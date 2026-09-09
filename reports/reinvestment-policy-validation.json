@@ -1,0 +1,31 @@
+{
+  "checkedAt": "2026-09-09T14:00:34.678807+00:00",
+  "scope": "Public practice policy revision; no live personal-bot changes",
+  "policyVersion": 2,
+  "implemented": [
+    "all balanced eligible fees used",
+    "explicit waiting reasons",
+    "historical receipt compatibility",
+    "existing waiting balances can be rechecked"
+  ],
+  "checks": {
+    "webDomainTests": 15,
+    "typescript": "passed",
+    "applicationLint": "passed",
+    "pythonTests": 5,
+    "pythonConservationCases": 600,
+    "solidityArithmeticTests": 4,
+    "solidityConservationFuzzRuns": 512,
+    "httpFullPythonParityCases": 7,
+    "httpRejectionCases": 5,
+    "disabledLiveCapabilities": "passed",
+    "productionBuild": "passed",
+    "workerFetchEntrypoint": "passed"
+  },
+  "limitations": [
+    "No browser UI testing performed.",
+    "Balanced-fee USD scenario only; no swap quotes, swap simulation or swap execution.",
+    "Operator cost gate is not proof of owner benefit.",
+    "Draft contract interface only; no deployable public vault."
+  ]
+}

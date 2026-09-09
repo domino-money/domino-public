@@ -1,0 +1,245 @@
+{
+  "schemaVersion": 1,
+  "mode": "bounded_core_position_qualification",
+  "chainId": 4663,
+  "poolId": "0xc613d796ce23c7344334ac5373063c89479675876d25738ee78cf0642f2a30ef",
+  "steps": [
+    {
+      "status": "position_chunk_reconciled",
+      "fromBlock": 58738261,
+      "through": 58743260,
+      "corePositions": 1,
+      "knownTicks": 2,
+      "modifications": 1,
+      "onchainPositionChecksPassed": true
+    },
+    {
+      "status": "position_chunk_reconciled",
+      "fromBlock": 58743261,
+      "through": 58748260,
+      "corePositions": 1,
+      "knownTicks": 2,
+      "modifications": 0,
+      "onchainPositionChecksPassed": true
+    },
+    {
+      "status": "position_chunk_reconciled",
+      "fromBlock": 58748261,
+      "through": 58753260,
+      "corePositions": 1,
+      "knownTicks": 2,
+      "modifications": 0,
+      "onchainPositionChecksPassed": true
+    },
+    {
+      "status": "position_chunk_reconciled",
+      "fromBlock": 58753261,
+      "through": 58763260,
+      "corePositions": 1,
+      "knownTicks": 2,
+      "modifications": 0,
+      "onchainPositionChecksPassed": true
+    },
+    {
+      "status": "position_chunk_reconciled",
+      "fromBlock": 58763261,
+      "through": 58772342,
+      "corePositions": 1,
+      "knownTicks": 2,
+      "modifications": 0,
+      "onchainPositionChecksPassed": true
+    },
+    {
+      "status": "caught_up_to_activity",
+      "through": 58772342
+    }
+  ],
+  "result": {
+    "schemaVersion": 1,
+    "methodologyVersion": 1,
+    "mode": "core_pool_activity_read_only",
+    "chainId": 4663,
+    "poolId": "0xc613d796ce23c7344334ac5373063c89479675876d25738ee78cf0642f2a30ef",
+    "poolKey": {
+      "hooks": "0x0000000000000000000000000000000000000000",
+      "fee_pips": 10000,
+      "currency0": "0x0000000000000000000000000000000000000000",
+      "currency1": "0x9b21df6ec499ce4bb952e40dadc1cfe9d334abd6",
+      "tick_spacing": 200
+    },
+    "revision": 5,
+    "accountingScope": "core_pool_events_only",
+    "snapshot": {
+      "hash": "0x2472d96a858815b9a6f4db67151ea3d9a3499709c86fa9573875c2c453a28bfb",
+      "tick": 199999,
+      "number": 58772342,
+      "lpFeePips": 10000,
+      "timestamp": 1788979669,
+      "sqrtPriceX96": "1744209614987380832158503113079779",
+      "protocolFeeRaw": 4097000,
+      "activeLiquidityRaw": "35184110057427449699765",
+      "feeGrowthGlobalX128": [
+        "290337693861552906841856138030",
+        "138962391926745182478175299659393426405"
+      ]
+    },
+    "coverage": {
+      "startBlock": 58738261,
+      "indexedThrough": 58772342,
+      "initializedBlock": 58738261,
+      "initializedAt": 1788976231,
+      "scope": "since_verified_initialize",
+      "canonicality": "requires_rpc_recheck",
+      "rpcCompleteness": "single_provider_assumption"
+    },
+    "window24h": {
+      "requestedSeconds": 86400,
+      "fromTimestampExclusive": 1788893269,
+      "throughTimestamp": 1788979669,
+      "observedSinceTimestamp": 1788976231,
+      "observedSeconds": 3438,
+      "completeWindow": false,
+      "status": "pool_younger_than_window",
+      "swapEventCount": 4,
+      "nonzeroSwapCount": 4,
+      "swapLegsRaw": [
+        {
+          "currencyIndex": 0,
+          "grossInput": "3001999036000000",
+          "output": "2940354541915645",
+          "absoluteTurnover": "5942353577915645"
+        },
+        {
+          "currencyIndex": 1,
+          "grossInput": "1436826755272319921561353",
+          "output": "1437785958528963347874223",
+          "absoluteTurnover": "2874612713801283269435576"
+        }
+      ],
+      "donations": {
+        "count": 0,
+        "amountsRaw": [
+          "0",
+          "0"
+        ]
+      },
+      "observedTotalSwapFeePips": [
+        10000
+      ],
+      "volumeUsd": null,
+      "volumeUsdReason": "timestamp_aligned_valuation_unavailable",
+      "lpFeesRaw": [
+        "30019990360000",
+        "14368267552723199215615"
+      ],
+      "lpFeesReason": null,
+      "feeApr": null,
+      "feeAprReason": "time_weighted_tvl_and_usd_valuation_not_reconciled",
+      "protocolFeesRaw": [
+        "0",
+        "0"
+      ],
+      "lpFeesBasis": "core_trading_fee_before_Q128_distribution_rounding"
+    },
+    "liquidity": {
+      "status": "core_active_liquidity_reconciled",
+      "activeLiquidityRaw": "35184110057427449699765",
+      "rangeCount": 1,
+      "isTvl": false,
+      "tvlUsd": null,
+      "tvlReason": "timestamp_aligned_valuation_unavailable",
+      "positionAccounting": {
+        "methodologyVersion": 1,
+        "status": "reconciled_as_of",
+        "reason": null,
+        "scope": "core_positions_not_nft_ownership",
+        "basis": "event_token_flows_excluding_protocol",
+        "lpAssetsRaw": [
+          "61644494084355",
+          "749999040796743356573677312"
+        ],
+        "principalRaw": [
+          "31624503724354",
+          "749984672529190633374461694"
+        ],
+        "unsettledFeesRaw": [
+          "30019990359999",
+          "14368267552723199215614"
+        ],
+        "roundingResidualRaw": [
+          "2",
+          "4"
+        ],
+        "settledFeesRaw": [
+          "0",
+          "0"
+        ],
+        "principalDepositedRaw": [
+          "0",
+          "749999999999999999999990182"
+        ],
+        "principalWithdrawnRaw": [
+          "0",
+          "0"
+        ],
+        "corePositionCount": 1,
+        "nonzeroLiquidityPositionCount": 1,
+        "knownTickCount": 2,
+        "donationsIncluded": true,
+        "protocolFeesExcluded": true,
+        "isWalletBalance": false,
+        "isWithdrawalQuote": false,
+        "nftOwnershipResolved": false,
+        "tvlUsd": null,
+        "tvlReason": "timestamp_aligned_valuation_unavailable",
+        "onchainReconciliation": {
+          "ticks": 2,
+          "ranges": 1,
+          "blockHash": "0x2472d96a858815b9a6f4db67151ea3d9a3499709c86fa9573875c2c453a28bfb",
+          "blockNumber": 58772342,
+          "corePositions": 1,
+          "sourceFeeMethodology": 1
+        }
+      }
+    },
+    "fees": {
+      "protocolDirectionalPips": [
+        1000,
+        1000
+      ],
+      "lpFeePipsAtSnapshot": 10000,
+      "feeGrowthGlobalX128": [
+        "290337693861552906841856138030",
+        "138962391926745182478175299659393426405"
+      ],
+      "growthIsTokenAmount": false,
+      "growthIncludesDonations": true,
+      "accounting": {
+        "methodologyVersion": 1,
+        "status": "reconciled_as_of",
+        "reason": null,
+        "lpFeesRaw": [
+          "30019990360000",
+          "14368267552723199215615"
+        ],
+        "protocolFeesRaw": [
+          "0",
+          "0"
+        ],
+        "donationsRaw": [
+          "0",
+          "0"
+        ],
+        "basis": "core_trading_fee_before_Q128_distribution_rounding",
+        "isCollectedAmount": false,
+        "isDominoServiceFee": false,
+        "scope": "since_verified_initialize",
+        "feeGrowthReconciled": true
+      }
+    },
+    "storedEventCount": 10,
+    "suggested": false,
+    "executionAvailable": false
+  },
+  "liveExecution": false
+}

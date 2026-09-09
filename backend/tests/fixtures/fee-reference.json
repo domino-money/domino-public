@@ -1,0 +1,639 @@
+{
+  "referenceRevision": "46c6834698c48bc4a463a86d8420f4eb1d7f3b75",
+  "cases": [
+    {
+      "name": "crossings_and_empty_tails",
+      "poolId": "0x0911afcb281d7bcae2d71443ceaeebd0f89b4537708449970d797622b4b4c941",
+      "poolKey": {
+        "currency0": "0x0000000000000000000000000000000000000000",
+        "currency1": "0x1111111111111111111111111111111111111111",
+        "fee_pips": 3000,
+        "tick_spacing": 60,
+        "hooks": "0x0000000000000000000000000000000000000000"
+      },
+      "sequence": [
+        {
+          "event": {
+            "poolId": "0x0911afcb281d7bcae2d71443ceaeebd0f89b4537708449970d797622b4b4c941",
+            "kind": "initialize",
+            "payload": {
+              "poolKey": {
+                "currency0": "0x0000000000000000000000000000000000000000",
+                "currency1": "0x1111111111111111111111111111111111111111",
+                "fee_pips": 3000,
+                "tick_spacing": 60,
+                "hooks": "0x0000000000000000000000000000000000000000"
+              },
+              "sqrtPriceX96": "79228162514264337593543950336",
+              "tick": 0
+            },
+            "timestamp": 1000,
+            "blockNumber": 10,
+            "blockHash": "0x1111111111111111111111111111111111111111111111111111111111111111",
+            "logIndex": 0
+          },
+          "expectedGrowthX128": [
+            "0",
+            "0"
+          ]
+        },
+        {
+          "event": {
+            "poolId": "0x0911afcb281d7bcae2d71443ceaeebd0f89b4537708449970d797622b4b4c941",
+            "kind": "modify_liquidity",
+            "payload": {
+              "tickLower": -60000,
+              "tickUpper": 60000,
+              "liquidityDelta": "1000000000000",
+              "salt": "0x0000000000000000000000000000000000000000000000000000000000000000"
+            },
+            "timestamp": 1001,
+            "blockNumber": 11,
+            "blockHash": "0x1111111111111111111111111111111111111111111111111111111111111111",
+            "logIndex": 1
+          },
+          "expectedGrowthX128": [
+            "0",
+            "0"
+          ]
+        },
+        {
+          "event": {
+            "poolId": "0x0911afcb281d7bcae2d71443ceaeebd0f89b4537708449970d797622b4b4c941",
+            "kind": "modify_liquidity",
+            "payload": {
+              "tickLower": -120,
+              "tickUpper": 0,
+              "liquidityDelta": "5000000000000",
+              "salt": "0x0000000000000000000000000000000000000000000000000000000000000000"
+            },
+            "timestamp": 1002,
+            "blockNumber": 12,
+            "blockHash": "0x1111111111111111111111111111111111111111111111111111111111111111",
+            "logIndex": 2
+          },
+          "expectedGrowthX128": [
+            "0",
+            "0"
+          ]
+        },
+        {
+          "event": {
+            "poolId": "0x0911afcb281d7bcae2d71443ceaeebd0f89b4537708449970d797622b4b4c941",
+            "kind": "modify_liquidity",
+            "payload": {
+              "tickLower": 0,
+              "tickUpper": 120,
+              "liquidityDelta": "5000000000000",
+              "salt": "0x0000000000000000000000000000000000000000000000000000000000000000"
+            },
+            "timestamp": 1003,
+            "blockNumber": 13,
+            "blockHash": "0x1111111111111111111111111111111111111111111111111111111111111111",
+            "logIndex": 3
+          },
+          "expectedGrowthX128": [
+            "0",
+            "0"
+          ]
+        },
+        {
+          "event": {
+            "poolId": "0x0911afcb281d7bcae2d71443ceaeebd0f89b4537708449970d797622b4b4c941",
+            "kind": "protocol_fee",
+            "payload": {
+              "protocolFeeRaw": 820200
+            },
+            "timestamp": 1004,
+            "blockNumber": 14,
+            "blockHash": "0x1111111111111111111111111111111111111111111111111111111111111111",
+            "logIndex": 4
+          },
+          "expectedGrowthX128": [
+            "0",
+            "0"
+          ]
+        },
+        {
+          "event": {
+            "poolId": "0x0911afcb281d7bcae2d71443ceaeebd0f89b4537708449970d797622b4b4c941",
+            "kind": "swap",
+            "payload": {
+              "amount0": "-100000000000",
+              "amount1": "94902492322",
+              "sqrtPriceX96": "74078822886585931264981761789",
+              "liquidity": "1000000000000",
+              "tick": -1345,
+              "swapFeePips": 3997
+            },
+            "timestamp": 1005,
+            "blockNumber": 15,
+            "blockHash": "0x1111111111111111111111111111111111111111111111111111111111111111",
+            "logIndex": 5
+          },
+          "expectedGrowthX128": [
+            "71174267865663742786380926673433985",
+            "0"
+          ],
+          "expectedProtocolRaw": 99999999
+        },
+        {
+          "event": {
+            "poolId": "0x0911afcb281d7bcae2d71443ceaeebd0f89b4537708449970d797622b4b4c941",
+            "kind": "swap",
+            "payload": {
+              "amount0": "10000000000",
+              "amount1": "-8853209311",
+              "sqrtPriceX96": "74778001837369493816817698940",
+              "liquidity": "1000000000000",
+              "tick": -1157,
+              "swapFeePips": 3200
+            },
+            "timestamp": 1006,
+            "blockNumber": 16,
+            "blockHash": "0x1111111111111111111111111111111111111111111111111111111111111111",
+            "logIndex": 6
+          },
+          "expectedGrowthX128": [
+            "71174267865663742786380926673433985",
+            "9037773420661997921417284661408406"
+          ],
+          "expectedProtocolRaw": 1770641
+        },
+        {
+          "event": {
+            "poolId": "0x0911afcb281d7bcae2d71443ceaeebd0f89b4537708449970d797622b4b4c941",
+            "kind": "donate",
+            "payload": {
+              "amount0": "1000000003",
+              "amount1": "10000001"
+            },
+            "timestamp": 1007,
+            "blockNumber": 17,
+            "blockHash": "0x1111111111111111111111111111111111111111111111111111111111111111",
+            "logIndex": 7
+          },
+          "expectedGrowthX128": [
+            "411456635807449307012570924495326018",
+            "12440597430153749476989494199100695"
+          ]
+        },
+        {
+          "event": {
+            "poolId": "0x0911afcb281d7bcae2d71443ceaeebd0f89b4537708449970d797622b4b4c941",
+            "kind": "modify_liquidity",
+            "payload": {
+              "tickLower": -60000,
+              "tickUpper": 60000,
+              "liquidityDelta": "-100000000000",
+              "salt": "0x0000000000000000000000000000000000000000000000000000000000000000"
+            },
+            "timestamp": 1008,
+            "blockNumber": 18,
+            "blockHash": "0x1111111111111111111111111111111111111111111111111111111111111111",
+            "logIndex": 8
+          },
+          "expectedGrowthX128": [
+            "411456635807449307012570924495326018",
+            "12440597430153749476989494199100695"
+          ]
+        },
+        {
+          "event": {
+            "poolId": "0x0911afcb281d7bcae2d71443ceaeebd0f89b4537708449970d797622b4b4c941",
+            "kind": "modify_liquidity",
+            "payload": {
+              "tickLower": -60000,
+              "tickUpper": 60000,
+              "liquidityDelta": "0",
+              "salt": "0x0000000000000000000000000000000000000000000000000000000000000000"
+            },
+            "timestamp": 1009,
+            "blockNumber": 19,
+            "blockHash": "0x1111111111111111111111111111111111111111111111111111111111111111",
+            "logIndex": 9
+          },
+          "expectedGrowthX128": [
+            "411456635807449307012570924495326018",
+            "12440597430153749476989494199100695"
+          ]
+        },
+        {
+          "event": {
+            "poolId": "0x0911afcb281d7bcae2d71443ceaeebd0f89b4537708449970d797622b4b4c941",
+            "kind": "modify_liquidity",
+            "payload": {
+              "tickLower": -60,
+              "tickUpper": 180,
+              "liquidityDelta": "3000000000000",
+              "salt": "0x0000000000000000000000000000000000000000000000000000000000000000"
+            },
+            "timestamp": 1010,
+            "blockNumber": 20,
+            "blockHash": "0x1111111111111111111111111111111111111111111111111111111111111111",
+            "logIndex": 10
+          },
+          "expectedGrowthX128": [
+            "411456635807449307012570924495326018",
+            "12440597430153749476989494199100695"
+          ]
+        },
+        {
+          "event": {
+            "poolId": "0x0911afcb281d7bcae2d71443ceaeebd0f89b4537708449970d797622b4b4c941",
+            "kind": "swap",
+            "payload": {
+              "amount0": "1004633331145",
+              "amount1": "-17376532933118",
+              "sqrtPriceX96": "4324846105752122384442905378221",
+              "liquidity": "0",
+              "tick": 80000,
+              "swapFeePips": 3200
+            },
+            "timestamp": 1011,
+            "blockNumber": 21,
+            "blockHash": "0x1111111111111111111111111111111111111111111111111111111111111111",
+            "logIndex": 11
+          },
+          "expectedGrowthX128": [
+            "411456635807449307012570924495326018",
+            "19612841597137738137493416706697997009"
+          ],
+          "expectedProtocolRaw": 3475306583
+        },
+        {
+          "event": {
+            "poolId": "0x0911afcb281d7bcae2d71443ceaeebd0f89b4537708449970d797622b4b4c941",
+            "kind": "swap",
+            "payload": {
+              "amount0": "-18198082669269",
+              "amount1": "18125560912844",
+              "sqrtPriceX96": "1451404646985709758556457135",
+              "liquidity": "0",
+              "tick": -80000,
+              "swapFeePips": 3997
+            },
+            "timestamp": 1012,
+            "blockNumber": 22,
+            "blockHash": "0x1111111111111111111111111111111111111111111111111111111111111111",
+            "logIndex": 12
+          },
+          "expectedGrowthX128": [
+            "20923346632138335815746018212339151446",
+            "19612841597137738137493416706697997009"
+          ],
+          "expectedProtocolRaw": 18198082663
+        },
+        {
+          "event": {
+            "poolId": "0x0911afcb281d7bcae2d71443ceaeebd0f89b4537708449970d797622b4b4c941",
+            "kind": "swap",
+            "payload": {
+              "amount0": "17213373800998",
+              "amount1": "-896949910548",
+              "sqrtPriceX96": "79228162514264337593543950336",
+              "liquidity": "8900000000000",
+              "tick": 0,
+              "swapFeePips": 3200
+            },
+            "timestamp": 1013,
+            "blockNumber": 23,
+            "blockHash": "0x1111111111111111111111111111111111111111111111111111111111111111",
+            "logIndex": 13
+          },
+          "expectedGrowthX128": [
+            "20923346632138335815746018212339151446",
+            "20585970102783608456974649119988123174"
+          ],
+          "expectedProtocolRaw": 179389979
+        },
+        {
+          "event": {
+            "poolId": "0x0911afcb281d7bcae2d71443ceaeebd0f89b4537708449970d797622b4b4c941",
+            "kind": "protocol_fee",
+            "payload": {
+              "protocolFeeRaw": 0
+            },
+            "timestamp": 1014,
+            "blockNumber": 24,
+            "blockHash": "0x1111111111111111111111111111111111111111111111111111111111111111",
+            "logIndex": 14
+          },
+          "expectedGrowthX128": [
+            "20923346632138335815746018212339151446",
+            "20585970102783608456974649119988123174"
+          ]
+        },
+        {
+          "event": {
+            "poolId": "0x0911afcb281d7bcae2d71443ceaeebd0f89b4537708449970d797622b4b4c941",
+            "kind": "swap",
+            "payload": {
+              "amount0": "-1",
+              "amount1": "0",
+              "sqrtPriceX96": "79228162514264337593543950336",
+              "liquidity": "8900000000000",
+              "tick": -1,
+              "swapFeePips": 3000
+            },
+            "timestamp": 1015,
+            "blockNumber": 25,
+            "blockHash": "0x1111111111111111111111111111111111111111111111111111111111111111",
+            "logIndex": 15
+          },
+          "expectedGrowthX128": [
+            "20923346632176569789557359612728294660",
+            "20585970102783608456974649119988123174"
+          ],
+          "expectedProtocolRaw": 0
+        },
+        {
+          "event": {
+            "poolId": "0x0911afcb281d7bcae2d71443ceaeebd0f89b4537708449970d797622b4b4c941",
+            "kind": "swap",
+            "payload": {
+              "amount0": "0",
+              "amount1": "0",
+              "sqrtPriceX96": "79228162514264337593543950336",
+              "liquidity": "8900000000000",
+              "tick": -1,
+              "swapFeePips": 3000
+            },
+            "timestamp": 1016,
+            "blockNumber": 26,
+            "blockHash": "0x1111111111111111111111111111111111111111111111111111111111111111",
+            "logIndex": 16
+          },
+          "expectedGrowthX128": [
+            "20923346632176569789557359612728294660",
+            "20585970102783608456974649119988123174"
+          ],
+          "expectedProtocolRaw": 0
+        }
+      ]
+    },
+    {
+      "name": "zero_liquidity_price_move",
+      "poolId": "0x0911afcb281d7bcae2d71443ceaeebd0f89b4537708449970d797622b4b4c941",
+      "poolKey": {
+        "currency0": "0x0000000000000000000000000000000000000000",
+        "currency1": "0x1111111111111111111111111111111111111111",
+        "fee_pips": 3000,
+        "tick_spacing": 60,
+        "hooks": "0x0000000000000000000000000000000000000000"
+      },
+      "sequence": [
+        {
+          "event": {
+            "poolId": "0x0911afcb281d7bcae2d71443ceaeebd0f89b4537708449970d797622b4b4c941",
+            "kind": "initialize",
+            "payload": {
+              "poolKey": {
+                "currency0": "0x0000000000000000000000000000000000000000",
+                "currency1": "0x1111111111111111111111111111111111111111",
+                "fee_pips": 3000,
+                "tick_spacing": 60,
+                "hooks": "0x0000000000000000000000000000000000000000"
+              },
+              "sqrtPriceX96": "79228162514264337593543950336",
+              "tick": 0
+            },
+            "timestamp": 1000,
+            "blockNumber": 10,
+            "blockHash": "0x1111111111111111111111111111111111111111111111111111111111111111",
+            "logIndex": 0
+          },
+          "expectedGrowthX128": [
+            "0",
+            "0"
+          ]
+        },
+        {
+          "event": {
+            "poolId": "0x0911afcb281d7bcae2d71443ceaeebd0f89b4537708449970d797622b4b4c941",
+            "kind": "swap",
+            "payload": {
+              "amount0": "0",
+              "amount1": "0",
+              "sqrtPriceX96": "10723438032895153248244559719",
+              "liquidity": "0",
+              "tick": -40000,
+              "swapFeePips": 3000
+            },
+            "timestamp": 1001,
+            "blockNumber": 11,
+            "blockHash": "0x1111111111111111111111111111111111111111111111111111111111111111",
+            "logIndex": 1
+          },
+          "expectedGrowthX128": [
+            "0",
+            "0"
+          ],
+          "expectedProtocolRaw": 0
+        }
+      ]
+    },
+    {
+      "name": "full_fee",
+      "poolId": "0x269499020a7fad332a489d257f0af37330000417eada728a6507eb4d2a918355",
+      "poolKey": {
+        "currency0": "0x0000000000000000000000000000000000000000",
+        "currency1": "0x1111111111111111111111111111111111111111",
+        "fee_pips": 1000000,
+        "tick_spacing": 60,
+        "hooks": "0x0000000000000000000000000000000000000000"
+      },
+      "sequence": [
+        {
+          "event": {
+            "poolId": "0x269499020a7fad332a489d257f0af37330000417eada728a6507eb4d2a918355",
+            "kind": "initialize",
+            "payload": {
+              "poolKey": {
+                "currency0": "0x0000000000000000000000000000000000000000",
+                "currency1": "0x1111111111111111111111111111111111111111",
+                "fee_pips": 1000000,
+                "tick_spacing": 60,
+                "hooks": "0x0000000000000000000000000000000000000000"
+              },
+              "sqrtPriceX96": "79228162514264337593543950336",
+              "tick": 0
+            },
+            "timestamp": 1000,
+            "blockNumber": 10,
+            "blockHash": "0x1111111111111111111111111111111111111111111111111111111111111111",
+            "logIndex": 0
+          },
+          "expectedGrowthX128": [
+            "0",
+            "0"
+          ]
+        },
+        {
+          "event": {
+            "poolId": "0x269499020a7fad332a489d257f0af37330000417eada728a6507eb4d2a918355",
+            "kind": "modify_liquidity",
+            "payload": {
+              "tickLower": -60000,
+              "tickUpper": 60000,
+              "liquidityDelta": "1000000000000",
+              "salt": "0x0000000000000000000000000000000000000000000000000000000000000000"
+            },
+            "timestamp": 1001,
+            "blockNumber": 11,
+            "blockHash": "0x1111111111111111111111111111111111111111111111111111111111111111",
+            "logIndex": 1
+          },
+          "expectedGrowthX128": [
+            "0",
+            "0"
+          ]
+        },
+        {
+          "event": {
+            "poolId": "0x269499020a7fad332a489d257f0af37330000417eada728a6507eb4d2a918355",
+            "kind": "swap",
+            "payload": {
+              "amount0": "-98765",
+              "amount1": "0",
+              "sqrtPriceX96": "79228162514264337593543950336",
+              "liquidity": "1000000000000",
+              "tick": -1,
+              "swapFeePips": 1000000
+            },
+            "timestamp": 1002,
+            "blockNumber": 12,
+            "blockHash": "0x1111111111111111111111111111111111111111111111111111111111111111",
+            "logIndex": 2
+          },
+          "expectedGrowthX128": [
+            "33607987968946487343960193102998",
+            "0"
+          ],
+          "expectedProtocolRaw": 0
+        }
+      ]
+    },
+    {
+      "name": "protocol_only",
+      "poolId": "0x12a6b1410a9fb5266bdf23b6014d9822815fb28d397da8e30accbceb7f1c7963",
+      "poolKey": {
+        "currency0": "0x0000000000000000000000000000000000000000",
+        "currency1": "0x1111111111111111111111111111111111111111",
+        "fee_pips": 0,
+        "tick_spacing": 60,
+        "hooks": "0x0000000000000000000000000000000000000000"
+      },
+      "sequence": [
+        {
+          "event": {
+            "poolId": "0x12a6b1410a9fb5266bdf23b6014d9822815fb28d397da8e30accbceb7f1c7963",
+            "kind": "initialize",
+            "payload": {
+              "poolKey": {
+                "currency0": "0x0000000000000000000000000000000000000000",
+                "currency1": "0x1111111111111111111111111111111111111111",
+                "fee_pips": 0,
+                "tick_spacing": 60,
+                "hooks": "0x0000000000000000000000000000000000000000"
+              },
+              "sqrtPriceX96": "79228162514264337593543950336",
+              "tick": 0
+            },
+            "timestamp": 1000,
+            "blockNumber": 10,
+            "blockHash": "0x1111111111111111111111111111111111111111111111111111111111111111",
+            "logIndex": 0
+          },
+          "expectedGrowthX128": [
+            "0",
+            "0"
+          ]
+        },
+        {
+          "event": {
+            "poolId": "0x12a6b1410a9fb5266bdf23b6014d9822815fb28d397da8e30accbceb7f1c7963",
+            "kind": "modify_liquidity",
+            "payload": {
+              "tickLower": -60000,
+              "tickUpper": 60000,
+              "liquidityDelta": "1000000000000",
+              "salt": "0x0000000000000000000000000000000000000000000000000000000000000000"
+            },
+            "timestamp": 1001,
+            "blockNumber": 11,
+            "blockHash": "0x1111111111111111111111111111111111111111111111111111111111111111",
+            "logIndex": 1
+          },
+          "expectedGrowthX128": [
+            "0",
+            "0"
+          ]
+        },
+        {
+          "event": {
+            "poolId": "0x12a6b1410a9fb5266bdf23b6014d9822815fb28d397da8e30accbceb7f1c7963",
+            "kind": "protocol_fee",
+            "payload": {
+              "protocolFeeRaw": 820200
+            },
+            "timestamp": 1002,
+            "blockNumber": 12,
+            "blockHash": "0x1111111111111111111111111111111111111111111111111111111111111111",
+            "logIndex": 2
+          },
+          "expectedGrowthX128": [
+            "0",
+            "0"
+          ]
+        },
+        {
+          "event": {
+            "poolId": "0x12a6b1410a9fb5266bdf23b6014d9822815fb28d397da8e30accbceb7f1c7963",
+            "kind": "swap",
+            "payload": {
+              "amount0": "-100000000000",
+              "amount1": "90826438767",
+              "sqrtPriceX96": "72032150663027854890029957575",
+              "liquidity": "1000000000000",
+              "tick": -1905,
+              "swapFeePips": 1000
+            },
+            "timestamp": 1003,
+            "blockNumber": 13,
+            "blockHash": "0x1111111111111111111111111111111111111111111111111111111111111111",
+            "logIndex": 3
+          },
+          "expectedGrowthX128": [
+            "0",
+            "0"
+          ],
+          "expectedProtocolRaw": 100000000
+        },
+        {
+          "event": {
+            "poolId": "0x12a6b1410a9fb5266bdf23b6014d9822815fb28d397da8e30accbceb7f1c7963",
+            "kind": "swap",
+            "payload": {
+              "amount0": "1000000000",
+              "amount1": "-827514272",
+              "sqrtPriceX96": "72097699985680532890657885465",
+              "liquidity": "1000000000000",
+              "tick": -1887,
+              "swapFeePips": 200
+            },
+            "timestamp": 1004,
+            "blockNumber": 14,
+            "blockHash": "0x1111111111111111111111111111111111111111111111111111111111111111",
+            "logIndex": 4
+          },
+          "expectedGrowthX128": [
+            "0",
+            "0"
+          ],
+          "expectedProtocolRaw": 165503
+        }
+      ]
+    }
+  ]
+}

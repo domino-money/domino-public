@@ -1,0 +1,58 @@
+{
+  "schemaVersion": 1,
+  "mode": "local_http_read_qualification",
+  "chainId": 4663,
+  "capabilities": {
+    "chainId": 4663,
+    "deployment": "local_development",
+    "publicChainReads": true,
+    "inventoryConfigured": true,
+    "inventoryCoverageQualified": false,
+    "walletAuthentication": false,
+    "privateAccounts": false,
+    "feeApr": false,
+    "suggestions": false,
+    "ownerTransactions": false,
+    "automation": false,
+    "feeCollection": false
+  },
+  "pages": [
+    {
+      "snapshot": {
+        "number": 58692029,
+        "hash": "0xdf69a405e58514e5c6c576fc742ad23521d2fd1ad0c6a940d1b4265702b22d5a",
+        "timestamp": 1788971563
+      },
+      "assetsRead": 13,
+      "unavailableAssets": 0,
+      "inventoryStatus": "page_received",
+      "inventoryReason": null,
+      "providerRows": 12,
+      "excludedRows": 0,
+      "hasMore": false,
+      "balanceCoverage": "requested_and_page_addresses_only"
+    }
+  ],
+  "walletIdentityAndAmountsOmitted": true,
+  "uniqueCurrenciesRead": 13,
+  "pageLimitReached": false,
+  "poolProbe": {
+    "snapshot": {
+      "number": 58692333,
+      "hash": "0x13de471655c12333496cdf5d67dc3bb7b5d9a832babc29b7e64f3b2447a039b1",
+      "timestamp": 1788971594
+    },
+    "discovery": {
+      "source": "dexscreener",
+      "coverage": "provider_candidates_only",
+      "returned": 18,
+      "v4Candidates": 17,
+      "rejectedOrOtherMarkets": 1,
+      "notProbed": 0
+    },
+    "verifiedPools": 17,
+    "unverifiedCandidates": 0,
+    "metricsQualified": false,
+    "liveExecution": false
+  }
+}

@@ -1,0 +1,27 @@
+{
+  "repository": "https://github.com/Uniswap/v4-core",
+  "revision": "46c6834698c48bc4a463a86d8420f4eb1d7f3b75",
+  "use": "non-production differential test reference only",
+  "sha256": {
+    "src/libraries/Pool.sol": "59c493035ad25d56f24a457e8b40d9d1e3784504b8ff13d171db1eb25c6f128e",
+    "src/libraries/CustomRevert.sol": "9d3dbe6b742cb1ac30f57df89d879ade9649389de1165fc637114bd062d39fca",
+    "src/libraries/LPFeeLibrary.sol": "e96c3fa7deac991dc09b6c5e560a340d01d6c68ccba483d4b29f8a66e5aa44e0",
+    "src/libraries/LiquidityMath.sol": "67a39e58732340af4870342ba9230691f35501d89ed8725ca1b338deaa0eb26a",
+    "src/libraries/ProtocolFeeLibrary.sol": "f8d96d9c8b5d12ab927b34551699bd7086750475f70254c9505e636f2cafe56a",
+    "src/types/Slot0.sol": "378b45486644dc7e49726358e83d0e2fffdaee088d18cac1a3df00d02c3635b4",
+    "src/types/BalanceDelta.sol": "320d9c13dec135c3903729e66d3a1040fe86d537a7ee53728915012ca183af32",
+    "src/libraries/SafeCast.sol": "c1a815a41607be5b4c86ca588a951f368156da8ee21bdfc18b5d51b58a0f27be",
+    "src/libraries/SwapMath.sol": "eb3971ea0ba84ff0a01f2fbe43f62f9c393121ef1724774ed3f3ab7760780e4a",
+    "src/libraries/SqrtPriceMath.sol": "42440c21bbab86c7eed4716b281ed5ca281cf14af8b5e06dc6dc3bc6864bcfdf",
+    "src/libraries/FixedPoint96.sol": "66ee26d4fb3ac639124bdfa27d3256d196970997fa127c09e9bf7154e30d4590",
+    "src/libraries/UnsafeMath.sol": "2de236e7ca0b9572a6b0184557565b6fd54e177224e202c727fe248785ede427",
+    "src/libraries/FullMath.sol": "a9607255a6fd604d9c92f6b7416811c38b9d86e5dfdb0c345a494ebd35f7a4a3",
+    "src/libraries/TickMath.sol": "272d4f6d3ff9ae33596ebcdb84a71a3c2d4542ae8fb5c88ddf1aca8043f5d06b",
+    "src/libraries/BitMath.sol": "e8a45eb3d57f9427fc47bbb2543c1a6a5f394113b378123ac7ca9f113a7502b4",
+    "src/libraries/FixedPoint128.sol": "1ca2f55160697b73bd66fd27c8724d79a57108121ce1e8a0ab8b79f38bb58fbb",
+    "src/libraries/Position.sol": "3dc4e2ad1564fa94eddf3ff06ce9ac592c9d578ea64ca194050382da454c8fcb",
+    "src/libraries/TickBitmap.sol": "19b25dccfac8bd90f9d615fb182547eb7b5908a5cbf21a1c5920b92c47383cb6",
+    "MIT_LICENSE": "b7b0c4379346af0701f5e4df9c861295d4a3af91dc3b15eb4356ebc571303df9",
+    "BUSL_LICENSE": "cd5241d8e1afe7098fa0f21059f7153348fdd25dbae5a8383a5f1dd2eb590321"
+  }
+}

@@ -1,0 +1,711 @@
+{
+  "mode": "read_only_qualification",
+  "schemaVersion": 1,
+  "chainId": 4663,
+  "selectedToken": "0xab35d04e1ee39c789c4a65d522417b3c7f2e4723",
+  "snapshot": {
+    "number": 58677944,
+    "hash": "0xc6bc0940283823d02aafd6ec36461adba8f01c009ff7a18e3cdfa56a576d772c",
+    "timestamp": 1788970145
+  },
+  "tokens": [
+    {
+      "address": "0x0000000000000000000000000000000000000000",
+      "kind": "native",
+      "decimals": 18,
+      "symbol": "ETH"
+    },
+    {
+      "address": "0xab35d04e1ee39c789c4a65d522417b3c7f2e4723",
+      "kind": "erc20",
+      "decimals": 18,
+      "symbol": "MARLIN"
+    },
+    {
+      "address": "0x5fc5360d0400a0fd4f2af552add042d716f1d168",
+      "kind": "erc20",
+      "decimals": 6,
+      "symbol": "USDG"
+    }
+  ],
+  "pools": [
+    {
+      "poolId": "0x59a626b46f61a117f13a4f3d31264dc9afcafff4c95c3e79d094f07cc050a3f0",
+      "currencies": [
+        "0x0000000000000000000000000000000000000000",
+        "0xab35d04e1ee39c789c4a65d522417b3c7f2e4723"
+      ],
+      "providerMetrics": {
+        "source": "dexscreener",
+        "retrievedAt": 1788970147,
+        "status": "external_unreconciled",
+        "asOfBlock": null,
+        "volume24hUsd": "1187011.87",
+        "reportedLiquidityUsd": "51284.39"
+      },
+      "poolKey": {
+        "currency0": "0x0000000000000000000000000000000000000000",
+        "currency1": "0xab35d04e1ee39c789c4a65d522417b3c7f2e4723",
+        "fee_pips": 0,
+        "tick_spacing": 200,
+        "hooks": "0xe5e702641ea86f4ae6cc3cdaed2b886f976be044"
+      },
+      "identityStatus": "verified_at_block",
+      "snapshot": {
+        "number": 58677944,
+        "hash": "0xc6bc0940283823d02aafd6ec36461adba8f01c009ff7a18e3cdfa56a576d772c",
+        "timestamp": 1788970145
+      },
+      "sqrtPriceX96": "221082500902233536058823425732241",
+      "tick": 158687,
+      "currentLpFeePips": 0,
+      "protocolFeeRaw": 0,
+      "integrationClass": "requires_separate_adapter",
+      "feeApr24h": null,
+      "aprReason": "reconciled_fee_history_unavailable",
+      "suggested": false,
+      "suggestionReason": "metrics_and_policy_not_qualified",
+      "executionAvailable": false,
+      "executionReason": "public_execution_not_implemented"
+    },
+    {
+      "poolId": "0xbf0fe39ec46400f36455eae199696e1009af2182f62bfb256b559b1f3e11afec",
+      "currencies": [
+        "0x0000000000000000000000000000000000000000",
+        "0xab35d04e1ee39c789c4a65d522417b3c7f2e4723"
+      ],
+      "providerMetrics": {
+        "source": "dexscreener",
+        "retrievedAt": 1788970147,
+        "status": "external_unreconciled",
+        "asOfBlock": null,
+        "volume24hUsd": "267292.71",
+        "reportedLiquidityUsd": "6852.28"
+      },
+      "poolKey": {
+        "currency0": "0x0000000000000000000000000000000000000000",
+        "currency1": "0xab35d04e1ee39c789c4a65d522417b3c7f2e4723",
+        "fee_pips": 9000,
+        "tick_spacing": 90,
+        "hooks": "0x0000000000000000000000000000000000000000"
+      },
+      "identityStatus": "verified_at_block",
+      "snapshot": {
+        "number": 58677944,
+        "hash": "0xc6bc0940283823d02aafd6ec36461adba8f01c009ff7a18e3cdfa56a576d772c",
+        "timestamp": 1788970145
+      },
+      "sqrtPriceX96": "230748170658651330070917897303196",
+      "tick": 159542,
+      "currentLpFeePips": 9000,
+      "protocolFeeRaw": 4097000,
+      "integrationClass": "hookless_fixed_fee",
+      "feeApr24h": null,
+      "aprReason": "reconciled_fee_history_unavailable",
+      "suggested": false,
+      "suggestionReason": "metrics_and_policy_not_qualified",
+      "executionAvailable": false,
+      "executionReason": "public_execution_not_implemented"
+    },
+    {
+      "poolId": "0xdb922f0619e11b0c1e6c3a142798f0243060b8a4331ea4f4e7de80e898cc02e7",
+      "currencies": [
+        "0x5fc5360d0400a0fd4f2af552add042d716f1d168",
+        "0xab35d04e1ee39c789c4a65d522417b3c7f2e4723"
+      ],
+      "providerMetrics": {
+        "source": "dexscreener",
+        "retrievedAt": 1788970147,
+        "status": "external_unreconciled",
+        "asOfBlock": null,
+        "volume24hUsd": "186808.06",
+        "reportedLiquidityUsd": "1991.29"
+      },
+      "poolKey": {
+        "currency0": "0x5fc5360d0400a0fd4f2af552add042d716f1d168",
+        "currency1": "0xab35d04e1ee39c789c4a65d522417b3c7f2e4723",
+        "fee_pips": 50000,
+        "tick_spacing": 500,
+        "hooks": "0x0000000000000000000000000000000000000000"
+      },
+      "identityStatus": "verified_at_block",
+      "snapshot": {
+        "number": 58677944,
+        "hash": "0xc6bc0940283823d02aafd6ec36461adba8f01c009ff7a18e3cdfa56a576d772c",
+        "timestamp": 1788970145
+      },
+      "sqrtPriceX96": "4469120845571885442733861940206126990",
+      "tick": 356980,
+      "currentLpFeePips": 50000,
+      "protocolFeeRaw": 4097000,
+      "integrationClass": "hookless_fixed_fee",
+      "feeApr24h": null,
+      "aprReason": "reconciled_fee_history_unavailable",
+      "suggested": false,
+      "suggestionReason": "metrics_and_policy_not_qualified",
+      "executionAvailable": false,
+      "executionReason": "public_execution_not_implemented"
+    },
+    {
+      "poolId": "0x38867840cc7a48e407d1a4ceadb8b95d9c868ae6d151569650efa47566d7fba2",
+      "currencies": [
+        "0x5fc5360d0400a0fd4f2af552add042d716f1d168",
+        "0xab35d04e1ee39c789c4a65d522417b3c7f2e4723"
+      ],
+      "providerMetrics": {
+        "source": "dexscreener",
+        "retrievedAt": 1788970147,
+        "status": "external_unreconciled",
+        "asOfBlock": null,
+        "volume24hUsd": "600.85",
+        "reportedLiquidityUsd": "192.91"
+      },
+      "poolKey": {
+        "currency0": "0x5fc5360d0400a0fd4f2af552add042d716f1d168",
+        "currency1": "0xab35d04e1ee39c789c4a65d522417b3c7f2e4723",
+        "fee_pips": 48850,
+        "tick_spacing": 977,
+        "hooks": "0x0000000000000000000000000000000000000000"
+      },
+      "identityStatus": "verified_at_block",
+      "snapshot": {
+        "number": 58677944,
+        "hash": "0xc6bc0940283823d02aafd6ec36461adba8f01c009ff7a18e3cdfa56a576d772c",
+        "timestamp": 1788970145
+      },
+      "sqrtPriceX96": "3696955060344024642344595865296013184",
+      "tick": 353186,
+      "currentLpFeePips": 48850,
+      "protocolFeeRaw": 4097000,
+      "integrationClass": "hookless_fixed_fee",
+      "feeApr24h": null,
+      "aprReason": "reconciled_fee_history_unavailable",
+      "suggested": false,
+      "suggestionReason": "metrics_and_policy_not_qualified",
+      "executionAvailable": false,
+      "executionReason": "public_execution_not_implemented"
+    },
+    {
+      "poolId": "0x7f764b5ecaad8593f2784fb8620f0ec67cbbf5e88640d038fce93cf0c09ae4b2",
+      "currencies": [
+        "0x0000000000000000000000000000000000000000",
+        "0xab35d04e1ee39c789c4a65d522417b3c7f2e4723"
+      ],
+      "providerMetrics": {
+        "source": "dexscreener",
+        "retrievedAt": 1788970147,
+        "status": "external_unreconciled",
+        "asOfBlock": null,
+        "volume24hUsd": "1929.06",
+        "reportedLiquidityUsd": "401.1"
+      },
+      "poolKey": {
+        "currency0": "0x0000000000000000000000000000000000000000",
+        "currency1": "0xab35d04e1ee39c789c4a65d522417b3c7f2e4723",
+        "fee_pips": 100000,
+        "tick_spacing": 1000,
+        "hooks": "0x0000000000000000000000000000000000000000"
+      },
+      "identityStatus": "verified_at_block",
+      "snapshot": {
+        "number": 58677944,
+        "hash": "0xc6bc0940283823d02aafd6ec36461adba8f01c009ff7a18e3cdfa56a576d772c",
+        "timestamp": 1788970145
+      },
+      "sqrtPriceX96": "231252521718197046414132153669681",
+      "tick": 159586,
+      "currentLpFeePips": 100000,
+      "protocolFeeRaw": 4097000,
+      "integrationClass": "hookless_fixed_fee",
+      "feeApr24h": null,
+      "aprReason": "reconciled_fee_history_unavailable",
+      "suggested": false,
+      "suggestionReason": "metrics_and_policy_not_qualified",
+      "executionAvailable": false,
+      "executionReason": "public_execution_not_implemented"
+    },
+    {
+      "poolId": "0x2aa3bb6d6f4d71fe0bcb64688d454c13701edaaec4cda23ca5e6580b6731914a",
+      "currencies": [
+        "0x0000000000000000000000000000000000000000",
+        "0xab35d04e1ee39c789c4a65d522417b3c7f2e4723"
+      ],
+      "providerMetrics": {
+        "source": "dexscreener",
+        "retrievedAt": 1788970147,
+        "status": "external_unreconciled",
+        "asOfBlock": null,
+        "volume24hUsd": "5016.52",
+        "reportedLiquidityUsd": "807.71"
+      },
+      "poolKey": {
+        "currency0": "0x0000000000000000000000000000000000000000",
+        "currency1": "0xab35d04e1ee39c789c4a65d522417b3c7f2e4723",
+        "fee_pips": 25000,
+        "tick_spacing": 250,
+        "hooks": "0x0000000000000000000000000000000000000000"
+      },
+      "identityStatus": "verified_at_block",
+      "snapshot": {
+        "number": 58677944,
+        "hash": "0xc6bc0940283823d02aafd6ec36461adba8f01c009ff7a18e3cdfa56a576d772c",
+        "timestamp": 1788970145
+      },
+      "sqrtPriceX96": "111519694831561922196268951929143",
+      "tick": 144999,
+      "currentLpFeePips": 25000,
+      "protocolFeeRaw": 4097000,
+      "integrationClass": "hookless_fixed_fee",
+      "feeApr24h": null,
+      "aprReason": "reconciled_fee_history_unavailable",
+      "suggested": false,
+      "suggestionReason": "metrics_and_policy_not_qualified",
+      "executionAvailable": false,
+      "executionReason": "public_execution_not_implemented"
+    },
+    {
+      "poolId": "0x61b8ad7a817cccd79ca7d1318470b927b793d26db3b987276061853ed76529e8",
+      "currencies": [
+        "0x5fc5360d0400a0fd4f2af552add042d716f1d168",
+        "0xab35d04e1ee39c789c4a65d522417b3c7f2e4723"
+      ],
+      "providerMetrics": {
+        "source": "dexscreener",
+        "retrievedAt": 1788970147,
+        "status": "external_unreconciled",
+        "asOfBlock": null,
+        "volume24hUsd": "5053.47",
+        "reportedLiquidityUsd": null
+      },
+      "poolKey": {
+        "currency0": "0x5fc5360d0400a0fd4f2af552add042d716f1d168",
+        "currency1": "0xab35d04e1ee39c789c4a65d522417b3c7f2e4723",
+        "fee_pips": 49100,
+        "tick_spacing": 491,
+        "hooks": "0x0000000000000000000000000000000000000000"
+      },
+      "identityStatus": "verified_at_block",
+      "snapshot": {
+        "number": 58677944,
+        "hash": "0xc6bc0940283823d02aafd6ec36461adba8f01c009ff7a18e3cdfa56a576d772c",
+        "timestamp": 1788970145
+      },
+      "sqrtPriceX96": "5567591780898881586753055012644275938",
+      "tick": 361375,
+      "currentLpFeePips": 49100,
+      "protocolFeeRaw": 4097000,
+      "integrationClass": "hookless_fixed_fee",
+      "feeApr24h": null,
+      "aprReason": "reconciled_fee_history_unavailable",
+      "suggested": false,
+      "suggestionReason": "metrics_and_policy_not_qualified",
+      "executionAvailable": false,
+      "executionReason": "public_execution_not_implemented"
+    },
+    {
+      "poolId": "0xa46b1db0010d2de3b569d560bed869d68c99c014d9a34819efdfe8f6a5e33b90",
+      "currencies": [
+        "0x0000000000000000000000000000000000000000",
+        "0xab35d04e1ee39c789c4a65d522417b3c7f2e4723"
+      ],
+      "providerMetrics": {
+        "source": "dexscreener",
+        "retrievedAt": 1788970147,
+        "status": "external_unreconciled",
+        "asOfBlock": null,
+        "volume24hUsd": "55.27",
+        "reportedLiquidityUsd": "2.86"
+      },
+      "poolKey": {
+        "currency0": "0x0000000000000000000000000000000000000000",
+        "currency1": "0xab35d04e1ee39c789c4a65d522417b3c7f2e4723",
+        "fee_pips": 859624,
+        "tick_spacing": 1,
+        "hooks": "0x0000000000000000000000000000000000000000"
+      },
+      "identityStatus": "verified_at_block",
+      "snapshot": {
+        "number": 58677944,
+        "hash": "0xc6bc0940283823d02aafd6ec36461adba8f01c009ff7a18e3cdfa56a576d772c",
+        "timestamp": 1788970145
+      },
+      "sqrtPriceX96": "73037854338830500508426711985086",
+      "tick": 136534,
+      "currentLpFeePips": 859624,
+      "protocolFeeRaw": 4097000,
+      "integrationClass": "hookless_fixed_fee",
+      "feeApr24h": null,
+      "aprReason": "reconciled_fee_history_unavailable",
+      "suggested": false,
+      "suggestionReason": "metrics_and_policy_not_qualified",
+      "executionAvailable": false,
+      "executionReason": "public_execution_not_implemented"
+    },
+    {
+      "poolId": "0x62e6a727a629e5980c39fff00e49dc623155ecf7d7f8e782cfc8e41fa2ca9d4c",
+      "currencies": [
+        "0x0000000000000000000000000000000000000000",
+        "0xab35d04e1ee39c789c4a65d522417b3c7f2e4723"
+      ],
+      "providerMetrics": {
+        "source": "dexscreener",
+        "retrievedAt": 1788970147,
+        "status": "external_unreconciled",
+        "asOfBlock": null,
+        "volume24hUsd": "3.24",
+        "reportedLiquidityUsd": "0.77"
+      },
+      "poolKey": {
+        "currency0": "0x0000000000000000000000000000000000000000",
+        "currency1": "0xab35d04e1ee39c789c4a65d522417b3c7f2e4723",
+        "fee_pips": 899900,
+        "tick_spacing": 8999,
+        "hooks": "0x0000000000000000000000000000000000000000"
+      },
+      "identityStatus": "verified_at_block",
+      "snapshot": {
+        "number": 58677944,
+        "hash": "0xc6bc0940283823d02aafd6ec36461adba8f01c009ff7a18e3cdfa56a576d772c",
+        "timestamp": 1788970145
+      },
+      "sqrtPriceX96": "40344002880236595619189314112272",
+      "tick": 124663,
+      "currentLpFeePips": 899900,
+      "protocolFeeRaw": 4097000,
+      "integrationClass": "hookless_fixed_fee",
+      "feeApr24h": null,
+      "aprReason": "reconciled_fee_history_unavailable",
+      "suggested": false,
+      "suggestionReason": "metrics_and_policy_not_qualified",
+      "executionAvailable": false,
+      "executionReason": "public_execution_not_implemented"
+    },
+    {
+      "poolId": "0x16034ac125ed3a75d5ab240a5c50ba5099c1a3ddcb2ffd0fb3b996ac365ef015",
+      "currencies": [
+        "0x0000000000000000000000000000000000000000",
+        "0xab35d04e1ee39c789c4a65d522417b3c7f2e4723"
+      ],
+      "providerMetrics": {
+        "source": "dexscreener",
+        "retrievedAt": 1788970147,
+        "status": "external_unreconciled",
+        "asOfBlock": null,
+        "volume24hUsd": "6.72",
+        "reportedLiquidityUsd": "2.99"
+      },
+      "poolKey": {
+        "currency0": "0x0000000000000000000000000000000000000000",
+        "currency1": "0xab35d04e1ee39c789c4a65d522417b3c7f2e4723",
+        "fee_pips": 852069,
+        "tick_spacing": 1,
+        "hooks": "0x0000000000000000000000000000000000000000"
+      },
+      "identityStatus": "verified_at_block",
+      "snapshot": {
+        "number": 58677944,
+        "hash": "0xc6bc0940283823d02aafd6ec36461adba8f01c009ff7a18e3cdfa56a576d772c",
+        "timestamp": 1788970145
+      },
+      "sqrtPriceX96": "146006949807132757369942883719438",
+      "tick": 150389,
+      "currentLpFeePips": 852069,
+      "protocolFeeRaw": 4097000,
+      "integrationClass": "hookless_fixed_fee",
+      "feeApr24h": null,
+      "aprReason": "reconciled_fee_history_unavailable",
+      "suggested": false,
+      "suggestionReason": "metrics_and_policy_not_qualified",
+      "executionAvailable": false,
+      "executionReason": "public_execution_not_implemented"
+    },
+    {
+      "poolId": "0x374a7ab438d996032c796115f3d5c1cb94c6ae94e0508bb4e1192974e02fb3a9",
+      "currencies": [
+        "0x0000000000000000000000000000000000000000",
+        "0xab35d04e1ee39c789c4a65d522417b3c7f2e4723"
+      ],
+      "providerMetrics": {
+        "source": "dexscreener",
+        "retrievedAt": 1788970147,
+        "status": "external_unreconciled",
+        "asOfBlock": null,
+        "volume24hUsd": "1.19",
+        "reportedLiquidityUsd": "1.41"
+      },
+      "poolKey": {
+        "currency0": "0x0000000000000000000000000000000000000000",
+        "currency1": "0xab35d04e1ee39c789c4a65d522417b3c7f2e4723",
+        "fee_pips": 808670,
+        "tick_spacing": 200,
+        "hooks": "0x0000000000000000000000000000000000000000"
+      },
+      "identityStatus": "verified_at_block",
+      "snapshot": {
+        "number": 58677944,
+        "hash": "0xc6bc0940283823d02aafd6ec36461adba8f01c009ff7a18e3cdfa56a576d772c",
+        "timestamp": 1788970145
+      },
+      "sqrtPriceX96": "225087687748522782877595637971572",
+      "tick": 159046,
+      "currentLpFeePips": 808670,
+      "protocolFeeRaw": 4097000,
+      "integrationClass": "hookless_fixed_fee",
+      "feeApr24h": null,
+      "aprReason": "reconciled_fee_history_unavailable",
+      "suggested": false,
+      "suggestionReason": "metrics_and_policy_not_qualified",
+      "executionAvailable": false,
+      "executionReason": "public_execution_not_implemented"
+    },
+    {
+      "poolId": "0xd2c6fb9f532e0240010b2200ca34768c7109a403bfd978d813f2b24db82c2ae4",
+      "currencies": [
+        "0x0000000000000000000000000000000000000000",
+        "0xab35d04e1ee39c789c4a65d522417b3c7f2e4723"
+      ],
+      "providerMetrics": {
+        "source": "dexscreener",
+        "retrievedAt": 1788970147,
+        "status": "external_unreconciled",
+        "asOfBlock": null,
+        "volume24hUsd": "1.52",
+        "reportedLiquidityUsd": "5.81"
+      },
+      "poolKey": {
+        "currency0": "0x0000000000000000000000000000000000000000",
+        "currency1": "0xab35d04e1ee39c789c4a65d522417b3c7f2e4723",
+        "fee_pips": 843790,
+        "tick_spacing": 200,
+        "hooks": "0x0000000000000000000000000000000000000000"
+      },
+      "identityStatus": "verified_at_block",
+      "snapshot": {
+        "number": 58677944,
+        "hash": "0xc6bc0940283823d02aafd6ec36461adba8f01c009ff7a18e3cdfa56a576d772c",
+        "timestamp": 1788970145
+      },
+      "sqrtPriceX96": "160177090017124300107188270392078",
+      "tick": 152241,
+      "currentLpFeePips": 843790,
+      "protocolFeeRaw": 4097000,
+      "integrationClass": "hookless_fixed_fee",
+      "feeApr24h": null,
+      "aprReason": "reconciled_fee_history_unavailable",
+      "suggested": false,
+      "suggestionReason": "metrics_and_policy_not_qualified",
+      "executionAvailable": false,
+      "executionReason": "public_execution_not_implemented"
+    },
+    {
+      "poolId": "0xb02b08f0e96ad579f551b6e7e6ce57f1fda70a94df8e7e6abf506604453681a0",
+      "currencies": [
+        "0x5fc5360d0400a0fd4f2af552add042d716f1d168",
+        "0xab35d04e1ee39c789c4a65d522417b3c7f2e4723"
+      ],
+      "providerMetrics": {
+        "source": "dexscreener",
+        "retrievedAt": 1788970147,
+        "status": "external_unreconciled",
+        "asOfBlock": null,
+        "volume24hUsd": "5.11",
+        "reportedLiquidityUsd": "20.8"
+      },
+      "poolKey": {
+        "currency0": "0x5fc5360d0400a0fd4f2af552add042d716f1d168",
+        "currency1": "0xab35d04e1ee39c789c4a65d522417b3c7f2e4723",
+        "fee_pips": 770000,
+        "tick_spacing": 7700,
+        "hooks": "0x0000000000000000000000000000000000000000"
+      },
+      "identityStatus": "verified_at_block",
+      "snapshot": {
+        "number": 58677944,
+        "hash": "0xc6bc0940283823d02aafd6ec36461adba8f01c009ff7a18e3cdfa56a576d772c",
+        "timestamp": 1788970145
+      },
+      "sqrtPriceX96": "4844691834019009513136818303519994664",
+      "tick": 358594,
+      "currentLpFeePips": 770000,
+      "protocolFeeRaw": 4097000,
+      "integrationClass": "hookless_fixed_fee",
+      "feeApr24h": null,
+      "aprReason": "reconciled_fee_history_unavailable",
+      "suggested": false,
+      "suggestionReason": "metrics_and_policy_not_qualified",
+      "executionAvailable": false,
+      "executionReason": "public_execution_not_implemented"
+    },
+    {
+      "poolId": "0xf3b030340f5914812afcfbfc33e2275c44484f027892aae029cdb6e060f2f99d",
+      "currencies": [
+        "0x0000000000000000000000000000000000000000",
+        "0xab35d04e1ee39c789c4a65d522417b3c7f2e4723"
+      ],
+      "providerMetrics": {
+        "source": "dexscreener",
+        "retrievedAt": 1788970147,
+        "status": "external_unreconciled",
+        "asOfBlock": null,
+        "volume24hUsd": "0.54",
+        "reportedLiquidityUsd": "3.17"
+      },
+      "poolKey": {
+        "currency0": "0x0000000000000000000000000000000000000000",
+        "currency1": "0xab35d04e1ee39c789c4a65d522417b3c7f2e4723",
+        "fee_pips": 854715,
+        "tick_spacing": 1,
+        "hooks": "0x0000000000000000000000000000000000000000"
+      },
+      "identityStatus": "verified_at_block",
+      "snapshot": {
+        "number": 58677944,
+        "hash": "0xc6bc0940283823d02aafd6ec36461adba8f01c009ff7a18e3cdfa56a576d772c",
+        "timestamp": 1788970145
+      },
+      "sqrtPriceX96": "251803518173151427469216509604431",
+      "tick": 161289,
+      "currentLpFeePips": 854715,
+      "protocolFeeRaw": 4097000,
+      "integrationClass": "hookless_fixed_fee",
+      "feeApr24h": null,
+      "aprReason": "reconciled_fee_history_unavailable",
+      "suggested": false,
+      "suggestionReason": "metrics_and_policy_not_qualified",
+      "executionAvailable": false,
+      "executionReason": "public_execution_not_implemented"
+    },
+    {
+      "poolId": "0x7bd2b12d81f60af785f6f9febad2fac8ad53c566a660dcef8e852e2f4c7b360a",
+      "currencies": [
+        "0x0000000000000000000000000000000000000000",
+        "0xab35d04e1ee39c789c4a65d522417b3c7f2e4723"
+      ],
+      "providerMetrics": {
+        "source": "dexscreener",
+        "retrievedAt": 1788970147,
+        "status": "external_unreconciled",
+        "asOfBlock": null,
+        "volume24hUsd": "1.59",
+        "reportedLiquidityUsd": "13.22"
+      },
+      "poolKey": {
+        "currency0": "0x0000000000000000000000000000000000000000",
+        "currency1": "0xab35d04e1ee39c789c4a65d522417b3c7f2e4723",
+        "fee_pips": 810000,
+        "tick_spacing": 19988,
+        "hooks": "0x0000000000000000000000000000000000000000"
+      },
+      "identityStatus": "verified_at_block",
+      "snapshot": {
+        "number": 58677944,
+        "hash": "0xc6bc0940283823d02aafd6ec36461adba8f01c009ff7a18e3cdfa56a576d772c",
+        "timestamp": 1788970145
+      },
+      "sqrtPriceX96": "207186915508276729497747507717214",
+      "tick": 157388,
+      "currentLpFeePips": 810000,
+      "protocolFeeRaw": 4097000,
+      "integrationClass": "hookless_fixed_fee",
+      "feeApr24h": null,
+      "aprReason": "reconciled_fee_history_unavailable",
+      "suggested": false,
+      "suggestionReason": "metrics_and_policy_not_qualified",
+      "executionAvailable": false,
+      "executionReason": "public_execution_not_implemented"
+    },
+    {
+      "poolId": "0x2d0088baeedc766c23119d2c6843acce89d75bb29174c890831c125e63c61dde",
+      "currencies": [
+        "0x0000000000000000000000000000000000000000",
+        "0xab35d04e1ee39c789c4a65d522417b3c7f2e4723"
+      ],
+      "providerMetrics": {
+        "source": "dexscreener",
+        "retrievedAt": 1788970147,
+        "status": "external_unreconciled",
+        "asOfBlock": null,
+        "volume24hUsd": "1",
+        "reportedLiquidityUsd": "1.73"
+      },
+      "poolKey": {
+        "currency0": "0x0000000000000000000000000000000000000000",
+        "currency1": "0xab35d04e1ee39c789c4a65d522417b3c7f2e4723",
+        "fee_pips": 870350,
+        "tick_spacing": 200,
+        "hooks": "0x0000000000000000000000000000000000000000"
+      },
+      "identityStatus": "verified_at_block",
+      "snapshot": {
+        "number": 58677944,
+        "hash": "0xc6bc0940283823d02aafd6ec36461adba8f01c009ff7a18e3cdfa56a576d772c",
+        "timestamp": 1788970145
+      },
+      "sqrtPriceX96": "250682812085915670183406345522537",
+      "tick": 161200,
+      "currentLpFeePips": 870350,
+      "protocolFeeRaw": 4097000,
+      "integrationClass": "hookless_fixed_fee",
+      "feeApr24h": null,
+      "aprReason": "reconciled_fee_history_unavailable",
+      "suggested": false,
+      "suggestionReason": "metrics_and_policy_not_qualified",
+      "executionAvailable": false,
+      "executionReason": "public_execution_not_implemented"
+    },
+    {
+      "poolId": "0xea42e9f1b6dfa8daba26854916bbacb0d3768d31c4abf177aa05c69a67331d95",
+      "currencies": [
+        "0x0000000000000000000000000000000000000000",
+        "0xab35d04e1ee39c789c4a65d522417b3c7f2e4723"
+      ],
+      "providerMetrics": {
+        "source": "dexscreener",
+        "retrievedAt": 1788970147,
+        "status": "external_unreconciled",
+        "asOfBlock": null,
+        "volume24hUsd": "0.87",
+        "reportedLiquidityUsd": "13.23"
+      },
+      "poolKey": {
+        "currency0": "0x0000000000000000000000000000000000000000",
+        "currency1": "0xab35d04e1ee39c789c4a65d522417b3c7f2e4723",
+        "fee_pips": 802731,
+        "tick_spacing": 9303,
+        "hooks": "0x0000000000000000000000000000000000000000"
+      },
+      "identityStatus": "verified_at_block",
+      "snapshot": {
+        "number": 58677944,
+        "hash": "0xc6bc0940283823d02aafd6ec36461adba8f01c009ff7a18e3cdfa56a576d772c",
+        "timestamp": 1788970145
+      },
+      "sqrtPriceX96": "228709069380233297043840544612401",
+      "tick": 159365,
+      "currentLpFeePips": 802731,
+      "protocolFeeRaw": 4097000,
+      "integrationClass": "hookless_fixed_fee",
+      "feeApr24h": null,
+      "aprReason": "reconciled_fee_history_unavailable",
+      "suggested": false,
+      "suggestionReason": "metrics_and_policy_not_qualified",
+      "executionAvailable": false,
+      "executionReason": "public_execution_not_implemented"
+    }
+  ],
+  "unverifiedCandidates": [],
+  "metricsQualified": false,
+  "liveExecution": false,
+  "discovery": {
+    "source": "dexscreener",
+    "coverage": "provider_candidates_only",
+    "returned": 18,
+    "v4Candidates": 17,
+    "rejectedOrOtherMarkets": 1,
+    "notProbed": 0
+  },
+  "walletInventory": {
+    "status": "not_probed",
+    "coverage": "unqualified"
+  }
+}

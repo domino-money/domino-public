@@ -1,0 +1,25 @@
+# Local dependencies, private provider configuration and development data
+node_modules/
+.venv/
+runtime/
+.env
+.env.*
+!.env.example
+__pycache__/
+*.pyc
+.pytest_cache/
+.codex/
+.DS_Store
+*.pem
+*.key
+*.p12
+*.keystore
+*.sqlite*
+*.db
+*.dump
+*.log
+*.tsbuildinfo
+contracts/out/
+contracts/cache/
+# Historical owner-only hosting metadata stays on the deployment owner's machine.
+reports/private-site-release*.json

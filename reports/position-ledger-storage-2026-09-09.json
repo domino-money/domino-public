@@ -1,0 +1,15 @@
+{
+  "schemaVersion": 1,
+  "databaseRestartPreservedActivityFeesAndPositions": true,
+  "counts": {
+    "pools": 2,
+    "chunks": 7,
+    "events": 16,
+    "fee_chunks": 7,
+    "fee_events": 4,
+    "position_chunks": 7,
+    "position_settlements": 2
+  },
+  "allPoolsPositionReconciled": true,
+  "liveExecution": false
+}

@@ -1,0 +1,200 @@
+{
+  "schemaVersion": 1,
+  "mode": "catalogue_http_qualification",
+  "chainId": 4663,
+  "expectedPoolId": "0x62e0c4567e99677915368953e58999696ea042aaa8e611a36f476678bd03183a",
+  "explicitIdsSentToApi": false,
+  "userWalletQueried": false,
+  "liveExecution": false,
+  "cases": [
+    {
+      "token": "0x9c06e2e7885a22a355d692a79d1a6aa642fc119b",
+      "pairedToken": "0x0bd7d308f8e1639fab988df18a8011f41eacad73",
+      "storedCatalogue": {
+        "schemaVersion": 1,
+        "mode": "stored_catalogue_candidates",
+        "chainId": 4663,
+        "poolManager": "0x8366a39cc670b4001a1121b8f6a443a643e40951",
+        "revision": 8,
+        "startBlock": 58736592,
+        "indexedThrough": 58742591,
+        "coverage": "configured_interval_only",
+        "completeHistory": false,
+        "liveExecution": false,
+        "items": [
+          {
+            "poolId": "0x62e0c4567e99677915368953e58999696ea042aaa8e611a36f476678bd03183a",
+            "poolKey": {
+              "currency0": "0x0bd7d308f8e1639fab988df18a8011f41eacad73",
+              "currency1": "0x9c06e2e7885a22a355d692a79d1a6aa642fc119b",
+              "fee_pips": 200000,
+              "tick_spacing": 4000,
+              "hooks": "0x0000000000000000000000000000000000000000"
+            },
+            "currencies": [
+              "0x0bd7d308f8e1639fab988df18a8011f41eacad73",
+              "0x9c06e2e7885a22a355d692a79d1a6aa642fc119b"
+            ],
+            "providerMetrics": null,
+            "catalogueSource": "initialize_event",
+            "catalogueObservation": {
+              "number": 58736614,
+              "hash": "0x9f9ef41dbe4edac425c8940f49f0270a58bd76b3efee26efcc8732a420d5e6d7"
+            },
+            "identityStatus": "catalogue_candidate",
+            "executionAvailable": false
+          }
+        ],
+        "hasMore": false,
+        "nextAfterPoolId": null
+      },
+      "snapshot": {
+        "number": 58751039,
+        "hash": "0x95575a1ccc6c2a9727b1e02adc1cbbf07f15269a2f76b91738cae2c02f3771a3",
+        "timestamp": 1788977518
+      },
+      "discovery": {
+        "source": "dexscreener",
+        "status": "received",
+        "coverage": "provider_candidates_only",
+        "returned": 3,
+        "v4Candidates": 3,
+        "rejectedOrOtherMarkets": 0,
+        "requestedPoolIds": 0,
+        "notProbed": 0
+      },
+      "catalogue": {
+        "chainId": 4663,
+        "poolManager": "0x8366a39cc670b4001a1121b8f6a443a643e40951",
+        "revision": 8,
+        "startBlock": 58736592,
+        "indexedThrough": 58742591,
+        "coverage": "configured_interval_only",
+        "completeHistory": false,
+        "liveExecution": false,
+        "hasMore": false,
+        "nextAfterPoolId": null,
+        "status": "available",
+        "candidatesLoaded": 1
+      },
+      "pools": [
+        {
+          "poolId": "0x62e0c4567e99677915368953e58999696ea042aaa8e611a36f476678bd03183a",
+          "poolKey": {
+            "currency0": "0x0bd7d308f8e1639fab988df18a8011f41eacad73",
+            "currency1": "0x9c06e2e7885a22a355d692a79d1a6aa642fc119b",
+            "fee_pips": 200000,
+            "tick_spacing": 4000,
+            "hooks": "0x0000000000000000000000000000000000000000"
+          },
+          "currencies": [
+            "0x0bd7d308f8e1639fab988df18a8011f41eacad73",
+            "0x9c06e2e7885a22a355d692a79d1a6aa642fc119b"
+          ],
+          "identityStatus": "verified_at_block",
+          "catalogueSource": "initialize_event",
+          "integrationClass": "hookless_fixed_fee",
+          "tokenMetadataStatus": "available",
+          "executionAvailable": false
+        }
+      ],
+      "unverifiedCandidates": [],
+      "checksPassed": true
+    },
+    {
+      "token": "0x0bd7d308f8e1639fab988df18a8011f41eacad73",
+      "pairedToken": "0x9c06e2e7885a22a355d692a79d1a6aa642fc119b",
+      "storedCatalogue": {
+        "schemaVersion": 1,
+        "mode": "stored_catalogue_candidates",
+        "chainId": 4663,
+        "poolManager": "0x8366a39cc670b4001a1121b8f6a443a643e40951",
+        "revision": 8,
+        "startBlock": 58736592,
+        "indexedThrough": 58742591,
+        "coverage": "configured_interval_only",
+        "completeHistory": false,
+        "liveExecution": false,
+        "items": [
+          {
+            "poolId": "0x62e0c4567e99677915368953e58999696ea042aaa8e611a36f476678bd03183a",
+            "poolKey": {
+              "currency0": "0x0bd7d308f8e1639fab988df18a8011f41eacad73",
+              "currency1": "0x9c06e2e7885a22a355d692a79d1a6aa642fc119b",
+              "fee_pips": 200000,
+              "tick_spacing": 4000,
+              "hooks": "0x0000000000000000000000000000000000000000"
+            },
+            "currencies": [
+              "0x0bd7d308f8e1639fab988df18a8011f41eacad73",
+              "0x9c06e2e7885a22a355d692a79d1a6aa642fc119b"
+            ],
+            "providerMetrics": null,
+            "catalogueSource": "initialize_event",
+            "catalogueObservation": {
+              "number": 58736614,
+              "hash": "0x9f9ef41dbe4edac425c8940f49f0270a58bd76b3efee26efcc8732a420d5e6d7"
+            },
+            "identityStatus": "catalogue_candidate",
+            "executionAvailable": false
+          }
+        ],
+        "hasMore": false,
+        "nextAfterPoolId": null
+      },
+      "snapshot": {
+        "number": 58751137,
+        "hash": "0x31d7e5161628c6ebad63b9ae9ed292696541ca387bcc4e82b57a02ea0aef6ed7",
+        "timestamp": 1788977528
+      },
+      "discovery": {
+        "source": "dexscreener",
+        "status": "received",
+        "coverage": "provider_candidates_only",
+        "returned": 30,
+        "v4Candidates": 0,
+        "rejectedOrOtherMarkets": 30,
+        "requestedPoolIds": 0,
+        "notProbed": 0
+      },
+      "catalogue": {
+        "chainId": 4663,
+        "poolManager": "0x8366a39cc670b4001a1121b8f6a443a643e40951",
+        "revision": 8,
+        "startBlock": 58736592,
+        "indexedThrough": 58742591,
+        "coverage": "configured_interval_only",
+        "completeHistory": false,
+        "liveExecution": false,
+        "hasMore": false,
+        "nextAfterPoolId": null,
+        "status": "available",
+        "candidatesLoaded": 1
+      },
+      "pools": [
+        {
+          "poolId": "0x62e0c4567e99677915368953e58999696ea042aaa8e611a36f476678bd03183a",
+          "poolKey": {
+            "currency0": "0x0bd7d308f8e1639fab988df18a8011f41eacad73",
+            "currency1": "0x9c06e2e7885a22a355d692a79d1a6aa642fc119b",
+            "fee_pips": 200000,
+            "tick_spacing": 4000,
+            "hooks": "0x0000000000000000000000000000000000000000"
+          },
+          "currencies": [
+            "0x0bd7d308f8e1639fab988df18a8011f41eacad73",
+            "0x9c06e2e7885a22a355d692a79d1a6aa642fc119b"
+          ],
+          "identityStatus": "verified_at_block",
+          "catalogueSource": "initialize_event",
+          "integrationClass": "hookless_fixed_fee",
+          "tokenMetadataStatus": "available",
+          "executionAvailable": false
+        }
+      ],
+      "unverifiedCandidates": [],
+      "checksPassed": true
+    }
+  ],
+  "checksPassed": true
+}

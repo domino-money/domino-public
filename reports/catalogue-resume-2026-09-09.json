@@ -1,0 +1,26 @@
+{
+  "schemaVersion": 1,
+  "mode": "bounded_initialize_index",
+  "chainId": 4663,
+  "headAtStart": {
+    "number": 58749766,
+    "hash": "0x6b758a976b2dd7229dc9e1b683751236d8179d254e476b547b887ef7d7208929",
+    "timestamp": 1788977392
+  },
+  "target": 58742591,
+  "steps": [
+    {
+      "status": "indexed",
+      "fromBlock": 58741592,
+      "through": 58742591,
+      "events": 30,
+      "endHash": "0xa1aadcf6f2ca3293697c461c7cc7d731a1188bf3fc54956afde1e5e222f3e47e"
+    },
+    {
+      "status": "caught_up_to_target",
+      "through": 58742591
+    }
+  ],
+  "completeHistory": false,
+  "liveExecution": false
+}

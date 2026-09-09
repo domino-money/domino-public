@@ -1,0 +1,135 @@
+"""Bounded Initialize-event indexing, with atomic checkpoints and replay."""
+from dataclasses import asdict
+import re
+
+from eth_hash.auto import keccak
+
+from discovery import (CHAIN_ID, POOL_MANAGER, DataError, ReadRpc, PoolKey,
+                       address, bytes32, quantity, parse_block, decode_result)
+from catalogue import PgCatalogue
+
+INITIALIZE_TOPIC = '0x' + keccak(b'Initialize(bytes32,address,address,uint24,int24,address,uint160,int24)').hex()
+
+
+class IndexRpc(ReadRpc):
+    METHODS = ReadRpc.METHODS | {'eth_getLogs'}
+
+
+def decode_initialize(raw):
+    if not isinstance(raw, dict) or address(raw.get('address')) != POOL_MANAGER or raw.get('removed') is not False:
+        raise DataError('invalid_initialize_log')
+    topics = raw.get('topics')
+    if not isinstance(topics, list) or len(topics) != 4 or bytes32(topics[0]) != INITIALIZE_TOPIC:
+        raise DataError('invalid_initialize_topics')
+    pool_id = bytes32(topics[1])
+    currencies = []
+    for value in topics[2:]:
+        value = bytes32(value)
+        if value[2:26] != '0'*24:
+            raise DataError('invalid_indexed_currency')
+        currencies.append(address('0x'+value[26:]))
+    data = raw.get('data')
+    if not isinstance(data, str) or len(data) != 322:
+        raise DataError('invalid_initialize_data')
+    fee, spacing, hooks, sqrt, tick = decode_result(['uint24','int24','address','uint160','int24'],data)
+    key = PoolKey.checked((*currencies,fee,spacing,hooks),pool_id)
+    if not 0 < sqrt < 2**160 or not -887272 <= tick <= 887272:
+        raise DataError('invalid_initial_price')
+    return {'poolId':pool_id,'poolKey':asdict(key), 'blockNumber':quantity(raw.get('blockNumber')),
+            'blockHash':bytes32(raw.get('blockHash')), 'transactionHash':bytes32(raw.get('transactionHash')),
+            'logIndex':quantity(raw.get('logIndex'))}
+
+
+class CatalogueIndexer:
+    def __init__(self, catalogue, rpc):
+        self.catalogue, self.rpc = catalogue, rpc
+
+    def block(self, number):
+        block = parse_block(self.rpc.request('eth_getBlockByNumber',[hex(number),False]))
+        if block.number != number:
+            raise DataError('unexpected_block_number')
+        return block
+
+    def check_chain(self):
+        if quantity(self.rpc.request('eth_chainId')) != CHAIN_ID:
+            raise DataError('wrong_chain')
+
+    def start(self, start_block):
+        if type(start_block) is not int or start_block<1:
+            raise DataError('invalid_catalogue_start')
+        self.check_chain()
+        with self.catalogue.connection(writer=True,lock=True) as conn:
+            state = self.catalogue.state(conn)
+            if state['start_block'] is not None:
+                if state['start_block'] != start_block:
+                    raise DataError('catalogue_start_already_set')
+                return
+            base = self.block(start_block-1)
+            conn.execute('''UPDATE domino_catalogue.state SET start_block=%s,next_block=%s,
+                          base_hash=%s,revision=revision+1 WHERE singleton''',(start_block,start_block,base.hash))
+
+    def _reconcile(self, conn):
+        state = self.catalogue.state(conn)
+        if state['start_block'] is None:
+            raise DataError('catalogue_start_required')
+        checkpoints = conn.execute('SELECT * FROM domino_catalogue.chunks ORDER BY end_block DESC LIMIT 64').fetchall()
+        if checkpoints and self.block(checkpoints[0]['end_block']).hash == checkpoints[0]['end_hash']:
+            return None
+        if not checkpoints and self.block(state['start_block']-1).hash == state['base_hash']:
+            return None
+        # Network errors abort the transaction. Only confirmed hash changes rewind.
+        for checkpoint in checkpoints[1:]:
+            if self.block(checkpoint['end_block']).hash == checkpoint['end_hash']:
+                self.catalogue.rewind(conn,checkpoint['end_block'])
+                return checkpoint['end_block']
+        base = self.block(state['start_block']-1)
+        self.catalogue.rewind(conn,base.number,base.hash)
+        return base.number
+
+    def step(self, *, through, span=1000):
+        if type(through) is not int or type(span) is not int or not 1<=span<=1000:
+            raise DataError('invalid_indexer_bounds')
+        self.check_chain()
+        with self.catalogue.connection(writer=True,lock=True) as conn:
+            rewind = self._reconcile(conn)
+            if rewind is not None:
+                return {'status':'rewound','through':rewind}
+            state = self.catalogue.state(conn)
+            start = state['next_block']
+            if start>through:
+                return {'status':'caught_up_to_target','through':start-1}
+            end = min(start+span-1,through)
+            before, end_block = self.block(start-1), self.block(end)
+            tail = conn.execute('SELECT end_hash FROM domino_catalogue.chunks ORDER BY end_block DESC LIMIT 1').fetchone()
+            if before.hash != (tail['end_hash'] if tail else state['base_hash']):
+                raise DataError('index_snapshot_reorganized')
+            code = self.rpc.request('eth_getCode',[POOL_MANAGER,end_block.tag])
+            if not isinstance(code,str) or not re.fullmatch(r'0x(?:[0-9a-fA-F]{2})+',code):
+                raise DataError('missing_pool_manager')
+            raw = self.rpc.request('eth_getLogs',[{'address':POOL_MANAGER,'topics':[INITIALIZE_TOPIC],
+                                   'fromBlock':hex(start),'toBlock':hex(end)}])
+            if not isinstance(raw,list) or len(raw)>2000:
+                raise DataError('invalid_logs_response')
+            events, identities, headers = [], {}, {}
+            for log in raw:
+                event = decode_initialize(log)
+                number = event['blockNumber']
+                if not start<=number<=end:
+                    raise DataError('event_outside_chunk')
+                if number not in headers:
+                    headers[number] = self.block(number)
+                if headers[number].hash != event['blockHash']:
+                    raise DataError('event_block_mismatch')
+                identity = (event['blockHash'],event['logIndex'])
+                if identity in identities:
+                    if identities[identity] != event:
+                        raise DataError('conflicting_duplicate_log')
+                    continue
+                identities[identity] = event
+                events.append(event)
+            if self.block(end)!=end_block or self.block(start-1)!=before:
+                raise DataError('index_snapshot_reorganized')
+            events.sort(key=lambda event:(event['blockNumber'],event['logIndex']))
+            self.catalogue.commit_chunk(conn,start,end,end_block.hash,events)
+            return {'status':'indexed','fromBlock':start,'through':end,'events':len(events),
+                    'endHash':end_block.hash}

@@ -1,0 +1,50 @@
+{
+  "schemaVersion": 1,
+  "mode": "bounded_initialize_index",
+  "chainId": 4663,
+  "headAtStart": {
+    "number": 58748649,
+    "hash": "0x91a8a7dc3876cc602014393c302ef232cfe724c72417ae904dd4568043b51349",
+    "timestamp": 1788977279
+  },
+  "target": 58741591,
+  "steps": [
+    {
+      "status": "indexed",
+      "fromBlock": 58736592,
+      "through": 58737591,
+      "events": 29,
+      "endHash": "0x357208c7f62a031a045cd5a7d76234f7f6110c42e0c412a92a90412d25e9583c"
+    },
+    {
+      "status": "indexed",
+      "fromBlock": 58737592,
+      "through": 58738591,
+      "events": 24,
+      "endHash": "0xfcafe303d7abcef4b6ef67e36a88518750994683ad9bf9da61cb2dcca0e9e6dd"
+    },
+    {
+      "status": "indexed",
+      "fromBlock": 58738592,
+      "through": 58739591,
+      "events": 36,
+      "endHash": "0xfa8b7ebd92f033626c368b84195e2bc268736c8e30ca90912a23c6faf0c07b2c"
+    },
+    {
+      "status": "indexed",
+      "fromBlock": 58739592,
+      "through": 58740591,
+      "events": 16,
+      "endHash": "0xe85619f82357a03d9a6bca8c5ba344718e90e06aa9d8d57e35e12b4d4e169543"
+    },
+    {
+      "status": "indexed",
+      "fromBlock": 58740592,
+      "through": 58741591,
+      "events": 40,
+      "endHash": "0x83e3758b0fdde18a8f22a0b964f9a8b4d2d7cc598e880d6e6915f64a235d37b3"
+    }
+  ],
+  "completeHistory": false,
+  "liveExecution": false
+}

@@ -1,0 +1,19 @@
+{
+  "name": "domino-development-tools",
+  "version": "0.7.0",
+  "private": true,
+  "description": "Pinned development tools for the Domino application.",
+  "devDependencies": {
+    "@foundry-rs/forge": "1.7.1",
+    "@foundry-rs/anvil": "1.7.1",
+    "solc": "0.8.26"
+  },
+  "engines": {
+    "node": ">=22.13.0"
+  },
+  "scripts": {
+    "test:contracts": "forge test --root contracts --offline",
+    "check:web": "npm --prefix web test && npm --prefix web run typecheck && npm --prefix web run lint && npm --prefix web run build",
+    "check:repository": "python3 scripts/check-repository.py"
+  }
+}

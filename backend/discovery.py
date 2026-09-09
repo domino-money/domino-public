@@ -1,0 +1,479 @@
+"""Read-only Robinhood discovery. No personal-bot imports, signer or wallet writes.
+
+Provider metrics are untrusted observations, not reconciled APR or permissions.
+Dependencies: eth-abi and eth-hash, pinned in requirements-readonly.txt.
+"""
+from dataclasses import dataclass, asdict
+from decimal import Decimal, InvalidOperation
+import json
+import re
+import time
+import urllib.error
+import urllib.request
+from urllib.parse import urlsplit
+
+from eth_abi import encode, decode
+from eth_hash.auto import keccak
+
+CHAIN_ID = 4663
+RPC_URL = 'https://rpc.mainnet.chain.robinhood.com'
+POOL_MANAGER = '0x8366a39cc670b4001a1121b8f6a443a643e40951'
+POSITION_MANAGER = '0x58daec3116aae6d93017baaea7749052e8a04fa7'
+STATE_VIEW = '0xf3334192d15450cdd385c8b70e03f9a6bd9e673b'
+ZERO = '0x' + '00' * 20
+KEY_TYPES = ('address', 'address', 'uint24', 'int24', 'address')
+MAX_RESPONSE_BYTES = 2_000_000
+
+
+class DataError(ValueError):
+    """A fixed safe code; never include provider URLs, payloads or credentials."""
+
+
+def address(value):
+    if not isinstance(value, str) or not re.fullmatch(r'0x[0-9a-fA-F]{40}', value):
+        raise DataError('invalid_address')
+    return value.lower()
+
+
+def bytes32(value):
+    if not isinstance(value, str) or not re.fullmatch(r'0x[0-9a-fA-F]{64}', value):
+        raise DataError('invalid_bytes32')
+    return value.lower()
+
+
+def quantity(value):
+    if not isinstance(value, str) or not re.fullmatch(r'0x(?:0|[1-9a-fA-F][0-9a-fA-F]*)', value):
+        raise DataError('invalid_quantity')
+    if len(value) > 66:
+        raise DataError('quantity_too_large')
+    return int(value, 16)
+
+
+def decimal_metric(value):
+    """Preserve zero versus missing; reject NaN, negatives and unbounded values."""
+    if value is None or isinstance(value, bool) or not isinstance(value, (str, int, float, Decimal)):
+        return None
+    if len(str(value)) > 128:
+        return None
+    try:
+        parsed = Decimal(str(value))
+        if not parsed.is_finite() or parsed < 0 or parsed > Decimal('1e30'):
+            return None
+        if not -36 <= parsed.as_tuple().exponent <= 30:
+            return None
+        if parsed and parsed.adjusted() < -36:
+            return None
+        return format(parsed, 'f')
+    except (InvalidOperation, ValueError):
+        return None
+
+
+class NoRedirect(urllib.request.HTTPRedirectHandler):
+    def redirect_request(self, request, fp, code, msg, headers, newurl):
+        return None  # Never forward wallet queries or credential-bearing routes.
+
+
+_JSON_OPENER = urllib.request.build_opener(NoRedirect()).open
+
+
+def json_http(url, body=None, *, timeout=12, opener=_JSON_OPENER):
+    try:
+        parsed = urlsplit(url)
+        valid = (parsed.scheme == 'https' and parsed.hostname and not parsed.fragment
+                 and not parsed.username and not parsed.password
+                 and (parsed.port is None or 1 <= parsed.port <= 65535)
+                 and not any(ord(char) < 32 or ord(char) == 127 for char in url))
+    except ValueError:
+        valid = False
+    if not valid:
+        raise DataError('https_endpoint_required')
+    request = urllib.request.Request(
+        url, data=json.dumps(body).encode() if body is not None else None,
+        headers={'Content-Type': 'application/json', 'User-Agent': 'DominoReadOnlyDiscovery/0.1'},
+    )
+    try:
+        with opener(request, timeout=timeout) as response:
+            raw = response.read(MAX_RESPONSE_BYTES + 1)
+        if len(raw) > MAX_RESPONSE_BYTES:
+            raise DataError('response_too_large')
+        return json.loads(raw, parse_float=Decimal)
+    except urllib.error.HTTPError as error:
+        raise DataError(f'http_{error.code}') from None
+    except (urllib.error.URLError, TimeoutError, OSError):
+        raise DataError('network_unavailable') from None
+    except DataError:
+        raise
+    except (UnicodeError, ValueError, RecursionError):
+        raise DataError('invalid_json') from None
+
+
+class ReadRpc:
+    """Local-only transport with bounded requests and an explicit read allowlist."""
+    METHODS = frozenset({'eth_chainId', 'eth_getBlockByNumber', 'eth_getCode',
+                         'eth_getBalance', 'eth_call'})
+
+    def __init__(self, url=RPC_URL, *, transport=json_http, max_requests=160):
+        self.url, self.transport = url, transport
+        self.count, self.max_requests = 0, max_requests
+
+    def request(self, method, params=()):
+        if method not in self.METHODS:
+            raise DataError('method_not_read_only')
+        if self.count >= self.max_requests:
+            raise DataError('request_budget_exhausted')
+        self.count += 1
+        payload = self.transport(self.url, {'jsonrpc': '2.0', 'id': self.count,
+                                          'method': method, 'params': list(params)})
+        if (not isinstance(payload, dict) or payload.get('jsonrpc') != '2.0'
+                or type(payload.get('id')) is not int or payload['id'] != self.count):
+            raise DataError('invalid_rpc_envelope')
+        if 'error' in payload:
+            raise DataError('rpc_error')
+        if 'result' not in payload:
+            raise DataError('missing_rpc_result')
+        return payload['result']
+
+    def call_raw(self, target, signature, inputs=(), values=(), *, block):
+        calldata = '0x' + (keccak(signature.encode())[:4] + encode(inputs, values)).hex()
+        return self.request('eth_call', [{'to': address(target), 'data': calldata,
+                                         'gas': hex(150_000)}, block])
+
+    def call(self, target, signature, inputs=(), values=(), outputs=(), *, block):
+        return decode_result(outputs, self.call_raw(target, signature, inputs, values, block=block))
+
+    def symbol(self, target, *, block):
+        raw = self.call_raw(target, 'symbol()', block=block)
+        if isinstance(raw, str) and len(raw) == 66:
+            value, = decode_result(['bytes32'], raw)
+            try:
+                return value.rstrip(b'\x00').decode('utf-8')
+            except UnicodeError:
+                raise DataError('invalid_symbol_text') from None
+        value, = decode_result(['string'], raw)
+        return value
+
+
+def decode_result(types, raw):
+    if (not isinstance(raw, str) or not re.fullmatch(r'0x(?:[0-9a-fA-F]{2})*', raw)
+            or len(raw) > 16_386):
+        raise DataError('invalid_abi_response')
+    try:
+        return decode(types, bytes.fromhex(raw[2:]))
+    except Exception:
+        raise DataError('invalid_abi_response') from None
+
+
+@dataclass(frozen=True)
+class Block:
+    number: int
+    hash: str
+    timestamp: int
+
+    @property
+    def tag(self):
+        return hex(self.number)
+
+
+def parse_block(raw):
+    if not isinstance(raw, dict):
+        raise DataError('block_unavailable')
+    return Block(quantity(raw.get('number')), bytes32(raw.get('hash')), quantity(raw.get('timestamp')))
+
+
+@dataclass(frozen=True)
+class PoolKey:
+    currency0: str
+    currency1: str
+    fee_pips: int
+    tick_spacing: int
+    hooks: str
+
+    @classmethod
+    def checked(cls, raw, expected_id):
+        if not isinstance(raw, (tuple, list)) or len(raw) != 5:
+            raise DataError('invalid_pool_key')
+        c0, c1, fee, spacing, hooks = raw
+        c0, c1, hooks = address(c0), address(c1), address(hooks)
+        if c0 >= c1 or type(fee) is not int or not (0 <= fee <= 1_000_000 or fee == 0x800000):
+            raise DataError('invalid_pool_key')
+        if type(spacing) is not int or not 1 <= spacing <= 32767:
+            raise DataError('invalid_tick_spacing')
+        if '0x' + keccak(encode(KEY_TYPES, (c0, c1, fee, spacing, hooks))).hex() != bytes32(expected_id):
+            raise DataError('pool_id_mismatch')
+        return cls(c0, c1, fee, spacing, hooks)
+
+
+def provider_candidates(payload, selected_token, retrieved_at):
+    """DEX Screener is a discovery seed, with no completeness guarantee."""
+    token = address(selected_token)
+    if not isinstance(payload, list) or len(payload) > 1000:
+        raise DataError('invalid_discovery_response')
+    candidates, rejected, seen, conflicts = [], 0, {}, set()
+    for raw in payload:
+        try:
+            if not isinstance(raw, dict):
+                raise DataError('invalid_candidate')
+            if raw.get('chainId') != 'robinhood' or raw.get('dexId') != 'uniswap':
+                rejected += 1
+                continue
+            if not isinstance(raw.get('labels'), list) or 'v4' not in raw['labels']:
+                rejected += 1
+                continue
+            pool = bytes32(raw.get('pairAddress'))
+            base, quote = raw.get('baseToken'), raw.get('quoteToken')
+            if not isinstance(base, dict) or not isinstance(quote, dict):
+                raise DataError('invalid_candidate')
+            currencies = sorted((address(base.get('address')), address(quote.get('address'))))
+            if currencies[0] == currencies[1] or token not in currencies:
+                raise DataError('token_mismatch')
+            if pool in seen:
+                if seen[pool] != currencies:
+                    conflicts.add(pool)
+                continue
+            seen[pool] = currencies
+            volume, liquidity = raw.get('volume'), raw.get('liquidity')
+            volume = volume if isinstance(volume, dict) else {}
+            liquidity = liquidity if isinstance(liquidity, dict) else {}
+            candidates.append({
+                'poolId': pool, 'currencies': currencies,
+                'providerMetrics': {
+                    'source': 'dexscreener', 'retrievedAt': retrieved_at,
+                    'status': 'external_unreconciled', 'asOfBlock': None,
+                    'volume24hUsd': decimal_metric(volume.get('h24')),
+                    'reportedLiquidityUsd': decimal_metric(liquidity.get('usd')),
+                },
+            })
+        except DataError:
+            rejected += 1
+    return [x for x in candidates if x['poolId'] not in conflicts], rejected + len(conflicts)
+
+
+class DiscoveryReader:
+    def __init__(self, rpc, *, clock=time.time, max_age=120):
+        self.rpc, self.clock, self.max_age = rpc, clock, max_age
+
+    def snapshot(self):
+        if quantity(self.rpc.request('eth_chainId')) != CHAIN_ID:
+            raise DataError('wrong_chain')
+        block = parse_block(self.rpc.request('eth_getBlockByNumber', ['latest', False]))
+        self._fresh(block)
+        for contract in (POOL_MANAGER, POSITION_MANAGER, STATE_VIEW):
+            code = self.rpc.request('eth_getCode', [contract, block.tag])
+            if not isinstance(code, str) or not re.fullmatch(r'0x(?:[0-9a-fA-F]{2})+', code):
+                raise DataError('missing_contract_code')
+        for contract in (POSITION_MANAGER, STATE_VIEW):
+            linked, = self.rpc.call(contract, 'poolManager()', outputs=['address'], block=block.tag)
+            if address(linked) != POOL_MANAGER:
+                raise DataError('manager_mismatch')
+        return block
+
+    def _fresh(self, block):
+        age = self.clock() - block.timestamp
+        if age < -15 or age > self.max_age:
+            raise DataError('stale_or_future_block')
+
+    def assert_canonical(self, block):
+        current = parse_block(self.rpc.request('eth_getBlockByNumber', [block.tag, False]))
+        if current != block:
+            raise DataError('snapshot_reorganized')
+        self._fresh(block)
+
+    def token(self, currency, block):
+        currency = address(currency)
+        if currency == ZERO:
+            return {'address': ZERO, 'kind': 'native', 'decimals': 18, 'symbol': 'ETH',
+                    'readStatus': 'available', 'metadataIssues': {}, 'displayUnitsAvailable': True,
+                    'executionAvailable': False}
+        code = self.rpc.request('eth_getCode', [currency, block.tag])
+        if code == '0x':
+            raise DataError('token_has_no_code')
+        if not isinstance(code, str) or not re.fullmatch(r'0x(?:[0-9a-fA-F]{2})+', code):
+            raise DataError('token_code_unavailable')
+        decimals, symbol, issues = None, None, {}
+        try:
+            decimals, = self.rpc.call(currency, 'decimals()', outputs=['uint8'], block=block.tag)
+            if type(decimals) is not int or not 0 <= decimals <= 255:
+                raise DataError('invalid_token_decimals')
+        except DataError as error:
+            decimals, issues['decimals'] = None, str(error)
+        try:
+            raw_symbol = self.rpc.symbol(currency, block=block.tag)
+            if not isinstance(raw_symbol, str) or not raw_symbol or len(raw_symbol) > 40 or not raw_symbol.isprintable():
+                raise DataError('invalid_symbol_text')
+            symbol = raw_symbol
+        except DataError as error:
+            issues['symbol'] = str(error)
+        return {'address': currency, 'kind': 'erc20_candidate', 'decimals': decimals, 'symbol': symbol,
+                'readStatus': 'partial' if issues else 'available', 'metadataIssues': issues,
+                'displayUnitsAvailable': decimals is not None, 'executionAvailable': False}
+
+    def token_lookup(self, currency, block):
+        """Address lookup is useful even if optional metadata is absent.
+
+        A contract exposing these methods is only a candidate, not proven ERC-20.
+        """
+        currency = address(currency)
+        try:
+            return self.token(currency, block)
+        except DataError as error:
+            return {'address': currency, 'kind': 'unknown', 'decimals': None, 'symbol': None,
+                    'readStatus': 'no_contract' if str(error) == 'token_has_no_code' else 'unavailable',
+                    'reason': str(error), 'metadataIssues': {}, 'displayUnitsAvailable': False,
+                    'executionAvailable': False}
+
+    def pool(self, candidate, block):
+        pool_id = bytes32(candidate['poolId'])
+        if candidate.get('poolKey') is not None:
+            value = candidate['poolKey']
+            if not isinstance(value,dict) or set(value)!={'currency0','currency1','fee_pips','tick_spacing','hooks'}:
+                raise DataError('invalid_pool_key')
+            raw_key = tuple(value[field] for field in ('currency0','currency1','fee_pips','tick_spacing','hooks'))
+        else:
+            # PositionManager's cache uses bytes25; verify the complete hash afterward.
+            raw_key = self.rpc.call(POSITION_MANAGER, 'poolKeys(bytes25)', ['bytes25'],
+                                   [bytes.fromhex(pool_id[2:52])], KEY_TYPES, block=block.tag)
+        key = PoolKey.checked(raw_key, pool_id)
+        if candidate.get('currencies') is not None and [key.currency0, key.currency1] != candidate['currencies']:
+            raise DataError('provider_currency_mismatch')
+        sqrt, tick, protocol, lp_fee = self.rpc.call(
+            STATE_VIEW, 'getSlot0(bytes32)', ['bytes32'], [bytes.fromhex(pool_id[2:])],
+            ['uint160', 'int24', 'uint24', 'uint24'], block=block.tag,
+        )
+        if not 0 < sqrt < 2**160 or not -887272 <= tick <= 887272 or lp_fee > 1_000_000:
+            raise DataError('invalid_pool_state')
+        if key.fee_pips != 0x800000 and lp_fee != key.fee_pips:
+            raise DataError('fixed_fee_mismatch')
+        return {
+            **candidate, 'currencies': [key.currency0, key.currency1],
+            'poolKey': asdict(key), 'identityStatus': 'verified_at_block',
+            'snapshot': asdict(block), 'sqrtPriceX96': str(sqrt), 'tick': tick,
+            'currentLpFeePips': lp_fee, 'protocolFeeRaw': protocol,
+            'integrationClass': ('hookless_fixed_fee' if key.hooks == ZERO and key.fee_pips != 0x800000
+                                 else 'requires_separate_adapter'),
+            'feeApr24h': None, 'aprReason': 'reconciled_fee_history_unavailable',
+            'suggested': False, 'suggestionReason': 'metrics_and_policy_not_qualified',
+            'executionAvailable': False, 'executionReason': 'public_execution_not_implemented',
+        }
+
+    def position_owner(self, token_id, block):
+        if type(token_id) is not int or not 0 < token_id < 2**256:
+            raise DataError('invalid_position_id')
+        owner, = self.rpc.call(POSITION_MANAGER, 'ownerOf(uint256)', ['uint256'], [token_id],
+                              ['address'], block=block.tag)
+        owner = address(owner)
+        if owner == ZERO:
+            raise DataError('invalid_position_owner')
+        return owner
+
+    def balances(self, owner, currencies, block):
+        """Address-list fallback, not enumeration of everything in a wallet."""
+        owner = address(owner)
+        currencies = list(dict.fromkeys([ZERO] + [address(x) for x in currencies]))
+        if len(currencies) > 32:
+            raise DataError('too_many_currencies')
+        result = []
+        for currency in currencies:
+            if currency == ZERO:
+                value = quantity(self.rpc.request('eth_getBalance', [owner, block.tag]))
+            else:
+                value, = self.rpc.call(currency, 'balanceOf(address)', ['address'], [owner],
+                                       ['uint256'], block=block.tag)
+            result.append({'currency': currency, 'amountRaw': str(value)})
+        return {'coverage': 'requested_addresses_only', 'snapshot': asdict(block), 'items': result}
+
+
+def discover(token, *, rpc=None, transport=json_http, clock=time.time, max_pools=12,
+             wallet=None, position_id=None, probe_inventory=False, pool_ids=(),
+             catalogue_candidates=(), catalogue_status=None, paired_token=None):
+    token = address(token)
+    paired_token = address(paired_token) if paired_token is not None else None
+    if paired_token==token:
+        raise DataError('invalid_pair')
+    if type(max_pools) is not int or not 1 <= max_pools <= 20 or (wallet and position_id is not None):
+        raise DataError('invalid_probe_options')
+    if not isinstance(pool_ids, (list, tuple)) or len(pool_ids) > min(10, max_pools):
+        raise DataError('invalid_pool_ids')
+    pool_ids = list(dict.fromkeys(bytes32(pool) for pool in pool_ids))
+    if not isinstance(catalogue_candidates,(list,tuple)) or len(catalogue_candidates)>100:
+        raise DataError('invalid_catalogue_candidates')
+    reader = DiscoveryReader(rpc or ReadRpc(), clock=clock)
+    block = reader.snapshot()
+    report = {'mode': 'read_only_qualification', 'schemaVersion': 2, 'chainId': CHAIN_ID,
+              'selectedToken': token, 'snapshot': asdict(block), 'tokens': [], 'pools': [],
+              'unverifiedCandidates': [], 'metricsQualified': False, 'liveExecution': False}
+    token_cache = {token: reader.token_lookup(token, block)}
+    try:
+        payload = transport(f'https://api.dexscreener.com/token-pairs/v1/robinhood/{token}')
+        candidates, rejected = provider_candidates(payload, token, int(clock()))
+        report['discovery'] = {'source': 'dexscreener', 'status': 'received',
+            'coverage': 'provider_candidates_only', 'returned': len(payload), 'v4Candidates': len(candidates),
+            'rejectedOrOtherMarkets': rejected}
+    except DataError as error:
+        candidates = []
+        report['discovery'] = {'source': 'dexscreener', 'status': 'unavailable', 'reason': str(error),
+            'coverage': 'unknown', 'returned': None, 'v4Candidates': None, 'rejectedOrOtherMarkets': None}
+    by_id = {candidate['poolId']: candidate for candidate in candidates}
+    known = {}
+    for cached in catalogue_candidates:
+        pool_id = bytes32(cached['poolId'])
+        observed = by_id.pop(pool_id,None)
+        candidate = dict(cached)
+        if observed is not None:
+            if observed['currencies']==cached['currencies']:
+                candidate['providerMetrics']=observed['providerMetrics']
+            else:
+                candidate['providerMetrics']=None
+                candidate['providerCurrencyConflict']=True
+        known[pool_id]=candidate
+    explicit = []
+    for pool_id in pool_ids:
+        candidate = known.pop(pool_id,None)
+        if candidate is None:
+            candidate=by_id.pop(pool_id, {'poolId': pool_id, 'providerMetrics': None})
+        explicit.append({**candidate, 'requestedById': True})
+    # Explicit IDs are still verified (and rejected if the pair is wrong).
+    remaining = list(known.values()) + list(by_id.values())
+    candidates = explicit + [c for c in remaining if paired_token is None or paired_token in c['currencies']]
+    report['catalogue'] = catalogue_status or {'status':'not_configured','completeHistory':False}
+    report['discovery'].update(requestedPoolIds=len(pool_ids), notProbed=max(0, len(candidates) - max_pools))
+    report['pairedToken'] = paired_token
+    for candidate in candidates[:max_pools]:
+        try:
+            pool = reader.pool(candidate, block)
+            if token not in pool['currencies']:
+                raise DataError('selected_token_mismatch')
+            if paired_token is not None and paired_token not in pool['currencies']:
+                raise DataError('selected_pair_mismatch')
+        except DataError as error:
+            report['unverifiedCandidates'].append({'poolId': candidate['poolId'], 'reason': str(error)})
+            continue
+        for currency in pool['currencies']:
+            if currency not in token_cache:
+                token_cache[currency] = reader.token_lookup(currency, block)
+        pool['tokenMetadataStatus'] = ('available' if all(token_cache[c]['readStatus'] == 'available'
+                                                        for c in pool['currencies']) else 'partial')
+        report['pools'].append(pool)
+    report['tokens'] = list(token_cache.values())
+    report['selectedTokenReadStatus'] = token_cache[token]['readStatus']
+    report['walletInventory'] = {'status': 'not_probed', 'coverage': 'unqualified'}
+    if wallet or position_id is not None:
+        owner = address(wallet) if wallet else reader.position_owner(position_id, block)
+        balances = reader.balances(owner, list(token_cache), block)
+        # Shareable report intentionally excludes wallet identity and quantities.
+        report['walletBalanceProbe'] = {'status': 'read_at_block',
+            'coverage': balances['coverage'], 'currenciesRead': len(balances['items']),
+            'walletIdentityAndAmountsOmitted': True}
+        if probe_inventory:
+            try:
+                inventory = transport('https://robinhoodchain.blockscout.com/api/v2/addresses/'
+                                      + owner + '/tokens?type=ERC-20')
+                if not isinstance(inventory, dict) or not isinstance(inventory.get('items'), list):
+                    raise DataError('invalid_inventory_response')
+                report['walletInventory'] = {'status': 'provider_page_received',
+                    'itemsOnFirstPage': len(inventory['items']), 'coverage': 'unqualified',
+                    'hasMore': bool(inventory.get('next_page_params'))}
+            except DataError as error:
+                report['walletInventory'] = {'status': 'unavailable', 'reason': str(error),
+                                            'coverage': 'unqualified'}
+    reader.assert_canonical(block)
+    return report

@@ -1,0 +1,39 @@
+{
+  "schemaVersion": 1,
+  "mode": "local_http_read_qualification",
+  "chainId": 4663,
+  "capabilities": {
+    "chainId": 4663,
+    "deployment": "local_development",
+    "publicChainReads": true,
+    "inventoryConfigured": true,
+    "inventoryCoverageQualified": false,
+    "walletAuthentication": false,
+    "privateAccounts": false,
+    "feeApr": false,
+    "suggestions": false,
+    "ownerTransactions": false,
+    "automation": false,
+    "feeCollection": false
+  },
+  "pages": [
+    {
+      "snapshot": {
+        "number": 58695359,
+        "hash": "0x2d39e1a560d6bf8d67549ed269565748df7e148f261a8853f4c1c318f619e461",
+        "timestamp": 1788971899
+      },
+      "assetsRead": 13,
+      "unavailableAssets": 0,
+      "inventoryStatus": "page_received",
+      "inventoryReason": null,
+      "providerRows": 12,
+      "excludedRows": 0,
+      "hasMore": false,
+      "balanceCoverage": "requested_and_page_addresses_only"
+    }
+  ],
+  "walletIdentityAndAmountsOmitted": true,
+  "uniqueCurrenciesRead": 13,
+  "pageLimitReached": false
+}

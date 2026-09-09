@@ -1,0 +1,216 @@
+{
+  "schemaVersion": 1,
+  "mode": "bounded_core_position_qualification",
+  "chainId": 4663,
+  "poolId": "0xb267aed771add477cec491761b7001ebe2a179fa0e675a76df47ae0ec064230a",
+  "steps": [
+    {
+      "status": "position_chunk_reconciled",
+      "fromBlock": 58738242,
+      "through": 58743241,
+      "corePositions": 1,
+      "knownTicks": 2,
+      "modifications": 1,
+      "onchainPositionChecksPassed": true
+    },
+    {
+      "status": "position_chunk_reconciled",
+      "fromBlock": 58743242,
+      "through": 58748241,
+      "corePositions": 1,
+      "knownTicks": 2,
+      "modifications": 0,
+      "onchainPositionChecksPassed": true
+    },
+    {
+      "status": "caught_up_to_activity",
+      "through": 58748241
+    }
+  ],
+  "result": {
+    "schemaVersion": 1,
+    "methodologyVersion": 1,
+    "mode": "core_pool_activity_read_only",
+    "chainId": 4663,
+    "poolId": "0xb267aed771add477cec491761b7001ebe2a179fa0e675a76df47ae0ec064230a",
+    "poolKey": {
+      "hooks": "0x0000000000000000000000000000000000000000",
+      "fee_pips": 10000,
+      "currency0": "0x0bd7d308f8e1639fab988df18a8011f41eacad73",
+      "currency1": "0xfb65c9ccc3581b7396f523ea0395d9ea2c4fea12",
+      "tick_spacing": 200
+    },
+    "revision": 2,
+    "accountingScope": "core_pool_events_only",
+    "snapshot": {
+      "hash": "0xa357478a1b74ccce4c618b72a019b962263395c7da07673c3d837a63cec3116b",
+      "tick": 115200,
+      "number": 58748241,
+      "lpFeePips": 10000,
+      "timestamp": 1788977237,
+      "sqrtPriceX96": "25135685339936509999814510248241",
+      "protocolFeeRaw": 4097000,
+      "activeLiquidityRaw": "0",
+      "feeGrowthGlobalX128": [
+        "0",
+        "0"
+      ]
+    },
+    "coverage": {
+      "startBlock": 58738242,
+      "indexedThrough": 58748241,
+      "initializedBlock": 58738242,
+      "initializedAt": 1788976229,
+      "scope": "since_verified_initialize",
+      "canonicality": "requires_rpc_recheck",
+      "rpcCompleteness": "single_provider_assumption"
+    },
+    "window24h": {
+      "requestedSeconds": 86400,
+      "fromTimestampExclusive": 1788890837,
+      "throughTimestamp": 1788977237,
+      "observedSinceTimestamp": 1788976229,
+      "observedSeconds": 1008,
+      "completeWindow": false,
+      "status": "pool_younger_than_window",
+      "swapEventCount": 0,
+      "nonzeroSwapCount": 0,
+      "swapLegsRaw": [
+        {
+          "currencyIndex": 0,
+          "grossInput": "0",
+          "output": "0",
+          "absoluteTurnover": "0"
+        },
+        {
+          "currencyIndex": 1,
+          "grossInput": "0",
+          "output": "0",
+          "absoluteTurnover": "0"
+        }
+      ],
+      "donations": {
+        "count": 0,
+        "amountsRaw": [
+          "0",
+          "0"
+        ]
+      },
+      "observedTotalSwapFeePips": [],
+      "volumeUsd": null,
+      "volumeUsdReason": "timestamp_aligned_valuation_unavailable",
+      "lpFeesRaw": [
+        "0",
+        "0"
+      ],
+      "lpFeesReason": null,
+      "feeApr": null,
+      "feeAprReason": "time_weighted_tvl_and_usd_valuation_not_reconciled",
+      "protocolFeesRaw": [
+        "0",
+        "0"
+      ],
+      "lpFeesBasis": "core_trading_fee_before_Q128_distribution_rounding"
+    },
+    "liquidity": {
+      "status": "core_active_liquidity_reconciled",
+      "activeLiquidityRaw": "0",
+      "rangeCount": 1,
+      "isTvl": false,
+      "tvlUsd": null,
+      "tvlReason": "timestamp_aligned_valuation_unavailable",
+      "positionAccounting": {
+        "methodologyVersion": 1,
+        "status": "reconciled_as_of",
+        "reason": null,
+        "scope": "core_positions_not_nft_ownership",
+        "basis": "event_token_flows_excluding_protocol",
+        "lpAssetsRaw": [
+          "0",
+          "999999999999999999999792"
+        ],
+        "principalRaw": [
+          "0",
+          "999999999999999999999791"
+        ],
+        "unsettledFeesRaw": [
+          "0",
+          "0"
+        ],
+        "roundingResidualRaw": [
+          "0",
+          "1"
+        ],
+        "settledFeesRaw": [
+          "0",
+          "0"
+        ],
+        "principalDepositedRaw": [
+          "0",
+          "999999999999999999999792"
+        ],
+        "principalWithdrawnRaw": [
+          "0",
+          "0"
+        ],
+        "corePositionCount": 1,
+        "nonzeroLiquidityPositionCount": 1,
+        "knownTickCount": 2,
+        "donationsIncluded": true,
+        "protocolFeesExcluded": true,
+        "isWalletBalance": false,
+        "isWithdrawalQuote": false,
+        "nftOwnershipResolved": false,
+        "tvlUsd": null,
+        "tvlReason": "timestamp_aligned_valuation_unavailable",
+        "onchainReconciliation": {
+          "ticks": 2,
+          "ranges": 1,
+          "blockHash": "0xa357478a1b74ccce4c618b72a019b962263395c7da07673c3d837a63cec3116b",
+          "blockNumber": 58748241,
+          "corePositions": 1,
+          "sourceFeeMethodology": 1
+        }
+      }
+    },
+    "fees": {
+      "protocolDirectionalPips": [
+        1000,
+        1000
+      ],
+      "lpFeePipsAtSnapshot": 10000,
+      "feeGrowthGlobalX128": [
+        "0",
+        "0"
+      ],
+      "growthIsTokenAmount": false,
+      "growthIncludesDonations": true,
+      "accounting": {
+        "methodologyVersion": 1,
+        "status": "reconciled_as_of",
+        "reason": null,
+        "lpFeesRaw": [
+          "0",
+          "0"
+        ],
+        "protocolFeesRaw": [
+          "0",
+          "0"
+        ],
+        "donationsRaw": [
+          "0",
+          "0"
+        ],
+        "basis": "core_trading_fee_before_Q128_distribution_rounding",
+        "isCollectedAmount": false,
+        "isDominoServiceFee": false,
+        "scope": "since_verified_initialize",
+        "feeGrowthReconciled": true
+      }
+    },
+    "storedEventCount": 6,
+    "suggested": false,
+    "executionAvailable": false
+  },
+  "liveExecution": false
+}

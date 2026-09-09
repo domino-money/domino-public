@@ -1,0 +1,241 @@
+{
+  "schemaVersion": 1,
+  "mode": "core_position_http_qualification",
+  "chainId": 4663,
+  "userWalletQueried": false,
+  "liveExecution": false,
+  "cases": [
+    {
+      "poolId": "0xc613d796ce23c7344334ac5373063c89479675876d25738ee78cf0642f2a30ef",
+      "checksPassed": true,
+      "positionsChecked": 1,
+      "individualCoreIdentitiesOmitted": true,
+      "response": {
+        "schemaVersion": 1,
+        "mode": "core_pool_positions_read_only",
+        "chainId": 4663,
+        "poolId": "0xc613d796ce23c7344334ac5373063c89479675876d25738ee78cf0642f2a30ef",
+        "poolKey": {
+          "hooks": "0x0000000000000000000000000000000000000000",
+          "fee_pips": 10000,
+          "currency0": "0x0000000000000000000000000000000000000000",
+          "currency1": "0x9b21df6ec499ce4bb952e40dadc1cfe9d334abd6",
+          "tick_spacing": 200
+        },
+        "snapshot": {
+          "hash": "0x2472d96a858815b9a6f4db67151ea3d9a3499709c86fa9573875c2c453a28bfb",
+          "tick": 199999,
+          "number": 58772342,
+          "lpFeePips": 10000,
+          "timestamp": 1788979669,
+          "sqrtPriceX96": "1744209614987380832158503113079779",
+          "protocolFeeRaw": 4097000,
+          "activeLiquidityRaw": "35184110057427449699765",
+          "feeGrowthGlobalX128": [
+            "290337693861552906841856138030",
+            "138962391926745182478175299659393426405"
+          ]
+        },
+        "coverage": {
+          "startBlock": 58738261,
+          "indexedThrough": 58772342,
+          "initializedBlock": 58738261,
+          "initializedAt": 1788976231,
+          "scope": "since_verified_initialize",
+          "canonicality": "block_hash_rechecked",
+          "rpcCompleteness": "single_provider_assumption"
+        },
+        "freshness": {
+          "ageSeconds": 5908,
+          "status": "stale",
+          "checkedAgainstHead": 58830940
+        },
+        "positionAccounting": {
+          "methodologyVersion": 1,
+          "status": "reconciled_as_of",
+          "reason": null,
+          "scope": "core_positions_not_nft_ownership",
+          "basis": "event_token_flows_excluding_protocol",
+          "lpAssetsRaw": [
+            "61644494084355",
+            "749999040796743356573677312"
+          ],
+          "principalRaw": [
+            "31624503724354",
+            "749984672529190633374461694"
+          ],
+          "unsettledFeesRaw": [
+            "30019990359999",
+            "14368267552723199215614"
+          ],
+          "roundingResidualRaw": [
+            "2",
+            "4"
+          ],
+          "settledFeesRaw": [
+            "0",
+            "0"
+          ],
+          "principalDepositedRaw": [
+            "0",
+            "749999999999999999999990182"
+          ],
+          "principalWithdrawnRaw": [
+            "0",
+            "0"
+          ],
+          "corePositionCount": 1,
+          "nonzeroLiquidityPositionCount": 1,
+          "knownTickCount": 2,
+          "donationsIncluded": true,
+          "protocolFeesExcluded": true,
+          "isWalletBalance": false,
+          "isWithdrawalQuote": false,
+          "nftOwnershipResolved": false,
+          "tvlUsd": null,
+          "tvlReason": "timestamp_aligned_valuation_unavailable",
+          "onchainReconciliation": {
+            "ticks": 2,
+            "ranges": 1,
+            "blockHash": "0x2472d96a858815b9a6f4db67151ea3d9a3499709c86fa9573875c2c453a28bfb",
+            "blockNumber": 58772342,
+            "corePositions": 1,
+            "sourceFeeMethodology": 1
+          }
+        },
+        "executionAvailable": false
+      }
+    },
+    {
+      "poolId": "0xb267aed771add477cec491761b7001ebe2a179fa0e675a76df47ae0ec064230a",
+      "checksPassed": true,
+      "positionsChecked": 1,
+      "individualCoreIdentitiesOmitted": true,
+      "response": {
+        "schemaVersion": 1,
+        "mode": "core_pool_positions_read_only",
+        "chainId": 4663,
+        "poolId": "0xb267aed771add477cec491761b7001ebe2a179fa0e675a76df47ae0ec064230a",
+        "poolKey": {
+          "hooks": "0x0000000000000000000000000000000000000000",
+          "fee_pips": 10000,
+          "currency0": "0x0bd7d308f8e1639fab988df18a8011f41eacad73",
+          "currency1": "0xfb65c9ccc3581b7396f523ea0395d9ea2c4fea12",
+          "tick_spacing": 200
+        },
+        "snapshot": {
+          "hash": "0xa357478a1b74ccce4c618b72a019b962263395c7da07673c3d837a63cec3116b",
+          "tick": 115200,
+          "number": 58748241,
+          "lpFeePips": 10000,
+          "timestamp": 1788977237,
+          "sqrtPriceX96": "25135685339936509999814510248241",
+          "protocolFeeRaw": 4097000,
+          "activeLiquidityRaw": "0",
+          "feeGrowthGlobalX128": [
+            "0",
+            "0"
+          ]
+        },
+        "coverage": {
+          "startBlock": 58738242,
+          "indexedThrough": 58748241,
+          "initializedBlock": 58738242,
+          "initializedAt": 1788976229,
+          "scope": "since_verified_initialize",
+          "canonicality": "block_hash_rechecked",
+          "rpcCompleteness": "single_provider_assumption"
+        },
+        "freshness": {
+          "ageSeconds": 8346,
+          "status": "stale",
+          "checkedAgainstHead": 58831023
+        },
+        "positionAccounting": {
+          "methodologyVersion": 1,
+          "status": "reconciled_as_of",
+          "reason": null,
+          "scope": "core_positions_not_nft_ownership",
+          "basis": "event_token_flows_excluding_protocol",
+          "lpAssetsRaw": [
+            "0",
+            "999999999999999999999792"
+          ],
+          "principalRaw": [
+            "0",
+            "999999999999999999999791"
+          ],
+          "unsettledFeesRaw": [
+            "0",
+            "0"
+          ],
+          "roundingResidualRaw": [
+            "0",
+            "1"
+          ],
+          "settledFeesRaw": [
+            "0",
+            "0"
+          ],
+          "principalDepositedRaw": [
+            "0",
+            "999999999999999999999792"
+          ],
+          "principalWithdrawnRaw": [
+            "0",
+            "0"
+          ],
+          "corePositionCount": 1,
+          "nonzeroLiquidityPositionCount": 1,
+          "knownTickCount": 2,
+          "donationsIncluded": true,
+          "protocolFeesExcluded": true,
+          "isWalletBalance": false,
+          "isWithdrawalQuote": false,
+          "nftOwnershipResolved": false,
+          "tvlUsd": null,
+          "tvlReason": "timestamp_aligned_valuation_unavailable",
+          "onchainReconciliation": {
+            "ticks": 2,
+            "ranges": 1,
+            "blockHash": "0xa357478a1b74ccce4c618b72a019b962263395c7da07673c3d837a63cec3116b",
+            "blockNumber": 58748241,
+            "corePositions": 1,
+            "sourceFeeMethodology": 1
+          }
+        },
+        "executionAvailable": false
+      }
+    }
+  ],
+  "checksPassed": true,
+  "capabilities": {
+    "chainId": 4663,
+    "deployment": "local_development",
+    "publicChainReads": true,
+    "inventoryConfigured": true,
+    "inventoryCoverageQualified": false,
+    "tokenAddressLookup": true,
+    "explicitPoolLookup": true,
+    "catalogueConfigured": true,
+    "corePoolActivity": true,
+    "coreTradingFees": {
+      "available": true,
+      "scope": "hookless_fixed_fee_reconciled_pools_only",
+      "methodologyVersion": 1
+    },
+    "corePositionAccounting": {
+      "available": true,
+      "scope": "hookless_fixed_fee_reconciled_pools_only",
+      "methodologyVersion": 1,
+      "nftOwnershipResolved": false
+    },
+    "walletAuthentication": false,
+    "privateAccounts": false,
+    "feeApr": false,
+    "suggestions": false,
+    "ownerTransactions": false,
+    "automation": false,
+    "feeCollection": false
+  }
+}

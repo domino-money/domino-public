@@ -1,0 +1,181 @@
+{
+  "schemaVersion": 1,
+  "mode": "bounded_capital_and_prices_qualification",
+  "poolId": "0xc613d796ce23c7344334ac5373063c89479675876d25738ee78cf0642f2a30ef",
+  "steps": [
+    {
+      "status": "capital_chunk_reconciled",
+      "fromBlock": 58738261,
+      "through": 58743260,
+      "capitalEvents": 10
+    },
+    {
+      "status": "capital_chunk_reconciled",
+      "fromBlock": 58743261,
+      "through": 58748260,
+      "capitalEvents": 0
+    },
+    {
+      "status": "capital_chunk_reconciled",
+      "fromBlock": 58748261,
+      "through": 58753260,
+      "capitalEvents": 0
+    },
+    {
+      "status": "capital_chunk_reconciled",
+      "fromBlock": 58753261,
+      "through": 58763260,
+      "capitalEvents": 0
+    },
+    {
+      "status": "capital_chunk_reconciled",
+      "fromBlock": 58763261,
+      "through": 58772342,
+      "capitalEvents": 0
+    },
+    {
+      "status": "caught_up_to_activity",
+      "through": 58772342
+    }
+  ],
+  "priceIngestion": [
+    {
+      "currency": "0x0000000000000000000000000000000000000000",
+      "status": "observations_saved",
+      "observations": 12,
+      "qualifiedForUsdValuation": false
+    },
+    {
+      "currency": "0x9b21df6ec499ce4bb952e40dadc1cfe9d334abd6",
+      "status": "unavailable",
+      "reason": "http_400"
+    }
+  ],
+  "result": {
+    "schemaVersion": 1,
+    "mode": "historical_pool_metrics_read_only",
+    "chainId": 4663,
+    "poolId": "0xc613d796ce23c7344334ac5373063c89479675876d25738ee78cf0642f2a30ef",
+    "poolKey": {
+      "hooks": "0x0000000000000000000000000000000000000000",
+      "fee_pips": 10000,
+      "currency0": "0x0000000000000000000000000000000000000000",
+      "currency1": "0x9b21df6ec499ce4bb952e40dadc1cfe9d334abd6",
+      "tick_spacing": 200
+    },
+    "snapshot": {
+      "hash": "0x2472d96a858815b9a6f4db67151ea3d9a3499709c86fa9573875c2c453a28bfb",
+      "tick": 199999,
+      "number": 58772342,
+      "lpFeePips": 10000,
+      "timestamp": 1788979669,
+      "sqrtPriceX96": "1744209614987380832158503113079779",
+      "protocolFeeRaw": 4097000,
+      "activeLiquidityRaw": "35184110057427449699765",
+      "feeGrowthGlobalX128": [
+        "290337693861552906841856138030",
+        "138962391926745182478175299659393426405"
+      ]
+    },
+    "revision": 5,
+    "capital": {
+      "methodologyVersion": 1,
+      "status": "reconciled_event_history",
+      "fromTimestampInclusive": 1788976231,
+      "throughTimestamp": 1788979669,
+      "observedSeconds": 3438,
+      "complete24h": false,
+      "timeWeighting": "post_event_step_function_last_event_wins_at_same_timestamp",
+      "tvlBasis": "lp_attributed_assets_including_unsettled_fees_and_rounding_residual_excluding_protocol",
+      "current": {
+        "tick": 199999,
+        "lpAssetsRaw": [
+          "61644494084355",
+          "749999040796743356573677312"
+        ],
+        "principalRaw": [
+          "31624503724354",
+          "749984672529190633374461694"
+        ],
+        "sqrtPriceX96": "1744209614987380832158503113079779",
+        "settledFeesRaw": [
+          "0",
+          "0"
+        ],
+        "unsettledFeesRaw": [
+          "30019990359999",
+          "14368267552723199215614"
+        ],
+        "roundingResidualRaw": [
+          "2",
+          "4"
+        ],
+        "principalDepositedRaw": [
+          "0",
+          "749999999999999999999990182"
+        ],
+        "principalWithdrawnRaw": [
+          "0",
+          "0"
+        ]
+      },
+      "integralRawSeconds": {
+        "lpAssetsRaw": [
+          "301139163925997375",
+          "2578453051462378486821085564750"
+        ],
+        "principalRaw": [
+          "197990437068313937",
+          "2578404118603035581639372871660"
+        ],
+        "unsettledFeesRaw": [
+          "103148726857676562",
+          "48932859342905181712679342"
+        ],
+        "roundingResidualRaw": [
+          "6876",
+          "13748"
+        ]
+      },
+      "averageDenominatorSeconds": 3438,
+      "sourceEventCount": 10,
+      "sourceChunks": 5,
+      "isInvestorPnl": false
+    },
+    "prices": [
+      {
+        "currency": "0x0000000000000000000000000000000000000000",
+        "observations": 12,
+        "firstTimestamp": 1788976200,
+        "lastTimestamp": 1788979500,
+        "status": "observed_unqualified",
+        "reason": "price_source_quality_not_qualified"
+      },
+      {
+        "currency": "0x9b21df6ec499ce4bb952e40dadc1cfe9d334abd6",
+        "observations": 0,
+        "firstTimestamp": null,
+        "lastTimestamp": null,
+        "status": "unavailable",
+        "reason": "price_history_missing"
+      }
+    ],
+    "valuation": {
+      "methodologyVersion": 1,
+      "status": "unavailable",
+      "reason": "qualified_usd_prices_required",
+      "tvlUsd": null,
+      "timeWeightedAverageTvlUsd": null,
+      "tradingLpFeesUsd": null,
+      "grossInputVolumeUsd": null,
+      "feeAprPercent": null
+    },
+    "suggested": false,
+    "executionAvailable": false,
+    "coverage": {
+      "canonicality": "requires_rpc_recheck",
+      "rpcCompleteness": "single_provider_assumption"
+    }
+  },
+  "liveExecution": false
+}

@@ -1,0 +1,48 @@
+{
+  "schemaVersion": 1,
+  "mode": "local_database_restart_qualification",
+  "before": {
+    "chainId": 4663,
+    "poolManager": "0x8366a39cc670b4001a1121b8f6a443a643e40951",
+    "revision": 8,
+    "startBlock": 58736592,
+    "indexedThrough": 58742591,
+    "coverage": "configured_interval_only",
+    "completeHistory": false,
+    "liveExecution": false,
+    "rowFingerprint": "35bed630e7d1f82d9523f8ee3eaf671b3ecd17cfbd559e5a489934de326e7061",
+    "chunks": 6,
+    "initializeEvents": 175,
+    "verifiedObservations": 42,
+    "uniquePools": 217,
+    "uniqueCurrencies": 135,
+    "observationBlocks": [
+      58748151
+    ],
+    "postgresVersion": "18.6 (Homebrew)",
+    "tcpListenAddresses": ""
+  },
+  "after": {
+    "chainId": 4663,
+    "poolManager": "0x8366a39cc670b4001a1121b8f6a443a643e40951",
+    "revision": 8,
+    "startBlock": 58736592,
+    "indexedThrough": 58742591,
+    "coverage": "configured_interval_only",
+    "completeHistory": false,
+    "liveExecution": false,
+    "rowFingerprint": "35bed630e7d1f82d9523f8ee3eaf671b3ecd17cfbd559e5a489934de326e7061",
+    "chunks": 6,
+    "initializeEvents": 175,
+    "verifiedObservations": 42,
+    "uniquePools": 217,
+    "uniqueCurrencies": 135,
+    "observationBlocks": [
+      58748151
+    ],
+    "postgresVersion": "18.6 (Homebrew)",
+    "tcpListenAddresses": ""
+  },
+  "dataPreservedAcrossDatabaseRestart": true,
+  "liveExecution": false
+}

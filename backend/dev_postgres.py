@@ -1,0 +1,144 @@
+"""Task-local PostgreSQL cluster: private Unix socket, no TCP or system service."""
+import argparse
+import json
+import os
+import re
+from pathlib import Path
+import shlex
+import shutil
+import stat
+import subprocess
+import tempfile
+
+import psycopg
+from psycopg import sql
+
+from catalogue import DB_CONFIG
+from discovery import DataError
+
+ROOT = Path(__file__).resolve().parent
+RUNTIME = ROOT/'runtime'
+DATA = RUNTIME/'postgres'
+SOCKET = RUNTIME/'pgsocket'
+PORT = 8877
+ADMIN = 'domino_catalogue_admin'
+
+
+def postgres_bin():
+    """Discover a local installation without upgrading an existing data directory."""
+    explicit = os.environ.get('DOMINO_PG_BIN')
+    candidates = [Path(explicit)] if explicit else []
+    if not explicit:
+        candidates.extend(Path(p) for p in (
+            '/opt/homebrew/opt/postgresql@18/bin', '/usr/local/opt/postgresql@18/bin'))
+        config = shutil.which('pg_config')
+        if config:
+            result = subprocess.run([config, '--bindir'], capture_output=True, text=True, timeout=5)
+            if result.returncode == 0:
+                candidates.append(Path(result.stdout.strip()))
+        initdb = shutil.which('initdb')
+        if initdb:
+            candidates.append(Path(initdb).parent)
+        candidates.extend(sorted(Path('/usr/lib/postgresql').glob('*/bin'), reverse=True))
+    required = (DATA/'PG_VERSION').read_text().strip() if (DATA/'PG_VERSION').is_file() else None
+    for candidate in candidates:
+        if not all((candidate/name).is_file() for name in ('initdb','pg_ctl','pg_dump','pg_restore')):
+            continue
+        result = subprocess.run([str(candidate/'initdb'), '--version'], capture_output=True, text=True, timeout=5)
+        if result.returncode:
+            continue
+        match = re.search(r'\(PostgreSQL\)\s+(\d+)', result.stdout)
+        major = match.group(1) if match else ''
+        if major.isdigit() and int(major) >= 16 and (required is None or major == required):
+            return candidate
+    # Keep import possible for the non-PostgreSQL suite; start() reports missing tools.
+    return RUNTIME/'postgresql-not-found'
+
+
+BIN = postgres_bin()
+
+
+def private_directory(path):
+    path.mkdir(mode=0o700,parents=True,exist_ok=True)
+    info = path.lstat()
+    if not stat.S_ISDIR(info.st_mode) or info.st_uid!=os.getuid() or info.st_mode & 0o077:
+        raise DataError('private_postgres_directory_required')
+
+
+def pg_command(args):
+    result = subprocess.run(args,stdout=subprocess.PIPE,stderr=subprocess.STDOUT,text=True,timeout=30)
+    if result.returncode:
+        raise DataError('local_postgres_command_failed')
+
+
+def start():
+    if not (BIN/'initdb').is_file():
+        raise DataError('compatible_postgresql_not_installed_set_DOMINO_PG_BIN')
+    private_directory(RUNTIME)
+    private_directory(SOCKET)
+    if not (DATA/'PG_VERSION').exists():
+        if DATA.exists():
+            raise DataError('postgres_directory_already_exists')
+        pg_command([str(BIN/'initdb'),'-D',str(DATA),'-U',ADMIN,'--auth-local=trust',
+                    '--auth-host=reject','--encoding=UTF8','--locale=C'])
+    private_directory(DATA)
+    status = subprocess.run([str(BIN/'pg_ctl'),'-D',str(DATA),'status'],capture_output=True)
+    if status.returncode:
+        options = shlex.join(['-k',str(SOCKET),'-p',str(PORT),'-c','listen_addresses=',
+                             '-c','unix_socket_permissions=0700'])
+        pg_command([str(BIN/'pg_ctl'),'-D',str(DATA),'-l',str(RUNTIME/'postgres.log'),
+                    '-o',options,'-w','-t','15','start'])
+    settings={'host':str(SOCKET),'port':PORT,'dbname':'domino_catalogue'}
+    with psycopg.connect(host=str(SOCKET),port=PORT,dbname='postgres',user=ADMIN,autocommit=True) as conn:
+        for role in ['domino_catalogue_reader','domino_catalogue_writer']:
+            if not conn.execute('SELECT 1 FROM pg_roles WHERE rolname=%s',(role,)).fetchone():
+                conn.execute(sql.SQL('CREATE ROLE {} LOGIN').format(sql.Identifier(role)))
+    create_database(settings['dbname'])
+    fd,name=tempfile.mkstemp(prefix='.catalogue-db-',dir=RUNTIME)
+    try:
+        with os.fdopen(fd,'w') as stream:
+            json.dump(settings,stream);stream.write('\n');stream.flush();os.fsync(stream.fileno())
+        if DB_CONFIG.is_symlink():
+            raise DataError('invalid_database_configuration_path')
+        os.replace(name,DB_CONFIG)
+    finally:
+        if os.path.exists(name):os.unlink(name)
+    print('Local PostgreSQL ready: private Unix socket, separate reader/writer roles, public catalogue only.')
+
+
+def create_database(name):
+    if name not in {'domino_catalogue','domino_catalogue_tests','domino_catalogue_restore_tests'}:
+        raise DataError('invalid_local_database_name')
+    with psycopg.connect(host=str(SOCKET),port=PORT,dbname='postgres',user=ADMIN,autocommit=True) as conn:
+        if not conn.execute('SELECT 1 FROM pg_database WHERE datname=%s',(name,)).fetchone():
+            conn.execute(sql.SQL('CREATE DATABASE {}').format(sql.Identifier(name)))
+    with psycopg.connect(host=str(SOCKET),port=PORT,dbname=name,user=ADMIN) as conn:
+        conn.execute((ROOT/'migrations/001_catalogue.sql').read_text())
+        conn.execute((ROOT/'migrations/002_activity.sql').read_text())
+        conn.execute((ROOT/'migrations/003_fee_ledger.sql').read_text())
+        conn.execute((ROOT/'migrations/004_positions.sql').read_text())
+        conn.execute((ROOT/'migrations/005_capital_prices.sql').read_text())
+
+
+def main():
+    parser=argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('action',choices=['start','stop','prepare-tests'])
+    args=parser.parse_args()
+    try:
+        if args.action=='stop':
+            pg_command([str(BIN/'pg_ctl'),'-D',str(DATA),'-m','fast','-w','-t','15','stop'])
+            print('Task-local PostgreSQL stopped; stored catalogue retained.')
+        else:
+            start()
+            if args.action=='prepare-tests':
+                create_database('domino_catalogue_tests')
+                create_database('domino_catalogue_restore_tests')
+                print('Separate catalogue test databases prepared.')
+    except (DataError,psycopg.Error,OSError,subprocess.SubprocessError):
+        print('Local PostgreSQL setup failed; inspect the task-local postgres.log when present.')
+        return 1
+    return 0
+
+
+if __name__=='__main__':
+    raise SystemExit(main())

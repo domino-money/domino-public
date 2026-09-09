@@ -1,0 +1,98 @@
+[
+  {
+    "name": "ordinary eligible compound",
+    "input": {
+      "availableFeesUsd": "20",
+      "positionValueUsd": "1000",
+      "gasUsd": "0.25"
+    },
+    "expected": {
+      "decision": "eligible",
+      "consumedFeesUsd": "20.000000",
+      "serviceFeeUsd": "0.400000",
+      "reinvestedUsd": "19.600000",
+      "reserveUsd": "0.000000",
+      "minimumFeesUsd": "14.375000"
+    }
+  },
+  {
+    "name": "gas too expensive",
+    "input": {
+      "availableFeesUsd": "5",
+      "positionValueUsd": "1000",
+      "gasUsd": "0.25"
+    },
+    "expected": {
+      "decision": "wait",
+      "serviceFeeUsd": "0.000000",
+      "reinvestedUsd": "0.000000",
+      "reserveUsd": "5.000000"
+    }
+  },
+  {
+    "name": "all balanced fees are used above the former liquidity cap",
+    "input": {
+      "availableFeesUsd": "200",
+      "positionValueUsd": "1000",
+      "gasUsd": "0.25"
+    },
+    "expected": {
+      "decision": "eligible",
+      "policyVersion": 2,
+      "consumedFeesUsd": "200.000000",
+      "serviceFeeUsd": "4.000000",
+      "reinvestedUsd": "196.000000",
+      "reserveUsd": "0.000000",
+      "reserveReason": "none"
+    }
+  },
+  {
+    "name": "threshold exact",
+    "input": {
+      "availableFeesUsd": "14.375",
+      "positionValueUsd": "1000",
+      "gasUsd": "0.25"
+    },
+    "expected": {
+      "decision": "eligible",
+      "serviceFeeUsd": "0.287500",
+      "reinvestedUsd": "14.087500"
+    }
+  },
+  {
+    "name": "threshold minus microdollar",
+    "input": {
+      "availableFeesUsd": "14.374999",
+      "positionValueUsd": "1000",
+      "gasUsd": "0.25"
+    },
+    "expected": { "decision": "wait", "reserveUsd": "14.374999" }
+  },
+  {
+    "name": "zero fees",
+    "input": {
+      "availableFeesUsd": "0",
+      "positionValueUsd": "1000",
+      "gasUsd": "0"
+    },
+    "expected": {
+      "decision": "wait",
+      "reason": "no_fees",
+      "serviceFeeUsd": "0.000000"
+    }
+  },
+  {
+    "name": "small positions can use all economically eligible fees",
+    "input": {
+      "availableFeesUsd": "100",
+      "positionValueUsd": "10",
+      "gasUsd": "0.25"
+    },
+    "expected": {
+      "decision": "eligible",
+      "reserveUsd": "0.000000",
+      "reinvestedUsd": "98.000000",
+      "serviceFeeUsd": "2.000000"
+    }
+  }
+]

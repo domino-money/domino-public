@@ -1,0 +1,23 @@
+{
+  "schemaVersion": 1,
+  "chainId": 4663,
+  "purpose": "Public read-only validation cases; not an admission list or recommendations",
+  "sources": [
+    "https://docs.robinhood.com/chain/contracts/",
+    "https://api.dexscreener.com/token-pairs/v1/robinhood/0x0000000000000000000000000000000000000000",
+    "https://api.dexscreener.com/token-pairs/v1/robinhood/0x5fc5360d0400a0fd4f2af552add042d716f1d168"
+  ],
+  "cases": [
+    {"label": "ETH native", "token": "0x0000000000000000000000000000000000000000"},
+    {"label": "USDG", "token": "0x5fc5360d0400a0fd4f2af552add042d716f1d168"},
+    {"label": "WETH", "token": "0x0bd7d308f8e1639fab988df18a8011f41eacad73", "poolIds": ["0x84bd4e2d8be11aeb0afc1195b38f587b61e90068548f1063fdbe448fb8cad0b6"]},
+    {"label": "MARLIN regression", "token": "0xab35d04e1ee39c789c4a65d522417b3c7f2e4723"},
+    {"label": "TRADOOR", "token": "0xb47efcc461d3cd6b270daf15388a77a3fae64ad1"},
+    {"label": "CRUMBS", "token": "0x80baa4b3bfac6f4978700df824b1b3d98e889136"},
+    {"label": "RUBEN", "token": "0x5942e47cc8057ac76a779f7499cd762cdd335b48"},
+    {"label": "MAD", "token": "0xb818ddfa44aad2157b0f7058aebcb52d4733d4c4"},
+    {"label": "BAG", "token": "0x792ff19204ef6c756b4d8efe2441d050f5ece818"},
+    {"label": "ZZZ", "token": "0x7dbf38976f6d3b9c529e7d9484a71898b409ee6a"},
+    {"label": "No-code control", "token": "0x000000000000000000000000000000000000dead", "expectedReadStatus": "no_contract"}
+  ]
+}

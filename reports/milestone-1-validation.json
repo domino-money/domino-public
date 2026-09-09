@@ -1,0 +1,19 @@
+{
+  "scope": "milestone_1_practice_workbench",
+  "recorded_at": "2026-09-09T03:51:18.407873+00:00",
+  "site_source_commit": "3ab5d0648b7a0cec15a8cfe9b87c4c9a044973fc",
+  "typescript_domain_tests": 13,
+  "python_domain_tests": 5,
+  "solidity_tests": 4,
+  "solidity_fuzz_cases": 512,
+  "http_financial_fixtures": 7,
+  "http_rejection_cases": 5,
+  "typecheck": "passed",
+  "application_lint": "passed",
+  "production_build": "passed",
+  "dependency_audit_reported_vulnerabilities": 0,
+  "browser_usability_testing": "not_performed",
+  "sql_migration_integration_testing": "not_performed",
+  "public_financial_operations_enabled": false,
+  "personal_bot_files_modified": false
+}

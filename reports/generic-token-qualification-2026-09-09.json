@@ -1,0 +1,1301 @@
+{
+  "schemaVersion": 1,
+  "mode": "generic_token_http_qualification",
+  "chainId": 4663,
+  "cases": [
+    {
+      "label": "ETH native",
+      "token": "0x0000000000000000000000000000000000000000",
+      "poolIds": [],
+      "expectedReadStatus": "available",
+      "asset": {
+        "address": "0x0000000000000000000000000000000000000000",
+        "kind": "native",
+        "decimals": 18,
+        "symbol": "ETH",
+        "readStatus": "available",
+        "metadataIssues": {},
+        "displayUnitsAvailable": true,
+        "executionAvailable": false
+      },
+      "tokenSnapshot": {
+        "number": 58728766,
+        "hash": "0x798fc3e2068876d9914b7950504fe8e767b20f978971dc4609c6b9206cb1e9a4",
+        "timestamp": 1788975270
+      },
+      "poolSnapshot": {
+        "number": 58728817,
+        "hash": "0x804c8b840b2526895edb9f839e6c19eaad94521a76ef77aaca7a6ec7b17b4927",
+        "timestamp": 1788975275
+      },
+      "discovery": {
+        "source": "dexscreener",
+        "status": "received",
+        "coverage": "provider_candidates_only",
+        "returned": 30,
+        "v4Candidates": 30,
+        "rejectedOrOtherMarkets": 0,
+        "requestedPoolIds": 0,
+        "notProbed": 25
+      },
+      "pools": [
+        {
+          "poolId": "0x1f530519f99592beaa1683fd25d8c558964115b9a3b2020513e8f46cfec17447",
+          "currencies": [
+            "0x0000000000000000000000000000000000000000",
+            "0xb47efcc461d3cd6b270daf15388a77a3fae64ad1"
+          ],
+          "poolKey": {
+            "currency0": "0x0000000000000000000000000000000000000000",
+            "currency1": "0xb47efcc461d3cd6b270daf15388a77a3fae64ad1",
+            "fee_pips": 0,
+            "tick_spacing": 200,
+            "hooks": "0xe5e702641ea86f4ae6cc3cdaed2b886f976be044"
+          },
+          "identityStatus": "verified_at_block",
+          "integrationClass": "requires_separate_adapter",
+          "tokenMetadataStatus": "available",
+          "executionAvailable": false
+        },
+        {
+          "poolId": "0x25e53c08633b9474f3491e4c6abeb6fa6210f8d5c122931679aa498aeab0ed09",
+          "currencies": [
+            "0x0000000000000000000000000000000000000000",
+            "0x80baa4b3bfac6f4978700df824b1b3d98e889136"
+          ],
+          "poolKey": {
+            "currency0": "0x0000000000000000000000000000000000000000",
+            "currency1": "0x80baa4b3bfac6f4978700df824b1b3d98e889136",
+            "fee_pips": 0,
+            "tick_spacing": 200,
+            "hooks": "0xe5e702641ea86f4ae6cc3cdaed2b886f976be044"
+          },
+          "identityStatus": "verified_at_block",
+          "integrationClass": "requires_separate_adapter",
+          "tokenMetadataStatus": "available",
+          "executionAvailable": false
+        },
+        {
+          "poolId": "0x3c6da72467e57b3e0a65d3ea15de0235ffec565f4d7c3a24398097aa98840568",
+          "currencies": [
+            "0x0000000000000000000000000000000000000000",
+            "0x5942e47cc8057ac76a779f7499cd762cdd335b48"
+          ],
+          "poolKey": {
+            "currency0": "0x0000000000000000000000000000000000000000",
+            "currency1": "0x5942e47cc8057ac76a779f7499cd762cdd335b48",
+            "fee_pips": 0,
+            "tick_spacing": 200,
+            "hooks": "0xe5e702641ea86f4ae6cc3cdaed2b886f976be044"
+          },
+          "identityStatus": "verified_at_block",
+          "integrationClass": "requires_separate_adapter",
+          "tokenMetadataStatus": "available",
+          "executionAvailable": false
+        },
+        {
+          "poolId": "0x7f8271c1a7a6a434f33b0babc15bf2980a0dcb4196848b4f7e789a7fd73a5350",
+          "currencies": [
+            "0x0000000000000000000000000000000000000000",
+            "0x008df4b3e857d06c4603aeb11f267ccd32ce2005"
+          ],
+          "poolKey": {
+            "currency0": "0x0000000000000000000000000000000000000000",
+            "currency1": "0x008df4b3e857d06c4603aeb11f267ccd32ce2005",
+            "fee_pips": 0,
+            "tick_spacing": 200,
+            "hooks": "0xe5e702641ea86f4ae6cc3cdaed2b886f976be044"
+          },
+          "identityStatus": "verified_at_block",
+          "integrationClass": "requires_separate_adapter",
+          "tokenMetadataStatus": "available",
+          "executionAvailable": false
+        },
+        {
+          "poolId": "0x9fdf3390bcc0edab9f215e990412556d10343f7e248c86c5e65f2b7d9a99c66c",
+          "currencies": [
+            "0x0000000000000000000000000000000000000000",
+            "0xb818ddfa44aad2157b0f7058aebcb52d4733d4c4"
+          ],
+          "poolKey": {
+            "currency0": "0x0000000000000000000000000000000000000000",
+            "currency1": "0xb818ddfa44aad2157b0f7058aebcb52d4733d4c4",
+            "fee_pips": 0,
+            "tick_spacing": 200,
+            "hooks": "0xe5e702641ea86f4ae6cc3cdaed2b886f976be044"
+          },
+          "identityStatus": "verified_at_block",
+          "integrationClass": "requires_separate_adapter",
+          "tokenMetadataStatus": "available",
+          "executionAvailable": false
+        }
+      ],
+      "unverifiedCandidates": [],
+      "checksPassed": true
+    },
+    {
+      "label": "USDG",
+      "token": "0x5fc5360d0400a0fd4f2af552add042d716f1d168",
+      "poolIds": [],
+      "expectedReadStatus": "available",
+      "asset": {
+        "address": "0x5fc5360d0400a0fd4f2af552add042d716f1d168",
+        "kind": "erc20_candidate",
+        "decimals": 6,
+        "symbol": "USDG",
+        "readStatus": "available",
+        "metadataIssues": {},
+        "displayUnitsAvailable": true,
+        "executionAvailable": false
+      },
+      "tokenSnapshot": {
+        "number": 58728996,
+        "hash": "0x73b94c44dcdc5337d5e4fb62c379a0303eae3678f4c5e82be8237fb62229550f",
+        "timestamp": 1788975293
+      },
+      "poolSnapshot": {
+        "number": 58729047,
+        "hash": "0xd41a6b0344d081882131bd89beee7160008725e4dcce974388b4e5161af5fca5",
+        "timestamp": 1788975300
+      },
+      "discovery": {
+        "source": "dexscreener",
+        "status": "received",
+        "coverage": "provider_candidates_only",
+        "returned": 30,
+        "v4Candidates": 28,
+        "rejectedOrOtherMarkets": 2,
+        "requestedPoolIds": 0,
+        "notProbed": 23
+      },
+      "pools": [
+        {
+          "poolId": "0x3b0cbf0603ecc67b5fc9bb4fbb6ac9e08d3b2f406b63d1662a36063a7fe5e866",
+          "currencies": [
+            "0x0000000000000000000000000000000000000000",
+            "0x5fc5360d0400a0fd4f2af552add042d716f1d168"
+          ],
+          "poolKey": {
+            "currency0": "0x0000000000000000000000000000000000000000",
+            "currency1": "0x5fc5360d0400a0fd4f2af552add042d716f1d168",
+            "fee_pips": 87,
+            "tick_spacing": 1,
+            "hooks": "0x0000000000000000000000000000000000000000"
+          },
+          "identityStatus": "verified_at_block",
+          "integrationClass": "hookless_fixed_fee",
+          "tokenMetadataStatus": "available",
+          "executionAvailable": false
+        },
+        {
+          "poolId": "0x24107d152f14a76d292123265ae3f3c71f863fc2f4ef7ba49d64e78d28ea379e",
+          "currencies": [
+            "0x0000000000000000000000000000000000000000",
+            "0x5fc5360d0400a0fd4f2af552add042d716f1d168"
+          ],
+          "poolKey": {
+            "currency0": "0x0000000000000000000000000000000000000000",
+            "currency1": "0x5fc5360d0400a0fd4f2af552add042d716f1d168",
+            "fee_pips": 100,
+            "tick_spacing": 1,
+            "hooks": "0x0000000000000000000000000000000000000000"
+          },
+          "identityStatus": "verified_at_block",
+          "integrationClass": "hookless_fixed_fee",
+          "tokenMetadataStatus": "available",
+          "executionAvailable": false
+        },
+        {
+          "poolId": "0xefcec38281d4cccaf9c9d7da02aff071d3b94d54fa50bb14b8e6b8e74529a16b",
+          "currencies": [
+            "0x0000000000000000000000000000000000000000",
+            "0x5fc5360d0400a0fd4f2af552add042d716f1d168"
+          ],
+          "poolKey": {
+            "currency0": "0x0000000000000000000000000000000000000000",
+            "currency1": "0x5fc5360d0400a0fd4f2af552add042d716f1d168",
+            "fee_pips": 83,
+            "tick_spacing": 1,
+            "hooks": "0x0000000000000000000000000000000000000000"
+          },
+          "identityStatus": "verified_at_block",
+          "integrationClass": "hookless_fixed_fee",
+          "tokenMetadataStatus": "available",
+          "executionAvailable": false
+        },
+        {
+          "poolId": "0x54f7883914619af9105355bf83ed678bcf9f63560218ac61c9963b9503d0ba32",
+          "currencies": [
+            "0x0000000000000000000000000000000000000000",
+            "0x5fc5360d0400a0fd4f2af552add042d716f1d168"
+          ],
+          "poolKey": {
+            "currency0": "0x0000000000000000000000000000000000000000",
+            "currency1": "0x5fc5360d0400a0fd4f2af552add042d716f1d168",
+            "fee_pips": 460,
+            "tick_spacing": 9,
+            "hooks": "0x0000000000000000000000000000000000000000"
+          },
+          "identityStatus": "verified_at_block",
+          "integrationClass": "hookless_fixed_fee",
+          "tokenMetadataStatus": "available",
+          "executionAvailable": false
+        },
+        {
+          "poolId": "0xbac3aa3b91584a53a579b3c999a56756e954e59247e497bad1d25a4334bde551",
+          "currencies": [
+            "0x0000000000000000000000000000000000000000",
+            "0x5fc5360d0400a0fd4f2af552add042d716f1d168"
+          ],
+          "poolKey": {
+            "currency0": "0x0000000000000000000000000000000000000000",
+            "currency1": "0x5fc5360d0400a0fd4f2af552add042d716f1d168",
+            "fee_pips": 8388608,
+            "tick_spacing": 10,
+            "hooks": "0x06a889870c8f83640d6816319f72e2aa579b6080"
+          },
+          "identityStatus": "verified_at_block",
+          "integrationClass": "requires_separate_adapter",
+          "tokenMetadataStatus": "available",
+          "executionAvailable": false
+        }
+      ],
+      "unverifiedCandidates": [],
+      "checksPassed": true
+    },
+    {
+      "label": "WETH",
+      "token": "0x0bd7d308f8e1639fab988df18a8011f41eacad73",
+      "poolIds": [
+        "0x84bd4e2d8be11aeb0afc1195b38f587b61e90068548f1063fdbe448fb8cad0b6"
+      ],
+      "expectedReadStatus": "available",
+      "asset": {
+        "address": "0x0bd7d308f8e1639fab988df18a8011f41eacad73",
+        "kind": "erc20_candidate",
+        "decimals": 18,
+        "symbol": "WETH",
+        "readStatus": "available",
+        "metadataIssues": {},
+        "displayUnitsAvailable": true,
+        "executionAvailable": false
+      },
+      "tokenSnapshot": {
+        "number": 58729160,
+        "hash": "0x8b34b5ab5c1ea19ed07e4192d268faf4f0c82972d780edf6b552ca94512f9326",
+        "timestamp": 1788975312
+      },
+      "poolSnapshot": {
+        "number": 58729227,
+        "hash": "0xf92326437c104231962d14477cd0a22f9c4c779a35bf35fe35fc0fadee066bf3",
+        "timestamp": 1788975318
+      },
+      "discovery": {
+        "source": "dexscreener",
+        "status": "received",
+        "coverage": "provider_candidates_only",
+        "returned": 30,
+        "v4Candidates": 0,
+        "rejectedOrOtherMarkets": 30,
+        "requestedPoolIds": 1,
+        "notProbed": 0
+      },
+      "pools": [
+        {
+          "poolId": "0x84bd4e2d8be11aeb0afc1195b38f587b61e90068548f1063fdbe448fb8cad0b6",
+          "currencies": [
+            "0x0bd7d308f8e1639fab988df18a8011f41eacad73",
+            "0x5fc5360d0400a0fd4f2af552add042d716f1d168"
+          ],
+          "poolKey": {
+            "currency0": "0x0bd7d308f8e1639fab988df18a8011f41eacad73",
+            "currency1": "0x5fc5360d0400a0fd4f2af552add042d716f1d168",
+            "fee_pips": 200,
+            "tick_spacing": 4,
+            "hooks": "0x0000000000000000000000000000000000000000"
+          },
+          "identityStatus": "verified_at_block",
+          "integrationClass": "hookless_fixed_fee",
+          "tokenMetadataStatus": "available",
+          "executionAvailable": false
+        }
+      ],
+      "unverifiedCandidates": [],
+      "checksPassed": true
+    },
+    {
+      "label": "MARLIN regression",
+      "token": "0xab35d04e1ee39c789c4a65d522417b3c7f2e4723",
+      "poolIds": [],
+      "expectedReadStatus": "available",
+      "asset": {
+        "address": "0xab35d04e1ee39c789c4a65d522417b3c7f2e4723",
+        "kind": "erc20_candidate",
+        "decimals": 18,
+        "symbol": "MARLIN",
+        "readStatus": "available",
+        "metadataIssues": {},
+        "displayUnitsAvailable": true,
+        "executionAvailable": false
+      },
+      "tokenSnapshot": {
+        "number": 58729319,
+        "hash": "0x384ef836ca57f3b578a00f83f5693804b2d6bab3745a1d5b14568e14c483cca5",
+        "timestamp": 1788975328
+      },
+      "poolSnapshot": {
+        "number": 58729388,
+        "hash": "0x9a074da1c2f61580fa741b6d8c37ae7a425bbba7f238707b5501e4a7d2aa8ab0",
+        "timestamp": 1788975335
+      },
+      "discovery": {
+        "source": "dexscreener",
+        "status": "received",
+        "coverage": "provider_candidates_only",
+        "returned": 17,
+        "v4Candidates": 16,
+        "rejectedOrOtherMarkets": 1,
+        "requestedPoolIds": 0,
+        "notProbed": 11
+      },
+      "pools": [
+        {
+          "poolId": "0x59a626b46f61a117f13a4f3d31264dc9afcafff4c95c3e79d094f07cc050a3f0",
+          "currencies": [
+            "0x0000000000000000000000000000000000000000",
+            "0xab35d04e1ee39c789c4a65d522417b3c7f2e4723"
+          ],
+          "poolKey": {
+            "currency0": "0x0000000000000000000000000000000000000000",
+            "currency1": "0xab35d04e1ee39c789c4a65d522417b3c7f2e4723",
+            "fee_pips": 0,
+            "tick_spacing": 200,
+            "hooks": "0xe5e702641ea86f4ae6cc3cdaed2b886f976be044"
+          },
+          "identityStatus": "verified_at_block",
+          "integrationClass": "requires_separate_adapter",
+          "tokenMetadataStatus": "available",
+          "executionAvailable": false
+        },
+        {
+          "poolId": "0xbf0fe39ec46400f36455eae199696e1009af2182f62bfb256b559b1f3e11afec",
+          "currencies": [
+            "0x0000000000000000000000000000000000000000",
+            "0xab35d04e1ee39c789c4a65d522417b3c7f2e4723"
+          ],
+          "poolKey": {
+            "currency0": "0x0000000000000000000000000000000000000000",
+            "currency1": "0xab35d04e1ee39c789c4a65d522417b3c7f2e4723",
+            "fee_pips": 9000,
+            "tick_spacing": 90,
+            "hooks": "0x0000000000000000000000000000000000000000"
+          },
+          "identityStatus": "verified_at_block",
+          "integrationClass": "hookless_fixed_fee",
+          "tokenMetadataStatus": "available",
+          "executionAvailable": false
+        },
+        {
+          "poolId": "0xdb922f0619e11b0c1e6c3a142798f0243060b8a4331ea4f4e7de80e898cc02e7",
+          "currencies": [
+            "0x5fc5360d0400a0fd4f2af552add042d716f1d168",
+            "0xab35d04e1ee39c789c4a65d522417b3c7f2e4723"
+          ],
+          "poolKey": {
+            "currency0": "0x5fc5360d0400a0fd4f2af552add042d716f1d168",
+            "currency1": "0xab35d04e1ee39c789c4a65d522417b3c7f2e4723",
+            "fee_pips": 50000,
+            "tick_spacing": 500,
+            "hooks": "0x0000000000000000000000000000000000000000"
+          },
+          "identityStatus": "verified_at_block",
+          "integrationClass": "hookless_fixed_fee",
+          "tokenMetadataStatus": "available",
+          "executionAvailable": false
+        },
+        {
+          "poolId": "0x38867840cc7a48e407d1a4ceadb8b95d9c868ae6d151569650efa47566d7fba2",
+          "currencies": [
+            "0x5fc5360d0400a0fd4f2af552add042d716f1d168",
+            "0xab35d04e1ee39c789c4a65d522417b3c7f2e4723"
+          ],
+          "poolKey": {
+            "currency0": "0x5fc5360d0400a0fd4f2af552add042d716f1d168",
+            "currency1": "0xab35d04e1ee39c789c4a65d522417b3c7f2e4723",
+            "fee_pips": 48850,
+            "tick_spacing": 977,
+            "hooks": "0x0000000000000000000000000000000000000000"
+          },
+          "identityStatus": "verified_at_block",
+          "integrationClass": "hookless_fixed_fee",
+          "tokenMetadataStatus": "available",
+          "executionAvailable": false
+        },
+        {
+          "poolId": "0x7f764b5ecaad8593f2784fb8620f0ec67cbbf5e88640d038fce93cf0c09ae4b2",
+          "currencies": [
+            "0x0000000000000000000000000000000000000000",
+            "0xab35d04e1ee39c789c4a65d522417b3c7f2e4723"
+          ],
+          "poolKey": {
+            "currency0": "0x0000000000000000000000000000000000000000",
+            "currency1": "0xab35d04e1ee39c789c4a65d522417b3c7f2e4723",
+            "fee_pips": 100000,
+            "tick_spacing": 1000,
+            "hooks": "0x0000000000000000000000000000000000000000"
+          },
+          "identityStatus": "verified_at_block",
+          "integrationClass": "hookless_fixed_fee",
+          "tokenMetadataStatus": "available",
+          "executionAvailable": false
+        }
+      ],
+      "unverifiedCandidates": [],
+      "checksPassed": true
+    },
+    {
+      "label": "TRADOOR",
+      "token": "0xb47efcc461d3cd6b270daf15388a77a3fae64ad1",
+      "poolIds": [],
+      "expectedReadStatus": "available",
+      "asset": {
+        "address": "0xb47efcc461d3cd6b270daf15388a77a3fae64ad1",
+        "kind": "erc20_candidate",
+        "decimals": 18,
+        "symbol": "TRADOOR",
+        "readStatus": "available",
+        "metadataIssues": {},
+        "displayUnitsAvailable": true,
+        "executionAvailable": false
+      },
+      "tokenSnapshot": {
+        "number": 58729512,
+        "hash": "0x0f3f9e9dbe561154c69cec1fd7e6fe14b5b5b43e388b717b9ef9256aabf2a2b9",
+        "timestamp": 1788975347
+      },
+      "poolSnapshot": {
+        "number": 58729583,
+        "hash": "0xeaed70bd621c797500f91224b211af18007d08f97fa9864dd57caccdfd54ddbb",
+        "timestamp": 1788975355
+      },
+      "discovery": {
+        "source": "dexscreener",
+        "status": "received",
+        "coverage": "provider_candidates_only",
+        "returned": 10,
+        "v4Candidates": 10,
+        "rejectedOrOtherMarkets": 0,
+        "requestedPoolIds": 0,
+        "notProbed": 5
+      },
+      "pools": [
+        {
+          "poolId": "0x1f530519f99592beaa1683fd25d8c558964115b9a3b2020513e8f46cfec17447",
+          "currencies": [
+            "0x0000000000000000000000000000000000000000",
+            "0xb47efcc461d3cd6b270daf15388a77a3fae64ad1"
+          ],
+          "poolKey": {
+            "currency0": "0x0000000000000000000000000000000000000000",
+            "currency1": "0xb47efcc461d3cd6b270daf15388a77a3fae64ad1",
+            "fee_pips": 0,
+            "tick_spacing": 200,
+            "hooks": "0xe5e702641ea86f4ae6cc3cdaed2b886f976be044"
+          },
+          "identityStatus": "verified_at_block",
+          "integrationClass": "requires_separate_adapter",
+          "tokenMetadataStatus": "available",
+          "executionAvailable": false
+        },
+        {
+          "poolId": "0xbf8e888d0fd1e1c2e3036c1e043115b2929ab1da85b2bf7453d81c9ff4f68642",
+          "currencies": [
+            "0x5fc5360d0400a0fd4f2af552add042d716f1d168",
+            "0xb47efcc461d3cd6b270daf15388a77a3fae64ad1"
+          ],
+          "poolKey": {
+            "currency0": "0x5fc5360d0400a0fd4f2af552add042d716f1d168",
+            "currency1": "0xb47efcc461d3cd6b270daf15388a77a3fae64ad1",
+            "fee_pips": 30000,
+            "tick_spacing": 300,
+            "hooks": "0x0000000000000000000000000000000000000000"
+          },
+          "identityStatus": "verified_at_block",
+          "integrationClass": "hookless_fixed_fee",
+          "tokenMetadataStatus": "available",
+          "executionAvailable": false
+        },
+        {
+          "poolId": "0xd077ea5fbd5328c6e7e2765448a5484cf101e80b8459c6899cafbf7857c236ee",
+          "currencies": [
+            "0x0000000000000000000000000000000000000000",
+            "0xb47efcc461d3cd6b270daf15388a77a3fae64ad1"
+          ],
+          "poolKey": {
+            "currency0": "0x0000000000000000000000000000000000000000",
+            "currency1": "0xb47efcc461d3cd6b270daf15388a77a3fae64ad1",
+            "fee_pips": 500000,
+            "tick_spacing": 5000,
+            "hooks": "0x0000000000000000000000000000000000000000"
+          },
+          "identityStatus": "verified_at_block",
+          "integrationClass": "hookless_fixed_fee",
+          "tokenMetadataStatus": "available",
+          "executionAvailable": false
+        },
+        {
+          "poolId": "0x26643e199cc33184f05efe82cea3b527543015b9850557507a752ab6f60fbcad",
+          "currencies": [
+            "0x5fc5360d0400a0fd4f2af552add042d716f1d168",
+            "0xb47efcc461d3cd6b270daf15388a77a3fae64ad1"
+          ],
+          "poolKey": {
+            "currency0": "0x5fc5360d0400a0fd4f2af552add042d716f1d168",
+            "currency1": "0xb47efcc461d3cd6b270daf15388a77a3fae64ad1",
+            "fee_pips": 29990,
+            "tick_spacing": 300,
+            "hooks": "0x0000000000000000000000000000000000000000"
+          },
+          "identityStatus": "verified_at_block",
+          "integrationClass": "hookless_fixed_fee",
+          "tokenMetadataStatus": "available",
+          "executionAvailable": false
+        },
+        {
+          "poolId": "0xffec8ad2ff37b028a2bf479996ae6e74543ab1af85885b00394e281f73c0ea98",
+          "currencies": [
+            "0x0000000000000000000000000000000000000000",
+            "0xb47efcc461d3cd6b270daf15388a77a3fae64ad1"
+          ],
+          "poolKey": {
+            "currency0": "0x0000000000000000000000000000000000000000",
+            "currency1": "0xb47efcc461d3cd6b270daf15388a77a3fae64ad1",
+            "fee_pips": 843790,
+            "tick_spacing": 200,
+            "hooks": "0x0000000000000000000000000000000000000000"
+          },
+          "identityStatus": "verified_at_block",
+          "integrationClass": "hookless_fixed_fee",
+          "tokenMetadataStatus": "available",
+          "executionAvailable": false
+        }
+      ],
+      "unverifiedCandidates": [],
+      "checksPassed": true
+    },
+    {
+      "label": "CRUMBS",
+      "token": "0x80baa4b3bfac6f4978700df824b1b3d98e889136",
+      "poolIds": [],
+      "expectedReadStatus": "available",
+      "asset": {
+        "address": "0x80baa4b3bfac6f4978700df824b1b3d98e889136",
+        "kind": "erc20_candidate",
+        "decimals": 18,
+        "symbol": "CRUMBS",
+        "readStatus": "available",
+        "metadataIssues": {},
+        "displayUnitsAvailable": true,
+        "executionAvailable": false
+      },
+      "tokenSnapshot": {
+        "number": 58729714,
+        "hash": "0xbc8695092cd0bf7af7e2696e8f860df7c1cb623b38fc24f2261614c52a74cf1a",
+        "timestamp": 1788975368
+      },
+      "poolSnapshot": {
+        "number": 58729779,
+        "hash": "0x5db55cdd02bf7897c520b77cb10086b0b024f5627799cd984da89c1e87e4352b",
+        "timestamp": 1788975374
+      },
+      "discovery": {
+        "source": "dexscreener",
+        "status": "received",
+        "coverage": "provider_candidates_only",
+        "returned": 30,
+        "v4Candidates": 29,
+        "rejectedOrOtherMarkets": 1,
+        "requestedPoolIds": 0,
+        "notProbed": 24
+      },
+      "pools": [
+        {
+          "poolId": "0x25e53c08633b9474f3491e4c6abeb6fa6210f8d5c122931679aa498aeab0ed09",
+          "currencies": [
+            "0x0000000000000000000000000000000000000000",
+            "0x80baa4b3bfac6f4978700df824b1b3d98e889136"
+          ],
+          "poolKey": {
+            "currency0": "0x0000000000000000000000000000000000000000",
+            "currency1": "0x80baa4b3bfac6f4978700df824b1b3d98e889136",
+            "fee_pips": 0,
+            "tick_spacing": 200,
+            "hooks": "0xe5e702641ea86f4ae6cc3cdaed2b886f976be044"
+          },
+          "identityStatus": "verified_at_block",
+          "integrationClass": "requires_separate_adapter",
+          "tokenMetadataStatus": "available",
+          "executionAvailable": false
+        },
+        {
+          "poolId": "0xc0c407d7d81338f92217f030a1c083f3db5c57efa9e2de04f2dd9214c46365d8",
+          "currencies": [
+            "0x5fc5360d0400a0fd4f2af552add042d716f1d168",
+            "0x80baa4b3bfac6f4978700df824b1b3d98e889136"
+          ],
+          "poolKey": {
+            "currency0": "0x5fc5360d0400a0fd4f2af552add042d716f1d168",
+            "currency1": "0x80baa4b3bfac6f4978700df824b1b3d98e889136",
+            "fee_pips": 39999,
+            "tick_spacing": 400,
+            "hooks": "0x0000000000000000000000000000000000000000"
+          },
+          "identityStatus": "verified_at_block",
+          "integrationClass": "hookless_fixed_fee",
+          "tokenMetadataStatus": "available",
+          "executionAvailable": false
+        },
+        {
+          "poolId": "0xa3a93a88475db070949e905d7de8df5bbe445ad1e4653fd25b4b8ad698cd992f",
+          "currencies": [
+            "0x5fc5360d0400a0fd4f2af552add042d716f1d168",
+            "0x80baa4b3bfac6f4978700df824b1b3d98e889136"
+          ],
+          "poolKey": {
+            "currency0": "0x5fc5360d0400a0fd4f2af552add042d716f1d168",
+            "currency1": "0x80baa4b3bfac6f4978700df824b1b3d98e889136",
+            "fee_pips": 25100,
+            "tick_spacing": 251,
+            "hooks": "0x0000000000000000000000000000000000000000"
+          },
+          "identityStatus": "verified_at_block",
+          "integrationClass": "hookless_fixed_fee",
+          "tokenMetadataStatus": "available",
+          "executionAvailable": false
+        },
+        {
+          "poolId": "0x0409e75179659d2bd8c62597c4dcd2034d2dc494a8d157e45d5e87cedd9fe727",
+          "currencies": [
+            "0x5fc5360d0400a0fd4f2af552add042d716f1d168",
+            "0x80baa4b3bfac6f4978700df824b1b3d98e889136"
+          ],
+          "poolKey": {
+            "currency0": "0x5fc5360d0400a0fd4f2af552add042d716f1d168",
+            "currency1": "0x80baa4b3bfac6f4978700df824b1b3d98e889136",
+            "fee_pips": 50000,
+            "tick_spacing": 1000,
+            "hooks": "0x0000000000000000000000000000000000000000"
+          },
+          "identityStatus": "verified_at_block",
+          "integrationClass": "hookless_fixed_fee",
+          "tokenMetadataStatus": "available",
+          "executionAvailable": false
+        },
+        {
+          "poolId": "0x859684f1e556a8a315bde3d16e5d9513a3f97440c92860918e21b6727ce35ade",
+          "currencies": [
+            "0x0000000000000000000000000000000000000000",
+            "0x80baa4b3bfac6f4978700df824b1b3d98e889136"
+          ],
+          "poolKey": {
+            "currency0": "0x0000000000000000000000000000000000000000",
+            "currency1": "0x80baa4b3bfac6f4978700df824b1b3d98e889136",
+            "fee_pips": 9000,
+            "tick_spacing": 90,
+            "hooks": "0x0000000000000000000000000000000000000000"
+          },
+          "identityStatus": "verified_at_block",
+          "integrationClass": "hookless_fixed_fee",
+          "tokenMetadataStatus": "available",
+          "executionAvailable": false
+        }
+      ],
+      "unverifiedCandidates": [],
+      "checksPassed": true
+    },
+    {
+      "label": "RUBEN",
+      "token": "0x5942e47cc8057ac76a779f7499cd762cdd335b48",
+      "poolIds": [],
+      "expectedReadStatus": "available",
+      "asset": {
+        "address": "0x5942e47cc8057ac76a779f7499cd762cdd335b48",
+        "kind": "erc20_candidate",
+        "decimals": 18,
+        "symbol": "RUBEN",
+        "readStatus": "available",
+        "metadataIssues": {},
+        "displayUnitsAvailable": true,
+        "executionAvailable": false
+      },
+      "tokenSnapshot": {
+        "number": 58729906,
+        "hash": "0xcfb1967264a4fabe1bfbad8338b957f5bd6aaf4186e4d4829a1a80ad832d03b3",
+        "timestamp": 1788975387
+      },
+      "poolSnapshot": {
+        "number": 58729972,
+        "hash": "0x435c77d2cb78afd39973cf2b3f3521e6c8fcb6a2a7915f8ccf96f895879b7878",
+        "timestamp": 1788975394
+      },
+      "discovery": {
+        "source": "dexscreener",
+        "status": "received",
+        "coverage": "provider_candidates_only",
+        "returned": 6,
+        "v4Candidates": 6,
+        "rejectedOrOtherMarkets": 0,
+        "requestedPoolIds": 0,
+        "notProbed": 1
+      },
+      "pools": [
+        {
+          "poolId": "0x3c6da72467e57b3e0a65d3ea15de0235ffec565f4d7c3a24398097aa98840568",
+          "currencies": [
+            "0x0000000000000000000000000000000000000000",
+            "0x5942e47cc8057ac76a779f7499cd762cdd335b48"
+          ],
+          "poolKey": {
+            "currency0": "0x0000000000000000000000000000000000000000",
+            "currency1": "0x5942e47cc8057ac76a779f7499cd762cdd335b48",
+            "fee_pips": 0,
+            "tick_spacing": 200,
+            "hooks": "0xe5e702641ea86f4ae6cc3cdaed2b886f976be044"
+          },
+          "identityStatus": "verified_at_block",
+          "integrationClass": "requires_separate_adapter",
+          "tokenMetadataStatus": "available",
+          "executionAvailable": false
+        },
+        {
+          "poolId": "0x524893eecd30f5580e148891b1bcb541a2ac00498f833fb0150a9ada138d35d5",
+          "currencies": [
+            "0x5942e47cc8057ac76a779f7499cd762cdd335b48",
+            "0x5fc5360d0400a0fd4f2af552add042d716f1d168"
+          ],
+          "poolKey": {
+            "currency0": "0x5942e47cc8057ac76a779f7499cd762cdd335b48",
+            "currency1": "0x5fc5360d0400a0fd4f2af552add042d716f1d168",
+            "fee_pips": 100000,
+            "tick_spacing": 1000,
+            "hooks": "0x0000000000000000000000000000000000000000"
+          },
+          "identityStatus": "verified_at_block",
+          "integrationClass": "hookless_fixed_fee",
+          "tokenMetadataStatus": "available",
+          "executionAvailable": false
+        },
+        {
+          "poolId": "0x97dbd585248b99b54e5abd128b0b20408f0a539e7ea6ca2126c845d089f5213b",
+          "currencies": [
+            "0x0000000000000000000000000000000000000000",
+            "0x5942e47cc8057ac76a779f7499cd762cdd335b48"
+          ],
+          "poolKey": {
+            "currency0": "0x0000000000000000000000000000000000000000",
+            "currency1": "0x5942e47cc8057ac76a779f7499cd762cdd335b48",
+            "fee_pips": 860610,
+            "tick_spacing": 200,
+            "hooks": "0x0000000000000000000000000000000000000000"
+          },
+          "identityStatus": "verified_at_block",
+          "integrationClass": "hookless_fixed_fee",
+          "tokenMetadataStatus": "available",
+          "executionAvailable": false
+        },
+        {
+          "poolId": "0x9baf26ae9c3d06063865e36d60ff3558c87198d66870a21fc5b970f2bea3c8a4",
+          "currencies": [
+            "0x0000000000000000000000000000000000000000",
+            "0x5942e47cc8057ac76a779f7499cd762cdd335b48"
+          ],
+          "poolKey": {
+            "currency0": "0x0000000000000000000000000000000000000000",
+            "currency1": "0x5942e47cc8057ac76a779f7499cd762cdd335b48",
+            "fee_pips": 810000,
+            "tick_spacing": 19988,
+            "hooks": "0x0000000000000000000000000000000000000000"
+          },
+          "identityStatus": "verified_at_block",
+          "integrationClass": "hookless_fixed_fee",
+          "tokenMetadataStatus": "available",
+          "executionAvailable": false
+        },
+        {
+          "poolId": "0x061ff1e0ba573751fe33534c059443d7865ef2c423a5a18f1a94c76b386a71e0",
+          "currencies": [
+            "0x5942e47cc8057ac76a779f7499cd762cdd335b48",
+            "0x5fc5360d0400a0fd4f2af552add042d716f1d168"
+          ],
+          "poolKey": {
+            "currency0": "0x5942e47cc8057ac76a779f7499cd762cdd335b48",
+            "currency1": "0x5fc5360d0400a0fd4f2af552add042d716f1d168",
+            "fee_pips": 500000,
+            "tick_spacing": 5000,
+            "hooks": "0x0000000000000000000000000000000000000000"
+          },
+          "identityStatus": "verified_at_block",
+          "integrationClass": "hookless_fixed_fee",
+          "tokenMetadataStatus": "available",
+          "executionAvailable": false
+        }
+      ],
+      "unverifiedCandidates": [],
+      "checksPassed": true
+    },
+    {
+      "label": "MAD",
+      "token": "0xb818ddfa44aad2157b0f7058aebcb52d4733d4c4",
+      "poolIds": [],
+      "expectedReadStatus": "available",
+      "asset": {
+        "address": "0xb818ddfa44aad2157b0f7058aebcb52d4733d4c4",
+        "kind": "erc20_candidate",
+        "decimals": 18,
+        "symbol": "MAD",
+        "readStatus": "available",
+        "metadataIssues": {},
+        "displayUnitsAvailable": true,
+        "executionAvailable": false
+      },
+      "tokenSnapshot": {
+        "number": 58730098,
+        "hash": "0xba0322eda5f354a3fb67131e4be42ec2943fec972661397a56273453f3a9125c",
+        "timestamp": 1788975407
+      },
+      "poolSnapshot": {
+        "number": 58730172,
+        "hash": "0x5550f8d217b4cfb896c3827e20e3fcf4f6bdf37947eb97ead3b8c34d5385a650",
+        "timestamp": 1788975414
+      },
+      "discovery": {
+        "source": "dexscreener",
+        "status": "received",
+        "coverage": "provider_candidates_only",
+        "returned": 13,
+        "v4Candidates": 13,
+        "rejectedOrOtherMarkets": 0,
+        "requestedPoolIds": 0,
+        "notProbed": 8
+      },
+      "pools": [
+        {
+          "poolId": "0x9fdf3390bcc0edab9f215e990412556d10343f7e248c86c5e65f2b7d9a99c66c",
+          "currencies": [
+            "0x0000000000000000000000000000000000000000",
+            "0xb818ddfa44aad2157b0f7058aebcb52d4733d4c4"
+          ],
+          "poolKey": {
+            "currency0": "0x0000000000000000000000000000000000000000",
+            "currency1": "0xb818ddfa44aad2157b0f7058aebcb52d4733d4c4",
+            "fee_pips": 0,
+            "tick_spacing": 200,
+            "hooks": "0xe5e702641ea86f4ae6cc3cdaed2b886f976be044"
+          },
+          "identityStatus": "verified_at_block",
+          "integrationClass": "requires_separate_adapter",
+          "tokenMetadataStatus": "available",
+          "executionAvailable": false
+        },
+        {
+          "poolId": "0x70ad540c5ad3e99773543087e67b0919c891d1e0e95fab44b9d700ebc0fc2124",
+          "currencies": [
+            "0x0000000000000000000000000000000000000000",
+            "0xb818ddfa44aad2157b0f7058aebcb52d4733d4c4"
+          ],
+          "poolKey": {
+            "currency0": "0x0000000000000000000000000000000000000000",
+            "currency1": "0xb818ddfa44aad2157b0f7058aebcb52d4733d4c4",
+            "fee_pips": 37500,
+            "tick_spacing": 375,
+            "hooks": "0x0000000000000000000000000000000000000000"
+          },
+          "identityStatus": "verified_at_block",
+          "integrationClass": "hookless_fixed_fee",
+          "tokenMetadataStatus": "available",
+          "executionAvailable": false
+        },
+        {
+          "poolId": "0x95e0de860917edb45821838846cbfc08d66d15e9a970e656fe6fb270a767b998",
+          "currencies": [
+            "0x5fc5360d0400a0fd4f2af552add042d716f1d168",
+            "0xb818ddfa44aad2157b0f7058aebcb52d4733d4c4"
+          ],
+          "poolKey": {
+            "currency0": "0x5fc5360d0400a0fd4f2af552add042d716f1d168",
+            "currency1": "0xb818ddfa44aad2157b0f7058aebcb52d4733d4c4",
+            "fee_pips": 200000,
+            "tick_spacing": 2000,
+            "hooks": "0x0000000000000000000000000000000000000000"
+          },
+          "identityStatus": "verified_at_block",
+          "integrationClass": "hookless_fixed_fee",
+          "tokenMetadataStatus": "available",
+          "executionAvailable": false
+        },
+        {
+          "poolId": "0xf025257a958b5040e886cae721474e0dee8565bba4d962ff2c5a01684aa4d2db",
+          "currencies": [
+            "0x0000000000000000000000000000000000000000",
+            "0xb818ddfa44aad2157b0f7058aebcb52d4733d4c4"
+          ],
+          "poolKey": {
+            "currency0": "0x0000000000000000000000000000000000000000",
+            "currency1": "0xb818ddfa44aad2157b0f7058aebcb52d4733d4c4",
+            "fee_pips": 120000,
+            "tick_spacing": 1200,
+            "hooks": "0x0000000000000000000000000000000000000000"
+          },
+          "identityStatus": "verified_at_block",
+          "integrationClass": "hookless_fixed_fee",
+          "tokenMetadataStatus": "available",
+          "executionAvailable": false
+        },
+        {
+          "poolId": "0x06c2084a9aca78bdc5a57561bd1a7ad4df3f52ac44a6c7dce9a67c58b7ad1b8b",
+          "currencies": [
+            "0x0000000000000000000000000000000000000000",
+            "0xb818ddfa44aad2157b0f7058aebcb52d4733d4c4"
+          ],
+          "poolKey": {
+            "currency0": "0x0000000000000000000000000000000000000000",
+            "currency1": "0xb818ddfa44aad2157b0f7058aebcb52d4733d4c4",
+            "fee_pips": 40000,
+            "tick_spacing": 400,
+            "hooks": "0x0000000000000000000000000000000000000000"
+          },
+          "identityStatus": "verified_at_block",
+          "integrationClass": "hookless_fixed_fee",
+          "tokenMetadataStatus": "available",
+          "executionAvailable": false
+        }
+      ],
+      "unverifiedCandidates": [],
+      "checksPassed": true
+    },
+    {
+      "label": "BAG",
+      "token": "0x792ff19204ef6c756b4d8efe2441d050f5ece818",
+      "poolIds": [],
+      "expectedReadStatus": "available",
+      "asset": {
+        "address": "0x792ff19204ef6c756b4d8efe2441d050f5ece818",
+        "kind": "erc20_candidate",
+        "decimals": 18,
+        "symbol": "BAG",
+        "readStatus": "available",
+        "metadataIssues": {},
+        "displayUnitsAvailable": true,
+        "executionAvailable": false
+      },
+      "tokenSnapshot": {
+        "number": 58730301,
+        "hash": "0x35b90bd3e674a73f01603923e464c72c190e85761c5242913d5ccd17a35a1125",
+        "timestamp": 1788975427
+      },
+      "poolSnapshot": {
+        "number": 58730369,
+        "hash": "0xa70bfad4e180cb3242f5b8e3c8a16229949d8c5919212e755ec217d28b2dc710",
+        "timestamp": 1788975434
+      },
+      "discovery": {
+        "source": "dexscreener",
+        "status": "received",
+        "coverage": "provider_candidates_only",
+        "returned": 6,
+        "v4Candidates": 6,
+        "rejectedOrOtherMarkets": 0,
+        "requestedPoolIds": 0,
+        "notProbed": 1
+      },
+      "pools": [
+        {
+          "poolId": "0x0435dd57a49eae26af5aa7bc37ea6d9c038371ec5b4b2fc3162e98f1b370f260",
+          "currencies": [
+            "0x0000000000000000000000000000000000000000",
+            "0x792ff19204ef6c756b4d8efe2441d050f5ece818"
+          ],
+          "poolKey": {
+            "currency0": "0x0000000000000000000000000000000000000000",
+            "currency1": "0x792ff19204ef6c756b4d8efe2441d050f5ece818",
+            "fee_pips": 0,
+            "tick_spacing": 200,
+            "hooks": "0xe5e702641ea86f4ae6cc3cdaed2b886f976be044"
+          },
+          "identityStatus": "verified_at_block",
+          "integrationClass": "requires_separate_adapter",
+          "tokenMetadataStatus": "available",
+          "executionAvailable": false
+        },
+        {
+          "poolId": "0x7ddaaab41d0542a1d9597bfa0a4bd1d4a167699aa04e76a52c092d043709f469",
+          "currencies": [
+            "0x0000000000000000000000000000000000000000",
+            "0x792ff19204ef6c756b4d8efe2441d050f5ece818"
+          ],
+          "poolKey": {
+            "currency0": "0x0000000000000000000000000000000000000000",
+            "currency1": "0x792ff19204ef6c756b4d8efe2441d050f5ece818",
+            "fee_pips": 860610,
+            "tick_spacing": 200,
+            "hooks": "0x0000000000000000000000000000000000000000"
+          },
+          "identityStatus": "verified_at_block",
+          "integrationClass": "hookless_fixed_fee",
+          "tokenMetadataStatus": "available",
+          "executionAvailable": false
+        },
+        {
+          "poolId": "0x2940523ceadab72e40dafe2c69d11bd4b568eab6aa68dbd3a60f422a2c1b4d8f",
+          "currencies": [
+            "0x0000000000000000000000000000000000000000",
+            "0x792ff19204ef6c756b4d8efe2441d050f5ece818"
+          ],
+          "poolKey": {
+            "currency0": "0x0000000000000000000000000000000000000000",
+            "currency1": "0x792ff19204ef6c756b4d8efe2441d050f5ece818",
+            "fee_pips": 810000,
+            "tick_spacing": 19988,
+            "hooks": "0x0000000000000000000000000000000000000000"
+          },
+          "identityStatus": "verified_at_block",
+          "integrationClass": "hookless_fixed_fee",
+          "tokenMetadataStatus": "available",
+          "executionAvailable": false
+        },
+        {
+          "poolId": "0x589c82a862bcc45ce21581d4583f235f0129d1a09e08d78ee90c8594f84ddd31",
+          "currencies": [
+            "0x0000000000000000000000000000000000000000",
+            "0x792ff19204ef6c756b4d8efe2441d050f5ece818"
+          ],
+          "poolKey": {
+            "currency0": "0x0000000000000000000000000000000000000000",
+            "currency1": "0x792ff19204ef6c756b4d8efe2441d050f5ece818",
+            "fee_pips": 899900,
+            "tick_spacing": 8999,
+            "hooks": "0x0000000000000000000000000000000000000000"
+          },
+          "identityStatus": "verified_at_block",
+          "integrationClass": "hookless_fixed_fee",
+          "tokenMetadataStatus": "available",
+          "executionAvailable": false
+        },
+        {
+          "poolId": "0x6ccef072a2156352d6e7b064caa004fcd3b991248a8fb6e37b2001243d0ecb02",
+          "currencies": [
+            "0x5fc5360d0400a0fd4f2af552add042d716f1d168",
+            "0x792ff19204ef6c756b4d8efe2441d050f5ece818"
+          ],
+          "poolKey": {
+            "currency0": "0x5fc5360d0400a0fd4f2af552add042d716f1d168",
+            "currency1": "0x792ff19204ef6c756b4d8efe2441d050f5ece818",
+            "fee_pips": 600000,
+            "tick_spacing": 6000,
+            "hooks": "0x0000000000000000000000000000000000000000"
+          },
+          "identityStatus": "verified_at_block",
+          "integrationClass": "hookless_fixed_fee",
+          "tokenMetadataStatus": "available",
+          "executionAvailable": false
+        }
+      ],
+      "unverifiedCandidates": [],
+      "checksPassed": true
+    },
+    {
+      "label": "ZZZ",
+      "token": "0x7dbf38976f6d3b9c529e7d9484a71898b409ee6a",
+      "poolIds": [],
+      "expectedReadStatus": "available",
+      "asset": {
+        "address": "0x7dbf38976f6d3b9c529e7d9484a71898b409ee6a",
+        "kind": "erc20_candidate",
+        "decimals": 18,
+        "symbol": "ZZZ",
+        "readStatus": "available",
+        "metadataIssues": {},
+        "displayUnitsAvailable": true,
+        "executionAvailable": false
+      },
+      "tokenSnapshot": {
+        "number": 58730498,
+        "hash": "0xffc4e409ba95eead9c22ddd41478b840cfdeaf9b51b08dd7914e4c2daed4d9ce",
+        "timestamp": 1788975447
+      },
+      "poolSnapshot": {
+        "number": 58730564,
+        "hash": "0xb36c9279f8b225e2888cfaa8a5757a05d58543cc67a72c0bfb9ab8b3ede0e92e",
+        "timestamp": 1788975454
+      },
+      "discovery": {
+        "source": "dexscreener",
+        "status": "received",
+        "coverage": "provider_candidates_only",
+        "returned": 30,
+        "v4Candidates": 27,
+        "rejectedOrOtherMarkets": 3,
+        "requestedPoolIds": 0,
+        "notProbed": 22
+      },
+      "pools": [
+        {
+          "poolId": "0x6538e2c223ed70228114983afecbe5e69fe627e2fafdf367bdd6bdeff2ad391f",
+          "currencies": [
+            "0x0000000000000000000000000000000000000000",
+            "0x7dbf38976f6d3b9c529e7d9484a71898b409ee6a"
+          ],
+          "poolKey": {
+            "currency0": "0x0000000000000000000000000000000000000000",
+            "currency1": "0x7dbf38976f6d3b9c529e7d9484a71898b409ee6a",
+            "fee_pips": 0,
+            "tick_spacing": 200,
+            "hooks": "0xe5e702641ea86f4ae6cc3cdaed2b886f976be044"
+          },
+          "identityStatus": "verified_at_block",
+          "integrationClass": "requires_separate_adapter",
+          "tokenMetadataStatus": "available",
+          "executionAvailable": false
+        },
+        {
+          "poolId": "0x07ee2b09374d11c2d87d0a0418481394a03bc05f01282e2f799b69dfa4c65417",
+          "currencies": [
+            "0x0000000000000000000000000000000000000000",
+            "0x7dbf38976f6d3b9c529e7d9484a71898b409ee6a"
+          ],
+          "poolKey": {
+            "currency0": "0x0000000000000000000000000000000000000000",
+            "currency1": "0x7dbf38976f6d3b9c529e7d9484a71898b409ee6a",
+            "fee_pips": 10015,
+            "tick_spacing": 200,
+            "hooks": "0x0000000000000000000000000000000000000000"
+          },
+          "identityStatus": "verified_at_block",
+          "integrationClass": "hookless_fixed_fee",
+          "tokenMetadataStatus": "available",
+          "executionAvailable": false
+        },
+        {
+          "poolId": "0x1e2ed4084a9e5b594d725d8a022554dc8e4c759a7a7a3f396018be916941c331",
+          "currencies": [
+            "0x0000000000000000000000000000000000000000",
+            "0x7dbf38976f6d3b9c529e7d9484a71898b409ee6a"
+          ],
+          "poolKey": {
+            "currency0": "0x0000000000000000000000000000000000000000",
+            "currency1": "0x7dbf38976f6d3b9c529e7d9484a71898b409ee6a",
+            "fee_pips": 20000,
+            "tick_spacing": 200,
+            "hooks": "0x0000000000000000000000000000000000000000"
+          },
+          "identityStatus": "verified_at_block",
+          "integrationClass": "hookless_fixed_fee",
+          "tokenMetadataStatus": "available",
+          "executionAvailable": false
+        },
+        {
+          "poolId": "0xdd96a8b750ee5eb3c13dcf874ee7dfdfd8b2b04706ed676db7b9921536290641",
+          "currencies": [
+            "0x5fc5360d0400a0fd4f2af552add042d716f1d168",
+            "0x7dbf38976f6d3b9c529e7d9484a71898b409ee6a"
+          ],
+          "poolKey": {
+            "currency0": "0x5fc5360d0400a0fd4f2af552add042d716f1d168",
+            "currency1": "0x7dbf38976f6d3b9c529e7d9484a71898b409ee6a",
+            "fee_pips": 9800,
+            "tick_spacing": 98,
+            "hooks": "0x0000000000000000000000000000000000000000"
+          },
+          "identityStatus": "verified_at_block",
+          "integrationClass": "hookless_fixed_fee",
+          "tokenMetadataStatus": "available",
+          "executionAvailable": false
+        },
+        {
+          "poolId": "0xf398e8f73f8b5067a978b1306c963e0c2224b2ada11b71d294d756106d02ae5d",
+          "currencies": [
+            "0x5fc5360d0400a0fd4f2af552add042d716f1d168",
+            "0x7dbf38976f6d3b9c529e7d9484a71898b409ee6a"
+          ],
+          "poolKey": {
+            "currency0": "0x5fc5360d0400a0fd4f2af552add042d716f1d168",
+            "currency1": "0x7dbf38976f6d3b9c529e7d9484a71898b409ee6a",
+            "fee_pips": 37900,
+            "tick_spacing": 379,
+            "hooks": "0x0000000000000000000000000000000000000000"
+          },
+          "identityStatus": "verified_at_block",
+          "integrationClass": "hookless_fixed_fee",
+          "tokenMetadataStatus": "available",
+          "executionAvailable": false
+        }
+      ],
+      "unverifiedCandidates": [],
+      "checksPassed": true
+    },
+    {
+      "label": "No-code control",
+      "token": "0x000000000000000000000000000000000000dead",
+      "poolIds": [],
+      "expectedReadStatus": "no_contract",
+      "asset": {
+        "address": "0x000000000000000000000000000000000000dead",
+        "kind": "unknown",
+        "decimals": null,
+        "symbol": null,
+        "readStatus": "no_contract",
+        "reason": "token_has_no_code",
+        "metadataIssues": {},
+        "displayUnitsAvailable": false,
+        "executionAvailable": false
+      },
+      "tokenSnapshot": {
+        "number": 58730694,
+        "hash": "0x9721fbb7b29b33012e0dba03a75fac82acc07330bd8a0dfb674ee721cf7e92c7",
+        "timestamp": 1788975467
+      },
+      "poolSnapshot": {
+        "number": 58730752,
+        "hash": "0xae95de21e9b6fe0a4e8912202fe44ad518ef8f894ae9646d7c1753796db07bb2",
+        "timestamp": 1788975473
+      },
+      "discovery": {
+        "source": "dexscreener",
+        "status": "received",
+        "coverage": "provider_candidates_only",
+        "returned": 0,
+        "v4Candidates": 0,
+        "rejectedOrOtherMarkets": 0,
+        "requestedPoolIds": 0,
+        "notProbed": 0
+      },
+      "pools": [],
+      "unverifiedCandidates": [],
+      "checksPassed": true
+    }
+  ],
+  "batchBalanceChecks": [
+    {
+      "snapshot": {
+        "number": 58730809,
+        "hash": "0xc901891442c2bca3cb19617f19f4aeb66ba385372636e04298f8968f06c8436a",
+        "timestamp": 1788975479
+      },
+      "requestedAddresses": 10,
+      "assetsRead": 10,
+      "unavailableAssets": [
+        {
+          "currency": "0x000000000000000000000000000000000000dead",
+          "reason": "token_has_no_code"
+        }
+      ],
+      "rawIntegerUnitsValid": true,
+      "inventoryStatus": "not_requested"
+    }
+  ],
+  "userWalletQueried": false,
+  "amountsOmitted": true,
+  "liveExecution": false,
+  "checksPassed": true,
+  "uniqueVerifiedPools": 42
+}

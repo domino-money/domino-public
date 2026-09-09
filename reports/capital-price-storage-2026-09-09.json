@@ -1,0 +1,26 @@
+{
+  "schemaVersion": 1,
+  "mode": "capital_price_storage_restart",
+  "beforeCounts": {
+    "chunks": 7,
+    "events": 16,
+    "capital_chunks": 7,
+    "capital_events": 16,
+    "price_observations": 12
+  },
+  "beforeDigest": "3228f5d3335d8b38f68bdc0c8e4972e878ea644ecd678ef4eceb38df94b20e9d",
+  "privateBackupCreated": true,
+  "backupBytes": 33854,
+  "backupSha256": "8d271f4fdcb1eada1832ed69f4a926cfb125ca4fc0c07c674ef6b3a7d8da0096",
+  "restartVerified": true,
+  "liveExecution": false,
+  "actualBackupRestoredToDisposableDatabase": true,
+  "afterCounts": {
+    "chunks": 7,
+    "events": 16,
+    "capital_chunks": 7,
+    "capital_events": 16,
+    "price_observations": 12
+  },
+  "afterDigest": "3228f5d3335d8b38f68bdc0c8e4972e878ea644ecd678ef4eceb38df94b20e9d"
+}

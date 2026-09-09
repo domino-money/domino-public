@@ -1,0 +1,25 @@
+{
+  "kind": "historical_rate_cost_sensitivity",
+  "liveExecution": false,
+  "hypotheticalGasUsd": "0.25",
+  "proposedServiceFeeBps": 200,
+  "gasBufferBps": 1500,
+  "minimumCoverageSeconds": 600,
+  "eligibleObservationCount": 8,
+  "excludedObservations": {
+    "insufficient_history": 17,
+    "outside_range": 45
+  },
+  "malformedRows": 0,
+  "estimatedSecondsToCostCoverage": {
+    "min": 258,
+    "median": 343.5,
+    "max": 2385
+  },
+  "limitations": [
+    "Recorded rate estimates overlap; observations are not independent returns.",
+    "Assumes balanced fee assets, constant price and unchanged accrual.",
+    "Does not assess price integrity, token ratios, owner advantage or signing eligibility.",
+    "This is not a forecast or an execution backtest."
+  ]
+}
