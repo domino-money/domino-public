@@ -47,7 +47,7 @@ Optional read-only provider setup and API commands are in [backend/README.md](ba
 
 ## Work together
 
-Both `rugged97` and `OxDecimal` have intended **administrator access to the entire repository**. Frontend/backend ownership is coordination, not an access restriction. See [contribution workflow](CONTRIBUTING.md), [assistant instructions](AGENTS.md) and [frontend handoff](FRONTEND_HANDOFF.md). Work is tracked in [GitHub Issues](https://github.com/domino-money/domino/issues).
+Both `rugged97` and `OxDecimal` have **administrator access to the entire repository**. Frontend/backend ownership is coordination, not an access restriction. See [contribution workflow](CONTRIBUTING.md), [assistant instructions](AGENTS.md) and [frontend handoff](FRONTEND_HANDOFF.md). Work is tracked in [GitHub Issues](https://github.com/domino-money/domino/issues).
 
 | Directory | Responsibility |
 | --- | --- |

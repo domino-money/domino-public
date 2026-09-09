@@ -10,7 +10,7 @@
 4. Open a small pull request. Explain the observable change, limitations and checks; include screenshots for visible changes when helpful.
 5. The other collaborator reviews. Main requires one approval, passing CI and resolved conversations. New commits dismiss stale approvals. Squash merge after checks pass; the branch is then deleted.
 
-Full administrative access includes settings and workflows, so protection is a shared development policy rather than isolation from either administrator. No directory is reserved exclusively to one contributor. If the invitation is pending, cross-review becomes available after it is accepted.
+Full administrative access includes settings and workflows, so protection is a shared development policy rather than isolation from either administrator. No directory is reserved exclusively to one contributor.
 
 ## API handoff
 
