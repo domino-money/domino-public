@@ -10,7 +10,7 @@ from capital_store import capital_point, raw_capital_metrics
 from catalogue import checked_key
 from discovery import CHAIN_ID, ZERO, DataError
 from position_accounting import replay_positions
-from price_history import (AlchemyHistorical, PriceQualification, PriceSeries, SOURCE,
+from price_history import (AlchemyHistorical, PriceQualification, PriceSeries, SOURCE, CHAINLINK_SOURCE,
                            decimal_string, iso, usd, load_price_series)
 from test_discovery import POOL, TOKEN
 from test_position_accounting import reference
@@ -199,6 +199,36 @@ class PriceDiagnosticsTests(unittest.TestCase):
         _, missing = self.load([], qualified=False)
         self.assertEqual(missing['status'], 'unavailable')
         self.assertEqual(missing['coverage']['status'], 'missing')
+
+    def test_qualified_query_selects_chain_and_exact_source_before_budget(self):
+        conn = Mock()
+        conn.execute.return_value.fetchall.return_value = []
+        proof = PriceQualification(ZERO, 18, SOURCE, POOL, 'test_fixture_only', max_age=120)
+        with patch.dict('price_history.PRODUCTION_QUALIFICATIONS', {(POOL, ZERO): proof}, clear=True):
+            load_price_series(conn, POOL, [ZERO], 1000, 2000)
+        sql, params = conn.execute.call_args.args
+        self.assertIn('chain_id=%s', sql)
+        self.assertIn('source=ANY(%s)', sql)
+        self.assertLess(sql.index('source=ANY(%s)'), sql.index('LIMIT 601'))
+        self.assertEqual(params, (CHAIN_ID, ZERO, [SOURCE], 880, 2000))
+
+    def test_unqualified_source_candidates_are_diagnostics_only(self):
+        conn = Mock()
+        conn.execute.return_value.fetchall.return_value = [
+            {'chainId': CHAIN_ID, 'currency': ZERO, 'source': source, 'timestamp': 1000,
+             'retrievedAt': 2000, 'priceUsd': price}
+            for source, price in [(SOURCE, '2000'), (CHAINLINK_SOURCE, '2500')]]
+        with patch.dict('price_history.PRODUCTION_QUALIFICATIONS', {}, clear=True):
+            series, evidence = load_price_series(conn, POOL, [ZERO], 1000, 1100)
+        self.assertEqual(series, [None])
+        self.assertEqual(evidence[0]['observations'], 2)
+        self.assertEqual(evidence[0]['observedSources'], sorted([SOURCE, CHAINLINK_SOURCE]))
+        self.assertEqual(evidence[0]['coverage']['status'], 'not_assessed')
+        self.assertEqual(evidence[0]['sourceQualification'], 'unqualified')
+
+    def test_default_production_policy_cannot_widen_age_for_chainlink(self):
+        with self.assertRaisesRegex(DataError, 'invalid_price_qualification'):
+            PriceQualification(ZERO, 18, CHAINLINK_SOURCE, POOL, 'test_fixture_only', max_age=86400)
 
 
 class HistoricalProviderTests(unittest.TestCase):

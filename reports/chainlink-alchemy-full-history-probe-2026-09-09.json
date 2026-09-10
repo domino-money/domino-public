@@ -1,0 +1,948 @@
+{
+  "schemaVersion": 1,
+  "mode": "bounded_chainlink_reference_qualification",
+  "poolId": "0x84bd4e2d8be11aeb0afc1195b38f587b61e90068548f1063fdbe448fb8cad0b6",
+  "poolKey": {
+    "currency0": "0x0bd7d308f8e1639fab988df18a8011f41eacad73",
+    "currency1": "0x5fc5360d0400a0fd4f2af552add042d716f1d168",
+    "fee_pips": 200,
+    "tick_spacing": 4,
+    "hooks": "0x0000000000000000000000000000000000000000"
+  },
+  "poolIdentityStatus": "verified_at_block",
+  "snapshot": {
+    "number": 58982799,
+    "hash": "0x0a6c11001ec1881af7d4fe1cf6e90cbc4234c8a9f5e613a7d4a7dbe0f4bde376",
+    "timestamp": 1789000882
+  },
+  "startTimestamp": 1788914482,
+  "endTimestamp": 1789000882,
+  "cases": [
+    {
+      "currency": "0x0bd7d308f8e1639fab988df18a8011f41eacad73",
+      "status": "reference_analytics_only",
+      "history": {
+        "observations": [
+          {
+            "chainId": 4663,
+            "currency": "0x0bd7d308f8e1639fab988df18a8011f41eacad73",
+            "source": "chainlink_robinhood_standard_v1",
+            "timestamp": 1788898279,
+            "retrievedAt": 1789000887,
+            "priceUsd": "2490.38",
+            "provenance": {
+              "adapterVersion": 1,
+              "manifestSha256": "2ae1ea5f432cab06904134759033d7c6434c323171f954120c4933fdde42e85d",
+              "status": "external_observation_unqualified",
+              "provider": "chainlink",
+              "proxyRole": "standard",
+              "proxy": "0x78f3556b67e17df817d51ef5a990cdaf09e8d3a9",
+              "aggregator": "0x6091e64eb7138eef066a80fd3a0d7427b91f2721",
+              "phaseId": 1,
+              "feedDecimals": 8,
+              "currencyDecimals": 18,
+              "currencyMapping": "canonical_weth_reference",
+              "roundId": "18446744073709553671",
+              "answerRaw": "249038000000",
+              "answerStartedAt": 1788898266,
+              "answerUpdatedAt": 1788898279,
+              "answeredInRound": "18446744073709553671",
+              "publicationBlock": {
+                "number": 57965680,
+                "hash": "0x2bc1a0a1203a98adf07d52aed5f2d9437dfdf1445b22e3409a735c53798f92a9",
+                "timestamp": 1788898279
+              },
+              "precedingBlock": {
+                "number": 57965679,
+                "hash": "0x39623073221eda669b7f1fa401c9ac34ebf7724b2ab83309ba6182d85d86c4e6",
+                "timestamp": 1788898279
+              },
+              "precedingRoundId": "18446744073709553670",
+              "timestampSemantics": "first_proven_publication_block",
+              "freshnessTimestamp": "answerUpdatedAt",
+              "targetPoolIndependenceVerified": false
+            }
+          },
+          {
+            "chainId": 4663,
+            "currency": "0x0bd7d308f8e1639fab988df18a8011f41eacad73",
+            "source": "chainlink_robinhood_standard_v1",
+            "timestamp": 1788929048,
+            "retrievedAt": 1789000887,
+            "priceUsd": "2504.8657",
+            "provenance": {
+              "adapterVersion": 1,
+              "manifestSha256": "2ae1ea5f432cab06904134759033d7c6434c323171f954120c4933fdde42e85d",
+              "status": "external_observation_unqualified",
+              "provider": "chainlink",
+              "proxyRole": "standard",
+              "proxy": "0x78f3556b67e17df817d51ef5a990cdaf09e8d3a9",
+              "aggregator": "0x6091e64eb7138eef066a80fd3a0d7427b91f2721",
+              "phaseId": 1,
+              "feedDecimals": 8,
+              "currencyDecimals": 18,
+              "currencyMapping": "canonical_weth_reference",
+              "roundId": "18446744073709553672",
+              "answerRaw": "250486570000",
+              "answerStartedAt": 1788929036,
+              "answerUpdatedAt": 1788929048,
+              "answeredInRound": "18446744073709553672",
+              "publicationBlock": {
+                "number": 58270678,
+                "hash": "0x70cbde5da41e584f07de67e5a3a1f04686c8ab300e49f662a8ab959526c9deab",
+                "timestamp": 1788929048
+              },
+              "precedingBlock": {
+                "number": 58270677,
+                "hash": "0x575bd2ae3081afe64d558e476beec45aa46f304b64e0edf38967cdcdd4a9e798",
+                "timestamp": 1788929048
+              },
+              "precedingRoundId": "18446744073709553671",
+              "timestampSemantics": "first_proven_publication_block",
+              "freshnessTimestamp": "answerUpdatedAt",
+              "targetPoolIndependenceVerified": false
+            }
+          },
+          {
+            "chainId": 4663,
+            "currency": "0x0bd7d308f8e1639fab988df18a8011f41eacad73",
+            "source": "chainlink_robinhood_standard_v1",
+            "timestamp": 1788932799,
+            "retrievedAt": 1789000887,
+            "priceUsd": "2491.61182636",
+            "provenance": {
+              "adapterVersion": 1,
+              "manifestSha256": "2ae1ea5f432cab06904134759033d7c6434c323171f954120c4933fdde42e85d",
+              "status": "external_observation_unqualified",
+              "provider": "chainlink",
+              "proxyRole": "standard",
+              "proxy": "0x78f3556b67e17df817d51ef5a990cdaf09e8d3a9",
+              "aggregator": "0x6091e64eb7138eef066a80fd3a0d7427b91f2721",
+              "phaseId": 1,
+              "feedDecimals": 8,
+              "currencyDecimals": 18,
+              "currencyMapping": "canonical_weth_reference",
+              "roundId": "18446744073709553673",
+              "answerRaw": "249161182636",
+              "answerStartedAt": 1788932787,
+              "answerUpdatedAt": 1788932799,
+              "answeredInRound": "18446744073709553673",
+              "publicationBlock": {
+                "number": 58307859,
+                "hash": "0x48277749d9ba2a8f46b67e7588ea59a847b1f306ad7a947eeffbffc220f6bd77",
+                "timestamp": 1788932799
+              },
+              "precedingBlock": {
+                "number": 58307858,
+                "hash": "0x4537c798cc27f76c7019085f33f3f70d77a955c1fa423804bb0825bc11c801ae",
+                "timestamp": 1788932799
+              },
+              "precedingRoundId": "18446744073709553672",
+              "timestampSemantics": "first_proven_publication_block",
+              "freshnessTimestamp": "answerUpdatedAt",
+              "targetPoolIndependenceVerified": false
+            }
+          },
+          {
+            "chainId": 4663,
+            "currency": "0x0bd7d308f8e1639fab988df18a8011f41eacad73",
+            "source": "chainlink_robinhood_standard_v1",
+            "timestamp": 1788935050,
+            "retrievedAt": 1789000887,
+            "priceUsd": "2504.92286383",
+            "provenance": {
+              "adapterVersion": 1,
+              "manifestSha256": "2ae1ea5f432cab06904134759033d7c6434c323171f954120c4933fdde42e85d",
+              "status": "external_observation_unqualified",
+              "provider": "chainlink",
+              "proxyRole": "standard",
+              "proxy": "0x78f3556b67e17df817d51ef5a990cdaf09e8d3a9",
+              "aggregator": "0x6091e64eb7138eef066a80fd3a0d7427b91f2721",
+              "phaseId": 1,
+              "feedDecimals": 8,
+              "currencyDecimals": 18,
+              "currencyMapping": "canonical_weth_reference",
+              "roundId": "18446744073709553674",
+              "answerRaw": "250492286383",
+              "answerStartedAt": 1788935038,
+              "answerUpdatedAt": 1788935050,
+              "answeredInRound": "18446744073709553674",
+              "publicationBlock": {
+                "number": 58330175,
+                "hash": "0xbe3912bf97e528e66332707968b1e9d9edc5438b8faa6779f8d30f46e0d82f61",
+                "timestamp": 1788935050
+              },
+              "precedingBlock": {
+                "number": 58330174,
+                "hash": "0x906e491b1db78bb2edb65cb125a5408deb3395ea970e3f0e2f346331e8230877",
+                "timestamp": 1788935050
+              },
+              "precedingRoundId": "18446744073709553673",
+              "timestampSemantics": "first_proven_publication_block",
+              "freshnessTimestamp": "answerUpdatedAt",
+              "targetPoolIndependenceVerified": false
+            }
+          },
+          {
+            "chainId": 4663,
+            "currency": "0x0bd7d308f8e1639fab988df18a8011f41eacad73",
+            "source": "chainlink_robinhood_standard_v1",
+            "timestamp": 1788941382,
+            "retrievedAt": 1789000887,
+            "priceUsd": "2518.13",
+            "provenance": {
+              "adapterVersion": 1,
+              "manifestSha256": "2ae1ea5f432cab06904134759033d7c6434c323171f954120c4933fdde42e85d",
+              "status": "external_observation_unqualified",
+              "provider": "chainlink",
+              "proxyRole": "standard",
+              "proxy": "0x78f3556b67e17df817d51ef5a990cdaf09e8d3a9",
+              "aggregator": "0x6091e64eb7138eef066a80fd3a0d7427b91f2721",
+              "phaseId": 1,
+              "feedDecimals": 8,
+              "currencyDecimals": 18,
+              "currencyMapping": "canonical_weth_reference",
+              "roundId": "18446744073709553675",
+              "answerRaw": "251813000000",
+              "answerStartedAt": 1788941370,
+              "answerUpdatedAt": 1788941382,
+              "answeredInRound": "18446744073709553675",
+              "publicationBlock": {
+                "number": 58392937,
+                "hash": "0xc3d231cf460f6e2ebd60abcdceea721501292fd74ff90e329ced3f90b6c34391",
+                "timestamp": 1788941382
+              },
+              "precedingBlock": {
+                "number": 58392936,
+                "hash": "0x012e7149d6880c66a43746ff6b9999c63ba20ffa394497394e49d48a56db4e50",
+                "timestamp": 1788941382
+              },
+              "precedingRoundId": "18446744073709553674",
+              "timestampSemantics": "first_proven_publication_block",
+              "freshnessTimestamp": "answerUpdatedAt",
+              "targetPoolIndependenceVerified": false
+            }
+          },
+          {
+            "chainId": 4663,
+            "currency": "0x0bd7d308f8e1639fab988df18a8011f41eacad73",
+            "source": "chainlink_robinhood_standard_v1",
+            "timestamp": 1788946544,
+            "retrievedAt": 1789000887,
+            "priceUsd": "2505.45885107",
+            "provenance": {
+              "adapterVersion": 1,
+              "manifestSha256": "2ae1ea5f432cab06904134759033d7c6434c323171f954120c4933fdde42e85d",
+              "status": "external_observation_unqualified",
+              "provider": "chainlink",
+              "proxyRole": "standard",
+              "proxy": "0x78f3556b67e17df817d51ef5a990cdaf09e8d3a9",
+              "aggregator": "0x6091e64eb7138eef066a80fd3a0d7427b91f2721",
+              "phaseId": 1,
+              "feedDecimals": 8,
+              "currencyDecimals": 18,
+              "currencyMapping": "canonical_weth_reference",
+              "roundId": "18446744073709553676",
+              "answerRaw": "250545885107",
+              "answerStartedAt": 1788946531,
+              "answerUpdatedAt": 1788946544,
+              "answeredInRound": "18446744073709553676",
+              "publicationBlock": {
+                "number": 58444111,
+                "hash": "0x34ab017aa1675779949f6134c2ba124f0bf607ccaf861b152facb14ceb21312c",
+                "timestamp": 1788946544
+              },
+              "precedingBlock": {
+                "number": 58444110,
+                "hash": "0xa5540d921d9469bfe2f85ac6f2b5489d3a215991db0524ec11c2817b6b47d887",
+                "timestamp": 1788946544
+              },
+              "precedingRoundId": "18446744073709553675",
+              "timestampSemantics": "first_proven_publication_block",
+              "freshnessTimestamp": "answerUpdatedAt",
+              "targetPoolIndependenceVerified": false
+            }
+          },
+          {
+            "chainId": 4663,
+            "currency": "0x0bd7d308f8e1639fab988df18a8011f41eacad73",
+            "source": "chainlink_robinhood_standard_v1",
+            "timestamp": 1788947354,
+            "retrievedAt": 1789000887,
+            "priceUsd": "2492.20680077",
+            "provenance": {
+              "adapterVersion": 1,
+              "manifestSha256": "2ae1ea5f432cab06904134759033d7c6434c323171f954120c4933fdde42e85d",
+              "status": "external_observation_unqualified",
+              "provider": "chainlink",
+              "proxyRole": "standard",
+              "proxy": "0x78f3556b67e17df817d51ef5a990cdaf09e8d3a9",
+              "aggregator": "0x6091e64eb7138eef066a80fd3a0d7427b91f2721",
+              "phaseId": 1,
+              "feedDecimals": 8,
+              "currencyDecimals": 18,
+              "currencyMapping": "canonical_weth_reference",
+              "roundId": "18446744073709553677",
+              "answerRaw": "249220680077",
+              "answerStartedAt": 1788947342,
+              "answerUpdatedAt": 1788947354,
+              "answeredInRound": "18446744073709553677",
+              "publicationBlock": {
+                "number": 58452135,
+                "hash": "0x055140efc94f030bf39318e4d16ae7bfd32c1b4e8197ffe18b2a6a8dc7fd3dc1",
+                "timestamp": 1788947354
+              },
+              "precedingBlock": {
+                "number": 58452134,
+                "hash": "0x131df99a9566a5a5bbafe0794a67e2e9b797a3bc76ca738fb98cfc50c44205da",
+                "timestamp": 1788947354
+              },
+              "precedingRoundId": "18446744073709553676",
+              "timestampSemantics": "first_proven_publication_block",
+              "freshnessTimestamp": "answerUpdatedAt",
+              "targetPoolIndependenceVerified": false
+            }
+          },
+          {
+            "chainId": 4663,
+            "currency": "0x0bd7d308f8e1639fab988df18a8011f41eacad73",
+            "source": "chainlink_robinhood_standard_v1",
+            "timestamp": 1788954827,
+            "retrievedAt": 1789000887,
+            "priceUsd": "2504.77",
+            "provenance": {
+              "adapterVersion": 1,
+              "manifestSha256": "2ae1ea5f432cab06904134759033d7c6434c323171f954120c4933fdde42e85d",
+              "status": "external_observation_unqualified",
+              "provider": "chainlink",
+              "proxyRole": "standard",
+              "proxy": "0x78f3556b67e17df817d51ef5a990cdaf09e8d3a9",
+              "aggregator": "0x6091e64eb7138eef066a80fd3a0d7427b91f2721",
+              "phaseId": 1,
+              "feedDecimals": 8,
+              "currencyDecimals": 18,
+              "currencyMapping": "canonical_weth_reference",
+              "roundId": "18446744073709553678",
+              "answerRaw": "250477000000",
+              "answerStartedAt": 1788954814,
+              "answerUpdatedAt": 1788954827,
+              "answeredInRound": "18446744073709553678",
+              "publicationBlock": {
+                "number": 58526170,
+                "hash": "0xf7e323c71a1b5153a06838b7ab24b8d70cb5f919f15bfe8ff61658768fac1c51",
+                "timestamp": 1788954827
+              },
+              "precedingBlock": {
+                "number": 58526169,
+                "hash": "0xc0ab9b156cea63248e5bac4fbb8de7e625221996309e197fb99fc5f354c740cc",
+                "timestamp": 1788954827
+              },
+              "precedingRoundId": "18446744073709553677",
+              "timestampSemantics": "first_proven_publication_block",
+              "freshnessTimestamp": "answerUpdatedAt",
+              "targetPoolIndependenceVerified": false
+            }
+          },
+          {
+            "chainId": 4663,
+            "currency": "0x0bd7d308f8e1639fab988df18a8011f41eacad73",
+            "source": "chainlink_robinhood_standard_v1",
+            "timestamp": 1788960859,
+            "retrievedAt": 1789000887,
+            "priceUsd": "2518.09",
+            "provenance": {
+              "adapterVersion": 1,
+              "manifestSha256": "2ae1ea5f432cab06904134759033d7c6434c323171f954120c4933fdde42e85d",
+              "status": "external_observation_unqualified",
+              "provider": "chainlink",
+              "proxyRole": "standard",
+              "proxy": "0x78f3556b67e17df817d51ef5a990cdaf09e8d3a9",
+              "aggregator": "0x6091e64eb7138eef066a80fd3a0d7427b91f2721",
+              "phaseId": 1,
+              "feedDecimals": 8,
+              "currencyDecimals": 18,
+              "currencyMapping": "canonical_weth_reference",
+              "roundId": "18446744073709553679",
+              "answerRaw": "251809000000",
+              "answerStartedAt": 1788960846,
+              "answerUpdatedAt": 1788960859,
+              "answeredInRound": "18446744073709553679",
+              "publicationBlock": {
+                "number": 58585916,
+                "hash": "0x79ba47ab81e3a275cc115b9db21ae8958dd7bba164645ab14ccf9289959cd891",
+                "timestamp": 1788960859
+              },
+              "precedingBlock": {
+                "number": 58585915,
+                "hash": "0x2f27c2a750ae5aecdd45f54a74567792a3a16aa0abd5648e244052a413afb363",
+                "timestamp": 1788960859
+              },
+              "precedingRoundId": "18446744073709553678",
+              "timestampSemantics": "first_proven_publication_block",
+              "freshnessTimestamp": "answerUpdatedAt",
+              "targetPoolIndependenceVerified": false
+            }
+          },
+          {
+            "chainId": 4663,
+            "currency": "0x0bd7d308f8e1639fab988df18a8011f41eacad73",
+            "source": "chainlink_robinhood_standard_v1",
+            "timestamp": 1788961369,
+            "retrievedAt": 1789000887,
+            "priceUsd": "2501.84353212",
+            "provenance": {
+              "adapterVersion": 1,
+              "manifestSha256": "2ae1ea5f432cab06904134759033d7c6434c323171f954120c4933fdde42e85d",
+              "status": "external_observation_unqualified",
+              "provider": "chainlink",
+              "proxyRole": "standard",
+              "proxy": "0x78f3556b67e17df817d51ef5a990cdaf09e8d3a9",
+              "aggregator": "0x6091e64eb7138eef066a80fd3a0d7427b91f2721",
+              "phaseId": 1,
+              "feedDecimals": 8,
+              "currencyDecimals": 18,
+              "currencyMapping": "canonical_weth_reference",
+              "roundId": "18446744073709553680",
+              "answerRaw": "250184353212",
+              "answerStartedAt": 1788961356,
+              "answerUpdatedAt": 1788961369,
+              "answeredInRound": "18446744073709553680",
+              "publicationBlock": {
+                "number": 58590958,
+                "hash": "0x7c03111f26c86ce5ccf9dd3601583c24103367e3ac7fe53fcddae44e4566f3a4",
+                "timestamp": 1788961369
+              },
+              "precedingBlock": {
+                "number": 58590957,
+                "hash": "0x62901d6e345d3bdc296b4409d46a53628d299d1154ff6c929d5a73b036b87678",
+                "timestamp": 1788961369
+              },
+              "precedingRoundId": "18446744073709553679",
+              "timestampSemantics": "first_proven_publication_block",
+              "freshnessTimestamp": "answerUpdatedAt",
+              "targetPoolIndependenceVerified": false
+            }
+          },
+          {
+            "chainId": 4663,
+            "currency": "0x0bd7d308f8e1639fab988df18a8011f41eacad73",
+            "source": "chainlink_robinhood_standard_v1",
+            "timestamp": 1788966440,
+            "retrievedAt": 1789000887,
+            "priceUsd": "2487.80879698",
+            "provenance": {
+              "adapterVersion": 1,
+              "manifestSha256": "2ae1ea5f432cab06904134759033d7c6434c323171f954120c4933fdde42e85d",
+              "status": "external_observation_unqualified",
+              "provider": "chainlink",
+              "proxyRole": "standard",
+              "proxy": "0x78f3556b67e17df817d51ef5a990cdaf09e8d3a9",
+              "aggregator": "0x6091e64eb7138eef066a80fd3a0d7427b91f2721",
+              "phaseId": 1,
+              "feedDecimals": 8,
+              "currencyDecimals": 18,
+              "currencyMapping": "canonical_weth_reference",
+              "roundId": "18446744073709553681",
+              "answerRaw": "248780879698",
+              "answerStartedAt": 1788966428,
+              "answerUpdatedAt": 1788966440,
+              "answeredInRound": "18446744073709553681",
+              "publicationBlock": {
+                "number": 58641235,
+                "hash": "0x99552f2a2deb4d5fadc5aaa1130af8e21a3a634ccb01fbcc483ab7855d7a577d",
+                "timestamp": 1788966440
+              },
+              "precedingBlock": {
+                "number": 58641234,
+                "hash": "0x65ad01da918139804758164135c1d36f034f97ee93afed2008934403f4836a44",
+                "timestamp": 1788966440
+              },
+              "precedingRoundId": "18446744073709553680",
+              "timestampSemantics": "first_proven_publication_block",
+              "freshnessTimestamp": "answerUpdatedAt",
+              "targetPoolIndependenceVerified": false
+            }
+          },
+          {
+            "chainId": 4663,
+            "currency": "0x0bd7d308f8e1639fab988df18a8011f41eacad73",
+            "source": "chainlink_robinhood_standard_v1",
+            "timestamp": 1788967371,
+            "retrievedAt": 1789000887,
+            "priceUsd": "2472.92",
+            "provenance": {
+              "adapterVersion": 1,
+              "manifestSha256": "2ae1ea5f432cab06904134759033d7c6434c323171f954120c4933fdde42e85d",
+              "status": "external_observation_unqualified",
+              "provider": "chainlink",
+              "proxyRole": "standard",
+              "proxy": "0x78f3556b67e17df817d51ef5a990cdaf09e8d3a9",
+              "aggregator": "0x6091e64eb7138eef066a80fd3a0d7427b91f2721",
+              "phaseId": 1,
+              "feedDecimals": 8,
+              "currencyDecimals": 18,
+              "currencyMapping": "canonical_weth_reference",
+              "roundId": "18446744073709553682",
+              "answerRaw": "247292000000",
+              "answerStartedAt": 1788967358,
+              "answerUpdatedAt": 1788967371,
+              "answeredInRound": "18446744073709553682",
+              "publicationBlock": {
+                "number": 58650442,
+                "hash": "0x1f946ca49174e84364b69d5e3e82c22baed8604060bacef2bb5cdaa3a205fcff",
+                "timestamp": 1788967371
+              },
+              "precedingBlock": {
+                "number": 58650441,
+                "hash": "0x0031e232ebf80d955ba15aefa59135fe59c2d090a48df6cf1371d663b846f8c1",
+                "timestamp": 1788967371
+              },
+              "precedingRoundId": "18446744073709553681",
+              "timestampSemantics": "first_proven_publication_block",
+              "freshnessTimestamp": "answerUpdatedAt",
+              "targetPoolIndependenceVerified": false
+            }
+          },
+          {
+            "chainId": 4663,
+            "currency": "0x0bd7d308f8e1639fab988df18a8011f41eacad73",
+            "source": "chainlink_robinhood_standard_v1",
+            "timestamp": 1788968121,
+            "retrievedAt": 1789000887,
+            "priceUsd": "2489.9099",
+            "provenance": {
+              "adapterVersion": 1,
+              "manifestSha256": "2ae1ea5f432cab06904134759033d7c6434c323171f954120c4933fdde42e85d",
+              "status": "external_observation_unqualified",
+              "provider": "chainlink",
+              "proxyRole": "standard",
+              "proxy": "0x78f3556b67e17df817d51ef5a990cdaf09e8d3a9",
+              "aggregator": "0x6091e64eb7138eef066a80fd3a0d7427b91f2721",
+              "phaseId": 1,
+              "feedDecimals": 8,
+              "currencyDecimals": 18,
+              "currencyMapping": "canonical_weth_reference",
+              "roundId": "18446744073709553683",
+              "answerRaw": "248990990000",
+              "answerStartedAt": 1788968109,
+              "answerUpdatedAt": 1788968121,
+              "answeredInRound": "18446744073709553683",
+              "publicationBlock": {
+                "number": 58657878,
+                "hash": "0xca73927c872ee9b3740ff8e84742519401b822931734ddcefe964541b6d667f0",
+                "timestamp": 1788968121
+              },
+              "precedingBlock": {
+                "number": 58657877,
+                "hash": "0x9214f1f9176d56f5a5db0c941df9d1418ac7db5162c15f69c9faf61364b3e700",
+                "timestamp": 1788968121
+              },
+              "precedingRoundId": "18446744073709553682",
+              "timestampSemantics": "first_proven_publication_block",
+              "freshnessTimestamp": "answerUpdatedAt",
+              "targetPoolIndependenceVerified": false
+            }
+          },
+          {
+            "chainId": 4663,
+            "currency": "0x0bd7d308f8e1639fab988df18a8011f41eacad73",
+            "source": "chainlink_robinhood_standard_v1",
+            "timestamp": 1788982615,
+            "retrievedAt": 1789000887,
+            "priceUsd": "2477.26803771",
+            "provenance": {
+              "adapterVersion": 1,
+              "manifestSha256": "2ae1ea5f432cab06904134759033d7c6434c323171f954120c4933fdde42e85d",
+              "status": "external_observation_unqualified",
+              "provider": "chainlink",
+              "proxyRole": "standard",
+              "proxy": "0x78f3556b67e17df817d51ef5a990cdaf09e8d3a9",
+              "aggregator": "0x6091e64eb7138eef066a80fd3a0d7427b91f2721",
+              "phaseId": 1,
+              "feedDecimals": 8,
+              "currencyDecimals": 18,
+              "currencyMapping": "canonical_weth_reference",
+              "roundId": "18446744073709553684",
+              "answerRaw": "247726803771",
+              "answerStartedAt": 1788982603,
+              "answerUpdatedAt": 1788982615,
+              "answeredInRound": "18446744073709553684",
+              "publicationBlock": {
+                "number": 58801598,
+                "hash": "0x48b3cc62d5a751f03887d240082ae7d22f3afffb3431927f3099fccaa209f4f3",
+                "timestamp": 1788982615
+              },
+              "precedingBlock": {
+                "number": 58801597,
+                "hash": "0x440c14069dda0ca16ca8b3f483f2f88b4a4b2267cc331fb5699deae5f8f9d73d",
+                "timestamp": 1788982615
+              },
+              "precedingRoundId": "18446744073709553683",
+              "timestampSemantics": "first_proven_publication_block",
+              "freshnessTimestamp": "answerUpdatedAt",
+              "targetPoolIndependenceVerified": false
+            }
+          },
+          {
+            "chainId": 4663,
+            "currency": "0x0bd7d308f8e1639fab988df18a8011f41eacad73",
+            "source": "chainlink_robinhood_standard_v1",
+            "timestamp": 1788983606,
+            "retrievedAt": 1789000887,
+            "priceUsd": "2463.84112725",
+            "provenance": {
+              "adapterVersion": 1,
+              "manifestSha256": "2ae1ea5f432cab06904134759033d7c6434c323171f954120c4933fdde42e85d",
+              "status": "external_observation_unqualified",
+              "provider": "chainlink",
+              "proxyRole": "standard",
+              "proxy": "0x78f3556b67e17df817d51ef5a990cdaf09e8d3a9",
+              "aggregator": "0x6091e64eb7138eef066a80fd3a0d7427b91f2721",
+              "phaseId": 1,
+              "feedDecimals": 8,
+              "currencyDecimals": 18,
+              "currencyMapping": "canonical_weth_reference",
+              "roundId": "18446744073709553685",
+              "answerRaw": "246384112725",
+              "answerStartedAt": 1788983593,
+              "answerUpdatedAt": 1788983606,
+              "answeredInRound": "18446744073709553685",
+              "publicationBlock": {
+                "number": 58811411,
+                "hash": "0x2eda96c838b43fe2cd77ef0e05b90aa9e7ef336e5d1338b9d144327051cda76a",
+                "timestamp": 1788983606
+              },
+              "precedingBlock": {
+                "number": 58811410,
+                "hash": "0xb171503adab9fd77d651193cddf2f84ef2b72ef5bb4c772462d01f60f8ceb8c3",
+                "timestamp": 1788983606
+              },
+              "precedingRoundId": "18446744073709553684",
+              "timestampSemantics": "first_proven_publication_block",
+              "freshnessTimestamp": "answerUpdatedAt",
+              "targetPoolIndependenceVerified": false
+            }
+          },
+          {
+            "chainId": 4663,
+            "currency": "0x0bd7d308f8e1639fab988df18a8011f41eacad73",
+            "source": "chainlink_robinhood_standard_v1",
+            "timestamp": 1788991738,
+            "retrievedAt": 1789000887,
+            "priceUsd": "2447.8",
+            "provenance": {
+              "adapterVersion": 1,
+              "manifestSha256": "2ae1ea5f432cab06904134759033d7c6434c323171f954120c4933fdde42e85d",
+              "status": "external_observation_unqualified",
+              "provider": "chainlink",
+              "proxyRole": "standard",
+              "proxy": "0x78f3556b67e17df817d51ef5a990cdaf09e8d3a9",
+              "aggregator": "0x6091e64eb7138eef066a80fd3a0d7427b91f2721",
+              "phaseId": 1,
+              "feedDecimals": 8,
+              "currencyDecimals": 18,
+              "currencyMapping": "canonical_weth_reference",
+              "roundId": "18446744073709553686",
+              "answerRaw": "244780000000",
+              "answerStartedAt": 1788991726,
+              "answerUpdatedAt": 1788991738,
+              "answeredInRound": "18446744073709553686",
+              "publicationBlock": {
+                "number": 58892118,
+                "hash": "0x042a0aaed8e4cee8da5eefb0c1cc4e19cba9fe5299d05a78fa8acee3dea88940",
+                "timestamp": 1788991738
+              },
+              "precedingBlock": {
+                "number": 58892117,
+                "hash": "0xa3fae035809ec55b9428d1fef50c254a54e5b1381ffb22212ed0f080b75b344c",
+                "timestamp": 1788991738
+              },
+              "precedingRoundId": "18446744073709553685",
+              "timestampSemantics": "first_proven_publication_block",
+              "freshnessTimestamp": "answerUpdatedAt",
+              "targetPoolIndependenceVerified": false
+            }
+          },
+          {
+            "chainId": 4663,
+            "currency": "0x0bd7d308f8e1639fab988df18a8011f41eacad73",
+            "source": "chainlink_robinhood_standard_v1",
+            "timestamp": 1788995429,
+            "retrievedAt": 1789000887,
+            "priceUsd": "2460.15477204",
+            "provenance": {
+              "adapterVersion": 1,
+              "manifestSha256": "2ae1ea5f432cab06904134759033d7c6434c323171f954120c4933fdde42e85d",
+              "status": "external_observation_unqualified",
+              "provider": "chainlink",
+              "proxyRole": "standard",
+              "proxy": "0x78f3556b67e17df817d51ef5a990cdaf09e8d3a9",
+              "aggregator": "0x6091e64eb7138eef066a80fd3a0d7427b91f2721",
+              "phaseId": 1,
+              "feedDecimals": 8,
+              "currencyDecimals": 18,
+              "currencyMapping": "canonical_weth_reference",
+              "roundId": "18446744073709553687",
+              "answerRaw": "246015477204",
+              "answerStartedAt": 1788995417,
+              "answerUpdatedAt": 1788995429,
+              "answeredInRound": "18446744073709553687",
+              "publicationBlock": {
+                "number": 58928726,
+                "hash": "0x072561f4d0a4f78854fb94a281a7f54f56ece07f0143dafc8c70a41f085a6050",
+                "timestamp": 1788995429
+              },
+              "precedingBlock": {
+                "number": 58928725,
+                "hash": "0x6461d2fe220deff5c18ca1cc9fb6e584a5ed5ff8367e768fd926a79acb7a91bd",
+                "timestamp": 1788995429
+              },
+              "precedingRoundId": "18446744073709553686",
+              "timestampSemantics": "first_proven_publication_block",
+              "freshnessTimestamp": "answerUpdatedAt",
+              "targetPoolIndependenceVerified": false
+            }
+          }
+        ],
+        "snapshot": {
+          "number": 58982799,
+          "hash": "0x0a6c11001ec1881af7d4fe1cf6e90cbc4234c8a9f5e613a7d4a7dbe0f4bde376",
+          "timestamp": 1789000882
+        },
+        "feed": {
+          "proxy": "0x78f3556b67e17df817d51ef5a990cdaf09e8d3a9",
+          "aggregator": "0x6091e64eb7138eef066a80fd3a0d7427b91f2721",
+          "description": "ETH / USD",
+          "decimals": 8,
+          "phase": 1,
+          "source": "chainlink_robinhood_standard_v1",
+          "proxyRole": "standard",
+          "manifestSha256": "2ae1ea5f432cab06904134759033d7c6434c323171f954120c4933fdde42e85d",
+          "currency": "0x0bd7d308f8e1639fab988df18a8011f41eacad73",
+          "currencyDecimals": 18,
+          "configurationScope": "proxy_phase_asset_and_precision"
+        },
+        "coverage": {
+          "status": "observed_unqualified",
+          "startTimestamp": 1788914482,
+          "endTimestamp": 1789000882,
+          "endBlock": {
+            "number": 58982799,
+            "hash": "0x0a6c11001ec1881af7d4fe1cf6e90cbc4234c8a9f5e613a7d4a7dbe0f4bde376",
+            "timestamp": 1789000882
+          },
+          "precedingObservationIncluded": true,
+          "roundCount": 17,
+          "maxRounds": 64,
+          "phaseTraversal": false,
+          "publicationBlocksVerified": true,
+          "freshnessAssessed": false,
+          "sequencerHistoryAssessed": false,
+          "withinSecondOrderingSupported": false
+        }
+      },
+      "reference": {
+        "policy": "chainlink_robinhood_reference_analytics_v1",
+        "status": "reference_analytics_only",
+        "evidenceSha256": "b70d10e6032a4d871f98d65c857bf0197dd339a17418cd4854c3b06a2e253bc5",
+        "currency": "0x0bd7d308f8e1639fab988df18a8011f41eacad73",
+        "targetPool": "0x84bd4e2d8be11aeb0afc1195b38f587b61e90068548f1063fdbe448fb8cad0b6",
+        "poolKey": {
+          "currency0": "0x0bd7d308f8e1639fab988df18a8011f41eacad73",
+          "currency1": "0x5fc5360d0400a0fd4f2af552add042d716f1d168",
+          "fee_pips": 200,
+          "tick_spacing": 4,
+          "hooks": "0x0000000000000000000000000000000000000000"
+        },
+        "startTimestamp": 1788914482,
+        "endTimestamp": 1789000882,
+        "snapshot": {
+          "number": 58982799,
+          "hash": "0x0a6c11001ec1881af7d4fe1cf6e90cbc4234c8a9f5e613a7d4a7dbe0f4bde376",
+          "timestamp": 1789000882
+        },
+        "maxAgeSeconds": 86520,
+        "heartbeatSeconds": 86400,
+        "publicationGraceSeconds": 120,
+        "ageOrigin": "answerUpdatedAt",
+        "availability": "publication_timestamp_plus_one_second",
+        "coverage": "complete",
+        "canonicality": "proof_blocks_rechecked",
+        "priceKind": "external_cex_reference",
+        "isChainlinkSla": false,
+        "executionAvailable": false,
+        "productionQualified": false
+      },
+      "rpcRequests": 838,
+      "durationSeconds": 389.136,
+      "observationsSaved": true
+    },
+    {
+      "currency": "0x5fc5360d0400a0fd4f2af552add042d716f1d168",
+      "status": "reference_analytics_only",
+      "history": {
+        "observations": [
+          {
+            "chainId": 4663,
+            "currency": "0x5fc5360d0400a0fd4f2af552add042d716f1d168",
+            "source": "chainlink_robinhood_standard_v1",
+            "timestamp": 1788881513,
+            "retrievedAt": 1789000887,
+            "priceUsd": "0.99982823",
+            "provenance": {
+              "adapterVersion": 1,
+              "manifestSha256": "2ae1ea5f432cab06904134759033d7c6434c323171f954120c4933fdde42e85d",
+              "status": "external_observation_unqualified",
+              "provider": "chainlink",
+              "proxyRole": "standard",
+              "proxy": "0x61b7e5650328764b076a108eff5fa7282a1b9ad2",
+              "aggregator": "0x8beee3503f6860d5dac4ce26b5eee92982951c2e",
+              "phaseId": 1,
+              "feedDecimals": 8,
+              "currencyDecimals": 6,
+              "currencyMapping": "canonical_usdg_reference",
+              "roundId": "18446744073709551712",
+              "answerRaw": "99982823",
+              "answerStartedAt": 1788881501,
+              "answerUpdatedAt": 1788881513,
+              "answeredInRound": "18446744073709551712",
+              "publicationBlock": {
+                "number": 57799495,
+                "hash": "0x4e956c7959ee0c8adae0a1aa1bf2fcb43d3c2d55aca4c0e442939b1a9a79b0b0",
+                "timestamp": 1788881513
+              },
+              "precedingBlock": {
+                "number": 57799494,
+                "hash": "0xb0c1ebb627e92c32fe5ce106b0c24f9b8b5403810a1214d24045bb33d24b71c2",
+                "timestamp": 1788881513
+              },
+              "precedingRoundId": "18446744073709551711",
+              "timestampSemantics": "first_proven_publication_block",
+              "freshnessTimestamp": "answerUpdatedAt",
+              "targetPoolIndependenceVerified": false
+            }
+          },
+          {
+            "chainId": 4663,
+            "currency": "0x5fc5360d0400a0fd4f2af552add042d716f1d168",
+            "source": "chainlink_robinhood_standard_v1",
+            "timestamp": 1788967939,
+            "retrievedAt": 1789000887,
+            "priceUsd": "0.99985174",
+            "provenance": {
+              "adapterVersion": 1,
+              "manifestSha256": "2ae1ea5f432cab06904134759033d7c6434c323171f954120c4933fdde42e85d",
+              "status": "external_observation_unqualified",
+              "provider": "chainlink",
+              "proxyRole": "standard",
+              "proxy": "0x61b7e5650328764b076a108eff5fa7282a1b9ad2",
+              "aggregator": "0x8beee3503f6860d5dac4ce26b5eee92982951c2e",
+              "phaseId": 1,
+              "feedDecimals": 8,
+              "currencyDecimals": 6,
+              "currencyMapping": "canonical_usdg_reference",
+              "roundId": "18446744073709551713",
+              "answerRaw": "99985174",
+              "answerStartedAt": 1788967926,
+              "answerUpdatedAt": 1788967939,
+              "answeredInRound": "18446744073709551713",
+              "publicationBlock": {
+                "number": 58656077,
+                "hash": "0x6455d2a6f4be327337af746f5e67fc5ecbb57cc6d8a8045f1f8b40aa28f1dc00",
+                "timestamp": 1788967939
+              },
+              "precedingBlock": {
+                "number": 58656076,
+                "hash": "0xb34abec063b4addf4c1231fbce294b23317d113060aa80728e149cf7949b5e99",
+                "timestamp": 1788967939
+              },
+              "precedingRoundId": "18446744073709551712",
+              "timestampSemantics": "first_proven_publication_block",
+              "freshnessTimestamp": "answerUpdatedAt",
+              "targetPoolIndependenceVerified": false
+            }
+          }
+        ],
+        "snapshot": {
+          "number": 58982799,
+          "hash": "0x0a6c11001ec1881af7d4fe1cf6e90cbc4234c8a9f5e613a7d4a7dbe0f4bde376",
+          "timestamp": 1789000882
+        },
+        "feed": {
+          "proxy": "0x61b7e5650328764b076a108eff5fa7282a1b9ad2",
+          "aggregator": "0x8beee3503f6860d5dac4ce26b5eee92982951c2e",
+          "description": "USDG / USD",
+          "decimals": 8,
+          "phase": 1,
+          "source": "chainlink_robinhood_standard_v1",
+          "proxyRole": "standard",
+          "manifestSha256": "2ae1ea5f432cab06904134759033d7c6434c323171f954120c4933fdde42e85d",
+          "currency": "0x5fc5360d0400a0fd4f2af552add042d716f1d168",
+          "currencyDecimals": 6,
+          "configurationScope": "proxy_phase_asset_and_precision"
+        },
+        "coverage": {
+          "status": "observed_unqualified",
+          "startTimestamp": 1788914482,
+          "endTimestamp": 1789000882,
+          "endBlock": {
+            "number": 58982799,
+            "hash": "0x0a6c11001ec1881af7d4fe1cf6e90cbc4234c8a9f5e613a7d4a7dbe0f4bde376",
+            "timestamp": 1789000882
+          },
+          "precedingObservationIncluded": true,
+          "roundCount": 2,
+          "maxRounds": 64,
+          "phaseTraversal": false,
+          "publicationBlocksVerified": true,
+          "freshnessAssessed": false,
+          "sequencerHistoryAssessed": false,
+          "withinSecondOrderingSupported": false
+        }
+      },
+      "reference": {
+        "policy": "chainlink_robinhood_reference_analytics_v1",
+        "status": "reference_analytics_only",
+        "evidenceSha256": "e7dbfa87815bae841a164aaf207e8a6c3c4b946f95e35fea96c20e219943bf33",
+        "currency": "0x5fc5360d0400a0fd4f2af552add042d716f1d168",
+        "targetPool": "0x84bd4e2d8be11aeb0afc1195b38f587b61e90068548f1063fdbe448fb8cad0b6",
+        "poolKey": {
+          "currency0": "0x0bd7d308f8e1639fab988df18a8011f41eacad73",
+          "currency1": "0x5fc5360d0400a0fd4f2af552add042d716f1d168",
+          "fee_pips": 200,
+          "tick_spacing": 4,
+          "hooks": "0x0000000000000000000000000000000000000000"
+        },
+        "startTimestamp": 1788914482,
+        "endTimestamp": 1789000882,
+        "snapshot": {
+          "number": 58982799,
+          "hash": "0x0a6c11001ec1881af7d4fe1cf6e90cbc4234c8a9f5e613a7d4a7dbe0f4bde376",
+          "timestamp": 1789000882
+        },
+        "maxAgeSeconds": 86520,
+        "heartbeatSeconds": 86400,
+        "publicationGraceSeconds": 120,
+        "ageOrigin": "answerUpdatedAt",
+        "availability": "publication_timestamp_plus_one_second",
+        "coverage": "complete",
+        "canonicality": "proof_blocks_rechecked",
+        "priceKind": "external_cex_reference",
+        "isChainlinkSla": false,
+        "executionAvailable": false,
+        "productionQualified": false
+      },
+      "rpcRequests": 136,
+      "durationSeconds": 62.948,
+      "observationsSaved": true
+    }
+  ],
+  "referenceCoverageComplete": true,
+  "capitalHistoryAssessed": false,
+  "tvlUsd": null,
+  "feeApr24h": null,
+  "productionQualified": false,
+  "executionAvailable": false,
+  "transport": "configured_alchemy_rpc",
+  "walletAccessed": false
+}

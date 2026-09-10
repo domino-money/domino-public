@@ -18,6 +18,12 @@ def value_window(window, series, pool_id):
         raise DataError('qualified_usd_prices_required')
     if any(s.qualification.target_pool != pool_id for s in series):
         raise DataError('price_pool_independence_not_qualified')
+    reference_only = any(getattr(s.qualification, 'reference_only', False) for s in series)
+    if reference_only:
+        currencies = tuple(window.get('currencies', ()))
+        if (currencies != tuple(s.qualification.currency for s in series) or
+                any(getattr(s.qualification, 'currencies', None) != currencies for s in series)):
+            raise DataError('reference_price_pool_currencies_mismatch')
     seconds = window['end']-window['start']
     if seconds <= 0:
         raise DataError('zero_observed_duration')
@@ -49,12 +55,14 @@ def value_window(window, series, pool_id):
     complete = seconds == 86400
     reason = 'pool_younger_than_window' if not complete else ('zero_time_weighted_tvl' if average == 0 else None)
     apr = 100*365*fees/average if reason is None else None
-    return {'methodologyVersion': VERSION, 'status': 'qualified_historical_calculation',
+    return {'methodologyVersion': VERSION,
+            'status': 'reference_analytics_only' if reference_only else 'qualified_historical_calculation',
             'tvlUsd': decimal_string(tvl), 'timeWeightedAverageTvlUsd': decimal_string(average),
             'tradingLpFeesUsd': decimal_string(fees), 'grossInputVolumeUsd': decimal_string(volume),
             'feeAprPercent': decimal_string(apr) if apr is not None else None, 'feeAprReason': reason,
             'complete24h': complete, 'observedSeconds': seconds,
-            'priceConvention': 'causal_last_observation_with_qualified_max_age',
+            'priceConvention': ('publication_plus_one_second_and_answer_age_reference_policy' if reference_only
+                                else 'causal_last_observation_with_qualified_max_age'),
             'feeAprBasis': '365_times_full_day_trading_lp_fees_over_time_weighted_lp_assets',
             'annualizationDays': 365, 'isPositionApr': False, 'isApy': False,
             'includesDominoServiceFee': False, 'includesTokenPricePnl': False,

@@ -17,11 +17,34 @@ from catalogue import PgCatalogue
 from dev_postgres import ADMIN, BIN, PORT, SOCKET
 from discovery import DataError, ZERO
 from metrics_service import stored_metrics
-from price_history import SOURCE, store_observations
+from price_history import CHAINLINK_SOURCE, SOURCE, PriceQualification, load_price_series, store_observations
 from read_api import ReadGate, create_app
 from read_service import ReadService
 from test_discovery import POOL
 import test_position_accounting as position_tests
+
+
+def chainlink_price():
+    """Synthetic publication proof; it never populates a qualification registry."""
+    round_id = (1 << 64)+2
+    return {'chainId': 4663, 'currency': ZERO, 'source': CHAINLINK_SOURCE,
+            'timestamp': 1000, 'retrievedAt': 2000, 'priceUsd': '2000',
+            'provenance': {
+                'adapterVersion': 1, 'status': 'external_observation_unqualified',
+                'provider': 'chainlink', 'proxyRole': 'standard',
+                'proxy': '0x78f3556b67e17df817d51ef5a990cdaf09e8d3a9',
+                'aggregator': '0x6091e64eb7138eef066a80fd3a0d7427b91f2721',
+                'phaseId': 1, 'feedDecimals': 8, 'currencyDecimals': 18,
+                'currencyMapping': 'native_eth', 'roundId': str(round_id),
+                'manifestSha256': '2ae1ea5f432cab06904134759033d7c6434c323171f954120c4933fdde42e85d',
+                'answerRaw': '200000000000', 'answerStartedAt': 985, 'answerUpdatedAt': 990,
+                'answeredInRound': str(round_id),
+                'publicationBlock': {'number': 100, 'hash': '0x'+'01'*32, 'timestamp': 1000},
+                'precedingBlock': {'number': 99, 'hash': '0x'+'02'*32, 'timestamp': 999},
+                'precedingRoundId': str(round_id-1),
+                'timestampSemantics': 'first_proven_publication_block',
+                'freshnessTimestamp': 'answerUpdatedAt', 'targetPoolIndependenceVerified': False,
+            }}
 
 
 @unittest.skipUnless(os.environ.get('DOMINO_TEST_POSTGRES') == '1', 'requires disposable PostgreSQL databases')
@@ -139,8 +162,70 @@ class CapitalPostgresTests(unittest.TestCase):
         self.assertEqual(report['prices'][0]['status'], 'observed_unqualified')
         self.assertIsNone(report['valuation']['tvlUsd'])
 
+    def test_two_price_sources_coexist_and_qualified_reads_are_isolated(self):
+        # More than the load budget of unrelated observations cannot crowd out
+        # the exact qualified source, even at an overlapping currency/time key.
+        candidate = chainlink_price()
+        store_observations(self.catalogue, [candidate])
+        store_observations(self.catalogue, [{**self.price(), 'timestamp': at, 'priceUsd': '2500'}
+                                           for at in range(700, 1300)])
+        store_observations(self.catalogue, [{**self.price(), 'timestamp': 1300, 'priceUsd': '2500'}])
+        self.assertEqual(self.counts()[2], 602)
+        proof = PriceQualification(ZERO, 18, CHAINLINK_SOURCE, POOL, 'test_fixture_only')
+        with patch.dict('price_history.PRODUCTION_QUALIFICATIONS', {(POOL, ZERO): proof}, clear=True):
+            with self.catalogue.connection() as conn:
+                series, evidence = load_price_series(conn, POOL, [ZERO], 1000, 1300)
+        self.assertEqual(series[0].at(1000), 2000)
+        self.assertEqual(evidence[0]['observations'], 1)
+        self.assertEqual(evidence[0]['observedSources'], [CHAINLINK_SOURCE])
+        self.assertEqual(evidence[0]['coverage']['status'], 'complete')
+
+    def test_chainlink_proof_revisions_require_review_and_retry_is_idempotent(self):
+        original = chainlink_price()
+        store_observations(self.catalogue, [original])
+        store_observations(self.catalogue, [{**original, 'retrievedAt': 2100}])
+        for field in ('hash', 'timestamp'):
+            bad = copy.deepcopy(original)
+            if field == 'hash':
+                bad['provenance']['publicationBlock']['hash'] = '0x'+'03'*32
+                error = 'revision_requires_review'
+            else:
+                bad['provenance']['publicationBlock']['timestamp'] = 1001
+                error = 'chainlink'
+            with self.subTest(field=field), self.assertRaisesRegex(DataError, error):
+                store_observations(self.catalogue, [bad])
+        with self.catalogue.connection() as conn:
+            stored = conn.execute('SELECT retrieved_at,provenance FROM domino_activity.price_observations').fetchone()
+        self.assertEqual(stored, {'retrieved_at': 2000, 'provenance': original['provenance']})
+
+    def test_chainlink_rows_cannot_self_promote_in_application_or_database(self):
+        bad = chainlink_price();bad['provenance']['status'] = 'qualified'
+        with self.assertRaisesRegex(DataError, 'invalid_price_observation'):
+            store_observations(self.catalogue, [bad])
+        store_observations(self.catalogue, [chainlink_price()])
+        with self.catalogue.connection(writer=True) as conn:
+            with self.assertRaises(psycopg.errors.CheckViolation):
+                conn.execute("UPDATE domino_activity.price_observations SET provenance=jsonb_set(provenance,'{status}','\"qualified\"')")
+        with self.catalogue.connection() as conn:
+            series, evidence = load_price_series(conn, POOL, [ZERO], 1000, 1100)
+        self.assertEqual(series, [None])
+        self.assertEqual(evidence[0]['status'], 'observed_unqualified')
+        self.assertEqual(evidence[0]['sourceQualification'], 'unqualified')
+
+    def test_chainlink_migration_reapplies_and_rejects_missing_proof(self):
+        store_observations(self.catalogue, [self.price(), chainlink_price()])
+        migration = Path(__file__).resolve().parents[1]/'migrations/006_chainlink_prices.sql'
+        with psycopg.connect(**self.settings, user=ADMIN) as conn:
+            conn.execute(migration.read_text());conn.execute(migration.read_text())
+        self.assertEqual(self.counts()[2], 2)
+        for proof in ('{}', '{"publicationBlock":{"timestamp":1001}}'):
+            with self.subTest(proof=proof), self.catalogue.connection(writer=True) as conn:
+                with self.assertRaises(psycopg.errors.CheckViolation):
+                    conn.execute('UPDATE domino_activity.price_observations SET provenance=%s::jsonb WHERE source=%s',
+                                 (proof, CHAINLINK_SOURCE))
+
     def test_dump_restore_and_reader_grants_cover_both_histories(self):
-        self.capital.step(POOL);store_observations(self.catalogue, [self.price()])
+        self.capital.step(POOL);store_observations(self.catalogue, [self.price(), chainlink_price()])
         before = stored_metrics(self.catalogue, POOL)
         with tempfile.TemporaryDirectory() as folder:
             archive = Path(folder)/'capital.dump';common = ['-h', str(SOCKET), '-p', str(PORT), '-U', ADMIN]
@@ -148,6 +233,10 @@ class CapitalPostgresTests(unittest.TestCase):
             subprocess.run([str(BIN/'pg_restore'), *common, '-d', 'domino_catalogue_restore_tests', '--clean', '--if-exists', '--exit-on-error', str(archive)], check=True, capture_output=True)
         restored = PgCatalogue({**self.settings, 'dbname': 'domino_catalogue_restore_tests'})
         self.assertEqual(stored_metrics(restored, POOL), before)
+        with restored.connection() as conn:
+            observations = conn.execute('SELECT source,provenance FROM domino_activity.price_observations ORDER BY source').fetchall()
+        self.assertEqual(observations, [{'source': SOURCE, 'provenance': self.price()['provenance']},
+                                       {'source': CHAINLINK_SOURCE, 'provenance': chainlink_price()['provenance']}])
         for table in ('capital_events', 'capital_chunks', 'price_observations'):
             with psycopg.connect(**self.settings, user='domino_catalogue_reader') as conn:
                 with self.assertRaises(psycopg.errors.InsufficientPrivilege): conn.execute('DELETE FROM domino_activity.'+table)

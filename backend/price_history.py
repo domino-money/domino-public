@@ -14,6 +14,8 @@ from discovery import CHAIN_ID, ZERO, DataError, address, bytes32, decimal_metri
 from inventory import inventory_endpoint
 
 SOURCE = 'alchemy_historical'
+CHAINLINK_SOURCE = 'chainlink_robinhood_standard_v1'
+OBSERVATION_SOURCES = (SOURCE, CHAINLINK_SOURCE)
 INTERVAL_SECONDS = 300
 MAX_PRICE_ROWS = 600
 
@@ -101,21 +103,29 @@ def store_observations(catalogue, rows):
         raise DataError('price_observation_budget_exhausted')
     with catalogue.connection(writer=True, lock=True) as conn:
         for row in rows:
-            currency = address(row['currency']);usd(row['priceUsd'])
-            if (row['chainId'] != CHAIN_ID or row['source'] != SOURCE or
-                    type(row['timestamp']) is not int or type(row['retrievedAt']) is not int or
-                    not 0 <= row['timestamp'] <= row['retrievedAt'] or
+            if (not isinstance(row, dict) or type(row.get('chainId')) is not int or
+                    row['chainId'] != CHAIN_ID or row.get('source') not in OBSERVATION_SOURCES or
+                    type(row.get('timestamp')) is not int or type(row.get('retrievedAt')) is not int or
+                    not 0 <= row['timestamp'] <= row['retrievedAt'] < 2**63 or
+                    not isinstance(row.get('provenance'), dict) or
                     row['provenance'].get('status') != 'external_observation_unqualified'):
                 raise DataError('invalid_price_observation')
+            currency = address(row.get('currency'));usd(row.get('priceUsd'))
+            source = row['source']
+            if source == CHAINLINK_SOURCE:
+                # Source evidence is validated independently of an observation's
+                # flags. Storing it does not create a production qualification.
+                from chainlink_reference import validate_observation
+                validate_observation(row)
             previous = conn.execute('''SELECT price_usd,provenance FROM domino_activity.price_observations
               WHERE chain_id=%s AND currency=%s AND source=%s AND observed_at=%s''',
-              (CHAIN_ID, currency, SOURCE, row['timestamp'])).fetchone()
+              (CHAIN_ID, currency, source, row['timestamp'])).fetchone()
             if previous:
                 if usd(previous['price_usd']) != usd(row['priceUsd']) or previous['provenance'] != row['provenance']:
                     raise DataError('stored_price_revision_requires_review')
                 continue
             conn.execute('INSERT INTO domino_activity.price_observations VALUES(%s,%s,%s,%s,%s,%s,%s)',
-                (CHAIN_ID, currency, SOURCE, row['timestamp'], row['retrievedAt'], row['priceUsd'], Jsonb(row['provenance'])))
+                (CHAIN_ID, currency, source, row['timestamp'], row['retrievedAt'], row['priceUsd'], Jsonb(row['provenance'])))
 
 
 @dataclass(frozen=True)
@@ -190,13 +200,18 @@ class PriceSeries:
 def load_price_series(conn, pool_id, currencies, start, end):
     series, evidence = [], []
     for currency in currencies:
+        qualification = PRODUCTION_QUALIFICATIONS.get((pool_id, currency))
+        sources = [qualification.source] if qualification else list(OBSERVATION_SOURCES)
+        lookback = qualification.max_age if qualification else 300
         rows = conn.execute('''SELECT chain_id AS "chainId",currency,source,observed_at AS timestamp,
           retrieved_at AS "retrievedAt",price_usd AS "priceUsd",provenance FROM domino_activity.price_observations
-          WHERE currency=%s AND observed_at>=%s AND observed_at<=%s ORDER BY observed_at LIMIT 601''',
-          (currency, max(0, start-300), end)).fetchall()
+          WHERE chain_id=%s AND currency=%s AND source=ANY(%s)
+          AND observed_at>=%s AND observed_at<=%s ORDER BY observed_at,source LIMIT 601''',
+          (CHAIN_ID, currency, sources, max(0, start-lookback), end)).fetchall()
         if len(rows) > MAX_PRICE_ROWS:
             raise DataError('price_observation_budget_exhausted')
-        qualification = PRODUCTION_QUALIFICATIONS.get((pool_id, currency))
+        # Multiple candidates may be counted for diagnostics. Their values are
+        # never combined: constructing a series requires one code-owned source.
         price_series = PriceSeries(qualification, rows) if qualification else None
         status = 'observed_unqualified' if rows else 'unavailable'
         reason = 'price_source_quality_not_qualified' if rows else 'price_history_missing'
@@ -213,6 +228,7 @@ def load_price_series(conn, pool_id, currencies, start, end):
             else:
                 status, reason, coverage = 'qualified', None, 'complete'
         evidence.append({'currency': currency, 'observations': len(rows),
+            'observedSources': sorted({row['source'] for row in rows}),
             'firstTimestamp': rows[0]['timestamp'] if rows else None,
             'lastTimestamp': rows[-1]['timestamp'] if rows else None,
             'status': status, 'reason': reason,

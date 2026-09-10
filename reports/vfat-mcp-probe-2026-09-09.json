@@ -1,0 +1,928 @@
+{
+  "schemaVersion": 1,
+  "mode": "bounded_public_read_only_provider_probe",
+  "localDate": "2026-09-09",
+  "localTimezone": "America/Sao_Paulo",
+  "responseAsOfRangeUtc": {
+    "first": "2026-09-10T00:21:05.548Z",
+    "last": "2026-09-10T00:22:10.691Z"
+  },
+  "mcpEndpoint": "https://mcp.vfat.io/mcp",
+  "discovery": {
+    "protocolVersion": "2025-03-26",
+    "serverInfo": {
+      "name": "vfat-mcp-server",
+      "version": "0.2.0",
+      "websiteUrl": "https://vfat.io"
+    },
+    "toolCount": 28,
+    "toolNames": [
+      "list_supported_chains",
+      "list_supported_protocols",
+      "get_token_metadata",
+      "search_yield_opportunities",
+      "get_yield_opportunity",
+      "get_pool_history",
+      "get_position_performance",
+      "get_position_performance_history",
+      "get_wallet_portfolio",
+      "get_position_activity",
+      "get_vfat_service_status",
+      "quote_swap",
+      "quote_bridge",
+      "get_bridge_status",
+      "quote_harvest",
+      "quote_exit",
+      "quote_rebalance",
+      "quote_deposit",
+      "quote_increase",
+      "quote_decrease",
+      "quote_withdraw",
+      "quote_move",
+      "prepare_deposit",
+      "estimate_automation_threshold",
+      "estimate_manual_action_gas",
+      "search_vfat_api",
+      "get_vfat_api_operation",
+      "generate_vfat_api_example"
+    ],
+    "poolHistoryTool": {
+      "description": "Reads scheduled pool analytics for the last 30 closed UTC days. Includes price, volume, fees, liquidity, volatility, verified Uniswap V3/V4 fee growth, and preparation/coverage status. Missing data never triggers live backfilling.",
+      "bucketSchema": {
+        "default": "day",
+        "description": "Prepared history covers only the last 30 closed UTC days.",
+        "type": "string",
+        "const": "day"
+      }
+    }
+  },
+  "calls": [
+    {
+      "tool": "list_supported_chains",
+      "arguments": {},
+      "source": "https://api.vfat.io/v4/chains",
+      "asOf": "2026-09-10T00:21:05.548Z",
+      "requestId": "a46d7cc7-9057-45bd-ac74-e7c4164c3ec7",
+      "data": {
+        "returnedChainCount": 36,
+        "selectedChain": {
+          "chainId": 4663,
+          "chainName": "Robinhood",
+          "nativeCurrency": {
+            "name": "Ether",
+            "symbol": "ETH",
+            "decimals": 18,
+            "address": "0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+          },
+          "wrappedNativeToken": {
+            "name": "Wrapped Ether",
+            "symbol": "WETH",
+            "address": "0x0bd7d308f8e1639fab988df18a8011f41eacad73",
+            "decimals": 18
+          },
+          "blockExplorerUrls": [
+            "https://robinhoodchain.blockscout.com"
+          ],
+          "blockTime": 0.1,
+          "swapSupported": true
+        }
+      },
+      "rawResponseSha256": "a8db79bb94e7ca2d20afa0f7eec9b17086079206e67bd06a1f7950d7f5d67d19"
+    },
+    {
+      "tool": "get_vfat_service_status",
+      "arguments": {},
+      "source": "https://api.vfat.io",
+      "asOf": "2026-09-10T00:21:05.681Z",
+      "requestId": "7f3fb211-4d96-430c-b193-a176c91862a0",
+      "data": {
+        "dataApi": {
+          "status": "ok",
+          "uptimeSec": 13789,
+          "checks": {
+            "redis": {
+              "ok": true
+            },
+            "support-reports-redis": {
+              "ok": true
+            },
+            "db": {
+              "ok": true
+            }
+          }
+        },
+        "quoteApi": {
+          "status": "ok",
+          "uptimeSec": 13810,
+          "checks": {
+            "redis": {
+              "ok": true
+            }
+          }
+        },
+        "aggregation": {
+          "chainCount": 36,
+          "delayedChainCount": 1,
+          "delayedChains": [
+            {
+              "chainId": 10,
+              "blockLag": 4091,
+              "timeLagSeconds": 8182,
+              "laggingPipeline": "token-balances",
+              "computedAt": "2026-09-10T00:21:00.246Z"
+            }
+          ],
+          "computedAt": "2026-09-10T00:21:00.246Z"
+        }
+      },
+      "rawResponseSha256": "fae8afc8702d762a6e811e555644f76bcb02f7e8cb9023ad839983cc22b1d5b6"
+    },
+    {
+      "tool": "list_supported_protocols",
+      "arguments": {},
+      "source": "https://mcp.vfat.io/mcp",
+      "asOf": null,
+      "asOfNote": "Error response supplied no asOf timestamp. Collected in the same bounded probe session.",
+      "isError": true,
+      "error": "Upstream request failed: rate_limited (request c31f5687-0203-41e7-ae84-0269ca28439c)",
+      "rawResponseSha256": "d8d4190b02344713c0cfe48a0ba7703781f592118c2a7887459f1f8c89732d5f"
+    },
+    {
+      "tool": "search_yield_opportunities",
+      "arguments": {
+        "chainIds": [
+          4663
+        ],
+        "pageSize": 2
+      },
+      "source": "https://api.vfat.io/v4/yield-opportunities",
+      "asOf": "2026-09-10T00:21:06.276Z",
+      "requestId": "84174e35-4f78-4e3e-ad05-45c799dad949",
+      "data": {
+        "total": 1836,
+        "searchTotal": 22621,
+        "page": 1,
+        "pageSize": 2,
+        "hasNextPage": true,
+        "items": [
+          {
+            "chainId": 4663,
+            "pool": {
+              "address": "0x52e65b17fb6e5ba00ed806f37afcd2daa50271ca",
+              "symbol": "UNI-V3",
+              "type": "concentrated",
+              "currentFee": 100,
+              "tick": -198215,
+              "tickSpacing": 1,
+              "underlying": [
+                {
+                  "address": "0x0bd7d308f8e1639fab988df18a8011f41eacad73",
+                  "symbol": "WETH",
+                  "decimals": 18,
+                  "price": 2469.9079
+                },
+                {
+                  "address": "0x5fc5360d0400a0fd4f2af552add042d716f1d168",
+                  "symbol": "USDG",
+                  "decimals": 6,
+                  "price": 0.99980827
+                }
+              ]
+            },
+            "options": [
+              {
+                "id": "4663:0x52e65b17fb6e5ba00ed806f37afcd2daa50271ca:0x52e65b17fb6e5ba00ed806f37afcd2daa50271ca:poolId=:poolIndex=",
+                "kind": "lp",
+                "type": "UNISWAP_V3",
+                "address": "0x52e65b17fb6e5ba00ed806f37afcd2daa50271ca",
+                "protocol": {
+                  "id": "uniswap",
+                  "name": "Uniswap"
+                },
+                "totalLiquidity": 32107692.057753023,
+                "activeLiquidity": 31643331.656176828,
+                "inRangeLiquidity": 26177.294816045604,
+                "apr": 61.26637438521022,
+                "avgApr": 61.26637438521022,
+                "maxApr": 74059.30282965594,
+                "aprBasis": {
+                  "feeWindowDays": 7,
+                  "effectiveFeeWindowDays": 7,
+                  "clippedByPoolAge": false,
+                  "components": [
+                    {
+                      "kind": "swapFees",
+                      "aprPercent": 61.26637438521022,
+                      "denominator": "activePoolLiquidity",
+                      "assumesFullTimeInRange": true
+                    }
+                  ],
+                  "assumesFullTimeInRange": true,
+                  "containsSourcePublishedApr": false
+                }
+              }
+            ]
+          },
+          {
+            "chainId": 4663,
+            "pool": {
+              "address": "0x8366a39cc670b4001a1121b8f6a443a643e40951",
+              "symbol": "UNI-V4",
+              "createdAt": "2026-07-14T07:28:30.000Z",
+              "type": "concentrated",
+              "currentFee": 3000,
+              "tick": -209927,
+              "tickSpacing": 60,
+              "poolId": "0xfe2a80bb5618fd14984b92ca6d45bf5ba67443ddb1435e28b2e48df2fc1526cd",
+              "underlying": [
+                {
+                  "address": "0x117cc2133c37b721f49de2a7a74833232b3b4c0c",
+                  "symbol": "SPY",
+                  "decimals": 18,
+                  "price": 763.5620409087729
+                },
+                {
+                  "address": "0x5fc5360d0400a0fd4f2af552add042d716f1d168",
+                  "symbol": "USDG",
+                  "decimals": 6,
+                  "price": 0.99980827
+                }
+              ]
+            },
+            "options": [
+              {
+                "id": "4663:0x8366a39cc670b4001a1121b8f6a443a643e40951:0x8366a39cc670b4001a1121b8f6a443a643e40951:poolId=0xfe2a80bb5618fd14984b92ca6d45bf5ba67443ddb1435e28b2e48df2fc1526cd:poolIndex=",
+                "kind": "lp",
+                "type": "UNISWAP_V4",
+                "address": "0x8366a39cc670b4001a1121b8f6a443a643e40951",
+                "protocol": {
+                  "id": "uniswap_v4",
+                  "name": "Uniswap V4"
+                },
+                "totalLiquidity": 9109616.106889788,
+                "activeLiquidity": 7745317.591749184,
+                "inRangeLiquidity": 3789537.5834716423,
+                "apr": 63.49517363582856,
+                "avgApr": 63.49517363582856,
+                "maxApr": 129.77580364890238,
+                "aprBasis": {
+                  "feeWindowDays": 7,
+                  "effectiveFeeWindowDays": 7,
+                  "clippedByPoolAge": false,
+                  "components": [
+                    {
+                      "kind": "swapFees",
+                      "aprPercent": 63.49517363582856,
+                      "denominator": "activePoolLiquidity",
+                      "assumesFullTimeInRange": true
+                    }
+                  ],
+                  "assumesFullTimeInRange": true,
+                  "containsSourcePublishedApr": false
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "rawResponseSha256": "11f5c7654e26ab6cfe4aa3a9522e09b6654feeead66895981da91e4c6bb75a78"
+    },
+    {
+      "tool": "search_yield_opportunities",
+      "arguments": {
+        "chainIds": [
+          4663
+        ],
+        "protocols": [
+          "uniswap_v4"
+        ],
+        "search": "MARLIN",
+        "pageSize": 3
+      },
+      "source": "https://api.vfat.io/v4/yield-opportunities",
+      "asOf": "2026-09-10T00:21:29.834Z",
+      "requestId": "65a2c923-12cf-4b10-9e56-10a7adae0a1c",
+      "data": {
+        "items": [],
+        "total": 0,
+        "searchTotal": 0,
+        "page": 1,
+        "pageSize": 3,
+        "hasNextPage": false
+      },
+      "rawResponseSha256": "19f56076d2f1b4cea264158ef43cd7f15c7b1ddaae9a2785d854941753d2b092"
+    },
+    {
+      "tool": "search_yield_opportunities",
+      "arguments": {
+        "chainIds": [
+          4663
+        ],
+        "search": "MARLIN",
+        "pageSize": 3
+      },
+      "source": "https://api.vfat.io/v4/yield-opportunities",
+      "asOf": "2026-09-10T00:21:49.408Z",
+      "requestId": "13c5ceca-5546-48b1-9fda-1308b0ed397b",
+      "data": {
+        "items": [],
+        "total": 0,
+        "searchTotal": 0,
+        "page": 1,
+        "pageSize": 3,
+        "hasNextPage": false
+      },
+      "rawResponseSha256": "206829283e58ee490e9521583b4c9fc3b1f597db381dc88bb1f7c1b96deae2ab"
+    },
+    {
+      "tool": "get_pool_history",
+      "arguments": {
+        "id": "4663:0x8366a39cc670b4001a1121b8f6a443a643e40951:0x8366a39cc670b4001a1121b8f6a443a643e40951:poolId=0xfe2a80bb5618fd14984b92ca6d45bf5ba67443ddb1435e28b2e48df2fc1526cd:poolIndex=",
+        "limit": 2
+      },
+      "source": "https://api.vfat.io/v4/pool-history",
+      "asOf": "2026-09-10T00:21:47.264Z",
+      "requestId": "d0a52307-7db1-4945-9f62-3d063dbcab2b",
+      "data": {
+        "opportunityId": "4663:0x8366a39cc670b4001a1121b8f6a443a643e40951:0x8366a39cc670b4001a1121b8f6a443a643e40951:poolId=0xfe2a80bb5618fd14984b92ca6d45bf5ba67443ddb1435e28b2e48df2fc1526cd:poolIndex=",
+        "chainId": 4663,
+        "poolAddress": "0x8366a39cc670b4001a1121b8f6a443a643e40951",
+        "poolId": "0xfe2a80bb5618fd14984b92ca6d45bf5ba67443ddb1435e28b2e48df2fc1526cd",
+        "token0": {
+          "address": "0x117cc2133c37b721f49de2a7a74833232b3b4c0c",
+          "symbol": "SPY",
+          "decimals": 18
+        },
+        "token1": {
+          "address": "0x5fc5360d0400a0fd4f2af552add042d716f1d168",
+          "symbol": "USDG",
+          "decimals": 6
+        },
+        "bucket": "day",
+        "from": "2026-08-11T00:00:00.000Z",
+        "to": "2026-09-09T00:00:00.000Z",
+        "activityStatus": "available",
+        "activitySource": "uniswap-v4",
+        "activityCompleteness": "unverified",
+        "activityTrustedFrom": "2026-06-13T00:00:00.000Z",
+        "tvlSource": "metrics-farm-snapshots",
+        "feeGrowthStatus": {
+          "quality": "partial",
+          "source": "uniswap-v4",
+          "throughBlock": "57964866",
+          "throughTimestamp": "2026-09-08T20:09:55.000Z",
+          "unavailableReason": "history_not_prepared"
+        },
+        "preparation": {
+          "activity": {
+            "status": "ready",
+            "checkedBuckets": 30,
+            "expectedBuckets": 30,
+            "oldestPreparedAt": "2026-09-09T00:30:09.358Z",
+            "lastAttemptAt": "2026-09-10T00:21:47.052Z"
+          },
+          "metrics": {
+            "status": "ready",
+            "checkedBuckets": 30,
+            "expectedBuckets": 30,
+            "oldestPreparedAt": "2026-09-09T20:15:02.527Z",
+            "lastAttemptAt": "2026-09-10T00:06:02.246Z"
+          },
+          "feeGrowth": {
+            "status": "backfilling",
+            "checkedBuckets": 29,
+            "expectedBuckets": 30,
+            "oldestPreparedAt": "2026-09-08T20:10:28.258Z",
+            "lastAttemptAt": "2026-09-09T19:25:10.852Z"
+          }
+        },
+        "warnings": [
+          "Scheduled fee growth backfill is incomplete (29/30 buckets checked).",
+          "Fee-growth replay has not fully covered and closed the requested range."
+        ],
+        "truncated": true,
+        "summary": {
+          "pointCount": 2,
+          "availablePointCount": 30,
+          "expectedPointCount": 30,
+          "pointObservationCoveragePercent": 100,
+          "priceObservationCoveragePercent": 100,
+          "activityObservationCoveragePercent": 100,
+          "tvlObservationCoveragePercent": 100,
+          "lpFeesObservationCoveragePercent": 100,
+          "latestObservedPointTimestamp": "2026-09-09T00:00:00.000Z",
+          "activityDataThrough": "2026-09-09T00:00:00.000Z",
+          "volumeDataThrough": "2026-09-09T00:00:00.000Z",
+          "lpFeesDataThrough": "2026-09-09T00:00:00.000Z",
+          "latestObservedTvlUsd": 9108529.538296033,
+          "latestObservedTvlTimestamp": "2026-09-09T23:00:00.000Z",
+          "observedAverageTvlUsd": 2845284.186063318,
+          "averageTvlUsd": 2845284.186063318,
+          "observedVolumeUsd": 62291480.576739974,
+          "observedLpFeesUsd": 186749.8584278254
+        },
+        "points": [
+          {
+            "timestamp": "2026-09-08T00:00:00.000Z",
+            "snapshotObservedAt": "2026-09-08T23:00:00.000Z",
+            "feeDataQuality": "resolved",
+            "valuationQuality": "complete",
+            "volumeToken0": "5151524038982106718339",
+            "volumeToken1": "1728180568767",
+            "volumeUsd": 5683377.8914383985,
+            "lpFeesToken0": "15444269068868355929",
+            "lpFeesToken1": "5181085334",
+            "lpFeesUsd": 17038.766907370748,
+            "averageLiquidity": "54917068621555050000",
+            "swapCount": 17798,
+            "firstBlockNumber": "57245377",
+            "lastBlockNumber": "58102173",
+            "feeGrowthResolved": true,
+            "feeGrowthClosed": true,
+            "feeGrowthFirstBlockNumber": "57245377",
+            "feeGrowthLastBlockNumber": "58101661",
+            "tvlUsd": 8323680.210935421,
+            "activeTvlUsd": 8065728.154485766,
+            "inRangeTvlUsd": 4275373.090207126,
+            "aprPercent": 67.97995939335557,
+            "lpAprPercent": 67.97995939335557
+          },
+          {
+            "timestamp": "2026-09-09T00:00:00.000Z",
+            "snapshotObservedAt": "2026-09-09T23:00:00.000Z",
+            "feeDataQuality": "resolved",
+            "valuationQuality": "complete",
+            "volumeToken0": "3889480070663888471011",
+            "volumeToken1": "590752596626",
+            "volumeUsd": 3560039.3986979364,
+            "lpFeesToken0": "11660661251850337617",
+            "lpFeesToken1": "1771076273",
+            "lpFeesUsd": 10672.998105613906,
+            "averageLiquidity": "43838931598554630000",
+            "swapCount": 11551,
+            "firstBlockNumber": "58102042",
+            "lastBlockNumber": "58960319",
+            "tvlUsd": 9108529.538296033,
+            "activeTvlUsd": 7744441.414814957,
+            "inRangeTvlUsd": 3789088.350601064,
+            "aprPercent": 63.56460118232715,
+            "lpAprPercent": 63.56460118232715
+          }
+        ]
+      },
+      "rawResponseSha256": "6945c0b7445418915d4750b6a6a302a29c41fa95dc47b822ede27a9b90d7cc78"
+    },
+    {
+      "tool": "get_token_metadata",
+      "arguments": {
+        "chainId": 4663,
+        "addresses": [
+          "0xab35d04e1ee39c789c4a65d522417b3c7f2e4723",
+          "0x0bd7d308f8e1639fab988df18a8011f41eacad73",
+          "0x5fc5360d0400a0fd4f2af552add042d716f1d168"
+        ]
+      },
+      "source": "https://api.vfat.io/v4/token",
+      "asOf": "2026-09-10T00:22:10.245Z",
+      "requestId": "3d623377-ff6b-4182-9c90-b384f722706c",
+      "data": [
+        {
+          "chainId": 4663,
+          "address": "0x0bd7d308f8e1639fab988df18a8011f41eacad73",
+          "symbol": "WETH",
+          "decimals": 18,
+          "name": "WETH",
+          "price": 2469.9079,
+          "distanceToOracle": 0,
+          "oracleAddress": "0x5f4ec3df9cbd43714fe2740f5e3616155c5b8419",
+          "priceTokenAddress": null,
+          "priceHistory24h": [
+            {
+              "timestampUtc": "2026-09-09T00:00:00.000Z",
+              "price": 2486.08
+            },
+            {
+              "timestampUtc": "2026-09-09T01:00:00.000Z",
+              "price": 2494.51
+            },
+            {
+              "timestampUtc": "2026-09-09T03:00:00.000Z",
+              "price": 2494.61
+            },
+            {
+              "timestampUtc": "2026-09-09T04:00:00.000Z",
+              "price": 2487.46
+            },
+            {
+              "timestampUtc": "2026-09-09T05:00:00.000Z",
+              "price": 2501.6
+            },
+            {
+              "timestampUtc": "2026-09-09T06:00:00.000Z",
+              "price": 2491.46
+            },
+            {
+              "timestampUtc": "2026-09-09T07:00:00.000Z",
+              "price": 2503.96
+            },
+            {
+              "timestampUtc": "2026-09-09T08:00:00.000Z",
+              "price": 2511.25
+            },
+            {
+              "timestampUtc": "2026-09-09T09:00:00.000Z",
+              "price": 2510.1
+            },
+            {
+              "timestampUtc": "2026-09-09T10:00:00.000Z",
+              "price": 2492.36
+            },
+            {
+              "timestampUtc": "2026-09-09T11:00:00.000Z",
+              "price": 2484.96
+            },
+            {
+              "timestampUtc": "2026-09-09T12:00:00.000Z",
+              "price": 2498.25
+            },
+            {
+              "timestampUtc": "2026-09-09T13:00:00.000Z",
+              "price": 2511.52
+            },
+            {
+              "timestampUtc": "2026-09-09T16:00:00.000Z",
+              "price": 2495.3
+            },
+            {
+              "timestampUtc": "2026-09-09T20:00:00.000Z",
+              "price": 2466.15
+            },
+            {
+              "timestampUtc": "2026-09-09T22:00:00.000Z",
+              "price": 2444.7
+            },
+            {
+              "timestampUtc": "2026-09-09T23:00:00.000Z",
+              "price": 2457.41
+            },
+            {
+              "timestampUtc": "2026-09-10T00:00:00.000Z",
+              "price": 2457.41
+            }
+          ]
+        },
+        {
+          "chainId": 4663,
+          "address": "0x5fc5360d0400a0fd4f2af552add042d716f1d168",
+          "symbol": "USDG",
+          "decimals": 6,
+          "name": "Global Dollar",
+          "price": 0.99980827,
+          "distanceToOracle": 0,
+          "oracleAddress": "0x3e7d1eab13ad0104d2750b8863b489d65364e32d",
+          "priceTokenAddress": null,
+          "priceHistory24h": [
+            {
+              "timestampUtc": "2026-09-09T00:00:00.000Z",
+              "price": 0.99983
+            },
+            {
+              "timestampUtc": "2026-09-09T01:00:00.000Z",
+              "price": 0.99983
+            },
+            {
+              "timestampUtc": "2026-09-09T03:00:00.000Z",
+              "price": 0.99983
+            },
+            {
+              "timestampUtc": "2026-09-09T04:00:00.000Z",
+              "price": 0.99983
+            },
+            {
+              "timestampUtc": "2026-09-09T05:00:00.000Z",
+              "price": 0.99983
+            },
+            {
+              "timestampUtc": "2026-09-09T06:00:00.000Z",
+              "price": 0.99983
+            },
+            {
+              "timestampUtc": "2026-09-09T07:00:00.000Z",
+              "price": 0.99983
+            },
+            {
+              "timestampUtc": "2026-09-09T08:00:00.000Z",
+              "price": 0.99983
+            },
+            {
+              "timestampUtc": "2026-09-09T09:00:00.000Z",
+              "price": 0.99983
+            },
+            {
+              "timestampUtc": "2026-09-09T10:00:00.000Z",
+              "price": 0.99983
+            },
+            {
+              "timestampUtc": "2026-09-09T11:00:00.000Z",
+              "price": 0.99983
+            },
+            {
+              "timestampUtc": "2026-09-09T12:00:00.000Z",
+              "price": 0.99983
+            },
+            {
+              "timestampUtc": "2026-09-09T13:00:00.000Z",
+              "price": 0.99983
+            },
+            {
+              "timestampUtc": "2026-09-09T16:00:00.000Z",
+              "price": 0.99983
+            },
+            {
+              "timestampUtc": "2026-09-09T20:00:00.000Z",
+              "price": 0.99981
+            },
+            {
+              "timestampUtc": "2026-09-09T22:00:00.000Z",
+              "price": 0.99981
+            },
+            {
+              "timestampUtc": "2026-09-09T23:00:00.000Z",
+              "price": 0.99981
+            },
+            {
+              "timestampUtc": "2026-09-10T00:00:00.000Z",
+              "price": 0.99981
+            }
+          ]
+        }
+      ],
+      "rawResponseSha256": "f3615b08ea6c3cd972a1bbcb9010eab0e4442ff52922c1947b72abd40656eb1e"
+    },
+    {
+      "tool": "search_vfat_api",
+      "arguments": {
+        "query": "pool history",
+        "service": "data",
+        "limit": 5
+      },
+      "source": "https://mcp.vfat.io",
+      "asOf": "2026-09-10T00:21:50.124Z",
+      "requestId": "69903b19-7430-4155-af3d-8057f8722e28",
+      "data": {
+        "count": 5,
+        "operations": [
+          {
+            "service": "data",
+            "operationId": "getPoolHistory",
+            "method": "GET",
+            "path": "/v4/pool-history",
+            "summary": "Prepared daily price, volume, fees, liquidity, and TVL for the last 30 closed days",
+            "tags": [
+              "analytics"
+            ]
+          },
+          {
+            "service": "data",
+            "operationId": "getPoolTickLiquidity",
+            "method": "GET",
+            "path": "/v4/pool-tick-liquidity",
+            "summary": "Pool tick liquidity",
+            "tags": [
+              "liquidity"
+            ]
+          },
+          {
+            "service": "data",
+            "operationId": "getSickleNftHistory",
+            "method": "GET",
+            "path": "/v4/sickle-nft-actions",
+            "summary": "Sickle NFT position actions history (last 30 days)",
+            "tags": [
+              "analytics"
+            ]
+          },
+          {
+            "service": "data",
+            "operationId": "getSickleNonNftHistory",
+            "method": "GET",
+            "path": "/v4/sickle-actions",
+            "summary": "Sickle non-NFT actions history (last 30 days)",
+            "tags": [
+              "analytics"
+            ]
+          },
+          {
+            "service": "data",
+            "operationId": "getPositionPerformanceHistory",
+            "method": "GET",
+            "path": "/v4/position-performance-history",
+            "summary": "Historical net performance for a position lineage",
+            "tags": [
+              "analytics"
+            ]
+          }
+        ]
+      },
+      "rawResponseSha256": "1f0a6048fee84c536d176691555efe30b281289f5fd62c679575449fe2a3d8cf"
+    },
+    {
+      "tool": "get_vfat_api_operation",
+      "arguments": {
+        "service": "data",
+        "operationId": "getPoolHistory"
+      },
+      "source": "https://api.vfat.io/openapi.json",
+      "asOf": "2026-09-10T00:22:10.691Z",
+      "requestId": "83399050-30f1-4e61-b2f8-76a7f8886097",
+      "data": {
+        "service": "data",
+        "operationId": "getPoolHistory",
+        "method": "GET",
+        "path": "/v4/pool-history",
+        "summary": "Prepared daily price, volume, fees, liquidity, and TVL for the last 30 closed days",
+        "tags": [
+          "analytics"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "maxLength": 512,
+              "type": "string"
+            }
+          },
+          {
+            "name": "from",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "format": "date-time",
+              "type": "string"
+            }
+          },
+          {
+            "name": "to",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "format": "date-time",
+              "type": "string"
+            }
+          },
+          {
+            "name": "bucket",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "enum": [
+                    "hour"
+                  ]
+                },
+                {
+                  "type": "string",
+                  "enum": [
+                    "day"
+                  ]
+                }
+              ]
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "minimum": 1,
+              "maximum": 1000,
+              "type": "integer"
+            }
+          }
+        ],
+        "selectedResponseProperties": {
+          "bucket": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "hour"
+                ]
+              },
+              {
+                "type": "string",
+                "enum": [
+                  "day"
+                ]
+              }
+            ]
+          },
+          "activityCompleteness": {
+            "type": "string",
+            "enum": [
+              "unverified"
+            ]
+          },
+          "tvlSource": {
+            "type": "string",
+            "enum": [
+              "metrics-farm-snapshots"
+            ]
+          }
+        }
+      },
+      "rawResponseSha256": "3390e53ccce66905a9a14b8ddd39f791c073db74942a69ad7a767bb66489cc9e"
+    }
+  ],
+  "derivedAssessment": {
+    "priceHistories": [
+      {
+        "currency": "0x0bd7d308f8e1639fab988df18a8011f41eacad73",
+        "observationCount": 18,
+        "firstTimestamp": "2026-09-09T00:00:00.000Z",
+        "lastTimestamp": "2026-09-10T00:00:00.000Z",
+        "observedSpanSeconds": 86400,
+        "maximumInternalGapSeconds": 14400,
+        "oracleChainIdentifierReturned": false,
+        "qualificationStatus": "observed_unqualified"
+      },
+      {
+        "currency": "0x5fc5360d0400a0fd4f2af552add042d716f1d168",
+        "observationCount": 18,
+        "firstTimestamp": "2026-09-09T00:00:00.000Z",
+        "lastTimestamp": "2026-09-10T00:00:00.000Z",
+        "observedSpanSeconds": 86400,
+        "maximumInternalGapSeconds": 14400,
+        "oracleChainIdentifierReturned": false,
+        "qualificationStatus": "observed_unqualified"
+      }
+    ],
+    "requestedTokenAddressesAbsentFromMetadataResponse": [
+      "0xab35d04e1ee39c789c4a65d522417b3c7f2e4723"
+    ],
+    "chainOpportunityTotalIsNotV4Only": true,
+    "historyReturnedPoints": 2,
+    "historyFullPreparedWindowDownloaded": false,
+    "marlinAbsenceDoesNotProveUniversalUnsupportedStatus": true,
+    "providerAprBasis": "seven_day_swap_fees_over_active_pool_liquidity_assuming_full_time_in_range",
+    "dominoAprBasis": "trailing_24h_lp_trading_fees_over_time_weighted_lp_attributed_assets",
+    "qualificationStatus": "external_observations_unqualified",
+    "notes": [
+      "Source, asOf and requestId are provider response metadata, not independent proofs of on-chain completeness.",
+      "Numeric provider USD prices and metrics remain unqualified JSON numbers; they were not admitted to exact accounting.",
+      "History summary coverage, replay completeness and truncated point delivery are separate dimensions.",
+      "Historical pool day labels differ from snapshot observation timestamps; no point-in-time price convention was qualified.",
+      "The oracleAddress field did not identify the oracle chain or prove historical round/publication availability."
+    ]
+  },
+  "officialSources": [
+    "https://vfat.io/mcp",
+    "https://docs.vfat.io/aprs/",
+    "https://api.vfat.io/openapi.json",
+    "https://github.com/vfat-io/sickle-public/blob/main/contracts/connectors/UniswapV4Connector.sol",
+    "https://github.com/vfat-io/sickle-public/blob/main/LICENSE",
+    "https://reference-data-directory.vercel.app/feeds-mainnet.json"
+  ],
+  "boundaries": {
+    "walletAddressesDisclosed": false,
+    "credentialsUsed": false,
+    "signaturesRequested": false,
+    "transactionQuotesRequested": false,
+    "transactionsSubmitted": false,
+    "mcpInstalled": false,
+    "runtimeDependencyAdded": false,
+    "productionQualificationChanged": false,
+    "productionDataIngested": false
+  },
+  "curation": "Selected structuredContent fields from original public responses; redundant MCP text, full chain lists, unrelated analytics and large schemas omitted. Original response byte SHA-256 digests identify the probe files.",
+  "primarySourceOracleAddressCrossCheck": {
+    "source": "https://reference-data-directory.vercel.app/feeds-mainnet.json",
+    "fetchedAt": "2026-09-10T00:48:55Z",
+    "responseSha256": "374effc436ebf06851c3a79aff4bbb5332b3a2744030bbb20d85a50d262fae95",
+    "catalogueEntryCount": 290,
+    "matchedEntries": [
+      {
+        "address": "0x3E7d1eAB13ad0104d2750B8863b489D65364e32D",
+        "pair": "USDT / USD",
+        "baseAsset": "USDT",
+        "decimals": 8,
+        "blockchain": "Ethereum"
+      },
+      {
+        "address": "0x5f4eC3Df9cbd43714FE2740f5E3616155c5b8419",
+        "pair": "ETH / USD",
+        "baseAsset": "ETH",
+        "decimals": 8,
+        "blockchain": "Ethereum"
+      }
+    ],
+    "interpretation": "The oracleAddress returned with Robinhood USDG matches the Ethereum USDT/USD proxy in this catalogue. VFAT returned no oracle-chain identifier or derivation, so this metadata ambiguity does not prove VFAT internally prices USDG using USDT. The WETH oracleAddress matches the Ethereum ETH/USD proxy.",
+    "qualificationStatus": "identity_ambiguity_requires_clarification",
+    "scope": "Two exact proxy-address matches against one public official catalogue; no on-chain calls or pricing-algorithm inference."
+  }
+}
