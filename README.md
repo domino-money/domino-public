@@ -7,7 +7,7 @@ Private source repository for a wallet-friendly Uniswap v4 liquidity app on Robi
 - **Web:** approved Tangerine practice workbench, position/activity cards, modal workflows and hypothetical fee calculations. Browser-local practice data; no live deposits or signing.
 - **Backend 0.7.0:** generic token reads, verified pool identities, a reorg-aware PostgreSQL public catalogue, fee/position accounting, historical capital, price observations and snapshot NFT ownership lookup.
 - **Valuation gate:** missing or unqualified prices keep USD TVL/APR unavailable. Alchemy's tested Prices API does not support Robinhood address queries. Pool coverage is partial; source coverage and freshness must stay visible.
-- **Contracts:** fee arithmetic library and a draft interface. Public vault execution, swaps, wallet authentication and tenant isolation are not production implementations.
+- **Contracts:** fee arithmetic and policy-validation libraries, a draft interface and synthetic boundary tests. Public vault execution, swaps, wallet authentication and tenant isolation are not production implementations.
 
 The personal live bot, operator wallet, credentials and operational database are outside this repository. See [implementation status](IMPLEMENTATION_STATUS.md), [alpha scope](ALPHA_SCOPE.md) and [security specification](SECURITY_SPEC.md).
 

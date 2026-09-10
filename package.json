@@ -12,7 +12,7 @@
     "node": ">=22.13.0"
   },
   "scripts": {
-    "test:contracts": "forge test --root contracts --offline",
+    "test:contracts": "node --test scripts/test-contracts.test.mjs && node scripts/test-contracts.mjs",
     "check:web": "npm --prefix web test && npm --prefix web run typecheck && npm --prefix web run lint && npm --prefix web run build",
     "check:app": "npm --prefix app test && npm --prefix app run typecheck && npm --prefix app run lint && npm --prefix app run build && npm --prefix app run test:render",
     "check:repository": "python3 scripts/check-repository.py"

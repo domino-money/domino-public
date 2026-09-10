@@ -8,8 +8,20 @@ library FeeAccounting {
     error InsufficientReserve();
 
     /// @dev Only gross USED fees are charged. Retained reserves remain uncharged.
+    /// Floor rounding in each currency's integer base units is intentional policy:
+    /// the remainder favors the owner. Zero fees are valid (including feeBps == 0
+    /// or grossUsed * feeBps < 10_000); do not round up or impose a one-unit toll.
+    /// At 200 bps, 49 consumed base units yield zero fee and 50 yield one unit.
+    /// This arithmetic does not authorize consumption. Its caller MUST enforce
+    /// owner/operator authority, proven earned-fee balances and an economically
+    /// justified minimum consumption (or an explicitly capped project subsidy).
+    /// That minimum depends on token units and full-path costs; no universal dust
+    /// threshold is selected here, and repeated tiny calls are not an approved
+    /// way to bypass the economic gate. This no-swap split supplies no swap ledger.
     function consume(uint128 reserve, uint128 grossUsed, uint16 feeBps)
-        internal pure returns (uint128 netAdded, uint128 protocolFee, uint128 remaining)
+        internal
+        pure
+        returns (uint128 netAdded, uint128 protocolFee, uint128 remaining)
     {
         if (feeBps > MAX_SERVICE_FEE_BPS) revert ExcessiveFee();
         if (grossUsed > reserve) revert InsufficientReserve();
