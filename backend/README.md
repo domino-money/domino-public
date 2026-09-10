@@ -278,3 +278,9 @@ backend/.venv/bin/python backend/qualify_metrics.py --pool-id 0xc613d796ce23c734
 ```
 
 The [qualification report](../reports/CAPITAL_PRICES_NFT_QUALIFICATION.md) records 200 passing tests, including 61 PostgreSQL tests and the three original-v4 EVM methods. New cases cover exact hand-calculated daily APR, sparse price changes, mid-interval gaps, no lookahead, raw precision, same-second ordering, full-day capital boundaries, atomic resume/reorgs, backup/restore, NFT transfers, cleared metadata, strict ABI identity and HTTP boundaries. The real samples retain 3,438 and 1,008 seconds of history at their stored snapshots; they are not complete current 24h analytics. No web or personal-bot changes are part of this milestone.
+
+## Price diagnostics: qualification and coverage
+
+In `/v1/read/pool-metrics`, each `prices[]` entry has additive `sourceQualification` and `coverage` fields. Source approval is distinct from available observations. The combined `status` is `qualified` only when an approved series covers the entire requested interval and both endpoints. No stored data yields `unavailable` / `price_history_missing`; a qualified series with a gap yields `unavailable` / `qualified_price_coverage_gap`.
+
+`coverage.status` is `complete`, `incomplete`, `missing` or `not_assessed`; its `startTimestamp`, `endTimestamp` and `maxAgeSeconds` explain the interval and policy. Unqualified data never claims complete coverage. Frontend adapters should preserve this distinction alongside the enclosing snapshot's freshness and the separate `valuation` result. See [methodology](../METRICS_METHODOLOGY.md) and [provider readiness](../reports/PRICE_SOURCE_READINESS.md). No production price qualification is enabled by this change.

@@ -177,6 +177,15 @@ class PriceSeries:
         # A stale gap ends at max_age. No backwards interpolation or future-price fill.
         return {t for at in self.times for t in (at, at+self.qualification.max_age) if start < t < end}
 
+    def require_coverage(self, start, end):
+        """Check both endpoints and every interval between updates/expiry boundaries."""
+        if type(start) is not int or type(end) is not int or not 0 <= start <= end:
+            raise DataError('invalid_price_history_bounds')
+        self.at(start);self.at(end)
+        bounds = sorted({start, end} | self.boundaries(start, end))
+        for a, b in zip(bounds, bounds[1:]):
+            self.at(Fraction(a+b, 2))
+
 
 def load_price_series(conn, pool_id, currencies, start, end):
     series, evidence = [], []
@@ -188,10 +197,27 @@ def load_price_series(conn, pool_id, currencies, start, end):
         if len(rows) > MAX_PRICE_ROWS:
             raise DataError('price_observation_budget_exhausted')
         qualification = PRODUCTION_QUALIFICATIONS.get((pool_id, currency))
+        price_series = PriceSeries(qualification, rows) if qualification else None
+        status = 'observed_unqualified' if rows else 'unavailable'
+        reason = 'price_source_quality_not_qualified' if rows else 'price_history_missing'
+        coverage = 'not_assessed' if rows else 'missing'
+        if price_series is not None:
+            try:
+                price_series.require_coverage(start, end)
+            except DataError as error:
+                if str(error) != 'qualified_price_coverage_gap':
+                    raise
+                status = 'unavailable'
+                reason = 'qualified_price_coverage_gap' if rows else 'price_history_missing'
+                coverage = 'incomplete' if rows else 'missing'
+            else:
+                status, reason, coverage = 'qualified', None, 'complete'
         evidence.append({'currency': currency, 'observations': len(rows),
             'firstTimestamp': rows[0]['timestamp'] if rows else None,
             'lastTimestamp': rows[-1]['timestamp'] if rows else None,
-            'status': 'qualified' if qualification else ('observed_unqualified' if rows else 'unavailable'),
-            'reason': None if qualification else ('price_source_quality_not_qualified' if rows else 'price_history_missing')})
-        series.append(PriceSeries(qualification, rows) if qualification else None)
+            'status': status, 'reason': reason,
+            'sourceQualification': 'qualified' if qualification else 'unqualified',
+            'coverage': {'status': coverage, 'startTimestamp': start, 'endTimestamp': end,
+                         'maxAgeSeconds': qualification.max_age if qualification else None}})
+        series.append(price_series)
     return series, evidence

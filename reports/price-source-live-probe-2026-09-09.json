@@ -1,0 +1,587 @@
+{
+  "mode": "read_only_provider_coverage",
+  "geckoNetworks": [
+    {
+      "source": "https://api.geckoterminal.com/api/v2/networks?page=2",
+      "retrievedAt": 1788998685,
+      "matches": [],
+      "pages": {
+        "first": "https://api.geckoterminal.com/api/v2/networks?page=1",
+        "prev": "https://api.geckoterminal.com/api/v2/networks?page=1",
+        "next": "https://api.geckoterminal.com/api/v2/networks?page=3",
+        "last": "https://api.geckoterminal.com/api/v2/networks?page=3"
+      }
+    },
+    {
+      "source": "https://api.geckoterminal.com/api/v2/networks?page=3",
+      "retrievedAt": 1788998685,
+      "matches": [
+        {
+          "id": "robinhood",
+          "type": "network",
+          "attributes": {
+            "name": "Robinhood",
+            "coingecko_asset_platform_id": "robinhood"
+          }
+        }
+      ],
+      "pages": {
+        "first": "https://api.geckoterminal.com/api/v2/networks?page=1",
+        "prev": "https://api.geckoterminal.com/api/v2/networks?page=2",
+        "next": null,
+        "last": "https://api.geckoterminal.com/api/v2/networks?page=3"
+      }
+    }
+  ],
+  "geckoTokens": [
+    {
+      "label": "USDG",
+      "source": "https://api.geckoterminal.com/api/v2/networks/robinhood/tokens/0x5fc5360d0400a0fd4f2af552add042d716f1d168?include=top_pools",
+      "retrievedAt": 1788998714,
+      "responseIdentity": "robinhood_0x5fc5360d0400a0fd4f2af552add042d716f1d168",
+      "address": "0x5fc5360d0400a0fd4f2af552add042d716f1d168",
+      "symbol": "USDG",
+      "priceUsd": "0.9997654608",
+      "topPools": [
+        {
+          "id": "robinhood_0x52e65b17fb6e5ba00ed806f37afcd2daa50271ca",
+          "address": "0x52e65b17fb6e5ba00ed806f37afcd2daa50271ca",
+          "name": "USDG / WETH 0.01%",
+          "dex": "uniswap-v3-robinhood"
+        },
+        {
+          "id": "robinhood_0xbac3aa3b91584a53a579b3c999a56756e954e59247e497bad1d25a4334bde551",
+          "address": "0xbac3aa3b91584a53a579b3c999a56756e954e59247e497bad1d25a4334bde551",
+          "name": "WETH / USDG",
+          "dex": "uniswap-v4-robinhood"
+        },
+        {
+          "id": "robinhood_0xd4eb21209c4d6093f80b5b84f5c45cc093ea14a3",
+          "address": "0xd4eb21209c4d6093f80b5b84f5c45cc093ea14a3",
+          "name": "NVDA / USDG 0.05%",
+          "dex": "uniswap-v3-robinhood"
+        }
+      ],
+      "priceQualified": false
+    },
+    {
+      "label": "WETH",
+      "source": "https://api.geckoterminal.com/api/v2/networks/robinhood/tokens/0x0bd7d308f8e1639fab988df18a8011f41eacad73?include=top_pools",
+      "retrievedAt": 1788998714,
+      "responseIdentity": "robinhood_0x0bd7d308f8e1639fab988df18a8011f41eacad73",
+      "address": "0x0bd7d308f8e1639fab988df18a8011f41eacad73",
+      "symbol": "WETH",
+      "priceUsd": "2468.4",
+      "topPools": [
+        {
+          "id": "robinhood_0x52e65b17fb6e5ba00ed806f37afcd2daa50271ca",
+          "address": "0x52e65b17fb6e5ba00ed806f37afcd2daa50271ca",
+          "name": "USDG / WETH 0.01%",
+          "dex": "uniswap-v3-robinhood"
+        },
+        {
+          "id": "robinhood_0xed50bdeea8adc232f159486192a4157281d722ff",
+          "address": "0xed50bdeea8adc232f159486192a4157281d722ff",
+          "name": "PONS / WETH 0.3%",
+          "dex": "uniswap-v3-robinhood"
+        },
+        {
+          "id": "robinhood_0x69bfaf19c9f377bb306a89aed9f6b07e2c1a8d9a",
+          "address": "0x69bfaf19c9f377bb306a89aed9f6b07e2c1a8d9a",
+          "name": "USDG / WETH 0.05%",
+          "dex": "uniswap-v3-robinhood"
+        }
+      ],
+      "priceQualified": false
+    },
+    {
+      "label": "MARLIN",
+      "source": "https://api.geckoterminal.com/api/v2/networks/robinhood/tokens/0xab35d04e1ee39c789c4a65d522417b3c7f2e4723?include=top_pools",
+      "retrievedAt": 1788998714,
+      "responseIdentity": "robinhood_0xab35d04e1ee39c789c4a65d522417b3c7f2e4723",
+      "address": "0xab35d04e1ee39c789c4a65d522417b3c7f2e4723",
+      "symbol": "MARLIN",
+      "priceUsd": "0.000345664905",
+      "topPools": [
+        {
+          "id": "robinhood_0x59a626b46f61a117f13a4f3d31264dc9afcafff4c95c3e79d094f07cc050a3f0",
+          "address": "0x59a626b46f61a117f13a4f3d31264dc9afcafff4c95c3e79d094f07cc050a3f0",
+          "name": "MARLIN / WETH",
+          "dex": "pons-v2-dex"
+        },
+        {
+          "id": "robinhood_0xdb922f0619e11b0c1e6c3a142798f0243060b8a4331ea4f4e7de80e898cc02e7",
+          "address": "0xdb922f0619e11b0c1e6c3a142798f0243060b8a4331ea4f4e7de80e898cc02e7",
+          "name": "MARLIN / USDG 5%",
+          "dex": "uniswap-v4-robinhood"
+        },
+        {
+          "id": "robinhood_0x69208ce67008077b38423ac4ef3de27cd603eb07",
+          "address": "0x69208ce67008077b38423ac4ef3de27cd603eb07",
+          "name": "MARLIN / USDG 2%",
+          "dex": "ramses-v3-robinhood"
+        }
+      ],
+      "priceQualified": false
+    }
+  ],
+  "chainlinkSnapshots": {
+    "chainId": 4663,
+    "blockNumber": 58961877,
+    "blockHash": "0xcee734b02b82019c3f00bc7ee49bdd1cee6a588bb223b82f222e74822ab312ec",
+    "blockTimestamp": 1788998771,
+    "retrievedAt": 1788998775,
+    "blockHashRechecked": true,
+    "feeds": [
+      {
+        "pair": "ETH/USD",
+        "proxyRole": "standard",
+        "proxy": "0x78f3556b67e17df817d51ef5a990cdaf09e8d3a9",
+        "block": 58961877,
+        "calls": {
+          "description()": {
+            "status": "received",
+            "values": [
+              "ETH / USD"
+            ]
+          },
+          "decimals()": {
+            "status": "received",
+            "values": [
+              "8"
+            ]
+          },
+          "aggregator()": {
+            "status": "received",
+            "values": [
+              "0x6091e64eb7138eef066a80fd3a0d7427b91f2721"
+            ]
+          },
+          "latestRoundData()": {
+            "status": "received",
+            "values": [
+              "18446744073709553687",
+              "246015477204",
+              "1788995417",
+              "1788995429",
+              "18446744073709553687"
+            ]
+          }
+        },
+        "sourceManifest": "https://reference-data-directory.vercel.app/feeds-robinhood-mainnet.json",
+        "requests": 4
+      },
+      {
+        "pair": "ETH/USD",
+        "proxyRole": "svr",
+        "proxy": "0x5058adee53b04e374d8bedbad634bc4778f50b22",
+        "block": 58961877,
+        "calls": {
+          "description()": {
+            "status": "received",
+            "values": [
+              "ETH / USD"
+            ]
+          },
+          "decimals()": {
+            "status": "received",
+            "values": [
+              "8"
+            ]
+          },
+          "aggregator()": {
+            "status": "received",
+            "values": [
+              "0x6091e64eb7138eef066a80fd3a0d7427b91f2721"
+            ]
+          },
+          "latestRoundData()": {
+            "status": "received",
+            "values": [
+              "36893488147419105303",
+              "246015477204",
+              "1788995417",
+              "1788995429",
+              "36893488147419105303"
+            ]
+          }
+        },
+        "sourceManifest": "https://reference-data-directory.vercel.app/feeds-robinhood-mainnet.json",
+        "requests": 4
+      },
+      {
+        "pair": "USDG/USD",
+        "proxyRole": "standard",
+        "proxy": "0x61b7e5650328764b076a108eff5fa7282a1b9ad2",
+        "block": 58961877,
+        "calls": {
+          "description()": {
+            "status": "received",
+            "values": [
+              "USDG / USD"
+            ]
+          },
+          "decimals()": {
+            "status": "received",
+            "values": [
+              "8"
+            ]
+          },
+          "aggregator()": {
+            "status": "received",
+            "values": [
+              "0x8beee3503f6860d5dac4ce26b5eee92982951c2e"
+            ]
+          },
+          "latestRoundData()": {
+            "status": "received",
+            "values": [
+              "18446744073709551713",
+              "99985174",
+              "1788967926",
+              "1788967939",
+              "18446744073709551713"
+            ]
+          }
+        },
+        "sourceManifest": "https://reference-data-directory.vercel.app/feeds-robinhood-mainnet.json",
+        "requests": 4
+      },
+      {
+        "pair": "USDG/USD",
+        "proxyRole": "svr",
+        "proxy": "0x901f56689360b89d7767a8ace28b7801e6348fa2",
+        "block": 58961877,
+        "calls": {
+          "description()": {
+            "status": "received",
+            "values": [
+              "USDG / USD"
+            ]
+          },
+          "decimals()": {
+            "status": "received",
+            "values": [
+              "8"
+            ]
+          },
+          "aggregator()": {
+            "status": "received",
+            "values": [
+              "0x8beee3503f6860d5dac4ce26b5eee92982951c2e"
+            ]
+          },
+          "latestRoundData()": {
+            "status": "received",
+            "values": [
+              "36893488147419103329",
+              "99985174",
+              "1788967926",
+              "1788967939",
+              "36893488147419103329"
+            ]
+          }
+        },
+        "sourceManifest": "https://reference-data-directory.vercel.app/feeds-robinhood-mainnet.json",
+        "requests": 4
+      }
+    ],
+    "priceQualification": "observed_unqualified",
+    "totalRpcRequests": 19
+  },
+  "chainlinkHistoricalRounds": {
+    "retrievedAt": 1788998893,
+    "snapshot": {
+      "blockNumber": 58961877,
+      "blockHash": "0xcee734b02b82019c3f00bc7ee49bdd1cee6a588bb223b82f222e74822ab312ec",
+      "blockTimestamp": 1788998771
+    },
+    "blockHashRechecked": true,
+    "feeds": [
+      {
+        "pair": "ETH/USD",
+        "standardProxy": "0x78f3556b67e17df817d51ef5a990cdaf09e8d3a9",
+        "blockNumber": 58961877,
+        "windowStart": 1788912371,
+        "windowEnd": 1788998771,
+        "rounds": [
+          {
+            "roundId": "18446744073709553671",
+            "answerRaw": "249038000000",
+            "startedAt": 1788898266,
+            "updatedAt": 1788898279,
+            "answeredInRound": "18446744073709553671"
+          },
+          {
+            "roundId": "18446744073709553672",
+            "answerRaw": "250486570000",
+            "startedAt": 1788929036,
+            "updatedAt": 1788929048,
+            "answeredInRound": "18446744073709553672"
+          },
+          {
+            "roundId": "18446744073709553673",
+            "answerRaw": "249161182636",
+            "startedAt": 1788932787,
+            "updatedAt": 1788932799,
+            "answeredInRound": "18446744073709553673"
+          },
+          {
+            "roundId": "18446744073709553674",
+            "answerRaw": "250492286383",
+            "startedAt": 1788935038,
+            "updatedAt": 1788935050,
+            "answeredInRound": "18446744073709553674"
+          },
+          {
+            "roundId": "18446744073709553675",
+            "answerRaw": "251813000000",
+            "startedAt": 1788941370,
+            "updatedAt": 1788941382,
+            "answeredInRound": "18446744073709553675"
+          },
+          {
+            "roundId": "18446744073709553676",
+            "answerRaw": "250545885107",
+            "startedAt": 1788946531,
+            "updatedAt": 1788946544,
+            "answeredInRound": "18446744073709553676"
+          },
+          {
+            "roundId": "18446744073709553677",
+            "answerRaw": "249220680077",
+            "startedAt": 1788947342,
+            "updatedAt": 1788947354,
+            "answeredInRound": "18446744073709553677"
+          },
+          {
+            "roundId": "18446744073709553678",
+            "answerRaw": "250477000000",
+            "startedAt": 1788954814,
+            "updatedAt": 1788954827,
+            "answeredInRound": "18446744073709553678"
+          },
+          {
+            "roundId": "18446744073709553679",
+            "answerRaw": "251809000000",
+            "startedAt": 1788960846,
+            "updatedAt": 1788960859,
+            "answeredInRound": "18446744073709553679"
+          },
+          {
+            "roundId": "18446744073709553680",
+            "answerRaw": "250184353212",
+            "startedAt": 1788961356,
+            "updatedAt": 1788961369,
+            "answeredInRound": "18446744073709553680"
+          },
+          {
+            "roundId": "18446744073709553681",
+            "answerRaw": "248780879698",
+            "startedAt": 1788966428,
+            "updatedAt": 1788966440,
+            "answeredInRound": "18446744073709553681"
+          },
+          {
+            "roundId": "18446744073709553682",
+            "answerRaw": "247292000000",
+            "startedAt": 1788967358,
+            "updatedAt": 1788967371,
+            "answeredInRound": "18446744073709553682"
+          },
+          {
+            "roundId": "18446744073709553683",
+            "answerRaw": "248990990000",
+            "startedAt": 1788968109,
+            "updatedAt": 1788968121,
+            "answeredInRound": "18446744073709553683"
+          },
+          {
+            "roundId": "18446744073709553684",
+            "answerRaw": "247726803771",
+            "startedAt": 1788982603,
+            "updatedAt": 1788982615,
+            "answeredInRound": "18446744073709553684"
+          },
+          {
+            "roundId": "18446744073709553685",
+            "answerRaw": "246384112725",
+            "startedAt": 1788983593,
+            "updatedAt": 1788983606,
+            "answeredInRound": "18446744073709553685"
+          },
+          {
+            "roundId": "18446744073709553686",
+            "answerRaw": "244780000000",
+            "startedAt": 1788991726,
+            "updatedAt": 1788991738,
+            "answeredInRound": "18446744073709553686"
+          },
+          {
+            "roundId": "18446744073709553687",
+            "answerRaw": "246015477204",
+            "startedAt": 1788995417,
+            "updatedAt": 1788995429,
+            "answeredInRound": "18446744073709553687"
+          }
+        ],
+        "reachesWindowStart": true,
+        "latestAgeSeconds": 3342,
+        "maximumObservedUpdateGapSeconds": 30769,
+        "fitsCurrent300SecondPolicy": false,
+        "errors": [],
+        "requests": 16,
+        "priceQualified": false
+      },
+      {
+        "pair": "USDG/USD",
+        "standardProxy": "0x61b7e5650328764b076a108eff5fa7282a1b9ad2",
+        "blockNumber": 58961877,
+        "windowStart": 1788912371,
+        "windowEnd": 1788998771,
+        "rounds": [
+          {
+            "roundId": "18446744073709551712",
+            "answerRaw": "99982823",
+            "startedAt": 1788881501,
+            "updatedAt": 1788881513,
+            "answeredInRound": "18446744073709551712"
+          },
+          {
+            "roundId": "18446744073709551713",
+            "answerRaw": "99985174",
+            "startedAt": 1788967926,
+            "updatedAt": 1788967939,
+            "answeredInRound": "18446744073709551713"
+          }
+        ],
+        "reachesWindowStart": true,
+        "latestAgeSeconds": 30832,
+        "maximumObservedUpdateGapSeconds": 86426,
+        "fitsCurrent300SecondPolicy": false,
+        "errors": [],
+        "requests": 1,
+        "priceQualified": false
+      }
+    ],
+    "totalRpcRequests": 18
+  },
+  "officialManifest": {
+    "url": "https://reference-data-directory.vercel.app/feeds-robinhood-mainnet.json",
+    "sha256": "2ae1ea5f432cab06904134759033d7c6434c323171f954120c4933fdde42e85d",
+    "totalFeeds": 57,
+    "selectedFeeds": [
+      {
+        "compareOffchain": "",
+        "contractAddress": "0x6091E64eb7138EEF066a80FD3A0d7427B91f2721",
+        "contractType": "",
+        "contractVersion": 6,
+        "decimalPlaces": null,
+        "ens": null,
+        "formatDecimalPlaces": null,
+        "healthPrice": "",
+        "heartbeat": 86400,
+        "history": null,
+        "multiply": "100000000",
+        "name": "ETH / USD",
+        "pair": [
+          "",
+          ""
+        ],
+        "path": "eth-usd-shared-svr",
+        "proxyAddress": "0x78F3556b67E17Df817D51Ef5a990cDaF09E8d3A9",
+        "secondaryProxyAddress": "0x5058aDee53b04e374d8bEDbAD634Bc4778F50b22",
+        "threshold": 0.5,
+        "valuePrefix": "",
+        "assetName": "Ethereum",
+        "feedCategory": "low",
+        "feedType": "Crypto",
+        "docs": {
+          "assetClass": "Crypto",
+          "attributeType": "cex_price",
+          "baseAsset": "ETH",
+          "baseAssetClic": "ETH_CR",
+          "baseAssetEntityId": "crypto-ETH",
+          "blockchainName": "Robinhood",
+          "clicProductName": "ETH/USD-RefPrice-DF-Robinhood-001",
+          "deliveryChannelCode": "DF",
+          "marketHours": "Crypto",
+          "productSubType": "Reference",
+          "productType": "Price",
+          "productTypeCode": "RefPrice",
+          "quoteAsset": "USD",
+          "quoteAssetClic": "USD_FX",
+          "quoteAssetEntityId": "forex-USD"
+        },
+        "decimals": 8,
+        "maxSubmissionValue": "95780971304118053647396689196894323976171195136475135"
+      },
+      {
+        "compareOffchain": "",
+        "contractAddress": "0x8bEeE3503F6860D5dac4cE26b5eEe92982951c2e",
+        "contractType": "",
+        "contractVersion": 6,
+        "decimalPlaces": null,
+        "ens": null,
+        "formatDecimalPlaces": null,
+        "healthPrice": "",
+        "heartbeat": 86400,
+        "history": null,
+        "multiply": "100000000",
+        "name": "USDG / USD",
+        "pair": [
+          "",
+          ""
+        ],
+        "path": "usdg-usd-shared-svr",
+        "proxyAddress": "0x61B7e5650328764B076A108EFF5fa7282a1B9aD2",
+        "secondaryProxyAddress": "0x901f56689360B89D7767a8acE28B7801e6348fa2",
+        "threshold": 0.5,
+        "valuePrefix": "",
+        "assetName": "Global Dollar",
+        "feedCategory": "medium",
+        "feedType": "Crypto",
+        "docs": {
+          "assetClass": "Crypto",
+          "assetSubClass": "Stablecoin",
+          "attributeType": "cex_price",
+          "baseAsset": "USDG",
+          "baseAssetClic": "USDG_CR",
+          "baseAssetEntityId": "crypto-USDG",
+          "blockchainName": "Robinhood",
+          "clicProductName": "USDG/USD-RefPrice-DF-Robinhood-001",
+          "deliveryChannelCode": "DF",
+          "marketHours": "Crypto",
+          "productSubType": "Reference",
+          "productType": "Price",
+          "productTypeCode": "RefPrice",
+          "quoteAsset": "USD",
+          "quoteAssetClic": "USD_FX",
+          "quoteAssetEntityId": "forex-USD",
+          "underlyingAsset": "forex-USD",
+          "underlyingAssetClic": "USD_FX"
+        },
+        "decimals": 8,
+        "maxSubmissionValue": "95780971304118053647396689196894323976171195136475135"
+      }
+    ]
+  },
+  "identitySources": [
+    "https://docs.robinhood.com/chain/contracts/",
+    "https://docs.robinhood.com/chain/oracles-and-price-feeds/",
+    "https://docs.chain.link/data-feeds/price-feeds/addresses?network=robinhood&page=1"
+  ],
+  "interpretation": {
+    "qualificationStatus": "observed_unqualified",
+    "sameDonAcrossStandardAndSvr": true,
+    "storedInProductionDatabase": false,
+    "productionRegistryChanged": false,
+    "currentPriceAgeLimitSeconds": 300,
+    "historicalPublicationBlocksResolved": false,
+    "canonicalTokenMappings": {
+      "nativeEth": "0x0000000000000000000000000000000000000000",
+      "weth": "0x0bd7d308f8e1639fab988df18a8011f41eacad73",
+      "usdg": "0x5fc5360d0400a0fd4f2af552add042d716f1d168"
+    }
+  }
+}

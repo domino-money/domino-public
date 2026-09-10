@@ -3,6 +3,7 @@ from fractions import Fraction
 from pathlib import Path
 import sys
 import unittest
+from unittest.mock import Mock, patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from capital_store import capital_point, raw_capital_metrics
@@ -10,7 +11,7 @@ from catalogue import checked_key
 from discovery import CHAIN_ID, ZERO, DataError
 from position_accounting import replay_positions
 from price_history import (AlchemyHistorical, PriceQualification, PriceSeries, SOURCE,
-                           decimal_string, iso, usd)
+                           decimal_string, iso, usd, load_price_series)
 from test_discovery import POOL, TOKEN
 from test_position_accounting import reference
 from valuation import value_window
@@ -139,6 +140,65 @@ class CapitalAndValuationTests(unittest.TestCase):
         with self.assertRaisesRegex(DataError, 'not_monotonic'): raw_capital_metrics(window)
         window = sample_window();window['endCapital'] = point(50)
         with self.assertRaisesRegex(DataError, 'tail_mismatch'): raw_capital_metrics(window)
+
+
+class PriceDiagnosticsTests(unittest.TestCase):
+    def load(self, times, *, qualified=True, end=900):
+        conn = Mock()
+        conn.execute.return_value.fetchall.return_value = [
+            {'chainId': CHAIN_ID, 'currency': ZERO, 'source': SOURCE, 'timestamp': at,
+             'retrievedAt': 2000, 'priceUsd': '1'} for at in times]
+        registry = {(POOL, ZERO): PriceQualification(ZERO, 0, SOURCE, POOL, 'test_fixture_only')} if qualified else {}
+        with patch.dict('price_history.PRODUCTION_QUALIFICATIONS', registry, clear=True):
+            series, evidence = load_price_series(conn, POOL, [ZERO], 0, end)
+        return series[0], evidence[0]
+
+    def test_qualified_source_without_observations_is_unavailable(self):
+        series, evidence = self.load([])
+        self.assertEqual(evidence['sourceQualification'], 'qualified')
+        self.assertEqual(evidence['status'], 'unavailable')
+        self.assertEqual(evidence['reason'], 'price_history_missing')
+        self.assertEqual(evidence['coverage']['status'], 'missing')
+        self.assertEqual(evidence['observations'], 0)
+        with self.assertRaisesRegex(DataError, 'qualified_price_coverage_gap'):
+            value_window(sample_window(900), [series, sample_series(TOKEN)], POOL)
+
+    def test_missing_initial_coverage_and_internal_gap_are_unavailable(self):
+        for times in ([300, 600, 900], [0, 600, 900]):
+            with self.subTest(times=times):
+                series, evidence = self.load(times)
+                self.assertEqual(evidence['sourceQualification'], 'qualified')
+                self.assertEqual(evidence['status'], 'unavailable')
+                self.assertEqual(evidence['reason'], 'qualified_price_coverage_gap')
+                self.assertEqual(evidence['coverage']['status'], 'incomplete')
+                with self.assertRaisesRegex(DataError, 'qualified_price_coverage_gap'):
+                    value_window(sample_window(900), [series, sample_series(TOKEN)], POOL)
+
+    def test_endpoint_expiry_and_fractional_internal_gap_are_detected(self):
+        _, expired = self.load([0, 300, 600], end=901)
+        self.assertEqual(expired['coverage']['status'], 'incomplete')
+        # Both endpoints have prices, but (300, 301) is a stale interval.
+        _, internal = self.load([0, 301], end=301)
+        self.assertEqual(internal['coverage']['status'], 'incomplete')
+
+    def test_complete_coverage_includes_exact_max_age_endpoint(self):
+        _, evidence = self.load([0, 300, 600])
+        self.assertEqual(evidence['status'], 'qualified')
+        self.assertIsNone(evidence['reason'])
+        self.assertEqual(evidence['coverage'], {'status': 'complete', 'startTimestamp': 0,
+                                              'endTimestamp': 900, 'maxAgeSeconds': 300})
+
+    def test_unqualified_observations_never_claim_qualified_coverage(self):
+        series, evidence = self.load([0, 300, 600, 900], qualified=False)
+        self.assertIsNone(series)
+        self.assertEqual(evidence['sourceQualification'], 'unqualified')
+        self.assertEqual(evidence['status'], 'observed_unqualified')
+        self.assertEqual(evidence['reason'], 'price_source_quality_not_qualified')
+        self.assertEqual(evidence['coverage']['status'], 'not_assessed')
+        self.assertIsNone(evidence['coverage']['maxAgeSeconds'])
+        _, missing = self.load([], qualified=False)
+        self.assertEqual(missing['status'], 'unavailable')
+        self.assertEqual(missing['coverage']['status'], 'missing')
 
 
 class HistoricalProviderTests(unittest.TestCase):
