@@ -1,0 +1,9 @@
+# Dependencies and build output
+node_modules/
+dist/
+*.tsbuildinfo
+
+# Local environment
+.env*
+!.env.example
+.test-build

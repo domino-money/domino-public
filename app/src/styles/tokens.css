@@ -1,0 +1,240 @@
+@import 'tailwindcss';
+
+@custom-variant dark (&:is(.dark *));
+
+/* ---------------------------------------------------------------------------
+   Domino design tokens
+
+   Palette: the approved Tangerine direction, carried over from the workbench
+   (web/app/globals.css:137-195 and :1094-1109). The palette is rugged97's
+   decision and is not ours to change.
+
+   Structure: depth comes from stacked near-neutral surfaces separated by very
+   low-contrast borders, not from shadows. Radius is a single 12px step.
+--------------------------------------------------------------------------- */
+
+:root {
+  /* Surfaces — light */
+  --bg: #f0f1f2;
+  --surface-1: #f7f8f9;
+  --surface-2: #ffffff;
+  --surface-3: #ffffff;
+
+  /* Text — light */
+  --fg: #232428;
+  --fg-muted: #64666e;
+  --fg-subtle: #8a8d95;
+
+  /* Lines — light */
+  --border: rgb(0 0 0 / 0.09);
+  --border-strong: rgb(0 0 0 / 0.16);
+
+  /* Tangerine — light */
+  --primary: #ff843d;
+  --primary-fg: #24201c;
+  --accent: #fff0e4;
+  --accent-fg: #a43d0f;
+  --ring: #b24413;
+
+  /* Money semantics — light */
+  --money-in: #17663e;
+  --money-in-bg: #edf8f0;
+  --money-out: #b33036;
+  --money-out-bg: #fff0f0;
+  --money-wait: #865100;
+  --money-wait-bg: #fff6df;
+
+  /* Shape */
+  --radius: 12px;
+  --radius-sm: 8px;
+  --radius-lg: 16px;
+  --radius-pill: 9999px;
+
+  /* Type */
+  --font-display: 'Instrument Serif', ui-serif, Georgia, 'Times New Roman', serif;
+  --font-sans: 'Geist', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --font-mono: 'Geist Mono', ui-monospace, 'SFMono-Regular', Menlo, monospace;
+}
+
+.dark {
+  /* Surfaces — dark. Four stacked levels, each a small step up. */
+  --bg: #191b20;
+  --surface-1: #1f2229;
+  --surface-2: #282b32;
+  --surface-3: #32363f;
+
+  /* Text — dark */
+  --fg: #f5f4f2;
+  --fg-muted: #b9bbc4;
+  --fg-subtle: #82858f;
+
+  /* Lines — dark. Deliberately faint: the layer does the separating. */
+  --border: rgb(255 255 255 / 0.07);
+  --border-strong: rgb(255 255 255 / 0.14);
+
+  /* Tangerine — dark */
+  --primary: #ff9d62;
+  --primary-fg: #24201c;
+  --accent: #422e25;
+  --accent-fg: #ffb98c;
+  --ring: #ff9d62;
+
+  /* Money semantics — dark */
+  --money-in: #80dfaa;
+  --money-in-bg: #203b2d;
+  --money-out: #ffaaaa;
+  --money-out-bg: #442b31;
+  --money-wait: #f6cd77;
+  --money-wait-bg: #423723;
+}
+
+@theme inline {
+  --color-bg: var(--bg);
+  --color-surface-1: var(--surface-1);
+  --color-surface-2: var(--surface-2);
+  --color-surface-3: var(--surface-3);
+
+  --color-fg: var(--fg);
+  --color-fg-muted: var(--fg-muted);
+  --color-fg-subtle: var(--fg-subtle);
+
+  --color-line: var(--border);
+  --color-line-strong: var(--border-strong);
+
+  --color-primary: var(--primary);
+  --color-primary-fg: var(--primary-fg);
+  --color-accent: var(--accent);
+  --color-accent-fg: var(--accent-fg);
+  --color-ring: var(--ring);
+
+  --color-money-in: var(--money-in);
+  --color-money-in-bg: var(--money-in-bg);
+  --color-money-out: var(--money-out);
+  --color-money-out-bg: var(--money-out-bg);
+  --color-money-wait: var(--money-wait);
+  --color-money-wait-bg: var(--money-wait-bg);
+
+  --radius-sm: var(--radius-sm);
+  --radius-DEFAULT: var(--radius);
+  --radius-lg: var(--radius-lg);
+
+  --font-display: var(--font-display);
+  --font-sans: var(--font-sans);
+  --font-mono: var(--font-mono);
+}
+
+@layer base {
+  * {
+    border-color: var(--border);
+  }
+
+  body {
+    background-color: var(--bg);
+    color: var(--fg);
+    font-family: var(--font-sans);
+    font-size: 15px;
+    line-height: 1.55;
+    margin: 0;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  /* Every money figure. Stops digits from shifting width as values update. */
+  .tnum {
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* Slow float for the token orbs behind the hero. Each orb sets its own
+     duration and delay, so the field never visibly repeats. */
+  @keyframes dm-float {
+    0% {
+      transform: translate3d(0, 0, 0);
+    }
+    33% {
+      transform: translate3d(var(--dx, 14px), var(--dy, -18px), 0);
+    }
+    66% {
+      transform: translate3d(calc(var(--dx, 14px) * -0.6), calc(var(--dy, -18px) * 0.5), 0);
+    }
+    100% {
+      transform: translate3d(0, 0, 0);
+    }
+  }
+
+  .dm-float {
+    animation: dm-float var(--dur, 22s) ease-in-out infinite;
+    animation-delay: var(--delay, 0s);
+    will-change: transform;
+  }
+
+  /* Seamless marquee: the track holds two copies of the same list. */
+  @keyframes dm-marquee {
+    from {
+      transform: translate3d(0, 0, 0);
+    }
+    to {
+      transform: translate3d(-50%, 0, 0);
+    }
+  }
+
+  .dm-marquee {
+    animation: dm-marquee var(--dur, 60s) linear infinite;
+    will-change: transform;
+  }
+
+  /* Number fields never show the browser's spin buttons. */
+  input[type='number'] {
+    appearance: textfield;
+    -moz-appearance: textfield;
+  }
+  input[type='number']::-webkit-outer-spin-button,
+  input[type='number']::-webkit-inner-spin-button {
+    -webkit-appearance: none;
+    margin: 0;
+  }
+
+  /* Gentle, once-only entrance for the hero. */
+  @keyframes dm-rise {
+    from {
+      opacity: 0;
+      transform: translateY(14px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+
+  .dm-rise {
+    animation: dm-rise 0.7s cubic-bezier(0.2, 0.7, 0.2, 1) both;
+    animation-delay: var(--delay, 0s);
+  }
+
+  /* Soft glow used sparingly on primary actions and the active state. */
+  .dm-glow {
+    box-shadow: 0 0 0 1px color-mix(in srgb, var(--primary) 35%, transparent),
+      0 8px 32px -8px color-mix(in srgb, var(--primary) 45%, transparent);
+  }
+
+  .sr-only {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border-width: 0;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+      scroll-behavior: auto !important;
+    }
+  }
+}
