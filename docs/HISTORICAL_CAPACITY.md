@@ -2,6 +2,8 @@
 
 The optional historical audit workers qualify stored core pool activity. Their resource profiles do not admit a pool for execution, establish wallet ownership, provide prices, or make full-history replay a prerequisite for on-demand reads. These commands require an explicitly configured archive-capable provider when actually run. The implementation and regressions were tested with synthetic RPC fixtures, disposable PostgreSQL and an isolated v4 EVM reference; no new live backfill was performed.
 
+This documentation was originally examined against [PR #54](https://github.com/domino-money/domino/pull/54), commit `973fec82cfa47134b6b45c6a351357b2d5edc86b`. Its capital commands and migration 012 are now integrated into main at `03ec1fad96122ca4cf163fc62da3d866f3e7cd87`, alongside the already merged #29 fee/position resume. Check that the relevant implementation and migrations are present before using its commands. This status update adds no runtime capability, requalification or deployment.
+
 ## Resource limits and correctness checks
 
 | Limit | Supported scope | Recovery |
@@ -22,6 +24,27 @@ These are operational limits. v4 uint128/int128 bounds, fee-growth wrapping, tic
 
 The replay model retains closed positions and zeroed tick records. A reopened identity must preserve its prior settlement history and v4 last-inside-growth behavior; every cleared tick must still pass the on-chain zero-state check. Removing tombstones alone would not solve the default lifetime-position ceiling: 128 disjoint open/close identities can already occupy 256 ticks. This release supports a larger finite model with batched proofs; it does not implement unbounded identity archival or erase old accounting evidence.
 
+## Planning for lifetime capacity
+
+The limits apply **per pool to distinct keys retained in its canonical replay history**, including unpublished work. They are not a count of wallets, NFTs, events or currently funded positions. Forward replay never removes a position key or a tick key; normal source reorg recovery can replace an orphaned history. Repeated CLI invocations, a new day or a smaller block span do not reset these counts.
+
+| Count | What consumes capacity | What closing or reopening changes |
+|---|---|---|
+| Core identities: 128 standard / 1,024 extended | Each distinct `(coreOwner, tickLower, tickUpper, salt)` within the pool | Closing keeps the key. Reopening the same tuple reuses it; a different salt, owner or boundary creates a different key. |
+| Known ticks: 256 standard / 2,048 extended | Each distinct lower/upper tick retained by any known identity, counted once even if shared | A cleared tick remains a zeroed tombstone. Reopening a previously used boundary reuses that key; clearing it does not free a slot. |
+
+The source of these ceilings is [the capacity profiles](../backend/historical_capacity.py); the counting and retention rules are in [position accounting](../backend/position_accounting.py). For example, 128 different identities sharing one range consume 128 identity slots and only two tick slots. 128 identities with disjoint ranges consume 128 identity slots and 256 tick slots even after every one closes. The next distinct identity exceeds standard capacity; selecting extended allows that 129th identity when all other accounting/resource checks pass. Extended has the same rule at 1,024 identities/2,048 ticks; it is not an unlimited or automatically growing profile.
+
+An operator should use this sequence when approaching or reaching a ceiling:
+
+1. Read `corePositionCount` and `knownTickCount` from a reconciled position report, together with its snapshot/coverage. `nonzeroLiquidityPositionCount` measures live positions and must not be used as remaining identity capacity. A lagging report describes its last qualified history, not every key in the pending chunk. The work table's `processedEvents` is an event offset, not a position/tick count.
+2. Inspect that pool's `historical_work` diagnostic and the failing ledger. `core_position_budget_exhausted` or `core_tick_budget_exhausted` under standard has action `select_extended_profile_and_resume`. Keep source events, qualified ledgers and the saved complete-event prefix. Use the existing [resume procedure](#resume-an-already-stored-expensive-chunk), selecting `--capacity-profile extended` on the position and capital workers. Reconcile predecessors before downstream capital.
+3. Continue bounded invocations with new report filenames. Keep extended on later invocations and later chunks: changing back to standard cannot accept an inherited model above 128/256, even if the new chunk is empty. Increasing `--max-steps` permits more batches in that invocation; it does not enlarge the model. Successful resumption can still meet a separate simulation, byte, source or valuation limit.
+4. If the next event would exceed extended, stop retrying that unchanged input. Its `capacity_review_required` action has **no larger shipped profile, tombstone-purge command or identity-retirement mode** behind it. The affected ledger cannot pass that event with this implementation; its dependent current values remain unavailable while earlier qualified history is retained. The failure is scoped to that pool/ledger; it does not establish zero capital or invalidate other pools' histories.
+5. Record the pool, selected profile, reason, source chunk and progress for a capacity change review. A future supported path would require a tested larger bounded model or a separately reviewed retirement/rehydration design. Neither deleting work nor replaying the same complete history from scratch removes its lifetime identities. Do not skip the event, advance the checkpoint manually or truncate history to make it fit.
+
+This explains the narrower [issue #18 acceptance](https://github.com/domino-money/domino/issues/18#issuecomment-5625151665). It does not claim to satisfy the original live-tick-only budget proposal. [Identity retirement criteria](IDENTITY_RETIREMENT.md) identify the outstanding proof before any future implementation can safely reclaim working-set capacity.
+
 The [bounded real-pool step benchmark](../reports/FEE_STEP_BENCHMARK.md) examined
 the five chunks in the existing 2026-09-09 public qualification window. The
 busiest **among those examined chunks** had 10 events, 4 swaps and 30 candidate
@@ -34,7 +57,7 @@ measurements, distinct from an examined empty chunk with zero steps.
 
 ## What is durable and what is available
 
-Migration `007_historical_work.sql` adds one unpublished checkpoint per pool and ledger (`fee` or `position`); `012_capital_work.sql` extends its ledger constraint to `capital`. The existing `dev_postgres.py start` helper applies both, without rewriting 007 or touching qualified rows. Each row records its source chunk, complete-event offset, reconstructed models, pending journal rows, completed proof checks and a diagnostic. No new methodology version is needed: final v1 models and proof fields retain their existing meaning and previously qualified chunks remain valid. Preserve incoming 006 and later 008–011 migrations when combining branches; 012 must follow 007.
+Migration `007_historical_work.sql` adds one unpublished checkpoint per pool and ledger (`fee` or `position`); `012_capital_work.sql` extends its ledger constraint to `capital`. The existing `dev_postgres.py start` helper applies both after the merged `006_chainlink_prices.sql`, without rewriting 007 or touching qualified rows. Each row records its source chunk, complete-event offset, reconstructed models, pending journal rows, completed proof checks and a diagnostic. No new methodology version is needed: final v1 models and proof fields retain their existing meaning and previously qualified chunks remain valid. Preserve later 008–011 migrations when combining their branches; 012 must follow 007.
 
 The writer holds the existing advisory lock. Before saving progress it rechecks the historical end block and the activity tail; every later batch repeats those checks. Proof calls use a stable sorted order and the same historical block. Only after all events and all required checks succeed does one transaction write the qualified chunk and every fee/settlement row, then delete unpublished progress. Assets still satisfy `lpAssetsRaw = principalRaw + unsettledFeesRaw + roundingResidualRaw` per currency, with exact fee-source agreement and the existing cumulative settlement audit. Partial models never populate a financial quantity.
 
@@ -89,7 +112,7 @@ Capital work binds its source chunk, events, preceding model and qualified posit
 backend/.venv/bin/python backend/manage_metrics.py --pool-id "$POOL_ID" --capacity-profile extended --restart-capital-work --max-steps 10 --output reports/capital-reviewed-restart-01.json
 ```
 
-The explicit restart holds the writer lock, verifies the source block/tail and removes only that pool's unpublished `capital` row. It retains source events, fee/position ledgers and all published capital. The command prints and records the previous diagnostic and discarded checkpoint digest, then replays the source from the beginning of that unpublished chunk. It is an operator CLI action, with no HTTP equivalent or automatic retry. It does not solve a genuinely unsupported single event, an extended-profile overflow or a bad source ledger. Those still require a capacity/source correction. The generic fee/position method-restart and lifetime retirement work in #18/#19 remains separate.
+The explicit restart holds the writer lock, verifies the source block/tail and removes only that pool's unpublished `capital` row. It retains source events, fee/position ledgers and all published capital. The command prints and records the previous diagnostic and discarded checkpoint digest, then replays the source from the beginning of that unpublished chunk. It is an operator CLI action, with no HTTP equivalent or automatic retry. It does not solve a genuinely unsupported single event, an extended-profile overflow or a bad source ledger. Those still require a capacity/source correction. Generic fee/position method-restart work remains separate in #19; #18 documents lifetime limits and [future retirement criteria](IDENTITY_RETIREMENT.md), without implementing retirement.
 
 ## Independent downstream limits
 
