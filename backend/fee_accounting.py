@@ -161,7 +161,7 @@ def reconstruct_swap(model, key, payload, *, budget=None, with_trace=False):
     return result
 
 
-def replay_fees(activity_model, ledger_model, events, pool_id, key):
+def replay_fees(activity_model, ledger_model, events, pool_id, key, *, budget=None):
     """Return independent activity/fee models and one fee row per swap event."""
     if not supported(key):
         raise DataError('fee_accounting_adapter_required')
@@ -172,7 +172,7 @@ def replay_fees(activity_model, ledger_model, events, pool_id, key):
     if ledger is not None and ledger.get('version') != VERSION:
         raise DataError('fee_methodology_mismatch')
     rows = []
-    budget = [MAX_CHUNK_STEPS]
+    budget = [MAX_CHUNK_STEPS] if budget is None else budget
     for event in events:
         kind, payload = event['kind'], event['payload']
         if kind == 'initialize':

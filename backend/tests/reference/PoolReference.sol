@@ -53,4 +53,5 @@ contract PoolReference {
         returns(uint160,uint256,uint256,uint256) {return SwapMath.computeSwapStep(p,t,l,a,f);}
     function sqrtAt(int24 tick) external pure returns(uint160) {return TickMath.getSqrtPriceAtTick(tick);}
     function tickAt(uint160 p) external pure returns(int24) {return TickMath.getTickAtSqrtPrice(p);}
+    function tickCap(int24 s) external pure returns(uint128) {return Pool.tickSpacingToMaxLiquidityPerTick(s);}
 }

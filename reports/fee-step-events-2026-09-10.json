@@ -1,0 +1,219 @@
+{
+  "poolId": "0xc613d796ce23c7344334ac5373063c89479675876d25738ee78cf0642f2a30ef",
+  "poolKey": {
+    "hooks": "0x0000000000000000000000000000000000000000",
+    "fee_pips": 10000,
+    "currency0": "0x0000000000000000000000000000000000000000",
+    "currency1": "0x9b21df6ec499ce4bb952e40dadc1cfe9d334abd6",
+    "tick_spacing": 200
+  },
+  "chunks": [
+    {
+      "fromBlock": 58738261,
+      "throughBlock": 58743260,
+      "recordedSwapEvents": 4,
+      "endBlock": {
+        "number": 58743260,
+        "hash": "0xa1ce05cafad22edd52fb673a09667830d40ddde55ca2b12db9e0a28da3864a4c",
+        "timestamp": 1788976736
+      },
+      "events": [
+        {
+          "poolId": "0xc613d796ce23c7344334ac5373063c89479675876d25738ee78cf0642f2a30ef",
+          "blockNumber": 58738261,
+          "blockHash": "0x657e0b2788b33b2dd808a5faa7298c66c7fef5f7a326c028a60ed364e47d877d",
+          "timestamp": 1788976231,
+          "logIndex": 157,
+          "kind": "initialize",
+          "payload": {
+            "poolKey": {
+              "currency0": "0x0000000000000000000000000000000000000000",
+              "currency1": "0x9b21df6ec499ce4bb952e40dadc1cfe9d334abd6",
+              "fee_pips": 10000,
+              "tick_spacing": 200,
+              "hooks": "0x0000000000000000000000000000000000000000"
+            },
+            "sqrtPriceX96": "1744244129640337381386292603617838",
+            "tick": 200000
+          },
+          "rawFingerprint": "0x3bfa9568f925461fb38d13c75830980c0e1cc9c5d46a21d65cc38b78cb5efe52"
+        },
+        {
+          "poolId": "0xc613d796ce23c7344334ac5373063c89479675876d25738ee78cf0642f2a30ef",
+          "blockNumber": 58738261,
+          "blockHash": "0x657e0b2788b33b2dd808a5faa7298c66c7fef5f7a326c028a60ed364e47d877d",
+          "timestamp": 1788976231,
+          "logIndex": 158,
+          "kind": "modify_liquidity",
+          "payload": {
+            "tickLower": 131000,
+            "tickUpper": 200000,
+            "liquidityDelta": "35184110057427449699765"
+          },
+          "rawFingerprint": "0xea66019b87c0381e51fcefe3468eed140256f0827274bc4373ae5b42acff8666"
+        },
+        {
+          "poolId": "0xc613d796ce23c7344334ac5373063c89479675876d25738ee78cf0642f2a30ef",
+          "blockNumber": 58738265,
+          "blockHash": "0x047c1895b5fb2d14bb54bd753bcbf163333c5bcb26871e35a2e9812e02d97916",
+          "timestamp": 1788976231,
+          "logIndex": 68,
+          "kind": "swap",
+          "payload": {
+            "amount0": "-1999036000000",
+            "amount1": "959203256643426312870",
+            "sqrtPriceX96": "1744241969690536817535877726140755",
+            "liquidity": "35184110057427449699765",
+            "tick": 199999,
+            "swapFeePips": 10000
+          },
+          "rawFingerprint": "0xb94f0be16055a64c0a12d977db4a35eafaa50e08eb0a0787400c2f9335ee7345"
+        },
+        {
+          "poolId": "0xc613d796ce23c7344334ac5373063c89479675876d25738ee78cf0642f2a30ef",
+          "blockNumber": 58738281,
+          "blockHash": "0xf8558d98593b502bba6ee26877a67bf4e2a0b46ee5a1a262113ca68c461dc0bb",
+          "timestamp": 1788976233,
+          "logIndex": 123,
+          "kind": "swap",
+          "payload": {
+            "amount0": "-3000000000000000",
+            "amount1": "1436826755272319921561353",
+            "sqrtPriceX96": "1741006499374938279798416892539923",
+            "liquidity": "35184110057427449699765",
+            "tick": 199962,
+            "swapFeePips": 10000
+          },
+          "rawFingerprint": "0x5d83cf0f4ac04158e5f28f036c5a403f463923f02db05e5328f778b0e9613c64"
+        },
+        {
+          "poolId": "0xc613d796ce23c7344334ac5373063c89479675876d25738ee78cf0642f2a30ef",
+          "blockNumber": 58738281,
+          "blockHash": "0xf8558d98593b502bba6ee26877a67bf4e2a0b46ee5a1a262113ca68c461dc0bb",
+          "timestamp": 1788976233,
+          "logIndex": 126,
+          "kind": "swap",
+          "payload": {
+            "amount0": "58913116749400",
+            "amount1": "-28736535105446398431227",
+            "sqrtPriceX96": "1741070561687187130845618615239339",
+            "liquidity": "35184110057427449699765",
+            "tick": 199963,
+            "swapFeePips": 10000
+          },
+          "rawFingerprint": "0x12f6dd303cde2f595aa7973ca20fdf2633b14e2ac17af3c5c296e374e179e9d9"
+        },
+        {
+          "poolId": "0xc613d796ce23c7344334ac5373063c89479675876d25738ee78cf0642f2a30ef",
+          "blockNumber": 58738585,
+          "blockHash": "0xb7014aff8f3bebac0e1c4cc4bb8dbc5721d914aeb95f66e3171bbcba91b91ec6",
+          "timestamp": 1788976264,
+          "logIndex": 91,
+          "kind": "swap",
+          "payload": {
+            "amount0": "2881441425166245",
+            "amount1": "-1408090220166873523130126",
+            "sqrtPriceX96": "1744209614987380832158503113079779",
+            "liquidity": "35184110057427449699765",
+            "tick": 199999,
+            "swapFeePips": 10000
+          },
+          "rawFingerprint": "0x7a1d60a5f12734f1cba68f129bcf9279582a553a3a53ab4a17531295d41319c5"
+        },
+        {
+          "poolId": "0xc613d796ce23c7344334ac5373063c89479675876d25738ee78cf0642f2a30ef",
+          "blockNumber": 58742543,
+          "blockHash": "0x9dddd438bb4daa593155ef8a44a854d007df067b8c188cacb937496731113e88",
+          "timestamp": 1788976663,
+          "logIndex": 154,
+          "kind": "protocol_fee",
+          "payload": {
+            "protocolFeeRaw": 4097000
+          },
+          "rawFingerprint": "0x2d48552a3c815f37bcd138e94ad676a464d88ead809dd1e28d537eba1bb207ce"
+        },
+        {
+          "poolId": "0xc613d796ce23c7344334ac5373063c89479675876d25738ee78cf0642f2a30ef",
+          "blockNumber": 58742550,
+          "blockHash": "0x4cf70d0016046b835be652a286ec11d8770c991c73a3d24f97b125fe77405e80",
+          "timestamp": 1788976664,
+          "logIndex": 106,
+          "kind": "protocol_fee",
+          "payload": {
+            "protocolFeeRaw": 4097000
+          },
+          "rawFingerprint": "0x2d48552a3c815f37bcd138e94ad676a464d88ead809dd1e28d537eba1bb207ce"
+        },
+        {
+          "poolId": "0xc613d796ce23c7344334ac5373063c89479675876d25738ee78cf0642f2a30ef",
+          "blockNumber": 58742557,
+          "blockHash": "0x62d9e7cd7286b1c9724724dc96cba01c32e58b185750a56ea6636606aab763df",
+          "timestamp": 1788976665,
+          "logIndex": 104,
+          "kind": "protocol_fee",
+          "payload": {
+            "protocolFeeRaw": 4097000
+          },
+          "rawFingerprint": "0x2d48552a3c815f37bcd138e94ad676a464d88ead809dd1e28d537eba1bb207ce"
+        },
+        {
+          "poolId": "0xc613d796ce23c7344334ac5373063c89479675876d25738ee78cf0642f2a30ef",
+          "blockNumber": 58742565,
+          "blockHash": "0xb555eccb0ccf14beacd987c736480140041e3aa6afd90d57c374c72c01af6212",
+          "timestamp": 1788976666,
+          "logIndex": 95,
+          "kind": "protocol_fee",
+          "payload": {
+            "protocolFeeRaw": 4097000
+          },
+          "rawFingerprint": "0x2d48552a3c815f37bcd138e94ad676a464d88ead809dd1e28d537eba1bb207ce"
+        }
+      ]
+    },
+    {
+      "fromBlock": 58743261,
+      "throughBlock": 58748260,
+      "recordedSwapEvents": 0,
+      "endBlock": {
+        "number": 58748260,
+        "hash": "0xe7b21a5096c642095c8a0c391de992d3fa7ccd9d8405b672e00260ce1248acc8",
+        "timestamp": 1788977239
+      },
+      "events": []
+    },
+    {
+      "fromBlock": 58748261,
+      "throughBlock": 58753260,
+      "recordedSwapEvents": 0,
+      "endBlock": {
+        "number": 58753260,
+        "hash": "0x6083a52169e2930bbedd091db972b1ecd4eeab8fa057448927de51127da04819",
+        "timestamp": 1788977743
+      },
+      "events": []
+    },
+    {
+      "fromBlock": 58753261,
+      "throughBlock": 58763260,
+      "recordedSwapEvents": 0,
+      "endBlock": {
+        "number": 58763260,
+        "hash": "0x4114f574e3015b5ba4f7f8090f7a47cee974d50f97e73b61923e279f328e3be0",
+        "timestamp": 1788978754
+      },
+      "events": []
+    },
+    {
+      "fromBlock": 58763261,
+      "throughBlock": 58772342,
+      "recordedSwapEvents": 0,
+      "endBlock": {
+        "number": 58772342,
+        "hash": "0x2472d96a858815b9a6f4db67151ea3d9a3499709c86fa9573875c2c453a28bfb",
+        "timestamp": 1788979669
+      },
+      "events": []
+    }
+  ],
+  "canonicality": "boundary_and_event_hashes_rechecked_single_provider"
+}

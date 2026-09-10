@@ -5,14 +5,25 @@ from activity_indexer import ActivityIndexer
 from catalogue import checked_key
 from discovery import DataError, bytes32
 from fee_accounting import VERSION, replay_fees, supported
+from historical_capacity import (capacity_profile, check_work_size, clear_work, load_work, record_failure,
+                                 replay_batch, save_work, unavailable_work)
 
 
 class FeeIndexer:
-    def __init__(self, store, rpc):
+    def __init__(self, store, rpc, *, capacity='standard'):
         self.store = store
         self.activity = ActivityIndexer(store, rpc)
+        self.capacity = capacity_profile(capacity)
 
     def step(self, pool_id):
+        pool_id = bytes32(pool_id)
+        try:
+            return self._step(pool_id)
+        except DataError as error:
+            record_failure(self.store, pool_id, 'fee', self.capacity, str(error))
+            raise
+
+    def _step(self, pool_id):
         pool_id = bytes32(pool_id)
         self.activity.chain.check_chain()
         with self.store.catalogue.connection(writer=True, lock=True) as conn:
@@ -47,8 +58,24 @@ class FeeIndexer:
               ORDER BY block_number,log_index LIMIT 2001''',(pool_id,chunk['start_block'])).fetchall()
             if len(events)>2000:
                 raise DataError('fee_event_budget_exhausted')
-            activity, ledger, fees = replay_fees(previous['model'] if previous else None,
-                previous['fee_model'] if previous else None, events, pool_id, key)
+            progress = load_work(conn, pool_id, 'fee', chunk['start_block'])
+            if progress and progress['totalEvents']!=len(events):
+                raise DataError('historical_work_checkpoint_mismatch')
+            activity, ledger, fees, offset = replay_batch(replay_fees,
+                progress['activity'] if progress else previous['model'] if previous else None,
+                progress['model'] if progress else previous['fee_model'] if previous else None,
+                events, progress['offset'] if progress else 0, pool_id, key)
+            fees = (progress['rows'] if progress else []) + fees
+            pending={'version':1,'activity':activity,'model':ledger,'rows':fees,
+                     'offset':offset,'totalEvents':len(events)}
+            check_work_size(pending)
+            if not ledger or ledger.get('version')!=VERSION:
+                raise DataError('fee_methodology_mismatch')
+            if offset < len(events):
+                if (self.activity.chain.block(block.number) != block or
+                        self.activity.chain.block(tail['end_block']).hash != tail['end_hash']):
+                    raise DataError('fee_activity_reorg_requires_replay')
+                return save_work(conn, pool_id, 'fee', chunk, self.capacity,pending)
             if activity != chunk['model']:
                 raise DataError('fee_activity_model_mismatch')
             if ledger['growthX128'] != chunk['state_snapshot']['feeGrowthGlobalX128']:
@@ -65,6 +92,7 @@ class FeeIndexer:
             for event in fees:
                 conn.execute('INSERT INTO domino_activity.fee_events VALUES(%s,%s,%s,%s,%s)',
                              (pool_id,event['blockHash'],event['logIndex'],chunk['start_block'],Jsonb(event['fees'])))
+            clear_work(conn, pool_id, 'fee')
             return {'status':'fee_chunk_reconciled','fromBlock':chunk['start_block'],
                     'through':block.number,'swapEvents':len(fees),'feeGrowthReconciled':True}
 
@@ -83,6 +111,7 @@ def read_fees(conn, row, tail, window):
     record = conn.execute('SELECT * FROM domino_activity.fee_chunks WHERE pool_id=%s AND chunk_start=%s',
                           (pool_id,tail['start_block'])).fetchone()
     if not record:
+        result.update(unavailable_work(conn, pool_id, 'fee'))
         window['lpFeesReason'] = result['reason']
         return result
     model = record['model']

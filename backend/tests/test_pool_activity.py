@@ -192,7 +192,7 @@ class ActivityPostgresTests(unittest.TestCase):
     def setUp(self):
         assert self.settings['dbname']=='domino_catalogue_tests'
         with psycopg.connect(**self.settings,user=ADMIN) as conn:
-            conn.execute('TRUNCATE domino_activity.price_observations,domino_activity.capital_events,domino_activity.capital_chunks,domino_activity.position_settlements,domino_activity.position_chunks,domino_activity.fee_events,domino_activity.fee_chunks,domino_activity.events,domino_activity.chunks,domino_activity.pools')
+            conn.execute('TRUNCATE domino_activity.historical_work,domino_activity.price_observations,domino_activity.capital_events,domino_activity.capital_chunks,domino_activity.position_settlements,domino_activity.position_chunks,domino_activity.fee_events,domino_activity.fee_chunks,domino_activity.events,domino_activity.chunks,domino_activity.pools')
         self.catalogue=PgCatalogue(self.settings)
         self.catalogue.seed([stored_candidate()],Block(9,block_hash(9),1009))
         self.store=PgActivity(self.catalogue);self.rpc=ActivityRpc()

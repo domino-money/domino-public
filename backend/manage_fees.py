@@ -7,6 +7,7 @@ from activity_store import PgActivity
 from catalogue import configured_catalogue
 from discovery import DataError, DiscoveryReader, ReadRpc, bytes32
 from fee_store import FeeIndexer
+from historical_capacity import PROFILES
 from local_config import load_config
 from read_service import bounded_transport
 
@@ -15,6 +16,7 @@ def main():
     parser=argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--pool-id',required=True)
     parser.add_argument('--max-steps',type=int,default=5)
+    parser.add_argument('--capacity-profile',choices=PROFILES,default='standard')
     parser.add_argument('--output',type=Path,required=True)
     args=parser.parse_args()
     try:
@@ -32,7 +34,8 @@ def main():
         store=PgActivity(catalogue)
         results=[]
         for _ in range(args.max_steps):
-            result=FeeIndexer(store,ReadRpc(url,transport=bounded_transport(90),max_requests=60)).step(pool_id)
+            result=FeeIndexer(store,ReadRpc(url,transport=bounded_transport(90),max_requests=60),
+                              capacity=args.capacity_profile).step(pool_id)
             results.append(result);print(json.dumps(result),flush=True)
             if result['status']=='caught_up_to_activity':break
         report={'schemaVersion':1,'mode':'bounded_core_trading_fee_qualification',

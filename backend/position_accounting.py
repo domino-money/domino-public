@@ -60,7 +60,7 @@ def add_pair(model, name, amounts):
     model[name] = [str(int(model[name][i])+amounts[i]) for i in (0,1)]
 
 
-def modify_position(model, activity, payload, spacing):
+def modify_position(model, activity, payload, spacing, *, capacity=None):
     owner = address(payload.get('sender'))
     salt = bytes32(payload.get('salt'))
     lower,upper,delta = payload['tickLower'],payload['tickUpper'],int(payload['liquidityDelta'])
@@ -72,7 +72,7 @@ def modify_position(model, activity, payload, spacing):
     if not 0 <= liquidity+delta < Q128 or (not delta and not liquidity):
         raise DataError('core_position_liquidity_mismatch')
     if old is None:
-        if len(model['positions']) >= MAX_POSITIONS:
+        if len(model['positions']) >= (capacity.positions if capacity else MAX_POSITIONS):
             raise DataError('core_position_budget_exhausted')
         old = {'coreOwner':owner,'tickLower':lower,'tickUpper':upper,'salt':salt,
                'liquidityRaw':'0','lastInsideX128':['0','0'],'settledFeesRaw':['0','0']}
@@ -81,7 +81,7 @@ def modify_position(model, activity, payload, spacing):
         maximum = (Q128-1)//(887272//spacing - (-887272//spacing) + 1)
         for tick, sign in ((lower,1),(upper,-1)):
             slot = str(tick)
-            if slot not in model['ticks'] and len(model['ticks']) >= MAX_TICKS:
+            if slot not in model['ticks'] and len(model['ticks']) >= (capacity.ticks if capacity else MAX_TICKS):
                 raise DataError('core_tick_budget_exhausted')
             item = model['ticks'].setdefault(slot,empty_tick())
             gross, net = int(item['gross'])+delta,int(item['net'])+sign*delta
@@ -122,7 +122,7 @@ def assert_position_liquidity(model, activity):
         raise DataError('core_position_range_mismatch')
 
 
-def replay_positions(activity_model, position_model, events, pool_id, key, *, observe=None):
+def replay_positions(activity_model, position_model, events, pool_id, key, *, observe=None, capacity=None, budget=None):
     if not supported(key):
         raise DataError('position_accounting_adapter_required')
     activity, model = copy.deepcopy(activity_model),copy.deepcopy(position_model)
@@ -130,7 +130,12 @@ def replay_positions(activity_model, position_model, events, pool_id, key, *, ob
         raise DataError('position_anchor_required')
     if model is not None and model.get('version')!=VERSION:
         raise DataError('position_methodology_mismatch')
-    settlements=[];budget=[MAX_CHUNK_STEPS]
+    if model is not None:
+        if len(model['positions']) > (capacity.positions if capacity else MAX_POSITIONS):
+            raise DataError('core_position_budget_exhausted')
+        if len(model['ticks']) > (capacity.ticks if capacity else MAX_TICKS):
+            raise DataError('core_tick_budget_exhausted')
+    settlements=[];budget=[MAX_CHUNK_STEPS] if budget is None else budget
     for event in events:
         kind,p = event['kind'],event['payload']
         if kind=='initialize':
@@ -142,7 +147,7 @@ def replay_positions(activity_model, position_model, events, pool_id, key, *, ob
         if model is None:
             raise DataError('position_anchor_required')
         if kind=='modify_liquidity':
-            change=modify_position(model,activity,p,key.tick_spacing)
+            change=modify_position(model,activity,p,key.tick_spacing,capacity=capacity)
             settlements.append({**event,'settlement':change})
             model['modifyCount']+=1
         elif kind=='swap':

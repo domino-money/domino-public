@@ -118,6 +118,7 @@ def create_database(name):
         conn.execute((ROOT/'migrations/003_fee_ledger.sql').read_text())
         conn.execute((ROOT/'migrations/004_positions.sql').read_text())
         conn.execute((ROOT/'migrations/005_capital_prices.sql').read_text())
+        conn.execute((ROOT/'migrations/007_historical_work.sql').read_text())
 
 
 def main():

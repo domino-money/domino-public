@@ -139,6 +139,23 @@ class NativeReferenceTests(unittest.TestCase):
         from position_reference_cases import run_native_position_reference
         run_native_position_reference(self)
 
+    def test_v4_negative_tick_floor_cap_matches_python_admission(self):
+        from position_accounting import modify_position, replay_positions
+        from test_position_accounting import reference
+        fixture=reference();key=checked_key(fixture['poolKey'],POOL)
+        state,model,_=replay_positions(None,None,[fixture['sequence'][0]['event']],POOL,key)
+        for spacing in (1,3,10,60,200,887,16384,32767):
+            cap,=self.call('tickCap(int24)',['int24'],[spacing],['uint128'])
+            self.assertEqual(cap,((1<<128)-1)//(887272//spacing-(-887272//spacing)+1))
+            # Exercise the actual admission formula, not just a duplicate helper.
+            import copy
+            payload={**fixture['sequence'][1]['event']['payload'], 'tickLower':-spacing,
+                     'tickUpper':spacing,'liquidityDelta':str(cap)}
+            modify_position(copy.deepcopy(model),state,payload,spacing)
+            payload['liquidityDelta']=str(cap+1)
+            with self.assertRaisesRegex(DataError,'core_tick_liquidity_mismatch'):
+                modify_position(copy.deepcopy(model),state,payload,spacing)
+
     def test_native_pool_sequences_crossings_gaps_protocol_and_liquidity_changes(self):
         cases=[]
         operations=[('modify',[-60000,60000,10**12]),('modify',[-120,0,5*10**12]),
