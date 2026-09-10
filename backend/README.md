@@ -7,6 +7,13 @@ This does not populate the production qualification registry or enable public
 TVL/APR, signing or execution. The [VFAT MCP assessment](../reports/VFAT_MCP_ASSESSMENT.md)
 records another tested discovery/comparison candidate and its coverage limits.
 
+Issue #23 adds [full-day capacity and resumable acquisition](../reports/PRICE_WINDOW_CAPACITY.md).
+The generic engine supports 1,446 exact observations per asset/source window,
+including a 300-second lookback. Chainlink acquisition still uses at most 64
+rounds per atomic fetch; the separate `collect_chainlink.py` command saves bounded
+slices at one immutable snapshot. This is a capacity change, not a production
+source qualification or a resampling rule.
+
 The `domain.py` Python core runs locally without dependencies, private keys, chain calls or access to the personal bot. It is the high-precision position reference and exact microdollar scenario engine. The separate `discovery.py` module now provides explicit read-only network qualification as described below. The private web prototype exposes the equivalent cost calculation at `POST /api/v1/compound-preview` and explicit disabled live capabilities at `GET /api/v1/capabilities`.
 
 Input uses three decimal **strings**: `availableFeesUsd`, `positionValueUsd`, `gasUsd`. These values describe a hypothetical balanced-fee case. They are not ERC-20 base units, execution permissions, a swap quote, or a promise of profitable execution.

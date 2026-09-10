@@ -14,7 +14,7 @@ from chainlink_history import (ADAPTER_VERSION, FEEDS, MANIFEST_SHA256, MAX_ROUN
                               ROUND_TYPES, SOURCE, USDG, WETH)
 from catalogue import checked_key
 from discovery import CHAIN_ID, ZERO, DataError, address, bytes32, parse_block, quantity
-from price_history import PriceSeries, usd
+from price_history import MAX_PRICE_ROWS, PriceSeries, usd
 
 POLICY = 'chainlink_robinhood_reference_analytics_v1'
 HEARTBEAT_SECONDS = 86400
@@ -122,13 +122,55 @@ def reference_series(bundle, target_pool, rpc, *, pool_key):
     No HTTP route calls this factory and it never changes the production registry.
     Existing proofs cannot be made current by modifying retrieval timestamps.
     """
+    return _reference_series(bundle, target_pool, rpc, pool_key=pool_key, max_observations=MAX_ROUNDS)
+
+
+def reference_series_from_slices(collection, target_pool, rpc, *, pool_key):
+    """Explicit full-day reference path; retain and revalidate the saved snapshot.
+
+    The legacy single-fetch factory remains limited to 64 rounds. A collection
+    can contain at most MAX_PRICE_ROWS exact updates, never sampled endpoints.
+    All slice boundary headers and all unique publication proofs are rechecked.
+    """
+    from chainlink_collection import (BudgetRpc, INVOCATION_SECONDS, REFERENCE_RPC_REQUESTS,
+                                     validate_collection)
+    _, rows = validate_collection(collection, complete=True)
+    slices = collection['slices']
+    rpc = BudgetRpc(rpc, max_requests=REFERENCE_RPC_REQUESTS, seconds=INVOCATION_SECONDS)
+    boundaries = {}
+    for part in slices:
+        expected = _block(part['coverage']['endBlock'])
+        if expected[0] in boundaries and expected != boundaries[expected[0]]:
+            raise DataError('chainlink_proof_conflict')
+        boundaries[expected[0]] = expected
+
+    def recheck_boundaries():
+        for number, expected_hash, timestamp in boundaries.values():
+            actual = parse_block(rpc.request('eth_getBlockByNumber', [hex(number), False]))
+            if (actual.number, actual.hash, actual.timestamp) != (number, expected_hash, timestamp):
+                raise DataError('chainlink_snapshot_reorganized')
+
+    recheck_boundaries()
+    bundle = {'observations': rows, 'snapshot': collection['snapshot'], 'feed': slices[0]['feed'],
+              'coverage': {**slices[-1]['coverage'], 'startTimestamp': collection['startTimestamp'],
+                           'roundCount': len(rows), 'maxRounds': MAX_PRICE_ROWS}}
+    series, evidence = _reference_series(bundle, target_pool, rpc, pool_key=pool_key,
+                                         max_observations=MAX_PRICE_ROWS, evidence_document=collection)
+    recheck_boundaries()
+    evidence.update(acquisitionMode='bounded_resumable_slices', sliceCount=len(slices),
+                    observationCount=len(rows), maxObservations=MAX_PRICE_ROWS,
+                    maxRoundsPerFetch=MAX_ROUNDS)
+    return series, evidence
+
+
+def _reference_series(bundle, target_pool, rpc, *, pool_key, max_observations, evidence_document=None):
     target_pool = bytes32(target_pool)
     key = checked_key(pool_key, target_pool)
     currencies = (key.currency0, key.currency1)
     if not isinstance(bundle, dict):
         raise DataError('invalid_chainlink_reference_bundle')
     rows = bundle.get('observations')
-    if not isinstance(rows, list) or not 1 <= len(rows) <= MAX_ROUNDS:
+    if not isinstance(rows, list) or not 1 <= len(rows) <= max_observations:
         raise DataError('invalid_chainlink_reference_bundle')
     for row in rows:
         validate_observation(row)
@@ -211,7 +253,8 @@ def reference_series(bundle, target_pool, rpc, *, pool_key):
     if tail[0] != int(ordered[-1]['provenance']['roundId']):
         raise DataError('chainlink_reference_history_gap')
     recheck()
-    digest = hashlib.sha256(json.dumps(bundle, sort_keys=True, separators=(',', ':')).encode()).hexdigest()
+    digest = hashlib.sha256(json.dumps(bundle if evidence_document is None else evidence_document,
+                                     sort_keys=True, separators=(',', ':')).encode()).hexdigest()
     qualification = _ReferenceQualification(currency, DECIMALS[currency], target_pool, digest, start, end, currencies)
     series = _ReferenceSeries(qualification, ordered)
     series.require_coverage(start, end)

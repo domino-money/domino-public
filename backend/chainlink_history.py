@@ -67,7 +67,7 @@ class ChainlinkHistorical:
         self.rpc, self.clock = rpc, clock
         self.deadline_seconds = deadline_seconds
 
-    def fetch(self, currency, start, end, *, block_number=None):
+    def fetch(self, currency, start, end, *, block_number=None, expected_snapshot=None):
         currency = address(currency)
         if currency not in FEEDS:
             raise DataError('chainlink_currency_unsupported')
@@ -91,6 +91,10 @@ class ChainlinkHistorical:
         snapshot = parse_block(self._request('eth_getBlockByNumber', [tag, False]))
         if block_number is not None and snapshot.number != block_number:
             raise DataError('chainlink_block_number_mismatch')
+        # A resumed acquisition is bound to its original header before any
+        # historical feed call. A newer hash must never relabel old proofs.
+        if expected_snapshot is not None and asdict(snapshot) != expected_snapshot:
+            raise DataError('chainlink_snapshot_reorganized')
         if snapshot.timestamp > now or end > snapshot.timestamp:
             raise DataError('chainlink_snapshot_time_mismatch')
         self._headers[snapshot.number] = snapshot

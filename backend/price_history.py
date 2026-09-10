@@ -17,7 +17,12 @@ SOURCE = 'alchemy_historical'
 CHAINLINK_SOURCE = 'chainlink_robinhood_standard_v1'
 OBSERVATION_SOURCES = (SOURCE, CHAINLINK_SOURCE)
 INTERVAL_SECONDS = 300
-MAX_PRICE_ROWS = 600
+MAX_PRICE_WINDOW_SECONDS = 86400
+MAX_PRODUCTION_PRICE_AGE_SECONDS = 300
+# A supported capacity envelope, not a resampling rule. Preserve every distinct
+# update, including faster ticks, until the explicit finite row budget is reached.
+SUPPORTED_MIN_CADENCE_SECONDS = 60
+MAX_PRICE_ROWS = (MAX_PRICE_WINDOW_SECONDS + MAX_PRODUCTION_PRICE_AGE_SECONDS) // SUPPORTED_MIN_CADENCE_SECONDS + 1
 
 
 def usd(value):
@@ -140,12 +145,13 @@ class PriceQualification:
     source: str
     target_pool: str
     evidence: str
-    max_age: int = 300
+    max_age: int = MAX_PRODUCTION_PRICE_AGE_SECONDS
 
     def __post_init__(self):
         address(self.currency);bytes32(self.target_pool)
         if (type(self.decimals) is not int or not 0 <= self.decimals <= 255 or
-                not self.evidence or not self.source or type(self.max_age) is not int or not 1 <= self.max_age <= 300):
+                not self.evidence or not self.source or type(self.max_age) is not int or
+                not 1 <= self.max_age <= MAX_PRODUCTION_PRICE_AGE_SECONDS):
             raise DataError('invalid_price_qualification')
 
 
@@ -198,18 +204,26 @@ class PriceSeries:
 
 
 def load_price_series(conn, pool_id, currencies, start, end):
+    if (type(start) is not int or type(end) is not int or
+            not 0 <= start <= end < 2**63 or end-start > MAX_PRICE_WINDOW_SECONDS):
+        raise DataError('invalid_price_history_bounds')
     series, evidence = [], []
     for currency in currencies:
         qualification = PRODUCTION_QUALIFICATIONS.get((pool_id, currency))
         sources = [qualification.source] if qualification else list(OBSERVATION_SOURCES)
-        lookback = qualification.max_age if qualification else 300
-        rows = conn.execute('''SELECT chain_id AS "chainId",currency,source,observed_at AS timestamp,
-          retrieved_at AS "retrievedAt",price_usd AS "priceUsd",provenance FROM domino_activity.price_observations
-          WHERE chain_id=%s AND currency=%s AND source=ANY(%s)
-          AND observed_at>=%s AND observed_at<=%s ORDER BY observed_at,source LIMIT 601''',
-          (CHAIN_ID, currency, sources, max(0, start-lookback), end)).fetchall()
-        if len(rows) > MAX_PRICE_ROWS:
-            raise DataError('price_observation_budget_exhausted')
+        lookback = qualification.max_age if qualification else MAX_PRODUCTION_PRICE_AGE_SECONDS
+        rows = []
+        for source in sources:
+            # Capacity belongs to one asset/source window. Diagnostic candidates
+            # cannot consume each other's allowance or lend spare rows to a dense feed.
+            source_rows = conn.execute(f'''SELECT chain_id AS "chainId",currency,source,observed_at AS timestamp,
+              retrieved_at AS "retrievedAt",price_usd AS "priceUsd",provenance FROM domino_activity.price_observations
+              WHERE chain_id=%s AND currency=%s AND source=ANY(%s)
+              AND observed_at>=%s AND observed_at<=%s ORDER BY observed_at,source LIMIT {MAX_PRICE_ROWS + 1}''',
+              (CHAIN_ID, currency, [source], max(0, start-lookback), end)).fetchall()
+            if len(source_rows) > MAX_PRICE_ROWS:
+                raise DataError('price_observation_budget_exhausted')
+            rows.extend(source_rows)
         # Multiple candidates may be counted for diagnostics. Their values are
         # never combined: constructing a series requires one code-owned source.
         price_series = PriceSeries(qualification, rows) if qualification else None
@@ -229,8 +243,8 @@ def load_price_series(conn, pool_id, currencies, start, end):
                 status, reason, coverage = 'qualified', None, 'complete'
         evidence.append({'currency': currency, 'observations': len(rows),
             'observedSources': sorted({row['source'] for row in rows}),
-            'firstTimestamp': rows[0]['timestamp'] if rows else None,
-            'lastTimestamp': rows[-1]['timestamp'] if rows else None,
+            'firstTimestamp': min(row['timestamp'] for row in rows) if rows else None,
+            'lastTimestamp': max(row['timestamp'] for row in rows) if rows else None,
             'status': status, 'reason': reason,
             'sourceQualification': 'qualified' if qualification else 'unqualified',
             'coverage': {'status': coverage, 'startTimestamp': start, 'endTimestamp': end,

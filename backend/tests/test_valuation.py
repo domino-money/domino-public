@@ -145,9 +145,11 @@ class CapitalAndValuationTests(unittest.TestCase):
 class PriceDiagnosticsTests(unittest.TestCase):
     def load(self, times, *, qualified=True, end=900):
         conn = Mock()
-        conn.execute.return_value.fetchall.return_value = [
+        samples = [
             {'chainId': CHAIN_ID, 'currency': ZERO, 'source': SOURCE, 'timestamp': at,
              'retrievedAt': 2000, 'priceUsd': '1'} for at in times]
+        conn.execute.side_effect = lambda sql, params: Mock(fetchall=Mock(return_value=[
+            row for row in samples if row['source'] in params[2]]))
         registry = {(POOL, ZERO): PriceQualification(ZERO, 0, SOURCE, POOL, 'test_fixture_only')} if qualified else {}
         with patch.dict('price_history.PRODUCTION_QUALIFICATIONS', registry, clear=True):
             series, evidence = load_price_series(conn, POOL, [ZERO], 0, end)
@@ -209,20 +211,23 @@ class PriceDiagnosticsTests(unittest.TestCase):
         sql, params = conn.execute.call_args.args
         self.assertIn('chain_id=%s', sql)
         self.assertIn('source=ANY(%s)', sql)
-        self.assertLess(sql.index('source=ANY(%s)'), sql.index('LIMIT 601'))
+        self.assertLess(sql.index('source=ANY(%s)'), sql.index('LIMIT 1447'))
         self.assertEqual(params, (CHAIN_ID, ZERO, [SOURCE], 880, 2000))
 
     def test_unqualified_source_candidates_are_diagnostics_only(self):
         conn = Mock()
-        conn.execute.return_value.fetchall.return_value = [
-            {'chainId': CHAIN_ID, 'currency': ZERO, 'source': source, 'timestamp': 1000,
+        samples = [
+            {'chainId': CHAIN_ID, 'currency': ZERO, 'source': source, 'timestamp': at,
              'retrievedAt': 2000, 'priceUsd': price}
-            for source, price in [(SOURCE, '2000'), (CHAINLINK_SOURCE, '2500')]]
+            for source, at, price in [(SOURCE, 1100, '2000'), (CHAINLINK_SOURCE, 1000, '2500')]]
+        conn.execute.side_effect = lambda sql, params: Mock(fetchall=Mock(return_value=[
+            row for row in samples if row['source'] in params[2]]))
         with patch.dict('price_history.PRODUCTION_QUALIFICATIONS', {}, clear=True):
             series, evidence = load_price_series(conn, POOL, [ZERO], 1000, 1100)
         self.assertEqual(series, [None])
         self.assertEqual(evidence[0]['observations'], 2)
         self.assertEqual(evidence[0]['observedSources'], sorted([SOURCE, CHAINLINK_SOURCE]))
+        self.assertEqual((evidence[0]['firstTimestamp'], evidence[0]['lastTimestamp']), (1000, 1100))
         self.assertEqual(evidence[0]['coverage']['status'], 'not_assessed')
         self.assertEqual(evidence[0]['sourceQualification'], 'unqualified')
 

@@ -77,6 +77,18 @@ Capital is a right-continuous step function of canonical block timestamp: the la
 
 The USD engine integrates these balances together with changes in qualified external prices. It uses exact rational arithmetic and only rounds the published decimal strings to 18 places. A qualified price is carried forward causally for at most its approved age (initial upper bound 300 seconds). Future observations never fill earlier gaps. The integrator splits at capital events, price updates and expiry boundaries; a gap anywhere, including between asset events, invalidates the dollar result. For each swap, gross input is valued once at its timestamp. LP trading allocations are valued separately; donations, liquidity flows and protocol fees do not become trading revenue.
 
+The bounded full-day price capacity is `floor((86400 + 300) / 60) + 1 = 1446`
+observations, with a 1,447-row SQL sentinel after filtering the exact qualified
+source. Sixty seconds is the supported capacity envelope, not promised feed
+cadence or a resampling interval. Every distinct faster update is retained until
+the finite budget is exceeded; overflow fails explicitly and never selects a
+sampled subset. Equal duplicate timestamps may deduplicate, while conflicting
+prices stop processing. A feed slower than 300 seconds can still have a coverage
+gap despite fitting the row budget. The production age policy remains unchanged.
+The separate [sliced Chainlink workflow](reports/PRICE_WINDOW_CAPACITY.md) retains
+publication evidence and the named reference-only 86,520-second age policy; it
+does not insert a production qualification.
+
 For a complete trailing day and positive average TVL, `feeAprPercent = 100 × 365 × tradingLpFeesUsd / timeWeightedAverageTvlUsd`. A younger pool retains its observed interval with APR unavailable; zero average capital never yields an infinite APR. Historical freshness is separate from coverage. `/v1/read/pool-metrics` reports the raw history and price-quality diagnostics even while dollar fields are unavailable. No recommendation or signing authority follows from a calculated metric.
 
 ## External price observations and current qualification gap

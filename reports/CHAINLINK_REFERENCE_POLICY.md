@@ -84,6 +84,13 @@ background schedule, provider URL in the report or automatic retry is involved.
 The CLI verifies a real pool identity but deliberately reports TVL/APR as null:
 price evidence alone is not reconciled capital history.
 
+This original probe and `reference_series()` accept at most **64 rounds per
+currency bundle**. That limit can cover a full day of a slow heartbeat feed under
+the named reference policy, but cannot promise a day for a feed with frequent
+updates. A round-budget failure returns no partial bundle. Issue #23 adds a
+separate [bounded resumable collection and sliced reference factory](PRICE_WINDOW_CAPACITY.md)
+without increasing the atomic 64-round limit or changing this reference policy.
+
 ## Completed live evidence
 
 The [complete Alchemy probe](chainlink-alchemy-full-history-probe-2026-09-09.json)

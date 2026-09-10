@@ -17,7 +17,7 @@ from catalogue import PgCatalogue
 from dev_postgres import ADMIN, BIN, PORT, SOCKET
 from discovery import DataError, ZERO
 from metrics_service import stored_metrics
-from price_history import CHAINLINK_SOURCE, SOURCE, PriceQualification, load_price_series, store_observations
+from price_history import MAX_PRICE_ROWS, CHAINLINK_SOURCE, SOURCE, PriceQualification, load_price_series, store_observations
 from read_api import ReadGate, create_app
 from read_service import ReadService
 from test_discovery import POOL
@@ -167,18 +167,85 @@ class CapitalPostgresTests(unittest.TestCase):
         # the exact qualified source, even at an overlapping currency/time key.
         candidate = chainlink_price()
         store_observations(self.catalogue, [candidate])
-        store_observations(self.catalogue, [{**self.price(), 'timestamp': at, 'priceUsd': '2500'}
-                                           for at in range(700, 1300)])
-        store_observations(self.catalogue, [{**self.price(), 'timestamp': 1300, 'priceUsd': '2500'}])
-        self.assertEqual(self.counts()[2], 602)
+        end = 700 + MAX_PRICE_ROWS
+        store_observations(self.catalogue, [{**self.price(), 'timestamp': at, 'retrievedAt': end, 'priceUsd': '2500'}
+                                           for at in range(700, end)])
+        store_observations(self.catalogue, [{**self.price(), 'timestamp': end, 'retrievedAt': end, 'priceUsd': '2500'}])
+        self.assertEqual(self.counts()[2], MAX_PRICE_ROWS + 2)
         proof = PriceQualification(ZERO, 18, CHAINLINK_SOURCE, POOL, 'test_fixture_only')
         with patch.dict('price_history.PRODUCTION_QUALIFICATIONS', {(POOL, ZERO): proof}, clear=True):
             with self.catalogue.connection() as conn:
-                series, evidence = load_price_series(conn, POOL, [ZERO], 1000, 1300)
+                series, evidence = load_price_series(conn, POOL, [ZERO], 1000, end)
         self.assertEqual(series[0].at(1000), 2000)
         self.assertEqual(evidence[0]['observations'], 1)
         self.assertEqual(evidence[0]['observedSources'], [CHAINLINK_SOURCE])
+        self.assertEqual(evidence[0]['coverage']['status'], 'incomplete')
+
+    def test_unqualified_full_day_sources_preserve_metrics_and_all_diagnostics(self):
+        self.capital.step(POOL)
+        for through in list(range(10018, 86410, 10000))+[86410]:
+            self.worker.step(POOL, through=through, span=10000)
+            self.fees.step(POOL);self.positions.step(POOL);self.capital.step(POOL)
+        before = stored_metrics(self.catalogue, POOL)
+        start, end = 1010, 87410
+        times = list(range(start-300, end+1, 60))
+        self.assertEqual(len(times), MAX_PRICE_ROWS)
+        alchemy = [{**self.price(), 'timestamp': at, 'retrievedAt': end, 'priceUsd': '2500'} for at in times]
+        chainlink = []
+        for index, at in enumerate(times):
+            row = chainlink_price()
+            row.update(timestamp=at, retrievedAt=end)
+            proof = row['provenance']
+            round_id = (1 << 64)+index+2
+            proof.update(answerStartedAt=at-15, answerUpdatedAt=at-10,
+                         roundId=str(round_id), answeredInRound=str(round_id), precedingRoundId=str(round_id-1))
+            proof['publicationBlock'].update(number=at, timestamp=at)
+            proof['precedingBlock'].update(number=at-1, timestamp=at-1)
+            chainlink.append(row)
+        store_observations(self.catalogue, alchemy)
+        store_observations(self.catalogue, chainlink)
+        with patch.dict('price_history.PRODUCTION_QUALIFICATIONS', {}, clear=True):
+            report = stored_metrics(self.catalogue, POOL)
+        self.assertEqual(report['capital'], before['capital'])
+        self.assertEqual(report['snapshot'], before['snapshot'])
+        self.assertTrue(report['capital']['complete24h'])
+        self.assertEqual(report['prices'][0], {
+            'currency': ZERO, 'observations': 2*MAX_PRICE_ROWS,
+            'observedSources': [SOURCE, CHAINLINK_SOURCE], 'firstTimestamp': times[0], 'lastTimestamp': end,
+            'status': 'observed_unqualified', 'reason': 'price_source_quality_not_qualified',
+            'sourceQualification': 'unqualified', 'coverage': {'status': 'not_assessed',
+                'startTimestamp': start, 'endTimestamp': end, 'maxAgeSeconds': None}})
+        self.assertEqual(report['prices'][1]['status'], 'unavailable')
+        self.assertEqual(report['prices'][1]['reason'], 'price_history_missing')
+        self.assertEqual(report['valuation'], before['valuation'])
+        self.assertEqual(report['valuation']['reason'], 'qualified_usd_prices_required')
+        self.assertIsNone(report['valuation']['tvlUsd'])
+        self.assertFalse(report['executionAvailable'])
+
+    def test_full_day_minute_observations_store_and_load_exactly_at_capacity(self):
+        end = 86700
+        rows = [{**self.price(), 'timestamp': at, 'retrievedAt': end, 'priceUsd': str(1+at % 7)}
+                for at in range(0, end+1, 60)]
+        self.assertEqual(len(rows), MAX_PRICE_ROWS)
+        store_observations(self.catalogue, rows)
+        store_observations(self.catalogue, rows)  # A resumed identical batch is idempotent.
+        proof = PriceQualification(ZERO, 18, SOURCE, POOL, 'synthetic_only')
+        with patch.dict('price_history.PRODUCTION_QUALIFICATIONS', {(POOL, ZERO): proof}, clear=True):
+            with self.catalogue.connection() as conn:
+                series, evidence = load_price_series(conn, POOL, [ZERO], 300, end)
+        self.assertEqual(series[0].times, [r['timestamp'] for r in rows])
         self.assertEqual(evidence[0]['coverage']['status'], 'complete')
+        self.assertEqual(self.counts()[2], MAX_PRICE_ROWS)
+        store_observations(self.catalogue, [{**rows[0], 'timestamp': 1}])
+        with patch.dict('price_history.PRODUCTION_QUALIFICATIONS', {(POOL, ZERO): proof}, clear=True):
+            with self.catalogue.connection() as conn:
+                with self.assertRaisesRegex(DataError, 'price_observation_budget_exhausted'):
+                    load_price_series(conn, POOL, [ZERO], 300, end)
+
+    def test_oversized_price_batch_writes_nothing(self):
+        with self.assertRaisesRegex(DataError, 'price_observation_budget_exhausted'):
+            store_observations(self.catalogue, [self.price()] * (MAX_PRICE_ROWS+1))
+        self.assertEqual(self.counts()[2], 0)
 
     def test_chainlink_proof_revisions_require_review_and_retry_is_idempotent(self):
         original = chainlink_price()
