@@ -30,11 +30,14 @@ library PolicyValidation {
         if (next.version == 0) revert InvalidPolicyVersion();
     }
 
-    /// @dev A new sequence starts with its root and version 1, in an explicitly
-    /// supplied paused or active state. Initialization must be atomic and owner-bound.
-    function validateInitial(IDominoVaultDraft.Policy memory initial) internal pure {
+    /// @dev A new sequence includes its root and starts at version 1, in an
+    /// explicitly supplied paused or active state. registeredPositions is the
+    /// membership the vault actually initializes, not a caller-supplied count.
+    /// Initialization must be atomic and owner-bound.
+    function validateInitial(IDominoVaultDraft.Policy memory initial, uint256 registeredPositions) internal pure {
         validate(initial);
         if (initial.version != 1) revert InvalidPolicyVersion();
+        validateMembership(initial.maxPositions, registeredPositions);
     }
 
     /// @dev Validate before storage mutation. registeredPositions comes from the
@@ -50,7 +53,11 @@ library PolicyValidation {
             revert InvalidPolicyVersion();
         }
         if (next.paused != current.paused) revert PauseChangeRequiresTransition();
-        if (registeredPositions == 0 || next.maxPositions < registeredPositions) {
+        validateMembership(next.maxPositions, registeredPositions);
+    }
+
+    function validateMembership(uint8 maxPositions, uint256 registeredPositions) private pure {
+        if (registeredPositions == 0 || maxPositions < registeredPositions) {
             revert PositionLimitBelowMembership();
         }
     }

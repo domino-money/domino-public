@@ -10,7 +10,9 @@ The public design removes the inherited 1500 bps liquidity-growth cap in favor o
 
 ## Policy write boundary
 
-Every future vault implementation must call `PolicyValidation.validateInitial` during atomic owner-bound initialization and `validateUpdate` before storing a new owner policy. Enforcing the cap only when fees are later consumed is insufficient. The validator selects no default policy.
+Every future vault implementation must call `PolicyValidation.validateInitial(policy, registeredPositions)` during atomic owner-bound initialization and `validateUpdate` before storing a new owner policy. Both guards require nonzero membership within the policy's position cap. The initial count must describe the root plus every child actually registered by that initialization; it must be derived from the vault's own initialization state, never trusted as a supplied count. Enforcing the cap only when fees are later consumed is insufficient. The validator selects no default policy.
+
+The former one-argument initialization guard is removed so a caller cannot silently omit membership validation. This changes an internal library call, not a deployed vault ABI. All current callers are the synthetic harness and contract tests and pass the actual fixture membership. A future implementation still must establish unique membership, authorization and asset custody atomically; accepting a count does not prove those properties.
 
 | Field | Enforced domain and meaning |
 | --- | --- |
@@ -34,6 +36,8 @@ The interval and position type ceilings are representational bounds, **not appro
 | Reserve and child-NFT withdrawals | Owner only, including while paused or the service is offline; fixed owner recipient and no exit toll |
 
 Policy writes emit `PolicyChanged`. Pause/resume events include actor, policy version and resulting state nonce. Withdrawal events identify the source/child, fixed owner recipient, actual reserve amounts where applicable, and resulting nonce. Emit them only after the corresponding real operation completes. Historical source records must still permit recovery of tracked reserves after a child leaves active membership.
+
+The synthetic harness permits `withdrawFeeReserves(tokenId, 0, 0)` for a known source: it advances the nonce and emits a zero-valued test record, without calling any token. This supports guard/nonce tests and does not establish a real transfer or select the public executor's behavior. Before implementation, the executor must explicitly choose whether to reject all-zero requests or support a documented no-transfer result; it must define nonce/receipt and indexer handling, avoid assuming tokens accept zero transfers, and prove any nonzero transfer completed before emitting its withdrawal receipt.
 
 Every completed policy write, pause, resume, withdrawal and automation action advances `stateNonce` exactly once. Resuming must not revive a plan signed before a pause. Reuse/wrap is forbidden; the harness tests nonce exhaustion with an exact error. Future implementations still must enforce complete intent replay protection, deadlines, frequency, registered operator revocation, sequence ownership, pool/currency membership, fee provenance, principal preservation, reentrancy, token compatibility and price bounds. The harness's freshness check covers only policy version, nonce, caller and paused state; it is not `compoundSelf`.
 

@@ -37,13 +37,13 @@ contract PolicyWriteHarness {
         uint256 root,
         uint256[] memory children
     ) {
-        PolicyValidation.validateInitial(initial);
+        uint256 initialMembership = children.length + 1;
+        PolicyValidation.validateInitial(initial, initialMembership);
         if (owner_ == address(0)) revert InvalidFixture();
         owner = owner_;
         operator = operator_;
         knownPosition[root] = true;
-        registeredPositions = children.length + 1;
-        if (registeredPositions > initial.maxPositions) revert PolicyValidation.PositionLimitBelowMembership();
+        registeredPositions = initialMembership;
         for (uint256 i; i < children.length; i++) {
             if (knownPosition[children[i]]) revert InvalidFixture();
             knownPosition[children[i]] = true;
@@ -89,6 +89,8 @@ contract PolicyWriteHarness {
         if (!knownPosition[tokenId]) revert UnknownPosition();
         uint128[2] storage balance = reserves[tokenId];
         if (amount0 > balance[0] || amount1 > balance[1]) revert InsufficientTrackedReserve();
+        // TEST ONLY: (0, 0) advances the synthetic nonce and emits a zero record.
+        // This does not select the real executor's zero-transfer/receipt policy.
         advanceNonce();
         balance[0] -= amount0;
         balance[1] -= amount1;

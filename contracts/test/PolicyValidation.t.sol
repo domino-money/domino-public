@@ -39,8 +39,8 @@ contract PolicyValidationTest {
         return new PolicyWriteHarness(address(this), operator, fixture(), 11, children);
     }
 
-    function exposedInitial(IDominoVaultDraft.Policy calldata initial) external pure {
-        PolicyValidation.validateInitial(initial);
+    function exposedInitial(IDominoVaultDraft.Policy calldata initial, uint256 count) external pure {
+        PolicyValidation.validateInitial(initial, count);
     }
 
     function exposedUpdate(
@@ -51,8 +51,12 @@ contract PolicyValidationTest {
         PolicyValidation.validateUpdate(current, next, count);
     }
 
-    function exposedDeploy(IDominoVaultDraft.Policy calldata initial) external returns (address) {
-        return address(new PolicyWriteHarness(address(this), address(0), initial, 11, new uint256[](0)));
+    function exposedDeploy(IDominoVaultDraft.Policy calldata initial, uint256 childCount) external returns (address) {
+        uint256[] memory children = new uint256[](childCount);
+        for (uint256 i; i < childCount; i++) {
+            children[i] = 12 + i;
+        }
+        return address(new PolicyWriteHarness(address(this), address(0), initial, 11, children));
     }
 
     function assertError(bool ok, bytes memory data, bytes4 selector) private pure {
@@ -67,28 +71,58 @@ contract PolicyValidationTest {
         require(vault.stateNonce() == nonce, "unexpected nonce mutation");
     }
 
+    function assertReserves(PolicyWriteHarness vault, uint256 tokenId, uint128 amount0, uint128 amount1)
+        private
+        view
+    {
+        uint128[2] memory balance = vault.reservesForTest(tokenId);
+        require(balance[0] == amount0 && balance[1] == amount1, "unexpected reserve mutation");
+    }
+
     function testInclusiveBoundsAndIndependentGeometry() public pure {
         IDominoVaultDraft.Policy memory value = IDominoVaultDraft.Policy(0, 0, 2000, 1, 1, 1, true);
-        PolicyValidation.validateInitial(value);
+        PolicyValidation.validateInitial(value, 1);
         value.serviceFeeBps = 200;
         value.triggerDistanceBps = 2000;
         value.maxOverlapBps = 0;
         value.minimumIntervalSeconds = type(uint32).max;
         value.maxPositions = type(uint8).max;
-        PolicyValidation.validateInitial(value);
+        PolicyValidation.validateInitial(value, type(uint8).max);
     }
 
     function testInitializationRejectsInvalidStoredPolicy() public {
         IDominoVaultDraft.Policy memory value = fixture();
         value.serviceFeeBps = 201;
-        (bool ok, bytes memory data) = address(this).call(abi.encodeCall(this.exposedDeploy, (value)));
+        (bool ok, bytes memory data) = address(this).call(abi.encodeCall(this.exposedDeploy, (value, 0)));
         assertError(ok, data, FeeAccounting.ExcessiveFee.selector);
         for (uint64 version; version < 3; version += 2) {
             value = fixture();
             value.version = version;
-            (ok, data) = address(this).call(abi.encodeCall(this.exposedDeploy, (value)));
+            (ok, data) = address(this).call(abi.encodeCall(this.exposedDeploy, (value, 0)));
             assertError(ok, data, PolicyValidation.InvalidPolicyVersion.selector);
         }
+    }
+
+    function testInitialMembershipAcceptsExactCapAndRejectsZeroOrAbove() public {
+        IDominoVaultDraft.Policy memory value = fixture();
+        PolicyValidation.validateInitial(value, 1);
+        PolicyValidation.validateInitial(value, value.maxPositions);
+        uint256[2] memory rejected = [uint256(0), uint256(value.maxPositions) + 1];
+        for (uint256 i; i < rejected.length; i++) {
+            (bool ok, bytes memory data) = address(this).call(abi.encodeCall(this.exposedInitial, (value, rejected[i])));
+            assertError(ok, data, PolicyValidation.PositionLimitBelowMembership.selector);
+        }
+    }
+
+    function testConstructorMembershipRejectsRootPlusChildrenAboveCap() public {
+        IDominoVaultDraft.Policy memory value = fixture();
+        PolicyWriteHarness vault = PolicyWriteHarness(this.exposedDeploy(value, 2));
+        require(vault.registeredPositions() == value.maxPositions);
+        assertStored(vault, value, 0);
+        (bool ok, bytes memory data) = address(this).call(abi.encodeCall(this.exposedDeploy, (value, 3)));
+        assertError(ok, data, PolicyValidation.PositionLimitBelowMembership.selector);
+        assertStored(vault, value, 0);
+        require(vault.registeredPositions() == 3);
     }
 
     function testEveryPolicyGuardRejectsAtWriteWithoutMutation() public {
@@ -251,6 +285,63 @@ contract PolicyValidationTest {
         require(vault.stateNonce() == 4);
     }
 
+    function testReserveWithdrawalAcceptsExactBalances() public {
+        PolicyWriteHarness vault = harness(address(0), 1);
+        vault.seedReservesForTest(11, 123, 456);
+        vault.seedReservesForTest(12, 7, 8);
+        vm.recordLogs();
+        vault.withdrawFeeReserves(11, 123, 456);
+        VmPolicyLogs.Log[] memory logs = vm.getRecordedLogs();
+        require(logs.length == 1 && logs[0].emitter == address(vault));
+        require(logs[0].topics.length == 3);
+        require(logs[0].topics[0] == keccak256("FeeReservesWithdrawn(uint256,address,uint128,uint128,uint64)"));
+        require(logs[0].topics[1] == bytes32(uint256(11)));
+        require(logs[0].topics[2] == bytes32(uint256(uint160(address(this)))));
+        require(keccak256(logs[0].data) == keccak256(abi.encode(uint128(123), uint128(456), uint64(1))));
+        assertReserves(vault, 11, 0, 0);
+        assertReserves(vault, 12, 7, 8);
+        assertStored(vault, fixture(), 1);
+        require(vault.registeredPositions() == 2);
+    }
+
+    function testReserveOverdrawRejectsEachCurrencyWithExactErrorAndNoMutation() public {
+        PolicyWriteHarness vault = harness(address(0), 1);
+        vault.seedReservesForTest(11, 123, 456);
+        vault.seedReservesForTest(12, 7, 8);
+        uint128[2][3] memory requests = [
+            [uint128(124), uint128(456)],
+            [uint128(123), uint128(457)],
+            [uint128(124), uint128(457)]
+        ];
+        for (uint256 i; i < requests.length; i++) {
+            (bool ok, bytes memory data) = address(vault).call(
+                abi.encodeCall(vault.withdrawFeeReserves, (11, requests[i][0], requests[i][1]))
+            );
+            assertError(ok, data, PolicyWriteHarness.InsufficientTrackedReserve.selector);
+            assertReserves(vault, 11, 123, 456);
+            assertReserves(vault, 12, 7, 8);
+            assertStored(vault, fixture(), 0);
+            require(vault.registeredPositions() == 2);
+        }
+    }
+
+    function testUnknownReservePositionRejectsZeroAndNonzeroAmountsWithoutMutation() public {
+        PolicyWriteHarness vault = harness(address(0), 1);
+        vault.seedReservesForTest(11, 123, 456);
+        vault.seedReservesForTest(12, 7, 8);
+        for (uint128 amount; amount < 2; amount++) {
+            (bool ok, bytes memory data) = address(vault).call(
+                abi.encodeCall(vault.withdrawFeeReserves, (999, amount, amount))
+            );
+            assertError(ok, data, PolicyWriteHarness.UnknownPosition.selector);
+            assertReserves(vault, 999, 0, 0);
+            assertReserves(vault, 11, 123, 456);
+            assertReserves(vault, 12, 7, 8);
+            assertStored(vault, fixture(), 0);
+            require(vault.registeredPositions() == 2);
+        }
+    }
+
     function testPolicyChangeEmitsVersionAndInvalidatesOldPlans() public {
         PolicyWriteHarness vault = harness(address(0), 0);
         IDominoVaultDraft.Policy memory next = fixture();
@@ -333,11 +424,11 @@ contract PolicyValidationTest {
     function testFuzzInvalidGeometryUsesExactErrors(uint16 triggerSeed, uint16 overlapSeed) public {
         IDominoVaultDraft.Policy memory value = fixture();
         value.triggerDistanceBps = 2001 + triggerSeed % 63535;
-        (bool ok, bytes memory data) = address(this).call(abi.encodeCall(this.exposedInitial, (value)));
+        (bool ok, bytes memory data) = address(this).call(abi.encodeCall(this.exposedInitial, (value, 1)));
         assertError(ok, data, PolicyValidation.ExcessiveTriggerDistance.selector);
         value = fixture();
         value.maxOverlapBps = 2001 + overlapSeed % 63535;
-        (ok, data) = address(this).call(abi.encodeCall(this.exposedInitial, (value)));
+        (ok, data) = address(this).call(abi.encodeCall(this.exposedInitial, (value, 1)));
         assertError(ok, data, PolicyValidation.ExcessiveOverlap.selector);
     }
 
