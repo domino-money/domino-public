@@ -88,6 +88,7 @@ export function RangeChart({
     <div>
       <div
         ref={box}
+        data-testid={onBounds ? 'range-chart-bounds' : 'range-chart-price'}
         className="relative cursor-ew-resize select-none touch-none"
         style={{ height: H }}
         onPointerDown={(e) => {

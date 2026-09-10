@@ -39,7 +39,18 @@ states, and the gas and available-fee boundaries of `previewCompound`. The
 engine is imported from `web/lib`, never copied, so a change there shows up
 here.
 
-`test:render` serves `dist` and drives it in a real browser. It exists because
+`test:render` serves `dist` and drives it in a real browser. Beyond rendering
+and errors, it exercises the behaviour a helper test cannot prove: a real
+pointer drag on a range edge (a still pointer must hold a still bound), input
+preservation across back-navigation, the action footer staying outside the
+scrolling body at a short viewport, receipt tab switching and the exact-amounts
+toggle, section links landing on their target across and within routes, the
+price slider's value-to-thumb mapping, both dialogs' focus containment and
+accessible names, that every displayed token has real artwork, and that
+placeholder figures never appear without their sample label. It also asserts
+that exactly one React instance rendered the page by counting fiber key
+suffixes in the DOM, which holds in every environment rather than only when
+DevTools is present. It exists because
 `tsc --noEmit && vite build` stayed green while the deployed page rendered
 nothing: two copies of React ended up in the bundle and the first hook threw.
 Compilation cannot see that; loading the built files can. It fails on any

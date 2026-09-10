@@ -158,15 +158,24 @@ test('the built landing page renders its content without a single browser error'
   await page.close();
 });
 
-test('React is instantiated exactly once in the built bundle', async () => {
-  // The direct form of the bug that produced the blank page. Two copies of the
-  // renderer each install their own dispatcher and the first hook reads null.
+test('exactly one React instance rendered the page', async () => {
+  // The blank-page failure came from two React copies in one bundle. Each
+  // copy stamps DOM nodes with its own random key suffix (__reactFiber$xxxx),
+  // so the number of distinct suffixes on the page is the number of Reacts.
+  // This asserts in every environment; it does not depend on DevTools.
   const page = await open('/');
-  const roots = await page.evaluate(() => {
-    const hook = window.__REACT_DEVTOOLS_GLOBAL_HOOK__;
-    return hook ? hook.renderers.size : null;
+  const suffixes = await page.evaluate(() => {
+    const found = new Set();
+    for (const el of document.querySelectorAll('#root, #root *')) {
+      for (const key of Object.keys(el)) {
+        const m = /^__reactFiber(\$.+)$/.exec(key);
+        if (m) found.add(m[1]);
+      }
+    }
+    return Array.from(found);
   });
-  if (roots !== null) assert.equal(roots, 1, 'more than one React renderer is loaded');
+  assert.equal(suffixes.length, 1, `React key suffixes on the page: ${JSON.stringify(suffixes)}`);
+  clean('singleton');
   await page.close();
 });
 
@@ -416,5 +425,256 @@ test('the page survives a narrow viewport without spilling sideways', async () =
   );
   assert.ok(overflow <= 1, `the page scrolls ${overflow}px horizontally at 375px wide`);
   clean('narrow viewport');
+  await page.close();
+});
+
+// ---------------------------------------------------------------------------
+// Flow behaviour asked for on #12, exercised through the DOM of the served
+// build rather than through the helpers.
+// ---------------------------------------------------------------------------
+
+/** Reads a numeric input's value as a number. */
+const num = (page, sel) => page.locator(sel).inputValue().then(Number);
+
+/** Sets a native range input the way a user would, so React sees the change. */
+async function setRange(page, selector, value) {
+  await page.locator(selector).evaluate((el, v) => {
+    const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set;
+    setter.call(el, String(v));
+    el.dispatchEvent(new Event('input', { bubbles: true }));
+    el.dispatchEvent(new Event('change', { bubbles: true }));
+  }, value);
+}
+
+test('dragging a range edge through the DOM holds a fixed pointer to a fixed bound', async () => {
+  const page = await open('/app');
+  await page.getByRole('button', { name: /New position|Let’s try it/ }).first().click();
+  const dialog = page.locator('[role="dialog"]');
+  await dialog.waitFor({ state: 'visible' });
+  await page.locator('#amount').fill('1000');
+  await dialog.getByRole('button', { name: 'Continue' }).click(); // Range step
+
+  const chart = page.getByTestId('range-chart-bounds');
+  await chart.waitFor({ state: 'visible' });
+  const box = await chart.boundingBox();
+  const lowerBefore = await num(page, '#min-price');
+  const upperBefore = await num(page, '#max-price');
+
+  // Grab the upper edge: it is the right-hand bound line inside the chart.
+  const edgeX = await page.evaluate(() => {
+    const lines = Array.from(document.querySelectorAll('[data-testid="range-chart-bounds"] line'));
+    const xs = lines.map((l) => l.getBoundingClientRect().left).filter((x) => Number.isFinite(x));
+    return Math.max(...xs);
+  });
+  const y = box.y + box.height / 2;
+  await page.mouse.move(edgeX, y);
+  await page.mouse.down();
+
+  // Move once to the right, then keep the pointer perfectly still while
+  // firing more move events. Before the fix, every event re-derived the
+  // domain from the new bounds and the value crept under a still pointer.
+  const targetX = Math.min(box.x + box.width - 4, edgeX + box.width * 0.12);
+  await page.mouse.move(targetX, y, { steps: 4 });
+  const first = await num(page, '#max-price');
+  assert.ok(first > upperBefore, `the edge did not follow the pointer (${upperBefore} -> ${first})`);
+  const seen = [];
+  for (let i = 0; i < 6; i++) {
+    await page.mouse.move(targetX, y);
+    seen.push(await num(page, '#max-price'));
+  }
+  await page.mouse.up();
+
+  assert.deepEqual(seen, seen.map(() => first), `the bound crept under a still pointer: ${seen.join(', ')}`);
+  assert.equal(await num(page, '#min-price'), lowerBefore, 'the other edge moved during the gesture');
+
+  // After release the domain may re-fit to the new bounds; the bounds themselves must not change.
+  await page.waitForTimeout(50);
+  assert.equal(await num(page, '#max-price'), first, 'the bound changed on release');
+  clean('range drag');
+  await page.close();
+});
+
+test('going back through the create flow keeps what was typed', async () => {
+  const page = await open('/app');
+  await page.getByRole('button', { name: /New position|Let’s try it/ }).first().click();
+  const dialog = page.locator('[role="dialog"]');
+  await dialog.waitFor({ state: 'visible' });
+
+  await page.locator('#amount').fill('2345.5');
+  await dialog.getByRole('button', { name: 'Continue' }).click();
+
+  // Change the range by typing, then go forward and back again.
+  await page.locator('#max-price').fill('1.8');
+  await page.locator('#max-price').press('Tab');
+  await page.locator('#min-price').fill('0.6');
+  await page.locator('#min-price').press('Tab');
+  await dialog.getByRole('button', { name: 'Continue' }).click(); // Explore
+  await dialog.getByRole('button', { name: 'Back' }).click(); // Range
+  assert.equal(await num(page, '#max-price'), 1.8, 'upper bound lost on back-navigation');
+  assert.equal(await num(page, '#min-price'), 0.6, 'lower bound lost on back-navigation');
+
+  await dialog.getByRole('button', { name: 'Back' }).click(); // Pair / amount
+  assert.equal(await page.locator('#amount').inputValue(), '2345.5', 'amount lost on back-navigation');
+
+  // And forward again still carries the same values through to the review.
+  await dialog.getByRole('button', { name: 'Continue' }).click();
+  await dialog.getByRole('button', { name: 'Continue' }).click();
+  await dialog.getByRole('button', { name: 'Continue' }).click();
+  const review = await dialog.innerText();
+  assert.match(review, /2,345\.50/, 'review does not show the typed amount');
+  assert.match(review, /0\.60 to \$1\.80/, 'review does not show the typed range');
+  clean('back navigation');
+  await page.close();
+});
+
+test('the dialog footer stays outside the scrolling body and on screen at a short viewport', async () => {
+  const page = await open('/app');
+  await page.setViewportSize({ width: 1280, height: 480 });
+  await page.getByRole('button', { name: /New position|Let’s try it/ }).first().click();
+  const dialog = page.locator('[role="dialog"]');
+  await dialog.waitFor({ state: 'visible' });
+
+  const layout = await page.evaluate(() => {
+    const dialog = document.querySelector('[role="dialog"]');
+    const footer = dialog.querySelector('footer');
+    const scroller = Array.from(dialog.querySelectorAll('*')).find(
+      (el) => getComputedStyle(el).overflowY === 'auto' && el.scrollHeight > el.clientHeight,
+    );
+    const fb = footer.getBoundingClientRect();
+    return {
+      hasScroller: Boolean(scroller),
+      footerInsideScroller: scroller ? scroller.contains(footer) : null,
+      footerBottom: fb.bottom,
+      viewport: window.innerHeight,
+      footerVisible: fb.height > 0 && fb.bottom <= window.innerHeight && fb.top >= 0,
+    };
+  });
+  assert.equal(layout.hasScroller, true, 'at 480px tall the body should need to scroll');
+  assert.equal(layout.footerInsideScroller, false, 'the action footer is inside the scrolling body');
+  assert.equal(layout.footerVisible, true, `footer bottom ${layout.footerBottom} vs viewport ${layout.viewport}`);
+
+  // And the primary action is actually reachable without scrolling.
+  const next = dialog.getByRole('button', { name: 'Continue' });
+  await page.locator('#amount').fill('1000');
+  await next.click({ trial: true });
+  clean('footer');
+  await page.close();
+});
+
+test('receipt tabs switch content and keep the exact-amounts toggle working', async () => {
+  const page = await open('/app');
+  await createPosition(page);
+  const dialog = await runScenario(page, '50', '0.50');
+  await dialog.getByRole('button', { name: 'See the result' }).click();
+  await dialog.getByRole('button', { name: 'Record it' }).click();
+  await dialog.waitFor({ state: 'detached' });
+  await page.getByRole('button', { name: 'View receipt' }).first().click();
+  const receipt = page.locator('[role="dialog"][aria-labelledby="receipt-title"]');
+  await receipt.waitFor({ state: 'visible' });
+
+  const tabs = receipt.getByRole('tab');
+  assert.equal(await tabs.count(), 3);
+  const texts = {};
+  for (const name of ['Amounts', 'Costs', 'Why this action?']) {
+    await receipt.getByRole('tab', { name }).click();
+    assert.equal(await receipt.getByRole('tab', { name }).getAttribute('aria-selected'), 'true', `${name} not selected`);
+    const selected = await receipt.locator('[role="tab"][aria-selected="true"]').count();
+    assert.equal(selected, 1, 'more than one tab selected');
+    texts[name] = await receipt.innerText();
+  }
+  assert.notEqual(texts.Amounts, texts.Costs, 'Costs tab shows the same content as Amounts');
+  assert.notEqual(texts.Costs, texts['Why this action?'], 'Why tab shows the same content as Costs');
+  assert.match(texts.Costs, /2%/, 'the costs tab does not show the fee basis');
+  assert.match(texts.Costs, /not a second deduction|from the service fee|covers the network cost/i, 'the costs tab does not explain that gas is not a second deduction');
+
+  // Exact amounts: six places appear after the toggle.
+  await receipt.getByRole('tab', { name: 'Amounts' }).click();
+  await page.locator('#receipt-exact').check();
+  assert.match(await receipt.innerText(), /\d\.\d{6}/, 'exact mode did not switch to six places');
+  await page.keyboard.press('Escape');
+  await receipt.waitFor({ state: 'detached' });
+  clean('receipt tabs');
+  await page.close();
+});
+
+/** Top of an element relative to the viewport, after the app's own scroll settles. */
+async function sectionTop(page, id) {
+  await page.waitForTimeout(80);
+  return page.evaluate((id) => document.getElementById(id)?.getBoundingClientRect().top ?? null, id);
+}
+
+test('section links land on their target, across routes and within one route', async () => {
+  const page = await open('/');
+  const header = await page.evaluate(() => document.querySelector('header')?.getBoundingClientRect().height ?? 0);
+
+  // Cross-route: Activity in the header goes to the workspace and to #activity.
+  await page.locator('header').getByRole('link', { name: 'Activity' }).click();
+  await page.waitForFunction(() => location.hash.startsWith('#/app'));
+  const activityTop = await sectionTop(page, 'activity');
+  assert.ok(activityTop !== null, '#activity is not on the page');
+  assert.ok(activityTop >= 0 && activityTop <= header + 40, `#activity landed at ${activityTop}px, header is ${header}px`);
+
+  // Cross-route the other way: Explore pools returns to the landing at #pools.
+  await page.getByRole('button', { name: 'Explore pools' }).click();
+  await page.waitForFunction(() => location.hash === '#/#pools');
+  const poolsTop = await sectionTop(page, 'pools');
+  assert.ok(poolsTop >= 0 && poolsTop <= header + 40, `#pools landed at ${poolsTop}px`);
+
+  // Same route, different section: only the hash section changes.
+  await page.evaluate(() => { location.hash = '#/#learn'; });
+  const learnTop = await sectionTop(page, 'learn');
+  assert.ok(learnTop >= 0 && learnTop <= header + 40, `#learn landed at ${learnTop}px`);
+  await page.evaluate(() => { location.hash = '#/#pools'; });
+  const backTop = await sectionTop(page, 'pools');
+  assert.ok(backTop >= 0 && backTop <= header + 40, `#pools (second time) landed at ${backTop}px`);
+
+  // A route with no section starts at the top.
+  await page.evaluate(() => { location.hash = '#/settings'; });
+  await page.waitForTimeout(80);
+  assert.equal(await page.evaluate(() => window.scrollY), 0, 'a plain route did not start at the top');
+  clean('section links');
+  await page.close();
+});
+
+test('the price slider maps its value to the thumb label and position', async () => {
+  const page = await open('/');
+  const slider = page.locator('#sim-price');
+  await slider.scrollIntoViewIfNeeded();
+  const min = Number(await slider.getAttribute('min'));
+  const max = Number(await slider.getAttribute('max'));
+  assert.ok(max > min);
+
+  for (const value of [min, (min + max) / 2, max, 1.37]) {
+    const v = Math.round(value * 100) / 100;
+    await setRange(page, '#sim-price', v);
+    const state = await page.evaluate(() => {
+      const input = document.getElementById('sim-price');
+      const thumb = input.parentElement.querySelector('.pointer-events-none');
+      return { value: Number(input.value), label: thumb.textContent.trim(), left: parseFloat(thumb.style.left) };
+    });
+    assert.equal(state.value, v, 'the input did not take the value');
+    const expectedPct = ((v - min) / (max - min)) * 100;
+    assert.ok(Math.abs(state.left - expectedPct) < 0.01, `thumb at ${state.left}% for ${v}, expected ${expectedPct}%`);
+    assert.match(state.label, /^\$[\d,]+\.\d{2}$/, `thumb label "${state.label}" is not a price`);
+    assert.equal(Number(state.label.replace(/[$,]/g, '')), v, `thumb label ${state.label} does not match ${v}`);
+  }
+  clean('price slider');
+  await page.close();
+});
+
+test('placeholder market figures are always accompanied by the sample label', async () => {
+  const page = await open('/');
+  const table = await page.evaluate(() => {
+    const cells = Array.from(document.querySelectorAll('[data-metric]'));
+    const states = cells.map((c) => c.getAttribute('data-metric'));
+    const sampleLabelled = cells.filter((c) => c.getAttribute('data-metric') === 'placeholder' && /Sample/.test(c.title)).length;
+    const pill = document.body.innerText.includes('Sample data');
+    return { total: cells.length, states: Array.from(new Set(states)), sampleLabelled, pill };
+  });
+  assert.ok(table.total > 0, 'no metric cells rendered');
+  assert.deepEqual(table.states, ['placeholder'], `unexpected metric states on the landing: ${table.states}`);
+  assert.equal(table.sampleLabelled, table.total, 'a placeholder figure is missing its sample label');
+  assert.equal(table.pill, true, 'the table is missing its Sample data pill');
+  clean('placeholder labels');
   await page.close();
 });

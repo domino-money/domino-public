@@ -1,16 +1,28 @@
-import { compactUsd, feeTierLabel, listMarkets, turnover, type Metric } from '../lib/markets'
+import { compactUsd, feeTierLabel, listMarkets, presentMetric, turnover, type Metric } from '../lib/markets'
 import { Button, Display, Pill, cx } from './ui'
 import { TokenPair } from './TokenIcon'
 
 function Cell({ metric, suffix, strong }: { metric: Metric; suffix?: string; strong?: boolean }) {
-  if (metric.value === null) return <span className="text-[13px] text-fg-subtle">Unavailable</span>
+  const shown = presentMetric(metric, (m) =>
+    suffix ? `${Number(m.value).toFixed(2)}${suffix}` : compactUsd(m),
+  )
+  if (shown.kind === 'unavailable') {
+    return (
+      <span className="text-[13px] text-fg-subtle" data-metric="unavailable" title={shown.reason}>
+        Unavailable
+      </span>
+    )
+  }
+  const asOf = shown.asOf ? new Date(shown.asOf * 1000).toLocaleString('en-US') : undefined
   return (
     <span
-      className={cx('tnum font-mono text-[13px]', strong && 'text-fg')}
-      style={metric.state === 'placeholder' && !strong ? { color: 'var(--fg-muted)' } : undefined}
-      title={metric.state === 'placeholder' ? 'Sample figure, not an observation' : undefined}
+      className={cx('tnum font-mono text-[13px]', strong && 'text-fg', shown.stale && 'text-money-wait')}
+      style={shown.sample && !strong ? { color: 'var(--fg-muted)' } : undefined}
+      data-metric={shown.stale ? 'stale' : shown.sample ? 'placeholder' : 'qualified'}
+      title={shown.sample ? 'Sample figure, not an observation' : shown.stale ? `Last observed ${asOf}` : undefined}
     >
-      {suffix ? `${Number(metric.value).toFixed(2)}${suffix}` : compactUsd(metric)}
+      {shown.text}
+      {shown.stale && <span className="ml-1 text-[11px]">· stale</span>}
     </span>
   )
 }

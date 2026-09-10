@@ -299,3 +299,43 @@ test('a fee tier reads as a percentage, never as raw pips', () => {
   assert.equal(markets.feeTierLabel(500), '0.05%');
   assert.equal(pair.feeTier(pair.PAIR.feePips), markets.feeTierLabel(pair.PAIR.feePips));
 });
+
+// ---------------------------------------------------------------------------
+// Metric presentation. A retained value must never pass as a current one.
+// ---------------------------------------------------------------------------
+
+test('an unavailable metric that still carries a value is shown as unavailable', () => {
+  const retained = { value: '10450000', state: 'unavailable', reason: 'provider_unavailable', asOf: 1_700_000_000 };
+  const shown = markets.presentMetric(retained);
+  assert.equal(shown.kind, 'unavailable');
+  assert.equal(shown.reason, 'provider_unavailable');
+});
+
+test('a stale metric keeps its value and its original time, and says it is stale', () => {
+  const shown = markets.presentMetric({ value: '10450000', state: 'stale', asOf: 1_700_000_000 });
+  assert.equal(shown.kind, 'value');
+  assert.equal(shown.stale, true);
+  assert.equal(shown.asOf, 1_700_000_000);
+  assert.equal(shown.text, markets.compactUsd({ value: '10450000', state: 'stale' }));
+});
+
+test('a qualified metric is neither stale nor a sample', () => {
+  const shown = markets.presentMetric({ value: '42.5', state: 'qualified' });
+  assert.deepEqual(shown, { kind: 'value', text: '$42.50', stale: false, sample: false, asOf: undefined });
+});
+
+test('a placeholder is marked as a sample, and a null value is unavailable whatever the state', () => {
+  assert.equal(markets.presentMetric({ value: '1', state: 'placeholder' }).sample, true);
+  for (const state of ['qualified', 'stale', 'placeholder', 'unavailable']) {
+    assert.equal(markets.presentMetric({ value: null, state }).kind, 'unavailable', state);
+  }
+});
+
+test('the presentation rule is decided by state, not by value nullness', () => {
+  // Same value, four states, four different outcomes.
+  const kinds = ['qualified', 'stale', 'placeholder', 'unavailable'].map((state) => {
+    const p = markets.presentMetric({ value: '5', state });
+    return p.kind === 'unavailable' ? 'unavailable' : p.stale ? 'stale' : p.sample ? 'sample' : 'current';
+  });
+  assert.deepEqual(kinds, ['current', 'stale', 'sample', 'unavailable']);
+});

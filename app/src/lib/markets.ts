@@ -10,13 +10,45 @@
  * as such. Do not render these rows without that label.
  */
 
-export type MetricState = 'qualified' | 'unavailable' | 'placeholder'
+export type MetricState = 'qualified' | 'stale' | 'unavailable' | 'placeholder'
 
 export interface Metric {
-  /** Decimal string, or null when the value is not established. */
+  /**
+   * Decimal string, or null when the value is not established. A non-null
+   * value does not by itself mean the figure is current: an `unavailable`
+   * metric may retain the last value it had, and a `stale` one always does.
+   * `state` decides what is shown; `value` never does on its own.
+   */
   value: string | null
   state: MetricState
   reason?: string
+  /** Original observation time of a retained value, as a unix timestamp. */
+  asOf?: number
+}
+
+export type Presented =
+  | { kind: 'unavailable'; reason?: string }
+  | { kind: 'value'; text: string; stale: boolean; sample: boolean; asOf?: number }
+
+/**
+ * The one rule for turning a metric into something on screen.
+ *
+ * An unavailable metric is shown as unavailable even when it still carries
+ * a retained value, a stale one shows its value with its original time, and
+ * a placeholder is marked as a sample. Nothing here is decided by whether
+ * `value` happens to be null.
+ */
+export function presentMetric(metric: Metric, format: (m: Metric) => string = compactUsd): Presented {
+  if (metric.state === 'unavailable' || metric.value === null) {
+    return { kind: 'unavailable', reason: metric.reason }
+  }
+  return {
+    kind: 'value',
+    text: format(metric),
+    stale: metric.state === 'stale',
+    sample: metric.state === 'placeholder',
+    asOf: metric.asOf,
+  }
 }
 
 export interface Market {
