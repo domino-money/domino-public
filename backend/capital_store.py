@@ -2,9 +2,11 @@
 from psycopg.types.json import Jsonb
 
 from activity_indexer import ActivityIndexer
+import capital_work
 from catalogue import checked_key
 from discovery import DataError, bytes32
-from position_accounting import position_summary, replay_positions
+from historical_capacity import capacity_profile, clear_work, record_failure, replay_batch, save_work
+from position_accounting import VERSION as POSITION_VERSION, position_summary, replay_positions
 from position_store import PositionIndexer, read_positions
 
 VERSION = 1
@@ -19,13 +21,59 @@ def capital_point(activity, model):
             'sqrtPriceX96': activity['sqrtPriceX96'], 'tick': activity['tick']}
 
 
+def replay_capital(activity, model, events, pool_id, key, **kwargs):
+    points = []
+    def observe(event, next_activity, next_model):
+        points.append({'blockHash': event['blockHash'], 'logIndex': event['logIndex'],
+                       'capital': capital_point(next_activity, next_model)})
+    activity, model, _ = replay_positions(activity, model, events, pool_id, key, observe=observe, **kwargs)
+    return activity, model, points
+
+
 class CapitalIndexer:
-    def __init__(self, store, rpc):
+    def __init__(self, store, rpc, *, capacity='standard'):
         self.store = store
         self.activity = ActivityIndexer(store, rpc)
-        self.positions = PositionIndexer(store, rpc)
+        self.capacity = capacity_profile(capacity)
+        self.positions = PositionIndexer(store, rpc, capacity=capacity)
 
     def step(self, pool_id):
+        pool_id = bytes32(pool_id)
+        try:
+            return self._step(pool_id)
+        except DataError as error:
+            record_failure(self.store, pool_id, 'capital', self.capacity, str(error))
+            raise
+
+    def restart(self, pool_id):
+        """Operator-only recovery: discard unpublished work after source review.
+
+        Canonical evidence must be available. Activity rewind remains the only
+        recovery for an orphaned source; this command never changes source or
+        qualified capital rows. The CLI report records what was discarded.
+        """
+        pool_id = bytes32(pool_id)
+        self.activity.chain.check_chain()
+        with self.store.catalogue.connection(writer=True, lock=True) as conn:
+            self.store.pool(conn, pool_id)
+            work = conn.execute('''SELECT w.progress,w.diagnostic,c.* FROM domino_activity.historical_work w
+              JOIN domino_activity.chunks c ON c.pool_id=w.pool_id AND c.start_block=w.chunk_start
+              WHERE w.pool_id=%s AND w.ledger='capital' ''', (pool_id,)).fetchone()
+            if not work:
+                return {'status': 'no_capital_work', 'ledger': 'capital'}
+            tail = self.store.tail(conn, pool_id)
+            block = self.activity.chain.block(work['end_block'])
+            if (block.hash != work['end_hash'] or block.timestamp != work['end_timestamp'] or
+                    self.activity.chain.block(tail['end_block']).hash != tail['end_hash']):
+                raise DataError('capital_activity_reorg_requires_replay')
+            self._canonical(block, tail)
+            clear_work(conn, pool_id, 'capital')
+            return {'status': 'capital_work_restarted', 'ledger': 'capital',
+                    'fromBlock': work['start_block'], 'throughBlock': work['end_block'],
+                    'discardedCheckpointDigest': capital_work.digest(work['progress']),
+                    'previousDiagnostic': work['diagnostic'], 'qualifiedCapitalRetained': True}
+
+    def _step(self, pool_id):
         pool_id = bytes32(pool_id)
         self.activity.chain.check_chain()
         with self.store.catalogue.connection(writer=True, lock=True) as conn:
@@ -47,14 +95,15 @@ class CapitalIndexer:
                 raise DataError('reconciled_position_tail_required')
             source = conn.execute('SELECT * FROM domino_activity.position_chunks WHERE pool_id=%s AND chunk_start=%s',
                                   (pool_id, chunk['start_block'])).fetchone()
-            if not source or source['methodology_version'] != 1:
+            if not source or source['methodology_version'] != POSITION_VERSION:
                 raise DataError('reconciled_position_chunk_required')
-            previous = conn.execute('''SELECT c.*,p.model AS position_model,k.methodology_version AS capital_version
+            previous = conn.execute('''SELECT c.*,p.model AS position_model,
+              p.methodology_version AS position_version,k.methodology_version AS capital_version
               FROM domino_activity.chunks c JOIN domino_activity.position_chunks p
               ON p.pool_id=c.pool_id AND p.chunk_start=c.start_block
               LEFT JOIN domino_activity.capital_chunks k ON k.pool_id=c.pool_id AND k.chunk_start=c.start_block
               WHERE c.pool_id=%s AND c.end_block=%s''', (pool_id, chunk['start_block']-1)).fetchone()
-            if ((previous and previous['capital_version'] != VERSION) or
+            if ((previous and (previous['capital_version'] != VERSION or previous['position_version'] != POSITION_VERSION)) or
                     (not previous and chunk['start_block'] != row['start_block'])):
                 raise DataError('capital_history_anchor_required')
             events = conn.execute('''SELECT pool_id AS "poolId",block_number AS "blockNumber",
@@ -63,30 +112,62 @@ class CapitalIndexer:
               ORDER BY block_number,log_index LIMIT 2001''', (pool_id, chunk['start_block'])).fetchall()
             if len(events) > 2000:
                 raise DataError('capital_event_budget_exhausted')
-            points = []
-            def observe(event, activity, model):
-                points.append((event, capital_point(activity, model)))
-            activity, model, _ = replay_positions(previous['model'] if previous else None,
-                previous['position_model'] if previous else None, events, pool_id, key, observe=observe)
+            block = self.activity.chain.block(chunk['end_block'])
+            if block.hash != chunk['end_hash'] or block.timestamp != chunk['end_timestamp']:
+                raise DataError('capital_activity_reorg_requires_replay')
+            binding = capital_work.bind_source(pool_id, key, chunk, source, previous, events)
+            progress = capital_work.load(conn, pool_id, chunk['start_block'], binding, events)
+            activity, model, points, offset = replay_batch(replay_capital,
+                progress['activity'] if progress else previous['model'] if previous else None,
+                progress['model'] if progress else previous['position_model'] if previous else None,
+                events, progress['offset'] if progress else 0, pool_id, key, capacity=self.capacity)
+            points = (progress['rows'] if progress else []) + points
+            pending = {'version': 1, 'activity': activity, 'model': model, 'rows': points,
+                       'offset': offset, 'totalEvents': len(events), 'checks': progress['checks'] if progress else 0}
+            if not model or model.get('version') != POSITION_VERSION:
+                raise DataError('capital_source_ledger_mismatch')
+            # Honor selected limits even on empty later chunks or proof-only resumes.
+            if len(model['positions']) > self.capacity.positions:
+                raise DataError('core_position_budget_exhausted')
+            if len(model['ticks']) > self.capacity.ticks:
+                raise DataError('core_tick_budget_exhausted')
+            if offset < len(events):
+                self._canonical(block, tail)
+                return save_work(conn, pool_id, 'capital', chunk, self.capacity, capital_work.seal(pending, binding))
             if activity != chunk['model'] or model != source['model']:
                 raise DataError('capital_source_ledger_mismatch')
-            block = self.activity.chain.block(chunk['end_block'])
-            if (block.hash != chunk['end_hash'] or block.timestamp != chunk['end_timestamp'] or
-                    self.activity.read_state(pool_id, block, key) != chunk['state_snapshot']):
+            if self.activity.read_state(pool_id, block, key) != chunk['state_snapshot']:
                 raise DataError('capital_state_reconciliation_failed')
-            proof = self.positions.check_positions(pool_id, block, activity, model)
+            required = len(model['positions']) + len(model['ticks']) + len({
+                (p['tickLower'], p['tickUpper']) for p in model['positions'].values()})
+            if pending['checks'] > required or (pending['checks'] and progress.get('requiredChecks') != required):
+                raise DataError('capital_work_checkpoint_mismatch')
+            self.positions.check_offset = pending['checks']
+            try:
+                proof = self.positions.check_positions(pool_id, block, activity, model)
+            finally:
+                self.positions.check_offset = None
             if proof != source['reconciliation']:
                 raise DataError('capital_position_reconciliation_failed')
-            if (self.activity.chain.block(block.number) != block or
-                    self.activity.chain.block(tail['end_block']).hash != tail['end_hash']):
-                raise DataError('capital_activity_reorg_requires_replay')
+            self._canonical(block, tail)
+            if self.positions.completed_checks < self.positions.required_checks:
+                pending['checks'], pending['requiredChecks'] = self.positions.completed_checks, required
+                return save_work(conn, pool_id, 'capital', chunk, self.capacity, capital_work.seal(pending, binding))
+            # Byte limits apply only to saved unpublished work, not a final row
+            # that is never written to historical_work. Publication is atomic.
             conn.execute('INSERT INTO domino_activity.capital_chunks VALUES(%s,%s,%s,%s,%s)',
                          (pool_id, chunk['start_block'], VERSION, len(points), Jsonb(capital_point(activity, model))))
-            for event, point in points:
+            for point in points:
                 conn.execute('INSERT INTO domino_activity.capital_events VALUES(%s,%s,%s,%s,%s)',
-                    (pool_id, event['blockHash'], event['logIndex'], chunk['start_block'], Jsonb(point)))
+                    (pool_id, point['blockHash'], point['logIndex'], chunk['start_block'], Jsonb(point['capital'])))
+            clear_work(conn, pool_id, 'capital')
             return {'status': 'capital_chunk_reconciled', 'fromBlock': chunk['start_block'],
                     'through': block.number, 'capitalEvents': len(points)}
+
+    def _canonical(self, block, tail):
+        if (self.activity.chain.block(block.number) != block or
+                self.activity.chain.block(tail['end_block']).hash != tail['end_hash']):
+            raise DataError('capital_activity_reorg_requires_replay')
 
 
 def load_capital_window(conn, row, tail):

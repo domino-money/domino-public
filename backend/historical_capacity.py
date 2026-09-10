@@ -70,6 +70,9 @@ def diagnostic(chunk, profile, progress, reason=None):
                 else 'capacity_review_required' if reason in
                 {'core_position_budget_exhausted', 'core_tick_budget_exhausted',
                  'fee_step_budget_exhausted', 'historical_work_byte_budget_exhausted'}
+                else 'restart_capital_work_after_review' if reason in
+                {'capital_work_method_mismatch', 'capital_work_source_mismatch',
+                 'capital_work_checkpoint_mismatch'}
                 else 'repair_source_then_resume' if reason else 'resume_same_command')}
 
 
@@ -99,7 +102,7 @@ def record_failure(store, pool_id, ledger, profile, reason):
     try:
         with store.catalogue.connection(writer=True, lock=True) as conn:
             # Fixed internal ledger names only, never request-derived SQL identifiers.
-            table = {'fee':'fee_chunks', 'position':'position_chunks'}[ledger]
+            table = {'fee':'fee_chunks', 'position':'position_chunks', 'capital':'capital_chunks'}[ledger]
             chunk = conn.execute('SELECT c.* FROM domino_activity.chunks c LEFT JOIN domino_activity.' + table + ''' q
               ON q.pool_id=c.pool_id AND q.chunk_start=c.start_block
               WHERE c.pool_id=%s AND q.pool_id IS NULL ORDER BY c.start_block LIMIT 1''', (pool_id,)).fetchone()

@@ -6,12 +6,12 @@ The optional historical audit workers qualify stored core pool activity. Their r
 
 | Limit | Supported scope | Recovery |
 |---|---|---|
-| 128 lifetime positions / 256 known ticks | Default `standard` position worker profile | Explicitly select `extended` and resume |
+| 128 lifetime positions / 256 known ticks | Default `standard` position and capital worker profile | Explicitly select `extended` and resume |
 | 1,024 lifetime positions / 2,048 known ticks | `extended` profile | A larger reviewed model is required; no unlimited mode |
-| 32 events / 100,000 candidate simulation steps | One fee or position worker batch | Save a complete-event prefix and resume the same stored chunk |
+| 32 events / 100,000 candidate simulation steps | One fee, position or capital worker batch | Save a complete-event prefix and resume the same stored chunk |
 | 8,192 simulation steps | Each individual swap candidate | An event exceeding this limit remains unsupported |
-| 128 position/range/tick checks | One position reconciliation batch | Resume the next unchecked identity at the same historical block |
-| 160 total RPC requests / 90 seconds | One position CLI worker instance | Fix provider availability, then resume; partial failed batches roll back |
+| 128 position/range/tick checks | One position or capital reconciliation batch | Resume the next unchecked identity at the same historical block |
+| 160 total RPC requests / 90 seconds | One position or capital CLI worker instance | Fix provider availability, then resume; partial failed batches roll back |
 | 60 total RPC requests / 90 seconds | One fee CLI worker instance | Fix provider availability, then resume |
 | 8 MiB serialized progress | One unpublished pool/ledger checkpoint | Capacity review; no partial values published |
 | 2,000 events | One source activity chunk | Reduce future activity spans; a single over-capacity block needs separate design |
@@ -34,7 +34,7 @@ measurements, distinct from an examined empty chunk with zero steps.
 
 ## What is durable and what is available
 
-Migration `007_historical_work.sql`, applied by the existing `dev_postgres.py start` helper, adds one unpublished checkpoint per pool and ledger (`fee` or `position`). Each row records its source chunk, complete-event offset, reconstructed models, pending journal rows, completed proof checks and a diagnostic. No new methodology version is needed: final v1 models and proof fields retain their existing meaning and previously qualified chunks remain valid.
+Migration `007_historical_work.sql` adds one unpublished checkpoint per pool and ledger (`fee` or `position`); `012_capital_work.sql` extends its ledger constraint to `capital`. The existing `dev_postgres.py start` helper applies both, without rewriting 007 or touching qualified rows. Each row records its source chunk, complete-event offset, reconstructed models, pending journal rows, completed proof checks and a diagnostic. No new methodology version is needed: final v1 models and proof fields retain their existing meaning and previously qualified chunks remain valid. Preserve incoming 006 and later 008–011 migrations when combining branches; 012 must follow 007.
 
 The writer holds the existing advisory lock. Before saving progress it rechecks the historical end block and the activity tail; every later batch repeats those checks. Proof calls use a stable sorted order and the same historical block. Only after all events and all required checks succeed does one transaction write the qualified chunk and every fee/settlement row, then delete unpublished progress. Assets still satisfy `lpAssetsRaw = principalRaw + unsettledFeesRaw + roundingResidualRaw` per currency, with exact fee-source agreement and the existing cumulative settlement audit. Partial models never populate a financial quantity.
 
@@ -69,8 +69,30 @@ ORDER BY pool_id, ledger;
 
 The activity live-range limit is distinct from historical identity accumulation. Smaller `manage_activity.py --span` values affect only future uncommitted log intervals. They do not modify existing chunks or cure simultaneous live-range/single-event limits. Existing stored fee/position chunks use the resumable procedure above, so destructive repartitioning is unnecessary.
 
+## Capital-specific resume and recovery
+
+After fee and position qualification reach the activity tail, use the matching capital profile:
+
+```sh
+backend/.venv/bin/python backend/manage_metrics.py --pool-id "$POOL_ID" --capacity-profile extended --max-steps 10 --output reports/capital-resume-01.json
+```
+
+The capital worker retains one after-event point for every complete replayed event, then repeats the position/range/tick proof in batches of at most 128 checks. It compares the final activity and position models with their qualified source ledgers, rechecks the pool state and canonical block/tail, and commits every capital point plus the capital chunk in one transaction. Neither replay prefixes nor partial proofs are visible through capital/valuation reads. The same limits apply to empty and nonempty later chunks inheriting more than 128 identities. Selecting `extended` only for the first chunk is insufficient.
+
+A finite invocation ending in `capital_chunk_in_progress` is successful progress. Its report has `capitalLedger.status: in_progress`, ledger-specific `historicalWork`, `result: null` and no price acquisition. Repeat the command with a new report filename. When capital catches up, the report can include stored metrics and the optional bounded price request. A capital checkpoint never qualifies USD prices. Consumers must preserve independently verified pool identity/snapshot data while unreconciled capital and derived valuation stay null; the read-v1 candidate in #26 handles that separate API boundary. This worker change does not activate that candidate or alter its schema.
+
+Capital work binds its source chunk, events, preceding model and qualified position proof to a SHA-256 digest. A second digest binds the loaded capital/arithmetic/proof implementation, and a checkpoint digest covers the complete models, point prefix and proof offset. Changing source evidence or worker code therefore rejects saved work before it can resume. Capacity selection can change from `standard` to `extended`, because it changes finite resource bounds rather than the arithmetic. The method digest is captured when the worker module loads; always stop/restart worker processes when changing their code. A method mismatch does not invalidate published v1 capital.
+
+`capital_work_method_mismatch`, `capital_work_source_mismatch` or `capital_work_checkpoint_mismatch` has action `restart_capital_work_after_review`. First inspect the diagnostic and review the changed implementation/source. If the source block is orphaned, run normal activity reorg recovery first; restart refuses an orphaned block or unavailable canonical verification. After resolving the cause, restart only the unpublished capital work:
+
+```sh
+backend/.venv/bin/python backend/manage_metrics.py --pool-id "$POOL_ID" --capacity-profile extended --restart-capital-work --max-steps 10 --output reports/capital-reviewed-restart-01.json
+```
+
+The explicit restart holds the writer lock, verifies the source block/tail and removes only that pool's unpublished `capital` row. It retains source events, fee/position ledgers and all published capital. The command prints and records the previous diagnostic and discarded checkpoint digest, then replays the source from the beginning of that unpublished chunk. It is an operator CLI action, with no HTTP equivalent or automatic retry. It does not solve a genuinely unsupported single event, an extended-profile overflow or a bad source ledger. Those still require a capacity/source correction. The generic fee/position method-restart and lifetime retirement work in #18/#19 remains separate.
+
 ## Independent downstream limits
 
-The extended profile qualifies historical core-position and fee storage, including aggregate activity reads. It does not increase the separate capital/valuation replay ceiling or the existing individual-position NFT adapter's 600-RPC read budget. Those paths remain bounded and can return unavailable even when historical core totals are qualified. No price, public request schema, wallet session, transaction or daemon behavior changes in this release.
+The extended profile now also qualifies historical capital in bounded batches. It does not increase the separate valuation window/event/price limits or the existing individual-position NFT adapter's 600-RPC read budget. Those paths remain bounded and can return unavailable even when historical core totals and capital are qualified. No price, public request schema, wallet session, transaction or daemon behavior changes in this release.
 
-Regression coverage includes a 129-identity close history with 258 retained ticks and all 516 distinct proof calls, exact native close/reopen settlement conservation, event-budget resume within an unchanged stored chunk, partial-proof invisibility, failure/restart, late mismatch, reorg cascade, reader grants and real backup/restore. Run the full PostgreSQL/EVM suite from the backend README for ledger changes.
+Regression coverage includes a 129-identity close history with 258 retained ticks and all 516 distinct proof calls for both positions and capital, the 128 threshold, empty and nonempty later capital chunks, native event-point balances and retained rounding residuals, event-budget resume within an unchanged stored chunk, partial-proof invisibility, failure/restart, late mismatch, source/method/checkpoint binding, reorg cascade, reader grants and real backup/restore. Fresh and upgraded 007 → 012 databases preserve pending work. Run the full PostgreSQL/EVM suite from the backend README for ledger changes.
