@@ -22,6 +22,20 @@ This file applies to the entire Domino repository. Read README.md and CONTRIBUTI
 
 Both collaborators may work in every directory. Coordinate overlapping files and API contracts in the issue/PR; there are no folder access restrictions. Use one branch per task (`codex/<issue>-<topic>` for assistant-created branches), small reviewable PRs and the relevant acceptance criteria. Do not silently change another task's API contract or deployment configuration.
 
+## Subagent delegation
+
+The project owner authorizes subagents to accelerate issue work. Delegate concrete, independent subtasks when parallel work materially helps, while the coordinating agent continues useful work. This permission does not start every open issue or connect separate collaborators' sessions automatically.
+
+- Before starting, read the issue, recent comments, related PRs and the current branch state. Respect work already assigned or in progress; coordinate overlap before editing the same files or API contract.
+- Give each subagent a bounded objective, relevant context, allowed files, read-only/edit scope and expected result. Keep exploratory research and independent review read-only unless edits are needed.
+- Use one writer per file. Simultaneous implementation tasks should use separate branches/worktrees with explicit ownership; independent GitHub issues retain separate PRs. Do not switch a shared checkout while another agent is writing in it.
+- The coordinating agent integrates results, checks source evidence, resolves conflicts and runs the relevant checks on the combined change. A subagent's claim that work passed is not a substitute for reviewing its evidence.
+- Return concise handoffs: findings or changes, file/commit references, tests actually run, unresolved dependencies and the next action. Preserve durable decisions in reviewed repository documentation and the issue/PR when publication is authorized as part of the task.
+- Internal subagent messages do not automatically reach the other collaborator's assistant. That assistant must read the shared issue/PR and updated repository. Do not claim a notification, background monitor or automatic handoff exists unless it was configured and verified.
+- Delegation preserves existing credential, financial-operation, deployment and PR-review boundaries. It does not authorize self-approval or bypassing protected `main`.
+
+## Verification
+
 Run relevant checks: `npm run check:web`, `npm run test:contracts`, and/or the Python suite in README. Changes to ledger, reorg, migrations or EVM parity require the full PostgreSQL/EVM suite. Report what actually ran and any skipped checks. Keep backend/openapi-read.json aligned with validated API requests.
 
 Keep GitHub Actions unprivileged and independent of real RPC keys/wallets. Never use pull_request_target to execute contributed code. Deployment and financial operations are outside ordinary test/PR workflows; follow the user's explicit scope.

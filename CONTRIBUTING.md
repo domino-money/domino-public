@@ -12,6 +12,12 @@
 
 Full administrative access includes settings and workflows, so protection is a shared development policy rather than isolation from either administrator. No directory is reserved exclusively to one contributor.
 
+## Working with subagents
+
+Subagent delegation is approved for independent parts of an issue. Follow the scope and integration rules in [AGENTS.md](AGENTS.md): one coordinating agent, explicit file ownership, separate worktrees for simultaneous implementation, and verification of the combined result.
+
+At the beginning of a task and before opening or updating its PR, read the latest issue comments and related changes. Each collaborator's assistant has its own session history; only published code, documentation and issue/PR discussion are shared. GitHub comments do not automatically wake a local assistant. Keep handoffs concise and tied to a concrete question, decision, dependency or result. Automated review or event-driven coordination needs its own configuration.
+
 ## API handoff
 
 `backend/openapi-read.json` is the versioned request contract. Existing Python test fixtures and explicit response-state semantics are the evidence for adapters; proposing response types may require a backend contract update. Do not pretend today's practice API is the read backend. Start frontend integration behind a mock adapter. A real same-origin bridge, authentication and public deployment are separate reviewed work.
