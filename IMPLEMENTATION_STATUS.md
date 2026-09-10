@@ -25,6 +25,7 @@
 
 - API 0.7.0 adds event-time capital and raw time integrals, persisted external prices, a conditional exact TVL/volume/fee-APR engine, and pinned official PositionManager NFT ownership with current principal/unsettled-fee reads. [Capital/price/NFT qualification](reports/CAPITAL_PRICES_NFT_QUALIFICATION.md) records 200 passing tests, seven reconciled real capital checkpoints and the external price limitation. The Alchemy Prices API returns native ETH history but rejects Robinhood address queries. No production price source is qualified, so live dollar TVL/APR remain unavailable. NFT ownership reads do not implement wallet authentication, wallet-wide NFT enumeration or private accounts.
 - Saved the [home infrastructure study](HOME_INFRASTRUCTURE_STUDY.md) for later deployment planning; no home machines were accessed or provisioned.
+- The 10 September [executor migration assessment](docs/EXECUTOR_MIGRATION_ASSESSMENT.md) maps selected personal source to the public alpha, preserves the setup/fee-only boundary and records source hashes, a staged release plan and exit-evidence requirements. It is a static documentation assessment, with historical source snapshots identified separately; it adds no public execution or production authorization.
 
 ## Verification scope
 

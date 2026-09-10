@@ -11,6 +11,8 @@ Private source repository for a wallet-friendly Uniswap v4 liquidity app on Robi
 
 The personal live bot, operator wallet, credentials and operational database are outside this repository. See [implementation status](IMPLEMENTATION_STATUS.md), [alpha scope](ALPHA_SCOPE.md) and [security specification](SECURITY_SPEC.md).
 
+The [executor migration assessment](docs/EXECUTOR_MIGRATION_ASSESSMENT.md) maps selected personal-strategy source to the approved public design, with provenance hashes, required redesign and independent release tests. It implements no public execution.
+
 ## Start locally
 
 Use Node 24 LTS and Python 3.14. macOS and Linux are supported development targets; use WSL2 on Windows. Install PostgreSQL 16+ only for database-backed work. Docker is not required.

@@ -1,0 +1,203 @@
+# Personal strategy to public executor: migration assessment
+
+10 September 2026 · [Issue #6](https://github.com/domino-money/domino/issues/6) · source assessment only
+
+**Reimplement the proven strategy rules inside a new, owner-bound public execution system.** Reuse the routing model, exact-unit arithmetic techniques, fee-origin conservation and failure cases as review inputs. The personal deployment is specialized to one sequence and has different policy, custody and operating assumptions. Its modules are not a deployable public executor, and this assessment copies or imports none of them.
+
+The approved alpha requires both Auto-compound and Domino, eligible fee-balancing swaps, owner-funded setup and direct owner recovery. A compound-only release can be an internal implementation stage; it does not complete that alpha. This report documents the migration work and evidence gates. It does not enable execution or certify the personal or public contracts.
+
+## Scope and provenance
+
+The user expressly authorized assessment and relevant sharing of personal-bot source. The original source inspection was limited to the selected source/test files identified in the [SHA-256 manifest](executor-migration-sources.json), plus the public specifications. No personal signer module, configuration, credential, runtime state, deployment artifact or operational database was opened. No bot module was imported or executed, no chain request was made, and no live operation was altered. A source file's reference to another module was not permission to follow that dependency.
+
+Evidence IDs below resolve to relative paths, symbols and exact file hashes in the manifest. `P` means the separately held personal source tree, locally named `Uniswap auto LP`; those paths are not files delivered in this repository. `M` means public `main` at `58d26c46064364bc0d0a7131297758e481590fd3`. `I` means the pending integration candidate at `9d73c041c835bf4e2f6d9e791b6f48ff86593ae1`, originally inspected from the separate `codex/backend-issues-integration` checkout. The [named branch](https://github.com/domino-money/domino/tree/codex/backend-issues-integration) is a discovery handle; the exact commit remains the evidence identity if that branch moves. Preserve that commit in the release evidence archive before retiring or rewriting its ref. Line references describe those snapshots, not a moving branch. Whole-file hashes identify the selected inputs; they do not imply that every line was audited. The manifest contains 27 selected files and 89 anchors: 12 public Git files with 29 anchors, plus 15 private-source files with 60 anchors. This documentation follow-up rechecks only the public Git evidence. The private hashes/anchors remain records of the original authorized assessment; no private tree was reopened or newly verified.
+
+| Snapshot | Evidence actually present | Boundary still absent |
+| --- | --- | --- |
+| Personal source, `P01`–`P15` | Pure strategy/math, narrow transaction builders, one local transaction journal, fixed-pool fee-only contracts and regression tests | Generic currencies, public service charging, swaps, multi-user authorization and durable distributed execution |
+| Public main, `M01`–`M07` | `FeeAccounting.consume`; draft self-compound interface; generic v4/position math; snapshot NFT reads; candidate tenant/intent schema | Public vault/factory, actual private-account deployment, wallet authentication, signer/reconciliation and financial execution |
+| Pending candidate, `I01`–`I05` | Shared policy guards, specified caller/event/nonce requirements, synthetic policy-write harness and additional arithmetic/policy tests | Asset custody, real token/NFT transfers, callbacks, compound implementation, successor and swap plans |
+
+These labels describe the original assessment snapshots, not current integration status. The candidate is not part of the cited historical main snapshot. Public main used for this documentation follow-up is `11a5c6cd815af02de448bfbea5d4cf547056e16f`; it already includes the fee/policy foundations from #7/#28. That integration supplies no evidence of a real public asset-holding executor. Its `PolicyWriteHarness` explicitly holds no assets; a synthetic withdrawal event is not proof of a token transfer. Its interval and position type ceilings are representational, not deployment resource limits. See `I01:24/35/43`, `I02:73–114`, `I03:7–10` and the candidate's `contracts/README.md`.
+
+The governing requirements remain [alpha scope](../ALPHA_SCOPE.md), [reinvestment policy](../REINVESTMENT_POLICY.md), [pricing](../PRICING_POLICY.md), [onboarding](../ONBOARDING_AND_POOL_DISCOVERY.md) and [security C01–C11](../SECURITY_SPEC.md). The personal defaults below do not override them.
+
+## What to retain and what to redesign
+
+| Area and source evidence | Retain as an algorithm or invariant | Public implementation required |
+| --- | --- | --- |
+| Exact fee/liquidity math — `P01 liquidity_math.py:41/45/55`, `fees_from_growth`, `amounts_for_liquidity`, `reinvestment` | Modulo-256 fee-growth differences; explicit floor/ceiling at token boundaries; bounded search for affordable liquidity | Generic currency identity, decimals, tick domain and overflow checks. Remove the standing `reserve_bps=10` default and inherited growth cap. Prefer the public `M03 v4_math.py:37/62` and `M04 position_accounting.py:44/53` plus pinned upstream differential tests over duplicating private math. |
+| Self-compound — `P07 FeesOnlyCompounder.sol:137`, `compound`; `P08 DominoVaultV2.sol:384`, `_compoundNet` | A distinct, narrowly eligible netting path; principal/checkpoint/permission checks; exact fee realization and balance reconciliation | Charge consumed fees once while preserving parity with the general collect/add path. Validate the same owner, sequence, currencies, policy and intent. Quote and select the path explicitly; never silently fall back after a failed self-compound. Measure the new service-cut overhead before claiming gas savings. |
+| Successor routing — `P02 domino_strategy.py:90/190`, `routes`, `spend_lots`; `P08:310/539/559`, `_execute`, `_debit`, `_destination` | Assign each original source lot once; normal self routing, eligible successor reuse/mint, out-of-range redirection, deterministic destination selection and explicit waiting | Key every source and destination by owner, sequence, verified pool and currency. Preserve original attribution when a destination's own fees route elsewhere. Do not recursively route incoming fees or pool unrelated sequence balances. Persist successor identity and membership; prevent duplicate creation across workers and reorgs. |
+| Trigger and geometry — `P02:15/81/142`, `token_price`, `range_steps`, `plan_mint`; `P08:181/469`, `setRouting`, `_mintLiquidity` | Independent trigger/overlap concepts; owner changes invalidate proposals; affordability can reduce overlap within allowed geometry | Fixed base/quote orientation per sequence, generic token order/decimals and tick spacing, explicit price-to-tick rounding, feasibility checks and owner-visible actual bounds. Replace hardcoded ranges and the stable-only waiting rule with evaluation of both fee currencies and admitted swaps. |
+| Economic timing and gas — `P03 dynamic_strategy.py:97/155/220`, `FeeRateEstimator.add`, `estimate_cadence`, `DynamicPolicy.decide` | Causal fee-unit increments, finite forecast horizon, freshness/warmup, full-cost requirement, pending-transaction stop, consecutive fresh observations and retaining elapsed wait | Two separate gates: owner advantage and operator sustainability. Evaluate direct, bounded swap, eligible Domino and wait candidates. Qualify prices, executable depth and earning-rate uncertainty. Personal floating-point forecasts and same-pool valuation are not spending authority or an independent oracle. |
+| Typed proposals and checks — `P04 executor_adapter.py:62/88`, `build_executor_transaction`, `validate_deployment`; `P05 domino_adapter.py:48/101`, `checkpoint`, `unsigned_execution` | Exact typed actions, bounded calldata, coherent state checkpoints, individual NFT approval and independent validation of the intended deployment | New generic typed plans, registered deployments/versions, current operator authority, exact recipients and chain/pool/currency membership. A public API must not become a signing endpoint. This assessment did not inspect the personal signer and supplies no claim about its security. |
+| Durable execution — `P06 transaction_journal.py:11/48/55/62`, `TransactionJournal`, `put`, `update`, `reserved_last_day` | Durable intent before broadcast, one unresolved operation per controlled nonce stream, conservative reservations through uncertain outcomes | Transactional tenant intents, global nonce coordination per signer, fenced leases, deterministic hash reconciliation, bounded replacements and canonical receipt/reorg recovery. The singleton SQLite/flock implementation and its private-file utility dependency are not portable multi-user isolation. `M06 backend/schema.sql` is an unapplied starting schema, not this completed system. |
+| Owner recovery and initialization — `P08:160/191/219/662/680/692/701`, constructor, migration and withdrawal methods | Fixed owner recipients, tracked reserve/child separation, donation exclusion, owner exits while service is unavailable | Atomically initialize a new generic owner-bound vault. No personal root ID, previous deployment or migration balance. Define root-in-wallet versus child-in-vault custody, preserve source records after child exit, and test real transfers, revocation and offline recovery. |
+
+### Policy translation is explicit
+
+| Personal source assumption | Approved public meaning |
+| --- | --- |
+| `DominoPolicy.trigger_bps=8000` and `setRouting(trigger, overlap)` compare price with a fraction of the old ceiling (`P02:30/90`, `P08:181/559`) | Public `triggerDistanceBps` measures distance **below** that ceiling. At the same quote orientation, `distance = 10000 - personal threshold`: 8000 means a 20% distance; 9500 means 5%. Do not copy 8000 into the distance field. Trigger and overlap remain independent; pending `I01` bounds each at 0–2000 bps. |
+| USDG token0 / MARLIN token1, 6/18 decimals, inverse price, spacing 500, fixed positive ticks (`P02:11/15`, `P09 DominoTicksV2.sol:7`) | Use verified full PoolKey and a stored quote-asset-per-base orientation. A rising quote price can mean increasing or decreasing raw ticks. Native ETH is distinct from WETH. The restricted personal TickMath helper cannot serve arbitrary public ranges. |
+| Default range steps are 4000/2000 ticks (`P02:81`; `P10 test_domino.py:81`) | The public target is a new ceiling 50% above the old ceiling, with a separately bounded overlap. The personal grid yields approximately **49.17948634%**, as its existing test states. Specify permitted rounding around the target, prove overlap does not exceed its bound in the selected orientation, display actual bounds and reject infeasible ranges. A hardcoded 4000-tick offset is not generic compliance. |
+| 15% addition cap, five positions and a 0.1% reinvestment reserve (`P02:30/179`, `P01:55`, `P05:22`) | No fixed addition cap or standing reserve: spend only the greatest economically justified proven fee amount within exact plan limits. Three total positions is a **proposed** alpha default awaiting gas/exposure testing, not a settled deployment setting. Pending `maxPositions <= 255` is only a type bound. |
+| Mint all available volatile-token fees or wait; stable-only fees do not mint (`P02:142`, `P10:86/108`) | Evaluate fees in both registered currencies. Compare direct use, a bounded beneficial swap, valid successor funding and waiting. No external stablecoin or unselected wallet funds. Dust/mismatch can wait with its amount, origin and reason; it is not a standing allocation. |
+| Fixed personal frequency window and operational limits (`P07:137/212`, `P08:599/625`); illustrative estimator defaults (`P03:19`) | Explicit owner policy and finite resource/gas budgets need review for each public path. A resettable 24-hour contract window is not automatically a rolling daily gas budget. Preserve reservations for outstanding, failed and replaced transactions across restarts; personal numeric defaults are not public consent. |
+
+The personal out-of-range rule can reuse an active position in either price direction; it does not move that position's principal. Its highest-index tie rule and “only the next reachable successor, otherwise wait” behavior are useful deterministic candidates, not permission to create a downward ladder or skip arbitrary sequence members. The public planner must specify these choices and test them against approved alpha behavior (`P02:90`, `P10:41–68`). A successor may initially be inactive; eligibility at the trigger alone cannot force its mint.
+
+## Accounting and authority in the new executor
+
+### Keep principal, earned lots and charges separate
+
+Each fee lot needs owner/sequence, source NFT, chain, full currency identity, canonical observation/receipt, raw units and consumption lineage. Public core-position accounting and a present NFT holder do not by themselves establish who owns previously settled fees. Separate opening/imported principal, later owner deposits, actual earned-fee lots, donations, protocol revenue and residual balances. Unknown balances or unqualified prices remain unavailable, never zero.
+
+For each currency on a no-swap automation path, reconcile:
+
+```text
+prior tracked fee reserve + realized earned fees
+    = net liquidity contribution + protocol cut + remaining tracked fee reserve
+```
+
+Principal liquidity must remain unchanged in every existing position except the permitted increase at the destination. No operator wallet pull, principal decrease, root transfer or cross-owner/sequence funding is allowed. General-path collection must credit the original source even when the destination's own fees are routed elsewhere; netting must account for gross realized fees rather than only the observed wallet transfer (`P08 _execute`, `_compoundNet`, `_collect`, `_debit`). Direct owner withdrawals are separately recorded movements, not chargeable automation.
+
+Public `M01 FeeAccounting.consume:11` supplies the no-swap split: `protocol = floor(grossUsed * feeBps / 10000)` and `remaining = reserve - grossUsed`, with a 200 bps maximum. It neither proves the reserve's origin nor determines affordable liquidity. At 200 bps, 49 base units produce a zero cut and 50 produce one; no hidden one-unit minimum is authorized. The executor must independently enforce reviewed economics or a bounded project subsidy (`I05 testFloorAtFortyNineAndFiftyBaseUnits`, `I02:87–92`).
+
+The swap extension needs a reviewed conservation specification before implementation. Track exact original-lot consumption, service cut, swap inputs/outputs, liquidity additions and residuals separately in each currency; never add unlike raw token units or substitute USD totals for token conservation. Converted proceeds retain the original fee lineage, incur no second automation charge, and become principal only when contributed to liquidity. Residual converted units must remain identifiable so later use is not charged twice. Reverts roll back transfers, consumed-intent state and the cut. Partial fills, if admitted, require actual consumed-input accounting. The existing fee-split library does not implement these rules.
+
+### Setup has a different authorization and fee boundary
+
+Owner-signed initial funding can use only the selected wallet deposit budget. It may include a bounded balancing swap, a mint in an existing pool, or the approved advanced initialize-plus-first-liquidity transaction. Bind chain/account, complete PoolKey, initial price, tick-rounded range, input caps, minimum outputs, recipient and expiry. Recheck competing initialization and re-quote after material price changes. An empty pool cannot be assumed to supply its own balancing route.
+
+Deposit principal, setup swap proceeds and unused deposit dust do not become earned-fee lots and incur no 2% automation cut. A separately consented owner-requested assisted swap has its own consumed-input fee boundary and approved 65 bps ceiling; the exact tariff remains pending. Charge no setup percentage on directly deposited tokens or unconsumed/refunded budget, no repeated intermediate-hop fee, and no extra assisted-swap or successor-mint service charge inside automation. Keep native ETH for owner gas outside the deposit budget and enforce exact `msg.value`, wrap/unwrap identity and fixed refunds. A successful separate swap followed by a canceled mint remains a completed swap receipt; resuming must not repeat it or its charge.
+
+The personal V2 migration is a narrowly checked legacy fee-reserve import from its old deployment (`P08 _captureMigration`, `completeMigration`). Its owner `transferFrom` flow is not a template for ongoing public wallet funding. New public instances start with no personal migration source or inherited balances; future migrations need their own owner-approved specification.
+
+### Read capability is not financial authority
+
+`M05 backend/nft_ownership.py:35/66` reads official PositionManager ownership at a pinned block. Its response explicitly says `walletControlVerified=False`, `executionAvailable=False`, `isWithdrawalQuote=False` and does not attribute earlier settled fees to the current holder. A public NFT read, connected wallet, draft contract interface, practice receipt or readable pool establishes no production authorization.
+
+Private settings require single-use wallet challenges bound to domain/origin, chain, nonce and expiry, followed by server-side tenant authorization. NFT ownership, individual approval, sequence membership, compatible pool/token behavior and operator registration must be freshly validated from coherent state. On-chain caller and spending checks remain independent of the authenticated session. Handle transfers/revocation and supported contract-wallet signatures explicitly. Admitted viewing, setup, swap, self-compound, Domino and suggestions are distinct capabilities with their own evidence.
+
+Pending `I02` specifies owner-or-registered-operator self-compound and emergency pause, owner-only policy/resume/exits, fixed owner recipients, and one state-nonce advance per completed mutation. `I01.validateUpdate` requires consecutive policy versions, unchanged pause state and limits compatible with actual membership. Carry these guards into actual storage writes and transfers; the harness is not an authorization implementation for a real vault. Preserve historical source/reserve records when a child leaves active membership.
+
+### Separate planning, signing and reconciliation
+
+The planner should emit typed self-compound, existing-successor funding, successor creation or wait decisions, with optional admitted fee-swap legs. The signer must rebuild and independently verify bounded transactions against registered contracts, current policy/state, original fee lots, currencies, recipients, deadlines, gas and price limits. No arbitrary calldata/recipient or client-supplied digest becomes authority. Signer implementation/security was outside this personal-source review.
+
+Before signing, persist the source block/hash, policy/state nonce, parent/range, fee budgets, selected path, cost reservation and unique intent. Enforce successor idempotency against concurrent workers. Allocate nonces globally per chain/signer across tenants using transactional ownership and fenced leases. Persist deterministic transaction identity before broadcast; reconcile an ambiguous result by hash and canonical state, without simply choosing a fresh nonce. Link replacements and their maximum costs to the same intent. Distinguish broadcast, inclusion, confirmation and settlement, and recover from reorgs, crashes and database restore without duplicate minting or charging. `M06` has tenant keys, RLS declarations and nonce/intent tables, but is expressly an unapplied candidate requiring extension and deployment-role/concurrency/restore tests.
+
+Gas decisions need full L2 execution plus applicable L1/data cost, route-specific simulation and a finite buffer. Require both conservative expected owner advantage over direct use/wait and realizable service revenue sufficient for operator cost, or an explicit bounded project subsidy. Operator gas already paid from the automation cut must not be subtracted from the owner's net addition again. Personal same-pool marking (`P02 mark`, `P08 _value0`) and a historical APR cannot qualify public USD limits, swaps or manipulation resistance. Missing causal price/depth evidence stops the affected action.
+
+## Evidence to carry forward, tests still required
+
+The following are **existing test-source cases inspected, not test results rerun for this assessment**. They provide regression scenarios and counterexamples for the new design. They are not an independent audit or evidence that a particular live deployment matches this source.
+
+| Existing evidence | Independent public acceptance work |
+| --- | --- |
+| `P10 RoutingTests` and `AllocationTests`: threshold boundary, independent original lots, successor reuse, both out-of-range directions, highest active index, no skipped child, source debits and tick-grid approximation | Generic/reversed currencies and decimals; independent trigger/overlap; actual rounded bounds; one child per parent/intent under races; source/destination identity across two owners and multiple sequences; explicit behavior at the reviewed cap |
+| `P11 DynamicStrategyTests`: no fee income from price changes, smoothing/gap reset, stale/incomplete/pending stop, consecutive fresh observations and elapsed wait retained | Qualified causal estimates with uncertainty; full route costs; direct versus partial/full swap versus wait; beneficial and rejected cases; missing/manipulated prices, fees awaiting reinvestment becoming viable after gas falls; no double-counted owner gas |
+| `P12 FeesOnlyCompounder.t.sol`, `P13 DominoVaultV2.t.sol`: principal preservation, revocation/staleness, wrong source, debt rollback, donation separation, no arbitrary calls, residual allowances and fuzz conservation | New public cut and mixed-currency netting parity; independent exact-raw oracle; overflow/rounding/dust boundaries; swaps, reverting/partial fills, charge-once conversion lineage; malicious tokens/callbacks, hooks and reentrancy; cross-tenant isolation |
+| `P14 DominoV2Security.t.sol`: isolated legacy reserves, independent routing, invalid settings, net path rejects mint/multiple sources, reserves supplementing either currency | Fresh generic initialization/factory identity; no inherited root/configuration; no legacy funding exception; owner/child withdrawal while paused/offline; old plans invalid after every mutation; actual custody/transfer receipts and residual-source recovery |
+| `M07 FeeAccounting.t.sol` and pending `I04/I05` policy/arithmetic tests | Wire pure guards into real storage and authority boundaries; verify caller matrix, fee consent, membership, stale-intent invalidation and nonce/version exhaustion on an actual asset-holding vault |
+
+Contract acceptance must use independent unit, fuzz/invariant and pinned v4 differential/fork tests, including balances and allowances before/after every path and every revert. Replace tests that assert the personal 15% cap, standing reserve, fixed token/grid or lack of swaps with public requirements; do not count their unchanged passage as migration success. Add setup cancellation/replacement, native refunds, competing initialization and separate assisted-fee receipt cases.
+
+The durable service needs fault-injection tests for duplicate jobs, ambiguous sends, replacement reservations, signer-wide nonce races, worker crash at each persistence boundary, reorg rollback and backup/restore. Test database roles and forced tenant isolation with real PostgreSQL; exercise signature replay, cross-user object references and the independent signer policy. Rehearse direct owner recovery without the API or operator.
+
+Before exposure, assess the exact public source revision, compiler/dependency provenance, reproducible bytecode, deployment/initialization and admitted token/pool paths against the checklist below. Personal operating history, mock tests and public read qualification cannot replace it.
+
+### Release checklist and evidence records
+
+All gates below are **pending** for the integrated public executor. The artifact
+names are required future deliverables, not existing reports or passing results.
+Use one immutable `reports/executor-release/<release-id>/` bundle, with every
+artifact's SHA-256 recorded in `release-manifest.json`. Evidence records must name
+the exact source commit, compiler/dependency lock digests, commands and environment,
+fixture/fork block identities, result counts and skipped cases, reviewer identity,
+findings and disposition. Redact credentials, signed transactions and private
+account/session data. A link to CI alone does not establish a gate's scope.
+
+The `EX-*` gate IDs and `D-*` case IDs below are this assessment's tracking IDs;
+they do not rename or replace requirements in the governing specifications.
+
+- [ ] **EX-01 — Freeze the release identity.** Map to [Security C09 and release evidence](../SECURITY_SPEC.md#8-evidence-required-for-each-release) and [Alpha execution qualification](../ALPHA_SCOPE.md#release-sequence-and-acceptance). Deliver `release-manifest.json`, `build-provenance.json` and `scope.md`: exact source, compiler settings, dependency hashes, reproducible bytecode, initialization pattern, admitted operations and exclusions. Independently reproduce the build and identify every reviewed deployment/configuration. **Pending.**
+- [ ] **EX-02 — Prove contract invariants.** Map to [Security C01–C11](../SECURITY_SPEC.md#2-contract-invariants--release-blocking), the Security §8 “Contract unit, fuzz, invariant tests” row and Alpha D01/D09/D10/D15/D17 below. Deliver `contract-invariants.json` and `contract-tests.log`, mapping each C01–C11 individually to named tests, exact-unit reference assertions and before/after balances/allowances, with fuzz seeds and invariant campaigns. Cover actual custody/storage/callbacks, donations, malicious behavior, partial consumption, dust, type/tick limits and equivalent net/general paths; harness-only results do not close this gate. **Pending.**
+- [ ] **EX-03 — Qualify admitted execution paths on pinned forks.** Map to [Security §3](../SECURITY_SPEC.md#3-price-integrity-and-admitted-markets), [§6](../SECURITY_SPEC.md#6-initial-deposit-and-exit-behavior), the §8 “Mainnet-state forks” row and [Alpha compatibility](../ALPHA_SCOPE.md#compatibility-is-assessed-per-pool-and-operation). Deliver `fork-paths.json`, `fork-tests.log` and `market-admission.json`: pinned Robinhood blocks/contracts/token behavior, both strategies, owner approvals/revocation, setup swap/mint, native ETH/refunds, competing initialization, bounded first mint and real exit transfers. Include D02/D07/D08/D11 and explicit rejected paths. **Pending.**
+- [ ] **EX-04 — Complete the separate Domino case matrix.** Map to [Alpha retained behavior](../ALPHA_SCOPE.md#domino-behavior-retained-from-the-agreed-strategy) and [required acceptance cases](../ALPHA_SCOPE.md#release-sequence-and-acceptance), plus Security C02–C07/C11. Deliver `domino-cases.json` and `domino-tests.log`: every D01–D17 case below links to named implementation tests and expected/actual results; include generic/reversed currencies, exact tick rounding, source-lot attribution, existing-successor reuse and exactly one new child. Auto-compound-only evidence is insufficient. **Pending.**
+- [ ] **EX-05 — Establish economic and gas bounds.** Map to Security C05/C10/C11, the §8 “Economic and gas benchmarks” row, [reinvestment policy](../REINVESTMENT_POLICY.md) and Alpha D06–D08/D09. Deliver `route-costs.json` and `economic-boundaries.json`: direct/net/swap/successor/wait comparisons, consumed-fee cut, L1/data plus L2 cost, small reserves, low accrual, repeated failures, outstanding/replacement reservations and subsidy limits. Demonstrate both owner benefit and operator sustainability using qualified price/depth assumptions; record reviewed caps and fee consent. **Pending.**
+- [ ] **EX-06 — Recover durable intents without duplicate effects.** Map to [Security §4](../SECURITY_SPEC.md#4-transactions-chain-reads-and-recovery), the §8 “Recovery tests” row and Alpha D03/D12–D15. Deliver `recovery-matrix.json`, `recovery-tests.log` and `restore-drill.md`: crash at every persistence/sign/send boundary, duplicate workers, fenced leases, signer-wide nonce allocation, ambiguous broadcasts, replacements, RPC disagreement, canonical reorg rollback and database restore. Each case reconciles original intent/hash, one successor and charge-once effects. **Pending.**
+- [ ] **EX-07 — Review signer and application isolation.** Map to [Security §5](../SECURITY_SPEC.md#5-signer-and-application-controls), C02/C06/C07/C10, the §8 “Application security review” row and Alpha D10/D11/D17. Deliver `application-security-review.md` and `isolation-tests.log`: independent typed-plan reconstruction, API/signer separation, real PostgreSQL roles/forced tenant isolation, cross-owner/sequence references, signature replay, CSRF, account/network changes, transaction substitution, admin access and key rotation/revocation. Enumerate supported wallet types and excluded capabilities. **Pending.**
+- [ ] **EX-08 — Demonstrate independent owner recovery.** Map to Security C08, §6, the §8 “Owner recovery drill” row and Alpha D11/D16. Deliver `owner-recovery-drill.md` and `exit-effects.json`: with frontend/API/indexer/operator unavailable, an owner inspects custody/authority and completes pause, withdrawal of tracked reserves/children and root revocation through the alternate interface or verified-contract instructions. Record actual asset/NFT effects, fixed recipients and residual allowances; synthetic exit events are insufficient. **Pending.**
+- [ ] **EX-09 — Obtain independent review, audit and remediation.** Map to the Security §8 “Independent audit” row and Alpha execution qualification. Deliver `reviewer-independence.md`, `audit-report.md`, `findings.json` and `remediation-tests.log`, all tied to EX-01. Scope covers custody, factory/initialization, fees/swaps, signing, isolation and recovery together. Critical/high findings block release; every remaining finding needs impact, disposition and product acceptance where economics change. Apply the independence definition below. **Pending.**
+- [ ] **EX-10 — Reconcile an explicitly authorized limited trial.** Map to [Security §7](../SECURITY_SPEC.md#7-failure-response), the §8 “Limited mainnet reconciliation” row and Alpha invited-functional-alpha acceptance. After EX-01–EX-09 pass and the owner separately authorizes deployment/trial, deliver `activation-decision.md`, `limited-reconciliation.json` and `incident-drill.md`: reviewed exposure/gas/sequence limits, both admitted strategies, verified deployment identity, every actual receipt/reserve/charge, working alerts and rollback/exit procedure. EX-10 must pass before declaring the functional alpha qualified or widening exposure. This pending checklist authorizes no trial. **Pending.**
+
+The following mapping covers every required Domino case in `ALPHA_SCOPE.md`;
+EX-04's artifact must preserve these IDs even when one test covers several cases.
+
+| Case ID | Required Alpha case | Gates carrying proof |
+| --- | --- | --- |
+| D01 | Independent trigger and overlap settings | EX-02, EX-04 |
+| D02 | Valid tick rounding and reversed token order | EX-03, EX-04 |
+| D03 | Exactly one successor at the threshold | EX-04, EX-06 |
+| D04 | Reuse an existing successor | EX-04 |
+| D05 | Below-range and above-range routing | EX-04 |
+| D06 | Insufficient or imbalanced fees | EX-04, EX-05 |
+| D07 | Beneficial and rejected swaps | EX-03, EX-04, EX-05 |
+| D08 | Stale or manipulated quotes | EX-03, EX-04, EX-05 |
+| D09 | Maximum sequence length | EX-02, EX-04, EX-05 |
+| D10 | Policy changes invalidate old plans | EX-02, EX-04, EX-07 |
+| D11 | Transfers and revocation | EX-03, EX-04, EX-07, EX-08 |
+| D12 | Duplicate jobs | EX-04, EX-06 |
+| D13 | Ambiguous broadcasts | EX-04, EX-06 |
+| D14 | Restarts and reorgs | EX-04, EX-06 |
+| D15 | Fee conservation without double charging | EX-02, EX-04, EX-06 |
+| D16 | Owner withdrawal while service is offline | EX-04, EX-08 |
+| D17 | Isolation of multiple owners and sequences | EX-02, EX-04, EX-07 |
+
+### Reviewer independence and gate closure
+
+For EX-01–EX-08, an independent reviewer is an identified person who did not author
+or implement the reviewed scope and did not produce its original asserted results. Record
+their contribution boundary and conflicts, exact reviewed revision, reproduced
+checks and explicit conclusion. A collaborator may review a scope they did not
+implement; its author cannot approve their own portion. The project owner records
+the gate decision after that review. Delegated agents, a second model run, author
+self-review, a green CI run and approval of this documentation are useful checks
+but do not supply this independent human review or an external audit.
+
+EX-09 additionally requires a qualified external reviewer or audit provider,
+independent of implementation and deployment operation for the covered scope,
+with disclosed relationships/conflicts and a written scoped report. Contracting
+or paying for review does not waive those disclosures. Reviewers must identify
+unexamined components and remediation they did not retest; no “audited” claim may
+exceed their exact report. No such audit is claimed or completed by this assessment.
+
+A gate remains pending until its concrete artifacts exist, all mapped cases have
+results rather than placeholders, skipped coverage and limitations are resolved
+or explicitly excluded from release scope, the required reviewer signs off, and
+the owner records acceptance against the frozen manifest. Material source,
+compiler, deployment, market or authority changes reopen affected gates. Keep
+superseded evidence with its original identifiers; never update a passed label
+without updating the underlying proof.
+
+## Staged migration and review deliverables
+
+| Stage | Bounded deliverable and exit evidence |
+| --- | --- |
+| 1. Freeze and agree semantics | Review this mapping and its source hashes; settle generic price orientation/rounding, sequence membership, fee-lot and swap conservation, owner authority and operational caps. Retain the integrated reviewed policy guards while adding real custody paths; do not call the harness a vault. Preserve upstream notices for any later reviewed port. |
+| 2. Build independent foundations | Public pure planner/math and synthetic fixtures; tenant migrations and durable intents; generic immutable-owner vault/factory with real custody and direct owner exits. Tests cover two owners/sequences before operator execution. Owner-funded setup and fee-only automation use separate typed plans and accounting. |
+| 3. Qualify direct fee-only actions locally | General collect/add and equivalent net self-compound with the consumed-fee cut, current permissions, freshness, exact balances and bounded gas. Integrate the restricted signer and restart/reorg reconciliation using local/fork fixtures. This is an internal compound milestone. |
+| 4. Complete functional-alpha paths | Generic successor reuse/mint and idempotency, independently bounded trigger/overlap, fee-balancing swaps with charge-once lineage and both economic gates; owner-funded swap/mint, advanced initialization and native-ETH recovery. Complete separate positive and rejection cases for every admitted operation. |
+| 5. Independent release qualification | Review/audit the frozen integrated system, remediate, verify deployed code and market/price assumptions, measure route budgets, and rehearse revocation/offline exits and incident recovery. Release scope cannot exceed the paths actually qualified. |
+| 6. Explicit limited activation | After EX-01–EX-09 and separate owner consent, run the bounded EX-10 trial with both strategies and reviewed exposure, gas and sequence budgets. Reconcile every receipt and retain reasoned waiting states. Complete EX-10 before declaring the functional alpha qualified or expanding exposure. |
+
+This ordering avoids depending on a personal runtime while preserving useful, independently testable strategy behavior. It is a work sequence rather than a delivery-date promise. Public production signing, deployment and customer activation remain separate authorized steps after the specified evidence exists.
+
+## Assessment verification and limits
+
+This change delivers documentation, source-path/symbol mapping and selected-input hashes. The original assessment recorded hashes/anchors against the named source snapshots. This follow-up verifies the 12 public Git files and their 29 anchors against the two exact public commits, the 27-entry manifest/count metadata, local Markdown links/anchors, gate mappings, repository hygiene and whitespace. The 15 private files and 60 private anchors are historical provenance only and were not reopened or revalidated. It does not rerun personal or public financial suites because it changes no executable code. No fresh backtest, live receipt, deployment-bytecode comparison, signer assessment or security audit was performed.
+
+To reproduce publicly accessible provenance, read the `main` and `candidate` files from their exact Git commits and compare SHA-256, bytes, lines and anchors at each relative `path`. Reproducing the private portion is a separate authorized source assessment, not a requirement to access private material for this documentation update. Do not fetch missing private files through runtime/configuration discovery. If a hash differs, assess the new source and issue a new manifest/report revision; do not silently relabel this evidence. User authorization to assess the personal source does not waive upstream licensing: `P15 THIRD_PARTY_NOTICES.md` records Uniswap/MIT attribution for math references. No personal source was copied into this documentation change.

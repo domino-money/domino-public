@@ -1,0 +1,743 @@
+{
+  "manifestVersion": 1,
+  "assessmentDate": "2026-09-10",
+  "issue": "https://github.com/domino-money/domino/issues/6",
+  "hashAlgorithm": "SHA-256 over exact file bytes",
+  "scope": "Selected source, test and attribution files for static assessment only. No personal modules imported or executed; no runtime, configuration, credential or deployment artifacts included. A whole-file hash identifies bytes, not a full-file audit.",
+  "sources": {
+    "personal": {
+      "locationAlias": "Uniswap auto LP (separate, user-authorized source tree; not included in this repository)",
+      "revisionBasis": "individual file hashes; no claim about deployed bytecode or operating state"
+    },
+    "main": {
+      "repository": "https://github.com/domino-money/domino",
+      "commit": "58d26c46064364bc0d0a7131297758e481590fd3",
+      "statusAtAssessment": "public main baseline"
+    },
+    "candidate": {
+      "repository": "https://github.com/domino-money/domino",
+      "commit": "9d73c041c835bf4e2f6d9e791b6f48ff86593ae1",
+      "statusAtAssessment": "pending integration candidate, not part of the cited main baseline",
+      "branchAtAssessment": "codex/backend-issues-integration"
+    }
+  },
+  "files": [
+    {
+      "id": "P01",
+      "source": "personal",
+      "path": "liquidity_math.py",
+      "sha256": "d715be3c976afe878c57c5b772b230c0dd8e54d70aa13c71b1567b2d62234fb8",
+      "bytes": 3496,
+      "lines": 80,
+      "anchors": [
+        {
+          "line": 41,
+          "symbol": "fees_from_growth",
+          "linePrefix": "def fees_from_growth("
+        },
+        {
+          "line": 45,
+          "symbol": "amounts_for_liquidity",
+          "linePrefix": "def amounts_for_liquidity("
+        },
+        {
+          "line": 55,
+          "symbol": "reinvestment",
+          "linePrefix": "def reinvestment("
+        }
+      ]
+    },
+    {
+      "id": "P02",
+      "source": "personal",
+      "path": "domino_strategy.py",
+      "sha256": "128cfa98bfaba7f88fdc22a788b780e4faa07b652c6baeb61e01265906978aea",
+      "bytes": 8707,
+      "lines": 204,
+      "anchors": [
+        {
+          "line": 30,
+          "symbol": "DominoPolicy",
+          "linePrefix": "class DominoPolicy:"
+        },
+        {
+          "line": 15,
+          "symbol": "token_price",
+          "linePrefix": "def token_price("
+        },
+        {
+          "line": 81,
+          "symbol": "range_steps",
+          "linePrefix": "def range_steps("
+        },
+        {
+          "line": 90,
+          "symbol": "routes",
+          "linePrefix": "def routes("
+        },
+        {
+          "line": 142,
+          "symbol": "plan_mint",
+          "linePrefix": "def plan_mint("
+        },
+        {
+          "line": 179,
+          "symbol": "plan_increase",
+          "linePrefix": "def plan_increase("
+        },
+        {
+          "line": 190,
+          "symbol": "spend_lots",
+          "linePrefix": "def spend_lots("
+        }
+      ]
+    },
+    {
+      "id": "P03",
+      "source": "personal",
+      "path": "dynamic_strategy.py",
+      "sha256": "89d0d49e70c2b55a2cf7f19c91ba6a8573fa23e918530c1f4a68bacb518c4961",
+      "bytes": 13358,
+      "lines": 291,
+      "anchors": [
+        {
+          "line": 19,
+          "symbol": "PolicyConfig",
+          "linePrefix": "class PolicyConfig:"
+        },
+        {
+          "line": 83,
+          "symbol": "FeeRateEstimator",
+          "linePrefix": "class FeeRateEstimator:"
+        },
+        {
+          "line": 97,
+          "symbol": "add",
+          "linePrefix": "    def add("
+        },
+        {
+          "line": 155,
+          "symbol": "estimate_cadence",
+          "linePrefix": "def estimate_cadence("
+        },
+        {
+          "line": 220,
+          "symbol": "decide",
+          "linePrefix": "    def decide("
+        }
+      ]
+    },
+    {
+      "id": "P04",
+      "source": "personal",
+      "path": "executor_adapter.py",
+      "sha256": "93790e9f66c80a24a50140e5c48591dc1a61e6464d37c5205a07c57736a18205",
+      "bytes": 5378,
+      "lines": 107,
+      "anchors": [
+        {
+          "line": 37,
+          "symbol": "checkpoint",
+          "linePrefix": "def checkpoint("
+        },
+        {
+          "line": 62,
+          "symbol": "build_executor_transaction",
+          "linePrefix": "def build_executor_transaction("
+        },
+        {
+          "line": 88,
+          "symbol": "validate_deployment",
+          "linePrefix": "def validate_deployment("
+        }
+      ]
+    },
+    {
+      "id": "P05",
+      "source": "personal",
+      "path": "domino_adapter.py",
+      "sha256": "575a22e2f15b222f645730d07a25d231468dadeac1467e02b1f1535bde7e1461",
+      "bytes": 8919,
+      "lines": 140,
+      "anchors": [
+        {
+          "line": 22,
+          "symbol": "VaultLimits",
+          "linePrefix": "class VaultLimits:"
+        },
+        {
+          "line": 48,
+          "symbol": "checkpoint",
+          "linePrefix": "def checkpoint("
+        },
+        {
+          "line": 101,
+          "symbol": "unsigned_execution",
+          "linePrefix": "def unsigned_execution("
+        }
+      ]
+    },
+    {
+      "id": "P06",
+      "source": "personal",
+      "path": "transaction_journal.py",
+      "sha256": "3e367062805f8df38d1ddfd1c6d477e7b2fe578702907b5a013c48f3a44e9bdd",
+      "bytes": 3338,
+      "lines": 76,
+      "anchors": [
+        {
+          "line": 10,
+          "symbol": "TransactionJournal",
+          "linePrefix": "class TransactionJournal:"
+        },
+        {
+          "line": 11,
+          "symbol": "__init__",
+          "linePrefix": "    def __init__("
+        },
+        {
+          "line": 48,
+          "symbol": "put",
+          "linePrefix": "    def put("
+        },
+        {
+          "line": 55,
+          "symbol": "update",
+          "linePrefix": "    def update("
+        },
+        {
+          "line": 62,
+          "symbol": "reserved_last_day",
+          "linePrefix": "    def reserved_last_day("
+        }
+      ]
+    },
+    {
+      "id": "P07",
+      "source": "personal",
+      "path": "contracts/src/FeesOnlyCompounder.sol",
+      "sha256": "2cec81c085bd968c75dedf5e6bd3dee431efd347076724b31ff3765724664923",
+      "bytes": 9684,
+      "lines": 226,
+      "anchors": [
+        {
+          "line": 137,
+          "symbol": "compound",
+          "linePrefix": "    function compound("
+        },
+        {
+          "line": 202,
+          "symbol": "_validatePosition",
+          "linePrefix": "    function _validatePosition("
+        },
+        {
+          "line": 212,
+          "symbol": "_validateLimits",
+          "linePrefix": "    function _validateLimits("
+        }
+      ]
+    },
+    {
+      "id": "P08",
+      "source": "personal",
+      "path": "contracts/src/DominoVaultV2.sol",
+      "sha256": "637801229bcb19ae9a37edba3cc8c4dfe5c10e88dabe98de8fd828bc22ee5ecd",
+      "bytes": 34258,
+      "lines": 719,
+      "anchors": [
+        {
+          "line": 160,
+          "symbol": "constructor",
+          "linePrefix": "    constructor("
+        },
+        {
+          "line": 181,
+          "symbol": "setRouting",
+          "linePrefix": "    function setRouting("
+        },
+        {
+          "line": 191,
+          "symbol": "_captureMigration",
+          "linePrefix": "    function _captureMigration("
+        },
+        {
+          "line": 219,
+          "symbol": "completeMigration",
+          "linePrefix": "    function completeMigration("
+        },
+        {
+          "line": 310,
+          "symbol": "_execute",
+          "linePrefix": "    function _execute("
+        },
+        {
+          "line": 384,
+          "symbol": "_compoundNet",
+          "linePrefix": "    function _compoundNet("
+        },
+        {
+          "line": 430,
+          "symbol": "_pendingFees",
+          "linePrefix": "    function _pendingFees("
+        },
+        {
+          "line": 441,
+          "symbol": "_increaseAmounts",
+          "linePrefix": "    function _increaseAmounts("
+        },
+        {
+          "line": 453,
+          "symbol": "_collect",
+          "linePrefix": "    function _collect("
+        },
+        {
+          "line": 469,
+          "symbol": "_mintLiquidity",
+          "linePrefix": "    function _mintLiquidity("
+        },
+        {
+          "line": 498,
+          "symbol": "_deposit",
+          "linePrefix": "    function _deposit("
+        },
+        {
+          "line": 539,
+          "symbol": "_debit",
+          "linePrefix": "    function _debit("
+        },
+        {
+          "line": 559,
+          "symbol": "_destination",
+          "linePrefix": "    function _destination("
+        },
+        {
+          "line": 599,
+          "symbol": "_validateRequest",
+          "linePrefix": "    function _validateRequest("
+        },
+        {
+          "line": 625,
+          "symbol": "_validateLimits",
+          "linePrefix": "    function _validateLimits("
+        },
+        {
+          "line": 635,
+          "symbol": "_value0",
+          "linePrefix": "    function _value0("
+        },
+        {
+          "line": 662,
+          "symbol": "withdrawReserves",
+          "linePrefix": "    function withdrawReserves("
+        },
+        {
+          "line": 680,
+          "symbol": "withdrawPosition",
+          "linePrefix": "    function withdrawPosition("
+        },
+        {
+          "line": 692,
+          "symbol": "withdrawUntrackedTokens",
+          "linePrefix": "    function withdrawUntrackedTokens("
+        },
+        {
+          "line": 701,
+          "symbol": "recoverUnexpectedNFT",
+          "linePrefix": "    function recoverUnexpectedNFT("
+        }
+      ]
+    },
+    {
+      "id": "P09",
+      "source": "personal",
+      "path": "contracts/src/DominoTicksV2.sol",
+      "sha256": "0e25f2d755685c2f2f698e776ff7cba0c520177a938b1d0fe17ce7cb712286cb",
+      "bytes": 2324,
+      "lines": 34,
+      "anchors": [
+        {
+          "line": 7,
+          "symbol": "sqrtAt",
+          "linePrefix": "    function sqrtAt("
+        }
+      ]
+    },
+    {
+      "id": "P10",
+      "source": "personal",
+      "path": "test_domino.py",
+      "sha256": "ca6c7cc3fa063a37eadbee09f297c9f3d65a9dcd321a601b6309dbfc60580e9a",
+      "bytes": 11724,
+      "lines": 213,
+      "anchors": [
+        {
+          "line": 20,
+          "symbol": "RoutingTests",
+          "linePrefix": "class RoutingTests("
+        },
+        {
+          "line": 80,
+          "symbol": "AllocationTests",
+          "linePrefix": "class AllocationTests("
+        },
+        {
+          "line": 24,
+          "symbol": "test_trigger_is_price_ceiling_fraction_and_exact_boundary",
+          "linePrefix": "    def test_trigger_is_price_ceiling_fraction_and_exact_boundary("
+        },
+        {
+          "line": 81,
+          "symbol": "test_tick_grid_approximates_upside_and_respects_overlap_ceiling",
+          "linePrefix": "    def test_tick_grid_approximates_upside_and_respects_overlap_ceiling("
+        },
+        {
+          "line": 86,
+          "symbol": "test_mint_uses_all_volatile_fees_except_integer_rounding",
+          "linePrefix": "    def test_mint_uses_all_volatile_fees_except_integer_rounding("
+        },
+        {
+          "line": 108,
+          "symbol": "test_stable_only_fees_wait_and_skipped_range_never_mints",
+          "linePrefix": "    def test_stable_only_fees_wait_and_skipped_range_never_mints("
+        }
+      ]
+    },
+    {
+      "id": "P11",
+      "source": "personal",
+      "path": "test_dynamic_strategy.py",
+      "sha256": "9216259b35123470655263459fe8fa51c2aef071a6a84a2ae56147b00dcd5fc8",
+      "bytes": 7786,
+      "lines": 137,
+      "anchors": [
+        {
+          "line": 10,
+          "symbol": "DynamicStrategyTests",
+          "linePrefix": "class DynamicStrategyTests("
+        },
+        {
+          "line": 56,
+          "symbol": "test_price_move_without_new_fee_units_is_not_income",
+          "linePrefix": "    def test_price_move_without_new_fee_units_is_not_income("
+        },
+        {
+          "line": 84,
+          "symbol": "test_stale_incomplete_pending_and_out_of_range_never_recommend",
+          "linePrefix": "    def test_stale_incomplete_pending_and_out_of_range_never_recommend("
+        },
+        {
+          "line": 115,
+          "symbol": "test_recalculation_does_not_restart_elapsed_wait",
+          "linePrefix": "    def test_recalculation_does_not_restart_elapsed_wait("
+        }
+      ]
+    },
+    {
+      "id": "P12",
+      "source": "personal",
+      "path": "contracts/test/FeesOnlyCompounder.t.sol",
+      "sha256": "e64c19b17ab6cfc7a72fa69de77cb9782a7dbb798716d9dd01d3234a29dd7b49",
+      "bytes": 10502,
+      "lines": 285,
+      "anchors": []
+    },
+    {
+      "id": "P13",
+      "source": "personal",
+      "path": "contracts/test/DominoVaultV2.t.sol",
+      "sha256": "567be1b8db8eb0aa42cb205ee918c8428d5149d9a9341d5c26d19a26fefd18ee",
+      "bytes": 15793,
+      "lines": 393,
+      "anchors": []
+    },
+    {
+      "id": "P14",
+      "source": "personal",
+      "path": "contracts/test/DominoV2Security.t.sol",
+      "sha256": "d718c931bf3ef692c631de039f7ff88f18c0d987a0545ff6ba7d227511268430",
+      "bytes": 10469,
+      "lines": 192,
+      "anchors": []
+    },
+    {
+      "id": "P15",
+      "source": "personal",
+      "path": "THIRD_PARTY_NOTICES.md",
+      "sha256": "f449ae0c26a230a1877c483828bc63cb8ecb6c057e8d9b2647a5e90df6942bb4",
+      "bytes": 1806,
+      "lines": 34,
+      "anchors": []
+    },
+    {
+      "id": "M01",
+      "source": "main",
+      "path": "contracts/src/FeeAccounting.sol",
+      "sha256": "2ca9888e0ee50f8f7f7f9dfedcc0f242df1a431ca895e60b36523a1d40319ee2",
+      "bytes": 819,
+      "lines": 20,
+      "anchors": [
+        {
+          "line": 11,
+          "symbol": "consume",
+          "linePrefix": "    function consume("
+        }
+      ]
+    },
+    {
+      "id": "M02",
+      "source": "main",
+      "path": "contracts/src/IDominoVaultDraft.sol",
+      "sha256": "4ff21823dc5614623f70e244af8774a51f6ca7b30e561666762d8a54ec2e760a",
+      "bytes": 1874,
+      "lines": 46,
+      "anchors": [
+        {
+          "line": 6,
+          "symbol": "interface IDominoVaultDraft",
+          "linePrefix": "interface IDominoVaultDraft {"
+        }
+      ]
+    },
+    {
+      "id": "M03",
+      "source": "main",
+      "path": "backend/v4_math.py",
+      "sha256": "720324f050b056dc5af6a18be1e5c827df7fcdd5b49ea1c538d0e2b60116b1bf",
+      "bytes": 4756,
+      "lines": 123,
+      "anchors": [
+        {
+          "line": 37,
+          "symbol": "sqrt_at_tick",
+          "linePrefix": "def sqrt_at_tick("
+        },
+        {
+          "line": 62,
+          "symbol": "amount_delta",
+          "linePrefix": "def amount_delta("
+        }
+      ]
+    },
+    {
+      "id": "M04",
+      "source": "main",
+      "path": "backend/position_accounting.py",
+      "sha256": "76377966f527e0344eb5dd20ac261dda80b010b4a1f2e8fa34c8a6b9a0a507a1",
+      "bytes": 10961,
+      "lines": 204,
+      "anchors": [
+        {
+          "line": 44,
+          "symbol": "principal_amounts",
+          "linePrefix": "def principal_amounts("
+        },
+        {
+          "line": 53,
+          "symbol": "pending_fees",
+          "linePrefix": "def pending_fees("
+        }
+      ]
+    },
+    {
+      "id": "M05",
+      "source": "main",
+      "path": "backend/nft_ownership.py",
+      "sha256": "90c261c82ea6206677c8e4baf554dd0c46c20b427cba4dd915f744533527ecb0",
+      "bytes": 5578,
+      "lines": 107,
+      "anchors": [
+        {
+          "line": 35,
+          "symbol": "read_identity",
+          "linePrefix": "def read_identity("
+        },
+        {
+          "line": 66,
+          "symbol": "read_nft_position",
+          "linePrefix": "def read_nft_position("
+        }
+      ]
+    },
+    {
+      "id": "M06",
+      "source": "main",
+      "path": "backend/schema.sql",
+      "sha256": "2653b9faccd9bfd8af1d6f140ebb0b9fcec6f4c3f95649f70c91a646e7bac0c5",
+      "bytes": 4739,
+      "lines": 92,
+      "anchors": [
+        {
+          "line": 16,
+          "symbol": "CREATE TABLE sequences",
+          "linePrefix": "CREATE TABLE sequences ("
+        },
+        {
+          "line": 43,
+          "symbol": "CREATE TABLE fee_lots",
+          "linePrefix": "CREATE TABLE fee_lots ("
+        },
+        {
+          "line": 58,
+          "symbol": "CREATE TABLE execution_intents",
+          "linePrefix": "CREATE TABLE execution_intents ("
+        },
+        {
+          "line": 72,
+          "symbol": "CREATE TABLE operator_nonces",
+          "linePrefix": "CREATE TABLE operator_nonces ("
+        }
+      ]
+    },
+    {
+      "id": "M07",
+      "source": "main",
+      "path": "contracts/test/FeeAccounting.t.sol",
+      "sha256": "bfbc4e1509a85aac41aeeebf18dfe72c82024803b508aaff61aab9b51a396535",
+      "bytes": 1647,
+      "lines": 33,
+      "anchors": []
+    },
+    {
+      "id": "I01",
+      "source": "candidate",
+      "path": "contracts/src/PolicyValidation.sol",
+      "sha256": "01996beec2e4b4b02ecf650070090f91db5b128742d44e9af1e1cc239a2792c8",
+      "bytes": 2756,
+      "lines": 57,
+      "anchors": [
+        {
+          "line": 24,
+          "symbol": "validate",
+          "linePrefix": "    function validate("
+        },
+        {
+          "line": 35,
+          "symbol": "validateInitial",
+          "linePrefix": "    function validateInitial("
+        },
+        {
+          "line": 43,
+          "symbol": "validateUpdate",
+          "linePrefix": "    function validateUpdate("
+        }
+      ]
+    },
+    {
+      "id": "I02",
+      "source": "candidate",
+      "path": "contracts/src/IDominoVaultDraft.sol",
+      "sha256": "f7225408da39408ce55fbea17408bfc3debb97742665630ad0b293808f95ff6f",
+      "bytes": 6755,
+      "lines": 115,
+      "anchors": [
+        {
+          "line": 10,
+          "symbol": "interface IDominoVaultDraft",
+          "linePrefix": "interface IDominoVaultDraft {"
+        },
+        {
+          "line": 93,
+          "symbol": "compoundSelf",
+          "linePrefix": "    function compoundSelf("
+        },
+        {
+          "line": 101,
+          "symbol": "pause",
+          "linePrefix": "    function pause("
+        },
+        {
+          "line": 104,
+          "symbol": "resume",
+          "linePrefix": "    function resume("
+        },
+        {
+          "line": 109,
+          "symbol": "withdrawFeeReserves",
+          "linePrefix": "    function withdrawFeeReserves("
+        },
+        {
+          "line": 114,
+          "symbol": "withdrawChildPosition",
+          "linePrefix": "    function withdrawChildPosition("
+        }
+      ]
+    },
+    {
+      "id": "I03",
+      "source": "candidate",
+      "path": "contracts/test/helpers/PolicyWriteHarness.sol",
+      "sha256": "799e5b7508b6f82f02dde343a96e1f54eb5d4f119add1053b74be1c35884a9b0",
+      "bytes": 5235,
+      "lines": 143,
+      "anchors": [
+        {
+          "line": 10,
+          "symbol": "contract PolicyWriteHarness",
+          "linePrefix": "contract PolicyWriteHarness {"
+        },
+        {
+          "line": 63,
+          "symbol": "setPolicy",
+          "linePrefix": "    function setPolicy("
+        },
+        {
+          "line": 71,
+          "symbol": "pause",
+          "linePrefix": "    function pause("
+        },
+        {
+          "line": 79,
+          "symbol": "resume",
+          "linePrefix": "    function resume("
+        },
+        {
+          "line": 87,
+          "symbol": "withdrawFeeReserves",
+          "linePrefix": "    function withdrawFeeReserves("
+        },
+        {
+          "line": 98,
+          "symbol": "withdrawChildPosition",
+          "linePrefix": "    function withdrawChildPosition("
+        },
+        {
+          "line": 109,
+          "symbol": "assertPlanFresh",
+          "linePrefix": "    function assertPlanFresh("
+        }
+      ]
+    },
+    {
+      "id": "I04",
+      "source": "candidate",
+      "path": "contracts/test/PolicyValidation.t.sol",
+      "sha256": "9a8641eafb3c9cade58aaf4583edcde9900b44dd36b625a5e4ba8cbb71999c63",
+      "bytes": 18316,
+      "lines": 364,
+      "anchors": []
+    },
+    {
+      "id": "I05",
+      "source": "candidate",
+      "path": "contracts/test/FeeAccounting.t.sol",
+      "sha256": "59cde38e4052de959e622c8ad921590b8811089a3f3f4a9c84be8d81d76347f5",
+      "bytes": 4670,
+      "lines": 87,
+      "anchors": [
+        {
+          "line": 22,
+          "symbol": "testFloorAtFortyNineAndFiftyBaseUnits",
+          "linePrefix": "    function testFloorAtFortyNineAndFiftyBaseUnits("
+        }
+      ]
+    }
+  ],
+  "verificationScope": {
+    "originalAssessment": "89 selected symbol anchors: 29 in public Git snapshots and 60 in the separately authorized private source snapshot. Original private checks are historical provenance, not reproduced in the documentation follow-up.",
+    "documentationFollowUp": "Public Git snapshots only: 12 files and 29 symbol anchors. No private source/runtime/configuration access, imports, execution or deployed-bytecode verification.",
+    "publicFiles": 12,
+    "publicAnchors": 29,
+    "privateFilesHistoricalOnly": 15,
+    "privateAnchorsHistoricalOnly": 60
+  }
+}
