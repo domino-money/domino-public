@@ -47,6 +47,13 @@ function serveDist() {
     try {
       if ((await stat(file)).isDirectory()) file = join(file, 'index.html');
     } catch {
+      // Only extension-less paths fall back to the app shell. A missing asset
+      // must be a real 404, or a broken image would load as HTML with a 200
+      // and the artwork test could never see it.
+      if (extname(file)) {
+        res.writeHead(404, { 'content-type': 'text/plain' }).end('not found');
+        return;
+      }
       file = join(DIST, 'index.html');
     }
     res.writeHead(200, {
@@ -99,13 +106,18 @@ async function open(route = '/') {
   const page = await browser.newPage({ viewport: { width: 1280, height: 900 } });
   page.on('pageerror', (error) => problems.push(`uncaught: ${error.message}`));
   page.on('console', (message) => {
-    if (message.type() === 'error') problems.push(`console.error: ${message.text()}`);
+    if (message.type() !== 'error') return;
+    // The artwork test deliberately probes one missing file.
+    if (message.location()?.url?.includes('nosuchtoken')) return;
+    problems.push(`console.error: ${message.text()}`);
   });
   page.on('requestfailed', (request) => {
     problems.push(`request failed: ${request.url()} (${request.failure()?.errorText})`);
   });
   page.on('response', (response) => {
-    if (response.status() >= 400) problems.push(`${response.status()} for ${response.url()}`);
+    if (response.status() >= 400 && !response.url().includes('nosuchtoken')) {
+      problems.push(`${response.status()} for ${response.url()}`);
+    }
   });
   await page.goto(`${origin}/#${route}`, { waitUntil: 'networkidle' });
   return page;
@@ -348,6 +360,51 @@ test('a scenario outside the engine limits shows its refusal instead of a number
   );
 
   clean('out-of-range scenario');
+  await page.close();
+});
+
+test('every token the app shows has real artwork, and an unknown one still gets a disc', async () => {
+  // Both surfaces: the landing shows the pool table, the workspace shows the
+  // practice pair once a card exists.
+  const page = await open('/app');
+  await createPosition(page);
+  await page.goto(`${origin}/#/`, { waitUntil: 'networkidle' });
+  // Let every mark either decode or fall back before looking.
+  await page.waitForFunction(() =>
+    Array.from(document.querySelectorAll('img[src*="/tokens/"]')).every((img) => img.complete),
+  );
+
+  // Nothing on screen may be a lettered fallback: every registered symbol has
+  // a file. The fallback exists for symbols we have not registered, not for
+  // the ones the app itself chooses to display.
+  const discs = await page.evaluate(() =>
+    Array.from(document.querySelectorAll('span[aria-hidden="true"]'))
+      .map((el) => el.textContent.trim())
+      .filter((t) => /^[A-Z]{1,3}$/.test(t)),
+  );
+  assert.deepEqual(discs, [], `lettered discs on screen for: ${discs.join(', ')}`);
+
+  // And every mark actually decoded to pixels, so a 200 for a broken file
+  // cannot pass as artwork.
+  const images = await page.evaluate(() =>
+    Array.from(document.querySelectorAll('img[src*="/tokens/"]')).map((img) => ({
+      src: img.getAttribute('src'),
+      ok: img.complete && img.naturalWidth > 0,
+    })),
+  );
+  assert.ok(images.length >= 8, `only ${images.length} token marks rendered`);
+  const broken = images.filter((i) => !i.ok).map((i) => i.src);
+  assert.deepEqual(broken, [], `token marks that failed to decode: ${broken.join(', ')}`);
+
+  // The fallback itself still works for a symbol with no file, and does not
+  // break layout or throw.
+  const fallback = await page.evaluate(async () => {
+    const img = new Image();
+    const loaded = await new Promise((r) => { img.onload = () => r(true); img.onerror = () => r(false); img.src = '/tokens/nosuchtoken.svg'; });
+    return loaded;
+  });
+  assert.equal(fallback, false, 'the missing-file path must stay reachable for the fallback to matter');
+  clean('token artwork');
   await page.close();
 });
 

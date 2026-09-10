@@ -4,28 +4,42 @@ import type { CSSProperties } from 'react'
 /**
  * Token marks.
  *
- * Every symbol looks for its artwork at /tokens/<symbol>.svg in this app, so
- * adding a logo is dropping a file in that folder. Nothing is fetched from a
- * third-party host. Symbols here are fixed constants chosen by us, not metadata
+ * Every symbol looks for its artwork at /tokens/<file> in this app, so adding a
+ * logo is dropping a file in that folder. Nothing is fetched from a third-party
+ * host at runtime. Symbols here are fixed constants chosen by us, not metadata
  * read from chain. A missing file falls back to a coloured disc with letters.
+ *
+ * `ext` exists because the Robinhood Chain tokens publish raster artwork, not
+ * vectors. Those files are their projects' own marks, saved into this
+ * repository rather than hot-linked. `bg` still matters for them: it is the
+ * colour behind the image while it loads and the disc colour if it is missing.
  */
 
-type Spec = { bg: string; fg?: string; text?: string; label: string; file?: string | null }
+type Spec = {
+  bg: string
+  fg?: string
+  text?: string
+  label: string
+  file?: string | null
+  ext?: 'svg' | 'jpg' | 'png'
+}
 
 /** Tokens that exist on Robinhood Chain (chain 4663), from the backend's validation set. */
 const SPECS: Record<string, Spec> = {
   ETH: { bg: '#627EEA', label: 'Ether' },
   WETH: { bg: '#363c4a', label: 'Wrapped Ether' },
   USDG: { bg: '#16b672', label: 'Global Dollar' },
-  MARLIN: { bg: '#1f6feb', label: 'Marlin', text: 'MR' },
-  TRADOOR: { bg: '#d99a00', label: 'Tradoor', text: 'TR' },
-  CRUMBS: { bg: '#c4703b', label: 'Crumbs', text: 'CR' },
-  RUBEN: { bg: '#8b5cf6', label: 'Ruben', text: 'RU' },
-  MAD: { bg: '#e0483f', label: 'Mad', text: 'MD' },
-  BAG: { bg: '#0ea5e9', label: 'Bag', text: 'BG' },
-  ZZZ: { bg: '#6366f1', label: 'ZZZ', text: 'ZZ' },
+  MARLIN: { bg: '#1f6feb', label: 'Marlin', text: 'MR', ext: 'jpg' },
+  TRADOOR: { bg: '#d99a00', label: 'Tradoor', text: 'TR', ext: 'jpg' },
+  CRUMBS: { bg: '#c4703b', label: 'Crumbs', text: 'CR', ext: 'jpg' },
+  RUBEN: { bg: '#8b5cf6', label: 'Ruben', text: 'RU', ext: 'jpg' },
+  MAD: { bg: '#e0483f', label: 'Mad', text: 'MD', ext: 'jpg' },
+  BAG: { bg: '#0ea5e9', label: 'Bag', text: 'BG', ext: 'jpg' },
+  ZZZ: { bg: '#6366f1', label: 'ZZZ', text: 'ZZ', ext: 'jpg' },
   UNI: { bg: '#FF007A', label: 'Uniswap', text: 'UNI', file: 'uniswap' },
-  MEME: { bg: 'var(--primary)', fg: 'var(--primary-fg)', label: 'Example token', text: 'M', file: null },
+  // Deliberately our own mark: MEME is an illustrative token that exists on no
+  // chain, so there is no official artwork to use and none should be implied.
+  MEME: { bg: '#ff843d', fg: '#2b1405', label: 'Example token', text: 'M' },
 }
 
 const fallback = (symbol: string): Spec => ({ bg: 'var(--surface-3)', fg: 'var(--fg)', label: symbol })
@@ -46,7 +60,7 @@ export function TokenIcon({
 }) {
   const key = symbol.toUpperCase()
   const spec = SPECS[key] ?? fallback(symbol)
-  const src = spec.file === null ? null : `/tokens/${(spec.file ?? key).toLowerCase()}.svg`
+  const src = spec.file === null ? null : `/tokens/${(spec.file ?? key).toLowerCase()}.${spec.ext ?? 'svg'}`
   const [broken, setBroken] = useState(false)
   const border = ring ? `2px solid ${ring}` : undefined
 
@@ -60,7 +74,18 @@ export function TokenIcon({
         draggable={false}
         onError={() => setBroken(true)}
         className={className}
-        style={{ width: size, height: size, borderRadius: '50%', border, display: 'block', background: spec.bg, ...style }}
+        style={{
+          width: size,
+          height: size,
+          borderRadius: '50%',
+          border,
+          display: 'block',
+          // Square source art, drawn into a circle without distorting it.
+          objectFit: 'cover',
+          flexShrink: 0,
+          background: spec.bg,
+          ...style,
+        }}
       />
     )
   }
