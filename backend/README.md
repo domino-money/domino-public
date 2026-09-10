@@ -1,5 +1,69 @@
 # Backend foundation
 
+API 0.8.0 follows the [MVP data strategy](../MVP_DATA_STRATEGY.md): read indexed
+market data on demand and keep exact historical reconstruction optional for
+onboarding. No lifetime backfill starts when a user reads a pool.
+
+## On-demand pool market data
+
+`POST /v1/read/pool-market` accepts a full v4 PoolId, optional boolean
+`includePriceHistory` (default false), and `priceToken` (`base` or `quote`,
+default base). The latter names the GeckoTerminal pair's explicit base/quote
+addresses, which are returned with the chart; it is not implicit token0/token1.
+
+```json
+{"poolId":"0x84bd4e2d8be11aeb0afc1195b38f587b61e90068548f1063fdbe448fb8cad0b6","includePriceHistory":true,"priceToken":"base"}
+```
+
+The route rereads canonical Uniswap deployment links, the full PoolKey and
+current state, then attaches attributed GeckoTerminal `reportedLiquidityUsd`
+and `volume24hUsd`. Optional OHLCV contains up to 24 hourly candles with the
+actual currency address, timestamps, open/closed flags and gap coverage. This
+does not prove a complete trailing 24-hour window. Neither active liquidity
+nor the PoolManager balance is converted into pool TVL.
+
+Market and chart observations have separate status and cache metadata. Missing
+values stay null; zero is retained only when reported. A provider failure keeps
+the current verified pool readable. A mismatched chain, full PoolId, currencies,
+DEX identity or chart orientation rejects the affected observation. PoolId does
+not include PoolManager, so another DEX's similarly hashed pool is not accepted.
+
+The process-local cache retains at most 256 entries, serves hits for 60 seconds,
+and can show explicitly stale data up to 300 seconds old after failure. Failed
+reads have a 15-second retry cooldown. Duplicate concurrent reads coalesce, and
+the shared provider budget is 25 requests per 60 seconds with no waiting queue
+or background refresh. Each provider call has a five-second timeout. These are
+local development limits, not distributed production quotas or a source SLA.
+Provider update time remains unknown even for a newly retrieved response.
+
+This route needs no catalogue, price qualification registry, wallet or Uniswap
+key. It inherits the loopback/browser-origin boundary below. It does not replace
+`/v1/read/pool-metrics`, whose exact ledger/valuation semantics are unchanged.
+`feeApr24h` remains null, suggestions and execution remain disabled. See
+[live HTTP evidence](../reports/on-demand-market-http-probe-2026-09-09.json) and
+[qualification notes](../reports/ON_DEMAND_MARKET_QUALIFICATION.md).
+
+## Uniswap API configuration and readiness
+
+Open `backend/Configurar Uniswap.command` in Terminal, or run
+`backend/.venv/bin/python backend/configure_uniswap.py` interactively. Obtain a
+key at the [developer portal](https://developers.uniswap.org/dashboard) and enter
+it at the hidden prompt. A successful public pool read precedes an atomic mode
+0600 save at ignored `backend/runtime/uniswap-api.json`. Failures preserve any
+previous configuration. `--config-file` selects a separate worktree's private
+configuration destination. Never place the key in chat or command arguments.
+
+`uniswap_liquidity.py` supports generic pair/fee/tick-spacing/hook pool reads.
+The live endpoint returns some decimals as strings; the parser normalizes exact
+integers with uint8 bounds and preserves missing metadata. Successful pool_info
+access alone is not an authentication audit: it also responded without a key.
+
+The configured [Trading API quote probe](../reports/UNISWAP_TRADING_READINESS.md)
+succeeded on Robinhood using router `2.1.1`, numeric chain IDs and no signatures.
+Those network-specific values supersede generic examples in the installed
+`swap-integration` skill. The quote adapter/public quote route, current user
+funding, service-fee tariff and financial execution remain separate work.
+
 Historical reference-price work for issue #4 now includes a bounded Chainlink
 adapter, publication-block evidence, source-isolated persistence and an explicit
 offline analytics policy. See [policy and reproduction](../reports/CHAINLINK_REFERENCE_POLICY.md).

@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Domino internal read API",
-    "version": "0.7.0"
+    "version": "0.8.0"
   },
   "paths": {
     "/health": {
@@ -324,6 +324,42 @@
           }
         }
       }
+    },
+    "/v1/read/pool-market": {
+      "post": {
+        "summary": "Pool Market",
+        "operationId": "pool_market_v1_read_pool_market_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PoolMarketRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
     }
   },
   "components": {
@@ -489,6 +525,32 @@
           "tokenIds"
         ],
         "title": "NftPositionsRequest"
+      },
+      "PoolMarketRequest": {
+        "properties": {
+          "poolId": {
+            "type": "string",
+            "pattern": "^0x[0-9a-fA-F]{64}$",
+            "title": "Poolid"
+          },
+          "includePriceHistory": {
+            "type": "boolean",
+            "title": "Includepricehistory",
+            "default": false
+          },
+          "priceToken": {
+            "type": "string",
+            "pattern": "^(base|quote)$",
+            "title": "Pricetoken",
+            "default": "base"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "poolId"
+        ],
+        "title": "PoolMarketRequest"
       },
       "PoolsRequest": {
         "properties": {

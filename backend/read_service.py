@@ -3,7 +3,7 @@ from dataclasses import asdict
 import time
 
 from discovery import (CHAIN_ID, RPC_URL, ZERO, DataError, DiscoveryReader,
-                       ReadRpc, Block, address, discover, json_http, parse_block)
+                       ReadRpc, Block, address, bytes32, discover, json_http, parse_block)
 from inventory import AlchemyInventory, CursorCodec
 
 
@@ -21,12 +21,17 @@ def bounded_transport(seconds=60):
 class ReadService:
     def __init__(self, *, rpc_url=RPC_URL, inventory_url=None, clock=time.time,
                  rpc_factory=None, inventory=None, cursor_codec=None, transport_factory=bounded_transport,
-                 catalogue=None):
+                 catalogue=None, market_cache=None):
         self.rpc_url, self.inventory_url, self.clock = rpc_url, inventory_url, clock
         self.rpc_factory, self.inventory = rpc_factory, inventory
         self.cursor_codec = cursor_codec or CursorCodec(clock=clock)
         self.transport_factory = transport_factory
         self.catalogue = catalogue
+        if market_cache is None:
+            from market_cache import MarketCache
+            from market_data import GeckoMarketData
+            market_cache = MarketCache(GeckoMarketData(clock=clock))
+        self.market_cache = market_cache
         # Validate configuration at startup, without sending network requests.
         if inventory_url:
             AlchemyInventory(inventory_url)
@@ -159,6 +164,52 @@ class ReadService:
         report['usableAsCurrent24h'] = (age <= 120 and report['capital']['complete24h'] and
                                        report['valuation'].get('feeAprPercent') is not None)
         return report
+
+    def pool_market(self, pool_id, *, include_price_history=False, price_token='base'):
+        """On-demand provider observations; no catalogue or history replay required."""
+        pool_id = bytes32(pool_id)
+        if type(include_price_history) is not bool or price_token not in ('base', 'quote'):
+            raise DataError('invalid_market_query')
+        reader = DiscoveryReader(self._rpc(self.transport_factory()), clock=self.clock)
+        block = reader.snapshot()
+        pool = reader.pool({'poolId': pool_id}, block)
+
+        def matched(observation):
+            data = observation.get('data')
+            if data is not None and (type(data.get('chainId')) is not int or
+                    data['chainId'] != CHAIN_ID or data.get('source') != 'geckoterminal' or
+                    data.get('poolId') != pool_id or data.get('currencies') != pool['currencies'] or
+                    {data.get('baseToken'), data.get('quoteToken')} != set(pool['currencies'])):
+                return {**observation, 'status': 'rejected',
+                        'reason': 'provider_currency_or_pool_mismatch', 'data': None}
+            return observation
+
+        market = matched(self.market_cache.get('pool', pool_id))
+        issues = []
+        if market.get('data') and market['data'].get('dexLabel') != 'uniswap-v4-robinhood':
+            issues.append('provider_dex_label_unconfirmed')
+            # A PoolId does not include PoolManager: a fork may use the same key.
+            market = {**market, 'status': 'rejected', 'reason': 'provider_dex_unconfirmed', 'data': None}
+        history = {'status': 'not_requested', 'reason': None, 'data': None, 'cache': None}
+        if include_price_history:
+            if market.get('data') is None:
+                history.update(status='unavailable', reason='provider_market_identity_unavailable')
+            else:
+                history = matched(self.market_cache.get('hourly_prices', pool_id, token=price_token))
+                data = history.get('data')
+                if data is not None and (data.get('selectedToken') != price_token or
+                        data.get('currency') != data.get(price_token + 'Token') or
+                        any(data.get(side) != market['data'].get(side) for side in ('baseToken', 'quoteToken'))):
+                    history = {**history, 'status': 'rejected',
+                               'reason': 'provider_chart_currency_mismatch', 'data': None}
+        reader.assert_canonical(block)
+        return {'schemaVersion': 1, 'mode': 'on_demand_provider_market', 'chainId': CHAIN_ID,
+                'poolId': pool_id, 'pool': pool, 'snapshot': asdict(block),
+                'market': market, 'priceHistory': history, 'issues': issues,
+                'requiresLocalHistory': False, 'providerMetricsReconciled': False,
+                'feeApr24h': None, 'aprReason': 'provider_lp_fee_history_unavailable',
+                'suggested': False, 'executionAvailable': False}
+
 
     def token(self, token):
         reader = DiscoveryReader(self._rpc(self.transport_factory()), clock=self.clock)

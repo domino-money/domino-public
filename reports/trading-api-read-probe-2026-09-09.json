@@ -1,0 +1,105 @@
+{
+  "schemaVersion": 1,
+  "mode": "read_only_quote_probe",
+  "endpoint": "https://trade-api.gateway.uniswap.org/v1/quote",
+  "chainId": 4663,
+  "startedAt": "2026-09-10T02:02:29.218964+00:00",
+  "request": {
+    "type": "EXACT_INPUT",
+    "amount": "1000000000000000",
+    "tokenInChainId": 4663,
+    "tokenOutChainId": 4663,
+    "tokenIn": "0x0bd7d308f8e1639fab988df18a8011f41eacad73",
+    "tokenOut": "0x5fc5360d0400a0fd4f2af552add042d716f1d168",
+    "swapper": "0x000000000000000000000000000000000000dead",
+    "slippageTolerance": 0.5,
+    "routingPreference": "BEST_PRICE",
+    "protocols": [
+      "V4"
+    ],
+    "hooksOptions": "V4_NO_HOOKS",
+    "generatePermitAsTransaction": false,
+    "permitAmount": "EXACT"
+  },
+  "publicSwapperPurpose": "public_burn_address_placeholder_not_a_user_wallet",
+  "headers": {
+    "x-api-key": "configured_locally_not_recorded",
+    "x-universal-router-version": "2.1.1",
+    "x-agent-info": {
+      "integration_name": "swap-integration",
+      "decision_origin": "human_mediated",
+      "version": "1.5.0"
+    }
+  },
+  "liveRequests": 1,
+  "executed": false,
+  "signed": false,
+  "approvalRequested": false,
+  "response": {
+    "routing": "CLASSIC",
+    "chainId": 4663,
+    "input": {
+      "token": "0x0bd7d308f8e1639fab988df18a8011f41eacad73",
+      "amountRaw": "1000000000000000"
+    },
+    "output": {
+      "token": "0x5fc5360d0400a0fd4f2af552add042d716f1d168",
+      "amountRaw": "2461513",
+      "minimumAmountRaw": "2449205"
+    },
+    "slippagePercent": "0.5",
+    "gasFeeWei": "46196465205000",
+    "gasFeeUsdProviderEstimate": "0.07529905334762742",
+    "gasUseEstimate": "192161",
+    "providerBlockNumber": "59031060",
+    "providerBlockHash": null,
+    "simulationFailureCodes": [],
+    "simulationSuccessProven": false,
+    "portionBips": null,
+    "portionAmountRaw": null,
+    "priceImpactPercent": "0.03",
+    "routes": [
+      [
+        {
+          "type": "v4-pool",
+          "poolId": "0x84bd4e2d8be11aeb0afc1195b38f587b61e90068548f1063fdbe448fb8cad0b6",
+          "tokenIn": {
+            "address": "0x0bd7d308f8e1639fab988df18a8011f41eacad73",
+            "chainId": 4663,
+            "decimals": "18"
+          },
+          "tokenOut": {
+            "address": "0x5fc5360d0400a0fd4f2af552add042d716f1d168",
+            "chainId": 4663,
+            "decimals": "6"
+          },
+          "feePips": "200",
+          "tickSpacing": null,
+          "hooks": "0x0000000000000000000000000000000000000000",
+          "amountInRaw": "1000000000000000",
+          "amountOutRaw": "2461513"
+        }
+      ]
+    ],
+    "permitDataReturned": true,
+    "permitTransactionReturned": false,
+    "isTokenApprovalApplicable": true
+  },
+  "failureCode": null,
+  "elapsedSeconds": 3.135,
+  "status": "quote_returned",
+  "completedAt": "2026-09-10T02:02:32.354165+00:00",
+  "limitations": [
+    "one_public_pair_one_amount_one_provider_response",
+    "not_a_user_wallet_quote",
+    "no_broadcast_or_execution_validation",
+    "gas_estimate_excludes_token_approvals",
+    "no_block_hash_revalidation",
+    "quote_not_saved_for_execution"
+  ],
+  "sources": [
+    "https://developers.uniswap.org/docs/trading/swapping-api/supported-chains",
+    "https://developers.uniswap.org/docs/api-reference/aggregator_quote",
+    "https://github.com/Uniswap/interface/blob/da6d36f71c4d2fd665b0aae1a052a4ffda917b31/packages/api/src/clients/trading/api.json"
+  ]
+}

@@ -1,0 +1,1045 @@
+{
+  "schemaVersion": 1,
+  "mode": "live_loopback_on_demand_market",
+  "catalogueConfigured": false,
+  "historicalBackfillStarted": false,
+  "executed": false,
+  "reads": [
+    {
+      "elapsedSeconds": 6.289,
+      "result": {
+        "schemaVersion": 1,
+        "mode": "on_demand_provider_market",
+        "chainId": 4663,
+        "poolId": "0x84bd4e2d8be11aeb0afc1195b38f587b61e90068548f1063fdbe448fb8cad0b6",
+        "pool": {
+          "poolId": "0x84bd4e2d8be11aeb0afc1195b38f587b61e90068548f1063fdbe448fb8cad0b6",
+          "currencies": [
+            "0x0bd7d308f8e1639fab988df18a8011f41eacad73",
+            "0x5fc5360d0400a0fd4f2af552add042d716f1d168"
+          ],
+          "poolKey": {
+            "currency0": "0x0bd7d308f8e1639fab988df18a8011f41eacad73",
+            "currency1": "0x5fc5360d0400a0fd4f2af552add042d716f1d168",
+            "fee_pips": 200,
+            "tick_spacing": 4,
+            "hooks": "0x0000000000000000000000000000000000000000"
+          },
+          "identityStatus": "verified_at_block",
+          "snapshot": {
+            "number": 59037026,
+            "hash": "0x10401aeff959116bf885906bc45f54a6fd4f198f6cdca6b926bfd830bfa4d59e",
+            "timestamp": 1789006349
+          },
+          "sqrtPriceX96": "3931368729968502122901270",
+          "tick": -198232,
+          "currentLpFeePips": 200,
+          "protocolFeeRaw": 213044,
+          "integrationClass": "hookless_fixed_fee",
+          "feeApr24h": null,
+          "aprReason": "reconciled_fee_history_unavailable",
+          "suggested": false,
+          "suggestionReason": "metrics_and_policy_not_qualified",
+          "executionAvailable": false,
+          "executionReason": "public_execution_not_implemented"
+        },
+        "snapshot": {
+          "number": 59037026,
+          "hash": "0x10401aeff959116bf885906bc45f54a6fd4f198f6cdca6b926bfd830bfa4d59e",
+          "timestamp": 1789006349
+        },
+        "market": {
+          "status": "available",
+          "reason": null,
+          "data": {
+            "source": "geckoterminal",
+            "chainId": 4663,
+            "retrievedAt": 1789006354,
+            "asOfTimestamp": null,
+            "asOfBlock": null,
+            "poolId": "0x84bd4e2d8be11aeb0afc1195b38f587b61e90068548f1063fdbe448fb8cad0b6",
+            "sourceUrl": "https://api.geckoterminal.com/api/v2/networks/robinhood/pools/0x84bd4e2d8be11aeb0afc1195b38f587b61e90068548f1063fdbe448fb8cad0b6",
+            "providerReported": true,
+            "currencies": [
+              "0x0bd7d308f8e1639fab988df18a8011f41eacad73",
+              "0x5fc5360d0400a0fd4f2af552add042d716f1d168"
+            ],
+            "baseToken": "0x5fc5360d0400a0fd4f2af552add042d716f1d168",
+            "quoteToken": "0x0bd7d308f8e1639fab988df18a8011f41eacad73",
+            "dexLabel": "uniswap-v4-robinhood",
+            "reportedLiquidityUsd": "459121.3274",
+            "volume24hUsd": "4093603.25685633"
+          },
+          "cache": {
+            "status": "miss",
+            "ageSeconds": 0,
+            "freshForSeconds": 60,
+            "maxStaleSeconds": 300,
+            "scope": "process_local",
+            "providerUpdateTimeKnown": false
+          }
+        },
+        "priceHistory": {
+          "status": "available",
+          "reason": null,
+          "data": {
+            "source": "geckoterminal",
+            "chainId": 4663,
+            "retrievedAt": 1789006355,
+            "asOfTimestamp": null,
+            "asOfBlock": null,
+            "poolId": "0x84bd4e2d8be11aeb0afc1195b38f587b61e90068548f1063fdbe448fb8cad0b6",
+            "sourceUrl": "https://api.geckoterminal.com/api/v2/networks/robinhood/pools/0x84bd4e2d8be11aeb0afc1195b38f587b61e90068548f1063fdbe448fb8cad0b6/ohlcv/hour?aggregate=1&limit=24&currency=usd&token=base",
+            "providerReported": true,
+            "currencies": [
+              "0x0bd7d308f8e1639fab988df18a8011f41eacad73",
+              "0x5fc5360d0400a0fd4f2af552add042d716f1d168"
+            ],
+            "baseToken": "0x5fc5360d0400a0fd4f2af552add042d716f1d168",
+            "quoteToken": "0x0bd7d308f8e1639fab988df18a8011f41eacad73",
+            "fetchedAt": 1789006355,
+            "selectedToken": "base",
+            "currency": "0x5fc5360d0400a0fd4f2af552add042d716f1d168",
+            "quoteCurrency": "usd",
+            "intervalSeconds": 3600,
+            "candles": [
+              {
+                "startTimestamp": 1788922800,
+                "openUsd": "1.0004060798358",
+                "highUsd": "1.00222833215127",
+                "lowUsd": "0.998627086041683",
+                "closeUsd": "1.00085277234793",
+                "volumeUsd": "182377.26377635016",
+                "closed": true
+              },
+              {
+                "startTimestamp": 1788926400,
+                "openUsd": "1.00085277234793",
+                "highUsd": "1.00184904337361",
+                "lowUsd": "0.994615318031144",
+                "closeUsd": "1.00017695996796",
+                "volumeUsd": "194699.45662125206",
+                "closed": true
+              },
+              {
+                "startTimestamp": 1788930000,
+                "openUsd": "1.00017695996796",
+                "highUsd": "1.00407997872375",
+                "lowUsd": "0.998132710248144",
+                "closeUsd": "1.00009778085668",
+                "volumeUsd": "157617.40454005843",
+                "closed": true
+              },
+              {
+                "startTimestamp": 1788933600,
+                "openUsd": "1.00009778085668",
+                "highUsd": "1.00143200503024",
+                "lowUsd": "0.997829900791695",
+                "closeUsd": "0.99961216739707",
+                "volumeUsd": "130700.34131167852",
+                "closed": true
+              },
+              {
+                "startTimestamp": 1788937200,
+                "openUsd": "0.99961216739707",
+                "highUsd": "1.00441607203823",
+                "lowUsd": "0.998403386326079",
+                "closeUsd": "0.999596650048149",
+                "volumeUsd": "112920.22956286964",
+                "closed": true
+              },
+              {
+                "startTimestamp": 1788940800,
+                "openUsd": "0.999596650048149",
+                "highUsd": "1.00146977021208",
+                "lowUsd": "0.998205812407677",
+                "closeUsd": "0.999499971416596",
+                "volumeUsd": "81273.41777405408",
+                "closed": true
+              },
+              {
+                "startTimestamp": 1788944400,
+                "openUsd": "0.999499971416596",
+                "highUsd": "1.00564356648153",
+                "lowUsd": "0.99869326300591",
+                "closeUsd": "0.99993042480457",
+                "volumeUsd": "168457.11653320305",
+                "closed": true
+              },
+              {
+                "startTimestamp": 1788948000,
+                "openUsd": "0.99993042480457",
+                "highUsd": "1.00211841191815",
+                "lowUsd": "0.998376045113894",
+                "closeUsd": "0.999948039906682",
+                "volumeUsd": "110528.80105701229",
+                "closed": true
+              },
+              {
+                "startTimestamp": 1788951600,
+                "openUsd": "0.999948039906682",
+                "highUsd": "1.00178468736746",
+                "lowUsd": "0.998493721388621",
+                "closeUsd": "1.00061237898863",
+                "volumeUsd": "103138.82590547072",
+                "closed": true
+              },
+              {
+                "startTimestamp": 1788955200,
+                "openUsd": "1.00061237898863",
+                "highUsd": "1.0013947381871",
+                "lowUsd": "0.997288714583583",
+                "closeUsd": "1.00011151219452",
+                "volumeUsd": "164032.03298228758",
+                "closed": true
+              },
+              {
+                "startTimestamp": 1788958800,
+                "openUsd": "1.00011151219452",
+                "highUsd": "1.00477409256344",
+                "lowUsd": "0.994760984760468",
+                "closeUsd": "1.00226736834547",
+                "volumeUsd": "230624.69792077213",
+                "closed": true
+              },
+              {
+                "startTimestamp": 1788962400,
+                "openUsd": "1.00226736834547",
+                "highUsd": "1.00391560570505",
+                "lowUsd": "0.99671791925773",
+                "closeUsd": "1.0000187932157",
+                "volumeUsd": "248189.37015755038",
+                "closed": true
+              },
+              {
+                "startTimestamp": 1788966000,
+                "openUsd": "1.0000187932157",
+                "highUsd": "1.0075250245869",
+                "lowUsd": "0.994621363958834",
+                "closeUsd": "1.00052626283479",
+                "volumeUsd": "410259.6451728971",
+                "closed": true
+              },
+              {
+                "startTimestamp": 1788969600,
+                "openUsd": "1.00052626283479",
+                "highUsd": "1.00391342689608",
+                "lowUsd": "0.996544830017244",
+                "closeUsd": "1.00009819077968",
+                "volumeUsd": "235475.14894910285",
+                "closed": true
+              },
+              {
+                "startTimestamp": 1788973200,
+                "openUsd": "1.00009819077968",
+                "highUsd": "1.00224446171011",
+                "lowUsd": "0.998216818219976",
+                "closeUsd": "1.00051129884742",
+                "volumeUsd": "121577.50085207302",
+                "closed": true
+              },
+              {
+                "startTimestamp": 1788976800,
+                "openUsd": "1.00051129884742",
+                "highUsd": "1.00228367611482",
+                "lowUsd": "0.998540233675301",
+                "closeUsd": "1.00028653511078",
+                "volumeUsd": "103402.52442704083",
+                "closed": true
+              },
+              {
+                "startTimestamp": 1788980400,
+                "openUsd": "1.00028653511078",
+                "highUsd": "1.00311804653363",
+                "lowUsd": "0.999230861364305",
+                "closeUsd": "1.00045303467721",
+                "volumeUsd": "147619.21058866114",
+                "closed": true
+              },
+              {
+                "startTimestamp": 1788984000,
+                "openUsd": "1.00045303467721",
+                "highUsd": "1.00470945677347",
+                "lowUsd": "0.998209167313414",
+                "closeUsd": "0.998937189350468",
+                "volumeUsd": "226514.71717893373",
+                "closed": true
+              },
+              {
+                "startTimestamp": 1788987600,
+                "openUsd": "0.998937189350468",
+                "highUsd": "1.00271987296166",
+                "lowUsd": "0.998937189350468",
+                "closeUsd": "0.999803661275431",
+                "volumeUsd": "162394.96776085475",
+                "closed": true
+              },
+              {
+                "startTimestamp": 1788991200,
+                "openUsd": "0.999803661275431",
+                "highUsd": "1.00324683760233",
+                "lowUsd": "0.998116960402546",
+                "closeUsd": "1.00047197540907",
+                "volumeUsd": "238682.73384277153",
+                "closed": true
+              },
+              {
+                "startTimestamp": 1788994800,
+                "openUsd": "1.00047197540907",
+                "highUsd": "1.0010844517071",
+                "lowUsd": "0.996494267705011",
+                "closeUsd": "0.999820467123784",
+                "volumeUsd": "156531.98277016872",
+                "closed": true
+              },
+              {
+                "startTimestamp": 1788998400,
+                "openUsd": "0.999820467123784",
+                "highUsd": "1.00155423152979",
+                "lowUsd": "0.998383141277429",
+                "closeUsd": "1.00053501210085",
+                "volumeUsd": "106040.33225885186",
+                "closed": true
+              },
+              {
+                "startTimestamp": 1789002000,
+                "openUsd": "1.00053501210085",
+                "highUsd": "1.0036515581776",
+                "lowUsd": "0.997130051632598",
+                "closeUsd": "1.00041839362749",
+                "volumeUsd": "191997.187534802",
+                "closed": true
+              },
+              {
+                "startTimestamp": 1789005600,
+                "openUsd": "1.00041839362749",
+                "highUsd": "1.00180006868034",
+                "lowUsd": "0.999998349603122",
+                "closeUsd": "1.00101612673247",
+                "volumeUsd": "22121.507234356384",
+                "closed": false
+              }
+            ],
+            "coverage": {
+              "status": "provider_reported",
+              "requestedLimit": 24,
+              "returnedCandles": 24,
+              "closedCandles": 23,
+              "gapsDetected": false,
+              "firstTimestamp": 1788922800,
+              "lastTimestamp": 1789005600,
+              "complete24h": false,
+              "completeness": "not_established"
+            }
+          },
+          "cache": {
+            "status": "miss",
+            "ageSeconds": 0,
+            "freshForSeconds": 60,
+            "maxStaleSeconds": 300,
+            "scope": "process_local",
+            "providerUpdateTimeKnown": false
+          }
+        },
+        "issues": [],
+        "requiresLocalHistory": false,
+        "providerMetricsReconciled": false,
+        "feeApr24h": null,
+        "aprReason": "provider_lp_fee_history_unavailable",
+        "suggested": false,
+        "executionAvailable": false
+      }
+    },
+    {
+      "elapsedSeconds": 6.502,
+      "result": {
+        "schemaVersion": 1,
+        "mode": "on_demand_provider_market",
+        "chainId": 4663,
+        "poolId": "0xdb922f0619e11b0c1e6c3a142798f0243060b8a4331ea4f4e7de80e898cc02e7",
+        "pool": {
+          "poolId": "0xdb922f0619e11b0c1e6c3a142798f0243060b8a4331ea4f4e7de80e898cc02e7",
+          "currencies": [
+            "0x5fc5360d0400a0fd4f2af552add042d716f1d168",
+            "0xab35d04e1ee39c789c4a65d522417b3c7f2e4723"
+          ],
+          "poolKey": {
+            "currency0": "0x5fc5360d0400a0fd4f2af552add042d716f1d168",
+            "currency1": "0xab35d04e1ee39c789c4a65d522417b3c7f2e4723",
+            "fee_pips": 50000,
+            "tick_spacing": 500,
+            "hooks": "0x0000000000000000000000000000000000000000"
+          },
+          "identityStatus": "verified_at_block",
+          "snapshot": {
+            "number": 59037090,
+            "hash": "0x84e16014f75eceab952dfecc57da52414d0980d4a663b8a1d2e30e62dc521598",
+            "timestamp": 1789006356
+          },
+          "sqrtPriceX96": "4352360484800172672615550885294235651",
+          "tick": 356450,
+          "currentLpFeePips": 50000,
+          "protocolFeeRaw": 4097000,
+          "integrationClass": "hookless_fixed_fee",
+          "feeApr24h": null,
+          "aprReason": "reconciled_fee_history_unavailable",
+          "suggested": false,
+          "suggestionReason": "metrics_and_policy_not_qualified",
+          "executionAvailable": false,
+          "executionReason": "public_execution_not_implemented"
+        },
+        "snapshot": {
+          "number": 59037090,
+          "hash": "0x84e16014f75eceab952dfecc57da52414d0980d4a663b8a1d2e30e62dc521598",
+          "timestamp": 1789006356
+        },
+        "market": {
+          "status": "available",
+          "reason": null,
+          "data": {
+            "source": "geckoterminal",
+            "chainId": 4663,
+            "retrievedAt": 1789006361,
+            "asOfTimestamp": null,
+            "asOfBlock": null,
+            "poolId": "0xdb922f0619e11b0c1e6c3a142798f0243060b8a4331ea4f4e7de80e898cc02e7",
+            "sourceUrl": "https://api.geckoterminal.com/api/v2/networks/robinhood/pools/0xdb922f0619e11b0c1e6c3a142798f0243060b8a4331ea4f4e7de80e898cc02e7",
+            "providerReported": true,
+            "currencies": [
+              "0x5fc5360d0400a0fd4f2af552add042d716f1d168",
+              "0xab35d04e1ee39c789c4a65d522417b3c7f2e4723"
+            ],
+            "baseToken": "0xab35d04e1ee39c789c4a65d522417b3c7f2e4723",
+            "quoteToken": "0x5fc5360d0400a0fd4f2af552add042d716f1d168",
+            "dexLabel": "uniswap-v4-robinhood",
+            "reportedLiquidityUsd": "15651.68",
+            "volume24hUsd": "50386.1528965015"
+          },
+          "cache": {
+            "status": "miss",
+            "ageSeconds": 0,
+            "freshForSeconds": 60,
+            "maxStaleSeconds": 300,
+            "scope": "process_local",
+            "providerUpdateTimeKnown": false
+          }
+        },
+        "priceHistory": {
+          "status": "available",
+          "reason": null,
+          "data": {
+            "source": "geckoterminal",
+            "chainId": 4663,
+            "retrievedAt": 1789006361,
+            "asOfTimestamp": null,
+            "asOfBlock": null,
+            "poolId": "0xdb922f0619e11b0c1e6c3a142798f0243060b8a4331ea4f4e7de80e898cc02e7",
+            "sourceUrl": "https://api.geckoterminal.com/api/v2/networks/robinhood/pools/0xdb922f0619e11b0c1e6c3a142798f0243060b8a4331ea4f4e7de80e898cc02e7/ohlcv/hour?aggregate=1&limit=24&currency=usd&token=base",
+            "providerReported": true,
+            "currencies": [
+              "0x5fc5360d0400a0fd4f2af552add042d716f1d168",
+              "0xab35d04e1ee39c789c4a65d522417b3c7f2e4723"
+            ],
+            "baseToken": "0xab35d04e1ee39c789c4a65d522417b3c7f2e4723",
+            "quoteToken": "0x5fc5360d0400a0fd4f2af552add042d716f1d168",
+            "fetchedAt": 1789006361,
+            "selectedToken": "base",
+            "currency": "0xab35d04e1ee39c789c4a65d522417b3c7f2e4723",
+            "quoteCurrency": "usd",
+            "intervalSeconds": 3600,
+            "candles": [
+              {
+                "startTimestamp": 1788919200,
+                "openUsd": "0.000765182384287725",
+                "highUsd": "0.000890780402261047",
+                "lowUsd": "0.000599296397152477",
+                "closeUsd": "0.000599296397152477",
+                "volumeUsd": "23940.534257287716",
+                "closed": true
+              },
+              {
+                "startTimestamp": 1788922800,
+                "openUsd": "0.000599296397152477",
+                "highUsd": "0.000599296397152477",
+                "lowUsd": "0.000235550703710871",
+                "closeUsd": "0.000280732902912225",
+                "volumeUsd": "10554.690500668243",
+                "closed": true
+              },
+              {
+                "startTimestamp": 1788926400,
+                "openUsd": "0.000280732902912225",
+                "highUsd": "0.000375406837333683",
+                "lowUsd": "0.00026234609535209",
+                "closeUsd": "0.000365613850744321",
+                "volumeUsd": "2143.267794900256",
+                "closed": true
+              },
+              {
+                "startTimestamp": 1788930000,
+                "openUsd": "0.000365613850744321",
+                "highUsd": "0.000365613850744321",
+                "lowUsd": "0.000112263365963985",
+                "closeUsd": "0.000115053746912322",
+                "volumeUsd": "1356.3538622583324",
+                "closed": true
+              },
+              {
+                "startTimestamp": 1788933600,
+                "openUsd": "0.000115053746912322",
+                "highUsd": "0.000115053746912322",
+                "lowUsd": "0.0000726502400960891",
+                "closeUsd": "0.000101034358064044",
+                "volumeUsd": "275.27411607115397",
+                "closed": true
+              },
+              {
+                "startTimestamp": 1788937200,
+                "openUsd": "0.000101034358064044",
+                "highUsd": "0.000103984699063025",
+                "lowUsd": "0.0000740097238577195",
+                "closeUsd": "0.0000740097238577195",
+                "volumeUsd": "71.96607801103009",
+                "closed": true
+              },
+              {
+                "startTimestamp": 1788940800,
+                "openUsd": "0.0000740097238577195",
+                "highUsd": "0.000127431064553209",
+                "lowUsd": "0.0000705974345475866",
+                "closeUsd": "0.000104018633222974",
+                "volumeUsd": "107.26256513751832",
+                "closed": true
+              },
+              {
+                "startTimestamp": 1788944400,
+                "openUsd": "0.000104018633222974",
+                "highUsd": "0.000104018633222974",
+                "lowUsd": "0.0000688851926588844",
+                "closeUsd": "0.0000805701548551182",
+                "volumeUsd": "54.281328093873945",
+                "closed": true
+              },
+              {
+                "startTimestamp": 1788948000,
+                "openUsd": "0.0000805701548551182",
+                "highUsd": "0.000109968030460703",
+                "lowUsd": "0.0000805701548551182",
+                "closeUsd": "0.000104451667302199",
+                "volumeUsd": "67.9665064248063",
+                "closed": true
+              },
+              {
+                "startTimestamp": 1788951600,
+                "openUsd": "0.000104451667302199",
+                "highUsd": "0.000543641926406182",
+                "lowUsd": "0.0000641912340905135",
+                "closeUsd": "0.000488506667697286",
+                "volumeUsd": "759.739573453853",
+                "closed": true
+              },
+              {
+                "startTimestamp": 1788955200,
+                "openUsd": "0.000488506667697286",
+                "highUsd": "0.000488506667697286",
+                "lowUsd": "0.000258679583364858",
+                "closeUsd": "0.000459577594394451",
+                "volumeUsd": "77.16916935047153",
+                "closed": true
+              },
+              {
+                "startTimestamp": 1788958800,
+                "openUsd": "0.000459577594394451",
+                "highUsd": "0.000473923540368789",
+                "lowUsd": "0.000240700251640452",
+                "closeUsd": "0.000438046918019643",
+                "volumeUsd": "179.45145637037376",
+                "closed": true
+              },
+              {
+                "startTimestamp": 1788962400,
+                "openUsd": "0.000438046918019643",
+                "highUsd": "0.000494605830783338",
+                "lowUsd": "0.000268481410865502",
+                "closeUsd": "0.000276069077633328",
+                "volumeUsd": "157.99563974385475",
+                "closed": true
+              },
+              {
+                "startTimestamp": 1788966000,
+                "openUsd": "0.000276069077633328",
+                "highUsd": "0.00031317643109536",
+                "lowUsd": "0.000276069077633328",
+                "closeUsd": "0.00028042902207517",
+                "volumeUsd": "25.9520187859255",
+                "closed": true
+              },
+              {
+                "startTimestamp": 1788969600,
+                "openUsd": "0.00028042902207517",
+                "highUsd": "0.000316297137592612",
+                "lowUsd": "0.000168316153133312",
+                "closeUsd": "0.000299078975862066",
+                "volumeUsd": "1719.6354869376958",
+                "closed": true
+              },
+              {
+                "startTimestamp": 1788973200,
+                "openUsd": "0.000299078975862066",
+                "highUsd": "0.000869497406746145",
+                "lowUsd": "0.000299078975862066",
+                "closeUsd": "0.000533693078478018",
+                "volumeUsd": "2671.343991005675",
+                "closed": true
+              },
+              {
+                "startTimestamp": 1788976800,
+                "openUsd": "0.000533693078478018",
+                "highUsd": "0.000533693078478018",
+                "lowUsd": "0.000310644261275554",
+                "closeUsd": "0.000450262620968415",
+                "volumeUsd": "2557.0107434252564",
+                "closed": true
+              },
+              {
+                "startTimestamp": 1788980400,
+                "openUsd": "0.000450262620968415",
+                "highUsd": "0.000451680213718697",
+                "lowUsd": "0.000394479151066894",
+                "closeUsd": "0.000409797422675405",
+                "volumeUsd": "276.33744555855714",
+                "closed": true
+              },
+              {
+                "startTimestamp": 1788984000,
+                "openUsd": "0.000409797422675405",
+                "highUsd": "0.000630830646911578",
+                "lowUsd": "0.000276699775016073",
+                "closeUsd": "0.000567035480995106",
+                "volumeUsd": "2448.787338124119",
+                "closed": true
+              },
+              {
+                "startTimestamp": 1788987600,
+                "openUsd": "0.000567035480995106",
+                "highUsd": "0.000569984618925947",
+                "lowUsd": "0.000473665069900736",
+                "closeUsd": "0.000473665069900736",
+                "volumeUsd": "377.4525568738574",
+                "closed": true
+              },
+              {
+                "startTimestamp": 1788991200,
+                "openUsd": "0.000473665069900736",
+                "highUsd": "0.000488549680101256",
+                "lowUsd": "0.000301930350749637",
+                "closeUsd": "0.000411302113945675",
+                "volumeUsd": "1655.616150735572",
+                "closed": true
+              },
+              {
+                "startTimestamp": 1788994800,
+                "openUsd": "0.000411302113945675",
+                "highUsd": "0.000411302113945675",
+                "lowUsd": "0.000299247635556529",
+                "closeUsd": "0.000303691227954257",
+                "volumeUsd": "461.8408017206325",
+                "closed": true
+              },
+              {
+                "startTimestamp": 1788998400,
+                "openUsd": "0.000303691227954257",
+                "highUsd": "0.000429611817345677",
+                "lowUsd": "0.000303691227954257",
+                "closeUsd": "0.000380874269505065",
+                "volumeUsd": "713.0963242403009",
+                "closed": true
+              },
+              {
+                "startTimestamp": 1789002000,
+                "openUsd": "0.000380874269505065",
+                "highUsd": "0.000380874269505065",
+                "lowUsd": "0.00033150624751502",
+                "closeUsd": "0.00033150624751502",
+                "volumeUsd": "189.1625083716358",
+                "closed": true
+              }
+            ],
+            "coverage": {
+              "status": "provider_reported",
+              "requestedLimit": 24,
+              "returnedCandles": 24,
+              "closedCandles": 24,
+              "gapsDetected": false,
+              "firstTimestamp": 1788919200,
+              "lastTimestamp": 1789002000,
+              "complete24h": false,
+              "completeness": "not_established"
+            }
+          },
+          "cache": {
+            "status": "miss",
+            "ageSeconds": 0,
+            "freshForSeconds": 60,
+            "maxStaleSeconds": 300,
+            "scope": "process_local",
+            "providerUpdateTimeKnown": false
+          }
+        },
+        "issues": [],
+        "requiresLocalHistory": false,
+        "providerMetricsReconciled": false,
+        "feeApr24h": null,
+        "aprReason": "provider_lp_fee_history_unavailable",
+        "suggested": false,
+        "executionAvailable": false
+      }
+    },
+    {
+      "elapsedSeconds": 5.306,
+      "result": {
+        "schemaVersion": 1,
+        "mode": "on_demand_provider_market",
+        "chainId": 4663,
+        "poolId": "0x84bd4e2d8be11aeb0afc1195b38f587b61e90068548f1063fdbe448fb8cad0b6",
+        "pool": {
+          "poolId": "0x84bd4e2d8be11aeb0afc1195b38f587b61e90068548f1063fdbe448fb8cad0b6",
+          "currencies": [
+            "0x0bd7d308f8e1639fab988df18a8011f41eacad73",
+            "0x5fc5360d0400a0fd4f2af552add042d716f1d168"
+          ],
+          "poolKey": {
+            "currency0": "0x0bd7d308f8e1639fab988df18a8011f41eacad73",
+            "currency1": "0x5fc5360d0400a0fd4f2af552add042d716f1d168",
+            "fee_pips": 200,
+            "tick_spacing": 4,
+            "hooks": "0x0000000000000000000000000000000000000000"
+          },
+          "identityStatus": "verified_at_block",
+          "snapshot": {
+            "number": 59037154,
+            "hash": "0x4a589bd917698c0c891cda508615f520d4ed75c9dca82c549ddd00bdb50355e7",
+            "timestamp": 1789006362
+          },
+          "sqrtPriceX96": "3930223006898437746974359",
+          "tick": -198238,
+          "currentLpFeePips": 200,
+          "protocolFeeRaw": 213044,
+          "integrationClass": "hookless_fixed_fee",
+          "feeApr24h": null,
+          "aprReason": "reconciled_fee_history_unavailable",
+          "suggested": false,
+          "suggestionReason": "metrics_and_policy_not_qualified",
+          "executionAvailable": false,
+          "executionReason": "public_execution_not_implemented"
+        },
+        "snapshot": {
+          "number": 59037154,
+          "hash": "0x4a589bd917698c0c891cda508615f520d4ed75c9dca82c549ddd00bdb50355e7",
+          "timestamp": 1789006362
+        },
+        "market": {
+          "status": "available",
+          "reason": null,
+          "data": {
+            "source": "geckoterminal",
+            "chainId": 4663,
+            "retrievedAt": 1789006354,
+            "asOfTimestamp": null,
+            "asOfBlock": null,
+            "poolId": "0x84bd4e2d8be11aeb0afc1195b38f587b61e90068548f1063fdbe448fb8cad0b6",
+            "sourceUrl": "https://api.geckoterminal.com/api/v2/networks/robinhood/pools/0x84bd4e2d8be11aeb0afc1195b38f587b61e90068548f1063fdbe448fb8cad0b6",
+            "providerReported": true,
+            "currencies": [
+              "0x0bd7d308f8e1639fab988df18a8011f41eacad73",
+              "0x5fc5360d0400a0fd4f2af552add042d716f1d168"
+            ],
+            "baseToken": "0x5fc5360d0400a0fd4f2af552add042d716f1d168",
+            "quoteToken": "0x0bd7d308f8e1639fab988df18a8011f41eacad73",
+            "dexLabel": "uniswap-v4-robinhood",
+            "reportedLiquidityUsd": "459121.3274",
+            "volume24hUsd": "4093603.25685633"
+          },
+          "cache": {
+            "status": "hit",
+            "ageSeconds": 12,
+            "freshForSeconds": 60,
+            "maxStaleSeconds": 300,
+            "scope": "process_local",
+            "providerUpdateTimeKnown": false
+          }
+        },
+        "priceHistory": {
+          "status": "available",
+          "reason": null,
+          "data": {
+            "source": "geckoterminal",
+            "chainId": 4663,
+            "retrievedAt": 1789006355,
+            "asOfTimestamp": null,
+            "asOfBlock": null,
+            "poolId": "0x84bd4e2d8be11aeb0afc1195b38f587b61e90068548f1063fdbe448fb8cad0b6",
+            "sourceUrl": "https://api.geckoterminal.com/api/v2/networks/robinhood/pools/0x84bd4e2d8be11aeb0afc1195b38f587b61e90068548f1063fdbe448fb8cad0b6/ohlcv/hour?aggregate=1&limit=24&currency=usd&token=base",
+            "providerReported": true,
+            "currencies": [
+              "0x0bd7d308f8e1639fab988df18a8011f41eacad73",
+              "0x5fc5360d0400a0fd4f2af552add042d716f1d168"
+            ],
+            "baseToken": "0x5fc5360d0400a0fd4f2af552add042d716f1d168",
+            "quoteToken": "0x0bd7d308f8e1639fab988df18a8011f41eacad73",
+            "fetchedAt": 1789006355,
+            "selectedToken": "base",
+            "currency": "0x5fc5360d0400a0fd4f2af552add042d716f1d168",
+            "quoteCurrency": "usd",
+            "intervalSeconds": 3600,
+            "candles": [
+              {
+                "startTimestamp": 1788922800,
+                "openUsd": "1.0004060798358",
+                "highUsd": "1.00222833215127",
+                "lowUsd": "0.998627086041683",
+                "closeUsd": "1.00085277234793",
+                "volumeUsd": "182377.26377635016",
+                "closed": true
+              },
+              {
+                "startTimestamp": 1788926400,
+                "openUsd": "1.00085277234793",
+                "highUsd": "1.00184904337361",
+                "lowUsd": "0.994615318031144",
+                "closeUsd": "1.00017695996796",
+                "volumeUsd": "194699.45662125206",
+                "closed": true
+              },
+              {
+                "startTimestamp": 1788930000,
+                "openUsd": "1.00017695996796",
+                "highUsd": "1.00407997872375",
+                "lowUsd": "0.998132710248144",
+                "closeUsd": "1.00009778085668",
+                "volumeUsd": "157617.40454005843",
+                "closed": true
+              },
+              {
+                "startTimestamp": 1788933600,
+                "openUsd": "1.00009778085668",
+                "highUsd": "1.00143200503024",
+                "lowUsd": "0.997829900791695",
+                "closeUsd": "0.99961216739707",
+                "volumeUsd": "130700.34131167852",
+                "closed": true
+              },
+              {
+                "startTimestamp": 1788937200,
+                "openUsd": "0.99961216739707",
+                "highUsd": "1.00441607203823",
+                "lowUsd": "0.998403386326079",
+                "closeUsd": "0.999596650048149",
+                "volumeUsd": "112920.22956286964",
+                "closed": true
+              },
+              {
+                "startTimestamp": 1788940800,
+                "openUsd": "0.999596650048149",
+                "highUsd": "1.00146977021208",
+                "lowUsd": "0.998205812407677",
+                "closeUsd": "0.999499971416596",
+                "volumeUsd": "81273.41777405408",
+                "closed": true
+              },
+              {
+                "startTimestamp": 1788944400,
+                "openUsd": "0.999499971416596",
+                "highUsd": "1.00564356648153",
+                "lowUsd": "0.99869326300591",
+                "closeUsd": "0.99993042480457",
+                "volumeUsd": "168457.11653320305",
+                "closed": true
+              },
+              {
+                "startTimestamp": 1788948000,
+                "openUsd": "0.99993042480457",
+                "highUsd": "1.00211841191815",
+                "lowUsd": "0.998376045113894",
+                "closeUsd": "0.999948039906682",
+                "volumeUsd": "110528.80105701229",
+                "closed": true
+              },
+              {
+                "startTimestamp": 1788951600,
+                "openUsd": "0.999948039906682",
+                "highUsd": "1.00178468736746",
+                "lowUsd": "0.998493721388621",
+                "closeUsd": "1.00061237898863",
+                "volumeUsd": "103138.82590547072",
+                "closed": true
+              },
+              {
+                "startTimestamp": 1788955200,
+                "openUsd": "1.00061237898863",
+                "highUsd": "1.0013947381871",
+                "lowUsd": "0.997288714583583",
+                "closeUsd": "1.00011151219452",
+                "volumeUsd": "164032.03298228758",
+                "closed": true
+              },
+              {
+                "startTimestamp": 1788958800,
+                "openUsd": "1.00011151219452",
+                "highUsd": "1.00477409256344",
+                "lowUsd": "0.994760984760468",
+                "closeUsd": "1.00226736834547",
+                "volumeUsd": "230624.69792077213",
+                "closed": true
+              },
+              {
+                "startTimestamp": 1788962400,
+                "openUsd": "1.00226736834547",
+                "highUsd": "1.00391560570505",
+                "lowUsd": "0.99671791925773",
+                "closeUsd": "1.0000187932157",
+                "volumeUsd": "248189.37015755038",
+                "closed": true
+              },
+              {
+                "startTimestamp": 1788966000,
+                "openUsd": "1.0000187932157",
+                "highUsd": "1.0075250245869",
+                "lowUsd": "0.994621363958834",
+                "closeUsd": "1.00052626283479",
+                "volumeUsd": "410259.6451728971",
+                "closed": true
+              },
+              {
+                "startTimestamp": 1788969600,
+                "openUsd": "1.00052626283479",
+                "highUsd": "1.00391342689608",
+                "lowUsd": "0.996544830017244",
+                "closeUsd": "1.00009819077968",
+                "volumeUsd": "235475.14894910285",
+                "closed": true
+              },
+              {
+                "startTimestamp": 1788973200,
+                "openUsd": "1.00009819077968",
+                "highUsd": "1.00224446171011",
+                "lowUsd": "0.998216818219976",
+                "closeUsd": "1.00051129884742",
+                "volumeUsd": "121577.50085207302",
+                "closed": true
+              },
+              {
+                "startTimestamp": 1788976800,
+                "openUsd": "1.00051129884742",
+                "highUsd": "1.00228367611482",
+                "lowUsd": "0.998540233675301",
+                "closeUsd": "1.00028653511078",
+                "volumeUsd": "103402.52442704083",
+                "closed": true
+              },
+              {
+                "startTimestamp": 1788980400,
+                "openUsd": "1.00028653511078",
+                "highUsd": "1.00311804653363",
+                "lowUsd": "0.999230861364305",
+                "closeUsd": "1.00045303467721",
+                "volumeUsd": "147619.21058866114",
+                "closed": true
+              },
+              {
+                "startTimestamp": 1788984000,
+                "openUsd": "1.00045303467721",
+                "highUsd": "1.00470945677347",
+                "lowUsd": "0.998209167313414",
+                "closeUsd": "0.998937189350468",
+                "volumeUsd": "226514.71717893373",
+                "closed": true
+              },
+              {
+                "startTimestamp": 1788987600,
+                "openUsd": "0.998937189350468",
+                "highUsd": "1.00271987296166",
+                "lowUsd": "0.998937189350468",
+                "closeUsd": "0.999803661275431",
+                "volumeUsd": "162394.96776085475",
+                "closed": true
+              },
+              {
+                "startTimestamp": 1788991200,
+                "openUsd": "0.999803661275431",
+                "highUsd": "1.00324683760233",
+                "lowUsd": "0.998116960402546",
+                "closeUsd": "1.00047197540907",
+                "volumeUsd": "238682.73384277153",
+                "closed": true
+              },
+              {
+                "startTimestamp": 1788994800,
+                "openUsd": "1.00047197540907",
+                "highUsd": "1.0010844517071",
+                "lowUsd": "0.996494267705011",
+                "closeUsd": "0.999820467123784",
+                "volumeUsd": "156531.98277016872",
+                "closed": true
+              },
+              {
+                "startTimestamp": 1788998400,
+                "openUsd": "0.999820467123784",
+                "highUsd": "1.00155423152979",
+                "lowUsd": "0.998383141277429",
+                "closeUsd": "1.00053501210085",
+                "volumeUsd": "106040.33225885186",
+                "closed": true
+              },
+              {
+                "startTimestamp": 1789002000,
+                "openUsd": "1.00053501210085",
+                "highUsd": "1.0036515581776",
+                "lowUsd": "0.997130051632598",
+                "closeUsd": "1.00041839362749",
+                "volumeUsd": "191997.187534802",
+                "closed": true
+              },
+              {
+                "startTimestamp": 1789005600,
+                "openUsd": "1.00041839362749",
+                "highUsd": "1.00180006868034",
+                "lowUsd": "0.999998349603122",
+                "closeUsd": "1.00101612673247",
+                "volumeUsd": "22121.507234356384",
+                "closed": false
+              }
+            ],
+            "coverage": {
+              "status": "provider_reported",
+              "requestedLimit": 24,
+              "returnedCandles": 24,
+              "closedCandles": 23,
+              "gapsDetected": false,
+              "firstTimestamp": 1788922800,
+              "lastTimestamp": 1789005600,
+              "complete24h": false,
+              "completeness": "not_established"
+            }
+          },
+          "cache": {
+            "status": "hit",
+            "ageSeconds": 11,
+            "freshForSeconds": 60,
+            "maxStaleSeconds": 300,
+            "scope": "process_local",
+            "providerUpdateTimeKnown": false
+          }
+        },
+        "issues": [],
+        "requiresLocalHistory": false,
+        "providerMetricsReconciled": false,
+        "feeApr24h": null,
+        "aprReason": "provider_lp_fee_history_unavailable",
+        "suggested": false,
+        "executionAvailable": false
+      }
+    }
+  ],
+  "completedAt": 1789006367
+}

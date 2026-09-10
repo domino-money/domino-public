@@ -76,7 +76,7 @@ class NoRedirect(urllib.request.HTTPRedirectHandler):
 _JSON_OPENER = urllib.request.build_opener(NoRedirect()).open
 
 
-def json_http(url, body=None, *, timeout=12, opener=_JSON_OPENER):
+def json_http(url, body=None, *, timeout=12, opener=_JSON_OPENER, headers=None):
     try:
         parsed = urlsplit(url)
         valid = (parsed.scheme == 'https' and parsed.hostname and not parsed.fragment
@@ -87,9 +87,14 @@ def json_http(url, body=None, *, timeout=12, opener=_JSON_OPENER):
         valid = False
     if not valid:
         raise DataError('https_endpoint_required')
+    extra = {} if headers is None else headers
+    if (not isinstance(extra, dict) or any(name != "x-api-key" for name in extra) or
+            any(not isinstance(value, str) or not 1 <= len(value) <= 512 or
+                any(not 33 <= ord(char) <= 126 for char in value) for value in extra.values())):
+        raise DataError("invalid_private_api_header")
     request = urllib.request.Request(
         url, data=json.dumps(body).encode() if body is not None else None,
-        headers={'Content-Type': 'application/json', 'User-Agent': 'DominoReadOnlyDiscovery/0.1'},
+        headers={'Content-Type': 'application/json', 'User-Agent': 'DominoReadOnlyDiscovery/0.1', **extra},
     )
     try:
         with opener(request, timeout=timeout) as response:

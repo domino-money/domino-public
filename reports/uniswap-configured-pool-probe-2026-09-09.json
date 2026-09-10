@@ -1,0 +1,65 @@
+{
+  "schemaVersion": 1,
+  "source": "uniswap_liquidity_pool_info_v1",
+  "chainId": 4663,
+  "retrievedAt": 1789005565,
+  "status": "external_observation_unqualified",
+  "asOfBlock": null,
+  "asOfTimestamp": null,
+  "pools": [
+    {
+      "poolId": "0x84bd4e2d8be11aeb0afc1195b38f587b61e90068548f1063fdbe448fb8cad0b6",
+      "chainId": 4663,
+      "protocol": "V4",
+      "poolKey": {
+        "currency0": "0x0bd7d308f8e1639fab988df18a8011f41eacad73",
+        "currency1": "0x5fc5360d0400a0fd4f2af552add042d716f1d168",
+        "fee_pips": 200,
+        "tick_spacing": 4,
+        "hooks": "0x0000000000000000000000000000000000000000"
+      },
+      "currencies": [
+        "0x0bd7d308f8e1639fab988df18a8011f41eacad73",
+        "0x5fc5360d0400a0fd4f2af552add042d716f1d168"
+      ],
+      "identityStatus": "provider_key_hash_checked",
+      "liquidityRaw": "115950763535802074",
+      "sqrtPriceX96": "3932703747177804924082235",
+      "tick": -198226,
+      "tokens": [
+        {
+          "address": "0x0bd7d308f8e1639fab988df18a8011f41eacad73",
+          "decimals": 18,
+          "providerAmountRaw": null
+        },
+        {
+          "address": "0x5fc5360d0400a0fd4f2af552add042d716f1d168",
+          "decimals": 6,
+          "providerAmountRaw": null
+        }
+      ],
+      "reserves": {
+        "amount0Raw": "76031527355409062505",
+        "amount1Raw": "221084905796",
+        "status": "available",
+        "method": "provider_fee_excluded_core_principal"
+      }
+    }
+  ],
+  "coverage": {
+    "scope": "one_provider_pair_page",
+    "complete": false,
+    "returned": 1,
+    "pageSize": 1,
+    "currentPage": 1
+  },
+  "provenance": {
+    "endpoint": "https://liquidity.api.uniswap.org/lp/pool_info",
+    "schemaCommit": "da6d36f71c4d2fd665b0aae1a052a4ffda917b31",
+    "onchainSnapshotVerified": false
+  },
+  "probeStatus": "known_pool_readable",
+  "elapsedSeconds": 0.726,
+  "requestMode": "locally_configured_key",
+  "credentialAuthenticationProven": false
+}

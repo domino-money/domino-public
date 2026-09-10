@@ -1,6 +1,6 @@
 # Local dependencies, private provider configuration and development data
-node_modules/
-.venv/
+node_modules
+.venv
 runtime/
 .env
 .env.*

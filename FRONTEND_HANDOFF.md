@@ -22,6 +22,29 @@ Each slice has its own GitHub issue and acceptance criteria. Mock data must be u
 - Identify assets by chain and address; symbols/decimals are optional, untrusted metadata. A zero-decimal token is valid, missing decimals are different.
 - Distinguish a measured zero from missing data, and partial discovery from an exhaustive empty result.
 - Retain provenance, block/hash, coverage and freshness. Mixed wallet pages do not share a single snapshot.
-- TVL, volume and APR require qualified historical inputs. Current Robinhood USD-price coverage is not qualified.
+- Provider-reported TVL and volume may be displayed with their source and freshness. Reconciled on-chain valuations and fee APR still require qualified historical inputs; missing APR must remain unavailable.
 - NFT owner at a snapshot is public data, not wallet authentication or user authorization.
 - Display service charges against consumed fees; never silently charge principal or unused fee balances.
+
+## Backend 0.8 market data handoff
+
+The additive `POST /v1/read/pool-market` route is ready for a typed mock adapter.
+Its request contract is in `backend/openapi-read.json`; real public response
+fixtures are the `reads[].result` objects in
+`reports/on-demand-market-http-probe-2026-09-09.json`. The route works without a
+local pool catalogue or historical ledger. This does not enable browser access
+to the loopback API; the reviewed bridge/session boundary remains issue #5.
+
+Display `market.data.reportedLiquidityUsd` and `volume24hUsd` as attributed
+provider figures, preserving null versus zero and the enclosing
+`available`/`stale`/`unavailable`/`rejected` status. Market cache age describes
+retrieval age, not a guaranteed source update timestamp. Keep `feeApr24h: null`
+and execution disabled. A verified pool can remain selectable for planning
+when its provider metrics are missing; it must not receive an APR/suggestion
+badge inferred from missing history.
+
+Price history is optional. `priceToken` names the provider base/quote role and
+the response includes the actual currency address. Use that address as the
+chart identity, preserve timestamps and gaps, and distinguish an open hourly
+candle from a closed one. Do not assume base equals the user's purchased token
+or token0. No token symbols or external logos are trusted for identity.

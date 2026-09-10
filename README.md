@@ -5,11 +5,15 @@ Private source repository for a wallet-friendly Uniswap v4 liquidity app on Robi
 ## Current status
 
 - **Web:** approved Tangerine practice workbench, position/activity cards, modal workflows and hypothetical fee calculations. Browser-local practice data; no live deposits or signing.
-- **Backend 0.7.0:** generic token reads, verified pool identities, a reorg-aware PostgreSQL public catalogue, fee/position accounting, historical capital, price observations and snapshot NFT ownership lookup.
-- **Valuation gate:** missing or unqualified prices keep USD TVL/APR unavailable. Alchemy's tested Prices API does not support Robinhood address queries. Pool coverage is partial; source coverage and freshness must stay visible.
+- **Backend 0.8.0:** generic token reads, verified pool identities and on-demand provider TVL/24h volume/hourly prices with a bounded cache. Exact historical accounting and NFT ownership reads remain available separately.
+- **Market data:** attributed provider TVL/volume can be read without a local pool ledger. Reconciled USD valuation and LP fee APR remain unavailable without qualified inputs. Source coverage, method and freshness remain visible; no new-pool history is invented.
 - **Contracts:** fee arithmetic and policy-validation libraries, a draft interface and synthetic boundary tests. Public vault execution, swaps, wallet authentication and tenant isolation are not production implementations.
 
 The personal live bot, operator wallet, credentials and operational database are outside this repository. See [implementation status](IMPLEMENTATION_STATUS.md), [alpha scope](ALPHA_SCOPE.md) and [security specification](SECURITY_SPEC.md).
+
+The approved [MVP data strategy](MVP_DATA_STRATEGY.md) uses existing APIs for
+onboarding. Full lifetime reconstruction is optional audit work and is not a
+user-facing prerequisite.
 
 The [executor migration assessment](docs/EXECUTOR_MIGRATION_ASSESSMENT.md) maps selected personal-strategy source to the approved public design, with provenance hashes, required redesign and independent release tests. It implements no public execution.
 

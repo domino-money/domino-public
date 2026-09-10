@@ -38,6 +38,11 @@ class ActivityRequest(BaseModel):
     poolId: PoolId
 
 
+class PoolMarketRequest(ActivityRequest):
+    includePriceHistory: StrictBool = False
+    priceToken: Annotated[str, StringConstraints(strict=True, pattern=r'^(base|quote)$')] = 'base'
+
+
 class NftPositionsRequest(BaseModel):
     model_config = ConfigDict(extra='forbid')
     tokenIds: list[Annotated[str, StringConstraints(strict=True, pattern=r'^(0|[1-9][0-9]{0,77})$')]] = Field(min_length=1, max_length=10)
@@ -155,7 +160,7 @@ def create_app(service=None, *, gate=None):
                               inventory_url=os.environ.get('DOMINO_INVENTORY_RPC_URL') or config.get('inventoryUrl'),
                               catalogue=configured_catalogue())
     gate = gate or ReadGate()
-    app = FastAPI(title='Domino internal read API', version='0.7.0', docs_url=None, redoc_url=None)
+    app = FastAPI(title='Domino internal read API', version='0.8.0', docs_url=None, redoc_url=None)
     app.add_middleware(LocalReadBoundary)
 
     @app.exception_handler(RequestValidationError)
@@ -182,6 +187,9 @@ def create_app(service=None, *, gate=None):
                                      'walletAuthentication': False},
                 'eventTimeCapital': service.catalogue is not None,
                 'historicalValuationEngine': True, 'productionPriceSourcesQualified': False,
+                'onDemandPoolMarket': {'available': True, 'requiresLocalHistory': False,
+                                      'source': 'geckoterminal', 'providerReported': True,
+                                      'priceHistory': 'up_to_24_hourly_candles'},
                 'walletAuthentication': False, 'privateAccounts': False, 'feeApr': False,
                 'suggestions': False, 'ownerTransactions': False, 'automation': False, 'feeCollection': False}
 
@@ -232,6 +240,11 @@ def create_app(service=None, *, gate=None):
     @app.post('/v1/read/pool-metrics')
     def pool_metrics(body: ActivityRequest):
         return run_read(lambda: service.pool_metrics(body.poolId))
+
+    @app.post('/v1/read/pool-market')
+    def pool_market(body: PoolMarketRequest):
+        return run_read(lambda: service.pool_market(body.poolId,
+                        include_price_history=body.includePriceHistory, price_token=body.priceToken))
 
     return app
 
