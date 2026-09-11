@@ -6,6 +6,13 @@ plain-EOA SIWE verifier. It does not authenticate through the public reader,
 grant financial permission or connect frontend hooks. Its shared contract is
 `api-contracts/session-v1/`; the public-read documentation below stays unchanged.
 
+Issue #40 adds a disabled [direct-deposit service](../docs/DIRECT_DEPOSITS.md)
+on loopback port 8881 with private PostgreSQL operation state. It prepares one
+exact owner-signed approval or mint at a time, verifies receipts and recovers
+interrupted work. Its separate `deposit-v1` contract requires reviewed token
+admission before preparation; it has no private key or broadcast method.
+Read/session payloads and frontend hooks remain unchanged. See
+[implementation evidence](../reports/DIRECT_DEPOSIT_IMPLEMENTATION.md).
 Issue #49 adds [operator-managed wallet admission](../docs/WALLET_ACCESS.md)
 to that candidate: login/private access is denied unless chain 4663 and the
 wallet's current grant generation match. Public reads remain open. The
@@ -134,7 +141,7 @@ Run `backend/.venv/bin/python -m unittest discover -s backend/tests -v` from the
 python3 backend/benchmark.py --observations /path/to/observations.jsonl --gas-usd 0.25 --output reports/rate-cost-sensitivity.json
 ```
 
-`schema.sql` is a **candidate schema**, not an applied or verified production migration. It specifies owner-bound sequences, token/fee provenance, durable intents, global signer nonce uniqueness, and forced tenant RLS. It still needs ephemeral-PostgreSQL integration, concurrency, restore, and reorg tests. RLS does not authenticate wallets: a production API must derive its tenant context from a verified, replay-protected session and use a database role without table ownership/BYPASSRLS. No public account, signing, deposit, or transaction-submission endpoint exists in this foundation.
+`schema.sql` is the historical **candidate automation schema**, not an applied production migration. Its sequence/fee-provenance/signer design is separate from the tested session migrations and issue #40's `009_direct_deposits.sql`. Those newer private schemas do not implement public vault automation. RLS does not authenticate wallets: a service must derive owner context from a verified, replay-protected session and use a database role without table ownership/BYPASSRLS. All public session/deposit candidates remain disabled and undeployed.
 
 The web practice workspace uses local browser storage; it is not the multi-user database and must not be described as such. No user wallet identity is uploaded to Sites. The future Python API remains a separate deployment from the preview's Cloudflare runtime.
 

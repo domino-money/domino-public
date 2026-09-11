@@ -1,0 +1,93 @@
+{
+  "automationAvailable": false,
+  "contractVersion": "1.1.0-rc.2",
+  "operation": {
+    "chainId": 4663,
+    "createdAt": 1800000180,
+    "history": [
+      {
+        "expiresAt": 1800000210,
+        "issuedAt": 1800000180,
+        "kind": "mint",
+        "nonceRaw": "5",
+        "receipt": {
+          "blockHash": "0x7c8c0582d21a968b9aa25d45e0e719f1fe93aa4458f5d5939d507b861e308328",
+          "blockNumber": 105,
+          "effectiveGasPriceRaw": "100",
+          "executionFeeRaw": "10000000",
+          "finality": "finalized",
+          "gasUsedRaw": "100000",
+          "l1FeeRaw": "10",
+          "outcome": "success",
+          "position": {
+            "amount0Raw": "100",
+            "amount1Raw": "200",
+            "currentOwner": "0xabababababababababababababababababababab",
+            "currentOwnerStatus": "verified",
+            "liquidityRaw": "12345",
+            "ownershipObservedBlock": {
+              "hash": "0x583f4f71b32721321fd0f20e674c3938142ce9f243e802c16cfc4def7d2dc523",
+              "number": 120,
+              "timestamp": 1800000200
+            },
+            "poolId": "0x25431634fd7de72516ccb751020a1a9188376a983ccc5f6c1152ca04a6acffad",
+            "recipient": "0xabababababababababababababababababababab",
+            "tickLower": -120,
+            "tickUpper": 180,
+            "tokenId": "7"
+          },
+          "totalFeeRaw": "10000010",
+          "transaction": {
+            "gasLimitRaw": "220000",
+            "maxFeePerGasRaw": "150",
+            "maxPriorityFeePerGasRaw": "50",
+            "nonceRaw": "5",
+            "selectedLimitsExceeded": []
+          },
+          "transactionHash": "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        },
+        "reconciliationState": "mismatched",
+        "reportedEffectConflicts": [
+          {
+            "nonceRaw": "6",
+            "transactionHash": "0xcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd"
+          }
+        ],
+        "step": 1,
+        "transactionHash": "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      }
+    ],
+    "id": "00000000-0000-4000-8000-000000000040",
+    "idempotencyKey": "00000000-0000-4000-8000-000000000041",
+    "outstanding": true,
+    "owner": "0xabababababababababababababababababababab",
+    "selection": {
+      "amountRaw": "100",
+      "budget0Raw": "110",
+      "budget1Raw": "220",
+      "chainId": 4663,
+      "independentToken": "0x1111111111111111111111111111111111111111",
+      "maxFeePerGasRaw": "200",
+      "maxGasLimitRaw": "300000",
+      "maxPriorityFeePerGasRaw": "100",
+      "nativeGasReserveRaw": "30000000",
+      "poolId": "0x25431634fd7de72516ccb751020a1a9188376a983ccc5f6c1152ca04a6acffad",
+      "poolKey": {
+        "currency0": "0x1111111111111111111111111111111111111111",
+        "currency1": "0x2222222222222222222222222222222222222222",
+        "fee_pips": 3000,
+        "hooks": "0x0000000000000000000000000000000000000000",
+        "tick_spacing": 60
+      },
+      "slippageBps": 50,
+      "tickLower": -120,
+      "tickUpper": 180
+    },
+    "serviceFeeBps": 0,
+    "state": "attention",
+    "updatedAt": 1800000180,
+    "version": 3
+  },
+  "serverBroadcastAvailable": false,
+  "walletStep": null
+}

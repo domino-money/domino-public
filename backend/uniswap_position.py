@@ -73,6 +73,25 @@ class UniswapPosition:
                 amount_raw, tick_lower, tick_upper, slippage_bps, budget0_raw=None,
                 budget1_raw=None, native_balance_raw=None, native_gas_reserve_raw=None,
                 chain_id=CHAIN_ID):
+        return self._compose(owner=owner, pool_id=pool_id, pool_key=pool_key,
+            independent_token=independent_token, amount_raw=amount_raw,
+            tick_lower=tick_lower, tick_upper=tick_upper, slippage_bps=slippage_bps,
+            budget0_raw=budget0_raw, budget1_raw=budget1_raw,
+            native_balance_raw=native_balance_raw, native_gas_reserve_raw=native_gas_reserve_raw,
+            chain_id=chain_id)
+
+    def prepare_mint(self, **kwargs):
+        """Private composition for the separately admitted direct-deposit pipeline.
+
+        Only already-inspected transaction fields leave this method. Composition
+        is not execution admission, balance verification or independent simulation.
+        """
+        return self._compose(**kwargs, _prepare=True)
+
+    def _compose(self, *, owner, pool_id, pool_key: PoolKey, independent_token,
+                 amount_raw, tick_lower, tick_upper, slippage_bps, budget0_raw=None,
+                 budget1_raw=None, native_balance_raw=None, native_gas_reserve_raw=None,
+                 chain_id=CHAIN_ID, _prepare=False):
         if type(chain_id) is not int or chain_id != CHAIN_ID:
             raise DataError('uniswap_position_chain_mismatch')
         owner, independent_token, pool_id = address(owner), address(independent_token), bytes32(pool_id)
@@ -99,7 +118,7 @@ class UniswapPosition:
         if native_gas_reserve_raw is not None and native_balance_raw is None:
             raise DataError('invalid_uniswap_position_gas_reserve')
         started = _clock_value(self._clock)
-        deadline = int(started) + TRANSACTION_LIFETIME_SECONDS
+        deadline = int(started) + (120 if _prepare else TRANSACTION_LIFETIME_SECONDS)
         body = {'walletAddress': owner, 'chainId': CHAIN_ID, 'protocol': 'V4',
             'existingPool': {'token0Address': key.currency0, 'token1Address': key.currency1,
                              'poolReference': pool_id},
@@ -142,6 +161,11 @@ class UniswapPosition:
                 expiresAt=int(started) + VALIDITY_SECONDS, preparedDeadline=deadline,
                 requestFingerprint=hashlib.sha256(json.dumps(identity, sort_keys=True,
                     separators=(',', ':')).encode()).hexdigest())
+            if _prepare:
+                return {'preview': result, 'transaction': {'chainId': CHAIN_ID,
+                    'from': owner, 'to': address(payload['create']['to']),
+                    'data': payload['create']['data'].lower(),
+                    'valueRaw': result['nativeFunding']['depositMaximumRaw']}}
             return result
 
     @staticmethod

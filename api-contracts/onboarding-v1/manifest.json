@@ -91,7 +91,7 @@
     },
     {
       "path": "backend/onboarding_api.py",
-      "sha256": "9b6c60633e569e14e129a0f204fe84dfc0402fec4a1d30b9a187fbc05616ed0c"
+      "sha256": "fb74f7190b4753a81400b1033836676ed7c9ae2af044f867a78821a29af5692f"
     },
     {
       "path": "backend/onboarding_service.py",
@@ -131,7 +131,7 @@
     },
     {
       "path": "backend/uniswap_position.py",
-      "sha256": "b3b3d9fbe3fb450a932a89e1c1a27a69e0f3bc745f9dcb6db8b262066cda4f62"
+      "sha256": "e7767b81a900c0a1860853934b265b4be96f9ad0b50d86896b8eda94606d280a"
     },
     {
       "path": "backend/tests/test_uniswap_quote.py",

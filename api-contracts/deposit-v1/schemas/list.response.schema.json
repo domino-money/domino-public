@@ -1,0 +1,777 @@
+{
+  "$defs": {
+    "DepositSelection": {
+      "additionalProperties": false,
+      "properties": {
+        "amountRaw": {
+          "maxLength": 78,
+          "pattern": "^[1-9][0-9]{0,77}$",
+          "title": "Amountraw",
+          "type": "string"
+        },
+        "budget0Raw": {
+          "maxLength": 78,
+          "pattern": "^(0|[1-9][0-9]{0,77})$",
+          "title": "Budget0Raw",
+          "type": "string",
+          "x-maximum-raw": "340282366920938463463374607431768211455"
+        },
+        "budget1Raw": {
+          "maxLength": 78,
+          "pattern": "^(0|[1-9][0-9]{0,77})$",
+          "title": "Budget1Raw",
+          "type": "string",
+          "x-maximum-raw": "340282366920938463463374607431768211455"
+        },
+        "chainId": {
+          "maximum": 4663,
+          "minimum": 4663,
+          "title": "Chainid",
+          "type": "integer"
+        },
+        "independentToken": {
+          "maxLength": 42,
+          "minLength": 42,
+          "pattern": "^0x[0-9a-f]{40}$",
+          "title": "Independenttoken",
+          "type": "string"
+        },
+        "maxFeePerGasRaw": {
+          "maxLength": 78,
+          "pattern": "^[1-9][0-9]{0,77}$",
+          "title": "Maxfeepergasraw",
+          "type": "string"
+        },
+        "maxGasLimitRaw": {
+          "maxLength": 78,
+          "pattern": "^[1-9][0-9]{0,77}$",
+          "title": "Maxgaslimitraw",
+          "type": "string"
+        },
+        "maxPriorityFeePerGasRaw": {
+          "maxLength": 78,
+          "pattern": "^(0|[1-9][0-9]{0,77})$",
+          "title": "Maxpriorityfeepergasraw",
+          "type": "string"
+        },
+        "nativeGasReserveRaw": {
+          "maxLength": 78,
+          "pattern": "^(0|[1-9][0-9]{0,77})$",
+          "title": "Nativegasreserveraw",
+          "type": "string"
+        },
+        "poolId": {
+          "maxLength": 66,
+          "minLength": 66,
+          "pattern": "^0x[0-9a-f]{64}$",
+          "title": "Poolid",
+          "type": "string"
+        },
+        "poolKey": {
+          "$ref": "#/$defs/PoolKeyModel"
+        },
+        "slippageBps": {
+          "maximum": 9999,
+          "minimum": 0,
+          "title": "Slippagebps",
+          "type": "integer"
+        },
+        "tickLower": {
+          "maximum": 887272,
+          "minimum": -887272,
+          "title": "Ticklower",
+          "type": "integer"
+        },
+        "tickUpper": {
+          "maximum": 887272,
+          "minimum": -887272,
+          "title": "Tickupper",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "chainId",
+        "poolId",
+        "poolKey",
+        "independentToken",
+        "amountRaw",
+        "tickLower",
+        "tickUpper",
+        "slippageBps",
+        "budget0Raw",
+        "budget1Raw",
+        "nativeGasReserveRaw",
+        "maxGasLimitRaw",
+        "maxFeePerGasRaw",
+        "maxPriorityFeePerGasRaw"
+      ],
+      "title": "DepositSelection",
+      "type": "object"
+    },
+    "ObservedTransaction": {
+      "additionalProperties": false,
+      "properties": {
+        "gasLimitRaw": {
+          "maxLength": 78,
+          "pattern": "^[1-9][0-9]{0,77}$",
+          "title": "Gaslimitraw",
+          "type": "string"
+        },
+        "maxFeePerGasRaw": {
+          "maxLength": 78,
+          "pattern": "^(0|[1-9][0-9]{0,77})$",
+          "title": "Maxfeepergasraw",
+          "type": "string"
+        },
+        "maxPriorityFeePerGasRaw": {
+          "maxLength": 78,
+          "pattern": "^(0|[1-9][0-9]{0,77})$",
+          "title": "Maxpriorityfeepergasraw",
+          "type": "string"
+        },
+        "nonceRaw": {
+          "maxLength": 78,
+          "pattern": "^(0|[1-9][0-9]{0,77})$",
+          "title": "Nonceraw",
+          "type": "string",
+          "x-maximum-raw": "18446744073709551615"
+        },
+        "selectedLimitsExceeded": {
+          "items": {
+            "enum": [
+              "gasLimit",
+              "maxFeePerGas",
+              "maxPriorityFeePerGas"
+            ],
+            "type": "string"
+          },
+          "maxItems": 3,
+          "title": "Selectedlimitsexceeded",
+          "type": "array"
+        }
+      },
+      "required": [
+        "nonceRaw",
+        "gasLimitRaw",
+        "maxFeePerGasRaw",
+        "maxPriorityFeePerGasRaw",
+        "selectedLimitsExceeded"
+      ],
+      "title": "ObservedTransaction",
+      "type": "object"
+    },
+    "OperationListItem": {
+      "additionalProperties": false,
+      "properties": {
+        "chainId": {
+          "maximum": 4663,
+          "minimum": 4663,
+          "title": "Chainid",
+          "type": "integer"
+        },
+        "createdAt": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "title": "Createdat",
+          "type": "integer"
+        },
+        "historyCount": {
+          "maximum": 16,
+          "minimum": 0,
+          "title": "Historycount",
+          "type": "integer"
+        },
+        "id": {
+          "maxLength": 36,
+          "minLength": 36,
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+          "title": "Id",
+          "type": "string"
+        },
+        "idempotencyKey": {
+          "maxLength": 36,
+          "minLength": 36,
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+          "title": "Idempotencykey",
+          "type": "string"
+        },
+        "lastStep": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/StepSummary"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "outstanding": {
+          "title": "Outstanding",
+          "type": "boolean"
+        },
+        "owner": {
+          "maxLength": 42,
+          "minLength": 42,
+          "pattern": "^0x[0-9a-f]{40}$",
+          "title": "Owner",
+          "type": "string"
+        },
+        "selection": {
+          "$ref": "#/$defs/DepositSelection"
+        },
+        "serviceFeeBps": {
+          "maximum": 0,
+          "minimum": 0,
+          "title": "Servicefeebps",
+          "type": "integer"
+        },
+        "state": {
+          "enum": [
+            "draft",
+            "awaiting_wallet",
+            "pending",
+            "confirmed",
+            "reverted",
+            "cancel_requested",
+            "cancelled",
+            "attention",
+            "superseded"
+          ],
+          "title": "State",
+          "type": "string"
+        },
+        "updatedAt": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "title": "Updatedat",
+          "type": "integer"
+        },
+        "version": {
+          "maximum": 2147483647,
+          "minimum": 1,
+          "title": "Version",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "id",
+        "idempotencyKey",
+        "owner",
+        "chainId",
+        "selection",
+        "state",
+        "version",
+        "outstanding",
+        "createdAt",
+        "updatedAt",
+        "historyCount",
+        "lastStep",
+        "serviceFeeBps"
+      ],
+      "title": "OperationListItem",
+      "type": "object"
+    },
+    "PoolKeyModel": {
+      "additionalProperties": false,
+      "properties": {
+        "currency0": {
+          "maxLength": 42,
+          "minLength": 42,
+          "pattern": "^0x[0-9a-f]{40}$",
+          "title": "Currency0",
+          "type": "string"
+        },
+        "currency1": {
+          "maxLength": 42,
+          "minLength": 42,
+          "pattern": "^0x[0-9a-f]{40}$",
+          "title": "Currency1",
+          "type": "string"
+        },
+        "fee_pips": {
+          "maximum": 1000000,
+          "minimum": 0,
+          "title": "Fee Pips",
+          "type": "integer"
+        },
+        "hooks": {
+          "const": "0x0000000000000000000000000000000000000000",
+          "title": "Hooks",
+          "type": "string"
+        },
+        "tick_spacing": {
+          "maximum": 32767,
+          "minimum": 1,
+          "title": "Tick Spacing",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "currency0",
+        "currency1",
+        "fee_pips",
+        "tick_spacing",
+        "hooks"
+      ],
+      "title": "PoolKeyModel",
+      "type": "object"
+    },
+    "ReceiptPosition": {
+      "additionalProperties": false,
+      "properties": {
+        "amount0Raw": {
+          "anyOf": [
+            {
+              "maxLength": 78,
+              "pattern": "^(0|[1-9][0-9]{0,77})$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Amount0Raw"
+        },
+        "amount1Raw": {
+          "anyOf": [
+            {
+              "maxLength": 78,
+              "pattern": "^(0|[1-9][0-9]{0,77})$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Amount1Raw"
+        },
+        "currentOwner": {
+          "anyOf": [
+            {
+              "maxLength": 42,
+              "minLength": 42,
+              "pattern": "^0x[0-9a-f]{40}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Currentowner"
+        },
+        "currentOwnerStatus": {
+          "enum": [
+            "verified",
+            "unavailable"
+          ],
+          "title": "Currentownerstatus",
+          "type": "string"
+        },
+        "liquidityRaw": {
+          "maxLength": 78,
+          "pattern": "^[1-9][0-9]{0,77}$",
+          "title": "Liquidityraw",
+          "type": "string",
+          "x-maximum-raw": "170141183460469231731687303715884105727"
+        },
+        "ownershipObservedBlock": {
+          "$ref": "#/$defs/SourceBlock"
+        },
+        "poolId": {
+          "maxLength": 66,
+          "minLength": 66,
+          "pattern": "^0x[0-9a-f]{64}$",
+          "title": "Poolid",
+          "type": "string"
+        },
+        "recipient": {
+          "maxLength": 42,
+          "minLength": 42,
+          "pattern": "^0x[0-9a-f]{40}$",
+          "title": "Recipient",
+          "type": "string"
+        },
+        "tickLower": {
+          "maximum": 887272,
+          "minimum": -887272,
+          "title": "Ticklower",
+          "type": "integer"
+        },
+        "tickUpper": {
+          "maximum": 887272,
+          "minimum": -887272,
+          "title": "Tickupper",
+          "type": "integer"
+        },
+        "tokenId": {
+          "maxLength": 78,
+          "pattern": "^[1-9][0-9]{0,77}$",
+          "title": "Tokenid",
+          "type": "string"
+        }
+      },
+      "required": [
+        "tokenId",
+        "recipient",
+        "poolId",
+        "tickLower",
+        "tickUpper",
+        "liquidityRaw",
+        "currentOwner",
+        "currentOwnerStatus",
+        "ownershipObservedBlock",
+        "amount0Raw",
+        "amount1Raw"
+      ],
+      "title": "ReceiptPosition",
+      "type": "object"
+    },
+    "ReceiptSummary": {
+      "additionalProperties": false,
+      "properties": {
+        "blockHash": {
+          "maxLength": 66,
+          "minLength": 66,
+          "pattern": "^0x[0-9a-f]{64}$",
+          "title": "Blockhash",
+          "type": "string"
+        },
+        "blockNumber": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "title": "Blocknumber",
+          "type": "integer"
+        },
+        "effectiveGasPriceRaw": {
+          "maxLength": 78,
+          "pattern": "^(0|[1-9][0-9]{0,77})$",
+          "title": "Effectivegaspriceraw",
+          "type": "string"
+        },
+        "executionFeeRaw": {
+          "maxLength": 78,
+          "pattern": "^(0|[1-9][0-9]{0,77})$",
+          "title": "Executionfeeraw",
+          "type": "string"
+        },
+        "finality": {
+          "enum": [
+            "finalized",
+            "provisional",
+            "unavailable"
+          ],
+          "title": "Finality",
+          "type": "string"
+        },
+        "gasUsedRaw": {
+          "maxLength": 78,
+          "pattern": "^(0|[1-9][0-9]{0,77})$",
+          "title": "Gasusedraw",
+          "type": "string"
+        },
+        "l1FeeRaw": {
+          "anyOf": [
+            {
+              "maxLength": 78,
+              "pattern": "^(0|[1-9][0-9]{0,77})$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "L1Feeraw"
+        },
+        "outcome": {
+          "enum": [
+            "success",
+            "reverted"
+          ],
+          "title": "Outcome",
+          "type": "string"
+        },
+        "position": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ReceiptPosition"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "totalFeeRaw": {
+          "anyOf": [
+            {
+              "maxLength": 78,
+              "pattern": "^(0|[1-9][0-9]{0,77})$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Totalfeeraw"
+        },
+        "transaction": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ObservedTransaction"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "transactionHash": {
+          "maxLength": 66,
+          "minLength": 66,
+          "pattern": "^0x[0-9a-f]{64}$",
+          "title": "Transactionhash",
+          "type": "string"
+        }
+      },
+      "required": [
+        "transactionHash",
+        "blockNumber",
+        "blockHash",
+        "outcome",
+        "finality",
+        "gasUsedRaw",
+        "effectiveGasPriceRaw",
+        "executionFeeRaw",
+        "l1FeeRaw",
+        "totalFeeRaw",
+        "position",
+        "transaction"
+      ],
+      "title": "ReceiptSummary",
+      "type": "object"
+    },
+    "ReportedEffectConflict": {
+      "additionalProperties": false,
+      "properties": {
+        "nonceRaw": {
+          "maxLength": 78,
+          "pattern": "^(0|[1-9][0-9]{0,77})$",
+          "title": "Nonceraw",
+          "type": "string",
+          "x-maximum-raw": "18446744073709551615"
+        },
+        "transactionHash": {
+          "maxLength": 66,
+          "minLength": 66,
+          "pattern": "^0x[0-9a-f]{64}$",
+          "title": "Transactionhash",
+          "type": "string"
+        }
+      },
+      "required": [
+        "transactionHash",
+        "nonceRaw"
+      ],
+      "title": "ReportedEffectConflict",
+      "type": "object"
+    },
+    "SourceBlock": {
+      "additionalProperties": false,
+      "properties": {
+        "hash": {
+          "maxLength": 66,
+          "minLength": 66,
+          "pattern": "^0x[0-9a-f]{64}$",
+          "title": "Hash",
+          "type": "string"
+        },
+        "number": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "title": "Number",
+          "type": "integer"
+        },
+        "timestamp": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "title": "Timestamp",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "number",
+        "hash",
+        "timestamp"
+      ],
+      "title": "SourceBlock",
+      "type": "object"
+    },
+    "StepSummary": {
+      "additionalProperties": false,
+      "properties": {
+        "expiresAt": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "title": "Expiresat",
+          "type": "integer"
+        },
+        "issuedAt": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "title": "Issuedat",
+          "type": "integer"
+        },
+        "kind": {
+          "enum": [
+            "erc20_reset",
+            "erc20_approval",
+            "permit2_approval",
+            "mint"
+          ],
+          "title": "Kind",
+          "type": "string"
+        },
+        "nonceRaw": {
+          "maxLength": 78,
+          "pattern": "^(0|[1-9][0-9]{0,77})$",
+          "title": "Nonceraw",
+          "type": "string",
+          "x-maximum-raw": "18446744073709551615"
+        },
+        "receipt": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ReceiptSummary"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "reconciliationState": {
+          "anyOf": [
+            {
+              "enum": [
+                "not_found",
+                "pending",
+                "confirmed",
+                "reverted",
+                "mismatched",
+                "reorged"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Reconciliationstate"
+        },
+        "reportedEffectConflicts": {
+          "items": {
+            "$ref": "#/$defs/ReportedEffectConflict"
+          },
+          "maxItems": 8,
+          "title": "Reportedeffectconflicts",
+          "type": "array"
+        },
+        "step": {
+          "maximum": 16,
+          "minimum": 1,
+          "title": "Step",
+          "type": "integer"
+        },
+        "transactionHash": {
+          "anyOf": [
+            {
+              "maxLength": 66,
+              "minLength": 66,
+              "pattern": "^0x[0-9a-f]{64}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Transactionhash"
+        }
+      },
+      "required": [
+        "step",
+        "kind",
+        "issuedAt",
+        "expiresAt",
+        "nonceRaw",
+        "transactionHash",
+        "reconciliationState",
+        "receipt",
+        "reportedEffectConflicts"
+      ],
+      "title": "StepSummary",
+      "type": "object"
+    }
+  },
+  "$id": "https://domino.invalid/contracts/deposit-v1/list.response.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "automationAvailable": {
+      "const": false,
+      "title": "Automationavailable",
+      "type": "boolean"
+    },
+    "contractVersion": {
+      "const": "1.1.0-rc.2",
+      "title": "Contractversion",
+      "type": "string"
+    },
+    "hasMore": {
+      "title": "Hasmore",
+      "type": "boolean"
+    },
+    "nextBefore": {
+      "anyOf": [
+        {
+          "maxLength": 36,
+          "minLength": 36,
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Nextbefore"
+    },
+    "operations": {
+      "items": {
+        "$ref": "#/$defs/OperationListItem"
+      },
+      "maxItems": 20,
+      "title": "Operations",
+      "type": "array"
+    },
+    "serverBroadcastAvailable": {
+      "const": false,
+      "title": "Serverbroadcastavailable",
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "contractVersion",
+    "operations",
+    "hasMore",
+    "nextBefore",
+    "serverBroadcastAvailable",
+    "automationAvailable"
+  ],
+  "title": "ListResponse",
+  "type": "object",
+  "x-contract-version": "1.1.0-rc.2",
+  "x-domino-constraints": [
+    "Closed strict fields, exact raw integer strings, safe integer selectors.",
+    "SIWE-derived owner; no browser-selected recipient or provider.",
+    "Immutable pool/range/budget/gas selection and optimistic operation version.",
+    "Wallet payload only on prepare, tied to an already persisted owner nonce.",
+    "Narrow ABI calldata is re-encoded and compared; no arbitrary calls.",
+    "Pending versus finalized receipts and missing values remain explicit."
+  ]
+}

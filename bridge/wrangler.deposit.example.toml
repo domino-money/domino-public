@@ -1,0 +1,14 @@
+# Documentation only; no route, hostname, Access or binding is provisioned.
+name = "domino-deposit-bridge-example"
+main = "src/deposit-worker.mjs"
+compatibility_date = "2026-09-10"
+workers_dev = false
+preview_urls = false
+
+[vars]
+DEPOSIT_BRIDGE_ENABLED = "false"
+APP_ORIGIN = "https://domino.money"
+DEPOSIT_GATEWAY_ORIGIN = "https://deposit-origin.domino.money"
+
+# DEPOSIT_ACCESS_CLIENT_ID / DEPOSIT_ACCESS_CLIENT_SECRET belong in the secret
+# store for a separate deposit Access identity. Never copy login/read identities.

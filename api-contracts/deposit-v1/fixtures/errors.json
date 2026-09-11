@@ -1,0 +1,278 @@
+[
+  {
+    "body": {
+      "error": "account_check_unavailable"
+    },
+    "status": 503
+  },
+  {
+    "body": {
+      "error": "account_unsupported"
+    },
+    "status": 403
+  },
+  {
+    "body": {
+      "error": "csrf_invalid"
+    },
+    "status": 403
+  },
+  {
+    "body": {
+      "error": "deposit_admission_required"
+    },
+    "status": 422
+  },
+  {
+    "body": {
+      "error": "deposit_allowance_unavailable"
+    },
+    "status": 503
+  },
+  {
+    "body": {
+      "error": "deposit_artifact_expired"
+    },
+    "status": 409
+  },
+  {
+    "body": {
+      "error": "deposit_capacity_busy"
+    },
+    "status": 429
+  },
+  {
+    "body": {
+      "error": "deposit_fee_cap_too_low"
+    },
+    "status": 422
+  },
+  {
+    "body": {
+      "error": "deposit_funding_insufficient"
+    },
+    "status": 422
+  },
+  {
+    "body": {
+      "error": "deposit_gas_balance_insufficient"
+    },
+    "status": 422
+  },
+  {
+    "body": {
+      "error": "deposit_gas_limit_exceeded"
+    },
+    "status": 422
+  },
+  {
+    "body": {
+      "error": "deposit_history_full"
+    },
+    "status": 409
+  },
+  {
+    "body": {
+      "error": "deposit_idempotency_conflict"
+    },
+    "status": 409
+  },
+  {
+    "body": {
+      "error": "deposit_invalid_request"
+    },
+    "status": 400
+  },
+  {
+    "body": {
+      "error": "deposit_not_found"
+    },
+    "status": 404
+  },
+  {
+    "body": {
+      "error": "deposit_owner_busy"
+    },
+    "status": 409
+  },
+  {
+    "body": {
+      "error": "deposit_owner_capacity_busy"
+    },
+    "status": 429
+  },
+  {
+    "body": {
+      "error": "deposit_owner_history_full"
+    },
+    "status": 429
+  },
+  {
+    "body": {
+      "error": "deposit_preparation_unavailable"
+    },
+    "status": 503
+  },
+  {
+    "body": {
+      "error": "deposit_reconciliation_unavailable"
+    },
+    "status": 503
+  },
+  {
+    "body": {
+      "error": "deposit_state_changed"
+    },
+    "status": 409
+  },
+  {
+    "body": {
+      "error": "deposit_state_conflict"
+    },
+    "status": 409
+  },
+  {
+    "body": {
+      "error": "deposit_store_unavailable"
+    },
+    "status": 503
+  },
+  {
+    "body": {
+      "error": "deposit_version_conflict"
+    },
+    "status": 409
+  },
+  {
+    "body": {
+      "error": "deposit_wallet_pending"
+    },
+    "status": 409
+  },
+  {
+    "body": {
+      "error": "invalid_request"
+    },
+    "status": 400
+  },
+  {
+    "body": {
+      "error": "json_required"
+    },
+    "status": 415
+  },
+  {
+    "body": {
+      "error": "method_not_allowed"
+    },
+    "status": 405
+  },
+  {
+    "body": {
+      "error": "onboarding_capacity_busy"
+    },
+    "status": 429
+  },
+  {
+    "body": {
+      "error": "onboarding_rate_limited"
+    },
+    "status": 429
+  },
+  {
+    "body": {
+      "error": "origin_not_allowed"
+    },
+    "status": 403
+  },
+  {
+    "body": {
+      "error": "preview_expired"
+    },
+    "status": 409
+  },
+  {
+    "body": {
+      "error": "provider_rate_limited"
+    },
+    "status": 429
+  },
+  {
+    "body": {
+      "error": "provider_request_rejected"
+    },
+    "status": 422
+  },
+  {
+    "body": {
+      "error": "provider_unavailable"
+    },
+    "status": 503
+  },
+  {
+    "body": {
+      "error": "request_timeout"
+    },
+    "status": 504
+  },
+  {
+    "body": {
+      "error": "request_too_large"
+    },
+    "status": 413
+  },
+  {
+    "body": {
+      "error": "route_not_available"
+    },
+    "status": 404
+  },
+  {
+    "body": {
+      "error": "session_capacity_busy"
+    },
+    "status": 429
+  },
+  {
+    "body": {
+      "error": "session_rate_limited"
+    },
+    "status": 429
+  },
+  {
+    "body": {
+      "error": "session_required"
+    },
+    "status": 401
+  },
+  {
+    "body": {
+      "error": "session_store_unavailable"
+    },
+    "status": 503
+  },
+  {
+    "body": {
+      "error": "upstream_contract_mismatch"
+    },
+    "status": 502
+  },
+  {
+    "body": {
+      "error": "upstream_invalid_response"
+    },
+    "status": 502
+  },
+  {
+    "body": {
+      "error": "upstream_timeout"
+    },
+    "status": 504
+  },
+  {
+    "body": {
+      "error": "upstream_unavailable"
+    },
+    "status": 503
+  }
+]

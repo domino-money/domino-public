@@ -90,10 +90,11 @@ def start():
                     '-o',options,'-w','-t','15','start'])
     settings={'host':str(SOCKET),'port':PORT,'dbname':'domino_catalogue'}
     with psycopg.connect(host=str(SOCKET),port=PORT,dbname='postgres',user=ADMIN,autocommit=True) as conn:
-        for role in ['domino_catalogue_reader','domino_catalogue_writer','domino_session_auth','domino_wallet_access_operator']:
+        for role in ['domino_catalogue_reader','domino_catalogue_writer','domino_session_auth','domino_wallet_access_operator','domino_deposit_service']:
             if not conn.execute('SELECT 1 FROM pg_roles WHERE rolname=%s',(role,)).fetchone():
                 conn.execute(sql.SQL('CREATE ROLE {} LOGIN').format(sql.Identifier(role)))
         conn.execute('ALTER ROLE domino_session_auth NOINHERIT NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS')
+        conn.execute('ALTER ROLE domino_deposit_service NOINHERIT NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS')
         conn.execute('ALTER ROLE domino_wallet_access_operator NOINHERIT NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS')
     create_database(settings['dbname'])
     fd,name=tempfile.mkstemp(prefix='.catalogue-db-',dir=RUNTIME)
@@ -123,9 +124,12 @@ def create_database(name):
         conn.execute((ROOT/'migrations/006_chainlink_prices.sql').read_text())
         conn.execute((ROOT/'migrations/007_historical_work.sql').read_text())
         conn.execute((ROOT/'migrations/008_wallet_sessions.sql').read_text())
+        conn.execute((ROOT/'migrations/009_direct_deposits.sql').read_text())
+        conn.execute((ROOT/'migrations/010_deposit_recovery.sql').read_text())
         conn.execute((ROOT/'migrations/011_wallet_access.sql').read_text())
         conn.execute((ROOT/'migrations/012_capital_work.sql').read_text())
         conn.execute((ROOT/'migrations/013_activity_diagnostics.sql').read_text())
+        conn.execute((ROOT/'migrations/014_deposit_draft_recovery.sql').read_text())
 
 
 def main():

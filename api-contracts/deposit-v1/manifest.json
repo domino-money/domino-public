@@ -1,0 +1,274 @@
+{
+  "contract": "deposit-v1",
+  "contractVersion": "1.1.0-rc.2",
+  "files": [
+    {
+      "path": "fixtures/errors.json",
+      "sha256": "12d0b25b831bfa05ac4d0bebd4eec01a372acf47307bbd14740b985db325027b"
+    },
+    {
+      "path": "fixtures/requests/allowances.json",
+      "sha256": "1192fbad84f108bb40da2f00eaf1befb57481a2ec62e7f3a34469ecebeaa7469"
+    },
+    {
+      "path": "fixtures/requests/cancel.json",
+      "sha256": "79186ce153bf1dd84e175b0655eacb91c59fc7cb422f90f7fe7695eecc3ea126"
+    },
+    {
+      "path": "fixtures/requests/create.json",
+      "sha256": "216b1ab2e2c47bb08fda40e02af1244f28ece48cfa28e6f356509fd3ffaa1dc5"
+    },
+    {
+      "path": "fixtures/requests/get.json",
+      "sha256": "1192fbad84f108bb40da2f00eaf1befb57481a2ec62e7f3a34469ecebeaa7469"
+    },
+    {
+      "path": "fixtures/requests/list.json",
+      "sha256": "097e611b0a47f7aa78744b93a9c8e5bf9a1b511c8bd436756b0ef4effa79b60a"
+    },
+    {
+      "path": "fixtures/requests/prepare.json",
+      "sha256": "79186ce153bf1dd84e175b0655eacb91c59fc7cb422f90f7fe7695eecc3ea126"
+    },
+    {
+      "path": "fixtures/requests/reconcile.json",
+      "sha256": "79186ce153bf1dd84e175b0655eacb91c59fc7cb422f90f7fe7695eecc3ea126"
+    },
+    {
+      "path": "fixtures/requests/report.json",
+      "sha256": "343b9efdcefd662a254aca0fa92652b8da0263b05137867560ebc2b1c60b195e"
+    },
+    {
+      "path": "fixtures/responses/allowances.json",
+      "sha256": "2887f09b2ba209f5875d80fdbf93841b715e98b1d25f94eda156492caaf579f9"
+    },
+    {
+      "path": "fixtures/responses/cancel.json",
+      "sha256": "3b9bf6ae28cc27a4854261a3e68ab372d20449b8d4429b386989e0d5ac28a4f2"
+    },
+    {
+      "path": "fixtures/responses/create.json",
+      "sha256": "3b9bf6ae28cc27a4854261a3e68ab372d20449b8d4429b386989e0d5ac28a4f2"
+    },
+    {
+      "path": "fixtures/responses/get.json",
+      "sha256": "3b9bf6ae28cc27a4854261a3e68ab372d20449b8d4429b386989e0d5ac28a4f2"
+    },
+    {
+      "path": "fixtures/responses/list.json",
+      "sha256": "fad56e3f88015161cdbaa1341191b57d1e090f89be0e5384e2ba26cca1a24c91"
+    },
+    {
+      "path": "fixtures/responses/prepare.json",
+      "sha256": "ea3ab11b3da114e6fed889636973bf27bad15d37e31a8bcf1dc81a159c2f3d53"
+    },
+    {
+      "path": "fixtures/responses/reconcile.json",
+      "sha256": "3b9bf6ae28cc27a4854261a3e68ab372d20449b8d4429b386989e0d5ac28a4f2"
+    },
+    {
+      "path": "fixtures/responses/report.json",
+      "sha256": "3b9bf6ae28cc27a4854261a3e68ab372d20449b8d4429b386989e0d5ac28a4f2"
+    },
+    {
+      "path": "fixtures/variants/cancelled.json",
+      "sha256": "422668637d8c6e0b0132cb4b69649c44d729d31dc37c65edda505bd5c7e2261c"
+    },
+    {
+      "path": "fixtures/variants/confirmed.json",
+      "sha256": "ff7cad70724633ceffbfb6fc126cfdbec5e57b4e3e70f924212e9a80bebcaf45"
+    },
+    {
+      "path": "fixtures/variants/erc20_approval.json",
+      "sha256": "3f18166d4312b6c886e5927572800b03723ef0073598724c0fc5530e304660cc"
+    },
+    {
+      "path": "fixtures/variants/erc20_reset.json",
+      "sha256": "d83d8e8b0db30c2f88f450531b8e61753cdb85d0789724d3d207b9873d4dc732"
+    },
+    {
+      "path": "fixtures/variants/fee_cap_breach.json",
+      "sha256": "3a0699b8467500d2c4250530d0b96c073bbd0b8a2966dca6f03378912d165434"
+    },
+    {
+      "path": "fixtures/variants/legacy_receipt.json",
+      "sha256": "65181e3e2f0d0877ef645302a2f0484f8328f43fdac4946f621dc23cfb8f8a5d"
+    },
+    {
+      "path": "fixtures/variants/mint.json",
+      "sha256": "6686279289085acbf22cb22ad0a467e4766aad14cc28199c87a56c21581cd7e5"
+    },
+    {
+      "path": "fixtures/variants/native.json",
+      "sha256": "81662276b44e5d9902bae58020604239915ed7b281eeeec74981a3835c797c01"
+    },
+    {
+      "path": "fixtures/variants/partial_allowances.json",
+      "sha256": "d26651f0677806955008a95794ed1f5c8461cc864fb665b5fa35ce100a4fb692"
+    },
+    {
+      "path": "fixtures/variants/pending.json",
+      "sha256": "6878b54ac222e8257c1fba7f50a6ae3b96e190ef69bf436189fab605e371e8b6"
+    },
+    {
+      "path": "fixtures/variants/permit2_approval.json",
+      "sha256": "bb1fcb88167dc18e53542f147033ecbf97f331d36a4e38824edc8694b3bcbda7"
+    },
+    {
+      "path": "fixtures/variants/reported_nonce_conflict.json",
+      "sha256": "34dd0ef7623a01dde1929371792a382c40cf64e9ba8e3a03b68ca7521ab26f88"
+    },
+    {
+      "path": "fixtures/variants/superseded.json",
+      "sha256": "5eecfc82449743305515921282f564c9a01450040c12cca2696616e15f724e9d"
+    },
+    {
+      "path": "runtime.d.mts",
+      "sha256": "fea4552185ef38c0fe9d9f59bcff8f95e2f7ae1dcd53077900497277e226ce6c"
+    },
+    {
+      "path": "schema-data.mjs",
+      "sha256": "bb1b469d03b46d72b18234b3d77b047f32ead9d9c2ec2cdcc0aa8fe8ab086d85"
+    },
+    {
+      "path": "schemas/allowances.request.schema.json",
+      "sha256": "8b1d56382ce666c5bc8f012b1ee88ba280d27b15e1f31636f5b579b2470a0e84"
+    },
+    {
+      "path": "schemas/allowances.response.schema.json",
+      "sha256": "be0b43d08ab2afebe2067edf5d6f2c042a046b80dfe9e0224216b4627f4d466e"
+    },
+    {
+      "path": "schemas/cancel.request.schema.json",
+      "sha256": "adf23634fe001110436fc14bad486f2b0bd2c0b49d21b0434aa1e3bb2eb7d93f"
+    },
+    {
+      "path": "schemas/cancel.response.schema.json",
+      "sha256": "01f9640a4c1cd571ea1c5d8d4ba5ebe603c003edb1638b95133dc2fe531f5ba2"
+    },
+    {
+      "path": "schemas/create.request.schema.json",
+      "sha256": "ef68250ce4187b8ba2a8a3fd0f4f672b7c50fa6c0d4dccca697c6e40fff79ad0"
+    },
+    {
+      "path": "schemas/create.response.schema.json",
+      "sha256": "a19cb98230d2b69334b12a143da37aa606c5e72cf5c1c7dc4ea6e2749f44ca0b"
+    },
+    {
+      "path": "schemas/error.response.schema.json",
+      "sha256": "1f23dec9e4ddbdcc1ef90e2799de041651588246471a9b8f6ca6a443de42838f"
+    },
+    {
+      "path": "schemas/get.request.schema.json",
+      "sha256": "a252fe8060e55100defe15805bcf0ec64666e635da3ecb19fa341a31c425f2fc"
+    },
+    {
+      "path": "schemas/get.response.schema.json",
+      "sha256": "9676bcb999499c23fb310726cbf9a2cbc3e5b6393e034c6fa3840a04c4008bd3"
+    },
+    {
+      "path": "schemas/list.request.schema.json",
+      "sha256": "305f127d869b11d86dc9f71a7c1324c5a0c7033f068afb4397ace5ba88243bba"
+    },
+    {
+      "path": "schemas/list.response.schema.json",
+      "sha256": "a5239a58a12b40d910b11cf03e9de1367cfb548cb6842628856ad8a6a60ebb06"
+    },
+    {
+      "path": "schemas/prepare.request.schema.json",
+      "sha256": "7bf4098cb364a7be3b38cb2b77421a919f9d86bda4945c9d6159b00e0813bc0f"
+    },
+    {
+      "path": "schemas/prepare.response.schema.json",
+      "sha256": "6c8ebdf03e8f147c288ae6c2bfb3249d397a69207bf89c2aca3fa7225d51cc5c"
+    },
+    {
+      "path": "schemas/reconcile.request.schema.json",
+      "sha256": "c81fb0414c79e7a07c6bfa0379176677c5e14d0922d5d6b019abefbb11f92c3e"
+    },
+    {
+      "path": "schemas/reconcile.response.schema.json",
+      "sha256": "67e199fba2c0b3d064ad1b0cf2e977c2bb9fbed5ae54f925b49e9c97bf1c0356"
+    },
+    {
+      "path": "schemas/report.request.schema.json",
+      "sha256": "34ca056c23b96801c055ace21ab8b7e5e22438b5c24e98378b55569dfd5ed154"
+    },
+    {
+      "path": "schemas/report.response.schema.json",
+      "sha256": "a08d1540976e7c38f1d70a5880da1e4ec0ea15a3617b091d783c41e973114406"
+    },
+    {
+      "path": "types.ts",
+      "sha256": "78e5bbe222ea05e6340c0a6f2fba1b4aba11342deae9135c1ca84c2838b8f281"
+    },
+    {
+      "path": "runtime.mjs",
+      "sha256": "e0ba8aaeba88410cf342df152ed470aec6b54dfe6d4dbe435469806be63530a4"
+    },
+    {
+      "path": "README.md",
+      "sha256": "ada901f0d243d382de8e65315a0ced55675ba9e261d69de963c3bc8f22fe0bd7"
+    },
+    {
+      "path": "consumer.typecheck.mts",
+      "sha256": "ae2f304549d63e3aa292f7254b158f637466f41ba53e4afe20ed5ba431958a4d"
+    }
+  ],
+  "generator": "scripts/export-deposit-contract.py",
+  "sources": [
+    {
+      "path": "backend/deposit_models.py",
+      "sha256": "f723327fd40189b557d557143520bd82c8d47dcd0eb858f202a179f065557e47"
+    },
+    {
+      "path": "backend/deposit_service.py",
+      "sha256": "dd40f9ef8f2efabfc649c5d72d044472d21abacb0406dbd1c08213af779433f0"
+    },
+    {
+      "path": "backend/deposit_allowances.py",
+      "sha256": "25b8083a9426738b90a9380f7bcad8bf2f5f66f765fb9a8c0233fedbff82e5ee"
+    },
+    {
+      "path": "backend/deposit_prepare.py",
+      "sha256": "6a9e0597634d378287f5f7b05c6a5b0d60d7914133db81463a876529f5949b98"
+    },
+    {
+      "path": "backend/deposit_receipt.py",
+      "sha256": "1aeee469ec67e2fe8de59e25eff44c9725cbbded72da6967dde65d3394d4f6d1"
+    },
+    {
+      "path": "backend/deposit_store.py",
+      "sha256": "b31179ef7208bc144c462086215f8b02ccafb27753fd5eed01b06473e616110f"
+    },
+    {
+      "path": "backend/migrations/014_deposit_draft_recovery.sql",
+      "sha256": "f9f98955e2a54f4dc5e2369c814a808d4ca51aa2afee68918554b452b1133807"
+    },
+    {
+      "path": "backend/tests/test_deposit_capacity_recovery.py",
+      "sha256": "7c799786faaa4de5cdd65b41295bd838a98cb7ad6bae25cb186339c5b1fae95d"
+    },
+    {
+      "path": "backend/tests/test_deposit_replacement_recovery.py",
+      "sha256": "f46c1763d42a167d0a384df92a7c664751d1e93709340fa86fb443b9319ca2bb"
+    },
+    {
+      "path": "backend/tests/deposit_contract_fixtures.py",
+      "sha256": "7a15a316ff1fcdd183c6d3102a7909afe4d67b62ee5d1b75980276422b3a1d87"
+    },
+    {
+      "path": "backend/tests/test_deposit_receipt.py",
+      "sha256": "1aac24f90c2d479af921530aa49110de84ddfb7668aa58d09a7225312b1fac89"
+    },
+    {
+      "path": "backend/tests/test_lp_mint_inspection.py",
+      "sha256": "8d09f843241f9dd43aa9fbb23561580bb713c7c2916c80b06f2b1fd3cac0603b"
+    },
+    {
+      "path": "scripts/export-deposit-contract.py",
+      "sha256": "f8d8d9695a0bf895e67e6d377334b29b18484a3d684457d67788d0d6e597dde1"
+    }
+  ],
+  "status": "candidate_disabled_pending_consumer_acknowledgement"
+}

@@ -1,0 +1,73 @@
+{
+  "allowances": {
+    "basis": "pinned_contract_reads_not_token_admission",
+    "observations": [
+      {
+        "currency": "0x1111111111111111111111111111111111111111",
+        "erc20AllowanceRaw": "17",
+        "erc20Spender": "0x000000000022d473030f116ddee9f6b43ac78ba3",
+        "erc20Status": "observed",
+        "permit2AllowanceRaw": "11",
+        "permit2Expiration": 1799999999,
+        "permit2Spender": "0x58daec3116aae6d93017baaea7749052e8a04fa7",
+        "permit2Status": "expired",
+        "revocationGuidance": "wallet_erc20_approve_zero_and_permit2_approve_zero"
+      },
+      {
+        "currency": "0x2222222222222222222222222222222222222222",
+        "erc20AllowanceRaw": "17",
+        "erc20Spender": "0x000000000022d473030f116ddee9f6b43ac78ba3",
+        "erc20Status": "observed",
+        "permit2AllowanceRaw": "11",
+        "permit2Expiration": 1799999999,
+        "permit2Spender": "0x58daec3116aae6d93017baaea7749052e8a04fa7",
+        "permit2Status": "expired",
+        "revocationGuidance": "wallet_erc20_approve_zero_and_permit2_approve_zero"
+      }
+    ],
+    "snapshot": {
+      "hash": "0xabababababababababababababababababababababababababababababababab",
+      "number": 100,
+      "timestamp": 1800000000
+    }
+  },
+  "automationAvailable": false,
+  "contractVersion": "1.1.0-rc.2",
+  "operation": {
+    "chainId": 4663,
+    "createdAt": 1800000000,
+    "history": [],
+    "id": "00000000-0000-4000-8000-000000000040",
+    "idempotencyKey": "00000000-0000-4000-8000-000000000041",
+    "outstanding": false,
+    "owner": "0xabababababababababababababababababababab",
+    "selection": {
+      "amountRaw": "100",
+      "budget0Raw": "1000",
+      "budget1Raw": "1000",
+      "chainId": 4663,
+      "independentToken": "0x1111111111111111111111111111111111111111",
+      "maxFeePerGasRaw": "10",
+      "maxGasLimitRaw": "500000",
+      "maxPriorityFeePerGasRaw": "1",
+      "nativeGasReserveRaw": "1000000",
+      "poolId": "0x25431634fd7de72516ccb751020a1a9188376a983ccc5f6c1152ca04a6acffad",
+      "poolKey": {
+        "currency0": "0x1111111111111111111111111111111111111111",
+        "currency1": "0x2222222222222222222222222222222222222222",
+        "fee_pips": 3000,
+        "hooks": "0x0000000000000000000000000000000000000000",
+        "tick_spacing": 60
+      },
+      "slippageBps": 50,
+      "tickLower": -120,
+      "tickUpper": 180
+    },
+    "serviceFeeBps": 0,
+    "state": "draft",
+    "updatedAt": 1800000000,
+    "version": 1
+  },
+  "serverBroadcastAvailable": false,
+  "walletStep": null
+}

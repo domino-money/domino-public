@@ -4,6 +4,8 @@
 
 ## Implemented
 
+- Issue #40 adds disabled [resumable direct deposits](docs/DIRECT_DEPOSITS.md): private owner-isolated operations, fresh Uniswap composition, exact bounded approvals/mints, persisted nonce issuance, canonical receipts and NFT identity. The owner signs each step; the service never broadcasts. Full local verification passes 755 backend PostgreSQL/EVM tests and 517 bridge tests, zero skips. [Evidence](reports/DIRECT_DEPOSIT_IMPLEMENTATION.md) distinguishes synthetic EVM checks from pending real deployment/token admission, frontend integration and activation. Existing read/session/onboarding payloads are preserved.
+
 - Issue #38 adds the disabled [authenticated onboarding API](docs/ONBOARDING_API.md): SIWE-derived owner, CSRF and post-provider session guards, durable quotas, Uniswap preview adapters and a separate `onboarding-v1` worker/contract. Full local verification passes 649 backend PostgreSQL/EVM tests without skips and 503 bridge tests. Frontend wiring, staging and financial execution remain separate; no new LP math or migration is added.
 
 - Issue #36 adds an internal [Uniswap LP position preview](docs/POSITION_PREVIEW.md). Uniswap calculates dependent deposits; Domino inspects the existing-pool mint identity and encoded maximum debits against selected budgets. Both input sides were qualified live with a public placeholder; an ignored provider budget was caught locally. No duplicate LP math, calldata output, public route, frontend change or financial execution. The complete backend suite passes 531 tests with PostgreSQL/EVM, zero skips.

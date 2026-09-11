@@ -1,0 +1,40 @@
+{
+  "$id": "https://domino.invalid/contracts/deposit-v1/list.request.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "before": {
+      "anyOf": [
+        {
+          "maxLength": 36,
+          "minLength": 36,
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Before"
+    },
+    "limit": {
+      "default": 20,
+      "maximum": 20,
+      "minimum": 1,
+      "title": "Limit",
+      "type": "integer"
+    }
+  },
+  "title": "ListRequest",
+  "type": "object",
+  "x-contract-version": "1.1.0-rc.2",
+  "x-domino-constraints": [
+    "Closed strict fields, exact raw integer strings, safe integer selectors.",
+    "SIWE-derived owner; no browser-selected recipient or provider.",
+    "Immutable pool/range/budget/gas selection and optimistic operation version.",
+    "Wallet payload only on prepare, tied to an already persisted owner nonce.",
+    "Narrow ABI calldata is re-encoded and compared; no arbitrary calls.",
+    "Pending versus finalized receipts and missing values remain explicit."
+  ]
+}

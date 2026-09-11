@@ -1,0 +1,187 @@
+{
+  "$defs": {
+    "DepositSelection": {
+      "additionalProperties": false,
+      "properties": {
+        "amountRaw": {
+          "maxLength": 78,
+          "pattern": "^[1-9][0-9]{0,77}$",
+          "title": "Amountraw",
+          "type": "string"
+        },
+        "budget0Raw": {
+          "maxLength": 78,
+          "pattern": "^(0|[1-9][0-9]{0,77})$",
+          "title": "Budget0Raw",
+          "type": "string",
+          "x-maximum-raw": "340282366920938463463374607431768211455"
+        },
+        "budget1Raw": {
+          "maxLength": 78,
+          "pattern": "^(0|[1-9][0-9]{0,77})$",
+          "title": "Budget1Raw",
+          "type": "string",
+          "x-maximum-raw": "340282366920938463463374607431768211455"
+        },
+        "chainId": {
+          "maximum": 4663,
+          "minimum": 4663,
+          "title": "Chainid",
+          "type": "integer"
+        },
+        "independentToken": {
+          "maxLength": 42,
+          "minLength": 42,
+          "pattern": "^0x[0-9a-f]{40}$",
+          "title": "Independenttoken",
+          "type": "string"
+        },
+        "maxFeePerGasRaw": {
+          "maxLength": 78,
+          "pattern": "^[1-9][0-9]{0,77}$",
+          "title": "Maxfeepergasraw",
+          "type": "string"
+        },
+        "maxGasLimitRaw": {
+          "maxLength": 78,
+          "pattern": "^[1-9][0-9]{0,77}$",
+          "title": "Maxgaslimitraw",
+          "type": "string"
+        },
+        "maxPriorityFeePerGasRaw": {
+          "maxLength": 78,
+          "pattern": "^(0|[1-9][0-9]{0,77})$",
+          "title": "Maxpriorityfeepergasraw",
+          "type": "string"
+        },
+        "nativeGasReserveRaw": {
+          "maxLength": 78,
+          "pattern": "^(0|[1-9][0-9]{0,77})$",
+          "title": "Nativegasreserveraw",
+          "type": "string"
+        },
+        "poolId": {
+          "maxLength": 66,
+          "minLength": 66,
+          "pattern": "^0x[0-9a-f]{64}$",
+          "title": "Poolid",
+          "type": "string"
+        },
+        "poolKey": {
+          "$ref": "#/$defs/PoolKeyModel"
+        },
+        "slippageBps": {
+          "maximum": 9999,
+          "minimum": 0,
+          "title": "Slippagebps",
+          "type": "integer"
+        },
+        "tickLower": {
+          "maximum": 887272,
+          "minimum": -887272,
+          "title": "Ticklower",
+          "type": "integer"
+        },
+        "tickUpper": {
+          "maximum": 887272,
+          "minimum": -887272,
+          "title": "Tickupper",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "chainId",
+        "poolId",
+        "poolKey",
+        "independentToken",
+        "amountRaw",
+        "tickLower",
+        "tickUpper",
+        "slippageBps",
+        "budget0Raw",
+        "budget1Raw",
+        "nativeGasReserveRaw",
+        "maxGasLimitRaw",
+        "maxFeePerGasRaw",
+        "maxPriorityFeePerGasRaw"
+      ],
+      "title": "DepositSelection",
+      "type": "object"
+    },
+    "PoolKeyModel": {
+      "additionalProperties": false,
+      "properties": {
+        "currency0": {
+          "maxLength": 42,
+          "minLength": 42,
+          "pattern": "^0x[0-9a-f]{40}$",
+          "title": "Currency0",
+          "type": "string"
+        },
+        "currency1": {
+          "maxLength": 42,
+          "minLength": 42,
+          "pattern": "^0x[0-9a-f]{40}$",
+          "title": "Currency1",
+          "type": "string"
+        },
+        "fee_pips": {
+          "maximum": 1000000,
+          "minimum": 0,
+          "title": "Fee Pips",
+          "type": "integer"
+        },
+        "hooks": {
+          "const": "0x0000000000000000000000000000000000000000",
+          "title": "Hooks",
+          "type": "string"
+        },
+        "tick_spacing": {
+          "maximum": 32767,
+          "minimum": 1,
+          "title": "Tick Spacing",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "currency0",
+        "currency1",
+        "fee_pips",
+        "tick_spacing",
+        "hooks"
+      ],
+      "title": "PoolKeyModel",
+      "type": "object"
+    }
+  },
+  "$id": "https://domino.invalid/contracts/deposit-v1/create.request.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "idempotencyKey": {
+      "maxLength": 36,
+      "minLength": 36,
+      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+      "title": "Idempotencykey",
+      "type": "string"
+    },
+    "selection": {
+      "$ref": "#/$defs/DepositSelection"
+    }
+  },
+  "required": [
+    "idempotencyKey",
+    "selection"
+  ],
+  "title": "CreateRequest",
+  "type": "object",
+  "x-contract-version": "1.1.0-rc.2",
+  "x-domino-constraints": [
+    "Closed strict fields, exact raw integer strings, safe integer selectors.",
+    "SIWE-derived owner; no browser-selected recipient or provider.",
+    "Immutable pool/range/budget/gas selection and optimistic operation version.",
+    "Wallet payload only on prepare, tied to an already persisted owner nonce.",
+    "Narrow ABI calldata is re-encoded and compared; no arbitrary calls.",
+    "Pending versus finalized receipts and missing values remain explicit."
+  ]
+}

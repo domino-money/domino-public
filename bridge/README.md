@@ -1,4 +1,13 @@
-# Domino read, session and onboarding BFF candidates
+# Domino read, session, onboarding and deposit BFF candidates
+
+Issue #40 adds `src/deposit-worker.mjs`, a disabled owner-signed direct-deposit
+transport with a separate `deposit-v1` contract and Access identity. It shares
+bounded authenticated transport with onboarding, preserves read/session payloads
+and performs no signing or broadcast. See the
+[deposit runbook](../docs/DIRECT_DEPOSITS.md) and
+[shared package](../api-contracts/deposit-v1/README.md). No frontend hook or
+deployment route is activated. The new shared transport is covered by both the
+existing onboarding and new deposit tests.
 
 The isolated `src/onboarding-worker.mjs` adds disabled, session-bound swap and
 position previews for #38. Its `onboarding-v1` contract, routes, Access identity
