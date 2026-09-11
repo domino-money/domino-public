@@ -10,12 +10,16 @@ the first start. No file here creates DNS, Access applications, Tunnel mappings,
 Worker bindings/routes or listener flags.
 
 Starting the Tunnel and enabling application capabilities are separate steps.
-HTTPS disabled acceptance needs a running Tunnel with all Worker/listener flags
-still false. The first start does not authorize reads, wallet admission or deposits.
+The first connector start belongs to the coordinated HTTPS acceptance window
+(the H-window) in the [handoff](STAGING_BACKEND_HANDOFF.md#remaining-inputs-and-backend-candidate):
+agree the participants, selected commits/pins, mapping/Access review, frontend
+perimeter evidence, probe plan and stop/rollback owner before starting. Keep all
+Worker/listener flags false. The first start does not authorize reads, wallet
+admission or deposits.
 The installed application remains `a5a855cec1fc5d120d9c1c187a84ff24bc1b02d6`.
-The [staging backend handoff](STAGING_BACKEND_HANDOFF.md) is being updated in the
-joint HTTPS preparation PR; documentation updates do not change that installed
-application pin or establish new VM evidence.
+The [staging backend handoff](STAGING_BACKEND_HANDOFF.md) records the installed and
+candidate pins separately. Documentation updates do not change the installed
+application or establish new VM evidence.
 
 ## Exact binary and provenance
 
@@ -45,8 +49,20 @@ No binary was downloaded or executed when preparing this candidate.
 The pinned [run implementation](https://github.com/cloudflare/cloudflared/blob/b749dfd998f4bced81f48727b9c971cfc3056865/cmd/cloudflared/tunnel/subcommands.go#L767)
 reads and trims the token file. Official [run parameters](https://developers.cloudflare.com/tunnel/advanced/run-parameters/)
 document file-based tokens from 2025.4.0 onward. The unit pins `--no-autoupdate`,
-info logging, a loopback-only metrics address and disabled management diagnostics.
+info logging, a loopback-only metrics address and disabled management-service diagnostics.
 Its 20-second graceful shutdown fits inside systemd's 30-second stop timeout.
+
+`--management-diagnostics=false` disables the additional diagnostics exposed by
+the management service, not all local diagnostics or management functions.
+[Pinned management handlers](https://github.com/cloudflare/cloudflared/blob/b749dfd998f4bced81f48727b9c971cfc3056865/management/service.go#L78-L92).
+The loopback server on `127.0.0.1:20241` also serves `/config`, `/diag/*`,
+`/debug/pprof/`, `/debug/requests`, `/debug/events`, `/metrics`, `/ready`,
+`/healthcheck` and `/quicktunnel`; some depend on configured handlers. These can
+expose runtime/configuration information and must never become origin mappings,
+reverse-proxy targets or port forwards. The pinned version explicitly returns
+403 for `/debug/pprof/cmdline`.
+[Metrics handlers](https://github.com/cloudflare/cloudflared/blob/b749dfd998f4bced81f48727b9c971cfc3056865/metrics/metrics.go#L62-L97),
+[diagnostic handlers](https://github.com/cloudflare/cloudflared/blob/b749dfd998f4bced81f48727b9c971cfc3056865/diagnostic/handlers.go#L58-L62).
 
 ## Credential and process boundary
 
@@ -55,7 +71,7 @@ The existing `domino-tunnel` OS user/group must be distinct and non-root, have n
 and application runtime access. Do not add groups or SQL roles.
 
 The Tunnel owner delivers only an encrypted file to the operator's key. Decrypt
-it locally through the operator's private workflow. Never send the token through
+it locally as root into an absent target using the command in step 3. Never send the token through
 chat, GitHub, a prompt, shell argument, environment variable, journal, screenshot
 or test output. Do not run `cloudflared service install` or `tunnel login`.
 
@@ -107,8 +123,22 @@ this initial installation. Never overwrite an existing installation as an upgrad
    empty config prevents discovery of unrelated local defaults. It contains no
    ingress rules; remotely managed routing remains an independent control plane.
 
-3. Through the private operator workflow, install the token source with the
-   ownership/modes above. Check `lstat` file type, link count, UID/GID, directory
+3. In the private operator session, replace the two quoted placeholder paths
+   below. After verifying the directory/parent ownership above, refuse any
+   existing target, including a dangling symlink, and decrypt directly as root:
+
+   ```sh
+   sudo sh -c '
+     umask 077
+     test ! -e /etc/domino/credentials/cloudflared-token &&
+     test ! -L /etc/domino/credentials/cloudflared-token &&
+     age -d -i "<operator-key-file>" \
+       -o /etc/domino/credentials/cloudflared-token "<tunnel-token.age>"
+   '
+   ```
+
+   Stop if decryption fails; do not start the service or overwrite/retry an
+   existing target automatically. Check `lstat` file type, link count, UID/GID, directory
    metadata and effective access without opening/printing the token. Confirm
    other service UIDs cannot read it. Record pass/fail metadata only.
 
@@ -142,6 +172,17 @@ and localhost permission includes local DNS/other loopback services. Record thos
 limits and any separately approved port controls. This change makes no host
 firewall, DNS or network-policy mutation.
 
+Startup connectivity prechecks remain enabled. If the reviewed drop-in permits
+DNS and the approved edge transport but denies `api.cloudflare.com:443`, expect
+that API precheck row to fail and the summary to report degraded transport.
+The pinned implementation treats that API failure as diagnostic, not a startup
+gate. Autoupdate is already disabled; this row is not a reason to add 443 egress.
+It does not excuse DNS/edge failures or replace the required connection and
+negative probes. Distinguish the failing component when assessing the summary.
+[Pinned precheck target](https://github.com/cloudflare/cloudflared/blob/b749dfd998f4bced81f48727b9c971cfc3056865/prechecks/probes.go#L24-L41),
+[summary classification](https://github.com/cloudflare/cloudflared/blob/b749dfd998f4bced81f48727b9c971cfc3056865/prechecks/result.go#L80-L151),
+[diagnostic-only startup](https://github.com/cloudflare/cloudflared/blob/b749dfd998f4bced81f48727b9c971cfc3056865/cmd/cloudflared/tunnel/cmd.go#L514-L516).
+
 Before starting the real connector, run a credential-free probe under the same
 effective service UID, address families and proposed egress filter: required DNS
 and approved edge destinations must succeed, an unrelated external destination
@@ -160,6 +201,17 @@ do not respond by weakening policy or increasing log level. Repeat the disabled
 HTTPS acceptance after a controlled connector restart.
 Record boolean/count results from local process inspection; do not dump argv,
 environment, credentials or raw journals into an assistant session or issue.
+Verify `/debug/pprof/cmdline` locally without retaining its response body:
+
+```sh
+probe_status="$(curl --disable --noproxy '*' --proto '=http' --connect-timeout 2 --max-time 4 \
+  --silent --show-error --output /dev/null --write-out '%{http_code}' \
+  http://127.0.0.1:20241/debug/pprof/cmdline)" && test "$probe_status" = 403
+```
+
+Also inspect effective listeners/mappings/forwards to prove nothing exposes
+port 20241 beyond loopback. A 403 from one path does not protect the other local
+handlers; do not retrieve their bodies for public evidence.
 
 ## Remote mappings and denial contract
 
@@ -194,11 +246,18 @@ Only the reviewed Pages caller may bind to the bridges. Beta perimeter, producti
 host allowlist, security headers and authentic connecting-IP propagation remain
 separate frontend acceptance. This file does not ACK their implementation.
 
-With flags false, prove authorized requests reach the correct disabled response
-and exact contract/security headers; missing/wrong service auth and audiences,
-cross-service paths and deferred/unmatched routes must fail. Confirm origin
-responses retain the reviewed `no-transform`/identity-encoding behavior. Do not
-grant a wallet or send a financial request to establish connectivity.
+With flags false, the authorized browser check follows beta gate → Pages binding
+→ Worker and verifies the disabled response plus exact contract/security headers.
+The disabled Worker makes no origin request; that check alone cannot prove the
+Tunnel or the listener's response headers. Worker Access client secrets stay in
+Cloudflare and never move to the operator, browser or a direct curl command.
+Direct `vm-*` probes are limited to denial markers with no service credentials;
+missing identity, cross-service paths and deferred/unmatched routes must fail.
+Retain separate connection/mapping evidence for the Tunnel and local disabled
+listener checks. Real origin JWT/audience and `no-transform`/identity behavior
+through Cloudflare still need the separately reviewed service-path acceptance;
+do not claim the flags-false browser result proves them. Do not grant a wallet
+or send a financial request to establish connectivity.
 
 ## Rollback and rotation
 
@@ -231,3 +290,9 @@ no subprocess, network, token read, installation or service start. Run the
 native systemd255 verifier and actual host checks above before use. Local macOS
 has no `systemd-analyze`; no native unit validation or VM qualification is claimed
 from those tests. Required repository CI remains separate from operational approval.
+
+Additional syscall/proc/hostname/IPC/memory-execution hardening is deferred to a
+separate VM-qualified change; it can affect the pinned Go binary and diagnostics.
+This follow-up adds no unit directive or address family. In particular, do not
+add `AF_NETLINK` merely to improve an ICMP source-selection diagnostic; private
+network/ICMP routing is outside the approved HTTP-origin scope.

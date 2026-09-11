@@ -14,6 +14,7 @@ User=domino-tunnel
 Group=domino-tunnel
 WorkingDirectory=/opt/domino/cloudflared/2026.9.0
 LoadCredential=cloudflared-token:/etc/domino/credentials/cloudflared-token
+# Disables management-service diagnostics; the loopback diagnostic server remains.
 ExecStart=/usr/bin/env -i HOME=/nonexistent PATH=/usr/bin:/bin /opt/domino/cloudflared/2026.9.0/cloudflared tunnel --config /opt/domino/cloudflared/2026.9.0/connector.yml --no-autoupdate --loglevel info --metrics 127.0.0.1:20241 --grace-period 20s --management-diagnostics=false run --token-file ${CREDENTIALS_DIRECTORY}/cloudflared-token
 UMask=0077
 NoNewPrivileges=yes

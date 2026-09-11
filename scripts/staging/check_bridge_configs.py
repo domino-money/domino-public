@@ -13,6 +13,11 @@ SERVICES = {
     "onboarding": ("onboarding-worker", "ONBOARDING_GATEWAY_ORIGIN", "2026-09-10"),
     "deposit": ("deposit-worker", "DEPOSIT_GATEWAY_ORIGIN", "2026-09-10"),
 }
+KNOWN_CONFIGS = {
+    "wrangler.example.toml", "wrangler.session.example.toml",
+    "wrangler.onboarding.example.toml", "wrangler.deposit.example.toml",
+    *(f"wrangler.{service}.toml" for service in SERVICES),
+}
 
 
 def same_value(actual, expected):
@@ -53,8 +58,31 @@ def validate(service, config):
     return errors
 
 
+def inventory_errors(directory, *, allowed_names=KNOWN_CONFIGS):
+    """Reject alternate config entry points; do not inspect their contents."""
+    try:
+        names = {path.name for path in directory.iterdir()}
+    except OSError:
+        return ["configuration directory unreadable"]
+    candidates = {name for name in names if name.casefold().startswith("wrangler")
+                  and name.casefold().endswith((".toml", ".json", ".jsonc"))}
+    # Only the exact reviewed names are allowed, even on case-insensitive disks.
+    errors = [f"{name}: unreviewed Worker configuration" for name in sorted(candidates - allowed_names)]
+    redirect = directory / ".wrangler" / "deploy" / "config.json"
+    try:
+        redirect.lstat()
+    except FileNotFoundError:
+        pass
+    except OSError:
+        errors.append(".wrangler/deploy/config.json: redirect inventory unreadable")
+    else:
+        errors.append(".wrangler/deploy/config.json: unreviewed Worker configuration redirect")
+    return errors
+
+
 def main():
-    failures = []
+    failures = inventory_errors(ROOT / "bridge")
+    failures.extend(f"repository root/{error}" for error in inventory_errors(ROOT, allowed_names=frozenset()))
     for service in SERVICES:
         path = ROOT / "bridge" / f"wrangler.{service}.toml"
         try:

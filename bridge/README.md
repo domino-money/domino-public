@@ -120,9 +120,10 @@ Incoming client identifiers and Access credentials cannot override server values
 The production adapter reads only Cloudflare's `CF-Connecting-IP` ingress value,
 validates a bounded IPv4/IPv6 literal and passes it as `X-Domino-Client-Id`.
 The gateway hashes that identifier with its server secret before budgeting.
-This header is trustworthy **only behind the reviewed Cloudflare ingress**.
+This header is trustworthy **only behind the reviewed ingress path: the
+`domino-app` production Pages Function and its private Worker service binding**.
 An arbitrary Node server or a direct test Request cannot prove that it came from
-connection metadata. The deployed route must exclude paths through untrusted
+connection metadata. The ingress path must exclude paths through untrusted
 same-zone Workers/subrequests that can alter the effective client identity, and
 its Cloudflare client-IP settings must be verified in staging. Never expose the
 test factory as an HTTP configuration surface or trust a browser-selected ID.
@@ -163,9 +164,12 @@ no bodies, addresses, IPs, cursors, credentials or other diagnostics.
 
 [`wrangler.example.toml`](wrangler.example.toml) is a non-deploying example with
 live reads off, no real routes, and both workers.dev/preview URLs off.
-`https://domino.money` is the user-selected app origin. The example gateway
-`https://vm-read.domino.money` is a proposal only: its DNS, Access application
-and service are not verified or provisioned. The file does not connect DNS,
+`https://domino.money` is the user-selected app origin. This historical example
+still uses `https://read-origin.domino.money`; the selected staging candidate is
+[`wrangler.read.toml`](wrangler.read.toml), with `https://vm-read.domino.money`.
+Neither hostname is established as provisioned or qualified by these files.
+Historical examples, implementation reports and test fixture hosts are not
+deployment inputs. The file does not connect DNS,
 provision a Worker, configure Access or run a deployment. Cloudflare credentials
 and actual staging are deferred. The candidate's source entry is `src/worker.mjs`.
 

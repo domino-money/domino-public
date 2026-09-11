@@ -51,11 +51,10 @@ The combined candidate includes all five launchers. The [disabled installer](VM_
 The public-data and auth paths remain separate:
 
 ```text
-browser -> Pages gate/host checks -> read service binding -> Access/Tunnel -> 127.0.0.1:8878
-                                                               -> 127.0.0.1:8876
-browser -> Pages gate/host checks -> session service binding -> separate Access/Tunnel
-                                                               -> 127.0.0.1:8879
-                                                               -> private PostgreSQL socket
+browser -> Pages gate/host checks -> service binding -> read Worker -> Access/Tunnel
+                                                                     -> 127.0.0.1:8878 -> 127.0.0.1:8876
+browser -> Pages gate/host checks -> service binding -> session Worker -> separate Access/Tunnel
+                                                                        -> 127.0.0.1:8879 -> private PostgreSQL socket
 ```
 
 Only the gateway's fixed `/internal/read/v1/*`, session listener's `/internal/session/v1/*`, onboarding listener's `/internal/onboarding/v1/*` and deposit listener's `/internal/deposit/v1/*` routes may become Tunnel destinations. These prefixes never authorize arbitrary wildcard dispatch. Do not publish port 8876, PostgreSQL, `/health`, OpenAPI or unmatched paths. All four eventual Access service identities/audiences must remain distinct; deposit is deferred rather than reusing another identity. Workers expose no public routes/domains; the reviewed production Pages Function is their only permitted binding caller. The exact Worker/Tunnel mapping and inputs are in the [staging handoff](STAGING_BACKEND_HANDOFF.md). Public reads require their existing service-authenticated backend path, but never a user-wallet allowlist check. The shared beta password gates invited staging separately from backend Service Auth and wallet ownership; its rotation, host denial and historical-deployment requirements are in that handoff.

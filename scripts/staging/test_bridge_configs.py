@@ -1,8 +1,14 @@
 """Deployment-boundary regressions; no network or Cloudflare account access."""
 import copy
+import contextlib
+import io
+from pathlib import Path
+import tempfile
 import tomllib
 import unittest
-from check_bridge_configs import ROOT, SERVICES, validate
+from unittest.mock import patch
+import check_bridge_configs
+from check_bridge_configs import ROOT, SERVICES, KNOWN_CONFIGS, inventory_errors, validate
 
 
 class DisabledBridgeConfigs(unittest.TestCase):
@@ -52,6 +58,57 @@ class DisabledBridgeConfigs(unittest.TestCase):
                     config = copy.deepcopy(original)
                     config["vars"].update(update)
                     self.assertTrue(validate(service, config))
+
+    def test_requires_explicit_disabled_public_entry_points(self):
+        for service, original in self.configs.items():
+            for key in ("workers_dev", "preview_urls", "routes"):
+                with self.subTest(service=service, missing=key):
+                    config = copy.deepcopy(original)
+                    del config[key]
+                    self.assertTrue(validate(service, config))
+
+    def test_inventory_rejects_alternate_configs_without_reading_them(self):
+        self.assertEqual(inventory_errors(ROOT / "bridge"), [])
+        with tempfile.TemporaryDirectory() as temporary:
+            directory = Path(temporary)
+            for name in KNOWN_CONFIGS | {"README.md", "wrangler.toml.backup"}:
+                (directory / name).touch()
+            self.assertEqual(inventory_errors(directory), [])
+            for name in ("wrangler.toml", "wrangler.json", "wrangler.jsonc",
+                         "wrangler.production.toml", "wranglerread.toml",
+                         "Wrangler.TOML", "WRANGLER.TOML", "wrangler.JSON", "Wrangler.jsonc",
+                         "wrangler.production.jsonc", "wrangler.read.json"):
+                with self.subTest(name=name):
+                    path = directory / name
+                    path.mkdir()  # Naming alone rejects even an unreadable/non-file candidate.
+                    self.assertEqual(inventory_errors(directory),
+                                     [f"{name}: unreviewed Worker configuration"])
+                    path.rmdir()
+            self.assertTrue(inventory_errors(directory / "absent"))
+
+    def test_cli_fails_for_alternate_config_even_when_all_four_candidates_are_valid(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            directory = root / "bridge"
+            directory.mkdir()
+            for service in SERVICES:
+                name = f"wrangler.{service}.toml"
+                (directory / name).write_bytes((ROOT / "bridge" / name).read_bytes())
+            for relative in ("bridge/wrangler.json", "bridge/Wrangler.TOML",
+                             "bridge/wrangler.production.jsonc", "bridge/wrangler.read.json",
+                             "wrangler.toml", "WRANGLER.JSONC", "wrangler.read.toml",
+                             "bridge/.wrangler/deploy/config.json", ".wrangler/deploy/config.json"):
+                with self.subTest(relative=relative):
+                    alternate = root / relative
+                    alternate.parent.mkdir(parents=True, exist_ok=True)
+                    alternate.write_text('{}')
+                    errors = io.StringIO()
+                    with patch.object(check_bridge_configs, 'ROOT', root), \
+                            contextlib.redirect_stderr(errors), contextlib.redirect_stdout(io.StringIO()):
+                        self.assertEqual(check_bridge_configs.main(), 1)
+                        self.assertIn('unreviewed Worker configuration', errors.getvalue())
+                        alternate.unlink()
+                        self.assertEqual(check_bridge_configs.main(), 0)
 
 
 if __name__ == "__main__":

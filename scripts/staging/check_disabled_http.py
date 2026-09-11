@@ -8,6 +8,9 @@ Expectations: read_api.py, read_gateway.py, session_api.py, authenticated_api.py
 catalogue.py and the four contract models. No endpoint is enabled by this file.
 The new private cache policy intentionally fails against the earlier a5a855c
 installation until these listener changes are rolled out.
+The output describes HTTP observations, not installed source identity. Record
+the release's installed.json commit and a successful check_filesystem.py --commit
+result beside each run; see docs/STAGING_BACKEND_HANDOFF.md.
 """
 import hashlib
 import http.client

@@ -12,6 +12,8 @@ its remaining inputs.
 
 ## Producer packages
 
+**Installed a5 release** (`a5a855cec1fc5d120d9c1c187a84ff24bc1b02d6`):
+
 | Package | Version | Manifest SHA-256 |
 |---|---|---|
 | read-v1 | 1.1.0-rc.3 | `6429b5ac93993c6e6e7ecd0016cf9d389f18acab81e7a95a42b04ea3b7bcfcf3` |
@@ -19,10 +21,44 @@ its remaining inputs.
 | onboarding-v1 | 1.0.0 | `197c237cb9bd99bf8ec62fac635b1c17c9116eebca7bb3031778444275d43b76` |
 | deposit-v1 | 1.1.0-rc.4 | `9882865f162ab13ede22e3526eadfa84db9ec0a8c1ad85dffe97fb130bc218c0` |
 
+**Reviewed #75 candidate**, not installed: source
+`9b844c5208b8e411ed4873ac5a66384718fb56ff`, rebased as
+`d66df69f7af2debca4a1706ebc19827077187e6e` with these manifest bytes unchanged.
+The subsequent test-only correction
+`dd650fa4d755b9f93776eb48ce706a90dab8ea4b` also preserves these pins.
+
+| Package | Version | Candidate manifest SHA-256 |
+|---|---|---|
+| read-v1 | 1.1.0-rc.3 | `5429900843f60dee12e6d81793ea81f1ab3bedca32a492043b3f1e7f37dd964e` |
+| session-v1 | 3.0.0-rc.2 | `278d5fa3f3a6571c92e13e39bddc3e1b9091a8ad82e4b83aa534cc9e83decd42` |
+| onboarding-v1 | 1.0.0 | `2f6eb9f02b8cd2d06cddd4352e7db6fdae6b19bd7f2a91577a9ec15039b5d416` |
+| deposit-v1 | 1.1.0-rc.4 | `be0e22ddfb5b6ea437a88999c9d924013bb5128af13060bd2af6f28a803848df` |
+
 Pin the actual producer commit, package version and manifest together. These are
 the combined producer digests, not the different standalone manifests. Recheck
 them when a later source revision is selected for staging. Existing fixtures and
 portable validators are available now for frontend adapter and rendered tests.
+The candidate table is dated review evidence, not a moving alias for `main`;
+recompute the selected release's pins after any subsequent provenance change,
+including the later [OpenAPI follow-up #77](https://github.com/domino-money/domino/pull/77).
+
+For each `scripts/staging/check_disabled_http.py` run, archive its JSON and the
+installed commit from `/var/backups/domino-disabled/<commit>/installed.json` together
+with a passing `check_filesystem.py --commit <commit> --archive <source.tar>
+--archive-sha256 <sha256>` result using the independently verified release archive.
+Record the checker source commit separately if it differs. HTTP output intentionally names the
+observed header policy, not a release: responses alone cannot identify installed
+code. The private-listener smoke requires both cache directives but does not
+require their set to be exactly `{no-store, no-transform}`; this compatibility
+choice does not weaken identity-encoding, duplicate-header or body checks.
+
+The offline configuration inventory rejects alternate Wrangler filenames in
+`bridge/` and the repository root, including case variants, named JSON/JSONC
+files and `.wrangler/deploy/config.json` redirections. This is a repository
+inventory, not a complete model of CLI resolution outside the repository.
+Always select the reviewed file explicitly with
+`--config bridge/wrangler.<service>.toml`; do not rely on default/upward discovery
+or a generated redirect when deploying these candidates.
 
 ## Origin and route contract
 
