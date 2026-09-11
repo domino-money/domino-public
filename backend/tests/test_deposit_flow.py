@@ -99,13 +99,14 @@ class Reconciler:
             for key in ('nonceRaw', 'gasLimitRaw', 'maxFeePerGasRaw', 'maxPriorityFeePerGasRaw')},
             'selectedLimitsExceeded': []}
         gas = observed['receipt']['gas']
-        gas.update(effectiveGasPriceRaw='10', executionFeeRaw='1000000', totalFeeRaw='1000010')
+        gas.update(effectiveGasPriceRaw='10', grossGasFeeRaw='1000000', totalFeeRaw=None)
+        gas['l1FeeRaw'] = None if gas['l1GasUsedRaw'] is None else str(int(gas['l1GasUsedRaw'])*10)
         if self.mode in ('cancelled', 'superseded'):
             observed.update(state='mismatched', reason='transaction_mismatch',
                             transactionHash=REPLACEMENT_HASH, replacement=True, differentEffect=True,
                             cancellation=self.mode == 'cancelled')
             observed['receipt'].update(transactionHash=REPLACEMENT_HASH, mint=None, transaction=None)
-            gas.update(gasUsedRaw='21000', executionFeeRaw='210000', totalFeeRaw='210010')
+            gas.update(gasUsedRaw='21000', grossGasFeeRaw='210000', totalFeeRaw=None)
         return observed
 
 
@@ -189,7 +190,7 @@ class DepositFlowTests(unittest.TestCase):
         self.assertEqual(response.status_code, status, response.text)
         self.assertEqual(response.json(), {'error': code})
         self.assertEqual(response.headers['Cache-Control'], 'no-store')
-        self.assertEqual(response.headers['X-Domino-Deposit-Contract'], '1.1.0-rc.2')
+        self.assertEqual(response.headers['X-Domino-Deposit-Contract'], DEPOSIT_VERSION)
         self.assertNotIn('set-cookie', response.headers)
         for private in (PRIVATE, ASSERTION):
             self.assertNotIn(private, response.text)

@@ -17,7 +17,7 @@ function request(route='create',body,headers={},method='POST') {
 }
 function reply(data,status=200,headers={}) {
   return new Response(typeof data==='string'?data:JSON.stringify(data),{status,headers:{
-    'Content-Type':'application/json','X-Domino-Deposit-Contract':'1.1.0-rc.2',...headers}});
+    'Content-Type':'application/json','X-Domino-Deposit-Contract':'1.1.0-rc.3',...headers}});
 }
 function harness(implementation) {
   const calls=[];
@@ -33,7 +33,7 @@ test('all routes use isolated authenticated origin and closed responses',async t
     const response=await h.worker.fetch(request(route),ENV);
     assert.equal(response.status,200,route+': '+await response.clone().text());
     assert.equal(response.headers.get('cache-control'),'no-store');
-    assert.equal(response.headers.get('X-Domino-Deposit-Contract'),'1.1.0-rc.2');
+    assert.equal(response.headers.get('X-Domino-Deposit-Contract'),'1.1.0-rc.3');
     assert.equal(response.headers.has('Set-Cookie'),false);
     assert.equal(response.headers.has('Access-Control-Allow-Origin'),false);
   }
@@ -66,7 +66,7 @@ test('unknown fields, numeric lexemes, unsafe raw money and wrong version are re
     JSON.stringify({...body,selection:{...body.selection,budget0Raw:1000}}),'null','{"x":1,"x":2}','x'.repeat(8193)]) {
     assert.ok((await h.worker.fetch(request('create',raw),ENV)).status>=400);
   }
-  for (const version of ['1.0.0','2']) {
+  for (const version of ['1.0.0','1.1.0-rc.2','2']) {
     assert.equal((await h.worker.fetch(request('create',undefined,{'X-Domino-Deposit-Contract':version}),ENV)).status,502);
   }
   assert.equal(h.calls.length,0);

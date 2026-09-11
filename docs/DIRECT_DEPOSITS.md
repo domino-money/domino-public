@@ -1,10 +1,16 @@
-# Resumable owner-signed direct deposits — issue #40
+# Resumable owner-signed direct deposits — issues #40 and #42
 
-`deposit-v1` 1.1.0-rc.2 is a disabled backend/worker candidate for creating a position
+`deposit-v1` 1.1.0-rc.3 is a disabled backend/worker candidate for creating a position
 in an **existing**, admitted Robinhood Uniswap v4 pool. It follows the session
 and preview candidates in #39. Uniswap still calculates composition; Domino
 validates the exact wallet step, stores its identity and reconciles its result.
 The backend never signs or broadcasts a financial transaction.
+
+Issue #42 qualifies deployment/RPC assumptions and corrects the candidate's
+Nitro fee projection. This is an explicit coordinated **pre-release migration**
+from `1.1.0-rc.2` to `1.1.0-rc.3` of the disabled candidate. Producer, worker, schemas, validators, types and fixtures
+must move together; consumer acknowledgement is still required before
+integration. See the migration section below.
 
 The P1 combined producer uses session-v1 3.0.0-rc.2 with current wallet
 admission/generation, stable CSRF and read-only browser GET `/me`. Fresh private
@@ -12,15 +18,15 @@ checks remain required before and after provider work and before payload deliver
 Revocation/regrant invalidates the old cookie with `session_required`, including
 an in-flight preparation. If a nonce was already persisted, denial keeps that
 evidence; a freshly admitted login recovers the same effect. Migrations001–014
-are applied together in order. Deposit response version/fields remain rc.2
-at this composition step; Nitro and token-admission increments are separate
-following candidates requiring their own coordinated contract notices.
+are applied together in order. This composition preserves the rc.2 recovery and session guarantees and adds
+Nitro receipt fields as rc.3. Token admission remains a following candidate
+requiring its own coordinated contract notice.
 
 ## Browser contract and lifecycle
 
 All eight `/api/deposit/v1/{route}` routes use same-origin POST JSON, the existing
 HttpOnly SIWE cookie and current `X-Domino-CSRF`. The optional request version
-header must equal `X-Domino-Deposit-Contract: 1.1.0-rc.2`; it is always on responses.
+header must equal `X-Domino-Deposit-Contract: 1.1.0-rc.3`; it is always on responses.
 No bearer, owner, recipient, provider URL, calldata or signature is accepted in
 a browser request. Owner identity comes from the checked session.
 
@@ -71,13 +77,17 @@ pool identity, balances and allowances. The next step is one of:
 3. Approve the exact Permit2 amount to canonical PositionManager.
 4. Mint the selected position and route any native refund to the owner.
 
-Only the selected step is simulated and estimated. The transaction uses a
-20% buffer above estimated EVM gas within the owner's selected cap, plus the
-selected fee ceilings. Native headroom covers the planned native deposit,
-selected reserve and this step's maximum EVM execution fee. L1/data fee is not
-silently included in that bound; actual complete cost remains unavailable when
-the provider does not report its separate component. Native ETH and WETH are
-distinct identities. No wrapped-token substitution occurs.
+Only the selected step is simulated and estimated. On Robinhood's Nitro stack,
+`eth_estimateGas` bundles execution and data-posting gas. The transaction uses a
+20% buffer above that bundled estimate within the owner's selected gas cap,
+plus the selected fee ceilings. Native headroom covers the planned native
+deposit, selected reserve and `gasLimitRaw × maxFeePerGasRaw` for this step.
+Do not add a second L1/poster estimate to that bundled bound. An estimate and
+buffer do not guarantee inclusion or a future fee; fee-cap or gas-limit
+failures remain explicit. Native ETH and WETH are distinct identities. No
+wrapped-token substitution occurs. The [RPC qualification](../reports/DEPOSIT_RPC_QUALIFICATION.md)
+records the live estimate shapes and pinned Nitro source basis; ordinary local
+EVM estimates do not establish Robinhood's bundled costs.
 
 The wallet handoff is valid for at most 30 seconds. The mint's on-chain deadline
 is 120 seconds. Permit2 approvals last at most one hour, allowing separate
@@ -178,11 +188,29 @@ no successful revoke. Refresh the pinned read after the wallet reports a
 confirmed revoke. Never compute current exposure by subtracting mint amounts
 from a historical Approval event, or treat cancel/superseded as revoked.
 
-Receipt gas is `gasUsed × effectiveGasPrice`, with separate reported L1 fee and
-nullable complete total. Standard ERC20 deposits use matching transfer events.
-Native net deposit/refund cannot be established from whole-block balances and
-stays unavailable without an admitted tracing source. Actual mint liquidity and
-NFT identity remain separately verifiable. Original principal is never relabeled
+Receipt fee fields use the qualified Nitro gross model. Quantities are decimal
+integer strings; fee amounts are wei and gas usage is measured in gas units:
+
+| Field | Meaning |
+| --- | --- |
+| `gasUsedRaw` | Receipt gas usage, including charged poster gas and after ordinary EVM gas refunds |
+| `effectiveGasPriceRaw` | Receipt effective price per gas unit |
+| `grossGasFeeRaw` | `gasUsedRaw × effectiveGasPriceRaw`, before any separate ArbOS resource refund |
+| `l1GasUsedRaw` | Nullable observed `gasUsedForL1`, in child-chain gas units; bounded by `gasUsedRaw` |
+| `l1FeeRaw` | Nullable `l1GasUsedRaw × effectiveGasPriceRaw`; the charged poster component already included in `grossGasFeeRaw` |
+| `totalFeeRaw` | Always null in this candidate: exact net fees/refunds are not qualified |
+
+An explicit `gasUsedForL1: 0` produces known-zero L1 fields; an absent operand
+leaves both L1 fields null. An unrelated provider extension named `l1Fee` is not
+accepted as the source of `l1FeeRaw`. Never add `l1FeeRaw` to `grossGasFeeRaw` or
+present their difference as exact net execution cost. A missing resource-usage
+extension does not prove zero additional refund. Gross gas fee is not the
+complete net wallet charge. See the [source and receipt analysis](../reports/DEPOSIT_RPC_QUALIFICATION.md#pinned-nitro-receipt-semantics).
+
+Standard admitted ERC20 deposits use matching transfer events. Native net
+deposit/refund cannot be established from whole-block balances and stays
+unavailable without an admitted tracing source. Actual mint liquidity and NFT
+identity remain separately verifiable. Original principal is never relabeled
 as earned fees, and no automation service fee is collected by this flow.
 
 ## Error handling and bounds
@@ -303,6 +331,23 @@ readability or a successful simulation never qualifies a token for signing.
 Manifest claims require actual review; the file validator does not perform it.
 The loader requires an owned private regular file, no symlink/hardlink, 32 KiB max.
 
+The [deployment and token review](../reports/DEPOSIT_DEPLOYMENT_REVIEW.md)
+confirmed the canonical deployments and existing WETH/USDG and ETH/USDG pool
+identities, but found **both WETH and USDG are upgradeable proxies**. They do not
+meet today's `nonUpgradeable` requirement. A constant proxy code hash does not
+pin its implementation or mutable delegates. MARLIN/BAG/ZZZ also remain
+unqualified: the bounded review did not obtain sufficient source/semantics
+evidence. No production manifest was populated by that review.
+
+The [local-fork qualification](../reports/DEPOSIT_FORK_QUALIFICATION.md) separates
+protocol characterization from production eligibility. An explicitly controlled,
+in-memory test admission override can exercise deployed mint/approval mechanics
+behind the local-only fork transport, with a missing-manifest negative control.
+It exports no admission manifest and grants no production eligibility. Success
+under those test assumptions cannot qualify proxy immutability or Nitro net gas
+costs. Deployment/source, RPC/finality and token-admission evidence must all be
+assessed separately.
+
 The example Worker config has no deploying route and keeps
 `DEPOSIT_BRIDGE_ENABLED=false`, workers.dev and preview URLs disabled. Proposed
 `deposit-origin.domino.money` is not provisioned. Eventual secrets are
@@ -312,8 +357,35 @@ The example Worker config has no deploying route and keeps
 Before activation: acknowledge the exact contract/digest with OxDecimal, test
 actual frontend hooks and wallet behavior, qualify admitted Robinhood contracts/tokens,
 complete independent execution review, and validate HTTPS/Cloudflare staging.
-Credentials for domino.money remain deferred. Local EVM fixtures are synthetic
-contracts and do not qualify mainnet deployments.
+Credentials for domino.money remain deferred. Synthetic EVM fixtures and
+controlled local-fork execution do not establish production admission.
+
+## Issue #42 candidate migration
+
+The receipt projection changes are breaking within the development candidate:
+`executionFeeRaw` is removed in favor of `grossGasFeeRaw`; `l1GasUsedRaw` is
+introduced; `l1FeeRaw` now requires the observed Nitro poster-gas operand and is
+an included component; `totalFeeRaw` is restricted to null. The route/header
+version changes from `1.1.0-rc.2` to `1.1.0-rc.3`; the previous candidate
+header is rejected. Pin the version and exact package manifest together.
+
+Update the producer, BFF, exported schemas/types/runtime validators and fixtures
+as one candidate, regenerate the package manifest, and communicate the exact
+commit/digest and field changes under [API compatibility](API_COMPATIBILITY.md).
+OxDecimal must acknowledge the corrected contract and affected receipt rendering
+before frontend integration or activation; silence is not acknowledgement.
+Read/session/onboarding contracts and frontend hooks are unchanged by this
+backend migration. Future changes to a released contract follow the normal
+version/overlap policy including explicit new version identifiers.
+
+Existing private receipt evidence is preserved. Summary projection recomputes
+gross gas from stored raw usage and price; old `executionFeeRaw`, standalone L1
+values and additive totals are not reinterpreted as qualified costs. Records
+without the new observed poster-gas operand return null L1 fields, and all
+summaries retain null net totals. The migration does not rewrite historical
+receipts, clear issued nonces or require reissuing a wallet transaction. The
+historical issue #41 implementation report remains a record of that earlier
+candidate; the issue #42 qualification reports describe the correction.
 
 Rollback disables the worker/listener and restores matching API builds while
 preserving operation/nonce/receipt evidence. Disabling a service does not cancel

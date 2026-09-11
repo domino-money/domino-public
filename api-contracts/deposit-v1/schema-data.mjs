@@ -19,7 +19,7 @@ export const SCHEMAS = {
       ],
       "title": "GetRequest",
       "type": "object",
-      "x-contract-version": "1.1.0-rc.2",
+      "x-contract-version": "1.1.0-rc.3",
       "x-domino-constraints": [
         "Closed strict fields, exact raw integer strings, safe integer selectors.",
         "SIWE-derived owner; no browser-selected recipient or provider.",
@@ -747,12 +747,6 @@ export const SCHEMAS = {
               "title": "Effectivegaspriceraw",
               "type": "string"
             },
-            "executionFeeRaw": {
-              "maxLength": 78,
-              "pattern": "^(0|[1-9][0-9]{0,77})$",
-              "title": "Executionfeeraw",
-              "type": "string"
-            },
             "finality": {
               "enum": [
                 "finalized",
@@ -768,6 +762,12 @@ export const SCHEMAS = {
               "title": "Gasusedraw",
               "type": "string"
             },
+            "grossGasFeeRaw": {
+              "maxLength": 78,
+              "pattern": "^(0|[1-9][0-9]{0,77})$",
+              "title": "Grossgasfeeraw",
+              "type": "string"
+            },
             "l1FeeRaw": {
               "anyOf": [
                 {
@@ -780,6 +780,19 @@ export const SCHEMAS = {
                 }
               ],
               "title": "L1Feeraw"
+            },
+            "l1GasUsedRaw": {
+              "anyOf": [
+                {
+                  "maxLength": 78,
+                  "pattern": "^(0|[1-9][0-9]{0,77})$",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "L1Gasusedraw"
             },
             "outcome": {
               "enum": [
@@ -800,17 +813,8 @@ export const SCHEMAS = {
               ]
             },
             "totalFeeRaw": {
-              "anyOf": [
-                {
-                  "maxLength": 78,
-                  "pattern": "^(0|[1-9][0-9]{0,77})$",
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Totalfeeraw"
+              "title": "Totalfeeraw",
+              "type": "null"
             },
             "transaction": {
               "anyOf": [
@@ -838,7 +842,8 @@ export const SCHEMAS = {
             "finality",
             "gasUsedRaw",
             "effectiveGasPriceRaw",
-            "executionFeeRaw",
+            "grossGasFeeRaw",
+            "l1GasUsedRaw",
             "l1FeeRaw",
             "totalFeeRaw",
             "position",
@@ -1133,7 +1138,7 @@ export const SCHEMAS = {
           "type": "boolean"
         },
         "contractVersion": {
-          "const": "1.1.0-rc.2",
+          "const": "1.1.0-rc.3",
           "title": "Contractversion",
           "type": "string"
         },
@@ -1166,7 +1171,7 @@ export const SCHEMAS = {
       ],
       "title": "AllowanceResponse",
       "type": "object",
-      "x-contract-version": "1.1.0-rc.2",
+      "x-contract-version": "1.1.0-rc.3",
       "x-domino-constraints": [
         "Closed strict fields, exact raw integer strings, safe integer selectors.",
         "SIWE-derived owner; no browser-selected recipient or provider.",
@@ -1203,7 +1208,7 @@ export const SCHEMAS = {
       ],
       "title": "ChangeRequest",
       "type": "object",
-      "x-contract-version": "1.1.0-rc.2",
+      "x-contract-version": "1.1.0-rc.3",
       "x-domino-constraints": [
         "Closed strict fields, exact raw integer strings, safe integer selectors.",
         "SIWE-derived owner; no browser-selected recipient or provider.",
@@ -1806,12 +1811,6 @@ export const SCHEMAS = {
               "title": "Effectivegaspriceraw",
               "type": "string"
             },
-            "executionFeeRaw": {
-              "maxLength": 78,
-              "pattern": "^(0|[1-9][0-9]{0,77})$",
-              "title": "Executionfeeraw",
-              "type": "string"
-            },
             "finality": {
               "enum": [
                 "finalized",
@@ -1827,6 +1826,12 @@ export const SCHEMAS = {
               "title": "Gasusedraw",
               "type": "string"
             },
+            "grossGasFeeRaw": {
+              "maxLength": 78,
+              "pattern": "^(0|[1-9][0-9]{0,77})$",
+              "title": "Grossgasfeeraw",
+              "type": "string"
+            },
             "l1FeeRaw": {
               "anyOf": [
                 {
@@ -1839,6 +1844,19 @@ export const SCHEMAS = {
                 }
               ],
               "title": "L1Feeraw"
+            },
+            "l1GasUsedRaw": {
+              "anyOf": [
+                {
+                  "maxLength": 78,
+                  "pattern": "^(0|[1-9][0-9]{0,77})$",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "L1Gasusedraw"
             },
             "outcome": {
               "enum": [
@@ -1859,17 +1877,8 @@ export const SCHEMAS = {
               ]
             },
             "totalFeeRaw": {
-              "anyOf": [
-                {
-                  "maxLength": 78,
-                  "pattern": "^(0|[1-9][0-9]{0,77})$",
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Totalfeeraw"
+              "title": "Totalfeeraw",
+              "type": "null"
             },
             "transaction": {
               "anyOf": [
@@ -1897,7 +1906,8 @@ export const SCHEMAS = {
             "finality",
             "gasUsedRaw",
             "effectiveGasPriceRaw",
-            "executionFeeRaw",
+            "grossGasFeeRaw",
+            "l1GasUsedRaw",
             "l1FeeRaw",
             "totalFeeRaw",
             "position",
@@ -2189,7 +2199,7 @@ export const SCHEMAS = {
           "type": "boolean"
         },
         "contractVersion": {
-          "const": "1.1.0-rc.2",
+          "const": "1.1.0-rc.3",
           "title": "Contractversion",
           "type": "string"
         },
@@ -2221,7 +2231,7 @@ export const SCHEMAS = {
       ],
       "title": "OperationResponse",
       "type": "object",
-      "x-contract-version": "1.1.0-rc.2",
+      "x-contract-version": "1.1.0-rc.3",
       "x-domino-constraints": [
         "Closed strict fields, exact raw integer strings, safe integer selectors.",
         "SIWE-derived owner; no browser-selected recipient or provider.",
@@ -2410,7 +2420,7 @@ export const SCHEMAS = {
       ],
       "title": "CreateRequest",
       "type": "object",
-      "x-contract-version": "1.1.0-rc.2",
+      "x-contract-version": "1.1.0-rc.3",
       "x-domino-constraints": [
         "Closed strict fields, exact raw integer strings, safe integer selectors.",
         "SIWE-derived owner; no browser-selected recipient or provider.",
@@ -3013,12 +3023,6 @@ export const SCHEMAS = {
               "title": "Effectivegaspriceraw",
               "type": "string"
             },
-            "executionFeeRaw": {
-              "maxLength": 78,
-              "pattern": "^(0|[1-9][0-9]{0,77})$",
-              "title": "Executionfeeraw",
-              "type": "string"
-            },
             "finality": {
               "enum": [
                 "finalized",
@@ -3034,6 +3038,12 @@ export const SCHEMAS = {
               "title": "Gasusedraw",
               "type": "string"
             },
+            "grossGasFeeRaw": {
+              "maxLength": 78,
+              "pattern": "^(0|[1-9][0-9]{0,77})$",
+              "title": "Grossgasfeeraw",
+              "type": "string"
+            },
             "l1FeeRaw": {
               "anyOf": [
                 {
@@ -3046,6 +3056,19 @@ export const SCHEMAS = {
                 }
               ],
               "title": "L1Feeraw"
+            },
+            "l1GasUsedRaw": {
+              "anyOf": [
+                {
+                  "maxLength": 78,
+                  "pattern": "^(0|[1-9][0-9]{0,77})$",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "L1Gasusedraw"
             },
             "outcome": {
               "enum": [
@@ -3066,17 +3089,8 @@ export const SCHEMAS = {
               ]
             },
             "totalFeeRaw": {
-              "anyOf": [
-                {
-                  "maxLength": 78,
-                  "pattern": "^(0|[1-9][0-9]{0,77})$",
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Totalfeeraw"
+              "title": "Totalfeeraw",
+              "type": "null"
             },
             "transaction": {
               "anyOf": [
@@ -3104,7 +3118,8 @@ export const SCHEMAS = {
             "finality",
             "gasUsedRaw",
             "effectiveGasPriceRaw",
-            "executionFeeRaw",
+            "grossGasFeeRaw",
+            "l1GasUsedRaw",
             "l1FeeRaw",
             "totalFeeRaw",
             "position",
@@ -3396,7 +3411,7 @@ export const SCHEMAS = {
           "type": "boolean"
         },
         "contractVersion": {
-          "const": "1.1.0-rc.2",
+          "const": "1.1.0-rc.3",
           "title": "Contractversion",
           "type": "string"
         },
@@ -3428,7 +3443,7 @@ export const SCHEMAS = {
       ],
       "title": "OperationResponse",
       "type": "object",
-      "x-contract-version": "1.1.0-rc.2",
+      "x-contract-version": "1.1.0-rc.3",
       "x-domino-constraints": [
         "Closed strict fields, exact raw integer strings, safe integer selectors.",
         "SIWE-derived owner; no browser-selected recipient or provider.",
@@ -3458,7 +3473,7 @@ export const SCHEMAS = {
       ],
       "title": "GetRequest",
       "type": "object",
-      "x-contract-version": "1.1.0-rc.2",
+      "x-contract-version": "1.1.0-rc.3",
       "x-domino-constraints": [
         "Closed strict fields, exact raw integer strings, safe integer selectors.",
         "SIWE-derived owner; no browser-selected recipient or provider.",
@@ -4061,12 +4076,6 @@ export const SCHEMAS = {
               "title": "Effectivegaspriceraw",
               "type": "string"
             },
-            "executionFeeRaw": {
-              "maxLength": 78,
-              "pattern": "^(0|[1-9][0-9]{0,77})$",
-              "title": "Executionfeeraw",
-              "type": "string"
-            },
             "finality": {
               "enum": [
                 "finalized",
@@ -4082,6 +4091,12 @@ export const SCHEMAS = {
               "title": "Gasusedraw",
               "type": "string"
             },
+            "grossGasFeeRaw": {
+              "maxLength": 78,
+              "pattern": "^(0|[1-9][0-9]{0,77})$",
+              "title": "Grossgasfeeraw",
+              "type": "string"
+            },
             "l1FeeRaw": {
               "anyOf": [
                 {
@@ -4094,6 +4109,19 @@ export const SCHEMAS = {
                 }
               ],
               "title": "L1Feeraw"
+            },
+            "l1GasUsedRaw": {
+              "anyOf": [
+                {
+                  "maxLength": 78,
+                  "pattern": "^(0|[1-9][0-9]{0,77})$",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "L1Gasusedraw"
             },
             "outcome": {
               "enum": [
@@ -4114,17 +4142,8 @@ export const SCHEMAS = {
               ]
             },
             "totalFeeRaw": {
-              "anyOf": [
-                {
-                  "maxLength": 78,
-                  "pattern": "^(0|[1-9][0-9]{0,77})$",
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Totalfeeraw"
+              "title": "Totalfeeraw",
+              "type": "null"
             },
             "transaction": {
               "anyOf": [
@@ -4152,7 +4171,8 @@ export const SCHEMAS = {
             "finality",
             "gasUsedRaw",
             "effectiveGasPriceRaw",
-            "executionFeeRaw",
+            "grossGasFeeRaw",
+            "l1GasUsedRaw",
             "l1FeeRaw",
             "totalFeeRaw",
             "position",
@@ -4444,7 +4464,7 @@ export const SCHEMAS = {
           "type": "boolean"
         },
         "contractVersion": {
-          "const": "1.1.0-rc.2",
+          "const": "1.1.0-rc.3",
           "title": "Contractversion",
           "type": "string"
         },
@@ -4476,7 +4496,7 @@ export const SCHEMAS = {
       ],
       "title": "OperationResponse",
       "type": "object",
-      "x-contract-version": "1.1.0-rc.2",
+      "x-contract-version": "1.1.0-rc.3",
       "x-domino-constraints": [
         "Closed strict fields, exact raw integer strings, safe integer selectors.",
         "SIWE-derived owner; no browser-selected recipient or provider.",
@@ -4518,7 +4538,7 @@ export const SCHEMAS = {
       },
       "title": "ListRequest",
       "type": "object",
-      "x-contract-version": "1.1.0-rc.2",
+      "x-contract-version": "1.1.0-rc.3",
       "x-domino-constraints": [
         "Closed strict fields, exact raw integer strings, safe integer selectors.",
         "SIWE-derived owner; no browser-selected recipient or provider.",
@@ -4978,12 +4998,6 @@ export const SCHEMAS = {
               "title": "Effectivegaspriceraw",
               "type": "string"
             },
-            "executionFeeRaw": {
-              "maxLength": 78,
-              "pattern": "^(0|[1-9][0-9]{0,77})$",
-              "title": "Executionfeeraw",
-              "type": "string"
-            },
             "finality": {
               "enum": [
                 "finalized",
@@ -4999,6 +5013,12 @@ export const SCHEMAS = {
               "title": "Gasusedraw",
               "type": "string"
             },
+            "grossGasFeeRaw": {
+              "maxLength": 78,
+              "pattern": "^(0|[1-9][0-9]{0,77})$",
+              "title": "Grossgasfeeraw",
+              "type": "string"
+            },
             "l1FeeRaw": {
               "anyOf": [
                 {
@@ -5011,6 +5031,19 @@ export const SCHEMAS = {
                 }
               ],
               "title": "L1Feeraw"
+            },
+            "l1GasUsedRaw": {
+              "anyOf": [
+                {
+                  "maxLength": 78,
+                  "pattern": "^(0|[1-9][0-9]{0,77})$",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "L1Gasusedraw"
             },
             "outcome": {
               "enum": [
@@ -5031,17 +5064,8 @@ export const SCHEMAS = {
               ]
             },
             "totalFeeRaw": {
-              "anyOf": [
-                {
-                  "maxLength": 78,
-                  "pattern": "^(0|[1-9][0-9]{0,77})$",
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Totalfeeraw"
+              "title": "Totalfeeraw",
+              "type": "null"
             },
             "transaction": {
               "anyOf": [
@@ -5069,7 +5093,8 @@ export const SCHEMAS = {
             "finality",
             "gasUsedRaw",
             "effectiveGasPriceRaw",
-            "executionFeeRaw",
+            "grossGasFeeRaw",
+            "l1GasUsedRaw",
             "l1FeeRaw",
             "totalFeeRaw",
             "position",
@@ -5249,7 +5274,7 @@ export const SCHEMAS = {
           "type": "boolean"
         },
         "contractVersion": {
-          "const": "1.1.0-rc.2",
+          "const": "1.1.0-rc.3",
           "title": "Contractversion",
           "type": "string"
         },
@@ -5295,7 +5320,7 @@ export const SCHEMAS = {
       ],
       "title": "ListResponse",
       "type": "object",
-      "x-contract-version": "1.1.0-rc.2",
+      "x-contract-version": "1.1.0-rc.3",
       "x-domino-constraints": [
         "Closed strict fields, exact raw integer strings, safe integer selectors.",
         "SIWE-derived owner; no browser-selected recipient or provider.",
@@ -5332,7 +5357,7 @@ export const SCHEMAS = {
       ],
       "title": "ChangeRequest",
       "type": "object",
-      "x-contract-version": "1.1.0-rc.2",
+      "x-contract-version": "1.1.0-rc.3",
       "x-domino-constraints": [
         "Closed strict fields, exact raw integer strings, safe integer selectors.",
         "SIWE-derived owner; no browser-selected recipient or provider.",
@@ -5935,12 +5960,6 @@ export const SCHEMAS = {
               "title": "Effectivegaspriceraw",
               "type": "string"
             },
-            "executionFeeRaw": {
-              "maxLength": 78,
-              "pattern": "^(0|[1-9][0-9]{0,77})$",
-              "title": "Executionfeeraw",
-              "type": "string"
-            },
             "finality": {
               "enum": [
                 "finalized",
@@ -5956,6 +5975,12 @@ export const SCHEMAS = {
               "title": "Gasusedraw",
               "type": "string"
             },
+            "grossGasFeeRaw": {
+              "maxLength": 78,
+              "pattern": "^(0|[1-9][0-9]{0,77})$",
+              "title": "Grossgasfeeraw",
+              "type": "string"
+            },
             "l1FeeRaw": {
               "anyOf": [
                 {
@@ -5968,6 +5993,19 @@ export const SCHEMAS = {
                 }
               ],
               "title": "L1Feeraw"
+            },
+            "l1GasUsedRaw": {
+              "anyOf": [
+                {
+                  "maxLength": 78,
+                  "pattern": "^(0|[1-9][0-9]{0,77})$",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "L1Gasusedraw"
             },
             "outcome": {
               "enum": [
@@ -5988,17 +6026,8 @@ export const SCHEMAS = {
               ]
             },
             "totalFeeRaw": {
-              "anyOf": [
-                {
-                  "maxLength": 78,
-                  "pattern": "^(0|[1-9][0-9]{0,77})$",
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Totalfeeraw"
+              "title": "Totalfeeraw",
+              "type": "null"
             },
             "transaction": {
               "anyOf": [
@@ -6026,7 +6055,8 @@ export const SCHEMAS = {
             "finality",
             "gasUsedRaw",
             "effectiveGasPriceRaw",
-            "executionFeeRaw",
+            "grossGasFeeRaw",
+            "l1GasUsedRaw",
             "l1FeeRaw",
             "totalFeeRaw",
             "position",
@@ -6318,7 +6348,7 @@ export const SCHEMAS = {
           "type": "boolean"
         },
         "contractVersion": {
-          "const": "1.1.0-rc.2",
+          "const": "1.1.0-rc.3",
           "title": "Contractversion",
           "type": "string"
         },
@@ -6350,7 +6380,7 @@ export const SCHEMAS = {
       ],
       "title": "OperationResponse",
       "type": "object",
-      "x-contract-version": "1.1.0-rc.2",
+      "x-contract-version": "1.1.0-rc.3",
       "x-domino-constraints": [
         "Closed strict fields, exact raw integer strings, safe integer selectors.",
         "SIWE-derived owner; no browser-selected recipient or provider.",
@@ -6387,7 +6417,7 @@ export const SCHEMAS = {
       ],
       "title": "ChangeRequest",
       "type": "object",
-      "x-contract-version": "1.1.0-rc.2",
+      "x-contract-version": "1.1.0-rc.3",
       "x-domino-constraints": [
         "Closed strict fields, exact raw integer strings, safe integer selectors.",
         "SIWE-derived owner; no browser-selected recipient or provider.",
@@ -6990,12 +7020,6 @@ export const SCHEMAS = {
               "title": "Effectivegaspriceraw",
               "type": "string"
             },
-            "executionFeeRaw": {
-              "maxLength": 78,
-              "pattern": "^(0|[1-9][0-9]{0,77})$",
-              "title": "Executionfeeraw",
-              "type": "string"
-            },
             "finality": {
               "enum": [
                 "finalized",
@@ -7011,6 +7035,12 @@ export const SCHEMAS = {
               "title": "Gasusedraw",
               "type": "string"
             },
+            "grossGasFeeRaw": {
+              "maxLength": 78,
+              "pattern": "^(0|[1-9][0-9]{0,77})$",
+              "title": "Grossgasfeeraw",
+              "type": "string"
+            },
             "l1FeeRaw": {
               "anyOf": [
                 {
@@ -7023,6 +7053,19 @@ export const SCHEMAS = {
                 }
               ],
               "title": "L1Feeraw"
+            },
+            "l1GasUsedRaw": {
+              "anyOf": [
+                {
+                  "maxLength": 78,
+                  "pattern": "^(0|[1-9][0-9]{0,77})$",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "L1Gasusedraw"
             },
             "outcome": {
               "enum": [
@@ -7043,17 +7086,8 @@ export const SCHEMAS = {
               ]
             },
             "totalFeeRaw": {
-              "anyOf": [
-                {
-                  "maxLength": 78,
-                  "pattern": "^(0|[1-9][0-9]{0,77})$",
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Totalfeeraw"
+              "title": "Totalfeeraw",
+              "type": "null"
             },
             "transaction": {
               "anyOf": [
@@ -7081,7 +7115,8 @@ export const SCHEMAS = {
             "finality",
             "gasUsedRaw",
             "effectiveGasPriceRaw",
-            "executionFeeRaw",
+            "grossGasFeeRaw",
+            "l1GasUsedRaw",
             "l1FeeRaw",
             "totalFeeRaw",
             "position",
@@ -7373,7 +7408,7 @@ export const SCHEMAS = {
           "type": "boolean"
         },
         "contractVersion": {
-          "const": "1.1.0-rc.2",
+          "const": "1.1.0-rc.3",
           "title": "Contractversion",
           "type": "string"
         },
@@ -7405,7 +7440,7 @@ export const SCHEMAS = {
       ],
       "title": "OperationResponse",
       "type": "object",
-      "x-contract-version": "1.1.0-rc.2",
+      "x-contract-version": "1.1.0-rc.3",
       "x-domino-constraints": [
         "Closed strict fields, exact raw integer strings, safe integer selectors.",
         "SIWE-derived owner; no browser-selected recipient or provider.",
@@ -7450,7 +7485,7 @@ export const SCHEMAS = {
       ],
       "title": "ReportRequest",
       "type": "object",
-      "x-contract-version": "1.1.0-rc.2",
+      "x-contract-version": "1.1.0-rc.3",
       "x-domino-constraints": [
         "Closed strict fields, exact raw integer strings, safe integer selectors.",
         "SIWE-derived owner; no browser-selected recipient or provider.",
@@ -8053,12 +8088,6 @@ export const SCHEMAS = {
               "title": "Effectivegaspriceraw",
               "type": "string"
             },
-            "executionFeeRaw": {
-              "maxLength": 78,
-              "pattern": "^(0|[1-9][0-9]{0,77})$",
-              "title": "Executionfeeraw",
-              "type": "string"
-            },
             "finality": {
               "enum": [
                 "finalized",
@@ -8074,6 +8103,12 @@ export const SCHEMAS = {
               "title": "Gasusedraw",
               "type": "string"
             },
+            "grossGasFeeRaw": {
+              "maxLength": 78,
+              "pattern": "^(0|[1-9][0-9]{0,77})$",
+              "title": "Grossgasfeeraw",
+              "type": "string"
+            },
             "l1FeeRaw": {
               "anyOf": [
                 {
@@ -8086,6 +8121,19 @@ export const SCHEMAS = {
                 }
               ],
               "title": "L1Feeraw"
+            },
+            "l1GasUsedRaw": {
+              "anyOf": [
+                {
+                  "maxLength": 78,
+                  "pattern": "^(0|[1-9][0-9]{0,77})$",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "L1Gasusedraw"
             },
             "outcome": {
               "enum": [
@@ -8106,17 +8154,8 @@ export const SCHEMAS = {
               ]
             },
             "totalFeeRaw": {
-              "anyOf": [
-                {
-                  "maxLength": 78,
-                  "pattern": "^(0|[1-9][0-9]{0,77})$",
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Totalfeeraw"
+              "title": "Totalfeeraw",
+              "type": "null"
             },
             "transaction": {
               "anyOf": [
@@ -8144,7 +8183,8 @@ export const SCHEMAS = {
             "finality",
             "gasUsedRaw",
             "effectiveGasPriceRaw",
-            "executionFeeRaw",
+            "grossGasFeeRaw",
+            "l1GasUsedRaw",
             "l1FeeRaw",
             "totalFeeRaw",
             "position",
@@ -8436,7 +8476,7 @@ export const SCHEMAS = {
           "type": "boolean"
         },
         "contractVersion": {
-          "const": "1.1.0-rc.2",
+          "const": "1.1.0-rc.3",
           "title": "Contractversion",
           "type": "string"
         },
@@ -8468,7 +8508,7 @@ export const SCHEMAS = {
       ],
       "title": "OperationResponse",
       "type": "object",
-      "x-contract-version": "1.1.0-rc.2",
+      "x-contract-version": "1.1.0-rc.3",
       "x-domino-constraints": [
         "Closed strict fields, exact raw integer strings, safe integer selectors.",
         "SIWE-derived owner; no browser-selected recipient or provider.",

@@ -4,6 +4,9 @@ The LP adapter supplies the liquidity composition. This module checks identities
 spending caps and state; it contains no liquidity or dependent-amount formula.
 Review evidence is trusted operator input, not inferred from token metadata or a
 successful simulation. Code hashes alone do not prove ERC20 semantics.
+The #42 deployment review found canonical WETH and USDG are upgradeable proxies;
+neither meets this policy's nonUpgradeable claim. Local-fork test admission is
+not a production review or authorization to populate a manifest.
 
 Primary interface references (deployment evidence must still be reviewed):
 https://developers.uniswap.org/docs/protocols/v4/deployments
@@ -268,8 +271,9 @@ class DirectDepositPreparer:
                     'data': calldata('approve(address,address,uint160,uint48)',
                         ['address', 'address', 'uint160', 'uint48'], [token, POSITION_MANAGER, cap, deadline])}
                 break
-        # Sign only selected fee ceilings. The maximum covers EVM execution;
-        # an L1/data fee is not inferred or silently represented as zero.
+        # Sign only selected fee ceilings. On qualified Robinhood Nitro,
+        # eth_estimateGas bundles execution and charged L1/poster gas. Do not
+        # add a second poster estimate; see DEPOSIT_RPC_QUALIFICATION.md.
         max_fee, priority = int(selected['maxFeePerGasRaw']), int(selected['maxPriorityFeePerGasRaw'])
         if max_fee < base_fee + priority:
             raise DataError('deposit_fee_cap')
@@ -284,6 +288,9 @@ class DirectDepositPreparer:
         gas_limit = (estimate * 120 + 99) // 100
         if not estimate <= gas_limit <= max_gas:
             raise DataError('deposit_gas_cap')
+        # Reserve this step's bundled gross gas ceiling, not a claimed net fee.
+        # Additional ArbOS refunds remain unqualified; receipt totalFeeRaw stays
+        # null even when grossGasFeeRaw and an included l1FeeRaw are available.
         if native < int(bounds['nativeValueRaw']) + int(selected['nativeGasReserveRaw']) + gas_limit * max_fee:
             raise DataError('deposit_native_headroom')
         tx['gasLimitRaw'] = str(gas_limit)

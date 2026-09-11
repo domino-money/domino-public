@@ -1,0 +1,882 @@
+{
+  "schemaVersion": "1.0.0",
+  "mode": "read_only_deployment_and_token_review",
+  "source": "configured_product_readonly_rpc_no_endpoint_retained",
+  "chainId": 4663,
+  "block": {
+    "number": "0x38e95d9",
+    "hash": "0x555260f7a9698a6bf555a089f956d05fae853123edefd4a40e412328134604d0",
+    "timestamp": "0x6aa30dce",
+    "numberDecimal": 59676121,
+    "timestampUtc": "2026-09-10T20:06:38+00:00"
+  },
+  "contracts": {
+    "WETH": {
+      "address": "0x0bd7d308f8e1639fab988df18a8011f41eacad73",
+      "runtimeBytes": 2202,
+      "runtimeCodeHash": "0x5706be52f64875fee65a2cec0d80e47a23d8793cbe85d214b48445e2d05f5353",
+      "eip1967Slots": {
+        "implementation": "0x000000000000000000000000c6b81b429797e0f555440b70cd99e032d7ae947e",
+        "admin": "0x000000000000000000000000a3acd31afb851b4eb9dad00f5204c01d924267df",
+        "beacon": "0x0000000000000000000000000000000000000000000000000000000000000000"
+      },
+      "minimalProxy": false,
+      "metadataRead": {
+        "symbol": [
+          "WETH"
+        ],
+        "decimals": [
+          18
+        ]
+      },
+      "readOnlySimulation": {
+        "approve(address,uint256)": {
+          "resultRaw": "0x0000000000000000000000000000000000000000000000000000000000000001",
+          "persisted": false
+        },
+        "transfer(address,uint256)": {
+          "resultRaw": "0x0000000000000000000000000000000000000000000000000000000000000001",
+          "persisted": false
+        }
+      },
+      "sourceVerification": {
+        "source": "https://sourcify.dev/server/v2/contract/4663/0x0bd7d308f8e1639fab988df18a8011f41eacad73?fields=all",
+        "runtimeMatch": "exact_match",
+        "creationMatch": null,
+        "verifiedAt": "2026-09-01T15:48:52Z",
+        "compilerVersion": "0.8.16+commit.07a7930e",
+        "contractName": "TransparentUpgradeableProxy",
+        "fullyQualifiedName": "@openzeppelin/contracts/proxy/transparent/TransparentUpgradeableProxy.sol:TransparentUpgradeableProxy",
+        "compilerSettings": {
+          "optimizer": {
+            "runs": 100,
+            "enabled": true
+          },
+          "viaIR": null,
+          "evmVersion": "london",
+          "metadata": {
+            "bytecodeHash": "ipfs",
+            "useLiteralContent": true
+          }
+        },
+        "sourcifyObservedRuntimeEqualsPinnedRpc": true,
+        "recompiledRuntimeExactlyEqualsPinnedRpc": true,
+        "sourceFiles": []
+      }
+    },
+    "USDG": {
+      "address": "0x5fc5360d0400a0fd4f2af552add042d716f1d168",
+      "runtimeBytes": 170,
+      "runtimeCodeHash": "0x864cc9ad53b338b82da1f7cab85ab0b3d5c8861acb422b6fec63cf36234f36a6",
+      "eip1967Slots": {
+        "implementation": "0x00000000000000000000000068184c449e1a8f34fa18d289737129fd27b66f8f",
+        "admin": "0x0000000000000000000000000000000000000000000000000000000000000000",
+        "beacon": "0x0000000000000000000000000000000000000000000000000000000000000000"
+      },
+      "minimalProxy": false,
+      "metadataRead": {
+        "symbol": [
+          "USDG"
+        ],
+        "decimals": [
+          6
+        ]
+      },
+      "readOnlySimulation": {
+        "approve(address,uint256)": {
+          "resultRaw": "0x0000000000000000000000000000000000000000000000000000000000000001",
+          "persisted": false
+        },
+        "transfer(address,uint256)": {
+          "resultRaw": "0x0000000000000000000000000000000000000000000000000000000000000001",
+          "persisted": false
+        }
+      },
+      "sourceVerification": {
+        "source": "https://sourcify.dev/server/v2/contract/4663/0x5fc5360d0400a0fd4f2af552add042d716f1d168?fields=all",
+        "runtimeMatch": "match",
+        "creationMatch": null,
+        "verifiedAt": "2026-09-01T15:45:42Z",
+        "compilerVersion": "0.8.30+commit.73712a01",
+        "contractName": "ERC1155CollectionProxy",
+        "fullyQualifiedName": "contracts/Erc1155/ERC1155CollectionProxy.sol:ERC1155CollectionProxy",
+        "compilerSettings": {
+          "optimizer": {
+            "runs": 200,
+            "enabled": true
+          },
+          "viaIR": null,
+          "evmVersion": "paris",
+          "metadata": null
+        },
+        "sourcifyObservedRuntimeEqualsPinnedRpc": true,
+        "recompiledRuntimeExactlyEqualsPinnedRpc": false,
+        "sourceFiles": []
+      }
+    },
+    "MARLIN": {
+      "address": "0xab35d04e1ee39c789c4a65d522417b3c7f2e4723",
+      "runtimeBytes": 3248,
+      "runtimeCodeHash": "0xe6abae219423b67e5d0449b963f961aba48608000a56c50c04a2cab5249a0ada",
+      "eip1967Slots": {
+        "implementation": "0x0000000000000000000000000000000000000000000000000000000000000000",
+        "admin": "0x0000000000000000000000000000000000000000000000000000000000000000",
+        "beacon": "0x0000000000000000000000000000000000000000000000000000000000000000"
+      },
+      "minimalProxy": false,
+      "metadataRead": {
+        "symbol": [
+          "MARLIN"
+        ],
+        "decimals": [
+          18
+        ]
+      },
+      "readOnlySimulation": {
+        "approve(address,uint256)": {
+          "resultRaw": "0x0000000000000000000000000000000000000000000000000000000000000001",
+          "persisted": false
+        },
+        "transfer(address,uint256)": {
+          "resultRaw": "0x0000000000000000000000000000000000000000000000000000000000000001",
+          "persisted": false
+        }
+      }
+    },
+    "BAG": {
+      "address": "0x792ff19204ef6c756b4d8efe2441d050f5ece818",
+      "runtimeBytes": 3248,
+      "runtimeCodeHash": "0x5aff554209d625c32d4c7b768bbfa4db78c2ca51da59808a00acbe55c6660a0e",
+      "eip1967Slots": {
+        "implementation": "0x0000000000000000000000000000000000000000000000000000000000000000",
+        "admin": "0x0000000000000000000000000000000000000000000000000000000000000000",
+        "beacon": "0x0000000000000000000000000000000000000000000000000000000000000000"
+      },
+      "minimalProxy": false,
+      "metadataRead": {
+        "symbol": [
+          "BAG"
+        ],
+        "decimals": [
+          18
+        ]
+      },
+      "readOnlySimulation": {
+        "approve(address,uint256)": {
+          "resultRaw": "0x0000000000000000000000000000000000000000000000000000000000000001",
+          "persisted": false
+        },
+        "transfer(address,uint256)": {
+          "resultRaw": "0x0000000000000000000000000000000000000000000000000000000000000001",
+          "persisted": false
+        }
+      }
+    },
+    "ZZZ": {
+      "address": "0x7dbf38976f6d3b9c529e7d9484a71898b409ee6a",
+      "runtimeBytes": 3248,
+      "runtimeCodeHash": "0x3d5ba33c3a94f655c16348011ff2c72f6ce8085239454ce4a6c4bf284e84a597",
+      "eip1967Slots": {
+        "implementation": "0x0000000000000000000000000000000000000000000000000000000000000000",
+        "admin": "0x0000000000000000000000000000000000000000000000000000000000000000",
+        "beacon": "0x0000000000000000000000000000000000000000000000000000000000000000"
+      },
+      "minimalProxy": false,
+      "metadataRead": {
+        "symbol": [
+          "ZZZ"
+        ],
+        "decimals": [
+          18
+        ]
+      },
+      "readOnlySimulation": {
+        "approve(address,uint256)": {
+          "resultRaw": "0x0000000000000000000000000000000000000000000000000000000000000001",
+          "persisted": false
+        },
+        "transfer(address,uint256)": {
+          "resultRaw": "0x0000000000000000000000000000000000000000000000000000000000000001",
+          "persisted": false
+        }
+      }
+    },
+    "PoolManager": {
+      "address": "0x8366a39cc670b4001a1121b8f6a443a643e40951",
+      "runtimeBytes": 24009,
+      "runtimeCodeHash": "0xbd3881180b547f5fe817545743cfb4343e96b1bc6640dcd70c106b0066e95626",
+      "eip1967Slots": {
+        "implementation": "0x0000000000000000000000000000000000000000000000000000000000000000",
+        "admin": "0x0000000000000000000000000000000000000000000000000000000000000000",
+        "beacon": "0x0000000000000000000000000000000000000000000000000000000000000000"
+      },
+      "minimalProxy": false,
+      "sourceVerification": {
+        "source": "https://sourcify.dev/server/v2/contract/4663/0x8366a39cc670b4001a1121b8f6a443a643e40951?fields=all",
+        "runtimeMatch": "match",
+        "creationMatch": "match",
+        "verifiedAt": "2026-09-08T09:35:27Z",
+        "compilerVersion": "0.8.26+commit.8a97fa7a",
+        "contractName": "PoolManager",
+        "fullyQualifiedName": "lib/v4-core/src/PoolManager.sol:PoolManager",
+        "compilerSettings": {
+          "optimizer": {
+            "runs": 44444444,
+            "enabled": true
+          },
+          "viaIR": true,
+          "evmVersion": "cancun",
+          "metadata": {
+            "bytecodeHash": "none"
+          }
+        },
+        "sourcifyObservedRuntimeEqualsPinnedRpc": true,
+        "recompiledRuntimeExactlyEqualsPinnedRpc": false,
+        "sourceFiles": []
+      },
+      "officialBytecodeComparison": {
+        "deploymentRepositoryCommit": "56928a9bb63d4b94fa41bbb104c22b5f759997e0",
+        "runtimeOffsetInInitcode": 185,
+        "runtimeBytes": 24009,
+        "embeddedInitcodeHash": "0x2aa0ab6866fc2e2b2a0a9128e66982a049eb04516c012690426ab110f92966f8",
+        "matchesAfterOnlyDeclaredImmutableNormalization": true,
+        "immutableGroups": [
+          {
+            "referenceId": "511",
+            "locations": [
+              {
+                "start": 13606,
+                "length": 32
+              }
+            ],
+            "observedValues": [
+              "0x0000000000000000000000008366a39cc670b4001a1121b8f6a443a643e40951"
+            ]
+          }
+        ],
+        "independentlyRecompiled": false
+      }
+    },
+    "PositionManager": {
+      "address": "0x58daec3116aae6d93017baaea7749052e8a04fa7",
+      "runtimeBytes": 23877,
+      "runtimeCodeHash": "0xc873e135dc9aaec88489cfbad146b4cb49d6a32e0d80326377784b7ba17670b2",
+      "eip1967Slots": {
+        "implementation": "0x0000000000000000000000000000000000000000000000000000000000000000",
+        "admin": "0x0000000000000000000000000000000000000000000000000000000000000000",
+        "beacon": "0x0000000000000000000000000000000000000000000000000000000000000000"
+      },
+      "minimalProxy": false,
+      "sourceVerification": {
+        "source": "https://sourcify.dev/server/v2/contract/4663/0x58daec3116aae6d93017baaea7749052e8a04fa7?fields=all",
+        "runtimeMatch": "match",
+        "creationMatch": null,
+        "verifiedAt": "2026-09-01T15:16:54Z",
+        "compilerVersion": "0.8.26+commit.8a97fa7a",
+        "contractName": "PositionManager",
+        "fullyQualifiedName": "src/PositionManager.sol:PositionManager",
+        "compilerSettings": {
+          "optimizer": {
+            "runs": 30000,
+            "enabled": true
+          },
+          "viaIR": true,
+          "evmVersion": "cancun",
+          "metadata": {
+            "bytecodeHash": "none"
+          }
+        },
+        "sourcifyObservedRuntimeEqualsPinnedRpc": true,
+        "recompiledRuntimeExactlyEqualsPinnedRpc": false,
+        "sourceFiles": []
+      },
+      "officialBytecodeComparison": {
+        "deploymentRepositoryCommit": "56928a9bb63d4b94fa41bbb104c22b5f759997e0",
+        "runtimeOffsetInInitcode": 1374,
+        "runtimeBytes": 23877,
+        "embeddedInitcodeHash": "0xb4e8b9a76ea9c47a4f0f585fb646542470d7dd80fa91398b1fbb42cc7a14645a",
+        "matchesAfterOnlyDeclaredImmutableNormalization": true,
+        "immutableGroups": [
+          {
+            "referenceId": "4682",
+            "locations": [
+              {
+                "start": 5685,
+                "length": 32
+              },
+              {
+                "start": 8107,
+                "length": 32
+              }
+            ],
+            "observedValues": [
+              "0x0000000000000000000000009639443158e8c5efa35bd45287bf2effd3d8dc06"
+            ]
+          },
+          {
+            "referenceId": "6718",
+            "locations": [
+              {
+                "start": 9429,
+                "length": 32
+              }
+            ],
+            "observedValues": [
+              "0x061938567e6832ca43b380ce1978347d2ab5aea073ca93cdf29074c9ebfa15dd"
+            ]
+          },
+          {
+            "referenceId": "6720",
+            "locations": [
+              {
+                "start": 9391,
+                "length": 32
+              }
+            ],
+            "observedValues": [
+              "0x0000000000000000000000000000000000000000000000000000000000001237"
+            ]
+          },
+          {
+            "referenceId": "6722",
+            "locations": [
+              {
+                "start": 9508,
+                "length": 32
+              }
+            ],
+            "observedValues": [
+              "0x7cdd38ae70f02d5eb954d5bafbadb6e6ee2067b58a9dbed8e6c370c9a571913e"
+            ]
+          },
+          {
+            "referenceId": "7111",
+            "locations": [
+              {
+                "start": 2806,
+                "length": 32
+              },
+              {
+                "start": 3765,
+                "length": 32
+              },
+              {
+                "start": 4468,
+                "length": 32
+              },
+              {
+                "start": 6336,
+                "length": 32
+              },
+              {
+                "start": 7228,
+                "length": 32
+              },
+              {
+                "start": 7377,
+                "length": 32
+              },
+              {
+                "start": 8353,
+                "length": 32
+              },
+              {
+                "start": 8600,
+                "length": 32
+              },
+              {
+                "start": 10584,
+                "length": 32
+              },
+              {
+                "start": 10796,
+                "length": 32
+              },
+              {
+                "start": 12059,
+                "length": 32
+              },
+              {
+                "start": 15686,
+                "length": 32
+              },
+              {
+                "start": 15929,
+                "length": 32
+              },
+              {
+                "start": 16092,
+                "length": 32
+              },
+              {
+                "start": 16371,
+                "length": 32
+              },
+              {
+                "start": 17179,
+                "length": 32
+              },
+              {
+                "start": 17780,
+                "length": 32
+              },
+              {
+                "start": 19177,
+                "length": 32
+              },
+              {
+                "start": 19558,
+                "length": 32
+              },
+              {
+                "start": 19940,
+                "length": 32
+              },
+              {
+                "start": 20169,
+                "length": 32
+              },
+              {
+                "start": 20313,
+                "length": 32
+              },
+              {
+                "start": 22383,
+                "length": 32
+              }
+            ],
+            "observedValues": [
+              "0x0000000000000000000000008366a39cc670b4001a1121b8f6a443a643e40951"
+            ]
+          },
+          {
+            "referenceId": "7204",
+            "locations": [
+              {
+                "start": 5250,
+                "length": 32
+              },
+              {
+                "start": 10698,
+                "length": 32
+              },
+              {
+                "start": 14914,
+                "length": 32
+              },
+              {
+                "start": 15006,
+                "length": 32
+              },
+              {
+                "start": 15298,
+                "length": 32
+              },
+              {
+                "start": 15435,
+                "length": 32
+              }
+            ],
+            "observedValues": [
+              "0x0000000000000000000000000bd7d308f8e1639fab988df18a8011f41eacad73"
+            ]
+          },
+          {
+            "referenceId": "7306",
+            "locations": [
+              {
+                "start": 5184,
+                "length": 32
+              },
+              {
+                "start": 12795,
+                "length": 32
+              }
+            ],
+            "observedValues": [
+              "0x00000000000000000000000000000000000000000000000000000000000493e0"
+            ]
+          },
+          {
+            "referenceId": "7660",
+            "locations": [
+              {
+                "start": 924,
+                "length": 32
+              },
+              {
+                "start": 2574,
+                "length": 32
+              },
+              {
+                "start": 3529,
+                "length": 32
+              },
+              {
+                "start": 20218,
+                "length": 32
+              }
+            ],
+            "observedValues": [
+              "0x000000000000000000000000000000000022d473030f116ddee9f6b43ac78ba3"
+            ]
+          }
+        ],
+        "independentlyRecompiled": false
+      }
+    },
+    "StateView": {
+      "address": "0xf3334192d15450cdd385c8b70e03f9a6bd9e673b",
+      "runtimeBytes": 3531,
+      "runtimeCodeHash": "0x7d9c591e0956fd89d98feb4ffcfe8bf1f7a62bd485edd979fa21d104b49878a6",
+      "eip1967Slots": {
+        "implementation": "0x0000000000000000000000000000000000000000000000000000000000000000",
+        "admin": "0x0000000000000000000000000000000000000000000000000000000000000000",
+        "beacon": "0x0000000000000000000000000000000000000000000000000000000000000000"
+      },
+      "minimalProxy": false,
+      "sourceVerification": {
+        "source": "https://sourcify.dev/server/v2/contract/4663/0xf3334192d15450cdd385c8b70e03f9a6bd9e673b?fields=all",
+        "runtimeMatch": "match",
+        "creationMatch": null,
+        "verifiedAt": "2026-09-08T09:35:25Z",
+        "compilerVersion": "0.8.26+commit.8a97fa7a",
+        "contractName": "StateView",
+        "fullyQualifiedName": "src/lens/StateView.sol:StateView",
+        "compilerSettings": {
+          "optimizer": {
+            "runs": 44444444,
+            "enabled": true
+          },
+          "viaIR": true,
+          "evmVersion": "cancun",
+          "metadata": {
+            "bytecodeHash": "none"
+          }
+        },
+        "sourcifyObservedRuntimeEqualsPinnedRpc": true,
+        "recompiledRuntimeExactlyEqualsPinnedRpc": false,
+        "sourceFiles": []
+      },
+      "officialBytecodeComparison": {
+        "deploymentRepositoryCommit": "56928a9bb63d4b94fa41bbb104c22b5f759997e0",
+        "runtimeOffsetInInitcode": 204,
+        "runtimeBytes": 3531,
+        "embeddedInitcodeHash": "0x629a234d6030d2c729a3d1527635cb35e64e99c767805201e564821015e04d1d",
+        "matchesAfterOnlyDeclaredImmutableNormalization": true,
+        "immutableGroups": [
+          {
+            "referenceId": "2689",
+            "locations": [
+              {
+                "start": 299,
+                "length": 32
+              },
+              {
+                "start": 582,
+                "length": 32
+              },
+              {
+                "start": 731,
+                "length": 32
+              },
+              {
+                "start": 926,
+                "length": 32
+              },
+              {
+                "start": 1153,
+                "length": 32
+              },
+              {
+                "start": 1353,
+                "length": 32
+              },
+              {
+                "start": 1499,
+                "length": 32
+              },
+              {
+                "start": 1570,
+                "length": 32
+              },
+              {
+                "start": 1671,
+                "length": 32
+              },
+              {
+                "start": 1844,
+                "length": 32
+              },
+              {
+                "start": 2064,
+                "length": 32
+              },
+              {
+                "start": 2410,
+                "length": 32
+              }
+            ],
+            "observedValues": [
+              "0x0000000000000000000000008366a39cc670b4001a1121b8f6a443a643e40951"
+            ]
+          }
+        ],
+        "independentlyRecompiled": false
+      }
+    },
+    "Permit2": {
+      "address": "0x000000000022d473030f116ddee9f6b43ac78ba3",
+      "runtimeBytes": 9152,
+      "runtimeCodeHash": "0x5208783f52488f7d3493e5e38311ab707c1d75457fe472a19b0b4d57d66a7fca",
+      "eip1967Slots": {
+        "implementation": "0x0000000000000000000000000000000000000000000000000000000000000000",
+        "admin": "0x0000000000000000000000000000000000000000000000000000000000000000",
+        "beacon": "0x0000000000000000000000000000000000000000000000000000000000000000"
+      },
+      "minimalProxy": false,
+      "sourceVerification": {
+        "source": "https://sourcify.dev/server/v2/contract/4663/0x000000000022d473030f116ddee9f6b43ac78ba3?fields=all",
+        "runtimeMatch": "match",
+        "creationMatch": null,
+        "verifiedAt": "2026-08-29T23:37:44Z",
+        "compilerVersion": "0.8.17+commit.8df45f5f",
+        "contractName": "Permit2",
+        "fullyQualifiedName": "src/Permit2.sol:Permit2",
+        "compilerSettings": {
+          "optimizer": {
+            "runs": 1000000,
+            "enabled": true
+          },
+          "viaIR": true,
+          "evmVersion": "london",
+          "metadata": {
+            "bytecodeHash": "ipfs",
+            "useLiteralContent": true
+          }
+        },
+        "sourcifyObservedRuntimeEqualsPinnedRpc": true,
+        "recompiledRuntimeExactlyEqualsPinnedRpc": false,
+        "sourceFiles": []
+      }
+    },
+    "WETHImplementation": {
+      "address": "0xc6b81b429797e0f555440b70cd99e032d7ae947e",
+      "runtimeBytes": 6961,
+      "runtimeCodeHash": "0xbe1295f37be34ffe03ad779bda0ef278907e1856b51a3be2f35ee541d75d4650",
+      "sourceVerification": {
+        "source": "https://sourcify.dev/server/v2/contract/4663/0xc6b81b429797e0f555440b70cd99e032d7ae947e?fields=all",
+        "runtimeMatch": "match",
+        "creationMatch": null,
+        "verifiedAt": "2026-09-01T15:44:41Z",
+        "compilerVersion": "0.8.16+commit.07a7930e",
+        "contractName": "aeWETH",
+        "fullyQualifiedName": "contracts/tokenbridge/libraries/aeWETH.sol:aeWETH",
+        "compilerSettings": {
+          "optimizer": {
+            "runs": 100,
+            "enabled": true
+          },
+          "viaIR": null,
+          "evmVersion": "london",
+          "metadata": {
+            "bytecodeHash": "ipfs"
+          }
+        },
+        "sourcifyObservedRuntimeEqualsPinnedRpc": true,
+        "recompiledRuntimeExactlyEqualsPinnedRpc": false,
+        "sourceFiles": [
+          {
+            "path": "contracts/tokenbridge/libraries/aeWETH.sol",
+            "keccak256": "0x602edfcb6ce033e11b77c8015e3f51eff98420e8057b2d87ad372b4d883eae4b"
+          }
+        ]
+      }
+    },
+    "WETHAdmin": {
+      "address": "0xa3acd31afb851b4eb9dad00f5204c01d924267df",
+      "runtimeBytes": 1681,
+      "runtimeCodeHash": "0xa4b2186ab82fa36fb4ae158582e5615ea519e757c26c13ba4a33daaaed8902a7"
+    },
+    "USDGImplementation": {
+      "address": "0x68184c449e1a8f34fa18d289737129fd27b66f8f",
+      "runtimeBytes": 18644,
+      "runtimeCodeHash": "0x3a551ac5c744af57e68a1d1431ac403c0f516ffd7d224a75746aee11fc4f3baf",
+      "sourceVerification": {
+        "source": "https://sourcify.dev/server/v2/contract/4663/0x68184c449e1a8f34fa18d289737129fd27b66f8f?fields=all",
+        "runtimeMatch": "match",
+        "creationMatch": "match",
+        "verifiedAt": "2026-09-01T15:17:10Z",
+        "compilerVersion": "0.8.28+commit.7893614a",
+        "contractName": "USDG",
+        "fullyQualifiedName": "contracts/stablecoins/USDG.sol:USDG",
+        "compilerSettings": {
+          "optimizer": {
+            "runs": 200,
+            "enabled": true
+          },
+          "viaIR": null,
+          "evmVersion": "paris",
+          "metadata": null
+        },
+        "sourcifyObservedRuntimeEqualsPinnedRpc": true,
+        "recompiledRuntimeExactlyEqualsPinnedRpc": false,
+        "sourceFiles": [
+          {
+            "path": "contracts/ClaimableRewardsBase.sol",
+            "keccak256": "0xea403a789569f90db7a0006dfc8416fa07ccebdefbb939d3ad9bd70c8a2d47c6"
+          },
+          {
+            "path": "contracts/PaxosTokenClaimableRewards.sol",
+            "keccak256": "0x0de234119c566d61b72db66868211119f3d91e53a021a1d5a0cde54e5080576e"
+          },
+          {
+            "path": "contracts/stablecoins/USDG.sol",
+            "keccak256": "0x69760e6b1caaeceff326b9fcb61fa77743aa7fdbc2d076a2138b72143f1ceb64"
+          }
+        ]
+      }
+    }
+  },
+  "canonicalBlockHashAfter": "0x555260f7a9698a6bf555a089f956d05fae853123edefd4a40e412328134604d0",
+  "finalizedHead": {
+    "number": "0x38e6873",
+    "hash": "0xf39e931d915a2fa06483d42fd050e9906a001cd53379bdca4e4e4666395f4fc8",
+    "timestamp": "0x6aa3093a"
+  },
+  "links": {
+    "PositionManager": {
+      "poolManager": [
+        "0x8366a39cc670b4001a1121b8f6a443a643e40951"
+      ],
+      "permit2": [
+        "0x000000000022d473030f116ddee9f6b43ac78ba3"
+      ],
+      "WETH9": [
+        "0x0bd7d308f8e1639fab988df18a8011f41eacad73"
+      ],
+      "tokenDescriptor": [
+        "0x9639443158e8c5efa35bd45287bf2effd3d8dc06"
+      ]
+    },
+    "StateView": {
+      "poolManager": [
+        "0x8366a39cc670b4001a1121b8f6a443a643e40951"
+      ]
+    },
+    "WETH": {
+      "l1Address": [
+        "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2"
+      ],
+      "l2Gateway": [
+        "0x1d187c3e2da52d72bc9c41e3aba0fdfa6a7bf055"
+      ]
+    },
+    "WETHAdmin": {
+      "owner": [
+        "0x2a153c6a1b66dbc930a8d7017230ab0253005c09"
+      ]
+    }
+  },
+  "native": {
+    "address": "0x0000000000000000000000000000000000000000",
+    "runtimeCode": "0x",
+    "decimals": 18,
+    "basis": "Robinhood official chain configuration; ETH gas"
+  },
+  "pools": [
+    {
+      "poolId": "0x84bd4e2d8be11aeb0afc1195b38f587b61e90068548f1063fdbe448fb8cad0b6",
+      "poolKey": {
+        "currency0": "0x0bd7d308f8e1639fab988df18a8011f41eacad73",
+        "currency1": "0x5fc5360d0400a0fd4f2af552add042d716f1d168",
+        "fee_pips": 200,
+        "tick_spacing": 4,
+        "hooks": "0x0000000000000000000000000000000000000000"
+      },
+      "poolIdHashMatches": true,
+      "sqrtPriceX96": "3931162558660261782574552",
+      "tick": -198233,
+      "protocolFeePipsPacked": 213044,
+      "lpFeePips": 200,
+      "activeLiquidityRaw": "113562315821886077",
+      "executionEligible": false
+    },
+    {
+      "poolId": "0x3b0cbf0603ecc67b5fc9bb4fbb6ac9e08d3b2f406b63d1662a36063a7fe5e866",
+      "poolKey": {
+        "currency0": "0x0000000000000000000000000000000000000000",
+        "currency1": "0x5fc5360d0400a0fd4f2af552add042d716f1d168",
+        "fee_pips": 87,
+        "tick_spacing": 1,
+        "hooks": "0x0000000000000000000000000000000000000000"
+      },
+      "poolIdHashMatches": true,
+      "sqrtPriceX96": "3931687803328377093691685",
+      "tick": -198231,
+      "protocolFeePipsPacked": 90134,
+      "lpFeePips": 87,
+      "activeLiquidityRaw": "158017775840794450",
+      "executionEligible": false
+    },
+    {
+      "poolId": "0xbf0fe39ec46400f36455eae199696e1009af2182f62bfb256b559b1f3e11afec",
+      "poolKey": {
+        "currency0": "0x0000000000000000000000000000000000000000",
+        "currency1": "0xab35d04e1ee39c789c4a65d522417b3c7f2e4723",
+        "fee_pips": 9000,
+        "tick_spacing": 90,
+        "hooks": "0x0000000000000000000000000000000000000000"
+      },
+      "poolIdHashMatches": true,
+      "sqrtPriceX96": "242620040256695587332461770930881",
+      "tick": 160546,
+      "protocolFeePipsPacked": 4097000,
+      "lpFeePips": 9000,
+      "activeLiquidityRaw": "5136719709482507322",
+      "executionEligible": false
+    }
+  ],
+  "canonicalBlockHashAfterDetails": "0x555260f7a9698a6bf555a089f956d05fae853123edefd4a40e412328134604d0",
+  "readOnlySimulationsDoNotProveAdmission": true,
+  "productionAdmissionChanged": false,
+  "standardProxySlots": {
+    "implementation": "0x360894a13ba1a3210667c828492db98dca3e2076cc3735a920a3ca505d382bbc",
+    "admin": "0xb53127684a568b3173ae13b9f8a6016e243e63b6e8ee1178d6a717850b5d6103",
+    "beacon": "0xa3f0ad74e5423aebfd80d3ef4346578335a9a72aeaee59ff6cb3582b35133d50"
+  },
+  "sourceLimits": {
+    "blockscoutApi": "http403_interactive_cloudflare_challenge_no_bypass",
+    "sourcifyTokenLookup": {
+      "MARLIN": 404,
+      "BAG": 404,
+      "ZZZ": 404,
+      "TRADOOR": 404,
+      "CRUMBS": 404,
+      "RUBEN": 404,
+      "MAD": 404
+    },
+    "tokenMetadataIpfs": "unavailable_from_attempted_public_gateways",
+    "freshIndependentCompilation": false
+  },
+  "productionAdmission": {
+    "changed": false,
+    "admittedTokens": [],
+    "WETH": "blocked_upgradeable_proxy",
+    "USDG": "blocked_upgradeable_proxy",
+    "MARLIN": "unqualified_source_and_semantics",
+    "BAG": "unqualified_source_and_semantics",
+    "ZZZ": "unqualified_source_and_semantics"
+  },
+  "readOnlySimulationContext": {
+    "from": "0x1111111111111111111111111111111111111111",
+    "approveSpender": "0x000000000022d473030f116ddee9f6b43ac78ba3",
+    "approveAmountRaw": "1",
+    "transferRecipient": "0x1111111111111111111111111111111111111111",
+    "transferAmountRaw": "0",
+    "method": "eth_call",
+    "gasLimitRaw": "500000",
+    "persisted": false,
+    "positiveValueTransferVerified": false
+  }
+}

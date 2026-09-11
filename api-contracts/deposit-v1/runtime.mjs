@@ -1,6 +1,6 @@
 // Closed contract and narrow ABI re-encoding. No LP formulas or broadcast.
 import { SCHEMAS, ERRORS } from './schema-data.mjs';
-export const CONTRACT_VERSION = '1.1.0-rc.2';
+export const CONTRACT_VERSION = '1.1.0-rc.3';
 export const ROUTES = Object.freeze(Object.keys(SCHEMAS));
 export const ERROR_STATUS_BY_CODE = Object.freeze({...ERRORS});
 const UINT256_MAX = (1n << 256n) - 1n;
@@ -138,8 +138,10 @@ function semantic(name, value) {
   if (name === 'ObservedTransaction') return BigInt(value.gasLimitRaw) >= 21000n &&
     BigInt(value.maxPriorityFeePerGasRaw) <= BigInt(value.maxFeePerGasRaw) &&
     new Set(value.selectedLimitsExceeded).size === value.selectedLimitsExceeded.length;
-  if (name === 'ReceiptSummary') return BigInt(value.executionFeeRaw) === BigInt(value.gasUsedRaw) * BigInt(value.effectiveGasPriceRaw) &&
-    value.totalFeeRaw === (value.l1FeeRaw === null ? null : String(BigInt(value.executionFeeRaw) + BigInt(value.l1FeeRaw))) &&
+  if (name === 'ReceiptSummary') return BigInt(value.grossGasFeeRaw) === BigInt(value.gasUsedRaw) * BigInt(value.effectiveGasPriceRaw) &&
+    (value.l1GasUsedRaw === null || BigInt(value.l1GasUsedRaw) <= BigInt(value.gasUsedRaw)) &&
+    value.l1FeeRaw === (value.l1GasUsedRaw === null ? null : String(BigInt(value.l1GasUsedRaw) * BigInt(value.effectiveGasPriceRaw))) &&
+    value.totalFeeRaw === null &&
     (value.outcome !== 'reverted' || value.position === null) &&
     (value.transaction === null || BigInt(value.gasUsedRaw) <= BigInt(value.transaction.gasLimitRaw) &&
       BigInt(value.effectiveGasPriceRaw) <= BigInt(value.transaction.maxFeePerGasRaw));

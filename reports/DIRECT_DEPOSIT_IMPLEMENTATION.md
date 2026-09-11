@@ -1,5 +1,10 @@
 # Resumable owner-signed direct deposits — implementation evidence
 
+Historical issue #40/#41 evidence. The subsequent [issue #42 qualification](DEPOSIT_FORK_QUALIFICATION.md)
+corrects this candidate's earlier execution-only/additive-L1 receipt assumptions
+and records real deployment/proxy/fork findings. Its new pre-release contract
+digest supersedes the historical digest below for integration; no release was activated.
+
 10 September 2026. Issue: [#40](https://github.com/domino-money/domino/issues/40).
 This backend candidate implements direct deposits into existing admitted
 Robinhood Uniswap v4 pools. A user can recover an interrupted operation without

@@ -1,6 +1,6 @@
 {
   "automationAvailable": false,
-  "contractVersion": "1.1.0-rc.2",
+  "contractVersion": "1.1.0-rc.3",
   "operation": {
     "chainId": 4663,
     "createdAt": 1800000180,
@@ -14,13 +14,14 @@
           "blockHash": "0x7c8c0582d21a968b9aa25d45e0e719f1fe93aa4458f5d5939d507b861e308328",
           "blockNumber": 105,
           "effectiveGasPriceRaw": "100",
-          "executionFeeRaw": "10000000",
           "finality": "finalized",
           "gasUsedRaw": "100000",
-          "l1FeeRaw": "10",
+          "grossGasFeeRaw": "10000000",
+          "l1FeeRaw": "1000000",
+          "l1GasUsedRaw": "10000",
           "outcome": "success",
           "position": null,
-          "totalFeeRaw": "10000010",
+          "totalFeeRaw": null,
           "transaction": {
             "gasLimitRaw": "220000",
             "maxFeePerGasRaw": "150",

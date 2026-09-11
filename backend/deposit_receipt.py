@@ -586,10 +586,16 @@ class ReceiptReconciler:
             gas_used, price = quantity(raw_receipt.get('gasUsed')), quantity(raw_receipt.get('effectiveGasPrice'))
             if gas_used > quantity(candidate.get('gas')) or gas_used < 21000 or observed is not None and price > _raw(observed['maxFeePerGasRaw']):
                 raise DataError('invalid_deposit_receipt_gas')
-            execution_fee = gas_used * price
-            l1_fee = None if raw_receipt.get('l1Fee') is None else quantity(raw_receipt['l1Fee'])
-            if execution_fee >= 2**256 or l1_fee is not None and execution_fee+l1_fee >= 2**256:
+            gross_fee = gas_used * price
+            try:
+                l1_gas = quantity(raw_receipt['gasUsedForL1']) if 'gasUsedForL1' in raw_receipt else None
+            except DataError:
+                raise DataError('invalid_deposit_receipt_gas') from None
+            if gross_fee >= 2**256 or l1_gas is not None and l1_gas > gas_used:
                 raise DataError('invalid_deposit_receipt_gas')
+            # Nitro's poster charge is included in gasUsed, not added to it.
+            # Additional ArbOS resource refunds are not resolved by this receipt.
+            l1_fee = None if l1_gas is None else l1_gas * price
             logs = self._logs(raw_receipt, transaction_hash, block, transaction_index)
             if status == 0 and logs: raise DataError('invalid_deposit_reverted_logs')
             finality, finalized = 'unavailable', None
@@ -607,10 +613,10 @@ class ReceiptReconciler:
                 finalized = None
             receipt = {'transactionHash': transaction_hash, 'blockNumber': number, 'blockHash': block_hash,
                 'transactionIndex': transaction_index, 'status': 'success' if status else 'reverted', 'canonical': True,
-                'gas': {'gasUsedRaw': str(gas_used), 'effectiveGasPriceRaw': str(price), 'executionFeeRaw': str(execution_fee),
+                'gas': {'gasUsedRaw': str(gas_used), 'effectiveGasPriceRaw': str(price), 'grossGasFeeRaw': str(gross_fee),
+                    'l1GasUsedRaw': None if l1_gas is None else str(l1_gas),
                     'l1FeeRaw': None if l1_fee is None else str(l1_fee),
-                    'totalFeeRaw': None if l1_fee is None else str(execution_fee+l1_fee),
-                    'totalFeeStatus': 'l1_fee_unavailable' if l1_fee is None else 'reported_execution_and_l1'},
+                    'totalFeeRaw': None, 'totalFeeStatus': 'net_fee_unavailable'},
                 'finality': {'status': finality, 'basis': 'rpc_finalized_tag', 'observedHead': head,
                     'finalizedHead': finalized, 'confirmations': head['number']-number+1, 'absoluteFinalityProven': False},
                 'mint': None, 'approval': None,
@@ -669,9 +675,16 @@ def receipt_summary(outcome):
         'ownershipObservedBlock': mint['currentState']['snapshot'],
         'amount0Raw': mint['tokens'][0]['depositedRaw'], 'amount1Raw': mint['tokens'][1]['depositedRaw'],
     }
+    gas = receipt['gas']
+    gas_used, price = _raw(gas['gasUsedRaw']), _raw(gas['effectiveGasPriceRaw'])
+    # Old records have no qualified poster-gas observation. Recompute from raw
+    # operands; never reinterpret their executionFeeRaw/l1FeeRaw/totalFeeRaw.
+    l1_gas = None if gas.get('l1GasUsedRaw') is None else _raw(gas['l1GasUsedRaw'])
     body = {'transactionHash': receipt['transactionHash'], 'blockNumber': receipt['blockNumber'],
         'blockHash': receipt['blockHash'], 'outcome': receipt['status'],
         'finality': {'pending':'provisional','finalized':'finalized','unavailable':'unavailable'}[receipt['finality']['status']],
-        **{name: receipt['gas'][name] for name in ('gasUsedRaw','effectiveGasPriceRaw','executionFeeRaw','l1FeeRaw','totalFeeRaw')},
+        'gasUsedRaw': str(gas_used), 'effectiveGasPriceRaw': str(price), 'grossGasFeeRaw': str(gas_used * price),
+        'l1GasUsedRaw': None if l1_gas is None else str(l1_gas),
+        'l1FeeRaw': None if l1_gas is None else str(l1_gas * price), 'totalFeeRaw': None,
         'position': position, 'transaction': receipt.get('transaction')}
     return ReceiptSummary.model_validate(body).model_dump()

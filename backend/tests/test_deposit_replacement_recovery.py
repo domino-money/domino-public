@@ -149,7 +149,7 @@ class DepositReplacementRecoveryTests(unittest.TestCase):
         self.assertEqual(len(evidence['selectedLimitsExceeded']), len(exceeded))
         self.assertEqual(record['history'][0]['receipt']['transaction'], evidence)
         paid = int(self.rpc.receipt['gasUsed'], 16) * int(self.rpc.receipt['effectiveGasPrice'], 16)
-        self.assertEqual(receipt['gas']['executionFeeRaw'], str(paid))
+        self.assertEqual(receipt['gas']['grossGasFeeRaw'], str(paid))
         return raw
 
     def test_above_selected_caps_mint_confirms_even_after_cancel_request(self):
@@ -627,30 +627,36 @@ class DepositReplacementRecoveryTests(unittest.TestCase):
         self.assertTrue(self.store.get(OWNER, newer['id'])['outstanding'])
         self.assertEqual(len(record['history']), 1)
 
-    def test_http_bumped_mint_roundtrip_preserves_actual_cost_and_null_l1(self):
-        rpc = Rpc(); self.bump(rpc)
-        rpc.receipt.pop('l1Fee')
-        record = self.start(rpc, cancel=True)
-        gateway = DepositGateway(service=self.service, verifier=SimpleNamespace(verify=Mock(return_value=True)),
-                                 origin='https://domino.money', enabled=True)
-        headers = {'Content-Type': 'application/json', 'CF-Access-Jwt-Assertion': 'fixture-assertion',
-            'X-Domino-Browser-Origin': 'https://domino.money', 'X-Domino-Client-Id': '192.0.2.41',
-            'X-Domino-Session': 'fixture-session', 'X-Domino-CSRF': 'fixture-csrf',
-            'X-Domino-Deposit-Contract': CONTRACT_VERSION}
-        with TestClient(create_deposit_app(gateway), base_url='http://127.0.0.1:8881',
-                        client=('127.0.0.1', 43100)) as client:
-            response = client.post('/internal/deposit/v1/report', headers=headers, content=json.dumps({
-                'intentId': record['id'], 'version': record['version'], 'transactionHash': HASH}))
-        self.assertEqual(response.status_code, 200, response.text)
-        payload = response.json(); validate_response('report', payload)
-        self.assertIsNone(payload['walletStep']); self.assertEqual(payload['operation']['state'], 'confirmed')
-        receipt = payload['operation']['history'][0]['receipt']
-        self.assertIsNone(receipt['l1FeeRaw']); self.assertIsNone(receipt['totalFeeRaw'])
-        self.assertEqual(receipt['executionFeeRaw'], '21000000')
-        self.assertEqual(response.headers['X-Domino-Deposit-Contract'], CONTRACT_VERSION)
-        self.assertFalse(payload['serverBroadcastAvailable']); self.assertFalse(payload['automationAvailable'])
-        self.assert_transaction_evidence(payload['operation'],
-            ('gasLimit', 'maxFeePerGas', 'maxPriorityFeePerGas'))
+    def test_http_bumped_mint_roundtrip_preserves_nitro_cost_and_observed_caps(self):
+        for poster_gas in (None, 0, 10000):
+            rpc = Rpc(); self.bump(rpc)
+            if poster_gas is None:
+                rpc.receipt.pop('gasUsedForL1')
+            else:
+                rpc.receipt['gasUsedForL1'] = hex(poster_gas)
+            record = self.start(rpc, cancel=True)
+            gateway = DepositGateway(service=self.service, verifier=SimpleNamespace(verify=Mock(return_value=True)),
+                                     origin='https://domino.money', enabled=True)
+            headers = {'Content-Type': 'application/json', 'CF-Access-Jwt-Assertion': 'fixture-assertion',
+                'X-Domino-Browser-Origin': 'https://domino.money', 'X-Domino-Client-Id': '192.0.2.41',
+                'X-Domino-Session': 'fixture-session', 'X-Domino-CSRF': 'fixture-csrf',
+                'X-Domino-Deposit-Contract': CONTRACT_VERSION}
+            with TestClient(create_deposit_app(gateway), base_url='http://127.0.0.1:8881',
+                            client=('127.0.0.1', 43100)) as client:
+                response = client.post('/internal/deposit/v1/report', headers=headers, content=json.dumps({
+                    'intentId': record['id'], 'version': record['version'], 'transactionHash': HASH}))
+            self.assertEqual(response.status_code, 200, response.text)
+            payload = response.json(); validate_response('report', payload)
+            self.assertIsNone(payload['walletStep']); self.assertEqual(payload['operation']['state'], 'confirmed')
+            receipt = payload['operation']['history'][0]['receipt']
+            self.assertEqual(receipt['l1GasUsedRaw'], None if poster_gas is None else str(poster_gas))
+            self.assertEqual(receipt['l1FeeRaw'], None if poster_gas is None else str(poster_gas * 210))
+            self.assertIsNone(receipt['totalFeeRaw'])
+            self.assertEqual(receipt['grossGasFeeRaw'], '21000000')
+            self.assertEqual(response.headers['X-Domino-Deposit-Contract'], CONTRACT_VERSION)
+            self.assertFalse(payload['serverBroadcastAvailable']); self.assertFalse(payload['automationAvailable'])
+            self.assert_transaction_evidence(payload['operation'],
+                ('gasLimit', 'maxFeePerGas', 'maxPriorityFeePerGas'))
 
 
 if __name__ == '__main__':

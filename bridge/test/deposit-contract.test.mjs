@@ -16,7 +16,7 @@ function readViews(body) {
 }
 
 test('all producer requests, responses, errors and variants pass the browser validator', () => {
-  assert.equal(CONTRACT_VERSION, '1.1.0-rc.2');
+  assert.equal(CONTRACT_VERSION, '1.1.0-rc.3');
   for (const route of ROUTES) {
     assert.equal(validateRequest(route, read(`fixtures/requests/${route}.json`)), true, route);
     assert.equal(validateResponse(route, read(`fixtures/responses/${route}.json`)), true, route);
@@ -91,9 +91,19 @@ test('cost and ownership observation fields preserve verified and unavailable va
   assert.ok(receipt.position.ownershipObservedBlock.hash);
   receipt.totalFeeRaw='0';assert.equal(validateResponse('get',response),false);
   const missing=read('fixtures/variants/confirmed.json');
+  missing.operation.history[0].receipt.l1GasUsedRaw=null;
   missing.operation.history[0].receipt.l1FeeRaw=null;
   missing.operation.history[0].receipt.totalFeeRaw=null;
   assert.equal(validateResponse('get',missing),true);
+  const included=read('fixtures/variants/confirmed.json');
+  const gas=included.operation.history[0].receipt;
+  gas.l1GasUsedRaw='100';
+  gas.l1FeeRaw=String(100n*BigInt(gas.effectiveGasPriceRaw));
+  assert.equal(validateResponse('get',included),true);
+  gas.totalFeeRaw=String(BigInt(gas.grossGasFeeRaw)+BigInt(gas.l1FeeRaw));
+  assert.equal(validateResponse('get',included),false,'poster component must not be added again');
+  gas.totalFeeRaw=null;gas.executionFeeRaw=gas.grossGasFeeRaw;
+  assert.equal(validateResponse('get',included),false,'old misleading field is rejected');
 });
 
 test('compact pagination metadata must match the returned last item', () => {
@@ -142,13 +152,13 @@ test('observed envelope nonce and actual costs remain bound', () => {
   const changes=[...['6',String(1n<<64n),'05',5].map(value=>['transaction','nonceRaw',value]),
     ['transaction','gasLimitRaw','20999'], ['transaction','maxPriorityFeePerGasRaw','202'],
     ['receipt','gasUsedRaw','300002'], ['receipt','effectiveGasPriceRaw','202'],
-    ['receipt','executionFeeRaw','1'], ['receipt','totalFeeRaw','1']];
+    ['receipt','grossGasFeeRaw','1'], ['receipt','totalFeeRaw','1']];
   for (const [section,field,changed] of changes) {
     const body=clone(source), receipt=body.operation.history[0].receipt;
     (section==='transaction' ? receipt.transaction : receipt)[field]=changed;
     if (['gasUsedRaw','effectiveGasPriceRaw'].includes(field)) {
-      receipt.executionFeeRaw=String(BigInt(receipt.gasUsedRaw)*BigInt(receipt.effectiveGasPriceRaw));
-      receipt.totalFeeRaw=String(BigInt(receipt.executionFeeRaw)+BigInt(receipt.l1FeeRaw));
+      receipt.grossGasFeeRaw=String(BigInt(receipt.gasUsedRaw)*BigInt(receipt.effectiveGasPriceRaw));
+      receipt.l1FeeRaw=receipt.l1GasUsedRaw===null ? null : String(BigInt(receipt.l1GasUsedRaw)*BigInt(receipt.effectiveGasPriceRaw));
     }
     for (const [route,value] of readViews(body)) assert.equal(validateResponse(route,value),false,`${route} ${field} ${changed}`);
   }

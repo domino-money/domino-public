@@ -24,7 +24,7 @@ def read_views(body):
 
 class DepositContractTests(unittest.TestCase):
     def test_all_producer_requests_and_observed_receipt_variants(self):
-        self.assertEqual(CONTRACT_VERSION, '1.1.0-rc.2')
+        self.assertEqual(CONTRACT_VERSION, '1.1.0-rc.3')
         requests,responses,_=build_fixtures()
         for route in requests:
             validate_request(route,requests[route]);validate_response(route,responses[route])
@@ -62,7 +62,9 @@ class DepositContractTests(unittest.TestCase):
         _,body=build_variants()['confirmed']
         receipt=body['operation']['history'][0]['receipt']
         self.assertIn('ownershipObservedBlock',receipt['position'])
-        for change in ({'executionFeeRaw':'1'},{'totalFeeRaw':None}):
+        for change in ({'grossGasFeeRaw':'1'},{'totalFeeRaw':'0'},
+                       {'executionFeeRaw':receipt['grossGasFeeRaw']},
+                       {'l1GasUsedRaw':str(int(receipt['gasUsedRaw'])+1)}):
             invalid=deepcopy(body);invalid['operation']['history'][0]['receipt'].update(change)
             with self.assertRaises(ValidationError): validate_response('get',invalid)
 
@@ -119,14 +121,15 @@ class DepositContractTests(unittest.TestCase):
                     ('transaction', 'maxPriorityFeePerGasRaw', '202'),
                     ('receipt', 'gasUsedRaw', '300002'),
                     ('receipt', 'effectiveGasPriceRaw', '202'),
-                    ('receipt', 'executionFeeRaw', '1'), ('receipt', 'totalFeeRaw', '1')]
+                    ('receipt', 'grossGasFeeRaw', '1'), ('receipt', 'totalFeeRaw', '1')]
         for section, field, changed in changes:
             body = deepcopy(source)
             receipt = body['operation']['history'][0]['receipt']
             (receipt['transaction'] if section == 'transaction' else receipt)[field] = changed
             if field in ('gasUsedRaw', 'effectiveGasPriceRaw'):
-                receipt['executionFeeRaw'] = str(int(receipt['gasUsedRaw']) * int(receipt['effectiveGasPriceRaw']))
-                receipt['totalFeeRaw'] = str(int(receipt['executionFeeRaw']) + int(receipt['l1FeeRaw']))
+                receipt['grossGasFeeRaw'] = str(int(receipt['gasUsedRaw']) * int(receipt['effectiveGasPriceRaw']))
+                receipt['l1FeeRaw'] = (None if receipt['l1GasUsedRaw'] is None else
+                    str(int(receipt['l1GasUsedRaw']) * int(receipt['effectiveGasPriceRaw'])))
             for route, value in read_views(body):
                 with self.subTest(field=field, changed=changed, route=route), self.assertRaises(ValidationError):
                     validate_response(route, value)

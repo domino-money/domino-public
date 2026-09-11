@@ -8,7 +8,7 @@ from onboarding_models import (StrictModel, Chain, NormalizedAddress, PoolId, Ra
     Raw128, PositiveRaw, LiquidityRaw, Tick, Slippage, Timestamp, Fingerprint,
     PoolKeyModel, FalseFlag, TrueFlag, ERROR_STATUS_BY_CODE as AUTH_ERRORS)
 
-CONTRACT_VERSION = '1.1.0-rc.2'
+CONTRACT_VERSION = '1.1.0-rc.3'
 MAX_BODY = 8192
 MAX_RESPONSE = 262144
 ERROR_STATUS_BY_CODE = {**AUTH_ERRORS,
@@ -232,21 +232,24 @@ class ReceiptSummary(StrictModel):
     finality: Literal['finalized', 'provisional', 'unavailable']
     gasUsedRaw: Raw
     effectiveGasPriceRaw: Raw
-    executionFeeRaw: Raw
+    grossGasFeeRaw: Raw
+    l1GasUsedRaw: Raw | None
     l1FeeRaw: Raw | None
-    totalFeeRaw: Raw | None
+    totalFeeRaw: None
     position: ReceiptPosition | None
     # Old stored observations have no envelope evidence until reconciled again.
     transaction: ObservedTransaction | None
 
     @model_validator(mode='after')
     def actual_cost(self):
-        execution = int(self.gasUsedRaw) * int(self.effectiveGasPriceRaw)
-        if int(self.executionFeeRaw) != execution:
+        gross = int(self.gasUsedRaw) * int(self.effectiveGasPriceRaw)
+        if int(self.grossGasFeeRaw) != gross:
             raise ValueError('gas_accounting_mismatch')
-        total = None if self.l1FeeRaw is None else str(execution + int(self.l1FeeRaw))
-        if self.totalFeeRaw != total:
-            raise ValueError('total_gas_accounting_mismatch')
+        if self.l1GasUsedRaw is not None and int(self.l1GasUsedRaw) > int(self.gasUsedRaw):
+            raise ValueError('l1_gas_exceeds_total_gas')
+        l1_fee = None if self.l1GasUsedRaw is None else str(int(self.l1GasUsedRaw) * int(self.effectiveGasPriceRaw))
+        if self.l1FeeRaw != l1_fee:
+            raise ValueError('l1_gas_accounting_mismatch')
         if self.outcome == 'reverted' and self.position is not None:
             raise ValueError('reverted_mint_evidence')
         if self.transaction is not None and (

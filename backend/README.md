@@ -21,6 +21,15 @@ The selected [home VM deployment](../docs/HOME_VM_RUNBOOK.md) still requires
 integrated-release validation and application configuration; the VM/empty PostgreSQL
 foundation is installed and four initial wallets are held privately for later admission.
 
+Issue #42 adds opt-in [Robinhood fork qualification](../reports/DEPOSIT_FORK_QUALIFICATION.md)
+through a read-only upstream gateway and an isolated Anvil child. Four protocol
+paths have observed successful mints; the report preserves unsupported and
+intermittent single-asset cases. Proxy tokens remain production-blocked. Nitro
+receipt accounting uses gross gas with an included poster component and unknown
+net total. This is a coordinated pre-release `deposit-v1` migration, requiring
+consumer acknowledgment before integration. The qualification CLI is separate
+from every public listener and from offline CI.
+
 API 0.8.0 follows the [MVP data strategy](../MVP_DATA_STRATEGY.md): read indexed
 market data on demand and keep exact historical reconstruction optional for
 onboarding. No lifetime backfill starts when a user reads a pool.

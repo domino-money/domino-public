@@ -14,9 +14,11 @@ from unittest.mock import patch
 
 from eth_abi import decode, encode
 from eth_hash.auto import keccak
+from pydantic import ValidationError
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from deposit_receipt import ReceiptReconciler, receipt_summary, validate_issued_artifact, PERMIT2, TRANSFER, APPROVAL, PERMIT_APPROVAL, MODIFY
+from deposit_models import ReceiptSummary
 from discovery import CHAIN_ID, POOL_MANAGER, POSITION_MANAGER, ZERO, DataError
 from lp_mint_inspection import inspect_mint
 from test_lp_mint_inspection import fixture, OWNER, OTHER, TOKEN0, TOKEN1, DEADLINE
@@ -81,7 +83,8 @@ class Rpc:
             logs=[event(TOKEN1,[APPROVAL,topic_address(OWNER),topic_address(PERMIT2)],'0x'+encode(['uint256'],[0 if kind=='erc20_reset' else 202]).hex())]
         for index,log in enumerate(logs):log['logIndex']=hex(index)
         self.receipt={'transactionHash':HASH,'blockHash':block_hash(MINED),'blockNumber':hex(MINED),'transactionIndex':'0x0',
-            'from':OWNER,'to':tx['to'],'status':'0x1','gasUsed':hex(100000),'effectiveGasPrice':hex(100),'l1Fee':'0xa','logs':logs}
+            'from':OWNER,'to':tx['to'],'status':'0x1','gasUsed':hex(100000),'effectiveGasPrice':hex(100),
+            'gasUsedForL1':hex(10000),'l1Fee':'0xa','logs':logs}
         self.calls=[];self.head=HEAD;self.finalized=FINALIZED;self.nonce=6
         self.blocks={MINED:[self.transaction]};self.by_hash={HASH:self.transaction}
         self.receipts={HASH:self.receipt};self.hash_overrides={};self.block_reads={};self.change_on_read={}
@@ -140,8 +143,8 @@ class DepositReceiptTests(unittest.TestCase):
         rpc=Rpc();result=reconcile(rpc)
         self.assertEqual(result['state'],'confirmed');self.assertTrue(result['nonceFinalized']);self.assertFalse(result['retryAllowed'])
         receipt=result['receipt']
-        self.assertEqual(receipt['gas'],{'gasUsedRaw':'100000','effectiveGasPriceRaw':'100','executionFeeRaw':'10000000',
-            'l1FeeRaw':'10','totalFeeRaw':'10000010','totalFeeStatus':'reported_execution_and_l1'})
+        self.assertEqual(receipt['gas'],{'gasUsedRaw':'100000','effectiveGasPriceRaw':'100','grossGasFeeRaw':'10000000',
+            'l1GasUsedRaw':'10000','l1FeeRaw':'1000000','totalFeeRaw':None,'totalFeeStatus':'net_fee_unavailable'})
         self.assertEqual(receipt['mint']['tokenId'],'7');self.assertEqual(receipt['mint']['tokens'][0]['depositedRaw'],'100')
         self.assertEqual(receipt['mint']['tokens'][1]['depositedRaw'],'200')
         self.assertEqual(receipt['finality']['status'],'finalized');self.assertFalse(receipt['finality']['absoluteFinalityProven'])
@@ -157,12 +160,86 @@ class DepositReceiptTests(unittest.TestCase):
     def test_reverted_waits_for_finality_and_has_no_mint(self):
         rpc=Rpc();rpc.receipt.update(status='0x0',logs=[])
         self.assertEqual(reconcile(rpc)['state'],'reverted');self.assertIsNone(receipt_summary(reconcile(rpc))['position'])
+        summary=receipt_summary(reconcile(rpc))
+        self.assertEqual((summary['grossGasFeeRaw'],summary['l1FeeRaw']),('10000000','1000000'))
+        self.assertIsNone(summary['totalFeeRaw'])
         rpc.finalized=MINED-1;self.assertEqual(reconcile(rpc)['state'],'pending')
 
-    def test_missing_l1_fee_is_not_zero_or_full_gas_total(self):
-        rpc=Rpc();rpc.receipt.pop('l1Fee');result=reconcile(rpc)
-        self.assertIsNone(result['receipt']['gas']['totalFeeRaw']);self.assertIsNone(receipt_summary(result)['l1FeeRaw'])
-        rpc.receipt['l1Fee']='0x0';self.assertEqual(reconcile(rpc)['receipt']['gas']['totalFeeRaw'],'10000000')
+    def test_missing_poster_gas_is_unknown_and_explicit_zero_is_preserved(self):
+        rpc=Rpc();rpc.receipt.pop('gasUsedForL1')
+        summary=receipt_summary(reconcile(rpc))
+        self.assertIsNone(summary['l1GasUsedRaw']);self.assertIsNone(summary['l1FeeRaw'])
+        self.assertEqual(summary['grossGasFeeRaw'],'10000000');self.assertIsNone(summary['totalFeeRaw'])
+        rpc.receipt['gasUsedForL1']='0x0'
+        summary=receipt_summary(reconcile(rpc))
+        self.assertEqual((summary['l1GasUsedRaw'],summary['l1FeeRaw']),('0','0'))
+        self.assertIsNone(summary['totalFeeRaw'])
+
+    def test_unqualified_l1_fee_extension_is_never_added_or_interpreted(self):
+        for extension in ('0xa','0x00','invalid',str(2**256),None,False,10,{'fee':'secret'}):
+            with self.subTest(extension=extension):
+                rpc=Rpc();rpc.receipt['l1Fee']=extension
+                summary=receipt_summary(reconcile(rpc))
+                self.assertEqual(summary['grossGasFeeRaw'],'10000000')
+                self.assertEqual(summary['l1FeeRaw'],'1000000');self.assertIsNone(summary['totalFeeRaw'])
+                rpc.receipt.pop('gasUsedForL1')
+                self.assertIsNone(receipt_summary(reconcile(rpc))['l1FeeRaw'])
+        rpc=Rpc();rpc.receipt.pop('l1Fee')
+        self.assertEqual(receipt_summary(reconcile(rpc))['l1FeeRaw'],'1000000')
+
+    def test_poster_gas_must_be_canonical_bounded_rpc_quantity(self):
+        for value in (None,False,0,'0','0x','0x00','0X0','0x-1',hex(100001),hex(2**256)):
+            with self.subTest(value=value):
+                rpc=Rpc();rpc.receipt['gasUsedForL1']=value
+                with self.assertRaisesRegex(DataError,'^invalid_deposit_receipt_gas$'):
+                    reconcile(rpc)
+
+    def test_fee_projection_preserves_integer_precision_and_effective_price(self):
+        rpc=Rpc();price=2**60+1
+        rpc.selection['maxFeePerGasRaw']=str(price+100)
+        rpc.artifact['transaction']['maxFeePerGasRaw']=str(price+50)
+        rpc.transaction['maxFeePerGas']=hex(price+50)
+        rpc.receipt['effectiveGasPrice']=hex(price)
+        summary=receipt_summary(reconcile(rpc))
+        self.assertEqual(summary['grossGasFeeRaw'],str(100000*price))
+        self.assertEqual(summary['l1FeeRaw'],str(10000*price))
+        self.assertIsNone(summary['totalFeeRaw'])
+
+    def test_public_fee_invariants_reject_net_claims_and_inconsistent_components(self):
+        summary=receipt_summary(reconcile(Rpc()))
+        for changes in ({'grossGasFeeRaw':'1'},{'grossGasFeeRaw':10000000},{'grossGasFeeRaw':str(2**256)},
+                        {'l1GasUsedRaw':'100001','l1FeeRaw':'10000100'},{'l1GasUsedRaw':None},
+                        {'l1GasUsedRaw':'00'},{'l1GasUsedRaw':10000},{'l1FeeRaw':'10'},
+                        {'l1FeeRaw':None},{'totalFeeRaw':'10000000'},{'totalFeeRaw':'0'},
+                        {'executionFeeRaw':'9000000'}):
+            with self.subTest(changes=changes),self.assertRaises(ValidationError):
+                ReceiptSummary.model_validate({**summary,**changes})
+
+    def test_legacy_stored_receipts_recompute_gross_without_reinterpreting_l1(self):
+        outcome=reconcile(Rpc());original=deepcopy(outcome)
+        outcome['receipt']['gas']={'gasUsedRaw':'100000','effectiveGasPriceRaw':'100',
+            'executionFeeRaw':'999','l1FeeRaw':'10','totalFeeRaw':'10000010',
+            'totalFeeStatus':'reported_execution_and_l1'}
+        legacy=deepcopy(outcome)
+        summary=receipt_summary(outcome)
+        self.assertEqual(summary['grossGasFeeRaw'],'10000000')
+        self.assertIsNone(summary['l1GasUsedRaw']);self.assertIsNone(summary['l1FeeRaw']);self.assertIsNone(summary['totalFeeRaw'])
+        self.assertNotIn('executionFeeRaw',summary);self.assertEqual(outcome,legacy)
+        self.assertEqual(summary['position'],receipt_summary(original)['position'])
+        for key in ('executionFeeRaw','l1FeeRaw','totalFeeRaw'):outcome['receipt']['gas'].pop(key)
+        self.assertEqual(receipt_summary(outcome),summary)
+
+    def test_summary_recomputes_new_components_and_validates_persisted_operands(self):
+        outcome=reconcile(Rpc());gas=outcome['receipt']['gas']
+        gas.update(grossGasFeeRaw='1',l1FeeRaw='2',totalFeeRaw='3')
+        summary=receipt_summary(outcome)
+        self.assertEqual((summary['grossGasFeeRaw'],summary['l1FeeRaw']),('10000000','1000000'))
+        self.assertIsNone(summary['totalFeeRaw'])
+        for field,value in (('gasUsedRaw','01'),('effectiveGasPriceRaw',100),('l1GasUsedRaw','100001'),
+                            ('l1GasUsedRaw',False),('effectiveGasPriceRaw',str(2**256-1))):
+            invalid=deepcopy(outcome);invalid['receipt']['gas'][field]=value
+            with self.subTest(field=field,value=value),self.assertRaises((DataError,ValidationError)):
+                receipt_summary(invalid)
 
     def test_native_net_spend_and_refund_never_use_whole_block_balances(self):
         rpc=Rpc(native=True);result=reconcile(rpc)
@@ -325,7 +402,7 @@ class DepositReceiptTests(unittest.TestCase):
             if mutation=='membership':rpc.blocks[MINED]=[]
             if mutation=='gas':rpc.receipt['gasUsed']=hex(220001)
             if mutation=='price':rpc.receipt['effectiveGasPrice']=hex(151)
-            if mutation=='l1':rpc.receipt['l1Fee']='0x00'
+            if mutation=='l1':rpc.receipt['gasUsedForL1']='0x00'
             if mutation=='hash':rpc.by_hash[HASH]['hash']=OTHER_HASH
             with self.subTest(mutation=mutation),self.assertRaises(DataError):reconcile(rpc)
 
@@ -428,7 +505,9 @@ contract StandardApprovalReceipt {
         self.assertIn(result['state'],('pending','confirmed'),repr(result))
         self.assertEqual(result['receipt']['approval']['amountRaw'],'202')
         self.assertEqual(result['receipt']['transactionHash'],digest)
-        self.assertEqual(int(result['receipt']['gas']['executionFeeRaw']),int(raw['gasUsed'],16)*int(raw['effectiveGasPrice'],16))
+        self.assertEqual(int(result['receipt']['gas']['grossGasFeeRaw']),int(raw['gasUsed'],16)*int(raw['effectiveGasPrice'],16))
+        self.assertIsNone(result['receipt']['gas']['l1GasUsedRaw'])
+        self.assertIsNone(result['receipt']['gas']['l1FeeRaw'])
         self.assertIsNone(result['receipt']['gas']['totalFeeRaw'])
         self.assertFalse(result['retryAllowed'])
 

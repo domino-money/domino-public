@@ -271,7 +271,14 @@ def json_http(url, body=None, *, timeout=12, opener=_JSON_OPENER, headers=None):
             return json.loads(b''.join(chunks), parse_float=Decimal,
                               parse_constant=_reject_json_constant, object_pairs_hook=_strict_json_object)
     except urllib.error.HTTPError as error:
-        raise DataError(f'http_{error.code}') from None
+        code = error.code
+        # Close the error response before discarding its private URL/reason;
+        # delayed resource warnings must not expose provider credentials.
+        try:
+            error.close()
+        except Exception:
+            pass
+        raise DataError(f'http_{code}') from None
     except (urllib.error.URLError, TimeoutError, OSError, http.client.HTTPException):
         check_read_deadline()
         raise DataError('network_unavailable') from None

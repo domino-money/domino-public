@@ -227,6 +227,17 @@ class DiscoveryTests(unittest.TestCase):
             json_http('https://private.example/api/secret-value', opener=opener)
         self.assertEqual(str(caught.exception), 'network_unavailable')
 
+    def test_http_error_response_is_closed_without_exposing_its_reason(self):
+        response = io.BytesIO(b'private upstream response')
+        error = urllib.error.HTTPError('https://example.invalid/private-canary', 503,
+                                       'private-reason-canary', {}, response)
+        def opener(*args, **kwargs):
+            raise error
+        with self.assertRaises(DataError) as caught:
+            json_http('https://example.invalid', opener=opener)
+        self.assertEqual(str(caught.exception), 'http_503')
+        self.assertTrue(response.closed)
+
     def test_invalid_json_integer_and_endpoint_fail_with_safe_codes(self):
         with self.assertRaisesRegex(DataError, 'invalid_json'):
             json_http('https://example.test', opener=lambda *a, **k: io.BytesIO(b'9' * 5000))
