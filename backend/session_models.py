@@ -5,14 +5,14 @@ from typing import Annotated, Literal
 
 from pydantic import AfterValidator, BaseModel, ConfigDict, Field, StrictInt, field_validator
 
-CONTRACT_VERSION = '2.0.0'
+CONTRACT_VERSION = '3.0.0-rc.2'
 CHAIN_ID = 4663
 POLICY_VERSION = 'plain_eoa_v1'
 MAX_BODY = 8192
 ERROR_STATUS = {
     'invalid_request':400, 'session_required':401, 'preauth_required':401,
     'invalid_signature':401, 'challenge_invalid':401, 'origin_not_allowed':403,
-    'csrf_invalid':403, 'account_unsupported':403, 'route_not_available':404,
+    'csrf_invalid':403, 'account_unsupported':403, 'wallet_not_allowed':403, 'route_not_available':404,
     'method_not_allowed':405, 'session_exists':409, 'request_too_large':413,
     'json_required':415, 'session_rate_limited':429, 'session_capacity_busy':429,
     'upstream_invalid_response':502, 'upstream_contract_mismatch':502,

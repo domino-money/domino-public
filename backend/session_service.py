@@ -38,6 +38,8 @@ class SessionService:
                 self.siwe.verify(body['message'],body['signature'],address=challenge['address'],nonce=challenge['nonce'],
                                  issued_at=challenge['issued_at'],expires_at=challenge['expires_at'])
                 check_read_deadline()
+                self.store.check_verified_admission(preauth,csrf,challenge)
+                check_read_deadline()
                 validation=validate_account(self.checker.check(challenge['address']))
                 check_read_deadline()
                 return self.store.finish_verify(preauth,csrf,challenge,validation,session)

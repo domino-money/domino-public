@@ -23,6 +23,7 @@ from session_models import CONTRACT_VERSION, RESPONSE_MODELS, SessionError
 from session_service import SessionService
 from session_siwe import SiwePolicy
 from session_store import SessionStore
+from wallet_access import WalletAccessAdmin
 
 ORIGIN='https://app.example.invalid'
 PREFIX='/internal/session/v1/'
@@ -37,7 +38,9 @@ class SessionListenerTests(unittest.TestCase):
         self.addCleanup(self.admin.close)
         self.admin.execute('TRUNCATE domino_sessions.contexts,domino_sessions.challenges,domino_sessions.sessions,'
                            'domino_sessions.rate_limits,domino_sessions.private_limits')
+        self.admin.execute('TRUNCATE domino_wallet_access.grants,domino_wallet_access.audit RESTART IDENTITY')
         self.account=Account.from_key(bytes([3])*32)
+        WalletAccessAdmin(settings).grant(self.account.address)
         self.checker=SimpleNamespace(check=Mock(return_value=dict(VALIDATION)))
         self.verifier=SimpleNamespace(verify=Mock())
         store=SessionStore(settings,abuse_secret=b'synthetic session listener abuse secret')
@@ -95,6 +98,27 @@ class SessionListenerTests(unittest.TestCase):
         self.assertEqual(self.success('logout',**credentials)['result'],{'authenticated':False})
         self.assertEqual(self.request('me',session=credentials['session']).status_code,401)
         self.assertEqual(self.verifier.verify.call_count,7)
+
+    def test_http_challenge_is_uniform_and_denial_requires_valid_owner_signature(self):
+        uninvited=Account.from_key(bytes([10])*32)
+        shapes=[]
+        for account,wrong in ((self.account,uninvited),(uninvited,self.account)):
+            initial=self.success('bootstrap')
+            credentials={'preauth':initial['credentials']['preauth'],'csrf':initial['result']['csrfToken']}
+            value=self.success('challenge',{'address':account.address,'chainId':4663},**credentials)
+            shapes.append((set(value),set(value['result']),value['credentials']))
+            issued=value['result']
+            body={'challengeId':issued['challengeId'],'message':issued['message'],
+                'signature':'0x'+Account.sign_message(encode_defunct(text=issued['message']),wrong.key).signature.hex()}
+            response=self.request('verify',body,**credentials)
+            self.assertEqual((response.status_code,response.json()),(401,{'error':'invalid_signature'}))
+            self.checker.check.assert_not_called()
+        self.assertEqual(shapes[0],shapes[1])
+        body['signature']='0x'+Account.sign_message(encode_defunct(text=issued['message']),uninvited.key).signature.hex()
+        response=self.request('verify',body,**credentials)
+        self.assertEqual((response.status_code,response.json()),(403,{'error':'wallet_not_allowed'}))
+        self.checker.check.assert_not_called()
+        self.assertEqual(self.admin.execute('SELECT count(*) AS n FROM domino_sessions.sessions').fetchone()['n'],0)
 
     def test_real_listener_refresh_denies_method_path_version_and_csrf_before_mutation(self):
         credentials,_=self.login()

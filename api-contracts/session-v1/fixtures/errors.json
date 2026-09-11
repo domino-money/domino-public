@@ -130,5 +130,11 @@
       "error": "upstream_unavailable"
     },
     "status": 503
+  },
+  "wallet_not_allowed": {
+    "body": {
+      "error": "wallet_not_allowed"
+    },
+    "status": 403
   }
 }

@@ -25,7 +25,8 @@
         "upstream_contract_mismatch",
         "upstream_invalid_response",
         "upstream_timeout",
-        "upstream_unavailable"
+        "upstream_unavailable",
+        "wallet_not_allowed"
       ],
       "type": "string"
     }
@@ -56,6 +57,7 @@
     "upstream_contract_mismatch": 502,
     "upstream_invalid_response": 502,
     "upstream_timeout": 504,
-    "upstream_unavailable": 503
+    "upstream_unavailable": 503,
+    "wallet_not_allowed": 403
   }
 }

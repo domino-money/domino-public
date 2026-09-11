@@ -320,8 +320,9 @@ formats are explicit compatibility failures, not an excuse to skip validation.
   to authorize only the identity bound to its existing session. Logout revokes
   that session in shared storage; do not rely on hiding a button or clearing a
   cookie alone. No private-route stateless positive session cache initially.
-- Limit bootstrap/challenge to 5/minute/IP and 20/hour/address for challenges;
-  verify to 10/minute/IP plus the challenge attempt cap. Successful users also
+- Limit bootstrap/challenge to 5/minute/IP and 100/minute globally; reserve the
+  20/hour wallet budget only after valid SIWE proof, before EOA RPC;
+  verify to 10/minute/IP and 200/minute globally plus the challenge attempt cap. Successful users also
   retain per-account/IP private-request limits. Address limits are abuse controls,
   not proof that an anonymous caller controls the address. Hash/enforce keys
   centrally and return 429 without revealing account existence.

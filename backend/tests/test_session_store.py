@@ -21,6 +21,7 @@ from session_models import SessionError
 from session_service import SessionService
 from session_siwe import SiwePolicy
 from session_store import CAPACITIES, CLEANUP_BATCH, SessionStore, digest, session_csrf, _DeadlineConnection
+from wallet_access import WalletAccessAdmin
 
 VALIDATION={'method':'plain_eoa','blockNumber':'123','blockHash':'0x'+'ab'*32}
 SECRET=b'synthetic shared abuse-key secret only'
@@ -42,7 +43,9 @@ class SessionStoreTests(unittest.TestCase):
         self.addCleanup(self.admin.close)
         self.admin.execute('TRUNCATE domino_sessions.contexts,domino_sessions.challenges,domino_sessions.sessions,'
                            'domino_sessions.rate_limits,domino_sessions.private_limits')
+        self.admin.execute('TRUNCATE domino_wallet_access.grants,domino_wallet_access.audit RESTART IDENTITY')
         self.account=Account.from_key(bytes([3])*32)
+        WalletAccessAdmin(self.settings).grant(self.account.address)
         self.checker=Checker()
         self.store=SessionStore(self.settings,abuse_secret=SECRET)
         self.service=SessionService(self.store,SiwePolicy('https://domino.money'),self.checker)
@@ -214,7 +217,7 @@ class SessionStoreTests(unittest.TestCase):
         self.error('session_required',lambda:self.call('me',**c))
         self.assertEqual(len(self.checker.calls),before)
 
-    def test_invalid_attempts_and_ip_and_address_limits_are_shared_and_durable(self):
+    def test_invalid_attempts_and_ip_limits_are_shared_but_unsigned_addresses_have_no_quota(self):
         p,b=self.pending()
         wrong={**b,'message':b['message']+'x'}
         for index in range(5):self.error('challenge_invalid',lambda:self.call('verify',wrong,service=self.peer,**p))
@@ -223,10 +226,12 @@ class SessionStoreTests(unittest.TestCase):
         self.assertEqual(self.checker.calls,[])
         for index in range(5):self.call('bootstrap',service=self.peer,client='192.0.2.9')
         self.error('session_rate_limited',lambda:self.call('bootstrap',client='192.0.2.9'))
-        for index in range(19):self.pending(f'198.51.100.{index+1}')
+        for index in range(21):self.pending(f'198.51.100.{index+1}')
         initial=self.call('bootstrap',client='198.51.100.30')
-        self.error('session_rate_limited',lambda:self.call('challenge',{'address':self.account.address,'chainId':4663},
-            client='198.51.100.30',preauth=initial['credentials']['preauth'],csrf=initial['result']['csrfToken']))
+        self.call('challenge',{'address':self.account.address,'chainId':4663},
+            client='198.51.100.30',preauth=initial['credentials']['preauth'],csrf=initial['result']['csrfToken'])
+        key=self.store._key('verified-address',self.account.address.lower())
+        self.assertIsNone(self.admin.execute('SELECT * FROM domino_sessions.rate_limits WHERE key_hash=%s',(key,)).fetchone())
 
     def test_private_bucket_burst_five_refills_at_thirty_per_minute_across_instances(self):
         p,b,c,r=self.login()

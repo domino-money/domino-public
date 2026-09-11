@@ -1,9 +1,26 @@
-# Session contract 2.0.0 candidate
+# Session contract 3.0.0-rc.2 candidate
 
 Unreleased and disabled. This contract belongs to the backend dependency #31
 of wallet UI #14. It does not change `read-v1`, connect any frontend hook,
 authorize spending, or enable automation. Activation needs backend/consumer
 review and separate deployment evidence.
+
+Issue #49 adds default-deny wallet admission for the invited alpha. Operators
+grant/revoke access in the backend database; no browser can enroll a wallet or
+fetch the list. Public read-v1 queries remain unauthenticated. A wallet must be
+admitted **and** prove control through SIWE before login; neither condition
+authorizes spending or makes a market/token eligible for a deposit.
+
+`challenge` has the same successful shape for every well-formed address.
+`wallet_not_allowed` (HTTP 403) occurs only on `verify`, after a valid owner
+signature. Membership is checked before EOA RPC and again at session creation;
+revocation during RPC is also denied. Invalid signatures return `invalid_signature`
+(401) regardless of membership. This denial stops the sign-in flow. Present an invitation/access
+state; do not automatically ask the wallet to sign again. An existing session
+whose admission generation was revoked returns `session_required` (401).
+Re-admitting the address does not revive old sessions/challenges. Clear private
+state and use a new sign-in after admission is restored. A storage outage remains
+`session_store_unavailable` (503), not a wallet rejection.
 
 `types.ts` and `schemas/` are generated from the Python session models;
 `runtime.mjs` validates strict browser JSON without dependencies. The BFF uses
@@ -28,7 +45,7 @@ preauth/session. Cookies must be sent with same-origin fetch credentials; do
 not copy them into JavaScript storage. Login signatures and messages belong
 only in the active sign-in flow, never telemetry.
 
-Use `X-Domino-Session-Contract: 2.0.0`. All responses include this header and
+Use `X-Domino-Session-Contract: 3.0.0-rc.2`. All responses include this header and
 `Cache-Control: no-store`. The version is independent of `read-v1`. Bodies are
 closed: unknown fields, alternate chains, guessed owner/role/session selectors,
 duplicate JSON keys and coerced scalars are invalid. A message is at most 2048
@@ -41,6 +58,7 @@ On reload, GET `me` with the HttpOnly session cookie and no old CSRF. It reads
 stored identity and recovers the same session-bound CSRF without rotating it,
 renewing idle expiry, reserving quota, cleaning records, checking RPC or revoking
 anything. Its `validation` is the **last stored observation**, which can be stale;
+admission is nevertheless rechecked against the current database grant/generation.
 `authenticated:true` establishes session identity, not current EOA eligibility
 or transaction permission. POST `refresh` with the recovered `X-Domino-CSRF`
 performs the fresh plain-EOA check and renews idle/snapshot state. Both tabs retain
@@ -72,17 +90,27 @@ or account code reads as unavailable, not as a logged-out or unsupported wallet.
 state gives `account_check_unavailable`. The initial method is `plain_eoa` only.
 Cookie/session tokens never appear in public response bodies.
 
-This replaces the unreleased 1.0.0 candidate's mutating GET semantics. The
-family/path stays `session-v1`; the header/manifest semantic version is 2.0.0.
-Freeze a new producer digest and consumer acknowledgement together. With all
-session and authenticated consumer ingress disabled, revoke old sessions and
-preauth/challenges before changing versions; do not run mixed 1.0.0/2.0.0 workers.
-An old random-CSRF session cannot be recovered by `me` and fails closed as
-`session_required` without modifying its hash. No automatic migration or
-production revocation is performed by this candidate. See rollout controls in
-the runbook before any activation.
+The earlier 2.0.0 candidate corrected the mutating GET semantics of 1.0.0. This
+3.0.0-rc.2 candidate adds a mandatory admission policy, one closed error, and
+generation-bound login/session state. Compared with rc.1, rc.2 removes the
+pre-signature membership oracle and moves the wallet quota after proof. Paths and
+successful public body shapes
+are unchanged. Pin the producer commit/digest and obtain consumer acknowledgment
+before integrating; no mixed producer/Worker/consumer versions are supported.
+Apply migration 011 with ingress disabled. Pre-migration session/challenge rows
+have no admission generation and cannot gain permission from a later grant.
+The migration also installs a lock-coupled INSERT trigger rejecting NULL, denied,
+or obsolete session generations from a legacy writer. It does not retrofit an
+old producer's read-only session lookup, so mixed/legacy rollback remains unsafe.
+An old random-CSRF session also remains unrecoverable. Rollback must keep
+authenticated ingress disabled: returning to a legacy producer can otherwise
+remove the admission gate. Preserve admission audit and financial history;
+do not restore old sessions to make a rollback appear successful.
 
 Regenerate with `backend/.venv/bin/python scripts/export-session-contract.py`;
 CI uses `--check` and cross-language fixture/mutation tests. See the
 [session runbook](../../docs/WALLET_SESSIONS.md) for lifetimes, routing,
 isolation, startup and activation/rollback requirements.
+See [wallet access](../../docs/WALLET_ACCESS.md) for operator management,
+revocation semantics and descendant integration, and the
+[home VM handoff](../../docs/HOME_VM_RUNBOOK.md) for the selected hosting scope.

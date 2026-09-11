@@ -4,6 +4,7 @@ Private source repository for a wallet-friendly Uniswap v4 liquidity app on Robi
 
 ## Current status
 
+- **Invited-wallet candidate:** operator-managed backend allowlist for login/private operations, with revocation and generation-bound sessions. Public reads stay open. [Wallet access](docs/WALLET_ACCESS.md), [home VM handoff](docs/HOME_VM_RUNBOOK.md). Application disabled; VM/database foundation provisioned, no real wallets admitted.
 - **Web:** approved Tangerine practice workbench, position/activity cards, modal workflows and hypothetical fee calculations. Browser-local practice data; no live deposits or signing.
 - **Backend 0.8.0:** generic token reads, verified pool identities and on-demand provider TVL/24h volume/hourly prices with a bounded cache. Exact historical accounting and NFT ownership reads remain available separately.
 - **Market data:** attributed provider TVL/volume can be read without a local pool ledger. Reconciled USD valuation and LP fee APR remain unavailable without qualified inputs. Source coverage, method and freshness remain visible; no new-pool history is invented.

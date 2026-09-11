@@ -6,6 +6,14 @@ plain-EOA SIWE verifier. It does not authenticate through the public reader,
 grant financial permission or connect frontend hooks. Its shared contract is
 `api-contracts/session-v1/`; the public-read documentation below stays unchanged.
 
+Issue #49 adds [operator-managed wallet admission](../docs/WALLET_ACCESS.md)
+to that candidate: login/private access is denied unless chain 4663 and the
+wallet's current grant generation match. Public reads remain open. The
+`session-v1` candidate is 3.0.0-rc.2; no initial wallets or services are enabled.
+The selected [home VM deployment](../docs/HOME_VM_RUNBOOK.md) still requires
+integrated-release validation and application configuration; the VM/empty PostgreSQL
+foundation is installed and four initial wallets are held privately for later admission.
+
 API 0.8.0 follows the [MVP data strategy](../MVP_DATA_STRATEGY.md): read indexed
 market data on demand and keep exact historical reconstruction optional for
 onboarding. No lifetime backfill starts when a user reads a pool.

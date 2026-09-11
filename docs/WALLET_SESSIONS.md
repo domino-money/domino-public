@@ -10,6 +10,16 @@ There is no private portfolio/settings API in this release. The verified owner
 context is a prerequisite for that later work; public NFT ownership stays public
 snapshot data and practice positions stay browser-local simulations.
 
+Issue #49 extends this disabled candidate with mandatory [wallet admission](WALLET_ACCESS.md)
+under `session-v1` **3.0.0-rc.2**. Operators control a persistent, default-empty
+allowlist for login/private operations; public reads remain unauthenticated.
+Grant generations prevent removed/re-admitted wallets from reusing old sign-in
+challenges or sessions. `wallet_not_allowed` occurs only after a valid SIWE proof
+on `verify`; admission is checked before EOA RPC and again at session creation. Well-formed challenge requests are uniform; unsigned
+requests never consume a target wallet's shared quota.
+Successful response shapes and the read-only GET/protected POST separation stay
+unchanged. See the linked runbook for migration 011 and operator permissions.
+
 ## Components and fixed traffic boundaries
 
 ```text
@@ -20,7 +30,7 @@ same-origin browser /api/session/v1/*
   -> private PostgreSQL schema + fresh read-only Robinhood account-code check
 ```
 
-`bridge/src/session-worker.mjs` handles only the five session paths. It sends
+`bridge/src/session-worker.mjs` handles only the six session paths. It sends
 named preauth/session credentials, CSRF, the checked canonical browser origin
 and trusted connection IP to `backend/session_api.py`. The listener verifies
 the Access JWT signature, issuer, audience, service ID and expiry before auth
@@ -106,7 +116,9 @@ expiry, including a final guard before committing authentication mutations.
 | Verification attempts | 5 per challenge, atomically reserved |
 | Session | 12 hours absolute; 30 minutes idle |
 | Bootstrap + challenge issuance | Shared 5/minute/trusted IP |
-| Challenge issuance per address | 20/hour/address |
+| Successful ownership proof before EOA RPC | 20/hour/proven wallet |
+| Bootstrap + challenge issuance globally | Shared 100/minute |
+| Verification globally | 200/minute |
 | Verification | 10/minute/trusted IP |
 | Protected session refresh | 30/minute, burst 5 per IP and verified account |
 
@@ -184,10 +196,11 @@ unavailable, distinct from `session_required`. Unsupported code-bearing wallets
 may still use public reads. See shared safe error fixtures and exact schemas;
 frontend adapter/rendering tests and acknowledgement remain outstanding.
 
-## Candidate version transition
+## Earlier 2.0.0 transition and current admission migration
 
-The family/path remains `session-v1` but its semantic header/manifest version is
-2.0.0 because GET no longer performs the old refresh behavior. Deployment must
+The earlier 2.0.0 candidate kept the family/path `session-v1` and separated GET
+recovery from refresh. The current 3.0.0-rc.2 candidate also requires admitted
+wallets and generation-bound session/challenge state. Deployment must
 remain disabled until the consumer adopts GET recovery plus POST refresh and
 acknowledges the new producer commit/digest. No mixed-version session replicas
 or workers are supported. Before a transition, disable session and authenticated
@@ -197,6 +210,13 @@ Do not merely relabel existing rows: old random CSRF cannot be recovered by GET,
 and old retained CSRF must not remain usable in descendant authenticated routes.
 An old session presented to GET returns `session_required` without writing.
 The candidate does not change a deployed database or invoke revocation.
+
+Migration 011 adds nullable generations to old rows without backfilling admission.
+Pre-migration sessions/challenges cannot become authorized from a later grant.
+Keep ingress disabled during transition and retain the admission audit. Returning
+to a legacy producer can remove this gate, so rollback also keeps ingress off
+until a matching policy-preserving build is reviewed. The owner-selected hosting
+target is described in the [home VM handoff](HOME_VM_RUNBOOK.md).
 
 The descendant `begin_preview` / `finish_preview` store guards continue checking
 the stored CSRF hash, so newly derived CSRF uses their existing interface.

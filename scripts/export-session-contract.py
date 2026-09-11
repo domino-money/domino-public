@@ -99,7 +99,9 @@ export function keys(value:unknown, names:readonly string[]):boolean;
 export function credential(value:unknown):value is string;
 export function validateEnvelope(route:SessionRoute, value:unknown):boolean;
 '''.replace('__VERSION__', CONTRACT_VERSION)
-    source_paths = ['backend/session_models.py', 'backend/session_siwe.py',
+    source_paths = ['backend/session_models.py', 'backend/session_siwe.py', 'backend/session_service.py',
+                    'backend/session_store.py', 'backend/wallet_access.py',
+                    'backend/migrations/011_wallet_access.sql',
                     'backend/tests/session_contract_fixtures.py', 'scripts/export-session-contract.py']
     manifest = {
         'contract': 'session-v1', 'contractVersion': CONTRACT_VERSION,
