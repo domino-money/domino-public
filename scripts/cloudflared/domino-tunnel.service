@@ -1,0 +1,48 @@
+# Candidate only. No automatic start; localhost-only egress is NOT operational.
+# Before first start: approve the separate egress drop-in and remote mappings,
+# validate credential/asset ownership, and run the documented network probes.
+[Unit]
+Description=Domino staging Cloudflare Tunnel (2026.9.0)
+Wants=network-online.target
+After=network-online.target
+StartLimitIntervalSec=60
+StartLimitBurst=3
+
+[Service]
+Type=exec
+User=domino-tunnel
+Group=domino-tunnel
+WorkingDirectory=/opt/domino/cloudflared/2026.9.0
+LoadCredential=cloudflared-token:/etc/domino/credentials/cloudflared-token
+ExecStart=/usr/bin/env -i HOME=/nonexistent PATH=/usr/bin:/bin /opt/domino/cloudflared/2026.9.0/cloudflared tunnel --config /opt/domino/cloudflared/2026.9.0/connector.yml --no-autoupdate --loglevel info --metrics 127.0.0.1:20241 --grace-period 20s --management-diagnostics=false run --token-file ${CREDENTIALS_DIRECTORY}/cloudflared-token
+UMask=0077
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+InaccessiblePaths=/etc/domino/credentials /opt/domino/releases /run/postgresql-domino
+CapabilityBoundingSet=
+AmbientCapabilities=
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+RestrictNamespaces=yes
+RestrictRealtime=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+SystemCallArchitectures=native
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+ProtectClock=yes
+IPAddressDeny=any
+IPAddressAllow=localhost
+LimitCORE=0
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=domino-tunnel
+Restart=on-failure
+RestartSec=5
+TimeoutStartSec=30
+TimeoutStopSec=30
+KillMode=mixed

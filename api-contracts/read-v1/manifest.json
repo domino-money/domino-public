@@ -1035,7 +1035,7 @@
     },
     {
       "path": "backend/read_gateway.py",
-      "sha256": "adbdb5730bf5425a2a36b58fba2430398dc2553899457a1a6dc2a64939296431"
+      "sha256": "376772878a3ff35a2fe65b4c9f10ca95c86b6405a79ef0305cd1d4e97ff33675"
     },
     {
       "path": "backend/bridge_state.py",

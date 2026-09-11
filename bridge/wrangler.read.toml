@@ -1,0 +1,22 @@
+# Reviewed-source candidate for #45; this file does not provision a deployment.
+# Only the reviewed domino-app Pages Function may call this Worker via a binding.
+# No Internet endpoint or scheduled trigger is configured here.
+name = "domino-read-bridge"
+main = "src/worker.mjs"
+compatibility_date = "2026-09-09"
+workers_dev = false
+preview_urls = false
+routes = []
+logpush = false
+
+[observability]
+enabled = false
+
+[vars]
+READ_BRIDGE_ENABLED = "false"
+APP_ORIGIN = "https://domino.money"
+GATEWAY_ORIGIN = "https://vm-read.domino.money"
+ENABLED_READS = ""
+
+# Access client IDs/secrets are provisioned separately in Cloudflare after review.
+# Do not add credentials, account overrides or environment bindings to this file.

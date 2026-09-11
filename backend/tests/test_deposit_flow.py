@@ -208,7 +208,8 @@ class DepositFlowTests(unittest.TestCase):
     def error(self, response, status, code):
         self.assertEqual(response.status_code, status, response.text)
         self.assertEqual(response.json(), {'error': code})
-        self.assertEqual(response.headers['Cache-Control'], 'no-store')
+        self.assertTrue({'no-store', 'no-transform'} <= {value.strip().lower() for value in response.headers['cache-control'].split(',')})
+        self.assertNotIn('content-encoding', response.headers)
         self.assertEqual(response.headers['X-Domino-Deposit-Contract'], DEPOSIT_VERSION)
         self.assertNotIn('set-cookie', response.headers)
         for private in (PRIVATE, ASSERTION):

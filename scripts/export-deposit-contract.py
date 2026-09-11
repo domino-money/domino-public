@@ -105,7 +105,8 @@ export function validateResponse<R extends DepositRoute>(route:R, value:unknown)
 export function validateError(status:number, value:unknown):value is DepositError;
 export function validateWalletStep(selection:DepositSelection, owner:string, artifact:PreparedArtifact):boolean;
 '''
-    source_paths = ['backend/deposit_models.py', 'backend/deposit_service.py', 'backend/deposit_allowances.py',
+    source_paths = ['backend/deposit_models.py', 'backend/deposit_api.py', 'backend/authenticated_api.py',
+                    'backend/deposit_service.py', 'backend/deposit_allowances.py',
                     'backend/deposit_prepare.py', 'backend/deposit_receipt.py', 'backend/deposit_store.py',
                     'backend/migrations/014_deposit_draft_recovery.sql',
                     'backend/tests/test_deposit_capacity_recovery.py',

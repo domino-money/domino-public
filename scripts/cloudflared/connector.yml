@@ -1,0 +1,4 @@
+# Deliberately empty local configuration for a remotely managed tunnel.
+# The explicit path prevents discovery of an unrelated default config file.
+# This file does not create/override remote ingress or make a route safe.
+{}

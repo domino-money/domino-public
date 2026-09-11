@@ -1,11 +1,13 @@
 #!/usr/bin/env python3
-"""Read-only loopback smoke; source a5a855cec1fc5d120d9c1c187a84ff24bc1b02d6.
+"""Read-only loopback smoke for the no-transform listener candidate.
 
 Run explicitly on the VM with Python 3.14. No repository imports, credentials,
 redirects, proxy environment, wallet inputs or external RPC. Only the reader's
 catalogue SELECT can reach a database. Private requests omit service identity.
 Expectations: read_api.py, read_gateway.py, session_api.py, authenticated_api.py,
 catalogue.py and the four contract models. No endpoint is enabled by this file.
+The new private cache policy intentionally fails against the earlier a5a855c
+installation until these listener changes are rolled out.
 """
 import hashlib
 import http.client
@@ -30,6 +32,13 @@ SERVICES = (
 def require(condition, label):
     if not condition:
         raise AssertionError(label)
+
+
+def check_cache_policy(value, *, private):
+    directives = {item.strip().lower() for item in (value or '').split(',')}
+    require('no-store' in directives, 'no_store_required')
+    if private:
+        require('no-transform' in directives, 'no_transform_required')
 
 
 def expired(*_):
@@ -70,11 +79,12 @@ def check(name, port, method, path, status, expected, kind='Read', version=READ_
         require(len(raw) <= MAX_BODY, 'response_body_too_large')
         require(response.status == status, 'unexpected_http_status')
         require(observed.get('content-length') == str(len(raw)), 'content_length_mismatch')
+        require(observed.get('content-encoding', 'identity') == 'identity', 'identity_encoding_required')
         require(observed.get('content-type', '').split(';')[0].strip() == 'application/json', 'json_required')
         require(observed.get(f'x-domino-{kind.lower()}-contract') == version, 'contract_version_mismatch')
         require(not any(k.startswith('access-control-') or k == 'set-cookie' for k in observed), 'cors_or_cookie_exposed')
         if secured:
-            require(observed.get('cache-control') == 'no-store', 'no_store_required')
+            check_cache_policy(observed.get('cache-control'), private=port != 8876)
             require(observed.get('x-content-type-options') == 'nosniff', 'nosniff_required')
             require(observed.get('content-security-policy') == CSP, 'csp_mismatch')
         if port == 8876:
@@ -132,7 +142,7 @@ def main():
         check(f'{service}-health-not-exposed', port, 'GET', '/health', 404, {'error': 'route_not_available'}, **options)
         check(f'{service}-route-denied', port, 'POST', prefix + 'not-a-route', 404, {'error': 'route_not_available'}, **options)
     passed = len(RESULTS) == 46 and all(row['passed'] for row in RESULTS)
-    print(json.dumps({'status': 'passed' if passed else 'failed', 'sourceCommit': 'a5a855cec1fc5d120d9c1c187a84ff24bc1b02d6',
+    print(json.dumps({'status': 'passed' if passed else 'failed', 'listenerHeaderPolicy': 'no-store_no-transform_identity',
                       'checks': RESULTS, 'complete': len(RESULTS) == 46, 'requestLimit': 46,
                       'elapsedSeconds': round(time.monotonic() - started, 3)}, indent=2))
     return 0 if passed else 1

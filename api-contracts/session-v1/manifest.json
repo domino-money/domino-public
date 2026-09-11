@@ -130,6 +130,10 @@
       "sha256": "3cda2e02ec83a30b82fc9344fd4fa0168b54ac0fa783cb18a72b3e2596ac6393"
     },
     {
+      "path": "backend/session_api.py",
+      "sha256": "529e26840080de40eef80a2659bdfb9908172ae21f5b694b746754836d3c0481"
+    },
+    {
       "path": "backend/session_siwe.py",
       "sha256": "eefd4a2c18703708050642190738d188407691645dae627841fcc971dc4aff37"
     },
@@ -155,7 +159,7 @@
     },
     {
       "path": "scripts/export-session-contract.py",
-      "sha256": "8c1572a2d86acec16cf3d110a2a82dc17f7be09a6f4215bc4d313b0d4d5b41cf"
+      "sha256": "92c2e95feed185137bd278425c6d8bc26b3c2d8c565fd04859d5eabcd4f13dc2"
     }
   ],
   "status": "candidate_disabled_pending_consumer_acknowledgement"

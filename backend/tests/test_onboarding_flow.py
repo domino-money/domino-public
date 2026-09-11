@@ -167,7 +167,8 @@ class OnboardingFlowTests(unittest.TestCase):
     def assert_error(self, response, status, code):
         self.assertEqual(response.status_code, status, response.text)
         self.assertEqual(response.json(), {'error': code})
-        self.assertEqual(response.headers['Cache-Control'], 'no-store')
+        self.assertTrue({'no-store', 'no-transform'} <= {value.strip().lower() for value in response.headers['cache-control'].split(',')})
+        self.assertNotIn('content-encoding', response.headers)
         self.assertNotIn('set-cookie', response.headers)
 
     def test_signed_login_then_both_real_adapters_use_authenticated_owner_and_strip_authority(self):
@@ -182,7 +183,8 @@ class OnboardingFlowTests(unittest.TestCase):
             self.assertFalse(preview['executionAvailable'])
             self.assertEqual(preview['status'], 'preview_only')
             self.assertEqual(response.headers['X-Domino-Onboarding-Contract'], '1.0.0')
-            self.assertEqual(response.headers['Cache-Control'], 'no-store')
+            self.assertTrue({'no-store', 'no-transform'} <= {value.strip().lower() for value in response.headers['cache-control'].split(',')})
+            self.assertNotIn('content-encoding', response.headers)
             self.assertNotIn('set-cookie', response.headers)
             if route == 'position-preview':
                 self.assertEqual(preview['position']['recipient'], owner)

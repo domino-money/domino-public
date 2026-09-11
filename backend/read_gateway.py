@@ -126,7 +126,7 @@ def create_gateway(gateway=None):
         deadline = gateway.clock() + 20
         request_id = secrets.token_hex(16)
         def result(status, data):
-            headers = {'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff',
+            headers = {'Cache-Control': 'no-store, no-transform', 'X-Content-Type-Options': 'nosniff',
                        'X-Domino-Read-Contract': CONTRACT_VERSION, 'X-Domino-Request-Id': request_id,
                        'Content-Security-Policy': "default-src 'none'; frame-ancestors 'none'"}
             if status == 429:

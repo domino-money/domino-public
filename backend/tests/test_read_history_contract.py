@@ -45,7 +45,9 @@ class ReadHistoryTests(IdentityFixtures, unittest.TestCase):
                         expected=getattr(reader,route.replace('-','_'))(POOL)
                         self.assertEqual(payload,expected)
                         self.assertFalse(payload['executionAvailable'])
-                        self.assertEqual(response.headers['cache-control'],'no-store')
+                        directives={item.strip().lower() for item in response.headers['cache-control'].split(',')}
+                        self.assertTrue({'no-store','no-transform'} <= directives)
+                        self.assertNotIn('content-encoding',response.headers)
                         self.assertNotIn('set-cookie',response.headers)
 
     def test_current_apr_requires_fresh_complete_qualified_valuation(self):

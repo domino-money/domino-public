@@ -164,7 +164,7 @@ no bodies, addresses, IPs, cursors, credentials or other diagnostics.
 [`wrangler.example.toml`](wrangler.example.toml) is a non-deploying example with
 live reads off, no real routes, and both workers.dev/preview URLs off.
 `https://domino.money` is the user-selected app origin. The example gateway
-`https://read-origin.domino.money` is a proposal only: its DNS, Access application
+`https://vm-read.domino.money` is a proposal only: its DNS, Access application
 and service are not verified or provisioned. The file does not connect DNS,
 provision a Worker, configure Access or run a deployment. Cloudflare credentials
 and actual staging are deferred. The candidate's source entry is `src/worker.mjs`.
@@ -200,3 +200,20 @@ frontend task and are untouched here. See
 [`API_COMPATIBILITY.md`](../docs/API_COMPATIBILITY.md).
 
 The [next candidate notice](../docs/READ_CONTRACT_CANDIDATE_1_1.md) defines the nine-route consumer handoff.
+
+
+## Selected disabled staging configuration
+
+The four concrete `wrangler.read.toml`, `wrangler.session.toml`,
+`wrangler.onboarding.toml` and `wrangler.deposit.toml` files use the selected
+`domino.money`/`vm-*` origins, all flags false, no public routes or preview URLs,
+and disabled observability/Logpush. They do not provision Cloudflare resources or
+Pages bindings. Decimal owns the reviewed Pages gate/host-check/API forwarder and
+its later service-binding PR. Deposit secrets/Access/Tunnel are deferred.
+
+Run `python3 scripts/staging/check_bridge_configs.py` from the repository root to
+check the disabled configuration boundary offline. Changing that boundary needs
+an explicit reviewed release; passing the check says nothing about remote
+resources, old deployments, allowed binding callers or trusted client IP. See
+[the staging handoff](../docs/STAGING_BACKEND_HANDOFF.md) and
+[the cloudflared unit](../docs/CLOUDFLARED_STAGING.md).

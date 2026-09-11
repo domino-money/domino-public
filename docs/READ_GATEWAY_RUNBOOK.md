@@ -3,7 +3,7 @@
 This candidate implements public-data reads only. The selected application origin
 is `https://domino.money`. Cloudflare credentials, DNS, Access, Tunnel and public
 activation are deferred; these instructions do not imply they exist. The example
-`https://read-origin.domino.money` is a proposed separate backend hostname.
+`https://vm-read.domino.money` is a proposed separate backend hostname.
 
 ## Local preparation
 

@@ -16,10 +16,10 @@ OxDecimal owns **all Cloudflare configuration, DNS, frontend routing and fronten
 | Server inspection | VM/OS/network foundation installed; verify the installation evidence, backup destination/restore and UPS handling |
 | Server owner | Four initial wallet identities were supplied and checksum-validated locally; the pending list stays private and has not been applied to a staging database |
 | Backend | Pinned release commit and dependency locks, read/session contract versions and digests, supported route list, SQL migration/role plan, service ownership, rollback and restore evidence |
-| OxDecimal | Exact HTTPS app origin and internal origin hostnames; Worker build/digests and disabled flags; Access issuer, separate read/auth audiences and service identities; Tunnel mapping and outbound transport requirements; authoritative client-IP/framing behavior; denial/default routes and preview-hostname policy |
+| OxDecimal | Exact HTTPS app origin and internal origin hostnames; Worker build/digests and disabled flags; Access issuer, four distinct read/session/onboarding/deposit audiences and service identities (deposit deferred until its own gate); Tunnel mapping and outbound transport requirements; authoritative client-IP/framing behavior; denial/default routes and preview-hostname policy |
 | Both collaborators | Consumer acknowledgement, end-to-end test window, operator contact and who disables ingress during an incident |
 
-Credentials and Tunnel tokens travel through local secret provisioning, never an issue, this document, a chat prompt or a shell argument. Non-secret issuer/audience/service identifiers still need to match the agreed environment exactly. `domino.money` is the intended app domain; example internal hostnames in the existing runbooks have not been provisioned.
+Credentials and Tunnel tokens travel through local secret provisioning, never an issue, this document, a chat prompt or a shell argument. Non-secret issuer/audience/service identifiers still need to match the agreed environment exactly. `https://domino.money` is the selected app origin. The selected internal origins are `https://vm-read.domino.money`, `https://vm-session.domino.money`, `https://vm-onboarding.domino.money` and `https://vm-deposit.domino.money`. These agreed names are not provisioning evidence. The first ingress phase defers the deposit Access app, service token and Tunnel mapping. See the [current handoff](STAGING_BACKEND_HANDOFF.md) for Pages service bindings, the owner-selected beta perimeter and required ingress proof.
 
 ## 2. Initial VM estimate and isolation
 
@@ -51,14 +51,14 @@ The combined candidate includes all five launchers. The [disabled installer](VM_
 The public-data and auth paths remain separate:
 
 ```text
-browser -> Decimal's same-origin read Worker -> Access/Tunnel -> 127.0.0.1:8878
+browser -> Pages gate/host checks -> read service binding -> Access/Tunnel -> 127.0.0.1:8878
                                                                -> 127.0.0.1:8876
-browser -> Decimal's same-origin session Worker -> separate Access identity/Tunnel
+browser -> Pages gate/host checks -> session service binding -> separate Access/Tunnel
                                                                -> 127.0.0.1:8879
                                                                -> private PostgreSQL socket
 ```
 
-Only the gateway's fixed `/internal/read/v1/*`, session listener's `/internal/session/v1/*`, onboarding listener's `/internal/onboarding/v1/*` and deposit listener's `/internal/deposit/v1/*` routes may become Tunnel destinations. These prefixes never authorize arbitrary wildcard dispatch. Do not publish port 8876, PostgreSQL, `/health`, OpenAPI or unmatched paths. All four Access service identities/audiences must remain distinct. The exact Worker/Tunnel mapping and inputs are in the [staging handoff](STAGING_BACKEND_HANDOFF.md). Public reads require their existing service-authenticated backend path, but never a user-wallet allowlist check. Decimal may independently gate the staging frontend; that is a separate policy.
+Only the gateway's fixed `/internal/read/v1/*`, session listener's `/internal/session/v1/*`, onboarding listener's `/internal/onboarding/v1/*` and deposit listener's `/internal/deposit/v1/*` routes may become Tunnel destinations. These prefixes never authorize arbitrary wildcard dispatch. Do not publish port 8876, PostgreSQL, `/health`, OpenAPI or unmatched paths. All four eventual Access service identities/audiences must remain distinct; deposit is deferred rather than reusing another identity. Workers expose no public routes/domains; the reviewed production Pages Function is their only permitted binding caller. The exact Worker/Tunnel mapping and inputs are in the [staging handoff](STAGING_BACKEND_HANDOFF.md). Public reads require their existing service-authenticated backend path, but never a user-wallet allowlist check. The shared beta password gates invited staging separately from backend Service Auth and wallet ownership; its rotation, host denial and historical-deployment requirements are in that handoff.
 
 ## 4. PostgreSQL foundation and application process ownership
 

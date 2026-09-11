@@ -101,7 +101,7 @@ def create_authenticated_app(gateway):
         request_id = secrets.token_hex(16)
 
         def result(status, body):
-            headers = {'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff',
+            headers = {'Cache-Control': 'no-store, no-transform', 'X-Content-Type-Options': 'nosniff',
                        'Content-Security-Policy': "default-src 'none'; frame-ancestors 'none'",
                        HEADER: CONTRACT_VERSION, 'X-Domino-Request-Id': request_id}
             if status == 429:

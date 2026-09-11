@@ -105,7 +105,7 @@ export function validateRequest<R extends OnboardingRoute>(route:R, value:unknow
 export function validateResponse<R extends OnboardingRoute>(route:R, value:unknown):value is OnboardingResponses[R];
 export function validateError(status:number, value:unknown):value is OnboardingError;
 '''
-    source_paths = ['backend/onboarding_models.py', 'backend/onboarding_api.py',
+    source_paths = ['backend/onboarding_models.py', 'backend/onboarding_api.py', 'backend/authenticated_api.py',
                     'backend/onboarding_service.py', 'backend/onboarding_auth.py',
                     'backend/session_store.py', 'backend/session_models.py', 'backend/wallet_access.py',
                     'backend/tests/test_onboarding_flow.py', 'backend/tests/test_onboarding_auth.py', 'backend/tests/onboarding_contract_fixtures.py',

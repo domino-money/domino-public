@@ -31,15 +31,20 @@ One small Linux backend deployment runs a gateway, the local Python reader and
 an outbound Cloudflare Tunnel. This uses the existing Python service and does
 not require a cluster, Redis or the home GPU servers. The selected app origin is `https://domino.money`. Cloudflare credentials and
 configuration are explicitly deferred by the owner. The proposed backend
-hostname `https://read-origin.domino.money` has not been provisioned or qualified. The existing Sites preview is not assumed to
+hostname `https://vm-read.domino.money` has not been provisioned or qualified. The existing Sites preview is not assumed to
 have the required secrets, route control or production identity.
 
-For invited staging, a separate Access application at the web origin admits
-only the named testers and covers both pages and `/api/*`. Verify that no
-alternate Worker/preview hostname bypasses that gate. This is testing access,
-not wallet ownership; "without login" for public reads means no wallet sign-in.
-The browser perimeter and backend Service Auth application have different
-audiences/policies. Keep live flags off until that staging gate is tested.
+For invited staging, the owner's shared beta password choice, already recorded
+in `app/functions/_lib/gate.ts`, supersedes the earlier requirement for a separate
+web-origin Access application. The [current staging handoff](STAGING_BACKEND_HANDOFF.md)
+requires at least 100 bits of generated randomness, a named tester list/count,
+production-host denial and a verified rotation/old-deployment procedure. A shared
+credential cannot identify or revoke one tester; wallet admission and session
+revocation remain separate. The Pages gate runs before private Worker service
+bindings, with no zone Worker routes, Worker public/preview URLs or unreviewed
+callers. The backend's separate Access Service Auth applications remain required.
+Keep live flags off until the actual ingress, host, client-IP and gate checks pass.
+This invited-staging adjustment does not approve a public release.
 
 ```mermaid
 flowchart LR

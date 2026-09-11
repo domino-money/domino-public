@@ -1,0 +1,16 @@
+{
+  "version": "2026.9.0",
+  "platform": "linux-amd64",
+  "asset": "cloudflared-linux-amd64",
+  "size": 39838050,
+  "sha256": "53b7a7a5420d188758d24341294acb0d1bca54296548ac05e38811a694ac6134",
+  "downloadUrl": "https://github.com/cloudflare/cloudflared/releases/download/2026.9.0/cloudflared-linux-amd64",
+  "releaseUrl": "https://github.com/cloudflare/cloudflared/releases/tag/2026.9.0",
+  "metadataUrl": "https://api.github.com/repos/cloudflare/cloudflared/releases/tags/2026.9.0",
+  "publishedAt": "2026-09-09T18:38:16Z",
+  "checkedOn": "2026-09-11",
+  "tagObject": "011bbe7bbe0b753fef5aba9b7b4dc3aec6123b50",
+  "sourceCommit": "b749dfd998f4bced81f48727b9c971cfc3056865",
+  "tagSignatureVerified": false,
+  "provenance": "Cloudflare-owned GitHub release metadata and asset digest; not an independently signed binary attestation. No binary downloaded or executed for this candidate."
+}

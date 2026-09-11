@@ -57,7 +57,8 @@ class SessionListenerTests(unittest.TestCase):
         transport.update(headers or {})
         response=self.client.request(method,PREFIX+route,json=body or {},headers=transport)
         self.assertEqual(response.headers['X-Domino-Session-Contract'],CONTRACT_VERSION)
-        self.assertEqual(response.headers['Cache-Control'],'no-store')
+        self.assertTrue({'no-store', 'no-transform'} <= {value.strip().lower() for value in response.headers['cache-control'].split(',')})
+        self.assertNotIn('content-encoding', response.headers)
         self.assertNotIn('set-cookie',response.headers)  # Only the external BFF emits cookies.
         return response
 

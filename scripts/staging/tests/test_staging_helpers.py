@@ -286,9 +286,11 @@ class HttpHelperTests(unittest.TestCase):
         body = b'{"error":"route_not_available"}'
         headers = [('content-length', str(len(body))), ('content-type', 'application/json'),
                    ('x-domino-read-contract', check_disabled_http.READ_VERSION),
-                   ('cache-control', 'no-store'), ('x-content-type-options', 'nosniff'),
+                   ('cache-control', 'no-store, no-transform'), ('x-content-type-options', 'nosniff'),
                    ('content-security-policy', check_disabled_http.CSP), ('x-domino-request-id', 'a' * 32)]
         cases = [('valid', headers, body, 404, True),
+                 ('missingNoTransform', [(k, 'no-store' if k == 'cache-control' else v) for k, v in headers], body, 404, False),
+                 ('transformedEncoding', headers + [('content-encoding', 'gzip')], body, 404, False),
                  ('wrongVersion', [(k, 'wrong' if k == 'x-domino-read-contract' else v) for k, v in headers], body, 404, False),
                  ('duplicateHeader', headers + [headers[0]], body, 404, False),
                  ('cookie', headers + [('set-cookie', 'fixture')], body, 404, False),

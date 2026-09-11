@@ -26,57 +26,128 @@ portable validators are available now for frontend adapter and rendered tests.
 
 ## Origin and route contract
 
-Decimal owns Cloudflare, DNS, same-origin Worker routes and the frontend gate.
-The exact staging APP_ORIGIN must be confirmed; domino.money is the intended
-application domain, not evidence that a proposed internal hostname exists.
+Decimal owns Cloudflare, DNS, the Pages forwarder/service bindings and the
+frontend gate. The [11 September handoff decision](https://github.com/domino-money/domino/issues/45#issuecomment-5634619206)
+selects `APP_ORIGIN=https://domino.money` and the internal origins below. This is
+configuration agreement, not evidence that DNS, Workers, Access or Tunnel exists.
 Do not point a browser at the private Python reader or enable CORS as a shortcut.
 
-| Browser family | Worker entry | Private Tunnel target | Backend mode |
+The selected ingress is **Internet → `domino-app` Pages Function → private Worker
+service binding → Access/Tunnel → loopback listener**. The Pages beta gate and
+host checks run before dispatch. Verify the deployed Pages `_routes.json` includes the entire
+application/API perimeter (an exclusion takes precedence over an inclusion), and
+configure exhaustion/error handling to fail closed rather than serve ungated
+static files. Workers Paid before enable does not replace these route checks.
+Its API branch preserves `no-store`, JSON CSP
+and the read family's cookie stripping. There are **no zone Worker routes,
+custom Worker domains, workers.dev or Worker preview URLs**. The four concrete
+`bridge/wrangler.{read,session,onboarding,deposit}.toml` candidates disable those
+endpoints, logging and all four capability flags; they contain no credentials.
+They configure Workers only. Decimal's separate frontend PR owns the forwarder
+and, after the four Workers are deployed disabled, the Pages service bindings.
+
+| Browser family | Worker / internal HTTPS origin | Private listener target | Initial ingress phase |
 |---|---|---|---|
-| `/api/read/v1/*` | `bridge/src/worker.mjs` | `http://127.0.0.1:8878/internal/read/v1/*` | Disabled gateway; reader is local at 8876 |
-| `/api/session/v1/*` | `bridge/src/session-worker.mjs` | `http://127.0.0.1:8879/internal/session/v1/*` | Disabled |
-| `/api/onboarding/v1/*` | `bridge/src/onboarding-worker.mjs` | `http://127.0.0.1:8880/internal/onboarding/v1/*` | Disabled |
-| `/api/deposit/v1/*` | `bridge/src/deposit-worker.mjs` | `http://127.0.0.1:8881/internal/deposit/v1/*` | Disabled |
+| `/api/read/v1/*` | `domino-read-bridge` / `https://vm-read.domino.money` | `http://127.0.0.1:8878/internal/read/v1/*` | Candidate; disabled |
+| `/api/session/v1/*` | `domino-session-bridge` / `https://vm-session.domino.money` | `http://127.0.0.1:8879/internal/session/v1/*` | Candidate; disabled |
+| `/api/onboarding/v1/*` | `domino-onboarding-bridge` / `https://vm-onboarding.domino.money` | `http://127.0.0.1:8880/internal/onboarding/v1/*` | Candidate; disabled |
+| `/api/deposit/v1/*` | `domino-deposit-bridge` / `https://vm-deposit.domino.money` | `http://127.0.0.1:8881/internal/deposit/v1/*` | Worker/binding disabled; **no Access app, service token or Tunnel mapping yet** |
 
 This table describes prefix translation, not an unrestricted wildcard proxy.
-Only exact paths/methods in the respective Worker dispatch tables are accepted.
-Read capabilities is authored locally by the Worker; it is not a Tunnel route.
-All nine read operations are POST: token, pools, pool-market, wallet-assets,
-nft-positions, catalogue, pool-activity, pool-positions and pool-metrics.
-The session Worker translates browser GET me to the internal contract correctly;
-configure the Worker rather than forwarding that browser method directly.
+Only exact paths/methods in each Worker's dispatch table are accepted. Read
+capabilities is local to the Worker; it is not a Tunnel route. All nine read
+operations are POST: token, pools, pool-market, wallet-assets, nft-positions,
+catalogue, pool-activity, pool-positions and pool-metrics. The session Worker
+translates browser GET me to its internal contract; do not forward that browser
+method directly. Port 8876, PostgreSQL, health/OpenAPI and unmatched/default paths
+remain private; unmatched Tunnel traffic must return a fixed denial.
 
-Do not publish port 8876, PostgreSQL, health/OpenAPI or unmatched/default paths.
-The four internal origins must have distinct Access service identities/audiences.
-Workers.dev, preview URLs and other hostnames cannot bypass the reviewed gate.
-No router port forward is needed: the connector uses the approved outbound Tunnel.
+There are four distinct service identities/audiences in the eventual design,
+but only read/session/onboarding are candidates for the first Tunnel phase.
+Deposit must not borrow any of those identities. Its fourth Access app, service
+token and mapping are deferred until its own admission/recovery gates pass.
+Deploying its disabled Worker without secrets does not require early provisioning
+of that fourth identity. No router port forwarding is needed.
 
-## Inputs Decimal supplies
+### Web gate and trusted client identity
 
-Before configuring live ingress, record these non-secret values in the release
-coordination issue:
+The owner-selected shared beta password already recorded in
+`app/functions/_lib/gate.ts` is the invited-staging perimeter. This reconciles the
+older web-origin Access requirement in `API_READ_BRIDGE.md`; it does **not**
+replace the separate backend Access Service Auth applications. The password must
+be generated with at least 100 bits of randomness and shared only with the named
+tester list; record its count, never the password, in the release issue. The
+existing 16-character code minimum alone does not prove that entropy. A shared
+credential gives no per-tester authentication or individual revocation. Its
+rotation is a global invitation revocation, separate from wallet grant/session
+revocation. This policy is limited to invited staging, not public activation.
 
-1. Exact HTTPS APP_ORIGIN and the four actual internal HTTPS origin hostnames.
-2. Access issuer and separate audience/service identifiers for read, session,
-   onboarding and deposits. The Python side validates the real service JWT;
-   sending a pair of arbitrary headers is not authentication.
-3. Reviewed Tunnel mapping, outbound transport requirements, default denial and
-   alternate-host/preview behavior. Provide connector credentials only through
-   the agreed private provisioning channel, never GitHub/chat/shell arguments.
-4. Worker build/commit, exact package manifests and route flags initially false.
-   Worker Access client secrets stay in Cloudflare's environment-specific secret
-   store. The listeners do not need copies of those client secrets.
-5. Trusted client-IP behavior (including subrequest exclusions), request framing,
-   log redaction/retention, frontend beta-gate behavior and the integration window.
+Before connecting bindings, enforce the production host allowlist and prove that
+pages.dev, branch aliases and deployment-hash URLs cannot reach the application
+or API. A new deployment does not update the gate in old deployments. Rotation
+therefore includes redeploy and removal or proven denial of **every** superseded
+reachable deployment and its bindings. Cloudflare may refuse deletion of a
+branch's latest deployment; such a deployment is a release blocker until its
+access/bindings are demonstrably removed. Do not claim deletion alone is a
+complete rollback or revocation strategy. See
+[Pages preview deployment behavior](https://developers.cloudflare.com/pages/configuration/preview-deployments/).
+
+Only the reviewed `domino-app` production Function may bind to the Workers;
+inventory all callers, preview deployments and routes before enabling anything,
+and restrict/audit deployment, API-token and CI permissions that can grant a new
+binding. The Wrangler public-URL flags do not enforce caller exclusivity.
+A service binding is a capability held by its caller, not an end-user identity.
+It does not by itself prove `CF-Connecting-IP` is the browser's IP. In particular,
+another Worker can call the public app over HTTP without holding a bridge binding;
+same-zone subrequests can influence the effective IP. Exclude those paths at the
+trusted Cloudflare ingress using verified platform metadata/rules (for example
+`cf.worker.upstream_zone`), scoped to the app host so legitimate BFF-to-origin
+requests remain possible; never use a browser-supplied `CF-Worker` or forwarding
+header. Test the actual Pages → binding path, including direct client spoofed
+headers, same-/cross-zone Worker subrequests, IPv4/IPv6 and any client-IP transform
+settings. The current header adapter is acceptable only after those conditions
+are proven; otherwise the ingress needs a separately reviewed identity fix. See
+[HTTP binding semantics](https://developers.cloudflare.com/workers/runtime-apis/bindings/service-bindings/http/),
+[Cloudflare client-IP headers](https://developers.cloudflare.com/fundamentals/reference/http-headers/)
+and the [upstream-zone field](https://developers.cloudflare.com/ruleset-engine/rules-language/fields/reference/cf.worker.upstream_zone/).
+
+## Remaining inputs and backend candidate
+
+Origins are selected above. Before starting the Tunnel or configuring live
+ingress, Decimal records these non-secret values in the release issue:
+
+1. Actual Access issuer, distinct audience/service identifiers and tested Service
+   Auth policies for each service being connected; the fourth deposit identity
+   follows only at its later gate. The Python side validates the real JWT.
+2. Exact Tunnel mapping, transport/egress requirements, default denial, deployed
+   Worker and Pages commits, binding inventory and alternate-host denial proof.
+3. Trusted client-IP/framing behavior, log redaction/retention, named tester count,
+   rotation procedure and the coordinated HTTPS acceptance window. Workers Paid
+   must be in place before the first capability enable.
+
+Connector credentials reach the operator only through the agreed private file
+provisioning channel (encrypted to the operator's key), never GitHub, chat or a
+shell argument. No key or credential is requested by this repository workflow.
+Worker Access client secrets stay in Cloudflare. The listeners do not need copies
+of those client secrets. The proposed systemd unit and its version/credential,
+egress and start gates are documented in [Cloudflared staging](CLOUDFLARED_STAGING.md).
+Starting the Tunnel for **disabled HTTPS acceptance** is distinct from enabling
+any Worker/listener capability; all four flags remain false during that start.
+
+The backend candidate adds `Cache-Control: no-store, no-transform` to the four
+private listeners so intermediaries are instructed not to encode/transform their
+identity JSON. The Workers retain their encoding rejection and byte bounds;
+verify actual response headers/bytes through Cloudflare before enable. Neither
+a header directive nor a local test proves the edge configuration obeys it.
+This source update is not installed on the historical a5 VM: select one combined
+reviewed release and refresh all changed package provenance pins before rollout.
 
 Backend then supplies the matching VM configuration and installed build evidence.
 The read gateway receives `DOMINO_ACCESS_*` and `DOMINO_BRIDGE_READS`; the other
-listeners receive their distinct `DOMINO_SESSION_ACCESS_*`,
-`DOMINO_ONBOARDING_ACCESS_*` or `DOMINO_DEPOSIT_ACCESS_*` settings. The private
-listeners share the exact session origin and persistent server-side abuse secret.
-Provider configuration belongs to the backend and is provisioned separately:
-RPC/inventory as needed, Uniswap credentials for real previews, and a reviewed
-token admission file before a deposit handoff. No signing key belongs on this VM.
+listeners receive distinct `DOMINO_SESSION_ACCESS_*`, `DOMINO_ONBOARDING_ACCESS_*`
+or, later, `DOMINO_DEPOSIT_ACCESS_*` settings. Private listeners share the exact
+session origin and persistent server-side abuse secret. Provider credentials and
+token admission are separate private provisioning. No signing key belongs on this VM.
 
 ## What Decimal can finish before the Tunnel
 
@@ -120,8 +191,11 @@ is an implicit resolution path. Keep current token-admission reviews, manifest
 ACKs and private operation archives, including owner-history/allowance lookup
 after archival. The disabled VM checks do not qualify these procedures.
 
-Rollback disables the four Worker routes and corresponding private listeners,
-stops the service units and preserves all database/private runtime evidence.
+Rollback removes/disables the four Pages binding forwards, sets the corresponding
+Worker and listener flags false, and stops the affected service/Tunnel units while
+preserving all database/private runtime evidence. There are no zone Worker routes
+to disable in this ingress. Confirm superseded Pages deployments cannot retain a
+working forwarder; keep a gate/host denial available during rollback.
 Do not drop migrations, erase reservations/receipts or restore an old wallet
 allowlist to make a rollback pass. Restoring a snapshot requires the release's
 admission and deposit reconciliation procedure before re-enabling private ingress.

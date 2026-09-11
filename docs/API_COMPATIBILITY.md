@@ -36,6 +36,25 @@ therefore still needs an explicit account of this equivalent runtime boundary.
 Consumers must receive the new OpenAPI and manifest digests in the integration
 notice before updating their source pins. This correction does not activate reads.
 
+### Private listener response transformations
+
+Following [the HTTPS handoff request](https://github.com/domino-money/domino/issues/45#issuecomment-5634619206),
+the read gateway (8878), session (8879), onboarding (8880) and deposit (8881)
+listeners emit `Cache-Control: no-store, no-transform` on successful and error
+responses. Their JSON remains uncompressed, with its exact `Content-Length`;
+the Workers still reject non-identity `Content-Encoding`. The directive asks
+intermediaries to preserve those bytes; offline checks do not qualify an actual
+Tunnel/Access path. Payloads, size limits, versions and enablement stay unchanged.
+
+The four manifests record the listener sources that determine these headers,
+including newly listed session and authenticated-service listener files. Only
+source provenance changes, not the shared schemas, fixtures or validators.
+The disabled HTTP smoke now checks cache directives independently of order,
+requires `no-transform` on these four private listeners and rejects compressed
+responses. It intentionally fails against the earlier `a5a855c` installation
+until the listener update is rolled out. Historical installation evidence and
+the reader-only `no-store` policy on 8876 remain unchanged.
+
 ## Version and field rules
 
 Use `read-v1` for the first browser contract major and a semantic contract

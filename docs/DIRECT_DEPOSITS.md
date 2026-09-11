@@ -371,7 +371,7 @@ explicit in the new review.
 
 The example Worker config has no deploying route and keeps
 `DEPOSIT_BRIDGE_ENABLED=false`, workers.dev and preview URLs disabled. Proposed
-`deposit-origin.domino.money` is not provisioned. Eventual secrets are
+`vm-deposit.domino.money` is the selected but unprovisioned origin; its Access identity, service token and Tunnel mapping are deferred until the deposit gates pass. Eventual secrets are
 `DEPOSIT_ACCESS_CLIENT_ID`/`DEPOSIT_ACCESS_CLIENT_SECRET`, with `APP_ORIGIN` and
 `DEPOSIT_GATEWAY_ORIGIN`. Do not reuse read/login Access identities.
 

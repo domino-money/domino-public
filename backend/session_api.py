@@ -143,7 +143,7 @@ def create_session_app(gateway=None):
         upload_deadline=min(deadline,gateway.clock()+gateway.upload_seconds)
         request_id=secrets.token_hex(16)
         def result(status,body):
-            headers={'Cache-Control':'no-store','X-Content-Type-Options':'nosniff',
+            headers={'Cache-Control':'no-store, no-transform','X-Content-Type-Options':'nosniff',
                      'Content-Security-Policy':"default-src 'none'; frame-ancestors 'none'",
                      'X-Domino-Session-Contract':CONTRACT_VERSION,'X-Domino-Request-Id':request_id}
             if status==429:headers['Retry-After']='2'
