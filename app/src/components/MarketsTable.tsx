@@ -1,11 +1,9 @@
-import { compactUsd, feeTierLabel, listMarkets, presentMetric, turnover, type Metric } from '../lib/markets'
+import { compactUsd, feeTierLabel, listMarkets, presentMetric, turnover, type Metric, type Presented } from '../lib/markets'
 import { Button, Display, Pill, cx } from './ui'
 import { TokenPair } from './TokenIcon'
 
-function Cell({ metric, suffix, strong }: { metric: Metric; suffix?: string; strong?: boolean }) {
-  const shown = presentMetric(metric, (m) =>
-    suffix ? `${Number(m.value).toFixed(2)}${suffix}` : compactUsd(m),
-  )
+/** Any presented figure: unavailable, stale with its time, a sample, or current. */
+function Shown({ shown, strong, muted }: { shown: Presented; strong?: boolean; muted?: boolean }) {
   if (shown.kind === 'unavailable') {
     return (
       <span className="text-[13px] text-fg-subtle" data-metric="unavailable" title={shown.reason}>
@@ -16,7 +14,12 @@ function Cell({ metric, suffix, strong }: { metric: Metric; suffix?: string; str
   const asOf = shown.asOf ? new Date(shown.asOf * 1000).toLocaleString('en-US') : undefined
   return (
     <span
-      className={cx('tnum font-mono text-[13px]', strong && 'text-fg', shown.stale && 'text-money-wait')}
+      className={cx(
+        'tnum font-mono text-[13px]',
+        strong && 'text-fg',
+        muted && !shown.stale && 'text-fg-muted',
+        shown.stale && 'text-money-wait',
+      )}
       style={shown.sample && !strong ? { color: 'var(--fg-muted)' } : undefined}
       data-metric={shown.stale ? 'stale' : shown.sample ? 'placeholder' : 'qualified'}
       title={shown.sample ? 'Sample figure, not an observation' : shown.stale ? `Last observed ${asOf}` : undefined}
@@ -25,6 +28,11 @@ function Cell({ metric, suffix, strong }: { metric: Metric; suffix?: string; str
       {shown.stale && <span className="ml-1 text-[11px]">· stale</span>}
     </span>
   )
+}
+
+function Cell({ metric, suffix, strong }: { metric: Metric; suffix?: string; strong?: boolean }) {
+  const shown = presentMetric(metric, (m) => (suffix ? `${Number(m.value).toFixed(2)}${suffix}` : compactUsd(m)))
+  return <Shown shown={shown} strong={strong} />
 }
 
 const HEAD = ['#', 'Pool', 'TVL', '1D vol', '30D vol', '1D vol/TVL', 'Pool APR']
@@ -86,7 +94,7 @@ export function MarketsTable() {
                   <td className="px-5 py-4 text-right"><Cell metric={m.tvlUsd} strong /></td>
                   <td className="px-5 py-4 text-right"><Cell metric={m.volume24hUsd} /></td>
                   <td className="px-5 py-4 text-right"><Cell metric={m.volume30dUsd} /></td>
-                  <td className="tnum px-5 py-4 text-right font-mono text-[13px] text-fg-muted">{turnover(m)}</td>
+                  <td className="px-5 py-4 text-right"><Shown shown={turnover(m)} muted /></td>
                   <td className="px-5 py-4 text-right">
                     <span className="inline-flex items-center gap-2">
                       <Cell metric={m.feeAprPercent} suffix="%" strong />

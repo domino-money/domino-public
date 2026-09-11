@@ -1,4 +1,4 @@
-import { feeTierLabel, listMarkets } from '../lib/markets'
+import { aprLabel, feeTierLabel, listMarkets, type Metric } from '../lib/markets'
 import { TokenPair } from './TokenIcon'
 
 /**
@@ -7,6 +7,29 @@ import { TokenPair } from './TokenIcon'
  * sample figures the strip carries the same small label the table does; it
  * disappears on its own once the numbers are qualified.
  */
+/** The APR in the strip, under the same state rule as the table: never a retained value as current. */
+function Apr({ metric }: { metric: Metric }) {
+  const shown = aprLabel(metric)
+  if (shown.kind === 'unavailable') {
+    return (
+      <span className="tnum font-mono text-fg-subtle" data-metric="unavailable">
+        APR unavailable
+      </span>
+    )
+  }
+  return (
+    <span
+      className="tnum font-mono"
+      style={{ color: shown.stale ? 'var(--money-wait)' : 'var(--money-in)' }}
+      data-metric={shown.stale ? 'stale' : shown.sample ? 'placeholder' : 'qualified'}
+      title={shown.sample ? 'Sample figure, not an observation' : shown.stale ? 'Last observed value, not current' : undefined}
+    >
+      {shown.text}
+      {shown.stale && ' · stale'}
+    </span>
+  )
+}
+
 export function Ticker() {
   const { markets, source } = listMarkets()
 
@@ -17,9 +40,7 @@ export function Ticker() {
         {m.base}/{m.quote}
       </span>
       <span className="font-mono text-fg-subtle">{feeTierLabel(m.feePips)}</span>
-      <span className="tnum font-mono" style={{ color: 'var(--money-in)' }}>
-        {m.feeAprPercent.value === null ? 'APR unavailable' : `${Number(m.feeAprPercent.value).toFixed(2)}% APR`}
-      </span>
+      <Apr metric={m.feeAprPercent} />
     </span>
   ))
 

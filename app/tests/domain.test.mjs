@@ -277,8 +277,8 @@ test('an unavailable metric says so instead of showing a number', () => {
   assert.equal(markets.compactUsd(missing), 'Unavailable');
   assert.equal(markets.compactUsd({ value: 'not a number', state: 'placeholder' }), 'Unavailable');
   const [m] = markets.listMarkets().markets;
-  assert.equal(markets.turnover({ ...m, tvlUsd: missing }), 'Unavailable');
-  assert.equal(markets.turnover({ ...m, volume24hUsd: missing }), 'Unavailable');
+  assert.equal(markets.turnover({ ...m, tvlUsd: missing }).kind, 'unavailable');
+  assert.equal(markets.turnover({ ...m, volume24hUsd: missing }).kind, 'unavailable');
 });
 
 test('a measured zero is shown as zero, never as unavailable', () => {
@@ -338,4 +338,68 @@ test('the presentation rule is decided by state, not by value nullness', () => {
     return p.kind === 'unavailable' ? 'unavailable' : p.stale ? 'stale' : p.sample ? 'sample' : 'current';
   });
   assert.deepEqual(kinds, ['current', 'stale', 'sample', 'unavailable']);
+});
+
+// ---------------------------------------------------------------------------
+// Derived figures inherit their inputs' states. Asked for on #1: turnover and
+// the ticker APR must not present a retained or stale value as current.
+// ---------------------------------------------------------------------------
+
+const metric = (value, state = 'qualified', asOf) => ({ value, state, asOf });
+const pool = (volume, tvl) => ({ ...markets.listMarkets().markets[0], volume24hUsd: volume, tvlUsd: tvl });
+
+test('turnover of two current figures is current', () => {
+  const shown = markets.turnover(pool(metric('500'), metric('1000')));
+  assert.deepEqual(shown, { kind: 'value', text: '0.50', stale: false, sample: false, asOf: undefined });
+});
+
+test('an unavailable operand makes turnover unavailable even when it keeps a value', () => {
+  for (const [volume, tvl] of [
+    [metric('500', 'unavailable'), metric('1000')],
+    [metric('500'), metric('1000', 'unavailable')],
+    [metric('500', 'unavailable'), metric('1000', 'stale', 1_700_000_000)],
+  ]) {
+    const shown = markets.turnover(pool(volume, tvl));
+    assert.equal(shown.kind, 'unavailable', `${volume.state}/${tvl.state}`);
+  }
+});
+
+test('one stale operand makes turnover stale, dated to that observation', () => {
+  const shown = markets.turnover(pool(metric('500', 'stale', 1_700_000_000), metric('1000')));
+  assert.equal(shown.kind, 'value');
+  assert.equal(shown.stale, true, 'a mix of stale and current must not read as current');
+  assert.equal(shown.asOf, 1_700_000_000);
+});
+
+test('two stale operands date turnover to the older observation', () => {
+  const shown = markets.turnover(pool(metric('500', 'stale', 1_700_000_900), metric('1000', 'stale', 1_700_000_000)));
+  assert.equal(shown.stale, true);
+  assert.equal(shown.asOf, 1_700_000_000);
+});
+
+test('a stale operand without a time gives a stale turnover without an invented time', () => {
+  const shown = markets.turnover(pool(metric('500', 'stale'), metric('1000', 'stale', 1_700_000_000)));
+  assert.equal(shown.stale, true);
+  assert.equal(shown.asOf, undefined);
+});
+
+test('a sample operand makes turnover a sample', () => {
+  assert.equal(markets.turnover(pool(metric('500', 'placeholder'), metric('1000'))).sample, true);
+});
+
+test('a measured zero volume is 0.00, and a zero TVL has no turnover', () => {
+  assert.equal(markets.turnover(pool(metric('0'), metric('1000'))).text, '0.00');
+  assert.equal(markets.turnover(pool(metric('1'), metric('1000'))).text, '<0.01');
+  assert.equal(markets.turnover(pool(metric('0'), metric('0'))).kind, 'unavailable');
+  assert.equal(markets.turnover(pool(metric('5'), metric('0'))).kind, 'unavailable');
+});
+
+test('the ticker APR follows the same state rule', () => {
+  assert.equal(markets.aprLabel(metric('150.924')).text, '150.92% APR');
+  assert.equal(markets.aprLabel(metric('150.92', 'unavailable')).kind, 'unavailable', 'retained APR shown as current');
+  const stale = markets.aprLabel(metric('150.92', 'stale', 1_700_000_000));
+  assert.equal(stale.stale, true);
+  assert.equal(stale.asOf, 1_700_000_000);
+  assert.equal(markets.aprLabel(metric('150.92', 'placeholder')).sample, true);
+  assert.equal(markets.aprLabel(metric(null, 'qualified')).kind, 'unavailable');
 });

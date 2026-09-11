@@ -159,12 +159,35 @@ export function compactUsd(metric: Metric): string {
   return `$${n.toFixed(2)}`
 }
 
-/** Daily volume over TVL, the turnover figure exchanges show next to APR. */
-export function turnover(m: Market): string {
-  if (m.volume24hUsd.value === null || m.tvlUsd.value === null) return 'Unavailable'
-  const r = Number(m.volume24hUsd.value) / Number(m.tvlUsd.value)
-  if (!Number.isFinite(r)) return 'Unavailable'
-  return r < 0.01 ? '<0.01' : r.toFixed(2)
+/**
+ * Daily volume over TVL, the turnover figure exchanges show next to APR.
+ *
+ * A ratio is only as good as its weakest operand. An unavailable operand makes
+ * it unavailable even when that operand still carries a retained value. A
+ * stale operand makes it stale, dated to the oldest observation involved. A
+ * sample operand makes it a sample. A measured zero volume is 0.00, never
+ * "<0.01", which would read as a small positive number.
+ */
+export function turnover(m: Market): Presented {
+  const inputs = [m.volume24hUsd, m.tvlUsd]
+  const missing = inputs.find((input) => input.state === 'unavailable' || input.value === null)
+  if (missing) return { kind: 'unavailable', reason: missing.reason }
+  const ratio = Number(m.volume24hUsd.value) / Number(m.tvlUsd.value)
+  if (!Number.isFinite(ratio) || ratio < 0) return { kind: 'unavailable', reason: 'turnover_undefined' }
+  const staleTimes = inputs.filter((input) => input.state === 'stale').map((input) => input.asOf)
+  const known = staleTimes.filter((time): time is number => time !== undefined)
+  return {
+    kind: 'value',
+    text: ratio === 0 ? '0.00' : ratio < 0.01 ? '<0.01' : ratio.toFixed(2),
+    stale: staleTimes.length > 0,
+    sample: inputs.some((input) => input.state === 'placeholder'),
+    // Only claim a time when every stale operand has one.
+    asOf: staleTimes.length > 0 && known.length === staleTimes.length ? Math.min(...known) : undefined,
+  }
 }
+
+/** A pool's APR as the ticker writes it, through the same state rule as every other figure. */
+export const aprLabel = (metric: Metric): Presented =>
+  presentMetric(metric, (m) => `${Number(m.value).toFixed(2)}% APR`)
 
 export const feeTierLabel = (pips: number) => `${(pips / 10_000).toFixed(2)}%`
