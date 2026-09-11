@@ -1,0 +1,37 @@
+{
+  "$id": "https://domino.invalid/contracts/session-v1/verify.request.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "challengeId": {
+      "pattern": "^[0-9a-f]{32}$",
+      "title": "Challengeid",
+      "type": "string"
+    },
+    "message": {
+      "maxLength": 2048,
+      "minLength": 1,
+      "title": "Message",
+      "type": "string"
+    },
+    "signature": {
+      "pattern": "^0x[0-9a-fA-F]{130}$",
+      "title": "Signature",
+      "type": "string"
+    }
+  },
+  "required": [
+    "challengeId",
+    "message",
+    "signature"
+  ],
+  "title": "VerifyRequest",
+  "type": "object",
+  "x-contract-version": "2.0.0",
+  "x-domino-constraints": [
+    "All timestamps are valid UTC calendar dates.",
+    "Messages must be well-formed UTF-8 and at most 2048 bytes.",
+    "Chain ID is the exact integer 4663 (no exponent/fraction/string/coercion).",
+    "Schema scalars are strict, including literal booleans."
+  ]
+}

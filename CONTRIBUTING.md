@@ -24,6 +24,12 @@ At the beginning of a task and before opening or updating its PR, read the lates
 
 Unknown prices remain unavailable. A connected wallet, discoverable pool or readable NFT owner does not authorize an automated transaction. Fee policy, permission and contract changes need explicit acceptance criteria and relevant accounting/security tests.
 
+The separate disabled session candidate uses `api-contracts/session-v1/` and
+the same compatibility/notice process. Its signature proves login only; no
+session bearer may enter the public reader or frontend storage. Regenerate its
+schemas/types/fixtures with `scripts/export-session-contract.py` and keep both
+its BFF and listener disabled until the documented integration gates pass.
+
 Before connecting real data or changing fields consumed by the frontend, follow
 [API_COMPATIBILITY.md](docs/API_COMPATIBILITY.md): post the exact version/field
 notice, shared fixtures, affected hooks, test results and rollback to the issue

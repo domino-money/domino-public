@@ -1,5 +1,11 @@
 # Backend foundation
 
+The disabled [wallet-session candidate](../docs/WALLET_SESSIONS.md) is a separate
+auth listener on loopback port 8879, backed by private PostgreSQL state and a
+plain-EOA SIWE verifier. It does not authenticate through the public reader,
+grant financial permission or connect frontend hooks. Its shared contract is
+`api-contracts/session-v1/`; the public-read documentation below stays unchanged.
+
 API 0.8.0 follows the [MVP data strategy](../MVP_DATA_STRATEGY.md): read indexed
 market data on demand and keep exact historical reconstruction optional for
 onboarding. No lifetime backfill starts when a user reads a pool.

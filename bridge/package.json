@@ -8,6 +8,6 @@
   },
   "scripts": {
     "test": "node --test",
-    "check": "node --check src/worker.mjs && node --check src/strict-json.mjs && node --check src/request-contract.mjs && node --test && node --test ../api-contracts/read-v1/consumer.test.mjs ../api-contracts/read-v1/progressive.test.mjs"
+    "check": "node --check src/worker.mjs && node --check src/session-worker.mjs && node --check src/strict-json.mjs && node --check src/request-contract.mjs && node --test && node --test ../api-contracts/read-v1/consumer.test.mjs ../api-contracts/read-v1/progressive.test.mjs"
   }
 }

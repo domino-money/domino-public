@@ -8,6 +8,7 @@ Private source repository for a wallet-friendly Uniswap v4 liquidity app on Robi
 - **Backend 0.8.0:** generic token reads, verified pool identities and on-demand provider TVL/24h volume/hourly prices with a bounded cache. Exact historical accounting and NFT ownership reads remain available separately.
 - **Market data:** attributed provider TVL/volume can be read without a local pool ledger. Reconciled USD valuation and LP fee APR remain unavailable without qualified inputs. Source coverage, method and freshness remain visible; no new-pool history is invented.
 - **Read bridge candidate:** shared `read-v1` contract, disabled same-origin Worker and authenticated loopback gateway; offline validation only. [Runbook](docs/READ_GATEWAY_RUNBOOK.md) and [evidence](reports/READ_BRIDGE_IMPLEMENTATION.md).
+- **Wallet sessions candidate:** disabled SIWE backend with private PostgreSQL state and a separate session BFF; plain EOAs only. [Session runbook](docs/WALLET_SESSIONS.md). No frontend hookup or deployed login.
 - **Contracts:** fee arithmetic and policy-validation libraries, a draft interface and synthetic boundary tests. Public vault execution, swaps, wallet authentication and tenant isolation are not production implementations.
 
 The personal live bot, operator wallet, credentials and operational database are outside this repository. See [implementation status](IMPLEMENTATION_STATUS.md), [alpha scope](ALPHA_SCOPE.md) and [security specification](SECURITY_SPEC.md).
@@ -41,6 +42,7 @@ npm run test:contracts
 npm run check:read-bridge
 backend/.venv/bin/python scripts/export-read-contract.py --check
 backend/.venv/bin/python scripts/export-read-openapi.py --check
+backend/.venv/bin/python scripts/export-session-contract.py --check
 ```
 
 The default Python suite explicitly skips PostgreSQL and native EVM cases. To run the full suite:
@@ -64,7 +66,8 @@ Both `rugged97` and `OxDecimal` have **administrator access to the entire reposi
 | `web/` | React / TypeScript / vinext practice UI and server preview endpoints |
 | `backend/` | Python / FastAPI read API, PostgreSQL accounting, OpenAPI and fixtures |
 | `api-contracts/read-v1/` | Shared read schemas, types, validators and fixtures |
-| `bridge/` | Disabled Cloudflare read Worker candidate |
+| `api-contracts/session-v1/` | Separate wallet-login schemas, types, validators and fixtures |
+| `bridge/` | Disabled Cloudflare read and session Worker candidates |
 | `contracts/` | Solidity draft interfaces and arithmetic tests |
 | `scripts/` | Pinned compiler wrapper and repository checks |
 | `reports/` | Historical qualification evidence; not current production state |

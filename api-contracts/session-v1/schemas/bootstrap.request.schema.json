@@ -1,0 +1,15 @@
+{
+  "$id": "https://domino.invalid/contracts/session-v1/bootstrap.request.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {},
+  "title": "EmptyRequest",
+  "type": "object",
+  "x-contract-version": "2.0.0",
+  "x-domino-constraints": [
+    "All timestamps are valid UTC calendar dates.",
+    "Messages must be well-formed UTF-8 and at most 2048 bytes.",
+    "Chain ID is the exact integer 4663 (no exponent/fraction/string/coercion).",
+    "Schema scalars are strict, including literal booleans."
+  ]
+}

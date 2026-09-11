@@ -1,0 +1,14 @@
+# Documentation only. No hostname, route, binding or service is provisioned.
+name = "domino-session-bridge-example"
+main = "src/session-worker.mjs"
+compatibility_date = "2026-09-10"
+workers_dev = false
+preview_urls = false
+
+[vars]
+SESSION_BRIDGE_ENABLED = "false"
+APP_ORIGIN = "https://domino.money"
+SESSION_GATEWAY_ORIGIN = "https://session-origin.domino.money"
+
+# SESSION_ACCESS_CLIENT_ID / SESSION_ACCESS_CLIENT_SECRET are separate auth
+# service identity secrets. Never put them here or reuse the reader's identity.

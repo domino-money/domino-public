@@ -294,7 +294,11 @@ formats are explicit compatibility failures, not an excuse to skip validation.
 - After signature verification, one database transaction conditionally consumes
   the unexpired unused challenge and creates the session. Two concurrent valid
   submissions yield at most one session. A lost response requires a new challenge,
-  not reuse of a consumed signature. Rotate any prior session and pre-login state.
+  not reuse of a consumed signature. Rotate pre-login state and an expired or
+  inactive prior session cookie. As clarified by the #31 implementation review,
+  bootstrap and verify refuse a presented active session: logout must complete
+  before another context can sign in. This avoids cross-tab replacement/logout
+  races without introducing unreviewed session-family authority.
 - Sessions use a random 256-bit opaque cookie; store only its hash with owner
   address, chain, created/last-used times, expiry and revocation. Absolute lifetime
   12 hours, idle limit 30 minutes; extension never exceeds the absolute expiry.

@@ -1,4 +1,11 @@
-# Domino read BFF
+# Domino read and session BFF candidates
+
+The separate, disabled `src/session-worker.mjs` now implements the session
+transport for backend #31/frontend #14. It has its own routes, Access identity,
+auth listener and private storage; it does not add session routes to the reader.
+See the [session contract](../api-contracts/session-v1/README.md) and
+[session runbook](../docs/WALLET_SESSIONS.md). The sections below describe the
+unchanged **read Worker** only.
 
 This directory contains an undeployed Cloudflare Worker candidate for contract
 `read-v1` / `1.1.0-rc.3`. Live reads default to **disabled**. It has no wallet session,

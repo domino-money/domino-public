@@ -90,9 +90,10 @@ def start():
                     '-o',options,'-w','-t','15','start'])
     settings={'host':str(SOCKET),'port':PORT,'dbname':'domino_catalogue'}
     with psycopg.connect(host=str(SOCKET),port=PORT,dbname='postgres',user=ADMIN,autocommit=True) as conn:
-        for role in ['domino_catalogue_reader','domino_catalogue_writer']:
+        for role in ['domino_catalogue_reader','domino_catalogue_writer','domino_session_auth']:
             if not conn.execute('SELECT 1 FROM pg_roles WHERE rolname=%s',(role,)).fetchone():
                 conn.execute(sql.SQL('CREATE ROLE {} LOGIN').format(sql.Identifier(role)))
+        conn.execute('ALTER ROLE domino_session_auth NOINHERIT NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS')
     create_database(settings['dbname'])
     fd,name=tempfile.mkstemp(prefix='.catalogue-db-',dir=RUNTIME)
     try:
@@ -103,7 +104,7 @@ def start():
         os.replace(name,DB_CONFIG)
     finally:
         if os.path.exists(name):os.unlink(name)
-    print('Local PostgreSQL ready: private Unix socket, separate reader/writer roles, public catalogue only.')
+    print('Local PostgreSQL ready: private Unix socket, isolated catalogue and session roles.')
 
 
 def create_database(name):
@@ -120,6 +121,7 @@ def create_database(name):
         conn.execute((ROOT/'migrations/005_capital_prices.sql').read_text())
         conn.execute((ROOT/'migrations/006_chainlink_prices.sql').read_text())
         conn.execute((ROOT/'migrations/007_historical_work.sql').read_text())
+        conn.execute((ROOT/'migrations/008_wallet_sessions.sql').read_text())
         conn.execute((ROOT/'migrations/012_capital_work.sql').read_text())
         conn.execute((ROOT/'migrations/013_activity_diagnostics.sql').read_text())
 

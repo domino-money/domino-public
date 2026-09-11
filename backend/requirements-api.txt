@@ -5,3 +5,7 @@ httpx==0.28.1
 psycopg[binary]==3.3.5
 PyJWT==2.13.0
 cryptography==50.0.1
+siwe==4.4.0
+eth-account==0.13.7
+# SIWE 4.4 grammar definitions require the compatible ABNF parser.
+abnf==2.2.0

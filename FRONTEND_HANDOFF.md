@@ -1,5 +1,16 @@
 # Frontend handoff
 
+## Wallet-session backend candidate (#31 / #14)
+
+The backend portion of #14 now has a separate disabled implementation candidate
+in #31. Its [session-v1 contract](api-contracts/session-v1/README.md) defines
+bootstrap/challenge/verify/me/logout, HttpOnly cookies, CSRF, supported plain EOAs,
+expiry and safe errors. [Integration/rollback](docs/WALLET_SESSIONS.md) lists the
+remaining consumer and staging evidence. Existing `read-v1` fields and app/web
+hooks are unchanged. Frontend owns wallet discovery, account/network changes,
+multi-tab/session refresh behavior and rendering; the backend does not claim
+those checks passed or activate them. Sign-in grants no spending authority.
+
 Audience: wallet users who trade tokens but are new to LPs. The app should make positions understandable without implying guaranteed profits or eliminating market risk. The UI language is English.
 
 ## Approved direction

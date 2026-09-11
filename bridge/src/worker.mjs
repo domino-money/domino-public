@@ -308,3 +308,8 @@ export function createWorker({ fetch: fetchImpl = globalThis.fetch, getClientIp 
 // only on the documented trusted edge; arbitrary Node/HTTP servers cannot prove
 // that a same-named header is connection metadata. See ../README.md.
 export default createWorker();
+
+// Internal transport primitives shared with the separate session Worker. This
+// exports no reader dispatch or service credentials; read routes stay unchanged.
+export { BridgeError, fail, exactOrigin, checkBrowser, jsonContentType, lengthWithin,
+  cancelBody, deadline, readText, clientIp };
