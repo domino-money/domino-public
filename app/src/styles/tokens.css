@@ -54,6 +54,9 @@
   --font-display: 'Instrument Serif', ui-serif, Georgia, 'Times New Roman', serif;
   --font-sans: 'Geist', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
   --font-mono: 'Geist Mono', ui-monospace, 'SFMono-Regular', Menlo, monospace;
+
+  /* Layout. The landing hero is pulled up by this much, to run under the header. */
+  --header-h: 72px;
 }
 
 .dark {

@@ -1,3 +1,4 @@
+import { useEffect, useState } from 'react'
 import { Button, Pill, cx } from './ui'
 
 function Wordmark() {
@@ -23,10 +24,30 @@ const NAV = [
   { label: 'Settings', href: '#/settings', route: '/settings' },
 ]
 
+/** Whether the page is scrolled to its very top. */
+function useAtTop() {
+  const [atTop, setAtTop] = useState(true)
+  useEffect(() => {
+    const update = () => setAtTop(window.scrollY < 8)
+    update()
+    window.addEventListener('scroll', update, { passive: true })
+    return () => window.removeEventListener('scroll', update)
+  }, [])
+  return atTop
+}
+
 export function Header({ route }: { route: string }) {
+  // On the landing page the header starts clear, so the hero backdrop runs
+  // behind it, and takes its own background once anything scrolls beneath.
+  const clear = useAtTop() && route === '/'
   return (
-    <header className="sticky top-0 z-30 bg-[var(--bg)]/85 backdrop-blur-md">
-      <div className="mx-auto flex h-[72px] max-w-[1220px] items-center justify-between px-5">
+    <header
+      className={cx(
+        'sticky top-0 z-30 transition-[background-color,backdrop-filter] duration-300',
+        clear ? 'bg-transparent' : 'bg-[var(--bg)]/85 backdrop-blur-md',
+      )}
+    >
+      <div className="mx-auto flex h-[var(--header-h)] max-w-[1220px] items-center justify-between px-5">
         <Wordmark />
 
         <nav className="hidden items-center gap-1 rounded-[var(--radius-pill)] border bg-surface-1 p-1 md:flex">

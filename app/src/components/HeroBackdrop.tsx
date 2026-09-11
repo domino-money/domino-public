@@ -7,6 +7,10 @@ import { previewPosition } from 'core/position'
  * curve (the same maths the product runs) drawn very large and very quiet
  * across the whole width, with the active range shaded. It reads as a
  * liquidity chart from across the room and stays out of the headline's way.
+ *
+ * It covers the full width of the window, from under the header down to the
+ * pools, so no edge of it shows on a wide screen. Only the bottom fades, into
+ * the page.
  */
 
 const LOWER = 0.7
@@ -44,7 +48,7 @@ export function HeroBackdrop() {
           backgroundSize: '22px 22px',
         }}
       />
-      <div className="absolute left-1/2 top-[10%] h-[520px] w-[900px] -translate-x-1/2 rounded-full opacity-[0.16] blur-[130px]" style={{ background: 'var(--primary)' }} />
+      <div className="absolute left-1/2 top-[10%] h-[520px] w-[max(900px,70vw)] -translate-x-1/2 rounded-full opacity-[0.16] blur-[130px]" style={{ background: 'var(--primary)' }} />
 
       <svg viewBox="0 0 1000 400" preserveAspectRatio="none" className="absolute inset-x-0 bottom-0 h-[72%] w-full">
         <defs>
@@ -52,20 +56,18 @@ export function HeroBackdrop() {
             <stop offset="0%" stopColor="var(--primary)" stopOpacity="0.22" />
             <stop offset="100%" stopColor="var(--primary)" stopOpacity="0" />
           </linearGradient>
-          <linearGradient id="dm-hero-fade" x1="0" y1="0" x2="1" y2="0">
-            <stop offset="0%" stopColor="var(--bg)" stopOpacity="1" />
-            <stop offset="12%" stopColor="var(--bg)" stopOpacity="0" />
-            <stop offset="88%" stopColor="var(--bg)" stopOpacity="0" />
-            <stop offset="100%" stopColor="var(--bg)" stopOpacity="1" />
+          {/* The range band and its edges fade in from the top, so they never draw a box. */}
+          <linearGradient id="dm-hero-band" x1="0" y1="0" x2="0" y2="400" gradientUnits="userSpaceOnUse">
+            <stop offset="0%" stopColor="var(--primary)" stopOpacity="0" />
+            <stop offset="40%" stopColor="var(--primary)" stopOpacity="1" />
           </linearGradient>
         </defs>
-        <rect x={x(LOWER)} y="0" width={x(UPPER) - x(LOWER)} height="400" fill="var(--primary)" opacity="0.06" />
+        <rect x={x(LOWER)} y="0" width={x(UPPER) - x(LOWER)} height="400" fill="url(#dm-hero-band)" opacity="0.06" />
         {[LOWER, UPPER].map((b) => (
-          <line key={b} x1={x(b)} y1="0" x2={x(b)} y2="400" stroke="var(--primary)" strokeOpacity="0.25" strokeDasharray="6 8" vectorEffect="non-scaling-stroke" />
+          <line key={b} x1={x(b)} y1="0" x2={x(b)} y2="400" stroke="url(#dm-hero-band)" strokeOpacity="0.25" strokeDasharray="6 8" vectorEffect="non-scaling-stroke" />
         ))}
         <path d={`${CURVE} L1000,400 L0,400 Z`} fill="url(#dm-hero-fill)" />
         <path d={CURVE} fill="none" stroke="var(--primary)" strokeOpacity="0.55" strokeWidth="1.5" vectorEffect="non-scaling-stroke" />
-        <rect x="0" y="0" width="1000" height="400" fill="url(#dm-hero-fade)" />
       </svg>
 
       <div className="absolute inset-x-0 bottom-0 h-40" style={{ background: 'linear-gradient(to bottom, transparent, var(--bg))' }} />

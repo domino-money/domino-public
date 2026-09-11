@@ -34,9 +34,11 @@ const LIMITS = [
 
 export function Landing() {
   return (
-    <main className="mx-auto max-w-[1220px] px-5">
-      {/* Hero: the headline and the product, nothing in between */}
-      <section className="relative -mx-5 flex min-h-[calc(100vh-112px)] flex-col justify-center overflow-hidden px-5 pb-24 pt-20 sm:pb-32 sm:pt-28">
+    <main>
+      {/* Hero: the headline and the product, nothing in between. Full width and
+          pulled up under the clear header, so the backdrop fills the page from
+          the top down to the pools. The 40px is the ticker above the header. */}
+      <section className="relative -mt-[var(--header-h)] flex min-h-[calc(100vh-40px)] flex-col justify-center overflow-hidden px-5 pb-24 pt-[calc(var(--header-h)+80px)] sm:pb-32 sm:pt-[calc(var(--header-h)+112px)]">
         <HeroBackdrop />
         <div className="relative text-center">
           <Display as="h1" className="dm-rise mx-auto max-w-[14ch] text-[46px] leading-[1.04] sm:text-[66px]">
@@ -51,96 +53,98 @@ export function Landing() {
         </p>
       </section>
 
-      {/* Pools come first, the way an exchange leads with its markets */}
-      <section id="pools" className="mt-6 scroll-mt-24">
-        <MarketsTable />
-      </section>
+      <div className="mx-auto max-w-[1220px] px-5">
+        {/* Pools come first, the way an exchange leads with its markets */}
+        <section id="pools" className="mt-6 scroll-mt-24">
+          <MarketsTable />
+        </section>
 
-      {/* Then the product */}
-      <section className="mt-28">
-        <div className="mb-8 text-center">
-          <Display className="mx-auto max-w-[18ch] text-[40px]">Made for every way to hold liquidity.</Display>
-          <p className="mx-auto mt-3 max-w-[54ch] text-[15px] text-fg-muted">Positions, reinvestment, the Domino sequence and receipts you can actually read. All in one place.</p>
-        </div>
-        <ProductCards />
-      </section>
-
-      <section className="mt-24">
-        <RangeSimulator />
-      </section>
-
-      <section className="mt-24">
-        <Card level={2} className="p-8 lg:p-10">
-          <div className="grid gap-8 lg:grid-cols-[0.85fr_1.15fr]">
-            <div>
-              <Pill tone="accent">Advanced</Pill>
-              <Display className="mt-4 text-[32px]">One position sets up the next.</Display>
-              <p className="mt-4 text-[14px] leading-relaxed text-fg-muted">
-                Normally a position reinvests its fees into itself. As the price climbs into the top of its range, Domino points those fees at the next position instead, so each one stands up the one above it.
-              </p>
-              <p className="mt-3 text-[14px] leading-relaxed text-fg-muted">
-                The successor is funded from earned fees only. Your deposit is never moved and nothing is pulled from your wallet. Every successor is another position in the same pool, not a new pool.
-              </p>
-              <p className="mt-4 text-[12px] leading-relaxed text-fg-subtle">Invite only, after its own security review. Holding several positions at once can increase your exposure if the price reverses.</p>
-            </div>
-            <DominoSequence />
+        {/* Then the product */}
+        <section className="mt-28">
+          <div className="mb-8 text-center">
+            <Display className="mx-auto max-w-[18ch] text-[40px]">Made for every way to hold liquidity.</Display>
+            <p className="mx-auto mt-3 max-w-[54ch] text-[15px] text-fg-muted">Positions, reinvestment, the Domino sequence and receipts you can actually read. All in one place.</p>
           </div>
-        </Card>
-      </section>
+          <ProductCards />
+        </section>
 
-      <section id="learn" className="mt-24 scroll-mt-24">
-        <Eyebrow>How it works</Eyebrow>
-        <Display className="mt-3 max-w-[20ch] text-[34px]">Three decisions, then it runs itself.</Display>
-        <div className="mt-8 grid gap-5 md:grid-cols-3">
-          {STEPS.map((step) => (
-            <Card key={step.n} className="p-6">
-              <span className="font-mono text-[12px] tracking-[0.5px]" style={{ color: 'var(--primary)' }}>{step.n}</span>
-              <h3 className="mt-3 text-[16px] font-medium">{step.title}</h3>
-              <p className="mt-2 text-[14px] leading-relaxed text-fg-muted">{step.body}</p>
-            </Card>
-          ))}
-        </div>
-      </section>
+        <section className="mt-24">
+          <RangeSimulator />
+        </section>
 
-      <section className="mt-24">
-        <Eyebrow>Before you start</Eyebrow>
-        <Display className="mt-3 max-w-[22ch] text-[34px]">What Domino does not do.</Display>
-        <p className="mt-3 max-w-[58ch] text-[14px] text-fg-muted">Most of this lives in the small print elsewhere. Here it is the first thing you read.</p>
-        <div className="mt-8 grid gap-5 sm:grid-cols-2">
-          {LIMITS.map((limit) => (
-            <Card key={limit.title} className="p-6">
-              <h3 className="text-[15px] font-medium">{limit.title}</h3>
-              <p className="mt-2 text-[14px] leading-relaxed text-fg-muted">{limit.body}</p>
-            </Card>
-          ))}
-        </div>
-      </section>
-
-      <section className="mt-20">
-        <a
-          href="https://uniswap.org"
-          target="_blank"
-          rel="noreferrer"
-          className="group relative flex flex-col items-start gap-6 overflow-hidden rounded-[28px] p-7 transition-transform duration-300 hover:-translate-y-1 sm:flex-row sm:items-center sm:justify-between sm:p-8"
-          style={{ background: 'color-mix(in srgb, #FF007A 12%, transparent)' }}
-        >
-          <div className="pointer-events-none absolute -left-16 -top-16 h-64 w-64 rounded-full opacity-50 blur-3xl transition-opacity duration-500 group-hover:opacity-80" style={{ background: '#FF007A' }} aria-hidden="true" />
-          <div className="pointer-events-none absolute -bottom-20 right-10 h-56 w-56 rounded-full opacity-30 blur-3xl" style={{ background: '#FC72FF' }} aria-hidden="true" />
-          <div className="relative flex items-center gap-5">
-            <div className="dm-float rounded-full" style={{ '--dur': '9s', '--dx': '4px', '--dy': '-8px', boxShadow: '0 24px 60px -16px rgba(255,0,122,0.55)' } as React.CSSProperties}>
-              <TokenIcon symbol="UNI" size={64} />
+        <section className="mt-24">
+          <Card level={2} className="p-8 lg:p-10">
+            <div className="grid gap-8 lg:grid-cols-[0.85fr_1.15fr]">
+              <div>
+                <Pill tone="accent">Advanced</Pill>
+                <Display className="mt-4 text-[32px]">One position sets up the next.</Display>
+                <p className="mt-4 text-[14px] leading-relaxed text-fg-muted">
+                  Normally a position reinvests its fees into itself. As the price climbs into the top of its range, Domino points those fees at the next position instead, so each one stands up the one above it.
+                </p>
+                <p className="mt-3 text-[14px] leading-relaxed text-fg-muted">
+                  The successor is funded from earned fees only. Your deposit is never moved and nothing is pulled from your wallet. Every successor is another position in the same pool, not a new pool.
+                </p>
+                <p className="mt-4 text-[12px] leading-relaxed text-fg-subtle">Invite only, after its own security review. Holding several positions at once can increase your exposure if the price reverses.</p>
+              </div>
+              <DominoSequence />
             </div>
-            <div>
-              <span className="font-mono text-[11px] uppercase tracking-[0.6px]" style={{ color: '#FF6FBE' }}>Protocol</span>
-              <h3 className="mt-1 font-display text-[26px] leading-tight">Built on Uniswap v4</h3>
-              <p className="mt-1.5 max-w-[52ch] text-[14px] leading-relaxed text-fg-muted">Every Domino position is a standard v4 position on Robinhood Chain. Domino looks after its upkeep and nothing else.</p>
-            </div>
+          </Card>
+        </section>
+
+        <section id="learn" className="mt-24 scroll-mt-24">
+          <Eyebrow>How it works</Eyebrow>
+          <Display className="mt-3 max-w-[20ch] text-[34px]">Three decisions, then it runs itself.</Display>
+          <div className="mt-8 grid gap-5 md:grid-cols-3">
+            {STEPS.map((step) => (
+              <Card key={step.n} className="p-6">
+                <span className="font-mono text-[12px] tracking-[0.5px]" style={{ color: 'var(--primary)' }}>{step.n}</span>
+                <h3 className="mt-3 text-[16px] font-medium">{step.title}</h3>
+                <p className="mt-2 text-[14px] leading-relaxed text-fg-muted">{step.body}</p>
+              </Card>
+            ))}
           </div>
-          <span className="relative inline-flex items-center gap-1.5 whitespace-nowrap rounded-[var(--radius-pill)] px-4 py-2 text-[13px] font-medium text-white transition group-hover:gap-2.5" style={{ background: '#FF007A' }}>
-            Learn about v4 <span aria-hidden="true">→</span>
-          </span>
-        </a>
-      </section>
+        </section>
+
+        <section className="mt-24">
+          <Eyebrow>Before you start</Eyebrow>
+          <Display className="mt-3 max-w-[22ch] text-[34px]">What Domino does not do.</Display>
+          <p className="mt-3 max-w-[58ch] text-[14px] text-fg-muted">Most of this lives in the small print elsewhere. Here it is the first thing you read.</p>
+          <div className="mt-8 grid gap-5 sm:grid-cols-2">
+            {LIMITS.map((limit) => (
+              <Card key={limit.title} className="p-6">
+                <h3 className="text-[15px] font-medium">{limit.title}</h3>
+                <p className="mt-2 text-[14px] leading-relaxed text-fg-muted">{limit.body}</p>
+              </Card>
+            ))}
+          </div>
+        </section>
+
+        <section className="mt-20">
+          <a
+            href="https://uniswap.org"
+            target="_blank"
+            rel="noreferrer"
+            className="group relative flex flex-col items-start gap-6 overflow-hidden rounded-[28px] p-7 transition-transform duration-300 hover:-translate-y-1 sm:flex-row sm:items-center sm:justify-between sm:p-8"
+            style={{ background: 'color-mix(in srgb, #FF007A 12%, transparent)' }}
+          >
+            <div className="pointer-events-none absolute -left-16 -top-16 h-64 w-64 rounded-full opacity-50 blur-3xl transition-opacity duration-500 group-hover:opacity-80" style={{ background: '#FF007A' }} aria-hidden="true" />
+            <div className="pointer-events-none absolute -bottom-20 right-10 h-56 w-56 rounded-full opacity-30 blur-3xl" style={{ background: '#FC72FF' }} aria-hidden="true" />
+            <div className="relative flex items-center gap-5">
+              <div className="dm-float rounded-full" style={{ '--dur': '9s', '--dx': '4px', '--dy': '-8px', boxShadow: '0 24px 60px -16px rgba(255,0,122,0.55)' } as React.CSSProperties}>
+                <TokenIcon symbol="UNI" size={64} />
+              </div>
+              <div>
+                <span className="font-mono text-[11px] uppercase tracking-[0.6px]" style={{ color: '#FF6FBE' }}>Protocol</span>
+                <h3 className="mt-1 font-display text-[26px] leading-tight">Built on Uniswap v4</h3>
+                <p className="mt-1.5 max-w-[52ch] text-[14px] leading-relaxed text-fg-muted">Every Domino position is a standard v4 position on Robinhood Chain. Domino looks after its upkeep and nothing else.</p>
+              </div>
+            </div>
+            <span className="relative inline-flex items-center gap-1.5 whitespace-nowrap rounded-[var(--radius-pill)] px-4 py-2 text-[13px] font-medium text-white transition group-hover:gap-2.5" style={{ background: '#FF007A' }}>
+              Learn about v4 <span aria-hidden="true">→</span>
+            </span>
+          </a>
+        </section>
+      </div>
     </main>
   )
 }
