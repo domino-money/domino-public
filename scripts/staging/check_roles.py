@@ -12,6 +12,8 @@ import stat
 import subprocess
 import time
 
+from catalogue_inventory import check_inventory, inventory_sql
+
 
 ADMIN = 'domino_catalogue_admin'
 READER = 'domino_catalogue_reader'
@@ -307,6 +309,10 @@ def main(argv=None):
         if not isinstance(data, dict):
             raise ValueError('metadata_unavailable')
         report['metadata'] = check_metadata(data)
+        inventory = json_result(query(args, 'domino-admin', ADMIN, inventory_sql(), deadline))
+        if not isinstance(inventory, dict):
+            raise ValueError('catalogue_inventory_unavailable')
+        report['metadata'].update(check_inventory(inventory, installed=True))
         if not all(report['metadata'].values()):
             raise ValueError('metadata_mismatch')
         for role in ROLES:

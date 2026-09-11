@@ -32,7 +32,9 @@ python3 scripts/staging/prepare_disabled.py \
 That hash identifies the prepared 11,018,240-byte archive. Verify its provenance
 independently; the Git tar commit header is a consistency check, not a signature.
 Review the installer from its own pinned commit as well. Keep the archive and
-installer in operator-controlled storage. For a later reviewed release, provide
+the complete `scripts/staging/` helper set from that commit in operator-controlled
+storage; the installer imports `catalogue_inventory.py` from that directory.
+For a later reviewed release, provide
 its actual commit/hash and reassess the plan rather than reusing these values.
 The installer accepts only regular files and directories, with bounded size and
 member counts; it rejects traversal, duplicate paths, links, special files,
@@ -55,6 +57,12 @@ or extra SQL membership is accepted. PUBLIC has no database privileges; existing
 runtime roles have CONNECT only. Existing five Domino roles must be LOGIN,
 NOINHERIT and lack administrative privileges. The DB must have no user objects,
 non-default extensions, large objects or other connected clients.
+Preflight compares the complete database and schema ACL inventory, including
+PUBLIC, grantors and grant options. Only the three PostgreSQL system schemas and
+`public` may exist before installation. No `pg_default_acl` entries in this DB
+or `pg_db_role_setting` entries anywhere in the dedicated cluster are accepted.
+The empty-database guard repeats the override checks in the migration transaction.
+An unexpected entry stops installation; it is never reset or revoked automatically.
 Both database and server encoding must be `UTF8`. `SQL_ASCII` is rejected before
 backup or application changes: psycopg otherwise returns text as bytes, breaking catalogue
 checkpoint/hash comparisons and JSON responses. Do not relabel an existing
@@ -138,8 +146,23 @@ attempt destructive rollback. There is no cleanup scheduler.
 
 After installation, run `check_roles.py` as root before starting the application.
 It verifies actual peer identities, encoding and ACLs using read-only queries.
-`check_filesystem.py --commit <installed-commit>` checks immutable code and the
-49 cross-service descriptor access pairs under the actual service UIDs.
+The filesystem check now requires the independently trusted archive as well as
+the installed commit. Run the reviewed helper set separately from installed code:
+
+```sh
+sudo python3.14 scripts/staging/check_filesystem.py \
+  --commit a5a855cec1fc5d120d9c1c187a84ff24bc1b02d6 \
+  --archive source.tar \
+  --archive-sha256 cddc956efc28a0954eb52388c7e26541f5de0d2191998adcd61bbb5db5e5a562
+```
+
+It checks all seven code inventories, file bytes and executable modes against
+that tar, in addition to root ownership and the 49 cross-service descriptor
+access pairs. Only each service's `backend/runtime` and the validated `.venv`
+link are excluded from the code comparison. Missing files, extra files/empty
+directories, changed bytes, links, hardlinks and mode changes fail the check.
+Runtime contents are not read. See [verifier scope and tests](STAGING_VERIFIER_HARDENING.md)
+for the trust boundary and checks still requiring the actual host.
 
 The fresh catalogue seed has no start block. Before testing its HTTP contract,
 provision the writer's private RPC configuration and initialize a reviewed start

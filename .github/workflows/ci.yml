@@ -17,6 +17,8 @@ jobs:
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - run: python3 scripts/check-repository.py
+      - name: Check staging helpers without host access
+        run: python3 -B -m unittest discover -s scripts/staging/tests -p test_staging_helpers.py -v
   frontend:
     name: Frontend
     runs-on: ubuntu-24.04
@@ -73,6 +75,8 @@ jobs:
       - run: npm run check:read-bridge
       - name: Check PostgreSQL tools
         run: test -x "$DOMINO_PG_BIN/initdb"
+      - name: Check staging catalogue inventory in a disposable cluster
+        run: DOMINO_TEST_STAGING_POSTGRES=1 python -B -m unittest discover -s scripts/staging/tests -p test_catalogue_postgres.py -v
       - run: python backend/dev_postgres.py prepare-tests
       - run: python -m unittest discover -s backend/tests -v
       - name: Stop isolated database

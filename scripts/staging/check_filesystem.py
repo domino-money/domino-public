@@ -6,6 +6,7 @@ contents. Runtime directories are writable only by their respective service;
 code is immutable and the root-managed venv is unwritable by service users.
 """
 import argparse
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -14,7 +15,10 @@ import re
 import signal
 import stat
 import subprocess
+import tarfile
 import time
+
+from prepare_disabled import archive_files
 
 
 RELEASES = Path('/opt/domino/releases')
@@ -108,6 +112,68 @@ def check_code(root, runtime_paths, deadline):
     require(seen_links == venv_links, 'venv_links_missing')
 
 
+def check_code_identity(root, files, deadline):
+    """Compare all seven code copies to the caller's independently trusted tar.
+
+    Runtime contents and the previously checked .venv link are the only allowed
+    additions. A manifest inside the installed release is not a trust anchor.
+    """
+    expected_files = {component / Path(name): (content, executable)
+                      for component in map(Path, COMPONENTS)
+                      for name, (content, executable) in files.items()}
+    expected_dirs = {Path('.'), *(Path(component) for component in COMPONENTS)}
+    for path in expected_files:
+        expected_dirs.update(path.parents)
+    seen_files, seen_dirs = set(), set()
+    mutable = {Path(component) / 'backend/runtime' for component in COMPONENTS}
+    links = {Path(component) / 'backend/.venv' for component in COMPONENTS}
+    expected_hashes = {name: hashlib.sha256(content).digest() for name, (content, _) in files.items()}
+    for directory, dirs, names in walk_entries(root, deadline):
+        relative_dir = directory.relative_to(root)
+        require(relative_dir in expected_dirs, 'unexpected_code_directory')
+        require(stat.S_IMODE(directory.lstat().st_mode) == 0o555, 'code_directory_mode_mismatch')
+        seen_dirs.add(relative_dir)
+        for name in list(dirs) + names:
+            path = directory / name
+            relative = path.relative_to(root)
+            if relative in mutable | links:
+                if name in dirs:
+                    dirs.remove(name)
+                continue
+            info = path.lstat()
+            if stat.S_ISDIR(info.st_mode):
+                require(relative in expected_dirs, 'unexpected_code_directory')
+                continue
+            require(relative in expected_files, 'unexpected_code_file')
+            require(stat.S_ISREG(info.st_mode), 'code_identity_requires_regular_file')
+            content, executable = expected_files[relative]
+            require(stat.S_IMODE(info.st_mode) == (0o555 if executable else 0o444), 'code_file_mode_mismatch')
+            fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+            with os.fdopen(fd, 'rb') as stream:
+                before = os.fstat(stream.fileno())
+                require(stat.S_ISREG(before.st_mode) and before.st_nlink == 1
+                        and before.st_size == len(content), 'code_file_metadata_mismatch')
+                require(before == info, 'code_file_changed_during_check')
+                digest = hashlib.sha256()
+                size = 0
+                while chunk := stream.read(1024 * 1024):
+                    remaining(deadline)
+                    size += len(chunk)
+                    require(size <= len(content), 'code_file_size_mismatch')
+                    digest.update(chunk)
+                after = os.fstat(stream.fileno())
+                # Reading can update atime. Other metadata and the final path
+                # must still identify the regular file that was opened.
+                stable = lambda s: (s.st_dev, s.st_ino, s.st_mode, s.st_uid, s.st_gid,
+                                    s.st_nlink, s.st_size, s.st_mtime_ns, s.st_ctime_ns)
+                require(stable(before) == stable(after) == stable(path.lstat()), 'code_file_changed_during_check')
+            archive_name = relative.relative_to(relative.parts[0]).as_posix()
+            require(size == len(content) and digest.digest() == expected_hashes[archive_name], 'code_content_mismatch')
+            seen_files.add(relative)
+    require(seen_files == set(expected_files) and seen_dirs == expected_dirs, 'code_inventory_incomplete')
+    return {'copies': len(COMPONENTS), 'filesPerCopy': len(files), 'verifiedFiles': len(seen_files)}
+
+
 def check_venv(deadline):
     """Match installer policy, including root-controlled interpreter file links."""
     protected_parents(VENV)
@@ -156,6 +222,8 @@ def probe(component, paths, code_path, deadline):
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__, allow_abbrev=False)
     parser.add_argument('--commit', required=True)
+    parser.add_argument('--archive', required=True, type=Path)
+    parser.add_argument('--archive-sha256', required=True)
     args = parser.parse_args(argv)
     report = {'ok': False, 'effectiveUserChecks': [], 'descriptorAccessPairs': 0,
               'rootOwnedImmutableCode': False, 'rootOwnedProtectedVenv': False}
@@ -163,6 +231,8 @@ def main(argv=None):
     try:
         require(os.geteuid() == 0, 'root_required')
         require(re.fullmatch('[0-9a-f]{40}', args.commit), 'invalid_commit')
+        files = archive_files(args.archive, args.archive_sha256, args.commit)
+        remaining(deadline)
         root = RELEASES / args.commit
         accounts = {component: pwd.getpwnam('domino-' + component) for component in COMPONENTS}
         uids = [account.pw_uid for account in accounts.values()]
@@ -171,6 +241,8 @@ def main(argv=None):
         paths = {component: str(runtime / 'catalogue-db.json') for component, runtime in runtimes.items()}
         check_code(root, set(runtimes.values()), deadline)
         report['rootOwnedImmutableCode'] = True
+        report['codeIdentity'] = dict(check_code_identity(root, files, deadline),
+            commit=args.commit, archiveSha256=args.archive_sha256)
         check_venv(deadline)
         report['rootOwnedProtectedVenv'] = True
         for component, runtime in runtimes.items():
@@ -184,7 +256,7 @@ def main(argv=None):
                                                   'isolatedDescriptors': len(COMPONENTS)})
             report['descriptorAccessPairs'] += len(COMPONENTS)
         report['ok'] = report['descriptorAccessPairs'] == 49 and all(row['ok'] for row in report['effectiveUserChecks'])
-    except (ValueError, KeyError, OSError, RuntimeError, TypeError) as error:
+    except (ValueError, KeyError, OSError, RuntimeError, TypeError, tarfile.TarError) as error:
         report['error'] = str(error) if isinstance(error, ValueError) and not isinstance(error, json.JSONDecodeError) else type(error).__name__
     print(json.dumps(report, indent=2))
     return 0 if report['ok'] else 1

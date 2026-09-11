@@ -63,6 +63,25 @@ Function security-definer flags and fixed search paths are checked. Only
 maintenance policies must match migrations 009/010/014, including maintenance
 UPDATE visibility with `WITH CHECK (false)`.
 
+The additional catalogue inventory covers **all nine schemas**: `pg_catalog`,
+`pg_toast`, `information_schema`, `public` and the five Domino schemas. The first
+three retain owner `postgres`; `public` retains `pg_database_owner`. Their complete
+ACLs, and the database ACL, must match the known foundation, including PUBLIC,
+grantor and grant option. No unlisted role may receive a schema/database grant.
+The DDL owner retains database CREATE/CONNECT/TEMPORARY; the five runtime roles
+have CONNECT only. Additional schemas (including temporary schemas), schema
+ownership changes, missing privileges and extra grants all fail closed. Inspect
+an unexpected entry before deciding whether the reviewed inventory should change;
+the verifier does not repair it.
+
+`pg_default_acl` must contain no rows in this database. The schema-local REVOKEs
+in migrations 008/009/011 leave that catalogue empty; they do not require an
+exception. `pg_db_role_setting` must contain no rows in the dedicated cluster,
+including role-only, database-only, role-in-database, global and other-database
+settings. This detects persistent trigger-bypass/search-path settings without
+reading or printing their values. Per-connection `PGOPTIONS` used by the verifier
+do not create persistent entries. Missing or malformed inventory also fails.
+
 Effective schema/table/function/sequence privileges and runtime grant options
 are checked against the source's role matrix. In particular, the public reader
 and writer cannot access sessions, admission or deposits; auth cannot grant
@@ -95,3 +114,6 @@ admission, or migration function bodies. Read-only ACL checks cannot establish
 that an actual write, trigger or financial recovery succeeds. Keep listeners
 and ingress disabled until the other staging gates pass; use the full isolated
 PG/EVM suite for behavioral validation rather than staging fixtures.
+Run this file together with its reviewed `catalogue_inventory.py` helper.
+[Hardening tests and remaining host checks](STAGING_VERIFIER_HARDENING.md)
+describe how the added inventory is tested without accessing staging.

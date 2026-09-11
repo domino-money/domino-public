@@ -20,6 +20,8 @@ import subprocess
 import tarfile
 import time
 
+from catalogue_inventory import NO_PERSISTENT_OVERRIDES, check_inventory, inventory_sql
+
 BASE = Path('/opt/domino')
 VENV = BASE / 'backend-venv'
 PYTHON = VENV / 'bin/python3.14'
@@ -73,7 +75,8 @@ EMPTY = """NOT EXISTS (SELECT FROM pg_namespace
  AND NOT EXISTS (SELECT FROM pg_type t JOIN pg_namespace n ON n.oid=t.typnamespace
  WHERE n.nspname='public')
  AND NOT EXISTS (SELECT FROM pg_extension WHERE extname<>'plpgsql')
- AND NOT EXISTS (SELECT FROM pg_largeobject_metadata)"""
+ AND NOT EXISTS (SELECT FROM pg_largeobject_metadata)
+ AND """ + NO_PERSISTENT_OVERRIDES
 
 
 def require(condition, message):
@@ -337,11 +340,9 @@ def preflight(files, commit):
     require(sql("SELECT count(*) FROM pg_auth_members m JOIN pg_roles r ON r.oid=m.member "
         "JOIN pg_roles g ON g.oid=m.roleid WHERE r.rolname ~ '^domino_' "
         "OR g.rolname ~ '^domino_'") == '0', 'unexpected SQL role memberships')
-    acl = json.loads(sql("SELECT json_agg(json_build_array(CASE WHEN a.grantee=0 THEN 'PUBLIC' "
-        "ELSE pg_get_userbyid(a.grantee) END,a.privilege_type)) FROM pg_database d,"
-        "aclexplode(COALESCE(d.datacl,acldefault('d',d.datdba))) a WHERE d.datname=current_database()"))
-    expected_acl = {(role, 'CONNECT') for _, _, role in MAPPINGS} | {(ADMIN, 'CREATE'), (ADMIN, 'TEMPORARY')}
-    require({tuple(row) for row in acl} == expected_acl, 'unexpected database ACL')
+    inventory = check_inventory(json.loads(sql(inventory_sql())), installed=False)
+    require(all(inventory.values()), 'unexpected foundation catalogue inventory: ' +
+            ','.join(name for name, passed in inventory.items() if not passed))
     validate_pg_files()
     return settings
 
