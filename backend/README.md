@@ -59,6 +59,12 @@ key. It inherits the loopback/browser-origin boundary below. It does not replace
 
 ## Uniswap API configuration and readiness
 
+Issue #34 adds an explicit [owner-funded quote preview](../docs/FUNDING_QUOTE_PREVIEW.md)
+through `preview_swap.py`: one bounded, expiring hookless-v4 quote with exact
+request/route checks and separate provider/Domino fee semantics. It is internal
+only, does not calculate the full LP composition, and returns no executable
+payload. No new browser route or frontend integration is enabled.
+
 Open `backend/Configurar Uniswap.command` in Terminal, or run
 `backend/.venv/bin/python backend/configure_uniswap.py` interactively. Obtain a
 key at the [developer portal](https://developers.uniswap.org/dashboard) and enter
@@ -75,8 +81,9 @@ access alone is not an authentication audit: it also responded without a key.
 The configured [Trading API quote probe](../reports/UNISWAP_TRADING_READINESS.md)
 succeeded on Robinhood using router `2.1.1`, numeric chain IDs and no signatures.
 Those network-specific values supersede generic examples in the installed
-`swap-integration` skill. The quote adapter/public quote route, current user
-funding, service-fee tariff and financial execution remain separate work.
+`swap-integration` skill. The [internal quote adapter](../docs/FUNDING_QUOTE_PREVIEW.md)
+is now implemented. Its public route, complete user funding plan, service-fee
+tariff and financial execution remain separate work.
 
 Historical reference-price work for issue #4 now includes a bounded Chainlink
 adapter, publication-block evidence, source-isolated persistence and an explicit

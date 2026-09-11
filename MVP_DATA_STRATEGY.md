@@ -46,6 +46,11 @@ Robinhood Trading API quote; see [Trading readiness](reports/UNISWAP_TRADING_REA
 The quote uses router 2.1.1 and numeric chain IDs, correcting generic skill
 examples for this network.
 
+Issue #34 now implements the [reusable quote preview](docs/FUNDING_QUOTE_PREVIEW.md)
+with strict request/route binding, expiry, separated fee observations and an
+explicit local CLI. The full LP funding plan, public quote route and financial
+execution remain separate; no frontend fields are switched by this module.
+
 API 0.8.0 adds `/v1/read/pool-market`: a current on-chain pool identity plus
 attributed GeckoTerminal TVL/24h volume and optional hourly prices. Its bounded
 in-memory cache coalesces requests and marks retained observations stale after

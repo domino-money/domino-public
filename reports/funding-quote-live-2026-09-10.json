@@ -1,0 +1,128 @@
+{
+  "schemaVersion": 1,
+  "mode": "read_only_quote_adapter_probe",
+  "date": "2026-09-10",
+  "liveRequestsThisTask": 2,
+  "includedResult": "final_normalized_preview",
+  "publicSwapperPurpose": "public_burn_address_placeholder_not_a_user_wallet",
+  "signed": false,
+  "executed": false,
+  "approvalRequested": false,
+  "result": {
+    "schemaVersion": 1,
+    "source": "uniswap_trading_quote_v1",
+    "chainId": 4663,
+    "status": "preview_only",
+    "executionAvailable": false,
+    "quote": {
+      "dexInputAmountRaw": "1000000000000000",
+      "grossOutputAmountRaw": "2449211",
+      "grossMinimumOutputAmountRaw": "2436964",
+      "policyMinimumOutputRaw": "2436964",
+      "outputAfterProviderFeeRaw": "2449211",
+      "minimumAfterProviderFeeRaw": "2436964",
+      "priceImpactPercent": "0.03",
+      "routes": [
+        [
+          {
+            "poolId": "0x84bd4e2d8be11aeb0afc1195b38f587b61e90068548f1063fdbe448fb8cad0b6",
+            "poolKey": {
+              "currency0": "0x0bd7d308f8e1639fab988df18a8011f41eacad73",
+              "currency1": "0x5fc5360d0400a0fd4f2af552add042d716f1d168",
+              "fee_pips": 200,
+              "tick_spacing": 4,
+              "hooks": "0x0000000000000000000000000000000000000000"
+            },
+            "tokenIn": {
+              "address": "0x0bd7d308f8e1639fab988df18a8011f41eacad73",
+              "decimals": 18
+            },
+            "tokenOut": {
+              "address": "0x5fc5360d0400a0fd4f2af552add042d716f1d168",
+              "decimals": 6
+            },
+            "amountInRaw": "1000000000000000",
+            "amountOutRaw": "2449211"
+          }
+        ]
+      ]
+    },
+    "previewChecks": {
+      "status": "within_observed_limits",
+      "reasons": []
+    },
+    "providerOutputFee": {
+      "status": "reported_zero",
+      "basis": "output_currency",
+      "currency": "0x5fc5360d0400a0fd4f2af552add042d716f1d168",
+      "bps": null,
+      "amountRaw": null,
+      "recipient": null,
+      "aggregatedOutputs": [
+        {
+          "recipient": "0x000000000000000000000000000000000000dead",
+          "amountRaw": "2449211",
+          "minimumAmountRaw": "2436964",
+          "bps": "10000",
+          "kind": null
+        }
+      ],
+      "zeroEvidence": "aggregated_outputs"
+    },
+    "dominoFee": {
+      "status": "tariff_not_selected",
+      "bps": null,
+      "amountRaw": null,
+      "basis": "consumed_owner_selected_gross_input",
+      "ceilingBps": 65,
+      "includedInDexInput": false,
+      "automationFeeApplies": false
+    },
+    "gas": {
+      "feeWei": "37321986696000",
+      "units": "193244",
+      "usd": "0.06258873087984332",
+      "source": "provider_estimate",
+      "includesApprovals": false,
+      "fullNetworkCostVerified": false
+    },
+    "simulation": {
+      "status": "no_provider_failure_reported",
+      "failureCodes": [],
+      "independentSuccessProven": false
+    },
+    "approvalApplicable": true,
+    "provenance": {
+      "endpoint": "https://trade-api.gateway.uniswap.org/v1/quote",
+      "schemaCommit": "da6d36f71c4d2fd665b0aae1a052a4ffda917b31",
+      "routerVersion": "2.1.1",
+      "providerBlockNumber": "59570974",
+      "providerBlockHash": null,
+      "onchainSnapshotVerified": false,
+      "routeIdentity": "provider_pool_key_hash_checked",
+      "tokenTransferSafetyVerified": false,
+      "ownerControlVerified": false
+    },
+    "requestedAt": 1789060224,
+    "retrievedAt": 1789060226,
+    "expiresAt": 1789060254,
+    "request": {
+      "owner": "0x000000000000000000000000000000000000dead",
+      "chainId": 4663,
+      "tokenIn": "0x0bd7d308f8e1639fab988df18a8011f41eacad73",
+      "tokenOut": "0x5fc5360d0400a0fd4f2af552add042d716f1d168",
+      "amountRaw": "1000000000000000",
+      "slippageBps": 50,
+      "maxPriceImpactBps": 100
+    },
+    "requestFingerprint": "20df0f63b21dd473837dc0131cd2daf9f0b3aee9f34ec9cf41cdd9378707b511"
+  },
+  "limitations": [
+    "one_public_pair_one_amount_no_coverage_SLA",
+    "already_expired_historical_evidence",
+    "no_independent_simulation_or_onchain_snapshot",
+    "no_default_Domino_tariff",
+    "no_missing_or_invalid_key_controls",
+    "no_raw_response_permits_or_credentials_retained"
+  ]
+}

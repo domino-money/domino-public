@@ -28,6 +28,11 @@ STATE_VIEW = '0xf3334192d15450cdd385c8b70e03f9a6bd9e673b'
 ZERO = '0x' + '00' * 20
 KEY_TYPES = ('address', 'address', 'uint24', 'int24', 'address')
 MAX_RESPONSE_BYTES = 2_000_000
+TRADING_QUOTE_ENDPOINT = 'https://trade-api.gateway.uniswap.org/v1/quote'
+TRADING_QUOTE_HEADERS = {
+    'x-universal-router-version': '2.1.1',
+    'x-agent-info': '{"integration_name":"swap-integration","decision_origin":"human_mediated","version":"1.5.0"}',
+}
 # A read consumes node computation, never wallet gas. Keep a finite ceiling even
 # for arbitrary token contracts. Smaller profiles are useful for trusted probes.
 MAX_READ_CALL_GAS = 500_000
@@ -238,7 +243,9 @@ def json_http(url, body=None, *, timeout=12, opener=_JSON_OPENER, headers=None):
     if not valid:
         raise DataError('https_endpoint_required')
     extra = {} if headers is None else headers
-    if (not isinstance(extra, dict) or any(name != "x-api-key" for name in extra) or
+    fixed = TRADING_QUOTE_HEADERS if url == TRADING_QUOTE_ENDPOINT else {}
+    if (not isinstance(extra, dict) or any(name != "x-api-key" and
+            (name not in fixed or value != fixed[name]) for name, value in extra.items()) or
             any(not isinstance(value, str) or not 1 <= len(value) <= 512 or
                 any(not 33 <= ord(char) <= 126 for char in value) for value in extra.values())):
         raise DataError("invalid_private_api_header")
