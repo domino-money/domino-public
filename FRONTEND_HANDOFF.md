@@ -49,6 +49,8 @@ Each slice has its own GitHub issue and acceptance criteria. Mock data must be u
 
 The password proves an invitation, nothing more. It is not wallet authentication, grants no capability in the app, and never substitutes for a session; wallet admission belongs to the session backend. A deployment missing either secret answers 503 to every request rather than opening. See `app/README.md` for operation and rotation.
 
+`/api/*` takes one more step, the ingress rugged97 accepted on #45: past the gate, `app/functions/api/[[path]].ts` forwards each family (read, session, onboarding, deposit) through a fixed private service binding to its bridge Worker and refuses everything else as JSON, never with a Worker contract header: another host gets 404, a missing binding 503, another Worker's subrequest 403. Every answer past the gate leaves with `Cache-Control: no-store, no-transform`. In production, `CANONICAL_HOSTS_ONLY` confines the deployment to `domino.money` and `www.domino.money`, so its pages.dev and hash URLs are not entrances. No binding exists yet: they arrive in a separate change after the owner deploys the four Workers with every flag off. Deposit stays deferred: no secrets, Access application or Tunnel mapping until its own gates pass. Details in `app/README.md`.
+
 ## Data rules
 
 - Identify assets by chain and address; symbols/decimals are optional, untrusted metadata. A zero-decimal token is valid, missing decimals are different.

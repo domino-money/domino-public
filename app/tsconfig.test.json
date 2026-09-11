@@ -21,6 +21,8 @@
     "../web/lib/position.ts",
     "functions/_lib/gate.ts",
     "functions/_middleware.ts",
+    "functions/_lib/bridge.ts",
+    "functions/api/[[path]].ts",
     "src/lib/read/pin.ts",
     "src/lib/read/types.ts",
     "src/lib/read/errors.ts",

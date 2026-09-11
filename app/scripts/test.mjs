@@ -15,6 +15,6 @@ writeFileSync('.test-build/package.json', JSON.stringify({ type: 'commonjs' }));
 
 execFileSync(
   process.execPath,
-  ['--test', 'tests/domain.test.mjs', 'tests/gate.test.mjs', 'tests/read.test.mjs', 'tests/contract-pin.test.mjs', 'tests/backend-contract.test.mjs', 'tests/build-guard.test.mjs'],
+  ['--test', 'tests/domain.test.mjs', 'tests/gate.test.mjs', 'tests/read.test.mjs', 'tests/contract-pin.test.mjs', 'tests/backend-contract.test.mjs', 'tests/build-guard.test.mjs', 'tests/forwarder.test.mjs'],
   { stdio: 'inherit' },
 );

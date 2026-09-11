@@ -86,6 +86,15 @@ every preview hostname the same way; there is no hostname around it.
 It proves an invitation, nothing more. It is not wallet authentication, grants
 no capability in the app, and never stands in for a session.
 
+**Production answers on its own hosts only.** `wrangler.toml` sets
+`CANONICAL_HOSTS_ONLY = "true"` for production and nothing for previews. A
+production deployment then serves `domino.money`, redirects `www.domino.money`
+to it, and answers every other host — `domino-app-e65.pages.dev`, its hash
+URLs, anything else — with a JSON 404 `{"error":"not_found"}` before the gate
+looks at anything, so none of them is an entrance. Previews keep the gate on
+their own hosts. This covers deployments made from this change on; an older
+deployment still answers on its hash URL until it is deleted in the dashboard.
+
 **Two secrets, set by the project owner and never committed:**
 
 ```sh
@@ -120,13 +129,94 @@ returns an error instead.
   the password in constant time. It sets `__Host-domino-beta` with `Secure`,
   `HttpOnly`, `SameSite=Lax`, `Path=/` and seven days of life, signed with
   HMAC-SHA256 over its expiry and a digest of the current password.
-- **Rotating `BETA_PASSWORD` signs everyone out at once**, because every cookie
-  was signed over the old password's digest. Use it to revoke access.
+- **Rotating `BETA_PASSWORD` signs everyone out** wherever the new secret
+  applies, because every cookie was signed over the old password's digest.
+  Pages keeps older deployments on their hash URLs, so after rotating and
+  redeploying, delete the superseded deployments or check in a private window
+  that the old password fails on every host that still answers.
 - `POST /__beta/logout` clears the cookie.
 - `www.domino.money` redirects to the apex.
-- Authenticated responses carry HSTS, `nosniff`, `X-Frame-Options: DENY`,
-  `noindex`, private caching and a strict CSP: scripts, styles, images and
-  connections from this origin only, plus the Google Fonts `index.html` loads.
+- Authenticated pages and assets carry HSTS, `nosniff`, `X-Frame-Options:
+  DENY`, `noindex`, private caching and a strict CSP: scripts, styles, images
+  and connections from this origin only, plus the Google Fonts `index.html`
+  loads. `/api` answers differ; see below.
+
+**The `/api` chain.** rugged97 accepted this ingress on #45: Pages gate →
+fixed API forwarder → private service binding.
+
+```text
+browser → functions/_middleware.ts        gate, host allowlist, headers
+        → functions/api/[[path]].ts       every /api/* the gate admits, but
+                                          a path with an empty segment,
+                                          which the middleware hands to
+                                          forward() itself
+        → forward() in functions/_lib/bridge.ts
+        → READ_BRIDGE | SESSION_BRIDGE | ONBOARDING_BRIDGE | DEPOSIT_BRIDGE
+        → that family's Worker from bridge/src
+```
+
+- `/api/read/v1/`, `/api/session/v1/`, `/api/onboarding/v1/` and
+  `/api/deposit/v1/` each go to one fixed binding. Any other `/api` path gets
+  a JSON 404 `not_found`, never `index.html`. So does a path with an empty
+  segment, such as `/api//x` or `/api/read/v1//capabilities`, even under a
+  family's prefix: Pages' route for `functions/api/[[path]].ts` does not match
+  it, so the middleware hands it to the forwarder itself, and no Worker is
+  handed a path Pages would not have routed to the forwarder.
+- The origin is checked first. Anything but `https://domino.money` gets 404
+  `not_found`, so a preview or pages.dev host never reaches a binding, even
+  one bound there by mistake.
+- A request carrying `CF-Worker` is another Worker's subrequest, whose
+  `CF-Connecting-IP` proves nothing, and gets 403 `worker_subrequest_refused`.
+  That is defense in depth only: the owner's WAF rule on
+  `cf.worker.upstream_zone`, scoped to this entrance, is the primary control.
+- A missing or wrong binding, or one that throws, gives 503
+  `bridge_unavailable`. No refusal carries an `X-Domino-*-Contract` header, so
+  from outside a refusal can always be told from a Worker's answer.
+- The Worker gets the original URL, method and body, with headers rebuilt
+  from an allowlist: `Content-Type`, `Content-Length`, `Origin`, `Host`,
+  `Sec-Fetch-*`, its own `X-Domino-<svc>-Contract`, `X-Domino-CSRF` (session,
+  onboarding and deposit) and `CF-Connecting-IP` as the edge wrote it. Session
+  gets the `__Host-domino-preauth` and `__Host-domino-session` cookies,
+  onboarding and deposit only `__Host-domino-session`, read none: the gate has
+  already taken every cookie off a public read (see
+  [Credentials on reads](#read-data)), and `forward()` would give the read
+  family none anyway. Duplicates arrive as sent, so the Worker still refuses
+  them. The beta cookie, `Authorization`, `X-Forwarded-*`, `CF-Access-*`,
+  every other `X-Domino-*` header, `Content-Encoding` and `Transfer-Encoding`
+  never leave.
+- A body sent with `Content-Encoding` (no browser's `fetch()` sends one, a
+  script can) reaches the Worker without that header, as the bytes that were
+  sent. An enabled Worker's strict UTF-8 and JSON parsing then refuses
+  compressed bytes as `invalid_request`: 400 in session-v1, onboarding-v1 and
+  deposit-v1, 422 in read-v1, whose status map says so (review note F1V-C1).
+  Sent to a Worker directly, the header itself would be refused as 415
+  `json_required`; through the forwarder it never arrives. A disabled Worker
+  answers `route_not_available` before it reads a body.
+- Every `/api` answer past the gate leaves with `Cache-Control: no-store,
+  no-transform` and `Content-Security-Policy: default-src 'none';
+  frame-ancestors 'none'`. The gate's own 401 is unchanged.
+- **No binding exists yet**, so an admitted API call on `domino.money`
+  answers 503 `bridge_unavailable` and calls nothing. The bindings arrive in a
+  separate change, as `[[env.production.services]]` only, after the owner
+  deploys the four Workers (`domino-read-bridge`, `domino-session-bridge`,
+  `domino-onboarding-bridge`, `domino-deposit-bridge`) with every flag off.
+  Previews never get one. Deposit stays deferred: its Worker and binding are
+  deployed disabled with no secrets, and it gets no Access application or
+  Tunnel mapping until its own gates pass.
+
+`tests/forwarder.test.mjs` drives this chain request by request, with
+recording bindings and with the real bridge Workers under their reviewed
+disabled vars. `globalThis.fetch` is a tripwire before the Workers load, so
+any upstream call fails the suite. Its stand-in for Pages routes `/api` with
+the matcher wrangler 4.130.0 uses, and a test fails if the deploy scripts
+move off that version, so the routing is re-checked first. It also checks
+that `wrangler.toml` can give vars and bindings to production only. It runs
+the gate's public-read step and the forwarder together: a signed-in read
+reaches `READ_BRIDGE` with no Cookie header, having already lost it at the
+gate, an empty segment still gets the JSON 404, and the other families keep
+only their named cookies. For F1V-C1 it builds enabled Workers in memory,
+with placeholder credentials and the tripwire as their transport, and shows
+a compressed body refused as `invalid_request` before any upstream call.
 
 **Deploying**, after `npx wrangler login` in your own terminal:
 
@@ -236,7 +326,10 @@ requires, so once #14 creates a session the browser sends them to this origin
 with public reads too. They stop at the gate: `functions/_middleware.ts` checks
 the beta cookie and then passes every `/api/read/*` request on with no Cookie
 header at all, so neither the read bridge nor anything behind it ever sees a
-session credential. `tests/gate.test.mjs` checks that in node, and
+session credential. `forward()` in `functions/_lib/bridge.ts` is a second
+layer: it gives the read family no Cookie header even if one arrived.
+`tests/gate.test.mjs` checks the gate in node, `tests/forwarder.test.mjs`
+checks the gate and the forwarder together, and
 `tests/read-bridge.browser.test.mjs` plants both cookies in Chromium and checks
 what the browser sends, what passes the gate and what reaches the gateway.
 
@@ -320,11 +413,13 @@ the practice workbench and the owner of the domain modules. Both exist until
 
 The browser cannot reach the Python read service directly: it returns 403
 `local_client_required` for any request carrying an `Origin` header. Data will
-therefore arrive through the bridge worker, mounted on this app's own origin at
-`/api/read/v1/*` — it emits no CORS headers and requires `url.origin ===
-APP_ORIGIN`, so a deployed worker cannot be called from a dev server on another
-port. Until that is enabled, `src/lib/markets.ts` serves labelled placeholder
-rows and the workspace runs entirely on the practice modules.
+therefore arrive through the bridge Worker, reached on this app's own origin
+at `/api/read/v1/*` through the Pages forwarder and a private service binding
+(see [the `/api` chain](#deploy-and-closed-beta)); the Worker has no route of
+its own. It emits no CORS headers and requires `url.origin === APP_ORIGIN`, so
+a deployed worker cannot be called from a dev server on another port. Until
+that is enabled, `src/lib/markets.ts` serves labelled placeholder rows and the
+workspace runs entirely on the practice modules.
 
 Hosting is Cloudflare Pages at `https://domino.money`; see
 [Deploy and closed beta](#deploy-and-closed-beta). The decision is recorded in

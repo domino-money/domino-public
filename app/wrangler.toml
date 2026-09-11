@@ -9,3 +9,26 @@
 name = "domino-app"
 pages_build_output_dir = "./dist"
 compatibility_date = "2026-09-10"
+
+# Production only. How wrangler 4.130.0 reads this file for Pages, as
+# Cloudflare's Pages configuration docs also describe: a deploy to the
+# production branch (main, which `npm run deploy` targets) reads
+# [env.production] over the top level; any other branch reads [env.preview],
+# and as there is none, the top level alone. `vars` and service bindings are
+# not inherited: an environment gets them from its own section only, and a
+# preview gets whatever the top level holds. So the top level must never hold
+# either; tests/forwarder.test.mjs fails if it does.
+#
+# Secrets are not part of this file. They stay in each environment's
+# settings, set with `wrangler pages secret put` or in the dashboard.
+#
+# CANONICAL_HOSTS_ONLY makes production answer on domino.money and
+# www.domino.money only (functions/_middleware.ts, rule 0), so no pages.dev or
+# hash URL of a production deployment is an entrance. It covers deployments
+# made from now on; older ones are closed by deleting them.
+#
+# No service bindings yet. READ_BRIDGE, SESSION_BRIDGE, ONBOARDING_BRIDGE and
+# DEPOSIT_BRIDGE arrive in a separate change, as [[env.production.services]]
+# only, after the four bridge Workers are deployed with every flag off.
+[env.production.vars]
+CANONICAL_HOSTS_ONLY = "true"

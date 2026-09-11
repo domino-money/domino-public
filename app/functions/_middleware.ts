@@ -4,6 +4,8 @@
  * See functions/_lib/gate.ts for why the gate exists and what it proves.
  * The rules, in order:
  *
+ *   0. Production only: a host other than   → 404, as JSON.
+ *      domino.money or www.domino.money
  *   1. Missing or weak configuration        → 503 for everything.
  *   2. www.domino.money                     → 301 to the apex.
  *   3. POST /__beta/login                   → set the access cookie, or 401.
@@ -12,7 +14,24 @@
  *      A public read (/api/read/*) is passed on without any cookie.
  *   6. Anything else                        → 401: the access page for a
  *      navigation, a JSON error for assets and API calls.
+ *
+ * Rule 0 holds where CANONICAL_HOSTS_ONLY is "true", which wrangler.toml sets
+ * for production only. A production deployment then answers on its own hosts
+ * and none of its pages.dev or hash URLs is an entrance; previews keep the gate.
+ *
+ * An API call that passes rule 5 goes on to the fixed forwarder:
+ *
+ *   /api/* → functions/api/[[path]].ts → forward() in functions/_lib/bridge.ts
+ *          → the family's private service binding → its bridge Worker
+ *
+ * The one exception is a path with an empty segment, such as /api//x: Pages'
+ * route never hands it to functions/api/[[path]].ts, so this middleware hands
+ * it to forward() itself (see onward()), and forward() refuses it.
+ *
+ * Whatever comes back, the Worker's answer or the forwarder's refusal, leaves
+ * with Cache-Control "no-store, no-transform" and a CSP that renders nothing.
  */
+import { forward, type BridgeEnv } from './_lib/bridge'
 import {
   PAGE_CSP,
   accessPage,
@@ -26,7 +45,7 @@ import {
   type PageState,
 } from './_lib/gate'
 
-/** The part of Cloudflare's Pages Functions context this middleware uses. */
+/** The part of Cloudflare's Pages Functions context the gate uses. */
 export interface GateContext {
   request: Request
   env: BetaEnv
@@ -57,6 +76,16 @@ export const APP_CSP = [
   "base-uri 'none'",
   "form-action 'self'",
 ].join('; ')
+
+/** The CSP for an API answer: JSON that renders nothing and frames nowhere. */
+export const API_CSP = "default-src 'none'; frame-ancestors 'none'"
+
+/**
+ * The /api paths: /api itself and everything under /api/, in any case. Pages
+ * hands every one of them to functions/api/[[path]].ts but a path with an
+ * empty segment; see onward().
+ */
+const API_PATH = /^\/api(?:\/|$)/i
 
 /**
  * Browser capabilities the site never uses, switched off so nothing injected
@@ -110,7 +139,7 @@ function json(code: string, status: number): Response {
       ...BASE_HEADERS,
       'Content-Type': 'application/json; charset=utf-8',
       'Cache-Control': 'no-store',
-      'Content-Security-Policy': "default-src 'none'; frame-ancestors 'none'",
+      'Content-Security-Policy': API_CSP,
     },
   })
 }
@@ -206,7 +235,13 @@ function secured(response: Response, url: URL): Response {
   for (const [name, value] of Object.entries(BASE_HEADERS)) out.headers.set(name, value)
   out.headers.append('Vary', 'Cookie')
   const type = out.headers.get('Content-Type') ?? ''
-  if (type.includes('text/html')) {
+  if (API_PATH.test(url.pathname)) {
+    // Never stored, never transformed on the way, never rendered as a page,
+    // whatever the Worker or the forwarder sent. A Worker's no-store is kept
+    // and tightened, never relaxed to the app's private, no-cache.
+    out.headers.set('Cache-Control', 'no-store, no-transform')
+    out.headers.set('Content-Security-Policy', API_CSP)
+  } else if (type.includes('text/html')) {
     out.headers.set('Content-Security-Policy', APP_CSP)
     out.headers.set('Cache-Control', 'private, no-cache')
   } else if (url.pathname.startsWith('/assets/')) {
@@ -218,8 +253,34 @@ function secured(response: Response, url: URL): Response {
   return out
 }
 
-export async function onRequest({ request, env, next }: GateContext): Promise<Response> {
+/** onRequest's context: the gate's part, plus the bindings forward() reads. */
+type Context = GateContext & { env: BridgeEnv }
+
+/**
+ * Where a request goes once the gate admits it. Pages hands
+ * functions/api/[[path]].ts only the paths its route, /api/:path*, matches,
+ * and its matcher, path-to-regexp 6.3.0 as wrangler 4.130.0 bundles it, takes
+ * non-empty segments only. An /api path with an empty segment, such as /api//x
+ * or /api/read/v1//capabilities, would fall through to the static files and be
+ * answered with index.html and a 200. Such a path goes to forward() from here,
+ * which refuses it. Every other request goes to Pages' next(), which routes
+ * the rest of /api to functions/api/[[path]].ts.
+ */
+function onward(context: Context, url: URL): GateContext['next'] {
+  if (!API_PATH.test(url.pathname) || !url.pathname.includes('//')) return context.next
+  // Like Pages' next(): handed a request, it forwards that one instead.
+  return (passed?: Request) => forward(passed ?? context.request, context.env)
+}
+
+export async function onRequest(context: Context): Promise<Response> {
+  const { request, env } = context
   const url = new URL(request.url)
+  // Called only once the gate admits the request (rule 5).
+  const next = onward(context, url)
+  // Rule 0, before the configuration, login and cookie are looked at.
+  const canonical = url.hostname === CANONICAL_HOST || url.hostname === `www.${CANONICAL_HOST}`
+  if (env.CANONICAL_HOSTS_ONLY === 'true' && !canonical) return json('not_found', 404)
+
   const config = await readConfig(env)
   if (!config) return page('unavailable', 503)
 

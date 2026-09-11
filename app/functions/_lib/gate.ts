@@ -15,6 +15,12 @@
 export interface BetaEnv {
   BETA_PASSWORD?: string
   BETA_COOKIE_KEY?: string
+  /**
+   * Not a secret and not part of the gate: "true" confines a deployment to
+   * domino.money and www.domino.money (functions/_middleware.ts, rule 0).
+   * Set for production only, in wrangler.toml.
+   */
+  CANONICAL_HOSTS_ONLY?: string
 }
 
 export interface BetaConfig {
