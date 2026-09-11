@@ -52,6 +52,7 @@ contract MockPositionManager {
     uint256 public unsubscribeGasLimit = 100000;
     address public transferReentryTarget;
     bytes public transferReentryData;
+    bytes public transferReentryResult;
     bool public transferReentryAttempted;
     bool public transferReentrySucceeded;
     address public subscribeReentryTarget;
@@ -108,6 +109,7 @@ contract MockPositionManager {
     function configureTransferReentry(address target, bytes calldata data) external {
         transferReentryTarget = target; transferReentryData = data;
         transferReentryAttempted = false; transferReentrySucceeded = false;
+        delete transferReentryResult;
     }
     function _locked() private view {
         if (MockPoolManager(poolManager).isUnlocked()) revert ManagerUnlocked();
@@ -159,7 +161,7 @@ contract MockPositionManager {
         _owners[id] = to;
         if (transferReentryTarget != address(0) && !transferReentryAttempted) {
             transferReentryAttempted = true;
-            (transferReentrySucceeded,) = transferReentryTarget.call(transferReentryData);
+            (transferReentrySucceeded, transferReentryResult) = transferReentryTarget.call(transferReentryData);
         }
     }
 
@@ -276,12 +278,14 @@ contract E2OwnerReceiver is IERC721ReceiverE2 {
     bool public rejectNFT;
     address public reentryTarget;
     bytes public reentryData;
+    bytes public reentryResult;
     bool public reentryAttempted;
     bool public reentrySucceeded;
 
     function setReject(bool native_, bool nft_) external { rejectNative = native_; rejectNFT = nft_; }
     function configureReentry(address target, bytes calldata data) external {
         reentryTarget = target; reentryData = data; reentryAttempted = false; reentrySucceeded = false;
+        delete reentryResult;
     }
     function invoke(address target, bytes calldata data) external payable returns (bytes memory result) {
         (bool ok, bytes memory returned) = target.call{value: msg.value}(data);
@@ -291,7 +295,7 @@ contract E2OwnerReceiver is IERC721ReceiverE2 {
     function _reenter() private {
         if (reentryTarget != address(0) && !reentryAttempted) {
             reentryAttempted = true;
-            (reentrySucceeded,) = reentryTarget.call(reentryData);
+            (reentrySucceeded, reentryResult) = reentryTarget.call(reentryData);
         }
     }
     receive() external payable { require(!rejectNative, "mock owner rejects native"); _reenter(); }

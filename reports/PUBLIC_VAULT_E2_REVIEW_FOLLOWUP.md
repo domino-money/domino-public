@@ -2,7 +2,7 @@
 
 11 September 2026 · [#101](https://github.com/domino-money/domino/issues/101)
 
-OxDecimal [approved #100](https://github.com/domino-money/domino/pull/100#pullrequestreview-5182910940) at `b78f5b4fc09e888afdb5b9d5813fbf33c4137aca`, with no blockers and fourteen nonblocking notes. That exact head had all four required CI checks and was squash-merged as `d814545c3c8fb141604a091ecafdd95fa22ab418`. This follow-up is based on that merge and requires a new independent financial review. The original approval is not reused for the new code.
+OxDecimal [approved #100](https://github.com/domino-money/domino/pull/100#pullrequestreview-5182910940) at `b78f5b4fc09e888afdb5b9d5813fbf33c4137aca`, with no blockers and fourteen nonblocking notes. That exact head had all four required CI checks and was squash-merged as `d814545c3c8fb141604a091ecafdd95fa22ab418`. That #101 follow-up received its own [independent approval in #103](https://github.com/domino-money/domino/pull/103#pullrequestreview-5183132095); the #100 approval was not reused for new code. The #104 refinement below adds tests/documentation without changing the approved production implementation.
 
 ## Review disposition
 
@@ -17,7 +17,7 @@ OxDecimal [approved #100](https://github.com/domino-money/domino/pull/100#pullre
 | 7 — taxed/rounding pair-token surplus | Retain exact debit/credit semantics, including untracked pair-token recovery, and exercise rejection with the transfer fee left enabled. Relaxing issuer/rounding behavior is a separate asset-support decision; no silently broadened token admission. |
 | 8 — foreign assets | Clarify the target is the pinned PositionManager, not arbitrary NFT collections. Native/pair-token and PositionManager-only recovery remain the explicit boundary. Generic foreign-token/NFT rescue is not implemented. |
 | 9 — initial operator | E1 explicitly permits a disabled zero operator and owner-direct authority. Preserve it, omit a zero-to-zero `OperatorChanged`, and test initialization plus owner validation. Additional owner/vault address exclusions were not adopted: no new authority is gained and E1 does not require them. |
-| 10 — owner-only evidence | Test exact `Unauthorized` errors from operator/stranger in valid operation states, then successful owner positive controls, including adoption, child exit and resume. |
+| 10 — owner-only evidence | #101 added exact errors and owner positive controls but revoked the operator too early for several checks. The #103 review identified that fixture gap; #104 strengthens it to require an enabled current operator and a distinct non-operator for every helper call. |
 | 11 — initialization guards | Cover actual exact error selectors, failed clone/registry/nonce rollback and preserved subscription state. A pre-existing foreign subscriber must remain foreign after rejection, rather than be incorrectly asserted zero. |
 | 12 — E1 parity | Independently rebuild sequence, signed-tick core/position, source and checkpoint hashes. Document that reconstructing an E1 policy hash must restore immutable base/quote fields omitted from the E2 limits getter. |
 | 13 — transition coverage | Add successful operator/authority controls, nonce assertions, terminal surplus/NFT/pause recovery and `TerminalRecovery` event evidence, and zero-withdrawal rejection. |
@@ -33,9 +33,38 @@ The [current E2 documentation](../docs/PUBLIC_VAULT_E2.md) includes owner instru
 
 ## Verification
 
+### #104 test and documentation refinement
+
+OxDecimal approved #103 at `e94ef193ea89d59b341424cf0068cfc82054c783`; it was integrated as `7b533e02274ddb30f8d52b5fdc7b8a7de8befea4` with its four passing CI checks. The six new nonblocking notes concern test evidence and documentation. #104 leaves every production contract and the published hashes below unchanged.
+
+- Current-operator negatives must actually use an enabled operator on every call; the helper requires that precondition and a distinct non-operator. Rotation/revocation run last, with the current address reread after rotation. The old fixture gap is acknowledged in row 10 above.
+- Nested unsubscribe receipts explicitly carry the same final N+2, with `RootInvalidated` emitted first. There is no event for the intermediate N+1. Tests inspect full fields and receipt order rather than infer mutation order from a nonce.
+- Entered-state modify/burn callbacks must fail with `UnexpectedCallback` while the native withdrawal succeeds and root ownership/subscription/authority remain intact. The mock retains raw revert bytes to distinguish this guard from an earlier authorization/lock failure.
+- Manager-origin reentry is rejected by `Unauthorized`; actual owner reentry from a native receipt into child withdrawal is rejected by `ReentrantCall`. Evidence identifies the guard that was reached.
+- Root rescue is exercised after a delivered transfer invalidation and at terminal authority generation. Reason 4 is unconditional on a successful rescue; `TerminalRecovery` carries entry counters, whereas subsequent invalidation/recovery events carry resulting counters.
+- The 13,909-gas value below is explicitly a historical local #103 measurement. CI proves the 100k acceptance budget. No workflow, compiler, size limit or production behavior was changed to produce extra logs.
+
+The combined `npm run test:contracts` run passed **122 Foundry tests, 0 failed, 0 skipped**: 55 custody, 30 factory and 37 policy/fee/E1-encoding tests. The **3 launcher regressions** passed; fuzz cases use 512 runs. Repository hygiene checked **1,012 files with 0 findings**, and the whitespace check passed. A delegated read-only review of the test delta found no remaining findings; it is not native approval or a new production audit.
+
+Five temporary production mutations were each compiled successfully, then rejected by the intended new assertion. Each run returned exit code 1; the production file was restored byte-for-byte to the published SHA-256 after every run. No mutation or raw log is included in the branch.
+
+| Temporary mutation | Focused custody test | Assertion that failed |
+| --- | --- | --- |
+| Broaden `adoptChild` to owner-or-operator | `testEveryOwnerOnlyGuardHasValidStateAndSuccessfulOwnerControl` | `operator did not fail specifically at owner guard` |
+| Broaden `withdrawChildPosition` to owner-or-operator | `testEveryOwnerOnlyGuardHasValidStateAndSuccessfulOwnerControl` | `operator did not fail specifically at owner guard` |
+| Remove entered guard from `notifyModifyLiquidity` | `testNativeOwnerModifyCallbackRejectedWhileWithdrawalCompletes` | `entered root callback did not fail specifically at callback guard` |
+| Remove entered guard from `notifyBurn` | `testNativeOwnerBurnCallbackRejectedWhileWithdrawalCompletes` | `entered root callback did not fail specifically at callback guard` |
+| Remove child withdrawal `nonReentrant` | `testNativeOwnerChildExitReentryFailsAtReentrancyGuard` | `owner child exit did not fail specifically at reentrancy guard` |
+
+Each mutant used `node scripts/test-contracts.mjs --match-contract DominoVaultCustodyTest --match-test <exact test name above> -vv`. These are bounded local mutation checks, not a general mutation-coverage claim. The restored-source custody run then passed all 55 tests, followed by the combined suite above.
+
+The backend is unchanged, so the prior local PostgreSQL/EVM evidence below is reused instead of repeating that suite locally; required current-head CI still runs all checks. The follow-up PR records that CI run separately, without treating the historical #103 approval as approval of these new assertions.
+
+### Historical #101 verification
+
 The combined `npm run test:contracts` run passed **116 Foundry tests, 0 failed, 0 skipped**: 49 custody, 30 factory and 37 existing policy/fee/E1-encoding tests. Its **3 launcher regressions** also passed. Fuzz cases use 512 runs. Both delegated test changes were integrated before this run; the first local smoke run exposed the three old receiver-dependent expectations, which were replaced with the intended receiver-independent recovery assertions and manager-failure/reentry coverage.
 
-The cold-clone callback test forwards 100,000 gas and records a 13,909-gas call measurement in the synthetic custody harness. The accepted budget is deliberately conservative; this is not an exact production/deployment gas benchmark. Tests separately exercise the manager's outer gas guard and an insufficient 1,000-gas notification that leaves the cached flag stale while live permission fails closed.
+The cold-clone callback test forwards 100,000 gas. The author measured a 13,909-gas call locally for the #103 synthetic custody harness; this historical local figure is not printed by CI. CI establishes success within the 100k budget, not the exact measurement. The accepted budget is deliberately conservative; this is not an exact production/deployment gas benchmark. Tests separately exercise the manager's outer gas guard and an insufficient 1,000-gas notification that leaves the cached flag stale while live permission fails closed.
 
 The full backend suite passed **1,221 tests in 153.061 seconds, 0 skipped**, with task-local PostgreSQL and the pinned Anvil EVM enabled. The temporary database was stopped afterward. No live RPC, operator signer, private wallet or staging service was used. The prior #100 evidence remains historical in [its report](PUBLIC_VAULT_E2_IMPLEMENTATION.md).
 

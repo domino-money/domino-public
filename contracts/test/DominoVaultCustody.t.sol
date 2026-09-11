@@ -121,12 +121,26 @@ contract DominoVaultCustodyTest is IERC721ReceiverE2 {
         uint256 count;
         for (uint256 i; i < logs.length; ++i) {
             if (logs[i].emitter == address(vault) && logs[i].topics[0] == keccak256("RootInvalidated(uint8,uint64,uint64)")) {
-                require(logs[i].topics.length == 1 && keccak256(logs[i].data) == keccak256(abi.encode(reason, generation, nonce)),
-                    "wrong root invalidation event");
+                _assertRootInvalidatedEvent(logs[i], reason, generation, nonce);
                 ++count;
             }
         }
         require(count == 1, "root invalidation event missing or duplicated");
+    }
+
+    function _assertRootInvalidatedEvent(VmE2.Log memory entry, uint8 reason, uint64 generation, uint64 nonce)
+        private view
+    {
+        require(entry.emitter == address(vault) && entry.topics.length == 1 &&
+            entry.topics[0] == keccak256("RootInvalidated(uint8,uint64,uint64)") &&
+            keccak256(entry.data) == keccak256(abi.encode(reason, generation, nonce)), "wrong root invalidation event");
+    }
+
+    function _assertRootRecoveryEvent(VmE2.Log memory entry, uint64 nonce) private view {
+        require(entry.emitter == address(vault) && entry.topics.length == 3 &&
+            entry.topics[0] == keccak256("UnmanagedPositionRecovered(uint256,address,bool,uint64)") &&
+            entry.topics[1] == bytes32(uint256(11)) && entry.topics[2] == bytes32(uint256(uint160(owner))) &&
+            keccak256(entry.data) == keccak256(abi.encode(true, nonce)), "root recovery event wrong");
     }
 
     function testInitializedRootStaysWithOwnerAndCheckpointDoesNotCreditFees() public view {
@@ -145,10 +159,16 @@ contract DominoVaultCustodyTest is IERC721ReceiverE2 {
 
     function _ownerOnlyWithPositiveControl(bytes memory data) private {
         uint64 nonce = vault.stateNonce();
-        vm.prank(OPERATOR); (bool ok, bytes memory result) = address(vault).call(data);
+        address currentOperator = vault.operator();
+        address outsider = currentOperator == STRANGER ? OPERATOR : STRANGER;
+        require(currentOperator != address(0) && currentOperator != owner && vault.isOperator(currentOperator),
+            "owner guard negative requires a current enabled operator");
+        require(outsider != currentOperator && outsider != owner && !vault.isOperator(outsider),
+            "owner guard outsider must not have operator authority");
+        vm.prank(currentOperator); (bool ok, bytes memory result) = address(vault).call(data);
         require(!ok && keccak256(result) == keccak256(abi.encodeWithSelector(DominoVault.Unauthorized.selector)),
             "operator did not fail specifically at owner guard");
-        vm.prank(STRANGER); (ok, result) = address(vault).call(data);
+        vm.prank(outsider); (ok, result) = address(vault).call(data);
         require(!ok && keccak256(result) == keccak256(abi.encodeWithSelector(DominoVault.Unauthorized.selector)),
             "stranger did not fail specifically at owner guard");
         require(vault.stateNonce() == nonce, "unauthorized call mutated");
@@ -164,8 +184,6 @@ contract DominoVaultCustodyTest is IERC721ReceiverE2 {
         bytes32 sourceId = vault.position(11).source0;
         _ownerOnlyWithPositiveControl(abi.encodeCall(vault.setPolicy, (next)));
         _ownerOnlyWithPositiveControl(abi.encodeCall(vault.setExecutionLimits, (limits)));
-        _ownerOnlyWithPositiveControl(abi.encodeCall(vault.setOperator, (STRANGER)));
-        _ownerOnlyWithPositiveControl(abi.encodeCall(vault.revokeOperator, ()));
         _ownerOnlyWithPositiveControl(abi.encodeCall(vault.withdrawFeeReserves, (sourceId, key.currency0, 1, 0)));
         _fund(key.currency0, 1);
         _ownerOnlyWithPositiveControl(abi.encodeCall(vault.recoverUntrackedCurrency, (key.currency0, 1)));
@@ -177,6 +195,10 @@ contract DominoVaultCustodyTest is IERC721ReceiverE2 {
         _ownerOnlyWithPositiveControl(abi.encodeCall(vault.withdrawChildPosition, (12)));
         vault.pause();
         _ownerOnlyWithPositiveControl(abi.encodeCall(vault.resume, ()));
+        _ownerOnlyWithPositiveControl(abi.encodeCall(vault.setOperator, (STRANGER)));
+        // The helper now exercises STRANGER as the actual current operator and
+        // the former OPERATOR as an outsider, before the owner revokes it.
+        _ownerOnlyWithPositiveControl(abi.encodeCall(vault.revokeOperator, ()));
     }
 
     function testPolicyAndLimitsRemainIndependentAndInvalidateOldAuthority() public {
@@ -416,6 +438,43 @@ contract DominoVaultCustodyTest is IERC721ReceiverE2 {
         require(vault.rootPermissionValid(), "root cannot be rearmed after rescue");
     }
 
+    function testDeliveredRootTransferAndRescueEmitTwoOrderedInvalidations() public {
+        uint64 nonce = vault.stateNonce(); uint64 generation = vault.authorityGeneration();
+        bytes32 identity = vault.position(11).identity;
+        vm.recordLogs();
+        positions.transferFrom(owner, address(vault), 11);
+        vault.recoverUnmanagedPosition(11);
+        VmE2.Log[] memory logs = vm.getRecordedLogs();
+        require(logs.length == 3, "root transfer and rescue log count");
+        _assertRootInvalidatedEvent(logs[0], 1, generation + 1, nonce + 1);
+        _assertRootInvalidatedEvent(logs[1], 4, generation + 2, nonce + 2);
+        _assertRootRecoveryEvent(logs[2], nonce + 2);
+        require(positions.ownerOf(11) == owner && positions.subscriber(11) == address(0) &&
+            !vault.rootArmed() && !vault.rootPermissionValid() && vault.stateNonce() == nonce + 2 &&
+            vault.authorityGeneration() == generation + 2 && vault.position(11).identity == identity,
+            "delivered callback rescue changed custody or counter semantics");
+    }
+
+    function testTerminalGenerationRootRecoverySaturatesAndEmitsReasonFour() public {
+        positions.setSuppressUnsubscribeCallback(true);
+        positions.transferFrom(owner, address(vault), 11);
+        vault.forceGeneration(type(uint64).max);
+        uint64 nonce = vault.stateNonce();
+        vm.recordLogs();
+        vault.recoverUnmanagedPosition(11);
+        VmE2.Log[] memory logs = vm.getRecordedLogs();
+        require(logs.length == 3 && logs[0].emitter == address(vault) && logs[0].topics.length == 2 &&
+            logs[0].topics[0] == keccak256("TerminalRecovery(bytes4,uint64,uint64)") &&
+            logs[0].topics[1] == bytes32(vault.recoverUnmanagedPosition.selector) &&
+            keccak256(logs[0].data) == keccak256(abi.encode(nonce, type(uint64).max)),
+            "terminal root recovery marker wrong");
+        _assertRootInvalidatedEvent(logs[1], 4, type(uint64).max, nonce + 1);
+        _assertRootRecoveryEvent(logs[2], nonce + 1);
+        require(positions.ownerOf(11) == owner && !vault.rootArmed() && !vault.rootPermissionValid() &&
+            vault.stateNonce() == nonce + 1 && vault.authorityGeneration() == type(uint64).max,
+            "terminal root rescue failed or wrapped");
+    }
+
     function testUnmanagedRescueIgnoresRejectingReceiverAndCannotInvokeOwnerReentry() public {
         E2OwnerReceiver receiver = new E2OwnerReceiver(); _setup(address(receiver), true);
         positions.mint(owner, 90, key, -300, 900, 500); positions.mint(owner, 91, key, -300, 900, 500);
@@ -595,7 +654,9 @@ contract DominoVaultCustodyTest is IERC721ReceiverE2 {
         bytes memory exit = abi.encodeCall(vault.withdrawFeeReserves, (source0, key.currency0, 50, 0));
         receiver.configureReentry(address(vault), exit);
         receiver.invoke(address(vault), exit);
-        require(receiver.reentryAttempted() && !receiver.reentrySucceeded(), "owner receiver reentered");
+        require(receiver.reentryAttempted() && !receiver.reentrySucceeded() &&
+            keccak256(receiver.reentryResult()) == keccak256(abi.encodeWithSelector(DominoVault.ReentrantCall.selector)),
+            "owner receiver did not fail specifically at reentrancy guard");
         require(address(receiver).balance == 50 && vault.feeBalance(source0, key.currency0).original == 50, "double native exit");
     }
 
@@ -632,7 +693,7 @@ contract DominoVaultCustodyTest is IERC721ReceiverE2 {
         require(positions.ownerOf(99) == owner, "owner without receiver cannot rescue NFT");
     }
 
-    function testPlainNFTManagerFailureRollsBackAndReentryCannotWithdrawSecondChild() public {
+    function testPlainNFTManagerFailureRollsBackAndManagerReentryIsUnauthorized() public {
         _adopt(12, 11); _adopt(13, 11);
         positions.setRejectTransfers(true); uint64 nonce = vault.stateNonce();
         vm.expectRevert(MockPositionManager.TransferRejected.selector); vault.withdrawChildPosition(12);
@@ -642,7 +703,9 @@ contract DominoVaultCustodyTest is IERC721ReceiverE2 {
         positions.configureTransferReentry(address(vault), abi.encodeCall(vault.withdrawChildPosition, (13)));
         vault.withdrawChildPosition(12);
         require(positions.transferReentryAttempted() && !positions.transferReentrySucceeded() &&
-            positions.ownerOf(12) == owner && positions.ownerOf(13) == address(vault), "manager reentry took second child");
+            keccak256(positions.transferReentryResult()) == keccak256(abi.encodeWithSelector(DominoVault.Unauthorized.selector)),
+            "manager reentry did not fail specifically at owner guard");
+        require(positions.ownerOf(12) == owner && positions.ownerOf(13) == address(vault), "manager reentry took second child");
     }
 
     function testNativeOwnerCallbackCanUnsubscribeRootDuringSuccessfulExit() public {
@@ -652,12 +715,87 @@ contract DominoVaultCustodyTest is IERC721ReceiverE2 {
         receiver.configureReentry(address(positions), abi.encodeCall(positions.unsubscribe, (11)));
         vm.recordLogs();
         receiver.invoke(address(vault), abi.encodeCall(vault.withdrawFeeReserves, (source0, key.currency0, 50, 0)));
-        _assertRootInvalidated(vm.getRecordedLogs(), 1, generation + 1, nonce + 2);
-        require(receiver.reentrySucceeded() && positions.subscriber(11) == address(0) && !vault.rootArmed() &&
+        VmE2.Log[] memory logs = vm.getRecordedLogs();
+        require(logs.length == 2, "nested unsubscribe exit log count");
+        _assertRootInvalidatedEvent(logs[0], 1, generation + 1, nonce + 2);
+        require(logs[1].emitter == address(vault) && logs[1].topics.length == 4 &&
+            logs[1].topics[0] == keccak256("FeeReservesWithdrawn(bytes32,address,address,uint128,uint128,uint64)") &&
+            logs[1].topics[1] == source0 && logs[1].topics[2] == bytes32(uint256(uint160(key.currency0))) &&
+            logs[1].topics[3] == bytes32(uint256(uint160(owner))) &&
+            keccak256(logs[1].data) == keccak256(abi.encode(uint128(50), uint128(0), nonce + 2)),
+            "fee exit event must follow invalidation and share its final nonce");
+        require(receiver.reentryAttempted() && receiver.reentrySucceeded() && positions.subscriber(11) == address(0) && !vault.rootArmed() &&
             !vault.rootPermissionValid() && vault.stateNonce() == nonce + 2 && vault.authorityGeneration() == generation + 1,
             "callback during exit left root authority stale");
         require(address(receiver).balance == 50 && vault.feeBalance(source0, key.currency0).original == 50,
             "invalidation disrupted exact owner payout");
+    }
+
+    function testNativeOwnerCallbackCanUnsubscribeDuringUntrackedRecovery() public {
+        E2OwnerReceiver receiver = new E2OwnerReceiver(); _setup(address(receiver), true);
+        _credit(11, 100, 0); _fund(key.currency0, 17);
+        bytes32 source0 = vault.position(11).source0;
+        uint64 nonce = vault.stateNonce(); uint64 generation = vault.authorityGeneration();
+        receiver.configureReentry(address(positions), abi.encodeCall(positions.unsubscribe, (11)));
+        vm.recordLogs();
+        receiver.invoke(address(vault), abi.encodeCall(vault.recoverUntrackedCurrency, (key.currency0, 17)));
+        VmE2.Log[] memory logs = vm.getRecordedLogs();
+        require(logs.length == 2, "nested unsubscribe surplus log count");
+        _assertRootInvalidatedEvent(logs[0], 1, generation + 1, nonce + 2);
+        require(logs[1].emitter == address(vault) && logs[1].topics.length == 3 &&
+            logs[1].topics[0] == keccak256("UntrackedCurrencyRecovered(address,address,uint256,uint64)") &&
+            logs[1].topics[1] == bytes32(uint256(uint160(key.currency0))) &&
+            logs[1].topics[2] == bytes32(uint256(uint160(owner))) &&
+            keccak256(logs[1].data) == keccak256(abi.encode(uint256(17), nonce + 2)),
+            "surplus event must follow invalidation and share its final nonce");
+        require(receiver.reentryAttempted() && receiver.reentrySucceeded() && !vault.rootArmed() &&
+            positions.subscriber(11) == address(0) && vault.stateNonce() == nonce + 2 &&
+            vault.authorityGeneration() == generation + 1 && address(receiver).balance == 17 &&
+            vault.feeBalance(source0, key.currency0).original == 100 && vault.accountedCurrency(key.currency0) == 100,
+            "surplus invalidation altered tracked reserve or authority");
+    }
+
+    function _assertEnteredRootCallbackRejected(bool burn_) private {
+        E2OwnerReceiver receiver = new E2OwnerReceiver(); _setup(address(receiver), true); _credit(11, 100, 0);
+        bytes32 source0 = vault.position(11).source0;
+        uint64 nonce = vault.stateNonce(); uint64 generation = vault.authorityGeneration();
+        bytes memory nested = burn_ ? abi.encodeCall(positions.burn, (11, 123)) :
+            abi.encodeCall(positions.notifyModify, (11, 1, 123));
+        receiver.configureReentry(address(positions), nested);
+        receiver.invoke(address(vault), abi.encodeCall(vault.withdrawFeeReserves, (source0, key.currency0, 50, 0)));
+        require(receiver.reentryAttempted() && !receiver.reentrySucceeded() &&
+            keccak256(receiver.reentryResult()) == keccak256(abi.encodeWithSelector(DominoVault.UnexpectedCallback.selector)),
+            "entered root callback did not fail specifically at callback guard");
+        require(vault.stateNonce() == nonce + 1 && vault.authorityGeneration() == generation && vault.rootArmed() &&
+            vault.rootPermissionValid() && positions.subscriber(11) == address(vault) && positions.ownerOf(11) == owner &&
+            positions.getApproved(11) == address(vault) && positions.getPositionLiquidity(11) == 1000 && !poolManager.isUnlocked(),
+            "rejected callback changed root or core lock state");
+        require(address(receiver).balance == 50 && address(vault).balance == 50 &&
+            vault.feeBalance(source0, key.currency0).original == 50, "callback rejection disrupted exact owner payout");
+    }
+
+    function testNativeOwnerModifyCallbackRejectedWhileWithdrawalCompletes() public {
+        _assertEnteredRootCallbackRejected(false);
+    }
+
+    function testNativeOwnerBurnCallbackRejectedWhileWithdrawalCompletes() public {
+        _assertEnteredRootCallbackRejected(true);
+    }
+
+    function testNativeOwnerChildExitReentryFailsAtReentrancyGuard() public {
+        E2OwnerReceiver receiver = new E2OwnerReceiver(); _setup(address(receiver), true);
+        _adopt(12, 11); _credit(11, 100, 0);
+        bytes32 source0 = vault.position(11).source0;
+        uint64 nonce = vault.stateNonce(); uint64 generation = vault.authorityGeneration();
+        receiver.configureReentry(address(vault), abi.encodeCall(vault.withdrawChildPosition, (12)));
+        receiver.invoke(address(vault), abi.encodeCall(vault.withdrawFeeReserves, (source0, key.currency0, 50, 0)));
+        require(receiver.reentryAttempted() && !receiver.reentrySucceeded() &&
+            keccak256(receiver.reentryResult()) == keccak256(abi.encodeWithSelector(DominoVault.ReentrantCall.selector)),
+            "owner child exit did not fail specifically at reentrancy guard");
+        require(vault.position(12).active && positions.ownerOf(12) == address(vault) && vault.activePositions() == 2 &&
+            vault.stateNonce() == nonce + 1 && vault.authorityGeneration() == generation && vault.rootArmed() &&
+            address(receiver).balance == 50 && vault.feeBalance(source0, key.currency0).original == 50,
+            "nested child exit changed custody or outer payout");
     }
 
     function testColdCloneUnsubscribeCallbackFitsConservative100kGasBudget() public {
