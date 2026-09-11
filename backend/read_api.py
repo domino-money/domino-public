@@ -16,7 +16,7 @@ from discovery import CHAIN_ID, RPC_URL, DataError
 from local_config import load_config, configured_rpc_urls
 from catalogue import configured_catalogue
 from read_service import ReadService
-from read_contract import CONTRACT_VERSION, RESPONSE_MODELS, ErrorResponse, validate_response, sanitize_error
+from read_contract import CONTRACT_VERSION, RESPONSE_MODELS, ErrorResponse, validate_response, sanitize_error, unsigned_string_pattern
 from read_deadline import read_deadline
 
 Address = Annotated[str, StringConstraints(strict=True, pattern=r'^0x[0-9a-fA-F]{40}$')]
@@ -48,7 +48,12 @@ class PoolMarketRequest(ActivityRequest):
 
 class NftPositionsRequest(BaseModel):
     model_config = ConfigDict(extra='forbid')
-    tokenIds: list[Annotated[str, StringConstraints(strict=True, pattern=r'^(0|[1-9][0-9]{0,77})$')]] = Field(min_length=1, max_length=10)
+    # OpenAPI must describe the uint256 bound enforced by valid_ids too.
+    # JSON Schema searches regexes; its $ can match before a final newline.
+    # Keep this strict end assertion in schema metadata (not Rust regex).
+    tokenIds: list[Annotated[str, StringConstraints(strict=True, pattern=r'^(0|[1-9][0-9]{0,77})$'),
+        Field(json_schema_extra={'pattern': unsigned_string_pattern(2**256-1) + r'(?![\s\S])',
+                                 'maxLength': 78})]] = Field(min_length=1, max_length=10)
     blockNumber: Annotated[StrictInt, Field(ge=0, le=2**53-1)] | None = None
 
     @model_validator(mode='after')

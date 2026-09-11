@@ -16,8 +16,25 @@ manifest; previous candidate acknowledgements do not cover this change.
 
 Producer and gateway responses now have closed schemas, generated TypeScript,
 runtime consumer tests, a typecheck consumer and a bounded progressive-read
-helper. The actual frontend adapters/rendering and their acknowledgement are
-still pending on #1. The deployment and real-data switch remain disabled.
+helper. A [fixture/backend-local consumer ACK](https://github.com/domino-money/domino/issues/1#issuecomment-5630832974)
+has been received; adapter review/integration and HTTPS qualification remain
+pending on #1. The deployment and real-data switch remain disabled.
+
+### NFT ID OpenAPI correction
+
+The producer follow-up to [the issue #1 ACK](https://github.com/domino-money/domino/issues/1#issuecomment-5634425074)
+describes `NftPositionsRequest.tokenIds` as canonical decimal strings from zero
+through `2**256 - 1`, including a strict end of string. The old OpenAPI pattern
+allowed 78-digit overflow and, in some JSON Schema validators, a final newline.
+Python and the shared read runtime already reject those values; their accepted
+requests, responses, errors and `1.1.0-rc.3` version are unchanged. Regeneration
+changes the OpenAPI file and only the `backend/read_api.py` source entry in the
+read manifest; shared schemas, validators, types and fixtures keep their bytes.
+The OpenAPI pattern now appends `(?![\s\S])` to its `$` anchor; the shared schema
+keeps `$` and its runtime already requires a full match. A textual schema diff
+therefore still needs an explicit account of this equivalent runtime boundary.
+Consumers must receive the new OpenAPI and manifest digests in the integration
+notice before updating their source pins. This correction does not activate reads.
 
 ## Version and field rules
 
