@@ -1,6 +1,8 @@
-# Public contract boundary — draft
+# Public custody candidate and draft execution boundary
 
-`IDominoVaultDraft.sol` specifies the integration surface and its caller/event requirements. `PolicyValidation.sol` implements shared guards for initialization and policy writes. The test-only `PolicyWriteHarness` executes those guards against synthetic state and demonstrates permissions, events and stale-plan invalidation. There is still **no public vault implementation**: the harness holds no assets and supplies no token/NFT transfers, swaps, callbacks or compounding. Its synthetic withdrawal records do not prove real transfer receipts.
+[`DominoVault.sol`](src/DominoVault.sol) and [`DominoVaultFactory.sol`](src/DominoVaultFactory.sol) now implement the E2 **custody and recovery candidate**: atomically owner-bound immutable clones, root subscription/rearm, owner-authorized child custody, operator revocation, policy guards and actual token/NFT exits. There is no compound/mint/swap/signing method or public deployment. See [E2 semantics and direct recovery](../docs/PUBLIC_VAULT_E2.md) and [implementation evidence](../reports/PUBLIC_VAULT_E2_IMPLEMENTATION.md). Protected fee-credit sinks require E4/E7 provenance; only test harnesses expose artificial credits. The measured runtime is 23,582 bytes, leaving 994 bytes; E4 must plan a reviewed refactor/version rather than blindly append its execution logic.
+
+`IDominoVaultDraft.sol` remains an **unimplemented execution interface**, not the E2 ABI. `PolicyValidation.sol` supplies guards used by E2 initialization/policy writes and by the old test-only `PolicyWriteHarness`. That old harness has no assets; its synthetic withdrawal records are not real transfer receipts. E2's terminal-counter owner recovery is the explicit exception to the old harness's blanket exhaustion failure.
 
 `FeeAccounting.sol` implements only the per-currency fee split for a no-swap path: gross used = net added + protocol cut, with unconsumed balances uncharged. The maximum service cut is 200 bps (2%). Floor rounding in integer token base units is an explicit owner-favoring policy. At 200 bps, consuming 49 base units charges zero and consuming 50 charges one; a zero rate and zero consumption are also valid. There is no rounding-up or minimum one-unit toll.
 
@@ -10,9 +12,9 @@ The public design removes the inherited 1500 bps liquidity-growth cap in favor o
 
 ## Policy write boundary
 
-Every future vault implementation must call `PolicyValidation.validateInitial(policy, registeredPositions)` during atomic owner-bound initialization and `validateUpdate` before storing a new owner policy. Both guards require nonzero membership within the policy's position cap. The initial count must describe the root plus every child actually registered by that initialization; it must be derived from the vault's own initialization state, never trusted as a supplied count. Enforcing the cap only when fees are later consumed is insufficient. The validator selects no default policy.
+E2 calls `PolicyValidation.validateInitial(policy, 1)` for its actual root-only atomic initialization and `validateUpdate` with the vault's own active membership before storing a new owner policy. Other implementations must preserve those guards. Both require nonzero membership within the policy's position cap. The count must describe the root plus actually registered children, never a supplied count. Enforcing the cap only when fees are later consumed is insufficient. The validator selects no default policy.
 
-The former one-argument initialization guard is removed so a caller cannot silently omit membership validation. This changes an internal library call, not a deployed vault ABI. All current callers are the synthetic harness and contract tests and pass the actual fixture membership. A future implementation still must establish unique membership, authorization and asset custody atomically; accepting a count does not prove those properties.
+The former one-argument initialization guard is removed so a caller cannot silently omit membership validation. This changes an internal library call, not a deployed vault ABI. E2 and the synthetic harness both supply membership from their own state. E2 additionally establishes unique membership, authorization and custody atomically; the validator's acceptance of a count alone does not prove those properties.
 
 | Field | Enforced domain and meaning |
 | --- | --- |
@@ -29,17 +31,17 @@ The interval and position type ceilings are representational bounds, **not appro
 | Call | Required caller |
 | --- | --- |
 | Read getters | Anyone |
-| `compoundSelf` | Owner or currently registered operator, while unpaused and subject to all execution checks |
+| `compoundSelf` (draft only, not implemented by E2) | Owner or currently registered operator, while unpaused and subject to all execution checks |
 | `setPolicy` | Owner only |
 | `pause` | Owner or currently registered operator for emergency stopping |
 | `resume` | Owner only |
 | Reserve and child-NFT withdrawals | Owner only, including while paused or the service is offline; fixed owner recipient and no exit toll |
 
-Policy writes emit `PolicyChanged`. Pause/resume events include actor, policy version and resulting state nonce. Withdrawal events identify the source/child, fixed owner recipient, actual reserve amounts where applicable, and resulting nonce. Emit them only after the corresponding real operation completes. Historical source records must still permit recovery of tracked reserves after a child leaves active membership.
+E2 policy writes emit `PolicyChanged(version, stateNonce)`. E2 pause/resume events identify the actor and resulting state nonce; their ABI does not include the policy version used by the old harness. Withdrawal events identify the source/child, fixed owner recipient, actual reserve amounts where applicable, and resulting nonce. They follow the completed transfer. Historical source records still permit recovery of tracked reserves after a child leaves active membership.
 
-The synthetic harness permits `withdrawFeeReserves(tokenId, 0, 0)` for a known source: it advances the nonce and emits a zero-valued test record, without calling any token. This supports guard/nonce tests and does not establish a real transfer or select the public executor's behavior. Before implementation, the executor must explicitly choose whether to reject all-zero requests or support a documented no-transfer result; it must define nonce/receipt and indexer handling, avoid assuming tokens accept zero transfers, and prove any nonzero transfer completed before emitting its withdrawal receipt.
+The old synthetic harness permits `withdrawFeeReserves(tokenId, 0, 0)` for guard tests without transferring assets. E2 instead rejects all-zero reserve withdrawals, identifies the balance by source ID and current currency, and proves a nonzero transfer before emitting its withdrawal event. Do not treat the old harness's signature or zero-valued records as E2 behavior.
 
-Every completed policy write, pause, resume, withdrawal and automation action advances `stateNonce` exactly once. Resuming must not revive a plan signed before a pause. Reuse/wrap is forbidden; the harness tests nonce exhaustion with an exact error. Future implementations still must enforce complete intent replay protection, deadlines, frequency, registered operator revocation, sequence ownership, pool/currency membership, fee provenance, principal preservation, reentrancy, token compatibility and price bounds. The harness's freshness check covers only policy version, nonce, caller and paused state; it is not `compoundSelf`.
+Every ordinary completed policy/authority/membership mutation and withdrawal in E2 advances `stateNonce` exactly once. At either counter's terminal value, new authority is prohibited while owner recovery remains possible without wrap; saturated counters remain saturated and `TerminalRecovery` identifies this exception. See the [E2 authority table](../docs/PUBLIC_VAULT_E2.md#authority-policy-and-exhaustion). Resuming must not revive a prior plan. Future financial execution still must enforce complete intent replay protection, deadlines, frequency, measured fee provenance, principal preservation, token compatibility and price bounds. Neither the old harness's freshness check nor E2's richer `validateAuthority` implements `compoundSelf`.
 
 Tests assert exact custom-error bytes, inclusive bounds, rejection before storage changes, independent geometry, registered membership, owner/operator/stranger separation, transition logs, owner exits while paused, stale plans and nonce exhaustion. Fee fuzzing includes raw invalid inputs and dedicated excessive-rate/overspending cases instead of only clamping inputs into a valid domain. No `forge-std` package is needed; a small test-only Foundry log interface inspects emitted logs.
 
