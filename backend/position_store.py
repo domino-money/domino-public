@@ -2,11 +2,12 @@
 from psycopg.types.json import Jsonb
 
 from activity_indexer import ActivityIndexer
+import historical_work
 from catalogue import checked_key
 from discovery import DataError, STATE_VIEW, bytes32
 from fee_accounting import VERSION as FEE_VERSION, supported
 from position_accounting import VERSION, inside_growth, position_summary, replay_positions
-from historical_capacity import (MAX_BATCH_CHECKS, capacity_profile, check_work_size, clear_work, load_work,
+from historical_capacity import (MAX_BATCH_CHECKS, capacity_profile, check_work_size, clear_work,
                                  record_failure, replay_batch, save_work, unavailable_work)
 
 
@@ -17,9 +18,10 @@ def same_fee_ledger(model, fees):
 
 
 class PositionIndexer:
-    def __init__(self,store,rpc,*,capacity='standard'):
+    def __init__(self,store,rpc,*,capacity='standard',activity_capacity='standard'):
         self.store,self.rpc=store,rpc
-        self.activity=ActivityIndexer(store,rpc)
+        self.activity=ActivityIndexer(store,rpc,capacity=activity_capacity)
+        self.activity_capacity=activity_capacity
         self.capacity=capacity_profile(capacity)
         self.check_offset=None
 
@@ -69,6 +71,9 @@ class PositionIndexer:
             record_failure(self.store,pool_id,'position',self.capacity,str(error))
             raise
 
+    def restart(self, pool_id):
+        return historical_work.restart(self, pool_id, 'position')
+
     def _step(self,pool_id):
         pool_id=bytes32(pool_id)
         self.activity.chain.check_chain()
@@ -103,17 +108,17 @@ class PositionIndexer:
               WHERE pool_id=%s AND chunk_start=%s ORDER BY block_number,log_index LIMIT 2001''',
               (pool_id,chunk['start_block'])).fetchall()
             if len(events)>2000:raise DataError('position_event_budget_exhausted')
-            progress=load_work(conn,pool_id,'position',chunk['start_block'])
-            if progress and progress['totalEvents']!=len(events):
-                raise DataError('historical_work_checkpoint_mismatch')
+            binding=historical_work.bind_source(pool_id,key,'position',chunk,previous,events,fee)
+            progress=historical_work.load(conn,pool_id,'position',chunk['start_block'],binding,events)
             activity,model,settlements,offset=replay_batch(replay_positions,
                 progress['activity'] if progress else previous['model'] if previous else None,
                 progress['model'] if progress else previous['position_model'] if previous else None,
-                events,progress['offset'] if progress else 0,pool_id,key,capacity=self.capacity)
+                events,progress['offset'] if progress else 0,pool_id,key,capacity=self.capacity,
+                activity_capacity=self.activity_capacity)
             settlements=(progress['rows'] if progress else [])+settlements
             pending={'version':1,'activity':activity,'model':model,'rows':settlements,
                      'offset':offset,'totalEvents':len(events),'checks':progress.get('checks',0) if progress else 0}
-            check_work_size(pending)
+            check_work_size(historical_work.seal(pending,binding),conn)
             if not model or model.get('version')!=VERSION:raise DataError('position_methodology_mismatch')
             # A resumed proof-only batch must also honor a smaller selected profile.
             if len(model['positions'])>self.capacity.positions:raise DataError('core_position_budget_exhausted')
@@ -122,7 +127,7 @@ class PositionIndexer:
                 if (self.activity.chain.block(block.number)!=block or
                         self.activity.chain.block(tail['end_block']).hash!=tail['end_hash']):
                     raise DataError('position_activity_reorg_requires_replay')
-                return save_work(conn,pool_id,'position',chunk,self.capacity,pending)
+                return save_work(conn,pool_id,'position',chunk,self.capacity,historical_work.seal(pending,binding))
             if activity!=chunk['model'] or not same_fee_ledger(model,fee['model']):
                 raise DataError('position_source_ledger_mismatch')
             if model['growthX128']!=chunk['state_snapshot']['feeGrowthGlobalX128']:
@@ -144,7 +149,7 @@ class PositionIndexer:
             if self.completed_checks<self.required_checks:
                 pending['checks']=self.completed_checks
                 pending['requiredChecks']=self.required_checks
-                return save_work(conn,pool_id,'position',chunk,self.capacity,pending)
+                return save_work(conn,pool_id,'position',chunk,self.capacity,historical_work.seal(pending,binding))
             conn.execute('INSERT INTO domino_activity.position_chunks VALUES(%s,%s,%s,%s,%s)',
                          (pool_id,chunk['start_block'],VERSION,Jsonb(model),Jsonb(proof)))
             for event in settlements:

@@ -1,0 +1,135 @@
+{
+  "schemaVersion": 1,
+  "mode": "bounded_recent_fee_step_study",
+  "chainId": 4663,
+  "source": "public-study",
+  "status": "measured",
+  "poolId": "0x46525dc119850396470f132c4a989d7192cb692139db891b5a4cdcd684c11b17",
+  "currentCanonicalityAssessed": true,
+  "stateReconciled": true,
+  "globalBusiestAssessed": false,
+  "productionCapacityCalibrated": false,
+  "executionAvailable": false,
+  "ledgerWritten": false,
+  "limits": {
+    "blocks": 10000,
+    "candidates": 8,
+    "initializations": 256,
+    "events": 2000,
+    "rpcRequests": 256,
+    "acquisitionSeconds": 60,
+    "replaySeconds": 30,
+    "aggregateStepAttempts": 1000000
+  },
+  "chunks": [
+    {
+      "fromBlock": 59775312,
+      "throughBlock": 59784871,
+      "events": 45,
+      "swaps": 40,
+      "inputSha256": "a8c4a1b67020e352866e9cef7449e25626f77eb3f4a8663a13c77f0e4bad71de",
+      "status": "within_budget",
+      "candidateStepsAdmitted": 240,
+      "candidateStepAttempts": 240,
+      "sharedBudgetUsedPercent": 0.24,
+      "replayMilliseconds": 4.547,
+      "resumeBatches": [
+        {
+          "fromEventOffset": 0,
+          "nextEventOffset": 32,
+          "candidateStepsAdmitted": 162,
+          "candidateStepAttempts": 162
+        },
+        {
+          "fromEventOffset": 32,
+          "nextEventOffset": 45,
+          "candidateStepsAdmitted": 78,
+          "candidateStepAttempts": 78
+        }
+      ],
+      "processedEvents": 45,
+      "resumeStatus": "complete",
+      "resumedEqualsSinglePass": true,
+      "outputSha256": "4da8ec9529e5d8a272e9884d88cce50203af6382c2a133999b8e32968fb0fb9c"
+    }
+  ],
+  "busiestExaminedChunk": {
+    "fromBlock": 59775312,
+    "throughBlock": 59784871,
+    "events": 45,
+    "swaps": 40,
+    "inputSha256": "a8c4a1b67020e352866e9cef7449e25626f77eb3f4a8663a13c77f0e4bad71de",
+    "status": "within_budget",
+    "candidateStepsAdmitted": 240,
+    "candidateStepAttempts": 240,
+    "sharedBudgetUsedPercent": 0.24,
+    "replayMilliseconds": 4.547,
+    "resumeBatches": [
+      {
+        "fromEventOffset": 0,
+        "nextEventOffset": 32,
+        "candidateStepsAdmitted": 162,
+        "candidateStepAttempts": 162
+      },
+      {
+        "fromEventOffset": 32,
+        "nextEventOffset": 45,
+        "candidateStepsAdmitted": 78,
+        "candidateStepAttempts": 78
+      }
+    ],
+    "processedEvents": 45,
+    "resumeStatus": "complete",
+    "resumedEqualsSinglePass": true,
+    "outputSha256": "4da8ec9529e5d8a272e9884d88cce50203af6382c2a133999b8e32968fb0fb9c"
+  },
+  "busiestScope": "only_the_examined_historical_chunks",
+  "allChunksWithinSinglePassBudget": true,
+  "totalCandidateStepsAdmittedIncludingResume": 480,
+  "totalStepAttemptsIncludingResume": 480,
+  "poolKey": {
+    "currency0": "0x385f4f8ae47651ce5f58f5265395a669f8281e18",
+    "currency1": "0x5fc5360d0400a0fd4f2af552add042d716f1d168",
+    "fee_pips": 2969,
+    "tick_spacing": 30,
+    "hooks": "0x0000000000000000000000000000000000000000"
+  },
+  "selection": {
+    "fromBlock": 59774872,
+    "throughBlock": 59784871,
+    "initializationsObserved": 132,
+    "supportedInitializations": 84,
+    "candidatesExamined": 8,
+    "policy": "eight_oldest_supported_recent_initializations_ranked_by_observed_swap_count",
+    "candidateCountsStatus": "unreconciled_provider_selection_diagnostics",
+    "candidateSwapCounts": {
+      "0x9d1375e966955f774c7b3fefaf970d64e92532b230a043d26cd0d26019be4ace": 0,
+      "0x907628f7bc403369622fc49baed2917025d18dcc840e003d95ce75f33237ffc4": 0,
+      "0x949be2d830bf688b9176cae804efd1c51e5186045e4e78cdf4be04a9d716bfbf": 0,
+      "0x46525dc119850396470f132c4a989d7192cb692139db891b5a4cdcd684c11b17": 40,
+      "0x22431c51d32c3261aefd68e799f5b52e9ad2c1fdc18c575e231d2b45ea1519ea": 1,
+      "0x4484c75d65cf8d3c304a6f417186d574c136e4591c75ef64b24815452cdd7661": 20,
+      "0x81dd7715d4497088cab3dcef7b7ff02ab7366e64071b3b3876889645b55f9ba0": 0,
+      "0xd19fda4107c1fa0303df54f54ce0df95f67cbc63fa3f4f9af3b90ffa9675a0ff": 0
+    },
+    "selectedPool": "0x46525dc119850396470f132c4a989d7192cb692139db891b5a4cdcd684c11b17",
+    "globalBusiestAssessed": false
+  },
+  "snapshot": {
+    "number": 59784871,
+    "hash": "0x3194792a31427ca4df4e422e97b9e62a2db8c6c2b9193fe8924322864bddbb63",
+    "timestamp": 1789081772,
+    "sqrtPriceX96": "19228007123091941559468",
+    "tick": -304645,
+    "protocolFeeRaw": 2019821,
+    "lpFeePips": 2969,
+    "activeLiquidityRaw": "4538902491170790330",
+    "feeGrowthGlobalX128": [
+      "52224310350733970854223360942753289031689",
+      "1978806600714920153835352063"
+    ]
+  },
+  "inputSha256": "b3018c837e062794443f854e1c4860785887c520f8aaec63a0ca72b6b44dd2dd",
+  "canonicality": "boundary_and_event_hashes_rechecked_single_provider",
+  "rpcRequests": 99
+}

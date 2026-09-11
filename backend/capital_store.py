@@ -31,11 +31,12 @@ def replay_capital(activity, model, events, pool_id, key, **kwargs):
 
 
 class CapitalIndexer:
-    def __init__(self, store, rpc, *, capacity='standard'):
+    def __init__(self, store, rpc, *, capacity='standard', activity_capacity='standard'):
         self.store = store
-        self.activity = ActivityIndexer(store, rpc)
+        self.activity = ActivityIndexer(store, rpc, capacity=activity_capacity)
+        self.activity_capacity = activity_capacity
         self.capacity = capacity_profile(capacity)
-        self.positions = PositionIndexer(store, rpc, capacity=capacity)
+        self.positions = PositionIndexer(store, rpc, capacity=capacity, activity_capacity=activity_capacity)
 
     def step(self, pool_id):
         pool_id = bytes32(pool_id)
@@ -120,7 +121,8 @@ class CapitalIndexer:
             activity, model, points, offset = replay_batch(replay_capital,
                 progress['activity'] if progress else previous['model'] if previous else None,
                 progress['model'] if progress else previous['position_model'] if previous else None,
-                events, progress['offset'] if progress else 0, pool_id, key, capacity=self.capacity)
+                events, progress['offset'] if progress else 0, pool_id, key, capacity=self.capacity,
+                activity_capacity=self.activity_capacity)
             points = (progress['rows'] if progress else []) + points
             pending = {'version': 1, 'activity': activity, 'model': model, 'rows': points,
                        'offset': offset, 'totalEvents': len(events), 'checks': progress['checks'] if progress else 0}

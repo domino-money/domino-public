@@ -8,7 +8,7 @@ import copy
 from bisect import bisect_left, bisect_right
 
 from discovery import DataError, ZERO
-from pool_activity import active_liquidity, protocol_directions, replay
+from pool_activity import active_liquidity, check_activity_capacity, protocol_directions, replay
 from v4_math import MAX_SQRT, MIN_SQRT, PIPS, Q128, U256, sqrt_at_tick, swap_step, tick_at_sqrt
 
 VERSION = 1
@@ -161,8 +161,9 @@ def reconstruct_swap(model, key, payload, *, budget=None, with_trace=False):
     return result
 
 
-def replay_fees(activity_model, ledger_model, events, pool_id, key, *, budget=None):
+def replay_fees(activity_model, ledger_model, events, pool_id, key, *, budget=None, activity_capacity='standard'):
     """Return independent activity/fee models and one fee row per swap event."""
+    check_activity_capacity(activity_model,activity_capacity)
     if not supported(key):
         raise DataError('fee_accounting_adapter_required')
     ledger = copy.deepcopy(ledger_model)
@@ -198,5 +199,5 @@ def replay_fees(activity_model, ledger_model, events, pool_id, key, *, budget=No
                 amount = int(payload[f'amount{i}'])
                 ledger['donationsRaw'][i] = str(int(ledger['donationsRaw'][i]) + amount)
                 ledger['growthX128'][i] = str((int(ledger['growthX128'][i]) + amount * Q128 // liquidity) & U256)
-        state = replay(state, [event], pool_id, key.__dict__)
+        state = replay(state, [event], pool_id, key.__dict__, capacity=activity_capacity)
     return state, ledger, rows

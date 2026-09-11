@@ -2,17 +2,19 @@
 from psycopg.types.json import Jsonb
 
 from activity_indexer import ActivityIndexer
+import historical_work
 from catalogue import checked_key
 from discovery import DataError, bytes32
 from fee_accounting import VERSION, replay_fees, supported
-from historical_capacity import (capacity_profile, check_work_size, clear_work, load_work, record_failure,
+from historical_capacity import (capacity_profile, check_work_size, clear_work, record_failure,
                                  replay_batch, save_work, unavailable_work)
 
 
 class FeeIndexer:
-    def __init__(self, store, rpc, *, capacity='standard'):
+    def __init__(self, store, rpc, *, capacity='standard', activity_capacity='standard'):
         self.store = store
-        self.activity = ActivityIndexer(store, rpc)
+        self.activity = ActivityIndexer(store, rpc, capacity=activity_capacity)
+        self.activity_capacity = activity_capacity
         self.capacity = capacity_profile(capacity)
 
     def step(self, pool_id):
@@ -22,6 +24,9 @@ class FeeIndexer:
         except DataError as error:
             record_failure(self.store, pool_id, 'fee', self.capacity, str(error))
             raise
+
+    def restart(self, pool_id):
+        return historical_work.restart(self, pool_id, 'fee')
 
     def _step(self, pool_id):
         pool_id = bytes32(pool_id)
@@ -58,17 +63,17 @@ class FeeIndexer:
               ORDER BY block_number,log_index LIMIT 2001''',(pool_id,chunk['start_block'])).fetchall()
             if len(events)>2000:
                 raise DataError('fee_event_budget_exhausted')
-            progress = load_work(conn, pool_id, 'fee', chunk['start_block'])
-            if progress and progress['totalEvents']!=len(events):
-                raise DataError('historical_work_checkpoint_mismatch')
+            binding = historical_work.bind_source(pool_id, key, 'fee', chunk, previous, events)
+            progress = historical_work.load(conn, pool_id, 'fee', chunk['start_block'], binding, events)
             activity, ledger, fees, offset = replay_batch(replay_fees,
                 progress['activity'] if progress else previous['model'] if previous else None,
                 progress['model'] if progress else previous['fee_model'] if previous else None,
-                events, progress['offset'] if progress else 0, pool_id, key)
+                events, progress['offset'] if progress else 0, pool_id, key,activity_capacity=self.activity_capacity)
             fees = (progress['rows'] if progress else []) + fees
             pending={'version':1,'activity':activity,'model':ledger,'rows':fees,
                      'offset':offset,'totalEvents':len(events)}
-            check_work_size(pending)
+            pending = historical_work.seal(pending, binding)
+            check_work_size(pending, conn)
             if not ledger or ledger.get('version')!=VERSION:
                 raise DataError('fee_methodology_mismatch')
             if offset < len(events):

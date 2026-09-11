@@ -275,6 +275,37 @@ class CapitalResumePostgresTests(unittest.TestCase):
         self.assertEqual(self.work()['progress'], before)
         self.assert_unpublished()
 
+    def test_resealed_same_count_capital_points_cannot_change_source_identity(self):
+        for field in ('blockHash', 'logIndex', 'order'):
+            with self.subTest(field=field):
+                self.setUp()
+                with patch('position_store.MAX_BATCH_CHECKS', 1):
+                    CapitalIndexer(self.store, self.rpc).step(POOL)
+                saved = self.work()['progress']
+                self.assertEqual(saved['checks'], 1)
+                count = len(saved['rows'])
+                self.assertGreater(count, 1)
+                if field == 'order':
+                    saved['rows'][0], saved['rows'][-1] = saved['rows'][-1], saved['rows'][0]
+                elif field == 'blockHash':
+                    saved['rows'][0][field] = '0x' + 'ab' * 32
+                else:
+                    saved['rows'][0][field] += 1
+                saved.pop('checkpointDigest')
+                saved = capital_work.seal(saved, saved['sourceDigest'])
+                self.assertEqual(len(saved['rows']), count)
+                with self.catalogue.connection(writer=True) as conn:
+                    conn.execute("UPDATE domino_activity.historical_work SET progress=%s WHERE ledger='capital'",
+                                 (Jsonb(saved),))
+                before = self.counts()
+                with patch.object(PositionIndexer, 'check_positions') as proof:
+                    with self.assertRaisesRegex(DataError, 'capital_work_checkpoint_mismatch'):
+                        CapitalIndexer(self.store, self.rpc).step(POOL)
+                proof.assert_not_called()
+                self.assertEqual(self.work()['progress'], saved)
+                self.assertEqual(self.counts(), before)
+                self.assert_unpublished()
+
     def test_database_failure_after_chunk_insert_rolls_back_all_points_and_keeps_saved_work(self):
         with patch('historical_capacity.MAX_BATCH_EVENTS', 1):
             CapitalIndexer(self.store, self.rpc).step(POOL)

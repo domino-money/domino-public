@@ -1,0 +1,813 @@
+{
+  "poolId": "0x46525dc119850396470f132c4a989d7192cb692139db891b5a4cdcd684c11b17",
+  "poolKey": {
+    "currency0": "0x385f4f8ae47651ce5f58f5265395a669f8281e18",
+    "currency1": "0x5fc5360d0400a0fd4f2af552add042d716f1d168",
+    "fee_pips": 2969,
+    "tick_spacing": 30,
+    "hooks": "0x0000000000000000000000000000000000000000"
+  },
+  "chunks": [
+    {
+      "fromBlock": 59775312,
+      "throughBlock": 59784871,
+      "endBlock": {
+        "number": 59784871,
+        "hash": "0x3194792a31427ca4df4e422e97b9e62a2db8c6c2b9193fe8924322864bddbb63",
+        "timestamp": 1789081772
+      },
+      "events": [
+        {
+          "poolId": "0x46525dc119850396470f132c4a989d7192cb692139db891b5a4cdcd684c11b17",
+          "blockNumber": 59775312,
+          "blockHash": "0xb65476633c9861082d33f6e069cd9fd1de368ef429f0e0e9676613dc2fe5a3db",
+          "timestamp": 1789080808,
+          "logIndex": 122,
+          "kind": "initialize",
+          "payload": {
+            "poolKey": {
+              "currency0": "0x385f4f8ae47651ce5f58f5265395a669f8281e18",
+              "currency1": "0x5fc5360d0400a0fd4f2af552add042d716f1d168",
+              "fee_pips": 2969,
+              "tick_spacing": 30,
+              "hooks": "0x0000000000000000000000000000000000000000"
+            },
+            "sqrtPriceX96": "19314453808614747621826",
+            "tick": -304555
+          },
+          "rawFingerprint": "0xd11a457caaddfab3eefdbbc804bddd69cf7d7330b0934b03f52c9c71c5f4d413"
+        },
+        {
+          "poolId": "0x46525dc119850396470f132c4a989d7192cb692139db891b5a4cdcd684c11b17",
+          "blockNumber": 59775312,
+          "blockHash": "0xb65476633c9861082d33f6e069cd9fd1de368ef429f0e0e9676613dc2fe5a3db",
+          "timestamp": 1789080808,
+          "logIndex": 124,
+          "kind": "modify_liquidity",
+          "payload": {
+            "tickLower": -315750,
+            "tickUpper": -298770,
+            "liquidityDelta": "4531854684284919062"
+          },
+          "rawFingerprint": "0x96911242f1586c05bfe3f9f71fa6b71e1aa849d8c67cf45a50ff959df8521f8d"
+        },
+        {
+          "poolId": "0x46525dc119850396470f132c4a989d7192cb692139db891b5a4cdcd684c11b17",
+          "blockNumber": 59775445,
+          "blockHash": "0xb6930f919f626c0492884b1ba6df8d877dbb14d94bc6ea84496093f5ef1e6556",
+          "timestamp": 1789080822,
+          "logIndex": 72,
+          "kind": "swap",
+          "payload": {
+            "amount0": "-1682510305375600000000",
+            "amount1": "99685708",
+            "sqrtPriceX96": "19312711052924176224003",
+            "liquidity": "4531854684284919062",
+            "tick": -304557,
+            "swapFeePips": 2969
+          },
+          "rawFingerprint": "0x0f16a8d31d7090f4e478562369c098c5bfc76de074414efb6f034b944caecaa0"
+        },
+        {
+          "poolId": "0x46525dc119850396470f132c4a989d7192cb692139db891b5a4cdcd684c11b17",
+          "blockNumber": 59775714,
+          "blockHash": "0xa31eb8f45b85e4088bb6b9cc1228ee86375f50be751fd3ae03008fc3a5d42c29",
+          "timestamp": 1789080850,
+          "logIndex": 64,
+          "kind": "swap",
+          "payload": {
+            "amount0": "-4184757670447846150307",
+            "amount1": "247861366",
+            "sqrtPriceX96": "19308377815876059964184",
+            "liquidity": "4531854684284919062",
+            "tick": -304562,
+            "swapFeePips": 2969
+          },
+          "rawFingerprint": "0xf3d96153706a1e9c57870ac8d88e47b980a17cb5f60f32bb9ab7dcaa2a9034d8"
+        },
+        {
+          "poolId": "0x46525dc119850396470f132c4a989d7192cb692139db891b5a4cdcd684c11b17",
+          "blockNumber": 59776073,
+          "blockHash": "0xa4c74260b98eaefd03cdabccba26fa8e8af078e5800475a15250c2d5eb8f3b74",
+          "timestamp": 1789080886,
+          "logIndex": 20,
+          "kind": "swap",
+          "payload": {
+            "amount0": "-4206417310248500000000",
+            "amount1": "249032191",
+            "sqrtPriceX96": "19304024109880023655472",
+            "liquidity": "4531854684284919062",
+            "tick": -304566,
+            "swapFeePips": 2969
+          },
+          "rawFingerprint": "0x779ce9ee571de56812b4bf5bd9b84ed551715dc288f5ec901a097cc53f50f62e"
+        },
+        {
+          "poolId": "0x46525dc119850396470f132c4a989d7192cb692139db891b5a4cdcd684c11b17",
+          "blockNumber": 59776111,
+          "blockHash": "0xdfc071f2b1c042db4824a35a7717f2bfa85101dcb8e0fa29f00a9ef6d4298361",
+          "timestamp": 1789080890,
+          "logIndex": 75,
+          "kind": "swap",
+          "payload": {
+            "amount0": "-329284734351182668377",
+            "amount1": "19489878",
+            "sqrtPriceX96": "19303683378025835949125",
+            "liquidity": "4531854684284919062",
+            "tick": -304567,
+            "swapFeePips": 2969
+          },
+          "rawFingerprint": "0x0164909baa51b507510e07eb18e4d28298fb523852881a10e894cdd5f2e67f25"
+        },
+        {
+          "poolId": "0x46525dc119850396470f132c4a989d7192cb692139db891b5a4cdcd684c11b17",
+          "blockNumber": 59776208,
+          "blockHash": "0x182425efbb0a1257ea52f95de8279f709c57cda90e970b54d82bbf905ddf0fb0",
+          "timestamp": 1789080900,
+          "logIndex": 31,
+          "kind": "swap",
+          "payload": {
+            "amount0": "-8344855949462657923483",
+            "amount1": "493690178",
+            "sqrtPriceX96": "19295052438068054628244",
+            "liquidity": "4531854684284919062",
+            "tick": -304576,
+            "swapFeePips": 2969
+          },
+          "rawFingerprint": "0xcc5aa79198e109fde1811ad5bd9d1777e7a04392120c0a96a49d25c3772abd50"
+        },
+        {
+          "poolId": "0x46525dc119850396470f132c4a989d7192cb692139db891b5a4cdcd684c11b17",
+          "blockNumber": 59776499,
+          "blockHash": "0xe33aecd2162e33c075c4a00ff6661f84238a70e19ebf48d201fbbe10e9ab7550",
+          "timestamp": 1789080929,
+          "logIndex": 10,
+          "kind": "swap",
+          "payload": {
+            "amount0": "-5915199457344453161913",
+            "amount1": "349681932",
+            "sqrtPriceX96": "19288939122685035650118",
+            "liquidity": "4531854684284919062",
+            "tick": -304582,
+            "swapFeePips": 2969
+          },
+          "rawFingerprint": "0x19ada252d021be3d81272550f04a2501243a6484357076f24ee6e4a7a50f6c9f"
+        },
+        {
+          "poolId": "0x46525dc119850396470f132c4a989d7192cb692139db891b5a4cdcd684c11b17",
+          "blockNumber": 59776563,
+          "blockHash": "0x692219ff8b72973aa41720071eacdcd21ac98d181bb0ce757ed3a0b45f7b9bd3",
+          "timestamp": 1789080936,
+          "logIndex": 102,
+          "kind": "swap",
+          "payload": {
+            "amount0": "-13831809508810175422864",
+            "amount1": "816814695",
+            "sqrtPriceX96": "19274659157421091459722",
+            "liquidity": "4531854684284919062",
+            "tick": -304597,
+            "swapFeePips": 2969
+          },
+          "rawFingerprint": "0x1f429db7bd8dfc6d86006cdd943dd5c386dec2122ec784fe9620a970b8914a93"
+        },
+        {
+          "poolId": "0x46525dc119850396470f132c4a989d7192cb692139db891b5a4cdcd684c11b17",
+          "blockNumber": 59776856,
+          "blockHash": "0x2854c5e9d120b2ed12f82589a13abe78dfe29962af85ea14134834f71df35c0a",
+          "timestamp": 1789080965,
+          "logIndex": 45,
+          "kind": "swap",
+          "payload": {
+            "amount0": "-8783909516832424831867",
+            "amount1": "518091694",
+            "sqrtPriceX96": "19265601617886097986238",
+            "liquidity": "4531854684284919062",
+            "tick": -304606,
+            "swapFeePips": 2969
+          },
+          "rawFingerprint": "0xa3f74add60a913f56d772bfe2bacf1d4578a910540b9a5dec66aeb1aa8e5d875"
+        },
+        {
+          "poolId": "0x46525dc119850396470f132c4a989d7192cb692139db891b5a4cdcd684c11b17",
+          "blockNumber": 59776902,
+          "blockHash": "0xf8bd712bb160342f0953de863cd792bb4a5acd3d171b46c355debf00976c4c18",
+          "timestamp": 1789080970,
+          "logIndex": 12,
+          "kind": "swap",
+          "payload": {
+            "amount0": "-7267212569298857392403",
+            "amount1": "428266098",
+            "sqrtPriceX96": "19258114454592799488210",
+            "liquidity": "4531854684284919062",
+            "tick": -304614,
+            "swapFeePips": 2969
+          },
+          "rawFingerprint": "0x92cdfe8fb2a8db297d658b8199103e1714181bf1da300e7c91e7c9c6909f67f9"
+        },
+        {
+          "poolId": "0x46525dc119850396470f132c4a989d7192cb692139db891b5a4cdcd684c11b17",
+          "blockNumber": 59777068,
+          "blockHash": "0x87f52d3f7f3a26598ce33098800d762b2ef880190aca85ea337da484e3384137",
+          "timestamp": 1789080987,
+          "logIndex": 65,
+          "kind": "swap",
+          "payload": {
+            "amount0": "1673468564664646959093",
+            "amount1": "-99178205",
+            "sqrtPriceX96": "19259843189930853933526",
+            "liquidity": "4531854684284919062",
+            "tick": -304612,
+            "swapFeePips": 2969
+          },
+          "rawFingerprint": "0x3594d74772f6712cfb1daeebf532c868688b274e63bb549ecfb3f817fea2eb1a"
+        },
+        {
+          "poolId": "0x46525dc119850396470f132c4a989d7192cb692139db891b5a4cdcd684c11b17",
+          "blockNumber": 59777163,
+          "blockHash": "0x3f975c1ef6874fb3da0c64f07eefffdc9bb1f36a25b9ba12b3d30668cd37ad38",
+          "timestamp": 1789080996,
+          "logIndex": 44,
+          "kind": "swap",
+          "payload": {
+            "amount0": "162986794358848949794",
+            "amount1": "-9660373",
+            "sqrtPriceX96": "19260011575996382772709",
+            "liquidity": "4531854684284919062",
+            "tick": -304612,
+            "swapFeePips": 2969
+          },
+          "rawFingerprint": "0x2f79fb21a501d9f97a84f4c38a0e4d428a3f028870398bb7df9b30dbe0aef411"
+        },
+        {
+          "poolId": "0x46525dc119850396470f132c4a989d7192cb692139db891b5a4cdcd684c11b17",
+          "blockNumber": 59777321,
+          "blockHash": "0x7eebaa1480e1a167b7305313ef6b70d6fc17ac08250274286afc1ffd23ec1efc",
+          "timestamp": 1789081012,
+          "logIndex": 183,
+          "kind": "swap",
+          "payload": {
+            "amount0": "63862448772803352604",
+            "amount1": "-3785231",
+            "sqrtPriceX96": "19260077554822345660726",
+            "liquidity": "4531854684284919062",
+            "tick": -304612,
+            "swapFeePips": 2969
+          },
+          "rawFingerprint": "0x3531505230a5c757923f81839c68723e4a6f35f33f5ee877d5b9e44aba3bdc3e"
+        },
+        {
+          "poolId": "0x46525dc119850396470f132c4a989d7192cb692139db891b5a4cdcd684c11b17",
+          "blockNumber": 59777799,
+          "blockHash": "0x5ab37a9165d5c2942c0d5a84b41ed56087291040bd9ccec000d73d9c9cfa1e31",
+          "timestamp": 1789081061,
+          "logIndex": 18,
+          "kind": "swap",
+          "payload": {
+            "amount0": "6705846623991487371359",
+            "amount1": "-397610734",
+            "sqrtPriceX96": "19267008147402738303376",
+            "liquidity": "4531854684284919062",
+            "tick": -304605,
+            "swapFeePips": 2969
+          },
+          "rawFingerprint": "0x03315c43f7dcf142f44f5c587058bc41ff4c3bc14641b457b897d29a1a73f63a"
+        },
+        {
+          "poolId": "0x46525dc119850396470f132c4a989d7192cb692139db891b5a4cdcd684c11b17",
+          "blockNumber": 59777879,
+          "blockHash": "0x233ca5ea208ab2fc24466d75d3e95c02b5253cded21054c915a5049227824271",
+          "timestamp": 1789081069,
+          "logIndex": 154,
+          "kind": "protocol_fee",
+          "payload": {
+            "protocolFeeRaw": 2019821
+          },
+          "rawFingerprint": "0x70b511ca9daeaea1b4813d501b93041c103c505292389b4c12db76af54f10720"
+        },
+        {
+          "poolId": "0x46525dc119850396470f132c4a989d7192cb692139db891b5a4cdcd684c11b17",
+          "blockNumber": 59778045,
+          "blockHash": "0x0f0d37e1d338d67818478705ab6d54e49a6447635eccce6b0a8e9c64b78d9da3",
+          "timestamp": 1789081086,
+          "logIndex": 74,
+          "kind": "swap",
+          "payload": {
+            "amount0": "-71820000000000000000000",
+            "amount1": "4216424623",
+            "sqrtPriceX96": "19193294491822065790223",
+            "liquidity": "4531854684284919062",
+            "tick": -304681,
+            "swapFeePips": 3461
+          },
+          "rawFingerprint": "0x77471517b2401d6cbbb0f23ed5137dfcdba848d2f788152bd605dc9666d69bc0"
+        },
+        {
+          "poolId": "0x46525dc119850396470f132c4a989d7192cb692139db891b5a4cdcd684c11b17",
+          "blockNumber": 59778620,
+          "blockHash": "0x5ca480f6b54e44d4c42f2e29a9e0500decf497c8371eabbb94bc0298bfe6d8ee",
+          "timestamp": 1789081144,
+          "logIndex": 104,
+          "kind": "swap",
+          "payload": {
+            "amount0": "11509348342770974532183",
+            "amount1": "-678209079",
+            "sqrtPriceX96": "19205110247626324980648",
+            "liquidity": "4531854684284919062",
+            "tick": -304669,
+            "swapFeePips": 3461
+          },
+          "rawFingerprint": "0xd857742dc5c64b8c36e1b9e83c740a0d04b54ac24c8f9584f20aa850db7bdcb0"
+        },
+        {
+          "poolId": "0x46525dc119850396470f132c4a989d7192cb692139db891b5a4cdcd684c11b17",
+          "blockNumber": 59778678,
+          "blockHash": "0x4546b3a8274e7a76a7ec7c2479f198cc314756a0afb7565388b321d9c9f2c268",
+          "timestamp": 1789081150,
+          "logIndex": 51,
+          "kind": "swap",
+          "payload": {
+            "amount0": "-9552575219646247636843",
+            "amount1": "559072496",
+            "sqrtPriceX96": "19195336261111527627052",
+            "liquidity": "4531854684284919062",
+            "tick": -304679,
+            "swapFeePips": 3461
+          },
+          "rawFingerprint": "0x62a642bddaa1a1b0d3c5d0bac6a10ab5be74f862b770c2109bb8522a3c27d74e"
+        },
+        {
+          "poolId": "0x46525dc119850396470f132c4a989d7192cb692139db891b5a4cdcd684c11b17",
+          "blockNumber": 59778751,
+          "blockHash": "0x903dbd7473c15db13b66b3e017c20c6d8d30207bf954980af592bc139805f015",
+          "timestamp": 1789081157,
+          "logIndex": 236,
+          "kind": "swap",
+          "payload": {
+            "amount0": "10478415746494888093793",
+            "amount1": "-617556879",
+            "sqrtPriceX96": "19206095334529905600709",
+            "liquidity": "4531854684284919062",
+            "tick": -304668,
+            "swapFeePips": 3461
+          },
+          "rawFingerprint": "0x4e090ec56d7cf0b8f2334832e4f69f18ec4a1b80f71abd5556df938706a540a0"
+        },
+        {
+          "poolId": "0x46525dc119850396470f132c4a989d7192cb692139db891b5a4cdcd684c11b17",
+          "blockNumber": 59778833,
+          "blockHash": "0x4bf7d02edb2cea34baa1717539ebc520890395cd0436cd99fd84fe0c9d8844fc",
+          "timestamp": 1789081165,
+          "logIndex": 44,
+          "kind": "swap",
+          "payload": {
+            "amount0": "-3545182631779745121378",
+            "amount1": "207572511",
+            "sqrtPriceX96": "19202466447499546466817",
+            "liquidity": "4531854684284919062",
+            "tick": -304672,
+            "swapFeePips": 3461
+          },
+          "rawFingerprint": "0xbd2c3337c54aef779ee6828440e6f23e718f0cdb2439f3135e05dcd7a52502ab"
+        },
+        {
+          "poolId": "0x46525dc119850396470f132c4a989d7192cb692139db891b5a4cdcd684c11b17",
+          "blockNumber": 59779737,
+          "blockHash": "0x71b91577795c41189dca3a1afc4eb03444bbf454661bbcbb22b6941e3e23083d",
+          "timestamp": 1789081254,
+          "logIndex": 15,
+          "kind": "swap",
+          "payload": {
+            "amount0": "-4870901272884870889999",
+            "amount1": "285066222",
+            "sqrtPriceX96": "19197482776447102578835",
+            "liquidity": "4531854684284919062",
+            "tick": -304677,
+            "swapFeePips": 3461
+          },
+          "rawFingerprint": "0xe63d82c7bf6f78f49f82505bcb310dfbb863190b78d72827e035c947e4b42a6e"
+        },
+        {
+          "poolId": "0x46525dc119850396470f132c4a989d7192cb692139db891b5a4cdcd684c11b17",
+          "blockNumber": 59780290,
+          "blockHash": "0x0d21bbd87e4ffa2f1b5f2c24be77921c0db47099fe1e1c1d87f304fd963939a2",
+          "timestamp": 1789081310,
+          "logIndex": 22,
+          "kind": "swap",
+          "payload": {
+            "amount0": "5217816907421242952043",
+            "amount1": "-307500000",
+            "sqrtPriceX96": "19202840040185400501565",
+            "liquidity": "4531854684284919062",
+            "tick": -304671,
+            "swapFeePips": 3461
+          },
+          "rawFingerprint": "0x47cbd8cfa65f060b21e9d322f2f772e40eabdb3b95150cef6575395ffe9bde47"
+        },
+        {
+          "poolId": "0x46525dc119850396470f132c4a989d7192cb692139db891b5a4cdcd684c11b17",
+          "blockNumber": 59780307,
+          "blockHash": "0x958036f190742df2ef0c71331d9c0bd2e4e0460b3ac4b97d12afefe9f5175727",
+          "timestamp": 1789081311,
+          "logIndex": 12,
+          "kind": "swap",
+          "payload": {
+            "amount0": "-2494549713922679024489",
+            "amount1": "146016013",
+            "sqrtPriceX96": "19200287314809478776830",
+            "liquidity": "4531854684284919062",
+            "tick": -304674,
+            "swapFeePips": 3461
+          },
+          "rawFingerprint": "0xe75310bc8e196a4fa449b50fff4751136e485cadf681b0e386e3616b42379724"
+        },
+        {
+          "poolId": "0x46525dc119850396470f132c4a989d7192cb692139db891b5a4cdcd684c11b17",
+          "blockNumber": 59780326,
+          "blockHash": "0x229f13cf93621ea0450837817db5789de198bd8b4ec8cd323968702e4c8be669",
+          "timestamp": 1789081313,
+          "logIndex": 19,
+          "kind": "swap",
+          "payload": {
+            "amount0": "410849892208641503919",
+            "amount1": "-24213341",
+            "sqrtPriceX96": "19200709159526761403025",
+            "liquidity": "4531854684284919062",
+            "tick": -304674,
+            "swapFeePips": 3461
+          },
+          "rawFingerprint": "0x9d87ba5c0447bf7c6cb4dc81508d029d33d85ad2a3608d56df95852d8fdb9285"
+        },
+        {
+          "poolId": "0x46525dc119850396470f132c4a989d7192cb692139db891b5a4cdcd684c11b17",
+          "blockNumber": 59780468,
+          "blockHash": "0x94d830c2e2152b8c73a3b44549891eb44615f7ec511cb97a4dee8463ae8deca6",
+          "timestamp": 1789081328,
+          "logIndex": 47,
+          "kind": "swap",
+          "payload": {
+            "amount0": "25807468781093096505197",
+            "amount1": "-1523092435",
+            "sqrtPriceX96": "19227244469721791642796",
+            "liquidity": "4531854684284919062",
+            "tick": -304646,
+            "swapFeePips": 3461
+          },
+          "rawFingerprint": "0x34cb76b98d4b594adf3226cdae0494e65b1c4992688ad16959c764fb077f1907"
+        },
+        {
+          "poolId": "0x46525dc119850396470f132c4a989d7192cb692139db891b5a4cdcd684c11b17",
+          "blockNumber": 59780577,
+          "blockHash": "0xf3b344ecc138a5bb4bbd6588e98e11982aa89dca80784f5243be1af687384321",
+          "timestamp": 1789081340,
+          "logIndex": 0,
+          "kind": "modify_liquidity",
+          "payload": {
+            "tickLower": -315750,
+            "tickUpper": -298770,
+            "liquidityDelta": "0"
+          },
+          "rawFingerprint": "0x06bcf79c59756bb8802a136f9ba3e73db394424227ee3c36b4b1edf56be56c69"
+        },
+        {
+          "poolId": "0x46525dc119850396470f132c4a989d7192cb692139db891b5a4cdcd684c11b17",
+          "blockNumber": 59780758,
+          "blockHash": "0x24687f2dd723926d508ebaf43ff72ad316394bfb50e9cbe7a36b6ebfcb7b041f",
+          "timestamp": 1789081358,
+          "logIndex": 49,
+          "kind": "modify_liquidity",
+          "payload": {
+            "tickLower": -315750,
+            "tickUpper": -298770,
+            "liquidityDelta": "7047806885871268"
+          },
+          "rawFingerprint": "0xcbfbca4f4ce2669c659dafce1c87915bca48ee77c4a0930a4af730ed02ae09ec"
+        },
+        {
+          "poolId": "0x46525dc119850396470f132c4a989d7192cb692139db891b5a4cdcd684c11b17",
+          "blockNumber": 59780798,
+          "blockHash": "0x2e369ebf651d51b9fcf174ab9441b040720687a3321733a63a860e365cafbe5a",
+          "timestamp": 1789081362,
+          "logIndex": 30,
+          "kind": "swap",
+          "payload": {
+            "amount0": "77008009459211387923128",
+            "amount1": "-4569917716",
+            "sqrtPriceX96": "19306737931645398848524",
+            "liquidity": "4538902491170790330",
+            "tick": -304563,
+            "swapFeePips": 3461
+          },
+          "rawFingerprint": "0x5725349a71ff0a8394c32f1e49a267da2ce6b428bdf57dd6972da4efa69bfffa"
+        },
+        {
+          "poolId": "0x46525dc119850396470f132c4a989d7192cb692139db891b5a4cdcd684c11b17",
+          "blockNumber": 59780798,
+          "blockHash": "0x2e369ebf651d51b9fcf174ab9441b040720687a3321733a63a860e365cafbe5a",
+          "timestamp": 1789081362,
+          "logIndex": 40,
+          "kind": "swap",
+          "payload": {
+            "amount0": "-8087850303402181369791",
+            "amount1": "478407691",
+            "sqrtPriceX96": "19298387154697752390158",
+            "liquidity": "4538902491170790330",
+            "tick": -304572,
+            "swapFeePips": 3461
+          },
+          "rawFingerprint": "0xfc550c3abb211542057e6898eb913ca7646d02856efbe389821e6088a2f9cd7f"
+        },
+        {
+          "poolId": "0x46525dc119850396470f132c4a989d7192cb692139db891b5a4cdcd684c11b17",
+          "blockNumber": 59780798,
+          "blockHash": "0x2e369ebf651d51b9fcf174ab9441b040720687a3321733a63a860e365cafbe5a",
+          "timestamp": 1789081362,
+          "logIndex": 50,
+          "kind": "swap",
+          "payload": {
+            "amount0": "-3996919644589935220703",
+            "amount1": "236270639",
+            "sqrtPriceX96": "19294262966375063685275",
+            "liquidity": "4538902491170790330",
+            "tick": -304576,
+            "swapFeePips": 3461
+          },
+          "rawFingerprint": "0x5cfacbd2ae33e0f247ec1febad35f812e1d0d3060ec92ff5ea7c5a8de0f51bee"
+        },
+        {
+          "poolId": "0x46525dc119850396470f132c4a989d7192cb692139db891b5a4cdcd684c11b17",
+          "blockNumber": 59780800,
+          "blockHash": "0xfe3ae03c60dc4fe09d16e0f24523a6103552f963039cb36a556b58d0c593b41c",
+          "timestamp": 1789081362,
+          "logIndex": 46,
+          "kind": "swap",
+          "payload": {
+            "amount0": "-1413239767626486542547",
+            "amount1": "83516936",
+            "sqrtPriceX96": "19292805148456105699780",
+            "liquidity": "4538902491170790330",
+            "tick": -304578,
+            "swapFeePips": 3461
+          },
+          "rawFingerprint": "0x52159f468d404ae7a66e53c271d4d2b835796cdbce6f0b74e332e589cd0ac9fb"
+        },
+        {
+          "poolId": "0x46525dc119850396470f132c4a989d7192cb692139db891b5a4cdcd684c11b17",
+          "blockNumber": 59780882,
+          "blockHash": "0x4d4f6a6e883559ff3171f082327a53b86470786c4a757049c220bfc101409d30",
+          "timestamp": 1789081371,
+          "logIndex": 99,
+          "kind": "swap",
+          "payload": {
+            "amount0": "-86112067722300447321",
+            "amount1": "5088478",
+            "sqrtPriceX96": "19292716327255892519294",
+            "liquidity": "4538902491170790330",
+            "tick": -304578,
+            "swapFeePips": 3461
+          },
+          "rawFingerprint": "0x3bae0a2d203744472a5cc0b50a547be5410eaaefe847f1b2c4a842fc6a942a7f"
+        },
+        {
+          "poolId": "0x46525dc119850396470f132c4a989d7192cb692139db891b5a4cdcd684c11b17",
+          "blockNumber": 59780893,
+          "blockHash": "0xc82995f8f54a423fc47cc2285b021c609c75eea5e6625cd0186f926e242e83cf",
+          "timestamp": 1789081372,
+          "logIndex": 11,
+          "kind": "swap",
+          "payload": {
+            "amount0": "-1917551501766176448581",
+            "amount1": "113298564",
+            "sqrtPriceX96": "19290738660395085085264",
+            "liquidity": "4538902491170790330",
+            "tick": -304580,
+            "swapFeePips": 3461
+          },
+          "rawFingerprint": "0x0460429f6239c7761617e06a6199182586660c7165f3b63746157aa75c24524b"
+        },
+        {
+          "poolId": "0x46525dc119850396470f132c4a989d7192cb692139db891b5a4cdcd684c11b17",
+          "blockNumber": 59781107,
+          "blockHash": "0xaa4a974b42599adbb38ece809036d46c74d55695e580a332bbec3ec1bc671d84",
+          "timestamp": 1789081393,
+          "logIndex": 96,
+          "kind": "swap",
+          "payload": {
+            "amount0": "-2932415439280247173279",
+            "amount1": "173216903",
+            "sqrtPriceX96": "19287715097547216049419",
+            "liquidity": "4538902491170790330",
+            "tick": -304583,
+            "swapFeePips": 3461
+          },
+          "rawFingerprint": "0x6195892935ca111afd3e9ead3fe65e11ff69dc5c40488656639733b88647b32a"
+        },
+        {
+          "poolId": "0x46525dc119850396470f132c4a989d7192cb692139db891b5a4cdcd684c11b17",
+          "blockNumber": 59781221,
+          "blockHash": "0x1cc9481ae0c3a00ea0c07bd7c4d7e59ba234676244051643befe0828720168a6",
+          "timestamp": 1789081405,
+          "logIndex": 65,
+          "kind": "swap",
+          "payload": {
+            "amount0": "-656099757063000000000",
+            "amount1": "38748183",
+            "sqrtPriceX96": "19287038734184000508377",
+            "liquidity": "4538902491170790330",
+            "tick": -304584,
+            "swapFeePips": 3461
+          },
+          "rawFingerprint": "0x9a001d1f12b38df7d1b4d58b63fdd7477fe3c1f2f2344ef2401b40f329a35ab1"
+        },
+        {
+          "poolId": "0x46525dc119850396470f132c4a989d7192cb692139db891b5a4cdcd684c11b17",
+          "blockNumber": 59781727,
+          "blockHash": "0xf11c933df34e8ec67559dc9fe8aeb657acf4aba72f54212d741e42bbf50f1871",
+          "timestamp": 1789081456,
+          "logIndex": 52,
+          "kind": "swap",
+          "payload": {
+            "amount0": "-760402785011383900919",
+            "amount1": "44904750",
+            "sqrtPriceX96": "19286254905744205593660",
+            "liquidity": "4538902491170790330",
+            "tick": -304585,
+            "swapFeePips": 3461
+          },
+          "rawFingerprint": "0xd8f3dcdc2857d25fef0fdadeb707fe77256ff6e31cb22db85c34870c7691c4e2"
+        },
+        {
+          "poolId": "0x46525dc119850396470f132c4a989d7192cb692139db891b5a4cdcd684c11b17",
+          "blockNumber": 59782115,
+          "blockHash": "0xe3f7115f64fe0fd74db59a7253473e173dc721cf411b206e80b517e3a56c6952",
+          "timestamp": 1789081496,
+          "logIndex": 61,
+          "kind": "swap",
+          "payload": {
+            "amount0": "-19348269536988608003680",
+            "amount1": "1141364086",
+            "sqrtPriceX96": "19266331988365453447545",
+            "liquidity": "4538902491170790330",
+            "tick": -304605,
+            "swapFeePips": 3461
+          },
+          "rawFingerprint": "0x814fe778b7f1f8e8b09e5baf2c42cf120bdfa8a1b3b8270dde89e9e309821ebc"
+        },
+        {
+          "poolId": "0x46525dc119850396470f132c4a989d7192cb692139db891b5a4cdcd684c11b17",
+          "blockNumber": 59782278,
+          "blockHash": "0x62ae5ade63d3567943b3efaac320a29f686d0ff517f84242c6d2b4b585e93f8e",
+          "timestamp": 1789081512,
+          "logIndex": 14,
+          "kind": "swap",
+          "payload": {
+            "amount0": "-1925459938713838683061",
+            "amount1": "113454847",
+            "sqrtPriceX96": "19264351593527619626720",
+            "liquidity": "4538902491170790330",
+            "tick": -304607,
+            "swapFeePips": 3461
+          },
+          "rawFingerprint": "0x6aef89fb045ffaed3dd1f9e4c01aed0889b62614efa980105714377f2dd7f5d4"
+        },
+        {
+          "poolId": "0x46525dc119850396470f132c4a989d7192cb692139db891b5a4cdcd684c11b17",
+          "blockNumber": 59782774,
+          "blockHash": "0x2769443d70575c99132a61054eddc53b6cc9f3f80d0508488fddbb563977eb05",
+          "timestamp": 1789081562,
+          "logIndex": 11,
+          "kind": "swap",
+          "payload": {
+            "amount0": "6900299294053421913945",
+            "amount1": "-409528208",
+            "sqrtPriceX96": "19271475313683751670654",
+            "liquidity": "4538902491170790330",
+            "tick": -304600,
+            "swapFeePips": 3461
+          },
+          "rawFingerprint": "0xb81ab8c9bafa9c6557bda082e0ff66b197baa0327aac5bb42d872f502e9c4ad4"
+        },
+        {
+          "poolId": "0x46525dc119850396470f132c4a989d7192cb692139db891b5a4cdcd684c11b17",
+          "blockNumber": 59782917,
+          "blockHash": "0x12247f98ce527b6450bd0e3236379291fedca0bf7c6f7782bb7517928fb3cb97",
+          "timestamp": 1789081574,
+          "logIndex": 40,
+          "kind": "swap",
+          "payload": {
+            "amount0": "4158183459551661117882",
+            "amount1": "-246931727",
+            "sqrtPriceX96": "19275770677197475724396",
+            "liquidity": "4538902491170790330",
+            "tick": -304596,
+            "swapFeePips": 3461
+          },
+          "rawFingerprint": "0x888af37ffed87b23c2d51bf91779d540a33d24a12af6dea31bf271f7c86dd355"
+        },
+        {
+          "poolId": "0x46525dc119850396470f132c4a989d7192cb692139db891b5a4cdcd684c11b17",
+          "blockNumber": 59783099,
+          "blockHash": "0xae96c497c51652936f01a1847187122211bc9a3f2f2f33bc7814957c692af0a9",
+          "timestamp": 1789081593,
+          "logIndex": 12,
+          "kind": "swap",
+          "payload": {
+            "amount0": "-45699923243475663736202",
+            "amount1": "2689151232",
+            "sqrtPriceX96": "19228830582913312765924",
+            "liquidity": "4538902491170790330",
+            "tick": -304644,
+            "swapFeePips": 3461
+          },
+          "rawFingerprint": "0xf9fdac18fa886e56c7de10fe76f8a6d7cfeeba51960e205927958b2a41574f0d"
+        },
+        {
+          "poolId": "0x46525dc119850396470f132c4a989d7192cb692139db891b5a4cdcd684c11b17",
+          "blockNumber": 59783386,
+          "blockHash": "0x3f02dd2d366533f2f36825bac0b9a4b2d59635c45ae5ad0a2665a6492fc2efc4",
+          "timestamp": 1789081622,
+          "logIndex": 20,
+          "kind": "swap",
+          "payload": {
+            "amount0": "-153362327374179932558",
+            "amount1": "9002352",
+            "sqrtPriceX96": "19228673443636297037727",
+            "liquidity": "4538902491170790330",
+            "tick": -304645,
+            "swapFeePips": 3461
+          },
+          "rawFingerprint": "0xec00389fa0924f8fedb7f540b2a3a78751efbdcc7ba35b36896a7c3d3ede3a04"
+        },
+        {
+          "poolId": "0x46525dc119850396470f132c4a989d7192cb692139db891b5a4cdcd684c11b17",
+          "blockNumber": 59783722,
+          "blockHash": "0xab1cd0586bd03217d8f3562a6e7470f7e17865557501f623b84c48cb16ea49a1",
+          "timestamp": 1789081656,
+          "logIndex": 31,
+          "kind": "swap",
+          "payload": {
+            "amount0": "-303053610202520883693",
+            "amount1": "17788782",
+            "sqrtPriceX96": "19228362934087749039760",
+            "liquidity": "4538902491170790330",
+            "tick": -304645,
+            "swapFeePips": 3461
+          },
+          "rawFingerprint": "0x7c4e0a70db60f65047e2cd2d13692e4e2922114d131052b8c90d56eb7a87048a"
+        },
+        {
+          "poolId": "0x46525dc119850396470f132c4a989d7192cb692139db891b5a4cdcd684c11b17",
+          "blockNumber": 59784405,
+          "blockHash": "0xc504aa399780e03137a56fa86dc3e0d83bcfe50a34d3dfe2a3166d4b8dd3c375",
+          "timestamp": 1789081725,
+          "logIndex": 14,
+          "kind": "swap",
+          "payload": {
+            "amount0": "-347279315658316180751",
+            "amount1": "20384057",
+            "sqrtPriceX96": "19228007123091941559468",
+            "liquidity": "4538902491170790330",
+            "tick": -304645,
+            "swapFeePips": 3461
+          },
+          "rawFingerprint": "0x697a0d30a81b9b460bb4424c9dc6edd8bf5d200e9a757f357e17b3044bc124a7"
+        }
+      ]
+    }
+  ],
+  "canonicality": "boundary_and_event_hashes_rechecked_single_provider",
+  "expectedSnapshot": {
+    "number": 59784871,
+    "hash": "0x3194792a31427ca4df4e422e97b9e62a2db8c6c2b9193fe8924322864bddbb63",
+    "timestamp": 1789081772,
+    "sqrtPriceX96": "19228007123091941559468",
+    "tick": -304645,
+    "protocolFeeRaw": 2019821,
+    "lpFeePips": 2969,
+    "activeLiquidityRaw": "4538902491170790330",
+    "feeGrowthGlobalX128": [
+      "52224310350733970854223360942753289031689",
+      "1978806600714920153835352063"
+    ]
+  },
+  "selection": {
+    "fromBlock": 59774872,
+    "throughBlock": 59784871,
+    "initializationsObserved": 132,
+    "supportedInitializations": 84,
+    "candidatesExamined": 8,
+    "policy": "eight_oldest_supported_recent_initializations_ranked_by_observed_swap_count",
+    "candidateCountsStatus": "unreconciled_provider_selection_diagnostics",
+    "candidateSwapCounts": {
+      "0x9d1375e966955f774c7b3fefaf970d64e92532b230a043d26cd0d26019be4ace": 0,
+      "0x907628f7bc403369622fc49baed2917025d18dcc840e003d95ce75f33237ffc4": 0,
+      "0x949be2d830bf688b9176cae804efd1c51e5186045e4e78cdf4be04a9d716bfbf": 0,
+      "0x46525dc119850396470f132c4a989d7192cb692139db891b5a4cdcd684c11b17": 40,
+      "0x22431c51d32c3261aefd68e799f5b52e9ad2c1fdc18c575e231d2b45ea1519ea": 1,
+      "0x4484c75d65cf8d3c304a6f417186d574c136e4591c75ef64b24815452cdd7661": 20,
+      "0x81dd7715d4497088cab3dcef7b7ff02ab7366e64071b3b3876889645b55f9ba0": 0,
+      "0xd19fda4107c1fa0303df54f54ce0df95f67cbc63fa3f4f9af3b90ffa9675a0ff": 0
+    },
+    "selectedPool": "0x46525dc119850396470f132c4a989d7192cb692139db891b5a4cdcd684c11b17",
+    "globalBusiestAssessed": false
+  }
+}

@@ -7,6 +7,7 @@ from activity_store import PgActivity
 from catalogue import configured_catalogue
 from discovery import DataError, DiscoveryReader, ReadRpc, bytes32
 from local_config import load_config
+from pool_activity import ACTIVITY_CAPACITY_PROFILES
 from historical_capacity import PROFILES
 from position_store import PositionIndexer
 from read_service import bounded_transport
@@ -17,6 +18,9 @@ def main():
     parser.add_argument('--pool-id',required=True)
     parser.add_argument('--max-steps',type=int,default=5)
     parser.add_argument('--capacity-profile',choices=PROFILES,default='standard')
+    parser.add_argument('--activity-capacity-profile',choices=ACTIVITY_CAPACITY_PROFILES,default='standard')
+    parser.add_argument('--restart-unpublished-work',action='store_true',
+                        help='Discard only unpublished position work after source/method review; replay from its chunk start.')
     parser.add_argument('--output',type=Path,required=True)
     args=parser.parse_args()
     try:
@@ -28,22 +32,26 @@ def main():
         if not url:raise DataError('configured_rpc_required')
         DiscoveryReader(ReadRpc(url,transport=bounded_transport())).snapshot()
         store=PgActivity(catalogue);results=[]
+        if args.restart_unpublished_work:
+            result=PositionIndexer(store,ReadRpc(url,transport=bounded_transport(90),max_requests=160),
+                                   capacity=args.capacity_profile,activity_capacity=args.activity_capacity_profile).restart(pool_id)
+            results.append(result);print(json.dumps(result),flush=True)
         for _ in range(args.max_steps):
             result=PositionIndexer(store,ReadRpc(url,transport=bounded_transport(90),max_requests=160),
-                                   capacity=args.capacity_profile).step(pool_id)
+                                   capacity=args.capacity_profile,activity_capacity=args.activity_capacity_profile).step(pool_id)
             results.append(result);print(json.dumps(result),flush=True)
             if result['status']=='caught_up_to_activity':break
         report={'schemaVersion':1,'mode':'bounded_core_position_qualification','chainId':4663,
-                'poolId':pool_id,'steps':results,'result':store.read(pool_id),'liveExecution':False}
+                'poolId':pool_id,'activityCapacityProfile':args.activity_capacity_profile,'steps':results,'result':store.read(pool_id),'liveExecution':False}
         args.output.parent.mkdir(parents=True,exist_ok=True)
         with args.output.open('x') as stream:json.dump(report,stream,indent=2);stream.write('\n')
         return 0
     except DataError as error:
-        print(json.dumps({'status':'position_qualification_failed','reason':str(error),'previousCommittedProgressRetained':True}))
+        print(json.dumps({'status':'position_qualification_failed','reason':str(error),'activityCapacityProfile':args.activity_capacity_profile,'previousCommittedProgressRetained':True}))
         return 1
     except (OSError,ValueError,TypeError,KeyError):
         print(json.dumps({'status':'position_qualification_failed','reason':'local_operation_unavailable',
-                          'previousCommittedProgressRetained':True}))
+                          'activityCapacityProfile':args.activity_capacity_profile,'previousCommittedProgressRetained':True}))
         return 1
 
 

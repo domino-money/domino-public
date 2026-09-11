@@ -15,7 +15,8 @@ def digest(value):
 # A changed implementation requires an explicit restart of unpublished work;
 # it does not invalidate already qualified v1 capital chunks.
 METHOD_DIGEST = digest({name: hashlib.sha256((Path(__file__).parent / name).read_bytes()).hexdigest()
-    for name in ('capital_work.py', 'capital_store.py', 'position_store.py',
+    for name in ('capital_work.py', 'capital_store.py', 'position_store.py', 'historical_work.py',
+                 'activity_indexer.py',
                  'position_accounting.py', 'fee_accounting.py', 'v4_math.py',
                  'pool_activity.py', 'historical_capacity.py')})
 

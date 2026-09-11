@@ -9,12 +9,13 @@ from catalogue import configured_catalogue
 from discovery import DataError, ReadRpc, bytes32
 from historical_capacity import PROFILES, unavailable_work
 from local_config import load_config
+from pool_activity import ACTIVITY_CAPACITY_PROFILES
 from metrics_service import stored_metrics
 from price_history import AlchemyHistorical, store_observations
 from read_service import bounded_transport
 
 
-def run(pool_id, max_steps, fetch_prices, *, capacity='standard', restart_capital_work=False):
+def run(pool_id, max_steps, fetch_prices, *, capacity='standard', activity_capacity='standard', restart_capital_work=False):
     if type(max_steps) is not int or not 1 <= max_steps <= 50:
         raise DataError('invalid_metrics_bounds_or_output_exists')
     catalogue = configured_catalogue()
@@ -25,7 +26,8 @@ def run(pool_id, max_steps, fetch_prices, *, capacity='standard', restart_capita
         raise DataError('configured_rpc_required')
     store = PgActivity(catalogue);steps = []
     def worker():
-        return CapitalIndexer(store, ReadRpc(url, transport=bounded_transport(90), max_requests=160), capacity=capacity)
+        return CapitalIndexer(store, ReadRpc(url, transport=bounded_transport(90), max_requests=160), capacity=capacity,
+                              activity_capacity=activity_capacity)
     recovery = worker().restart(pool_id) if restart_capital_work else None
     if recovery:
         print(json.dumps(recovery), flush=True)
@@ -59,7 +61,7 @@ def run(pool_id, max_steps, fetch_prices, *, capacity='standard', restart_capita
                 prices.append(result);print(json.dumps(result), flush=True)
         metrics = stored_metrics(catalogue, pool_id)
     return {'schemaVersion': 1, 'mode': 'bounded_capital_and_prices_qualification', 'poolId': pool_id,
-            'capacityProfile': capacity, 'recovery': recovery, 'capitalLedger': capital,
+            'capacityProfile': capacity, 'activityCapacityProfile': activity_capacity, 'recovery': recovery, 'capitalLedger': capital,
             'steps': steps, 'priceIngestion': prices, 'result': metrics, 'liveExecution': False}
 
 
@@ -68,6 +70,7 @@ def main():
     parser.add_argument('--pool-id', required=True)
     parser.add_argument('--max-steps', type=int, default=6)
     parser.add_argument('--capacity-profile', choices=PROFILES, default='standard')
+    parser.add_argument('--activity-capacity-profile', choices=ACTIVITY_CAPACITY_PROFILES, default='standard')
     parser.add_argument('--restart-capital-work', action='store_true',
                         help='Discard only unpublished capital progress after operator review; retain all source/qualified rows')
     parser.add_argument('--fetch-prices', action='store_true')
@@ -77,17 +80,17 @@ def main():
         if not 1 <= args.max_steps <= 50 or args.output.exists():
             raise DataError('invalid_metrics_bounds_or_output_exists')
         result = run(bytes32(args.pool_id), args.max_steps, args.fetch_prices,
-                     capacity=args.capacity_profile, restart_capital_work=args.restart_capital_work)
+                     capacity=args.capacity_profile, activity_capacity=args.activity_capacity_profile, restart_capital_work=args.restart_capital_work)
         args.output.parent.mkdir(parents=True, exist_ok=True)
         with args.output.open('x') as stream:
             json.dump(result, stream, indent=2);stream.write('\n')
         return 0
     except DataError as error:
         print(json.dumps({'status': 'metrics_qualification_failed', 'reason': str(error),
-                          'previousCommittedProgressRetained': True}));return 1
+                          'activityCapacityProfile': args.activity_capacity_profile, 'previousCommittedProgressRetained': True}));return 1
     except (OSError, ValueError, TypeError, KeyError):
         print(json.dumps({'status': 'metrics_qualification_failed', 'reason': 'local_operation_unavailable',
-                          'previousCommittedProgressRetained': True}));return 1
+                          'activityCapacityProfile': args.activity_capacity_profile, 'previousCommittedProgressRetained': True}));return 1
 
 
 if __name__ == '__main__':

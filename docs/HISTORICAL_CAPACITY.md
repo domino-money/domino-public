@@ -1,6 +1,6 @@
 # Historical ledger capacity and recovery
 
-The optional historical audit workers qualify stored core pool activity. Their resource profiles do not admit a pool for execution, establish wallet ownership, provide prices, or make full-history replay a prerequisite for on-demand reads. These commands require an explicitly configured archive-capable provider when actually run. The implementation and regressions were tested with synthetic RPC fixtures, disposable PostgreSQL and an isolated v4 EVM reference; no new live backfill was performed.
+The optional historical audit workers qualify stored core pool activity. Their resource profiles do not admit a pool for execution, establish wallet ownership, provide prices, or make full-history replay a prerequisite for on-demand reads. These commands require an explicitly configured archive-capable provider when actually run. Capacity and recovery regressions use synthetic RPC fixtures, disposable PostgreSQL and an isolated v4 EVM reference. Separate bounded public fee-step measurements and their source coverage are recorded in [the benchmark report](../reports/FEE_STEP_BENCHMARK.md); they do not populate a deployed ledger.
 
 This documentation was originally examined against [PR #54](https://github.com/domino-money/domino/pull/54), commit `973fec82cfa47134b6b45c6a351357b2d5edc86b`. Its capital commands and migration 012 are now integrated into main at `03ec1fad96122ca4cf163fc62da3d866f3e7cd87`, alongside the already merged #29 fee/position resume. Check that the relevant implementation and migrations are present before using its commands. This status update adds no runtime capability, requalification or deployment.
 
@@ -17,7 +17,8 @@ This documentation was originally examined against [PR #54](https://github.com/d
 | 60 total RPC requests / 90 seconds | One fee CLI worker instance | Fix provider availability, then resume |
 | 8 MiB serialized progress | One unpublished pool/ledger checkpoint | Capacity review; no partial values published |
 | 2,000 events | One source activity chunk | Reduce future activity spans; a single over-capacity block needs separate design |
-| 5,000 live aggregate ranges | Activity replay, independent of core identities | Capacity review; smaller spans cannot reduce simultaneous live ranges |
+| 5,000 live aggregate ranges | `standard` activity profile, independent of core identities | Explicitly select the `extended` activity profile and repeat the uncommitted interval |
+| 10,000 live aggregate ranges | `extended` activity profile | Capacity review; no larger shipped profile, no truncation or unlimited mode |
 | 50 batches | One explicit CLI invocation | Run another bounded invocation with a new report filename |
 
 These are operational limits. v4 uint128/int128 bounds, fee-growth wrapping, tick-spacing alignment, exact swap outcomes, donation/protocol separation, position fee debt, settlement-journal totals and token-asset conservation are correctness requirements and do not change with a profile. The tick-liquidity cap continues to match pinned v4-core revision `46c6834698c48bc4a463a86d8420f4eb1d7f3b75`: its negative minimum tick division is floored. For spacing 60, the cap is `11505354575363080317263139282924270`; using truncation toward zero would incorrectly increase that cap. The unmodified vendored source and its hashes are checked, and the external test harness compares admission against the compiled v4 function.
@@ -45,15 +46,16 @@ An operator should use this sequence when approaching or reaching a ceiling:
 
 This explains the narrower [issue #18 acceptance](https://github.com/domino-money/domino/issues/18#issuecomment-5625151665). It does not claim to satisfy the original live-tick-only budget proposal. [Identity retirement criteria](IDENTITY_RETIREMENT.md) identify the outstanding proof before any future implementation can safely reclaim working-set capacity.
 
-The [bounded real-pool step benchmark](../reports/FEE_STEP_BENCHMARK.md) examined
-the five chunks in the existing 2026-09-09 public qualification window. The
-busiest **among those examined chunks** had 10 events, 4 swaps and 30 candidate
-steps (0.03% of 100,000); the other four were empty. Actual batch replay reproduced
-the single-pass result. The projected public events and a credential-free replay
-command are committed for reproduction. This sparse sample does not establish
-the busiest-ever chunk or calibrate the resource ceiling for high-activity pools;
-that broader evidence remains open. Acquisition failure is unavailable with null
-measurements, distinct from an examined empty chunk with zero steps.
+The [bounded real-pool step benchmark](../reports/FEE_STEP_BENCHMARK.md) keeps
+each dataset, measured scope, busiest examined chunk, acquisition exclusions and
+replay command together. Candidate steps include failed candidate attempts, not
+only accepted swaps or initialized-tick crossings. The original five sparse
+chunks (30 steps at most) and later complete 40-swap lifecycle (240 steps) are
+baseline evidence, not a high-load calibration. Synthetic stress proves the
+actual 100,000/100,001 boundary and resumability separately from representativeness.
+Acquisition failure is unavailable with null measurements, distinct from an
+examined empty chunk with zero steps. Do not infer a global busiest pool or a
+production service capacity from a bounded sample.
 
 ## What is durable and what is available
 
@@ -82,6 +84,17 @@ backend/.venv/bin/python backend/manage_positions.py --pool-id "$POOL_ID" --capa
 
 `--max-steps` now counts bounded batches, so a large source chunk can require multiple invocations. The command does not retry forever, schedule future runs, erase a previous report, or move the activity checkpoint. The 100,000-step budget is shared across all attempted candidates in a batch, including rejected attempts. If a later event exhausts it, only earlier complete events are saved; the failing event starts from that prefix in a new invocation. An individual candidate over 8,192 steps still blocks. A whole replay batch can also roll back for a correctness error or an identity/byte limit, retaining its earlier durable prefix.
 
+The current reconstruction tries at most eight candidates per swap. Usually
+there are up to two consumed-amount modes at the extreme limit and four at the
+observed ending price. When both limits coincide, each iteration can try four
+candidates; the implementation retains both iterations. A completed swap therefore
+consumes at most 65,536 admitted simulation steps (8 × 8,192), below the 100,000
+shared budget. A fresh batch can fit one such swap, not necessarily two. This
+explains the relationship between the ceilings, not a claim that every real swap
+is supported: one candidate can still exceed its own limit. The benchmark
+documents observed work separately, and non-simulation work remains bounded by
+event/model limits.
+
 For an offline diagnostic with an already configured local database, use the existing read-only database role and query the public work table; this does not require an RPC call:
 
 ```sql
@@ -90,7 +103,60 @@ FROM domino_activity.historical_work
 ORDER BY pool_id, ledger;
 ```
 
-The activity live-range limit is distinct from historical identity accumulation. Smaller `manage_activity.py --span` values affect only future uncommitted log intervals. They do not modify existing chunks or cure simultaneous live-range/single-event limits. Existing stored fee/position chunks use the resumable procedure above, so destructive repartitioning is unnecessary.
+## Resume an activity range overflow
+
+Activity profiles bound simultaneously nonzero aggregate `(lower, upper)` ranges,
+independently of lifetime core position/tick profiles. They are selected explicitly:
+
+```sh
+backend/.venv/bin/python backend/manage_activity.py --pool-id "$POOL_ID" --status
+backend/.venv/bin/python backend/manage_activity.py --pool-id "$POOL_ID" --capacity-profile extended --through "$TARGET_BLOCK" --output reports/activity-extended-01.json
+```
+
+Migration `013_activity_diagnostics.sql` persists a range failure against its
+checkpoint revision and predecessor. `--status` reads it without provider
+configuration or RPC; it is stored operator evidence, not a fresh chain read.
+Stop conflicting writers, inspect the failed interval/profile, and keep the
+registered pool and target. The failed chunk has published no events and has
+not advanced the checkpoint. Extended replays that interval from the preceding
+committed model under the same event, canonicality and StateView checks. It does
+not skip an event or reinterpret a previously qualified model. A successful
+commit or canonical rewind clears the diagnostic atomically; a failed recorder
+does not replace the original error.
+
+Keep selecting extended for subsequent intervals while the model exceeds the
+standard limit. An inherited model over the selected limit is rejected even on
+an empty interval or one that would remove ranges. Above 10,000, keep the ledger
+unavailable and request a reviewed capacity change. Repeating the same command,
+choosing smaller spans or deleting history cannot solve that simultaneous limit.
+Smaller `--span` values only help the separate 2,000-events-per-chunk limit on
+future uncommitted intervals; a single block above that ceiling remains unsupported.
+
+The fee, position and capital CLIs separately accept
+`--activity-capacity-profile extended` to replay an extended activity model.
+Their existing `--capacity-profile` still selects lifetime identity/tick capacity:
+128/256 standard or 1,024/2,048 extended. For example:
+
+```sh
+backend/.venv/bin/python backend/manage_fees.py --pool-id "$POOL_ID" --activity-capacity-profile extended --output reports/fees-extended-activity-01.json
+backend/.venv/bin/python backend/manage_positions.py --pool-id "$POOL_ID" --activity-capacity-profile extended --capacity-profile extended --output reports/positions-extended-activity-01.json
+backend/.venv/bin/python backend/manage_metrics.py --pool-id "$POOL_ID" --activity-capacity-profile extended --capacity-profile extended --output reports/capital-extended-activity-01.json
+```
+
+Activity capacity is not proof of downstream capacity. A 5,001-range source may
+qualify activity and fees yet still exceed the independent position/capital
+identity limit. Those financial quantities remain unavailable with their own
+diagnostics; source activity and earlier qualified history are retained. The raw
+historical action `review_activity_capacity_profile_then_resume` tells the
+operator to inspect the selected activity profile, use extended if still standard,
+or seek a capacity review if already extended. It never authorizes an automatic
+increase. Profile selection changes resources, not arithmetic or model content.
+
+Changing the worker implementation invalidates unfinished method-bound work.
+Review its diagnostic and changed code first, then use the existing explicit
+fee/position `--restart-unpublished-work` or capital `--restart-capital-work`
+procedure, with the intended profiles. This removes only that ledger's unpublished
+work and replays its retained source chunk. Published history is not rewritten.
 
 ## Capital-specific resume and recovery
 
@@ -112,7 +178,7 @@ Capital work binds its source chunk, events, preceding model and qualified posit
 backend/.venv/bin/python backend/manage_metrics.py --pool-id "$POOL_ID" --capacity-profile extended --restart-capital-work --max-steps 10 --output reports/capital-reviewed-restart-01.json
 ```
 
-The explicit restart holds the writer lock, verifies the source block/tail and removes only that pool's unpublished `capital` row. It retains source events, fee/position ledgers and all published capital. The command prints and records the previous diagnostic and discarded checkpoint digest, then replays the source from the beginning of that unpublished chunk. It is an operator CLI action, with no HTTP equivalent or automatic retry. It does not solve a genuinely unsupported single event, an extended-profile overflow or a bad source ledger. Those still require a capacity/source correction. Generic fee/position method-restart work remains separate in #19; #18 documents lifetime limits and [future retirement criteria](IDENTITY_RETIREMENT.md), without implementing retirement.
+The explicit restart holds the writer lock, verifies the source block/tail and removes only that pool's unpublished `capital` row. It retains source events, fee/position ledgers and all published capital. The command prints the previous diagnostic and discarded checkpoint digest and includes them in its successful report, then replays the source from the beginning of that unpublished chunk. It is an operator CLI action, with no HTTP equivalent or automatic retry. It does not solve an unsupported single event, an extended-profile overflow or a bad source ledger. Those still require a capacity/source correction. Fee/position workers provide the analogous `--restart-unpublished-work` flag; #18 documents lifetime limits and [future retirement criteria](IDENTITY_RETIREMENT.md), without implementing retirement.
 
 ## Independent downstream limits
 

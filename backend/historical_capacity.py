@@ -9,6 +9,7 @@ from dataclasses import dataclass
 from psycopg.types.json import Jsonb
 
 from discovery import DataError
+from pool_activity import check_activity_capacity
 
 
 @dataclass(frozen=True)
@@ -23,6 +24,11 @@ PROFILES = {'standard': Capacity('standard', 128, 256),
 MAX_BATCH_EVENTS = 32
 MAX_BATCH_CHECKS = 128
 MAX_PROGRESS_BYTES = 8 * 1024 * 1024
+
+
+def maximum_checks():
+    # Each identity has at most one distinct range and two known boundaries.
+    return max(profile.positions * 2 + profile.ticks for profile in PROFILES.values())
 
 
 def capacity_profile(name):
@@ -41,7 +47,7 @@ def load_work(conn, pool_id, ledger, chunk_start):
             raise DataError('historical_work_version_mismatch')
         offset,total,checks=value.get('offset'),value.get('totalEvents'),value.get('checks',0)
         if (type(offset) is not int or type(total) is not int or not 0<=offset<=total<=2000 or
-                type(checks) is not int or not 0<=checks<=4096 or
+                type(checks) is not int or not 0<=checks<=maximum_checks() or
                 (checks and offset!=total) or not isinstance(value.get('rows'),list) or
                 len(value['rows'])>offset or not isinstance(value.get('model'),dict) or
                 value['model'].get('version')!=1 or not isinstance(value.get('activity'),dict)):
@@ -53,7 +59,7 @@ def diagnostic(chunk, profile, progress, reason=None):
     view=progress if isinstance(progress,dict) else {}
     def count(name,default=None):
         value=view.get(name,default)
-        return value if type(value) is int and 0<=value<=4096 else default
+        return value if type(value) is int and 0<=value<=max(2000,maximum_checks()) else default
     return {'status': 'blocked' if reason else 'in_progress', 'reason': reason,
             'capacityProfile': profile.name, 'fromBlock': chunk['start_block'],
             'throughBlock': chunk['end_block'],
@@ -70,19 +76,29 @@ def diagnostic(chunk, profile, progress, reason=None):
                 else 'capacity_review_required' if reason in
                 {'core_position_budget_exhausted', 'core_tick_budget_exhausted',
                  'fee_step_budget_exhausted', 'historical_work_byte_budget_exhausted'}
+                else 'review_activity_capacity_profile_then_resume' if reason == 'activity_range_budget_exhausted'
                 else 'restart_capital_work_after_review' if reason in
                 {'capital_work_method_mismatch', 'capital_work_source_mismatch',
                  'capital_work_checkpoint_mismatch'}
+                else 'restart_unpublished_work_after_review' if reason in
+                {'historical_work_version_mismatch', 'historical_work_method_mismatch',
+                 'historical_work_source_mismatch', 'historical_work_checkpoint_mismatch'}
                 else 'repair_source_then_resume' if reason else 'resume_same_command')}
 
 
-def check_work_size(progress):
-    if len(json.dumps(progress).encode()) > MAX_PROGRESS_BYTES:
+def check_work_size(progress, conn=None):
+    # Use the same normalization and UTF-8 byte count as the migration CHECK.
+    # JSONB expands exponents and normalizes whitespace/escapes; json.dumps alone
+    # can undercount or reject a valid payload. Check before any publication too.
+    size = (conn.execute('SELECT octet_length(%s::jsonb::text) AS size',
+                         (Jsonb(progress),)).fetchone()['size'] if conn is not None
+            else len(json.dumps(progress).encode()))
+    if size > MAX_PROGRESS_BYTES:
         raise DataError('historical_work_byte_budget_exhausted')
 
 
 def save_work(conn, pool_id, ledger, chunk, profile, progress):
-    check_work_size(progress)
+    check_work_size(progress, conn)
     detail = diagnostic(chunk, profile, progress)
     conn.execute('''INSERT INTO domino_activity.historical_work VALUES(%s,%s,%s,%s,%s)
       ON CONFLICT(pool_id,ledger) DO UPDATE SET chunk_start=EXCLUDED.chunk_start,
@@ -129,7 +145,7 @@ def unavailable_work(conn, pool_id, ledger):
     return {'historicalWork': detail, **({'reason': detail['reason']} if detail['reason'] else {})}
 
 
-def replay_batch(replay, activity, model, events, offset, pool_id, key, *, capacity=None):
+def replay_batch(replay, activity, model, events, offset, pool_id, key, *, capacity=None, activity_capacity='standard'):
     """Commit complete events only; share one simulation budget across this batch.
 
     A failed event consumes this invocation's budget, but cannot mutate the last
@@ -137,12 +153,14 @@ def replay_batch(replay, activity, model, events, offset, pool_id, key, *, capac
     A single event that exceeds the fixed limit remains explicitly unsupported.
     """
     from fee_accounting import MAX_CHUNK_STEPS
+    check_activity_capacity(activity,activity_capacity)
     budget = [MAX_CHUNK_STEPS]
     rows = []
     end = min(len(events), offset + MAX_BATCH_EVENTS)
     for index in range(offset, end):
         try:
-            args = {'budget': budget, **({'capacity': capacity} if capacity is not None else {})}
+            args = {'budget': budget, 'activity_capacity': activity_capacity,
+                    **({'capacity': capacity} if capacity is not None else {})}
             next_activity, next_model, changes = replay(activity, model, [events[index]], pool_id, key, **args)
         except DataError as error:
             if str(error) == 'fee_step_budget_exhausted' and index > offset:

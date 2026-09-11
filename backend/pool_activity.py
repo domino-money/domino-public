@@ -17,7 +17,24 @@ MODIFY = topic('ModifyLiquidity(bytes32,address,int24,int24,int256,bytes32)')
 DONATE = topic('Donate(bytes32,address,uint256,uint256)')
 PROTOCOL = topic('ProtocolFeeUpdated(bytes32,uint24)')
 TOPICS = [INITIALIZE_TOPIC, SWAP, MODIFY, DONATE, PROTOCOL]
+# Live-range resource profiles; these are not v4 arithmetic/identity limits.
+# Selection is explicit for each worker and never inherited from persisted state.
 MAX_RANGES = 5000
+ACTIVITY_CAPACITY_PROFILES = {'standard': MAX_RANGES, 'extended': 10000}
+
+
+def activity_range_limit(capacity='standard'):
+    if type(capacity) is not str or capacity not in ACTIVITY_CAPACITY_PROFILES:
+        raise DataError('invalid_activity_capacity_profile')
+    return ACTIVITY_CAPACITY_PROFILES[capacity]
+
+
+def check_activity_capacity(model, capacity='standard'):
+    limit = activity_range_limit(capacity)
+    if model is not None and len(model['ranges']) > limit:
+        raise DataError('activity_range_budget_exhausted')
+    return limit
+
 MAX_SQRT = 1461446703485210103287273052203988822378723970342
 MIN_SQRT = 4295128739
 
@@ -100,8 +117,9 @@ def active_liquidity(model, tick=None):
                if (bounds:=key.split(':')) and int(bounds[0])<=tick<int(bounds[1]))
 
 
-def replay(model, events, pool_id, key):
+def replay(model, events, pool_id, key, *, capacity='standard'):
     """Replay ordered, canonical event candidates. Reject incomplete liquidity history."""
+    limit=check_activity_capacity(model,capacity)
     key=checked_key(key,pool_id)
     state=copy.deepcopy(model)
     for event in events:
@@ -127,7 +145,7 @@ def replay(model, events, pool_id, key):
                 state['ranges'][slot]=str(value)
             else:
                 state['ranges'].pop(slot,None)
-            if len(state['ranges'])>MAX_RANGES:
+            if len(state['ranges'])>limit:
                 raise DataError('activity_range_budget_exhausted')
         elif kind=='swap':
             if active_liquidity(state,p['tick'])!=int(p['liquidity']):

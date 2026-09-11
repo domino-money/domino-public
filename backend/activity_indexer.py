@@ -4,11 +4,14 @@ from dataclasses import asdict
 from catalogue import checked_key
 from catalogue_indexer import CatalogueIndexer, INITIALIZE_TOPIC
 from discovery import POOL_MANAGER, STATE_VIEW, DataError, bytes32
-from pool_activity import TOPICS, active_liquidity, decode_activity, replay, valid_price, protocol_directions
+from pool_activity import (TOPICS, active_liquidity, activity_range_limit,
+                           decode_activity, replay, valid_price, protocol_directions)
 
 
 class ActivityIndexer:
-    def __init__(self,store,rpc):
+    def __init__(self,store,rpc,*,capacity='standard'):
+        self.range_limit=activity_range_limit(capacity)
+        self.capacity=capacity
         self.store,self.rpc=store,rpc
         self.chain=CatalogueIndexer(store.catalogue,rpc)
 
@@ -78,6 +81,20 @@ class ActivityIndexer:
         pool_id=bytes32(pool_id)
         if type(through) is not int or through<1 or type(span) is not int or not 1<=span<=10000:
             raise DataError('invalid_activity_bounds')
+        attempt={}
+        try:
+            return self._step(pool_id,through=through,span=span,attempt=attempt)
+        except DataError as error:
+            if str(error)=='activity_range_budget_exhausted' and attempt:
+                # This runs after the indexing transaction rolled back. A stale
+                # writer or a diagnostic outage must not alter/mask that result.
+                try:
+                    self.store.record_range_failure(pool_id,attempt)
+                except DataError:
+                    pass
+            raise
+
+    def _step(self,pool_id,*,through,span,attempt):
         self.chain.check_chain()
         with self.store.catalogue.connection(writer=True,lock=True) as conn:
             row=self.store.pool(conn,pool_id)
@@ -117,7 +134,12 @@ class ActivityIndexer:
             events.sort(key=lambda e:(e['blockNumber'],e['logIndex']))
             if any(a['timestamp']>b['timestamp'] for a,b in zip(events,events[1:])):
                 raise DataError('activity_timestamp_regression')
-            model=replay(tail['model'] if tail else None,events,pool_id,row['pool_key'])
+            attempt.update({'checkpointRevision':row['revision'],'fromBlock':start,
+                'attemptedThroughBlock':end,'attemptedEndHash':block.hash,
+                'predecessorHash':before.hash,'capacityProfile':self.capacity,'liveRangeLimit':self.range_limit,
+                'observedLiveRangesAtLeast':max(self.range_limit+1,len(tail['model']['ranges']) if tail else 0),
+                'lastCommittedLiveRanges':len(tail['model']['ranges']) if tail else 0})
+            model=replay(tail['model'] if tail else None,events,pool_id,row['pool_key'],capacity=self.capacity)
             if model is None:
                 raise DataError('initialize_anchor_not_found')
             state=self.read_state(pool_id,block,checked_key(row['pool_key'],pool_id))
@@ -129,4 +151,5 @@ class ActivityIndexer:
                 raise DataError('activity_snapshot_reorganized')
             self.store.commit(conn,row,block,model,state,events)
             return {'status':'indexed','fromBlock':start,'through':end,'events':len(events),
-                    'activeRanges':len(model['ranges']),'stateReconciled':True}
+                    'activeRanges':len(model['ranges']),'stateReconciled':True,
+                    'capacityProfile':self.capacity,'liveRangeLimit':self.range_limit}

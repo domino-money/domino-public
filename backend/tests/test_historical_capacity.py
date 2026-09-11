@@ -101,12 +101,13 @@ class CapacityDomainTests(unittest.TestCase):
             self.assertEqual((a,m,rows),expected)
 
     def test_shared_step_exhaustion_saves_only_complete_event_prefix(self):
-        def bounded(a,m,events,pool,key,*,budget):
+        def bounded(a,m,events,pool,key,*,budget,activity_capacity):
+            self.assertEqual(activity_capacity,'standard')
             budget[0]-=60000
             if budget[0]<0:raise DataError('fee_step_budget_exhausted')
-            return events[0],events[0],[events[0]]
+            return {'ranges':{},'event':events[0]},events[0],[events[0]]
         a,m,rows,offset=replay_batch(bounded,None,None,[1,2,3],0,POOL,self.key)
-        self.assertEqual((a,m,rows,offset),(1,1,[1],1))
+        self.assertEqual((a,m,rows,offset),({'ranges':{},'event':1},1,[1],1))
         self.assertEqual(replay_batch(bounded,a,m,[1,2,3],offset,POOL,self.key)[3],2)
         with patch('fee_accounting.MAX_CHUNK_STEPS',1):
             with self.assertRaisesRegex(DataError,'fee_step_budget_exhausted'):

@@ -1,0 +1,29 @@
+{
+  "schemaVersion": 1,
+  "source": "explicit_product_configured_rpc",
+  "chainId": 4663,
+  "poolId": "0xa2d27dad5411f79bb8667d1d5306fa159b36d3c856d15930eb9188696e0da180",
+  "snapshot": {
+    "number": 59804470,
+    "hash": "0xd769c57fa898ddcc03700a54519bb2adc0da237a9f1c43e0b88972f92dc774cb",
+    "timestamp": 1789083749,
+    "sqrtPriceX96": "1727000378492918118492",
+    "tick": -352847,
+    "protocolFeeRaw": 4097000,
+    "lpFeePips": 70000,
+    "activeLiquidityRaw": "169259521516519851",
+    "feeGrowthGlobalX128": [
+      "4611079597740526432930834808841114859175300324",
+      "1066363204802367011109512717486"
+    ]
+  },
+  "rpcRequests": 7,
+  "requestLimit": 8,
+  "secondsLimit": 20,
+  "chainChecked": true,
+  "blockHashRechecked": true,
+  "ledgerWritten": false,
+  "executionAvailable": false,
+  "status": "state_available",
+  "feeReplayPerformed": false
+}

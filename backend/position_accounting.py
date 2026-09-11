@@ -9,7 +9,7 @@ from eth_hash.auto import keccak
 
 from discovery import DataError, address, bytes32
 from fee_accounting import MAX_CHUNK_STEPS, reconstruct_swap, supported
-from pool_activity import active_liquidity, replay
+from pool_activity import active_liquidity, check_activity_capacity, replay
 from v4_math import Q128, U256, amount_delta, sqrt_at_tick, tick_at_sqrt
 
 VERSION = 1
@@ -122,7 +122,8 @@ def assert_position_liquidity(model, activity):
         raise DataError('core_position_range_mismatch')
 
 
-def replay_positions(activity_model, position_model, events, pool_id, key, *, observe=None, capacity=None, budget=None):
+def replay_positions(activity_model, position_model, events, pool_id, key, *, observe=None, capacity=None, budget=None, activity_capacity='standard'):
+    check_activity_capacity(activity_model,activity_capacity)
     if not supported(key):
         raise DataError('position_accounting_adapter_required')
     activity, model = copy.deepcopy(activity_model),copy.deepcopy(position_model)
@@ -173,7 +174,7 @@ def replay_positions(activity_model, position_model, events, pool_id, key, *, ob
             amounts=[int(p[f'amount{i}']) for i in (0,1)]
             model['growthX128']=[str((int(model['growthX128'][i])+amounts[i]*Q128//liquidity) & U256) for i in (0,1)]
             add_pair(model,'lpAssetsRaw',amounts);add_pair(model,'donationsRaw',amounts)
-        activity=replay(activity,[event],pool_id,key.__dict__)
+        activity=replay(activity,[event],pool_id,key.__dict__,capacity=activity_capacity)
         assert_position_liquidity(model,activity)
         if any(int(x)<0 for x in model['lpAssetsRaw']):
             raise DataError('negative_core_pool_assets')

@@ -1,0 +1,220 @@
+{
+  "schemaVersion": 1,
+  "mode": "synthetic_fee_step_stress",
+  "source": "synthetic-stress",
+  "status": "measured",
+  "canonicality": "synthetic_not_chain_evidence",
+  "currentCanonicalityAssessed": false,
+  "productionCapacityCalibrated": false,
+  "executionAvailable": false,
+  "ledgerWritten": false,
+  "rpcRequests": 0,
+  "limits": {
+    "candidateSteps": 8192,
+    "sharedSteps": 100000,
+    "aggregateStepAttempts": 1000000,
+    "generationAndReplaySeconds": 30
+  },
+  "chunks": [
+    {
+      "fromBlock": 10,
+      "throughBlock": 10,
+      "events": 361,
+      "swaps": 160,
+      "inputSha256": "a51518aed8bdef6cbffbbb283f127d93eb52f1460773d11ab0bcee741e129242",
+      "status": "over_budget",
+      "reason": "fee_step_budget_exhausted",
+      "exhaustedBound": "shared_steps",
+      "candidateStepsAdmitted": 100000,
+      "candidateStepAttempts": 100001,
+      "sharedBudgetUsedPercent": 100.0,
+      "replayMilliseconds": 321.769,
+      "resumeBatches": [
+        {
+          "fromEventOffset": 0,
+          "nextEventOffset": 32,
+          "candidateStepsAdmitted": 0,
+          "candidateStepAttempts": 0
+        },
+        {
+          "fromEventOffset": 32,
+          "nextEventOffset": 64,
+          "candidateStepsAdmitted": 0,
+          "candidateStepAttempts": 0
+        },
+        {
+          "fromEventOffset": 64,
+          "nextEventOffset": 96,
+          "candidateStepsAdmitted": 0,
+          "candidateStepAttempts": 0
+        },
+        {
+          "fromEventOffset": 96,
+          "nextEventOffset": 128,
+          "candidateStepsAdmitted": 0,
+          "candidateStepAttempts": 0
+        },
+        {
+          "fromEventOffset": 128,
+          "nextEventOffset": 160,
+          "candidateStepsAdmitted": 0,
+          "candidateStepAttempts": 0
+        },
+        {
+          "fromEventOffset": 160,
+          "nextEventOffset": 192,
+          "candidateStepsAdmitted": 0,
+          "candidateStepAttempts": 0
+        },
+        {
+          "fromEventOffset": 192,
+          "nextEventOffset": 224,
+          "candidateStepsAdmitted": 27600,
+          "candidateStepAttempts": 27600
+        },
+        {
+          "fromEventOffset": 224,
+          "nextEventOffset": 256,
+          "candidateStepsAdmitted": 38400,
+          "candidateStepAttempts": 38400
+        },
+        {
+          "fromEventOffset": 256,
+          "nextEventOffset": 288,
+          "candidateStepsAdmitted": 38400,
+          "candidateStepAttempts": 38400
+        },
+        {
+          "fromEventOffset": 288,
+          "nextEventOffset": 320,
+          "candidateStepsAdmitted": 38400,
+          "candidateStepAttempts": 38400
+        },
+        {
+          "fromEventOffset": 320,
+          "nextEventOffset": 352,
+          "candidateStepsAdmitted": 38400,
+          "candidateStepAttempts": 38400
+        },
+        {
+          "fromEventOffset": 352,
+          "nextEventOffset": 361,
+          "candidateStepsAdmitted": 10800,
+          "candidateStepAttempts": 10800
+        }
+      ],
+      "processedEvents": 361,
+      "resumeStatus": "complete",
+      "resumedEqualsSinglePass": null,
+      "outputSha256": "aa9d4b60a90785f0122acec80ddee3a7f2e1efe5116bf47fcbbb326ac15f53a1"
+    }
+  ],
+  "busiestExaminedChunk": {
+    "fromBlock": 10,
+    "throughBlock": 10,
+    "events": 361,
+    "swaps": 160,
+    "inputSha256": "a51518aed8bdef6cbffbbb283f127d93eb52f1460773d11ab0bcee741e129242",
+    "status": "over_budget",
+    "reason": "fee_step_budget_exhausted",
+    "exhaustedBound": "shared_steps",
+    "candidateStepsAdmitted": 100000,
+    "candidateStepAttempts": 100001,
+    "sharedBudgetUsedPercent": 100.0,
+    "replayMilliseconds": 321.769,
+    "resumeBatches": [
+      {
+        "fromEventOffset": 0,
+        "nextEventOffset": 32,
+        "candidateStepsAdmitted": 0,
+        "candidateStepAttempts": 0
+      },
+      {
+        "fromEventOffset": 32,
+        "nextEventOffset": 64,
+        "candidateStepsAdmitted": 0,
+        "candidateStepAttempts": 0
+      },
+      {
+        "fromEventOffset": 64,
+        "nextEventOffset": 96,
+        "candidateStepsAdmitted": 0,
+        "candidateStepAttempts": 0
+      },
+      {
+        "fromEventOffset": 96,
+        "nextEventOffset": 128,
+        "candidateStepsAdmitted": 0,
+        "candidateStepAttempts": 0
+      },
+      {
+        "fromEventOffset": 128,
+        "nextEventOffset": 160,
+        "candidateStepsAdmitted": 0,
+        "candidateStepAttempts": 0
+      },
+      {
+        "fromEventOffset": 160,
+        "nextEventOffset": 192,
+        "candidateStepsAdmitted": 0,
+        "candidateStepAttempts": 0
+      },
+      {
+        "fromEventOffset": 192,
+        "nextEventOffset": 224,
+        "candidateStepsAdmitted": 27600,
+        "candidateStepAttempts": 27600
+      },
+      {
+        "fromEventOffset": 224,
+        "nextEventOffset": 256,
+        "candidateStepsAdmitted": 38400,
+        "candidateStepAttempts": 38400
+      },
+      {
+        "fromEventOffset": 256,
+        "nextEventOffset": 288,
+        "candidateStepsAdmitted": 38400,
+        "candidateStepAttempts": 38400
+      },
+      {
+        "fromEventOffset": 288,
+        "nextEventOffset": 320,
+        "candidateStepsAdmitted": 38400,
+        "candidateStepAttempts": 38400
+      },
+      {
+        "fromEventOffset": 320,
+        "nextEventOffset": 352,
+        "candidateStepsAdmitted": 38400,
+        "candidateStepAttempts": 38400
+      },
+      {
+        "fromEventOffset": 352,
+        "nextEventOffset": 361,
+        "candidateStepsAdmitted": 10800,
+        "candidateStepAttempts": 10800
+      }
+    ],
+    "processedEvents": 361,
+    "resumeStatus": "complete",
+    "resumedEqualsSinglePass": null,
+    "outputSha256": "aa9d4b60a90785f0122acec80ddee3a7f2e1efe5116bf47fcbbb326ac15f53a1"
+  },
+  "busiestScope": "synthetic_workload_only",
+  "allChunksWithinSinglePassBudget": false,
+  "totalCandidateStepsAdmittedIncludingResume": 292000,
+  "totalStepAttemptsIncludingResume": 292001,
+  "synthetic": {
+    "ranges": 200,
+    "swaps": 160,
+    "rangeLiquidityRaw": "1000000000000",
+    "lowerTick": -6000,
+    "upperTick": 6000,
+    "generation": "existing_simulator_workload_not_independent_accounting_oracle"
+  },
+  "inputSha256": "9e304a7bce5682fc001f9c98cb0a974e32a2d5fe4036af1eb070f6b9300a1c1d",
+  "generationStepAttempts": 32000,
+  "totalStepAttemptsAllStages": 516001,
+  "resumedEqualsSingleEventPartition": true
+}
