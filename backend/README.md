@@ -361,4 +361,27 @@ The [qualification report](../reports/CAPITAL_PRICES_NFT_QUALIFICATION.md) recor
 
 In `/v1/read/pool-metrics`, each `prices[]` entry has additive `sourceQualification` and `coverage` fields. Source approval is distinct from available observations. The combined `status` is `qualified` only when an approved series covers the entire requested interval and both endpoints. No stored data yields `unavailable` / `price_history_missing`; a qualified series with a gap yields `unavailable` / `qualified_price_coverage_gap`.
 
+`sourceQualification` is `qualified`, `unqualified` or `not_assessed`.
+`observations` and `observedSources` are nullable: a successful load returns an
+exact count and source list (including `0` and `[]` for missing history). A
+currency over the bounded window returns `status: unavailable` and
+`reason: price_observation_budget_exhausted`, with null count, source list and
+timestamp extrema, and `not_assessed` source qualification/coverage. It never
+reports truncated or invented counts. The other currency keeps its own observed
+or qualified diagnostics. Unqualified observations use
+`price_source_quality_not_qualified`; any overflow keeps all pool USD/APR fields
+null without discarding verified capital, snapshot or revision.
+
 `coverage.status` is `complete`, `incomplete`, `missing` or `not_assessed`; its `startTimestamp`, `endTimestamp` and `maxAgeSeconds` explain the interval and policy. Unqualified data never claims complete coverage. Frontend adapters should preserve this distinction alongside the enclosing snapshot's freshness and the separate `valuation` result. See [methodology](../METRICS_METHODOLOGY.md) and [provider readiness](../reports/PRICE_SOURCE_READINESS.md). No production price qualification is enabled by this change.
+
+
+### Completed price collections and reviewed orphan recovery
+
+A completed `collect_chainlink.py --store-observations` invocation rechecks its
+canonical snapshot, slice boundaries and publication proofs even when no new
+slice is acquired. Verification failure leaves storage unchanged. Known moving
+price-window capacity returns metrics with verified capital preserved and USD
+null, using the existing read-v1 #26 unassessed state. Previously stored orphan
+proofs require explicit operator-reviewed quarantine with a durable private
+archive; collection retries never overwrite/delete them. See the bounded
+[workflow and evidence](../reports/PRICE_WINDOW_CAPACITY.md#moving-window-and-orphan-recovery--issue-51).

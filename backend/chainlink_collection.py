@@ -19,6 +19,8 @@ MAX_TOTAL_ROWS = MAX_PRICE_ROWS + 2 * MAX_SLICES
 MAX_STEPS = 4
 SLICE_RPC_REQUESTS = 1600
 INVOCATION_RPC_REQUESTS = MAX_STEPS * SLICE_RPC_REQUESTS + 2
+# Two passes over snapshot, slice boundaries and all publication/predecessor headers.
+STORAGE_RPC_REQUESTS = 2 * (2 + MAX_SLICES + 2 * MAX_PRICE_ROWS)
 INVOCATION_SECONDS = 480
 REFERENCE_RPC_REQUESTS = 15000
 MODE = 'bounded_chainlink_collection'
@@ -50,8 +52,9 @@ def block(value):
 class BudgetRpc:
     """Bound work even if an embedding caller supplies an unlimited RPC client.
 
-    The caller must also bound each transport call. The CLI's shared transport
-    deadline bounds the whole invocation, including time inside a network call.
+    The caller must also bound each transport call. The CLI clamps socket
+    timeouts to its remaining budget; these before/after-call guards are
+    cooperative, not a hard cancellation of an in-flight response stream.
     """
     def __init__(self, rpc, *, max_requests, seconds, monotonic=time.monotonic):
         self.rpc, self.limit, self.count = rpc, max_requests, 0
@@ -204,3 +207,36 @@ def advance_collection(collection, rpc, *, slice_seconds=DEFAULT_SLICE_SECONDS, 
     candidate = {**collection, 'slices': [*collection['slices'], bundle]}
     validate_collection(candidate)
     return candidate
+
+
+def collection_blocks(collection):
+    """All saved canonical evidence, deduplicated without masking conflicts."""
+    _, rows = validate_collection(collection, complete=True)
+    blocks = {}
+    for value in [collection['snapshot'],
+                  *(part['coverage']['endBlock'] for part in collection['slices']),
+                  *(row['provenance'][key] for row in rows for key in ('publicationBlock', 'precedingBlock'))]:
+        if value['number'] in blocks and blocks[value['number']] != value:
+            raise DataError('chainlink_proof_conflict')
+        blocks[value['number']] = value
+    return blocks
+
+
+def recheck_collection(collection, rpc):
+    """Canonical header verification; storage still does not qualify price truth."""
+    blocks = collection_blocks(collection)
+    if quantity(rpc.request('eth_chainId')) != CHAIN_ID:
+        raise DataError('wrong_chain')
+    for number, expected in sorted(blocks.items()):
+        actual = asdict(parse_block(rpc.request('eth_getBlockByNumber', [hex(number), False])))
+        if actual != expected:
+            raise DataError('chainlink_snapshot_reorganized')
+
+
+def store_collection(catalogue, collection, rpc):
+    """Recheck before any write and again before committing, including zero-step resumes."""
+    from price_history import store_observations
+    _, rows = validate_collection(collection, complete=True)
+    bounded = BudgetRpc(rpc, max_requests=STORAGE_RPC_REQUESTS, seconds=INVOCATION_SECONDS)
+    recheck_collection(collection, bounded)
+    store_observations(catalogue, rows, before_commit=lambda: recheck_collection(collection, bounded))

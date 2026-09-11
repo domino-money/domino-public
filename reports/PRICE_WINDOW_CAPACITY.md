@@ -18,7 +18,7 @@ disposable PostgreSQL/Anvil. No historical backfill was run.
 | Default collection slice | `(64-2)*60 = 3720` seconds; explicit range 1–3,720 |
 | Collection | One asset, one immutable snapshot, at most 24 hours, 1,446 slices |
 | Collection observations | At most 1,446 unique rows and 4,338 rows including slice overlaps |
-| CLI invocation | 1–4 slices; 6,402 RPC calls including initial identity reads; 480 seconds total |
+| CLI invocation | 1–4 slices; 6,402 acquisition RPC calls; optional storage adds at most 8,680 verification calls; shared 480-second cooperative budget |
 | Atomic collection step | At most 1,600 RPC calls and 180 seconds |
 | Sliced reference validation | At most 15,000 RPC calls and 480 seconds, with a bounded caller transport |
 | Checkpoint | At most 8 MiB; private regular file mode 0600 inside ignored `backend/runtime/` |
@@ -67,9 +67,34 @@ remain explicit errors requiring a reviewed adapter/capacity decision.
 
 `--store-observations` writes the deduplicated completed collection in one existing
 price-store transaction. Repeating the same completed command is idempotent;
-conflicting revisions require review. Storage remains `observed_unqualified` and
-does not assert current canonicality. A retained acquisition checkpoint may be
-historical or later orphaned; it must be revalidated before reference valuation.
+conflicting revisions require review. Even with zero acquisition steps remaining,
+storage checks chain identity, the original snapshot, every slice boundary and
+all distinct publication/predecessor headers before any write and again before
+commit. A reorg, missing RPC evidence, deadline or verification-budget failure
+leaves the transaction uncommitted. Header conflicts inside a checkpoint fail
+before RPC. Storage remains `observed_unqualified`: canonical headers do not
+establish round truth, independent market integrity or production qualification.
+Reference valuation still performs its full round/configuration proof checks.
+
+Storage performs two sequential verification passes. One pass runs before
+opening the price transaction; the second runs under the catalogue-wide writer
+advisory lock and can require up to 4,340 RPC calls, including chain identity.
+Activity, fee, position and capital writers sharing that lock then fail fast
+with `catalogue_writer_busy`. Acquisition and both passes consume the same
+480-second invocation budget; a zero-acquisition resume of a completed checkpoint
+still needs both full passes. The maximum storage-only 8,680 calls would leave
+less than 56 ms per call before local work, so the request ceiling is not a
+provider throughput guarantee. Slow providers or dense evidence can repeatedly
+fail storage without committing any rows. Resume the completed checkpoint in a
+later, separate invocation to avoid sharing time with acquisition; if full
+verification still cannot finish, stop and review the workflow's capacity.
+
+The budget is checked before and after each RPC, with socket timeouts clamped
+to the remaining time. The inherited urllib transport does not hard-cancel an
+in-flight response stream, so 480 seconds is not a guaranteed wall-clock ceiling
+on the writer lock. The lock remains held until verification finishes or raises
+and the transaction exits. These limitations do not permit skipping the second
+pass, raising source capacity or committing partially verified evidence.
 
 Checkpoints contain strict public observation/proof fields, an immutable identity
 hash and an SHA-256 envelope. Hashes detect accidental changes, not a malicious
@@ -150,3 +175,103 @@ The focused capacity, valuation and PostgreSQL capital suites passed 9, 25 and
 19 tests respectively. The complete PostgreSQL/EVM suite passed **278 tests with
 no skips** on 2026-09-10, using only this checkout's private disposable cluster.
 No production qualification, pricing policy, migration or API schema changed.
+
+
+## Moving-window and orphan recovery — issue #51
+
+Two individually valid stored collections may exceed one later moving window.
+The SQL reader retains its per-source 1,447-row sentinel and does not truncate.
+`stored_metrics` catches only `price_observation_budget_exhausted` from that
+reader and preserves reconciled capital, identity, snapshot and revision. All
+USD/APR fields become null with that reason. The overflowing currency's price
+counts, sources and timestamp extrema are null; its `sourceQualification` and
+coverage are `not_assessed`, never an apparently complete truncated count.
+The other currency retains its independently assessed diagnostics and coverage.
+These are exactly the states already
+specified by read-v1 candidate #26 (`8c49c3c`, version `1.1.0-rc.1`), not a new
+contract variant. Database, RPC and corrupt-ledger errors remain errors.
+
+The regression acquires collection A with 1,446 unique rows and the adjacent B
+with three, using the real sliced adapter against a synthetic archive. Their
+shared predecessor deduplicates in PostgreSQL. A later trailing day contains
+1,447 Chainlink rows and returns HTTP 200 with capital retained/USD null; advancing
+one second excludes a boundary row and restores exactly 1,446 Chainlink rows plus
+1,446 independently budgeted Alchemy observations. Both candidates remain
+unqualified. The older mixed-source and qualified-source-isolation tests remain.
+
+Previously stored orphan proofs require an explicit operator action. The public
+API and collection retries never delete/overwrite them. Review the original
+private checkpoint and record its collection digest, provision a private 0700
+archive directory durably (including syncing its parent), then invoke:
+
+```sh
+backend/.venv/bin/python backend/price_quarantine.py \
+  --checkpoint backend/runtime/chainlink/window.json \
+  --reviewed-sha256 "$REVIEWED_COLLECTION_SHA256" \
+  --archive-directory "$PRIVATE_ARCHIVE_DIRECTORY" \
+  --provider-config backend/runtime/provider.json
+```
+
+This template is not a record of a live operation. The directory must already
+exist; this command never creates it. Selection is bounded to the reviewed
+collection's at most 1,446 identities, under the catalogue writer lock and row
+locks. Exact stored price/provenance must still match the reviewed collection.
+Only rows whose publication or predecessor block hash now differs can be removed;
+a changed snapshot alone is not proof that earlier price observations are orphaned.
+A missing/error response cannot authorize deletion. All headers are read twice
+against one canonical anchor, and that anchor is rechecked after archiving.
+The limit is 8,683 verification requests and 480 seconds with bounded transport.
+
+Before deletion, a 0600 archive retains the full checkpoint, original stored
+retrieval times/provenance, changed canonical headers and anchor. The archive is
+at most 16 MiB, named by its SHA-256, read back exactly, and both file and directory
+are synced. An existing-file retry also verifies and syncs the file. Archive,
+RPC or database failure preserves rows; a durable archive from a rolled-back
+attempt remains evidence. No automatic replacement follows quarantine: a
+separately reviewed canonical collection can later insert the vacated identities.
+Back up these archives with the database. Repeating a completed quarantine returns
+`price_quarantine_no_orphans` and makes no additional deletion.
+
+The focused tests cover pre-write reorg/unavailability, transaction rollback on
+the final canonical check, idempotent zero-step CLI storage, exact quarantine
+provenance, file/directory sync failures, failed archive readback, a changed
+anchor after archival and a separate canonical replacement. No production
+qualification or migration changes, deployment, wallet use or live RPC are part
+of this work.
+
+
+Verification for this follow-up on 2026-09-10: the full isolated PostgreSQL/native
+EVM backend suite passed **290 tests with zero skips**; the 12 new recovery tests
+are included in that count. Direct pinned Forge from `contracts/` passed four
+tests, including 512 fuzz runs. The inherited root Forge wrapper/path issue is
+already fixed separately by #28 and must be preserved on integration. The actual
+moving-window HTTP reports also passed the pinned #26 strict Pydantic contract
+and JavaScript consumer runtime after applying #26's unchanged public-response
+decorator; a fabricated truncated observation count was rejected. This combined
+contract evidence is an integration check, not frontend acknowledgement or a
+change to the #26 candidate. No UI, contract arithmetic or migration changed.
+
+### Reconciliation with main `420a591`
+
+The merge retains the resumable capital worker from #54 and the #52 canonical
+storage/quarantine checks. Price overflow is now handled separately for each
+currency: missing, observed-unqualified and qualified diagnostics for the other
+currency survive unchanged. The real HTTP regression covers overflow in either
+currency, complete qualified coverage in the other, exact unavailable
+status/reason, unchanged capital/snapshot/revision and null valuation. Database,
+RPC and integrity failures still propagate even after an earlier currency
+overflow. The moving-window regression retains the 1,446/1,447 boundary and
+recovery, with missing history reported as `0`/`[]` rather than null.
+
+The merged tree passed **398 PostgreSQL/native-EVM tests with zero skips**,
+including **13 storage-recovery tests**, plus **29 Solidity tests** and **3 native
+launcher tests**. All seven Solidity fuzz tests ran 512 cases each. Repository
+hygiene and dependency checks passed. Tests used this worktree's disposable Unix
+socket PostgreSQL cluster and synthetic RPC/EVM fixtures; the cluster was stopped
+after verification. No production source qualification or migration changed.
+
+The legacy `qualify_chainlink.py --store-observations` integrity finding remains
+separate in issue #60. This reconciliation neither fixes nor endorses that
+storage path, and the sliced-checkpoint quarantine procedure does not establish
+recovery coverage for its legacy rows. The #26 contract integration and frontend
+acknowledgement remain separate from these producer tests.

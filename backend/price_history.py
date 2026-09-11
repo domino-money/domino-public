@@ -73,7 +73,7 @@ class AlchemyHistorical:
         currency = address(currency)
         now = int(self.clock())
         if (type(start) is not int or type(end) is not int or
-                not 0 <= start < end <= now or end-start > 86400+600):
+                not 0 <= start < end <= now or end-start > MAX_PRICE_WINDOW_SECONDS+MAX_PRODUCTION_PRICE_AGE_SECONDS):
             raise DataError('invalid_price_history_bounds')
         identity = ({'symbol': 'ETH'} if currency == ZERO else
                     {'network': 'robinhood-mainnet', 'address': currency})
@@ -83,8 +83,10 @@ class AlchemyHistorical:
         if any(result.get(k) != v for k, v in identity.items()):
             raise DataError('price_response_asset_mismatch')
         data = result.get('data')
-        if not isinstance(data, list) or len(data) > MAX_PRICE_ROWS:
+        if not isinstance(data, list):
             raise DataError('invalid_price_history_response')
+        if len(data) > MAX_PRICE_ROWS:
+            raise DataError('price_observation_budget_exhausted')
         rows = {}
         for entry in data:
             if not isinstance(entry, dict):
@@ -103,7 +105,7 @@ class AlchemyHistorical:
         return list(rows[k] for k in sorted(rows))
 
 
-def store_observations(catalogue, rows):
+def store_observations(catalogue, rows, *, before_commit=None):
     if not isinstance(rows, list) or len(rows) > MAX_PRICE_ROWS:
         raise DataError('price_observation_budget_exhausted')
     with catalogue.connection(writer=True, lock=True) as conn:
@@ -131,6 +133,8 @@ def store_observations(catalogue, rows):
                 continue
             conn.execute('INSERT INTO domino_activity.price_observations VALUES(%s,%s,%s,%s,%s,%s,%s)',
                 (CHAIN_ID, currency, source, row['timestamp'], row['retrievedAt'], row['priceUsd'], Jsonb(row['provenance'])))
+        if before_commit is not None:
+            before_commit()
 
 
 @dataclass(frozen=True)

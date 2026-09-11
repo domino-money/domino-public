@@ -82,7 +82,13 @@ observations, with a 1,447-row SQL sentinel after filtering the exact qualified
 source. Sixty seconds is the supported capacity envelope, not promised feed
 cadence or a resampling interval. Every distinct faster update is retained until
 the finite budget is exceeded; overflow fails explicitly and never selects a
-sampled subset. Equal duplicate timestamps may deduplicate, while conflicting
+sampled subset. At the metrics service boundary, known price capacity preserves
+verified capital/snapshot/revision while all USD fields become null with
+`price_observation_budget_exhausted`. Only the overflowing currency's price
+observations/sources/extrema are null and its `sourceQualification`/coverage are
+`not_assessed`, matching read-v1 #26. The other currency retains its independently
+loaded counts, source qualification and coverage, including complete coverage.
+Database, RPC and integrity errors remain errors. Equal duplicate timestamps may deduplicate, while conflicting
 prices stop processing. A feed slower than 300 seconds can still have a coverage
 gap despite fitting the row budget. The production age policy remains unchanged.
 The separate [sliced Chainlink workflow](reports/PRICE_WINDOW_CAPACITY.md) retains
@@ -101,7 +107,16 @@ The production qualification registry is intentionally empty. Provider observati
 
 ## Source qualification and observed coverage diagnostics
 
-Each `prices[]` entry now separates `sourceQualification` (`qualified` or `unqualified`) from `coverage.status` (`complete`, `incomplete`, `missing` or `not_assessed`). A source approved in code can still have no stored observations or insufficient history. The legacy combined `status` is `qualified` only when a qualified series covers both endpoints and every interval in the requested historical window. Otherwise it is `unavailable`, with `price_history_missing` or `qualified_price_coverage_gap`; observed data without source approval remains `observed_unqualified`.
+Each `prices[]` entry now separates `sourceQualification` (`qualified`, `unqualified` or `not_assessed`) from `coverage.status` (`complete`, `incomplete`, `missing` or `not_assessed`). A source approved in code can still have no stored observations or insufficient history. The legacy combined `status` is `qualified` only when a qualified series covers both endpoints and every interval in the requested historical window. Otherwise it is `unavailable`, with `price_history_missing`, `qualified_price_coverage_gap` or `price_observation_budget_exhausted`; observed data without source approval remains `observed_unqualified` with `price_source_quality_not_qualified`.
+
+`observations` is an exact integer count and `observedSources` is a list of source
+identifiers after a successful bounded load. Missing history is `0` and `[]`.
+Both fields are nullable: overflow returns null for both, and null timestamp
+extrema, rather than a truncated count, an empty history claim or partial source
+list. For that currency, `sourceQualification: not_assessed` means the load did
+not establish a usable series; it does not revoke or grant source approval.
+Qualification and coverage of the other currency are preserved, while the
+pool's valuation remains unavailable and all USD fields remain null.
 
 `coverage.startTimestamp` and `endTimestamp` identify the assessed interval. `maxAgeSeconds` is the approved age limit, or null before source qualification. No-observation coverage is `missing`; existing but unqualified observations are `not_assessed`, since they cannot establish trustworthy coverage. An internal stale interval is incomplete even when both endpoints have fresh prices. Exactly reaching the approved age is permitted; any later interval requires another observation.
 
