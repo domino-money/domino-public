@@ -41,6 +41,9 @@
       ],
       "core/*": [
         "../web/lib/*"
+      ],
+      "api-contracts/*": [
+        "../api-contracts/*"
       ]
     }
   },

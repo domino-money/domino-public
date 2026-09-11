@@ -1,6 +1,11 @@
 # Dependencies and build output
 node_modules/
 dist/
+# Fixture and bridge-test builds: never deployed, never in dist
+.fixture-dist/
+.bridge-dist/
+# Links tests/build-guard.test.mjs makes to dist; removed after each test
+.guard-link-*
 *.tsbuildinfo
 
 # Local environment

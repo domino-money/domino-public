@@ -5,34 +5,16 @@
 import { execFileSync } from 'node:child_process';
 import { mkdirSync, writeFileSync } from 'node:fs';
 
-execFileSync(
-  process.execPath,
-  [
-    'node_modules/typescript/bin/tsc',
-    '--outDir',
-    '.test-build',
-    '--target',
-    'ES2022',
-    '--module',
-    'commonjs',
-    '--moduleResolution',
-    'node',
-    '--esModuleInterop',
-    '--skipLibCheck',
-    '--strict',
-    'src/lib/pair.ts',
-    'src/lib/geometry.ts',
-    'src/lib/format.ts',
-    'src/lib/markets.ts',
-    '../web/lib/compound.ts',
-    '../web/lib/position.ts',
-    'functions/_lib/gate.ts',
-    'functions/_middleware.ts',
-  ],
-  { stdio: 'inherit' },
-);
+// The file list and compiler options live in tsconfig.test.json: CommonJS
+// output for node --test, and the `api-contracts/*` path so the read adapter
+// compiles against rugged97's contract types in place.
+execFileSync(process.execPath, ['node_modules/typescript/bin/tsc', '-p', 'tsconfig.test.json'], { stdio: 'inherit' });
 
 mkdirSync('.test-build', { recursive: true });
 writeFileSync('.test-build/package.json', JSON.stringify({ type: 'commonjs' }));
 
-execFileSync(process.execPath, ['--test', 'tests/domain.test.mjs', 'tests/gate.test.mjs'], { stdio: 'inherit' });
+execFileSync(
+  process.execPath,
+  ['--test', 'tests/domain.test.mjs', 'tests/gate.test.mjs', 'tests/read.test.mjs', 'tests/contract-pin.test.mjs', 'tests/backend-contract.test.mjs', 'tests/build-guard.test.mjs'],
+  { stdio: 'inherit' },
+);

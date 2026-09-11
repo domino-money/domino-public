@@ -12,7 +12,7 @@
  * added to the install.
  */
 import assert from 'node:assert/strict';
-import { createReadStream, existsSync } from 'node:fs';
+import { createReadStream, existsSync, readdirSync, readFileSync } from 'node:fs';
 import { stat } from 'node:fs/promises';
 import { createServer } from 'node:http';
 import { extname, join, normalize, resolve } from 'node:path';
@@ -692,5 +692,78 @@ test('placeholder market figures are always accompanied by the sample label', as
   assert.equal(table.sampleLabelled, table.total, 'a placeholder figure is missing its sample label');
   assert.equal(table.pill, true, 'the table is missing its Sample data pill');
   clean('placeholder labels');
+  await page.close();
+});
+
+// ---------------------------------------------------------------------------
+// The default build after the read adapter (#1): the same practice app with
+// the same labelled sample figures, no read request, and no read code at all.
+// Fixture and bridge sources exist only in their own builds, which are tested
+// in read-states.browser.test.mjs and read-bridge.browser.test.mjs.
+// ---------------------------------------------------------------------------
+
+test('the default build makes no read request on any route', async () => {
+  const seen = [];
+  for (const route of ['/', '/app', '/settings']) {
+    const page = await open(route);
+    page.on('request', (request) => seen.push(`${request.resourceType()} ${new URL(request.url()).pathname}`));
+    await page.reload({ waitUntil: 'networkidle' });
+    clean(`requests on ${route}`);
+    await page.close();
+  }
+  assert.deepEqual(seen.filter((r) => r.includes(' /api/')), [], 'nothing asked /api/');
+  assert.deepEqual(seen.filter((r) => /^(fetch|xhr) /.test(r)), [], 'no fetch or XHR at all');
+});
+
+test('the default build ships no fixture, validator or bridge code, and no read lab', () => {
+  const scripts = readdirSync(join(DIST, 'assets')).filter((file) => file.endsWith('.js'));
+  assert.equal(scripts.length, 1, `one bundle, no lazily loaded read chunks: ${scripts.join(', ')}`);
+  const code = scripts.map((file) => readFileSync(join(DIST, 'assets', file), 'utf8')).join('\n');
+  for (const marker of [
+    '/api/read/v1',
+    'X-Domino-Read-Contract',
+    'beta_access_required',
+    'assertResponse',
+    'fixtures/gateway',
+    'onerror=alert',
+    '0911afcb281d7bcae2d71443ceaeebd0f89b4537708449970d797622b4b4c941',
+    'abababababababab',
+    'c0ffeec0ffee',
+  ]) {
+    assert.equal(code.includes(marker), false, `dist contains ${marker}`);
+  }
+  assert.equal(existsSync(join(DIST, 'read-lab.html')), false, 'the read lab is not part of the default build');
+});
+
+test('Settings still reports signing and live data off, and Connect wallet stays disabled', async () => {
+  const page = await open('/settings');
+  const text = await page.locator('#root').innerText();
+  assert.match(text, /Signing\s+Off/);
+  assert.match(text, /Live chain data\s+Off/);
+  assert.equal(await page.getByRole('button', { name: 'Connect wallet' }).isDisabled(), true);
+  assert.equal(await page.locator('[data-build-banner]').count(), 0, 'no fixture or test-build banner');
+  clean('settings');
+  await page.close();
+});
+
+test('the landing shows exactly the sample figures it showed before the read adapter', async () => {
+  const page = await open('/');
+  const rows = await page
+    .locator('#pools tbody tr')
+    .evaluateAll((trs) => trs.map((tr) => Array.from(tr.querySelectorAll('td'), (td) => td.innerText.replace(/\s+/g, ' ').trim())));
+  assert.deepEqual(
+    rows.map((cells) => cells.slice(2, 6)),
+    [
+      ['$10.4M', '$37.1M', '$812.0M', '3.55'],
+      ['$3.2M', '$550.5K', '$16.4M', '0.17'],
+      ['$1.3M', '$1.4M', '$39.1M', '1.08'],
+      ['$582.7K', '$533.9K', '$12.8M', '0.92'],
+      ['$509.5K', '$752.4K', '$9.3M', '1.48'],
+    ],
+  );
+  assert.deepEqual(rows.map((cells) => cells[6].replace(/ ›$/, '')), ['150.92%', '22.52%', '84.05%', '68.27%', '24.54%']);
+  assert.deepEqual(rows.map((cells) => cells[1]), ['WETH/USDG v4 · 0.05%', 'ETH/USDG v4 · 0.30%', 'MARLIN/USDG v4 · 0.90%', 'TRADOOR/USDG v4 · 1.00%', 'CRUMBS/USDG v4 · 1.00%']);
+  assert.equal(await page.locator('[data-read-status]').getAttribute('data-read-status'), 'none', 'no status line on the sample landing');
+  clean('landing figures');
   await page.close();
 });

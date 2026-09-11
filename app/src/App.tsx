@@ -7,6 +7,9 @@ import { Landing } from './screens/Landing'
 import { Dashboard } from './screens/Dashboard'
 import { Settings } from './screens/Settings'
 import { Button } from './components/ui'
+import { BuildBanner } from './components/read/BuildBanner'
+import { appMarketsProvider } from './lib/read/buildMode'
+import { MarketsContext } from './lib/read/useMarkets'
 
 /**
  * Hash routing with a section part: `#/app#activity` is route `/app`, section
@@ -62,6 +65,8 @@ function useHashLocation() {
 export default function App() {
   const { route } = useHashLocation()
   const { dark, loaded, setDark } = useLocalWorkspace()
+  // One provider for the whole app, so the ticker and the table share one load.
+  const [markets] = useState(appMarketsProvider)
 
   // Appearance is shared with the existing workbench through its own storage key.
   // With nothing stored yet, open dark, but never override a saved choice.
@@ -89,7 +94,9 @@ export default function App() {
   }, [])
 
   return (
+    <MarketsContext.Provider value={markets}>
     <div className="min-h-screen">
+      {__DOMINO_READ_MODE__ !== 'sample' && <BuildBanner mode={__DOMINO_READ_MODE__} />}
       {route === '/' && <Ticker />}
       <Header route={route} />
       {route === '/app' ? <Dashboard /> : route === '/settings' ? <Settings /> : <Landing />}
@@ -104,5 +111,6 @@ export default function App() {
         {dark ? 'Light' : 'Dark'}
       </Button>
     </div>
+    </MarketsContext.Provider>
   )
 }

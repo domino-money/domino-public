@@ -21,6 +21,9 @@ import { pathToFileURL } from 'node:url';
 const HERE = import.meta.dirname;
 const COMPILED = resolve(HERE, '../.test-build/app/functions/_middleware.js');
 export const DIST = resolve(HERE, '../dist');
+/** The fixture and bridge-test builds, which never go to dist. */
+export const FIXTURE_DIST = resolve(HERE, '../.fixture-dist');
+export const BRIDGE_DIST = resolve(HERE, '../.bridge-dist');
 
 const TYPES = {
   '.html': 'text/html; charset=utf-8',
@@ -57,8 +60,18 @@ async function staticResponse(dist, url) {
   });
 }
 
-/** node:http server whose every request goes through the middleware first. */
-export function createGatedServer({ env, dist = DIST, middleware = loadMiddleware() }) {
+/**
+ * node:http server whose every request goes through the middleware first.
+ *
+ * `api`, when given, answers /api/* requests the middleware admits, the way a
+ * Pages Function or a mounted Worker would, and receives the request the
+ * middleware passes on (which may differ from the browser's: a public read
+ * loses its cookies). Without it they fall through to the static files, as
+ * before. `observe`, when given, sees each request exactly as the browser
+ * sent it, before the middleware. `env` is read on every request, so a test
+ * can break the gate configuration mid-run by changing it.
+ */
+export function createGatedServer({ env, dist = DIST, middleware = loadMiddleware(), api = null, observe = null }) {
   return createServer(async (req, res) => {
     try {
       const url = new URL(req.url, `http://${req.headers.host}`);
@@ -74,7 +87,9 @@ export function createGatedServer({ env, dist = DIST, middleware = loadMiddlewar
         body: hasBody ? Readable.toWeb(req) : undefined,
         duplex: hasBody ? 'half' : undefined,
       });
-      const response = await middleware.onRequest({ request, env, next: () => staticResponse(dist, url) });
+      observe?.(request);
+      const next = (passed) => (api && url.pathname.startsWith('/api/') ? api(passed ?? request) : staticResponse(dist, url));
+      const response = await middleware.onRequest({ request, env, next });
       const cookies = response.headers.getSetCookie();
       for (const [name, value] of response.headers) {
         if (name.toLowerCase() !== 'set-cookie') res.setHeader(name, value);

@@ -9,7 +9,9 @@ export const CAPABILITIES = {
   chainId: 4663,
   signingEnabled: false,
   walletFundingEnabled: false,
-  liveDataEnabled: false,
+  // True only in the bridge-test build, which vite.config.ts refuses to write
+  // into dist. The deployed build folds this to false and ships no read code.
+  liveDataEnabled: __DOMINO_READ_MODE__ === 'bridge',
   swapsEnabled: false,
   simulation: {
     protocolFeeBps: 200,

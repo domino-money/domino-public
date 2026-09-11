@@ -243,6 +243,78 @@ test('the cookie is accepted among other cookies', async () => {
   assert.equal(response.status, 200);
 });
 
+// ---------------------------------------------------------------------------
+// Public reads go on without cookies. The browser attaches every same-origin
+// cookie whose Path covers the read, and session-v1's __Host- cookies must be
+// Path=/, so the gate is the first place that can drop them.
+// ---------------------------------------------------------------------------
+
+const SESSION_COOKIES = '__Host-domino-session=sessiontoken; __Host-domino-preauth=preauthtoken';
+
+/** Runs a request through the gate and returns what `next` was handed. */
+async function passedOn(request) {
+  const handed = [];
+  const response = await onRequest({
+    request,
+    env: ENV,
+    next: async (passed) => {
+      handed.push(passed);
+      return new Response('{}', { headers: { 'Content-Type': 'application/json' } });
+    },
+  });
+  return { response, handed };
+}
+
+test('a public read goes on past the gate with no cookie at all, and otherwise unchanged', async () => {
+  const cookie = await signIn();
+  const body = '{"token":"0x' + 'a1'.repeat(20) + '"}';
+  const request = new Request(`${ORIGIN}/api/read/v1/token`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Accept: 'application/json',
+      'X-Domino-Read-Contract': '1.1.0-rc.3',
+      Cookie: `theme=dark; ${cookie}; ${SESSION_COOKIES}`,
+    },
+    body,
+  });
+  const { response, handed } = await passedOn(request);
+  assert.equal(response.status, 200);
+  assert.equal(handed.length, 1);
+  const passed = handed[0];
+  assert.ok(passed instanceof Request, 'the gate hands on a request of its own, not the one the browser sent');
+  assert.equal(passed.headers.get('Cookie'), null, 'no cookie of any kind goes past the gate on a public read');
+  for (const [name, value] of passed.headers) assert.doesNotMatch(value, /sessiontoken|preauthtoken|domino-beta/, `a credential went on in ${name}`);
+  assert.equal(passed.method, 'POST');
+  assert.equal(passed.url, `${ORIGIN}/api/read/v1/token`);
+  assert.equal(passed.headers.get('Content-Type'), 'application/json');
+  assert.equal(passed.headers.get('X-Domino-Read-Contract'), '1.1.0-rc.3');
+  assert.equal(await passed.text(), body, 'the body goes on byte for byte');
+});
+
+test('the capabilities read loses its cookies too', async () => {
+  const cookie = await signIn();
+  const { handed } = await passedOn(fetchLike('/api/read/v1/capabilities', { Cookie: `${cookie}; ${SESSION_COOKIES}` }));
+  assert.equal(handed.length, 1);
+  assert.equal(handed[0]?.headers.get('Cookie'), null);
+});
+
+test('everything that is not a public read keeps its cookies, because session routes need them', async () => {
+  const cookie = await signIn();
+  for (const path of ['/', '/api/session/v1/me', '/api/onboarding/v1/status', '/api/readiness', '/assets/index.js']) {
+    const { response, handed } = await passedOn(fetchLike(path, { Cookie: `${cookie}; ${SESSION_COOKIES}` }));
+    assert.equal(response.status, 200, path);
+    assert.deepEqual(handed, [undefined], `${path} goes on as the browser sent it`);
+  }
+});
+
+test('a read without the beta cookie is still refused, whatever else it carries', async () => {
+  const { response, handed } = await passedOn(fetchLike('/api/read/v1/token', { Cookie: SESSION_COOKIES }));
+  assert.equal(response.status, 401);
+  assert.deepEqual(await response.json(), { error: 'beta_access_required' });
+  assert.deepEqual(handed, []);
+});
+
 test('a tampered, expired, foreign or duplicated cookie is refused', async () => {
   const good = await signIn();
   const [name, value] = good.split('=');

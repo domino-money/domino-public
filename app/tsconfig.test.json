@@ -1,0 +1,39 @@
+{
+  "compilerOptions": {
+    "outDir": ".test-build",
+    "target": "ES2022",
+    "module": "commonjs",
+    "moduleResolution": "node10",
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "strict": true,
+    "resolveJsonModule": true,
+    "paths": {
+      "api-contracts/*": ["../api-contracts/*"]
+    }
+  },
+  "files": [
+    "src/lib/pair.ts",
+    "src/lib/geometry.ts",
+    "src/lib/format.ts",
+    "src/lib/markets.ts",
+    "../web/lib/compound.ts",
+    "../web/lib/position.ts",
+    "functions/_lib/gate.ts",
+    "functions/_middleware.ts",
+    "src/lib/read/pin.ts",
+    "src/lib/read/types.ts",
+    "src/lib/read/errors.ts",
+    "src/lib/read/interpret.ts",
+    "src/lib/read/pipeline.ts",
+    "src/lib/read/bridgeSource.ts",
+    "src/lib/read/fixtureSource.ts",
+    "src/lib/read/scenarios.ts",
+    "src/lib/read/scheduler.ts",
+    "src/lib/read/decimal.ts",
+    "src/lib/read/project.ts",
+    "src/lib/read/pagers.ts",
+    "src/lib/read/marketsProvider.ts",
+    "src/lib/read/deferredMarkets.ts"
+  ]
+}

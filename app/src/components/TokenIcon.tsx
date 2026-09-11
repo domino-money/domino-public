@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import type { CSSProperties } from 'react'
+import type { TokenDisplay } from '../lib/read/types'
 
 /**
  * Token marks.
@@ -123,6 +124,42 @@ export function TokenPair({ base, quote, size = 32, ring = 'var(--surface-2)' }:
     <span className="inline-flex shrink-0 items-center" aria-hidden="true">
       <TokenIcon symbol={base} size={size} ring={ring} />
       <TokenIcon symbol={quote} size={size} ring={ring} style={{ marginLeft: -size * 0.3 }} />
+    </span>
+  )
+}
+
+/**
+ * The mark for a token as the read adapter describes it. Artwork comes only
+ * from the curated key attached to it by address; a token without one gets a
+ * plain disc. No letters are drawn from its symbol, which is untrusted text,
+ * and nothing from it ever reaches `src` or `alt`.
+ */
+export function TokenMark({ token, size = 24, ring, style }: { token: TokenDisplay; size?: number; ring?: string; style?: CSSProperties }) {
+  if (token.artwork) return <TokenIcon symbol={token.artwork} size={size} ring={ring} style={style} />
+  return (
+    <span
+      aria-hidden="true"
+      data-token-mark="unknown"
+      style={{
+        width: size,
+        height: size,
+        borderRadius: '50%',
+        border: ring ? `2px solid ${ring}` : undefined,
+        display: 'inline-block',
+        flexShrink: 0,
+        background: 'var(--surface-3)',
+        ...style,
+      }}
+    />
+  )
+}
+
+/** `TokenPair` for adapter tokens. */
+export function TokenMarkPair({ base, quote, size = 32, ring = 'var(--surface-2)' }: { base: TokenDisplay; quote: TokenDisplay; size?: number; ring?: string }) {
+  return (
+    <span className="inline-flex shrink-0 items-center" aria-hidden="true">
+      <TokenMark token={base} size={size} ring={ring} />
+      <TokenMark token={quote} size={size} ring={ring} style={{ marginLeft: -size * 0.3 }} />
     </span>
   )
 }

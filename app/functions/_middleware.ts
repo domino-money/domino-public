@@ -9,6 +9,7 @@
  *   3. POST /__beta/login                   → set the access cookie, or 401.
  *   4. POST /__beta/logout                  → clear it.
  *   5. Valid access cookie                  → the app, with security headers.
+ *      A public read (/api/read/*) is passed on without any cookie.
  *   6. Anything else                        → 401: the access page for a
  *      navigation, a JSON error for assets and API calls.
  */
@@ -29,11 +30,14 @@ import {
 export interface GateContext {
   request: Request
   env: BetaEnv
-  next: () => Promise<Response>
+  /** The rest of the deployment; given a request, it serves that one instead. */
+  next: (request?: Request) => Promise<Response>
 }
 
 export const LOGIN_PATH = '/__beta/login'
 export const LOGOUT_PATH = '/__beta/logout'
+/** Public reads. The read bridge serves /api/read/v1/*; any later version sits under the same prefix. */
+export const PUBLIC_READ_PREFIX = '/api/read/'
 const CANONICAL_HOST = 'domino.money'
 const MAX_FORM_BYTES = 1024
 
@@ -178,6 +182,24 @@ function logout(request: Request, url: URL): Response {
   return seeOther('/', clearCookie())
 }
 
+/**
+ * A public read as it goes on past the gate: the same request with no Cookie
+ * header at all.
+ *
+ * The browser sends every same-origin cookie whose Path covers the read, and
+ * session-v1's `__Host-domino-session` and `__Host-domino-preauth` must be
+ * `Path=/` (the `__Host-` prefix requires it). The beta cookie has done its
+ * job once the gate has checked it, and a public read needs no other, so none
+ * of them reaches the read bridge or anything behind it. This holds whatever
+ * the bridge does with cookies, and costs a read nothing: no read route takes
+ * a credential.
+ */
+function withoutCookies(request: Request): Request {
+  const headers = new Headers(request.headers)
+  headers.delete('Cookie')
+  return new Request(request, { headers })
+}
+
 /** The app's own response, with the security headers every page must carry. */
 function secured(response: Response, url: URL): Response {
   const out = new Response(response.body, response)
@@ -212,7 +234,8 @@ export async function onRequest({ request, env, next }: GateContext): Promise<Re
   if (url.pathname === LOGOUT_PATH) return logout(request, url)
 
   if (await hasValidCookie(config, request.headers.get('Cookie'), Date.now())) {
-    return secured(await next(), url)
+    const read = url.pathname.startsWith(PUBLIC_READ_PREFIX)
+    return secured(await (read ? next(withoutCookies(request)) : next()), url)
   }
   return wantsPage(request) ? page('ask', 401) : json('beta_access_required', 401)
 }

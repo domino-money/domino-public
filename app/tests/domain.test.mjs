@@ -403,3 +403,74 @@ test('the ticker APR follows the same state rule', () => {
   assert.equal(markets.aprLabel(metric('150.92', 'placeholder')).sample, true);
   assert.equal(markets.aprLabel(metric(null, 'qualified')).kind, 'unavailable');
 });
+
+// ---------------------------------------------------------------------------
+// The states the read adapter adds (#1). Each has its own words on screen, and
+// none of them may pass as a current figure.
+// ---------------------------------------------------------------------------
+
+test('absent, not current and rejected are distinct from unavailable, and none of them shows a number', () => {
+  const absent = markets.presentMetric({ value: null, state: 'absent', reason: 'provider_not_reported' });
+  assert.deepEqual(absent, { kind: 'absent', reason: 'provider_not_reported' });
+  const reference = markets.presentMetric({ value: '158.06', state: 'reference', reason: 'reference_analytics_only' });
+  assert.deepEqual(reference, { kind: 'not_current', reason: 'reference_analytics_only', basis: 'reference' });
+  const partial = markets.presentMetric({ value: '0.1', state: 'partial' });
+  assert.equal(partial.kind, 'not_current');
+  const rejected = markets.presentMetric({ value: '12345', state: 'rejected', reason: 'provider_currency_or_pool_mismatch' });
+  assert.deepEqual(rejected, { kind: 'unavailable', reason: 'provider_currency_or_pool_mismatch', rejected: true });
+  for (const shown of [absent, reference, partial, rejected]) assert.equal('text' in shown, false, `${shown.kind} carries a figure`);
+});
+
+test('a provider figure names its provider and is never presented as qualified', () => {
+  const shown = markets.presentMetric({ value: '12345.67', state: 'provider', source: 'GeckoTerminal', asOf: 1010 });
+  assert.deepEqual(shown, { kind: 'value', text: '$12.3K', stale: false, sample: false, asOf: 1010, source: 'GeckoTerminal' });
+});
+
+test('zero inside a usable observation is a value; the same zero in an unavailable one is not shown', () => {
+  assert.equal(markets.presentMetric({ value: '0', state: 'provider', source: 'GeckoTerminal' }).text, '$0.00');
+  assert.equal(markets.presentMetric({ value: '0', state: 'unavailable' }).kind, 'unavailable');
+  assert.equal(markets.compactUsd({ value: '0.000020026865830513', state: 'qualified' }), '$0.000020', 'sub-cent keeps six places, as formatAmount does');
+});
+
+test('turnover needs two usable operands on one basis', () => {
+  const provider = (value, source = 'GeckoTerminal') => ({ value, state: 'provider', source });
+  for (const bad of [metric('1000', 'reference'), metric('1000', 'partial'), { value: null, state: 'absent' }, metric('1000', 'rejected'), metric('1000', 'unavailable')]) {
+    assert.equal(markets.turnover(pool(metric('500'), bad)).kind, 'unavailable', `TVL ${bad.state}`);
+    assert.equal(markets.turnover(pool(bad, metric('1000'))).kind, 'unavailable', `volume ${bad.state}`);
+  }
+  assert.deepEqual(markets.turnover(pool(provider('500'), metric('1000'))), { kind: 'unavailable', reason: 'mixed_basis' });
+  assert.deepEqual(markets.turnover(pool(provider('500'), provider('1000', 'DexScreener'))), { kind: 'unavailable', reason: 'mixed_basis' });
+  const attributed = markets.turnover(pool(provider('500'), provider('1000')));
+  assert.deepEqual([attributed.text, attributed.source, attributed.stale], ['0.50', 'GeckoTerminal', false]);
+  const stale = markets.turnover(pool({ ...provider('500'), state: 'stale', asOf: 1010 }, provider('1000')));
+  assert.deepEqual([stale.stale, stale.asOf, stale.source], [true, 1010, 'GeckoTerminal']);
+});
+
+test('turnover divides the decimal strings exactly, whatever their size', () => {
+  const huge = '115792089237316195423570985008687907853269984665640564039457584007913129639935';
+  assert.equal(markets.turnover(pool(metric(huge), metric(huge))).text, '1.00');
+  assert.equal(markets.turnover(pool(metric('1'), metric('3'))).text, '0.33');
+});
+
+test('the ticker APR says not current or not reported in words, never with the number', () => {
+  assert.equal(markets.aprLabel({ value: '158.06', state: 'reference' }).kind, 'not_current');
+  assert.equal(markets.aprLabel({ value: null, state: 'absent' }).kind, 'absent');
+  assert.equal(markets.aprLabel({ value: '158.060469175186043958', state: 'qualified' }).text, '158.06% APR');
+});
+
+test('the sample rows keep the landing figures exactly and are keyed by pool, not by symbol', () => {
+  // The strings the landing showed before the adapter, computed with the old Number code.
+  const rows = markets.listMarkets().markets;
+  const cell = (m) => markets.presentMetric(m).text;
+  assert.deepEqual(rows.map((m) => cell(m.tvlUsd)), ['$10.4M', '$3.2M', '$1.3M', '$582.7K', '$509.5K']);
+  assert.deepEqual(rows.map((m) => cell(m.volume24hUsd)), ['$37.1M', '$550.5K', '$1.4M', '$533.9K', '$752.4K']);
+  assert.deepEqual(rows.map((m) => cell(m.volume30dUsd)), ['$812.0M', '$16.4M', '$39.1M', '$12.8M', '$9.3M']);
+  assert.deepEqual(rows.map((m) => markets.turnover(m).text), ['3.55', '0.17', '1.08', '0.92', '1.48']);
+  assert.deepEqual(rows.map((m) => markets.aprLabel(m.feeAprPercent).text), ['150.92% APR', '22.52% APR', '84.05% APR', '68.27% APR', '24.54% APR']);
+  assert.deepEqual(rows.map((m) => markets.feeLabel(m)), ['0.05%', '0.30%', '0.90%', '1.00%', '1.00%']);
+  assert.equal(markets.feeLabel({ feePips: null }), 'Dynamic fee');
+  for (const m of rows) {
+    assert.equal(m.key, `4663:${m.poolId}`);
+    assert.deepEqual([m.tokens.base.origin, m.tokens.base.symbol], ['sample', m.base]);
+  }
+});

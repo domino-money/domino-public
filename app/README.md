@@ -39,6 +39,11 @@ states, and the gas and available-fee boundaries of `previewCompound`. The
 engine is imported from `web/lib`, never copied, so a change there shows up
 here.
 
+`npm test` also runs `tests/read.test.mjs`, the read adapter against every
+fixture in `api-contracts/read-v1` with the package's own runtime, the compiled
+beta gate and the unmodified bridge Worker, and `tests/contract-pin.test.mjs`,
+which recomputes the SHA-256 of every pinned producer manifest.
+
 `test:render` serves `dist` and drives it in a real browser. Beyond rendering
 and errors, it exercises the behaviour a helper test cannot prove: a real
 pointer drag on a range edge (a still pointer must hold a still bound), input
@@ -150,6 +155,116 @@ cookie stops working when the password rotates. Removing the cookie check fails
 7 unit and all 8 browser tests; letting a wrong password through fails the unit
 suite.
 
+## Read data
+
+`src/lib/read/` is the typed adapter for rugged97's read contract
+(`api-contracts/read-v1`, pinned in `src/lib/read/pin.ts` with the producer
+commit and each package's manifest SHA-256). The pin is producer commit
+`b50f80e5f5f6eacc07645d9856ab649047161aae`, the squash of #77 on main; with
+#75 (listener provenance in all four manifests) it is one combined release,
+and no contract version changed. One interface, `ReadSource`,
+covers all nine routes and has two implementations: the package fixtures, and
+the same-origin bridge at `/api/read/v1/*`. Both hand their replies to one
+pipeline, which recognises the beta gate's 401 and 503 first, then requires
+the exact `X-Domino-Read-Contract` header, then validates with the package
+runtime (`assertResponse`, `validateError`) and checks the answer is about the
+pool, token or block that was asked for. Anything that fails is a state of its
+own (`gate_required`, `incompatible`, `invalid`, `unavailable`, …) and nothing
+of it is rendered. Only a validated 429 `read_capacity_busy` is asked again on
+its own (R-1 on #1): three attempts at most, each after the bridge's
+Retry-After plus up to 250 ms, and only while the read's budget covers the
+wait. A transient 503/504 is shown as itself, with a Retry for the person.
+A read has 60 s from the moment it is queued, which cover the queue, the
+capabilities check, every attempt and wait, and one cursor or revision
+restart; each attempt, fetch and body, has 20 s of them at most. At either
+deadline the attempt is cancelled, and an answer that arrives anyway is
+discarded; past its deadline a read sends nothing more, not even the
+capabilities check. These deadlines, the Retry-After waits and the pacing
+between reads are measured on the browser's monotonic clock
+(`performance.now()`), so a change to the system time, an NTP step or a
+resume from sleep neither cuts a read short nor lets a late answer in; only
+the time a reply was received is stamped with the wall clock.
+
+An identical read, the same route and body asked for again on one screen,
+joins the read already queued or in flight instead of being sent again, and
+is held to that read's deadline, its first reader's, rather than to 60 s
+from its own enqueue. The first reader was queued no later, so that
+deadline is never more than 60 s after the joiner was queued, and R-1's
+bound holds for every reader: a joiner may be answered `read_deadline`
+before its own 60 s are up, never after them. Each reader also stops at its
+own abort or deadline, whichever comes first, without cancelling the read
+for the others; the last one to leave cancels it.
+
+Components read through `MarketsProvider`, not a source. The default build
+uses the curated sample rows, exactly as before; they are not dressed up as
+contract payloads, which would mean inventing provider provenance. Previews
+and production still deploy that default sample build, and will until the
+live-data PR.
+
+**Build modes.** Only `--mode` chooses where data comes from; no environment
+variable does.
+
+| Command | Data | Output |
+|---|---|---|
+| `npm run build`, `npm run dev` | Labelled sample rows, no read code in the bundle | `dist` |
+| `npm run dev:fixtures`, `npm run build:fixtures` | Package fixtures through the real pipeline, plus the read lab at `/read-lab.html` | `.fixture-dist` |
+| `npm run build:bridge-test` | The bridge source, for a local stub only | `.bridge-dist` |
+
+`vite.config.ts` refuses to write a fixture or bridge build into `dist`, which
+is what Pages deploys, or anywhere inside it, however the path is spelled
+(`DIST` on a case-insensitive disk, `dist/lab`, `dist/..lab`, an absolute path,
+a link).
+`tests/build-guard.test.mjs` resolves the real config with each spelling, and
+ `tests/render.test.mjs` checks that `dist` makes no
+read request and contains no read code. `npm run test:read` (part of
+`test:gate`) builds both read modes and drives them behind the real gate:
+`tests/read-states.browser.test.mjs` renders every fixture case with the real
+Top pools table, ticker and family panels; `tests/read-bridge.browser.test.mjs`
+reads through `bridge/src/worker.mjs` in front of package fixtures.
+
+**Still off in the deployed build:** live data, the bridge source, signing,
+wallet funding, swaps, sessions, previews and deposits. Connect wallet stays
+disabled. Turning live data on needs the consumer acknowledgement on #1 and a
+staging exercise first.
+
+**Credentials on reads.** Reads use `credentials: 'same-origin'` so the beta
+cookie reaches the gate. The app adds no credential of its own (no
+Authorization, CSRF or session header, no SIWE), but the browser also attaches
+every same-origin cookie whose Path covers `/api/read/v1/`. session-v1 sets its
+session and preauth cookies with `Path=/`, which their `__Host-` prefix
+requires, so once #14 creates a session the browser sends them to this origin
+with public reads too. They stop at the gate: `functions/_middleware.ts` checks
+the beta cookie and then passes every `/api/read/*` request on with no Cookie
+header at all, so neither the read bridge nor anything behind it ever sees a
+session credential. `tests/gate.test.mjs` checks that in node, and
+`tests/read-bridge.browser.test.mjs` plants both cookies in Chromium and checks
+what the browser sends, what passes the gate and what reaches the gateway.
+
+**Backend reconciliation.** Issue #1 asks for the adapter's types to be agreed
+against `backend/openapi-read.json` and the Python response fixtures.
+`tests/backend-contract.test.mjs` does that on every run. It pins the OpenAPI
+document by digest (`BACKEND_OPENAPI_PIN` in `src/lib/read/pin.ts`), and
+checks that its nine POST read routes are read-v1's. It compares every
+request and response schema with read-v1 field by field. It drives
+`fixtures/request-boundaries.json` (the Python request models' own boundary
+corpus) through the adapter's request check and the real bridge Worker, and
+every Python-produced response in `fixtures/producer/` through the adapter.
+Each difference found is recorded, with what the adapter does about it, in
+`tests/backend-contract.ledger.mjs`; the test fails on an unrecorded difference
+and on a recorded one that has gone. Seven differences are recorded. Three
+were raised with rugged97 and are decided on issue #1. The OpenAPI `tokenIds`
+item now carries the uint256 bound (#74) and the array `uniqueItems` (#77);
+its pattern is read-v1's followed by `(?![\s\S])`, an end assertion that the
+read-v1 runtime's full-match rule makes equivalent, and the test checks that
+relation exactly. The private capabilities response stays untyped, and the
+bridge keeps the closed read-v1 shape. The bridge's 8192-byte request limit,
+which answers 413 to a 4096-character cursor of four-byte characters the
+Python model accepts, is intentional. Four more differences are by design:
+404/405 are bridge-only, the contract header and the `/api/read/v1/` paths
+belong to the bridge, and the bridge seals the wallet-assets cursor. In every
+case the browser path (read-v1 and the bridge) is the stricter or an
+equivalent side, and the adapter follows it.
+
 ## Routes
 
 | Route | Screen |
@@ -225,13 +340,19 @@ roles on non-semantic elements by design).
 No wallet, no chain read, no transaction, no signing. Every figure in the
 practice workspace is simulated and labelled as such.
 
-`src/lib/markets.ts` is the adapter behind the pool ticker and the Top pools
-table. It carries the read API's state discriminators (`qualified` /
-`unavailable` / `placeholder`) and a `source` field, and today it returns
-`placeholder` rows for five pairs built from tokens that exist on the network.
-**Those rows are labelled "Sample" wherever they appear and must stay labelled
-until the adapter returns qualified data.** Swapping `listMarkets` for a real
-call is the only change needed.
+`src/lib/markets.ts` holds the figures behind the pool ticker and the Top
+pools table and the one rule for showing them. Each figure carries a state:
+`qualified` (pool-metrics `usableAsCurrent24h`, the only current 24h/APR
+figure), `provider` (named, unreconciled), `stale` (a figure that was current,
+with its original time; stale pool metrics count only when they would be
+`usableAsCurrent24h` if the snapshot were fresh, and are otherwise `partial`),
+`partial` and `reference` (never current, never a cell value), `absent`,
+`unavailable`, `rejected`, or `placeholder`. Today it returns `placeholder`
+rows for five pairs built from tokens that exist on the network. **Those rows
+are labelled "Sample" wherever they appear and must stay labelled until the
+adapter returns qualified data.** Token symbols from reads are untrusted text:
+`TokenLabel` renders them isolated in `<bdi>` and never as an attribute, URL or
+artwork key.
 
 The service fee appears only where an owner would be asked to act: the Review
 step of position creation, the fee-scenario review, and receipts. It is absent
@@ -243,6 +364,7 @@ coloured disc with its letters, so adding a logo is dropping in a file.
 
 ## What is not here yet
 
-Wallet connection, SIWE sessions, live chain reads, the browser bridge to the
-Python read API, qualified USD prices, and anything that signs. Each has its
+Wallet connection, SIWE sessions, live chain reads in the deployed build,
+qualified USD prices, and anything that signs. The read adapter and its bridge
+source exist but are off until the consumer acknowledgement and staging. Each has its
 own gate in the repository's specifications.

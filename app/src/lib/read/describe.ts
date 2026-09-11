@@ -1,0 +1,137 @@
+/**
+ * The words for every state a read can end in, in one place.
+ *
+ * Reasons in the contract are closed enums, validated before they get here,
+ * so a code this map does not know is still safe to show as plain text. No
+ * provider-authored string ever passes through here.
+ */
+import { REQUEST_READ_CONTRACT } from './pin'
+import { BRIDGE_RETRY } from './pipeline'
+import type { FailedOutcome, ReadKey } from './types'
+
+const REASONS: Record<string, string> = {
+  provider_unavailable: 'provider unavailable',
+  provider_rate_limited: 'provider rate limited',
+  provider_capacity_busy: 'provider busy',
+  provider_currency_or_pool_mismatch: 'provider data did not match this pool',
+  provider_dex_unconfirmed: 'provider could not confirm the exchange',
+  provider_chart_currency_mismatch: 'chart currency did not match',
+  provider_market_identity_unavailable: 'market identity unavailable',
+  provider_lp_fee_history_unavailable: 'provider LP fee history unavailable',
+  reconciled_fee_history_unavailable: 'reconciled fee history unavailable',
+  qualified_usd_prices_required: 'qualified USD prices required',
+  qualified_price_coverage_gap: 'gap in qualified price coverage',
+  price_observation_budget_exhausted: 'price read budget exhausted',
+  capital_history_unavailable: 'capital history unavailable',
+  reconciled_position_tail_required: 'position history not reconciled yet',
+  capital_ledger_not_caught_up: 'capital ledger catching up',
+  capital_window_budget_exhausted: 'capital window read budget exhausted',
+  pool_younger_than_window: 'pool younger than the 24h window',
+  capital_window_incomplete: 'capital reconciled over less than the 24h window',
+  zero_time_weighted_tvl: 'zero time-weighted TVL',
+  position_ledger_not_caught_up: 'position ledger catching up',
+  position_accounting_adapter_required: 'position accounting adapter required',
+  fee_ledger_not_caught_up: 'fee ledger catching up',
+  fee_accounting_adapter_required: 'fee accounting adapter required',
+  timestamp_aligned_valuation_unavailable: 'no timestamp-aligned valuation',
+  lp_fee_and_time_weighted_tvl_not_reconciled: 'LP fees and time-weighted TVL not reconciled',
+  time_weighted_tvl_and_usd_valuation_not_reconciled: 'time-weighted TVL and USD valuation not reconciled',
+  price_source_quality_not_qualified: 'price source not qualified',
+  price_history_missing: 'price history missing',
+  token_has_no_code: 'no contract at this address',
+  rpc_error: 'RPC error',
+  rpc_call_gas_limit: 'RPC call hit the gas limit',
+  rpc_call_reverted: 'RPC call reverted',
+  network_unavailable: 'network unavailable',
+  upstream_unavailable: 'read service unavailable',
+  upstream_timeout: 'read service timed out',
+  not_in_read_v1: 'read-v1 has no such field',
+  mixed_basis: 'operands come from different sources',
+  turnover_undefined: 'no TVL to divide by',
+}
+
+export const reasonText = (code: string | null | undefined): string =>
+  code ? (REASONS[code] ?? code.replace(/_/g, ' ')) : 'no reason given'
+
+export interface FailureText {
+  title: string
+  detail: string
+  /** Whether asking again could plausibly help. */
+  retry: boolean
+  /** The beta cookie is gone: the way back is the access page. */
+  signIn?: boolean
+}
+
+export function describeFailure(outcome: FailedOutcome<ReadKey>): FailureText {
+  switch (outcome.state) {
+    case 'gate_required':
+      return { title: 'Beta access needed', detail: 'Your access to the closed beta has expired or was signed out. Sign in again to load pool data.', retry: false, signIn: true }
+    case 'gate_unavailable':
+      return { title: 'Access is paused', detail: 'The beta gate is temporarily unavailable. Nothing is wrong on your side.', retry: true }
+    case 'access_required':
+      return { title: 'Blocked by an access check', detail: 'This environment sits behind an access check that redirected the read. Nothing was shown.', retry: false }
+    case 'incompatible':
+      return {
+        title: 'Read contract mismatch',
+        detail:
+          outcome.reason === 'contract_header_missing'
+            ? 'The read service did not say which contract it speaks, so nothing it sent is shown.'
+            : outcome.reason === 'upstream_contract_mismatch'
+              ? 'The read bridge and its gateway disagree on the contract version.'
+              : `The read service speaks a contract this app was not built for. It expects ${REQUEST_READ_CONTRACT}.`,
+        retry: true,
+      }
+    case 'invalid':
+      return {
+        title: 'Data failed validation',
+        detail:
+          outcome.reason === 'identity_mismatch'
+            ? 'The reply was about a different pool, token or block than the one asked for. Nothing from it is shown.'
+            : outcome.reason === 'request_contract'
+              ? 'This app built a request the read contract does not allow. Nothing was sent.'
+              : 'The reply did not match the read contract. Nothing from it is shown.',
+        retry: outcome.reason !== 'request_contract',
+      }
+    case 'unavailable': {
+      const cause = outcome.cause
+      const detail =
+        cause.kind === 'producer'
+          ? `The read service answered: ${reasonText(cause.code)}.`
+          : cause.kind === 'network'
+            ? 'The read service could not be reached.'
+            : cause.kind === 'edge'
+              ? `The network edge answered with an error page (HTTP ${cause.status}), not the read service.`
+              : cause.kind === 'read_deadline'
+                ? cause.limit === 'attempt'
+                  ? `The read service did not answer within ${BRIDGE_RETRY.attemptMs / 1000} s, so the read was stopped.`
+                  : `Stopped after ${BRIDGE_RETRY.totalMs / 1000} s, time spent queued included.`
+                : 'Too many reads are already waiting on this screen.'
+      return { title: 'Pool data unavailable', detail, retry: true }
+    }
+    case 'busy':
+      return { title: 'Read service busy', detail: `Try again in ${outcome.retryAfterSeconds} s.`, retry: true }
+    case 'restart_required':
+      return {
+        title: 'The list changed',
+        detail: outcome.code === 'invalid_or_expired_cursor' ? 'The page handle expired, so the list restarts from the first page.' : 'The catalogue was re-indexed, so the list restarts from the first page.',
+        retry: true,
+      }
+    case 'request_rejected':
+      return { title: 'Request refused', detail: `The read bridge refused this request (${reasonText(outcome.code)}, HTTP ${outcome.status}).`, retry: false }
+    case 'disabled':
+      return {
+        title: 'Live data is off',
+        detail:
+          outcome.reason === 'live_data_disabled'
+            ? 'This build does not read live data.'
+            : outcome.reason === 'bridge_data_mode_disabled'
+              ? 'Live reads are switched off on the server.'
+              : 'This read is not enabled on the server.',
+        retry: false,
+      }
+    case 'aborted':
+      return { title: 'Cancelled', detail: 'The read was cancelled.', retry: true }
+    default:
+      return outcome satisfies never
+  }
+}
