@@ -1,6 +1,6 @@
 # Public executor delivery plan
 
-11 September 2026 · planning candidate · source baseline `69359d28c88564dd47d2446f606972df2b88ff8e`
+11 September 2026 · reviewed ordering in #84; E1 implementation candidate in [execution-v1](execution-v1.md) · source baseline `69359d28c88564dd47d2446f606972df2b88ff8e`
 
 Build the public executor in seven independently reviewable work packages, starting with an offline sequence/action/accounting contract. None requires the Cloudflare Tunnel token. Real activation still requires the existing financial evidence gates; starting the backend or accepting a wallet session cannot activate automation.
 
@@ -97,7 +97,7 @@ For swap paths add actual swap-in and swap-out legs on the appropriate currency 
 
 These are different identifiers: sequence ID, immutable financial intent ID, successor identity, vault state nonce, owner policy version, database optimistic version/fencing token and signer transaction nonce. Do not reuse the deposit owner's wallet nonce as a vault nonce. The same financial intent can have bounded replacement attempts sharing a signer nonce; a lost broadcast reply must never create a fresh nonce or successor by itself.
 
-Each completed on-chain policy/pause/resume/withdrawal/automation mutation advances the vault state nonce exactly once, with no reuse/wrap; a revert does not. Owner registration/revocation and membership mutations must invalidate prior plans too. E1/E2 specify their exact nonce behavior rather than leave a gap in the draft interface. A database lease does not authorize an old worker after fencing. Reconciliation is reversible for noncanonical observations; resubmission requires canonical nonce, intent and asset evidence.
+Each completed on-chain policy/pause/resume/withdrawal/automation mutation advances the vault state nonce exactly once, with no reuse/wrap; a revert does not. Owner registration/revocation and membership mutations must invalidate prior plans too. E1 defines nonce exhaustion as terminal for automation, with owner-only recovery still available; E2 must implement and prove that explicit terminal exception to the old synthetic harness. A database lease does not authorize an old worker after fencing. Reconciliation is reversible for noncanonical observations; resubmission requires canonical nonce, intent and asset evidence.
 
 The final hash/domain encoding is an E1 deliverable, not selected by this Markdown. It must bind all financially material fields, reject ambiguous encodings and have independent golden vectors; a plain JSON hash or client-supplied digest is not accepted signing authority. The draft on-chain plan uses bounded integer types (including uint128 budgets and uint64 policy/state fields); E1 must enforce those ABI domains while keeping wire/raw quantities canonical decimal strings and must not silently narrow larger values.
 
@@ -114,7 +114,7 @@ Gas estimates and reservations include the complete chosen path. Follow [existin
 These remain required by the approved scope; they are not silently dropped or counted as delivered by this plan:
 
 - **Owner-funded setup:** complete assisted exact-input swap, the selected tariff under the approved 65 bps ceiling, existing-pool mint and advanced initialize-plus-first-liquidity with price/competing-initialization guards. Reuse the reviewed direct-deposit path instead of rebuilding it. Swap success followed by cancelled mint must remain recoverable without another charge. Native ETH/refunds and unsupported partial fills need explicit cases. The current preview/deposit contracts do not implement these additions; their future versioned issue must coordinate with Decimal's existing consumer.
-- **Real data and public access:** continue #4/#5/#14/#49 and the staging release separately. Public reads stay public at the app boundary; private settings require an admitted session. A private operator execution service is not an extra public Worker sign endpoint. The deferred Deposit Tunnel mapping is unrelated to local executor implementation.
+- **Real data and public access:** continue #4/#5/#14/#49 and the staging release separately. Market reads require no wallet session, but remain behind the beta Access gate during the invited alpha; private settings also require an admitted wallet session. A private operator execution service is not an extra public Worker sign endpoint. The deferred Deposit Tunnel mapping is unrelated to local executor implementation.
 - **Frontend activation and receipts:** after an exact contract notice/ACK, Decimal implements sequence cards, policy review, individual authorization, signed semantic amount receipts, waiting reasons and direct-recovery controls. Existing read/practice cards are not rewritten as live holdings. This plan creates no frontend assignment without that handoff.
 - **Operational policy:** choose justified position/exposure/gas budgets, bounded observation/economic horizons, fee-recipient/rotation behavior, confirmations/finality assumptions and supported admission scope from test evidence. Three positions, the practice 15% gas buffer and integer type maxima are not approved universal deployment defaults.
 
@@ -130,6 +130,8 @@ Use the existing [EX-01–EX-10 checklist and D01–D17 matrix](EXECUTOR_MIGRATI
 | E5 | EX-06 recovery and EX-07 signing/application isolation |
 | E6 + E7 | EX-02–EX-06 full Domino/swap behavior and EX-08 recovery after those paths |
 | Integrated setup + public system | Complete remaining EX-01–EX-08 coverage; independent EX-09 audit/remediation; separately authorized EX-10 limited trial |
+
+Review clarifications from #84: E3 supplies price/market assumptions and pure strategy evidence, not EX-03 pinned-fork qualification by itself. E6/E7 also require EX-07 independent typed-plan reconstruction. Frontend recovery controls alone do not close EX-08: owner exits must work with frontend, API, indexer and operator unavailable. E5's exit evidence includes key rotation, on-chain revocation, compromised-key response, documented recovery authority and a bounded gas-funded operator cohort separated from protocol treasury.
 
 **Completion of E1 is a usable implementation handoff. Completion of E4 is an internal compound milestone. Neither is the invited functional alpha.** Freeze exact source/build/deployment/admission identities, reproduce the mapped tests, complete actual offline owner-recovery drills and obtain the specified independent reviews/audit before the financial release gate. Tests or delegated review alone do not close the existing independent-human/audit requirements.
 
