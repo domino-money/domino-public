@@ -32,9 +32,13 @@
  *      a service binding
  *   5. The binding throws or answers no Response   → 503 bridge_unavailable.
  *
- * No binding exists yet. They are added for production only, after the four
- * Workers are deployed with every flag off; until then an admitted API call
- * on domino.money answers 503 bridge_unavailable without calling anything.
+ * The four bindings are production's only: app/wrangler.toml declares them
+ * as [[env.production.services]], one per family below, each naming its
+ * bridge Worker (domino-read-bridge, domino-session-bridge,
+ * domino-onboarding-bridge, domino-deposit-bridge), deployed with every flag
+ * off. A preview has none, and its API calls end at refusal 1.
+ * tests/forwarder.test.mjs checks that the names looked up here are the names
+ * wrangler.toml binds.
  */
 
 /** What a service binding offers its caller. */

@@ -195,12 +195,20 @@ browser → functions/_middleware.ts        gate, host allowlist, headers
 - Every `/api` answer past the gate leaves with `Cache-Control: no-store,
   no-transform` and `Content-Security-Policy: default-src 'none';
   frame-ancestors 'none'`. The gate's own 401 is unchanged.
-- **No binding exists yet**, so an admitted API call on `domino.money`
-  answers 503 `bridge_unavailable` and calls nothing. The bindings arrive in a
-  separate change, as `[[env.production.services]]` only, after the owner
-  deploys the four Workers (`domino-read-bridge`, `domino-session-bridge`,
-  `domino-onboarding-bridge`, `domino-deposit-bridge`) with every flag off.
-  Previews never get one. Deposit stays deferred: its Worker and binding are
+- **Production is bound; previews are not.** `wrangler.toml` binds
+  `READ_BRIDGE`, `SESSION_BRIDGE`, `ONBOARDING_BRIDGE` and `DEPOSIT_BRIDGE`
+  to the Workers `domino-read-bridge`, `domino-session-bridge`,
+  `domino-onboarding-bridge` and `domino-deposit-bridge`, as
+  `[[env.production.services]]` only. The owner deployed those Workers
+  first, with every flag `"false"`. Once this config is deployed, an admitted
+  API call on `domino.money` reaches its family's disabled Worker:
+  `GET /api/read/v1/capabilities` answers 200 with `dataMode: "disabled"`,
+  and every other route answers 404 `route_not_available`, each with the
+  Worker's `X-Domino-<svc>-Contract` header. Nothing is enabled by the
+  bindings, and no Worker calls anything upstream. There is no
+  `[env.preview]` and no top-level `services`, so a preview has no binding:
+  every `/api` call there gets 404 `not_found` from the origin check, with no
+  contract header. Deposit stays deferred: its Worker and binding are
   deployed disabled with no secrets, and it gets no Access application or
   Tunnel mapping until its own gates pass.
 
@@ -210,7 +218,12 @@ disabled vars. `globalThis.fetch` is a tripwire before the Workers load, so
 any upstream call fails the suite. Its stand-in for Pages routes `/api` with
 the matcher wrangler 4.130.0 uses, and a test fails if the deploy scripts
 move off that version, so the routing is re-checked first. It also checks
-that `wrangler.toml` can give vars and bindings to production only. It runs
+that `wrangler.toml` can give vars and bindings to production only, and reads
+the file with wrangler 4.130.0's own config reader (web's pinned copy,
+offline): production must bind exactly the four names `forward()` looks up,
+each to its own Worker, and preview none. With those bindings and the real
+disabled Workers, every family gets its disabled answer and a preview host
+its 404, with no upstream call. It runs
 the gate's public-read step and the forwarder together: a signed-in read
 reaches `READ_BRIDGE` with no Cookie header, having already lost it at the
 gate, an empty segment still gets the JSON 404, and the other families keep
@@ -227,6 +240,21 @@ npm run deploy           # build, then upload as production
 
 Both pin wrangler 4.130.0 through `npx` rather than a dependency, so CI never
 downloads it.
+
+**After every Pages deploy, check the bindings (step C11).** In the
+dashboard, Workers & Pages → `domino-app` → Settings → Bindings:
+
+- *Choose Environment* on **Production**: exactly four, each a Service
+  binding: `READ_BRIDGE` → `domino-read-bridge`, `SESSION_BRIDGE` →
+  `domino-session-bridge`, `ONBOARDING_BRIDGE` → `domino-onboarding-bridge`,
+  `DEPOSIT_BRIDGE` → `domino-deposit-bridge`.
+- *Choose Environment* on **Preview**: none.
+
+Repeat both after every deploy, preview deploys included. Signed in on
+`domino.money`, `/api/read/v1/capabilities` then shows `dataMode: "disabled"`
+with an `X-Domino-Read-Contract` header. To roll back, delete the four
+`[[env.production.services]]` tables and run `npm run deploy` again:
+production API calls then answer 503 `bridge_unavailable` and call nothing.
 
 **Looking at it locally.** `scripts/gated-server.mjs` serves `dist` through the
 compiled middleware with `node:http`, which is how the browser tests run it:

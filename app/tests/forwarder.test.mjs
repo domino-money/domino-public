@@ -82,15 +82,28 @@ const CSRF = 'c'.repeat(43);
 
 /** What this suite expects of each family, written out rather than read from the code under test. */
 const FAMILY = {
-  read: { binding: 'READ_BRIDGE', contract: 'x-domino-read-contract', csrf: false, cookie: null },
+  read: { binding: 'READ_BRIDGE', service: 'domino-read-bridge', contract: 'x-domino-read-contract', csrf: false, cookie: null },
   session: {
     binding: 'SESSION_BRIDGE',
+    service: 'domino-session-bridge',
     contract: 'x-domino-session-contract',
     csrf: true,
     cookie: `${PREAUTH}; ${SESSION}`,
   },
-  onboarding: { binding: 'ONBOARDING_BRIDGE', contract: 'x-domino-onboarding-contract', csrf: true, cookie: SESSION },
-  deposit: { binding: 'DEPOSIT_BRIDGE', contract: 'x-domino-deposit-contract', csrf: true, cookie: SESSION },
+  onboarding: {
+    binding: 'ONBOARDING_BRIDGE',
+    service: 'domino-onboarding-bridge',
+    contract: 'x-domino-onboarding-contract',
+    csrf: true,
+    cookie: SESSION,
+  },
+  deposit: {
+    binding: 'DEPOSIT_BRIDGE',
+    service: 'domino-deposit-bridge',
+    contract: 'x-domino-deposit-contract',
+    csrf: true,
+    cookie: SESSION,
+  },
 };
 const FAMILIES = Object.keys(FAMILY);
 
@@ -915,6 +928,11 @@ test('wrangler.toml: vars and service bindings can only ever be production\'s', 
   const production = tables.filter(({ header }) => header === '[env.production.vars]');
   assert.equal(production.length, 1);
   assert.deepEqual(production[0].keys, { CANONICAL_HOSTS_ONLY: '"true"' });
+  // Service bindings: one table per family, each naming a binding and a
+  // Worker and nothing else (no entrypoint, no environment).
+  const services = tables.filter(({ header }) => header === '[[env.production.services]]');
+  assert.equal(services.length, FAMILIES.length);
+  for (const { keys } of services) assert.deepEqual(Object.keys(keys).sort(), ['binding', 'service']);
 });
 
 test('the deploy scripts pin wrangler 4.130.0, whose Pages router the stand-in and onward() follow', () => {
@@ -929,9 +947,140 @@ test('the deploy scripts pin wrangler 4.130.0, whose Pages router the stand-in a
   }
 });
 
-test('wrangler.toml: no service binding yet; they arrive once the four Workers are deployed disabled', () => {
-  // The bindings change replaces this test with one naming the four bindings.
-  assert.deepEqual(wranglerToml().filter(({ header }) => header.includes('services')), []);
+/**
+ * app/wrangler.toml as wrangler 4.130.0 reads it for each Pages environment,
+ * through its own config reader: unstable_readConfig, the normalizing and
+ * validating reader its Pages commands also run before their Pages-only
+ * checks. It runs in a child process, so nothing wrangler loads can touch this
+ * file's upstream tripwire, offline, with a placeholder token and account; it
+ * never deploys. wrangler is web's dependency, pinned to the version the
+ * deploy scripts run.
+ */
+let wranglerRead;
+function wrangler() {
+  if (wranglerRead) return wranglerRead;
+  const { spawnSync } = require('node:child_process');
+  const { existsSync, readFileSync } = require('node:fs');
+  const { fileURLToPath } = require('node:url');
+  const web = JSON.parse(readFileSync(new URL('../../web/package.json', import.meta.url), 'utf8'));
+  assert.equal({ ...web.dependencies, ...web.devDependencies }.wrangler, '4.130.0', "web/package.json's wrangler pin");
+  const dir = fileURLToPath(new URL('../../web/node_modules/wrangler/', import.meta.url));
+  assert.ok(existsSync(`${dir}package.json`), 'wrangler is missing: run npm --prefix web ci first');
+  const script = [
+    'const [dir, config] = process.argv.slice(1);',
+    "const { version } = require(dir + 'package.json');",
+    "const { unstable_readConfig } = require(dir + 'wrangler-dist/cli.js');",
+    'const read = (env) => {',
+    '  const c = unstable_readConfig({ config, env }, { hideWarnings: false });',
+    '  return { targetEnvironment: c.targetEnvironment, vars: c.vars, services: c.services };',
+    '};',
+    "process.stdout.write(JSON.stringify({ version, production: read('production'), preview: read('preview') }));",
+  ].join('\n');
+  const config = fileURLToPath(new URL('../wrangler.toml', import.meta.url));
+  const run = spawnSync(process.execPath, ['-e', script, dir, config], {
+    encoding: 'utf8',
+    env: {
+      ...process.env,
+      CLOUDFLARE_API_TOKEN: 'invalid-review-token',
+      CLOUDFLARE_ACCOUNT_ID: '0'.repeat(32),
+      WRANGLER_SEND_METRICS: 'false',
+    },
+  });
+  assert.equal(run.status, 0, run.stderr);
+  // No warning either: wrangler reports a key it does not know here.
+  assert.equal(run.stderr, '');
+  wranglerRead = JSON.parse(run.stdout);
+  return wranglerRead;
+}
+
+test('wrangler 4.130.0 reads four service bindings for production, to exactly the four bridge Workers, and none for preview', () => {
+  const read = wrangler();
+  assert.equal(read.version, '4.130.0');
+  assert.equal(read.production.targetEnvironment, 'production');
+  assert.deepEqual(read.production.vars, { CANONICAL_HOSTS_ONLY: 'true' });
+  assert.deepEqual(
+    read.production.services,
+    FAMILIES.map((family) => ({ binding: FAMILY[family].binding, service: FAMILY[family].service })),
+  );
+  assert.equal(read.preview.targetEnvironment, 'preview');
+  assert.deepEqual(read.preview.vars, {});
+  assert.deepEqual(read.preview.services, []);
+});
+
+test("the binding names forward() looks up are exactly the names wrangler.toml binds, each to its family's Worker", async () => {
+  const bound = Object.fromEntries(wrangler().production.services.map(({ binding, service }) => [binding, service]));
+  const looked = [];
+  for (const family of FAMILIES) {
+    // An env that records every name forward() reads from it and holds nothing.
+    const names = [];
+    const env = new Proxy({}, { get: (_, name) => (names.push(name), undefined) });
+    await refused(await forward(new Request(`${ORIGIN}${ROUTE[family].path}`), env), 503, 'bridge_unavailable');
+    assert.equal(names.length, 1, `${family} read ${names.map(String).join(', ')}`);
+    assert.equal(bound[names[0]], FAMILY[family].service, `${family} → ${String(names[0])} → a Worker`);
+    looked.push(names[0]);
+  }
+  assert.deepEqual(looked.sort(), Object.keys(bound).sort());
+});
+
+/**
+ * An environment as wrangler.toml deploys it: its vars, the gate's secrets,
+ * and each declared binding bound to the real bridge Worker of that service
+ * name, under its reviewed disabled config.
+ */
+function deployed(environment) {
+  const { vars, services } = wrangler()[environment];
+  const calls = [];
+  const env = { ...GATE, ...vars };
+  for (const { binding, service } of services) {
+    const family = FAMILIES.find((name) => FAMILY[name].service === service);
+    assert.ok(family, `${binding} names ${service}, which is no bridge Worker`);
+    env[binding] = {
+      fetch(request) {
+        calls.push(`${service} ${request.method} ${request.url}`);
+        return WORKERS[family].fetch(request, DISABLED[family]);
+      },
+    };
+  }
+  return { env, calls };
+}
+
+test('production as wrangler.toml binds it: every family reaches its own disabled Worker and gets its disabled answer, nothing upstream', async () => {
+  const { env, calls } = deployed('production');
+  const capabilities = await pages(call('/api/read/v1/capabilities'), env);
+  assert.equal(capabilities.status, 200);
+  assert.equal(capabilities.headers.get('x-domino-read-contract'), RUNTIME.read.CONTRACT_VERSION);
+  const document = await capabilities.json();
+  assert.equal(document.dataMode, 'disabled');
+  assert.deepEqual(document.enabledReads, []);
+  for (const family of FAMILIES) {
+    const { path, body } = ROUTE[family];
+    const response = await pages(call(path, { method: 'POST', body, headers: { 'X-Domino-CSRF': CSRF } }), env);
+    await workerSaid(response, family, 'route_not_available');
+  }
+  await workerSaid(await pages(call('/api/session/v1/me'), env), 'session', 'route_not_available');
+  assert.deepEqual(calls, [
+    'domino-read-bridge GET https://domino.money/api/read/v1/capabilities',
+    ...FAMILIES.map((family) => `${FAMILY[family].service} POST https://domino.money${ROUTE[family].path}`),
+    'domino-session-bridge GET https://domino.money/api/session/v1/me',
+  ]);
+  assert.equal(served, 0);
+  assert.deepEqual(upstream, []);
+});
+
+test('a preview as wrangler.toml deploys it has no binding, and every /api call there gets the 404 not_found of the origin check', async () => {
+  const { env, calls } = deployed('preview');
+  assert.deepEqual(Object.keys(env).filter((name) => name.endsWith('_BRIDGE')), []);
+  for (const origin of ['https://preview.domino-app-e65.pages.dev', 'https://abc123de.domino-app-e65.pages.dev']) {
+    for (const family of FAMILIES) {
+      const { path, body } = ROUTE[family];
+      const response = await pages(call(path, { method: 'POST', body, origin, headers: { 'X-Domino-CSRF': CSRF } }), env);
+      await refused(response, 404, 'not_found');
+    }
+    await refused(await pages(call('/api/read/v1/capabilities', { origin }), env), 404, 'not_found');
+  }
+  assert.deepEqual(calls, []);
+  assert.equal(served, 0);
+  assert.deepEqual(upstream, []);
 });
 
 // ---------------------------------------------------------------------------
