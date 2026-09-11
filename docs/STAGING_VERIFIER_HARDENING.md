@@ -18,9 +18,11 @@ schemas and five initial Domino roles' database grants; after installation the
 inventory adds the five application schemas and deposit CONNECT. The existing
 effective table/function/sequence and peer checks remain in place.
 
-Any default ACL entry in the target database or persistent role/database setting
-in the dedicated cluster fails verification, regardless of owner or database
-scope. The migrations' schema-local default REVOKEs leave no default-ACL rows.
+Any default ACL entry in the target database, persistent role/database setting,
+or parameter ACL entry in the dedicated cluster fails verification, regardless
+of owner or database scope. A parameter SET grant can authorize restricted
+settings without a persistent override. The migrations' schema-local default
+REVOKEs leave no default-ACL rows.
 No value is reset automatically. The expected foundation uses PostgreSQL 16's
 `pg_database_owner` ownership of `public`; an extra temporary schema also requires
 operator inspection rather than an automatic exception.
@@ -28,6 +30,12 @@ operator inspection rather than an automatic exception.
 These checks do not authenticate the running database server, attest stored
 function/trigger bodies, audit every cluster role or prove a financial write.
 They do not replace the actual host peer/isolation checks or behavioral suite.
+
+The follow-up to [Decimal's #73 review](https://github.com/domino-money/domino/pull/73#pullrequestreview-5179001356)
+qualifies catalogue relations/functions and pins the installer's libpq search
+path to `pg_catalog`, checks `pg_parameter_acl`, and reports override categories
+before generic database-emptiness failures. Root commands use Python `-B` to
+avoid writing bytecode in the reviewed helper copy. This changes no SQL grants.
 
 ## Installed source identity
 
@@ -70,12 +78,22 @@ runuser, systemd, a real HTTP service or the VM:
 python3 -B -m unittest discover -s scripts/staging/tests -p test_staging_helpers.py -v
 ```
 
+Entry-point tests mock only the host perimeter and exercise actual `preflight`
+and `check_roles.main` control flow. They require the inventory call and rejection
+of every failed inventory category, including the override-specific diagnostics.
+These tests fail if either call is removed or its results are ignored.
+
 The opt-in SQL suite creates its own unprivileged PostgreSQL cluster under a
 fresh temporary directory, with a private Unix socket and TCP disabled. It
 applies exactly migrations 001–014 as the fixture's non-superuser owner. It
 checks the positive inventory and transactional mutations of schema/DB grants,
 grant options, owners, extra schemas, default ACLs and persistent settings.
-Every mutation rolls back and rechecks the clean inventory. It also demonstrates
+Transactional mutations roll back and recheck the clean inventory. Further
+regressions create owner-controlled shadow catalogue views, prove a client's
+fixed search path overrides a database default, and demonstrate that a parameter
+SET grant enables restricted-setting changes for a non-superuser connection.
+The latter connection tests revoke/reset their fixture changes in cleanup.
+It also demonstrates
 four previously undetected states passing the old metadata checks while the new
 inventory rejects them. The cluster is stopped and removed by test cleanup:
 

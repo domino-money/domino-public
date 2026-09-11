@@ -6,14 +6,14 @@ roles, run migrations, grant a wallet, change configuration, or start services.
 Run it as root **on the target VM**, against its existing private Unix socket:
 
 ```sh
-sudo python3.14 scripts/staging/check_roles.py
+sudo python3.14 -B scripts/staging/check_roles.py
 ```
 
 Defaults are `/run/postgresql-domino`, port `8877`, database
 `domino_catalogue`. Only the socket and port can be selected explicitly:
 
 ```sh
-sudo python3.14 scripts/staging/check_roles.py --socket /run/postgresql-domino --port 8877
+sudo python3.14 -B scripts/staging/check_roles.py --socket /run/postgresql-domino --port 8877
 ```
 
 The script requires `/usr/sbin/runuser`, `/usr/bin/env`, `/usr/bin/id`,
@@ -81,6 +81,12 @@ including role-only, database-only, role-in-database, global and other-database
 settings. This detects persistent trigger-bypass/search-path settings without
 reading or printing their values. Per-connection `PGOPTIONS` used by the verifier
 do not create persistent entries. Missing or malformed inventory also fails.
+`pg_parameter_acl` must also be empty across the cluster. For example, granting
+SET on `session_replication_role` can authorize trigger bypass without a persistent
+setting. Any parameter ACL row fails; there is no runtime-role exception.
+The shared inventory schema-qualifies catalogue relations and built-in functions;
+the connection's fixed `pg_catalog` search path also applies. Owner-created
+shadow views in `public` cannot replace the inspected catalogues.
 
 Effective schema/table/function/sequence privileges and runtime grant options
 are checked against the source's role matrix. In particular, the public reader
@@ -115,5 +121,6 @@ that an actual write, trigger or financial recovery succeeds. Keep listeners
 and ingress disabled until the other staging gates pass; use the full isolated
 PG/EVM suite for behavioral validation rather than staging fixtures.
 Run this file together with its reviewed `catalogue_inventory.py` helper.
+Keep `-B` in root commands so imports do not write bytecode into that helper copy.
 [Hardening tests and remaining host checks](STAGING_VERIFIER_HARDENING.md)
 describe how the added inventory is tested without accessing staging.

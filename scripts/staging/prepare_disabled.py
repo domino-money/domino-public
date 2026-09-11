@@ -35,7 +35,8 @@ DEPOSIT = 'domino_deposit_service'
 BACKUPS = Path('/var/backups/domino-disabled')
 UNIT_DIR = Path('/etc/systemd/system')
 ENV = {'PATH': '/usr/sbin:/usr/bin:/sbin:/bin', 'LANG': 'C.UTF-8',
-       'PGCONNECT_TIMEOUT': '5', 'PYTHONDONTWRITEBYTECODE': '1'}
+       'PGCONNECT_TIMEOUT': '5', 'PGOPTIONS': '-c search_path=pg_catalog',
+       'PYTHONDONTWRITEBYTECODE': '1'}
 COMMAND_TIMEOUT = 180
 SERVICES = {
     'read': ('read_api.py', '--port 8876 --read-budget 15'),
@@ -66,16 +67,16 @@ HBA = (('local', 'all', 'postgres', 'peer'),
        ('local', 'all', 'all', 'reject'),
        ('host', 'all', 'all', '0.0.0.0/0', 'reject'),
        ('host', 'all', 'all', '::0/0', 'reject'))
-EMPTY = """NOT EXISTS (SELECT FROM pg_namespace
+EMPTY = """NOT EXISTS (SELECT FROM pg_catalog.pg_namespace
  WHERE nspname NOT IN ('public','information_schema') AND nspname !~ '^pg_')
- AND NOT EXISTS (SELECT FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace
+ AND NOT EXISTS (SELECT FROM pg_catalog.pg_class c JOIN pg_catalog.pg_namespace n ON n.oid=c.relnamespace
  WHERE n.nspname='public')
- AND NOT EXISTS (SELECT FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace
+ AND NOT EXISTS (SELECT FROM pg_catalog.pg_proc p JOIN pg_catalog.pg_namespace n ON n.oid=p.pronamespace
  WHERE n.nspname='public')
- AND NOT EXISTS (SELECT FROM pg_type t JOIN pg_namespace n ON n.oid=t.typnamespace
+ AND NOT EXISTS (SELECT FROM pg_catalog.pg_type t JOIN pg_catalog.pg_namespace n ON n.oid=t.typnamespace
  WHERE n.nspname='public')
- AND NOT EXISTS (SELECT FROM pg_extension WHERE extname<>'plpgsql')
- AND NOT EXISTS (SELECT FROM pg_largeobject_metadata)
+ AND NOT EXISTS (SELECT FROM pg_catalog.pg_extension WHERE extname<>'plpgsql')
+ AND NOT EXISTS (SELECT FROM pg_catalog.pg_largeobject_metadata)
  AND """ + NO_PERSISTENT_OVERRIDES
 
 
@@ -315,11 +316,11 @@ def preflight(files, commit):
                 'unexpected PG auth config mode/type')
         require(info.st_gid == pwd.getpwnam('postgres').pw_gid, 'unexpected PG auth config group')
         require(normalized_config(path) == expected, 'PG auth foundation differs from reviewed snapshot')
-    settings = json.loads(sql("SELECT json_object_agg(name,setting) FROM pg_settings WHERE name IN "
+    settings = json.loads(sql("SELECT pg_catalog.json_object_agg(name,setting) FROM pg_catalog.pg_settings WHERE name IN "
         "('server_version_num','server_encoding','data_directory','config_file','hba_file','ident_file','port',"
         "'listen_addresses','unix_socket_directories','unix_socket_permissions','unix_socket_group')"))
     require(settings.get('server_encoding') == 'UTF8' and sql(
-        "SELECT pg_encoding_to_char(encoding) FROM pg_database WHERE datname=current_database()") == 'UTF8',
+        "SELECT pg_catalog.pg_encoding_to_char(encoding) FROM pg_catalog.pg_database WHERE datname=pg_catalog.current_database()") == 'UTF8',
         'PostgreSQL database and server_encoding must be UTF8')
     expected = {'data_directory': str(DATA), 'config_file': str(CONFIG/'postgresql.conf'),
                 'hba_file': str(CONFIG/'pg_hba.conf'), 'ident_file': str(CONFIG/'pg_ident.conf'),
@@ -327,33 +328,40 @@ def preflight(files, commit):
                 'unix_socket_permissions': '0770', 'unix_socket_group': 'domino-db'}
     require(all(settings[k] == v for k, v in expected.items())
             and 160000 <= int(settings['server_version_num']) < 170000, 'unexpected PostgreSQL foundation')
-    require(sql(f'SELECT {EMPTY}') == 't', 'database is not empty')
-    require(sql("SELECT pg_get_userbyid(datdba) FROM pg_database WHERE datname=current_database()") == ADMIN,
-            'wrong database owner')
-    require(sql("SELECT count(*) FROM pg_stat_activity WHERE datname=current_database() "
-                "AND pid<>pg_backend_pid() AND backend_type='client backend'") == '0', 'other DB clients connected')
-    roles = json.loads(sql("SELECT json_agg(rolname ORDER BY rolname) FROM pg_roles WHERE rolname ~ '^domino_'"))
-    require(roles == sorted(row[2] for row in MAPPINGS), 'unexpected Domino SQL roles')
-    require(sql("SELECT count(*) FROM pg_roles WHERE rolname ~ '^domino_' "
-        "AND (rolsuper OR rolcreatedb OR rolcreaterole OR rolreplication OR rolbypassrls OR rolinherit OR NOT rolcanlogin)") == '0',
-        'unexpected Domino SQL role privileges')
-    require(sql("SELECT count(*) FROM pg_auth_members m JOIN pg_roles r ON r.oid=m.member "
-        "JOIN pg_roles g ON g.oid=m.roleid WHERE r.rolname ~ '^domino_' "
-        "OR g.rolname ~ '^domino_'") == '0', 'unexpected SQL role memberships')
     inventory = check_inventory(json.loads(sql(inventory_sql())), installed=False)
+    override_categories = {
+        'noDefaultAclOverrides': 'default privilege overrides (pg_default_acl)',
+        'noPersistentRoleDatabaseSettings': 'persistent role/database overrides (pg_db_role_setting)',
+        'noParameterAclOverrides': 'parameter privilege overrides (pg_parameter_acl)',
+    }
+    unexpected = [category for key, category in override_categories.items() if not inventory[key]]
+    require(not unexpected, 'unexpected PostgreSQL overrides: ' + ', '.join(unexpected))
     require(all(inventory.values()), 'unexpected foundation catalogue inventory: ' +
             ','.join(name for name, passed in inventory.items() if not passed))
+    require(sql(f'SELECT {EMPTY}') == 't', 'database is not empty')
+    require(sql("SELECT pg_catalog.pg_get_userbyid(datdba) FROM pg_catalog.pg_database WHERE datname=pg_catalog.current_database()") == ADMIN,
+            'wrong database owner')
+    require(sql("SELECT pg_catalog.count(*) FROM pg_catalog.pg_stat_activity WHERE datname=pg_catalog.current_database() "
+                "AND pid<>pg_catalog.pg_backend_pid() AND backend_type='client backend'") == '0', 'other DB clients connected')
+    roles = json.loads(sql("SELECT pg_catalog.json_agg(rolname ORDER BY rolname) FROM pg_catalog.pg_roles WHERE rolname ~ '^domino_'"))
+    require(roles == sorted(row[2] for row in MAPPINGS), 'unexpected Domino SQL roles')
+    require(sql("SELECT pg_catalog.count(*) FROM pg_catalog.pg_roles WHERE rolname ~ '^domino_' "
+        "AND (rolsuper OR rolcreatedb OR rolcreaterole OR rolreplication OR rolbypassrls OR rolinherit OR NOT rolcanlogin)") == '0',
+        'unexpected Domino SQL role privileges')
+    require(sql("SELECT pg_catalog.count(*) FROM pg_catalog.pg_auth_members m JOIN pg_catalog.pg_roles r ON r.oid=m.member "
+        "JOIN pg_catalog.pg_roles g ON g.oid=m.roleid WHERE r.rolname ~ '^domino_' "
+        "OR g.rolname ~ '^domino_'") == '0', 'unexpected SQL role memberships')
     validate_pg_files()
     return settings
 
 
 def validate_pg_files():
     for view in ('pg_hba_file_rules', 'pg_ident_file_mappings'):
-        require(sql(f'SELECT count(*) FROM {view} WHERE error IS NOT NULL') == '0', f'invalid {view}')
+        require(sql(f'SELECT pg_catalog.count(*) FROM pg_catalog.{view} WHERE error IS NOT NULL') == '0', f'invalid {view}')
 
 
 def verify_new_peers():
-    # pg_reload_conf() signals the server; positive new connections prove that
+    # pg_catalog.pg_reload_conf() signals the server; positive new connections prove that
     # the new mappings are actually loaded, not merely parseable on disk.
     for _, user, role in NEW_MAPPINGS:
         for attempt in range(20):
@@ -482,7 +490,7 @@ def apply(files, planned):
                     (*HBA[:6], ('local', DB, DEPOSIT, 'peer', 'map=domino'), *HBA[6:]),
                 'written peer configuration differs from plan')
         validate_pg_files()
-        require(sql('SELECT pg_reload_conf()') == 't', 'PostgreSQL reload request failed')
+        require(sql('SELECT pg_catalog.pg_reload_conf()') == 't', 'PostgreSQL reload request failed')
         verify_new_peers()
         migrations = '\n'.join(files[p][0].decode() for p in MIGRATIONS)
         guard = f"SET LOCAL lock_timeout='5s'; SET LOCAL statement_timeout='120s'; DO $$ BEGIN IF NOT ({EMPTY}) THEN RAISE EXCEPTION 'database_not_empty'; END IF; END $$;\n"

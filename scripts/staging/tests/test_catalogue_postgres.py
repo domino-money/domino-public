@@ -23,7 +23,8 @@ class CataloguePostgresTests(unittest.TestCase):
     @classmethod
     def run_tool(cls, name, *args, data=None):
         result = subprocess.run([str(cls.bin / name), *args], input=data, text=True,
-            capture_output=True, timeout=30, env={'PATH': '/usr/bin:/bin', 'LC_ALL': 'C'})
+            capture_output=True, timeout=30, env={'PATH': '/usr/bin:/bin', 'LC_ALL': 'C',
+                                                'PGOPTIONS': prepare_disabled.ENV['PGOPTIONS']})
         if result.returncode:
             raise AssertionError(f'{name} failed: {result.stderr}')
         return result.stdout.strip()
@@ -131,11 +132,61 @@ class CataloguePostgresTests(unittest.TestCase):
         for mutation in (
             'ALTER DEFAULT PRIVILEGES GRANT SELECT ON TABLES TO unrelated',
             "ALTER ROLE domino_session_auth SET session_replication_role='replica'",
+            'GRANT SET ON PARAMETER session_replication_role TO domino_session_auth',
         ):
             with self.subTest(mutation=mutation):
                 output = self.query('BEGIN; ' + mutation + '; SELECT ' + prepare_disabled.EMPTY + '; ROLLBACK;',
                                     database='empty_guard')
                 self.assertEqual(output, 'f')
+
+        shadow = """CREATE TABLE public.hidden_fixture(value integer);
+          CREATE VIEW public.pg_class AS SELECT * FROM pg_catalog.pg_class WHERE false;
+          CREATE VIEW public.pg_proc AS SELECT * FROM pg_catalog.pg_proc WHERE false;
+          CREATE VIEW public.pg_type AS SELECT * FROM pg_catalog.pg_type WHERE false;
+          SET LOCAL search_path=public,pg_catalog;"""
+        self.assertEqual(self.query('BEGIN; ' + shadow + ' SELECT ' + prepare_disabled.EMPTY + '; ROLLBACK;',
+                                    database='empty_guard', role=inventory.ADMIN), 'f')
+
+    def test_catalogue_shadow_views_cannot_hide_owner_tampering(self):
+        cases = [
+            ('pg_default_acl', 'ALTER DEFAULT PRIVILEGES GRANT SELECT ON TABLES TO unrelated', 'defaultAclCount'),
+            ('pg_db_role_setting', "ALTER DATABASE domino_catalogue SET application_name='fixture'", 'roleSettingCount'),
+        ]
+        for catalogue, mutation, key in cases:
+            with self.subTest(catalogue=catalogue):
+                sql = f'CREATE VIEW public.{catalogue} AS SELECT * FROM pg_catalog.{catalogue} WHERE false;'
+                data = json.loads(self.query('BEGIN; ' + sql + mutation + '; SET LOCAL search_path=public,pg_catalog;'
+                                             + inventory.inventory_sql() + 'ROLLBACK;', role=inventory.ADMIN))
+                self.assertGreater(data[key], 0)
+        data = json.loads(self.query("""BEGIN; CREATE SCHEMA hidden_schema;
+          CREATE VIEW public.pg_namespace AS SELECT * FROM pg_catalog.pg_namespace WHERE nspname<>'hidden_schema';
+          SET LOCAL search_path=public,pg_catalog;""" + inventory.inventory_sql() + 'ROLLBACK;', role=inventory.ADMIN))
+        self.assertFalse(inventory.check_inventory(data, installed=True)['completeSchemaInventory'])
+        self.assertIn('hidden_schema', {row['name'] for row in data['schemas']})
+
+    def test_parameter_set_grant_is_detected_without_a_persistent_setting(self):
+        denied = 'SET session_replication_role=replica;'
+        with self.assertRaisesRegex(AssertionError, 'permission denied to set parameter'):
+            self.query(denied, role=inventory.AUTH)
+        self.query('GRANT SET ON PARAMETER session_replication_role TO domino_session_auth;')
+        try:
+            self.assertEqual(self.query(denied + 'SHOW session_replication_role;', role=inventory.AUTH), 'replica')
+            data = json.loads(self.query(inventory.inventory_sql(), role=inventory.ADMIN))
+            self.assertEqual(data['roleSettingCount'], 0)
+            self.assertGreater(data['parameterAclCount'], 0)
+            self.assertFalse(inventory.check_inventory(data, installed=True)['noParameterAclOverrides'])
+        finally:
+            self.query('REVOKE SET ON PARAMETER session_replication_role FROM domino_session_auth;')
+        self.assertTrue(all(inventory.check_inventory(json.loads(self.query(inventory.inventory_sql())), installed=True).values()))
+
+    def test_client_search_path_overrides_database_default(self):
+        self.query('ALTER DATABASE domino_catalogue SET search_path=public,pg_catalog;')
+        try:
+            self.assertEqual(self.query('SHOW search_path;', role=inventory.ADMIN), 'pg_catalog')
+            data = json.loads(self.query(inventory.inventory_sql(), role=inventory.ADMIN))
+            self.assertFalse(inventory.check_inventory(data, installed=True)['noPersistentRoleDatabaseSettings'])
+        finally:
+            self.query('ALTER DATABASE domino_catalogue RESET search_path;')
 
 
 if __name__ == '__main__':

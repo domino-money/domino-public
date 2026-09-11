@@ -5,11 +5,13 @@ import io
 import json
 import os
 from pathlib import Path
+import stat
 import subprocess
 import sys
 import tarfile
 import tempfile
 import time
+from types import SimpleNamespace
 import unittest
 from unittest.mock import Mock, patch
 
@@ -225,6 +227,14 @@ class CodeIdentityTests(unittest.TestCase):
 
 
 class CatalogueShapeTests(unittest.TestCase):
+    def test_parameter_acl_count_requires_an_explicit_integer_zero(self):
+        for value in (None, False, True, '0', 1, -1, []):
+            with self.subTest(value=value):
+                self.assertFalse(catalogue_inventory.check_inventory({'parameterAclCount': value},
+                                  installed=True)['noParameterAclOverrides'])
+        self.assertTrue(catalogue_inventory.check_inventory({'parameterAclCount': 0},
+                        installed=True)['noParameterAclOverrides'])
+
     def test_missing_or_malformed_inventory_fails_closed(self):
         for data in (None, [], {}, {'roleSettingCount': False, 'defaultAclCount': False},
                      {'roleSettingCount': 0, 'defaultAclCount': 0, 'schemas': []}):
@@ -264,6 +274,164 @@ class RoleCommandTests(unittest.TestCase):
                 patch.object(check_roles.os, 'killpg') as kill:
             self.assertEqual(check_roles.command(['fixture'], time.monotonic() + 1)['status'], 'timeout')
         kill.assert_called_once_with(12345, check_roles.signal.SIGKILL)
+
+
+class InventoryWiringTests(unittest.TestCase):
+    """Mock the host perimeter, then exercise the actual entry-point control flow.
+
+    Catalogue SQL/validation are exercised with real PG in the companion suite.
+    These tests specifically catch removing either entry point's inventory call
+    or ignoring its false checks. No preflight fixture touches the actual host.
+    """
+    checks = ('noDefaultAclOverrides', 'noPersistentRoleDatabaseSettings',
+              'noParameterAclOverrides', 'completeSchemaInventory',
+              'completeSchemaAcl', 'completeDatabaseAcl')
+
+    def run_role_main(self, failing=None):
+        users = {name: 1000 + i for i, name in enumerate(check_roles.PEERS)}
+        checked = {name: name != failing for name in self.checks}
+        fixture = {'fixture': 'role_catalogue'}
+        def query(args, os_user, role, sql, deadline, **kwargs):
+            if sql == check_roles.IDENTITY_SQL:
+                if role not in check_roles.PEERS[os_user]:
+                    return {'status': 'peer_denied' if check_roles.PEERS[os_user] else 'socket_denied'}
+                data = {'sessionUser': role, 'currentUser': role, 'database': 'domino_catalogue', 'readonly': True}
+            elif sql == check_roles.metadata_sql():
+                data = {'fixture': 'legacy_metadata'}
+            elif sql == catalogue_inventory.inventory_sql():
+                data = fixture
+            elif sql.startswith("SELECT json_build_object('checks'"):
+                data = {'checks': 1, 'failures': []}
+            else:
+                table = sql.split('FROM (SELECT 1 FROM ')[1].split(' LIMIT 0)')[0]
+                return ({'status': 'ok', 'output': '0'} if check_roles.allowed_table(role, table, 'SELECT')
+                        else {'status': 'privilege_denied'})
+            return {'status': 'ok', 'output': json.dumps(data)}
+        output = io.StringIO()
+        with contextlib.ExitStack() as stack:
+            stack.enter_context(patch.object(check_roles.os, 'geteuid', return_value=0))
+            stack.enter_context(patch.object(check_roles.os, 'access', return_value=True))
+            stack.enter_context(patch.object(check_roles.pwd, 'getpwnam', side_effect=lambda name: SimpleNamespace(pw_uid=users[name])))
+            stack.enter_context(patch.object(check_roles, 'socket_access', return_value=[{'ok': True}]))
+            stack.enter_context(patch.object(check_roles, 'command', side_effect=lambda argv, deadline: {
+                'status': 'ok', 'output': str(users[argv[2]])}))
+            stack.enter_context(patch.object(check_roles, 'check_metadata', return_value={'legacy': True}))
+            inventory = stack.enter_context(patch.object(check_roles, 'check_inventory', return_value=checked))
+            queries = stack.enter_context(patch.object(check_roles, 'query', side_effect=query))
+            stack.enter_context(contextlib.redirect_stdout(output))
+            status = check_roles.main([])
+        inventory.assert_called_once_with(fixture, installed=True)
+        self.assertEqual(sum(call.args[3] == catalogue_inventory.inventory_sql() for call in queries.call_args_list), 1)
+        return status, json.loads(output.getvalue())
+
+    def test_role_command_requires_every_added_inventory_check(self):
+        status, report = self.run_role_main()
+        self.assertEqual(status, 0, report)
+        for failing in self.checks:
+            with self.subTest(failing=failing):
+                status, report = self.run_role_main(failing)
+                self.assertEqual(status, 1)
+                self.assertFalse(report['ok'])
+                self.assertIs(report['metadata'][failing], False)
+                self.assertEqual(report['error'], 'metadata_mismatch')
+
+    @contextlib.contextmanager
+    def preflight_host(self, *, failing=None, empty=True):
+        pg = prepare_disabled
+        fixture = {'fixture': 'foundation_catalogue'}
+        checked = {name: name != failing for name in self.checks}
+        members = {row[1] for row in pg.MAPPINGS} | {'postgres'}
+        users = {name: SimpleNamespace(pw_uid=1000 + i, pw_gid=2000 + i)
+                 for i, name in enumerate(sorted(members | {'domino-gateway', 'domino-tunnel'}))}
+        users['postgres'] = SimpleNamespace(pw_uid=109, pw_gid=113)
+        settings = {'server_version_num': '160001', 'server_encoding': 'UTF8',
+                    'data_directory': str(pg.DATA), 'config_file': str(pg.CONFIG / 'postgresql.conf'),
+                    'hba_file': str(pg.CONFIG / 'pg_hba.conf'), 'ident_file': str(pg.CONFIG / 'pg_ident.conf'),
+                    'port': '8877', 'listen_addresses': '', 'unix_socket_directories': pg.SOCKET,
+                    'unix_socket_permissions': '0770', 'unix_socket_group': 'domino-db'}
+        def query(sql):
+            if sql == catalogue_inventory.inventory_sql():
+                return json.dumps(fixture)
+            if 'FROM pg_catalog.pg_settings' in sql:
+                return json.dumps(settings)
+            if 'pg_encoding_to_char' in sql:
+                return 'UTF8'
+            if sql == 'SELECT ' + pg.EMPTY:
+                return 't' if empty else 'f'
+            if 'pg_get_userbyid(datdba)' in sql:
+                return pg.ADMIN
+            if 'json_agg(rolname' in sql:
+                return json.dumps(sorted(row[2] for row in pg.MAPPINGS))
+            if sql.startswith('SELECT pg_catalog.count(*)'):
+                return '0'
+            raise AssertionError('unexpected preflight SQL')
+        def lstat(path):
+            mode = {pg.SOCKET: stat.S_IFDIR | 0o750,
+                    str(Path(pg.SOCKET) / '.s.PGSQL.8877'): stat.S_IFSOCK | 0o770}[str(path)]
+            return SimpleNamespace(st_mode=mode, st_uid=109, st_gid=3000)
+        def read_text(path, *args, **kwargs):
+            self.assertEqual(str(path), '/etc/os-release')
+            return 'ID=ubuntu\nVERSION_ID="24.04"\n'
+        def run(argv):
+            self.assertIn(argv, [['/usr/bin/systemctl', name, '--all', '--no-legend', '--no-pager']
+                                for name in ('list-unit-files', 'list-units')] + [['/usr/bin/ss', '-H', '-ltn']])
+            return b''
+        with contextlib.ExitStack() as stack:
+            for function in ('dependency_preflight', 'trusted_parents', 'pg_parents', 'validate_pg_files'):
+                stack.enter_context(patch.object(pg, function))
+            stack.enter_context(patch.object(pg, 'trusted', return_value=SimpleNamespace(
+                st_mode=stat.S_IFREG | 0o600, st_uid=109, st_gid=113)))
+            stack.enter_context(patch.object(pg, 'normalized_config', side_effect=lambda path:
+                pg.HBA if path.name == 'pg_hba.conf' else pg.MAPPINGS))
+            stack.enter_context(patch.object(pg.os, 'geteuid', return_value=0))
+            stack.enter_context(patch.object(pg.os.path, 'lexists', return_value=False))
+            stack.enter_context(patch.object(pg.os, 'getgrouplist', side_effect=lambda user, gid:
+                [gid, 3000] if user in members else [gid]))
+            stack.enter_context(patch.object(pg.pwd, 'getpwnam', side_effect=users.__getitem__))
+            stack.enter_context(patch.object(pg.pwd, 'getpwall', return_value=[]))
+            stack.enter_context(patch.object(pg.grp, 'getgrnam', side_effect=lambda name:
+                SimpleNamespace(gr_gid=3000, gr_mem=list(members)) if name == 'domino-db'
+                else SimpleNamespace(gr_gid=users[name].pw_gid)))
+            stack.enter_context(patch.object(pg.grp, 'getgrall', return_value=[]))
+            stack.enter_context(patch.object(Path, 'read_text', read_text))
+            stack.enter_context(patch.object(Path, 'lstat', lstat))
+            stack.enter_context(patch.object(Path, 'is_symlink', return_value=False))
+            stack.enter_context(patch.object(Path, 'exists', return_value=False))
+            stack.enter_context(patch.object(pg, 'run', side_effect=run))
+            queries = stack.enter_context(patch.object(pg, 'sql', side_effect=query))
+            inventory = stack.enter_context(patch.object(pg, 'check_inventory', return_value=checked))
+            yield queries, inventory, settings, fixture
+
+    def test_preflight_requires_the_full_inventory(self):
+        with self.preflight_host() as (queries, inventory, settings, fixture):
+            self.assertEqual(prepare_disabled.preflight({}, COMMIT), settings)
+            inventory.assert_called_once_with(fixture, installed=False)
+            self.assertEqual(sum(call.args[0] == catalogue_inventory.inventory_sql() for call in queries.call_args_list), 1)
+        for failing in self.checks:
+            with self.subTest(failing=failing), self.preflight_host(failing=failing):
+                with self.assertRaisesRegex(ValueError, 'unexpected (PostgreSQL overrides|foundation catalogue inventory)'):
+                    prepare_disabled.preflight({}, COMMIT)
+
+    def test_preflight_reports_overrides_before_generic_empty_database_failure(self):
+        labels = {'noDefaultAclOverrides': 'default privilege overrides \\(pg_default_acl\\)',
+                  'noPersistentRoleDatabaseSettings': 'persistent role/database overrides \\(pg_db_role_setting\\)',
+                  'noParameterAclOverrides': 'parameter privilege overrides \\(pg_parameter_acl\\)'}
+        for failing, label in labels.items():
+            with self.subTest(failing=failing), self.preflight_host(failing=failing, empty=False):
+                with self.assertRaisesRegex(ValueError, label):
+                    prepare_disabled.preflight({}, COMMIT)
+        with self.preflight_host(empty=False), self.assertRaisesRegex(ValueError, '^database is not empty$'):
+            prepare_disabled.preflight({}, COMMIT)
+
+    def test_sql_transport_pins_search_path_without_making_migrations_readonly(self):
+        process = Mock(returncode=0)
+        process.communicate.return_value = (b't\n', b'')
+        with patch.object(prepare_disabled.subprocess, 'Popen', return_value=process) as popen:
+            self.assertEqual(prepare_disabled.sql('SELECT true', transaction=True), 't')
+        args, options = popen.call_args
+        self.assertIn('--single-transaction', args[0])
+        self.assertIn('-X', args[0])
+        self.assertEqual(options['env']['PGOPTIONS'], '-c search_path=pg_catalog')
 
 
 class HttpHelperTests(unittest.TestCase):

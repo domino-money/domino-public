@@ -21,29 +21,31 @@ SCHEMA_USERS = {
 # pg_db_role_setting is cluster-wide. This dedicated cluster has no persistent
 # role/database overrides, including global, another database, or another role.
 # The schema-local default REVOKEs in 008/009/011 leave no pg_default_acl rows.
-NO_PERSISTENT_OVERRIDES = """NOT EXISTS (SELECT FROM pg_default_acl)
- AND NOT EXISTS (SELECT FROM pg_db_role_setting)"""
+NO_PERSISTENT_OVERRIDES = """NOT EXISTS (SELECT FROM pg_catalog.pg_default_acl)
+ AND NOT EXISTS (SELECT FROM pg_catalog.pg_db_role_setting)
+ AND NOT EXISTS (SELECT FROM pg_catalog.pg_parameter_acl)"""
 
 
 def inventory_sql():
     """Counts are untruncated; bounded lists fail closed on excess inventory."""
-    return """SELECT json_build_object(
- 'defaultAclCount',(SELECT count(*) FROM pg_default_acl),
- 'roleSettingCount',(SELECT count(*) FROM pg_db_role_setting),
- 'schemas',(SELECT json_agg(row_to_json(s)) FROM
-   (SELECT nspname AS name,pg_get_userbyid(nspowner) AS owner
-    FROM pg_namespace ORDER BY nspname LIMIT 65) s),
- 'databaseAcl',(SELECT json_agg(json_build_array(
-    CASE WHEN a.grantee=0 THEN 'PUBLIC' ELSE pg_get_userbyid(a.grantee) END,
-    a.privilege_type,pg_get_userbyid(a.grantor),a.is_grantable))
-   FROM (SELECT a.* FROM pg_database d,
-    aclexplode(COALESCE(d.datacl,acldefault('d',d.datdba))) a
-    WHERE d.datname=current_database() ORDER BY a.grantee,a.privilege_type,a.grantor LIMIT 129) a),
- 'schemaAcl',(SELECT json_agg(json_build_array(s.name,
-    CASE WHEN s.grantee=0 THEN 'PUBLIC' ELSE pg_get_userbyid(s.grantee) END,
-    s.privilege_type,pg_get_userbyid(s.grantor),s.is_grantable))
-   FROM (SELECT n.nspname AS name,a.* FROM pg_namespace n,
-    aclexplode(COALESCE(n.nspacl,acldefault('n',n.nspowner))) a
+    return """SELECT pg_catalog.json_build_object(
+ 'defaultAclCount',(SELECT pg_catalog.count(*) FROM pg_catalog.pg_default_acl),
+ 'roleSettingCount',(SELECT pg_catalog.count(*) FROM pg_catalog.pg_db_role_setting),
+ 'parameterAclCount',(SELECT pg_catalog.count(*) FROM pg_catalog.pg_parameter_acl),
+ 'schemas',(SELECT pg_catalog.json_agg(pg_catalog.row_to_json(s)) FROM
+   (SELECT nspname AS name,pg_catalog.pg_get_userbyid(nspowner) AS owner
+    FROM pg_catalog.pg_namespace ORDER BY nspname LIMIT 65) s),
+ 'databaseAcl',(SELECT pg_catalog.json_agg(pg_catalog.json_build_array(
+    CASE WHEN a.grantee=0 THEN 'PUBLIC' ELSE pg_catalog.pg_get_userbyid(a.grantee) END,
+    a.privilege_type,pg_catalog.pg_get_userbyid(a.grantor),a.is_grantable))
+   FROM (SELECT a.* FROM pg_catalog.pg_database d,
+    pg_catalog.aclexplode(COALESCE(d.datacl,pg_catalog.acldefault('d',d.datdba))) a
+    WHERE d.datname=pg_catalog.current_database() ORDER BY a.grantee,a.privilege_type,a.grantor LIMIT 129) a),
+ 'schemaAcl',(SELECT pg_catalog.json_agg(pg_catalog.json_build_array(s.name,
+    CASE WHEN s.grantee=0 THEN 'PUBLIC' ELSE pg_catalog.pg_get_userbyid(s.grantee) END,
+    s.privilege_type,pg_catalog.pg_get_userbyid(s.grantor),s.is_grantable))
+   FROM (SELECT n.nspname AS name,a.* FROM pg_catalog.pg_namespace n,
+    pg_catalog.aclexplode(COALESCE(n.nspacl,pg_catalog.acldefault('n',n.nspowner))) a
     ORDER BY n.nspname,a.grantee,a.privilege_type,a.grantor LIMIT 257) s));"""
 
 
@@ -79,6 +81,7 @@ def check_inventory(data, *, installed):
     return {
         'noDefaultAclOverrides': type(data.get('defaultAclCount')) is int and data['defaultAclCount'] == 0,
         'noPersistentRoleDatabaseSettings': type(data.get('roleSettingCount')) is int and data['roleSettingCount'] == 0,
+        'noParameterAclOverrides': type(data.get('parameterAclCount')) is int and data['parameterAclCount'] == 0,
         'completeSchemaInventory': isinstance(schemas, list) and len(schemas) == len(owners)
             and all(isinstance(s, dict) and set(s) == {'name', 'owner'}
                     and s['name'] in owners and s['owner'] == owners[s['name']] for s in schemas)

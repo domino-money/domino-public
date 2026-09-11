@@ -23,7 +23,7 @@ Generate a **plain tar** from the exact reviewed Git commit, without a prefix:
 ```sh
 git archive --format=tar --output=source.tar a5a855cec1fc5d120d9c1c187a84ff24bc1b02d6
 sha256sum source.tar
-python3 scripts/staging/prepare_disabled.py \
+python3 -B scripts/staging/prepare_disabled.py \
   --archive source.tar \
   --archive-sha256 cddc956efc28a0954eb52388c7e26541f5de0d2191998adcd61bbb5db5e5a562 \
   --commit a5a855cec1fc5d120d9c1c187a84ff24bc1b02d6
@@ -60,9 +60,18 @@ non-default extensions, large objects or other connected clients.
 Preflight compares the complete database and schema ACL inventory, including
 PUBLIC, grantors and grant options. Only the three PostgreSQL system schemas and
 `public` may exist before installation. No `pg_default_acl` entries in this DB
-or `pg_db_role_setting` entries anywhere in the dedicated cluster are accepted.
+or `pg_db_role_setting` / `pg_parameter_acl` entries anywhere in the dedicated
+cluster are accepted. Parameter grants can permit a runtime role to set a
+normally restricted parameter such as `session_replication_role` without leaving
+a persistent role/database setting, so they are checked independently.
 The empty-database guard repeats the override checks in the migration transaction.
 An unexpected entry stops installation; it is never reset or revoked automatically.
+Preflight reports default-privilege, persistent role/database or parameter-privilege
+overrides by category and catalogue name before the generic nonempty-database
+check. Missing metadata also fails closed; diagnostics never print setting values.
+Installer libpq connections pin `PGOPTIONS=-c search_path=pg_catalog`, and its
+catalogue relations/functions are schema-qualified, so owner-created objects in
+`public` or a database-default search path cannot redirect these checks.
 Both database and server encoding must be `UTF8`. `SQL_ASCII` is rejected before
 backup or application changes: psycopg otherwise returns text as bytes, breaking catalogue
 checkpoint/hash comparisons and JSON responses. Do not relabel an existing
@@ -150,7 +159,7 @@ The filesystem check now requires the independently trusted archive as well as
 the installed commit. Run the reviewed helper set separately from installed code:
 
 ```sh
-sudo python3.14 scripts/staging/check_filesystem.py \
+sudo python3.14 -B scripts/staging/check_filesystem.py \
   --commit a5a855cec1fc5d120d9c1c187a84ff24bc1b02d6 \
   --archive source.tar \
   --archive-sha256 cddc956efc28a0954eb52388c7e26541f5de0d2191998adcd61bbb5db5e5a562
@@ -163,6 +172,8 @@ link are excluded from the code comparison. Missing files, extra files/empty
 directories, changed bytes, links, hardlinks and mode changes fail the check.
 Runtime contents are not read. See [verifier scope and tests](STAGING_VERIFIER_HARDENING.md)
 for the trust boundary and checks still requiring the actual host.
+Use `-B` for the installer and every Python verifier invocation: importing the
+shared helpers must not create root-owned `__pycache__` in the operator's copy.
 
 The fresh catalogue seed has no start block. Before testing its HTTP contract,
 provision the writer's private RPC configuration and initialize a reviewed start
