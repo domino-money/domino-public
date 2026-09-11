@@ -2,7 +2,7 @@
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import redirect_stderr
 from decimal import Decimal
-from http.client import HTTPConnection
+from http.client import HTTPConnection, HTTPResponse
 from io import BytesIO, StringIO
 import json
 import socket
@@ -11,7 +11,7 @@ from types import SimpleNamespace
 import time
 import traceback
 import unittest
-from unittest.mock import Mock
+from unittest.mock import Mock, patch
 from urllib.error import HTTPError
 from urllib.parse import urlsplit
 
@@ -441,20 +441,32 @@ class ForkReadGatewayTests(unittest.TestCase):
 
     def test_connection_capacity_rejects_before_starting_unbounded_handlers(self):
         transport = Transport()
-        with self.gateway(transport, max_concurrency=1, upload_seconds=.5) as gateway:
+        with self.gateway(transport, max_concurrency=1, upload_seconds=5) as gateway:
             parsed = urlsplit(gateway.url)
-            with socket.create_connection((parsed.hostname, parsed.port), timeout=1) as partial:
-                partial.sendall(b'POST / HTTP/1.1\r\n')
-                # The first handler has read headers when its semaphore is
-                # unavailable; bounded polling is entirely local to this test.
-                for _ in range(100):
-                    if not gateway._connections.acquire(blocking=False):
-                        break
-                    gateway._connections.release()
-                    time.sleep(.002)
-                status, _, body = self.post(gateway)
-                self.assertEqual(status, 503)
-                self.assertEqual(body, b'')
+            started = Event()
+            process_request_thread = gateway._server.process_request_thread
+
+            def start_handler(*args):
+                started.set()
+                return process_request_thread(*args)
+
+            with patch.object(gateway._server, 'process_request_thread', side_effect=start_handler) as handlers:
+                with socket.create_connection((parsed.hostname, parsed.port), timeout=1) as partial:
+                    partial.sendall(b'POST / HTTP/1.1\r\n')
+                    self.assertTrue(started.wait(1), 'The first connection must occupy a handler.')
+                    # Admission rejects at accept, before reading any request.
+                    # A POST upload can race that close and raise BrokenPipeError
+                    # before the client reads the valid 503. Send no excess bytes.
+                    with socket.create_connection((parsed.hostname, parsed.port), timeout=1) as excess:
+                        with HTTPResponse(excess) as response:
+                            response.begin()
+                            self.assertEqual(response.status, 503)
+                            self.assertEqual(response.getheader('Connection'), 'close')
+                            self.assertEqual(response.getheader('Content-Length'), '0')
+                            self.assertEqual(response.read(), b'')
+                    handlers.assert_called_once()
+                    self.assertEqual(gateway.stats['failures'].get('fork_capacity_busy'), 1)
+                    self.assertEqual(gateway.stats['requests'], 0)
             self.assertEqual(transport.calls, [])
 
     def test_context_close_waits_for_started_read_then_rejects_further_work(self):
