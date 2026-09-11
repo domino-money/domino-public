@@ -7,6 +7,7 @@ Private source repository for a wallet-friendly Uniswap v4 liquidity app on Robi
 - **Web:** approved Tangerine practice workbench, position/activity cards, modal workflows and hypothetical fee calculations. Browser-local practice data; no live deposits or signing.
 - **Backend 0.8.0:** generic token reads, verified pool identities and on-demand provider TVL/24h volume/hourly prices with a bounded cache. Exact historical accounting and NFT ownership reads remain available separately.
 - **Market data:** attributed provider TVL/volume can be read without a local pool ledger. Reconciled USD valuation and LP fee APR remain unavailable without qualified inputs. Source coverage, method and freshness remain visible; no new-pool history is invented.
+- **Read bridge candidate:** shared `read-v1` contract, disabled same-origin Worker and authenticated loopback gateway; offline validation only. [Runbook](docs/READ_GATEWAY_RUNBOOK.md) and [evidence](reports/READ_BRIDGE_IMPLEMENTATION.md).
 - **Contracts:** fee arithmetic and policy-validation libraries, a draft interface and synthetic boundary tests. Public vault execution, swaps, wallet authentication and tenant isolation are not production implementations.
 
 The personal live bot, operator wallet, credentials and operational database are outside this repository. See [implementation status](IMPLEMENTATION_STATUS.md), [alpha scope](ALPHA_SCOPE.md) and [security specification](SECURITY_SPEC.md).
@@ -37,6 +38,9 @@ Open http://127.0.0.1:3000. The practice UI and all automated tests need **no wa
 npm run check:web
 backend/.venv/bin/python -m unittest discover -s backend/tests -v
 npm run test:contracts
+npm run check:read-bridge
+backend/.venv/bin/python scripts/export-read-contract.py --check
+backend/.venv/bin/python scripts/export-read-openapi.py --check
 ```
 
 The default Python suite explicitly skips PostgreSQL and native EVM cases. To run the full suite:
@@ -49,7 +53,7 @@ backend/.venv/bin/python backend/dev_postgres.py stop
 
 The helper runs a private Unix-socket cluster, with disposable test databases separate from the development catalogue. `DOMINO_PG_BIN` selects an installation when discovery needs help. It never upgrades an existing database directory. Root `npm ci` installs the pinned Anvil, Forge and Solidity compiler used in tests.
 
-Optional read-only provider setup and API commands are in [backend/README.md](backend/README.md). Keys are entered locally at a hidden prompt, never committed. The local Python API rejects browser origins and is **not** the deployed web API; use fixtures until a reviewed integration bridge exists.
+Optional read-only provider setup and API commands are in [backend/README.md](backend/README.md). Keys are entered locally at a hidden prompt, never committed. The local Python API rejects browser origins and is **not** the deployed web API; use the shared fixtures until the candidate bridge completes staging and frontend integration.
 
 ## Work together
 
@@ -59,6 +63,8 @@ Both `rugged97` and `OxDecimal` have **administrator access to the entire reposi
 | --- | --- |
 | `web/` | React / TypeScript / vinext practice UI and server preview endpoints |
 | `backend/` | Python / FastAPI read API, PostgreSQL accounting, OpenAPI and fixtures |
+| `api-contracts/read-v1/` | Shared read schemas, types, validators and fixtures |
+| `bridge/` | Disabled Cloudflare read Worker candidate |
 | `contracts/` | Solidity draft interfaces and arithmetic tests |
 | `scripts/` | Pinned compiler wrapper and repository checks |
 | `reports/` | Historical qualification evidence; not current production state |

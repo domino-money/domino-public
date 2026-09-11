@@ -1,0 +1,1034 @@
+{
+  "browserTransformations": [
+    {
+      "change": "internal cursor exchanged for opaque gateway handle",
+      "gatewayType": "string|null",
+      "path": "inventory.nextCursor",
+      "producerType": "string|null",
+      "route": "wallet-assets"
+    }
+  ],
+  "contractVersion": "1.1.0-rc.2",
+  "enabledReadCandidates": [
+    "token",
+    "pools",
+    "pool-market",
+    "wallet-assets",
+    "nft-positions",
+    "catalogue",
+    "pool-activity",
+    "pool-positions",
+    "pool-metrics"
+  ],
+  "files": [
+    {
+      "path": "README.md",
+      "sha256": "8c8a2105a2f5e854f5c838512519bd9163838b3bed59e67fd1970843bbb5c2b1"
+    },
+    {
+      "path": "consumer.test.mjs",
+      "sha256": "ec82abd53714bbb47eddbdbc95630f0d0259f2043c2e26deab3026a6c19370ce"
+    },
+    {
+      "path": "consumer.typecheck.mts",
+      "sha256": "1c8443b5977c8a63a0e32f4c72d8d6c0f2cf0fc6daf052850a302f3cb4a4165b"
+    },
+    {
+      "path": "fixtures/error/catalogue.invalid_request.json",
+      "sha256": "2a77bb3fbb64052e95568069f1891ce6b43b5da9328476b890d78bda9c169166"
+    },
+    {
+      "path": "fixtures/error/catalogue.read_capacity_busy.json",
+      "sha256": "d403ef64095c25a56e47a187a186e11273abde3db22b683833eb640bf8562021"
+    },
+    {
+      "path": "fixtures/error/catalogue.stale_or_future_block.json",
+      "sha256": "be6818eb7ecba4e1f43c3dc7365f3a5773fe5e11c90168fb8fbc61a2556a41a0"
+    },
+    {
+      "path": "fixtures/error/catalogue.upstream_contract_mismatch.json",
+      "sha256": "9ba89a4094fe375e9a80072f0fabe4156efd43a52d29604c10860d20f2934d02"
+    },
+    {
+      "path": "fixtures/error/catalogue.upstream_timeout.json",
+      "sha256": "8230a2aeab84b5fcc23578948a1f96a1c005adf12a01c6b54cfbb465409f5fa6"
+    },
+    {
+      "path": "fixtures/error/catalogue.upstream_unavailable.json",
+      "sha256": "140dd3bfe182772842320d8920c99a837bc7fb3cb8c55032265e4ba8fe0d22cc"
+    },
+    {
+      "path": "fixtures/error/nft-positions.invalid_request.json",
+      "sha256": "2a77bb3fbb64052e95568069f1891ce6b43b5da9328476b890d78bda9c169166"
+    },
+    {
+      "path": "fixtures/error/nft-positions.read_capacity_busy.json",
+      "sha256": "d403ef64095c25a56e47a187a186e11273abde3db22b683833eb640bf8562021"
+    },
+    {
+      "path": "fixtures/error/nft-positions.stale_or_future_block.json",
+      "sha256": "be6818eb7ecba4e1f43c3dc7365f3a5773fe5e11c90168fb8fbc61a2556a41a0"
+    },
+    {
+      "path": "fixtures/error/nft-positions.upstream_contract_mismatch.json",
+      "sha256": "9ba89a4094fe375e9a80072f0fabe4156efd43a52d29604c10860d20f2934d02"
+    },
+    {
+      "path": "fixtures/error/nft-positions.upstream_timeout.json",
+      "sha256": "8230a2aeab84b5fcc23578948a1f96a1c005adf12a01c6b54cfbb465409f5fa6"
+    },
+    {
+      "path": "fixtures/error/nft-positions.upstream_unavailable.json",
+      "sha256": "140dd3bfe182772842320d8920c99a837bc7fb3cb8c55032265e4ba8fe0d22cc"
+    },
+    {
+      "path": "fixtures/error/pool-activity.invalid_request.json",
+      "sha256": "2a77bb3fbb64052e95568069f1891ce6b43b5da9328476b890d78bda9c169166"
+    },
+    {
+      "path": "fixtures/error/pool-activity.read_capacity_busy.json",
+      "sha256": "d403ef64095c25a56e47a187a186e11273abde3db22b683833eb640bf8562021"
+    },
+    {
+      "path": "fixtures/error/pool-activity.stale_or_future_block.json",
+      "sha256": "be6818eb7ecba4e1f43c3dc7365f3a5773fe5e11c90168fb8fbc61a2556a41a0"
+    },
+    {
+      "path": "fixtures/error/pool-activity.upstream_contract_mismatch.json",
+      "sha256": "9ba89a4094fe375e9a80072f0fabe4156efd43a52d29604c10860d20f2934d02"
+    },
+    {
+      "path": "fixtures/error/pool-activity.upstream_timeout.json",
+      "sha256": "8230a2aeab84b5fcc23578948a1f96a1c005adf12a01c6b54cfbb465409f5fa6"
+    },
+    {
+      "path": "fixtures/error/pool-activity.upstream_unavailable.json",
+      "sha256": "140dd3bfe182772842320d8920c99a837bc7fb3cb8c55032265e4ba8fe0d22cc"
+    },
+    {
+      "path": "fixtures/error/pool-market.invalid_request.json",
+      "sha256": "2a77bb3fbb64052e95568069f1891ce6b43b5da9328476b890d78bda9c169166"
+    },
+    {
+      "path": "fixtures/error/pool-market.read_capacity_busy.json",
+      "sha256": "d403ef64095c25a56e47a187a186e11273abde3db22b683833eb640bf8562021"
+    },
+    {
+      "path": "fixtures/error/pool-market.stale_or_future_block.json",
+      "sha256": "be6818eb7ecba4e1f43c3dc7365f3a5773fe5e11c90168fb8fbc61a2556a41a0"
+    },
+    {
+      "path": "fixtures/error/pool-market.upstream_contract_mismatch.json",
+      "sha256": "9ba89a4094fe375e9a80072f0fabe4156efd43a52d29604c10860d20f2934d02"
+    },
+    {
+      "path": "fixtures/error/pool-market.upstream_timeout.json",
+      "sha256": "8230a2aeab84b5fcc23578948a1f96a1c005adf12a01c6b54cfbb465409f5fa6"
+    },
+    {
+      "path": "fixtures/error/pool-market.upstream_unavailable.json",
+      "sha256": "140dd3bfe182772842320d8920c99a837bc7fb3cb8c55032265e4ba8fe0d22cc"
+    },
+    {
+      "path": "fixtures/error/pool-metrics.invalid_request.json",
+      "sha256": "2a77bb3fbb64052e95568069f1891ce6b43b5da9328476b890d78bda9c169166"
+    },
+    {
+      "path": "fixtures/error/pool-metrics.read_capacity_busy.json",
+      "sha256": "d403ef64095c25a56e47a187a186e11273abde3db22b683833eb640bf8562021"
+    },
+    {
+      "path": "fixtures/error/pool-metrics.stale_or_future_block.json",
+      "sha256": "be6818eb7ecba4e1f43c3dc7365f3a5773fe5e11c90168fb8fbc61a2556a41a0"
+    },
+    {
+      "path": "fixtures/error/pool-metrics.upstream_contract_mismatch.json",
+      "sha256": "9ba89a4094fe375e9a80072f0fabe4156efd43a52d29604c10860d20f2934d02"
+    },
+    {
+      "path": "fixtures/error/pool-metrics.upstream_timeout.json",
+      "sha256": "8230a2aeab84b5fcc23578948a1f96a1c005adf12a01c6b54cfbb465409f5fa6"
+    },
+    {
+      "path": "fixtures/error/pool-metrics.upstream_unavailable.json",
+      "sha256": "140dd3bfe182772842320d8920c99a837bc7fb3cb8c55032265e4ba8fe0d22cc"
+    },
+    {
+      "path": "fixtures/error/pool-positions.invalid_request.json",
+      "sha256": "2a77bb3fbb64052e95568069f1891ce6b43b5da9328476b890d78bda9c169166"
+    },
+    {
+      "path": "fixtures/error/pool-positions.read_capacity_busy.json",
+      "sha256": "d403ef64095c25a56e47a187a186e11273abde3db22b683833eb640bf8562021"
+    },
+    {
+      "path": "fixtures/error/pool-positions.stale_or_future_block.json",
+      "sha256": "be6818eb7ecba4e1f43c3dc7365f3a5773fe5e11c90168fb8fbc61a2556a41a0"
+    },
+    {
+      "path": "fixtures/error/pool-positions.upstream_contract_mismatch.json",
+      "sha256": "9ba89a4094fe375e9a80072f0fabe4156efd43a52d29604c10860d20f2934d02"
+    },
+    {
+      "path": "fixtures/error/pool-positions.upstream_timeout.json",
+      "sha256": "8230a2aeab84b5fcc23578948a1f96a1c005adf12a01c6b54cfbb465409f5fa6"
+    },
+    {
+      "path": "fixtures/error/pool-positions.upstream_unavailable.json",
+      "sha256": "140dd3bfe182772842320d8920c99a837bc7fb3cb8c55032265e4ba8fe0d22cc"
+    },
+    {
+      "path": "fixtures/error/pools.catalogue_revision_changed.json",
+      "sha256": "6c9e7c44aa07debceae52c58d145072ee56c68c4af0ccd409e92c2654ad28b6f"
+    },
+    {
+      "path": "fixtures/error/pools.invalid_request.json",
+      "sha256": "2a77bb3fbb64052e95568069f1891ce6b43b5da9328476b890d78bda9c169166"
+    },
+    {
+      "path": "fixtures/error/pools.read_capacity_busy.json",
+      "sha256": "d403ef64095c25a56e47a187a186e11273abde3db22b683833eb640bf8562021"
+    },
+    {
+      "path": "fixtures/error/pools.stale_or_future_block.json",
+      "sha256": "be6818eb7ecba4e1f43c3dc7365f3a5773fe5e11c90168fb8fbc61a2556a41a0"
+    },
+    {
+      "path": "fixtures/error/pools.upstream_contract_mismatch.json",
+      "sha256": "9ba89a4094fe375e9a80072f0fabe4156efd43a52d29604c10860d20f2934d02"
+    },
+    {
+      "path": "fixtures/error/pools.upstream_timeout.json",
+      "sha256": "8230a2aeab84b5fcc23578948a1f96a1c005adf12a01c6b54cfbb465409f5fa6"
+    },
+    {
+      "path": "fixtures/error/pools.upstream_unavailable.json",
+      "sha256": "140dd3bfe182772842320d8920c99a837bc7fb3cb8c55032265e4ba8fe0d22cc"
+    },
+    {
+      "path": "fixtures/error/token.invalid_request.json",
+      "sha256": "2a77bb3fbb64052e95568069f1891ce6b43b5da9328476b890d78bda9c169166"
+    },
+    {
+      "path": "fixtures/error/token.read_capacity_busy.json",
+      "sha256": "d403ef64095c25a56e47a187a186e11273abde3db22b683833eb640bf8562021"
+    },
+    {
+      "path": "fixtures/error/token.stale_or_future_block.json",
+      "sha256": "be6818eb7ecba4e1f43c3dc7365f3a5773fe5e11c90168fb8fbc61a2556a41a0"
+    },
+    {
+      "path": "fixtures/error/token.upstream_contract_mismatch.json",
+      "sha256": "9ba89a4094fe375e9a80072f0fabe4156efd43a52d29604c10860d20f2934d02"
+    },
+    {
+      "path": "fixtures/error/token.upstream_timeout.json",
+      "sha256": "8230a2aeab84b5fcc23578948a1f96a1c005adf12a01c6b54cfbb465409f5fa6"
+    },
+    {
+      "path": "fixtures/error/token.upstream_unavailable.json",
+      "sha256": "140dd3bfe182772842320d8920c99a837bc7fb3cb8c55032265e4ba8fe0d22cc"
+    },
+    {
+      "path": "fixtures/error/wallet-assets.invalid_or_expired_cursor.json",
+      "sha256": "35281827f91fb6ba14f531c9212c989c91864a0a5f80f1e7a8a76596864dfebf"
+    },
+    {
+      "path": "fixtures/error/wallet-assets.invalid_request.json",
+      "sha256": "2a77bb3fbb64052e95568069f1891ce6b43b5da9328476b890d78bda9c169166"
+    },
+    {
+      "path": "fixtures/error/wallet-assets.read_capacity_busy.json",
+      "sha256": "d403ef64095c25a56e47a187a186e11273abde3db22b683833eb640bf8562021"
+    },
+    {
+      "path": "fixtures/error/wallet-assets.stale_or_future_block.json",
+      "sha256": "be6818eb7ecba4e1f43c3dc7365f3a5773fe5e11c90168fb8fbc61a2556a41a0"
+    },
+    {
+      "path": "fixtures/error/wallet-assets.upstream_contract_mismatch.json",
+      "sha256": "9ba89a4094fe375e9a80072f0fabe4156efd43a52d29604c10860d20f2934d02"
+    },
+    {
+      "path": "fixtures/error/wallet-assets.upstream_timeout.json",
+      "sha256": "8230a2aeab84b5fcc23578948a1f96a1c005adf12a01c6b54cfbb465409f5fa6"
+    },
+    {
+      "path": "fixtures/error/wallet-assets.upstream_unavailable.json",
+      "sha256": "140dd3bfe182772842320d8920c99a837bc7fb3cb8c55032265e4ba8fe0d22cc"
+    },
+    {
+      "path": "fixtures/gateway/capabilities.disabled.json",
+      "sha256": "8b836498d9b7f77871a850124f45bcd09c8674fd478a3ec06414bdfd84d335ad"
+    },
+    {
+      "path": "fixtures/gateway/capabilities.live_read_only.json",
+      "sha256": "62a2a09517169af3f21402c4ed78c4fd370a496eafe836f4425cba204c147936"
+    },
+    {
+      "path": "fixtures/gateway/catalogue.empty.json",
+      "sha256": "77b73243229386e4497c007aa6303bad6bf68db7defcbbe2dceae98efa305ed2"
+    },
+    {
+      "path": "fixtures/gateway/catalogue.success.json",
+      "sha256": "f4dc1ceb05343a597f876142c88b61faf0557910c9810c4693ae2b98935bc44f"
+    },
+    {
+      "path": "fixtures/gateway/nft-positions.empty.json",
+      "sha256": "b8e911956c42980c87b220eba584da574c3d134f344462c28c7870700f5501f6"
+    },
+    {
+      "path": "fixtures/gateway/nft-positions.stale.json",
+      "sha256": "566ad732d5757fe4c14e657904fb8fe46d132cb6814982267e514d41d314f0d6"
+    },
+    {
+      "path": "fixtures/gateway/nft-positions.success.json",
+      "sha256": "e3f91c4a91ecf556db2f0b908a33fcb0d60f39c875dbb72f481ac34d9f1e40f1"
+    },
+    {
+      "path": "fixtures/gateway/nft-positions.zero.json",
+      "sha256": "60df34a64b4943d7225b345398c73ca6c01e156f754bbe86328a74198fc8baa6"
+    },
+    {
+      "path": "fixtures/gateway/pool-activity.partial.json",
+      "sha256": "c4eb1cd1a5c15ad07d22ffaee4438ddc7600f663ea61c1756e437dbe5c515518"
+    },
+    {
+      "path": "fixtures/gateway/pool-activity.stale.json",
+      "sha256": "1b8ac5951f546248b998ca8c6a9e2b2bdbc445324821aac28cdbdb0f4ca8c10a"
+    },
+    {
+      "path": "fixtures/gateway/pool-activity.success.json",
+      "sha256": "ead305a5fdc8c20a59c5bb8537d6a9bed5da980a5fc67b03dbe9df5d7d532f7a"
+    },
+    {
+      "path": "fixtures/gateway/pool-activity.unavailable.json",
+      "sha256": "502669de236c4b1219304702796846b99cf9f8feb44e2ac3605ad5d3491a14b0"
+    },
+    {
+      "path": "fixtures/gateway/pool-market.expired.json",
+      "sha256": "be6b3756e1e6d4b6d9ecda2ad932a7f699e69eae994d1662b6610d42a2b57545"
+    },
+    {
+      "path": "fixtures/gateway/pool-market.missing.json",
+      "sha256": "f1eb24ac84c5424897d6826222b8f414f168b78ab69f7350fbb62477f432bf4f"
+    },
+    {
+      "path": "fixtures/gateway/pool-market.not-requested.json",
+      "sha256": "c4175171f168b46e597d229b19ce030a761fcf64345d455f7a493fc84d972d37"
+    },
+    {
+      "path": "fixtures/gateway/pool-market.provider-rate-limited.json",
+      "sha256": "42bd1b540274cad2e5e5ad14d697bb2944bb7723ca3ff72aa1ede14c4493467c"
+    },
+    {
+      "path": "fixtures/gateway/pool-market.provider-timeout.json",
+      "sha256": "5cfeac1d33c85d8b51a7b285c2792aa3e52cba848bb52e2d0779894d9b66a083"
+    },
+    {
+      "path": "fixtures/gateway/pool-market.rejected-currencies.json",
+      "sha256": "aa8b4f0cef010a4c9b8dade2690d17b5de7eb39b12b6c15295e2b8ce8a237156"
+    },
+    {
+      "path": "fixtures/gateway/pool-market.rejected.json",
+      "sha256": "c32c67a84ae1b3a2c10d2ef52f2b631cd9108866ea49d93fae548bded4cbdf32"
+    },
+    {
+      "path": "fixtures/gateway/pool-market.stale.json",
+      "sha256": "d87fd2043abc94ddb5f2b94c7b5f48978ade0b74dd20b4d09e321f0755572611"
+    },
+    {
+      "path": "fixtures/gateway/pool-market.success.json",
+      "sha256": "440d384ef451a9c8384c397bd8a1babc4a083234d9c81a311624ab8c891c8097"
+    },
+    {
+      "path": "fixtures/gateway/pool-market.zero.json",
+      "sha256": "54d1662bbe6ac3f3c5b33899103b41202fdf87ce2714ef924476118226465178"
+    },
+    {
+      "path": "fixtures/gateway/pool-metrics.capital-capacity.json",
+      "sha256": "afc5a812c5204e4d0d4b67fa69e118d36a4a14d1092ca1237dad533872609acc"
+    },
+    {
+      "path": "fixtures/gateway/pool-metrics.capital-unavailable.json",
+      "sha256": "efe55f71da2e8d04ccc4836af1ac0c8c8424907be69264c6d4062976736d227f"
+    },
+    {
+      "path": "fixtures/gateway/pool-metrics.missing-prices.json",
+      "sha256": "225d09f89b4f1c64bc6a3f0755cbd6e1b8b5d0b815131001a9eb1197c13f78d4"
+    },
+    {
+      "path": "fixtures/gateway/pool-metrics.partial.json",
+      "sha256": "601490269a6f8e3f9d5dd35dafba5aa149160e048d3604ca9b64db1aaf4ee46e"
+    },
+    {
+      "path": "fixtures/gateway/pool-metrics.price-capacity.json",
+      "sha256": "d3c1c52c46ea8e4b0fb1ecb7c0e490c483ccce63b8446507604d1f9a93f2de30"
+    },
+    {
+      "path": "fixtures/gateway/pool-metrics.qualified.json",
+      "sha256": "e1b7f973b8a9f41f9a431546de4e1d8ba551fb40dea5362a37de3503c4dccdc0"
+    },
+    {
+      "path": "fixtures/gateway/pool-metrics.reference-analytics.json",
+      "sha256": "7a37ff9e316f56e369a4ba44ab8425115d37e77ce2c1908776f70719d6589cc8"
+    },
+    {
+      "path": "fixtures/gateway/pool-metrics.stale.json",
+      "sha256": "d9a20cf03610154f8648be8031864347e7b5c8eb385f557eee21c2cdbfa3208e"
+    },
+    {
+      "path": "fixtures/gateway/pool-metrics.unqualified.json",
+      "sha256": "93c2378c456946e76a6346fcd21d3b889eb68006173a2d6f2f08fa6b422b4fd4"
+    },
+    {
+      "path": "fixtures/gateway/pool-positions.partial.json",
+      "sha256": "5233012da73bf963296ea7a11ffedc33e22b045f7de5fa3035c1cbe303ae2a72"
+    },
+    {
+      "path": "fixtures/gateway/pool-positions.stale.json",
+      "sha256": "7fb6522ec50a7026caac9ba0f4012ea04f26144d047e152595d6f2b926aba43b"
+    },
+    {
+      "path": "fixtures/gateway/pool-positions.success.json",
+      "sha256": "707a177ff69ff8c5ea027837328816783f36104cbbed84596b454ff08a08426f"
+    },
+    {
+      "path": "fixtures/gateway/pool-positions.unavailable.json",
+      "sha256": "c463f717f8e627759f2192f6f715aa4ed2ca622ed5f9b3034d8cdb07d008425e"
+    },
+    {
+      "path": "fixtures/gateway/pools.catalogue.json",
+      "sha256": "c0c3d058cf454d29cc2871815255f128782f33c273200e22b2a8041c6799e30d"
+    },
+    {
+      "path": "fixtures/gateway/pools.missing.json",
+      "sha256": "d0507befbccb759554e362fa8b5e9af376cc383a964134c760e7c7d55c001927"
+    },
+    {
+      "path": "fixtures/gateway/pools.partial-metadata.json",
+      "sha256": "a82bce7f9bfe1d157200f21ee13caa063ddcba84e0315944625c2b09b5067907"
+    },
+    {
+      "path": "fixtures/gateway/pools.provider-unavailable.json",
+      "sha256": "2ab0e60365cc7403c74359a6c31c904facc100d878ec8c57b904f860cb8be151"
+    },
+    {
+      "path": "fixtures/gateway/pools.rejected-candidate.json",
+      "sha256": "609db149a36698095c5a4aa65b7d5a212e902b233508f3dccfd8a1a7694e6efd"
+    },
+    {
+      "path": "fixtures/gateway/pools.success.json",
+      "sha256": "54a73c4df77309698d4afddd91deedcf66dd9f268cb746398a08247749bbd57a"
+    },
+    {
+      "path": "fixtures/gateway/pools.zero-and-missing-metrics.json",
+      "sha256": "c750919f9900d2099c98c857543557fb7265cbfa745939c5da9aed17c8489bd4"
+    },
+    {
+      "path": "fixtures/gateway/token.missing-contract.json",
+      "sha256": "1ae1c31d6b620e2d079077f8ad75fdd20d48105c78f2cc5577edc5b53e0ad0f5"
+    },
+    {
+      "path": "fixtures/gateway/token.missing-decimals.json",
+      "sha256": "b78de4647505a6e7b52a31be4a70edd8e8c01df2804a787b3076c395ab576c7b"
+    },
+    {
+      "path": "fixtures/gateway/token.native.json",
+      "sha256": "b28a72b16f0e5d4c20b2052dc18315b0e235c721f2bfb041d2d926aa1269d9c0"
+    },
+    {
+      "path": "fixtures/gateway/token.success.json",
+      "sha256": "5c1d9c07e099c8d59ba338e6b604c14374ac984041c602d93865187fa1184278"
+    },
+    {
+      "path": "fixtures/gateway/token.unavailable.json",
+      "sha256": "8f0f289251441f4b601f309b5831053c667063092546339efbfb7605bc5e9d6f"
+    },
+    {
+      "path": "fixtures/gateway/token.untrusted-symbol.json",
+      "sha256": "b910a56dc0916baac0a8bf2c2d6eb50a23fd914d3b09063b1564055a548c0460"
+    },
+    {
+      "path": "fixtures/gateway/token.zero-decimals.json",
+      "sha256": "fdf9460902af83ff927a708e0f10f44f1b07576bfd72456c1e5404e2825f6364"
+    },
+    {
+      "path": "fixtures/gateway/wallet-assets.fallback.json",
+      "sha256": "e531c87472a1cb40ac219daeb2fffe185e900821f9a67b56a0d87477aed407e5"
+    },
+    {
+      "path": "fixtures/gateway/wallet-assets.last-page.json",
+      "sha256": "64797d675f1cbdfd0e618ec2a5b74e7a9f07474425830fa8e231d1cc16dc1f7b"
+    },
+    {
+      "path": "fixtures/gateway/wallet-assets.missing-contract.json",
+      "sha256": "3b0418b5ab3966e1a2cf9af38e3c33f661a94850470cf3347c96678a515a57cc"
+    },
+    {
+      "path": "fixtures/gateway/wallet-assets.not-requested.json",
+      "sha256": "151d820ca660367d14c62cb0554a98a8aa85d0f464ed1baa1da2ae3efe823740"
+    },
+    {
+      "path": "fixtures/gateway/wallet-assets.opaque-page.json",
+      "sha256": "e4d039c3ffa00f98793b5454049c5d8d98d7b9d219c83b05ad383dcecdb0d549"
+    },
+    {
+      "path": "fixtures/gateway/wallet-assets.page.json",
+      "sha256": "e4d039c3ffa00f98793b5454049c5d8d98d7b9d219c83b05ad383dcecdb0d549"
+    },
+    {
+      "path": "fixtures/gateway/wallet-assets.partial-metadata.json",
+      "sha256": "84219af5497d7bdf89cb19a5c576d3d05a442b7aaca6e31b20665c589cbb0c28"
+    },
+    {
+      "path": "fixtures/gateway/wallet-assets.provider-unavailable.json",
+      "sha256": "663caea44116c348d84a6eb27a042d85d259193fcb1637e516b64581fb8625b7"
+    },
+    {
+      "path": "fixtures/gateway/wallet-assets.zero.json",
+      "sha256": "995b24e65d11bc9fe28e0fab97e5b8097638a30debe64db5508b8819471f2fd6"
+    },
+    {
+      "path": "fixtures/index.json",
+      "sha256": "3d64cb901211bee2be3e035b5785741d9643ee78ae0d69b8d8705cf6d3742b66"
+    },
+    {
+      "path": "fixtures/invalid/catalogue.incompatible-version.json",
+      "sha256": "f781896188ae4cb722faa297e76d3aaec78806eedb812d30f24d355c4018f8a5"
+    },
+    {
+      "path": "fixtures/invalid/nft-positions.incompatible-version.json",
+      "sha256": "0122ebfc751d422731eb6a02f3fc71ed9f3b3aa43c6434a1a4f891e0357a4ba1"
+    },
+    {
+      "path": "fixtures/invalid/pool-activity.incompatible-version.json",
+      "sha256": "5a37d70a8e976452c22e6aa5c5639f085d7c5d220694b8970158a69cf27c2dc4"
+    },
+    {
+      "path": "fixtures/invalid/pool-market.incompatible-version.json",
+      "sha256": "a1c573e65bb1db8ecb696b5ed093bc6580195fec133cf7a3df4d4cb10c72ef72"
+    },
+    {
+      "path": "fixtures/invalid/pool-metrics.incompatible-version.json",
+      "sha256": "b769c1eefa7d772e6ebc2d3a815d2b1fc869e93403c22aba2574833a6e3204a4"
+    },
+    {
+      "path": "fixtures/invalid/pool-metrics.reference-claimed-current.json",
+      "sha256": "4a848fa30d09a32e61eb7658c992d562da1017b4a424d9ecc9e90358eb0e54aa"
+    },
+    {
+      "path": "fixtures/invalid/pool-positions.incompatible-version.json",
+      "sha256": "5e2b791915f640b5a1f08d328a78b0e5bef159895270407250e520cdc1b78caf"
+    },
+    {
+      "path": "fixtures/invalid/pools.incompatible-version.json",
+      "sha256": "dfb7013ee6ec7e9d68c7d1f333ece2ca7a9622de856153fcf66883b9082533b5"
+    },
+    {
+      "path": "fixtures/invalid/token.incompatible-version.json",
+      "sha256": "ee43fad0a420fae9a76a1044e969e0f8ebcd47ed9933d96dcd3ae2143286945d"
+    },
+    {
+      "path": "fixtures/invalid/wallet-assets.incompatible-version.json",
+      "sha256": "166070a1722254e9cf4380590b5e4c78344bd78d9d2295ca0d04108bb9c03b48"
+    },
+    {
+      "path": "fixtures/producer/catalogue.empty.json",
+      "sha256": "77b73243229386e4497c007aa6303bad6bf68db7defcbbe2dceae98efa305ed2"
+    },
+    {
+      "path": "fixtures/producer/catalogue.success.json",
+      "sha256": "f4dc1ceb05343a597f876142c88b61faf0557910c9810c4693ae2b98935bc44f"
+    },
+    {
+      "path": "fixtures/producer/nft-positions.empty.json",
+      "sha256": "b8e911956c42980c87b220eba584da574c3d134f344462c28c7870700f5501f6"
+    },
+    {
+      "path": "fixtures/producer/nft-positions.stale.json",
+      "sha256": "566ad732d5757fe4c14e657904fb8fe46d132cb6814982267e514d41d314f0d6"
+    },
+    {
+      "path": "fixtures/producer/nft-positions.success.json",
+      "sha256": "e3f91c4a91ecf556db2f0b908a33fcb0d60f39c875dbb72f481ac34d9f1e40f1"
+    },
+    {
+      "path": "fixtures/producer/nft-positions.zero.json",
+      "sha256": "60df34a64b4943d7225b345398c73ca6c01e156f754bbe86328a74198fc8baa6"
+    },
+    {
+      "path": "fixtures/producer/pool-activity.partial.json",
+      "sha256": "c4eb1cd1a5c15ad07d22ffaee4438ddc7600f663ea61c1756e437dbe5c515518"
+    },
+    {
+      "path": "fixtures/producer/pool-activity.stale.json",
+      "sha256": "1b8ac5951f546248b998ca8c6a9e2b2bdbc445324821aac28cdbdb0f4ca8c10a"
+    },
+    {
+      "path": "fixtures/producer/pool-activity.success.json",
+      "sha256": "ead305a5fdc8c20a59c5bb8537d6a9bed5da980a5fc67b03dbe9df5d7d532f7a"
+    },
+    {
+      "path": "fixtures/producer/pool-activity.unavailable.json",
+      "sha256": "502669de236c4b1219304702796846b99cf9f8feb44e2ac3605ad5d3491a14b0"
+    },
+    {
+      "path": "fixtures/producer/pool-market.expired.json",
+      "sha256": "be6b3756e1e6d4b6d9ecda2ad932a7f699e69eae994d1662b6610d42a2b57545"
+    },
+    {
+      "path": "fixtures/producer/pool-market.missing.json",
+      "sha256": "f1eb24ac84c5424897d6826222b8f414f168b78ab69f7350fbb62477f432bf4f"
+    },
+    {
+      "path": "fixtures/producer/pool-market.not-requested.json",
+      "sha256": "c4175171f168b46e597d229b19ce030a761fcf64345d455f7a493fc84d972d37"
+    },
+    {
+      "path": "fixtures/producer/pool-market.provider-rate-limited.json",
+      "sha256": "42bd1b540274cad2e5e5ad14d697bb2944bb7723ca3ff72aa1ede14c4493467c"
+    },
+    {
+      "path": "fixtures/producer/pool-market.provider-timeout.json",
+      "sha256": "5cfeac1d33c85d8b51a7b285c2792aa3e52cba848bb52e2d0779894d9b66a083"
+    },
+    {
+      "path": "fixtures/producer/pool-market.rejected-currencies.json",
+      "sha256": "aa8b4f0cef010a4c9b8dade2690d17b5de7eb39b12b6c15295e2b8ce8a237156"
+    },
+    {
+      "path": "fixtures/producer/pool-market.rejected.json",
+      "sha256": "c32c67a84ae1b3a2c10d2ef52f2b631cd9108866ea49d93fae548bded4cbdf32"
+    },
+    {
+      "path": "fixtures/producer/pool-market.stale.json",
+      "sha256": "d87fd2043abc94ddb5f2b94c7b5f48978ade0b74dd20b4d09e321f0755572611"
+    },
+    {
+      "path": "fixtures/producer/pool-market.success.json",
+      "sha256": "440d384ef451a9c8384c397bd8a1babc4a083234d9c81a311624ab8c891c8097"
+    },
+    {
+      "path": "fixtures/producer/pool-market.zero.json",
+      "sha256": "54d1662bbe6ac3f3c5b33899103b41202fdf87ce2714ef924476118226465178"
+    },
+    {
+      "path": "fixtures/producer/pool-metrics.capital-capacity.json",
+      "sha256": "afc5a812c5204e4d0d4b67fa69e118d36a4a14d1092ca1237dad533872609acc"
+    },
+    {
+      "path": "fixtures/producer/pool-metrics.capital-unavailable.json",
+      "sha256": "efe55f71da2e8d04ccc4836af1ac0c8c8424907be69264c6d4062976736d227f"
+    },
+    {
+      "path": "fixtures/producer/pool-metrics.missing-prices.json",
+      "sha256": "225d09f89b4f1c64bc6a3f0755cbd6e1b8b5d0b815131001a9eb1197c13f78d4"
+    },
+    {
+      "path": "fixtures/producer/pool-metrics.partial.json",
+      "sha256": "601490269a6f8e3f9d5dd35dafba5aa149160e048d3604ca9b64db1aaf4ee46e"
+    },
+    {
+      "path": "fixtures/producer/pool-metrics.price-capacity.json",
+      "sha256": "d3c1c52c46ea8e4b0fb1ecb7c0e490c483ccce63b8446507604d1f9a93f2de30"
+    },
+    {
+      "path": "fixtures/producer/pool-metrics.qualified.json",
+      "sha256": "e1b7f973b8a9f41f9a431546de4e1d8ba551fb40dea5362a37de3503c4dccdc0"
+    },
+    {
+      "path": "fixtures/producer/pool-metrics.reference-analytics.json",
+      "sha256": "7a37ff9e316f56e369a4ba44ab8425115d37e77ce2c1908776f70719d6589cc8"
+    },
+    {
+      "path": "fixtures/producer/pool-metrics.stale.json",
+      "sha256": "d9a20cf03610154f8648be8031864347e7b5c8eb385f557eee21c2cdbfa3208e"
+    },
+    {
+      "path": "fixtures/producer/pool-metrics.unqualified.json",
+      "sha256": "93c2378c456946e76a6346fcd21d3b889eb68006173a2d6f2f08fa6b422b4fd4"
+    },
+    {
+      "path": "fixtures/producer/pool-positions.partial.json",
+      "sha256": "5233012da73bf963296ea7a11ffedc33e22b045f7de5fa3035c1cbe303ae2a72"
+    },
+    {
+      "path": "fixtures/producer/pool-positions.stale.json",
+      "sha256": "7fb6522ec50a7026caac9ba0f4012ea04f26144d047e152595d6f2b926aba43b"
+    },
+    {
+      "path": "fixtures/producer/pool-positions.success.json",
+      "sha256": "707a177ff69ff8c5ea027837328816783f36104cbbed84596b454ff08a08426f"
+    },
+    {
+      "path": "fixtures/producer/pool-positions.unavailable.json",
+      "sha256": "c463f717f8e627759f2192f6f715aa4ed2ca622ed5f9b3034d8cdb07d008425e"
+    },
+    {
+      "path": "fixtures/producer/pools.catalogue.json",
+      "sha256": "c0c3d058cf454d29cc2871815255f128782f33c273200e22b2a8041c6799e30d"
+    },
+    {
+      "path": "fixtures/producer/pools.missing.json",
+      "sha256": "d0507befbccb759554e362fa8b5e9af376cc383a964134c760e7c7d55c001927"
+    },
+    {
+      "path": "fixtures/producer/pools.partial-metadata.json",
+      "sha256": "a82bce7f9bfe1d157200f21ee13caa063ddcba84e0315944625c2b09b5067907"
+    },
+    {
+      "path": "fixtures/producer/pools.provider-unavailable.json",
+      "sha256": "2ab0e60365cc7403c74359a6c31c904facc100d878ec8c57b904f860cb8be151"
+    },
+    {
+      "path": "fixtures/producer/pools.rejected-candidate.json",
+      "sha256": "609db149a36698095c5a4aa65b7d5a212e902b233508f3dccfd8a1a7694e6efd"
+    },
+    {
+      "path": "fixtures/producer/pools.success.json",
+      "sha256": "54a73c4df77309698d4afddd91deedcf66dd9f268cb746398a08247749bbd57a"
+    },
+    {
+      "path": "fixtures/producer/pools.zero-and-missing-metrics.json",
+      "sha256": "c750919f9900d2099c98c857543557fb7265cbfa745939c5da9aed17c8489bd4"
+    },
+    {
+      "path": "fixtures/producer/token.missing-contract.json",
+      "sha256": "1ae1c31d6b620e2d079077f8ad75fdd20d48105c78f2cc5577edc5b53e0ad0f5"
+    },
+    {
+      "path": "fixtures/producer/token.missing-decimals.json",
+      "sha256": "b78de4647505a6e7b52a31be4a70edd8e8c01df2804a787b3076c395ab576c7b"
+    },
+    {
+      "path": "fixtures/producer/token.native.json",
+      "sha256": "b28a72b16f0e5d4c20b2052dc18315b0e235c721f2bfb041d2d926aa1269d9c0"
+    },
+    {
+      "path": "fixtures/producer/token.success.json",
+      "sha256": "5c1d9c07e099c8d59ba338e6b604c14374ac984041c602d93865187fa1184278"
+    },
+    {
+      "path": "fixtures/producer/token.unavailable.json",
+      "sha256": "8f0f289251441f4b601f309b5831053c667063092546339efbfb7605bc5e9d6f"
+    },
+    {
+      "path": "fixtures/producer/token.untrusted-symbol.json",
+      "sha256": "b910a56dc0916baac0a8bf2c2d6eb50a23fd914d3b09063b1564055a548c0460"
+    },
+    {
+      "path": "fixtures/producer/token.zero-decimals.json",
+      "sha256": "fdf9460902af83ff927a708e0f10f44f1b07576bfd72456c1e5404e2825f6364"
+    },
+    {
+      "path": "fixtures/producer/wallet-assets.fallback.json",
+      "sha256": "e531c87472a1cb40ac219daeb2fffe185e900821f9a67b56a0d87477aed407e5"
+    },
+    {
+      "path": "fixtures/producer/wallet-assets.last-page.json",
+      "sha256": "64797d675f1cbdfd0e618ec2a5b74e7a9f07474425830fa8e231d1cc16dc1f7b"
+    },
+    {
+      "path": "fixtures/producer/wallet-assets.missing-contract.json",
+      "sha256": "3b0418b5ab3966e1a2cf9af38e3c33f661a94850470cf3347c96678a515a57cc"
+    },
+    {
+      "path": "fixtures/producer/wallet-assets.not-requested.json",
+      "sha256": "151d820ca660367d14c62cb0554a98a8aa85d0f464ed1baa1da2ae3efe823740"
+    },
+    {
+      "path": "fixtures/producer/wallet-assets.page.json",
+      "sha256": "a61b36dfb10a70738b6031b20fb15412b0212a43b13dfd3e322a74a516ddd300"
+    },
+    {
+      "path": "fixtures/producer/wallet-assets.partial-metadata.json",
+      "sha256": "84219af5497d7bdf89cb19a5c576d3d05a442b7aaca6e31b20665c589cbb0c28"
+    },
+    {
+      "path": "fixtures/producer/wallet-assets.provider-unavailable.json",
+      "sha256": "663caea44116c348d84a6eb27a042d85d259193fcb1637e516b64581fb8625b7"
+    },
+    {
+      "path": "fixtures/producer/wallet-assets.zero.json",
+      "sha256": "995b24e65d11bc9fe28e0fab97e5b8097638a30debe64db5508b8819471f2fd6"
+    },
+    {
+      "path": "fixtures/request-boundaries.json",
+      "sha256": "88ed0f123d7bdc3be7ecd2e0f04797ca89490f48d4178d73bef242d281b73093"
+    },
+    {
+      "path": "fixtures/requests/catalogue.json",
+      "sha256": "d53b604ee738d85f0920c3c8b9b888fe6b2fc696ea9a9847a3467795c38bb300"
+    },
+    {
+      "path": "fixtures/requests/nft-positions.json",
+      "sha256": "637bdb7e269f7c87c9128273e67014bc021a9970b89a04bb408b04d9f1cfe22a"
+    },
+    {
+      "path": "fixtures/requests/pool-activity.json",
+      "sha256": "34649fb67591e40f7e79e8c734e450551de0c0f66ecac281f1753a782d41e3e5"
+    },
+    {
+      "path": "fixtures/requests/pool-market.json",
+      "sha256": "9d583001203bbe45ce0c7e8dbde4ca7b848284a66b692a227aece0e1607806a3"
+    },
+    {
+      "path": "fixtures/requests/pool-metrics.json",
+      "sha256": "34649fb67591e40f7e79e8c734e450551de0c0f66ecac281f1753a782d41e3e5"
+    },
+    {
+      "path": "fixtures/requests/pool-positions.json",
+      "sha256": "34649fb67591e40f7e79e8c734e450551de0c0f66ecac281f1753a782d41e3e5"
+    },
+    {
+      "path": "fixtures/requests/pools.json",
+      "sha256": "6fe9f567339f4b8d6acef9df3f8421b5c7a346efa7ebdde5d27bfea899be9f79"
+    },
+    {
+      "path": "fixtures/requests/token.json",
+      "sha256": "77421d6ab0aa77bc5c6e54f0f8225043d7826462473ebc5fd9ffe6d9eef0be01"
+    },
+    {
+      "path": "fixtures/requests/wallet-assets.json",
+      "sha256": "9e51fbd937da1d6289a1e55998f8590cb613b382de3ee8d0547d8e84890e5fe7"
+    },
+    {
+      "path": "progressive.d.mts",
+      "sha256": "27b971287d5e7708c78c4cd7c5ae8b1851112b473dfab3d6199384a9c7041c0c"
+    },
+    {
+      "path": "progressive.mjs",
+      "sha256": "97d3453651913258e36fb945038ad57421560f0115a6249ee3537dcb82eb6171"
+    },
+    {
+      "path": "progressive.test.mjs",
+      "sha256": "eabafe66887c752ec7862fb0b333806ff9cb31ea8cf35f99477b31e4523d0cbb"
+    },
+    {
+      "path": "runtime.d.mts",
+      "sha256": "4fc05c632386da60e30aa61592ff305dc089c71df71199073f9f1a28c5f75196"
+    },
+    {
+      "path": "runtime.mjs",
+      "sha256": "ad752c0f17ea5ee620f6358bf84f9f57c1255c6b827f5050fa27c857337a3164"
+    },
+    {
+      "path": "schemas/capabilities.response.schema.json",
+      "sha256": "531691d763aca67ff9e23963898e910687d878a3da3278a79dbc746eeeefb9c8"
+    },
+    {
+      "path": "schemas/catalogue.request.schema.json",
+      "sha256": "f3d9180f73031f1fdcf59a9ed48de85395d4e63e5fc2da18308b19bf54fb0bc5"
+    },
+    {
+      "path": "schemas/catalogue.response.schema.json",
+      "sha256": "4518716d3d866d6a9d0483ccb0a2ecf9c7a2dcfecf8ff7cfd8aa1212ec668204"
+    },
+    {
+      "path": "schemas/error.response.schema.json",
+      "sha256": "62f2d615b4f6d904808bdbce6a69fd97bf8fa29feb6ad4b3566b251910df0178"
+    },
+    {
+      "path": "schemas/nft-positions.request.schema.json",
+      "sha256": "957136dc7b79a4cbffa14ad08c415ed788fd56b868f29a4fbace5758ea22ddfd"
+    },
+    {
+      "path": "schemas/nft-positions.response.schema.json",
+      "sha256": "f7d12a5a2f73a457b6022f711846fb22710e1e5b52f37b0f25701a43fea820d8"
+    },
+    {
+      "path": "schemas/pool-activity.request.schema.json",
+      "sha256": "b46f2d8e5eb1b1677ab3917055564070fc24293d8669138130c27f7a2592e9d0"
+    },
+    {
+      "path": "schemas/pool-activity.response.schema.json",
+      "sha256": "ddedade99bbd770b5f27680b14371929c93848aeea4592b5ed2168b7ad267833"
+    },
+    {
+      "path": "schemas/pool-market.request.schema.json",
+      "sha256": "de73ff51c18a204dab7dd4dbc8d60f20b3139c7f90d44bca28bb4d3b3daa4916"
+    },
+    {
+      "path": "schemas/pool-market.response.schema.json",
+      "sha256": "d9d9c26812869bf1b78cb715434734710802648eb2b745aa6de15cf63000fd37"
+    },
+    {
+      "path": "schemas/pool-metrics.request.schema.json",
+      "sha256": "f13b9d97f834597a6423adb4eb55afebd0bad63d792dd9db1170ecc0b1584572"
+    },
+    {
+      "path": "schemas/pool-metrics.response.schema.json",
+      "sha256": "a3ff4fd3d58ace5c83d5a62097c9389b4d210f068f56f0a302894b3f98623208"
+    },
+    {
+      "path": "schemas/pool-positions.request.schema.json",
+      "sha256": "8e06c3565df66d6b7dab0ef89a1694836a6b26e6e85ca9f35e65c813e2929f43"
+    },
+    {
+      "path": "schemas/pool-positions.response.schema.json",
+      "sha256": "359365c2d89b08f979f4144f75b9bebcc17a6abb31c515f36d647bd85e8844f0"
+    },
+    {
+      "path": "schemas/pools.request.schema.json",
+      "sha256": "c550ef459758f050ef72c817a641e5ed9914485a5113ea62f63dc7b7d8088949"
+    },
+    {
+      "path": "schemas/pools.response.schema.json",
+      "sha256": "0ad7e337bbdb339af8638c348d5a9c0d31816acd1d0d561571ec6c933141a026"
+    },
+    {
+      "path": "schemas/token.request.schema.json",
+      "sha256": "d715c0900ea67406ff200036ecd0a0eacce392bbfe2e13a43685a7d5f6f217b5"
+    },
+    {
+      "path": "schemas/token.response.schema.json",
+      "sha256": "0edddf0fd1fb39a605bfded151b75eeed5760af06b8a894d7de6fd467673562c"
+    },
+    {
+      "path": "schemas/wallet-assets.request.schema.json",
+      "sha256": "b92a36761644d1e1fd4d227ac582dc53418fdb335b7a5284b94fbce9ca7dbdca"
+    },
+    {
+      "path": "schemas/wallet-assets.response.schema.json",
+      "sha256": "cdeb8b05f581708505b99eac0eb5f9cf27503000dbd8c25adb83805be77f4dcc"
+    },
+    {
+      "path": "types.ts",
+      "sha256": "2c1736be6ce35d1d08df06c2cfe7f13d4165f14ded73787174082687643cce73"
+    }
+  ],
+  "generator": "scripts/export-read-contract.py",
+  "producerApplicationVersion": "0.8.0",
+  "sources": [
+    {
+      "path": "backend/read_contract.py",
+      "sha256": "f5d04797ce09995bf4d9c50a5ac45e4d792bd6cb0e3bf221ad7b4bd8b268ba7f"
+    },
+    {
+      "path": "backend/read_api.py",
+      "sha256": "a5cc9a46aada00696a7219086c0ac88f153cc953504df140a2f1e3e3d7d3833b"
+    },
+    {
+      "path": "backend/read_service.py",
+      "sha256": "1851f75345e5970dc6d30026a13f1c75db3d28524f21eefbdb1f55bb7335c13a"
+    },
+    {
+      "path": "backend/historical_read.py",
+      "sha256": "64b86c237e0c606542e398ee606f7b0e969d05fa9ce4e7c8c5a5be2f505987cc"
+    },
+    {
+      "path": "backend/historical_capacity.py",
+      "sha256": "757ee65c68de1c966165309425eefe423d328d7cfbb413f6b71bd929f8e32a60"
+    },
+    {
+      "path": "bridge/src/request-contract.mjs",
+      "sha256": "786524b4cadde2df2b1275f041532c3c4c4f13fb988857149cd858d2b3821fda"
+    },
+    {
+      "path": "backend/read_gateway.py",
+      "sha256": "adbdb5730bf5425a2a36b58fba2430398dc2553899457a1a6dc2a64939296431"
+    },
+    {
+      "path": "backend/bridge_state.py",
+      "sha256": "f120d5191a51bac01b53901b62c7ea587e280eb071e40b7085c4d52a39d5ac82"
+    },
+    {
+      "path": "backend/bridge_http.py",
+      "sha256": "9e839b84104d80c67cb59b474f2694e9ab7c29e10ab806b05b4ba57200f73f84"
+    },
+    {
+      "path": "backend/metrics_service.py",
+      "sha256": "510dc869bfdfae37b8240b9e87f4044ebe84229f4c56c71a388e715afed144f8"
+    },
+    {
+      "path": "backend/activity_store.py",
+      "sha256": "1a0606cb757f2cf8b210429ac640c0d4fc5670980ee6ec9e8c8dba44a2ac0ead"
+    },
+    {
+      "path": "backend/position_store.py",
+      "sha256": "8555b9b9d8b52880c91357fa2082f419ea7db517a95cd1b849e4e3acedf6314d"
+    },
+    {
+      "path": "backend/fee_store.py",
+      "sha256": "3171fbcc6f31f9d6074351ba6de9d8f8178708f7d919603a8abbd1de234efe48"
+    },
+    {
+      "path": "backend/capital_store.py",
+      "sha256": "361fa18c778633736d89136b8db991882a772db0b18bd3957a4cb6567ba03707"
+    },
+    {
+      "path": "backend/price_history.py",
+      "sha256": "ac4b0100dd1c315bc8adfd2bd92ee3b02385437afe8f090b1a96efdf23c979ed"
+    },
+    {
+      "path": "backend/valuation.py",
+      "sha256": "b767959ee4520d61b663b70ff849b475149fc2106f4c1e2db73180f7dd0e610d"
+    },
+    {
+      "path": "backend/chainlink_reference.py",
+      "sha256": "a6953bc8971f1f6b45b56c89a1513ef18ba2287c6b07e2ba0ec5f0e48ff80f3d"
+    },
+    {
+      "path": "backend/discovery.py",
+      "sha256": "6922959dc990cfdb24b2ed7c186a956568f64a750a57762e4ee96909c8ff292e"
+    },
+    {
+      "path": "backend/nft_ownership.py",
+      "sha256": "90c261c82ea6206677c8e4baf554dd0c46c20b427cba4dd915f744533527ecb0"
+    },
+    {
+      "path": "backend/inventory.py",
+      "sha256": "2810a21b0eb44f4fec329e85bc18ffea0e518788da6dd1bd86b70ae499f7d56f"
+    },
+    {
+      "path": "backend/market_cache.py",
+      "sha256": "3344ad1ed2b06fff0844a5ee60d2835a625bbc917412e8fbbdded58655d833e6"
+    },
+    {
+      "path": "backend/market_data.py",
+      "sha256": "4e51bfd0e20e9e72d99522270a03dea062b163f38b22dfe315d0b6b373f2b1f1"
+    },
+    {
+      "path": "backend/read_deadline.py",
+      "sha256": "f74ec9bf421525cccde91e5f461479d36ff6155289a7d5db556820937e4786a8"
+    },
+    {
+      "path": "backend/catalogue.py",
+      "sha256": "5102587693051b281beec975289b3a0f942d0b45810d1f0ec4f729c19bbcb6a7"
+    },
+    {
+      "path": "backend/position_accounting.py",
+      "sha256": "34a480c7c9c7445271c2e389f9d405c840ee546d71e2d239905515c9f6254e98"
+    },
+    {
+      "path": "backend/fee_accounting.py",
+      "sha256": "1506ae1dac69a18b933809bde330b4f0079d39a5632b4df41b8050bae28b03ed"
+    },
+    {
+      "path": "backend/pool_activity.py",
+      "sha256": "382b41269e57eb62e00622bfd09ce2507588b707c387dfc55653afdce2f27f04"
+    },
+    {
+      "path": "backend/tests/fixtures/position-reference.json",
+      "sha256": "12d7fad2c621c8d1352f3d1c0351bab7fd0f4c63478ebb22e2ad44c99ec09cf3"
+    },
+    {
+      "path": "backend/tests/read_history_fixtures.py",
+      "sha256": "cc131cf3b867389550cb04bf5c682e4995157be875d6b85d42afbfb1790fe609"
+    },
+    {
+      "path": "backend/tests/read_request_fixtures.py",
+      "sha256": "2685f3686186534644117d5e177600ff9a18bda7763f23931426a064bbf4ea6c"
+    },
+    {
+      "path": "backend/tests/test_read_contract.py",
+      "sha256": "1b5975d0d885e344b7abb2c9bf988156111b2975fd11892f02509ae173e90775"
+    },
+    {
+      "path": "scripts/export-read-contract.py",
+      "sha256": "96e73a7534921874cba3847a37afb69c52bc665125d000f9f996a877d29b8f3a"
+    }
+  ],
+  "status": "candidate_disabled_pending_consumer_acknowledgement"
+}

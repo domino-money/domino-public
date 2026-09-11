@@ -34,6 +34,8 @@ jobs:
             app/package-lock.json
       - run: npm --prefix web ci --no-audit --no-fund
       - run: npm run check:web
+      - name: Check shared read types
+        run: node web/node_modules/typescript/bin/tsc --noEmit --strict --target ES2022 --module NodeNext --moduleResolution NodeNext api-contracts/read-v1/types.ts api-contracts/read-v1/runtime.d.mts api-contracts/read-v1/consumer.typecheck.mts
       - run: npm --prefix app ci --no-audit --no-fund
       - run: npm run check:app
   backend:
@@ -57,6 +59,9 @@ jobs:
           cache-dependency-path: backend/requirements-api.lock
       - run: npm ci --no-audit --no-fund
       - run: python -m pip install -r backend/requirements-api.lock
+      - run: python scripts/export-read-contract.py --check
+      - run: python scripts/export-read-openapi.py --check
+      - run: npm run check:read-bridge
       - name: Check PostgreSQL tools
         run: test -x "$DOMINO_PG_BIN/initdb"
       - run: python backend/dev_postgres.py prepare-tests

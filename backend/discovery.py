@@ -5,8 +5,12 @@ Dependencies: eth-abi and eth-hash, pinned in requirements-readonly.txt.
 """
 from dataclasses import dataclass, asdict
 from decimal import Decimal, InvalidOperation
+from functools import partial
+import http.client
+import io
 import json
 import re
+import socket
 import time
 import urllib.error
 import urllib.request
@@ -14,6 +18,7 @@ from urllib.parse import urlsplit
 
 from eth_abi import encode, decode
 from eth_hash.auto import keccak
+from read_deadline import check_read_deadline, current_read_deadline, read_deadline
 
 CHAIN_ID = 4663
 RPC_URL = 'https://rpc.mainnet.chain.robinhood.com'
@@ -73,7 +78,120 @@ class NoRedirect(urllib.request.HTTPRedirectHandler):
         return None  # Never forward wallet queries or credential-bearing routes.
 
 
-_JSON_OPENER = urllib.request.build_opener(NoRedirect()).open
+class _DeadlineSocketReader(io.RawIOBase):
+    """Clamp every recv, including those used to parse slow HTTP headers/chunks."""
+    def __init__(self, sock, deadline):
+        self.socket, self.deadline = sock, deadline
+        self.raw = sock.makefile('rb', buffering=0)
+
+    def readable(self):
+        return True
+
+    def readinto(self, buffer):
+        self.socket.settimeout(self.deadline.remaining())
+        result = self.raw.readinto(buffer)
+        self.deadline.remaining()
+        return result
+
+    def close(self):
+        try:
+            self.raw.close()
+        finally:
+            super().close()
+
+
+class _DeadlineSocket:
+    def __init__(self, sock, deadline):
+        self.socket, self.deadline = sock, deadline
+
+    def makefile(self, mode):
+        assert mode == 'rb'
+        return io.BufferedReader(_DeadlineSocketReader(self.socket, self.deadline))
+
+
+class _DeadlineHTTPResponse(http.client.HTTPResponse):
+    def __init__(self, sock, *args, deadline, **kwargs):
+        super().__init__(_DeadlineSocket(sock, deadline), *args, **kwargs)
+
+
+def _deadline_connect(address, timeout, source_address=None, *, deadline):
+    if deadline is None:
+        return socket.create_connection(address, timeout, source_address)
+    deadline.remaining()
+    host, port = address
+    addresses = socket.getaddrinfo(host, port, 0, socket.SOCK_STREAM)
+    deadline.remaining()  # DNS itself is synchronous; do not connect after late resolution.
+    last_error = None
+    for family, kind, protocol, _, target in addresses:
+        remaining = deadline.timeout(timeout)
+        connection = socket.socket(family, kind, protocol)
+        try:
+            connection.settimeout(remaining)
+            if source_address:
+                connection.bind(source_address)
+            connection.connect(target)
+            deadline.remaining()
+            return connection
+        except OSError as error:
+            last_error = error
+            connection.close()
+            deadline.remaining()
+        except BaseException:
+            connection.close()
+            raise
+    raise last_error or OSError('no_resolved_addresses')
+
+
+class _DeadlineHTTPSConnection(http.client.HTTPSConnection):
+    def __init__(self, *args, **kwargs):
+        self.deadline = current_read_deadline()
+        super().__init__(*args, **kwargs)
+        self._create_connection = partial(_deadline_connect, deadline=self.deadline)
+        if self.deadline is not None:
+            self.response_class = partial(_DeadlineHTTPResponse, deadline=self.deadline)
+
+    def connect(self):
+        if self.deadline is not None:
+            self.timeout = self.deadline.timeout(self.timeout)
+        # Match HTTPSConnection's TLS setup, but deduct TCP/tunnel time before
+        # the handshake as well as before any subsequent socket operation.
+        http.client.HTTPConnection.connect(self)
+        if self.deadline is not None:
+            self.sock.settimeout(self.deadline.remaining())
+        self.sock = self._context.wrap_socket(
+            self.sock, server_hostname=self._tunnel_host or self.host)
+        if self.deadline is not None:
+            self.sock.settimeout(self.deadline.remaining())
+
+    def send(self, data):
+        if self.deadline is not None:
+            remaining = self.deadline.remaining()
+            if self.sock is not None:
+                self.sock.settimeout(remaining)
+        super().send(data)
+        if self.deadline is not None:
+            self.deadline.remaining()
+
+
+class _DeadlineHTTPSHandler(urllib.request.HTTPSHandler):
+    def https_open(self, request):
+        return self.do_open(_DeadlineHTTPSConnection, request, context=self._context)
+
+
+_JSON_OPENER = urllib.request.build_opener(NoRedirect(), _DeadlineHTTPSHandler()).open
+
+
+def _strict_json_object(pairs):
+    result = {}
+    for key, value in pairs:
+        if key in result:
+            raise ValueError('duplicate_json_key')
+        result[key] = value
+    return result
+
+
+def _reject_json_constant(value):
+    raise ValueError('nonfinite_json_number')
 
 
 def json_http(url, body=None, *, timeout=12, opener=_JSON_OPENER, headers=None):
@@ -92,23 +210,35 @@ def json_http(url, body=None, *, timeout=12, opener=_JSON_OPENER, headers=None):
             any(not isinstance(value, str) or not 1 <= len(value) <= 512 or
                 any(not 33 <= ord(char) <= 126 for char in value) for value in extra.values())):
         raise DataError("invalid_private_api_header")
-    request = urllib.request.Request(
-        url, data=json.dumps(body).encode() if body is not None else None,
-        headers={'Content-Type': 'application/json', 'User-Agent': 'DominoReadOnlyDiscovery/0.1', **extra},
-    )
     try:
-        with opener(request, timeout=timeout) as response:
-            raw = response.read(MAX_RESPONSE_BYTES + 1)
-        if len(raw) > MAX_RESPONSE_BYTES:
-            raise DataError('response_too_large')
-        return json.loads(raw, parse_float=Decimal)
+        with read_deadline(timeout) as deadline:
+            request = urllib.request.Request(
+                url, data=json.dumps(body, allow_nan=False).encode() if body is not None else None,
+                headers={'Content-Type': 'application/json', 'User-Agent': 'DominoReadOnlyDiscovery/0.1', **extra},
+            )
+            with opener(request, timeout=deadline.remaining()) as response:
+                chunks, size = [], 0
+                read = getattr(response, 'read1', response.read)
+                while True:
+                    deadline.remaining()
+                    chunk = read(min(64 * 1024, MAX_RESPONSE_BYTES + 1 - size))
+                    deadline.remaining()
+                    if not chunk:
+                        break
+                    size += len(chunk)
+                    if size > MAX_RESPONSE_BYTES:
+                        raise DataError('response_too_large')
+                    chunks.append(chunk)
+            return json.loads(b''.join(chunks), parse_float=Decimal,
+                              parse_constant=_reject_json_constant, object_pairs_hook=_strict_json_object)
     except urllib.error.HTTPError as error:
         raise DataError(f'http_{error.code}') from None
-    except (urllib.error.URLError, TimeoutError, OSError):
+    except (urllib.error.URLError, TimeoutError, OSError, http.client.HTTPException):
+        check_read_deadline()
         raise DataError('network_unavailable') from None
     except DataError:
         raise
-    except (UnicodeError, ValueError, RecursionError):
+    except (UnicodeError, ValueError, RecursionError, InvalidOperation):
         raise DataError('invalid_json') from None
 
 
@@ -124,11 +254,13 @@ class ReadRpc:
     def request(self, method, params=()):
         if method not in self.METHODS:
             raise DataError('method_not_read_only')
+        check_read_deadline()
         if self.count >= self.max_requests:
             raise DataError('request_budget_exhausted')
         self.count += 1
         payload = self.transport(self.url, {'jsonrpc': '2.0', 'id': self.count,
                                           'method': method, 'params': list(params)})
+        check_read_deadline()
         if (not isinstance(payload, dict) or payload.get('jsonrpc') != '2.0'
                 or type(payload.get('id')) is not int or payload['id'] != self.count):
             raise DataError('invalid_rpc_envelope')
@@ -408,7 +540,9 @@ def discover(token, *, rpc=None, transport=json_http, clock=time.time, max_pools
               'unverifiedCandidates': [], 'metricsQualified': False, 'liveExecution': False}
     token_cache = {token: reader.token_lookup(token, block)}
     try:
+        check_read_deadline()
         payload = transport(f'https://api.dexscreener.com/token-pairs/v1/robinhood/{token}')
+        check_read_deadline()
         candidates, rejected = provider_candidates(payload, token, int(clock()))
         report['discovery'] = {'source': 'dexscreener', 'status': 'received',
             'coverage': 'provider_candidates_only', 'returned': len(payload), 'v4Candidates': len(candidates),
@@ -470,8 +604,10 @@ def discover(token, *, rpc=None, transport=json_http, clock=time.time, max_pools
             'walletIdentityAndAmountsOmitted': True}
         if probe_inventory:
             try:
+                check_read_deadline()
                 inventory = transport('https://robinhoodchain.blockscout.com/api/v2/addresses/'
                                       + owner + '/tokens?type=ERC-20')
+                check_read_deadline()
                 if not isinstance(inventory, dict) or not isinstance(inventory.get('items'), list):
                     raise DataError('invalid_inventory_response')
                 report['walletInventory'] = {'status': 'provider_page_received',

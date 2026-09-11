@@ -1,0 +1,18 @@
+{
+  "$id": "https://domino.invalid/contracts/read-v1/pool-positions.request.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "poolId": {
+      "pattern": "^0x[0-9a-fA-F]{64}$",
+      "title": "Poolid",
+      "type": "string"
+    }
+  },
+  "required": [
+    "poolId"
+  ],
+  "title": "ActivityRequest",
+  "type": "object",
+  "x-contract-version": "1.1.0-rc.2"
+}

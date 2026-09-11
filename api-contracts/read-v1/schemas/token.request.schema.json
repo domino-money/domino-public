@@ -1,0 +1,18 @@
+{
+  "$id": "https://domino.invalid/contracts/read-v1/token.request.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "token": {
+      "pattern": "^0x[0-9a-fA-F]{40}$",
+      "title": "Token",
+      "type": "string"
+    }
+  },
+  "required": [
+    "token"
+  ],
+  "title": "TokenRequest",
+  "type": "object",
+  "x-contract-version": "1.1.0-rc.2"
+}

@@ -1,20 +1,70 @@
 """Read orchestration with optional public catalogue; no accounts or signer."""
 from dataclasses import asdict
+from copy import deepcopy
+from functools import wraps
 import time
 
 from discovery import (CHAIN_ID, RPC_URL, ZERO, DataError, DiscoveryReader,
                        ReadRpc, Block, address, bytes32, discover, json_http, parse_block)
 from inventory import AlchemyInventory, CursorCodec
+from read_deadline import (ReadDeadline, check_read_deadline, current_read_deadline,
+                           use_read_deadline)
+
+
+# These are known transport failures, not a fallback for arbitrary producer text.
+_HTTP_REASONS = {f'http_{code}': 'upstream_unavailable'
+                 for code in (400, 401, 403, 404, 408, 500, 502, 503, 504)}
+_HTTP_REASONS['http_429'] = 'provider_rate_limited'
+
+
+def public_reason(reason, known):
+    if reason is None or type(reason) is str and reason in known:
+        return reason
+    if type(reason) is str and reason in _HTTP_REASONS:
+        return _HTTP_REASONS[reason]
+    raise DataError('upstream_contract_mismatch')
+
+
+def public_response(route):
+    """Project known worker states and identity tags without mutating raw reports."""
+    def decorate(operation):
+        @wraps(operation)
+        def wrapped(*args, **kwargs):
+            from read_contract import REASON_CODES
+            from historical_read import project_historical_work
+            result = deepcopy(operation(*args, **kwargs))
+            project_historical_work(route, result)
+            def walk(value):
+                if isinstance(value, dict):
+                    if isinstance(value.get('poolKey'), dict):
+                        key = value['poolKey']
+                        key['feeMode'] = 'dynamic' if key['fee_pips'] == 8388608 else 'fixed'
+                    if route in ('token', 'pools', 'wallet-assets'):
+                        if 'reason' in value:
+                            value['reason'] = public_reason(value['reason'], REASON_CODES)
+                        issues = value.get('metadataIssues', {})
+                        if not isinstance(issues, dict):
+                            raise DataError('upstream_contract_mismatch')
+                        for field, reason in issues.items():
+                            issues[field] = public_reason(reason, REASON_CODES)
+                    for child in value.values(): walk(child)
+                elif isinstance(value, list):
+                    for child in value: walk(child)
+            walk(result)
+            for pool in result.get('pools', []) if route == 'pools' else result.get('items', []) if route == 'catalogue' else []:
+                pool['poolKind'] = 'catalogue' if 'catalogueSource' in pool else 'discovery'
+            return result
+        return wrapped
+    return decorate
 
 
 def bounded_transport(seconds=60):
-    deadline = time.monotonic() + seconds
+    parent = current_read_deadline()
+    deadline = ReadDeadline(seconds, parents=(parent,) if parent else ())
 
     def transport(url, body=None):
-        remaining = deadline - time.monotonic()
-        if remaining <= 0:
-            raise DataError('read_deadline_exceeded')
-        return json_http(url, body, timeout=min(8, remaining))
+        with use_read_deadline(deadline) as active:
+            return json_http(url, body, timeout=active.timeout(8))
     return transport
 
 
@@ -41,8 +91,18 @@ class ReadService:
         return bool(self.inventory_url or self.inventory)
 
     def _rpc(self, transport):
+        check_read_deadline()
         return self.rpc_factory() if self.rpc_factory else ReadRpc(self.rpc_url, transport=transport)
 
+    def _market(self, kind, pool_id, **kwargs):
+        check_read_deadline()
+        result = self.market_cache.get(kind, pool_id, **kwargs)
+        # Cache fallback cannot turn a timed-out request into stale success, or
+        # permit a second provider call after the first spent the read budget.
+        check_read_deadline()
+        return result
+
+    @public_response('pools')
     def pools(self, token, max_pools=12, pool_ids=(), *, paired_token=None):
         token=address(token)
         paired_token=address(paired_token) if paired_token is not None else None
@@ -61,12 +121,14 @@ class ReadService:
                         transport=transport, clock=self.clock, pool_ids=pool_ids,
                         catalogue_candidates=candidates,catalogue_status=status,paired_token=paired_token)
 
+    @public_response('catalogue')
     def catalogue_page(self, token, *, limit=20, after=None, revision=None, paired_token=None):
         if not self.catalogue:
             raise DataError('catalogue_not_configured')
         return {'schemaVersion':1,'mode':'stored_catalogue_candidates',
                 **self.catalogue.lookup(token,limit=limit,after=after,revision=revision,paired_token=paired_token)}
 
+    @public_response('pool-activity')
     def pool_activity(self, pool_id, *, include_positions=False):
         from activity_store import PgActivity
         if not self.catalogue:
@@ -89,11 +151,14 @@ class ReadService:
         report['window24h']['usableAsCurrent24h']=age<=120 and report['window24h']['completeWindow']
         return report
 
+    @public_response('pool-positions')
     def pool_positions(self,pool_id):
         report=self.pool_activity(pool_id,include_positions=True)
         positions=report['liquidity']['positionAccounting']
         if positions['status']!='reconciled_as_of':
-            raise DataError(positions['reason'])
+            return {'schemaVersion':1,'mode':'core_pool_positions_read_only',
+                    **{k:report[k] for k in ('chainId','poolId','poolKey','snapshot','coverage','freshness')},
+                    'positionAccounting':positions,'executionAvailable':False}
         from nft_ownership import resolve_core_owners
         rpc = self._rpc(self.transport_factory())
         # Explicit per-read budget; never silently truncate a pool's known identities.
@@ -116,6 +181,7 @@ class ReadService:
                 **{k:report[k] for k in ('chainId','poolId','poolKey','snapshot','coverage','freshness')},
                 'positionAccounting':positions,'executionAvailable':False}
 
+    @public_response('nft-positions')
     def nft_positions(self, token_ids, block_number=None):
         from nft_ownership import read_nft_position, token_id
         if not isinstance(token_ids, (list, tuple)) or not 1 <= len(token_ids) <= 10:
@@ -129,7 +195,7 @@ class ReadService:
         if block_number is None:
             block = head
         else:
-            if type(block_number) is not int or not 0 <= block_number <= head.number:
+            if type(block_number) is not int or not 0 <= block_number <= min(head.number, 2**53-1):
                 raise DataError('invalid_nft_snapshot_block')
             block = parse_block(rpc.request('eth_getBlockByNumber', [hex(block_number), False]))
             if block.number != block_number or block.timestamp > head.timestamp:
@@ -145,6 +211,7 @@ class ReadService:
                               'status': 'fresh' if self.clock()-block.timestamp <= 120 else 'stale'},
                 'executionAvailable': False}
 
+    @public_response('pool-metrics')
     def pool_metrics(self, pool_id):
         from metrics_service import stored_metrics
         if not self.catalogue:
@@ -162,9 +229,12 @@ class ReadService:
         report['freshness'] = {'ageSeconds': age, 'status': 'fresh' if age <= 120 else 'stale'}
         report['coverage']['canonicality'] = 'block_hash_rechecked'
         report['usableAsCurrent24h'] = (age <= 120 and report['capital']['complete24h'] and
+                                       report['valuation']['status'] == 'qualified_historical_calculation' and
+                                       report['valuation']['complete24h'] and
                                        report['valuation'].get('feeAprPercent') is not None)
         return report
 
+    @public_response('pool-market')
     def pool_market(self, pool_id, *, include_price_history=False, price_token='base'):
         """On-demand provider observations; no catalogue or history replay required."""
         pool_id = bytes32(pool_id)
@@ -184,7 +254,7 @@ class ReadService:
                         'reason': 'provider_currency_or_pool_mismatch', 'data': None}
             return observation
 
-        market = matched(self.market_cache.get('pool', pool_id))
+        market = matched(self._market('pool', pool_id))
         issues = []
         if market.get('data') and market['data'].get('dexLabel') != 'uniswap-v4-robinhood':
             issues.append('provider_dex_label_unconfirmed')
@@ -195,7 +265,7 @@ class ReadService:
             if market.get('data') is None:
                 history.update(status='unavailable', reason='provider_market_identity_unavailable')
             else:
-                history = matched(self.market_cache.get('hourly_prices', pool_id, token=price_token))
+                history = matched(self._market('hourly_prices', pool_id, token=price_token))
                 data = history.get('data')
                 if data is not None and (data.get('selectedToken') != price_token or
                         data.get('currency') != data.get(price_token + 'Token') or
@@ -211,6 +281,7 @@ class ReadService:
                 'suggested': False, 'executionAvailable': False}
 
 
+    @public_response('token')
     def token(self, token):
         reader = DiscoveryReader(self._rpc(self.transport_factory()), clock=self.clock)
         block = reader.snapshot()
@@ -219,6 +290,7 @@ class ReadService:
         return {'schemaVersion': 1, 'mode': 'public_token_read_only', 'chainId': CHAIN_ID,
                 'snapshot': asdict(block), 'asset': asset, 'liveExecution': False}
 
+    @public_response('wallet-assets')
     def wallet_assets(self, wallet, tokens=(), *, auto_discover=True, cursor=None):
         wallet = address(wallet)
         if not isinstance(tokens, (list, tuple)) or len(tokens) > 10:
@@ -236,7 +308,9 @@ class ReadService:
         candidates = []
         if auto_discover and provider:
             try:
+                check_read_deadline()
                 page = provider.page(wallet, key)
+                check_read_deadline()
                 candidates = page['currencies']
                 next_cursor = (self.cursor_codec.issue(wallet, tokens, provider.context, page['nextKey'])
                                if page['nextKey'] else None)

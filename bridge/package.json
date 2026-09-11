@@ -1,0 +1,13 @@
+{
+  "name": "domino-read-bridge",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=22.13.0"
+  },
+  "scripts": {
+    "test": "node --test",
+    "check": "node --check src/worker.mjs && node --check src/strict-json.mjs && node --check src/request-contract.mjs && node --test && node --test ../api-contracts/read-v1/consumer.test.mjs ../api-contracts/read-v1/progressive.test.mjs"
+  }
+}

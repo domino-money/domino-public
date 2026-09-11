@@ -1,0 +1,47 @@
+{
+  "catalogue": {
+    "completeHistory": false,
+    "status": "not_configured"
+  },
+  "chainId": 4663,
+  "discovery": {
+    "coverage": "provider_candidates_only",
+    "notProbed": 0,
+    "rejectedOrOtherMarkets": 0,
+    "requestedPoolIds": 0,
+    "returned": 0,
+    "source": "dexscreener",
+    "status": "received",
+    "v4Candidates": 0
+  },
+  "liveExecution": false,
+  "metricsQualified": false,
+  "mode": "read_only_qualification",
+  "pairedToken": null,
+  "pools": [],
+  "schemaVersion": 2,
+  "selectedToken": "0x1111111111111111111111111111111111111111",
+  "selectedTokenReadStatus": "available",
+  "snapshot": {
+    "hash": "0xabababababababababababababababababababababababababababababababab",
+    "number": 700,
+    "timestamp": 1000
+  },
+  "tokens": [
+    {
+      "address": "0x1111111111111111111111111111111111111111",
+      "decimals": 6,
+      "displayUnitsAvailable": true,
+      "executionAvailable": false,
+      "kind": "erc20_candidate",
+      "metadataIssues": {},
+      "readStatus": "available",
+      "symbol": "TOKEN"
+    }
+  ],
+  "unverifiedCandidates": [],
+  "walletInventory": {
+    "coverage": "unqualified",
+    "status": "not_probed"
+  }
+}

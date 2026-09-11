@@ -1,0 +1,131 @@
+{
+  "accountingScope": "core_pool_events_only",
+  "chainId": 4663,
+  "coverage": {
+    "canonicality": "block_hash_rechecked",
+    "indexedThrough": 700,
+    "initializedAt": 1010,
+    "initializedBlock": 10,
+    "rpcCompleteness": "single_provider_assumption",
+    "scope": "since_verified_initialize",
+    "startBlock": 10
+  },
+  "executionAvailable": false,
+  "fees": {
+    "accounting": {
+      "basis": "core_trading_fee_before_Q128_distribution_rounding",
+      "donationsRaw": null,
+      "isCollectedAmount": false,
+      "isDominoServiceFee": false,
+      "lpFeesRaw": null,
+      "methodologyVersion": 1,
+      "protocolFeesRaw": null,
+      "reason": "fee_ledger_not_caught_up",
+      "status": "unavailable"
+    },
+    "feeGrowthGlobalX128": [
+      "19941706163581137741515406091183849985",
+      "159144112945835567368298087012620373"
+    ],
+    "growthIncludesDonations": true,
+    "growthIsTokenAmount": false,
+    "lpFeePipsAtSnapshot": 3000,
+    "protocolDirectionalPips": [
+      1000,
+      200
+    ]
+  },
+  "freshness": {
+    "ageSeconds": 10,
+    "checkedAgainstHead": 701,
+    "status": "fresh"
+  },
+  "liquidity": {
+    "activeLiquidityRaw": "1000000000000",
+    "isTvl": false,
+    "positionAccounting": {
+      "lpAssetsRaw": null,
+      "methodologyVersion": 1,
+      "principalRaw": null,
+      "reason": "position_ledger_not_caught_up",
+      "status": "unavailable",
+      "unsettledFeesRaw": null
+    },
+    "rangeCount": 2,
+    "status": "core_active_liquidity_reconciled",
+    "tvlReason": "pool_assets_and_uncollected_fees_not_reconciled",
+    "tvlUsd": null
+  },
+  "methodologyVersion": 1,
+  "mode": "core_pool_activity_read_only",
+  "poolId": "0x0911afcb281d7bcae2d71443ceaeebd0f89b4537708449970d797622b4b4c941",
+  "poolKey": {
+    "currency0": "0x0000000000000000000000000000000000000000",
+    "currency1": "0x1111111111111111111111111111111111111111",
+    "feeMode": "fixed",
+    "fee_pips": 3000,
+    "hooks": "0x0000000000000000000000000000000000000000",
+    "tick_spacing": 60
+  },
+  "revision": 2,
+  "schemaVersion": 1,
+  "snapshot": {
+    "activeLiquidityRaw": "1000000000000",
+    "feeGrowthGlobalX128": [
+      "19941706163581137741515406091183849985",
+      "159144112945835567368298087012620373"
+    ],
+    "hash": "0xabababababababababababababababababababababababababababababababab",
+    "lpFeePips": 3000,
+    "number": 700,
+    "protocolFeeRaw": 820200,
+    "sqrtPriceX96": "1590309234695400130885391457910",
+    "tick": 59990,
+    "timestamp": 87410
+  },
+  "storedEventCount": 20,
+  "suggested": false,
+  "window24h": {
+    "completeWindow": true,
+    "donations": {
+      "amountsRaw": [
+        "997654324",
+        "323456796"
+      ],
+      "count": 2
+    },
+    "feeApr": null,
+    "feeAprReason": "lp_fee_and_time_weighted_tvl_not_reconciled",
+    "fromTimestampExclusive": 1010,
+    "lpFeesRaw": null,
+    "lpFeesReason": "fee_ledger_not_caught_up",
+    "nonzeroSwapCount": 3,
+    "observedSeconds": 86400,
+    "observedSinceTimestamp": 1010,
+    "observedTotalSwapFeePips": [
+      3200,
+      3997
+    ],
+    "requestedSeconds": 86400,
+    "status": "covered_as_of",
+    "swapEventCount": 4,
+    "swapLegsRaw": [
+      {
+        "absoluteTurnover": "28926913445278",
+        "currencyIndex": 0,
+        "grossInput": "28833125768701",
+        "output": "93787676577"
+      },
+      {
+        "absoluteTurnover": "1635670293697",
+        "currencyIndex": 1,
+        "grossInput": "100000000000",
+        "output": "1535670293697"
+      }
+    ],
+    "throughTimestamp": 87410,
+    "usableAsCurrent24h": true,
+    "volumeUsd": null,
+    "volumeUsdReason": "timestamp_aligned_valuation_unavailable"
+  }
+}

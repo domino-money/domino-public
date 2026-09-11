@@ -1,0 +1,27 @@
+{
+  "chainId": 4663,
+  "executionAvailable": false,
+  "freshness": {
+    "ageSeconds": 10,
+    "status": "fresh"
+  },
+  "items": [
+    {
+      "corePositionId": null,
+      "nftOwnershipResolved": false,
+      "owner": null,
+      "status": "position_info_empty_at_snapshot",
+      "tokenId": "1"
+    }
+  ],
+  "mode": "public_nft_positions_read_only",
+  "ownershipScope": "owner_at_snapshot",
+  "requestedIdsOnly": true,
+  "schemaVersion": 1,
+  "snapshot": {
+    "hash": "0xabababababababababababababababababababababababababababababababab",
+    "number": 700,
+    "timestamp": 1000
+  },
+  "walletControlVerified": false
+}

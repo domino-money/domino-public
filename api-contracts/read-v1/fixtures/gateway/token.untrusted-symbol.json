@@ -1,0 +1,21 @@
+{
+  "asset": {
+    "address": "0x1111111111111111111111111111111111111111",
+    "decimals": 6,
+    "displayUnitsAvailable": true,
+    "executionAvailable": false,
+    "kind": "erc20_candidate",
+    "metadataIssues": {},
+    "readStatus": "available",
+    "symbol": "<img src=x onerror=alert(1)>"
+  },
+  "chainId": 4663,
+  "liveExecution": false,
+  "mode": "public_token_read_only",
+  "schemaVersion": 1,
+  "snapshot": {
+    "hash": "0xabababababababababababababababababababababababababababababababab",
+    "number": 700,
+    "timestamp": 1000
+  }
+}

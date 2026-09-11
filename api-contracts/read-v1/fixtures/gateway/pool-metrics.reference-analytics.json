@@ -1,0 +1,163 @@
+{
+  "capital": {
+    "averageDenominatorSeconds": 86400,
+    "complete24h": true,
+    "current": {
+      "lpAssetsRaw": [
+        "1012536287",
+        "20025853294226"
+      ],
+      "principalDepositedRaw": [
+        "1602526362165",
+        "21677142254997"
+      ],
+      "principalRaw": [
+        "24807311",
+        "20025729837429"
+      ],
+      "principalWithdrawnRaw": [
+        "30226593643272",
+        "215422123863"
+      ],
+      "roundingResidualRaw": [
+        "9",
+        "9"
+      ],
+      "settledFeesRaw": [
+        "86422803289",
+        "500000008"
+      ],
+      "sqrtPriceX96": "1590309234695400130885391457910",
+      "tick": 59990,
+      "unsettledFeesRaw": [
+        "987728967",
+        "123456788"
+      ]
+    },
+    "fromTimestampInclusive": 1010,
+    "integralRawSeconds": {
+      "lpAssetsRaw": [
+        "156125889058009",
+        "1729926881513867021"
+      ],
+      "principalRaw": [
+        "70642567821837",
+        "1729916216076886212"
+      ],
+      "roundingResidualRaw": [
+        "777518",
+        "777516"
+      ],
+      "unsettledFeesRaw": [
+        "85483320458654",
+        "10665436203293"
+      ]
+    },
+    "isInvestorPnl": false,
+    "methodologyVersion": 1,
+    "observedSeconds": 86400,
+    "sourceChunks": 1,
+    "sourceEventCount": 20,
+    "status": "reconciled_event_history",
+    "throughTimestamp": 87410,
+    "timeWeighting": "post_event_step_function_last_event_wins_at_same_timestamp",
+    "tvlBasis": "lp_attributed_assets_including_unsettled_fees_and_rounding_residual_excluding_protocol"
+  },
+  "chainId": 4663,
+  "coverage": {
+    "canonicality": "block_hash_rechecked",
+    "rpcCompleteness": "single_provider_assumption"
+  },
+  "executionAvailable": false,
+  "freshness": {
+    "ageSeconds": 10,
+    "status": "fresh"
+  },
+  "mode": "historical_pool_metrics_read_only",
+  "poolId": "0x0911afcb281d7bcae2d71443ceaeebd0f89b4537708449970d797622b4b4c941",
+  "poolKey": {
+    "currency0": "0x0000000000000000000000000000000000000000",
+    "currency1": "0x1111111111111111111111111111111111111111",
+    "feeMode": "fixed",
+    "fee_pips": 3000,
+    "hooks": "0x0000000000000000000000000000000000000000",
+    "tick_spacing": 60
+  },
+  "prices": [
+    {
+      "coverage": {
+        "endTimestamp": 87410,
+        "maxAgeSeconds": 86520,
+        "startTimestamp": 1010,
+        "status": "complete"
+      },
+      "currency": "0x0000000000000000000000000000000000000000",
+      "firstTimestamp": 710,
+      "lastTimestamp": 87410,
+      "observations": 290,
+      "observedSources": [
+        "chainlink_robinhood_standard_v1"
+      ],
+      "reason": null,
+      "sourceQualification": "qualified",
+      "status": "qualified"
+    },
+    {
+      "coverage": {
+        "endTimestamp": 87410,
+        "maxAgeSeconds": 86520,
+        "startTimestamp": 1010,
+        "status": "complete"
+      },
+      "currency": "0x1111111111111111111111111111111111111111",
+      "firstTimestamp": 710,
+      "lastTimestamp": 87410,
+      "observations": 290,
+      "observedSources": [
+        "chainlink_robinhood_standard_v1"
+      ],
+      "reason": null,
+      "sourceQualification": "qualified",
+      "status": "qualified"
+    }
+  ],
+  "revision": 2,
+  "schemaVersion": 1,
+  "snapshot": {
+    "activeLiquidityRaw": "1000000000000",
+    "feeGrowthGlobalX128": [
+      "19941706163581137741515406091183849985",
+      "159144112945835567368298087012620373"
+    ],
+    "hash": "0xabababababababababababababababababababababababababababababababab",
+    "lpFeePips": 3000,
+    "number": 700,
+    "protocolFeeRaw": 820200,
+    "sqrtPriceX96": "1590309234695400130885391457910",
+    "tick": 59990,
+    "timestamp": 87410
+  },
+  "suggested": false,
+  "usableAsCurrent24h": false,
+  "valuation": {
+    "annualizationDays": 365,
+    "complete24h": true,
+    "decimalPlaces": 18,
+    "executionAvailable": false,
+    "feeAprBasis": "365_times_full_day_trading_lp_fees_over_time_weighted_lp_assets",
+    "feeAprPercent": "158.060469175186043958",
+    "feeAprReason": null,
+    "grossInputVolumeUsd": "0.000028933125768701",
+    "includesDominoServiceFee": false,
+    "includesTokenPricePnl": false,
+    "isApy": false,
+    "isPositionApr": false,
+    "methodologyVersion": 1,
+    "observedSeconds": 86400,
+    "priceConvention": "publication_plus_one_second_and_answer_age_reference_policy",
+    "status": "reference_analytics_only",
+    "timeWeightedAverageTvlUsd": "0.000020024108881978",
+    "tradingLpFeesUsd": "0.000000086712877937",
+    "tvlUsd": "0.000020026865830513"
+  }
+}

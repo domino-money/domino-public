@@ -72,7 +72,9 @@ class CapitalPostgresTests(unittest.TestCase):
         self.assertIsNone(report['valuation']['tvlUsd'])
 
     def test_missing_capital_or_position_qualification_cannot_be_promoted(self):
-        with self.assertRaisesRegex(DataError, 'capital_ledger_not_caught_up'): stored_metrics(self.catalogue, POOL)
+        result=stored_metrics(self.catalogue, POOL)
+        self.assertEqual(result['capital']['reason'], 'capital_ledger_not_caught_up')
+        self.assertIsNone(result['capital']['current']);self.assertIsNone(result['valuation']['tvlUsd'])
         with self.catalogue.connection(writer=True) as conn: conn.execute('DELETE FROM domino_activity.position_chunks')
         with self.assertRaisesRegex(DataError, 'reconciled_position_tail_required'): self.capital.step(POOL)
         self.assertEqual(self.counts(), (0, 0, 0))
@@ -80,7 +82,9 @@ class CapitalPostgresTests(unittest.TestCase):
     def test_restart_lagging_history_and_empty_chunks(self):
         self.capital.step(POOL)
         self.worker.step(POOL, through=30);self.fees.step(POOL);self.positions.step(POOL)
-        with self.assertRaisesRegex(DataError, 'not_caught_up'): stored_metrics(self.catalogue, POOL)
+        result=stored_metrics(self.catalogue, POOL)
+        self.assertEqual(result['capital']['reason'], 'capital_ledger_not_caught_up')
+        self.assertIsNone(result['capital']['integralRawSeconds']);self.assertIsNone(result['valuation']['feeAprPercent'])
         CapitalIndexer(self.store, self.rpc).step(POOL)
         before = self.counts()
         self.worker.step(POOL, through=40);self.fees.step(POOL);self.positions.step(POOL);self.capital.step(POOL)

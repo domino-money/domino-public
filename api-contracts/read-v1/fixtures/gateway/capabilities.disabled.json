@@ -1,0 +1,10 @@
+{
+  "automation": false,
+  "chainId": 4663,
+  "contractVersion": "1.1.0-rc.2",
+  "dataMode": "disabled",
+  "enabledReads": [],
+  "ownerTransactions": false,
+  "privateAccounts": false,
+  "walletAuthentication": false
+}

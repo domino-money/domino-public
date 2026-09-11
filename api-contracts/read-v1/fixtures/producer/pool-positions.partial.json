@@ -1,0 +1,186 @@
+{
+  "chainId": 4663,
+  "coverage": {
+    "canonicality": "block_hash_rechecked",
+    "indexedThrough": 700,
+    "initializedAt": 1010,
+    "initializedBlock": 10,
+    "rpcCompleteness": "single_provider_assumption",
+    "scope": "since_verified_initialize",
+    "startBlock": 10
+  },
+  "executionAvailable": false,
+  "freshness": {
+    "ageSeconds": 10,
+    "checkedAgainstHead": 701,
+    "status": "fresh"
+  },
+  "mode": "core_pool_positions_read_only",
+  "poolId": "0x0911afcb281d7bcae2d71443ceaeebd0f89b4537708449970d797622b4b4c941",
+  "poolKey": {
+    "currency0": "0x0000000000000000000000000000000000000000",
+    "currency1": "0x1111111111111111111111111111111111111111",
+    "feeMode": "fixed",
+    "fee_pips": 3000,
+    "hooks": "0x0000000000000000000000000000000000000000",
+    "tick_spacing": 60
+  },
+  "positionAccounting": {
+    "basis": "event_token_flows_excluding_protocol",
+    "corePositionCount": 3,
+    "donationsIncluded": true,
+    "isWalletBalance": false,
+    "isWithdrawalQuote": false,
+    "items": [
+      {
+        "coreOwner": "0x1111111111111111111111111111111111111111",
+        "corePositionId": "0x09e7c58edbcfada1689a21e726d798731094b77c193aa6802d362690c4432a54",
+        "lastInsideX128": [
+          "0",
+          "0"
+        ],
+        "liquidityRaw": "1000000000000",
+        "nft": {
+          "nftOwnershipResolved": false,
+          "owner": null,
+          "status": "core_owner_adapter_required"
+        },
+        "principalRaw": [
+          "24807311",
+          "20022729982920"
+        ],
+        "salt": "0x0000000000000000000000000000000000000000000000000000000000000001",
+        "settledFeesRaw": [
+          "74898239041",
+          "344225725"
+        ],
+        "tickLower": -60000,
+        "tickUpper": 60000,
+        "unsettledFeesRaw": [
+          "987728967",
+          "123456788"
+        ]
+      },
+      {
+        "coreOwner": "0x2222222222222222222222222222222222222222",
+        "corePositionId": "0x9b7a4206a713012bf04c9dec25a9b4506c41479903c414c26ba3d63a126c997b",
+        "lastInsideX128": [
+          "0",
+          "0"
+        ],
+        "liquidityRaw": "500000000000",
+        "nft": {
+          "nftOwnershipResolved": false,
+          "owner": null,
+          "status": "core_owner_adapter_required"
+        },
+        "principalRaw": [
+          "0",
+          "2999854509"
+        ],
+        "salt": "0x0000000000000000000000000000000000000000000000000000000000000001",
+        "settledFeesRaw": [
+          "0",
+          "18083993"
+        ],
+        "tickLower": -60,
+        "tickUpper": 60,
+        "unsettledFeesRaw": [
+          "0",
+          "0"
+        ]
+      },
+      {
+        "coreOwner": "0x1111111111111111111111111111111111111111",
+        "corePositionId": "0xbb6aa4826942ae911b8915ad2f353407cd698ef18d5fb3871c5565e51ee20826",
+        "lastInsideX128": [
+          "19605599412473721855407221384387864440",
+          "117133944572456687802516038874958734"
+        ],
+        "liquidityRaw": "0",
+        "nft": {
+          "nftOwnershipResolved": false,
+          "owner": null,
+          "status": "core_owner_adapter_required"
+        },
+        "principalRaw": [
+          "0",
+          "0"
+        ],
+        "salt": "0x0000000000000000000000000000000000000000000000000000000000000002",
+        "settledFeesRaw": [
+          "11524564248",
+          "137690290"
+        ],
+        "tickLower": -60000,
+        "tickUpper": 60000,
+        "unsettledFeesRaw": [
+          "0",
+          "0"
+        ]
+      }
+    ],
+    "knownTickCount": 4,
+    "lpAssetsRaw": [
+      "1012536287",
+      "20025853294226"
+    ],
+    "methodologyVersion": 1,
+    "nftOwnershipResolved": false,
+    "nftOwnershipScope": "historical_snapshot_not_current_wallet_authentication",
+    "nonzeroLiquidityPositionCount": 2,
+    "onchainReconciliation": {
+      "blockHash": "0xabababababababababababababababababababababababababababababababab",
+      "blockNumber": 700,
+      "corePositions": 3,
+      "ranges": 2,
+      "sourceFeeMethodology": 1,
+      "ticks": 4
+    },
+    "principalDepositedRaw": [
+      "1602526362165",
+      "21677142254997"
+    ],
+    "principalRaw": [
+      "24807311",
+      "20025729837429"
+    ],
+    "principalWithdrawnRaw": [
+      "30226593643272",
+      "215422123863"
+    ],
+    "protocolFeesExcluded": true,
+    "reason": null,
+    "roundingResidualRaw": [
+      "9",
+      "9"
+    ],
+    "scope": "core_positions_not_nft_ownership",
+    "settledFeesRaw": [
+      "86422803289",
+      "500000008"
+    ],
+    "status": "reconciled_as_of",
+    "tvlReason": "timestamp_aligned_valuation_unavailable",
+    "tvlUsd": null,
+    "unsettledFeesRaw": [
+      "987728967",
+      "123456788"
+    ]
+  },
+  "schemaVersion": 1,
+  "snapshot": {
+    "activeLiquidityRaw": "1000000000000",
+    "feeGrowthGlobalX128": [
+      "19941706163581137741515406091183849985",
+      "159144112945835567368298087012620373"
+    ],
+    "hash": "0xabababababababababababababababababababababababababababababababab",
+    "lpFeePips": 3000,
+    "number": 700,
+    "protocolFeeRaw": 820200,
+    "sqrtPriceX96": "1590309234695400130885391457910",
+    "tick": 59990,
+    "timestamp": 1029
+  }
+}

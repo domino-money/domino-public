@@ -5,6 +5,7 @@ import re
 import time
 
 from discovery import CHAIN_ID, DataError, address, bytes32, json_http
+from read_deadline import check_read_deadline, read_timeout
 
 SOURCE = 'geckoterminal'
 ROOT = 'https://api.geckoterminal.com/api/v2/networks/robinhood'
@@ -82,9 +83,11 @@ class GeckoMarketData:
         return int(value)
 
     def _fetch(self, url):
+        check_read_deadline()
         self._now()  # Invalid clocks must not initiate provider work.
-        result = _object(self.transport(url, timeout=5))
-        return result, self._now()
+        result = self.transport(url, timeout=read_timeout(5))
+        check_read_deadline()
+        return _object(result), self._now()
 
     @staticmethod
     def _attribution(pool_id, url, retrieved):

@@ -193,7 +193,8 @@ class CatalogueReadTests(unittest.TestCase):
 
     def test_catalogue_api_validation_and_revision_conflict(self):
         catalogue = Mock()
-        catalogue.lookup.return_value={'items':[stored_candidate()], 'revision':3,'completeHistory':False}
+        from test_read_contract import CatalogueFixture
+        catalogue.lookup.return_value={**CatalogueFixture().lookup(TOKEN), 'revision':3}
         service = ReadService(catalogue=catalogue)
         client=TestClient(create_app(service,gate=ReadGate(interval=0)),base_url='http://127.0.0.1')
         response=client.post('/v1/read/catalogue',json={'token':TOKEN,'pairedToken':ZERO})

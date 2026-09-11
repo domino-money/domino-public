@@ -1,0 +1,307 @@
+{
+  "$defs": {
+    "CatalogueCandidate": {
+      "additionalProperties": false,
+      "properties": {
+        "catalogueObservation": {
+          "$ref": "#/$defs/CatalogueObservation"
+        },
+        "catalogueSource": {
+          "enum": [
+            "initialize_event",
+            "verified_observation"
+          ],
+          "title": "Cataloguesource",
+          "type": "string"
+        },
+        "currencies": {
+          "items": {
+            "pattern": "^0x[0-9a-f]{40}$",
+            "type": "string"
+          },
+          "maxItems": 2,
+          "minItems": 2,
+          "title": "Currencies",
+          "type": "array"
+        },
+        "executionAvailable": {
+          "const": false,
+          "title": "Executionavailable",
+          "type": "boolean"
+        },
+        "identityStatus": {
+          "const": "catalogue_candidate",
+          "title": "Identitystatus",
+          "type": "string"
+        },
+        "poolId": {
+          "pattern": "^0x[0-9a-f]{64}$",
+          "title": "Poolid",
+          "type": "string"
+        },
+        "poolKey": {
+          "discriminator": {
+            "mapping": {
+              "dynamic": "#/$defs/DynamicPoolKey",
+              "fixed": "#/$defs/FixedPoolKey"
+            },
+            "propertyName": "feeMode"
+          },
+          "oneOf": [
+            {
+              "$ref": "#/$defs/FixedPoolKey"
+            },
+            {
+              "$ref": "#/$defs/DynamicPoolKey"
+            }
+          ],
+          "title": "Poolkey"
+        },
+        "poolKind": {
+          "const": "catalogue",
+          "title": "Poolkind",
+          "type": "string"
+        },
+        "providerMetrics": {
+          "title": "Providermetrics",
+          "type": "null"
+        }
+      },
+      "required": [
+        "poolKind",
+        "poolId",
+        "poolKey",
+        "currencies",
+        "providerMetrics",
+        "catalogueSource",
+        "catalogueObservation",
+        "identityStatus",
+        "executionAvailable"
+      ],
+      "title": "CatalogueCandidate",
+      "type": "object"
+    },
+    "CatalogueObservation": {
+      "additionalProperties": false,
+      "properties": {
+        "hash": {
+          "pattern": "^0x[0-9a-f]{64}$",
+          "title": "Hash",
+          "type": "string"
+        },
+        "number": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "title": "Number",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "number",
+        "hash"
+      ],
+      "title": "CatalogueObservation",
+      "type": "object"
+    },
+    "DynamicPoolKey": {
+      "additionalProperties": false,
+      "properties": {
+        "currency0": {
+          "pattern": "^0x[0-9a-f]{40}$",
+          "title": "Currency0",
+          "type": "string"
+        },
+        "currency1": {
+          "pattern": "^0x[0-9a-f]{40}$",
+          "title": "Currency1",
+          "type": "string"
+        },
+        "feeMode": {
+          "const": "dynamic",
+          "title": "Feemode",
+          "type": "string"
+        },
+        "fee_pips": {
+          "const": 8388608,
+          "title": "Fee Pips",
+          "type": "integer"
+        },
+        "hooks": {
+          "pattern": "^0x[0-9a-f]{40}$",
+          "title": "Hooks",
+          "type": "string"
+        },
+        "tick_spacing": {
+          "maximum": 32767,
+          "minimum": 1,
+          "title": "Tick Spacing",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "currency0",
+        "currency1",
+        "tick_spacing",
+        "hooks",
+        "feeMode",
+        "fee_pips"
+      ],
+      "title": "DynamicPoolKey",
+      "type": "object"
+    },
+    "FixedPoolKey": {
+      "additionalProperties": false,
+      "properties": {
+        "currency0": {
+          "pattern": "^0x[0-9a-f]{40}$",
+          "title": "Currency0",
+          "type": "string"
+        },
+        "currency1": {
+          "pattern": "^0x[0-9a-f]{40}$",
+          "title": "Currency1",
+          "type": "string"
+        },
+        "feeMode": {
+          "const": "fixed",
+          "title": "Feemode",
+          "type": "string"
+        },
+        "fee_pips": {
+          "maximum": 1000000,
+          "minimum": 0,
+          "title": "Fee Pips",
+          "type": "integer"
+        },
+        "hooks": {
+          "pattern": "^0x[0-9a-f]{40}$",
+          "title": "Hooks",
+          "type": "string"
+        },
+        "tick_spacing": {
+          "maximum": 32767,
+          "minimum": 1,
+          "title": "Tick Spacing",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "currency0",
+        "currency1",
+        "tick_spacing",
+        "hooks",
+        "feeMode",
+        "fee_pips"
+      ],
+      "title": "FixedPoolKey",
+      "type": "object"
+    }
+  },
+  "$id": "https://domino.invalid/contracts/read-v1/catalogue.response.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "chainId": {
+      "const": 4663,
+      "title": "Chainid",
+      "type": "integer"
+    },
+    "completeHistory": {
+      "const": false,
+      "title": "Completehistory",
+      "type": "boolean"
+    },
+    "coverage": {
+      "const": "configured_interval_only",
+      "title": "Coverage",
+      "type": "string"
+    },
+    "hasMore": {
+      "title": "Hasmore",
+      "type": "boolean"
+    },
+    "indexedThrough": {
+      "anyOf": [
+        {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Indexedthrough"
+    },
+    "items": {
+      "items": {
+        "$ref": "#/$defs/CatalogueCandidate"
+      },
+      "maxItems": 100,
+      "title": "Items",
+      "type": "array"
+    },
+    "liveExecution": {
+      "const": false,
+      "title": "Liveexecution",
+      "type": "boolean"
+    },
+    "mode": {
+      "const": "stored_catalogue_candidates",
+      "title": "Mode",
+      "type": "string"
+    },
+    "nextAfterPoolId": {
+      "anyOf": [
+        {
+          "pattern": "^0x[0-9a-f]{64}$",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Nextafterpoolid"
+    },
+    "poolManager": {
+      "pattern": "^0x[0-9a-f]{40}$",
+      "title": "Poolmanager",
+      "type": "string"
+    },
+    "revision": {
+      "maximum": 9007199254740991,
+      "minimum": 0,
+      "title": "Revision",
+      "type": "integer"
+    },
+    "schemaVersion": {
+      "const": 1,
+      "title": "Schemaversion",
+      "type": "integer"
+    },
+    "startBlock": {
+      "maximum": 9007199254740991,
+      "minimum": 0,
+      "title": "Startblock",
+      "type": "integer"
+    }
+  },
+  "required": [
+    "schemaVersion",
+    "mode",
+    "chainId",
+    "poolManager",
+    "revision",
+    "startBlock",
+    "indexedThrough",
+    "coverage",
+    "completeHistory",
+    "liveExecution",
+    "hasMore",
+    "nextAfterPoolId",
+    "items"
+  ],
+  "title": "CatalogueResponse",
+  "type": "object",
+  "x-contract-version": "1.1.0-rc.2"
+}

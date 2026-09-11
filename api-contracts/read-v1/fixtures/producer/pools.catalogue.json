@@ -1,0 +1,116 @@
+{
+  "catalogue": {
+    "candidatesLoaded": 1,
+    "chainId": 4663,
+    "completeHistory": false,
+    "coverage": "configured_interval_only",
+    "hasMore": false,
+    "indexedThrough": 650,
+    "liveExecution": false,
+    "nextAfterPoolId": null,
+    "poolManager": "0x8366a39cc670b4001a1121b8f6a443a643e40951",
+    "revision": 2,
+    "startBlock": 10,
+    "status": "available"
+  },
+  "chainId": 4663,
+  "discovery": {
+    "coverage": "provider_candidates_only",
+    "notProbed": 0,
+    "rejectedOrOtherMarkets": 0,
+    "requestedPoolIds": 1,
+    "returned": 1,
+    "source": "dexscreener",
+    "status": "received",
+    "v4Candidates": 1
+  },
+  "liveExecution": false,
+  "metricsQualified": false,
+  "mode": "read_only_qualification",
+  "pairedToken": null,
+  "pools": [
+    {
+      "aprReason": "reconciled_fee_history_unavailable",
+      "catalogueObservation": {
+        "hash": "0xcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd",
+        "number": 500
+      },
+      "catalogueSource": "initialize_event",
+      "currencies": [
+        "0x0000000000000000000000000000000000000000",
+        "0x1111111111111111111111111111111111111111"
+      ],
+      "currentLpFeePips": 3000,
+      "executionAvailable": false,
+      "executionReason": "public_execution_not_implemented",
+      "feeApr24h": null,
+      "identityStatus": "verified_at_block",
+      "integrationClass": "hookless_fixed_fee",
+      "poolId": "0x0911afcb281d7bcae2d71443ceaeebd0f89b4537708449970d797622b4b4c941",
+      "poolKey": {
+        "currency0": "0x0000000000000000000000000000000000000000",
+        "currency1": "0x1111111111111111111111111111111111111111",
+        "feeMode": "fixed",
+        "fee_pips": 3000,
+        "hooks": "0x0000000000000000000000000000000000000000",
+        "tick_spacing": 60
+      },
+      "poolKind": "catalogue",
+      "protocolFeeRaw": 0,
+      "providerMetrics": {
+        "asOfBlock": null,
+        "reportedLiquidityUsd": "10.00",
+        "retrievedAt": 1010,
+        "source": "dexscreener",
+        "status": "external_unreconciled",
+        "volume24hUsd": "1234.56"
+      },
+      "requestedById": true,
+      "snapshot": {
+        "hash": "0xabababababababababababababababababababababababababababababababab",
+        "number": 700,
+        "timestamp": 1000
+      },
+      "sqrtPriceX96": "79228162514264337593543950336",
+      "suggested": false,
+      "suggestionReason": "metrics_and_policy_not_qualified",
+      "tick": 0,
+      "tokenMetadataStatus": "available"
+    }
+  ],
+  "schemaVersion": 2,
+  "selectedToken": "0x1111111111111111111111111111111111111111",
+  "selectedTokenReadStatus": "available",
+  "snapshot": {
+    "hash": "0xabababababababababababababababababababababababababababababababab",
+    "number": 700,
+    "timestamp": 1000
+  },
+  "tokens": [
+    {
+      "address": "0x1111111111111111111111111111111111111111",
+      "decimals": 6,
+      "displayUnitsAvailable": true,
+      "executionAvailable": false,
+      "kind": "erc20_candidate",
+      "metadataIssues": {},
+      "readStatus": "available",
+      "symbol": "TOKEN"
+    },
+    {
+      "address": "0x0000000000000000000000000000000000000000",
+      "decimals": 18,
+      "displayUnitsAvailable": true,
+      "executionAvailable": false,
+      "kind": "native",
+      "metadataIssues": {},
+      "readStatus": "available",
+      "symbol": "ETH"
+    }
+  ],
+  "unverifiedCandidates": [],
+  "walletInventory": {
+    "coverage": "unqualified",
+    "status": "not_probed"
+  }
+}

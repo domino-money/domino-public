@@ -87,10 +87,16 @@ class CapitalResumePostgresTests(unittest.TestCase):
             return tuple(conn.execute('SELECT count(*) AS n FROM domino_activity.' + table).fetchone()['n']
                          for table in ('capital_chunks', 'capital_events', 'chunks', 'position_chunks'))
 
-    def assert_unpublished(self):
+    def assert_unpublished(self, expected_error=None):
         self.assertEqual(self.counts()[:2], (0, 0))
-        with self.assertRaisesRegex(DataError, 'capital_ledger_not_caught_up'):
-            stored_metrics(self.catalogue, POOL)
+        if expected_error:
+            with self.assertRaisesRegex(DataError, expected_error):
+                stored_metrics(self.catalogue, POOL)
+        else:
+            report = stored_metrics(self.catalogue, POOL)
+            self.assertEqual(report['capital']['reason'], 'capital_ledger_not_caught_up')
+            self.assertIsNone(report['capital']['current'])
+            self.assertIsNone(report['valuation']['feeAprPercent'])
         # Independently verified source accounting survives the capital delay.
         self.assertEqual(self.store.read(POOL)['liquidity']['positionAccounting']['status'], 'reconciled_as_of')
 
@@ -175,8 +181,7 @@ class CapitalResumePostgresTests(unittest.TestCase):
                 CapitalIndexer(self.store, self.rpc).step(POOL)
             self.assertEqual(self.counts(), before)
             self.assertEqual(self.work()['diagnostic']['action'], 'select_extended_profile_and_resume')
-            with self.assertRaisesRegex(DataError, 'capital_ledger_not_caught_up'):
-                stored_metrics(self.catalogue, POOL)
+            self.assertEqual(stored_metrics(self.catalogue, POOL)['capital']['reason'], 'capital_ledger_not_caught_up')
             self.rpc.checked.clear()
             first = CapitalIndexer(self.store, self.rpc, capacity='extended').step(POOL)
             self.assertEqual(first['completedChecks'], 128)
@@ -205,7 +210,7 @@ class CapitalResumePostgresTests(unittest.TestCase):
             with self.assertRaisesRegex(DataError, 'core_tick_state_reconciliation_failed'):
                 CapitalIndexer(self.store, self.rpc).step(POOL)
             self.assertEqual(self.work()['progress'], before)
-            self.assert_unpublished()
+            self.assert_unpublished('upstream_contract_mismatch')
             self.rpc.corrupt = None
             CapitalIndexer(self.store, self.rpc).step(POOL)
         self.assertIsNone(self.work())
@@ -242,7 +247,7 @@ class CapitalResumePostgresTests(unittest.TestCase):
                     with self.assertRaisesRegex(DataError, 'capital_work_' + change + '_mismatch'):
                         CapitalIndexer(self.store, self.rpc).step(POOL)
                 self.assertEqual(self.work()['diagnostic']['action'], 'restart_capital_work_after_review')
-                self.assert_unpublished()
+                self.assert_unpublished('upstream_contract_mismatch')
                 # This operator action replays from source and never edits source ledgers.
                 counts = self.counts()
                 restart = CapitalIndexer(self.store, self.rpc).restart(POOL)
@@ -261,7 +266,7 @@ class CapitalResumePostgresTests(unittest.TestCase):
             conn.execute("UPDATE domino_activity.events SET payload=payload || '{\"sourceRevision\":1}'::jsonb WHERE block_number=10")
         with self.assertRaisesRegex(DataError, 'capital_work_source_mismatch'):
             CapitalIndexer(self.store, self.rpc).step(POOL)
-        self.assert_unpublished()
+        self.assert_unpublished('upstream_contract_mismatch')
 
     def test_method_change_during_proof_cannot_reuse_completed_checks(self):
         with patch('position_store.MAX_BATCH_CHECKS', 1):
@@ -273,7 +278,7 @@ class CapitalResumePostgresTests(unittest.TestCase):
             with self.assertRaisesRegex(DataError, 'capital_work_method_mismatch'):
                 CapitalIndexer(self.store, self.rpc).step(POOL)
         self.assertEqual(self.work()['progress'], before)
-        self.assert_unpublished()
+        self.assert_unpublished('upstream_contract_mismatch')
 
     def test_resealed_same_count_capital_points_cannot_change_source_identity(self):
         for field in ('blockHash', 'logIndex', 'order'):
@@ -304,7 +309,7 @@ class CapitalResumePostgresTests(unittest.TestCase):
                 proof.assert_not_called()
                 self.assertEqual(self.work()['progress'], saved)
                 self.assertEqual(self.counts(), before)
-                self.assert_unpublished()
+                self.assert_unpublished('upstream_contract_mismatch')
 
     def test_database_failure_after_chunk_insert_rolls_back_all_points_and_keeps_saved_work(self):
         with patch('historical_capacity.MAX_BATCH_EVENTS', 1):
@@ -317,7 +322,7 @@ class CapitalResumePostgresTests(unittest.TestCase):
         try:
             with self.assertRaisesRegex(DataError, 'catalogue_database_unavailable'):
                 CapitalIndexer(self.store, self.rpc).step(POOL)
-            self.assert_unpublished()
+            self.assert_unpublished('catalogue_database_unavailable')
             self.assertEqual(self.work()['progress'], before)
         finally:
             with psycopg.connect(**self.settings, user=ADMIN) as conn:
@@ -349,6 +354,22 @@ class CapitalResumePostgresTests(unittest.TestCase):
             self.assertIsNone(self.work())
             self.assertEqual(self.counts(), (0, 0, 0, 0))
 
+    def test_saved_source_failures_reach_reads_without_becoming_ordinary_lag(self):
+        # Persist the actual record_failure diagnostic with no unpublished prefix.
+        # Reads must preserve both the raw diagnostic and every committed table.
+        before = self.counts()
+        for reason in ('network_unavailable', 'rpc_error', 'read_deadline_exceeded',
+                       'catalogue_database_unavailable', 'capital_work_source_mismatch'):
+            worker = CapitalIndexer(self.store, self.rpc)
+            with self.subTest(reason=reason), patch.object(worker, '_step', side_effect=DataError(reason)):
+                with self.assertRaisesRegex(DataError, reason): worker.step(POOL)
+                saved = self.work()
+                self.assertEqual(saved['diagnostic']['reason'], reason)
+                expected = 'upstream_contract_mismatch' if reason == 'capital_work_source_mismatch' else reason
+                self.assert_unpublished(expected)
+                self.assertEqual(self.work(), saved)
+                self.assertEqual(self.counts(), before)
+
     def test_unavailable_verification_preserves_operator_restart_target(self):
         with patch('historical_capacity.MAX_BATCH_EVENTS', 1):
             CapitalIndexer(self.store, self.rpc).step(POOL)
@@ -367,7 +388,9 @@ class CapitalResumePostgresTests(unittest.TestCase):
                 with self.assertRaisesRegex(DataError, 'historical_work_byte_budget_exhausted'):
                     CapitalIndexer(self.store, self.rpc).step(POOL)
             self.assertEqual(self.work()['progress'], before)
-            self.assert_unpublished()
+            # This fault injection persists a non-contract one-byte profile.
+            # The read boundary must reject that shape, never normalize it away.
+            self.assert_unpublished('upstream_contract_mismatch')
         with patch('historical_capacity.MAX_PROGRESS_BYTES', 1):
             CapitalIndexer(self.store, self.rpc).step(POOL)
         self.assertIsNone(self.work())

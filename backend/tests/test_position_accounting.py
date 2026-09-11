@@ -307,7 +307,10 @@ class PositionPostgresTests(unittest.TestCase):
 
     def test_http_missing_or_orphaned_position_snapshot_is_unavailable(self):
         client=self.client();response=client.post('/v1/read/pool-positions',json={'poolId':POOL})
-        self.assertEqual(response.status_code,503);self.assertEqual(response.json()['error'],'position_ledger_not_caught_up')
+        self.assertEqual(response.status_code,200)
+        self.assertEqual(response.json()['positionAccounting']['reason'],'position_ledger_not_caught_up')
+        self.assertIsNone(response.json()['positionAccounting']['principalRaw'])
+        self.assertFalse(response.json()['executionAvailable'])
         self.positions.step(POOL);rpc=SnapshotRpc();rpc.orphan=True
         response=self.client(rpc).post('/v1/read/pool-positions',json={'poolId':POOL})
         self.assertEqual(response.status_code,503);self.assertEqual(response.json()['error'],'activity_snapshot_reorganized')

@@ -41,6 +41,10 @@ for entry in entries:
         # This exact synthetic URL tests rejection of HTTP Basic credentials.
         fixture = b'https://' + b'user:password@robinhood-mainnet.g.alchemy.com/v2/key'
         data = data.replace(fixture, b'SYNTHETIC_REJECTED_URL')
+    if name == 'bridge/test/worker.test.mjs':
+        # This exact reserved-host fixture proves gateway URL userinfo is rejected.
+        fixture = b'https://' + b'name:password@gateway.example.invalid'
+        data = data.replace(fixture, b'SYNTHETIC_REJECTED_URL')
     if len(data) > 5_000_000:
         errors.append((name, 'unexpected large source artifact'))
     if any(pattern.search(data) for pattern in patterns):

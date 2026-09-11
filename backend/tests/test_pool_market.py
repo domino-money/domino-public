@@ -25,15 +25,22 @@ class Provider:
         return {'poolId': pool_id, 'chainId': 4663, 'currencies': self.currencies, 'source': 'geckoterminal',
                 'retrievedAt': 1010, 'asOfBlock': None, 'asOfTimestamp': None,
                 'baseToken': TOKEN, 'quoteToken': ZERO, 'dexLabel': self.dex,
+                'sourceUrl': 'https://www.geckoterminal.com/robinhood/pools/' + pool_id,
                 'reportedLiquidityUsd': '50000.25', 'volume24hUsd': '0', 'providerReported': True}
 
     def hourly_prices(self, pool_id, *, token):
         self.calls.append('history:' + token)
         return {'poolId': pool_id, 'chainId': 4663, 'currencies': self.currencies, 'source': 'geckoterminal',
+                'retrievedAt': 1010, 'asOfBlock': None, 'asOfTimestamp': None,
+                'sourceUrl': 'https://www.geckoterminal.com/robinhood/pools/' + pool_id,
+                'providerReported': True, 'fetchedAt': 1010, 'quoteCurrency': 'usd',
+                'intervalSeconds': 3600,
                 'baseToken': TOKEN, 'quoteToken': ZERO,
                 'selectedToken': token,
                 'currency': TOKEN if token == 'base' else ZERO, 'candles': [],
-                'coverage': {'status': 'missing', 'complete24h': False}}
+                'coverage': {'status': 'missing', 'complete24h': False, 'requestedLimit': 24,
+                             'returnedCandles': 0, 'closedCandles': 0, 'gapsDetected': False,
+                             'firstTimestamp': None, 'lastTimestamp': None, 'completeness': 'not_established'}}
 
 
 class PoolMarketTests(unittest.TestCase):

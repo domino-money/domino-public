@@ -1,0 +1,40 @@
+{
+  "chainId": 4663,
+  "completeHistory": false,
+  "coverage": "configured_interval_only",
+  "hasMore": false,
+  "indexedThrough": 650,
+  "items": [
+    {
+      "catalogueObservation": {
+        "hash": "0xcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd",
+        "number": 500
+      },
+      "catalogueSource": "initialize_event",
+      "currencies": [
+        "0x0000000000000000000000000000000000000000",
+        "0x1111111111111111111111111111111111111111"
+      ],
+      "executionAvailable": false,
+      "identityStatus": "catalogue_candidate",
+      "poolId": "0x0911afcb281d7bcae2d71443ceaeebd0f89b4537708449970d797622b4b4c941",
+      "poolKey": {
+        "currency0": "0x0000000000000000000000000000000000000000",
+        "currency1": "0x1111111111111111111111111111111111111111",
+        "feeMode": "fixed",
+        "fee_pips": 3000,
+        "hooks": "0x0000000000000000000000000000000000000000",
+        "tick_spacing": 60
+      },
+      "poolKind": "catalogue",
+      "providerMetrics": null
+    }
+  ],
+  "liveExecution": false,
+  "mode": "stored_catalogue_candidates",
+  "nextAfterPoolId": null,
+  "poolManager": "0x8366a39cc670b4001a1121b8f6a443a643e40951",
+  "revision": 2,
+  "schemaVersion": 999,
+  "startBlock": 10
+}

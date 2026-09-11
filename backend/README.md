@@ -395,3 +395,47 @@ null, using the existing read-v1 #26 unassessed state. Previously stored orphan
 proofs require explicit operator-reviewed quarantine with a durable private
 archive; collection retries never overwrite/delete them. See the bounded
 [workflow and evidence](../reports/PRICE_WINDOW_CAPACITY.md#moving-window-and-orphan-recovery--issue-51).
+
+## Disabled browser read bridge candidate — read-v1 1.1.0-rc.2
+
+The nine browser candidates now share strict success/error models in
+`read_contract.py`, exported schemas/types/fixtures in `api-contracts/read-v1/`,
+and generated local OpenAPI. Run both exporters with `--check` in CI; omit that
+flag to regenerate after a reviewed model change. Historical local-only routes
+are not automatically enabled in the browser.
+
+`read_gateway.py` is a separate disabled loopback process. It verifies Access
+service JWTs, enforces central admission/IP budgets, validates reader output and
+exchanges internal inventory cursors for short-lived opaque handles. It cannot
+sign or authenticate a wallet. `bridge_http.py` restricts transport to numeric
+loopback with a total socket deadline; `read_deadline.py` shares the reader's
+remaining budget across nested provider work. A failed browser request does not
+release actual reader work; health reconciliation prevents another operation
+until the reader is idle.
+
+See the [gateway runbook](../docs/READ_GATEWAY_RUNBOOK.md) for explicit disabled
+startup and the separate credential/staging phase. Existing localhost/browser
+restrictions stay enabled. No changes to local personal-bot services are needed.
+
+
+## Nine-route read contract candidate
+
+The public response boundary projects known unpublished fee/position work into
+the existing unavailable/null ledger states. Replay/proof progress, work awaiting
+method review, dependency waits and finite capacity exhaustion retain
+`fee_ledger_not_caught_up` or `position_ledger_not_caught_up`, including the fee
+window reason. Stored RPC/network/database failures return sanitized 503/504
+errors instead of ordinary incomplete history. Raw operator reports retain
+`historicalWork`; snapshots, revisions
+and independently qualified amounts are unchanged. Unknown diagnostics, source
+or checkpoint inconsistencies, nonnull unqualified amounts and canonical failures
+remain errors. Capital reads validate pending position and capital sidecars before calling
+them missing history. Ambiguous missing-chunk diagnostics require a current
+methodology check of that exact dependency. The updated manifest pins the producer and request validator.
+
+ReadService exports `read-v1 / 1.1.0-rc.2` through the local API and disabled
+same-origin gateway/BFF. Catalogue, pool activity, core positions and historical
+metrics now use validated response models, in addition to the original five routes.
+Public reads require no SIWE; a real authenticated service caller mediates browser
+requests while the reader's Origin boundary remains enforced. See the
+[change notice and remaining evidence gates](../docs/READ_CONTRACT_CANDIDATE_1_1.md).

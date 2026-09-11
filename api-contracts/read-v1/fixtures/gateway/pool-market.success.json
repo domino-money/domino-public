@@ -1,0 +1,136 @@
+{
+  "aprReason": "provider_lp_fee_history_unavailable",
+  "chainId": 4663,
+  "executionAvailable": false,
+  "feeApr24h": null,
+  "issues": [],
+  "market": {
+    "cache": {
+      "ageSeconds": 0,
+      "freshForSeconds": 60,
+      "maxStaleSeconds": 300,
+      "providerUpdateTimeKnown": false,
+      "scope": "process_local",
+      "status": "miss"
+    },
+    "data": {
+      "asOfBlock": null,
+      "asOfTimestamp": null,
+      "baseToken": "0x1111111111111111111111111111111111111111",
+      "chainId": 4663,
+      "currencies": [
+        "0x0000000000000000000000000000000000000000",
+        "0x1111111111111111111111111111111111111111"
+      ],
+      "dexLabel": "uniswap-v4-robinhood",
+      "poolId": "0x0911afcb281d7bcae2d71443ceaeebd0f89b4537708449970d797622b4b4c941",
+      "providerReported": true,
+      "quoteToken": "0x0000000000000000000000000000000000000000",
+      "reportedLiquidityUsd": "12345.670000000000000001",
+      "retrievedAt": 1010,
+      "source": "geckoterminal",
+      "sourceUrl": "https://api.geckoterminal.com/api/v2/networks/robinhood/pools/0x0911afcb281d7bcae2d71443ceaeebd0f89b4537708449970d797622b4b4c941",
+      "volume24hUsd": "0"
+    },
+    "reason": null,
+    "status": "available"
+  },
+  "mode": "on_demand_provider_market",
+  "pool": {
+    "aprReason": "reconciled_fee_history_unavailable",
+    "currencies": [
+      "0x0000000000000000000000000000000000000000",
+      "0x1111111111111111111111111111111111111111"
+    ],
+    "currentLpFeePips": 3000,
+    "executionAvailable": false,
+    "executionReason": "public_execution_not_implemented",
+    "feeApr24h": null,
+    "identityStatus": "verified_at_block",
+    "integrationClass": "hookless_fixed_fee",
+    "poolId": "0x0911afcb281d7bcae2d71443ceaeebd0f89b4537708449970d797622b4b4c941",
+    "poolKey": {
+      "currency0": "0x0000000000000000000000000000000000000000",
+      "currency1": "0x1111111111111111111111111111111111111111",
+      "feeMode": "fixed",
+      "fee_pips": 3000,
+      "hooks": "0x0000000000000000000000000000000000000000",
+      "tick_spacing": 60
+    },
+    "protocolFeeRaw": 0,
+    "snapshot": {
+      "hash": "0xabababababababababababababababababababababababababababababababab",
+      "number": 700,
+      "timestamp": 1000
+    },
+    "sqrtPriceX96": "79228162514264337593543950336",
+    "suggested": false,
+    "suggestionReason": "metrics_and_policy_not_qualified",
+    "tick": 0
+  },
+  "poolId": "0x0911afcb281d7bcae2d71443ceaeebd0f89b4537708449970d797622b4b4c941",
+  "priceHistory": {
+    "cache": {
+      "ageSeconds": 0,
+      "freshForSeconds": 60,
+      "maxStaleSeconds": 300,
+      "providerUpdateTimeKnown": false,
+      "scope": "process_local",
+      "status": "miss"
+    },
+    "data": {
+      "asOfBlock": null,
+      "asOfTimestamp": null,
+      "baseToken": "0x1111111111111111111111111111111111111111",
+      "candles": [
+        {
+          "closeUsd": "1.05",
+          "closed": false,
+          "highUsd": "1.1",
+          "lowUsd": "0.9",
+          "openUsd": "1.000000000000000001",
+          "startTimestamp": 0,
+          "volumeUsd": "0"
+        }
+      ],
+      "chainId": 4663,
+      "coverage": {
+        "closedCandles": 0,
+        "complete24h": false,
+        "completeness": "not_established",
+        "firstTimestamp": 0,
+        "gapsDetected": false,
+        "lastTimestamp": 0,
+        "requestedLimit": 24,
+        "returnedCandles": 1,
+        "status": "provider_reported"
+      },
+      "currencies": [
+        "0x0000000000000000000000000000000000000000",
+        "0x1111111111111111111111111111111111111111"
+      ],
+      "currency": "0x1111111111111111111111111111111111111111",
+      "fetchedAt": 1010,
+      "intervalSeconds": 3600,
+      "poolId": "0x0911afcb281d7bcae2d71443ceaeebd0f89b4537708449970d797622b4b4c941",
+      "providerReported": true,
+      "quoteCurrency": "usd",
+      "quoteToken": "0x0000000000000000000000000000000000000000",
+      "retrievedAt": 1010,
+      "selectedToken": "base",
+      "source": "geckoterminal",
+      "sourceUrl": "https://api.geckoterminal.com/api/v2/networks/robinhood/pools/0x0911afcb281d7bcae2d71443ceaeebd0f89b4537708449970d797622b4b4c941/ohlcv/hour?aggregate=1&limit=24&currency=usd&token=base"
+    },
+    "reason": null,
+    "status": "available"
+  },
+  "providerMetricsReconciled": false,
+  "requiresLocalHistory": false,
+  "schemaVersion": 1,
+  "snapshot": {
+    "hash": "0xabababababababababababababababababababababababababababababababab",
+    "number": 700,
+    "timestamp": 1000
+  },
+  "suggested": false
+}

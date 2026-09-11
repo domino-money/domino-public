@@ -8,6 +8,21 @@ Tangerine accents, modern rounded cards with light retro details. Positions are 
 
 The practice workbench is the visual baseline. Preserve its distinction between simulations and real transactions. Do not redesign the palette or introduce a fixed reserve of fees as part of integration work.
 
+## Coordination before real data
+
+OxDecimal must receive advance notice before a live API is connected or a
+consumed response field/meaning changes. Follow the
+[compatibility and notice process](docs/API_COMPATIBILITY.md), including the
+exact contract version, shared payload fixtures, affected hooks, test results
+and rollback. Use the candidate `api-contracts/read-v1/` schemas, types and runtime validators; TypeScript declarations alone do not validate HTTP JSON.
+
+The [read bridge specification](docs/API_READ_BRIDGE.md) and
+[acceptance plan](docs/API_READ_BRIDGE_TEST_PLAN.md) now have a disabled implementation candidate for issue #5. The shared package
+contains the five route contracts and fixtures. No public endpoint is active
+and no existing success field is renamed. Only `inventory.nextCursor` changes
+to an opaque browser handle. Mock adapter work can continue; actual rendering
+and the recorded frontend acknowledgement remain required before activation.
+
 ## First integration slices
 
 1. A typed read-data adapter and deterministic mocks for token, pool, activity, capital and NFT owner views. Coordinate contract gaps against `backend/openapi-read.json`; amounts stay strings.

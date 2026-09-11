@@ -1,0 +1,17 @@
+# Documentation only. No hostname, route, binding or service is provisioned.
+name = "domino-read-bridge-example"
+main = "src/worker.mjs"
+compatibility_date = "2026-09-09"
+workers_dev = false
+preview_urls = false
+
+[vars]
+READ_BRIDGE_ENABLED = "false"
+# The user selected domino.money; this file does not connect its DNS or Worker.
+APP_ORIGIN = "https://domino.money"
+# Proposed backend hostname only, not a verified or provisioned origin.
+GATEWAY_ORIGIN = "https://read-origin.domino.money"
+ENABLED_READS = ""
+
+# ACCESS_CLIENT_ID and ACCESS_CLIENT_SECRET belong in a separately approved,
+# environment-specific Worker secret store; never add them to this file.

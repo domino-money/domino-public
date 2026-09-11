@@ -1,0 +1,1172 @@
+{
+  "$defs": {
+    "ActivityCoverage": {
+      "additionalProperties": false,
+      "properties": {
+        "canonicality": {
+          "const": "block_hash_rechecked",
+          "title": "Canonicality",
+          "type": "string"
+        },
+        "indexedThrough": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "title": "Indexedthrough",
+          "type": "integer"
+        },
+        "initializedAt": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "title": "Initializedat",
+          "type": "integer"
+        },
+        "initializedBlock": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "title": "Initializedblock",
+          "type": "integer"
+        },
+        "rpcCompleteness": {
+          "const": "single_provider_assumption",
+          "title": "Rpccompleteness",
+          "type": "string"
+        },
+        "scope": {
+          "const": "since_verified_initialize",
+          "title": "Scope",
+          "type": "string"
+        },
+        "startBlock": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "title": "Startblock",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "startBlock",
+        "indexedThrough",
+        "initializedBlock",
+        "initializedAt",
+        "scope",
+        "canonicality",
+        "rpcCompleteness"
+      ],
+      "title": "ActivityCoverage",
+      "type": "object"
+    },
+    "ActivityFees": {
+      "additionalProperties": false,
+      "properties": {
+        "accounting": {
+          "discriminator": {
+            "mapping": {
+              "reconciled_as_of": "#/$defs/FeesReconciled",
+              "unavailable": "#/$defs/FeesUnavailable"
+            },
+            "propertyName": "status"
+          },
+          "oneOf": [
+            {
+              "$ref": "#/$defs/FeesUnavailable"
+            },
+            {
+              "$ref": "#/$defs/FeesReconciled"
+            }
+          ],
+          "title": "Accounting"
+        },
+        "feeGrowthGlobalX128": {
+          "items": {
+            "$ref": "#/$defs/Raw"
+          },
+          "maxItems": 2,
+          "minItems": 2,
+          "title": "Feegrowthglobalx128",
+          "type": "array"
+        },
+        "growthIncludesDonations": {
+          "const": true,
+          "title": "Growthincludesdonations",
+          "type": "boolean"
+        },
+        "growthIsTokenAmount": {
+          "const": false,
+          "title": "Growthistokenamount",
+          "type": "boolean"
+        },
+        "lpFeePipsAtSnapshot": {
+          "maximum": 1000000,
+          "minimum": 0,
+          "title": "Lpfeepipsatsnapshot",
+          "type": "integer"
+        },
+        "protocolDirectionalPips": {
+          "items": {
+            "maximum": 4095,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "maxItems": 2,
+          "minItems": 2,
+          "title": "Protocoldirectionalpips",
+          "type": "array"
+        }
+      },
+      "required": [
+        "protocolDirectionalPips",
+        "lpFeePipsAtSnapshot",
+        "feeGrowthGlobalX128",
+        "growthIsTokenAmount",
+        "growthIncludesDonations",
+        "accounting"
+      ],
+      "title": "ActivityFees",
+      "type": "object"
+    },
+    "ActivityFreshness": {
+      "additionalProperties": false,
+      "properties": {
+        "ageSeconds": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "title": "Ageseconds",
+          "type": "integer"
+        },
+        "checkedAgainstHead": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "title": "Checkedagainsthead",
+          "type": "integer"
+        },
+        "status": {
+          "enum": [
+            "fresh",
+            "stale"
+          ],
+          "title": "Status",
+          "type": "string"
+        }
+      },
+      "required": [
+        "ageSeconds",
+        "status",
+        "checkedAgainstHead"
+      ],
+      "title": "ActivityFreshness",
+      "type": "object"
+    },
+    "ActivityLiquidity": {
+      "additionalProperties": false,
+      "properties": {
+        "activeLiquidityRaw": {
+          "$ref": "#/$defs/Raw"
+        },
+        "isTvl": {
+          "const": false,
+          "title": "Istvl",
+          "type": "boolean"
+        },
+        "positionAccounting": {
+          "discriminator": {
+            "mapping": {
+              "reconciled_as_of": "#/$defs/PositionsReconciled",
+              "unavailable": "#/$defs/PositionsUnavailable"
+            },
+            "propertyName": "status"
+          },
+          "oneOf": [
+            {
+              "$ref": "#/$defs/PositionsUnavailable"
+            },
+            {
+              "$ref": "#/$defs/PositionsReconciled"
+            }
+          ],
+          "title": "Positionaccounting"
+        },
+        "rangeCount": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "title": "Rangecount",
+          "type": "integer"
+        },
+        "status": {
+          "const": "core_active_liquidity_reconciled",
+          "title": "Status",
+          "type": "string"
+        },
+        "tvlReason": {
+          "enum": [
+            "timestamp_aligned_valuation_unavailable",
+            "pool_assets_and_uncollected_fees_not_reconciled"
+          ],
+          "title": "Tvlreason",
+          "type": "string"
+        },
+        "tvlUsd": {
+          "title": "Tvlusd",
+          "type": "null"
+        }
+      },
+      "required": [
+        "status",
+        "activeLiquidityRaw",
+        "rangeCount",
+        "isTvl",
+        "tvlUsd",
+        "tvlReason",
+        "positionAccounting"
+      ],
+      "title": "ActivityLiquidity",
+      "type": "object"
+    },
+    "ActivityWindow": {
+      "additionalProperties": false,
+      "properties": {
+        "completeWindow": {
+          "title": "Completewindow",
+          "type": "boolean"
+        },
+        "donations": {
+          "$ref": "#/$defs/Donations"
+        },
+        "feeApr": {
+          "title": "Feeapr",
+          "type": "null"
+        },
+        "feeAprReason": {
+          "enum": [
+            "lp_fee_and_time_weighted_tvl_not_reconciled",
+            "time_weighted_tvl_and_usd_valuation_not_reconciled"
+          ],
+          "title": "Feeaprreason",
+          "type": "string"
+        },
+        "fromTimestampExclusive": {
+          "maximum": 9007199254740991,
+          "minimum": -9007199254740991,
+          "title": "Fromtimestampexclusive",
+          "type": "integer"
+        },
+        "lpFeesBasis": {
+          "const": "core_trading_fee_before_Q128_distribution_rounding",
+          "title": "Lpfeesbasis",
+          "type": "string"
+        },
+        "lpFeesRaw": {
+          "anyOf": [
+            {
+              "items": {
+                "pattern": "^(0|[1-9][0-9]{0,155})$",
+                "type": "string"
+              },
+              "maxItems": 2,
+              "minItems": 2,
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Lpfeesraw"
+        },
+        "lpFeesReason": {
+          "anyOf": [
+            {
+              "enum": [
+                "per_step_fee_accounting_not_reconciled",
+                "fee_ledger_not_caught_up",
+                "fee_accounting_adapter_required"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Lpfeesreason"
+        },
+        "nonzeroSwapCount": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "title": "Nonzeroswapcount",
+          "type": "integer"
+        },
+        "observedSeconds": {
+          "maximum": 86400,
+          "minimum": 0,
+          "title": "Observedseconds",
+          "type": "integer"
+        },
+        "observedSinceTimestamp": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "title": "Observedsincetimestamp",
+          "type": "integer"
+        },
+        "observedTotalSwapFeePips": {
+          "items": {
+            "maximum": 1000000,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "maxItems": 50000,
+          "title": "Observedtotalswapfeepips",
+          "type": "array"
+        },
+        "protocolFeesRaw": {
+          "items": {
+            "pattern": "^(0|[1-9][0-9]{0,155})$",
+            "type": "string"
+          },
+          "maxItems": 2,
+          "minItems": 2,
+          "title": "Protocolfeesraw",
+          "type": "array"
+        },
+        "requestedSeconds": {
+          "maximum": 86400,
+          "minimum": 1,
+          "title": "Requestedseconds",
+          "type": "integer"
+        },
+        "status": {
+          "enum": [
+            "covered_as_of",
+            "pool_younger_than_window"
+          ],
+          "title": "Status",
+          "type": "string"
+        },
+        "swapEventCount": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "title": "Swapeventcount",
+          "type": "integer"
+        },
+        "swapLegsRaw": {
+          "items": {
+            "$ref": "#/$defs/SwapLeg"
+          },
+          "maxItems": 2,
+          "minItems": 2,
+          "title": "Swaplegsraw",
+          "type": "array"
+        },
+        "throughTimestamp": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "title": "Throughtimestamp",
+          "type": "integer"
+        },
+        "usableAsCurrent24h": {
+          "title": "Usableascurrent24H",
+          "type": "boolean"
+        },
+        "volumeUsd": {
+          "title": "Volumeusd",
+          "type": "null"
+        },
+        "volumeUsdReason": {
+          "const": "timestamp_aligned_valuation_unavailable",
+          "title": "Volumeusdreason",
+          "type": "string"
+        }
+      },
+      "required": [
+        "requestedSeconds",
+        "fromTimestampExclusive",
+        "throughTimestamp",
+        "observedSinceTimestamp",
+        "observedSeconds",
+        "completeWindow",
+        "status",
+        "swapEventCount",
+        "nonzeroSwapCount",
+        "swapLegsRaw",
+        "donations",
+        "observedTotalSwapFeePips",
+        "volumeUsd",
+        "volumeUsdReason",
+        "lpFeesRaw",
+        "lpFeesReason",
+        "feeApr",
+        "feeAprReason",
+        "usableAsCurrent24h"
+      ],
+      "title": "ActivityWindow",
+      "type": "object"
+    },
+    "Donations": {
+      "additionalProperties": false,
+      "properties": {
+        "amountsRaw": {
+          "items": {
+            "pattern": "^(0|[1-9][0-9]{0,155})$",
+            "type": "string"
+          },
+          "maxItems": 2,
+          "minItems": 2,
+          "title": "Amountsraw",
+          "type": "array"
+        },
+        "count": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "title": "Count",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "count",
+        "amountsRaw"
+      ],
+      "title": "Donations",
+      "type": "object"
+    },
+    "DynamicPoolKey": {
+      "additionalProperties": false,
+      "properties": {
+        "currency0": {
+          "pattern": "^0x[0-9a-f]{40}$",
+          "title": "Currency0",
+          "type": "string"
+        },
+        "currency1": {
+          "pattern": "^0x[0-9a-f]{40}$",
+          "title": "Currency1",
+          "type": "string"
+        },
+        "feeMode": {
+          "const": "dynamic",
+          "title": "Feemode",
+          "type": "string"
+        },
+        "fee_pips": {
+          "const": 8388608,
+          "title": "Fee Pips",
+          "type": "integer"
+        },
+        "hooks": {
+          "pattern": "^0x[0-9a-f]{40}$",
+          "title": "Hooks",
+          "type": "string"
+        },
+        "tick_spacing": {
+          "maximum": 32767,
+          "minimum": 1,
+          "title": "Tick Spacing",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "currency0",
+        "currency1",
+        "tick_spacing",
+        "hooks",
+        "feeMode",
+        "fee_pips"
+      ],
+      "title": "DynamicPoolKey",
+      "type": "object"
+    },
+    "FeesReconciled": {
+      "additionalProperties": false,
+      "properties": {
+        "basis": {
+          "const": "core_trading_fee_before_Q128_distribution_rounding",
+          "title": "Basis",
+          "type": "string"
+        },
+        "donationsRaw": {
+          "items": {
+            "pattern": "^(0|[1-9][0-9]{0,155})$",
+            "type": "string"
+          },
+          "maxItems": 2,
+          "minItems": 2,
+          "title": "Donationsraw",
+          "type": "array"
+        },
+        "feeGrowthReconciled": {
+          "const": true,
+          "title": "Feegrowthreconciled",
+          "type": "boolean"
+        },
+        "isCollectedAmount": {
+          "const": false,
+          "title": "Iscollectedamount",
+          "type": "boolean"
+        },
+        "isDominoServiceFee": {
+          "const": false,
+          "title": "Isdominoservicefee",
+          "type": "boolean"
+        },
+        "lpFeesRaw": {
+          "items": {
+            "pattern": "^(0|[1-9][0-9]{0,155})$",
+            "type": "string"
+          },
+          "maxItems": 2,
+          "minItems": 2,
+          "title": "Lpfeesraw",
+          "type": "array"
+        },
+        "methodologyVersion": {
+          "const": 1,
+          "title": "Methodologyversion",
+          "type": "integer"
+        },
+        "protocolFeesRaw": {
+          "items": {
+            "pattern": "^(0|[1-9][0-9]{0,155})$",
+            "type": "string"
+          },
+          "maxItems": 2,
+          "minItems": 2,
+          "title": "Protocolfeesraw",
+          "type": "array"
+        },
+        "reason": {
+          "title": "Reason",
+          "type": "null"
+        },
+        "scope": {
+          "const": "since_verified_initialize",
+          "title": "Scope",
+          "type": "string"
+        },
+        "status": {
+          "const": "reconciled_as_of",
+          "title": "Status",
+          "type": "string"
+        }
+      },
+      "required": [
+        "methodologyVersion",
+        "status",
+        "reason",
+        "lpFeesRaw",
+        "protocolFeesRaw",
+        "donationsRaw",
+        "basis",
+        "isCollectedAmount",
+        "isDominoServiceFee",
+        "scope",
+        "feeGrowthReconciled"
+      ],
+      "title": "FeesReconciled",
+      "type": "object"
+    },
+    "FeesUnavailable": {
+      "additionalProperties": false,
+      "properties": {
+        "basis": {
+          "const": "core_trading_fee_before_Q128_distribution_rounding",
+          "title": "Basis",
+          "type": "string"
+        },
+        "donationsRaw": {
+          "title": "Donationsraw",
+          "type": "null"
+        },
+        "isCollectedAmount": {
+          "const": false,
+          "title": "Iscollectedamount",
+          "type": "boolean"
+        },
+        "isDominoServiceFee": {
+          "const": false,
+          "title": "Isdominoservicefee",
+          "type": "boolean"
+        },
+        "lpFeesRaw": {
+          "title": "Lpfeesraw",
+          "type": "null"
+        },
+        "methodologyVersion": {
+          "const": 1,
+          "title": "Methodologyversion",
+          "type": "integer"
+        },
+        "protocolFeesRaw": {
+          "title": "Protocolfeesraw",
+          "type": "null"
+        },
+        "reason": {
+          "enum": [
+            "fee_ledger_not_caught_up",
+            "fee_accounting_adapter_required"
+          ],
+          "title": "Reason",
+          "type": "string"
+        },
+        "status": {
+          "const": "unavailable",
+          "title": "Status",
+          "type": "string"
+        }
+      },
+      "required": [
+        "methodologyVersion",
+        "status",
+        "reason",
+        "lpFeesRaw",
+        "protocolFeesRaw",
+        "donationsRaw",
+        "basis",
+        "isCollectedAmount",
+        "isDominoServiceFee"
+      ],
+      "title": "FeesUnavailable",
+      "type": "object"
+    },
+    "FixedPoolKey": {
+      "additionalProperties": false,
+      "properties": {
+        "currency0": {
+          "pattern": "^0x[0-9a-f]{40}$",
+          "title": "Currency0",
+          "type": "string"
+        },
+        "currency1": {
+          "pattern": "^0x[0-9a-f]{40}$",
+          "title": "Currency1",
+          "type": "string"
+        },
+        "feeMode": {
+          "const": "fixed",
+          "title": "Feemode",
+          "type": "string"
+        },
+        "fee_pips": {
+          "maximum": 1000000,
+          "minimum": 0,
+          "title": "Fee Pips",
+          "type": "integer"
+        },
+        "hooks": {
+          "pattern": "^0x[0-9a-f]{40}$",
+          "title": "Hooks",
+          "type": "string"
+        },
+        "tick_spacing": {
+          "maximum": 32767,
+          "minimum": 1,
+          "title": "Tick Spacing",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "currency0",
+        "currency1",
+        "tick_spacing",
+        "hooks",
+        "feeMode",
+        "fee_pips"
+      ],
+      "title": "FixedPoolKey",
+      "type": "object"
+    },
+    "PositionProof": {
+      "additionalProperties": false,
+      "properties": {
+        "blockHash": {
+          "pattern": "^0x[0-9a-f]{64}$",
+          "title": "Blockhash",
+          "type": "string"
+        },
+        "blockNumber": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "title": "Blocknumber",
+          "type": "integer"
+        },
+        "corePositions": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "title": "Corepositions",
+          "type": "integer"
+        },
+        "ranges": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "title": "Ranges",
+          "type": "integer"
+        },
+        "sourceFeeMethodology": {
+          "const": 1,
+          "title": "Sourcefeemethodology",
+          "type": "integer"
+        },
+        "ticks": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "title": "Ticks",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "blockNumber",
+        "blockHash",
+        "corePositions",
+        "ticks",
+        "ranges",
+        "sourceFeeMethodology"
+      ],
+      "title": "PositionProof",
+      "type": "object"
+    },
+    "PositionsReconciled": {
+      "additionalProperties": false,
+      "properties": {
+        "basis": {
+          "const": "event_token_flows_excluding_protocol",
+          "title": "Basis",
+          "type": "string"
+        },
+        "corePositionCount": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "title": "Corepositioncount",
+          "type": "integer"
+        },
+        "donationsIncluded": {
+          "const": true,
+          "title": "Donationsincluded",
+          "type": "boolean"
+        },
+        "isWalletBalance": {
+          "const": false,
+          "title": "Iswalletbalance",
+          "type": "boolean"
+        },
+        "isWithdrawalQuote": {
+          "const": false,
+          "title": "Iswithdrawalquote",
+          "type": "boolean"
+        },
+        "knownTickCount": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "title": "Knowntickcount",
+          "type": "integer"
+        },
+        "lpAssetsRaw": {
+          "items": {
+            "pattern": "^(0|[1-9][0-9]{0,155})$",
+            "type": "string"
+          },
+          "maxItems": 2,
+          "minItems": 2,
+          "title": "Lpassetsraw",
+          "type": "array"
+        },
+        "methodologyVersion": {
+          "const": 1,
+          "title": "Methodologyversion",
+          "type": "integer"
+        },
+        "nftOwnershipResolved": {
+          "title": "Nftownershipresolved",
+          "type": "boolean"
+        },
+        "nonzeroLiquidityPositionCount": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "title": "Nonzeroliquiditypositioncount",
+          "type": "integer"
+        },
+        "onchainReconciliation": {
+          "$ref": "#/$defs/PositionProof"
+        },
+        "principalDepositedRaw": {
+          "items": {
+            "pattern": "^(0|[1-9][0-9]{0,155})$",
+            "type": "string"
+          },
+          "maxItems": 2,
+          "minItems": 2,
+          "title": "Principaldepositedraw",
+          "type": "array"
+        },
+        "principalRaw": {
+          "items": {
+            "pattern": "^(0|[1-9][0-9]{0,155})$",
+            "type": "string"
+          },
+          "maxItems": 2,
+          "minItems": 2,
+          "title": "Principalraw",
+          "type": "array"
+        },
+        "principalWithdrawnRaw": {
+          "items": {
+            "pattern": "^(0|[1-9][0-9]{0,155})$",
+            "type": "string"
+          },
+          "maxItems": 2,
+          "minItems": 2,
+          "title": "Principalwithdrawnraw",
+          "type": "array"
+        },
+        "protocolFeesExcluded": {
+          "const": true,
+          "title": "Protocolfeesexcluded",
+          "type": "boolean"
+        },
+        "reason": {
+          "title": "Reason",
+          "type": "null"
+        },
+        "roundingResidualRaw": {
+          "items": {
+            "pattern": "^(0|[1-9][0-9]{0,155})$",
+            "type": "string"
+          },
+          "maxItems": 2,
+          "minItems": 2,
+          "title": "Roundingresidualraw",
+          "type": "array"
+        },
+        "scope": {
+          "const": "core_positions_not_nft_ownership",
+          "title": "Scope",
+          "type": "string"
+        },
+        "settledFeesRaw": {
+          "items": {
+            "pattern": "^(0|[1-9][0-9]{0,155})$",
+            "type": "string"
+          },
+          "maxItems": 2,
+          "minItems": 2,
+          "title": "Settledfeesraw",
+          "type": "array"
+        },
+        "status": {
+          "const": "reconciled_as_of",
+          "title": "Status",
+          "type": "string"
+        },
+        "tvlReason": {
+          "const": "timestamp_aligned_valuation_unavailable",
+          "title": "Tvlreason",
+          "type": "string"
+        },
+        "tvlUsd": {
+          "title": "Tvlusd",
+          "type": "null"
+        },
+        "unsettledFeesRaw": {
+          "items": {
+            "pattern": "^(0|[1-9][0-9]{0,155})$",
+            "type": "string"
+          },
+          "maxItems": 2,
+          "minItems": 2,
+          "title": "Unsettledfeesraw",
+          "type": "array"
+        }
+      },
+      "required": [
+        "methodologyVersion",
+        "status",
+        "reason",
+        "scope",
+        "basis",
+        "lpAssetsRaw",
+        "principalRaw",
+        "unsettledFeesRaw",
+        "roundingResidualRaw",
+        "settledFeesRaw",
+        "principalDepositedRaw",
+        "principalWithdrawnRaw",
+        "corePositionCount",
+        "nonzeroLiquidityPositionCount",
+        "knownTickCount",
+        "donationsIncluded",
+        "protocolFeesExcluded",
+        "isWalletBalance",
+        "isWithdrawalQuote",
+        "nftOwnershipResolved",
+        "tvlUsd",
+        "tvlReason",
+        "onchainReconciliation"
+      ],
+      "title": "PositionsReconciled",
+      "type": "object"
+    },
+    "PositionsUnavailable": {
+      "additionalProperties": false,
+      "properties": {
+        "lpAssetsRaw": {
+          "title": "Lpassetsraw",
+          "type": "null"
+        },
+        "methodologyVersion": {
+          "const": 1,
+          "title": "Methodologyversion",
+          "type": "integer"
+        },
+        "principalRaw": {
+          "title": "Principalraw",
+          "type": "null"
+        },
+        "reason": {
+          "enum": [
+            "position_ledger_not_caught_up",
+            "position_accounting_adapter_required"
+          ],
+          "title": "Reason",
+          "type": "string"
+        },
+        "status": {
+          "const": "unavailable",
+          "title": "Status",
+          "type": "string"
+        },
+        "unsettledFeesRaw": {
+          "title": "Unsettledfeesraw",
+          "type": "null"
+        }
+      },
+      "required": [
+        "methodologyVersion",
+        "status",
+        "lpAssetsRaw",
+        "principalRaw",
+        "unsettledFeesRaw",
+        "reason"
+      ],
+      "title": "PositionsUnavailable",
+      "type": "object"
+    },
+    "Raw": {
+      "maxLength": 78,
+      "pattern": "^(?:0|[1-9][0-9]{0,76}|10[0-9]{76}|11[0-4][0-9]{75}|115[0-6][0-9]{74}|1157[0-8][0-9]{73}|11579[0-1][0-9]{72}|1157920[0-7][0-9]{70}|11579208[0-8][0-9]{69}|115792089[0-1][0-9]{68}|1157920892[0-2][0-9]{67}|11579208923[0-6][0-9]{66}|115792089237[0-2][0-9]{65}|11579208923730[0-9]{64}|11579208923731[0-5][0-9]{63}|1157920892373160[0-9]{62}|1157920892373161[0-8][0-9]{61}|11579208923731619[0-4][0-9]{60}|115792089237316195[0-3][0-9]{59}|1157920892373161954[0-1][0-9]{58}|11579208923731619542[0-2][0-9]{57}|115792089237316195423[0-4][0-9]{56}|1157920892373161954235[0-6][0-9]{55}|115792089237316195423570[0-8][0-9]{53}|1157920892373161954235709[0-7][0-9]{52}|11579208923731619542357098[0-4][0-9]{51}|11579208923731619542357098500[0-7][0-9]{48}|115792089237316195423570985008[0-5][0-9]{47}|1157920892373161954235709850086[0-7][0-9]{46}|11579208923731619542357098500868[0-6][0-9]{45}|115792089237316195423570985008687[0-8][0-9]{44}|11579208923731619542357098500868790[0-6][0-9]{42}|115792089237316195423570985008687907[0-7][0-9]{41}|1157920892373161954235709850086879078[0-4][0-9]{40}|11579208923731619542357098500868790785[0-2][0-9]{39}|115792089237316195423570985008687907853[0-1][0-9]{38}|1157920892373161954235709850086879078532[0-5][0-9]{37}|11579208923731619542357098500868790785326[0-8][0-9]{36}|115792089237316195423570985008687907853269[0-8][0-9]{35}|1157920892373161954235709850086879078532699[0-7][0-9]{34}|11579208923731619542357098500868790785326998[0-3][0-9]{33}|115792089237316195423570985008687907853269984[0-5][0-9]{32}|1157920892373161954235709850086879078532699846[0-5][0-9]{31}|11579208923731619542357098500868790785326998466[0-4][0-9]{30}|115792089237316195423570985008687907853269984665[0-5][0-9]{29}|1157920892373161954235709850086879078532699846656[0-3][0-9]{28}|115792089237316195423570985008687907853269984665640[0-4][0-9]{26}|1157920892373161954235709850086879078532699846656405[0-5][0-9]{25}|11579208923731619542357098500868790785326998466564056[0-3][0-9]{24}|1157920892373161954235709850086879078532699846656405640[0-2][0-9]{22}|11579208923731619542357098500868790785326998466564056403[0-8][0-9]{21}|115792089237316195423570985008687907853269984665640564039[0-3][0-9]{20}|1157920892373161954235709850086879078532699846656405640394[0-4][0-9]{19}|11579208923731619542357098500868790785326998466564056403945[0-6][0-9]{18}|115792089237316195423570985008687907853269984665640564039457[0-4][0-9]{17}|1157920892373161954235709850086879078532699846656405640394575[0-7][0-9]{16}|11579208923731619542357098500868790785326998466564056403945758[0-3][0-9]{15}|11579208923731619542357098500868790785326998466564056403945758400[0-6][0-9]{12}|115792089237316195423570985008687907853269984665640564039457584007[0-8][0-9]{11}|11579208923731619542357098500868790785326998466564056403945758400790[0-9]{10}|11579208923731619542357098500868790785326998466564056403945758400791[0-2][0-9]{9}|1157920892373161954235709850086879078532699846656405640394575840079130[0-9]{8}|1157920892373161954235709850086879078532699846656405640394575840079131[0-1][0-9]{7}|11579208923731619542357098500868790785326998466564056403945758400791312[0-8][0-9]{6}|115792089237316195423570985008687907853269984665640564039457584007913129[0-5][0-9]{5}|1157920892373161954235709850086879078532699846656405640394575840079131296[0-2][0-9]{4}|11579208923731619542357098500868790785326998466564056403945758400791312963[0-8][0-9]{3}|115792089237316195423570985008687907853269984665640564039457584007913129639[0-8][0-9]{2}|1157920892373161954235709850086879078532699846656405640394575840079131296399[0-2][0-9]{1}|11579208923731619542357098500868790785326998466564056403945758400791312963993[0-4][0-9]{0}|115792089237316195423570985008687907853269984665640564039457584007913129639935)$",
+      "type": "string"
+    },
+    "StateSnapshot": {
+      "additionalProperties": false,
+      "properties": {
+        "activeLiquidityRaw": {
+          "$ref": "#/$defs/Raw"
+        },
+        "feeGrowthGlobalX128": {
+          "items": {
+            "$ref": "#/$defs/Raw"
+          },
+          "maxItems": 2,
+          "minItems": 2,
+          "title": "Feegrowthglobalx128",
+          "type": "array"
+        },
+        "hash": {
+          "pattern": "^0x[0-9a-f]{64}$",
+          "title": "Hash",
+          "type": "string"
+        },
+        "lpFeePips": {
+          "maximum": 1000000,
+          "minimum": 0,
+          "title": "Lpfeepips",
+          "type": "integer"
+        },
+        "number": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "title": "Number",
+          "type": "integer"
+        },
+        "protocolFeeRaw": {
+          "maximum": 16777215,
+          "minimum": 0,
+          "title": "Protocolfeeraw",
+          "type": "integer"
+        },
+        "sqrtPriceX96": {
+          "$ref": "#/$defs/Raw"
+        },
+        "tick": {
+          "maximum": 887272,
+          "minimum": -887272,
+          "title": "Tick",
+          "type": "integer"
+        },
+        "timestamp": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "title": "Timestamp",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "number",
+        "hash",
+        "timestamp",
+        "sqrtPriceX96",
+        "tick",
+        "activeLiquidityRaw",
+        "protocolFeeRaw",
+        "lpFeePips",
+        "feeGrowthGlobalX128"
+      ],
+      "title": "StateSnapshot",
+      "type": "object"
+    },
+    "SwapLeg": {
+      "additionalProperties": false,
+      "properties": {
+        "absoluteTurnover": {
+          "pattern": "^(0|[1-9][0-9]{0,155})$",
+          "title": "Absoluteturnover",
+          "type": "string"
+        },
+        "currencyIndex": {
+          "enum": [
+            0,
+            1
+          ],
+          "title": "Currencyindex",
+          "type": "integer"
+        },
+        "grossInput": {
+          "pattern": "^(0|[1-9][0-9]{0,155})$",
+          "title": "Grossinput",
+          "type": "string"
+        },
+        "output": {
+          "pattern": "^(0|[1-9][0-9]{0,155})$",
+          "title": "Output",
+          "type": "string"
+        }
+      },
+      "required": [
+        "currencyIndex",
+        "grossInput",
+        "output",
+        "absoluteTurnover"
+      ],
+      "title": "SwapLeg",
+      "type": "object"
+    }
+  },
+  "$id": "https://domino.invalid/contracts/read-v1/pool-activity.response.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "accountingScope": {
+      "const": "core_pool_events_only",
+      "title": "Accountingscope",
+      "type": "string"
+    },
+    "chainId": {
+      "const": 4663,
+      "title": "Chainid",
+      "type": "integer"
+    },
+    "coverage": {
+      "$ref": "#/$defs/ActivityCoverage"
+    },
+    "executionAvailable": {
+      "const": false,
+      "title": "Executionavailable",
+      "type": "boolean"
+    },
+    "fees": {
+      "$ref": "#/$defs/ActivityFees"
+    },
+    "freshness": {
+      "$ref": "#/$defs/ActivityFreshness"
+    },
+    "liquidity": {
+      "$ref": "#/$defs/ActivityLiquidity"
+    },
+    "methodologyVersion": {
+      "const": 1,
+      "title": "Methodologyversion",
+      "type": "integer"
+    },
+    "mode": {
+      "const": "core_pool_activity_read_only",
+      "title": "Mode",
+      "type": "string"
+    },
+    "poolId": {
+      "pattern": "^0x[0-9a-f]{64}$",
+      "title": "Poolid",
+      "type": "string"
+    },
+    "poolKey": {
+      "discriminator": {
+        "mapping": {
+          "dynamic": "#/$defs/DynamicPoolKey",
+          "fixed": "#/$defs/FixedPoolKey"
+        },
+        "propertyName": "feeMode"
+      },
+      "oneOf": [
+        {
+          "$ref": "#/$defs/FixedPoolKey"
+        },
+        {
+          "$ref": "#/$defs/DynamicPoolKey"
+        }
+      ],
+      "title": "Poolkey"
+    },
+    "revision": {
+      "maximum": 9007199254740991,
+      "minimum": 0,
+      "title": "Revision",
+      "type": "integer"
+    },
+    "schemaVersion": {
+      "const": 1,
+      "title": "Schemaversion",
+      "type": "integer"
+    },
+    "snapshot": {
+      "$ref": "#/$defs/StateSnapshot"
+    },
+    "storedEventCount": {
+      "maximum": 9007199254740991,
+      "minimum": 0,
+      "title": "Storedeventcount",
+      "type": "integer"
+    },
+    "suggested": {
+      "const": false,
+      "title": "Suggested",
+      "type": "boolean"
+    },
+    "window24h": {
+      "$ref": "#/$defs/ActivityWindow"
+    }
+  },
+  "required": [
+    "schemaVersion",
+    "methodologyVersion",
+    "mode",
+    "chainId",
+    "poolId",
+    "poolKey",
+    "revision",
+    "accountingScope",
+    "snapshot",
+    "coverage",
+    "freshness",
+    "window24h",
+    "liquidity",
+    "fees",
+    "storedEventCount",
+    "suggested",
+    "executionAvailable"
+  ],
+  "title": "PoolActivityResponse",
+  "type": "object",
+  "x-contract-version": "1.1.0-rc.2"
+}

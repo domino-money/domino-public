@@ -1,0 +1,15 @@
+{
+  "chainId": 4663,
+  "completeHistory": false,
+  "coverage": "configured_interval_only",
+  "hasMore": false,
+  "indexedThrough": 650,
+  "items": [],
+  "liveExecution": false,
+  "mode": "stored_catalogue_candidates",
+  "nextAfterPoolId": null,
+  "poolManager": "0x8366a39cc670b4001a1121b8f6a443a643e40951",
+  "revision": 2,
+  "schemaVersion": 1,
+  "startBlock": 10
+}

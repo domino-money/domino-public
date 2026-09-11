@@ -20,9 +20,16 @@ At the beginning of a task and before opening or updating its PR, read the lates
 
 ## API handoff
 
-`backend/openapi-read.json` is the versioned request contract. Existing Python test fixtures and explicit response-state semantics are the evidence for adapters; proposing response types may require a backend contract update. Do not pretend today's practice API is the read backend. Start frontend integration behind a mock adapter. A real same-origin bridge, authentication and public deployment are separate reviewed work.
+`backend/openapi-read.json` describes local requests and the five bridge response models. `api-contracts/read-v1/` is the shared candidate response/request contract with TypeScript types, runtime validators and producer fixtures; regenerate both exports after model changes. Do not pretend today's practice API is the read backend. Start frontend integration behind a mock adapter. A real same-origin bridge, authentication and public deployment are separate reviewed work.
 
 Unknown prices remain unavailable. A connected wallet, discoverable pool or readable NFT owner does not authorize an automated transaction. Fee policy, permission and contract changes need explicit acceptance criteria and relevant accounting/security tests.
+
+Before connecting real data or changing fields consumed by the frontend, follow
+[API_COMPATIBILITY.md](docs/API_COMPATIBILITY.md): post the exact version/field
+notice, shared fixtures, affected hooks, test results and rollback to the issue
+and obtain the frontend owner's acknowledgement before integration. The
+[issue #5 bridge design](docs/API_READ_BRIDGE.md) preserves existing local API
+restrictions. Its disabled implementation candidate is not a deployed public service.
 
 ## Checks and releases
 

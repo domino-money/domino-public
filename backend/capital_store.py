@@ -5,7 +5,7 @@ from activity_indexer import ActivityIndexer
 import capital_work
 from catalogue import checked_key
 from discovery import DataError, bytes32
-from historical_capacity import capacity_profile, clear_work, record_failure, replay_batch, save_work
+from historical_capacity import capacity_profile, clear_work, record_failure, replay_batch, save_work, unavailable_work
 from position_accounting import VERSION as POSITION_VERSION, position_summary, replay_positions
 from position_store import PositionIndexer, read_positions
 
@@ -177,6 +177,8 @@ def load_capital_window(conn, row, tail):
     pool_id = row['pool_id']
     positions = read_positions(conn, row, tail)
     if positions['status'] != 'reconciled_as_of':
+        from historical_read import require_incomplete_positions
+        require_incomplete_positions(positions, tail['state_snapshot'])
         raise DataError('reconciled_position_tail_required')
     audit = conn.execute('''SELECT count(*) AS chunks, count(k.pool_id) AS qualified,
       COALESCE(sum(k.event_count),0) AS events, min(k.methodology_version) AS min_version,
@@ -184,6 +186,20 @@ def load_capital_window(conn, row, tail):
       LEFT JOIN domino_activity.capital_chunks k ON k.pool_id=c.pool_id AND k.chunk_start=c.start_block
       WHERE c.pool_id=%s''', (pool_id,)).fetchone()
     if audit['chunks'] != audit['qualified']:
+        from historical_read import require_incomplete_capital
+        pending = unavailable_work(conn, pool_id, 'capital')
+        if pending:
+            work = pending['historicalWork']
+            reason = require_incomplete_capital(work, tail['state_snapshot'])
+            if reason == 'reconciled_position_chunk_required':
+                # The worker uses this reason for both absence and wrong methodology.
+                # Check the actual dependency before presenting it as ordinary lag.
+                source = conn.execute('SELECT methodology_version FROM domino_activity.position_chunks '
+                                      'WHERE pool_id=%s AND chunk_start=%s',
+                                      (pool_id, work['fromBlock'])).fetchone()
+                if source and (type(source['methodology_version']) is not int or
+                               source['methodology_version'] != POSITION_VERSION):
+                    raise DataError('upstream_contract_mismatch')
         raise DataError('capital_ledger_not_caught_up')
     continuity = conn.execute('''SELECT min(start_block) AS first_block,max(end_block) AS last_block,
       count(*) FILTER (WHERE previous_end IS NOT NULL AND previous_end<>start_block-1) AS gaps

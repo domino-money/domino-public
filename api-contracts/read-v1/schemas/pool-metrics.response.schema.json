@@ -1,0 +1,1122 @@
+{
+  "$defs": {
+    "CapitalIntegral": {
+      "additionalProperties": false,
+      "properties": {
+        "lpAssetsRaw": {
+          "items": {
+            "pattern": "^(0|[1-9][0-9]{0,155})$",
+            "type": "string"
+          },
+          "maxItems": 2,
+          "minItems": 2,
+          "title": "Lpassetsraw",
+          "type": "array"
+        },
+        "principalRaw": {
+          "items": {
+            "pattern": "^(0|[1-9][0-9]{0,155})$",
+            "type": "string"
+          },
+          "maxItems": 2,
+          "minItems": 2,
+          "title": "Principalraw",
+          "type": "array"
+        },
+        "roundingResidualRaw": {
+          "items": {
+            "pattern": "^(0|[1-9][0-9]{0,155})$",
+            "type": "string"
+          },
+          "maxItems": 2,
+          "minItems": 2,
+          "title": "Roundingresidualraw",
+          "type": "array"
+        },
+        "unsettledFeesRaw": {
+          "items": {
+            "pattern": "^(0|[1-9][0-9]{0,155})$",
+            "type": "string"
+          },
+          "maxItems": 2,
+          "minItems": 2,
+          "title": "Unsettledfeesraw",
+          "type": "array"
+        }
+      },
+      "required": [
+        "lpAssetsRaw",
+        "principalRaw",
+        "unsettledFeesRaw",
+        "roundingResidualRaw"
+      ],
+      "title": "CapitalIntegral",
+      "type": "object"
+    },
+    "CapitalPoint": {
+      "additionalProperties": false,
+      "properties": {
+        "lpAssetsRaw": {
+          "items": {
+            "pattern": "^(0|[1-9][0-9]{0,155})$",
+            "type": "string"
+          },
+          "maxItems": 2,
+          "minItems": 2,
+          "title": "Lpassetsraw",
+          "type": "array"
+        },
+        "principalDepositedRaw": {
+          "items": {
+            "pattern": "^(0|[1-9][0-9]{0,155})$",
+            "type": "string"
+          },
+          "maxItems": 2,
+          "minItems": 2,
+          "title": "Principaldepositedraw",
+          "type": "array"
+        },
+        "principalRaw": {
+          "items": {
+            "pattern": "^(0|[1-9][0-9]{0,155})$",
+            "type": "string"
+          },
+          "maxItems": 2,
+          "minItems": 2,
+          "title": "Principalraw",
+          "type": "array"
+        },
+        "principalWithdrawnRaw": {
+          "items": {
+            "pattern": "^(0|[1-9][0-9]{0,155})$",
+            "type": "string"
+          },
+          "maxItems": 2,
+          "minItems": 2,
+          "title": "Principalwithdrawnraw",
+          "type": "array"
+        },
+        "roundingResidualRaw": {
+          "items": {
+            "pattern": "^(0|[1-9][0-9]{0,155})$",
+            "type": "string"
+          },
+          "maxItems": 2,
+          "minItems": 2,
+          "title": "Roundingresidualraw",
+          "type": "array"
+        },
+        "settledFeesRaw": {
+          "items": {
+            "pattern": "^(0|[1-9][0-9]{0,155})$",
+            "type": "string"
+          },
+          "maxItems": 2,
+          "minItems": 2,
+          "title": "Settledfeesraw",
+          "type": "array"
+        },
+        "sqrtPriceX96": {
+          "$ref": "#/$defs/Raw"
+        },
+        "tick": {
+          "maximum": 887272,
+          "minimum": -887272,
+          "title": "Tick",
+          "type": "integer"
+        },
+        "unsettledFeesRaw": {
+          "items": {
+            "pattern": "^(0|[1-9][0-9]{0,155})$",
+            "type": "string"
+          },
+          "maxItems": 2,
+          "minItems": 2,
+          "title": "Unsettledfeesraw",
+          "type": "array"
+        }
+      },
+      "required": [
+        "lpAssetsRaw",
+        "principalRaw",
+        "unsettledFeesRaw",
+        "roundingResidualRaw",
+        "principalDepositedRaw",
+        "principalWithdrawnRaw",
+        "settledFeesRaw",
+        "sqrtPriceX96",
+        "tick"
+      ],
+      "title": "CapitalPoint",
+      "type": "object"
+    },
+    "CapitalReconciled": {
+      "additionalProperties": false,
+      "properties": {
+        "averageDenominatorSeconds": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "title": "Averagedenominatorseconds",
+          "type": "integer"
+        },
+        "complete24h": {
+          "title": "Complete24H",
+          "type": "boolean"
+        },
+        "current": {
+          "$ref": "#/$defs/CapitalPoint"
+        },
+        "fromTimestampInclusive": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "title": "Fromtimestampinclusive",
+          "type": "integer"
+        },
+        "integralRawSeconds": {
+          "$ref": "#/$defs/CapitalIntegral"
+        },
+        "isInvestorPnl": {
+          "const": false,
+          "title": "Isinvestorpnl",
+          "type": "boolean"
+        },
+        "methodologyVersion": {
+          "const": 1,
+          "title": "Methodologyversion",
+          "type": "integer"
+        },
+        "observedSeconds": {
+          "maximum": 86400,
+          "minimum": 0,
+          "title": "Observedseconds",
+          "type": "integer"
+        },
+        "sourceChunks": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "title": "Sourcechunks",
+          "type": "integer"
+        },
+        "sourceEventCount": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "title": "Sourceeventcount",
+          "type": "integer"
+        },
+        "status": {
+          "const": "reconciled_event_history",
+          "title": "Status",
+          "type": "string"
+        },
+        "throughTimestamp": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "title": "Throughtimestamp",
+          "type": "integer"
+        },
+        "timeWeighting": {
+          "const": "post_event_step_function_last_event_wins_at_same_timestamp",
+          "title": "Timeweighting",
+          "type": "string"
+        },
+        "tvlBasis": {
+          "const": "lp_attributed_assets_including_unsettled_fees_and_rounding_residual_excluding_protocol",
+          "title": "Tvlbasis",
+          "type": "string"
+        }
+      },
+      "required": [
+        "methodologyVersion",
+        "status",
+        "fromTimestampInclusive",
+        "throughTimestamp",
+        "observedSeconds",
+        "complete24h",
+        "timeWeighting",
+        "tvlBasis",
+        "current",
+        "integralRawSeconds",
+        "averageDenominatorSeconds",
+        "sourceEventCount",
+        "sourceChunks",
+        "isInvestorPnl"
+      ],
+      "title": "CapitalReconciled",
+      "type": "object"
+    },
+    "CapitalUnavailable": {
+      "additionalProperties": false,
+      "properties": {
+        "complete24h": {
+          "const": false,
+          "title": "Complete24H",
+          "type": "boolean"
+        },
+        "current": {
+          "title": "Current",
+          "type": "null"
+        },
+        "integralRawSeconds": {
+          "title": "Integralrawseconds",
+          "type": "null"
+        },
+        "methodologyVersion": {
+          "const": 1,
+          "title": "Methodologyversion",
+          "type": "integer"
+        },
+        "reason": {
+          "enum": [
+            "reconciled_position_tail_required",
+            "capital_ledger_not_caught_up",
+            "capital_window_budget_exhausted"
+          ],
+          "title": "Reason",
+          "type": "string"
+        },
+        "status": {
+          "const": "unavailable",
+          "title": "Status",
+          "type": "string"
+        }
+      },
+      "required": [
+        "methodologyVersion",
+        "status",
+        "reason",
+        "current",
+        "integralRawSeconds",
+        "complete24h"
+      ],
+      "title": "CapitalUnavailable",
+      "type": "object"
+    },
+    "DynamicPoolKey": {
+      "additionalProperties": false,
+      "properties": {
+        "currency0": {
+          "pattern": "^0x[0-9a-f]{40}$",
+          "title": "Currency0",
+          "type": "string"
+        },
+        "currency1": {
+          "pattern": "^0x[0-9a-f]{40}$",
+          "title": "Currency1",
+          "type": "string"
+        },
+        "feeMode": {
+          "const": "dynamic",
+          "title": "Feemode",
+          "type": "string"
+        },
+        "fee_pips": {
+          "const": 8388608,
+          "title": "Fee Pips",
+          "type": "integer"
+        },
+        "hooks": {
+          "pattern": "^0x[0-9a-f]{40}$",
+          "title": "Hooks",
+          "type": "string"
+        },
+        "tick_spacing": {
+          "maximum": 32767,
+          "minimum": 1,
+          "title": "Tick Spacing",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "currency0",
+        "currency1",
+        "tick_spacing",
+        "hooks",
+        "feeMode",
+        "fee_pips"
+      ],
+      "title": "DynamicPoolKey",
+      "type": "object"
+    },
+    "FixedPoolKey": {
+      "additionalProperties": false,
+      "properties": {
+        "currency0": {
+          "pattern": "^0x[0-9a-f]{40}$",
+          "title": "Currency0",
+          "type": "string"
+        },
+        "currency1": {
+          "pattern": "^0x[0-9a-f]{40}$",
+          "title": "Currency1",
+          "type": "string"
+        },
+        "feeMode": {
+          "const": "fixed",
+          "title": "Feemode",
+          "type": "string"
+        },
+        "fee_pips": {
+          "maximum": 1000000,
+          "minimum": 0,
+          "title": "Fee Pips",
+          "type": "integer"
+        },
+        "hooks": {
+          "pattern": "^0x[0-9a-f]{40}$",
+          "title": "Hooks",
+          "type": "string"
+        },
+        "tick_spacing": {
+          "maximum": 32767,
+          "minimum": 1,
+          "title": "Tick Spacing",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "currency0",
+        "currency1",
+        "tick_spacing",
+        "hooks",
+        "feeMode",
+        "fee_pips"
+      ],
+      "title": "FixedPoolKey",
+      "type": "object"
+    },
+    "Freshness": {
+      "additionalProperties": false,
+      "properties": {
+        "ageSeconds": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "title": "Ageseconds",
+          "type": "integer"
+        },
+        "status": {
+          "enum": [
+            "fresh",
+            "stale"
+          ],
+          "title": "Status",
+          "type": "string"
+        }
+      },
+      "required": [
+        "ageSeconds",
+        "status"
+      ],
+      "title": "Freshness",
+      "type": "object"
+    },
+    "MetricsCoverage": {
+      "additionalProperties": false,
+      "properties": {
+        "canonicality": {
+          "const": "block_hash_rechecked",
+          "title": "Canonicality",
+          "type": "string"
+        },
+        "rpcCompleteness": {
+          "const": "single_provider_assumption",
+          "title": "Rpccompleteness",
+          "type": "string"
+        }
+      },
+      "required": [
+        "canonicality",
+        "rpcCompleteness"
+      ],
+      "title": "MetricsCoverage",
+      "type": "object"
+    },
+    "PriceCoverage": {
+      "additionalProperties": false,
+      "properties": {
+        "endTimestamp": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "title": "Endtimestamp",
+          "type": "integer"
+        },
+        "maxAgeSeconds": {
+          "anyOf": [
+            {
+              "maximum": 9007199254740991,
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Maxageseconds"
+        },
+        "startTimestamp": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "title": "Starttimestamp",
+          "type": "integer"
+        },
+        "status": {
+          "enum": [
+            "not_assessed",
+            "missing",
+            "incomplete",
+            "complete"
+          ],
+          "title": "Status",
+          "type": "string"
+        }
+      },
+      "required": [
+        "status",
+        "startTimestamp",
+        "endTimestamp",
+        "maxAgeSeconds"
+      ],
+      "title": "PriceCoverage",
+      "type": "object"
+    },
+    "PriceCoverageUnassessed": {
+      "additionalProperties": false,
+      "properties": {
+        "endTimestamp": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "title": "Endtimestamp",
+          "type": "integer"
+        },
+        "maxAgeSeconds": {
+          "title": "Maxageseconds",
+          "type": "null"
+        },
+        "startTimestamp": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "title": "Starttimestamp",
+          "type": "integer"
+        },
+        "status": {
+          "const": "not_assessed",
+          "title": "Status",
+          "type": "string"
+        }
+      },
+      "required": [
+        "status",
+        "startTimestamp",
+        "endTimestamp",
+        "maxAgeSeconds"
+      ],
+      "title": "PriceCoverageUnassessed",
+      "type": "object"
+    },
+    "PriceEvidenceAssessed": {
+      "additionalProperties": false,
+      "properties": {
+        "coverage": {
+          "$ref": "#/$defs/PriceCoverage"
+        },
+        "currency": {
+          "pattern": "^0x[0-9a-f]{40}$",
+          "title": "Currency",
+          "type": "string"
+        },
+        "firstTimestamp": {
+          "anyOf": [
+            {
+              "maximum": 9007199254740991,
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Firsttimestamp"
+        },
+        "lastTimestamp": {
+          "anyOf": [
+            {
+              "maximum": 9007199254740991,
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Lasttimestamp"
+        },
+        "observations": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "title": "Observations",
+          "type": "integer"
+        },
+        "observedSources": {
+          "items": {
+            "enum": [
+              "alchemy_historical",
+              "chainlink_robinhood_standard_v1"
+            ],
+            "type": "string"
+          },
+          "maxItems": 2,
+          "title": "Observedsources",
+          "type": "array"
+        },
+        "reason": {
+          "anyOf": [
+            {
+              "enum": [
+                "price_source_quality_not_qualified",
+                "price_history_missing",
+                "qualified_price_coverage_gap"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Reason"
+        },
+        "sourceQualification": {
+          "enum": [
+            "qualified",
+            "unqualified"
+          ],
+          "title": "Sourcequalification",
+          "type": "string"
+        },
+        "status": {
+          "enum": [
+            "observed_unqualified",
+            "unavailable",
+            "qualified"
+          ],
+          "title": "Status",
+          "type": "string"
+        }
+      },
+      "required": [
+        "currency",
+        "observations",
+        "observedSources",
+        "firstTimestamp",
+        "lastTimestamp",
+        "status",
+        "reason",
+        "sourceQualification",
+        "coverage"
+      ],
+      "title": "PriceEvidenceAssessed",
+      "type": "object"
+    },
+    "PriceEvidenceUnassessed": {
+      "additionalProperties": false,
+      "properties": {
+        "coverage": {
+          "$ref": "#/$defs/PriceCoverageUnassessed"
+        },
+        "currency": {
+          "pattern": "^0x[0-9a-f]{40}$",
+          "title": "Currency",
+          "type": "string"
+        },
+        "firstTimestamp": {
+          "title": "Firsttimestamp",
+          "type": "null"
+        },
+        "lastTimestamp": {
+          "title": "Lasttimestamp",
+          "type": "null"
+        },
+        "observations": {
+          "title": "Observations",
+          "type": "null"
+        },
+        "observedSources": {
+          "title": "Observedsources",
+          "type": "null"
+        },
+        "reason": {
+          "enum": [
+            "price_observation_budget_exhausted",
+            "capital_history_unavailable"
+          ],
+          "title": "Reason",
+          "type": "string"
+        },
+        "sourceQualification": {
+          "const": "not_assessed",
+          "title": "Sourcequalification",
+          "type": "string"
+        },
+        "status": {
+          "const": "unavailable",
+          "title": "Status",
+          "type": "string"
+        }
+      },
+      "required": [
+        "currency",
+        "observations",
+        "observedSources",
+        "firstTimestamp",
+        "lastTimestamp",
+        "status",
+        "reason",
+        "sourceQualification",
+        "coverage"
+      ],
+      "title": "PriceEvidenceUnassessed",
+      "type": "object"
+    },
+    "Raw": {
+      "maxLength": 78,
+      "pattern": "^(?:0|[1-9][0-9]{0,76}|10[0-9]{76}|11[0-4][0-9]{75}|115[0-6][0-9]{74}|1157[0-8][0-9]{73}|11579[0-1][0-9]{72}|1157920[0-7][0-9]{70}|11579208[0-8][0-9]{69}|115792089[0-1][0-9]{68}|1157920892[0-2][0-9]{67}|11579208923[0-6][0-9]{66}|115792089237[0-2][0-9]{65}|11579208923730[0-9]{64}|11579208923731[0-5][0-9]{63}|1157920892373160[0-9]{62}|1157920892373161[0-8][0-9]{61}|11579208923731619[0-4][0-9]{60}|115792089237316195[0-3][0-9]{59}|1157920892373161954[0-1][0-9]{58}|11579208923731619542[0-2][0-9]{57}|115792089237316195423[0-4][0-9]{56}|1157920892373161954235[0-6][0-9]{55}|115792089237316195423570[0-8][0-9]{53}|1157920892373161954235709[0-7][0-9]{52}|11579208923731619542357098[0-4][0-9]{51}|11579208923731619542357098500[0-7][0-9]{48}|115792089237316195423570985008[0-5][0-9]{47}|1157920892373161954235709850086[0-7][0-9]{46}|11579208923731619542357098500868[0-6][0-9]{45}|115792089237316195423570985008687[0-8][0-9]{44}|11579208923731619542357098500868790[0-6][0-9]{42}|115792089237316195423570985008687907[0-7][0-9]{41}|1157920892373161954235709850086879078[0-4][0-9]{40}|11579208923731619542357098500868790785[0-2][0-9]{39}|115792089237316195423570985008687907853[0-1][0-9]{38}|1157920892373161954235709850086879078532[0-5][0-9]{37}|11579208923731619542357098500868790785326[0-8][0-9]{36}|115792089237316195423570985008687907853269[0-8][0-9]{35}|1157920892373161954235709850086879078532699[0-7][0-9]{34}|11579208923731619542357098500868790785326998[0-3][0-9]{33}|115792089237316195423570985008687907853269984[0-5][0-9]{32}|1157920892373161954235709850086879078532699846[0-5][0-9]{31}|11579208923731619542357098500868790785326998466[0-4][0-9]{30}|115792089237316195423570985008687907853269984665[0-5][0-9]{29}|1157920892373161954235709850086879078532699846656[0-3][0-9]{28}|115792089237316195423570985008687907853269984665640[0-4][0-9]{26}|1157920892373161954235709850086879078532699846656405[0-5][0-9]{25}|11579208923731619542357098500868790785326998466564056[0-3][0-9]{24}|1157920892373161954235709850086879078532699846656405640[0-2][0-9]{22}|11579208923731619542357098500868790785326998466564056403[0-8][0-9]{21}|115792089237316195423570985008687907853269984665640564039[0-3][0-9]{20}|1157920892373161954235709850086879078532699846656405640394[0-4][0-9]{19}|11579208923731619542357098500868790785326998466564056403945[0-6][0-9]{18}|115792089237316195423570985008687907853269984665640564039457[0-4][0-9]{17}|1157920892373161954235709850086879078532699846656405640394575[0-7][0-9]{16}|11579208923731619542357098500868790785326998466564056403945758[0-3][0-9]{15}|11579208923731619542357098500868790785326998466564056403945758400[0-6][0-9]{12}|115792089237316195423570985008687907853269984665640564039457584007[0-8][0-9]{11}|11579208923731619542357098500868790785326998466564056403945758400790[0-9]{10}|11579208923731619542357098500868790785326998466564056403945758400791[0-2][0-9]{9}|1157920892373161954235709850086879078532699846656405640394575840079130[0-9]{8}|1157920892373161954235709850086879078532699846656405640394575840079131[0-1][0-9]{7}|11579208923731619542357098500868790785326998466564056403945758400791312[0-8][0-9]{6}|115792089237316195423570985008687907853269984665640564039457584007913129[0-5][0-9]{5}|1157920892373161954235709850086879078532699846656405640394575840079131296[0-2][0-9]{4}|11579208923731619542357098500868790785326998466564056403945758400791312963[0-8][0-9]{3}|115792089237316195423570985008687907853269984665640564039457584007913129639[0-8][0-9]{2}|1157920892373161954235709850086879078532699846656405640394575840079131296399[0-2][0-9]{1}|11579208923731619542357098500868790785326998466564056403945758400791312963993[0-4][0-9]{0}|115792089237316195423570985008687907853269984665640564039457584007913129639935)$",
+      "type": "string"
+    },
+    "StateSnapshot": {
+      "additionalProperties": false,
+      "properties": {
+        "activeLiquidityRaw": {
+          "$ref": "#/$defs/Raw"
+        },
+        "feeGrowthGlobalX128": {
+          "items": {
+            "$ref": "#/$defs/Raw"
+          },
+          "maxItems": 2,
+          "minItems": 2,
+          "title": "Feegrowthglobalx128",
+          "type": "array"
+        },
+        "hash": {
+          "pattern": "^0x[0-9a-f]{64}$",
+          "title": "Hash",
+          "type": "string"
+        },
+        "lpFeePips": {
+          "maximum": 1000000,
+          "minimum": 0,
+          "title": "Lpfeepips",
+          "type": "integer"
+        },
+        "number": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "title": "Number",
+          "type": "integer"
+        },
+        "protocolFeeRaw": {
+          "maximum": 16777215,
+          "minimum": 0,
+          "title": "Protocolfeeraw",
+          "type": "integer"
+        },
+        "sqrtPriceX96": {
+          "$ref": "#/$defs/Raw"
+        },
+        "tick": {
+          "maximum": 887272,
+          "minimum": -887272,
+          "title": "Tick",
+          "type": "integer"
+        },
+        "timestamp": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "title": "Timestamp",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "number",
+        "hash",
+        "timestamp",
+        "sqrtPriceX96",
+        "tick",
+        "activeLiquidityRaw",
+        "protocolFeeRaw",
+        "lpFeePips",
+        "feeGrowthGlobalX128"
+      ],
+      "title": "StateSnapshot",
+      "type": "object"
+    },
+    "ValuationCalculated": {
+      "additionalProperties": false,
+      "properties": {
+        "annualizationDays": {
+          "const": 365,
+          "title": "Annualizationdays",
+          "type": "integer"
+        },
+        "complete24h": {
+          "title": "Complete24H",
+          "type": "boolean"
+        },
+        "decimalPlaces": {
+          "const": 18,
+          "title": "Decimalplaces",
+          "type": "integer"
+        },
+        "executionAvailable": {
+          "const": false,
+          "title": "Executionavailable",
+          "type": "boolean"
+        },
+        "feeAprBasis": {
+          "const": "365_times_full_day_trading_lp_fees_over_time_weighted_lp_assets",
+          "title": "Feeaprbasis",
+          "type": "string"
+        },
+        "feeAprPercent": {
+          "anyOf": [
+            {
+              "maxLength": 224,
+              "pattern": "^[0-9]+(?:\\.[0-9]+)?$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Feeaprpercent"
+        },
+        "feeAprReason": {
+          "anyOf": [
+            {
+              "enum": [
+                "pool_younger_than_window",
+                "zero_time_weighted_tvl"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Feeaprreason"
+        },
+        "grossInputVolumeUsd": {
+          "maxLength": 224,
+          "pattern": "^[0-9]+(?:\\.[0-9]+)?$",
+          "title": "Grossinputvolumeusd",
+          "type": "string"
+        },
+        "includesDominoServiceFee": {
+          "const": false,
+          "title": "Includesdominoservicefee",
+          "type": "boolean"
+        },
+        "includesTokenPricePnl": {
+          "const": false,
+          "title": "Includestokenpricepnl",
+          "type": "boolean"
+        },
+        "isApy": {
+          "const": false,
+          "title": "Isapy",
+          "type": "boolean"
+        },
+        "isPositionApr": {
+          "const": false,
+          "title": "Ispositionapr",
+          "type": "boolean"
+        },
+        "methodologyVersion": {
+          "const": 1,
+          "title": "Methodologyversion",
+          "type": "integer"
+        },
+        "observedSeconds": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "title": "Observedseconds",
+          "type": "integer"
+        },
+        "priceConvention": {
+          "enum": [
+            "publication_plus_one_second_and_answer_age_reference_policy",
+            "causal_last_observation_with_qualified_max_age"
+          ],
+          "title": "Priceconvention",
+          "type": "string"
+        },
+        "status": {
+          "enum": [
+            "reference_analytics_only",
+            "qualified_historical_calculation"
+          ],
+          "title": "Status",
+          "type": "string"
+        },
+        "timeWeightedAverageTvlUsd": {
+          "maxLength": 224,
+          "pattern": "^[0-9]+(?:\\.[0-9]+)?$",
+          "title": "Timeweightedaveragetvlusd",
+          "type": "string"
+        },
+        "tradingLpFeesUsd": {
+          "maxLength": 224,
+          "pattern": "^[0-9]+(?:\\.[0-9]+)?$",
+          "title": "Tradinglpfeesusd",
+          "type": "string"
+        },
+        "tvlUsd": {
+          "maxLength": 224,
+          "pattern": "^[0-9]+(?:\\.[0-9]+)?$",
+          "title": "Tvlusd",
+          "type": "string"
+        }
+      },
+      "required": [
+        "methodologyVersion",
+        "status",
+        "tvlUsd",
+        "timeWeightedAverageTvlUsd",
+        "tradingLpFeesUsd",
+        "grossInputVolumeUsd",
+        "feeAprPercent",
+        "feeAprReason",
+        "complete24h",
+        "observedSeconds",
+        "priceConvention",
+        "feeAprBasis",
+        "annualizationDays",
+        "isPositionApr",
+        "isApy",
+        "includesDominoServiceFee",
+        "includesTokenPricePnl",
+        "decimalPlaces",
+        "executionAvailable"
+      ],
+      "title": "ValuationCalculated",
+      "type": "object"
+    },
+    "ValuationUnavailable": {
+      "additionalProperties": false,
+      "properties": {
+        "feeAprPercent": {
+          "title": "Feeaprpercent",
+          "type": "null"
+        },
+        "grossInputVolumeUsd": {
+          "title": "Grossinputvolumeusd",
+          "type": "null"
+        },
+        "methodologyVersion": {
+          "const": 1,
+          "title": "Methodologyversion",
+          "type": "integer"
+        },
+        "reason": {
+          "enum": [
+            "qualified_usd_prices_required",
+            "price_pool_independence_not_qualified",
+            "reference_price_pool_currencies_mismatch",
+            "zero_observed_duration",
+            "qualified_price_coverage_gap",
+            "swap_outside_valuation_window",
+            "reconciled_swap_fees_required",
+            "ambiguous_swap_input",
+            "price_observation_budget_exhausted",
+            "capital_history_unavailable"
+          ],
+          "title": "Reason",
+          "type": "string"
+        },
+        "status": {
+          "const": "unavailable",
+          "title": "Status",
+          "type": "string"
+        },
+        "timeWeightedAverageTvlUsd": {
+          "title": "Timeweightedaveragetvlusd",
+          "type": "null"
+        },
+        "tradingLpFeesUsd": {
+          "title": "Tradinglpfeesusd",
+          "type": "null"
+        },
+        "tvlUsd": {
+          "title": "Tvlusd",
+          "type": "null"
+        }
+      },
+      "required": [
+        "methodologyVersion",
+        "status",
+        "reason",
+        "tvlUsd",
+        "timeWeightedAverageTvlUsd",
+        "tradingLpFeesUsd",
+        "grossInputVolumeUsd",
+        "feeAprPercent"
+      ],
+      "title": "ValuationUnavailable",
+      "type": "object"
+    }
+  },
+  "$id": "https://domino.invalid/contracts/read-v1/pool-metrics.response.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "capital": {
+      "discriminator": {
+        "mapping": {
+          "reconciled_event_history": "#/$defs/CapitalReconciled",
+          "unavailable": "#/$defs/CapitalUnavailable"
+        },
+        "propertyName": "status"
+      },
+      "oneOf": [
+        {
+          "$ref": "#/$defs/CapitalReconciled"
+        },
+        {
+          "$ref": "#/$defs/CapitalUnavailable"
+        }
+      ],
+      "title": "Capital"
+    },
+    "chainId": {
+      "const": 4663,
+      "title": "Chainid",
+      "type": "integer"
+    },
+    "coverage": {
+      "$ref": "#/$defs/MetricsCoverage"
+    },
+    "executionAvailable": {
+      "const": false,
+      "title": "Executionavailable",
+      "type": "boolean"
+    },
+    "freshness": {
+      "$ref": "#/$defs/Freshness"
+    },
+    "mode": {
+      "const": "historical_pool_metrics_read_only",
+      "title": "Mode",
+      "type": "string"
+    },
+    "poolId": {
+      "pattern": "^0x[0-9a-f]{64}$",
+      "title": "Poolid",
+      "type": "string"
+    },
+    "poolKey": {
+      "discriminator": {
+        "mapping": {
+          "dynamic": "#/$defs/DynamicPoolKey",
+          "fixed": "#/$defs/FixedPoolKey"
+        },
+        "propertyName": "feeMode"
+      },
+      "oneOf": [
+        {
+          "$ref": "#/$defs/FixedPoolKey"
+        },
+        {
+          "$ref": "#/$defs/DynamicPoolKey"
+        }
+      ],
+      "title": "Poolkey"
+    },
+    "prices": {
+      "items": {
+        "discriminator": {
+          "mapping": {
+            "not_assessed": "#/$defs/PriceEvidenceUnassessed",
+            "qualified": "#/$defs/PriceEvidenceAssessed",
+            "unqualified": "#/$defs/PriceEvidenceAssessed"
+          },
+          "propertyName": "sourceQualification"
+        },
+        "oneOf": [
+          {
+            "$ref": "#/$defs/PriceEvidenceAssessed"
+          },
+          {
+            "$ref": "#/$defs/PriceEvidenceUnassessed"
+          }
+        ]
+      },
+      "maxItems": 2,
+      "minItems": 2,
+      "title": "Prices",
+      "type": "array"
+    },
+    "revision": {
+      "maximum": 9007199254740991,
+      "minimum": 0,
+      "title": "Revision",
+      "type": "integer"
+    },
+    "schemaVersion": {
+      "const": 1,
+      "title": "Schemaversion",
+      "type": "integer"
+    },
+    "snapshot": {
+      "$ref": "#/$defs/StateSnapshot"
+    },
+    "suggested": {
+      "const": false,
+      "title": "Suggested",
+      "type": "boolean"
+    },
+    "usableAsCurrent24h": {
+      "title": "Usableascurrent24H",
+      "type": "boolean"
+    },
+    "valuation": {
+      "discriminator": {
+        "mapping": {
+          "qualified_historical_calculation": "#/$defs/ValuationCalculated",
+          "reference_analytics_only": "#/$defs/ValuationCalculated",
+          "unavailable": "#/$defs/ValuationUnavailable"
+        },
+        "propertyName": "status"
+      },
+      "oneOf": [
+        {
+          "$ref": "#/$defs/ValuationUnavailable"
+        },
+        {
+          "$ref": "#/$defs/ValuationCalculated"
+        }
+      ],
+      "title": "Valuation"
+    }
+  },
+  "required": [
+    "schemaVersion",
+    "mode",
+    "chainId",
+    "poolId",
+    "poolKey",
+    "snapshot",
+    "revision",
+    "capital",
+    "prices",
+    "valuation",
+    "freshness",
+    "usableAsCurrent24h",
+    "suggested",
+    "executionAvailable",
+    "coverage"
+  ],
+  "title": "PoolMetricsResponse",
+  "type": "object",
+  "x-contract-version": "1.1.0-rc.2",
+  "x-domino-constraints": [
+    "usableAsCurrent24h requires qualified_historical_calculation, complete24h capital and valuation, fresh snapshot, and non-null feeAprPercent"
+  ]
+}

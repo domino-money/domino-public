@@ -1,0 +1,21 @@
+{
+  "asset": {
+    "address": "0x0000000000000000000000000000000000000000",
+    "decimals": 18,
+    "displayUnitsAvailable": true,
+    "executionAvailable": false,
+    "kind": "native",
+    "metadataIssues": {},
+    "readStatus": "available",
+    "symbol": "ETH"
+  },
+  "chainId": 4663,
+  "liveExecution": false,
+  "mode": "public_token_read_only",
+  "schemaVersion": 1,
+  "snapshot": {
+    "hash": "0xabababababababababababababababababababababababababababababababab",
+    "number": 700,
+    "timestamp": 1000
+  }
+}

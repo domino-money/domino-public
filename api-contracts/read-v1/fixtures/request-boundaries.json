@@ -1,0 +1,1808 @@
+[
+  {
+    "json": "{\"token\":\"0xa1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1\"}",
+    "name": "minimum",
+    "parsedValid": true,
+    "route": "token",
+    "valid": true
+  },
+  {
+    "json": "{}",
+    "name": "empty",
+    "parsedValid": false,
+    "route": "token",
+    "valid": false
+  },
+  {
+    "json": "[]",
+    "name": "array",
+    "parsedValid": false,
+    "route": "token",
+    "valid": false
+  },
+  {
+    "json": "null",
+    "name": "null",
+    "parsedValid": false,
+    "route": "token",
+    "valid": false
+  },
+  {
+    "json": "\"0xa1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1\"",
+    "name": "scalar",
+    "parsedValid": false,
+    "route": "token",
+    "valid": false
+  },
+  {
+    "json": "{\"token\":\"0xa1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1\",\"rpcUrl\":\"https://untrusted.invalid\"}",
+    "name": "unknown-field",
+    "parsedValid": false,
+    "route": "token",
+    "valid": false
+  },
+  {
+    "json": "{\"token\":\"0xa1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1\",\"__proto__\":{}}",
+    "name": "prototype-key",
+    "parsedValid": false,
+    "route": "token",
+    "valid": false
+  },
+  {
+    "json": "{\"token\":\"0xA1A1A1A1A1A1A1A1A1A1A1A1A1A1A1A1A1A1A1A1\"}",
+    "name": "token-upper-digits",
+    "parsedValid": true,
+    "route": "token",
+    "valid": true
+  },
+  {
+    "json": "{\"token\":\"0x0000000000000000000000000000000000000000\"}",
+    "name": "token-zero",
+    "parsedValid": true,
+    "route": "token",
+    "valid": true
+  },
+  {
+    "json": "{\"token\":\"0xa1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a\"}",
+    "name": "token-short",
+    "parsedValid": false,
+    "route": "token",
+    "valid": false
+  },
+  {
+    "json": "{\"token\":\"0xa1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a10\"}",
+    "name": "token-long",
+    "parsedValid": false,
+    "route": "token",
+    "valid": false
+  },
+  {
+    "json": "{\"token\":\"0xa1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1\\n\"}",
+    "name": "token-newline",
+    "parsedValid": false,
+    "route": "token",
+    "valid": false
+  },
+  {
+    "json": "{\"token\":\"0xa1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1\\r\\n\"}",
+    "name": "token-crlf",
+    "parsedValid": false,
+    "route": "token",
+    "valid": false
+  },
+  {
+    "json": "{\"token\":\"0Xa1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1\"}",
+    "name": "token-upper-prefix",
+    "parsedValid": false,
+    "route": "token",
+    "valid": false
+  },
+  {
+    "json": "{\"token\":\"0xa1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1ag\"}",
+    "name": "token-invalid-hex",
+    "parsedValid": false,
+    "route": "token",
+    "valid": false
+  },
+  {
+    "json": "{\"token\":null}",
+    "name": "token-null",
+    "parsedValid": false,
+    "route": "token",
+    "valid": false
+  },
+  {
+    "json": "{\"token\":0}",
+    "name": "token-number",
+    "parsedValid": false,
+    "route": "token",
+    "valid": false
+  },
+  {
+    "json": "{\"token\":true}",
+    "name": "token-boolean",
+    "parsedValid": false,
+    "route": "token",
+    "valid": false
+  },
+  {
+    "json": "{\"token\":\"0xa1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1\"}",
+    "name": "minimum",
+    "parsedValid": true,
+    "route": "pools",
+    "valid": true
+  },
+  {
+    "json": "{}",
+    "name": "empty",
+    "parsedValid": false,
+    "route": "pools",
+    "valid": false
+  },
+  {
+    "json": "[]",
+    "name": "array",
+    "parsedValid": false,
+    "route": "pools",
+    "valid": false
+  },
+  {
+    "json": "null",
+    "name": "null",
+    "parsedValid": false,
+    "route": "pools",
+    "valid": false
+  },
+  {
+    "json": "\"0xa1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1\"",
+    "name": "scalar",
+    "parsedValid": false,
+    "route": "pools",
+    "valid": false
+  },
+  {
+    "json": "{\"token\":\"0xa1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1\",\"rpcUrl\":\"https://untrusted.invalid\"}",
+    "name": "unknown-field",
+    "parsedValid": false,
+    "route": "pools",
+    "valid": false
+  },
+  {
+    "json": "{\"token\":\"0xa1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1\",\"__proto__\":{}}",
+    "name": "prototype-key",
+    "parsedValid": false,
+    "route": "pools",
+    "valid": false
+  },
+  {
+    "json": "{\"token\":\"0xA1A1A1A1A1A1A1A1A1A1A1A1A1A1A1A1A1A1A1A1\"}",
+    "name": "token-upper-digits",
+    "parsedValid": true,
+    "route": "pools",
+    "valid": true
+  },
+  {
+    "json": "{\"token\":\"0x0000000000000000000000000000000000000000\"}",
+    "name": "token-zero",
+    "parsedValid": true,
+    "route": "pools",
+    "valid": true
+  },
+  {
+    "json": "{\"token\":\"0xa1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a\"}",
+    "name": "token-short",
+    "parsedValid": false,
+    "route": "pools",
+    "valid": false
+  },
+  {
+    "json": "{\"token\":\"0xa1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a10\"}",
+    "name": "token-long",
+    "parsedValid": false,
+    "route": "pools",
+    "valid": false
+  },
+  {
+    "json": "{\"token\":\"0xa1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1\\n\"}",
+    "name": "token-newline",
+    "parsedValid": false,
+    "route": "pools",
+    "valid": false
+  },
+  {
+    "json": "{\"token\":\"0xa1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1\\r\\n\"}",
+    "name": "token-crlf",
+    "parsedValid": false,
+    "route": "pools",
+    "valid": false
+  },
+  {
+    "json": "{\"token\":\"0Xa1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1\"}",
+    "name": "token-upper-prefix",
+    "parsedValid": false,
+    "route": "pools",
+    "valid": false
+  },
+  {
+    "json": "{\"token\":\"0xa1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1ag\"}",
+    "name": "token-invalid-hex",
+    "parsedValid": false,
+    "route": "pools",
+    "valid": false
+  },
+  {
+    "json": "{\"token\":null}",
+    "name": "token-null",
+    "parsedValid": false,
+    "route": "pools",
+    "valid": false
+  },
+  {
+    "json": "{\"token\":0}",
+    "name": "token-number",
+    "parsedValid": false,
+    "route": "pools",
+    "valid": false
+  },
+  {
+    "json": "{\"token\":true}",
+    "name": "token-boolean",
+    "parsedValid": false,
+    "route": "pools",
+    "valid": false
+  },
+  {
+    "json": "{\"poolId\":\"0xc3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3\"}",
+    "name": "minimum",
+    "parsedValid": true,
+    "route": "pool-market",
+    "valid": true
+  },
+  {
+    "json": "{}",
+    "name": "empty",
+    "parsedValid": false,
+    "route": "pool-market",
+    "valid": false
+  },
+  {
+    "json": "[]",
+    "name": "array",
+    "parsedValid": false,
+    "route": "pool-market",
+    "valid": false
+  },
+  {
+    "json": "null",
+    "name": "null",
+    "parsedValid": false,
+    "route": "pool-market",
+    "valid": false
+  },
+  {
+    "json": "\"0xa1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1\"",
+    "name": "scalar",
+    "parsedValid": false,
+    "route": "pool-market",
+    "valid": false
+  },
+  {
+    "json": "{\"poolId\":\"0xc3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3\",\"rpcUrl\":\"https://untrusted.invalid\"}",
+    "name": "unknown-field",
+    "parsedValid": false,
+    "route": "pool-market",
+    "valid": false
+  },
+  {
+    "json": "{\"poolId\":\"0xc3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3\",\"__proto__\":{}}",
+    "name": "prototype-key",
+    "parsedValid": false,
+    "route": "pool-market",
+    "valid": false
+  },
+  {
+    "json": "{\"poolId\":\"0xC3C3C3C3C3C3C3C3C3C3C3C3C3C3C3C3C3C3C3C3C3C3C3C3C3C3C3C3C3C3C3C3\"}",
+    "name": "poolId-upper-digits",
+    "parsedValid": true,
+    "route": "pool-market",
+    "valid": true
+  },
+  {
+    "json": "{\"poolId\":\"0x0000000000000000000000000000000000000000000000000000000000000000\"}",
+    "name": "poolId-zero",
+    "parsedValid": true,
+    "route": "pool-market",
+    "valid": true
+  },
+  {
+    "json": "{\"poolId\":\"0xc3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c\"}",
+    "name": "poolId-short",
+    "parsedValid": false,
+    "route": "pool-market",
+    "valid": false
+  },
+  {
+    "json": "{\"poolId\":\"0xc3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c30\"}",
+    "name": "poolId-long",
+    "parsedValid": false,
+    "route": "pool-market",
+    "valid": false
+  },
+  {
+    "json": "{\"poolId\":\"0xc3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3\\n\"}",
+    "name": "poolId-newline",
+    "parsedValid": false,
+    "route": "pool-market",
+    "valid": false
+  },
+  {
+    "json": "{\"poolId\":\"0xc3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3\\r\\n\"}",
+    "name": "poolId-crlf",
+    "parsedValid": false,
+    "route": "pool-market",
+    "valid": false
+  },
+  {
+    "json": "{\"poolId\":\"0Xc3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3\"}",
+    "name": "poolId-upper-prefix",
+    "parsedValid": false,
+    "route": "pool-market",
+    "valid": false
+  },
+  {
+    "json": "{\"poolId\":\"0xc3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3cg\"}",
+    "name": "poolId-invalid-hex",
+    "parsedValid": false,
+    "route": "pool-market",
+    "valid": false
+  },
+  {
+    "json": "{\"poolId\":null}",
+    "name": "poolId-null",
+    "parsedValid": false,
+    "route": "pool-market",
+    "valid": false
+  },
+  {
+    "json": "{\"poolId\":0}",
+    "name": "poolId-number",
+    "parsedValid": false,
+    "route": "pool-market",
+    "valid": false
+  },
+  {
+    "json": "{\"poolId\":true}",
+    "name": "poolId-boolean",
+    "parsedValid": false,
+    "route": "pool-market",
+    "valid": false
+  },
+  {
+    "json": "{\"wallet\":\"0xa1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1\"}",
+    "name": "minimum",
+    "parsedValid": true,
+    "route": "wallet-assets",
+    "valid": true
+  },
+  {
+    "json": "{}",
+    "name": "empty",
+    "parsedValid": false,
+    "route": "wallet-assets",
+    "valid": false
+  },
+  {
+    "json": "[]",
+    "name": "array",
+    "parsedValid": false,
+    "route": "wallet-assets",
+    "valid": false
+  },
+  {
+    "json": "null",
+    "name": "null",
+    "parsedValid": false,
+    "route": "wallet-assets",
+    "valid": false
+  },
+  {
+    "json": "\"0xa1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1\"",
+    "name": "scalar",
+    "parsedValid": false,
+    "route": "wallet-assets",
+    "valid": false
+  },
+  {
+    "json": "{\"wallet\":\"0xa1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1\",\"rpcUrl\":\"https://untrusted.invalid\"}",
+    "name": "unknown-field",
+    "parsedValid": false,
+    "route": "wallet-assets",
+    "valid": false
+  },
+  {
+    "json": "{\"wallet\":\"0xa1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1\",\"__proto__\":{}}",
+    "name": "prototype-key",
+    "parsedValid": false,
+    "route": "wallet-assets",
+    "valid": false
+  },
+  {
+    "json": "{\"wallet\":\"0xA1A1A1A1A1A1A1A1A1A1A1A1A1A1A1A1A1A1A1A1\"}",
+    "name": "wallet-upper-digits",
+    "parsedValid": true,
+    "route": "wallet-assets",
+    "valid": true
+  },
+  {
+    "json": "{\"wallet\":\"0x0000000000000000000000000000000000000000\"}",
+    "name": "wallet-zero",
+    "parsedValid": true,
+    "route": "wallet-assets",
+    "valid": true
+  },
+  {
+    "json": "{\"wallet\":\"0xa1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a\"}",
+    "name": "wallet-short",
+    "parsedValid": false,
+    "route": "wallet-assets",
+    "valid": false
+  },
+  {
+    "json": "{\"wallet\":\"0xa1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a10\"}",
+    "name": "wallet-long",
+    "parsedValid": false,
+    "route": "wallet-assets",
+    "valid": false
+  },
+  {
+    "json": "{\"wallet\":\"0xa1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1\\n\"}",
+    "name": "wallet-newline",
+    "parsedValid": false,
+    "route": "wallet-assets",
+    "valid": false
+  },
+  {
+    "json": "{\"wallet\":\"0xa1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1\\r\\n\"}",
+    "name": "wallet-crlf",
+    "parsedValid": false,
+    "route": "wallet-assets",
+    "valid": false
+  },
+  {
+    "json": "{\"wallet\":\"0Xa1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1\"}",
+    "name": "wallet-upper-prefix",
+    "parsedValid": false,
+    "route": "wallet-assets",
+    "valid": false
+  },
+  {
+    "json": "{\"wallet\":\"0xa1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1ag\"}",
+    "name": "wallet-invalid-hex",
+    "parsedValid": false,
+    "route": "wallet-assets",
+    "valid": false
+  },
+  {
+    "json": "{\"wallet\":null}",
+    "name": "wallet-null",
+    "parsedValid": false,
+    "route": "wallet-assets",
+    "valid": false
+  },
+  {
+    "json": "{\"wallet\":0}",
+    "name": "wallet-number",
+    "parsedValid": false,
+    "route": "wallet-assets",
+    "valid": false
+  },
+  {
+    "json": "{\"wallet\":true}",
+    "name": "wallet-boolean",
+    "parsedValid": false,
+    "route": "wallet-assets",
+    "valid": false
+  },
+  {
+    "json": "{\"tokenIds\":[\"0\"]}",
+    "name": "minimum",
+    "parsedValid": true,
+    "route": "nft-positions",
+    "valid": true
+  },
+  {
+    "json": "{}",
+    "name": "empty",
+    "parsedValid": false,
+    "route": "nft-positions",
+    "valid": false
+  },
+  {
+    "json": "[]",
+    "name": "array",
+    "parsedValid": false,
+    "route": "nft-positions",
+    "valid": false
+  },
+  {
+    "json": "null",
+    "name": "null",
+    "parsedValid": false,
+    "route": "nft-positions",
+    "valid": false
+  },
+  {
+    "json": "\"0xa1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1\"",
+    "name": "scalar",
+    "parsedValid": false,
+    "route": "nft-positions",
+    "valid": false
+  },
+  {
+    "json": "{\"tokenIds\":[\"0\"],\"rpcUrl\":\"https://untrusted.invalid\"}",
+    "name": "unknown-field",
+    "parsedValid": false,
+    "route": "nft-positions",
+    "valid": false
+  },
+  {
+    "json": "{\"tokenIds\":[\"0\"],\"__proto__\":{}}",
+    "name": "prototype-key",
+    "parsedValid": false,
+    "route": "nft-positions",
+    "valid": false
+  },
+  {
+    "json": "{\"token\":\"0xa1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1\"}",
+    "name": "minimum",
+    "parsedValid": true,
+    "route": "catalogue",
+    "valid": true
+  },
+  {
+    "json": "{}",
+    "name": "empty",
+    "parsedValid": false,
+    "route": "catalogue",
+    "valid": false
+  },
+  {
+    "json": "[]",
+    "name": "array",
+    "parsedValid": false,
+    "route": "catalogue",
+    "valid": false
+  },
+  {
+    "json": "null",
+    "name": "null",
+    "parsedValid": false,
+    "route": "catalogue",
+    "valid": false
+  },
+  {
+    "json": "\"0xa1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1\"",
+    "name": "scalar",
+    "parsedValid": false,
+    "route": "catalogue",
+    "valid": false
+  },
+  {
+    "json": "{\"token\":\"0xa1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1\",\"rpcUrl\":\"https://untrusted.invalid\"}",
+    "name": "unknown-field",
+    "parsedValid": false,
+    "route": "catalogue",
+    "valid": false
+  },
+  {
+    "json": "{\"token\":\"0xa1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1\",\"__proto__\":{}}",
+    "name": "prototype-key",
+    "parsedValid": false,
+    "route": "catalogue",
+    "valid": false
+  },
+  {
+    "json": "{\"token\":\"0xA1A1A1A1A1A1A1A1A1A1A1A1A1A1A1A1A1A1A1A1\"}",
+    "name": "token-upper-digits",
+    "parsedValid": true,
+    "route": "catalogue",
+    "valid": true
+  },
+  {
+    "json": "{\"token\":\"0x0000000000000000000000000000000000000000\"}",
+    "name": "token-zero",
+    "parsedValid": true,
+    "route": "catalogue",
+    "valid": true
+  },
+  {
+    "json": "{\"token\":\"0xa1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a\"}",
+    "name": "token-short",
+    "parsedValid": false,
+    "route": "catalogue",
+    "valid": false
+  },
+  {
+    "json": "{\"token\":\"0xa1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a10\"}",
+    "name": "token-long",
+    "parsedValid": false,
+    "route": "catalogue",
+    "valid": false
+  },
+  {
+    "json": "{\"token\":\"0xa1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1\\n\"}",
+    "name": "token-newline",
+    "parsedValid": false,
+    "route": "catalogue",
+    "valid": false
+  },
+  {
+    "json": "{\"token\":\"0xa1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1\\r\\n\"}",
+    "name": "token-crlf",
+    "parsedValid": false,
+    "route": "catalogue",
+    "valid": false
+  },
+  {
+    "json": "{\"token\":\"0Xa1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1\"}",
+    "name": "token-upper-prefix",
+    "parsedValid": false,
+    "route": "catalogue",
+    "valid": false
+  },
+  {
+    "json": "{\"token\":\"0xa1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1ag\"}",
+    "name": "token-invalid-hex",
+    "parsedValid": false,
+    "route": "catalogue",
+    "valid": false
+  },
+  {
+    "json": "{\"token\":null}",
+    "name": "token-null",
+    "parsedValid": false,
+    "route": "catalogue",
+    "valid": false
+  },
+  {
+    "json": "{\"token\":0}",
+    "name": "token-number",
+    "parsedValid": false,
+    "route": "catalogue",
+    "valid": false
+  },
+  {
+    "json": "{\"token\":true}",
+    "name": "token-boolean",
+    "parsedValid": false,
+    "route": "catalogue",
+    "valid": false
+  },
+  {
+    "json": "{\"poolId\":\"0xc3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3\"}",
+    "name": "minimum",
+    "parsedValid": true,
+    "route": "pool-activity",
+    "valid": true
+  },
+  {
+    "json": "{}",
+    "name": "empty",
+    "parsedValid": false,
+    "route": "pool-activity",
+    "valid": false
+  },
+  {
+    "json": "[]",
+    "name": "array",
+    "parsedValid": false,
+    "route": "pool-activity",
+    "valid": false
+  },
+  {
+    "json": "null",
+    "name": "null",
+    "parsedValid": false,
+    "route": "pool-activity",
+    "valid": false
+  },
+  {
+    "json": "\"0xa1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1\"",
+    "name": "scalar",
+    "parsedValid": false,
+    "route": "pool-activity",
+    "valid": false
+  },
+  {
+    "json": "{\"poolId\":\"0xc3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3\",\"rpcUrl\":\"https://untrusted.invalid\"}",
+    "name": "unknown-field",
+    "parsedValid": false,
+    "route": "pool-activity",
+    "valid": false
+  },
+  {
+    "json": "{\"poolId\":\"0xc3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3\",\"__proto__\":{}}",
+    "name": "prototype-key",
+    "parsedValid": false,
+    "route": "pool-activity",
+    "valid": false
+  },
+  {
+    "json": "{\"poolId\":\"0xC3C3C3C3C3C3C3C3C3C3C3C3C3C3C3C3C3C3C3C3C3C3C3C3C3C3C3C3C3C3C3C3\"}",
+    "name": "poolId-upper-digits",
+    "parsedValid": true,
+    "route": "pool-activity",
+    "valid": true
+  },
+  {
+    "json": "{\"poolId\":\"0x0000000000000000000000000000000000000000000000000000000000000000\"}",
+    "name": "poolId-zero",
+    "parsedValid": true,
+    "route": "pool-activity",
+    "valid": true
+  },
+  {
+    "json": "{\"poolId\":\"0xc3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c\"}",
+    "name": "poolId-short",
+    "parsedValid": false,
+    "route": "pool-activity",
+    "valid": false
+  },
+  {
+    "json": "{\"poolId\":\"0xc3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c30\"}",
+    "name": "poolId-long",
+    "parsedValid": false,
+    "route": "pool-activity",
+    "valid": false
+  },
+  {
+    "json": "{\"poolId\":\"0xc3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3\\n\"}",
+    "name": "poolId-newline",
+    "parsedValid": false,
+    "route": "pool-activity",
+    "valid": false
+  },
+  {
+    "json": "{\"poolId\":\"0xc3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3\\r\\n\"}",
+    "name": "poolId-crlf",
+    "parsedValid": false,
+    "route": "pool-activity",
+    "valid": false
+  },
+  {
+    "json": "{\"poolId\":\"0Xc3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3\"}",
+    "name": "poolId-upper-prefix",
+    "parsedValid": false,
+    "route": "pool-activity",
+    "valid": false
+  },
+  {
+    "json": "{\"poolId\":\"0xc3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3cg\"}",
+    "name": "poolId-invalid-hex",
+    "parsedValid": false,
+    "route": "pool-activity",
+    "valid": false
+  },
+  {
+    "json": "{\"poolId\":null}",
+    "name": "poolId-null",
+    "parsedValid": false,
+    "route": "pool-activity",
+    "valid": false
+  },
+  {
+    "json": "{\"poolId\":0}",
+    "name": "poolId-number",
+    "parsedValid": false,
+    "route": "pool-activity",
+    "valid": false
+  },
+  {
+    "json": "{\"poolId\":true}",
+    "name": "poolId-boolean",
+    "parsedValid": false,
+    "route": "pool-activity",
+    "valid": false
+  },
+  {
+    "json": "{\"poolId\":\"0xc3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3\"}",
+    "name": "minimum",
+    "parsedValid": true,
+    "route": "pool-positions",
+    "valid": true
+  },
+  {
+    "json": "{}",
+    "name": "empty",
+    "parsedValid": false,
+    "route": "pool-positions",
+    "valid": false
+  },
+  {
+    "json": "[]",
+    "name": "array",
+    "parsedValid": false,
+    "route": "pool-positions",
+    "valid": false
+  },
+  {
+    "json": "null",
+    "name": "null",
+    "parsedValid": false,
+    "route": "pool-positions",
+    "valid": false
+  },
+  {
+    "json": "\"0xa1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1\"",
+    "name": "scalar",
+    "parsedValid": false,
+    "route": "pool-positions",
+    "valid": false
+  },
+  {
+    "json": "{\"poolId\":\"0xc3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3\",\"rpcUrl\":\"https://untrusted.invalid\"}",
+    "name": "unknown-field",
+    "parsedValid": false,
+    "route": "pool-positions",
+    "valid": false
+  },
+  {
+    "json": "{\"poolId\":\"0xc3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3\",\"__proto__\":{}}",
+    "name": "prototype-key",
+    "parsedValid": false,
+    "route": "pool-positions",
+    "valid": false
+  },
+  {
+    "json": "{\"poolId\":\"0xC3C3C3C3C3C3C3C3C3C3C3C3C3C3C3C3C3C3C3C3C3C3C3C3C3C3C3C3C3C3C3C3\"}",
+    "name": "poolId-upper-digits",
+    "parsedValid": true,
+    "route": "pool-positions",
+    "valid": true
+  },
+  {
+    "json": "{\"poolId\":\"0x0000000000000000000000000000000000000000000000000000000000000000\"}",
+    "name": "poolId-zero",
+    "parsedValid": true,
+    "route": "pool-positions",
+    "valid": true
+  },
+  {
+    "json": "{\"poolId\":\"0xc3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c\"}",
+    "name": "poolId-short",
+    "parsedValid": false,
+    "route": "pool-positions",
+    "valid": false
+  },
+  {
+    "json": "{\"poolId\":\"0xc3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c30\"}",
+    "name": "poolId-long",
+    "parsedValid": false,
+    "route": "pool-positions",
+    "valid": false
+  },
+  {
+    "json": "{\"poolId\":\"0xc3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3\\n\"}",
+    "name": "poolId-newline",
+    "parsedValid": false,
+    "route": "pool-positions",
+    "valid": false
+  },
+  {
+    "json": "{\"poolId\":\"0xc3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3\\r\\n\"}",
+    "name": "poolId-crlf",
+    "parsedValid": false,
+    "route": "pool-positions",
+    "valid": false
+  },
+  {
+    "json": "{\"poolId\":\"0Xc3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3\"}",
+    "name": "poolId-upper-prefix",
+    "parsedValid": false,
+    "route": "pool-positions",
+    "valid": false
+  },
+  {
+    "json": "{\"poolId\":\"0xc3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3cg\"}",
+    "name": "poolId-invalid-hex",
+    "parsedValid": false,
+    "route": "pool-positions",
+    "valid": false
+  },
+  {
+    "json": "{\"poolId\":null}",
+    "name": "poolId-null",
+    "parsedValid": false,
+    "route": "pool-positions",
+    "valid": false
+  },
+  {
+    "json": "{\"poolId\":0}",
+    "name": "poolId-number",
+    "parsedValid": false,
+    "route": "pool-positions",
+    "valid": false
+  },
+  {
+    "json": "{\"poolId\":true}",
+    "name": "poolId-boolean",
+    "parsedValid": false,
+    "route": "pool-positions",
+    "valid": false
+  },
+  {
+    "json": "{\"poolId\":\"0xc3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3\"}",
+    "name": "minimum",
+    "parsedValid": true,
+    "route": "pool-metrics",
+    "valid": true
+  },
+  {
+    "json": "{}",
+    "name": "empty",
+    "parsedValid": false,
+    "route": "pool-metrics",
+    "valid": false
+  },
+  {
+    "json": "[]",
+    "name": "array",
+    "parsedValid": false,
+    "route": "pool-metrics",
+    "valid": false
+  },
+  {
+    "json": "null",
+    "name": "null",
+    "parsedValid": false,
+    "route": "pool-metrics",
+    "valid": false
+  },
+  {
+    "json": "\"0xa1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1\"",
+    "name": "scalar",
+    "parsedValid": false,
+    "route": "pool-metrics",
+    "valid": false
+  },
+  {
+    "json": "{\"poolId\":\"0xc3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3\",\"rpcUrl\":\"https://untrusted.invalid\"}",
+    "name": "unknown-field",
+    "parsedValid": false,
+    "route": "pool-metrics",
+    "valid": false
+  },
+  {
+    "json": "{\"poolId\":\"0xc3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3\",\"__proto__\":{}}",
+    "name": "prototype-key",
+    "parsedValid": false,
+    "route": "pool-metrics",
+    "valid": false
+  },
+  {
+    "json": "{\"poolId\":\"0xC3C3C3C3C3C3C3C3C3C3C3C3C3C3C3C3C3C3C3C3C3C3C3C3C3C3C3C3C3C3C3C3\"}",
+    "name": "poolId-upper-digits",
+    "parsedValid": true,
+    "route": "pool-metrics",
+    "valid": true
+  },
+  {
+    "json": "{\"poolId\":\"0x0000000000000000000000000000000000000000000000000000000000000000\"}",
+    "name": "poolId-zero",
+    "parsedValid": true,
+    "route": "pool-metrics",
+    "valid": true
+  },
+  {
+    "json": "{\"poolId\":\"0xc3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c\"}",
+    "name": "poolId-short",
+    "parsedValid": false,
+    "route": "pool-metrics",
+    "valid": false
+  },
+  {
+    "json": "{\"poolId\":\"0xc3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c30\"}",
+    "name": "poolId-long",
+    "parsedValid": false,
+    "route": "pool-metrics",
+    "valid": false
+  },
+  {
+    "json": "{\"poolId\":\"0xc3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3\\n\"}",
+    "name": "poolId-newline",
+    "parsedValid": false,
+    "route": "pool-metrics",
+    "valid": false
+  },
+  {
+    "json": "{\"poolId\":\"0xc3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3\\r\\n\"}",
+    "name": "poolId-crlf",
+    "parsedValid": false,
+    "route": "pool-metrics",
+    "valid": false
+  },
+  {
+    "json": "{\"poolId\":\"0Xc3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3\"}",
+    "name": "poolId-upper-prefix",
+    "parsedValid": false,
+    "route": "pool-metrics",
+    "valid": false
+  },
+  {
+    "json": "{\"poolId\":\"0xc3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3cg\"}",
+    "name": "poolId-invalid-hex",
+    "parsedValid": false,
+    "route": "pool-metrics",
+    "valid": false
+  },
+  {
+    "json": "{\"poolId\":null}",
+    "name": "poolId-null",
+    "parsedValid": false,
+    "route": "pool-metrics",
+    "valid": false
+  },
+  {
+    "json": "{\"poolId\":0}",
+    "name": "poolId-number",
+    "parsedValid": false,
+    "route": "pool-metrics",
+    "valid": false
+  },
+  {
+    "json": "{\"poolId\":true}",
+    "name": "poolId-boolean",
+    "parsedValid": false,
+    "route": "pool-metrics",
+    "valid": false
+  },
+  {
+    "json": "{\"token\":\"0xa1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1\",\"pairedToken\":null}",
+    "name": "pairedToken-null",
+    "parsedValid": true,
+    "route": "pools",
+    "valid": true
+  },
+  {
+    "json": "{\"token\":\"0xa1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1\",\"pairedToken\":\"0xb2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2\"}",
+    "name": "pairedToken-different",
+    "parsedValid": true,
+    "route": "pools",
+    "valid": true
+  },
+  {
+    "json": "{\"token\":\"0xa1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1\",\"pairedToken\":\"0xa1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1\"}",
+    "name": "pairedToken-same",
+    "parsedValid": false,
+    "route": "pools",
+    "valid": false
+  },
+  {
+    "json": "{\"token\":\"0xa1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1\",\"pairedToken\":\"0xA1A1A1A1A1A1A1A1A1A1A1A1A1A1A1A1A1A1A1A1\"}",
+    "name": "pairedToken-same-uppercase",
+    "parsedValid": false,
+    "route": "pools",
+    "valid": false
+  },
+  {
+    "json": "{\"token\":\"0xa1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1\",\"pairedToken\":\"0xb2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2\\n\"}",
+    "name": "pairedToken-newline",
+    "parsedValid": false,
+    "route": "pools",
+    "valid": false
+  },
+  {
+    "json": "{\"token\":\"0xa1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1\",\"pairedToken\":null}",
+    "name": "pairedToken-null",
+    "parsedValid": true,
+    "route": "catalogue",
+    "valid": true
+  },
+  {
+    "json": "{\"token\":\"0xa1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1\",\"pairedToken\":\"0xb2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2\"}",
+    "name": "pairedToken-different",
+    "parsedValid": true,
+    "route": "catalogue",
+    "valid": true
+  },
+  {
+    "json": "{\"token\":\"0xa1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1\",\"pairedToken\":\"0xa1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1\"}",
+    "name": "pairedToken-same",
+    "parsedValid": false,
+    "route": "catalogue",
+    "valid": false
+  },
+  {
+    "json": "{\"token\":\"0xa1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1\",\"pairedToken\":\"0xA1A1A1A1A1A1A1A1A1A1A1A1A1A1A1A1A1A1A1A1\"}",
+    "name": "pairedToken-same-uppercase",
+    "parsedValid": false,
+    "route": "catalogue",
+    "valid": false
+  },
+  {
+    "json": "{\"token\":\"0xa1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1\",\"pairedToken\":\"0xb2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2\\n\"}",
+    "name": "pairedToken-newline",
+    "parsedValid": false,
+    "route": "catalogue",
+    "valid": false
+  },
+  {
+    "json": "{\"token\":\"0xa1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1\",\"maxPools\":1}",
+    "name": "maxPools-min",
+    "parsedValid": true,
+    "route": "pools",
+    "valid": true
+  },
+  {
+    "json": "{\"token\":\"0xa1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1\",\"maxPools\":20}",
+    "name": "maxPools-max",
+    "parsedValid": true,
+    "route": "pools",
+    "valid": true
+  },
+  {
+    "json": "{\"token\":\"0xa1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1\",\"maxPools\":0}",
+    "name": "maxPools-below",
+    "parsedValid": false,
+    "route": "pools",
+    "valid": false
+  },
+  {
+    "json": "{\"token\":\"0xa1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1\",\"maxPools\":21}",
+    "name": "maxPools-above",
+    "parsedValid": false,
+    "route": "pools",
+    "valid": false
+  },
+  {
+    "json": "{\"token\":\"0xa1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1\",\"maxPools\":true}",
+    "name": "maxPools-boolean",
+    "parsedValid": false,
+    "route": "pools",
+    "valid": false
+  },
+  {
+    "json": "{\"token\":\"0xa1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1\",\"maxPools\":\"1\"}",
+    "name": "maxPools-string",
+    "parsedValid": false,
+    "route": "pools",
+    "valid": false
+  },
+  {
+    "json": "{\"token\":\"0xa1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1\",\"maxPools\":1.5}",
+    "name": "maxPools-fraction",
+    "parsedValid": false,
+    "route": "pools",
+    "valid": false
+  },
+  {
+    "json": "{\"token\":\"0xa1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1\",\"maxPools\":null}",
+    "name": "maxPools-null",
+    "parsedValid": false,
+    "route": "pools",
+    "valid": false
+  },
+  {
+    "json": "{\"token\":\"0xa1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1\",\"maxPools\":1.0}",
+    "name": "maxPools-float-lexeme",
+    "parsedValid": true,
+    "route": "pools",
+    "valid": false
+  },
+  {
+    "json": "{\"token\":\"0xa1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1\",\"maxPools\":1e0}",
+    "name": "maxPools-exponent-lexeme",
+    "parsedValid": true,
+    "route": "pools",
+    "valid": false
+  },
+  {
+    "json": "{\"token\":\"0xa1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1\",\"limit\":1}",
+    "name": "limit-min",
+    "parsedValid": true,
+    "route": "catalogue",
+    "valid": true
+  },
+  {
+    "json": "{\"token\":\"0xa1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1\",\"limit\":100}",
+    "name": "limit-max",
+    "parsedValid": true,
+    "route": "catalogue",
+    "valid": true
+  },
+  {
+    "json": "{\"token\":\"0xa1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1\",\"limit\":0}",
+    "name": "limit-below",
+    "parsedValid": false,
+    "route": "catalogue",
+    "valid": false
+  },
+  {
+    "json": "{\"token\":\"0xa1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1\",\"limit\":101}",
+    "name": "limit-above",
+    "parsedValid": false,
+    "route": "catalogue",
+    "valid": false
+  },
+  {
+    "json": "{\"token\":\"0xa1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1\",\"limit\":true}",
+    "name": "limit-boolean",
+    "parsedValid": false,
+    "route": "catalogue",
+    "valid": false
+  },
+  {
+    "json": "{\"token\":\"0xa1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1\",\"limit\":\"1\"}",
+    "name": "limit-string",
+    "parsedValid": false,
+    "route": "catalogue",
+    "valid": false
+  },
+  {
+    "json": "{\"token\":\"0xa1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1\",\"limit\":1.5}",
+    "name": "limit-fraction",
+    "parsedValid": false,
+    "route": "catalogue",
+    "valid": false
+  },
+  {
+    "json": "{\"token\":\"0xa1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1\",\"limit\":null}",
+    "name": "limit-null",
+    "parsedValid": false,
+    "route": "catalogue",
+    "valid": false
+  },
+  {
+    "json": "{\"token\":\"0xa1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1\",\"limit\":1.0}",
+    "name": "limit-float-lexeme",
+    "parsedValid": true,
+    "route": "catalogue",
+    "valid": false
+  },
+  {
+    "json": "{\"token\":\"0xa1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1\",\"limit\":1e0}",
+    "name": "limit-exponent-lexeme",
+    "parsedValid": true,
+    "route": "catalogue",
+    "valid": false
+  },
+  {
+    "json": "{\"token\":\"0xa1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1\",\"revision\":0}",
+    "name": "revision-min",
+    "parsedValid": true,
+    "route": "catalogue",
+    "valid": true
+  },
+  {
+    "json": "{\"token\":\"0xa1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1\",\"revision\":9007199254740991}",
+    "name": "revision-max",
+    "parsedValid": true,
+    "route": "catalogue",
+    "valid": true
+  },
+  {
+    "json": "{\"token\":\"0xa1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1\",\"revision\":-1}",
+    "name": "revision-below",
+    "parsedValid": false,
+    "route": "catalogue",
+    "valid": false
+  },
+  {
+    "json": "{\"token\":\"0xa1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1\",\"revision\":9007199254740992}",
+    "name": "revision-above",
+    "parsedValid": false,
+    "route": "catalogue",
+    "valid": false
+  },
+  {
+    "json": "{\"token\":\"0xa1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1\",\"revision\":true}",
+    "name": "revision-boolean",
+    "parsedValid": false,
+    "route": "catalogue",
+    "valid": false
+  },
+  {
+    "json": "{\"token\":\"0xa1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1\",\"revision\":\"0\"}",
+    "name": "revision-string",
+    "parsedValid": false,
+    "route": "catalogue",
+    "valid": false
+  },
+  {
+    "json": "{\"token\":\"0xa1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1\",\"revision\":1.5}",
+    "name": "revision-fraction",
+    "parsedValid": false,
+    "route": "catalogue",
+    "valid": false
+  },
+  {
+    "json": "{\"token\":\"0xa1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1\",\"revision\":null}",
+    "name": "revision-null",
+    "parsedValid": true,
+    "route": "catalogue",
+    "valid": true
+  },
+  {
+    "json": "{\"token\":\"0xa1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1\",\"revision\":0.0}",
+    "name": "revision-float-lexeme",
+    "parsedValid": true,
+    "route": "catalogue",
+    "valid": false
+  },
+  {
+    "json": "{\"token\":\"0xa1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1\",\"revision\":0e0}",
+    "name": "revision-exponent-lexeme",
+    "parsedValid": true,
+    "route": "catalogue",
+    "valid": false
+  },
+  {
+    "json": "{\"tokenIds\":[\"0\"],\"blockNumber\":0}",
+    "name": "blockNumber-min",
+    "parsedValid": true,
+    "route": "nft-positions",
+    "valid": true
+  },
+  {
+    "json": "{\"tokenIds\":[\"0\"],\"blockNumber\":9007199254740991}",
+    "name": "blockNumber-max",
+    "parsedValid": true,
+    "route": "nft-positions",
+    "valid": true
+  },
+  {
+    "json": "{\"tokenIds\":[\"0\"],\"blockNumber\":-1}",
+    "name": "blockNumber-below",
+    "parsedValid": false,
+    "route": "nft-positions",
+    "valid": false
+  },
+  {
+    "json": "{\"tokenIds\":[\"0\"],\"blockNumber\":9007199254740992}",
+    "name": "blockNumber-above",
+    "parsedValid": false,
+    "route": "nft-positions",
+    "valid": false
+  },
+  {
+    "json": "{\"tokenIds\":[\"0\"],\"blockNumber\":true}",
+    "name": "blockNumber-boolean",
+    "parsedValid": false,
+    "route": "nft-positions",
+    "valid": false
+  },
+  {
+    "json": "{\"tokenIds\":[\"0\"],\"blockNumber\":\"0\"}",
+    "name": "blockNumber-string",
+    "parsedValid": false,
+    "route": "nft-positions",
+    "valid": false
+  },
+  {
+    "json": "{\"tokenIds\":[\"0\"],\"blockNumber\":1.5}",
+    "name": "blockNumber-fraction",
+    "parsedValid": false,
+    "route": "nft-positions",
+    "valid": false
+  },
+  {
+    "json": "{\"tokenIds\":[\"0\"],\"blockNumber\":null}",
+    "name": "blockNumber-null",
+    "parsedValid": true,
+    "route": "nft-positions",
+    "valid": true
+  },
+  {
+    "json": "{\"tokenIds\":[\"0\"],\"blockNumber\":0.0}",
+    "name": "blockNumber-float-lexeme",
+    "parsedValid": true,
+    "route": "nft-positions",
+    "valid": false
+  },
+  {
+    "json": "{\"tokenIds\":[\"0\"],\"blockNumber\":0e0}",
+    "name": "blockNumber-exponent-lexeme",
+    "parsedValid": true,
+    "route": "nft-positions",
+    "valid": false
+  },
+  {
+    "json": "{\"token\":\"0xa1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1\",\"poolIds\":[]}",
+    "name": "poolIds-empty",
+    "parsedValid": true,
+    "route": "pools",
+    "valid": true
+  },
+  {
+    "json": "{\"token\":\"0xa1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1\",\"poolIds\":[\"0xc3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3\",\"0xc3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3\",\"0xc3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3\",\"0xc3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3\",\"0xc3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3\",\"0xc3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3\",\"0xc3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3\",\"0xc3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3\",\"0xc3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3\",\"0xc3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3\"]}",
+    "name": "poolIds-ten",
+    "parsedValid": true,
+    "route": "pools",
+    "valid": true
+  },
+  {
+    "json": "{\"token\":\"0xa1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1\",\"poolIds\":[\"0xc3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3\",\"0xc3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3\",\"0xc3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3\",\"0xc3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3\",\"0xc3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3\",\"0xc3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3\",\"0xc3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3\",\"0xc3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3\",\"0xc3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3\",\"0xc3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3\",\"0xc3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3\"]}",
+    "name": "poolIds-eleven",
+    "parsedValid": false,
+    "route": "pools",
+    "valid": false
+  },
+  {
+    "json": "{\"token\":\"0xa1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1\",\"poolIds\":null}",
+    "name": "poolIds-null",
+    "parsedValid": false,
+    "route": "pools",
+    "valid": false
+  },
+  {
+    "json": "{\"token\":\"0xa1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1\",\"poolIds\":[\"0xc3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3\\n\"]}",
+    "name": "poolIds-bad-item",
+    "parsedValid": false,
+    "route": "pools",
+    "valid": false
+  },
+  {
+    "json": "{\"token\":\"0xa1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1\",\"poolIds\":[\"0xc3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3\",\"0xc3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3\",\"0xc3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3\",\"0xc3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3\",\"0xc3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3\",\"0xc3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3\",\"0xc3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3\",\"0xc3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3\",\"0xc3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3\",\"0xc3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3\"],\"maxPools\":10}",
+    "name": "poolIds-fit-maxPools",
+    "parsedValid": true,
+    "route": "pools",
+    "valid": true
+  },
+  {
+    "json": "{\"token\":\"0xa1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1\",\"poolIds\":[\"0xc3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3\",\"0xc3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3\",\"0xc3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3\",\"0xc3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3\",\"0xc3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3\",\"0xc3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3\",\"0xc3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3\",\"0xc3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3\",\"0xc3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3\",\"0xc3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3\"],\"maxPools\":9}",
+    "name": "poolIds-exceed-maxPools",
+    "parsedValid": false,
+    "route": "pools",
+    "valid": false
+  },
+  {
+    "json": "{\"token\":\"0xa1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1\",\"afterPoolId\":null}",
+    "name": "afterPoolId-null",
+    "parsedValid": true,
+    "route": "catalogue",
+    "valid": true
+  },
+  {
+    "json": "{\"token\":\"0xa1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1\",\"afterPoolId\":\"0xc3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3\"}",
+    "name": "afterPoolId-without-revision",
+    "parsedValid": false,
+    "route": "catalogue",
+    "valid": false
+  },
+  {
+    "json": "{\"token\":\"0xa1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1\",\"afterPoolId\":\"0xc3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3\\n\"}",
+    "name": "afterPoolId-bad",
+    "parsedValid": false,
+    "route": "catalogue",
+    "valid": false
+  },
+  {
+    "json": "{\"token\":\"0xa1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1\",\"afterPoolId\":\"0xc3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3\",\"revision\":0}",
+    "name": "page-zero-revision",
+    "parsedValid": true,
+    "route": "catalogue",
+    "valid": true
+  },
+  {
+    "json": "{\"token\":\"0xa1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1\",\"afterPoolId\":\"0xc3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3\",\"revision\":null}",
+    "name": "page-null-revision",
+    "parsedValid": false,
+    "route": "catalogue",
+    "valid": false
+  },
+  {
+    "json": "{\"wallet\":\"0xa1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1\",\"tokens\":[]}",
+    "name": "tokens-empty",
+    "parsedValid": true,
+    "route": "wallet-assets",
+    "valid": true
+  },
+  {
+    "json": "{\"wallet\":\"0xa1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1\",\"tokens\":[\"0xb2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2\",\"0xb2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2\",\"0xb2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2\",\"0xb2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2\",\"0xb2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2\",\"0xb2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2\",\"0xb2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2\",\"0xb2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2\",\"0xb2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2\",\"0xb2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2\"]}",
+    "name": "tokens-ten",
+    "parsedValid": true,
+    "route": "wallet-assets",
+    "valid": true
+  },
+  {
+    "json": "{\"wallet\":\"0xa1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1\",\"tokens\":[\"0xb2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2\",\"0xb2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2\",\"0xb2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2\",\"0xb2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2\",\"0xb2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2\",\"0xb2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2\",\"0xb2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2\",\"0xb2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2\",\"0xb2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2\",\"0xb2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2\",\"0xb2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2\"]}",
+    "name": "tokens-eleven",
+    "parsedValid": false,
+    "route": "wallet-assets",
+    "valid": false
+  },
+  {
+    "json": "{\"wallet\":\"0xa1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1\",\"tokens\":null}",
+    "name": "tokens-null",
+    "parsedValid": false,
+    "route": "wallet-assets",
+    "valid": false
+  },
+  {
+    "json": "{\"wallet\":\"0xa1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1\",\"tokens\":[\"0xb2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2\\n\"]}",
+    "name": "tokens-bad-item",
+    "parsedValid": false,
+    "route": "wallet-assets",
+    "valid": false
+  },
+  {
+    "json": "{\"wallet\":\"0xa1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1\",\"cursor\":null}",
+    "name": "cursor-null",
+    "parsedValid": true,
+    "route": "wallet-assets",
+    "valid": true
+  },
+  {
+    "json": "{\"wallet\":\"0xa1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1\",\"cursor\":\"x\"}",
+    "name": "cursor-one",
+    "parsedValid": true,
+    "route": "wallet-assets",
+    "valid": true
+  },
+  {
+    "json": "{\"wallet\":\"0xa1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1\",\"cursor\":\"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\"}",
+    "name": "cursor-max",
+    "parsedValid": true,
+    "route": "wallet-assets",
+    "valid": true
+  },
+  {
+    "json": "{\"wallet\":\"0xa1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1\",\"cursor\":\"🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣\"}",
+    "name": "cursor-unicode-max",
+    "parsedValid": true,
+    "route": "wallet-assets",
+    "valid": true
+  },
+  {
+    "json": "{\"wallet\":\"0xa1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1\",\"cursor\":\"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\"}",
+    "name": "cursor-above",
+    "parsedValid": false,
+    "route": "wallet-assets",
+    "valid": false
+  },
+  {
+    "json": "{\"wallet\":\"0xa1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1\",\"cursor\":\"🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣🁣\"}",
+    "name": "cursor-unicode-above",
+    "parsedValid": false,
+    "route": "wallet-assets",
+    "valid": false
+  },
+  {
+    "json": "{\"wallet\":\"0xa1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1\",\"cursor\":\"\"}",
+    "name": "cursor-empty",
+    "parsedValid": false,
+    "route": "wallet-assets",
+    "valid": false
+  },
+  {
+    "json": "{\"wallet\":\"0xa1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1\",\"cursor\":0}",
+    "name": "cursor-number",
+    "parsedValid": false,
+    "route": "wallet-assets",
+    "valid": false
+  },
+  {
+    "json": "{\"wallet\":\"0xa1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1\",\"cursor\":false}",
+    "name": "cursor-boolean",
+    "parsedValid": false,
+    "route": "wallet-assets",
+    "valid": false
+  },
+  {
+    "json": "{\"wallet\":\"0xa1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1\",\"autoDiscover\":true}",
+    "name": "autoDiscover-true",
+    "parsedValid": true,
+    "route": "wallet-assets",
+    "valid": true
+  },
+  {
+    "json": "{\"wallet\":\"0xa1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1\",\"autoDiscover\":false}",
+    "name": "autoDiscover-false",
+    "parsedValid": true,
+    "route": "wallet-assets",
+    "valid": true
+  },
+  {
+    "json": "{\"wallet\":\"0xa1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1\",\"autoDiscover\":1}",
+    "name": "autoDiscover-number",
+    "parsedValid": false,
+    "route": "wallet-assets",
+    "valid": false
+  },
+  {
+    "json": "{\"wallet\":\"0xa1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1\",\"autoDiscover\":\"true\"}",
+    "name": "autoDiscover-string",
+    "parsedValid": false,
+    "route": "wallet-assets",
+    "valid": false
+  },
+  {
+    "json": "{\"wallet\":\"0xa1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1\",\"autoDiscover\":null}",
+    "name": "autoDiscover-null",
+    "parsedValid": false,
+    "route": "wallet-assets",
+    "valid": false
+  },
+  {
+    "json": "{\"poolId\":\"0xc3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3\",\"includePriceHistory\":true}",
+    "name": "includePriceHistory-true",
+    "parsedValid": true,
+    "route": "pool-market",
+    "valid": true
+  },
+  {
+    "json": "{\"poolId\":\"0xc3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3\",\"includePriceHistory\":false}",
+    "name": "includePriceHistory-false",
+    "parsedValid": true,
+    "route": "pool-market",
+    "valid": true
+  },
+  {
+    "json": "{\"poolId\":\"0xc3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3\",\"includePriceHistory\":1}",
+    "name": "includePriceHistory-number",
+    "parsedValid": false,
+    "route": "pool-market",
+    "valid": false
+  },
+  {
+    "json": "{\"poolId\":\"0xc3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3\",\"includePriceHistory\":\"true\"}",
+    "name": "includePriceHistory-string",
+    "parsedValid": false,
+    "route": "pool-market",
+    "valid": false
+  },
+  {
+    "json": "{\"poolId\":\"0xc3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3\",\"includePriceHistory\":null}",
+    "name": "includePriceHistory-null",
+    "parsedValid": false,
+    "route": "pool-market",
+    "valid": false
+  },
+  {
+    "json": "{\"poolId\":\"0xc3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3\",\"priceToken\":\"base\"}",
+    "name": "priceToken-base",
+    "parsedValid": true,
+    "route": "pool-market",
+    "valid": true
+  },
+  {
+    "json": "{\"poolId\":\"0xc3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3\",\"priceToken\":\"quote\"}",
+    "name": "priceToken-quote",
+    "parsedValid": true,
+    "route": "pool-market",
+    "valid": true
+  },
+  {
+    "json": "{\"poolId\":\"0xc3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3\",\"priceToken\":\"BASE\"}",
+    "name": "priceToken-case",
+    "parsedValid": false,
+    "route": "pool-market",
+    "valid": false
+  },
+  {
+    "json": "{\"poolId\":\"0xc3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3\",\"priceToken\":\"token0\"}",
+    "name": "priceToken-other",
+    "parsedValid": false,
+    "route": "pool-market",
+    "valid": false
+  },
+  {
+    "json": "{\"poolId\":\"0xc3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3\",\"priceToken\":null}",
+    "name": "priceToken-null",
+    "parsedValid": false,
+    "route": "pool-market",
+    "valid": false
+  },
+  {
+    "json": "{\"tokenIds\":[\"115792089237316195423570985008687907853269984665640564039457584007913129639935\"]}",
+    "name": "tokenIds-max-uint256",
+    "parsedValid": true,
+    "route": "nft-positions",
+    "valid": true
+  },
+  {
+    "json": "{\"tokenIds\":[\"115792089237316195423570985008687907853269984665640564039457584007913129639936\"]}",
+    "name": "tokenIds-overflow",
+    "parsedValid": false,
+    "route": "nft-positions",
+    "valid": false
+  },
+  {
+    "json": "{\"tokenIds\":[\"1111111111111111111111111111111111111111111111111111111111111111111111111111111\"]}",
+    "name": "tokenIds-above-78-digits",
+    "parsedValid": false,
+    "route": "nft-positions",
+    "valid": false
+  },
+  {
+    "json": "{\"tokenIds\":[\"0\",\"1\",\"2\",\"3\",\"4\",\"5\",\"6\",\"7\",\"8\",\"9\"]}",
+    "name": "tokenIds-ten",
+    "parsedValid": true,
+    "route": "nft-positions",
+    "valid": true
+  },
+  {
+    "json": "{\"tokenIds\":[\"0\",\"1\",\"2\",\"3\",\"4\",\"5\",\"6\",\"7\",\"8\",\"9\",\"10\"]}",
+    "name": "tokenIds-eleven",
+    "parsedValid": false,
+    "route": "nft-positions",
+    "valid": false
+  },
+  {
+    "json": "{\"tokenIds\":[]}",
+    "name": "tokenIds-empty",
+    "parsedValid": false,
+    "route": "nft-positions",
+    "valid": false
+  },
+  {
+    "json": "{\"tokenIds\":null}",
+    "name": "tokenIds-null",
+    "parsedValid": false,
+    "route": "nft-positions",
+    "valid": false
+  },
+  {
+    "json": "{\"tokenIds\":[\"1\",\"1\"]}",
+    "name": "tokenIds-duplicate",
+    "parsedValid": false,
+    "route": "nft-positions",
+    "valid": false
+  },
+  {
+    "json": "{\"tokenIds\":[\"01\"]}",
+    "name": "tokenIds-leading-zero",
+    "parsedValid": false,
+    "route": "nft-positions",
+    "valid": false
+  },
+  {
+    "json": "{\"tokenIds\":[\"-1\"]}",
+    "name": "tokenIds-negative",
+    "parsedValid": false,
+    "route": "nft-positions",
+    "valid": false
+  },
+  {
+    "json": "{\"tokenIds\":[1]}",
+    "name": "tokenIds-number",
+    "parsedValid": false,
+    "route": "nft-positions",
+    "valid": false
+  },
+  {
+    "json": "{\"tokenIds\":[\"1\\n\"]}",
+    "name": "tokenIds-newline",
+    "parsedValid": false,
+    "route": "nft-positions",
+    "valid": false
+  },
+  {
+    "json": "{\"tokenIds\":[\"1\\r\\n\"]}",
+    "name": "tokenIds-crlf",
+    "parsedValid": false,
+    "route": "nft-positions",
+    "valid": false
+  },
+  {
+    "json": "{\"tokenIds\":[\"1e3\"]}",
+    "name": "tokenIds-exponent",
+    "parsedValid": false,
+    "route": "nft-positions",
+    "valid": false
+  },
+  {
+    "json": "{\"tokenIds\":[\"1.0\"]}",
+    "name": "tokenIds-decimal",
+    "parsedValid": false,
+    "route": "nft-positions",
+    "valid": false
+  },
+  {
+    "json": "{\"tokenIds\":[\" 1\"]}",
+    "name": "tokenIds-space",
+    "parsedValid": false,
+    "route": "nft-positions",
+    "valid": false
+  }
+]

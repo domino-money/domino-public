@@ -1,0 +1,69 @@
+{
+  "aprReason": "provider_lp_fee_history_unavailable",
+  "chainId": 4663,
+  "executionAvailable": false,
+  "feeApr24h": null,
+  "issues": [],
+  "market": {
+    "cache": {
+      "ageSeconds": null,
+      "freshForSeconds": 60,
+      "maxStaleSeconds": 300,
+      "providerUpdateTimeKnown": false,
+      "scope": "process_local",
+      "status": "stale_fallback"
+    },
+    "data": null,
+    "reason": "provider_unavailable",
+    "status": "unavailable"
+  },
+  "mode": "on_demand_provider_market",
+  "pool": {
+    "aprReason": "reconciled_fee_history_unavailable",
+    "currencies": [
+      "0x0000000000000000000000000000000000000000",
+      "0x1111111111111111111111111111111111111111"
+    ],
+    "currentLpFeePips": 3000,
+    "executionAvailable": false,
+    "executionReason": "public_execution_not_implemented",
+    "feeApr24h": null,
+    "identityStatus": "verified_at_block",
+    "integrationClass": "hookless_fixed_fee",
+    "poolId": "0x0911afcb281d7bcae2d71443ceaeebd0f89b4537708449970d797622b4b4c941",
+    "poolKey": {
+      "currency0": "0x0000000000000000000000000000000000000000",
+      "currency1": "0x1111111111111111111111111111111111111111",
+      "feeMode": "fixed",
+      "fee_pips": 3000,
+      "hooks": "0x0000000000000000000000000000000000000000",
+      "tick_spacing": 60
+    },
+    "protocolFeeRaw": 0,
+    "snapshot": {
+      "hash": "0xabababababababababababababababababababababababababababababababab",
+      "number": 700,
+      "timestamp": 1000
+    },
+    "sqrtPriceX96": "79228162514264337593543950336",
+    "suggested": false,
+    "suggestionReason": "metrics_and_policy_not_qualified",
+    "tick": 0
+  },
+  "poolId": "0x0911afcb281d7bcae2d71443ceaeebd0f89b4537708449970d797622b4b4c941",
+  "priceHistory": {
+    "cache": null,
+    "data": null,
+    "reason": "provider_market_identity_unavailable",
+    "status": "unavailable"
+  },
+  "providerMetricsReconciled": false,
+  "requiresLocalHistory": false,
+  "schemaVersion": 1,
+  "snapshot": {
+    "hash": "0xabababababababababababababababababababababababababababababababab",
+    "number": 700,
+    "timestamp": 1000
+  },
+  "suggested": false
+}

@@ -1,0 +1,1296 @@
+{
+  "contractVersion": "1.1.0-rc.2",
+  "fixtures": [
+    {
+      "file": "fixtures/producer/token.success.json",
+      "kind": "producer",
+      "route": "token",
+      "status": 200,
+      "valid": true
+    },
+    {
+      "file": "fixtures/producer/token.native.json",
+      "kind": "producer",
+      "route": "token",
+      "status": 200,
+      "valid": true
+    },
+    {
+      "file": "fixtures/producer/token.missing-decimals.json",
+      "kind": "producer",
+      "route": "token",
+      "status": 200,
+      "valid": true
+    },
+    {
+      "file": "fixtures/producer/token.zero-decimals.json",
+      "kind": "producer",
+      "route": "token",
+      "status": 200,
+      "valid": true
+    },
+    {
+      "file": "fixtures/producer/token.missing-contract.json",
+      "kind": "producer",
+      "route": "token",
+      "status": 200,
+      "valid": true
+    },
+    {
+      "file": "fixtures/producer/token.unavailable.json",
+      "kind": "producer",
+      "route": "token",
+      "status": 200,
+      "valid": true
+    },
+    {
+      "file": "fixtures/producer/token.untrusted-symbol.json",
+      "kind": "producer",
+      "route": "token",
+      "status": 200,
+      "valid": true
+    },
+    {
+      "file": "fixtures/producer/pools.success.json",
+      "kind": "producer",
+      "route": "pools",
+      "status": 200,
+      "valid": true
+    },
+    {
+      "file": "fixtures/producer/pools.missing.json",
+      "kind": "producer",
+      "route": "pools",
+      "status": 200,
+      "valid": true
+    },
+    {
+      "file": "fixtures/producer/pools.partial-metadata.json",
+      "kind": "producer",
+      "route": "pools",
+      "status": 200,
+      "valid": true
+    },
+    {
+      "file": "fixtures/producer/pools.provider-unavailable.json",
+      "kind": "producer",
+      "route": "pools",
+      "status": 200,
+      "valid": true
+    },
+    {
+      "file": "fixtures/producer/pools.zero-and-missing-metrics.json",
+      "kind": "producer",
+      "route": "pools",
+      "status": 200,
+      "valid": true
+    },
+    {
+      "file": "fixtures/producer/pools.rejected-candidate.json",
+      "kind": "producer",
+      "route": "pools",
+      "status": 200,
+      "valid": true
+    },
+    {
+      "file": "fixtures/producer/pools.catalogue.json",
+      "kind": "producer",
+      "route": "pools",
+      "status": 200,
+      "valid": true
+    },
+    {
+      "file": "fixtures/producer/wallet-assets.fallback.json",
+      "kind": "producer",
+      "route": "wallet-assets",
+      "status": 200,
+      "valid": true
+    },
+    {
+      "file": "fixtures/producer/wallet-assets.zero.json",
+      "kind": "producer",
+      "route": "wallet-assets",
+      "status": 200,
+      "valid": true
+    },
+    {
+      "file": "fixtures/producer/wallet-assets.partial-metadata.json",
+      "kind": "producer",
+      "route": "wallet-assets",
+      "status": 200,
+      "valid": true
+    },
+    {
+      "file": "fixtures/producer/wallet-assets.missing-contract.json",
+      "kind": "producer",
+      "route": "wallet-assets",
+      "status": 200,
+      "valid": true
+    },
+    {
+      "file": "fixtures/producer/wallet-assets.not-requested.json",
+      "kind": "producer",
+      "route": "wallet-assets",
+      "status": 200,
+      "valid": true
+    },
+    {
+      "file": "fixtures/producer/wallet-assets.page.json",
+      "kind": "producer",
+      "route": "wallet-assets",
+      "status": 200,
+      "valid": true
+    },
+    {
+      "file": "fixtures/gateway/wallet-assets.opaque-page.json",
+      "kind": "gateway",
+      "route": "wallet-assets",
+      "status": 200,
+      "valid": true
+    },
+    {
+      "file": "fixtures/producer/wallet-assets.last-page.json",
+      "kind": "producer",
+      "route": "wallet-assets",
+      "status": 200,
+      "valid": true
+    },
+    {
+      "file": "fixtures/producer/wallet-assets.provider-unavailable.json",
+      "kind": "producer",
+      "route": "wallet-assets",
+      "status": 200,
+      "valid": true
+    },
+    {
+      "file": "fixtures/producer/pool-market.success.json",
+      "kind": "producer",
+      "route": "pool-market",
+      "status": 200,
+      "valid": true
+    },
+    {
+      "file": "fixtures/producer/pool-market.not-requested.json",
+      "kind": "producer",
+      "route": "pool-market",
+      "status": 200,
+      "valid": true
+    },
+    {
+      "file": "fixtures/producer/pool-market.stale.json",
+      "kind": "producer",
+      "route": "pool-market",
+      "status": 200,
+      "valid": true
+    },
+    {
+      "file": "fixtures/producer/pool-market.expired.json",
+      "kind": "producer",
+      "route": "pool-market",
+      "status": 200,
+      "valid": true
+    },
+    {
+      "file": "fixtures/producer/pool-market.missing.json",
+      "kind": "producer",
+      "route": "pool-market",
+      "status": 200,
+      "valid": true
+    },
+    {
+      "file": "fixtures/producer/pool-market.zero.json",
+      "kind": "producer",
+      "route": "pool-market",
+      "status": 200,
+      "valid": true
+    },
+    {
+      "file": "fixtures/producer/pool-market.rejected.json",
+      "kind": "producer",
+      "route": "pool-market",
+      "status": 200,
+      "valid": true
+    },
+    {
+      "file": "fixtures/producer/pool-market.rejected-currencies.json",
+      "kind": "producer",
+      "route": "pool-market",
+      "status": 200,
+      "valid": true
+    },
+    {
+      "file": "fixtures/producer/pool-market.provider-rate-limited.json",
+      "kind": "producer",
+      "route": "pool-market",
+      "status": 200,
+      "valid": true
+    },
+    {
+      "file": "fixtures/producer/pool-market.provider-timeout.json",
+      "kind": "producer",
+      "route": "pool-market",
+      "status": 200,
+      "valid": true
+    },
+    {
+      "file": "fixtures/producer/nft-positions.success.json",
+      "kind": "producer",
+      "route": "nft-positions",
+      "status": 200,
+      "valid": true
+    },
+    {
+      "file": "fixtures/producer/nft-positions.empty.json",
+      "kind": "producer",
+      "route": "nft-positions",
+      "status": 200,
+      "valid": true
+    },
+    {
+      "file": "fixtures/producer/nft-positions.zero.json",
+      "kind": "producer",
+      "route": "nft-positions",
+      "status": 200,
+      "valid": true
+    },
+    {
+      "file": "fixtures/producer/nft-positions.stale.json",
+      "kind": "producer",
+      "route": "nft-positions",
+      "status": 200,
+      "valid": true
+    },
+    {
+      "file": "fixtures/producer/catalogue.success.json",
+      "kind": "producer",
+      "route": "catalogue",
+      "status": 200,
+      "valid": true
+    },
+    {
+      "file": "fixtures/producer/catalogue.empty.json",
+      "kind": "producer",
+      "route": "catalogue",
+      "status": 200,
+      "valid": true
+    },
+    {
+      "file": "fixtures/producer/pool-activity.success.json",
+      "kind": "producer",
+      "route": "pool-activity",
+      "status": 200,
+      "valid": true
+    },
+    {
+      "file": "fixtures/producer/pool-positions.success.json",
+      "kind": "producer",
+      "route": "pool-positions",
+      "status": 200,
+      "valid": true
+    },
+    {
+      "file": "fixtures/producer/pool-activity.partial.json",
+      "kind": "producer",
+      "route": "pool-activity",
+      "status": 200,
+      "valid": true
+    },
+    {
+      "file": "fixtures/producer/pool-positions.partial.json",
+      "kind": "producer",
+      "route": "pool-positions",
+      "status": 200,
+      "valid": true
+    },
+    {
+      "file": "fixtures/producer/pool-activity.stale.json",
+      "kind": "producer",
+      "route": "pool-activity",
+      "status": 200,
+      "valid": true
+    },
+    {
+      "file": "fixtures/producer/pool-positions.stale.json",
+      "kind": "producer",
+      "route": "pool-positions",
+      "status": 200,
+      "valid": true
+    },
+    {
+      "file": "fixtures/producer/pool-activity.unavailable.json",
+      "kind": "producer",
+      "route": "pool-activity",
+      "status": 200,
+      "valid": true
+    },
+    {
+      "file": "fixtures/producer/pool-positions.unavailable.json",
+      "kind": "producer",
+      "route": "pool-positions",
+      "status": 200,
+      "valid": true
+    },
+    {
+      "file": "fixtures/producer/pool-metrics.qualified.json",
+      "kind": "producer",
+      "route": "pool-metrics",
+      "status": 200,
+      "valid": true
+    },
+    {
+      "file": "fixtures/producer/pool-metrics.partial.json",
+      "kind": "producer",
+      "route": "pool-metrics",
+      "status": 200,
+      "valid": true
+    },
+    {
+      "file": "fixtures/producer/pool-metrics.stale.json",
+      "kind": "producer",
+      "route": "pool-metrics",
+      "status": 200,
+      "valid": true
+    },
+    {
+      "file": "fixtures/producer/pool-metrics.unqualified.json",
+      "kind": "producer",
+      "route": "pool-metrics",
+      "status": 200,
+      "valid": true
+    },
+    {
+      "file": "fixtures/producer/pool-metrics.reference-analytics.json",
+      "kind": "producer",
+      "route": "pool-metrics",
+      "status": 200,
+      "valid": true
+    },
+    {
+      "file": "fixtures/producer/pool-metrics.missing-prices.json",
+      "kind": "producer",
+      "route": "pool-metrics",
+      "status": 200,
+      "valid": true
+    },
+    {
+      "file": "fixtures/producer/pool-metrics.capital-unavailable.json",
+      "kind": "producer",
+      "route": "pool-metrics",
+      "status": 200,
+      "valid": true
+    },
+    {
+      "file": "fixtures/producer/pool-metrics.capital-capacity.json",
+      "kind": "producer",
+      "route": "pool-metrics",
+      "status": 200,
+      "valid": true
+    },
+    {
+      "file": "fixtures/producer/pool-metrics.price-capacity.json",
+      "kind": "producer",
+      "route": "pool-metrics",
+      "status": 200,
+      "valid": true
+    },
+    {
+      "file": "fixtures/gateway/token.success.json",
+      "kind": "gateway",
+      "route": "token",
+      "status": 200,
+      "valid": true
+    },
+    {
+      "file": "fixtures/gateway/token.native.json",
+      "kind": "gateway",
+      "route": "token",
+      "status": 200,
+      "valid": true
+    },
+    {
+      "file": "fixtures/gateway/token.missing-decimals.json",
+      "kind": "gateway",
+      "route": "token",
+      "status": 200,
+      "valid": true
+    },
+    {
+      "file": "fixtures/gateway/token.zero-decimals.json",
+      "kind": "gateway",
+      "route": "token",
+      "status": 200,
+      "valid": true
+    },
+    {
+      "file": "fixtures/gateway/token.missing-contract.json",
+      "kind": "gateway",
+      "route": "token",
+      "status": 200,
+      "valid": true
+    },
+    {
+      "file": "fixtures/gateway/token.unavailable.json",
+      "kind": "gateway",
+      "route": "token",
+      "status": 200,
+      "valid": true
+    },
+    {
+      "file": "fixtures/gateway/token.untrusted-symbol.json",
+      "kind": "gateway",
+      "route": "token",
+      "status": 200,
+      "valid": true
+    },
+    {
+      "file": "fixtures/gateway/pools.success.json",
+      "kind": "gateway",
+      "route": "pools",
+      "status": 200,
+      "valid": true
+    },
+    {
+      "file": "fixtures/gateway/pools.missing.json",
+      "kind": "gateway",
+      "route": "pools",
+      "status": 200,
+      "valid": true
+    },
+    {
+      "file": "fixtures/gateway/pools.partial-metadata.json",
+      "kind": "gateway",
+      "route": "pools",
+      "status": 200,
+      "valid": true
+    },
+    {
+      "file": "fixtures/gateway/pools.provider-unavailable.json",
+      "kind": "gateway",
+      "route": "pools",
+      "status": 200,
+      "valid": true
+    },
+    {
+      "file": "fixtures/gateway/pools.zero-and-missing-metrics.json",
+      "kind": "gateway",
+      "route": "pools",
+      "status": 200,
+      "valid": true
+    },
+    {
+      "file": "fixtures/gateway/pools.rejected-candidate.json",
+      "kind": "gateway",
+      "route": "pools",
+      "status": 200,
+      "valid": true
+    },
+    {
+      "file": "fixtures/gateway/pools.catalogue.json",
+      "kind": "gateway",
+      "route": "pools",
+      "status": 200,
+      "valid": true
+    },
+    {
+      "file": "fixtures/gateway/wallet-assets.fallback.json",
+      "kind": "gateway",
+      "route": "wallet-assets",
+      "status": 200,
+      "valid": true
+    },
+    {
+      "file": "fixtures/gateway/wallet-assets.zero.json",
+      "kind": "gateway",
+      "route": "wallet-assets",
+      "status": 200,
+      "valid": true
+    },
+    {
+      "file": "fixtures/gateway/wallet-assets.partial-metadata.json",
+      "kind": "gateway",
+      "route": "wallet-assets",
+      "status": 200,
+      "valid": true
+    },
+    {
+      "file": "fixtures/gateway/wallet-assets.missing-contract.json",
+      "kind": "gateway",
+      "route": "wallet-assets",
+      "status": 200,
+      "valid": true
+    },
+    {
+      "file": "fixtures/gateway/wallet-assets.not-requested.json",
+      "kind": "gateway",
+      "route": "wallet-assets",
+      "status": 200,
+      "valid": true
+    },
+    {
+      "file": "fixtures/gateway/wallet-assets.page.json",
+      "kind": "gateway",
+      "route": "wallet-assets",
+      "status": 200,
+      "valid": true
+    },
+    {
+      "file": "fixtures/gateway/wallet-assets.last-page.json",
+      "kind": "gateway",
+      "route": "wallet-assets",
+      "status": 200,
+      "valid": true
+    },
+    {
+      "file": "fixtures/gateway/wallet-assets.provider-unavailable.json",
+      "kind": "gateway",
+      "route": "wallet-assets",
+      "status": 200,
+      "valid": true
+    },
+    {
+      "file": "fixtures/gateway/pool-market.success.json",
+      "kind": "gateway",
+      "route": "pool-market",
+      "status": 200,
+      "valid": true
+    },
+    {
+      "file": "fixtures/gateway/pool-market.not-requested.json",
+      "kind": "gateway",
+      "route": "pool-market",
+      "status": 200,
+      "valid": true
+    },
+    {
+      "file": "fixtures/gateway/pool-market.stale.json",
+      "kind": "gateway",
+      "route": "pool-market",
+      "status": 200,
+      "valid": true
+    },
+    {
+      "file": "fixtures/gateway/pool-market.expired.json",
+      "kind": "gateway",
+      "route": "pool-market",
+      "status": 200,
+      "valid": true
+    },
+    {
+      "file": "fixtures/gateway/pool-market.missing.json",
+      "kind": "gateway",
+      "route": "pool-market",
+      "status": 200,
+      "valid": true
+    },
+    {
+      "file": "fixtures/gateway/pool-market.zero.json",
+      "kind": "gateway",
+      "route": "pool-market",
+      "status": 200,
+      "valid": true
+    },
+    {
+      "file": "fixtures/gateway/pool-market.rejected.json",
+      "kind": "gateway",
+      "route": "pool-market",
+      "status": 200,
+      "valid": true
+    },
+    {
+      "file": "fixtures/gateway/pool-market.rejected-currencies.json",
+      "kind": "gateway",
+      "route": "pool-market",
+      "status": 200,
+      "valid": true
+    },
+    {
+      "file": "fixtures/gateway/pool-market.provider-rate-limited.json",
+      "kind": "gateway",
+      "route": "pool-market",
+      "status": 200,
+      "valid": true
+    },
+    {
+      "file": "fixtures/gateway/pool-market.provider-timeout.json",
+      "kind": "gateway",
+      "route": "pool-market",
+      "status": 200,
+      "valid": true
+    },
+    {
+      "file": "fixtures/gateway/nft-positions.success.json",
+      "kind": "gateway",
+      "route": "nft-positions",
+      "status": 200,
+      "valid": true
+    },
+    {
+      "file": "fixtures/gateway/nft-positions.empty.json",
+      "kind": "gateway",
+      "route": "nft-positions",
+      "status": 200,
+      "valid": true
+    },
+    {
+      "file": "fixtures/gateway/nft-positions.zero.json",
+      "kind": "gateway",
+      "route": "nft-positions",
+      "status": 200,
+      "valid": true
+    },
+    {
+      "file": "fixtures/gateway/nft-positions.stale.json",
+      "kind": "gateway",
+      "route": "nft-positions",
+      "status": 200,
+      "valid": true
+    },
+    {
+      "file": "fixtures/gateway/catalogue.success.json",
+      "kind": "gateway",
+      "route": "catalogue",
+      "status": 200,
+      "valid": true
+    },
+    {
+      "file": "fixtures/gateway/catalogue.empty.json",
+      "kind": "gateway",
+      "route": "catalogue",
+      "status": 200,
+      "valid": true
+    },
+    {
+      "file": "fixtures/gateway/pool-activity.success.json",
+      "kind": "gateway",
+      "route": "pool-activity",
+      "status": 200,
+      "valid": true
+    },
+    {
+      "file": "fixtures/gateway/pool-positions.success.json",
+      "kind": "gateway",
+      "route": "pool-positions",
+      "status": 200,
+      "valid": true
+    },
+    {
+      "file": "fixtures/gateway/pool-activity.partial.json",
+      "kind": "gateway",
+      "route": "pool-activity",
+      "status": 200,
+      "valid": true
+    },
+    {
+      "file": "fixtures/gateway/pool-positions.partial.json",
+      "kind": "gateway",
+      "route": "pool-positions",
+      "status": 200,
+      "valid": true
+    },
+    {
+      "file": "fixtures/gateway/pool-activity.stale.json",
+      "kind": "gateway",
+      "route": "pool-activity",
+      "status": 200,
+      "valid": true
+    },
+    {
+      "file": "fixtures/gateway/pool-positions.stale.json",
+      "kind": "gateway",
+      "route": "pool-positions",
+      "status": 200,
+      "valid": true
+    },
+    {
+      "file": "fixtures/gateway/pool-activity.unavailable.json",
+      "kind": "gateway",
+      "route": "pool-activity",
+      "status": 200,
+      "valid": true
+    },
+    {
+      "file": "fixtures/gateway/pool-positions.unavailable.json",
+      "kind": "gateway",
+      "route": "pool-positions",
+      "status": 200,
+      "valid": true
+    },
+    {
+      "file": "fixtures/gateway/pool-metrics.qualified.json",
+      "kind": "gateway",
+      "route": "pool-metrics",
+      "status": 200,
+      "valid": true
+    },
+    {
+      "file": "fixtures/gateway/pool-metrics.partial.json",
+      "kind": "gateway",
+      "route": "pool-metrics",
+      "status": 200,
+      "valid": true
+    },
+    {
+      "file": "fixtures/gateway/pool-metrics.stale.json",
+      "kind": "gateway",
+      "route": "pool-metrics",
+      "status": 200,
+      "valid": true
+    },
+    {
+      "file": "fixtures/gateway/pool-metrics.unqualified.json",
+      "kind": "gateway",
+      "route": "pool-metrics",
+      "status": 200,
+      "valid": true
+    },
+    {
+      "file": "fixtures/gateway/pool-metrics.reference-analytics.json",
+      "kind": "gateway",
+      "route": "pool-metrics",
+      "status": 200,
+      "valid": true
+    },
+    {
+      "file": "fixtures/gateway/pool-metrics.missing-prices.json",
+      "kind": "gateway",
+      "route": "pool-metrics",
+      "status": 200,
+      "valid": true
+    },
+    {
+      "file": "fixtures/gateway/pool-metrics.capital-unavailable.json",
+      "kind": "gateway",
+      "route": "pool-metrics",
+      "status": 200,
+      "valid": true
+    },
+    {
+      "file": "fixtures/gateway/pool-metrics.capital-capacity.json",
+      "kind": "gateway",
+      "route": "pool-metrics",
+      "status": 200,
+      "valid": true
+    },
+    {
+      "file": "fixtures/gateway/pool-metrics.price-capacity.json",
+      "kind": "gateway",
+      "route": "pool-metrics",
+      "status": 200,
+      "valid": true
+    },
+    {
+      "file": "fixtures/gateway/capabilities.disabled.json",
+      "kind": "gateway",
+      "route": "capabilities",
+      "status": 200,
+      "valid": true
+    },
+    {
+      "file": "fixtures/gateway/capabilities.live_read_only.json",
+      "kind": "gateway",
+      "route": "capabilities",
+      "status": 200,
+      "valid": true
+    },
+    {
+      "file": "fixtures/error/token.invalid_request.json",
+      "kind": "error",
+      "route": "token",
+      "status": 422,
+      "valid": true
+    },
+    {
+      "file": "fixtures/error/token.read_capacity_busy.json",
+      "kind": "error",
+      "route": "token",
+      "status": 429,
+      "valid": true
+    },
+    {
+      "file": "fixtures/error/token.upstream_timeout.json",
+      "kind": "error",
+      "route": "token",
+      "status": 504,
+      "valid": true
+    },
+    {
+      "file": "fixtures/error/token.upstream_unavailable.json",
+      "kind": "error",
+      "route": "token",
+      "status": 503,
+      "valid": true
+    },
+    {
+      "file": "fixtures/error/token.upstream_contract_mismatch.json",
+      "kind": "error",
+      "route": "token",
+      "status": 502,
+      "valid": true
+    },
+    {
+      "file": "fixtures/error/token.stale_or_future_block.json",
+      "kind": "error",
+      "route": "token",
+      "status": 503,
+      "valid": true
+    },
+    {
+      "file": "fixtures/invalid/token.incompatible-version.json",
+      "kind": "invalid",
+      "route": "token",
+      "status": 200,
+      "valid": false
+    },
+    {
+      "file": "fixtures/error/pools.invalid_request.json",
+      "kind": "error",
+      "route": "pools",
+      "status": 422,
+      "valid": true
+    },
+    {
+      "file": "fixtures/error/pools.read_capacity_busy.json",
+      "kind": "error",
+      "route": "pools",
+      "status": 429,
+      "valid": true
+    },
+    {
+      "file": "fixtures/error/pools.upstream_timeout.json",
+      "kind": "error",
+      "route": "pools",
+      "status": 504,
+      "valid": true
+    },
+    {
+      "file": "fixtures/error/pools.upstream_unavailable.json",
+      "kind": "error",
+      "route": "pools",
+      "status": 503,
+      "valid": true
+    },
+    {
+      "file": "fixtures/error/pools.upstream_contract_mismatch.json",
+      "kind": "error",
+      "route": "pools",
+      "status": 502,
+      "valid": true
+    },
+    {
+      "file": "fixtures/error/pools.stale_or_future_block.json",
+      "kind": "error",
+      "route": "pools",
+      "status": 503,
+      "valid": true
+    },
+    {
+      "file": "fixtures/invalid/pools.incompatible-version.json",
+      "kind": "invalid",
+      "route": "pools",
+      "status": 200,
+      "valid": false
+    },
+    {
+      "file": "fixtures/error/pool-market.invalid_request.json",
+      "kind": "error",
+      "route": "pool-market",
+      "status": 422,
+      "valid": true
+    },
+    {
+      "file": "fixtures/error/pool-market.read_capacity_busy.json",
+      "kind": "error",
+      "route": "pool-market",
+      "status": 429,
+      "valid": true
+    },
+    {
+      "file": "fixtures/error/pool-market.upstream_timeout.json",
+      "kind": "error",
+      "route": "pool-market",
+      "status": 504,
+      "valid": true
+    },
+    {
+      "file": "fixtures/error/pool-market.upstream_unavailable.json",
+      "kind": "error",
+      "route": "pool-market",
+      "status": 503,
+      "valid": true
+    },
+    {
+      "file": "fixtures/error/pool-market.upstream_contract_mismatch.json",
+      "kind": "error",
+      "route": "pool-market",
+      "status": 502,
+      "valid": true
+    },
+    {
+      "file": "fixtures/error/pool-market.stale_or_future_block.json",
+      "kind": "error",
+      "route": "pool-market",
+      "status": 503,
+      "valid": true
+    },
+    {
+      "file": "fixtures/invalid/pool-market.incompatible-version.json",
+      "kind": "invalid",
+      "route": "pool-market",
+      "status": 200,
+      "valid": false
+    },
+    {
+      "file": "fixtures/error/wallet-assets.invalid_request.json",
+      "kind": "error",
+      "route": "wallet-assets",
+      "status": 422,
+      "valid": true
+    },
+    {
+      "file": "fixtures/error/wallet-assets.read_capacity_busy.json",
+      "kind": "error",
+      "route": "wallet-assets",
+      "status": 429,
+      "valid": true
+    },
+    {
+      "file": "fixtures/error/wallet-assets.upstream_timeout.json",
+      "kind": "error",
+      "route": "wallet-assets",
+      "status": 504,
+      "valid": true
+    },
+    {
+      "file": "fixtures/error/wallet-assets.upstream_unavailable.json",
+      "kind": "error",
+      "route": "wallet-assets",
+      "status": 503,
+      "valid": true
+    },
+    {
+      "file": "fixtures/error/wallet-assets.upstream_contract_mismatch.json",
+      "kind": "error",
+      "route": "wallet-assets",
+      "status": 502,
+      "valid": true
+    },
+    {
+      "file": "fixtures/error/wallet-assets.stale_or_future_block.json",
+      "kind": "error",
+      "route": "wallet-assets",
+      "status": 503,
+      "valid": true
+    },
+    {
+      "file": "fixtures/invalid/wallet-assets.incompatible-version.json",
+      "kind": "invalid",
+      "route": "wallet-assets",
+      "status": 200,
+      "valid": false
+    },
+    {
+      "file": "fixtures/error/nft-positions.invalid_request.json",
+      "kind": "error",
+      "route": "nft-positions",
+      "status": 422,
+      "valid": true
+    },
+    {
+      "file": "fixtures/error/nft-positions.read_capacity_busy.json",
+      "kind": "error",
+      "route": "nft-positions",
+      "status": 429,
+      "valid": true
+    },
+    {
+      "file": "fixtures/error/nft-positions.upstream_timeout.json",
+      "kind": "error",
+      "route": "nft-positions",
+      "status": 504,
+      "valid": true
+    },
+    {
+      "file": "fixtures/error/nft-positions.upstream_unavailable.json",
+      "kind": "error",
+      "route": "nft-positions",
+      "status": 503,
+      "valid": true
+    },
+    {
+      "file": "fixtures/error/nft-positions.upstream_contract_mismatch.json",
+      "kind": "error",
+      "route": "nft-positions",
+      "status": 502,
+      "valid": true
+    },
+    {
+      "file": "fixtures/error/nft-positions.stale_or_future_block.json",
+      "kind": "error",
+      "route": "nft-positions",
+      "status": 503,
+      "valid": true
+    },
+    {
+      "file": "fixtures/invalid/nft-positions.incompatible-version.json",
+      "kind": "invalid",
+      "route": "nft-positions",
+      "status": 200,
+      "valid": false
+    },
+    {
+      "file": "fixtures/error/catalogue.invalid_request.json",
+      "kind": "error",
+      "route": "catalogue",
+      "status": 422,
+      "valid": true
+    },
+    {
+      "file": "fixtures/error/catalogue.read_capacity_busy.json",
+      "kind": "error",
+      "route": "catalogue",
+      "status": 429,
+      "valid": true
+    },
+    {
+      "file": "fixtures/error/catalogue.upstream_timeout.json",
+      "kind": "error",
+      "route": "catalogue",
+      "status": 504,
+      "valid": true
+    },
+    {
+      "file": "fixtures/error/catalogue.upstream_unavailable.json",
+      "kind": "error",
+      "route": "catalogue",
+      "status": 503,
+      "valid": true
+    },
+    {
+      "file": "fixtures/error/catalogue.upstream_contract_mismatch.json",
+      "kind": "error",
+      "route": "catalogue",
+      "status": 502,
+      "valid": true
+    },
+    {
+      "file": "fixtures/error/catalogue.stale_or_future_block.json",
+      "kind": "error",
+      "route": "catalogue",
+      "status": 503,
+      "valid": true
+    },
+    {
+      "file": "fixtures/invalid/catalogue.incompatible-version.json",
+      "kind": "invalid",
+      "route": "catalogue",
+      "status": 200,
+      "valid": false
+    },
+    {
+      "file": "fixtures/error/pool-activity.invalid_request.json",
+      "kind": "error",
+      "route": "pool-activity",
+      "status": 422,
+      "valid": true
+    },
+    {
+      "file": "fixtures/error/pool-activity.read_capacity_busy.json",
+      "kind": "error",
+      "route": "pool-activity",
+      "status": 429,
+      "valid": true
+    },
+    {
+      "file": "fixtures/error/pool-activity.upstream_timeout.json",
+      "kind": "error",
+      "route": "pool-activity",
+      "status": 504,
+      "valid": true
+    },
+    {
+      "file": "fixtures/error/pool-activity.upstream_unavailable.json",
+      "kind": "error",
+      "route": "pool-activity",
+      "status": 503,
+      "valid": true
+    },
+    {
+      "file": "fixtures/error/pool-activity.upstream_contract_mismatch.json",
+      "kind": "error",
+      "route": "pool-activity",
+      "status": 502,
+      "valid": true
+    },
+    {
+      "file": "fixtures/error/pool-activity.stale_or_future_block.json",
+      "kind": "error",
+      "route": "pool-activity",
+      "status": 503,
+      "valid": true
+    },
+    {
+      "file": "fixtures/invalid/pool-activity.incompatible-version.json",
+      "kind": "invalid",
+      "route": "pool-activity",
+      "status": 200,
+      "valid": false
+    },
+    {
+      "file": "fixtures/error/pool-positions.invalid_request.json",
+      "kind": "error",
+      "route": "pool-positions",
+      "status": 422,
+      "valid": true
+    },
+    {
+      "file": "fixtures/error/pool-positions.read_capacity_busy.json",
+      "kind": "error",
+      "route": "pool-positions",
+      "status": 429,
+      "valid": true
+    },
+    {
+      "file": "fixtures/error/pool-positions.upstream_timeout.json",
+      "kind": "error",
+      "route": "pool-positions",
+      "status": 504,
+      "valid": true
+    },
+    {
+      "file": "fixtures/error/pool-positions.upstream_unavailable.json",
+      "kind": "error",
+      "route": "pool-positions",
+      "status": 503,
+      "valid": true
+    },
+    {
+      "file": "fixtures/error/pool-positions.upstream_contract_mismatch.json",
+      "kind": "error",
+      "route": "pool-positions",
+      "status": 502,
+      "valid": true
+    },
+    {
+      "file": "fixtures/error/pool-positions.stale_or_future_block.json",
+      "kind": "error",
+      "route": "pool-positions",
+      "status": 503,
+      "valid": true
+    },
+    {
+      "file": "fixtures/invalid/pool-positions.incompatible-version.json",
+      "kind": "invalid",
+      "route": "pool-positions",
+      "status": 200,
+      "valid": false
+    },
+    {
+      "file": "fixtures/error/pool-metrics.invalid_request.json",
+      "kind": "error",
+      "route": "pool-metrics",
+      "status": 422,
+      "valid": true
+    },
+    {
+      "file": "fixtures/error/pool-metrics.read_capacity_busy.json",
+      "kind": "error",
+      "route": "pool-metrics",
+      "status": 429,
+      "valid": true
+    },
+    {
+      "file": "fixtures/error/pool-metrics.upstream_timeout.json",
+      "kind": "error",
+      "route": "pool-metrics",
+      "status": 504,
+      "valid": true
+    },
+    {
+      "file": "fixtures/error/pool-metrics.upstream_unavailable.json",
+      "kind": "error",
+      "route": "pool-metrics",
+      "status": 503,
+      "valid": true
+    },
+    {
+      "file": "fixtures/error/pool-metrics.upstream_contract_mismatch.json",
+      "kind": "error",
+      "route": "pool-metrics",
+      "status": 502,
+      "valid": true
+    },
+    {
+      "file": "fixtures/error/pool-metrics.stale_or_future_block.json",
+      "kind": "error",
+      "route": "pool-metrics",
+      "status": 503,
+      "valid": true
+    },
+    {
+      "file": "fixtures/invalid/pool-metrics.incompatible-version.json",
+      "kind": "invalid",
+      "route": "pool-metrics",
+      "status": 200,
+      "valid": false
+    },
+    {
+      "file": "fixtures/error/wallet-assets.invalid_or_expired_cursor.json",
+      "kind": "error",
+      "route": "wallet-assets",
+      "status": 400,
+      "valid": true
+    },
+    {
+      "file": "fixtures/error/pools.catalogue_revision_changed.json",
+      "kind": "error",
+      "route": "pools",
+      "status": 409,
+      "valid": true
+    },
+    {
+      "file": "fixtures/invalid/pool-metrics.reference-claimed-current.json",
+      "kind": "invalid",
+      "route": "pool-metrics",
+      "status": 200,
+      "valid": false
+    }
+  ],
+  "requests": [
+    {
+      "file": "fixtures/requests/token.json",
+      "route": "token"
+    },
+    {
+      "file": "fixtures/requests/pools.json",
+      "route": "pools"
+    },
+    {
+      "file": "fixtures/requests/pool-market.json",
+      "route": "pool-market"
+    },
+    {
+      "file": "fixtures/requests/wallet-assets.json",
+      "route": "wallet-assets"
+    },
+    {
+      "file": "fixtures/requests/nft-positions.json",
+      "route": "nft-positions"
+    },
+    {
+      "file": "fixtures/requests/catalogue.json",
+      "route": "catalogue"
+    },
+    {
+      "file": "fixtures/requests/pool-activity.json",
+      "route": "pool-activity"
+    },
+    {
+      "file": "fixtures/requests/pool-positions.json",
+      "route": "pool-positions"
+    },
+    {
+      "file": "fixtures/requests/pool-metrics.json",
+      "route": "pool-metrics"
+    }
+  ]
+}

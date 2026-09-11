@@ -2,8 +2,10 @@ annotated-doc==0.0.5
 annotated-types==0.8.0
 anyio==4.15.1
 certifi==2026.7.22
+cffi==2.1.1
 click==8.5.0
 cytoolz==1.1.0
+cryptography==50.0.1
 eth-hash==0.7.1
 eth-typing==6.0.0
 eth-utils==6.0.0
@@ -17,6 +19,8 @@ parsimonious==0.10.0
 psycopg==3.3.5
 psycopg-binary==3.3.5
 pycryptodome==3.23.0
+pycparser==3.0
+PyJWT==2.13.0
 pydantic==2.13.5
 pydantic_core==2.46.5
 regex==2026.9.3

@@ -1,0 +1,351 @@
+{
+  "$defs": {
+    "MetadataIssues": {
+      "additionalProperties": false,
+      "properties": {
+        "decimals": {
+          "enum": [
+            "upstream_unavailable",
+            "rpc_error",
+            "network_unavailable",
+            "invalid_abi_response",
+            "invalid_rpc_envelope",
+            "missing_rpc_result",
+            "request_budget_exhausted",
+            "invalid_json",
+            "response_too_large",
+            "invalid_quantity",
+            "quantity_too_large",
+            "token_has_no_code",
+            "token_code_unavailable",
+            "invalid_token_decimals",
+            "invalid_symbol_text",
+            "provider_unavailable",
+            "provider_rate_limited",
+            "provider_capacity_busy",
+            "invalid_discovery_response",
+            "invalid_inventory_response",
+            "invalid_inventory_page",
+            "invalid_inventory_cursor",
+            "invalid_pool_key",
+            "invalid_tick_spacing",
+            "pool_id_mismatch",
+            "invalid_pool_state",
+            "fixed_fee_mismatch",
+            "provider_currency_mismatch",
+            "selected_token_mismatch",
+            "selected_pair_mismatch",
+            "catalogue_database_unavailable",
+            "catalogue_schema_mismatch",
+            "catalogue_currency_mismatch",
+            "read_deadline_exceeded"
+          ],
+          "title": "Decimals",
+          "type": "string"
+        },
+        "symbol": {
+          "enum": [
+            "upstream_unavailable",
+            "rpc_error",
+            "network_unavailable",
+            "invalid_abi_response",
+            "invalid_rpc_envelope",
+            "missing_rpc_result",
+            "request_budget_exhausted",
+            "invalid_json",
+            "response_too_large",
+            "invalid_quantity",
+            "quantity_too_large",
+            "token_has_no_code",
+            "token_code_unavailable",
+            "invalid_token_decimals",
+            "invalid_symbol_text",
+            "provider_unavailable",
+            "provider_rate_limited",
+            "provider_capacity_busy",
+            "invalid_discovery_response",
+            "invalid_inventory_response",
+            "invalid_inventory_page",
+            "invalid_inventory_cursor",
+            "invalid_pool_key",
+            "invalid_tick_spacing",
+            "pool_id_mismatch",
+            "invalid_pool_state",
+            "fixed_fee_mismatch",
+            "provider_currency_mismatch",
+            "selected_token_mismatch",
+            "selected_pair_mismatch",
+            "catalogue_database_unavailable",
+            "catalogue_schema_mismatch",
+            "catalogue_currency_mismatch",
+            "read_deadline_exceeded"
+          ],
+          "title": "Symbol",
+          "type": "string"
+        }
+      },
+      "title": "MetadataIssues",
+      "type": "object"
+    },
+    "Snapshot": {
+      "additionalProperties": false,
+      "properties": {
+        "hash": {
+          "pattern": "^0x[0-9a-f]{64}$",
+          "title": "Hash",
+          "type": "string"
+        },
+        "number": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "title": "Number",
+          "type": "integer"
+        },
+        "timestamp": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "title": "Timestamp",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "number",
+        "hash",
+        "timestamp"
+      ],
+      "title": "Snapshot",
+      "type": "object"
+    },
+    "TokenMetadata": {
+      "additionalProperties": false,
+      "properties": {
+        "address": {
+          "pattern": "^0x[0-9a-f]{40}$",
+          "title": "Address",
+          "type": "string"
+        },
+        "decimals": {
+          "anyOf": [
+            {
+              "maximum": 255,
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Decimals"
+        },
+        "displayUnitsAvailable": {
+          "title": "Displayunitsavailable",
+          "type": "boolean"
+        },
+        "executionAvailable": {
+          "const": false,
+          "title": "Executionavailable",
+          "type": "boolean"
+        },
+        "kind": {
+          "enum": [
+            "native",
+            "erc20_candidate"
+          ],
+          "title": "Kind",
+          "type": "string"
+        },
+        "metadataIssues": {
+          "$ref": "#/$defs/MetadataIssues"
+        },
+        "readStatus": {
+          "enum": [
+            "available",
+            "partial"
+          ],
+          "title": "Readstatus",
+          "type": "string"
+        },
+        "symbol": {
+          "anyOf": [
+            {
+              "maxLength": 40,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Symbol"
+        }
+      },
+      "required": [
+        "address",
+        "kind",
+        "decimals",
+        "symbol",
+        "readStatus",
+        "metadataIssues",
+        "displayUnitsAvailable",
+        "executionAvailable"
+      ],
+      "title": "TokenMetadata",
+      "type": "object"
+    },
+    "UnknownToken": {
+      "additionalProperties": false,
+      "properties": {
+        "address": {
+          "pattern": "^0x[0-9a-f]{40}$",
+          "title": "Address",
+          "type": "string"
+        },
+        "decimals": {
+          "title": "Decimals",
+          "type": "null"
+        },
+        "displayUnitsAvailable": {
+          "const": false,
+          "title": "Displayunitsavailable",
+          "type": "boolean"
+        },
+        "executionAvailable": {
+          "const": false,
+          "title": "Executionavailable",
+          "type": "boolean"
+        },
+        "kind": {
+          "const": "unknown",
+          "title": "Kind",
+          "type": "string"
+        },
+        "metadataIssues": {
+          "$ref": "#/$defs/MetadataIssues"
+        },
+        "readStatus": {
+          "enum": [
+            "no_contract",
+            "unavailable"
+          ],
+          "title": "Readstatus",
+          "type": "string"
+        },
+        "reason": {
+          "enum": [
+            "upstream_unavailable",
+            "rpc_error",
+            "network_unavailable",
+            "invalid_abi_response",
+            "invalid_rpc_envelope",
+            "missing_rpc_result",
+            "request_budget_exhausted",
+            "invalid_json",
+            "response_too_large",
+            "invalid_quantity",
+            "quantity_too_large",
+            "token_has_no_code",
+            "token_code_unavailable",
+            "invalid_token_decimals",
+            "invalid_symbol_text",
+            "provider_unavailable",
+            "provider_rate_limited",
+            "provider_capacity_busy",
+            "invalid_discovery_response",
+            "invalid_inventory_response",
+            "invalid_inventory_page",
+            "invalid_inventory_cursor",
+            "invalid_pool_key",
+            "invalid_tick_spacing",
+            "pool_id_mismatch",
+            "invalid_pool_state",
+            "fixed_fee_mismatch",
+            "provider_currency_mismatch",
+            "selected_token_mismatch",
+            "selected_pair_mismatch",
+            "catalogue_database_unavailable",
+            "catalogue_schema_mismatch",
+            "catalogue_currency_mismatch",
+            "read_deadline_exceeded"
+          ],
+          "title": "Reason",
+          "type": "string"
+        },
+        "symbol": {
+          "title": "Symbol",
+          "type": "null"
+        }
+      },
+      "required": [
+        "address",
+        "kind",
+        "decimals",
+        "symbol",
+        "readStatus",
+        "reason",
+        "metadataIssues",
+        "displayUnitsAvailable",
+        "executionAvailable"
+      ],
+      "title": "UnknownToken",
+      "type": "object"
+    }
+  },
+  "$id": "https://domino.invalid/contracts/read-v1/token.response.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "asset": {
+      "discriminator": {
+        "mapping": {
+          "erc20_candidate": "#/$defs/TokenMetadata",
+          "native": "#/$defs/TokenMetadata",
+          "unknown": "#/$defs/UnknownToken"
+        },
+        "propertyName": "kind"
+      },
+      "oneOf": [
+        {
+          "$ref": "#/$defs/TokenMetadata"
+        },
+        {
+          "$ref": "#/$defs/UnknownToken"
+        }
+      ],
+      "title": "Asset"
+    },
+    "chainId": {
+      "const": 4663,
+      "title": "Chainid",
+      "type": "integer"
+    },
+    "liveExecution": {
+      "const": false,
+      "title": "Liveexecution",
+      "type": "boolean"
+    },
+    "mode": {
+      "const": "public_token_read_only",
+      "title": "Mode",
+      "type": "string"
+    },
+    "schemaVersion": {
+      "const": 1,
+      "title": "Schemaversion",
+      "type": "integer"
+    },
+    "snapshot": {
+      "$ref": "#/$defs/Snapshot"
+    }
+  },
+  "required": [
+    "schemaVersion",
+    "mode",
+    "chainId",
+    "snapshot",
+    "asset",
+    "liveExecution"
+  ],
+  "title": "TokenResponse",
+  "type": "object",
+  "x-contract-version": "1.1.0-rc.2"
+}

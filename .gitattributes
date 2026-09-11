@@ -1,0 +1,8 @@
+# Keep generated contract artifacts available while focusing review on their source.
+backend/openapi-read.json linguist-generated=true
+api-contracts/read-v1/schemas/** linguist-generated=true
+api-contracts/read-v1/fixtures/** linguist-generated=true
+api-contracts/read-v1/manifest.json linguist-generated=true
+api-contracts/read-v1/types.ts linguist-generated=true
+api-contracts/read-v1/runtime.mjs linguist-generated=true
+api-contracts/read-v1/runtime.d.mts linguist-generated=true

@@ -1,0 +1,52 @@
+{
+  "balanceCoverage": "requested_and_page_addresses_only",
+  "chainId": 4663,
+  "inventory": {
+    "asOfBlock": null,
+    "coverage": "unknown",
+    "hasMore": null,
+    "nextCursor": null,
+    "source": null,
+    "status": "not_configured"
+  },
+  "items": [
+    {
+      "address": "0x0000000000000000000000000000000000000000",
+      "amountRaw": "0",
+      "balanceStatus": "read_at_block",
+      "decimals": 18,
+      "discoveredByProvider": false,
+      "displayUnitsAvailable": true,
+      "executionAvailable": false,
+      "kind": "native",
+      "metadataIssues": {},
+      "readStatus": "available",
+      "requestedByAddress": false,
+      "symbol": "ETH"
+    },
+    {
+      "address": "0x1111111111111111111111111111111111111111",
+      "amountRaw": "57896044618658097711785492504343953926634992332820282019728792003956564820091",
+      "balanceStatus": "read_at_block",
+      "decimals": 6,
+      "discoveredByProvider": false,
+      "displayUnitsAvailable": true,
+      "executionAvailable": false,
+      "kind": "erc20_candidate",
+      "metadataIssues": {},
+      "readStatus": "available",
+      "requestedByAddress": true,
+      "symbol": "TOKEN"
+    }
+  ],
+  "liveExecution": false,
+  "mode": "public_address_read_only",
+  "schemaVersion": 2,
+  "snapshot": {
+    "hash": "0xabababababababababababababababababababababababababababababababab",
+    "number": 700,
+    "timestamp": 1000
+  },
+  "unavailableAssets": [],
+  "walletControlVerified": false
+}

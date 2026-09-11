@@ -342,14 +342,18 @@ class ActivityPostgresTests(unittest.TestCase):
 
 class ActivityApiTests(unittest.TestCase):
     def setup_client(self,stored=None,rpc=None):
-        service=ReadService(catalogue=object(),rpc_factory=lambda:rpc or FakeRpc(),clock=lambda:1010)
+        from read_history_fixtures import HistoryRpc, HistoryDatabase
+        snapshot=HistoryDatabase().snapshot
+        service=ReadService(catalogue=object(),rpc_factory=lambda:rpc or HistoryRpc(snapshot),clock=lambda:87420)
         client=TestClient(create_app(service,gate=ReadGate(interval=0)),base_url='http://127.0.0.1')
         return client
 
     @staticmethod
-    def report(timestamp=1000,number=700):
-        return {'snapshot':{'number':number,'hash':BLOCK['hash'],'timestamp':timestamp},
-                'coverage':{},'window24h':{'completeWindow':True},'executionAvailable':False}
+    def report(timestamp=87410,number=700):
+        from read_history_fixtures import HistoryDatabase
+        report=PgActivity(HistoryDatabase()).read(POOL)
+        report['snapshot'].update(timestamp=timestamp,number=number)
+        return report
 
     def test_http_schema_and_canonical_freshness(self):
         client=self.setup_client()
@@ -364,13 +368,15 @@ class ActivityApiTests(unittest.TestCase):
             self.assertEqual(client.post('/v1/read/pool-activity',json=args).status_code,422)
 
     def test_stale_data_is_historical_not_current_24h(self):
-        class OldBlock(FakeRpc):
+        from read_history_fixtures import HistoryRpc, HistoryDatabase
+        class OldBlock(HistoryRpc):
+            def __init__(self): super().__init__(HistoryDatabase().snapshot)
             def request(self,method,params=()):
                 if method=='eth_getBlockByNumber' and params[0]=='0x2bb':
-                    return {'number':'0x2bb','hash':BLOCK['hash'],'timestamp':hex(800)}
+                    return {'number':'0x2bb','hash':BLOCK['hash'],'timestamp':hex(87200)}
                 return super().request(method,params)
         client=self.setup_client(rpc=OldBlock())
-        with patch('activity_store.PgActivity.read',return_value=self.report(timestamp=800,number=699)):
+        with patch('activity_store.PgActivity.read',return_value=self.report(timestamp=87200,number=699)):
             response=client.post('/v1/read/pool-activity',json={'poolId':POOL})
         self.assertEqual(response.status_code,200)
         self.assertEqual(response.json()['freshness']['status'],'stale')

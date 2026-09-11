@@ -1,0 +1,32 @@
+{
+  "$id": "https://domino.invalid/contracts/read-v1/pool-market.request.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "includePriceHistory": {
+      "default": false,
+      "title": "Includepricehistory",
+      "type": "boolean"
+    },
+    "poolId": {
+      "pattern": "^0x[0-9a-fA-F]{64}$",
+      "title": "Poolid",
+      "type": "string"
+    },
+    "priceToken": {
+      "default": "base",
+      "enum": [
+        "base",
+        "quote"
+      ],
+      "title": "Pricetoken",
+      "type": "string"
+    }
+  },
+  "required": [
+    "poolId"
+  ],
+  "title": "PoolMarketRequest",
+  "type": "object",
+  "x-contract-version": "1.1.0-rc.2"
+}

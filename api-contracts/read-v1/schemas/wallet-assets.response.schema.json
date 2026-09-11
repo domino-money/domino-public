@@ -1,0 +1,590 @@
+{
+  "$defs": {
+    "InventoryIdle": {
+      "additionalProperties": false,
+      "properties": {
+        "asOfBlock": {
+          "title": "Asofblock",
+          "type": "null"
+        },
+        "coverage": {
+          "const": "unknown",
+          "title": "Coverage",
+          "type": "string"
+        },
+        "hasMore": {
+          "title": "Hasmore",
+          "type": "null"
+        },
+        "nextCursor": {
+          "title": "Nextcursor",
+          "type": "null"
+        },
+        "source": {
+          "anyOf": [
+            {
+              "const": "alchemy",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Source"
+        },
+        "status": {
+          "enum": [
+            "not_configured",
+            "not_requested"
+          ],
+          "title": "Status",
+          "type": "string"
+        }
+      },
+      "required": [
+        "source",
+        "asOfBlock",
+        "status",
+        "coverage",
+        "hasMore",
+        "nextCursor"
+      ],
+      "title": "InventoryIdle",
+      "type": "object"
+    },
+    "InventoryPage": {
+      "additionalProperties": false,
+      "properties": {
+        "asOfBlock": {
+          "title": "Asofblock",
+          "type": "null"
+        },
+        "coverage": {
+          "const": "provider_page_only",
+          "title": "Coverage",
+          "type": "string"
+        },
+        "excludedRows": {
+          "maximum": 20,
+          "minimum": 0,
+          "title": "Excludedrows",
+          "type": "integer"
+        },
+        "hasMore": {
+          "title": "Hasmore",
+          "type": "boolean"
+        },
+        "nextCursor": {
+          "anyOf": [
+            {
+              "maxLength": 4096,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Nextcursor"
+        },
+        "retrievedAt": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "title": "Retrievedat",
+          "type": "integer"
+        },
+        "rowsReceived": {
+          "maximum": 20,
+          "minimum": 0,
+          "title": "Rowsreceived",
+          "type": "integer"
+        },
+        "source": {
+          "anyOf": [
+            {
+              "const": "alchemy",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Source"
+        },
+        "status": {
+          "const": "page_received",
+          "title": "Status",
+          "type": "string"
+        }
+      },
+      "required": [
+        "source",
+        "asOfBlock",
+        "status",
+        "coverage",
+        "hasMore",
+        "nextCursor",
+        "retrievedAt",
+        "rowsReceived",
+        "excludedRows"
+      ],
+      "title": "InventoryPage",
+      "type": "object"
+    },
+    "InventoryUnavailable": {
+      "additionalProperties": false,
+      "properties": {
+        "asOfBlock": {
+          "title": "Asofblock",
+          "type": "null"
+        },
+        "coverage": {
+          "const": "unknown",
+          "title": "Coverage",
+          "type": "string"
+        },
+        "hasMore": {
+          "title": "Hasmore",
+          "type": "null"
+        },
+        "nextCursor": {
+          "title": "Nextcursor",
+          "type": "null"
+        },
+        "reason": {
+          "enum": [
+            "upstream_unavailable",
+            "rpc_error",
+            "network_unavailable",
+            "invalid_abi_response",
+            "invalid_rpc_envelope",
+            "missing_rpc_result",
+            "request_budget_exhausted",
+            "invalid_json",
+            "response_too_large",
+            "invalid_quantity",
+            "quantity_too_large",
+            "token_has_no_code",
+            "token_code_unavailable",
+            "invalid_token_decimals",
+            "invalid_symbol_text",
+            "provider_unavailable",
+            "provider_rate_limited",
+            "provider_capacity_busy",
+            "invalid_discovery_response",
+            "invalid_inventory_response",
+            "invalid_inventory_page",
+            "invalid_inventory_cursor",
+            "invalid_pool_key",
+            "invalid_tick_spacing",
+            "pool_id_mismatch",
+            "invalid_pool_state",
+            "fixed_fee_mismatch",
+            "provider_currency_mismatch",
+            "selected_token_mismatch",
+            "selected_pair_mismatch",
+            "catalogue_database_unavailable",
+            "catalogue_schema_mismatch",
+            "catalogue_currency_mismatch",
+            "read_deadline_exceeded"
+          ],
+          "title": "Reason",
+          "type": "string"
+        },
+        "source": {
+          "anyOf": [
+            {
+              "const": "alchemy",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Source"
+        },
+        "status": {
+          "const": "unavailable",
+          "title": "Status",
+          "type": "string"
+        }
+      },
+      "required": [
+        "source",
+        "asOfBlock",
+        "status",
+        "coverage",
+        "hasMore",
+        "nextCursor",
+        "reason"
+      ],
+      "title": "InventoryUnavailable",
+      "type": "object"
+    },
+    "MetadataIssues": {
+      "additionalProperties": false,
+      "properties": {
+        "decimals": {
+          "enum": [
+            "upstream_unavailable",
+            "rpc_error",
+            "network_unavailable",
+            "invalid_abi_response",
+            "invalid_rpc_envelope",
+            "missing_rpc_result",
+            "request_budget_exhausted",
+            "invalid_json",
+            "response_too_large",
+            "invalid_quantity",
+            "quantity_too_large",
+            "token_has_no_code",
+            "token_code_unavailable",
+            "invalid_token_decimals",
+            "invalid_symbol_text",
+            "provider_unavailable",
+            "provider_rate_limited",
+            "provider_capacity_busy",
+            "invalid_discovery_response",
+            "invalid_inventory_response",
+            "invalid_inventory_page",
+            "invalid_inventory_cursor",
+            "invalid_pool_key",
+            "invalid_tick_spacing",
+            "pool_id_mismatch",
+            "invalid_pool_state",
+            "fixed_fee_mismatch",
+            "provider_currency_mismatch",
+            "selected_token_mismatch",
+            "selected_pair_mismatch",
+            "catalogue_database_unavailable",
+            "catalogue_schema_mismatch",
+            "catalogue_currency_mismatch",
+            "read_deadline_exceeded"
+          ],
+          "title": "Decimals",
+          "type": "string"
+        },
+        "symbol": {
+          "enum": [
+            "upstream_unavailable",
+            "rpc_error",
+            "network_unavailable",
+            "invalid_abi_response",
+            "invalid_rpc_envelope",
+            "missing_rpc_result",
+            "request_budget_exhausted",
+            "invalid_json",
+            "response_too_large",
+            "invalid_quantity",
+            "quantity_too_large",
+            "token_has_no_code",
+            "token_code_unavailable",
+            "invalid_token_decimals",
+            "invalid_symbol_text",
+            "provider_unavailable",
+            "provider_rate_limited",
+            "provider_capacity_busy",
+            "invalid_discovery_response",
+            "invalid_inventory_response",
+            "invalid_inventory_page",
+            "invalid_inventory_cursor",
+            "invalid_pool_key",
+            "invalid_tick_spacing",
+            "pool_id_mismatch",
+            "invalid_pool_state",
+            "fixed_fee_mismatch",
+            "provider_currency_mismatch",
+            "selected_token_mismatch",
+            "selected_pair_mismatch",
+            "catalogue_database_unavailable",
+            "catalogue_schema_mismatch",
+            "catalogue_currency_mismatch",
+            "read_deadline_exceeded"
+          ],
+          "title": "Symbol",
+          "type": "string"
+        }
+      },
+      "title": "MetadataIssues",
+      "type": "object"
+    },
+    "Raw": {
+      "maxLength": 78,
+      "pattern": "^(?:0|[1-9][0-9]{0,76}|10[0-9]{76}|11[0-4][0-9]{75}|115[0-6][0-9]{74}|1157[0-8][0-9]{73}|11579[0-1][0-9]{72}|1157920[0-7][0-9]{70}|11579208[0-8][0-9]{69}|115792089[0-1][0-9]{68}|1157920892[0-2][0-9]{67}|11579208923[0-6][0-9]{66}|115792089237[0-2][0-9]{65}|11579208923730[0-9]{64}|11579208923731[0-5][0-9]{63}|1157920892373160[0-9]{62}|1157920892373161[0-8][0-9]{61}|11579208923731619[0-4][0-9]{60}|115792089237316195[0-3][0-9]{59}|1157920892373161954[0-1][0-9]{58}|11579208923731619542[0-2][0-9]{57}|115792089237316195423[0-4][0-9]{56}|1157920892373161954235[0-6][0-9]{55}|115792089237316195423570[0-8][0-9]{53}|1157920892373161954235709[0-7][0-9]{52}|11579208923731619542357098[0-4][0-9]{51}|11579208923731619542357098500[0-7][0-9]{48}|115792089237316195423570985008[0-5][0-9]{47}|1157920892373161954235709850086[0-7][0-9]{46}|11579208923731619542357098500868[0-6][0-9]{45}|115792089237316195423570985008687[0-8][0-9]{44}|11579208923731619542357098500868790[0-6][0-9]{42}|115792089237316195423570985008687907[0-7][0-9]{41}|1157920892373161954235709850086879078[0-4][0-9]{40}|11579208923731619542357098500868790785[0-2][0-9]{39}|115792089237316195423570985008687907853[0-1][0-9]{38}|1157920892373161954235709850086879078532[0-5][0-9]{37}|11579208923731619542357098500868790785326[0-8][0-9]{36}|115792089237316195423570985008687907853269[0-8][0-9]{35}|1157920892373161954235709850086879078532699[0-7][0-9]{34}|11579208923731619542357098500868790785326998[0-3][0-9]{33}|115792089237316195423570985008687907853269984[0-5][0-9]{32}|1157920892373161954235709850086879078532699846[0-5][0-9]{31}|11579208923731619542357098500868790785326998466[0-4][0-9]{30}|115792089237316195423570985008687907853269984665[0-5][0-9]{29}|1157920892373161954235709850086879078532699846656[0-3][0-9]{28}|115792089237316195423570985008687907853269984665640[0-4][0-9]{26}|1157920892373161954235709850086879078532699846656405[0-5][0-9]{25}|11579208923731619542357098500868790785326998466564056[0-3][0-9]{24}|1157920892373161954235709850086879078532699846656405640[0-2][0-9]{22}|11579208923731619542357098500868790785326998466564056403[0-8][0-9]{21}|115792089237316195423570985008687907853269984665640564039[0-3][0-9]{20}|1157920892373161954235709850086879078532699846656405640394[0-4][0-9]{19}|11579208923731619542357098500868790785326998466564056403945[0-6][0-9]{18}|115792089237316195423570985008687907853269984665640564039457[0-4][0-9]{17}|1157920892373161954235709850086879078532699846656405640394575[0-7][0-9]{16}|11579208923731619542357098500868790785326998466564056403945758[0-3][0-9]{15}|11579208923731619542357098500868790785326998466564056403945758400[0-6][0-9]{12}|115792089237316195423570985008687907853269984665640564039457584007[0-8][0-9]{11}|11579208923731619542357098500868790785326998466564056403945758400790[0-9]{10}|11579208923731619542357098500868790785326998466564056403945758400791[0-2][0-9]{9}|1157920892373161954235709850086879078532699846656405640394575840079130[0-9]{8}|1157920892373161954235709850086879078532699846656405640394575840079131[0-1][0-9]{7}|11579208923731619542357098500868790785326998466564056403945758400791312[0-8][0-9]{6}|115792089237316195423570985008687907853269984665640564039457584007913129[0-5][0-9]{5}|1157920892373161954235709850086879078532699846656405640394575840079131296[0-2][0-9]{4}|11579208923731619542357098500868790785326998466564056403945758400791312963[0-8][0-9]{3}|115792089237316195423570985008687907853269984665640564039457584007913129639[0-8][0-9]{2}|1157920892373161954235709850086879078532699846656405640394575840079131296399[0-2][0-9]{1}|11579208923731619542357098500868790785326998466564056403945758400791312963993[0-4][0-9]{0}|115792089237316195423570985008687907853269984665640564039457584007913129639935)$",
+      "type": "string"
+    },
+    "Snapshot": {
+      "additionalProperties": false,
+      "properties": {
+        "hash": {
+          "pattern": "^0x[0-9a-f]{64}$",
+          "title": "Hash",
+          "type": "string"
+        },
+        "number": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "title": "Number",
+          "type": "integer"
+        },
+        "timestamp": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "title": "Timestamp",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "number",
+        "hash",
+        "timestamp"
+      ],
+      "title": "Snapshot",
+      "type": "object"
+    },
+    "UnavailableAsset": {
+      "additionalProperties": false,
+      "properties": {
+        "currency": {
+          "pattern": "^0x[0-9a-f]{40}$",
+          "title": "Currency",
+          "type": "string"
+        },
+        "reason": {
+          "enum": [
+            "upstream_unavailable",
+            "rpc_error",
+            "network_unavailable",
+            "invalid_abi_response",
+            "invalid_rpc_envelope",
+            "missing_rpc_result",
+            "request_budget_exhausted",
+            "invalid_json",
+            "response_too_large",
+            "invalid_quantity",
+            "quantity_too_large",
+            "token_has_no_code",
+            "token_code_unavailable",
+            "invalid_token_decimals",
+            "invalid_symbol_text",
+            "provider_unavailable",
+            "provider_rate_limited",
+            "provider_capacity_busy",
+            "invalid_discovery_response",
+            "invalid_inventory_response",
+            "invalid_inventory_page",
+            "invalid_inventory_cursor",
+            "invalid_pool_key",
+            "invalid_tick_spacing",
+            "pool_id_mismatch",
+            "invalid_pool_state",
+            "fixed_fee_mismatch",
+            "provider_currency_mismatch",
+            "selected_token_mismatch",
+            "selected_pair_mismatch",
+            "catalogue_database_unavailable",
+            "catalogue_schema_mismatch",
+            "catalogue_currency_mismatch",
+            "read_deadline_exceeded"
+          ],
+          "title": "Reason",
+          "type": "string"
+        }
+      },
+      "required": [
+        "currency",
+        "reason"
+      ],
+      "title": "UnavailableAsset",
+      "type": "object"
+    },
+    "WalletItem": {
+      "additionalProperties": false,
+      "properties": {
+        "address": {
+          "pattern": "^0x[0-9a-f]{40}$",
+          "title": "Address",
+          "type": "string"
+        },
+        "amountRaw": {
+          "$ref": "#/$defs/Raw"
+        },
+        "balanceStatus": {
+          "const": "read_at_block",
+          "title": "Balancestatus",
+          "type": "string"
+        },
+        "decimals": {
+          "anyOf": [
+            {
+              "maximum": 255,
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Decimals"
+        },
+        "discoveredByProvider": {
+          "title": "Discoveredbyprovider",
+          "type": "boolean"
+        },
+        "displayUnitsAvailable": {
+          "title": "Displayunitsavailable",
+          "type": "boolean"
+        },
+        "executionAvailable": {
+          "const": false,
+          "title": "Executionavailable",
+          "type": "boolean"
+        },
+        "kind": {
+          "enum": [
+            "native",
+            "erc20_candidate"
+          ],
+          "title": "Kind",
+          "type": "string"
+        },
+        "metadataIssues": {
+          "$ref": "#/$defs/MetadataIssues"
+        },
+        "readStatus": {
+          "enum": [
+            "available",
+            "partial"
+          ],
+          "title": "Readstatus",
+          "type": "string"
+        },
+        "requestedByAddress": {
+          "title": "Requestedbyaddress",
+          "type": "boolean"
+        },
+        "symbol": {
+          "anyOf": [
+            {
+              "maxLength": 40,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Symbol"
+        }
+      },
+      "required": [
+        "address",
+        "kind",
+        "decimals",
+        "symbol",
+        "readStatus",
+        "metadataIssues",
+        "displayUnitsAvailable",
+        "executionAvailable",
+        "amountRaw",
+        "balanceStatus",
+        "requestedByAddress",
+        "discoveredByProvider"
+      ],
+      "title": "WalletItem",
+      "type": "object"
+    }
+  },
+  "$id": "https://domino.invalid/contracts/read-v1/wallet-assets.response.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "balanceCoverage": {
+      "const": "requested_and_page_addresses_only",
+      "title": "Balancecoverage",
+      "type": "string"
+    },
+    "chainId": {
+      "const": 4663,
+      "title": "Chainid",
+      "type": "integer"
+    },
+    "inventory": {
+      "discriminator": {
+        "mapping": {
+          "not_configured": "#/$defs/InventoryIdle",
+          "not_requested": "#/$defs/InventoryIdle",
+          "page_received": "#/$defs/InventoryPage",
+          "unavailable": "#/$defs/InventoryUnavailable"
+        },
+        "propertyName": "status"
+      },
+      "oneOf": [
+        {
+          "$ref": "#/$defs/InventoryIdle"
+        },
+        {
+          "$ref": "#/$defs/InventoryUnavailable"
+        },
+        {
+          "$ref": "#/$defs/InventoryPage"
+        }
+      ],
+      "title": "Inventory"
+    },
+    "items": {
+      "items": {
+        "$ref": "#/$defs/WalletItem"
+      },
+      "maxItems": 31,
+      "title": "Items",
+      "type": "array"
+    },
+    "liveExecution": {
+      "const": false,
+      "title": "Liveexecution",
+      "type": "boolean"
+    },
+    "mode": {
+      "const": "public_address_read_only",
+      "title": "Mode",
+      "type": "string"
+    },
+    "schemaVersion": {
+      "const": 2,
+      "title": "Schemaversion",
+      "type": "integer"
+    },
+    "snapshot": {
+      "$ref": "#/$defs/Snapshot"
+    },
+    "unavailableAssets": {
+      "items": {
+        "$ref": "#/$defs/UnavailableAsset"
+      },
+      "maxItems": 31,
+      "title": "Unavailableassets",
+      "type": "array"
+    },
+    "walletControlVerified": {
+      "const": false,
+      "title": "Walletcontrolverified",
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "schemaVersion",
+    "mode",
+    "chainId",
+    "snapshot",
+    "items",
+    "unavailableAssets",
+    "balanceCoverage",
+    "inventory",
+    "walletControlVerified",
+    "liveExecution"
+  ],
+  "title": "WalletAssetsResponse",
+  "type": "object",
+  "x-contract-version": "1.1.0-rc.2"
+}

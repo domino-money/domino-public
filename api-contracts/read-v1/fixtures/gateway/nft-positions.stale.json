@@ -1,0 +1,59 @@
+{
+  "chainId": 4663,
+  "executionAvailable": false,
+  "freshness": {
+    "ageSeconds": 210,
+    "status": "stale"
+  },
+  "items": [
+    {
+      "amountScope": "current_core_principal_and_unsettled_fees_only",
+      "coreOwner": "0x58daec3116aae6d93017baaea7749052e8a04fa7",
+      "corePositionId": "0x74ee6a665cbe57b9a73f023639a8c7ccf7556aca6135c423f78bbe632f213c97",
+      "executionAvailable": false,
+      "hasLiquidity": true,
+      "inRange": true,
+      "isWithdrawalQuote": false,
+      "liquidityRaw": "1000000",
+      "nftOwnershipResolved": true,
+      "owner": "0x3333333333333333333333333333333333333333",
+      "ownershipBasis": "ownerOf_at_pinned_block",
+      "pastSettledFeesAttributedToCurrentOwner": false,
+      "poolId": "0x0911afcb281d7bcae2d71443ceaeebd0f89b4537708449970d797622b4b4c941",
+      "poolKey": {
+        "currency0": "0x0000000000000000000000000000000000000000",
+        "currency1": "0x1111111111111111111111111111111111111111",
+        "feeMode": "fixed",
+        "fee_pips": 3000,
+        "hooks": "0x0000000000000000000000000000000000000000",
+        "tick_spacing": 60
+      },
+      "positionManager": "0x58daec3116aae6d93017baaea7749052e8a04fa7",
+      "principalRaw": [
+        "2995",
+        "2995"
+      ],
+      "salt": "0x0000000000000000000000000000000000000000000000000000000000000001",
+      "status": "owner_verified_at_snapshot",
+      "tickLower": -60,
+      "tickUpper": 60,
+      "tokenCompatibilityQualified": false,
+      "tokenId": "1",
+      "unsettledFeesRaw": [
+        "500000",
+        "0"
+      ],
+      "walletControlVerified": false
+    }
+  ],
+  "mode": "public_nft_positions_read_only",
+  "ownershipScope": "owner_at_snapshot",
+  "requestedIdsOnly": true,
+  "schemaVersion": 1,
+  "snapshot": {
+    "hash": "0x000000000000000000000000000000000000000000000000000000000000028a",
+    "number": 650,
+    "timestamp": 800
+  },
+  "walletControlVerified": false
+}
