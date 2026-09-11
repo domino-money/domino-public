@@ -194,6 +194,22 @@ test('every route in the header renders', async () => {
   }
 });
 
+test('every form field on every route can be identified by the browser', async () => {
+  // Chrome flags fields with neither an id nor a name: autofill and
+  // password managers cannot tell them apart.
+  for (const route of ['/', '/app', '/settings']) {
+    const page = await open(route);
+    const anonymous = await page.evaluate(() =>
+      Array.from(document.querySelectorAll('input, select, textarea'))
+        .filter((el) => !el.id && !el.getAttribute('name'))
+        .map((el) => el.outerHTML.slice(0, 120)),
+    );
+    assert.deepEqual(anonymous, [], `route ${route} has form fields without an id or name`);
+    clean(`form fields on ${route}`);
+    await page.close();
+  }
+});
+
 test('no dollar figure is shown without the placeholder notice beside it', async () => {
   const page = await open('/');
   const text = await page.locator('#root').innerText();

@@ -10,7 +10,7 @@ import { beforeEach, test } from 'node:test';
 
 const require = createRequire(import.meta.url);
 const gate = require('../.test-build/app/functions/_lib/gate.js');
-const { onRequest, APP_CSP, LOGIN_PATH, LOGOUT_PATH } = require('../.test-build/app/functions/_middleware.js');
+const { onRequest, APP_CSP, LOGIN_PATH, LOGOUT_PATH, PERMISSIONS_POLICY } = require('../.test-build/app/functions/_middleware.js');
 
 const PASSWORD = 'correct-horse-battery-staple-42';
 const KEY = 'q3VfK9mJx7Rt2WbN5cYp8LhD4sGa6ZeU1oTiQwErTyA';
@@ -201,6 +201,29 @@ test('with a valid cookie the app is served, with the security headers', async (
   assert.equal(response.headers.get('X-Frame-Options'), 'DENY');
   assert.equal(response.headers.get('X-Robots-Tag'), 'noindex, nofollow');
   assert.match(response.headers.get('Vary'), /Cookie/);
+  assert.equal(response.headers.get('Permissions-Policy'), PERMISSIONS_POLICY);
+  assert.equal(response.headers.get('Cross-Origin-Opener-Policy'), 'same-origin-allow-popups');
+  assert.equal(response.headers.get('Cross-Origin-Resource-Policy'), 'same-origin');
+});
+
+test('the access page and refusals carry the same isolation headers as the app', async () => {
+  for (const request of [navigate('/'), fetchLike('/assets/index.js')]) {
+    const response = await run(request);
+    assert.equal(response.status, 401);
+    assert.equal(response.headers.get('Permissions-Policy'), PERMISSIONS_POLICY);
+    assert.equal(response.headers.get('Cross-Origin-Opener-Policy'), 'same-origin-allow-popups');
+    assert.equal(response.headers.get('Cross-Origin-Resource-Policy'), 'same-origin');
+    assert.equal(response.headers.get('X-Frame-Options'), 'DENY');
+  }
+});
+
+test('the permissions policy switches off sensors and payments but leaves hardware-wallet paths alone', () => {
+  for (const feature of ['camera', 'microphone', 'geolocation', 'payment']) {
+    assert.match(PERMISSIONS_POLICY, new RegExp(`(^|, )${feature}=\\(\\)`), `${feature} is not switched off`);
+  }
+  for (const feature of ['usb', 'hid', 'serial', 'bluetooth']) {
+    assert.doesNotMatch(PERMISSIONS_POLICY, new RegExp(`(^|, )${feature}=`), `${feature} would block hardware wallets`);
+  }
 });
 
 test('hashed assets stay cacheable, but only in the browser that authenticated', async () => {

@@ -39,6 +39,8 @@ export function HeroWidget() {
         <div className="mt-2 flex items-baseline gap-2">
           <span className="font-mono text-[28px] text-fg-subtle">$</span>
           <input
+            id="hero-amount"
+            name="amount"
             aria-label="Total starting value in USD"
             inputMode="decimal"
             value={amount}

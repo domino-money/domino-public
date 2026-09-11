@@ -54,12 +54,37 @@ export const APP_CSP = [
   "form-action 'self'",
 ].join('; ')
 
+/**
+ * Browser capabilities the site never uses, switched off so nothing injected
+ * into a page can reach them. USB, HID, serial and Bluetooth are deliberately
+ * left alone: hardware wallets reach the browser through them, and the wallet
+ * connection will need them when it exists.
+ */
+export const PERMISSIONS_POLICY = [
+  'accelerometer=()',
+  'browsing-topics=()',
+  'camera=()',
+  'display-capture=()',
+  'geolocation=()',
+  'gyroscope=()',
+  'magnetometer=()',
+  'microphone=()',
+  'midi=()',
+  'payment=()',
+].join(', ')
+
 const BASE_HEADERS: Record<string, string> = {
   'Strict-Transport-Security': 'max-age=31536000',
   'X-Content-Type-Options': 'nosniff',
   'Referrer-Policy': 'strict-origin-when-cross-origin',
   'X-Frame-Options': 'DENY',
   'X-Robots-Tag': 'noindex, nofollow',
+  'Permissions-Policy': PERMISSIONS_POLICY,
+  // Severs any cross-origin page that opens this one, while still letting a
+  // future wallet popup opened *by* this page talk back to it.
+  'Cross-Origin-Opener-Policy': 'same-origin-allow-popups',
+  // Our responses may only be loaded by our own pages.
+  'Cross-Origin-Resource-Policy': 'same-origin',
 }
 
 function page(state: PageState, status: number): Response {
