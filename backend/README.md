@@ -71,6 +71,14 @@ This does not populate the production qualification registry or enable public
 TVL/APR, signing or execution. The [VFAT MCP assessment](../reports/VFAT_MCP_ASSESSMENT.md)
 records another tested discovery/comparison candidate and its coverage limits.
 
+The legacy `qualify_chainlink.py --store-observations` command requires successful
+reference validation for both currencies and rechecks every captured proof header
+inside the atomic write gate. Failed validation saves neither currency; original
+reasons and old rows remain intact. The report exposes `storage.status`, and a
+failed requested save exits nonzero. [Legacy storage and recovery](../reports/LEGACY_CHAINLINK_STORAGE.md)
+documents the evidence needed for older rows, retention of idempotent provenance
+and the distinction from #52's sliced-checkpoint quarantine.
+
 Issue #23 adds [full-day capacity and resumable acquisition](../reports/PRICE_WINDOW_CAPACITY.md).
 The generic engine supports 1,446 exact observations per asset/source window,
 including a 300-second lookback. Chainlink acquisition still uses at most 64

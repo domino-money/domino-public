@@ -40,35 +40,77 @@ def qualify(pool_id, hours=24, *, persist=False, provider_config=None):
         started = time.monotonic()
         price_rpc = ReadRpc(url, transport=bounded_transport(480), max_requests=1600)
         result = {'currency': currency, 'status': 'unavailable'}
+        guards = []
+        bundle = None
         try:
             bundle = ChainlinkHistorical(price_rpc, deadline_seconds=360).fetch(
                 currency, start, end, block_number=snapshot.number)
             result['history'] = bundle
-            _, evidence = reference_series(bundle, pool_id, price_rpc, pool_key=pool['poolKey'])
+            if (not isinstance(bundle, dict) or bundle.get('snapshot') != asdict(snapshot)
+                    or not isinstance(bundle.get('coverage'), dict)
+                    or bundle['coverage'].get('startTimestamp') != start
+                    or bundle['coverage'].get('endTimestamp') != end
+                    or not isinstance(bundle.get('feed'), dict)
+                    or bundle['feed'].get('currency') != currency):
+                raise DataError('chainlink_probe_context_mismatch')
+            _, evidence = reference_series(bundle, pool_id, price_rpc,
+                pool_key=pool['poolKey'], on_verified=guards.append if persist else None)
             result.update(status='reference_analytics_only', reference=evidence)
         except DataError as error:
             result['reason'] = str(error)
         result.update(rpcRequests=price_rpc.count, durationSeconds=round(time.monotonic()-started, 3))
         print(json.dumps({k: result[k] for k in ('currency', 'status', 'rpcRequests', 'durationSeconds')}
                          | ({'reason': result['reason']} if 'reason' in result else {})), flush=True)
-        return result
+        # Guards contain private RPC clients and never enter the JSON report.
+        return result, guards, price_rpc, started, bundle
 
     with ThreadPoolExecutor(max_workers=2) as workers:
-        cases = list(workers.map(probe, pool['currencies']))
-    # Historical metadata remains pinned; do not require the old snapshot to be
-    # fresh after a long bounded archive probe, but recheck its canonical hash.
-    final_rpc = ReadRpc(url, transport=bounded_transport(15), max_requests=3)
-    if parse_block(final_rpc.request('eth_getBlockByNumber', [snapshot.tag, False])) != snapshot:
-        raise DataError('snapshot_reorganized')
+        probes = list(workers.map(probe, pool['currencies']))
+    cases = [item[0] for item in probes]
+    storage = {'requested': persist, 'status': 'not_requested', 'reason': None}
     for case in cases:
         case['observationsSaved'] = False
-        if catalogue is not None and 'history' in case:
-            store_observations(catalogue, case['history']['observations'])
-            case['observationsSaved'] = True
+    complete = all(case['status'] == 'reference_analytics_only' for case in cases)
+    if not complete and persist:
+        storage.update(status='blocked', reason='reference_validation_failed')
+    if complete:
+        try:
+            # Keep the original probe error when validation already failed.
+            # Otherwise recheck discovery's pinned snapshot before any storage.
+            final_rpc = ReadRpc(url, transport=bounded_transport(15), max_requests=3)
+            if parse_block(final_rpc.request('eth_getBlockByNumber', [snapshot.tag, False])) != snapshot:
+                raise DataError('snapshot_reorganized')
+            if catalogue is not None:
+                if any(len(guards) != 1 for _, guards, _, _, _ in probes):
+                    raise DataError('chainlink_storage_validation_missing')
+
+                def before_commit():
+                    for case, guards, _, _, _ in probes:
+                        try:
+                            guards[0]()
+                        except DataError as error:
+                            case.update(status='unavailable', reason=str(error))
+                            raise
+
+                # Both currencies share one transaction, including idempotent
+                # retries. A failed second guard rolls back every new row.
+                rows = [row for _, _, _, _, bundle in probes for row in bundle['observations']]
+                store_observations(catalogue, rows, before_commit=before_commit)
+                for case in cases:
+                    case['observationsSaved'] = True
+                storage.update(status='saved')
+        except DataError as error:
+            storage.update(status='failed' if persist else 'not_requested', reason=str(error))
+            if catalogue is None or str(error) == 'snapshot_reorganized':
+                for case in cases:
+                    case.update(status='unavailable', reason=str(error))
+    for case, _, price_rpc, started, _ in probes:
+        case.update(rpcRequests=price_rpc.count, durationSeconds=round(time.monotonic()-started, 3))
     return {'schemaVersion': 1, 'mode': 'bounded_chainlink_reference_qualification',
         'poolId': pool_id, 'poolKey': pool['poolKey'], 'poolIdentityStatus': pool['identityStatus'],
         'snapshot': asdict(snapshot), 'startTimestamp': start, 'endTimestamp': end,
-        'cases': cases, 'referenceCoverageComplete': all(c['status'] == 'reference_analytics_only' for c in cases),
+        'cases': cases, 'storage': storage,
+        'referenceCoverageComplete': all(c['status'] == 'reference_analytics_only' for c in cases),
         'capitalHistoryAssessed': False, 'tvlUsd': None, 'feeApr24h': None,
         'productionQualified': False, 'executionAvailable': False,
         'transport': 'configured_alchemy_rpc' if provider_config is not None else 'public_robinhood_rpc',
@@ -92,7 +134,8 @@ def main():
         args.output.parent.mkdir(parents=True, exist_ok=True)
         with args.output.open('x') as stream:
             json.dump(result, stream, indent=2);stream.write('\n')
-        return 0 if result['referenceCoverageComplete'] else 1
+        return 0 if (result['referenceCoverageComplete'] and
+                     (not args.store_observations or result['storage']['status'] == 'saved')) else 1
     except DataError as error:
         print(json.dumps({'status': 'chainlink_qualification_failed', 'reason': str(error)}));return 1
     except (OSError, KeyError, TypeError, ValueError):

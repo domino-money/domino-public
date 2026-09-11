@@ -78,11 +78,18 @@ backend/.venv/bin/python backend/qualify_chainlink.py \
 Omit `--provider-config` to try the public RPC. Omit `--store-observations` for
 report-only operation. Existing output files are never overwritten. Each of two
 independent currency probes allows at most 1,600 requests, 360 seconds for archive
-discovery and 480 seconds including proof revalidation. These are CLI ceilings,
+discovery and 480 seconds including proof and commit revalidation. These are CLI ceilings,
 not scheduled polling intervals. No wallet, signer,
 background schedule, provider URL in the report or automatic retry is involved.
 The CLI verifies a real pool identity but deliberately reports TVL/APR as null:
 price evidence alone is not reconciled capital history.
+
+Storage requires both bundles to pass complete reference validation and a second
+check of all captured proof headers inside one atomic write transaction. Any
+failed probe blocks the entire two-currency save; `storage.status` and the CLI exit
+code distinguish that from a completed save. Idempotent retries also revalidate.
+See [legacy storage and evidence recovery](LEGACY_CHAINLINK_STORAGE.md) for the
+commit conditions, bounded writer-lock cost and handling of older stored rows.
 
 This original probe and `reference_series()` accept at most **64 rounds per
 currency bundle**. That limit can cover a full day of a slow heartbeat feed under
@@ -116,8 +123,11 @@ The [public-RPC attempt](chainlink-history-probe-2026-09-09.json) failed on both
 currencies after 37 calls. A separate diagnostic identified an archive-state
 metadata error at block 58,815,849; the configured Alchemy endpoint successfully
 read that same block with EIP-1898. The [earlier capped Alchemy attempt](chainlink-alchemy-history-probe-2026-09-09.json)
-completed USDG but exhausted the 180-second ETH discovery limit. The final CLI
-uses the explicit ceilings above and preserves completed evidence.
+completed and stored USDG but exhausted the 180-second ETH discovery limit. These
+reports predate #60's atomic two-currency storage guard; they remain historical
+evidence of that earlier behavior. The current CLI uses the explicit ceilings
+above and preserves diagnostic evidence while saving neither currency if either
+reference validation fails.
 
 This is a cold historical qualification workload, not an acceptable synchronous
 public request or an execution price check. Incremental ingestion and reuse of

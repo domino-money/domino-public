@@ -5,6 +5,7 @@ Publication controls availability; answerUpdatedAt controls expiry. A reference
 is usable only inside its revalidated evidence window, including its snapshot.
 """
 from bisect import bisect_right
+from copy import deepcopy
 from dataclasses import dataclass
 from fractions import Fraction
 import hashlib
@@ -116,13 +117,17 @@ class _ReferenceSeries(PriceSeries):
         return {t for t in (*self.times, *self.expires) if start < t < end}
 
 
-def reference_series(bundle, target_pool, rpc, *, pool_key):
+def reference_series(bundle, target_pool, rpc, *, pool_key, on_verified=None):
     """Revalidate stored/fresh proofs before constructing an offline-only series.
 
     No HTTP route calls this factory and it never changes the production registry.
     Existing proofs cannot be made current by modifying retrieval timestamps.
+    An optional callback receives a no-argument storage guard only after every
+    reference check passes. Run that guard inside the locked write transaction;
+    it binds the original bundle and every proven header, including end+1.
     """
-    return _reference_series(bundle, target_pool, rpc, pool_key=pool_key, max_observations=MAX_ROUNDS)
+    return _reference_series(bundle, target_pool, rpc, pool_key=pool_key,
+                             max_observations=MAX_ROUNDS, on_verified=on_verified)
 
 
 def reference_series_from_slices(collection, target_pool, rpc, *, pool_key):
@@ -163,12 +168,16 @@ def reference_series_from_slices(collection, target_pool, rpc, *, pool_key):
     return series, evidence
 
 
-def _reference_series(bundle, target_pool, rpc, *, pool_key, max_observations, evidence_document=None):
+def _reference_series(bundle, target_pool, rpc, *, pool_key, max_observations,
+                      evidence_document=None, on_verified=None):
     target_pool = bytes32(target_pool)
     key = checked_key(pool_key, target_pool)
     currencies = (key.currency0, key.currency1)
     if not isinstance(bundle, dict):
         raise DataError('invalid_chainlink_reference_bundle')
+    source_bundle = bundle
+    if on_verified is not None:
+        bundle = deepcopy(bundle)
     rows = bundle.get('observations')
     if not isinstance(rows, list) or not 1 <= len(rows) <= max_observations:
         raise DataError('invalid_chainlink_reference_bundle')
@@ -258,6 +267,30 @@ def _reference_series(bundle, target_pool, rpc, *, pool_key, max_observations, e
     qualification = _ReferenceQualification(currency, DECIMALS[currency], target_pool, digest, start, end, currencies)
     series = _ReferenceSeries(qualification, ordered)
     series.require_coverage(start, end)
+    if on_verified is not None:
+        # The callback never recaptures an expected hash from a later RPC. In
+        # particular, the end-boundary successor is part of this frozen proof.
+        verified_blocks = tuple(blocks.values())
+
+        def storage_guard():
+            def unchanged():
+                try:
+                    actual = hashlib.sha256(json.dumps(source_bundle, sort_keys=True,
+                        separators=(',', ':'), allow_nan=False).encode()).hexdigest()
+                except (TypeError, ValueError, RecursionError):
+                    raise DataError('chainlink_reference_bundle_changed') from None
+                if actual != digest:
+                    raise DataError('chainlink_reference_bundle_changed')
+            unchanged()
+            if quantity(rpc.request('eth_chainId')) != CHAIN_ID:
+                raise DataError('wrong_chain')
+            for number, expected_hash, timestamp in (*verified_blocks, snapshot):
+                actual = parse_block(rpc.request('eth_getBlockByNumber', [hex(number), False]))
+                if (actual.number, actual.hash, actual.timestamp) != (number, expected_hash, timestamp):
+                    raise DataError('chainlink_snapshot_reorganized')
+            unchanged()
+
+        on_verified(storage_guard)
     return series, {'policy': POLICY, 'status': 'reference_analytics_only', 'evidenceSha256': digest,
         'currency': currency, 'targetPool': target_pool, 'poolKey': pool_key,
         'startTimestamp': start, 'endTimestamp': end,
