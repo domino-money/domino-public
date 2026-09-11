@@ -1,0 +1,97 @@
+# Read-only staging role verification
+
+`scripts/staging/check_roles.py` checks the PostgreSQL foundation after the
+reviewed application migrations 001–014 have been applied. It does not provision
+roles, run migrations, grant a wallet, change configuration, or start services.
+Run it as root **on the target VM**, against its existing private Unix socket:
+
+```sh
+sudo python3.14 scripts/staging/check_roles.py
+```
+
+Defaults are `/run/postgresql-domino`, port `8877`, database
+`domino_catalogue`. Only the socket and port can be selected explicitly:
+
+```sh
+sudo python3.14 scripts/staging/check_roles.py --socket /run/postgresql-domino --port 8877
+```
+
+The script requires `/usr/sbin/runuser`, `/usr/bin/env`, `/usr/bin/id`,
+`/usr/bin/python3` and `/usr/bin/psql`, and the nine distinct, non-root OS identities below. Missing
+identities or dependencies fail the check; they are never created automatically.
+
+| OS identity | Permitted PostgreSQL identity |
+| --- | --- |
+| `domino-admin` | `domino_catalogue_admin` |
+| `domino-read` | `domino_catalogue_reader` |
+| `domino-write` | `domino_catalogue_writer` |
+| `domino-auth` | `domino_session_auth` |
+| `domino-onboarding` | `domino_session_auth` |
+| `domino-deposit` | `domino_session_auth` and `domino_deposit_service` |
+| `domino-operator` | `domino_wallet_access_operator` |
+| `domino-gateway` | No socket directory access; none of the six application roles |
+| `domino-tunnel` | No socket directory access; none of the six application roles |
+
+It verifies the effective UID via `runuser`, then tests all **54** pairs in
+this matrix. A positive connection must report the exact session/current SQL
+user, database and read-only transaction mode. For users with socket access, a
+denied pair passes only on an explicit peer/HBA rejection. Gateway/tunnel use
+the earlier filesystem boundary: the canonical socket directory must be owned
+by postgres:domino-db with mode0750 and the actual socket with mode0770. A child
+under each effective UID checks its effective/supplementary socket-group
+membership and the kernel's directory-traversal decision, including ACLs. Both
+must deny gateway/tunnel and permit the other service identities.
+
+Only after those checks can gateway/tunnel pass on libpq's exact `Permission
+denied` error naming the selected socket file. This result is separately named
+`socket_denied`; it does not claim HBA was reached. The 12 filesystem-denied
+pairs remain in the 54-pair matrix. Generic permission errors, another socket
+path, missing socket, missing database/role, timeout,
+password authentication, missing OS user and arbitrary command failures cannot
+masquerade as successful isolation. Environment credentials and `psqlrc` are
+excluded; `PGPASSFILE=/dev/null` also disables per-user password files (libpq may
+emit a harmless non-regular-password-file warning that is not printed), and
+`psql -X --no-password` cannot prompt for a password.
+
+The six SQL roles must be LOGIN, NOINHERIT, NOSUPERUSER, NOCREATEDB,
+NOCREATEROLE, NOREPLICATION and NOBYPASSRLS, with no memberships in either
+direction. The expected database, five schemas, 24 tables, admission audit
+sequence and six functions must have the trusted DDL owner
+`domino_catalogue_admin`. Unexpected/missing objects fail the inventory check.
+Function security-definer flags and fixed search paths are checked. Only
+`domino_deposits.intents` uses FORCE RLS in the deposit schema; its owner and
+maintenance policies must match migrations 009/010/014, including maintenance
+UPDATE visibility with `WITH CHECK (false)`.
+
+Effective schema/table/function/sequence privileges and runtime grant options
+are checked against the source's role matrix. In particular, the public reader
+and writer cannot access sessions, admission or deposits; auth cannot grant
+wallet access or access deposit storage; the operator can read admission and
+execute its dedicated function but cannot read session secrets or write tables
+directly. Deposit SELECT/INSERT/UPDATE and expiry EXECUTE remain separate from
+direct DELETE or maintenance ownership. The verifier **never invokes**
+`set_access`, `expire_unissued`, or any other application function.
+
+Each permitted OS/SQL pair also attempts `SELECT count(*) FROM (SELECT 1 FROM
+<fixed-table> LIMIT 0)` against a representative table in every schema. These
+queries prove actual SELECT/schema permissions without retrieving or scanning
+private rows. Metadata queries use only PostgreSQL catalogues and built-in
+privilege helpers. Every connection has default read-only transactions,
+2-second statement, 500-ms lock and 3-second idle/connect limits. A child has a
+6-second wall-clock limit; the entire verification has a 120-second deadline.
+Timeout cleanup kills the subprocess group. No SQL writes or fixtures are used,
+including on failure.
+
+Output is JSON with names, UIDs, booleans, counts and fixed failure categories.
+It excludes raw database errors and private rows. Exit status `0` means every
+check passed; status `1` means a failure or incomplete verification. Treat the
+JSON as local operator evidence, not a health endpoint. PostgreSQL may record
+the deliberately denied connection attempts in its own administrative log.
+
+This is a point-in-time check of the listed OS users and six SQL application
+roles, not every role/OS identity on the machine. It does not inspect HBA files,
+firewall/TCP exposure, backups, providers, Cloudflare, session semantics, token
+admission, or migration function bodies. Read-only ACL checks cannot establish
+that an actual write, trigger or financial recovery succeeds. Keep listeners
+and ingress disabled until the other staging gates pass; use the full isolated
+PG/EVM suite for behavioral validation rather than staging fixtures.

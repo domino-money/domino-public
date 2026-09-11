@@ -1,0 +1,521 @@
+#!/usr/bin/env python3
+"""Plan (default) or install one disabled release on the fixed Ubuntu VM foundation.
+
+No SSH, dependency installation, provider configuration, service start or upgrade.
+Run from a separately reviewed copy; the archive must be a trusted plain Git tar.
+"""
+import argparse
+import fcntl
+import grp
+import hashlib
+import io
+import json
+import os
+from pathlib import Path, PurePosixPath
+import pwd
+import re
+import signal
+import stat
+import subprocess
+import tarfile
+import time
+
+BASE = Path('/opt/domino')
+VENV = BASE / 'backend-venv'
+PYTHON = VENV / 'bin/python3.14'
+PG = Path('/usr/lib/postgresql/16/bin')
+CONFIG = Path('/etc/postgresql/16/domino')
+DATA = Path('/var/lib/postgresql/16/domino')
+SOCKET = '/run/postgresql-domino'
+DB = 'domino_catalogue'
+ADMIN = 'domino_catalogue_admin'
+DEPOSIT = 'domino_deposit_service'
+BACKUPS = Path('/var/backups/domino-disabled')
+UNIT_DIR = Path('/etc/systemd/system')
+ENV = {'PATH': '/usr/sbin:/usr/bin:/sbin:/bin', 'LANG': 'C.UTF-8',
+       'PGCONNECT_TIMEOUT': '5', 'PYTHONDONTWRITEBYTECODE': '1'}
+COMMAND_TIMEOUT = 180
+SERVICES = {
+    'read': ('read_api.py', '--port 8876 --read-budget 15'),
+    'gateway': ('read_gateway.py', '--port 8878 --reader-port 8876'),
+    'auth': ('session_api.py', '--port 8879'),
+    'onboarding': ('onboarding_api.py', '--port 8880'),
+    'deposit': ('deposit_api.py', '--port 8881'),
+}
+ROOTS = (*SERVICES, 'operator', 'write')
+MIGRATIONS = tuple('backend/migrations/' + name + '.sql' for name in (
+    '001_catalogue', '002_activity', '003_fee_ledger', '004_positions',
+    '005_capital_prices', '006_chainlink_prices', '007_historical_work',
+    '008_wallet_sessions', '009_direct_deposits', '010_deposit_recovery',
+    '011_wallet_access', '012_capital_work', '013_activity_diagnostics',
+    '014_deposit_draft_recovery'))
+MAPPINGS = (
+    ('domino', 'domino-admin', ADMIN),
+    ('domino', 'domino-read', 'domino_catalogue_reader'),
+    ('domino', 'domino-write', 'domino_catalogue_writer'),
+    ('domino', 'domino-auth', 'domino_session_auth'),
+    ('domino', 'domino-operator', 'domino_wallet_access_operator'),
+)
+NEW_MAPPINGS = (('domino', 'domino-onboarding', 'domino_session_auth'),
+                ('domino', 'domino-deposit', 'domino_session_auth'),
+                ('domino', 'domino-deposit', DEPOSIT))
+HBA = (('local', 'all', 'postgres', 'peer'),
+       *(('local', DB, role, 'peer', 'map=domino') for _, _, role in MAPPINGS),
+       ('local', 'all', 'all', 'reject'),
+       ('host', 'all', 'all', '0.0.0.0/0', 'reject'),
+       ('host', 'all', 'all', '::0/0', 'reject'))
+EMPTY = """NOT EXISTS (SELECT FROM pg_namespace
+ WHERE nspname NOT IN ('public','information_schema') AND nspname !~ '^pg_')
+ AND NOT EXISTS (SELECT FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace
+ WHERE n.nspname='public')
+ AND NOT EXISTS (SELECT FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace
+ WHERE n.nspname='public')
+ AND NOT EXISTS (SELECT FROM pg_type t JOIN pg_namespace n ON n.oid=t.typnamespace
+ WHERE n.nspname='public')
+ AND NOT EXISTS (SELECT FROM pg_extension WHERE extname<>'plpgsql')
+ AND NOT EXISTS (SELECT FROM pg_largeobject_metadata)"""
+
+
+def require(condition, message):
+    if not condition:
+        raise ValueError(message)
+
+
+def archive_files(path, digest, commit):
+    """Read once; hash and validate every member before any extraction or mutation."""
+    require(re.fullmatch('[0-9a-f]{64}', digest), 'archive SHA256 must be lowercase hex')
+    require(re.fullmatch('[0-9a-f]{40}', commit), 'commit must be a full lowercase Git SHA')
+    fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+    with os.fdopen(fd, 'rb') as stream:
+        info = os.fstat(stream.fileno())
+        require(stat.S_ISREG(info.st_mode) and info.st_size <= 64*1024*1024,
+                'archive must be a regular plain tar of at most64MiB')
+        payload = stream.read(64*1024*1024 + 1)
+    require(hashlib.sha256(payload).hexdigest() == digest, 'archive SHA256 mismatch')
+    files, kinds, total = {}, {}, 0
+    with tarfile.open(fileobj=io.BytesIO(payload), mode='r:') as archive:
+        require(archive.pax_headers.get('comment') == commit, 'Git tar commit header mismatch')
+        for member in archive:
+            name = member.name.rstrip('/')
+            parts = name.split('/')
+            require(name and not name.startswith('/') and '\\' not in name
+                    and not any(part in ('', '.', '..') for part in parts)
+                    and not any(ord(c) < 32 or ord(c) == 127 for c in name), 'unsafe tar path')
+            require(name not in kinds and len(kinds) < 20000, 'duplicate or excessive tar members')
+            require(member.isfile() or member.isdir(), 'tar links and special files are forbidden')
+            require(not member.sparse, 'sparse tar files are forbidden')
+            require(not set(parts) & {'.git', '.venv', 'runtime', 'node_modules', '__pycache__'},
+                    'archive includes a runtime, dependency or Git work directory')
+            total += member.size
+            require(0 <= member.size <= 32*1024*1024 and total <= 128*1024*1024,
+                    'expanded tar size limit exceeded')
+            kinds[name] = member.isdir()
+            if member.isfile():
+                files[name] = (archive.extractfile(member).read(), bool(member.mode & 0o111))
+    for name in kinds:
+        require(all(kinds.get(str(parent), True) for parent in PurePosixPath(name).parents
+                    if str(parent) != '.'), 'tar file used as a directory')
+    needed = (*MIGRATIONS, 'backend/requirements-api.lock',
+              *('backend/' + script for script, _ in SERVICES.values()))
+    require(all(name in files for name in needed), 'required release file missing')
+    require({name for name in files if name.startswith('backend/migrations/')} == set(MIGRATIONS),
+            'release migration set must be exactly001–014')
+    return files
+
+
+def unit_text(component, commit):
+    root = BASE / 'releases' / commit / component
+    script, args = SERVICES[component]
+    return f'''[Unit]
+Description=Domino disabled staging {component} ({commit})
+After=postgresql@16-domino.service
+StartLimitIntervalSec=60
+StartLimitBurst=3
+
+[Service]
+Type=exec
+User=domino-{component}
+Group=domino-{component}
+WorkingDirectory={root}
+ExecStart={root}/backend/.venv/bin/python3.14 -B backend/{script} {args}
+Environment=PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1 WEB_CONCURRENCY=1 UVICORN_WORKERS=1
+UnsetEnvironment=PYTHONPATH PYTHONHOME DOMINO_DISCOVERY_RPC_URL DOMINO_INVENTORY_RPC_URL
+UMask=0077
+ProtectSystem=strict
+ReadWritePaths={root}/backend/runtime
+ProtectHome=true
+PrivateTmp=true
+PrivateDevices=true
+NoNewPrivileges=true
+CapabilityBoundingSet=
+RestrictSUIDSGID=true
+LimitCORE=0
+IPAddressDeny=any
+IPAddressAllow=localhost
+Restart=on-failure
+RestartSec=5
+TimeoutStartSec=30
+TimeoutStopSec=30
+KillMode=control-group
+'''
+
+
+def plan(files, digest, commit):
+    return {'mode': 'disabled-install-plan', 'hostValidated': False,
+            'commit': commit, 'archiveSha256': digest,
+            'target': str(BASE / 'releases' / commit),
+            'backup': str(BACKUPS / commit),
+            'migrations': [{'path': p, 'sha256': hashlib.sha256(files[p][0]).hexdigest()}
+                           for p in MIGRATIONS],
+            'dependencyLockSha256': hashlib.sha256(files['backend/requirements-api.lock'][0]).hexdigest(),
+            'newPeerMappings': NEW_MAPPINGS,
+            'units': {f'domino-{c}.service': unit_text(c, commit) for c in SERVICES},
+            'steps': ['Require root, Ubuntu24.04, fixed PG16 foundation and exact locked venv.',
+                      'Refuse nonempty DB, clients, existing release, units, users or deposit role.',
+                      'Back up PG configs, ownership/modes and empty database privately.',
+                      'Create only onboarding/deposit OS users and fixed deposit SQL role.',
+                      'Install seven separate immutable code roots and private runtime descriptors.',
+                      'Add exact peer mappings; validate files, reload PG and prove peer identities.',
+                      'Apply001–014 as domino-admin in one PostgreSQL transaction.',
+                      'Write five static units, systemd-analyze verify and daemon-reload only.'],
+            'notPerformed': ['service start/enable', 'network or provider configuration',
+                             'wallet grants', 'Cloudflare/Tunnel', 'cron', 'firewall changes',
+                             'dependency installation', 'upgrade or destructive rollback']}
+
+
+def run(args, *, data=None, stdout=None):
+    process = subprocess.Popen(args, stdin=subprocess.PIPE, stdout=stdout or subprocess.PIPE,
+                               stderr=subprocess.PIPE, env=ENV, start_new_session=True)
+    try:
+        output, _ = process.communicate(data, timeout=COMMAND_TIMEOUT)
+    except subprocess.TimeoutExpired:
+        # Terminate runuser AND its psql/pg_dump child. An orphaned psql must
+        # not commit a migration after the installer has reported failure.
+        os.killpg(process.pid, signal.SIGKILL)
+        process.communicate()
+        raise ValueError(f'command timed out: {Path(args[0]).name}') from None
+    require(process.returncode == 0, f'command failed: {Path(args[0]).name}; stop and inspect locally')
+    return output
+
+
+def sql(query, *, os_user='postgres', role='postgres', transaction=False):
+    args = ['/usr/sbin/runuser', '-u', os_user, '--', str(PG / 'psql'),
+            '-X', '-w', '-qAt', '-v', 'ON_ERROR_STOP=1', '-h', SOCKET,
+            '-p', '8877', '-U', role, '-d', DB]
+    if transaction:
+        args.append('--single-transaction')
+    return run([*args, '-f', '-'], data=query.encode()).decode().strip()
+
+
+def trusted(path, owner=0):
+    info = path.lstat()
+    require(not stat.S_ISLNK(info.st_mode) and info.st_uid == owner
+            and not info.st_mode & 0o022, f'untrusted ownership/mode: {path}')
+    return info
+
+
+def trusted_parents(path):
+    for parent in (path, *path.parents):
+        trusted(parent)
+
+
+def pg_parents(path):
+    pg_uid = pwd.getpwnam('postgres').pw_uid
+    for parent in (path, *path.parents):
+        info = parent.lstat()
+        require(not stat.S_ISLNK(info.st_mode) and info.st_uid in (0, pg_uid)
+                and not info.st_mode & 0o022, f'untrusted PostgreSQL path: {parent}')
+
+
+def normalized_config(path):
+    return tuple(tuple(line.split('#', 1)[0].split()) for line in path.read_text().splitlines()
+                 if line.split('#', 1)[0].strip())
+
+
+def dependency_preflight(files):
+    trusted_parents(VENV)
+    for directory, dirs, names in os.walk(VENV, followlinks=False):
+        for name in dirs + names:
+            path = Path(directory) / name
+            if path.is_symlink():
+                target = path.resolve(strict=True)
+                require(not target.is_dir() or target.is_relative_to(VENV),
+                        'venv directory symlink leaves the reviewed environment')
+                trusted_parents(target)
+            else:
+                trusted(path)
+    expected = {}
+    for line in files['backend/requirements-api.lock'][0].decode().splitlines():
+        if not line.strip() or line.startswith('#'):
+            continue
+        require(re.fullmatch(r'[A-Za-z0-9_.-]+==[A-Za-z0-9_.+-]+', line), 'lock must contain exact pins')
+        name, version = line.split('==')
+        expected[re.sub('[-_.]+', '-', name).lower()] = version
+    code = "import importlib.metadata as m,json,re,sys; assert sys.version_info[:2]==(3,14); print(json.dumps({re.sub('[-_.]+','-',d.metadata['Name']).lower():d.version for d in m.distributions()}))"
+    installed = json.loads(run([str(PYTHON), '-I', '-B', '-c', code]))
+    require({k: v for k, v in installed.items() if k not in {'pip', 'setuptools', 'wheel'}} == expected,
+            'venv distributions do not exactly match release lock (excluding packaging tools)')
+    run([str(PYTHON), '-I', '-B', '-m', 'pip', 'check'])
+
+
+def preflight(files, commit):
+    release = BASE / 'releases'
+    require(os.geteuid() == 0, '--apply requires root')
+    os_release = dict(line.split('=', 1) for line in Path('/etc/os-release').read_text().splitlines() if '=' in line)
+    require(os_release.get('ID', '').strip('"') == 'ubuntu'
+            and os_release.get('VERSION_ID', '').strip('"') == '24.04', 'requires Ubuntu24.04')
+    dependency_preflight(files)
+    for directory in (BASE, UNIT_DIR):
+        trusted_parents(directory)
+    pg_parents(CONFIG)
+    pg_parents(DATA)
+    require(not release.is_symlink(), 'releases directory cannot be a symlink')
+    if release.exists():
+        trusted(release)
+        require(not any(release.iterdir()), 'releases directory is not empty')
+    require(not os.path.lexists(BASE / 'current'), 'existing current release link')
+    require(not os.path.lexists(BACKUPS / commit), 'backup already exists; inspect previous attempt')
+    for command in ('list-unit-files', 'list-units'):
+        units = run(['/usr/bin/systemctl', command, '--all', '--no-legend', '--no-pager']).decode()
+        require(not any(re.match(r'^\s*(?:●\s*)?domino[^\s]*\.(service|socket|timer)\s', line)
+                        for line in units.splitlines()),
+                'conflicting Domino systemd unit')
+    for component in SERVICES:
+        require(not os.path.lexists(UNIT_DIR / f'domino-{component}.service'), 'unit already exists')
+    listeners = run(['/usr/bin/ss', '-H', '-ltn']).decode()
+    require(not re.search(r':(?:8876|8878|8879|8880|8881)\s', listeners), 'application port already listening')
+    members = set(grp.getgrnam('domino-db').gr_mem)
+    expected_members = {row[1] for row in MAPPINGS} | {'postgres'}
+    require(members == expected_members, 'unexpected domino-db members')
+    for user in (*expected_members, 'domino-gateway', 'domino-tunnel'):
+        account = pwd.getpwnam(user)
+        require(account.pw_uid != 0, 'service account cannot be root')
+        require(grp.getgrnam(user).gr_gid == account.pw_gid, 'unexpected service primary group')
+        require((grp.getgrnam('domino-db').gr_gid in os.getgrouplist(user, account.pw_gid))
+                == (user in expected_members), 'unexpected socket group access')
+    for user in ('domino-onboarding', 'domino-deposit'):
+        require(user not in {p.pw_name for p in pwd.getpwall()}
+                and user not in {g.gr_name for g in grp.getgrall()}, 'new OS identity already exists')
+    pg_uid = pwd.getpwnam('postgres').pw_uid
+    socket_directory = Path(SOCKET).lstat()
+    require(stat.S_ISDIR(socket_directory.st_mode) and socket_directory.st_uid == pg_uid
+            and socket_directory.st_gid == grp.getgrnam('domino-db').gr_gid
+            and stat.S_IMODE(socket_directory.st_mode) == 0o750, 'unexpected socket directory')
+    socket = (Path(SOCKET)/'.s.PGSQL.8877').lstat()
+    require(stat.S_ISSOCK(socket.st_mode) and socket.st_uid == pg_uid
+            and socket.st_gid == grp.getgrnam('domino-db').gr_gid
+            and stat.S_IMODE(socket.st_mode) == 0o770, 'unexpected PostgreSQL socket')
+    for name, expected in [('pg_hba.conf', HBA), ('pg_ident.conf', MAPPINGS)]:
+        path = CONFIG / name
+        info = trusted(path, pg_uid)
+        require(stat.S_ISREG(info.st_mode) and stat.S_IMODE(info.st_mode) == 0o600,
+                'unexpected PG auth config mode/type')
+        require(info.st_gid == pwd.getpwnam('postgres').pw_gid, 'unexpected PG auth config group')
+        require(normalized_config(path) == expected, 'PG auth foundation differs from reviewed snapshot')
+    settings = json.loads(sql("SELECT json_object_agg(name,setting) FROM pg_settings WHERE name IN "
+        "('server_version_num','server_encoding','data_directory','config_file','hba_file','ident_file','port',"
+        "'listen_addresses','unix_socket_directories','unix_socket_permissions','unix_socket_group')"))
+    require(settings.get('server_encoding') == 'UTF8' and sql(
+        "SELECT pg_encoding_to_char(encoding) FROM pg_database WHERE datname=current_database()") == 'UTF8',
+        'PostgreSQL database and server_encoding must be UTF8')
+    expected = {'data_directory': str(DATA), 'config_file': str(CONFIG/'postgresql.conf'),
+                'hba_file': str(CONFIG/'pg_hba.conf'), 'ident_file': str(CONFIG/'pg_ident.conf'),
+                'port': '8877', 'listen_addresses': '', 'unix_socket_directories': SOCKET,
+                'unix_socket_permissions': '0770', 'unix_socket_group': 'domino-db'}
+    require(all(settings[k] == v for k, v in expected.items())
+            and 160000 <= int(settings['server_version_num']) < 170000, 'unexpected PostgreSQL foundation')
+    require(sql(f'SELECT {EMPTY}') == 't', 'database is not empty')
+    require(sql("SELECT pg_get_userbyid(datdba) FROM pg_database WHERE datname=current_database()") == ADMIN,
+            'wrong database owner')
+    require(sql("SELECT count(*) FROM pg_stat_activity WHERE datname=current_database() "
+                "AND pid<>pg_backend_pid() AND backend_type='client backend'") == '0', 'other DB clients connected')
+    roles = json.loads(sql("SELECT json_agg(rolname ORDER BY rolname) FROM pg_roles WHERE rolname ~ '^domino_'"))
+    require(roles == sorted(row[2] for row in MAPPINGS), 'unexpected Domino SQL roles')
+    require(sql("SELECT count(*) FROM pg_roles WHERE rolname ~ '^domino_' "
+        "AND (rolsuper OR rolcreatedb OR rolcreaterole OR rolreplication OR rolbypassrls OR rolinherit OR NOT rolcanlogin)") == '0',
+        'unexpected Domino SQL role privileges')
+    require(sql("SELECT count(*) FROM pg_auth_members m JOIN pg_roles r ON r.oid=m.member "
+        "JOIN pg_roles g ON g.oid=m.roleid WHERE r.rolname ~ '^domino_' "
+        "OR g.rolname ~ '^domino_'") == '0', 'unexpected SQL role memberships')
+    acl = json.loads(sql("SELECT json_agg(json_build_array(CASE WHEN a.grantee=0 THEN 'PUBLIC' "
+        "ELSE pg_get_userbyid(a.grantee) END,a.privilege_type)) FROM pg_database d,"
+        "aclexplode(COALESCE(d.datacl,acldefault('d',d.datdba))) a WHERE d.datname=current_database()"))
+    expected_acl = {(role, 'CONNECT') for _, _, role in MAPPINGS} | {(ADMIN, 'CREATE'), (ADMIN, 'TEMPORARY')}
+    require({tuple(row) for row in acl} == expected_acl, 'unexpected database ACL')
+    validate_pg_files()
+    return settings
+
+
+def validate_pg_files():
+    for view in ('pg_hba_file_rules', 'pg_ident_file_mappings'):
+        require(sql(f'SELECT count(*) FROM {view} WHERE error IS NOT NULL') == '0', f'invalid {view}')
+
+
+def verify_new_peers():
+    # pg_reload_conf() signals the server; positive new connections prove that
+    # the new mappings are actually loaded, not merely parseable on disk.
+    for _, user, role in NEW_MAPPINGS:
+        for attempt in range(20):
+            try:
+                require(sql('SELECT current_user', os_user=user, role=role) == role, 'wrong peer identity')
+                break
+            except ValueError:
+                if attempt == 19:
+                    raise
+                time.sleep(0.1)
+
+
+def exclusive_file(path, content, mode=0o600, uid=0, gid=0):
+    fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, mode)
+    with os.fdopen(fd, 'wb') as stream:
+        os.fchown(stream.fileno(), uid, gid)
+        os.fchmod(stream.fileno(), mode)
+        stream.write(content)
+        stream.flush()
+        os.fsync(stream.fileno())
+
+
+def fsync_directory(path):
+    folder = os.open(path, os.O_RDONLY | os.O_DIRECTORY)
+    try:
+        os.fsync(folder)
+    finally:
+        os.close(folder)
+
+
+def backup(settings, planned):
+    if BACKUPS.exists():
+        trusted_parents(BACKUPS)
+        require(stat.S_IMODE(BACKUPS.stat().st_mode) == 0o700, 'backup directory must be0700')
+    else:
+        trusted_parents(BACKUPS.parent)
+        BACKUPS.mkdir(mode=0o700)
+        fsync_directory(BACKUPS.parent)
+    destination = BACKUPS / planned['commit']
+    destination.mkdir(mode=0o700)
+    fsync_directory(BACKUPS)
+    metadata = []
+    for path in (*sorted(CONFIG.rglob('*')), DATA / 'postgresql.auto.conf'):
+        info = path.lstat()
+        require(stat.S_ISREG(info.st_mode) or stat.S_ISDIR(info.st_mode), 'special PG config file')
+        metadata.append({'path': str(path), 'uid': info.st_uid, 'gid': info.st_gid,
+                         'mode': stat.S_IMODE(info.st_mode)})
+        if stat.S_ISREG(info.st_mode):
+            target = destination / 'configs' / str(path).lstrip('/')
+            target.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+            exclusive_file(target, path.read_bytes())
+    exclusive_file(destination/'metadata.json', json.dumps({'files': metadata, 'settings': settings}, indent=2).encode())
+    exclusive_file(destination/'plan.json', json.dumps(planned, indent=2).encode())
+    fd = os.open(destination/'empty-database.dump', os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+    with os.fdopen(fd, 'wb') as stream:
+        run(['/usr/sbin/runuser', '-u', 'postgres', '--', str(PG/'pg_dump'),
+             '-w', '-h', SOCKET, '-p', '8877', '-U', 'postgres', '-d', DB, '-Fc'], stdout=stream)
+        stream.flush()
+        os.fsync(stream.fileno())
+    for directory, _, _ in os.walk(destination, topdown=False):
+        fsync_directory(directory)
+    return destination
+
+
+def install_roots(files, commit):
+    releases = BASE/'releases'
+    releases.mkdir(mode=0o755, exist_ok=True)
+    os.chmod(releases, 0o755)
+    release = releases/commit
+    release.mkdir(mode=0o755)
+    for component in ROOTS:
+        root = release/component
+        root.mkdir(mode=0o755)
+        for name, (content, executable) in files.items():
+            path = root/name
+            path.parent.mkdir(mode=0o755, parents=True, exist_ok=True)
+            exclusive_file(path, content, 0o555 if executable else 0o444)
+        runtime = root/'backend/runtime'
+        runtime.mkdir(mode=0o700)
+        account = pwd.getpwnam('domino-'+component)
+        os.chown(runtime, account.pw_uid, account.pw_gid)
+        descriptor = json.dumps({'host': SOCKET, 'port': 8877, 'dbname': DB}).encode() + b'\n'
+        exclusive_file(runtime/'catalogue-db.json', descriptor, uid=account.pw_uid, gid=account.pw_gid)
+        (root/'backend/.venv').symlink_to(VENV, target_is_directory=True)
+        for directory, _, _ in os.walk(root, topdown=False):
+            if Path(directory) != runtime:
+                os.chmod(directory, 0o555)
+    os.chmod(release, 0o555)
+
+
+def replace_pg_config(path, content):
+    original = path.stat()
+    temporary = path.with_name(path.name + '.domino-disabled-new')
+    exclusive_file(temporary, content, stat.S_IMODE(original.st_mode), original.st_uid, original.st_gid)
+    os.replace(temporary, path)
+    fsync_directory(path.parent)
+
+
+def apply(files, planned):
+    require(os.geteuid() == 0, '--apply requires root')
+    trusted_parents(BASE)
+    fd = os.open(BASE/'.disabled-install.lock', os.O_CREAT | os.O_RDWR | os.O_NOFOLLOW, 0o600)
+    with os.fdopen(fd, 'rb+'):
+        fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        require(os.fstat(fd).st_uid == 0 and stat.S_ISREG(os.fstat(fd).st_mode)
+                and stat.S_IMODE(os.fstat(fd).st_mode) == 0o600, 'invalid install lock')
+        settings = preflight(files, planned['commit'])
+        destination = backup(settings, planned)
+        print('Preflight passed; private backup complete. Applying disabled installation.', flush=True)
+        for user in ('domino-onboarding', 'domino-deposit'):
+            run(['/usr/sbin/useradd', '--system', '--user-group', '--no-create-home',
+                 '--home-dir', '/nonexistent', '--shell', '/usr/sbin/nologin', '--groups', 'domino-db', user])
+        sql(f'CREATE ROLE {DEPOSIT} LOGIN NOINHERIT NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS;'
+            f' GRANT CONNECT ON DATABASE {DB} TO {DEPOSIT};')
+        install_roots(files, planned['commit'])
+        ident = (CONFIG/'pg_ident.conf').read_bytes() + b'\n' + ('\n'.join(' '.join(row) for row in NEW_MAPPINGS)+'\n').encode()
+        lines = (CONFIG/'pg_hba.conf').read_text().splitlines(keepends=True)
+        insertion = next(i for i, line in enumerate(lines)
+                         if tuple(line.split('#', 1)[0].split()) == ('local', 'all', 'all', 'reject'))
+        lines.insert(insertion, f'local {DB} {DEPOSIT} peer map=domino\n')
+        hba = ''.join(lines)
+        replace_pg_config(CONFIG/'pg_ident.conf', ident)
+        replace_pg_config(CONFIG/'pg_hba.conf', hba.encode())
+        require(normalized_config(CONFIG/'pg_ident.conf') == (*MAPPINGS, *NEW_MAPPINGS)
+                and normalized_config(CONFIG/'pg_hba.conf') ==
+                    (*HBA[:6], ('local', DB, DEPOSIT, 'peer', 'map=domino'), *HBA[6:]),
+                'written peer configuration differs from plan')
+        validate_pg_files()
+        require(sql('SELECT pg_reload_conf()') == 't', 'PostgreSQL reload request failed')
+        verify_new_peers()
+        migrations = '\n'.join(files[p][0].decode() for p in MIGRATIONS)
+        guard = f"SET LOCAL lock_timeout='5s'; SET LOCAL statement_timeout='120s'; DO $$ BEGIN IF NOT ({EMPTY}) THEN RAISE EXCEPTION 'database_not_empty'; END IF; END $$;\n"
+        sql(guard + migrations, os_user='domino-admin', role=ADMIN, transaction=True)
+        for component in SERVICES:
+            exclusive_file(UNIT_DIR/f'domino-{component}.service', unit_text(component, planned['commit']).encode(), 0o644)
+        run(['/usr/bin/systemd-analyze', 'verify', *(str(UNIT_DIR/f'domino-{c}.service') for c in SERVICES)])
+        run(['/usr/bin/systemctl', 'daemon-reload'])
+        validate_pg_files()
+        exclusive_file(destination/'installed.json', json.dumps({'commit': planned['commit'],
+            'servicesStarted': False, 'servicesEnabled': False, 'migrationsCommitted': list(MIGRATIONS)}).encode())
+        print('Installed; no service started or enabled. Review BPF enforcement and smoke tests separately.')
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('--archive', required=True, type=Path)
+    parser.add_argument('--archive-sha256', required=True)
+    parser.add_argument('--commit', required=True)
+    parser.add_argument('--apply', action='store_true')
+    args = parser.parse_args()
+    try:
+        files = archive_files(args.archive, args.archive_sha256, args.commit)
+        planned = plan(files, args.archive_sha256, args.commit)
+        if args.apply:
+            os.umask(0o077)
+            apply(files, planned)
+        else:
+            print(json.dumps(planned, indent=2))
+        return 0
+    except (OSError, ValueError, KeyError, tarfile.TarError, subprocess.SubprocessError) as error:
+        print(f'Installation refused/stopped: {error}. No automatic rollback; inspect any private backup.', file=__import__('sys').stderr)
+        return 1
+
+
+if __name__ == '__main__':
+    raise SystemExit(main())
