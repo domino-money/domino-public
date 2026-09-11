@@ -1,0 +1,118 @@
+{
+  "contractVersion": "1.0.0",
+  "preview": {
+    "chainId": 4663,
+    "dominoFee": {
+      "assistedSwapPerformed": false,
+      "automationFeeApplies": false,
+      "bps": 0,
+      "status": "not_applicable_direct_deposit"
+    },
+    "executionAvailable": false,
+    "expiresAt": 1030,
+    "gas": {
+      "feeWei": null,
+      "fullNetworkCostVerified": false,
+      "source": null
+    },
+    "nativeFunding": {
+      "balanceIndependentlyVerified": false,
+      "depositMaximumRaw": "0",
+      "reportedBalanceRaw": null,
+      "reserveCoversActualGasVerified": false,
+      "selectedGasReserveRaw": null
+    },
+    "position": {
+      "adjustedPrices": {
+        "humanPrices": null,
+        "max": "1.01816206010461250825511659",
+        "min": "0.9880723056656161819557585",
+        "status": "provider_reported",
+        "unit": "raw_token1_per_raw_token0"
+      },
+      "mintLiquidityRaw": "12345",
+      "poolId": "0x25431634fd7de72516ccb751020a1a9188376a983ccc5f6c1152ca04a6acffad",
+      "poolKey": {
+        "currency0": "0x1111111111111111111111111111111111111111",
+        "currency1": "0x2222222222222222222222222222222222222222",
+        "fee_pips": 3000,
+        "hooks": "0x0000000000000000000000000000000000000000",
+        "tick_spacing": 60
+      },
+      "recipient": "0xabababababababababababababababababababab",
+      "tickLower": -120,
+      "tickUpper": 180,
+      "tokens": [
+        {
+          "address": "0x1111111111111111111111111111111111111111",
+          "budgetStatus": "unknown",
+          "estimatedUnspentBudgetRaw": null,
+          "expectedDepositRaw": "100",
+          "maximumDebitRaw": "101",
+          "selectedBudgetRaw": null,
+          "unspentAtMaximumRaw": null
+        },
+        {
+          "address": "0x2222222222222222222222222222222222222222",
+          "budgetStatus": "unknown",
+          "estimatedUnspentBudgetRaw": null,
+          "expectedDepositRaw": "200",
+          "maximumDebitRaw": "202",
+          "selectedBudgetRaw": null,
+          "unspentAtMaximumRaw": null
+        }
+      ]
+    },
+    "preparedDeadline": 2200,
+    "previewChecks": {
+      "reasons": [
+        "token0_budget_unknown",
+        "token1_budget_unknown",
+        "native_balance_unknown",
+        "native_gas_reserve_unspecified"
+      ],
+      "status": "incomplete"
+    },
+    "provenance": {
+      "balancesAndAllowancesVerified": false,
+      "blockNumber": null,
+      "calculation": "uniswap_lp_create",
+      "mintIdentityAndLimitsInspected": true,
+      "onchainSnapshotVerified": false,
+      "schemaCommit": "da6d36f71c4d2fd665b0aae1a052a4ffda917b31",
+      "slippageModelIndependentlyVerified": false,
+      "tokenSafetyVerified": false
+    },
+    "request": {
+      "amountRaw": "100",
+      "budget0Raw": null,
+      "budget1Raw": null,
+      "chainId": 4663,
+      "independentToken": "0x1111111111111111111111111111111111111111",
+      "nativeBalanceRaw": null,
+      "nativeGasReserveRaw": null,
+      "owner": "0xabababababababababababababababababababab",
+      "poolId": "0x25431634fd7de72516ccb751020a1a9188376a983ccc5f6c1152ca04a6acffad",
+      "poolKey": {
+        "currency0": "0x1111111111111111111111111111111111111111",
+        "currency1": "0x2222222222222222222222222222222222222222",
+        "fee_pips": 3000,
+        "hooks": "0x0000000000000000000000000000000000000000",
+        "tick_spacing": 60
+      },
+      "slippageBps": 50,
+      "tickLower": -120,
+      "tickUpper": 180
+    },
+    "requestFingerprint": "b4192f2236247fc7fcc5487768833b16716675023087154e8c5779f43d038d4a",
+    "requestedAt": 1000,
+    "retrievedAt": 1000,
+    "schemaVersion": 1,
+    "simulation": {
+      "independentSuccessProven": false,
+      "status": "not_requested"
+    },
+    "source": "uniswap_liquidity_create_v1",
+    "status": "preview_only"
+  }
+}

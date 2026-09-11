@@ -44,6 +44,7 @@ npm run check:read-bridge
 backend/.venv/bin/python scripts/export-read-contract.py --check
 backend/.venv/bin/python scripts/export-read-openapi.py --check
 backend/.venv/bin/python scripts/export-session-contract.py --check
+backend/.venv/bin/python scripts/export-onboarding-contract.py --check
 ```
 
 The default Python suite explicitly skips PostgreSQL and native EVM cases. To run the full suite:

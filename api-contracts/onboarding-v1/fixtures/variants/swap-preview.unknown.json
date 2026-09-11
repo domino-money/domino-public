@@ -1,0 +1,109 @@
+{
+  "contractVersion": "1.0.0",
+  "preview": {
+    "approvalApplicable": true,
+    "chainId": 4663,
+    "dominoFee": {
+      "amountRaw": null,
+      "automationFeeApplies": false,
+      "basis": "consumed_owner_selected_gross_input",
+      "bps": null,
+      "ceilingBps": 65,
+      "includedInDexInput": false,
+      "status": "tariff_not_selected"
+    },
+    "executionAvailable": false,
+    "expiresAt": 1030,
+    "gas": {
+      "feeWei": null,
+      "fullNetworkCostVerified": false,
+      "includesApprovals": false,
+      "source": "provider_estimate",
+      "units": null,
+      "usd": null
+    },
+    "previewChecks": {
+      "reasons": [
+        "price_impact_unknown",
+        "provider_output_fee_unknown",
+        "simulation_unknown",
+        "gas_estimate_incomplete"
+      ],
+      "status": "blocked"
+    },
+    "provenance": {
+      "endpoint": "https://trade-api.gateway.uniswap.org/v1/quote",
+      "onchainSnapshotVerified": false,
+      "ownerControlVerified": false,
+      "providerBlockHash": null,
+      "providerBlockNumber": "59031060",
+      "routeIdentity": "provider_pool_key_hash_checked",
+      "routerVersion": "2.1.1",
+      "schemaCommit": "da6d36f71c4d2fd665b0aae1a052a4ffda917b31",
+      "tokenTransferSafetyVerified": false
+    },
+    "providerOutputFee": {
+      "aggregatedOutputs": null,
+      "amountRaw": null,
+      "basis": "output_currency",
+      "bps": null,
+      "currency": "0x2222222222222222222222222222222222222222",
+      "recipient": null,
+      "status": "unknown",
+      "zeroEvidence": null
+    },
+    "quote": {
+      "dexInputAmountRaw": "1000",
+      "grossMinimumOutputAmountRaw": "1990",
+      "grossOutputAmountRaw": "2000",
+      "minimumAfterProviderFeeRaw": null,
+      "outputAfterProviderFeeRaw": null,
+      "policyMinimumOutputRaw": "1990",
+      "priceImpactPercent": null,
+      "routes": [
+        [
+          {
+            "amountInRaw": "1000",
+            "amountOutRaw": "2000",
+            "poolId": "0x25431634fd7de72516ccb751020a1a9188376a983ccc5f6c1152ca04a6acffad",
+            "poolKey": {
+              "currency0": "0x1111111111111111111111111111111111111111",
+              "currency1": "0x2222222222222222222222222222222222222222",
+              "fee_pips": 3000,
+              "hooks": "0x0000000000000000000000000000000000000000",
+              "tick_spacing": 60
+            },
+            "tokenIn": {
+              "address": "0x1111111111111111111111111111111111111111",
+              "decimals": 18
+            },
+            "tokenOut": {
+              "address": "0x2222222222222222222222222222222222222222",
+              "decimals": 18
+            }
+          }
+        ]
+      ]
+    },
+    "request": {
+      "amountRaw": "1000",
+      "chainId": 4663,
+      "maxPriceImpactBps": 100,
+      "owner": "0x4444444444444444444444444444444444444444",
+      "slippageBps": 50,
+      "tokenIn": "0x1111111111111111111111111111111111111111",
+      "tokenOut": "0x2222222222222222222222222222222222222222"
+    },
+    "requestFingerprint": "d55a780068e0890576a9ad080bfffc2b32f925ba0cb9edcaf93fdf96dbda8bfd",
+    "requestedAt": 1000,
+    "retrievedAt": 1000,
+    "schemaVersion": 1,
+    "simulation": {
+      "failureCodes": null,
+      "independentSuccessProven": false,
+      "status": "unknown"
+    },
+    "source": "uniswap_trading_quote_v1",
+    "status": "preview_only"
+  }
+}

@@ -1,0 +1,154 @@
+{
+  "contract": "onboarding-v1",
+  "contractVersion": "1.0.0",
+  "files": [
+    {
+      "path": "fixtures/errors.json",
+      "sha256": "9c5933f4b21c5c1f68f4c34b86798c1d8593ba61ed1950a7347c41a4dd79bcbe"
+    },
+    {
+      "path": "fixtures/requests/position-preview.json",
+      "sha256": "38fafb36ac55ab1f4d8099237fe53fbe800f92ec61be28daed28308993dd1b4a"
+    },
+    {
+      "path": "fixtures/requests/swap-preview.json",
+      "sha256": "48ae2a2412ab94a63c3b3cd760d1b7b2ccc56f7c5e8bdbefae18c78be8bba06a"
+    },
+    {
+      "path": "fixtures/responses/position-preview.json",
+      "sha256": "ccc0ef912d7b1d9bc2a89aafaf617aa8bbedaad52d0a961a87cd1f7dca930e03"
+    },
+    {
+      "path": "fixtures/responses/swap-preview.json",
+      "sha256": "df0b5928e0944344310d1135fda7bfa21948dfcf06679e70396fd0bca06b8ddf"
+    },
+    {
+      "path": "fixtures/variants/position-preview.blocked.json",
+      "sha256": "1054e7640b93aff41b9caf27831aefff6103b3a3c24439f5c7d90859ae61b51c"
+    },
+    {
+      "path": "fixtures/variants/position-preview.incomplete.json",
+      "sha256": "ff36d22f09306d747db9aab019c8b2063d37d915a19ca52973f18ad7c0ebcdcf"
+    },
+    {
+      "path": "fixtures/variants/position-preview.native.json",
+      "sha256": "9ecc6b70827ba5a3181c048981bc852d09fbb046d08441429346238e2314adbb"
+    },
+    {
+      "path": "fixtures/variants/swap-preview.unknown.json",
+      "sha256": "a86187395dcf6c2765780cb5c047f260d09627336681097648852cdbdd45cb97"
+    },
+    {
+      "path": "runtime.d.mts",
+      "sha256": "d4035be21d48ca03a991df4ff436db999a18648c9c6b7644ece5efdae8b633cf"
+    },
+    {
+      "path": "schema-data.mjs",
+      "sha256": "c7cee628f97e502f4ca1ace4457f5c4abbd0d70b3774fa095ad310a66d485b87"
+    },
+    {
+      "path": "schemas/error.response.schema.json",
+      "sha256": "77362689723ccef4a211a81466a4bc8e210a30bb0130afcdc98d26dfec9b451d"
+    },
+    {
+      "path": "schemas/position-preview.request.schema.json",
+      "sha256": "9f14d56a7cda669c098e538160d11f37282ed44f5bb45dd22062e151e6b7afbf"
+    },
+    {
+      "path": "schemas/position-preview.response.schema.json",
+      "sha256": "e3b4cff99e794692cd2ff07bb559a8732c0720eef279cb780c82f969901b9f9d"
+    },
+    {
+      "path": "schemas/swap-preview.request.schema.json",
+      "sha256": "f8edafeb824011f075d7a9bfa3e2d475898dfa5b427554d4c160c3bd206fc913"
+    },
+    {
+      "path": "schemas/swap-preview.response.schema.json",
+      "sha256": "ce670fc8d27ef1fe385b0371d8435a7287121c23a6be5cec844bf1f17651f37c"
+    },
+    {
+      "path": "types.ts",
+      "sha256": "0d32dfdba2be275967548894d8f2b684edc6233f556d82ffc881c3df4b80ce6f"
+    },
+    {
+      "path": "runtime.mjs",
+      "sha256": "5a4e00069bf5c580e11244f4606450b2ef056f127f9c7bf9780b1a3ffb312add"
+    },
+    {
+      "path": "README.md",
+      "sha256": "0d4c633b8fbd1b2ebcb347e3a55ef118555aa48716171d2c53e4caae34e4c069"
+    },
+    {
+      "path": "consumer.typecheck.mts",
+      "sha256": "6452e19901649a5af453b864f51f8edb697936f4f537f07fa517a46eda17874a"
+    }
+  ],
+  "generator": "scripts/export-onboarding-contract.py",
+  "sources": [
+    {
+      "path": "backend/onboarding_models.py",
+      "sha256": "c8ad0867124c839c519197b0521f16c0f7e428e727a842414a8929bab2f13167"
+    },
+    {
+      "path": "backend/onboarding_api.py",
+      "sha256": "9b6c60633e569e14e129a0f204fe84dfc0402fec4a1d30b9a187fbc05616ed0c"
+    },
+    {
+      "path": "backend/onboarding_service.py",
+      "sha256": "b678376b09ca7589684bf19dbce796d87174cb0306bf000491d076c8e3f3792b"
+    },
+    {
+      "path": "backend/onboarding_auth.py",
+      "sha256": "0060646f6ceaf95da3b597c68110737d17129afae8dce4120f206de1ed5677d4"
+    },
+    {
+      "path": "backend/session_store.py",
+      "sha256": "a59aa12048b4bca60e72c789e4003dad78cc71704aa683a1fdc8308bdd6bc4d1"
+    },
+    {
+      "path": "backend/session_models.py",
+      "sha256": "3cda2e02ec83a30b82fc9344fd4fa0168b54ac0fa783cb18a72b3e2596ac6393"
+    },
+    {
+      "path": "backend/wallet_access.py",
+      "sha256": "e07e6eed8d323aac75f093fb8b1f6b7e8ad3035d9e42b40a9eac3b0ed9cd5820"
+    },
+    {
+      "path": "backend/tests/test_onboarding_flow.py",
+      "sha256": "5178353ebeac0afc44aad402ac1250f1c7b2d0fdd267cd3ba64d821bbe836a7f"
+    },
+    {
+      "path": "backend/tests/test_onboarding_auth.py",
+      "sha256": "34a6a6c89d039fe563a88709996bcf1467135041f9ee7b53b4cf49c64853f52e"
+    },
+    {
+      "path": "backend/tests/onboarding_contract_fixtures.py",
+      "sha256": "be5780fb1ec09503664659cf4bc3fbccf2e7ffd9b173a624770db516bc4e5a1c"
+    },
+    {
+      "path": "backend/uniswap_quote.py",
+      "sha256": "9d80aac65117aa072af715c79fc82e67c51c5b57c7be98d1ef475bb2b1651de5"
+    },
+    {
+      "path": "backend/uniswap_position.py",
+      "sha256": "b3b3d9fbe3fb450a932a89e1c1a27a69e0f3bc745f9dcb6db8b262066cda4f62"
+    },
+    {
+      "path": "backend/tests/test_uniswap_quote.py",
+      "sha256": "5fb6f9ea062e1ee28009d9dbff78fbcc3799867aed1c516ad9065c439d475836"
+    },
+    {
+      "path": "backend/tests/test_uniswap_position.py",
+      "sha256": "66b66b15bcffabac999e0c5e7399768f25598aa7074b1798991ef8c9213de525"
+    },
+    {
+      "path": "backend/tests/test_lp_mint_inspection.py",
+      "sha256": "8d09f843241f9dd43aa9fbb23561580bb713c7c2916c80b06f2b1fd3cac0603b"
+    },
+    {
+      "path": "scripts/export-onboarding-contract.py",
+      "sha256": "482e34d1b720644d531cc49c8f35a6d4caae8e6985f7822f21562a70adc5ffa2"
+    }
+  ],
+  "status": "candidate_disabled_pending_consumer_acknowledgement"
+}

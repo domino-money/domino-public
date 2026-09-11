@@ -59,6 +59,13 @@ key. It inherits the loopback/browser-origin boundary below. It does not replace
 
 ## Uniswap API configuration and readiness
 
+Issue #38 connects session and preview adapters through a disabled
+[authenticated onboarding API](../docs/ONBOARDING_API.md). It derives owner from
+SIWE, requires CSRF, rechecks revocation/expiry after provider work, and applies
+durable IP/account/global quotas. Its separate `onboarding-v1` contract and
+worker leave read/session payloads and frontend hooks unchanged. No signing,
+deployment or financial authority is enabled.
+
 Issue #36 adds an internal [Uniswap LP position preview](../docs/POSITION_PREVIEW.md)
 through `preview_position.py`. Uniswap computes the dependent-token amount for
 an existing hookless fixed-fee v4 pool; Domino inspects the prepared mint and

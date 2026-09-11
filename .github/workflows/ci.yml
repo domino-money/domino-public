@@ -38,6 +38,8 @@ jobs:
         run: node web/node_modules/typescript/bin/tsc --noEmit --strict --target ES2022 --module NodeNext --moduleResolution NodeNext api-contracts/read-v1/types.ts api-contracts/read-v1/runtime.d.mts api-contracts/read-v1/consumer.typecheck.mts
       - name: Check shared session types
         run: node web/node_modules/typescript/bin/tsc --noEmit --strict --target ES2022 --module NodeNext --moduleResolution NodeNext api-contracts/session-v1/types.ts api-contracts/session-v1/runtime.d.mts
+      - name: Check shared onboarding types
+        run: node web/node_modules/typescript/bin/tsc --noEmit --strict --target ES2022 --module NodeNext --moduleResolution NodeNext api-contracts/onboarding-v1/types.ts api-contracts/onboarding-v1/runtime.d.mts api-contracts/onboarding-v1/consumer.typecheck.mts
       - run: npm --prefix app ci --no-audit --no-fund
       - run: npm run check:app
   backend:
@@ -64,6 +66,7 @@ jobs:
       - run: python scripts/export-read-contract.py --check
       - run: python scripts/export-read-openapi.py --check
       - run: python scripts/export-session-contract.py --check
+      - run: python scripts/export-onboarding-contract.py --check
       - run: npm run check:read-bridge
       - name: Check PostgreSQL tools
         run: test -x "$DOMINO_PG_BIN/initdb"

@@ -139,7 +139,7 @@
     },
     {
       "path": "backend/session_store.py",
-      "sha256": "5c27f4a1a9673d2ce791e83a9374056ee5e69d37e925b99d5ed3fe426997f026"
+      "sha256": "a59aa12048b4bca60e72c789e4003dad78cc71704aa683a1fdc8308bdd6bc4d1"
     },
     {
       "path": "backend/wallet_access.py",

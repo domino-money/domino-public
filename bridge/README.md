@@ -1,4 +1,11 @@
-# Domino read and session BFF candidates
+# Domino read, session and onboarding BFF candidates
+
+The isolated `src/onboarding-worker.mjs` adds disabled, session-bound swap and
+position previews for #38. Its `onboarding-v1` contract, routes, Access identity
+and limits are separate; read/session capabilities and payloads do not change.
+See the [onboarding runbook](../docs/ONBOARDING_API.md) and
+[shared package](../api-contracts/onboarding-v1/README.md). No app hook or
+deployment route is activated by this source candidate.
 
 The separate, disabled `src/session-worker.mjs` now implements the session
 transport for backend #31/frontend #14. It has its own routes, Access identity,

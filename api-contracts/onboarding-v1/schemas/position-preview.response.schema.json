@@ -1,0 +1,751 @@
+{
+  "$defs": {
+    "AdjustedPrices": {
+      "additionalProperties": false,
+      "properties": {
+        "humanPrices": {
+          "title": "Humanprices",
+          "type": "null"
+        },
+        "max": {
+          "maxLength": 208,
+          "pattern": "^(0|[1-9][0-9]*)(\\.[0-9]+)?$",
+          "title": "Max",
+          "type": "string"
+        },
+        "min": {
+          "maxLength": 208,
+          "pattern": "^(0|[1-9][0-9]*)(\\.[0-9]+)?$",
+          "title": "Min",
+          "type": "string"
+        },
+        "status": {
+          "const": "provider_reported",
+          "title": "Status",
+          "type": "string"
+        },
+        "unit": {
+          "const": "raw_token1_per_raw_token0",
+          "title": "Unit",
+          "type": "string"
+        }
+      },
+      "required": [
+        "min",
+        "max",
+        "unit",
+        "status",
+        "humanPrices"
+      ],
+      "title": "AdjustedPrices",
+      "type": "object"
+    },
+    "NativeFunding": {
+      "additionalProperties": false,
+      "properties": {
+        "balanceIndependentlyVerified": {
+          "const": false,
+          "title": "Balanceindependentlyverified",
+          "type": "boolean"
+        },
+        "depositMaximumRaw": {
+          "maxLength": 78,
+          "pattern": "^(0|[1-9][0-9]{0,77})$",
+          "title": "Depositmaximumraw",
+          "type": "string"
+        },
+        "reportedBalanceRaw": {
+          "anyOf": [
+            {
+              "maxLength": 78,
+              "pattern": "^(0|[1-9][0-9]{0,77})$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Reportedbalanceraw"
+        },
+        "reserveCoversActualGasVerified": {
+          "const": false,
+          "title": "Reservecoversactualgasverified",
+          "type": "boolean"
+        },
+        "selectedGasReserveRaw": {
+          "anyOf": [
+            {
+              "maxLength": 78,
+              "pattern": "^(0|[1-9][0-9]{0,77})$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Selectedgasreserveraw"
+        }
+      },
+      "required": [
+        "depositMaximumRaw",
+        "reportedBalanceRaw",
+        "selectedGasReserveRaw",
+        "balanceIndependentlyVerified",
+        "reserveCoversActualGasVerified"
+      ],
+      "title": "NativeFunding",
+      "type": "object"
+    },
+    "PoolKeyModel": {
+      "additionalProperties": false,
+      "properties": {
+        "currency0": {
+          "maxLength": 42,
+          "minLength": 42,
+          "pattern": "^0x[0-9a-f]{40}$",
+          "title": "Currency0",
+          "type": "string"
+        },
+        "currency1": {
+          "maxLength": 42,
+          "minLength": 42,
+          "pattern": "^0x[0-9a-f]{40}$",
+          "title": "Currency1",
+          "type": "string"
+        },
+        "fee_pips": {
+          "maximum": 1000000,
+          "minimum": 0,
+          "title": "Fee Pips",
+          "type": "integer"
+        },
+        "hooks": {
+          "const": "0x0000000000000000000000000000000000000000",
+          "title": "Hooks",
+          "type": "string"
+        },
+        "tick_spacing": {
+          "maximum": 32767,
+          "minimum": 1,
+          "title": "Tick Spacing",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "currency0",
+        "currency1",
+        "fee_pips",
+        "tick_spacing",
+        "hooks"
+      ],
+      "title": "PoolKeyModel",
+      "type": "object"
+    },
+    "Position": {
+      "additionalProperties": false,
+      "properties": {
+        "adjustedPrices": {
+          "$ref": "#/$defs/AdjustedPrices"
+        },
+        "mintLiquidityRaw": {
+          "maxLength": 78,
+          "pattern": "^[1-9][0-9]{0,77}$",
+          "title": "Mintliquidityraw",
+          "type": "string",
+          "x-maximum-raw": "170141183460469231731687303715884105727"
+        },
+        "poolId": {
+          "maxLength": 66,
+          "minLength": 66,
+          "pattern": "^0x[0-9a-f]{64}$",
+          "title": "Poolid",
+          "type": "string"
+        },
+        "poolKey": {
+          "$ref": "#/$defs/PoolKeyModel"
+        },
+        "recipient": {
+          "maxLength": 42,
+          "minLength": 42,
+          "pattern": "^0x[0-9a-f]{40}$",
+          "title": "Recipient",
+          "type": "string"
+        },
+        "tickLower": {
+          "maximum": 887272,
+          "minimum": -887272,
+          "title": "Ticklower",
+          "type": "integer"
+        },
+        "tickUpper": {
+          "maximum": 887272,
+          "minimum": -887272,
+          "title": "Tickupper",
+          "type": "integer"
+        },
+        "tokens": {
+          "items": {
+            "$ref": "#/$defs/PositionToken"
+          },
+          "maxItems": 2,
+          "minItems": 2,
+          "title": "Tokens",
+          "type": "array"
+        }
+      },
+      "required": [
+        "poolId",
+        "poolKey",
+        "recipient",
+        "tickLower",
+        "tickUpper",
+        "tokens",
+        "mintLiquidityRaw",
+        "adjustedPrices"
+      ],
+      "title": "Position",
+      "type": "object"
+    },
+    "PositionChecks": {
+      "additionalProperties": false,
+      "properties": {
+        "reasons": {
+          "items": {
+            "enum": [
+              "token0_maximum_exceeds_budget",
+              "token1_maximum_exceeds_budget",
+              "token0_budget_unknown",
+              "token1_budget_unknown",
+              "native_balance_unknown",
+              "native_gas_reserve_unspecified",
+              "native_deposit_exceeds_balance",
+              "native_gas_reserve_exceeded"
+            ],
+            "type": "string"
+          },
+          "maxItems": 8,
+          "title": "Reasons",
+          "type": "array"
+        },
+        "status": {
+          "enum": [
+            "blocked",
+            "incomplete",
+            "within_selected_limits"
+          ],
+          "title": "Status",
+          "type": "string"
+        }
+      },
+      "required": [
+        "status",
+        "reasons"
+      ],
+      "title": "PositionChecks",
+      "type": "object"
+    },
+    "PositionDominoFee": {
+      "additionalProperties": false,
+      "properties": {
+        "assistedSwapPerformed": {
+          "const": false,
+          "title": "Assistedswapperformed",
+          "type": "boolean"
+        },
+        "automationFeeApplies": {
+          "const": false,
+          "title": "Automationfeeapplies",
+          "type": "boolean"
+        },
+        "bps": {
+          "maximum": 0,
+          "minimum": 0,
+          "title": "Bps",
+          "type": "integer"
+        },
+        "status": {
+          "const": "not_applicable_direct_deposit",
+          "title": "Status",
+          "type": "string"
+        }
+      },
+      "required": [
+        "status",
+        "bps",
+        "automationFeeApplies",
+        "assistedSwapPerformed"
+      ],
+      "title": "PositionDominoFee",
+      "type": "object"
+    },
+    "PositionGas": {
+      "additionalProperties": false,
+      "properties": {
+        "feeWei": {
+          "anyOf": [
+            {
+              "maxLength": 78,
+              "pattern": "^(0|[1-9][0-9]{0,77})$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Feewei"
+        },
+        "fullNetworkCostVerified": {
+          "const": false,
+          "title": "Fullnetworkcostverified",
+          "type": "boolean"
+        },
+        "source": {
+          "anyOf": [
+            {
+              "const": "provider_estimate",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Source"
+        }
+      },
+      "required": [
+        "feeWei",
+        "source",
+        "fullNetworkCostVerified"
+      ],
+      "title": "PositionGas",
+      "type": "object"
+    },
+    "PositionIdentity": {
+      "additionalProperties": false,
+      "properties": {
+        "amountRaw": {
+          "maxLength": 78,
+          "pattern": "^[1-9][0-9]{0,77}$",
+          "title": "Amountraw",
+          "type": "string"
+        },
+        "budget0Raw": {
+          "anyOf": [
+            {
+              "maxLength": 78,
+              "pattern": "^(0|[1-9][0-9]{0,77})$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Budget0Raw"
+        },
+        "budget1Raw": {
+          "anyOf": [
+            {
+              "maxLength": 78,
+              "pattern": "^(0|[1-9][0-9]{0,77})$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Budget1Raw"
+        },
+        "chainId": {
+          "maximum": 4663,
+          "minimum": 4663,
+          "title": "Chainid",
+          "type": "integer"
+        },
+        "independentToken": {
+          "maxLength": 42,
+          "minLength": 42,
+          "pattern": "^0x[0-9a-fA-F]{40}$",
+          "title": "Independenttoken",
+          "type": "string"
+        },
+        "nativeBalanceRaw": {
+          "anyOf": [
+            {
+              "maxLength": 78,
+              "pattern": "^(0|[1-9][0-9]{0,77})$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Nativebalanceraw"
+        },
+        "nativeGasReserveRaw": {
+          "anyOf": [
+            {
+              "maxLength": 78,
+              "pattern": "^(0|[1-9][0-9]{0,77})$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Nativegasreserveraw"
+        },
+        "owner": {
+          "maxLength": 42,
+          "minLength": 42,
+          "pattern": "^0x[0-9a-f]{40}$",
+          "title": "Owner",
+          "type": "string"
+        },
+        "poolId": {
+          "maxLength": 66,
+          "minLength": 66,
+          "pattern": "^0x[0-9a-f]{64}$",
+          "title": "Poolid",
+          "type": "string"
+        },
+        "poolKey": {
+          "$ref": "#/$defs/PoolKeyModel"
+        },
+        "slippageBps": {
+          "maximum": 9999,
+          "minimum": 0,
+          "title": "Slippagebps",
+          "type": "integer"
+        },
+        "tickLower": {
+          "maximum": 887272,
+          "minimum": -887272,
+          "title": "Ticklower",
+          "type": "integer"
+        },
+        "tickUpper": {
+          "maximum": 887272,
+          "minimum": -887272,
+          "title": "Tickupper",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "chainId",
+        "poolId",
+        "poolKey",
+        "independentToken",
+        "amountRaw",
+        "tickLower",
+        "tickUpper",
+        "slippageBps",
+        "budget0Raw",
+        "budget1Raw",
+        "nativeBalanceRaw",
+        "nativeGasReserveRaw",
+        "owner"
+      ],
+      "title": "PositionIdentity",
+      "type": "object"
+    },
+    "PositionPreview": {
+      "additionalProperties": false,
+      "properties": {
+        "chainId": {
+          "maximum": 4663,
+          "minimum": 4663,
+          "title": "Chainid",
+          "type": "integer"
+        },
+        "dominoFee": {
+          "$ref": "#/$defs/PositionDominoFee"
+        },
+        "executionAvailable": {
+          "const": false,
+          "title": "Executionavailable",
+          "type": "boolean"
+        },
+        "expiresAt": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "title": "Expiresat",
+          "type": "integer"
+        },
+        "gas": {
+          "$ref": "#/$defs/PositionGas"
+        },
+        "nativeFunding": {
+          "$ref": "#/$defs/NativeFunding"
+        },
+        "position": {
+          "$ref": "#/$defs/Position"
+        },
+        "preparedDeadline": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "title": "Prepareddeadline",
+          "type": "integer"
+        },
+        "previewChecks": {
+          "$ref": "#/$defs/PositionChecks"
+        },
+        "provenance": {
+          "$ref": "#/$defs/PositionProvenance"
+        },
+        "request": {
+          "$ref": "#/$defs/PositionIdentity"
+        },
+        "requestFingerprint": {
+          "maxLength": 64,
+          "minLength": 64,
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Requestfingerprint",
+          "type": "string"
+        },
+        "requestedAt": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "title": "Requestedat",
+          "type": "integer"
+        },
+        "retrievedAt": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "title": "Retrievedat",
+          "type": "integer"
+        },
+        "schemaVersion": {
+          "maximum": 1,
+          "minimum": 1,
+          "title": "Schemaversion",
+          "type": "integer"
+        },
+        "simulation": {
+          "$ref": "#/$defs/PositionSimulation"
+        },
+        "source": {
+          "const": "uniswap_liquidity_create_v1",
+          "title": "Source",
+          "type": "string"
+        },
+        "status": {
+          "const": "preview_only",
+          "title": "Status",
+          "type": "string"
+        }
+      },
+      "required": [
+        "schemaVersion",
+        "chainId",
+        "status",
+        "executionAvailable",
+        "requestedAt",
+        "retrievedAt",
+        "expiresAt",
+        "requestFingerprint",
+        "source",
+        "position",
+        "previewChecks",
+        "nativeFunding",
+        "gas",
+        "dominoFee",
+        "simulation",
+        "provenance",
+        "request",
+        "preparedDeadline"
+      ],
+      "title": "PositionPreview",
+      "type": "object"
+    },
+    "PositionProvenance": {
+      "additionalProperties": false,
+      "properties": {
+        "balancesAndAllowancesVerified": {
+          "const": false,
+          "title": "Balancesandallowancesverified",
+          "type": "boolean"
+        },
+        "blockNumber": {
+          "title": "Blocknumber",
+          "type": "null"
+        },
+        "calculation": {
+          "const": "uniswap_lp_create",
+          "title": "Calculation",
+          "type": "string"
+        },
+        "mintIdentityAndLimitsInspected": {
+          "const": true,
+          "title": "Mintidentityandlimitsinspected",
+          "type": "boolean"
+        },
+        "onchainSnapshotVerified": {
+          "const": false,
+          "title": "Onchainsnapshotverified",
+          "type": "boolean"
+        },
+        "schemaCommit": {
+          "const": "da6d36f71c4d2fd665b0aae1a052a4ffda917b31",
+          "title": "Schemacommit",
+          "type": "string"
+        },
+        "slippageModelIndependentlyVerified": {
+          "const": false,
+          "title": "Slippagemodelindependentlyverified",
+          "type": "boolean"
+        },
+        "tokenSafetyVerified": {
+          "const": false,
+          "title": "Tokensafetyverified",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "schemaCommit",
+        "calculation",
+        "mintIdentityAndLimitsInspected",
+        "onchainSnapshotVerified",
+        "blockNumber",
+        "balancesAndAllowancesVerified",
+        "tokenSafetyVerified",
+        "slippageModelIndependentlyVerified"
+      ],
+      "title": "PositionProvenance",
+      "type": "object"
+    },
+    "PositionSimulation": {
+      "additionalProperties": false,
+      "properties": {
+        "independentSuccessProven": {
+          "const": false,
+          "title": "Independentsuccessproven",
+          "type": "boolean"
+        },
+        "status": {
+          "const": "not_requested",
+          "title": "Status",
+          "type": "string"
+        }
+      },
+      "required": [
+        "status",
+        "independentSuccessProven"
+      ],
+      "title": "PositionSimulation",
+      "type": "object"
+    },
+    "PositionToken": {
+      "additionalProperties": false,
+      "properties": {
+        "address": {
+          "maxLength": 42,
+          "minLength": 42,
+          "pattern": "^0x[0-9a-f]{40}$",
+          "title": "Address",
+          "type": "string"
+        },
+        "budgetStatus": {
+          "enum": [
+            "unknown",
+            "exceeded",
+            "within_limit"
+          ],
+          "title": "Budgetstatus",
+          "type": "string"
+        },
+        "estimatedUnspentBudgetRaw": {
+          "anyOf": [
+            {
+              "maxLength": 78,
+              "pattern": "^(0|[1-9][0-9]{0,77})$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Estimatedunspentbudgetraw"
+        },
+        "expectedDepositRaw": {
+          "maxLength": 78,
+          "pattern": "^(0|[1-9][0-9]{0,77})$",
+          "title": "Expecteddepositraw",
+          "type": "string"
+        },
+        "maximumDebitRaw": {
+          "maxLength": 78,
+          "pattern": "^(0|[1-9][0-9]{0,77})$",
+          "title": "Maximumdebitraw",
+          "type": "string",
+          "x-maximum-raw": "340282366920938463463374607431768211455"
+        },
+        "selectedBudgetRaw": {
+          "anyOf": [
+            {
+              "maxLength": 78,
+              "pattern": "^(0|[1-9][0-9]{0,77})$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Selectedbudgetraw"
+        },
+        "unspentAtMaximumRaw": {
+          "anyOf": [
+            {
+              "maxLength": 78,
+              "pattern": "^(0|[1-9][0-9]{0,77})$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Unspentatmaximumraw"
+        }
+      },
+      "required": [
+        "address",
+        "expectedDepositRaw",
+        "maximumDebitRaw",
+        "selectedBudgetRaw",
+        "budgetStatus",
+        "estimatedUnspentBudgetRaw",
+        "unspentAtMaximumRaw"
+      ],
+      "title": "PositionToken",
+      "type": "object"
+    }
+  },
+  "$id": "https://domino.invalid/contracts/onboarding-v1/position-preview.response.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "contractVersion": {
+      "const": "1.0.0",
+      "title": "Contractversion",
+      "type": "string"
+    },
+    "preview": {
+      "$ref": "#/$defs/PositionPreview"
+    }
+  },
+  "required": [
+    "contractVersion",
+    "preview"
+  ],
+  "title": "PositionResponse",
+  "type": "object",
+  "x-contract-version": "1.0.0",
+  "x-domino-constraints": [
+    "All scalars are strict; JSON number lexemes must be canonical safe integers.",
+    "Raw token strings are exact canonical uint256 values (positive when specified).",
+    "Pool keys are ordered, distinct, hookless and fixed fee; the backend verifies Keccak PoolId.",
+    "Selected ticks must be spaced and ordered; the independent token must belong to the pool.",
+    "Preview timestamps have a 30-second lifetime; position prepared deadline is 1200 seconds.",
+    "Unknown values remain null; cost/status arithmetic must match the adapter projection.",
+    "Session-derived owner, response identity and freshness are checked by the service."
+  ]
+}

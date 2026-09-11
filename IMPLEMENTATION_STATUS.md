@@ -4,6 +4,8 @@
 
 ## Implemented
 
+- Issue #38 adds the disabled [authenticated onboarding API](docs/ONBOARDING_API.md): SIWE-derived owner, CSRF and post-provider session guards, durable quotas, Uniswap preview adapters and a separate `onboarding-v1` worker/contract. Full local verification passes 649 backend PostgreSQL/EVM tests without skips and 503 bridge tests. Frontend wiring, staging and financial execution remain separate; no new LP math or migration is added.
+
 - Issue #36 adds an internal [Uniswap LP position preview](docs/POSITION_PREVIEW.md). Uniswap calculates dependent deposits; Domino inspects the existing-pool mint identity and encoded maximum debits against selected budgets. Both input sides were qualified live with a public placeholder; an ignored provider budget was caught locally. No duplicate LP math, calldata output, public route, frontend change or financial execution. The complete backend suite passes 531 tests with PostgreSQL/EVM, zero skips.
 - Issue #34 adds the internal [Uniswap funding quote preview](docs/FUNDING_QUOTE_PREVIEW.md), explicit CLI, exact route/amount/recipient checks and short validity. Unknown/provider output fees remain separate from the unselected Domino input-budget tariff. This is a reusable preview adapter, not a complete funding solver or live swap flow; public routes and frontend source are unchanged.
 

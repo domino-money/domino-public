@@ -18,7 +18,7 @@ from psycopg.rows import dict_row
 
 from discovery import DataError
 from read_deadline import check_read_deadline, read_timeout
-from session_models import CHAIN_ID, POLICY_VERSION, SessionError, utc
+from session_models import CHAIN_ID, POLICY_VERSION, SessionError, token, utc, validate_account
 
 AUTH_ROLE = 'domino_session_auth'
 CAPACITIES = {'contexts': 10000, 'challenges': 20000, 'sessions': 10000,
@@ -28,6 +28,10 @@ LOCK_ID = 0x444F4D53455353
 ISSUANCE_GLOBAL_PER_MINUTE = 100
 VERIFY_GLOBAL_PER_MINUTE = 200
 PROVEN_WALLET_PER_HOUR = 20
+PREVIEW_IP_LIMIT = 20
+PREVIEW_ACCOUNT_LIMIT = 10
+PREVIEW_GLOBAL_LIMIT = 60
+PREVIEW_WINDOW_SECONDS = 60
 
 
 def digest(value):
@@ -398,6 +402,63 @@ class SessionStore:
                          'WHERE bearer_hash=%s', (now,validation['blockNumber'],validation['blockHash'],digest(session)))
             return _CommitResult({'result':self._result(row['address'],row['expires_at'],csrf,validation),'credentials':{}},
                                  min(row['expires_at'],row['last_used_at']+timedelta(minutes=30)),'session_required')
+        return self._transaction(operation)
+
+    def begin_preview(self, client, session, csrf):
+        """Reserve costly preview reads before any external account/API check.
+
+        This namespace is separate from login and private-read quotas. Expected
+        denials commit the already reserved attempts, including bad credentials
+        and a later account/global limit. Only the verified public owner leaves
+        this transaction; stored credential hashes never do.
+        """
+        def operation(conn, now):
+            denied = self._rate(conn, now, 'onboarding-ip', client,
+                                PREVIEW_IP_LIMIT, PREVIEW_WINDOW_SECONDS)
+            if denied:
+                return denied
+            try:
+                token(session, required='session_required')
+                token(csrf, required='csrf_invalid')
+            except SessionError as error:
+                return error
+            row = self._session(conn, session)
+            if not self._active(row, now) or row['chain_id'] != CHAIN_ID:
+                return SessionError('session_required')
+            if not same_hash(row['csrf_hash'], csrf):
+                return SessionError('csrf_invalid')
+            for kind, value, maximum in (
+                    ('onboarding-account', row['address'], PREVIEW_ACCOUNT_LIMIT),
+                    ('onboarding-global', 'all', PREVIEW_GLOBAL_LIMIT)):
+                denied = self._rate(conn, now, kind, value, maximum, PREVIEW_WINDOW_SECONDS)
+                if denied:
+                    return denied
+            # Keep reservations when expiry is crossed during the DB work.
+            # The separate finish guard rechecks immediately before provider use.
+            fresh = conn.execute('SELECT clock_timestamp() AS now').fetchone()['now']
+            if not self._active(row, fresh):
+                return SessionError('session_required')
+            return {'address': row['address'], 'chainId': CHAIN_ID}
+        return self._transaction(operation)
+
+    def finish_preview(self, session, csrf, owner, validation):
+        """Reauthorize before/after provider work without rotating browser CSRF."""
+        token(session, required='session_required')
+        token(csrf, required='csrf_invalid')
+        validation = validate_account(validation)
+        def operation(conn, now):
+            row = self._session(conn, session)
+            if (not self._active(row, now) or row['chain_id'] != CHAIN_ID
+                    or row['address'] != owner):
+                return SessionError('session_required')
+            if not same_hash(row['csrf_hash'], csrf):
+                return SessionError('csrf_invalid')
+            conn.execute('UPDATE sessions SET last_used_at=%s,block_number=%s,block_hash=%s '
+                         'WHERE bearer_hash=%s',
+                         (now, validation['blockNumber'], validation['blockHash'], digest(session)))
+            return _CommitResult(None,
+                                 min(row['expires_at'], row['last_used_at'] + timedelta(minutes=30)),
+                                 'session_required')
         return self._transaction(operation)
 
     def revoke(self, session):
