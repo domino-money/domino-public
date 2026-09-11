@@ -7,6 +7,10 @@ default command validates the trusted archive and prints a JSON plan without
 writing files, inspecting the host or contacting PostgreSQL. `--apply` is an
 explicit root-only operation on the already provisioned VM.
 
+For an already installed release, use the separately reviewed
+[disabled upgrade procedure](VM_DISABLED_UPGRADE.md). This one-time installer's
+fresh-database and empty-destination guards remain unchanged.
+
 The selected archive is producer candidate
 `a5a855cec1fc5d120d9c1c187a84ff24bc1b02d6`, based on PR #46
 `4d008a8a6fa520d31a915f796374ea1b152764b5`, with the legacy v1 receipt fix and
