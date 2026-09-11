@@ -59,6 +59,14 @@ key. It inherits the loopback/browser-origin boundary below. It does not replace
 
 ## Uniswap API configuration and readiness
 
+Issue #36 adds an internal [Uniswap LP position preview](../docs/POSITION_PREVIEW.md)
+through `preview_position.py`. Uniswap computes the dependent-token amount for
+an existing hookless fixed-fee v4 pool; Domino inspects the prepared mint and
+compares its maximum debits with selected budgets. The preview contains no
+calldata. It does not initialize a pool, balance tokens with swaps, authenticate
+an owner or enable a browser/signing route. Human-price input should use the
+official frontend/SDK to obtain canonical spaced ticks.
+
 Issue #34 adds an explicit [owner-funded quote preview](../docs/FUNDING_QUOTE_PREVIEW.md)
 through `preview_swap.py`: one bounded, expiring hookless-v4 quote with exact
 request/route checks and separate provider/Domino fee semantics. It is internal

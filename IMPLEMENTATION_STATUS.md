@@ -4,6 +4,7 @@
 
 ## Implemented
 
+- Issue #36 adds an internal [Uniswap LP position preview](docs/POSITION_PREVIEW.md). Uniswap calculates dependent deposits; Domino inspects the existing-pool mint identity and encoded maximum debits against selected budgets. Both input sides were qualified live with a public placeholder; an ignored provider budget was caught locally. No duplicate LP math, calldata output, public route, frontend change or financial execution. The complete backend suite passes 531 tests with PostgreSQL/EVM, zero skips.
 - Issue #34 adds the internal [Uniswap funding quote preview](docs/FUNDING_QUOTE_PREVIEW.md), explicit CLI, exact route/amount/recipient checks and short validity. Unknown/provider output fees remain separate from the unselected Domino input-budget tariff. This is a reusable preview adapter, not a complete funding solver or live swap flow; public routes and frontend source are unchanged.
 
 - Issue #49 adds [backend wallet admission](docs/WALLET_ACCESS.md): operator-only persistent grants/audit, default-deny login and generation checks on session/private authorization. Public reads remain unauthenticated; revoke/regrant cannot revive old credentials. The session candidate is 3.0.0-rc.2; [qualification](reports/WALLET_ACCESS_IMPLEMENTATION.md) records the PostgreSQL/EVM qualification and the PR #53 privacy correction. [Home VM preparation](docs/HOME_VM_RUNBOOK.md) records the installed VM/empty PostgreSQL foundation, private initial wallet list and Decimal's Cloudflare/DNS scope. No application activation or real wallet grant.
