@@ -2,6 +2,8 @@
 
 11 September 2026 · [#86](https://github.com/domino-money/domino/issues/86)
 
+Historical evidence for the originally approved #100 head. The later [#101 review follow-up](PUBLIC_VAULT_E2_REVIEW_FOLLOWUP.md) supersedes its receiver-dependent NFT exit behavior, mutable checkpoint preimage, callback/event details and runtime measurement. Original test counts and hashes below refer to #100, not the follow-up head.
+
 Base: `b30f8b88838b3e118f951b26ebf7c4c9a55c1e9f`, the approved E1 #98 squash merge. Implementation branch: `codex/86-owner-vault`. This report describes a custody/recovery candidate, not a deployed or financially activated executor. The [E2 contract semantics](../docs/PUBLIC_VAULT_E2.md) document the actual ABI and owner recovery route.
 
 ## Delivered behavior

@@ -5,7 +5,7 @@ import {DominoVault} from "../src/DominoVault.sol";
 import {DominoVaultTypes as T, IERC721ReceiverE2} from "../src/DominoVaultTypes.sol";
 import {IDominoVaultDraft} from "../src/IDominoVaultDraft.sol";
 import {VmE2, MockPoolManager, MockPositionManager, MockStateView, MockERC20, E2OwnerReceiver,
-    E2ForeignSubscriber} from "./E2Mocks.sol";
+    E2ForeignSubscriber, E2OwnerWithoutNFTReceiver} from "./E2Mocks.sol";
 
 interface VmE2CodeEtch {
     function etch(address target, bytes calldata runtime) external;
@@ -38,6 +38,7 @@ contract DominoVaultCustodyTest is IERC721ReceiverE2 {
     T.PoolKey private key;
     VaultE2TestHarness private vault;
     address private owner;
+    event CallbackGasBound(uint256 forwardedGas, uint256 coldCallGasUsed);
 
     receive() external payable {}
     function onERC721Received(address, address, uint256, bytes calldata) external pure returns (bytes4) {
@@ -93,8 +94,10 @@ contract DominoVaultCustodyTest is IERC721ReceiverE2 {
         positions.mint(owner, id, key, -300, 900, 500);
         vm.prank(owner);
         positions.approve(address(vault), id);
+        uint64 nonce = vault.stateNonce();
         vm.prank(owner);
         vault.adoptChild(id, parent, true);
+        require(vault.stateNonce() == nonce + 1, "adoption nonce not exact");
     }
 
     function _balance(address currency, address account) private view returns (uint256) {
@@ -106,6 +109,24 @@ contract DominoVaultCustodyTest is IERC721ReceiverE2 {
         bytes32 sourceId = currency == key.currency0 ? p.source0 : p.source1;
         vm.prank(owner);
         vault.withdrawFeeReserves(sourceId, currency, original, charged);
+    }
+
+    function _checkpointCommitment(uint256 id, T.Checkpoint memory cp) private view returns (bytes32) {
+        return keccak256(abi.encode(keccak256("DominoRegistrationCheckpointV1"), vault.sequenceIdentityHash(), id,
+            cp.liquidity, cp.feeGrowthInside0LastX128, cp.feeGrowthInside1LastX128,
+            cp.feeGrowthInside0X128, cp.feeGrowthInside1X128, cp.observedAtBlock));
+    }
+
+    function _assertRootInvalidated(VmE2.Log[] memory logs, uint8 reason, uint64 generation, uint64 nonce) private view {
+        uint256 count;
+        for (uint256 i; i < logs.length; ++i) {
+            if (logs[i].emitter == address(vault) && logs[i].topics[0] == keccak256("RootInvalidated(uint8,uint64,uint64)")) {
+                require(logs[i].topics.length == 1 && keccak256(logs[i].data) == keccak256(abi.encode(reason, generation, nonce)),
+                    "wrong root invalidation event");
+                ++count;
+            }
+        }
+        require(count == 1, "root invalidation event missing or duplicated");
     }
 
     function testInitializedRootStaysWithOwnerAndCheckpointDoesNotCreditFees() public view {
@@ -122,26 +143,40 @@ contract DominoVaultCustodyTest is IERC721ReceiverE2 {
             "registration fabricated reserves");
     }
 
-    function testOnlyOwnerCanChangePolicyLimitsOperatorAndWithdraw() public {
+    function _ownerOnlyWithPositiveControl(bytes memory data) private {
+        uint64 nonce = vault.stateNonce();
+        vm.prank(OPERATOR); (bool ok, bytes memory result) = address(vault).call(data);
+        require(!ok && keccak256(result) == keccak256(abi.encodeWithSelector(DominoVault.Unauthorized.selector)),
+            "operator did not fail specifically at owner guard");
+        vm.prank(STRANGER); (ok, result) = address(vault).call(data);
+        require(!ok && keccak256(result) == keccak256(abi.encodeWithSelector(DominoVault.Unauthorized.selector)),
+            "stranger did not fail specifically at owner guard");
+        require(vault.stateNonce() == nonce, "unauthorized call mutated");
+        vm.prank(owner); (ok, result) = address(vault).call(data);
+        if (!ok) assembly ("memory-safe") { revert(add(result, 32), mload(result)) }
+        require(vault.stateNonce() == nonce + 1, "owner positive control nonce not exact");
+    }
+
+    function testEveryOwnerOnlyGuardHasValidStateAndSuccessfulOwnerControl() public {
         _credit(11, 100, 200);
         IDominoVaultDraft.Policy memory next = vault.policy(); next.version++;
         T.ExecutionLimits memory limits = vault.executionLimits(); limits.version++;
         bytes32 sourceId = vault.position(11).source0;
-        bytes[] memory calls = new bytes[](8);
-        calls[0] = abi.encodeCall(vault.setPolicy, (next));
-        calls[1] = abi.encodeCall(vault.setExecutionLimits, (limits));
-        calls[2] = abi.encodeCall(vault.setOperator, (STRANGER));
-        calls[3] = abi.encodeCall(vault.revokeOperator, ());
-        calls[4] = abi.encodeCall(vault.withdrawFeeReserves, (sourceId, key.currency0, 1, 0));
-        calls[5] = abi.encodeCall(vault.recoverUntrackedCurrency, (key.currency0, 1));
-        calls[6] = abi.encodeCall(vault.rearmRoot, (true));
-        calls[7] = abi.encodeCall(vault.recoverUnmanagedPosition, (11));
-        uint64 nonce = vault.stateNonce();
-        for (uint256 i; i < calls.length; ++i) {
-            vm.prank(OPERATOR); (bool ok,) = address(vault).call(calls[i]); require(!ok, "operator gained owner power");
-            vm.prank(STRANGER); (ok,) = address(vault).call(calls[i]); require(!ok, "stranger gained owner power");
-        }
-        require(vault.stateNonce() == nonce && vault.accountedCurrency(key.currency0) == 100, "failed calls mutated");
+        _ownerOnlyWithPositiveControl(abi.encodeCall(vault.setPolicy, (next)));
+        _ownerOnlyWithPositiveControl(abi.encodeCall(vault.setExecutionLimits, (limits)));
+        _ownerOnlyWithPositiveControl(abi.encodeCall(vault.setOperator, (STRANGER)));
+        _ownerOnlyWithPositiveControl(abi.encodeCall(vault.revokeOperator, ()));
+        _ownerOnlyWithPositiveControl(abi.encodeCall(vault.withdrawFeeReserves, (sourceId, key.currency0, 1, 0)));
+        _fund(key.currency0, 1);
+        _ownerOnlyWithPositiveControl(abi.encodeCall(vault.recoverUntrackedCurrency, (key.currency0, 1)));
+        _ownerOnlyWithPositiveControl(abi.encodeCall(vault.rearmRoot, (true)));
+        positions.mint(owner, 99, key, -300, 900, 500); positions.transferFrom(owner, address(vault), 99);
+        _ownerOnlyWithPositiveControl(abi.encodeCall(vault.recoverUnmanagedPosition, (99)));
+        positions.mint(owner, 12, key, -300, 900, 500); positions.approve(address(vault), 12);
+        _ownerOnlyWithPositiveControl(abi.encodeCall(vault.adoptChild, (12, 11, true)));
+        _ownerOnlyWithPositiveControl(abi.encodeCall(vault.withdrawChildPosition, (12)));
+        vault.pause();
+        _ownerOnlyWithPositiveControl(abi.encodeCall(vault.resume, ()));
     }
 
     function testPolicyAndLimitsRemainIndependentAndInvalidateOldAuthority() public {
@@ -150,11 +185,13 @@ contract DominoVaultCustodyTest is IERC721ReceiverE2 {
         IDominoVaultDraft.Policy memory next = vault.policy();
         next.version++; next.triggerDistanceBps = 100; next.maxOverlapBps = 1700;
         vault.setPolicy(next);
+        require(vault.stateNonce() == oldNonce + 1, "policy nonce not exact");
         IDominoVaultDraft.Policy memory stored = vault.policy();
         require(stored.triggerDistanceBps == 100 && stored.maxOverlapBps == 1700, "geometry coupled");
         vm.expectRevert(); vault.validateAuthority(1, oldNonce, generation);
         T.ExecutionLimits memory limits = vault.executionLimits(); limits.version++; limits.upsideBps = 4000;
         vault.setExecutionLimits(limits);
+        require(vault.stateNonce() == oldNonce + 2, "limits nonce not exact");
         require(vault.executionLimits().upsideBps == 4000, "limits unchanged");
     }
 
@@ -167,6 +204,19 @@ contract DominoVaultCustodyTest is IERC721ReceiverE2 {
         vault.revokeOperator();
         require(!vault.isOperator(OPERATOR), "operator still authorized");
         vm.prank(OPERATOR); vm.expectRevert(); vault.pause();
+    }
+
+    function testOperatorRotationAndAuthorityValidationHaveSuccessfulControls() public {
+        uint64 version = vault.policy().version; uint64 nonce = vault.stateNonce(); uint64 generation = vault.authorityGeneration();
+        vault.validateAuthority(version, nonce, generation);
+        vm.prank(OPERATOR); vault.validateAuthority(version, nonce, generation);
+        vault.setOperator(STRANGER);
+        require(vault.operator() == STRANGER && vault.isOperator(STRANGER) && !vault.isOperator(OPERATOR) &&
+            vault.stateNonce() == nonce + 1 && vault.authorityGeneration() == generation + 1, "rotation state wrong");
+        vm.prank(OPERATOR); vm.expectRevert(DominoVault.Unauthorized.selector);
+        vault.validateAuthority(version, nonce + 1, generation + 1);
+        vm.prank(STRANGER); vault.validateAuthority(version, nonce + 1, generation + 1);
+        vault.validateAuthority(version, nonce + 1, generation + 1);
     }
 
     function testWithdrawNativeAndERC20ReservesPaysOnlyOwnerWithNoFee() public {
@@ -217,6 +267,29 @@ contract DominoVaultCustodyTest is IERC721ReceiverE2 {
         vm.expectRevert(); vault.recoverUntrackedCurrency(address(unrelated), 5);
     }
 
+    function testTaxedUntrackedRecoveryStillRejectsExactPayoutMismatchAtBothAmounts() public {
+        _fund(key.currency1, 1000);
+        MockERC20(key.currency1).configureTransfer(0, 100);
+        uint64 nonce = vault.stateNonce();
+        vm.expectRevert(DominoVault.TransferFailed.selector); vault.recoverUntrackedCurrency(key.currency1, 100);
+        vm.expectRevert(DominoVault.TransferFailed.selector); vault.recoverUntrackedCurrency(key.currency1, 1000);
+        require(vault.stateNonce() == nonce && vault.accountedCurrency(key.currency1) == 0 &&
+            _balance(key.currency1, address(vault)) == 1000 && _balance(key.currency1, owner) == 0,
+            "taxed surplus recovery mutated state");
+        MockERC20(key.currency1).configureTransfer(0, 0);
+        vault.recoverUntrackedCurrency(key.currency1, 1000);
+        require(_balance(key.currency1, owner) == 1000, "untaxed recovery positive control failed");
+    }
+
+    function testZeroWithdrawalFailsForKnownBackedSource() public {
+        _credit(11, 100, 0);
+        bytes32 source0 = vault.position(11).source0; uint64 nonce = vault.stateNonce();
+        vm.expectRevert(DominoVault.InvalidAmount.selector);
+        vault.withdrawFeeReserves(source0, key.currency0, 0, 0);
+        require(vault.stateNonce() == nonce && vault.feeBalance(source0, key.currency0).original == 100,
+            "zero withdrawal mutated state");
+    }
+
     function testArtificialCreditSinksRequireRealBalanceBackingAndPreserveChargeClass() public {
         bytes32 sourceId = vault.position(11).source0;
         vm.expectRevert(); vault.creditOriginal(11, 1, 0);
@@ -256,29 +329,29 @@ contract DominoVaultCustodyTest is IERC721ReceiverE2 {
         vault.withdrawFeeReserves(child.source1, key.currency1, 80, 0);
         require(vault.accountedCurrency(key.currency0) == 0 && vault.accountedCurrency(key.currency1) == 0, "stranded reserve");
         positions.approve(address(vault), 12);
-        vm.expectRevert(); vault.adoptChild(12, 11, true);
+        vm.expectRevert(DominoVault.InvalidPosition.selector); vault.adoptChild(12, 11, true);
     }
 
     function testAdoptionRejectsForeignOwnerParentPoolAndUnconsentedOrUnapprovedNFT() public {
         positions.mint(STRANGER, 12, key, -300, 900, 500);
         vm.prank(STRANGER); positions.approve(address(vault), 12);
-        vm.expectRevert(); vault.adoptChild(12, 11, true);
+        vm.expectRevert(DominoVault.PermissionUnavailable.selector); vault.adoptChild(12, 11, true);
         positions.mint(owner, 13, key, -300, 900, 500);
-        vm.expectRevert(); vault.adoptChild(13, 11, true);
+        vm.expectRevert(DominoVault.PermissionUnavailable.selector); vault.adoptChild(13, 11, true);
         positions.approve(address(vault), 13);
-        vm.expectRevert(); vault.adoptChild(13, 11, false);
-        vm.expectRevert(); vault.adoptChild(13, 99, true);
+        vm.expectRevert(DominoVault.MissingConsent.selector); vault.adoptChild(13, 11, false);
+        vm.expectRevert(DominoVault.InvalidPosition.selector); vault.adoptChild(13, 99, true);
         T.PoolKey memory other = key; other.fee = 500;
         positions.mint(owner, 14, other, -300, 900, 500);
         positions.approve(address(vault), 14);
-        vm.expectRevert(); vault.adoptChild(14, 11, true);
+        vm.expectRevert(DominoVault.InvalidPosition.selector); vault.adoptChild(14, 11, true);
         require(positions.ownerOf(13) == owner && !vault.position(13).known, "invalid adoption kept effects");
     }
 
     function testDirectRootOrForeignNFTTransferCannotMasqueradeAsAdoption() public {
-        vm.expectRevert(); positions.safeTransferFrom(owner, address(vault), 11);
+        vm.expectRevert(DominoVault.UnexpectedCallback.selector); positions.safeTransferFrom(owner, address(vault), 11);
         positions.mint(owner, 12, key, -300, 900, 500);
-        vm.expectRevert(); positions.safeTransferFrom(owner, address(vault), 12);
+        vm.expectRevert(DominoVault.UnexpectedCallback.selector); positions.safeTransferFrom(owner, address(vault), 12);
         require(positions.ownerOf(11) == owner && positions.subscriber(11) == address(vault), "root rollback failed");
         require(positions.ownerOf(12) == owner && !vault.position(12).known, "unsolicited NFT accepted");
     }
@@ -323,18 +396,27 @@ contract DominoVaultCustodyTest is IERC721ReceiverE2 {
         positions.transferFrom(owner, address(vault), 11);
         uint64 nonce = vault.stateNonce(); uint64 generation = vault.authorityGeneration();
         T.Position memory old = vault.position(11);
+        positions.setRejectTransfers(true);
+        vm.expectRevert(MockPositionManager.TransferRejected.selector); vault.recoverUnmanagedPosition(11);
+        require(positions.ownerOf(11) == address(vault) && vault.rootArmed() &&
+            vault.stateNonce() == nonce && vault.authorityGeneration() == generation &&
+            keccak256(abi.encode(vault.position(11))) == keccak256(abi.encode(old)),
+            "failed root rescue retained invalidation or changed custody");
+        positions.setRejectTransfers(false);
+        vm.recordLogs();
         vault.recoverUnmanagedPosition(11);
+        _assertRootInvalidated(vm.getRecordedLogs(), 4, generation + 1, nonce + 1);
         require(positions.ownerOf(11) == owner && !vault.rootArmed() && !vault.rootPermissionValid(), "root rescue kept authority");
         require(vault.stateNonce() == nonce + 1 && vault.authorityGeneration() == generation + 1, "root rescue nonce doubled");
         T.Position memory current = vault.position(11);
         require(current.identity == old.identity && current.source0 == old.source0 && current.source1 == old.source1,
             "root rescue changed fee provenance");
-        vm.expectRevert(); vault.rearmRoot(true);
+        vm.expectRevert(DominoVault.PermissionUnavailable.selector); vault.rearmRoot(true);
         positions.approve(address(vault), 11); vault.rearmRoot(true);
         require(vault.rootPermissionValid(), "root cannot be rearmed after rescue");
     }
 
-    function testUnmanagedRescueReceiverRejectionRollsBackAndReentryCannotRescueAnotherNFT() public {
+    function testUnmanagedRescueIgnoresRejectingReceiverAndCannotInvokeOwnerReentry() public {
         E2OwnerReceiver receiver = new E2OwnerReceiver(); _setup(address(receiver), true);
         positions.mint(owner, 90, key, -300, 900, 500); positions.mint(owner, 91, key, -300, 900, 500);
         vm.startPrank(owner);
@@ -342,12 +424,10 @@ contract DominoVaultCustodyTest is IERC721ReceiverE2 {
         vm.stopPrank();
         uint64 nonce = vault.stateNonce(); receiver.setReject(false, true);
         bytes memory rescue = abi.encodeCall(vault.recoverUnmanagedPosition, (90));
-        vm.expectRevert(); receiver.invoke(address(vault), rescue);
-        require(positions.ownerOf(90) == address(vault) && vault.stateNonce() == nonce, "rescue callback rollback");
-        receiver.setReject(false, false);
         receiver.configureReentry(address(vault), abi.encodeCall(vault.recoverUnmanagedPosition, (91)));
         receiver.invoke(address(vault), rescue);
-        require(receiver.reentryAttempted() && !receiver.reentrySucceeded(), "unmanaged rescue reentered");
+        require(!receiver.reentryAttempted(), "unmanaged rescue called owner receiver");
+        require(vault.stateNonce() == nonce + 1, "plain transfer rescue nonce");
         require(positions.ownerOf(90) == owner && positions.ownerOf(91) == address(vault), "rescued both NFTs");
     }
 
@@ -355,7 +435,7 @@ contract DominoVaultCustodyTest is IERC721ReceiverE2 {
         positions.mint(owner, 12, key, -300, 900, 500);
         positions.approve(address(vault), 12);
         stateView.setPositionState(12, 499, 3, 4);
-        vm.expectRevert(); vault.adoptChild(12, 11, true);
+        vm.expectRevert(DominoVault.InvalidPosition.selector); vault.adoptChild(12, 11, true);
         require(positions.ownerOf(12) == owner && !vault.position(12).known, "bad checkpoint adopted");
     }
 
@@ -368,7 +448,7 @@ contract DominoVaultCustodyTest is IERC721ReceiverE2 {
         _withdraw(12, key.currency1, 80, 0);
         vault.withdrawChildPosition(12);
         require(positions.ownerOf(12) == owner, "root transfer reassigned child");
-        vm.prank(STRANGER); vm.expectRevert(); vault.rearmRoot(true);
+        vm.prank(STRANGER); vm.expectRevert(DominoVault.Unauthorized.selector); vault.rearmRoot(true);
     }
 
     function testRootTransferAwayAndBackRequiresRearmEvenIfCallbackSuppressed() public {
@@ -380,7 +460,7 @@ contract DominoVaultCustodyTest is IERC721ReceiverE2 {
         uint64 policyVersion = vault.policy().version;
         uint64 nonce = vault.stateNonce();
         uint64 authority = vault.authorityGeneration();
-        vm.expectRevert(); vault.validateAuthority(policyVersion, nonce, authority);
+        vm.expectRevert(DominoVault.PermissionUnavailable.selector); vault.validateAuthority(policyVersion, nonce, authority);
         bytes32 source0 = vault.position(11).source0;
         uint64 generation = vault.authorityGeneration();
         vault.rearmRoot(true);
@@ -392,7 +472,7 @@ contract DominoVaultCustodyTest is IERC721ReceiverE2 {
         positions.approve(address(0), 11);
         positions.setApprovalForAll(address(vault), true);
         require(!vault.rootPermissionValid(), "global approval bypass");
-        vm.expectRevert(); vault.rearmRoot(true);
+        vm.expectRevert(DominoVault.PermissionUnavailable.selector); vault.rearmRoot(true);
         positions.approve(address(vault), 11);
         vault.rearmRoot(true);
         require(vault.rootPermissionValid(), "individual approval not restored");
@@ -402,7 +482,7 @@ contract DominoVaultCustodyTest is IERC721ReceiverE2 {
         positions.unsubscribe(11);
         E2ForeignSubscriber foreign = new E2ForeignSubscriber();
         positions.subscribe(11, address(foreign), "");
-        vm.expectRevert(); vault.rearmRoot(true);
+        vm.expectRevert(DominoVault.ForeignSubscription.selector); vault.rearmRoot(true);
         positions.unsubscribe(11);
         vault.rearmRoot(true);
         require(positions.subscriber(11) == address(vault), "rearm subscribe missing");
@@ -437,8 +517,12 @@ contract DominoVaultCustodyTest is IERC721ReceiverE2 {
     function testRearmSnapshotsExactCoreStateWithoutReplacingOriginalSourceIdentity() public {
         T.Position memory before_ = vault.position(11);
         T.Checkpoint memory initial = vault.checkpoint(11);
+        T.Checkpoint memory registered = vault.registrationCheckpoint(11);
+        bytes32 baseline = _checkpointCommitment(11, registered);
+        require(baseline == before_.registrationBaselineId && baseline == registered.commitment,
+            "registration checkpoint does not reconstruct baseline");
         uint64 nonce = vault.stateNonce();
-        vm.expectRevert(); vault.rearmRoot(false);
+        vm.expectRevert(DominoVault.MissingConsent.selector); vault.rearmRoot(false);
         require(vault.stateNonce() == nonce, "unconsented rearm mutated");
         stateView.setPositionState(11, 1000, 11, 22);
         stateView.setFeeGrowthInside(keccak256(abi.encode(key)), -600, 600, 33, 44);
@@ -449,7 +533,21 @@ contract DominoVaultCustodyTest is IERC721ReceiverE2 {
             current.feeGrowthInside0X128 == 33 && current.feeGrowthInside1X128 == 44 &&
             current.observedAtBlock == block.number && current.commitment != initial.commitment,
             "checkpoint mixed or not refreshed");
+        bytes32 firstRearmCommitment = current.commitment;
+        stateView.setPositionState(11, 1000, 55, 66);
+        stateView.setFeeGrowthInside(keccak256(abi.encode(key)), -600, 600, 77, 88);
+        vm.roll(block.number + 1);
+        vault.rearmRoot(true);
+        current = vault.checkpoint(11);
+        require(current.feeGrowthInside0LastX128 == 55 && current.feeGrowthInside1LastX128 == 66 &&
+            current.feeGrowthInside0X128 == 77 && current.feeGrowthInside1X128 == 88 &&
+            current.observedAtBlock == block.number && current.commitment != firstRearmCommitment &&
+            current.commitment != initial.commitment && _checkpointCommitment(11, current) == current.commitment &&
+            vault.stateNonce() == nonce + 2, "second rearm did not retain a distinct coherent observation");
         T.Position memory after_ = vault.position(11);
+        T.Checkpoint memory preserved = vault.registrationCheckpoint(11);
+        require(keccak256(abi.encode(preserved)) == keccak256(abi.encode(registered)) &&
+            _checkpointCommitment(11, preserved) == baseline, "registration checkpoint overwritten by rearm");
         require(after_.identity == before_.identity && after_.registrationBaselineId == before_.registrationBaselineId &&
             after_.source0 == before_.source0 && after_.source1 == before_.source1, "historical source replaced");
         require(vault.accountedCurrency(key.currency0) == 0 && vault.accountedCurrency(key.currency1) == 0,
@@ -501,27 +599,135 @@ contract DominoVaultCustodyTest is IERC721ReceiverE2 {
         require(address(receiver).balance == 50 && vault.feeBalance(source0, key.currency0).original == 50, "double native exit");
     }
 
-    function testRejectingNativeAndNFTReceiverRollsBackActualExits() public {
+    function testRejectingNativeReceiverRollsBackButNFTExitDoesNotRequireReceiver() public {
         E2OwnerReceiver receiver = new E2OwnerReceiver(); _setup(address(receiver), true);
         _adopt(12, 11); _credit(11, 100, 0);
         bytes32 source0 = vault.position(11).source0;
         uint64 nonce = vault.stateNonce(); receiver.setReject(true, true);
         vm.expectRevert(); receiver.invoke(address(vault),
             abi.encodeCall(vault.withdrawFeeReserves, (source0, key.currency0, 100, 0)));
-        vm.expectRevert(); receiver.invoke(address(vault), abi.encodeCall(vault.withdrawChildPosition, (12)));
         require(vault.stateNonce() == nonce && vault.feeBalance(source0, key.currency0).original == 100, "receiver rollback");
-        require(positions.ownerOf(12) == address(vault) && vault.position(12).active, "NFT receiver rollback");
-        receiver.setReject(false, false);
         receiver.invoke(address(vault), abi.encodeCall(vault.withdrawChildPosition, (12)));
+        require(positions.ownerOf(12) == owner && !vault.position(12).active && vault.stateNonce() == nonce + 1,
+            "rejecting NFT receiver stranded child");
     }
 
-    function testOwnerNFTReceiverCannotReenterAnotherChildExit() public {
+    function testPlainNFTExitNeverCallsOwnerReceiverOrReentryHook() public {
         E2OwnerReceiver receiver = new E2OwnerReceiver(); _setup(address(receiver), true);
         _adopt(12, 11); _adopt(13, 11);
         receiver.configureReentry(address(vault), abi.encodeCall(vault.withdrawChildPosition, (13)));
         receiver.invoke(address(vault), abi.encodeCall(vault.withdrawChildPosition, (12)));
-        require(receiver.reentryAttempted() && !receiver.reentrySucceeded(), "NFT receiver reentered");
+        require(!receiver.reentryAttempted(), "NFT exit called owner receiver");
         require(positions.ownerOf(12) == owner && positions.ownerOf(13) == address(vault), "second child stolen");
+    }
+
+    function testOwnerWithoutNFTReceiverRecoversManagedAndUnmanagedNFTs() public {
+        E2OwnerWithoutNFTReceiver receiver = new E2OwnerWithoutNFTReceiver(); _setup(address(receiver), true);
+        _adopt(12, 11);
+        receiver.invoke(address(vault), abi.encodeCall(vault.withdrawChildPosition, (12)));
+        require(positions.ownerOf(12) == owner, "owner without receiver cannot exit child");
+        positions.mint(owner, 99, key, -300, 900, 500);
+        vm.prank(owner); positions.transferFrom(owner, address(vault), 99);
+        receiver.invoke(address(vault), abi.encodeCall(vault.recoverUnmanagedPosition, (99)));
+        require(positions.ownerOf(99) == owner, "owner without receiver cannot rescue NFT");
+    }
+
+    function testPlainNFTManagerFailureRollsBackAndReentryCannotWithdrawSecondChild() public {
+        _adopt(12, 11); _adopt(13, 11);
+        positions.setRejectTransfers(true); uint64 nonce = vault.stateNonce();
+        vm.expectRevert(MockPositionManager.TransferRejected.selector); vault.withdrawChildPosition(12);
+        require(vault.position(12).active && positions.ownerOf(12) == address(vault) && vault.stateNonce() == nonce,
+            "failed manager transfer left effects");
+        positions.setRejectTransfers(false);
+        positions.configureTransferReentry(address(vault), abi.encodeCall(vault.withdrawChildPosition, (13)));
+        vault.withdrawChildPosition(12);
+        require(positions.transferReentryAttempted() && !positions.transferReentrySucceeded() &&
+            positions.ownerOf(12) == owner && positions.ownerOf(13) == address(vault), "manager reentry took second child");
+    }
+
+    function testNativeOwnerCallbackCanUnsubscribeRootDuringSuccessfulExit() public {
+        E2OwnerReceiver receiver = new E2OwnerReceiver(); _setup(address(receiver), true); _credit(11, 100, 0);
+        bytes32 source0 = vault.position(11).source0;
+        uint64 nonce = vault.stateNonce(); uint64 generation = vault.authorityGeneration();
+        receiver.configureReentry(address(positions), abi.encodeCall(positions.unsubscribe, (11)));
+        vm.recordLogs();
+        receiver.invoke(address(vault), abi.encodeCall(vault.withdrawFeeReserves, (source0, key.currency0, 50, 0)));
+        _assertRootInvalidated(vm.getRecordedLogs(), 1, generation + 1, nonce + 2);
+        require(receiver.reentrySucceeded() && positions.subscriber(11) == address(0) && !vault.rootArmed() &&
+            !vault.rootPermissionValid() && vault.stateNonce() == nonce + 2 && vault.authorityGeneration() == generation + 1,
+            "callback during exit left root authority stale");
+        require(address(receiver).balance == 50 && vault.feeBalance(source0, key.currency0).original == 50,
+            "invalidation disrupted exact owner payout");
+    }
+
+    function testColdCloneUnsubscribeCallbackFitsConservative100kGasBudget() public {
+        uint64 nonce = vault.stateNonce(); uint64 generation = vault.authorityGeneration();
+        address target = address(vault); address implementation_ = vault.implementation();
+        bytes memory data = abi.encodeCall(vault.notifyUnsubscribe, (11));
+        // cool marks both account and storage cold; also cool the delegate target.
+        vm.cool(target); vm.cool(implementation_);
+        vm.prank(address(positions)); uint256 beforeGas = gasleft();
+        (bool ok,) = target.call{gas: 100000}(data);
+        uint256 used = beforeGas - gasleft();
+        require(ok && !vault.rootArmed() && vault.stateNonce() == nonce + 1 &&
+            vault.authorityGeneration() == generation + 1, "cold clone callback exceeded budget");
+        emit CallbackGasBound(100000, used);
+    }
+
+    function testUnsubscribeGasGuardRevertsBeforeLosingSubscription() public {
+        positions.setUnsubscribeGasLimit(100000);
+        uint64 nonce = vault.stateNonce();
+        (bool ok, bytes memory result) = address(positions).call{gas: 50000}(abi.encodeCall(positions.unsubscribe, (11)));
+        require(!ok && keccak256(result) == keccak256(abi.encodeWithSelector(MockPositionManager.UnsubscribeGasTooLow.selector)),
+            "mock did not enforce upstream pre-call gas guard");
+        require(positions.subscriber(11) == address(vault) && vault.rootArmed() && vault.stateNonce() == nonce,
+            "failed cap guard lost subscription");
+    }
+
+    function testInsufficientCallbackBudgetLeavesAdvisoryFlagButAuthorityFailsClosed() public {
+        positions.setUnsubscribeGasLimit(1000);
+        uint64 nonce = vault.stateNonce(); uint64 generation = vault.authorityGeneration();
+        positions.unsubscribe(11);
+        require(positions.subscriber(11) == address(0) && vault.rootArmed() && !vault.rootPermissionValid() &&
+            vault.stateNonce() == nonce && vault.authorityGeneration() == generation,
+            "lost callback must remain explicit and fail closed");
+    }
+
+    function testMockManagerEntryGuardsRejectOperationsWhileUnlocked() public {
+        _adopt(12, 11);
+        poolManager.setUnlocked(true);
+        vm.expectRevert(MockPositionManager.ManagerUnlocked.selector); positions.unsubscribe(11);
+        vm.expectRevert(MockPositionManager.ManagerUnlocked.selector); positions.transferFrom(owner, STRANGER, 11);
+        vm.expectRevert(MockPositionManager.ManagerUnlocked.selector); positions.notifyModify(11, 0, 0);
+        vm.expectRevert(MockPositionManager.ManagerUnlocked.selector); positions.burn(11, 0);
+        vm.expectRevert(MockPositionManager.ManagerUnlocked.selector); vault.withdrawChildPosition(12);
+        require(positions.ownerOf(12) == address(vault) && vault.position(12).active, "locked-model rejection mutated custody");
+        poolManager.setUnlocked(false); vault.withdrawChildPosition(12);
+        require(positions.ownerOf(12) == owner, "locked manager positive control failed");
+    }
+
+    function testTerminalSurplusNFTRecoveryAndPauseEmitExactRecoveryEvents() public {
+        _fund(key.currency0, 7);
+        positions.mint(owner, 99, key, -300, 900, 500); positions.transferFrom(owner, address(vault), 99);
+        vault.forceNonce(type(uint64).max);
+        uint64 generation = vault.authorityGeneration();
+        vm.recordLogs();
+        vault.pause(); vault.recoverUntrackedCurrency(key.currency0, 7); vault.recoverUnmanagedPosition(99);
+        VmE2.Log[] memory logs = vm.getRecordedLogs();
+        bytes4[3] memory selectors = [vault.pause.selector, vault.recoverUntrackedCurrency.selector,
+            vault.recoverUnmanagedPosition.selector];
+        uint256 found;
+        for (uint256 i; i < logs.length; ++i) {
+            if (logs[i].emitter == address(vault) && logs[i].topics[0] == keccak256("TerminalRecovery(bytes4,uint64,uint64)")) {
+                require(found < 3 && logs[i].topics.length == 2 && logs[i].topics[1] == bytes32(selectors[found]) &&
+                    keccak256(logs[i].data) == keccak256(abi.encode(type(uint64).max, generation)),
+                    "wrong terminal recovery event");
+                ++found;
+            }
+        }
+        require(found == 3 && vault.stateNonce() == type(uint64).max && vault.authorityGeneration() == generation &&
+            vault.policy().paused && address(vault).balance == 0 && positions.ownerOf(99) == owner,
+            "terminal recovery missed event, wrapped or failed");
     }
 
     function testTerminalNonceRejectsNewAuthorityButOwnerRecoveryRemainsAvailable() public {
@@ -529,8 +735,8 @@ contract DominoVaultCustodyTest is IERC721ReceiverE2 {
         vault.forceNonce(type(uint64).max);
         uint64 policyVersion = vault.policy().version;
         uint64 generation = vault.authorityGeneration();
-        vm.expectRevert(); vault.validateAuthority(policyVersion, type(uint64).max, generation);
-        vm.expectRevert(); vault.rearmRoot(true);
+        vm.expectRevert(DominoVault.NonceExhausted.selector); vault.validateAuthority(policyVersion, type(uint64).max, generation);
+        vm.expectRevert(DominoVault.NonceExhausted.selector); vault.rearmRoot(true);
         _withdraw(11, key.currency0, 100, 0);
         vault.withdrawChildPosition(12);
         require(vault.stateNonce() == type(uint64).max && positions.ownerOf(12) == owner, "terminal recovery wrapped/failed");
@@ -584,7 +790,7 @@ contract DominoVaultCustodyTest is IERC721ReceiverE2 {
         positions.mint(owner, 12, key, -300, 900, 500); positions.approve(address(vault), 12);
         positions.setRejectSafeTransfers(true);
         uint64 nonce = vault.stateNonce();
-        vm.expectRevert(); vault.adoptChild(12, 11, true);
+        vm.expectRevert(abi.encodeWithSignature("Error(string)", "mock safe transfer failed")); vault.adoptChild(12, 11, true);
         require(!vault.position(12).known && positions.ownerOf(12) == owner && vault.stateNonce() == nonce,
             "failed transfer left registration");
     }

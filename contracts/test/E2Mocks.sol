@@ -20,6 +20,7 @@ interface VmE2 {
     function getRecordedLogs() external returns (Log[] memory);
     function store(address account, bytes32 slot, bytes32 value) external;
     function load(address account, bytes32 slot) external view returns (bytes32);
+    function cool(address account) external;
 }
 
 interface SubscriberE2 {
@@ -35,6 +36,9 @@ contract MockPoolManager {
 }
 
 contract MockPositionManager {
+    error ManagerUnlocked();
+    error UnsubscribeGasTooLow();
+    error TransferRejected();
     struct NFT { T.PoolKey key; int24 lower; int24 upper; uint128 liquidity; }
     address public immutable poolManager;
     mapping(uint256 => NFT) private _positions;
@@ -44,6 +48,12 @@ contract MockPositionManager {
     mapping(uint256 => address) public subscriber;
     bool public suppressUnsubscribeCallback;
     bool public rejectSafeTransfers;
+    bool public rejectTransfers;
+    uint256 public unsubscribeGasLimit = 100000;
+    address public transferReentryTarget;
+    bytes public transferReentryData;
+    bool public transferReentryAttempted;
+    bool public transferReentrySucceeded;
     address public subscribeReentryTarget;
     bytes public subscribeReentryData;
     bytes public subscribeReentryResult;
@@ -93,6 +103,15 @@ contract MockPositionManager {
     function setLiquidity(uint256 id, uint128 liquidity) external { _positions[id].liquidity = liquidity; }
     function setSuppressUnsubscribeCallback(bool value) external { suppressUnsubscribeCallback = value; }
     function setRejectSafeTransfers(bool value) external { rejectSafeTransfers = value; }
+    function setRejectTransfers(bool value) external { rejectTransfers = value; }
+    function setUnsubscribeGasLimit(uint256 value) external { unsubscribeGasLimit = value; }
+    function configureTransferReentry(address target, bytes calldata data) external {
+        transferReentryTarget = target; transferReentryData = data;
+        transferReentryAttempted = false; transferReentrySucceeded = false;
+    }
+    function _locked() private view {
+        if (MockPoolManager(poolManager).isUnlocked()) revert ManagerUnlocked();
+    }
     function configureSubscribeReentry(address target, bytes calldata data, bool required) external {
         subscribeReentryTarget = target; subscribeReentryData = data;
         requireSubscribeReentrySuccess = required; subscribeReentryAttempted = false;
@@ -101,7 +120,7 @@ contract MockPositionManager {
 
     function subscribe(uint256 id, address target, bytes calldata data) external {
         _authorized(id);
-        require(!MockPoolManager(poolManager).isUnlocked(), "mock manager unlocked");
+        _locked();
         require(target.code.length != 0 && subscriber[id] == address(0), "mock invalid subscriber");
         subscriber[id] = target;
         if (subscribeReentryTarget != address(0) && !subscribeReentryAttempted) {
@@ -114,7 +133,7 @@ contract MockPositionManager {
 
     function unsubscribe(uint256 id) external {
         _authorized(id);
-        require(!MockPoolManager(poolManager).isUnlocked(), "mock manager unlocked");
+        _locked();
         require(subscriber[id] != address(0), "mock not subscribed");
         _unsubscribe(id);
     }
@@ -123,17 +142,25 @@ contract MockPositionManager {
         address target = subscriber[id];
         delete subscriber[id];
         if (target != address(0) && !suppressUnsubscribeCallback) {
-            // Production unsubscribe notification is bounded and failure-tolerant.
-            try SubscriberE2(target).notifyUnsubscribe{gas: 100000}(id) {} catch {}
+            // Mirrors the pre-call cap guard and failure-tolerant notification;
+            // actual deployed-manager cap/code still require qualification.
+            if (gasleft() < unsubscribeGasLimit) revert UnsubscribeGasTooLow();
+            try SubscriberE2(target).notifyUnsubscribe{gas: unsubscribeGasLimit}(id) {} catch {}
         }
     }
 
     function transferFrom(address from, address to, uint256 id) public {
         _authorized(id);
+        _locked();
+        if (rejectTransfers) revert TransferRejected();
         require(ownerOf(id) == from && to != address(0), "mock invalid transfer");
         delete getApproved[id];
         if (subscriber[id] != address(0)) _unsubscribe(id);
         _owners[id] = to;
+        if (transferReentryTarget != address(0) && !transferReentryAttempted) {
+            transferReentryAttempted = true;
+            (transferReentrySucceeded,) = transferReentryTarget.call(transferReentryData);
+        }
     }
 
     function safeTransferFrom(address from, address to, uint256 id) external {
@@ -147,13 +174,20 @@ contract MockPositionManager {
 
     function notifyModify(uint256 id, int256 liquidityChange, int256 feesAccrued) external {
         _authorized(id);
+        _locked();
+        // Synthetic external modify entry: model the unlock interval for the
+        // notification, without pretending to execute real v4 liquidity math.
+        MockPoolManager(poolManager).setUnlocked(true);
         if (subscriber[id] != address(0)) {
             SubscriberE2(subscriber[id]).notifyModifyLiquidity(id, liquidityChange, feesAccrued);
         }
+        MockPoolManager(poolManager).setUnlocked(false);
     }
 
     function burn(uint256 id, int256 feesAccrued) external {
         _authorized(id);
+        _locked();
+        MockPoolManager(poolManager).setUnlocked(true);
         address owner = ownerOf(id);
         (, uint256 info) = getPoolAndPositionInfo(id);
         address target = subscriber[id];
@@ -164,6 +198,7 @@ contract MockPositionManager {
             SubscriberE2(target).notifyBurn(id, owner, info, _positions[id].liquidity, feesAccrued);
         }
         delete _positions[id];
+        MockPoolManager(poolManager).setUnlocked(false);
     }
 }
 
@@ -273,4 +308,13 @@ contract E2ForeignSubscriber is SubscriberE2 {
     function notifyUnsubscribe(uint256) external view { require(!rejectNotifications, "mock notify"); }
     function notifyModifyLiquidity(uint256, int256, int256) external view { require(!rejectNotifications, "mock notify"); }
     function notifyBurn(uint256, address, uint256, uint256, int256) external view { require(!rejectNotifications, "mock notify"); }
+}
+
+/// @dev An immutable owner can hold an NFT without implementing its receiver.
+contract E2OwnerWithoutNFTReceiver {
+    function invoke(address target, bytes calldata data) external returns (bytes memory result) {
+        (bool ok, bytes memory returned) = target.call(data);
+        if (!ok) assembly ("memory-safe") { revert(add(returned, 32), mload(returned)) }
+        return returned;
+    }
 }

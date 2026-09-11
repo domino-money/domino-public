@@ -64,6 +64,7 @@ contract DominoVault {
     T.ExecutionLimits private _limits;
     mapping(uint256 => T.Position) private _positions;
     mapping(uint256 => T.Checkpoint) private _checkpoints;
+    mapping(uint256 => T.Checkpoint) private _registrationCheckpoints;
     mapping(bytes32 => T.Source) private _sources;
     mapping(bytes32 => mapping(address => T.FeeBalance)) private _balances;
     mapping(address => uint256) public accountedCurrency;
@@ -170,7 +171,8 @@ contract DominoVault {
         _register(rootTokenId, true, 0, lo, hi);
         _armRoot();
         emit Initialized(owner, sequenceId, _sequenceIdentity, rootTokenId);
-        emit OperatorChanged(address(0), operator, authorityGeneration, stateNonce);
+        // Zero is an explicitly disabled operator; owner authority is independent.
+        if (operator != address(0)) emit OperatorChanged(address(0), operator, authorityGeneration, stateNonce);
     }
 
     function policy() external view returns (IDominoVaultDraft.Policy memory) {
@@ -195,6 +197,11 @@ contract DominoVault {
 
     function checkpoint(uint256 id) external view returns (T.Checkpoint memory) {
         return _checkpoints[id];
+    }
+
+    /// @notice Original checkpoint preimage, retained across every root rearm.
+    function registrationCheckpoint(uint256 id) external view returns (T.Checkpoint memory) {
+        return _registrationCheckpoints[id];
     }
 
     function source(bytes32 id) external view returns (T.Source memory) {
@@ -224,20 +231,17 @@ contract DominoVault {
         IPositionManagerE2 manager = IPositionManagerE2(positionManager);
         try manager.ownerOf(rootTokenId) returns (address holder) {
             if (holder != owner) return false;
-        }
-            catch {
+        } catch {
             return false;
         }
         try manager.getApproved(rootTokenId) returns (address approved) {
             if (approved != address(this)) return false;
-        }
-            catch {
+        } catch {
             return false;
         }
         try manager.subscriber(rootTokenId) returns (address target) {
             return target == address(this);
-        }
-            catch {
+        } catch {
             return false;
         }
     }
@@ -345,7 +349,9 @@ contract DominoVault {
         _advance(true);
         member.active = false;
         activePositions--;
-        IPositionManagerE2(positionManager).safeTransferFrom(address(this), owner, tokenId);
+        // The owner explicitly requested its own NFT. Do not require a receiver
+        // hook: immutable contract wallets can hold NFTs without implementing it.
+        IPositionManagerE2(positionManager).transferFrom(address(this), owner, tokenId);
         if (IPositionManagerE2(positionManager).ownerOf(tokenId) != owner) revert TransferFailed();
         emit ChildPositionWithdrawn(tokenId, owner, stateNonce);
     }
@@ -360,8 +366,9 @@ contract DominoVault {
         if (tokenId == rootTokenId) {
             rootArmed = false;
             _advanceGeneration();
+            emit RootInvalidated(4, authorityGeneration, stateNonce);
         }
-        IPositionManagerE2(positionManager).safeTransferFrom(address(this), owner, tokenId);
+        IPositionManagerE2(positionManager).transferFrom(address(this), owner, tokenId);
         if (IPositionManagerE2(positionManager).ownerOf(tokenId) != owner) revert TransferFailed();
         emit UnmanagedPositionRecovered(tokenId, owner, tokenId == rootTokenId, stateNonce);
     }
@@ -409,7 +416,8 @@ contract DominoVault {
     function notifyUnsubscribe(uint256 tokenId) external {
         if (msg.sender != positionManager || tokenId != rootTokenId) revert UnexpectedCallback();
         if (_subscriptionTransition && _entered == 1) return;
-        if (_entered != 0) revert UnexpectedCallback();
+        // Upstream may notify during an owner's receive callback. This path
+        // only removes authority, with no external calls or asset movement.
         _invalidateRoot(1);
     }
 
@@ -501,6 +509,7 @@ contract DominoVault {
         if (member.known) revert InvalidPosition();
         T.Checkpoint memory point = _readCheckpoint(tokenId, lo, hi);
         _checkpoints[tokenId] = point;
+        _registrationCheckpoints[tokenId] = point;
         member.known = true;
         member.active = true;
         member.isRoot = isRoot;
