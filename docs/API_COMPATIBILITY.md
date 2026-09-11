@@ -23,16 +23,32 @@ pending on #1. The deployment and real-data switch remain disabled.
 ### NFT ID OpenAPI correction
 
 The producer follow-up to [the issue #1 ACK](https://github.com/domino-money/domino/issues/1#issuecomment-5634425074)
-describes `NftPositionsRequest.tokenIds` as canonical decimal strings from zero
-through `2**256 - 1`, including a strict end of string. The old OpenAPI pattern
-allowed 78-digit overflow and, in some JSON Schema validators, a final newline.
+describes `NftPositionsRequest.tokenIds` as unique canonical decimal strings from
+zero through `2**256 - 1`, including a strict end of string. The old OpenAPI
+pattern allowed 78-digit overflow and, with Python `re.search`, a final newline;
+the array also lacked the `uniqueItems: true` metadata.
 Python and the shared read runtime already reject those values; their accepted
 requests, responses, errors and `1.1.0-rc.3` version are unchanged. Regeneration
 changes the OpenAPI file and only the `backend/read_api.py` source entry in the
 read manifest; shared schemas, validators, types and fixtures keep their bytes.
-The OpenAPI pattern now appends `(?![\s\S])` to its `$` anchor; the shared schema
-keeps `$` and its runtime already requires a full match. A textual schema diff
-therefore still needs an explicit account of this equivalent runtime boundary.
+The OpenAPI pattern appends `(?![\s\S])` to its `$` anchor.
+[ECMAScript](https://tc39.es/ecma262/multipage/text-processing.html#sec-compileassertion)
+without the multiline (`m`) flag already requires the actual end at `$`;
+[Python `re`](https://docs.python.org/3.14/library/re.html) can also match before
+a terminal LF. The extra assertion guards that Python behavior. The shared
+schema keeps `$` and its runtime also requires a full match, so a textual schema
+diff still needs an explicit account of this equivalent runtime boundary.
+
+[JSON Schema's recommended regex subset](https://json-schema.org/understanding-json-schema/reference/regular_expressions)
+explicitly includes positive and negative lookahead; this assertion is not
+excluded from that subset. That guidance does not establish compatibility with
+every tool. The persistent Node test runs the exported pattern in ECMAScript
+with `u` and without `m`, checks array metadata, and compares existing runtime
+acceptance. The Python regression covers `re.search`, the model and HTTP input.
+The separate #74 Ajv 2020-12 boundary evidence remains specific to the tested
+tool/version; neither native regex test is a complete JSON Schema validator.
+Consumers using other engines must verify equivalent bounds and uniqueness or
+reject unsupported schemas, rather than dropping the assertion or coercing IDs.
 Consumers must receive the new OpenAPI and manifest digests in the integration
 notice before updating their source pins. This correction does not activate reads.
 

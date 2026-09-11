@@ -24,8 +24,8 @@ class NftOpenApiBoundsTests(unittest.TestCase):
     def test_openapi_pattern_search_matches_python_uint256_boundaries(self):
         schema = create_app(service=object()).openapi()['components']['schemas']['NftPositionsRequest']
         item = schema['properties']['tokenIds']['items']
-        # JSON Schema pattern uses a search, not fullmatch: a trailing newline
-        # must be rejected by the exported pattern itself in either case.
+        # Exercise Python re.search too: unlike ECMAScript without m, its $
+        # can match before a terminal LF. The schema must guard this engine.
         self.assertEqual(item['type'], 'string')
         for value, expected in BOUNDARIES:
             with self.subTest(value=value):
@@ -40,6 +40,15 @@ class NftOpenApiBoundsTests(unittest.TestCase):
                 else:
                     model_valid = True
                 self.assertEqual(model_valid, expected)
+
+    def test_python_regex_end_and_array_uniqueness_are_described_explicitly(self):
+        array = NftPositionsRequest.model_json_schema()['properties']['tokenIds']
+        self.assertIs(array.get('uniqueItems'), True)
+        self.assertIsNotNone(re.search(r'^0$', '0\n'))
+        self.assertIsNone(re.search(array['items']['pattern'], '0\n'))
+        for ids in (['0', '0'], [str(UINT256_MAX), str(UINT256_MAX)]):
+            with self.subTest(ids=ids), self.assertRaises(ValueError):
+                NftPositionsRequest.model_validate({'tokenIds': ids})
 
     def test_checked_in_openapi_preserves_generated_nft_item_bounds(self):
         generated = create_app(service=object()).openapi()
@@ -76,4 +85,10 @@ class NftOpenApiBoundsTests(unittest.TestCase):
                     self.assertEqual(response.json(), {'error': 'invalid_request'})
                     self.assertEqual(response.headers['x-domino-read-contract'], CONTRACT_VERSION)
                     self.assertEqual(response.headers['cache-control'], 'no-store')
+                    self.assertEqual(calls, [(ids, 700)])
+            for duplicates in (['0', '0'], [str(UINT256_MAX), str(UINT256_MAX)]):
+                with self.subTest(duplicates=duplicates):
+                    response = client.post('/v1/read/nft-positions', json={'tokenIds': duplicates})
+                    self.assertEqual(response.status_code, 422)
+                    self.assertEqual(response.json(), {'error': 'invalid_request'})
                     self.assertEqual(calls, [(ids, 700)])
