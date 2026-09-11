@@ -15,10 +15,11 @@ from rpc_config import DEFAULT_RPC_HOSTS, rpc_endpoint
 class DepositRpc:
     METHODS = frozenset({'eth_chainId', 'eth_getBlockByNumber', 'eth_getCode',
         'eth_getBalance', 'eth_getTransactionCount', 'eth_call', 'eth_estimateGas',
-        'eth_maxPriorityFeePerGas', 'eth_getTransactionByHash', 'eth_getTransactionReceipt'})
+        'eth_maxPriorityFeePerGas', 'eth_getTransactionByHash', 'eth_getTransactionReceipt',
+        'eth_getStorageAt'})
 
     def __init__(self, url, *, allowed_hosts=DEFAULT_RPC_HOSTS, transport=json_http,
-                 max_requests=80):
+                 max_requests=160):
         if type(max_requests) is not int or not 1 <= max_requests <= 160:
             raise DataError('invalid_deposit_rpc_budget')
         self._url = rpc_endpoint(url, allowed_hosts)

@@ -1,6 +1,6 @@
 {
   "automationAvailable": false,
-  "contractVersion": "1.1.0-rc.3",
+  "contractVersion": "1.1.0-rc.4",
   "operation": {
     "chainId": 4663,
     "createdAt": 1800000180,
@@ -52,7 +52,8 @@
   "walletStep": {
     "admission": {
       "manifestId": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-      "policyVersion": "direct_existing_pool_v1"
+      "policyVersion": "direct_existing_pool_v1",
+      "tokenReviews": null
     },
     "balances": {
       "nativeRaw": "999999999",

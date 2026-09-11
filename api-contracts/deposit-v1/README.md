@@ -1,18 +1,44 @@
-# deposit-v1 — 1.1.0-rc.3 candidate
+# deposit-v1 — 1.1.0-rc.4 candidate
 
 This disabled candidate expands the closed1.0.0 contract with superseded state,
 quota errors, allowance observations, observed replacement envelopes and nonce-conflict evidence. Producers, workers and consumers must
-agree on1.1.0-rc.3 and the new manifest digest before activation; older headers
+agree on1.1.0-rc.4 and the new manifest digest before activation; older headers
 are rejected. Frontend acknowledgement remains pending.
 
 Disabled owner-signed direct-deposit API. This package is separate from
 `onboarding-v1` previews and does not activate financial operations. Issue #42
 coordinates the breaking receipt migration from `1.1.0-rc.2` to `1.1.0-rc.3`;
 its exact changes are listed below.
+Issue #44 adds a further migration from rc.3 to rc.4 for reviewed-token admission.
+
+## Reviewed-token candidate migration (#44)
+
+- `walletStep.admission.policyVersion` also accepts `direct_existing_pool_v2`.
+  V2 requires `tokenReviews: [{address, reviewId}]`, exactly the selected non-native
+  currencies in canonical order. V1 permits only null/absent tokenReviews.
+- `ReceiptPosition` adds required `amount0Basis` and `amount1Basis`: raw amounts
+  are non-null only for `admitted_standard_transfer_events` or
+  `reviewed_proxy_transfer_events`. Other bases are `native_net_unavailable`,
+  `token_review_changed`, `token_review_unavailable`, `legacy_token_review_unqualified`.
+  Never convert those null quantities to zero.
+- Proxy amounts are transfer-event quantities under matching reviewed historical
+  endpoint assumptions, not transaction-level balance traces or proof that an
+  issuer could not transiently upgrade within a block.
+- New errors: `deposit_token_changed` (409), `deposit_token_restricted` (422),
+  `deposit_token_check_unavailable` (503). Stop the signature flow on these
+  responses. A backend rejection cannot cancel an already delivered transaction.
+- Every wallet payload, including a repeated prepare response, is freshly
+  revalidated against token/policy state without changing its persisted nonce.
+
+Fixtures `reviewed-proxy`, `proxy-event-amounts` and `token-review-changed` cover
+these additions. [Policy and consumer guidance](../../docs/REVIEWED_TOKEN_ADMISSION.md)
+describe issuer controls, USDG payout-group limits, historical review retention,
+resource bounds and rollback. Exact-package acknowledgment is required before
+frontend integration; no hook or public route was activated here.
 
 All routes are same-origin POST JSON at `/api/deposit/v1/{route}` with the
 existing HttpOnly SIWE session cookie and `X-Domino-CSRF`. Optional request and
-mandatory response version header: `X-Domino-Deposit-Contract: 1.1.0-rc.3`.
+mandatory response version header: `X-Domino-Deposit-Contract: 1.1.0-rc.4`.
 
 - `create`: idempotencyKey UUID and immutable selection (pool, spaced ticks,
   exact amounts/budgets and explicit per-step gas caps).
@@ -86,8 +112,10 @@ Fixtures are synthetic. Candidate validators and offline tests do not qualify
 token behavior, deployments, HTTPS staging or the actual frontend integration.
 Live preparation requires an explicit reviewed local admission manifest. The
 [deployment review](../../reports/DEPOSIT_DEPLOYMENT_REVIEW.md) found both WETH
-and USDG are upgradeable proxies and therefore blocked by the current immutable
-token policy. No reviewed production manifest was created. The
+and USDG are upgradeable proxies and therefore blocked by the legacy immutable
+token policy. That review created no production manifest. Issue #44 adds separate
+[reviewed v2 profiles](../../docs/REVIEWED_TOKEN_ADMISSION.md) and disabled
+configuration tooling; it does not enable deposits. The earlier
 [local-fork evidence](../../reports/DEPOSIT_FORK_QUALIFICATION.md) uses controlled
 test assumptions to characterize deployed mechanics; it does not grant token
 eligibility, prove absent future upgrades or qualify Nitro net gas charges.

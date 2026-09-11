@@ -1,6 +1,6 @@
-# Resumable owner-signed direct deposits — issues #40 and #42
+# Resumable owner-signed direct deposits — issues #40, #42 and #44
 
-`deposit-v1` 1.1.0-rc.3 is a disabled backend/worker candidate for creating a position
+`deposit-v1` 1.1.0-rc.4 is a disabled backend/worker candidate for creating a position
 in an **existing**, admitted Robinhood Uniswap v4 pool. It follows the session
 and preview candidates in #39. Uniswap still calculates composition; Domino
 validates the exact wallet step, stores its identity and reconciles its result.
@@ -12,6 +12,11 @@ from `1.1.0-rc.2` to `1.1.0-rc.3` of the disabled candidate. Producer, worker, s
 must move together; consumer acknowledgement is still required before
 integration. See the migration section below.
 
+Issue #44 adds [reviewed immutable/proxy token support](REVIEWED_TOKEN_ADMISSION.md)
+and a further coordinated pre-release admission/receipt migration from rc.3
+to rc.4. Older headers are rejected. See the
+[current evidence and remaining gates](../reports/UPGRADEABLE_ADMISSION_IMPLEMENTATION.md).
+
 The P1 combined producer uses session-v1 3.0.0-rc.2 with current wallet
 admission/generation, stable CSRF and read-only browser GET `/me`. Fresh private
 checks remain required before and after provider work and before payload delivery.
@@ -19,14 +24,14 @@ Revocation/regrant invalidates the old cookie with `session_required`, including
 an in-flight preparation. If a nonce was already persisted, denial keeps that
 evidence; a freshly admitted login recovers the same effect. Migrations001–014
 are applied together in order. This composition preserves the rc.2 recovery and session guarantees and adds
-Nitro receipt fields as rc.3. Token admission remains a following candidate
-requiring its own coordinated contract notice.
+Nitro receipt fields from rc.3. This candidate adds token admission as rc.4,
+requiring its own coordinated contract notice and consumer acknowledgement.
 
 ## Browser contract and lifecycle
 
 All eight `/api/deposit/v1/{route}` routes use same-origin POST JSON, the existing
 HttpOnly SIWE cookie and current `X-Domino-CSRF`. The optional request version
-header must equal `X-Domino-Deposit-Contract: 1.1.0-rc.3`; it is always on responses.
+header must equal `X-Domino-Deposit-Contract: 1.1.0-rc.4`; it is always on responses.
 No bearer, owner, recipient, provider URL, calldata or signature is accepted in
 a browser request. Owner identity comes from the checked session.
 
@@ -227,7 +232,7 @@ Body/response limits are 8 KiB/256 KiB. Upload is 5 seconds; shared worker total
 seconds and private listener total 20 seconds, including auth and database work.
 The listener admits two actual workers with no queue, retaining capacity when
 HTTP times out while underlying work finishes. Read-only deposit RPC is a
-separate allowlist (80 calls/20 seconds, no broadcast methods); receipt scans
+separate allowlist (160 calls/20 seconds, no broadcast methods); receipt scans
 have a 15-second nested deadline. This first configuration uses the selected
 primary RPC without automatic failover or retries.
 
@@ -324,18 +329,28 @@ Separate `DOMINO_DEPOSIT_ACCESS_ISSUER`, `DOMINO_DEPOSIT_ACCESS_AUDIENCE` and
 
 Admission is empty by default. A bounded, locally reviewed manifest binds its
 SHA-256 ID, policy, review references/validity, fixed deployment code hashes and
-up to 32 reviewed token identities/code hashes. Current policy requires standard
-transfer, nonrebasing, nonupgradeable tokens; proxy/other behaviors need another
-reviewed guard. Native support is explicit. Reads/discovery remain generic, but
+up to 32 active reviewed token profiles. Legacy `direct_existing_pool_v1` requires
+standard-transfer, nonrebasing, nonupgradeable tokens. The new
+`direct_existing_pool_v2` also supports explicitly reviewed transparent/UUPS
+profiles with implementation, authority and operative checks, plus up to 32
+historical reviews for receipts. Native support is explicit. Reads/discovery remain generic, but
 readability or a successful simulation never qualifies a token for signing.
 Manifest claims require actual review; the file validator does not perform it.
 The loader requires an owned private regular file, no symlink/hardlink, 32 KiB max.
+Supported v1 approvals and mint transfer amounts are qualified against the exact
+issued manifest's reviewed token hashes at the receipt block and its parent.
+Successful finalized approvals release the owner reservation and return to draft
+(or finish cancellation); unknown/changed reviews retain the existing recovery
+guards. See [legacy receipt handling](REVIEWED_TOKEN_ADMISSION.md#receipts-and-history)
+for review retention and manifest-replacement limits.
 
 The [deployment and token review](../reports/DEPOSIT_DEPLOYMENT_REVIEW.md)
 confirmed the canonical deployments and existing WETH/USDG and ETH/USDG pool
-identities, but found **both WETH and USDG are upgradeable proxies**. They do not
-meet today's `nonUpgradeable` requirement. A constant proxy code hash does not
-pin its implementation or mutable delegates. MARLIN/BAG/ZZZ also remain
+identities, but found **both WETH and USDG are upgradeable proxies**. They cannot
+meet the legacy `nonUpgradeable` requirement. A constant proxy code hash does not
+pin its implementation or mutable delegates. Issue #44 supplies separate
+[source-backed profiles and guards](REVIEWED_TOKEN_ADMISSION.md); it does not
+relabel these assets immutable or enable them publicly. MARLIN/BAG/ZZZ remain
 unqualified: the bounded review did not obtain sufficient source/semantics
 evidence. No production manifest was populated by that review.
 
@@ -347,6 +362,12 @@ It exports no admission manifest and grants no production eligibility. Success
 under those test assumptions cannot qualify proxy immutability or Nitro net gas
 costs. Deployment/source, RPC/finality and token-admission evidence must all be
 assessed separately.
+
+The [reviewed-profile fork runs](../reports/UPGRADEABLE_ADMISSION_IMPLEMENTATION.md)
+then exercise the same qualification paths with v2 admission and no test override.
+Historical #42 evidence remains unchanged. Issuer controls, transient same-block
+upgrades, USDG payout-group restrictions and public activation gates remain
+explicit in the new review.
 
 The example Worker config has no deploying route and keeps
 `DEPOSIT_BRIDGE_ENABLED=false`, workers.dev and preview URLs disabled. Proposed

@@ -17,7 +17,7 @@ from deposit_contract_fixtures import build_fixtures
 from test_deposit_prepare import signed_manifest
 
 ORIGIN='https://domino.money'
-HEADERS={'Content-Type':'application/json','X-Domino-Deposit-Contract':'1.1.0-rc.3',
+HEADERS={'Content-Type':'application/json','X-Domino-Deposit-Contract':'1.1.0-rc.4',
     'X-Domino-Browser-Origin':ORIGIN,'CF-Access-Jwt-Assertion':'synthetic-service-assertion',
     'X-Domino-Client-Id':'192.0.2.1','X-Domino-Session':'a'*43,'X-Domino-CSRF':'b'*43}
 
@@ -44,7 +44,7 @@ class DepositApiTests(unittest.TestCase):
         for route in self.requests:
             response=self.post(route)
             self.assertEqual(response.status_code,200,response.text)
-            self.assertEqual(response.headers['X-Domino-Deposit-Contract'],'1.1.0-rc.3')
+            self.assertEqual(response.headers['X-Domino-Deposit-Contract'],'1.1.0-rc.4')
             self.assertEqual(response.headers['cache-control'],'no-store')
             self.assertNotIn('set-cookie',response.headers)
             self.assertNotIn('access-control-allow-origin',response.headers)
@@ -75,7 +75,7 @@ class DepositApiTests(unittest.TestCase):
         self.assertNotIn('provider-secret',result.text)
 
     def test_contract_mismatch_duplicate_headers_and_capacity(self):
-        for version in ('1.0.0', '1.1.0-rc.2', '2.0.0'):
+        for version in ('1.0.0', '1.1.0-rc.2', '1.1.0-rc.3', '2.0.0'):
             self.assertEqual(self.post(headers={**HEADERS,'X-Domino-Deposit-Contract':version}).status_code,502)
         self.service.execute.assert_not_called()
         self.assertEqual(self.post(headers=[*HEADERS.items(),('x-domino-session','c'*43)]).status_code,400)

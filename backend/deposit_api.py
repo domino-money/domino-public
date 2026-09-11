@@ -92,12 +92,15 @@ def main():
                 raise ValueError()
             settings, urls = database_settings(), configured_rpc_urls(config)
             hosts = config.get('rpcAllowedHosts', DEFAULT_RPC_HOSTS)
-            rpc_factory = lambda: DepositRpc(urls[0], allowed_hosts=hosts)
+            # Two currencies, implementation/admin identity and operative
+            # controls are checked before and after composition. Still one
+            # bounded request budget and deadline; no unbounded retries.
+            rpc_factory = lambda: DepositRpc(urls[0], allowed_hosts=hosts, max_requests=160)
             auth = OnboardingAuth(SessionStore(settings, abuse_secret=bytes.fromhex(secret)),
                                  PlainEoaChecker(urls, allowed_hosts=hosts))
-            service = DepositService(auth, DepositStore(settings),
-                DirectDepositPreparer(UniswapPosition(api_key), rpc_factory, admission=manifest),
-                lambda: ReceiptReconciler(rpc_factory()), private_values=(api_key,),
+            preparer = DirectDepositPreparer(UniswapPosition(api_key), rpc_factory, admission=manifest)
+            service = DepositService(auth, DepositStore(settings), preparer,
+                lambda: ReceiptReconciler(rpc_factory(), token_guard=preparer.token_guard), private_values=(api_key,),
                 allowance_reader_factory=lambda: AllowanceReader(rpc_factory()))
             verifier = AccessVerifier(os.environ.get('DOMINO_DEPOSIT_ACCESS_ISSUER'),
                 os.environ.get('DOMINO_DEPOSIT_ACCESS_AUDIENCE'), os.environ.get('DOMINO_DEPOSIT_ACCESS_SERVICE_ID'))

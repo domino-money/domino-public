@@ -29,6 +29,8 @@ from discovery import (CHAIN_ID, ZERO, POOL_MANAGER, POSITION_MANAGER, STATE_VIE
     KEY_TYPES, DataError, PoolKey, address, bytes32, parse_block, quantity)
 from lp_mint_inspection import inspect_mint, MSG_SENDER, ADDRESS_THIS
 from read_deadline import check_read_deadline, read_deadline
+from token_admission import (POLICY as UPGRADEABLE_POLICY, TokenAdmission,
+                             validate_manifest as validate_proxy_manifest, validate_check_budget)
 
 PERMIT2 = '0x000000000022d473030f116ddee9f6b43ac78ba3'
 POLICY_VERSION = 'direct_existing_pool_v1'
@@ -68,6 +70,8 @@ def validate_admission_manifest(manifest, *, now):
     The caller must load operator-owned configuration securely. This validator
     cannot authenticate the reviewer or independently establish review claims.
     """
+    if type(manifest) is dict and manifest.get('schemaVersion') == 2:
+        return validate_proxy_manifest(manifest, now=now, deployments=DEPLOYMENTS)
     try:
         if not isinstance(manifest, dict) or set(manifest) != {
                 'schemaVersion', 'policyVersion', 'manifestId', 'reviewedAt', 'expiresAt',
@@ -138,12 +142,132 @@ def _nonce(raw):
     return value
 
 
+def _legacy_token_guard(manifest):
+    """Bind historical immutable-token checks to one validated v1 manifest.
+
+    Capture only immutable values from the detached review, independently of
+    active preparation expiry or later caller edits. The complete manifest ID
+    binds each token's reviewed semantics and code hash; a code hash alone is
+    never admission. Unknown historical manifests keep their unqualified state.
+    """
+    manifest_id = manifest['manifestId']
+    tokens = {token['address']: token['codeHash'] for token in manifest['tokens']}
+
+    def receipt(*, request, currency, admission, before, block):
+        result = {'status': 'legacy_unqualified', 'reviewId': None, 'upgradeable': None}
+        if (admission.get('policyVersion') != POLICY_VERSION
+                or admission.get('manifestId') != manifest_id or currency not in tokens):
+            return result
+        result = {'status': 'unavailable', 'reviewId': manifest_id, 'upgradeable': False}
+        try:
+            for snapshot in (before, block):
+                check_read_deadline()
+                code = request('eth_getCode', [currency,
+                    {'blockHash': snapshot['hash'], 'requireCanonical': True}])
+                check_read_deadline()
+                if _code_hash(code) != tokens[currency]:
+                    return {**result, 'status': 'changed'}
+            return {**result, 'status': 'matched'}
+        except Exception:
+            check_read_deadline()
+            return result
+    return receipt
+
+
 class DirectDepositPreparer:
     def __init__(self, position, rpc_factory, *, admission=None, clock=time.time):
         self.position, self.rpc_factory, self.clock = position, rpc_factory, clock
         # Detach trusted input, but revalidate time and its hash on every request.
         self.admission = (validate_admission_manifest(admission, now=_now(clock))
                           if admission is not None else None)
+        self.token_admission = TokenAdmission([*self.admission['tokens'], *self.admission.get('reviewArchive', [])] if self.admission
+            and self.admission['policyVersion'] == UPGRADEABLE_POLICY else [])
+        self.token_guard = (_legacy_token_guard(self.admission) if self.admission
+            and self.admission['policyVersion'] == POLICY_VERSION else self.token_admission.receipt)
+
+    def revalidate(self, owner, selection, artifact):
+        """Recheck a persisted wallet payload; never issue a new effect or nonce."""
+        try:
+            with read_deadline(20):
+                selected = DepositSelection.model_validate(selection).model_dump()
+                value = PreparedArtifact.model_validate(artifact).model_dump(by_alias=True)
+                manifest = validate_admission_manifest(self.admission, now=_now(self.clock))
+                if (value['transaction']['from'] != owner
+                        or value['admission']['manifestId'] != manifest['manifestId']
+                        or value['admission']['policyVersion'] != manifest['policyVersion']):
+                    raise DepositError('deposit_token_changed')
+                profiles = self._profiles(selected, manifest)
+                # Legacy reviews remain readable for reconciliation, but cannot
+                # be used to issue/re-deliver proxy-authorized wallet payloads.
+                if manifest['policyVersion'] != UPGRADEABLE_POLICY:
+                    return self._revalidate_legacy(owner, selected, value, manifest)
+                rpc = self.rpc_factory()
+                block = parse_block(rpc.request('eth_getBlockByNumber', ['latest', False]))
+                self._fresh(block, _now(self.clock))
+                if quantity(rpc.request('eth_chainId')) != CHAIN_ID:
+                    raise DepositError('deposit_token_check_unavailable')
+                if value['admission']['tokenReviews'] != self._review_refs(profiles):
+                    raise DepositError('deposit_token_changed')
+                self.token_admission.check(rpc.request, profiles, owner=owner, block=asdict(block))
+                self._wallet_identity(rpc, owner, value, manifest, block)
+                if (parse_block(rpc.request('eth_getBlockByNumber', [block.tag, False])) != block
+                        or _nonce(rpc.request('eth_getTransactionCount', [owner, 'latest'])) != int(value['transaction']['nonceRaw'])
+                        or _nonce(rpc.request('eth_getTransactionCount', [owner, 'pending'])) != int(value['transaction']['nonceRaw'])):
+                    raise DepositError('deposit_state_changed')
+                if _now(self.clock) >= value['expiresAt']:
+                    raise DepositError('deposit_artifact_expired')
+        except DepositError:
+            raise
+        except Exception:
+            check_read_deadline()
+            raise DepositError('deposit_token_check_unavailable') from None
+
+    def _revalidate_legacy(self, owner, selected, artifact, manifest):
+        # Preserve immutable-token compatibility while still checking current
+        # code before re-delivery; this does not authorize any proxy profile.
+        rpc = self.rpc_factory()
+        block = parse_block(rpc.request('eth_getBlockByNumber', ['latest', False]))
+        self._fresh(block, _now(self.clock))
+        pinned = {'blockHash': block.hash, 'requireCanonical': True}
+        if quantity(rpc.request('eth_chainId')) != CHAIN_ID:
+            raise DepositError('deposit_token_check_unavailable')
+        for profile in self._profiles(selected, manifest):
+            if _code_hash(rpc.request('eth_getCode', [profile['address'], pinned])) != profile['codeHash']:
+                raise DepositError('deposit_token_changed')
+        self._wallet_identity(rpc, owner, artifact, manifest, block)
+        if parse_block(rpc.request('eth_getBlockByNumber', [block.tag, False])) != block:
+            raise DepositError('deposit_state_changed')
+
+    def _wallet_identity(self, rpc, owner, artifact, manifest, block):
+        pinned = {'blockHash': block.hash, 'requireCanonical': True}
+        if rpc.request('eth_getCode', [owner, pinned]) != '0x':
+            raise DepositError('deposit_state_changed')
+        for label, target in DEPLOYMENTS.items():
+            if _code_hash(rpc.request('eth_getCode', [target, pinned])) != manifest['deployments'][label]:
+                raise DepositError('deposit_admission_required')
+        nonce = int(artifact['transaction']['nonceRaw'])
+        if (any(_nonce(rpc.request('eth_getTransactionCount', [owner, tag])) != nonce
+                for tag in ('latest', 'pending')) or _now(self.clock) >= artifact['expiresAt']):
+            raise DepositError('deposit_state_changed')
+
+    @staticmethod
+    def _review_refs(profiles):
+        return [{'address': p['address'], 'reviewId': p['reviewId']} for p in profiles]
+
+    @staticmethod
+    def _profiles(selection, manifest):
+        key = PoolKey.checked(tuple(selection['poolKey'][k] for k in
+            ('currency0', 'currency1', 'fee_pips', 'tick_spacing', 'hooks')), selection['poolId'])
+        tokens = {p['address']: p for p in manifest['tokens']}
+        try:
+            if key.hooks != ZERO or ZERO in (key.currency0, key.currency1) and not manifest['nativeEnabled']:
+                raise ValueError()
+            profiles = [tokens[c] for c in (key.currency0, key.currency1) if c != ZERO]
+            if manifest['policyVersion'] == UPGRADEABLE_POLICY:
+                validate_check_budget(profiles)
+            return profiles
+        except (KeyError, ValueError):
+            raise DepositError('deposit_admission_required') from None
 
     def prepare(self, owner, selection):
         try:
@@ -172,6 +296,7 @@ class DirectDepositPreparer:
         if key.hooks != ZERO or key.fee_pips > 1_000_000 or any(
                 not manifest['nativeEnabled'] if c == ZERO else c not in tokens for c in currencies):
             raise DepositError('deposit_admission_required')
+        profiles = self._profiles(selected, manifest)
         check_read_deadline()
         rpc = self.rpc_factory()
 
@@ -199,9 +324,12 @@ class DirectDepositPreparer:
                 raise DepositError('deposit_admission_required')
         if request('eth_getCode', [owner, pinned]) != '0x':
             raise DepositError('deposit_admission_required')
-        for token in currencies:
-            if token != ZERO and _code_hash(request('eth_getCode', [token, pinned])) != tokens[token]['codeHash']:
-                raise DepositError('deposit_admission_required')
+        if manifest['policyVersion'] == UPGRADEABLE_POLICY:
+            self.token_admission.check(request, profiles, owner=owner, block=asdict(block))
+        else:
+            for token in currencies:
+                if token != ZERO and _code_hash(request('eth_getCode', [token, pinned])) != tokens[token]['codeHash']:
+                    raise DepositError('deposit_admission_required')
         for target, signature, expected in ((POSITION_MANAGER, 'poolManager()', POOL_MANAGER),
                 (STATE_VIEW, 'poolManager()', POOL_MANAGER), (POSITION_MANAGER, 'permit2()', PERMIT2)):
             if call(target, signature, outputs=['address'])[0] != expected:
@@ -306,6 +434,14 @@ class DirectDepositPreparer:
                 or _nonce(request('eth_getTransactionCount', [owner, 'latest'])) != nonce
                 or _nonce(request('eth_getTransactionCount', [owner, 'pending'])) != nonce):
             raise DataError('deposit_snapshot_changed')
+        if manifest['policyVersion'] == UPGRADEABLE_POLICY:
+            # A provider composition can take time; reread token identity at a
+            # fresh canonical block after simulation, not only the old snapshot.
+            tail = parse_block(request('eth_getBlockByNumber', ['latest', False]))
+            self._fresh(tail, _now(self.clock))
+            self.token_admission.check(request, profiles, owner=owner, block=asdict(tail))
+            if parse_block(request('eth_getBlockByNumber', [tail.tag, False])) != tail:
+                raise DepositError('deposit_state_changed')
         completed = _now(self.clock)
         self._fresh(block, completed)
         validate_admission_manifest(manifest, now=completed)
@@ -315,7 +451,8 @@ class DirectDepositPreparer:
         artifact = {'kind': kind, 'transaction': tx, 'sourceBlock': asdict(block),
             'expiresAt': expires, 'preparedDeadline': deadline, 'mintedBounds': bounds,
             'balances': {'nativeRaw': str(native), 'token0Raw': str(balances[0]), 'token1Raw': str(balances[1])},
-            'admission': {'manifestId': manifest['manifestId'], 'policyVersion': POLICY_VERSION},
+            'admission': {'manifestId': manifest['manifestId'], 'policyVersion': manifest['policyVersion'],
+                'tokenReviews': self._review_refs(profiles) if manifest['policyVersion'] == UPGRADEABLE_POLICY else None},
             'simulation': {'status': 'passed', 'estimatedGasRaw': str(estimate),
                 'blockNumber': block.number, 'blockHash': block.hash}}
         checked = PreparedArtifact.model_validate(artifact).model_dump(by_alias=True)

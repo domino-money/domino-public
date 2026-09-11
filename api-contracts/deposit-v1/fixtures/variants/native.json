@@ -1,6 +1,6 @@
 {
   "automationAvailable": false,
-  "contractVersion": "1.1.0-rc.3",
+  "contractVersion": "1.1.0-rc.4",
   "operation": {
     "chainId": 4663,
     "createdAt": 1800000000,

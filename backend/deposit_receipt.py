@@ -10,6 +10,7 @@ IPoolManager.sol; v4-periphery dce236d4e2057422d0791d9a973a58765eb46f65
 PositionManager.sol and PositionInfoLibrary.sol; permit2
 cc56ad0f3439c502c246fc5cfcc3db92bb8b7219/src/interfaces/IAllowanceTransfer.sol.
 """
+from copy import deepcopy
 from dataclasses import asdict
 import re
 
@@ -28,7 +29,10 @@ MAX_TRANSACTIONS = 1024
 MAX_BLOCK_TRANSACTIONS = 2048
 MAX_LOGS = 256
 MAX_HASHES = 8
-MAX_RPC_REQUESTS = 100
+# Admitted token pairs cost at most 72 historical identity reads. A resumed
+# 16-block scan with stale replacement hints and NFT/finality checks can add
+# 73 reads including independent finalized nonce proof; leave bounded headroom within the shared DepositRpc ceiling.
+MAX_RPC_REQUESTS = 160
 MAX_BLOCK_NUMBER = 2**53-1
 TRANSFER = '0x' + keccak(b'Transfer(address,address,uint256)').hex()
 APPROVAL = '0x' + keccak(b'Approval(address,address,uint256)').hex()
@@ -38,7 +42,13 @@ REASONS = frozenset(('transaction_not_found', 'transaction_pending', 'scan_in_pr
     'nonce_consumed_transaction_unresolved', 'transaction_mismatch', 'receipt_mismatch',
     'receipt_pending', 'finality_pending', 'finality_unavailable', 'transaction_confirmed',
     'transaction_reverted', 'canonicality_changed', 'mint_state_unavailable',
-    'reported_effect_nonce_mismatch'))
+    'token_review_changed', 'token_review_unavailable', 'reported_effect_nonce_mismatch'))
+QUALIFIED_AMOUNT_BASES = frozenset(('admitted_standard_transfer_events', 'reviewed_proxy_transfer_events'))
+UNQUALIFIED_AMOUNT_BASES = {
+    'changed': 'token_review_changed',
+    'unavailable': 'token_review_unavailable',
+    'legacy_unqualified': 'legacy_token_review_unqualified',
+}
 
 
 def _raw(value):
@@ -89,10 +99,11 @@ class _EvidenceMissing(Exception):
 
 
 class ReceiptReconciler:
-    def __init__(self, rpc, *, max_blocks=MAX_BLOCKS, max_transactions=MAX_TRANSACTIONS):
+    def __init__(self, rpc, *, token_guard=None, max_blocks=MAX_BLOCKS, max_transactions=MAX_TRANSACTIONS):
         self._request = rpc.request if hasattr(rpc, 'request') else rpc
-        if not callable(self._request) or type(max_blocks) is not int or not 1 <= max_blocks <= MAX_BLOCKS or type(max_transactions) is not int or not 1 <= max_transactions <= MAX_TRANSACTIONS:
+        if not callable(self._request) or token_guard is not None and not callable(token_guard) or type(max_blocks) is not int or not 1 <= max_blocks <= MAX_BLOCKS or type(max_transactions) is not int or not 1 <= max_transactions <= MAX_TRANSACTIONS:
             raise DataError('invalid_deposit_receipt_config')
+        self._token_guard = token_guard
         self.max_blocks, self.max_transactions = max_blocks, max_transactions
         self._count = 0
 
@@ -142,6 +153,10 @@ class ReceiptReconciler:
                 if _raw(tx[actual]) > _raw(selection[limit]):
                     raise ValueError()
             key = PoolKey.checked(tuple(selection['poolKey'].values()), selection['poolId'])
+            if artifact['admission']['policyVersion'] == 'direct_existing_pool_v2':
+                expected_currencies = [currency for currency in (key.currency0, key.currency1) if currency != ZERO]
+                if [review['address'] for review in artifact['admission']['tokenReviews']] != expected_currencies:
+                    raise ValueError()
             caps = artifact['mintedBounds']
             if any(_raw(caps[f'amount{i}MaxRaw']) > _raw(selection[f'budget{i}Raw']) for i in (0, 1)):
                 raise ValueError()
@@ -288,6 +303,51 @@ class ReceiptReconciler:
         if owner == ZERO: raise DataError('deposit_receipt_nft_mismatch')
         return {'status': 'verified', 'owner': owner, 'liquidityRaw': str(liquidity), 'snapshot': block}
 
+    def _token_review(self, currency, artifact, block):
+        """Historical endpoint evidence, never a transaction-time code trace.
+
+        The callback is trusted operator policy, not a browser predicate. Its
+        reads share this reconciliation's budget. Review/RPC failures remove
+        amount trust without concealing a submitted transaction or its NFT.
+        Matching proxy endpoints cannot exclude a transient same-block upgrade.
+        """
+        review = {'status': 'legacy_unqualified', 'reviewId': None, 'upgradeable': None}
+        before = None
+        if self._token_guard is not None:
+            review['status'] = 'unavailable'
+            try:
+                if block['number'] == 0:
+                    raise ValueError()
+                before, _ = self._get_block(block['number']-1)
+                if before['hash'] != self._receipt_parent_hash:
+                    raise ValueError()
+                observed = self._token_guard(request=self._rpc, currency=currency,
+                    admission=deepcopy(artifact['admission']), before=deepcopy(before), block=deepcopy(block))
+                if (type(observed) is not dict or set(observed) != {'status', 'reviewId', 'upgradeable'}
+                        or observed['status'] not in ('matched', *UNQUALIFIED_AMOUNT_BASES)
+                        or observed['reviewId'] is not None and not (
+                            isinstance(observed['reviewId'], str) and re.fullmatch('[0-9a-f]{64}', observed['reviewId']))
+                        or observed['upgradeable'] is not None and type(observed['upgradeable']) is not bool
+                        or observed['status'] == 'matched' and (
+                            observed['reviewId'] is None or type(observed['upgradeable']) is not bool)):
+                    raise ValueError()
+                if artifact['admission']['policyVersion'] == 'direct_existing_pool_v2':
+                    expected = next(row['reviewId'] for row in artifact['admission']['tokenReviews']
+                                    if row['address'] == currency)
+                    if observed['status'] == 'matched' and observed['reviewId'] != expected:
+                        raise ValueError()
+                review = deepcopy(observed)
+            except Exception:
+                check_read_deadline()
+                review = {'status': 'unavailable', 'reviewId': None, 'upgradeable': None}
+        return {**review, 'beforeBlock': before, 'receiptBlock': deepcopy(block)}
+
+    @staticmethod
+    def _amount_basis(review):
+        if review['status'] == 'matched':
+            return 'reviewed_proxy_transfer_events' if review['upgradeable'] else 'admitted_standard_transfer_events'
+        return UNQUALIFIED_AMOUNT_BASES[review['status']]
+
     def _mint(self, logs, owner, selection, artifact, key, block, head):
         transfers = [row for row in logs if row['address'] == POSITION_MANAGER and row['topics'] and row['topics'][0] == TRANSFER]
         if len(transfers) != 1: raise DataError('deposit_receipt_mint_event_mismatch')
@@ -322,6 +382,12 @@ class ReceiptReconciler:
                 tokens.append({'currency': currency, 'maximumDebitRaw': cap, 'depositedRaw': None,
                     'ownerDebitRaw': None, 'ownerCreditRaw': None, 'basis': 'native_net_unavailable'})
                 continue
+            review = self._token_review(currency, artifact, block)
+            basis = self._amount_basis(review)
+            if review['status'] != 'matched':
+                tokens.append({'currency': currency, 'maximumDebitRaw': cap, 'depositedRaw': None,
+                    'ownerDebitRaw': None, 'ownerCreditRaw': None, 'basis': basis, 'review': review})
+                continue
             debit = credit = deposited = 0
             for row in logs:
                 if row['address'] != currency or not row['topics'] or row['topics'][0] != TRANSFER: continue
@@ -335,8 +401,8 @@ class ReceiptReconciler:
                 if recipient == owner: credit += amount
             if debit != deposited or credit or debit > _raw(cap): raise DataError('deposit_receipt_token_amount_mismatch')
             tokens.append({'currency': currency, 'maximumDebitRaw': cap, 'depositedRaw': str(deposited),
-                'ownerDebitRaw': str(debit), 'ownerCreditRaw': str(credit), 'basis': 'admitted_standard_transfer_events'})
-        if key.currency0 != ZERO and not any(_raw(token['depositedRaw']) for token in tokens):
+                'ownerDebitRaw': str(debit), 'ownerCreditRaw': str(credit), 'basis': basis, 'review': review})
+        if key.currency0 != ZERO and all(token['depositedRaw'] is not None for token in tokens) and not any(_raw(token['depositedRaw']) for token in tokens):
             raise DataError('deposit_receipt_missing_token_transfers')
         return {'tokenId': str(number), 'poolId': selection['poolId'], 'poolKey': asdict(key),
             'tickLower': lower, 'tickUpper': upper, 'salt': '0x'+salt.hex(), 'mintRecipient': owner,
@@ -345,6 +411,11 @@ class ReceiptReconciler:
                 'refundRaw': None, 'basis': 'transaction_value_only_net_unavailable'}}
 
     def _approval(self, logs, owner, artifact, approval, block):
+        review = self._token_review(approval['token'], artifact, block)
+        if review['status'] != 'matched':
+            return {**approval, 'amountRaw': None, 'requestedAmountRaw': approval['amountRaw'],
+                'basis': self._amount_basis(review), 'allowanceCurrentlyUsable': None,
+                'snapshot': block, 'review': review}
         target = PERMIT2 if artifact['kind'] == 'permit2_approval' else approval['token']
         topic = PERMIT_APPROVAL if artifact['kind'] == 'permit2_approval' else APPROVAL
         events = [row for row in logs if row['address'] == target and row['topics'] and row['topics'][0] == topic]
@@ -363,7 +434,7 @@ class ReceiptReconciler:
         # Approval events prove this tx's effect. A later transfer in the same
         # block can consume it; the next preparation must read allowances again.
         return {**approval, 'basis': 'canonical_approval_event', 'allowanceCurrentlyUsable': None,
-                'snapshot': block}
+                'snapshot': block, 'review': review}
 
     def _scan(self, owner, nonce, source, cursor, head):
         next_block, offset, previous_hash, partial_hash = source['number'], 0, None, None
@@ -621,11 +692,15 @@ class ReceiptReconciler:
                     'finalizedHead': finalized, 'confirmations': head['number']-number+1, 'absoluteFinalityProven': False},
                 'mint': None, 'approval': None,
                 'transaction': self._transaction_evidence(observed, selection)}
+            self._receipt_parent_hash = raw_block.get('parentHash')
             state_missing = False
+            approval_review = None
             if observed is not None and status:
                 try:
                     if artifact['kind'] == 'mint': receipt['mint'] = self._mint(logs, owner, selection, artifact, key, block, head)
-                    else: receipt['approval'] = self._approval(logs, owner, artifact, approval, block)
+                    else:
+                        receipt['approval'] = self._approval(logs, owner, artifact, approval, block)
+                        approval_review = receipt['approval']['review']['status']
                 except _EvidenceMissing: state_missing = True
                 except DataError:
                     result.update(state='mismatched', reason='receipt_mismatch', receipt=receipt,
@@ -650,6 +725,10 @@ class ReceiptReconciler:
             if conflicts: result.update(state='mismatched', reason='reported_effect_nonce_mismatch')
             elif observed is None: result.update(state='mismatched', reason='transaction_mismatch')
             elif state_missing: result.update(state='pending', reason='mint_state_unavailable')
+            elif approval_review in ('changed', 'legacy_unqualified'):
+                result.update(state='mismatched', reason='token_review_changed' if approval_review == 'changed' else 'token_review_unavailable')
+            elif approval_review == 'unavailable':
+                result.update(state='pending', reason='token_review_unavailable')
             elif finality != 'finalized': result.update(state='pending', reason='finality_' + finality)
             elif status: result.update(state='confirmed', reason='transaction_confirmed')
             else: result.update(state='reverted', reason='transaction_reverted')
@@ -659,6 +738,34 @@ class ReceiptReconciler:
 def validate_issued_artifact(owner, selection, artifact):
     """Recheck persisted transaction effects and selected caps without RPC/writes."""
     return ReceiptReconciler._context(owner, selection, artifact)[2]
+
+
+def _public_token_amount(token, receipt):
+    """Old amount labels alone do not establish the newly required identity.
+
+    Keep historical raw records intact; project amounts only with their bound
+    review evidence. A later implementation upgrade does not change an already
+    recorded canonical historical identity.
+    """
+    basis = token.get('basis')
+    if token.get('currency') == ZERO:
+        return None, 'native_net_unavailable'
+    if basis in UNQUALIFIED_AMOUNT_BASES.values():
+        return None, basis
+    review = token.get('review')
+    try:
+        if (basis not in QUALIFIED_AMOUNT_BASES or type(review) is not dict
+                or review['status'] != 'matched' or type(review['upgradeable']) is not bool
+                or basis != ('reviewed_proxy_transfer_events' if review['upgradeable'] else 'admitted_standard_transfer_events')
+                or not re.fullmatch('[0-9a-f]{64}', review['reviewId'])
+                or review['receiptBlock']['number'] != receipt['blockNumber']
+                or review['receiptBlock']['hash'] != receipt['blockHash']
+                or review['beforeBlock']['number'] != receipt['blockNumber']-1):
+            raise ValueError()
+        _raw(token['depositedRaw'])
+        return token['depositedRaw'], basis
+    except (KeyError, TypeError, ValueError, DataError):
+        return None, 'legacy_token_review_unqualified'
 
 
 def receipt_summary(outcome):
@@ -673,8 +780,10 @@ def receipt_summary(outcome):
         'tickLower': mint['tickLower'], 'tickUpper': mint['tickUpper'], 'liquidityRaw': mint['mintedLiquidityRaw'],
         'currentOwner': mint['currentState']['owner'], 'currentOwnerStatus': mint['currentState']['status'],
         'ownershipObservedBlock': mint['currentState']['snapshot'],
-        'amount0Raw': mint['tokens'][0]['depositedRaw'], 'amount1Raw': mint['tokens'][1]['depositedRaw'],
     }
+    if position is not None:
+        for index, token in enumerate(mint['tokens']):
+            position[f'amount{index}Raw'], position[f'amount{index}Basis'] = _public_token_amount(token, receipt)
     gas = receipt['gas']
     gas_used, price = _raw(gas['gasUsedRaw']), _raw(gas['effectiveGasPriceRaw'])
     # Old records have no qualified poster-gas observation. Recompute from raw

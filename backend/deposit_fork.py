@@ -154,7 +154,7 @@ class DepositFork:
             'result': self.request(body['method'], body['params'])}
 
     def deposit_rpc(self):
-        return DepositRpc(RPC_URL, transport=self.transport)
+        return DepositRpc(RPC_URL, transport=self.transport, max_requests=160)
 
     def mine(self, count=1):
         if type(count) is not int or not 1 <= count <= 16:

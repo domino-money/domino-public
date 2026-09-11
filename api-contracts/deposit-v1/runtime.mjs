@@ -1,6 +1,6 @@
 // Closed contract and narrow ABI re-encoding. No LP formulas or broadcast.
 import { SCHEMAS, ERRORS } from './schema-data.mjs';
-export const CONTRACT_VERSION = '1.1.0-rc.3';
+export const CONTRACT_VERSION = '1.1.0-rc.4';
 export const ROUTES = Object.freeze(Object.keys(SCHEMAS));
 export const ERROR_STATUS_BY_CODE = Object.freeze({...ERRORS});
 const UINT256_MAX = (1n << 256n) - 1n;
@@ -82,6 +82,9 @@ export function validateWalletStep(selection, owner, artifact) {
         !/^0x[0-9a-f]{40}$/u.test(owner) || [ZERO, alias, '0x' + '0'.repeat(39) + '2'].includes(owner)) return false;
     const tx = artifact.transaction, caps = artifact.mintedBounds;
     const currencies = [selection.poolKey.currency0, selection.poolKey.currency1];
+    if (artifact.admission.policyVersion === 'direct_existing_pool_v2' &&
+        (artifact.admission.tokenReviews.length !== currencies.filter(c => c !== ZERO).length ||
+         artifact.admission.tokenReviews.some((row, i) => row.address !== currencies.filter(c => c !== ZERO)[i]))) return false;
     if (tx.from !== owner || BigInt(tx.gasLimitRaw) > BigInt(selection.maxGasLimitRaw) ||
         BigInt(tx.maxFeePerGasRaw) > BigInt(selection.maxFeePerGasRaw) ||
         BigInt(tx.maxPriorityFeePerGasRaw) > BigInt(selection.maxPriorityFeePerGasRaw) ||
@@ -115,6 +118,11 @@ function stepPolicy(step, selection, state) {
 }
 
 function semantic(name, value) {
+  if (name === 'Admission') return value.policyVersion === 'direct_existing_pool_v1'
+    ? value.tokenReviews == null
+    : Array.isArray(value.tokenReviews) && value.tokenReviews.length > 0 &&
+      value.tokenReviews.every(row => row.address !== ZERO) &&
+      new Set(value.tokenReviews.map(row => row.address)).size === value.tokenReviews.length;
   if (name === 'PoolKeyModel') return value.currency0 < value.currency1;
   if (name === 'DepositSelection') {
     const k = value.poolKey, i = [k.currency0, k.currency1].indexOf(value.independentToken);
@@ -134,7 +142,9 @@ function semantic(name, value) {
     BigInt(value.simulation.estimatedGasRaw) <= BigInt(value.transaction.gasLimitRaw) &&
     (value.kind !== 'mint' || value.transaction.to === PM);
   if (name === 'ReceiptPosition') return (value.currentOwner === null) === (value.currentOwnerStatus === 'unavailable') &&
-    value.tickLower < value.tickUpper;
+    value.tickLower < value.tickUpper && [0, 1].every(i =>
+      (value[`amount${i}Raw`] !== null) === ['admitted_standard_transfer_events',
+        'reviewed_proxy_transfer_events'].includes(value[`amount${i}Basis`]));
   if (name === 'ObservedTransaction') return BigInt(value.gasLimitRaw) >= 21000n &&
     BigInt(value.maxPriorityFeePerGasRaw) <= BigInt(value.maxFeePerGasRaw) &&
     new Set(value.selectedLimitsExceeded).size === value.selectedLimitsExceeded.length;

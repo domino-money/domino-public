@@ -1,0 +1,2857 @@
+{
+  "schemaVersion": 1,
+  "reviewDate": "2026-09-10",
+  "scope": "reviewed_proxy_candidate_no_production_activation",
+  "chainId": 4663,
+  "profilesFile": "robinhood-reviewed-token-profiles-2026-09-10.json",
+  "sourceBlock": {
+    "number": 59702441,
+    "hash": "0x7e18a93cf71e6bb1f094f4a5552475590034e763e7154c1cac16a35cba8108a7",
+    "timestamp": 1789073456
+  },
+  "mainReadBatch": {
+    "version": 1,
+    "purpose": "review_evidence_not_production_activation",
+    "source": "configured_product_readonly_rpc_no_endpoint_retained",
+    "chainId": 4663,
+    "block": {
+      "number": "0x38efca9",
+      "hash": "0x7e18a93cf71e6bb1f094f4a5552475590034e763e7154c1cac16a35cba8108a7",
+      "timestamp": "0x6aa31830"
+    },
+    "contracts": {
+      "WETH": {
+        "address": "0x0bd7d308f8e1639fab988df18a8011f41eacad73",
+        "runtimeBytes": 2202,
+        "runtimeCodeHash": "0x5706be52f64875fee65a2cec0d80e47a23d8793cbe85d214b48445e2d05f5353",
+        "eip1967Slots": {
+          "implementation": "0x000000000000000000000000c6b81b429797e0f555440b70cd99e032d7ae947e",
+          "admin": "0x000000000000000000000000a3acd31afb851b4eb9dad00f5204c01d924267df",
+          "beacon": "0x0000000000000000000000000000000000000000000000000000000000000000"
+        }
+      },
+      "USDG": {
+        "address": "0x5fc5360d0400a0fd4f2af552add042d716f1d168",
+        "runtimeBytes": 170,
+        "runtimeCodeHash": "0x864cc9ad53b338b82da1f7cab85ab0b3d5c8861acb422b6fec63cf36234f36a6",
+        "eip1967Slots": {
+          "implementation": "0x00000000000000000000000068184c449e1a8f34fa18d289737129fd27b66f8f",
+          "admin": "0x0000000000000000000000000000000000000000000000000000000000000000",
+          "beacon": "0x0000000000000000000000000000000000000000000000000000000000000000"
+        }
+      },
+      "WETHImplementation": {
+        "address": "0xc6b81b429797e0f555440b70cd99e032d7ae947e",
+        "runtimeBytes": 6961,
+        "runtimeCodeHash": "0xbe1295f37be34ffe03ad779bda0ef278907e1856b51a3be2f35ee541d75d4650"
+      },
+      "USDGImplementation": {
+        "address": "0x68184c449e1a8f34fa18d289737129fd27b66f8f",
+        "runtimeBytes": 18644,
+        "runtimeCodeHash": "0x3a551ac5c744af57e68a1d1431ac403c0f516ffd7d224a75746aee11fc4f3baf"
+      },
+      "WETHProxyAdmin": {
+        "address": "0xa3acd31afb851b4eb9dad00f5204c01d924267df",
+        "runtimeBytes": 1681,
+        "runtimeCodeHash": "0xa4b2186ab82fa36fb4ae158582e5615ea519e757c26c13ba4a33daaaed8902a7"
+      },
+      "WETHGovernance": {
+        "address": "0x2a153c6a1b66dbc930a8d7017230ab0253005c09",
+        "runtimeBytes": 2202,
+        "runtimeCodeHash": "0x5706be52f64875fee65a2cec0d80e47a23d8793cbe85d214b48445e2d05f5353"
+      },
+      "USDGDefaultAdmin": {
+        "address": "0xcfa0388f5ddf905fdc08c45c716c15dc10a14c6f",
+        "runtimeBytes": 6754,
+        "runtimeCodeHash": "0xe616a4f66608354a45be3af2f82e909a1e000f4360eeb909defd830ee43c554b"
+      }
+    },
+    "calls": [
+      {
+        "target": "WETHProxyAdmin",
+        "signature": "owner()",
+        "arguments": [],
+        "raw": "0x0000000000000000000000002a153c6a1b66dbc930a8d7017230ab0253005c09",
+        "decoded": [
+          "0x2a153c6a1b66dbc930a8d7017230ab0253005c09"
+        ]
+      },
+      {
+        "target": "WETH",
+        "signature": "l1Address()",
+        "arguments": [],
+        "raw": "0x000000000000000000000000c02aaa39b223fe8d0a0e5c4f27ead9083c756cc2",
+        "decoded": [
+          "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2"
+        ]
+      },
+      {
+        "target": "WETH",
+        "signature": "l2Gateway()",
+        "arguments": [],
+        "raw": "0x0000000000000000000000001d187c3e2da52d72bc9c41e3aba0fdfa6a7bf055",
+        "decoded": [
+          "0x1d187c3e2da52d72bc9c41e3aba0fdfa6a7bf055"
+        ]
+      },
+      {
+        "target": "USDG",
+        "signature": "defaultAdmin()",
+        "arguments": [],
+        "raw": "0x000000000000000000000000cfa0388f5ddf905fdc08c45c716c15dc10a14c6f",
+        "decoded": [
+          "0xcfa0388f5ddf905fdc08c45c716c15dc10a14c6f"
+        ]
+      },
+      {
+        "target": "USDG",
+        "signature": "owner()",
+        "arguments": [],
+        "raw": "0x000000000000000000000000cfa0388f5ddf905fdc08c45c716c15dc10a14c6f",
+        "decoded": [
+          "0xcfa0388f5ddf905fdc08c45c716c15dc10a14c6f"
+        ]
+      },
+      {
+        "target": "USDG",
+        "signature": "pendingDefaultAdmin()",
+        "arguments": [],
+        "raw": "0x00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+        "decoded": [
+          "0x0000000000000000000000000000000000000000",
+          0
+        ]
+      },
+      {
+        "target": "USDG",
+        "signature": "defaultAdminDelay()",
+        "arguments": [],
+        "raw": "0x0000000000000000000000000000000000000000000000000000000000002a30",
+        "decoded": [
+          10800
+        ]
+      },
+      {
+        "target": "USDG",
+        "signature": "pendingDefaultAdminDelay()",
+        "arguments": [],
+        "raw": "0x00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+        "decoded": [
+          0,
+          0
+        ]
+      },
+      {
+        "target": "USDG",
+        "signature": "globalTransferSettings()",
+        "arguments": [],
+        "raw": "0x00000000000000000000000000000000000000000000000000000000699cea000000000000000000000000000000000000000000000000000000000000015180000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+        "decoded": [
+          1771891200,
+          86400,
+          false,
+          "0x00000000000000000000",
+          false
+        ]
+      },
+      {
+        "target": "USDG",
+        "signature": "getRoleAdmin(bytes32)",
+        "arguments": [
+          "0x0000000000000000000000000000000000000000000000000000000000000000"
+        ],
+        "raw": "0x0000000000000000000000000000000000000000000000000000000000000000",
+        "decoded": [
+          "0x0000000000000000000000000000000000000000000000000000000000000000"
+        ]
+      },
+      {
+        "target": "USDG",
+        "signature": "hasRole(bytes32,address)",
+        "arguments": [
+          "0x0000000000000000000000000000000000000000000000000000000000000000",
+          "0xcfa0388f5ddf905fdc08c45c716c15dc10a14c6f"
+        ],
+        "raw": "0x0000000000000000000000000000000000000000000000000000000000000001",
+        "decoded": [
+          true
+        ]
+      },
+      {
+        "target": "USDG",
+        "signature": "getRoleAdmin(bytes32)",
+        "arguments": [
+          "0x139c2898040ef16910dc9f44dc697df79363da767d8bc92f2e310312b816e46d"
+        ],
+        "raw": "0x0000000000000000000000000000000000000000000000000000000000000000",
+        "decoded": [
+          "0x0000000000000000000000000000000000000000000000000000000000000000"
+        ]
+      },
+      {
+        "target": "USDG",
+        "signature": "hasRole(bytes32,address)",
+        "arguments": [
+          "0x139c2898040ef16910dc9f44dc697df79363da767d8bc92f2e310312b816e46d",
+          "0xcfa0388f5ddf905fdc08c45c716c15dc10a14c6f"
+        ],
+        "raw": "0x0000000000000000000000000000000000000000000000000000000000000000",
+        "decoded": [
+          false
+        ]
+      },
+      {
+        "target": "USDG",
+        "signature": "getRoleAdmin(bytes32)",
+        "arguments": [
+          "0xe3e4f9d7569515307c0cdec302af069a93c9e33f325269bac70e6e22465a9796"
+        ],
+        "raw": "0x0000000000000000000000000000000000000000000000000000000000000000",
+        "decoded": [
+          "0x0000000000000000000000000000000000000000000000000000000000000000"
+        ]
+      },
+      {
+        "target": "USDG",
+        "signature": "hasRole(bytes32,address)",
+        "arguments": [
+          "0xe3e4f9d7569515307c0cdec302af069a93c9e33f325269bac70e6e22465a9796",
+          "0xcfa0388f5ddf905fdc08c45c716c15dc10a14c6f"
+        ],
+        "raw": "0x0000000000000000000000000000000000000000000000000000000000000000",
+        "decoded": [
+          false
+        ]
+      },
+      {
+        "target": "USDG",
+        "signature": "getFacet(bytes4)",
+        "arguments": [
+          "0xe5839836"
+        ],
+        "raw": "0x00000000000000000000000058cab81e3d8468a0e90df8cbfacb34535e1de942",
+        "decoded": [
+          "0x58cab81e3d8468a0e90df8cbfacb34535e1de942"
+        ]
+      },
+      {
+        "target": "USDG",
+        "signature": "getFacet(bytes4)",
+        "arguments": [
+          "0x5c975abb"
+        ],
+        "raw": "0x00000000000000000000000058cab81e3d8468a0e90df8cbfacb34535e1de942",
+        "decoded": [
+          "0x58cab81e3d8468a0e90df8cbfacb34535e1de942"
+        ]
+      },
+      {
+        "target": "USDG",
+        "signature": "getFacet(bytes4)",
+        "arguments": [
+          "0x8456cb59"
+        ],
+        "raw": "0x00000000000000000000000058cab81e3d8468a0e90df8cbfacb34535e1de942",
+        "decoded": [
+          "0x58cab81e3d8468a0e90df8cbfacb34535e1de942"
+        ]
+      },
+      {
+        "target": "USDG",
+        "signature": "getFacet(bytes4)",
+        "arguments": [
+          "0x3f4ba83a"
+        ],
+        "raw": "0x00000000000000000000000058cab81e3d8468a0e90df8cbfacb34535e1de942",
+        "decoded": [
+          "0x58cab81e3d8468a0e90df8cbfacb34535e1de942"
+        ]
+      },
+      {
+        "target": "USDG",
+        "signature": "getFacet(bytes4)",
+        "arguments": [
+          "0x8d1fdf2f"
+        ],
+        "raw": "0x00000000000000000000000058cab81e3d8468a0e90df8cbfacb34535e1de942",
+        "decoded": [
+          "0x58cab81e3d8468a0e90df8cbfacb34535e1de942"
+        ]
+      },
+      {
+        "target": "USDG",
+        "signature": "getFacet(bytes4)",
+        "arguments": [
+          "0x45c8b1a6"
+        ],
+        "raw": "0x00000000000000000000000058cab81e3d8468a0e90df8cbfacb34535e1de942",
+        "decoded": [
+          "0x58cab81e3d8468a0e90df8cbfacb34535e1de942"
+        ]
+      },
+      {
+        "target": "USDG",
+        "signature": "getFacet(bytes4)",
+        "arguments": [
+          "0x52e5a050"
+        ],
+        "raw": "0x00000000000000000000000058cab81e3d8468a0e90df8cbfacb34535e1de942",
+        "decoded": [
+          "0x58cab81e3d8468a0e90df8cbfacb34535e1de942"
+        ]
+      },
+      {
+        "target": "USDG",
+        "signature": "isFrozen(address)",
+        "arguments": [
+          "0x1111111111111111111111111111111111111111"
+        ],
+        "raw": "0x0000000000000000000000000000000000000000000000000000000000000000",
+        "decoded": [
+          false
+        ]
+      },
+      {
+        "target": "USDG",
+        "signature": "isFrozen(address)",
+        "arguments": [
+          "0x000000000022d473030f116ddee9f6b43ac78ba3"
+        ],
+        "raw": "0x0000000000000000000000000000000000000000000000000000000000000000",
+        "decoded": [
+          false
+        ]
+      },
+      {
+        "target": "USDG",
+        "signature": "isFrozen(address)",
+        "arguments": [
+          "0x8366a39cc670b4001a1121b8f6a443a643e40951"
+        ],
+        "raw": "0x0000000000000000000000000000000000000000000000000000000000000000",
+        "decoded": [
+          false
+        ]
+      }
+    ],
+    "storage": {
+      "USDG:1:syntheticOwner": {
+        "baseSlot": 1,
+        "key": "0x1111111111111111111111111111111111111111",
+        "location": "0x8eec1c9afb183a84aac7003cf8e730bfb6385f6e43761d6425fba4265de3a9eb",
+        "raw": "0x000000000000000000000000000000000000000000000000000000000007a120",
+        "decoded": {
+          "payoutGroupId": 0
+        }
+      },
+      "USDG:6:syntheticOwner": {
+        "baseSlot": 6,
+        "key": "0x1111111111111111111111111111111111111111",
+        "location": "0x70f16d33119391b8b067ddbccc95d800dffc462fb735b11fb31d20dbd5ec1617",
+        "raw": "0x0000000000000000000000000000000000000000000000000000000000000000",
+        "decoded": {
+          "frozenByte": 0
+        }
+      },
+      "USDG:1:Permit2": {
+        "baseSlot": 1,
+        "key": "0x000000000022d473030f116ddee9f6b43ac78ba3",
+        "location": "0xe9aaf1dcef456daa7b23008a1f5e44b154c908a859268cdf99699ab7a500e29a",
+        "raw": "0x0000000000000000000000000000000000000000000000000000000000000000",
+        "decoded": {
+          "payoutGroupId": 0
+        }
+      },
+      "USDG:6:Permit2": {
+        "baseSlot": 6,
+        "key": "0x000000000022d473030f116ddee9f6b43ac78ba3",
+        "location": "0xdbcee093acff54484e739e37387b786dbd65912b249602cae1da0102f5bbcc52",
+        "raw": "0x0000000000000000000000000000000000000000000000000000000000000000",
+        "decoded": {
+          "frozenByte": 0
+        }
+      },
+      "USDG:1:PoolManager": {
+        "baseSlot": 1,
+        "key": "0x8366a39cc670b4001a1121b8f6a443a643e40951",
+        "location": "0xabeb780e019d6420e51ad745127b38f864912c2e66588cae92bddb8225d7ee80",
+        "raw": "0x000000000000000000000000000000000000000000000000000027d696a45f84",
+        "decoded": {
+          "payoutGroupId": 0
+        }
+      },
+      "USDG:6:PoolManager": {
+        "baseSlot": 6,
+        "key": "0x8366a39cc670b4001a1121b8f6a443a643e40951",
+        "location": "0xa9dcdc25576f3af4e79d6cc8285e0bf958b6735fea52c33576735d614eae159d",
+        "raw": "0x0000000000000000000000000000000000000000000000000000000000000000",
+        "decoded": {
+          "frozenByte": 0
+        }
+      },
+      "USDG:4": {
+        "slot": 4,
+        "raw": "0x00000000000000000000000000000000000000000000000001518000699cea00"
+      },
+      "USDG:61": {
+        "slot": 61,
+        "raw": "0x0000000000000000000000000000000000000000000000000000000000000003"
+      },
+      "USDG:212": {
+        "slot": 212,
+        "raw": "0x000000002a300000000000000000000000000000000000000000000000000000"
+      },
+      "USDG:213": {
+        "slot": 213,
+        "raw": "0x000000000000000000000000cfa0388f5ddf905fdc08c45c716c15dc10a14c6f"
+      },
+      "WETH:0": {
+        "slot": 0,
+        "raw": "0x0000000000000000000000000000000000000000000000000000000000000001"
+      },
+      "WETH:204": {
+        "slot": 204,
+        "raw": "0x0000000000000000000000001d187c3e2da52d72bc9c41e3aba0fdfa6a7bf055"
+      },
+      "WETH:205": {
+        "slot": 205,
+        "raw": "0x000000000000000000000000c02aaa39b223fe8d0a0e5c4f27ead9083c756cc2"
+      }
+    },
+    "contexts": {
+      "syntheticOwner": "0x1111111111111111111111111111111111111111",
+      "Permit2": "0x000000000022d473030f116ddee9f6b43ac78ba3",
+      "PoolManager": "0x8366a39cc670b4001a1121b8f6a443a643e40951"
+    },
+    "canonicalBlockHashAfter": "0x7e18a93cf71e6bb1f094f4a5552475590034e763e7154c1cac16a35cba8108a7",
+    "readCount": 54
+  },
+  "governanceReadBatch": {
+    "block": {
+      "number": "0x38efca9",
+      "hash": "0x7e18a93cf71e6bb1f094f4a5552475590034e763e7154c1cac16a35cba8108a7",
+      "timestamp": "0x6aa31830"
+    },
+    "contracts": {
+      "WETHGovernance": {
+        "address": "0x2a153c6a1b66dbc930a8d7017230ab0253005c09",
+        "runtimeCodeHash": "0x5706be52f64875fee65a2cec0d80e47a23d8793cbe85d214b48445e2d05f5353",
+        "runtimeBytes": 2202,
+        "eip1967Slots": {
+          "implementation": {
+            "slot": "0x360894a13ba1a3210667c828492db98dca3e2076cc3735a920a3ca505d382bbc",
+            "raw": "0x0000000000000000000000003c3e52bc8c181d06a76e2518bbc655c5bb3ce7cd"
+          },
+          "admin": {
+            "slot": "0xb53127684a568b3173ae13b9f8a6016e243e63b6e8ee1178d6a717850b5d6103",
+            "raw": "0x000000000000000000000000a3acd31afb851b4eb9dad00f5204c01d924267df"
+          },
+          "beacon": {
+            "slot": "0xa3f0ad74e5423aebfd80d3ef4346578335a9a72aeaee59ff6cb3582b35133d50",
+            "raw": "0x0000000000000000000000000000000000000000000000000000000000000000"
+          }
+        },
+        "calls": {
+          "owner()": {
+            "data": "0x8da5cb5b",
+            "raw": {
+              "rpcErrorCode": 3
+            }
+          }
+        }
+      },
+      "USDGDefaultAdmin": {
+        "address": "0xcfa0388f5ddf905fdc08c45c716c15dc10a14c6f",
+        "runtimeCodeHash": "0xe616a4f66608354a45be3af2f82e909a1e000f4360eeb909defd830ee43c554b",
+        "runtimeBytes": 6754,
+        "eip1967Slots": {
+          "implementation": {
+            "slot": "0x360894a13ba1a3210667c828492db98dca3e2076cc3735a920a3ca505d382bbc",
+            "raw": "0x0000000000000000000000000000000000000000000000000000000000000000"
+          },
+          "admin": {
+            "slot": "0xb53127684a568b3173ae13b9f8a6016e243e63b6e8ee1178d6a717850b5d6103",
+            "raw": "0x0000000000000000000000000000000000000000000000000000000000000000"
+          },
+          "beacon": {
+            "slot": "0xa3f0ad74e5423aebfd80d3ef4346578335a9a72aeaee59ff6cb3582b35133d50",
+            "raw": "0x0000000000000000000000000000000000000000000000000000000000000000"
+          }
+        },
+        "calls": {
+          "getMinDelay()": {
+            "data": "0xf27a0c92",
+            "raw": "0x0000000000000000000000000000000000000000000000000000000000015180",
+            "decoded": [
+              86400
+            ]
+          },
+          "owner()": {
+            "data": "0x8da5cb5b",
+            "raw": {
+              "rpcErrorCode": 3
+            }
+          }
+        }
+      },
+      "USDGTokenAdminFacet": {
+        "address": "0x58cab81e3d8468a0e90df8cbfacb34535e1de942",
+        "runtimeCodeHash": "0xe59c8f48b9198212d26a62177e6f49eedd46d0005b3a7b4f1ff282b11f82d5a4",
+        "runtimeBytes": 12266,
+        "eip1967Slots": {
+          "implementation": {
+            "slot": "0x360894a13ba1a3210667c828492db98dca3e2076cc3735a920a3ca505d382bbc",
+            "raw": "0x0000000000000000000000000000000000000000000000000000000000000000"
+          },
+          "admin": {
+            "slot": "0xb53127684a568b3173ae13b9f8a6016e243e63b6e8ee1178d6a717850b5d6103",
+            "raw": "0x0000000000000000000000000000000000000000000000000000000000000000"
+          },
+          "beacon": {
+            "slot": "0xa3f0ad74e5423aebfd80d3ef4346578335a9a72aeaee59ff6cb3582b35133d50",
+            "raw": "0x0000000000000000000000000000000000000000000000000000000000000000"
+          }
+        },
+        "calls": {
+          "paused()": {
+            "data": "0x5c975abb",
+            "raw": "0x0000000000000000000000000000000000000000000000000000000000000000",
+            "decoded": [
+              false
+            ]
+          }
+        }
+      },
+      "WETHGovernanceImplementation": {
+        "address": "0x3c3e52bc8c181d06a76e2518bbc655c5bb3ce7cd",
+        "runtimeBytes": 6204,
+        "runtimeCodeHash": "0x0d88feac198ef1b50b99fddf06aa9f6b1050bfe7211d6f04173de9b6d8953bcb",
+        "calls": {}
+      },
+      "WETHGovernanceAdmin": {
+        "address": "0xa3acd31afb851b4eb9dad00f5204c01d924267df",
+        "runtimeBytes": 1681,
+        "runtimeCodeHash": "0xa4b2186ab82fa36fb4ae158582e5615ea519e757c26c13ba4a33daaaed8902a7",
+        "calls": {
+          "owner()": {
+            "data": "0x8da5cb5b",
+            "raw": "0x0000000000000000000000002a153c6a1b66dbc930a8d7017230ab0253005c09",
+            "decoded": [
+              "0x2a153c6a1b66dbc930a8d7017230ab0253005c09"
+            ]
+          }
+        }
+      }
+    },
+    "canonicalBlockHashAfter": "0x7e18a93cf71e6bb1f094f4a5552475590034e763e7154c1cac16a35cba8108a7",
+    "readCount": 20
+  },
+  "fullProfileValidation": {
+    "sourceBlock": {
+      "number": 59702441,
+      "hash": "0x7e18a93cf71e6bb1f094f4a5552475590034e763e7154c1cac16a35cba8108a7",
+      "timestamp": 1789073456
+    },
+    "profileChecks": [
+      {
+        "address": "0x0bd7d308f8e1639fab988df18a8011f41eacad73",
+        "reviewId": "e435e28d007e3bf896874b7307c7b74706816267c032e5ccf32fac834748f195",
+        "status": "passed"
+      },
+      {
+        "address": "0x5fc5360d0400a0fd4f2af552add042d716f1d168",
+        "reviewId": "fd0eda85f7aaf2b6ce4a4f9568365850b07d267bfefc3d61aec79f29139085c4",
+        "status": "passed"
+      }
+    ],
+    "deployments": {
+      "poolManager": {
+        "address": "0x8366a39cc670b4001a1121b8f6a443a643e40951",
+        "runtimeCodeHash": "0xbd3881180b547f5fe817545743cfb4343e96b1bc6640dcd70c106b0066e95626",
+        "matchesCandidate": true
+      },
+      "positionManager": {
+        "address": "0x58daec3116aae6d93017baaea7749052e8a04fa7",
+        "runtimeCodeHash": "0xc873e135dc9aaec88489cfbad146b4cb49d6a32e0d80326377784b7ba17670b2",
+        "matchesCandidate": true
+      },
+      "stateView": {
+        "address": "0xf3334192d15450cdd385c8b70e03f9a6bd9e673b",
+        "runtimeCodeHash": "0x7d9c591e0956fd89d98feb4ffcfe8bf1f7a62bd485edd979fa21d104b49878a6",
+        "matchesCandidate": true
+      },
+      "permit2": {
+        "address": "0x000000000022d473030f116ddee9f6b43ac78ba3",
+        "runtimeCodeHash": "0x5208783f52488f7d3493e5e38311ab707c1d75457fe472a19b0b4d57d66a7fca",
+        "matchesCandidate": true
+      }
+    },
+    "scope": "read_only_synthetic_owner_not_user_account",
+    "canonicalBlockHashAfter": "0x7e18a93cf71e6bb1f094f4a5552475590034e763e7154c1cac16a35cba8108a7",
+    "readCount": 48
+  },
+  "independentCompilerChecks": {
+    "WETH": {
+      "compiler": "0.8.16+commit.07a7930e.Emscripten.clang",
+      "bytecodeExecutableMatches": true,
+      "metadataLength": 53,
+      "runtimeBytes": 6961,
+      "layoutMatchesSourcify": true,
+      "storageLayout": {
+        "storage": [
+          {
+            "astId": 1582,
+            "contract": "contracts/tokenbridge/libraries/aeWETH.sol:aeWETH",
+            "label": "_initialized",
+            "offset": 0,
+            "slot": "0",
+            "type": "t_uint8"
+          },
+          {
+            "astId": 1585,
+            "contract": "contracts/tokenbridge/libraries/aeWETH.sol:aeWETH",
+            "label": "_initializing",
+            "offset": 1,
+            "slot": "0",
+            "type": "t_bool"
+          },
+          {
+            "astId": 2208,
+            "contract": "contracts/tokenbridge/libraries/aeWETH.sol:aeWETH",
+            "label": "__gap",
+            "offset": 0,
+            "slot": "1",
+            "type": "t_array(t_uint256)50_storage"
+          },
+          {
+            "astId": 324,
+            "contract": "contracts/tokenbridge/libraries/aeWETH.sol:aeWETH",
+            "label": "_balances",
+            "offset": 0,
+            "slot": "51",
+            "type": "t_mapping(t_address,t_uint256)"
+          },
+          {
+            "astId": 330,
+            "contract": "contracts/tokenbridge/libraries/aeWETH.sol:aeWETH",
+            "label": "_allowances",
+            "offset": 0,
+            "slot": "52",
+            "type": "t_mapping(t_address,t_mapping(t_address,t_uint256))"
+          },
+          {
+            "astId": 332,
+            "contract": "contracts/tokenbridge/libraries/aeWETH.sol:aeWETH",
+            "label": "_totalSupply",
+            "offset": 0,
+            "slot": "53",
+            "type": "t_uint256"
+          },
+          {
+            "astId": 334,
+            "contract": "contracts/tokenbridge/libraries/aeWETH.sol:aeWETH",
+            "label": "_name",
+            "offset": 0,
+            "slot": "54",
+            "type": "t_string_storage"
+          },
+          {
+            "astId": 336,
+            "contract": "contracts/tokenbridge/libraries/aeWETH.sol:aeWETH",
+            "label": "_symbol",
+            "offset": 0,
+            "slot": "55",
+            "type": "t_string_storage"
+          },
+          {
+            "astId": 338,
+            "contract": "contracts/tokenbridge/libraries/aeWETH.sol:aeWETH",
+            "label": "_decimals",
+            "offset": 0,
+            "slot": "56",
+            "type": "t_uint8"
+          },
+          {
+            "astId": 933,
+            "contract": "contracts/tokenbridge/libraries/aeWETH.sol:aeWETH",
+            "label": "__gap",
+            "offset": 0,
+            "slot": "57",
+            "type": "t_array(t_uint256)44_storage"
+          },
+          {
+            "astId": 2828,
+            "contract": "contracts/tokenbridge/libraries/aeWETH.sol:aeWETH",
+            "label": "_HASHED_NAME",
+            "offset": 0,
+            "slot": "101",
+            "type": "t_bytes32"
+          },
+          {
+            "astId": 2830,
+            "contract": "contracts/tokenbridge/libraries/aeWETH.sol:aeWETH",
+            "label": "_HASHED_VERSION",
+            "offset": 0,
+            "slot": "102",
+            "type": "t_bytes32"
+          },
+          {
+            "astId": 2968,
+            "contract": "contracts/tokenbridge/libraries/aeWETH.sol:aeWETH",
+            "label": "__gap",
+            "offset": 0,
+            "slot": "103",
+            "type": "t_array(t_uint256)50_storage"
+          },
+          {
+            "astId": 1410,
+            "contract": "contracts/tokenbridge/libraries/aeWETH.sol:aeWETH",
+            "label": "_nonces",
+            "offset": 0,
+            "slot": "153",
+            "type": "t_mapping(t_address,t_struct(Counter)2215_storage)"
+          },
+          {
+            "astId": 1418,
+            "contract": "contracts/tokenbridge/libraries/aeWETH.sol:aeWETH",
+            "label": "_PERMIT_TYPEHASH_DEPRECATED_SLOT",
+            "offset": 0,
+            "slot": "154",
+            "type": "t_bytes32"
+          },
+          {
+            "astId": 1574,
+            "contract": "contracts/tokenbridge/libraries/aeWETH.sol:aeWETH",
+            "label": "__gap",
+            "offset": 0,
+            "slot": "155",
+            "type": "t_array(t_uint256)49_storage"
+          },
+          {
+            "astId": 995,
+            "contract": "contracts/tokenbridge/libraries/aeWETH.sol:aeWETH",
+            "label": "l2Gateway",
+            "offset": 0,
+            "slot": "204",
+            "type": "t_address"
+          },
+          {
+            "astId": 998,
+            "contract": "contracts/tokenbridge/libraries/aeWETH.sol:aeWETH",
+            "label": "l1Address",
+            "offset": 0,
+            "slot": "205",
+            "type": "t_address"
+          }
+        ],
+        "types": {
+          "t_address": {
+            "encoding": "inplace",
+            "label": "address",
+            "numberOfBytes": "20"
+          },
+          "t_array(t_uint256)44_storage": {
+            "base": "t_uint256",
+            "encoding": "inplace",
+            "label": "uint256[44]",
+            "numberOfBytes": "1408"
+          },
+          "t_array(t_uint256)49_storage": {
+            "base": "t_uint256",
+            "encoding": "inplace",
+            "label": "uint256[49]",
+            "numberOfBytes": "1568"
+          },
+          "t_array(t_uint256)50_storage": {
+            "base": "t_uint256",
+            "encoding": "inplace",
+            "label": "uint256[50]",
+            "numberOfBytes": "1600"
+          },
+          "t_bool": {
+            "encoding": "inplace",
+            "label": "bool",
+            "numberOfBytes": "1"
+          },
+          "t_bytes32": {
+            "encoding": "inplace",
+            "label": "bytes32",
+            "numberOfBytes": "32"
+          },
+          "t_mapping(t_address,t_mapping(t_address,t_uint256))": {
+            "encoding": "mapping",
+            "key": "t_address",
+            "label": "mapping(address => mapping(address => uint256))",
+            "numberOfBytes": "32",
+            "value": "t_mapping(t_address,t_uint256)"
+          },
+          "t_mapping(t_address,t_struct(Counter)2215_storage)": {
+            "encoding": "mapping",
+            "key": "t_address",
+            "label": "mapping(address => struct CountersUpgradeable.Counter)",
+            "numberOfBytes": "32",
+            "value": "t_struct(Counter)2215_storage"
+          },
+          "t_mapping(t_address,t_uint256)": {
+            "encoding": "mapping",
+            "key": "t_address",
+            "label": "mapping(address => uint256)",
+            "numberOfBytes": "32",
+            "value": "t_uint256"
+          },
+          "t_string_storage": {
+            "encoding": "bytes",
+            "label": "string",
+            "numberOfBytes": "32"
+          },
+          "t_struct(Counter)2215_storage": {
+            "encoding": "inplace",
+            "label": "struct CountersUpgradeable.Counter",
+            "members": [
+              {
+                "astId": 2214,
+                "contract": "contracts/tokenbridge/libraries/aeWETH.sol:aeWETH",
+                "label": "_value",
+                "offset": 0,
+                "slot": "0",
+                "type": "t_uint256"
+              }
+            ],
+            "numberOfBytes": "32"
+          },
+          "t_uint256": {
+            "encoding": "inplace",
+            "label": "uint256",
+            "numberOfBytes": "32"
+          },
+          "t_uint8": {
+            "encoding": "inplace",
+            "label": "uint8",
+            "numberOfBytes": "1"
+          }
+        }
+      },
+      "storageLayoutSha256": "534c28cb6f71f0f322e26bcba8dfa70681696d2e4d15299f184ef1cb14d9519e",
+      "verifiedSourceUrl": "https://sourcify.dev/server/v2/contract/4663/0xc6b81b429797e0f555440b70cd99e032d7ae947e?fields=compilation,sources,storageLayout,runtimeBytecode.onchainBytecode,runtimeBytecode.recompiledBytecode,runtimeBytecode.transformations",
+      "settings": {
+        "metadata": {
+          "bytecodeHash": "ipfs"
+        },
+        "libraries": {},
+        "optimizer": {
+          "runs": 100,
+          "enabled": true
+        },
+        "evmVersion": "london",
+        "remappings": [
+          "@arbitrum/=node_modules/@arbitrum/",
+          "@ensdomains/=node_modules/@ensdomains/",
+          "@offchainlabs/=node_modules/@offchainlabs/",
+          "@openzeppelin/contracts-upgradeable/=node_modules/@openzeppelin/contracts-upgradeable/",
+          "@openzeppelin/contracts/=node_modules/@openzeppelin/contracts/",
+          "ds-test/=lib/forge-std/lib/ds-test/src/",
+          "eth-gas-reporter/=node_modules/eth-gas-reporter/",
+          "forge-std/=lib/forge-std/src/",
+          "hardhat-deploy/=node_modules/hardhat-deploy/",
+          "hardhat/=node_modules/hardhat/",
+          "nitro-contracts/=lib/nitro-contracts/src/"
+        ]
+      },
+      "sourceContentSha256": {
+        "contracts/tokenbridge/arbitrum/IArbToken.sol": "4d70f0c9cf01d14a84eec3ae337cd7a674bef2eec7a72f6752631a76bab7f149",
+        "contracts/tokenbridge/libraries/BytesLib.sol": "a659bd8eb2e8fbc0e58d851c280c573c20c7d50561a490743cf4480ac4de8653",
+        "contracts/tokenbridge/libraries/BytesParser.sol": "b9d6f8073254efe7ab9c442e767ce6e2641daa3c5d27ffe5c261be9af547496f",
+        "contracts/tokenbridge/libraries/ERC20Upgradeable.sol": "e4c68eded35af4237bd4bcf8ef1129e25809bbafdc03270fb6e49b640d321d2a",
+        "contracts/tokenbridge/libraries/ITransferAndCall.sol": "579de5b48eab92f808af3577eb02d9d5a01debfc253b3ec1ac1cc5d7051b6875",
+        "contracts/tokenbridge/libraries/IWETH9.sol": "c660edb0375986411108816996b6f703a25b693be359bbc3274069019ef29b00",
+        "contracts/tokenbridge/libraries/L2GatewayToken.sol": "40b128d6d3149f91820c143a759bcc3e76e7d7cc1a25ca6ddceaa20d05ca9ab1",
+        "contracts/tokenbridge/libraries/TransferAndCallToken.sol": "a409943c29ee663d9d2ad1ea2ae4914cb019bc8a65a20d085c58e81ebd8d6edd",
+        "contracts/tokenbridge/libraries/aeERC20.sol": "10644e0be0f5abbb6654e95a7f1a6b1dd3ec790bfe484df5d031d8a16863f91f",
+        "contracts/tokenbridge/libraries/aeWETH.sol": "b26087e549d2020917195e46ed1ec4e879905bb9b4eab0b7e64855a130e2dfce",
+        "contracts/tokenbridge/libraries/draft-ERC20PermitUpgradeable.sol": "1b2549b692c5a72fa35a4cb5c47364db44e57a9a9a89299d6bc03184ffa1d44f",
+        "node_modules/@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol": "98ce2984e449716f24043a8c11bbe969a6d34878b1d522b92c88d62708ba3376",
+        "node_modules/@openzeppelin/contracts-upgradeable/token/ERC20/IERC20Upgradeable.sol": "4e09a7479aa3e7c313f8fc141c4c8fc04e0abfeb8754615ef7d78ec94c298b07",
+        "node_modules/@openzeppelin/contracts-upgradeable/token/ERC20/extensions/IERC20MetadataUpgradeable.sol": "68bcca423fc72ec9625e219c9e36306c726a347e43f3711467c579bd3f6500c8",
+        "node_modules/@openzeppelin/contracts-upgradeable/token/ERC20/extensions/draft-IERC20PermitUpgradeable.sol": "b97515a88e75c313eacf0a27c9439ef371d86d4c2730d3b13076640942f813df",
+        "node_modules/@openzeppelin/contracts-upgradeable/utils/AddressUpgradeable.sol": "1d7d481b79fd54d957c9a0696f6227f7799fec01d8ba41f5c130a7cc6b4eddc9",
+        "node_modules/@openzeppelin/contracts-upgradeable/utils/ContextUpgradeable.sol": "5fb301961e45cb482fe4e05646d2f529aa449fe0e90c6671475d6a32356fa2d4",
+        "node_modules/@openzeppelin/contracts-upgradeable/utils/CountersUpgradeable.sol": "5c1ac829a429b0c2ca9b4c9ed8b78d412320e9175e45f088c4e9056ef95fbf21",
+        "node_modules/@openzeppelin/contracts-upgradeable/utils/StringsUpgradeable.sol": "68f5690fc266a6b48386c28cbfd72ec67c24b05a51ce26d24103577c15f61401",
+        "node_modules/@openzeppelin/contracts-upgradeable/utils/cryptography/ECDSAUpgradeable.sol": "2aee2a508bebf8e55bf78814d9d66a7a21c35c171e4010dfc3888c031f193628",
+        "node_modules/@openzeppelin/contracts-upgradeable/utils/cryptography/EIP712Upgradeable.sol": "91e9d20515fa1516a9e9dd754b8a3ced5552f955b039dbe69d08c566fbd2e024",
+        "node_modules/@openzeppelin/contracts-upgradeable/utils/math/MathUpgradeable.sol": "158a0316fa289fad12c2ca764449e43e6724fb79c58fc438508d116f9af46b39"
+      }
+    },
+    "USDG": {
+      "compiler": "0.8.28+commit.7893614a.Emscripten.clang",
+      "bytecodeExecutableMatches": true,
+      "ignoredImmutables": [
+        {
+          "length": 32,
+          "start": 4702
+        },
+        {
+          "length": 32,
+          "start": 4766
+        },
+        {
+          "length": 32,
+          "start": 5078
+        },
+        {
+          "length": 32,
+          "start": 5142
+        },
+        {
+          "length": 32,
+          "start": 5285
+        }
+      ],
+      "metadataLength": 53,
+      "runtimeBytes": 18644,
+      "layoutMatchesSourcify": true,
+      "storageLayout": {
+        "storage": [
+          {
+            "astId": 8943,
+            "contract": "contracts/stablecoins/USDG.sol:USDG",
+            "label": "initializedV1",
+            "offset": 0,
+            "slot": "0",
+            "type": "t_bool"
+          },
+          {
+            "astId": 8948,
+            "contract": "contracts/stablecoins/USDG.sol:USDG",
+            "label": "balanceData",
+            "offset": 0,
+            "slot": "1",
+            "type": "t_mapping(t_address,t_struct(TokenAccountData)8930_storage)"
+          },
+          {
+            "astId": 8950,
+            "contract": "contracts/stablecoins/USDG.sol:USDG",
+            "label": "totalSupply_",
+            "offset": 0,
+            "slot": "2",
+            "type": "t_uint256"
+          },
+          {
+            "astId": 8956,
+            "contract": "contracts/stablecoins/USDG.sol:USDG",
+            "label": "allowed",
+            "offset": 0,
+            "slot": "3",
+            "type": "t_mapping(t_address,t_mapping(t_address,t_uint256))"
+          },
+          {
+            "astId": 8959,
+            "contract": "contracts/stablecoins/USDG.sol:USDG",
+            "label": "globalTransferSettings",
+            "offset": 0,
+            "slot": "4",
+            "type": "t_struct(GlobalTransferSettings)8941_storage"
+          },
+          {
+            "astId": 8961,
+            "contract": "contracts/stablecoins/USDG.sol:USDG",
+            "label": "assetProtectionRoleDeprecated",
+            "offset": 0,
+            "slot": "5",
+            "type": "t_address"
+          },
+          {
+            "astId": 8965,
+            "contract": "contracts/stablecoins/USDG.sol:USDG",
+            "label": "frozen",
+            "offset": 0,
+            "slot": "6",
+            "type": "t_mapping(t_address,t_bool)"
+          },
+          {
+            "astId": 8967,
+            "contract": "contracts/stablecoins/USDG.sol:USDG",
+            "label": "supplyControllerDeprecated",
+            "offset": 0,
+            "slot": "7",
+            "type": "t_address"
+          },
+          {
+            "astId": 8969,
+            "contract": "contracts/stablecoins/USDG.sol:USDG",
+            "label": "proposedOwnerDeprecated",
+            "offset": 0,
+            "slot": "8",
+            "type": "t_address"
+          },
+          {
+            "astId": 8971,
+            "contract": "contracts/stablecoins/USDG.sol:USDG",
+            "label": "betaDelegateWhitelisterDeprecated",
+            "offset": 0,
+            "slot": "9",
+            "type": "t_address"
+          },
+          {
+            "astId": 8975,
+            "contract": "contracts/stablecoins/USDG.sol:USDG",
+            "label": "betaDelegateWhitelistDeprecated",
+            "offset": 0,
+            "slot": "10",
+            "type": "t_mapping(t_address,t_bool)"
+          },
+          {
+            "astId": 8979,
+            "contract": "contracts/stablecoins/USDG.sol:USDG",
+            "label": "nextSeqsDeprecated",
+            "offset": 0,
+            "slot": "11",
+            "type": "t_mapping(t_address,t_uint256)"
+          },
+          {
+            "astId": 8981,
+            "contract": "contracts/stablecoins/USDG.sol:USDG",
+            "label": "EIP712_DOMAIN_HASH_DEPRECATED",
+            "offset": 0,
+            "slot": "12",
+            "type": "t_bytes32"
+          },
+          {
+            "astId": 8984,
+            "contract": "contracts/stablecoins/USDG.sol:USDG",
+            "label": "supplyControl",
+            "offset": 0,
+            "slot": "13",
+            "type": "t_contract(SupplyControl)13106"
+          },
+          {
+            "astId": 8988,
+            "contract": "contracts/stablecoins/USDG.sol:USDG",
+            "label": "__gap_BaseStorageV3",
+            "offset": 0,
+            "slot": "14",
+            "type": "t_array(t_uint256)24_storage"
+          },
+          {
+            "astId": 8990,
+            "contract": "contracts/stablecoins/USDG.sol:USDG",
+            "label": "DOMAIN_SEPARATOR_DEPRECATED",
+            "offset": 0,
+            "slot": "38",
+            "type": "t_bytes32"
+          },
+          {
+            "astId": 8994,
+            "contract": "contracts/stablecoins/USDG.sol:USDG",
+            "label": "_nonces",
+            "offset": 0,
+            "slot": "39",
+            "type": "t_mapping(t_address,t_uint256)"
+          },
+          {
+            "astId": 8998,
+            "contract": "contracts/stablecoins/USDG.sol:USDG",
+            "label": "__gap_EIP2612_compat",
+            "offset": 0,
+            "slot": "40",
+            "type": "t_array(t_uint256)10_storage"
+          },
+          {
+            "astId": 9004,
+            "contract": "contracts/stablecoins/USDG.sol:USDG",
+            "label": "_authorizationStates",
+            "offset": 0,
+            "slot": "50",
+            "type": "t_mapping(t_address,t_mapping(t_bytes32,t_bool))"
+          },
+          {
+            "astId": 9008,
+            "contract": "contracts/stablecoins/USDG.sol:USDG",
+            "label": "__gap_EIP3009_compat",
+            "offset": 0,
+            "slot": "51",
+            "type": "t_array(t_uint256)10_storage"
+          },
+          {
+            "astId": 1588,
+            "contract": "contracts/stablecoins/USDG.sol:USDG",
+            "label": "_initialized",
+            "offset": 0,
+            "slot": "61",
+            "type": "t_uint8"
+          },
+          {
+            "astId": 1591,
+            "contract": "contracts/stablecoins/USDG.sol:USDG",
+            "label": "_initializing",
+            "offset": 1,
+            "slot": "61",
+            "type": "t_bool"
+          },
+          {
+            "astId": 2257,
+            "contract": "contracts/stablecoins/USDG.sol:USDG",
+            "label": "__gap",
+            "offset": 0,
+            "slot": "62",
+            "type": "t_array(t_uint256)50_storage"
+          },
+          {
+            "astId": 2640,
+            "contract": "contracts/stablecoins/USDG.sol:USDG",
+            "label": "__gap",
+            "offset": 0,
+            "slot": "112",
+            "type": "t_array(t_uint256)50_storage"
+          },
+          {
+            "astId": 752,
+            "contract": "contracts/stablecoins/USDG.sol:USDG",
+            "label": "_roles",
+            "offset": 0,
+            "slot": "162",
+            "type": "t_mapping(t_bytes32,t_struct(RoleData)747_storage)"
+          },
+          {
+            "astId": 1047,
+            "contract": "contracts/stablecoins/USDG.sol:USDG",
+            "label": "__gap",
+            "offset": 0,
+            "slot": "163",
+            "type": "t_array(t_uint256)49_storage"
+          },
+          {
+            "astId": 17,
+            "contract": "contracts/stablecoins/USDG.sol:USDG",
+            "label": "_pendingDefaultAdmin",
+            "offset": 0,
+            "slot": "212",
+            "type": "t_address"
+          },
+          {
+            "astId": 19,
+            "contract": "contracts/stablecoins/USDG.sol:USDG",
+            "label": "_pendingDefaultAdminSchedule",
+            "offset": 20,
+            "slot": "212",
+            "type": "t_uint48"
+          },
+          {
+            "astId": 21,
+            "contract": "contracts/stablecoins/USDG.sol:USDG",
+            "label": "_currentDelay",
+            "offset": 26,
+            "slot": "212",
+            "type": "t_uint48"
+          },
+          {
+            "astId": 23,
+            "contract": "contracts/stablecoins/USDG.sol:USDG",
+            "label": "_currentDefaultAdmin",
+            "offset": 0,
+            "slot": "213",
+            "type": "t_address"
+          },
+          {
+            "astId": 25,
+            "contract": "contracts/stablecoins/USDG.sol:USDG",
+            "label": "_pendingDelay",
+            "offset": 20,
+            "slot": "213",
+            "type": "t_uint48"
+          },
+          {
+            "astId": 27,
+            "contract": "contracts/stablecoins/USDG.sol:USDG",
+            "label": "_pendingDelaySchedule",
+            "offset": 26,
+            "slot": "213",
+            "type": "t_uint48"
+          },
+          {
+            "astId": 711,
+            "contract": "contracts/stablecoins/USDG.sol:USDG",
+            "label": "__gap",
+            "offset": 0,
+            "slot": "214",
+            "type": "t_array(t_uint256)48_storage"
+          },
+          {
+            "astId": 10896,
+            "contract": "contracts/stablecoins/USDG.sol:USDG",
+            "label": "payoutData",
+            "offset": 0,
+            "slot": "262",
+            "type": "t_mapping(t_uint256,t_struct(PayoutGroupData)10863_storage)"
+          },
+          {
+            "astId": 10900,
+            "contract": "contracts/stablecoins/USDG.sol:USDG",
+            "label": "payoutIdToClaimer",
+            "offset": 0,
+            "slot": "263",
+            "type": "t_mapping(t_uint256,t_address)"
+          },
+          {
+            "astId": 10904,
+            "contract": "contracts/stablecoins/USDG.sol:USDG",
+            "label": "payoutIdToManager",
+            "offset": 0,
+            "slot": "264",
+            "type": "t_mapping(t_uint256,t_address)"
+          },
+          {
+            "astId": 10908,
+            "contract": "contracts/stablecoins/USDG.sol:USDG",
+            "label": "payoutIdToDestination",
+            "offset": 0,
+            "slot": "265",
+            "type": "t_mapping(t_uint256,t_address)"
+          },
+          {
+            "astId": 10910,
+            "contract": "contracts/stablecoins/USDG.sol:USDG",
+            "label": "nextPayoutId",
+            "offset": 0,
+            "slot": "266",
+            "type": "t_uint16"
+          },
+          {
+            "astId": 10915,
+            "contract": "contracts/stablecoins/USDG.sol:USDG",
+            "label": "multipliers",
+            "offset": 0,
+            "slot": "267",
+            "type": "t_mapping(t_uint256,t_struct(MultiplierData)10874_storage)"
+          },
+          {
+            "astId": 10919,
+            "contract": "contracts/stablecoins/USDG.sol:USDG",
+            "label": "multiplierPayoutGroupCount",
+            "offset": 0,
+            "slot": "268",
+            "type": "t_mapping(t_uint256,t_uint256)"
+          },
+          {
+            "astId": 10921,
+            "contract": "contracts/stablecoins/USDG.sol:USDG",
+            "label": "nextMultiplierId",
+            "offset": 0,
+            "slot": "269",
+            "type": "t_uint16"
+          },
+          {
+            "astId": 10923,
+            "contract": "contracts/stablecoins/USDG.sol:USDG",
+            "label": "firstActiveId",
+            "offset": 2,
+            "slot": "269",
+            "type": "t_uint16"
+          },
+          {
+            "astId": 10925,
+            "contract": "contracts/stablecoins/USDG.sol:USDG",
+            "label": "activeMultiplierCount",
+            "offset": 4,
+            "slot": "269",
+            "type": "t_uint16"
+          },
+          {
+            "astId": 10928,
+            "contract": "contracts/stablecoins/USDG.sol:USDG",
+            "label": "adminConfig",
+            "offset": 0,
+            "slot": "270",
+            "type": "t_struct(AdminConfigSettings)10881_storage"
+          },
+          {
+            "astId": 10934,
+            "contract": "contracts/stablecoins/USDG.sol:USDG",
+            "label": "_registrationAuthState",
+            "offset": 0,
+            "slot": "271",
+            "type": "t_mapping(t_address,t_mapping(t_bytes32,t_bool))"
+          },
+          {
+            "astId": 10939,
+            "contract": "contracts/stablecoins/USDG.sol:USDG",
+            "label": "_pendingRegistrations",
+            "offset": 0,
+            "slot": "272",
+            "type": "t_mapping(t_address,t_struct(PendingRegistration)10886_storage)"
+          },
+          {
+            "astId": 10944,
+            "contract": "contracts/stablecoins/USDG.sol:USDG",
+            "label": "frozenData",
+            "offset": 0,
+            "slot": "273",
+            "type": "t_mapping(t_address,t_struct(FrozenData)10891_storage)"
+          },
+          {
+            "astId": 12106,
+            "contract": "contracts/stablecoins/USDG.sol:USDG",
+            "label": "facets",
+            "offset": 0,
+            "slot": "274",
+            "type": "t_mapping(t_bytes4,t_address)"
+          },
+          {
+            "astId": 1570,
+            "contract": "contracts/stablecoins/USDG.sol:USDG",
+            "label": "__gap",
+            "offset": 0,
+            "slot": "275",
+            "type": "t_array(t_uint256)50_storage"
+          },
+          {
+            "astId": 1885,
+            "contract": "contracts/stablecoins/USDG.sol:USDG",
+            "label": "__gap",
+            "offset": 0,
+            "slot": "325",
+            "type": "t_array(t_uint256)50_storage"
+          }
+        ],
+        "types": {
+          "t_address": {
+            "encoding": "inplace",
+            "label": "address",
+            "numberOfBytes": "20"
+          },
+          "t_array(t_uint256)10_storage": {
+            "base": "t_uint256",
+            "encoding": "inplace",
+            "label": "uint256[10]",
+            "numberOfBytes": "320"
+          },
+          "t_array(t_uint256)24_storage": {
+            "base": "t_uint256",
+            "encoding": "inplace",
+            "label": "uint256[24]",
+            "numberOfBytes": "768"
+          },
+          "t_array(t_uint256)48_storage": {
+            "base": "t_uint256",
+            "encoding": "inplace",
+            "label": "uint256[48]",
+            "numberOfBytes": "1536"
+          },
+          "t_array(t_uint256)49_storage": {
+            "base": "t_uint256",
+            "encoding": "inplace",
+            "label": "uint256[49]",
+            "numberOfBytes": "1568"
+          },
+          "t_array(t_uint256)50_storage": {
+            "base": "t_uint256",
+            "encoding": "inplace",
+            "label": "uint256[50]",
+            "numberOfBytes": "1600"
+          },
+          "t_bool": {
+            "encoding": "inplace",
+            "label": "bool",
+            "numberOfBytes": "1"
+          },
+          "t_bytes10": {
+            "encoding": "inplace",
+            "label": "bytes10",
+            "numberOfBytes": "10"
+          },
+          "t_bytes32": {
+            "encoding": "inplace",
+            "label": "bytes32",
+            "numberOfBytes": "32"
+          },
+          "t_bytes4": {
+            "encoding": "inplace",
+            "label": "bytes4",
+            "numberOfBytes": "4"
+          },
+          "t_contract(SupplyControl)13106": {
+            "encoding": "inplace",
+            "label": "contract SupplyControl",
+            "numberOfBytes": "20"
+          },
+          "t_mapping(t_address,t_bool)": {
+            "encoding": "mapping",
+            "key": "t_address",
+            "label": "mapping(address => bool)",
+            "numberOfBytes": "32",
+            "value": "t_bool"
+          },
+          "t_mapping(t_address,t_mapping(t_address,t_uint256))": {
+            "encoding": "mapping",
+            "key": "t_address",
+            "label": "mapping(address => mapping(address => uint256))",
+            "numberOfBytes": "32",
+            "value": "t_mapping(t_address,t_uint256)"
+          },
+          "t_mapping(t_address,t_mapping(t_bytes32,t_bool))": {
+            "encoding": "mapping",
+            "key": "t_address",
+            "label": "mapping(address => mapping(bytes32 => bool))",
+            "numberOfBytes": "32",
+            "value": "t_mapping(t_bytes32,t_bool)"
+          },
+          "t_mapping(t_address,t_struct(FrozenData)10891_storage)": {
+            "encoding": "mapping",
+            "key": "t_address",
+            "label": "mapping(address => struct ClaimableRewardsStorageV3.FrozenData)",
+            "numberOfBytes": "32",
+            "value": "t_struct(FrozenData)10891_storage"
+          },
+          "t_mapping(t_address,t_struct(PendingRegistration)10886_storage)": {
+            "encoding": "mapping",
+            "key": "t_address",
+            "label": "mapping(address => struct ClaimableRewardsStorageV3.PendingRegistration)",
+            "numberOfBytes": "32",
+            "value": "t_struct(PendingRegistration)10886_storage"
+          },
+          "t_mapping(t_address,t_struct(TokenAccountData)8930_storage)": {
+            "encoding": "mapping",
+            "key": "t_address",
+            "label": "mapping(address => struct BaseStorageV3.TokenAccountData)",
+            "numberOfBytes": "32",
+            "value": "t_struct(TokenAccountData)8930_storage"
+          },
+          "t_mapping(t_address,t_uint256)": {
+            "encoding": "mapping",
+            "key": "t_address",
+            "label": "mapping(address => uint256)",
+            "numberOfBytes": "32",
+            "value": "t_uint256"
+          },
+          "t_mapping(t_bytes32,t_bool)": {
+            "encoding": "mapping",
+            "key": "t_bytes32",
+            "label": "mapping(bytes32 => bool)",
+            "numberOfBytes": "32",
+            "value": "t_bool"
+          },
+          "t_mapping(t_bytes32,t_struct(RoleData)747_storage)": {
+            "encoding": "mapping",
+            "key": "t_bytes32",
+            "label": "mapping(bytes32 => struct AccessControlUpgradeable.RoleData)",
+            "numberOfBytes": "32",
+            "value": "t_struct(RoleData)747_storage"
+          },
+          "t_mapping(t_bytes4,t_address)": {
+            "encoding": "mapping",
+            "key": "t_bytes4",
+            "label": "mapping(bytes4 => address)",
+            "numberOfBytes": "32",
+            "value": "t_address"
+          },
+          "t_mapping(t_uint256,t_address)": {
+            "encoding": "mapping",
+            "key": "t_uint256",
+            "label": "mapping(uint256 => address)",
+            "numberOfBytes": "32",
+            "value": "t_address"
+          },
+          "t_mapping(t_uint256,t_struct(MultiplierData)10874_storage)": {
+            "encoding": "mapping",
+            "key": "t_uint256",
+            "label": "mapping(uint256 => struct ClaimableRewardsStorageV3.MultiplierData)",
+            "numberOfBytes": "32",
+            "value": "t_struct(MultiplierData)10874_storage"
+          },
+          "t_mapping(t_uint256,t_struct(PayoutGroupData)10863_storage)": {
+            "encoding": "mapping",
+            "key": "t_uint256",
+            "label": "mapping(uint256 => struct ClaimableRewardsStorageV3.PayoutGroupData)",
+            "numberOfBytes": "32",
+            "value": "t_struct(PayoutGroupData)10863_storage"
+          },
+          "t_mapping(t_uint256,t_uint256)": {
+            "encoding": "mapping",
+            "key": "t_uint256",
+            "label": "mapping(uint256 => uint256)",
+            "numberOfBytes": "32",
+            "value": "t_uint256"
+          },
+          "t_struct(AdminConfigSettings)10881_storage": {
+            "encoding": "inplace",
+            "label": "struct ClaimableRewardsStorageV3.AdminConfigSettings",
+            "members": [
+              {
+                "astId": 10876,
+                "contract": "contracts/stablecoins/USDG.sol:USDG",
+                "label": "claimSource",
+                "offset": 0,
+                "slot": "0",
+                "type": "t_address"
+              },
+              {
+                "astId": 10878,
+                "contract": "contracts/stablecoins/USDG.sol:USDG",
+                "label": "minRate",
+                "offset": 20,
+                "slot": "0",
+                "type": "t_uint40"
+              },
+              {
+                "astId": 10880,
+                "contract": "contracts/stablecoins/USDG.sol:USDG",
+                "label": "maxRate",
+                "offset": 25,
+                "slot": "0",
+                "type": "t_uint40"
+              }
+            ],
+            "numberOfBytes": "32"
+          },
+          "t_struct(FrozenData)10891_storage": {
+            "encoding": "inplace",
+            "label": "struct ClaimableRewardsStorageV3.FrozenData",
+            "members": [
+              {
+                "astId": 10888,
+                "contract": "contracts/stablecoins/USDG.sol:USDG",
+                "label": "rewards",
+                "offset": 0,
+                "slot": "0",
+                "type": "t_uint64"
+              },
+              {
+                "astId": 10890,
+                "contract": "contracts/stablecoins/USDG.sol:USDG",
+                "label": "payoutGroupId",
+                "offset": 8,
+                "slot": "0",
+                "type": "t_uint32"
+              }
+            ],
+            "numberOfBytes": "32"
+          },
+          "t_struct(GlobalTransferSettings)8941_storage": {
+            "encoding": "inplace",
+            "label": "struct BaseStorageV3.GlobalTransferSettings",
+            "members": [
+              {
+                "astId": 8932,
+                "contract": "contracts/stablecoins/USDG.sol:USDG",
+                "label": "referenceTime",
+                "offset": 0,
+                "slot": "0",
+                "type": "t_uint40"
+              },
+              {
+                "astId": 8934,
+                "contract": "contracts/stablecoins/USDG.sol:USDG",
+                "label": "maturityPeriod",
+                "offset": 5,
+                "slot": "0",
+                "type": "t_uint32"
+              },
+              {
+                "astId": 8936,
+                "contract": "contracts/stablecoins/USDG.sol:USDG",
+                "label": "partnerSignedRegistrationsEnabled",
+                "offset": 9,
+                "slot": "0",
+                "type": "t_bool"
+              },
+              {
+                "astId": 8938,
+                "contract": "contracts/stablecoins/USDG.sol:USDG",
+                "label": "__gap_remaining",
+                "offset": 10,
+                "slot": "0",
+                "type": "t_bytes10"
+              },
+              {
+                "astId": 8940,
+                "contract": "contracts/stablecoins/USDG.sol:USDG",
+                "label": "paused",
+                "offset": 20,
+                "slot": "0",
+                "type": "t_bool"
+              }
+            ],
+            "numberOfBytes": "32"
+          },
+          "t_struct(MultiplierData)10874_storage": {
+            "encoding": "inplace",
+            "label": "struct ClaimableRewardsStorageV3.MultiplierData",
+            "members": [
+              {
+                "astId": 10865,
+                "contract": "contracts/stablecoins/USDG.sol:USDG",
+                "label": "beforeRate",
+                "offset": 0,
+                "slot": "0",
+                "type": "t_uint40"
+              },
+              {
+                "astId": 10867,
+                "contract": "contracts/stablecoins/USDG.sol:USDG",
+                "label": "afterRate",
+                "offset": 5,
+                "slot": "0",
+                "type": "t_uint40"
+              },
+              {
+                "astId": 10869,
+                "contract": "contracts/stablecoins/USDG.sol:USDG",
+                "label": "switchTime",
+                "offset": 10,
+                "slot": "0",
+                "type": "t_uint40"
+              },
+              {
+                "astId": 10871,
+                "contract": "contracts/stablecoins/USDG.sol:USDG",
+                "label": "switchTimeMultiplier",
+                "offset": 15,
+                "slot": "0",
+                "type": "t_uint48"
+              },
+              {
+                "astId": 10873,
+                "contract": "contracts/stablecoins/USDG.sol:USDG",
+                "label": "nextActiveId",
+                "offset": 21,
+                "slot": "0",
+                "type": "t_uint16"
+              }
+            ],
+            "numberOfBytes": "32"
+          },
+          "t_struct(PayoutGroupData)10863_storage": {
+            "encoding": "inplace",
+            "label": "struct ClaimableRewardsStorageV3.PayoutGroupData",
+            "members": [
+              {
+                "astId": 10854,
+                "contract": "contracts/stablecoins/USDG.sol:USDG",
+                "label": "balance",
+                "offset": 0,
+                "slot": "0",
+                "type": "t_uint64"
+              },
+              {
+                "astId": 10856,
+                "contract": "contracts/stablecoins/USDG.sol:USDG",
+                "label": "shares",
+                "offset": 8,
+                "slot": "0",
+                "type": "t_uint64"
+              },
+              {
+                "astId": 10858,
+                "contract": "contracts/stablecoins/USDG.sol:USDG",
+                "label": "multiplierId",
+                "offset": 16,
+                "slot": "0",
+                "type": "t_uint16"
+              },
+              {
+                "astId": 10860,
+                "contract": "contracts/stablecoins/USDG.sol:USDG",
+                "label": "lastClaimAllTime",
+                "offset": 18,
+                "slot": "0",
+                "type": "t_uint40"
+              },
+              {
+                "astId": 10862,
+                "contract": "contracts/stablecoins/USDG.sol:USDG",
+                "label": "lastClaimAllMultiplier",
+                "offset": 23,
+                "slot": "0",
+                "type": "t_uint48"
+              }
+            ],
+            "numberOfBytes": "32"
+          },
+          "t_struct(PendingRegistration)10886_storage": {
+            "encoding": "inplace",
+            "label": "struct ClaimableRewardsStorageV3.PendingRegistration",
+            "members": [
+              {
+                "astId": 10883,
+                "contract": "contracts/stablecoins/USDG.sol:USDG",
+                "label": "payoutGroupId",
+                "offset": 0,
+                "slot": "0",
+                "type": "t_uint32"
+              },
+              {
+                "astId": 10885,
+                "contract": "contracts/stablecoins/USDG.sol:USDG",
+                "label": "proposer",
+                "offset": 4,
+                "slot": "0",
+                "type": "t_address"
+              }
+            ],
+            "numberOfBytes": "32"
+          },
+          "t_struct(RoleData)747_storage": {
+            "encoding": "inplace",
+            "label": "struct AccessControlUpgradeable.RoleData",
+            "members": [
+              {
+                "astId": 744,
+                "contract": "contracts/stablecoins/USDG.sol:USDG",
+                "label": "members",
+                "offset": 0,
+                "slot": "0",
+                "type": "t_mapping(t_address,t_bool)"
+              },
+              {
+                "astId": 746,
+                "contract": "contracts/stablecoins/USDG.sol:USDG",
+                "label": "adminRole",
+                "offset": 0,
+                "slot": "1",
+                "type": "t_bytes32"
+              }
+            ],
+            "numberOfBytes": "64"
+          },
+          "t_struct(TokenAccountData)8930_storage": {
+            "encoding": "inplace",
+            "label": "struct BaseStorageV3.TokenAccountData",
+            "members": [
+              {
+                "astId": 8923,
+                "contract": "contracts/stablecoins/USDG.sol:USDG",
+                "label": "balance",
+                "offset": 0,
+                "slot": "0",
+                "type": "t_uint64"
+              },
+              {
+                "astId": 8925,
+                "contract": "contracts/stablecoins/USDG.sol:USDG",
+                "label": "shares",
+                "offset": 8,
+                "slot": "0",
+                "type": "t_uint64"
+              },
+              {
+                "astId": 8927,
+                "contract": "contracts/stablecoins/USDG.sol:USDG",
+                "label": "payoutGroupId",
+                "offset": 16,
+                "slot": "0",
+                "type": "t_uint16"
+              },
+              {
+                "astId": 8929,
+                "contract": "contracts/stablecoins/USDG.sol:USDG",
+                "label": "lastUpdateTime",
+                "offset": 18,
+                "slot": "0",
+                "type": "t_uint40"
+              }
+            ],
+            "numberOfBytes": "32"
+          },
+          "t_uint16": {
+            "encoding": "inplace",
+            "label": "uint16",
+            "numberOfBytes": "2"
+          },
+          "t_uint256": {
+            "encoding": "inplace",
+            "label": "uint256",
+            "numberOfBytes": "32"
+          },
+          "t_uint32": {
+            "encoding": "inplace",
+            "label": "uint32",
+            "numberOfBytes": "4"
+          },
+          "t_uint40": {
+            "encoding": "inplace",
+            "label": "uint40",
+            "numberOfBytes": "5"
+          },
+          "t_uint48": {
+            "encoding": "inplace",
+            "label": "uint48",
+            "numberOfBytes": "6"
+          },
+          "t_uint64": {
+            "encoding": "inplace",
+            "label": "uint64",
+            "numberOfBytes": "8"
+          },
+          "t_uint8": {
+            "encoding": "inplace",
+            "label": "uint8",
+            "numberOfBytes": "1"
+          }
+        }
+      },
+      "storageLayoutSha256": "6a232e5803226b13a036adc963782a82f60c7b26359e94d1cce9891410f50a58",
+      "verifiedSourceUrl": "https://sourcify.dev/server/v2/contract/4663/0x68184c449e1a8f34fa18d289737129fd27b66f8f?fields=compilation,sources,storageLayout,runtimeBytecode.onchainBytecode,runtimeBytecode.recompiledBytecode,runtimeBytecode.transformations",
+      "settings": {
+        "optimizer": {
+          "runs": 200,
+          "enabled": true
+        },
+        "evmVersion": "paris"
+      },
+      "sourceContentSha256": {
+        "@openzeppelin/contracts-upgradeable/access/AccessControlDefaultAdminRulesUpgradeable.sol": "578c324721ecdf6aff1ca23c642e563a9aa728e3bd6e3216cc79b08cd3f68e9f",
+        "@openzeppelin/contracts-upgradeable/access/AccessControlUpgradeable.sol": "36ae01d269ee0cf6622f33e3af4fe1d0ccaccfd372a21c4435cba78fe8f6aa03",
+        "@openzeppelin/contracts-upgradeable/access/IAccessControlDefaultAdminRulesUpgradeable.sol": "180d2fba912bdd2ae4c1a11fea122e6b01e57727bb60d8ac0966909af52a2f56",
+        "@openzeppelin/contracts-upgradeable/access/IAccessControlUpgradeable.sol": "6d3fbd4566bc123db1ee6ba2a1b79544b572df9b9cc9be360ddb3244dd07c86b",
+        "@openzeppelin/contracts-upgradeable/interfaces/draft-IERC1822Upgradeable.sol": "a94576fd98585c07b2a9725f7c89c910a3a1909a03f49ec2df465327c6a0ffc3",
+        "@openzeppelin/contracts-upgradeable/interfaces/IERC1967Upgradeable.sol": "167828e6f725b1d47d82bc912fd0f1c6ed0fb67a4e5e06a4d62e72b4a53e95cf",
+        "@openzeppelin/contracts-upgradeable/interfaces/IERC5313Upgradeable.sol": "2901d7b0733afa66b59c1162a37938c831bf02b46fb29a804bbafd2393e203c1",
+        "@openzeppelin/contracts-upgradeable/proxy/beacon/IBeaconUpgradeable.sol": "e0ac7115916f0dce0a8e80769694736f3e674bdc5b2e5853964c82004b1e1cc5",
+        "@openzeppelin/contracts-upgradeable/proxy/ERC1967/ERC1967UpgradeUpgradeable.sol": "40dd5b14a370eea51ba94eb1b66a89638c6c54d86cc9f406599075c273e5e4c6",
+        "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol": "a2c4e5c274a586f145d278293ae33198cd8f412ab7e6d26f2394c8949b32b24b",
+        "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol": "04338003a3be8f5f38595048b591d80fdc147bf95cc7c6285e1e1a5f1afa2b47",
+        "@openzeppelin/contracts-upgradeable/utils/AddressUpgradeable.sol": "db92fc1b515decad3a783b1422190877d2d70b907c6e36fb0998d9465aee42db",
+        "@openzeppelin/contracts-upgradeable/utils/ContextUpgradeable.sol": "5fb301961e45cb482fe4e05646d2f529aa449fe0e90c6671475d6a32356fa2d4",
+        "@openzeppelin/contracts-upgradeable/utils/introspection/ERC165Upgradeable.sol": "fd84e5284eccc479268f0ef36b830019d4f7999ceb7959430d8d8d9e602dd4ef",
+        "@openzeppelin/contracts-upgradeable/utils/introspection/IERC165Upgradeable.sol": "a39bc026ad6214e9ecd526bd4a1ddf9862d80bd4a9d0d031d9bafa4c3c147c0b",
+        "@openzeppelin/contracts-upgradeable/utils/math/MathUpgradeable.sol": "fbf7ebc0f3c2cf5aef908ecce85e69af53db4e2c6652f61c8ac1e3f416c2fa99",
+        "@openzeppelin/contracts-upgradeable/utils/math/SafeCastUpgradeable.sol": "647d03e70d45c15cd9aa3afc3b32de945ec024a022614e263f33bb35c557ac94",
+        "@openzeppelin/contracts-upgradeable/utils/math/SignedMathUpgradeable.sol": "4f06981f993ea4a96e078c2036b5a42e1edade38996e5180171d5fe4be2f18fe",
+        "@openzeppelin/contracts-upgradeable/utils/StorageSlotUpgradeable.sol": "5b478023a1200e1364308ca06cdefec7cb7ab990a1cb904cbbdbaa7ba85076be",
+        "@openzeppelin/contracts-upgradeable/utils/StringsUpgradeable.sol": "357c8d1a0fb673fa10a884d6e27b383171ecc3eaf8dee8211de75f88ff77843d",
+        "@openzeppelin/contracts/access/IAccessControl.sol": "d03c1257f2094da6c86efa7aa09c1c07ebd33dd31046480c5097bc2542140e45",
+        "@openzeppelin/contracts/utils/math/Math.sol": "85a2caf3bd06579fb55236398c1321e15fd524a8fe140dff748c0f73d7a52345",
+        "@openzeppelin/contracts/utils/math/SafeCast.sol": "a5dab332e2caa1db5aae709693e59431132aa720528d0245a647dde6e93d7436",
+        "@openzeppelin/contracts/utils/math/SafeMath.sol": "fc16aa4564878e1bb65740239d0c1422451cd32136306626ac37f5d5e0606a7b",
+        "@openzeppelin/contracts/utils/structs/DoubleEndedQueue.sol": "a8d06e25f59c254d612f90d7cf88b967bc4ca6d5b3fa9d0b1c0e5c724afb90ff",
+        "@openzeppelin/contracts/utils/structs/EnumerableSet.sol": "a64e5d0e83019d9caa51e6fe6f68ac54b583ac15792b8557cb8e4fab20711b9f",
+        "contracts/BaseStorageV3.sol": "27d6d752e88e8fa4924d38613ca641eaa5d28ad5c3ed430696d0cd0673bc4d79",
+        "contracts/ClaimableRewardsBase.sol": "b88b0063d1b748b5edf5a96a97b2c8f62c0c48cd77b97513f197d2d4f4caeb28",
+        "contracts/ClaimableRewardsErrors.sol": "7f8c5172253f3baa96e2b85b2930ebfb957819eef8684083f9135827ac96c05d",
+        "contracts/ClaimableRewardsEvents.sol": "501dc504b56a3996aebd2ffa8c5f3dec94d3bfcc0d8e3a53d107ad078a559cd1",
+        "contracts/ClaimableRewardsStorageV3.sol": "ee3a43d5ce81865250751fddd5ab1f9003ad82a3b2582ae819da0e0d41021198",
+        "contracts/lib/EIP712.sol": "5352211c6e4ffbbc2085ce2b83f8ec0a7ea057ad3b6862c3879203e4ffce27fc",
+        "contracts/lib/MultiplierGrowthLib.sol": "0b4bbdc0c742379781d3c69295ba3aef02fcb7fff50448447cc65ab3430c6042",
+        "contracts/lib/PaxosBaseAbstract.sol": "37dbc8824191d0cca06394bef638f815c91d57cd34e88932a96eb574c0320456",
+        "contracts/lib/RateLimit.sol": "3c151336ba942867951503e4334b8aa079e4d7771c94c5f1f119f2398609b027",
+        "contracts/lib/Roles.sol": "46d65675f9f36ac045f35bd827766c9445421f2f2019501fc4f40e10176c548c",
+        "contracts/lib/SharesLib.sol": "0a4d34afd844a70e071f001c434edfd7c319032b92447937dfaf192c9b42d39b",
+        "contracts/lib/StorageLib.sol": "b29be495ddc37cb642d8c57f91de46fbbe5d49495259dc3d125d70e9d8244881",
+        "contracts/PaxosTokenClaimableRewards.sol": "c897cc5a4cd7b93a021ddf9e1150558c893f02023c24fab72ff550fd8f2bc818",
+        "contracts/stablecoins/USDG.sol": "1bca71147bdbfde6787d08ff327f542ad0cb5b5320f71773edfb9ecec3c23f2d",
+        "contracts/SupplyControl.sol": "4a9662640f52655b5792529b4d2502f8da37dd896d858e5a43f51af9467795da",
+        "contracts/TokenAdminEvents.sol": "2221cf82afe014223cc61c89d3ee163086970c2da2984b6b2422a2af11611ac3",
+        "hardhat/console.sol": "5a6db75ebe2603ab1ce17c40f48447f3040268675f027a77fe5e9b236f4e31dd"
+      },
+      "immutableValuesAreImplementationAddress": true
+    },
+    "USDGTokenAdminFacet": {
+      "compiler": "0.8.28+commit.7893614a.Emscripten.clang",
+      "bytecodeExecutableMatches": true,
+      "metadataLength": 53,
+      "runtimeBytes": 12266,
+      "compiledBytes": 12266,
+      "storageLayout": {
+        "storage": [
+          {
+            "astId": 8943,
+            "contract": "contracts/facets/TokenAdminFacet.sol:TokenAdminFacet",
+            "label": "initializedV1",
+            "offset": 0,
+            "slot": "0",
+            "type": "t_bool"
+          },
+          {
+            "astId": 8948,
+            "contract": "contracts/facets/TokenAdminFacet.sol:TokenAdminFacet",
+            "label": "balanceData",
+            "offset": 0,
+            "slot": "1",
+            "type": "t_mapping(t_address,t_struct(TokenAccountData)8930_storage)"
+          },
+          {
+            "astId": 8950,
+            "contract": "contracts/facets/TokenAdminFacet.sol:TokenAdminFacet",
+            "label": "totalSupply_",
+            "offset": 0,
+            "slot": "2",
+            "type": "t_uint256"
+          },
+          {
+            "astId": 8956,
+            "contract": "contracts/facets/TokenAdminFacet.sol:TokenAdminFacet",
+            "label": "allowed",
+            "offset": 0,
+            "slot": "3",
+            "type": "t_mapping(t_address,t_mapping(t_address,t_uint256))"
+          },
+          {
+            "astId": 8959,
+            "contract": "contracts/facets/TokenAdminFacet.sol:TokenAdminFacet",
+            "label": "globalTransferSettings",
+            "offset": 0,
+            "slot": "4",
+            "type": "t_struct(GlobalTransferSettings)8941_storage"
+          },
+          {
+            "astId": 8961,
+            "contract": "contracts/facets/TokenAdminFacet.sol:TokenAdminFacet",
+            "label": "assetProtectionRoleDeprecated",
+            "offset": 0,
+            "slot": "5",
+            "type": "t_address"
+          },
+          {
+            "astId": 8965,
+            "contract": "contracts/facets/TokenAdminFacet.sol:TokenAdminFacet",
+            "label": "frozen",
+            "offset": 0,
+            "slot": "6",
+            "type": "t_mapping(t_address,t_bool)"
+          },
+          {
+            "astId": 8967,
+            "contract": "contracts/facets/TokenAdminFacet.sol:TokenAdminFacet",
+            "label": "supplyControllerDeprecated",
+            "offset": 0,
+            "slot": "7",
+            "type": "t_address"
+          },
+          {
+            "astId": 8969,
+            "contract": "contracts/facets/TokenAdminFacet.sol:TokenAdminFacet",
+            "label": "proposedOwnerDeprecated",
+            "offset": 0,
+            "slot": "8",
+            "type": "t_address"
+          },
+          {
+            "astId": 8971,
+            "contract": "contracts/facets/TokenAdminFacet.sol:TokenAdminFacet",
+            "label": "betaDelegateWhitelisterDeprecated",
+            "offset": 0,
+            "slot": "9",
+            "type": "t_address"
+          },
+          {
+            "astId": 8975,
+            "contract": "contracts/facets/TokenAdminFacet.sol:TokenAdminFacet",
+            "label": "betaDelegateWhitelistDeprecated",
+            "offset": 0,
+            "slot": "10",
+            "type": "t_mapping(t_address,t_bool)"
+          },
+          {
+            "astId": 8979,
+            "contract": "contracts/facets/TokenAdminFacet.sol:TokenAdminFacet",
+            "label": "nextSeqsDeprecated",
+            "offset": 0,
+            "slot": "11",
+            "type": "t_mapping(t_address,t_uint256)"
+          },
+          {
+            "astId": 8981,
+            "contract": "contracts/facets/TokenAdminFacet.sol:TokenAdminFacet",
+            "label": "EIP712_DOMAIN_HASH_DEPRECATED",
+            "offset": 0,
+            "slot": "12",
+            "type": "t_bytes32"
+          },
+          {
+            "astId": 8984,
+            "contract": "contracts/facets/TokenAdminFacet.sol:TokenAdminFacet",
+            "label": "supplyControl",
+            "offset": 0,
+            "slot": "13",
+            "type": "t_contract(SupplyControl)13106"
+          },
+          {
+            "astId": 8988,
+            "contract": "contracts/facets/TokenAdminFacet.sol:TokenAdminFacet",
+            "label": "__gap_BaseStorageV3",
+            "offset": 0,
+            "slot": "14",
+            "type": "t_array(t_uint256)24_storage"
+          },
+          {
+            "astId": 8990,
+            "contract": "contracts/facets/TokenAdminFacet.sol:TokenAdminFacet",
+            "label": "DOMAIN_SEPARATOR_DEPRECATED",
+            "offset": 0,
+            "slot": "38",
+            "type": "t_bytes32"
+          },
+          {
+            "astId": 8994,
+            "contract": "contracts/facets/TokenAdminFacet.sol:TokenAdminFacet",
+            "label": "_nonces",
+            "offset": 0,
+            "slot": "39",
+            "type": "t_mapping(t_address,t_uint256)"
+          },
+          {
+            "astId": 8998,
+            "contract": "contracts/facets/TokenAdminFacet.sol:TokenAdminFacet",
+            "label": "__gap_EIP2612_compat",
+            "offset": 0,
+            "slot": "40",
+            "type": "t_array(t_uint256)10_storage"
+          },
+          {
+            "astId": 9004,
+            "contract": "contracts/facets/TokenAdminFacet.sol:TokenAdminFacet",
+            "label": "_authorizationStates",
+            "offset": 0,
+            "slot": "50",
+            "type": "t_mapping(t_address,t_mapping(t_bytes32,t_bool))"
+          },
+          {
+            "astId": 9008,
+            "contract": "contracts/facets/TokenAdminFacet.sol:TokenAdminFacet",
+            "label": "__gap_EIP3009_compat",
+            "offset": 0,
+            "slot": "51",
+            "type": "t_array(t_uint256)10_storage"
+          },
+          {
+            "astId": 1588,
+            "contract": "contracts/facets/TokenAdminFacet.sol:TokenAdminFacet",
+            "label": "_initialized",
+            "offset": 0,
+            "slot": "61",
+            "type": "t_uint8"
+          },
+          {
+            "astId": 1591,
+            "contract": "contracts/facets/TokenAdminFacet.sol:TokenAdminFacet",
+            "label": "_initializing",
+            "offset": 1,
+            "slot": "61",
+            "type": "t_bool"
+          },
+          {
+            "astId": 2257,
+            "contract": "contracts/facets/TokenAdminFacet.sol:TokenAdminFacet",
+            "label": "__gap",
+            "offset": 0,
+            "slot": "62",
+            "type": "t_array(t_uint256)50_storage"
+          },
+          {
+            "astId": 2640,
+            "contract": "contracts/facets/TokenAdminFacet.sol:TokenAdminFacet",
+            "label": "__gap",
+            "offset": 0,
+            "slot": "112",
+            "type": "t_array(t_uint256)50_storage"
+          },
+          {
+            "astId": 752,
+            "contract": "contracts/facets/TokenAdminFacet.sol:TokenAdminFacet",
+            "label": "_roles",
+            "offset": 0,
+            "slot": "162",
+            "type": "t_mapping(t_bytes32,t_struct(RoleData)747_storage)"
+          },
+          {
+            "astId": 1047,
+            "contract": "contracts/facets/TokenAdminFacet.sol:TokenAdminFacet",
+            "label": "__gap",
+            "offset": 0,
+            "slot": "163",
+            "type": "t_array(t_uint256)49_storage"
+          },
+          {
+            "astId": 17,
+            "contract": "contracts/facets/TokenAdminFacet.sol:TokenAdminFacet",
+            "label": "_pendingDefaultAdmin",
+            "offset": 0,
+            "slot": "212",
+            "type": "t_address"
+          },
+          {
+            "astId": 19,
+            "contract": "contracts/facets/TokenAdminFacet.sol:TokenAdminFacet",
+            "label": "_pendingDefaultAdminSchedule",
+            "offset": 20,
+            "slot": "212",
+            "type": "t_uint48"
+          },
+          {
+            "astId": 21,
+            "contract": "contracts/facets/TokenAdminFacet.sol:TokenAdminFacet",
+            "label": "_currentDelay",
+            "offset": 26,
+            "slot": "212",
+            "type": "t_uint48"
+          },
+          {
+            "astId": 23,
+            "contract": "contracts/facets/TokenAdminFacet.sol:TokenAdminFacet",
+            "label": "_currentDefaultAdmin",
+            "offset": 0,
+            "slot": "213",
+            "type": "t_address"
+          },
+          {
+            "astId": 25,
+            "contract": "contracts/facets/TokenAdminFacet.sol:TokenAdminFacet",
+            "label": "_pendingDelay",
+            "offset": 20,
+            "slot": "213",
+            "type": "t_uint48"
+          },
+          {
+            "astId": 27,
+            "contract": "contracts/facets/TokenAdminFacet.sol:TokenAdminFacet",
+            "label": "_pendingDelaySchedule",
+            "offset": 26,
+            "slot": "213",
+            "type": "t_uint48"
+          },
+          {
+            "astId": 711,
+            "contract": "contracts/facets/TokenAdminFacet.sol:TokenAdminFacet",
+            "label": "__gap",
+            "offset": 0,
+            "slot": "214",
+            "type": "t_array(t_uint256)48_storage"
+          },
+          {
+            "astId": 10896,
+            "contract": "contracts/facets/TokenAdminFacet.sol:TokenAdminFacet",
+            "label": "payoutData",
+            "offset": 0,
+            "slot": "262",
+            "type": "t_mapping(t_uint256,t_struct(PayoutGroupData)10863_storage)"
+          },
+          {
+            "astId": 10900,
+            "contract": "contracts/facets/TokenAdminFacet.sol:TokenAdminFacet",
+            "label": "payoutIdToClaimer",
+            "offset": 0,
+            "slot": "263",
+            "type": "t_mapping(t_uint256,t_address)"
+          },
+          {
+            "astId": 10904,
+            "contract": "contracts/facets/TokenAdminFacet.sol:TokenAdminFacet",
+            "label": "payoutIdToManager",
+            "offset": 0,
+            "slot": "264",
+            "type": "t_mapping(t_uint256,t_address)"
+          },
+          {
+            "astId": 10908,
+            "contract": "contracts/facets/TokenAdminFacet.sol:TokenAdminFacet",
+            "label": "payoutIdToDestination",
+            "offset": 0,
+            "slot": "265",
+            "type": "t_mapping(t_uint256,t_address)"
+          },
+          {
+            "astId": 10910,
+            "contract": "contracts/facets/TokenAdminFacet.sol:TokenAdminFacet",
+            "label": "nextPayoutId",
+            "offset": 0,
+            "slot": "266",
+            "type": "t_uint16"
+          },
+          {
+            "astId": 10915,
+            "contract": "contracts/facets/TokenAdminFacet.sol:TokenAdminFacet",
+            "label": "multipliers",
+            "offset": 0,
+            "slot": "267",
+            "type": "t_mapping(t_uint256,t_struct(MultiplierData)10874_storage)"
+          },
+          {
+            "astId": 10919,
+            "contract": "contracts/facets/TokenAdminFacet.sol:TokenAdminFacet",
+            "label": "multiplierPayoutGroupCount",
+            "offset": 0,
+            "slot": "268",
+            "type": "t_mapping(t_uint256,t_uint256)"
+          },
+          {
+            "astId": 10921,
+            "contract": "contracts/facets/TokenAdminFacet.sol:TokenAdminFacet",
+            "label": "nextMultiplierId",
+            "offset": 0,
+            "slot": "269",
+            "type": "t_uint16"
+          },
+          {
+            "astId": 10923,
+            "contract": "contracts/facets/TokenAdminFacet.sol:TokenAdminFacet",
+            "label": "firstActiveId",
+            "offset": 2,
+            "slot": "269",
+            "type": "t_uint16"
+          },
+          {
+            "astId": 10925,
+            "contract": "contracts/facets/TokenAdminFacet.sol:TokenAdminFacet",
+            "label": "activeMultiplierCount",
+            "offset": 4,
+            "slot": "269",
+            "type": "t_uint16"
+          },
+          {
+            "astId": 10928,
+            "contract": "contracts/facets/TokenAdminFacet.sol:TokenAdminFacet",
+            "label": "adminConfig",
+            "offset": 0,
+            "slot": "270",
+            "type": "t_struct(AdminConfigSettings)10881_storage"
+          },
+          {
+            "astId": 10934,
+            "contract": "contracts/facets/TokenAdminFacet.sol:TokenAdminFacet",
+            "label": "_registrationAuthState",
+            "offset": 0,
+            "slot": "271",
+            "type": "t_mapping(t_address,t_mapping(t_bytes32,t_bool))"
+          },
+          {
+            "astId": 10939,
+            "contract": "contracts/facets/TokenAdminFacet.sol:TokenAdminFacet",
+            "label": "_pendingRegistrations",
+            "offset": 0,
+            "slot": "272",
+            "type": "t_mapping(t_address,t_struct(PendingRegistration)10886_storage)"
+          },
+          {
+            "astId": 10944,
+            "contract": "contracts/facets/TokenAdminFacet.sol:TokenAdminFacet",
+            "label": "frozenData",
+            "offset": 0,
+            "slot": "273",
+            "type": "t_mapping(t_address,t_struct(FrozenData)10891_storage)"
+          }
+        ],
+        "types": {
+          "t_address": {
+            "encoding": "inplace",
+            "label": "address",
+            "numberOfBytes": "20"
+          },
+          "t_array(t_uint256)10_storage": {
+            "base": "t_uint256",
+            "encoding": "inplace",
+            "label": "uint256[10]",
+            "numberOfBytes": "320"
+          },
+          "t_array(t_uint256)24_storage": {
+            "base": "t_uint256",
+            "encoding": "inplace",
+            "label": "uint256[24]",
+            "numberOfBytes": "768"
+          },
+          "t_array(t_uint256)48_storage": {
+            "base": "t_uint256",
+            "encoding": "inplace",
+            "label": "uint256[48]",
+            "numberOfBytes": "1536"
+          },
+          "t_array(t_uint256)49_storage": {
+            "base": "t_uint256",
+            "encoding": "inplace",
+            "label": "uint256[49]",
+            "numberOfBytes": "1568"
+          },
+          "t_array(t_uint256)50_storage": {
+            "base": "t_uint256",
+            "encoding": "inplace",
+            "label": "uint256[50]",
+            "numberOfBytes": "1600"
+          },
+          "t_bool": {
+            "encoding": "inplace",
+            "label": "bool",
+            "numberOfBytes": "1"
+          },
+          "t_bytes10": {
+            "encoding": "inplace",
+            "label": "bytes10",
+            "numberOfBytes": "10"
+          },
+          "t_bytes32": {
+            "encoding": "inplace",
+            "label": "bytes32",
+            "numberOfBytes": "32"
+          },
+          "t_contract(SupplyControl)13106": {
+            "encoding": "inplace",
+            "label": "contract SupplyControl",
+            "numberOfBytes": "20"
+          },
+          "t_mapping(t_address,t_bool)": {
+            "encoding": "mapping",
+            "key": "t_address",
+            "label": "mapping(address => bool)",
+            "numberOfBytes": "32",
+            "value": "t_bool"
+          },
+          "t_mapping(t_address,t_mapping(t_address,t_uint256))": {
+            "encoding": "mapping",
+            "key": "t_address",
+            "label": "mapping(address => mapping(address => uint256))",
+            "numberOfBytes": "32",
+            "value": "t_mapping(t_address,t_uint256)"
+          },
+          "t_mapping(t_address,t_mapping(t_bytes32,t_bool))": {
+            "encoding": "mapping",
+            "key": "t_address",
+            "label": "mapping(address => mapping(bytes32 => bool))",
+            "numberOfBytes": "32",
+            "value": "t_mapping(t_bytes32,t_bool)"
+          },
+          "t_mapping(t_address,t_struct(FrozenData)10891_storage)": {
+            "encoding": "mapping",
+            "key": "t_address",
+            "label": "mapping(address => struct ClaimableRewardsStorageV3.FrozenData)",
+            "numberOfBytes": "32",
+            "value": "t_struct(FrozenData)10891_storage"
+          },
+          "t_mapping(t_address,t_struct(PendingRegistration)10886_storage)": {
+            "encoding": "mapping",
+            "key": "t_address",
+            "label": "mapping(address => struct ClaimableRewardsStorageV3.PendingRegistration)",
+            "numberOfBytes": "32",
+            "value": "t_struct(PendingRegistration)10886_storage"
+          },
+          "t_mapping(t_address,t_struct(TokenAccountData)8930_storage)": {
+            "encoding": "mapping",
+            "key": "t_address",
+            "label": "mapping(address => struct BaseStorageV3.TokenAccountData)",
+            "numberOfBytes": "32",
+            "value": "t_struct(TokenAccountData)8930_storage"
+          },
+          "t_mapping(t_address,t_uint256)": {
+            "encoding": "mapping",
+            "key": "t_address",
+            "label": "mapping(address => uint256)",
+            "numberOfBytes": "32",
+            "value": "t_uint256"
+          },
+          "t_mapping(t_bytes32,t_bool)": {
+            "encoding": "mapping",
+            "key": "t_bytes32",
+            "label": "mapping(bytes32 => bool)",
+            "numberOfBytes": "32",
+            "value": "t_bool"
+          },
+          "t_mapping(t_bytes32,t_struct(RoleData)747_storage)": {
+            "encoding": "mapping",
+            "key": "t_bytes32",
+            "label": "mapping(bytes32 => struct AccessControlUpgradeable.RoleData)",
+            "numberOfBytes": "32",
+            "value": "t_struct(RoleData)747_storage"
+          },
+          "t_mapping(t_uint256,t_address)": {
+            "encoding": "mapping",
+            "key": "t_uint256",
+            "label": "mapping(uint256 => address)",
+            "numberOfBytes": "32",
+            "value": "t_address"
+          },
+          "t_mapping(t_uint256,t_struct(MultiplierData)10874_storage)": {
+            "encoding": "mapping",
+            "key": "t_uint256",
+            "label": "mapping(uint256 => struct ClaimableRewardsStorageV3.MultiplierData)",
+            "numberOfBytes": "32",
+            "value": "t_struct(MultiplierData)10874_storage"
+          },
+          "t_mapping(t_uint256,t_struct(PayoutGroupData)10863_storage)": {
+            "encoding": "mapping",
+            "key": "t_uint256",
+            "label": "mapping(uint256 => struct ClaimableRewardsStorageV3.PayoutGroupData)",
+            "numberOfBytes": "32",
+            "value": "t_struct(PayoutGroupData)10863_storage"
+          },
+          "t_mapping(t_uint256,t_uint256)": {
+            "encoding": "mapping",
+            "key": "t_uint256",
+            "label": "mapping(uint256 => uint256)",
+            "numberOfBytes": "32",
+            "value": "t_uint256"
+          },
+          "t_struct(AdminConfigSettings)10881_storage": {
+            "encoding": "inplace",
+            "label": "struct ClaimableRewardsStorageV3.AdminConfigSettings",
+            "members": [
+              {
+                "astId": 10876,
+                "contract": "contracts/facets/TokenAdminFacet.sol:TokenAdminFacet",
+                "label": "claimSource",
+                "offset": 0,
+                "slot": "0",
+                "type": "t_address"
+              },
+              {
+                "astId": 10878,
+                "contract": "contracts/facets/TokenAdminFacet.sol:TokenAdminFacet",
+                "label": "minRate",
+                "offset": 20,
+                "slot": "0",
+                "type": "t_uint40"
+              },
+              {
+                "astId": 10880,
+                "contract": "contracts/facets/TokenAdminFacet.sol:TokenAdminFacet",
+                "label": "maxRate",
+                "offset": 25,
+                "slot": "0",
+                "type": "t_uint40"
+              }
+            ],
+            "numberOfBytes": "32"
+          },
+          "t_struct(FrozenData)10891_storage": {
+            "encoding": "inplace",
+            "label": "struct ClaimableRewardsStorageV3.FrozenData",
+            "members": [
+              {
+                "astId": 10888,
+                "contract": "contracts/facets/TokenAdminFacet.sol:TokenAdminFacet",
+                "label": "rewards",
+                "offset": 0,
+                "slot": "0",
+                "type": "t_uint64"
+              },
+              {
+                "astId": 10890,
+                "contract": "contracts/facets/TokenAdminFacet.sol:TokenAdminFacet",
+                "label": "payoutGroupId",
+                "offset": 8,
+                "slot": "0",
+                "type": "t_uint32"
+              }
+            ],
+            "numberOfBytes": "32"
+          },
+          "t_struct(GlobalTransferSettings)8941_storage": {
+            "encoding": "inplace",
+            "label": "struct BaseStorageV3.GlobalTransferSettings",
+            "members": [
+              {
+                "astId": 8932,
+                "contract": "contracts/facets/TokenAdminFacet.sol:TokenAdminFacet",
+                "label": "referenceTime",
+                "offset": 0,
+                "slot": "0",
+                "type": "t_uint40"
+              },
+              {
+                "astId": 8934,
+                "contract": "contracts/facets/TokenAdminFacet.sol:TokenAdminFacet",
+                "label": "maturityPeriod",
+                "offset": 5,
+                "slot": "0",
+                "type": "t_uint32"
+              },
+              {
+                "astId": 8936,
+                "contract": "contracts/facets/TokenAdminFacet.sol:TokenAdminFacet",
+                "label": "partnerSignedRegistrationsEnabled",
+                "offset": 9,
+                "slot": "0",
+                "type": "t_bool"
+              },
+              {
+                "astId": 8938,
+                "contract": "contracts/facets/TokenAdminFacet.sol:TokenAdminFacet",
+                "label": "__gap_remaining",
+                "offset": 10,
+                "slot": "0",
+                "type": "t_bytes10"
+              },
+              {
+                "astId": 8940,
+                "contract": "contracts/facets/TokenAdminFacet.sol:TokenAdminFacet",
+                "label": "paused",
+                "offset": 20,
+                "slot": "0",
+                "type": "t_bool"
+              }
+            ],
+            "numberOfBytes": "32"
+          },
+          "t_struct(MultiplierData)10874_storage": {
+            "encoding": "inplace",
+            "label": "struct ClaimableRewardsStorageV3.MultiplierData",
+            "members": [
+              {
+                "astId": 10865,
+                "contract": "contracts/facets/TokenAdminFacet.sol:TokenAdminFacet",
+                "label": "beforeRate",
+                "offset": 0,
+                "slot": "0",
+                "type": "t_uint40"
+              },
+              {
+                "astId": 10867,
+                "contract": "contracts/facets/TokenAdminFacet.sol:TokenAdminFacet",
+                "label": "afterRate",
+                "offset": 5,
+                "slot": "0",
+                "type": "t_uint40"
+              },
+              {
+                "astId": 10869,
+                "contract": "contracts/facets/TokenAdminFacet.sol:TokenAdminFacet",
+                "label": "switchTime",
+                "offset": 10,
+                "slot": "0",
+                "type": "t_uint40"
+              },
+              {
+                "astId": 10871,
+                "contract": "contracts/facets/TokenAdminFacet.sol:TokenAdminFacet",
+                "label": "switchTimeMultiplier",
+                "offset": 15,
+                "slot": "0",
+                "type": "t_uint48"
+              },
+              {
+                "astId": 10873,
+                "contract": "contracts/facets/TokenAdminFacet.sol:TokenAdminFacet",
+                "label": "nextActiveId",
+                "offset": 21,
+                "slot": "0",
+                "type": "t_uint16"
+              }
+            ],
+            "numberOfBytes": "32"
+          },
+          "t_struct(PayoutGroupData)10863_storage": {
+            "encoding": "inplace",
+            "label": "struct ClaimableRewardsStorageV3.PayoutGroupData",
+            "members": [
+              {
+                "astId": 10854,
+                "contract": "contracts/facets/TokenAdminFacet.sol:TokenAdminFacet",
+                "label": "balance",
+                "offset": 0,
+                "slot": "0",
+                "type": "t_uint64"
+              },
+              {
+                "astId": 10856,
+                "contract": "contracts/facets/TokenAdminFacet.sol:TokenAdminFacet",
+                "label": "shares",
+                "offset": 8,
+                "slot": "0",
+                "type": "t_uint64"
+              },
+              {
+                "astId": 10858,
+                "contract": "contracts/facets/TokenAdminFacet.sol:TokenAdminFacet",
+                "label": "multiplierId",
+                "offset": 16,
+                "slot": "0",
+                "type": "t_uint16"
+              },
+              {
+                "astId": 10860,
+                "contract": "contracts/facets/TokenAdminFacet.sol:TokenAdminFacet",
+                "label": "lastClaimAllTime",
+                "offset": 18,
+                "slot": "0",
+                "type": "t_uint40"
+              },
+              {
+                "astId": 10862,
+                "contract": "contracts/facets/TokenAdminFacet.sol:TokenAdminFacet",
+                "label": "lastClaimAllMultiplier",
+                "offset": 23,
+                "slot": "0",
+                "type": "t_uint48"
+              }
+            ],
+            "numberOfBytes": "32"
+          },
+          "t_struct(PendingRegistration)10886_storage": {
+            "encoding": "inplace",
+            "label": "struct ClaimableRewardsStorageV3.PendingRegistration",
+            "members": [
+              {
+                "astId": 10883,
+                "contract": "contracts/facets/TokenAdminFacet.sol:TokenAdminFacet",
+                "label": "payoutGroupId",
+                "offset": 0,
+                "slot": "0",
+                "type": "t_uint32"
+              },
+              {
+                "astId": 10885,
+                "contract": "contracts/facets/TokenAdminFacet.sol:TokenAdminFacet",
+                "label": "proposer",
+                "offset": 4,
+                "slot": "0",
+                "type": "t_address"
+              }
+            ],
+            "numberOfBytes": "32"
+          },
+          "t_struct(RoleData)747_storage": {
+            "encoding": "inplace",
+            "label": "struct AccessControlUpgradeable.RoleData",
+            "members": [
+              {
+                "astId": 744,
+                "contract": "contracts/facets/TokenAdminFacet.sol:TokenAdminFacet",
+                "label": "members",
+                "offset": 0,
+                "slot": "0",
+                "type": "t_mapping(t_address,t_bool)"
+              },
+              {
+                "astId": 746,
+                "contract": "contracts/facets/TokenAdminFacet.sol:TokenAdminFacet",
+                "label": "adminRole",
+                "offset": 0,
+                "slot": "1",
+                "type": "t_bytes32"
+              }
+            ],
+            "numberOfBytes": "64"
+          },
+          "t_struct(TokenAccountData)8930_storage": {
+            "encoding": "inplace",
+            "label": "struct BaseStorageV3.TokenAccountData",
+            "members": [
+              {
+                "astId": 8923,
+                "contract": "contracts/facets/TokenAdminFacet.sol:TokenAdminFacet",
+                "label": "balance",
+                "offset": 0,
+                "slot": "0",
+                "type": "t_uint64"
+              },
+              {
+                "astId": 8925,
+                "contract": "contracts/facets/TokenAdminFacet.sol:TokenAdminFacet",
+                "label": "shares",
+                "offset": 8,
+                "slot": "0",
+                "type": "t_uint64"
+              },
+              {
+                "astId": 8927,
+                "contract": "contracts/facets/TokenAdminFacet.sol:TokenAdminFacet",
+                "label": "payoutGroupId",
+                "offset": 16,
+                "slot": "0",
+                "type": "t_uint16"
+              },
+              {
+                "astId": 8929,
+                "contract": "contracts/facets/TokenAdminFacet.sol:TokenAdminFacet",
+                "label": "lastUpdateTime",
+                "offset": 18,
+                "slot": "0",
+                "type": "t_uint40"
+              }
+            ],
+            "numberOfBytes": "32"
+          },
+          "t_uint16": {
+            "encoding": "inplace",
+            "label": "uint16",
+            "numberOfBytes": "2"
+          },
+          "t_uint256": {
+            "encoding": "inplace",
+            "label": "uint256",
+            "numberOfBytes": "32"
+          },
+          "t_uint32": {
+            "encoding": "inplace",
+            "label": "uint32",
+            "numberOfBytes": "4"
+          },
+          "t_uint40": {
+            "encoding": "inplace",
+            "label": "uint40",
+            "numberOfBytes": "5"
+          },
+          "t_uint48": {
+            "encoding": "inplace",
+            "label": "uint48",
+            "numberOfBytes": "6"
+          },
+          "t_uint64": {
+            "encoding": "inplace",
+            "label": "uint64",
+            "numberOfBytes": "8"
+          },
+          "t_uint8": {
+            "encoding": "inplace",
+            "label": "uint8",
+            "numberOfBytes": "1"
+          }
+        }
+      },
+      "storageLayoutSha256": "3efc183dbc0d534b0efc74e7d51e8d3a397d2a895a07c866d1b4a0fda3b1f413",
+      "primarySourceUrl": "https://github.com/paxosglobal/paxos-token-contracts/blob/74999fc56a91c6e78e829ed5b5b7da4ada9a79d4/contracts/facets/TokenAdminFacet.sol",
+      "sourceSha256": "b35f4fd00773b865116f0474cd2d9be432ebb09c784834988740913c77f47471",
+      "dependencies": "exact USDG verified sources listed above; same solc version/settings"
+    }
+  },
+  "issuerSourceComparison": [
+    {
+      "path": "contracts/BaseStorageV3.sol",
+      "sourceUrl": "https://raw.githubusercontent.com/paxosglobal/paxos-token-contracts/74999fc56a91c6e78e829ed5b5b7da4ada9a79d4/contracts/BaseStorageV3.sol",
+      "sha256": "27d6d752e88e8fa4924d38613ca641eaa5d28ad5c3ed430696d0cd0673bc4d79",
+      "bytes": 8703,
+      "matchesPinnedRepository": true
+    },
+    {
+      "path": "contracts/ClaimableRewardsBase.sol",
+      "sourceUrl": "https://raw.githubusercontent.com/paxosglobal/paxos-token-contracts/74999fc56a91c6e78e829ed5b5b7da4ada9a79d4/contracts/ClaimableRewardsBase.sol",
+      "sha256": "b88b0063d1b748b5edf5a96a97b2c8f62c0c48cd77b97513f197d2d4f4caeb28",
+      "bytes": 30695,
+      "matchesPinnedRepository": false
+    },
+    {
+      "path": "contracts/ClaimableRewardsErrors.sol",
+      "sourceUrl": "https://raw.githubusercontent.com/paxosglobal/paxos-token-contracts/74999fc56a91c6e78e829ed5b5b7da4ada9a79d4/contracts/ClaimableRewardsErrors.sol",
+      "sha256": "7f8c5172253f3baa96e2b85b2930ebfb957819eef8684083f9135827ac96c05d",
+      "bytes": 4213,
+      "matchesPinnedRepository": true
+    },
+    {
+      "path": "contracts/ClaimableRewardsEvents.sol",
+      "sourceUrl": "https://raw.githubusercontent.com/paxosglobal/paxos-token-contracts/74999fc56a91c6e78e829ed5b5b7da4ada9a79d4/contracts/ClaimableRewardsEvents.sol",
+      "sha256": "501dc504b56a3996aebd2ffa8c5f3dec94d3bfcc0d8e3a53d107ad078a559cd1",
+      "bytes": 2672,
+      "matchesPinnedRepository": true
+    },
+    {
+      "path": "contracts/ClaimableRewardsStorageV3.sol",
+      "sourceUrl": "https://raw.githubusercontent.com/paxosglobal/paxos-token-contracts/74999fc56a91c6e78e829ed5b5b7da4ada9a79d4/contracts/ClaimableRewardsStorageV3.sol",
+      "sha256": "ee3a43d5ce81865250751fddd5ab1f9003ad82a3b2582ae819da0e0d41021198",
+      "bytes": 8874,
+      "matchesPinnedRepository": true
+    },
+    {
+      "path": "contracts/lib/EIP712.sol",
+      "sourceUrl": "https://raw.githubusercontent.com/paxosglobal/paxos-token-contracts/74999fc56a91c6e78e829ed5b5b7da4ada9a79d4/contracts/lib/EIP712.sol",
+      "sha256": "5352211c6e4ffbbc2085ce2b83f8ec0a7ea057ad3b6862c3879203e4ffce27fc",
+      "bytes": 1039,
+      "matchesPinnedRepository": true
+    },
+    {
+      "path": "contracts/lib/MultiplierGrowthLib.sol",
+      "sourceUrl": "https://raw.githubusercontent.com/paxosglobal/paxos-token-contracts/74999fc56a91c6e78e829ed5b5b7da4ada9a79d4/contracts/lib/MultiplierGrowthLib.sol",
+      "sha256": "0b4bbdc0c742379781d3c69295ba3aef02fcb7fff50448447cc65ab3430c6042",
+      "bytes": 9471,
+      "matchesPinnedRepository": true
+    },
+    {
+      "path": "contracts/lib/PaxosBaseAbstract.sol",
+      "sourceUrl": "https://raw.githubusercontent.com/paxosglobal/paxos-token-contracts/74999fc56a91c6e78e829ed5b5b7da4ada9a79d4/contracts/lib/PaxosBaseAbstract.sol",
+      "sha256": "37dbc8824191d0cca06394bef638f815c91d57cd34e88932a96eb574c0320456",
+      "bytes": 2816,
+      "matchesPinnedRepository": true
+    },
+    {
+      "path": "contracts/lib/RateLimit.sol",
+      "sourceUrl": "https://raw.githubusercontent.com/paxosglobal/paxos-token-contracts/74999fc56a91c6e78e829ed5b5b7da4ada9a79d4/contracts/lib/RateLimit.sol",
+      "sha256": "3c151336ba942867951503e4334b8aa079e4d7771c94c5f1f119f2398609b027",
+      "bytes": 4017,
+      "matchesPinnedRepository": true
+    },
+    {
+      "path": "contracts/lib/Roles.sol",
+      "sourceUrl": "https://raw.githubusercontent.com/paxosglobal/paxos-token-contracts/74999fc56a91c6e78e829ed5b5b7da4ada9a79d4/contracts/lib/Roles.sol",
+      "sha256": "46d65675f9f36ac045f35bd827766c9445421f2f2019501fc4f40e10176c548c",
+      "bytes": 4041,
+      "matchesPinnedRepository": true
+    },
+    {
+      "path": "contracts/lib/SharesLib.sol",
+      "sourceUrl": "https://raw.githubusercontent.com/paxosglobal/paxos-token-contracts/74999fc56a91c6e78e829ed5b5b7da4ada9a79d4/contracts/lib/SharesLib.sol",
+      "sha256": "0a4d34afd844a70e071f001c434edfd7c319032b92447937dfaf192c9b42d39b",
+      "bytes": 7843,
+      "matchesPinnedRepository": true
+    },
+    {
+      "path": "contracts/lib/StorageLib.sol",
+      "sourceUrl": "https://raw.githubusercontent.com/paxosglobal/paxos-token-contracts/74999fc56a91c6e78e829ed5b5b7da4ada9a79d4/contracts/lib/StorageLib.sol",
+      "sha256": "b29be495ddc37cb642d8c57f91de46fbbe5d49495259dc3d125d70e9d8244881",
+      "bytes": 3564,
+      "matchesPinnedRepository": true
+    },
+    {
+      "path": "contracts/PaxosTokenClaimableRewards.sol",
+      "sourceUrl": "https://raw.githubusercontent.com/paxosglobal/paxos-token-contracts/74999fc56a91c6e78e829ed5b5b7da4ada9a79d4/contracts/PaxosTokenClaimableRewards.sol",
+      "sha256": "c897cc5a4cd7b93a021ddf9e1150558c893f02023c24fab72ff550fd8f2bc818",
+      "bytes": 26903,
+      "matchesPinnedRepository": true
+    },
+    {
+      "path": "contracts/stablecoins/USDG.sol",
+      "sourceUrl": "https://raw.githubusercontent.com/paxosglobal/paxos-token-contracts/74999fc56a91c6e78e829ed5b5b7da4ada9a79d4/contracts/stablecoins/USDG.sol",
+      "sha256": "1bca71147bdbfde6787d08ff327f542ad0cb5b5320f71773edfb9ecec3c23f2d",
+      "bytes": 1299,
+      "matchesPinnedRepository": true
+    },
+    {
+      "path": "contracts/SupplyControl.sol",
+      "sourceUrl": "https://raw.githubusercontent.com/paxosglobal/paxos-token-contracts/74999fc56a91c6e78e829ed5b5b7da4ada9a79d4/contracts/SupplyControl.sol",
+      "sha256": "4a9662640f52655b5792529b4d2502f8da37dd896d858e5a43f51af9467795da",
+      "bytes": 20994,
+      "matchesPinnedRepository": true
+    },
+    {
+      "path": "contracts/TokenAdminEvents.sol",
+      "sourceUrl": "https://raw.githubusercontent.com/paxosglobal/paxos-token-contracts/74999fc56a91c6e78e829ed5b5b7da4ada9a79d4/contracts/TokenAdminEvents.sol",
+      "sha256": "2221cf82afe014223cc61c89d3ee163086970c2da2984b6b2422a2af11611ac3",
+      "bytes": 941,
+      "matchesPinnedRepository": true
+    }
+  ],
+  "issuerSourceDifference": {
+    "path": "contracts/ClaimableRewardsBase.sol",
+    "function": "DOMAIN_SEPARATOR()",
+    "difference": "pinned issuer source includes virtual keyword; verified deployed source omits it; every other line matches",
+    "deployedSourceUsedForIndependentCompilation": true
+  },
+  "governanceSourceAvailability": [
+    {
+      "name": "WETHProxyAdmin",
+      "cid": "QmXe3KAC6coeCZQxyKB3cGt1VtoqBoKb9KB9eohGm2GPdF",
+      "sha256": "8a2d9d6b4833462246845f0898b3da66a9086b54eb9fb2d870a9780af5c177f6",
+      "metadataStatus": "unavailable"
+    },
+    {
+      "name": "WETHGovernanceImplementation",
+      "cid": "QmRRZdPwei7eQxSBdNTNFVwSko7wi7KzRTHWS3fCksnyb1",
+      "sha256": "2dd5382fdba08a29cf28575cf947a054897172a386b7932a48f84af2cd16c35c",
+      "metadataStatus": "unavailable"
+    },
+    {
+      "name": "USDGDefaultAdmin",
+      "cid": "QmVXpT8iHMi7P6E2o3kXdEnGTGiXz38FgeK7wkYxtKAjcj",
+      "sha256": "6ade36681b32b89d07465eef407e4c751b3525451622096251dfc29e31ced1a8",
+      "metadataStatus": "unavailable"
+    },
+    {
+      "name": "USDGTokenAdminFacet",
+      "cid": "QmacdsEoQHXWmWMmWvhAYzNtf2J2ctgMjResSLsAStzMrw",
+      "sha256": "b6649558ddfaff11ea85d4a8cc5fc0b36b66aff55cf280095f3942f2b3f80e18",
+      "metadataStatus": "unavailable"
+    }
+  ],
+  "limitations": [
+    "Synthetic owner is not a user identity; actual owner state must be checked for every request.",
+    "USDG reward-enrolled owner or PoolManager is unsupported by the group-zero profile.",
+    "No exhaustive role-holder/facet inventory; default-admin governance code identities are pinned, but complete authorization paths are not independently source-authenticated.",
+    "USDG getMinDelay is an observed getter, not proof that all upgrades or restrictions wait 86400 seconds.",
+    "Runtime snapshots cannot exclude issuer changes after preparation or transient in-block upgrades.",
+    "No automatic admission by symbol, no production manifest activation, no live broadcasts."
+  ]
+}

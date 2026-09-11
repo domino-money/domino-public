@@ -110,6 +110,7 @@ export function validateWalletStep(selection:DepositSelection, owner:string, art
                     'backend/migrations/014_deposit_draft_recovery.sql',
                     'backend/tests/test_deposit_capacity_recovery.py',
                     'backend/tests/test_deposit_replacement_recovery.py',
+                    'backend/token_admission.py', 'backend/deposit_rpc.py',
                     'backend/tests/deposit_contract_fixtures.py', 'backend/tests/test_deposit_receipt.py',
                     'backend/tests/test_lp_mint_inspection.py', 'scripts/export-deposit-contract.py']
     manifest = {

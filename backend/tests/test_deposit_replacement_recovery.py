@@ -21,6 +21,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from deposit_api import DepositGateway, create_deposit_app
 from deposit_models import CONTRACT_VERSION, DepositError, validate_response
 from deposit_receipt import ReceiptReconciler
+from test_deposit_receipt import synthetic_review
 from deposit_service import DepositService
 from deposit_store import DepositStoreError, _Connection
 from discovery import DataError
@@ -43,6 +44,9 @@ class FixtureAuth:
 class FixturePreparer:
     def __init__(self, artifact):
         self.artifact, self.calls = deepcopy(artifact), 0
+
+    def revalidate(self, owner, selection, artifact):
+        assert owner == OWNER and artifact == self.artifact
 
     def prepare(self, owner, selection):
         assert owner == OWNER
@@ -85,7 +89,7 @@ class DepositReplacementRecoveryTests(unittest.TestCase):
             self.assertIsNone(response['walletStep'])
         return response
 
-    def start(self, rpc=None, *, cancel=False):
+    def start(self, rpc=None, *, cancel=False, token_guard=synthetic_review):
         # Each matrix case has its own rows; failed red subtests cannot poison
         # the next scenario with the intentionally unresolved owner reservation.
         self.admin.execute('TRUNCATE domino_deposits.intents')
@@ -94,7 +98,7 @@ class DepositReplacementRecoveryTests(unittest.TestCase):
         self.rpc = rpc or Rpc()
         self.preparer = FixturePreparer(self.rpc.artifact)
         self.service = DepositService(FixtureAuth(), self.store, self.preparer,
-            lambda: ReceiptReconciler(self.rpc), clock=lambda: self.now)
+            lambda: ReceiptReconciler(self.rpc, token_guard=token_guard), clock=lambda: self.now)
         created = self.call('create', idempotencyKey=str(uuid.uuid4()),
                             selection=deepcopy(self.rpc.selection))['operation']
         prepared = self.call('prepare', created)
@@ -331,7 +335,7 @@ class DepositReplacementRecoveryTests(unittest.TestCase):
         self.assertEqual(record['history'][0]['reportedEffectConflicts'], conflict)
         # Independently defend the store from a later real observation whose
         # caller omitted the saved conflicts. This is not a fabricated outcome.
-        fresh = ReceiptReconciler(rpc).reconcile(OWNER, rpc.selection, rpc.artifact,
+        fresh = ReceiptReconciler(rpc, token_guard=synthetic_review).reconcile(OWNER, rpc.selection, rpc.artifact,
                                                 known_hashes=[HASH])
         raw = self.store.reconcile(OWNER, record['id'], record['version'], fresh)
         self.assertEqual(raw['state'], 'attention'); self.assertTrue(raw['outstanding'])
@@ -626,6 +630,41 @@ class DepositReplacementRecoveryTests(unittest.TestCase):
         self.assertEqual(record['state'], 'confirmed')
         self.assertTrue(self.store.get(OWNER, newer['id'])['outstanding'])
         self.assertEqual(len(record['history']), 1)
+
+    def test_proxy_review_basis_and_nitro_caps_cannot_clear_cross_nonce_conflicts(self):
+        for review_status in ('matched', 'changed', 'unavailable'):
+            for conflict in (False, True):
+                with self.subTest(review_status=review_status, conflict=conflict):
+                    rpc = Rpc(); self.bump(rpc)
+                    rpc.artifact['admission'].update(policyVersion='direct_existing_pool_v2',
+                        tokenReviews=[{'address': rpc.selection['poolKey'][f'currency{i}'],
+                                       'reviewId': 'f'*64} for i in (0, 1)])
+                    if conflict:
+                        self.add_off_nonce(rpc, deepcopy(rpc.transaction))
+                    guard = lambda **values: {'status': review_status, 'reviewId': 'f'*64, 'upgradeable': True}
+                    record = self.start(rpc, token_guard=guard)
+                    record = self.report(record, OTHER_HASH if conflict else HASH)
+                    self.assertEqual(record['state'], 'attention' if conflict else 'confirmed')
+                    receipt = record['history'][0]['receipt']
+                    self.assertEqual(receipt['position']['tokenId'], str(TOKEN_ID))
+                    self.assertEqual(receipt['grossGasFeeRaw'], '21000000')
+                    self.assertEqual(receipt['l1GasUsedRaw'], '10000')
+                    self.assertEqual(receipt['l1FeeRaw'], '2100000')
+                    self.assertIsNone(receipt['totalFeeRaw'])
+                    for i, amount in enumerate(('100', '200')):
+                        self.assertEqual(receipt['position'][f'amount{i}Raw'], amount if review_status == 'matched' else None)
+                        self.assertEqual(receipt['position'][f'amount{i}Basis'],
+                            'reviewed_proxy_transfer_events' if review_status == 'matched' else 'token_review_' + review_status)
+                    self.assert_transaction_evidence(record,
+                        ('gasLimit', 'maxFeePerGas', 'maxPriorityFeePerGas'))
+                    if conflict:
+                        saved = deepcopy(record['history'][0]['reportedEffectConflicts'])
+                        self.assertEqual(saved, [{'transactionHash': OTHER_HASH, 'nonceRaw': '6'}])
+                        rpc.by_hash.pop(OTHER_HASH)
+                        record = self.call('reconcile', record)['operation']
+                        self.assertEqual(record['state'], 'attention')
+                        self.assertEqual(record['history'][0]['reportedEffectConflicts'], saved)
+                        self.assert_busy(record)
 
     def test_http_bumped_mint_roundtrip_preserves_nitro_cost_and_observed_caps(self):
         for poster_gas in (None, 0, 10000):

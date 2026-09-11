@@ -29,6 +29,8 @@ from fastapi.testclient import TestClient
 from deposit_api import DepositGateway, create_deposit_app
 from deposit_service import DepositService
 from deposit_store import DepositStore, _Connection
+from deposit_models import DepositError
+from deposit_prepare import calldata, PERMIT2
 from discovery import DataError
 from dev_postgres import ADMIN, PORT, SOCKET
 from onboarding_auth import OnboardingAuth
@@ -54,6 +56,13 @@ VALIDATION = {'method': 'plain_eoa', 'blockNumber': '123', 'blockHash': '0x' + '
 class Preparer:
     def __init__(self):
         self.calls, self.effect, self.nonce = [], None, 7
+        self.revalidation_calls, self.revalidation_effect = [], None
+        self.kind = 'mint'
+
+    def revalidate(self, owner, selection, artifact):
+        self.revalidation_calls.append((owner, deepcopy(selection), deepcopy(artifact)))
+        if self.revalidation_effect:
+            self.revalidation_effect()
 
     def prepare(self, owner, selection):
         self.calls.append((owner, deepcopy(selection)))
@@ -67,6 +76,11 @@ class Preparer:
         params[0] = encode(MINT_TYPES, mint)
         set_plan(tx, actions, params, deadline=result['preparedDeadline'])
         tx['from'] = owner
+        if self.kind == 'erc20_approval':
+            result['kind'] = self.kind
+            tx.update(to=selection['poolKey']['currency1'], valueRaw='0',
+                data=calldata('approve(address,uint256)', ['address', 'uint256'],
+                              [PERMIT2, int(result['mintedBounds']['amount1MaxRaw'])]))
         tx['nonceRaw'] = str(self.nonce)
         return result
 
@@ -86,7 +100,12 @@ class Reconciler:
                 'resolvedSubmissionHashes': list(kwargs['known_hashes'])}
         # Reuse the independently tested chain-reader producer fixture, binding
         # its synthetic successful NFT recipient/current owner to this login.
-        observed = receipt_fixture(Rpc())
+        if self.mode in ('changed_approval', 'unavailable_approval'):
+            observed = receipt_fixture(Rpc(kind='erc20_approval'), token_guard=lambda **values: {
+                'status': 'changed' if self.mode == 'changed_approval' else 'unavailable',
+                'reviewId': 'f'*64, 'upgradeable': True})
+        else:
+            observed = receipt_fixture(Rpc())
         def replace(value):
             if isinstance(value, dict):
                 return {key: replace(child) for key, child in value.items()}
@@ -194,6 +213,98 @@ class DepositFlowTests(unittest.TestCase):
         self.assertNotIn('set-cookie', response.headers)
         for private in (PRIVATE, ASSERTION):
             self.assertNotIn(private, response.text)
+
+    def test_changed_token_after_persistence_blocks_wallet_delivery_and_preserves_reservation(self):
+        credentials, owner = self.login()
+        record, _ = self.create(credentials)
+        def changed():
+            saved = self.store.get(owner, record['id'])
+            self.assertTrue(saved['outstanding'])
+            self.assertEqual(saved['version'], 2)
+            raise DepositError('deposit_token_changed')
+        self.preparer.revalidation_effect = changed
+        response = self.change('prepare', record, credentials)
+        self.error(response, 409, 'deposit_token_changed')
+        saved = DepositStore(self.settings).get(owner, record['id'])
+        self.assertEqual(saved['state'], 'awaiting_wallet')
+        self.assertTrue(saved['outstanding'])
+        self.assertEqual(len(saved['history']), 1)
+        self.assertIsNotNone(saved['issued'])
+        self.assertNotIn('data', response.json())
+        other, _ = self.create(credentials)
+        self.error(self.change('prepare', other, credentials), 409, 'deposit_owner_busy')
+        self.assertEqual(self.store.get(owner, record['id'])['history'], saved['history'])
+
+    def test_session_revoked_during_final_token_recheck_never_delivers_persisted_step(self):
+        credentials, owner = self.login()
+        record, _ = self.create(credentials)
+        def revoke():
+            response = self.post('session', 'logout', credentials=credentials)
+            self.assertEqual(response.status_code, 200, response.text)
+        self.preparer.revalidation_effect = revoke
+        response = self.change('prepare', record, credentials)
+        self.error(response, 401, 'session_required')
+        saved = self.store.get(owner, record['id'])
+        self.assertTrue(saved['outstanding'])
+        self.assertEqual(saved['version'], 2)
+        self.assertEqual(len(saved['history']), 1)
+
+    def test_token_change_blocks_redelivery_but_not_submitted_receipt_reconciliation(self):
+        credentials, owner = self.login()
+        record, _ = self.create(credentials)
+        prepared = self.change('prepare', record, credentials)
+        self.assertEqual(prepared.status_code, 200, prepared.text)
+        issued = prepared.json()['operation']
+        initial = self.store.get(owner, record['id'])
+        self.preparer.revalidation_effect = lambda: (_ for _ in ()).throw(DepositError('deposit_token_changed'))
+        self.error(self.change('prepare', issued, credentials), 409, 'deposit_token_changed')
+        self.assertEqual(len(self.preparer.calls), 1, 'Re-delivery cannot create another transaction.')
+        self.assertEqual(len(self.preparer.revalidation_calls), 2)
+        self.assertEqual(self.store.get(owner, record['id'])['history'], initial['history'])
+        self.reconciler.mode = 'confirmed'
+        response = self.change('report', issued, credentials, transactionHash=TX_HASH)
+        self.assertEqual(response.status_code, 200, response.text)
+        self.assertEqual(response.json()['operation']['state'], 'confirmed')
+        self.assertIsNone(response.json()['walletStep'])
+        self.assertEqual(len(self.preparer.revalidation_calls), 2, 'Receipt lookup must survive token admission changes.')
+
+    def test_unavailable_current_review_keeps_handoff_and_existing_facts(self):
+        credentials, owner = self.login()
+        record, _ = self.create(credentials)
+        prepared = self.change('prepare', record, credentials)
+        issued = prepared.json()['operation']
+        initial = self.store.get(owner, record['id'])
+        self.preparer.revalidation_effect = lambda: (_ for _ in ()).throw(DepositError('deposit_token_check_unavailable'))
+        self.error(self.change('prepare', issued, credentials), 503, 'deposit_token_check_unavailable')
+        restored = DepositStore(self.settings).get(owner, record['id'])
+        self.assertTrue(restored['outstanding'])
+        self.assertEqual(restored['history'], initial['history'])
+        read = self.post('deposit', 'get', {'intentId': record['id']}, credentials)
+        self.assertEqual(read.status_code, 200)
+        self.assertIsNone(read.json()['walletStep'])
+
+    def test_changed_or_unavailable_approval_retains_owner_reservation_and_canonical_receipt(self):
+        for number, mode in enumerate(('changed_approval', 'unavailable_approval'), start=1):
+            with self.subTest(mode=mode):
+                credentials, owner = self.login(number)
+                self.preparer.kind = 'erc20_approval'
+                record, _ = self.create(credentials)
+                prepared = self.change('prepare', record, credentials)
+                self.assertEqual(prepared.status_code, 200, prepared.text)
+                self.reconciler.mode = mode
+                response = self.change('report', prepared.json()['operation'], credentials, transactionHash=TX_HASH)
+                self.assertEqual(response.status_code, 200, response.text)
+                operation = response.json()['operation']
+                self.assertEqual(operation['state'], 'attention' if mode == 'changed_approval' else 'pending')
+                self.assertTrue(operation['outstanding'])
+                self.assertIsNone(response.json()['walletStep'])
+                saved = DepositStore(self.settings).get(owner, record['id'])
+                self.assertTrue(saved['history'][0]['reconciliation']['nonceFinalized'])
+                self.assertEqual(saved['history'][0]['receipt']['transactionHash'], TX_HASH)
+                self.assertIsNone(saved['history'][0]['receipt']['approval']['amountRaw'])
+                self.assertEqual(saved['history'][0]['initialFinalizedReceipt'], saved['history'][0]['receipt'])
+                other, _ = self.create(credentials)
+                self.error(self.change('prepare', other, credentials), 409, 'deposit_owner_busy')
 
     def test_signed_session_create_idempotency_get_and_foreign_owner_isolation(self):
         first, owner = self.login()

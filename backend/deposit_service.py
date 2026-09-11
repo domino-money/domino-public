@@ -154,6 +154,13 @@ class DepositService:
 
     def _finish(self, context, route, response):
         check_read_deadline()
+        if response.get('walletStep'):
+            # A stored handoff is not permission to reuse a retired token
+            # implementation. This covers both new issuance and re-delivery;
+            # failure leaves the durable nonce reservation intact.
+            self.preparer.revalidate(context['owner'], response['operation']['selection'],
+                                     response['walletStep'])
+            check_read_deadline()
         response = validate_response(route, response)
         encoded = json.dumps(response, allow_nan=False, separators=(',', ':'))
         secrets = (*self.private_values, context['session'], context['csrf'])

@@ -16,7 +16,7 @@ function readViews(body) {
 }
 
 test('all producer requests, responses, errors and variants pass the browser validator', () => {
-  assert.equal(CONTRACT_VERSION, '1.1.0-rc.3');
+  assert.equal(CONTRACT_VERSION, '1.1.0-rc.4');
   for (const route of ROUTES) {
     assert.equal(validateRequest(route, read(`fixtures/requests/${route}.json`)), true, route);
     assert.equal(validateResponse(route, read(`fixtures/responses/${route}.json`)), true, route);
@@ -83,6 +83,28 @@ test('wallet payload cannot appear on a durable read or be associated with a dif
   for(const route of ['get','create','cancel','report','reconcile']) assert.equal(validateResponse(route,prepared),false);
   prepared.operation.owner='0x'+'ee'.repeat(20);
   assert.equal(validateResponse('prepare',prepared),false);
+});
+
+test('reviewed proxy references and unqualified receipt amounts cannot be relabeled', () => {
+  const proxy=read('fixtures/variants/reviewed-proxy.json');
+  for (const mutate of [
+    step=>{step.admission.tokenReviews=null;},
+    step=>{step.admission.tokenReviews.reverse();},
+    step=>{step.admission.tokenReviews.pop();},
+    step=>{step.admission.tokenReviews[0].address='0x'+'ff'.repeat(20);},
+    step=>{step.admission.policyVersion='direct_existing_pool_v1';},
+  ]) {
+    const bad=clone(proxy);mutate(bad.walletStep);
+    assert.equal(validateResponse('prepare',bad),false);
+  }
+  const changed=read('fixtures/variants/token-review-changed.json');
+  assert.equal(validateResponse('get',changed),true);
+  changed.operation.history[0].receipt.position.amount0Raw='0';
+  assert.equal(validateResponse('get',changed),false);
+  const events=read('fixtures/variants/proxy-event-amounts.json');
+  assert.equal(validateResponse('get',events),true);
+  events.operation.history[0].receipt.position.amount0Basis='token_review_unavailable';
+  assert.equal(validateResponse('get',events),false);
 });
 
 test('cost and ownership observation fields preserve verified and unavailable values', () => {

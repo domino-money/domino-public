@@ -319,6 +319,18 @@
     "ReceiptPosition": {
       "additionalProperties": false,
       "properties": {
+        "amount0Basis": {
+          "enum": [
+            "native_net_unavailable",
+            "admitted_standard_transfer_events",
+            "reviewed_proxy_transfer_events",
+            "token_review_changed",
+            "token_review_unavailable",
+            "legacy_token_review_unqualified"
+          ],
+          "title": "Amount0Basis",
+          "type": "string"
+        },
         "amount0Raw": {
           "anyOf": [
             {
@@ -331,6 +343,18 @@
             }
           ],
           "title": "Amount0Raw"
+        },
+        "amount1Basis": {
+          "enum": [
+            "native_net_unavailable",
+            "admitted_standard_transfer_events",
+            "reviewed_proxy_transfer_events",
+            "token_review_changed",
+            "token_review_unavailable",
+            "legacy_token_review_unqualified"
+          ],
+          "title": "Amount1Basis",
+          "type": "string"
         },
         "amount1Raw": {
           "anyOf": [
@@ -421,7 +445,9 @@
         "currentOwnerStatus",
         "ownershipObservedBlock",
         "amount0Raw",
-        "amount1Raw"
+        "amount1Raw",
+        "amount0Basis",
+        "amount1Basis"
       ],
       "title": "ReceiptPosition",
       "type": "object"
@@ -724,7 +750,7 @@
       "type": "boolean"
     },
     "contractVersion": {
-      "const": "1.1.0-rc.3",
+      "const": "1.1.0-rc.4",
       "title": "Contractversion",
       "type": "string"
     },
@@ -770,7 +796,7 @@
   ],
   "title": "ListResponse",
   "type": "object",
-  "x-contract-version": "1.1.0-rc.3",
+  "x-contract-version": "1.1.0-rc.4",
   "x-domino-constraints": [
     "Closed strict fields, exact raw integer strings, safe integer selectors.",
     "SIWE-derived owner; no browser-selected recipient or provider.",

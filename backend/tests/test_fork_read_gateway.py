@@ -3,19 +3,21 @@ from concurrent.futures import ThreadPoolExecutor
 from contextlib import redirect_stderr
 from decimal import Decimal
 from http.client import HTTPConnection
-from io import StringIO
+from io import BytesIO, StringIO
 import json
 import socket
 from threading import Event, Lock, Timer
+from types import SimpleNamespace
 import time
 import traceback
 import unittest
+from unittest.mock import Mock
 from urllib.error import HTTPError
 from urllib.parse import urlsplit
 
 from discovery import json_http
 from fork_read_gateway import (ForkReadError, ForkReadGateway, MAX_BATCH, MAX_BODY,
-                               MAX_CALL_GAS, MAX_RESPONSE, METHODS)
+                               MAX_CALL_GAS, MAX_RESPONSE, METHODS, _Handler)
 
 
 CANARY = 'SYNTHETIC_PRIVATE_CANARY'
@@ -374,6 +376,36 @@ class ForkReadGatewayTests(unittest.TestCase):
             self.assertEqual(gateway.request('eth_chainId'), '0x1')
             self.assertEqual(gateway.stats['requests'], 4)
 
+    def test_upload_socket_timeout_emits_complete_safe_response(self):
+        transport = Transport()
+        with self.gateway(transport) as gateway:
+            # Exercise the actual handler/reply without a competing hard-close
+            # timer, so the complete timeout response is deterministic.
+            handler = _Handler.__new__(_Handler)
+            handler.server = SimpleNamespace(gateway=gateway)
+            handler.path = '/'
+            handler.headers = {'Host': urlsplit(gateway.url).netloc,
+                'Content-Type': 'application/json', 'Content-Length': '100'}
+            handler.rfile = Mock()
+            handler.rfile.read.side_effect = TimeoutError
+            handler.wfile = BytesIO()
+            handler.connection = Mock()
+            handler.request_version = 'HTTP/1.1'
+            handler.requestline = 'POST / HTTP/1.1'
+            handler.command = 'POST'
+            handler.do_POST()
+            head, body = handler.wfile.getvalue().split(b'\r\n\r\n', 1)
+            self.assertTrue(head.startswith(b'HTTP/1.1 408 Request Timeout\r\n'))
+            self.assertIn(b'Cache-Control: no-store', head)
+            self.assertIn(b'Connection: close', head)
+            self.assertIn(f'Content-Length: {len(body)}'.encode(), head)
+            self.assertEqual(json.loads(body), {'jsonrpc': '2.0', 'id': None,
+                'error': {'code': -32000, 'message': 'fork_upload_timeout'}})
+            self.assertTrue(handler.close_connection)
+            self.assertSafe(body)
+            self.assertEqual(transport.calls, [])
+            self.assertEqual(gateway.stats['failures']['fork_upload_timeout'], 1)
+
     def test_absolute_upload_deadline_bounds_idle_connections_and_shutdown(self):
         transport = Transport()
         start = time.monotonic()
@@ -388,11 +420,21 @@ class ForkReadGatewayTests(unittest.TestCase):
                 while chunk := connection.recv(4096):
                     received += chunk
                     self.assertLess(len(received), 4096)
-                # Either the absolute timer closes the socket or its socket
-                # timeout wins the race and returns the same fixed diagnosis.
+                # The hard timer can close the socket before, during or after
+                # the socket-timeout reply. A partial reply is not a promise
+                # of complete HTTP delivery; a complete reply must be exact.
                 if received:
-                    self.assertTrue(received.startswith(b'HTTP/1.1 408'))
-                    self.assertIn(b'fork_upload_timeout', received)
+                    status = b'HTTP/1.1 408 Request Timeout\r\n'
+                    self.assertTrue(status.startswith(received) or received.startswith(status))
+                    head, separator, body = received.partition(b'\r\n\r\n')
+                    if separator:
+                        expected = json.dumps({'jsonrpc': '2.0', 'id': None,
+                            'error': {'code': -32000, 'message': 'fork_upload_timeout'}},
+                            separators=(',', ':')).encode()
+                        self.assertIn(f'Content-Length: {len(expected)}'.encode(), head)
+                        self.assertTrue(expected.startswith(body))
+                        if len(body) == len(expected):
+                            self.assertEqual(json.loads(body), json.loads(expected))
         self.assertLess(time.monotonic()-start, 1)
         self.assertEqual(transport.calls, [])
         self.assertGreaterEqual(gateway.stats['failures'].get('fork_upload_timeout', 0), 1)

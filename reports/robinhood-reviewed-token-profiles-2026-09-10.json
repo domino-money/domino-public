@@ -1,0 +1,221 @@
+{
+  "schemaVersion": 1,
+  "chainId": 4663,
+  "reviewedAt": 1789073456,
+  "sourceBlock": {
+    "number": 59702441,
+    "hash": "0x7e18a93cf71e6bb1f094f4a5552475590034e763e7154c1cac16a35cba8108a7",
+    "timestamp": 1789073456
+  },
+  "profiles": [
+    {
+      "reviewId": "e435e28d007e3bf896874b7307c7b74706816267c032e5ccf32fac834748f195",
+      "address": "0x0bd7d308f8e1639fab988df18a8011f41eacad73",
+      "codeHash": "0x5706be52f64875fee65a2cec0d80e47a23d8793cbe85d214b48445e2d05f5353",
+      "reviewReference": "reports/UPGRADEABLE_TOKEN_REVIEW.md#weth",
+      "standardTransfer": true,
+      "nonRebasing": true,
+      "approvalReturn": "bool",
+      "kind": "erc1967_transparent",
+      "implementation": {
+        "address": "0xc6b81b429797e0f555440b70cd99e032d7ae947e",
+        "codeHash": "0xbe1295f37be34ffe03ad779bda0ef278907e1856b51a3be2f35ee541d75d4650"
+      },
+      "admin": "0xa3acd31afb851b4eb9dad00f5204c01d924267df",
+      "dependencies": [
+        {
+          "address": "0xa3acd31afb851b4eb9dad00f5204c01d924267df",
+          "codeHash": "0xa4b2186ab82fa36fb4ae158582e5615ea519e757c26c13ba4a33daaaed8902a7"
+        },
+        {
+          "address": "0x2a153c6a1b66dbc930a8d7017230ab0253005c09",
+          "codeHash": "0x5706be52f64875fee65a2cec0d80e47a23d8793cbe85d214b48445e2d05f5353"
+        },
+        {
+          "address": "0x3c3e52bc8c181d06a76e2518bbc655c5bb3ce7cd",
+          "codeHash": "0x0d88feac198ef1b50b99fddf06aa9f6b1050bfe7211d6f04173de9b6d8953bcb"
+        }
+      ],
+      "identityStorage": [
+        {
+          "address": "0x2a153c6a1b66dbc930a8d7017230ab0253005c09",
+          "slot": "0x360894a13ba1a3210667c828492db98dca3e2076cc3735a920a3ca505d382bbc",
+          "value": "0x0000000000000000000000003c3e52bc8c181d06a76e2518bbc655c5bb3ce7cd"
+        },
+        {
+          "address": "0x2a153c6a1b66dbc930a8d7017230ab0253005c09",
+          "slot": "0xb53127684a568b3173ae13b9f8a6016e243e63b6e8ee1178d6a717850b5d6103",
+          "value": "0x000000000000000000000000a3acd31afb851b4eb9dad00f5204c01d924267df"
+        },
+        {
+          "address": "0x2a153c6a1b66dbc930a8d7017230ab0253005c09",
+          "slot": "0xa3f0ad74e5423aebfd80d3ef4346578335a9a72aeaee59ff6cb3582b35133d50",
+          "value": "0x0000000000000000000000000000000000000000000000000000000000000000"
+        },
+        {
+          "address": "0x0bd7d308f8e1639fab988df18a8011f41eacad73",
+          "slot": "0x00000000000000000000000000000000000000000000000000000000000000cc",
+          "value": "0x0000000000000000000000001d187c3e2da52d72bc9c41e3aba0fdfa6a7bf055"
+        },
+        {
+          "address": "0x0bd7d308f8e1639fab988df18a8011f41eacad73",
+          "slot": "0x00000000000000000000000000000000000000000000000000000000000000cd",
+          "value": "0x000000000000000000000000c02aaa39b223fe8d0a0e5c4f27ead9083c756cc2"
+        }
+      ],
+      "identityCalls": [
+        {
+          "address": "0xa3acd31afb851b4eb9dad00f5204c01d924267df",
+          "data": "0x8da5cb5b",
+          "result": "0x0000000000000000000000002a153c6a1b66dbc930a8d7017230ab0253005c09"
+        }
+      ],
+      "stateStorage": [
+        {
+          "slot": "0x0000000000000000000000000000000000000000000000000000000000000000",
+          "mask": "0x000000000000000000000000000000000000000000000000000000000000ffff",
+          "value": "0x0000000000000000000000000000000000000000000000000000000000000001"
+        }
+      ],
+      "accountStorage": []
+    },
+    {
+      "reviewId": "fd0eda85f7aaf2b6ce4a4f9568365850b07d267bfefc3d61aec79f29139085c4",
+      "address": "0x5fc5360d0400a0fd4f2af552add042d716f1d168",
+      "codeHash": "0x864cc9ad53b338b82da1f7cab85ab0b3d5c8861acb422b6fec63cf36234f36a6",
+      "reviewReference": "reports/UPGRADEABLE_TOKEN_REVIEW.md#usdg",
+      "standardTransfer": true,
+      "nonRebasing": true,
+      "approvalReturn": "bool",
+      "kind": "erc1967_uups",
+      "implementation": {
+        "address": "0x68184c449e1a8f34fa18d289737129fd27b66f8f",
+        "codeHash": "0x3a551ac5c744af57e68a1d1431ac403c0f516ffd7d224a75746aee11fc4f3baf"
+      },
+      "admin": "0x0000000000000000000000000000000000000000",
+      "dependencies": [
+        {
+          "address": "0xcfa0388f5ddf905fdc08c45c716c15dc10a14c6f",
+          "codeHash": "0xe616a4f66608354a45be3af2f82e909a1e000f4360eeb909defd830ee43c554b"
+        },
+        {
+          "address": "0x58cab81e3d8468a0e90df8cbfacb34535e1de942",
+          "codeHash": "0xe59c8f48b9198212d26a62177e6f49eedd46d0005b3a7b4f1ff282b11f82d5a4"
+        }
+      ],
+      "identityStorage": [
+        {
+          "address": "0x5fc5360d0400a0fd4f2af552add042d716f1d168",
+          "slot": "0x000000000000000000000000000000000000000000000000000000000000003d",
+          "value": "0x0000000000000000000000000000000000000000000000000000000000000003"
+        },
+        {
+          "address": "0x5fc5360d0400a0fd4f2af552add042d716f1d168",
+          "slot": "0x00000000000000000000000000000000000000000000000000000000000000d4",
+          "value": "0x000000002a300000000000000000000000000000000000000000000000000000"
+        },
+        {
+          "address": "0x5fc5360d0400a0fd4f2af552add042d716f1d168",
+          "slot": "0x00000000000000000000000000000000000000000000000000000000000000d5",
+          "value": "0x000000000000000000000000cfa0388f5ddf905fdc08c45c716c15dc10a14c6f"
+        },
+        {
+          "address": "0xcfa0388f5ddf905fdc08c45c716c15dc10a14c6f",
+          "slot": "0x360894a13ba1a3210667c828492db98dca3e2076cc3735a920a3ca505d382bbc",
+          "value": "0x0000000000000000000000000000000000000000000000000000000000000000"
+        },
+        {
+          "address": "0xcfa0388f5ddf905fdc08c45c716c15dc10a14c6f",
+          "slot": "0xb53127684a568b3173ae13b9f8a6016e243e63b6e8ee1178d6a717850b5d6103",
+          "value": "0x0000000000000000000000000000000000000000000000000000000000000000"
+        },
+        {
+          "address": "0xcfa0388f5ddf905fdc08c45c716c15dc10a14c6f",
+          "slot": "0xa3f0ad74e5423aebfd80d3ef4346578335a9a72aeaee59ff6cb3582b35133d50",
+          "value": "0x0000000000000000000000000000000000000000000000000000000000000000"
+        },
+        {
+          "address": "0x5fc5360d0400a0fd4f2af552add042d716f1d168",
+          "slot": "0xbc357c3911ba8f0b2d250aa43f3b27ee30da9a52969423e5fe8750406bad1f3c",
+          "value": "0x00000000000000000000000058cab81e3d8468a0e90df8cbfacb34535e1de942"
+        },
+        {
+          "address": "0x5fc5360d0400a0fd4f2af552add042d716f1d168",
+          "slot": "0x3aac79ee7c1c70518ad18c8427713a262406f5a8392cf178b0fd527c2a0a7791",
+          "value": "0x00000000000000000000000058cab81e3d8468a0e90df8cbfacb34535e1de942"
+        },
+        {
+          "address": "0x5fc5360d0400a0fd4f2af552add042d716f1d168",
+          "slot": "0x705f305e77b7215f97ad1df41a4f76b8cde792dc19557ede20e9e73c7bb98dde",
+          "value": "0x00000000000000000000000058cab81e3d8468a0e90df8cbfacb34535e1de942"
+        },
+        {
+          "address": "0x5fc5360d0400a0fd4f2af552add042d716f1d168",
+          "slot": "0x52e3d0cfdd28e20d3f40c1859336acf032405e1d7236fa4f6359626baa1517b3",
+          "value": "0x00000000000000000000000058cab81e3d8468a0e90df8cbfacb34535e1de942"
+        },
+        {
+          "address": "0x5fc5360d0400a0fd4f2af552add042d716f1d168",
+          "slot": "0x9372ecb24eec829c50eee0b60dd4e0b7ae66e4b17617dadbd33fe283b99497bc",
+          "value": "0x00000000000000000000000058cab81e3d8468a0e90df8cbfacb34535e1de942"
+        },
+        {
+          "address": "0x5fc5360d0400a0fd4f2af552add042d716f1d168",
+          "slot": "0x1ad8c185f0c7b7415aeae12e3a44183b27728aaed45c01d94402b213c77a164f",
+          "value": "0x00000000000000000000000058cab81e3d8468a0e90df8cbfacb34535e1de942"
+        },
+        {
+          "address": "0x5fc5360d0400a0fd4f2af552add042d716f1d168",
+          "slot": "0xd5316eeca26dc8a082bc598662192e8ac8a2fea878b051a46a83f98cdafba108",
+          "value": "0x00000000000000000000000058cab81e3d8468a0e90df8cbfacb34535e1de942"
+        }
+      ],
+      "identityCalls": [
+        {
+          "address": "0x5fc5360d0400a0fd4f2af552add042d716f1d168",
+          "data": "0x84ef8ffc",
+          "result": "0x000000000000000000000000cfa0388f5ddf905fdc08c45c716c15dc10a14c6f"
+        },
+        {
+          "address": "0xcfa0388f5ddf905fdc08c45c716c15dc10a14c6f",
+          "data": "0xf27a0c92",
+          "result": "0x0000000000000000000000000000000000000000000000000000000000015180"
+        }
+      ],
+      "stateStorage": [
+        {
+          "slot": "0x0000000000000000000000000000000000000000000000000000000000000004",
+          "mask": "0x0000000000000000000000ff0000000000000000000000000000000000000000",
+          "value": "0x0000000000000000000000000000000000000000000000000000000000000000"
+        }
+      ],
+      "accountStorage": [
+        {
+          "slot": "0x0000000000000000000000000000000000000000000000000000000000000006",
+          "mask": "0x00000000000000000000000000000000000000000000000000000000000000ff",
+          "value": "0x0000000000000000000000000000000000000000000000000000000000000000",
+          "accounts": [
+            "owner",
+            "permit2",
+            "pool_manager"
+          ]
+        },
+        {
+          "slot": "0x0000000000000000000000000000000000000000000000000000000000000001",
+          "mask": "0x0000000000000000000000000000ffff00000000000000000000000000000000",
+          "value": "0x0000000000000000000000000000000000000000000000000000000000000000",
+          "accounts": [
+            "owner",
+            "pool_manager"
+          ]
+        }
+      ]
+    }
+  ],
+  "deployments": {
+    "poolManager": "0xbd3881180b547f5fe817545743cfb4343e96b1bc6640dcd70c106b0066e95626",
+    "positionManager": "0xc873e135dc9aaec88489cfbad146b4cb49d6a32e0d80326377784b7ba17670b2",
+    "stateView": "0x7d9c591e0956fd89d98feb4ffcfe8bf1f7a62bd485edd979fa21d104b49878a6",
+    "permit2": "0x5208783f52488f7d3493e5e38311ab707c1d75457fe472a19b0b4d57d66a7fca"
+  }
+}

@@ -24,7 +24,7 @@ def read_views(body):
 
 class DepositContractTests(unittest.TestCase):
     def test_all_producer_requests_and_observed_receipt_variants(self):
-        self.assertEqual(CONTRACT_VERSION, '1.1.0-rc.3')
+        self.assertEqual(CONTRACT_VERSION, '1.1.0-rc.4')
         requests,responses,_=build_fixtures()
         for route in requests:
             validate_request(route,requests[route]);validate_response(route,responses[route])

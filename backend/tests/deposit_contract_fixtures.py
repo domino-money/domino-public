@@ -93,7 +93,7 @@ def build_variants():
     pending['operation']['history'][0].update(transactionHash=HASH,reconciliationState='pending')
     values['pending']=('get',pending)
     from deposit_receipt import ReceiptReconciler, receipt_summary
-    from test_deposit_receipt import context, Rpc, HASH as receipt_hash
+    from test_deposit_receipt import context, Rpc, HASH as receipt_hash, synthetic_review
     for kind in ('erc20_reset','erc20_approval','permit2_approval','mint'):
         selected,prepared=context(kind=kind)
         body=response(ready=True,now=prepared['sourceBlock']['timestamp'])
@@ -103,14 +103,30 @@ def build_variants():
         values[kind]=('prepare',body)
     confirmed=deepcopy(values['mint'][1]);confirmed['walletStep']=None
     confirmed['operation'].update(state='confirmed',outstanding=False,version=3)
-    receipt=receipt_summary(ReceiptReconciler(Rpc()).reconcile(OWNER,*context(),known_hashes=[receipt_hash]))
+    receipt=receipt_summary(ReceiptReconciler(Rpc(), token_guard=synthetic_review).reconcile(OWNER,*context(),known_hashes=[receipt_hash]))
     confirmed['operation']['history'][0].update(transactionHash=receipt_hash,reconciliationState='confirmed',receipt=receipt)
     values['confirmed']=('get',confirmed)
+    # Explicitly synthetic proxy review states for consumer migration tests.
+    proxy = deepcopy(values['mint'][1])
+    proxy['walletStep']['admission'].update(policyVersion='direct_existing_pool_v2',
+        tokenReviews=[{'address': proxy['operation']['selection']['poolKey'][f'currency{i}'],
+                       'reviewId': ('cd' if i == 0 else 'ef') * 32} for i in (0, 1)])
+    values['reviewed-proxy'] = ('prepare', proxy)
+    proxy_receipt = deepcopy(confirmed)
+    for i in (0, 1):
+        proxy_receipt['operation']['history'][0]['receipt']['position'][f'amount{i}Basis'] = 'reviewed_proxy_transfer_events'
+    values['proxy-event-amounts'] = ('get', proxy_receipt)
+    changed = deepcopy(confirmed)
+    for i in (0, 1):
+        position = changed['operation']['history'][0]['receipt']['position']
+        position[f'amount{i}Raw'] = None
+        position[f'amount{i}Basis'] = 'token_review_changed'
+    values['token-review-changed'] = ('get', changed)
     bumped = deepcopy(confirmed)
     rpc = Rpc()
     rpc.transaction.update(gas=hex(300001), maxFeePerGas=hex(201), maxPriorityFeePerGas=hex(101))
     bumped['operation']['history'][0]['receipt'] = receipt_summary(
-        ReceiptReconciler(rpc).reconcile(OWNER, *context(), known_hashes=[receipt_hash]))
+        ReceiptReconciler(rpc, token_guard=synthetic_review).reconcile(OWNER, *context(), known_hashes=[receipt_hash]))
     values['fee_cap_breach'] = ('get', bumped)
     legacy = deepcopy(confirmed)
     legacy['operation']['history'][0]['receipt']['transaction'] = None

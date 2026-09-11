@@ -28,6 +28,7 @@ from discovery import CHAIN_ID, POOL_MANAGER, POSITION_MANAGER, STATE_VIEW, ZERO
 from fork_read_gateway import ForkReadGateway, ForkReadError
 from local_config import load_config
 import uniswap_config
+from reviewed_admission_config import load_candidate_with_digest
 from uniswap_position import UniswapPosition
 
 # Public experiment fixtures; not a production token or pool allowlist.
@@ -158,20 +159,20 @@ def selection(fork, name):
     return result, key
 
 
-def mint_controls(fork, selected, artifact):
+def mint_controls(fork, selected, artifact, token_guard=None):
     """Exercise a real expired mint and then discard that alternate fork history."""
     checkpoint = fork.request('evm_snapshot')
     fork.request('evm_setNextBlockTimestamp', [artifact['preparedDeadline'] + 1])
     fork.mine()
     reverted = fork.send_artifact(artifact)
     fork.mine(2)
-    observation = ReceiptReconciler(fork.deposit_rpc()).reconcile(OWNER, selected, artifact,
+    observation = ReceiptReconciler(fork.deposit_rpc(), token_guard=token_guard).reconcile(OWNER, selected, artifact,
         known_hashes=[reverted['transactionHash']])
     if reverted['status'] != '0x0' or observation['state'] != 'reverted':
         raise DataError('fork_deadline_control_failed')
     if fork.request('evm_revert', [checkpoint]) is not True:
         raise DataError('fork_checkpoint_restore_failed')
-    reorg = ReceiptReconciler(fork.deposit_rpc()).reconcile(OWNER, selected, artifact,
+    reorg = ReceiptReconciler(fork.deposit_rpc(), token_guard=token_guard).reconcile(OWNER, selected, artifact,
         known_hashes=[reverted['transactionHash']], previous_receipt=observation['receipt'])
     if reorg['state'] != 'reorged' or not reorg['reorgDetected']:
         raise DataError('fork_reorg_control_failed')
@@ -180,7 +181,7 @@ def mint_controls(fork, selected, artifact):
         'alternateLocalHistoryDiscarded': True}
 
 
-def run_case(fork, api_key, name):
+def run_case(fork, api_key, name, *, reviewed_manifest=None):
     fork.fresh_block()
     selected, key = selection(fork, name)
     provider_calls, composition_observations = Counter(), []
@@ -211,8 +212,13 @@ def run_case(fork, api_key, name):
             raise
     else:
         raise DataError('fork_missing_admission_control_failed')
-    manifest = test_admission(fork, key)
+    manifest = reviewed_manifest or test_admission(fork, key)
     preparer = DirectDepositPreparer(position, fork.deposit_rpc, admission=manifest)
+    def synthetic_guard(**values):
+        # Original protocol-only experiment, explicitly overriding semantic
+        # admission. The reviewed-profile mode never uses this callback.
+        return {'status': 'matched', 'reviewId': 'f'*64, 'upgradeable': False}
+    token_guard = preparer.token_guard if reviewed_manifest else synthetic_guard
     steps, controls = [], None
     for _ in range(12):
         fork.fresh_block()
@@ -222,16 +228,17 @@ def run_case(fork, api_key, name):
             return {'name': name, 'status': 'failed', 'reason': safe_error(error),
                 'selection': selected, 'steps': steps, 'providerCalls': dict(provider_calls),
                 'compositionObservations': composition_observations,
-                'executionEligible': False, 'testAdmissionOverride': True,
+                'executionEligible': False, 'testAdmissionOverride': reviewed_manifest is None,
                 'missingAdmissionDenied': True}
         validate_issued_artifact(OWNER, selected, artifact)
+        preparer.revalidate(OWNER, selected, artifact)
         if artifact['kind'] == 'mint':
-            controls = mint_controls(fork, selected, artifact)
+            controls = mint_controls(fork, selected, artifact, token_guard)
         before = balances(fork, key)
         native_before = int(fork.request('eth_getBalance', [OWNER, 'latest']), 16)
         receipt = fork.send_artifact(artifact)
         fork.mine(2)  # Artificial local finalization; not Nitro settlement time.
-        result = ReceiptReconciler(fork.deposit_rpc()).reconcile(OWNER, selected, artifact,
+        result = ReceiptReconciler(fork.deposit_rpc(), token_guard=token_guard).reconcile(OWNER, selected, artifact,
             known_hashes=[receipt['transactionHash']])
         after = balances(fork, key)
         native_after = int(fork.request('eth_getBalance', [OWNER, 'latest']), 16)
@@ -266,8 +273,10 @@ def run_case(fork, api_key, name):
                 'steps': steps, 'providerCalls': dict(provider_calls),
                 'compositionObservations': composition_observations,
                 'controls': controls, 'receiptAmountsMatchControlledDeltas': True,
-                'productionAdmission': 'blocked_proxy_tokens', 'executionEligible': False,
-                'missingAdmissionDenied': True, 'testAdmissionOverride': True}
+                'productionAdmission': 'reviewed_candidate_not_activated' if reviewed_manifest else 'blocked_proxy_tokens',
+                'executionEligible': False, 'missingAdmissionDenied': True,
+                'testAdmissionOverride': reviewed_manifest is None,
+                'tokenReviewIds': artifact['admission'].get('tokenReviews')}
     return {'name': name, 'status': 'failed', 'selection': selected, 'steps': steps,
         'providerCalls': dict(provider_calls), 'reason': 'fork_step_limit'}
 
@@ -278,6 +287,8 @@ def main(argv=None):
     parser.add_argument('--uniswap-config', required=True, type=Path)
     parser.add_argument('--case', choices=CASES, action='append')
     parser.add_argument('--output', required=True, type=Path)
+    parser.add_argument('--reviewed-profiles', type=Path,
+        help='Explicit reviewed candidate profiles; no synthetic token-admission override')
     try:
         args = parser.parse_args(argv)
     except DataError as error:
@@ -291,6 +302,12 @@ def main(argv=None):
         'finalityModel': 'Anvil with one slot per epoch; not mainnet finality',
         'startedAt': int(time.time())}
     try:
+        reviewed_manifest = None
+        if args.reviewed_profiles:
+            reviewed_manifest, profile_digest = load_candidate_with_digest(args.reviewed_profiles)
+            report['testAdmissionOverride'] = False
+            report['reviewedManifestId'] = reviewed_manifest['manifestId']
+            report['reviewedProfilesSha256'] = profile_digest
         config = load_config(args.rpc_config)
         api_key = uniswap_config.load_config(args.uniswap_config)['apiKey']
         with ForkReadGateway(config['rpcUrl'], allowed_hosts=config.get('rpcAllowedHosts',
@@ -307,7 +324,7 @@ def main(argv=None):
                     checkpoint = fork.request('evm_snapshot')
                     print(json.dumps({'case': name, 'status': 'started'}), flush=True)
                     try:
-                        case = run_case(fork, api_key, name)
+                        case = run_case(fork, api_key, name, reviewed_manifest=reviewed_manifest)
                     except (DataError, DepositError, ForkReadError) as error:
                         case = {'name': name, 'status': 'failed', 'reason': safe_error(error)}
                     report['cases'].append(case)

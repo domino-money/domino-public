@@ -17,8 +17,9 @@ from eth_hash.auto import keccak
 from pydantic import ValidationError
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from deposit_receipt import ReceiptReconciler, receipt_summary, validate_issued_artifact, PERMIT2, TRANSFER, APPROVAL, PERMIT_APPROVAL, MODIFY
+from deposit_receipt import ReceiptReconciler, receipt_summary, validate_issued_artifact, PERMIT2, TRANSFER, APPROVAL, PERMIT_APPROVAL, MODIFY, MAX_RPC_REQUESTS
 from deposit_models import ReceiptSummary
+from deposit_rpc import DepositRpc
 from discovery import CHAIN_ID, POOL_MANAGER, POSITION_MANAGER, ZERO, DataError
 from lp_mint_inspection import inspect_mint
 from test_lp_mint_inspection import fixture, OWNER, OTHER, TOKEN0, TOKEN1, DEADLINE
@@ -57,7 +58,7 @@ def context(*, native=False, kind='mint'):
     artifact={'kind':kind,'transaction':transaction,'sourceBlock':{'number':SOURCE,'hash':block_hash(SOURCE),'timestamp':DEADLINE-120},
         'expiresAt':DEADLINE-90,'preparedDeadline':DEADLINE,'mintedBounds':bounds,
         'balances':{'nativeRaw':'999999999','token0Raw':'1000','token1Raw':'2000'},
-        'admission':{'manifestId':'a'*64,'policyVersion':'direct_existing_pool_v1'},
+        'admission':{'manifestId':'a'*64,'policyVersion':'direct_existing_pool_v1','tokenReviews':None},
         'simulation':{'status':'passed','estimatedGasRaw':'200000','blockNumber':SOURCE,'blockHash':block_hash(SOURCE)}}
     return selection,artifact
 
@@ -124,11 +125,168 @@ class Rpc:
         raise AssertionError(method)
 
 
-def reconcile(rpc, **changes):
-    return ReceiptReconciler(rpc).reconcile(OWNER,rpc.selection,rpc.artifact,known_hashes=[HASH],**changes)
+def synthetic_review(*, request, currency, admission, before, block):
+    """An explicit offline review fixture, never a default production policy."""
+    return {'status': 'matched', 'reviewId': 'f'*64, 'upgradeable': False}
+
+
+def reconcile(rpc, *, token_guard=synthetic_review, **changes):
+    return ReceiptReconciler(rpc, token_guard=token_guard).reconcile(OWNER,rpc.selection,rpc.artifact,known_hashes=[HASH],**changes)
 
 
 class DepositReceiptTests(unittest.TestCase):
+    def test_v2_review_refs_bind_exact_selected_currencies_in_canonical_order(self):
+        for native in (False, True):
+            rpc = Rpc(native=native)
+            currencies = [currency for currency in (rpc.selection['poolKey']['currency0'], rpc.selection['poolKey']['currency1']) if currency != ZERO]
+            refs = [{'address': currency, 'reviewId': 'f'*64} for currency in currencies]
+            rpc.artifact['admission'].update(policyVersion='direct_existing_pool_v2', tokenReviews=refs)
+            self.assertEqual(validate_issued_artifact(OWNER, rpc.selection, rpc.artifact), rpc.artifact)
+            invalid = [[{'address': OTHER, 'reviewId': 'f'*64}], []]
+            if len(refs) == 2:
+                invalid.extend([list(reversed(refs)), refs[:1]])
+            for values in invalid:
+                changed = deepcopy(rpc.artifact)
+                changed['admission']['tokenReviews'] = values
+                with self.subTest(native=native, refs=values), self.assertRaises(DataError):
+                    validate_issued_artifact(OWNER, rpc.selection, changed)
+
+    def test_unguarded_legacy_mint_keeps_nft_and_gas_but_cannot_claim_token_amounts(self):
+        rpc = Rpc()
+        result = reconcile(rpc, token_guard=None)
+        self.assertEqual(result['state'], 'confirmed')
+        self.assertTrue(result['nonceFinalized'])
+        summary = receipt_summary(result)
+        self.assertEqual(summary['position']['tokenId'], str(TOKEN_ID))
+        self.assertEqual(summary['grossGasFeeRaw'], '10000000')
+        for index in (0, 1):
+            self.assertIsNone(summary['position'][f'amount{index}Raw'])
+            self.assertEqual(summary['position'][f'amount{index}Basis'], 'legacy_token_review_unqualified')
+        self.assertEqual(result['transactionHash'], HASH)
+
+    def test_guard_cannot_substitute_a_different_review_for_issued_v2_identity(self):
+        rpc = Rpc()
+        rpc.artifact['admission'].update(policyVersion='direct_existing_pool_v2', tokenReviews=[
+            {'address': token, 'reviewId': 'e'*64} for token in (TOKEN0, TOKEN1)])
+        result = reconcile(rpc)  # The explicit test guard returns review f..., not e....
+        self.assertEqual(result['state'], 'confirmed')
+        position = receipt_summary(result)['position']
+        self.assertIsNone(position['amount0Raw'])
+        self.assertEqual(position['amount0Basis'], 'token_review_unavailable')
+
+    def test_changed_implementation_downgrades_only_that_currency(self):
+        def guard(**values):
+            return {'status': 'changed' if values['currency'] == TOKEN0 else 'matched',
+                    'reviewId': 'f'*64, 'upgradeable': values['currency'] == TOKEN0}
+        result = reconcile(Rpc(), token_guard=guard)
+        self.assertEqual(result['state'], 'confirmed')
+        summary = receipt_summary(result)['position']
+        self.assertIsNone(summary['amount0Raw'])
+        self.assertEqual(summary['amount0Basis'], 'token_review_changed')
+        self.assertEqual(summary['amount1Raw'], '200')
+        self.assertEqual(summary['amount1Basis'], 'admitted_standard_transfer_events')
+        self.assertEqual(summary['recipient'], OWNER)
+        self.assertIsNone(result['receipt']['mint']['tokens'][0]['ownerDebitRaw'])
+
+    def test_reviewed_proxy_quantities_use_historical_endpoints_and_distinct_basis(self):
+        seen = []
+        def guard(**values):
+            seen.append(values)
+            return {'status': 'matched', 'reviewId': 'f'*64, 'upgradeable': True}
+        result = reconcile(Rpc(), token_guard=guard)
+        position = receipt_summary(result)['position']
+        self.assertEqual(position['amount0Raw'], '100')
+        self.assertEqual(position['amount0Basis'], 'reviewed_proxy_transfer_events')
+        self.assertEqual(position['amount1Basis'], 'reviewed_proxy_transfer_events')
+        self.assertEqual(len(seen), 2)
+        for check in seen:
+            self.assertEqual(check['before']['number'], MINED-1)
+            self.assertEqual(check['before']['hash'], block_hash(MINED-1))
+            self.assertEqual(check['block']['number'], MINED)
+            self.assertEqual(check['block']['hash'], block_hash(MINED))
+            self.assertNotEqual(check['block']['number'], HEAD)
+        # Evidence is explicitly endpoint-based; it is not a claim about an
+        # undetected transient implementation change within the same block.
+        proof = result['receipt']['mint']['tokens'][0]['review']
+        self.assertEqual(proof['beforeBlock']['number'], MINED-1)
+        self.assertEqual(proof['receiptBlock']['hash'], block_hash(MINED))
+
+    def test_later_upgrade_does_not_rewrite_verified_historical_identity(self):
+        def historical_guard(**values):
+            return {'status': 'matched' if values['block']['number'] <= MINED else 'changed',
+                    'reviewId': 'f'*64, 'upgradeable': True}
+        rpc = Rpc()
+        first = reconcile(rpc, token_guard=historical_guard)
+        old_receipt = deepcopy(first['receipt'])
+        rpc.head += 50
+        later = reconcile(rpc, token_guard=historical_guard, previous_receipt=old_receipt)
+        self.assertEqual(later['state'], 'confirmed')
+        self.assertEqual(later['receipt']['mint']['tokens'], old_receipt['mint']['tokens'])
+        self.assertEqual(receipt_summary(later)['position']['amount0Raw'], '100')
+
+    def test_unavailable_or_malformed_guard_does_not_hide_already_minted_nft(self):
+        def failed(**values):
+            raise RuntimeError('private-provider-canary')
+        guards = [failed,
+            lambda **values: {'status': 'matched', 'reviewId': None, 'upgradeable': True},
+            lambda **values: {'status': 'matched', 'reviewId': 'f'*64, 'upgradeable': True, 'extra': 'secret'},
+            lambda **values: {'status': 'unknown', 'reviewId': None, 'upgradeable': None}]
+        for guard in guards:
+            result = reconcile(Rpc(), token_guard=guard)
+            self.assertEqual(result['state'], 'confirmed')
+            summary = receipt_summary(result)
+            self.assertEqual(summary['position']['tokenId'], str(TOKEN_ID))
+            self.assertIsNone(summary['position']['amount0Raw'])
+            self.assertEqual(summary['position']['amount0Basis'], 'token_review_unavailable')
+            self.assertNotIn('private-provider-canary', json.dumps(result))
+
+    def test_changed_or_missing_review_never_qualifies_approval_effect(self):
+        for kind in ('erc20_reset', 'erc20_approval', 'permit2_approval'):
+            for status in ('changed', 'unavailable', 'legacy_unqualified'):
+                with self.subTest(kind=kind, status=status):
+                    result = reconcile(Rpc(kind=kind), token_guard=lambda **values: {
+                        'status': status, 'reviewId': 'f'*64, 'upgradeable': True})
+                    self.assertEqual(result['state'], 'pending' if status == 'unavailable' else 'mismatched')
+                    self.assertEqual(result['reason'], 'token_review_changed' if status == 'changed' else 'token_review_unavailable')
+                    self.assertTrue(result['nonceFinalized'])
+                    self.assertTrue(result['nonceConsumed'])
+                    self.assertEqual(result['receipt']['status'], 'success')
+                    self.assertIsNone(result['receipt']['approval']['amountRaw'])
+                    self.assertFalse(result['retryAllowed'])
+
+    def test_reverted_transaction_reconciles_without_current_token_admission(self):
+        def denied(**values):
+            self.fail('Reverted effects must not depend on current token admission.')
+        rpc = Rpc(kind='erc20_approval')
+        rpc.receipt.update(status='0x0', logs=[])
+        result = reconcile(rpc, token_guard=denied)
+        self.assertEqual(result['state'], 'reverted')
+        self.assertTrue(result['nonceFinalized'])
+
+    def test_parent_hash_mismatch_prevents_amount_qualification(self):
+        rpc = Rpc()
+        request = rpc.request
+        def inconsistent(method, params):
+            result = request(method, params)
+            if method == 'eth_getBlockByNumber' and result['number'] == hex(MINED):
+                result['parentHash'] = block_hash(1)
+            return result
+        rpc.request = inconsistent
+        result = reconcile(rpc)
+        self.assertEqual(result['state'], 'confirmed')
+        self.assertEqual(receipt_summary(result)['position']['amount0Basis'], 'token_review_unavailable')
+
+    def test_legacy_projection_does_not_invent_review_evidence_or_mutate_history(self):
+        result = reconcile(Rpc())
+        for token in result['receipt']['mint']['tokens']:
+            token.pop('review')
+        stored = deepcopy(result)
+        position = receipt_summary(result)['position']
+        self.assertIsNone(position['amount0Raw'])
+        self.assertEqual(position['amount0Basis'], 'legacy_token_review_unqualified')
+        self.assertEqual(result, stored)
+        self.assertEqual(result['receipt']['mint']['tokens'][0]['depositedRaw'], '100')
+
     def test_finalized_receipt_requires_nonce_consumed_at_finalized_snapshot(self):
         rpc=Rpc()
         original=rpc.request
@@ -275,6 +433,72 @@ class DepositReceiptTests(unittest.TestCase):
         rpc=Rpc();result=ReceiptReconciler(rpc).reconcile(OWNER,rpc.selection,rpc.artifact)
         self.assertEqual(result['transactionHash'],HASH);self.assertEqual(result['state'],'confirmed')
         self.assertTrue(any(method=='eth_getBlockByNumber' and params[1] for method,params in rpc.calls))
+
+    def test_maximum_admitted_identity_reads_fit_resumed_scan_and_stale_hints(self):
+        from test_token_admission import profile, seal, word, ProfileRpc, OWNER as REVIEW_OWNER
+        from token_admission import TokenAdmission, validate_profile, validate_check_budget, check_cost
+        # Resume at source+1, then scan all 16 blocks before finding the mint.
+        with patch.multiple(sys.modules[__name__], MINED=SOURCE+16, FINALIZED=SOURCE+18):
+            rpc=Rpc();profiles=[];codes={};storage={};responses={}
+            for currency in (rpc.selection['poolKey']['currency0'],rpc.selection['poolKey']['currency1']):
+                p=profile();p.update(address=currency,admin='0x'+'77'*20)
+                p['implementation']['address']='0x'+'66'*20;p['dependencies'][0]['address']=p['admin']
+                p['identityStorage']=[{'address':p['admin'],'slot':word(100+i),'value':word(REVIEW_OWNER)} for i in range(10)]
+                p['identityCalls']=[{'address':p['admin'],'data':'0x'+(100+i).to_bytes(4,'big').hex(),'result':word(REVIEW_OWNER)} for i in range(2)]
+                p['stateStorage']=[];p['accountStorage']=[]
+                p=validate_profile(seal(p));profiles.append(p)
+                fake=ProfileRpc(p);codes.update(fake.codes);storage.update(fake.storage);responses.update(fake.responses)
+            validate_check_budget(profiles)
+            self.assertEqual(sum(check_cost(p)[0] for p in profiles),36)
+            rpc.artifact['admission'].update(policyVersion='direct_existing_pool_v2',
+                tokenReviews=[{'address':p['address'],'reviewId':p['reviewId']} for p in profiles])
+            hints=['0x'+i.to_bytes(32,'big').hex() for i in range(1,9)]
+            previous_hash='0x'+(9).to_bytes(32,'big').hex()
+            for hint in [*hints,previous_hash]:
+                old=deepcopy(rpc.transaction)
+                old.update(hash=hint,blockHash='0x'+'cc'*32,blockNumber=hex(SOURCE+14))
+                rpc.by_hash[hint]=old
+            previous={'transactionHash':previous_hash,'blockNumber':SOURCE+14,'blockHash':block_hash(SOURCE+14)}
+            cursor={'nextBlock':SOURCE+1,'nextTransactionIndex':0,'previousBlockHash':block_hash(SOURCE),
+                'partialBlockHash':None,'sourceBlockHash':block_hash(SOURCE)}
+            requests=[];identity_reads=[]
+            def transport(url,body,**options):
+                # An actual bounded DepositRpc processes this offline transport;
+                # no endpoint, key, or network is used by the test.
+                method,params=body['method'],body['params'];requests.append(method)
+                if method=='eth_getCode' and params[0] in codes:
+                    result=codes[params[0]];identity_reads.append(method)
+                elif method=='eth_getStorageAt':
+                    result=storage[params[0],params[1]];identity_reads.append(method)
+                elif method=='eth_call' and (params[0]['to'],params[0]['data']) in responses:
+                    result=responses[params[0]['to'],params[0]['data']];identity_reads.append(method)
+                else:result=rpc.request(method,params)
+                return {'jsonrpc':'2.0','id':body['id'],'result':result}
+            adapter=DepositRpc('https://rpc.mainnet.chain.robinhood.com',transport=transport,max_requests=160)
+            engine=ReceiptReconciler(adapter,token_guard=TokenAdmission(profiles).receipt)
+            outcome=engine.reconcile(OWNER,rpc.selection,rpc.artifact,known_hashes=hints,
+                previous_receipt=previous,scan_cursor=cursor)
+            self.assertEqual(outcome['state'],'confirmed');self.assertTrue(outcome['nonceFinalized'])
+            self.assertEqual(receipt_summary(outcome)['position']['amount0Raw'],'100')
+            self.assertEqual(receipt_summary(outcome)['position']['amount1Basis'],'reviewed_proxy_transfer_events')
+            self.assertEqual(len(identity_reads),72)
+            self.assertEqual(len(requests),145);self.assertEqual(adapter.count,145)
+            self.assertEqual(engine._count,145);self.assertLess(engine._count,MAX_RPC_REQUESTS)
+
+    def test_receipt_shared_budget_stops_overlong_guard_without_retry_or_success(self):
+        rpc=Rpc();requests=[]
+        def transport(url,body,**options):
+            requests.append(body['method'])
+            return {'jsonrpc':'2.0','id':body['id'],'result':rpc.request(body['method'],body['params'])}
+        def excessive_guard(*,request,**context):
+            for _ in range(MAX_RPC_REQUESTS+1):request('eth_chainId',[])
+            self.fail('The shared receipt request budget was not enforced')
+        adapter=DepositRpc('https://rpc.mainnet.chain.robinhood.com',transport=transport,max_requests=160)
+        engine=ReceiptReconciler(adapter,token_guard=excessive_guard)
+        with self.assertRaisesRegex(DataError,'^deposit_receipt_request_budget$'):
+            engine.reconcile(OWNER,rpc.selection,rpc.artifact,known_hashes=[HASH])
+        self.assertEqual(MAX_RPC_REQUESTS,160)
+        self.assertEqual(len(requests),160);self.assertEqual(adapter.count,160)
 
     def test_scan_checkpoints_advance_without_lifetime_indexing(self):
         rpc=Rpc();engine=ReceiptReconciler(rpc,max_blocks=2)
@@ -501,7 +725,7 @@ contract StandardApprovalReceipt {
             if raw is not None and int(self.rpc('eth_getBlockByNumber',['latest',False])['number'],16) >= int(raw['blockNumber'],16): break
             time.sleep(.01)
         else: self.fail('local receipt unavailable')
-        result=ReceiptReconciler(self.rpc).reconcile(owner,selection,artifact,known_hashes=[digest])
+        result=ReceiptReconciler(self.rpc, token_guard=synthetic_review).reconcile(owner,selection,artifact,known_hashes=[digest])
         self.assertIn(result['state'],('pending','confirmed'),repr(result))
         self.assertEqual(result['receipt']['approval']['amountRaw'],'202')
         self.assertEqual(result['receipt']['transactionHash'],digest)

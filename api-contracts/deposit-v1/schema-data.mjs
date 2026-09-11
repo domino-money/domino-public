@@ -19,7 +19,7 @@ export const SCHEMAS = {
       ],
       "title": "GetRequest",
       "type": "object",
-      "x-contract-version": "1.1.0-rc.3",
+      "x-contract-version": "1.1.0-rc.4",
       "x-domino-constraints": [
         "Closed strict fields, exact raw integer strings, safe integer selectors.",
         "SIWE-derived owner; no browser-selected recipient or provider.",
@@ -42,9 +42,28 @@ export const SCHEMAS = {
               "type": "string"
             },
             "policyVersion": {
-              "const": "direct_existing_pool_v1",
+              "enum": [
+                "direct_existing_pool_v1",
+                "direct_existing_pool_v2"
+              ],
               "title": "Policyversion",
               "type": "string"
+            },
+            "tokenReviews": {
+              "anyOf": [
+                {
+                  "items": {
+                    "$ref": "#/$defs/TokenReviewRef"
+                  },
+                  "maxItems": 2,
+                  "type": "array"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Tokenreviews"
             }
           },
           "required": [
@@ -618,6 +637,18 @@ export const SCHEMAS = {
         "ReceiptPosition": {
           "additionalProperties": false,
           "properties": {
+            "amount0Basis": {
+              "enum": [
+                "native_net_unavailable",
+                "admitted_standard_transfer_events",
+                "reviewed_proxy_transfer_events",
+                "token_review_changed",
+                "token_review_unavailable",
+                "legacy_token_review_unqualified"
+              ],
+              "title": "Amount0Basis",
+              "type": "string"
+            },
             "amount0Raw": {
               "anyOf": [
                 {
@@ -630,6 +661,18 @@ export const SCHEMAS = {
                 }
               ],
               "title": "Amount0Raw"
+            },
+            "amount1Basis": {
+              "enum": [
+                "native_net_unavailable",
+                "admitted_standard_transfer_events",
+                "reviewed_proxy_transfer_events",
+                "token_review_changed",
+                "token_review_unavailable",
+                "legacy_token_review_unqualified"
+              ],
+              "title": "Amount1Basis",
+              "type": "string"
             },
             "amount1Raw": {
               "anyOf": [
@@ -720,7 +763,9 @@ export const SCHEMAS = {
             "currentOwnerStatus",
             "ownershipObservedBlock",
             "amount0Raw",
-            "amount1Raw"
+            "amount1Raw",
+            "amount0Basis",
+            "amount1Basis"
           ],
           "title": "ReceiptPosition",
           "type": "object"
@@ -1049,6 +1094,31 @@ export const SCHEMAS = {
           "title": "StepSummary",
           "type": "object"
         },
+        "TokenReviewRef": {
+          "additionalProperties": false,
+          "properties": {
+            "address": {
+              "maxLength": 42,
+              "minLength": 42,
+              "pattern": "^0x[0-9a-f]{40}$",
+              "title": "Address",
+              "type": "string"
+            },
+            "reviewId": {
+              "maxLength": 64,
+              "minLength": 64,
+              "pattern": "^[0-9a-f]{64}$",
+              "title": "Reviewid",
+              "type": "string"
+            }
+          },
+          "required": [
+            "address",
+            "reviewId"
+          ],
+          "title": "TokenReviewRef",
+          "type": "object"
+        },
         "WalletTransaction": {
           "additionalProperties": false,
           "properties": {
@@ -1138,7 +1208,7 @@ export const SCHEMAS = {
           "type": "boolean"
         },
         "contractVersion": {
-          "const": "1.1.0-rc.3",
+          "const": "1.1.0-rc.4",
           "title": "Contractversion",
           "type": "string"
         },
@@ -1171,7 +1241,7 @@ export const SCHEMAS = {
       ],
       "title": "AllowanceResponse",
       "type": "object",
-      "x-contract-version": "1.1.0-rc.3",
+      "x-contract-version": "1.1.0-rc.4",
       "x-domino-constraints": [
         "Closed strict fields, exact raw integer strings, safe integer selectors.",
         "SIWE-derived owner; no browser-selected recipient or provider.",
@@ -1208,7 +1278,7 @@ export const SCHEMAS = {
       ],
       "title": "ChangeRequest",
       "type": "object",
-      "x-contract-version": "1.1.0-rc.3",
+      "x-contract-version": "1.1.0-rc.4",
       "x-domino-constraints": [
         "Closed strict fields, exact raw integer strings, safe integer selectors.",
         "SIWE-derived owner; no browser-selected recipient or provider.",
@@ -1231,9 +1301,28 @@ export const SCHEMAS = {
               "type": "string"
             },
             "policyVersion": {
-              "const": "direct_existing_pool_v1",
+              "enum": [
+                "direct_existing_pool_v1",
+                "direct_existing_pool_v2"
+              ],
               "title": "Policyversion",
               "type": "string"
+            },
+            "tokenReviews": {
+              "anyOf": [
+                {
+                  "items": {
+                    "$ref": "#/$defs/TokenReviewRef"
+                  },
+                  "maxItems": 2,
+                  "type": "array"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Tokenreviews"
             }
           },
           "required": [
@@ -1682,6 +1771,18 @@ export const SCHEMAS = {
         "ReceiptPosition": {
           "additionalProperties": false,
           "properties": {
+            "amount0Basis": {
+              "enum": [
+                "native_net_unavailable",
+                "admitted_standard_transfer_events",
+                "reviewed_proxy_transfer_events",
+                "token_review_changed",
+                "token_review_unavailable",
+                "legacy_token_review_unqualified"
+              ],
+              "title": "Amount0Basis",
+              "type": "string"
+            },
             "amount0Raw": {
               "anyOf": [
                 {
@@ -1694,6 +1795,18 @@ export const SCHEMAS = {
                 }
               ],
               "title": "Amount0Raw"
+            },
+            "amount1Basis": {
+              "enum": [
+                "native_net_unavailable",
+                "admitted_standard_transfer_events",
+                "reviewed_proxy_transfer_events",
+                "token_review_changed",
+                "token_review_unavailable",
+                "legacy_token_review_unqualified"
+              ],
+              "title": "Amount1Basis",
+              "type": "string"
             },
             "amount1Raw": {
               "anyOf": [
@@ -1784,7 +1897,9 @@ export const SCHEMAS = {
             "currentOwnerStatus",
             "ownershipObservedBlock",
             "amount0Raw",
-            "amount1Raw"
+            "amount1Raw",
+            "amount0Basis",
+            "amount1Basis"
           ],
           "title": "ReceiptPosition",
           "type": "object"
@@ -2113,6 +2228,31 @@ export const SCHEMAS = {
           "title": "StepSummary",
           "type": "object"
         },
+        "TokenReviewRef": {
+          "additionalProperties": false,
+          "properties": {
+            "address": {
+              "maxLength": 42,
+              "minLength": 42,
+              "pattern": "^0x[0-9a-f]{40}$",
+              "title": "Address",
+              "type": "string"
+            },
+            "reviewId": {
+              "maxLength": 64,
+              "minLength": 64,
+              "pattern": "^[0-9a-f]{64}$",
+              "title": "Reviewid",
+              "type": "string"
+            }
+          },
+          "required": [
+            "address",
+            "reviewId"
+          ],
+          "title": "TokenReviewRef",
+          "type": "object"
+        },
         "WalletTransaction": {
           "additionalProperties": false,
           "properties": {
@@ -2199,7 +2339,7 @@ export const SCHEMAS = {
           "type": "boolean"
         },
         "contractVersion": {
-          "const": "1.1.0-rc.3",
+          "const": "1.1.0-rc.4",
           "title": "Contractversion",
           "type": "string"
         },
@@ -2231,7 +2371,7 @@ export const SCHEMAS = {
       ],
       "title": "OperationResponse",
       "type": "object",
-      "x-contract-version": "1.1.0-rc.3",
+      "x-contract-version": "1.1.0-rc.4",
       "x-domino-constraints": [
         "Closed strict fields, exact raw integer strings, safe integer selectors.",
         "SIWE-derived owner; no browser-selected recipient or provider.",
@@ -2420,7 +2560,7 @@ export const SCHEMAS = {
       ],
       "title": "CreateRequest",
       "type": "object",
-      "x-contract-version": "1.1.0-rc.3",
+      "x-contract-version": "1.1.0-rc.4",
       "x-domino-constraints": [
         "Closed strict fields, exact raw integer strings, safe integer selectors.",
         "SIWE-derived owner; no browser-selected recipient or provider.",
@@ -2443,9 +2583,28 @@ export const SCHEMAS = {
               "type": "string"
             },
             "policyVersion": {
-              "const": "direct_existing_pool_v1",
+              "enum": [
+                "direct_existing_pool_v1",
+                "direct_existing_pool_v2"
+              ],
               "title": "Policyversion",
               "type": "string"
+            },
+            "tokenReviews": {
+              "anyOf": [
+                {
+                  "items": {
+                    "$ref": "#/$defs/TokenReviewRef"
+                  },
+                  "maxItems": 2,
+                  "type": "array"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Tokenreviews"
             }
           },
           "required": [
@@ -2894,6 +3053,18 @@ export const SCHEMAS = {
         "ReceiptPosition": {
           "additionalProperties": false,
           "properties": {
+            "amount0Basis": {
+              "enum": [
+                "native_net_unavailable",
+                "admitted_standard_transfer_events",
+                "reviewed_proxy_transfer_events",
+                "token_review_changed",
+                "token_review_unavailable",
+                "legacy_token_review_unqualified"
+              ],
+              "title": "Amount0Basis",
+              "type": "string"
+            },
             "amount0Raw": {
               "anyOf": [
                 {
@@ -2906,6 +3077,18 @@ export const SCHEMAS = {
                 }
               ],
               "title": "Amount0Raw"
+            },
+            "amount1Basis": {
+              "enum": [
+                "native_net_unavailable",
+                "admitted_standard_transfer_events",
+                "reviewed_proxy_transfer_events",
+                "token_review_changed",
+                "token_review_unavailable",
+                "legacy_token_review_unqualified"
+              ],
+              "title": "Amount1Basis",
+              "type": "string"
             },
             "amount1Raw": {
               "anyOf": [
@@ -2996,7 +3179,9 @@ export const SCHEMAS = {
             "currentOwnerStatus",
             "ownershipObservedBlock",
             "amount0Raw",
-            "amount1Raw"
+            "amount1Raw",
+            "amount0Basis",
+            "amount1Basis"
           ],
           "title": "ReceiptPosition",
           "type": "object"
@@ -3323,6 +3508,31 @@ export const SCHEMAS = {
             "reportedEffectConflicts"
           ],
           "title": "StepSummary",
+          "type": "object"
+        },
+        "TokenReviewRef": {
+          "additionalProperties": false,
+          "properties": {
+            "address": {
+              "maxLength": 42,
+              "minLength": 42,
+              "pattern": "^0x[0-9a-f]{40}$",
+              "title": "Address",
+              "type": "string"
+            },
+            "reviewId": {
+              "maxLength": 64,
+              "minLength": 64,
+              "pattern": "^[0-9a-f]{64}$",
+              "title": "Reviewid",
+              "type": "string"
+            }
+          },
+          "required": [
+            "address",
+            "reviewId"
+          ],
+          "title": "TokenReviewRef",
           "type": "object"
         },
         "WalletTransaction": {
@@ -3411,7 +3621,7 @@ export const SCHEMAS = {
           "type": "boolean"
         },
         "contractVersion": {
-          "const": "1.1.0-rc.3",
+          "const": "1.1.0-rc.4",
           "title": "Contractversion",
           "type": "string"
         },
@@ -3443,7 +3653,7 @@ export const SCHEMAS = {
       ],
       "title": "OperationResponse",
       "type": "object",
-      "x-contract-version": "1.1.0-rc.3",
+      "x-contract-version": "1.1.0-rc.4",
       "x-domino-constraints": [
         "Closed strict fields, exact raw integer strings, safe integer selectors.",
         "SIWE-derived owner; no browser-selected recipient or provider.",
@@ -3473,7 +3683,7 @@ export const SCHEMAS = {
       ],
       "title": "GetRequest",
       "type": "object",
-      "x-contract-version": "1.1.0-rc.3",
+      "x-contract-version": "1.1.0-rc.4",
       "x-domino-constraints": [
         "Closed strict fields, exact raw integer strings, safe integer selectors.",
         "SIWE-derived owner; no browser-selected recipient or provider.",
@@ -3496,9 +3706,28 @@ export const SCHEMAS = {
               "type": "string"
             },
             "policyVersion": {
-              "const": "direct_existing_pool_v1",
+              "enum": [
+                "direct_existing_pool_v1",
+                "direct_existing_pool_v2"
+              ],
               "title": "Policyversion",
               "type": "string"
+            },
+            "tokenReviews": {
+              "anyOf": [
+                {
+                  "items": {
+                    "$ref": "#/$defs/TokenReviewRef"
+                  },
+                  "maxItems": 2,
+                  "type": "array"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Tokenreviews"
             }
           },
           "required": [
@@ -3947,6 +4176,18 @@ export const SCHEMAS = {
         "ReceiptPosition": {
           "additionalProperties": false,
           "properties": {
+            "amount0Basis": {
+              "enum": [
+                "native_net_unavailable",
+                "admitted_standard_transfer_events",
+                "reviewed_proxy_transfer_events",
+                "token_review_changed",
+                "token_review_unavailable",
+                "legacy_token_review_unqualified"
+              ],
+              "title": "Amount0Basis",
+              "type": "string"
+            },
             "amount0Raw": {
               "anyOf": [
                 {
@@ -3959,6 +4200,18 @@ export const SCHEMAS = {
                 }
               ],
               "title": "Amount0Raw"
+            },
+            "amount1Basis": {
+              "enum": [
+                "native_net_unavailable",
+                "admitted_standard_transfer_events",
+                "reviewed_proxy_transfer_events",
+                "token_review_changed",
+                "token_review_unavailable",
+                "legacy_token_review_unqualified"
+              ],
+              "title": "Amount1Basis",
+              "type": "string"
             },
             "amount1Raw": {
               "anyOf": [
@@ -4049,7 +4302,9 @@ export const SCHEMAS = {
             "currentOwnerStatus",
             "ownershipObservedBlock",
             "amount0Raw",
-            "amount1Raw"
+            "amount1Raw",
+            "amount0Basis",
+            "amount1Basis"
           ],
           "title": "ReceiptPosition",
           "type": "object"
@@ -4378,6 +4633,31 @@ export const SCHEMAS = {
           "title": "StepSummary",
           "type": "object"
         },
+        "TokenReviewRef": {
+          "additionalProperties": false,
+          "properties": {
+            "address": {
+              "maxLength": 42,
+              "minLength": 42,
+              "pattern": "^0x[0-9a-f]{40}$",
+              "title": "Address",
+              "type": "string"
+            },
+            "reviewId": {
+              "maxLength": 64,
+              "minLength": 64,
+              "pattern": "^[0-9a-f]{64}$",
+              "title": "Reviewid",
+              "type": "string"
+            }
+          },
+          "required": [
+            "address",
+            "reviewId"
+          ],
+          "title": "TokenReviewRef",
+          "type": "object"
+        },
         "WalletTransaction": {
           "additionalProperties": false,
           "properties": {
@@ -4464,7 +4744,7 @@ export const SCHEMAS = {
           "type": "boolean"
         },
         "contractVersion": {
-          "const": "1.1.0-rc.3",
+          "const": "1.1.0-rc.4",
           "title": "Contractversion",
           "type": "string"
         },
@@ -4496,7 +4776,7 @@ export const SCHEMAS = {
       ],
       "title": "OperationResponse",
       "type": "object",
-      "x-contract-version": "1.1.0-rc.3",
+      "x-contract-version": "1.1.0-rc.4",
       "x-domino-constraints": [
         "Closed strict fields, exact raw integer strings, safe integer selectors.",
         "SIWE-derived owner; no browser-selected recipient or provider.",
@@ -4538,7 +4818,7 @@ export const SCHEMAS = {
       },
       "title": "ListRequest",
       "type": "object",
-      "x-contract-version": "1.1.0-rc.3",
+      "x-contract-version": "1.1.0-rc.4",
       "x-domino-constraints": [
         "Closed strict fields, exact raw integer strings, safe integer selectors.",
         "SIWE-derived owner; no browser-selected recipient or provider.",
@@ -4869,6 +5149,18 @@ export const SCHEMAS = {
         "ReceiptPosition": {
           "additionalProperties": false,
           "properties": {
+            "amount0Basis": {
+              "enum": [
+                "native_net_unavailable",
+                "admitted_standard_transfer_events",
+                "reviewed_proxy_transfer_events",
+                "token_review_changed",
+                "token_review_unavailable",
+                "legacy_token_review_unqualified"
+              ],
+              "title": "Amount0Basis",
+              "type": "string"
+            },
             "amount0Raw": {
               "anyOf": [
                 {
@@ -4881,6 +5173,18 @@ export const SCHEMAS = {
                 }
               ],
               "title": "Amount0Raw"
+            },
+            "amount1Basis": {
+              "enum": [
+                "native_net_unavailable",
+                "admitted_standard_transfer_events",
+                "reviewed_proxy_transfer_events",
+                "token_review_changed",
+                "token_review_unavailable",
+                "legacy_token_review_unqualified"
+              ],
+              "title": "Amount1Basis",
+              "type": "string"
             },
             "amount1Raw": {
               "anyOf": [
@@ -4971,7 +5275,9 @@ export const SCHEMAS = {
             "currentOwnerStatus",
             "ownershipObservedBlock",
             "amount0Raw",
-            "amount1Raw"
+            "amount1Raw",
+            "amount0Basis",
+            "amount1Basis"
           ],
           "title": "ReceiptPosition",
           "type": "object"
@@ -5274,7 +5580,7 @@ export const SCHEMAS = {
           "type": "boolean"
         },
         "contractVersion": {
-          "const": "1.1.0-rc.3",
+          "const": "1.1.0-rc.4",
           "title": "Contractversion",
           "type": "string"
         },
@@ -5320,7 +5626,7 @@ export const SCHEMAS = {
       ],
       "title": "ListResponse",
       "type": "object",
-      "x-contract-version": "1.1.0-rc.3",
+      "x-contract-version": "1.1.0-rc.4",
       "x-domino-constraints": [
         "Closed strict fields, exact raw integer strings, safe integer selectors.",
         "SIWE-derived owner; no browser-selected recipient or provider.",
@@ -5357,7 +5663,7 @@ export const SCHEMAS = {
       ],
       "title": "ChangeRequest",
       "type": "object",
-      "x-contract-version": "1.1.0-rc.3",
+      "x-contract-version": "1.1.0-rc.4",
       "x-domino-constraints": [
         "Closed strict fields, exact raw integer strings, safe integer selectors.",
         "SIWE-derived owner; no browser-selected recipient or provider.",
@@ -5380,9 +5686,28 @@ export const SCHEMAS = {
               "type": "string"
             },
             "policyVersion": {
-              "const": "direct_existing_pool_v1",
+              "enum": [
+                "direct_existing_pool_v1",
+                "direct_existing_pool_v2"
+              ],
               "title": "Policyversion",
               "type": "string"
+            },
+            "tokenReviews": {
+              "anyOf": [
+                {
+                  "items": {
+                    "$ref": "#/$defs/TokenReviewRef"
+                  },
+                  "maxItems": 2,
+                  "type": "array"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Tokenreviews"
             }
           },
           "required": [
@@ -5831,6 +6156,18 @@ export const SCHEMAS = {
         "ReceiptPosition": {
           "additionalProperties": false,
           "properties": {
+            "amount0Basis": {
+              "enum": [
+                "native_net_unavailable",
+                "admitted_standard_transfer_events",
+                "reviewed_proxy_transfer_events",
+                "token_review_changed",
+                "token_review_unavailable",
+                "legacy_token_review_unqualified"
+              ],
+              "title": "Amount0Basis",
+              "type": "string"
+            },
             "amount0Raw": {
               "anyOf": [
                 {
@@ -5843,6 +6180,18 @@ export const SCHEMAS = {
                 }
               ],
               "title": "Amount0Raw"
+            },
+            "amount1Basis": {
+              "enum": [
+                "native_net_unavailable",
+                "admitted_standard_transfer_events",
+                "reviewed_proxy_transfer_events",
+                "token_review_changed",
+                "token_review_unavailable",
+                "legacy_token_review_unqualified"
+              ],
+              "title": "Amount1Basis",
+              "type": "string"
             },
             "amount1Raw": {
               "anyOf": [
@@ -5933,7 +6282,9 @@ export const SCHEMAS = {
             "currentOwnerStatus",
             "ownershipObservedBlock",
             "amount0Raw",
-            "amount1Raw"
+            "amount1Raw",
+            "amount0Basis",
+            "amount1Basis"
           ],
           "title": "ReceiptPosition",
           "type": "object"
@@ -6260,6 +6611,31 @@ export const SCHEMAS = {
             "reportedEffectConflicts"
           ],
           "title": "StepSummary",
+          "type": "object"
+        },
+        "TokenReviewRef": {
+          "additionalProperties": false,
+          "properties": {
+            "address": {
+              "maxLength": 42,
+              "minLength": 42,
+              "pattern": "^0x[0-9a-f]{40}$",
+              "title": "Address",
+              "type": "string"
+            },
+            "reviewId": {
+              "maxLength": 64,
+              "minLength": 64,
+              "pattern": "^[0-9a-f]{64}$",
+              "title": "Reviewid",
+              "type": "string"
+            }
+          },
+          "required": [
+            "address",
+            "reviewId"
+          ],
+          "title": "TokenReviewRef",
           "type": "object"
         },
         "WalletTransaction": {
@@ -6348,7 +6724,7 @@ export const SCHEMAS = {
           "type": "boolean"
         },
         "contractVersion": {
-          "const": "1.1.0-rc.3",
+          "const": "1.1.0-rc.4",
           "title": "Contractversion",
           "type": "string"
         },
@@ -6380,7 +6756,7 @@ export const SCHEMAS = {
       ],
       "title": "OperationResponse",
       "type": "object",
-      "x-contract-version": "1.1.0-rc.3",
+      "x-contract-version": "1.1.0-rc.4",
       "x-domino-constraints": [
         "Closed strict fields, exact raw integer strings, safe integer selectors.",
         "SIWE-derived owner; no browser-selected recipient or provider.",
@@ -6417,7 +6793,7 @@ export const SCHEMAS = {
       ],
       "title": "ChangeRequest",
       "type": "object",
-      "x-contract-version": "1.1.0-rc.3",
+      "x-contract-version": "1.1.0-rc.4",
       "x-domino-constraints": [
         "Closed strict fields, exact raw integer strings, safe integer selectors.",
         "SIWE-derived owner; no browser-selected recipient or provider.",
@@ -6440,9 +6816,28 @@ export const SCHEMAS = {
               "type": "string"
             },
             "policyVersion": {
-              "const": "direct_existing_pool_v1",
+              "enum": [
+                "direct_existing_pool_v1",
+                "direct_existing_pool_v2"
+              ],
               "title": "Policyversion",
               "type": "string"
+            },
+            "tokenReviews": {
+              "anyOf": [
+                {
+                  "items": {
+                    "$ref": "#/$defs/TokenReviewRef"
+                  },
+                  "maxItems": 2,
+                  "type": "array"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Tokenreviews"
             }
           },
           "required": [
@@ -6891,6 +7286,18 @@ export const SCHEMAS = {
         "ReceiptPosition": {
           "additionalProperties": false,
           "properties": {
+            "amount0Basis": {
+              "enum": [
+                "native_net_unavailable",
+                "admitted_standard_transfer_events",
+                "reviewed_proxy_transfer_events",
+                "token_review_changed",
+                "token_review_unavailable",
+                "legacy_token_review_unqualified"
+              ],
+              "title": "Amount0Basis",
+              "type": "string"
+            },
             "amount0Raw": {
               "anyOf": [
                 {
@@ -6903,6 +7310,18 @@ export const SCHEMAS = {
                 }
               ],
               "title": "Amount0Raw"
+            },
+            "amount1Basis": {
+              "enum": [
+                "native_net_unavailable",
+                "admitted_standard_transfer_events",
+                "reviewed_proxy_transfer_events",
+                "token_review_changed",
+                "token_review_unavailable",
+                "legacy_token_review_unqualified"
+              ],
+              "title": "Amount1Basis",
+              "type": "string"
             },
             "amount1Raw": {
               "anyOf": [
@@ -6993,7 +7412,9 @@ export const SCHEMAS = {
             "currentOwnerStatus",
             "ownershipObservedBlock",
             "amount0Raw",
-            "amount1Raw"
+            "amount1Raw",
+            "amount0Basis",
+            "amount1Basis"
           ],
           "title": "ReceiptPosition",
           "type": "object"
@@ -7320,6 +7741,31 @@ export const SCHEMAS = {
             "reportedEffectConflicts"
           ],
           "title": "StepSummary",
+          "type": "object"
+        },
+        "TokenReviewRef": {
+          "additionalProperties": false,
+          "properties": {
+            "address": {
+              "maxLength": 42,
+              "minLength": 42,
+              "pattern": "^0x[0-9a-f]{40}$",
+              "title": "Address",
+              "type": "string"
+            },
+            "reviewId": {
+              "maxLength": 64,
+              "minLength": 64,
+              "pattern": "^[0-9a-f]{64}$",
+              "title": "Reviewid",
+              "type": "string"
+            }
+          },
+          "required": [
+            "address",
+            "reviewId"
+          ],
+          "title": "TokenReviewRef",
           "type": "object"
         },
         "WalletTransaction": {
@@ -7408,7 +7854,7 @@ export const SCHEMAS = {
           "type": "boolean"
         },
         "contractVersion": {
-          "const": "1.1.0-rc.3",
+          "const": "1.1.0-rc.4",
           "title": "Contractversion",
           "type": "string"
         },
@@ -7440,7 +7886,7 @@ export const SCHEMAS = {
       ],
       "title": "OperationResponse",
       "type": "object",
-      "x-contract-version": "1.1.0-rc.3",
+      "x-contract-version": "1.1.0-rc.4",
       "x-domino-constraints": [
         "Closed strict fields, exact raw integer strings, safe integer selectors.",
         "SIWE-derived owner; no browser-selected recipient or provider.",
@@ -7485,7 +7931,7 @@ export const SCHEMAS = {
       ],
       "title": "ReportRequest",
       "type": "object",
-      "x-contract-version": "1.1.0-rc.3",
+      "x-contract-version": "1.1.0-rc.4",
       "x-domino-constraints": [
         "Closed strict fields, exact raw integer strings, safe integer selectors.",
         "SIWE-derived owner; no browser-selected recipient or provider.",
@@ -7508,9 +7954,28 @@ export const SCHEMAS = {
               "type": "string"
             },
             "policyVersion": {
-              "const": "direct_existing_pool_v1",
+              "enum": [
+                "direct_existing_pool_v1",
+                "direct_existing_pool_v2"
+              ],
               "title": "Policyversion",
               "type": "string"
+            },
+            "tokenReviews": {
+              "anyOf": [
+                {
+                  "items": {
+                    "$ref": "#/$defs/TokenReviewRef"
+                  },
+                  "maxItems": 2,
+                  "type": "array"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Tokenreviews"
             }
           },
           "required": [
@@ -7959,6 +8424,18 @@ export const SCHEMAS = {
         "ReceiptPosition": {
           "additionalProperties": false,
           "properties": {
+            "amount0Basis": {
+              "enum": [
+                "native_net_unavailable",
+                "admitted_standard_transfer_events",
+                "reviewed_proxy_transfer_events",
+                "token_review_changed",
+                "token_review_unavailable",
+                "legacy_token_review_unqualified"
+              ],
+              "title": "Amount0Basis",
+              "type": "string"
+            },
             "amount0Raw": {
               "anyOf": [
                 {
@@ -7971,6 +8448,18 @@ export const SCHEMAS = {
                 }
               ],
               "title": "Amount0Raw"
+            },
+            "amount1Basis": {
+              "enum": [
+                "native_net_unavailable",
+                "admitted_standard_transfer_events",
+                "reviewed_proxy_transfer_events",
+                "token_review_changed",
+                "token_review_unavailable",
+                "legacy_token_review_unqualified"
+              ],
+              "title": "Amount1Basis",
+              "type": "string"
             },
             "amount1Raw": {
               "anyOf": [
@@ -8061,7 +8550,9 @@ export const SCHEMAS = {
             "currentOwnerStatus",
             "ownershipObservedBlock",
             "amount0Raw",
-            "amount1Raw"
+            "amount1Raw",
+            "amount0Basis",
+            "amount1Basis"
           ],
           "title": "ReceiptPosition",
           "type": "object"
@@ -8390,6 +8881,31 @@ export const SCHEMAS = {
           "title": "StepSummary",
           "type": "object"
         },
+        "TokenReviewRef": {
+          "additionalProperties": false,
+          "properties": {
+            "address": {
+              "maxLength": 42,
+              "minLength": 42,
+              "pattern": "^0x[0-9a-f]{40}$",
+              "title": "Address",
+              "type": "string"
+            },
+            "reviewId": {
+              "maxLength": 64,
+              "minLength": 64,
+              "pattern": "^[0-9a-f]{64}$",
+              "title": "Reviewid",
+              "type": "string"
+            }
+          },
+          "required": [
+            "address",
+            "reviewId"
+          ],
+          "title": "TokenReviewRef",
+          "type": "object"
+        },
         "WalletTransaction": {
           "additionalProperties": false,
           "properties": {
@@ -8476,7 +8992,7 @@ export const SCHEMAS = {
           "type": "boolean"
         },
         "contractVersion": {
-          "const": "1.1.0-rc.3",
+          "const": "1.1.0-rc.4",
           "title": "Contractversion",
           "type": "string"
         },
@@ -8508,7 +9024,7 @@ export const SCHEMAS = {
       ],
       "title": "OperationResponse",
       "type": "object",
-      "x-contract-version": "1.1.0-rc.3",
+      "x-contract-version": "1.1.0-rc.4",
       "x-domino-constraints": [
         "Closed strict fields, exact raw integer strings, safe integer selectors.",
         "SIWE-derived owner; no browser-selected recipient or provider.",
@@ -8544,6 +9060,9 @@ export const ERRORS = {
   "deposit_state_changed": 409,
   "deposit_state_conflict": 409,
   "deposit_store_unavailable": 503,
+  "deposit_token_changed": 409,
+  "deposit_token_check_unavailable": 503,
+  "deposit_token_restricted": 422,
   "deposit_version_conflict": 409,
   "deposit_wallet_pending": 409,
   "invalid_request": 400,

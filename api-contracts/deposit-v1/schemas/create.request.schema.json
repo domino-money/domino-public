@@ -175,7 +175,7 @@
   ],
   "title": "CreateRequest",
   "type": "object",
-  "x-contract-version": "1.1.0-rc.3",
+  "x-contract-version": "1.1.0-rc.4",
   "x-domino-constraints": [
     "Closed strict fields, exact raw integer strings, safe integer selectors.",
     "SIWE-derived owner; no browser-selected recipient or provider.",

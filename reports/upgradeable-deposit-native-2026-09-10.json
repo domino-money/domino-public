@@ -1,0 +1,283 @@
+{
+  "anvilVersion": "anvil/v1.7.1",
+  "bootstrap": {
+    "seedSource": "0x8366a39cc670b4001a1121b8f6a443a643e40951",
+    "seedSourceNativeBalanceOverriddenRaw": "1000000000000000000",
+    "syntheticNativeBalanceRaw": "100000000000000000000",
+    "tokenCodeOrStorageOverridden": false,
+    "usdgTransferredLocallyRaw": "100000000",
+    "wrappedLocallyRaw": "100000000000000000"
+  },
+  "cases": [
+    {
+      "compositionObservations": [
+        {
+          "calldataIdentityValidated": true,
+          "encodedBounds": {
+            "amount0MaxRaw": "1026382610064733",
+            "amount1MaxRaw": "2528058",
+            "mintLiquidityRaw": "521586201325",
+            "nativeValueRaw": "1026382610064733"
+          },
+          "providerNominalAmountsRaw": [
+            "1000000000000000",
+            "2463448"
+          ]
+        },
+        {
+          "calldataIdentityValidated": true,
+          "encodedBounds": {
+            "amount0MaxRaw": "1026378959214783",
+            "amount1MaxRaw": "2527218",
+            "mintLiquidityRaw": "521498597782",
+            "nativeValueRaw": "1026378959214783"
+          },
+          "providerNominalAmountsRaw": [
+            "1000000000000000",
+            "2462620"
+          ]
+        },
+        {
+          "calldataIdentityValidated": true,
+          "encodedBounds": {
+            "amount0MaxRaw": "1026376231967055",
+            "amount1MaxRaw": "2526655",
+            "mintLiquidityRaw": "521439805260",
+            "nativeValueRaw": "1026376231967055"
+          },
+          "providerNominalAmountsRaw": [
+            "1000000000000000",
+            "2462065"
+          ]
+        }
+      ],
+      "controls": {
+        "alternateLocalHistoryDiscarded": true,
+        "expiredMintRejectedOnChain": true,
+        "orphanedReceiptDetectedAfterLocalRestore": true,
+        "revertedReceiptVerified": true
+      },
+      "executionEligible": false,
+      "missingAdmissionDenied": true,
+      "name": "native-input",
+      "productionAdmission": "reviewed_candidate_not_activated",
+      "providerCalls": {
+        "lpCreate": 3
+      },
+      "receiptAmountsMatchControlledDeltas": true,
+      "selection": {
+        "amountRaw": "1000000000000000",
+        "budget0Raw": "5000000000000000",
+        "budget1Raw": "10000000",
+        "chainId": 4663,
+        "independentToken": "0x0000000000000000000000000000000000000000",
+        "maxFeePerGasRaw": "10000000000",
+        "maxGasLimitRaw": "3000000",
+        "maxPriorityFeePerGasRaw": "0",
+        "nativeGasReserveRaw": "10000000000000000",
+        "poolId": "0x3b0cbf0603ecc67b5fc9bb4fbb6ac9e08d3b2f406b63d1662a36063a7fe5e866",
+        "poolKey": {
+          "currency0": "0x0000000000000000000000000000000000000000",
+          "currency1": "0x5fc5360d0400a0fd4f2af552add042d716f1d168",
+          "fee_pips": 87,
+          "hooks": "0x0000000000000000000000000000000000000000",
+          "tick_spacing": 1
+        },
+        "slippageBps": 50,
+        "tickLower": -200237,
+        "tickUpper": -196237
+      },
+      "status": "protocol_path_passed",
+      "steps": [
+        {
+          "gasEstimatedRaw": "58374",
+          "gasLimitRaw": "70049",
+          "kind": "erc20_approval",
+          "localNativeNetDebitRaw": "0",
+          "localNativeRefundRaw": "0",
+          "localReceipt": {
+            "blockHash": "0xd5ba45360069e7eda9740392767c970db6767dbea81617e2f8edecea603870ec",
+            "blockNumber": 59711886,
+            "effectiveGasPriceRaw": "86610318",
+            "finality": "finalized",
+            "gasUsedRaw": "57916",
+            "grossGasFeeRaw": "5016123177288",
+            "l1FeeRaw": null,
+            "l1GasUsedRaw": null,
+            "outcome": "success",
+            "position": null,
+            "totalFeeRaw": null,
+            "transactionHash": "0x3336c64e4196139daa4237bf78900f8e8373639807e7d8444d058f78eacd0e6a"
+          },
+          "localSingleTransactionDebitsRaw": [
+            "0",
+            "0"
+          ],
+          "mintedBounds": {
+            "amount0MaxRaw": "1026382610064733",
+            "amount1MaxRaw": "2528058",
+            "mintLiquidityRaw": "521586201325",
+            "nativeValueRaw": "1026382610064733"
+          },
+          "nonceRaw": "1",
+          "reconciliationReason": "transaction_confirmed",
+          "reconciliationState": "confirmed"
+        },
+        {
+          "gasEstimatedRaw": "47578",
+          "gasLimitRaw": "57094",
+          "kind": "permit2_approval",
+          "localNativeNetDebitRaw": "0",
+          "localNativeRefundRaw": "0",
+          "localReceipt": {
+            "blockHash": "0xbcd4a9284e2f8f9d9217079fb2ac09c1f4d15fcf3a7c1d05aee292a92e0916b0",
+            "blockNumber": 59711890,
+            "effectiveGasPriceRaw": "50769380",
+            "finality": "finalized",
+            "gasUsedRaw": "47578",
+            "grossGasFeeRaw": "2415505561640",
+            "l1FeeRaw": null,
+            "l1GasUsedRaw": null,
+            "outcome": "success",
+            "position": null,
+            "totalFeeRaw": null,
+            "transactionHash": "0xb80a33b8805d9503d706fd89207486a3cf2ed6731a4a5090aaf458d5295c4314"
+          },
+          "localSingleTransactionDebitsRaw": [
+            "0",
+            "0"
+          ],
+          "mintedBounds": {
+            "amount0MaxRaw": "1026378959214783",
+            "amount1MaxRaw": "2527218",
+            "mintLiquidityRaw": "521498597782",
+            "nativeValueRaw": "1026378959214783"
+          },
+          "nonceRaw": "2",
+          "reconciliationReason": "transaction_confirmed",
+          "reconciliationState": "confirmed"
+        },
+        {
+          "gasEstimatedRaw": "337018",
+          "gasLimitRaw": "404422",
+          "kind": "mint",
+          "localNativeNetDebitRaw": "999802737822717",
+          "localNativeRefundRaw": "26573494144338",
+          "localReceipt": {
+            "blockHash": "0x7e1a07a7acb34e04f089ed53ef86dfff229fbf70759f2a3b946ac564967aafe0",
+            "blockNumber": 59711894,
+            "effectiveGasPriceRaw": "17444814",
+            "finality": "finalized",
+            "gasUsedRaw": "327253",
+            "grossGasFeeRaw": "5708867715942",
+            "l1FeeRaw": null,
+            "l1GasUsedRaw": null,
+            "outcome": "success",
+            "position": {
+              "amount0Basis": "native_net_unavailable",
+              "amount0Raw": null,
+              "amount1Basis": "reviewed_proxy_transfer_events",
+              "amount1Raw": "2462551",
+              "currentOwner": "0x000000000000000000000000000000000000dead",
+              "currentOwnerStatus": "verified",
+              "liquidityRaw": "521439805260",
+              "ownershipObservedBlock": {
+                "hash": "0x0744ea4e625c7ac4e1be2fe37bb19bdcd4e58c21afb2191c9cdaeb9c93ee852f",
+                "number": 59711896,
+                "timestamp": 1789074434
+              },
+              "poolId": "0x3b0cbf0603ecc67b5fc9bb4fbb6ac9e08d3b2f406b63d1662a36063a7fe5e866",
+              "recipient": "0x000000000000000000000000000000000000dead",
+              "tickLower": -200237,
+              "tickUpper": -196237,
+              "tokenId": "2378534"
+            },
+            "totalFeeRaw": null,
+            "transactionHash": "0xcdb384cf8467dc844f2c901cad28af23da257dc630a27a3f7639ce410051409d"
+          },
+          "localSingleTransactionDebitsRaw": [
+            "999802737822717",
+            "2462551"
+          ],
+          "mintedBounds": {
+            "amount0MaxRaw": "1026376231967055",
+            "amount1MaxRaw": "2526655",
+            "mintLiquidityRaw": "521439805260",
+            "nativeValueRaw": "1026376231967055"
+          },
+          "nonceRaw": "3",
+          "reconciliationReason": "transaction_confirmed",
+          "reconciliationState": "confirmed"
+        }
+      ],
+      "testAdmissionOverride": false,
+      "tokenReviewIds": [
+        {
+          "address": "0x5fc5360d0400a0fd4f2af552add042d716f1d168",
+          "reviewId": "fd0eda85f7aaf2b6ce4a4f9568365850b07d267bfefc3d61aec79f29139085c4"
+        }
+      ]
+    }
+  ],
+  "chainId": 4663,
+  "completedAt": 1789074443,
+  "executionEligible": false,
+  "finalityModel": "Anvil with one slot per epoch; not mainnet finality",
+  "gasModel": "local Ethereum Cancun EVM; not Nitro fee qualification",
+  "localMethodCounts": {
+    "anvil_impersonateAccount": 2,
+    "anvil_mine": 10,
+    "anvil_setBalance": 2,
+    "anvil_stopImpersonatingAccount": 1,
+    "eth_call": 70,
+    "eth_chainId": 21,
+    "eth_estimateGas": 3,
+    "eth_getBalance": 15,
+    "eth_getBlockByNumber": 68,
+    "eth_getCode": 90,
+    "eth_getStorageAt": 294,
+    "eth_getTransactionByHash": 5,
+    "eth_getTransactionCount": 29,
+    "eth_getTransactionReceipt": 22,
+    "eth_sendTransaction": 6,
+    "evm_revert": 2,
+    "evm_setNextBlockTimestamp": 4,
+    "evm_snapshot": 2,
+    "web3_clientVersion": 15
+  },
+  "mainnetTransactionsSent": 0,
+  "mode": "local_fork_protocol_qualification",
+  "owner": "0x000000000000000000000000000000000000dead",
+  "productionAdmissionChanged": false,
+  "providerHost": "robinhood-mainnet.g.alchemy.com",
+  "reviewedManifestId": "6db1094dad2d264cfce4a53effe9286aa0a3613a973bf70de510d6b4c47cb87f",
+  "reviewedProfilesSha256": "6662239b375638fc1c86e331e883d10f3778460899bf79c5e10e788028fcdf28",
+  "schemaVersion": 1,
+  "source": {
+    "hash": "0xfc008b26cce5014ae77921577e3b4a1693b515c9de284e38f04a28474908ad02",
+    "number": "0x38f2188",
+    "timestamp": "0x6aa31be7"
+  },
+  "sourceCanonicalAtEnd": true,
+  "startedAt": 1789074407,
+  "status": "completed",
+  "testAdmissionOverride": false,
+  "upstream": {
+    "closed": true,
+    "failures": {
+      "fork_invalid_request": 1,
+      "fork_method_not_allowed": 1
+    },
+    "methods": {
+      "eth_chainId": 1,
+      "eth_getBalance": 12,
+      "eth_getBlockByNumber": 4,
+      "eth_getCode": 12,
+      "eth_getStorageAt": 51,
+      "eth_getTransactionByHash": 1,
+      "eth_getTransactionCount": 12,
+      "eth_getTransactionReceipt": 12
+    },
+    "requests": 107
+  }
+}

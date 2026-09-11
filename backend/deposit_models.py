@@ -8,7 +8,7 @@ from onboarding_models import (StrictModel, Chain, NormalizedAddress, PoolId, Ra
     Raw128, PositiveRaw, LiquidityRaw, Tick, Slippage, Timestamp, Fingerprint,
     PoolKeyModel, FalseFlag, TrueFlag, ERROR_STATUS_BY_CODE as AUTH_ERRORS)
 
-CONTRACT_VERSION = '1.1.0-rc.3'
+CONTRACT_VERSION = '1.1.0-rc.4'
 MAX_BODY = 8192
 MAX_RESPONSE = 262144
 ERROR_STATUS_BY_CODE = {**AUTH_ERRORS,
@@ -23,6 +23,8 @@ ERROR_STATUS_BY_CODE = {**AUTH_ERRORS,
     'deposit_wallet_pending': 409, 'deposit_funding_insufficient': 422,
     'deposit_fee_cap_too_low': 422, 'deposit_gas_limit_exceeded': 422,
     'deposit_gas_balance_insufficient': 422, 'deposit_state_changed': 409,
+    'deposit_token_changed': 409, 'deposit_token_restricted': 422,
+    'deposit_token_check_unavailable': 503,
 }
 
 
@@ -148,9 +150,25 @@ class Balances(StrictModel):
     token1Raw: Raw
 
 
+class TokenReviewRef(StrictModel):
+    address: NormalizedAddress
+    reviewId: Fingerprint
+
+
 class Admission(StrictModel):
     manifestId: Fingerprint
-    policyVersion: Literal['direct_existing_pool_v1']
+    policyVersion: Literal['direct_existing_pool_v1', 'direct_existing_pool_v2']
+    tokenReviews: Annotated[list[TokenReviewRef], Field(max_length=2)] | None = None
+
+    @model_validator(mode='after')
+    def review_binding(self):
+        if self.policyVersion == 'direct_existing_pool_v1':
+            if self.tokenReviews is not None:
+                raise ValueError('legacy_admission_cannot_claim_token_review')
+        elif (not self.tokenReviews or any(row.address == ZERO for row in self.tokenReviews)
+                or len({row.address for row in self.tokenReviews}) != len(self.tokenReviews)):
+            raise ValueError('token_reviews_required')
+        return self
 
 
 class Simulation(StrictModel):
@@ -198,6 +216,20 @@ class ReceiptPosition(StrictModel):
     ownershipObservedBlock: SourceBlock
     amount0Raw: Raw | None
     amount1Raw: Raw | None
+    amount0Basis: Literal['native_net_unavailable', 'admitted_standard_transfer_events',
+        'reviewed_proxy_transfer_events', 'token_review_changed', 'token_review_unavailable',
+        'legacy_token_review_unqualified']
+    amount1Basis: Literal['native_net_unavailable', 'admitted_standard_transfer_events',
+        'reviewed_proxy_transfer_events', 'token_review_changed', 'token_review_unavailable',
+        'legacy_token_review_unqualified']
+
+    @model_validator(mode='after')
+    def amount_evidence(self):
+        trusted = ('admitted_standard_transfer_events', 'reviewed_proxy_transfer_events')
+        for amount, basis in ((self.amount0Raw, self.amount0Basis), (self.amount1Raw, self.amount1Basis)):
+            if (amount is not None) != (basis in trusted):
+                raise ValueError('token_amount_evidence_mismatch')
+        return self
 
     @model_validator(mode='after')
     def evidence(self):

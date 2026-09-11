@@ -139,6 +139,24 @@
   },
   {
     "body": {
+      "error": "deposit_token_changed"
+    },
+    "status": 409
+  },
+  {
+    "body": {
+      "error": "deposit_token_check_unavailable"
+    },
+    "status": 503
+  },
+  {
+    "body": {
+      "error": "deposit_token_restricted"
+    },
+    "status": 422
+  },
+  {
+    "body": {
       "error": "deposit_version_conflict"
     },
     "status": 409

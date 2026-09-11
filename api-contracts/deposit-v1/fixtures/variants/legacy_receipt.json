@@ -1,6 +1,6 @@
 {
   "automationAvailable": false,
-  "contractVersion": "1.1.0-rc.3",
+  "contractVersion": "1.1.0-rc.4",
   "operation": {
     "chainId": 4663,
     "createdAt": 1800000180,
@@ -21,7 +21,9 @@
           "l1GasUsedRaw": "10000",
           "outcome": "success",
           "position": {
+            "amount0Basis": "admitted_standard_transfer_events",
             "amount0Raw": "100",
+            "amount1Basis": "admitted_standard_transfer_events",
             "amount1Raw": "200",
             "currentOwner": "0xabababababababababababababababababababab",
             "currentOwnerStatus": "verified",

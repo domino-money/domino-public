@@ -24,11 +24,20 @@ foundation is installed and four initial wallets are held privately for later ad
 Issue #42 adds opt-in [Robinhood fork qualification](../reports/DEPOSIT_FORK_QUALIFICATION.md)
 through a read-only upstream gateway and an isolated Anvil child. Four protocol
 paths have observed successful mints; the report preserves unsupported and
-intermittent single-asset cases. Proxy tokens remain production-blocked. Nitro
+intermittent single-asset cases. That qualification used test-only proxy assumptions. Nitro
 receipt accounting uses gross gas with an included poster component and unknown
 net total. This is a coordinated pre-release `deposit-v1` migration, requiring
 consumer acknowledgment before integration. The qualification CLI is separate
 from every public listener and from offline CI.
+
+Issue #44 adds [reviewed-token admission](../docs/REVIEWED_TOKEN_ADMISSION.md)
+for immutable tokens and ERC-1967 transparent/UUPS proxies. WETH/USDG have dated
+source-backed profiles, fresh preparation/re-delivery checks and historical
+receipt identity checks. USDG payout-group accounts are outside the initial
+profile. [Current implementation evidence](../reports/UPGRADEABLE_ADMISSION_IMPLEMENTATION.md)
+records four observed fork paths using the actual reviewed profiles and preserves
+provider/read failures. The helper only creates a private candidate file; all
+services remain disabled, with consumer acknowledgment and release gates pending.
 
 API 0.8.0 follows the [MVP data strategy](../MVP_DATA_STRATEGY.md): read indexed
 market data on demand and keep exact historical reconstruction optional for
