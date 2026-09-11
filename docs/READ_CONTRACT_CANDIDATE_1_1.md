@@ -1,4 +1,4 @@
-# Read contract 1.1.0-rc.2 — coordinated prerelease notice
+# Read contract 1.1.0-rc.3 — coordinated prerelease notice
 
 This disabled producer candidate follows the accepted #5/#26 decisions. The previous,
 unreleased 1.0.0 manifest at `395856bf6ee3a0870c6fb674f9a260961d5f29ab`
@@ -8,7 +8,7 @@ and the final producer commit in the shared #1 acknowledgement. Do not use a bra
 
 ## Observable changes
 
-| Before | 1.1.0-rc.2 |
+| Before | 1.1.0-rc.3 |
 | --- | --- |
 | Five browser read routes | Nine: adds catalogue, pool-activity, pool-positions, pool-metrics |
 | Pool union inferred from optional fields | pools[].poolKind is discovery or catalogue; catalogue.items[] explicitly catalogue |
@@ -31,11 +31,17 @@ an offline test-only price registry; the production registry remains empty.
 
 The candidate incorporates main `191e0a743d8af1c95400993cca6b456b8967ba5c`,
 #52 storage safeguards, #58 bounded activity/recovery, #63 legacy Chainlink
-storage guards and #59's historical-work projection. It supersedes rc.1; the
-prior producer/manifest pins do not acknowledge this combined source. All 219
-non-manifest read-v1 artifacts remain identical to the preceding rc.2 candidate.
-Nine source hashes change; the current manifest SHA-256 is
-`52941a3035a87c470ad2fde918cc69f4d340a75baf17944c55c0e6cfc107cb69`.
+storage guards and #59's historical-work projection. The #27 reconciliation adds bounded RPC failover and the explicit
+`rpc_call_gas_limit` / `rpc_call_reverted` HTTP errors and nested reason values.
+The contract is now **1.1.0-rc.3**, an explicit coordinated prerelease migration
+from #26's rc.2 at `de654b406fe0a9330c91eb8bf58b9689aafef1ad` (manifest
+`52941a3035a87c470ad2fde918cc69f4d340a75baf17944c55c0e6cfc107cb69`).
+A consumer pinned to rc.2 must reject the new version until updated and tested.
+Gas exhaustion means unavailable token metadata, never invented decimals;
+explicit optional metadata reverts remain partial. Both codes are safe 503s for
+required reads. Unknown provider diagnostics still fail closed. The generator
+also pins RPC failover/configuration modules. See the [exact gas notice](READ_GAS_DIAGNOSTICS.md).
+Pin the final rc.3 producer and manifest in #1; no rc.2 acknowledgement transfers.
 
 - Response JSON integer fields are bounded to JavaScript's safe integer range;
   smaller domain bounds stay smaller. Exact token amounts, growth counters and NFT

@@ -43,7 +43,7 @@
   ],
   "title": "PoolsRequest",
   "type": "object",
-  "x-contract-version": "1.1.0-rc.2",
+  "x-contract-version": "1.1.0-rc.3",
   "x-domino-constraints": [
     "pairedToken must differ from token case-insensitively",
     "poolIds length must not exceed maxPools (default 12)"

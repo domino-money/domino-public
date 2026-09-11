@@ -37,6 +37,7 @@ class MetadataRpc(FakeRpc):
 
     def call(self, target, signature, *args, **kwargs):
         if target == TOKEN and signature == 'decimals()':
+            if isinstance(self.decimals, Exception): raise self.decimals
             if self.decimals is None: raise DataError('rpc_error')
             return (self.decimals,)
         if target == TOKEN and signature == 'balanceOf(address)': return (self.balance,)
@@ -102,6 +103,8 @@ def build_fixtures():
     add('token', 'success', service().token(TOKEN))
     add('token', 'native', service().token(ZERO))
     add('token', 'missing-decimals', service(MetadataRpc(decimals=None)).token(TOKEN))
+    add('token', 'call-gas-limit', service(MetadataRpc(decimals=DataError('rpc_call_gas_limit'))).token(TOKEN))
+    add('token', 'metadata-reverted', service(MetadataRpc(decimals=DataError('rpc_call_reverted'))).token(TOKEN))
     add('token', 'zero-decimals', service(MetadataRpc(decimals=0)).token(TOKEN))
     add('token', 'missing-contract', service(MetadataRpc(code='0x')).token(TOKEN))
     add('token', 'unavailable', service(MetadataRpc(code=DataError('rpc_error'))).token(TOKEN))
@@ -121,6 +124,7 @@ def build_fixtures():
     add('wallet-assets', 'fallback', service().wallet_assets(OWNER, [TOKEN]))
     add('wallet-assets', 'zero', service(MetadataRpc(balance=0)).wallet_assets(OWNER, [TOKEN]))
     add('wallet-assets', 'partial-metadata', service(MetadataRpc(decimals=None)).wallet_assets(OWNER, [TOKEN]))
+    add('wallet-assets', 'call-gas-limit', service(MetadataRpc(decimals=DataError('rpc_call_gas_limit'))).wallet_assets(OWNER, [TOKEN]))
     add('wallet-assets', 'missing-contract', service(MetadataRpc(code='0x')).wallet_assets(OWNER, [TOKEN]))
     add('wallet-assets', 'not-requested', service().wallet_assets(OWNER, [TOKEN], auto_discover=False))
     provider = AlchemyInventory(URL, transport=ProviderTransport([page([TOKEN], 'internal-provider-page-2'), page([])]), clock=lambda: 1010)
@@ -219,7 +223,8 @@ def build_fixtures():
                                   'ownerTransactions': False, 'automation': False}, kind='gateway')
     for route in RESPONSE_MODELS:
         for code in ('invalid_request', 'read_capacity_busy', 'upstream_timeout',
-                     'upstream_unavailable', 'upstream_contract_mismatch', 'stale_or_future_block'):
+                     'upstream_unavailable', 'upstream_contract_mismatch', 'stale_or_future_block',
+                     'rpc_call_gas_limit', 'rpc_call_reverted'):
             status, body = sanitize_error(code)
             add(route, code, body, kind='error', status=status)
         source = next(item['file'] for item in index if item['route'] == route and item['kind'] == 'producer')

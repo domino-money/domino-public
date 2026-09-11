@@ -104,6 +104,29 @@ The web practice workspace uses local browser storage; it is not the multi-user 
 
 ## Read-only discovery qualification
 
+All `ReadRpc.call_raw` / `call` reads use a named **500,000 gas computation
+ceiling** (`DEFAULT_READ_CALL_GAS`). A trusted Python caller can select a lower
+profile, from 21,000 to 500,000; neither HTTP input nor token metadata can raise
+it. This is an `eth_call` node budget, not a transaction or a wallet charge. There
+is no automatic gas escalation, gas-error retry or gas-triggered RPC failover.
+The existing request count, response size and total deadline still apply.
+
+Explicit node out-of-gas responses become `rpc_call_gas_limit`; explicit EVM
+reverts become `rpc_call_reverted`. Unknown or ambiguous provider failures remain
+`rpc_error`. Revert data takes precedence over words in a revert reason, so a
+token's `revert("out of gas")` is not presented as a proven budget failure. A
+proxy can wrap an inner out-of-gas in an ordinary revert; this cannot be diagnosed
+as a gas limit from the returned envelope alone. Raw errors and revert bytes are
+never exposed. Known gas exhaustion yields an unavailable token/asset read, with
+no claim that its metadata is invalid. Ordinary missing/reverting optional
+metadata still permits a partial read, with decimals left unknown.
+
+The offline EVM regression uses a synthetic delegated metadata method with 100
+cold storage reads: it fails at the former 150,000 ceiling and succeeds once at
+500,000. This supports a broader bounded profile, not every arbitrary contract.
+Code existence and readable metadata still do not establish token safety or
+execution compatibility. See the [pending contract notice](../docs/READ_GAS_DIAGNOSTICS.md).
+
 `discovery.py` uses a bounded read-only JSON-RPC transport, with no personal-bot imports, config reads, signing, transaction submission or daemon. ABI/Keccak dependencies are pinned in `requirements-readonly.txt`; the existing project `.venv` already provides them. A separate environment can install only those requirements.
 
 `qualify_discovery.py` explicitly probes one Robinhood token. It filters DEX Screener candidates by chain, protocol, version and exact token identity, verifies complete PoolKeys against their full hashes through PositionManager, checks current StateView data and token metadata, and rechecks the same block at completion. This verifies a data identity at one block, not the token's economic safety or automation eligibility.
@@ -396,7 +419,7 @@ proofs require explicit operator-reviewed quarantine with a durable private
 archive; collection retries never overwrite/delete them. See the bounded
 [workflow and evidence](../reports/PRICE_WINDOW_CAPACITY.md#moving-window-and-orphan-recovery--issue-51).
 
-## Disabled browser read bridge candidate — read-v1 1.1.0-rc.2
+## Disabled browser read bridge candidate — read-v1 1.1.0-rc.3
 
 The nine browser candidates now share strict success/error models in
 `read_contract.py`, exported schemas/types/fixtures in `api-contracts/read-v1/`,
@@ -417,6 +440,51 @@ See the [gateway runbook](../docs/READ_GATEWAY_RUNBOOK.md) for explicit disabled
 startup and the separate credential/staging phase. Existing localhost/browser
 restrictions stay enabled. No changes to local personal-bot services are needed.
 
+## Multiple read RPC providers — issue #24
+
+The local configuration separates generic RPC endpoints from Alchemy inventory.
+Version1 files remain readable and retain their shape. They now allow either the
+known Alchemy RPC shape or the public Robinhood default in `rpcUrl`. Inventory
+continues to use its own Alchemy validator. Field errors identify `rpc_url`,
+`rpc_fallback_url` or `inventory_url` without echoing an endpoint or credential.
+
+Version2 adds `rpcFallbackUrls` (at most two) and `rpcAllowedHosts` (at most eight
+exact, lowercase DNS names); `rpcUrl` remains the primary for compatibility with
+local audit tools. `inventoryUrl` can be null. All URLs must be HTTPS with no
+userinfo, query, fragment, explicit port or browser-selected destination. Defaults
+include only the public Robinhood and Alchemy hosts. An operator can add a new
+provider by local configuration, without relaxing inventory admission or editing
+code. Host admission is not evidence of chain/provider qualification.
+
+```sh
+backend/.venv/bin/python backend/configure_rpc.py
+```
+
+The terminal asks for one to three full URLs through hidden input, preserves the
+inventory setting, verifies the chain/managers and common block on every endpoint,
+and saves only after all probes succeed. No endpoint or key is a command-line
+argument. The existing Alchemy configurator preserves the independent RPC list
+in version2 files when rotating an inventory key. With a version1 file, that
+configurator replaces the primary RPC with the new Alchemy endpoint. Upgrade to
+version2 first to preserve a separate public RPC. Neither configurator is run
+automatically.
+
+The product read API uses the ordered RPC list. Each logical read tries an
+endpoint at most once, advances on network errors or HTTP429/502/503/504, and keeps
+one deadline and request counter, including failed attempts and verification.
+The fallback verifies chain4663 and every previously observed block before reading
+state. Wrong chain or changed snapshot rejects the entire result, even if an
+optional metadata handler catches the initial error. Contract reverts, invalid
+RPC/ABI and budget exhaustion do not trigger provider retries. State reads must
+use an already observed numeric block. No results from an inconsistent snapshot
+are mixed into a response.
+
+`DOMINO_DISCOVERY_RPC_URL` is a trusted, validated single-endpoint override and
+intentionally disables configured fallbacks for that process. Legacy historical
+CLI tools still use `rpcUrl` as their primary; this slice enables automatic
+failover in ReadService/API only. Public response shapes and field names are
+unchanged. Staging must qualify an independent secondary endpoint and exercise
+outage/identity failure before claiming deployed redundancy.
 
 ## Nine-route read contract candidate
 
@@ -433,7 +501,7 @@ remain errors. Capital reads validate pending position and capital sidecars befo
 them missing history. Ambiguous missing-chunk diagnostics require a current
 methodology check of that exact dependency. The updated manifest pins the producer and request validator.
 
-ReadService exports `read-v1 / 1.1.0-rc.2` through the local API and disabled
+ReadService exports `read-v1 / 1.1.0-rc.3` through the local API and disabled
 same-origin gateway/BFF. Catalogue, pool activity, core positions and historical
 metrics now use validated response models, in addition to the original five routes.
 Public reads require no SIWE; a real authenticated service caller mediates browser

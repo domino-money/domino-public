@@ -1,7 +1,7 @@
 # Domino read BFF
 
 This directory contains an undeployed Cloudflare Worker candidate for contract
-`read-v1` / `1.1.0-rc.2`. Live reads default to **disabled**. It has no wallet session,
+`read-v1` / `1.1.0-rc.3`. Live reads default to **disabled**. It has no wallet session,
 private account, signer, transaction or automation routes. It does not change
 the web app or its existing practice endpoints.
 
@@ -80,7 +80,7 @@ ten-token fallback, twenty-pool check, ten explicit-pool ID, distinct uint256
 NFT ID and JavaScript-safe nonnegative block/revision limits. Number lexemes and original validated JSON text
 are retained while unsafe block/revision integers are rejected before forwarding.
 
-The optional browser `X-Domino-Read-Contract` header must equal `1.1.0-rc.2` when
+The optional browser `X-Domino-Read-Contract` header must equal `1.1.0-rc.3` when
 supplied. Every BFF response includes that version and its own random UUID in
 `X-Domino-Request-Id`. The gateway must emit the exact contract header on success
 and safe errors; absent/combined/different versions fail closed.

@@ -1,7 +1,7 @@
 # Read-v1 contract candidate
 
 This shared package describes the nine backend 0.8 read response families and
-the proposed bridge capabilities. Contract `1.1.0-rc.2` is a release candidate behind
+the proposed bridge capabilities. Contract `1.1.0-rc.3` is a release candidate behind
 disabled live flags, pending the acknowledgement recorded in
 [API_COMPATIBILITY.md](../../docs/API_COMPATIBILITY.md). It does not activate
 frontend imports, establish a wallet session, authorize transactions or deploy
@@ -79,7 +79,7 @@ load-test limits and required consumer acknowledgement. consumer.typecheck.mts
 proves poolKind, feeMode, priceToken and nullable historical state narrowing;
 CI also runs consumer.test.mjs and progressive.test.mjs at runtime.
 
-## Reconciled candidate 1.1.0-rc.2
+## Reconciled candidate 1.1.0-rc.3
 
 This stricter, still-disabled candidate preserves field names and raw amount
 strings. Every response JSON integer is bounded to JavaScript's safe range

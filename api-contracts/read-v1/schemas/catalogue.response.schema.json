@@ -303,5 +303,5 @@
   ],
   "title": "CatalogueResponse",
   "type": "object",
-  "x-contract-version": "1.1.0-rc.2"
+  "x-contract-version": "1.1.0-rc.3"
 }

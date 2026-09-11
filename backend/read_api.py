@@ -13,7 +13,7 @@ from pydantic import BaseModel, ConfigDict, Field, StrictBool, StrictInt, String
 from typing import Annotated, Literal
 
 from discovery import CHAIN_ID, RPC_URL, DataError
-from local_config import load_config
+from local_config import load_config, configured_rpc_urls
 from catalogue import configured_catalogue
 from read_service import ReadService
 from read_contract import CONTRACT_VERSION, RESPONSE_MODELS, ErrorResponse, validate_response, sanitize_error
@@ -162,7 +162,7 @@ def create_app(service=None, *, gate=None, read_budget_seconds=60):
     generation = secrets.token_hex(16)
     if service is None:
         config = load_config()
-        service = ReadService(rpc_url=os.environ.get('DOMINO_DISCOVERY_RPC_URL') or config.get('rpcUrl', RPC_URL),
+        service = ReadService(rpc_urls=configured_rpc_urls(config, os.environ.get('DOMINO_DISCOVERY_RPC_URL')),
                               inventory_url=os.environ.get('DOMINO_INVENTORY_RPC_URL') or config.get('inventoryUrl'),
                               catalogue=configured_catalogue())
     gate = gate or ReadGate()

@@ -10,7 +10,7 @@ from types import UnionType
 from typing_extensions import TypeAliasType
 from pydantic import BaseModel, ConfigDict, Field, StrictBool, StrictInt, StringConstraints, model_validator
 
-CONTRACT_VERSION = '1.1.0-rc.2'
+CONTRACT_VERSION = '1.1.0-rc.3'
 ENABLED_READS = ('token', 'pools', 'pool-market', 'wallet-assets', 'nft-positions',
                  'catalogue', 'pool-activity', 'pool-positions', 'pool-metrics')
 ReadRoute = Literal[ENABLED_READS]
@@ -41,7 +41,8 @@ DecimalString = Annotated[str, StringConstraints(strict=True, pattern=r'^[0-9]+(
 # Only explicit transport codes normalize at the service boundary; unknown nested
 # producer diagnostics fail contract validation instead of disguising schema drift.
 REASON_CODES = (
-    'upstream_unavailable', 'rpc_error', 'network_unavailable', 'invalid_abi_response',
+    'upstream_unavailable', 'rpc_error', 'rpc_call_gas_limit', 'rpc_call_reverted',
+    'network_unavailable', 'invalid_abi_response',
     'invalid_rpc_envelope', 'missing_rpc_result', 'request_budget_exhausted',
     'invalid_json', 'response_too_large', 'invalid_quantity', 'quantity_too_large',
     'token_has_no_code', 'token_code_unavailable', 'invalid_token_decimals', 'invalid_symbol_text',
@@ -937,7 +938,7 @@ class PoolMetricsResponse(WireModel):
 
 
 class BridgeCapabilities(WireModel):
-    contractVersion: Literal['1.1.0-rc.2']
+    contractVersion: Literal['1.1.0-rc.3']
     dataMode: Literal['disabled', 'live_read_only']
     chainId: Literal[4663]
     enabledReads: Annotated[list[ReadRoute], Field(max_length=9, json_schema_extra={"uniqueItems": True})]
@@ -971,7 +972,8 @@ for _code in (
     'snapshot_reorganized', 'nft_snapshot_reorganized', 'activity_snapshot_reorganized',
     'metrics_snapshot_reorganized', 'stale_or_future_block', 'wrong_chain',
     'missing_contract_code', 'manager_mismatch', 'block_unavailable',
-    'rpc_error', 'network_unavailable', 'request_budget_exhausted',
+    'rpc_error', 'rpc_call_gas_limit', 'rpc_call_reverted',
+    'network_unavailable', 'request_budget_exhausted',
     'invalid_rpc_envelope', 'missing_rpc_result', 'invalid_abi_response',
     'invalid_quantity', 'quantity_too_large', 'invalid_json', 'response_too_large',
     'invalid_pool_key', 'invalid_tick_spacing', 'pool_id_mismatch', 'invalid_pool_state',

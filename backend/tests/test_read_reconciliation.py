@@ -14,6 +14,8 @@ from read_contract import validate_response
 from read_service import public_response
 from read_history_fixtures import history_service, Rows
 from historical_capacity import diagnostic, PROFILES
+from catalogue_indexer import IndexRpc
+from discovery import DataError, STATE_VIEW
 from test_discovery import POOL
 from test_historical_read_projection import pending
 
@@ -22,6 +24,54 @@ FIXTURES = ROOT / 'api-contracts/read-v1/fixtures'
 
 
 class ReadReconciliationTests(unittest.TestCase):
+    def test_classified_indexer_rpc_failures_keep_503_through_real_historical_readers(self):
+        # The actual indexer transport classifier supplies the persisted reason.
+        # Only RPC envelopes and database rows are synthetic: ledger readers,
+        # metrics dependencies, public projection and the HTTP boundary are real.
+        failures = [('out of gas', -32000, 'rpc_call_gas_limit'),
+                    ('execution reverted', 3, 'rpc_call_reverted')]
+        paths = [('fee', 'pool-activity'), ('position', 'pool-activity'),
+                 ('position', 'pool-positions'), ('position', 'pool-metrics'),
+                 ('capital', 'pool-metrics')]
+        for message, code, expected in failures:
+            def transport(url, body):
+                return {'jsonrpc': '2.0', 'id': body['id'],
+                        'error': {'code': code, 'message': message}}
+            rpc = IndexRpc(transport=transport)
+            with self.assertRaises(DataError) as failure:
+                rpc.call(STATE_VIEW, 'getLiquidity(bytes32)', ['bytes32'],
+                         [bytes.fromhex(POOL[2:])], ['uint128'], block=hex(700))
+            self.assertEqual(str(failure.exception), expected)
+            self.assertEqual(rpc.count, 1)
+            for ledger, route in paths:
+                with self.subTest(reason=expected, ledger=ledger, route=route), \
+                        history_service() as (reader, database):
+                    work = diagnostic(database.tail, PROFILES['standard'],
+                                      {'offset': 2, 'totalEvents': 20}, str(failure.exception))
+                    before = deepcopy(work); execute = database.execute; observed = []
+                    def failed_work(query, params=()):
+                        q = ' '.join(query.split())
+                        if q.startswith('SELECT diagnostic FROM domino_activity.historical_work'):
+                            observed.append(params)
+                            return Rows([{'diagnostic': deepcopy(work)}] if params == (POOL, ledger) else [])
+                        if ledger in ('fee', 'position') and q.startswith(
+                                'SELECT * FROM domino_activity.' + ledger + '_chunks'):
+                            return Rows([])
+                        if ledger == 'fee' and q.startswith('SELECT * FROM domino_activity.position_chunks'):
+                            # A position ledger cannot be qualified without its fee dependency.
+                            return Rows([])
+                        if ledger == 'capital' and q.startswith('SELECT count(*) AS chunks'):
+                            return Rows([{'chunks': 1, 'qualified': 0}])
+                        return execute(query, params)
+                    with patch.object(database, 'execute', side_effect=failed_work), \
+                            TestClient(create_app(reader, gate=ReadGate(interval=0)),
+                                       base_url='http://127.0.0.1:8876') as client:
+                        response = client.post('/v1/read/' + route, json={'poolId': POOL})
+                    self.assertIn((POOL, ledger), observed)
+                    self.assertEqual((response.status_code, response.json()),
+                                     (503, {'error': expected}))
+                    self.assertEqual(work, before)
+
     def test_unknown_producer_reasons_fail_closed_and_known_transport_failures_stay_available(self):
         for route, filename, path in [
                 ('token', 'token.unavailable.json', ('asset', 'reason')),

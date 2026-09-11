@@ -1434,6 +1434,8 @@
             "enum": [
               "upstream_unavailable",
               "rpc_error",
+              "rpc_call_gas_limit",
+              "rpc_call_reverted",
               "network_unavailable",
               "invalid_abi_response",
               "invalid_rpc_envelope",
@@ -1854,6 +1856,8 @@
             "enum": [
               "upstream_unavailable",
               "rpc_error",
+              "rpc_call_gas_limit",
+              "rpc_call_reverted",
               "network_unavailable",
               "invalid_abi_response",
               "invalid_rpc_envelope",
@@ -2092,6 +2096,8 @@
               "request_too_large",
               "response_too_large",
               "route_not_available",
+              "rpc_call_gas_limit",
+              "rpc_call_reverted",
               "rpc_error",
               "snapshot_reorganized",
               "stale_or_future_block",
@@ -2823,6 +2829,8 @@
             "enum": [
               "upstream_unavailable",
               "rpc_error",
+              "rpc_call_gas_limit",
+              "rpc_call_reverted",
               "network_unavailable",
               "invalid_abi_response",
               "invalid_rpc_envelope",
@@ -3272,6 +3280,8 @@
             "enum": [
               "upstream_unavailable",
               "rpc_error",
+              "rpc_call_gas_limit",
+              "rpc_call_reverted",
               "network_unavailable",
               "invalid_abi_response",
               "invalid_rpc_envelope",
@@ -3312,6 +3322,8 @@
             "enum": [
               "upstream_unavailable",
               "rpc_error",
+              "rpc_call_gas_limit",
+              "rpc_call_reverted",
               "network_unavailable",
               "invalid_abi_response",
               "invalid_rpc_envelope",
@@ -5140,6 +5152,8 @@
             "enum": [
               "upstream_unavailable",
               "rpc_error",
+              "rpc_call_gas_limit",
+              "rpc_call_reverted",
               "network_unavailable",
               "invalid_abi_response",
               "invalid_rpc_envelope",
@@ -5477,6 +5491,8 @@
             "enum": [
               "upstream_unavailable",
               "rpc_error",
+              "rpc_call_gas_limit",
+              "rpc_call_reverted",
               "network_unavailable",
               "invalid_abi_response",
               "invalid_rpc_envelope",
@@ -5563,6 +5579,8 @@
             "enum": [
               "upstream_unavailable",
               "rpc_error",
+              "rpc_call_gas_limit",
+              "rpc_call_reverted",
               "network_unavailable",
               "invalid_abi_response",
               "invalid_rpc_envelope",

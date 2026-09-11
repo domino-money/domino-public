@@ -7,6 +7,7 @@ import time
 from discovery import (CHAIN_ID, RPC_URL, ZERO, DataError, DiscoveryReader,
                        ReadRpc, Block, address, bytes32, discover, json_http, parse_block)
 from inventory import AlchemyInventory, CursorCodec
+from rpc_failover import FailoverReadRpc
 from read_deadline import (ReadDeadline, check_read_deadline, current_read_deadline,
                            use_read_deadline)
 
@@ -69,10 +70,11 @@ def bounded_transport(seconds=60):
 
 
 class ReadService:
-    def __init__(self, *, rpc_url=RPC_URL, inventory_url=None, clock=time.time,
+    def __init__(self, *, rpc_url=RPC_URL, rpc_urls=None, inventory_url=None, clock=time.time,
                  rpc_factory=None, inventory=None, cursor_codec=None, transport_factory=bounded_transport,
                  catalogue=None, market_cache=None):
         self.rpc_url, self.inventory_url, self.clock = rpc_url, inventory_url, clock
+        self.rpc_urls = tuple(rpc_urls) if rpc_urls is not None else None
         self.rpc_factory, self.inventory = rpc_factory, inventory
         self.cursor_codec = cursor_codec or CursorCodec(clock=clock)
         self.transport_factory = transport_factory
@@ -92,7 +94,11 @@ class ReadService:
 
     def _rpc(self, transport):
         check_read_deadline()
-        return self.rpc_factory() if self.rpc_factory else ReadRpc(self.rpc_url, transport=transport)
+        if self.rpc_factory:
+            return self.rpc_factory()
+        if self.rpc_urls is not None:
+            return FailoverReadRpc(self.rpc_urls, transport=transport)
+        return ReadRpc(self.rpc_url, transport=transport)
 
     def _market(self, kind, pool_id, **kwargs):
         check_read_deadline()

@@ -35,7 +35,7 @@
   ],
   "title": "NftPositionsRequest",
   "type": "object",
-  "x-contract-version": "1.1.0-rc.2",
+  "x-contract-version": "1.1.0-rc.3",
   "x-domino-constraints": [
     "tokenIds must be decimal integers less than 2**256"
   ]

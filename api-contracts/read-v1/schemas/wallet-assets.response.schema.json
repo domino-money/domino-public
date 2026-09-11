@@ -155,6 +155,8 @@
           "enum": [
             "upstream_unavailable",
             "rpc_error",
+            "rpc_call_gas_limit",
+            "rpc_call_reverted",
             "network_unavailable",
             "invalid_abi_response",
             "invalid_rpc_envelope",
@@ -228,6 +230,8 @@
           "enum": [
             "upstream_unavailable",
             "rpc_error",
+            "rpc_call_gas_limit",
+            "rpc_call_reverted",
             "network_unavailable",
             "invalid_abi_response",
             "invalid_rpc_envelope",
@@ -268,6 +272,8 @@
           "enum": [
             "upstream_unavailable",
             "rpc_error",
+            "rpc_call_gas_limit",
+            "rpc_call_reverted",
             "network_unavailable",
             "invalid_abi_response",
             "invalid_rpc_envelope",
@@ -354,6 +360,8 @@
           "enum": [
             "upstream_unavailable",
             "rpc_error",
+            "rpc_call_gas_limit",
+            "rpc_call_reverted",
             "network_unavailable",
             "invalid_abi_response",
             "invalid_rpc_envelope",
@@ -586,5 +594,5 @@
   ],
   "title": "WalletAssetsResponse",
   "type": "object",
-  "x-contract-version": "1.1.0-rc.2"
+  "x-contract-version": "1.1.0-rc.3"
 }

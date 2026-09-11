@@ -28,10 +28,42 @@ STATE_VIEW = '0xf3334192d15450cdd385c8b70e03f9a6bd9e673b'
 ZERO = '0x' + '00' * 20
 KEY_TYPES = ('address', 'address', 'uint24', 'int24', 'address')
 MAX_RESPONSE_BYTES = 2_000_000
+# A read consumes node computation, never wallet gas. Keep a finite ceiling even
+# for arbitrary token contracts. Smaller profiles are useful for trusted probes.
+MAX_READ_CALL_GAS = 500_000
+DEFAULT_READ_CALL_GAS = MAX_READ_CALL_GAS
 
 
 class DataError(ValueError):
     """A fixed safe code; never include provider URLs, payloads or credentials."""
+
+
+def rpc_error_code(method, error):
+    """Recognize explicit eth_call failures; ambiguous provider text stays generic.
+
+    A revert reason may itself contain 'out of gas'. Revert data/code takes
+    precedence, and no arbitrary message, revert bytes or URL leaves this layer.
+    """
+    if (method != 'eth_call' or not isinstance(error, dict)
+            or type(error.get('code')) is not int):
+        return 'rpc_error'
+    message = error.get('message')
+    if not isinstance(message, str) or len(message) > 512:
+        return 'rpc_error'
+    message = message.strip().lower()
+    data = error.get('data')
+    if (error['code'] == 3 or message == 'execution reverted'
+            or message.startswith('execution reverted:')
+            or (isinstance(data, str) and re.fullmatch(r'0x(?:[0-9a-fA-F]{2})+', data))):
+        return 'rpc_call_reverted'
+    # Structured/unknown data may contain a nested revert: do not guess.
+    if data not in (None, '0x'):
+        return 'rpc_error'
+    if (message in ('out of gas', 'intrinsic gas too low', 'execution ran out of gas',
+                    'evm error outofgas')
+            or re.fullmatch(r'gas required exceeds allowance \([0-9]{1,10}\)', message)):
+        return 'rpc_call_gas_limit'
+    return 'rpc_error'
 
 
 def address(value):
@@ -247,9 +279,13 @@ class ReadRpc:
     METHODS = frozenset({'eth_chainId', 'eth_getBlockByNumber', 'eth_getCode',
                          'eth_getBalance', 'eth_call'})
 
-    def __init__(self, url=RPC_URL, *, transport=json_http, max_requests=160):
+    def __init__(self, url=RPC_URL, *, transport=json_http, max_requests=160,
+                 call_gas_limit=DEFAULT_READ_CALL_GAS):
+        if type(call_gas_limit) is not int or not 21_000 <= call_gas_limit <= MAX_READ_CALL_GAS:
+            raise DataError('invalid_read_call_gas_limit')
         self.url, self.transport = url, transport
         self.count, self.max_requests = 0, max_requests
+        self.call_gas_limit = call_gas_limit
 
     def request(self, method, params=()):
         if method not in self.METHODS:
@@ -265,7 +301,7 @@ class ReadRpc:
                 or type(payload.get('id')) is not int or payload['id'] != self.count):
             raise DataError('invalid_rpc_envelope')
         if 'error' in payload:
-            raise DataError('rpc_error')
+            raise DataError(rpc_error_code(method, payload['error']))
         if 'result' not in payload:
             raise DataError('missing_rpc_result')
         return payload['result']
@@ -273,7 +309,7 @@ class ReadRpc:
     def call_raw(self, target, signature, inputs=(), values=(), *, block):
         calldata = '0x' + (keccak(signature.encode())[:4] + encode(inputs, values)).hex()
         return self.request('eth_call', [{'to': address(target), 'data': calldata,
-                                         'gas': hex(150_000)}, block])
+                                         'gas': hex(self.call_gas_limit)}, block])
 
     def call(self, target, signature, inputs=(), values=(), outputs=(), *, block):
         return decode_result(outputs, self.call_raw(target, signature, inputs, values, block=block))
@@ -432,6 +468,8 @@ class DiscoveryReader:
             if type(decimals) is not int or not 0 <= decimals <= 255:
                 raise DataError('invalid_token_decimals')
         except DataError as error:
+            if str(error) == 'rpc_call_gas_limit':
+                raise
             decimals, issues['decimals'] = None, str(error)
         try:
             raw_symbol = self.rpc.symbol(currency, block=block.tag)
@@ -439,6 +477,8 @@ class DiscoveryReader:
                 raise DataError('invalid_symbol_text')
             symbol = raw_symbol
         except DataError as error:
+            if str(error) == 'rpc_call_gas_limit':
+                raise
             issues['symbol'] = str(error)
         return {'address': currency, 'kind': 'erc20_candidate', 'decimals': decimals, 'symbol': symbol,
                 'readStatus': 'partial' if issues else 'available', 'metadataIssues': issues,

@@ -9,7 +9,8 @@ from discovery import DataError
 _RESOURCE_REASONS = frozenset({'core_position_budget_exhausted', 'core_tick_budget_exhausted',
                              'fee_step_budget_exhausted', 'historical_work_byte_budget_exhausted'})
 _TRANSIENT_REASONS = {reason: reason for reason in (
-    'network_unavailable', 'rpc_error', 'request_budget_exhausted',
+    'network_unavailable', 'rpc_error', 'rpc_call_gas_limit', 'rpc_call_reverted',
+    'request_budget_exhausted',
     'read_deadline_exceeded', 'catalogue_database_unavailable', 'block_unavailable')}
 _TRANSIENT_REASONS.update({f'http_{code}': 'upstream_unavailable'
                            for code in (400, 401, 403, 404, 408, 429, 500, 502, 503, 504)})

@@ -7,15 +7,35 @@ import tempfile
 
 from discovery import DataError
 from inventory import inventory_endpoint
+from rpc_config import DEFAULT_RPC_HOSTS, MAX_RPC_ENDPOINTS, rpc_endpoint, rpc_hosts, configured_rpc_urls
 
 CONFIG_PATH = Path(__file__).resolve().parent / 'runtime' / 'providers.json'
 
 
 def checked_config(data):
-    if not isinstance(data, dict) or set(data) != {'version', 'rpcUrl', 'inventoryUrl'} or type(data['version']) is not int or data['version'] != 1:
+    if not isinstance(data, dict) or type(data.get('version')) is not int:
         raise DataError('invalid_local_provider_config')
-    inventory_endpoint(data['rpcUrl'])
-    inventory_endpoint(data['inventoryUrl'])
+    legacy = {'version', 'rpcUrl', 'inventoryUrl'}
+    modern = legacy | {'rpcFallbackUrls', 'rpcAllowedHosts'}
+    if (data['version'] == 1 and set(data) == legacy):
+        hosts, fallbacks = DEFAULT_RPC_HOSTS, []
+    elif data['version'] == 2 and set(data) == modern:
+        hosts = rpc_hosts(data['rpcAllowedHosts'])
+        fallbacks = data['rpcFallbackUrls']
+        if not isinstance(fallbacks, list) or len(fallbacks) >= MAX_RPC_ENDPOINTS:
+            raise DataError('invalid_rpc_fallback_urls')
+    else:
+        raise DataError('invalid_local_provider_config')
+    rpc_endpoint(data['rpcUrl'], hosts)
+    for url in fallbacks:
+        rpc_endpoint(url, hosts, field='rpc_fallback_url')
+    if len(set([data['rpcUrl'], *fallbacks])) != len(fallbacks) + 1:
+        raise DataError('duplicate_rpc_endpoint')
+    if data['inventoryUrl'] is not None or data['version'] == 1:
+        try:
+            inventory_endpoint(data['inventoryUrl'])
+        except (DataError, TypeError, AttributeError):
+            raise DataError('invalid_inventory_url') from None
     return data
 
 
@@ -31,10 +51,12 @@ def load_config(path=CONFIG_PATH):
             info = os.fstat(stream.fileno())
             if not stat.S_ISREG(info.st_mode) or info.st_uid != os.getuid() or info.st_mode & 0o077:
                 raise DataError('local_provider_config_permissions')
-            raw = stream.read(4097)
-        if len(raw) > 4096:
+            raw = stream.read(8193)
+        if len(raw) > 8192:
             raise DataError('invalid_local_provider_config')
         return checked_config(json.loads(raw))
+    except DataError:
+        raise
     except (OSError, ValueError, TypeError):
         raise DataError('local_provider_config_unreadable') from None
 

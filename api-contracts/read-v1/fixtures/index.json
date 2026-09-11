@@ -1,5 +1,5 @@
 {
-  "contractVersion": "1.1.0-rc.2",
+  "contractVersion": "1.1.0-rc.3",
   "fixtures": [
     {
       "file": "fixtures/producer/token.success.json",
@@ -17,6 +17,20 @@
     },
     {
       "file": "fixtures/producer/token.missing-decimals.json",
+      "kind": "producer",
+      "route": "token",
+      "status": 200,
+      "valid": true
+    },
+    {
+      "file": "fixtures/producer/token.call-gas-limit.json",
+      "kind": "producer",
+      "route": "token",
+      "status": 200,
+      "valid": true
+    },
+    {
+      "file": "fixtures/producer/token.metadata-reverted.json",
       "kind": "producer",
       "route": "token",
       "status": 200,
@@ -115,6 +129,13 @@
     },
     {
       "file": "fixtures/producer/wallet-assets.partial-metadata.json",
+      "kind": "producer",
+      "route": "wallet-assets",
+      "status": 200,
+      "valid": true
+    },
+    {
+      "file": "fixtures/producer/wallet-assets.call-gas-limit.json",
       "kind": "producer",
       "route": "wallet-assets",
       "status": 200,
@@ -415,6 +436,20 @@
       "valid": true
     },
     {
+      "file": "fixtures/gateway/token.call-gas-limit.json",
+      "kind": "gateway",
+      "route": "token",
+      "status": 200,
+      "valid": true
+    },
+    {
+      "file": "fixtures/gateway/token.metadata-reverted.json",
+      "kind": "gateway",
+      "route": "token",
+      "status": 200,
+      "valid": true
+    },
+    {
       "file": "fixtures/gateway/token.zero-decimals.json",
       "kind": "gateway",
       "route": "token",
@@ -507,6 +542,13 @@
     },
     {
       "file": "fixtures/gateway/wallet-assets.partial-metadata.json",
+      "kind": "gateway",
+      "route": "wallet-assets",
+      "status": 200,
+      "valid": true
+    },
+    {
+      "file": "fixtures/gateway/wallet-assets.call-gas-limit.json",
       "kind": "gateway",
       "route": "wallet-assets",
       "status": 200,
@@ -835,6 +877,20 @@
       "valid": true
     },
     {
+      "file": "fixtures/error/token.rpc_call_gas_limit.json",
+      "kind": "error",
+      "route": "token",
+      "status": 503,
+      "valid": true
+    },
+    {
+      "file": "fixtures/error/token.rpc_call_reverted.json",
+      "kind": "error",
+      "route": "token",
+      "status": 503,
+      "valid": true
+    },
+    {
       "file": "fixtures/invalid/token.incompatible-version.json",
       "kind": "invalid",
       "route": "token",
@@ -878,6 +934,20 @@
     },
     {
       "file": "fixtures/error/pools.stale_or_future_block.json",
+      "kind": "error",
+      "route": "pools",
+      "status": 503,
+      "valid": true
+    },
+    {
+      "file": "fixtures/error/pools.rpc_call_gas_limit.json",
+      "kind": "error",
+      "route": "pools",
+      "status": 503,
+      "valid": true
+    },
+    {
+      "file": "fixtures/error/pools.rpc_call_reverted.json",
       "kind": "error",
       "route": "pools",
       "status": 503,
@@ -933,6 +1003,20 @@
       "valid": true
     },
     {
+      "file": "fixtures/error/pool-market.rpc_call_gas_limit.json",
+      "kind": "error",
+      "route": "pool-market",
+      "status": 503,
+      "valid": true
+    },
+    {
+      "file": "fixtures/error/pool-market.rpc_call_reverted.json",
+      "kind": "error",
+      "route": "pool-market",
+      "status": 503,
+      "valid": true
+    },
+    {
       "file": "fixtures/invalid/pool-market.incompatible-version.json",
       "kind": "invalid",
       "route": "pool-market",
@@ -976,6 +1060,20 @@
     },
     {
       "file": "fixtures/error/wallet-assets.stale_or_future_block.json",
+      "kind": "error",
+      "route": "wallet-assets",
+      "status": 503,
+      "valid": true
+    },
+    {
+      "file": "fixtures/error/wallet-assets.rpc_call_gas_limit.json",
+      "kind": "error",
+      "route": "wallet-assets",
+      "status": 503,
+      "valid": true
+    },
+    {
+      "file": "fixtures/error/wallet-assets.rpc_call_reverted.json",
       "kind": "error",
       "route": "wallet-assets",
       "status": 503,
@@ -1031,6 +1129,20 @@
       "valid": true
     },
     {
+      "file": "fixtures/error/nft-positions.rpc_call_gas_limit.json",
+      "kind": "error",
+      "route": "nft-positions",
+      "status": 503,
+      "valid": true
+    },
+    {
+      "file": "fixtures/error/nft-positions.rpc_call_reverted.json",
+      "kind": "error",
+      "route": "nft-positions",
+      "status": 503,
+      "valid": true
+    },
+    {
       "file": "fixtures/invalid/nft-positions.incompatible-version.json",
       "kind": "invalid",
       "route": "nft-positions",
@@ -1074,6 +1186,20 @@
     },
     {
       "file": "fixtures/error/catalogue.stale_or_future_block.json",
+      "kind": "error",
+      "route": "catalogue",
+      "status": 503,
+      "valid": true
+    },
+    {
+      "file": "fixtures/error/catalogue.rpc_call_gas_limit.json",
+      "kind": "error",
+      "route": "catalogue",
+      "status": 503,
+      "valid": true
+    },
+    {
+      "file": "fixtures/error/catalogue.rpc_call_reverted.json",
       "kind": "error",
       "route": "catalogue",
       "status": 503,
@@ -1129,6 +1255,20 @@
       "valid": true
     },
     {
+      "file": "fixtures/error/pool-activity.rpc_call_gas_limit.json",
+      "kind": "error",
+      "route": "pool-activity",
+      "status": 503,
+      "valid": true
+    },
+    {
+      "file": "fixtures/error/pool-activity.rpc_call_reverted.json",
+      "kind": "error",
+      "route": "pool-activity",
+      "status": 503,
+      "valid": true
+    },
+    {
       "file": "fixtures/invalid/pool-activity.incompatible-version.json",
       "kind": "invalid",
       "route": "pool-activity",
@@ -1178,6 +1318,20 @@
       "valid": true
     },
     {
+      "file": "fixtures/error/pool-positions.rpc_call_gas_limit.json",
+      "kind": "error",
+      "route": "pool-positions",
+      "status": 503,
+      "valid": true
+    },
+    {
+      "file": "fixtures/error/pool-positions.rpc_call_reverted.json",
+      "kind": "error",
+      "route": "pool-positions",
+      "status": 503,
+      "valid": true
+    },
+    {
       "file": "fixtures/invalid/pool-positions.incompatible-version.json",
       "kind": "invalid",
       "route": "pool-positions",
@@ -1221,6 +1375,20 @@
     },
     {
       "file": "fixtures/error/pool-metrics.stale_or_future_block.json",
+      "kind": "error",
+      "route": "pool-metrics",
+      "status": 503,
+      "valid": true
+    },
+    {
+      "file": "fixtures/error/pool-metrics.rpc_call_gas_limit.json",
+      "kind": "error",
+      "route": "pool-metrics",
+      "status": 503,
+      "valid": true
+    },
+    {
+      "file": "fixtures/error/pool-metrics.rpc_call_reverted.json",
       "kind": "error",
       "route": "pool-metrics",
       "status": 503,

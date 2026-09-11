@@ -7,7 +7,7 @@ connections and field changes before frontend hooks consume them.
 
 ## Current baseline and gaps
 
-The next disabled producer candidate is `read-v1 / 1.1.0-rc.2`, reconciling #26
+The next disabled producer candidate is `read-v1 / 1.1.0-rc.3`, reconciling #26
 with current main, #52 and the approved #59 projection. The
 [coordinated change notice](READ_CONTRACT_CANDIDATE_1_1.md) records the nine routes,
 field semantics, numeric bounds, fixtures, load-test limitations and consumer
@@ -22,7 +22,7 @@ still pending on #1. The deployment and real-data switch remain disabled.
 ## Version and field rules
 
 Use `read-v1` for the first browser contract major and a semantic contract
-version (the current candidate is `1.1.0-rc.2`). It is distinct from the
+version (the current candidate is `1.1.0-rc.3`). It is distinct from the
 Python application version and existing per-response `schemaVersion` values.
 Do not rewrite those fields to make them equal.
 

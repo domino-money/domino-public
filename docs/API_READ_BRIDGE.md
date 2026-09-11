@@ -93,7 +93,7 @@ require a separate state/rate-limit design and tests, not an autoscaling flag.
 
 ## Browser route contract
 
-All nine paths are implemented in the disabled 1.1.0-rc.2 candidate; no public
+All nine paths are implemented in the disabled 1.1.0-rc.3 candidate; no public
 endpoints are active. Each requires a route flag and consumer/release evidence. Public
 names differ only by the explicit prefix mapping. JSON request and successful
 response field names remain those of the selected backend contract. No `data`

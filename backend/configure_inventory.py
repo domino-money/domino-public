@@ -5,7 +5,7 @@ import sys
 
 from discovery import DataError, DiscoveryReader, ReadRpc, ZERO
 from inventory import AlchemyInventory
-from local_config import save_config
+from local_config import load_config, save_config
 
 
 def main():
@@ -36,7 +36,13 @@ def main():
         except DataError as error:
             print('Inventario indisponivel neste acesso. Codigo:', str(error))
             print('A busca por endereco continua disponivel pelo RPC validado.')
-        save_config({'version': 1, 'rpcUrl': url, 'inventoryUrl': url})
+        existing = load_config()
+        if existing.get('version') == 2:
+            # Inventory-key rotation must not silently remove independent RPCs.
+            config = {**existing, 'inventoryUrl': url}
+        else:
+            config = {'version': 1, 'rpcUrl': url, 'inventoryUrl': url}
+        save_config(config)
         print('Configuracao salva com permissao 0600, apenas para o novo backend.')
         print('Nenhuma assinatura ou transacao foi solicitada.')
         return 0

@@ -224,6 +224,7 @@ export function validateError(status: number, payload: unknown): payload is Erro
                 'generator': 'scripts/export-read-contract.py',
                 'sources': [{'path': name, 'sha256': hashlib.sha256((ROOT/name).read_bytes()).hexdigest()}
                             for name in ('backend/read_contract.py', 'backend/read_api.py', 'backend/read_service.py',
+                                         'backend/rpc_failover.py', 'backend/rpc_config.py', 'backend/local_config.py',
                                          'backend/historical_read.py', 'backend/historical_capacity.py', 'bridge/src/request-contract.mjs',
                                          'backend/read_gateway.py', 'backend/bridge_state.py', 'backend/bridge_http.py',
                                          'backend/metrics_service.py', 'backend/activity_store.py', 'backend/position_store.py',
@@ -234,7 +235,8 @@ export function validateError(status: number, payload: unknown): payload is Erro
                                          'backend/fee_accounting.py', 'backend/pool_activity.py',
                                          'backend/tests/fixtures/position-reference.json',
                                          'backend/tests/read_history_fixtures.py', 'backend/tests/read_request_fixtures.py',
-                                         'backend/tests/test_read_contract.py', 'scripts/export-read-contract.py')],
+                                         'backend/tests/test_read_contract.py', 'backend/tests/test_read_reconciliation.py',
+                                         'scripts/export-read-contract.py')],
                 'enabledReadCandidates': list(ENABLED_READS),
                 'browserTransformations': [{'path': 'inventory.nextCursor', 'route': 'wallet-assets',
                                             'producerType': 'string|null', 'gatewayType': 'string|null',

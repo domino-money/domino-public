@@ -8,7 +8,7 @@
       "route": "wallet-assets"
     }
   ],
-  "contractVersion": "1.1.0-rc.2",
+  "contractVersion": "1.1.0-rc.3",
   "enabledReadCandidates": [
     "token",
     "pools",
@@ -23,7 +23,7 @@
   "files": [
     {
       "path": "README.md",
-      "sha256": "8c8a2105a2f5e854f5c838512519bd9163838b3bed59e67fd1970843bbb5c2b1"
+      "sha256": "ba9e9dc8488d20cf1e3833669c5a4a39414ea7f5bc61971ea10f831972d657dc"
     },
     {
       "path": "consumer.test.mjs",
@@ -40,6 +40,14 @@
     {
       "path": "fixtures/error/catalogue.read_capacity_busy.json",
       "sha256": "d403ef64095c25a56e47a187a186e11273abde3db22b683833eb640bf8562021"
+    },
+    {
+      "path": "fixtures/error/catalogue.rpc_call_gas_limit.json",
+      "sha256": "bf598fb526d88f37c5af62c7b5f67582274e2426b847b9e21f0584ae0f9119e4"
+    },
+    {
+      "path": "fixtures/error/catalogue.rpc_call_reverted.json",
+      "sha256": "5716589b8bec838fbb7ee7d943043ed032165801f06c25eead72748f940b2063"
     },
     {
       "path": "fixtures/error/catalogue.stale_or_future_block.json",
@@ -66,6 +74,14 @@
       "sha256": "d403ef64095c25a56e47a187a186e11273abde3db22b683833eb640bf8562021"
     },
     {
+      "path": "fixtures/error/nft-positions.rpc_call_gas_limit.json",
+      "sha256": "bf598fb526d88f37c5af62c7b5f67582274e2426b847b9e21f0584ae0f9119e4"
+    },
+    {
+      "path": "fixtures/error/nft-positions.rpc_call_reverted.json",
+      "sha256": "5716589b8bec838fbb7ee7d943043ed032165801f06c25eead72748f940b2063"
+    },
+    {
       "path": "fixtures/error/nft-positions.stale_or_future_block.json",
       "sha256": "be6818eb7ecba4e1f43c3dc7365f3a5773fe5e11c90168fb8fbc61a2556a41a0"
     },
@@ -88,6 +104,14 @@
     {
       "path": "fixtures/error/pool-activity.read_capacity_busy.json",
       "sha256": "d403ef64095c25a56e47a187a186e11273abde3db22b683833eb640bf8562021"
+    },
+    {
+      "path": "fixtures/error/pool-activity.rpc_call_gas_limit.json",
+      "sha256": "bf598fb526d88f37c5af62c7b5f67582274e2426b847b9e21f0584ae0f9119e4"
+    },
+    {
+      "path": "fixtures/error/pool-activity.rpc_call_reverted.json",
+      "sha256": "5716589b8bec838fbb7ee7d943043ed032165801f06c25eead72748f940b2063"
     },
     {
       "path": "fixtures/error/pool-activity.stale_or_future_block.json",
@@ -114,6 +138,14 @@
       "sha256": "d403ef64095c25a56e47a187a186e11273abde3db22b683833eb640bf8562021"
     },
     {
+      "path": "fixtures/error/pool-market.rpc_call_gas_limit.json",
+      "sha256": "bf598fb526d88f37c5af62c7b5f67582274e2426b847b9e21f0584ae0f9119e4"
+    },
+    {
+      "path": "fixtures/error/pool-market.rpc_call_reverted.json",
+      "sha256": "5716589b8bec838fbb7ee7d943043ed032165801f06c25eead72748f940b2063"
+    },
+    {
       "path": "fixtures/error/pool-market.stale_or_future_block.json",
       "sha256": "be6818eb7ecba4e1f43c3dc7365f3a5773fe5e11c90168fb8fbc61a2556a41a0"
     },
@@ -138,6 +170,14 @@
       "sha256": "d403ef64095c25a56e47a187a186e11273abde3db22b683833eb640bf8562021"
     },
     {
+      "path": "fixtures/error/pool-metrics.rpc_call_gas_limit.json",
+      "sha256": "bf598fb526d88f37c5af62c7b5f67582274e2426b847b9e21f0584ae0f9119e4"
+    },
+    {
+      "path": "fixtures/error/pool-metrics.rpc_call_reverted.json",
+      "sha256": "5716589b8bec838fbb7ee7d943043ed032165801f06c25eead72748f940b2063"
+    },
+    {
       "path": "fixtures/error/pool-metrics.stale_or_future_block.json",
       "sha256": "be6818eb7ecba4e1f43c3dc7365f3a5773fe5e11c90168fb8fbc61a2556a41a0"
     },
@@ -160,6 +200,14 @@
     {
       "path": "fixtures/error/pool-positions.read_capacity_busy.json",
       "sha256": "d403ef64095c25a56e47a187a186e11273abde3db22b683833eb640bf8562021"
+    },
+    {
+      "path": "fixtures/error/pool-positions.rpc_call_gas_limit.json",
+      "sha256": "bf598fb526d88f37c5af62c7b5f67582274e2426b847b9e21f0584ae0f9119e4"
+    },
+    {
+      "path": "fixtures/error/pool-positions.rpc_call_reverted.json",
+      "sha256": "5716589b8bec838fbb7ee7d943043ed032165801f06c25eead72748f940b2063"
     },
     {
       "path": "fixtures/error/pool-positions.stale_or_future_block.json",
@@ -190,6 +238,14 @@
       "sha256": "d403ef64095c25a56e47a187a186e11273abde3db22b683833eb640bf8562021"
     },
     {
+      "path": "fixtures/error/pools.rpc_call_gas_limit.json",
+      "sha256": "bf598fb526d88f37c5af62c7b5f67582274e2426b847b9e21f0584ae0f9119e4"
+    },
+    {
+      "path": "fixtures/error/pools.rpc_call_reverted.json",
+      "sha256": "5716589b8bec838fbb7ee7d943043ed032165801f06c25eead72748f940b2063"
+    },
+    {
       "path": "fixtures/error/pools.stale_or_future_block.json",
       "sha256": "be6818eb7ecba4e1f43c3dc7365f3a5773fe5e11c90168fb8fbc61a2556a41a0"
     },
@@ -212,6 +268,14 @@
     {
       "path": "fixtures/error/token.read_capacity_busy.json",
       "sha256": "d403ef64095c25a56e47a187a186e11273abde3db22b683833eb640bf8562021"
+    },
+    {
+      "path": "fixtures/error/token.rpc_call_gas_limit.json",
+      "sha256": "bf598fb526d88f37c5af62c7b5f67582274e2426b847b9e21f0584ae0f9119e4"
+    },
+    {
+      "path": "fixtures/error/token.rpc_call_reverted.json",
+      "sha256": "5716589b8bec838fbb7ee7d943043ed032165801f06c25eead72748f940b2063"
     },
     {
       "path": "fixtures/error/token.stale_or_future_block.json",
@@ -242,6 +306,14 @@
       "sha256": "d403ef64095c25a56e47a187a186e11273abde3db22b683833eb640bf8562021"
     },
     {
+      "path": "fixtures/error/wallet-assets.rpc_call_gas_limit.json",
+      "sha256": "bf598fb526d88f37c5af62c7b5f67582274e2426b847b9e21f0584ae0f9119e4"
+    },
+    {
+      "path": "fixtures/error/wallet-assets.rpc_call_reverted.json",
+      "sha256": "5716589b8bec838fbb7ee7d943043ed032165801f06c25eead72748f940b2063"
+    },
+    {
       "path": "fixtures/error/wallet-assets.stale_or_future_block.json",
       "sha256": "be6818eb7ecba4e1f43c3dc7365f3a5773fe5e11c90168fb8fbc61a2556a41a0"
     },
@@ -259,11 +331,11 @@
     },
     {
       "path": "fixtures/gateway/capabilities.disabled.json",
-      "sha256": "8b836498d9b7f77871a850124f45bcd09c8674fd478a3ec06414bdfd84d335ad"
+      "sha256": "dfffff82ec8bc567984d26a7c3e3a2f4698f04b4455fc1b633e2dca15d762902"
     },
     {
       "path": "fixtures/gateway/capabilities.live_read_only.json",
-      "sha256": "62a2a09517169af3f21402c4ed78c4fd370a496eafe836f4425cba204c147936"
+      "sha256": "ea2f269e07018a6faad10c0808cb13516f1c761f765fb3e0f0e70b8b94ef7f22"
     },
     {
       "path": "fixtures/gateway/catalogue.empty.json",
@@ -426,6 +498,14 @@
       "sha256": "c750919f9900d2099c98c857543557fb7265cbfa745939c5da9aed17c8489bd4"
     },
     {
+      "path": "fixtures/gateway/token.call-gas-limit.json",
+      "sha256": "cf555e62b6ec40414baf2aae989fe050cedb0327c77929519fcb2adbf6465aef"
+    },
+    {
+      "path": "fixtures/gateway/token.metadata-reverted.json",
+      "sha256": "3bd8a1c1ce02393bf0cda00fba050c5e72f0c2c0d1d53145c9522ab1f424cebd"
+    },
+    {
       "path": "fixtures/gateway/token.missing-contract.json",
       "sha256": "1ae1c31d6b620e2d079077f8ad75fdd20d48105c78f2cc5577edc5b53e0ad0f5"
     },
@@ -452,6 +532,10 @@
     {
       "path": "fixtures/gateway/token.zero-decimals.json",
       "sha256": "fdf9460902af83ff927a708e0f10f44f1b07576bfd72456c1e5404e2825f6364"
+    },
+    {
+      "path": "fixtures/gateway/wallet-assets.call-gas-limit.json",
+      "sha256": "ea0592eb536bda6e9314f4370db0720220a3430ac075b804798fe02113632de7"
     },
     {
       "path": "fixtures/gateway/wallet-assets.fallback.json",
@@ -491,7 +575,7 @@
     },
     {
       "path": "fixtures/index.json",
-      "sha256": "3d64cb901211bee2be3e035b5785741d9643ee78ae0d69b8d8705cf6d3742b66"
+      "sha256": "b11399191bf58ff79a555444c9d1ef18f6b92d130b2dd777bc59f0501351b37a"
     },
     {
       "path": "fixtures/invalid/catalogue.incompatible-version.json",
@@ -694,6 +778,14 @@
       "sha256": "c750919f9900d2099c98c857543557fb7265cbfa745939c5da9aed17c8489bd4"
     },
     {
+      "path": "fixtures/producer/token.call-gas-limit.json",
+      "sha256": "cf555e62b6ec40414baf2aae989fe050cedb0327c77929519fcb2adbf6465aef"
+    },
+    {
+      "path": "fixtures/producer/token.metadata-reverted.json",
+      "sha256": "3bd8a1c1ce02393bf0cda00fba050c5e72f0c2c0d1d53145c9522ab1f424cebd"
+    },
+    {
       "path": "fixtures/producer/token.missing-contract.json",
       "sha256": "1ae1c31d6b620e2d079077f8ad75fdd20d48105c78f2cc5577edc5b53e0ad0f5"
     },
@@ -720,6 +812,10 @@
     {
       "path": "fixtures/producer/token.zero-decimals.json",
       "sha256": "fdf9460902af83ff927a708e0f10f44f1b07576bfd72456c1e5404e2825f6364"
+    },
+    {
+      "path": "fixtures/producer/wallet-assets.call-gas-limit.json",
+      "sha256": "ea0592eb536bda6e9314f4370db0720220a3430ac075b804798fe02113632de7"
     },
     {
       "path": "fixtures/producer/wallet-assets.fallback.json",
@@ -811,91 +907,91 @@
     },
     {
       "path": "runtime.mjs",
-      "sha256": "ad752c0f17ea5ee620f6358bf84f9f57c1255c6b827f5050fa27c857337a3164"
+      "sha256": "f74c0ef409e693f541e357846efc8d7e83b4c2c1a80432a3f7b601531b9dc0f1"
     },
     {
       "path": "schemas/capabilities.response.schema.json",
-      "sha256": "531691d763aca67ff9e23963898e910687d878a3da3278a79dbc746eeeefb9c8"
+      "sha256": "cc2f214c4316b6c385a7049a437cb2b9ffad458a4a988f204863d1ca36270672"
     },
     {
       "path": "schemas/catalogue.request.schema.json",
-      "sha256": "f3d9180f73031f1fdcf59a9ed48de85395d4e63e5fc2da18308b19bf54fb0bc5"
+      "sha256": "19de4d3b211ba13fb171ec9aebb495bc9556af97743d55a458607b05a068dd1a"
     },
     {
       "path": "schemas/catalogue.response.schema.json",
-      "sha256": "4518716d3d866d6a9d0483ccb0a2ecf9c7a2dcfecf8ff7cfd8aa1212ec668204"
+      "sha256": "9ab6204b437963f8cdaf0f210caf60a5da05c8d12670c479f556bcad755ee003"
     },
     {
       "path": "schemas/error.response.schema.json",
-      "sha256": "62f2d615b4f6d904808bdbce6a69fd97bf8fa29feb6ad4b3566b251910df0178"
+      "sha256": "abfb54babbb13d8e84ed281ad4ef2eb0c7cef9d4c6e73a89c9a73908e7cfa4c1"
     },
     {
       "path": "schemas/nft-positions.request.schema.json",
-      "sha256": "957136dc7b79a4cbffa14ad08c415ed788fd56b868f29a4fbace5758ea22ddfd"
+      "sha256": "a2eaad8e5cf90c6a9798fcc6e0aea4f903881f028532411ef7ae4dc4191ee95f"
     },
     {
       "path": "schemas/nft-positions.response.schema.json",
-      "sha256": "f7d12a5a2f73a457b6022f711846fb22710e1e5b52f37b0f25701a43fea820d8"
+      "sha256": "8da064f1f52e3f1effea45e47b279fff8f0eca596aac9665dafcfa858849f932"
     },
     {
       "path": "schemas/pool-activity.request.schema.json",
-      "sha256": "b46f2d8e5eb1b1677ab3917055564070fc24293d8669138130c27f7a2592e9d0"
+      "sha256": "d05152c3c66100b4376bf4c279f579f5cda6e8cfb2e51f1f2bcca35138e09959"
     },
     {
       "path": "schemas/pool-activity.response.schema.json",
-      "sha256": "ddedade99bbd770b5f27680b14371929c93848aeea4592b5ed2168b7ad267833"
+      "sha256": "2eed27194bb8dc8a9858234ec6479ee7f7c63ac72486ad88ebe7a7a0c50ca364"
     },
     {
       "path": "schemas/pool-market.request.schema.json",
-      "sha256": "de73ff51c18a204dab7dd4dbc8d60f20b3139c7f90d44bca28bb4d3b3daa4916"
+      "sha256": "67a896b437893ae7b1f451cc3d146c072bb0592715fded741b7a707684bbd566"
     },
     {
       "path": "schemas/pool-market.response.schema.json",
-      "sha256": "d9d9c26812869bf1b78cb715434734710802648eb2b745aa6de15cf63000fd37"
+      "sha256": "abd37c07d32610fbfceb5c76f9ad138ddf87aa16fb54c9b6e9075bef104edb91"
     },
     {
       "path": "schemas/pool-metrics.request.schema.json",
-      "sha256": "f13b9d97f834597a6423adb4eb55afebd0bad63d792dd9db1170ecc0b1584572"
+      "sha256": "bd6694db25a310cdd3dec633227dec02dd56ff6ce46bac7610f89cbfd7d0121e"
     },
     {
       "path": "schemas/pool-metrics.response.schema.json",
-      "sha256": "a3ff4fd3d58ace5c83d5a62097c9389b4d210f068f56f0a302894b3f98623208"
+      "sha256": "e866ecbe9e659742c0ba537173635f77ccf2b2432a2a900e6f00b3d685be03cf"
     },
     {
       "path": "schemas/pool-positions.request.schema.json",
-      "sha256": "8e06c3565df66d6b7dab0ef89a1694836a6b26e6e85ca9f35e65c813e2929f43"
+      "sha256": "555a50d865bb510f2bf2faccd87f9b76f5d116e8374a17eaf3203aefe28ca404"
     },
     {
       "path": "schemas/pool-positions.response.schema.json",
-      "sha256": "359365c2d89b08f979f4144f75b9bebcc17a6abb31c515f36d647bd85e8844f0"
+      "sha256": "71bee29296924749be7630c02d5d4408505c3d42a0fcf9ef950f6f77715c11b8"
     },
     {
       "path": "schemas/pools.request.schema.json",
-      "sha256": "c550ef459758f050ef72c817a641e5ed9914485a5113ea62f63dc7b7d8088949"
+      "sha256": "a2083e84ff1906fcd34e2b8b5ebc1c795e690d3c3fe37bc739e47066392f9da7"
     },
     {
       "path": "schemas/pools.response.schema.json",
-      "sha256": "0ad7e337bbdb339af8638c348d5a9c0d31816acd1d0d561571ec6c933141a026"
+      "sha256": "0b1bb81d0a80a094ce6fa2663fde5438106971392142dcd4e3e5177ec01385b9"
     },
     {
       "path": "schemas/token.request.schema.json",
-      "sha256": "d715c0900ea67406ff200036ecd0a0eacce392bbfe2e13a43685a7d5f6f217b5"
+      "sha256": "651dca47747f73f831ffc23f0e1acd486c8e945203218b9f3c77e68b595a78b0"
     },
     {
       "path": "schemas/token.response.schema.json",
-      "sha256": "0edddf0fd1fb39a605bfded151b75eeed5760af06b8a894d7de6fd467673562c"
+      "sha256": "7e3c3364903d38fb328645aac5238742494ef503d479f6cd4796d93be7ae9cec"
     },
     {
       "path": "schemas/wallet-assets.request.schema.json",
-      "sha256": "b92a36761644d1e1fd4d227ac582dc53418fdb335b7a5284b94fbce9ca7dbdca"
+      "sha256": "9e771db24e3310290d5728174d23e037bf2880ebaac2097701468879da0f2d47"
     },
     {
       "path": "schemas/wallet-assets.response.schema.json",
-      "sha256": "cdeb8b05f581708505b99eac0eb5f9cf27503000dbd8c25adb83805be77f4dcc"
+      "sha256": "3da4e08bbf711253c3cc48850c6676f746216dc0ef2107a624a4469ed14a2859"
     },
     {
       "path": "types.ts",
-      "sha256": "2c1736be6ce35d1d08df06c2cfe7f13d4165f14ded73787174082687643cce73"
+      "sha256": "a50c6b9114033c7fd560934784169a408f8be4e978ba23324788a1cb3c7675f3"
     }
   ],
   "generator": "scripts/export-read-contract.py",
@@ -903,19 +999,31 @@
   "sources": [
     {
       "path": "backend/read_contract.py",
-      "sha256": "f5d04797ce09995bf4d9c50a5ac45e4d792bd6cb0e3bf221ad7b4bd8b268ba7f"
+      "sha256": "539fa15678bd25df3db213180d40bbe30e98a463426856c7eeb5b39a102038da"
     },
     {
       "path": "backend/read_api.py",
-      "sha256": "a5cc9a46aada00696a7219086c0ac88f153cc953504df140a2f1e3e3d7d3833b"
+      "sha256": "5a4e805f26097b8efcb53da10a93cb20769440f7d6ec6f6f1d82b4de3a7bbf61"
     },
     {
       "path": "backend/read_service.py",
-      "sha256": "1851f75345e5970dc6d30026a13f1c75db3d28524f21eefbdb1f55bb7335c13a"
+      "sha256": "83ef45956e85347f4aab425cc7b77396ca82a74231aa0f1803926bd77b9448fd"
+    },
+    {
+      "path": "backend/rpc_failover.py",
+      "sha256": "6493aa48e0bf51b4834e1a418497fc056a103dc4c1f0cc81576f6f647c98c5c9"
+    },
+    {
+      "path": "backend/rpc_config.py",
+      "sha256": "92c09b1aebe54641d60e75ad4b85c82527472776a29fbcf177da2f48ae0374a4"
+    },
+    {
+      "path": "backend/local_config.py",
+      "sha256": "0ed9d3d4d3316c2560f57d144bfd6fb42256999cfd98e30959a66fbd49a9d826"
     },
     {
       "path": "backend/historical_read.py",
-      "sha256": "64b86c237e0c606542e398ee606f7b0e969d05fa9ce4e7c8c5a5be2f505987cc"
+      "sha256": "c5573bdc2ef8e181814b042ddc5805bc02c2e98e607f585040be1ffb3f65c6ad"
     },
     {
       "path": "backend/historical_capacity.py",
@@ -971,7 +1079,7 @@
     },
     {
       "path": "backend/discovery.py",
-      "sha256": "6922959dc990cfdb24b2ed7c186a956568f64a750a57762e4ee96909c8ff292e"
+      "sha256": "a369bb6720bedd3ff3997f319a7fe9dcb9a610cd27fe3df86c13aac4bd201784"
     },
     {
       "path": "backend/nft_ownership.py",
@@ -1023,11 +1131,15 @@
     },
     {
       "path": "backend/tests/test_read_contract.py",
-      "sha256": "1b5975d0d885e344b7abb2c9bf988156111b2975fd11892f02509ae173e90775"
+      "sha256": "0d236a38bfaa3529e4d42f2382f13693efb6e3f1d4483f6e473939f9fab126e1"
+    },
+    {
+      "path": "backend/tests/test_read_reconciliation.py",
+      "sha256": "59976d0ae212ed649991ca51679c2e34b08eec869ddafd9dce925b464bd966b0"
     },
     {
       "path": "scripts/export-read-contract.py",
-      "sha256": "96e73a7534921874cba3847a37afb69c52bc665125d000f9f996a877d29b8f3a"
+      "sha256": "8ef574be4d81bbf62b82203cce04d75e27dc6f147ec9e1964be91f8ba98c4e68"
     }
   ],
   "status": "candidate_disabled_pending_consumer_acknowledgement"

@@ -1115,7 +1115,7 @@
   ],
   "title": "PoolMetricsResponse",
   "type": "object",
-  "x-contract-version": "1.1.0-rc.2",
+  "x-contract-version": "1.1.0-rc.3",
   "x-domino-constraints": [
     "usableAsCurrent24h requires qualified_historical_calculation, complete24h capital and valuation, fresh snapshot, and non-null feeAprPercent"
   ]
