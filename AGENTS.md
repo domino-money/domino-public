@@ -22,6 +22,18 @@ This file applies to the entire Domino repository. Read README.md and CONTRIBUTI
 
 Both collaborators may work in every directory. Coordinate overlapping files and API contracts in the issue/PR; there are no folder access restrictions. Use one branch per task (`codex/<issue>-<topic>` for assistant-created branches), small reviewable PRs and the relevant acceptance criteria. Do not silently change another task's API contract or deployment configuration.
 
+## Proportionate review and owner fast path
+
+The owner approved a fast path on 11 September 2026 after PR #64. Small, reversible changes made by the responsible area owner need that author's validation and current-head CI, **not a second manual review or approval**. OxDecimal owns frontend presentation; rugged97 owns backend, contracts and integration. Ownership is coordination, not a restriction on repository access.
+
+- Examples: spacing, colours, typography, decorative backgrounds, static artwork and local copy adjustments that preserve product meaning and behavior. Judge the semantic change; re-indentation alone is not a reason for a full audit.
+- The author briefly records what changed and the relevant check. Reuse passing CI and existing exact-head evidence. Do not repeat the full suite locally, create a browser-size matrix, add mirrored tests or delegate an independent review just to recheck a small owner change. Use a focused visual check only if the author has not already covered the changed state or there is a concrete unresolved regression.
+- Keep a PR, passing required CI, an up-to-date base and resolved conversations. The responsible owner may merge an eligible PR without waiting for the other collaborator. If explicitly asked to assess it, check eligibility and existing evidence briefly; do not turn this into a second audit.
+- Require independent review for money/amount/state semantics, wallet/session/access controls, signatures/approvals/swaps/deposits, API/schema contracts, database migrations or historical accounting, provider trust/qualification, dependencies/build/deployment/CI, security or this policy. These exclusions apply even inside a presentation file. Substantial or cross-area changes also use normal review.
+- GitHub's native path rule implements a narrow UI-file exception; it cannot prove change size, semantics or author responsibility. Being in an exempt path is necessary for that automatic exception, not sufficient to claim eligibility. Unlisted files retain the normal review requirement until the file boundary is deliberately updated. Do not use admin bypass or move sensitive code into exempt paths.
+
+See [review policy](docs/REVIEW_POLICY.md) for the exact path boundary and GitHub configuration.
+
 ## Subagent delegation
 
 The project owner authorizes subagents to accelerate issue work. Delegate concrete, independent subtasks when parallel work materially helps, while the coordinating agent continues useful work. This permission does not start every open issue or connect separate collaborators' sessions automatically.

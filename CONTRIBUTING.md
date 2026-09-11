@@ -8,7 +8,7 @@
 2. Branch from current `main`: `codex/<issue>-<topic>` for assistant work or `feature/<issue>-<topic>` for manual work. Use a separate clone/worktree for simultaneous tasks.
 3. Give your assistant AGENTS.md, the issue's acceptance criteria and the relevant specs. Never transfer credentials through prompts.
 4. Open a small pull request. Explain the observable change, limitations and checks; include screenshots for visible changes when helpful.
-5. The other collaborator reviews. Main requires one approval, passing CI and resolved conversations. New commits dismiss stale approvals. Squash merge after checks pass; the branch is then deleted.
+5. Apply the [proportionate review policy](docs/REVIEW_POLICY.md). A small, reversible presentation change by the responsible owner uses author validation plus current-head CI, with no second manual review/approval. Other changes require independent approval. All PRs retain passing required CI, an up-to-date base and resolved conversations. New commits dismiss stale approvals where approval is required. Squash merge after the applicable gates pass; delete the branch only when it has no dependent work.
 
 Full administrative access includes settings and workflows, so protection is a shared development policy rather than isolation from either administrator. No directory is reserved exclusively to one contributor.
 
