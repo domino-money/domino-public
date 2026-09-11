@@ -46,6 +46,7 @@
   },
   "include": [
     "src",
+    "functions",
     "vite.config.ts"
   ]
 }

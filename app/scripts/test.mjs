@@ -26,6 +26,8 @@ execFileSync(
     'src/lib/markets.ts',
     '../web/lib/compound.ts',
     '../web/lib/position.ts',
+    'functions/_lib/gate.ts',
+    'functions/_middleware.ts',
   ],
   { stdio: 'inherit' },
 );
@@ -33,4 +35,4 @@ execFileSync(
 mkdirSync('.test-build', { recursive: true });
 writeFileSync('.test-build/package.json', JSON.stringify({ type: 'commonjs' }));
 
-execFileSync(process.execPath, ['--test', 'tests/domain.test.mjs'], { stdio: 'inherit' });
+execFileSync(process.execPath, ['--test', 'tests/domain.test.mjs', 'tests/gate.test.mjs'], { stdio: 'inherit' });

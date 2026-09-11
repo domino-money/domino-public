@@ -19,7 +19,7 @@ npm --prefix app run dev       # http://localhost:5273
 Checks, the same ones CI runs, in the same order:
 
 ```sh
-npm run check:app   # domain tests, typecheck, lint, build, browser tests
+npm run check:app   # domain and gate tests, typecheck, lint, build, browser tests
 ```
 
 ## Tests
@@ -67,6 +67,88 @@ For a look rather than a check:
 ```sh
 npm --prefix app run preview   # http://127.0.0.1:5274
 ```
+
+## Deploy and closed beta
+
+The site is a Cloudflare Pages project, `domino-app`, configured in
+`wrangler.toml`. `functions/_middleware.ts` runs before every request the
+deployment receives — pages, assets and `/api/*` — and nothing of the app is
+served until the browser holds a valid access cookie. Because the gate is code
+in every deployment, it covers `www.domino.money`, `domino-app-e65.pages.dev`
+(Cloudflare appended `-e65` because the plain name was taken), `preview.domino-app-e65.pages.dev` and
+every preview hostname the same way; there is no hostname around it.
+
+It proves an invitation, nothing more. It is not wallet authentication, grants
+no capability in the app, and never stands in for a session.
+
+**Two secrets, set by the project owner and never committed:**
+
+```sh
+npx wrangler pages secret put BETA_PASSWORD --project-name domino-app
+node -e "process.stdout.write(require('crypto').randomBytes(32).toString('base64url'))" | npx wrangler pages secret put BETA_COOKIE_KEY --project-name domino-app
+```
+
+The CLI in wrangler 4.130.0 sets **production** secrets only; it has no
+per-environment flag. Set the same two names for preview in the dashboard:
+Workers & Pages → `domino-app` → Settings → *Choose Environment: Preview* →
+Variables and secrets, both with type **Secret** — never *Text*, which stores
+the value in plain view — and a different random cookie key. The password must be
+at least 16 characters. Without both secrets, or with either too weak or reused
+as the other, every request gets 503 — including the login form. The deployment
+is never open by misconfiguration.
+
+**Set Fail closed in both environments.** Workers & Pages → `domino-app` →
+Settings → Runtime → *Fail open/closed* → **Fail closed**, once with *Choose
+Environment* on Production and once on Preview. The free plan runs Pages
+Functions up to 100,000 requests a day. With *Fail open*, once that is exhausted
+Cloudflare serves the static files without running this middleware — the whole
+site, unguarded, and someone could exhaust the quota on purpose. *Fail closed*
+returns an error instead.
+
+**How it behaves:**
+
+- A page navigation without access gets the access page with status 401. It
+  ships no script, and its own CSP forbids `fetch()`.
+- Any other request without access — an asset, a token image, an API call —
+  gets 401 `{"error":"beta_access_required"}`. Nothing is served.
+- `POST /__beta/login` accepts only a small same-origin form post and compares
+  the password in constant time. It sets `__Host-domino-beta` with `Secure`,
+  `HttpOnly`, `SameSite=Lax`, `Path=/` and seven days of life, signed with
+  HMAC-SHA256 over its expiry and a digest of the current password.
+- **Rotating `BETA_PASSWORD` signs everyone out at once**, because every cookie
+  was signed over the old password's digest. Use it to revoke access.
+- `POST /__beta/logout` clears the cookie.
+- `www.domino.money` redirects to the apex.
+- Authenticated responses carry HSTS, `nosniff`, `X-Frame-Options: DENY`,
+  `noindex`, private caching and a strict CSP: scripts, styles, images and
+  connections from this origin only, plus the Google Fonts `index.html` loads.
+
+**Deploying**, after `npx wrangler login` in your own terminal:
+
+```sh
+npm run deploy:preview   # build, then upload to a preview hostname
+npm run deploy           # build, then upload as production
+```
+
+Both pin wrangler 4.130.0 through `npx` rather than a dependency, so CI never
+downloads it.
+
+**Looking at it locally.** `scripts/gated-server.mjs` serves `dist` through the
+compiled middleware with `node:http`, which is how the browser tests run it:
+
+```sh
+npm test && npm run build
+BETA_PASSWORD=local-preview-password BETA_COOKIE_KEY=$(node -e "console.log(require('crypto').randomBytes(32).toString('base64url'))") npm run serve:gated
+```
+
+**Tests.** `tests/gate.test.mjs` drives the middleware one request at a time,
+and every refusal also asserts that nothing was served. `tests/gate.browser.test.mjs`
+opens the built site through the real middleware in a browser: no password
+shows only the access page and every built file answers 401; the right
+password opens the whole app with no CSP violation; signing out closes it; a
+cookie stops working when the password rotates. Removing the cookie check fails
+7 unit and all 8 browser tests; letting a wrong password through fails the unit
+suite.
 
 ## Routes
 
@@ -129,8 +211,9 @@ APP_ORIGIN`, so a deployed worker cannot be called from a dev server on another
 port. Until that is enabled, `src/lib/markets.ts` serves labelled placeholder
 rows and the workspace runs entirely on the practice modules.
 
-Hosting for `app/` is not decided and remains a separate gate. `TECH_STACK.md`
-and `FRONTEND_HANDOFF.md` are the place to record it.
+Hosting is Cloudflare Pages at `https://domino.money`; see
+[Deploy and closed beta](#deploy-and-closed-beta). The decision is recorded in
+`TECH_STACK.md` and `FRONTEND_HANDOFF.md`.
 
 Two rules from `web/`'s oxlint config are off here, both because they target a
 Next.js app: `next/no-img-element` (the whole `nextjs` plugin) and

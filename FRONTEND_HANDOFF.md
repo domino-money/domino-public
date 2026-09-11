@@ -17,6 +17,12 @@ The practice workbench is the visual baseline. Preserve its distinction between 
 
 Each slice has its own GitHub issue and acceptance criteria. Mock data must be unmistakable; a successful mock cannot enable deposit, swap, mint, compound or successor creation. Read integration must not remove the current browser-Origin restrictions on the Python service. A same-origin bridge is a separate task.
 
+## Hosting and access
+
+`app/` is served by Cloudflare Pages at `https://domino.money` (project `domino-app`, configured in `app/wrangler.toml`). During the closed beta the entire deployment — pages, assets and `/api/*` — sits behind a shared-password gate in `app/functions/_middleware.ts`. Because the gate is code in every deployment rather than a setting on one hostname, it covers `www`, `*.pages.dev` and preview hostnames equally. The project owner chose this over the Cloudflare Access perimeter described in `docs/API_READ_BRIDGE.md`.
+
+The password proves an invitation, nothing more. It is not wallet authentication, grants no capability in the app, and never substitutes for a session; wallet admission belongs to the session backend. A deployment missing either secret answers 503 to every request rather than opening. See `app/README.md` for operation and rotation.
+
 ## Data rules
 
 - Identify assets by chain and address; symbols/decimals are optional, untrusted metadata. A zero-decimal token is valid, missing decimals are different.

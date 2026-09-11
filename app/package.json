@@ -13,7 +13,11 @@
     "test": "node scripts/test.mjs",
     "test:render": "node --test tests/render.test.mjs",
     "typecheck": "tsc --noEmit",
-    "lint": "oxlint src"
+    "lint": "oxlint src functions",
+    "test:gate": "node --test tests/gate.browser.test.mjs",
+    "serve:gated": "node scripts/gated-server.mjs",
+    "deploy:preview": "npm run build && npx --yes wrangler@4.130.0 pages deploy --branch preview",
+    "deploy": "npm run build && npx --yes wrangler@4.130.0 pages deploy --branch main"
   },
   "dependencies": {
     "react": "19.2.8",

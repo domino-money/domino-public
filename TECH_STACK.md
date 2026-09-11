@@ -44,6 +44,8 @@ These are implementation choices, not claims that integrations have passed testi
 
 The existing web build remains in Sites for development and review. The earlier Vercel suggestion is not an implemented hosting decision: the current build is Vinext/Cloudflare. Preserve the UI and API boundary now; validate the public frontend runtime, custom domain, authentication and delivery checks before selecting its production deployment. Do not start a framework migration merely to match a hosting suggestion.
 
+The product frontend in `app/` is hosted on Cloudflare Pages at `https://domino.money`: the static Vite build plus one Pages Function. During the closed beta that function gates every request behind a shared password; see `app/README.md` and `FRONTEND_HANDOFF.md`. This settles the static frontend's hosting only. The read bridge, session Workers and backend keep their own reviewed deployment and activation gates.
+
 ## System boundaries
 
 The browser requests data from the API and asks the owner's wallet to sign setup, changes and exit. Connecting or signing in grants no financial approval.

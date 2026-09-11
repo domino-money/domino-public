@@ -1,0 +1,11 @@
+# Cloudflare Pages project for the product frontend.
+#
+# `wrangler pages deploy` uploads ./dist and compiles ./functions. The access
+# middleware in functions/_middleware.ts runs in front of every request.
+#
+# No secrets live here. BETA_PASSWORD and BETA_COOKIE_KEY are Pages secrets,
+# set by the project owner with `wrangler pages secret put`; without both the
+# deployment answers 503 to everything rather than opening.
+name = "domino-app"
+pages_build_output_dir = "./dist"
+compatibility_date = "2026-09-10"
