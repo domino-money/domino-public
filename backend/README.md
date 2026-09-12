@@ -57,6 +57,11 @@ onboarding. No lifetime backfill starts when a user reads a pool.
 
 ## On-demand pool market data
 
+The [#123 RPC batching candidate](../docs/READ_RPC_BATCHING.md) preserves the
+same snapshot proofs and logical request budgets while reducing independent
+snapshot checks to two bounded envelopes. Its unchanged-wire notice and
+separate endpoint qualification requirements are documented there.
+
 `POST /v1/read/pool-market` accepts a full v4 PoolId, optional boolean
 `includePriceHistory` (default false), and `priceToken` (`base` or `quote`,
 default base). The latter names the GeckoTerminal pair's explicit base/quote

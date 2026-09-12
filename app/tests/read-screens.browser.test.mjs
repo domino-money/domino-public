@@ -1218,12 +1218,15 @@ test('the figures dialog ages with the row behind it, and says stale when the ro
   assert.equal(await dialog.locator('[data-provider-figure="attributed_stale"]').count(), 0, 'nothing is stale yet');
   assert.match(await dialog.innerText(), /cache 0 s/);
 
+  const readsBeforeAge = await caseLog(page);
   // Past the read service's fresh window, with the dialog left open.
   await page.clock.fastForward('01:05');
   await page.waitForFunction(() => document.querySelectorAll('[data-pool-figures-dialog] [data-provider-figure="attributed_stale"]').length > 0);
   const aged = await dialog.innerText();
   assert.match(aged, /· stale/, 'the open dialog says stale in words, not only in colour');
   assert.doesNotMatch(aged, /cache 0 s/, 'and stops reporting the retrieval cache age as if it were current');
+  assert.doesNotMatch(aged, /A later refresh failed/i, 'aging alone does not imply a failed refresh');
+  assert.deepEqual(await caseLog(page), readsBeforeAge, 'the display clock starts no new read');
   assert.deepEqual(await page.locator('tbody [data-metric="stale"]').count() > 0, true, 'the row behind it says the same');
 
   await quiet(page, errors);

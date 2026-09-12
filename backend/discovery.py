@@ -292,14 +292,19 @@ class ReadRpc:
     """Local-only transport with bounded requests and an explicit read allowlist."""
     METHODS = frozenset({'eth_chainId', 'eth_getBlockByNumber', 'eth_getCode',
                          'eth_getBalance', 'eth_call'})
+    MAX_BATCH_ITEMS = 8
+    MAX_BATCH_BYTES = 65_536
 
     def __init__(self, url=RPC_URL, *, transport=json_http, max_requests=160,
-                 call_gas_limit=DEFAULT_READ_CALL_GAS):
+                 call_gas_limit=DEFAULT_READ_CALL_GAS, batch_reads=False):
         if type(call_gas_limit) is not int or not 21_000 <= call_gas_limit <= MAX_READ_CALL_GAS:
             raise DataError('invalid_read_call_gas_limit')
+        if type(batch_reads) is not bool:
+            raise DataError('invalid_rpc_batch')
         self.url, self.transport = url, transport
         self.count, self.max_requests = 0, max_requests
         self.call_gas_limit = call_gas_limit
+        self.batch_reads = batch_reads
 
     def request(self, method, params=()):
         if method not in self.METHODS:
@@ -320,10 +325,88 @@ class ReadRpc:
             raise DataError('missing_rpc_result')
         return payload['result']
 
-    def call_raw(self, target, signature, inputs=(), values=(), *, block):
+    def _batch_specs(self, calls):
+        """Only bounded independent reads, never state overrides or writes."""
+        check_read_deadline()
+        if not isinstance(calls, (list, tuple)) or not 1 <= len(calls) <= self.MAX_BATCH_ITEMS:
+            raise DataError('invalid_rpc_batch')
+        result = []
+        for call in calls:
+            if not isinstance(call, (list, tuple)) or len(call) != 2:
+                raise DataError('invalid_rpc_batch')
+            method, params = call
+            if not isinstance(method, str) or method not in ReadRpc.METHODS:
+                raise DataError('method_not_read_only')
+            if not isinstance(params, (list, tuple)):
+                raise DataError('invalid_rpc_batch')
+            params = list(params)
+            if method == 'eth_chainId':
+                valid = not params
+            elif method == 'eth_getBlockByNumber':
+                valid = (len(params) == 2 and params[1] is False and isinstance(params[0],str)
+                         and (params[0] == 'latest' or re.fullmatch(r'0x(?:0|[1-9a-f][0-9a-f]*)',params[0])))
+            else:
+                valid = (len(params) == 2 and isinstance(params[-1],str)
+                         and re.fullmatch(r'0x(?:0|[1-9a-f][0-9a-f]*)',params[-1]))
+                if valid and method == 'eth_call':
+                    tx = params[0]
+                    valid = (isinstance(tx,dict) and set(tx)=={'to','data','gas'}
+                             and isinstance(tx['to'],str) and address(tx['to'])==tx['to']
+                             and isinstance(tx['data'],str) and len(tx['data'])<=16_386
+                             and re.fullmatch(r'0x(?:[0-9a-fA-F]{2})*',tx['data']))
+                    if valid:
+                        gas = quantity(tx['gas'])
+                        if not 21_000 <= gas <= self.call_gas_limit:
+                            raise DataError('invalid_read_call_gas_limit')
+                    params[0] = dict(tx) if isinstance(tx,dict) else tx
+                elif valid:
+                    valid = isinstance(params[0],str) and address(params[0])==params[0]
+            if not valid:
+                raise DataError('invalid_rpc_batch')
+            result.append((method,params))
+        return result
+
+    def batch(self, calls):
+        """One bounded envelope; every attempted item spends the RPC budget.
+
+        No partial results or sequential retry are returned after a batch fails.
+        The HTTPS transport retains its aggregate response-byte/deadline limits.
+        """
+        calls = self._batch_specs(calls)
+        if self.count + len(calls) > self.max_requests:
+            raise DataError('request_budget_exhausted')
+        bodies = [{'jsonrpc':'2.0','id':self.count+i+1,'method':method,'params':params}
+                  for i,(method,params) in enumerate(calls)]
+        if len(json.dumps(bodies,allow_nan=False,separators=(',',':')).encode()) > self.MAX_BATCH_BYTES:
+            raise DataError('invalid_rpc_batch')
+        self.count += len(calls)
+        payload = self.transport(self.url,bodies)
+        check_read_deadline()
+        if not isinstance(payload,list) or len(payload)!=len(bodies):
+            raise DataError('invalid_rpc_envelope')
+        expected = {body['id'] for body in bodies}
+        by_id = {}
+        for item in payload:
+            if (not isinstance(item,dict) or item.get('jsonrpc')!='2.0'
+                    or type(item.get('id')) is not int or item['id'] not in expected
+                    or item['id'] in by_id
+                    or set(item) not in ({'jsonrpc','id','result'},{'jsonrpc','id','error'})):
+                raise DataError('invalid_rpc_envelope')
+            by_id[item['id']] = item
+        if set(by_id)!=expected:
+            raise DataError('invalid_rpc_envelope')
+        for body in bodies:
+            item = by_id[body['id']]
+            if 'error' in item:
+                raise DataError(rpc_error_code(body['method'],item['error']))
+        return [by_id[body['id']]['result'] for body in bodies]
+
+    def call_params(self, target, signature, inputs=(), values=(), *, block):
         calldata = '0x' + (keccak(signature.encode())[:4] + encode(inputs, values)).hex()
-        return self.request('eth_call', [{'to': address(target), 'data': calldata,
-                                         'gas': hex(self.call_gas_limit)}, block])
+        return [{'to':address(target),'data':calldata,'gas':hex(self.call_gas_limit)},block]
+
+    def call_raw(self, target, signature, inputs=(), values=(), *, block):
+        return self.request('eth_call',self.call_params(target,signature,inputs,values,block=block))
 
     def call(self, target, signature, inputs=(), values=(), outputs=(), *, block):
         return decode_result(outputs, self.call_raw(target, signature, inputs, values, block=block))
@@ -440,16 +523,30 @@ class DiscoveryReader:
         self.rpc, self.clock, self.max_age = rpc, clock, max_age
 
     def snapshot(self):
-        if quantity(self.rpc.request('eth_chainId')) != CHAIN_ID:
+        batched = getattr(self.rpc,'batch_reads',False) is True
+        if batched:
+            chain, raw_block = self.rpc.batch([('eth_chainId',[]),('eth_getBlockByNumber',['latest',False])])
+        else:
+            chain = self.rpc.request('eth_chainId')
+            raw_block = None
+        if quantity(chain) != CHAIN_ID:
             raise DataError('wrong_chain')
-        block = parse_block(self.rpc.request('eth_getBlockByNumber', ['latest', False]))
+        block = parse_block(raw_block if batched else self.rpc.request('eth_getBlockByNumber',['latest',False]))
         self._fresh(block)
-        for contract in (POOL_MANAGER, POSITION_MANAGER, STATE_VIEW):
-            code = self.rpc.request('eth_getCode', [contract, block.tag])
+        contracts = (POOL_MANAGER,POSITION_MANAGER,STATE_VIEW)
+        if batched:
+            # All state calls use the parsed numeric block; no metadata trust is
+            # cached, and code/link checks still gate every snapshot publication.
+            observed = self.rpc.batch([('eth_getCode',[contract,block.tag]) for contract in contracts]+[
+                ('eth_call',self.rpc.call_params(contract,'poolManager()',block=block.tag))
+                for contract in (POSITION_MANAGER,STATE_VIEW)])
+        for index,contract in enumerate(contracts):
+            code = observed[index] if batched else self.rpc.request('eth_getCode',[contract,block.tag])
             if not isinstance(code, str) or not re.fullmatch(r'0x(?:[0-9a-fA-F]{2})+', code):
                 raise DataError('missing_contract_code')
-        for contract in (POSITION_MANAGER, STATE_VIEW):
-            linked, = self.rpc.call(contract, 'poolManager()', outputs=['address'], block=block.tag)
+        for index,contract in enumerate((POSITION_MANAGER,STATE_VIEW)):
+            linked, = (decode_result(['address'],observed[index+3]) if batched else
+                       self.rpc.call(contract,'poolManager()',outputs=['address'],block=block.tag))
             if address(linked) != POOL_MANAGER:
                 raise DataError('manager_mismatch')
         return block

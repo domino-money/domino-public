@@ -97,8 +97,8 @@ class ReadService:
         if self.rpc_factory:
             return self.rpc_factory()
         if self.rpc_urls is not None:
-            return FailoverReadRpc(self.rpc_urls, transport=transport)
-        return ReadRpc(self.rpc_url, transport=transport)
+            return FailoverReadRpc(self.rpc_urls, transport=transport, batch_reads=True)
+        return ReadRpc(self.rpc_url, transport=transport, batch_reads=True)
 
     def _market(self, kind, pool_id, **kwargs):
         check_read_deadline()

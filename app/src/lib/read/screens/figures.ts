@@ -53,7 +53,7 @@ export function figureFromMarket(market: PoolMarketResponse['market'], pick: 'li
   const v = valued(raw)
   if (!v) return { state: 'unavailable', provider, reason: 'invalid_quantity' }
   const base = { ...v, provider, retrievedAt: market.data.retrievedAt, cacheAgeSeconds: market.cache.ageSeconds }
-  // A stale envelope with a reason is still a retained observation: the reason says why the refresh failed.
+  // A stale envelope is still a retained observation; a reason describes why no fresher observation is available.
   return market.status === 'stale' ? { state: 'attributed_stale', ...base, refreshReason: market.reason } : { state: 'attributed', ...base }
 }
 
@@ -84,7 +84,7 @@ export function provenanceText(figure: AttributedFigure): { short: string; long:
     case 'attributed_stale':
       return {
         short: `${name} · stale`,
-        long: `Reported by ${name}, retrieved ${utcTime(figure.retrievedAt)}. A later refresh failed (${reasonText(figure.refreshReason)}), so this is the earlier retrieval. ${tail}`,
+        long: `Reported by ${name}, retrieved ${utcTime(figure.retrievedAt)}. This observation is stale${figure.refreshReason === null ? '' : ` (${reasonText(figure.refreshReason)})`}. ${tail}`,
       }
     case 'not_reported':
       return { short: `${name} · not reported`, long: `${name} was retrieved but reported no value for this figure. ${tail}` }

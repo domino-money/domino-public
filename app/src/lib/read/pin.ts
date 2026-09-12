@@ -12,18 +12,20 @@
  * reaching the screen. `producerCommit` is informational: CI can check the
  * bytes, not which commit produced them.
  *
- * The pinned commit records #119's gateway compatibility fix for the matching
- * Cloudflare Access transport cookie. Only the gateway source provenance in
- * the read manifest changed; schemas, types, fixtures, runtime, OpenAPI and
- * the other three packages remain byte-identical. No contract version changed.
+ * The pinned source commit records #123's bounded RPC batching, including the
+ * pre-dispatch failover correction. Only three backend source hashes in the
+ * read manifest changed; schemas, types, fixtures, runtime, OpenAPI and the
+ * other three packages remain byte-identical. No contract version changed.
+ * See docs/READ_RPC_BATCHING.md for the unchanged-wire notice and the separate
+ * operational qualification still required before rollout.
  */
 export const PRODUCER_PIN = {
-  producerCommit: '807afe399fd250a6db83a4014aadf64d7e9af543',
-  producerPullRequest: 119,
+  producerCommit: 'adba60f45fe20e53b2b38fde040c9eeb03fad380',
+  producerIssue: 123,
   packages: {
     'read-v1': {
       version: '1.1.0-rc.3',
-      manifestSha256: '0190300169bafbf32243191151ce71426b023a1578065eb287618bb3663af044',
+      manifestSha256: '91a73a54a1cd4eb40e9df55c5a9691163a2c6569a58a9a3a1ef9d2799a20196a',
     },
     'session-v1': {
       version: '3.0.0-rc.2',

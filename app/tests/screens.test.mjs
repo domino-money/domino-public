@@ -1024,6 +1024,17 @@ test('provenance names the provider and the retrieval, says not reconciled, neve
   }
 });
 
+test('#123: stale provenance does not invent a failed refresh when only the observation aged', () => {
+  const stale = { state: 'attributed_stale', value: '$1', zero: false, provider: 'geckoterminal', retrievedAt: 1010, cacheAgeSeconds: 0, refreshReason: null };
+  const aged = figures.provenanceText(stale);
+  assert.match(aged.short, /stale/);
+  assert.match(aged.long, /retrieved 00:16:50 UTC, 1970-01-01/);
+  assert.doesNotMatch(aged.long, /refresh failed/i, 'elapsed time is not evidence that a refresh was attempted');
+  const failed = figures.provenanceText({ ...stale, refreshReason: 'provider_unavailable' });
+  assert.ok(failed.long.includes(built('describe').reasonText('provider_unavailable')), 'a known reason remains visible');
+  assert.match(failed.short, /stale/);
+});
+
 test('pool age comes from verified activity data only, and never an APR or USD figure from it', () => {
   const partial = runtime.assertResponse('pool-activity', fixture('pool-activity.partial'));
   const realNow = Date.now;

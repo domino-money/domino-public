@@ -73,6 +73,13 @@ the reader-only `no-store` policy on 8876 remain unchanged.
 
 ## Version and field rules
 
+The [#123 bounded RPC batching notice](READ_RPC_BATCHING.md) records source
+`adba60f45fe20e53b2b38fde040c9eeb03fad380` and the regenerated read manifest.
+Only three backend source hashes change; the shared wire files, OpenAPI,
+contract versions and other manifests remain identical. The candidate still
+needs its full endpoint qualification before rollout. Display aging also no
+longer claims that a refresh failed when none was attempted.
+
 Use `read-v1` for the first browser contract major and a semantic contract
 version (the current candidate is `1.1.0-rc.3`). It is distinct from the
 Python application version and existing per-response `schemaVersion` values.

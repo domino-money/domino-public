@@ -71,3 +71,55 @@ class FailoverReadRpc(ReadRpc):
                         or code not in ('rpc_error', 'rpc_call_reverted', 'rpc_call_gas_limit')):
                     self.failure = code
                 raise
+
+    def batch(self, calls):
+        calls = self._batch_specs(calls)
+        if self.failure:
+            raise DataError(self.failure)
+        while True:
+            batch_attempted = False
+            try:
+                check_read_deadline()
+                if not self.verified:
+                    self._verify()
+                for method,params in calls:
+                    if method in ('eth_call','eth_getCode','eth_getBalance') and params[-1] not in self.anchors:
+                        raise DataError('block_unavailable')
+                batch_attempted = True
+                results = super().batch(calls)
+                # Commit anchors only after the entire envelope and every chain
+                # or block assertion validates. Never merge partial providers.
+                anchors = dict(self.anchors)
+                for (method,params),result in zip(calls,results):
+                    if method == 'eth_chainId' and quantity(result)!=CHAIN_ID:
+                        raise DataError('wrong_chain')
+                    if method == 'eth_getBlockByNumber':
+                        block = parse_block(result)
+                        if params[0]!='latest' and block.tag!=params[0]:
+                            raise DataError('snapshot_reorganized')
+                        if block.tag in anchors and block!=anchors[block.tag]:
+                            raise DataError('snapshot_reorganized')
+                        if block.tag not in anchors and len(anchors)>=MAX_ANCHORS:
+                            raise DataError('request_budget_exhausted')
+                        anchors[block.tag] = block
+                self.anchors = anchors
+                return results
+            except DataError as error:
+                try:
+                    check_read_deadline()
+                except DataError as expired:
+                    self.failure = str(expired)
+                    raise
+                code = str(error)
+                # Failed pre-dispatch identity/anchor reads retain scalar
+                # failover. Once a batch is attempted, a network failure may
+                # mean unknown completion and must not replay it. Explicit HTTP
+                # failures still allow fresh chain/all-anchor verification on
+                # the next provider, within the same deadline and count.
+                retryable = code in RETRYABLE and (code != 'network_unavailable' or not batch_attempted)
+                if retryable and self.index+1<len(self.urls):
+                    self.index += 1
+                    self.url,self.verified = self.urls[self.index],False
+                    continue
+                self.failure = code
+                raise

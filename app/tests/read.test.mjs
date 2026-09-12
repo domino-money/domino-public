@@ -1306,6 +1306,25 @@ function gated(script) {
   };
 }
 
+test('#123: returning viewers do not reload a completed success or failure through ensure', async () => {
+  const providerCase = scenarios.MARKET_CASES.find((c) => c.id === 'provider').script;
+  for (const [expected, script] of [['ready', providerCase], ['failed', { 'pool-market': [{ transport: 'gate401' }] }]]) {
+    const reads = gated(script);
+    const provider = createReadMarketsProvider({ source: reads.source, poolIds: [FIXTURE_POOL], kind: 'fixture' });
+    const leaving = provider.subscribe(() => undefined);
+    assert.equal((await settled(provider, () => provider.ensure())).phase, expected);
+    const completedReads = reads.counts.reads;
+    leaving();
+    const back = provider.subscribe(() => undefined);
+    provider.ensure();
+    provider.ensure();
+    await later();
+    assert.equal(reads.counts.reads, completedReads, `${expected}: completion remains remembered after the last viewer leaves`);
+    assert.equal(provider.getSnapshot().phase, expected);
+    back();
+  }
+});
+
 /** A provider whose subscriptions are counted while they are held. */
 function counted(provider) {
   let active = 0;

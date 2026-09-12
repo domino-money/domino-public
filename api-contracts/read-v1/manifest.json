@@ -1007,11 +1007,11 @@
     },
     {
       "path": "backend/read_service.py",
-      "sha256": "83ef45956e85347f4aab425cc7b77396ca82a74231aa0f1803926bd77b9448fd"
+      "sha256": "8f5e2f5ed1cf5da5012098d86443c3f382a129bee3102765c2524b5e538336df"
     },
     {
       "path": "backend/rpc_failover.py",
-      "sha256": "6493aa48e0bf51b4834e1a418497fc056a103dc4c1f0cc81576f6f647c98c5c9"
+      "sha256": "5b8dae539306a4a6a063b2165898b05fd0b2d81a6c610e9b972fb895829d61dd"
     },
     {
       "path": "backend/rpc_config.py",
@@ -1079,7 +1079,7 @@
     },
     {
       "path": "backend/discovery.py",
-      "sha256": "3a1bce4dd8082b63e259ec36e74308561e3bc382ce799ce5b63c7621d34031af"
+      "sha256": "3136e4b14f76ea3e876362ee45c76c4ec530468bb85cdb799df948e318aa6e1a"
     },
     {
       "path": "backend/nft_ownership.py",
