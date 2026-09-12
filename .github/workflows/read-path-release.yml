@@ -1,0 +1,59 @@
+name: Publish read path
+on:
+  workflow_dispatch:
+    inputs:
+      operation:
+        description: Inspect access, or publish the read Worker and app after the VM is ready
+        type: choice
+        options: [inspect, publish]
+        default: inspect
+        required: true
+      source_sha:
+        description: Exact main commit to inspect or publish
+        type: string
+        required: true
+permissions:
+  contents: read
+concurrency:
+  group: publish-read-path
+  cancel-in-progress: false
+jobs:
+  release:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    env:
+      WRANGLER_SEND_METRICS: 'false'
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - name: Require the dispatched main commit
+        env:
+          SOURCE_SHA: ${{ inputs.source_sha }}
+        run: test "$SOURCE_SHA" = "$(git rev-parse HEAD)"
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version-file: .nvmrc
+      - name: Inspect existing Cloudflare access without printing credentials
+        run: node scripts/publish-read-path.mjs inspect
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
+      - if: inputs.operation == 'publish'
+        run: npm --prefix app ci --no-audit --no-fund
+      - name: Build and record the app without deployment credentials
+        if: inputs.operation == 'publish'
+        run: npm --prefix app run release:build
+      - name: Publish the read Worker, retaining its enabled v1 reads and Access secrets
+        if: inputs.operation == 'publish'
+        run: node scripts/publish-read-path.mjs worker
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
+      - name: Upload the same recorded app to preview and production
+        if: inputs.operation == 'publish'
+        run: |
+          npm --prefix app run deploy:preview
+          npm --prefix app run deploy
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}

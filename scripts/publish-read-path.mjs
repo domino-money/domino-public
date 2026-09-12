@@ -1,0 +1,87 @@
+/** Fixed Domino read-path release. Credentials stay in the deployment step.
+ * Run `inspect` to check existing access; `worker` after the VM serves read-v2.
+ * The app uses its existing build-once, preview-then-production release helper.
+ */
+import { spawnSync } from 'node:child_process'
+import { readFileSync } from 'node:fs'
+import { fileURLToPath, pathToFileURL } from 'node:url'
+
+const ROOT = fileURLToPath(new URL('../', import.meta.url))
+const KNOWN_READS = new Set(['token', 'pools', 'pool-market', 'wallet-assets', 'nft-positions', 'catalogue', 'pool-activity'])
+const VISIBLE_VARS = ['READ_BRIDGE_ENABLED', 'READ_V2_BRIDGE_ENABLED', 'ENABLED_READS', 'ENABLED_V2_READS', 'APP_ORIGIN', 'GATEWAY_ORIGIN']
+
+export function releaseVars(settings) {
+  const vars = Object.fromEntries((settings.bindings ?? [])
+    .filter(binding => binding.type === 'plain_text' && VISIBLE_VARS.includes(binding.name))
+    .map(binding => [binding.name, binding.text]))
+  const secrets = new Set((settings.bindings ?? []).filter(binding => binding.type === 'secret_text').map(binding => binding.name))
+  if (!secrets.has('ACCESS_CLIENT_ID') || !secrets.has('ACCESS_CLIENT_SECRET')) throw new Error('The read Worker is missing its existing Access credentials.')
+  if (vars.READ_BRIDGE_ENABLED !== 'true' || vars.APP_ORIGIN !== 'https://domino.money' || vars.GATEWAY_ORIGIN !== 'https://vm-read.domino.money') {
+    throw new Error('The existing read Worker does not match the active Domino read path.')
+  }
+  const reads = vars.ENABLED_READS?.split(',').map(value => value.trim()) ?? []
+  if (!reads.includes('pool-market') || reads.some(value => !KNOWN_READS.has(value))) throw new Error('Unexpected existing enabled v1 reads; refusing to replace them.')
+  return { ...vars, READ_V2_BRIDGE_ENABLED: 'true', ENABLED_V2_READS: 'pool-market' }
+}
+
+async function cloudflare(path) {
+  const token = process.env.CLOUDFLARE_API_TOKEN
+  const account = process.env.CLOUDFLARE_ACCOUNT_ID
+  if (!token || !/^[0-9a-f]{32}$/.test(account ?? '')) throw new Error('Cloudflare token/account configuration is missing.')
+  const response = await fetch(`https://api.cloudflare.com/client/v4/accounts/${account}/${path}`, {
+    headers: { Authorization: `Bearer ${token}` }, signal: AbortSignal.timeout(30_000),
+  })
+  const body = await response.json().catch(() => null)
+  if (!response.ok || !body?.success) {
+    // Provider error bodies and bindings can contain confidential configuration.
+    const codes = (body?.errors ?? []).map(error => Number(error.code)).filter(Number.isFinite)
+    throw new Error(`Cloudflare ${path.split('/')[0]} HTTP ${response.status}; error codes ${codes.join(',') || 'unavailable'}.`)
+  }
+  return body.result
+}
+
+async function run(operation) {
+  if (operation !== 'inspect' && operation !== 'worker') throw new Error('Use inspect or worker.')
+  if (operation === 'inspect') {
+    const results = await Promise.allSettled([
+      cloudflare('workers/scripts/domino-read-bridge/settings'),
+      cloudflare('pages/projects/domino-app'),
+      cloudflare('cfd_tunnel/7abb1264-ee70-4b69-a33c-b75a9deb4589/configurations'),
+    ])
+    const summary = {}
+    for (const [index, key] of ['worker', 'pages', 'devTunnel'].entries()) {
+      const result = results[index]
+      if (result.status === 'rejected') { summary[key] = { error: result.reason.message }; continue }
+      const value = result.value
+      if (key === 'worker') summary[key] = { name: 'domino-read-bridge', vars: Object.fromEntries((value.bindings ?? [])
+        .filter(binding => binding.type === 'plain_text' && VISIBLE_VARS.includes(binding.name))
+        .map(binding => [binding.name, binding.text])),
+        accessCredentialNames: (value.bindings ?? []).filter(binding => binding.type === 'secret_text').map(binding => binding.name) }
+      if (key === 'pages') summary[key] = { name: value.name, productionBranch: value.production_branch,
+        productionDeployment: value.canonical_deployment?.id ?? null,
+        productionCommit: value.canonical_deployment?.deployment_trigger?.metadata?.commit_hash ?? null }
+      if (key === 'devTunnel') summary[key] = { version: value.version, ingress: (value.config?.ingress ?? [])
+        .map(rule => ({ hostname: rule.hostname, path: rule.path, service: rule.service })) }
+    }
+    console.log(JSON.stringify(summary, null, 2))
+    return
+  }
+  const settings = await cloudflare('workers/scripts/domino-read-bridge/settings')
+  const vars = releaseVars(settings)
+  if (!readFileSync(new URL('../bridge/wrangler.read.toml', import.meta.url), 'utf8').includes('READ_V2_BRIDGE_ENABLED')) {
+    throw new Error('This source does not yet contain the v2 read Worker.')
+  }
+  const args = ['--yes', 'wrangler@4.130.0', 'deploy', '-c', 'bridge/wrangler.read.toml', '--keep-vars']
+  for (const [name, value] of Object.entries(vars)) args.push('--var', `${name}:${value}`)
+  const result = spawnSync('npx', args, { cwd: ROOT, stdio: 'inherit', shell: false })
+  if (result.status !== 0) throw new Error(`Read Worker deployment failed with exit ${result.status ?? 'unknown'}.`)
+  const deployed = await cloudflare('workers/scripts/domino-read-bridge/settings')
+  const current = Object.fromEntries((deployed.bindings ?? []).filter(binding => binding.type === 'plain_text').map(binding => [binding.name, binding.text]))
+  if (Object.entries(vars).some(([name, value]) => current[name] !== value)) throw new Error('Deployed read Worker flags differ from the requested release.')
+  releaseVars(deployed)
+  console.log('Read Worker deployed: existing v1 reads retained; read-v2 pool-market enabled; Access credentials retained.')
+}
+
+if (import.meta.url === pathToFileURL(process.argv[1] ?? '').href) {
+  run(process.argv[2]).catch(error => { console.error(error.message); process.exitCode = 1 })
+}
