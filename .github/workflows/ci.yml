@@ -21,6 +21,8 @@ jobs:
         run: |
           python3 -B -m unittest discover -s scripts/staging/tests -p test_staging_helpers.py -v
           python3 -B -m unittest discover -s scripts/staging/tests -p test_upgrade_disabled.py -v
+      - name: Check offline staging egress policy candidates
+        run: python3 -B -m unittest discover -s scripts/staging/tests -p test_egress_policy.py -v
       - name: Check disabled bridge deployment candidates
         run: |
           python3 scripts/staging/check_bridge_configs.py
