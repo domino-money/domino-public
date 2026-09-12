@@ -385,7 +385,7 @@ def exclusive_file(path, content, mode=0o600, uid=0, gid=0):
 
 
 def fsync_directory(path):
-    folder = os.open(path, os.O_RDONLY | os.O_DIRECTORY)
+    folder = os.open(path, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
     try:
         os.fsync(folder)
     finally:
@@ -426,7 +426,9 @@ def backup(settings, planned):
     return destination
 
 
-def install_roots(files, commit):
+def install_roots(files, commit, *, private_runtime=False):
+    """Stage immutable source; upgrades keep runtime roots private until copied."""
+    require(type(private_runtime) is bool, 'private_runtime must be a boolean')
     releases = BASE/'releases'
     releases.mkdir(mode=0o755, exist_ok=True)
     os.chmod(releases, 0o755)
@@ -442,9 +444,10 @@ def install_roots(files, commit):
         runtime = root/'backend/runtime'
         runtime.mkdir(mode=0o700)
         account = pwd.getpwnam('domino-'+component)
-        os.chown(runtime, account.pw_uid, account.pw_gid)
+        uid, gid = (0, 0) if private_runtime else (account.pw_uid, account.pw_gid)
+        os.chown(runtime, uid, gid, follow_symlinks=False)
         descriptor = json.dumps({'host': SOCKET, 'port': 8877, 'dbname': DB}).encode() + b'\n'
-        exclusive_file(runtime/'catalogue-db.json', descriptor, uid=account.pw_uid, gid=account.pw_gid)
+        exclusive_file(runtime/'catalogue-db.json', descriptor, uid=uid, gid=gid)
         (root/'backend/.venv').symlink_to(VENV, target_is_directory=True)
         for directory, _, _ in os.walk(root, topdown=False):
             if Path(directory) != runtime:

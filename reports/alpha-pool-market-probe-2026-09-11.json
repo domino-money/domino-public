@@ -1,0 +1,534 @@
+{
+  "schemaVersion": 1,
+  "mode": "serial_live_loopback_pool_market_probe",
+  "startedAt": "2026-09-11T16:55:55.382326+00:00",
+  "sourceCommit": "5345eef6f67cd8bd1989414ae755e29df5d3d90f",
+  "probeSha256": "c4d1f2d64d0d97401d30b648081bdd7424b8c2b2339ec1250c7f14c0f174dd18",
+  "readManifestSha256": "ec101da5ad23b19724044beaa159e79825f754c1ada58ce52d6e488545eb31c2",
+  "contractVersion": "1.1.0-rc.3",
+  "chainId": 4663,
+  "rpcEndpointCount": 1,
+  "limits": {
+    "pools": 2,
+    "casesPerPool": 3,
+    "readerDeadlineSeconds": 15,
+    "rpcRequestsPerRead": 160,
+    "marketRequestsPerMinute": 25
+  },
+  "catalogueConfigured": false,
+  "historicalBackfillStarted": false,
+  "productionPricingQualified": false,
+  "financialTransactions": 0,
+  "publicDeploymentChanged": false,
+  "concurrentClientsTested": false,
+  "reads": [
+    {
+      "poolId": "0x84bd4e2d8be11aeb0afc1195b38f587b61e90068548f1063fdbe448fb8cad0b6",
+      "case": "market_only",
+      "request": {
+        "poolId": "0x84bd4e2d8be11aeb0afc1195b38f587b61e90068548f1063fdbe448fb8cad0b6",
+        "includePriceHistory": false,
+        "priceToken": "quote"
+      },
+      "elapsedSeconds": 6.1942,
+      "requests": {
+        "rpcRequests": 11,
+        "marketRequests": 1
+      },
+      "observation": {
+        "httpStatus": 200,
+        "contractValid": true,
+        "headersValid": true,
+        "snapshot": {
+          "number": 60414157,
+          "hash": "0x305893cc397434fddd1c1a097012df20cd3400967656006f08c3ec62336ad044",
+          "timestamp": 1789145756
+        },
+        "snapshotAgeSecondsAtReceipt": 5,
+        "poolKey": {
+          "currency0": "0x0bd7d308f8e1639fab988df18a8011f41eacad73",
+          "currency1": "0x5fc5360d0400a0fd4f2af552add042d716f1d168",
+          "fee_pips": 200,
+          "tick_spacing": 4,
+          "hooks": "0x0000000000000000000000000000000000000000",
+          "feeMode": "fixed"
+        },
+        "currencies": [
+          "0x0bd7d308f8e1639fab988df18a8011f41eacad73",
+          "0x5fc5360d0400a0fd4f2af552add042d716f1d168"
+        ],
+        "identityStatus": "verified_at_block",
+        "integrationClass": "hookless_fixed_fee",
+        "market": {
+          "status": "available",
+          "reason": null,
+          "cache": {
+            "status": "miss",
+            "ageSeconds": 0,
+            "freshForSeconds": 60,
+            "maxStaleSeconds": 300,
+            "scope": "process_local",
+            "providerUpdateTimeKnown": false
+          },
+          "data": {
+            "source": "geckoterminal",
+            "chainId": 4663,
+            "retrievedAt": 1789145761,
+            "asOfTimestamp": null,
+            "asOfBlock": null,
+            "providerReported": true,
+            "currencies": [
+              "0x0bd7d308f8e1639fab988df18a8011f41eacad73",
+              "0x5fc5360d0400a0fd4f2af552add042d716f1d168"
+            ],
+            "baseToken": "0x5fc5360d0400a0fd4f2af552add042d716f1d168",
+            "quoteToken": "0x0bd7d308f8e1639fab988df18a8011f41eacad73",
+            "reportedLiquidityUsd": "515348.9849",
+            "volume24hUsd": "5499679.2654287"
+          }
+        },
+        "priceHistory": {
+          "status": "not_requested",
+          "reason": null,
+          "cache": null,
+          "data": null
+        },
+        "feeApr24h": null,
+        "aprReason": "provider_lp_fee_history_unavailable",
+        "suggested": false,
+        "executionAvailable": false,
+        "requiresLocalHistory": false,
+        "providerMetricsReconciled": false
+      }
+    },
+    {
+      "poolId": "0x84bd4e2d8be11aeb0afc1195b38f587b61e90068548f1063fdbe448fb8cad0b6",
+      "case": "first_chart",
+      "request": {
+        "poolId": "0x84bd4e2d8be11aeb0afc1195b38f587b61e90068548f1063fdbe448fb8cad0b6",
+        "includePriceHistory": true,
+        "priceToken": "quote"
+      },
+      "elapsedSeconds": 6.097457,
+      "requests": {
+        "rpcRequests": 11,
+        "marketRequests": 1
+      },
+      "observation": {
+        "httpStatus": 200,
+        "contractValid": true,
+        "headersValid": true,
+        "snapshot": {
+          "number": 60414224,
+          "hash": "0xa8e9568d101d4621d32000bec100030732f431a4ff94d1d1a19697ba218054a1",
+          "timestamp": 1789145763
+        },
+        "snapshotAgeSecondsAtReceipt": 5,
+        "poolKey": {
+          "currency0": "0x0bd7d308f8e1639fab988df18a8011f41eacad73",
+          "currency1": "0x5fc5360d0400a0fd4f2af552add042d716f1d168",
+          "fee_pips": 200,
+          "tick_spacing": 4,
+          "hooks": "0x0000000000000000000000000000000000000000",
+          "feeMode": "fixed"
+        },
+        "currencies": [
+          "0x0bd7d308f8e1639fab988df18a8011f41eacad73",
+          "0x5fc5360d0400a0fd4f2af552add042d716f1d168"
+        ],
+        "identityStatus": "verified_at_block",
+        "integrationClass": "hookless_fixed_fee",
+        "market": {
+          "status": "available",
+          "reason": null,
+          "cache": {
+            "status": "hit",
+            "ageSeconds": 6,
+            "freshForSeconds": 60,
+            "maxStaleSeconds": 300,
+            "scope": "process_local",
+            "providerUpdateTimeKnown": false
+          },
+          "data": {
+            "source": "geckoterminal",
+            "chainId": 4663,
+            "retrievedAt": 1789145761,
+            "asOfTimestamp": null,
+            "asOfBlock": null,
+            "providerReported": true,
+            "currencies": [
+              "0x0bd7d308f8e1639fab988df18a8011f41eacad73",
+              "0x5fc5360d0400a0fd4f2af552add042d716f1d168"
+            ],
+            "baseToken": "0x5fc5360d0400a0fd4f2af552add042d716f1d168",
+            "quoteToken": "0x0bd7d308f8e1639fab988df18a8011f41eacad73",
+            "reportedLiquidityUsd": "515348.9849",
+            "volume24hUsd": "5499679.2654287"
+          }
+        },
+        "priceHistory": {
+          "status": "rejected",
+          "reason": "provider_chart_currency_mismatch",
+          "cache": {
+            "status": "miss",
+            "ageSeconds": 0,
+            "freshForSeconds": 60,
+            "maxStaleSeconds": 300,
+            "scope": "process_local",
+            "providerUpdateTimeKnown": false
+          },
+          "data": null
+        },
+        "feeApr24h": null,
+        "aprReason": "provider_lp_fee_history_unavailable",
+        "suggested": false,
+        "executionAvailable": false,
+        "requiresLocalHistory": false,
+        "providerMetricsReconciled": false
+      }
+    },
+    {
+      "poolId": "0x84bd4e2d8be11aeb0afc1195b38f587b61e90068548f1063fdbe448fb8cad0b6",
+      "case": "cached_chart",
+      "request": {
+        "poolId": "0x84bd4e2d8be11aeb0afc1195b38f587b61e90068548f1063fdbe448fb8cad0b6",
+        "includePriceHistory": true,
+        "priceToken": "quote"
+      },
+      "elapsedSeconds": 5.647206,
+      "requests": {
+        "rpcRequests": 11,
+        "marketRequests": 0
+      },
+      "observation": {
+        "httpStatus": 200,
+        "contractValid": true,
+        "headersValid": true,
+        "snapshot": {
+          "number": 60414294,
+          "hash": "0x07d0c1b4d2cdc7ff291928c18ef6c35faf88c28ee9be63b849af22c3aa3be911",
+          "timestamp": 1789145770
+        },
+        "snapshotAgeSecondsAtReceipt": 5,
+        "poolKey": {
+          "currency0": "0x0bd7d308f8e1639fab988df18a8011f41eacad73",
+          "currency1": "0x5fc5360d0400a0fd4f2af552add042d716f1d168",
+          "fee_pips": 200,
+          "tick_spacing": 4,
+          "hooks": "0x0000000000000000000000000000000000000000",
+          "feeMode": "fixed"
+        },
+        "currencies": [
+          "0x0bd7d308f8e1639fab988df18a8011f41eacad73",
+          "0x5fc5360d0400a0fd4f2af552add042d716f1d168"
+        ],
+        "identityStatus": "verified_at_block",
+        "integrationClass": "hookless_fixed_fee",
+        "market": {
+          "status": "available",
+          "reason": null,
+          "cache": {
+            "status": "hit",
+            "ageSeconds": 13,
+            "freshForSeconds": 60,
+            "maxStaleSeconds": 300,
+            "scope": "process_local",
+            "providerUpdateTimeKnown": false
+          },
+          "data": {
+            "source": "geckoterminal",
+            "chainId": 4663,
+            "retrievedAt": 1789145761,
+            "asOfTimestamp": null,
+            "asOfBlock": null,
+            "providerReported": true,
+            "currencies": [
+              "0x0bd7d308f8e1639fab988df18a8011f41eacad73",
+              "0x5fc5360d0400a0fd4f2af552add042d716f1d168"
+            ],
+            "baseToken": "0x5fc5360d0400a0fd4f2af552add042d716f1d168",
+            "quoteToken": "0x0bd7d308f8e1639fab988df18a8011f41eacad73",
+            "reportedLiquidityUsd": "515348.9849",
+            "volume24hUsd": "5499679.2654287"
+          }
+        },
+        "priceHistory": {
+          "status": "rejected",
+          "reason": "provider_chart_currency_mismatch",
+          "cache": {
+            "status": "hit",
+            "ageSeconds": 6,
+            "freshForSeconds": 60,
+            "maxStaleSeconds": 300,
+            "scope": "process_local",
+            "providerUpdateTimeKnown": false
+          },
+          "data": null
+        },
+        "feeApr24h": null,
+        "aprReason": "provider_lp_fee_history_unavailable",
+        "suggested": false,
+        "executionAvailable": false,
+        "requiresLocalHistory": false,
+        "providerMetricsReconciled": false
+      }
+    },
+    {
+      "poolId": "0xdb922f0619e11b0c1e6c3a142798f0243060b8a4331ea4f4e7de80e898cc02e7",
+      "case": "market_only",
+      "request": {
+        "poolId": "0xdb922f0619e11b0c1e6c3a142798f0243060b8a4331ea4f4e7de80e898cc02e7",
+        "includePriceHistory": false,
+        "priceToken": "quote"
+      },
+      "elapsedSeconds": 6.338886,
+      "requests": {
+        "rpcRequests": 11,
+        "marketRequests": 1
+      },
+      "observation": {
+        "httpStatus": 200,
+        "contractValid": true,
+        "headersValid": true,
+        "snapshot": {
+          "number": 60414362,
+          "hash": "0xd3bc1cf0fb83f8dbaaf07a0efd425ad6acea8b8780428457b935185f161e741c",
+          "timestamp": 1789145777
+        },
+        "snapshotAgeSecondsAtReceipt": 5,
+        "poolKey": {
+          "currency0": "0x5fc5360d0400a0fd4f2af552add042d716f1d168",
+          "currency1": "0xab35d04e1ee39c789c4a65d522417b3c7f2e4723",
+          "fee_pips": 50000,
+          "tick_spacing": 500,
+          "hooks": "0x0000000000000000000000000000000000000000",
+          "feeMode": "fixed"
+        },
+        "currencies": [
+          "0x5fc5360d0400a0fd4f2af552add042d716f1d168",
+          "0xab35d04e1ee39c789c4a65d522417b3c7f2e4723"
+        ],
+        "identityStatus": "verified_at_block",
+        "integrationClass": "hookless_fixed_fee",
+        "market": {
+          "status": "available",
+          "reason": null,
+          "cache": {
+            "status": "miss",
+            "ageSeconds": 0,
+            "freshForSeconds": 60,
+            "maxStaleSeconds": 300,
+            "scope": "process_local",
+            "providerUpdateTimeKnown": false
+          },
+          "data": {
+            "source": "geckoterminal",
+            "chainId": 4663,
+            "retrievedAt": 1789145782,
+            "asOfTimestamp": null,
+            "asOfBlock": null,
+            "providerReported": true,
+            "currencies": [
+              "0x5fc5360d0400a0fd4f2af552add042d716f1d168",
+              "0xab35d04e1ee39c789c4a65d522417b3c7f2e4723"
+            ],
+            "baseToken": "0xab35d04e1ee39c789c4a65d522417b3c7f2e4723",
+            "quoteToken": "0x5fc5360d0400a0fd4f2af552add042d716f1d168",
+            "reportedLiquidityUsd": "13388.435",
+            "volume24hUsd": "4951.4390416341"
+          }
+        },
+        "priceHistory": {
+          "status": "not_requested",
+          "reason": null,
+          "cache": null,
+          "data": null
+        },
+        "feeApr24h": null,
+        "aprReason": "provider_lp_fee_history_unavailable",
+        "suggested": false,
+        "executionAvailable": false,
+        "requiresLocalHistory": false,
+        "providerMetricsReconciled": false
+      }
+    },
+    {
+      "poolId": "0xdb922f0619e11b0c1e6c3a142798f0243060b8a4331ea4f4e7de80e898cc02e7",
+      "case": "first_chart",
+      "request": {
+        "poolId": "0xdb922f0619e11b0c1e6c3a142798f0243060b8a4331ea4f4e7de80e898cc02e7",
+        "includePriceHistory": true,
+        "priceToken": "quote"
+      },
+      "elapsedSeconds": 6.244215,
+      "requests": {
+        "rpcRequests": 11,
+        "marketRequests": 1
+      },
+      "observation": {
+        "httpStatus": 200,
+        "contractValid": true,
+        "headersValid": true,
+        "snapshot": {
+          "number": 60414433,
+          "hash": "0xdc1ce13494b62b8b502fa36fe18d31b481b4220af8c5d3853d00dd22c47480ab",
+          "timestamp": 1789145785
+        },
+        "snapshotAgeSecondsAtReceipt": 5,
+        "poolKey": {
+          "currency0": "0x5fc5360d0400a0fd4f2af552add042d716f1d168",
+          "currency1": "0xab35d04e1ee39c789c4a65d522417b3c7f2e4723",
+          "fee_pips": 50000,
+          "tick_spacing": 500,
+          "hooks": "0x0000000000000000000000000000000000000000",
+          "feeMode": "fixed"
+        },
+        "currencies": [
+          "0x5fc5360d0400a0fd4f2af552add042d716f1d168",
+          "0xab35d04e1ee39c789c4a65d522417b3c7f2e4723"
+        ],
+        "identityStatus": "verified_at_block",
+        "integrationClass": "hookless_fixed_fee",
+        "market": {
+          "status": "available",
+          "reason": null,
+          "cache": {
+            "status": "hit",
+            "ageSeconds": 6,
+            "freshForSeconds": 60,
+            "maxStaleSeconds": 300,
+            "scope": "process_local",
+            "providerUpdateTimeKnown": false
+          },
+          "data": {
+            "source": "geckoterminal",
+            "chainId": 4663,
+            "retrievedAt": 1789145782,
+            "asOfTimestamp": null,
+            "asOfBlock": null,
+            "providerReported": true,
+            "currencies": [
+              "0x5fc5360d0400a0fd4f2af552add042d716f1d168",
+              "0xab35d04e1ee39c789c4a65d522417b3c7f2e4723"
+            ],
+            "baseToken": "0xab35d04e1ee39c789c4a65d522417b3c7f2e4723",
+            "quoteToken": "0x5fc5360d0400a0fd4f2af552add042d716f1d168",
+            "reportedLiquidityUsd": "13388.435",
+            "volume24hUsd": "4951.4390416341"
+          }
+        },
+        "priceHistory": {
+          "status": "unavailable",
+          "reason": "provider_unavailable",
+          "cache": {
+            "status": "stale_fallback",
+            "ageSeconds": null,
+            "freshForSeconds": 60,
+            "maxStaleSeconds": 300,
+            "scope": "process_local",
+            "providerUpdateTimeKnown": false
+          },
+          "data": null
+        },
+        "feeApr24h": null,
+        "aprReason": "provider_lp_fee_history_unavailable",
+        "suggested": false,
+        "executionAvailable": false,
+        "requiresLocalHistory": false,
+        "providerMetricsReconciled": false
+      }
+    },
+    {
+      "poolId": "0xdb922f0619e11b0c1e6c3a142798f0243060b8a4331ea4f4e7de80e898cc02e7",
+      "case": "cached_chart",
+      "request": {
+        "poolId": "0xdb922f0619e11b0c1e6c3a142798f0243060b8a4331ea4f4e7de80e898cc02e7",
+        "includePriceHistory": true,
+        "priceToken": "quote"
+      },
+      "elapsedSeconds": 5.557842,
+      "requests": {
+        "rpcRequests": 11,
+        "marketRequests": 0
+      },
+      "observation": {
+        "httpStatus": 200,
+        "contractValid": true,
+        "headersValid": true,
+        "snapshot": {
+          "number": 60414504,
+          "hash": "0x86af92c8327d4db083404be63794f23f920e36d0e594ee2c047482f77ea06bca",
+          "timestamp": 1789145792
+        },
+        "snapshotAgeSecondsAtReceipt": 4,
+        "poolKey": {
+          "currency0": "0x5fc5360d0400a0fd4f2af552add042d716f1d168",
+          "currency1": "0xab35d04e1ee39c789c4a65d522417b3c7f2e4723",
+          "fee_pips": 50000,
+          "tick_spacing": 500,
+          "hooks": "0x0000000000000000000000000000000000000000",
+          "feeMode": "fixed"
+        },
+        "currencies": [
+          "0x5fc5360d0400a0fd4f2af552add042d716f1d168",
+          "0xab35d04e1ee39c789c4a65d522417b3c7f2e4723"
+        ],
+        "identityStatus": "verified_at_block",
+        "integrationClass": "hookless_fixed_fee",
+        "market": {
+          "status": "available",
+          "reason": null,
+          "cache": {
+            "status": "hit",
+            "ageSeconds": 13,
+            "freshForSeconds": 60,
+            "maxStaleSeconds": 300,
+            "scope": "process_local",
+            "providerUpdateTimeKnown": false
+          },
+          "data": {
+            "source": "geckoterminal",
+            "chainId": 4663,
+            "retrievedAt": 1789145782,
+            "asOfTimestamp": null,
+            "asOfBlock": null,
+            "providerReported": true,
+            "currencies": [
+              "0x5fc5360d0400a0fd4f2af552add042d716f1d168",
+              "0xab35d04e1ee39c789c4a65d522417b3c7f2e4723"
+            ],
+            "baseToken": "0xab35d04e1ee39c789c4a65d522417b3c7f2e4723",
+            "quoteToken": "0x5fc5360d0400a0fd4f2af552add042d716f1d168",
+            "reportedLiquidityUsd": "13388.435",
+            "volume24hUsd": "4951.4390416341"
+          }
+        },
+        "priceHistory": {
+          "status": "unavailable",
+          "reason": "provider_unavailable",
+          "cache": {
+            "status": "cooldown",
+            "ageSeconds": null,
+            "freshForSeconds": 60,
+            "maxStaleSeconds": 300,
+            "scope": "process_local",
+            "providerUpdateTimeKnown": false
+          },
+          "data": null
+        },
+        "feeApr24h": null,
+        "aprReason": "provider_lp_fee_history_unavailable",
+        "suggested": false,
+        "executionAvailable": false,
+        "requiresLocalHistory": false,
+        "providerMetricsReconciled": false
+      }
+    }
+  ],
+  "finishedAt": "2026-09-11T16:56:36.892628+00:00",
+  "requests": {
+    "rpcRequests": 66,
+    "marketRequests": 4
+  },
+  "allResponsesValid": true
+}

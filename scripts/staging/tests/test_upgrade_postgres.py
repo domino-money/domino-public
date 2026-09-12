@@ -1,14 +1,16 @@
 """Real disabled-upgrade dump/restore probes in an opt-in disposable cluster.
 
 DOMINO_TEST_STAGING_POSTGRES=1 and DOMINO_PG_BIN=<PG16+ tools> are required.
-The subprocess boundary redirects the fixed production pg_dump command only to
-this fixture's unique Unix socket/database. No real service, VM, runtime file,
+The subprocess boundary substitutes the local identity for runuser and redirects
+pg_dump only to this fixture's unique Unix socket/database. The actual Python
+resource wrapper still executes after that identity boundary. No real service, VM, runtime file,
 TCP listener, provider, installer or upgrade apply/rollback is used.
 """
 import json
 import os
 from pathlib import Path
 import re
+import resource
 import stat
 import subprocess
 import sys
@@ -21,6 +23,10 @@ import catalogue_inventory as inventory
 import check_roles
 import prepare_disabled as install
 import upgrade_disabled as upgrade
+
+EXPECTED_DUMP_ENV = {'PATH': '/usr/sbin:/usr/bin:/sbin:/bin', 'LANG': 'C.UTF-8',
+                     'PGCONNECT_TIMEOUT': '5', 'PGOPTIONS': '-c search_path=pg_catalog',
+                     'PYTHONDONTWRITEBYTECODE': '1'}
 
 
 @unittest.skipUnless(os.environ.get('DOMINO_TEST_STAGING_POSTGRES') == '1',
@@ -108,23 +114,50 @@ class UpgradePostgresTests(unittest.TestCase):
     def dump(self, *, database=None):
         """Run the production function with only the host identity redirected.
 
-        Keep real Popen, stdout, stderr, process groups, child RLIMIT_FSIZE, timeout,
-        O_EXCL/NOFOLLOW, fsync and normalization. Only a root-owned output check is
+        Keep real Popen, stdout, stderr, process groups, post-identity Python
+        RLIMIT_FSIZE wrapper, timeout, O_EXCL/NOFOLLOW, fsync and normalization.
+        Native runuser/PAM is not executed in this unprivileged local test; the
+        command assertion proves the wrapper follows it in the production argv. Only a root-owned output check is
         mapped to the non-root fixture owner; every other file check stays real.
         """
         self.dump_number += 1
         path = self.base / f'{self.database}-{self.dump_number}.sql'
         actual_popen = subprocess.Popen
         actual_read = upgrade.read_regular
-        expected = ['/usr/sbin/runuser', '-u', 'postgres', '--', str(install.PG / 'pg_dump'),
-                    '-w', '-h', install.SOCKET, '-p', '8877', '-U', 'postgres', '-d', install.DB,
-                    '--format=plain', '--lock-wait-timeout=5s']
+        expected_dump = [str(install.PG / 'pg_dump'), '-w', '-h', install.SOCKET,
+                         '-p', '8877', '-U', 'postgres', '-d', install.DB,
+                         '--format=plain', '--lock-wait-timeout=5s']
 
         def fixture_popen(argv, **kwargs):
-            self.assertEqual(argv, expected, 'production dump boundary changed; review the adapter')
-            redirected = [str(self.bin / 'pg_dump'), '-w', '-h', str(self.socket), '-p', '18778',
-                          '-U', 'postgres', '-d', database or self.database,
+            self.assertEqual(argv[:8], ['/usr/sbin/runuser', '-u', 'postgres', '--',
+                                       '/usr/bin/python3', '-I', '-B', '-c'])
+            self.assertEqual(install.ENV, EXPECTED_DUMP_ENV)
+            self.assertEqual(argv[8], upgrade.DUMP_EXEC)
+            inherited = upgrade.resource.getrlimit(resource.RLIMIT_FSIZE)
+            expected_cap = min([upgrade.MAX_DUMP_BYTES] + [limit for limit in inherited
+                                                        if limit != resource.RLIM_INFINITY])
+            self.assertEqual(argv[9], str(expected_cap))
+            self.assertEqual(json.loads(argv[10]), EXPECTED_DUMP_ENV)
+            self.assertEqual(kwargs['env'], EXPECTED_DUMP_ENV)
+            dump_index = argv.index(str(install.PG / 'pg_dump'))
+            self.assertEqual(dump_index, 11)
+            self.assertEqual(argv[dump_index:], expected_dump,
+                             'production dump boundary changed; review the adapter')
+            self.assertNotIn('preexec_fn', kwargs,
+                             'the file bound must be applied after runuser/PAM')
+            # Preserve the actual isolated Python wrapper and all of its limit
+            # arguments. Remove only runuser and map pg_dump to the fixture.
+            redirected = [sys.executable, *argv[5:dump_index], str(self.bin / 'pg_dump'),
+                          '-w', '-h', str(self.socket), '-p', '18778', '-U', 'postgres',
+                          '-d', database or self.database,
                           '--format=plain', '--lock-wait-timeout=5s']
+            if getattr(self, 'inherited_environment', None) is not None:
+                kwargs['env'] = self.inherited_environment
+            if getattr(self, 'inherited_file_limit', None) is not None:
+                limit = self.inherited_file_limit
+                # This test-only child boundary models a stricter inherited PAM
+                # limit. The real production wrapper must not increase it.
+                kwargs['preexec_fn'] = lambda: resource.setrlimit(resource.RLIMIT_FSIZE, (limit, limit))
             return actual_popen(redirected, **kwargs)
 
         def fixture_read(candidate, **kwargs):
@@ -143,7 +176,8 @@ class UpgradePostgresTests(unittest.TestCase):
         second, second_path = self.dump()
         self.assertEqual(first, second)
         self.assertGreater(first_path.stat().st_size, 10000)
-        # pg_dump 17+ guards contain random keys: raw inequality makes this an
+        # Patched pg_dump, including the PG16.10 security backport, emits random
+        # guard keys: raw inequality makes this an
         # actual normalization regression test, not a mock with constant bytes.
         if b'\\restrict ' in first_path.read_bytes():
             self.assertNotEqual(first_path.read_bytes(), second_path.read_bytes())
@@ -226,6 +260,38 @@ class UpgradePostgresTests(unittest.TestCase):
         self.assertEqual(stat.S_IMODE(path.stat().st_mode), 0o600)
         self.assertEqual(self.query('SELECT count(*) FROM domino_catalogue.events;',
                                     database=self.database), '1')
+
+
+    def test_wrapper_does_not_raise_a_stricter_inherited_file_size_limit(self):
+        self.inherited_file_limit = 128
+        with self.assertRaisesRegex(upgrade.UpgradeError, '^database_dump_failed$'):
+            self.dump()
+        path = self.base / f'{self.database}-{self.dump_number}.sql'
+        self.assertLessEqual(path.stat().st_size, 128)
+        self.assertEqual(stat.S_IMODE(path.stat().st_mode), 0o600)
+
+
+    def test_caller_file_size_limit_survives_an_identity_boundary_reset(self):
+        # Model runuser/PAM losing an earlier caller limit: the wrapper child has
+        # the ordinary unlimited fixture RLIMIT, while the caller observed 128.
+        # Production must carry the caller cap explicitly into the post-PAM argv.
+        with patch.object(upgrade.resource, 'getrlimit', return_value=(128, 128)):
+            with self.assertRaisesRegex(upgrade.UpgradeError, '^database_dump_failed$'):
+                self.dump()
+        path = self.base / f'{self.database}-{self.dump_number}.sql'
+        self.assertLessEqual(path.stat().st_size, 128)
+        self.assertEqual(stat.S_IMODE(path.stat().st_mode), 0o600)
+
+
+    def test_wrapper_replaces_a_poisoned_inherited_environment_before_pg_dump(self):
+        expected, _ = self.dump()
+        # A runuser/PAM environment that leaks into pg_dump would cause the
+        # intentionally invalid PGOPTIONS below to reject its connection.
+        self.inherited_environment = {'PATH': '/nonexistent', 'LANG': 'C',
+            'PGOPTIONS': '-c domino_nonexistent_fixture_option=1',
+            'DOMINO_SYNTHETIC_INHERITED_VALUE': 'must-not-reach-pg-dump'}
+        actual, _ = self.dump()
+        self.assertEqual(actual, expected)
 
 
 if __name__ == '__main__':

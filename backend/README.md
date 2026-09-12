@@ -1,5 +1,12 @@
 # Backend foundation
 
+The local [APR metrics candidate](../docs/APR_METRICS.md) adds exact pool-estimate
+and managed fee-performance calculators plus `preview_metrics.py`. Pool mode
+can use the existing on-demand reader; managed mode consumes explicit offline
+evidence. This does not add an HTTP route, replace `feeApr24h`, collect live
+managed receipts or enable card refresh. The examples distinguish estimates,
+complete-day performance, measuring, missing and stale states.
+
 The disabled [wallet-session candidate](../docs/WALLET_SESSIONS.md) is a separate
 auth listener on loopback port 8879, backed by private PostgreSQL state and a
 plain-EOA SIWE verifier. It does not authenticate through the public reader,

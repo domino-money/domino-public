@@ -1,0 +1,45 @@
+{
+  "defaultEvaluationTimestamp": 1789135200,
+  "evaluationTimestamps": {
+    "managed": 1789135200,
+    "managed-measuring": 1789135200,
+    "managed-reorged": 1789135200,
+    "managed-stale": 1789135321,
+    "managed-unpriced": 1789135200,
+    "pool": 1789135200,
+    "pool-missing": 1789135200,
+    "pool-stale": 1789135261
+  },
+  "exampleVersion": 1,
+  "files": {
+    "managed-measuring.input.json": "c6835189978048fb00c216485824703e0b7078323e9c69621618e46dc6e6cadc",
+    "managed-measuring.output.json": "65e26a20856af6e9fceb98c75b8ccb3ac36db715291af777d2ca90e9e59b35ad",
+    "managed-reorged.input.json": "0badf0ed7e57fa468324e0a2e3ec21053e4477678a049567601e1cd31fc5bf19",
+    "managed-reorged.output.json": "b439ed8306dae705374a1de75d9dd3c4508a4cb263854495de0a56b178e1e9e0",
+    "managed-stale.input.json": "06e962d119ae8599a5e6b8b82ff20ccdd2e545f7de49799161696ecc3e188ef5",
+    "managed-stale.output.json": "c08e10eb2258f9c5d9ddd62e0dd599fe6c0c1f900af91ae34b8e07553cb36865",
+    "managed-unpriced.input.json": "45e097478369a9685abe7b57b108c360820ceabb6ec188c39228a204e2317b8e",
+    "managed-unpriced.output.json": "0bc8bfa52fceb5e75f4e2bd8fe057efca73a4c4f7b5066f6a126a1961cbd00ba",
+    "managed.input.json": "06e962d119ae8599a5e6b8b82ff20ccdd2e545f7de49799161696ecc3e188ef5",
+    "managed.input.schema.json": "b2af1f39b410c99a90dbf91d2f8cd931486a94cc90729ee38907d5d9467e65f1",
+    "managed.output.json": "7172d793a1e1335af6e07b5ad07191e09cb2e567ea29f9c2c814b603bfc01ccc",
+    "pool-missing.input.json": "6fa21bde7a4fc87773e2d793ec845171518d66ac1462c8685725c9af1d0d5995",
+    "pool-missing.output.json": "061427aa0ffe95127c4143aaa7fcdb6d9e2670da826184c18c718c7ee9d4b98a",
+    "pool-stale.input.json": "5aabfb401fed757e2df9d22491d0f35867e30e1eaa215444628dbac2c55c0f91",
+    "pool-stale.output.json": "4b884d9c40fe6927dacffb295b5a49c056090b4da8879f2c2a15afe4c16e4ca0",
+    "pool.input.json": "5aabfb401fed757e2df9d22491d0f35867e30e1eaa215444628dbac2c55c0f91",
+    "pool.input.schema.json": "49dac6bf0b793c332f803ec7df73101195a0aa52879c846793fa3af8c433371f",
+    "pool.output.json": "e8b04054de7c239cccd5b9192da21a949cb98c0602be340f8f657702fae9065c",
+    "pool.output.schema.json": "bb4fc672e4a5e9fda30e36c47bdc980cd82ae31e431fbc22b7a9402728477840"
+  },
+  "sources": {
+    "api-contracts/read-v1/fixtures/producer/pool-market.success.json": "440d384ef451a9c8384c397bd8a1babc4a083234d9c81a311624ab8c891c8097",
+    "backend/managed_performance.py": "38816b9fd58f9f95e311bb0dbda8c73711709a81f68a998f5cc62bb5626ae669",
+    "backend/pool_apr.py": "00b37b2645ad72fa2f55e83c9fcfc24791cfc31b2eaffceb82b37a5d212f541f",
+    "backend/preview_metrics.py": "06cd8d91ddfdeed7a40950513cc6a718ecf8c3eaef69ca00af761f44d28ed72e",
+    "docs/APR_METRICS.md": "b4920eb386f90498022547a425e16a166e64750f4672a69314703123e9d9f3bc",
+    "scripts/export-metrics-examples.py": "16c81dbbcc4495d26a527ad8f7e406bdfc90e45e2f54aadd6476b09492efb4ac"
+  },
+  "status": "internal_review_examples_no_http_route",
+  "synthetic": true
+}

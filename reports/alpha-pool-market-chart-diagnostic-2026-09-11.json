@@ -1,0 +1,56 @@
+{
+  "schemaVersion": 1,
+  "mode": "bounded_public_quote_chart_diagnostic",
+  "referenceReportSha256": "6d603159b9fe217990063921167a4fafdc2443106ad5994890be5e45bc9667b5",
+  "publicHttpRequests": 2,
+  "rpcRequests": 0,
+  "providerConfigLoaded": false,
+  "productionParserChanged": false,
+  "reads": [
+    {
+      "poolId": "0x84bd4e2d8be11aeb0afc1195b38f587b61e90068548f1063fdbe448fb8cad0b6",
+      "selectedToken": "quote",
+      "retrievedAt": "2026-09-11T16:57:51.977001+00:00",
+      "referenceMarketRoles": {
+        "baseToken": "0x5fc5360d0400a0fd4f2af552add042d716f1d168",
+        "quoteToken": "0x0bd7d308f8e1639fab988df18a8011f41eacad73"
+      },
+      "observedChartRoles": {
+        "baseToken": "0x0bd7d308f8e1639fab988df18a8011f41eacad73",
+        "quoteToken": "0x5fc5360d0400a0fd4f2af552add042d716f1d168"
+      },
+      "rawCandleCount": 24,
+      "parserStatus": "accepted",
+      "selectedCurrency": "0x5fc5360d0400a0fd4f2af552add042d716f1d168",
+      "coverage": {
+        "status": "provider_reported",
+        "requestedLimit": 24,
+        "returnedCandles": 24,
+        "closedCandles": 23,
+        "gapsDetected": false,
+        "firstTimestamp": 1789059600,
+        "lastTimestamp": 1789142400,
+        "complete24h": false,
+        "completeness": "not_established"
+      },
+      "elapsedSeconds": 0.206239
+    },
+    {
+      "poolId": "0xdb922f0619e11b0c1e6c3a142798f0243060b8a4331ea4f4e7de80e898cc02e7",
+      "selectedToken": "quote",
+      "retrievedAt": "2026-09-11T16:57:52.183463+00:00",
+      "referenceMarketRoles": {
+        "baseToken": "0xab35d04e1ee39c789c4a65d522417b3c7f2e4723",
+        "quoteToken": "0x5fc5360d0400a0fd4f2af552add042d716f1d168"
+      },
+      "observedChartRoles": {
+        "baseToken": "0x5fc5360d0400a0fd4f2af552add042d716f1d168",
+        "quoteToken": "0xab35d04e1ee39c789c4a65d522417b3c7f2e4723"
+      },
+      "rawCandleCount": 24,
+      "parserStatus": "rejected",
+      "reason": "invalid_market_candles",
+      "elapsedSeconds": 1.378126
+    }
+  ]
+}

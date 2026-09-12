@@ -46,6 +46,10 @@ For each `scripts/staging/check_disabled_http.py` run, archive its JSON and the
 installed commit from `/var/backups/domino-disabled/<commit>/installed.json` together
 with a passing `check_filesystem.py --commit <commit> --archive <source.tar>
 --archive-sha256 <sha256>` result using the independently verified release archive.
+Treat `installed.json` as historical: its `upgrade-state.json`, when present, must
+not have phase `rolled_back`, and exact current unit references plus independently verified
+source identity must match the chosen installed commit; see
+[upgrade state and rollback](VM_DISABLED_UPGRADE.md#interrupted-operation-and-rollback).
 Record the checker source commit separately if it differs. HTTP output intentionally names the
 observed header policy, not a release: responses alone cannot identify installed
 code. The private-listener smoke requires both cache directives but does not

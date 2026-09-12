@@ -1,0 +1,426 @@
+{
+  "$comment": "Internal shape only. Cross-field, accounting, freshness and identity checks require the Python calculator; this is not a browser API contract.",
+  "$defs": {
+    "AprInputs": {
+      "additionalProperties": false,
+      "properties": {
+        "currentLpFeePips": {
+          "maximum": 1000000,
+          "minimum": 0,
+          "title": "Currentlpfeepips",
+          "type": "integer"
+        },
+        "reportedLiquidityUsd": {
+          "anyOf": [
+            {
+              "maxLength": 224,
+              "pattern": "^[0-9]+(?:\\.[0-9]+)?$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Reportedliquidityusd"
+        },
+        "volume24hUsd": {
+          "anyOf": [
+            {
+              "maxLength": 224,
+              "pattern": "^[0-9]+(?:\\.[0-9]+)?$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Volume24Husd"
+        }
+      },
+      "required": [
+        "currentLpFeePips",
+        "volume24hUsd",
+        "reportedLiquidityUsd"
+      ],
+      "title": "AprInputs",
+      "type": "object"
+    },
+    "AprPrecision": {
+      "additionalProperties": false,
+      "properties": {
+        "decimalPlaces": {
+          "const": 18,
+          "title": "Decimalplaces",
+          "type": "integer"
+        },
+        "rounding": {
+          "const": "half_up",
+          "title": "Rounding",
+          "type": "string"
+        }
+      },
+      "required": [
+        "decimalPlaces",
+        "rounding"
+      ],
+      "title": "AprPrecision",
+      "type": "object"
+    },
+    "AprProvenance": {
+      "additionalProperties": false,
+      "properties": {
+        "asOfBlock": {
+          "title": "Asofblock",
+          "type": "null"
+        },
+        "asOfTimestamp": {
+          "title": "Asoftimestamp",
+          "type": "null"
+        },
+        "cacheAgeSeconds": {
+          "anyOf": [
+            {
+              "maximum": 9007199254740991,
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Cacheageseconds"
+        },
+        "cacheStatus": {
+          "enum": [
+            "hit",
+            "cooldown",
+            "rate_limited",
+            "stale_fallback",
+            "miss"
+          ],
+          "title": "Cachestatus",
+          "type": "string"
+        },
+        "effectiveMarketAgeSeconds": {
+          "anyOf": [
+            {
+              "maximum": 9007199254740991,
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Effectivemarketageseconds"
+        },
+        "evaluatedAt": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "title": "Evaluatedat",
+          "type": "integer"
+        },
+        "freshForSeconds": {
+          "const": 60,
+          "title": "Freshforseconds",
+          "type": "integer"
+        },
+        "marketReason": {
+          "anyOf": [
+            {
+              "enum": [
+                "provider_capacity_busy",
+                "provider_rate_limited",
+                "provider_unavailable",
+                "provider_currency_or_pool_mismatch",
+                "provider_dex_unconfirmed"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Marketreason"
+        },
+        "marketStatus": {
+          "enum": [
+            "available",
+            "stale",
+            "unavailable",
+            "rejected"
+          ],
+          "title": "Marketstatus",
+          "type": "string"
+        },
+        "maxStaleSeconds": {
+          "const": 300,
+          "title": "Maxstaleseconds",
+          "type": "integer"
+        },
+        "providerUpdateTimeKnown": {
+          "const": false,
+          "title": "Providerupdatetimeknown",
+          "type": "boolean"
+        },
+        "retrievedAt": {
+          "anyOf": [
+            {
+              "maximum": 9007199254740991,
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Retrievedat"
+        },
+        "snapshot": {
+          "$ref": "#/$defs/Snapshot"
+        },
+        "snapshotAgeSeconds": {
+          "anyOf": [
+            {
+              "maximum": 9007199254740991,
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Snapshotageseconds"
+        },
+        "snapshotFreshForSeconds": {
+          "const": 120,
+          "title": "Snapshotfreshforseconds",
+          "type": "integer"
+        },
+        "sourceUrl": {
+          "anyOf": [
+            {
+              "maxLength": 512,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Sourceurl"
+        }
+      },
+      "required": [
+        "evaluatedAt",
+        "snapshot",
+        "snapshotAgeSeconds",
+        "sourceUrl",
+        "retrievedAt",
+        "asOfTimestamp",
+        "asOfBlock",
+        "providerUpdateTimeKnown",
+        "marketStatus",
+        "marketReason",
+        "cacheStatus",
+        "cacheAgeSeconds",
+        "effectiveMarketAgeSeconds",
+        "freshForSeconds",
+        "snapshotFreshForSeconds",
+        "maxStaleSeconds"
+      ],
+      "title": "AprProvenance",
+      "type": "object"
+    },
+    "Snapshot": {
+      "additionalProperties": false,
+      "properties": {
+        "hash": {
+          "pattern": "^0x[0-9a-f]{64}$",
+          "title": "Hash",
+          "type": "string"
+        },
+        "number": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "title": "Number",
+          "type": "integer"
+        },
+        "timestamp": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "title": "Timestamp",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "number",
+        "hash",
+        "timestamp"
+      ],
+      "title": "Snapshot",
+      "type": "object"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "Internal candidate model; not an addition to any public read-v1 route.",
+  "properties": {
+    "chainId": {
+      "const": 4663,
+      "title": "Chainid",
+      "type": "integer"
+    },
+    "executionAvailable": {
+      "const": false,
+      "title": "Executionavailable",
+      "type": "boolean"
+    },
+    "feeAprEstimate24hPercent": {
+      "anyOf": [
+        {
+          "maxLength": 97,
+          "pattern": "^(?:0|[1-9][0-9]{0,77})(?:\\.[0-9]{1,18})?$",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Feeaprestimate24Hpercent"
+    },
+    "inputs": {
+      "$ref": "#/$defs/AprInputs"
+    },
+    "limitations": {
+      "items": {
+        "enum": [
+          "provider_reported_volume_and_tvl_unreconciled",
+          "provider_update_time_unknown",
+          "current_tvl_not_time_weighted",
+          "assumes_current_fixed_lp_fee_for_24h_volume",
+          "protocol_fee_effect_not_reconciled",
+          "no_full_day_coverage_proof",
+          "excludes_rewards_gas_service_fees_and_price_pnl",
+          "pool_estimate_not_position_apr_or_apy",
+          "not_a_return_forecast_or_recommendation"
+        ],
+        "type": "string"
+      },
+      "maxItems": 9,
+      "minItems": 9,
+      "title": "Limitations",
+      "type": "array"
+    },
+    "method": {
+      "const": "fixed_lp_fee_x_volume24h_over_reported_tvl_annualized_365",
+      "title": "Method",
+      "type": "string"
+    },
+    "metric": {
+      "const": "feeAprEstimate24hPercent",
+      "title": "Metric",
+      "type": "string"
+    },
+    "poolId": {
+      "pattern": "^0x[0-9a-f]{64}$",
+      "title": "Poolid",
+      "type": "string"
+    },
+    "precision": {
+      "$ref": "#/$defs/AprPrecision"
+    },
+    "provenance": {
+      "$ref": "#/$defs/AprProvenance"
+    },
+    "providerMetricsReconciled": {
+      "const": false,
+      "title": "Providermetricsreconciled",
+      "type": "boolean"
+    },
+    "reasons": {
+      "items": {
+        "enum": [
+          "pool_identity_mismatch",
+          "snapshot_mismatch",
+          "pool_state_unavailable",
+          "dynamic_fee_unsupported",
+          "hooked_pool_unsupported",
+          "pool_integration_unsupported",
+          "fixed_fee_mismatch",
+          "market_unavailable",
+          "market_rejected",
+          "market_identity_mismatch",
+          "provider_dex_unconfirmed",
+          "missing_reported_tvl",
+          "zero_reported_tvl",
+          "missing_volume24h",
+          "market_age_unknown",
+          "market_timestamp_future",
+          "snapshot_timestamp_future",
+          "market_data_expired",
+          "snapshot_expired",
+          "estimate_out_of_bounds",
+          "estimate_below_display_precision",
+          "provider_observation_stale",
+          "market_cache_stale",
+          "onchain_snapshot_stale"
+        ],
+        "type": "string"
+      },
+      "maxItems": 24,
+      "title": "Reasons",
+      "type": "array"
+    },
+    "scope": {
+      "const": "pool",
+      "title": "Scope",
+      "type": "string"
+    },
+    "source": {
+      "const": "geckoterminal",
+      "title": "Source",
+      "type": "string"
+    },
+    "status": {
+      "enum": [
+        "available",
+        "stale",
+        "unavailable"
+      ],
+      "title": "Status",
+      "type": "string"
+    },
+    "suggested": {
+      "const": false,
+      "title": "Suggested",
+      "type": "boolean"
+    },
+    "version": {
+      "const": "pool-apr-estimate-v0",
+      "title": "Version",
+      "type": "string"
+    }
+  },
+  "required": [
+    "version",
+    "scope",
+    "metric",
+    "source",
+    "chainId",
+    "poolId",
+    "status",
+    "feeAprEstimate24hPercent",
+    "reasons",
+    "method",
+    "inputs",
+    "provenance",
+    "precision",
+    "limitations",
+    "providerMetricsReconciled",
+    "suggested",
+    "executionAvailable"
+  ],
+  "title": "PoolAprEstimate",
+  "type": "object"
+}

@@ -66,9 +66,32 @@ selection of a newer branch or release and no migration/dependency upgrade path.
    the live DB, use `dev_postgres.py` against staging, or treat dump readability as
    restore proof. The updater's backup is not a substitute for this operation gate.
 4. Record the reviewed helper SHA, both archive hashes, restore evidence and
-   intended source pair privately. Check disk capacity for both releases and
-   private backups. The updater bounds runtime bytes to64MiB and each DB dump
-   to256MiB; a larger installation needs a separately reviewed procedure.
+   intended source pair privately. Budget for seven new source copies, two new
+   runtime copies (private backup and target), three application-phase DB dumps,
+   and another full dump for each rollback attempt. Existing releases and dumps
+   remain on disk. The updater bounds runtime bytes to 64 MiB and each DB dump
+   to 256 MiB; four maximum-sized dumps alone require 1 GiB. Its `statvfs` preflight
+   requires source/runtime allocation, backup space including one rollback dump,
+   and PostgreSQL filesystem headroom, aggregating requirements by `st_dev`.
+   Metadata byte allowances add 64 MiB on the release device and 128 MiB on the
+   backup device for apply (64 MiB for apply and 64 MiB for the rollback reserve).
+   Each later rollback attempt requires one new dump plus 64 MiB for metadata.
+   PostgreSQL byte headroom is the larger of 1 GiB or 5% of its filesystem.
+
+   The inode budget counts copied source/runtime entries, including files,
+   directories and recreated links, plus four dump files for apply or one for a
+   rollback attempt. Each metadata allowance adds 1,024 inodes: two allowances
+   in the apply backup budget, one on the release device, and one for a later
+   rollback attempt. The PostgreSQL device retains another 1,024 headroom inodes.
+   The helper requires a positive total inode count (`f_files`) and an available
+   count (`f_favail`) between zero and that total; unusable reports or insufficient
+   capacity are refused.
+
+   `st_dev` may distinguish logical filesystems that share one storage pool.
+   For pooled Btrfs subvolumes or ZFS datasets, calculate the combined pool budget
+   manually; independent device checks do not establish total pool headroom.
+   A larger installation needs a separately reviewed procedure. Recheck bytes
+   and inodes before every retry; these checks do not reserve storage or inodes.
 
 The tool requires the old installed receipt and the shared root0600 installer
 lock. It rejects an existing target release or backup directory. It never clears
@@ -94,22 +117,39 @@ After the preceding gates, add `--apply` to the same command. The operation:
   cutover. No PG configuration, SQL data or dependencies are changed.
 - Creates seven separate immutable copies under `/opt/domino/releases/<target>`.
   Runtime bytes, uid/gid and modes are preserved, including nested lock directories
-  and writer0644 reports inside private0700 runtime roots. Links, special files,
-  extended attributes/ACLs, unsafe modes and excessive depth are refused. The
-  existing fixed venv link is recreated; runtime paths are never shared or linked.
+  and writer 0644 reports inside private 0700 runtime roots. New runtime trees stay
+  root-owned 0700 while copying; ownership is handed to the service UID from the
+  leaves upward, with the runtime root last. Links, special files,
+  extended attributes/ACLs, special permission bits, unsafe modes and excessive
+  depth are refused. The existing fixed venv link is recreated; runtime paths
+  are never shared or linked.
 - Verifies staged source/runtime identity and native unit syntax, then rechecks
-  old runtime, stopped state and DB fingerprint. It replaces each unit atomically
-  and records progress. The five-unit set is not atomic; keeping apps stopped makes
-  interruption recoverable. It reloads systemd, rechecks state/foundation/roles and
-  compares a final DB dump and runtime snapshot before writing `installed.json`.
+  old runtime, stopped state, role/catalogue access and DB fingerprint. It replaces
+  each unit atomically and records progress. The five-unit set is not atomic;
+  keeping apps stopped makes interruption recoverable. It reloads systemd,
+  rechecks state/foundation/roles and
+  compares a final DB dump and both old/target runtime snapshots before writing
+  `installed.json`.
 
-The DB fingerprint covers the complete plain dump, including rows and sequences.
-Only random `\restrict`/`\unrestrict` command lines are normalized for newer local
-PostgreSQL tools; production remains PG16. Fingerprints and private file hashes
+The DB fingerprint covers the plain dump, including rows and sequences.
+Random `\restrict`/`\unrestrict` guard command lines are normalized only for the
+fingerprint; the saved dump retains its guards for restore. The security fix
+[introduced in PostgreSQL 16.10](https://www.postgresql.org/docs/release/16.10/)
+also applies to the production PG16 tools. This normalization is required in
+production and must not be removed as a test-only accommodation.
+The dump's file-size limit is set by an isolated Python wrapper **after**
+`runuser` opens its PAM session and before `exec` of `pg_dump`. Lower inherited
+limits are preserved. An inherited parent limit alone is insufficient:
+[runuser resets RLIMIT_FSIZE](https://manpages.ubuntu.com/manpages/noble/man1/runuser.1.html).
+Local PostgreSQL tests execute the real limiting wrapper with the fixture user;
+they do not claim to execute native PAM. The actual VM's process boundary remains
+part of operational acceptance. Fingerprints and private file hashes
 stay inside the root-only backup. Public JSON contains fixed refusal reasons,
 source identifiers and preservation booleans, never configuration, DB contents
 or their fingerprints. This plain dump also excludes database-level ownership
-and CONNECT ACLs; the role verifier checks that fixed foundation separately.
+and CONNECT ACLs; `check_roles.py` checks that fixed foundation separately during
+preflight, immediately before cutover and after reload. A stable dump fingerprint
+alone does not prove role/database-level state unchanged.
 PostgreSQL configuration, global roles and database creation/ACLs remain covered
 by the existing foundation backup and separate recovery procedure.
 
@@ -131,20 +171,32 @@ Rollback accepts only known phases and exact old/new units. It revalidates the
 old source, foundation, dependencies, DB and runtime snapshot; when staging
 completed it also requires intact target source/runtime. A partial stage may
 remain after an early failure, but was never selected for execution. Known old/new
-temporary unit files from a crash are accepted; unrelated bytes are refused.
+temporary unit files from a crash are accepted, including empty files and exact
+prefixes of a known old/new version at root 0600 or 0644. They must still be regular
+single-link files. Unrelated bytes or unsafe file metadata are refused.
 
 Rollback atomically restores the five saved old unit references, reloads systemd
 and confirms stopped/static state and roles. It can be retried after interruption
 of rollback; it preserves the staging-complete flag across attempts. A completed
-rollback is recorded as `rolled_back` and is not replayed. Both source trees and
-all private evidence remain. A future attempt needs explicit operator assessment
-of retained destinations; this tool does not delete or resume staging.
+rollback is recorded as `rolled_back` and is not replayed. The durable
+`upgrade-state.json` is authoritative for this operation's phase. `installed.json`
+is a historical success receipt and remains on disk after rollback; never infer
+the currently selected source from that receipt alone. Require the journal phase,
+exact current unit references and independent source identity to agree.
+Both source trees and all private evidence remain. A future attempt needs explicit
+operator assessment of retained destinations; this tool does not delete or resume staging.
 
 If any DB/runtime/unit/source drift occurred, reconcile it explicitly. Do not
 force rollback or replace current private data with an older snapshot. This tool
 never rewinds SQL data or financial/session state.
 
 ## Acceptance after cutover
+
+Make the tool-managed rollback decision **before the first smoke start**.
+A service start that changes a lock/runtime file or DB state closes this tool's
+snapshot-based rollback path, even when every feature flag stays false. After
+that point, recovery requires explicit reconciliation of the changed state;
+do not restore an old private snapshot merely to make rollback pass.
 
 Run the separate source/filesystem and role verifiers. Reconfirm actual BPF egress
 enforcement before a coordinated bounded smoke start. Wait for all five sockets,

@@ -1,0 +1,1843 @@
+{
+  "schemaVersion": 1,
+  "observedDateUtc": "2026-09-11",
+  "scope": "Bounded public read-only VFAT APR and analytics assessment. No wallet, credential, quote, transaction, installation or live backfill. Provider claims are not independent Domino accounting qualification.",
+  "server": {
+    "name": "vfat-mcp-server",
+    "version": "0.2.0",
+    "protocolVersion": "2025-03-26",
+    "toolCount": 37
+  },
+  "toolSchemas": [
+    {
+      "name": "search_yield_opportunities",
+      "title": "Search yield opportunities",
+      "description": "Searches and ranks VFAT yield opportunities with bounded, model-friendly pagination.",
+      "inputSchema": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "type": "object",
+        "properties": {
+          "search": {
+            "description": "Free-text token, pool, or protocol search.",
+            "type": "string",
+            "maxLength": 200
+          },
+          "chainIds": {
+            "maxItems": 10,
+            "type": "array",
+            "items": {
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991,
+              "description": "EVM chain ID, for example 1 for Ethereum."
+            }
+          },
+          "protocols": {
+            "maxItems": 20,
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 100
+            }
+          },
+          "farmTypes": {
+            "maxItems": 3,
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "stable",
+                "volatile",
+                "concentrated"
+              ]
+            }
+          },
+          "assetCorrelations": {
+            "description": "Filter by pair-price correlation classification.",
+            "maxItems": 3,
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "correlated",
+                "uncorrelated",
+                "unknown"
+              ]
+            }
+          },
+          "minApr": {
+            "type": "number",
+            "minimum": 0
+          },
+          "maxApr": {
+            "type": "number",
+            "minimum": 0
+          },
+          "minTvlUsd": {
+            "type": "number",
+            "minimum": 0
+          },
+          "maxTvlUsd": {
+            "type": "number",
+            "minimum": 0
+          },
+          "sortBy": {
+            "default": "tvl",
+            "type": "string",
+            "enum": [
+              "tvl",
+              "inRangeTvl",
+              "activeTvl",
+              "fees",
+              "rewards",
+              "apr",
+              "range"
+            ]
+          },
+          "sortDirection": {
+            "default": "desc",
+            "type": "string",
+            "enum": [
+              "asc",
+              "desc"
+            ]
+          },
+          "aprMode": {
+            "default": "default",
+            "type": "string",
+            "enum": [
+              "avg",
+              "max",
+              "default"
+            ]
+          },
+          "page": {
+            "default": 1,
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 1000
+          },
+          "pageSize": {
+            "default": 10,
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 20
+          }
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "execution": {
+        "taskSupport": "forbidden"
+      },
+      "outputSchema": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "type": "object",
+        "properties": {
+          "source": {
+            "type": "string",
+            "format": "uri"
+          },
+          "asOf": {
+            "type": "string"
+          },
+          "requestId": {
+            "type": "string"
+          },
+          "data": {}
+        },
+        "required": [
+          "source",
+          "asOf",
+          "requestId",
+          "data"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "get_pool_history",
+      "title": "Get pool analytics and history",
+      "description": "Reads scheduled pool analytics for 30 closed UTC days, or hourly swap activity for the last 24 closed hours when the pool has a known age under seven days. Daily data includes TVL and verified fee growth. Missing data never triggers live backfilling.",
+      "inputSchema": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 512,
+            "description": "Stable VFAT yield option ID returned by opportunity discovery."
+          },
+          "from": {
+            "type": "string",
+            "format": "date-time",
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$",
+            "description": "ISO 8601 timestamp with a timezone."
+          },
+          "to": {
+            "type": "string",
+            "format": "date-time",
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$",
+            "description": "ISO 8601 timestamp with a timezone."
+          },
+          "bucket": {
+            "default": "day",
+            "description": "Prepared history covers 30 closed UTC days, or 24 closed hours for pools with a known age under seven days.",
+            "type": "string",
+            "enum": [
+              "hour",
+              "day"
+            ]
+          },
+          "limit": {
+            "default": 1000,
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 1000
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "execution": {
+        "taskSupport": "forbidden"
+      },
+      "outputSchema": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "type": "object",
+        "properties": {
+          "source": {
+            "type": "string",
+            "format": "uri"
+          },
+          "asOf": {
+            "type": "string"
+          },
+          "requestId": {
+            "type": "string"
+          },
+          "data": {}
+        },
+        "required": [
+          "source",
+          "asOf",
+          "requestId",
+          "data"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "get_position_performance",
+      "title": "Get open-position performance",
+      "description": "Gets lineage-aware net PnL, cash flow, ROI/APR percentages, freshness, and PnL availability for open VFAT positions.",
+      "inputSchema": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "type": "object",
+        "properties": {
+          "adminAddress": {
+            "type": "string",
+            "pattern": "^0x[a-fA-F0-9]{40}$",
+            "description": "Wallet that administers the VFAT Sickle positions."
+          },
+          "chainId": {
+            "description": "Optionally restrict positions to one chain.",
+            "type": "integer",
+            "exclusiveMinimum": 0,
+            "maximum": 9007199254740991
+          }
+        },
+        "required": [
+          "adminAddress"
+        ]
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "execution": {
+        "taskSupport": "forbidden"
+      },
+      "outputSchema": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "type": "object",
+        "properties": {
+          "source": {
+            "type": "string",
+            "format": "uri"
+          },
+          "asOf": {
+            "type": "string"
+          },
+          "requestId": {
+            "type": "string"
+          },
+          "data": {}
+        },
+        "required": [
+          "source",
+          "asOf",
+          "requestId",
+          "data"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "get_position_performance_history",
+      "title": "Get position-performance history",
+      "description": "Gets bounded PnL, ROI/APR percentages, valuation history, and PnL availability for one lineage.",
+      "inputSchema": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "type": "object",
+        "properties": {
+          "chainId": {
+            "type": "integer",
+            "exclusiveMinimum": 0,
+            "maximum": 9007199254740991,
+            "description": "EVM chain ID, for example 1 for Ethereum."
+          },
+          "sickleAddress": {
+            "type": "string",
+            "pattern": "^0x[a-fA-F0-9]{40}$",
+            "description": "VFAT Sickle smart-account address."
+          },
+          "positionRootTokenId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 256,
+            "description": "Stable lineage identifier returned by get_position_performance."
+          },
+          "from": {
+            "type": "string",
+            "format": "date-time",
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$",
+            "description": "ISO 8601 timestamp with a timezone."
+          },
+          "to": {
+            "type": "string",
+            "format": "date-time",
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$",
+            "description": "ISO 8601 timestamp with a timezone."
+          },
+          "bucket": {
+            "default": "day",
+            "type": "string",
+            "enum": [
+              "hour",
+              "day"
+            ]
+          },
+          "limit": {
+            "default": 365,
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 1000
+          }
+        },
+        "required": [
+          "chainId",
+          "sickleAddress",
+          "positionRootTokenId"
+        ]
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "execution": {
+        "taskSupport": "forbidden"
+      },
+      "outputSchema": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "type": "object",
+        "properties": {
+          "source": {
+            "type": "string",
+            "format": "uri"
+          },
+          "asOf": {
+            "type": "string"
+          },
+          "requestId": {
+            "type": "string"
+          },
+          "data": {}
+        },
+        "required": [
+          "source",
+          "asOf",
+          "requestId",
+          "data"
+        ],
+        "additionalProperties": false
+      }
+    }
+  ],
+  "requests": [
+    {
+      "transport": "MCP tools/call",
+      "endpoint": "https://mcp.vfat.io/mcp",
+      "request": {
+        "name": "list_supported_chains",
+        "arguments": {}
+      },
+      "response": {
+        "source": "https://api.vfat.io/v4/chains",
+        "asOf": "2026-09-11T17:55:04.747Z",
+        "requestId": "b80c45e3-82bd-44cf-b6a6-382e7aad6b01",
+        "data": [
+          {
+            "chainId": 4663,
+            "chainName": "Robinhood",
+            "nativeCurrency": {
+              "name": "Ether",
+              "symbol": "ETH",
+              "decimals": 18,
+              "address": "0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+            },
+            "wrappedNativeToken": {
+              "name": "Wrapped Ether",
+              "symbol": "WETH",
+              "address": "0x0bd7d308f8e1639fab988df18a8011f41eacad73",
+              "decimals": 18
+            },
+            "blockExplorerUrls": [
+              "https://robinhoodchain.blockscout.com"
+            ],
+            "blockTime": 0.1,
+            "swapSupported": true
+          }
+        ]
+      },
+      "curation": "Only Robinhood entry retained; other supported chains omitted."
+    },
+    {
+      "transport": "MCP tools/call",
+      "endpoint": "https://mcp.vfat.io/mcp",
+      "request": {
+        "name": "search_yield_opportunities",
+        "arguments": {
+          "chainIds": [
+            4663
+          ],
+          "search": "0x84bd4e2d8be11aeb0afc1195b38f587b61e90068548f1063fdbe448fb8cad0b6",
+          "pageSize": 2
+        }
+      },
+      "response": {
+        "source": "https://api.vfat.io/v4/yield-opportunities",
+        "asOf": "2026-09-11T17:55:06.048Z",
+        "requestId": "bf3fca37-393c-418b-861b-4e55870fd4fd",
+        "data": {
+          "items": [
+            {
+              "chainId": 4663,
+              "pool": {
+                "address": "0x8366a39cc670b4001a1121b8f6a443a643e40951",
+                "symbol": "UNI-V4",
+                "createdAt": "2026-07-16T14:37:48.000Z",
+                "type": "concentrated",
+                "currentFee": 200,
+                "tick": -197818,
+                "tickSpacing": 4,
+                "poolId": "0x84bd4e2d8be11aeb0afc1195b38f587b61e90068548f1063fdbe448fb8cad0b6",
+                "underlying": [
+                  {
+                    "address": "0x0bd7d308f8e1639fab988df18a8011f41eacad73",
+                    "symbol": "WETH",
+                    "decimals": 18,
+                    "price": 2567.66660658
+                  },
+                  {
+                    "address": "0x5fc5360d0400a0fd4f2af552add042d716f1d168",
+                    "symbol": "USDG",
+                    "decimals": 6,
+                    "price": 0.99965692
+                  }
+                ],
+                "assetCorrelation": {
+                  "classification": "uncorrelated",
+                  "methodVersion": "log-returns-4h-30d-v1",
+                  "baseTokenAddress": "0x0bd7d308f8e1639fab988df18a8011f41eacad73",
+                  "quoteTokenAddress": "0x5fc5360d0400a0fd4f2af552add042d716f1d168",
+                  "pearson": 0.2742,
+                  "pearsonLower95": 0.1329,
+                  "relativeRealizedVolatilityAnnualizedPercent": 55.02,
+                  "annualizedTrackingErrorPercent": 55.02,
+                  "relativePriceMovePercentiles": [
+                    {
+                      "horizonHours": 24,
+                      "observations": 174,
+                      "p90AbsoluteMovePercent": 4.81,
+                      "p95AbsoluteMovePercent": 6.97,
+                      "p90DownMovePercent": 2.49,
+                      "p95DownMovePercent": 2.93,
+                      "p90UpMovePercent": 4.74,
+                      "p95UpMovePercent": 6.97
+                    },
+                    {
+                      "horizonHours": 168,
+                      "observations": 138,
+                      "p90AbsoluteMovePercent": 33.2,
+                      "p95AbsoluteMovePercent": 34.32,
+                      "p90DownMovePercent": 4.65,
+                      "p95DownMovePercent": 5.48,
+                      "p90UpMovePercent": 33.2,
+                      "p95UpMovePercent": 34.32
+                    }
+                  ],
+                  "routineRange": {
+                    "methodVersion": "routine-volatility-4h-v1",
+                    "status": "available",
+                    "windowDays": 14,
+                    "recentWindowDays": 3,
+                    "observations": 84,
+                    "recentObservations": 18,
+                    "coveragePercent": 100,
+                    "recentCoveragePercent": 100,
+                    "dataThrough": "2026-09-11T12:00:00.000Z",
+                    "routineVolatilityAnnualizedPercent": 29.6567,
+                    "bands": [
+                      {
+                        "horizonHours": 24,
+                        "logHalfWidth": 0.0310460582
+                      },
+                      {
+                        "horizonHours": 168,
+                        "logHalfWidth": 0.0821401493
+                      }
+                    ]
+                  },
+                  "observations": 179,
+                  "coveragePercent": 100,
+                  "windowDays": 30,
+                  "intervalHours": 4,
+                  "calculatedAt": "2026-09-11T17:17:01.778Z",
+                  "dataThrough": "2026-09-11T12:00:00.000Z"
+                }
+              },
+              "points": [],
+              "options": [
+                {
+                  "aprBasis": {
+                    "feeWindowDays": 7,
+                    "effectiveFeeWindowDays": 7,
+                    "clippedByPoolAge": false,
+                    "components": [
+                      {
+                        "kind": "swapFees",
+                        "aprPercent": 99.11991209591886,
+                        "denominator": "activePoolLiquidity",
+                        "assumesFullTimeInRange": true
+                      }
+                    ],
+                    "assumesFullTimeInRange": true,
+                    "containsSourcePublishedApr": false
+                  },
+                  "id": "4663:0x8366a39cc670b4001a1121b8f6a443a643e40951:0x8366a39cc670b4001a1121b8f6a443a643e40951:poolId=0x84bd4e2d8be11aeb0afc1195b38f587b61e90068548f1063fdbe448fb8cad0b6:poolIndex=",
+                  "kind": "lp",
+                  "type": "UNISWAP_V4",
+                  "address": "0x8366a39cc670b4001a1121b8f6a443a643e40951",
+                  "protocol": {
+                    "id": "uniswap_v4",
+                    "name": "Uniswap V4"
+                  },
+                  "isKilled": false,
+                  "totalLiquidity": 460335.5130700758,
+                  "activeLiquidity": 383997.4070168759,
+                  "inRangeLiquidity": 607.7339103000199,
+                  "apr": 99.11991209591886,
+                  "avgApr": 99.11991209591886,
+                  "maxApr": 62629.0364639741,
+                  "rewardsPerWeek": 7299.521221918209,
+                  "guaranteedAprPricePercentRange": {
+                    "minPricePercent": -12.6,
+                    "maxPricePercent": 12.64,
+                    "widthPercent": 25.24
+                  }
+                }
+              ]
+            }
+          ],
+          "total": 1,
+          "searchTotal": 1,
+          "page": 1,
+          "pageSize": 2,
+          "hasNextPage": false
+        }
+      }
+    },
+    {
+      "transport": "MCP tools/call",
+      "endpoint": "https://mcp.vfat.io/mcp",
+      "request": {
+        "name": "search_yield_opportunities",
+        "arguments": {
+          "chainIds": [
+            4663
+          ],
+          "search": "0xdb922f0619e11b0c1e6c3a142798f0243060b8a4331ea4f4e7de80e898cc02e7",
+          "pageSize": 2
+        }
+      },
+      "response": {
+        "source": "https://api.vfat.io/v4/yield-opportunities",
+        "asOf": "2026-09-11T17:55:05.972Z",
+        "requestId": "757c5b56-21ce-40a6-90d5-03d6c6b2d2f2",
+        "data": {
+          "items": [],
+          "total": 0,
+          "searchTotal": 0,
+          "page": 1,
+          "pageSize": 2,
+          "hasNextPage": false
+        }
+      }
+    },
+    {
+      "transport": "MCP tools/call",
+      "endpoint": "https://mcp.vfat.io/mcp",
+      "request": {
+        "name": "get_pool_history",
+        "arguments": {
+          "id": "4663:0x8366a39cc670b4001a1121b8f6a443a643e40951:0x8366a39cc670b4001a1121b8f6a443a643e40951:poolId=0x84bd4e2d8be11aeb0afc1195b38f587b61e90068548f1063fdbe448fb8cad0b6:poolIndex=",
+          "from": "2026-09-09T00:00:00Z",
+          "to": "2026-09-11T00:00:00Z",
+          "bucket": "day",
+          "limit": 2
+        }
+      },
+      "response": {
+        "source": "https://api.vfat.io/v4/pool-history",
+        "asOf": "2026-09-11T17:56:07.140Z",
+        "requestId": "2fdc2901-140e-43a1-a332-5ebd1c4ac180",
+        "data": {
+          "opportunityId": "4663:0x8366a39cc670b4001a1121b8f6a443a643e40951:0x8366a39cc670b4001a1121b8f6a443a643e40951:poolId=0x84bd4e2d8be11aeb0afc1195b38f587b61e90068548f1063fdbe448fb8cad0b6:poolIndex=",
+          "chainId": 4663,
+          "poolAddress": "0x8366a39cc670b4001a1121b8f6a443a643e40951",
+          "token0": {
+            "address": "0x0bd7d308f8e1639fab988df18a8011f41eacad73",
+            "symbol": "WETH",
+            "decimals": 18
+          },
+          "token1": {
+            "address": "0x5fc5360d0400a0fd4f2af552add042d716f1d168",
+            "symbol": "USDG",
+            "decimals": 6
+          },
+          "bucket": "day",
+          "from": "2026-09-09T00:00:00.000Z",
+          "to": "2026-09-10T00:00:00.000Z",
+          "activityStatus": "available",
+          "feeGrowthStatus": {
+            "quality": "exact",
+            "source": "uniswap-v4",
+            "throughBlock": "60434254",
+            "throughTimestamp": "2026-09-11T17:29:59.000Z"
+          },
+          "preparation": {
+            "activity": {
+              "status": "ready",
+              "checkedBuckets": 2,
+              "expectedBuckets": 2,
+              "oldestPreparedAt": "2026-09-11T17:45:31.508Z",
+              "lastAttemptAt": "2026-09-11T17:45:31.388Z"
+            },
+            "metrics": {
+              "status": "ready",
+              "checkedBuckets": 2,
+              "expectedBuckets": 2,
+              "oldestPreparedAt": "2026-09-11T17:30:08.514Z",
+              "lastAttemptAt": "2026-09-11T17:30:08.467Z"
+            },
+            "feeGrowth": {
+              "status": "ready",
+              "checkedBuckets": 2,
+              "expectedBuckets": 2,
+              "oldestPreparedAt": "2026-09-11T17:30:41.932Z",
+              "lastAttemptAt": "2026-09-11T17:30:41.812Z"
+            }
+          },
+          "summary": {
+            "pointCount": 2,
+            "availablePointCount": 2,
+            "expectedPointCount": 2,
+            "pointObservationCoveragePercent": 100,
+            "priceObservationCoveragePercent": 100,
+            "activityObservationCoveragePercent": 100,
+            "tvlObservationCoveragePercent": 100,
+            "volumeObservationCoveragePercent": 100,
+            "lpFeesObservationCoveragePercent": 100,
+            "volumeUnvaluedPointCount": 0,
+            "lpFeesUnavailablePointCount": 0,
+            "volumeObservationCount": 2,
+            "lpFeesObservationCount": 2,
+            "intraBucketPriceVolatilityObservationCount": 2,
+            "intraBucketPriceVolatilityObservationCoveragePercent": 100,
+            "liquidityVolatilityObservationCount": 2,
+            "liquidityVolatilityObservationCoveragePercent": 100,
+            "turnoverObservationCount": 2,
+            "turnoverObservationCoveragePercent": 100,
+            "latestObservedPointTimestamp": "2026-09-10T00:00:00.000Z",
+            "activityDataThrough": "2026-09-10T00:00:00.000Z",
+            "volumeDataThrough": "2026-09-10T00:00:00.000Z",
+            "lpFeesDataThrough": "2026-09-10T00:00:00.000Z",
+            "latestObservedTvlUsd": 415945.6923074202,
+            "latestObservedTvlTimestamp": "2026-09-10T23:00:00.000Z",
+            "observedAverageTvlUsd": 447374.36215746246,
+            "averageTvlUsd": 447374.36215746246,
+            "observedTvlChangePercent": -13.13,
+            "tvlChangePercent": -13.13,
+            "medianIntraBucketPriceVolatilityPercent": 0.7,
+            "medianLiquidityVolatilityPercent": 11.48,
+            "observedVolumeUsd": 8537076.510203676,
+            "observedLpFeesUsd": 1707.4152821920864,
+            "observedTurnover": 19.082623485694693,
+            "feeGrowthDelta0X128": "1026533560863251295615308226220421999554",
+            "feeGrowthDelta1X128": "2502083722247793881459281272120"
+          },
+          "points": [
+            {
+              "timestamp": "2026-09-09T00:00:00.000Z",
+              "feeDataQuality": "resolved",
+              "valuationQuality": "complete",
+              "snapshotObservedAt": "2026-09-09T23:00:00.000Z",
+              "tick": -198244,
+              "feePercent": 0.02,
+              "openSqrtPriceX96": "3949311457555845776375635",
+              "highSqrtPriceX96": "3978812869447512106742481",
+              "lowSqrtPriceX96": "3915350596679403641820341",
+              "closeSqrtPriceX96": "3935242939611371994592632",
+              "openPriceToken1PerToken0": 2484.755169866794,
+              "highPriceToken1PerToken0": 2522.0161337891604,
+              "lowPriceToken1PerToken0": 2442.2051674734257,
+              "closePriceToken1PerToken0": 2467.083957944992,
+              "volumeToken0": "821693015123336514230",
+              "volumeToken1": "2014051183245",
+              "volumeUsd": 4032901.6615058747,
+              "lpFeesToken0": "164338603024667292",
+              "lpFeesToken1": "402810227",
+              "lpFeesUsd": 806.5803226540249,
+              "averageLiquidity": "116025457223151970",
+              "minLiquidity": "62688314796069200",
+              "maxLiquidity": "194180990033677000",
+              "medianLiquidity": "117403309798686610",
+              "liquidityVariance": "2.458160329336676e+32",
+              "liquidityVolatilityPercent": 13.51,
+              "medianPriceToken1PerToken0": 2493.375995320946,
+              "priceVariance": 2.671732926743007e-22,
+              "intraBucketPriceVolatilityPercent": 0.66,
+              "swapCount": 13723,
+              "uniqueSenders": 103,
+              "firstBlockNumber": "58101788",
+              "lastBlockNumber": "58960319",
+              "feeGrowthGlobal0X128": "32824265451368971177482368613150552119168",
+              "feeGrowthGlobal1X128": "72853834078207119993582555962739",
+              "feeGrowthDelta0X128": "484840267135363487450753509869541364860",
+              "feeGrowthDelta1X128": "1195270863276956872971306402418",
+              "feeGrowthResolved": true,
+              "feeGrowthClosed": true,
+              "feeGrowthFirstBlockNumber": "58101788",
+              "feeGrowthLastBlockNumber": "58958108",
+              "tvlUsd": 478803.0320075047,
+              "activeTvlUsd": 457644.7466399627,
+              "inRangeTvlUsd": 1202.0944300201393,
+              "stakedTvlUsd": 478803.0320075047,
+              "rewardedTvlUsd": 1202.0944300201393,
+              "aprPercent": 103.61954928413589,
+              "lpAprPercent": 103.61954928413589
+            },
+            {
+              "timestamp": "2026-09-10T00:00:00.000Z",
+              "feeDataQuality": "resolved",
+              "valuationQuality": "complete",
+              "snapshotObservedAt": "2026-09-10T23:00:00.000Z",
+              "tick": -198302,
+              "feePercent": 0.02,
+              "openSqrtPriceX96": "3935255708600168782658788",
+              "highSqrtPriceX96": "3947757338132859081195520",
+              "lowSqrtPriceX96": "3886488683300303761571840",
+              "closeSqrtPriceX96": "3911115735556137398792327",
+              "openPriceToken1PerToken0": 2467.0999682493175,
+              "highPriceToken1PerToken0": 2482.7999700759647,
+              "lowPriceToken1PerToken0": 2406.3325595424412,
+              "closePriceToken1PerToken0": 2436.9250239613193,
+              "volumeToken0": "927747672634264779909",
+              "volumeToken1": "2232156071025",
+              "volumeUsd": 4504174.848697801,
+              "lpFeesToken0": "185549534526852947",
+              "lpFeesToken1": "446431204",
+              "lpFeesUsd": 900.8349595380614,
+              "averageLiquidity": "118257183544689330",
+              "minLiquidity": "108138545705785000",
+              "maxLiquidity": "156687432084018000",
+              "medianLiquidity": "115467647053271180",
+              "liquidityVariance": "1.2487026866459024e+32",
+              "liquidityVolatilityPercent": 9.45,
+              "medianPriceToken1PerToken0": 2459.6955017984537,
+              "priceVariance": 3.258799968924243e-22,
+              "intraBucketPriceVolatilityPercent": 0.73,
+              "swapCount": 13814,
+              "uniqueSenders": 110,
+              "firstBlockNumber": "58958285",
+              "lastBlockNumber": "59816816",
+              "feeGrowthGlobal0X128": "33365958745096858985646923329501432753862",
+              "feeGrowthGlobal1X128": "74160646937177957002070530832441",
+              "feeGrowthDelta0X128": "541693293727887808164554716350880634694",
+              "feeGrowthDelta1X128": "1306812858970837008487974869702",
+              "feeGrowthResolved": true,
+              "feeGrowthClosed": true,
+              "feeGrowthFirstBlockNumber": "58958285",
+              "feeGrowthLastBlockNumber": "59814759",
+              "tvlUsd": 415945.6923074202,
+              "activeTvlUsd": 397274.1644934792,
+              "inRangeTvlUsd": 1414.1925226501874,
+              "stakedTvlUsd": 415945.6923074202,
+              "rewardedTvlUsd": 1414.1925226501874,
+              "aprPercent": 109.69806751138144,
+              "lpAprPercent": 109.69806751138144
+            }
+          ],
+          "warnings": [],
+          "truncated": false,
+          "poolId": "0x84bd4e2d8be11aeb0afc1195b38f587b61e90068548f1063fdbe448fb8cad0b6",
+          "activitySource": "uniswap-v4",
+          "activityCompleteness": "unverified",
+          "activityTrustedFrom": "2026-06-14T00:00:00.000Z",
+          "tvlSource": "metrics-farm-snapshots",
+          "currentRangeRisk": {
+            "classification": "uncorrelated",
+            "methodVersion": "log-returns-4h-30d-v1",
+            "observations": 179,
+            "coveragePercent": 100,
+            "windowDays": 30,
+            "intervalHours": 4,
+            "calculatedAt": "2026-09-11T17:17:01.778Z",
+            "baseTokenAddress": "0x0bd7d308f8e1639fab988df18a8011f41eacad73",
+            "quoteTokenAddress": "0x5fc5360d0400a0fd4f2af552add042d716f1d168",
+            "pearson": 0.2742,
+            "pearsonLower95": 0.1329,
+            "relativeRealizedVolatilityAnnualizedPercent": 55.02,
+            "annualizedTrackingErrorPercent": 55.02,
+            "routineRange": {
+              "methodVersion": "routine-volatility-4h-v1",
+              "status": "available",
+              "windowDays": 14,
+              "recentWindowDays": 3,
+              "observations": 84,
+              "recentObservations": 18,
+              "coveragePercent": 100,
+              "recentCoveragePercent": 100,
+              "dataThrough": "2026-09-11T12:00:00.000Z",
+              "routineVolatilityAnnualizedPercent": 29.6567,
+              "bands": [
+                {
+                  "horizonHours": 24,
+                  "logHalfWidth": 0.0310460582
+                },
+                {
+                  "horizonHours": 168,
+                  "logHalfWidth": 0.0821401493
+                }
+              ]
+            },
+            "relativePriceMovePercentiles": [
+              {
+                "horizonHours": 24,
+                "observations": 174,
+                "p90AbsoluteMovePercent": 4.81,
+                "p95AbsoluteMovePercent": 6.97,
+                "p90DownMovePercent": 2.49,
+                "p95DownMovePercent": 2.93,
+                "p90UpMovePercent": 4.74,
+                "p95UpMovePercent": 6.97
+              },
+              {
+                "horizonHours": 168,
+                "observations": 138,
+                "p90AbsoluteMovePercent": 33.2,
+                "p95AbsoluteMovePercent": 34.32,
+                "p90DownMovePercent": 4.65,
+                "p95DownMovePercent": 5.48,
+                "p90UpMovePercent": 33.2,
+                "p95UpMovePercent": 34.32
+              }
+            ],
+            "dataThrough": "2026-09-11T12:00:00.000Z"
+          }
+        }
+      }
+    },
+    {
+      "transport": "HTTP GET",
+      "url": "https://api.vfat.io/v4/yield-opportunities?chainId=4663&search=0x84bd4e2d8be11aeb0afc1195b38f587b61e90068548f1063fdbe448fb8cad0b6&pageSize=2&aprMode=default",
+      "status": 200,
+      "headers": {
+        "date": "Fri, 11 Sep 2026 17:56:41 GMT",
+        "content-type": "application/json; charset=utf-8",
+        "cache-control": "public, max-age=0, s-maxage=60, stale-while-revalidate=60",
+        "x-rate-limit": "5",
+        "x-rate-remaining": "4",
+        "x-rate-reset": "1",
+        "x-request-id": "24288fa0-ae0a-11f1-b0d2-93906fb218ac"
+      },
+      "response": {
+        "items": [
+          {
+            "chainId": 4663,
+            "pool": {
+              "address": "0x8366a39cc670b4001a1121b8f6a443a643e40951",
+              "symbol": "UNI-V4",
+              "decimals": 0,
+              "type": "concentrated",
+              "underlying": [
+                {
+                  "address": "0x0bd7d308f8e1639fab988df18a8011f41eacad73",
+                  "symbol": "WETH",
+                  "decimals": 18,
+                  "price": 2567.66660658
+                },
+                {
+                  "address": "0x5fc5360d0400a0fd4f2af552add042d716f1d168",
+                  "symbol": "USDG",
+                  "decimals": 6,
+                  "price": 0.99965692
+                }
+              ],
+              "createdAt": "2026-07-16T14:37:48.000Z",
+              "assetCorrelation": {
+                "classification": "uncorrelated",
+                "methodVersion": "log-returns-4h-30d-v1",
+                "observations": 179,
+                "coveragePercent": 100,
+                "windowDays": 30,
+                "intervalHours": 4,
+                "calculatedAt": "2026-09-11T17:17:01.778Z",
+                "baseTokenAddress": "0x0bd7d308f8e1639fab988df18a8011f41eacad73",
+                "quoteTokenAddress": "0x5fc5360d0400a0fd4f2af552add042d716f1d168",
+                "pearson": 0.2742,
+                "pearsonLower95": 0.1329,
+                "relativeRealizedVolatilityAnnualizedPercent": 55.02,
+                "annualizedTrackingErrorPercent": 55.02,
+                "routineRange": {
+                  "methodVersion": "routine-volatility-4h-v1",
+                  "status": "available",
+                  "windowDays": 14,
+                  "recentWindowDays": 3,
+                  "observations": 84,
+                  "recentObservations": 18,
+                  "coveragePercent": 100,
+                  "recentCoveragePercent": 100,
+                  "dataThrough": "2026-09-11T12:00:00.000Z",
+                  "routineVolatilityAnnualizedPercent": 29.6567,
+                  "bands": [
+                    {
+                      "horizonHours": 24,
+                      "logHalfWidth": 0.0310460582
+                    },
+                    {
+                      "horizonHours": 168,
+                      "logHalfWidth": 0.0821401493
+                    }
+                  ]
+                },
+                "relativePriceMovePercentiles": [
+                  {
+                    "horizonHours": 24,
+                    "observations": 174,
+                    "p90AbsoluteMovePercent": 4.81,
+                    "p95AbsoluteMovePercent": 6.97,
+                    "p90DownMovePercent": 2.49,
+                    "p95DownMovePercent": 2.93,
+                    "p90UpMovePercent": 4.74,
+                    "p95UpMovePercent": 6.97
+                  },
+                  {
+                    "horizonHours": 168,
+                    "observations": 138,
+                    "p90AbsoluteMovePercent": 33.2,
+                    "p95AbsoluteMovePercent": 34.32,
+                    "p90DownMovePercent": 4.65,
+                    "p95DownMovePercent": 5.48,
+                    "p90UpMovePercent": 33.2,
+                    "p95UpMovePercent": 34.32
+                  }
+                ],
+                "dataThrough": "2026-09-11T12:00:00.000Z"
+              },
+              "currentFee": 200,
+              "tick": -197830,
+              "tickSpacing": 4,
+              "sqrtPrice": "4011252955701357223870464",
+              "poolId": "0x84bd4e2d8be11aeb0afc1195b38f587b61e90068548f1063fdbe448fb8cad0b6",
+              "volumeUsd1d": 5715212.05190018,
+              "volumeUsd7d": 36520198.43058653
+            },
+            "points": [],
+            "options": [
+              {
+                "id": "4663:0x8366a39cc670b4001a1121b8f6a443a643e40951:0x8366a39cc670b4001a1121b8f6a443a643e40951:poolId=0x84bd4e2d8be11aeb0afc1195b38f587b61e90068548f1063fdbe448fb8cad0b6:poolIndex=",
+                "kind": "lp",
+                "type": "UNISWAP_V4",
+                "address": "0x8366a39cc670b4001a1121b8f6a443a643e40951",
+                "protocol": {
+                  "id": "uniswap_v4",
+                  "name": "Uniswap V4",
+                  "url": "https://app.uniswap.org",
+                  "insurance": true
+                },
+                "isKilled": false,
+                "totalLiquidity": 460338.1165027476,
+                "activeLiquidity": 384000.01044954784,
+                "inRangeLiquidity": 607.6284254130167,
+                "apr": 99.18059462330905,
+                "apy": 169.24750856682343,
+                "avgApr": 99.18059462330905,
+                "avgApy": 169.24750856682343,
+                "maxApr": 62678.68285762916,
+                "maxApy": 2.856256723370737e+160,
+                "weeklyRewards": [
+                  {
+                    "type": "swap-fee",
+                    "token": {
+                      "address": "0x0bd7d308f8e1639fab988df18a8011f41eacad73",
+                      "symbol": "WETH",
+                      "decimals": 18,
+                      "price": 2567.66660658
+                    },
+                    "amount": "1443889186274903138",
+                    "amountUsd": 3707.426047200038
+                  },
+                  {
+                    "type": "swap-fee",
+                    "token": {
+                      "address": "0x5fc5360d0400a0fd4f2af552add042d716f1d168",
+                      "symbol": "USDG",
+                      "decimals": 6,
+                      "price": 0.99965692
+                    },
+                    "amount": "3597847908",
+                    "amountUsd": 3596.6135583397236
+                  }
+                ],
+                "rewardsPerWeek": 7304.039605539761,
+                "aprBasis": {
+                  "feeWindowDays": 7,
+                  "effectiveFeeWindowDays": 7,
+                  "clippedByPoolAge": false,
+                  "components": [
+                    {
+                      "kind": "swapFees",
+                      "aprPercent": 99.18059462330905,
+                      "denominator": "activePoolLiquidity",
+                      "assumesFullTimeInRange": true
+                    }
+                  ],
+                  "assumesFullTimeInRange": true,
+                  "containsSourcePublishedApr": false
+                },
+                "guaranteedAprPricePercentRange": {
+                  "minPricePercent": -12.6,
+                  "maxPricePercent": 12.64,
+                  "widthPercent": 25.24
+                }
+              }
+            ]
+          }
+        ],
+        "total": 1,
+        "searchTotal": 1,
+        "page": 1,
+        "pageSize": 2,
+        "hasNextPage": false
+      },
+      "curation": "Unrelated aggregate facets omitted. HTTP Date is response time, not an APR data-through timestamp."
+    }
+  ],
+  "publicOperationSchemas": [
+    {
+      "source": "https://api.vfat.io/openapi.json",
+      "retrievedAt": "2026-09-11T17:56:17.988Z",
+      "operationId": "listYieldOpportunities",
+      "method": "GET",
+      "path": "/v4/yield-opportunities",
+      "parameters": [
+        {
+          "schema": {
+            "type": "number"
+          },
+          "in": "query",
+          "name": "chainId",
+          "required": false
+        },
+        {
+          "schema": {
+            "type": "string"
+          },
+          "in": "query",
+          "name": "id",
+          "required": false
+        },
+        {
+          "schema": {
+            "default": 1,
+            "minimum": 1,
+            "type": "number"
+          },
+          "in": "query",
+          "name": "page",
+          "required": false
+        },
+        {
+          "schema": {
+            "default": 100,
+            "minimum": 1,
+            "maximum": 200,
+            "type": "number"
+          },
+          "in": "query",
+          "name": "pageSize",
+          "required": false
+        },
+        {
+          "schema": {
+            "type": "string"
+          },
+          "examples": {
+            "weth btc zec": {
+              "value": "weth btc zec"
+            },
+            "cbbtc eth -wsteth": {
+              "value": "cbbtc eth -wsteth"
+            },
+            "-wsteth": {
+              "value": "-wsteth"
+            },
+            "CL100-ETH/USDC": {
+              "value": "CL100-ETH/USDC"
+            }
+          },
+          "in": "query",
+          "name": "search",
+          "required": false,
+          "description": "Case-insensitive search. Whitespace-separated terms match any term; prefix a term with - to exclude matching results. Exclusions take precedence and can be used alone. A standalone - is ignored. Pair, CL tick-spacing, address, and pool ID searches work within each term. Example: cbbtc eth -wsteth."
+        },
+        {
+          "schema": {
+            "type": "string"
+          },
+          "in": "query",
+          "name": "protocols",
+          "required": false
+        },
+        {
+          "schema": {
+            "type": "string"
+          },
+          "in": "query",
+          "name": "chains",
+          "required": false
+        },
+        {
+          "schema": {
+            "type": "string"
+          },
+          "in": "query",
+          "name": "farmTypes",
+          "required": false
+        },
+        {
+          "schema": {
+            "type": "string"
+          },
+          "in": "query",
+          "name": "points",
+          "required": false
+        },
+        {
+          "schema": {
+            "pattern": "^\\s*(correlated|uncorrelated|unknown)(\\s*,\\s*(correlated|uncorrelated|unknown))*\\s*$",
+            "type": "string"
+          },
+          "in": "query",
+          "name": "assetCorrelation",
+          "required": false
+        },
+        {
+          "schema": {
+            "type": "string"
+          },
+          "in": "query",
+          "name": "favoriteIds",
+          "required": false
+        },
+        {
+          "schema": {
+            "type": "boolean"
+          },
+          "in": "query",
+          "name": "favoritesOnly",
+          "required": false
+        },
+        {
+          "schema": {
+            "type": "boolean"
+          },
+          "in": "query",
+          "name": "coverableOnly",
+          "required": false
+        },
+        {
+          "schema": {
+            "type": "number"
+          },
+          "in": "query",
+          "name": "minAPR",
+          "required": false
+        },
+        {
+          "schema": {
+            "type": "number"
+          },
+          "in": "query",
+          "name": "maxAPR",
+          "required": false
+        },
+        {
+          "schema": {
+            "type": "number"
+          },
+          "in": "query",
+          "name": "minTVL",
+          "required": false
+        },
+        {
+          "schema": {
+            "type": "number"
+          },
+          "in": "query",
+          "name": "maxTVL",
+          "required": false
+        },
+        {
+          "schema": {
+            "type": "number"
+          },
+          "in": "query",
+          "name": "minRewards",
+          "required": false
+        },
+        {
+          "schema": {
+            "type": "number"
+          },
+          "in": "query",
+          "name": "maxRewards",
+          "required": false
+        },
+        {
+          "schema": {
+            "type": "number"
+          },
+          "in": "query",
+          "name": "minFee",
+          "required": false
+        },
+        {
+          "schema": {
+            "type": "number"
+          },
+          "in": "query",
+          "name": "maxFee",
+          "required": false
+        },
+        {
+          "schema": {
+            "type": "number"
+          },
+          "in": "query",
+          "name": "minAvgRange",
+          "required": false
+        },
+        {
+          "schema": {
+            "type": "number"
+          },
+          "in": "query",
+          "name": "maxAvgRange",
+          "required": false
+        },
+        {
+          "schema": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "tvl"
+                ]
+              },
+              {
+                "type": "string",
+                "enum": [
+                  "inRangeTvl"
+                ]
+              },
+              {
+                "type": "string",
+                "enum": [
+                  "activeTvl"
+                ]
+              },
+              {
+                "type": "string",
+                "enum": [
+                  "fees"
+                ]
+              },
+              {
+                "type": "string",
+                "enum": [
+                  "rewards"
+                ]
+              },
+              {
+                "type": "string",
+                "enum": [
+                  "apr"
+                ]
+              },
+              {
+                "type": "string",
+                "enum": [
+                  "range"
+                ]
+              }
+            ]
+          },
+          "in": "query",
+          "name": "sortKey",
+          "required": false
+        },
+        {
+          "schema": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "asc"
+                ]
+              },
+              {
+                "type": "string",
+                "enum": [
+                  "desc"
+                ]
+              }
+            ]
+          },
+          "in": "query",
+          "name": "sortDirection",
+          "required": false
+        },
+        {
+          "schema": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "avg"
+                ]
+              },
+              {
+                "type": "string",
+                "enum": [
+                  "max"
+                ]
+              },
+              {
+                "type": "string",
+                "enum": [
+                  "default"
+                ]
+              }
+            ]
+          },
+          "in": "query",
+          "name": "aprMode",
+          "required": false
+        }
+      ]
+    },
+    {
+      "source": "https://api.vfat.io/openapi.json",
+      "retrievedAt": "2026-09-11T17:55:27.322Z",
+      "operationId": "getPoolHistory",
+      "method": "GET",
+      "path": "/v4/pool-history",
+      "parameters": [
+        {
+          "schema": {
+            "minLength": 1,
+            "maxLength": 512,
+            "type": "string"
+          },
+          "in": "query",
+          "name": "id",
+          "required": true
+        },
+        {
+          "schema": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "in": "query",
+          "name": "from",
+          "required": false
+        },
+        {
+          "schema": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "in": "query",
+          "name": "to",
+          "required": false
+        },
+        {
+          "schema": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "hour"
+                ]
+              },
+              {
+                "type": "string",
+                "enum": [
+                  "day"
+                ]
+              }
+            ]
+          },
+          "in": "query",
+          "name": "bucket",
+          "required": false
+        },
+        {
+          "schema": {
+            "minimum": 1,
+            "maximum": 1000,
+            "type": "integer"
+          },
+          "in": "query",
+          "name": "limit",
+          "required": false
+        }
+      ]
+    },
+    {
+      "source": "https://api.vfat.io/openapi.json",
+      "retrievedAt": "2026-09-11T17:55:27.296Z",
+      "operationId": "getPositionPerformance",
+      "method": "GET",
+      "path": "/v4/position-performance",
+      "parameters": [
+        {
+          "schema": {
+            "pattern": "^0x[0-9a-fA-F]{40}$",
+            "type": "string"
+          },
+          "in": "query",
+          "name": "adminAddress",
+          "required": true
+        },
+        {
+          "schema": {
+            "minimum": 1,
+            "type": "integer"
+          },
+          "in": "query",
+          "name": "chainId",
+          "required": false
+        }
+      ],
+      "positionProperties": {
+        "type": {
+          "type": "string"
+        },
+        "chainId": {
+          "minimum": 1,
+          "type": "integer"
+        },
+        "sickleAddress": {
+          "pattern": "^0x[0-9a-f]{40}$",
+          "type": "string"
+        },
+        "adminAddress": {
+          "pattern": "^0x[0-9a-f]{40}$",
+          "type": "string"
+        },
+        "tokenId": {
+          "type": "string"
+        },
+        "nftManagerAddress": {
+          "pattern": "^0x[0-9a-f]{40}$",
+          "type": "string"
+        },
+        "poolAddress": {
+          "pattern": "^0x[0-9a-f]{40}$",
+          "type": "string"
+        },
+        "farmAddress": {
+          "pattern": "^0x[0-9a-f]{40}$",
+          "type": "string"
+        },
+        "nftHolderAddress": {
+          "pattern": "^0x[0-9a-f]{40}$",
+          "type": "string"
+        },
+        "positionRootTokenId": {
+          "type": "string"
+        },
+        "openedAt": {
+          "format": "date-time",
+          "type": "string"
+        },
+        "ageInDays": {
+          "type": "number"
+        },
+        "netCashflowUsd": {
+          "description": "Cumulative external cash flow; this is not booked trading profit.",
+          "type": "number"
+        },
+        "currentValueUsd": {
+          "description": "Current principal value, excluding pending rewards and estimated swap fees.",
+          "type": "number"
+        },
+        "totalPnlUsd": {
+          "description": "Net position performance: cumulative external cash flow plus current principal and pending rewards. Estimated swap fees replace pending rewards when rewards are zero or omitted.",
+          "type": "number"
+        },
+        "roiPercent": {
+          "type": "number"
+        },
+        "aprPercent": {
+          "type": "number"
+        },
+        "status": {
+          "anyOf": [
+            {
+              "type": "string",
+              "enum": [
+                "available"
+              ]
+            },
+            {
+              "type": "string",
+              "enum": [
+                "partial"
+              ]
+            },
+            {
+              "type": "string",
+              "enum": [
+                "unavailable"
+              ]
+            }
+          ]
+        },
+        "statusReason": {
+          "type": "string"
+        },
+        "statusReasonCode": {
+          "type": "string"
+        },
+        "analyticsStatus": {
+          "type": "string"
+        },
+        "analyticsStatusReason": {
+          "type": "string"
+        },
+        "computedAt": {
+          "format": "date-time",
+          "type": "string"
+        },
+        "sourceUpdatedAt": {
+          "format": "date-time",
+          "type": "string"
+        },
+        "sourceBlockNumber": {
+          "type": "string"
+        },
+        "freshnessStatus": {
+          "type": "string"
+        },
+        "priceStatus": {
+          "type": "string"
+        },
+        "valueStatus": {
+          "type": "string"
+        },
+        "projectionStatus": {
+          "type": "string"
+        },
+        "quarantinedLegs": {
+          "minimum": 0,
+          "type": "integer"
+        },
+        "unpricedLegs": {
+          "minimum": 0,
+          "type": "integer"
+        },
+        "suspectedNftTransferOut": {
+          "type": "boolean"
+        },
+        "breakdown": {
+          "additionalProperties": false,
+          "type": "object",
+          "properties": {
+            "grossContributionsUsd": {
+              "type": "number"
+            },
+            "capitalExposureUsdDays": {
+              "type": "number"
+            },
+            "returnBasisVersion": {
+              "minimum": 0,
+              "type": "integer"
+            },
+            "pendingRewardsUsd": {
+              "description": "USD value of pending position rewards.",
+              "type": "number"
+            },
+            "estimatedSwapFeesUsd": {
+              "description": "USD value of estimated uncollected swap fees. Included in current-position total PnL only when pending rewards are zero or omitted.",
+              "type": "number"
+            }
+          }
+        }
+      }
+    },
+    {
+      "source": "https://api.vfat.io/openapi.json",
+      "retrievedAt": "2026-09-11T17:55:27.091Z",
+      "operationId": "getPositionPerformanceHistory",
+      "method": "GET",
+      "path": "/v4/position-performance-history",
+      "parameters": [
+        {
+          "schema": {
+            "minimum": 1,
+            "type": "integer"
+          },
+          "in": "query",
+          "name": "chainId",
+          "required": true
+        },
+        {
+          "schema": {
+            "pattern": "^0x[0-9a-fA-F]{40}$",
+            "type": "string"
+          },
+          "in": "query",
+          "name": "sickleAddress",
+          "required": true
+        },
+        {
+          "schema": {
+            "minLength": 1,
+            "maxLength": 256,
+            "type": "string"
+          },
+          "in": "query",
+          "name": "positionRootTokenId",
+          "required": true
+        },
+        {
+          "schema": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "in": "query",
+          "name": "from",
+          "required": false
+        },
+        {
+          "schema": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "in": "query",
+          "name": "to",
+          "required": false
+        },
+        {
+          "schema": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "hour"
+                ]
+              },
+              {
+                "type": "string",
+                "enum": [
+                  "day"
+                ]
+              }
+            ]
+          },
+          "in": "query",
+          "name": "bucket",
+          "required": false
+        },
+        {
+          "schema": {
+            "minimum": 1,
+            "maximum": 1000,
+            "type": "integer"
+          },
+          "in": "query",
+          "name": "limit",
+          "required": false
+        }
+      ],
+      "positionProperties": {
+        "timestamp": {
+          "format": "date-time",
+          "type": "string"
+        },
+        "currentTokenId": {
+          "type": "string"
+        },
+        "positionRootTokenId": {
+          "type": "string"
+        },
+        "currentBalanceUsd": {
+          "description": "Current principal value, excluding pending rewards and estimated swap fees.",
+          "type": "number"
+        },
+        "netCashflowUsd": {
+          "description": "Cumulative external cash flow; this is not booked trading profit.",
+          "type": "number"
+        },
+        "totalPnlUsd": {
+          "description": "Historical net position performance: cumulative external cash flow plus current principal, excluding pending rewards and estimated swap fees.",
+          "type": "number"
+        },
+        "roiPercent": {
+          "type": "number"
+        },
+        "aprPercent": {
+          "type": "number"
+        },
+        "ageInDays": {
+          "type": "number"
+        },
+        "status": {
+          "anyOf": [
+            {
+              "type": "string",
+              "enum": [
+                "available"
+              ]
+            },
+            {
+              "type": "string",
+              "enum": [
+                "partial"
+              ]
+            },
+            {
+              "type": "string",
+              "enum": [
+                "unavailable"
+              ]
+            }
+          ]
+        },
+        "statusReason": {
+          "type": "string"
+        },
+        "statusReasonCode": {
+          "type": "string"
+        },
+        "analyticsStatus": {
+          "type": "string"
+        },
+        "analyticsStatusReason": {
+          "type": "string"
+        },
+        "quarantinedLegs": {
+          "minimum": 0,
+          "type": "integer"
+        },
+        "unpricedLegs": {
+          "minimum": 0,
+          "type": "integer"
+        },
+        "suspectedNftTransferOut": {
+          "type": "boolean"
+        },
+        "breakdown": {
+          "additionalProperties": false,
+          "type": "object",
+          "properties": {
+            "grossContributionsUsd": {
+              "type": "number"
+            },
+            "capitalExposureUsdDays": {
+              "type": "number"
+            },
+            "returnBasisVersion": {
+              "minimum": 0,
+              "type": "integer"
+            },
+            "pendingRewardsUsd": {
+              "description": "USD value of pending position rewards.",
+              "type": "number"
+            },
+            "estimatedSwapFeesUsd": {
+              "description": "USD value of estimated uncollected swap fees. Included in current-position total PnL only when pending rewards are zero or omitted.",
+              "type": "number"
+            }
+          }
+        }
+      }
+    }
+  ],
+  "sourceFilesSha256": {
+    "vfat-mcp-tools-20260911.json": "8ac21d6ad1028afa8ab708825a1a3e00c61609e7d26fc1f2cfb625756047c167",
+    "vfat-yield_get_schema-20260911.json": "ab61922fee98113348808b94d3a49e5eea9af9be543c77416e4dc959e2854a88",
+    "vfat-pool_schema-20260911.json": "29daf5189f55c595efcc64fc30538ee1fc8f438ee70c161526a9977f951bb58c",
+    "vfat-performance_schema-20260911.json": "ebf1638288021193b9f506486a3699f0b31c7e4f018f4ec55b7933b6e742de42",
+    "vfat-performance_history_schema-20260911.json": "80c987e927718b85c32017852f38e9b023b47315f9fd7a0670dd84b08dce3432"
+  },
+  "limitations": [
+    "Seven-day active-liquidity APR is not pool rolling24h fee APR or actual managed strategy APR.",
+    "WETH latest two daily observations remain activityCompleteness=unverified, despite provider feeGrowthStatus quality=exact.",
+    "MARLIN exact PoolId search returned no items; this proves only the observed discovery gap.",
+    "Metrics source publication times and oracle identity remain unqualified for Domino event-time valuations.",
+    "Public hosted API commercial redistribution terms and SLA were not verified."
+  ]
+}

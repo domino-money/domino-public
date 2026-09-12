@@ -215,8 +215,11 @@ authorize starting the connector before the agreed window.
    false, no public/deposit routes, connector stopped, and a separate working
    SSH/Tailscale recovery session. Record active services and existing firewall
    tables, drop-ins and hashes privately; do not print secrets or environment
-   files. Stop and runtime-mask the six service units before installing either
-   layer; quiesce jobs/sessions for write/operator/admin. Retain those masks
+   files. Stop and effectively mask the six service units before installing either
+   layer using the [native stop-gate procedure](STAGING_EGRESS_NATIVE_PROBES.md).
+   A runtime mask is ineffective when an `/etc/systemd/system/` unit takes
+   precedence; successful `systemctl mask` exit status is not proof. Require
+   `LoadState=masked` for all six units. Quiesce jobs/sessions for write/operator/admin. Retain those masks
    until qualification/rollback is complete. Check no processes/sockets of the
    listed UIDs remain. Confirm the named nft table is absent.
 2. Collect fresh sanitized DNS/identity evidence, render, and review the exact
@@ -254,7 +257,7 @@ authorize starting the connector before the agreed window.
    another reviewed artifact and explicit coordination; this generator does
    not refresh or start it.
 
-Rollback is fail-closed: stop and runtime-mask the six units, quiesce every
+Rollback is fail-closed: stop and effectively mask the six units, quiesce every
 listed UID, verify empty processes/sockets, restore their prior localhost-only
 drop-ins and reload systemd. Keep the restrictive nft table until that state is
 verified. Only then, if removing this candidate, use `sudo nft delete table inet

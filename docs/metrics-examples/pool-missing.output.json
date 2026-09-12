@@ -1,0 +1,59 @@
+{
+  "chainId": 4663,
+  "executionAvailable": false,
+  "feeAprEstimate24hPercent": null,
+  "inputs": {
+    "currentLpFeePips": 3000,
+    "reportedLiquidityUsd": "1000000",
+    "volume24hUsd": null
+  },
+  "limitations": [
+    "provider_reported_volume_and_tvl_unreconciled",
+    "provider_update_time_unknown",
+    "current_tvl_not_time_weighted",
+    "assumes_current_fixed_lp_fee_for_24h_volume",
+    "protocol_fee_effect_not_reconciled",
+    "no_full_day_coverage_proof",
+    "excludes_rewards_gas_service_fees_and_price_pnl",
+    "pool_estimate_not_position_apr_or_apy",
+    "not_a_return_forecast_or_recommendation"
+  ],
+  "method": "fixed_lp_fee_x_volume24h_over_reported_tvl_annualized_365",
+  "metric": "feeAprEstimate24hPercent",
+  "poolId": "0x0911afcb281d7bcae2d71443ceaeebd0f89b4537708449970d797622b4b4c941",
+  "precision": {
+    "decimalPlaces": 18,
+    "rounding": "half_up"
+  },
+  "provenance": {
+    "asOfBlock": null,
+    "asOfTimestamp": null,
+    "cacheAgeSeconds": 0,
+    "cacheStatus": "miss",
+    "effectiveMarketAgeSeconds": 0,
+    "evaluatedAt": 1789135200,
+    "freshForSeconds": 60,
+    "marketReason": null,
+    "marketStatus": "available",
+    "maxStaleSeconds": 300,
+    "providerUpdateTimeKnown": false,
+    "retrievedAt": 1789135200,
+    "snapshot": {
+      "hash": "0xabababababababababababababababababababababababababababababababab",
+      "number": 700,
+      "timestamp": 1789135200
+    },
+    "snapshotAgeSeconds": 0,
+    "snapshotFreshForSeconds": 120,
+    "sourceUrl": "https://api.geckoterminal.com/api/v2/networks/robinhood/pools/0x0911afcb281d7bcae2d71443ceaeebd0f89b4537708449970d797622b4b4c941"
+  },
+  "providerMetricsReconciled": false,
+  "reasons": [
+    "missing_volume24h"
+  ],
+  "scope": "pool",
+  "source": "geckoterminal",
+  "status": "unavailable",
+  "suggested": false,
+  "version": "pool-apr-estimate-v0"
+}

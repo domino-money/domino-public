@@ -11,6 +11,9 @@ installation until these listener changes are rolled out.
 The output describes HTTP observations, not installed source identity. Record
 the release's installed.json commit and a successful check_filesystem.py --commit
 result beside each run; see docs/STAGING_BACKEND_HANDOFF.md.
+installed.json is historical: its upgrade-state.json, when present, must not have
+phase rolled_back, and exact current unit references plus verified source identity must
+match the chosen installed commit; see docs/VM_DISABLED_UPGRADE.md.
 """
 import hashlib
 import http.client

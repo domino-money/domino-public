@@ -1,0 +1,169 @@
+{
+  "capital": [
+    {
+      "components": [
+        {
+          "tokenId": "1",
+          "valueUsd": "1000"
+        },
+        {
+          "tokenId": null,
+          "valueUsd": "0"
+        }
+      ],
+      "endsAt": 1789092000,
+      "startsAt": 1789048800,
+      "valuationStatus": "qualified"
+    },
+    {
+      "components": [
+        {
+          "tokenId": "1",
+          "valueUsd": "1000"
+        },
+        {
+          "tokenId": "2",
+          "valueUsd": "98"
+        },
+        {
+          "tokenId": null,
+          "valueUsd": "0"
+        }
+      ],
+      "endsAt": 1789135200,
+      "startsAt": 1789092000,
+      "valuationStatus": "qualified"
+    }
+  ],
+  "capitalScope": "all_position_assets_and_epoch_residual_once",
+  "chainId": 4663,
+  "coverageStart": 1789048800,
+  "credits": [
+    {
+      "amount": {
+        "currency": "0x4444444444444444444444444444444444444444",
+        "decimals": 6,
+        "price": {
+          "sourceId": "synthetic_review_price",
+          "status": "qualified",
+          "timestamp": 1789048800,
+          "usdPerToken": "1",
+          "validUntil": 1789135200
+        },
+        "raw": "100000000"
+      },
+      "epochId": "synthetic-epoch-1",
+      "eventId": "earning-1",
+      "feeOriginId": "origin-1",
+      "kind": "new_trading_fee",
+      "timestamp": 1789092000,
+      "tokenId": "1"
+    },
+    {
+      "amount": {
+        "currency": "0x4444444444444444444444444444444444444444",
+        "decimals": 6,
+        "price": {
+          "sourceId": "synthetic_review_price",
+          "status": "qualified",
+          "timestamp": 1789048800,
+          "usdPerToken": "1",
+          "validUntil": 1789135200
+        },
+        "raw": "98000000"
+      },
+      "epochId": "synthetic-epoch-1",
+      "eventId": "redirect-1",
+      "feeOriginId": "origin-1",
+      "kind": "internal_transfer",
+      "timestamp": 1789092000,
+      "tokenId": "2"
+    },
+    {
+      "amount": {
+        "currency": "0x4444444444444444444444444444444444444444",
+        "decimals": 6,
+        "price": {
+          "sourceId": "synthetic_review_price",
+          "status": "qualified",
+          "timestamp": 1789048800,
+          "usdPerToken": "1",
+          "validUntil": 1789135200
+        },
+        "raw": "10000000"
+      },
+      "epochId": "synthetic-epoch-1",
+      "eventId": "earning-2",
+      "feeOriginId": "origin-2",
+      "kind": "new_trading_fee",
+      "timestamp": 1789135200,
+      "tokenId": "2"
+    }
+  ],
+  "debits": [
+    {
+      "amount": {
+        "currency": "0x4444444444444444444444444444444444444444",
+        "decimals": 6,
+        "price": {
+          "sourceId": "synthetic_review_price",
+          "status": "qualified",
+          "timestamp": 1789048800,
+          "usdPerToken": "1",
+          "validUntil": 1789135200
+        },
+        "raw": "2000000"
+      },
+      "epochId": "synthetic-epoch-1",
+      "eventId": "charge-1",
+      "kind": "service_fee",
+      "payer": "strategy",
+      "timestamp": 1789092000,
+      "tokenId": "1"
+    },
+    {
+      "amount": {
+        "currency": "0x4444444444444444444444444444444444444444",
+        "decimals": 6,
+        "price": {
+          "sourceId": "synthetic_review_price",
+          "status": "qualified",
+          "timestamp": 1789048800,
+          "usdPerToken": "1",
+          "validUntil": 1789135200
+        },
+        "raw": "250000"
+      },
+      "epochId": "synthetic-epoch-1",
+      "eventId": "gas-1",
+      "kind": "network_gas",
+      "payer": "operator",
+      "timestamp": 1789092000,
+      "tokenId": null
+    }
+  ],
+  "epochId": "synthetic-epoch-1",
+  "incomeCoverage": "complete",
+  "members": [
+    {
+      "endsAt": null,
+      "startsAt": 1789048800,
+      "tokenId": "1"
+    },
+    {
+      "endsAt": null,
+      "startsAt": 1789092000,
+      "tokenId": "2"
+    }
+  ],
+  "owner": "0x1111111111111111111111111111111111111111",
+  "positionManager": "0x2222222222222222222222222222222222222222",
+  "scope": "sequence",
+  "snapshot": {
+    "blockHash": "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "blockNumber": 1000,
+    "canonicality": "reorged",
+    "timestamp": 1789135200
+  },
+  "startedAt": 1789048800
+}

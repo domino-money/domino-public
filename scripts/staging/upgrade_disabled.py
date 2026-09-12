@@ -27,7 +27,21 @@ import prepare_disabled as install
 
 MAX_RUNTIME_BYTES = 64 * 1024 * 1024
 MAX_DUMP_BYTES = 256 * 1024 * 1024
+SPACE_METADATA_BYTES = 64 * 1024 * 1024
+SPACE_METADATA_INODES = 1024
+PG_MIN_FREE_BYTES = 1024 * 1024 * 1024
 TOOL_DIR = Path(__file__).resolve().parent
+# runuser (including its PAM session) can reset resource limits and environment.
+# Apply the cap afterwards, never increasing an inherited soft or hard limit,
+# and replace the post-PAM environment before exec of the pinned pg_dump binary.
+DUMP_EXEC = ('import json,os,resource,signal,sys; '
+             'limits=resource.getrlimit(resource.RLIMIT_FSIZE); '
+             'cap=min([int(sys.argv[1])]+[v for v in limits if v!=resource.RLIM_INFINITY]); '
+             'resource.setrlimit(resource.RLIMIT_FSIZE,(cap,cap)); '
+             'assert resource.getrlimit(resource.RLIMIT_FSIZE)==(cap,cap); '
+             'signal.signal(signal.SIGXFSZ,signal.SIG_DFL); '
+             'signal.signal(signal.SIGPIPE,signal.SIG_DFL); '
+             'os.execve(sys.argv[3],sys.argv[3:],json.loads(sys.argv[2]))')
 
 
 class UpgradeError(ValueError):
@@ -37,6 +51,16 @@ class UpgradeError(ValueError):
 def require(condition, reason):
     if not condition:
         raise UpgradeError(reason)
+
+
+def checked_step(reason, operation, *args, **kwargs):
+    """Preserve our fixed diagnoses; redact unstructured helper failures."""
+    try:
+        return operation(*args, **kwargs)
+    except UpgradeError:
+        raise
+    except Exception:
+        raise UpgradeError(reason) from None
 
 
 def sha(payload):
@@ -63,7 +87,7 @@ def plan(old, new, old_sha, new_sha, before, after):
                              'Access/Tunnel/egress', 'wallet grants', 'release deletion']}
 
 
-def read_regular(path, *, limit, owner=None, mode=None):
+def read_regular(path, *, limit, owner=None, mode=None, return_stat=False):
     """Read a bounded stable single-link regular file, never follow a link."""
     info = path.lstat()
     require(stat.S_ISREG(info.st_mode) and info.st_nlink == 1, 'regular_single_link_file_required')
@@ -80,12 +104,14 @@ def read_regular(path, *, limit, owner=None, mode=None):
         require(stable(opened) == stable(os.fstat(stream.fileno())) == stable(path.lstat()),
                 'file_changed_during_read')
     require(len(payload) <= limit, 'file_size_limit')
-    return payload
+    return (payload, opened) if return_stat else payload
 
 
 def private_json(path):
     filesystem.protected_parents(path.parent)
-    return json.loads(read_regular(path, limit=8 * 1024 * 1024, owner=0, mode=0o600))
+    value = json.loads(read_regular(path, limit=8 * 1024 * 1024, owner=0, mode=0o600))
+    require(type(value) is dict, 'private_json_object_required')
+    return value
 
 
 def write_json(path, value):
@@ -129,7 +155,7 @@ def runtime_snapshot(root):
                     require(mode == 0o700, 'runtime_directory_must_be_private')
                     content = None
                 else:
-                    require(not mode & 0o133, 'runtime_file_must_not_be_executable_or_writable_by_others')
+                    require(mode & ~0o644 == 0, 'runtime_file_must_not_be_executable_or_writable_by_others')
                     content = read_regular(path, limit=MAX_RUNTIME_BYTES - total, owner=account.pw_uid)
                     total += len(content)
                 entries[relative] = (mode, info.st_uid, info.st_gid, content)
@@ -154,25 +180,46 @@ def inventory(snapshot):
 def copy_runtime(snapshot, target, *, backup=False):
     for component, entries in snapshot.items():
         root = target / component if backup else target / component / 'backend/runtime'
+        filesystem.protected_parents(root.parent)
         if backup:
             root.mkdir(mode=0o700)
         else:
+            info = root.lstat()
+            require(stat.S_ISDIR(info.st_mode) and info.st_uid == 0 and info.st_gid == 0
+                    and stat.S_IMODE(info.st_mode) == 0o700, 'new_runtime_must_be_root_private')
             # install_roots created only this exact empty descriptor. Never remove
             # anything from the old runtime or merge into an existing target release.
             require(sorted(p.name for p in root.iterdir()) == ['catalogue-db.json'],
                     'new_runtime_not_empty')
+            read_regular(root / 'catalogue-db.json', limit=65536, owner=0, mode=0o600)
             (root / 'catalogue-db.json').unlink()
         for name, (mode, uid, gid, content) in sorted(entries.items(), key=lambda item: (item[0].count('/'), item[0])):
             path = root if name == '.' else root / name
             if content is None:
                 if name != '.':
                     path.mkdir(mode=0o700)
-                if not backup:
-                    os.chown(path, uid, gid)
-                    os.chmod(path, mode)
             else:
-                install.exclusive_file(path, content, 0o600 if backup else mode,
-                                       0 if backup else uid, 0 if backup else gid)
+                # Every ancestor remains root-owned 0700 while files are created.
+                install.exclusive_file(path, content)
+        if not backup:
+            # Restore child metadata using stable non-following descriptors. The
+            # runtime root changes owner last, after all privileged copy work.
+            for name, (mode, uid, gid, content) in sorted(entries.items(),
+                    key=lambda item: (len(Path(item[0]).parts), item[0]), reverse=True):
+                path = root if name == '.' else root / name
+                flags = os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK
+                fd = os.open(path, flags | (os.O_DIRECTORY if content is None else 0))
+                try:
+                    info = os.fstat(fd)
+                    require(info.st_uid == 0 and info.st_gid == 0
+                            and (stat.S_ISDIR(info.st_mode) if content is None else
+                                 stat.S_ISREG(info.st_mode) and info.st_nlink == 1),
+                            'new_runtime_metadata_changed')
+                    os.fchown(fd, uid, gid)
+                    os.fchmod(fd, mode)
+                    os.fsync(fd)
+                finally:
+                    os.close(fd)
         for directory, _, _ in os.walk(root, topdown=False):
             install.fsync_directory(Path(directory))
 
@@ -234,9 +281,11 @@ def verify_roles():
     # trusted helper directory, without inheriting PYTHONPATH or the current cwd.
     code = ('import runpy,sys; sys.path.insert(0, sys.argv[1]); '
             'sys.argv=[sys.argv[2]]; runpy.run_path(sys.argv[0],run_name="__main__")')
-    report = json.loads(install.run(['/usr/bin/python3', '-I', '-B',
-                                    '-c', code, str(TOOL_DIR), str(TOOL_DIR / 'check_roles.py')]))
-    require(report.get('ok') is True, 'installed_role_or_catalogue_verification_failed')
+    report = json.loads(checked_step('installed_role_or_catalogue_verification_failed', install.run,
+                        ['/usr/bin/python3', '-I', '-B', '-c', code,
+                         str(TOOL_DIR), str(TOOL_DIR / 'check_roles.py')]))
+    require(type(report) is dict and report.get('ok') is True,
+            'installed_role_or_catalogue_verification_failed')
 
 
 def trusted_toolchain():
@@ -274,6 +323,7 @@ def foundation_preflight():
         "FROM pg_catalog.pg_settings WHERE name IN ('server_version_num','server_encoding',"
         "'data_directory','config_file','hba_file','ident_file','port','listen_addresses',"
         "'unix_socket_directories','unix_socket_permissions','unix_socket_group')"))
+    require(type(settings) is dict, 'postgres_settings_object_required')
     expected = {'server_encoding': 'UTF8', 'data_directory': str(install.DATA),
                 'config_file': str(install.CONFIG / 'postgresql.conf'),
                 'hba_file': str(install.CONFIG / 'pg_hba.conf'),
@@ -307,8 +357,68 @@ def host_context(files):
     require(os_release.get('ID', '').strip('"') == 'ubuntu'
             and os_release.get('VERSION_ID', '').strip('"') == '24.04', 'requires_Ubuntu24_04')
     require(not os.path.lexists(install.BASE / 'current'), 'unexpected_current_link')
-    install.dependency_preflight(files)
-    foundation_preflight()
+    checked_step('installed_dependencies_verification_failed', install.dependency_preflight, files)
+    checked_step('postgres_foundation_verification_failed', foundation_preflight)
+
+
+def space_preflight(files, snapshot, *, rollback=False):
+    """Require conservative available bytes/inodes per device, without reservation.
+
+    Apply budgets seven block-rounded source copies, two complete runtime copies,
+    three maximum dumps plus one rollback dump, and separate 64 MiB metadata
+    allowances for apply and rollback, plus one on the releases device. Every
+    allowance also includes 1024 metadata inodes. Rollback rechecks a new dump
+    and its metadata allowance. Keep max(1 GiB, 5% capacity) free on the PG device;
+    requirements add when backups, source and PG share a filesystem, with 1024
+    free PG inodes. Pooled filesystems need an operator's combined budget because
+    different st_dev values can share the same underlying storage.
+    """
+    devices = {}
+
+    def device(path):
+        info, space = path.stat(), os.statvfs(path)
+        require(space.f_frsize > 0 and space.f_bsize > 0 and space.f_blocks > 0,
+                'invalid_filesystem_space_report')
+        require(space.f_files > 0 and 0 <= space.f_favail <= space.f_files,
+                'invalid_filesystem_inode_report')
+        available = space.f_bavail * space.f_frsize
+        value = devices.setdefault(info.st_dev, {'needed': 0, 'available': available,
+                                                'neededInodes': 0, 'availableInodes': space.f_favail})
+        value['available'] = min(value['available'], available)
+        value['availableInodes'] = min(value['availableInodes'], space.f_favail)
+        return value, max(4096, space.f_frsize, space.f_bsize), space.f_blocks * space.f_frsize
+
+    def allocated(size, block):
+        return ((size + block - 1) // block) * block
+
+    def runtime_bytes(block):
+        return sum(block if row[3] is None else allocated(len(row[3]), block)
+                   for entries in snapshot.values() for row in entries.values())
+
+    backups, block, _ = device(install.BACKUPS)
+    runtime_inodes = sum(len(entries) for entries in snapshot.values())
+    if rollback:
+        backups['needed'] += allocated(MAX_DUMP_BYTES, block) + SPACE_METADATA_BYTES
+        backups['neededInodes'] += 1 + SPACE_METADATA_INODES
+    else:
+        backups['needed'] += (4 * allocated(MAX_DUMP_BYTES, block)
+                              + runtime_bytes(block) + 2 * SPACE_METADATA_BYTES)
+        backups['neededInodes'] += runtime_inodes + 4 + 2 * SPACE_METADATA_INODES
+        releases, block, _ = device(install.BASE / 'releases')
+        directories = {parent for name in files for parent in Path(name).parents}
+        source = (sum(allocated(len(payload), block) for payload, _ in files.values())
+                  + (len(directories) + 2) * block)
+        releases['needed'] += (len(install.ROOTS) * source + runtime_bytes(block)
+                               + SPACE_METADATA_BYTES)
+        releases['neededInodes'] += (len(install.ROOTS) * (len(files) + len(directories) + 2)
+                                     + runtime_inodes + SPACE_METADATA_INODES)
+    postgres, _, capacity = device(install.DATA)
+    postgres['needed'] += max(PG_MIN_FREE_BYTES, (capacity + 19) // 20)
+    postgres['neededInodes'] += SPACE_METADATA_INODES
+    require(all(value['available'] >= value['needed'] for value in devices.values()),
+            'insufficient_rollback_space' if rollback else 'insufficient_upgrade_space')
+    require(all(value['availableInodes'] >= value['neededInodes'] for value in devices.values()),
+            'insufficient_rollback_inodes' if rollback else 'insufficient_upgrade_inodes')
 
 
 def host_preflight(old, new, planned):
@@ -319,20 +429,24 @@ def host_preflight(old, new, planned):
     old_receipt = receipt(planned)
     verify_source(Path(planned['fromRelease']), old)
     verify_roles()
-    return units, old_receipt, runtime_snapshot(Path(planned['fromRelease']))
+    snapshot = runtime_snapshot(Path(planned['fromRelease']))
+    space_preflight(new, snapshot)
+    return units, old_receipt, snapshot
 
 
 def dump_database(path):
     """Private complete plain dump, with a child file-size bound and no DB writes."""
+    inherited = resource.getrlimit(resource.RLIMIT_FSIZE)
+    cap = min([MAX_DUMP_BYTES] + [value for value in inherited if value != resource.RLIM_INFINITY])
     fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600)
     with os.fdopen(fd, 'wb') as output:
-        argv = ['/usr/sbin/runuser', '-u', 'postgres', '--', str(install.PG / 'pg_dump'),
+        argv = ['/usr/sbin/runuser', '-u', 'postgres', '--',
+                '/usr/bin/python3', '-I', '-B', '-c', DUMP_EXEC,
+                str(cap), json.dumps(install.ENV), str(install.PG / 'pg_dump'),
                 '-w', '-h', install.SOCKET, '-p', '8877', '-U', 'postgres', '-d', install.DB,
                 '--format=plain', '--lock-wait-timeout=5s']
         proc = subprocess.Popen(argv, stdout=output, stderr=subprocess.PIPE,
-                                env=install.ENV, start_new_session=True,
-                                preexec_fn=lambda: resource.setrlimit(resource.RLIMIT_FSIZE,
-                                                                     (MAX_DUMP_BYTES, MAX_DUMP_BYTES)))
+                                env=install.ENV, start_new_session=True)
         try:
             proc.communicate(timeout=install.COMMAND_TIMEOUT)
         except subprocess.TimeoutExpired:
@@ -343,8 +457,8 @@ def dump_database(path):
         output.flush()
         os.fsync(output.fileno())
     payload = read_regular(path, limit=MAX_DUMP_BYTES, owner=0, mode=0o600)
-    # PG17+ add random psql guard keys. The fixed production target is PG16;
-    # stripping only these complete command lines also permits offline PG18 tests.
+    # Random psql guard keys also ship in PG16.10+ (CVE-2025-8714 backport),
+    # including the production target. Strip only these complete command lines.
     normalized = re.sub(rb'(?m)^\\(?:un)?restrict [A-Za-z0-9]+\r?\n', b'', payload)
     return sha(normalized)
 
@@ -352,7 +466,9 @@ def dump_database(path):
 def replace_unit(path, content, *, known_versions=()):
     temporary = path.with_name(path.name + '.disabled-upgrade-next')
     if os.path.lexists(temporary):
-        require(read_regular(temporary, limit=65536, owner=0, mode=0o644) in (content, *known_versions),
+        partial, info = read_regular(temporary, limit=65536, owner=0, return_stat=True)
+        require(info.st_gid == 0 and stat.S_IMODE(info.st_mode) in (0o600, 0o644)
+                and any(version.startswith(partial) for version in (content, *known_versions)),
                 'unexpected_unit_temporary')
         temporary.unlink()
     install.exclusive_file(temporary, content, 0o644)
@@ -382,10 +498,11 @@ def apply(old, new, planned):
     digest = dump_database(destination / 'database-before.sql')
     sync_tree(destination)
     state = {'phase': 'backed_up', 'commit': planned['commit'], 'fromCommit': planned['fromCommit'],
-             'databaseFingerprint': digest, 'unitsWritten': [], 'targetStaged': False}
+             'databaseFingerprint': digest, 'unitsWritten': [], 'targetStaged': False,
+             'lastStep': 'stage_source'}
     journal(destination, state)
     # No mutation of the installed release/runtime, PG configs, SQL data or venv.
-    install.install_roots(new, planned['commit'])
+    install.install_roots(new, planned['commit'], private_runtime=True)
     target = Path(planned['target'])
     copy_runtime(snapshot, target)
     sync_tree(target)
@@ -396,34 +513,50 @@ def apply(old, new, planned):
     for name, text in planned['units'].items():
         install.exclusive_file(candidates / name, text.encode())
     sync_tree(candidates)
-    install.run(['/usr/bin/systemd-analyze', 'verify', *(str(candidates / n) for n in units)])
+    checked_step('candidate_unit_verification_failed', install.run,
+                 ['/usr/bin/systemd-analyze', 'verify', *(str(candidates / n) for n in units)])
     state['phase'] = 'staged'
     state['targetStaged'] = True
+    state['lastStep'] = 'preswitch_checks'
     journal(destination, state)
     stopped_units([planned['fromCommit']])
     require(inventory(runtime_snapshot(Path(planned['fromRelease']))) == inventory(snapshot),
             'old_runtime_changed_before_switch')
     require(dump_database(destination / 'database-preswitch.sql') == digest, 'database_changed_before_switch')
+    verify_roles()
     state['phase'] = 'switching'
+    state['lastStep'] = 'replace_units'
     journal(destination, state)
     for name, text in planned['units'].items():
         replace_unit(install.UNIT_DIR / name, text.encode())
         state['unitsWritten'].append(name)
         journal(destination, state)
-    install.run(['/usr/bin/systemd-analyze', 'verify', *(str(install.UNIT_DIR / n) for n in units)])
-    install.run(['/usr/bin/systemctl', 'daemon-reload'])
+    state['lastStep'] = 'verify_installed_units'
+    journal(destination, state)
+    checked_step('installed_unit_verification_failed', install.run,
+                 ['/usr/bin/systemd-analyze', 'verify', *(str(install.UNIT_DIR / n) for n in units)])
+    state['lastStep'] = 'reload_unit_definitions'
+    journal(destination, state)
+    checked_step('unit_definition_reload_failed', install.run, ['/usr/bin/systemctl', 'daemon-reload'])
+    state['lastStep'] = 'verify_after_switch'
+    journal(destination, state)
     stopped_units([planned['commit']])
     host_context(new)
     verify_source(target, new)
     verify_roles()
-    require(inventory(runtime_snapshot(target)) == inventory(snapshot), 'target_runtime_changed')
     require(dump_database(destination / 'database-after.sql') == digest, 'database_changed_after_switch')
+    require(inventory(runtime_snapshot(target)) == inventory(snapshot), 'target_runtime_changed')
+    require(inventory(runtime_snapshot(Path(planned['fromRelease']))) == inventory(snapshot),
+            'old_runtime_changed_after_switch')
+    state['lastStep'] = 'write_installed_receipt'
+    journal(destination, state)
     write_json(destination / 'installed.json', {
         'commit': planned['commit'], 'fromCommit': planned['fromCommit'],
         'archiveSha256': planned['archiveSha256'], 'servicesStarted': False, 'servicesEnabled': False,
         'migrationsCommitted': list(install.MIGRATIONS), 'migrationsReapplied': False,
         'databasePreserved': True, 'runtimePreserved': True})
     state['phase'] = 'complete'
+    state['lastStep'] = 'complete'
     journal(destination, state)
     return {'mode': 'disabled-upgrade', 'ok': True, 'commit': planned['commit'],
             'servicesStarted': False, 'servicesEnabled': False, 'databasePreserved': True,
@@ -451,9 +584,11 @@ def rollback(old, new, planned):
     if state['targetStaged']:
         verify_source(target, new)
         require(inventory(runtime_snapshot(target)) == expected, 'rollback_target_runtime_changed')
+    space_preflight(old, {}, rollback=True)
     proof = destination / f'database-rollback-{time.time_ns()}.sql'
     require(dump_database(proof) == state['databaseFingerprint'], 'rollback_database_changed')
     state['phase'] = 'rolling_back'
+    state['lastStep'] = 'restore_units'
     journal(destination, state)
     for component in install.SERVICES:
         name = f'domino-{component}.service'
@@ -461,10 +596,15 @@ def rollback(old, new, planned):
         require(content == install.unit_text(component, planned['fromCommit']).encode(), 'backup_unit_mismatch')
         replace_unit(install.UNIT_DIR / name, content,
                      known_versions=(install.unit_text(component, planned['commit']).encode(),))
-    install.run(['/usr/bin/systemctl', 'daemon-reload'])
+    state['lastStep'] = 'reload_previous_units'
+    journal(destination, state)
+    checked_step('unit_definition_reload_failed', install.run, ['/usr/bin/systemctl', 'daemon-reload'])
+    state['lastStep'] = 'verify_rollback'
+    journal(destination, state)
     stopped_units([planned['fromCommit']])
     verify_roles()
     state['phase'] = 'rolled_back'
+    state['lastStep'] = 'rolled_back'
     journal(destination, state)
     return {'mode': 'disabled-upgrade-rollback', 'ok': True, 'commit': planned['fromCommit'],
             'servicesStarted': False, 'databaseRestored': False, 'targetEvidencePreserved': True}
@@ -506,8 +646,7 @@ def main(argv=None):
                     result = rollback(old, new, planned) if args.rollback else apply(old, new, planned)
         print(json.dumps(result, indent=2))
         return 0
-    except (ValueError, OSError, KeyError, TypeError, RuntimeError, tarfile.TarError,
-            subprocess.SubprocessError) as error:
+    except Exception as error:
         # Runtime paths/bytes, configuration, database rows and private fingerprints
         # stay in operator-controlled storage, including on refusal.
         reason = str(error) if isinstance(error, UpgradeError) else type(error).__name__

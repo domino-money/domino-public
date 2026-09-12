@@ -1,0 +1,64 @@
+{
+  "capital": [
+    {
+      "components": [
+        {
+          "tokenId": "1",
+          "valueUsd": "1000"
+        },
+        {
+          "tokenId": null,
+          "valueUsd": "0"
+        }
+      ],
+      "endsAt": 1789135200,
+      "startsAt": 1789092000,
+      "valuationStatus": "qualified"
+    }
+  ],
+  "capitalScope": "all_position_assets_and_epoch_residual_once",
+  "chainId": 4663,
+  "coverageStart": 1789092000,
+  "credits": [
+    {
+      "amount": {
+        "currency": "0x4444444444444444444444444444444444444444",
+        "decimals": 6,
+        "price": {
+          "sourceId": "synthetic_review_price",
+          "status": "qualified",
+          "timestamp": 1789048800,
+          "usdPerToken": "1",
+          "validUntil": 1789135200
+        },
+        "raw": "10000000"
+      },
+      "epochId": "synthetic-epoch-1",
+      "eventId": "earning-3",
+      "feeOriginId": "origin-3",
+      "kind": "new_trading_fee",
+      "timestamp": 1789135200,
+      "tokenId": "1"
+    }
+  ],
+  "debits": [],
+  "epochId": "synthetic-epoch-1",
+  "incomeCoverage": "complete",
+  "members": [
+    {
+      "endsAt": null,
+      "startsAt": 1789092000,
+      "tokenId": "1"
+    }
+  ],
+  "owner": "0x1111111111111111111111111111111111111111",
+  "positionManager": "0x2222222222222222222222222222222222222222",
+  "scope": "nft",
+  "snapshot": {
+    "blockHash": "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "blockNumber": 1000,
+    "canonicality": "verified",
+    "timestamp": 1789135200
+  },
+  "startedAt": 1789092000
+}

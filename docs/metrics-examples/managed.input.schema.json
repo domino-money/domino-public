@@ -1,0 +1,472 @@
+{
+  "$comment": "Internal shape only. Cross-field, accounting, freshness and identity checks require the Python calculator; this is not a browser API contract.",
+  "$defs": {
+    "CapitalComponent": {
+      "additionalProperties": false,
+      "properties": {
+        "tokenId": {
+          "anyOf": [
+            {
+              "pattern": "^(0|[1-9][0-9]{0,77})$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Tokenid"
+        },
+        "valueUsd": {
+          "anyOf": [
+            {
+              "pattern": "^(0|[1-9][0-9]{0,77})(\\.[0-9]{1,18})?$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Valueusd"
+        }
+      },
+      "required": [
+        "tokenId",
+        "valueUsd"
+      ],
+      "title": "CapitalComponent",
+      "type": "object"
+    },
+    "CapitalSegment": {
+      "additionalProperties": false,
+      "properties": {
+        "components": {
+          "items": {
+            "$ref": "#/$defs/CapitalComponent"
+          },
+          "maxItems": 65,
+          "title": "Components",
+          "type": "array"
+        },
+        "endsAt": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "title": "Endsat",
+          "type": "integer"
+        },
+        "startsAt": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "title": "Startsat",
+          "type": "integer"
+        },
+        "valuationStatus": {
+          "enum": [
+            "qualified",
+            "unqualified",
+            "unavailable"
+          ],
+          "title": "Valuationstatus",
+          "type": "string"
+        }
+      },
+      "required": [
+        "startsAt",
+        "endsAt",
+        "valuationStatus",
+        "components"
+      ],
+      "title": "CapitalSegment",
+      "type": "object"
+    },
+    "CostDebit": {
+      "additionalProperties": false,
+      "properties": {
+        "amount": {
+          "$ref": "#/$defs/ValuedAmount"
+        },
+        "epochId": {
+          "pattern": "^[A-Za-z0-9:_-]{1,160}$",
+          "title": "Epochid",
+          "type": "string"
+        },
+        "eventId": {
+          "pattern": "^[A-Za-z0-9:_-]{1,160}$",
+          "title": "Eventid",
+          "type": "string"
+        },
+        "kind": {
+          "enum": [
+            "service_fee",
+            "dex_fee",
+            "network_gas"
+          ],
+          "title": "Kind",
+          "type": "string"
+        },
+        "payer": {
+          "enum": [
+            "strategy",
+            "operator"
+          ],
+          "title": "Payer",
+          "type": "string"
+        },
+        "timestamp": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "title": "Timestamp",
+          "type": "integer"
+        },
+        "tokenId": {
+          "anyOf": [
+            {
+              "pattern": "^(0|[1-9][0-9]{0,77})$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Tokenid"
+        }
+      },
+      "required": [
+        "eventId",
+        "epochId",
+        "tokenId",
+        "timestamp",
+        "kind",
+        "payer",
+        "amount"
+      ],
+      "title": "CostDebit",
+      "type": "object"
+    },
+    "FeeCredit": {
+      "additionalProperties": false,
+      "properties": {
+        "amount": {
+          "$ref": "#/$defs/ValuedAmount"
+        },
+        "epochId": {
+          "pattern": "^[A-Za-z0-9:_-]{1,160}$",
+          "title": "Epochid",
+          "type": "string"
+        },
+        "eventId": {
+          "pattern": "^[A-Za-z0-9:_-]{1,160}$",
+          "title": "Eventid",
+          "type": "string"
+        },
+        "feeOriginId": {
+          "pattern": "^[A-Za-z0-9:_-]{1,160}$",
+          "title": "Feeoriginid",
+          "type": "string"
+        },
+        "kind": {
+          "enum": [
+            "new_trading_fee",
+            "opening_fee",
+            "internal_transfer",
+            "donation"
+          ],
+          "title": "Kind",
+          "type": "string"
+        },
+        "timestamp": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "title": "Timestamp",
+          "type": "integer"
+        },
+        "tokenId": {
+          "pattern": "^(0|[1-9][0-9]{0,77})$",
+          "title": "Tokenid",
+          "type": "string"
+        }
+      },
+      "required": [
+        "eventId",
+        "feeOriginId",
+        "epochId",
+        "tokenId",
+        "timestamp",
+        "kind",
+        "amount"
+      ],
+      "title": "FeeCredit",
+      "type": "object"
+    },
+    "Membership": {
+      "additionalProperties": false,
+      "properties": {
+        "endsAt": {
+          "anyOf": [
+            {
+              "maximum": 9007199254740991,
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Endsat"
+        },
+        "startsAt": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "title": "Startsat",
+          "type": "integer"
+        },
+        "tokenId": {
+          "pattern": "^(0|[1-9][0-9]{0,77})$",
+          "title": "Tokenid",
+          "type": "string"
+        }
+      },
+      "required": [
+        "tokenId",
+        "startsAt"
+      ],
+      "title": "Membership",
+      "type": "object"
+    },
+    "Price": {
+      "additionalProperties": false,
+      "properties": {
+        "sourceId": {
+          "pattern": "^[A-Za-z0-9:_-]{1,160}$",
+          "title": "Sourceid",
+          "type": "string"
+        },
+        "status": {
+          "enum": [
+            "qualified",
+            "unqualified",
+            "unavailable"
+          ],
+          "title": "Status",
+          "type": "string"
+        },
+        "timestamp": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "title": "Timestamp",
+          "type": "integer"
+        },
+        "usdPerToken": {
+          "anyOf": [
+            {
+              "pattern": "^(0|[1-9][0-9]{0,77})(\\.[0-9]{1,18})?$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Usdpertoken"
+        },
+        "validUntil": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "title": "Validuntil",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "sourceId",
+        "status",
+        "timestamp",
+        "validUntil",
+        "usdPerToken"
+      ],
+      "title": "Price",
+      "type": "object"
+    },
+    "Snapshot": {
+      "additionalProperties": false,
+      "properties": {
+        "blockHash": {
+          "pattern": "^0x[0-9a-f]{64}$",
+          "title": "Blockhash",
+          "type": "string"
+        },
+        "blockNumber": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "title": "Blocknumber",
+          "type": "integer"
+        },
+        "canonicality": {
+          "enum": [
+            "verified",
+            "unverified",
+            "reorged"
+          ],
+          "title": "Canonicality",
+          "type": "string"
+        },
+        "timestamp": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "title": "Timestamp",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "blockNumber",
+        "blockHash",
+        "timestamp",
+        "canonicality"
+      ],
+      "title": "Snapshot",
+      "type": "object"
+    },
+    "ValuedAmount": {
+      "additionalProperties": false,
+      "properties": {
+        "currency": {
+          "pattern": "^0x[0-9a-f]{40}$",
+          "title": "Currency",
+          "type": "string"
+        },
+        "decimals": {
+          "maximum": 255,
+          "minimum": 0,
+          "title": "Decimals",
+          "type": "integer"
+        },
+        "price": {
+          "$ref": "#/$defs/Price"
+        },
+        "raw": {
+          "pattern": "^(0|[1-9][0-9]{0,77})$",
+          "title": "Raw",
+          "type": "string"
+        }
+      },
+      "required": [
+        "currency",
+        "decimals",
+        "raw",
+        "price"
+      ],
+      "title": "ValuedAmount",
+      "type": "object"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "capital": {
+      "items": {
+        "$ref": "#/$defs/CapitalSegment"
+      },
+      "maxItems": 4096,
+      "title": "Capital",
+      "type": "array"
+    },
+    "capitalScope": {
+      "const": "all_position_assets_and_epoch_residual_once",
+      "title": "Capitalscope",
+      "type": "string"
+    },
+    "chainId": {
+      "const": 4663,
+      "title": "Chainid",
+      "type": "integer"
+    },
+    "coverageStart": {
+      "maximum": 9007199254740991,
+      "minimum": 0,
+      "title": "Coveragestart",
+      "type": "integer"
+    },
+    "credits": {
+      "items": {
+        "$ref": "#/$defs/FeeCredit"
+      },
+      "maxItems": 20000,
+      "title": "Credits",
+      "type": "array"
+    },
+    "debits": {
+      "items": {
+        "$ref": "#/$defs/CostDebit"
+      },
+      "maxItems": 20000,
+      "title": "Debits",
+      "type": "array"
+    },
+    "epochId": {
+      "pattern": "^[A-Za-z0-9:_-]{1,160}$",
+      "title": "Epochid",
+      "type": "string"
+    },
+    "incomeCoverage": {
+      "enum": [
+        "complete",
+        "partial",
+        "unavailable"
+      ],
+      "title": "Incomecoverage",
+      "type": "string"
+    },
+    "members": {
+      "items": {
+        "$ref": "#/$defs/Membership"
+      },
+      "maxItems": 64,
+      "minItems": 1,
+      "title": "Members",
+      "type": "array"
+    },
+    "owner": {
+      "pattern": "^0x[0-9a-f]{40}$",
+      "title": "Owner",
+      "type": "string"
+    },
+    "positionManager": {
+      "pattern": "^0x[0-9a-f]{40}$",
+      "title": "Positionmanager",
+      "type": "string"
+    },
+    "scope": {
+      "enum": [
+        "nft",
+        "sequence"
+      ],
+      "title": "Scope",
+      "type": "string"
+    },
+    "snapshot": {
+      "$ref": "#/$defs/Snapshot"
+    },
+    "startedAt": {
+      "maximum": 9007199254740991,
+      "minimum": 0,
+      "title": "Startedat",
+      "type": "integer"
+    }
+  },
+  "required": [
+    "chainId",
+    "epochId",
+    "scope",
+    "owner",
+    "positionManager",
+    "startedAt",
+    "snapshot",
+    "coverageStart",
+    "incomeCoverage",
+    "capitalScope",
+    "members",
+    "capital",
+    "credits",
+    "debits"
+  ],
+  "title": "PerformanceEvidence",
+  "type": "object"
+}
