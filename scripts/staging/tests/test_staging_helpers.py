@@ -15,6 +15,9 @@ from types import SimpleNamespace
 import unittest
 from unittest.mock import Mock, patch
 
+# Re-export the focused profile suite through the existing required CI entry point.
+from test_schema_acl_profiles import SchemaAclProfileTests
+
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import catalogue_inventory
 import check_disabled_http

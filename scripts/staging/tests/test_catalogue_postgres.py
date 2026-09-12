@@ -83,6 +83,57 @@ class CataloguePostgresTests(unittest.TestCase):
                 acl = json.loads(self.query(check_roles.acl_sql(role), role=inventory.ADMIN))
                 self.assertEqual(acl['failures'], [])
 
+    def test_installed_hardened_public_schema_preserves_effective_authority(self):
+        stock = json.loads(self.query(inventory.inventory_sql(), role=inventory.ADMIN))
+        roles = ','.join("'" + role + "'" for role in check_roles.ROLES)
+        public_usage = ("SELECT pg_catalog.json_object_agg(rolname,"
+            "pg_catalog.has_schema_privilege(rolname,'public','USAGE')) "
+            f"FROM pg_catalog.pg_roles WHERE rolname IN ({roles});")
+        # The only mutation is inside the disposable fixture transaction; no
+        # verifier repairs the ACL, and ROLLBACK restores the shared fixture.
+        sql = ('BEGIN; REVOKE USAGE ON SCHEMA public FROM PUBLIC; '
+               + inventory.inventory_sql() + check_roles.metadata_sql()
+               + ''.join(check_roles.acl_sql(role) for role in check_roles.ROLES)
+               + public_usage + 'ROLLBACK;')
+        reports = [json.loads(line) for line in self.query(sql, role=inventory.ADMIN).splitlines()]
+        self.assertEqual(len(reports), 3 + len(check_roles.ROLES))
+        hardened, metadata = reports[:2]
+        self.assertEqual(len(stock['schemaAcl']), 29)
+        self.assertEqual(len(hardened['schemaAcl']), 28)
+        self.assertEqual({tuple(row) for row in stock['schemaAcl']}
+                         - {tuple(row) for row in hardened['schemaAcl']},
+                         {('public', 'PUBLIC', 'USAGE', 'pg_database_owner', False)})
+        self.assertEqual({tuple(row) for row in hardened['schemaAcl']}
+                         - {tuple(row) for row in stock['schemaAcl']}, set())
+        self.assertTrue(all(inventory.check_inventory(hardened, installed=True).values()))
+        self.assertTrue(all(check_roles.check_metadata(metadata).values()))
+        for role, acl in zip(check_roles.ROLES, reports[2:-1]):
+            with self.subTest(role=role):
+                self.assertGreater(acl['checks'], 0)
+                self.assertEqual(acl['failures'], [])
+        self.assertEqual(reports[-1], {role: role == inventory.ADMIN for role in check_roles.ROLES})
+        self.assertEqual(json.loads(self.query(inventory.inventory_sql(), role=inventory.ADMIN)), stock)
+
+    def test_hardened_profile_still_rejects_other_missing_or_added_grants(self):
+        cases = (
+            'REVOKE USAGE ON SCHEMA pg_catalog FROM PUBLIC',
+            'REVOKE USAGE ON SCHEMA information_schema FROM PUBLIC',
+            'REVOKE CREATE ON SCHEMA public FROM pg_database_owner',
+            'REVOKE USAGE ON SCHEMA public FROM pg_database_owner',
+            'REVOKE USAGE ON SCHEMA domino_activity FROM domino_catalogue_reader',
+            'GRANT USAGE ON SCHEMA domino_sessions TO unrelated',
+            'GRANT CREATE ON SCHEMA public TO PUBLIC',
+            'GRANT USAGE ON SCHEMA domino_catalogue TO domino_catalogue_reader WITH GRANT OPTION',
+        )
+        for mutation in cases:
+            with self.subTest(mutation=mutation):
+                data = json.loads(self.query('BEGIN; REVOKE USAGE ON SCHEMA public FROM PUBLIC; '
+                                             + mutation + ';' + inventory.inventory_sql() + 'ROLLBACK;'))
+                self.assertFalse(inventory.check_inventory(data, installed=True)['completeSchemaAcl'])
+        restored = json.loads(self.query(inventory.inventory_sql(), role=inventory.ADMIN))
+        self.assertEqual(len(restored['schemaAcl']), 29)
+        self.assertTrue(all(inventory.check_inventory(restored, installed=True).values()))
+
     def test_catalogue_mutations_are_rejected_and_rolled_back(self):
         cases = [
             ('databasePublicConnect', 'GRANT CONNECT ON DATABASE domino_catalogue TO PUBLIC', 'completeDatabaseAcl'),

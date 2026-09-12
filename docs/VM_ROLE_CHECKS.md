@@ -67,10 +67,28 @@ The additional catalogue inventory covers **all nine schemas**: `pg_catalog`,
 `pg_toast`, `information_schema`, `public` and the five Domino schemas. The first
 three retain owner `postgres`; `public` retains `pg_database_owner`. Their complete
 ACLs, and the database ACL, must match the known foundation, including PUBLIC,
-grantor and grant option. No unlisted role may receive a schema/database grant.
+grantor and grant option. For an installed database, exactly two complete schema
+ACL profiles are accepted:
+
+- `pg16_stock`: all 29 expected entries, including PUBLIC USAGE on `public`.
+- `installed_public_usage_revoked`: the same entries except
+  `(public, PUBLIC, USAGE, pg_database_owner, false)`, for 28 entries. The schema
+  owner keeps its own CREATE/USAGE grants; every system/application schema grant,
+  grantor and grant option remains identical to the stock profile.
+
+The installed a5 database has the second, stricter profile. It was identified
+during the disabled-upgrade inspection; the helper previously rejected it before
+running the effective privilege/SELECT checks. This recognition does not grant
+PUBLIC access or repair database state. The empty-foundation installer preflight
+still accepts only `pg16_stock`. Neither entry point accepts arbitrary subsets,
+duplicate entries or a changed grantor/owner/grant option. This helper change
+requires its own review before another operational upgrade attempt; source
+tests do not establish that the remaining VM checks have passed.
+
+No unlisted role may receive a schema/database grant.
 The DDL owner retains database CREATE/CONNECT/TEMPORARY; the five runtime roles
 have CONNECT only. Additional schemas (including temporary schemas), schema
-ownership changes, missing privileges and extra grants all fail closed. Inspect
+ownership changes, other missing privileges and extra grants all fail closed. Inspect
 an unexpected entry before deciding whether the reviewed inventory should change;
 the verifier does not repair it.
 

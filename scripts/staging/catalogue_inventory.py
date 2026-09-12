@@ -74,6 +74,13 @@ def check_inventory(data, *, installed):
             schema_acl.add((name, 'PUBLIC', 'USAGE', owner, False))
         if name in SCHEMA_USERS:
             schema_acl.update((name, role, 'USAGE', owner, False) for role in SCHEMA_USERS[name])
+    schema_acl_profiles = {'pg16_stock': schema_acl}
+    if installed:
+        # The installed a5 foundation lacks only this PUBLIC grant. Preserve
+        # that stricter boundary without accepting arbitrary missing privileges
+        # or changing the stock-only empty-foundation installation preflight.
+        schema_acl_profiles['installed_public_usage_revoked'] = schema_acl - {
+            ('public', 'PUBLIC', 'USAGE', 'pg_database_owner', False)}
     roles = (ADMIN, READER, WRITER, AUTH, OPERATOR) + ((DEPOSIT,) if installed else ())
     database_acl = {(role, 'CONNECT', ADMIN, False) for role in roles}
     database_acl.update((ADMIN, privilege, ADMIN, False) for privilege in ('CREATE', 'TEMPORARY'))
@@ -86,6 +93,7 @@ def check_inventory(data, *, installed):
             and all(isinstance(s, dict) and set(s) == {'name', 'owner'}
                     and s['name'] in owners and s['owner'] == owners[s['name']] for s in schemas)
             and {s['name'] for s in schemas} == set(owners),
-        'completeSchemaAcl': exact_rows(data.get('schemaAcl'), schema_acl),
+        'completeSchemaAcl': any(exact_rows(data.get('schemaAcl'), expected)
+                                 for expected in schema_acl_profiles.values()),
         'completeDatabaseAcl': exact_rows(data.get('databaseAcl'), database_acl),
     }
