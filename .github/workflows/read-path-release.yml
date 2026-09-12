@@ -3,9 +3,9 @@ on:
   workflow_dispatch:
     inputs:
       operation:
-        description: Inspect access, or publish the read Worker and app after the VM is ready
+        description: Inspect access, publish the app, or publish the full read path after the VM is ready
         type: choice
-        options: [inspect, publish]
+        options: [inspect, app, publish]
         default: inspect
         required: true
       source_sha:
@@ -38,10 +38,10 @@ jobs:
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
-      - if: inputs.operation == 'publish'
+      - if: inputs.operation != 'inspect'
         run: npm --prefix app ci --no-audit --no-fund
       - name: Build and record the app without deployment credentials
-        if: inputs.operation == 'publish'
+        if: inputs.operation != 'inspect'
         run: npm --prefix app run release:build
       - name: Publish the read Worker, retaining its enabled v1 reads and Access secrets
         if: inputs.operation == 'publish'
@@ -50,7 +50,7 @@ jobs:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
       - name: Upload the same recorded app to preview and production
-        if: inputs.operation == 'publish'
+        if: inputs.operation != 'inspect'
         run: |
           npm --prefix app run deploy:preview
           npm --prefix app run deploy

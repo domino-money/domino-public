@@ -30,9 +30,10 @@
  * tests/release.test.mjs injects its own runner. One CI job does deploy, and
  * only ever to the gated preview, after all four checks pass on main; it
  * authenticates with a scoped CLOUDFLARE_API_TOKEN read from repository
- * secrets at that step, never with a stored login. Production stays a manual
- * act from a machine whose own .release record shows the same digest already
- * deployed to preview. The project name comes from wrangler.toml, as before.
+ * secrets at that step, never with a stored login. The manually dispatched
+ * read-path release can also publish production, using the same credential
+ * and the same recorded digest already uploaded to preview in that job.
+ * The project name comes from wrangler.toml, as before.
  */
 import { spawnSync } from 'node:child_process'
 import { createHash } from 'node:crypto'
