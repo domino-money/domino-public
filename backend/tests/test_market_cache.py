@@ -8,6 +8,8 @@ from discovery import DataError
 from market_cache import MarketCache
 
 POOL = '0x' + 'ab' * 32
+TOKEN = '0x' + '11' * 20
+OTHER = '0x' + '22' * 20
 
 
 class Provider:
@@ -21,8 +23,8 @@ class Provider:
             raise self.error
         return {'poolId': pool_id, 'reportedLiquidityUsd': '1.23', 'retrievedAt': 1000}
 
-    def hourly_prices(self, pool_id, *, token):
-        self.calls.append(('hourly_prices', pool_id, token))
+    def hourly_prices(self, pool_id, *, token, currency):
+        self.calls.append(('hourly_prices', pool_id, token, currency))
         return {'poolId': pool_id, 'selectedToken': token, 'candles': []}
 
 
@@ -78,30 +80,30 @@ class MarketCacheTests(unittest.TestCase):
     def test_pool_and_each_chart_currency_have_separate_entries(self):
         self.cache.get('pool', POOL)
         self.cache.get('pool', POOL, token='quote')
-        self.cache.get('hourly_prices', POOL)
-        self.cache.get('hourly_prices', POOL, token='quote')
+        self.cache.get('hourly_prices', POOL, currency=TOKEN)
+        self.cache.get('hourly_prices', POOL, token='quote', currency=OTHER)
         self.assertEqual(len(self.provider.calls), 3)
 
     def test_rate_budget_is_shared_across_keys_without_sleeping(self):
         for i in range(25):
             self.cache.get('pool', '0x' + format(i, '064x'))
-        report = self.cache.get('hourly_prices', POOL)
+        report = self.cache.get('hourly_prices', POOL, currency=TOKEN)
         self.assertEqual(report['reason'], 'provider_capacity_busy')
         self.assertIsNone(report['data'])
         self.assertEqual(len(self.provider.calls), 25)
         self.now += 60
-        self.assertEqual(self.cache.get('hourly_prices', POOL)['status'], 'available')
+        self.assertEqual(self.cache.get('hourly_prices', POOL, currency=TOKEN)['status'], 'available')
 
     def test_capacity_is_bounded_and_lru_hits_keep_entries(self):
         self.cache.capacity = 2
         self.cache.get('pool', POOL)
-        self.cache.get('hourly_prices', POOL)
+        self.cache.get('hourly_prices', POOL, currency=TOKEN)
         self.cache.get('pool', POOL)
-        self.cache.get('hourly_prices', POOL, token='quote')
+        self.cache.get('hourly_prices', POOL, token='quote', currency=OTHER)
         self.assertEqual(len(self.cache.entries), 2)
         self.cache.get('pool', POOL)
         self.assertEqual(len(self.provider.calls), 3)
-        self.cache.get('hourly_prices', POOL)
+        self.cache.get('hourly_prices', POOL, currency=TOKEN)
         self.assertEqual(len(self.provider.calls), 4)
 
     def test_concurrent_identical_reads_make_one_provider_request(self):

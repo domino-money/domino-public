@@ -14,6 +14,17 @@ MAX_CANDLES = 24
 HOUR_SECONDS = 3600
 
 
+class MarketCandleError(DataError):
+    """Bounded local diagnostics; the public cache still emits its finite error.
+
+    No provider values, URLs or exception text are copied into the diagnostic.
+    Operators may attach a separately reviewed public sample to a report.
+    """
+    def __init__(self, reason, *, row_index=None, field=None, code='invalid_market_candles'):
+        super().__init__(code)
+        self.diagnostic = {'reason': reason, 'rowIndex': row_index, 'field': field}
+
+
 def _object(value):
     if not isinstance(value, dict):
         raise DataError('invalid_market_response')
@@ -126,11 +137,15 @@ class GeckoMarketData:
                 'reportedLiquidityUsd': _number(attributes.get('reserve_in_usd'), optional=True),
                 'volume24hUsd': _number(volume, optional=True)}
 
-    def hourly_prices(self, pool_id, *, token='base'):
+    def hourly_prices(self, pool_id, *, currency, token='base'):
         pool_id = bytes32(pool_id)
         if token not in ('base', 'quote'):
             raise DataError('invalid_market_price_token')
-        url = ROOT+'/pools/'+pool_id+'/ohlcv/hour?aggregate=1&limit=24&currency=usd&token='+token
+        currency = address(currency)
+        # Resolve the role using the already qualified pool observation, before
+        # making this call. Gecko's OHLCV metadata puts the selected token in
+        # base, including when the pool endpoint calls that token quote.
+        url = ROOT+'/pools/'+pool_id+'/ohlcv/hour?aggregate=1&limit=24&currency=usd&token='+currency
         result, retrieved = self._fetch(url)
         data = _object(result.get('data'))
         if data.get('type') != 'ohlcv_request_response':
@@ -138,22 +153,45 @@ class GeckoMarketData:
         metadata = _object(result.get('meta'))
         currencies = _currencies(_object(metadata.get('base')).get('address'),
                                  _object(metadata.get('quote')).get('address'))
+        if currencies['baseToken'] != currency:
+            raise DataError('market_chart_currency_mismatch')
+        # Preserve v1's pool-relative role names. Only metadata labels move;
+        # no price, volume, timestamp or gap is inverted or synthesized.
+        if token == 'quote':
+            currencies = _currencies(currencies['quoteToken'], currency)
         raw = _object(data.get('attributes')).get('ohlcv_list')
-        if not isinstance(raw, list) or len(raw) > MAX_CANDLES:
-            raise DataError('invalid_market_candles')
+        if not isinstance(raw, list):
+            raise MarketCandleError('invalid_list')
+        if len(raw) > MAX_CANDLES:
+            raise MarketCandleError('too_many_candles')
         candles, seen = [], set()
-        for entry in raw:
+        for row_index, entry in enumerate(raw):
             if not isinstance(entry, list) or len(entry) != 6:
-                raise DataError('invalid_market_candles')
+                raise MarketCandleError('invalid_row', row_index=row_index)
             start = entry[0]
-            if (type(start) is not int or not 0 <= start <= retrieved or
-                    start % HOUR_SECONDS or start in seen):
-                raise DataError('invalid_market_candles')
+            if type(start) is not int or start < 0:
+                raise MarketCandleError('invalid_timestamp', row_index=row_index, field='timestamp')
+            if start > retrieved:
+                raise MarketCandleError('future_timestamp', row_index=row_index, field='timestamp')
+            if start % HOUR_SECONDS:
+                raise MarketCandleError('unaligned_timestamp', row_index=row_index, field='timestamp')
+            if start in seen:
+                raise MarketCandleError('duplicate_timestamp', row_index=row_index, field='timestamp')
             seen.add(start)
-            opened, high, low, closed, volume = [_number(value) for value in entry[1:]]
-            if not (Decimal(low) <= Decimal(opened) <= Decimal(high) and
-                    Decimal(low) <= Decimal(closed) <= Decimal(high)):
-                raise DataError('invalid_market_candles')
+            numbers = []
+            for field, value in zip(('open', 'high', 'low', 'close', 'volume'), entry[1:]):
+                try:
+                    numbers.append(_number(value))
+                except DataError:
+                    raise MarketCandleError('invalid_number', row_index=row_index, field=field,
+                                            code='invalid_market_number') from None
+            opened, high, low, closed, volume = numbers
+            if Decimal(low) > Decimal(high):
+                raise MarketCandleError('low_above_high', row_index=row_index)
+            if not Decimal(low) <= Decimal(opened) <= Decimal(high):
+                raise MarketCandleError('open_outside_range', row_index=row_index, field='open')
+            if not Decimal(low) <= Decimal(closed) <= Decimal(high):
+                raise MarketCandleError('close_outside_range', row_index=row_index, field='close')
             candles.append({'startTimestamp': start, 'openUsd': opened, 'highUsd': high, 'lowUsd': low,
                             'closeUsd': closed, 'volumeUsd': volume, 'closed': start+HOUR_SECONDS <= retrieved})
         candles.sort(key=lambda item: item['startTimestamp'])

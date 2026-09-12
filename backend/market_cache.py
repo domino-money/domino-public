@@ -4,7 +4,7 @@ from copy import deepcopy
 from threading import Lock
 import time
 
-from discovery import DataError, bytes32
+from discovery import DataError, address, bytes32
 
 
 class MarketCache:
@@ -22,11 +22,17 @@ class MarketCache:
         self.ttl, self.max_stale, self.retry_delay = 60, 300, 15
         self.capacity, self.requests_per_minute = 256, 25
 
-    def get(self, kind, pool_id, *, token='base'):
+    def get(self, kind, pool_id, *, token='base', currency=None):
         pool_id = bytes32(pool_id)
         if kind not in ('pool', 'hourly_prices') or token not in ('base', 'quote'):
             raise DataError('invalid_market_query')
-        key = (kind, pool_id, token if kind == 'hourly_prices' else None)
+        if kind == 'hourly_prices':
+            currency = address(currency)
+        elif currency is not None:
+            raise DataError('invalid_market_query')
+        # A pool's provider base/quote orientation can change between reads.
+        # Never reuse a chart (including stale fallback) for a different address.
+        key = (kind, pool_id, token if kind == 'hourly_prices' else None, currency)
         with self.lock:
             now = self.clock()
             entry = self.entries.get(key)
@@ -47,7 +53,7 @@ class MarketCache:
             self.requests.append(now)
             try:
                 data = (self.provider.pool(pool_id) if kind == 'pool' else
-                        self.provider.hourly_prices(pool_id, token=token))
+                        self.provider.hourly_prices(pool_id, token=token, currency=currency))
                 if not isinstance(data, dict):
                     raise DataError('invalid_market_response')
             except Exception as error:

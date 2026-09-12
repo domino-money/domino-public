@@ -271,9 +271,12 @@ class ReadService:
             if market.get('data') is None:
                 history.update(status='unavailable', reason='provider_market_identity_unavailable')
             else:
-                history = matched(self._market('hourly_prices', pool_id, token=price_token))
+                requested_currency = market['data'][price_token + 'Token']
+                history = matched(self._market('hourly_prices', pool_id, token=price_token,
+                                               currency=requested_currency))
                 data = history.get('data')
                 if data is not None and (data.get('selectedToken') != price_token or
+                        data.get('currency') != requested_currency or
                         data.get('currency') != data.get(price_token + 'Token') or
                         any(data.get(side) != market['data'].get(side) for side in ('baseToken', 'quoteToken'))):
                     history = {**history, 'status': 'rejected',

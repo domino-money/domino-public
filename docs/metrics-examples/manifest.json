@@ -33,7 +33,7 @@
     "pool.output.schema.json": "bb4fc672e4a5e9fda30e36c47bdc980cd82ae31e431fbc22b7a9402728477840"
   },
   "sources": {
-    "api-contracts/read-v1/fixtures/producer/pool-market.success.json": "440d384ef451a9c8384c397bd8a1babc4a083234d9c81a311624ab8c891c8097",
+    "api-contracts/read-v1/fixtures/producer/pool-market.success.json": "b8abee56a658da66ab75a11394da8a1a31159d0327e05cd3f39351b779782891",
     "backend/managed_performance.py": "38816b9fd58f9f95e311bb0dbda8c73711709a81f68a998f5cc62bb5626ae669",
     "backend/pool_apr.py": "00b37b2645ad72fa2f55e83c9fcfc24791cfc31b2eaffceb82b37a5d212f541f",
     "backend/preview_metrics.py": "06cd8d91ddfdeed7a40950513cc6a718ecf8c3eaef69ca00af761f44d28ed72e",

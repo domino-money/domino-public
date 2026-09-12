@@ -6,6 +6,7 @@ from pathlib import Path
 import subprocess
 import sys
 import unittest
+from urllib.parse import parse_qs, urlsplit
 from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -67,8 +68,10 @@ class MarketTransport:
     def __call__(self, url, **kwargs):
         if self.failure: raise DataError(self.failure)
         if '/ohlcv/' in url:
+            selected = parse_qs(urlsplit(url).query)['token'][0]
+            other = self.quote if selected == self.base else self.base
             return {'data': {'type': 'ohlcv_request_response', 'attributes': {'ohlcv_list': self.rows}},
-                    'meta': {'base': {'address': self.base}, 'quote': {'address': self.quote}}}
+                    'meta': {'base': {'address': selected}, 'quote': {'address': other}}}
         return {'data': {'id': 'robinhood_'+POOL, 'type': 'pool',
                          'attributes': {'address': POOL, 'reserve_in_usd': self.liquidity,
                                         'volume_usd': {'h24': self.volume}},

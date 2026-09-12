@@ -71,8 +71,11 @@ separate endpoint qualification requirements are documented there.
 
 `POST /v1/read/pool-market` accepts a full v4 PoolId, optional boolean
 `includePriceHistory` (default false), and `priceToken` (`base` or `quote`,
-default base). The latter names the GeckoTerminal pair's explicit base/quote
+default base). The latter names the verified market observation's base/quote
 addresses, which are returned with the chart; it is not implicit token0/token1.
+The provider request selects that token by address. The adapter verifies OHLCV
+metadata and maps only its labels back to the market orientation, preserving
+every candle value. See the [chart qualification report](../reports/ALPHA_CHART_CURRENCY_QUALIFICATION_2026-09-12.md).
 
 ```json
 {"poolId":"0x84bd4e2d8be11aeb0afc1195b38f587b61e90068548f1063fdbe448fb8cad0b6","includePriceHistory":true,"priceToken":"base"}

@@ -1,0 +1,67 @@
+{
+  "schemaVersion": 1,
+  "source": "geckoterminal",
+  "chainId": 4663,
+  "poolId": "0xdb922f0619e11b0c1e6c3a142798f0243060b8a4331ea4f4e7de80e898cc02e7",
+  "currency": "0x5fc5360d0400a0fd4f2af552add042d716f1d168",
+  "otherCurrency": "0xab35d04e1ee39c789c4a65d522417b3c7f2e4723",
+  "note": "Only the two conflicting public rows from each response; original indices are zero based. OHLCV values are exact decimal strings, not binary floats. No deduplication or inferred candle.",
+  "samples": [
+    {
+      "window": "current_2026_09_12",
+      "sourceUrl": "https://api.geckoterminal.com/api/v2/networks/robinhood/pools/0xdb922f0619e11b0c1e6c3a142798f0243060b8a4331ea4f4e7de80e898cc02e7/ohlcv/hour?aggregate=1&limit=24&currency=usd&token=0x5fc5360d0400a0fd4f2af552add042d716f1d168",
+      "responseSha256": "2b37fd98d1ac7566a74fac5e96b31828be1e317e4a20ee1545a87bca23cf0981",
+      "retrievedAt": 1789234034,
+      "originalRowIndices": [
+        21,
+        22
+      ],
+      "rows": [
+        [
+          1789146000,
+          "0.996443811290116",
+          "0.99841615456552",
+          "0.996443811290116",
+          "0.99841615456552",
+          "61.9756843785001"
+        ],
+        [
+          1789146000,
+          "0.99841615456552",
+          "0.99841615456552",
+          "0.99841615456552",
+          "0.99841615456552",
+          "61.9756843785001"
+        ]
+      ]
+    },
+    {
+      "window": "historical_2026_09_11",
+      "sourceUrl": "https://api.geckoterminal.com/api/v2/networks/robinhood/pools/0xdb922f0619e11b0c1e6c3a142798f0243060b8a4331ea4f4e7de80e898cc02e7/ohlcv/hour?aggregate=1&limit=24&currency=usd&token=0x5fc5360d0400a0fd4f2af552add042d716f1d168&before_timestamp=1789146000",
+      "responseSha256": "99633c6ec428019d39b79aea8f31cda73c3644e45f95c6912bf1ac9676978353",
+      "retrievedAt": 1789234078,
+      "originalRowIndices": [
+        20,
+        21
+      ],
+      "rows": [
+        [
+          1789059600,
+          "0.998590811092112",
+          "1.00146871030233",
+          "0.997768391521417",
+          "1.00067556073116",
+          "776.0643745778486"
+        ],
+        [
+          1789059600,
+          "1.00067556073116",
+          "1.00146871030233",
+          "0.997768391521417",
+          "1.00067556073116",
+          "776.0643745778486"
+        ]
+      ]
+    }
+  ]
+}

@@ -63,6 +63,15 @@ randomness, including continuation through the production inventory service;
 its handle is 64 lowercase hexadecimal characters. A cursor conveys
 pagination state, never wallet ownership.
 
+Pool-market chart selection is pool-relative: `selectedToken` keeps the request's
+`priceToken`, `currency` is the corresponding `market.data` token address, and
+history `baseToken`/`quoteToken` keep that market's orientation. The producer asks
+GeckoTerminal for the explicit address and requires it in OHLCV `meta.base`, then
+maps only verified metadata labels back to the pool orientation. No candle is
+inverted or filled; duplicate timestamps reject the chart without erasing market
+metrics. See the [#92 qualification report](../../reports/ALPHA_CHART_CURRENCY_QUALIFICATION_2026-09-12.md)
+for public evidence and the separate upstream/chain trust boundaries.
+
 Metadata symbols and provider labels are untrusted text even after validation.
 Render them as escaped text (for example ordinary React interpolation), never
 HTML, and do not use source metadata as fetch/link/image destinations without a

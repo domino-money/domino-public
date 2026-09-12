@@ -6,7 +6,7 @@ from unittest.mock import Mock
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from discovery import DataError, ZERO
-from market_data import GeckoMarketData, ROOT
+from market_data import GeckoMarketData, MarketCandleError, ROOT
 
 POOL = '0x'+'12'*32
 BASE = '0x'+'22'*20
@@ -102,8 +102,8 @@ class MarketDataTests(unittest.TestCase):
 
     def test_hourly_candles_sort_ascending_and_preserve_exact_decimals(self):
         adapter, transport = self.adapter(hourly_response())
-        result = adapter.hourly_prices(POOL)
-        transport.assert_called_once_with(ROOT+'/pools/'+POOL+'/ohlcv/hour?aggregate=1&limit=24&currency=usd&token=base', timeout=5)
+        result = adapter.hourly_prices(POOL, currency=BASE)
+        transport.assert_called_once_with(ROOT+'/pools/'+POOL+'/ohlcv/hour?aggregate=1&limit=24&currency=usd&token='+BASE, timeout=5)
         self.assertEqual(result['currency'], BASE)
         self.assertEqual(result['selectedToken'], 'base')
         self.assertEqual([c['startTimestamp'] for c in result['candles']], [99*3600, 100*3600])
@@ -115,15 +115,17 @@ class MarketDataTests(unittest.TestCase):
         self.assertEqual(result['coverage']['completeness'], 'not_established')
 
     def test_quote_chart_is_bound_to_quote_address_not_name_or_canonical_order(self):
-        adapter, transport = self.adapter(hourly_response())
-        result = adapter.hourly_prices(POOL, token='quote')
+        raw = hourly_response()
+        raw['meta']['base']['address'], raw['meta']['quote']['address'] = QUOTE, BASE
+        adapter, transport = self.adapter(raw)
+        result = adapter.hourly_prices(POOL, currency=QUOTE, token='quote')
         self.assertEqual(result['currency'], QUOTE)
         self.assertEqual(result['quoteToken'], QUOTE)
-        self.assertIn('token=quote', transport.call_args.args[0])
+        self.assertIn('token='+QUOTE, transport.call_args.args[0])
         for token in ('usd', BASE, 'base&limit=1000', None):
             adapter, transport = self.adapter(hourly_response())
             with self.assertRaisesRegex(DataError, '^invalid_market_price_token$'):
-                adapter.hourly_prices(POOL, token=token)
+                adapter.hourly_prices(POOL, currency=BASE, token=token)
             transport.assert_not_called()
 
     def test_chart_requires_both_metadata_addresses_and_distinct_tokens(self):
@@ -131,13 +133,13 @@ class MarketDataTests(unittest.TestCase):
                        lambda d: d['meta']['base'].update(address='MARLIN'),
                        lambda d: d['meta']['quote'].update(address=BASE)):
             raw = hourly_response();mutate(raw)
-            with self.assertRaises(DataError): self.adapter(raw)[0].hourly_prices(POOL)
+            with self.assertRaises(DataError): self.adapter(raw)[0].hourly_prices(POOL, currency=BASE)
 
     def test_sparse_and_empty_histories_are_explicit_without_zero_fills(self):
-        result = self.adapter(hourly_response([candle(95*3600), candle(99*3600)]))[0].hourly_prices(POOL)
+        result = self.adapter(hourly_response([candle(95*3600), candle(99*3600)]))[0].hourly_prices(POOL, currency=BASE)
         self.assertTrue(result['coverage']['gapsDetected'])
         self.assertEqual(len(result['candles']), 2)
-        empty = self.adapter(hourly_response([]))[0].hourly_prices(POOL)
+        empty = self.adapter(hourly_response([]))[0].hourly_prices(POOL, currency=BASE)
         self.assertEqual(empty['candles'], [])
         self.assertEqual(empty['coverage']['status'], 'missing')
         self.assertIsNone(empty['coverage']['firstTimestamp'])
@@ -146,7 +148,7 @@ class MarketDataTests(unittest.TestCase):
         for rows in ([candle(99*3600)]*2, [candle(99*3600+1)], [candle(101*3600)],
                      [candle(True)], [candle(-3600)], [candle(i*3600) for i in range(25)]):
             with self.assertRaisesRegex(DataError, '^invalid_market_candles$'):
-                self.adapter(hourly_response(rows))[0].hourly_prices(POOL)
+                self.adapter(hourly_response(rows))[0].hourly_prices(POOL, currency=BASE)
 
     def test_invalid_ohlc_and_missing_cells_do_not_become_partial_fake_candles(self):
         cases = []
@@ -156,16 +158,16 @@ class MarketDataTests(unittest.TestCase):
         cases += [candle(99*3600)[:-1], candle(99*3600)+[0]]
         for row in cases:
             with self.subTest(row=row), self.assertRaises(DataError):
-                self.adapter(hourly_response([row]))[0].hourly_prices(POOL)
+                self.adapter(hourly_response([row]))[0].hourly_prices(POOL, currency=BASE)
 
     def test_missing_or_wrong_response_shape_never_claims_empty_history(self):
         for raw in ({}, {'data': None}, {'data': {'type': 'pool'}},
                     {**hourly_response(), 'data': {'type': 'ohlcv_request_response', 'attributes': {}}}):
-            with self.assertRaises(DataError): self.adapter(raw)[0].hourly_prices(POOL)
+            with self.assertRaises(DataError): self.adapter(raw)[0].hourly_prices(POOL, currency=BASE)
 
     def test_closed_flag_at_exact_hour_boundary_does_not_establish_rolling_day(self):
         raw = hourly_response([candle(t*3600) for t in range(76,100)])
-        result = GeckoMarketData(transport=lambda *a, **k: raw, clock=lambda: 100*3600).hourly_prices(POOL)
+        result = GeckoMarketData(transport=lambda *a, **k: raw, clock=lambda: 100*3600).hourly_prices(POOL, currency=BASE)
         self.assertEqual(result['coverage']['closedCandles'], 24)
         self.assertFalse(result['coverage']['complete24h'])
 

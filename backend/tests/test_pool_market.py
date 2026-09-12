@@ -14,6 +14,7 @@ from test_discovery import FakeRpc, POOL, TOKEN, OTHER
 class Provider:
     def __init__(self):
         self.calls = []
+        self.chart_currencies = []
         self.error = False
         self.currencies = [ZERO, TOKEN]
         self.dex = 'uniswap-v4-robinhood'
@@ -28,8 +29,9 @@ class Provider:
                 'sourceUrl': 'https://www.geckoterminal.com/robinhood/pools/' + pool_id,
                 'reportedLiquidityUsd': '50000.25', 'volume24hUsd': '0', 'providerReported': True}
 
-    def hourly_prices(self, pool_id, *, token):
+    def hourly_prices(self, pool_id, *, token, currency):
         self.calls.append('history:' + token)
+        self.chart_currencies.append(currency)
         return {'poolId': pool_id, 'chainId': 4663, 'currencies': self.currencies, 'source': 'geckoterminal',
                 'retrievedAt': 1010, 'asOfBlock': None, 'asOfTimestamp': None,
                 'sourceUrl': 'https://www.geckoterminal.com/robinhood/pools/' + pool_id,

@@ -22,10 +22,10 @@ class ExactProvider(service_fixture.Provider):
     def pool(self, pool_id):
         return {**super().pool(pool_id), 'chainId': CHAIN_ID, **self.pool_overrides}
 
-    def hourly_prices(self, pool_id, *, token):
+    def hourly_prices(self, pool_id, *, token, currency):
         if self.history_error:
             raise DataError('http_503')
-        return {**super().hourly_prices(pool_id, token=token), 'chainId': CHAIN_ID,
+        return {**super().hourly_prices(pool_id, token=token, currency=currency), 'chainId': CHAIN_ID,
                 'selectedToken': token, **self.history_overrides}
 
 
@@ -108,7 +108,7 @@ class MarketReviewTests(unittest.TestCase):
         self.assertEqual(changed['market']['data']['baseToken'], ZERO)
         self.assertIsNone(changed['priceHistory']['data'])
         self.assertNotEqual(changed['priceHistory']['status'], 'available')
-        self.assertEqual(changed['priceHistory']['cache']['ageSeconds'], 61)
+        self.assertIsNone(changed['priceHistory']['cache']['ageSeconds'])
 
     def test_shared_request_limit_can_leave_chart_unavailable_without_erasing_pool_metrics(self):
         provider = ExactProvider();service = self.service(provider)

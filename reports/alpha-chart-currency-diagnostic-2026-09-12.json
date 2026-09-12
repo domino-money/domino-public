@@ -1,0 +1,259 @@
+{
+  "schemaVersion": 1,
+  "mode": "bounded_public_chart_currency_diagnostic",
+  "sourceBaseline": "cc43d6c3aad91283100d4484963dcc9135d2bf4b",
+  "publicMarketHttpRequests": 12,
+  "initialRequests": 8,
+  "rateLimitRetries": 3,
+  "historicalRequests": 1,
+  "rpcRequests": 0,
+  "providerConfigLoaded": false,
+  "serviceHttpMeasured": false,
+  "productionHttpsMeasured": false,
+  "reads": [
+    {
+      "poolId": "0x84bd4e2d8be11aeb0afc1195b38f587b61e90068548f1063fdbe448fb8cad0b6",
+      "selector": null,
+      "url": "https://api.geckoterminal.com/api/v2/networks/robinhood/pools/0x84bd4e2d8be11aeb0afc1195b38f587b61e90068548f1063fdbe448fb8cad0b6",
+      "httpStatus": "200",
+      "transportExit": 0,
+      "recordedAt": "2026-09-12T17:24:29.212337+00:00",
+      "attempt": 1,
+      "providerElapsedSeconds": 0.2872,
+      "responseSha256": "cde9c83b97634d01756b11d0429a9c9b9f74381d93a2cfe63a78cf78e8648b49",
+      "observedRoles": {
+        "base": "0x5fc5360d0400a0fd4f2af552add042d716f1d168",
+        "quote": "0x0bd7d308f8e1639fab988df18a8011f41eacad73"
+      }
+    },
+    {
+      "poolId": "0x84bd4e2d8be11aeb0afc1195b38f587b61e90068548f1063fdbe448fb8cad0b6",
+      "selector": "0x5fc5360d0400a0fd4f2af552add042d716f1d168",
+      "url": "https://api.geckoterminal.com/api/v2/networks/robinhood/pools/0x84bd4e2d8be11aeb0afc1195b38f587b61e90068548f1063fdbe448fb8cad0b6/ohlcv/hour?aggregate=1&limit=24&currency=usd&token=0x5fc5360d0400a0fd4f2af552add042d716f1d168",
+      "httpStatus": "200",
+      "transportExit": 0,
+      "recordedAt": "2026-09-12T17:24:29.502056+00:00",
+      "attempt": 1,
+      "providerElapsedSeconds": 0.433482,
+      "responseSha256": "863848433930b37ef20588cc2625ed2648e397d62163f18392dd27ae70df956d",
+      "observedRoles": {
+        "base": "0x5fc5360d0400a0fd4f2af552add042d716f1d168",
+        "quote": "0x0bd7d308f8e1639fab988df18a8011f41eacad73"
+      },
+      "rawCandleCount": 24,
+      "parserStatus": "accepted",
+      "coverage": {
+        "status": "provider_reported",
+        "requestedLimit": 24,
+        "returnedCandles": 24,
+        "closedCandles": 23,
+        "gapsDetected": false,
+        "firstTimestamp": 1789149600,
+        "lastTimestamp": 1789232400,
+        "complete24h": false,
+        "completeness": "not_established"
+      },
+      "offlineParserElapsedSeconds": 0.000273
+    },
+    {
+      "poolId": "0x84bd4e2d8be11aeb0afc1195b38f587b61e90068548f1063fdbe448fb8cad0b6",
+      "selector": "0x0bd7d308f8e1639fab988df18a8011f41eacad73",
+      "url": "https://api.geckoterminal.com/api/v2/networks/robinhood/pools/0x84bd4e2d8be11aeb0afc1195b38f587b61e90068548f1063fdbe448fb8cad0b6/ohlcv/hour?aggregate=1&limit=24&currency=usd&token=0x0bd7d308f8e1639fab988df18a8011f41eacad73",
+      "httpStatus": "200",
+      "transportExit": 0,
+      "recordedAt": "2026-09-12T17:24:29.935980+00:00",
+      "attempt": 1,
+      "providerElapsedSeconds": 0.321303,
+      "responseSha256": "f2c0b46e243c3f3b5aa57cad38dbf3731dacd49016d2649907c436c6dd35d904",
+      "observedRoles": {
+        "base": "0x0bd7d308f8e1639fab988df18a8011f41eacad73",
+        "quote": "0x5fc5360d0400a0fd4f2af552add042d716f1d168"
+      },
+      "rawCandleCount": 24,
+      "parserStatus": "accepted",
+      "coverage": {
+        "status": "provider_reported",
+        "requestedLimit": 24,
+        "returnedCandles": 24,
+        "closedCandles": 23,
+        "gapsDetected": false,
+        "firstTimestamp": 1789149600,
+        "lastTimestamp": 1789232400,
+        "complete24h": false,
+        "completeness": "not_established"
+      },
+      "offlineParserElapsedSeconds": 0.000163
+    },
+    {
+      "poolId": "0x84bd4e2d8be11aeb0afc1195b38f587b61e90068548f1063fdbe448fb8cad0b6",
+      "selector": "quote",
+      "url": "https://api.geckoterminal.com/api/v2/networks/robinhood/pools/0x84bd4e2d8be11aeb0afc1195b38f587b61e90068548f1063fdbe448fb8cad0b6/ohlcv/hour?aggregate=1&limit=24&currency=usd&token=quote",
+      "httpStatus": "200",
+      "transportExit": 0,
+      "recordedAt": "2026-09-12T17:24:30.258488+00:00",
+      "attempt": 1,
+      "providerElapsedSeconds": 0.475251,
+      "responseSha256": "3ccd6485ea7bb2a815b244ad898f865fc9549e9875e66e1c8f73a4f86edfd53a",
+      "observedRoles": {
+        "base": "0x0bd7d308f8e1639fab988df18a8011f41eacad73",
+        "quote": "0x5fc5360d0400a0fd4f2af552add042d716f1d168"
+      },
+      "rawCandleCount": 24,
+      "parserStatus": "accepted",
+      "coverage": {
+        "status": "provider_reported",
+        "requestedLimit": 24,
+        "returnedCandles": 24,
+        "closedCandles": 23,
+        "gapsDetected": false,
+        "firstTimestamp": 1789149600,
+        "lastTimestamp": 1789232400,
+        "complete24h": false,
+        "completeness": "not_established"
+      },
+      "offlineParserElapsedSeconds": 0.000146
+    },
+    {
+      "poolId": "0xdb922f0619e11b0c1e6c3a142798f0243060b8a4331ea4f4e7de80e898cc02e7",
+      "selector": null,
+      "url": "https://api.geckoterminal.com/api/v2/networks/robinhood/pools/0xdb922f0619e11b0c1e6c3a142798f0243060b8a4331ea4f4e7de80e898cc02e7",
+      "httpStatus": "200",
+      "transportExit": 0,
+      "recordedAt": "2026-09-12T17:24:30.734928+00:00",
+      "attempt": 1,
+      "providerElapsedSeconds": 0.307211,
+      "responseSha256": "1e8532aa43ce34b21c22a91cf4c5f05bed1559729618aa72d73a3dd456df82dd",
+      "observedRoles": {
+        "base": "0xab35d04e1ee39c789c4a65d522417b3c7f2e4723",
+        "quote": "0x5fc5360d0400a0fd4f2af552add042d716f1d168"
+      }
+    },
+    {
+      "poolId": "0xdb922f0619e11b0c1e6c3a142798f0243060b8a4331ea4f4e7de80e898cc02e7",
+      "selector": "0xab35d04e1ee39c789c4a65d522417b3c7f2e4723",
+      "url": "https://api.geckoterminal.com/api/v2/networks/robinhood/pools/0xdb922f0619e11b0c1e6c3a142798f0243060b8a4331ea4f4e7de80e898cc02e7/ohlcv/hour?aggregate=1&limit=24&currency=usd&token=0xab35d04e1ee39c789c4a65d522417b3c7f2e4723",
+      "httpStatus": "429",
+      "transportExit": 0,
+      "recordedAt": "2026-09-12T17:24:31.042617+00:00",
+      "attempt": 1,
+      "providerElapsedSeconds": 0.042826
+    },
+    {
+      "poolId": "0xdb922f0619e11b0c1e6c3a142798f0243060b8a4331ea4f4e7de80e898cc02e7",
+      "selector": "0x5fc5360d0400a0fd4f2af552add042d716f1d168",
+      "url": "https://api.geckoterminal.com/api/v2/networks/robinhood/pools/0xdb922f0619e11b0c1e6c3a142798f0243060b8a4331ea4f4e7de80e898cc02e7/ohlcv/hour?aggregate=1&limit=24&currency=usd&token=0x5fc5360d0400a0fd4f2af552add042d716f1d168",
+      "httpStatus": "429",
+      "transportExit": 0,
+      "recordedAt": "2026-09-12T17:24:31.085707+00:00",
+      "attempt": 1,
+      "providerElapsedSeconds": 0.040216
+    },
+    {
+      "poolId": "0xdb922f0619e11b0c1e6c3a142798f0243060b8a4331ea4f4e7de80e898cc02e7",
+      "selector": "quote",
+      "url": "https://api.geckoterminal.com/api/v2/networks/robinhood/pools/0xdb922f0619e11b0c1e6c3a142798f0243060b8a4331ea4f4e7de80e898cc02e7/ohlcv/hour?aggregate=1&limit=24&currency=usd&token=quote",
+      "httpStatus": "429",
+      "transportExit": 0,
+      "recordedAt": "2026-09-12T17:24:31.126340+00:00",
+      "attempt": 1,
+      "providerElapsedSeconds": 0.035253
+    },
+    {
+      "poolId": "0xdb922f0619e11b0c1e6c3a142798f0243060b8a4331ea4f4e7de80e898cc02e7",
+      "selector": "0xab35d04e1ee39c789c4a65d522417b3c7f2e4723",
+      "url": "https://api.geckoterminal.com/api/v2/networks/robinhood/pools/0xdb922f0619e11b0c1e6c3a142798f0243060b8a4331ea4f4e7de80e898cc02e7/ohlcv/hour?aggregate=1&limit=24&currency=usd&token=0xab35d04e1ee39c789c4a65d522417b3c7f2e4723",
+      "httpStatus": "200",
+      "transportExit": 0,
+      "recordedAt": "2026-09-12T17:27:13.004735+00:00",
+      "attempt": 2,
+      "providerElapsedSeconds": 0.557583,
+      "responseSha256": "d692a760e14ade007288144ae255c7e0811fb44956c39961ec42e8d882ad25c6",
+      "observedRoles": {
+        "base": "0xab35d04e1ee39c789c4a65d522417b3c7f2e4723",
+        "quote": "0x5fc5360d0400a0fd4f2af552add042d716f1d168"
+      },
+      "rawCandleCount": 24,
+      "parserStatus": "rejected",
+      "parserError": "invalid_market_candles",
+      "diagnostic": {
+        "reason": "duplicate_timestamp",
+        "rowIndex": 22,
+        "field": "timestamp"
+      },
+      "offlineParserElapsedSeconds": 0.000162
+    },
+    {
+      "poolId": "0xdb922f0619e11b0c1e6c3a142798f0243060b8a4331ea4f4e7de80e898cc02e7",
+      "selector": "0x5fc5360d0400a0fd4f2af552add042d716f1d168",
+      "url": "https://api.geckoterminal.com/api/v2/networks/robinhood/pools/0xdb922f0619e11b0c1e6c3a142798f0243060b8a4331ea4f4e7de80e898cc02e7/ohlcv/hour?aggregate=1&limit=24&currency=usd&token=0x5fc5360d0400a0fd4f2af552add042d716f1d168",
+      "httpStatus": "200",
+      "transportExit": 0,
+      "recordedAt": "2026-09-12T17:27:14.278912+00:00",
+      "attempt": 2,
+      "providerElapsedSeconds": 1.273076,
+      "responseSha256": "2b37fd98d1ac7566a74fac5e96b31828be1e317e4a20ee1545a87bca23cf0981",
+      "observedRoles": {
+        "base": "0x5fc5360d0400a0fd4f2af552add042d716f1d168",
+        "quote": "0xab35d04e1ee39c789c4a65d522417b3c7f2e4723"
+      },
+      "rawCandleCount": 24,
+      "parserStatus": "rejected",
+      "parserError": "invalid_market_candles",
+      "diagnostic": {
+        "reason": "duplicate_timestamp",
+        "rowIndex": 22,
+        "field": "timestamp"
+      },
+      "offlineParserElapsedSeconds": 0.000141
+    },
+    {
+      "poolId": "0xdb922f0619e11b0c1e6c3a142798f0243060b8a4331ea4f4e7de80e898cc02e7",
+      "selector": "quote",
+      "url": "https://api.geckoterminal.com/api/v2/networks/robinhood/pools/0xdb922f0619e11b0c1e6c3a142798f0243060b8a4331ea4f4e7de80e898cc02e7/ohlcv/hour?aggregate=1&limit=24&currency=usd&token=quote",
+      "httpStatus": "200",
+      "transportExit": 0,
+      "recordedAt": "2026-09-12T17:27:14.916156+00:00",
+      "attempt": 2,
+      "providerElapsedSeconds": 0.636149,
+      "responseSha256": "8dfe4258c936a6ac7d9b582fe572414e8fc8b2f0ccf79620d2759108b6fd6f0c",
+      "observedRoles": {
+        "base": "0x5fc5360d0400a0fd4f2af552add042d716f1d168",
+        "quote": "0xab35d04e1ee39c789c4a65d522417b3c7f2e4723"
+      },
+      "rawCandleCount": 24,
+      "parserStatus": "rejected",
+      "parserError": "invalid_market_candles",
+      "diagnostic": {
+        "reason": "duplicate_timestamp",
+        "rowIndex": 22,
+        "field": "timestamp"
+      },
+      "offlineParserElapsedSeconds": 0.000133
+    },
+    {
+      "poolId": "0xdb922f0619e11b0c1e6c3a142798f0243060b8a4331ea4f4e7de80e898cc02e7",
+      "selector": "0x5fc5360d0400a0fd4f2af552add042d716f1d168",
+      "url": "https://api.geckoterminal.com/api/v2/networks/robinhood/pools/0xdb922f0619e11b0c1e6c3a142798f0243060b8a4331ea4f4e7de80e898cc02e7/ohlcv/hour?aggregate=1&limit=24&currency=usd&token=0x5fc5360d0400a0fd4f2af552add042d716f1d168&before_timestamp=1789146000",
+      "httpStatus": "200",
+      "transportExit": 0,
+      "recordedAt": "2026-09-12T17:27:58.769610+00:00",
+      "attempt": 1,
+      "providerElapsedSeconds": 1.351952,
+      "beforeTimestamp": 1789146000,
+      "responseSha256": "99633c6ec428019d39b79aea8f31cda73c3644e45f95c6912bf1ac9676978353",
+      "observedRoles": {
+        "base": "0x5fc5360d0400a0fd4f2af552add042d716f1d168",
+        "quote": "0xab35d04e1ee39c789c4a65d522417b3c7f2e4723"
+      },
+      "rawCandleCount": 24,
+      "parserStatus": "rejected",
+      "parserError": "invalid_market_candles",
+      "diagnostic": {
+        "reason": "duplicate_timestamp",
+        "rowIndex": 21,
+        "field": "timestamp"
+      },
+      "offlineParserElapsedSeconds": 0.000132
+    }
+  ]
+}
