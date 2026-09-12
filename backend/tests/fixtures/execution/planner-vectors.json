@@ -1,0 +1,181 @@
+{
+  "cases": [
+    {
+      "expected": {
+        "action": "compound_self",
+        "grossConsumed": [
+          999,
+          999
+        ],
+        "liquidityIncrease": 163831,
+        "netAdded": [
+          980,
+          980
+        ],
+        "operatorBufferedCostQuote": 4,
+        "ownerNetBenefitQuote": 632,
+        "serviceCut": [
+          19,
+          19
+        ]
+      },
+      "feeIncrementPer600SecondsPerCurrency": 100,
+      "name": "direct_max",
+      "setup": {
+        "amounts": [
+          1000,
+          1000
+        ],
+        "reverse": false,
+        "trigger": 0
+      }
+    },
+    {
+      "expected": {
+        "action": "compound_self",
+        "grossConsumed": [
+          625,
+          625
+        ],
+        "liquidityIncrease": 102394,
+        "netAdded": [
+          613,
+          613
+        ],
+        "operatorBufferedCostQuote": 4,
+        "ownerNetBenefitQuote": 30,
+        "serviceCut": [
+          12,
+          12
+        ]
+      },
+      "feeIncrementPer600SecondsPerCurrency": 10,
+      "name": "direct_partial",
+      "setup": {
+        "amounts": [
+          10000,
+          10000
+        ],
+        "reverse": false,
+        "trigger": 0
+      }
+    },
+    {
+      "expected": {
+        "action": "wait",
+        "grossConsumed": [
+          0,
+          0
+        ],
+        "liquidityIncrease": 0,
+        "netAdded": [
+          0,
+          0
+        ],
+        "operatorBufferedCostQuote": 0,
+        "ownerNetBenefitQuote": 0,
+        "serviceCut": [
+          0,
+          0
+        ]
+      },
+      "feeIncrementPer600SecondsPerCurrency": 0,
+      "name": "low_fees",
+      "setup": {
+        "amounts": [
+          1000,
+          1000
+        ],
+        "reverse": false,
+        "trigger": 0
+      }
+    },
+    {
+      "expected": {
+        "action": "compound_self",
+        "grossConsumed": [
+          999,
+          999
+        ],
+        "liquidityIncrease": 163831,
+        "netAdded": [
+          980,
+          980
+        ],
+        "operatorBufferedCostQuote": 4,
+        "ownerNetBenefitQuote": 632,
+        "serviceCut": [
+          19,
+          19
+        ]
+      },
+      "feeIncrementPer600SecondsPerCurrency": 100,
+      "name": "reversed",
+      "setup": {
+        "amounts": [
+          1000,
+          1000
+        ],
+        "reverse": true,
+        "trigger": 0
+      }
+    },
+    {
+      "expected": {
+        "action": "create_domino",
+        "grossConsumed": [
+          999,
+          0
+        ],
+        "liquidityIncrease": 5414,
+        "netAdded": [
+          980,
+          0
+        ],
+        "operatorBufferedCostQuote": 4,
+        "ownerNetBenefitQuote": 535,
+        "serviceCut": [
+          19,
+          0
+        ]
+      },
+      "feeIncrementPer600SecondsPerCurrency": 1000,
+      "name": "successor",
+      "setup": {
+        "amounts": [
+          1000,
+          1000
+        ],
+        "reverse": false,
+        "trigger": 500
+      }
+    }
+  ],
+  "fixtureConstructor": "backend/tests/test_execution_planner.py:setup/history/evidence",
+  "settings": {
+    "forecastHaircutBps": 0,
+    "liquidityFractionChoicesBps": [
+      625,
+      1250,
+      2500,
+      5000,
+      10000
+    ],
+    "maximumForecastSeconds": 3600,
+    "maximumMeasurementSeconds": 7200,
+    "maximumSampleAgeSeconds": 120,
+    "minimumOwnerBenefitQuote": 0,
+    "minimumSampleSeconds": 1200,
+    "minimumSamples": 3,
+    "operatorCostBufferBps": 1500,
+    "overlapChoicesBps": [
+      0,
+      500,
+      2000
+    ],
+    "serviceRealizationBps": 10000,
+    "version": "0x0000000000000000000000000000000000000000000000000000000000000320"
+  },
+  "syntheticOnly": true,
+  "version": "e3-offline-review-1"
+}
