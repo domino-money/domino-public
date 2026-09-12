@@ -1,4 +1,4 @@
-import { Button, Card, Display } from '../components/ui'
+import { Card, Display } from '../components/ui'
 
 /**
  * Your positions, in the invited read-only alpha.
@@ -28,14 +28,12 @@ export function Dashboard() {
         </a>
       </Card>
 
-      <Card level={2} className="mt-5 flex flex-wrap items-center justify-between gap-4 p-4 md:px-5">
-        <div>
-          <h2 className="text-[14px] font-medium">Connect a wallet to see your positions</h2>
-          <p className="mt-0.5 text-[12px] text-fg-muted">Wallet sign-in comes only after its own acceptance. Nothing on this page asks your wallet for anything.</p>
-        </div>
-        <Button variant="outline" disabled title="Wallet connection is not implemented yet">
-          Connect wallet
-        </Button>
+      <Card level={2} className="mt-5 p-4 md:px-5">
+        <h2 className="text-[14px] font-medium">Connect a wallet to see your positions</h2>
+        <p className="mt-0.5 text-[12px] text-fg-muted">
+          Sign in with the wallet control at the top of the page. It only proves you control an address: nothing here asks your wallet to
+          approve, send or sign anything else.
+        </p>
       </Card>
     </main>
   )

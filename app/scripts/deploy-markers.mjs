@@ -56,13 +56,23 @@ export function findForbidden(text, limit = 3) {
   return found
 }
 
-/** The keys a deployable mode is made of. Any other key must be off: false, absent, null, zero or empty. */
-const MODE_KEYS = new Set(['read', 'pools', 'deployable', 'outDir', 'lab'])
+/**
+ * The keys a deployable mode is made of. Any other key must be off: false,
+ * absent, null, zero or empty.
+ *
+ * `wallet` joined them when wallet sign-in shipped: the deployed build carries
+ * the feature, so it is a legitimate part of a deployable mode rather than a
+ * test flag. `testHooks` deliberately did not: it stays outside this set, so a
+ * deployable mode that switches it on is refused by the loop below, and the
+ * FORBIDDEN list above refuses a bundle that so much as names it.
+ */
+const MODE_KEYS = new Set(['read', 'pools', 'deployable', 'outDir', 'lab', 'wallet'])
 
 /**
  * Throws unless a deployable mode reads live through the bridge, from the
  * reviewed pool selection, builds no lab, and switches nothing else on: no
- * test hooks, preview, deposit lab, wallet test or any flag a later mode adds.
+ * test hooks, no preview, no deposit lab, no flag a later mode adds. Wallet
+ * sign-in is part of what deploys and so is allowed; its test hooks are not.
  */
 export function assertDeployable(mode, row) {
   const problems = []

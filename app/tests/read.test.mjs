@@ -2182,7 +2182,7 @@ test('no private API path, no signing or value transfer, no markup injection, no
       /\/v1\/read\//,
       /:8876/,
       /127\.0\.0\.1/,
-      /eth_sendTransaction|eth_sendRawTransaction|writeContract|sendCalls|personal_sign|eth_signTypedData|\.approve\(/,
+      /eth_sendTransaction|eth_sendRawTransaction|writeContract|sendCalls|eth_signTypedData|\.approve\(/,
       /dangerouslySetInnerHTML|innerHTML/,
       /\.sourceUrl\b/,
     ]) {
@@ -2190,8 +2190,22 @@ test('no private API path, no signing or value transfer, no markup injection, no
     }
   }
   assert.deepEqual(found, []);
+
+  // The one signature this app ever asks a wallet for is the SIWE login
+  // message, and only the wallet port may name it. It is not in the list
+  // above because, unlike every method there, it moves nothing: it proves an
+  // address is controlled and authorises no transfer, approval or call.
+  const signers = sources()
+    .filter((file) => /personal_sign/.test(readFileSync(file, 'utf8')))
+    .map((file) => file.slice(SRC.length).replace(/\\/g, '/'));
+  assert.deepEqual(signers, ['/wallet/port.ts'], 'only the wallet port may name the login signature');
+
+  // Two clients reach the network, each to its own family on this origin: the
+  // read adapter through /api/read/v1/, and the session client through
+  // /api/session/v1/. A third thing that fetches is a path nobody reviewed,
+  // which is what this guard exists to catch.
   const fetchers = sources().filter((file) => /\bfetch\(/.test(readFileSync(file, 'utf8'))).map((file) => file.slice(SRC.length).replace(/\\/g, '/'));
-  assert.deepEqual(fetchers, ['/lib/read/bridgeSource.ts'], 'the bridge source is the only thing that fetches');
+  assert.deepEqual(fetchers, ['/lib/read/bridgeSource.ts', '/wallet/session.ts'], 'only the read adapter and the session client fetch');
 });
 
 test('no source file carries a control character, so git and review see it as text', () => {

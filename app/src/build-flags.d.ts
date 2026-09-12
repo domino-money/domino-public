@@ -12,3 +12,15 @@ declare const __DOMINO_READ_MODE__: 'fixture' | 'bridge'
 declare const __DOMINO_DEPLOYABLE__: boolean
 /** The pools the bridge reads: the reviewed selection, or the package fixture pool a local stub serves. */
 declare const __DOMINO_POOL_SET__: 'selected' | 'fixture'
+/**
+ * Wallet sign-in: EIP-6963 discovery and a SIWE session against session-v1.
+ * True in the deployable modes and in wallet-test; the feature is one lazy
+ * chunk, so a build without it emits no wallet code at all.
+ */
+declare const __DOMINO_WALLET_SESSION__: boolean
+/**
+ * The probes the wallet browser tests drive. True in wallet-test only: a
+ * deployable build folds this to false, and scripts/deploy-markers.mjs
+ * refuses any bundle that still names it.
+ */
+declare const __DOMINO_TEST_HOOKS__: boolean

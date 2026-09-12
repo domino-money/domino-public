@@ -38,22 +38,28 @@ const reactDomRoot = here('./node_modules/react-dom')
  *                             plus the read lab (read-lab.html)
  *   bridge-test               the bridge source, for the package fixture pool
  *                             a local stub serves
+ *   wallet-test               the same, plus the wallet session's test probes,
+ *                             for the browser tests' fake session service
+ *
+ * Wallet sign-in itself is not a mode: the deployable modes carry it, because
+ * it is part of what the site does. Only its probes are a mode of their own.
  *
  * Only a deployable mode may write to dist, which is what Pages deploys; the
  * guard below refuses any other there. No mode has sample data: there is none.
  */
 const MODES = {
-  production: { read: 'bridge', pools: 'selected', deployable: true, outDir: 'dist', lab: false },
-  development: { read: 'bridge', pools: 'selected', deployable: true, outDir: 'dist', lab: false },
-  fixtures: { read: 'fixture', pools: 'fixture', deployable: false, outDir: '.fixture-dist', lab: true },
-  'bridge-test': { read: 'bridge', pools: 'fixture', deployable: false, outDir: '.bridge-dist', lab: false },
+  production: { read: 'bridge', pools: 'selected', deployable: true, outDir: 'dist', lab: false, wallet: true, testHooks: false },
+  development: { read: 'bridge', pools: 'selected', deployable: true, outDir: 'dist', lab: false, wallet: true, testHooks: false },
+  fixtures: { read: 'fixture', pools: 'fixture', deployable: false, outDir: '.fixture-dist', lab: true, wallet: false, testHooks: false },
+  'bridge-test': { read: 'bridge', pools: 'fixture', deployable: false, outDir: '.bridge-dist', lab: false, wallet: false, testHooks: false },
+  'wallet-test': { read: 'bridge', pools: 'fixture', deployable: false, outDir: '.wallet-test-dist', lab: false, wallet: true, testHooks: true },
 } as const
 
 // Every deployable row is checked whichever mode is built, so a production row
 // that reads fixtures fails the fixture build too, not only its own. What a
-// deployable mode may never be is in scripts/deploy-markers.mjs. Later modes
-// (#70's wallet session, #72's deposit preview) must keep their test flags off
-// in these rows, and __DOMINO_TEST_HOOKS__ separate from __DOMINO_WALLET_SESSION__.
+// deployable mode may never be is in scripts/deploy-markers.mjs. The wallet
+// session is now part of a deployable row; its test hooks are not, and are
+// kept a separate flag precisely so a deployable row cannot carry them.
 for (const [name, row] of Object.entries(MODES)) {
   if (row.deployable) assertDeployable(name, row)
 }
@@ -159,7 +165,7 @@ function deployableBundleCheck(mode: string, deployable: boolean): Plugin {
 
 export default defineConfig(({ mode }) => {
   if (!Object.hasOwn(MODES, mode)) {
-    throw new Error(`Unknown mode "${mode}". Use production, development, fixtures or bridge-test.`)
+    throw new Error(`Unknown mode "${mode}". Use production, development, fixtures, bridge-test or wallet-test.`)
   }
   const settings = MODES[mode as keyof typeof MODES]
   return {
@@ -168,6 +174,11 @@ export default defineConfig(({ mode }) => {
       __DOMINO_READ_MODE__: JSON.stringify(settings.read),
       __DOMINO_POOL_SET__: JSON.stringify(settings.pools),
       __DOMINO_DEPLOYABLE__: JSON.stringify(settings.deployable),
+      // Wallet sign-in ships; its probes do not. Both are literals, so the
+      // chunk behind the first is emitted only where it is true, and the code
+      // behind the second disappears from every build but wallet-test.
+      __DOMINO_WALLET_SESSION__: JSON.stringify(settings.wallet),
+      __DOMINO_TEST_HOOKS__: JSON.stringify(settings.testHooks),
     },
     resolve: {
       dedupe: ['react', 'react-dom', 'react/jsx-runtime', 'react/jsx-dev-runtime'],

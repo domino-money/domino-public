@@ -12,7 +12,7 @@
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview",
     "test": "node scripts/test.mjs",
-    "test:render": "node --test tests/page-watch.test.mjs tests/render.test.mjs",
+    "test:render": "node --test tests/page-watch.test.mjs tests/render.test.mjs && npm run test:session",
     "typecheck": "tsc --noEmit",
     "lint": "oxlint src functions",
     "test:gate": "node --test tests/gate.browser.test.mjs tests/release.browser.test.mjs && npm run test:read",
@@ -23,11 +23,16 @@
     "release:build": "npm run build && node scripts/release.mjs record",
     "release:verify": "node scripts/release.mjs verify",
     "deploy:preview": "node scripts/release.mjs deploy preview",
-    "deploy": "node scripts/release.mjs deploy production"
+    "deploy": "node scripts/release.mjs deploy production",
+    "build:wallet-test": "vite build --mode wallet-test",
+    "test:session": "npm run build:wallet-test && node --test tests/session.bundle.test.mjs tests/session.browser.test.mjs"
   },
   "dependencies": {
+    "@tanstack/react-query": "^5.102.8",
     "react": "19.2.8",
-    "react-dom": "19.2.8"
+    "react-dom": "19.2.8",
+    "viem": "^2.56.3",
+    "wagmi": "^3.7.7"
   },
   "devDependencies": {
     "@tailwindcss/vite": "4.2.1",

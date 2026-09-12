@@ -1,5 +1,21 @@
-import { useEffect, useState } from 'react'
+import { lazy, Suspense, useEffect, useState } from 'react'
 import { Button, cx } from './ui'
+import { WalletBoundary } from './wallet/WalletBoundary'
+
+// The wallet session is one lazy chunk, reached only through this constant.
+// Where it is false the bundler drops the import and no wallet code is
+// emitted at all. The condition is the defined identifier itself rather than
+// a re-export of it, so the bundler folds it for certain.
+const WalletSession = __DOMINO_WALLET_SESSION__ ? lazy(() => import('./wallet/WalletSessionIsland')) : null
+
+/** Shown while the feature loads, or if it fails to. */
+function DisabledConnect({ title }: { title: string }) {
+  return (
+    <Button variant="outline" disabled title={title} className="whitespace-nowrap">
+      Connect wallet
+    </Button>
+  )
+}
 
 function Wordmark() {
   return (
@@ -65,10 +81,20 @@ export function Header({ route }: { route: string }) {
         </nav>
 
         <div className="flex shrink-0 items-center gap-2.5">
-          {/* As on the base: disabled on every route. Wallet sign-in is a separate, later change with its own acceptance. */}
-          <Button variant="outline" disabled title="Wallet connection is not implemented yet" className="whitespace-nowrap">
-            Connect wallet
-          </Button>
+          {/* One expression, so a build without the feature folds to exactly
+              the disabled control the header had before it. */}
+          {__DOMINO_WALLET_SESSION__ && WalletSession ? (
+            // Mounted on every route, so the session it holds and its status
+            // announcements survive navigation. On the landing it renders only
+            // its live region.
+            <WalletBoundary fallback={route === '/' ? null : <DisabledConnect title="Wallet sign-in could not load. Reload the page to try again." />}>
+              <Suspense fallback={route === '/' ? null : <DisabledConnect title="Loading wallet sign-in" />}>
+                <WalletSession />
+              </Suspense>
+            </WalletBoundary>
+          ) : (
+            <DisabledConnect title="Wallet connection is not implemented yet" />
+          )}
         </div>
       </div>
     </header>

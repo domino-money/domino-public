@@ -15,6 +15,24 @@ writeFileSync('.test-build/package.json', JSON.stringify({ type: 'commonjs' }));
 
 execFileSync(
   process.execPath,
-  ['--test', 'tests/domain.test.mjs', 'tests/gate.test.mjs', 'tests/read.test.mjs', 'tests/contract-pin.test.mjs', 'tests/backend-contract.test.mjs', 'tests/build-guard.test.mjs', 'tests/forwarder.test.mjs', 'tests/release.test.mjs'],
+  [
+    '--test',
+    'tests/domain.test.mjs',
+    'tests/gate.test.mjs',
+    'tests/read.test.mjs',
+    'tests/contract-pin.test.mjs',
+    'tests/backend-contract.test.mjs',
+    'tests/build-guard.test.mjs',
+    'tests/forwarder.test.mjs',
+    'tests/release.test.mjs',
+    'tests/session.api.test.mjs',
+    'tests/session.siwe.test.mjs',
+    'tests/session.machine.test.mjs',
+    'tests/session.controller.test.mjs',
+    'tests/session.refresh.test.mjs',
+    'tests/session.privateQuery.test.mjs',
+    'tests/session.forwarder.test.mjs',
+    'tests/session.source-guard.test.mjs',
+  ],
   { stdio: 'inherit' },
 );

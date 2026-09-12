@@ -480,9 +480,15 @@ test('the landing asks the capabilities once and posts nothing when live data is
   ]);
 });
 
-test('the deployable build carries the live read path and the selected pools, nothing of the fixture pipeline, in one script', () => {
+test('the deployable build carries the live read path and the selected pools, nothing of the fixture pipeline, in the entry and the wallet chunk', () => {
   const scripts = readdirSync(join(DIST, 'assets')).filter((file) => file.endsWith('.js'));
-  assert.equal(scripts.length, 1, `one bundle, no lazily loaded chunks: ${scripts.join(', ')}`);
+  const entry = scripts.filter((file) => file.startsWith('index-'));
+  const island = scripts.filter((file) => file.startsWith('WalletSessionIsland-'));
+  // Wallet sign-in is the one lazily loaded chunk: a visitor who never opens
+  // it never downloads it. Anything else split out is a chunk nobody asked for.
+  assert.equal(entry.length, 1, `one entry: ${scripts.join(', ')}`);
+  assert.equal(island.length, 1, `one wallet chunk: ${scripts.join(', ')}`);
+  assert.equal(scripts.length, 2, `no other chunk: ${scripts.join(', ')}`);
   const code = scripts.map((file) => readFileSync(join(DIST, 'assets', file), 'utf8')).join('\n');
   for (const marker of ['/api/read/v1', 'X-Domino-Read-Contract', 'assertResponse', ...SELECTED]) {
     assert.equal(code.includes(marker), true, `dist lacks ${marker}`);
@@ -517,12 +523,18 @@ test('Settings reports signing and wallet funding off and live reads built in, s
   await close(page);
 });
 
-test('Connect wallet stays disabled on every route, no route mentions practice, and only the appearance is stored', async () => {
+test('the wallet control is on every route and ready, no route mentions practice, and only the appearance is stored', async () => {
   for (const route of ['/', '/app', '/settings']) {
     const page = await open(route);
+    // No wallet is injected in this suite, so the control invites one. It is
+    // enabled: sign-in is built into the deployed site now, and opening it
+    // signs nothing (tests/session.browser.test.mjs drives the flow itself).
+    // One way in, in the header, on every route: a second control would leave
+    // the reader guessing which one signs them in.
     const buttons = await page.getByRole('button', { name: 'Connect wallet' }).all();
-    assert.ok(buttons.length >= 1, `no Connect wallet on ${route}`);
-    for (const button of buttons) assert.equal(await button.isDisabled(), true, `Connect wallet is enabled on ${route}`);
+    assert.equal(buttons.length, 1, `expected one Connect wallet on ${route}, found ${buttons.length}`);
+    assert.equal(await buttons[0].isDisabled(), false, `Connect wallet is disabled on ${route}`);
+    assert.equal(await page.locator('header').getByRole('button', { name: 'Connect wallet' }).count(), 1, `the control is not in the header on ${route}`);
     assert.doesNotMatch(await page.locator('#root').innerText(), /practice/i, `practice on ${route}`);
     await page.getByRole('button', { name: /Switch to (light|dark) appearance/ }).click();
     assert.deepEqual(await page.evaluate(() => Object.keys(localStorage)), ['domino-appearance'], `${route} stored something besides the appearance`);

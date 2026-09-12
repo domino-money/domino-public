@@ -36,6 +36,12 @@
     "src/lib/read/pagers.ts",
     "src/lib/read/marketsProvider.ts",
     "src/lib/read/deferredMarkets.ts",
-    "src/config/selectedPools.ts"
+    "src/config/selectedPools.ts",
+    "src/session/api.ts",
+    "src/session/errors.ts",
+    "src/session/siwe.ts",
+    "src/session/machine.ts",
+    "src/session/controller.ts",
+    "src/session/privateQuery.ts"
   ]
 }
