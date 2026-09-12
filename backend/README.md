@@ -1,5 +1,10 @@
 # Backend foundation
 
+[Execution policy](../docs/EXECUTION_POLICY.md) supersedes historical owner, ACK
+and approval procedures here. Any authorized collaborator or agent may implement
+and operate within scope, recording results alongside or after execution.
+Technical controls, compatibility evidence and wallet consent still apply.
+
 The [E1 hardening boundary](../reports/EXECUTION_E1_HARDENING.md) supplies strict
 derived-record/JSON validation and offline plan/effect reconciliation for future
 executor work. Its observations and measurements remain caller-supplied; no
@@ -39,8 +44,9 @@ paths have observed successful mints; the report preserves unsupported and
 intermittent single-asset cases. That qualification used test-only proxy assumptions. Nitro
 receipt accounting uses gross gas with an included poster component and unknown
 net total. This is a coordinated pre-release `deposit-v1` migration, requiring
-consumer acknowledgment before integration. The qualification CLI is separate
-from every public listener and from offline CI.
+producer/consumer compatibility validation and a notice alongside or after
+delivery. The qualification CLI is separate from every public listener and
+from offline CI.
 
 Issue #44 adds [reviewed-token admission](../docs/REVIEWED_TOKEN_ADMISSION.md)
 for immutable tokens and ERC-1967 transparent/UUPS proxies. WETH/USDG have dated
@@ -49,7 +55,8 @@ receipt identity checks. USDG payout-group accounts are outside the initial
 profile. [Current implementation evidence](../reports/UPGRADEABLE_ADMISSION_IMPLEMENTATION.md)
 records four observed fork paths using the actual reviewed profiles and preserves
 provider/read failures. The helper only creates a private candidate file; all
-services remain disabled, with consumer acknowledgment and release gates pending.
+services remain disabled in this candidate, with consumer validation and
+technical release evidence pending. No named collaborator's ACK is required.
 
 API 0.8.0 follows the [MVP data strategy](../MVP_DATA_STRATEGY.md): read indexed
 market data on demand and keep exact historical reconstruction optional for

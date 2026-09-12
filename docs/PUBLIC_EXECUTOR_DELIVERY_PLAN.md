@@ -1,5 +1,7 @@
 # Public executor delivery plan
 
+Process update, 12 September 2026: [EXECUTION_POLICY.md](EXECUTION_POLICY.md) supersedes this plan's historical ownership, issue/PR and approval sequence. All authorized collaborators may execute any work package, including its consumers and deployment. Use the technical dependencies below; planning is not a prerequisite to useful implementation.
+
 11 September 2026 · reviewed ordering in #84; E1 implementation candidate in [execution-v1](execution-v1.md) · source baseline `69359d28c88564dd47d2446f606972df2b88ff8e`
 
 Build the public executor in seven independently reviewable work packages, starting with an offline sequence/action/accounting contract. None requires the Cloudflare Tunnel token. Real activation still requires the existing financial evidence gates; starting the backend or accepting a wallet session cannot activate automation.
@@ -20,11 +22,11 @@ This plan implements the ordering requested after the development-status review.
 
 No personal-bot module or runtime is imported. Public code is the implementation starting point; the assessment preserves the already authorized source provenance.
 
-## Backlog ownership and ordering
+## Shared backlog and technical dependencies
 
-Proposed implementation lead for E1–E7: **rugged97**, backend/contracts/integration. **OxDecimal** reviews the financial/API boundary independently and owns subsequent frontend consumers. File access remains shared. Publish one issue per work package only after checking current assignments; the local IDs here are not GitHub issue numbers. Split a package into smaller PRs when its acceptance boundary requires it.
+Any authorized collaborator or agent may implement E1–E7, their frontend consumers and operational integration. There is no fixed implementer or reviewer. Reuse existing work and technical interfaces; issues and PRs are optional records, not prerequisites. Split work only when that helps deliver useful progress.
 
-The initial inventory contained no public-executor implementation issue. This plan is now tracked in [#84](https://github.com/domino-money/domino/pull/84), with E1–E7 in [#85](https://github.com/domino-money/domino/issues/85), [#86](https://github.com/domino-money/domino/issues/86), [#87](https://github.com/domino-money/domino/issues/87), [#88](https://github.com/domino-money/domino/issues/88), [#89](https://github.com/domino-money/domino/issues/89), [#90](https://github.com/domino-money/domino/issues/90) and [#91](https://github.com/domino-money/domino/issues/91), respectively. Their dependencies govern integrated completion; creating them does not start every package. [#6](https://github.com/domino-money/domino/issues/6) is closed and delivered the migration assessment only. Keep existing work in its own issues: [#4](https://github.com/domino-money/domino/issues/4) price qualification, [#5](https://github.com/domino-money/domino/issues/5) bridge, [#14](https://github.com/domino-money/domino/issues/14) wallet consumer, [#49](https://github.com/domino-money/domino/issues/49) wallet admission and [#45](https://github.com/domino-money/domino/issues/45) integration/deployment. Frontend issues #2/#3/#13 and PRs #70–#72 remain Decimal's work; do not duplicate them as executor issues.
+The initial inventory contained no public-executor implementation issue. This plan is now tracked in [#84](https://github.com/domino-money/domino/pull/84), with E1–E7 in [#85](https://github.com/domino-money/domino/issues/85), [#86](https://github.com/domino-money/domino/issues/86), [#87](https://github.com/domino-money/domino/issues/87), [#88](https://github.com/domino-money/domino/issues/88), [#89](https://github.com/domino-money/domino/issues/89), [#90](https://github.com/domino-money/domino/issues/90) and [#91](https://github.com/domino-money/domino/issues/91), respectively. Their dependencies govern integrated completion; creating them does not start every package. [#6](https://github.com/domino-money/domino/issues/6) is closed and delivered the migration assessment only. Keep existing work in its own issues: [#4](https://github.com/domino-money/domino/issues/4) price qualification, [#5](https://github.com/domino-money/domino/issues/5) bridge, [#14](https://github.com/domino-money/domino/issues/14) wallet consumer, [#49](https://github.com/domino-money/domino/issues/49) wallet admission and [#45](https://github.com/domino-money/domino/issues/45) integration/deployment. Reuse frontend issues #2/#3/#13 and PRs #70–#72 without duplicating them; their historical author does not reserve the area.
 
 | Order | Work package and concrete output | Depends on | Completion evidence |
 | --- | --- | --- | --- |
@@ -44,11 +46,11 @@ E1 turns the following candidate into strict internal models and reproducible fi
 
 The increment must supply valid self/redirect/mint/wait fixtures plus negative cases, a canonical encoding/hash specification with cross-language golden vectors, and a separate transition/conservation oracle that does not merely reproduce the implementation. Include both native/erc20 currency identities, reversed token ordering, multiple owners, two sequences owned by one wallet and source/destination cross-links. It needs no VM, Cloudflare, provider credential, transaction, signer or production SQL migration.
 
-E1's model review must resolve the candidate details called out below before downstream code relies on them. Numeric gas/exposure/sequence caps and economic horizons remain named **unselected** release settings; fixture values are synthetic and never become implicit deployment defaults.
+Resolve the candidate model details in the implementation before downstream code relies on them; no separate reviewer reply is needed. Numeric gas/exposure/sequence caps and economic horizons remain named **unselected** release settings; fixture values are synthetic and never become implicit deployment defaults.
 
 ## Candidate internal data contract
 
-**Status: proposed semantics, not a published API or final Solidity ABI.** Preserve existing field names when referencing existing contracts: `PoolKeyModel` uses `currency0`, `currency1`, `fee_pips`, `tick_spacing`, `hooks`; the draft policy uses `serviceFeeBps`, `triggerDistanceBps`, `maxOverlapBps`, `minimumIntervalSeconds`, `maxPositions`, `version`, `paused`. New browser routes/fields require the separate [compatibility notice and acknowledgement](API_COMPATIBILITY.md).
+**Status: proposed semantics, not a published API or final Solidity ABI.** Preserve existing field names when referencing existing contracts: `PoolKeyModel` uses `currency0`, `currency1`, `fee_pips`, `tick_spacing`, `hooks`; the draft policy uses `serviceFeeBps`, `triggerDistanceBps`, `maxOverlapBps`, `minimumIntervalSeconds`, `maxPositions`, `version`, `paused`. New browser routes/fields require the separate [compatibility notice](API_COMPATIBILITY.md).
 
 ### Sequence and ownership
 
@@ -129,12 +131,12 @@ Use the existing [EX-01–EX-10 checklist and D01–D17 matrix](EXECUTOR_MIGRATI
 | E4 | EX-02 token accounting; EX-03 actual manager paths; EX-04 self/general equivalence; EX-05 gas |
 | E5 | EX-06 recovery and EX-07 signing/application isolation |
 | E6 + E7 | EX-02–EX-06 full Domino/swap behavior and EX-08 recovery after those paths |
-| Integrated setup + public system | Complete remaining EX-01–EX-08 coverage; independent EX-09 audit/remediation; separately authorized EX-10 limited trial |
+| Integrated setup + public system | Complete remaining EX-01–EX-08 coverage; optional EX-09 review/audit with recorded scope; separately authorized EX-10 limited trial |
 
 Review clarifications from #84: E3 supplies price/market assumptions and pure strategy evidence, not EX-03 pinned-fork qualification by itself. E6/E7 also require EX-07 independent typed-plan reconstruction. Frontend recovery controls alone do not close EX-08: owner exits must work with frontend, API, indexer and operator unavailable. E5's exit evidence includes key rotation, on-chain revocation, compromised-key response, documented recovery authority and a bounded gas-funded operator cohort separated from protocol treasury.
 
 E2 review follow-up #101 adds concrete E4/E5 prerequisites: qualify the actual PositionManager's unsubscribe gas cap/callback behavior using the [E2 qualification checklist](PUBLIC_VAULT_E2.md#positionmanager-qualification-before-funding); preserve initial checkpoint preimages; combine immutable base/quote with stored limits for E1 policy hashing; implement a narrow expected-modify context before the vault modifies its own root; and treat current root permission as authoritative even when events or `rootArmed` are stale. Do not infer an approval-history epoch from revoke/reapprove reads. The current custody runtime leaves only 463 bytes below EIP-170, requiring a reviewed refactor/version before financial paths.
 
-**Completion of E1 is a usable implementation handoff. Completion of E4 is an internal compound milestone. Neither is the invited functional alpha.** Freeze exact source/build/deployment/admission identities, reproduce the mapped tests, complete actual offline owner-recovery drills and obtain the specified independent reviews/audit before the financial release gate. Tests or delegated review alone do not close the existing independent-human/audit requirements.
+**Completion of E1 is a usable implementation handoff. Completion of E4 is an internal compound milestone. Neither alone proves the invited functional alpha works.** Record source/build/deployment/admission identities and actual behavior with proportional checks. Review and audit may support this work but are not mandatory human approval gates under EXECUTION_POLICY.md. Do not claim an audit or unperformed recovery test as completed.
 
 No external audit, deployment, production signing or financial trial is scheduled or authorized by this document. E1 and the E2 custody foundation have now been integrated; #99 and #101 preserve their review follow-ups before affected integrations. E3/E5 can advance on reviewed identities without waiting for the Tunnel, while financial activation retains all release gates above.

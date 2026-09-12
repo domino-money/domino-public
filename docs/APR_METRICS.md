@@ -135,6 +135,11 @@ wallet activity. The CLI does not publish its output.
 
 ## Integration work still required
 
+[Execution policy](EXECUTION_POLICY.md) supersedes historical owner, ACK and
+approval procedures here. Any authorized collaborator or agent may implement
+and operate within scope, recording results alongside or after execution.
+Technical controls, compatibility evidence and wallet consent still apply.
+
 1. The executor's forward collector must produce the baseline, canonical fee
    origins and actual receipts (#85/#89). Collect only managed subjects from
    their baseline, not all pool history. Persist idempotently and replay or
@@ -143,7 +148,7 @@ wallet activity. The CLI does not publish its output.
    owner epoch.
 2. Qualify the actual valuation/coverage producer. Caller-supplied `qualified`
    or `canonicality` labels in a synthetic input are not production proof.
-3. Agree the versioned read response with OxDecimal and follow
+3. Implement and validate the versioned producer/consumer response and follow
    [API compatibility](API_COMPATIBILITY.md). No existing route, schema,
    frontend hook, source pin or enablement flag changes here. Proposed consumers
    are #13 pool comparisons and #2 individual/sequence cards; private metrics

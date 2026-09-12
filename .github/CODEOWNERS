@@ -1,13 +1,3 @@
-# Review coordination only. Both administrators can work throughout the repo.
-# Native main rules retain independent review outside the UI fast-path boundary.
-* @rugged97 @OxDecimal
-
-# Small owner presentation changes: no automatic peer-review request.
-# Semantically sensitive/substantial/cross-area edits still require review;
-# see docs/REVIEW_POLICY.md. Keep these exclusions aligned with the ruleset.
-/app/src/styles/tokens.css
-/app/src/components/Header.tsx
-/app/src/components/HeroBackdrop.tsx
-/app/src/components/Footer.tsx
-/app/src/screens/Landing.tsx
-/app/public/tokens/*.svg
+# No exclusive owners or automatic review assignments.
+# Every authorized collaborator may work across the entire repository.
+# Process policy: docs/EXECUTION_POLICY.md (owner decision, 12 September 2026).

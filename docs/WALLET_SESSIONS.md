@@ -194,16 +194,22 @@ using the still-held preauth/CSRF within its ten-minute window, then start a new
 sign-in flow. Do not replay the consumed signature. A storage/RPC failure is
 unavailable, distinct from `session_required`. Unsupported code-bearing wallets
 may still use public reads. See shared safe error fixtures and exact schemas;
-frontend adapter/rendering tests and acknowledgement remain outstanding.
+frontend adapter/rendering tests remain outstanding in this candidate's evidence.
 
 ## Earlier 2.0.0 transition and current admission migration
+
+[Execution policy](EXECUTION_POLICY.md) supersedes historical owner, ACK and
+approval procedures here. Any authorized collaborator or agent may implement
+and operate within scope, recording results alongside or after execution.
+Technical controls, compatibility evidence and wallet consent still apply.
 
 The earlier 2.0.0 candidate kept the family/path `session-v1` and separated GET
 recovery from refresh. The current 3.0.0-rc.2 candidate also requires admitted
 wallets and generation-bound session/challenge state. Deployment must
-remain disabled until the consumer adopts GET recovery plus POST refresh and
-acknowledges the new producer commit/digest. No mixed-version session replicas
-or workers are supported. Before a transition, disable session and authenticated
+remain disabled until the consumer implements GET recovery plus POST refresh
+and matches the new producer commit/digest. Any authorized collaborator may
+complete and validate both sides without another person's ACK. No mixed-version
+session replicas or workers are supported. Before a transition, disable session and authenticated
 preview/deposit ingress, revoke old contexts/challenges/sessions through the
 operator-controlled auth store, and deploy matching producers and consumers.
 Do not merely relabel existing rows: old random CSRF cannot be recovered by GET,
@@ -269,9 +275,10 @@ it independently in each worker or on restart.
 
 Code, synthetic tests and contract fixtures can advance while disabled. They do
 not prove real HTTPS cookies, wallet rendering, Cloudflare/Tunnel framing or
-production database permissions. Before enabling on domino.money, record:
+production database permissions. For domino.money, verify the following and
+record the results alongside or after delivery:
 
-1. Backend and frontend commit/contract digest, consumer acknowledgement and
+1. Backend and frontend commit/contract digest, compatibility evidence and
    actual adapter tests, including multiple wallets/tabs and account/chain changes.
 2. Separate auth Access application/service identity, exact origin/path mapping,
    Tunnel-only loopback ingress and authoritative client-IP/framing tests. No
@@ -283,8 +290,9 @@ production database permissions. Before enabling on domino.money, record:
    cancellation/lost-response handling and failure-mode tests on the frozen build.
 5. Edge, Tunnel, database and error-reporting redaction/retention: no bodies,
    signatures, full addresses, bearer/CSRF tokens or service credentials. Request
-   IDs and fixed statuses are permitted. External security review before public
-   exposure remains a release requirement; these internal reviews are not it.
+   IDs and fixed statuses are permitted. Preserve the security validation
+   scenarios for public exposure. External review may supplement the evidence
+   without becoming a permission gate; internal checks are not an external audit.
 
 Rollback first disables the session Worker and listener, then revokes outstanding
 contexts/sessions with the auth store under operator control. Restore matching

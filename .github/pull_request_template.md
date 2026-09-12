@@ -8,4 +8,4 @@ Which checks ran? Note skipped checks and remaining limitations.
 
 ## Coordination
 
-Link the issue. Call out API, accounting, permission or deployment changes when relevant.
+Optional: link an existing issue and note relevant API, accounting, access or deployment effects. No issue, area-owner ACK or second approval is required; see docs/EXECUTION_POLICY.md.

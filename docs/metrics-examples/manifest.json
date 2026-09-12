@@ -37,7 +37,7 @@
     "backend/managed_performance.py": "38816b9fd58f9f95e311bb0dbda8c73711709a81f68a998f5cc62bb5626ae669",
     "backend/pool_apr.py": "00b37b2645ad72fa2f55e83c9fcfc24791cfc31b2eaffceb82b37a5d212f541f",
     "backend/preview_metrics.py": "06cd8d91ddfdeed7a40950513cc6a718ecf8c3eaef69ca00af761f44d28ed72e",
-    "docs/APR_METRICS.md": "b4920eb386f90498022547a425e16a166e64750f4672a69314703123e9d9f3bc",
+    "docs/APR_METRICS.md": "5408a1e046c951955d6a6a26432b385240430ab6aee4fd05a0a4aae2f73c7e9a",
     "scripts/export-metrics-examples.py": "16c81dbbcc4495d26a527ad8f7e406bdfc90e45e2f54aadd6476b09492efb4ac"
   },
   "status": "internal_review_examples_no_http_route",

@@ -1,5 +1,7 @@
 # Public MVP security specification
 
+Process update, 12 September 2026: [EXECUTION_POLICY.md](docs/EXECUTION_POLICY.md) supersedes mandatory collaborator/owner review and external-audit approval queues. Any authorized collaborator may implement and operate within the task scope. The wallet consent, cryptographic authorization, isolation and accounting requirements below remain technical behavior, not area ownership.
+
 **Draft requirements · 9 September 2026 · Robinhood Chain / Uniswap v4**
 
 This specifies a new public deployment. It is not a claim that the current personal bot satisfies public-service requirements. The existing [internal review](../AUDITORIA_DOMINO_V2.md) provides reusable evidence, not independent certification.
@@ -122,9 +124,9 @@ Maintain a responsible-disclosure channel, contact coverage for incidents, sever
 | Recovery tests | Crash before/after sign and send; duplicate jobs; RPC disagreement; reorg; replacement; backup restore |
 | Application security review | Cross-tenant access; signatures/replay; frontend transaction substitution; admin and signer isolation |
 | Owner recovery drill | Frontend/API/indexer unavailable; owner can stop and recover positions/reserves using the alternate path |
-| Independent audit | Frozen exact source, compiler, deployment pattern and configuration; remediation retested |
+| Optional independent audit | If commissioned: exact source, compiler, deployment pattern, configuration and retested remediation; report only the actual scope |
 | Limited mainnet reconciliation | Every receipt and reserve matches the ledger; real gas limits and alerts operate |
 
-Critical/high findings block public release. Lower-severity findings need documented impact and disposition; economically meaningful exceptions require explicit product decisions. Publish the audit scope, reviewed version, known limitations, verified deployment addresses, and changes since review. An audit does not replace runtime monitoring or guarantee absence of defects.
+Address actual critical/high findings promptly through correction, isolation or rollback; record remaining impact and disposition. Publish the deployed version, known limitations and verified addresses. If an audit was performed, publish its actual scope and changes since review. An external audit is not a procedural prerequisite under the current owner policy and does not replace runtime monitoring or guarantee absence of defects.
 
 Do not reuse personal test counts as proof that public fee collection, multi-user isolation, or remote signing has been verified. Each new authority and money flow needs its own evidence.

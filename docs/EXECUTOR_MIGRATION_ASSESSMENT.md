@@ -131,8 +131,8 @@ they do not rename or replace requirements in the governing specifications.
 - [ ] **EX-06 — Recover durable intents without duplicate effects.** Map to [Security §4](../SECURITY_SPEC.md#4-transactions-chain-reads-and-recovery), the §8 “Recovery tests” row and Alpha D03/D12–D15. Deliver `recovery-matrix.json`, `recovery-tests.log` and `restore-drill.md`: crash at every persistence/sign/send boundary, duplicate workers, fenced leases, signer-wide nonce allocation, ambiguous broadcasts, replacements, RPC disagreement, canonical reorg rollback and database restore. Each case reconciles original intent/hash, one successor and charge-once effects. **Pending.**
 - [ ] **EX-07 — Review signer and application isolation.** Map to [Security §5](../SECURITY_SPEC.md#5-signer-and-application-controls), C02/C06/C07/C10, the §8 “Application security review” row and Alpha D10/D11/D17. Deliver `application-security-review.md` and `isolation-tests.log`: independent typed-plan reconstruction, API/signer separation, real PostgreSQL roles/forced tenant isolation, cross-owner/sequence references, signature replay, CSRF, account/network changes, transaction substitution, admin access and key rotation/revocation. Enumerate supported wallet types and excluded capabilities. **Pending.**
 - [ ] **EX-08 — Demonstrate independent owner recovery.** Map to Security C08, §6, the §8 “Owner recovery drill” row and Alpha D11/D16. Deliver `owner-recovery-drill.md` and `exit-effects.json`: with frontend/API/indexer/operator unavailable, an owner inspects custody/authority and completes pause, withdrawal of tracked reserves/children and root revocation through the alternate interface or verified-contract instructions. Record actual asset/NFT effects, fixed recipients and residual allowances; synthetic exit events are insufficient. **Pending.**
-- [ ] **EX-09 — Obtain independent review, audit and remediation.** Map to the Security §8 “Independent audit” row and Alpha execution qualification. Deliver `reviewer-independence.md`, `audit-report.md`, `findings.json` and `remediation-tests.log`, all tied to EX-01. Scope covers custody, factory/initialization, fees/swaps, signing, isolation and recovery together. Critical/high findings block release; every remaining finding needs impact, disposition and product acceptance where economics change. Apply the independence definition below. **Pending.**
-- [ ] **EX-10 — Reconcile an explicitly authorized limited trial.** Map to [Security §7](../SECURITY_SPEC.md#7-failure-response), the §8 “Limited mainnet reconciliation” row and Alpha invited-functional-alpha acceptance. After EX-01–EX-09 pass and the owner separately authorizes deployment/trial, deliver `activation-decision.md`, `limited-reconciliation.json` and `incident-drill.md`: reviewed exposure/gas/sequence limits, both admitted strategies, verified deployment identity, every actual receipt/reserve/charge, working alerts and rollback/exit procedure. EX-10 must pass before declaring the functional alpha qualified or widening exposure. This pending checklist authorizes no trial. **Pending.**
+- [ ] **EX-09 — Optional independent review/audit and remediation evidence.** If commissioned, record the actual scope, reviewer independence, exact EX-01 revision, findings and retested remediation. No external audit has been completed; this is not a mandatory human dependency under EXECUTION_POLICY.md. Actual findings still need correction, isolation or recorded disposition. **Not performed; optional.**
+- [ ] **EX-10 — Reconcile an explicitly authorized limited trial.** Map to [Security §7](../SECURITY_SPEC.md#7-failure-response), the §8 “Limited mainnet reconciliation” row and Alpha invited-functional-alpha acceptance. Within the current owner-authorized deployment/trial scope, using the applicable EX-01–EX-08 technical evidence, deliver `activation-decision.md`, `limited-reconciliation.json` and `incident-drill.md`: reviewed exposure/gas/sequence limits, both admitted strategies, verified deployment identity, every actual receipt/reserve/charge, working alerts and rollback/exit procedure. EX-10 must pass before declaring the functional alpha qualified or widening exposure. This pending checklist authorizes no trial. **Pending.**
 
 The following mapping covers every required Domino case in `ALPHA_SCOPE.md`;
 EX-04's artifact must preserve these IDs even when one test covers several cases.
@@ -157,42 +157,24 @@ EX-04's artifact must preserve these IDs even when one test covers several cases
 | D16 | Owner withdrawal while service is offline | EX-04, EX-08 |
 | D17 | Isolation of multiple owners and sequences | EX-02, EX-04, EX-07 |
 
-### Reviewer independence and gate closure
+### Evidence, optional review and delivery
 
-For EX-01–EX-08, an independent reviewer is an identified person who did not author
-or implement the reviewed scope and did not produce its original asserted results. Record
-their contribution boundary and conflicts, exact reviewed revision, reproduced
-checks and explicit conclusion. A collaborator may review a scope they did not
-implement; its author cannot approve their own portion. The project owner records
-the gate decision after that review. Delegated agents, a second model run, author
-self-review, a green CI run and approval of this documentation are useful checks
-but do not supply this independent human review or an external audit.
+The owner's [execution-first policy](EXECUTION_POLICY.md), effective 12 September 2026, supersedes the former mandatory non-author human review, external-audit and repeated owner-sign-off process for EX-01–EX-10. Any authorized collaborator may implement, validate, integrate and operate the scoped work without waiting for a named reviewer or another person's ACK.
 
-EX-09 additionally requires a qualified external reviewer or audit provider,
-independent of implementation and deployment operation for the covered scope,
-with disclosed relationships/conflicts and a written scoped report. Contracting
-or paying for review does not waive those disclosures. Reviewers must identify
-unexamined components and remediation they did not retest; no “audited” claim may
-exceed their exact report. No such audit is claimed or completed by this assessment.
+Use the concrete artifacts and mapped technical scenarios to guide proportional verification. Record actual source/compiler/environment, results, skipped coverage and limitations. A missing implementation or failed technical invariant is a real issue to fix; a missing ceremonial signature is not. Keep superseded evidence with its original identifiers and rerun only checks affected by material changes.
 
-A gate remains pending until its concrete artifacts exist, all mapped cases have
-results rather than placeholders, skipped coverage and limitations are resolved
-or explicitly excluded from release scope, the required reviewer signs off, and
-the owner records acceptance against the frozen manifest. Material source,
-compiler, deployment, market or authority changes reopen affected gates. Keep
-superseded evidence with its original identifiers; never update a passed label
-without updating the underlying proof.
+Independent reviews and external audits remain available when useful, including alongside or after implementation. If obtained, record the reviewer, scope, source version, conflicts and unexamined components. Do not label author/subagent/CI checks as an independent human audit, and do not claim an audit beyond its actual report. This assessment claims no completed external audit.
 
-## Staged migration and review deliverables
+## Technical migration reference
 
 | Stage | Bounded deliverable and exit evidence |
 | --- | --- |
-| 1. Freeze and agree semantics | Review this mapping and its source hashes; settle generic price orientation/rounding, sequence membership, fee-lot and swap conservation, owner authority and operational caps. Retain the integrated reviewed policy guards while adding real custody paths; do not call the harness a vault. Preserve upstream notices for any later reviewed port. |
+| 1. Implement consistent semantics | Review this mapping and its source hashes; settle generic price orientation/rounding, sequence membership, fee-lot and swap conservation, owner authority and operational caps. Retain the integrated reviewed policy guards while adding real custody paths; do not call the harness a vault. Preserve upstream notices for any later reviewed port. |
 | 2. Build independent foundations | Public pure planner/math and synthetic fixtures; tenant migrations and durable intents; generic immutable-owner vault/factory with real custody and direct owner exits. Tests cover two owners/sequences before operator execution. Owner-funded setup and fee-only automation use separate typed plans and accounting. |
 | 3. Qualify direct fee-only actions locally | General collect/add and equivalent net self-compound with the consumed-fee cut, current permissions, freshness, exact balances and bounded gas. Integrate the restricted signer and restart/reorg reconciliation using local/fork fixtures. This is an internal compound milestone. |
 | 4. Complete functional-alpha paths | Generic successor reuse/mint and idempotency, independently bounded trigger/overlap, fee-balancing swaps with charge-once lineage and both economic gates; owner-funded swap/mint, advanced initialization and native-ETH recovery. Complete separate positive and rejection cases for every admitted operation. |
-| 5. Independent release qualification | Review/audit the frozen integrated system, remediate, verify deployed code and market/price assumptions, measure route budgets, and rehearse revocation/offline exits and incident recovery. Release scope cannot exceed the paths actually qualified. |
-| 6. Explicit limited activation | After EX-01–EX-09 and separate owner consent, run the bounded EX-10 trial with both strategies and reviewed exposure, gas and sequence budgets. Reconcile every receipt and retain reasoned waiting states. Complete EX-10 before declaring the functional alpha qualified or expanding exposure. |
+| 5. Verify delivered behavior | Verify deployed code and market/price assumptions, measure affected route budgets and check recovery behavior proportionately. Optional review/audit may run alongside delivery. Do not claim qualifications beyond actual evidence. |
+| 6. Explicit limited activation | Within the existing owner-authorized trial scope and applicable technical limits, run the bounded EX-10 trial with both strategies and reviewed exposure, gas and sequence budgets. Reconcile every receipt and retain reasoned waiting states. Complete EX-10 before declaring the functional alpha qualified or expanding exposure. |
 
 This ordering avoids depending on a personal runtime while preserving useful, independently testable strategy behavior. It is a work sequence rather than a delivery-date promise. Public production signing, deployment and customer activation remain separate authorized steps after the specified evidence exists.
 

@@ -1,5 +1,10 @@
 # Public read bridge and wallet sessions
 
+[Execution policy](EXECUTION_POLICY.md) supersedes historical owner, ACK and
+approval procedures here. Any authorized collaborator or agent may implement
+and operate within scope, recording results alongside or after execution.
+Technical controls, compatibility evidence and wallet consent still apply.
+
 Status: read bridge implemented as a disabled candidate for
 [issue #5](https://github.com/domino-money/domino/issues/5), on top of the pending
 backend 0.8.0 candidate. See the [implementation evidence](../reports/READ_BRIDGE_IMPLEMENTATION.md)
@@ -15,8 +20,8 @@ private preferences are a separate capability and do not authorize transactions.
 
 1. Complete the producer/consumer response contract and deterministic fixtures.
 2. Implement and test the read bridge with synthetic upstreams, disabled by default.
-3. Announce the candidate contract and staging switch to OxDecimal, complete the
-   checks below, then enable an invited read-only staging cohort.
+3. Complete the checks below and enable the authorized read-only staging cohort;
+   record the candidate contract and staging switch alongside or after delivery.
 4. Implement wallet sessions in a separate slice before adding private settings.
 
 Steps 1–2 have local implementation and offline evidence. Steps 3–4 remain release/session work. No live swap, mint, automation,
@@ -361,11 +366,11 @@ Alert on contract mismatches, service-auth failures, deadline overruns, exhauste
 provider budget and sustained read failures. Include contract/build IDs in
 deployment audit records. Never page on every routine 429.
 
-The switch to real data is a coordinated release event, even if no field changed.
-OxDecimal receives the contract version/digest, routes, payload fixtures, safe
-error states, affected frontend hooks, deployment target and rollback in advance.
-Record his acknowledgement and both test results on the release PR. All code
-may continue in parallel behind disabled flags while that integration is pending.
+Record a switch to real data even if no field changed: contract version/digest,
+routes, payload fixtures, safe error states, affected frontend hooks, deployment
+target, rollback and producer/consumer test results. Any authorized collaborator
+may integrate both sides and publish that record alongside or after delivery;
+no named consumer acknowledgement or release PR is a permission gate.
 
 Initially enable only the declared read routes for a small invited cohort.
 Rollback disables live reads and renders an explicit unavailable state while

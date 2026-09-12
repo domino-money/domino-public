@@ -170,16 +170,22 @@ host, activate a worker, connect frontend hooks or grant a wallet permission.
 
 ## Consumer coordination
 
-This is another explicit coordinated pre-release migration of the unacknowledged,
+[Execution policy](EXECUTION_POLICY.md) supersedes historical owner, ACK and
+approval procedures here. Any authorized collaborator or agent may implement
+and operate within scope, recording results alongside or after execution.
+Technical controls, compatibility evidence and wallet consent still apply.
+
+This is another explicit coordinated pre-release migration of the
 undeployed `deposit-v1` **1.1.0-rc.4 candidate**, migrated from rc.3. `walletStep.admission.policyVersion`
 accepts `direct_existing_pool_v2`; that policy requires canonical non-native
 `tokenReviews: [{address, reviewId}]`. Legacy v1 has null/absent tokenReviews.
 `ReceiptPosition` adds the two required basis fields above; three finite errors
 are added. Request routes, owner authority and fee policy are unchanged.
 
-OxDecimal owns the frontend handlers/display. The shared package contains exact
-schemas, fixtures, validators and types; integration must acknowledge its final
-digest before enabling a real consumer. Display a support/unavailability state
+Any authorized collaborator may implement the frontend handlers/display.
+The shared package contains exact schemas, fixtures, validators and types;
+validate its final digest and the real consumer together, recording the result
+alongside or after delivery. Display a support/unavailability state
 with optional details, and never coerce a null amount into zero. Rollback keeps
 the service disabled, restores producer/consumer versions together and preserves
 operation history, reservations and review archives.

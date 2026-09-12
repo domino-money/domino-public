@@ -1,23 +1,25 @@
 # Home VM staging runbook
 
+Process policy: [EXECUTION_POLICY.md](EXECUTION_POLICY.md), 12 September 2026. Any authorized collaborator may provision, configure, deploy and recover the VM, Cloudflare and application. Historical area ownership, handoff ACKs and approval windows below are superseded; actual technical service requirements remain applicable.
+
 Issue #49 · **VM foundation provisioned; application staging stays private and disabled**
 
 The isolated staging VM runs Ubuntu 24.04 LTS with 4 vCPUs, 8 GiB RAM and a preallocated 100 GiB disk. Dedicated SSH access works through the host; no router port was opened. A separate NAT network and host firewall block guest access to the host/LAN/Tailscale/other VM, with positive public DNS/HTTPS and negative internal-connection checks confirmed by firewall counters. A libvirt lifecycle hook refuses startup/restore when the actual network or firewall verification fails. Host storage layout, free-space measurements and management identities belong in the private deployment record.
 
 PostgreSQL 16.15 is installed with no TCP listener, a private Unix socket, fixed peer mappings and separate non-superuser service/operator roles. Python 3.14.7 and the locked backend dependencies are available on that VM. The initial foundation had an empty application database. The explicit [disabled installer](VM_DISABLED_INSTALL.md) now supplies the complete migration plan and five service units for the combined candidate. Consult the [installation record](VM_STAGING_2026-09-11.md) for applied migrations, role/restart checks and actual service state. Provider credentials, wallet grants and Cloudflare ingress are separate release steps; a private disabled installation is not consumer or production acceptance. Private host details and provisioning artifacts stay outside the repository.
 
-OxDecimal owns **all Cloudflare configuration, DNS, frontend routing and frontend access gating**. Backend work owns the wallet allowlist for login and private operations. The wallet allowlist does not restrict public blockchain reads and does not grant token approvals, signing or financial execution. See [wallet access](WALLET_ACCESS.md), [wallet sessions](WALLET_SESSIONS.md), [read gateway](READ_GATEWAY_RUNBOOK.md) and [API compatibility](API_COMPATIBILITY.md).
+All authorized collaborators may configure Cloudflare, DNS, frontend routing/access gates, VM services and the wallet allowlist for login/private operations. No area is reserved to a named person. The wallet allowlist does not restrict public blockchain reads and does not grant token approvals, signing or financial execution. See [wallet access](WALLET_ACCESS.md), [wallet sessions](WALLET_SESSIONS.md), [read gateway](READ_GATEWAY_RUNBOOK.md) and [API compatibility](API_COMPATIBILITY.md).
 
 ## 1. Inputs needed before provisioning
 
-| Owner | Required input or deliverable |
+| Input area | Required input or deliverable |
 | --- | --- |
-| Server owner | SSH access and storage preparation complete; VM allocated and running. |
+| Host access | SSH access and storage preparation complete; VM allocated and running. |
 | Server inspection | VM/OS/network foundation installed; verify the installation evidence, backup destination/restore and UPS handling |
-| Server owner | Four initial wallet identities were supplied and checksum-validated locally; the pending list stays private and has not been applied to a staging database |
+| Host access | Four initial wallet identities were supplied and checksum-validated locally; the pending list stays private and has not been applied to a staging database |
 | Backend | Pinned release commit and dependency locks, read/session contract versions and digests, supported route list, SQL migration/role plan, service ownership, rollback and restore evidence |
-| OxDecimal | Exact HTTPS app origin and internal origin hostnames; Worker build/digests and disabled flags; Access issuer, four distinct read/session/onboarding/deposit audiences and service identities (deposit deferred until its own gate); Tunnel mapping and outbound transport requirements; authoritative client-IP/framing behavior; denial/default routes and preview-hostname policy |
-| Both collaborators | Consumer acknowledgement, end-to-end test window, operator contact and who disables ingress during an incident |
+| HTTPS ingress | Exact HTTPS app origin and internal origin hostnames; Worker build/digests and disabled flags; Access issuer, four distinct read/session/onboarding/deposit audiences and service identities (deposit deferred until its own gate); Tunnel mapping and outbound transport requirements; authoritative client-IP/framing behavior; denial/default routes and preview-hostname policy |
+| Operations | Current compatibility evidence, useful diagnostics and recovery instructions that any authorized collaborator can execute; no mandatory consumer ACK/test window |
 
 Credentials and Tunnel tokens travel through local secret provisioning, never an issue, this document, a chat prompt or a shell argument. Non-secret issuer/audience/service identifiers still need to match the agreed environment exactly. `https://domino.money` is the selected app origin. The selected internal origins are `https://vm-read.domino.money`, `https://vm-session.domino.money`, `https://vm-onboarding.domino.money` and `https://vm-deposit.domino.money`. These agreed names are not provisioning evidence. The first ingress phase defers the deposit Access app, service token and Tunnel mapping. See the [current handoff](STAGING_BACKEND_HANDOFF.md) for Pages service bindings, the owner-selected beta perimeter and required ingress proof.
 
@@ -137,7 +139,7 @@ The disabled installer provides units with these actual commands, fixed working 
 
 ## 7. Handoff and staging activation evidence
 
-Backend provides Decimal the pinned producer commit, `read-v1` and `session-v1` manifests/digests, exact route/port mapping, safe error fixtures (including wallet denial/unavailable states), allowed methods/body limits, disabled-mode checks and the rollback procedure. Decimal provides the matching consumer/Worker build, acknowledgement and the ingress identity/framing details from section 1. Backend does not edit or provision Cloudflare as part of this handoff.
+The implementing collaborator records the pinned producer and consumer/Worker commits, `read-v1` and `session-v1` manifests/digests, exact route/port mapping, safe error fixtures, method/body limits, relevant checks and recovery procedure. Any authorized collaborator may supply or update both the backend and Cloudflare configuration; no named-person handoff or acknowledgement is required.
 
 Keep all four Worker flags and listeners disabled until the following is demonstrated on the actual VM and HTTPS path:
 
@@ -148,7 +150,7 @@ Keep all four Worker flags and listeners disabled until the following is demonst
 - HTTPS cookies, CSRF, challenge replay, GET session recovery, POST refresh, logout, multi-tab/account switching and lost-response handling pass against the agreed contract version.
 - Monitoring, disk alerts, time synchronization, backup/restore and rollback drills pass. Session cleanup is request-driven today; a bounded operator cleanup schedule and retention validation still need provisioning before a wall-clock retention promise.
 
-Only after the existing release gates and frontend acknowledgement are complete should the operator coordinate Decimal's flags and the listeners' explicit enable configuration. This runbook neither supplies that authorization nor claims an external security review has occurred.
+Within the current task authorization, any collaborator may configure the matching Worker flags and listener enablement using the actual technical evidence. A frontend acknowledgement or external review is not a procedural prerequisite. Record what was verified; do not claim an external audit occurred unless it did.
 
 ## 8. Backups, restore and shutdown
 

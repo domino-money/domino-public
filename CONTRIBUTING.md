@@ -1,46 +1,31 @@
 # Contributing
 
-`rugged97` and `OxDecimal` are repository administrators with access across frontend, backend, contracts, documentation and settings. Code ownership requests review; it does not restrict read/write access. OxDecimal initially focuses on frontend; rugged97 coordinates backend, contracts and integration. Either may contribute anywhere.
+Follow [Execution first](docs/EXECUTION_POLICY.md), the owner decision of 12 September 2026. It supersedes older planning, ownership and approval gates. `rugged97` and `OxDecimal` are administrators with access across the entire repository; all authorized collaborators and their agents may operate across all project areas.
 
-## Task workflow
+## Working approach
 
-1. Pick an issue and assign yourself before starting. State which files and API boundaries you expect to touch. If another task overlaps, agree on the contract first.
-2. Branch from current `main`: `codex/<issue>-<topic>` for assistant work or `feature/<issue>-<topic>` for manual work. Use a separate clone/worktree for simultaneous tasks.
-3. Give your assistant AGENTS.md, the issue's acceptance criteria and the relevant specs. Never transfer credentials through prompts.
-4. Open a small pull request. Explain the observable change, limitations and checks; include screenshots for visible changes when helpful.
-5. Apply the [proportionate review policy](docs/REVIEW_POLICY.md). A small, reversible presentation change by the responsible owner uses author validation plus current-head CI, with no second manual review/approval. Other changes require independent approval. All PRs retain passing required CI, an up-to-date base and resolved conversations. New commits dismiss stale approvals where approval is required. Squash merge after the applicable gates pass; delete the branch only when it has no dependent work.
+1. Start the next useful action in the requested scope. Read the relevant current code/state; no issue assignment, advance plan or area-owner acknowledgement is required.
+2. Implement the smallest useful increment. Use a branch/worktree when it helps isolate concurrent work; assistant branches use `codex/`. Preserve uncommitted work and resolve overlaps directly.
+3. Run checks proportionate to the actual change, reusing valid evidence. CI remains automatic feedback. Optional Windows/browser acceptance and repeated full-suite runs are not universal delivery gates.
+4. Integrate with a normal direct push to `main`, or use a small PR when useful. Any authorized collaborator may merge without a second person's approval. Keep forward/linear history and avoid force-pushing or deleting shared main.
+5. Record the delivered behavior, actual checks, known problems and useful recovery details after acting. Issues and PRs are coordination records, not permission queues. Fix reported errors promptly.
 
-Full administrative access includes settings and workflows, so protection is a shared development policy rather than isolation from either administrator. No directory is reserved exclusively to one contributor.
+Task authorization persists through necessary fixes, provisioning, configuration, integration and deployment. Do not ask repeatedly for the same approval. Missing credentials or an external restriction should be reported concretely while other work continues. Do not publish credentials in commits, prompts, logs or browser bundles.
 
-## Working with subagents
+## Cross-area work and subagents
 
-Subagent delegation is approved for independent parts of an issue. Follow the scope and integration rules in [AGENTS.md](AGENTS.md): one coordinating agent, explicit file ownership, separate worktrees for simultaneous implementation, and verification of the combined result.
+No frontend/backend/contracts/infrastructure area has an exclusive owner. Any collaborator may update both sides of an interface or operate an environment through authorized project access. Delegate independent subtasks when useful, inspect their evidence and integrate their results. Avoid concurrent overwrites using current diffs and isolated worktrees, without reserving areas or waiting for ceremonial handoffs.
 
-At the beginning of a task and before opening or updating its PR, read the latest issue comments and related changes. Each collaborator's assistant has its own session history; only published code, documentation and issue/PR discussion are shared. GitHub comments do not automatically wake a local assistant. Keep handoffs concise and tied to a concrete question, decision, dependency or result. Automated review or event-driven coordination needs its own configuration.
+Each assistant has its own session history. Publish a short result in the existing issue/PR when needed; a GitHub comment does not automatically wake another assistant. Do not claim monitoring or automatic notifications that were not configured.
 
-## API handoff
+## API compatibility and runtime behavior
 
-`backend/openapi-read.json` describes local requests and the five bridge response models. `api-contracts/read-v1/` is the shared candidate response/request contract with TypeScript types, runtime validators and producer fixtures; regenerate both exports after model changes. Do not pretend today's practice API is the read backend. Start frontend integration behind a mock adapter. A real same-origin bridge, authentication and public deployment are separate reviewed work.
+Use shared schemas, runtime validators and representative producer/consumer fixtures. Keep `backend/openapi-read.json`, `api-contracts/read-v1/` and relevant session exports consistent with real behavior. Follow [API_COMPATIBILITY.md](docs/API_COMPATIBILITY.md) for version semantics and a concise change notice. The implementing collaborator may adapt producer and consumer and integrate immediately; a named person's ACK is not required.
 
-Unknown prices remain unavailable. A connected wallet, discoverable pool or readable NFT owner does not authorize an automated transaction. Fee policy, permission and contract changes need explicit acceptance criteria and relevant accounting/security tests.
+Unknown values remain unavailable. Public NFT ownership is not wallet authentication; a connected wallet or login does not supply spending consent. Keep existing data integrity, secret handling and runtime access controls correct. This process change does not fabricate live capabilities, signatures or qualified data.
 
-The separate disabled session candidate uses `api-contracts/session-v1/` and
-the same compatibility/notice process. Its signature proves login only; no
-session bearer may enter the public reader or frontend storage. Regenerate its
-schemas/types/fixtures with `scripts/export-session-contract.py` and keep both
-its BFF and listener disabled until the documented integration gates pass.
+## Checks and delivery
 
-Before connecting real data or changing fields consumed by the frontend, follow
-[API_COMPATIBILITY.md](docs/API_COMPATIBILITY.md): post the exact version/field
-notice, shared fixtures, affected hooks, test results and rollback to the issue
-and obtain the frontend owner's acknowledgement before integration. The
-[issue #5 bridge design](docs/API_READ_BRIDGE.md) preserves existing local API
-restrictions. Its disabled implementation candidate is not a deployed public service.
+README lists reproducible frontend, backend, PostgreSQL/Anvil, Solidity and repository-hygiene checks. Choose the checks affected by a change and report their results. CI remains unprivileged and independent of real provider/wallet keys. Tests and feedback guide corrections without a mandatory reviewer/CI waiting gate on main.
 
-## Checks and releases
-
-See README.md for reproducible setup. CI runs frontend checks, all backend tests with isolated PostgreSQL/Anvil, Solidity unit/fuzz tests and repository hygiene. No production secrets are required. Do not store personal provider keys in Actions while these tests are fully offline.
-
-GitHub publication and Sites deployment are separate. Run Sites publishing from an isolated frontend-only checkout while retaining its approved hosting identity. The existing private preview remains under its deployment owner's account. Public backend deployment and live contract activation require their own completed evidence gates.
-
-Use issues and labels as the initial task board. Priorities are labels; dependencies belong in issue bodies. A GitHub Project can be added later without changing this workflow.
+Any authorized collaborator may deploy and recover the scoped project. Use the actual target's documented commands and credentials. For Sites, retain its hosting identity and use the frontend-only checkout so deployment does not replace this repository's Git remote. A provider account permission is an actual access constraint, not a permanent assignment to a particular person.

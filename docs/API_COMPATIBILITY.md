@@ -1,9 +1,8 @@
 # API compatibility and frontend notice
 
 Applies to [issue #5](https://github.com/domino-money/domino/issues/5) and the
-frontend adapter owned by OxDecimal in [issue #1](https://github.com/domino-money/domino/issues/1).
-This policy addresses the user's explicit request to announce real API
-connections and field changes before frontend hooks consume them.
+shared frontend adapter in [issue #1](https://github.com/domino-money/domino/issues/1).
+Technical compatibility rules remain applicable. Under [EXECUTION_POLICY.md](EXECUTION_POLICY.md), any authorized collaborator may update producer and consumer together; a notice records the change and does not require a named owner's acknowledgement or a separate approval window.
 
 ## Current baseline and gaps
 
@@ -115,7 +114,7 @@ The complete schemas must also cover the other endpoints and nested states.
 | New enum value or changed default/order/page behavior | Treat as breaking until consumer fallback tests prove compatibility |
 | Optional additive field/route | Minor only after old-consumer tests pass and affected consumers are notified |
 | Internal refactor with identical observable contract | Patch; tests prove existing fixtures remain accepted |
-| Mock → real source, deployment target, cache/freshness or capability change | Operational notice and release acknowledgement even if schemas are unchanged |
+| Mock → real source, deployment target, cache/freshness or capability change | Concise operational notice even if schemas are unchanged; no mandatory acknowledgement |
 
 For an already deployed major, keep the old route available for at least 30
 days after a communicated replacement, until consumers migrate. Record any
@@ -141,32 +140,17 @@ The schema generator, manifest and header enforcement now have offline tests.
 This candidate local API emits the contract header. Public deployment and the
 frontend rendering/release matrix still require their own evidence.
 
-## Required notice and acknowledgement
+## Change notice without an approval queue
 
-The author posts the notice to the integration issue and links it from the PR,
-tagging @OxDecimal for frontend impact. If another issue contains affected
-hooks, cross-link it. Send notice before merging a contract change or flipping
-the data-source flag, not merely in the final release summary.
+Record meaningful API or real-data changes in the existing issue/PR or commit with the implementation. Any authorized collaborator can update and validate the affected producers and consumers; no advance notice reply, frontend-owner ACK, backend-owner ACK or release-owner sign-off is required. Use the current [execution policy](EXECUTION_POLICY.md), including for older candidate notices that describe the former acknowledgement process.
 
 ```text
-API change / real-data activation notice
-Issue and PR:
-Backend commit and contract version/digest:
-Frontend candidate commit and affected hooks/screens:
-Routes and exact field changes (before -> after, or "none"):
-Types, units, nullability, states and error changes:
-Fixture/schema links and producer/consumer test results:
-Environment and proposed activation window:
-Feature flag, migration sequence and rollback:
-Frontend acknowledgement link:
-Backend acknowledgement link:
+API / real-data change
+Commit and contract version/digest:
+Affected routes, fields and consumers:
+Compatibility/migration and fixtures:
+Checks actually run and known limitations:
+Environment, activation and recovery:
 ```
 
-Acknowledgement means the consumer owner confirms its candidate handles the
-contract and the planned switch. A comment's existence, silence, a suggested
-reviewer or an assistant's prediction is not acknowledgement. The release
-owner verifies the record before activation. Development behind disabled flags
-continues while integration review is pending. Main protection remains in place.
-
-This is currently a documented release process, not a GitHub-enforced deployment
-gate. Its automation belongs with the actual bridge/deployment implementation.
+Keep the technical version/field semantics above. Fix real incompatibilities or use a compatible migration/rollback; do not wait for a particular collaborator merely to approve work that can be completed directly.

@@ -1,5 +1,7 @@
 # Frontend handoff
 
+Process update, 12 September 2026: [EXECUTION_POLICY.md](docs/EXECUTION_POLICY.md) supersedes the historical ownership/ACK/review gates below. Any authorized collaborator may implement both sides, integrate and deploy within the task scope; no named frontend/backend owner is required. Historical candidate/activation statements are not current deployment evidence.
+
 ## Wallet-session backend candidate (#31 / #14)
 
 The backend portion of #14 now has a separate disabled implementation candidate
@@ -7,7 +9,7 @@ in #31. Its [session-v1 contract](api-contracts/session-v1/README.md) defines
 bootstrap/challenge/verify/me/logout, HttpOnly cookies, CSRF, supported plain EOAs,
 expiry and safe errors. [Integration/rollback](docs/WALLET_SESSIONS.md) lists the
 remaining consumer and staging evidence. Existing `read-v1` fields and app/web
-hooks are unchanged. Frontend owns wallet discovery, account/network changes,
+hooks are unchanged. Frontend integration includes wallet discovery, account/network changes,
 multi-tab/session refresh behavior and rendering; the backend does not claim
 those checks passed or activate them. Sign-in grants no spending authority.
 
@@ -19,10 +21,9 @@ Tangerine accents, modern rounded cards with light retro details. Positions are 
 
 The workbench's visual language stays the baseline, and the product app in `app/` has no practice mode: it shows no simulated figure as data. Preserve the distinction between explanation and real transactions. Do not redesign the palette or introduce a fixed reserve of fees as part of integration work.
 
-## Coordination before real data
+## Real-data compatibility
 
-OxDecimal must receive advance notice before a live API is connected or a
-consumed response field/meaning changes. Follow the
+Record live API connections and consumed field/meaning changes with the implementation, without waiting for a named collaborator. Follow the
 [compatibility and notice process](docs/API_COMPATIBILITY.md), including the
 exact contract version, shared payload fixtures, affected hooks, test results
 and rollback. Use the candidate `api-contracts/read-v1/` schemas, types and runtime validators; TypeScript declarations alone do not validate HTTP JSON.
@@ -32,16 +33,16 @@ The [read bridge specification](docs/API_READ_BRIDGE.md) and
 contains the five route contracts and fixtures. No public endpoint is active
 and no existing success field is renamed. Only `inventory.nextCursor` changes
 to an opaque browser handle. Mock adapter work can continue; actual rendering
-and the recorded frontend acknowledgement remain required before activation.
+can be validated by any implementing collaborator; no recorded frontend acknowledgement is required before activation.
 
 ## First integration slices
 
-1. A typed read-data adapter and deterministic mocks for token, pool, activity, capital and NFT owner views. Coordinate contract gaps against `backend/openapi-read.json`; amounts stay strings. *Built against read-v1 1.1.0-rc.3 in `app/src/lib/read/` (all nine routes, fixture and bridge sources; the deployable build reads through the bridge and the fixture source stays in test builds); see `app/README.md` → Read data. Pinned to producer commit `b50f80e5f5f6eacc07645d9856ab649047161aae` (#77, which with #75 is one combined release) and reconciled against `openapi-read.json` and the Python fixtures on every test run. The seven differences are recorded in `app/tests/backend-contract.ledger.mjs`: the three raised with rugged97 are decided on issue #1 (the `tokenIds` pattern now differs only by an equivalent end assertion; the private capabilities document stays untyped; the 8192-byte bridge limit is intentional) and four are by design. The deployable build reads live through the same-origin bridge with explicit unavailable states; there is no sample build. The consumer acknowledgement for these pins is still pending.*
+1. A typed read-data adapter and deterministic mocks for token, pool, activity, capital and NFT owner views. Coordinate contract gaps against `backend/openapi-read.json`; amounts stay strings. *Built against read-v1 1.1.0-rc.3 in `app/src/lib/read/` (all nine routes, fixture and bridge sources; the deployable build reads through the bridge and the fixture source stays in test builds); see `app/README.md` → Read data. Pinned to producer commit `b50f80e5f5f6eacc07645d9856ab649047161aae` (#77, which with #75 is one combined release) and reconciled against `openapi-read.json` and the Python fixtures on every test run. The seven differences are recorded in `app/tests/backend-contract.ledger.mjs`: the three raised with rugged97 are decided on issue #1 (the `tokenIds` pattern now differs only by an equivalent end assertion; the private capabilities document stays untyped; the 8192-byte bridge limit is intentional) and four are by design. The deployable build reads live through the same-origin bridge with explicit unavailable states; there is no sample build. This historical candidate recorded a pending consumer acknowledgement; that process requirement is superseded by EXECUTION_POLICY.md.*
 2. Read-only position cards using this adapter: token pair, range, snapshot, fees, principal and owner status. Hide unavailable valuation behind a clear state, never a plausible invented number.
 3. Token and pool selection dialogs: wallet token or pasted address, explanation of pairing, existing pools, fee/range choices and metadata/freshness states. Advanced new-pool initialization is a separately labeled path and remains non-executable until implemented.
 4. Loading, unavailable, stale and partial states with retry that preserves prior data. Responsive interaction and accessible keyboard/focus behavior.
 
-Each slice has its own GitHub issue and acceptance criteria. Mock data must be unmistakable; a successful mock cannot enable deposit, swap, mint, compound or successor creation. Read integration must not remove the current browser-Origin restrictions on the Python service. A same-origin bridge is a separate task.
+Use existing issues and acceptance examples when useful; a new issue or ceremony is not required for each slice. Mock data must be unmistakable; a successful mock cannot enable deposit, swap, mint, compound or successor creation. Read integration must not remove the current browser-Origin restrictions on the Python service. A same-origin bridge is a separate task.
 
 ## Hosting and access
 

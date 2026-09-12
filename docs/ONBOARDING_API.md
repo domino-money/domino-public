@@ -155,19 +155,26 @@ worker settings are `APP_ORIGIN`, `ONBOARDING_GATEWAY_ORIGIN` and secret-store
 
 ## Handoff, activation and rollback
 
+[Execution policy](EXECUTION_POLICY.md) supersedes historical owner, ACK and
+approval procedures here. Any authorized collaborator or agent may implement
+and operate within scope, recording results alongside or after execution.
+Technical controls, compatibility evidence and wallet consent still apply.
+
 The [shared package](../api-contracts/onboarding-v1/README.md) includes schemas,
 types, runtime validation, deterministic fixtures and producer hashes. The onboarding payload contract stays 1.0.0; inherited read-v1 rc.3 and
 session-v1 3.0.0-rc.2 must be pinned from this combined producer. Session/source
-manifest hashes change with the composed private authorization methods. OxDecimal
-owns amount/range/review hook integration and rendering tests; no consumer
-acknowledgement is inferred from our validator tests.
+manifest hashes change with the composed private authorization methods. Any
+authorized collaborator may integrate amount/range/review hooks and run rendering
+tests; validator tests alone do not establish the actual consumer behavior.
 
-Before activation, agree version/digest, hooks, null/error/expiry handling and
-consumer evidence through [API_COMPATIBILITY.md](API_COMPATIBILITY.md). Staging
+Validate version/digest, hooks and null/error/expiry handling; record consumer
+evidence alongside or after delivery under [API_COMPATIBILITY.md](API_COMPATIBILITY.md). Staging
 must verify HTTPS cookies, exact origin/routes, separate Access audiences,
 trusted client-IP metadata, singleton/quota behavior, redacted logging and
 provider capacity. Cloudflare credentials for domino.money remain deferred.
-External security review remains a public-release gate in the existing spec.
+Preserve the security validation scenarios in the existing spec. External review
+may supplement that evidence; it is not a permission gate under EXECUTION_POLICY.md,
+and no external audit may be claimed without its actual report.
 
 Rollback disables the onboarding worker/listener and restores matching consumer,
 producer and contract builds. Login/public reads can remain available. This

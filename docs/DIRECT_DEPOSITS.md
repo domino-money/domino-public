@@ -1,5 +1,10 @@
 # Resumable owner-signed direct deposits — issues #40, #42 and #44
 
+[Execution policy](EXECUTION_POLICY.md) supersedes historical owner, ACK and
+approval procedures here. Any authorized collaborator or agent may implement
+and operate within scope, recording results alongside or after execution.
+Technical controls, compatibility evidence and wallet consent still apply.
+
 `deposit-v1` 1.1.0-rc.4 is a disabled backend/worker candidate for creating a position
 in an **existing**, admitted Robinhood Uniswap v4 pool. It follows the session
 and preview candidates in #39. Uniswap still calculates composition; Domino
@@ -9,8 +14,8 @@ The backend never signs or broadcasts a financial transaction.
 Issue #42 qualifies deployment/RPC assumptions and corrects the candidate's
 Nitro fee projection. This is an explicit coordinated **pre-release migration**
 from `1.1.0-rc.2` to `1.1.0-rc.3` of the disabled candidate. Producer, worker, schemas, validators, types and fixtures
-must move together; consumer acknowledgement is still required before
-integration. See the migration section below.
+must move together and pass producer/consumer compatibility checks.
+See the migration section below.
 
 Issue #44 adds [reviewed immutable/proxy token support](REVIEWED_TOKEN_ADMISSION.md)
 and a further coordinated pre-release admission/receipt migration from rc.3
@@ -25,7 +30,7 @@ an in-flight preparation. If a nonce was already persisted, denial keeps that
 evidence; a freshly admitted login recovers the same effect. Migrations001–014
 are applied together in order. This composition preserves the rc.2 recovery and session guarantees and adds
 Nitro receipt fields from rc.3. This candidate adds token admission as rc.4,
-requiring its own coordinated contract notice and consumer acknowledgement.
+requiring its own compatibility evidence and contract notice alongside or after delivery.
 
 ## Browser contract and lifecycle
 
@@ -375,9 +380,10 @@ The example Worker config has no deploying route and keeps
 `DEPOSIT_ACCESS_CLIENT_ID`/`DEPOSIT_ACCESS_CLIENT_SECRET`, with `APP_ORIGIN` and
 `DEPOSIT_GATEWAY_ORIGIN`. Do not reuse read/login Access identities.
 
-Before activation: acknowledge the exact contract/digest with OxDecimal, test
-actual frontend hooks and wallet behavior, qualify admitted Robinhood contracts/tokens,
-complete independent execution review, and validate HTTPS/Cloudflare staging.
+For activation, validate the exact contract/digest, actual frontend hooks and
+wallet behavior, admitted Robinhood contracts/tokens, execution safety and
+HTTPS/Cloudflare staging. Record the evidence alongside or after delivery;
+no named consumer or peer approval is required for the authorized work.
 Credentials for domino.money remain deferred. Synthetic EVM fixtures and
 controlled local-fork execution do not establish production admission.
 
@@ -393,8 +399,8 @@ header is rejected. Pin the version and exact package manifest together.
 Update the producer, BFF, exported schemas/types/runtime validators and fixtures
 as one candidate, regenerate the package manifest, and communicate the exact
 commit/digest and field changes under [API compatibility](API_COMPATIBILITY.md).
-OxDecimal must acknowledge the corrected contract and affected receipt rendering
-before frontend integration or activation; silence is not acknowledgement.
+Any authorized collaborator may integrate the corrected contract and validate
+affected receipt rendering, then record the results without waiting for an ACK.
 Read/session/onboarding contracts and frontend hooks are unchanged by this
 backend migration. Future changes to a released contract follow the normal
 version/overlap policy including explicit new version identifiers.

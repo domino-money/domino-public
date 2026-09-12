@@ -1,4 +1,9 @@
-# Backend staging handoff for Decimal
+# Backend staging integration
+
+[Execution policy](EXECUTION_POLICY.md) supersedes historical owner, ACK and
+approval procedures here. Any authorized collaborator or agent may implement
+and operate within scope, recording results alongside or after execution.
+Technical controls, compatibility evidence and wallet consent still apply.
 
 The installed application source is
 `a5a855cec1fc5d120d9c1c187a84ff24bc1b02d6`: PR #46 producer
@@ -66,8 +71,8 @@ or a generated redirect when deploying these candidates.
 
 ## Origin and route contract
 
-Decimal owns Cloudflare, DNS, the Pages forwarder/service bindings and the
-frontend gate. The [11 September handoff decision](https://github.com/domino-money/domino/issues/45#issuecomment-5634619206)
+Any authorized collaborator may configure Cloudflare, DNS, the Pages
+forwarder/service bindings and the frontend gate. The [11 September handoff decision](https://github.com/domino-money/domino/issues/45#issuecomment-5634619206)
 selects `APP_ORIGIN=https://domino.money` and the internal origins below. This is
 configuration agreement, not evidence that DNS, Workers, Access or Tunnel exists.
 Do not point a browser at the private Python reader or enable CORS as a shortcut.
@@ -83,8 +88,9 @@ and the read family's cookie stripping. There are **no zone Worker routes,
 custom Worker domains, workers.dev or Worker preview URLs**. The four concrete
 `bridge/wrangler.{read,session,onboarding,deposit}.toml` candidates disable those
 endpoints, logging and all four capability flags; they contain no credentials.
-They configure Workers only. Decimal's separate frontend PR owns the forwarder
-and, after the four Workers are deployed disabled, the Pages service bindings.
+They configure Workers only. The forwarder and Pages service bindings are
+separate frontend configuration; any authorized collaborator can implement
+them after the four Workers are deployed disabled.
 
 | Browser family | Worker / internal HTTPS origin | Private listener target | Initial ingress phase |
 |---|---|---|---|
@@ -153,8 +159,9 @@ and the [upstream-zone field](https://developers.cloudflare.com/ruleset-engine/r
 
 ## Remaining inputs and backend candidate
 
-Origins are selected above. Before starting the Tunnel or configuring live
-ingress, Decimal records these non-secret values in the release issue:
+Origins are selected above. The collaborator configuring live ingress verifies
+the following inputs and records the non-secret values alongside or after
+delivery; a release issue or another person's reply is not a prerequisite:
 
 1. Actual Access issuer, distinct audience/service identifiers and tested Service
    Auth policies for each service being connected; the fourth deposit identity
@@ -189,7 +196,7 @@ or, later, `DOMINO_DEPOSIT_ACCESS_*` settings. Private listeners share the exact
 session origin and persistent server-side abuse secret. Provider credentials and
 token admission are separate private provisioning. No signing key belongs on this VM.
 
-## What Decimal can finish before the Tunnel
+## Frontend work independent of the Tunnel
 
 Issue #1 can implement all nine read adapters and actual rendered state tests
 using the published gateway fixtures. Public blockchain reads do not require a
@@ -211,7 +218,7 @@ creating another intent releases the reservation.
 
 ## Acceptance and rollback
 
-Record a consumer ACK naming the frontend commit, actual producer commit, all
+Record compatibility evidence naming the frontend commit, actual producer commit, all
 versions/digests, affected hooks/screens and the tests actually performed.
 Distinguish fixture acceptance, backend-local verification and HTTPS staging.
 The coordinated staging exercise must cover exact origins/Access identities,
@@ -223,12 +230,12 @@ release decision.
 Source issue closure does not replace the remaining activation qualifications.
 Validate actual provider error formats, failover and measured capacity for the
 affected read/preview routes; the accepted bounded study is not production
-capacity calibration (#25 and the read-bridge qualification). Before enabling
-deposits, review an audited, evidence-preserving operator procedure for unknown
+capacity calibration (#25 and the read-bridge qualification). For deposits,
+validate the evidence-preserving operator procedure for unknown
 transaction hashes and off-nonce conflicts, including the unobserved original
 hash followed by a wallet speed-up (#41). No database edit or archive operation
 is an implicit resolution path. Keep current token-admission reviews, manifest
-ACKs and private operation archives, including owner-history/allowance lookup
+validation records and private operation archives, including owner-history/allowance lookup
 after archival. The disabled VM checks do not qualify these procedures.
 
 Rollback removes/disables the four Pages binding forwards, sets the corresponding

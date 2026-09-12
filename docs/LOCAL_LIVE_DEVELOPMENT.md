@@ -1,19 +1,23 @@
 # Local frontend with authenticated development reads (#132)
 
-## Delivery status and owners
+## Delivery status and execution policy
 
-This is the **disabled backend candidate and integration handoff**, not an
-installed development environment or a completed Windows acceptance. The owner
-authorized HTTPS development access in [#132](https://github.com/domino-money/domino/issues/132#issuecomment-5648636897).
-No production/preview origin, Worker binding, application flag or provider
-qualification changes as a result of running the offline tests in this change.
+The backend and native Windows launcher implementations are on `main`; the
+[native installation receipt](https://github.com/domino-money/domino/issues/132#issuecomment-5649320693)
+records the observed VM state. The owner authorized HTTPS development access in
+[#132](https://github.com/domino-money/domino/issues/132#issuecomment-5648636897).
+These implementation and native records do not establish a Cloudflare routing
+or Windows/HMR outcome beyond the evidence they contain.
 
-Rugged owns the development gateway, reader, provider/resource qualification,
-VM installation and recovery. OxDecimal owns the Node launcher/proxy, Vite
-integration, artifact guards and acceptance on the owner's Windows machine.
-Use separate branches/worktrees and agree on interface changes in #132. Keep
-#124 / PR #129 and the subsequent coordinated queue paused until this handoff
-is accepted. #126 / #131 production acceptance remains complete.
+The [execution policy dated 12 September 2026](EXECUTION_POLICY.md) overrides
+process requirements in this runbook. Any authorized collaborator may implement,
+install or recover this path within the technical boundaries below. Use separate
+branches/worktrees and record interface changes in #132. The
+[owner's waiver](https://github.com/domino-money/domino/issues/132#issuecomment-5649416293)
+removes Windows, HMR and hot-admission acceptance tests as delivery gates;
+unperformed checks remain explicitly untested. Do not pause #124 / PR #129 or
+the coordinated queue solely for those tests, a cross-collaborator ACK or an
+independent-review wait. #126 / #131 production acceptance remains complete.
 
 The required path is:
 
@@ -33,7 +37,7 @@ Windows browser
 
 The hostname is an authorized provisioning target, not evidence that DNS,
 Access or its tunnel has been created. Ports 8890/8891 and tunnel metrics 20242
-were observed free by the sole VM operator on 2026-09-12 at 20:55:53 UTC; they
+were observed free by the VM operator on 2026-09-12 at 20:55:53 UTC; they
 must be checked and reserved at installation. Existing production 8876/8878 and
 the disabled private/financial listeners are outside this development path.
 
@@ -65,8 +69,8 @@ development credential failure is distinguished by HTTP status and protected
 development diagnostics; do not put a new error string into the read contract.
 Capabilities declare admission scope, not positive provider/index coverage.
 
-Record **three different versions** at acceptance: the actual installed reader
-and gateway commits, the contract version/manifest digest, and the frontend
+Record **three different versions** in operational or diagnostic evidence:
+the actual installed reader and gateway commits, the contract version/manifest digest, and the frontend
 checkout commit plus dirty state. The previous production receipt names reader
 `0aebebc184355c8168fab67e9241c91765301840` and gateway
 `807afe399fd250a6db83a4014aadf64d7e9af543`; frontend main
@@ -88,12 +92,12 @@ an Access cookie/JWT as a replacement for current credential validation.
 Store the local secret outside the checkout, every Vite `fs.allow` root and any
 directory reachable through a symlink/junction from those roots. Use a private
 user-only file under the owner's Windows configuration directory; document
-and test its ACL in the launcher PR. A repository `.gitignore` entry alone
+its ACL and label any unperformed verification untested. A repository
+`.gitignore` entry alone
 does not prevent Vite `/@fs/` exposure. No secrets in issue/chat, CLI arguments,
 URLs, `VITE_*`, browser storage, bundles, sourcemaps or logs. Use synthetic
-canaries for artifact tests. The precise secret-free profile example and
-Windows command must come with Decimal's launcher implementation, not a
-command that this backend-only candidate cannot start.
+canaries for artifact tests. Use the precise secret-free profile example and
+Windows command documented with the launcher implementation.
 
 The local process binds only numeric `127.0.0.1`, one explicit port (default
 5273), no automatic fallback. An alternate worktree chooses an explicit other
@@ -121,18 +125,18 @@ off. `vite build --mode local-live` must fail. Normal production builds must
 never import the local proxy/profile or its markers. Existing labeled fixture
 and bridge-test modes remain supplemental offline tools, not live acceptance.
 
-## VM and provider isolation — activation gates
+## VM and provider isolation
 
-Independent review is required before activating this new access boundary,
-under [REVIEW_POLICY.md](REVIEW_POLICY.md) and the issue's explicit acceptance
-condition. Passing unit tests is not approval of an installed namespace,
-firewall, SQL role, tunnel mapping or quota allocation.
+Apply [EXECUTION_POLICY.md](EXECUTION_POLICY.md) to authorization and execution;
+this runbook adds no independent-review waiting gate. Passing unit tests does
+not establish the installed namespace, firewall, SQL role, tunnel mapping or
+quota allocation. Preserve the technical checks and restrictions below.
 
 The operator's read-only inspection found 4 vCPU, approximately 7.06 GiB
 available memory and no sampled pressure. This supports preparing a separate
 process; it does not establish provider-account capacity. Proposed isolated
-UIDs 974/975/976 were free, not allocated. Review the final host inventory
-before choosing names/IDs.
+UIDs 974/975/976 were free at that inspection. Use the native receipt and current
+host inventory for their installed state before choosing names/IDs.
 
 The installation plan uses the dedicated root-level `dominodev.slice`, CPU quota
 50% (half one vCPU), CPU weight 10, MemoryHigh 768 MiB, MemoryMax 1 GiB,
@@ -184,14 +188,14 @@ For Gecko, verify the actual shared-IP allowance and other consumers before
 claiming that production's 25 plus development's 3 fit. Include restarts and
 every provider-using process in that aggregate. For Dex, likewise record other
 consumers and the endpoint allowance. Until this evidence and its enforcement
-are reviewed, keep development admission disabled and perform only offline
+are established, keep development admission disabled and perform only offline
 tests. Do not weaken production limits to make the candidate appear live.
 
 ## Backend CLI and private profile templates
 
 These are **operator-side** commands for the reviewed installed release; they
 are not the Windows launcher. Run under the dedicated service identities and
-the reviewed namespaces, never as a shortcut around the installation review.
+the configured namespaces, preserving the installation's technical boundaries.
 Without `--enable`, the entrypoints do not admit development reads:
 
 ```sh
@@ -202,8 +206,8 @@ python backend/dev_read_gateway.py --profile /etc/domino-dev/gateway/profile.jso
 
 The reader's eventual activation command adds
 `--enable --profile /etc/domino-dev/reader/profile.json`; the gateway adds
-`--enable`. This requires independently reviewed installation, provider
-reservation and populated private profiles, not just an authorization flag.
+`--enable`. This requires the qualified installation, provider reservation and
+populated private profiles, not just an authorization flag.
 Paths in this example must match the final reviewed operator mount plan.
 
 Gateway profile, with placeholders that deliberately fail validation until
@@ -257,7 +261,7 @@ privately fills the qualified inventory URL and
 `catalogue:{"host":"<private Unix socket directory>","port":<reviewed port>,"dbname":"domino_catalogue"}`
 after installing the distinct `domino_dev_catalogue_reader` role and grants.
 Null configurations explicitly mean that coverage is not configured; they
-cannot be used as the final seven-family acceptance receipt.
+cannot be reported as evidence of positive coverage for all seven families.
 
 All profiles use the exact bounded schemas implemented by the entrypoints.
 The profile directory and its files must be owned by that component's dedicated
@@ -278,7 +282,7 @@ The reader enforces a full **60-second startup cooldown**. Do not interpret
 an enabled gateway flag as a ready reader. Protected status projects only
 validated local reader admission states (including cooldown/unavailable) and
 always labels provider health as unprobed. Complete installation warm-up
-before Windows acceptance; show a bounded wait/manual Retry if a reader
+before requesting data; show a bounded wait/manual Retry if a reader
 restarts while the launcher is open. Do not turn that wait into data polling.
 Cheap authenticated status/capability checks have a separate bounded control
 budget (30/minute, burst 5), so a startup handshake cannot spend the two-token
@@ -291,30 +295,37 @@ rolling-minute envelope; a gateway token-bucket rate is not a provider quota.
    including one with an already issued valid assertion, must fail closed.
    Remove/stop the dev connector/gateway if an immediate transport shutdown
    is required; never reopen production ingress as a fallback.
-2. Disable/delete the dedicated Access service token and confirm both a new
-   authentication attempt and an already established client's next request
-   fail. Account for a read already admitted before revocation: it may finish
+2. Disable/delete the dedicated Access service token when revoking it. Both a
+   new authentication attempt and an already established client's next request
+   must fail. Live denial probes are optional diagnostics, not an automatic
+   step. Account for a read already admitted before revocation: it may finish
    within its existing deadline, but cannot admit another operation.
 3. Renewal/rotation is dev-only: deliver the replacement privately, update
    the verifier principal if the Client ID changes, invalidate old admission,
-   confirm old credential rejection, then run the bounded acceptance probe.
+   and preserve rejection of the old credential. Any verification probe is an
+   optional, explicitly selected diagnostic.
    Do not assume a signed JWT becomes invalid just because a key was rotated.
 4. Stop the local launcher with Ctrl+C; close Vite/HMR, pending local requests
    and upstream connections. Operator rollback removes only the new dev
    route/unit/profile after recording admission disabled. Confirm the prior
    production manifest/processes and access gates remain intact.
 
-Report downtime/expiry/rate-limit/contract-mismatch in #132 to Rugged with UTC,
-safe request ID and installed version only. Decimal owns Windows launcher
-recovery. Do not publish provider bodies, URLs with keys or private-address
-payloads. There is no public administrative health endpoint or uptime SLA
+Report downtime/expiry/rate-limit/contract-mismatch in #132 with UTC,
+safe request ID and installed version only. Any authorized collaborator may
+perform VM or Windows launcher recovery. Do not publish provider bodies,
+URLs with keys or private-address payloads. There is no public administrative health endpoint or uptime SLA
 implied by this candidate. UI retry must remain bounded and explicit.
 
-## Required Windows acceptance receipt
+## Optional Windows and integration diagnostics
 
-The owner and Decimal complete this on the actual Windows development machine
-after independent review and installation, with Rugged observing sanitized
-VM counters. A remote smoke test or credentials alone is not completion.
+The owner waived this checklist as a delivery gate in
+[#132](https://github.com/domino-money/domino/issues/132#issuecomment-5649416293).
+Run only the diagnostics explicitly selected for troubleshooting or evidence;
+do not automatically execute negative tests or revoke hot admission on a live
+service. Windows, HMR and hot-revocation outcomes remain untested unless actual
+evidence records them. A remote smoke test or credentials alone cannot prove
+those outcomes. No owner acceptance test is required to close the delivery or
+resume the coordinated queue under [EXECUTION_POLICY.md](EXECUTION_POLICY.md).
 
 1. Record Windows/Node versions, local checkout SHA/dirty state, exact loopback
    port, installed reader/gateway SHAs, contract/manifest and enabled routes.
@@ -330,7 +341,8 @@ VM counters. A remote smoke test or credentials alone is not completion.
    source, block, age and coverage; leave empty/unindexed/disabled and untested
    positive pagination/history explicit. Use the public examples below, never
    copy personal bot or tenant data.
-4. Test missing/expired/revoked access, already-open client after revocation,
+4. In an explicitly selected diagnostic environment or window, optionally test
+   missing/expired/revoked access, already-open client after revocation,
    renewal, wrong Host/Origin and HMR Origin, another local port, cross-site
    API requests, query/encoded paths, arbitrary destination/redirect, oversize
    input/output, cancellation and two tabs/worktrees plus reload bursts.
@@ -339,10 +351,11 @@ VM counters. A remote smoke test or credentials alone is not completion.
    symlinks/junctions and is absent from production assets/sourcemaps. Confirm
    local-live cannot build, and existing release/preview guards and required
    CI pass without development profiles or secrets.
-6. Record the owner's explicit acceptance of the real design/data workflow,
-   remaining coverage limits and a tested stop/revocation/rollback receipt.
-   Then close #132 and resume the agreed next priority. Do not mark this
-   receipt complete using offline fixtures or a server-only request.
+6. Record observed results, remaining coverage limits, untested checks and the
+   owner's waiver. Record a stop/revocation/rollback result only if performed.
+   Closure and the next coordinated priority do not depend on completing this
+   checklist. Do not describe offline fixtures or a server-only request as a
+   completed Windows/HMR test.
 
 ## Maintained public examples and coverage
 
@@ -395,7 +408,7 @@ coverage are still unqualified; labeled synthetic tests may cover their UI.
 | Future flow | Existing contract | Separate work required before real local use |
 | --- | --- | --- |
 | Wallet login/private account | `session-v1` 3.0.0-rc.2 | Dedicated dev session ingress/audience, admitted test account, SIWE consent, origin/cookie/CSRF design. The chosen read-only HTTP loopback does not automatically solve Secure `__Host-` session cookies. Access service authentication does not identify a wallet owner or supply private portfolio/settings APIs. |
-| Swap/LP onboarding previews | `onboarding-v1` 1.0.0 | Reviewed dev session/CSRF, server-derived owner, provider qualification/quotas, validity/unit checks and frontend contract ACK. Preview does not authorize spending; its routes are absent from this read allowlist. |
+| Swap/LP onboarding previews | `onboarding-v1` 1.0.0 | Reviewed dev session/CSRF, server-derived owner, provider qualification/quotas, validity/unit checks and consumer contract notice. Preview does not authorize spending; its routes are absent from this read allowlist. |
 | Deposit preparation/reconciliation | `deposit-v1` 1.1.0-rc.4 | Separate financial/access review, test accounts or isolated fork, durable state, exact-step expiry and owner authorization. No approval/signature/swap/mint/production execution under #132. |
 | Missing private/financial screens | #124 / PR #129 | Resume only in the coordinated queue, with contract/pin/fixture and consumer notices. Do not import that candidate into the development read boundary or present fixtures as real balances. |
 
