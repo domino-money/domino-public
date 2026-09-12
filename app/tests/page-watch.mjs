@@ -20,11 +20,12 @@
  * screen this app leaves can cancel its own read as it unmounts, which is the
  * test's doing just as much.
  *
- * An answer that arrived and a body the page stopped reading are the same
- * request to Chromium: cancelling the stream of a read that is over reports
- * that request as net::ERR_ABORTED, on a page the test has not touched. That
- * is excused too, and only when the answer had arrived first; an abort with
- * no answer behind it is still the page's error.
+ * An /api answer that arrived and a body this app then stopped reading is the
+ * same request to Chromium: cancelling that stream reports the request as
+ * net::ERR_ABORTED, on a page the test has not touched. That is excused, and
+ * only for an /api call, never a navigation, and only one an answer arrived
+ * for. An abort with no answer behind it, a navigation abandoned after its
+ * answer, and any other resource cut short after its headers all still count.
  *
  * `waitUntil: 'networkidle'` is no protection: it only says nothing was in
  * flight for 500 ms, and on a slow machine the landing has not sent its first
@@ -127,12 +128,16 @@ export function watch(page, { ignore = () => false, console: withConsole = true,
     const error = request.failure()?.errorText;
     // The test left this view or closed the page: it stopped this itself.
     if (error === ABORTED && (state.closed || startedIn < state.view)) return;
-    // The answer for this request had already arrived and the page stopped
-    // reading its body. A read of this app that is over releases the stream,
-    // and Chromium reports the request the body belonged to as aborted, with
-    // the page still sitting there. An abort of a request no answer ever
-    // arrived for still counts, which is what keeps a cancelled read visible.
-    if (error === ABORTED && state.answered.has(request)) return;
+    // An /api read this app answered and then stopped reading. It cancels a
+    // body it will not use: an attempt or a read past its deadline, a load
+    // superseded by the next one, the last waiter for a shared check leaving,
+    // an answer over the size bound. Chromium reports the request that body
+    // belonged to as aborted, with the page still sitting there. A body read
+    // to the end never reaches here at all, it finishes, so this cannot tell
+    // a release from an abandonment. It is therefore kept to exactly the
+    // requests that reason covers: an /api call, never a navigation, and only
+    // one an answer arrived for. Every other abort still counts.
+    if (error === ABORTED && isApi(request) && !request.isNavigationRequest() && state.answered.has(request)) return;
     if (requests) push(`request failed: ${request.url()} (${error})`);
   });
   page.on('response', (response) => {
