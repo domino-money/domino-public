@@ -63,6 +63,20 @@ audience, expiry, service `common_name`, `type: app` and empty `sub`. These serv
 claims follow the [Access application-token contract](https://developers.cloudflare.com/cloudflare-one/access-controls/applications/http-apps/authorization-cookie/application-token/).
 Real staging must confirm the actual claim shape and test rotation/revocation.
 
+Cloudflare Access may also forward `Cookie: CF_Authorization=<assertion>` on the
+service request. The gateway accepts this transport duplicate only when it is
+the sole cookie and its value exactly equals `Cf-Access-Jwt-Assertion`; the full
+signed service-identity verification remains mandatory. A cookie alone never
+authenticates a request. Other cookies, duplicate cookie headers, mismatched
+assertions, Origin and Authorization headers remain rejected. The gateway never
+forwards cookies to the reader or sets a browser cookie.
+
+When the tunnel's ingress uses `originRequest.access.required=true`, cloudflared
+also fetches the issuer's `/cdn-cgi/access/certs` before forwarding. Its service
+identity therefore needs the issuer's approved HTTPS destinations in addition to
+the tunnel edge transport and local gateway. A Healthy tunnel by itself does not
+prove this authenticated path; verify the real token POST end to end.
+
 The BFF receives its separate Access client ID/secret through Worker secrets.
 See [bridge/README.md](../bridge/README.md) and its disabled example configuration.
 Mount only `/api/read/v1/*` at the application origin, with an independent tester

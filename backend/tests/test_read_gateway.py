@@ -78,6 +78,62 @@ class GatewayTests(IdentityFixtures, unittest.TestCase):
         self.assertEqual(self.client.get('/internal/read/v1/token',headers=self.headers).status_code,405)
         self.assertEqual(self.upstream.calls,[])
 
+    def test_access_transport_cookie_duplicates_verified_header_without_becoming_authentication(self):
+        assertion = self.headers['Cf-Access-Jwt-Assertion']
+        with patch.object(self.upstream.client, 'stream', wraps=self.upstream.client.stream) as reader_request:
+            response = self.post(headers={**self.headers, 'Cookie': 'CF_Authorization=' + assertion})
+        self.assertEqual(reader_request.call_count, 2)
+        for call in reader_request.call_args_list:
+            forwarded = {name.lower() for name in call.kwargs.get('headers', {})}
+            self.assertTrue({'cookie', 'cf-access-jwt-assertion'}.isdisjoint(forwarded))
+        self.assertEqual(response.status_code, 200, response.text)
+        self.assertEqual(response.json(), self.upstream.service.token(TOKEN))
+        self.assertEqual(response.headers['x-domino-read-contract'], CONTRACT_VERSION)
+        self.assertNotIn('set-cookie', response.headers)
+        self.assertEqual([route for route, _ in self.upstream.calls], ['health', 'token'])
+
+        self.upstream.calls.clear()
+        for label, invalid in [('malformed', 'invalid'),
+                              ('signature', assertion[:-12] + 'AAAAAAAAAAAA'),
+                              ('client', self.token(common_name='other.access')),
+                              ('issuer', self.token(iss='https://other.cloudflareaccess.com')),
+                              ('audience', self.token(aud=['b'*64])),
+                              ('type', self.token(type='org')),
+                              ('subject', self.token(sub='human')),
+                              ('expired', self.token(exp=int(time.time())-1))]:
+            with self.subTest(identity=label):
+                headers = {**self.headers, 'Cf-Access-Jwt-Assertion': invalid,
+                           'Cookie': 'CF_Authorization=' + invalid}
+                self.assertEqual(self.post(headers=headers).status_code, 403)
+        self.assertEqual(self.upstream.calls, [])
+
+    def test_access_cookie_rejects_other_duplicate_malformed_or_browser_credentials(self):
+        assertion = self.headers['Cf-Access-Jwt-Assertion']
+        access = 'CF_Authorization=' + assertion
+        for cookie in ('', 'CF_Authorization=', 'CF_Authorization=other',
+                       'cf_authorization=' + assertion, 'session=' + assertion,
+                       'CF_Authorization="' + assertion + '"',
+                       access + '; session=private', 'session=private; ' + access,
+                       access + '; ' + access, access + ',' + access, access + ';',
+                       access.replace('.', '%2E'), access + '\n'):
+            with self.subTest(cookie_shape=cookie.split('=', 1)[0]):
+                response = self.post(headers={**self.headers, 'Cookie': cookie})
+                self.assertEqual(response.status_code, 403)
+        for extra in ({'Origin': 'https://app.example'}, {'Authorization': 'Bearer private'}):
+            self.assertEqual(self.post(headers={**self.headers, 'Cookie': access, **extra}).status_code, 403)
+        self.assertEqual(self.post(headers={'Cookie': access, 'X-Domino-Client-Id': '192.0.2.1'}).status_code, 403)
+        duplicate = list(self.headers.items()) + [('Cookie', access), ('Cookie', access)]
+        self.assertEqual(self.post(headers=duplicate).status_code, 422)
+        nonascii = [(k.encode(), v.encode()) for k, v in self.headers.items()] + [(b'Cookie', access.encode() + b'\xff')]
+        self.assertEqual(self.post(headers=nonascii).status_code, 403)
+        # JWT decoders may ignore non-base64 signature characters. Matching
+        # copies must still be one syntactically valid compact JWT cookie.
+        for suffix in (',,,,', ';;;;', '=', '%3B', '\t'):
+            malformed = assertion + suffix
+            self.assertEqual(self.post(headers={**self.headers, 'Cf-Access-Jwt-Assertion': malformed,
+                                              'Cookie': 'CF_Authorization=' + malformed}).status_code, 403)
+        self.assertEqual(self.upstream.calls, [])
+
     def test_browser_headers_bad_identity_and_duplicate_headers_rejected(self):
         for extra in [{'Origin':'https://app.example'},{'Cookie':'private'},{'Authorization':'secret'},
                       {'X-Domino-Client-Id':'spoofed,192.0.2.1'}]:

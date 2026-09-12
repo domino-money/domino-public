@@ -5,6 +5,7 @@ separately configured Access/Tunnel ingress. No user sessions or transactions.
 """
 import asyncio
 from copy import deepcopy
+import hmac
 import ipaddress
 import json
 import os
@@ -145,7 +146,17 @@ def create_gateway(gateway=None):
             if name in headers:
                 return result(422, {'error': 'invalid_request'})
             headers[name] = value
-        if any(name in headers for name in (b'origin', b'cookie', b'authorization')):
+        if any(name in headers for name in (b'origin', b'authorization')):
+            return result(403, {'error': 'origin_not_allowed'})
+        cookie = headers.get(b'cookie')
+        assertion_header = headers.get(b'cf-access-jwt-assertion', b'')
+        # Access can duplicate its service assertion in CF_Authorization. It is
+        # transport metadata only: accept exactly that one identical value,
+        # never cookie-based authentication or an additional browser cookie.
+        # The unchanged verifier below still authenticates the signed header.
+        if cookie is not None and (not assertion_header or len(assertion_header) > 8192 or
+                not re.fullmatch(rb'[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+', assertion_header) or
+                not hmac.compare_digest(cookie.strip(b' \t'), b'CF_Authorization=' + assertion_header)):
             return result(403, {'error': 'origin_not_allowed'})
         try:
             remote = ipaddress.ip_address(request.client.host)

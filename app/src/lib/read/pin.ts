@@ -12,21 +12,18 @@
  * reaching the screen. `producerCommit` is informational: CI can check the
  * bytes, not which commit produced them.
  *
- * The pinned commit is the squash of #77 on main (complete OpenAPI NFT
- * uniqueness). It is a combined release: #74 before it added the uint256
- * bound to the OpenAPI `tokenIds` item, and #75 changed the listener
- * provenance recorded in the read, session, onboarding and deposit manifests.
- * No contract version changed. The later #76 and #78 touched staging scripts
- * and docs only; every manifest and backend/openapi-read.json are
- * byte-identical between this commit and the main this branch last merged.
+ * The pinned commit records #119's gateway compatibility fix for the matching
+ * Cloudflare Access transport cookie. Only the gateway source provenance in
+ * the read manifest changed; schemas, types, fixtures, runtime, OpenAPI and
+ * the other three packages remain byte-identical. No contract version changed.
  */
 export const PRODUCER_PIN = {
-  producerCommit: 'b50f80e5f5f6eacc07645d9856ab649047161aae',
-  producerPullRequest: 77,
+  producerCommit: '807afe399fd250a6db83a4014aadf64d7e9af543',
+  producerPullRequest: 119,
   packages: {
     'read-v1': {
       version: '1.1.0-rc.3',
-      manifestSha256: 'ec101da5ad23b19724044beaa159e79825f754c1ada58ce52d6e488545eb31c2',
+      manifestSha256: '0190300169bafbf32243191151ce71426b023a1578065eb287618bb3663af044',
     },
     'session-v1': {
       version: '3.0.0-rc.2',
