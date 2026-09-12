@@ -27,12 +27,14 @@ from bridge_state import strict_json
 from dev_read_identity import Admission, DevProfile, GATEWAY_PORT, READER_PORT, PrincipalBudget, RevocableVerifier, private_directory
 from discovery import DataError
 from read_contract import CONTRACT_VERSION
+from pool_apr_contract import CONTRACT_VERSION as V2_CONTRACT_VERSION, REQUEST_MODELS as V2_REQUEST_MODELS
 from read_deadline import read_deadline
 from read_gateway import Gateway, MAX_BODY, REQUEST_MODELS
 from read_api import ReadGate
 
 DEV_READS = ('token', 'pools', 'pool-market', 'wallet-assets', 'nft-positions', 'catalogue', 'pool-activity')
 READ_PREFIX = '/internal/read/v1/'
+V2_PREFIX = '/internal/read/v2/'
 STATUS_PATH = '/internal/dev/v1/status'
 
 
@@ -84,12 +86,13 @@ class GuardedReader:
 
 
 class DevGateway(Gateway):
-    def __init__(self, *, profile=None, admission=None, enabled=False, verifier=None,
-                 upstream=None, gate=None, clock=time.monotonic, cursors=None):
-        if type(enabled) is not bool or profile is not None and not isinstance(profile, DevProfile):
+    def __init__(self, *, profile=None, admission=None, enabled=False, enabled_v2=False, verifier=None,
+                 upstream=None, gate=None, clock=time.monotonic, wall_clock=time.time, cursors=None):
+        if (type(enabled) is not bool or type(enabled_v2) is not bool or
+                profile is not None and not isinstance(profile, DevProfile)):
             raise DataError('invalid_dev_configuration')
         if profile is None or admission is None:
-            if enabled or verifier is not None:
+            if enabled or enabled_v2 or verifier is not None:
                 raise DataError('invalid_dev_configuration')
         elif admission.service_id != profile.service_id:
             raise DataError('invalid_dev_configuration')
@@ -101,16 +104,20 @@ class DevGateway(Gateway):
         self.control_budget = None if profile is None or admission is None else PrincipalBudget(
             replace(profile, requests_per_minute=30, burst=5), admission, clock=clock)
         super().__init__(enabled=enabled, enabled_reads=DEV_READS,
+                         enabled_v2=enabled_v2, enabled_v2_reads=('pool-market',),
                          verifier=RevocableVerifier(actual_verifier, admission) if actual_verifier and admission else None,
                          budgets=budget, upstream=GuardedReader(upstream or LocalReaderHTTP(READER_PORT, clock=clock), admission),
-                         gate=gate or ReadGate(interval=2, clock=clock), clock=clock, cursors=cursors)
+                         gate=gate or ReadGate(interval=2, clock=clock), clock=clock, wall_clock=wall_clock, cursors=cursors)
 
     def allowed(self):
         return self.verifier is not None and self.admission is not None and self.admission.allowed()
 
-    def capabilities(self):
-        return {'contractVersion': CONTRACT_VERSION, 'dataMode': 'live_read_only' if self.enabled else 'disabled',
-                'chainId': 4663, 'enabledReads': list(DEV_READS) if self.enabled else [],
+    def capabilities(self, *, version='v1'):
+        enabled = self.enabled_v2 if version == 'v2' else self.enabled
+        reads = ('pool-market',) if version == 'v2' else DEV_READS
+        return {'contractVersion': V2_CONTRACT_VERSION if version == 'v2' else CONTRACT_VERSION,
+                'dataMode': 'live_read_only' if enabled else 'disabled',
+                'chainId': 4663, 'enabledReads': list(reads) if enabled else [],
                 'walletAuthentication': False, 'privateAccounts': False, 'ownerTransactions': False, 'automation': False}
 
     def reader_connection(self, deadline):
@@ -137,11 +144,11 @@ class DevGateway(Gateway):
                     'burst': self.profile.burst, 'maxInFlight': 1, 'minimumStartIntervalSeconds': 2,
                     'controlRequestsPerMinute': 30, 'controlBurst': 5, 'upstreamBudgetSeconds': 15}}
 
-    def execute_dev(self, route, body, assertion, deadline):
+    def execute_dev(self, route, body, assertion, deadline, *, version='v1'):
         if route not in ('capabilities', 'status'):
             # Existing execution owns and releases admission, including shielded
             # upstream work. Its client is the configured, verified principal.
-            result = super().execute(route, body, assertion, self.profile.service_id, deadline)
+            result = super().execute(route, body, assertion, self.profile.service_id, deadline, version=version)
             return result if self.allowed() else (403, {'error': 'upstream_unavailable'})
         try:
             remaining = deadline - self.clock()
@@ -157,7 +164,7 @@ class DevGateway(Gateway):
             self.admission.check()
             if self.clock() >= deadline:
                 return 504, {'error': 'upstream_timeout'}
-            return 200, self.capabilities() if route == 'capabilities' else self.status(connection)
+            return 200, self.capabilities(version=version) if route == 'capabilities' else self.status(connection)
         except DataError:
             return 403, {'error': 'upstream_unavailable'}
         finally:
@@ -171,16 +178,21 @@ def create_dev_gateway(gateway=None):
     @app.middleware('http')
     async def boundary(request: Request, call_next):
         deadline, request_id = gateway.clock() + 20, secrets.token_hex(16)
+        path = request.scope.get('raw_path', b'').decode('ascii', errors='replace')
+        version = 'v2' if path.startswith(V2_PREFIX) else 'v1'
+        contract = V2_CONTRACT_VERSION if version == 'v2' else CONTRACT_VERSION
         def result(status, data):
             headers = {'Cache-Control': 'no-store, no-transform', 'X-Content-Type-Options': 'nosniff',
-                       'X-Domino-Read-Contract': CONTRACT_VERSION, 'X-Domino-Request-Id': request_id,
+                       'X-Domino-Read-Contract': contract, 'X-Domino-Request-Id': request_id,
                        'Content-Security-Policy': "default-src 'none'; frame-ancestors 'none'"}
             if status == 429:
                 headers['Retry-After'] = '2'
             return JSONResponse(data, status_code=status, headers=headers)
-        path = request.scope.get('raw_path', b'').decode('ascii', errors='replace')
-        route = 'status' if path == STATUS_PATH else path[len(READ_PREFIX):] if path.startswith(READ_PREFIX) else None
-        if route not in (*DEV_READS, 'capabilities', 'status') or request.scope.get('query_string') or (route == 'status' and path != STATUS_PATH):
+        prefix = V2_PREFIX if version == 'v2' else READ_PREFIX
+        models = V2_REQUEST_MODELS if version == 'v2' else REQUEST_MODELS
+        reads = ('pool-market',) if version == 'v2' else DEV_READS
+        route = 'status' if path == STATUS_PATH else path[len(prefix):] if path.startswith(prefix) else None
+        if route not in (*reads, 'capabilities', 'status') or request.scope.get('query_string') or (route == 'status' and path != STATUS_PATH):
             return result(404, {'error': 'route_not_available'})
         control = route in ('capabilities', 'status')
         if request.method != ('GET' if control else 'POST'):
@@ -195,7 +207,7 @@ def create_dev_gateway(gateway=None):
             headers[name] = value
         if headers.get(b'host') != b'127.0.0.1:8891' or any(k in headers for k in (b'origin', b'authorization', b'x-domino-client-id')):
             return result(403, {'error': 'origin_not_allowed'})
-        if headers.get(b'x-domino-read-contract', CONTRACT_VERSION.encode()) != CONTRACT_VERSION.encode():
+        if headers.get(b'x-domino-read-contract', contract.encode()) != contract.encode():
             return result(502, {'error': 'upstream_contract_mismatch'})
         try:
             if not ipaddress.ip_address(request.client.host).is_loopback:
@@ -212,7 +224,7 @@ def create_dev_gateway(gateway=None):
             return result(403, {'error': 'origin_not_allowed'})
         if not gateway.allowed():
             return result(403, {'error': 'upstream_unavailable'})
-        if not control and not gateway.enabled:
+        if not control and not (gateway.enabled_v2 if version == 'v2' else gateway.enabled):
             return result(404, {'error': 'route_not_available'})
         body = None
         if control:
@@ -230,7 +242,7 @@ def create_dev_gateway(gateway=None):
                         if len(raw) > MAX_BODY:
                             return result(413, {'error': 'request_too_large'})
                 body = strict_json(raw)
-                REQUEST_MODELS[route].model_validate(body)
+                models[route].model_validate(body)
             except TimeoutError:
                 return result(408, {'error': 'request_timeout'})
             except (DataError, ValidationError, ValueError, TypeError):
@@ -247,7 +259,7 @@ def create_dev_gateway(gateway=None):
         started = Event()
         def execute():
             started.set()
-            return gateway.execute_dev(route, body, assertion.decode('ascii'), deadline)
+            return gateway.execute_dev(route, body, assertion.decode('ascii'), deadline, version=version)
         try:
             with anyio.CancelScope(shield=True):
                 status, data = await anyio.to_thread.run_sync(execute, abandon_on_cancel=False, limiter=app.state.worker_limiter)
@@ -293,6 +305,7 @@ def main():
     parser.add_argument('--port', type=int, required=True, choices=(GATEWAY_PORT,))
     parser.add_argument('--reader-port', type=int, required=True, choices=(READER_PORT,))
     parser.add_argument('--enable', action='store_true')
+    parser.add_argument('--enable-v2', action='store_true', help='Opt in to public pool-market estimates')
     args = parser.parse_args()
     fd = None
     try:
@@ -301,9 +314,9 @@ def main():
         profile = DevProfile.load(args.profile)
         fd = acquire_runtime_lock(args.runtime_dir, args.profile)
         admission = Admission(args.profile.parent / 'admission.json', profile.service_id)
-        if args.enable:
+        if args.enable or args.enable_v2:
             admission.check()
-        gateway = DevGateway(profile=profile, admission=admission, enabled=args.enable)
+        gateway = DevGateway(profile=profile, admission=admission, enabled=args.enable, enabled_v2=args.enable_v2)
         uvicorn.run(create_dev_gateway(gateway), host='127.0.0.1', port=GATEWAY_PORT, workers=1,
                     proxy_headers=False, access_log=False, server_header=False, limit_concurrency=16)
     except (DataError, OSError, ValueError, TypeError):

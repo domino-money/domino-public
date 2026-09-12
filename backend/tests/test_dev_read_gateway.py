@@ -102,6 +102,75 @@ class DevGatewayTests(IdentityFixtures, unittest.TestCase):
             self.assertTrue(headers.isdisjoint({'cookie', 'authorization', 'cf-access-jwt-assertion',
                                               'cf-connecting-ip', 'x-forwarded-for', 'x-domino-client-id'}))
 
+    def market_gateway(self, *, enabled_v2=False):
+        from test_read_v2_gateway import MarketReader
+        reader = MarketReader()
+        original = reader.request
+        def request(route, body=None, *, deadline):
+            status, data, metadata = original(route, body, deadline=deadline)
+            if route == 'health':
+                data['devAdmission'] = {'state': 'ready', 'retryAfterSeconds': 0,
+                                        'startsPerMinute': 6, 'minimumStartIntervalSeconds': 2}
+                metadata = dict(reader.metadata)
+            return status, data, metadata
+        reader.request = request
+        gateway = DevGateway(profile=self.profile, admission=self.admission, enabled=True,
+                             enabled_v2=enabled_v2, verifier=self.verifier(), upstream=reader,
+                             gate=ReadGate(interval=0), wall_clock=lambda: 1010)
+        return reader, gateway, self.make_client(gateway)
+
+    def test_v2_opt_in_reuses_one_v1_market_read_and_preserves_seven_v1_routes(self):
+        reader, gateway, client = self.market_gateway()
+        path = '/internal/read/v2/'
+        request = {'poolId': reader.data['poolId']}
+        self.assertEqual(client.post(path + 'pool-market', json=request, headers=self.headers).status_code, 404)
+        capabilities = client.get(path + 'capabilities', headers=self.headers)
+        self.assertEqual(capabilities.status_code, 200)
+        self.assertEqual(capabilities.json()['enabledReads'], [])
+        self.assertEqual(capabilities.headers['x-domino-read-contract'], '2.0.0-rc.1')
+        gateway.enabled_v2 = True
+        assertion = self.headers['Cf-Access-Jwt-Assertion']
+        response = client.post(path + 'pool-market', json=request,
+                               headers={**self.headers, 'Cookie': 'CF_Authorization=' + assertion})
+        self.assertEqual(response.status_code, 200, response.text)
+        self.assertEqual(response.json()['estimate']['feeAprEstimate24hPercent'], '10.95')
+        self.assertEqual(response.json()['market'], reader.data)
+        self.assertFalse(response.json()['executionAvailable'])
+        self.assertEqual(reader.calls, [('health', None), ('pool-market', {**request, 'includePriceHistory': False})])
+        self.assertEqual(client.get(path + 'capabilities', headers=self.headers).json()['enabledReads'], ['pool-market'])
+        self.assertEqual(client.get('/internal/read/v1/capabilities', headers=self.headers).json()['enabledReads'], list(DEV_READS))
+        legacy = client.post('/internal/read/v1/pool-market', json=request, headers=self.headers)
+        self.assertEqual(legacy.status_code, 200)
+        self.assertEqual(legacy.json(), reader.data)
+        self.assertEqual(legacy.headers['x-domino-read-contract'], CONTRACT_VERSION)
+
+    def test_v2_scope_and_revocation_during_health_prevent_new_read(self):
+        reader, gateway, client = self.market_gateway(enabled_v2=True)
+        request = {'poolId': reader.data['poolId']}
+        for route in ('token', 'pool-positions', 'status', 'pool-market/', '%70ool-market'):
+            self.assertEqual(client.post('/internal/read/v2/' + route, json=request, headers=self.headers).status_code, 404)
+        for body in ({**request, 'includePriceHistory': True}, {**request, 'now': 1010}):
+            self.assertEqual(client.post('/internal/read/v2/pool-market', json=body, headers=self.headers).status_code, 422)
+        self.assertEqual(client.post('/internal/read/v2/pool-market', json=request,
+                                     headers={**self.headers, 'X-Domino-Read-Contract': CONTRACT_VERSION}).status_code, 502)
+        self.assertEqual(client.post('/internal/read/v2/pool-market', json=request).status_code, 403)
+        self.assertEqual(reader.calls, [])
+        reader.on_request = lambda route: self.grant(enabled=False) if route == 'health' else None
+        response = client.post('/internal/read/v2/pool-market', json=request, headers=self.headers)
+        self.assertEqual(response.status_code, 403)
+        self.assertEqual(reader.calls, [('health', None)])
+
+    def test_v2_and_v1_share_the_same_principal_data_budget(self):
+        reader, gateway, client = self.market_gateway(enabled_v2=True)
+        profile = DevProfile(ISSUER, AUDIENCE, SERVICE, 'a'*40, 'b'*40, 'c'*64, 6, 2)
+        gateway.budgets = PrincipalBudget(profile, self.admission, clock=lambda: 100.)
+        for version, status in (('v2', 200), ('v1', 200), ('v2', 429)):
+            response = client.post('/internal/read/' + version + '/pool-market',
+                                   json={'poolId': reader.data['poolId']}, headers=self.headers)
+            self.assertEqual(response.status_code, status, response.text)
+        self.assertEqual(len(reader.calls), 4)
+        self.assertEqual(client.get('/internal/read/v2/capabilities', headers=self.headers).status_code, 200)
+
     def test_jwt_claims_missing_identity_and_legacy_client_header_fail_closed(self):
         variations = [{}, {'Cf-Access-Jwt-Assertion': 'bad'},
                       {**self.headers, 'X-Domino-Client-Id': '192.0.2.1'}]

@@ -66,7 +66,7 @@ A consumer retaining a result must add its elapsed holding time and expire it;
 
 ## Consumer handoff
 
-Decimal can reuse the existing market projection with `response.market` and
+The consumer can reuse the existing market projection with `response.market` and
 add a separate estimate presentation. The existing `Market.feeAprPercent` and
 qualified-APR path must not silently acquire this estimate's meaning. Use copy
 such as “Estimated pool fee APR”, with the attributed source, observation age
@@ -84,8 +84,8 @@ chain proof or provider qualification.
 and disabled/live mode. Old v1 clients continue to use their original prefix
 and exact version. The Pages forwarder routes both prefixes to the same trusted
 READ_BRIDGE binding, strips every browser credential and preserves the version
-header. No public UI calls v2 until Decimal implements and acknowledges its
-consumer. Keep v1 available for at least the communicated 30-day migration
+header. Integrate producer and consumer together under
+[EXECUTION_POLICY.md](EXECUTION_POLICY.md). Keep v1 available for at least the communicated 30-day migration
 period and until its consumers migrate; this candidate schedules no removal.
 
 ## Separate opt-in and acceptance
@@ -95,13 +95,22 @@ v1 controls remain `READ_BRIDGE_ENABLED` and `ENABLED_READS`. The v2 controls
 are `READ_V2_BRIDGE_ENABLED` and `ENABLED_V2_READS`; absent values also leave v2
 off. The only v2 read candidate is `pool-market`. A v1 flag cannot enable v2.
 
-The gateway's new `--enable-v2` and `DOMINO_BRIDGE_V2_READS=pool-market` are
+The production gateway's `--enable-v2` and `DOMINO_BRIDGE_V2_READS=pool-market` are
 independent from v1 `--enable`/`DOMINO_BRIDGE_READS`. They use the existing read
 Access verifier and the same reader on 8876. The reader requires no new flag or
-API route. No command in this document should be interpreted as an instruction
-to modify the active continuous-read VM deployment.
+API route. The development gateway on 8891 separately accepts `--enable-v2`,
+with only `pool-market` in V2 and the existing reader on 8890. Its profile schema,
+hot admission, verified Access principal, data/control budgets and one worker
+are shared across both versions. V2 capabilities use the same authenticated
+`/internal/read/v2/capabilities` route; `/internal/dev/v1/status` retains its
+V1 schema. An enabled V1 flag does not enable V2. Existing reader cooldown,
+qualification expiry, provider limits and the seven V1 routes are unchanged.
 
-After independent API/security review and Decimal's exact version/digest ACK:
+The chart reader uses the explicitly requested currency address in the fixed
+Gecko OHLCV route. The development transport accepts that exact address form
+under the existing three-Gecko-calls/minute budget; no provider host is added.
+
+Apply the authorized runtime update and record its observed outcome:
 
 1. Qualify a reviewed immutable gateway release while retaining the existing
    continuous read profile, credentials and v1 availability.

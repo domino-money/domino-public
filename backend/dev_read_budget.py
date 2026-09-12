@@ -25,7 +25,7 @@ CEILINGS = {'rpc': 120, 'gecko': 3, 'dex': 6}
 WINDOW_SECONDS = 60
 GECKO_ROUTE = re.compile(
     r'https://api\.geckoterminal\.com/api/v2/networks/robinhood/pools/0x[0-9a-f]{64}'
-    r'(?:/ohlcv/hour\?aggregate=1&limit=24&currency=usd&token=(?:base|quote))?\Z')
+    r'(?:/ohlcv/hour\?aggregate=1&limit=24&currency=usd&token=0x[0-9a-f]{40})?\Z')
 DEX_ROUTE = re.compile(r'https://api\.dexscreener\.com/token-pairs/v1/robinhood/0x[0-9a-f]{40}\Z')
 
 

@@ -234,13 +234,14 @@ export function validateError(status:number, value:unknown):value is ErrorRespon
     sources = ('backend/pool_apr_contract.py', 'backend/pool_apr.py', 'backend/read_contract.py',
                'backend/discovery.py', 'backend/read_service.py', 'backend/market_cache.py', 'backend/market_data.py',
                'backend/read_gateway.py', 'backend/read_api.py', 'backend/bridge_http.py',
+               'backend/dev_read_gateway.py', 'backend/dev_read_identity.py', 'backend/dev_read_service.py', 'backend/dev_read_budget.py',
                'backend/bridge_identity.py', 'backend/bridge_state.py', 'backend/read_deadline.py',
                'bridge/src/worker.mjs', 'bridge/src/strict-json.mjs', 'app/functions/_lib/bridge.ts',
                'bridge/wrangler.read.toml',
                'backend/tests/read_v2_contract_fixtures.py', 'backend/tests/test_read_v2_contract.py', 'backend/tests/test_read_contract.py',
                'backend/tests/test_discovery.py', 'scripts/export-read-contract.py', 'scripts/export-read-v2-contract.py')
     files['manifest.json'] = text({'contract': 'read-v2', 'contractVersion': contract.CONTRACT_VERSION,
-        'status': 'candidate_disabled_pending_consumer_acknowledgement',
+        'status': 'opt_in_public_read_only',
         'generator': 'scripts/export-read-v2-contract.py', 'enabledReadCandidates': ['pool-market'],
         'sources': [{'path': path, 'sha256': hashlib.sha256((ROOT / path).read_bytes()).hexdigest()} for path in sources],
         'files': [{'path': path, 'sha256': hashlib.sha256(value.encode()).hexdigest()} for path, value in sorted(files.items())]})

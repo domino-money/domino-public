@@ -1,9 +1,10 @@
 # Read-v2 pool estimate candidate
 
-Contract `2.0.0-rc.1` adds an opt-in `pool-market` response at the gateway's
-`/internal/read/v2/pool-market`. It does not activate a Worker, change the app,
-or replace any `read-v1` schema or payload. Consumer acknowledgement, exact pins
-and a separate deployment decision remain required.
+Contract `2.0.0-rc.1` adds an opt-in `pool-market` response at the production and
+development gateways' `/internal/read/v2/pool-market`. Existing `read-v1`
+schemas and payloads remain available. Keep consumer pins and runtime flags
+consistent under the [execution policy](../../docs/EXECUTION_POLICY.md); no
+named consumer acknowledgement is an execution gate.
 
 The sole request is `{ "poolId": "<full lowercase PoolId>" }`. The gateway
 obtains one completed read-v1 `pool-market` response with price history off,

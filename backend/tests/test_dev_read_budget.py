@@ -121,6 +121,16 @@ class DevelopmentBudgetTests(unittest.TestCase):
                 with self.subTest(url=url), self.assertRaises(DataError): self.transport(url, body)
         self.assertEqual(self.calls, [])
 
+    def test_address_bound_chart_route_keeps_provider_budget_and_rejects_role_aliases(self):
+        chart = GECKO + '/ohlcv/hour?aggregate=1&limit=24&currency=usd&token=' + TOKEN
+        with self.budgets.operation():
+            self.transport(GECKO)
+            self.transport(chart)
+            for invalid in (chart.replace(TOKEN, 'base'), chart + '&target=other', chart.replace('limit=24', 'limit=100')):
+                with self.assertRaises(DataError): self.transport(invalid)
+        self.assertEqual(len(self.calls), 2)
+        self.assertEqual(len(self.budgets.events['gecko']), 2)
+
     def test_no_io_without_operation_qualification_after_expiry_or_during_restart_cooldown(self):
         with self.assertRaises(DataError): self.transport(PRIMARY, payload())
         self.now[0] = 59
