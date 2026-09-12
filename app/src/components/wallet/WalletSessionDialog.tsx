@@ -6,24 +6,14 @@ import { useSignedInIdentity } from '../../session/privateQuery'
 import { connectWallet, disconnectWallet, switchToRobinhood } from '../../wallet/port'
 import { sessionController } from '../../wallet/session'
 import { useDialog } from '../../lib/useDialog'
-import { Callout } from '../Callout'
-import { Button, Card, Display, Eyebrow, Pill } from '../ui'
+import { Button, Card, Pill } from '../ui'
+import { BrandMark } from '../BrandMark'
 import { describe, REFRESH_UNAVAILABLE } from './copy'
+import { WalletLogo } from './WalletLogo'
 
 /** Wallet names come from the extension that announced them: shown as text, shortened. */
 const MAX_NAME = 40
 const walletName = (name: string) => (name.length > MAX_NAME ? `${name.slice(0, MAX_NAME - 1)}…` : name)
-
-/** A neutral mark. The provider's own EIP-6963 icon is untrusted data and never used as an image. */
-function WalletGlyph() {
-  return (
-    <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true">
-      <rect x="1.5" y="3.5" width="13" height="10" rx="2.5" fill="none" stroke="currentColor" strokeWidth="1.3" />
-      <path d="M1.5 6.5h13" stroke="currentColor" strokeWidth="1.3" />
-      <circle cx="11.5" cy="10" r="1" fill="currentColor" />
-    </svg>
-  )
-}
 
 /** An action's own outcome, shown only while the state it was taken in lasts. */
 interface Notice {
@@ -180,21 +170,26 @@ export function WalletSessionDialog({
         role="dialog"
         aria-modal="true"
         aria-labelledby="wallet-dialog-title"
-        aria-describedby="wallet-dialog-status"
+        aria-describedby={view.status === 'no_wallet' ? undefined : 'wallet-dialog-status'}
         ref={dialog}
         className="grid max-h-[92vh] w-full max-w-[480px] grid-rows-[auto_minmax(0,1fr)_auto] rounded-b-none sm:max-h-[86vh] sm:rounded-b-[var(--radius-lg)]"
       >
-        <header className="border-b p-5">
-          <Eyebrow>Robinhood Chain · 4663</Eyebrow>
-          <Display as="h2" id="wallet-dialog-title" tabIndex={-1} className="mt-2 text-[23px] outline-none">
-            Wallet sign-in
-          </Display>
-          <p id="wallet-dialog-status" className="mt-1 text-[13px] text-fg-muted" data-status={view.status}>
+        <header className="relative px-6 pt-7 pb-1">
+          <BrandMark width={20} height={34} className="mx-auto mb-3" />
+          <h2 id="wallet-dialog-title" tabIndex={-1} className="text-center font-display text-[30px] leading-tight font-normal outline-none">
+            {view.status === 'no_wallet' ? 'Connect' : 'Wallet'}
+          </h2>
+          <button type="button" onClick={onClose} aria-label="Close" className="absolute top-3 right-3 flex size-9 items-center justify-center rounded-full text-fg-muted transition hover:bg-surface-3 hover:text-fg focus-visible:outline-2 focus-visible:outline-[var(--ring)]">
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+              <path d="m4 4 8 8M12 4l-8 8" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" />
+            </svg>
+          </button>
+          {view.status !== 'no_wallet' && <p id="wallet-dialog-status" className="mt-3 text-center text-[13px] text-fg-muted" data-status={view.status}>
             {describe(view)}
-          </p>
+          </p>}
         </header>
 
-        <div className="grid gap-4 overflow-y-auto p-5" aria-busy={busy || pending || undefined}>
+        <div className="grid gap-4 overflow-y-auto p-6" aria-busy={busy || pending || undefined}>
           {identity.kind === 'connected' && view.status !== 'no_wallet' && (
             <div className="flex items-center justify-between gap-3 rounded-[var(--radius)] border bg-surface-1 px-4 py-3">
               <div className="min-w-0">
@@ -216,16 +211,19 @@ export function WalletSessionDialog({
               <ul className="grid gap-2" aria-label="Browser wallets">
                 {connectors.map((connector) => (
                   <li key={connector.uid}>
-                    <Button
-                      variant="outline"
-                      className="w-full justify-start"
+                    <button
+                      type="button"
+                      className="group flex min-h-12 w-full items-center gap-3 rounded-[var(--radius)] border border-transparent bg-surface-3 px-4 py-3 text-left text-[14px] font-medium transition hover:border-primary/30 hover:bg-accent focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--ring)] disabled:cursor-wait disabled:opacity-50"
                       disabled={pending}
                       onClick={() => connect(connector)}
                     >
-                      <WalletGlyph />
+                      <WalletLogo id={connector.id} />
                       <span className="sr-only">{'Connect '}</span>
-                      {walletName(connector.name)}
-                    </Button>
+                      <bdi className="min-w-0 truncate">{walletName(connector.name)}</bdi>
+                      <svg width="16" height="16" viewBox="0 0 16 16" className="ml-auto shrink-0 text-primary opacity-0 transition group-hover:opacity-100 group-focus-visible:opacity-100" fill="none" aria-hidden="true">
+                        <path d="M3 8h10m-4-4 4 4-4 4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+                      </svg>
+                    </button>
                   </li>
                 ))}
               </ul>
@@ -264,21 +262,11 @@ export function WalletSessionDialog({
             </p>
           )}
 
-          <Callout title="Signing in is not a permission">
-            Signing in only proves you control this address. It grants no spending permission and cannot deposit, swap,
-            mint, compound or open a successor position. Nothing in your wallet can move because you signed in.
-          </Callout>
-          <p className="text-[12px] text-fg-subtle">
-            Only standard wallets (EOAs) can sign in. Smart-contract and EIP-7702 delegated accounts are not supported yet.
-          </p>
         </div>
 
-        <footer className="flex flex-wrap items-center justify-between gap-3 border-t p-5">
-          <Button variant="ghost" onClick={onClose}>
-            Close
-          </Button>
-          <div className="flex flex-wrap items-center gap-2">{actions}</div>
-        </footer>
+        {actions && <footer className="flex flex-wrap items-center justify-end gap-2 border-t px-6 py-4">
+          {actions}
+        </footer>}
       </Card>
     </div>,
     document.body,

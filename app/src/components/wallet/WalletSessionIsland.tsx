@@ -4,7 +4,7 @@ import { WagmiProvider } from 'wagmi'
 import { privateQueryClient } from '../../session/privateQuery'
 import { walletConfig } from '../../wallet/config'
 import { useSession } from '../../wallet/session'
-import { Button, Pill } from '../ui'
+import { Button } from '../ui'
 import { announcement, shortAddress } from './copy'
 import { PrivateReadProbe } from './PrivateReadProbe'
 import { WalletSessionDialog } from './WalletSessionDialog'
@@ -30,15 +30,15 @@ function WalletControl() {
   const [open, setOpen] = useState(false)
   const { view, identity } = session
 
-  let label = <>Wallet</>
-  if (view.status === 'no_wallet') label = <>Connect wallet</>
-  else if (view.status === 'signed_out') label = <>Sign in</>
-  else if (view.status === 'signed_in' && identity.kind === 'connected') {
+  let label = <>Connect wallet</>
+  if (identity.kind === 'connected') {
     label = (
       <>
-        <Pill tone="in">Signed in</Pill>
-        <span className="sr-only">{' as '}</span>
+        <span className="sr-only">{view.status === 'signed_in' ? 'Signed in as ' : 'Connected wallet '}</span>
         <span className="tnum font-mono">{shortAddress(identity.address)}</span>
+        <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
+          <path d="m3 4.5 3 3 3-3" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round" />
+        </svg>
       </>
     )
   }
@@ -58,6 +58,7 @@ function WalletControl() {
             aria-haspopup="dialog"
             aria-expanded={open}
             aria-busy={session.busy || undefined}
+            title={identity.kind === 'connected' ? identity.address : undefined}
             onClick={() => setOpen(true)}
           >
             {label}

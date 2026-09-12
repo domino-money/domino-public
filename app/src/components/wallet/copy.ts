@@ -63,7 +63,7 @@ export function describe(view: View): string {
     case 'starting':
       return 'Looking for your wallet…'
     case 'no_wallet':
-      return 'Connect a browser wallet to sign in.'
+      return ''
     case 'wrong_network':
       return `Your wallet is on network ${view.chainId}. Sign-in works on Robinhood Chain (4663) only.`
     case 'checking':

@@ -1,5 +1,6 @@
 import { lazy, Suspense, useEffect, useState } from 'react'
 import { Button, cx } from './ui'
+import { BrandMark } from './BrandMark'
 import { WalletBoundary } from './wallet/WalletBoundary'
 
 // The wallet session is one lazy chunk, reached only through this constant.
@@ -20,12 +21,7 @@ function DisabledConnect({ title }: { title: string }) {
 function Wordmark() {
   return (
     <a href="#/" className="flex items-center gap-2.5">
-      <svg width="26" height="26" viewBox="0 0 26 26" aria-hidden="true">
-        <rect x="1" y="1" width="24" height="24" rx="7" fill="var(--primary)" />
-        <circle cx="13" cy="8" r="2.1" fill="var(--primary-fg)" />
-        <rect x="6.5" y="12.4" width="13" height="1.3" rx="0.65" fill="var(--primary-fg)" />
-        <circle cx="13" cy="18" r="2.1" fill="var(--primary-fg)" />
-      </svg>
+      <BrandMark />
       <span className="font-display text-[24px] leading-none">
         domino<span style={{ color: 'var(--primary)' }}>.</span>
       </span>

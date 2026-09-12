@@ -144,7 +144,7 @@ async function scenario({ gate = null, intercept, admit = [ADDR_A, ADDR_B], cloc
 // ---- page helpers ----------------------------------------------------------
 
 const trigger = (page) => page.locator('header [aria-haspopup="dialog"]');
-const dialog = (page) => page.getByRole('dialog', { name: 'Wallet sign-in' });
+const dialog = (page) => page.getByRole('dialog', { name: /^(Connect|Wallet)$/ });
 const view = (page) => page.evaluate(() => window.__dominoSessionProbe.view());
 const privateKeys = (page) => page.evaluate(() => window.__dominoSessionProbe.privateKeys().map((key) => key.join('|')));
 
@@ -209,6 +209,30 @@ test('each announced wallet is listed by name, and no provider icon becomes an i
   await s.close();
 });
 
+test('clean wallet picker uses only bundled brand icons; connection shows the address before sign-in', async () => {
+  const s = await scenario({ wallets: [
+    { id: 'rabby', name: 'Rabby Wallet', rdns: 'io.rabby', uuid: '8f2a7d1c-0000-4000-8000-000000000001' },
+    { id: 'unknown', name: 'Unknown Wallet', rdns: 'unknown.wallet', uuid: '8f2a7d1c-0000-4000-8000-000000000002' },
+  ] });
+  const page = await s.open();
+  await viewIs(page, 'no_wallet');
+  await openDialog(page);
+  assert.equal(await dialog(page).getByRole('heading', { name: 'Connect', exact: true }).count(), 1);
+  assert.doesNotMatch(await dialog(page).innerText(), /Signing in is not a permission|Connect a browser wallet|Robinhood Chain · 4663|Only standard wallets/);
+  assert.deepEqual(await dialog(page).locator('img').evaluateAll((images) => images.map((image) => image.getAttribute('src'))), ['/wallets/rabby.svg']);
+  assert.equal(await dialog(page).locator('img').evaluate((image) => image.complete && image.naturalWidth > 0), true);
+  await dialog(page).getByRole('button', { name: 'Connect Rabby Wallet' }).click();
+  await viewIs(page, 'signed_out');
+  assert.match(await trigger(page).innerText(), new RegExp(`${ADDR_A.slice(0, 6)}…${ADDR_A.slice(-4)}`));
+  assert.doesNotMatch(await trigger(page).innerText(), /Signed in/);
+  assert.equal(await trigger(page).getAttribute('title'), ADDR_A);
+  assert.equal(s.wallet.state.signed.length, 0, 'showing the address does not sign in');
+  await dialog(page).getByRole('button', { name: 'Disconnect wallet', exact: true }).click();
+  await viewIs(page, 'no_wallet');
+  assert.equal(await trigger(page).innerText(), 'Connect wallet');
+  await s.close();
+});
+
 test('sign-in: bootstrap, challenge for the EIP-55 address, one signature over the exact server message, verify', async () => {
   const s = await scenario();
   const page = await s.open();
@@ -222,7 +246,7 @@ test('sign-in: bootstrap, challenge for the EIP-55 address, one signature over t
   assert.equal(s.wallet.state.signed[0].message, issued, 'the wallet signed the server message byte for byte');
 
   await until(page, () => document.querySelector('[data-testid="session-details"]') !== null, null, 'session details');
-  assert.match(await dialog(page).innerText(), /grants no spending permission/);
+  assert.equal(await dialog(page).getByRole('button', { name: 'Sign out', exact: true }).count(), 1);
   assert.match(await trigger(page).innerText(), /Signed in/);
   const keys = await privateKeys(page);
   assert.equal(keys.length, 1);
@@ -972,9 +996,9 @@ test('signing in grants nothing: the site says so, and signing stays off', async
   const page = await s.open();
   await connect(page);
   await signIn(s, page);
-  assert.match(await dialog(page).innerText(), /cannot deposit, swap, mint, compound or open a successor position/);
-  assert.match(await dialog(page).innerText(), /Nothing in your wallet can move because you signed in/);
-  assert.match(await dialog(page).innerText(), /Smart-contract and EIP-7702 delegated accounts are not supported/);
+  // The owner removed the permanent explanatory paragraphs from this modal.
+  // Permissions remain unchanged and the existing Settings explanation stays.
+  assert.doesNotMatch(await dialog(page).innerText(), /Signing in is not a permission|Only standard wallets/);
   await dialog(page).getByRole('button', { name: 'Close' }).click();
   // Signed in is all the header claims: no mode label, and nothing about what
   // the address may now do.
