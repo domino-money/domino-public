@@ -13,7 +13,7 @@
  * attempt, the last repeating. A request no reply fits gets the bridge's 422,
  * which is how a test proves a pagination cursor went back exactly as received.
  */
-import { GATE_PAGE_MARKER, GATE_REFUSAL } from './interpret'
+import { FORWARDER_REFUSALS, GATE_PAGE_MARKER, GATE_REFUSAL } from './interpret'
 import { REQUEST_READ_CONTRACT } from './pin'
 import { BRIDGE_RETRY, realClock, runRead, type Clock, type RetryPolicy } from './pipeline'
 import type { RawReply, ReadOptions, ReadOutcome, ReadRequests, ReadRoute, ReadSource, ReadValidators, RequestOf } from './types'
@@ -24,12 +24,16 @@ export interface FixtureCatalog {
   text: (path: string) => string
 }
 
-/** Replies no fixture file describes: the gate, the edge and broken transports. */
+/** Replies no fixture file describes: the gate, the /api forwarder, the edge and broken transports. */
 export type Transport =
   | 'gate401'
   | 'gate503'
+  | 'forwarder503'
+  | 'forwarder404'
+  | 'forwarder403'
   | 'edgeHtml502'
   | 'spaHtml200'
+  | 'routeNotAvailable404'
   | 'opaqueRedirect'
   | 'network'
   | 'headerMissing'
@@ -65,6 +69,13 @@ const reply = (status: number, contentType: string | null, text: string, contrac
 })
 
 const JSON_TYPE = 'application/json; charset=utf-8'
+
+/** The /api forwarder's refusal for a status, exactly as interpret.ts recognises it. */
+function forwarder(status: number): RawReply {
+  const refusal = FORWARDER_REFUSALS.find((entry) => entry.status === status)
+  if (!refusal) throw new Error(`The forwarder has no ${status} refusal`)
+  return reply(status, JSON_TYPE, refusal.body, null)
+}
 
 /** JSON with object keys sorted, so two requests compare by content, never by key order. */
 export function canonicalJson(value: unknown): string {
@@ -108,10 +119,20 @@ export function createFixtureSource({ catalog, validators, script, clock = realC
         return reply(401, 'application/json; charset=utf-8', GATE_REFUSAL, null)
       case 'gate503':
         return reply(503, 'text/html; charset=utf-8', GATE_PAGE, null)
+      case 'forwarder503':
+        return forwarder(503)
+      case 'forwarder404':
+        return forwarder(404)
+      case 'forwarder403':
+        return forwarder(403)
       case 'edgeHtml502':
         return reply(502, 'text/html; charset=UTF-8', '<html><body>Bad gateway</body></html>', null)
       case 'spaHtml200':
         return reply(200, 'text/html; charset=utf-8', '<!doctype html><div id="root"></div>', null)
+      case 'routeNotAvailable404':
+        // The bridge's own answer for a route its deployment does not enable, contract header included.
+        // The package ships no fixture for it; the body is the whole error, code and nothing else.
+        return reply(404, JSON_TYPE, '{"error":"route_not_available"}')
       case 'opaqueRedirect':
         return { ...reply(0, null, '', null), opaqueRedirect: true }
       case 'network':
@@ -146,7 +167,7 @@ export function createFixtureSource({ catalog, validators, script, clock = realC
     async read<R extends ReadRoute>(route: R, request: ReadRequests[R], opts: ReadOptions = {}): Promise<ReadOutcome<R>> {
       requests.push({ route, request })
       const steps = script[route]
-      const provenance = { transport: 'fixture' as const, contract: null, receivedAt: clock.now(), attempts: 0 }
+      const provenance = { transport: 'fixture' as const, contract: null, receivedAt: clock.now(), receivedMonotonic: clock.monotonic(), attempts: 0 }
       // The bridge validates requests too; a fixture must not accept what it would refuse.
       if (!validators.validateRequest(route, request)) return { route, provenance, state: 'invalid', reason: 'request_contract' }
       if (!steps || steps.length === 0) return { route, provenance, state: 'disabled', reason: 'route_not_enabled' }

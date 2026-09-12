@@ -14,7 +14,7 @@ import { MarketsContext } from '../lib/read/useMarkets'
 
 /**
  * Every fixture case on one page, each with its own source, rendered by the
- * app's real components: the Top pools table and the ticker for market rows,
+ * app's real components: the Selected pools table and the ticker for market rows,
  * the family panels for everything else. Nothing here is a mock of a
  * component; only the reads are scripted.
  */
@@ -61,7 +61,7 @@ export function ReadLab() {
           manifest {pin.manifestSha256.slice(0, 12)}.
         </p>
 
-        <Display className="mt-10 text-[28px]">Top pools and ticker</Display>
+        <Display className="mt-10 text-[28px]">Selected pools and ticker</Display>
         <div className="mt-4 grid gap-6">
           {MARKET_CASES.map((scenario) => (
             <MarketCaseView key={scenario.id} scenario={scenario} />

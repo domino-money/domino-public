@@ -4,8 +4,11 @@ dist/
 # Fixture and bridge-test builds: never deployed, never in dist
 .fixture-dist/
 .bridge-dist/
-# Links tests/build-guard.test.mjs makes to dist; removed after each test
+# Links and config copies tests/build-guard.test.mjs makes; removed after each test
 .guard-link-*
+.guard-config-*
+# The release record scripts/release.mjs writes: local to the machine that built and deployed
+.release/
 *.tsbuildinfo
 
 # Local environment

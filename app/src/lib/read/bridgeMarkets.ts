@@ -1,20 +1,25 @@
 /**
- * Market rows from the same-origin bridge, for the bridge-test build only.
+ * Market rows from the same-origin bridge: the provider of every deployable
+ * build, and of the bridge-test build.
  *
- * read-v1 has no "top pools" route: pools and catalogue both need a token. A
- * live table therefore needs a curated list of pool ids, which belongs to #13.
- * Until it exists this build asks for the package's fixture pool, which is
- * what the local bridge stub in tests/read-bridge.browser.test.mjs serves.
+ * read-v1 has no "top pools" route, so the rows come from a reviewed list of
+ * pool ids, src/config/selectedPools.ts. The bridge-test build asks for the
+ * package's fixture pool instead, which is what its local bridge stub
+ * serves; that branch folds away everywhere else, and the fixture id with
+ * it. Whether anything is read is the server's call: the source asks the
+ * bridge's capabilities first and sends only what they list. R-1's pacing
+ * and bounded busy retry are the scheduler's and the pipeline's, unchanged.
  */
+import { SELECTED_POOLS } from '../../config/selectedPools'
 import { CAPABILITIES } from '../capabilities'
+import { BRIDGE_TEST_POOLS } from './bridgeTestPools'
 import { createBridgeSource } from './bridgeSource'
 import { READ_RUNTIME } from './contract'
 import { createReadMarketsProvider } from './marketsProvider'
 import { createScheduledSource } from './scheduler'
 
-const BRIDGE_TEST_POOLS = ['0x0911afcb281d7bcae2d71443ceaeebd0f89b4537708449970d797622b4b4c941']
-
 export function bridgeMarkets() {
-  const source = createScheduledSource(createBridgeSource({ enabled: CAPABILITIES.liveDataEnabled, validators: READ_RUNTIME }))
-  return createReadMarketsProvider({ source, poolIds: BRIDGE_TEST_POOLS, kind: 'bridge' })
+  const source = createScheduledSource(createBridgeSource({ enabled: CAPABILITIES.liveReadsBuilt, validators: READ_RUNTIME }))
+  const poolIds = __DOMINO_POOL_SET__ === 'selected' ? SELECTED_POOLS : BRIDGE_TEST_POOLS
+  return createReadMarketsProvider({ source, poolIds, kind: 'bridge' })
 }

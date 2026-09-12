@@ -1,5 +1,4 @@
 import { useEffect, useState } from 'react'
-import { useLocalWorkspace } from 'core/local-workspace'
 import { Header } from './components/Header'
 import { Footer } from './components/Footer'
 import { Ticker } from './components/Ticker'
@@ -8,12 +7,13 @@ import { Dashboard } from './screens/Dashboard'
 import { Settings } from './screens/Settings'
 import { Button } from './components/ui'
 import { BuildBanner } from './components/read/BuildBanner'
+import { useAppearance } from './lib/appearance'
 import { appMarketsProvider } from './lib/read/buildMode'
 import { MarketsContext } from './lib/read/useMarkets'
 
 /**
- * Hash routing with a section part: `#/app#activity` is route `/app`, section
- * `activity`. Both are tracked, so a link that only changes the section still
+ * Hash routing with a section part: `#/#pools` is route `/`, section
+ * `pools`. Both are tracked, so a link that only changes the section still
  * produces a state change and still scrolls, and a route change does not
  * discard the section it was asked to open.
  */
@@ -64,26 +64,13 @@ function useHashLocation() {
 
 export default function App() {
   const { route } = useHashLocation()
-  const { dark, loaded, setDark } = useLocalWorkspace()
+  const { dark, setDark } = useAppearance()
   // One provider for the whole app, so the ticker and the table share one load.
   const [markets] = useState(appMarketsProvider)
 
-  // Appearance is shared with the existing workbench through its own storage key.
-  // With nothing stored yet, open dark, but never override a saved choice.
   useEffect(() => {
-    if (!loaded) return
-    let stored: string | null = null
-    try {
-      stored = window.localStorage.getItem('domino-appearance')
-    } catch {
-      stored = null
-    }
-    if (stored === null && !dark) setDark(true)
-  }, [loaded, dark, setDark])
-
-  useEffect(() => {
-    if (loaded) document.documentElement.classList.toggle('dark', dark)
-  }, [dark, loaded])
+    document.documentElement.classList.toggle('dark', dark)
+  }, [dark])
 
   // A page opened directly on a section link starts at the top otherwise. Read
   // from the hash rather than from state so this depends on nothing and runs
@@ -96,20 +83,18 @@ export default function App() {
   return (
     <MarketsContext.Provider value={markets}>
     <div className="min-h-screen">
-      {__DOMINO_READ_MODE__ !== 'sample' && <BuildBanner mode={__DOMINO_READ_MODE__} />}
+      {!__DOMINO_DEPLOYABLE__ && <BuildBanner mode={__DOMINO_READ_MODE__} />}
       {route === '/' && <Ticker />}
       <Header route={route} />
       {route === '/app' ? <Dashboard /> : route === '/settings' ? <Settings /> : <Landing />}
-      <Footer />
-
-      <Button
-        variant="outline"
-        onClick={() => setDark(!dark)}
-        className="fixed bottom-5 right-5 z-40 bg-surface-2"
-        aria-label={dark ? 'Switch to light appearance' : 'Switch to dark appearance'}
-      >
-        {dark ? 'Light' : 'Dark'}
-      </Button>
+      {/* The appearance toggle sits in the footer's own flow at every width, never floating over the page, so it can never cover text. */}
+      <Footer
+        appearance={
+          <Button variant="outline" onClick={() => setDark(!dark)} aria-label={dark ? 'Switch to light appearance' : 'Switch to dark appearance'}>
+            {dark ? 'Light' : 'Dark'}
+          </Button>
+        }
+      />
     </div>
     </MarketsContext.Provider>
   )

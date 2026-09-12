@@ -4,7 +4,7 @@
  * The fixture build (vite build --mode fixtures) is served through the real
  * beta gate and its CSP, exactly as gate.browser.test.mjs serves dist. The
  * read lab renders every read-v1 fixture case with the app's own components:
- * the Top pools table and the ticker for market rows, the family panels for
+ * the Selected pools table and the ticker for market rows, the family panels for
  * the other routes. Each case reads through the real pipeline and the real
  * package runtime; only which fixture answers is scripted.
  */
@@ -13,6 +13,7 @@ import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { after, before, test } from 'node:test';
 import { chromium } from 'playwright-core';
+import { leaving, watch } from './page-watch.mjs';
 import { FIXTURE_DIST, createGatedServer } from '../scripts/gated-server.mjs';
 
 const PASSWORD = 'browser-test-beta-password';
@@ -57,16 +58,15 @@ before(async () => {
     document.addEventListener('securitypolicyviolation', (event) => window.__csp.push(`${event.violatedDirective} ${event.blockedURI}`));
   });
   page = await context.newPage();
-  page.on('pageerror', (error) => log.errors.push(`uncaught: ${error.message}`));
-  page.on('console', (message) => {
-    if (message.type() === 'error') log.errors.push(message.text());
-  });
+  // Per page, and teardown-aware: an ERR_ABORTED of a view this test leaves is the test's doing (page-watch.mjs).
+  log.errors = watch(page, { requests: false, responses: false }).problems;
   page.on('dialog', (dialog) => {
     log.dialogs.push(dialog.message());
     void dialog.dismiss();
   });
   await page.goto(`${origin}/`, { waitUntil: 'networkidle' });
   await page.fill('#password', PASSWORD);
+  leaving(page);
   await Promise.all([page.waitForNavigation({ waitUntil: 'networkidle' }), page.click('button[type="submit"]')]);
   await page.goto(`${origin}/read-lab.html`, { waitUntil: 'networkidle' });
   await page.waitForFunction(() => document.querySelectorAll('[data-case]').length > 0 && document.querySelectorAll('[data-loading]').length === 0, null, {
@@ -81,10 +81,10 @@ after(async () => {
 
 const section = (id) => page.locator(`[data-case="${id}"]`);
 
-/** The five figure cells of a case's single table row, and its ticker APR. */
+/** The four figure cells of a case's single table row, and its ticker APR. */
 function figures(id) {
   return section(id).evaluate((root) => {
-    const cells = Array.from(root.querySelectorAll('tbody tr td')).slice(2);
+    const cells = Array.from(root.querySelectorAll('tbody tr td')).slice(1);
     const read = (el) => [el?.innerText.replace(/\s/g, '') ?? null, el?.getAttribute('data-metric') ?? null];
     return {
       cells: cells.map((td) => read(td.querySelector('[data-metric]'))),
@@ -104,60 +104,50 @@ function fact(id, label) {
 
 test('the lab renders every fixture case behind the gate, under the CSP, without an error', async () => {
   const count = await page.locator('[data-case]').count();
-  // 28 market scenarios, 59 gateway fixtures across the nine routes, 5 pagination and restart cases.
-  assert.equal(count, 92, `rendered ${count} cases`);
-  assert.equal(await page.locator('[data-case^="market-"]').count(), 28);
+  // 26 market scenarios, 59 gateway fixtures across the nine routes, 5 pagination and restart cases.
+  assert.equal(count, 90, `rendered ${count} cases`);
+  assert.equal(await page.locator('[data-case^="market-"]').count(), 26);
   assert.deepEqual(await page.evaluate(() => window.__csp), [], 'CSP violations');
   // The only failure allowed is the access page's own 401 before signing in.
   assert.deepEqual(log.errors.filter((e) => !/status of 401/.test(e)), []);
   assert.match(await page.locator('[data-build-banner="fixture"]').innerText(), /not deployable/);
 });
 
-test('market rows: every observation reaches the table and the ticker as itself', async () => {
-  const absent = ['Nosource', 'absent'];
+test('market rows: every observation reaches the table and the ticker as itself, and the APR is never a figure', async () => {
   const unavailable = ['Unavailable', 'unavailable'];
+  const apr = ['APRunavailable', 'unavailable'];
+  const provider = [['$12.3K·GeckoTerminal', 'provider'], ['$0.00·GeckoTerminal', 'provider'], ['0.00·calculated', 'calculated'], unavailable];
+  const rejected = [['Unavailable', 'rejected'], ['Unavailable', 'rejected'], unavailable, unavailable];
+  const blank = [unavailable, unavailable, unavailable, unavailable];
   const expected = {
-    qualified: { cells: [['$0.000020', 'qualified'], ['$0.000029', 'qualified'], absent, ['1.44', 'qualified'], ['158.06%', 'qualified']], ticker: ['158.06%APR', 'qualified'] },
-    provider: {
-      cells: [['$12.3K·GeckoTerminal', 'provider'], ['$0.00·GeckoTerminal', 'provider'], absent, ['0.00·GeckoTerminal', 'provider'], unavailable],
-      ticker: ['APRunavailable', 'unavailable'],
-    },
-    zero: { cells: [['$0.00·GeckoTerminal', 'provider'], ['$0.00·GeckoTerminal', 'provider'], absent, unavailable, unavailable], ticker: ['APRunavailable', 'unavailable'] },
-    missing: { cells: [['Notreported', 'absent'], ['Notreported', 'absent'], absent, unavailable, unavailable], ticker: ['APRunavailable', 'unavailable'] },
-    stale: {
-      cells: [['$12.3K·stale·GeckoTerminal', 'stale'], ['$0.00·stale·GeckoTerminal', 'stale'], absent, ['0.00·stale·GeckoTerminal', 'stale'], ['158.06%·stale', 'stale']],
-      ticker: ['158.06%APR·stale', 'stale'],
-    },
-    expired: { cells: [unavailable, unavailable, absent, unavailable, unavailable], ticker: ['APRunavailable', 'unavailable'] },
-    // Stale metrics that would fail qualification even if fresh were never current: not current, not a stale number.
-    'stale-capital-partial': { cells: [['Notcurrent', 'not-current'], ['Notcurrent', 'not-current'], absent, unavailable, ['Notcurrent', 'not-current']], ticker: ['APRnotcurrent', 'not-current'] },
-    'stale-capital-unavailable': { cells: [['Notcurrent', 'not-current'], ['Notcurrent', 'not-current'], absent, unavailable, ['Notcurrent', 'not-current']], ticker: ['APRnotcurrent', 'not-current'] },
-    'rejected-currencies': { cells: [['Unavailable', 'rejected'], ['Unavailable', 'rejected'], absent, unavailable, unavailable], ticker: ['APRunavailable', 'unavailable'] },
-    'rejected-dex': { cells: [['Unavailable', 'rejected'], ['Unavailable', 'rejected'], absent, unavailable, unavailable], ticker: ['APRunavailable', 'unavailable'] },
-    timeout: { cells: [unavailable, unavailable, absent, unavailable, unavailable], ticker: ['APRunavailable', 'unavailable'] },
-    'rate-limited': { cells: [unavailable, unavailable, absent, unavailable, unavailable], ticker: ['APRunavailable', 'unavailable'] },
-    reference: { cells: [['Notcurrent', 'not-current'], ['Notcurrent', 'not-current'], absent, unavailable, ['Notcurrent', 'not-current']], ticker: ['APRnotcurrent', 'not-current'] },
-    partial: { cells: [['Notcurrent', 'not-current'], ['Notcurrent', 'not-current'], absent, unavailable, ['Notcurrent', 'not-current']], ticker: ['APRnotcurrent', 'not-current'] },
-    'metrics-invalid': { cells: [['$12.3K·GeckoTerminal', 'provider'], ['$0.00·GeckoTerminal', 'provider'], absent, ['0.00·GeckoTerminal', 'provider'], unavailable], ticker: ['APRunavailable', 'unavailable'] },
-    // Qualified metrics answered for another pool: this pool's row keeps its own provider figures only.
-    'metrics-other-pool': { cells: [['$12.3K·GeckoTerminal', 'provider'], ['$0.00·GeckoTerminal', 'provider'], absent, ['0.00·GeckoTerminal', 'provider'], unavailable], ticker: ['APRunavailable', 'unavailable'] },
-    'retry-recovers': { cells: [['$0.000020', 'qualified'], ['$0.000029', 'qualified'], absent, ['1.44', 'qualified'], ['158.06%', 'qualified']], ticker: ['158.06%APR', 'qualified'] },
+    provider,
+    zero: [['$0.00·GeckoTerminal', 'provider'], ['$0.00·GeckoTerminal', 'provider'], unavailable, unavailable],
+    missing: [['NotreportedbyGeckoTerminal', 'absent'], ['NotreportedbyGeckoTerminal', 'absent'], unavailable, unavailable],
+    stale: [['$12.3K·stale·GeckoTerminal', 'stale'], ['$0.00·stale·GeckoTerminal', 'stale'], ['0.00·stale·calculated', 'stale'], unavailable],
+    expired: blank,
+    'rejected-currencies': rejected,
+    'rejected-dex': rejected,
+    timeout: blank,
+    'rate-limited': blank,
+    'retry-recovers': provider,
+    'untrusted-symbol': provider,
   };
-  for (const [id, want] of Object.entries(expected)) {
-    assert.deepEqual(await figures(`market-${id}`), want, `market-${id}`);
+  for (const [id, cells] of Object.entries(expected)) {
+    assert.deepEqual(await figures(`market-${id}`), { cells, ticker: apr }, `market-${id}`);
+    assert.equal(await section(`market-${id}`).locator('[data-read-status]').getAttribute('data-read-status'), 'none', id);
   }
   // Never-displayed values are absent from the whole case, not just from their cell.
   for (const id of ['expired', 'rejected-currencies', 'rejected-dex', 'timeout']) {
     assert.doesNotMatch(await section(`market-${id}`).innerText(), /\$12\.3K/, `${id} shows the provider figure`);
   }
-  for (const id of ['reference', 'partial', 'metrics-other-pool', 'stale-capital-partial', 'stale-capital-unavailable']) {
-    const text = await section(`market-${id}`).innerText();
-    assert.doesNotMatch(text, /158\.06|0\.000020|0\.000029/, `${id} shows a non-current figure`);
-  }
-  assert.match(await section('market-expired').innerText(), /GeckoTerminal unavailable, cache 301 s/, 'the retained age is shown as provenance only');
-  assert.equal(await section('market-metrics-invalid').locator('[data-read-status]').getAttribute('data-read-status'), 'partial');
-  assert.equal(await section('market-metrics-other-pool').locator('[data-read-status]').getAttribute('data-read-status'), 'partial');
-  assert.match(await section('market-qualified').innerText(), /Block 700/);
+  // The APR says why it is unavailable; each row names the block its pool was verified at, and
+  // dates GeckoTerminal's figures only by when they were retrieved, never "as of" or "updated at".
+  assert.equal(await section('market-provider').locator('tbody td').last().locator('[data-metric]').getAttribute('title'), 'Unavailable: APR not provided by the read service yet');
+  assert.match(await section('market-provider').locator('tbody tr p').innerText(), /^Pool verified on-chain at block 700 · Reported by GeckoTerminal, retrieved \d+ s ago$/);
+  assert.match(await section('market-stale').locator('tbody tr p').innerText(), /^Pool verified on-chain at block 700 · Reported by GeckoTerminal, retrieved (6\d|[7-9]\d|1[01]\d) s ago · stale$/);
+  assert.equal(await section('market-expired').locator('tbody tr p').innerText(), 'Pool verified on-chain at block 700 · GeckoTerminal figures unavailable: provider unavailable', 'no figure, so no age');
+  assert.equal(await section('market-rejected-currencies').locator('tbody tr p').innerText(), 'Pool verified on-chain at block 700 · GeckoTerminal figures rejected: provider data did not match this pool');
+  for (const id of Object.keys(expected)) assert.doesNotMatch(await section(`market-${id}`).innerText(), /as of|updated at/i, `${id} dates a figure it cannot date`);
 });
 
 test('an HTML-like token symbol renders as literal text, and nothing runs', async () => {
@@ -200,7 +190,11 @@ test('table-wide states: one polite status line, the right words, and not a sing
     'header-rc2': ['incompatible', /expects 1\.1\.0-rc\.3/],
     invalid: ['invalid', /did not match the read contract/],
     busy: ['busy', /Try again in 7 s/],
-    transient: ['unavailable', /answered: read service unavailable/],
+    transient: ['unavailable', /Temporarily unavailable[\s\S]*answered: read service unavailable/],
+    'not-connected': ['not_connected', /Live data isn't connected yet/],
+    'not-found': ['not_connected', /Live data isn't available on this address/],
+    'no-forwarder': ['not_connected', /Live data isn't connected yet/],
+    'route-disabled': ['disabled', /Live data is switched off for now/],
   };
   for (const [id, [state, words]] of Object.entries(cases)) {
     const root = section(`market-${id}`);
@@ -209,6 +203,13 @@ test('table-wide states: one polite status line, the right words, and not a sing
     assert.match(await status.innerText(), words, id);
     assert.equal(await root.locator('tbody tr').count(), 0, `${id} rendered rows`);
     assert.equal(await root.locator('[data-metric]').count(), 0, `${id} rendered figures`);
+  }
+  // Live data not connected, or switched off: a Retry cannot change that, and the ticker says the same words.
+  for (const id of ['not-connected', 'not-found', 'no-forwarder', 'route-disabled']) {
+    const root = section(`market-${id}`);
+    assert.equal(await root.getByRole('button', { name: 'Retry' }).count(), 0, `${id} offers a Retry`);
+    const title = await root.locator('[data-read-status] p').first().innerText();
+    assert.equal(await root.locator('[data-ticker-status]').innerText(), title, `${id}: the ticker disagrees with the table`);
   }
   const signIn = section('market-gate401').getByRole('link', { name: 'Sign in again' });
   assert.equal(await signIn.getAttribute('href'), '/', 'the way back is this site’s own root');
@@ -300,15 +301,16 @@ test('the fixture landing is the real app, labelled as fixture data', async () =
   await landing.goto(`${origin}/`, { waitUntil: 'networkidle' });
   await landing.locator('#pools tbody tr').first().waitFor();
   const text = await landing.locator('#pools').innerText();
+  assert.match(text, /Selected pools/);
   assert.match(text, /Fixture data/);
   assert.match(text, /Contract fixtures from read-v1 1\.1\.0-rc\.3/);
-  assert.match(text, /\$0\.000020/);
+  assert.match(text, /\$12\.3K/);
   assert.equal(await landing.locator('[data-build-banner="fixture"]').count(), 1);
   await landing.close();
 });
 
 test('Refresh keeps keyboard focus through its read; it is busy, never unmounted, while the read runs', async () => {
-  const id = 'market-qualified';
+  const id = 'market-provider';
   const root = section(id);
   await root.getByRole('button', { name: 'Refresh', exact: true }).focus();
   await root.evaluate((el) => {
@@ -332,5 +334,17 @@ test('Refresh keeps keyboard focus through its read; it is busy, never unmounted
   assert.ok(!trace.includes('BODY'), `focus fell to the page during Refresh: ${trace}`);
   assert.ok(trace.includes('Refreshing…'), `Refresh was not shown busy while its read ran: ${trace}`);
   assert.deepEqual(await root.evaluate((el) => [el.contains(document.activeElement), document.activeElement?.textContent]), [true, 'Refresh']);
-  assert.deepEqual(await figures(id), { cells: [['$0.000020', 'qualified'], ['$0.000029', 'qualified'], ['Nosource', 'absent'], ['1.44', 'qualified'], ['158.06%', 'qualified']], ticker: ['158.06%APR', 'qualified'] });
+  assert.deepEqual(await figures(id), {
+    cells: [['$12.3K·GeckoTerminal', 'provider'], ['$0.00·GeckoTerminal', 'provider'], ['0.00·calculated', 'calculated'], ['Unavailable', 'unavailable']],
+    ticker: ['APRunavailable', 'unavailable'],
+  });
+});
+
+test('with no pools selected the table says so, reads nothing and offers nothing to refresh', async () => {
+  const root = section('market-no-pools');
+  assert.equal(await root.locator('tbody tr').count(), 0);
+  assert.match(await root.locator('[data-empty="no-pools"]').innerText(), /No pools selected yet/);
+  assert.equal(await root.locator('[data-read-status]').getAttribute('data-read-status'), 'none');
+  assert.equal(await root.locator('[data-ticker-status]').innerText(), 'No pools selected yet');
+  assert.equal(await root.getByRole('button', { name: 'Refresh' }).count(), 0);
 });

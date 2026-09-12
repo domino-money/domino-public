@@ -1,35 +1,29 @@
 /**
- * What this build can and cannot do, in the same shape the workbench serves
- * from GET /api/v1/capabilities. Kept as a module here because this app has no
- * server; the values are identical so the Settings screen tells the truth.
+ * What this build can and cannot do, for the Settings screen.
+ *
+ * The invited read-only alpha reads public data and nothing else: no
+ * signing, no wallet funding, no swaps. These are constants of the build.
+ * Whether a live read is enabled is the server's answer to the capabilities
+ * GET, never a flag here, and no sign-in state is derived from these values.
  */
 export const CAPABILITIES = {
   version: 1,
-  mode: 'practice',
   chainId: 4663,
   signingEnabled: false,
   walletFundingEnabled: false,
-  // True only in the bridge-test build, which vite.config.ts refuses to write
-  // into dist. The deployed build folds this to false and ships no read code.
-  liveDataEnabled: __DOMINO_READ_MODE__ === 'bridge',
+  // Every build that can be deployed carries the read path. Whether any read
+  // is enabled is the server's call, in its capabilities answer, never this flag.
+  liveReadsBuilt: true,
   swapsEnabled: false,
-  simulation: {
-    protocolFeeBps: 200,
-    reinvestmentPolicyVersion: 2,
-    fixedReserveBps: 0,
-    maxLiquidityIncreaseBps: null as number | null,
-    gasBufferBps: 1500,
-  },
-  features: ['position-preview', 'compound-preview', 'local-practice-workspace'],
 } as const
 
-export type Availability = 'practice' | 'planned' | 'not-connected'
+export type Availability = 'not-in-alpha' | 'planned' | 'not-connected'
 
-/** The roadmap rows the workbench shows in Settings. */
+/** What Settings lists, and where each stands in this alpha. */
 export const ROADMAP: Array<{ name: string; status: Availability; note: string }> = [
-  { name: 'Compound', status: 'practice', note: 'Run fee scenarios by hand on practice cards.' },
-  { name: 'Fee-balancing swaps', status: 'planned', note: 'Bounded swaps so uneven fees can still be reinvested.' },
-  { name: 'Domino', status: 'planned', note: 'Fees from one position open the next one higher up.' },
+  { name: 'Compound', status: 'not-in-alpha', note: 'Earned fees go back into the same position.' },
+  { name: 'Fee-balancing swaps', status: 'not-in-alpha', note: 'Bounded swaps so uneven fees can still be reinvested.' },
+  { name: 'Domino', status: 'not-in-alpha', note: 'Fees from one position open the next one higher up.' },
   { name: 'Wallet permissions', status: 'not-connected', note: 'No wallet connection exists in this build.' },
-  { name: 'Service pricing', status: 'planned', note: 'Shown at the moment a real position is created. Final rate table pending.' },
+  { name: 'Service pricing', status: 'planned', note: 'Shown when a position is created. Final rate table pending.' },
 ]

@@ -1,8 +1,14 @@
 /**
  * Set by vite.config.ts from the build mode, never from the environment.
  *
- * `sample` in every build that can be deployed or previewed. Comparisons with
- * it are constant-folded, so the fixture and bridge branches, and every module
- * only they import, are absent from the default bundle, which a test checks.
+ * Comparisons with these constants are folded at build time, so a branch
+ * another mode needs, and every module only that branch imports, is absent
+ * from a bundle that cannot reach it. The deployable modes (production and
+ * development, the two that write to dist) read live through the same-origin
+ * bridge from the reviewed pool selection and render no build banner.
  */
-declare const __DOMINO_READ_MODE__: 'sample' | 'fixture' | 'bridge'
+declare const __DOMINO_READ_MODE__: 'fixture' | 'bridge'
+/** True for the modes that write to dist, which is what gets deployed. */
+declare const __DOMINO_DEPLOYABLE__: boolean
+/** The pools the bridge reads: the reviewed selection, or the package fixture pool a local stub serves. */
+declare const __DOMINO_POOL_SET__: 'selected' | 'fixture'

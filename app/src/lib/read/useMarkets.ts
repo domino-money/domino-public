@@ -1,12 +1,23 @@
 /**
- * The markets provider as React sees it: one per screen, shared through
- * context, so the ticker and the table render the same rows from one load.
+ * The markets provider as React sees it: one per app, shared through
+ * context, so the ticker and the table render one result set from one load.
  */
 import { createContext, useContext, useEffect, useSyncExternalStore } from 'react'
-import { sampleMarkets, type MarketsProvider, type MarketsState } from './marketsProvider'
+import type { MarketsProvider, MarketsState } from './marketsProvider'
 import type { MarketsResult } from '../markets'
 
-export const MarketsContext = createContext<MarketsProvider>(sampleMarkets)
+const LOADING: MarketsState = { phase: 'loading', previous: null, retrying: null }
+
+/** Outside a provider nothing is read and nothing is made up: a loading state that never starts. */
+const IDLE: MarketsProvider = {
+  kind: 'bridge',
+  getSnapshot: () => LOADING,
+  subscribe: () => () => undefined,
+  ensure: () => undefined,
+  refresh: () => undefined,
+}
+
+export const MarketsContext = createContext<MarketsProvider>(IDLE)
 
 /** The rows a screen may show in a state: current ones, the ones being refreshed, or the retained stale ones. */
 export function shownResult(state: MarketsState): MarketsResult | null {

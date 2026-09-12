@@ -233,7 +233,7 @@ export function createBridgeSource(options: BridgeOptions): ReadSource {
     transport: 'bridge',
     async read<R extends ReadRoute>(route: R, request: ReadRequests[R], opts: ReadOptions = {}): Promise<ReadOutcome<R>> {
       const deadlineAt = opts.deadlineAt ?? clock.monotonic() + policy.totalMs
-      const provenance = (): Provenance => ({ transport: 'bridge', contract: null, receivedAt: clock.now(), attempts: 0, deadlineAt })
+      const provenance = (): Provenance => ({ transport: 'bridge', contract: null, receivedAt: clock.now(), receivedMonotonic: clock.monotonic(), attempts: 0, deadlineAt })
       const late = (): ReadOutcome<R> => ({ route, provenance: provenance(), state: 'unavailable', cause: { kind: 'read_deadline', limit: 'read' }, retryable: true })
       if (!enabled) return { route, provenance: provenance(), state: 'disabled', reason: 'live_data_disabled' }
       if (!validators.validateRequest(route, request)) return { route, provenance: provenance(), state: 'invalid', reason: 'request_contract' }

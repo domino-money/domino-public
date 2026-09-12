@@ -151,6 +151,7 @@ export async function runRead<R extends ReadKey>(run: ReadRun<R>): Promise<ReadO
     requestId: reply?.requestIdHeader && REQUEST_ID.test(reply.requestIdHeader) ? reply.requestIdHeader : undefined,
     contract: reply?.contractHeader ?? null,
     receivedAt: clock.now(),
+    receivedMonotonic: clock.monotonic(),
     attempts,
     deadlineAt,
   })

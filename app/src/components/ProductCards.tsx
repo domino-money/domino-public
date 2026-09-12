@@ -1,10 +1,11 @@
-import { TokenIcon, TokenPair } from './TokenIcon'
+import { cx } from './ui'
 
 /**
  * Four product cards in the manner of an exchange's landing page: a deep
  * colour per card, an eyebrow with a small mark, the title in the card's own
- * colour, a short line, a pill link with an arrow, and a big graphic that
- * runs off the right edge. Built from shapes, not screenshots.
+ * colour, a short line and a big graphic that runs off the right edge. Built
+ * from shapes, not screenshots, and wordless: no pair, token or amount is
+ * drawn. None of these features is part of the alpha, and each card says so.
  */
 
 type Theme = { bg: string; ink: string; soft: string; pillBg: string }
@@ -18,20 +19,29 @@ const THEMES: Record<'orange' | 'green' | 'blue' | 'plum', Theme> = {
 
 const lift = '0 30px 60px -24px rgba(0,0,0,0.7)'
 
-/* Three pair badges climbing off the right edge, like coins stacked on a desk. */
+/* Three position cards climbing off the right edge: two plain marks and a range bar each. */
 function PositionsArt({ t }: { t: Theme }) {
-  const pairs = [
-    { base: 'MEME', quote: 'USDG', x: 6, y: 58, s: 66, rot: -8 },
-    { base: 'WETH', quote: 'USDG', x: 42, y: 26, s: 78, rot: 6 },
-    { base: 'ETH', quote: 'USDG', x: 78, y: 60, s: 92, rot: -4 },
+  const cards = [
+    { x: 8, y: 58, w: 118, rot: -8, from: 18, span: 44 },
+    { x: 44, y: 26, w: 136, rot: 6, from: 30, span: 36 },
+    { x: 80, y: 60, w: 152, rot: -4, from: 12, span: 58 },
   ]
   return (
     <div className="absolute inset-y-0 right-0 w-[52%]">
-      {pairs.map((p, i) => (
-        <div key={i} className="dm-float absolute" style={{ left: `${p.x}%`, top: `${p.y}%`, transform: `translate(-50%, -50%) rotate(${p.rot}deg)`, '--dur': `${11 + i * 3}s`, '--delay': `${-i * 2}s`, '--dx': '0px', '--dy': '-8px' } as React.CSSProperties}>
-          <div className="flex items-center gap-2 rounded-full border px-2.5 py-2" style={{ background: t.bg, borderColor: 'rgba(255,255,255,0.12)', boxShadow: lift }}>
-            <TokenPair base={p.base} quote={p.quote} size={Math.round(p.s * 0.5)} ring={t.bg} />
-            <span className="pr-1 font-mono text-[12px]" style={{ color: t.soft }}>{p.base}/{p.quote}</span>
+      {cards.map((c, i) => (
+        <div
+          key={i}
+          className="dm-float absolute"
+          style={{ left: `${c.x}%`, top: `${c.y}%`, transform: `translate(-50%, -50%) rotate(${c.rot}deg)`, '--dur': `${11 + i * 3}s`, '--delay': `${-i * 2}s`, '--dx': '0px', '--dy': '-8px' } as React.CSSProperties}
+        >
+          <div className="rounded-[16px] border p-3" style={{ width: c.w, background: t.bg, borderColor: 'rgba(255,255,255,0.12)', boxShadow: lift }}>
+            <div className="flex">
+              <span className="h-6 w-6 rounded-full" style={{ background: t.soft, opacity: 0.55 }} />
+              <span className="-ml-2 h-6 w-6 rounded-full border-2" style={{ background: t.ink, borderColor: t.bg }} />
+            </div>
+            <div className="mt-3 h-1.5 rounded-full" style={{ background: 'rgba(255,255,255,0.12)' }}>
+              <div className="h-full rounded-full" style={{ marginLeft: `${c.from}%`, width: `${c.span}%`, background: t.ink }} />
+            </div>
           </div>
         </div>
       ))}
@@ -73,19 +83,20 @@ function DominoArt({ t }: { t: Theme }) {
   )
 }
 
-/* Floating chips, the lines of a receipt spread out in space. */
+/* Floating slips, the lines of a receipt spread out in space, drawn as lines rather than words or amounts. */
 function ReceiptArt({ t }: { t: Theme }) {
-  const chips = [
-    { text: 'Card 02 · receipt', x: 30, y: 22, rot: -6 },
-    { text: 'Nothing waiting', x: 68, y: 46, rot: 5 },
-    { text: '+$41.16 reinvested', x: 38, y: 72, rot: -3, hot: true },
+  const slips = [
+    { w: 132, x: 30, y: 22, rot: -6 },
+    { w: 104, x: 68, y: 46, rot: 5 },
+    { w: 150, x: 38, y: 72, rot: -3, hot: true },
   ]
   return (
     <div className="absolute inset-y-0 right-0 w-[56%]">
-      {chips.map((c, i) => (
+      {slips.map((c, i) => (
         <div key={i} className="dm-float absolute" style={{ left: `${c.x}%`, top: `${c.y}%`, transform: `translate(-50%, -50%) rotate(${c.rot}deg)`, '--dur': `${10 + i * 2}s`, '--delay': `${-i * 1.8}s`, '--dx': '4px', '--dy': '-8px' } as React.CSSProperties}>
-          <span className="tnum block whitespace-nowrap rounded-[12px] border px-4 py-2.5 font-mono text-[13px]" style={{ background: c.hot ? t.ink : t.bg, color: c.hot ? '#1d1020' : t.soft, borderColor: 'rgba(255,255,255,0.12)', boxShadow: c.hot ? `${lift}, 0 0 40px ${t.ink}66` : lift }}>
-            {c.text}
+          <span className="block rounded-[12px] border px-4 py-3" style={{ width: c.w, background: c.hot ? t.ink : t.bg, borderColor: 'rgba(255,255,255,0.12)', boxShadow: c.hot ? `${lift}, 0 0 40px ${t.ink}66` : lift }}>
+            <span className="block h-1.5 w-2/3 rounded-full" style={{ background: c.hot ? '#1d1020' : t.soft, opacity: 0.6 }} />
+            <span className="mt-1.5 block h-1.5 w-1/3 rounded-full" style={{ background: c.hot ? '#1d1020' : t.soft, opacity: 0.35 }} />
           </span>
         </div>
       ))}
@@ -97,14 +108,14 @@ function Mark({ children }: { children: React.ReactNode }) {
   return <span className="inline-flex h-4 w-4 items-center justify-center">{children}</span>
 }
 
-const CARDS: Array<{ key: keyof typeof THEMES; eyebrow: string; mark: React.ReactNode; title: string; body: string; cta: string; href: string; art: (t: Theme) => React.ReactNode; tall?: boolean }> = [
+const CARDS: Array<{ key: keyof typeof THEMES; eyebrow: string; mark: React.ReactNode; title: string; body: string; cta?: string; href?: string; art: (t: Theme) => React.ReactNode }> = [
   {
     key: 'orange',
     eyebrow: 'Positions',
     mark: <Mark><svg viewBox="0 0 16 16" width="14" height="14" fill="currentColor"><rect x="2" y="3" width="12" height="10" rx="2" /></svg></Mark>,
     title: 'Every position on one card.',
     body: 'What you hold, where your range sits, and whether it is collecting fees right now.',
-    cta: 'Open the workspace',
+    cta: 'Your positions',
     href: '#/app',
     art: (t) => <PositionsArt t={t} />,
   },
@@ -121,7 +132,7 @@ const CARDS: Array<{ key: keyof typeof THEMES; eyebrow: string; mark: React.Reac
   {
     key: 'blue',
     eyebrow: 'Domino',
-    mark: <Mark><TokenIcon symbol="MEME" size={14} /></Mark>,
+    mark: <Mark><svg viewBox="0 0 16 16" width="14" height="14" fill="currentColor"><rect x="4" y="1" width="8" height="14" rx="2" /><circle cx="8" cy="4.6" r="1.2" fill="#161f3f" /><circle cx="8" cy="11.4" r="1.2" fill="#161f3f" /></svg></Mark>,
     title: 'One position opens the next.',
     body: 'Near the top of its range, a position uses its fees to open the next one higher up. Your deposit never moves.',
     cta: 'Watch the sequence',
@@ -134,8 +145,6 @@ const CARDS: Array<{ key: keyof typeof THEMES; eyebrow: string; mark: React.Reac
     mark: <Mark><svg viewBox="0 0 16 16" width="14" height="14" fill="currentColor"><path d="M4 2h8v12l-2-1.2L8 14l-2-1.2L4 14zM6 5h4v1H6zm0 2.5h4v1H6z" /></svg></Mark>,
     title: 'Every action, itemised.',
     body: 'What was collected, what went back in and what is still waiting. On every run, down to fractions of a cent.',
-    cta: 'Read a receipt',
-    href: '#/app#activity',
     art: (t) => <ReceiptArt t={t} />,
   },
 ]
@@ -145,8 +154,8 @@ export function ProductCards() {
     <div className="grid gap-5 md:grid-cols-2">
       {CARDS.map((c) => {
         const t = THEMES[c.key]
-        return (
-          <a key={c.key} href={c.href} className="group relative flex min-h-[320px] flex-col justify-between overflow-hidden rounded-[28px] p-8 transition-transform duration-300 hover:-translate-y-1" style={{ background: t.bg }}>
+        const content = (
+          <>
             {c.art(t)}
             <div className="relative max-w-[52%]">
               <span className="flex items-center gap-2 text-[13px] font-medium" style={{ color: t.ink }}>
@@ -155,10 +164,27 @@ export function ProductCards() {
               <h3 className="mt-4 text-[30px] font-medium leading-[1.1] tracking-[-0.3px]" style={{ color: t.ink }}>{c.title}</h3>
               <p className="mt-3 text-[15px] leading-relaxed" style={{ color: t.soft }}>{c.body}</p>
             </div>
-            <span className="relative mt-8 inline-flex w-fit items-center gap-2 rounded-[var(--radius-pill)] px-4 py-2.5 text-[13px] font-medium transition group-hover:gap-3" style={{ background: t.pillBg, color: t.ink }}>
-              {c.cta} <span aria-hidden="true">→</span>
-            </span>
+            <div className="relative mt-8 flex flex-wrap items-center gap-3">
+              {c.cta && (
+                <span className="inline-flex w-fit items-center gap-2 rounded-[var(--radius-pill)] px-4 py-2.5 text-[13px] font-medium transition group-hover:gap-3" style={{ background: t.pillBg, color: t.ink }}>
+                  {c.cta} <span aria-hidden="true">→</span>
+                </span>
+              )}
+              <span className="rounded-[var(--radius-pill)] border px-3 py-1.5 text-[12px]" style={{ borderColor: 'rgba(255,255,255,0.18)', color: t.soft }}>
+                Not available in the alpha
+              </span>
+            </div>
+          </>
+        )
+        const shape = 'group relative flex min-h-[320px] flex-col justify-between overflow-hidden rounded-[28px] p-8'
+        return c.href ? (
+          <a key={c.key} href={c.href} className={cx(shape, 'transition-transform duration-300 hover:-translate-y-1')} style={{ background: t.bg }}>
+            {content}
           </a>
+        ) : (
+          <div key={c.key} className={shape} style={{ background: t.bg }}>
+            {content}
+          </div>
         )
       })}
     </div>

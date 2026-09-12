@@ -1,20 +1,20 @@
 /**
  * The markets provider this build uses, chosen at build time.
  *
- * `__DOMINO_READ_MODE__` is a constant, so in the default build both branches
- * below fold away and the dynamic imports with them: no validator, fixture,
- * fetch or bridge code is emitted into dist. Fixture and bridge-test builds
- * load their provider on first use and render a loading state until then.
+ * `__DOMINO_READ_MODE__` is a constant. Every deployable build reads through
+ * the same-origin bridge, imported statically so dist stays one script, and
+ * the fixture branch folds away with the fixture pipeline, catalogue and
+ * scenarios it imports. The fixture build loads its provider on first use
+ * and renders a loading state until then. No build has sample rows to fall
+ * back on: there are none.
  */
+import { bridgeMarkets } from './bridgeMarkets'
 import { deferredMarkets } from './deferredMarkets'
-import { sampleMarkets, type MarketsProvider } from './marketsProvider'
+import type { MarketsProvider } from './marketsProvider'
 
 export function appMarketsProvider(): MarketsProvider {
   if (__DOMINO_READ_MODE__ === 'fixture') {
-    return deferredMarkets('fixture', () => import('./fixtureMarkets').then((m) => m.fixtureMarkets('qualified')))
+    return deferredMarkets('fixture', () => import('./fixtureMarkets').then((m) => m.fixtureMarkets('provider')))
   }
-  if (__DOMINO_READ_MODE__ === 'bridge') {
-    return deferredMarkets('bridge', () => import('./bridgeMarkets').then((m) => m.bridgeMarkets()))
-  }
-  return sampleMarkets
+  return bridgeMarkets()
 }

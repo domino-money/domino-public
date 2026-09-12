@@ -70,6 +70,12 @@ export interface Provenance {
   contract: string | null
   /** Wall clock, ms (Date.now()), when this outcome was made. Orders retained results; never a data timestamp, never a deadline. */
   receivedAt: number
+  /**
+   * Monotonic clock, ms (`Clock.monotonic`), when this outcome was made: what
+   * time on screen is counted from, since no wall-clock step moves it. Means
+   * nothing outside this page, so it is never shown.
+   */
+  receivedMonotonic?: number
   attempts: number
   /** Monotonic clock, ms (`Clock.monotonic`), by which the logical read this belongs to had to settle (R-1). A restart keeps it. */
   deadlineAt?: number
@@ -95,6 +101,15 @@ export interface Observation {
   interval?: { startBlock: number; indexedThrough: number | null; coverage: 'configured_interval_only' }
   providers: ProviderObservation[]
 }
+
+/**
+ * Why the site's own /api layer answered instead of the read bridge. The
+ * first three are the /api forwarder's refusals (#80): no bridge bound, an
+ * address it does not serve (a preview host, say), a request from a Worker
+ * rather than a browser. `no_forwarder` is a deployment with no /api
+ * function at all, whose static site answers a read with its index page.
+ */
+export type NotConnectedReason = 'bridge_unavailable' | 'not_found' | 'worker_subrequest_refused' | 'no_forwarder'
 
 export type InvalidReason =
   | 'request_contract'
@@ -151,6 +166,8 @@ export type ReadOutcome<R extends ReadKey = ReadRoute> = { route: R; provenance:
   /** Any other 4xx: this app asked for something the bridge refuses. */
   | { state: 'request_rejected'; code: ErrorCode; status: number }
   | { state: 'disabled'; reason: 'live_data_disabled' | 'route_not_enabled' | 'bridge_data_mode_disabled' }
+  /** Nothing was read: live data is not connected on this deployment. Never asked again on its own. */
+  | { state: 'not_connected'; reason: NotConnectedReason }
   | { state: 'aborted' }
 )
 
@@ -186,7 +203,7 @@ declare const opaque: unique symbol
 export type OpaqueCursor = string & { readonly [opaque]: true }
 
 /** Curated artwork keys: the token files this app ships in public/tokens. */
-export type ArtworkKey = 'ETH' | 'WETH' | 'USDG' | 'MARLIN' | 'TRADOOR' | 'CRUMBS' | 'RUBEN' | 'MAD' | 'BAG' | 'ZZZ' | 'UNI'
+export type ArtworkKey = 'ETH' | 'WETH' | 'USDG' | 'MARLIN' | 'UNI'
 
 /**
  * A token as a screen may show it. Identity is chain plus address. `symbol` on
@@ -194,7 +211,6 @@ export type ArtworkKey = 'ETH' | 'WETH' | 'USDG' | 'MARLIN' | 'TRADOOR' | 'CRUMB
  * markup, an attribute, a URL or an artwork key.
  */
 export type TokenDisplay =
-  | { origin: 'sample'; symbol: string; artwork: ArtworkKey; address: null }
   | {
       origin: 'read'
       chainId: 4663

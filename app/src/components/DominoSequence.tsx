@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { usd } from 'core/position'
+import { times } from '../lib/scenario'
 import { Pill, cx } from './ui'
 
 /**
@@ -10,7 +10,8 @@ import { Pill, cx } from './ui'
  * itself and its earned fees open the next position instead.
  *
  * A diagram of the rule, not a projection. It shows when a successor opens,
- * never how much anything would earn.
+ * never how much anything would earn. Prices are multiples of the first
+ * position's start price. Domino is not part of the alpha, and says so.
  */
 
 const LADDER = [
@@ -48,11 +49,14 @@ export function DominoSequence() {
       <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-baseline gap-2">
           <span className="text-[12px] text-fg-muted">{'Price'}</span>
-          <strong className="tnum font-mono text-[20px]">{usd(price)}</strong>
+          <strong className="tnum font-mono text-[20px]">{times(price)}</strong>
         </div>
-        <Pill tone={carrying ? 'accent' : 'neutral'}>
-          {open.length} of {LADDER.length} positions open
-        </Pill>
+        <div className="flex flex-wrap items-center gap-2">
+          <Pill tone={carrying ? 'accent' : 'neutral'}>
+            {open.length} of {LADDER.length} positions open
+          </Pill>
+          <Pill tone="neutral">Not available in the alpha</Pill>
+        </div>
       </div>
 
       <div className="grid gap-2.5">
@@ -63,7 +67,7 @@ export function DominoSequence() {
                 Position {s.i + 1}
               </p>
               <p className="font-mono text-[10px] text-fg-subtle">
-                {usd(s.lower)} to {usd(s.upper)}
+                {times(s.lower)} to {times(s.upper)}
               </p>
             </div>
 
@@ -135,6 +139,7 @@ export function DominoSequence() {
         <span className="flex items-center gap-1.5"><i className="h-2.5 w-2.5 rounded-sm" style={{ background: 'var(--accent)' }} />range</span>
         <span className="flex items-center gap-1.5"><i className="h-2.5 w-2.5 rounded-sm" style={{ background: 'var(--primary)', opacity: 0.55 }} />hand-off zone</span>
         <span className="flex items-center gap-1.5"><i className="h-2.5 w-[2px] rounded-sm" style={{ background: 'var(--fg)' }} />price</span>
+        <span className="ml-auto">Schematic, not a projection</span>
       </div>
     </div>
   )

@@ -1,4 +1,4 @@
-import { SCENARIO_MAX, SCENARIO_MIN } from './pair'
+import { SCENARIO_MAX, SCENARIO_MIN } from './scenario'
 
 /** Inclusive price window a chart is drawn over. */
 export type Domain = [number, number]

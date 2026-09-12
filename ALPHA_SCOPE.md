@@ -1,6 +1,6 @@
 # Domino — functional alpha and market compatibility
 
-9 September 2026. Product scope update requested after UI approval: the first invited-user functional alpha includes an opt-in Domino strategy. A wallet-connected read-only build is an internal integration milestone, not the completed user alpha. This changes scope and sequencing; it does not claim that public execution is implemented, reviewed or deployed.
+9 September 2026. Product scope update requested after UI approval: the first invited-user functional alpha includes an opt-in Domino strategy. The invited read-only alpha is the first release milestone: verified live public reads where enabled, explicit unavailable states elsewhere, and wallet sign-in only after its separate acceptance. It does not complete the functional execution scope below. Auto-compound, Domino, deposits and swaps remain disabled until their own implementation and release gates pass. This changes scope and sequencing; it does not claim that public execution is implemented, reviewed or deployed.
 
 ## What the alpha delivers
 
@@ -61,6 +61,8 @@ The current IDominoVaultDraft interface only describes the self-compound integra
 Prevent duplicate successors when workers race or a broadcast response is lost. Persist a unique successor intent linked to the parent, policy/state nonce and chosen range; reconcile its NFT mint/receipt before retrying or planning another child. Track provisional versus canonical events across reorgs.
 
 ## Release sequence and acceptance
+
+**Invited read-only alpha:** The invited read-only alpha is the first release milestone: verified live public reads where enabled, explicit unavailable states elsewhere, and wallet sign-in only after its separate acceptance. It does not complete the functional execution scope below. Auto-compound, Domino, deposits and swaps remain disabled until their own implementation and release gates pass.
 
 **Internal integration:** wallet authentication/inventory, pool discovery and metric qualification, durable data and the approved cards; complete sequence-aware API/data contracts and exact deposit composition. Develop initial creation, compound, swaps and Domino on local/fork environments during this work.
 

@@ -119,6 +119,8 @@ export interface MarketCase {
   title: string
   script: RouteScript
   policy?: RetryPolicy
+  /** The pools the table reads: the fixture pool, unless a case says otherwise. */
+  poolIds?: readonly string[]
 }
 
 const tokens = (script: ReplyScript = { fixture: gateway('token.success') }): ReplyScript[] => [
@@ -126,52 +128,94 @@ const tokens = (script: ReplyScript = { fixture: gateway('token.success') }): Re
   { ...script, expectRequest: { token: FIXTURE_TOKEN } },
 ]
 
-function marketCase(id: string, title: string, market: ReplyScript | ReplyScript[], metrics: ReplyScript | null, token?: ReplyScript, policy?: RetryPolicy): MarketCase {
+/**
+ * A case of the lean table: pool-market without price history, then each
+ * token. Every pool-market reply answers only that exact request, so a table
+ * asking anything else gets the bridge's refusal on screen. No case scripts
+ * pool-metrics: the table never asks for it, and a fixture source with no
+ * reply for a route answers it as not enabled.
+ */
+function marketCase(id: string, title: string, market: ReplyScript | ReplyScript[], token?: ReplyScript, policy?: RetryPolicy): MarketCase {
+  const lean = { poolId: FIXTURE_POOL, includePriceHistory: false }
   return {
     id,
     title,
     policy,
     script: {
-      'pool-market': Array.isArray(market) ? market : [market],
-      'pool-metrics': metrics ? [metrics] : [],
+      'pool-market': (Array.isArray(market) ? market : [market]).map((step) => ({ ...step, expectRequest: lean })),
       token: tokens(token),
     },
   }
 }
 
 const m = (name: string): ReplyScript => ({ fixture: gateway(`pool-market.${name}`), mutate: withoutHistory })
-const q = (name: string): ReplyScript => ({ fixture: gateway(`pool-metrics.${name}`) })
 
 export const MARKET_CASES: MarketCase[] = [
-  marketCase('qualified', 'Qualified metrics', m('success'), q('qualified')),
-  marketCase('provider', 'Provider figures, metrics unqualified', m('success'), q('unqualified')),
-  marketCase('zero', 'Provider zero', m('zero'), q('unqualified')),
-  marketCase('missing', 'Provider fields not reported', m('missing'), q('unqualified')),
-  marketCase('stale', 'Stale provider and stale metrics', m('stale'), q('stale')),
-  marketCase('expired', 'Expired cache with retained age', m('expired'), q('capital-unavailable')),
-  marketCase('stale-capital-partial', 'Stale metrics, capital over 1 h only', m('expired'), { ...q('stale'), mutate: withCapitalIncomplete }),
-  marketCase('stale-capital-unavailable', 'Stale metrics, capital unavailable', m('expired'), { ...q('stale'), mutate: withCapitalUnavailable }),
-  marketCase('rejected-currencies', 'Service-level identity rejection', m('rejected-currencies'), q('unqualified')),
-  marketCase('rejected-dex', 'Exchange unconfirmed', m('rejected'), q('unqualified')),
-  marketCase('timeout', 'Adapter-level identity failure as unavailable', m('provider-timeout'), q('price-capacity')),
-  marketCase('rate-limited', 'Provider rate limited', m('provider-rate-limited'), q('missing-prices')),
-  marketCase('reference', 'Reference analytics', m('provider-timeout'), q('reference-analytics')),
-  marketCase('partial', 'Partial window', m('provider-timeout'), q('partial')),
-  marketCase('untrusted-symbol', 'HTML-like symbol', m('success'), q('qualified'), { fixture: gateway('token.untrusted-symbol') }),
-  marketCase('hostile-symbol', 'Bidi, zero-width and markup symbol', m('success'), q('qualified'), { fixture: gateway('token.success'), mutate: withSymbol(HOSTILE_SYMBOL) }),
-  marketCase('metrics-invalid', 'Metrics payload fails validation', m('success'), { fixture: invalidFixture('pool-metrics.reference-claimed-current') }),
-  marketCase('metrics-other-pool', 'Qualified metrics answered for another pool', m('success'), { ...q('qualified'), mutate: withPoolId(OTHER_POOL) }),
-  marketCase('retry-recovers', 'One 429, asked again after its Retry-After', [{ fixture: errorFixture('pool-market.read_capacity_busy'), retryAfter: '1' }, m('success')], q('qualified'), undefined, BRIDGE_RETRY),
+  marketCase('provider', 'Provider figures', m('success')),
+  marketCase('zero', 'Provider zero', m('zero')),
+  marketCase('missing', 'Provider fields not reported', m('missing')),
+  marketCase('stale', 'Stale provider figures', m('stale')),
+  marketCase('expired', 'Expired cache with retained age', m('expired')),
+  marketCase('rejected-currencies', 'Service-level identity rejection', m('rejected-currencies')),
+  marketCase('rejected-dex', 'Exchange unconfirmed', m('rejected')),
+  marketCase('timeout', 'Adapter-level identity failure as unavailable', m('provider-timeout')),
+  marketCase('rate-limited', 'Provider rate limited', m('provider-rate-limited')),
+  marketCase('untrusted-symbol', 'HTML-like symbol', m('success'), { fixture: gateway('token.untrusted-symbol') }),
+  marketCase('hostile-symbol', 'Bidi, zero-width and markup symbol', m('success'), { fixture: gateway('token.success'), mutate: withSymbol(HOSTILE_SYMBOL) }),
+  marketCase('retry-recovers', 'One 429, asked again after its Retry-After', [{ fixture: errorFixture('pool-market.read_capacity_busy'), retryAfter: '1' }, m('success')], undefined, BRIDGE_RETRY),
+  { id: 'no-pools', title: 'No pools selected: nothing is read', script: {}, poolIds: [] },
   // Table-wide: nothing may render.
-  marketCase('gate401', 'Beta gate refusal', { transport: 'gate401' }, null),
-  marketCase('gate503', 'Beta gate misconfigured', { transport: 'gate503' }, null),
-  marketCase('edge502', 'Edge error page', { transport: 'edgeHtml502' }, null),
-  marketCase('access', 'Access redirect', { transport: 'opaqueRedirect' }, null),
-  marketCase('header-missing', 'Contract header missing', { ...m('success'), transport: 'headerMissing' }, null),
-  marketCase('header-rc2', 'Contract header rc.2', { ...m('success'), transport: 'headerRc2' }, null),
-  marketCase('invalid', 'Payload fails validation', { fixture: invalidFixture('pool-market.incompatible-version') }, null),
-  marketCase('busy', 'Read capacity busy', { fixture: errorFixture('pool-market.read_capacity_busy'), retryAfter: '7' }, null),
-  marketCase('transient', 'A 503, shown for the person to retry', { fixture: errorFixture('pool-market.upstream_unavailable') }, null, undefined, BRIDGE_RETRY),
+  marketCase('gate401', 'Beta gate refusal', { transport: 'gate401' }),
+  marketCase('gate503', 'Beta gate misconfigured', { transport: 'gate503' }),
+  marketCase('not-connected', 'No read bridge behind the /api forwarder', { transport: 'forwarder503' }),
+  marketCase('not-found', 'The /api forwarder does not serve this address', { transport: 'forwarder404' }),
+  marketCase('no-forwarder', 'No /api function: the site answers with its index page', { transport: 'spaHtml200' }),
+  marketCase('route-disabled', 'Pool reads switched off on the server', { transport: 'routeNotAvailable404' }),
+  marketCase('edge502', 'Edge error page', { transport: 'edgeHtml502' }),
+  marketCase('access', 'Access redirect', { transport: 'opaqueRedirect' }),
+  marketCase('header-missing', 'Contract header missing', { ...m('success'), transport: 'headerMissing' }),
+  marketCase('header-rc2', 'Contract header rc.2', { ...m('success'), transport: 'headerRc2' }),
+  marketCase('invalid', 'Payload fails validation', { fixture: invalidFixture('pool-market.incompatible-version') }),
+  marketCase('busy', 'Read capacity busy', { fixture: errorFixture('pool-market.read_capacity_busy'), retryAfter: '7' }),
+  marketCase('transient', 'A 503, shown for the person to retry', { fixture: errorFixture('pool-market.upstream_unavailable') }, undefined, BRIDGE_RETRY),
+]
+
+// ---------------------------------------------------------------------------
+// Row projection with pool-metrics: the rules projectMarketRow applies when
+// metrics are given. The lean table never reads them; these keep the
+// qualification rules under test for the day the read service provides a
+// current APR. Tests only.
+// ---------------------------------------------------------------------------
+
+export interface ProjectionCase {
+  id: string
+  market: ReplyScript
+  metrics: ReplyScript
+  token?: ReplyScript
+}
+
+/** The token replies a projected row reads: the native currency and the fixture token. */
+export const projectionTokens = (token?: ReplyScript) => tokens(token)
+
+const q = (name: string): ReplyScript => ({ fixture: gateway(`pool-metrics.${name}`) })
+
+export const PROJECTION_CASES: ProjectionCase[] = [
+  { id: 'qualified', market: m('success'), metrics: q('qualified') },
+  { id: 'provider', market: m('success'), metrics: q('unqualified') },
+  { id: 'zero', market: m('zero'), metrics: q('unqualified') },
+  { id: 'missing', market: m('missing'), metrics: q('unqualified') },
+  { id: 'stale', market: m('stale'), metrics: q('stale') },
+  { id: 'expired', market: m('expired'), metrics: q('capital-unavailable') },
+  { id: 'stale-capital-partial', market: m('expired'), metrics: { ...q('stale'), mutate: withCapitalIncomplete } },
+  { id: 'stale-capital-unavailable', market: m('expired'), metrics: { ...q('stale'), mutate: withCapitalUnavailable } },
+  { id: 'rejected-currencies', market: m('rejected-currencies'), metrics: q('unqualified') },
+  { id: 'rejected-dex', market: m('rejected'), metrics: q('unqualified') },
+  { id: 'timeout', market: m('provider-timeout'), metrics: q('price-capacity') },
+  { id: 'rate-limited', market: m('provider-rate-limited'), metrics: q('missing-prices') },
+  { id: 'reference', market: m('provider-timeout'), metrics: q('reference-analytics') },
+  { id: 'partial', market: m('provider-timeout'), metrics: q('partial') },
+  { id: 'metrics-invalid', market: m('success'), metrics: { fixture: invalidFixture('pool-metrics.reference-claimed-current') } },
+  { id: 'metrics-other-pool', market: m('success'), metrics: { ...q('qualified'), mutate: withPoolId(OTHER_POOL) } },
 ]
 
 // ---------------------------------------------------------------------------

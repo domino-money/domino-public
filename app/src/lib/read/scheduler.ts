@@ -100,7 +100,7 @@ export function createScheduledSource(
     read<R extends ReadRoute>(route: R, request: ReadRequests[R], opts: ReadOptions = {}): Promise<ReadOutcome<R>> {
       // The budget runs from here. A restart keeps what is left of the read it restarts.
       const deadlineAt = Math.min(opts.deadlineAt ?? Infinity, clock.monotonic() + totalMs)
-      const provenance = (): Provenance => ({ transport: source.transport, contract: null, receivedAt: clock.now(), attempts: 0, deadlineAt })
+      const provenance = (): Provenance => ({ transport: source.transport, contract: null, receivedAt: clock.now(), receivedMonotonic: clock.monotonic(), attempts: 0, deadlineAt })
       const aborted = (): ReadOutcome<R> => ({ route, state: 'aborted', provenance: provenance() })
       const expired = (): ReadOutcome<R> => ({ route, state: 'unavailable', cause: { kind: 'read_deadline', limit: 'read' }, retryable: true, provenance: provenance() })
       if (opts.signal?.aborted) return Promise.resolve(aborted())

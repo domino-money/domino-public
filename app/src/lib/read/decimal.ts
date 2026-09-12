@@ -6,8 +6,7 @@
  * one. Values are parsed into a BigInt coefficient and a scale, only after the
  * package runtime has validated the payload, and formatted back to text.
  *
- * Rounding is half-to-even, which reproduces every sample figure the landing
- * page showed before this module existed (10.45M still reads $10.4M).
+ * Rounding is half-to-even: 10.45M reads $10.4M.
  */
 
 /** An exact decimal: `coefficient / 10^scale`. */
@@ -74,8 +73,8 @@ export const isZero = (value: Decimal) => value.coefficient === 0n
 /**
  * Compact USD for table cells: $12.00B, $10.4M, $582.7K, $42.50.
  *
- * A positive amount below one cent keeps six places, the same rule as
- * formatAmount in format.ts, so a real but tiny figure never reads as $0.00;
+ * A positive amount below one cent keeps six places, the workbench's rule for
+ * money, so a real but tiny figure never reads as $0.00;
  * one too small even for that reads <$0.000001. A measured zero is $0.00.
  * Null for anything that is not a decimal string.
  */

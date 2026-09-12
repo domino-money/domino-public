@@ -1,5 +1,20 @@
-import { useEffect, useRef } from 'react'
-import { compactUsd, feeLabel, percentText, presentMetric, turnover, type Market, type MarketProvenance, type Metric, type Presented } from '../lib/markets'
+import { useEffect, useRef, useState } from 'react'
+import {
+  compactUsd,
+  feeLabel,
+  percentText,
+  presentMetric,
+  providerStale,
+  readNow,
+  retrievedAgeSeconds,
+  retrievedText,
+  turnover,
+  type Instant,
+  type Market,
+  type MarketProvenance,
+  type Metric,
+  type Presented,
+} from '../lib/markets'
 import { reasonText } from '../lib/read/describe'
 import { shownResult, useMarkets } from '../lib/read/useMarkets'
 import { ReadStatus, marketsStatus } from './read/ReadStatus'
@@ -8,11 +23,13 @@ import { TokenMarkPair } from './TokenIcon'
 import { Button, Display, Pill, cx } from './ui'
 
 /**
- * Any presented figure: unavailable, not reported, not current, stale with
- * its time, a named provider's, a sample, or current. Titles carry only our
- * own words for a state, never provider text.
+ * Any presented figure: unavailable, not reported, not current, stale, a
+ * named provider's, Domino's calculation from a provider's figures, or
+ * current. A provider figure is dated only by when it was retrieved
+ * (`retrieved`), never "as of" a time: the provider's own update time is not
+ * known. Titles carry only our own words for a state, never provider text.
  */
-function Shown({ shown, strong, muted }: { shown: Presented; strong?: boolean; muted?: boolean }) {
+function Shown({ shown, strong, muted, retrieved }: { shown: Presented; strong?: boolean; muted?: boolean; retrieved?: string }) {
   if (shown.kind === 'unavailable') {
     return (
       <span
@@ -25,11 +42,13 @@ function Shown({ shown, strong, muted }: { shown: Presented; strong?: boolean; m
     )
   }
   if (shown.kind === 'absent') {
-    // A gap in the read contract is not the same thing as a source reporting nothing.
-    const gap = shown.reason === 'not_in_read_v1'
     return (
-      <span className="text-[13px] text-fg-subtle" data-metric="absent" title={gap ? 'The read contract has no field for this figure yet' : 'The source reported no value'}>
-        {gap ? 'No source' : 'Not reported'}
+      <span
+        className="text-[13px] text-fg-subtle"
+        data-metric="absent"
+        title={`Unavailable: ${shown.source ?? 'the source'} reported no value`}
+      >
+        {shown.source ? `Not reported by ${shown.source}` : 'Not reported'}
       </span>
     )
   }
@@ -44,7 +63,6 @@ function Shown({ shown, strong, muted }: { shown: Presented; strong?: boolean; m
       </span>
     )
   }
-  const asOf = shown.asOf ? new Date(shown.asOf * 1000).toLocaleString('en-US') : undefined
   return (
     <span
       className={cx(
@@ -53,41 +71,75 @@ function Shown({ shown, strong, muted }: { shown: Presented; strong?: boolean; m
         muted && !shown.stale && 'text-fg-muted',
         shown.stale && 'text-money-wait',
       )}
-      style={shown.sample && !strong ? { color: 'var(--fg-muted)' } : undefined}
-      data-metric={shown.stale ? 'stale' : shown.sample ? 'placeholder' : shown.source ? 'provider' : 'qualified'}
-      title={
-        shown.sample
-          ? 'Sample figure, not an observation'
-          : shown.stale
-            ? `Last observed ${asOf}`
-            : shown.source
-              ? `Reported by ${shown.source}, not reconciled by Domino`
-              : undefined
-      }
+      data-metric={shown.stale ? 'stale' : shown.source ? 'provider' : shown.calculatedFrom ? 'calculated' : 'qualified'}
+      title={valueTitle(shown, retrieved)}
     >
       {shown.text}
       {shown.stale && <span className="ml-1 text-[11px]">· stale</span>}
       {shown.source && <span className="ml-1 text-[11px] text-fg-subtle">· {shown.source}</span>}
+      {shown.calculatedFrom && <span className="ml-1 text-[11px] text-fg-subtle">· calculated</span>}
     </span>
   )
 }
 
-function Cell({ metric, percent, strong }: { metric: Metric; percent?: boolean; strong?: boolean }) {
+/** Who a shown figure comes from, and how old it is, in our own words. */
+function valueTitle(shown: Extract<Presented, { kind: 'value' }>, retrieved = 'retrieval time unknown') {
+  const stale = shown.stale ? ' Stale, not current.' : ''
+  if (shown.source) return `Reported by ${shown.source}, ${retrieved}. Not reconciled by Domino.${stale}`
+  // Only 24h vol/TVL is calculated from a provider's figures.
+  if (shown.calculatedFrom) return `Calculated by Domino from ${shown.calculatedFrom}'s reported 24h volume and TVL, ${retrieved}. Those figures are not reconciled by Domino.${stale}`
+  if (!shown.stale) return undefined
+  return shown.asOf ? `Last observed ${new Date(shown.asOf * 1000).toLocaleString('en-US')}` : 'Last observed value, not current'
+}
+
+function Cell({ metric, percent, strong, retrieved }: { metric: Metric; percent?: boolean; strong?: boolean; retrieved?: string }) {
   const shown = presentMetric(metric, (m) => (percent ? `${percentText(m) ?? 'Unavailable'}%` : compactUsd(m)))
-  return <Shown shown={shown} strong={strong} />
+  return <Shown shown={shown} strong={strong} retrieved={retrieved} />
 }
 
-/** Where a read row's figures came from. Never on sample rows. */
-function provenanceLine(p: MarketProvenance) {
-  const market = `GeckoTerminal ${p.market.status}${p.market.cacheAgeSeconds === null ? '' : `, cache ${p.market.cacheAgeSeconds} s`}`
+/**
+ * Where a row's figures came from: the block the pool was verified at, and
+ * what GeckoTerminal reported, dated by when it was retrieved, or why it has
+ * nothing to show. Never "as of" or "updated at": the provider's own update
+ * time is not known.
+ */
+function provenanceLine(p: MarketProvenance, age: number | null, stale: boolean) {
+  const verified = `Pool verified on-chain at block ${p.block}`
+  const market =
+    p.market.status === 'available' || p.market.status === 'stale'
+      ? `Reported by GeckoTerminal, ${retrievedText(age)}${stale ? ' · stale' : ''}`
+      : `GeckoTerminal figures ${p.market.status}: ${reasonText(p.market.reason)}`
+  if (p.metrics === 'not_requested') return `${verified} · ${market}`
   const metrics = p.metrics ? `Domino history ${p.metrics.freshness}, ${p.metrics.ageSeconds} s` : 'Domino history unavailable'
-  return `Block ${p.block} · ${market} · ${metrics}`
+  return `${verified} · ${market} · ${metrics}`
 }
 
-function Row({ m, i }: { m: Market; i: number }) {
+/** This page's clocks, once a second while `active`, so a retrieval age or time on screen keeps counting. */
+function useNow(active: boolean) {
+  const [now, setNow] = useState(readNow)
+  useEffect(() => {
+    if (!active) return
+    const tick = () => setNow(readNow())
+    const first = setTimeout(tick, 0)
+    const timer = setInterval(tick, 1000)
+    return () => {
+      clearTimeout(first)
+      clearInterval(timer)
+    }
+  }, [active])
+  return now
+}
+
+function Row({ m: read, now }: { m: Market; now: Instant }) {
+  const p = read.provenance
+  const age = p ? retrievedAgeSeconds(p.market, now) : null
+  const stale = p ? providerStale(p.market, now) : false
+  const retrieved = retrievedText(age)
+  // A provider figure past the read service's fresh window is shown stale, never as current.
+  const aged = (metric: Metric): Metric => (stale && metric.state === 'provider' ? { ...metric, state: 'stale' } : metric)
+  const m: Market = { ...read, tvlUsd: aged(read.tvlUsd), volume24hUsd: aged(read.volume24hUsd) }
   return (
-    <tr className="group cursor-pointer border-b transition last:border-b-0 hover:bg-surface-2" {...(m.provenance ? { 'data-fixtures': m.provenance.fixtures.join(' ') } : {})}>
-      <td className="px-5 py-4 text-[13px] text-fg-subtle">{i + 1}</td>
+    <tr className="border-b transition last:border-b-0 hover:bg-surface-2">
       <td className="px-5 py-4">
         <div className="flex items-center gap-3">
           <TokenMarkPair base={m.tokens.base} quote={m.tokens.quote} size={30} ring="var(--surface-1)" />
@@ -100,30 +152,53 @@ function Row({ m, i }: { m: Market; i: number }) {
             <span className="font-mono">{feeLabel(m)}</span>
           </span>
         </div>
-        {m.provenance && <p className="mt-1.5 font-mono text-[10.5px] text-fg-subtle">{provenanceLine(m.provenance)}</p>}
+        {p && (
+          <p className="mt-1.5 font-mono text-[10.5px] text-fg-subtle" data-provenance="">
+            {provenanceLine(p, age, stale)}
+          </p>
+        )}
       </td>
-      <td className="px-5 py-4 text-right"><Cell metric={m.tvlUsd} strong /></td>
-      <td className="px-5 py-4 text-right"><Cell metric={m.volume24hUsd} /></td>
-      <td className="px-5 py-4 text-right"><Cell metric={m.volume30dUsd} /></td>
-      <td className="px-5 py-4 text-right"><Shown shown={turnover(m)} muted /></td>
-      <td className="px-5 py-4 text-right">
-        <span className="inline-flex items-center gap-2">
-          <Cell metric={m.feeAprPercent} percent strong />
-          <span className="text-fg-subtle transition group-hover:translate-x-0.5" aria-hidden="true">›</span>
-        </span>
-      </td>
+      <td className="px-5 py-4 text-right"><Cell metric={m.tvlUsd} strong retrieved={retrieved} /></td>
+      <td className="px-5 py-4 text-right"><Cell metric={m.volume24hUsd} retrieved={retrieved} /></td>
+      <td className="px-5 py-4 text-right"><Shown shown={turnover(m)} muted retrieved={retrieved} /></td>
+      <td className="px-5 py-4 text-right"><Cell metric={m.feeAprPercent} percent strong /></td>
     </tr>
   )
 }
 
-const HEAD = ['#', 'Pool', 'TVL', '1D vol', '30D vol', '1D vol/TVL', 'Pool APR']
+/**
+ * Column headers, each with what its figures are. The lean table reads
+ * pool-market only, so its TVL and 24h volume can only be GeckoTerminal's,
+ * and the headers say so (#93) on a second line that every width shows; the
+ * ratio is Domino's own. Were a row to carry Domino's own history, they
+ * would name no one.
+ */
+function heads(markets: Market[]): [label: string, note?: string][] {
+  const lean = markets.every((m) => m.provenance?.metrics === 'not_requested')
+  return [
+    ['Pool'],
+    ['TVL', lean ? '(reported by GeckoTerminal)' : undefined],
+    ['24h volume', lean ? '(reported by GeckoTerminal)' : undefined],
+    ['24h vol/TVL', lean ? '(calculated by Domino)' : undefined],
+    ['Pool APR'],
+  ]
+}
 
+/**
+ * The pools rugged97 selected for review (src/config/selectedPools.ts), in
+ * that order, which is not a ranking. Every figure comes from a validated
+ * read and names its provider and age; a figure the read service does not
+ * provide, the pool APR today, says so. Nothing is shown in place of a read
+ * that failed.
+ */
 export function MarketsTable() {
   const { state, provider } = useMarkets()
   const result = shownResult(state)
   const markets = result?.markets ?? []
   const network = result?.network ?? 'Robinhood Chain'
-  const reads = provider.kind !== 'sample'
+  const now = useNow(markets.length > 0)
+  // Folded away in every build but the fixture one, with the words it would show.
+  const fixtures = __DOMINO_READ_MODE__ === 'fixture' && provider.kind === 'fixture'
 
   // After a successful retry the Retry button goes away; focus moves to the heading instead of the page.
   // Refresh stays mounted (busy) while its own read runs, so it keeps focus; if that read fails, Refresh
@@ -159,16 +234,15 @@ export function MarketsTable() {
       <div className="flex flex-wrap items-end justify-between gap-4">
         <div>
           <div className="flex items-center gap-3">
-            <Display ref={heading} className="text-[30px] outline-none" {...(reads ? { tabIndex: -1 } : {})}>
-              Top pools
+            <Display ref={heading} className="text-[30px] outline-none" tabIndex={-1}>
+              Selected pools
             </Display>
-            {result?.source === 'placeholder' && <Pill tone="wait">Sample data</Pill>}
-            {provider.kind === 'fixture' && <Pill tone="wait">Fixture data</Pill>}
+            {fixtures && <Pill tone="wait">Fixture data</Pill>}
           </div>
           <p className="mt-2 max-w-[60ch] text-[14px] text-fg-muted">
-            {reads
-              ? `Pools on ${network}, read through ${provider.kind === 'fixture' ? 'the read pipeline from contract fixtures' : 'the same-origin read bridge'}.`
-              : `Pools on ${network}, built from tokens that exist on the network.`}
+            {fixtures
+              ? `Pools on ${network}, read through the read pipeline from contract fixtures.`
+              : `Pools selected for review on ${network}, read live through this site's read service. Figures carry their provider and age; anything not provided shows as unavailable.`}
             {result?.notice ? ` ${result.notice}` : ''}
           </p>
         </div>
@@ -177,12 +251,11 @@ export function MarketsTable() {
             <span className="h-2 w-2 rounded-full" style={{ background: '#00c805' }} aria-hidden="true" />
             {network}
           </span>
-          {reads && (state.phase === 'ready' || refreshing) && (
+          {(state.phase === 'ready' || refreshing) && markets.length > 0 && (
             <Button variant="ghost" aria-disabled={refreshing ? true : undefined} onClick={refresh}>
               {refreshing ? 'Refreshing…' : 'Refresh'}
             </Button>
           )}
-          <Button variant="ghost">View all pools →</Button>
         </div>
       </div>
 
@@ -190,23 +263,34 @@ export function MarketsTable() {
 
       <div className="mt-6 overflow-hidden rounded-[20px] border bg-surface-1">
         <div className="overflow-x-auto">
-          <table className="w-full min-w-[820px] border-collapse">
+          <table className="w-full min-w-[720px] border-collapse">
             <thead>
               <tr className="border-b bg-surface-2/60 text-left">
-                {HEAD.map((h, i) => (
-                  <th key={h} scope="col" className={cx('px-5 py-3 text-[12px] font-normal text-fg-subtle', i >= 2 && 'text-right', i === 0 && 'w-12')}>
-                    {h}
+                {heads(markets).map(([label, note], i) => (
+                  <th key={label} scope="col" className={cx('px-5 py-3 align-bottom text-[12px] font-normal text-fg-subtle', i >= 1 && 'text-right')}>
+                    {label}
+                    {note && (
+                      <>
+                        {' '}
+                        <span className="block text-[11px]">{note}</span>
+                      </>
+                    )}
                   </th>
                 ))}
               </tr>
             </thead>
             <tbody>
-              {markets.map((m, i) => (
-                <Row key={m.key} m={m} i={i} />
+              {markets.map((m) => (
+                <Row key={m.key} m={m} now={now} />
               ))}
             </tbody>
           </table>
         </div>
+        {state.phase === 'ready' && markets.length === 0 && (
+          <p className="border-t px-5 py-6 text-center text-[13px] text-fg-muted" data-empty="no-pools">
+            No pools selected yet.
+          </p>
+        )}
         <p className="border-t px-5 py-3 text-[12px] leading-relaxed text-fg-subtle">
           Pool APR describes a pool, not a position. It is not a forecast, not a return on your deposit, and says nothing about what a given range would have earned.
         </p>

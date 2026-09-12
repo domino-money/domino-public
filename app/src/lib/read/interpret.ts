@@ -6,9 +6,14 @@
  *      they are recognised before the header is required and before anything
  *      of the body is treated as a producer payload.
  *   2. A redirect: Cloudflare Access in front of a staging origin.
+ *   2b. The site's own /api layer, still before the header: the /api
+ *      forwarder's refusals (#80), exact bytes and status, and the static
+ *      index page a deployment without a forwarder serves for any path.
+ *      Neither is the bridge speaking, so neither is a contract mismatch or
+ *      an edge error: both are `not_connected`, which is never retried.
  *   3. The `X-Domino-Read-Contract` header, on success and error replies
- *      alike, exact match against the pinned candidate. A non-JSON reply with
- *      no header is an edge page or a missing bridge, not a contract.
+ *      alike, exact match against the pinned candidate. Any other non-JSON
+ *      reply with no header is an edge page, not a contract.
  *   4. JSON media, the size bound, and parsing.
  *   5. 200: the package runtime (`assertResponse`), then the identity checks
  *      against the request. Only then `ok`.
@@ -25,6 +30,7 @@ import type {
   Observation,
   Provenance,
   ProviderObservation,
+  NotConnectedReason,
   RawReply,
   ReadOutcome,
   ReadKey,
@@ -41,6 +47,18 @@ export const GATE_REFUSAL = '{"error":"beta_access_required"}'
  * its configuration is broken; an edge error page never carries it.
  */
 export const GATE_PAGE_MARKER = '<title>Domino · Closed beta</title>'
+/**
+ * The /api forwarder's refusals (#80), byte for byte as its refuse() writes
+ * them: `JSON.stringify({ error })` as application/json, each code with
+ * exactly one status, and never a contract header, so no bridge answer can
+ * look like one. Anything else, a different status, extra bytes or a
+ * contract header, is not the forwarder and goes on to the contract checks.
+ */
+export const FORWARDER_REFUSALS: ReadonlyArray<{ status: number; body: string; reason: Exclude<NotConnectedReason, 'no_forwarder'> }> = [
+  { status: 503, body: '{"error":"bridge_unavailable"}', reason: 'bridge_unavailable' },
+  { status: 404, body: '{"error":"not_found"}', reason: 'not_found' },
+  { status: 403, body: '{"error":"worker_subrequest_refused"}', reason: 'worker_subrequest_refused' },
+]
 /** The bridge's own response bound (LIMITS.responseBytes in bridge/src/worker.mjs). */
 export const MAX_RESPONSE_BYTES = 1024 * 1024
 /** Non-JSON bodies are only ever inspected for the gate marker. */
@@ -267,6 +285,14 @@ export function interpretReply<R extends ReadKey>(
 
   // 2. Access answers with a redirect, which a manual-redirect fetch cannot read.
   if (raw.opaqueRedirect) return { ...base, state: 'access_required' }
+
+  // 2b. The site's own /api layer answered, not the bridge: nothing was read.
+  if (raw.contractHeader === null) {
+    const refusal = FORWARDER_REFUSALS.find((entry) => entry.status === raw.status && entry.body === text)
+    if (refusal && isJsonMedia(raw.contentType)) return { ...base, state: 'not_connected', reason: refusal.reason }
+    // No /api function at all: the static site's fallback serves index.html for every path.
+    if (raw.status === 200 && isHtmlMedia(raw.contentType)) return { ...base, state: 'not_connected', reason: 'no_forwarder' }
+  }
 
   // 3. The contract header, on every reply the bridge authors.
   if (raw.contractHeader === null) {

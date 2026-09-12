@@ -5,6 +5,11 @@ Tangerine palette with new structure, screens and components.
 
 `web/` is untouched by this directory and keeps working exactly as before.
 
+This is the invited read-only alpha. It reads public pool data live where the
+server enables it, says plainly when it cannot, and never signs, approves,
+deposits or swaps. No build that can be deployed has a practice mode or a
+sample figure.
+
 ## Run it
 
 Both directories must be installed. This app imports domain modules from
@@ -24,44 +29,55 @@ npm run check:app   # domain and gate tests, typecheck, lint, build, browser tes
 
 ## Tests
 
-Two suites, run from `app/`.
+Three suites, run from `app/`.
 
 ```sh
 npm --prefix app test          # pure logic, node --test
-npm --prefix app run build     # required before the next one
+npm --prefix app run build     # required before the browser suites
 npm --prefix app run test:render
+npm --prefix app run test:gate # the gate, release and read-state browser suites
 ```
 
 `npm test` compiles the pure modules to `.test-build` and runs
 `tests/domain.test.mjs`, the same pattern as `web/scripts/test.mjs`. It covers
-the range geometry, the money-display rules, the market adapter's placeholder
-states, and the gas and available-fee boundaries of `previewCompound`. The
-engine is imported from `web/lib`, never copied, so a change there shows up
-here.
+the range geometry, the relative scenario the explanatory sections draw (every
+figure a multiple of the start price or a share of the starting value), the
+market model's states, and the gas and available-fee boundaries of
+`previewCompound`. The engines are imported from `web/lib`, never copied, so a
+change there shows up here.
 
 `npm test` also runs `tests/read.test.mjs`, the read adapter against every
 fixture in `api-contracts/read-v1` with the package's own runtime, the compiled
-beta gate and the unmodified bridge Worker, and `tests/contract-pin.test.mjs`,
-which recomputes the SHA-256 of every pinned producer manifest.
+beta gate and the unmodified bridge Worker, including the read budget below;
+`tests/contract-pin.test.mjs`, which recomputes the SHA-256 of every pinned
+producer manifest; `tests/build-guard.test.mjs`, the deploy guards in
+`vite.config.ts`; `tests/forwarder.test.mjs`, the `/api` chain (see
+[Deploy and closed beta](#deploy-and-closed-beta)); and
+`tests/release.test.mjs`, the release script in a temporary directory.
 
 `test:render` serves `dist` and drives it in a real browser. Beyond rendering
 and errors, it exercises the behaviour a helper test cannot prove: a real
-pointer drag on a range edge (a still pointer must hold a still bound), input
-preservation across back-navigation, the action footer staying outside the
-scrolling body at a short viewport, receipt tab switching and the exact-amounts
-toggle, section links landing on their target across and within routes, the
-price slider's value-to-thumb mapping, both dialogs' focus containment and
-accessible names, that every displayed token has real artwork, and that
-placeholder figures never appear without their sample label. It also asserts
-that exactly one React instance rendered the page by counting fiber key
-suffixes in the DOM, which holds in every environment rather than only when
-DevTools is present. It exists because
-`tsc --noEmit && vite build` stayed green while the deployed page rendered
-nothing: two copies of React ended up in the bundle and the first hook threw.
-Compilation cannot see that; loading the built files can. It fails on any
-uncaught error, `console.error` or failed request, checks that each route
-renders real content, and walks the whole create-and-compound flow including
-both dialogs' focus containment and accessible names.
+pointer drag on the simulator chart (a still pointer must hold a still price),
+section links landing on their target across and within routes, the price
+slider's value-to-thumb mapping, that no route shows a dollar figure, that
+Connect wallet is disabled on every route and only the appearance is stored,
+the honest positions screen, and the not-connected landing: one capabilities
+GET, no POST and no figure. It scans every text file of `dist` for sample,
+practice, fixture and test-only markers. It also asserts that exactly one
+React instance rendered the page by counting fiber key suffixes in the DOM,
+which holds in every environment rather than only when DevTools is present.
+It exists because `tsc --noEmit && vite build` stayed green while the
+deployed page rendered nothing: two copies of React ended up in the bundle and
+the first hook threw. Compilation cannot see that; loading the built files
+can. It fails on any uncaught error, `console.error` or failed request, and
+checks that each route renders real content.
+
+`test:gate` runs `tests/gate.browser.test.mjs` and
+`tests/release.browser.test.mjs` against `dist` behind the compiled gate, then
+`test:read` (see Read data). The release suite puts a stub where the /api
+forwarder and bridge would be and walks every honest state of the deployable
+landing with its exact wire cost. R-1's pacing runs in real time there, so it
+is timing-sensitive: rerun it once if it flakes.
 
 The browser is whatever Chromium build the machine already has — Chrome on the
 CI runner, Edge on a Windows workstation — so no browser download is added to
@@ -217,7 +233,8 @@ recording bindings and with the real bridge Workers under their reviewed
 disabled vars. `globalThis.fetch` is a tripwire before the Workers load, so
 any upstream call fails the suite. Its stand-in for Pages routes `/api` with
 the matcher wrangler 4.130.0 uses, and a test fails if the deploy scripts
-move off that version, so the routing is re-checked first. It also checks
+move off that version (both run `scripts/release.mjs`, whose `WRANGLER`
+constant and deploy command it checks), so the routing is re-checked first. It also checks
 that `wrangler.toml` can give vars and bindings to production only, and reads
 the file with wrangler 4.130.0's own config reader (web's pinned copy,
 offline): production must bind exactly the four names `forward()` looks up,
@@ -231,15 +248,43 @@ only their named cookies. For F1V-C1 it builds enabled Workers in memory,
 with placeholder credentials and the tripwire as their transport, and shows
 a compressed body refused as `invalid_request` before any upstream call.
 
-**Deploying**, after `npx wrangler login` in your own terminal:
+**Deploying.** One build, recorded, then deployed twice without a rebuild:
+first to the gated preview, then, unchanged, to production. After
+`npx wrangler login` in your own terminal:
 
 ```sh
-npm run deploy:preview   # build, then upload to a preview hostname
-npm run deploy           # build, then upload as production
+npm run release:build    # build, refuse any forbidden marker, record the digest
+npm run release:verify   # optional: dist still matches the record
+npm run deploy:preview   # verify, then upload that dist as a preview
+npm run deploy           # verify, then upload the same dist as production
 ```
 
-Both pin wrangler 4.130.0 through `npx` rather than a dependency, so CI never
-downloads it.
+Deploy production from the same checkout that deployed the preview. The
+release record, `.release/manifest.json` and `.release/deployed.json`, is
+written in that checkout and ignored by git, so no other clone, worktree or
+machine has it, and `npm run deploy` there refuses for want of a preview
+deploy it never saw. In a new checkout, run `npm run release:build` and
+`npm run deploy:preview` there first, check the preview, then `npm run
+deploy`.
+
+`scripts/release.mjs record` hashes every file of `dist`, `functions/` and
+`wrangler.toml` (SHA-256 over sorted relative paths) into one digest and
+writes `.release/manifest.json`, and refuses a `dist` that carries any marker
+from `scripts/deploy-markers.mjs`. It also refuses a checkout with uncommitted
+changes (changed tracked files anywhere in the repository, or untracked files
+under `app/` that git does not ignore): commit first, then build, so the
+commit it records, which both deploys pass as `--commit-hash`, names the bytes
+that were built. Both deploys verify the digest first, then
+run `npx --yes wrangler@4.130.0 pages deploy ./dist` with no build step,
+tagged with the recorded commit. Production is refused unless
+`.release/deployed.json` shows the same digest deployed to preview. wrangler
+compiles `functions/` at upload, which is why their sources are in the
+digest. wrangler is pinned through `npx` rather than a dependency, so CI never
+downloads it. wrangler takes the project from `wrangler.toml`'s `name`: the
+Pages project is `domino-app`, and `domino-app-e65.pages.dev` is only its
+hostname (Cloudflare appended `-e65` there because the plain name was taken).
+Leave `name` as it is: wrangler 4.130.0 would find no project under any other
+name, offer to create one, and leave domino.money as it was.
 
 **After every Pages deploy, check the bindings (step C11).** In the
 dashboard, Workers & Pages → `domino-app` → Settings → Bindings:
@@ -253,8 +298,10 @@ dashboard, Workers & Pages → `domino-app` → Settings → Bindings:
 Repeat both after every deploy, preview deploys included. Signed in on
 `domino.money`, `/api/read/v1/capabilities` then shows `dataMode: "disabled"`
 with an `X-Domino-Read-Contract` header. To roll back, delete the four
-`[[env.production.services]]` tables and run `npm run deploy` again:
-production API calls then answer 503 `bridge_unavailable` and call nothing.
+`[[env.production.services]]` tables and release again (`npm run
+release:build`, `npm run deploy:preview`, `npm run deploy`: `wrangler.toml` is
+part of the recorded digest, so the old record no longer verifies): production
+API calls then answer 503 `bridge_unavailable` and call nothing.
 
 **Looking at it locally.** `scripts/gated-server.mjs` serves `dist` through the
 compiled middleware with `node:http`, which is how the browser tests run it:
@@ -283,12 +330,14 @@ commit and each package's manifest SHA-256). The pin is producer commit
 and no contract version changed. One interface, `ReadSource`,
 covers all nine routes and has two implementations: the package fixtures, and
 the same-origin bridge at `/api/read/v1/*`. Both hand their replies to one
-pipeline, which recognises the beta gate's 401 and 503 first, then requires
-the exact `X-Domino-Read-Contract` header, then validates with the package
-runtime (`assertResponse`, `validateError`) and checks the answer is about the
-pool, token or block that was asked for. Anything that fails is a state of its
-own (`gate_required`, `incompatible`, `invalid`, `unavailable`, …) and nothing
-of it is rendered. Only a validated 429 `read_capacity_busy` is asked again on
+pipeline, which recognises the beta gate's 401 and 503 first, then the site's
+own /api layer (the /api forwarder's refusals from #80, or the index page a
+deployment without an /api function serves), then requires the exact
+`X-Domino-Read-Contract` header, then validates with the package runtime
+(`assertResponse`, `validateError`) and checks the answer is about the pool,
+token or block that was asked for. Anything that fails is a state of its own
+(`gate_required`, `not_connected`, `incompatible`, `invalid`, `unavailable`,
+…) and nothing of it is rendered. Only a validated 429 `read_capacity_busy` is asked again on
 its own (R-1 on #1): three attempts at most, each after the bridge's
 Retry-After plus up to 250 ms, and only while the read's budget covers the
 wait. A transient 503/504 is shown as itself, with a Retry for the person.
@@ -313,37 +362,72 @@ before its own 60 s are up, never after them. Each reader also stops at its
 own abort or deadline, whichever comes first, without cancelling the read
 for the others; the last one to leave cancels it.
 
-Components read through `MarketsProvider`, not a source. The default build
-uses the curated sample rows, exactly as before; they are not dressed up as
-contract payloads, which would mean inventing provider provenance. Previews
-and production still deploy that default sample build, and will until the
-live-data PR.
+Components read through `MarketsProvider`, not a source. **The deployable
+build reads live.** Production and development read the reviewed pool
+selection in `src/config/selectedPools.ts` through the same-origin bridge at
+`/api/read/v1/*`: the two chain-4663 pool ids rugged97 selected on #45 as
+candidates for fresh pool-market validation. The list holds ids only; pair
+names and figures come from validated reads, and its order is not a ranking.
+The ticker and the Selected pools table share one provider and one result
+set. There are no sample rows anywhere.
+
+**Read budget.** Per selected pool, one `pool-market` read with
+`includePriceHistory: false` sent explicitly, then each distinct token once,
+strictly one read at a time, and no `pool-metrics`. Through the bridge that is
+one capabilities GET plus N + U POSTs for N pools and U distinct tokens: five
+POSTs for the two selected pools when they share a currency. There is no
+client cache, so every load reads again, and the bridge's own bounded
+observation cache keeps its original ages. The APR shows as unavailable ("APR
+not provided by the read service yet"), never 0, until the read service
+provides one. An empty selection reads nothing and says "No pools selected
+yet".
+
+**Honest states** are decided in the shared read layer (`interpret.ts`,
+`describe.ts`), never per screen, and nothing ever stands in for a failed read:
+
+| Reply | Shown | Retry |
+|---|---|---|
+| Gate 401 | Beta access needed, with Sign in again | no |
+| /api forwarder 503 `bridge_unavailable`, or no /api at all (the site's index page) | Live data isn't connected yet | no |
+| /api forwarder 404 `not_found` (a preview or any other host) | Live data isn't available on this address | no |
+| Capabilities `dataMode: "disabled"`, no enabled read, or 404 `route_not_available` | Live data is switched off for now | no |
+| 429 `read_capacity_busy` | asked again under R-1, then Read service busy | yes |
+| Producer 503 or 504, transient | Temporarily unavailable | yes, for a person |
+| A read deadline | Pool data unavailable, naming the limit | yes |
+
+The forwarder's refusals are recognised by their exact bytes and status, and
+only without the contract header; anything else without the header is still a
+contract mismatch or an edge page. None of these states is asked again on its
+own.
 
 **Build modes.** Only `--mode` chooses where data comes from; no environment
 variable does.
 
 | Command | Data | Output |
 |---|---|---|
-| `npm run build`, `npm run dev` | Labelled sample rows, no read code in the bundle | `dist` |
+| `npm run build`, `npm run dev` | Deployable: live reads of the selected pools through the bridge. The dev server has no /api, so it shows "Live data isn't connected yet" | `dist` |
 | `npm run dev:fixtures`, `npm run build:fixtures` | Package fixtures through the real pipeline, plus the read lab at `/read-lab.html` | `.fixture-dist` |
-| `npm run build:bridge-test` | The bridge source, for a local stub only | `.bridge-dist` |
+| `npm run build:bridge-test` | The bridge source for the package fixture pool, for a local stub only | `.bridge-dist` |
 
-`vite.config.ts` refuses to write a fixture or bridge build into `dist`, which
-is what Pages deploys, or anywhere inside it, however the path is spelled
+`vite.config.ts` refuses to write anything but a deployable build into `dist`,
+which is what Pages deploys, or anywhere inside it, however the path is spelled
 (`DIST` on a case-insensitive disk, `dist/lab`, `dist/..lab`, an absolute path,
-a link).
-`tests/build-guard.test.mjs` resolves the real config with each spelling, and
- `tests/render.test.mjs` checks that `dist` makes no
-read request and contains no read code. `npm run test:read` (part of
-`test:gate`) builds both read modes and drives them behind the real gate:
-`tests/read-states.browser.test.mjs` renders every fixture case with the real
-Top pools table, ticker and family panels; `tests/read-bridge.browser.test.mjs`
-reads through `bridge/src/worker.mjs` in front of package fixtures.
+a link). It checks every deployable mode on every build (bridge reads, the
+selected pools, no lab, every other flag off), and its
+`domino:deployable-bundle-check` plugin fails a deployable build that carries
+any marker from `scripts/deploy-markers.mjs`: sample or practice wording, the
+example token, fixture labels, files and ids, the read lab or test hooks.
+`tests/build-guard.test.mjs` resolves the real config with each spelling and
+exercises both checks, and `tests/render.test.mjs` scans the built `dist`.
+`npm run test:read` (part of `test:gate`) builds both test modes and drives
+them behind the real gate: `tests/read-states.browser.test.mjs` renders every
+fixture case with the real Selected pools table, ticker and family panels;
+`tests/read-bridge.browser.test.mjs` reads through `bridge/src/worker.mjs` in
+front of package fixtures.
 
-**Still off in the deployed build:** live data, the bridge source, signing,
-wallet funding, swaps, sessions, previews and deposits. Connect wallet stays
-disabled. Turning live data on needs the consumer acknowledgement on #1 and a
-staging exercise first.
+**Still off in the deployed build:** signing, wallet funding, swaps, sessions,
+previews and deposits. Connect wallet stays disabled. Whether live reads are
+on is the server's answer, not the build's.
 
 **Credentials on reads.** Reads use `credentials: 'same-origin'` so the beta
 cookie reaches the gate. The app adds no credential of its own (no
@@ -390,36 +474,30 @@ equivalent side, and the adapter follows it.
 
 | Route | Screen |
 |---|---|
-| `#/` | Landing: pool ticker, hero widget, top pools, product cards, range simulator, Domino sequence, how it works, limits |
-| `#/app` | Positions workspace: practice cards, activity feed, receipts |
-| `#/settings` | Appearance, capability table, build facts, practice data summary |
+| `#/` | Landing: pool ticker, hero range widget, Selected pools, product cards, range simulator, Domino sequence, how it works, limits |
+| `#/app` | Your positions: an honest empty state until a read-only position lookup exists (#71) |
+| `#/settings` | Appearance, capability table, build facts |
 
 ## Domain logic belongs to `web/lib`
 
-The money maths, the range maths and the practice workspace are rugged97's.
-This app **imports** them and never copies them:
+The range maths is rugged97's. This app **imports** it and never copies it:
 
 ```ts
-import { previewPosition, usd, qty } from 'core/position'
-import { previewCompound, pendingFeesExplanation } from 'core/compound'
-import { addPracticePosition, runPracticeCompound, practiceFunding } from 'core/practice'
-import { useLocalWorkspace } from 'core/local-workspace'
+import { previewPosition } from 'core/position'
 ```
 
 `core/*` is an alias to `../web/lib/*`, declared in `tsconfig.json` and
 `vite.config.ts` (which also opens `server.fs.allow` for the parent directory).
-A fix in `web/lib` reaches this app with no action here, and there is no second
-copy of the accounting to drift.
+A fix in `web/lib` reaches this app with no action here. The explanatory
+sections run it on a position of no particular size (`src/lib/scenario.ts`)
+and show only ratios: multiples of the start price and shares of the starting
+value.
 
-Practice data uses the same `domino-practice-v1` storage key and the same
-schema, and appearance uses `domino-appearance`.
-
-**Those keys do not share records between the two apps.** `localStorage` is
-scoped per origin, and the two dev servers listen on different ports, so
-`localhost:5273` and `localhost:8877` hold separate stores. Sharing the key and
-schema means a book written by either app is readable by the other if they are
-ever served from one origin; it does not mean a card created here shows up in
-the workbench today.
+The app keeps one thing in the browser: light or dark, under the
+`domino-appearance` key the workbench also uses (`src/lib/appearance.ts`).
+There is no practice workspace and no `domino-practice-v1` storage.
+`localStorage` is scoped per origin, so the two apps' appearance choices stay
+separate unless they are served from one origin.
 
 ## Toolchain
 
@@ -445,9 +523,9 @@ therefore arrive through the bridge Worker, reached on this app's own origin
 at `/api/read/v1/*` through the Pages forwarder and a private service binding
 (see [the `/api` chain](#deploy-and-closed-beta)); the Worker has no route of
 its own. It emits no CORS headers and requires `url.origin === APP_ORIGIN`, so
-a deployed worker cannot be called from a dev server on another port. Until
-that is enabled, `src/lib/markets.ts` serves labelled placeholder rows and the
-workspace runs entirely on the practice modules.
+a deployed worker cannot be called from a dev server on another port. The
+deployable build reads through that bridge; until a deployment connects it,
+the site says live data isn't connected yet and shows no figure.
 
 Hosting is Cloudflare Pages at `https://domino.money`; see
 [Deploy and closed beta](#deploy-and-closed-beta). The decision is recorded in
@@ -460,34 +538,47 @@ roles on non-semantic elements by design).
 
 ## Data honesty
 
-No wallet, no chain read, no transaction, no signing. Every figure in the
-practice workspace is simulated and labelled as such.
+No wallet, no transaction, no signing and no invented figure. The only market
+data on screen comes from validated live reads, named with its provider and
+age. The explanatory sections draw the product's own maths in relative terms
+and say what is not available in the alpha.
 
-`src/lib/markets.ts` holds the figures behind the pool ticker and the Top
+Each Selected pools row follows #93's display rules. It names the block its
+pool was verified at, and its pair comes from the token reads of the pool's
+own currency addresses, never from the provider's base/quote. TVL and 24h
+volume are "Reported by GeckoTerminal" and dated only by when they were
+retrieved ("retrieved 12 s ago": the read service's cache age, counted on
+from its answer), never "as of" or "updated at", because the provider's own
+update time is not known. A stale observation, or one on screen past the read
+service's 60 s fresh window, is marked stale in the cell; a rejected or
+unavailable one keeps the verified row with its figures unavailable and the
+reason; a null figure is "Not reported", never $0. `sourceUrl` is never read.
+A failure on one pool (a 504, a 429 that outlasts R-1) drops only that pool,
+named in the status line, and leaves the other row.
+
+`src/lib/markets.ts` holds the figures behind the pool ticker and the Selected
 pools table and the one rule for showing them. Each figure carries a state:
 `qualified` (pool-metrics `usableAsCurrent24h`, the only current 24h/APR
 figure), `provider` (named, unreconciled), `stale` (a figure that was current,
 with its original time; stale pool metrics count only when they would be
 `usableAsCurrent24h` if the snapshot were fresh, and are otherwise `partial`),
 `partial` and `reference` (never current, never a cell value), `absent`,
-`unavailable`, `rejected`, or `placeholder`. Today it returns `placeholder`
-rows for five pairs built from tokens that exist on the network. **Those rows
-are labelled "Sample" wherever they appear and must stay labelled until the
-adapter returns qualified data.** Token symbols from reads are untrusted text:
+`unavailable` or `rejected`. There is no sample or placeholder state. The lean
+table reads no pool-metrics, so its APR is `unavailable` with the reason
+`fee_apr_not_provided`. Token symbols from reads are untrusted text:
 `TokenLabel` renders them isolated in `<bdi>` and never as an attribute, URL or
 artwork key.
 
-The service fee appears only where an owner would be asked to act: the Review
-step of position creation, the fee-scenario review, and receipts. It is absent
-from the landing page.
+The service fee appears nowhere in the alpha: nothing can be created or
+compounded.
 
-Token artwork lives in `public/tokens/<symbol>.svg` and is served from this
-app, never from a third-party host. A symbol with no file falls back to a
-coloured disc with its letters, so adding a logo is dropping in a file.
+Token artwork lives in `public/tokens/` and is served from this app, never
+from a third-party host. A read token gets artwork only through its address
+(`ARTWORK_BY_ADDRESS` in `src/lib/read/project.ts`), never through its
+symbol, and shows a plain disc without one.
 
 ## What is not here yet
 
-Wallet connection, SIWE sessions, live chain reads in the deployed build,
-qualified USD prices, and anything that signs. The read adapter and its bridge
-source exist but are off until the consumer acknowledgement and staging. Each has its
-own gate in the repository's specifications.
+Wallet connection, SIWE sessions, position lookup, qualified USD prices and a
+current APR, and anything that signs. Each has its own gate in the
+repository's specifications.

@@ -1,4 +1,4 @@
-import { usd } from 'core/position'
+import { times } from '../lib/scenario'
 
 /**
  * A price control you can actually grab.
@@ -6,7 +6,8 @@ import { usd } from 'core/position'
  * A native range input sits invisibly over the whole track, so clicking or
  * dragging anywhere on it works, the keyboard works and screen readers get a
  * real slider. The visuals underneath follow its value: a wide track, the
- * active range shaded, and a large thumb with the price written on it.
+ * active range shaded, and a large thumb with the price written on it as a
+ * multiple of the start price.
  */
 export function PriceSlider({
   id,
@@ -61,7 +62,7 @@ export function PriceSlider({
           className="flex h-8 items-center justify-center rounded-[var(--radius-pill)] border-2 bg-surface-2 px-2.5 font-mono text-[12px] shadow-[0_4px_16px_-4px_rgba(0,0,0,0.45)]"
           style={{ borderColor: inside || lower === undefined ? 'var(--primary)' : 'var(--money-wait)' }}
         >
-          <span className="tnum">{usd(value)}</span>
+          <span className="tnum">{times(value)}</span>
         </div>
       </div>
 
@@ -80,8 +81,8 @@ export function PriceSlider({
       />
 
       <div className="mt-2 flex justify-between font-mono text-[11px] text-fg-subtle">
-        <span>{usd(min)}</span>
-        <span>{usd(max)}</span>
+        <span>{times(min)}</span>
+        <span>{times(max)}</span>
       </div>
     </div>
   )

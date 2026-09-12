@@ -1,26 +1,26 @@
-import { useLocalWorkspace } from 'core/local-workspace'
+import { useAppearance } from '../lib/appearance'
 import { CAPABILITIES, ROADMAP, type Availability } from '../lib/capabilities'
 import { Button, Card, Display, Eyebrow, Pill } from '../components/ui'
 
 const LABEL: Record<Availability, { text: string; tone: 'in' | 'wait' | 'neutral' }> = {
-  practice: { text: 'Practice available', tone: 'in' },
+  'not-in-alpha': { text: 'Not available in the alpha', tone: 'neutral' },
   planned: { text: 'Planned', tone: 'wait' },
   'not-connected': { text: 'Not connected', tone: 'neutral' },
 }
 
 export function Settings() {
-  const { dark, setDark, book } = useLocalWorkspace()
+  const { dark, setDark } = useAppearance()
 
   return (
     <main className="mx-auto max-w-[900px] px-5 py-10">
       <Display as="h1" className="text-[38px]">Settings</Display>
-      <p className="mt-1 text-[13px] text-fg-muted">Appearance, what this build can do, and where your practice data lives.</p>
+      <p className="mt-1 text-[13px] text-fg-muted">Appearance, and what this build can and cannot do.</p>
 
       <div className="mt-8 grid gap-5">
         <Card className="flex items-center justify-between gap-4 p-6">
           <div>
             <h2 className="text-[15px] font-medium">Appearance</h2>
-            <p className="mt-0.5 text-[13px] text-fg-muted">Shared with the workbench through the same saved preference.</p>
+            <p className="mt-0.5 text-[13px] text-fg-muted">Saved in this browser only.</p>
           </div>
           <Button variant="outline" onClick={() => setDark(!dark)}>{dark ? 'Switch to light' : 'Switch to dark'}</Button>
         </Card>
@@ -45,13 +45,10 @@ export function Settings() {
           <dl className="mt-4 grid gap-x-8 gap-y-3 sm:grid-cols-2">
             {(
               [
-                ['Mode', CAPABILITIES.mode],
                 ['Chain', `Robinhood Chain · ${CAPABILITIES.chainId}`],
-                ['Reinvestment policy', `Version ${CAPABILITIES.simulation.reinvestmentPolicyVersion}`],
-                ['Gas buffer in the cost check', `${CAPABILITIES.simulation.gasBufferBps / 100}%`],
-                ['Fixed idle reserve', `${CAPABILITIES.simulation.fixedReserveBps}%`],
+                ['Live reads', 'Built in, switched on by the server'],
                 ['Signing', CAPABILITIES.signingEnabled ? 'Enabled' : 'Off'],
-                ['Live chain data', CAPABILITIES.liveDataEnabled ? 'Enabled' : 'Off'],
+                ['Wallet funding', CAPABILITIES.walletFundingEnabled ? 'Enabled' : 'Off'],
               ] as const
             ).map(([k, v]) => (
               <div key={k} className="flex items-baseline justify-between gap-4 border-b border-dashed py-2">
@@ -60,13 +57,6 @@ export function Settings() {
               </div>
             ))}
           </dl>
-        </Card>
-
-        <Card className="p-6">
-          <Eyebrow>Practice data</Eyebrow>
-          <p className="mt-3 text-[13px] leading-relaxed text-fg-muted">
-            {book.positions.length} practice position{book.positions.length === 1 ? '' : 's'} and {book.events.length} event{book.events.length === 1 ? '' : 's'} are stored in this browser only. Nothing is sent anywhere, and there is no wallet, chain read or transaction behind any of it.
-          </p>
         </Card>
       </div>
     </main>

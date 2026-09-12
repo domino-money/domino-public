@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Button, Pill, cx } from './ui'
+import { Button, cx } from './ui'
 
 function Wordmark() {
   return (
@@ -20,7 +20,6 @@ function Wordmark() {
 const NAV = [
   { label: 'Overview', href: '#/', route: '/' },
   { label: 'Positions', href: '#/app', route: '/app' },
-  { label: 'Activity', href: '#/app#activity', route: '' },
   { label: 'Settings', href: '#/settings', route: '/settings' },
 ]
 
@@ -52,7 +51,7 @@ export function Header({ route }: { route: string }) {
 
         <nav className="hidden items-center gap-1 rounded-[var(--radius-pill)] border bg-surface-1 p-1 md:flex">
           {NAV.map((item) => {
-            const active = item.route !== '' && item.route === route
+            const active = item.route === route
             return (
               <a
                 key={item.label}
@@ -66,21 +65,10 @@ export function Header({ route }: { route: string }) {
         </nav>
 
         <div className="flex shrink-0 items-center gap-2.5">
-          <div className="hidden lg:block">
-            <Pill tone="neutral">
-              <span className="h-1.5 w-1.5 rounded-full" style={{ background: 'var(--money-wait)' }} aria-hidden="true" />
-              Practice mode
-            </Pill>
-          </div>
-          {route === '/' ? (
-            <Button onClick={() => (window.location.hash = '#/app')} className="whitespace-nowrap">
-              Open workspace
-            </Button>
-          ) : (
-            <Button variant="outline" disabled title="Wallet connection is not implemented yet" className="whitespace-nowrap">
-              Connect wallet
-            </Button>
-          )}
+          {/* As on the base: disabled on every route. Wallet sign-in is a separate, later change with its own acceptance. */}
+          <Button variant="outline" disabled title="Wallet connection is not implemented yet" className="whitespace-nowrap">
+            Connect wallet
+          </Button>
         </div>
       </div>
     </header>

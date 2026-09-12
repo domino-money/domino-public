@@ -1,6 +1,4 @@
 import type { ReactNode, ButtonHTMLAttributes } from 'react'
-import { formatAmount, toneFor } from '../lib/format'
-import type { Tone } from '../lib/format'
 
 export function cx(...parts: Array<string | false | null | undefined>) {
   return parts.filter(Boolean).join(' ')
@@ -111,35 +109,5 @@ export function Eyebrow({ children, className }: { children: ReactNode; classNam
     >
       {children}
     </p>
-  )
-}
-
-/**
- * A money figure. Signed, labelled and tabular so colour is never the only cue,
- * and sub-cent amounts escalate to six places instead of collapsing to $0.00.
- */
-export function Amount({
-  value,
-  tone = 'neutral',
-  exact = false,
-  prefix = '$',
-}: {
-  value: number | string
-  tone?: Tone
-  exact?: boolean
-  prefix?: string
-}) {
-  const n = typeof value === 'string' ? Number(value) : value
-  const effective = toneFor(n, tone)
-  const colors = {
-    neutral: 'text-fg',
-    in: 'text-money-in',
-    out: 'text-money-out',
-    wait: 'text-money-wait',
-  }
-  return (
-    <span className={cx('tnum font-mono', colors[effective])}>
-      {formatAmount(n, { tone, exact, prefix })}
-    </span>
   )
 }

@@ -12,16 +12,18 @@
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview",
     "test": "node scripts/test.mjs",
-    "test:render": "node --test tests/render.test.mjs",
+    "test:render": "node --test tests/page-watch.test.mjs tests/render.test.mjs",
     "typecheck": "tsc --noEmit",
     "lint": "oxlint src functions",
-    "test:gate": "node --test tests/gate.browser.test.mjs && npm run test:read",
+    "test:gate": "node --test tests/gate.browser.test.mjs tests/release.browser.test.mjs && npm run test:read",
     "build:fixtures": "vite build --mode fixtures",
     "build:bridge-test": "vite build --mode bridge-test",
     "test:read": "npm run build:fixtures && npm run build:bridge-test && node --test tests/read-states.browser.test.mjs tests/read-bridge.browser.test.mjs",
     "serve:gated": "node scripts/gated-server.mjs",
-    "deploy:preview": "npm run build && npx --yes wrangler@4.130.0 pages deploy --branch preview",
-    "deploy": "npm run build && npx --yes wrangler@4.130.0 pages deploy --branch main"
+    "release:build": "npm run build && node scripts/release.mjs record",
+    "release:verify": "node scripts/release.mjs verify",
+    "deploy:preview": "node scripts/release.mjs deploy preview",
+    "deploy": "node scripts/release.mjs deploy production"
   },
   "dependencies": {
     "react": "19.2.8",

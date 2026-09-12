@@ -4,10 +4,25 @@
  * Reasons in the contract are closed enums, validated before they get here,
  * so a code this map does not know is still safe to show as plain text. No
  * provider-authored string ever passes through here.
+ *
+ * Every screen takes its words, its Retry and its sign-in link from here, so
+ * an honest state is decided once, in the shared read layer, never per screen:
+ *
+ *   gate 401                           Beta access needed, with Sign in again
+ *   /api forwarder 503, or no /api     Live data isn't connected yet
+ *   forwarder 404 (another address)    Live data isn't available on this address
+ *   capabilities disabled, a route     Live data is switched off for now
+ *     not enabled, 404 route_not_available
+ *   429 read_capacity_busy             Read service busy, once R-1 gives up
+ *   transient producer 503 or 504      Temporarily unavailable, Retry for a person
+ *   read deadline                      Pool data unavailable, naming the limit
+ *
+ * None of these is asked again on its own; only R-1's 429 retry does that,
+ * inside the pipeline. Nothing here ever puts sample data in their place.
  */
 import { REQUEST_READ_CONTRACT } from './pin'
 import { BRIDGE_RETRY } from './pipeline'
-import type { FailedOutcome, ReadKey } from './types'
+import type { FailedOutcome, NotConnectedReason, ReadKey } from './types'
 
 const REASONS: Record<string, string> = {
   provider_unavailable: 'provider unavailable',
@@ -47,6 +62,7 @@ const REASONS: Record<string, string> = {
   upstream_timeout: 'read service timed out',
   not_in_read_v1: 'read-v1 has no such field',
   mixed_basis: 'operands come from different sources',
+  fee_apr_not_provided: 'APR not provided by the read service yet',
   turnover_undefined: 'no TVL to divide by',
 }
 
@@ -62,6 +78,21 @@ export interface FailureText {
   signIn?: boolean
 }
 
+/** The site's own /api layer answered instead of the read bridge. A retry cannot change that, so none is offered. */
+function notConnected(reason: NotConnectedReason): FailureText {
+  switch (reason) {
+    case 'not_found':
+      return { title: 'Live data isn\'t available on this address', detail: 'Live reads are not served on this address, such as a preview. Nothing is shown in their place.', retry: false }
+    case 'worker_subrequest_refused':
+      return { title: 'Request refused', detail: 'The site refused this read because it did not come straight from a browser.', retry: false }
+    case 'bridge_unavailable':
+    case 'no_forwarder':
+      return { title: 'Live data isn\'t connected yet', detail: 'This site\'s read service is not connected yet, so there are no pool figures to show. Nothing is shown in their place.', retry: false }
+    default:
+      return reason satisfies never
+  }
+}
+
 export function describeFailure(outcome: FailedOutcome<ReadKey>): FailureText {
   switch (outcome.state) {
     case 'gate_required':
@@ -70,6 +101,8 @@ export function describeFailure(outcome: FailedOutcome<ReadKey>): FailureText {
       return { title: 'Access is paused', detail: 'The beta gate is temporarily unavailable. Nothing is wrong on your side.', retry: true }
     case 'access_required':
       return { title: 'Blocked by an access check', detail: 'This environment sits behind an access check that redirected the read. Nothing was shown.', retry: false }
+    case 'not_connected':
+      return notConnected(outcome.reason)
     case 'incompatible':
       return {
         title: 'Read contract mismatch',
@@ -94,18 +127,22 @@ export function describeFailure(outcome: FailedOutcome<ReadKey>): FailureText {
       }
     case 'unavailable': {
       const cause = outcome.cause
+      if (cause.kind === 'producer') {
+        const detail = `The read service answered: ${reasonText(cause.code)}.`
+        // A transient 503 or 504 may clear, so a person may ask again; nothing asks on its own.
+        // Integrity, configuration and indexing codes would get the same answer, so no Retry.
+        return outcome.retryable ? { title: 'Temporarily unavailable', detail, retry: true } : { title: 'Pool data unavailable', detail, retry: false }
+      }
       const detail =
-        cause.kind === 'producer'
-          ? `The read service answered: ${reasonText(cause.code)}.`
-          : cause.kind === 'network'
-            ? 'The read service could not be reached.'
-            : cause.kind === 'edge'
-              ? `The network edge answered with an error page (HTTP ${cause.status}), not the read service.`
-              : cause.kind === 'read_deadline'
-                ? cause.limit === 'attempt'
-                  ? `The read service did not answer within ${BRIDGE_RETRY.attemptMs / 1000} s, so the read was stopped.`
-                  : `Stopped after ${BRIDGE_RETRY.totalMs / 1000} s, time spent queued included.`
-                : 'Too many reads are already waiting on this screen.'
+        cause.kind === 'network'
+          ? 'The read service could not be reached.'
+          : cause.kind === 'edge'
+            ? `The network edge answered with an error page (HTTP ${cause.status}), not the read service.`
+            : cause.kind === 'read_deadline'
+              ? cause.limit === 'attempt'
+                ? `The read service did not answer within ${BRIDGE_RETRY.attemptMs / 1000} s, so the read was stopped.`
+                : `Stopped after ${BRIDGE_RETRY.totalMs / 1000} s, time spent queued included.`
+              : 'Too many reads are already waiting on this screen.'
       return { title: 'Pool data unavailable', detail, retry: true }
     }
     case 'busy':
@@ -120,7 +157,7 @@ export function describeFailure(outcome: FailedOutcome<ReadKey>): FailureText {
       return { title: 'Request refused', detail: `The read bridge refused this request (${reasonText(outcome.code)}, HTTP ${outcome.status}).`, retry: false }
     case 'disabled':
       return {
-        title: 'Live data is off',
+        title: 'Live data is switched off for now',
         detail:
           outcome.reason === 'live_data_disabled'
             ? 'This build does not read live data.'

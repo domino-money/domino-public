@@ -23,12 +23,12 @@ const { createBridgeSource, READ_HEADERS, READ_INIT } = built('bridgeSource');
 const { BRIDGE_RETRY } = built('pipeline');
 const { ERROR_CLASS } = built('errors');
 const { createScheduledSource } = built('scheduler');
-const { describeFailure } = built('describe');
+const { describeFailure, reasonText } = built('describe');
 const decimal = built('decimal');
 const project = built('project');
 const pagers = built('pagers');
 const scenarios = built('scenarios');
-const { loadMarkets, createReadMarketsProvider } = built('marketsProvider');
+const { loadSelectedPools, createReadMarketsProvider, tableMarketRequest } = built('marketsProvider');
 const markets = require('../.test-build/app/src/lib/markets.js');
 const middleware = require('../.test-build/app/functions/_middleware.js');
 
@@ -285,9 +285,120 @@ test('a missing or rc.2 contract header is incompatible, and no validator sees t
     assert.deepEqual([outcome.state, outcome.reason], ['incompatible', reason]);
     assert.deepEqual(calls, { assertResponse: 0, validateError: 0 });
   }
-  // HTML with a 200 and no header, whatever answered it, is not the bridge.
+  // HTML with a 200 and no header is not the bridge: it is a site with no /api function (below).
   const spa = interpretReply('token', tokenRequest, raw(200, 'text/html', '<!doctype html>', null), runtime, provenance);
-  assert.deepEqual([spa.state, spa.cause.kind], ['unavailable', 'edge']);
+  assert.deepEqual([spa.state, spa.reason], ['not_connected', 'no_forwarder']);
+});
+
+// ---------------------------------------------------------------------------
+// The site's own /api layer (#80): refusals from the forwarder, or no forwarder
+// at all. Recognised after the gate and before the contract header.
+// ---------------------------------------------------------------------------
+
+const FORWARDER = [
+  [503, '{"error":"bridge_unavailable"}', 'bridge_unavailable'],
+  [404, '{"error":"not_found"}', 'not_found'],
+  [403, '{"error":"worker_subrequest_refused"}', 'worker_subrequest_refused'],
+];
+const kind = (outcome) => [outcome.state, outcome.reason ?? outcome.cause?.kind];
+
+test('the /api forwarder’s refusals are not_connected, decided before the contract header and before any validation', () => {
+  for (const [status, body, reason] of FORWARDER) {
+    const { calls, validators } = spied();
+    const outcome = interpretReply('pool-market', { poolId: FIXTURE_POOL, includePriceHistory: false }, raw(status, 'application/json; charset=utf-8', body, null), validators, provenance);
+    assert.deepEqual([outcome.state, outcome.reason], ['not_connected', reason], `${status} ${body}`);
+    assert.deepEqual(calls, { assertResponse: 0, validateError: 0 }, 'no validator sees the body');
+    assert.equal('data' in outcome, false);
+  }
+});
+
+test('only the forwarder’s exact refusal is not_connected: another status, other bytes, other media or a contract header is not the forwarder', () => {
+  const run = (reply) => interpretReply('token', tokenRequest, reply, runtime, provenance);
+  // The right code under the wrong status, the wrong code under the right one, or anything added: header-less JSON, which is no contract.
+  for (const [status, body] of [
+    [404, '{"error":"bridge_unavailable"}'],
+    [503, '{"error":"not_found"}'],
+    [403, '{"error":"not_found"}'],
+    [503, '{"error":"bridge_unavailable","detail":1}'],
+    [503, '{"error": "bridge_unavailable"}'],
+    [503, '{"error":"bridge_unavailable"}\n'],
+    [503, '{"error":"upstream_unavailable"}'],
+  ]) {
+    assert.deepEqual(kind(run(raw(status, 'application/json; charset=utf-8', body, null))), ['incompatible', 'contract_header_missing'], `${status} ${JSON.stringify(body)}`);
+  }
+  assert.deepEqual(kind(run(raw(503, 'text/plain', '{"error":"bridge_unavailable"}', null))), ['unavailable', 'edge'], 'not JSON media');
+  // With the contract header it is the bridge speaking, and bridge_unavailable is no read-v1 code.
+  assert.deepEqual(kind(run(raw(503, 'application/json', '{"error":"bridge_unavailable"}'))), ['invalid', 'error_contract']);
+  // The gate's own answers still come first.
+  assert.equal(run(raw(401, 'application/json; charset=utf-8', GATE_REFUSAL, null)).state, 'gate_required');
+  assert.equal(run(raw(503, 'text/html', `<html><head>${GATE_PAGE_MARKER}</head></html>`, null)).state, 'gate_unavailable');
+  assert.equal(run({ ...raw(0, null, '', null), opaqueRedirect: true }).state, 'access_required');
+});
+
+test('a site with no /api function answers a read with its index page: not_connected, not an edge error; other pages are still the edge', () => {
+  const run = (reply) => interpretReply('token', tokenRequest, reply, runtime, provenance);
+  for (const type of ['text/html; charset=utf-8', 'text/html']) {
+    assert.deepEqual(kind(run(raw(200, type, '<!doctype html><div id="root"></div>', null))), ['not_connected', 'no_forwarder'], type);
+  }
+  for (const status of [404, 500, 502, 504]) {
+    assert.deepEqual(kind(run(raw(status, 'text/html; charset=UTF-8', '<html>error</html>', null))), ['unavailable', 'edge'], `HTML ${status}`);
+  }
+  // HTML under the contract header is a broken bridge reply, not a missing forwarder.
+  assert.deepEqual(kind(run(raw(200, 'text/html', '<!doctype html>'))), ['invalid', 'not_json']);
+});
+
+test('a forwarder refusal of the capabilities GET ends the read there: one GET, no POST, and nothing kept for the next read', async () => {
+  const replies = [
+    ...FORWARDER.map(([status, body, reason]) => [reason, () => new Response(body, { status, headers: { 'Content-Type': 'application/json; charset=utf-8' } })]),
+    ['no_forwarder', () => new Response('<!doctype html><div id="root"></div>', { status: 200, headers: { 'Content-Type': 'text/html; charset=utf-8' } })],
+  ];
+  for (const [reason, answer] of replies) {
+    const seen = [];
+    const fetch = async (path, init) => (seen.push(`${init.method} ${path}`), answer());
+    const { calls, validators } = spied();
+    const source = createBridgeSource({ enabled: true, validators, fetch, clock: fakeClock() });
+    const outcome = await source.read('pool-market', { poolId: FIXTURE_POOL, includePriceHistory: false });
+    assert.deepEqual([outcome.state, outcome.reason, outcome.route], ['not_connected', reason, 'pool-market'], reason);
+    assert.equal(outcome.provenance.attempts, 1, 'asked once, never again on its own');
+    assert.deepEqual(seen, ['GET /api/read/v1/capabilities'], `${reason}: the POST never went out`);
+    assert.deepEqual(calls, { assertResponse: 0, validateError: 0 });
+    assert.equal((await source.read('token', tokenRequest)).state, 'not_connected');
+    assert.deepEqual(seen, ['GET /api/read/v1/capabilities', 'GET /api/read/v1/capabilities'], `${reason}: a refusal is not kept, and still nothing is posted`);
+  }
+  // The fixture transports carry the same bytes through the same pipeline.
+  for (const [transport, reason] of [['forwarder503', 'bridge_unavailable'], ['forwarder404', 'not_found'], ['forwarder403', 'worker_subrequest_refused'], ['spaHtml200', 'no_forwarder']]) {
+    const outcome = await fixtures({ token: [{ transport }] }).read('token', tokenRequest);
+    assert.deepEqual([outcome.state, outcome.reason], ['not_connected', reason], transport);
+  }
+});
+
+test('the honest states have their own words, and none offers a Retry that cannot help', () => {
+  const words = (failure) => {
+    const text = describeFailure({ route: 'pool-market', provenance: {}, ...failure });
+    return [text.title, text.retry, Boolean(text.signIn)];
+  };
+  const NOT_CONNECTED = 'Live data isn\'t connected yet';
+  assert.deepEqual(words({ state: 'not_connected', reason: 'bridge_unavailable' }), [NOT_CONNECTED, false, false]);
+  assert.deepEqual(words({ state: 'not_connected', reason: 'no_forwarder' }), [NOT_CONNECTED, false, false]);
+  assert.deepEqual(words({ state: 'not_connected', reason: 'not_found' }), ['Live data isn\'t available on this address', false, false]);
+  assert.deepEqual(words({ state: 'not_connected', reason: 'worker_subrequest_refused' }), ['Request refused', false, false]);
+  for (const reason of ['bridge_data_mode_disabled', 'route_not_enabled', 'live_data_disabled']) {
+    assert.deepEqual(words({ state: 'disabled', reason }), ['Live data is switched off for now', false, false], reason);
+  }
+  assert.deepEqual(words({ state: 'gate_required' }), ['Beta access needed', false, true]);
+  assert.deepEqual(words({ state: 'busy', retryAfterSeconds: 3 }), ['Read service busy', true, false]);
+  assert.deepEqual(words({ state: 'unavailable', cause: { kind: 'read_deadline', limit: 'read' }, retryable: true }), ['Pool data unavailable', true, false]);
+  // Every producer code the error table calls transient reads as temporarily unavailable, with a Retry for a person;
+  // every final one keeps its own title and offers none.
+  let transient = 0;
+  for (const [code, rule] of Object.entries(ERROR_CLASS)) {
+    if (rule.kind !== 'unavailable') continue;
+    const failure = { state: 'unavailable', cause: { kind: 'producer', code, status: runtime.ERROR_STATUS_BY_CODE[code] }, retryable: rule.retryable };
+    assert.deepEqual(words(failure), rule.retryable ? ['Temporarily unavailable', true, false] : ['Pool data unavailable', false, false], code);
+    if (rule.retryable) transient += 1;
+  }
+  assert.ok(transient >= 3, 'upstream_unavailable, upstream_timeout and read_deadline_exceeded at least');
+  assert.match(describeFailure({ route: 'pool-market', provenance: {}, state: 'unavailable', cause: { kind: 'producer', code: 'upstream_unavailable', status: 503 }, retryable: true }).detail, /answered: read service unavailable/);
 });
 
 test('invalid payloads fail closed as `invalid`, with nothing to render', async () => {
@@ -704,13 +815,13 @@ test('identity is chain plus address or pool id, never a symbol', async () => {
   assert.deepEqual(step.view.rows.map((row) => row.key), [`4663:${NATIVE}`, `4663:${FIXTURE_TOKEN}`]);
   assert.deepEqual(step.view.rows.map((row) => row.token.symbol), ['TOKEN', 'TOKEN']);
 
-  const loaded = await loadMarkets(fixtures(scenarios.MARKET_CASES.find((c) => c.id === 'qualified').script), [FIXTURE_POOL]);
+  const loaded = await loadSelectedPools(fixtures(scenarios.MARKET_CASES.find((c) => c.id === 'provider').script), [FIXTURE_POOL]);
   const [row] = loaded.rows;
   assert.equal(row.key, `4663:${FIXTURE_POOL}`);
   assert.equal(row.tokens.base.address, NATIVE);
   assert.equal(row.tokens.base.artwork, 'ETH', 'artwork chosen by address');
   assert.equal(row.tokens.quote.artwork, null, 'a symbol never selects artwork');
-  const hostile = await loadMarkets(fixtures(scenarios.MARKET_CASES.find((c) => c.id === 'untrusted-symbol').script), [FIXTURE_POOL]);
+  const hostile = await loadSelectedPools(fixtures(scenarios.MARKET_CASES.find((c) => c.id === 'untrusted-symbol').script), [FIXTURE_POOL]);
   assert.equal(hostile.rows[0].tokens.quote.symbol, '<img src=x onerror=alert(1)>', 'kept as text, verbatim');
   assert.equal(hostile.rows[0].tokens.quote.artwork, null);
 });
@@ -767,19 +878,118 @@ test('pagination: the handle is minted from the page and passed back verbatim; r
 // R4: what each observation may become on screen
 // ---------------------------------------------------------------------------
 
+/**
+ * A row projected from pool-market, pool-metrics and token reads, the way a
+ * table that read metrics would build it. The lean table never does; these
+ * keep projectMarketRow's qualification rules under test.
+ */
 async function row(id) {
+  const scenario = scenarios.PROJECTION_CASES.find((c) => c.id === id);
+  const source = fixtures({ 'pool-market': [scenario.market], 'pool-metrics': [scenario.metrics], token: scenarios.projectionTokens(scenario.token) }, { clock: fakeClock() });
+  const market = await source.read('pool-market', tableMarketRequest(FIXTURE_POOL));
+  assert.equal(market.state, 'ok', `${id}: pool-market ${market.state}`);
+  const metrics = await source.read('pool-metrics', { poolId: FIXTURE_POOL });
+  const tokens = new Map();
+  for (const currency of market.data.pool.currencies) tokens.set(currency.toLowerCase(), await source.read('token', { token: currency }));
+  return { metrics, market: project.projectMarketRow({ market, metrics, tokens }) };
+}
+/** A row of the lean table: pool-market and tokens only, through the loader the app uses. */
+async function leanRow(id) {
   const scenario = scenarios.MARKET_CASES.find((c) => c.id === id);
-  const loaded = await loadMarkets(fixtures(scenario.script, { policy: scenario.policy, clock: fakeClock() }), [FIXTURE_POOL]);
+  const loaded = await loadSelectedPools(fixtures(scenario.script, { policy: scenario.policy, clock: fakeClock() }), scenario.poolIds ?? [FIXTURE_POOL]);
   return { ...loaded, market: loaded.rows[0] };
 }
-const states = (m) => [m.tvlUsd.state, m.volume24hUsd.state, m.volume30dUsd.state, m.feeAprPercent.state];
+const states = (m) => [m.tvlUsd.state, m.volume24hUsd.state, m.feeAprPercent.state];
+
+test('the lean table: provider figures named with their age, the APR not provided, and nothing from pool-metrics', async () => {
+  const { market, problems } = await leanRow('provider');
+  assert.deepEqual(problems, []);
+  assert.deepEqual(states(market), ['provider', 'provider', 'unavailable']);
+  assert.deepEqual([market.feeAprPercent.value, market.feeAprPercent.reason], [null, 'fee_apr_not_provided']);
+  assert.equal(reasonText('fee_apr_not_provided'), 'APR not provided by the read service yet');
+  assert.equal(markets.aprLabel(market.feeAprPercent).kind, 'unavailable', 'never 0, never an estimate');
+  assert.deepEqual([market.tvlUsd.source, market.tvlUsd.asOf, market.volume24hUsd.source], ['GeckoTerminal', 1010, 'GeckoTerminal']);
+  assert.equal(market.provenance.metrics, 'not_requested');
+  const { receivedAt, receivedMonotonic, ...observed } = market.provenance.market;
+  assert.deepEqual(observed, { status: 'available', reason: null, cacheAgeSeconds: 0, freshForSeconds: 60 });
+  assert.equal(typeof receivedAt, 'number', 'dated by when its answer arrived, to count the retrieval age on');
+  assert.equal(typeof receivedMonotonic, 'number', 'and on the monotonic clock, which no wall-clock step moves');
+  assert.equal('volume30dUsd' in market, false, 'no column for a figure read-v1 does not carry');
+  const stale = (await leanRow('stale')).market;
+  assert.deepEqual(states(stale), ['stale', 'stale', 'unavailable'], 'stale provider figures, and no stale APR from anywhere');
+});
+
+test('#93: a provider figure is dated only by its retrieval age, counted on from the answer, and turns stale past the fresh window', () => {
+  const observed = { status: 'available', reason: null, cacheAgeSeconds: 12, freshForSeconds: 60, receivedAt: 1_000_000 };
+  assert.equal(markets.retrievedAgeSeconds(observed, 1_000_000), 12);
+  assert.equal(markets.retrievedAgeSeconds(observed, 1_005_900), 17);
+  assert.equal(markets.retrievedAgeSeconds(observed, 999_000), 12, 'a clock that steps back never makes it younger');
+  assert.equal(markets.retrievedAgeSeconds({ ...observed, cacheAgeSeconds: null }, 1_005_900), null, 'an unknown age stays unknown');
+  assert.equal(markets.retrievedText(12), 'retrieved 12 s ago');
+  assert.equal(markets.retrievedText(150), 'retrieved 2 min ago');
+  assert.equal(markets.retrievedText(null), 'retrieval time unknown');
+  for (const age of [0, 12, 150, null]) assert.doesNotMatch(markets.retrievedText(age), /as of|updated/i);
+  assert.equal(markets.providerStale(observed, 1_048_000), false, '60 s after retrieval: still fresh');
+  assert.equal(markets.providerStale(observed, 1_049_000), true, '61 s after retrieval: stale on screen');
+  assert.equal(markets.providerStale({ ...observed, status: 'stale' }, 1_000_000), true, 'the read service said stale');
+  assert.equal(markets.providerStale({ ...observed, status: 'unavailable', cacheAgeSeconds: 301 }, 1_000_000), false, 'no figures, nothing to mark');
+  // No reported age: the time since the answer arrived is a lower bound on it. The figures still turn
+  // stale once they have been on screen past the fresh window, and their retrieval time stays unknown.
+  const unknown = { ...observed, cacheAgeSeconds: null };
+  assert.equal(markets.retrievedText(markets.retrievedAgeSeconds(unknown, 1_061_000)), 'retrieval time unknown', 'no age is invented');
+  assert.equal(markets.providerStale(unknown, 1_060_000), false, 'on screen for 60 s: not yet past the fresh window');
+  assert.equal(markets.providerStale(unknown, 1_061_000), true, 'on screen for 61 s: at least 61 s old, so stale');
+  assert.equal(markets.providerStale(unknown, 999_000), false, 'a clock that steps back makes it no younger than when it arrived');
+  assert.equal(markets.providerStale({ ...unknown, status: 'stale' }, 1_000_000), true, 'the read service said stale');
+});
+
+test('#93: time on screen is counted on the monotonic clock when the answer was stamped on it, whatever the wall clock does', () => {
+  const unknown = { status: 'available', reason: null, cacheAgeSeconds: null, freshForSeconds: 60, receivedAt: 1_000_000, receivedMonotonic: 5_000 };
+  assert.equal(markets.providerStale(unknown, { wall: 900_000, monotonic: 66_000 }), true, 'the wall clock stepped back: 61 s on screen all the same');
+  assert.equal(markets.providerStale(unknown, { wall: 9_000_000, monotonic: 65_000 }), false, 'the wall clock stepped forward: still only 60 s on screen');
+  const reported = { ...unknown, cacheAgeSeconds: 12 };
+  assert.equal(markets.retrievedAgeSeconds(reported, { wall: 0, monotonic: 10_900 }), 17, 'the reported age, plus the time on screen');
+  assert.equal(markets.retrievedAgeSeconds(reported, 1_005_900), 17, 'a wall reading alone counts on the wall clock');
+  assert.equal(markets.retrievedAgeSeconds({ ...reported, receivedMonotonic: undefined }, { wall: 1_005_900, monotonic: 10_900 }), 17, 'an answer never stamped on it falls back to the wall clock');
+});
+
+test('#93: the pair comes from the pool’s own currencies and their token reads, never the provider’s base/quote, and sourceUrl is never carried', async () => {
+  const { readFileSync } = require('node:fs');
+  const wire = JSON.parse(readFileSync(new URL('../../api-contracts/read-v1/fixtures/gateway/pool-market.success.json', import.meta.url), 'utf8'));
+  // The provider reports this pool the other way round: base is currency1.
+  assert.deepEqual([wire.market.data.baseToken, wire.market.data.quoteToken], [wire.pool.currencies[1], wire.pool.currencies[0]]);
+  assert.match(wire.market.data.sourceUrl, /^https:\/\/api\.geckoterminal\.com\//);
+  const { market } = await leanRow('provider');
+  assert.deepEqual([market.tokens.base.address, market.tokens.quote.address], wire.pool.currencies, 'currency0/currency1, as the verified pool has them');
+  assert.doesNotMatch(JSON.stringify(market), /geckoterminal\.com|sourceUrl/, 'the provider URL never reaches a row');
+});
+
+test('#93: a rejected or unavailable provider observation keeps the verified row, with its figures unavailable, never zero', async () => {
+  for (const [id, state] of [['rejected-currencies', 'rejected'], ['rejected-dex', 'rejected'], ['timeout', 'unavailable'], ['rate-limited', 'unavailable'], ['expired', 'unavailable']]) {
+    const { rows, problems, market } = await leanRow(id);
+    assert.deepEqual([rows.length, problems.length], [1, 0], `${id}: the verified pool keeps its row`);
+    assert.deepEqual(states(market), [state, state, 'unavailable'], id);
+    for (const metric of [market.tvlUsd, market.volume24hUsd]) {
+      assert.equal(metric.value, null, `${id}: no retained value`);
+      assert.equal(markets.presentMetric(metric).kind, 'unavailable', id);
+    }
+    assert.equal(markets.turnover(market).kind, 'unavailable', id);
+    assert.equal(market.provenance.market.status, state === 'rejected' ? 'rejected' : 'unavailable', id);
+    assert.ok(market.provenance.market.reason, `${id}: the reason travels with the row`);
+  }
+  // Reported as null inside a usable observation: not reported, not $0.
+  const { market } = await leanRow('missing');
+  assert.deepEqual([market.tvlUsd.value, market.tvlUsd.state, market.volume24hUsd.value, market.volume24hUsd.state], [null, 'absent', null, 'absent']);
+  assert.equal(markets.presentMetric(market.tvlUsd).kind, 'absent');
+  assert.equal(markets.turnover(market).kind, 'unavailable');
+});
 
 test('qualified pool-metrics is the only current 24h and APR figure', async () => {
   const { market } = await row('qualified');
-  assert.deepEqual(states(market), ['qualified', 'qualified', 'absent', 'qualified']);
+  assert.deepEqual(states(market), ['qualified', 'qualified', 'qualified']);
   assert.equal(market.tvlUsd.value, '0.000020026865830513', 'point-in-time TVL, not the time-weighted APR basis');
   assert.equal(market.feeAprPercent.value, '158.060469175186043958');
-  assert.equal(market.volume30dUsd.reason, 'not_in_read_v1');
+
   assert.equal(markets.aprLabel(market.feeAprPercent).text, '158.06% APR');
   assert.equal(markets.presentMetric(market.tvlUsd).text, '$0.000020');
   assert.equal(markets.turnover(market).kind, 'value');
@@ -787,13 +997,13 @@ test('qualified pool-metrics is the only current 24h and APR figure', async () =
 
 test('provider figures are named and never qualified; a provider zero is a zero', async () => {
   const provider = (await row('provider')).market;
-  assert.deepEqual(states(provider), ['provider', 'provider', 'absent', 'unavailable']);
+  assert.deepEqual(states(provider), ['provider', 'provider', 'unavailable']);
   assert.deepEqual([provider.tvlUsd.value, provider.tvlUsd.source, provider.tvlUsd.asOf], ['12345.670000000000000001', 'GeckoTerminal', 1010]);
   assert.equal(provider.feeAprPercent.reason, 'qualified_usd_prices_required');
   const shown = markets.presentMetric(provider.tvlUsd);
   assert.deepEqual([shown.kind, shown.text, shown.source, shown.stale], ['value', '$12.3K', 'GeckoTerminal', false]);
   const turn = markets.turnover(provider);
-  assert.deepEqual([turn.text, turn.source], ['0.00', 'GeckoTerminal'], 'a measured zero volume is 0.00, attributed');
+  assert.deepEqual([turn.text, turn.calculatedFrom, 'source' in turn], ['0.00', 'GeckoTerminal', false], 'a measured zero volume is 0.00, calculated from GeckoTerminal figures');
 
   const zero = (await row('zero')).market;
   assert.deepEqual([zero.tvlUsd.value, zero.volume24hUsd.value], ['0', '0']);
@@ -832,7 +1042,7 @@ test('both identity-rejection paths are never displayed', async () => {
 
 test('reference analytics and partial windows are never current, and never a cell value', async () => {
   const reference = (await row('reference')).market;
-  assert.deepEqual(states(reference), ['reference', 'reference', 'absent', 'reference']);
+  assert.deepEqual(states(reference), ['reference', 'reference', 'reference']);
   assert.equal(reference.feeAprPercent.value, '158.060469175186043958', 'the value is kept in the model');
   const shown = markets.presentMetric(reference.feeAprPercent);
   assert.deepEqual(shown, { kind: 'not_current', reason: 'reference_analytics_only', basis: 'reference' });
@@ -840,7 +1050,7 @@ test('reference analytics and partial windows are never current, and never a cel
   assert.equal(markets.turnover(reference).kind, 'unavailable');
 
   const partial = (await row('partial')).market;
-  assert.deepEqual(states(partial), ['partial', 'partial', 'absent', 'partial']);
+  assert.deepEqual(states(partial), ['partial', 'partial', 'partial']);
   assert.equal(partial.feeAprPercent.value, null);
 
   const metricsView = project.projectPoolMetrics(JSON.parse(text(gateway('pool-metrics.reference-analytics'))));
@@ -863,7 +1073,7 @@ test('stale metrics that would fail qualification when fresh are not current, ne
   // reconciled over 1 h only, or not at all, fails qualification however fresh the snapshot is.
   for (const [id, reason] of [['stale-capital-partial', 'capital_window_incomplete'], ['stale-capital-unavailable', 'reconciled_position_tail_required']]) {
     const { market } = await row(id);
-    assert.deepEqual(states(market), ['partial', 'partial', 'absent', 'partial'], id);
+    assert.deepEqual(states(market), ['partial', 'partial', 'partial'], id);
     assert.deepEqual([market.feeAprPercent.reason, market.tvlUsd.reason], [reason, reason], id);
     assert.equal(markets.aprLabel(market.feeAprPercent).kind, 'not_current', `${id} APR drawn as a number`);
     assert.equal(markets.presentMetric(market.tvlUsd).kind, 'not_current', `${id} TVL drawn as a number`);
@@ -929,29 +1139,26 @@ test('every family view distinguishes its own partial, stale and unavailable sta
 // The markets provider: blocking states, problems, retention
 // ---------------------------------------------------------------------------
 
-test('a blocking answer stops the table; a failed metrics read only blanks what depends on it', async () => {
-  for (const id of ['gate401', 'gate503', 'access', 'header-missing', 'header-rc2']) {
-    const loaded = await row(id);
+test('a blocking answer stops the table; a per-pool failure only takes that pool out', async () => {
+  for (const id of ['gate401', 'gate503', 'access', 'header-missing', 'header-rc2', 'not-connected', 'not-found', 'no-forwarder', 'route-disabled']) {
+    const loaded = await leanRow(id);
     assert.equal(loaded.rows.length, 0, id);
     assert.ok(loaded.blocking, `${id} blocks`);
   }
   for (const id of ['invalid', 'busy', 'transient', 'edge502']) {
-    const loaded = await row(id);
+    const loaded = await leanRow(id);
     assert.deepEqual([loaded.rows.length, loaded.blocking, loaded.problems.length], [0, null, 1], id);
   }
+  const recovered = await leanRow('retry-recovers');
+  assert.equal(recovered.rows.length, 1);
+  // Given metrics that fail validation, or answer for another pool, nothing of them reaches this pool's row.
   const partial = await row('metrics-invalid');
-  assert.equal(partial.rows.length, 1);
-  assert.deepEqual([partial.problems[0].outcome.route, partial.problems[0].outcome.state], ['pool-metrics', 'invalid']);
+  assert.deepEqual([partial.metrics.route, partial.metrics.state], ['pool-metrics', 'invalid']);
   assert.deepEqual([partial.market.feeAprPercent.state, partial.market.feeAprPercent.reason], ['unavailable', 'invalid']);
-  // Qualified metrics about another pool: nothing of them reaches this pool's row.
   const elsewhere = await row('metrics-other-pool');
-  assert.equal(elsewhere.rows.length, 1);
-  const wrong = elsewhere.problems[0].outcome;
-  assert.deepEqual([wrong.route, wrong.state, wrong.reason], ['pool-metrics', 'invalid', 'identity_mismatch']);
+  assert.deepEqual([elsewhere.metrics.route, elsewhere.metrics.state, elsewhere.metrics.reason], ['pool-metrics', 'invalid', 'identity_mismatch']);
   assert.deepEqual([elsewhere.market.feeAprPercent.state, elsewhere.market.feeAprPercent.reason], ['unavailable', 'invalid']);
   for (const key of ['tvlUsd', 'volume24hUsd']) assert.notEqual(elsewhere.market[key].state, 'qualified', key);
-  const recovered = await row('retry-recovers');
-  assert.equal(recovered.rows.length, 1);
 });
 
 /** Resolves with the provider's next settled state after `action`. */
@@ -971,21 +1178,32 @@ function settled(provider, action) {
 }
 
 test('a failed refresh keeps the last good rows, dated and marked stale, beside the reason', async () => {
-  const qualified = scenarios.MARKET_CASES.find((c) => c.id === 'qualified').script;
-  const script = { ...qualified, 'pool-market': [qualified['pool-market'][0], { transport: 'gate401' }] };
+  const lean = scenarios.MARKET_CASES.find((c) => c.id === 'provider').script;
+  const script = { ...lean, 'pool-market': [lean['pool-market'][0], { transport: 'gate401' }] };
   let now = 5_000_000;
   const provider = createReadMarketsProvider({ source: fixtures(script), poolIds: [FIXTURE_POOL], kind: 'fixture', now: () => now });
   const first = await settled(provider, () => provider.ensure());
   assert.equal(first.phase, 'ready');
-  assert.equal(first.result.markets[0].tvlUsd.state, 'qualified');
+  assert.equal(first.result.markets[0].tvlUsd.state, 'provider');
   now = 6_000_000;
   const second = await settled(provider, () => provider.refresh());
   assert.equal(second.phase, 'failed');
   assert.equal(second.failure.state, 'gate_required');
   const kept = second.retained.result.markets[0];
-  assert.deepEqual([kept.tvlUsd.state, kept.tvlUsd.asOf], ['stale', 5000], 'retained, stale, dated to when it was read');
-  assert.equal(kept.feeAprPercent.state, 'stale');
+  assert.deepEqual([kept.tvlUsd.state, kept.tvlUsd.asOf], ['stale', 1010], 'retained, stale, dated to its own provider observation');
+  assert.equal(kept.feeAprPercent.state, 'unavailable', 'an APR that was never provided stays unavailable, never a stale figure');
   assert.equal(second.retained.receivedAt, 5_000_000);
+  // A current figure with no time of its own is dated to the read that produced it.
+  const { retainAsStale } = built('marketsProvider');
+  const bare = {
+    ...second.retained.result,
+    markets: [{ ...kept, tvlUsd: { value: '5', state: 'qualified' }, volume24hUsd: { value: '1', state: 'provider', source: 'GeckoTerminal', asOf: 900 }, feeAprPercent: { value: '2', state: 'qualified' } }],
+  };
+  const aged = retainAsStale(bare, 5_000_000).markets[0];
+  assert.deepEqual(
+    [aged.tvlUsd.state, aged.tvlUsd.asOf, aged.volume24hUsd.state, aged.volume24hUsd.asOf, aged.feeAprPercent.state, aged.feeAprPercent.asOf],
+    ['stale', 5000, 'stale', 900, 'stale', 5000],
+  );
 });
 
 /** A source that answers from fixtures, or holds every read until it is aborted. */
@@ -1006,55 +1224,6 @@ function holdable(script) {
   };
 }
 
-/** No figure in the rows may read as current: each is stale (dated), or was never current. */
-function assertNothingCurrent(result, label) {
-  assert.ok(result, `${label}: rows kept`);
-  const states = result.markets.flatMap((row) => Object.values(row).filter((v) => v && typeof v === 'object' && 'state' in v).map((v) => v.state));
-  assert.ok(states.includes('stale'), `${label}: ${states}`);
-  assert.deepEqual(states.filter((state) => state === 'qualified' || state === 'provider'), [], `${label}: retained rows read as current`);
-  assert.equal(markets.presentMetric(result.markets[0].feeAprPercent).stale, true, `${label}: the APR is drawn stale`);
-  assert.equal(result.markets[0].tvlUsd.asOf, 5000, `${label}: dated to the read that produced it`);
-}
-
-test('while Retry runs after a failed refresh, the retained rows stay stale beside the failure', async () => {
-  const qualified = scenarios.MARKET_CASES.find((c) => c.id === 'qualified').script;
-  const { source, hold } = holdable({ ...qualified, 'pool-market': [qualified['pool-market'][0], { transport: 'gate401' }] });
-  let now = 5_000_000;
-  const provider = createReadMarketsProvider({ source, poolIds: [FIXTURE_POOL], kind: 'fixture', now: () => now });
-  const viewer = provider.subscribe(() => undefined);
-  assert.equal((await settled(provider, () => provider.ensure())).phase, 'ready');
-  now = 6_000_000;
-  assert.equal((await settled(provider, () => provider.refresh())).phase, 'failed');
-  hold();
-  provider.refresh();
-  const retrying = provider.getSnapshot();
-  assert.deepEqual([retrying.phase, retrying.retrying?.state], ['loading', 'gate_required']);
-  assertNothingCurrent(retrying.previous, 'Retry');
-  provider.refresh();
-  assertNothingCurrent(provider.getSnapshot().previous, 'Retry pressed again');
-  viewer();
-});
-
-test('rows left behind by a read nobody waited for come back stale, not current', async () => {
-  const qualified = scenarios.MARKET_CASES.find((c) => c.id === 'qualified').script;
-  const { source, hold } = holdable(qualified);
-  const provider = createReadMarketsProvider({ source, poolIds: [FIXTURE_POOL], kind: 'fixture', now: () => 5_000_000 });
-  assert.equal((await settled(provider, () => provider.ensure())).phase, 'ready');
-  hold();
-  const leaving = provider.subscribe(() => undefined);
-  provider.refresh();
-  // A refresh of rows that are current right now keeps them as they are.
-  assert.equal(provider.getSnapshot().previous.markets[0].tvlUsd.state, 'qualified');
-  leaving();
-  // The last viewer left mid-read. The next one starts again, and the old rows are not current.
-  const back = provider.subscribe(() => undefined);
-  provider.ensure();
-  const snapshot = provider.getSnapshot();
-  assert.equal(snapshot.phase, 'loading');
-  assertNothingCurrent(snapshot.previous, 'remount');
-  back();
-});
-
 /** No figure may read as current, and every provider figure that was current is stale, dated to its provider time. */
 function assertProviderRowsStale(result, label) {
   assert.ok(result, `${label}: rows kept`);
@@ -1071,8 +1240,8 @@ function assertProviderRowsStale(result, label) {
 
 test('provider figures kept after a failed refresh, during Retry and after an abandoned read are stale, never provider', async () => {
   const providerCase = scenarios.MARKET_CASES.find((c) => c.id === 'provider').script;
-  const fresh = await row('provider');
-  assert.deepEqual(states(fresh.market), ['provider', 'provider', 'absent', 'unavailable'], 'the scenario starts from current provider figures');
+  const fresh = await leanRow('provider');
+  assert.deepEqual(states(fresh.market), ['provider', 'provider', 'unavailable'], 'the scenario starts from current provider figures');
 
   // A failed refresh.
   const { source, hold } = holdable({ ...providerCase, 'pool-market': [providerCase['pool-market'][0], { transport: 'gate401' }] });
@@ -1158,7 +1327,7 @@ function counted(provider) {
 
 test('D4: the last viewer leaving the deferred provider releases its inner subscription, which cancels the read; a viewer who returns reads again', async () => {
   const { deferredMarkets } = built('deferredMarkets');
-  const reads = gated(scenarios.MARKET_CASES.find((c) => c.id === 'qualified').script);
+  const reads = gated(scenarios.MARKET_CASES.find((c) => c.id === 'provider').script);
   const inner = counted(createReadMarketsProvider({ source: reads.source, poolIds: [FIXTURE_POOL], kind: 'fixture' }));
   let loads = 0;
   const provider = deferredMarkets('fixture', async () => ((loads += 1), inner.provider));
@@ -1196,7 +1365,7 @@ test('D4: the last viewer leaving the deferred provider releases its inner subsc
 
 test('D4: a viewer who leaves before the chunk arrives starts nothing; the next one to come does', async () => {
   const { deferredMarkets } = built('deferredMarkets');
-  const reads = gated(scenarios.MARKET_CASES.find((c) => c.id === 'qualified').script);
+  const reads = gated(scenarios.MARKET_CASES.find((c) => c.id === 'provider').script);
   const inner = counted(createReadMarketsProvider({ source: reads.source, poolIds: [FIXTURE_POOL], kind: 'fixture' }));
   let arrive = () => undefined;
   const provider = deferredMarkets('fixture', () => new Promise((done) => (arrive = () => done(inner.provider))));
@@ -1219,12 +1388,184 @@ test('D4: a viewer who leaves before the chunk arrives starts nothing; the next 
   assert.equal(inner.active(), 0);
 });
 
-test('the sample provider is today’s landing, synchronously, with no source at all', () => {
-  const { sampleMarkets } = built('marketsProvider');
-  const state = sampleMarkets.getSnapshot();
-  assert.equal(state.phase, 'ready');
-  assert.equal(state.result.source, 'placeholder');
-  assert.deepEqual(state.result, markets.listMarkets());
+// ---------------------------------------------------------------------------
+// The read budget (rugged97 on #45): per selected pool one pool-market read
+// without price history, then each distinct token once. No pool-metrics, one
+// capabilities GET per source, strictly one read at a time, and no cache.
+// ---------------------------------------------------------------------------
+
+const POOL_A = `0x${'a1'.repeat(32)}`;
+const POOL_Z = `0x${'b2'.repeat(32)}`;
+const TOKEN_Y = `0x${'22'.repeat(20)}`;
+const TOKEN_Z = `0x${'33'.repeat(20)}`;
+/** Two pools that share one currency: A/Y and Y/Z, where A is the native currency. Test data only. */
+const BUDGET_POOLS = { [POOL_A]: [NATIVE, TOKEN_Y], [POOL_Z]: [TOKEN_Y, TOKEN_Z] };
+const WIRE_ORDER = ['pool-market', 'token', 'token', 'pool-market', 'token'];
+
+/** The package's pool-market reply without history, rewritten to answer for another pool id and pair. */
+function marketFor(poolId, currencies) {
+  const body = scenarios.withoutHistory(JSON.parse(text(gateway('pool-market.not-requested'))));
+  body.poolId = poolId;
+  body.pool.poolId = poolId;
+  body.pool.currencies = currencies;
+  body.pool.poolKey.currency0 = currencies[0];
+  body.pool.poolKey.currency1 = currencies[1];
+  body.market.data.poolId = poolId;
+  body.market.data.currencies = currencies;
+  body.market.data.baseToken = currencies[1];
+  body.market.data.quoteToken = currencies[0];
+  return body;
+}
+
+/** The package's token reply for another address. */
+function tokenFor(address, symbol) {
+  if (address === NATIVE) return JSON.parse(text(gateway('token.native')));
+  const body = JSON.parse(text(gateway('token.success')));
+  body.asset.address = address;
+  body.asset.symbol = symbol;
+  return body;
+}
+
+/** A same-origin bridge stand-in: capabilities from the package fixture, each POST answered by `answer`, every reply with the contract header. */
+function stubBridge(answer, { capabilities = JSON.parse(text(gateway('capabilities.live_read_only'))) } = {}) {
+  const wire = [];
+  const fetch = async (path, init) => {
+    wire.push({ method: init.method, path, body: init.body === undefined ? null : JSON.parse(init.body) });
+    const reply = init.method === 'GET' ? { status: 200, text: JSON.stringify(capabilities) } : answer(path.replace('/api/read/v1/', ''), JSON.parse(init.body));
+    return new Response(reply.text, { status: reply.status, headers: { 'Content-Type': 'application/json; charset=utf-8', 'X-Domino-Read-Contract': RC3 } });
+  };
+  return { fetch, wire };
+}
+
+const budgetAnswer = (route, body) => {
+  if (route === 'pool-market') return { status: 200, text: JSON.stringify(marketFor(body.poolId, BUDGET_POOLS[body.poolId])) };
+  if (route === 'token') return { status: 200, text: JSON.stringify(tokenFor(body.token, 'TKN')) };
+  throw new Error(`the table asked ${route}`);
+};
+
+test('the table’s load is N pool-market reads without price history plus U distinct token reads, one at a time, and never pool-metrics', async () => {
+  const script = {
+    'pool-market': Object.entries(BUDGET_POOLS).map(([poolId, currencies]) => ({ fixture: gateway('pool-market.not-requested'), mutate: () => marketFor(poolId, currencies), expectRequest: { poolId, includePriceHistory: false } })),
+    token: [NATIVE, TOKEN_Y, TOKEN_Z].map((address) => ({ fixture: gateway(address === NATIVE ? 'token.native' : 'token.success'), mutate: () => tokenFor(address, 'TKN'), expectRequest: { token: address } })),
+  };
+  const base = fixtures(script);
+  const calls = [];
+  let inFlight = 0;
+  let overlapped = false;
+  const source = {
+    transport: base.transport,
+    read: async (route, request, opts) => {
+      if (inFlight > 0) overlapped = true;
+      inFlight += 1;
+      calls.push({ route, request });
+      try {
+        return await base.read(route, request, opts);
+      } finally {
+        inFlight -= 1;
+      }
+    },
+  };
+  const loaded = await loadSelectedPools(source, Object.keys(BUDGET_POOLS));
+  assert.deepEqual(calls.map((c) => c.route), WIRE_ORDER, 'N + U = 2 + 3 reads');
+  assert.equal(overlapped, false, 'each read starts after the one before it has settled');
+  assert.deepEqual([loaded.rows.length, loaded.problems.length, loaded.blocking], [2, 0, null]);
+  for (const call of calls.filter((c) => c.route === 'pool-market')) {
+    assert.deepEqual(Object.keys(call.request).sort(), ['includePriceHistory', 'poolId']);
+    assert.equal(call.request.includePriceHistory, false, 'price history is explicitly not requested');
+  }
+  assert.deepEqual(calls.filter((c) => c.route === 'token').map((c) => c.request.token), [NATIVE, TOKEN_Y, TOKEN_Z], 'the shared token is read once');
+  assert.deepEqual(loaded.rows.map((r) => r.poolId), Object.keys(BUDGET_POOLS), 'rows keep the configured order');
+  assert.deepEqual(loaded.rows.map((r) => r.feeAprPercent.reason), ['fee_apr_not_provided', 'fee_apr_not_provided']);
+  // Nothing is kept between loads: the next load reads everything again.
+  await loadSelectedPools(source, Object.keys(BUDGET_POOLS));
+  assert.deepEqual(calls.map((c) => c.route), [...WIRE_ORDER, ...WIRE_ORDER]);
+});
+
+test('through the bridge, two selected pools cost exactly one capabilities GET and five POSTs, in order, and a reload the same again', async () => {
+  for (let load = 1; load <= 2; load++) {
+    const bridge = stubBridge(budgetAnswer);
+    const clock = fakeClock();
+    const source = createScheduledSource(createBridgeSource({ enabled: true, validators: runtime, fetch: bridge.fetch, clock }), { clock });
+    const loaded = await loadSelectedPools(source, Object.keys(BUDGET_POOLS));
+    assert.equal(loaded.rows.length, 2, `load ${load}`);
+    assert.deepEqual(bridge.wire.map((r) => `${r.method} ${r.path}`), ['GET /api/read/v1/capabilities', ...WIRE_ORDER.map((route) => `POST /api/read/v1/${route}`)], `load ${load}`);
+    assert.deepEqual(
+      bridge.wire.filter((r) => r.path.endsWith('/pool-market')).map((r) => r.body),
+      Object.keys(BUDGET_POOLS).map((poolId) => ({ poolId, includePriceHistory: false })),
+    );
+    // The GET is the bridge's own and unpaced; each POST after the first waits its turn.
+    assert.equal(clock.delays.length, 4, `four gaps between five POSTs, one read at a time: ${clock.delays}`);
+    assert.ok(clock.delays.every((ms) => ms > 0 && ms <= 1100), `${clock.delays}`);
+  }
+});
+
+test('the real bridge Worker accepts the table’s lean pool-market request exactly as sent', async () => {
+  const bridge = realBridge({ answer: (route) => (route === 'pool-market' ? { status: 200, text: text(gateway('pool-market.not-requested')) } : undefined) });
+  const outcome = await createBridgeSource({ enabled: true, validators: runtime, fetch: bridge.fetch, clock: fakeClock() }).read('pool-market', tableMarketRequest(FIXTURE_POOL));
+  assert.equal(outcome.state, 'ok');
+  assert.equal(outcome.data.priceHistory.status, 'not_requested');
+  assert.deepEqual(bridge.upstream.map((c) => [c.route, c.body]), [['pool-market', { poolId: FIXTURE_POOL, includePriceHistory: false }]]);
+});
+
+test('with live data not connected, or switched off, two selected pools cost one capabilities GET and no POST', async () => {
+  for (const [status, body, reason] of FORWARDER) {
+    const wire = [];
+    const fetch = async (path, init) => (wire.push(`${init.method} ${path}`), new Response(body, { status, headers: { 'Content-Type': 'application/json; charset=utf-8' } }));
+    const clock = fakeClock();
+    const loaded = await loadSelectedPools(createScheduledSource(createBridgeSource({ enabled: true, validators: runtime, fetch, clock }), { clock }), Object.keys(BUDGET_POOLS));
+    assert.deepEqual([loaded.blocking.state, loaded.blocking.reason, loaded.rows.length], ['not_connected', reason, 0]);
+    assert.deepEqual(wire, ['GET /api/read/v1/capabilities'], reason);
+  }
+  const listed = (enabledReads) => ({ ...JSON.parse(text(gateway('capabilities.live_read_only'))), enabledReads });
+  for (const [capabilities, reason] of [
+    [JSON.parse(text(gateway('capabilities.disabled'))), 'bridge_data_mode_disabled'],
+    [listed([]), 'bridge_data_mode_disabled'],
+    [listed(['token']), 'route_not_enabled'],
+  ]) {
+    const bridge = stubBridge(budgetAnswer, { capabilities });
+    const clock = fakeClock();
+    const loaded = await loadSelectedPools(createScheduledSource(createBridgeSource({ enabled: true, validators: runtime, fetch: bridge.fetch, clock }), { clock }), Object.keys(BUDGET_POOLS));
+    assert.deepEqual([loaded.blocking.state, loaded.blocking.reason, loaded.rows.length], ['disabled', reason, 0], reason);
+    assert.deepEqual(bridge.wire.map((r) => r.method), ['GET'], `${reason}: nothing posted`);
+    assert.equal(describeFailure(loaded.blocking).title, 'Live data is switched off for now');
+  }
+});
+
+test('a pool-market route switched off on the server stops the table at its first answer', async () => {
+  const calls = [];
+  const base = fixtures({ 'pool-market': [{ transport: 'routeNotAvailable404' }] });
+  const source = { transport: base.transport, read: (route, request, opts) => (calls.push(route), base.read(route, request, opts)) };
+  const loaded = await loadSelectedPools(source, Object.keys(BUDGET_POOLS));
+  assert.deepEqual([loaded.blocking?.state, loaded.blocking?.reason], ['disabled', 'route_not_enabled']);
+  assert.deepEqual(calls, ['pool-market'], 'the second pool is not asked');
+  assert.equal(describeFailure(loaded.blocking).title, 'Live data is switched off for now');
+});
+
+test('an empty selection reads nothing at all, not even the capabilities GET, and the table is ready with no rows', async () => {
+  let reads = 0;
+  const idle = { transport: 'bridge', read: async () => ((reads += 1), { state: 'aborted' }) };
+  const loaded = await loadSelectedPools(idle, []);
+  assert.deepEqual([loaded.rows.length, loaded.problems.length, loaded.blocking], [0, 0, null]);
+  const provider = createReadMarketsProvider({ source: idle, poolIds: [], kind: 'bridge' });
+  const state = await settled(provider, () => provider.ensure());
+  assert.deepEqual([state.phase, state.result.markets.length, state.problems.length, state.result.source], ['ready', 0, 0, 'live']);
+  assert.equal(reads, 0);
+  const bridge = stubBridge(budgetAnswer);
+  const clock = fakeClock();
+  await loadSelectedPools(createScheduledSource(createBridgeSource({ enabled: true, validators: runtime, fetch: bridge.fetch, clock }), { clock }), []);
+  assert.deepEqual(bridge.wire, []);
+});
+
+test('the selected pools are exactly the two chain-4663 ids rugged97 chose on #45, and the config holds ids only', () => {
+  const { SELECTED_POOLS } = require('../.test-build/app/src/config/selectedPools.js');
+  assert.deepEqual(SELECTED_POOLS, [
+    '0x84bd4e2d8be11aeb0afc1195b38f587b61e90068548f1063fdbe448fb8cad0b6',
+    '0xdb922f0619e11b0c1e6c3a142798f0243060b8a4331ea4f4e7de80e898cc02e7',
+  ]);
+  for (const id of SELECTED_POOLS) assert.match(id, /^0x[0-9a-f]{64}$/);
+  const code = readFileSync(join(SRC, 'config/selectedPools.ts'), 'utf8').replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/.*$/gm, '');
+  assert.doesNotMatch(code, /symbol|label|name|weth|usdg|marlin|tvl|volume|apr|price/i, 'no labels, symbols or figures');
+  assert.deepEqual(code.match(/0x[0-9a-f]+/g), SELECTED_POOLS, 'nothing but the two ids');
 });
 
 // ---------------------------------------------------------------------------
@@ -1888,6 +2229,11 @@ test('every failure state has words, and only the gate asks to sign in', () => {
     { state: 'restart_required', code: 'invalid_or_expired_cursor' },
     { state: 'request_rejected', code: 'invalid_request', status: 422 },
     { state: 'disabled', reason: 'live_data_disabled' },
+    { state: 'disabled', reason: 'bridge_data_mode_disabled' },
+    { state: 'not_connected', reason: 'bridge_unavailable' },
+    { state: 'not_connected', reason: 'not_found' },
+    { state: 'not_connected', reason: 'worker_subrequest_refused' },
+    { state: 'not_connected', reason: 'no_forwarder' },
     { state: 'aborted' },
   ];
   for (const failure of failures) {

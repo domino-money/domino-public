@@ -28,7 +28,7 @@ const STEPS = [
 const LIMITS = [
   { title: 'It does not remove market risk', body: 'Prices move and your position moves with them. Below your range you hold the volatile token; above it, the stablecoin.' },
   { title: 'It does not promise a return', body: 'Fees are separate from profit. A position can collect fees for weeks and still be worth less than if you had simply held the assets.' },
-  { title: 'It does not take custody', body: 'Your wallet owns the position and signs every change. Pausing the automation does not withdraw liquidity, and you can leave without us.' },
+  { title: 'It does not take custody', body: 'Your wallet stays the owner. In this alpha Domino only reads public data and cannot sign or move anything.' },
   { title: 'It does not touch your principal', body: 'Automation only ever works with the fees a position has earned. Your deposit, your unused fee balance and any price appreciation are never touched.' },
 ]
 
@@ -49,7 +49,7 @@ export function Landing() {
           <HeroWidget />
         </div>
         <p className="dm-rise relative mx-auto mt-6 max-w-[46ch] text-center text-[13px] leading-relaxed text-fg-muted" style={{ '--delay': '0.18s' } as React.CSSProperties}>
-          Open a liquidity position on Robinhood Chain and watch exactly what it holds. Your wallet signs everything and stays the owner.
+          See pools on Robinhood Chain read live. This alpha only reads public data; it asks for no signature, approval or deposit.
         </p>
       </section>
 
@@ -63,12 +63,12 @@ export function Landing() {
         <section className="mt-28">
           <div className="mb-8 text-center">
             <Display className="mx-auto max-w-[18ch] text-[40px]">Made for every way to hold liquidity.</Display>
-            <p className="mx-auto mt-3 max-w-[54ch] text-[15px] text-fg-muted">Positions, reinvestment, the Domino sequence and receipts you can actually read. All in one place.</p>
+            <p className="mx-auto mt-3 max-w-[54ch] text-[15px] text-fg-muted">What Domino is being built to do: positions, reinvestment, the Domino sequence and receipts you can read. None of it is available in the alpha yet.</p>
           </div>
           <ProductCards />
         </section>
 
-        <section className="mt-24">
+        <section id="ranges" className="mt-24 scroll-mt-24">
           <RangeSimulator />
         </section>
 
@@ -84,7 +84,7 @@ export function Landing() {
                 <p className="mt-3 text-[14px] leading-relaxed text-fg-muted">
                   The successor is funded from earned fees only. Your deposit is never moved and nothing is pulled from your wallet. Every successor is another position in the same pool, not a new pool.
                 </p>
-                <p className="mt-4 text-[12px] leading-relaxed text-fg-subtle">Invite only, after its own security review. Holding several positions at once can increase your exposure if the price reverses.</p>
+                <p className="mt-4 text-[12px] leading-relaxed text-fg-subtle">Not available in the alpha. Invite only, after its own security review. Holding several positions at once can increase your exposure if the price reverses.</p>
               </div>
               <DominoSequence />
             </div>
@@ -97,7 +97,10 @@ export function Landing() {
           <div className="mt-8 grid gap-5 md:grid-cols-3">
             {STEPS.map((step) => (
               <Card key={step.n} className="p-6">
-                <span className="font-mono text-[12px] tracking-[0.5px]" style={{ color: 'var(--primary)' }}>{step.n}</span>
+                <div className="flex items-center justify-between gap-3">
+                  <span className="font-mono text-[12px] tracking-[0.5px]" style={{ color: 'var(--primary)' }}>{step.n}</span>
+                  <Pill tone="neutral">Not available in the alpha</Pill>
+                </div>
                 <h3 className="mt-3 text-[16px] font-medium">{step.title}</h3>
                 <p className="mt-2 text-[14px] leading-relaxed text-fg-muted">{step.body}</p>
               </Card>

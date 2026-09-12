@@ -935,15 +935,23 @@ test('wrangler.toml: vars and service bindings can only ever be production\'s', 
   for (const { keys } of services) assert.deepEqual(Object.keys(keys).sort(), ['binding', 'service']);
 });
 
-test('the deploy scripts pin wrangler 4.130.0, whose Pages router the stand-in and onward() follow', () => {
+test('the deploy scripts pin wrangler 4.130.0, whose Pages router the stand-in and onward() follow', async () => {
   // API_ROUTE above and onward() in functions/_middleware.ts follow the route
   // matching of wrangler 4.130.0 (path-to-regexp 6.3.0). Before this pin
   // moves, rebuild these functions with the new version, check which /api
   // paths reach functions/api/[[path]].ts, and update both.
+  // Both deploy scripts go through scripts/release.mjs, which uploads the
+  // recorded dist with the wrangler it pins, so the pin is asserted there:
+  // its WRANGLER constant and the one command each deploy runs.
   const { readFileSync } = require('node:fs');
   const { scripts } = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8'));
-  for (const name of ['deploy', 'deploy:preview']) {
-    assert.match(scripts[name], /\bnpx --yes wrangler@4\.130\.0 pages deploy\b/, name);
+  assert.equal(scripts.deploy, 'node scripts/release.mjs deploy production');
+  assert.equal(scripts['deploy:preview'], 'node scripts/release.mjs deploy preview');
+  const { WRANGLER, deployCommand } = await import('../scripts/release.mjs');
+  assert.equal(WRANGLER, 'wrangler@4.130.0');
+  for (const target of ['preview', 'production']) {
+    const command = ['npx', ...deployCommand(target, { gitHead: '0'.repeat(40) })].join(' ');
+    assert.match(command, /^npx --yes wrangler@4\.130\.0 pages deploy \.\/dist\b/, target);
   }
 });
 
@@ -954,7 +962,7 @@ test('the deploy scripts pin wrangler 4.130.0, whose Pages router the stand-in a
  * checks. It runs in a child process, so nothing wrangler loads can touch this
  * file's upstream tripwire, offline, with a placeholder token and account; it
  * never deploys. wrangler is web's dependency, pinned to the version the
- * deploy scripts run.
+ * deploy scripts run (scripts/release.mjs's WRANGLER).
  */
 let wranglerRead;
 function wrangler() {
@@ -972,9 +980,10 @@ function wrangler() {
     "const { unstable_readConfig } = require(dir + 'wrangler-dist/cli.js');",
     'const read = (env) => {',
     '  const c = unstable_readConfig({ config, env }, { hideWarnings: false });',
-    '  return { targetEnvironment: c.targetEnvironment, vars: c.vars, services: c.services };',
+    '  return { name: c.name, targetEnvironment: c.targetEnvironment, vars: c.vars, services: c.services };',
     '};',
-    "process.stdout.write(JSON.stringify({ version, production: read('production'), preview: read('preview') }));",
+    // pagesDeploy: no environment, as `pages deploy` reads the file to find the project.
+    "process.stdout.write(JSON.stringify({ version, production: read('production'), preview: read('preview'), pagesDeploy: read(undefined) }));",
   ].join('\n');
   const config = fileURLToPath(new URL('../wrangler.toml', import.meta.url));
   const run = spawnSync(process.execPath, ['-e', script, dir, config], {
@@ -1020,6 +1029,45 @@ test("the binding names forward() looks up are exactly the names wrangler.toml b
     looked.push(names[0]);
   }
   assert.deepEqual(looked.sort(), Object.keys(bound).sort());
+});
+
+test('both deploys target the Pages project wrangler.toml names, domino-app, and no doc calls domino-app-e65 anything but its pages.dev hostname', async () => {
+  const { readFileSync } = require('node:fs');
+  const { fileURLToPath } = require('node:url');
+  // How wrangler 4.130.0's `pages deploy` picks the project: it reads the
+  // config with no environment, then takes --project-name, else that name.
+  // A name with no such project (8000007) is treated as a new project, so
+  // renaming it to the pages.dev label would offer to create one and leave
+  // domino.money as it was.
+  const cli = readFileSync(fileURLToPath(new URL('../../web/node_modules/wrangler/wrangler-dist/cli.js', import.meta.url)), 'utf8');
+  assert.ok(cli.includes('config2 = readPagesConfig({ ...args, config: configPath, env: void 0 });'), 'pages deploy reads the config with no environment');
+  assert.ok(cli.includes('let projectName = args.projectName ?? config2?.name ?? cachedProjectName;'), 'pages deploy takes --project-name, else the config name');
+  const { deployCommand } = await import('../scripts/release.mjs');
+  for (const target of ['preview', 'production']) {
+    assert.ok(!deployCommand(target, { gitHead: '0'.repeat(40) }).includes('--project-name'), `${target} passes no --project-name`);
+  }
+  const project = wrangler().pagesDeploy.name;
+  assert.equal(project, 'domino-app');
+
+  // Every doc names that project, and domino-app-e65 only ever as a hostname:
+  // Cloudflare appended -e65 to the pages.dev label, not to the project.
+  const offenders = [];
+  for (const doc of ['app/README.md', 'FRONTEND_HANDOFF.md', 'TECH_STACK.md']) {
+    const text = readFileSync(new URL(`../../${doc}`, import.meta.url), 'utf8');
+    for (const [, named] of text.matchAll(/--project-name\s+([\w-]+)/g)) if (named !== project) offenders.push(`${doc}: --project-name ${named}`);
+    for (const [, named] of text.matchAll(/Workers & Pages → `([^`]+)`/g)) if (named !== project) offenders.push(`${doc}: Workers & Pages → ${named}`);
+    for (const hit of text.matchAll(/domino-app-e65(?!\.pages\.dev)/g)) {
+      offenders.push(`${doc}: …${text.slice(Math.max(0, hit.index - 50), hit.index + 30).replace(/\s+/g, ' ')}…`);
+    }
+  }
+  assert.deepEqual(offenders, []);
+
+  // Where the README walks through a release, it says so in as many words
+  // (compared with its line breaks as spaces: Markdown wraps anywhere).
+  const readme = readFileSync(new URL('../README.md', import.meta.url), 'utf8');
+  const release = readme.slice(readme.indexOf('**Deploying.**'), readme.indexOf('**After every Pages deploy')).replace(/\s+/g, ' ');
+  assert.match(release, new RegExp(`the Pages project is \`${project}\``));
+  assert.match(release, /`domino-app-e65\.pages\.dev` is only its hostname/);
 });
 
 /**

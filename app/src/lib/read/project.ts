@@ -522,7 +522,7 @@ export function projectFamily<R extends ReadRoute>(outcome: Extract<ReadOutcome<
 }
 
 // ---------------------------------------------------------------------------
-// One table row from three reads
+// One table row from its reads
 // ---------------------------------------------------------------------------
 
 const unavailable = (reason: string): Metric => ({ value: null, state: 'unavailable', reason })
@@ -560,7 +560,9 @@ function figure(
 }
 
 function apr(metrics: ReadOutcome<'pool-metrics'> | null): Metric {
-  if (!metrics) return unavailable('not_requested')
+  // The lean table never reads pool-metrics, and nothing else in read-v1 carries a fee APR:
+  // unavailable, with that reason. Never a zero, never an estimate.
+  if (!metrics) return unavailable('fee_apr_not_provided')
   if (metrics.state !== 'ok') return unavailable(metrics.state)
   const d = metrics.data
   const v = d.valuation
@@ -574,6 +576,7 @@ function apr(metrics: ReadOutcome<'pool-metrics'> | null): Metric {
 
 export interface RowReads {
   market: Extract<ReadOutcome<'pool-market'>, { state: 'ok' }>
+  /** Null when not requested, which every row of the lean table is. */
   metrics: ReadOutcome<'pool-metrics'> | null
   /** Token reads by lowercase address. */
   tokens: ReadonlyMap<string, ReadOutcome<'token'>>
@@ -590,8 +593,15 @@ export function projectMarketRow({ market, metrics, tokens }: RowReads): Market 
   const quote = token(currency1)
   const provenance: MarketProvenance = {
     block: d.snapshot.number,
-    market: { status: d.market.status, cacheAgeSeconds: d.market.cache.ageSeconds },
-    metrics: metrics?.state === 'ok' ? { freshness: metrics.data.freshness.status, ageSeconds: metrics.data.freshness.ageSeconds } : null,
+    market: {
+      status: d.market.status,
+      reason: d.market.reason,
+      cacheAgeSeconds: d.market.cache.ageSeconds,
+      freshForSeconds: d.market.cache.freshForSeconds,
+      receivedAt: market.provenance.receivedAt,
+      ...(market.provenance.receivedMonotonic !== undefined ? { receivedMonotonic: market.provenance.receivedMonotonic } : {}),
+    },
+    metrics: metrics === null ? 'not_requested' : metrics.state === 'ok' ? { freshness: metrics.data.freshness.status, ageSeconds: metrics.data.freshness.ageSeconds } : null,
     fixtures: [market, metrics, ...tokens.values()]
       .map((outcome) => outcome?.provenance.fixture)
       .filter((file): file is string => typeof file === 'string'),
@@ -606,8 +616,7 @@ export function projectMarketRow({ market, metrics, tokens }: RowReads): Market 
     protocol: 'v4',
     tvlUsd: figure(metrics, d, (v) => v.tvlUsd, (m) => m.reportedLiquidityUsd),
     volume24hUsd: figure(metrics, d, (v) => v.grossInputVolumeUsd, (m) => m.volume24hUsd),
-    // read-v1 has no 30-day volume field: a contract gap, not a missing observation.
-    volume30dUsd: { value: null, state: 'absent', reason: 'not_in_read_v1' },
+
     feeAprPercent: apr(metrics),
     provenance,
   }

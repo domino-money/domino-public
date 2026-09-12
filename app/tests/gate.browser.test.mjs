@@ -14,6 +14,7 @@ import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { after, before, test } from 'node:test';
 import { chromium } from 'playwright-core';
+import { closeContext, leaving, watch } from './page-watch.mjs';
 import { DIST, createGatedServer } from '../scripts/gated-server.mjs';
 
 const PASSWORD = 'browser-test-beta-password';
@@ -60,11 +61,9 @@ after(async () => {
 async function visitor() {
   const context = await browser.newContext({ viewport: { width: 1280, height: 860 } });
   const page = await context.newPage();
-  const log = { errors: [], responses: [] };
-  page.on('pageerror', (error) => log.errors.push(`uncaught: ${error.message}`));
-  page.on('console', (message) => {
-    if (message.type() === 'error') log.errors.push(message.text());
-  });
+  // Per page, and teardown-aware: an ERR_ABORTED of a view this test leaves is the test's doing (page-watch.mjs).
+  const { problems } = watch(page, { requests: false, responses: false });
+  const log = { errors: problems, responses: [] };
   page.on('response', (response) => {
     if (response.url().startsWith(origin)) log.responses.push({ status: response.status(), path: response.url().slice(origin.length) });
   });
@@ -74,6 +73,7 @@ async function visitor() {
 async function signIn(page) {
   await page.goto(`${origin}/`, { waitUntil: 'networkidle' });
   await page.fill('#password', PASSWORD);
+  leaving(page);
   await Promise.all([page.waitForNavigation({ waitUntil: 'networkidle' }), page.click('button[type="submit"]')]);
 }
 
@@ -89,7 +89,7 @@ test('a visitor without the password sees only the access page', async () => {
   // about ours. The CSP blocks such injections on the real site anyway.
   const raw = await (await fetch(`${origin}/`, { headers: { 'Sec-Fetch-Mode': 'navigate' } })).text();
   assert.doesNotMatch(raw, /<script/i, 'the access page must not ship script');
-  await context.close();
+  await closeContext(context);
 });
 
 test('the built files themselves cannot be fetched without the password', async () => {
@@ -103,7 +103,7 @@ test('the built files themselves cannot be fetched without the password', async 
     assert.equal(response.status(), 401, `${path} answered ${response.status()}`);
     assert.equal(await response.text(), '{"error":"beta_access_required"}', `${path} leaked content`);
   }
-  await context.close();
+  await closeContext(context);
 });
 
 test('the access page cannot call anything, even from its own origin', async () => {
@@ -118,18 +118,19 @@ test('the access page cannot call anything, even from its own origin', async () 
     }
   });
   assert.equal(outcome, 'blocked', "the access page's CSP should forbid fetch()");
-  await context.close();
+  await closeContext(context);
 });
 
 test('a wrong password keeps the visitor out and says so', async () => {
   const { context, page } = await visitor();
   await page.goto(`${origin}/`, { waitUntil: 'networkidle' });
   await page.fill('#password', 'not-the-password');
+  leaving(page);
   await Promise.all([page.waitForNavigation(), page.click('button[type="submit"]')]);
   assert.match(await page.locator('[role="alert"]').innerText(), /didn’t work/);
   assert.equal(await page.locator('#password').getAttribute('aria-invalid'), 'true');
   assert.deepEqual(await context.cookies(), [], 'a wrong password must not set any cookie');
-  await context.close();
+  await closeContext(context);
 });
 
 test('the right password opens the full app, which runs under the CSP without a violation', async () => {
@@ -154,7 +155,7 @@ test('the right password opens the full app, which runs under the CSP without a 
   assert.deepEqual(failures, [], `requests failed after sign-in: ${JSON.stringify(failures)}`);
   const violations = log.errors.filter((e) => !/status of 401/.test(e));
   assert.deepEqual(violations, [], 'the app reported errors under the gate');
-  await context.close();
+  await closeContext(context);
 });
 
 test('the whole workspace works behind the gate, not only the landing', async () => {
@@ -170,7 +171,7 @@ test('the whole workspace works behind the gate, not only the landing', async ()
   );
   assert.equal(images, 0, 'token images failed to load behind the gate');
   assert.deepEqual(log.errors.filter((e) => !/status of 401/.test(e)), []);
-  await context.close();
+  await closeContext(context);
 });
 
 test('signing out closes the site again', async () => {
@@ -181,7 +182,7 @@ test('signing out closes the site again', async () => {
   const response = await page.goto(`${origin}/`, { waitUntil: 'networkidle' });
   assert.equal(response.status(), 401, 'the app was still reachable after signing out');
   assert.equal(await page.locator('#password').count(), 1);
-  await context.close();
+  await closeContext(context);
 });
 
 test('a cookie from one browser does not work after the password is rotated', async () => {
@@ -197,7 +198,7 @@ test('a cookie from one browser does not work after the password is rotated', as
   const tab = await second.newPage();
   const response = await tab.goto(`${other}/`, { waitUntil: 'networkidle' });
   assert.equal(response.status(), 401, 'an old cookie still opened the site after rotation');
-  await second.close();
+  await closeContext(second);
   await new Promise((done) => rotated.close(done));
-  await context.close();
+  await closeContext(context);
 });

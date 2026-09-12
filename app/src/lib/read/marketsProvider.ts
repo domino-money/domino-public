@@ -1,25 +1,26 @@
 /**
- * Where the Top pools table and the ticker get their rows.
+ * Where the Selected pools table and the ticker get their rows.
  *
  * Components depend on this interface, never on a read source directly. The
- * default build uses `sampleMarkets`: today's curated, labelled sample rows,
- * ready on the first render, with no request behind them. Fixture and bridge
- * builds use `createReadMarketsProvider`, which builds rows from three reads
- * per pool (pool-market, pool-metrics and each currency's token metadata).
+ * app holds one provider, shared through context, so the ticker and the table
+ * render one result set from one load. Rows come from validated reads only;
+ * there is no sample or placeholder row anywhere.
  *
- * The curated sample is deliberately not dressed up as contract payloads: that
- * would mean inventing GeckoTerminal provenance, snapshots and cache ages for
- * figures nobody observed. Both providers meet at the view-model level.
+ * The load is lean, on rugged97's read budget (#45): per selected pool, one
+ * pool-market read that explicitly does not ask for price history, then each
+ * distinct token once, only for pools that answered. No pool-metrics read,
+ * so the APR shows as not provided. Through the bridge that is one
+ * capabilities GET plus N + U POSTs for N pools and U distinct tokens, sent
+ * one after another. There is no client cache: every load reads again. An
+ * empty selection reads nothing at all.
  *
- * A read provider is a small store shared by every component on a screen, so
- * the ticker and the table cost one set of reads. When a refresh fails, the
- * last good rows stay on screen dated and marked stale, beside the reason,
- * as docs/API_COMPATIBILITY.md asks. A failed payload itself is never shown.
+ * When a refresh fails, the last good rows stay on screen dated and marked
+ * stale, beside the reason, as docs/API_COMPATIBILITY.md asks. A failed
+ * payload itself is never shown.
  */
-import { listMarkets, type Market, type MarketsResult, type Metric } from '../markets'
+import type { Market, MarketsResult, Metric } from '../markets'
 import { projectMarketRow } from './project'
-import { PRODUCER_PIN } from './pin'
-import type { FailedOutcome, ReadOutcome, ReadSource } from './types'
+import type { FailedOutcome, ReadOutcome, ReadRequests, ReadSource } from './types'
 
 export interface MarketProblem {
   poolId: string
@@ -40,7 +41,7 @@ export type MarketsState =
   | { phase: 'failed'; failure: FailedOutcome; retained: Retained | null }
 
 export interface MarketsProvider {
-  readonly kind: 'sample' | 'fixture' | 'bridge'
+  readonly kind: 'fixture' | 'bridge'
   getSnapshot(): MarketsState
   subscribe(listener: () => void): () => void
   /** Starts the first load if none has started. */
@@ -48,19 +49,9 @@ export interface MarketsProvider {
   refresh(): void
 }
 
-const SAMPLE_STATE: MarketsState = { phase: 'ready', result: listMarkets(), problems: [] }
-
-/** Today's landing: labelled sample rows, synchronously, and no request at all. */
-export const sampleMarkets: MarketsProvider = {
-  kind: 'sample',
-  getSnapshot: () => SAMPLE_STATE,
-  subscribe: () => () => undefined,
-  ensure: () => undefined,
-  refresh: () => undefined,
-}
-
 /** States that say nothing can be read on this screen, whichever pool is asked about. */
 export const isBlocking = (outcome: FailedOutcome) =>
+  outcome.state === 'not_connected' ||
   outcome.state === 'gate_required' ||
   outcome.state === 'gate_unavailable' ||
   outcome.state === 'access_required' ||
@@ -80,7 +71,6 @@ export function retainAsStale(result: MarketsResult, receivedAtMs: number): Mark
       ...row,
       tvlUsd: age(row.tvlUsd),
       volume24hUsd: age(row.volume24hUsd),
-      volume30dUsd: age(row.volume30dUsd),
       feeAprPercent: age(row.feeAprPercent),
     })),
   }
@@ -93,30 +83,28 @@ export interface LoadedMarkets {
   aborted: boolean
 }
 
+/** The one pool-market request the table sends: price history explicitly off, because the table draws no chart. */
+export const tableMarketRequest = (poolId: string): ReadRequests['pool-market'] => ({ poolId, includePriceHistory: false })
+
 /**
- * The reads behind the table, one pool at a time so a blocking answer stops
- * the rest. Token metadata is read once per address for the whole table.
+ * The reads behind the table, strictly one after another: each starts once
+ * the one before it has settled, so a blocking answer stops the rest, and a
+ * disabled pool-market route, which is disabled for every pool, stops them
+ * too. A token shared by several pools is read once for the whole table.
  */
-export async function loadMarkets(source: ReadSource, poolIds: readonly string[], signal?: AbortSignal): Promise<LoadedMarkets> {
+export async function loadSelectedPools(source: ReadSource, poolIds: readonly string[], signal?: AbortSignal): Promise<LoadedMarkets> {
   const rows: Market[] = []
   const problems: MarketProblem[] = []
   const tokenReads = new Map<string, ReadOutcome<'token'>>()
   const stopped = (blocking: FailedOutcome | null, aborted = false): LoadedMarkets => ({ rows, problems, blocking, aborted })
 
   for (const poolId of poolIds) {
-    // No history flag: the table shows no chart, and the answer is bound to what was asked.
-    const market = await source.read('pool-market', { poolId }, { signal })
+    const market = await source.read('pool-market', tableMarketRequest(poolId), { signal })
     if (market.state === 'aborted') return stopped(null, true)
     if (market.state !== 'ok') {
-      if (isBlocking(market)) return stopped(market)
+      if (isBlocking(market) || market.state === 'disabled') return stopped(market)
       problems.push({ poolId, outcome: market })
       continue
-    }
-    const metrics = await source.read('pool-metrics', { poolId }, { signal })
-    if (metrics.state === 'aborted') return stopped(null, true)
-    if (metrics.state !== 'ok') {
-      if (isBlocking(metrics)) return stopped(metrics)
-      problems.push({ poolId, outcome: metrics })
     }
     const tokens = new Map<string, ReadOutcome<'token'>>()
     for (const currency of market.data.pool.currencies) {
@@ -133,24 +121,22 @@ export async function loadMarkets(source: ReadSource, poolIds: readonly string[]
       }
       tokens.set(key, read)
     }
-    rows.push(projectMarketRow({ market, metrics, tokens }))
+    rows.push(projectMarketRow({ market, metrics: null, tokens }))
   }
   return stopped(null)
 }
 
-const NOTICE = {
-  fixture: `Contract fixtures from read-v1 ${PRODUCER_PIN.packages['read-v1'].version}, served through the real read pipeline. Not observations.`,
-  bridge: undefined,
-}
-
 export interface ReadMarketsOptions {
   source: ReadSource
+  /** The pools to read, in the order the rows keep. */
   poolIds: readonly string[]
   kind: 'fixture' | 'bridge'
+  /** Shown beside the rows: the fixture build says they are fixtures. */
+  notice?: string
   now?: () => number
 }
 
-export function createReadMarketsProvider({ source, poolIds, kind, now = () => Date.now() }: ReadMarketsOptions): MarketsProvider {
+export function createReadMarketsProvider({ source, poolIds, kind, notice, now = () => Date.now() }: ReadMarketsOptions): MarketsProvider {
   let state: MarketsState = { phase: 'loading', previous: null, retrying: null }
   let lastGood: Retained | null = null
   let controller: AbortController | null = null
@@ -182,7 +168,7 @@ export function createReadMarketsProvider({ source, poolIds, kind, now = () => D
     controller = mine
     const retrying = state.phase === 'failed' ? state.failure : state.phase === 'loading' ? state.retrying : null
     set({ phase: 'loading', previous, retrying })
-    const loaded = await loadMarkets(source, poolIds, mine.signal)
+    const loaded = await loadSelectedPools(source, poolIds, mine.signal)
     if (mine.signal.aborted || controller !== mine) return
     controller = null
     const retained = lastGood ? { result: retainAsStale(lastGood.result, lastGood.receivedAt), receivedAt: lastGood.receivedAt } : null
@@ -192,11 +178,11 @@ export function createReadMarketsProvider({ source, poolIds, kind, now = () => D
       return
     }
     const result: MarketsResult = {
-      source: kind === 'fixture' ? 'fixture' : 'live',
+      source: kind === 'bridge' ? 'live' : kind,
       chainId: 4663,
       network: 'Robinhood Chain',
       markets: loaded.rows,
-      notice: NOTICE[kind],
+      notice,
     }
     lastGood = { result, receivedAt: now() }
     set({ phase: 'ready', result, problems: loaded.problems })

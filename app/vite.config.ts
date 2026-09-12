@@ -1,9 +1,10 @@
-import { existsSync, realpathSync } from 'node:fs'
+import { existsSync, readdirSync, readFileSync, realpathSync } from 'node:fs'
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
 import { fileURLToPath, URL } from 'node:url'
 import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
 import { defineConfig, type Plugin } from 'vite'
+import { TEXT_FILE, assertDeployable, findForbidden } from './scripts/deploy-markers.mjs'
 
 const here = (p: string) => fileURLToPath(new URL(p, import.meta.url))
 
@@ -25,23 +26,37 @@ const reactRoot = here('./node_modules/react')
 const reactDomRoot = here('./node_modules/react-dom')
 
 /**
- * Where read data comes from, per build mode. Only `--mode` selects it; no
- * environment variable does, so nothing on a build machine can switch it on.
+ * What each build mode reads and where it may write. Only `--mode` selects
+ * it; no environment variable does, so nothing on a build machine can change
+ * what a build reads.
  *
- *   production, development   today's labelled sample rows, no read code at all
+ *   production, development   deployable: live reads through the same-origin
+ *                             bridge, from the reviewed pool selection
+ *                             (src/config/selectedPools.ts). The dev server
+ *                             has no /api, so it shows the not-connected state.
  *   fixtures                  the package fixtures through the real pipeline,
  *                             plus the read lab (read-lab.html)
- *   bridge-test               the same-origin bridge, for a local stub only
+ *   bridge-test               the bridge source, for the package fixture pool
+ *                             a local stub serves
  *
- * The read modes write to their own directories. Pages deploys ./dist, and the
- * guard below refuses to put anything but the sample build there.
+ * Only a deployable mode may write to dist, which is what Pages deploys; the
+ * guard below refuses any other there. No mode has sample data: there is none.
  */
 const MODES = {
-  production: { read: 'sample', outDir: 'dist', lab: false },
-  development: { read: 'sample', outDir: 'dist', lab: false },
-  fixtures: { read: 'fixture', outDir: '.fixture-dist', lab: true },
-  'bridge-test': { read: 'bridge', outDir: '.bridge-dist', lab: false },
+  production: { read: 'bridge', pools: 'selected', deployable: true, outDir: 'dist', lab: false },
+  development: { read: 'bridge', pools: 'selected', deployable: true, outDir: 'dist', lab: false },
+  fixtures: { read: 'fixture', pools: 'fixture', deployable: false, outDir: '.fixture-dist', lab: true },
+  'bridge-test': { read: 'bridge', pools: 'fixture', deployable: false, outDir: '.bridge-dist', lab: false },
 } as const
+
+// Every deployable row is checked whichever mode is built, so a production row
+// that reads fixtures fails the fixture build too, not only its own. What a
+// deployable mode may never be is in scripts/deploy-markers.mjs. Later modes
+// (#70's wallet session, #72's deposit preview) must keep their test flags off
+// in these rows, and __DOMINO_TEST_HOOKS__ separate from __DOMINO_WALLET_SESSION__.
+for (const [name, row] of Object.entries(MODES)) {
+  if (row.deployable) assertDeployable(name, row)
+}
 
 /**
  * The directory as the file system resolves it: symlinks and junctions
@@ -77,20 +92,67 @@ export function isWithin(dir: string, root: string): boolean {
 export const DEPLOYED_DIR = here('./dist')
 
 /**
- * Refuses a fixture or bridge-test build whose output would be deployed: into
+ * Refuses a build that is not deployable whose output would be deployed: into
  * dist itself, a subdirectory of it (`dist/lab` ships with the site, and so
  * does `dist/..lab`, whose name merely starts with two dots), or the same
  * directory spelled differently (`DIST`, `./dist/`, an absolute path, a
  * symlink or junction). tests/build-guard.test.mjs resolves this config with
  * each of those spellings, for every mode in MODES that has its own directory.
  */
-function sampleOnlyInDist(read: string): Plugin {
+function deployableOnlyInDist(mode: string, deployable: boolean): Plugin {
   return {
-    name: 'domino:sample-only-in-dist',
+    name: 'domino:deployable-only-in-dist',
     configResolved(config) {
-      if (read !== 'sample' && isWithin(resolve(config.root, config.build.outDir), DEPLOYED_DIR)) {
-        throw new Error(`A ${read} build may not write to dist: that directory is what gets deployed.`)
+      if (!deployable && isWithin(resolve(config.root, config.build.outDir), DEPLOYED_DIR)) {
+        throw new Error(`A ${mode} build may not write to dist: that directory is what gets deployed.`)
       }
+    },
+  }
+}
+
+/** Every file under `dir`, at any depth. */
+function filesUnder(dir: string): string[] {
+  if (!existsSync(dir)) return []
+  return readdirSync(dir, { withFileTypes: true }).flatMap((entry) => (entry.isDirectory() ? filesUnder(join(dir, entry.name)) : [join(dir, entry.name)]))
+}
+
+/**
+ * Fails a deployable build that carries anything of sample, practice, fixture
+ * or test-only code (scripts/deploy-markers.mjs): first over every script,
+ * stylesheet and page Rollup emits, before anything is written, then over the
+ * whole output directory once it is, public files included. A failing check
+ * fails `vite build`, so npm run build, check:app and CI all enforce it.
+ */
+function deployableBundleCheck(mode: string, deployable: boolean): Plugin {
+  const refuse = (hits: string[]) => {
+    throw new Error(`The ${mode} build is deployable and carries what must never ship:\n${hits.join('\n')}`)
+  }
+  let outDir = ''
+  return {
+    name: 'domino:deployable-bundle-check',
+    apply: 'build',
+    enforce: 'post',
+    configResolved(config) {
+      outDir = resolve(config.root, config.build.outDir)
+    },
+    generateBundle(_options, bundle) {
+      if (!deployable) return
+      const hits: string[] = []
+      for (const [file, output] of Object.entries(bundle)) {
+        if (!TEXT_FILE.test(file)) continue
+        const text = output.type === 'chunk' ? output.code : typeof output.source === 'string' ? output.source : new TextDecoder().decode(output.source)
+        for (const hit of findForbidden(text)) hits.push(`${file}: ${hit.marker} in "${hit.context}"`)
+      }
+      if (hits.length > 0) refuse(hits)
+    },
+    closeBundle() {
+      if (!deployable) return
+      const hits: string[] = []
+      for (const file of filesUnder(outDir)) {
+        if (!TEXT_FILE.test(file)) continue
+        for (const hit of findForbidden(readFileSync(file, 'utf8'))) hits.push(`${relative(outDir, file)}: ${hit.marker} in "${hit.context}"`)
+      }
+      if (hits.length > 0) refuse(hits)
     },
   }
 }
@@ -101,8 +163,12 @@ export default defineConfig(({ mode }) => {
   }
   const settings = MODES[mode as keyof typeof MODES]
   return {
-    plugins: [react(), tailwindcss(), sampleOnlyInDist(settings.read)],
-    define: { __DOMINO_READ_MODE__: JSON.stringify(settings.read) },
+    plugins: [react(), tailwindcss(), deployableOnlyInDist(mode, settings.deployable), deployableBundleCheck(mode, settings.deployable)],
+    define: {
+      __DOMINO_READ_MODE__: JSON.stringify(settings.read),
+      __DOMINO_POOL_SET__: JSON.stringify(settings.pools),
+      __DOMINO_DEPLOYABLE__: JSON.stringify(settings.deployable),
+    },
     resolve: {
       dedupe: ['react', 'react-dom', 'react/jsx-runtime', 'react/jsx-dev-runtime'],
       alias: [

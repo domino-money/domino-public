@@ -11,10 +11,9 @@ const shortAddress = (address: string) => `${address.slice(0, 6)}…${address.sl
  * around it, and the width cap stops a long symbol from pushing the row
  * apart; the full text stays in the element for assistive technology. A
  * token with no readable symbol is shown by its address, which is its
- * identity anyway. Curated sample symbols are our own constants.
+ * identity anyway. There are no curated names: every symbol comes from a read.
  */
 export function TokenLabel({ token }: { token: TokenDisplay }) {
-  if (token.origin === 'sample') return <>{token.symbol}</>
   if (token.symbol === null) return <span className="font-mono">{shortAddress(token.address)}</span>
   return <bdi className="inline-block max-w-[14ch] truncate align-bottom">{token.symbol}</bdi>
 }

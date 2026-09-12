@@ -7,8 +7,9 @@ import type { TokenDisplay } from '../lib/read/types'
  *
  * Every symbol looks for its artwork at /tokens/<file> in this app, so adding a
  * logo is dropping a file in that folder. Nothing is fetched from a third-party
- * host at runtime. Symbols here are fixed constants chosen by us, not metadata
- * read from chain. A missing file falls back to a coloured disc with letters.
+ * host at runtime. The keys are our curated artwork keys: a read token reaches
+ * one only through its address (project.ts), never through its symbol. A
+ * missing file falls back to a coloured disc with letters.
  *
  * `ext` exists because the Robinhood Chain tokens publish raster artwork, not
  * vectors. Those files are their projects' own marks, saved into this
@@ -31,16 +32,7 @@ const SPECS: Record<string, Spec> = {
   WETH: { bg: '#363c4a', label: 'Wrapped Ether' },
   USDG: { bg: '#16b672', label: 'Global Dollar' },
   MARLIN: { bg: '#1f6feb', label: 'Marlin', text: 'MR', ext: 'jpg' },
-  TRADOOR: { bg: '#d99a00', label: 'Tradoor', text: 'TR', ext: 'jpg' },
-  CRUMBS: { bg: '#c4703b', label: 'Crumbs', text: 'CR', ext: 'jpg' },
-  RUBEN: { bg: '#8b5cf6', label: 'Ruben', text: 'RU', ext: 'jpg' },
-  MAD: { bg: '#e0483f', label: 'Mad', text: 'MD', ext: 'jpg' },
-  BAG: { bg: '#0ea5e9', label: 'Bag', text: 'BG', ext: 'jpg' },
-  ZZZ: { bg: '#6366f1', label: 'ZZZ', text: 'ZZ', ext: 'jpg' },
   UNI: { bg: '#FF007A', label: 'Uniswap', text: 'UNI', file: 'uniswap' },
-  // Deliberately our own mark: MEME is an illustrative token that exists on no
-  // chain, so there is no official artwork to use and none should be implied.
-  MEME: { bg: '#ff843d', fg: '#2b1405', label: 'Example token', text: 'M' },
 }
 
 const fallback = (symbol: string): Spec => ({ bg: 'var(--surface-3)', fg: 'var(--fg)', label: symbol })
@@ -118,15 +110,6 @@ export function TokenIcon({
   )
 }
 
-/** Two overlapping marks, the way exchanges show a pair. */
-export function TokenPair({ base, quote, size = 32, ring = 'var(--surface-2)' }: { base: string; quote: string; size?: number; ring?: string }) {
-  return (
-    <span className="inline-flex shrink-0 items-center" aria-hidden="true">
-      <TokenIcon symbol={base} size={size} ring={ring} />
-      <TokenIcon symbol={quote} size={size} ring={ring} style={{ marginLeft: -size * 0.3 }} />
-    </span>
-  )
-}
 
 /**
  * The mark for a token as the read adapter describes it. Artwork comes only
@@ -164,7 +147,3 @@ export function TokenMarkPair({ base, quote, size = 32, ring = 'var(--surface-2)
   )
 }
 
-export const tokenLabel = (symbol: string) => (SPECS[symbol.toUpperCase()] ?? fallback(symbol)).label
-
-/** Real network tokens, in the order they appear across the site. */
-export const NETWORK_TOKENS = ['ETH', 'USDG', 'WETH', 'MARLIN', 'TRADOOR', 'CRUMBS', 'RUBEN', 'MAD', 'BAG', 'ZZZ']
