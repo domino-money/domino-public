@@ -31,10 +31,17 @@ const textFiles = (dir) =>
     .filter((file) => /\.(js|css|html)$/.test(file) && statSync(join(dir, file)).isFile())
     .map((file) => ({ file, text: readFileSync(join(dir, file), 'utf8') }));
 const gzip = (file) => gzipSync(readFileSync(file), { level: 9 }).length;
-/** The one entry script and the one wallet chunk of a build, by name. */
+/**
+ * The one entry script and the one wallet chunk of a build.
+ *
+ * The entry is whichever script index.html loads, not whichever is named
+ * index-*: a lazy chunk gets that name too when the module opening it is
+ * called index.ts, which is how the read screens' chunk is named.
+ */
 function shape(dir) {
   const js = scripts(dir);
-  const entry = js.filter((file) => file.startsWith('index-'));
+  const html = readFileSync(join(dir, 'index.html'), 'utf8');
+  const entry = js.filter((file) => html.includes(file));
   const island = js.filter((file) => file.startsWith('WalletSessionIsland-'));
   return { js, entry, island };
 }
@@ -43,7 +50,9 @@ test('the deployed build carries wallet sign-in as its own chunk, beside one ent
   const { js, entry, island } = shape(DIST);
   assert.equal(entry.length, 1, js.join(', '));
   assert.equal(island.length, 1, js.join(', '));
-  assert.equal(js.length, 2, `only the entry and the wallet chunk: ${js.join(', ')}`);
+  // The read screens and the shared read source are lazy chunks of their own,
+  // so a visitor who opens neither the figures nor the position lookup never
+  // downloads them. What must not appear is a second entry or a second island.
   assert.equal(assets(DIST).filter((file) => file.endsWith('.css')).length, 1, assets(DIST).join(', '));
 });
 
@@ -131,7 +140,8 @@ test('the lockfile holds no optional connector SDK', () => {
 });
 
 test('the wallet chunk stays within its size budget, in the build that deploys as well', (t) => {
-  // 90 kB gzip is the ceiling for everything the feature adds to a build. A
+  // 90 kB gzip is the ceiling for everything the lazy chunks add to a build:
+  // wallet sign-in, the read screens and the shared read source together. A
   // connector SDK or a public-client stack slipping in would blow well past it.
   const BUDGET = 90_000;
   for (const [label, dir] of [

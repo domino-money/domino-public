@@ -1,0 +1,134 @@
+/**
+ * Issue #3: existing pools for a chosen token, as options a person can pick
+ * for reference.
+ *
+ * Neutral order (fee tier, then pool id): never ranked by provider volume or
+ * APR, and nothing is "recommended". Candidates the producer rejected are
+ * listed with their reason and cannot be chosen. Coverage is said plainly:
+ * an empty or partial list is never proof that no pool exists. DexScreener
+ * figures here are attributed to DexScreener and never mixed with
+ * GeckoTerminal's.
+ */
+import type { CatalogueDiscoveryPool, DiscoveryPool, PoolsResponse } from 'api-contracts/read-v1/types'
+import { reasonText } from '../describe'
+import { tokenDisplay, unreadToken } from '../project'
+import type { TokenDisplay } from '../types'
+import { COPY } from './copy'
+import { DYNAMIC_FEE_PIPS, feeLabel } from './fee'
+import { addressKey, poolIdKey, type AddressKey, type PoolIdKey } from './identity'
+import { figureFromProviderMetrics, retrievalNote, type AttributedFigure } from './figures'
+
+export interface PoolOption {
+  key: PoolIdKey
+  kind: 'discovery' | 'catalogue'
+  currencies: [TokenDisplay, TokenDisplay]
+  fee: string
+  /** For ordering only; the dynamic sentinel sorts last. */
+  feePips: number
+  tickSpacing: number
+  /** The pool's tick and square-root price at `block`, as read. Only poolRange.ts turns them into a price. */
+  tick: number
+  sqrtPriceX96: string
+  /** When the reply arrived, on the page's clock (provenance.receivedAt); null when unknown. Never shown as a data time. */
+  readAt: number | null
+  hooks: AddressKey
+  integration: 'hookless_fixed_fee' | 'requires_separate_adapter'
+  /** The block the pool was verified at. */
+  block: number
+  catalogue: { source: 'initialize_event' | 'verified_observation'; block: number } | null
+  requestedById: boolean
+  liquidity: AttributedFigure
+  volume: AttributedFigure
+  /** Source and retrieval time of the two DexScreener figures; null when there are none to date (none retrieved, or rejected). */
+  providerNote: string | null
+  aprReason: string
+  tokenMetadata: 'available' | 'partial'
+  providerConflict: boolean
+}
+
+export interface RejectedPool {
+  key: PoolIdKey
+  reason: string
+}
+
+export interface PoolsView {
+  options: PoolOption[]
+  rejected: RejectedPool[]
+  coverage: string[]
+  block: number
+  /** False whenever a source was missing: the list may be incomplete. */
+  complete: boolean
+}
+
+export function poolOption(pool: DiscoveryPool | CatalogueDiscoveryPool, tokens: ReadonlyMap<string, TokenDisplay>, readAt: number | null = null): PoolOption {
+  const token = (address: string) => tokens.get(address.toLowerCase()) ?? unreadToken(address)
+  const conflict = 'providerCurrencyConflict' in pool && pool.providerCurrencyConflict === true
+  return {
+    key: poolIdKey(pool.poolId),
+    kind: pool.poolKind,
+    currencies: [token(pool.poolKey.currency0), token(pool.poolKey.currency1)],
+    fee: feeLabel(pool.poolKey),
+    feePips: pool.poolKey.feeMode === 'dynamic' ? DYNAMIC_FEE_PIPS : pool.poolKey.fee_pips,
+    tickSpacing: pool.poolKey.tick_spacing,
+    tick: pool.tick,
+    sqrtPriceX96: pool.sqrtPriceX96,
+    readAt,
+    hooks: addressKey(pool.poolKey.hooks),
+    integration: pool.integrationClass,
+    block: pool.snapshot.number,
+    catalogue: pool.poolKind === 'catalogue' ? { source: pool.catalogueSource, block: pool.catalogueObservation.number } : null,
+    requestedById: pool.requestedById === true,
+    liquidity: figureFromProviderMetrics(pool.providerMetrics, 'liquidity', conflict),
+    volume: figureFromProviderMetrics(pool.providerMetrics, 'volume', conflict),
+    providerNote: pool.providerMetrics && !conflict ? retrievalNote('dexscreener', pool.providerMetrics.retrievedAt) : null,
+    aprReason: pool.aprReason,
+    tokenMetadata: pool.tokenMetadataStatus,
+    providerConflict: conflict,
+  }
+}
+
+/** Fee tier, then pool id. The order says nothing about which pool is better. */
+export function neutralOrder<T extends Pick<PoolOption, 'feePips' | 'key'>>(options: readonly T[]): T[] {
+  return [...options].sort((a, b) => a.feePips - b.feePips || (a.key < b.key ? -1 : a.key > b.key ? 1 : 0))
+}
+
+export function coverageLines(d: PoolsResponse): { lines: string[]; complete: boolean } {
+  const lines: string[] = []
+  let complete = true
+  if (d.discovery.status === 'received') {
+    const n = d.discovery.returned
+    lines.push(`DexScreener returned ${n} candidate${n === 1 ? '' : 's'} (${d.discovery.v4Candidates} on Uniswap v4). That covers the provider’s candidates only.`)
+  } else {
+    complete = false
+    lines.push(`DexScreener discovery was unavailable (${reasonText(d.discovery.reason)}), so this list may be incomplete.`)
+  }
+  if (d.catalogue.status === 'available') {
+    lines.push(`Catalogue revision ${d.catalogue.revision} covers blocks ${d.catalogue.startBlock}–${d.catalogue.indexedThrough ?? 'not yet indexed'} only, not complete history.`)
+  } else if (d.catalogue.status === 'not_configured') {
+    complete = false
+    lines.push('No pool catalogue is configured on this server, so this list may be incomplete.')
+  } else {
+    complete = false
+    lines.push(`The pool catalogue was unavailable (${reasonText(d.catalogue.reason)}), so this list may be incomplete.`)
+  }
+  if (d.selectedTokenReadStatus !== 'available') lines.push(`The selected token’s metadata is ${reasonText(d.selectedTokenReadStatus)}.`)
+  if (d.pools.length === 0) lines.push(COPY.picker.noOptions)
+  return { lines, complete }
+}
+
+export function projectPoolsView(d: PoolsResponse, readAt: number | null = null): PoolsView {
+  const tokens = new Map(d.tokens.map((t) => [t.address.toLowerCase(), tokenDisplay(t)]))
+  const { lines, complete } = coverageLines(d)
+  return {
+    options: neutralOrder(d.pools.map((pool) => poolOption(pool, tokens, readAt))),
+    rejected: d.unverifiedCandidates.map((candidate) => ({ key: poolIdKey(candidate.poolId), reason: candidate.reason })),
+    coverage: lines,
+    block: d.snapshot.number,
+    complete,
+  }
+}
+
+/** Fixed key order: the scheduler coalesces by the request's JSON. */
+export function poolsRequest(token: AddressKey, paired: AddressKey | null) {
+  return paired ? { token, pairedToken: paired } : { token }
+}

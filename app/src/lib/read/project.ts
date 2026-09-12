@@ -104,10 +104,12 @@ function raw(label: string, amounts: readonly string[] | null, reason?: string |
   return { label, text: `${texts.join(' · ')} (raw units)`, state: zero ? 'zero' : 'raw' }
 }
 
+import { fixedFeePercent } from './screens/fee'
+
 const count = (label: string, n: number, unit: string): Fact => ({ label, text: `${n} ${unit}`, state: n === 0 ? 'zero' : 'value' })
 
 /** A fixed fee in pips as a percentage, or the dynamic sentinel as what it means. Pips are small integers, not amounts. */
-export const feeText = (key: FixedPoolKey | DynamicPoolKey) => (key.feeMode === 'dynamic' ? 'Dynamic fee' : `${(key.fee_pips / 10_000).toFixed(2)}%`)
+export const feeText = (key: FixedPoolKey | DynamicPoolKey) => (key.feeMode === 'dynamic' ? 'Dynamic fee' : fixedFeePercent(key.fee_pips))
 
 const PROVIDER_NAME: Record<string, string> = {
   geckoterminal: 'GeckoTerminal',

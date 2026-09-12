@@ -33,6 +33,7 @@ execFileSync(
     'tests/session.privateQuery.test.mjs',
     'tests/session.forwarder.test.mjs',
     'tests/session.source-guard.test.mjs',
+    'tests/screens.test.mjs',
   ],
   { stdio: 'inherit' },
 );

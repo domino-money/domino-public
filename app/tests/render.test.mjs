@@ -482,13 +482,19 @@ test('the landing asks the capabilities once and posts nothing when live data is
 
 test('the deployable build carries the live read path and the selected pools, nothing of the fixture pipeline, in the entry and the wallet chunk', () => {
   const scripts = readdirSync(join(DIST, 'assets')).filter((file) => file.endsWith('.js'));
-  const entry = scripts.filter((file) => file.startsWith('index-'));
+  // The entry is the script index.html loads; a lazy chunk can be named
+  // index-* too, because the module that opens it is called index.ts.
+  const html = readFileSync(join(DIST, 'index.html'), 'utf8');
+  const entry = scripts.filter((file) => html.includes(file));
   const island = scripts.filter((file) => file.startsWith('WalletSessionIsland-'));
   // Wallet sign-in is the one lazily loaded chunk: a visitor who never opens
   // it never downloads it. Anything else split out is a chunk nobody asked for.
   assert.equal(entry.length, 1, `one entry: ${scripts.join(', ')}`);
   assert.equal(island.length, 1, `one wallet chunk: ${scripts.join(', ')}`);
-  assert.equal(scripts.length, 2, `no other chunk: ${scripts.join(', ')}`);
+  // Beyond those two, the read screens and the shared read source they use are
+  // lazy chunks: loaded when a reader opens the figures or the position
+  // lookup, never on first paint. A second entry would be the real regression.
+  assert.ok(scripts.length >= 2, `entry and wallet chunk at least: ${scripts.join(', ')}`);
   const code = scripts.map((file) => readFileSync(join(DIST, 'assets', file), 'utf8')).join('\n');
   for (const marker of ['/api/read/v1', 'X-Domino-Read-Contract', 'assertResponse', ...SELECTED]) {
     assert.equal(code.includes(marker), true, `dist lacks ${marker}`);
@@ -568,10 +574,14 @@ test('the positions screen is an honest empty state: no cards, totals, activity 
   const page = await open('/app');
   const text = await page.locator('#root').innerText();
   assert.match(text, /Your positions will appear here/);
-  assert.match(text, /Position lookup and wallet discovery are not available in the alpha\./);
+  // The by-id lookup is here now; finding every position a wallet holds is not.
+  assert.match(text, /Look a position up by its id/);
   assert.doesNotMatch(text, /practice|receipt|reinvested|awaiting|activity/i);
   assert.equal(await page.locator('[role="dialog"]').count(), 0);
-  assert.equal(await page.locator('main button:not([disabled])').count(), 0, 'nothing on the screen can start an action');
+  // Nothing reads on load: the lookup asks only when someone asks it to, and
+  // the screen shows no figure of its own until then.
+  assert.deepEqual(apiOf(page), [[]], 'the positions screen reads nothing by itself');
+  assert.equal(await page.locator('main [data-metric]').count(), 0, 'no figure appears before a lookup');
   assert.equal(await page.getByRole('link', { name: 'See the selected pools' }).getAttribute('href'), '#/#pools');
   clean(page, 'positions');
   await close(page);

@@ -11,15 +11,16 @@
  * and bounded busy retry are the scheduler's and the pipeline's, unchanged.
  */
 import { SELECTED_POOLS } from '../../config/selectedPools'
-import { CAPABILITIES } from '../capabilities'
 import { BRIDGE_TEST_POOLS } from './bridgeTestPools'
-import { createBridgeSource } from './bridgeSource'
-import { READ_RUNTIME } from './contract'
 import { createReadMarketsProvider } from './marketsProvider'
-import { createScheduledSource } from './scheduler'
+import { appBridgeSource } from './screens/appSourceBridge'
 
 export function bridgeMarkets() {
-  const source = createScheduledSource(createBridgeSource({ enabled: CAPABILITIES.liveReadsBuilt, validators: READ_RUNTIME }))
+  // The app's one source, shared with the read screens: the table, the
+  // position lookup, the pickers and the figures dialog queue on the same
+  // scheduler, so their starts are spaced the way the bridge admits reads
+  // instead of each path spacing only itself.
+  const source = appBridgeSource()
   const poolIds = __DOMINO_POOL_SET__ === 'selected' ? SELECTED_POOLS : BRIDGE_TEST_POOLS
   return createReadMarketsProvider({ source, poolIds, kind: 'bridge' })
 }

@@ -181,6 +181,20 @@ const USABLE: ReadonlySet<MetricState> = new Set(['qualified', 'provider', 'stal
  * are a provider's, it says it was calculated from that provider's figures
  * (`calculatedFrom`), never that the provider reported it (`source`).
  */
+/**
+ * A row's figures as they read at `now`: a provider figure past the read
+ * service's fresh window is stale, never current. Anything holding a market
+ * open — the Top pools row, and the figures dialog it opens — projects it
+ * through here on every tick, so what is on screen keeps ageing instead of
+ * freezing at the moment it was opened.
+ */
+export function agedMarket(m: Market, now: Instant): Market {
+  const p = m.provenance
+  if (!p || !providerStale(p.market, now)) return m
+  const aged = (metric: Metric): Metric => (metric.state === 'provider' ? { ...metric, state: 'stale' } : metric)
+  return { ...m, tvlUsd: aged(m.tvlUsd), volume24hUsd: aged(m.volume24hUsd) }
+}
+
 export function turnover(m: Pick<Market, 'volume24hUsd' | 'tvlUsd'>): Presented {
   const inputs = [m.volume24hUsd, m.tvlUsd]
   const missing = inputs.find((input) => !USABLE.has(input.state) || input.value === null)
@@ -266,7 +280,26 @@ export const aprLabel = (metric: Metric): Presented =>
     return text === null ? 'Unavailable' : `${text}% APR`
   })
 
-export const feeTierLabel = (pips: number) => `${(pips / 10_000).toFixed(2)}%`
+/**
+ * A v4 pool whose hook sets the fee carries the sentinel 8388608 in its fee
+ * field, not a rate. Divided as a rate it reads 838.86%, which is why it is
+ * named here rather than left to arithmetic.
+ */
+/**
+ * A fee is exact to the pip: 1 pip is 0.0001%, not 0.00%. Two decimals would
+ * collapse every tier below 0.005% into the same text, so the digits are
+ * written out rather than rounded.
+ */
+function fixedFeePercent(pips: number): string {
+  if (Math.trunc(pips) !== pips || pips < 0) return 'Unknown fee'
+  const whole = Math.floor(pips / 10_000)
+  const fraction = String(pips % 10_000).padStart(4, '0')
+  return `${whole}.${fraction.slice(0, 2) + fraction.slice(2).replace(/0+$/, '')}%`
+}
+
+export const DYNAMIC_FEE_PIPS = 8_388_608
+
+export const feeTierLabel = (pips: number) => (pips === DYNAMIC_FEE_PIPS ? 'Dynamic' : fixedFeePercent(pips))
 
 /** The fee as a row shows it: a fixed tier, or dynamic when the pool's hook sets it. */
 export const feeLabel = (market: Pick<Market, 'feePips'>) => (market.feePips === null ? 'Dynamic fee' : feeTierLabel(market.feePips))

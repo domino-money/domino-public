@@ -13,7 +13,17 @@ import '../styles/tokens.css'
 const root = document.getElementById('root')
 if (!root) throw new Error('Missing #root')
 
-if (__DOMINO_READ_MODE__ === 'fixture') {
+if (__DOMINO_READ_MODE__ === 'fixture' && window.location.hash.startsWith('#screens')) {
+  // The read screens' cases, one per page: read-lab.html#screens/<case>.
+  const caseId = window.location.hash.slice('#screens/'.length)
+  void import('./screensCases').then(({ ScreensLab }) =>
+    createRoot(root).render(
+      <StrictMode>
+        <ScreensLab caseId={caseId} />
+      </StrictMode>,
+    ),
+  )
+} else if (__DOMINO_READ_MODE__ === 'fixture') {
   void import('./ReadLab').then(({ ReadLab }) =>
     createRoot(root).render(
       <StrictMode>

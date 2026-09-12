@@ -80,9 +80,11 @@ const sameList = (a: readonly string[], b: readonly string[]) =>
  * the answer is the whole requested set: one result per id, none left out,
  * none twice, none extra.
  *
- * Two echoes are deliberately not bound: `pools.pairedToken` (the fixtures
- * answer null for a requested pair, an open question for the producer) and the
- * wallet, which wallet-assets does not echo at all.
+ * One echo is deliberately not bound: the wallet, which wallet-assets does not
+ * echo at all. `pools.pairedToken` stays nullable in the payload and the
+ * binding no longer waits on it — each pool is checked against the requested
+ * pair through its own key, which the producer confirmed on #112 is the right
+ * side for this to live on.
  */
 export function answersRequest<R extends ReadKey>(route: R, request: RequestOf<R>, data: ReadResponses[R]): boolean {
   switch (route) {
@@ -96,7 +98,22 @@ export function answersRequest<R extends ReadKey>(route: R, request: RequestOf<R
     case 'pools': {
       const q = request as unknown as ReadRequests['pools']
       const d = data as ReadResponses['pools']
-      return sameAddress(d.selectedToken, q.token)
+      if (!sameAddress(d.selectedToken, q.token)) return false
+      // Every pool, not just the echoed selection. The reply's `pairedToken`
+      // echo is nullable, so believing the echo would let a pool that does not
+      // hold the selected token, or that is not paired with the second asset
+      // asked for, arrive as one more selectable option. Each pool carries its
+      // own key, so nothing beyond the payload is needed to tell. This is what
+      // the catalogue case below already does for its items.
+      return d.pools.every((pool) => {
+        const currencies = [pool.poolKey.currency0, pool.poolKey.currency1]
+        const held = currencies.findIndex((currency) => sameAddress(currency, q.token))
+        if (held === -1) return false
+        if (q.pairedToken === undefined || q.pairedToken === null) return true
+        // The other side by position, so a pool of a token with itself is
+        // compared against the currency the selected token did not claim.
+        return sameAddress(currencies[held === 0 ? 1 : 0], q.pairedToken)
+      })
     }
     case 'pool-market': {
       const q = request as unknown as ReadRequests['pool-market']

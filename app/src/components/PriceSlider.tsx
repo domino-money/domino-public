@@ -19,6 +19,8 @@ export function PriceSlider({
   onChange,
   lower,
   upper,
+  format = times,
+  valueText,
 }: {
   id: string
   label: string
@@ -29,6 +31,10 @@ export function PriceSlider({
   onChange: (v: number) => void
   lower?: number
   upper?: number
+  /** How a position on the track reads. Multiples of the start price by default; a pool screen passes its own price. */
+  format?: (v: number) => string
+  /** What a screen reader says for the current value, when the written figure alone would not be enough. */
+  valueText?: (v: number) => string
 }) {
   const pct = (v: number) => ((v - min) / (max - min)) * 100
   const inside = lower !== undefined && upper !== undefined && value >= lower && value < upper
@@ -62,7 +68,7 @@ export function PriceSlider({
           className="flex h-8 items-center justify-center rounded-[var(--radius-pill)] border-2 bg-surface-2 px-2.5 font-mono text-[12px] shadow-[0_4px_16px_-4px_rgba(0,0,0,0.45)]"
           style={{ borderColor: inside || lower === undefined ? 'var(--primary)' : 'var(--money-wait)' }}
         >
-          <span className="tnum">{times(value)}</span>
+          <span className="tnum">{format(value)}</span>
         </div>
       </div>
 
@@ -77,12 +83,15 @@ export function PriceSlider({
         step={step}
         value={value}
         onChange={(e) => onChange(Number(e.target.value))}
+        // The raw value can be a tick, which says nothing out loud. A screen
+        // that knows what its numbers mean passes the words for them.
+        aria-valuetext={valueText ? valueText(value) : undefined}
         className="absolute inset-0 h-full w-full cursor-ew-resize opacity-0"
       />
 
       <div className="mt-2 flex justify-between font-mono text-[11px] text-fg-subtle">
-        <span>{times(min)}</span>
-        <span>{times(max)}</span>
+        <span>{format(min)}</span>
+        <span>{format(max)}</span>
       </div>
     </div>
   )

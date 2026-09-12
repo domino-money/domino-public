@@ -42,6 +42,21 @@
     "src/session/siwe.ts",
     "src/session/machine.ts",
     "src/session/controller.ts",
-    "src/session/privateQuery.ts"
+    "src/session/privateQuery.ts",
+    "src/lib/read/screens/identity.ts",
+    "src/lib/read/screens/fee.ts",
+    "src/lib/read/screens/screenRead.ts",
+    "src/lib/read/screens/copy.ts",
+    "src/lib/read/screens/positions.ts",
+    "src/lib/read/screens/tokens.ts",
+    "src/lib/read/screens/walletSession.ts",
+    "src/lib/read/screens/poolsList.ts",
+    "src/lib/read/screens/poolRange.ts",
+    "src/lib/read/screens/catalogueSession.ts",
+    "src/lib/read/screens/figures.ts",
+    "src/lib/read/screens/marketList.ts",
+    "src/lib/read/screens/delayedSource.ts",
+    "src/lib/read/screens/appScript.ts",
+    "src/lib/read/screens/appMarkets.ts"
   ]
 }

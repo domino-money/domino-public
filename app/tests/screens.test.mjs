@@ -1,0 +1,1256 @@
+/**
+ * The read screens' pure modules (#2 position cards, #3 selectors, #13
+ * figures), against rugged97's package fixtures and the real package runtime,
+ * through slice A's pipeline, scheduler and pagers. Nothing here re-implements
+ * a validator or a fixture.
+ */
+import assert from 'node:assert/strict';
+import { readdirSync, readFileSync, statSync } from 'node:fs';
+import { createRequire } from 'node:module';
+import { join, resolve } from 'node:path';
+import { test } from 'node:test';
+import * as runtime from '../../api-contracts/read-v1/runtime.mjs';
+
+const require = createRequire(import.meta.url);
+const built = (name) => require(`../.test-build/app/src/lib/read/${name}.js`);
+const identity = built('screens/identity');
+const fee = built('screens/fee');
+const { readWithin, withReadBudget, SCREEN_BUDGET_MS } = built('screens/screenRead');
+const { createAppMarketsProvider } = built('screens/appMarkets');
+const { describeFailure } = built('describe');
+const project = built('project');
+const positions = built('screens/positions');
+const tokens = built('screens/tokens');
+const walletSession = built('screens/walletSession');
+const pools = built('screens/poolsList');
+const poolRange = built('screens/poolRange');
+const catalogue = built('screens/catalogueSession');
+const figures = built('screens/figures');
+const marketList = built('screens/marketList');
+const copy = built('screens/copy');
+const { withDelays } = built('screens/delayedSource');
+const { APP_SCRIPT, FIXTURE_NFT_IDS, FIXTURE_OWNER } = built('screens/appScript');
+const { createFixtureSource } = built('fixtureSource');
+const { createScheduledSource } = built('scheduler');
+// F3 renamed this: the table loads exactly the reviewed pool selection.
+const { loadSelectedPools } = built('marketsProvider');
+const { MARKET_CASES, FIXTURE_POOL, FIXTURE_TOKEN, NATIVE, MUTATED_CURSOR, gateway, errorFixture, invalidFixture, withCursor, withNextCataloguePage } = built('scenarios');
+const markets = require('../.test-build/app/src/lib/markets.js');
+const ts = require('typescript');
+
+const READ = resolve(import.meta.dirname, '../../api-contracts/read-v1');
+const SRC = resolve(import.meta.dirname, '../src');
+const text = (path) => readFileSync(join(READ, path), 'utf8');
+const catalog = { index: JSON.parse(text('fixtures/index.json')), text };
+const fixture = (name) => JSON.parse(text(`fixtures/gateway/${name}.json`));
+const fixtures = (script, options = {}) => createFixtureSource({ catalog, validators: runtime, script, ...options });
+const BIG = FIXTURE_NFT_IDS[1];
+const live = () => new AbortController().signal;
+const PROVENANCE_BANNED = /\b(current|live|updated|qualified)\b/i;
+const OTHER_ADDRESS = `0x${'12'.repeat(20)}`;
+const flush = () => new Promise((done) => setImmediate(done));
+
+/** A clock that moves only when a test says so; sleeps wait for it. */
+function manualClock() {
+  let now = 0;
+  const timers = [];
+  return {
+    now: () => now,
+    // The read pipeline times itself on a monotonic reading, never on the wall
+    // clock: this one moves with the test's own advance() and nothing else.
+    monotonic: () => now,
+    random: () => 0,
+    sleep(ms, signal) {
+      return new Promise((resolve, reject) => {
+        if (signal?.aborted) return reject(signal.reason);
+        const timer = { at: now + ms, resolve };
+        timers.push(timer);
+        signal?.addEventListener(
+          'abort',
+          () => {
+            const i = timers.indexOf(timer);
+            if (i !== -1) timers.splice(i, 1);
+            reject(signal.reason);
+          },
+          { once: true },
+        );
+      });
+    },
+    /** The deadline timer of pipeline.ts, on the same list advance() drains. */
+    timer(ms, callback) {
+      const entry = { at: now + ms, resolve: callback };
+      timers.push(entry);
+      return () => {
+        const i = timers.indexOf(entry);
+        if (i !== -1) timers.splice(i, 1);
+      };
+    },
+    async advance(ms) {
+      now += ms;
+      for (const timer of timers.filter((t) => t.at <= now)) {
+        timers.splice(timers.indexOf(timer), 1);
+        timer.resolve();
+      }
+      await flush();
+      await flush();
+    },
+    pending: () => timers.length,
+  };
+}
+
+/** A clock whose sleeps pass at once, moving time forward by what was asked. */
+function autoClock() {
+  let now = 0;
+  return {
+    now: () => now,
+    // Same reading as now(): this clock only ever moves forward, by what a
+    // sleep asked for, so wall time and monotonic time cannot diverge here.
+    monotonic: () => now,
+    timer: () => () => undefined,
+    random: () => 0,
+    sleep: async (ms, signal) => {
+      if (signal?.aborted) throw signal.reason;
+      now += ms;
+    },
+  };
+}
+
+const tokenMap = (...names) => {
+  const map = new Map();
+  for (const name of names) {
+    const asset = fixture(name).asset;
+    map.set(asset.address, { origin: 'read', chainId: 4663, address: asset.address, symbol: asset.symbol, decimals: asset.decimals, readStatus: asset.readStatus, artwork: null });
+  }
+  return map;
+};
+
+const BASE_TOKENS = [
+  { fixture: gateway('token.native'), expectRequest: { token: NATIVE } },
+  { fixture: gateway('token.success'), expectRequest: { token: FIXTURE_TOKEN } },
+];
+
+// ---------------------------------------------------------------------------
+// Identity (#3 S-ID1..3, T-S1..3)
+// ---------------------------------------------------------------------------
+
+test('a pasted address is accepted exactly when the read contract accepts it, as typed, with nothing trimmed', () => {
+  const boundaries = JSON.parse(text('fixtures/request-boundaries.json')).filter((c) => c.route === 'token');
+  const names = [];
+  for (const c of boundaries) {
+    const payload = JSON.parse(c.json);
+    if (!payload || typeof payload !== 'object' || Array.isArray(payload) || Object.keys(payload).length !== 1 || typeof payload.token !== 'string') continue;
+    names.push(c.name);
+    const parsed = identity.parseAddressInput(payload.token);
+    assert.equal(parsed.ok, runtime.validateRequest('token', payload), `${c.name} disagrees with validateRequest`);
+    assert.equal(parsed.ok, c.valid, `${c.name} disagrees with the boundary corpus`);
+    if (parsed.ok) {
+      assert.equal(parsed.wire, payload.token, 'sent exactly as typed');
+      assert.equal(parsed.key, payload.token.toLowerCase());
+    }
+  }
+  for (const needed of ['token-newline', 'token-crlf', 'token-upper-prefix', 'token-upper-digits', 'token-zero', 'token-short', 'token-long', 'token-invalid-hex']) {
+    assert.ok(names.includes(needed), `boundary case ${needed} was exercised`);
+  }
+  const address = '0xa1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1';
+  assert.deepEqual(identity.parseAddressInput(`${address}\n`), { ok: false, reason: 'line_break' });
+  assert.deepEqual(identity.parseAddressInput(`${address}\r\n`), { ok: false, reason: 'line_break' });
+  assert.deepEqual(identity.parseAddressInput(` ${address}`), { ok: false, reason: 'whitespace' });
+  assert.deepEqual(identity.parseAddressInput(`0X${address.slice(2)}`), { ok: false, reason: 'prefix' });
+  assert.deepEqual(identity.parseAddressInput(''), { ok: false, reason: 'empty' });
+  for (const pasted of [`${address}\n`, `${address}\r\n`, `${address.slice(0, 20)}\n${address.slice(20)}`]) {
+    assert.deepEqual(identity.screenPaste(pasted), { ok: false, reason: 'line_break' }, JSON.stringify(pasted));
+  }
+  assert.deepEqual(identity.screenPaste(address), { ok: true });
+});
+
+test('native ETH and a wrapped ERC-20 are two identities, and two rows', () => {
+  const native = tokens.candidateFromToken(fixture('token.native'), NATIVE);
+  const wethData = fixture('token.success');
+  wethData.asset.address = '0x7777777777777777777777777777777777777777';
+  wethData.asset.symbol = 'WETH';
+  const weth = tokens.candidateFromToken(wethData, wethData.asset.address);
+  assert.equal(native.kind, 'native');
+  assert.equal(weth.kind, 'erc20_candidate');
+  assert.notEqual(native.key, weth.key);
+  assert.equal(tokens.mergeCandidates([native], [weth]).length, 2);
+});
+
+test('address search matches hex only, never symbol text, and the same symbol at two addresses stays two rows', () => {
+  const data = fixture('pools.success');
+  const twin = structuredClone(data.pools[0]);
+  twin.poolId = `0x${'cd'.repeat(32)}`;
+  data.pools.push(twin);
+  const view = pools.projectPoolsView(runtime.assertResponse('pools', data));
+  assert.equal(view.options.length, 2, 'two pools with the same symbols are two options');
+  assert.notEqual(view.options[0].key, view.options[1].key);
+  const rows = [{ key: '0x1111111111111111111111111111111111111111' }, { key: '0x0000000000000000000000000000000000000000' }];
+  assert.deepEqual(identity.searchByAddress(rows, 'TOKEN'), []);
+  assert.deepEqual(identity.searchByAddress(rows, 'ETH'), []);
+  assert.deepEqual(identity.searchByAddress(rows, '0x1111'), [rows[0]]);
+  assert.deepEqual(identity.searchByAddress(rows, ''), rows);
+});
+
+test('token states: what can be chosen, what cannot, and the untrusted symbol byte for byte', () => {
+  const pick = (name) => tokens.candidateFromToken(fixture(name), fixture(name).asset.address);
+  assert.equal(pick('token.success').why, null);
+  assert.equal(pick('token.missing-contract').why, 'no_contract');
+  assert.equal(pick('token.unavailable').why, 'unreadable');
+  const gas = pick('token.call-gas-limit');
+  assert.equal(gas.why, 'unreadable');
+  assert.equal(gas.reasonCode, 'rpc_call_gas_limit');
+  for (const partial of ['token.missing-decimals', 'token.metadata-reverted']) {
+    const c = pick(partial);
+    assert.equal(c.why, null, `${partial} stays selectable`);
+    assert.equal(c.decimalsUnavailable, true, `${partial} says decimals are unavailable`);
+  }
+  const zero = pick('token.zero-decimals');
+  assert.equal(zero.why, null);
+  assert.equal(zero.decimalsUnavailable, false, 'zero decimals is a real value');
+  assert.equal(zero.token.decimals, 0);
+  assert.equal(pick('token.untrusted-symbol').token.symbol, '<img src=x onerror=alert(1)>');
+  const first = pick('token.success');
+  assert.equal(tokens.excluding(first, first.key).why, 'excluded');
+});
+
+// ---------------------------------------------------------------------------
+// Fees (G13)
+// ---------------------------------------------------------------------------
+
+test('fees are exact to the pip, and the dynamic sentinel reads Dynamic', () => {
+  const table = { 1: '0.0001%', 50: '0.005%', 100: '0.01%', 500: '0.05%', 3000: '0.30%', 9000: '0.90%', 10000: '1.00%', 1000000: '100.00%' };
+  for (const [pips, want] of Object.entries(table)) assert.equal(fee.fixedFeePercent(Number(pips)), want, `${pips} pips`);
+  assert.equal(fee.feeLabel({ feeMode: 'dynamic', fee_pips: 8388608 }), 'Dynamic');
+  assert.equal(fee.feeLabel({ feeMode: 'fixed', fee_pips: 3000 }), '0.30%');
+  // Both surfaces that name a fee agree with the table above, which is exact to
+  // the pip. The old two-decimal rounding is gone: it turned 50 pips, a real
+  // tier, into the same text as 100.
+  for (const [pips, want] of Object.entries(table)) {
+    assert.equal(fee.feeFromPips(Number(pips)), want, `${pips} pips through feeFromPips`);
+    assert.equal(markets.feeTierLabel(Number(pips)), want, `${pips} pips on a table row`);
+  }
+  assert.equal(fee.feeFromPips(8388608), 'Dynamic');
+  assert.equal(markets.feeTierLabel(8388608), 'Dynamic');
+  // Every other surface that names a fee: the Top pools row and ticker, and slice A's read facts.
+  // The row says "Dynamic fee": the word alone would read as a figure's state.
+  assert.equal(markets.feeLabel({ feePips: null }), 'Dynamic fee', 'a market row of a dynamic-fee pool');
+  assert.equal(markets.feeLabel({ feePips: 3000 }), '0.30%');
+  // A read fact spells it out: "Dynamic fee", never the bare word, which would
+  // read as a figure's state rather than as how the pool charges.
+  assert.equal(project.feeText({ feeMode: 'dynamic', fee_pips: 8388608 }), 'Dynamic fee', "slice A's fee fact");
+  assert.equal(project.feeText({ feeMode: 'fixed', fee_pips: 50 }), '0.005%');
+});
+
+// ---------------------------------------------------------------------------
+// #2 position cards
+// ---------------------------------------------------------------------------
+
+test('typed NFT IDs: canonical decimals below 2^256, unique, 1 to 10', () => {
+  const max = (2n ** 256n - 1n).toString();
+  assert.deepEqual(positions.parseTokenIdsInput(`1, ${max}\n7`), { ok: true, ids: ['1', max, '7'] });
+  assert.deepEqual(positions.parseTokenIdsInput((2n ** 256n).toString()), { ok: false, reason: 'too_large' });
+  assert.deepEqual(positions.parseTokenIdsInput('01'), { ok: false, reason: 'leading_zero' });
+  assert.deepEqual(positions.parseTokenIdsInput('1 1'), { ok: false, reason: 'duplicate' });
+  assert.deepEqual(positions.parseTokenIdsInput('1.5'), { ok: false, reason: 'not_decimal' });
+  assert.deepEqual(positions.parseTokenIdsInput('-1'), { ok: false, reason: 'not_decimal' });
+  assert.deepEqual(positions.parseTokenIdsInput(' ,\n'), { ok: false, reason: 'empty' });
+  assert.deepEqual(positions.parseTokenIdsInput(Array.from({ length: 11 }, (_, i) => String(i + 1)).join(' ')), { ok: false, reason: 'too_many' });
+  for (const text of ['0', '1 2 3', max, FIXTURE_NFT_IDS.join(',')]) {
+    const parsed = positions.parseTokenIdsInput(text);
+    assert.ok(parsed.ok);
+    assert.equal(runtime.validateRequest('nft-positions', { tokenIds: parsed.ids }), true, text);
+  }
+});
+
+test('a live card: pool, fee, range in ticks and prices, amounts, owner at the block as public data, and no USD value', () => {
+  const data = runtime.assertResponse('nft-positions', fixture('nft-positions.success'));
+  const projected = positions.projectNftBatch(FIXTURE_NFT_IDS, data, tokenMap('token.native', 'token.success'));
+  assert.ok(projected.ok);
+  const { batch } = projected;
+  assert.deepEqual(batch.cards.map((c) => c.key), ['4663:nft:1', `4663:nft:${BIG}`]);
+  const card = batch.cards[0];
+  assert.equal(card.kind, 'live');
+  assert.equal(card.fee, '0.30%');
+  assert.deepEqual([card.range.tickLower, card.range.tickUpper], [-60, 60]);
+  assert.deepEqual(card.range.prices, { lower: '≈994,018,000,000', upper: '≈1,006,020,000,000' });
+  assert.equal(positions.tickPriceText(-60, 18, 6), '≈994,018,000,000');
+  assert.equal(positions.tickPriceText(60, 18, 6), '≈1,006,020,000,000');
+  assert.equal(positions.tickPriceText(887272, 18, 0), null, 'out of the formatter range: ticks only');
+  assert.doesNotMatch(positions.tickPriceText(-887272, 0, 0) ?? '', /e/, 'never an exponent');
+  assert.equal(card.owner.address, '0x3333333333333333333333333333333333333333');
+  assert.equal(card.owner.basis, 'ownerOf_at_pinned_block');
+  assert.equal('coreOwner' in card, false, 'the core owner is the manager and is never mapped');
+  assert.deepEqual(card.valuation, { state: 'unavailable', reason: 'no_qualified_price_source' });
+  assert.equal(card.inRange, true);
+  assert.equal(card.hasLiquidity, true);
+  assert.equal(card.principal[0].kind, 'units');
+  assert.equal(card.principal[0].text, '3,797,063,507.756903070969194414');
+  assert.equal(card.unsettledFees[1].kind, 'zero');
+  assert.deepEqual(Object.keys(card).filter((k) => /usd/i.test(k)), []);
+  assert.equal(batch.block.number, 700);
+});
+
+test('empty, zero and stale NFTs keep their own states and the original snapshot', () => {
+  const empty = positions.projectNftBatch(['1'], runtime.assertResponse('nft-positions', fixture('nft-positions.empty')), new Map());
+  assert.deepEqual(empty.batch.cards, [{ origin: 'chain', kind: 'empty', key: '4663:nft:1', tokenId: '1' }]);
+  const zero = positions.projectNftBatch(['1'], runtime.assertResponse('nft-positions', fixture('nft-positions.zero')), tokenMap('token.native', 'token.success'));
+  assert.equal(zero.batch.cards[0].hasLiquidity, false);
+  assert.deepEqual(zero.batch.cards[0].principal.map((a) => a.kind), ['zero', 'zero']);
+  const stale = positions.projectNftBatch(['1'], runtime.assertResponse('nft-positions', fixture('nft-positions.stale')), new Map());
+  assert.equal(stale.batch.block.timestamp, 800);
+  assert.equal(stale.batch.freshness.status, 'stale');
+});
+
+test('without decimals the range is ticks only and amounts stay raw', () => {
+  const data = runtime.assertResponse('nft-positions', fixture('nft-positions.success'));
+  const { batch } = positions.projectNftBatch(FIXTURE_NFT_IDS, data, tokenMap('token.native', 'token.missing-decimals'));
+  assert.equal(batch.cards[0].range.prices, null);
+  assert.equal(batch.cards[0].principal[1].kind, 'raw');
+  assert.equal(batch.cards[0].principal[0].kind, 'units');
+});
+
+test('a reply that does not answer every ID asked for is refused whole', () => {
+  const data = runtime.assertResponse('nft-positions', fixture('nft-positions.empty'));
+  assert.deepEqual(positions.projectNftBatch(FIXTURE_NFT_IDS, data, new Map()), { ok: false, reason: 'incomplete_reply' });
+});
+
+test('lookup state: only the latest request lands; refresh keeps cards, new IDs drop them, hiding restores', () => {
+  const { lookupReducer: reduce } = positions;
+  const data = runtime.assertResponse('nft-positions', fixture('nft-positions.stale'));
+  const batchA = positions.projectNftBatch(['1'], data, new Map()).batch;
+  let s = { phase: 'idle' };
+  s = reduce(s, { type: 'submit', requestId: 1, ids: ['1'] });
+  s = reduce(s, { type: 'submit', requestId: 2, ids: ['2'] });
+  s = reduce(s, { type: 'submit', requestId: 3, ids: ['1'] });
+  s = reduce(s, { type: 'result', requestId: 1, result: { kind: 'ok', batch: { ...batchA, block: { ...batchA.block, number: 1 } } } });
+  assert.equal(s.phase, 'loading', 'the slow first answer is dropped');
+  s = reduce(s, { type: 'result', requestId: 2, result: { kind: 'failed', failure: { state: 'incomplete_reply' } } });
+  assert.equal(s.phase, 'loading', 'the superseded second answer is dropped');
+  s = reduce(s, { type: 'result', requestId: 3, result: { kind: 'ok', batch: batchA } });
+  assert.equal(s.phase, 'ready');
+  assert.equal(s.batch.block.number, 650);
+
+  let refresh = reduce(s, { type: 'submit', requestId: 4, ids: ['1'] });
+  assert.equal(refresh.retained, batchA, 'a refresh of the same IDs keeps the cards while it runs');
+  refresh = reduce(refresh, { type: 'result', requestId: 4, result: { kind: 'failed', failure: { state: 'local', code: 'screen_budget_exceeded', route: 'nft-positions' } } });
+  assert.equal(refresh.phase, 'failed');
+  assert.equal(refresh.retained, batchA, 'and after it fails, with their own snapshot');
+
+  const other = reduce(s, { type: 'submit', requestId: 5, ids: ['2'] });
+  assert.equal(other.retained, null, 'new IDs drop the earlier cards');
+  assert.deepEqual(reduce(other, { type: 'cancel', requestId: 5 }), s, 'hiding while loading restores what was there');
+  assert.deepEqual(reduce(s, { type: 'clear' }), { phase: 'idle' });
+});
+
+test('a lookup is one NFT read with exactly the typed IDs and no pinned block, then one read per currency', async () => {
+  const source = fixtures({ 'nft-positions': [{ fixture: gateway('nft-positions.success'), expectRequest: { tokenIds: FIXTURE_NFT_IDS } }], token: BASE_TOKENS });
+  const result = await positions.runLookup(source, FIXTURE_NFT_IDS, { signal: live() });
+  assert.equal(result.kind, 'ok');
+  assert.deepEqual(source.requests, [
+    { route: 'nft-positions', request: { tokenIds: FIXTURE_NFT_IDS } },
+    { route: 'token', request: { token: NATIVE } },
+    { route: 'token', request: { token: FIXTURE_TOKEN } },
+  ]);
+  assert.equal(result.batch.tokenProblems, 0);
+});
+
+test('the fixture app answers the package NFT IDs through the real pipeline', async () => {
+  const result = await positions.runLookup(fixtures(APP_SCRIPT), FIXTURE_NFT_IDS, { signal: live() });
+  assert.equal(result.kind, 'ok');
+  assert.equal(result.batch.cards.length, 2);
+});
+
+test('a bad ID fails the whole batch; an incomplete reply shows nothing new', async () => {
+  const batch503 = fixtures({ 'nft-positions': [{ fixture: errorFixture('nft-positions.upstream_unavailable'), mutate: (b) => ({ ...b, error: 'nft_live_position_has_no_owner' }) }] });
+  const failed = await positions.runLookup(batch503, FIXTURE_NFT_IDS, { signal: live() });
+  assert.equal(failed.kind, 'failed');
+  assert.equal(failed.failure.state, 'unavailable');
+  assert.equal(failed.failure.cause.code, 'nft_live_position_has_no_owner');
+  const incomplete = fixtures({ 'nft-positions': [{ fixture: gateway('nft-positions.empty') }], token: BASE_TOKENS });
+  const partial = await positions.runLookup(incomplete, FIXTURE_NFT_IDS, { signal: live() });
+  // A reply that answers fewer ids than were asked for is refused before it is
+  // read: answersRequest wants the exact set back, so an empty batch is a wrong
+  // answer to this request, not a short one.
+  assert.equal(partial.kind, 'failed');
+  assert.deepEqual([partial.failure.state, partial.failure.reason], ['invalid', 'identity_mismatch']);
+  assert.equal(incomplete.requests.filter((r) => r.route === 'token').length, 0, 'no token read for a refused reply');
+});
+
+test('at most 8 token reads per lookup, one per distinct currency, and a new lookup aborts the old one', async () => {
+  const data = fixture('nft-positions.success');
+  const template = data.items[0];
+  data.items = Array.from({ length: 10 }, (_, i) => ({
+    ...structuredClone(template),
+    tokenId: String(i + 1),
+    poolKey: { ...template.poolKey, currency0: `0x${'0'.repeat(38)}${(2 * i + 1).toString(16).padStart(2, '0')}`, currency1: `0x${'0'.repeat(38)}${(2 * i + 2).toString(16).padStart(2, '0')}` },
+  }));
+  data.items[9].poolKey = { ...data.items[0].poolKey };
+  const ids = data.items.map((item) => item.tokenId);
+  const validated = runtime.assertResponse('nft-positions', data);
+  const needed = positions.tokensNeeded(validated);
+  assert.equal(needed.reads.length, 8);
+  assert.equal(needed.skipped, 18 - 8, 'a repeated pool costs nothing');
+  const source = fixtures({ 'nft-positions': [{ fixture: gateway('nft-positions.success'), mutate: () => data }], token: BASE_TOKENS });
+  const result = await positions.runLookup(source, ids, { signal: live() });
+  assert.equal(source.requests.filter((r) => r.route === 'token').length, 8);
+  assert.equal(result.batch.tokenCapped, true);
+
+  const clock = manualClock();
+  const slow = withDelays(fixtures({ 'nft-positions': [{ fixture: gateway('nft-positions.success') }], token: BASE_TOKENS }), (route) => (route === 'token' ? { delayMs: 5000 } : undefined), clock);
+  const controller = new AbortController();
+  const pending = positions.runLookup(slow, FIXTURE_NFT_IDS, { signal: controller.signal, clock });
+  await flush();
+  await flush();
+  controller.abort();
+  assert.deepEqual(await pending, { kind: 'aborted' });
+  assert.equal(slow.log.find((entry) => entry.route === 'token')?.aborted, true, 'the token read was cancelled with the lookup');
+});
+
+// ---------------------------------------------------------------------------
+// Screen reads and slice A's scheduler (G8, T-G10)
+// ---------------------------------------------------------------------------
+
+test('a read gives up after its budget, counting time spent queued, and leaves no timer behind', async () => {
+  const clock = manualClock();
+  const hang = withDelays(fixtures({ token: BASE_TOKENS }), () => ({ hang: true }), clock);
+  const pending = readWithin(hang, 'token', { token: FIXTURE_TOKEN }, { signal: live(), clock, budgetMs: 1000 });
+  await clock.advance(999);
+  await clock.advance(1);
+  assert.deepEqual(await pending, { route: 'token', state: 'local', code: 'screen_budget_exceeded' });
+  assert.equal(SCREEN_BUDGET_MS, 60_000);
+
+  // Queued behind a read that never ends, the second read's budget still runs out.
+  const queue = createScheduledSource(hang, { minIntervalMs: 0, clock });
+  void queue.read('token', { token: NATIVE }, { signal: live() });
+  const queued = readWithin(queue, 'token', { token: FIXTURE_TOKEN }, { signal: live(), clock, budgetMs: 500 });
+  await clock.advance(500);
+  assert.equal((await queued).state, 'local');
+  assert.equal(hang.log.filter((entry) => entry.request.token === FIXTURE_TOKEN).length, 1, 'only the first budget test read started');
+
+  const quick = manualClock();
+  const done = await readWithin(fixtures({ token: BASE_TOKENS }), 'token', { token: FIXTURE_TOKEN }, { signal: live(), clock: quick });
+  assert.equal(done.state, 'ok');
+  assert.equal(quick.pending(), 0, 'the budget timer is cleared once the read settles');
+  const cancelled = new AbortController();
+  cancelled.abort();
+  assert.equal((await readWithin(fixtures({ token: BASE_TOKENS }), 'token', { token: FIXTURE_TOKEN }, { signal: cancelled.signal, clock: quick })).state, 'aborted');
+});
+
+test('the shared queue: 12 distinct pending reads at most, duplicates joined, the last waiter cancels, spaced starts', async () => {
+  const clock = manualClock();
+  const hang = withDelays(fixtures({ token: BASE_TOKENS }), () => ({ hang: true }), clock);
+  const queue = createScheduledSource(hang, { minIntervalMs: 0, clock });
+  const controller = new AbortController();
+  const address = (i) => `0x${(i + 1).toString(16).padStart(40, '0')}`;
+  for (let i = 0; i < 12; i++) void queue.read('token', { token: address(i) }, { signal: controller.signal });
+  let joined = false;
+  void queue.read('token', { token: address(3) }, { signal: controller.signal }).then(() => {
+    joined = true;
+  });
+  const refused = await queue.read('token', { token: address(12) }, { signal: controller.signal });
+  assert.equal(refused.state, 'unavailable');
+  assert.equal(refused.cause.kind, 'queue_full');
+  assert.equal(copy.failureText(refused, 'token').detail, 'Too many reads queued. Try again in a moment.');
+  await flush();
+  assert.equal(joined, false, 'a duplicate joins the queued read instead of counting as another');
+  assert.equal(hang.log.some((entry) => entry.request.token === address(12)), false, 'the refused read never reached the source');
+  controller.abort();
+  await flush();
+
+  // Two waiters on one read: one leaving keeps it, the last leaving cancels it.
+  const slow = withDelays(fixtures({ token: BASE_TOKENS }), () => ({ delayMs: 100 }), clock);
+  const shared = createScheduledSource(slow, { minIntervalMs: 0, clock });
+  const a = new AbortController();
+  const b = new AbortController();
+  const first = shared.read('token', { token: FIXTURE_TOKEN }, { signal: a.signal });
+  const second = shared.read('token', { token: FIXTURE_TOKEN }, { signal: b.signal });
+  a.abort();
+  assert.equal((await first).state, 'aborted');
+  await clock.advance(100);
+  assert.equal((await second).state, 'ok', 'the other waiter still gets the answer');
+  assert.equal(slow.log.length, 1, 'one read for both');
+  const c = new AbortController();
+  const lone = shared.read('token', { token: NATIVE }, { signal: c.signal });
+  await flush();
+  c.abort();
+  assert.equal((await lone).state, 'aborted');
+  await flush();
+  assert.equal(slow.log.at(-1).aborted, true, 'the last waiter leaving cancels the read itself');
+
+  // A read aborted before it starts never reaches the source.
+  const blocked = withDelays(fixtures({ token: BASE_TOKENS }), (_r, request) => (request.token === NATIVE ? { hang: true } : undefined), clock);
+  const serial = createScheduledSource(blocked, { minIntervalMs: 0, clock });
+  const head = new AbortController();
+  const tail = new AbortController();
+  void serial.read('token', { token: NATIVE }, { signal: head.signal });
+  const behind = serial.read('token', { token: FIXTURE_TOKEN }, { signal: tail.signal });
+  tail.abort();
+  assert.equal((await behind).state, 'aborted');
+  head.abort();
+  await flush();
+  await flush();
+  assert.deepEqual(blocked.log.map((entry) => entry.request.token), [NATIVE]);
+
+  // Starts are at least 1.1 s apart.
+  const auto = autoClock();
+  const timed = withDelays(fixtures({ token: BASE_TOKENS }), () => undefined, auto);
+  const paced = createScheduledSource(timed, { minIntervalMs: 1100, clock: auto });
+  await Promise.all([NATIVE, FIXTURE_TOKEN, address(5)].map((token) => paced.read('token', { token }, { signal: live() })));
+  const starts = timed.log.map((entry) => entry.at);
+  for (let i = 1; i < starts.length; i++) assert.ok(starts[i] - starts[i - 1] >= 1100, `starts ${starts}`);
+});
+
+test('a read never makes more attempts than the pipeline policy allows', async () => {
+  // The shipped policy's shape, with no waiting between attempts so the test
+  // does not depend on a clock: what is under test is the count, not the pace.
+  const RETRY_NOW = { maxAttempts: 3, jitterMs: 0, attemptMs: 20_000, totalMs: 60_000 };
+
+  // A 503 is not asked again. R-1 retries one answer and one only, a validated
+  // 429: a service that says it is unavailable is believed the first time.
+  const refused = fixtures({ token: [{ fixture: errorFixture('token.upstream_unavailable') }] }, { policy: RETRY_NOW, clock: autoClock() });
+  const once = await refused.read('token', { token: FIXTURE_TOKEN });
+  assert.equal(once.provenance.attempts, 1, 'an upstream_unavailable is believed the first time');
+
+  // The 429 is the one that is asked again, up to the policy's ceiling.
+  const busy = fixtures({ token: [{ fixture: errorFixture('token.read_capacity_busy'), retryAfter: '0' }] }, { policy: RETRY_NOW, clock: autoClock() });
+  const outcome = await busy.read('token', { token: FIXTURE_TOKEN });
+  assert.equal(outcome.provenance.attempts, RETRY_NOW.maxAttempts, 'a validated 429 is asked again, and never past the ceiling');
+  assert.equal(busy.requests.length, 1, 'one call to the source, however many attempts inside it');
+});
+
+// ---------------------------------------------------------------------------
+// #3 wallet listing and catalogue
+// ---------------------------------------------------------------------------
+
+const WALLET = { wallet: FIXTURE_OWNER, autoDiscover: true };
+const WALLET_MORE = { ...WALLET, cursor: MUTATED_CURSOR };
+const firstPage = { fixture: gateway('wallet-assets.opaque-page'), mutate: withCursor(MUTATED_CURSOR), expectRequest: WALLET };
+const expiredCursor = { fixture: errorFixture('wallet-assets.invalid_or_expired_cursor'), expectRequest: WALLET_MORE };
+
+test('the wallet handle goes back exactly as received and never leaves the pager', async () => {
+  const source = fixtures({ 'wallet-assets': [firstPage, { fixture: gateway('wallet-assets.last-page'), expectRequest: WALLET_MORE }] });
+  const session = walletSession.createWalletSession(source, { wallet: FIXTURE_OWNER, tokens: [] });
+  const one = await session.first();
+  assert.equal(one.status, 'ready');
+  assert.equal(one.canLoadMore, true);
+  const two = await session.more();
+  assert.equal(two.status, 'ready', 'a wrong handle would have been refused with 422');
+  assert.equal(two.view.pages, 2);
+  assert.equal(two.canLoadMore, false, 'the last page ends the list');
+  assert.equal(JSON.stringify(two).includes(MUTATED_CURSOR), false);
+  assert.deepEqual(source.requests.map((r) => r.request), [WALLET, WALLET_MORE]);
+
+  const mixed = '0xABCDEF0123456789abcdef0123456789ABCDEF01';
+  const exact = fixtures({ 'wallet-assets': [{ fixture: gateway('wallet-assets.page'), expectRequest: { wallet: mixed, autoDiscover: true } }] });
+  assert.equal((await walletSession.createWalletSession(exact, { wallet: mixed, tokens: [] }).first()).status, 'ready', 'the wallet goes out exactly as typed');
+  assert.deepEqual(walletSession.walletRequest({ wallet: mixed, tokens: [FIXTURE_TOKEN] }), { wallet: mixed, tokens: [FIXTURE_TOKEN], autoDiscover: true });
+});
+
+test('an expired handle restarts once and marks nothing lost; a second one is left to the person', async () => {
+  const once = walletSession.createWalletSession(fixtures({ 'wallet-assets': [firstPage, expiredCursor] }), { wallet: FIXTURE_OWNER, tokens: [] });
+  await once.first();
+  const restarted = await once.more();
+  assert.equal(restarted.restarted, true);
+  assert.equal(restarted.status, 'ready');
+  const twice = await once.more();
+  assert.equal(twice.status, 'restart_exhausted', 'a second expiry never loops');
+  assert.equal(twice.canLoadMore, false);
+  const fresh = await once.restart();
+  assert.equal(fresh.status, 'ready');
+});
+
+test('a failed page is asked for again with the same handle while it can live, then the list starts over', async () => {
+  let now = 0;
+  const source = fixtures({ 'wallet-assets': [firstPage, { fixture: errorFixture('wallet-assets.upstream_unavailable'), expectRequest: WALLET_MORE }, { fixture: gateway('wallet-assets.last-page'), expectRequest: WALLET_MORE }] });
+  const session = walletSession.createWalletSession(source, { wallet: FIXTURE_OWNER, tokens: [] }, () => now);
+  await session.first();
+  const failed = await session.more();
+  assert.equal(failed.status, 'failed');
+  now = walletSession.HANDLE_RETRY_WINDOW_MS - 1;
+  const again = await session.more();
+  assert.equal(again.status, 'ready');
+  assert.deepEqual(source.requests.map((r) => r.request.cursor ?? null), [null, MUTATED_CURSOR, MUTATED_CURSOR]);
+
+  let later = 0;
+  const stale = fixtures({ 'wallet-assets': [firstPage, { fixture: errorFixture('wallet-assets.upstream_unavailable'), expectRequest: WALLET_MORE }] });
+  const aged = walletSession.createWalletSession(stale, { wallet: FIXTURE_OWNER, tokens: [] }, () => later);
+  await aged.first();
+  await aged.more();
+  later = walletSession.HANDLE_RETRY_WINDOW_MS;
+  assert.equal(aged.snapshot().status, 'handle_expired');
+  const restarted = await aged.more();
+  assert.equal(restarted.restarted, true);
+  assert.equal(stale.requests.at(-1).request.cursor, undefined, 'a handle that may be dead is not sent');
+});
+
+test('wallet: a full cursor table is busy, an empty unconfigured list asks for token addresses, 5 pages at most', async () => {
+  const busy = walletSession.createWalletSession(fixtures({ 'wallet-assets': [firstPage, { fixture: errorFixture('wallet-assets.read_capacity_busy'), expectRequest: WALLET_MORE }] }), { wallet: FIXTURE_OWNER, tokens: [] });
+  await busy.first();
+  assert.equal((await busy.more()).status, 'busy');
+
+  const empty = { fixture: gateway('wallet-assets.fallback'), mutate: (b) => ({ ...b, items: [] }) };
+  assert.equal((await walletSession.createWalletSession(fixtures({ 'wallet-assets': [empty] }), { wallet: FIXTURE_OWNER, tokens: [] }).first()).emptyHint, true);
+  assert.equal((await walletSession.createWalletSession(fixtures({ 'wallet-assets': [empty] }), { wallet: FIXTURE_OWNER, tokens: [FIXTURE_TOKEN] }).first()).emptyHint, false);
+
+  const zero = await walletSession.createWalletSession(fixtures({ 'wallet-assets': [{ fixture: gateway('wallet-assets.zero') }] }), { wallet: FIXTURE_OWNER, tokens: [] }).first();
+  assert.deepEqual(zero.view.rows.map((row) => row.amount.text), ['0', '0']);
+
+  const source = fixtures({ 'wallet-assets': [firstPage, { fixture: gateway('wallet-assets.opaque-page'), mutate: withCursor(MUTATED_CURSOR), expectRequest: WALLET_MORE }] });
+  const capped = walletSession.createWalletSession(source, { wallet: FIXTURE_OWNER, tokens: [] });
+  let snap = await capped.first();
+  for (let i = 0; i < 6; i++) snap = await capped.more();
+  assert.equal(snap.view.pages, walletSession.WALLET_PAGE_CAP);
+  assert.equal(snap.capped, true);
+  assert.equal(snap.canLoadMore, false);
+  assert.equal(source.requests.length, 5, 'no read past the cap');
+
+  const candidates = tokens.candidatesFromWalletView(zero.view);
+  assert.deepEqual(candidates.map((c) => c.kind), ['native', 'erc20_candidate']);
+  const gas = await walletSession.createWalletSession(fixtures({ 'wallet-assets': [{ fixture: gateway('wallet-assets.call-gas-limit') }] }), { wallet: FIXTURE_OWNER, tokens: [] }).first();
+  const rows = tokens.candidatesFromWalletView(gas.view);
+  assert.deepEqual(rows.map((c) => c.why), [null, 'wallet_unavailable'], 'an unreadable balance leaves the others valid');
+});
+
+test('existing pools: neutral order, DexScreener figures attributed, rejected candidates listed, never "no pool exists"', () => {
+  const view = pools.projectPoolsView(runtime.assertResponse('pools', fixture('pools.success')));
+  const [option] = view.options;
+  assert.equal(option.fee, '0.30%');
+  assert.equal(option.kind, 'discovery');
+  assert.deepEqual(option.liquidity, { state: 'attributed', value: '$10.00', zero: false, provider: 'dexscreener', retrievedAt: 1010, cacheAgeSeconds: null });
+  assert.equal(option.volume.value, '$1.2K');
+  // Source and age for the DexScreener figures: the payload's retrieval time, the only age the pools route gives.
+  assert.equal(option.providerNote, 'DexScreener figures retrieved 00:16:50 UTC, 1970-01-01. Provider-reported, not reconciled with chain data.');
+  assert.doesNotMatch(option.providerNote, PROVENANCE_BANNED);
+  assert.equal(option.aprReason, 'reconciled_fee_history_unavailable');
+
+  const rejected = pools.projectPoolsView(runtime.assertResponse('pools', fixture('pools.rejected-candidate')));
+  assert.equal(rejected.options.length, 0);
+  assert.deepEqual(rejected.rejected.map((r) => r.reason), ['provider_currency_mismatch']);
+  for (const name of ['pools.rejected-candidate', 'pools.missing', 'pools.provider-unavailable', 'pools.success', 'pools.catalogue']) {
+    const lines = pools.projectPoolsView(runtime.assertResponse('pools', fixture(name))).coverage.join(' ');
+    assert.doesNotMatch(lines, /no pool exists|there are no pools/i, name);
+  }
+  assert.match(pools.projectPoolsView(runtime.assertResponse('pools', fixture('pools.missing'))).coverage.join(' '), /isn’t proof that none exists/);
+  const unavailable = pools.projectPoolsView(runtime.assertResponse('pools', fixture('pools.provider-unavailable')));
+  assert.equal(unavailable.complete, false);
+  assert.match(unavailable.coverage[0], /unavailable \(network unavailable\)/);
+  const zeroMissing = pools.projectPoolsView(runtime.assertResponse('pools', fixture('pools.zero-and-missing-metrics'))).options[0];
+  assert.equal(zeroMissing.liquidity.state, 'not_reported');
+  assert.equal(zeroMissing.volume.zero, true);
+  assert.equal(pools.projectPoolsView(runtime.assertResponse('pools', fixture('pools.catalogue'))).options[0].catalogue.source, 'initialize_event');
+  const ordered = pools.neutralOrder([
+    { key: '0xb', feePips: 3000 },
+    { key: '0xa', feePips: 8388608 },
+    { key: '0xc', feePips: 500 },
+    { key: '0xa0', feePips: 3000 },
+  ]);
+  assert.deepEqual(ordered.map((o) => o.key), ['0xc', '0xa0', '0xb', '0xa']);
+});
+
+// Answered by @rugged97 on #112: no producer or wire change is needed. The
+// `pairedToken` echo stays nullable, and the binding does not depend on it —
+// each returned pool carries its own key, so the consumer checks every pool's
+// currencies against the token and the optional second asset it asked for
+// (interpret.ts, the 'pools' case, as the 'catalogue' case already did).
+// Without that check he reproduced both a wrong token and a wrong second asset
+// passing the runtime and becoming one selectable option.
+test('a pools reply is bound to the chosen token and second asset: a pool holding neither is a wrong answer, never an option', async () => {
+  const pooled = (entry) => fixtures({ pools: [entry] });
+  // The echo names the asked-for token, but the only pool holds 0x0000… and 0x1111….
+  const echoOnly = { fixture: gateway('pools.success'), mutate: (b) => ((b.selectedToken = OTHER_ADDRESS), b) };
+  const foreign = await readWithin(pooled(echoOnly), 'pools', pools.poolsRequest(OTHER_ADDRESS, null), { signal: live() });
+  assert.deepEqual([foreign.state, foreign.reason], ['invalid', 'identity_mismatch']);
+  assert.equal('data' in foreign, false);
+  // A second asset none of the returned pools holds.
+  const unpaired = await readWithin(pooled({ fixture: gateway('pools.success') }), 'pools', pools.poolsRequest(FIXTURE_TOKEN, OTHER_ADDRESS), { signal: live() });
+  assert.deepEqual([unpaired.state, unpaired.reason], ['invalid', 'identity_mismatch']);
+  // The pair the pool does hold still answers.
+  const paired = await readWithin(pooled({ fixture: gateway('pools.success') }), 'pools', pools.poolsRequest(FIXTURE_TOKEN, NATIVE), { signal: live() });
+  assert.equal(paired.state, 'ok');
+  assert.equal(pools.projectPoolsView(paired.data).options.length, 1);
+  // The per-pool check does not lean on the pairedToken echo, which the fixtures leave null.
+  assert.equal(paired.data.pairedToken, null);
+
+  // Verifying a catalogue candidate goes through the same check.
+  const wrongPair = await catalogue.verifyCandidate(pooled({ fixture: gateway('pools.catalogue') }), FIXTURE_TOKEN, OTHER_ADDRESS, FIXTURE_POOL, { signal: live() });
+  assert.deepEqual([wrongPair.failure?.state, wrongPair.failure?.reason, wrongPair.option], ['invalid', 'identity_mismatch', null]);
+  const wrongToken = await catalogue.verifyCandidate(
+    pooled({ fixture: gateway('pools.catalogue'), mutate: (b) => ((b.selectedToken = OTHER_ADDRESS), b) }),
+    OTHER_ADDRESS,
+    null,
+    FIXTURE_POOL,
+    { signal: live() },
+  );
+  assert.deepEqual([wrongToken.failure?.reason, wrongToken.option], ['identity_mismatch', null]);
+  const rightPair = await catalogue.verifyCandidate(pooled({ fixture: gateway('pools.catalogue') }), FIXTURE_TOKEN, NATIVE, FIXTURE_POOL, { signal: live() });
+  assert.equal(rightPair.option?.key, FIXTURE_POOL);
+});
+
+// ---------------------------------------------------------------------------
+// Practice range on a chosen pool (#3 S-PL7), wallet chain (#3)
+// ---------------------------------------------------------------------------
+
+/** sqrtPriceX96 at each tick, from backend/v4_math.py's sqrt_at_tick (the backend's port of v4-core TickMath). */
+const SQRT_AT_TICK = {
+  0: '79228162514264337593543950336',
+  1: '79232123823359799118286999568',
+  [-1]: '79224201403219477170569942574',
+  60: '79466191966197645195421774833',
+  [-60]: '78990846045029531151608375686',
+  1000: '83290069058676223003182343270',
+  12345: '146870458338965608271414022015',
+  [-54321]: '5240503682681966373147841867',
+  200000: '1744244129640337381386292603617838',
+  [-200000]: '3598751819609688046946419',
+  [-887272]: '4295128739',
+  887272: '1461446703485210103287273052203988822378723970342',
+};
+
+const optionFrom = (name, mutate = (b) => b, readAt = 1_000) => pools.projectPoolsView(runtime.assertResponse('pools', mutate(fixture(name))), readAt).options[0];
+
+test('the pool price check is v4 TickMath exactly: every tick agrees with its own square-root price and no other', () => {
+  for (const [tick, sqrt] of Object.entries(SQRT_AT_TICK)) assert.equal(poolRange.sqrtPriceAtTick(+tick).toString(), sqrt, `tick ${tick}`);
+  assert.equal(poolRange.sqrtPriceAtTick(poolRange.MIN_TICK), poolRange.MIN_SQRT_PRICE);
+  assert.equal(poolRange.sqrtPriceAtTick(poolRange.MAX_TICK), poolRange.MAX_SQRT_PRICE);
+  assert.throws(() => poolRange.sqrtPriceAtTick(887273), RangeError);
+  assert.throws(() => poolRange.sqrtPriceAtTick(0.5), RangeError);
+  const at = (t) => poolRange.sqrtPriceAtTick(t);
+  assert.equal(poolRange.tickAgrees(0, at(0)), true);
+  assert.equal(poolRange.tickAgrees(0, at(1) - 1n), true, 'anywhere inside the tick');
+  assert.equal(poolRange.tickAgrees(0, at(1)), true, 'on the upper boundary, where a swap going down leaves the tick one below');
+  assert.equal(poolRange.tickAgrees(0, at(1) + 1n), false);
+  assert.equal(poolRange.tickAgrees(1, at(0)), false);
+  assert.equal(poolRange.tickAgrees(5000, at(0)), false);
+  assert.equal(poolRange.tickAgrees(0, 0n), false);
+  assert.equal(poolRange.tickAgrees(poolRange.MAX_TICK, poolRange.MAX_SQRT_PRICE), false, 'no pool sits at MAX_SQRT_PRICE');
+  assert.equal(poolRange.tickAgrees(poolRange.MIN_TICK, poolRange.MIN_SQRT_PRICE), true);
+});
+
+test('a chosen pool’s price comes only from its read tick, square-root price and decimals; anything short of that is unavailable', () => {
+  const option = optionFrom('pools.success');
+  assert.deepEqual([option.tick, option.sqrtPriceX96, option.readAt, option.tickSpacing], [0, '79228162514264337593543950336', 1_000, 60]);
+  const price = poolRange.poolPrice(option, 1_000);
+  assert.equal(price.state, 'usable');
+  // ETH (18 decimals) is currency0 and TOKEN (6) currency1: 10^12 TOKEN per ETH at tick 0, from the helper the NFT cards use.
+  assert.equal(price.text, '≈1,000,000,000,000');
+  assert.equal(price.text, positions.tickPriceText(0, 18, 6));
+  assert.deepEqual([price.block, price.tick, price.base.symbol, price.quote.symbol, price.partial, price.stale], [700, 0, 'ETH', 'TOKEN', false, false]);
+
+  const problem = (o) => {
+    const p = poolRange.poolPrice(o, 1_000);
+    return p.state === 'unavailable' ? p.problem : `usable ${p.text}`;
+  };
+  assert.equal(problem(optionFrom('pools.partial-metadata')), 'decimals_unknown', 'TOKEN’s decimals could not be read');
+  assert.equal(problem({ ...option, tick: 5000 }), 'tick_mismatch');
+  assert.equal(problem({ ...option, sqrtPriceX96: '0' }), 'not_initialized');
+  assert.equal(problem({ ...option, sqrtPriceX96: 'nope' }), 'tick_mismatch');
+  assert.equal(problem({ ...option, tick: 887271, sqrtPriceX96: poolRange.sqrtPriceAtTick(887271).toString() }), 'beyond_display');
+
+  const partial = poolRange.poolPrice(
+    optionFrom('pools.success', (b) => {
+      b.pools[0].tokenMetadataStatus = 'partial';
+      Object.assign(b.tokens[0], { symbol: null, readStatus: 'partial', metadataIssues: { symbol: 'invalid_symbol_text' } });
+      return b;
+    }),
+    1_000,
+  );
+  assert.deepEqual([partial.state, partial.partial, partial.text, partial.quote.symbol], ['usable', true, '≈1,000,000,000,000', null]);
+
+  // Stale is time since the reply arrived on this page, never the payload's own clock.
+  assert.equal(poolRange.poolPrice(option, 1_000 + poolRange.PRICE_STALE_MS - 1).stale, false);
+  assert.equal(poolRange.poolPrice(option, 1_000 + poolRange.PRICE_STALE_MS).stale, true);
+  assert.equal(poolRange.poolPrice({ ...option, readAt: null }, 1e15).stale, false);
+  assert.equal(poolRange.PRICE_STALE_MS, 300_000);
+});
+
+test('the checked width is derived from the range and the price now: a preset only while the range is exactly it, otherwise Custom', () => {
+  const spacing = 60;
+  const closer = poolRange.presetRange(0, spacing, 'standard');
+  const wider = poolRange.presetRange(0, spacing, 'wide');
+  assert.equal(poolRange.rangeMode(closer, 0, spacing), 'standard');
+  assert.equal(poolRange.rangeMode(wider, 0, spacing), 'wide', 'a kept Wider range reopens as Wider, not the default');
+  assert.equal(poolRange.rangeMode(poolRange.stepBound(wider, 'upper', 1, spacing), 0, spacing), 'custom', 'a stepped range reopens as Custom');
+  assert.equal(poolRange.rangeMode(poolRange.stepBound(closer, 'lower', -1, spacing), 0, spacing, 'standard'), 'custom', 'a remembered pick never outlives the range');
+  // The price read again moved one tick spacing: the kept range is no longer 0.7× to 1.5× of it.
+  assert.equal(poolRange.rangeMode(closer, 60, spacing, 'standard'), 'custom');
+  assert.equal(poolRange.rangeMode(poolRange.presetRange(60, spacing, 'standard'), 60, spacing), 'standard');
+  // An explicit "Custom" stays custom; a preferred preset that doesn't match gives way.
+  assert.equal(poolRange.rangeMode(closer, 0, spacing, 'custom'), 'custom');
+  assert.equal(poolRange.rangeMode(closer, 0, spacing, 'wide'), 'standard');
+  // On a spacing so wide the two presets coincide, the pick breaks the tie.
+  const huge = 32767;
+  assert.deepEqual(poolRange.presetRange(0, huge, 'standard'), poolRange.presetRange(0, huge, 'wide'));
+  assert.equal(poolRange.rangeMode(poolRange.presetRange(0, huge, 'wide'), 0, huge), 'standard');
+  assert.equal(poolRange.rangeMode(poolRange.presetRange(0, huge, 'wide'), 0, huge, 'wide'), 'wide');
+});
+
+test('range presets sit on the tick spacing, inside v4’s ticks, around the pool’s tick, and bounds never cross', () => {
+  const spacing = 60;
+  const closer = poolRange.presetRange(0, spacing, 'standard');
+  const wider = poolRange.presetRange(0, spacing, 'wide');
+  // 0.7× to 1.5× and 0.5× to 2× of the pool price (ranges.ts RANGES), rounded outward to multiples of 60.
+  assert.deepEqual(closer, { lower: -3600, upper: 4080 });
+  assert.deepEqual(wider, { lower: -6960, upper: 6960 });
+  for (const range of [closer, wider, poolRange.presetRange(12345, 200, 'standard'), poolRange.presetRange(-887000, 10, 'wide'), poolRange.presetRange(887250, 60, 'standard')]) {
+    assert.ok(Number.isInteger(range.lower) && Number.isInteger(range.upper), JSON.stringify(range));
+    assert.ok(range.lower < range.upper, JSON.stringify(range));
+    for (const t of [range.lower, range.upper]) assert.ok(t >= poolRange.MIN_TICK && t <= poolRange.MAX_TICK, `${t} inside v4 ticks`);
+  }
+  assert.equal(poolRange.presetRange(12345, 200, 'standard').lower % 200, 0);
+  assert.equal(poolRange.rangePosition(poolRange.presetRange(12345, 200, 'standard'), 12345), 'inside');
+  assert.deepEqual(poolRange.usableTicks(60), { min: -887220, max: 887220 });
+  assert.equal(poolRange.presetRange(887250, 60, 'standard').upper, 887220);
+
+  assert.deepEqual(poolRange.stepBound(closer, 'upper', 1, spacing), { lower: -3600, upper: 4140 });
+  assert.deepEqual(poolRange.stepBound(closer, 'lower', -2, spacing), { lower: -3720, upper: 4080 });
+  assert.deepEqual(poolRange.moveBound(closer, 'lower', 9000, spacing), { lower: 4020, upper: 4080 }, 'the lower bound stops one spacing below the upper');
+  assert.deepEqual(poolRange.moveBound(closer, 'upper', -9000, spacing), { lower: -3600, upper: -3540 });
+  assert.deepEqual(poolRange.moveBound(closer, 'upper', 131, spacing), { lower: -3600, upper: 120 }, 'snapped to the nearest multiple of the spacing');
+  assert.deepEqual(poolRange.moveBound(closer, 'lower', -1e7, spacing), { lower: -887220, upper: 4080 });
+  assert.ok(Object.is(poolRange.moveBound({ lower: -120, upper: 60 }, 'lower', -20, spacing).lower, 0), 'never -0');
+  assert.deepEqual(poolRange.normaliseRange({ lower: 887220, upper: 887220 }, spacing), { lower: 887160, upper: 887220 });
+
+  assert.deepEqual(poolRange.sliderWindow(0, spacing, closer), { min: -13920, max: 13920 }, 'a quarter to four times the pool price');
+  assert.deepEqual(poolRange.sliderWindow(0, spacing, { lower: -20000, upper: 60 }), { min: -20000, max: 13920 }, 'widened to hold the range');
+
+  assert.equal(poolRange.rangePosition(closer, 0), 'inside');
+  assert.equal(poolRange.rangePosition(closer, -3601), 'below');
+  assert.equal(poolRange.rangePosition(closer, -3600), 'inside');
+  assert.equal(poolRange.rangePosition(closer, 4080), 'above', 'v4: the upper tick is outside');
+
+  assert.equal(poolRange.fromPoolPrice(0, 0), '0%');
+  assert.equal(poolRange.fromPoolPrice(4080, 0), '+50.4%');
+  assert.equal(poolRange.fromPoolPrice(-3600, 0), '−30.2%');
+  assert.equal(poolRange.fromPoolPrice(13920, 0), '+302%');
+  const price = poolRange.poolPrice(optionFrom('pools.success'), 1_000);
+  assert.equal(poolRange.boundPrice(-3600, price), positions.tickPriceText(-3600, 18, 6));
+  assert.equal(poolRange.boundPrice(887220, price), null, 'beyond display is said in words, never an exponent');
+});
+
+test('wallet candidates: only a reply about Robinhood Chain (4663) is used, and it is public data, not ownership', async () => {
+  const otherChain = { fixture: gateway('wallet-assets.opaque-page'), mutate: (b) => ((b.chainId = 1), b) };
+  const refused = await walletSession.createWalletSession(fixtures({ 'wallet-assets': [otherChain] }), { wallet: FIXTURE_OWNER, tokens: [] }).first(live());
+  assert.equal(refused.failure?.state, 'invalid');
+  assert.deepEqual([refused.view.rows.length, refused.canLoadMore], [0, false], 'nothing from another chain is listed');
+  const listed = await walletSession.createWalletSession(fixtures({ 'wallet-assets': [{ fixture: gateway('wallet-assets.opaque-page') }] }), { wallet: FIXTURE_OWNER, tokens: [] }).first(live());
+  assert.equal(listed.failure, null);
+  assert.ok(listed.view.rows.length > 0);
+  assert.match(copy.COPY.picker.walletPublicNote, /public chain data on Robinhood Chain \(4663\)/);
+  assert.match(copy.COPY.picker.walletPublicNote, /isn’t proof that anyone here owns or controls it/);
+  assert.doesNotMatch(copy.COPY.picker.walletPublicNote, /\byour\b/i);
+  for (const text of Object.values(copy.COPY.range).flatMap((v) => (typeof v === 'string' ? [v] : Object.values(v)))) {
+    assert.doesNotMatch(text, /\byour\b|recommend|best|guarantee/i, text);
+  }
+  assert.ok(copy.allCopyStrings().includes(copy.COPY.range.note), 'the range words are in the default-bundle check');
+});
+
+test('the catalogue pages, restarts once on 409, stops at 5 pages, and only a verified pool becomes an option', async () => {
+  const CATALOGUE = { token: FIXTURE_TOKEN, limit: 20 };
+  const NEXT = { ...CATALOGUE, afterPoolId: FIXTURE_POOL, revision: 2 };
+  const withNext = { fixture: gateway('catalogue.success'), mutate: withNextCataloguePage, expectRequest: CATALOGUE };
+  const paged = catalogue.createCatalogueSession(fixtures({ catalogue: [withNext, { fixture: gateway('catalogue.empty'), expectRequest: NEXT }] }), FIXTURE_TOKEN, null);
+  await paged.first();
+  const two = await paged.more();
+  assert.equal(two.view.pages, 2);
+  assert.equal(two.canLoadMore, false);
+
+  const changed = catalogue.createCatalogueSession(fixtures({ catalogue: [withNext, { fixture: errorFixture('pools.catalogue_revision_changed'), expectRequest: NEXT }] }), FIXTURE_TOKEN, null);
+  await changed.first();
+  assert.equal((await changed.more()).view.restarted, true);
+
+  const source = fixtures({ catalogue: [withNext, { fixture: gateway('catalogue.success'), mutate: withNextCataloguePage, expectRequest: NEXT }] });
+  const capped = catalogue.createCatalogueSession(source, FIXTURE_TOKEN, null);
+  let snap = await capped.first();
+  for (let i = 0; i < 6; i++) snap = await capped.more();
+  assert.equal(snap.view.pages, catalogue.CATALOGUE_PAGE_CAP);
+  assert.equal(snap.capped, true);
+  assert.equal(source.requests.length, 5);
+
+  const request = catalogue.verifyRequest(FIXTURE_TOKEN, NATIVE, FIXTURE_POOL);
+  assert.equal(runtime.validateRequest('pools', request), true);
+  assert.equal(runtime.validateRequest('catalogue', catalogue.catalogueRequest(FIXTURE_TOKEN, NATIVE)), true);
+  const VERIFY = { token: FIXTURE_TOKEN, maxPools: 1, poolIds: [FIXTURE_POOL] };
+  const verified = await catalogue.verifyCandidate(fixtures({ pools: [{ fixture: gateway('pools.catalogue'), expectRequest: VERIFY }] }), FIXTURE_TOKEN, null, FIXTURE_POOL, { signal: live() });
+  assert.equal(verified.option?.kind, 'catalogue');
+  const missing = await catalogue.verifyCandidate(fixtures({ pools: [{ fixture: gateway('pools.missing'), expectRequest: VERIFY }] }), FIXTURE_TOKEN, null, FIXTURE_POOL, { signal: live() });
+  assert.deepEqual([missing.failure, missing.option], [null, null]);
+  const restarted = await catalogue.verifyCandidate(fixtures({ pools: [{ fixture: errorFixture('pools.catalogue_revision_changed') }, { fixture: gateway('pools.catalogue') }] }), FIXTURE_TOKEN, null, FIXTURE_POOL, { signal: live() });
+  assert.equal(restarted.restarted, true);
+  assert.equal(restarted.option?.key, FIXTURE_POOL);
+});
+
+test('the same IDs again while they are read join that read; only different IDs cancel it and ask again', async () => {
+  const loading = positions.lookupReducer({ phase: 'idle' }, { type: 'submit', requestId: 1, ids: ['1', BIG] });
+  assert.equal(loading.phase, 'loading');
+  assert.equal(positions.joinsRunningLookup(loading, ['1', BIG]), true);
+  assert.equal(positions.joinsRunningLookup(loading, [BIG, '1']), true, 'the same set, typed in another order, is the same question');
+  assert.equal(positions.joinsRunningLookup(loading, ['1']), false);
+  assert.equal(positions.joinsRunningLookup({ phase: 'idle' }, ['1', BIG]), false);
+
+  // The section's own runner (ChainPositionsSection holds one and calls nothing else),
+  // against the real scheduler: a second click on the same IDs joins the read in flight;
+  // different IDs cancel it and ask again.
+  const clicks = async (first, second) => {
+    const sent = [];
+    const inner = {
+      transport: 'fixture',
+      read: (route, request, options) => {
+        sent.push({ route, signal: options?.signal });
+        return new Promise((done) => setTimeout(() => done({ route, state: 'unavailable', reason: 'test', provenance: { transport: 'fixture', contract: null, receivedAt: 0, attempts: 1 } }), 60));
+      },
+    };
+    const scheduled = createScheduledSource(inner, { minIntervalMs: 0 });
+    let state = { phase: 'idle' };
+    const runner = positions.createLookupRunner(scheduled, (event) => {
+      state = positions.lookupReducer(state, event);
+    });
+    const started = [runner.start(state, first)];
+    await new Promise((done) => setTimeout(done, 10));
+    started.push(runner.start(state, second));
+    while (state.phase === 'loading') await new Promise((done) => setTimeout(done, 10));
+    const nft = sent.filter((r) => r.route === 'nft-positions');
+    return { started, reads: nft.length, firstCancelled: nft[0].signal?.aborted === true, ids: state.ids };
+  };
+  assert.deepEqual(await clicks(['1'], ['1']), { started: [true, false], reads: 1, firstCancelled: false, ids: ['1'] }, 'joined: one read, never cancelled');
+  assert.deepEqual(await clicks(['1', BIG], [BIG, '1']), { started: [true, false], reads: 1, firstCancelled: false, ids: ['1', BIG] }, 'the same set in another order is joined too');
+  assert.deepEqual(await clicks(['1'], ['2']), { started: [true, true], reads: 2, firstCancelled: true, ids: ['2'] }, 'different IDs cancel and ask again');
+
+  // Cancelling (hiding the section, Clear) aborts the read in flight and nothing lands.
+  let state = { phase: 'idle' };
+  const seen = [];
+  const hanging = { transport: 'fixture', read: (route, request, { signal }) => new Promise((done) => signal.addEventListener('abort', () => done({ route, state: 'aborted', provenance: { transport: 'fixture', contract: null, receivedAt: 0, attempts: 0 } }))) };
+  const runner = positions.createLookupRunner(hanging, (event) => {
+    seen.push(event.type);
+    state = positions.lookupReducer(state, event);
+  });
+  runner.start(state, ['1']);
+  runner.cancel();
+  await flush();
+  await flush();
+  assert.deepEqual(seen, ['submit', 'result']);
+  assert.equal(state.phase, 'idle', 'an aborted lookup returns to what was there before');
+});
+
+test('the Top pools reads have the same 60 s budget as the screens, worded as a read stopped, never as retries used up', async () => {
+  const clock = manualClock();
+  const log = [];
+  const hanging = {
+    transport: 'fixture',
+    read: (route, request, { signal }) => {
+      log.push(route);
+      return new Promise((done) => signal.addEventListener('abort', () => done({ route, state: 'aborted', provenance: { transport: 'fixture', contract: null, receivedAt: 0, attempts: 0 } })));
+    },
+  };
+  const budgeted = withReadBudget(hanging, { clock });
+  const pending = budgeted.read('pool-market', { poolId: FIXTURE_POOL }, { signal: live() });
+  await clock.advance(SCREEN_BUDGET_MS - 1);
+  let settled = false;
+  void pending.then(() => (settled = true));
+  await flush();
+  assert.equal(settled, false, 'still waiting 1 ms before the budget');
+  await clock.advance(1);
+  const stopped = await pending;
+  assert.deepEqual([stopped.state, stopped.cause, stopped.retryable], ['unavailable', { kind: 'read_deadline', limit: 'read' }, true]);
+  assert.equal(describeFailure(stopped).detail, 'Stopped after 60 s, time spent queued included.', 'the Top pools wording, which ships in slice A’s describe module');
+  // The screens say what slice A already says: one event, one description.
+  assert.equal(copy.failureText(stopped, 'pools').detail, 'Stopped after 60 s, time spent queued included.');
+
+  // The caller's own cancel stays a silent abort, and a read inside the budget passes through untouched.
+  const cancelled = new AbortController();
+  const aborted = withReadBudget(hanging, { clock }).read('pool-market', { poolId: FIXTURE_POOL }, { signal: cancelled.signal });
+  cancelled.abort();
+  assert.equal((await aborted).state, 'aborted');
+  const provider = MARKET_CASES.find((c) => c.id === 'provider').script;
+  // The lean request the table sends: the scenario answers that one and no other.
+  const ok = await withReadBudget(fixtures(provider)).read('pool-market', { poolId: FIXTURE_POOL, includePriceHistory: false });
+  assert.equal(ok.state, 'ok');
+  assert.equal(clock.pending(), 0, 'no budget timer outlives its read');
+
+  // What the app builds (buildMode.ts and the lab both call createAppMarketsProvider): the budget applies.
+  const markets = createAppMarketsProvider({ source: hanging, poolIds: [FIXTURE_POOL], kind: 'fixture', clock });
+  markets.ensure();
+  await flush();
+  assert.equal(markets.getSnapshot().phase, 'loading');
+  await clock.advance(SCREEN_BUDGET_MS);
+  await flush();
+  const snap = markets.getSnapshot();
+  assert.equal(snap.phase, 'failed');
+  assert.deepEqual(snap.failure.cause, { kind: 'read_deadline', limit: 'read' });
+});
+
+// ---------------------------------------------------------------------------
+// #13 attributed figures
+// ---------------------------------------------------------------------------
+
+
+test('GeckoTerminal figures keep every envelope state apart, dated only by the payload', () => {
+  const market = (name) => runtime.assertResponse('pool-market', fixture(`pool-market.${name}`)).market;
+  assert.deepEqual(figures.figureFromMarket(market('success'), 'liquidity'), { state: 'attributed', value: '$12.3K', zero: false, provider: 'geckoterminal', retrievedAt: market('success').data.retrievedAt, cacheAgeSeconds: 0 });
+  const stale = figures.figureFromMarket(market('stale'), 'liquidity');
+  assert.equal(stale.state, 'attributed_stale', 'a stale envelope with a reason is still a retained observation');
+  assert.equal(stale.refreshReason, 'provider_unavailable');
+  assert.deepEqual(figures.figureFromMarket(market('expired'), 'liquidity'), { state: 'unavailable', provider: 'geckoterminal', reason: market('expired').reason }, 'a cache age on discarded data is not an observation');
+  assert.equal(figures.figureFromMarket(market('rejected-currencies'), 'liquidity').state, 'rejected');
+  assert.equal(figures.figureFromMarket(market('provider-timeout'), 'volume').state, 'unavailable');
+  assert.equal(figures.figureFromMarket(market('missing'), 'liquidity').state, 'not_reported');
+  const zero = figures.figureFromMarket(market('zero'), 'volume');
+  assert.deepEqual([zero.value, zero.zero], ['$0.00', true]);
+  assert.equal(figures.utcTime(1010), '00:16:50 UTC, 1970-01-01');
+});
+
+test('provenance names the provider and the retrieval, says not reconciled, never claims current, and ignores the client clock', () => {
+  const states = [
+    { state: 'attributed', value: '$1', zero: false, provider: 'geckoterminal', retrievedAt: 1010, cacheAgeSeconds: 0 },
+    { state: 'attributed_stale', value: '$1', zero: false, provider: 'geckoterminal', retrievedAt: 1010, cacheAgeSeconds: 200, refreshReason: 'provider_unavailable' },
+    { state: 'not_reported', provider: 'dexscreener' },
+    { state: 'unavailable', provider: 'geckoterminal', reason: 'provider_rate_limited' },
+    { state: 'rejected', provider: 'geckoterminal', reason: 'provider_currency_or_pool_mismatch' },
+  ];
+  const realNow = Date.now;
+  const render = () => states.map((s) => figures.provenanceText(s));
+  try {
+    Date.now = () => 0;
+    const in1970 = render();
+    Date.now = () => Date.UTC(2026, 8, 11);
+    assert.deepEqual(render(), in1970, 'the same reply reads the same whatever the client clock says');
+  } finally {
+    Date.now = realNow;
+  }
+  for (const [i, { short, long }] of render().entries()) {
+    const name = states[i].provider === 'geckoterminal' ? 'GeckoTerminal' : 'DexScreener';
+    assert.ok(short.includes(name) && long.includes(name), `state ${states[i].state} names ${name}`);
+    assert.match(long, /retrieved/);
+    assert.match(long, /not reconciled/);
+    assert.doesNotMatch(`${short} ${long}`, PROVENANCE_BANNED);
+  }
+});
+
+test('pool age comes from verified activity data only, and never an APR or USD figure from it', () => {
+  const partial = runtime.assertResponse('pool-activity', fixture('pool-activity.partial'));
+  const realNow = Date.now;
+  let facts;
+  try {
+    Date.now = () => 0;
+    facts = figures.activityFacts(partial);
+    Date.now = () => Date.UTC(2026, 8, 11);
+    assert.deepEqual(figures.activityFacts(partial), facts);
+  } finally {
+    Date.now = realNow;
+  }
+  assert.equal(facts.window, 'young');
+  assert.deepEqual(facts.age, { seconds: 19, basis: 'observedSeconds' });
+  assert.equal(19, partial.snapshot.timestamp - partial.coverage.initializedAt);
+  assert.equal(Object.keys(facts).some((key) => /apr|usd/i.test(key)), false);
+  const covered = figures.activityFacts(runtime.assertResponse('pool-activity', fixture('pool-activity.success')));
+  assert.equal(covered.window, 'covered');
+  assert.equal(covered.age, null);
+  assert.equal(figures.activityFacts(runtime.assertResponse('pool-activity', fixture('pool-activity.stale'))).stale, true);
+  assert.equal(figures.activityFacts(runtime.assertResponse('pool-activity', fixture('pool-activity.unavailable'))).feeAccounting, 'unavailable');
+});
+
+// OPEN QUESTION for @rugged97, same reason: this case needs the market
+// scenarios 'qualified', 'reference', 'partial' and 'metrics-invalid', which
+// all came from pool-metrics. F3 dropped that read from the table's path
+// (marketsProvider.ts: "No pool-metrics read"), so no row can carry a
+// qualified metric and the scenarios no longer exist. Skipped until pool-metrics
+// returns to this path or the case is rewritten to today's contract.
+test.skip('only usableAsCurrent24h makes a row qualified; provider-derived turnover waits on the open question', async () => {
+  const row = async (id, script) => (await loadSelectedPools(fixtures(script ?? MARKET_CASES.find((c) => c.id === id).script), [FIXTURE_POOL])).rows[0];
+  assert.equal(figures.rowQualified(await row('qualified')), true);
+  for (const id of ['provider', 'reference', 'partial', 'stale', 'metrics-invalid']) assert.equal(figures.rowQualified(await row(id)), false, id);
+  const provider = await row('provider');
+  assert.deepEqual(figures.turnoverCell(provider), { kind: 'unavailable', reason: 'derived_figure_pending_q8' });
+  assert.equal(figures.turnoverCell(await row('stale')).kind, 'unavailable');
+  const qualified = await row('qualified');
+  assert.deepEqual(figures.turnoverCell(qualified), markets.turnover(qualified), 'qualified operands keep the existing ratio');
+  assert.equal(figures.metricNoteCode(provider.feeAprPercent), provider.feeAprPercent.reason);
+  assert.equal(figures.figureNoteId('provider_lp_fee_history_unavailable'), 'figure-note-provider_lp_fee_history_unavailable');
+  assert.equal(copy.screenReason('derived_figure_pending_q8'), 'volume over TVL from provider figures waits on a decision about derived figures');
+});
+
+test('the landing reads a bounded list: no placeholder pool, at most 4 reads a pool', async () => {
+  for (const mode of ['fixture', 'bridge']) {
+    const ids = marketList.marketPoolIds(mode);
+    assert.ok(ids.length >= 1 && ids.length <= marketList.MARKET_POOL_BUDGET, mode);
+    for (const id of ids) assert.equal(marketList.PLACEHOLDER_POOL_IDS.includes(id), false);
+  }
+  const source = fixtures(APP_SCRIPT);
+  const loaded = await loadSelectedPools(source, marketList.marketPoolIds('fixture'));
+  assert.equal(loaded.rows.length, 1);
+  assert.ok(source.requests.length <= marketList.READS_PER_POOL * loaded.rows.length, `${source.requests.length} reads`);
+  assert.deepEqual(source.requests.map((r) => r.route), ['pool-market', 'token', 'token']);
+  // Explicitly false, not absent: the table draws no chart, and saying so lets
+  // answersRequest refuse a reply that carries history nobody asked for.
+  assert.equal(source.requests[0].request.includePriceHistory, false, 'table rows ask for no price history, and say so');
+});
+
+// ---------------------------------------------------------------------------
+// Words and guards
+// ---------------------------------------------------------------------------
+
+test('every fixed sentence is listed for the default-bundle check, and chain cards never say "your"', () => {
+  const all = copy.allCopyStrings();
+  assert.ok(all.length > 40, `${all.length} sentences`);
+  assert.equal(new Set(all).size, all.length);
+  for (const sentence of all) assert.ok(sentence.length >= 12, sentence);
+  for (const wanted of [copy.COPY.lookup.heading, copy.COPY.lookup.intro, copy.COPY.card.owner, copy.COPY.picker.tokenTitle, copy.COPY.figures.providerDetail]) assert.ok(all.includes(wanted), wanted);
+  for (const sentence of [...Object.values(copy.COPY.lookup), ...Object.values(copy.COPY.card)]) assert.doesNotMatch(sentence, /\byour\b|\byou own\b/i, sentence);
+  assert.match(copy.COPY.card.owner, /public data/);
+  assert.match(copy.COPY.card.ownerNote, /proves nothing/);
+  assert.match(copy.COPY.picker.walletPill, /not your wallet/);
+});
+
+test('every read state has its own words, and the beta gate never offers a wallet sign-in', () => {
+  const provenance = { transport: 'fixture', contract: null, receivedAt: 0, attempts: 3 };
+  const states = [
+    { state: 'gate_required' },
+    { state: 'gate_unavailable' },
+    { state: 'access_required' },
+    { state: 'incompatible', reason: 'contract_version_not_accepted' },
+    { state: 'invalid', reason: 'response_contract' },
+    { state: 'invalid', reason: 'identity_mismatch' },
+    { state: 'unavailable', cause: { kind: 'producer', code: 'upstream_unavailable', status: 503 }, retryable: true },
+    { state: 'unavailable', cause: { kind: 'network' }, retryable: false },
+    { state: 'unavailable', cause: { kind: 'edge', status: 502 }, retryable: false },
+    { state: 'unavailable', cause: { kind: 'read_deadline', limit: 'read' }, retryable: true },
+    { state: 'unavailable', cause: { kind: 'queue_full' }, retryable: true },
+    { state: 'busy', retryAfterSeconds: 7 },
+    { state: 'restart_required', code: 'invalid_or_expired_cursor' },
+    { state: 'request_rejected', code: 'invalid_request', status: 422 },
+    { state: 'disabled', reason: 'route_not_enabled' },
+    { state: 'disabled', reason: 'bridge_data_mode_disabled' },
+    { state: 'local', code: 'screen_budget_exceeded' },
+    { state: 'incomplete_reply' },
+  ];
+  const seen = new Set();
+  for (const s of states) {
+    const t = copy.failureText({ route: 'nft-positions', provenance, ...s }, 'positions');
+    assert.ok(t.title && t.detail, JSON.stringify(s));
+    seen.add(`${t.title}|${t.detail}`);
+    assert.doesNotMatch(`${t.title} ${t.detail}`, /connect|wallet sign|sign in with/i);
+  }
+  // An incompatible header and a reply that fails validation both mean the same thing to a person: this build needs an update.
+  const update = (s) => copy.failureText({ route: 'nft-positions', provenance, ...s }, 'positions');
+  assert.deepEqual(update(states[3]), { ...update(states[4]), code: 'incompatible' });
+  assert.equal(seen.size, states.length - 1, 'every other pair of states reads differently');
+  assert.match(copy.failureText({ route: 'nft-positions', provenance, state: 'gate_required' }, 'positions').detail, /Reload the page to sign in to the beta/);
+  assert.equal(copy.failureText({ route: 'nft-positions', provenance, state: 'disabled', reason: 'route_not_enabled' }, 'positions').detail, 'Position reads aren’t enabled on this server.');
+  assert.equal(copy.failureText({ route: 'nft-positions', provenance, state: 'aborted' }, 'positions').title, '', 'a cancelled read says nothing');
+});
+
+const SCREEN_DIRS = [join(SRC, 'lib/read/screens'), join(SRC, 'components/read/screens')];
+const BANNED_IDENTIFIERS = new Set([
+  'sendTransaction', 'writeContract', 'sendCalls', 'approve', 'signMessage', 'signTypedData', 'ethereum', 'fetch', 'XMLHttpRequest', 'WebSocket',
+  'EventSource', 'sendBeacon', 'innerHTML', 'outerHTML', 'dangerouslySetInnerHTML', 'localStorage', 'sessionStorage', 'indexedDB', 'caches',
+  'BroadcastChannel', 'Number', 'parseFloat', 'parseInt', 'sourceUrl', 'eval',
+]);
+const BANNED_IMPORTS = /core\/practice|core\/local-workspace|session-v1|deposit-v1|onboarding-v1/;
+const BANNED_STRINGS = /https?:\/\/|eth_[a-z]|personal_sign/i;
+
+/** Every violation in one source file, found on its syntax tree so comments never count. */
+function violations(source, file = 'inline.tsx') {
+  const tree = ts.createSourceFile(file, source, ts.ScriptTarget.Latest, true, file.endsWith('.tsx') ? ts.ScriptKind.TSX : ts.ScriptKind.TS);
+  const found = [];
+  const visit = (node) => {
+    if (ts.isIdentifier(node) && BANNED_IDENTIFIERS.has(node.text)) found.push(`identifier ${node.text}`);
+    if (ts.isPropertyAccessExpression(node) && node.expression.getText() === 'window' && node.name.text === 'open') found.push('window.open');
+    if ((ts.isJsxOpeningElement(node) || ts.isJsxSelfClosingElement(node)) && node.tagName.getText() === 'a') found.push('<a> element');
+    if (ts.isJsxAttribute(node)) {
+      const name = node.name.getText();
+      if (name === 'href' || name === 'src') found.push(`${name} attribute`);
+      if (name === 'key' && node.initializer && /symbol/i.test(node.initializer.getText())) found.push('key built from a symbol');
+    }
+    if ((ts.isStringLiteral(node) || ts.isNoSubstitutionTemplateLiteral(node) || ts.isTemplateHead(node) || ts.isTemplateMiddle(node) || ts.isTemplateTail(node) || ts.isJsxText(node)) && BANNED_STRINGS.test(node.text)) {
+      found.push(`string ${node.text.slice(0, 40)}`);
+    }
+    if (ts.isImportDeclaration(node) && BANNED_IMPORTS.test(node.moduleSpecifier.text)) found.push(`import ${node.moduleSpecifier.text}`);
+    ts.forEachChild(node, visit);
+  };
+  visit(tree);
+  return found;
+}
+
+function sourceFiles(dir) {
+  return readdirSync(dir).flatMap((name) => {
+    const path = join(dir, name);
+    return statSync(path).isDirectory() ? sourceFiles(path) : /\.tsx?$/.test(name) ? [path] : [];
+  });
+}
+
+test('the read screens hold no signing, value transfer, network, storage, link, markup or practice-workspace path', () => {
+  // The guard itself catches what it is for, and ignores comments.
+  assert.deepEqual(violations('// fetch approve localStorage https://x\nconst a = 1'), []);
+  assert.deepEqual(
+    violations('const x = fetch("https://evil.test"); const y = <a href="/">x</a>; window.open("/"); localStorage.x = Number("1")').sort(),
+    ['<a> element', 'href attribute', 'identifier Number', 'identifier fetch', 'identifier localStorage', 'string https://evil.test', 'window.open'].sort(),
+  );
+  assert.deepEqual(violations("import { addPracticePosition } from 'core/practice'"), ['import core/practice']);
+  assert.deepEqual(violations('const r = rows.map((t) => <li key={t.symbol}>{t.symbol}</li>)'), ['key built from a symbol']);
+  const files = SCREEN_DIRS.flatMap(sourceFiles);
+  assert.ok(files.length >= 25, `${files.length} files scanned`);
+  for (const file of files) assert.deepEqual(violations(readFileSync(file, 'utf8'), file), [], file);
+});
+
+// #112 review, P2 (@rugged97): withReadBudget dropped the caller's deadlineAt,
+// and readWithin forwarded only its own signal. A pager's automatic restart
+// carries the first attempt's deadline so the two share one budget — through
+// the wrapper it was granted a fresh 60 s instead. The budget may shorten that
+// deadline; it may never extend it.
+test('the screen budget shortens the caller’s deadline and never extends it', async () => {
+  const clock = manualClock();
+  const seen = [];
+  const inner = {
+    transport: 'fixture',
+    read: (route, request, options) => {
+      seen.push(options?.deadlineAt ?? null);
+      return Promise.resolve({ route, state: 'ok', data: null, provenance: { transport: 'fixture', contract: null, receivedAt: clock.now(), attempts: 0 } });
+    },
+  };
+  const budgeted = withReadBudget(inner, { clock });
+
+  await budgeted.read('token', { token: FIXTURE_TOKEN }, { signal: live() });
+  assert.equal(seen[0], null, 'the budget is not handed down as a deadline: when it runs out the outcome is this screen’s own, not the pipeline’s');
+
+  await budgeted.read('token', { token: FIXTURE_TOKEN }, { signal: live(), deadlineAt: 1000 });
+  assert.equal(seen[1], 1000, 'an earlier deadline passes through untouched');
+
+  // The reproduction from the review: monotonic 1050, caller deadline 1000.
+  await clock.advance(1050);
+  await budgeted.read('token', { token: FIXTURE_TOKEN }, { signal: live(), deadlineAt: 1000 });
+  assert.equal(seen[2], 1000, 'an expired deadline reaches the source as it is, for the source to answer as a direct read would');
+
+  const distant = clock.monotonic() + 5 * SCREEN_BUDGET_MS;
+  await budgeted.read('token', { token: FIXTURE_TOKEN }, { signal: live(), deadlineAt: distant });
+  assert.equal(seen[3], distant, 'a deadline beyond the budget travels as it is; the budget still stops the read first, in its own words');
+});
+
+// The rest of that same finding, which the wrapper fix did not reach: the two
+// manual 409 restarts asked again without the first attempt's deadline, so a
+// restart near expiry was handed a fresh screen budget. @rugged97's exact
+// reproduction on #112: first attempt with deadline 60000,
+// `catalogue_revision_changed` at 59000, second attempt granted 119000 and
+// answering with a selectable option at 61000 — past the deadline the logical
+// read began with. Both restart sites now pass the first outcome's
+// `provenance.deadlineAt` on, so the two attempts share one budget.
+test('a manual restart after catalogue_revision_changed keeps the first attempt’s deadline, never a fresh budget', async () => {
+  const seen = [];
+  const provenance = { transport: 'fixture', contract: null, receivedAt: 0, attempts: 1, deadlineAt: 60_000 };
+  const source = {
+    transport: 'fixture',
+    read: (route, _request, options) => {
+      seen.push(options?.deadlineAt ?? null);
+      return Promise.resolve(
+        seen.length === 1
+          ? { route, state: 'restart_required', code: 'catalogue_revision_changed', provenance }
+          : { route, state: 'unavailable', cause: { kind: 'network' }, retryable: true, provenance },
+      );
+    },
+  };
+
+  const verified = await catalogue.verifyCandidate(source, FIXTURE_TOKEN, null, FIXTURE_POOL, { signal: live() });
+  assert.equal(verified.restarted, true, 'the 409 did start a second attempt');
+  assert.deepEqual(
+    seen,
+    [null, 60_000],
+    'the first attempt carries no deadline of its own, and the restart carries the one that attempt came back with',
+  );
+});

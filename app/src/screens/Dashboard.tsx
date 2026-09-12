@@ -1,4 +1,6 @@
+import { Suspense } from 'react'
 import { Card, Display } from '../components/ui'
+import { ChainPositionsSlot, SlotBoundary, SlotFailed } from '../lib/read/screens/slots'
 
 /**
  * Your positions, in the invited read-only alpha.
@@ -19,7 +21,9 @@ export function Dashboard() {
 
       <Card className="mt-8 flex flex-col items-center gap-3 p-12 text-center" data-empty="positions">
         <p className="text-[16px] font-medium">Your positions will appear here</p>
-        <p className="max-w-[48ch] text-[13px] leading-relaxed text-fg-muted">Position lookup and wallet discovery are not available in the alpha.</p>
+        <p className="max-w-[48ch] text-[13px] leading-relaxed text-fg-muted">
+          Look a position up by its id below. Finding every position a wallet holds comes with wallet discovery, which is not in the alpha yet.
+        </p>
         <a
           href="#/#pools"
           className="mt-1 inline-flex items-center gap-1.5 rounded-[var(--radius-pill)] border border-line-strong px-4 py-2 text-[13px] font-medium transition hover:bg-surface-2"
@@ -27,6 +31,21 @@ export function Dashboard() {
           See the selected pools <span aria-hidden="true">→</span>
         </a>
       </Card>
+
+      {/* Public position NFTs, looked up by id: nothing is read until asked. */}
+      {ChainPositionsSlot && SlotBoundary && SlotFailed && (
+        <SlotBoundary
+          fallback={
+            <div className="mt-10">
+              <SlotFailed />
+            </div>
+          }
+        >
+          <Suspense fallback={null}>
+            <ChainPositionsSlot />
+          </Suspense>
+        </SlotBoundary>
+      )}
 
       <Card level={2} className="mt-5 p-4 md:px-5">
         <h2 className="text-[14px] font-medium">Connect a wallet to see your positions</h2>

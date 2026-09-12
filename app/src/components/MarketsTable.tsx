@@ -1,5 +1,6 @@
-import { useEffect, useRef, useState } from 'react'
+import { Suspense, useEffect, useRef, useState } from 'react'
 import {
+  agedMarket,
   compactUsd,
   feeLabel,
   percentText,
@@ -15,7 +16,9 @@ import {
   type Metric,
   type Presented,
 } from '../lib/markets'
+import { figureNoteId, presentedNoteCode } from '../lib/read/screens/figures'
 import { reasonText } from '../lib/read/describe'
+import { PoolFigureNotesSlot, PoolFiguresSlot, SlotBoundary, SlotFailed } from '../lib/read/screens/slots'
 import { shownResult, useMarkets } from '../lib/read/useMarkets'
 import { ReadStatus, marketsStatus } from './read/ReadStatus'
 import { TokenLabel } from './read/TokenLabel'
@@ -30,10 +33,15 @@ import { Button, Display, Pill, cx } from './ui'
  * known. Titles carry only our own words for a state, never provider text.
  */
 function Shown({ shown, strong, muted, retrieved }: { shown: Presented; strong?: boolean; muted?: boolean; retrieved?: string }) {
+  // A cell that shows no number points at the visible note that says why,
+  // which PoolFigureNotes renders under the table under this same id.
+  const code = presentedNoteCode(shown)
+  const describedBy = code ? figureNoteId(code) : undefined
   if (shown.kind === 'unavailable') {
     return (
       <span
         className="text-[13px] text-fg-subtle"
+        aria-describedby={describedBy}
         data-metric={shown.rejected ? 'rejected' : 'unavailable'}
         title={shown.reason ? `Unavailable: ${reasonText(shown.reason)}` : undefined}
       >
@@ -45,6 +53,7 @@ function Shown({ shown, strong, muted, retrieved }: { shown: Presented; strong?:
     return (
       <span
         className="text-[13px] text-fg-subtle"
+        aria-describedby={describedBy}
         data-metric="absent"
         title={`Unavailable: ${shown.source ?? 'the source'} reported no value`}
       >
@@ -56,6 +65,7 @@ function Shown({ shown, strong, muted, retrieved }: { shown: Presented; strong?:
     return (
       <span
         className="text-[13px] text-fg-subtle"
+        aria-describedby={describedBy}
         data-metric="not-current"
         title={shown.basis === 'reference' ? 'Reference analytics only, not a current figure' : 'Calculated over an incomplete window, not a current figure'}
       >
@@ -130,22 +140,33 @@ function useNow(active: boolean) {
   return now
 }
 
-function Row({ m: read, now }: { m: Market; now: Instant }) {
+function Row({ m: read, now, onFigures }: { m: Market; now: Instant; onFigures?: () => void }) {
   const p = read.provenance
   const age = p ? retrievedAgeSeconds(p.market, now) : null
   const stale = p ? providerStale(p.market, now) : false
   const retrieved = retrievedText(age)
-  // A provider figure past the read service's fresh window is shown stale, never as current.
-  const aged = (metric: Metric): Metric => (stale && metric.state === 'provider' ? { ...metric, state: 'stale' } : metric)
-  const m: Market = { ...read, tvlUsd: aged(read.tvlUsd), volume24hUsd: aged(read.volume24hUsd) }
+  // The same projection the figures dialog is given, so the row and the dialog
+  // it opens never disagree about whether a figure is still current.
+  const m = agedMarket(read, now)
   return (
     <tr className="border-b transition last:border-b-0 hover:bg-surface-2">
       <td className="px-5 py-4">
         <div className="flex items-center gap-3">
           <TokenMarkPair base={m.tokens.base} quote={m.tokens.quote} size={30} ring="var(--surface-1)" />
-          <span className="text-[14px] font-medium">
-            <TokenLabel token={m.tokens.base} />/<TokenLabel token={m.tokens.quote} />
-          </span>
+          {onFigures ? (
+            // The pool opens its figures on demand; its name is the button's name.
+            <button type="button" onClick={onFigures} data-pool-figures="" className="underline decoration-dotted underline-offset-4 hover:decoration-solid">
+              {/* The name keeps its own element inside the control: it is the
+                  pool's label whether or not there is anything to open. */}
+              <span className="text-[14px] font-medium">
+                <TokenLabel token={m.tokens.base} />/<TokenLabel token={m.tokens.quote} />
+              </span>
+            </button>
+          ) : (
+            <span className="text-[14px] font-medium">
+              <TokenLabel token={m.tokens.base} />/<TokenLabel token={m.tokens.quote} />
+            </span>
+          )}
           <span className="flex items-center gap-1.5 text-[11px] text-fg-subtle">
             <span className="rounded-[6px] bg-surface-3 px-1.5 py-0.5 font-mono">{m.protocol}</span>
             <span>·</span>
@@ -197,6 +218,12 @@ export function MarketsTable() {
   const markets = result?.markets ?? []
   const network = result?.network ?? 'Robinhood Chain'
   const now = useNow(markets.length > 0)
+  // The pool whose figures are open, if any. Nothing is read to open it.
+  // The pool the dialog is showing, held by key rather than by value: the
+  // projection is taken again on every tick, so an open dialog ages with the
+  // row behind it instead of keeping the market as it was when it opened.
+  const [figuresKey, setFiguresKey] = useState<string | null>(null)
+  const figures = figuresKey === null ? null : (markets.find((m) => m.key === figuresKey) ?? null)
   // Folded away in every build but the fixture one, with the words it would show.
   const fixtures = __DOMINO_READ_MODE__ === 'fixture' && provider.kind === 'fixture'
 
@@ -281,7 +308,7 @@ export function MarketsTable() {
             </thead>
             <tbody>
               {markets.map((m) => (
-                <Row key={m.key} m={m} now={now} />
+                <Row key={m.key} m={m} now={now} onFigures={() => setFiguresKey(m.key)} />
               ))}
             </tbody>
           </table>
@@ -291,10 +318,24 @@ export function MarketsTable() {
             No pools selected yet.
           </p>
         )}
+        {PoolFigureNotesSlot && SlotBoundary && SlotFailed && markets.length > 0 && (
+          <SlotBoundary fallback={<SlotFailed />}>
+            <Suspense fallback={null}>
+              <PoolFigureNotesSlot markets={markets} />
+            </Suspense>
+          </SlotBoundary>
+        )}
         <p className="border-t px-5 py-3 text-[12px] leading-relaxed text-fg-subtle">
           Pool APR describes a pool, not a position. It is not a forecast, not a return on your deposit, and says nothing about what a given range would have earned.
         </p>
       </div>
+      {figures && PoolFiguresSlot && SlotBoundary && SlotFailed && (
+        <SlotBoundary fallback={<SlotFailed />}>
+          <Suspense fallback={null}>
+            <PoolFiguresSlot market={agedMarket(figures, now)} onClose={() => setFiguresKey(null)} />
+          </Suspense>
+        </SlotBoundary>
+      )}
     </div>
   )
 }
