@@ -8,6 +8,7 @@ from copy import deepcopy
 import hmac
 import ipaddress
 import json
+import math
 import os
 import re
 import secrets
@@ -26,6 +27,9 @@ from read_api import AssetsRequest, TokenRequest, PoolsRequest, PoolMarketReques
 from bridge_http import LocalReaderHTTP
 from read_deadline import read_deadline
 from read_contract import CONTRACT_VERSION, validate_response, sanitize_error, ERROR_STATUS_BY_CODE
+from pool_apr_contract import (CONTRACT_VERSION as V2_CONTRACT_VERSION,
+                               REQUEST_MODELS as V2_REQUEST_MODELS,
+                               build_pool_market_estimate)
 
 REQUEST_MODELS = {'token': TokenRequest, 'pools': PoolsRequest, 'pool-market': PoolMarketRequest,
                   'wallet-assets': AssetsRequest, 'nft-positions': NftPositionsRequest,
@@ -42,17 +46,21 @@ def safe_error(code):
 
 class Gateway:
     def __init__(self, *, verifier=None, upstream=None, enabled=False, enabled_reads=(),
-                 budgets=None, cursors=None, gate=None, clock=time.monotonic):
-        if type(enabled) is not bool or not set(enabled_reads) <= set(REQUEST_MODELS):
+                 enabled_v2=False, enabled_v2_reads=(), budgets=None, cursors=None,
+                 gate=None, clock=time.monotonic, wall_clock=time.time):
+        if (type(enabled) is not bool or not set(enabled_reads) <= set(REQUEST_MODELS) or
+                type(enabled_v2) is not bool or not set(enabled_v2_reads) <= set(V2_REQUEST_MODELS)):
             raise DataError('invalid_gateway_config')
-        if enabled and (verifier is None or not enabled_reads):
+        if ((enabled and (verifier is None or not enabled_reads)) or
+                (enabled_v2 and (verifier is None or not enabled_v2_reads))):
             raise DataError('invalid_gateway_config')
         self.enabled, self.enabled_reads = enabled, frozenset(enabled_reads)
+        self.enabled_v2, self.enabled_v2_reads = enabled_v2, frozenset(enabled_v2_reads)
         self.verifier, self.upstream = verifier, upstream or LocalReaderHTTP()
         self.budgets, self.cursors = budgets or ClientBudgets(), cursors or OpaqueCursors()
-        self.gate, self.clock = gate or ReadGate(), clock
+        self.gate, self.clock, self.wall_clock = gate or ReadGate(), clock, wall_clock
 
-    def execute(self, route, body, assertion, client, deadline):
+    def execute(self, route, body, assertion, client, deadline, *, version='v1'):
         # Admission was acquired before thread dispatch. Auth is inside the total budget.
         try:
             remaining = deadline - self.clock()
@@ -81,6 +89,10 @@ class Gateway:
             generation = health.get('generation')
             self.cursors.observe_generation(generation)
             sent = deepcopy(body)
+            if version == 'v2':
+                # One existing read supplies both the table data and estimate.
+                # Never fetch a chart or accept metrics/a clock from the caller.
+                sent = {'poolId': body['poolId'], 'includePriceHistory': False}
             if route == 'wallet-assets' and sent.get('cursor') is not None:
                 sent['cursor'] = self.cursors.unwrap(sent['cursor'], body)
             status, data, metadata = self.upstream.request(route, sent, deadline=deadline)
@@ -105,6 +117,15 @@ class Gateway:
                 output['inventory']['nextCursor'] = self.cursors.wrap(output['inventory']['nextCursor'], body)
             # The declared cursor substitution is the only payload transformation.
             validate_response(route, output)
+            if version == 'v2':
+                now = self.wall_clock()
+                if type(now) not in (int, float) or not math.isfinite(now):
+                    raise DataError('upstream_unavailable')
+                try:
+                    output = build_pool_market_estimate(output, now=int(now),
+                                                       requested_pool_id=body['poolId'])
+                except (ValidationError, ValueError, TypeError, OverflowError):
+                    raise DataError('upstream_contract_mismatch') from None
             if len(json.dumps(output, allow_nan=False).encode()) > MAX_RESPONSE:
                 raise DataError('upstream_invalid_response')
             if self.clock() >= deadline:
@@ -126,20 +147,25 @@ def create_gateway(gateway=None):
     async def boundary(request: Request, call_next):
         deadline = gateway.clock() + 20
         request_id = secrets.token_hex(16)
+        path = request.scope.get('raw_path', b'').decode('ascii', errors='replace')
+        version = 'v2' if path.startswith('/internal/read/v2/') else 'v1'
         def result(status, data):
             headers = {'Cache-Control': 'no-store, no-transform', 'X-Content-Type-Options': 'nosniff',
-                       'X-Domino-Read-Contract': CONTRACT_VERSION, 'X-Domino-Request-Id': request_id,
+                       'X-Domino-Read-Contract': V2_CONTRACT_VERSION if version == 'v2' else CONTRACT_VERSION,
+                       'X-Domino-Request-Id': request_id,
                        'Content-Security-Policy': "default-src 'none'; frame-ancestors 'none'"}
             if status == 429:
                 headers['Retry-After'] = '2'
             return JSONResponse(data, status_code=status, headers=headers)
-        path = request.scope.get('raw_path', b'').decode('ascii', errors='replace')
-        match = re.fullmatch(r'/internal/read/v1/(token|pools|pool-market|wallet-assets|nft-positions|catalogue|pool-activity|pool-positions|pool-metrics)', path)
+        models = V2_REQUEST_MODELS if version == 'v2' else REQUEST_MODELS
+        match = re.fullmatch(r'/internal/read/' + version + r'/(' + '|'.join(models) + r')', path)
         if not match or request.scope.get('query_string'):
             return result(404, {'error': 'route_not_available'})
         if request.method != 'POST':
             return result(405, {'error': 'method_not_allowed'})
-        if not gateway.enabled or match[1] not in gateway.enabled_reads:
+        enabled = gateway.enabled_v2 if version == 'v2' else gateway.enabled
+        enabled_reads = gateway.enabled_v2_reads if version == 'v2' else gateway.enabled_reads
+        if not enabled or match[1] not in enabled_reads:
             return result(404, {'error': 'route_not_available'})
         headers = {}
         for name, value in request.scope['headers']:
@@ -184,7 +210,7 @@ def create_gateway(gateway=None):
                     if len(raw) > MAX_BODY:
                         return result(413, {'error': 'request_too_large'})
             body = strict_json(raw)
-            REQUEST_MODELS[match[1]].model_validate(body)
+            models[match[1]].model_validate(body)
         except TimeoutError:
             return result(408, {'error': 'request_timeout'})
         except (DataError, ValidationError, ValueError, TypeError):
@@ -194,6 +220,8 @@ def create_gateway(gateway=None):
         started = Event()
         def execute():
             started.set()
+            if version == 'v2':
+                return gateway.execute(match[1], body, assertion, client, deadline, version=version)
             return gateway.execute(match[1], body, assertion, client, deadline)
         try:
             # Only an admitted operation can enter the pool; no pending read queue.
@@ -222,6 +250,7 @@ def main():
     parser.add_argument('--port', type=int, default=8878)
     parser.add_argument('--reader-port', type=int, default=8876)
     parser.add_argument('--enable', action='store_true')
+    parser.add_argument('--enable-v2', action='store_true', help='Opt in to the separate pool estimate candidate')
     args = parser.parse_args()
     try:
         if args.port in (8765, args.reader_port) or not 1024 <= args.port <= 65535:
@@ -234,12 +263,17 @@ def main():
         fcntl.flock(lock_fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
         verifier = None
         reads = ()
-        if args.enable:
+        v2_reads = ()
+        if args.enable or args.enable_v2:
             verifier = AccessVerifier(os.environ.get('DOMINO_ACCESS_ISSUER'),
                                       os.environ.get('DOMINO_ACCESS_AUDIENCE'),
                                       os.environ.get('DOMINO_ACCESS_SERVICE_ID'))
+        if args.enable:
             reads = tuple(os.environ.get('DOMINO_BRIDGE_READS', '').split(','))
+        if args.enable_v2:
+            v2_reads = tuple(os.environ.get('DOMINO_BRIDGE_V2_READS', '').split(','))
         gateway = Gateway(enabled=args.enable, enabled_reads=reads, verifier=verifier,
+                          enabled_v2=args.enable_v2, enabled_v2_reads=v2_reads,
                           upstream=LocalReaderHTTP(args.reader_port))
     except (DataError, OSError):
         parser.exit(2, 'Gateway configuration invalid or process already running.\n')

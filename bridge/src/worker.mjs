@@ -1,9 +1,27 @@
 import { parseStrictJson } from './strict-json.mjs';
 import { CHAIN_ID, CONTRACT_VERSION, ROUTES, isObject, validateRequest } from './request-contract.mjs';
 import { ERROR_STATUS_BY_CODE, validateResponse } from '../../api-contracts/read-v1/runtime.mjs';
+import {
+  CONTRACT_VERSION as V2_CONTRACT_VERSION, ERROR_STATUS_BY_CODE as V2_ERROR_STATUS_BY_CODE,
+  validateRequest as validateV2Request, validateResponse as validateV2Response,
+} from '../../api-contracts/read-v2/runtime.mjs';
 
 const CONTRACT_HEADER = 'X-Domino-Read-Contract';
-const PREFIX = '/api/read/v1/';
+// Only the exact public path chooses a protocol. Neither deployment variables
+// nor browser payloads can select another upstream path or response validator.
+const V1_PROTOCOL = Object.freeze({
+  prefix: '/api/read/v1/', upstreamPrefix: '/internal/read/v1/', version: CONTRACT_VERSION,
+  enabledFlag: 'READ_BRIDGE_ENABLED', readsFlag: 'ENABLED_READS', routes: ROUTES,
+  validateRequest, validateResponse, errors: ERROR_STATUS_BY_CODE,
+  matchesRequest: () => true,
+});
+const V2_PROTOCOL = Object.freeze({
+  prefix: '/api/read/v2/', upstreamPrefix: '/internal/read/v2/', version: V2_CONTRACT_VERSION,
+  enabledFlag: 'READ_V2_BRIDGE_ENABLED', readsFlag: 'ENABLED_V2_READS',
+  routes: Object.freeze({ 'pool-market': Object.freeze({ schemaVersion: 1 }) }),
+  validateRequest: validateV2Request, validateResponse: validateV2Response, errors: V2_ERROR_STATUS_BY_CODE,
+  matchesRequest: (request, response) => request.poolId === response.poolId,
+});
 export const LIMITS = Object.freeze({ requestBytes: 8192, responseBytes: 1024 * 1024, bodyMs: 5000, totalMs: 20000, upstreamMs: 15000 });
 
 // Shared, finite and status-specific. Unknown producer failures never reach clients.
@@ -22,15 +40,16 @@ function exactOrigin(value) {
   } catch { return null; }
 }
 
-function config(env) {
+function config(env, protocol) {
   const appOrigin = exactOrigin(env.APP_ORIGIN);
   if (!appOrigin) fail('upstream_unavailable');
-  if (env.READ_BRIDGE_ENABLED !== 'true') return { appOrigin, enabledReads: [] };
+  if (env[protocol.enabledFlag] !== 'true') return { appOrigin, enabledReads: [] };
   const gatewayOrigin = exactOrigin(env.GATEWAY_ORIGIN);
-  const enabledReads = typeof env.ENABLED_READS === 'string' && env.ENABLED_READS !== '' ? env.ENABLED_READS.split(',') : [];
+  const configuredReads = env[protocol.readsFlag];
+  const enabledReads = typeof configuredReads === 'string' && configuredReads !== '' ? configuredReads.split(',') : [];
   const secret = (value) => typeof value === 'string' && /^[\x21-\x7e]{1,1024}$/.test(value);
   if (!gatewayOrigin || gatewayOrigin === appOrigin || !enabledReads.length ||
-      new Set(enabledReads).size !== enabledReads.length || enabledReads.some((route) => !Object.hasOwn(ROUTES, route)) ||
+      new Set(enabledReads).size !== enabledReads.length || enabledReads.some((route) => !Object.hasOwn(protocol.routes, route)) ||
       !secret(env.ACCESS_CLIENT_ID) || !secret(env.ACCESS_CLIENT_SECRET)) fail('upstream_unavailable');
   return { appOrigin, gatewayOrigin, enabledReads, clientId: env.ACCESS_CLIENT_ID, clientSecret: env.ACCESS_CLIENT_SECRET };
 }
@@ -139,19 +158,19 @@ async function readText(body, limit, scope, errorCode) {
   }
 }
 
-function headersFor(requestId, extra = {}) {
+function headersFor(requestId, protocol, extra = {}) {
   return {
     'Content-Type': 'application/json; charset=utf-8',
     'Cache-Control': 'no-store',
     'X-Content-Type-Options': 'nosniff',
-    [CONTRACT_HEADER]: CONTRACT_VERSION,
+    [CONTRACT_HEADER]: protocol.version,
     'X-Domino-Request-Id': requestId,
     ...extra,
   };
 }
 
-function errorResponse(code, requestId, extra) {
-  return new Response(JSON.stringify({ error: code }), { status: ERROR_STATUS_BY_CODE[code], headers: headersFor(requestId, extra) });
+function errorResponse(code, requestId, protocol, extra) {
+  return new Response(JSON.stringify({ error: code }), { status: protocol.errors[code], headers: headersFor(requestId, protocol, extra) });
 }
 
 function clientIp(value) {
@@ -168,7 +187,7 @@ function retryAfter(headers) {
   return /^[0-9]{1,3}$/.test(value ?? '') && Number(value) >= 1 && Number(value) <= 60 ? String(Number(value)) : '1';
 }
 
-async function upstreamRead(request, body, route, settings, fetchImpl, trustedIp, started, requestId) {
+async function upstreamRead(request, body, payload, route, settings, fetchImpl, trustedIp, started, requestId, protocol) {
   const ip = clientIp(trustedIp);
   if (!ip) fail('upstream_unavailable');
   const remaining = LIMITS.totalMs - (Date.now() - started);
@@ -177,11 +196,11 @@ async function upstreamRead(request, body, route, settings, fetchImpl, trustedIp
   let response;
   try {
     scope.check();
-    const pending = Promise.resolve(fetchImpl(`${settings.gatewayOrigin}/internal/read/v1/${route}`, {
+    const pending = Promise.resolve(fetchImpl(`${settings.gatewayOrigin}${protocol.upstreamPrefix}${route}`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        [CONTRACT_HEADER]: CONTRACT_VERSION,
+        [CONTRACT_HEADER]: protocol.version,
         'CF-Access-Client-Id': settings.clientId,
         'CF-Access-Client-Secret': settings.clientSecret,
         'X-Domino-Client-Id': ip,
@@ -199,7 +218,7 @@ async function upstreamRead(request, body, route, settings, fetchImpl, trustedIp
     // Access/infrastructure can return login HTML with a misleading 200. Inspect
     // media before version negotiation so it remains an availability failure.
     if (!jsonContentType(response.headers)) fail('upstream_unavailable');
-    if (response.headers.get(CONTRACT_HEADER) !== CONTRACT_VERSION) fail('upstream_contract_mismatch');
+    if (response.headers.get(CONTRACT_HEADER) !== protocol.version) fail('upstream_contract_mismatch');
     // Native fetch supplies decoded bytes. Identity is explicit on our gateway;
     // reject encoded responses instead of relying on runtime decoding ambiguity.
     const encoding = response.headers.get('Content-Encoding');
@@ -218,19 +237,19 @@ async function upstreamRead(request, body, route, settings, fetchImpl, trustedIp
     }
     if (response.status === 200) {
       if (!isObject(result) || Object.hasOwn(result, 'error')) fail('upstream_invalid_response');
-      if (result.schemaVersion !== ROUTES[route].schemaVersion || result.chainId !== CHAIN_ID) fail('upstream_contract_mismatch');
-      const valid = validateResponse(route, result);
+      if (result.schemaVersion !== protocol.routes[route].schemaVersion || result.chainId !== CHAIN_ID) fail('upstream_contract_mismatch');
+      const valid = protocol.validateResponse(route, result) && protocol.matchesRequest(payload, result);
       scope.check();
       if (!valid) fail('upstream_contract_mismatch');
       // Both gateway and BFF validate the full pinned response schema. Preserve
       // original JSON bytes/names/numbers, including the gateway's opaque cursor.
-      const output = new Response(text, { status: 200, headers: headersFor(requestId) });
+      const output = new Response(text, { status: 200, headers: headersFor(requestId, protocol) });
       scope.check();
       return output;
     }
     if (!isObject(result) || Object.keys(result).length !== 1 || typeof result.error !== 'string') fail('upstream_invalid_response');
-    if (!Object.hasOwn(ERROR_STATUS_BY_CODE, result.error) || ERROR_STATUS_BY_CODE[result.error] !== response.status) fail('upstream_unavailable');
-    const output = errorResponse(result.error, requestId, response.status === 429 ? { 'Retry-After': retryAfter(response.headers) } : undefined);
+    if (!Object.hasOwn(protocol.errors, result.error) || protocol.errors[result.error] !== response.status) fail('upstream_unavailable');
+    const output = errorResponse(result.error, requestId, protocol, response.status === 429 ? { 'Retry-After': retryAfter(response.headers) } : undefined);
     scope.check();
     return output;
   } catch (error) {
@@ -250,19 +269,21 @@ export function createWorker({ fetch: fetchImpl = globalThis.fetch, getClientIp 
     async fetch(request, env = {}) {
       const requestId = crypto.randomUUID();
       const started = Date.now();
+      let protocol = V1_PROTOCOL;
       try {
-        const settings = config(env);
         const url = new URL(request.url);
-        const route = url.pathname.startsWith(PREFIX) ? url.pathname.slice(PREFIX.length) : null;
-        if (url.search || url.hash || !route || (route !== 'capabilities' && !Object.hasOwn(ROUTES, route))) fail('route_not_available');
+        if (url.pathname.startsWith(V2_PROTOCOL.prefix)) protocol = V2_PROTOCOL;
+        const settings = config(env, protocol);
+        const route = url.pathname.startsWith(protocol.prefix) ? url.pathname.slice(protocol.prefix.length) : null;
+        if (url.search || url.hash || !route || (route !== 'capabilities' && !Object.hasOwn(protocol.routes, route))) fail('route_not_available');
         const capability = route === 'capabilities';
         if (request.method !== (capability ? 'GET' : 'POST')) fail('method_not_allowed');
         checkBrowser(request, settings.appOrigin, capability);
         const requestedContract = request.headers.get(CONTRACT_HEADER);
-        if (requestedContract !== null && requestedContract !== CONTRACT_VERSION) fail('upstream_contract_mismatch');
+        if (requestedContract !== null && requestedContract !== protocol.version) fail('upstream_contract_mismatch');
         if (capability) {
           const output = new Response(JSON.stringify({
-            contractVersion: CONTRACT_VERSION,
+            contractVersion: protocol.version,
             dataMode: settings.enabledReads.length ? 'live_read_only' : 'disabled',
             chainId: CHAIN_ID,
             enabledReads: settings.enabledReads,
@@ -270,7 +291,7 @@ export function createWorker({ fetch: fetchImpl = globalThis.fetch, getClientIp 
             privateAccounts: false,
             ownerTransactions: false,
             automation: false,
-          }), { headers: headersFor(requestId) });
+          }), { headers: headersFor(requestId, protocol) });
           if (Date.now() - started >= LIMITS.totalMs) fail('request_timeout');
           return output;
         }
@@ -287,7 +308,7 @@ export function createWorker({ fetch: fetchImpl = globalThis.fetch, getClientIp 
           scope.check();
           body = parseStrictJson(text, { numberLexemes: true });
           scope.check();
-          const valid = validateRequest(route, body);
+          const valid = protocol.validateRequest(route, body);
           scope.check();
           if (!valid) fail('invalid_request');
         } catch (error) {
@@ -295,10 +316,10 @@ export function createWorker({ fetch: fetchImpl = globalThis.fetch, getClientIp 
           if (error instanceof BridgeError) throw error;
           fail('invalid_request');
         } finally { scope.dispose(); }
-        return await upstreamRead(request, text, route, settings, fetchImpl, getClientIp(request), started, requestId);
+        return await upstreamRead(request, text, body, route, settings, fetchImpl, getClientIp(request), started, requestId, protocol);
       } catch (error) {
         const code = error instanceof BridgeError ? error.code : 'upstream_unavailable';
-        return errorResponse(code, requestId);
+        return errorResponse(code, requestId, protocol);
       }
     },
   };

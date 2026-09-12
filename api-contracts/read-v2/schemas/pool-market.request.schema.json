@@ -1,0 +1,18 @@
+{
+  "$id": "https://domino.invalid/contracts/read-v2/pool-market.request.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "poolId": {
+      "pattern": "^0x[0-9a-f]{64}$",
+      "title": "Poolid",
+      "type": "string"
+    }
+  },
+  "required": [
+    "poolId"
+  ],
+  "title": "PoolMarketEstimateRequest",
+  "type": "object",
+  "x-contract-version": "2.0.0-rc.1"
+}

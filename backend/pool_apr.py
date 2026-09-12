@@ -41,6 +41,7 @@ UNAVAILABLE_REASONS = (
     'pool_identity_mismatch', 'snapshot_mismatch', 'pool_state_unavailable',
     'dynamic_fee_unsupported', 'hooked_pool_unsupported',
     'pool_integration_unsupported', 'fixed_fee_mismatch',
+    'invalid_protocol_fee', 'protocol_fee_unsupported',
     'market_unavailable', 'market_rejected', 'market_identity_mismatch',
     'provider_dex_unconfirmed', 'missing_reported_tvl', 'zero_reported_tvl',
     'missing_volume24h', 'market_age_unknown', 'market_timestamp_future',
@@ -58,6 +59,7 @@ AprDecimal = Annotated[str, StringConstraints(
 
 class AprInputs(WireModel):
     currentLpFeePips: Annotated[UInt, Field(le=1_000_000)]
+    protocolFeeRaw: Annotated[UInt, Field(le=2**24-1)]
     volume24hUsd: DecimalString | None
     reportedLiquidityUsd: DecimalString | None
 
@@ -178,6 +180,14 @@ def estimate_pool_apr(pool_market_response: Mapping, *, now: int) -> dict:
         reasons.append('pool_integration_unsupported')
     if key['feeMode'] == 'fixed' and key['fee_pips'] != pool['currentLpFeePips']:
         reasons.append('fixed_fee_mismatch')
+    # A v4 protocol fee is two packed 12-bit directional fees, at most 1000
+    # pips each. Reported aggregate volume cannot apportion the directions or
+    # establish historical protocol fees; do not emit an unadjusted LP rate.
+    protocol_fee = pool['protocolFeeRaw']
+    if (protocol_fee & 0xfff) > 1000 or (protocol_fee >> 12) > 1000:
+        reasons.append('invalid_protocol_fee')
+    elif protocol_fee:
+        reasons.append('protocol_fee_unsupported')
 
     retrieved_at = data['retrievedAt'] if data else None
     snapshot_age = now - snapshot['timestamp'] if snapshot['timestamp'] <= now else None
@@ -207,19 +217,19 @@ def estimate_pool_apr(pool_market_response: Mapping, *, now: int) -> dict:
             market['reason'] == 'provider_dex_unconfirmed' or
             (data and data['dexLabel'] != 'uniswap-v4-robinhood')):
         reasons.append('provider_dex_unconfirmed')
-    if data and (data['chainId'] != response['chainId'] or data['poolId'] != response['poolId'] or
+    if market['reason'] == 'provider_currency_or_pool_mismatch' or (data and (
+                 data['chainId'] != response['chainId'] or data['poolId'] != response['poolId'] or
                  data['currencies'] != pool['currencies'] or
-                 sorted((data['baseToken'], data['quoteToken'])) != pool['currencies'] or
-                 market['reason'] == 'provider_currency_or_pool_mismatch'):
+                 sorted((data['baseToken'], data['quoteToken'])) != pool['currencies'])):
         reasons.append('market_identity_mismatch')
 
     tvl = data['reportedLiquidityUsd'] if data else None
     volume = data['volume24hUsd'] if data else None
-    if tvl is None:
+    if tvl is None and market['status'] != 'rejected':
         reasons.append('missing_reported_tvl')
-    elif Fraction(tvl) == 0:
+    elif tvl is not None and Fraction(tvl) == 0:
         reasons.append('zero_reported_tvl')
-    if volume is None:
+    if volume is None and market['status'] != 'rejected':
         reasons.append('missing_volume24h')
 
     value = None
@@ -243,6 +253,7 @@ def estimate_pool_apr(pool_market_response: Mapping, *, now: int) -> dict:
         'source': 'geckoterminal', 'chainId': response['chainId'], 'poolId': response['poolId'],
         'status': status, 'feeAprEstimate24hPercent': value, 'reasons': reasons, 'method': METHOD,
         'inputs': {'currentLpFeePips': pool['currentLpFeePips'],
+                   'protocolFeeRaw': protocol_fee,
                    'volume24hUsd': volume, 'reportedLiquidityUsd': tvl},
         'provenance': {
             'evaluatedAt': now, 'snapshot': snapshot, 'snapshotAgeSeconds': snapshot_age,

@@ -52,6 +52,9 @@ class DisabledBridgeConfigs(unittest.TestCase):
                 {"APP_ORIGIN": "https://alternate.invalid"},
                 {SERVICES[service][1]: "https://other-service.invalid"},
                 {"ENABLED_READS": "token"},
+                {"READ_V2_BRIDGE_ENABLED": "true"},
+                {"READ_V2_BRIDGE_ENABLED": False},
+                {"ENABLED_V2_READS": "pool-market"},
             ]
             for update in variants:
                 with self.subTest(service=service, update=update):

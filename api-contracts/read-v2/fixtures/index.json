@@ -1,0 +1,230 @@
+{
+  "contractVersion": "2.0.0-rc.1",
+  "fixtures": [
+    {
+      "file": "fixtures/producer/pool-market.available.json",
+      "route": "pool-market",
+      "valid": true
+    },
+    {
+      "file": "fixtures/producer/pool-market.zero-volume.json",
+      "route": "pool-market",
+      "valid": true
+    },
+    {
+      "file": "fixtures/producer/pool-market.zero-tvl.json",
+      "route": "pool-market",
+      "valid": true
+    },
+    {
+      "file": "fixtures/producer/pool-market.missing-volume.json",
+      "route": "pool-market",
+      "valid": true
+    },
+    {
+      "file": "fixtures/producer/pool-market.missing-tvl.json",
+      "route": "pool-market",
+      "valid": true
+    },
+    {
+      "file": "fixtures/producer/pool-market.precise.json",
+      "route": "pool-market",
+      "valid": true
+    },
+    {
+      "file": "fixtures/producer/pool-market.below-precision.json",
+      "route": "pool-market",
+      "valid": true
+    },
+    {
+      "file": "fixtures/producer/pool-market.out-of-bounds.json",
+      "route": "pool-market",
+      "valid": true
+    },
+    {
+      "file": "fixtures/producer/pool-market.protocol-fee.json",
+      "route": "pool-market",
+      "valid": true
+    },
+    {
+      "file": "fixtures/producer/pool-market.invalid-protocol-fee.json",
+      "route": "pool-market",
+      "valid": true
+    },
+    {
+      "file": "fixtures/producer/pool-market.dynamic.json",
+      "route": "pool-market",
+      "valid": true
+    },
+    {
+      "file": "fixtures/producer/pool-market.hooked.json",
+      "route": "pool-market",
+      "valid": true
+    },
+    {
+      "file": "fixtures/producer/pool-market.cache-59.json",
+      "route": "pool-market",
+      "valid": true
+    },
+    {
+      "file": "fixtures/producer/pool-market.stale.json",
+      "route": "pool-market",
+      "valid": true
+    },
+    {
+      "file": "fixtures/producer/pool-market.cache-300.json",
+      "route": "pool-market",
+      "valid": true
+    },
+    {
+      "file": "fixtures/producer/pool-market.expired.json",
+      "route": "pool-market",
+      "valid": true
+    },
+    {
+      "file": "fixtures/producer/pool-market.snapshot-120.json",
+      "route": "pool-market",
+      "valid": true
+    },
+    {
+      "file": "fixtures/producer/pool-market.snapshot-121.json",
+      "route": "pool-market",
+      "valid": true
+    },
+    {
+      "file": "fixtures/producer/pool-market.snapshot-300.json",
+      "route": "pool-market",
+      "valid": true
+    },
+    {
+      "file": "fixtures/producer/pool-market.snapshot-expired.json",
+      "route": "pool-market",
+      "valid": true
+    },
+    {
+      "file": "fixtures/producer/pool-market.future-retrieval.json",
+      "route": "pool-market",
+      "valid": true
+    },
+    {
+      "file": "fixtures/producer/pool-market.rejected-currencies.json",
+      "route": "pool-market",
+      "valid": true
+    },
+    {
+      "file": "fixtures/producer/pool-market.rejected-dex.json",
+      "route": "pool-market",
+      "valid": true
+    },
+    {
+      "file": "fixtures/producer/pool-market.provider-unavailable.json",
+      "route": "pool-market",
+      "valid": true
+    },
+    {
+      "file": "fixtures/producer/pool-market.provider-rate-limited.json",
+      "route": "pool-market",
+      "valid": true
+    },
+    {
+      "file": "fixtures/responses/pool-market.json",
+      "route": "pool-market",
+      "valid": true
+    },
+    {
+      "file": "fixtures/capabilities.disabled.json",
+      "route": "capabilities",
+      "valid": true
+    },
+    {
+      "file": "fixtures/capabilities.enabled.json",
+      "route": "capabilities",
+      "valid": true
+    },
+    {
+      "file": "fixtures/invalid/pool-market.outer-pool.json",
+      "route": "pool-market",
+      "valid": false
+    },
+    {
+      "file": "fixtures/invalid/pool-market.estimate-pool.json",
+      "route": "pool-market",
+      "valid": false
+    },
+    {
+      "file": "fixtures/invalid/pool-market.market-pool.json",
+      "route": "pool-market",
+      "valid": false
+    },
+    {
+      "file": "fixtures/invalid/pool-market.apr-tampered.json",
+      "route": "pool-market",
+      "valid": false
+    },
+    {
+      "file": "fixtures/invalid/pool-market.apr-float.json",
+      "route": "pool-market",
+      "valid": false
+    },
+    {
+      "file": "fixtures/invalid/pool-market.apr-null-current.json",
+      "route": "pool-market",
+      "valid": false
+    },
+    {
+      "file": "fixtures/invalid/pool-market.inputs-volume.json",
+      "route": "pool-market",
+      "valid": false
+    },
+    {
+      "file": "fixtures/invalid/pool-market.inputs-protocol.json",
+      "route": "pool-market",
+      "valid": false
+    },
+    {
+      "file": "fixtures/invalid/pool-market.source-url.json",
+      "route": "pool-market",
+      "valid": false
+    },
+    {
+      "file": "fixtures/invalid/pool-market.retrieval-reset.json",
+      "route": "pool-market",
+      "valid": false
+    },
+    {
+      "file": "fixtures/invalid/pool-market.snapshot-hash.json",
+      "route": "pool-market",
+      "valid": false
+    },
+    {
+      "file": "fixtures/invalid/pool-market.cache-age.json",
+      "route": "pool-market",
+      "valid": false
+    },
+    {
+      "file": "fixtures/invalid/pool-market.limitation-removed.json",
+      "route": "pool-market",
+      "valid": false
+    },
+    {
+      "file": "fixtures/invalid/pool-market.execution.json",
+      "route": "pool-market",
+      "valid": false
+    },
+    {
+      "file": "fixtures/invalid/pool-market.version.json",
+      "route": "pool-market",
+      "valid": false
+    },
+    {
+      "file": "fixtures/invalid/pool-market.stale-promoted.json",
+      "route": "pool-market",
+      "valid": false
+    },
+    {
+      "file": "fixtures/invalid/pool-market.protocol-promoted.json",
+      "route": "pool-market",
+      "valid": false
+    }
+  ]
+}

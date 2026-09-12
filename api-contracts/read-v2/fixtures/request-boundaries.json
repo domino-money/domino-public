@@ -1,0 +1,91 @@
+[
+  {
+    "name": "valid",
+    "payload": {
+      "poolId": "0x0911afcb281d7bcae2d71443ceaeebd0f89b4537708449970d797622b4b4c941"
+    },
+    "route": "pool-market",
+    "valid": true
+  },
+  {
+    "name": "uppercase",
+    "payload": {
+      "poolId": "0x0911AFCB281D7BCAE2D71443CEAEEBD0F89B4537708449970D797622B4B4C941"
+    },
+    "route": "pool-market",
+    "valid": false
+  },
+  {
+    "name": "short",
+    "payload": {
+      "poolId": "0x123"
+    },
+    "route": "pool-market",
+    "valid": false
+  },
+  {
+    "name": "missing",
+    "payload": {},
+    "route": "pool-market",
+    "valid": false
+  },
+  {
+    "name": "array",
+    "payload": [
+      {
+        "poolId": "0x0911afcb281d7bcae2d71443ceaeebd0f89b4537708449970d797622b4b4c941"
+      }
+    ],
+    "route": "pool-market",
+    "valid": false
+  },
+  {
+    "name": "null",
+    "payload": null,
+    "route": "pool-market",
+    "valid": false
+  },
+  {
+    "name": "newline",
+    "payload": {
+      "poolId": "0x0911afcb281d7bcae2d71443ceaeebd0f89b4537708449970d797622b4b4c941\n"
+    },
+    "route": "pool-market",
+    "valid": false
+  },
+  {
+    "name": "chart",
+    "payload": {
+      "includePriceHistory": true,
+      "poolId": "0x0911afcb281d7bcae2d71443ceaeebd0f89b4537708449970d797622b4b4c941"
+    },
+    "route": "pool-market",
+    "valid": false
+  },
+  {
+    "name": "clock",
+    "payload": {
+      "now": 1010,
+      "poolId": "0x0911afcb281d7bcae2d71443ceaeebd0f89b4537708449970d797622b4b4c941"
+    },
+    "route": "pool-market",
+    "valid": false
+  },
+  {
+    "name": "volume",
+    "payload": {
+      "poolId": "0x0911afcb281d7bcae2d71443ceaeebd0f89b4537708449970d797622b4b4c941",
+      "volume24hUsd": "1"
+    },
+    "route": "pool-market",
+    "valid": false
+  },
+  {
+    "name": "wrong-route",
+    "payload": {
+      "poolId": "0x0911afcb281d7bcae2d71443ceaeebd0f89b4537708449970d797622b4b4c941"
+    },
+    "route": "token",
+    "valid": false
+  }
+]

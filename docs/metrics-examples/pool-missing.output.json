@@ -4,6 +4,7 @@
   "feeAprEstimate24hPercent": null,
   "inputs": {
     "currentLpFeePips": 3000,
+    "protocolFeeRaw": 0,
     "reportedLiquidityUsd": "1000000",
     "volume24hUsd": null
   },

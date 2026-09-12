@@ -2,15 +2,17 @@
 
 Implementation candidate for #95, following the owner's approved distinction:
 choose a pool using a simple attributed estimate; evaluate a managed NFT or
-Domino sequence using its actual fee income and changing capital. The two
-calculators run locally. This is not a new HTTP API or an activated card feed.
+Domino sequence using its actual fee income and changing capital. The original
+two calculators run locally. The later [public pool estimate
+candidate](PUBLIC_POOL_APR_ESTIMATE.md) adds an opt-in read-v2 gateway/BFF route;
+managed card collection and activation remain separate.
 
 ## Pool selection
 
 `backend/pool_apr.py` consumes the existing validated `pool-market` response. It
 does not rebuild pool history, request a chart or create a catalogue job.
 
-For an admitted hookless pool with a fixed LP fee:
+For an admitted hookless pool with a fixed LP fee and current protocol fee zero:
 
 `estimated fee APR % = 36,500 × reported volume24hUSD × LP fee pips / 1,000,000 / reported TVLUSD`
 
@@ -23,7 +25,7 @@ does not supply these analytics. No unsupported private analytics endpoint is
 used. Missing inputs are not copied from Uniswap UI zero fallbacks.
 
 The adapter rechecks PoolId/PoolKey/currency associations and fee mode. Missing
-volume, missing/zero TVL, dynamic fees, hooks, mismatched identity and expired
+volume, missing/zero TVL, dynamic or nonzero protocol fees, hooks, mismatched identity and expired
 observations do not produce a usable APR. Reported zero volume is a real zero.
 Provider retrieval time is not its underlying update time. A reported 24h volume
 does not prove a complete day of pool history, known pool age or causal prices.
@@ -37,7 +39,9 @@ snapshot age at most 120 seconds. Older observations up to 300 seconds remain
 explicitly stale; expired observations have no APR. This does not add polling
 or alter the existing cache's read budget.
 
-The original `read-v1` field **`feeApr24h` remains null**, with its original
+The public candidate also retains `inputs.protocolFeeRaw` and rejects invalid
+packed directional protocol fees. Aggregate volume cannot establish their LP
+share. The original `read-v1` field **`feeApr24h` remains null**, with its original
 meaning. A future browser integration must adopt the new estimate semantics
 explicitly, rather than relabel this result as `qualified` in the current UI.
 
@@ -149,10 +153,11 @@ Technical controls, compatibility evidence and wallet consent still apply.
 2. Qualify the actual valuation/coverage producer. Caller-supplied `qualified`
    or `canonicality` labels in a synthetic input are not production proof.
 3. Implement and validate the versioned producer/consumer response and follow
-   [API compatibility](API_COMPATIBILITY.md). No existing route, schema,
-   frontend hook, source pin or enablement flag changes here. Proposed consumers
-   are #13 pool comparisons and #2 individual/sequence cards; private metrics
-   require an authenticated owner-bound route, never the public pool reader.
+   [API compatibility](API_COMPATIBILITY.md). The
+   [read-v2 pool candidate](PUBLIC_POOL_APR_ESTIMATE.md) supplies the versioned
+   route and fixtures for #13. The original read-v1 payload is preserved, with an updated source
+   manifest and pin for the gateway change. Private #2 individual/sequence
+   metrics require an authenticated owner-bound route, never the public reader.
 4. Serve bounded cached snapshots. The proposed frontend cadence is 30–60
    seconds while visible, plus invalidation after confirmed actions; cache and
    provider budgets must be qualified at integration. The CLI is one-shot and

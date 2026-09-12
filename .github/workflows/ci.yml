@@ -64,6 +64,8 @@ jobs:
       - run: npm run check:web
       - name: Check shared read types
         run: node web/node_modules/typescript/bin/tsc --noEmit --strict --target ES2022 --module NodeNext --moduleResolution NodeNext api-contracts/read-v1/types.ts api-contracts/read-v1/runtime.d.mts api-contracts/read-v1/consumer.typecheck.mts
+      - name: Check opt-in pool estimate types
+        run: node web/node_modules/typescript/bin/tsc --noEmit --strict --target ES2022 --module NodeNext --moduleResolution NodeNext api-contracts/read-v2/types.ts api-contracts/read-v2/runtime.d.mts api-contracts/read-v2/consumer.typecheck.mts
       - name: Check shared session types
         run: node web/node_modules/typescript/bin/tsc --noEmit --strict --target ES2022 --module NodeNext --moduleResolution NodeNext api-contracts/session-v1/types.ts api-contracts/session-v1/runtime.d.mts
       - name: Check shared onboarding types
@@ -72,6 +74,8 @@ jobs:
         run: node web/node_modules/typescript/bin/tsc --noEmit --strict --target ES2022 --module NodeNext --moduleResolution NodeNext api-contracts/deposit-v1/types.ts api-contracts/deposit-v1/runtime.d.mts api-contracts/deposit-v1/consumer.typecheck.mts
       - run: npm --prefix app ci --no-audit --no-fund
       - run: npm run check:app
+      - name: Check pool estimate contract in a real browser
+        run: node --test api-contracts/read-v2/consumer.browser.test.mjs
   backend:
     name: Backend
     runs-on: ubuntu-24.04
@@ -94,6 +98,7 @@ jobs:
       - run: npm ci --no-audit --no-fund
       - run: python -m pip install -r backend/requirements-api.lock
       - run: python scripts/export-read-contract.py --check
+      - run: python scripts/export-read-v2-contract.py --check
       - run: python scripts/export-read-openapi.py --check
       - run: python scripts/export-session-contract.py --check
       - run: python scripts/export-onboarding-contract.py --check

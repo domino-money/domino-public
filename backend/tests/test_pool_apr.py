@@ -91,17 +91,32 @@ class PoolAprTests(unittest.TestCase):
 
     def test_zero_lp_fee_does_not_use_protocol_fee(self):
         response = rekey(example(), fee_pips=0)
-        response['pool'].update(currentLpFeePips=0, protocolFeeRaw=1234)
+        response['pool'].update(currentLpFeePips=0, protocolFeeRaw=0)
         result = estimate_pool_apr(response, now=1010)
         self.assertEqual(result['feeAprEstimate24hPercent'], '0')
         self.assertEqual(result['status'], 'available')
 
-    def test_protocol_fee_is_not_added_to_lp_fee(self):
-        response = example()
-        response['pool']['protocolFeeRaw'] = 1234
-        result = estimate_pool_apr(response, now=1010)
-        self.assertEqual(result['feeAprEstimate24hPercent'], '10.95')
-        self.assertIn('protocol_fee_effect_not_reconciled', result['limitations'])
+    def test_protocol_fee_directions_cannot_be_estimated_from_aggregate_volume(self):
+        for raw in (1, 1000, 1 << 12, 1000 << 12, (1000 << 12) | 1000, (200 << 12) | 500):
+            for volume in ('1000', '0'):
+                with self.subTest(raw=raw, volume=volume):
+                    response = example()
+                    response['pool']['protocolFeeRaw'] = raw
+                    response['market']['data']['volume24hUsd'] = volume
+                    result = self.assert_unavailable(response, 'protocol_fee_unsupported')
+                    self.assertEqual(result['inputs']['protocolFeeRaw'], raw)
+
+    def test_invalid_packed_protocol_fees_are_rejected_in_either_direction(self):
+        for raw in (1001, 1001 << 12, 0xffffff):
+            with self.subTest(raw=raw):
+                response = example()
+                response['pool']['protocolFeeRaw'] = raw
+                self.assert_unavailable(response, 'invalid_protocol_fee')
+
+    def test_rejected_currency_observation_keeps_identity_reason_without_missing_values(self):
+        result = self.assert_unavailable(fixture('rejected-currencies'), 'market_identity_mismatch')
+        self.assertNotIn('missing_reported_tvl', result['reasons'])
+        self.assertNotIn('missing_volume24h', result['reasons'])
 
     def test_decimal_arithmetic_exceeds_binary_float_precision(self):
         response = example()

@@ -1,0 +1,12 @@
+{
+  "automation": false,
+  "chainId": 4663,
+  "contractVersion": "2.0.0-rc.1",
+  "dataMode": "live_read_only",
+  "enabledReads": [
+    "pool-market"
+  ],
+  "ownerTransactions": false,
+  "privateAccounts": false,
+  "walletAuthentication": false
+}

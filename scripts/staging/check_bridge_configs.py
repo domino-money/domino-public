@@ -46,7 +46,8 @@ def validate(service, config):
             f"{service.upper()}_BRIDGE_ENABLED": "false",
             "APP_ORIGIN": "https://domino.money",
             origin_key: f"https://vm-{service}.domino.money",
-            **({"ENABLED_READS": ""} if service == "read" else {}),
+            **({"ENABLED_READS": "", "READ_V2_BRIDGE_ENABLED": "false",
+                "ENABLED_V2_READS": ""} if service == "read" else {}),
         },
     }
     errors = []

@@ -1,0 +1,67 @@
+{
+  "$id": "https://domino.invalid/contracts/read-v2/capabilities.response.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "automation": {
+      "const": false,
+      "title": "Automation",
+      "type": "boolean"
+    },
+    "chainId": {
+      "const": 4663,
+      "title": "Chainid",
+      "type": "integer"
+    },
+    "contractVersion": {
+      "const": "2.0.0-rc.1",
+      "title": "Contractversion",
+      "type": "string"
+    },
+    "dataMode": {
+      "enum": [
+        "disabled",
+        "live_read_only"
+      ],
+      "title": "Datamode",
+      "type": "string"
+    },
+    "enabledReads": {
+      "items": {
+        "const": "pool-market",
+        "type": "string"
+      },
+      "maxItems": 1,
+      "title": "Enabledreads",
+      "type": "array"
+    },
+    "ownerTransactions": {
+      "const": false,
+      "title": "Ownertransactions",
+      "type": "boolean"
+    },
+    "privateAccounts": {
+      "const": false,
+      "title": "Privateaccounts",
+      "type": "boolean"
+    },
+    "walletAuthentication": {
+      "const": false,
+      "title": "Walletauthentication",
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "contractVersion",
+    "dataMode",
+    "chainId",
+    "enabledReads",
+    "walletAuthentication",
+    "privateAccounts",
+    "ownerTransactions",
+    "automation"
+  ],
+  "title": "BridgeCapabilities",
+  "type": "object",
+  "x-contract-version": "2.0.0-rc.1"
+}

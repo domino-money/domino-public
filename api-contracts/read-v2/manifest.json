@@ -1,0 +1,345 @@
+{
+  "contract": "read-v2",
+  "contractVersion": "2.0.0-rc.1",
+  "enabledReadCandidates": [
+    "pool-market"
+  ],
+  "files": [
+    {
+      "path": "README.md",
+      "sha256": "9254a1ad0ead8e5b78ceb0a16cb784826eda96bfc70f19feccdc3788e863ea48"
+    },
+    {
+      "path": "consumer.browser.test.mjs",
+      "sha256": "3b8f7cf25ed0b8bc0aae17aeae75fc07a3fd9e91a3c7fd56c97338a4c1687df6"
+    },
+    {
+      "path": "consumer.test.mjs",
+      "sha256": "00cdccb6095a07aab5d7f62f0eea3e7a9a2cfe8dd205f1d10fc7720684e8ddbe"
+    },
+    {
+      "path": "consumer.typecheck.mts",
+      "sha256": "f47bb4f6a342392cfce8aaab0feffe599e19ad8553c3c590c00201f714349b0c"
+    },
+    {
+      "path": "fixtures/capabilities.disabled.json",
+      "sha256": "580f2408e9d3cd8e7ae2f86110cca2d5eef2902d522243de8c6b6295e3c28c6b"
+    },
+    {
+      "path": "fixtures/capabilities.enabled.json",
+      "sha256": "4f8942ee891d1a333ad556fa5b50954a3e6d2de27ef94d577d3abb4f809a905e"
+    },
+    {
+      "path": "fixtures/errors.json",
+      "sha256": "6265a318cb4a47165caad5dc67ed6a3583223c85ca9e78ff79692ce1f3601d49"
+    },
+    {
+      "path": "fixtures/index.json",
+      "sha256": "af847b5a9662dd9992b9a23b42938ab8536bca0c1b00d224f07139b219784f10"
+    },
+    {
+      "path": "fixtures/invalid/pool-market.apr-float.json",
+      "sha256": "420f4a924c5ee52bbbde904dd6d2ee0be05ffecf1ee0291639b4473637280ac5"
+    },
+    {
+      "path": "fixtures/invalid/pool-market.apr-null-current.json",
+      "sha256": "2e0bd1b13f0c43908ad8b6934f3033a682859843e3e17830b215528ce01f3be8"
+    },
+    {
+      "path": "fixtures/invalid/pool-market.apr-tampered.json",
+      "sha256": "1d62a122068847cae577da2a3aa0d547927c8796d1b0bda1a816c0bf012ebef0"
+    },
+    {
+      "path": "fixtures/invalid/pool-market.cache-age.json",
+      "sha256": "86304d6d48123d634a3b5ddac98e86079e3a5b607701e431bfdb6c23eb56ad75"
+    },
+    {
+      "path": "fixtures/invalid/pool-market.estimate-pool.json",
+      "sha256": "0058bd7213b5411d166bb925e388677710dd84e55b44f64e4ced43a58f405c59"
+    },
+    {
+      "path": "fixtures/invalid/pool-market.execution.json",
+      "sha256": "54327d0dd93b9b9af8254714d51198a3559fb7c8a498416f683f4cac8d3d4ed3"
+    },
+    {
+      "path": "fixtures/invalid/pool-market.inputs-protocol.json",
+      "sha256": "fb8006c34773bd657b7f4d03f4e787a930141f9fdae32354b54897bd5e08febf"
+    },
+    {
+      "path": "fixtures/invalid/pool-market.inputs-volume.json",
+      "sha256": "d78c4674c6959842dc8fc079d7ef0877e400dae4a535d87a44d549dc4fefbf9d"
+    },
+    {
+      "path": "fixtures/invalid/pool-market.limitation-removed.json",
+      "sha256": "24c07850783677adc89b1ee372f2ca1d3d42e4729f34be9df08cb134a1c3f1d5"
+    },
+    {
+      "path": "fixtures/invalid/pool-market.market-pool.json",
+      "sha256": "1910f13a078c4a9cf4f512b80906932f652607645d28c86a0d2e6bd81ff35061"
+    },
+    {
+      "path": "fixtures/invalid/pool-market.outer-pool.json",
+      "sha256": "2d3ddc124abe98929c7bb53ac7d10d328aa17f1764be9348000f1ea8949bb2d4"
+    },
+    {
+      "path": "fixtures/invalid/pool-market.protocol-promoted.json",
+      "sha256": "daee5b2e9a2b0e9e2b2e77847a2fc2d06b55f0233f5f49565be9008c501cc8ff"
+    },
+    {
+      "path": "fixtures/invalid/pool-market.retrieval-reset.json",
+      "sha256": "667818e46238f56891db93cded0b5b721bcc644cf4120cf1c0aaa4d20a2c58a9"
+    },
+    {
+      "path": "fixtures/invalid/pool-market.snapshot-hash.json",
+      "sha256": "194b5688755cea6ad44577c2dc9b6c49fabda25a615a7f31eb6a337dff3d4359"
+    },
+    {
+      "path": "fixtures/invalid/pool-market.source-url.json",
+      "sha256": "eec187c7d6c45744d9eb1d4c00c3b56a4ce70ce873291ab02e0a1ceaa226f2d6"
+    },
+    {
+      "path": "fixtures/invalid/pool-market.stale-promoted.json",
+      "sha256": "cb3e5eeea259adf2e3191a3a616c47feb6e010a578bfd40845e79fd4d993c10b"
+    },
+    {
+      "path": "fixtures/invalid/pool-market.version.json",
+      "sha256": "8b8d596972553030a3a3416eb7615f1235ac02687d2289e7b7376a447fe256a2"
+    },
+    {
+      "path": "fixtures/producer/pool-market.available.json",
+      "sha256": "f396dbfe59125deebb0a89bc302cc4fc5abf83f051bfb532614f3b7db75b4933"
+    },
+    {
+      "path": "fixtures/producer/pool-market.below-precision.json",
+      "sha256": "8786d82404c5e3b5929394d820217ec08fdb04d78b641e39b110dec381a5d0a8"
+    },
+    {
+      "path": "fixtures/producer/pool-market.cache-300.json",
+      "sha256": "b108b7cadbd1a3fce848a14ec793a7bbbe45a9fa5cb4ad3518ffa3a4d2197c96"
+    },
+    {
+      "path": "fixtures/producer/pool-market.cache-59.json",
+      "sha256": "66e840433abcd222491f0a0a51e9702be986292ba214251d2224767da17c7581"
+    },
+    {
+      "path": "fixtures/producer/pool-market.dynamic.json",
+      "sha256": "a5a7f27e5c2bbb44bc55130fe4259e8e51c178f0675bb87ddb0577f178fc7136"
+    },
+    {
+      "path": "fixtures/producer/pool-market.expired.json",
+      "sha256": "0ffdc445cb4de4269a0dd0bf0fe73386e6b75ed0f86f44d7df7b8b21e504860c"
+    },
+    {
+      "path": "fixtures/producer/pool-market.future-retrieval.json",
+      "sha256": "b28407dd415b142146c4a399088eea48e6a3a5009f18e962f9758885d0375fea"
+    },
+    {
+      "path": "fixtures/producer/pool-market.hooked.json",
+      "sha256": "a991668cd3b955648b046a0c6b5ac271959270326cdb9ded4cec4fcb791f543d"
+    },
+    {
+      "path": "fixtures/producer/pool-market.invalid-protocol-fee.json",
+      "sha256": "3bf97e83b0802a25b54688aa36c57db2e4fd9e5647a25cafb3dc4a248e8847e0"
+    },
+    {
+      "path": "fixtures/producer/pool-market.missing-tvl.json",
+      "sha256": "22335f6f1e1beb6857f32f5904d1f91fb0d176af0402c09343aa0b3737ce490b"
+    },
+    {
+      "path": "fixtures/producer/pool-market.missing-volume.json",
+      "sha256": "d8bd39b623b77bd6052ced93e435aad695e3d17cdeaba0b75b01da45a6324989"
+    },
+    {
+      "path": "fixtures/producer/pool-market.out-of-bounds.json",
+      "sha256": "bf5b822d668b2f4a5fe1b7ce56a79f2c348a63ec6b22d4e6e53456749090b7c9"
+    },
+    {
+      "path": "fixtures/producer/pool-market.precise.json",
+      "sha256": "f81588541d26828c5151f46c63591f718a655cae941ee487d5623c490f6519a8"
+    },
+    {
+      "path": "fixtures/producer/pool-market.protocol-fee.json",
+      "sha256": "55b1dd92123d9f6535f7ededf9d67562dc094c4f7b4761742f9745e3713a9dad"
+    },
+    {
+      "path": "fixtures/producer/pool-market.provider-rate-limited.json",
+      "sha256": "26818a80a0f6bc6536f17b2554240e3a6f30d4e7f4fd20330eac4021fd7cdc9d"
+    },
+    {
+      "path": "fixtures/producer/pool-market.provider-unavailable.json",
+      "sha256": "284d24acf6b9b0f9d4acea68c74a205e5dee00f963b22daaba00e1ed15332c7b"
+    },
+    {
+      "path": "fixtures/producer/pool-market.rejected-currencies.json",
+      "sha256": "a3356df3ce1960515e9c644b72dd76973e3d8c1a5f3fc1d00d81c0026a29ffd0"
+    },
+    {
+      "path": "fixtures/producer/pool-market.rejected-dex.json",
+      "sha256": "6a94ff3ca05a28ab938a97888c471e62acb959ad5ad79567bb6fee7f61e90c83"
+    },
+    {
+      "path": "fixtures/producer/pool-market.snapshot-120.json",
+      "sha256": "b420c5bc6afa6312fc6291885e5a6fcebf45e45168e9f7551b3563f63a8d46df"
+    },
+    {
+      "path": "fixtures/producer/pool-market.snapshot-121.json",
+      "sha256": "bd7cafa0d27d93a1ad0dc5515c1b422bcfee2ad42db284cd08704813d5ada187"
+    },
+    {
+      "path": "fixtures/producer/pool-market.snapshot-300.json",
+      "sha256": "cee8392fcf85934360294fabff506be9dc18b6504d051275acb8ef37d98c6b5f"
+    },
+    {
+      "path": "fixtures/producer/pool-market.snapshot-expired.json",
+      "sha256": "3359aa303296c70844040da5c231a825cab5c340e28db96c1a8e361807bd03bd"
+    },
+    {
+      "path": "fixtures/producer/pool-market.stale.json",
+      "sha256": "99117f163a20216e6ebb4e48befa1aa00cea6c6dedf05a10a6781dfebbcdfc56"
+    },
+    {
+      "path": "fixtures/producer/pool-market.zero-tvl.json",
+      "sha256": "3bffc1e5d5efe57c58c75d64eb752ff385b83a4a67482d62191ff3ce1148d0b8"
+    },
+    {
+      "path": "fixtures/producer/pool-market.zero-volume.json",
+      "sha256": "49a9a706599b2a7c7ff50504e473b89128f0e05ab50ee2bfd0de4cce3e98025b"
+    },
+    {
+      "path": "fixtures/request-boundaries.json",
+      "sha256": "bbfaec80334d282088d11ad1710f48fe4dd5fa09d4eec84d244f8025bc7ea800"
+    },
+    {
+      "path": "fixtures/requests/pool-market.json",
+      "sha256": "34649fb67591e40f7e79e8c734e450551de0c0f66ecac281f1753a782d41e3e5"
+    },
+    {
+      "path": "fixtures/responses/pool-market.json",
+      "sha256": "f396dbfe59125deebb0a89bc302cc4fc5abf83f051bfb532614f3b7db75b4933"
+    },
+    {
+      "path": "runtime.d.mts",
+      "sha256": "33185faceca357b7174518cada3aacd83db97426ff543b028c8b3e07f4f5b017"
+    },
+    {
+      "path": "runtime.mjs",
+      "sha256": "45f3d280c18baec1d71b318a0eb22de6fbabb031e5493be9873bf496fc99811e"
+    },
+    {
+      "path": "schemas/capabilities.response.schema.json",
+      "sha256": "adfca7b6e8519b826c5bf3a5908e32f7e9352019849fb2d256e4b953b7eda93b"
+    },
+    {
+      "path": "schemas/error.response.schema.json",
+      "sha256": "b104ab754e49457671719104c981d15d85db4e58357fe5a5f57e6178de7ffb62"
+    },
+    {
+      "path": "schemas/pool-market.request.schema.json",
+      "sha256": "a789111a443860c6ea8e0e08ebd780e78ea97fe21c0a9a000d9b6e4f68e8e4eb"
+    },
+    {
+      "path": "schemas/pool-market.response.schema.json",
+      "sha256": "91578f8a301ace9f2769dbde7ca3ff7cfc2faf145bc2e4dc9c01158f708b199f"
+    },
+    {
+      "path": "types.ts",
+      "sha256": "8c073a73887109ec6b8ea32f8bb0ae92e1a88c263241b464e7c70ffed65853f4"
+    }
+  ],
+  "generator": "scripts/export-read-v2-contract.py",
+  "sources": [
+    {
+      "path": "backend/pool_apr_contract.py",
+      "sha256": "50e9d04fd8a0cdbcca8cc32d15e56ad442834be094b782e18ee54e536e930eda"
+    },
+    {
+      "path": "backend/pool_apr.py",
+      "sha256": "de6759e3430a179874b6b4b6f21d9c13ac1157fdeba3dbb87392fcccb90d92c8"
+    },
+    {
+      "path": "backend/read_contract.py",
+      "sha256": "539fa15678bd25df3db213180d40bbe30e98a463426856c7eeb5b39a102038da"
+    },
+    {
+      "path": "backend/discovery.py",
+      "sha256": "3a1bce4dd8082b63e259ec36e74308561e3bc382ce799ce5b63c7621d34031af"
+    },
+    {
+      "path": "backend/read_service.py",
+      "sha256": "83ef45956e85347f4aab425cc7b77396ca82a74231aa0f1803926bd77b9448fd"
+    },
+    {
+      "path": "backend/market_cache.py",
+      "sha256": "3344ad1ed2b06fff0844a5ee60d2835a625bbc917412e8fbbdded58655d833e6"
+    },
+    {
+      "path": "backend/market_data.py",
+      "sha256": "4e51bfd0e20e9e72d99522270a03dea062b163f38b22dfe315d0b6b373f2b1f1"
+    },
+    {
+      "path": "backend/read_gateway.py",
+      "sha256": "6b73a878445d5bc9e0a8e4c1906e0e87177fb50bbc18af7eaaa4ecc82bf1cc12"
+    },
+    {
+      "path": "backend/read_api.py",
+      "sha256": "5d12391e4c76d4430b4003c8a931b26984094c9b929ab7ad5c95e929057fd7b6"
+    },
+    {
+      "path": "backend/bridge_http.py",
+      "sha256": "9e839b84104d80c67cb59b474f2694e9ab7c29e10ab806b05b4ba57200f73f84"
+    },
+    {
+      "path": "backend/bridge_identity.py",
+      "sha256": "da32b8ea6377d5fcfe379cc4fc8b39e74f8b5110f63c6625ed2cba0dcb00b022"
+    },
+    {
+      "path": "backend/bridge_state.py",
+      "sha256": "f120d5191a51bac01b53901b62c7ea587e280eb071e40b7085c4d52a39d5ac82"
+    },
+    {
+      "path": "backend/read_deadline.py",
+      "sha256": "f74ec9bf421525cccde91e5f461479d36ff6155289a7d5db556820937e4786a8"
+    },
+    {
+      "path": "bridge/src/worker.mjs",
+      "sha256": "df3adc1f7ab65fb0673a78de353fc7d18db0529e8c42d1cb45f19c615ac064a6"
+    },
+    {
+      "path": "bridge/src/strict-json.mjs",
+      "sha256": "d436ef5423faf50c6d96789a344e5522e1628312a1f876c047d07edecff778f8"
+    },
+    {
+      "path": "app/functions/_lib/bridge.ts",
+      "sha256": "d32a9d282b67a7d0882fc4f8d758d9815c688a408908b3a9ba02469d8cf177bd"
+    },
+    {
+      "path": "bridge/wrangler.read.toml",
+      "sha256": "a9d8be47c1f769b19b42f09f800590b388c655822ef0a984cffb933d1727b673"
+    },
+    {
+      "path": "backend/tests/read_v2_contract_fixtures.py",
+      "sha256": "0024eeda699c0a2604f0815d270e6ddf7205ecaeffb7d4787f3c76cfabe812f2"
+    },
+    {
+      "path": "backend/tests/test_read_v2_contract.py",
+      "sha256": "4a9139f2aa2de62549e31a0d6def69f75251d2a5206d4b3541cd23dd4bd17803"
+    },
+    {
+      "path": "backend/tests/test_read_contract.py",
+      "sha256": "0d236a38bfaa3529e4d42f2382f13693efb6e3f1d4483f6e473939f9fab126e1"
+    },
+    {
+      "path": "backend/tests/test_discovery.py",
+      "sha256": "3ffc1db907f8c29d7a168b4412de25a329f1d3bb315ece83025fd108c191b665"
+    },
+    {
+      "path": "scripts/export-read-contract.py",
+      "sha256": "8ef574be4d81bbf62b82203cce04d75e27dc6f147ec9e1964be91f8ba98c4e68"
+    },
+    {
+      "path": "scripts/export-read-v2-contract.py",
+      "sha256": "c0d2466ae6a43e2e1c8405f204432e16944a8bba33a63df3d063f5288c792ec0"
+    }
+  ],
+  "status": "candidate_disabled_pending_consumer_acknowledgement"
+}

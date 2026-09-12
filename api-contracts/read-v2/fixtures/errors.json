@@ -1,0 +1,338 @@
+[
+  {
+    "payload": {
+      "error": "activity_methodology_mismatch"
+    },
+    "status": 503
+  },
+  {
+    "payload": {
+      "error": "activity_not_indexed"
+    },
+    "status": 503
+  },
+  {
+    "payload": {
+      "error": "activity_pool_not_registered"
+    },
+    "status": 503
+  },
+  {
+    "payload": {
+      "error": "activity_snapshot_reorganized"
+    },
+    "status": 503
+  },
+  {
+    "payload": {
+      "error": "activity_window_budget_exhausted"
+    },
+    "status": 503
+  },
+  {
+    "payload": {
+      "error": "block_unavailable"
+    },
+    "status": 503
+  },
+  {
+    "payload": {
+      "error": "catalogue_database_unavailable"
+    },
+    "status": 503
+  },
+  {
+    "payload": {
+      "error": "catalogue_not_configured"
+    },
+    "status": 503
+  },
+  {
+    "payload": {
+      "error": "catalogue_revision_changed"
+    },
+    "status": 409
+  },
+  {
+    "payload": {
+      "error": "catalogue_schema_mismatch"
+    },
+    "status": 503
+  },
+  {
+    "payload": {
+      "error": "fixed_fee_mismatch"
+    },
+    "status": 503
+  },
+  {
+    "payload": {
+      "error": "invalid_abi_response"
+    },
+    "status": 503
+  },
+  {
+    "payload": {
+      "error": "invalid_json"
+    },
+    "status": 503
+  },
+  {
+    "payload": {
+      "error": "invalid_nft_position_info"
+    },
+    "status": 503
+  },
+  {
+    "payload": {
+      "error": "invalid_nft_snapshot_block"
+    },
+    "status": 503
+  },
+  {
+    "payload": {
+      "error": "invalid_or_expired_cursor"
+    },
+    "status": 400
+  },
+  {
+    "payload": {
+      "error": "invalid_pool_key"
+    },
+    "status": 503
+  },
+  {
+    "payload": {
+      "error": "invalid_pool_state"
+    },
+    "status": 503
+  },
+  {
+    "payload": {
+      "error": "invalid_quantity"
+    },
+    "status": 503
+  },
+  {
+    "payload": {
+      "error": "invalid_request"
+    },
+    "status": 422
+  },
+  {
+    "payload": {
+      "error": "invalid_rpc_envelope"
+    },
+    "status": 503
+  },
+  {
+    "payload": {
+      "error": "invalid_tick_spacing"
+    },
+    "status": 503
+  },
+  {
+    "payload": {
+      "error": "invalid_token_list"
+    },
+    "status": 400
+  },
+  {
+    "payload": {
+      "error": "json_required"
+    },
+    "status": 415
+  },
+  {
+    "payload": {
+      "error": "local_client_required"
+    },
+    "status": 403
+  },
+  {
+    "payload": {
+      "error": "manager_mismatch"
+    },
+    "status": 503
+  },
+  {
+    "payload": {
+      "error": "method_not_allowed"
+    },
+    "status": 405
+  },
+  {
+    "payload": {
+      "error": "metrics_snapshot_reorganized"
+    },
+    "status": 503
+  },
+  {
+    "payload": {
+      "error": "missing_contract_code"
+    },
+    "status": 503
+  },
+  {
+    "payload": {
+      "error": "missing_rpc_result"
+    },
+    "status": 503
+  },
+  {
+    "payload": {
+      "error": "network_unavailable"
+    },
+    "status": 503
+  },
+  {
+    "payload": {
+      "error": "nft_core_liquidity_mismatch"
+    },
+    "status": 503
+  },
+  {
+    "payload": {
+      "error": "nft_live_position_has_no_owner"
+    },
+    "status": 503
+  },
+  {
+    "payload": {
+      "error": "nft_pool_or_range_mismatch"
+    },
+    "status": 503
+  },
+  {
+    "payload": {
+      "error": "nft_snapshot_reorganized"
+    },
+    "status": 503
+  },
+  {
+    "payload": {
+      "error": "origin_not_allowed"
+    },
+    "status": 403
+  },
+  {
+    "payload": {
+      "error": "pool_id_mismatch"
+    },
+    "status": 503
+  },
+  {
+    "payload": {
+      "error": "provider_currency_mismatch"
+    },
+    "status": 503
+  },
+  {
+    "payload": {
+      "error": "quantity_too_large"
+    },
+    "status": 503
+  },
+  {
+    "payload": {
+      "error": "read_capacity_busy"
+    },
+    "status": 429
+  },
+  {
+    "payload": {
+      "error": "read_deadline_exceeded"
+    },
+    "status": 504
+  },
+  {
+    "payload": {
+      "error": "request_budget_exhausted"
+    },
+    "status": 503
+  },
+  {
+    "payload": {
+      "error": "request_timeout"
+    },
+    "status": 408
+  },
+  {
+    "payload": {
+      "error": "request_too_large"
+    },
+    "status": 413
+  },
+  {
+    "payload": {
+      "error": "response_too_large"
+    },
+    "status": 503
+  },
+  {
+    "payload": {
+      "error": "route_not_available"
+    },
+    "status": 404
+  },
+  {
+    "payload": {
+      "error": "rpc_call_gas_limit"
+    },
+    "status": 503
+  },
+  {
+    "payload": {
+      "error": "rpc_call_reverted"
+    },
+    "status": 503
+  },
+  {
+    "payload": {
+      "error": "rpc_error"
+    },
+    "status": 503
+  },
+  {
+    "payload": {
+      "error": "snapshot_reorganized"
+    },
+    "status": 503
+  },
+  {
+    "payload": {
+      "error": "stale_or_future_block"
+    },
+    "status": 503
+  },
+  {
+    "payload": {
+      "error": "upstream_contract_mismatch"
+    },
+    "status": 502
+  },
+  {
+    "payload": {
+      "error": "upstream_invalid_response"
+    },
+    "status": 502
+  },
+  {
+    "payload": {
+      "error": "upstream_timeout"
+    },
+    "status": 504
+  },
+  {
+    "payload": {
+      "error": "upstream_unavailable"
+    },
+    "status": 503
+  },
+  {
+    "payload": {
+      "error": "wrong_chain"
+    },
+    "status": 503
+  }
+]

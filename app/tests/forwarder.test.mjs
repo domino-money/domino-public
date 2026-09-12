@@ -51,13 +51,15 @@ const ORIGIN = 'https://domino.money';
 const PASSWORD = 'forwarder-suite-beta-password';
 const GATE = { BETA_PASSWORD: PASSWORD, BETA_COOKIE_KEY: 'Rk7sV2mQx9Lp4TbN8cWy3ZdJ6hGa1FeU5oXiQwErTzB' };
 
-/** The [vars] of each reviewed disabled config in #75 (bridge/wrangler.<svc>.toml at 9b844c5), verbatim. */
+/** The committed disabled configs, including the separately disabled read-v2 candidate. */
 const DISABLED = {
   read: {
     READ_BRIDGE_ENABLED: 'false',
+    READ_V2_BRIDGE_ENABLED: 'false',
     APP_ORIGIN: 'https://domino.money',
     GATEWAY_ORIGIN: 'https://vm-read.domino.money',
     ENABLED_READS: '',
+    ENABLED_V2_READS: '',
   },
   session: {
     SESSION_BRIDGE_ENABLED: 'false',
@@ -415,7 +417,7 @@ test('an /api path no family owns gets a JSON 404 from the forwarder, never inde
     '/api/x',
     '/api/read',
     '/api/read/v1',
-    '/api/read/v2/capabilities',
+    '/api/read/v3/capabilities',
     '/api/readx/v1/capabilities',
     '/api/sessions/v1/me',
     '/api/deposit/v1',
@@ -1195,6 +1197,39 @@ test('the same signed-in capabilities read reaches the real read Worker, disable
   assert.equal(traced.handed[0]?.headers.get('Cookie'), null);
   assert.deepEqual(calls, ['read GET https://domino.money/api/read/v1/capabilities']);
   assert.deepEqual(upstream, []);
+});
+
+test('read-v2 uses the existing binding with no cookies and remains independently disabled', async () => {
+  const { env, calls } = workers();
+  const traced = tracedPages(call('/api/read/v2/capabilities', { cookie: JAR }), env);
+  const response = await traced.response;
+  assert.equal(response.status, 200);
+  assert.equal(response.headers.get('x-domino-read-contract'), '2.0.0-rc.1');
+  const data = await response.json();
+  assert.equal(data.dataMode, 'disabled');
+  assert.deepEqual(data.enabledReads, []);
+  assert.equal(traced.handed[0]?.headers.get('Cookie'), null);
+  assert.deepEqual(calls, ['read GET https://domino.money/api/read/v2/capabilities']);
+  assert.deepEqual(upstream, []);
+});
+
+test('read-v2 POST preserves request bytes and version while discarding credentials at Pages', async () => {
+  const { bound, env } = recorders();
+  const body = JSON.stringify({ poolId: `0x${'a'.repeat(64)}` });
+  const traced = tracedPages(call('/api/read/v2/pool-market', {
+    method: 'POST', body, cookie: JAR,
+    headers: { 'X-Domino-Read-Contract': '2.0.0-rc.1', Authorization: 'Bearer forbidden',
+      'CF-Access-Client-Secret': 'forbidden', 'X-Domino-Client-Id': '192.0.2.99' },
+  }), env);
+  assert.equal((await traced.response).status, 200);
+  assert.equal(traced.handed[0]?.headers.get('Cookie'), null);
+  const [seen] = bound.read.calls;
+  assert.equal(seen.url, `${ORIGIN}/api/read/v2/pool-market`);
+  assert.equal(new TextDecoder().decode(seen.body), body);
+  assert.equal(seen.headers['x-domino-read-contract'], '2.0.0-rc.1');
+  for (const name of ['cookie', 'authorization', 'cf-access-client-secret', 'x-domino-client-id']) {
+    assert.equal(name in seen.headers, false, name);
+  }
 });
 
 test('a signed-in POST read loses its cookies at the gate and keeps its method, URL, contract header and body bytes', async () => {

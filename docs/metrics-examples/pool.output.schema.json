@@ -10,6 +10,12 @@
           "title": "Currentlpfeepips",
           "type": "integer"
         },
+        "protocolFeeRaw": {
+          "maximum": 16777215,
+          "minimum": 0,
+          "title": "Protocolfeeraw",
+          "type": "integer"
+        },
         "reportedLiquidityUsd": {
           "anyOf": [
             {
@@ -39,6 +45,7 @@
       },
       "required": [
         "currentLpFeePips",
+        "protocolFeeRaw",
         "volume24hUsd",
         "reportedLiquidityUsd"
       ],
@@ -348,6 +355,8 @@
           "hooked_pool_unsupported",
           "pool_integration_unsupported",
           "fixed_fee_mismatch",
+          "invalid_protocol_fee",
+          "protocol_fee_unsupported",
           "market_unavailable",
           "market_rejected",
           "market_identity_mismatch",
@@ -368,7 +377,7 @@
         ],
         "type": "string"
       },
-      "maxItems": 24,
+      "maxItems": 26,
       "title": "Reasons",
       "type": "array"
     },
