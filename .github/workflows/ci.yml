@@ -29,6 +29,7 @@ jobs:
         run: |
           python3 -B -m unittest discover -s scripts/staging/tests -p test_egress_policy.py -v
           python3 -B -m unittest discover -s scripts/staging/tests -p test_egress_window_probe.py -v
+          python3 -B -m unittest discover -s scripts/staging/tests -p test_dev_infrastructure.py -v
       - name: Check disabled bridge deployment candidates
         run: |
           python3 scripts/staging/check_bridge_configs.py
@@ -100,6 +101,7 @@ jobs:
         run: |
           DOMINO_TEST_STAGING_POSTGRES=1 python -B -m unittest discover -s scripts/staging/tests -p test_catalogue_postgres.py -v
           DOMINO_TEST_STAGING_POSTGRES=1 python -B -m unittest discover -s scripts/staging/tests -p test_upgrade_postgres.py -v
+          DOMINO_TEST_STAGING_POSTGRES=1 python -B -m unittest discover -s scripts/staging/tests -p test_dev_catalogue_profile.py -v
       - run: python backend/dev_postgres.py prepare-tests
       - run: python -m unittest discover -s backend/tests -v
       - name: Stop isolated database
