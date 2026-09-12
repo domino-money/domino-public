@@ -1,0 +1,390 @@
+{
+  "description": "Synthetic development tooling fixtures. Repeated-letter commits/digest are not deployed releases. Never import these into production frontend assets.",
+  "responses": [
+    {
+      "name": "ready",
+      "status": 200,
+      "headers": {
+        "X-Domino-Read-Contract": "1.1.0-rc.3",
+        "X-Domino-Request-Id": "00000000000000000000000000000000"
+      },
+      "body": {
+        "schemaVersion": 1,
+        "environment": "development",
+        "authenticated": true,
+        "readEnabled": true,
+        "contractVersion": "1.1.0-rc.3",
+        "readerCommit": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "gatewayCommit": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "releaseMetadataSource": "operator_profile",
+        "contractManifestSha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+        "enabledReads": [
+          "token",
+          "pools",
+          "pool-market",
+          "wallet-assets",
+          "nft-positions",
+          "catalogue",
+          "pool-activity"
+        ],
+        "providerHealth": "not_probed",
+        "readerConnection": {
+          "state": "ready",
+          "retryAfterSeconds": 0,
+          "startsPerMinute": 6,
+          "minimumStartIntervalSeconds": 2,
+          "busy": false
+        },
+        "gatewayAdmission": {
+          "requestsPerMinute": 6,
+          "burst": 2,
+          "maxInFlight": 1,
+          "minimumStartIntervalSeconds": 2,
+          "controlRequestsPerMinute": 30,
+          "controlBurst": 5,
+          "upstreamBudgetSeconds": 15
+        }
+      }
+    },
+    {
+      "name": "busy",
+      "status": 200,
+      "headers": {
+        "X-Domino-Read-Contract": "1.1.0-rc.3",
+        "X-Domino-Request-Id": "00000000000000000000000000000000"
+      },
+      "body": {
+        "schemaVersion": 1,
+        "environment": "development",
+        "authenticated": true,
+        "readEnabled": true,
+        "contractVersion": "1.1.0-rc.3",
+        "readerCommit": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "gatewayCommit": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "releaseMetadataSource": "operator_profile",
+        "contractManifestSha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+        "enabledReads": [
+          "token",
+          "pools",
+          "pool-market",
+          "wallet-assets",
+          "nft-positions",
+          "catalogue",
+          "pool-activity"
+        ],
+        "providerHealth": "not_probed",
+        "readerConnection": {
+          "state": "ready",
+          "retryAfterSeconds": 0,
+          "startsPerMinute": 6,
+          "minimumStartIntervalSeconds": 2,
+          "busy": true
+        },
+        "gatewayAdmission": {
+          "requestsPerMinute": 6,
+          "burst": 2,
+          "maxInFlight": 1,
+          "minimumStartIntervalSeconds": 2,
+          "controlRequestsPerMinute": 30,
+          "controlBurst": 5,
+          "upstreamBudgetSeconds": 15
+        }
+      }
+    },
+    {
+      "name": "startup-cooldown",
+      "status": 200,
+      "headers": {
+        "X-Domino-Read-Contract": "1.1.0-rc.3",
+        "X-Domino-Request-Id": "00000000000000000000000000000000"
+      },
+      "body": {
+        "schemaVersion": 1,
+        "environment": "development",
+        "authenticated": true,
+        "readEnabled": true,
+        "contractVersion": "1.1.0-rc.3",
+        "readerCommit": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "gatewayCommit": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "releaseMetadataSource": "operator_profile",
+        "contractManifestSha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+        "enabledReads": [
+          "token",
+          "pools",
+          "pool-market",
+          "wallet-assets",
+          "nft-positions",
+          "catalogue",
+          "pool-activity"
+        ],
+        "providerHealth": "not_probed",
+        "readerConnection": {
+          "state": "cooldown",
+          "retryAfterSeconds": 60,
+          "startsPerMinute": 6,
+          "minimumStartIntervalSeconds": 2,
+          "busy": false
+        },
+        "gatewayAdmission": {
+          "requestsPerMinute": 6,
+          "burst": 2,
+          "maxInFlight": 1,
+          "minimumStartIntervalSeconds": 2,
+          "controlRequestsPerMinute": 30,
+          "controlBurst": 5,
+          "upstreamBudgetSeconds": 15
+        }
+      }
+    },
+    {
+      "name": "capacity-cooldown",
+      "status": 200,
+      "headers": {
+        "X-Domino-Read-Contract": "1.1.0-rc.3",
+        "X-Domino-Request-Id": "00000000000000000000000000000000"
+      },
+      "body": {
+        "schemaVersion": 1,
+        "environment": "development",
+        "authenticated": true,
+        "readEnabled": true,
+        "contractVersion": "1.1.0-rc.3",
+        "readerCommit": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "gatewayCommit": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "releaseMetadataSource": "operator_profile",
+        "contractManifestSha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+        "enabledReads": [
+          "token",
+          "pools",
+          "pool-market",
+          "wallet-assets",
+          "nft-positions",
+          "catalogue",
+          "pool-activity"
+        ],
+        "providerHealth": "not_probed",
+        "readerConnection": {
+          "state": "cooldown",
+          "retryAfterSeconds": 10,
+          "startsPerMinute": 6,
+          "minimumStartIntervalSeconds": 2,
+          "busy": false
+        },
+        "gatewayAdmission": {
+          "requestsPerMinute": 6,
+          "burst": 2,
+          "maxInFlight": 1,
+          "minimumStartIntervalSeconds": 2,
+          "controlRequestsPerMinute": 30,
+          "controlBurst": 5,
+          "upstreamBudgetSeconds": 15
+        }
+      }
+    },
+    {
+      "name": "qualification-expired",
+      "status": 200,
+      "headers": {
+        "X-Domino-Read-Contract": "1.1.0-rc.3",
+        "X-Domino-Request-Id": "00000000000000000000000000000000"
+      },
+      "body": {
+        "schemaVersion": 1,
+        "environment": "development",
+        "authenticated": true,
+        "readEnabled": true,
+        "contractVersion": "1.1.0-rc.3",
+        "readerCommit": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "gatewayCommit": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "releaseMetadataSource": "operator_profile",
+        "contractManifestSha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+        "enabledReads": [
+          "token",
+          "pools",
+          "pool-market",
+          "wallet-assets",
+          "nft-positions",
+          "catalogue",
+          "pool-activity"
+        ],
+        "providerHealth": "not_probed",
+        "readerConnection": {
+          "state": "qualification_expired",
+          "retryAfterSeconds": 0,
+          "startsPerMinute": 6,
+          "minimumStartIntervalSeconds": 2,
+          "busy": false
+        },
+        "gatewayAdmission": {
+          "requestsPerMinute": 6,
+          "burst": 2,
+          "maxInFlight": 1,
+          "minimumStartIntervalSeconds": 2,
+          "controlRequestsPerMinute": 30,
+          "controlBurst": 5,
+          "upstreamBudgetSeconds": 15
+        }
+      }
+    },
+    {
+      "name": "qualification-disabled",
+      "status": 200,
+      "headers": {
+        "X-Domino-Read-Contract": "1.1.0-rc.3",
+        "X-Domino-Request-Id": "00000000000000000000000000000000"
+      },
+      "body": {
+        "schemaVersion": 1,
+        "environment": "development",
+        "authenticated": true,
+        "readEnabled": true,
+        "contractVersion": "1.1.0-rc.3",
+        "readerCommit": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "gatewayCommit": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "releaseMetadataSource": "operator_profile",
+        "contractManifestSha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+        "enabledReads": [
+          "token",
+          "pools",
+          "pool-market",
+          "wallet-assets",
+          "nft-positions",
+          "catalogue",
+          "pool-activity"
+        ],
+        "providerHealth": "not_probed",
+        "readerConnection": {
+          "state": "qualification_disabled",
+          "retryAfterSeconds": 0,
+          "startsPerMinute": 6,
+          "minimumStartIntervalSeconds": 2,
+          "busy": false
+        },
+        "gatewayAdmission": {
+          "requestsPerMinute": 6,
+          "burst": 2,
+          "maxInFlight": 1,
+          "minimumStartIntervalSeconds": 2,
+          "controlRequestsPerMinute": 30,
+          "controlBurst": 5,
+          "upstreamBudgetSeconds": 15
+        }
+      }
+    },
+    {
+      "name": "reader-unavailable",
+      "status": 200,
+      "headers": {
+        "X-Domino-Read-Contract": "1.1.0-rc.3",
+        "X-Domino-Request-Id": "00000000000000000000000000000000"
+      },
+      "body": {
+        "schemaVersion": 1,
+        "environment": "development",
+        "authenticated": true,
+        "readEnabled": true,
+        "contractVersion": "1.1.0-rc.3",
+        "readerCommit": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "gatewayCommit": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "releaseMetadataSource": "operator_profile",
+        "contractManifestSha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+        "enabledReads": [
+          "token",
+          "pools",
+          "pool-market",
+          "wallet-assets",
+          "nft-positions",
+          "catalogue",
+          "pool-activity"
+        ],
+        "providerHealth": "not_probed",
+        "readerConnection": {
+          "state": "unavailable"
+        },
+        "gatewayAdmission": {
+          "requestsPerMinute": 6,
+          "burst": 2,
+          "maxInFlight": 1,
+          "minimumStartIntervalSeconds": 2,
+          "controlRequestsPerMinute": 30,
+          "controlBurst": 5,
+          "upstreamBudgetSeconds": 15
+        }
+      }
+    },
+    {
+      "name": "reader-incompatible",
+      "status": 200,
+      "headers": {
+        "X-Domino-Read-Contract": "1.1.0-rc.3",
+        "X-Domino-Request-Id": "00000000000000000000000000000000"
+      },
+      "body": {
+        "schemaVersion": 1,
+        "environment": "development",
+        "authenticated": true,
+        "readEnabled": true,
+        "contractVersion": "1.1.0-rc.3",
+        "readerCommit": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "gatewayCommit": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "releaseMetadataSource": "operator_profile",
+        "contractManifestSha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+        "enabledReads": [
+          "token",
+          "pools",
+          "pool-market",
+          "wallet-assets",
+          "nft-positions",
+          "catalogue",
+          "pool-activity"
+        ],
+        "providerHealth": "not_probed",
+        "readerConnection": {
+          "state": "incompatible"
+        },
+        "gatewayAdmission": {
+          "requestsPerMinute": 6,
+          "burst": 2,
+          "maxInFlight": 1,
+          "minimumStartIntervalSeconds": 2,
+          "controlRequestsPerMinute": 30,
+          "controlBurst": 5,
+          "upstreamBudgetSeconds": 15
+        }
+      }
+    },
+    {
+      "name": "gateway-disabled",
+      "status": 200,
+      "headers": {
+        "X-Domino-Read-Contract": "1.1.0-rc.3",
+        "X-Domino-Request-Id": "00000000000000000000000000000000"
+      },
+      "body": {
+        "schemaVersion": 1,
+        "environment": "development",
+        "authenticated": true,
+        "readEnabled": false,
+        "contractVersion": "1.1.0-rc.3",
+        "readerCommit": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "gatewayCommit": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "releaseMetadataSource": "operator_profile",
+        "contractManifestSha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+        "enabledReads": [],
+        "providerHealth": "not_probed",
+        "readerConnection": {
+          "state": "unavailable"
+        },
+        "gatewayAdmission": {
+          "requestsPerMinute": 6,
+          "burst": 2,
+          "maxInFlight": 1,
+          "minimumStartIntervalSeconds": 2,
+          "controlRequestsPerMinute": 30,
+          "controlBurst": 5,
+          "upstreamBudgetSeconds": 15
+        }
+      }
+    }
+  ]
+}

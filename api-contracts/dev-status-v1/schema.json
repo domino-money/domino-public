@@ -1,0 +1,232 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "urn:domino:development-read-status:1",
+  "title": "Domino authenticated development read status v1",
+  "description": "Development tooling only. Success body of GET /internal/dev/v1/status. No provider health or release verification is implied by profile metadata.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "environment",
+    "authenticated",
+    "readEnabled",
+    "contractVersion",
+    "readerCommit",
+    "gatewayCommit",
+    "releaseMetadataSource",
+    "contractManifestSha256",
+    "enabledReads",
+    "providerHealth",
+    "readerConnection",
+    "gatewayAdmission"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": 1
+    },
+    "environment": {
+      "const": "development"
+    },
+    "authenticated": {
+      "const": true
+    },
+    "readEnabled": {
+      "type": "boolean"
+    },
+    "contractVersion": {
+      "const": "1.1.0-rc.3"
+    },
+    "readerCommit": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{40}$",
+      "minLength": 40,
+      "maxLength": 40
+    },
+    "gatewayCommit": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{40}$",
+      "minLength": 40,
+      "maxLength": 40
+    },
+    "releaseMetadataSource": {
+      "const": "operator_profile"
+    },
+    "contractManifestSha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$",
+      "minLength": 64,
+      "maxLength": 64
+    },
+    "enabledReads": {
+      "type": "array",
+      "items": {
+        "enum": [
+          "token",
+          "pools",
+          "pool-market",
+          "wallet-assets",
+          "nft-positions",
+          "catalogue",
+          "pool-activity"
+        ]
+      },
+      "uniqueItems": true,
+      "maxItems": 7
+    },
+    "providerHealth": {
+      "const": "not_probed"
+    },
+    "readerConnection": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "state"
+          ],
+          "properties": {
+            "state": {
+              "enum": [
+                "unavailable",
+                "incompatible"
+              ]
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "state",
+            "retryAfterSeconds",
+            "startsPerMinute",
+            "minimumStartIntervalSeconds",
+            "busy"
+          ],
+          "properties": {
+            "state": {
+              "enum": [
+                "ready",
+                "cooldown",
+                "qualification_disabled",
+                "qualification_expired"
+              ]
+            },
+            "retryAfterSeconds": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 60
+            },
+            "startsPerMinute": {
+              "const": 6
+            },
+            "minimumStartIntervalSeconds": {
+              "const": 2
+            },
+            "busy": {
+              "type": "boolean"
+            }
+          },
+          "allOf": [
+            {
+              "if": {
+                "properties": {
+                  "state": {
+                    "const": "cooldown"
+                  }
+                }
+              },
+              "then": {
+                "properties": {
+                  "retryAfterSeconds": {
+                    "minimum": 1
+                  }
+                }
+              },
+              "else": {
+                "properties": {
+                  "retryAfterSeconds": {
+                    "const": 0
+                  }
+                }
+              }
+            }
+          ]
+        }
+      ]
+    },
+    "gatewayAdmission": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "requestsPerMinute",
+        "burst",
+        "maxInFlight",
+        "minimumStartIntervalSeconds",
+        "controlRequestsPerMinute",
+        "controlBurst",
+        "upstreamBudgetSeconds"
+      ],
+      "properties": {
+        "requestsPerMinute": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 30
+        },
+        "burst": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 5
+        },
+        "maxInFlight": {
+          "const": 1
+        },
+        "minimumStartIntervalSeconds": {
+          "const": 2
+        },
+        "controlRequestsPerMinute": {
+          "const": 30
+        },
+        "controlBurst": {
+          "const": 5
+        },
+        "upstreamBudgetSeconds": {
+          "const": 15
+        }
+      }
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "readEnabled": {
+            "const": true
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "enabledReads": {
+            "const": [
+              "token",
+              "pools",
+              "pool-market",
+              "wallet-assets",
+              "nft-positions",
+              "catalogue",
+              "pool-activity"
+            ]
+          }
+        }
+      },
+      "else": {
+        "properties": {
+          "enabledReads": {
+            "const": []
+          }
+        }
+      }
+    }
+  ]
+}
