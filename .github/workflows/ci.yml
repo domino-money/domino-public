@@ -7,8 +7,11 @@ on:
 permissions:
   contents: read
 concurrency:
-  group: ci-${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  # Replace obsolete PR checks, but let a main run finish its preview upload.
+  # GitHub keeps only the newest pending run; intermediate pushes may coalesce.
+  # Manual checks have their own group and cannot displace a pending main push.
+  group: ci-${{ github.workflow }}-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 jobs:
   hygiene:
     name: Repository hygiene
@@ -50,6 +53,8 @@ jobs:
           cache-dependency-path: |
             web/package-lock.json
             app/package-lock.json
+      - name: Check preview deployment policy without credentials
+        run: node --test scripts/preview-workflow.test.mjs
       - run: npm --prefix web ci --no-audit --no-fund
       - run: npm run check:web
       - name: Check shared read types
@@ -112,3 +117,46 @@ jobs:
           cache: npm
       - run: npm ci --no-audit --no-fund
       - run: npm run test:contracts
+  preview:
+    name: Deploy gated preview
+    needs: [hygiene, frontend, backend, contracts]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    concurrency:
+      group: deploy-gated-preview
+      cancel-in-progress: false
+    env:
+      WRANGLER_SEND_METRICS: 'false'
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+          cache-dependency-path: app/package-lock.json
+      - run: npm --prefix app ci --no-audit --no-fund
+      - name: Build and record exactly what will be uploaded
+        run: npm --prefix app run release:build
+      - name: Deploy that recorded dist to the gated preview
+        if: env.CLOUDFLARE_API_TOKEN != '' && env.CLOUDFLARE_ACCOUNT_ID != ''
+        run: npm --prefix app run deploy:preview
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          # A repository variable, not a secret: the account id is an
+          # identifier that already appears in dashboard URLs and wrangler
+          # configs, and hiding it would only cost the owner a step.
+          CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
+      - name: Say why nothing was deployed
+        if: env.CLOUDFLARE_API_TOKEN == '' || env.CLOUDFLARE_ACCOUNT_ID == ''
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          if [ -z "$CLOUDFLARE_API_TOKEN" ]; then
+            echo "::notice title=Preview not deployed::Set CLOUDFLARE_API_TOKEN as a repository secret under Settings > Secrets and variables > Actions > Secrets."
+          fi
+          if [ -z "$CLOUDFLARE_ACCOUNT_ID" ]; then
+            echo "::notice title=Preview not deployed::Set CLOUDFLARE_ACCOUNT_ID as a repository variable under Settings > Secrets and variables > Actions > Variables."
+          fi
+          echo "This build was recorded but not uploaded. Once configured, a successful main push run deploys the gated preview."

@@ -267,6 +267,23 @@ deploy it never saw. In a new checkout, run `npm run release:build` and
 `npm run deploy:preview` there first, check the preview, then `npm run
 deploy`.
 
+**Automatic preview.** CI also builds, records and deploys the gated preview
+after all four checks pass on a push to `main`. Pull requests and manual CI
+runs never deploy. A running main workflow finishes, including its upload;
+GitHub keeps only the newest pending main run, so rapid pushes may skip an
+intermediate commit. This follows the latest pending version rather than
+promising a deployment for every merge. New PR revisions still cancel their
+obsolete checks, and manual runs cannot replace pending main push runs.
+
+In repository Settings → Secrets and variables → Actions, configure
+`CLOUDFLARE_API_TOKEN` under **Secrets** and `CLOUDFLARE_ACCOUNT_ID` under
+**Variables**. Only the deployment and missing-configuration steps receive
+them. If either is absent, the build is recorded, the upload is skipped, and
+a notice identifies the missing setting. The Pages beta secrets and Fail
+closed settings described above still apply. CI's local release record is
+discarded with its runner; it does not authorize a production deploy from
+another checkout.
+
 `scripts/release.mjs record` hashes every file of `dist`, `functions/` and
 `wrangler.toml` (SHA-256 over sorted relative paths) into one digest and
 writes `.release/manifest.json`, and refuses a `dist` that carries any marker
@@ -279,8 +296,8 @@ run `npx --yes wrangler@4.130.0 pages deploy ./dist` with no build step,
 tagged with the recorded commit. Production is refused unless
 `.release/deployed.json` shows the same digest deployed to preview. wrangler
 compiles `functions/` at upload, which is why their sources are in the
-digest. wrangler is pinned through `npx` rather than a dependency, so CI never
-downloads it. wrangler takes the project from `wrangler.toml`'s `name`: the
+digest. The upload fetches the pinned wrangler through `npx`, including in
+the preview CI job. wrangler takes the project from `wrangler.toml`'s `name`: the
 Pages project is `domino-app`, and `domino-app-e65.pages.dev` is only its
 hostname (Cloudflare appended `-e65` there because the plain name was taken).
 Leave `name` as it is: wrangler 4.130.0 would find no project under any other

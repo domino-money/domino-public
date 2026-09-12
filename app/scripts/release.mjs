@@ -25,10 +25,14 @@
  * deploy: wrangler's own Pages walker calls fs.stat, which follows links, so
  * a link left in the tree would upload bytes no digest here ever covered.
  *
- * Deploying needs `npx wrangler login` in the owner's own terminal. Nothing
- * here holds or asks for a credential, and no test or CI job runs `deploy`:
- * tests/release.test.mjs injects its own runner. The project name comes from
- * wrangler.toml, as before.
+ * A local deploy needs `npx wrangler login` in the owner's own terminal, and
+ * nothing in this file holds or asks for a credential. No test runs `deploy`:
+ * tests/release.test.mjs injects its own runner. One CI job does deploy, and
+ * only ever to the gated preview, after all four checks pass on main; it
+ * authenticates with a scoped CLOUDFLARE_API_TOKEN read from repository
+ * secrets at that step, never with a stored login. Production stays a manual
+ * act from a machine whose own .release record shows the same digest already
+ * deployed to preview. The project name comes from wrangler.toml, as before.
  */
 import { spawnSync } from 'node:child_process'
 import { createHash } from 'node:crypto'
@@ -37,7 +41,7 @@ import { join, relative, resolve, sep } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { TEXT_FILE, findForbidden } from './deploy-markers.mjs'
 
-/** The pinned wrangler, fetched by npx at deploy time so CI never downloads it. */
+/** The pinned wrangler, fetched by npx at upload time, including preview CI. */
 export const WRANGLER = 'wrangler@4.130.0'
 /** Pages branch per target: `preview` is the gated preview alias, `main` the production branch. */
 const BRANCH = { preview: 'preview', production: 'main' }
