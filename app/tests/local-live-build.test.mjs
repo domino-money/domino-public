@@ -1,6 +1,9 @@
 import assert from 'node:assert/strict'
 import { resolve } from 'node:path'
+import { readFileSync } from 'node:fs'
+import { runInNewContext } from 'node:vm'
 import { test } from 'node:test'
+import ts from 'typescript'
 import { resolveConfig } from 'vite'
 import { findForbidden } from '../scripts/deploy-markers.mjs'
 
@@ -24,4 +27,28 @@ test('production and development builds remove the local flag and reject local m
     assert.equal(config.define.__DOMINO_LOCAL_LIVE__, 'false')
   }
   for (const marker of ['local-live', 'dev-read.domino.money', 'CF-Access-Client-Secret', 'CF-Access-Client-Id', '__DOMINO_LOCAL_LIVE__', 'Local real-data development']) assert.ok(findForbidden(marker).length)
+})
+
+test('the real source factory paces only local-live at 10.1 s; deployed reads retain 1.1 s and shared deadlines', () => {
+  const source = readFileSync(resolve(root, 'src/lib/read/screens/appSourceBridge.ts'), 'utf8')
+  const compiled = ts.transpileModule(source, { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } }).outputText
+  for (const localLive of [true, false]) {
+    const validators = {}; const bridge = {}; const scheduled = {}; const calls = []
+    const exports = {}
+    runInNewContext(compiled, { exports, __DOMINO_LOCAL_LIVE__: localLive, require: (path) => {
+      if (path === '../../capabilities') return { CAPABILITIES: { liveReadsBuilt: true } }
+      if (path === '../contract') return { READ_RUNTIME: validators }
+      if (path === '../bridgeSource') return { createBridgeSource: (options) => { calls.push(['bridge', options]); return bridge } }
+      if (path === '../scheduler') return { createScheduledSource: (input, options) => { calls.push(['scheduler', input, options]); return scheduled } }
+      throw new Error(`Unexpected source dependency: ${path}`)
+    } })
+    assert.equal(exports.BRIDGE_SPACING_MS, localLive ? 10_100 : 1100)
+    assert.equal(exports.createAppBridgeSource(), scheduled)
+    assert.equal(calls[0][1].validators, validators, 'same canonical validators')
+    assert.equal(calls[0][1].enabled, true)
+    assert.deepEqual(Object.keys(calls[0][1]).sort(), ['enabled', 'validators'], 'no retry policy override')
+    assert.equal(calls[1][1], bridge, 'same source through the existing scheduler')
+    assert.equal(calls[1][2].minIntervalMs, localLive ? 10_100 : 1100)
+    assert.deepEqual(Object.keys(calls[1][2]), ['minIntervalMs'], '60 s total deadline and queue bounds are not changed')
+  }
 })
