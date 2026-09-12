@@ -36,6 +36,7 @@ const BIG = '5789604461865809771178549250434395392663499233282028201972879200395
 const READ = resolve(import.meta.dirname, '../../api-contracts/read-v1/fixtures/gateway');
 const fixture = (name) => readFileSync(join(READ, `${name}.json`), 'utf8');
 const OWNER = '0x3333333333333333333333333333333333333333';
+const TOKEN = '0x1111111111111111111111111111111111111111';
 /** The stub gateway's continuation handle: 64 hex characters, unlike any hash in the fixtures, so any copy of it is found. */
 const HANDLE = 'd15ea5e0'.repeat(8);
 const firstWalletPage = () => {
@@ -69,6 +70,8 @@ let edge = [];
 let upstream = [];
 /** wallet-assets replies exactly as the bridge handed them to the browser. */
 let walletReplies = [];
+/** A test may control one gateway reply; all other reads keep the package fixtures. */
+let overrideReply = null;
 
 const worker = createWorker({
   getClientIp: () => '198.51.100.21',
@@ -76,7 +79,7 @@ const worker = createWorker({
     const route = new URL(url).pathname.replace('/internal/read/v1/', '');
     const body = JSON.parse(init.body);
     upstream.push({ route, body, raw: init.body });
-    const reply = REPLY(route, body);
+    const reply = await (overrideReply?.(route, body, init.signal) ?? REPLY(route, body));
     return new Response(reply.text, { status: reply.status, headers: { 'Content-Type': 'application/json', 'X-Domino-Read-Contract': RC3 } });
   },
 });
@@ -264,20 +267,156 @@ test('the landing reads one listed pool, never a placeholder id, and pool activi
   await context.close();
 });
 
-// OPEN QUESTION for @rugged97: this case drives the create flow of #72 ("New
-// position" -> Choose token -> List tokens from a public address), and that
-// flow is not on this base: `ChainSelectionSlot` (slots.tsx:47) is mounted by
-// nothing outside the lab until #72 lands, so the app route has no way in.
-//
-// What stays covered meanwhile: the handle never reaching the page, the DOM or
-// storage is asserted live in read-screens.browser.test.mjs ('a public address
-// lists tokens as a public lookup...'), with the same handle-watch helpers.
-// What is NOT covered until this case runs again: the bridge leg — that the
-// bytes the page POSTs are the bytes the bridge forwards upstream, and that no
-// edge request carries the handle in a URL or a Referer. Restore this case with
-// #72; nothing here was weakened to make it pass.
-test.skip('B4: the wallet handle goes back to the bridge byte for byte in the POST body, and never into a URL, a Referer, storage or the page', async () => {
-  const { context, page, errors } = await visit('/app');
+test('the normal pool explorer reads the chosen token, discovery and catalogue only on demand, through the public bridge', async () => {
+  const { context, page, errors } = await visit('/pools');
+  try {
+    await page.getByRole('heading', { name: 'Explore pools', exact: true }).waitFor();
+    assert.deepEqual(edge, [], 'route mount makes no API request');
+    await page.getByRole('button', { name: 'Choose first token', exact: true }).click();
+    const dialog = page.locator('[data-pool-selection-dialog]');
+    await page.fill('#token-address', TOKEN);
+    await page.waitForTimeout(300);
+    assert.deepEqual(edge, [], 'opening the dialog, picker and typing an address reads nothing');
+    await dialog.getByRole('button', { name: 'Check address', exact: true }).click();
+    const candidate = dialog.locator('[data-candidate="erc20_candidate"]');
+    await candidate.waitFor({ timeout: 30_000 });
+    assert.match(await candidate.innerText(), new RegExp(TOKEN));
+    await candidate.getByRole('radio').check();
+    await dialog.getByRole('button', { name: 'Use this token' }).click();
+    await dialog.waitFor({ state: 'detached' });
+    const pool = page.locator('[data-pool-option="discovery"]');
+    await pool.waitFor({ timeout: 30_000 });
+    await pool.locator('summary').click();
+    const poolText = await pool.innerText();
+    assert.match(poolText, /Found by DexScreener discovery, verified on chain/);
+    assert.match(poolText, /verified at block 700/);
+    assert.match(poolText, /Pool APR unavailable/);
+    assert.doesNotMatch(poolText, /APR\s*0(?:\.0+)?%/);
+    assert.equal(posts().some((r) => r.path.endsWith('/catalogue')), false, 'catalogue is not loaded with discovery');
+    await page.getByText('More sources · stored catalogue', { exact: true }).click();
+    await page.getByRole('button', { name: 'Load catalogue candidates' }).click();
+    await page.locator('[data-catalogue-item]').waitFor({ timeout: 30_000 });
+    assert.match(await page.locator('[data-catalogue]').innerText(), /configured block interval only/);
+    assert.equal(await page.locator('[data-catalogue-item] input[type="radio"]').count(), 0, 'a stored candidate is not a selectable verified pool');
+
+    await pool.getByRole('radio').check();
+    await page.getByRole('button', { name: 'Explore range' }).click();
+    await page.getByRole('dialog', { name: 'Range on this pool', exact: true }).waitFor();
+    assert.match(await dialog.innerText(), /Nothing is quoted, created, approved or signed/);
+    await page.keyboard.press('Escape');
+    assert.equal(await pool.getByRole('radio').isChecked(), true, 'closing range preserves the selected pool');
+    await dialog.waitFor({ state: 'detached' });
+    await page.waitForTimeout(1200);
+
+    assert.deepEqual(edge.map((r) => `${r.method} ${r.path}`), [
+      'GET /api/read/v1/capabilities',
+      'POST /api/read/v1/token',
+      'POST /api/read/v1/pools',
+      'POST /api/read/v1/catalogue',
+    ], 'only explicit public reads: no market polling, session or financial call');
+    assert.deepEqual(posts().map((r) => JSON.parse(r.body)), [{ token: TOKEN }, { token: TOKEN }, { token: TOKEN, limit: 20 }]);
+    for (const r of edge) {
+      assert.equal(r.headers['sec-fetch-site'], 'same-origin');
+      for (const forbidden of ['authorization', 'x-domino-csrf', 'x-domino-session']) assert.equal(r.headers[forbidden], undefined, forbidden);
+    }
+    const starts = posts().map((r) => r.at);
+    for (let i = 1; i < starts.length; i++) assert.ok(starts[i] - starts[i - 1] >= 1050, `explorer POST starts ${starts[i] - starts[i - 1]} ms apart`);
+
+    // A pair change cannot retain a pool or range from the old query.
+    await page.getByRole('button', { name: 'Choose second token (optional)' }).click();
+    assert.equal(await dialog.locator('[data-candidate="erc20_candidate"] input[type="radio"]').isDisabled(), true, 'the first token cannot also be the second');
+    const native = '0x0000000000000000000000000000000000000000';
+    await page.fill('#token-address', native);
+    await dialog.getByRole('button', { name: 'Check address', exact: true }).click();
+    await dialog.locator('[data-candidate="native"]').waitFor({ timeout: 30_000 });
+    await dialog.locator('[data-candidate="native"]').getByRole('radio').check();
+    await dialog.getByRole('button', { name: 'Use this asset' }).click();
+    await dialog.waitFor({ state: 'detached' });
+    assert.equal(await page.getByRole('button', { name: 'Explore range' }).isDisabled(), true, 'changing the pair clears the previous pool');
+    assert.equal(await page.locator('[data-pool-option] input:checked').count(), 0);
+    await page.waitForFunction(() => !document.querySelector('[data-screen-status="loading"]'));
+    await page.getByRole('button', { name: 'Choose first token', exact: true }).click();
+    await dialog.locator('[data-candidate="native"]').getByRole('radio').check();
+    await dialog.getByRole('button', { name: 'Use this token' }).click();
+    await dialog.waitFor({ state: 'detached' });
+    assert.equal(await page.getByRole('button', { name: 'Clear second token' }).count(), 0, 'changing the first token clears the second');
+    assert.equal(await page.getByRole('button', { name: 'Explore range' }).isDisabled(), true);
+    await page.goto(`${origin}/#/settings`);
+    await page.getByRole('heading', { name: 'Settings', exact: true }).waitFor();
+    await page.goto(`${origin}/#/pools`);
+    await page.getByRole('button', { name: 'Choose first token', exact: true }).waitFor();
+    assert.equal(await page.locator('[data-pool-option]').count(), 0, 'leaving the route discards its choices');
+    assert.deepEqual(errors, []);
+  } finally {
+    await context.close();
+  }
+});
+
+for (const route of ['pools', 'catalogue']) {
+  test(`the normal pool explorer retries a failed first ${route} read explicitly without changing the pair`, { timeout: 45_000 }, async () => {
+    const { context, page, errors } = await visit('/pools');
+    let calls = 0;
+    let release = () => undefined;
+    let started = () => undefined;
+    const held = new Promise((resolve) => { release = resolve; });
+    const retryStarted = new Promise((resolve) => { started = resolve; });
+    overrideReply = (read, body) => {
+      if (read !== route) return null;
+      calls += 1;
+      if (calls === 1) return { status: 503, text: fixture(`../error/${route}.upstream_unavailable`) };
+      return (async () => { started(); await held; return REPLY(read, body); })();
+    };
+    try {
+      await page.getByRole('button', { name: 'Choose first token', exact: true }).click();
+      const dialog = page.locator('[data-pool-selection-dialog]');
+      await page.fill('#token-address', TOKEN);
+      await dialog.getByRole('button', { name: 'Check address', exact: true }).click();
+      const candidate = dialog.locator('[data-candidate="erc20_candidate"]');
+      await candidate.waitFor({ timeout: 30_000 });
+      await candidate.getByRole('radio').check();
+      await dialog.getByRole('button', { name: 'Use this token' }).click();
+      await dialog.waitFor({ state: 'detached' });
+      if (route === 'catalogue') {
+        await page.locator('[data-pool-option="discovery"]').waitFor({ timeout: 30_000 });
+        await page.getByText('More sources · stored catalogue', { exact: true }).click();
+        await page.getByRole('button', { name: 'Load catalogue candidates' }).click();
+      }
+      const status = page.locator(route === 'pools' ? '[data-picker="pool"] > [data-screen-status]' : '[data-catalogue] > [data-screen-status]');
+      await status.getByText('The read service answered:', { exact: false }).waitFor({ timeout: 30_000 });
+      assert.equal(await status.getAttribute('data-screen-status'), 'unavailable');
+      await page.waitForTimeout(1200);
+      assert.equal(calls, 1, '503 never starts an automatic retry');
+      const retry = status.getByRole('button', { name: 'Retry', exact: true });
+      assert.equal(await retry.count(), 1, `${route}: a failed first read needs an explicit Retry without changing the pair`);
+      await retry.click();
+      await retryStarted;
+      const trying = status.getByRole('button', { name: 'Trying again…', exact: true });
+      assert.equal(await trying.getAttribute('aria-disabled'), 'true', 'Retry stays mounted and busy');
+      await trying.evaluate((button) => { button.click(); button.click(); });
+      await page.waitForTimeout(100);
+      assert.equal(calls, 2, 'busy Retry cannot start another logical read');
+      release();
+      await page.locator(route === 'pools' ? '[data-pool-option="discovery"]' : '[data-catalogue-item]').waitFor({ timeout: 30_000 });
+      assert.equal(await status.getByRole('button').count(), 0, 'a successful retry clears the failure');
+      assert.equal(await page.getByRole('button', { name: 'Choose second token (optional)' }).isDisabled(), false, 'the first token remains selected');
+      const requests = posts().filter((r) => r.path.endsWith(`/${route}`));
+      assert.equal(requests.length, 2);
+      const expected = route === 'pools' ? { token: TOKEN } : { token: TOKEN, limit: 20 };
+      assert.deepEqual(requests.map((r) => JSON.parse(r.body)), [expected, expected], 'Retry repeats the same question, without a cursor or another pair');
+      assert.ok(requests[1].at - requests[0].at >= 1050, 'Retry uses the shared paced source');
+      assert.deepEqual(errors, []);
+    } finally {
+      release();
+      overrideReply = null;
+      await context.close();
+    }
+  });
+}
+
+// #3 gives the existing public-wallet selector a normal app entrance; B4 no
+// longer depends on the separate create/deposit flow or a lab-only modal.
+test('B4: the wallet handle goes back to the bridge byte for byte in the POST body, and never into a URL, a Referer, storage or the page', async () => {
+  const { context, page, errors } = await visit('/pools');
   // A fresh document with the watcher in place before any app code runs; the reads so far don't count.
   await page.addInitScript(watchForHandle, HANDLE.slice(0, 16));
   await page.reload({ waitUntil: 'networkidle' });
@@ -286,11 +425,11 @@ test.skip('B4: the wallet handle goes back to the bridge byte for byte in the PO
   walletReplies = [];
   const seen = [];
   page.on('request', (request) => seen.push({ url: request.url(), referer: request.headers().referer ?? '' }));
-  await page.getByRole('button', { name: 'New position' }).click();
-  const dialog = page.locator('[role="dialog"]');
-  await dialog.getByRole('button', { name: 'Choose token' }).click();
+  await page.getByRole('button', { name: 'Choose first token', exact: true }).click();
+  const dialog = page.locator('[data-pool-selection-dialog]');
   await dialog.getByRole('button', { name: 'List tokens from a public address' }).click();
   await page.fill('#wallet-address', OWNER);
+  assert.deepEqual(edge, [], 'wallet listing waits for an explicit request, not opening the picker');
   await dialog.getByRole('button', { name: 'List tokens', exact: true }).click();
   const wallet = dialog.locator('[data-wallet-candidates]');
   await page.waitForFunction(() => document.querySelector('[data-wallet-pages="1"]'), null, { timeout: 30_000 });
@@ -310,6 +449,12 @@ test.skip('B4: the wallet handle goes back to the bridge byte for byte in the PO
   const up = upstream.filter((r) => r.route === 'wallet-assets');
   assert.deepEqual(up.map((r) => r.raw), walletPosts.map((r) => r.body));
   assert.equal(up[1].body.cursor, HANDLE);
+  assert.deepEqual(edge.map((r) => `${r.method} ${r.path}`), [
+    'GET /api/read/v1/capabilities',
+    'POST /api/read/v1/wallet-assets',
+    'POST /api/read/v1/wallet-assets',
+  ], 'a public wallet listing never starts a login or private operation');
+  assert.ok(walletPosts[1].at - walletPosts[0].at >= 1050, 'wallet pages share the public read pacing');
 
   const inUrlOrReferer = [
     ...edge.map((r) => [`${r.method} ${r.path}`, r.path, r.headers.referer ?? '']),

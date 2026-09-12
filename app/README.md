@@ -492,8 +492,42 @@ equivalent side, and the adapter follows it.
 | Route | Screen |
 |---|---|
 | `#/` | Landing: pool ticker, hero range widget, Selected pools, product cards, range simulator, Domino sequence, how it works, limits |
-| `#/app` | Your positions: an honest empty state until a read-only position lookup exists (#71) |
+| `#/app` | Your positions: public NFT lookup by ID, without proving wallet ownership or granting permissions |
+| `#/pools` | Explore pools: public-address/token lookup, existing-pool discovery, catalogue coverage and non-executable range exploration |
 | `#/settings` | Appearance, capability table, build facts |
+
+### Read-only pool exploration
+
+The **Pools** navigation, **Explore pools** link on Positions and footer entry
+open `#/pools`, including on a small screen. Two token selectors are visible
+immediately. Each opens a bounded token dialog: paste a Robinhood Chain
+contract address or list candidates from a public address. Applying the first
+token loads existing pools directly below the selectors; a second token
+optionally narrows the results. Select a pool and use **Explore range** for
+the second, non-executable step. Pool identity and extended provenance sit in
+expandable details; provider attribution and unavailable/stale states remain
+visible. The stored catalogue expands under **More sources** and loads only
+on request. The page reuses `TokenPicker`, `PoolPicker`, `PoolRangeControls`
+and the app's single scheduled source. Opening the route or token dialog sends
+no read; submitting a lookup or applying a changed token initiates the read.
+
+Back, Escape and the backdrop close the current dialog and restore focus to
+its trigger. Closing a token dialog cancels its component-owned reads without
+applying an unconfirmed choice. Confirmed selections live only on the page;
+changing a token clears the prior pool/range, and changing the first token
+also clears the second. Leaving the route discards all selections and cancels
+remaining component reads. No selection is stored or passed to a quote,
+deposit or wallet action.
+Native ETH and wrapped ERC-20 identities stay distinct. Provider figures keep
+their source/coverage; missing APR stays unavailable, and an empty configured
+catalogue is not presented as proof that no pool exists. New-pool creation is
+described as a separate future path, never enabled here.
+
+The normal route is covered by the existing built-app render suite and the
+gated real-bridge/fixture consumer suite (`read-screens.bridge.test.mjs`).
+Those offline fixtures are test inputs only, never deployment data. Actual
+authenticated edge acceptance is recorded separately in the issue after a
+reviewed release; preview origins intentionally cannot call the read bridge.
 
 ## Domain logic belongs to `web/lib`
 

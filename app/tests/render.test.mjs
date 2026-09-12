@@ -170,6 +170,7 @@ test('every route in the header renders', async () => {
   for (const [route, expected] of [
     ['/', /Robinhood Chain/],
     ['/app', /position/i],
+    ['/pools', /Explore pools/],
     ['/settings', /Appearance|Compound|Availability/i],
   ]) {
     const page = await open(route);
@@ -181,10 +182,61 @@ test('every route in the header renders', async () => {
   }
 });
 
+test('the mobile Dashboard opens the public pool explorer: named, focused, bounded and idle until a read is requested', async () => {
+  const page = await open('/app');
+  assert.equal(await page.locator('header').getByRole('link', { name: 'Pools', exact: true }).getAttribute('href'), '#/pools');
+  await page.setViewportSize({ width: 375, height: 812 });
+  const entrance = page.locator('main').getByRole('link', { name: 'Explore pools' });
+  assert.equal(await entrance.isVisible(), true, 'the mobile Dashboard has a visible entrance');
+  await entrance.click();
+  await page.getByRole('heading', { name: 'Explore pools', exact: true }).waitFor();
+  const trigger = page.getByRole('button', { name: 'Choose first token', exact: true });
+  await trigger.waitFor();
+  assert.equal(await page.getByRole('button', { name: 'Choose second token (optional)' }).isVisible(), true);
+  assert.equal(await page.getByRole('button', { name: 'Explore range' }).isDisabled(), true);
+  await trigger.click();
+  const dialog = page.locator('[data-pool-selection-dialog]');
+  await dialog.waitFor();
+  await assertNamed(page, 'public pool explorer');
+  await page.getByRole('dialog', { name: 'Choose a token from chain data', exact: true }).waitFor();
+  assert.equal((await focusedIn(page, '#pool-selection-title')).inside, true, 'the picker heading receives focus');
+  assert.equal(await dialog.getByRole('button', { name: 'Use this token' }).isDisabled(), true);
+  await dialog.getByRole('button', { name: 'Back to pools' }).focus();
+  await page.keyboard.press('Tab');
+  assert.equal((await focusedIn(page, '[data-pool-selection-dialog]')).inside, true, 'Tab cannot leave the modal');
+  const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
+  assert.ok(overflow <= 1, `the picker scrolls ${overflow}px sideways at 375px`);
+  const bounds = await dialog.boundingBox();
+  assert.ok(bounds.y >= 0 && bounds.y + bounds.height <= 813, 'the modal is bounded to the mobile viewport');
+  assert.doesNotMatch(await dialog.innerText(), /\$\s?\d|\b0(?:\.0+)?%/, 'no figures before any answer');
+
+  await page.keyboard.press('Escape');
+  await dialog.waitFor({ state: 'detached' });
+  await trigger.click();
+  await dialog.getByRole('button', { name: 'Back to pools' }).click();
+  await dialog.waitFor({ state: 'detached' });
+  await trigger.click();
+  await page.getByRole('dialog', { name: 'Choose a token from chain data', exact: true }).waitFor();
+  await page.mouse.click(1, 1);
+  await dialog.waitFor({ state: 'detached' });
+  await trigger.click();
+  await dialog.getByRole('button', { name: 'Close pool explorer' }).click();
+  await dialog.waitFor({ state: 'detached' });
+  assert.equal(await trigger.evaluate((node) => node === document.activeElement), true, 'closing restores the entry button focus');
+  await trigger.click();
+  await dialog.waitFor();
+  assert.equal(await dialog.getByRole('button', { name: 'Use this token' }).isDisabled(), true, 'no token was chosen');
+  await page.keyboard.press('Escape');
+  await dialog.waitFor({ state: 'detached' });
+  assert.deepEqual(apiOf(page), [[]], 'opening the route, dialog and token picker sends no API request');
+  clean(page, 'mobile pool explorer');
+  await close(page);
+});
+
 test('every form field on every route can be identified by the browser', async () => {
   // Chrome flags fields with neither an id nor a name: autofill and
   // password managers cannot tell them apart.
-  for (const route of ['/', '/app', '/settings']) {
+  for (const route of ['/', '/app', '/pools', '/settings']) {
     const page = await open(route);
     const anonymous = await page.evaluate(() =>
       Array.from(document.querySelectorAll('input, select, textarea'))
@@ -198,7 +250,7 @@ test('every form field on every route can be identified by the browser', async (
 });
 
 test('no dollar figure appears on any route when no read has answered', async () => {
-  for (const route of ['/', '/app', '/settings']) {
+  for (const route of ['/', '/app', '/pools', '/settings']) {
     const page = await open(route);
     await page.waitForTimeout(100);
     const text = await page.locator('#root').innerText();
@@ -349,9 +401,12 @@ test('section links land on their target, across routes and within one route', a
   await page.waitForTimeout(80);
   assert.equal(await page.evaluate(() => window.scrollY), 0, 'the positions screen did not start at the top');
 
-  // Cross-route back to a section: the positions screen's link returns to the landing at #pools.
+  // The positions screen leads to discovery; its selected-pools link returns to the landing section.
   leaving(page);
-  await page.getByRole('link', { name: 'See the selected pools' }).click();
+  await page.locator('main').getByRole('link', { name: 'Explore pools' }).click();
+  await page.waitForFunction(() => location.hash === '#/pools');
+  leaving(page);
+  await page.getByRole('link', { name: 'View selected pools' }).click();
   await page.waitForFunction(() => location.hash === '#/#pools');
   const poolsTop = await sectionTop(page, 'pools');
   assert.ok(poolsTop >= 0 && poolsTop <= header + 40, `#pools landed at ${poolsTop}px, header is ${header}px`);
@@ -383,7 +438,7 @@ test('every footer and navigation link goes somewhere this app has: no "#/" plac
     })),
   );
   assert.ok(links.some((l) => l.footer), 'the footer has links');
-  const ROUTES = ['/', '/app', '/settings'];
+  const ROUTES = ['/', '/app', '/pools', '/settings'];
   for (const link of links) {
     const label = `${link.footer ? 'footer' : 'header'} link "${link.text}" (${link.href})`;
     assert.ok(link.href !== null && link.href.trim() !== '', `${label} has no target`);
@@ -464,7 +519,7 @@ const SELECTED = readFileSync(resolve(import.meta.dirname, '../src/config/select
 
 test('the landing asks the capabilities once and posts nothing when live data is not connected; other routes ask nothing', async () => {
   const seen = [];
-  for (const route of ['/', '/app', '/settings']) {
+  for (const route of ['/', '/app', '/pools', '/settings']) {
     const page = await open(route);
     await reload(page, route);
     seen.push([route, apiOf(page)]);
@@ -476,6 +531,7 @@ test('the landing asks the capabilities once and posts nothing when live data is
   assert.deepEqual(seen, [
     ['/', [once, once]],
     ['/app', [[], []]],
+    ['/pools', [[], []]],
     ['/settings', [[], []]],
   ]);
 });
@@ -530,7 +586,7 @@ test('Settings reports signing and wallet funding off and live reads built in, s
 });
 
 test('the wallet control is on every route and ready, no route mentions practice, and only the appearance is stored', async () => {
-  for (const route of ['/', '/app', '/settings']) {
+  for (const route of ['/', '/app', '/pools', '/settings']) {
     const page = await open(route);
     // No wallet is injected in this suite, so the control invites one. It is
     // enabled: sign-in is built into the deployed site now, and opening it
@@ -582,7 +638,7 @@ test('the positions screen is an honest empty state: no cards, totals, activity 
   // the screen shows no figure of its own until then.
   assert.deepEqual(apiOf(page), [[]], 'the positions screen reads nothing by itself');
   assert.equal(await page.locator('main [data-metric]').count(), 0, 'no figure appears before a lookup');
-  assert.equal(await page.getByRole('link', { name: 'See the selected pools' }).getAttribute('href'), '#/#pools');
+  assert.equal(await page.locator('main').getByRole('link', { name: 'Explore pools' }).getAttribute('href'), '#/pools');
   clean(page, 'positions');
   await close(page);
 });

@@ -25,10 +25,10 @@ export function Dashboard() {
           Look a position up by its id below. Finding every position a wallet holds comes with wallet discovery, which is not in the alpha yet.
         </p>
         <a
-          href="#/#pools"
+          href="#/pools"
           className="mt-1 inline-flex items-center gap-1.5 rounded-[var(--radius-pill)] border border-line-strong px-4 py-2 text-[13px] font-medium transition hover:bg-surface-2"
         >
-          See the selected pools <span aria-hidden="true">→</span>
+          Explore pools <span aria-hidden="true">→</span>
         </a>
       </Card>
 

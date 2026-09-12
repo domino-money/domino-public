@@ -12,7 +12,33 @@ import { ProviderFigure } from './ProviderFigure'
 import { ScreenStatus, type StatusLine } from './ScreenStatus'
 import { SymbolText } from './SymbolText'
 
-function PoolRow({ option, checked, onPick, name }: { option: PoolOption; checked: boolean; onPick: () => void; name: string }) {
+function PoolRow({ option, checked, onPick, name, compact = false }: { option: PoolOption; checked: boolean; onPick: () => void; name: string; compact?: boolean }) {
+  if (compact) return (
+    <li className={`rounded-[var(--radius)] border p-3 ${checked ? 'border-primary bg-surface-2' : 'bg-surface-1'}`} data-pool-option={option.kind}>
+      <label className="flex cursor-pointer items-center gap-3">
+        <input type="radio" name={name} checked={checked} onChange={onPick} className="h-4 w-4 shrink-0 accent-[var(--primary)]" />
+        <span className="min-w-0 flex-1 text-[14px] font-medium"><SymbolText token={option.currencies[0]} /> / <SymbolText token={option.currencies[1]} /></span>
+        <span className="shrink-0 rounded-md bg-surface-3 px-2 py-1 font-mono text-[11px]" data-fee="">{option.fee}</span>
+      </label>
+      <div className="mt-3 grid gap-2">
+        {option.tokenMetadata === 'partial' && <p className="text-[12px] text-money-wait">{COPY.picker.partialMetadata}</p>}
+        {option.providerConflict && <p className="text-[12px] text-money-out">{COPY.picker.providerConflict}</p>}
+        <ProviderFigure label="Liquidity" figure={option.liquidity} />
+        <ProviderFigure label="24h volume" figure={option.volume} />
+        <p className="flex justify-between gap-3 text-[12px] text-fg-subtle"><span>Pool APR</span><span>Unavailable</span></p>
+      </div>
+      <details className="mt-3 border-t pt-2 text-[11px] leading-relaxed text-fg-muted">
+        <summary className="cursor-pointer">Pool details · verified at block {option.block}</summary>
+        <div className="mt-2 grid gap-2">
+          <Address value={option.key} />
+          <p>{option.kind === 'discovery' ? 'Found by DexScreener discovery, verified on chain' : `From the catalogue (${option.catalogue?.source === 'initialize_event' ? 'initialize event' : 'verified observation'} at block ${option.catalogue?.block}), verified on chain`}{option.requestedById && ' · asked for by id'}</p>
+          <p>Tick spacing {option.tickSpacing} · {option.integration === 'hookless_fixed_fee' ? COPY.picker.hookless : COPY.picker.needsAdapter} · {option.hooks === NATIVE_CURRENCY ? 'no hooks' : <>hooks <Address value={option.hooks} /></>}</p>
+          {option.providerNote && <p data-provider-note="">{option.providerNote}</p>}
+          <p>Pool APR unavailable: {reasonText(option.aprReason)}.</p>
+        </div>
+      </details>
+    </li>
+  )
   return (
     <li className="rounded-[var(--radius)] border bg-surface-1 px-3 py-2.5" data-pool-option={option.kind}>
       <label className="flex cursor-pointer items-start gap-3">
@@ -107,10 +133,13 @@ function CatalogueCandidates({
   }
 
   const step = (go: (s: CatalogueSession, signal: AbortSignal) => Promise<CatalogueSnapshot>) => {
-    session.current ??= createCatalogueSession(source, token, paired)
+    const current = (session.current ??= createCatalogueSession(source, token, paired))
+    if (current.snapshot().loading) return
     const { mine, done } = start()
-    setSnap(session.current.snapshot())
-    void go(session.current, mine.signal).then((next) => {
+    const result = go(current, mine.signal)
+    // first/more set loading synchronously; retain any failure beside the busy Retry.
+    setSnap(current.snapshot())
+    void result.then((next) => {
       done()
       if (!mine.signal.aborted && mounted.current) setSnap({ ...next })
     })
@@ -150,7 +179,8 @@ function CatalogueCandidates({
         </Button>
       )}
       {snap?.loading && view?.pages === 0 && <p className="text-[12px] text-fg-subtle">Reading the catalogue…</p>}
-      {snap?.failure && <ScreenStatus line={failureText(snap.failure, 'catalogue')} />}
+      {snap?.failure && <ScreenStatus line={failureText(snap.failure, 'catalogue')} busy={snap.loading}
+        onRetry={view?.pages === 0 ? () => step((s, signal) => s.first(signal)) : undefined} />}
       {view && view.pages > 0 && (
         <>
           {view.restarted && <p className="text-[12px] text-money-wait">{COPY.picker.catalogueRestarted}</p>}
@@ -195,7 +225,7 @@ function CatalogueCandidates({
   )
 }
 
-type PoolsResult = { kind: 'loading' } | { kind: 'ok'; view: PoolsView; restarted: boolean } | { kind: 'failed'; line: StatusLine }
+type PoolsResult = { kind: 'loading'; retrying?: StatusLine } | { kind: 'ok'; view: PoolsView; restarted: boolean } | { kind: 'failed'; line: StatusLine }
 
 /**
  * Existing pools for the chosen token (and second asset, if chosen), from the
@@ -208,15 +238,24 @@ export function PoolPicker({
   paired,
   pending,
   onPending,
+  compact = false,
 }: {
   source: ReadSource
   token: AddressKey
   paired: AddressKey | null
   pending: PoolOption | null
   onPending: (option: PoolOption | null) => void
+  compact?: boolean
 }) {
   const [result, setResult] = useState<PoolsResult>({ kind: 'loading' })
   const [verified, setVerified] = useState<PoolOption[]>([])
+  const [attempt, setAttempt] = useState(0)
+  const retry = () => {
+    if (result.kind !== 'failed' || !result.line.retry) return
+    setResult({ kind: 'loading', retrying: result.line })
+    // An explicit Retry is a new logical read. Its internal 409 restart keeps that read's deadline.
+    setAttempt((value) => value + 1)
+  }
 
   useEffect(() => {
     const controller = new AbortController()
@@ -235,14 +274,15 @@ export function PoolPicker({
       setResult(outcome.state === 'ok' ? { kind: 'ok', view: projectPoolsView(outcome.data, outcome.provenance.receivedAt), restarted } : { kind: 'failed', line: failureText(outcome, 'pools') })
     })()
     return () => controller.abort()
-  }, [source, token, paired])
+  }, [source, token, paired, attempt])
 
   const listed = result.kind === 'ok' ? result.view.options : []
   const options = neutralOrder([...listed, ...verified.filter((v) => !listed.some((o) => o.key === v.key))])
 
   return (
     <div className="grid gap-4" data-picker="pool">
-      <ScreenStatus line={result.kind === 'loading' ? { code: 'loading', title: COPY.picker.poolsLoading, detail: '' } : result.kind === 'failed' ? result.line : null} />
+      <ScreenStatus line={result.kind === 'loading' ? result.retrying ?? { code: 'loading', title: COPY.picker.poolsLoading, detail: '' } : result.kind === 'failed' ? result.line : null}
+        onRetry={retry} busy={result.kind === 'loading'} />
       {result.kind === 'ok' && (
         <>
           {result.restarted && <p className="text-[12px] text-money-wait">{COPY.picker.catalogueRestarted}</p>}
@@ -258,7 +298,7 @@ export function PoolPicker({
           <legend className="mb-1 text-[13px] font-medium">{COPY.picker.poolsLegend}</legend>
           <ul className="grid gap-2">
             {options.map((option) => (
-              <PoolRow key={option.key} option={option} name="pool-option" checked={pending?.key === option.key} onPick={() => onPending(option)} />
+              <PoolRow key={option.key} option={option} name="pool-option" checked={pending?.key === option.key} onPick={() => onPending(option)} compact={compact} />
             ))}
           </ul>
         </fieldset>
@@ -278,10 +318,15 @@ export function PoolPicker({
           </ul>
         </section>
       )}
-      <CatalogueCandidates source={source} token={token} paired={paired} verified={new Set(verified.map((v) => v.key))} onVerified={(option) => setVerified((list) => [...list.filter((v) => v.key !== option.key), option])} />
-      <p className="rounded-[var(--radius)] border border-dashed p-3 text-[12px] leading-relaxed text-fg-muted" data-new-pool-note="">
+      <details open={compact ? undefined : true} className="text-[12px] text-fg-muted">
+        <summary className={compact ? 'cursor-pointer' : 'hidden'}>More sources · stored catalogue</summary>
+        <div className={compact ? 'mt-3' : ''}>
+          <CatalogueCandidates source={source} token={token} paired={paired} verified={new Set(verified.map((v) => v.key))} onVerified={(option) => setVerified((list) => [...list.filter((v) => v.key !== option.key), option])} />
+        </div>
+      </details>
+      {!compact && <p className="rounded-[var(--radius)] border border-dashed p-3 text-[12px] leading-relaxed text-fg-muted" data-new-pool-note="">
         {COPY.picker.newPool}
-      </p>
+      </p>}
     </div>
   )
 }

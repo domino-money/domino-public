@@ -5,6 +5,7 @@ import { Ticker } from './components/Ticker'
 import { Landing } from './screens/Landing'
 import { Dashboard } from './screens/Dashboard'
 import { Settings } from './screens/Settings'
+import { Pools } from './screens/Pools'
 import { Button } from './components/ui'
 import { BuildBanner } from './components/read/BuildBanner'
 import { useAppearance } from './lib/appearance'
@@ -86,7 +87,7 @@ export default function App() {
       {!__DOMINO_DEPLOYABLE__ && <BuildBanner mode={__DOMINO_READ_MODE__} />}
       {route === '/' && <Ticker />}
       <Header route={route} />
-      {route === '/app' ? <Dashboard /> : route === '/settings' ? <Settings /> : <Landing />}
+      {route === '/app' ? <Dashboard /> : route === '/pools' ? <Pools /> : route === '/settings' ? <Settings /> : <Landing />}
       {/* The appearance toggle sits in the footer's own flow at every width, never floating over the page, so it can never cover text. */}
       <Footer
         appearance={

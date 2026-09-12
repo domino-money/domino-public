@@ -18,7 +18,7 @@ const COLUMNS = [
   {
     heading: 'Product',
     links: [
-      { label: 'Pools', href: '#/#pools' },
+      { label: 'Explore pools', href: '#/pools' },
       { label: 'Positions', href: '#/app' },
     ],
   },

@@ -35,6 +35,7 @@ function Wordmark() {
 
 const NAV = [
   { label: 'Overview', href: '#/', route: '/' },
+  { label: 'Pools', href: '#/pools', route: '/pools' },
   { label: 'Positions', href: '#/app', route: '/app' },
   { label: 'Settings', href: '#/settings', route: '/settings' },
 ]
@@ -72,6 +73,7 @@ export function Header({ route }: { route: string }) {
               <a
                 key={item.label}
                 href={item.href}
+                aria-current={active ? 'page' : undefined}
                 className={cx('rounded-[var(--radius-pill)] px-3.5 py-1.5 text-[13px] transition', active ? 'bg-surface-3 text-fg' : 'text-fg-muted hover:text-fg')}
               >
                 {item.label}
