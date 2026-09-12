@@ -15,6 +15,7 @@
 
 /** @type {ReadonlyArray<{ name: string; pattern: RegExp }>} */
 export const FORBIDDEN = [
+  { name: 'local development boundary', pattern: /local-live|dev-read\.domino\.money|CF-Access-Client-Secret|CF-Access-Client-Id|__DOMINO_LOCAL_LIVE__|Local real-data development/ },
   // Sample and practice data or wording, in any case.
   { name: 'sample', pattern: /sample/i },
   { name: 'practice', pattern: /practice/i },

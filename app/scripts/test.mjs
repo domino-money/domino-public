@@ -34,6 +34,11 @@ execFileSync(
     'tests/session.forwarder.test.mjs',
     'tests/session.source-guard.test.mjs',
     'tests/screens.test.mjs',
+    'tests/local-live-boundary.test.mjs',
+    'tests/local-live-build.test.mjs',
+    'tests/local-live-proxy.test.mjs',
+    'tests/local-live-credentials.test.mjs',
+    'tests/local-live-vite.test.mjs',
   ],
   { stdio: 'inherit' },
 );

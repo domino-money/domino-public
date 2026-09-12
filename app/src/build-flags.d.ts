@@ -24,3 +24,4 @@ declare const __DOMINO_WALLET_SESSION__: boolean
  * refuses any bundle that still names it.
  */
 declare const __DOMINO_TEST_HOOKS__: boolean
+declare const __DOMINO_LOCAL_LIVE__: boolean

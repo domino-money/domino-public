@@ -163,13 +163,19 @@ function deployableBundleCheck(mode: string, deployable: boolean): Plugin {
   }
 }
 
-export default defineConfig(({ mode }) => {
-  if (!Object.hasOwn(MODES, mode)) {
+export default defineConfig(({ mode, command }) => {
+  // A local-live server is created only by the guarded native launcher. It
+  // must never become an alternate build output or an ordinary Vite listener.
+  const localLive = mode === 'local-live'
+  if (localLive && command === 'build') throw new Error('local-live is serve-only and cannot be built or released.')
+  if (!localLive && !Object.hasOwn(MODES, mode)) {
     throw new Error(`Unknown mode "${mode}". Use production, development, fixtures, bridge-test or wallet-test.`)
   }
-  const settings = MODES[mode as keyof typeof MODES]
+  const settings = localLive
+    ? { ...MODES.development, deployable: false, wallet: false }
+    : MODES[mode as keyof typeof MODES]
   return {
-    plugins: [react(), tailwindcss(), deployableOnlyInDist(mode, settings.deployable), deployableBundleCheck(mode, settings.deployable)],
+    plugins: [react(), tailwindcss(), ...(localLive ? [{ name: 'domino:local-live-launcher-only', configResolved(config: { server: { middlewareMode: unknown } }) { if (!config.server.middlewareMode) throw new Error('Use npm run dev:live; local-live requires the guarded launcher.') } }] : [deployableOnlyInDist(mode, settings.deployable)]), deployableBundleCheck(mode, settings.deployable)],
     define: {
       __DOMINO_READ_MODE__: JSON.stringify(settings.read),
       __DOMINO_POOL_SET__: JSON.stringify(settings.pools),
@@ -179,6 +185,7 @@ export default defineConfig(({ mode }) => {
       // behind the second disappears from every build but wallet-test.
       __DOMINO_WALLET_SESSION__: JSON.stringify(settings.wallet),
       __DOMINO_TEST_HOOKS__: JSON.stringify(settings.testHooks),
+      __DOMINO_LOCAL_LIVE__: JSON.stringify(localLive),
     },
     resolve: {
       dedupe: ['react', 'react-dom', 'react/jsx-runtime', 'react/jsx-dev-runtime'],

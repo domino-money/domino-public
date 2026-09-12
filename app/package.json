@@ -8,6 +8,8 @@
   },
   "scripts": {
     "dev": "vite",
+    "dev:live": "node scripts/local-live.mjs",
+    "test:local-live": "node --test tests/local-live-boundary.test.mjs tests/local-live-build.test.mjs tests/local-live-vite.test.mjs tests/local-live-proxy.test.mjs tests/local-live-credentials.test.mjs",
     "dev:fixtures": "vite --mode fixtures",
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview",

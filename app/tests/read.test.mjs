@@ -2193,7 +2193,7 @@ function sources(dir = SRC) {
   );
 }
 
-test('no private API path, no signing or value transfer, no markup injection, no provider URL use', () => {
+test('no private API path, no signing or value transfer, no markup injection, no provider URL use', async () => {
   const found = [];
   for (const file of sources()) {
     const code = readFileSync(file, 'utf8');
@@ -2219,12 +2219,35 @@ test('no private API path, no signing or value transfer, no markup injection, no
     .map((file) => file.slice(SRC.length).replace(/\\/g, '/'));
   assert.deepEqual(signers, ['/wallet/port.ts'], 'only the wallet port may name the login signature');
 
-  // Two clients reach the network, each to its own family on this origin: the
-  // read adapter through /api/read/v1/, and the session client through
-  // /api/session/v1/. A third thing that fetches is a path nobody reviewed,
-  // which is what this guard exists to catch.
+  // The deployable app still has only its read and session clients. #132
+  // adds one reviewed serve-only diagnostic fetch, not a general exception
+  // for components or new routes. Check its exact destination and build gate
+  // as well as retaining the complete source-tree fetcher allowlist.
   const fetchers = sources().filter((file) => /\bfetch\(/.test(readFileSync(file, 'utf8'))).map((file) => file.slice(SRC.length).replace(/\\/g, '/'));
-  assert.deepEqual(fetchers, ['/lib/read/bridgeSource.ts', '/wallet/session.ts'], 'only the read adapter and the session client fetch');
+  const diagnosticPath = '/components/read/LocalDevelopmentBanner.tsx';
+  assert.deepEqual(fetchers, [diagnosticPath, '/lib/read/bridgeSource.ts', '/wallet/session.ts'], 'only the two product clients and the reviewed serve-only diagnostics fetch');
+
+  const diagnostics = readFileSync(join(SRC, diagnosticPath), 'utf8');
+  assert.equal([...diagnostics.matchAll(/\bfetch\s*\(/g)].length, 1, 'exactly one diagnostic fetch call');
+  assert.match(diagnostics, /fetch\('\/api\/dev\/v1\/status', \{ credentials: 'omit', cache: 'no-store', signal: controller\.signal \}\)/, 'fixed same-origin status GET, without credentials or configurable target');
+  assert.deepEqual([...diagnostics.matchAll(/['"`](https?:\/\/[^'"`]+|\/api\/[^'"`]+)['"`]/g)].map((match) => match[1]), ['/api/dev/v1/status'], 'no other network route in the diagnostic component');
+  assert.doesNotMatch(diagnostics, /\b(?:XMLHttpRequest|WebSocket|EventSource|sendBeacon|importScripts)\b/, 'no alternate diagnostic network client');
+
+  const consumers = sources().filter((file) => /\bLocalDevelopmentBanner\b/.test(readFileSync(file, 'utf8'))).map((file) => file.slice(SRC.length).replace(/\\/g, '/'));
+  assert.deepEqual(consumers, ['/App.tsx', diagnosticPath], 'no other entry point can mount the diagnostic component');
+  const app = readFileSync(join(SRC, 'App.tsx'), 'utf8');
+  assert.equal([...app.matchAll(/<LocalDevelopmentBanner\b/g)].length, 1);
+  assert.match(app, /\{__DOMINO_LOCAL_LIVE__\s*\?\s*<LocalDevelopmentBanner\s*\/>/, 'diagnostics mount only behind the serve-only build literal');
+
+  const { resolveConfig } = await import('vite');
+  const root = resolve(SRC, '..');
+  for (const mode of ['production', 'development']) {
+    const config = await resolveConfig({ root, configFile: join(root, 'vite.config.ts'), mode, logLevel: 'silent' }, 'build');
+    assert.equal(config.define.__DOMINO_LOCAL_LIVE__, 'false', `${mode} folds the diagnostic branch away`);
+    const guard = config.plugins.find((plugin) => plugin.name === 'domino:deployable-bundle-check');
+    assert.ok(guard, `${mode} checks emitted and copied assets`);
+    assert.throws(() => guard.generateBundle.call({}, {}, { 'assets/diagnostic.js': { type: 'chunk', fileName: 'assets/diagnostic.js', code: diagnostics } }), /deployable and carries what must never ship/, `${mode} refuses diagnostic code if it reaches the bundle`);
+  }
 });
 
 test('no source file carries a control character, so git and review see it as text', () => {

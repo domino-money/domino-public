@@ -12,6 +12,10 @@ sample figure.
 
 ## Run it
 
+For the separately reviewed native Windows real-data development candidate,
+see [local-live setup and boundaries](LOCAL_LIVE.md). It requires dedicated
+development provisioning; it never reuses production access or changes Pages.
+
 Both directories must be installed. This app imports domain modules from
 `web/lib`, and TypeScript needs `web/` present to resolve them.
 

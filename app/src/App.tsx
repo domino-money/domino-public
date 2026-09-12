@@ -11,6 +11,7 @@ import { BuildBanner } from './components/read/BuildBanner'
 import { useAppearance } from './lib/appearance'
 import { appMarketsProvider } from './lib/read/buildMode'
 import { MarketsContext } from './lib/read/useMarkets'
+import { LocalDevelopmentBanner } from './components/read/LocalDevelopmentBanner'
 
 /**
  * Hash routing with a section part: `#/#pools` is route `/`, section
@@ -84,7 +85,7 @@ export default function App() {
   return (
     <MarketsContext.Provider value={markets}>
     <div className="min-h-screen">
-      {!__DOMINO_DEPLOYABLE__ && <BuildBanner mode={__DOMINO_READ_MODE__} />}
+      {__DOMINO_LOCAL_LIVE__ ? <LocalDevelopmentBanner /> : !__DOMINO_DEPLOYABLE__ && <BuildBanner mode={__DOMINO_READ_MODE__} />}
       {route === '/' && <Ticker />}
       <Header route={route} />
       {route === '/app' ? <Dashboard /> : route === '/pools' ? <Pools /> : route === '/settings' ? <Settings /> : <Landing />}
