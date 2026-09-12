@@ -1,8 +1,9 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.26;
 
-import {DominoVaultTypes as T, IPositionManagerE2, IStateViewE2, IERC20E2} from "./DominoVaultTypes.sol";
+import {DominoVaultTypes as T, IPositionManagerE2, IERC20E2} from "./DominoVaultTypes.sol";
 import {IDominoVaultDraft} from "./IDominoVaultDraft.sol";
+import {DominoVaultReadHelper} from "./DominoVaultReadHelper.sol";
 import {PolicyValidation} from "./PolicyValidation.sol";
 
 /// @notice E2 owner-bound custody and recovery candidate. No execution or swaps.
@@ -29,14 +30,18 @@ contract DominoVault {
     error InsufficientReserve();
     error TransferFailed();
     error UnbackedReserve();
+    error ReadHelperUnavailable();
 
+    /// @dev Fixed read-only dependency. Owner recovery never calls it.
+    DominoVaultReadHelper public immutable readHelper;
+    bytes32 public immutable readHelperCodeHash;
     address public immutable factory;
     address public immutable implementation;
     address public immutable poolManager;
     address public immutable positionManager;
     address public immutable stateView;
     address public immutable serviceFeeRecipient;
-    uint64 public constant implementationVersion = 1;
+    uint64 public constant implementationVersion = 2;
     bytes32 public immutable poolManagerCodeHash;
     bytes32 public immutable positionManagerCodeHash;
     bytes32 public immutable stateViewCodeHash;
@@ -120,6 +125,8 @@ contract DominoVault {
             factory_ == address(0) || feeRecipient_ == address(0) || poolManager_.code.length == 0
                 || positionManager_.code.length == 0 || stateView_.code.length == 0
         ) revert InvalidIdentity();
+        readHelper = new DominoVaultReadHelper(positionManager_, stateView_);
+        readHelperCodeHash = address(readHelper).codehash;
         factory = factory_;
         implementation = address(this);
         poolManager = poolManager_;
@@ -465,43 +472,13 @@ contract DominoVault {
     }
 
     function _readPosition(uint256 tokenId) private view returns (T.PoolKey memory key, int24 lo, int24 hi) {
-        if (tokenId == 0 || poolId == bytes32(0)) revert InvalidPosition();
-        uint256 info;
-        (key, info) = IPositionManagerE2(positionManager).getPoolAndPositionInfo(tokenId);
-        if (info == 0 || keccak256(abi.encode(key)) != poolId || info >> 56 != uint256(poolId) >> 56) {
-            revert InvalidPosition();
-        }
-        lo = int24(uint24(info >> 8));
-        hi = int24(uint24(info >> 32));
-        if (
-            key.tickSpacing <= 0 || lo < -887272 || hi > 887272 || lo >= hi || lo % key.tickSpacing != 0
-                || hi % key.tickSpacing != 0
-        ) revert InvalidPosition();
+        _requireReadHelper();
+        return readHelper.readPosition(poolId, tokenId);
     }
 
     function _readCheckpoint(uint256 tokenId, int24 lo, int24 hi) private view returns (T.Checkpoint memory point) {
-        if (block.number > type(uint64).max) revert InvalidIdentity();
-        (point.liquidity, point.feeGrowthInside0LastX128, point.feeGrowthInside1LastX128) =
-            IStateViewE2(stateView).getPositionInfo(poolId, positionManager, lo, hi, bytes32(tokenId));
-        if (point.liquidity != IPositionManagerE2(positionManager).getPositionLiquidity(tokenId)) {
-            revert InvalidPosition();
-        }
-        (point.feeGrowthInside0X128, point.feeGrowthInside1X128) =
-            IStateViewE2(stateView).getFeeGrowthInside(poolId, lo, hi);
-        point.observedAtBlock = uint64(block.number);
-        point.commitment = keccak256(
-            abi.encode(
-                keccak256("DominoRegistrationCheckpointV1"),
-                _sequenceIdentity,
-                tokenId,
-                point.liquidity,
-                point.feeGrowthInside0LastX128,
-                point.feeGrowthInside1LastX128,
-                point.feeGrowthInside0X128,
-                point.feeGrowthInside1X128,
-                point.observedAtBlock
-            )
-        );
+        _requireReadHelper();
+        return readHelper.readCheckpoint(poolId, _sequenceIdentity, tokenId, lo, hi);
     }
 
     function _register(uint256 tokenId, bool isRoot, uint256 parent, int24 lo, int24 hi) private {
@@ -526,35 +503,9 @@ contract DominoVault {
         emit PositionRegistered(tokenId, member.identity, member.source0, member.source1, stateNonce);
     }
 
-    struct PositionWords {
-        bytes32 typeHash;
-        bytes32 sequence;
-        uint256 tokenId;
-        uint64 generation;
-        bool isRoot;
-        uint256 parentTokenId;
-        int24 lower;
-        int24 upper;
-        bytes32 corePositionId;
-        bytes32 baseline;
-    }
-
     function _positionIdentity(uint256 tokenId, T.Position storage member) private view returns (bytes32) {
-        PositionWords memory value;
-        value.typeHash = keccak256(
-            "PositionIdentity(bytes32 sequence,uint256 tokenId,uint64 generation,bool isRoot,uint256 parentTokenId,int24 tickLower,int24 tickUpper,bytes32 corePositionId,bytes32 registrationBaselineId)"
-        );
-        value.sequence = _sequenceIdentity;
-        value.tokenId = tokenId;
-        value.generation = member.generation;
-        value.isRoot = member.isRoot;
-        value.parentTokenId = member.parentTokenId;
-        value.lower = member.tickLower;
-        value.upper = member.tickUpper;
-        value.corePositionId =
-            keccak256(abi.encodePacked(positionManager, member.tickLower, member.tickUpper, bytes32(tokenId)));
-        value.baseline = member.registrationBaselineId;
-        return keccak256(abi.encode(value));
+        _requireReadHelper();
+        return readHelper.positionIdentity(_sequenceIdentity, tokenId, member);
     }
 
     function _sourceIdentity(bytes32 positionId, address currency) private view returns (bytes32) {
@@ -568,55 +519,25 @@ contract DominoVault {
         );
     }
 
-    struct SequenceWords {
-        bytes32 typeHash;
-        uint256 chainId;
-        address owner_;
-        bytes32 sequenceId_;
-        address vault;
-        address factory_;
-        address implementation_;
-        uint64 implementationVersion_;
-        address poolManager_;
-        address positionManager_;
-        bytes32 key;
-        bytes32 poolId_;
-        address base;
-        address quote;
-        address feeRecipient;
+    function _computeSequenceIdentity() private view returns (bytes32) {
+        _requireReadHelper();
+        DominoVaultReadHelper.SequenceContext memory context;
+        context.owner = owner;
+        context.sequenceId = sequenceId;
+        context.factory = factory;
+        context.implementation = implementation;
+        context.implementationVersion = implementationVersion;
+        context.poolManager = poolManager;
+        context.poolId = poolId;
+        context.baseCurrency = baseCurrency;
+        context.quoteCurrency = quoteCurrency;
+        context.serviceFeeRecipient = serviceFeeRecipient;
+        context.key = _key;
+        return readHelper.sequenceIdentity(context);
     }
 
-    function _computeSequenceIdentity() private view returns (bytes32) {
-        SequenceWords memory value;
-        value.typeHash = keccak256(
-            "SequenceIdentity(uint256 chainId,address owner,bytes32 sequenceId,address vault,address factory,address implementation,uint64 implementationVersion,address poolManager,address positionManager,bytes32 poolKey,bytes32 poolId,address baseCurrency,address quoteCurrency,address serviceFeeRecipient)"
-        );
-        value.chainId = block.chainid;
-        value.owner_ = owner;
-        value.sequenceId_ = sequenceId;
-        value.vault = address(this);
-        value.factory_ = factory;
-        value.implementation_ = implementation;
-        value.implementationVersion_ = implementationVersion;
-        value.poolManager_ = poolManager;
-        value.positionManager_ = positionManager;
-        value.key = keccak256(
-            abi.encode(
-                keccak256(
-                    "PoolKey(address currency0,address currency1,uint24 fee_pips,int24 tick_spacing,address hooks)"
-                ),
-                _key.currency0,
-                _key.currency1,
-                _key.fee,
-                _key.tickSpacing,
-                _key.hooks
-            )
-        );
-        value.poolId_ = poolId;
-        value.base = baseCurrency;
-        value.quote = quoteCurrency;
-        value.feeRecipient = serviceFeeRecipient;
-        return keccak256(abi.encode(value));
+    function _requireReadHelper() private view {
+        if (address(readHelper).codehash != readHelperCodeHash) revert ReadHelperUnavailable();
     }
 
     function _validateLimits(T.ExecutionLimits memory limits) private pure {
@@ -645,7 +566,8 @@ contract DominoVault {
 
     function _deploymentUnchanged() private view returns (bool) {
         return block.chainid == 4663 && poolManager.codehash == poolManagerCodeHash
-            && positionManager.codehash == positionManagerCodeHash && stateView.codehash == stateViewCodeHash;
+            && positionManager.codehash == positionManagerCodeHash && stateView.codehash == stateViewCodeHash
+            && address(readHelper).codehash == readHelperCodeHash;
     }
 
     function _requireCurrency(address currency) private view {

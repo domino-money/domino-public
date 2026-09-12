@@ -6,6 +6,7 @@ import { existsSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { checkContractSizes, formatReport } from './check-contract-size.mjs';
 
 const require = createRequire(import.meta.url);
 const root = fileURLToPath(new URL('../', import.meta.url));
@@ -33,7 +34,13 @@ async function main() {
     binary = path.resolve(path.dirname(require.resolve('@foundry-rs/forge/package.json')), '../dist', name);
   }
   if (!existsSync(binary)) throw new Error('Pinned Forge binary missing; run npm ci in this checkout on macOS, Linux or WSL2.');
-  return runChecked(binary, contractArguments(process.argv.slice(2)));
+  const status = runChecked(binary, contractArguments(process.argv.slice(2)));
+  if (status !== 0) return status;
+  // Keep npm's trailing Forge filters attached to this launcher, not to a
+  // second shell command. Inspect only artifacts from the successful build.
+  const report = checkContractSizes();
+  console.log(formatReport(report));
+  return report.ok ? 0 : 1;
 }
 
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {

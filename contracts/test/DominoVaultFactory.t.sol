@@ -380,7 +380,7 @@ contract DominoVaultFactoryTest {
             vault,
             address(factory),
             factory.implementation(),
-            uint64(1)
+            uint64(2)
         );
         bytes memory tail = abi.encode(
             address(manager),
@@ -662,7 +662,7 @@ contract DominoVaultFactoryTest {
         require(addressGetter(vault, "serviceFeeRecipient()") == FEE_RECIPIENT, "fee recipient binding");
         DominoVault deployed = DominoVault(payable(vault));
         require(
-            deployed.implementation() == factory.implementation() && deployed.implementationVersion() == 1,
+            deployed.implementation() == factory.implementation() && deployed.implementationVersion() == 2,
             "implementation version binding"
         );
         require(deployed.sequenceId() == sequence && deployed.rootTokenId() == 101, "sequence/root binding");

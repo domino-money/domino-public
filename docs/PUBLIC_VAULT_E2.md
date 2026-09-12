@@ -1,6 +1,8 @@
 # Public vault and factory — E2 custody candidate
 
-11 September 2026 · [#86](https://github.com/domino-money/domino/issues/86) · implementation version 1
+11 September 2026 · [#86](https://github.com/domino-money/domino/issues/86) · original implementation version 1
+
+The current source contains a [version-2 architecture candidate](PUBLIC_VAULT_V2_ARCHITECTURE.md) for independent review. The custody semantics below remain; the version-1 bytecode measurements and compiler profile at the end are historical. Version 2 does not activate compound, Domino or swaps.
 
 E2 implements owner-bound initialization, NFT custody, authority transitions and direct recovery in [DominoVault](../contracts/src/DominoVault.sol) and [DominoVaultFactory](../contracts/src/DominoVaultFactory.sol). It uses the reviewed [E1 identities](execution-v1.md) and existing PolicyValidation. This is a locally tested custody implementation, **not an activated public executor**: there is no compound, liquidity modification, mint, router, external credit, signing or upgrade method. It does not implement the draft `compoundSelf` interface or pretend the draft's withdrawal signature is this ABI.
 
