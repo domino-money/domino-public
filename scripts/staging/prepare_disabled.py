@@ -46,12 +46,19 @@ SERVICES = {
     'deposit': ('deposit_api.py', '--port 8881'),
 }
 ROOTS = (*SERVICES, 'operator', 'write')
+# The fixed foundation applied by this installer, not every SQL file in a release.
 MIGRATIONS = tuple('backend/migrations/' + name + '.sql' for name in (
     '001_catalogue', '002_activity', '003_fee_ledger', '004_positions',
     '005_capital_prices', '006_chainlink_prices', '007_historical_work',
     '008_wallet_sessions', '009_direct_deposits', '010_deposit_recovery',
     '011_wallet_access', '012_capital_work', '013_activity_diagnostics',
     '014_deposit_draft_recovery'))
+# Optional source files for separately deployed subsystems. Packaging these does
+# not admit their schemas/roles or claim they were applied in the receipts.
+PACKAGED_ONLY_MIGRATIONS = (
+    'backend/migrations/015_unsigned_execution.sql',
+    'backend/migrations/016_managed_performance.sql',
+)
 MAPPINGS = (
     ('domino', 'domino-admin', ADMIN),
     ('domino', 'domino-read', 'domino_catalogue_reader'),
@@ -122,9 +129,16 @@ def archive_files(path, digest, commit):
     needed = (*MIGRATIONS, 'backend/requirements-api.lock',
               *('backend/' + script for script, _ in SERVICES.values()))
     require(all(name in files for name in needed), 'required release file missing')
-    require({name for name in files if name.startswith('backend/migrations/')} == set(MIGRATIONS),
-            'release migration set must be exactly001–014')
+    require({name for name in files if name.startswith('backend/migrations/')}
+            <= set(MIGRATIONS) | set(PACKAGED_ONLY_MIGRATIONS),
+            'release includes an unsupported migration file')
     return files
+
+
+def packaged_only_migrations(files):
+    """Record inert SQL source independently from the applied foundation."""
+    return [{'path': name, 'sha256': hashlib.sha256(files[name][0]).hexdigest()}
+            for name in PACKAGED_ONLY_MIGRATIONS if name in files]
 
 
 def unit_text(component, commit):
@@ -165,7 +179,7 @@ KillMode=control-group
 
 
 def plan(files, digest, commit):
-    return {'mode': 'disabled-install-plan', 'hostValidated': False,
+    planned = {'mode': 'disabled-install-plan', 'hostValidated': False,
             'commit': commit, 'archiveSha256': digest,
             'target': str(BASE / 'releases' / commit),
             'backup': str(BACKUPS / commit),
@@ -185,6 +199,11 @@ def plan(files, digest, commit):
             'notPerformed': ['service start/enable', 'network or provider configuration',
                              'wallet grants', 'Cloudflare/Tunnel', 'cron', 'firewall changes',
                              'dependency installation', 'upgrade or destructive rollback']}
+    # Keep legacy plans unchanged when the release contains only the foundation.
+    packaged = packaged_only_migrations(files)
+    if packaged:
+        planned['packagedOnlyMigrations'] = packaged
+    return planned
 
 
 def run(args, *, data=None, stdout=None):
@@ -503,8 +522,12 @@ def apply(files, planned):
         run(['/usr/bin/systemd-analyze', 'verify', *(str(UNIT_DIR/f'domino-{c}.service') for c in SERVICES)])
         run(['/usr/bin/systemctl', 'daemon-reload'])
         validate_pg_files()
-        exclusive_file(destination/'installed.json', json.dumps({'commit': planned['commit'],
-            'servicesStarted': False, 'servicesEnabled': False, 'migrationsCommitted': list(MIGRATIONS)}).encode())
+        receipt = {'commit': planned['commit'], 'servicesStarted': False,
+                   'servicesEnabled': False, 'migrationsCommitted': list(MIGRATIONS)}
+        packaged = packaged_only_migrations(files)
+        if packaged:
+            receipt['packagedOnlyMigrations'] = packaged
+        exclusive_file(destination/'installed.json', json.dumps(receipt).encode())
         print('Installed; no service started or enabled. Review BPF enforcement and smoke tests separately.')
 
 

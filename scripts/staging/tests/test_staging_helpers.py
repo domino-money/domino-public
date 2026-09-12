@@ -5,6 +5,7 @@ import io
 import json
 import os
 from pathlib import Path
+import shutil
 import stat
 import subprocess
 import sys
@@ -26,6 +27,21 @@ import check_roles
 import prepare_disabled
 
 COMMIT = 'a' * 40
+# Independent release contract: adding a migration to production MIGRATIONS
+# must not silently widen what these installation/receipt tests expect.
+FOUNDATION_MIGRATIONS = tuple('backend/migrations/' + name + '.sql' for name in (
+    '001_catalogue', '002_activity', '003_fee_ledger', '004_positions',
+    '005_capital_prices', '006_chainlink_prices', '007_historical_work',
+    '008_wallet_sessions', '009_direct_deposits', '010_deposit_recovery',
+    '011_wallet_access', '012_capital_work', '013_activity_diagnostics',
+    '014_deposit_draft_recovery'))
+PACKAGED_MIGRATIONS = ('backend/migrations/015_unsigned_execution.sql',
+                       'backend/migrations/016_managed_performance.sql')
+
+
+def packaged_records(files):
+    return [{'path': path, 'sha256': hashlib.sha256(files[path][0]).hexdigest()}
+            for path in PACKAGED_MIGRATIONS if path in files]
 
 
 class ArchiveTests(unittest.TestCase):
@@ -77,6 +93,31 @@ class ArchiveTests(unittest.TestCase):
             with self.subTest(commit=commit, digest=claimed_digest), self.assertRaises(ValueError):
                 prepare_disabled.archive_files(self.path, claimed_digest, commit)
 
+    def test_only_named_optional_migrations_are_packaged_not_applied(self):
+        self.assertEqual(prepare_disabled.MIGRATIONS, FOUNDATION_MIGRATIONS)
+        self.assertEqual(prepare_disabled.PACKAGED_ONLY_MIGRATIONS, PACKAGED_MIGRATIONS)
+        for extras in ((), PACKAGED_MIGRATIONS[:1], PACKAGED_MIGRATIONS[1:], PACKAGED_MIGRATIONS):
+            with self.subTest(extras=extras), \
+                    patch.object(prepare_disabled, 'run', side_effect=AssertionError('host command')), \
+                    patch.object(prepare_disabled, 'sql', side_effect=AssertionError('SQL')):
+                digest = self.archive(extra=[(path, tarfile.REGTYPE) for path in extras])
+                files = prepare_disabled.archive_files(self.path, digest, COMMIT)
+                planned = prepare_disabled.plan(files, digest, COMMIT)
+                self.assertEqual([row['path'] for row in planned['migrations']], list(FOUNDATION_MIGRATIONS))
+                self.assertEqual(prepare_disabled.packaged_only_migrations(files), packaged_records(files))
+                self.assertEqual(set(files) & set(PACKAGED_MIGRATIONS), set(extras))
+                if extras:
+                    self.assertEqual(planned['packagedOnlyMigrations'], packaged_records(files))
+                else:
+                    self.assertNotIn('packagedOnlyMigrations', planned)
+
+    def test_optional_sql_never_makes_a_foundation_migration_optional(self):
+        for missing in FOUNDATION_MIGRATIONS:
+            with self.subTest(missing=missing):
+                digest = self.archive(omit=[missing], extra=[(path, tarfile.REGTYPE) for path in PACKAGED_MIGRATIONS])
+                with self.assertRaisesRegex(ValueError, 'required release file missing'):
+                    prepare_disabled.archive_files(self.path, digest, COMMIT)
+
     def test_untrusted_members_are_rejected_without_extraction(self):
         cases = [('../outside', tarfile.REGTYPE), ('/outside', tarfile.REGTYPE),
                  ('backend/../outside', tarfile.REGTYPE), ('backend//extra', tarfile.REGTYPE),
@@ -86,7 +127,11 @@ class ArchiveTests(unittest.TestCase):
                  ('node_modules/file', tarfile.REGTYPE), ('backend/link', tarfile.SYMTYPE),
                  ('backend/hardlink', tarfile.LNKTYPE), ('backend/fifo', tarfile.FIFOTYPE),
                  ('backend/device', tarfile.CHRTYPE), ('backend/read_api.py', tarfile.REGTYPE),
-                 ('backend/migrations/015_extra.sql', tarfile.REGTYPE)]
+                 ('backend/migrations/015_extra.sql', tarfile.REGTYPE),
+                 ('backend/migrations/017_future.sql', tarfile.REGTYPE),
+                 ('backend/migrations/nested/015_unsigned_execution.sql', tarfile.REGTYPE),
+                 (PACKAGED_MIGRATIONS[0], tarfile.SYMTYPE),
+                 (PACKAGED_MIGRATIONS[1], tarfile.LNKTYPE)]
         for case in cases:
             with self.subTest(case=case):
                 digest = self.archive(extra=[case])
@@ -119,6 +164,121 @@ class ArchiveTests(unittest.TestCase):
                 for line in ('UMask=0077', 'NoNewPrivileges=true', 'ProtectSystem=strict',
                              'IPAddressDeny=any', 'IPAddressAllow=localhost', 'TimeoutStopSec=30'):
                     self.assertIn(line + '\n', unit)
+
+
+class CurrentGitArchiveTests(unittest.TestCase):
+    """The actual release artifact, not a fabricated list of required files."""
+    @classmethod
+    def setUpClass(cls):
+        cls.repo = Path(__file__).resolve().parents[3]
+        if not (cls.repo / '.git').exists():
+            raise unittest.SkipTest('Building a Git archive requires a source checkout; tar planning does not.')
+        # Missing/broken Git in a checkout (including required CI) is a failure.
+        cls.temp = tempfile.TemporaryDirectory(prefix='domino-real-archive-')
+        cls.addClassCleanup(cls.temp.cleanup)
+        cls.root = Path(cls.temp.name)
+        cls.commit = subprocess.run(['git', '-C', str(cls.repo), 'rev-parse', 'HEAD'],
+                                    check=True, capture_output=True, text=True, timeout=30).stdout.strip()
+        cls.archive = cls.root / 'source.tar'
+        subprocess.run(['git', '-C', str(cls.repo), 'archive', '--format=tar',
+                        '--output', str(cls.archive), cls.commit],
+                       check=True, capture_output=True, timeout=30)
+        cls.digest = hashlib.sha256(cls.archive.read_bytes()).hexdigest()
+
+    def test_current_head_plain_git_archive_plans_without_host_access(self):
+        with patch.object(prepare_disabled, 'run', side_effect=AssertionError('host command')), \
+                patch.object(prepare_disabled, 'sql', side_effect=AssertionError('SQL')), \
+                patch.object(prepare_disabled, 'preflight', side_effect=AssertionError('host preflight')), \
+                patch.object(prepare_disabled, 'apply', side_effect=AssertionError('apply')):
+            files = prepare_disabled.archive_files(self.archive, self.digest, self.commit)
+            planned = prepare_disabled.plan(files, self.digest, self.commit)
+        self.assertIn('scripts/staging/prepare_disabled.py', files)
+        self.assertIn('backend/schema.sql', files)
+        self.assertFalse(planned['hostValidated'])
+        self.assertEqual([row['path'] for row in planned['migrations']], list(FOUNDATION_MIGRATIONS))
+        self.assertEqual(planned.get('packagedOnlyMigrations', []), packaged_records(files))
+
+    def test_separately_reviewed_helper_plans_real_tar_without_git_or_checkout(self):
+        helpers = self.root / 'installed-helpers'
+        helpers.mkdir()
+        for name in ('prepare_disabled.py', 'catalogue_inventory.py'):
+            shutil.copyfile(self.repo / 'scripts/staging' / name, helpers / name)
+        self.assertFalse((helpers / '.git').exists())
+        # Run the actual CLI, but fail before any attempted host child process
+        # even if a future regression makes default planning invoke one.
+        child = ("import runpy,subprocess,sys\n"
+                 "def forbidden(*args, **kwargs): raise AssertionError('planner attempted a child process')\n"
+                 "subprocess.Popen=forbidden\n"
+                 "sys.path.insert(0,sys.argv[1]); sys.argv=sys.argv[2:]\n"
+                 "runpy.run_path(sys.argv[0],run_name='__main__')\n")
+        result = subprocess.run([sys.executable, '-I', '-B', '-c', child, str(helpers),
+                                 str(helpers / 'prepare_disabled.py'),
+                                 '--archive', str(self.archive), '--archive-sha256', self.digest,
+                                 '--commit', self.commit], cwd=helpers,
+                                env={'PATH': '', 'LANG': 'C.UTF-8', 'PYTHONDONTWRITEBYTECODE': '1'},
+                                capture_output=True, text=True, timeout=30)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        planned = json.loads(result.stdout)
+        self.assertEqual(planned['mode'], 'disabled-install-plan')
+        self.assertFalse(planned['hostValidated'])
+        self.assertEqual([row['path'] for row in planned['migrations']], list(FOUNDATION_MIGRATIONS))
+
+
+class InstallerMigrationTests(unittest.TestCase):
+    def test_applied_sql_and_receipt_keep_only_foundation_with_optional_sql_packaged(self):
+        sentinel = b"DO $$ BEGIN RAISE EXCEPTION 'PACKAGED_SQL_MUST_NOT_RUN'; END $$;\n"
+        for extras in ((), PACKAGED_MIGRATIONS):
+            with self.subTest(extras=extras), tempfile.TemporaryDirectory() as temporary, contextlib.ExitStack() as stack:
+                root = Path(temporary)
+                for attr, child in (('BASE', 'opt'), ('CONFIG', 'pg'), ('UNIT_DIR', 'units')):
+                    path = root / child
+                    path.mkdir()
+                    stack.enter_context(patch.object(prepare_disabled, attr, path))
+                destination = root / 'backup'
+                destination.mkdir()
+                for name, rows in (('pg_ident.conf', prepare_disabled.MAPPINGS), ('pg_hba.conf', prepare_disabled.HBA)):
+                    (prepare_disabled.CONFIG / name).write_text('\n'.join(' '.join(row) for row in rows) + '\n')
+                files = {path: (f"SELECT 'foundation_{i}';\n".encode(), False)
+                         for i, path in enumerate(FOUNDATION_MIGRATIONS, 1)}
+                files['backend/requirements-api.lock'] = (b'locked\n', False)
+                files.update({path: (sentinel, False) for path in extras})
+                planned = prepare_disabled.plan(files, 'c' * 64, COMMIT)
+                real_fstat = os.fstat
+                def root_owned(fd):
+                    info = real_fstat(fd)
+                    fields = list(info)
+                    fields[4] = 0
+                    return os.stat_result(fields)
+                stack.enter_context(patch.object(prepare_disabled.os, 'geteuid', return_value=0))
+                stack.enter_context(patch.object(prepare_disabled.os, 'fstat', side_effect=root_owned))
+                stack.enter_context(patch.object(prepare_disabled.os, 'fchown'))
+                for name in ('trusted_parents', 'preflight', 'validate_pg_files', 'verify_new_peers'):
+                    stack.enter_context(patch.object(prepare_disabled, name))
+                stack.enter_context(patch.object(prepare_disabled, 'backup', return_value=destination))
+                roots = stack.enter_context(patch.object(prepare_disabled, 'install_roots'))
+                stack.enter_context(patch.object(prepare_disabled, 'replace_pg_config',
+                                                side_effect=lambda path, content: path.write_bytes(content)))
+                stack.enter_context(patch.object(prepare_disabled, 'run', return_value=b''))
+                stack.enter_context(patch.object(prepare_disabled.subprocess, 'Popen',
+                                                side_effect=AssertionError('host process')))
+                sql = stack.enter_context(patch.object(prepare_disabled, 'sql', return_value='t'))
+                stack.enter_context(contextlib.redirect_stdout(io.StringIO()))
+                prepare_disabled.apply(files, planned)
+                roots.assert_called_once_with(files, COMMIT)
+                migration_calls = [call for call in sql.call_args_list if call.kwargs.get('transaction')]
+                self.assertEqual(len(migration_calls), 1)
+                expected_sql = '\n'.join(files[path][0].decode() for path in FOUNDATION_MIGRATIONS)
+                query = migration_calls[0].args[0]
+                self.assertEqual(query[query.index("SELECT 'foundation_1';"):], expected_sql)
+                self.assertEqual(query.count("SELECT 'foundation_"), 14)
+                self.assertEqual(migration_calls[0].kwargs, {'os_user': 'domino-admin', 'role': prepare_disabled.ADMIN,
+                                                            'transaction': True})
+                self.assertTrue(all('PACKAGED_SQL_MUST_NOT_RUN' not in call.args[0] for call in sql.call_args_list))
+                receipt = json.loads((destination / 'installed.json').read_text())
+                self.assertEqual(receipt['migrationsCommitted'], list(FOUNDATION_MIGRATIONS))
+                self.assertEqual(receipt.get('packagedOnlyMigrations', []), packaged_records(files))
+                if not extras:
+                    self.assertNotIn('packagedOnlyMigrations', receipt)
 
 
 class CodeIdentityTests(unittest.TestCase):

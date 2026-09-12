@@ -16,6 +16,8 @@ from types import SimpleNamespace
 import unittest
 from unittest.mock import Mock, patch
 
+from test_staging_helpers import FOUNDATION_MIGRATIONS, PACKAGED_MIGRATIONS, packaged_records
+
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import prepare_disabled as install
 import upgrade_disabled as upgrade
@@ -198,6 +200,40 @@ class PlanTests(unittest.TestCase):
         old, new = archives()
         with self.assertRaisesRegex(ValueError, 'source_and_destination_must_differ'):
             upgrade.plan(old, new, 'c' * 64, 'd' * 64, BEFORE, BEFORE)
+
+    def test_optional_sql_additions_changes_and_removal_are_only_package_changes(self):
+        self.assertEqual(install.MIGRATIONS, FOUNDATION_MIGRATIONS)
+        subsets = ((), PACKAGED_MIGRATIONS[:1], PACKAGED_MIGRATIONS[1:], PACKAGED_MIGRATIONS)
+        for before in subsets:
+            for after in subsets:
+                with self.subTest(before=before, after=after), \
+                        patch.object(install, 'run', side_effect=AssertionError('host command')), \
+                        patch.object(install, 'sql', side_effect=AssertionError('SQL')):
+                    old, new = archives()
+                    old.update({path: (b'old packaged SQL\n', False) for path in before})
+                    new.update({path: (b'new packaged SQL\n', False) for path in after})
+                    planned = make_plan(old, new)
+                    self.assertEqual(planned['unchangedMigrations'], list(FOUNDATION_MIGRATIONS))
+                    self.assertEqual(planned['changedFiles'], sorted({'backend/read_api.py', *before, *after}))
+                    if before or after:
+                        self.assertEqual(planned['fromPackagedOnlyMigrations'], packaged_records(old))
+                        self.assertEqual(planned['packagedOnlyMigrations'], packaged_records(new))
+                    else:
+                        self.assertNotIn('fromPackagedOnlyMigrations', planned)
+                        self.assertNotIn('packagedOnlyMigrations', planned)
+
+    def test_receipt_still_requires_exact_foundation_even_when_extra_sql_is_packaged(self):
+        planned = make_plan()
+        receipt = {'commit': BEFORE, 'migrationsCommitted': list(FOUNDATION_MIGRATIONS)}
+        with patch.object(upgrade, 'private_json', return_value=receipt):
+            self.assertEqual(upgrade.receipt(planned), receipt)
+        for committed in (list(FOUNDATION_MIGRATIONS[:-1]),
+                          [*FOUNDATION_MIGRATIONS, PACKAGED_MIGRATIONS[0]],
+                          [*FOUNDATION_MIGRATIONS, *PACKAGED_MIGRATIONS]):
+            with self.subTest(committed=committed), \
+                    patch.object(upgrade, 'private_json', return_value={**receipt, 'migrationsCommitted': committed}):
+                with self.assertRaisesRegex(ValueError, '^installed_migration_receipt_mismatch$'):
+                    upgrade.receipt(planned)
 
     def test_default_cli_never_enters_host_operations(self):
         old, new = archives()
@@ -509,6 +545,45 @@ class UpgradeFlowTests(unittest.TestCase):
         self.assertEqual(self.state()['phase'], 'rolled_back')
         self.assertTrue(target.exists(), 'Rollback preserves target evidence.')
         self.assertEqual(upgrade.runtime_snapshot(target), self.snapshot)
+        self.assert_no_start_or_database_write()
+
+    def test_upgrade_packages_optional_sql_without_applying_or_recording_it_as_committed(self):
+        sentinel = b"DO $$ BEGIN RAISE EXCEPTION 'PACKAGED_SQL_MUST_NOT_RUN'; END $$;\n"
+        self.new.update({path: (sentinel, False) for path in PACKAGED_MIGRATIONS})
+        self.planned = make_plan(self.old, self.new)
+        result = upgrade.apply(self.old, self.new, self.planned)
+        self.assertTrue(result['ok'])
+        receipt = json.loads((Path(self.planned['backup']) / 'installed.json').read_text())
+        self.assertEqual(receipt['migrationsCommitted'], list(FOUNDATION_MIGRATIONS))
+        self.assertIs(receipt['migrationsReapplied'], False)
+        self.assertEqual(receipt['packagedOnlyMigrations'], packaged_records(self.new))
+        self.assertTrue(receipt['databasePreserved'])
+        self.assertTrue(receipt['runtimePreserved'])
+        for component in install.ROOTS:
+            for name in PACKAGED_MIGRATIONS:
+                path = Path(self.planned['target']) / component / name
+                self.assertEqual(path.read_bytes(), sentinel)
+                self.assertEqual(stat.S_IMODE(path.stat().st_mode), 0o444)
+        self.assertTrue(all('PACKAGED_SQL_MUST_NOT_RUN' not in call.args[0] for call in self.sql.call_args_list))
+        self.assertTrue(upgrade.rollback(self.old, self.new, self.planned)['ok'])
+        self.assertEqual(self.unit_versions(), list(self.units.values()))
+        self.assert_no_start_or_database_write()
+
+    def test_legacy_saved_plan_without_package_metadata_still_rolls_back(self):
+        # This is the plan shape saved by the prior helper. Empty new metadata
+        # would break rollback's exact saved_plan == planned comparison.
+        legacy = {key: value for key, value in self.planned.items()
+                  if key not in ('fromPackagedOnlyMigrations', 'packagedOnlyMigrations')}
+        self.assertEqual(self.planned, legacy)
+        upgrade.apply(self.old, self.new, self.planned)
+        directory = Path(self.planned['backup'])
+        make_file(directory / 'plan.json', json.dumps(legacy).encode())
+        receipt = json.loads((directory / 'installed.json').read_text())
+        self.assertNotIn('packagedOnlyMigrations', receipt)
+        recomputed = make_plan(self.old, self.new)
+        self.assertEqual(json.dumps(recomputed, sort_keys=True), json.dumps(legacy, sort_keys=True))
+        self.assertTrue(upgrade.rollback(self.old, self.new, recomputed)['ok'])
+        self.assertEqual(self.unit_versions(), list(self.units.values()))
         self.assert_no_start_or_database_write()
 
     def test_database_change_before_switch_keeps_old_units_and_blocks_rollback(self):

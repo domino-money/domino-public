@@ -42,12 +42,33 @@ For a later reviewed release, provide
 its actual commit/hash and reassess the plan rather than reusing these values.
 The installer accepts only regular files and directories, with bounded size and
 member counts; it rejects traversal, duplicate paths, links, special files,
-sparse files and embedded runtime/dependency/Git directories. Only the explicit
-001–014 migration list is eligible; `backend/schema.sql` is never applied.
+sparse files and embedded runtime/dependency/Git directories. The complete
+001–014 foundation is required. The exact optional source files
+`015_unsigned_execution.sql` and `016_managed_performance.sql` may also be
+packaged, independently or together; unknown migration filenames are rejected.
+Only001–014 is applied. `backend/schema.sql` and these optional migrations are
+never applied by this installer.
+
+When optional files are present, the plan and installation receipt list their
+paths and SHA-256 digests separately in `packagedOnlyMigrations`.
+`migrationsCommitted` remains exactly001–014. The installer copies the complete
+archive into every immutable code root; the subsequent `check_filesystem.py`
+verification covers optional SQL source too. No file is filtered out to make
+an archive pass. Their execution/performance
+schemas, service roles and live features require a separately reviewed rollout.
+This packaging allowance does not relax the foundation catalogue/ACL checks.
+
+The existing CI staging suite now validates an actual `git archive HEAD`, in
+addition to malformed-archive fixtures. A new migration must deliberately join
+an appropriate profile instead of passing CI unnoticed. Planning an already
+created tar still needs only the trusted helpers and Python, not Git on the VM.
 
 After independent review, run the same command locally on the VM as root with
 `--apply`. Do not add `--enable`, start services or supply credentials to this
 installer. It has no SSH, install-package, start-service or upgrade option.
+An active continuous read deployment is outside this disabled profile. Do not
+remove its target/drop-ins or stop its services to use this installer; preserve
+the separate deployment and its reviewed maintenance procedure.
 
 ## Required foundation and preflight
 

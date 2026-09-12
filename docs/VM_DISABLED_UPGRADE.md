@@ -49,6 +49,26 @@ source/target commits. Other source changes still need review; passing this
 comparison does not establish application compatibility. There is no automatic
 selection of a newer branch or release and no migration/dependency upgrade path.
 
+The archive policy also admits the exact optional source files
+`015_unsigned_execution.sql` and `016_managed_performance.sql`, separately or
+together. They remain inert: the updater can add, change or remove these files
+as reviewed source, but never applies them or admits their database schemas.
+The existing full source inventory verifies their bytes and modes too. Unknown
+migration names and any change to the applied001–014 foundation still fail.
+
+If either archive includes optional migrations, the plan records
+`fromPackagedOnlyMigrations` and `packagedOnlyMigrations` as separate lists of
+paths and hashes. The target receipt records optional files only when present;
+`migrationsCommitted` always lists001–014 and `migrationsReapplied` remains
+false. Foundation-only plan and receipt formats remain unchanged, so journals
+created by the previous helper retain exact plan equality during rollback.
+For a new plan, rollback still rejects any mismatch, including these lists.
+
+The database remains subject to the complete foundation catalogue/ACL inventory.
+A separately deployed execution/performance schema needs its own migration and
+upgrade profile. Likewise, this disabled updater is not an upgrade mechanism
+for the active continuous read target or its service drop-ins.
+
 ## Before application
 
 1. Coordinate an exclusive maintenance window. Stop all five apps and all manual

@@ -72,7 +72,7 @@ def plan(old, new, old_sha, new_sha, before, after):
     frozen = (*install.MIGRATIONS, 'backend/schema.sql', 'backend/requirements-api.lock')
     require(all(name in old and old.get(name) == new.get(name) for name in frozen),
             'schema_migration_or_dependency_change_requires_another_upgrade')
-    return {'mode': 'disabled-upgrade-plan', 'hostValidated': False,
+    planned = {'mode': 'disabled-upgrade-plan', 'hostValidated': False,
             'fromCommit': before, 'commit': after,
             'fromArchiveSha256': old_sha, 'archiveSha256': new_sha,
             'fromRelease': str(install.BASE / 'releases' / before),
@@ -85,6 +85,14 @@ def plan(old, new, old_sha, new_sha, before, after):
             'notPerformed': ['service start/enable', 'database writes or restore',
                              'migration replay', 'dependency change', 'runtime configuration changes',
                              'Access/Tunnel/egress', 'wallet grants', 'release deletion']}
+    previous_packaged = install.packaged_only_migrations(old)
+    packaged = install.packaged_only_migrations(new)
+    if previous_packaged or packaged:
+        planned['fromPackagedOnlyMigrations'] = previous_packaged
+        planned['packagedOnlyMigrations'] = packaged
+    # rollback compares the full saved plan; foundation-only journals created
+    # by the previous toolchain must retain their exact plan shape and values.
+    return planned
 
 
 def read_regular(path, *, limit, owner=None, mode=None, return_stat=False):
@@ -550,11 +558,15 @@ def apply(old, new, planned):
             'old_runtime_changed_after_switch')
     state['lastStep'] = 'write_installed_receipt'
     journal(destination, state)
-    write_json(destination / 'installed.json', {
+    installed = {
         'commit': planned['commit'], 'fromCommit': planned['fromCommit'],
         'archiveSha256': planned['archiveSha256'], 'servicesStarted': False, 'servicesEnabled': False,
         'migrationsCommitted': list(install.MIGRATIONS), 'migrationsReapplied': False,
-        'databasePreserved': True, 'runtimePreserved': True})
+        'databasePreserved': True, 'runtimePreserved': True}
+    packaged = install.packaged_only_migrations(new)
+    if packaged:
+        installed['packagedOnlyMigrations'] = packaged
+    write_json(destination / 'installed.json', installed)
     state['phase'] = 'complete'
     state['lastStep'] = 'complete'
     journal(destination, state)
