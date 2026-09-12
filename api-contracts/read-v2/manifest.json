@@ -7,7 +7,7 @@
   "files": [
     {
       "path": "README.md",
-      "sha256": "9254a1ad0ead8e5b78ceb0a16cb784826eda96bfc70f19feccdc3788e863ea48"
+      "sha256": "47ba8c8dc8514b7c59b0bd6040547f8f8b9be2668ce9c7443e7084a25a11b84d"
     },
     {
       "path": "consumer.browser.test.mjs",
@@ -262,19 +262,19 @@
     },
     {
       "path": "backend/discovery.py",
-      "sha256": "3a1bce4dd8082b63e259ec36e74308561e3bc382ce799ce5b63c7621d34031af"
+      "sha256": "3136e4b14f76ea3e876362ee45c76c4ec530468bb85cdb799df948e318aa6e1a"
     },
     {
       "path": "backend/read_service.py",
-      "sha256": "83ef45956e85347f4aab425cc7b77396ca82a74231aa0f1803926bd77b9448fd"
+      "sha256": "078dc625543abe263226ae3a770b875fe5293286806c32a3a1352cb902129704"
     },
     {
       "path": "backend/market_cache.py",
-      "sha256": "3344ad1ed2b06fff0844a5ee60d2835a625bbc917412e8fbbdded58655d833e6"
+      "sha256": "97ff52dce966a54e2173d806fc558bd4030df8d3e3beefb50922408aaa02894b"
     },
     {
       "path": "backend/market_data.py",
-      "sha256": "4e51bfd0e20e9e72d99522270a03dea062b163f38b22dfe315d0b6b373f2b1f1"
+      "sha256": "74049dc8baf1528a8f2680b0aefbf1dfcb9796b9c693eb2c9bf34b4e8e866098"
     },
     {
       "path": "backend/read_gateway.py",
@@ -287,6 +287,22 @@
     {
       "path": "backend/bridge_http.py",
       "sha256": "9e839b84104d80c67cb59b474f2694e9ab7c29e10ab806b05b4ba57200f73f84"
+    },
+    {
+      "path": "backend/dev_read_gateway.py",
+      "sha256": "eda74317ab46ab8df625b35ae409778762df2c0d1ee0c1573a95c3cda75e183a"
+    },
+    {
+      "path": "backend/dev_read_identity.py",
+      "sha256": "7005ea74d6bd8cc33e92e2d41b300ee5c22a071ca62c69e2f6959fc3f0965c4e"
+    },
+    {
+      "path": "backend/dev_read_service.py",
+      "sha256": "786afd7a2e2707b6ad55d05c6be793f470264dd7157a24f852d9b0b650a98156"
+    },
+    {
+      "path": "backend/dev_read_budget.py",
+      "sha256": "e9133473fafa0f2e9ed1ac417c35060c2ca2c97cc024c4bfef854b5ca1872ded"
     },
     {
       "path": "backend/bridge_identity.py",
@@ -326,7 +342,7 @@
     },
     {
       "path": "backend/tests/test_read_contract.py",
-      "sha256": "0d236a38bfaa3529e4d42f2382f13693efb6e3f1d4483f6e473939f9fab126e1"
+      "sha256": "2836c032cf82c87a23d11cadb952a842832768d59614fcbd91b4af0553f2ba4d"
     },
     {
       "path": "backend/tests/test_discovery.py",
@@ -338,8 +354,8 @@
     },
     {
       "path": "scripts/export-read-v2-contract.py",
-      "sha256": "c0d2466ae6a43e2e1c8405f204432e16944a8bba33a63df3d063f5288c792ec0"
+      "sha256": "f2563b07de4b582675713395535b28ec67f128782a8a117b7c61947302c96545"
     }
   ],
-  "status": "candidate_disabled_pending_consumer_acknowledgement"
+  "status": "opt_in_public_read_only"
 }

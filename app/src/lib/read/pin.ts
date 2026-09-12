@@ -1,7 +1,7 @@
 /**
  * The producer this app is built against, recorded in one place.
  *
- * rugged97 publishes the API contracts from api-contracts/ in this repository.
+ * The producer publishes API contracts from api-contracts/ in this repository.
  * The app imports them in place through the `api-contracts/*` alias and never
  * copies them. The contract is pinned by version plus the SHA-256 of each
  * package's manifest.json, the file that in turn hashes every schema, type,
@@ -12,20 +12,18 @@
  * reaching the screen. `producerCommit` is informational: CI can check the
  * bytes, not which commit produced them.
  *
- * The pinned source commit records #123's bounded RPC batching, including the
- * pre-dispatch failover correction. Only three backend source hashes in the
- * read manifest changed; schemas, types, fixtures, runtime, OpenAPI and the
- * other three packages remain byte-identical. No contract version changed.
- * See docs/READ_RPC_BATCHING.md for the unchanged-wire notice and the separate
- * operational qualification still required before rollout.
+ * The source commit integrates opt-in pool APR estimates (#127), explicit
+ * chart currency identity (#128) and their development gateway path while
+ * preserving RPC batching and the seven read-v1 routes. The independent V2
+ * contract is pinned separately below; v1 remains exactly rc.3.
  */
 export const PRODUCER_PIN = {
-  producerCommit: 'adba60f45fe20e53b2b38fde040c9eeb03fad380',
-  producerIssue: 123,
+  producerCommit: '9f4195662f5cc859011dba8f631475b3daec1acd',
+  producerIssue: 95,
   packages: {
     'read-v1': {
       version: '1.1.0-rc.3',
-      manifestSha256: '91a73a54a1cd4eb40e9df55c5a9691163a2c6569a58a9a3a1ef9d2799a20196a',
+      manifestSha256: '6c32d2bda8ecf4946e8e54afa1d2f9778a6022db2166aa41d2a61a401dfd9b42',
     },
     'session-v1': {
       version: '3.0.0-rc.2',
@@ -40,6 +38,12 @@ export const PRODUCER_PIN = {
       manifestSha256: 'be0e22ddfb5b6ea437a88999c9d924013bb5128af13060bd2af6f28a803848df',
     },
   },
+} as const
+
+/** Separately opted-in public pool estimates; never accepted as a v1 response. */
+export const READ_V2_PIN = {
+  version: '2.0.0-rc.1',
+  manifestSha256: 'd516fe13f8c13fb2f70c4ad4ca287eb2ba006232ae94c33ba319f570fe6aab47',
 } as const
 
 /**

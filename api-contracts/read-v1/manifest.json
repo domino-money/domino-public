@@ -23,7 +23,7 @@
   "files": [
     {
       "path": "README.md",
-      "sha256": "ba9e9dc8488d20cf1e3833669c5a4a39414ea7f5bc61971ea10f831972d657dc"
+      "sha256": "3595895aba4333bb5b520f7f2d4ee0b6f9e44783e187e565db30e894daf8a54a"
     },
     {
       "path": "consumer.test.mjs",
@@ -383,7 +383,7 @@
     },
     {
       "path": "fixtures/gateway/pool-market.missing.json",
-      "sha256": "f1eb24ac84c5424897d6826222b8f414f168b78ab69f7350fbb62477f432bf4f"
+      "sha256": "d3ef8547f3089858af5a867ebf799b389b9b4b0714e44ce8f3bfaa25caf50fa0"
     },
     {
       "path": "fixtures/gateway/pool-market.not-requested.json",
@@ -407,15 +407,15 @@
     },
     {
       "path": "fixtures/gateway/pool-market.stale.json",
-      "sha256": "d87fd2043abc94ddb5f2b94c7b5f48978ade0b74dd20b4d09e321f0755572611"
+      "sha256": "9d2d72be23754a0da8bdb882fb728d12442669efa24d3abc648316300ddc8f71"
     },
     {
       "path": "fixtures/gateway/pool-market.success.json",
-      "sha256": "440d384ef451a9c8384c397bd8a1babc4a083234d9c81a311624ab8c891c8097"
+      "sha256": "b8abee56a658da66ab75a11394da8a1a31159d0327e05cd3f39351b779782891"
     },
     {
       "path": "fixtures/gateway/pool-market.zero.json",
-      "sha256": "54d1662bbe6ac3f3c5b33899103b41202fdf87ce2714ef924476118226465178"
+      "sha256": "d9c1c779611cf91e949e394be47afd7f906e32bef03352df85b7a831b2cad9f4"
     },
     {
       "path": "fixtures/gateway/pool-metrics.capital-capacity.json",
@@ -591,7 +591,7 @@
     },
     {
       "path": "fixtures/invalid/pool-market.incompatible-version.json",
-      "sha256": "a1c573e65bb1db8ecb696b5ed093bc6580195fec133cf7a3df4d4cb10c72ef72"
+      "sha256": "ad59b2f53c096fb70dbf801bbb6a8c6c46e823a35c6b95677333bc5f15618b92"
     },
     {
       "path": "fixtures/invalid/pool-metrics.incompatible-version.json",
@@ -663,7 +663,7 @@
     },
     {
       "path": "fixtures/producer/pool-market.missing.json",
-      "sha256": "f1eb24ac84c5424897d6826222b8f414f168b78ab69f7350fbb62477f432bf4f"
+      "sha256": "d3ef8547f3089858af5a867ebf799b389b9b4b0714e44ce8f3bfaa25caf50fa0"
     },
     {
       "path": "fixtures/producer/pool-market.not-requested.json",
@@ -687,15 +687,15 @@
     },
     {
       "path": "fixtures/producer/pool-market.stale.json",
-      "sha256": "d87fd2043abc94ddb5f2b94c7b5f48978ade0b74dd20b4d09e321f0755572611"
+      "sha256": "9d2d72be23754a0da8bdb882fb728d12442669efa24d3abc648316300ddc8f71"
     },
     {
       "path": "fixtures/producer/pool-market.success.json",
-      "sha256": "440d384ef451a9c8384c397bd8a1babc4a083234d9c81a311624ab8c891c8097"
+      "sha256": "b8abee56a658da66ab75a11394da8a1a31159d0327e05cd3f39351b779782891"
     },
     {
       "path": "fixtures/producer/pool-market.zero.json",
-      "sha256": "54d1662bbe6ac3f3c5b33899103b41202fdf87ce2714ef924476118226465178"
+      "sha256": "d9c1c779611cf91e949e394be47afd7f906e32bef03352df85b7a831b2cad9f4"
     },
     {
       "path": "fixtures/producer/pool-metrics.capital-capacity.json",
@@ -1007,7 +1007,7 @@
     },
     {
       "path": "backend/read_service.py",
-      "sha256": "8f5e2f5ed1cf5da5012098d86443c3f382a129bee3102765c2524b5e538336df"
+      "sha256": "078dc625543abe263226ae3a770b875fe5293286806c32a3a1352cb902129704"
     },
     {
       "path": "backend/rpc_failover.py",
@@ -1091,11 +1091,11 @@
     },
     {
       "path": "backend/market_cache.py",
-      "sha256": "3344ad1ed2b06fff0844a5ee60d2835a625bbc917412e8fbbdded58655d833e6"
+      "sha256": "97ff52dce966a54e2173d806fc558bd4030df8d3e3beefb50922408aaa02894b"
     },
     {
       "path": "backend/market_data.py",
-      "sha256": "4e51bfd0e20e9e72d99522270a03dea062b163f38b22dfe315d0b6b373f2b1f1"
+      "sha256": "74049dc8baf1528a8f2680b0aefbf1dfcb9796b9c693eb2c9bf34b4e8e866098"
     },
     {
       "path": "backend/read_deadline.py",
@@ -1131,7 +1131,7 @@
     },
     {
       "path": "backend/tests/test_read_contract.py",
-      "sha256": "0d236a38bfaa3529e4d42f2382f13693efb6e3f1d4483f6e473939f9fab126e1"
+      "sha256": "2836c032cf82c87a23d11cadb952a842832768d59614fcbd91b4af0553f2ba4d"
     },
     {
       "path": "backend/tests/test_read_reconciliation.py",
