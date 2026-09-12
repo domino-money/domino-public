@@ -1,6 +1,8 @@
 {
   "cases": [
     {
+      "accrualHashes": [],
+      "collectionHashes": [],
       "credit": {
         "amountRaw": "1300",
         "blockHash": "0x000000000000000000000000000000000000000000000000000000000000012d",
@@ -178,6 +180,8 @@
       "successorId": null
     },
     {
+      "accrualHashes": [],
+      "collectionHashes": [],
       "credit": {
         "amountRaw": "1300",
         "blockHash": "0x000000000000000000000000000000000000000000000000000000000000012d",
@@ -371,6 +375,8 @@
       "successorId": null
     },
     {
+      "accrualHashes": [],
+      "collectionHashes": [],
       "credit": {
         "amountRaw": "1300",
         "blockHash": "0x000000000000000000000000000000000000000000000000000000000000012d",
@@ -548,6 +554,8 @@
       "successorId": "0x4e538f78c2669bce781c529a53f2b9f8cc6142a57bcc613a28b7cdd3650ce10f"
     },
     {
+      "accrualHashes": [],
+      "collectionHashes": [],
       "credit": {
         "amountRaw": "1300",
         "blockHash": "0x000000000000000000000000000000000000000000000000000000000000012d",
@@ -725,6 +733,8 @@
       "successorId": null
     },
     {
+      "accrualHashes": [],
+      "collectionHashes": [],
       "credit": {
         "amountRaw": "1300",
         "blockHash": "0x000000000000000000000000000000000000000000000000000000000000012d",
@@ -902,6 +912,8 @@
       "successorId": null
     },
     {
+      "accrualHashes": [],
+      "collectionHashes": [],
       "credit": {
         "amountRaw": "1300",
         "blockHash": "0x000000000000000000000000000000000000000000000000000000000000012d",
@@ -1079,6 +1091,8 @@
       "successorId": null
     },
     {
+      "accrualHashes": [],
+      "collectionHashes": [],
       "credit": {
         "amountRaw": "1300",
         "blockHash": "0x000000000000000000000000000000000000000000000000000000000000012d",
@@ -1256,6 +1270,8 @@
       "successorId": null
     },
     {
+      "accrualHashes": [],
+      "collectionHashes": [],
       "credit": {
         "amountRaw": "1300",
         "blockHash": "0x000000000000000000000000000000000000000000000000000000000000012d",
@@ -1433,6 +1449,8 @@
       "successorId": null
     },
     {
+      "accrualHashes": [],
+      "collectionHashes": [],
       "credit": {
         "amountRaw": "1300",
         "blockHash": "0x000000000000000000000000000000000000000000000000000000000000012d",
@@ -1608,17 +1626,577 @@
       "sequenceHash": "0x84f994fc05446f7808a37698238c00f6deb5c2979644edd5b7901c6209371661",
       "sourceHash": "0x412c17918c0c3ac3af2ffa9806045a71dd16254962c0e1d543e9316e49a9eb2e",
       "successorId": null
+    },
+    {
+      "accrualHashes": [
+        "0x1a87c26f6802cfc5cd8d241eed7dd94b2fdc95827396e05a43dd4b3c082627d7"
+      ],
+      "collectionHashes": [
+        "0xb817e91456ec8f898eeb2edbb723b1cfcca845ac10555dc798e67137b1a54a9c"
+      ],
+      "credit": {
+        "amountRaw": "1300",
+        "blockHash": "0x000000000000000000000000000000000000000000000000000000000000012d",
+        "blockNumber": "1234",
+        "canonical": true,
+        "eventIndex": 3,
+        "finalized": false,
+        "source": "0x412c17918c0c3ac3af2ffa9806045a71dd16254962c0e1d543e9316e49a9eb2e",
+        "transactionHash": "0x0000000000000000000000000000000000000000000000000000000000000191"
+      },
+      "creditHash": "0xc8393092f0013c2973c9e6686cd389f59357b0f95fd8d3fda0527861fe5cbe0b",
+      "creditId": "0x5002539c39c27549c5cdc9a6945271e1d27a61b511b4090bcab0535fb8a337c6",
+      "domainHash": "0xd5ee4d7435a354f0bb715719447e1a2a7012e585e8f5b93a0ba7b0122f8c78ba",
+      "intentId": "0x264a23f02b05cf3d82bb598f783693e8336ad11ccad7e14b3f9d3552e2157e78",
+      "name": "collection_general",
+      "observation": {
+        "accruals": [
+          {
+            "amountRaw": "1000",
+            "checkpointId": "0x00000000000000000000000000000000000000000000000000000000000002bd",
+            "source": {
+              "currency": "0x0000000000000000000000000000000000000010",
+              "position": "0x7b5cabf5a46156e83a94b460cd50d975d6c2cc4ecb9ef98accfdfe1a4bec571d",
+              "sequence": "0x84f994fc05446f7808a37698238c00f6deb5c2979644edd5b7901c6209371661"
+            }
+          }
+        ],
+        "authorityGeneration": "1",
+        "balances": [],
+        "blockHash": "0x000000000000000000000000000000000000000000000000000000000000012d",
+        "blockNumber": "1234",
+        "blockTimestamp": "1700000000",
+        "canonical": true,
+        "coverageComplete": true,
+        "operator": "0x0000000000000000000000000000000000000009",
+        "operatorEnabled": true,
+        "policy": {
+          "limits": {
+            "baseCurrency": "0x0000000000000000000000000000000000000010",
+            "forecastHorizonSeconds": 3600,
+            "maxGasCostWei": "1000000000000000",
+            "maxObservationAgeSeconds": 120,
+            "maxPriceImpactBps": 100,
+            "maxSlippageBps": 100,
+            "quoteCurrency": "0x0000000000000000000000000000000000000020",
+            "upsideBps": 5000,
+            "version": "1"
+          },
+          "maxOverlapBps": 2000,
+          "maxPositions": 4,
+          "minimumIntervalSeconds": 600,
+          "paused": false,
+          "serviceFeeBps": 200,
+          "triggerDistanceBps": 500,
+          "version": "1"
+        },
+        "positions": [
+          {
+            "active": true,
+            "holder": "0x0000000000000000000000000000000000000001",
+            "individualApproval": "0x0000000000000000000000000000000000000003",
+            "position": {
+              "corePositionId": "0xbbda2f9140cb5074bc9156fdebba445f787094f975c98bdc847003ff6940698b",
+              "generation": "1",
+              "isRoot": true,
+              "parentTokenId": "0",
+              "registrationBaselineId": "0x000000000000000000000000000000000000000000000000000000000000044d",
+              "sequence": "0x84f994fc05446f7808a37698238c00f6deb5c2979644edd5b7901c6209371661",
+              "tickLower": -120,
+              "tickUpper": 180,
+              "tokenId": "101"
+            }
+          }
+        ],
+        "sequence": {
+          "baseCurrency": "0x0000000000000000000000000000000000000010",
+          "chainId": 4663,
+          "factory": "0x0000000000000000000000000000000000000004",
+          "implementation": "0x0000000000000000000000000000000000000005",
+          "implementationVersion": "1",
+          "owner": "0x0000000000000000000000000000000000000001",
+          "poolId": "0xb7a0fb68b2b106d2ad386d2221acbdb3b027b737f097dfbb8a854fa3cc08fcf2",
+          "poolKey": {
+            "currency0": "0x0000000000000000000000000000000000000010",
+            "currency1": "0x0000000000000000000000000000000000000020",
+            "fee_pips": 3000,
+            "hooks": "0x0000000000000000000000000000000000000000",
+            "tick_spacing": 60
+          },
+          "poolManager": "0x0000000000000000000000000000000000000007",
+          "positionManager": "0x0000000000000000000000000000000000000006",
+          "quoteCurrency": "0x0000000000000000000000000000000000000020",
+          "sequenceId": "0x000000000000000000000000000000000000000000000000000000000000000b",
+          "serviceFeeRecipient": "0x0000000000000000000000000000000000000008",
+          "vault": "0x0000000000000000000000000000000000000003"
+        },
+        "sqrtPriceX96": "79228162514264337593543950336",
+        "stateNonce": "7"
+      },
+      "plan": {
+        "action": 1,
+        "allocations": [],
+        "collections": [
+          {
+            "maxGrossRaw": "1000",
+            "sourceId": "0x412c17918c0c3ac3af2ffa9806045a71dd16254962c0e1d543e9316e49a9eb2e"
+          }
+        ],
+        "deadline": "1700000060",
+        "destination": {
+          "createChild": false,
+          "tickLower": -120,
+          "tickUpper": 180,
+          "tokenId": "101"
+        },
+        "expectedAuthorityGeneration": "1",
+        "expectedPolicyVersion": "1",
+        "expectedStateNonce": "7",
+        "liquidityIncrease": "1",
+        "maxChargedInput0": "0",
+        "maxChargedInput1": "0",
+        "maxGasCostWei": "1000000000000",
+        "maxGrossFee0": "1000",
+        "maxGrossFee1": "0",
+        "maxSqrtPriceX96": "79228162514264337593543950337",
+        "minNetAdded0": "980",
+        "minNetAdded1": "0",
+        "minSqrtPriceX96": "79228162514264337593543950335",
+        "observationHash": "0x29586e54237e875617b83edd6b5fb7bcbefcb8d93a2f658366c004519d79bb3a",
+        "path": 0,
+        "policyHash": "0x4f0c724d99b41a99fcdf5576a4166f80030378c21b94f154bb5d1a3856543f29",
+        "sequence": {
+          "baseCurrency": "0x0000000000000000000000000000000000000010",
+          "chainId": 4663,
+          "factory": "0x0000000000000000000000000000000000000004",
+          "implementation": "0x0000000000000000000000000000000000000005",
+          "implementationVersion": "1",
+          "owner": "0x0000000000000000000000000000000000000001",
+          "poolId": "0xb7a0fb68b2b106d2ad386d2221acbdb3b027b737f097dfbb8a854fa3cc08fcf2",
+          "poolKey": {
+            "currency0": "0x0000000000000000000000000000000000000010",
+            "currency1": "0x0000000000000000000000000000000000000020",
+            "fee_pips": 3000,
+            "hooks": "0x0000000000000000000000000000000000000000",
+            "tick_spacing": 60
+          },
+          "poolManager": "0x0000000000000000000000000000000000000007",
+          "positionManager": "0x0000000000000000000000000000000000000006",
+          "quoteCurrency": "0x0000000000000000000000000000000000000020",
+          "sequenceId": "0x000000000000000000000000000000000000000000000000000000000000000b",
+          "serviceFeeRecipient": "0x0000000000000000000000000000000000000008",
+          "vault": "0x0000000000000000000000000000000000000003"
+        },
+        "sourceBlockHash": "0x000000000000000000000000000000000000000000000000000000000000012d",
+        "sourceBlockNumber": "1234",
+        "swap": {
+          "adapterId": "0x0000000000000000000000000000000000000000000000000000000000000000",
+          "adapterVersion": "0",
+          "amountInRaw": "0",
+          "currencyIn": "0x0000000000000000000000000000000000000000",
+          "currencyOut": "0x0000000000000000000000000000000000000000",
+          "enabled": false,
+          "minAmountOutRaw": "0",
+          "routeCommitment": "0x0000000000000000000000000000000000000000000000000000000000000000"
+        }
+      },
+      "planHash": "0xa3d8b304222e3f4ad4d1df7b35b39151f30819850e5d782efab133f68a24123d",
+      "positionHash": "0x7b5cabf5a46156e83a94b460cd50d975d6c2cc4ecb9ef98accfdfe1a4bec571d",
+      "sequenceHash": "0x84f994fc05446f7808a37698238c00f6deb5c2979644edd5b7901c6209371661",
+      "sourceHash": "0x412c17918c0c3ac3af2ffa9806045a71dd16254962c0e1d543e9316e49a9eb2e",
+      "successorId": null
+    },
+    {
+      "accrualHashes": [
+        "0x1a87c26f6802cfc5cd8d241eed7dd94b2fdc95827396e05a43dd4b3c082627d7"
+      ],
+      "collectionHashes": [
+        "0xb817e91456ec8f898eeb2edbb723b1cfcca845ac10555dc798e67137b1a54a9c"
+      ],
+      "credit": {
+        "amountRaw": "1300",
+        "blockHash": "0x000000000000000000000000000000000000000000000000000000000000012d",
+        "blockNumber": "1234",
+        "canonical": true,
+        "eventIndex": 3,
+        "finalized": false,
+        "source": "0x412c17918c0c3ac3af2ffa9806045a71dd16254962c0e1d543e9316e49a9eb2e",
+        "transactionHash": "0x0000000000000000000000000000000000000000000000000000000000000191"
+      },
+      "creditHash": "0xc8393092f0013c2973c9e6686cd389f59357b0f95fd8d3fda0527861fe5cbe0b",
+      "creditId": "0x5002539c39c27549c5cdc9a6945271e1d27a61b511b4090bcab0535fb8a337c6",
+      "domainHash": "0xd5ee4d7435a354f0bb715719447e1a2a7012e585e8f5b93a0ba7b0122f8c78ba",
+      "intentId": "0x063816d76a31ddc57ccaa66b68fc4afa6d00594de40a34d963348e3c92f9cefd",
+      "name": "collection_swap",
+      "observation": {
+        "accruals": [
+          {
+            "amountRaw": "1000",
+            "checkpointId": "0x00000000000000000000000000000000000000000000000000000000000002bd",
+            "source": {
+              "currency": "0x0000000000000000000000000000000000000010",
+              "position": "0x7b5cabf5a46156e83a94b460cd50d975d6c2cc4ecb9ef98accfdfe1a4bec571d",
+              "sequence": "0x84f994fc05446f7808a37698238c00f6deb5c2979644edd5b7901c6209371661"
+            }
+          }
+        ],
+        "authorityGeneration": "1",
+        "balances": [],
+        "blockHash": "0x000000000000000000000000000000000000000000000000000000000000012d",
+        "blockNumber": "1234",
+        "blockTimestamp": "1700000000",
+        "canonical": true,
+        "coverageComplete": true,
+        "operator": "0x0000000000000000000000000000000000000009",
+        "operatorEnabled": true,
+        "policy": {
+          "limits": {
+            "baseCurrency": "0x0000000000000000000000000000000000000010",
+            "forecastHorizonSeconds": 3600,
+            "maxGasCostWei": "1000000000000000",
+            "maxObservationAgeSeconds": 120,
+            "maxPriceImpactBps": 100,
+            "maxSlippageBps": 100,
+            "quoteCurrency": "0x0000000000000000000000000000000000000020",
+            "upsideBps": 5000,
+            "version": "1"
+          },
+          "maxOverlapBps": 2000,
+          "maxPositions": 4,
+          "minimumIntervalSeconds": 600,
+          "paused": false,
+          "serviceFeeBps": 200,
+          "triggerDistanceBps": 500,
+          "version": "1"
+        },
+        "positions": [
+          {
+            "active": true,
+            "holder": "0x0000000000000000000000000000000000000001",
+            "individualApproval": "0x0000000000000000000000000000000000000003",
+            "position": {
+              "corePositionId": "0xbbda2f9140cb5074bc9156fdebba445f787094f975c98bdc847003ff6940698b",
+              "generation": "1",
+              "isRoot": true,
+              "parentTokenId": "0",
+              "registrationBaselineId": "0x000000000000000000000000000000000000000000000000000000000000044d",
+              "sequence": "0x84f994fc05446f7808a37698238c00f6deb5c2979644edd5b7901c6209371661",
+              "tickLower": -120,
+              "tickUpper": 180,
+              "tokenId": "101"
+            }
+          }
+        ],
+        "sequence": {
+          "baseCurrency": "0x0000000000000000000000000000000000000010",
+          "chainId": 4663,
+          "factory": "0x0000000000000000000000000000000000000004",
+          "implementation": "0x0000000000000000000000000000000000000005",
+          "implementationVersion": "1",
+          "owner": "0x0000000000000000000000000000000000000001",
+          "poolId": "0xb7a0fb68b2b106d2ad386d2221acbdb3b027b737f097dfbb8a854fa3cc08fcf2",
+          "poolKey": {
+            "currency0": "0x0000000000000000000000000000000000000010",
+            "currency1": "0x0000000000000000000000000000000000000020",
+            "fee_pips": 3000,
+            "hooks": "0x0000000000000000000000000000000000000000",
+            "tick_spacing": 60
+          },
+          "poolManager": "0x0000000000000000000000000000000000000007",
+          "positionManager": "0x0000000000000000000000000000000000000006",
+          "quoteCurrency": "0x0000000000000000000000000000000000000020",
+          "sequenceId": "0x000000000000000000000000000000000000000000000000000000000000000b",
+          "serviceFeeRecipient": "0x0000000000000000000000000000000000000008",
+          "vault": "0x0000000000000000000000000000000000000003"
+        },
+        "sqrtPriceX96": "79228162514264337593543950336",
+        "stateNonce": "7"
+      },
+      "plan": {
+        "action": 1,
+        "allocations": [],
+        "collections": [
+          {
+            "maxGrossRaw": "1000",
+            "sourceId": "0x412c17918c0c3ac3af2ffa9806045a71dd16254962c0e1d543e9316e49a9eb2e"
+          }
+        ],
+        "deadline": "1700000060",
+        "destination": {
+          "createChild": false,
+          "tickLower": -120,
+          "tickUpper": 180,
+          "tokenId": "101"
+        },
+        "expectedAuthorityGeneration": "1",
+        "expectedPolicyVersion": "1",
+        "expectedStateNonce": "7",
+        "liquidityIncrease": "1",
+        "maxChargedInput0": "0",
+        "maxChargedInput1": "0",
+        "maxGasCostWei": "1000000000000",
+        "maxGrossFee0": "1000",
+        "maxGrossFee1": "0",
+        "maxSqrtPriceX96": "79228162514264337593543950337",
+        "minNetAdded0": "0",
+        "minNetAdded1": "500",
+        "minSqrtPriceX96": "79228162514264337593543950335",
+        "observationHash": "0x29586e54237e875617b83edd6b5fb7bcbefcb8d93a2f658366c004519d79bb3a",
+        "path": 0,
+        "policyHash": "0x4f0c724d99b41a99fcdf5576a4166f80030378c21b94f154bb5d1a3856543f29",
+        "sequence": {
+          "baseCurrency": "0x0000000000000000000000000000000000000010",
+          "chainId": 4663,
+          "factory": "0x0000000000000000000000000000000000000004",
+          "implementation": "0x0000000000000000000000000000000000000005",
+          "implementationVersion": "1",
+          "owner": "0x0000000000000000000000000000000000000001",
+          "poolId": "0xb7a0fb68b2b106d2ad386d2221acbdb3b027b737f097dfbb8a854fa3cc08fcf2",
+          "poolKey": {
+            "currency0": "0x0000000000000000000000000000000000000010",
+            "currency1": "0x0000000000000000000000000000000000000020",
+            "fee_pips": 3000,
+            "hooks": "0x0000000000000000000000000000000000000000",
+            "tick_spacing": 60
+          },
+          "poolManager": "0x0000000000000000000000000000000000000007",
+          "positionManager": "0x0000000000000000000000000000000000000006",
+          "quoteCurrency": "0x0000000000000000000000000000000000000020",
+          "sequenceId": "0x000000000000000000000000000000000000000000000000000000000000000b",
+          "serviceFeeRecipient": "0x0000000000000000000000000000000000000008",
+          "vault": "0x0000000000000000000000000000000000000003"
+        },
+        "sourceBlockHash": "0x000000000000000000000000000000000000000000000000000000000000012d",
+        "sourceBlockNumber": "1234",
+        "swap": {
+          "adapterId": "0x0000000000000000000000000000000000000000000000000000000000000320",
+          "adapterVersion": "1",
+          "amountInRaw": "980",
+          "currencyIn": "0x0000000000000000000000000000000000000010",
+          "currencyOut": "0x0000000000000000000000000000000000000020",
+          "enabled": true,
+          "minAmountOutRaw": "500",
+          "routeCommitment": "0x0000000000000000000000000000000000000000000000000000000000000321"
+        }
+      },
+      "planHash": "0xd58c2c67e761430717f993c3b8bd527ab2608e413d1a13774b5af3102fbd3100",
+      "positionHash": "0x7b5cabf5a46156e83a94b460cd50d975d6c2cc4ecb9ef98accfdfe1a4bec571d",
+      "sequenceHash": "0x84f994fc05446f7808a37698238c00f6deb5c2979644edd5b7901c6209371661",
+      "sourceHash": "0x412c17918c0c3ac3af2ffa9806045a71dd16254962c0e1d543e9316e49a9eb2e",
+      "successorId": null
+    },
+    {
+      "accrualHashes": [
+        "0x1a87c26f6802cfc5cd8d241eed7dd94b2fdc95827396e05a43dd4b3c082627d7"
+      ],
+      "collectionHashes": [
+        "0xb817e91456ec8f898eeb2edbb723b1cfcca845ac10555dc798e67137b1a54a9c"
+      ],
+      "credit": {
+        "amountRaw": "1300",
+        "blockHash": "0x000000000000000000000000000000000000000000000000000000000000012d",
+        "blockNumber": "1234",
+        "canonical": true,
+        "eventIndex": 3,
+        "finalized": false,
+        "source": "0x412c17918c0c3ac3af2ffa9806045a71dd16254962c0e1d543e9316e49a9eb2e",
+        "transactionHash": "0x0000000000000000000000000000000000000000000000000000000000000191"
+      },
+      "creditHash": "0xc8393092f0013c2973c9e6686cd389f59357b0f95fd8d3fda0527861fe5cbe0b",
+      "creditId": "0x5002539c39c27549c5cdc9a6945271e1d27a61b511b4090bcab0535fb8a337c6",
+      "domainHash": "0xd5ee4d7435a354f0bb715719447e1a2a7012e585e8f5b93a0ba7b0122f8c78ba",
+      "intentId": "0x776bec5362e5b74cc9b9e72b0b4aa146af975f8212198eb571bd29a6f2b5ce16",
+      "name": "collection_net",
+      "observation": {
+        "accruals": [
+          {
+            "amountRaw": "1000",
+            "checkpointId": "0x00000000000000000000000000000000000000000000000000000000000002bd",
+            "source": {
+              "currency": "0x0000000000000000000000000000000000000010",
+              "position": "0x7b5cabf5a46156e83a94b460cd50d975d6c2cc4ecb9ef98accfdfe1a4bec571d",
+              "sequence": "0x84f994fc05446f7808a37698238c00f6deb5c2979644edd5b7901c6209371661"
+            }
+          }
+        ],
+        "authorityGeneration": "1",
+        "balances": [],
+        "blockHash": "0x000000000000000000000000000000000000000000000000000000000000012d",
+        "blockNumber": "1234",
+        "blockTimestamp": "1700000000",
+        "canonical": true,
+        "coverageComplete": true,
+        "operator": "0x0000000000000000000000000000000000000009",
+        "operatorEnabled": true,
+        "policy": {
+          "limits": {
+            "baseCurrency": "0x0000000000000000000000000000000000000010",
+            "forecastHorizonSeconds": 3600,
+            "maxGasCostWei": "1000000000000000",
+            "maxObservationAgeSeconds": 120,
+            "maxPriceImpactBps": 100,
+            "maxSlippageBps": 100,
+            "quoteCurrency": "0x0000000000000000000000000000000000000020",
+            "upsideBps": 5000,
+            "version": "1"
+          },
+          "maxOverlapBps": 2000,
+          "maxPositions": 4,
+          "minimumIntervalSeconds": 600,
+          "paused": false,
+          "serviceFeeBps": 200,
+          "triggerDistanceBps": 500,
+          "version": "1"
+        },
+        "positions": [
+          {
+            "active": true,
+            "holder": "0x0000000000000000000000000000000000000001",
+            "individualApproval": "0x0000000000000000000000000000000000000003",
+            "position": {
+              "corePositionId": "0xbbda2f9140cb5074bc9156fdebba445f787094f975c98bdc847003ff6940698b",
+              "generation": "1",
+              "isRoot": true,
+              "parentTokenId": "0",
+              "registrationBaselineId": "0x000000000000000000000000000000000000000000000000000000000000044d",
+              "sequence": "0x84f994fc05446f7808a37698238c00f6deb5c2979644edd5b7901c6209371661",
+              "tickLower": -120,
+              "tickUpper": 180,
+              "tokenId": "101"
+            }
+          }
+        ],
+        "sequence": {
+          "baseCurrency": "0x0000000000000000000000000000000000000010",
+          "chainId": 4663,
+          "factory": "0x0000000000000000000000000000000000000004",
+          "implementation": "0x0000000000000000000000000000000000000005",
+          "implementationVersion": "1",
+          "owner": "0x0000000000000000000000000000000000000001",
+          "poolId": "0xb7a0fb68b2b106d2ad386d2221acbdb3b027b737f097dfbb8a854fa3cc08fcf2",
+          "poolKey": {
+            "currency0": "0x0000000000000000000000000000000000000010",
+            "currency1": "0x0000000000000000000000000000000000000020",
+            "fee_pips": 3000,
+            "hooks": "0x0000000000000000000000000000000000000000",
+            "tick_spacing": 60
+          },
+          "poolManager": "0x0000000000000000000000000000000000000007",
+          "positionManager": "0x0000000000000000000000000000000000000006",
+          "quoteCurrency": "0x0000000000000000000000000000000000000020",
+          "sequenceId": "0x000000000000000000000000000000000000000000000000000000000000000b",
+          "serviceFeeRecipient": "0x0000000000000000000000000000000000000008",
+          "vault": "0x0000000000000000000000000000000000000003"
+        },
+        "sqrtPriceX96": "79228162514264337593543950336",
+        "stateNonce": "7"
+      },
+      "plan": {
+        "action": 1,
+        "allocations": [],
+        "collections": [
+          {
+            "maxGrossRaw": "1000",
+            "sourceId": "0x412c17918c0c3ac3af2ffa9806045a71dd16254962c0e1d543e9316e49a9eb2e"
+          }
+        ],
+        "deadline": "1700000060",
+        "destination": {
+          "createChild": false,
+          "tickLower": -120,
+          "tickUpper": 180,
+          "tokenId": "101"
+        },
+        "expectedAuthorityGeneration": "1",
+        "expectedPolicyVersion": "1",
+        "expectedStateNonce": "7",
+        "liquidityIncrease": "1",
+        "maxChargedInput0": "0",
+        "maxChargedInput1": "0",
+        "maxGasCostWei": "1000000000000",
+        "maxGrossFee0": "1000",
+        "maxGrossFee1": "0",
+        "maxSqrtPriceX96": "79228162514264337593543950337",
+        "minNetAdded0": "980",
+        "minNetAdded1": "0",
+        "minSqrtPriceX96": "79228162514264337593543950335",
+        "observationHash": "0x29586e54237e875617b83edd6b5fb7bcbefcb8d93a2f658366c004519d79bb3a",
+        "path": 1,
+        "policyHash": "0x4f0c724d99b41a99fcdf5576a4166f80030378c21b94f154bb5d1a3856543f29",
+        "sequence": {
+          "baseCurrency": "0x0000000000000000000000000000000000000010",
+          "chainId": 4663,
+          "factory": "0x0000000000000000000000000000000000000004",
+          "implementation": "0x0000000000000000000000000000000000000005",
+          "implementationVersion": "1",
+          "owner": "0x0000000000000000000000000000000000000001",
+          "poolId": "0xb7a0fb68b2b106d2ad386d2221acbdb3b027b737f097dfbb8a854fa3cc08fcf2",
+          "poolKey": {
+            "currency0": "0x0000000000000000000000000000000000000010",
+            "currency1": "0x0000000000000000000000000000000000000020",
+            "fee_pips": 3000,
+            "hooks": "0x0000000000000000000000000000000000000000",
+            "tick_spacing": 60
+          },
+          "poolManager": "0x0000000000000000000000000000000000000007",
+          "positionManager": "0x0000000000000000000000000000000000000006",
+          "quoteCurrency": "0x0000000000000000000000000000000000000020",
+          "sequenceId": "0x000000000000000000000000000000000000000000000000000000000000000b",
+          "serviceFeeRecipient": "0x0000000000000000000000000000000000000008",
+          "vault": "0x0000000000000000000000000000000000000003"
+        },
+        "sourceBlockHash": "0x000000000000000000000000000000000000000000000000000000000000012d",
+        "sourceBlockNumber": "1234",
+        "swap": {
+          "adapterId": "0x0000000000000000000000000000000000000000000000000000000000000000",
+          "adapterVersion": "0",
+          "amountInRaw": "0",
+          "currencyIn": "0x0000000000000000000000000000000000000000",
+          "currencyOut": "0x0000000000000000000000000000000000000000",
+          "enabled": false,
+          "minAmountOutRaw": "0",
+          "routeCommitment": "0x0000000000000000000000000000000000000000000000000000000000000000"
+        }
+      },
+      "planHash": "0xe95bcda313d4eba3bd1d67c67937106758f1335dd29d384a78656b79bba414cd",
+      "positionHash": "0x7b5cabf5a46156e83a94b460cd50d975d6c2cc4ecb9ef98accfdfe1a4bec571d",
+      "sequenceHash": "0x84f994fc05446f7808a37698238c00f6deb5c2979644edd5b7901c6209371661",
+      "sourceHash": "0x412c17918c0c3ac3af2ffa9806045a71dd16254962c0e1d543e9316e49a9eb2e",
+      "successorId": null
     }
   ],
+  "convertedLineage": {
+    "allocationId": "0xa7e327161a65fa49dfdf540f1feaef3217cc7bea452b7ac232cccbe911cf00e6",
+    "record": {
+      "currency": "0x0000000000000000000000000000000000000020",
+      "eventIndex": 2,
+      "inputAllocations": [
+        {
+          "amountRaw": "300",
+          "lotId": "0x00000000000000000000000000000000000000000000000000000000000000c9"
+        },
+        {
+          "amountRaw": "100",
+          "lotId": "0x00000000000000000000000000000000000000000000000000000000000000cb"
+        }
+      ],
+      "source": "0x412c17918c0c3ac3af2ffa9806045a71dd16254962c0e1d543e9316e49a9eb2e",
+      "transactionHash": "0x00000000000000000000000000000000000000000000000000000000000001f4"
+    },
+    "recordHash": "0x6c1b2739d76f623ff13b5304582015587d462cc7b712f3ed5882609ffb10614e"
+  },
   "encodingTypes": {
     "AccrualObservation": "AccrualObservation(bytes32 source,uint128 amountRaw,bytes32 checkpointId)",
     "Allocation": "Allocation(bytes32 lotId,uint128 amountRaw)",
     "CollectionBudget": "CollectionBudget(bytes32 sourceId,uint128 maxGrossRaw)",
+    "ConvertedLotId": "ConvertedLotId(bytes32 source,bytes32 transactionHash,uint32 eventIndex,address currency)",
+    "ConvertedLotLineage": "ConvertedLotLineage(bytes32 source,bytes32 transactionHash,uint32 eventIndex,address currency,bytes32 inputAllocations)",
     "CustodyObservation": "CustodyObservation(bytes32 position,address holder,address individualApproval,bool active)",
     "Destination": "Destination(bool createChild,uint256 tokenId,int24 tickLower,int24 tickUpper)",
     "ExecutionLimits": "ExecutionLimits(uint64 version,address baseCurrency,address quoteCurrency,uint32 upsideBps,uint16 maxSlippageBps,uint16 maxPriceImpactBps,uint128 maxGasCostWei,uint32 maxObservationAgeSeconds,uint32 forecastHorizonSeconds)",
     "ExecutionPlan": "ExecutionPlan(bytes32 sequence,bytes32 policyHash,bytes32 observationHash,uint8 action,uint8 path,uint64 expectedPolicyVersion,uint64 expectedStateNonce,uint64 expectedAuthorityGeneration,uint64 sourceBlockNumber,bytes32 sourceBlockHash,uint64 deadline,bytes32 allocations,bytes32 collections,bytes32 destination,uint128 liquidityIncrease,uint128 maxGrossFee0,uint128 maxGrossFee1,uint128 maxChargedInput0,uint128 maxChargedInput1,uint128 minNetAdded0,uint128 minNetAdded1,uint160 minSqrtPriceX96,uint160 maxSqrtPriceX96,uint128 maxGasCostWei,bytes32 swap)",
     "FeeCredit": "FeeCredit(bytes32 source,bytes32 transactionHash,uint32 eventIndex,uint128 amountRaw,uint64 blockNumber,bytes32 blockHash,bool canonical,bool finalized)",
+    "FeeCreditId": "FeeCreditId(bytes32 source,bytes32 transactionHash,uint32 eventIndex)",
     "FeeSourceIdentity": "FeeSourceIdentity(bytes32 sequence,bytes32 position,address currency)",
     "Observation": "Observation(bytes32 sequence,bytes32 policy,uint64 stateNonce,uint64 authorityGeneration,uint64 blockNumber,bytes32 blockHash,uint64 blockTimestamp,uint160 sqrtPriceX96,address operator,bool operatorEnabled,bool canonical,bool coverageComplete,bytes32 positions,bytes32 balances,bytes32 accruals)",
     "PoolKey": "PoolKey(address currency0,address currency1,uint24 fee_pips,int24 tick_spacing,address hooks)",
@@ -1626,9 +2204,11 @@
     "SequenceIdentity": "SequenceIdentity(uint256 chainId,address owner,bytes32 sequenceId,address vault,address factory,address implementation,uint64 implementationVersion,address poolManager,address positionManager,bytes32 poolKey,bytes32 poolId,address baseCurrency,address quoteCurrency,address serviceFeeRecipient)",
     "SequencePolicy": "SequencePolicy(uint16 serviceFeeBps,uint16 triggerDistanceBps,uint16 maxOverlapBps,uint32 minimumIntervalSeconds,uint8 maxPositions,uint64 version,bool paused,bytes32 limits)",
     "SourceBalance": "SourceBalance(bytes32 source,bytes32 lotId,address currency,bool convertedCharged,uint128 amountRaw,uint128 reservedRaw,bytes32 reconciliationId)",
+    "SuccessorId": "SuccessorId(bytes32 sequence,uint256 parentTokenId)",
     "SwapBounds": "SwapBounds(bool enabled,bytes32 adapterId,uint64 adapterVersion,bytes32 routeCommitment,address currencyIn,address currencyOut,uint128 amountInRaw,uint128 minAmountOutRaw)"
   },
   "syntheticOnly": true,
+  "validationRevision": "e1-hardening-99",
   "version": "e1-candidate-1",
   "wait": {
     "action": "wait",

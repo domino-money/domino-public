@@ -33,7 +33,8 @@ def position(seq, token=101, parent=None, *, lower=-120, upper=180, generation='
         registrationBaselineId=identity(1000 + token))
 
 
-def scenario(action=1, *, native=False, reverse=False, owner=1, number=11, manager=6, charged=False):
+def scenario(action=1, *, native=False, reverse=False, owner=1, number=11, manager=6, charged=False,
+             collection=False, net=False, swap=False):
     seq = sequence(native=native, reverse=reverse, owner=owner, number=number, manager=manager)
     root = position(seq)
     members = [m.CustodyObservation(position=root, holder=seq.owner, individualApproval=seq.vault, active=True)]
@@ -67,6 +68,18 @@ def scenario(action=1, *, native=False, reverse=False, owner=1, number=11, manag
         maxGasCostWei='1000000000000', swap=disabled)
     credit = m.FeeCredit(source=source.digest(), transactionHash=identity(401), eventIndex=3,
         amountRaw='1300', blockNumber='1234', blockHash=identity(301), canonical=True, finalized=False)
+    if collection:
+        accrual = m.AccrualObservation(source=source, amountRaw='1000', checkpointId=identity(701))
+        observation = m.Observation.model_validate_json(json.dumps({**observation.model_dump(mode='json'),
+            'balances': [], 'accruals': [accrual.model_dump(mode='json')]}))
+        changes = {'observationHash': observation.digest(), 'allocations': [],
+            'collections': [{'sourceId': source.digest(), 'maxGrossRaw': '1000'}], 'path': 1 if net else 0}
+        if swap:
+            changes.update(minNetAdded0='0', minNetAdded1='500', swap=m.SwapBounds(
+                enabled=True, adapterId=identity(800), adapterVersion='1', routeCommitment=identity(801),
+                currencyIn=seq.poolKey.currency0, currencyOut=seq.poolKey.currency1,
+                amountInRaw='980', minAmountOutRaw='500').model_dump(mode='json'))
+        plan = m.ExecutionPlan.model_validate_json(json.dumps({**plan.model_dump(mode='json'), **changes}))
     return observation, plan, credit
 
 
@@ -75,18 +88,31 @@ def vectors():
     for name, kwargs in [('self', {}), ('redirect', {'action':2}), ('domino', {'action':3}),
                          ('native', {'native':True}), ('reversed', {'reverse':True}),
                          ('other_owner', {'owner':2}), ('other_sequence', {'number':12}),
-                         ('other_manager', {'manager':10}), ('charged_residual', {'charged':True})]:
+                         ('other_manager', {'manager':10}), ('charged_residual', {'charged':True}),
+                         ('collection_general', {'collection':True}),
+                         ('collection_swap', {'collection':True, 'swap':True}),
+                         ('collection_net', {'collection':True, 'net':True})]:
         obs, plan, credit = scenario(**kwargs)
         m.validate_candidate(plan, obs, now=1700000030, actor=obs.operator)
         cases.append({'name':name, 'observation':obs.model_dump(mode='json'), 'plan':plan.model_dump(mode='json'),
                       'credit':credit.model_dump(mode='json'), 'sequenceHash':obs.sequence.digest(),
-                      'positionHash':obs.balances[0].source.position, 'sourceHash':obs.balances[0].source.digest(),
+                      'positionHash':position(obs.sequence).digest(), 'sourceHash':credit.source,
                       'creditId':credit.credit_id(), 'creditHash':credit.digest(),
                       'domainHash':'0x'+plan.domain_hash().hex(), 'planHash':plan.digest(), 'intentId':plan.intent_id(),
-                      'successorId':plan.successor_id() if plan.action==3 else None})
-    return {'version':m.VERSION, 'syntheticOnly':True,
-            'encodingTypes':{name:kind.type_string() for name,kind in vars(m).items()
+                      'successorId':plan.successor_id() if plan.action==3 else None,
+                      'accrualHashes':[a.digest() for a in obs.accruals],
+                      'collectionHashes':[c.digest() for c in plan.collections]})
+    base, _, base_credit = scenario()
+    lineage = m.ConvertedLotLineage(source=base_credit.source, transactionHash=identity(500), eventIndex=2,
+        currency=base.sequence.poolKey.currency1, inputAllocations=(m.Allocation(lotId=identity(201),amountRaw='300'),
+                                                               m.Allocation(lotId=identity(203),amountRaw='100')))
+    return {'version':m.VERSION, 'validationRevision':'e1-hardening-99', 'syntheticOnly':True,
+            'encodingTypes':{**{name:kind.type_string() for name,kind in vars(m).items()
                 if isinstance(kind,type) and issubclass(kind,m.Record) and kind is not m.Record},
+                'FeeCreditId':m.CREDIT_ID_TYPE, 'SuccessorId':m.SUCCESSOR_ID_TYPE,
+                'ConvertedLotId':m.CONVERTED_LOT_ID_TYPE},
+            'convertedLineage':{'record':lineage.model_dump(mode='json'), 'recordHash':lineage.digest(),
+                                'allocationId':lineage.allocation_id()},
             'wait':m.WaitDecision(action='wait', observationHash=scenario()[0].digest(), reason='not_due').model_dump(),
             'cases':cases}
 

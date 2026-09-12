@@ -262,12 +262,11 @@ contract ExecutionEncodingTest {
         );
     }
 
-    function observationHash(address currency0, address baseCurrency, address quoteCurrency)
+    function observationWords(address currency0, address baseCurrency, address quoteCurrency)
         private
         pure
-        returns (bytes32)
+        returns (ObservationWords memory value)
     {
-        ObservationWords memory value;
         value.typeHash = keccak256(
             "Observation(bytes32 sequence,bytes32 policy,uint64 stateNonce,uint64 authorityGeneration,uint64 blockNumber,bytes32 blockHash,uint64 blockTimestamp,uint160 sqrtPriceX96,address operator,bool operatorEnabled,bool canonical,bool coverageComplete,bytes32 positions,bytes32 balances,bytes32 accruals)"
         );
@@ -297,7 +296,12 @@ contract ExecutionEncodingTest {
         entries[0] = balanceHash(value.sequence, currency0);
         value.balances = hashArray(entries);
         value.accruals = hashArray(new bytes32[](0));
-        return keccak256(abi.encode(value));
+    }
+
+    function observationHash(address currency0, address baseCurrency, address quoteCurrency)
+        private pure returns (bytes32)
+    {
+        return keccak256(abi.encode(observationWords(currency0, baseCurrency, quoteCurrency)));
     }
 
     function allocationHash(uint256 lot, uint128 amount) private pure returns (bytes32) {
@@ -369,6 +373,104 @@ contract ExecutionEncodingTest {
 
     function intentId(PlanWords memory plan, uint256 chainId, address vault) private pure returns (bytes32) {
         return keccak256(abi.encodePacked(hex"1901", domainHash(chainId, vault), keccak256(abi.encode(plan))));
+    }
+
+    function destinationHash(bool createChild, uint256 token, int24 lower, int24 upper)
+        private pure returns (bytes32)
+    {
+        return keccak256(abi.encode(
+            keccak256("Destination(bool createChild,uint256 tokenId,int24 tickLower,int24 tickUpper)"),
+            createChild, token, lower, upper));
+    }
+
+    function collectionPlan(bool net, bool swapEnabled) private pure returns (PlanWords memory plan) {
+        plan = selfPlan(address(0x10), address(0x10), address(0x20));
+        ObservationWords memory obs = observationWords(address(0x10), address(0x10), address(0x20));
+        bytes32 source = sourceHash(plan.sequence, address(0x10));
+        bytes32[] memory entries = new bytes32[](1);
+        entries[0] = keccak256(abi.encode(
+            keccak256("AccrualObservation(bytes32 source,uint128 amountRaw,bytes32 checkpointId)"),
+            source, uint128(1000), bytes32(uint256(701))));
+        require(entries[0] == 0x1a87c26f6802cfc5cd8d241eed7dd94b2fdc95827396e05a43dd4b3c082627d7, "accrual");
+        obs.accruals = hashArray(entries);
+        obs.balances = hashArray(new bytes32[](0));
+        plan.observationHash = keccak256(abi.encode(obs));
+        plan.allocations = hashArray(new bytes32[](0));
+        entries[0] = keccak256(abi.encode(
+            keccak256("CollectionBudget(bytes32 sourceId,uint128 maxGrossRaw)"), source, uint128(1000)));
+        require(entries[0] == 0xb817e91456ec8f898eeb2edbb723b1cfcca845ac10555dc798e67137b1a54a9c, "collection");
+        plan.collections = hashArray(entries);
+        plan.path = net ? 1 : 0;
+        if (swapEnabled) {
+            plan.minNetAdded0 = 0;
+            plan.minNetAdded1 = 500;
+            plan.swap = keccak256(abi.encode(
+                keccak256("SwapBounds(bool enabled,bytes32 adapterId,uint64 adapterVersion,bytes32 routeCommitment,address currencyIn,address currencyOut,uint128 amountInRaw,uint128 minAmountOutRaw)"),
+                true, bytes32(uint256(800)), uint64(1), bytes32(uint256(801)),
+                address(0x10), address(0x20), uint128(980), uint128(500)));
+        }
+    }
+
+    function testNonemptyAccrualCollectionAndGeneralPathGolden() public pure {
+        PlanWords memory plan = collectionPlan(false, false);
+        require(keccak256(abi.encode(plan)) == 0xa3d8b304222e3f4ad4d1df7b35b39151f30819850e5d782efab133f68a24123d, "general collection plan");
+        require(intentId(plan, 4663, address(3)) == 0x264a23f02b05cf3d82bb598f783693e8336ad11ccad7e14b3f9d3552e2157e78, "general collection intent");
+    }
+
+    function testEnabledSwapGeneralAndSeparateNetNoSwapGoldens() public pure {
+        PlanWords memory plan = collectionPlan(false, true);
+        require(keccak256(abi.encode(plan)) == 0xd58c2c67e761430717f993c3b8bd527ab2608e413d1a13774b5af3102fbd3100, "swap plan");
+        require(intentId(plan, 4663, address(3)) == 0x063816d76a31ddc57ccaa66b68fc4afa6d00594de40a34d963348e3c92f9cefd, "swap intent");
+        plan = collectionPlan(true, false);
+        require(keccak256(abi.encode(plan)) == 0xe95bcda313d4eba3bd1d67c67937106758f1335dd29d384a78656b79bba414cd, "net plan");
+        require(intentId(plan, 4663, address(3)) == 0x776bec5362e5b74cc9b9e72b0b4aa146af975f8212198eb571bd29a6f2b5ce16, "net intent");
+    }
+
+    function testDominoAndStableSuccessorReservationGoldens() public pure {
+        PlanWords memory plan = selfPlan(address(0x10), address(0x10), address(0x20));
+        plan.action = 3;
+        plan.destination = destinationHash(true, 101, 0, 600);
+        require(keccak256(abi.encode(plan)) == 0x19fb167fbe81f87a3e66c00464aae6d0eeb89570f6fc2d675da279d468436e02, "domino plan");
+        require(intentId(plan, 4663, address(3)) == 0xd6179e6f43a0c31c501f3ebaccbec1e2b6dac079c8dbeab963e0d24eb25e5066, "domino intent");
+        bytes32 successor = keccak256(abi.encode(
+            keccak256("SuccessorId(bytes32 sequence,uint256 parentTokenId)"), plan.sequence, uint256(101)));
+        require(successor == 0x4e538f78c2669bce781c529a53f2b9f8cc6142a57bcc613a28b7cdd3650ce10f, "successor id");
+    }
+
+    function testRedirectToExistingChildGolden() public pure {
+        PlanWords memory plan = selfPlan(address(0x10), address(0x10), address(0x20));
+        ObservationWords memory obs = observationWords(address(0x10), address(0x10), address(0x20));
+        bytes32 child = keccak256(abi.encode(
+            keccak256("PositionIdentity(bytes32 sequence,uint256 tokenId,uint64 generation,bool isRoot,uint256 parentTokenId,int24 tickLower,int24 tickUpper,bytes32 corePositionId,bytes32 registrationBaselineId)"),
+            plan.sequence, uint256(102), uint64(1), false, uint256(101), int24(0), int24(600),
+            keccak256(abi.encodePacked(address(6), int24(0), int24(600), bytes32(uint256(102)))),
+            bytes32(uint256(1102))));
+        bytes32 root = positionHash(plan.sequence);
+        bytes32 custodyType = keccak256("CustodyObservation(bytes32 position,address holder,address individualApproval,bool active)");
+        bytes32[] memory members = new bytes32[](2);
+        members[root < child ? 0 : 1] = keccak256(abi.encode(custodyType, root, address(1), address(3), true));
+        members[root < child ? 1 : 0] = keccak256(abi.encode(custodyType, child, address(3), address(0), true));
+        obs.positions = hashArray(members);
+        plan.observationHash = keccak256(abi.encode(obs));
+        plan.action = 2;
+        plan.destination = destinationHash(false, 102, 0, 600);
+        require(keccak256(abi.encode(plan)) == 0x2d72beb5604a41ab72d981b36c2e9585e7a697060806c191c04ce86337e1d867, "redirect plan");
+        require(intentId(plan, 4663, address(3)) == 0x7c130b23b4232ee1b993c19ce90fbb4f60f9a241de2aa3ac1a3d619f2702c0b7, "redirect intent");
+    }
+
+    function testConvertedAllocationIdentityAndInputLineageGolden() public pure {
+        bytes32 source = sourceHash(sequenceHash(address(0x10), address(0x10), address(0x20)), address(0x10));
+        bytes32[] memory allocations = new bytes32[](2);
+        allocations[0] = allocationHash(201, 300);
+        allocations[1] = allocationHash(203, 100);
+        bytes32 record = keccak256(abi.encode(
+            keccak256("ConvertedLotLineage(bytes32 source,bytes32 transactionHash,uint32 eventIndex,address currency,bytes32 inputAllocations)"),
+            source, bytes32(uint256(500)), uint32(2), address(0x20), hashArray(allocations)));
+        require(record == 0x6c1b2739d76f623ff13b5304582015587d462cc7b712f3ed5882609ffb10614e, "converted input lineage");
+        bytes32 stableId = keccak256(abi.encode(
+            keccak256("ConvertedLotId(bytes32 source,bytes32 transactionHash,uint32 eventIndex,address currency)"),
+            source, bytes32(uint256(500)), uint32(2), address(0x20)));
+        require(stableId == 0xa7e327161a65fa49dfdf540f1feaef3217cc7bea452b7ac232cccbe911cf00e6, "converted allocation id");
     }
 
     function testSelfSequencePositionAndFeeSourceGoldens() public pure {

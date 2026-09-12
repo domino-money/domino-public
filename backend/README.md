@@ -1,5 +1,10 @@
 # Backend foundation
 
+The [E1 hardening boundary](../reports/EXECUTION_E1_HARDENING.md) supplies strict
+derived-record/JSON validation and offline plan/effect reconciliation for future
+executor work. Its observations and measurements remain caller-supplied; no
+public execution route, signer, live receipt collector or transaction is added.
+
 The local [APR metrics candidate](../docs/APR_METRICS.md) adds exact pool-estimate
 and managed fee-performance calculators plus `preview_metrics.py`. Pool mode
 can use the existing on-demand reader; managed mode consumes explicit offline

@@ -4,6 +4,7 @@ Digests describe an immutable candidate; validating a record is NOT authorizatio
 Every encoded model declares its complete ABI field order. Nested records are
 struct hashes; arrays are keccak(abi.encode(bytes32[])). See execution-v1.md.
 """
+import json
 from typing import Annotated, ClassVar, Literal
 
 from eth_abi import encode
@@ -18,6 +19,37 @@ VERSION = 'e1-candidate-1'
 ZERO = '0x' + '00' * 20
 ZERO_HASH = '0x' + '00' * 32
 U64_MAX = 2**64 - 1
+CREDIT_ID_TYPE = 'FeeCreditId(bytes32 source,bytes32 transactionHash,uint32 eventIndex)'
+SUCCESSOR_ID_TYPE = 'SuccessorId(bytes32 sequence,uint256 parentTokenId)'
+CONVERTED_LOT_ID_TYPE = 'ConvertedLotId(bytes32 source,bytes32 transactionHash,uint32 eventIndex,address currency)'
+
+
+def parse_execution_json(kind, payload):
+    """Strict process-ingress helper, including duplicate keys at every depth.
+
+    There is no public execution ingress today. Future E3/E5 JSON readers must
+    use this helper before deriving records; a dict has already lost duplicates.
+    JSON-mode validation preserves the declared immutable tuple representation.
+    """
+    def unique_object(pairs):
+        result = {}
+        for key, value in pairs:
+            if key in result:
+                raise ValueError('duplicate_json_key')
+            result[key] = value
+        return result
+
+    if not isinstance(payload, (str, bytes, bytearray)):
+        raise ValueError('invalid_execution_json')
+    parsed = json.loads(payload, object_pairs_hook=unique_object)
+    return kind.model_validate_json(json.dumps(parsed, allow_nan=False))
+
+
+def revalidate_record(kind, value):
+    """Do not trust model_copy/model_construct or a nested derived instance."""
+    if not isinstance(value, kind):
+        raise ValueError('invalid_execution_record_type')
+    return parse_execution_json(kind, value.model_dump_json(warnings=False))
 
 
 def _uint(bits):
@@ -146,7 +178,7 @@ class PositionIdentity(Record):
 
     @model_validator(mode='after')
     def checked(self):
-        if int(self.generation) == 0 or self.tickLower >= self.tickUpper:
+        if int(self.tokenId) == 0 or int(self.generation) == 0 or self.tickLower >= self.tickUpper:
             raise ValueError('invalid_position')
         if (self.isRoot and self.parentTokenId != '0') or (not self.isRoot and self.parentTokenId == self.tokenId):
             raise ValueError('invalid_parent')
@@ -161,6 +193,11 @@ class FeeSourceIdentity(Record):
 
 
 class FeeCredit(Record):
+    """eventIndex is zero-based within ALL logs of this transaction's receipt.
+
+    Never pass the block-scoped JSON-RPC logIndex. Native fee realization uses
+    the vault's fee event, since ETH has no ERC20 Transfer log.
+    """
     source: Identity
     transactionHash: Identity
     eventIndex: Annotated[StrictInt, Field(ge=0, le=2**32-1)]
@@ -182,7 +219,7 @@ class FeeCredit(Record):
     def credit_id(self):
         # Fork location and amount are reconciliation evidence, not dedup keys.
         return _hex(_hash(encode(['bytes32', 'bytes32', 'bytes32', 'uint32'], [
-            _hash(b'FeeCreditId(bytes32 source,bytes32 transactionHash,uint32 eventIndex)'),
+            _hash(CREDIT_ID_TYPE.encode()),
             bytes.fromhex(self.source[2:]), bytes.fromhex(self.transactionHash[2:]), self.eventIndex])))
 
 
@@ -270,6 +307,7 @@ def _unique_sorted(records, key):
     keys = [key(v) for v in records]
     if keys != sorted(keys) or len(set(keys)) != len(keys):
         raise ValueError('duplicate_or_unsorted_records')
+    return keys
 
 
 class Observation(Record):
@@ -309,29 +347,38 @@ class Observation(Record):
             raise ValueError('missing_enabled_operator')
         if sum(p.active for p in self.positions) > self.policy.maxPositions:
             raise ValueError('active_membership_exceeds_policy')
-        _unique_sorted(self.positions, lambda v: v.position.digest())
+        position_ids = _unique_sorted(self.positions, lambda v: v.position.digest())
         _unique_sorted(self.balances, lambda v: v.lotId)
         _unique_sorted(self.accruals, lambda v: v.source.digest())
-        positions = {p.position.digest(): p for p in self.positions}
-        nft_ids = [p.position.tokenId for p in self.positions]
-        if len(set(nft_ids)) != len(nft_ids) or sum(p.position.isRoot for p in self.positions) != 1:
+        positions = dict(zip(position_ids, self.positions))
+        by_token = {p.position.tokenId: p.position for p in self.positions}
+        if len(by_token) != len(self.positions) or sum(p.position.isRoot for p in self.positions) != 1:
             raise ValueError('invalid_membership')
         for p in self.positions:
             identity = p.position
             if identity.sequence != sid or identity.tickLower % sequence.poolKey.tick_spacing or identity.tickUpper % sequence.poolKey.tick_spacing:
                 raise ValueError('position_sequence_mismatch')
-            if not identity.isRoot and identity.parentTokenId not in nft_ids:
+            if not identity.isRoot and identity.parentTokenId not in by_token:
                 raise ValueError('unknown_parent')
             expected_core = core_position_id(sequence.positionManager, identity.tickLower, identity.tickUpper,
                                             '0x' + int(identity.tokenId).to_bytes(32, 'big').hex())
             if identity.corePositionId != expected_core:
                 raise ValueError('core_position_mismatch')
+        # Validate all direct links before walking. Each vertex is completed
+        # once; shared ancestry is not rescanned for every descendant.
+        complete = {p.tokenId for p in by_token.values() if p.isRoot}
+        for identity in by_token.values():
             lineage, current = set(), identity
-            while not current.isRoot:
+            while current.tokenId not in complete:
                 if current.tokenId in lineage:
                     raise ValueError('membership_cycle')
                 lineage.add(current.tokenId)
-                current = next(item.position for item in self.positions if item.position.tokenId == current.parentTokenId)
+                current = by_token[current.parentTokenId]
+            complete.update(lineage)
+        # One remaining balance per stable original credit or converted output
+        # allocation. Splitting/renaming a lot cannot duplicate its entitlement.
+        if len({entry.reconciliationId for entry in self.balances}) != len(self.balances):
+            raise ValueError('duplicate_reconciliation_reference')
         aggregates = {}
         for entry in (*self.balances, *self.accruals):
             source = entry.source
@@ -359,6 +406,33 @@ class Allocation(Record):
         return self
 
 
+class ConvertedLotLineage(Record):
+    """Receipt-local output allocation plus the exact original lot debits.
+
+    Its stable ID excludes changing fork location/amount evidence. E5 must keep
+    one row for this ID and reconcile changed evidence, never append a fragment.
+    """
+    source: Identity
+    transactionHash: Identity
+    eventIndex: Annotated[StrictInt, Field(ge=0, le=2**32-1)]
+    currency: Address
+    inputAllocations: Annotated[tuple[Allocation, ...], Field(min_length=1, max_length=4096)]
+    ABI = (('source', 'bytes32'), ('transactionHash', 'bytes32'), ('eventIndex', 'uint32'),
+           ('currency', 'address'), ('inputAllocations', 'bytes32'))
+
+    @model_validator(mode='after')
+    def checked(self):
+        _unique_sorted(self.inputAllocations, lambda v: v.lotId)
+        if sum(int(a.amountRaw) for a in self.inputAllocations) >= 2**128:
+            raise ValueError('converted_allocation_overflow')
+        return self
+
+    def allocation_id(self):
+        return _hex(_hash(encode(['bytes32', 'bytes32', 'bytes32', 'uint32', 'address'], [
+            _hash(CONVERTED_LOT_ID_TYPE.encode()), bytes.fromhex(self.source[2:]),
+            bytes.fromhex(self.transactionHash[2:]), self.eventIndex, self.currency])))
+
+
 class CollectionBudget(Record):
     sourceId: Identity
     maxGrossRaw: Raw128
@@ -380,7 +454,7 @@ class Destination(Record):
 
     @model_validator(mode='after')
     def checked(self):
-        if self.tickLower >= self.tickUpper:
+        if self.tokenId == '0' or self.tickLower >= self.tickUpper:
             raise ValueError('invalid_destination_range')
         return self
 
@@ -455,7 +529,8 @@ class ExecutionPlan(Record):
             raise ValueError('empty_plan')
         if not MIN_SQRT_RATIO <= int(self.minSqrtPriceX96) <= int(self.maxSqrtPriceX96) < MAX_SQRT_RATIO:
             raise ValueError('invalid_price_bounds')
-        if int(self.expectedStateNonce) == U64_MAX or self.expectedPolicyVersion == '0' or self.expectedAuthorityGeneration == '0':
+        if (int(self.expectedStateNonce) == U64_MAX or self.expectedPolicyVersion == '0'
+                or int(self.expectedAuthorityGeneration) in (0, U64_MAX)):
             raise ValueError('invalid_or_exhausted_version')
         if (self.action == 3) != self.destination.createChild:
             raise ValueError('action_destination_mismatch')
@@ -479,7 +554,7 @@ class ExecutionPlan(Record):
         if self.action != 3:
             raise ValueError('not_successor_plan')
         return _hex(_hash(encode(['bytes32', 'bytes32', 'uint256'], [
-            _hash(b'SuccessorId(bytes32 sequence,uint256 parentTokenId)'),
+            _hash(SUCCESSOR_ID_TYPE.encode()),
             self.sequence.struct_hash(), int(self.destination.tokenId)])))
 
 
@@ -498,6 +573,8 @@ def validate_candidate(plan: ExecutionPlan, observation: Observation, *, now: in
     E3 owns strategy/economics; E2/E4 enforce custody/fee authority on-chain; E5
     independently rebuilds the plan and atomically reserves balances/nonces.
     """
+    plan = revalidate_record(ExecutionPlan, plan)
+    observation = revalidate_record(Observation, observation)
     if type(now) is not int or not 0 <= now <= U64_MAX:
         raise ValueError('invalid_clock')
     policy, sequence = observation.policy, observation.sequence
@@ -520,6 +597,7 @@ def validate_candidate(plan: ExecutionPlan, observation: Observation, *, now: in
     if int(plan.maxGasCostWei) > int(policy.limits.maxGasCostWei):
         raise ValueError('gas_budget_exceeded')
     positions = {p.position.tokenId: p for p in observation.positions}
+    positions_by_digest = {p.position.digest(): p for p in observation.positions}
     root = next(p for p in observation.positions if p.position.isRoot)
     if not root.active or root.holder != sequence.owner or root.individualApproval != sequence.vault:
         raise ValueError('root_permission_unavailable')
@@ -558,7 +636,7 @@ def validate_candidate(plan: ExecutionPlan, observation: Observation, *, now: in
         accrual = accruals.get(collection.sourceId)
         if accrual is None or int(collection.maxGrossRaw) > int(accrual.amountRaw):
             raise ValueError('collection_unavailable')
-        member = next(p for p in observation.positions if p.position.digest() == accrual.source.position)
+        member = positions_by_digest[accrual.source.position]
         if not member.active:
             raise ValueError('collection_source_inactive')
         totals[False][pair.index(accrual.source.currency)] += int(collection.maxGrossRaw)

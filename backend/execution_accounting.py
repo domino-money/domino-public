@@ -181,13 +181,19 @@ def split_swap_output(inputs, amountOutRaw):
 
 
 def reconcile_consumption(lots, allocations, dispositions, *, service_fee_bps, swaps=None):
-    """Check per-source/per-currency actual effects against selected fee budgets.
+    """Project per-source/per-currency dispositions from selected fee budgets.
 
     Every net input unit must go to direct liquidity or a declared swap; otherwise
     its original gross was not consumed and must remain uncharged. Swap output
     may go to liquidity or remain as charged residual. This initial helper permits
     independent exact-input swaps, not recycling their output into another leg in
     the same action. A route's internal hops are one terminal in/out observation.
+
+    The conservation expression below is a derived arithmetic invariant, not
+    an independent before/after observation. The operative guards are exact net
+    input disposition and output overspending. A swap-only/all-residual result
+    can be useful arithmetic but is NOT successful reinvestment evidence; use
+    execution_receipts.reconcile_plan_effects for the plan/effect checks.
 
     This does not prove on-chain receipts, prices, route admission, profitability,
     intent uniqueness or execution. A reverted/ambiguous attempt supplies no
