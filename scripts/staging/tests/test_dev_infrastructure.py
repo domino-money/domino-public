@@ -86,7 +86,7 @@ class DevInfrastructureTests(unittest.TestCase):
     def test_operator_directory_replacement_visible_and_not_service_writable(self):
         for role in d.ROLES:
             p = self.role(role)
-            self.assertEqual(p['BindReadOnlyPaths'], [d.ROOT + '/' + role])
+            self.assertEqual(p['BindReadOnlyPaths'], [d.ROOT + '/' + role + ':/run/domino-dev-' + role + '-config'])
             self.assertEqual(p['ProtectSystem'], ['strict'])
             self.assertEqual(p['ReadWritePaths'], [d.STATE + ('/dev-read-gateway' if role == 'gateway' else '/' + role)])
             self.assertNotIn('EnvironmentFile', p)
@@ -94,6 +94,24 @@ class DevInfrastructureTests(unittest.TestCase):
             item = self.files[d.ROOT + '/gateway/' + name + '.json']
             self.assertEqual((item['uid'], item['gid'], item['mode']), (975, 975, 0o600))
         self.assertEqual(json.loads(self.files[d.ROOT + '/gateway/admission.json']['bytes'])['enabled'], False)
+
+    def test_config_aliases_do_not_require_host_parent_traversal_or_widen_it(self):
+        for role in d.ROLES:
+            p = self.role(role)
+            alias = '/run/domino-dev-' + role + '-config'
+            self.assertEqual(p['BindReadOnlyPaths'], [d.ROOT + '/' + role + ':' + alias])
+            self.assertNotIn(alias, p['ReadWritePaths'])
+            for sibling in set(d.ROLES) - {role}:
+                self.assertNotIn('/run/domino-dev-' + sibling + '-config', p['ExecStart'][0])
+        gateway = self.role('gateway')['ExecStart'][0]
+        tunnel = self.role('tunnel')['ExecStart'][0]
+        self.assertIn('--profile /run/domino-dev-gateway-config/profile.json ', gateway)
+        self.assertIn('--config /run/domino-dev-tunnel-config/config.yml ', tunnel)
+        self.assertNotIn('--profile /etc/', gateway)
+        self.assertNotIn('--config /etc/', tunnel)
+        self.assertNotIn('--profile', self.role('reader')['ExecStart'][0])
+        self.assertNotIn('/etc/domino', [item['path'] for item in self.manifest['directories']])
+        self.assertFalse(any(name.startswith('/run/') for name in self.files))
 
     def test_credential_and_production_runtime_isolation(self):
         for role in d.ROLES:

@@ -78,11 +78,15 @@ def unit(role, release):
     user = USERS[role]
     code = CODE + '/' + release
     runtime = STATE + ('/dev-read-gateway' if role == 'gateway' else '/' + role)
+    # /etc/domino remains root-private on the host. PID1 binds only this role's
+    # directory into its service namespace; no host parent permission changes.
+    # A later enabled reader must likewise use this alias's profile.json.
+    config = '/run/domino-dev-' + role + '-config'
     maximum = {'reader': '512M', 'gateway': '192M', 'tunnel': '128M'}[role]
     command = {
         'reader': f'{PYTHON} -B {code}/backend/dev_read_service.py',
-        'gateway': f'{PYTHON} -B {code}/backend/dev_read_gateway.py --profile {ROOT}/gateway/profile.json --runtime-dir {runtime} --port 8891 --reader-port 8890',
-        'tunnel': f'{CLOUDFLARED} tunnel --config {ROOT}/tunnel/config.yml --no-autoupdate --loglevel info --metrics 127.0.0.1:20242 --grace-period 20s --management-diagnostics=false run --token-file ${{CREDENTIALS_DIRECTORY}}/dev-tunnel-token',
+        'gateway': f'{PYTHON} -B {code}/backend/dev_read_gateway.py --profile {config}/profile.json --runtime-dir {runtime} --port 8891 --reader-port 8890',
+        'tunnel': f'{CLOUDFLARED} tunnel --config {config}/config.yml --no-autoupdate --loglevel info --metrics 127.0.0.1:20242 --grace-period 20s --management-diagnostics=false run --token-file ${{CREDENTIALS_DIRECTORY}}/dev-tunnel-token',
     }[role]
     # Keep sibling imports used by the backend, with no inherited proxy/token
     # environment and no per-user Python site packages.
@@ -113,7 +117,7 @@ def unit(role, release):
               f'ReadWritePaths={runtime}',
               # Directory bind makes the operator's atomic file replacement
               # visible while denying a compromised service write access.
-              f'BindReadOnlyPaths={ROOT}/{role}',
+              f'BindReadOnlyPaths={ROOT}/{role}:{config}',
               'InaccessiblePaths=/opt/domino/releases /etc/domino/continuous-reads /etc/domino/credentials /etc/domino/dev/tunnel-private /root /home',
               'LimitCORE=0', 'SystemCallArchitectures=native']
     if role == 'tunnel':
