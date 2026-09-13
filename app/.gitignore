@@ -1,10 +1,11 @@
 # Dependencies and build output
 node_modules/
 dist/
-# Fixture, bridge-test and wallet-test builds: never deployed, never in dist
+# Fixture, bridge-test, wallet-test and consumer-test builds: never deployed, never in dist
 .fixture-dist/
 .bridge-dist/
 .wallet-test-dist/
+.consumer-test-dist/
 # Links and config copies tests/build-guard.test.mjs makes; removed after each test
 .guard-link-*
 .guard-config-*

@@ -74,8 +74,26 @@ test('the guarded directory is the one Pages deploys', () => {
 
 test('the matrix covers every mode the config declares, each as the config resolves it', async () => {
   assert.deepEqual(MODES.filter(({ outDir }) => outDir === 'dist').map(({ mode }) => mode).sort(), ['development', 'production'], 'only the deployable builds write to dist');
-  for (const mode of ['fixtures', 'bridge-test']) assert.ok(GUARDED.some((row) => row.mode === mode), `${mode} is in the matrix`);
+  for (const mode of ['fixtures', 'bridge-test', 'wallet-test', 'consumer-test']) assert.ok(GUARDED.some((row) => row.mode === mode), `${mode} is in the matrix`);
   for (const { mode, outDir } of MODES) assert.equal((await resolveFor(mode)).build.outDir, outDir, mode);
+});
+
+test('only the consumer-test build compiles in the previews and the deposit lab, and it writes a manifest', async () => {
+  for (const mode of ['production', 'development', 'fixtures', 'bridge-test', 'wallet-test']) {
+    const config = await resolveFor(mode);
+    assert.equal(config.define.__DOMINO_ONBOARDING_PREVIEW__, 'false', `${mode} previews`);
+    assert.equal(config.define.__DOMINO_DEPOSIT_LAB__, 'false', `${mode} deposit lab`);
+    assert.equal(config.build.manifest, false, `${mode} manifest`);
+  }
+  const consumer = await resolveFor('consumer-test');
+  assert.equal(consumer.define.__DOMINO_ONBOARDING_PREVIEW__, 'true');
+  assert.equal(consumer.define.__DOMINO_DEPOSIT_LAB__, 'true');
+  assert.equal(consumer.define.__DOMINO_WALLET_SESSION__, 'true', 'the previews need the wallet session');
+  assert.equal(consumer.build.manifest, true);
+});
+
+test('an unknown build mode is refused', async () => {
+  await assert.rejects(resolveFor('consumer-live'), /Unknown mode "consumer-live"/);
 });
 
 const caseless = process.platform === 'win32' || process.platform === 'darwin';

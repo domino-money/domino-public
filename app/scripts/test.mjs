@@ -9,6 +9,9 @@ import { mkdirSync, writeFileSync } from 'node:fs';
 // output for node --test, and the `api-contracts/*` path so the read adapter
 // compiles against rugged97's contract types in place.
 execFileSync(process.execPath, ['node_modules/typescript/bin/tsc', '-p', 'tsconfig.test.json'], { stdio: 'inherit' });
+// The onboarding previews (#38) and the deposit consumer (#40/#44): their own
+// file list, into the same .test-build tree.
+execFileSync(process.execPath, ['node_modules/typescript/bin/tsc', '-p', 'tsconfig.consumer-test.json'], { stdio: 'inherit' });
 
 mkdirSync('.test-build', { recursive: true });
 writeFileSync('.test-build/package.json', JSON.stringify({ type: 'commonjs' }));
@@ -40,6 +43,15 @@ execFileSync(
     'tests/local-live-proxy.test.mjs',
     'tests/local-live-credentials.test.mjs',
     'tests/local-live-vite.test.mjs',
+    'tests/onboarding.client.test.mjs',
+    'tests/onboarding.controller.test.mjs',
+    'tests/onboarding.project.test.mjs',
+    'tests/deposit.client.test.mjs',
+    'tests/deposit.flow.test.mjs',
+    'tests/deposit.present.test.mjs',
+    'tests/consumer.fixtures.test.mjs',
+    'tests/consumer.guard.test.mjs',
+    'tests/consumer.port.test.mjs',
   ],
   { stdio: 'inherit' },
 );

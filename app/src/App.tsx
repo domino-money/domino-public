@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { lazy, Suspense, useEffect, useState } from 'react'
 import { Header } from './components/Header'
 import { Footer } from './components/Footer'
 import { Ticker } from './components/Ticker'
@@ -6,12 +6,20 @@ import { Landing } from './screens/Landing'
 import { Dashboard } from './screens/Dashboard'
 import { Settings } from './screens/Settings'
 import { Pools } from './screens/Pools'
-import { Button } from './components/ui'
+import { Button, Card } from './components/ui'
 import { BuildBanner } from './components/read/BuildBanner'
 import { useAppearance } from './lib/appearance'
 import { appMarketsProvider } from './lib/read/buildMode'
 import { MarketsContext } from './lib/read/useMarkets'
 import { LocalDevelopmentBanner } from './components/read/LocalDevelopmentBanner'
+
+// The onboarding previews (#38) and the deposit consumer's fixture lab
+// (#40/#44) are compiled in only by `vite build --mode consumer-test`.
+// Everywhere else both constants are null: the bundler drops the imports, no
+// chunk is emitted, and both routes fall through to Landing like any unknown
+// route. A chunk that fails to load says so instead of showing a blank page.
+const LivePreview = __DOMINO_ONBOARDING_PREVIEW__ ? lazy(() => import('./screens/LivePreview').catch(() => ({ default: () => <p role="alert">This screen couldn’t load. Reload to try again.</p> }))) : null
+const Deposits = __DOMINO_DEPOSIT_LAB__ ? lazy(() => import('./screens/Deposits').catch(() => ({ default: () => <p role="alert">This screen couldn’t load. Reload to try again.</p> }))) : null
 
 /**
  * Hash routing with a section part: `#/#pools` is route `/`, section
@@ -88,7 +96,48 @@ export default function App() {
       {__DOMINO_LOCAL_LIVE__ ? <LocalDevelopmentBanner /> : !__DOMINO_DEPLOYABLE__ && <BuildBanner mode={__DOMINO_READ_MODE__} />}
       {route === '/' && <Ticker />}
       <Header route={route} />
-      {route === '/app' ? <Dashboard /> : route === '/pools' ? <Pools /> : route === '/settings' ? <Settings /> : <Landing />}
+      {route === '/app' ? (
+        __DOMINO_ONBOARDING_PREVIEW__ || __DOMINO_DEPOSIT_LAB__ ? (
+          <>
+            {/* The previews (#38) and the deposit fixture lab (#40/#44), in the
+                consumer-test build only; everywhere else this branch folds away
+                and /app renders exactly as before. */}
+            <div className="mx-auto max-w-[1100px] px-5">
+              <Card level={2} className="mt-10 flex flex-wrap items-center justify-between gap-4 p-4 md:px-5">
+                <div>
+                  <h2 className="text-[14px] font-medium">Live preview (invited testers)</h2>
+                  <p className="mt-0.5 text-[12px] text-fg-muted">Onboarding previews for a signed-in wallet, and the deposit consumer’s fixture lab. This test build only.</p>
+                </div>
+                <div className="flex gap-2">
+                  <Button variant="outline" onClick={() => (window.location.hash = '#/live-preview')}>
+                    Live preview
+                  </Button>
+                  <Button variant="outline" onClick={() => (window.location.hash = '#/deposits')}>
+                    Deposit fixture lab
+                  </Button>
+                </div>
+              </Card>
+            </div>
+            <Dashboard />
+          </>
+        ) : (
+          <Dashboard />
+        )
+      ) : route === '/pools' ? (
+        <Pools />
+      ) : route === '/settings' ? (
+        <Settings />
+      ) : __DOMINO_ONBOARDING_PREVIEW__ && LivePreview && route === '/live-preview' ? (
+        <Suspense fallback={<p role="status">Loading…</p>}>
+          <LivePreview />
+        </Suspense>
+      ) : __DOMINO_DEPOSIT_LAB__ && Deposits && route === '/deposits' ? (
+        <Suspense fallback={<p role="status">Loading…</p>}>
+          <Deposits />
+        </Suspense>
+      ) : (
+        <Landing />
+      )}
       {/* The appearance toggle sits in the footer's own flow at every width, never floating over the page, so it can never cover text. */}
       <Footer
         appearance={

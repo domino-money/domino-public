@@ -87,13 +87,21 @@ test('the wallet feature is reached only through the build flag', () => {
   // session modules statically. The error boundary is plain React and is the
   // one wallet component the header may import directly.
   const feature = /^(session|wallet|components\/wallet)\//;
+  // The onboarding previews and the deposit consumer (#38, #40/#44) read the
+  // session through session/port.ts, and the preview screen also through
+  // session/livePort.ts. Both live in chunks of the consumer-test build only;
+  // consumer.guard and consumer.bundle prove neither reaches a deployable one.
+  // This is a named exception for two modules, not an opening of the feature.
+  const consumer = /^(onboarding|deposit|components\/(preview|deposit|consumer))\/|^screens\/(LivePreview|Deposits)\.tsx$/;
+  const consumerMayUse = (path, target) =>
+    consumer.test(path) && (target === 'session/port' || (path === 'screens/LivePreview.tsx' && target === 'session/livePort'));
   const offenders = [];
   for (const { path, code } of ALL.filter(({ path }) => !feature.test(path))) {
     for (const spec of specifiers(code)) {
       if (/^(wagmi|viem|@tanstack\/)/.test(spec)) offenders.push(`${path}: ${spec}`);
       if (!spec.startsWith('.')) continue;
       const target = posix.normalize(posix.join(posix.dirname(path), spec));
-      if (feature.test(target) && target !== 'components/wallet/WalletBoundary' && spec !== './wallet/WalletSessionIsland') {
+      if (feature.test(target) && target !== 'components/wallet/WalletBoundary' && spec !== './wallet/WalletSessionIsland' && !consumerMayUse(path, target)) {
         offenders.push(`${path}: ${spec}`);
       }
     }

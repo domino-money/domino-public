@@ -89,14 +89,19 @@ async function send(req, res, response) {
  * @param fake       the fake session service
  * @param gate       env for the real beta gate, or null to serve without it
  * @param intercept  (url) => Response | undefined, to replace a static file
+ * @param routes     test-only same-origin handlers, after session routing and the gate
  */
-export function createWalletServer({ fake, gate = null, intercept, dist = WALLET_DIST }) {
+export function createWalletServer({ fake, gate = null, intercept, dist = WALLET_DIST, routes = [] }) {
   const middleware = loadMiddleware();
   const sockets = new Set();
 
   async function app(request) {
     const url = new URL(request.url);
     if (url.pathname.startsWith('/api/session/v1/') && !fake.controls.notRouted) return fake.handle(request);
+    for (const route of routes) {
+      const response = await route(request, url);
+      if (response !== undefined) return response;
+    }
     const replaced = intercept?.(url);
     if (replaced) return replaced;
     return staticResponse(dist, url);

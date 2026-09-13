@@ -14,7 +14,7 @@
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview",
     "test": "node scripts/test.mjs",
-    "test:render": "node --test tests/page-watch.test.mjs tests/render.test.mjs && npm run test:session",
+    "test:render": "node --test tests/page-watch.test.mjs tests/render.test.mjs && npm run test:session && npm run test:consumer",
     "typecheck": "tsc --noEmit",
     "lint": "oxlint src functions",
     "test:gate": "node --test tests/gate.browser.test.mjs tests/release.browser.test.mjs && npm run test:read",
@@ -27,7 +27,10 @@
     "deploy:preview": "node scripts/release.mjs deploy preview",
     "deploy": "node scripts/release.mjs deploy production",
     "build:wallet-test": "vite build --mode wallet-test",
-    "test:session": "npm run build:wallet-test && node --test tests/session.bundle.test.mjs tests/session.browser.test.mjs"
+    "test:session": "npm run build:wallet-test && node --test tests/session.bundle.test.mjs tests/session.browser.test.mjs",
+    "build:consumer-test": "vite build --mode consumer-test",
+    "test:consumer": "npm run build:consumer-test && node --test tests/consumer.bundle.test.mjs tests/consumer.browser.test.mjs",
+    "check:producer-fixtures": "node scripts/check-producer-fixtures.mjs"
   },
   "dependencies": {
     "@tanstack/react-query": "^5.102.8",

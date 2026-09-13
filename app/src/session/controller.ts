@@ -112,6 +112,13 @@ export const REFRESH_RETRY_MS: readonly number[] = [30_000, 60_000, 120_000]
  */
 export const SESSION_CHECK_MS = 5 * 60_000
 
+/**
+ * What `withSessionCsrf` returns instead of running its callback: the session
+ * it was asked for is not the one this tab holds any more (another epoch,
+ * signed out, or never signed in).
+ */
+export const NO_SESSION: unique symbol = Symbol('no session')
+
 export interface SessionController {
   dispatch(event: Event): void
   /** The user did something in this tab (a key, a pointer, a wheel). */
@@ -122,6 +129,14 @@ export interface SessionController {
   renewedElsewhere(): void
   subscribe(listener: () => void): () => void
   getSnapshot(): Snapshot
+  /**
+   * Runs `fn` with the session CSRF, only while the session of `epoch` is the
+   * signed-in one. For private requests other features make (#38 previews):
+   * the CSRF is handed to the callback as an argument and is never returned,
+   * stored or published. Anything else resolves to NO_SESSION without calling
+   * `fn`. It never starts a request, a check or a signature of its own.
+   */
+  withSessionCsrf<T>(epoch: number, fn: (csrf: string) => Promise<T>): Promise<T | typeof NO_SESSION>
 }
 
 export function createSessionController(ports: ControllerPorts): SessionController {
@@ -391,5 +406,10 @@ export function createSessionController(ports: ControllerPorts): SessionControll
       return () => listeners.delete(listener)
     },
     getSnapshot: () => snapshot,
+    withSessionCsrf(epoch, fn) {
+      const held = machine.session
+      if (machine.epoch !== epoch || machine.view.status !== 'signed_in' || held === null) return Promise.resolve(NO_SESSION)
+      return fn(held.csrf)
+    },
   }
 }

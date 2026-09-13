@@ -493,6 +493,29 @@ equivalent side, and the adapter follows it.
 
 ## Routes
 
+### Onboarding and deposit consumer tests (#124)
+
+`npm run build:consumer-test` builds the recovered onboarding preview and
+deposit lab into `.consumer-test-dist`. Run `npm run test:consumer` after the
+production build to check their lazy chunks and browser behavior. This suite
+also runs through `npm run check:app`.
+
+In this test build, `#/live-preview` uses the session port and the separate
+`onboarding-v1` client; its initial currencies, pool and amounts are synthetic
+test inputs. `#/deposits` uses only the fixture transport and a disabled wallet
+handoff. These screens are integration test surfaces, not a customer funding
+flow. The production and development builds define both consumer flags as
+false and emit neither screen nor its consumer fixtures.
+
+The existing deployed read path remains shared through `appBridgeSource()`.
+Public token/pool selection still needs a separate connection to a customer
+onboarding flow; merging these test screens does not provide that connection.
+Worker activation, real deposit transport and wallet sending are separate work.
+
+`npm run check:producer-fixtures` optionally checks the derived fixtures against
+the Python producer models; it requires the backend Python dependencies and is
+not part of the frontend CI job.
+
 | Route | Screen |
 |---|---|
 | `#/` | Landing: pool ticker, hero range widget, Selected pools, product cards, range simulator, Domino sequence, how it works, limits |

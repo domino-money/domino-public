@@ -47,12 +47,17 @@ const reactDomRoot = here('./node_modules/react-dom')
  * Only a deployable mode may write to dist, which is what Pages deploys; the
  * guard below refuses any other there. No mode has sample data: there is none.
  */
+// wallet-test plus the onboarding previews (#38) at #/live-preview and the
+// deposit consumer's fixture lab (#40/#44) at #/deposits, for the browser
+// tests' fake services only. No build sends a deposit anywhere, and none
+// can: there is no live deposit transport and no wallet send.
 const MODES = {
-  production: { read: 'bridge', pools: 'selected', deployable: true, outDir: 'dist', lab: false, wallet: true, testHooks: false },
-  development: { read: 'bridge', pools: 'selected', deployable: true, outDir: 'dist', lab: false, wallet: true, testHooks: false },
-  fixtures: { read: 'fixture', pools: 'fixture', deployable: false, outDir: '.fixture-dist', lab: true, wallet: false, testHooks: false },
-  'bridge-test': { read: 'bridge', pools: 'fixture', deployable: false, outDir: '.bridge-dist', lab: false, wallet: false, testHooks: false },
-  'wallet-test': { read: 'bridge', pools: 'fixture', deployable: false, outDir: '.wallet-test-dist', lab: false, wallet: true, testHooks: true },
+  production: { read: 'bridge', pools: 'selected', deployable: true, outDir: 'dist', lab: false, wallet: true, testHooks: false, preview: false, depositLab: false },
+  development: { read: 'bridge', pools: 'selected', deployable: true, outDir: 'dist', lab: false, wallet: true, testHooks: false, preview: false, depositLab: false },
+  fixtures: { read: 'fixture', pools: 'fixture', deployable: false, outDir: '.fixture-dist', lab: true, wallet: false, testHooks: false, preview: false, depositLab: false },
+  'bridge-test': { read: 'bridge', pools: 'fixture', deployable: false, outDir: '.bridge-dist', lab: false, wallet: false, testHooks: false, preview: false, depositLab: false },
+  'wallet-test': { read: 'bridge', pools: 'fixture', deployable: false, outDir: '.wallet-test-dist', lab: false, wallet: true, testHooks: true, preview: false, depositLab: false },
+  'consumer-test': { read: 'bridge', pools: 'fixture', deployable: false, outDir: '.consumer-test-dist', lab: false, wallet: true, testHooks: true, preview: true, depositLab: true },
 } as const
 
 // Every deployable row is checked whichever mode is built, so a production row
@@ -169,7 +174,7 @@ export default defineConfig(({ mode, command }) => {
   const localLive = mode === 'local-live'
   if (localLive && command === 'build') throw new Error('local-live is serve-only and cannot be built or released.')
   if (!localLive && !Object.hasOwn(MODES, mode)) {
-    throw new Error(`Unknown mode "${mode}". Use production, development, fixtures, bridge-test or wallet-test.`)
+    throw new Error(`Unknown mode "${mode}". Use production, development, fixtures, bridge-test, wallet-test or consumer-test.`)
   }
   const settings = localLive
     ? { ...MODES.development, deployable: false, wallet: false }
@@ -186,6 +191,12 @@ export default defineConfig(({ mode, command }) => {
       __DOMINO_WALLET_SESSION__: JSON.stringify(settings.wallet),
       __DOMINO_TEST_HOOKS__: JSON.stringify(settings.testHooks),
       __DOMINO_LOCAL_LIVE__: JSON.stringify(localLive),
+      // The onboarding previews (#38) and the deposit consumer's fixture lab
+      // (#40/#44): true only in consumer-test. Literals, so the screens behind
+      // them, their validators, fixtures and copy leave every other build,
+      // including the one that deploys.
+      __DOMINO_ONBOARDING_PREVIEW__: JSON.stringify(settings.preview),
+      __DOMINO_DEPOSIT_LAB__: JSON.stringify(settings.depositLab),
     },
     resolve: {
       dedupe: ['react', 'react-dom', 'react/jsx-runtime', 'react/jsx-dev-runtime'],
@@ -206,6 +217,10 @@ export default defineConfig(({ mode, command }) => {
     build: {
       outDir: settings.outDir,
       emptyOutDir: true,
+      // The consumer-test build records which chunk holds which module, so
+      // tests/consumer.bundle.test.mjs can scan the preview and deposit chunks
+      // and prove neither reaches the build that deploys.
+      manifest: settings.preview || settings.depositLab,
       rollupOptions: settings.lab ? { input: { main: here('./index.html'), lab: here('./read-lab.html') } } : undefined,
     },
   }
