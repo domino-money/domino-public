@@ -112,7 +112,8 @@ class EnrollmentStore(PerformanceStore):
 
     def finish(self, owner, job, outcome):
         self._write()
-        states = {'success': ('tracking','forward_collection',30), 'failed': ('stale','collection_failed',60),
+        states = {'success': ('tracking','forward_collection',30), 'advanced': ('tracking','forward_collection',1),
+                  'caught_up': ('tracking','forward_collection',30), 'failed': ('stale','collection_failed',60),
                   'blocked': ('blocked','baseline_reorged',60)}
         if outcome not in states: raise PerformanceStoreError('performance_invalid_request')
         def operation(conn, now, owner):

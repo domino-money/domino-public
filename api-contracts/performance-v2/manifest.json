@@ -107,7 +107,7 @@
     },
     {
       "path": "backend/performance_runtime.py",
-      "sha256": "e8656a7b409c0d5976e9e38728ad40bafc5a4bb5b533cf6431b936de8c0f0a37"
+      "sha256": "476fc068ed8c0823e6359acc23a065905a258ae617c9fc449350397965e4b75e"
     },
     {
       "path": "bridge/src/performance-worker.mjs",
@@ -115,11 +115,11 @@
     },
     {
       "path": "backend/performance_enrollment.py",
-      "sha256": "8663aa9e969a004932039093701aea286fd89b5cda5da030dc28e3bcfaff144e"
+      "sha256": "ed6a1971d816ec7c352f98cf621c662fae46153553baf223e592c9e7c1c3f835"
     },
     {
       "path": "backend/performance_producer.py",
-      "sha256": "06075b8ab01631d84d3499e34612f9bfff70735b33a064d17a8b9c2943b934ad"
+      "sha256": "583899a2713044e404e8cdbb7e35f970125de0bb98db6b0ce44c2d7082371073"
     },
     {
       "path": "backend/migrations/018_performance_enrollment.sql",

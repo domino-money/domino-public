@@ -30,8 +30,9 @@ endpoint and no failovers. The profile schema is:
     "vault": "0x2222222222222222222222222222222222222222",
     "vaultCodeHash": "0x3333333333333333333333333333333333333333333333333333333333333333"
   }],
-  "maxRequestsPerMinute": 512,
-  "maxRequestsPerStep": 128
+  "maxRequestsPerMinute": 8192,
+  "maxRequestsPerStep": 1024,
+  "pageBlocks": 4
 }
 ```
 
@@ -73,16 +74,25 @@ The owner can list at most eight enrolled vaults and batch at most eight cards.
 Only enrollment/list/card activity extends a90s visible lease. Hidden-tab polling
 must stop; idle or unenrolled wallets make no collector RPC calls. Each claimed
 job has a45s fenced lease, then at most one raw page and one financial step, each
-with a15s deadline and1-block raw page. Success schedules30s later; failure60s.
+with a15s deadline. Raw pages default to4 blocks, configurable from1 to16.
+Progress schedules the next bounded step1s later; only a fully caught-up raw and
+financial cursor schedules30s later. Failure schedules60s later. A persisted raw
+page awaiting financial processing is drained before collecting another raw page.
 Actual next observation can be later when finality, page backlog or budget delays
 work. Cards preserve the actual dated snapshot and return30–60s refresh guidance.
 
 The collector has a60s startup cooldown and one rolling process-wide RPC-item
-budget, default512/minute (configured ceiling2048), shared by all owners, steps,
-receipt verifiers and failed calls. Step ceiling defaults128 (maximum256). These
+budget, default8192/minute (configured ceiling32768), shared by all owners, steps,
+receipt verifiers and failed calls. Step ceiling defaults1024 (maximum2048). These
 are finite defensive ceilings, not account quota qualification or a30s SLA.
 There is no unbounded catch-up loop, provider price probe or background wallet
 discovery. `--once` reports one bounded tick and respects startup cooldown.
+An offline SQL integration test with the default8192/minute budget follows
+120 finalized blocks/minute for3 simulated minutes, then recovers a60-block
+backlog while finality continues advancing. This proves durable scheduling and
+catch-up behavior with the fixture; it does not qualify remote provider latency
+or capacity. Configure page size and budget for the admitted account and observed
+workload. Exhaustion preserves committed pages for a later bounded tick.
 
 Collection resumes durable raw/financial cursors after restart. Reorg generations
 invalidate old calculations; the original raw/financial audit remains. A changed

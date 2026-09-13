@@ -38,8 +38,9 @@ class Profile(StrictModel):
     databaseConfig: str
     runtimeDirectory: str
     subjects: Annotated[list[Subject], Field(min_length=1,max_length=256)]
-    maxRequestsPerMinute: Annotated[int,Field(ge=1,le=2048)] = 512
-    maxRequestsPerStep: Annotated[int,Field(ge=1,le=256)] = 128
+    pageBlocks: Annotated[int,Field(ge=1,le=16)] = 4
+    maxRequestsPerMinute: Annotated[int,Field(ge=1,le=32768)] = 8192
+    maxRequestsPerStep: Annotated[int,Field(ge=1,le=2048)] = 1024
 
 
 def private_json(path, maximum=65536):
@@ -119,4 +120,5 @@ class Runtime:
         rpc = ProducerRpc(AdmittedRpc(),maximum=self.profile.maxRequestsPerMinute)
         return PerformanceProducer(rpc,self.enrollments,PerformanceStore(self.settings,role=COLLECTOR_ROLE),
             FinancialHistoryStore(self.settings,role=COLLECTOR_ROLE),
-            sorted({subject.owner for subject in self.profile.subjects}),max_requests=self.profile.maxRequestsPerStep)
+            sorted({subject.owner for subject in self.profile.subjects}),page_blocks=self.profile.pageBlocks,
+            max_requests=self.profile.maxRequestsPerStep)

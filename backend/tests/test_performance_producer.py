@@ -33,7 +33,8 @@ class ProducerTests(unittest.TestCase):
         rpc=ProducerRpc(SimpleNamespace(request=Mock()),clock=lambda:100)
         rpc.ready_at=100
         queue=SimpleNamespace(claim=Mock(),bind_baseline=Mock(return_value={'epochId':'epoch'}),finish=Mock())
-        instance=PerformanceProducer(rpc,queue,Mock(),Mock(),['owner'])
+        financial_store=SimpleNamespace(next_financial_page=Mock(return_value={'epoch':{'status':'active'},'financial':{},'page':None}))
+        instance=PerformanceProducer(rpc,queue,Mock(),financial_store,['owner'])
         instance.collector=SimpleNamespace(capture=Mock(return_value='baseline'))
         instance.raw=SimpleNamespace(advance=Mock(return_value=SimpleNamespace(outcome='advanced')))
         instance.financial=SimpleNamespace(advance=Mock(return_value=SimpleNamespace(outcome='advanced')))
@@ -43,14 +44,14 @@ class ProducerTests(unittest.TestCase):
 
     def test_capture_binds_atomically_then_one_financial_step_only(self):
         p,q,_=self.producer()
-        self.assertEqual(p.tick(),'success')
+        self.assertEqual(p.tick(),'advanced')
         q.bind_baseline.assert_called_once()
         p.raw.advance.assert_not_called()
         p.financial.advance.assert_called_once_with('owner','epoch')
 
     def test_restart_uses_saved_epoch_instead_of_new_capture(self):
         p,q,job=self.producer(); job['epoch_id']='saved'
-        self.assertEqual(p.tick(),'success')
+        self.assertEqual(p.tick(),'advanced')
         p.collector.capture.assert_not_called()
         p.raw.advance.assert_called_once_with('owner','saved')
         p.financial.advance.assert_called_once_with('owner','saved')
@@ -67,6 +68,13 @@ class ProducerTests(unittest.TestCase):
         p,q,_=self.producer(); q.claim.return_value=None
         self.assertEqual(p.tick(),'idle')
         p.raw.advance.assert_not_called(); p.financial.advance.assert_not_called(); p.collector.capture.assert_not_called()
+
+    def test_financial_backlog_precedes_more_raw_work_after_budget_failure(self):
+        p,q,job=self.producer(); job['epoch_id']='saved'
+        p.financial_store.next_financial_page.return_value['page']={'persisted':'raw page'}
+        self.assertEqual(p.tick(),'advanced')
+        p.raw.advance.assert_not_called()
+        p.financial.advance.assert_called_once_with('owner','saved')
 
 
 if __name__=='__main__': unittest.main()

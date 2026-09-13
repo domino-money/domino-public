@@ -99,12 +99,12 @@ class EnrollmentTests(unittest.TestCase):
         enrollment=self.store.enroll(chain_owner,{'vault':VAULT,'tokenIds':['1']},CODE_HASH)
         producer=PerformanceProducer(bounded,self.store,PerformanceStore(self.settings,role=COLLECTOR_ROLE),
             FinancialHistoryStore(self.settings,role=COLLECTOR_ROLE),[chain_owner],max_requests=256)
-        self.assertEqual(producer.tick(),'success')
+        self.assertEqual(producer.tick(),'advanced')
         epoch=self.store.visible(chain_owner)['enrollments'][0]['epochId']
         original=PerformanceStore(self.settings).read_epoch(chain_owner,epoch)
         rpc.add_transaction(logs=[pool_log()]); rpc.finalized=11
         self.expire(due_at=True)
-        self.assertEqual(producer.tick(),'success')
+        self.assertEqual(producer.tick(),'advanced')
         bundle=FinancialHistoryStore(self.settings).read_financial_window(chain_owner,epoch)
         self.assertEqual(bundle['epoch']['cursor']['blockNumber'],11)
         self.assertEqual(bundle['financial']['cursor']['blockNumber'],11)
@@ -114,6 +114,70 @@ class EnrollmentTests(unittest.TestCase):
         self.assertEqual(producer.tick(),'failed')
         retained=FinancialHistoryStore(self.settings).read_financial_window(chain_owner,epoch)
         self.assertEqual(retained['financial']['cursor'],bundle['financial']['cursor'])
+
+    def test_120_blocks_per_minute_for_three_minutes_and_bounded_catchup(self):
+        from test_performance_financial_collection import FinancialRpc
+        from test_performance_collection import OWNER as chain_owner,VAULT,CODE_HASH,hash_
+        rpc=FinancialRpc()
+        rpc.headers={n:{'number':hex(n),'hash':hash_(n),'parentHash':hash_(n-1),
+            'timestamp':hex(1000+n//2),'transactions':[]} for n in range(1,801)}
+        clock=[60]
+        bounded=ProducerRpc(rpc,maximum=8192,clock=lambda:clock[0]); bounded.ready_at=60
+        self.store.enroll(chain_owner,{'vault':VAULT,'tokenIds':['1']},CODE_HASH)
+        raw=PerformanceStore(self.settings,role=COLLECTOR_ROLE)
+        financial=FinancialHistoryStore(self.settings,role=COLLECTOR_ROLE)
+        producer=PerformanceProducer(bounded,self.store,raw,financial,[chain_owner],page_blocks=4,max_requests=1024)
+        self.assertEqual(producer.tick(),'advanced')
+        epoch=self.store.visible(chain_owner)['enrollments'][0]['epochId']
+        opening=raw.read_epoch(chain_owner,epoch)['baseline']
+        for second in range(1,181):
+            clock[0]=60+second; rpc.finalized=10+2*second
+            self.expire(due_at=True)
+            self.assertEqual(producer.tick(),'advanced')
+            self.assertEqual(financial.next_financial_page(chain_owner,epoch)['financial']['cursor']['blockNumber'],rpc.finalized)
+        # Thirty seconds without work creates a real 60-block durable backlog;
+        # finalized keeps advancing at two blocks/s while four-block pages catch up.
+        caught=False
+        for second in range(211,252):
+            clock[0]=60+second; rpc.finalized=10+2*second
+            self.expire(due_at=True)
+            self.assertEqual(producer.tick(),'advanced')
+            head=financial.next_financial_page(chain_owner,epoch)['financial']['cursor']['blockNumber']
+            if head==rpc.finalized:
+                caught=True; break
+        self.assertTrue(caught,'configured pages must recover the backlog while the chain keeps advancing')
+        self.assertEqual(raw.read_epoch(chain_owner,epoch)['baseline'],opening)
+        self.assertLessEqual(len(bounded.calls),8192)
+
+    def test_budget_exhaustion_after_raw_commit_resumes_that_financial_page(self):
+        from unittest.mock import patch
+        from test_performance_financial_collection import FinancialRpc
+        from test_performance_collection import OWNER as chain_owner,VAULT,CODE_HASH
+        rpc=FinancialRpc(); clock=[60]
+        budget=ProducerRpc(rpc,maximum=2048,clock=lambda:clock[0]); budget.ready_at=60
+        self.store.enroll(chain_owner,{'vault':VAULT,'tokenIds':['1']},CODE_HASH)
+        raw=PerformanceStore(self.settings,role=COLLECTOR_ROLE)
+        financial=FinancialHistoryStore(self.settings,role=COLLECTOR_ROLE)
+        producer=PerformanceProducer(budget,self.store,raw,financial,[chain_owner])
+        self.assertEqual(producer.tick(),'advanced')
+        epoch=self.store.visible(chain_owner)['enrollments'][0]['epochId']
+        opening=raw.read_epoch(chain_owner,epoch)['baseline']
+        rpc.finalized=14; budget.maximum=len(budget.calls)+40
+        self.expire(due_at=True)
+        self.assertEqual(producer.tick(),'failed')
+        retained=financial.next_financial_page(chain_owner,epoch)
+        self.assertEqual(retained['epoch']['cursor']['blockNumber'],14)
+        self.assertEqual(retained['financial']['cursor']['blockNumber'],10)
+        self.assertIsNotNone(retained['page'])
+        # New producer, same persistent quota; expiration permits the next step.
+        clock[0]=121; budget.maximum=2048; self.expire(due_at=True)
+        resumed=PerformanceProducer(budget,self.store,raw,financial,[chain_owner])
+        with patch.object(resumed.raw,'advance',side_effect=AssertionError('raw must not starve persisted financial work')):
+            self.assertEqual(resumed.tick(),'advanced')
+        final=financial.next_financial_page(chain_owner,epoch)
+        self.assertEqual(final['financial']['cursor']['blockNumber'],14)
+        self.assertEqual(final['epoch']['baseline'],opening)
+        self.assertIsNone(final['page'])
 
 
 if __name__=='__main__': unittest.main()

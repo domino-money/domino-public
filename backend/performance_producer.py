@@ -13,8 +13,8 @@ from read_deadline import check_read_deadline, read_deadline
 
 class ProducerRpc:
     """One process-wide transport budget, including failures and nested verifiers."""
-    def __init__(self, rpc, *, maximum=512, clock=time.monotonic):
-        if type(maximum) is not int or not 1 <= maximum <= 2048: raise ValueError('invalid_producer_rpc_budget')
+    def __init__(self, rpc, *, maximum=8192, clock=time.monotonic):
+        if type(maximum) is not int or not 1 <= maximum <= 32768: raise ValueError('invalid_producer_rpc_budget')
         self.rpc,self.maximum,self.clock = rpc,maximum,clock
         self.calls,self.lock = deque(),threading.Lock()
         self.ready_at = clock()+60
@@ -34,9 +34,9 @@ class ProducerRpc:
 
 
 class PerformanceProducer:
-    def __init__(self, rpc, enrollments, raw_store, financial_store, owners, *, page_blocks=1, max_requests=128):
+    def __init__(self, rpc, enrollments, raw_store, financial_store, owners, *, page_blocks=4, max_requests=1024):
         if (not isinstance(rpc,ProducerRpc) or not 1 <= len(owners) <= 32 or len(set(owners)) != len(owners)
-                or type(max_requests) is not int or not 1 <= max_requests <= 256):
+                or type(max_requests) is not int or not 1 <= max_requests <= 2048):
             raise ValueError('invalid_performance_producer_config')
         self.enrollments,self.raw_store,self.financial_store,self.owners = enrollments,raw_store,financial_store,tuple(owners)
         self.collector = CanonicalCollector(rpc,page_blocks=page_blocks,max_requests=max_requests)
@@ -53,6 +53,7 @@ class PerformanceProducer:
         if job is None: return 'idle'
         outcome = 'failed'
         try:
+            raw_outcome = 'advanced'
             with read_deadline(15):
                 if job['epoch_id'] is None:
                     baseline = self.collector.capture(owner,job['vault'],job['token_ids'],job['vault_code_hash'])
@@ -60,16 +61,24 @@ class PerformanceProducer:
                     epoch = record['epochId']
                 else:
                     epoch = job['epoch_id']
-                    step = self.raw.advance(owner,epoch)
-                    if step.outcome == 'baseline_reorged':
-                        outcome = 'blocked'
-                    elif step.outcome == 'read_failed':
-                        raise CollectionError('collection_read_failed')
+                    pending = self.financial_store.next_financial_page(owner,epoch)
+                    if pending['epoch']['status']=='baseline_reorged': outcome='blocked'
+                    # A committed raw page survives exhausted financial budget.
+                    # Drain that exact durable page first, avoiding starvation
+                    # from repeatedly spending the next budget on raw progress.
+                    elif pending['financial'] is not None and pending['page'] is None:
+                        step = self.raw.advance(owner,epoch)
+                        raw_outcome = step.outcome
+                        if step.outcome == 'baseline_reorged': outcome='blocked'
+                        elif step.outcome == 'read_failed': raise CollectionError('collection_read_failed')
             if outcome != 'blocked':
                 with read_deadline(15):
                     step = self.financial.advance(owner,epoch)
-                    outcome = 'failed' if step.outcome == 'read_failed' else 'success'
-        except (CollectionError,PerformanceStoreError,DataError,ValueError):
+                    outcome = ('failed' if step.outcome=='read_failed' else
+                               'caught_up' if step.outcome==raw_outcome=='caught_up' else 'advanced')
+        except PerformanceStoreError as error:
+            outcome = 'blocked' if error.code=='performance_epoch_blocked' else 'failed'
+        except (CollectionError,DataError,ValueError):
             outcome = 'failed'
         # Never record provider error text, sessions, tokens or raw evidence in the queue.
         with read_deadline(2): self.enrollments.finish(owner,job,outcome)
