@@ -16,6 +16,7 @@ const wallet={owner:f.owner,current:()=>current,nonceOffered:n=>claims.has(Strin
   calls.push({method,params});
   if(method==='eth_sendTransaction'&&mode==='reject'){mode='normal';throw Object.assign(new Error('rejected'),{code:4001})}
   if(method==='eth_sendTransaction'&&mode==='unknown'){mode='normal';throw new Error('outcome_unknown')}
+  if(method==='eth_sendTransaction'&&mode==='late-reject'){mode='normal';now+=29.999;return new Promise((_,reject)=>setTimeout(()=>reject(Object.assign(new Error('late_rejected'),{code:4001})),50))}
   if(method==='eth_getCode'&&mode==='wrongcode'&&params[0]===f.release.deployment.routing)return '0x6000';
   if(method==='eth_getTransactionCount'&&mode==='pending'&&params[1]==='pending')return `0x${(BigInt(await rpc(method,params))+1n).toString(16)}`;
   const value=await rpc(method,params);
@@ -75,6 +76,12 @@ assert.equal(calls.slice(ownerOnlyStart).some(x=>x.method==='eth_getCode'&&x.par
 await assert.rejects(recovery.recover(f.oldVault,'withdraw-child',gas,{tokenId:BigInt(f.root)}),/invalid_child/);check();
 await assert.rejects(recovery.recover(f.oldVault,'withdraw-fees',gas,{...balance,original:balance.original+1n,charged:0n}),/fee_reserve_insufficient/);check();
 await rpc('anvil_setCode',[d.engine,originalEngine]);
+// A definite rejection arriving after our UI timeout releases that exact
+// claim. The UI still requires a newly prepared and acknowledged review.
+const late=await recovery.recover(f.oldVault,'revoke-operator',gas);mode='late-reject';await assert.rejects(recovery.send(late,true),/wallet_timeout/);
+assert.equal(wallet.nonceOffered(BigInt(late.transaction.nonce)),true);
+await new Promise(resolve=>setTimeout(resolve,75));assert.equal(wallet.nonceOffered(BigInt(late.transaction.nonce)),false);
+await assert.rejects(recovery.send(late,true),/review_required/);check();
 // Unknown wallet outcome must survive a new SDK instance (shared nonce guard).
 const revoke=await recovery.recover(f.oldVault,'revoke-operator',gas);mode='unknown';await assert.rejects(recovery.send(revoke,true),/outcome_unknown/);
 await assert.rejects(createSequenceClient(wallet,d,()=>now).recover(f.oldVault,'revoke-operator',gas),/pending_wallet_transaction/);check();

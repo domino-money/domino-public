@@ -96,7 +96,7 @@ export function sequenceDeploymentFrom(value: unknown, now = Date.now() / 1000):
  * accepted. Every logical action has one deadline and a fixed read ceiling. */
 export function createSequenceClient(wallet: WalletRpc, deployment: SequenceDeployment, now = () => Date.now() / 1000) {
   const d = Object.freeze({ ...deployment, codeHashes: Object.freeze({ ...deployment.codeHashes }) })
-  type Rpc = (method: string, params: unknown[]) => Promise<unknown>
+  type Rpc = (method: string, params: unknown[], rejected?: (error: unknown) => Promise<void>) => Promise<unknown>
   type Context = { rpc: Rpc; block: Hex; hash: Hex }
   const issued = new WeakMap<PreparedSequence, (c: Context) => Promise<void>>()
   const sent = new Map<Hex, PreparedSequence>()
@@ -104,11 +104,17 @@ export function createSequenceClient(wallet: WalletRpc, deployment: SequenceDepl
   async function bounded<T>(work: (c: Context) => Promise<T>): Promise<T> {
     if (busy) return fail('wallet_action_busy')
     busy = true; const end = now() + 30; let calls = 0
-    const rpc: Rpc = async (method, params) => {
+    const rpc: Rpc = async (method, params, rejected) => {
       if (!wallet.current() || now() >= end || ++calls > 100) return fail('wallet_action_expired')
       let timer: ReturnType<typeof setTimeout> | undefined
       try {
-        const value = await Promise.race([wallet.request(method, params), new Promise<never>((_, reject) => { timer = setTimeout(() => reject(new Error('wallet_timeout')), Math.max(1, (end - now()) * 1000)) })])
+        // Observe the original wallet promise even after our deadline. A late
+        // explicit 4001 may release only this claim; silence/timeout never does.
+        const original = wallet.request(method, params).catch(async error => {
+          if (rejected) { try { await rejected(error) } catch { /* A failed release keeps the nonce protected. */ } }
+          throw error
+        })
+        const value = await Promise.race([original, new Promise<never>((_, reject) => { timer = setTimeout(() => reject(new Error('wallet_timeout')), Math.max(1, (end - now()) * 1000)) })])
         if (!wallet.current() || now() >= end) return fail('wallet_identity_changed')
         return value
       } finally { clearTimeout(timer) }
@@ -278,14 +284,11 @@ export function createSequenceClient(wallet: WalletRpc, deployment: SequenceDepl
       await c.rpc('eth_call',[prepared.transaction,'latest'])
       const claim = await wallet.claimNonce(nonce)
       issued.delete(prepared)
-      try {
-        const hash = await c.rpc('eth_sendTransaction',[prepared.transaction])
-        if (typeof hash !== 'string' || !hashPattern.test(hash)) fail('wallet_outcome_unknown')
-        sent.set(hash as Hex,prepared); return hash as Hex
-      } catch (error) {
+      const hash = await c.rpc('eth_sendTransaction',[prepared.transaction],async error => {
         if (error && typeof error === 'object' && (error as {code?:unknown}).code === 4001) await wallet.releaseRejectedNonce(nonce,claim)
-        throw error
-      }
+      })
+      if (typeof hash !== 'string' || !hashPattern.test(hash)) fail('wallet_outcome_unknown')
+      sent.set(hash as Hex,prepared); return hash as Hex
     }),
     receipt: (hash: Hex) => bounded(async c => {
       if (!hashPattern.test(hash)) fail('invalid_transaction_hash')
