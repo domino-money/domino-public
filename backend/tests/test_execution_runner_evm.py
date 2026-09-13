@@ -96,6 +96,19 @@ class DurableExecutorEvmTests(unittest.TestCase):
     def prepare(self):return self.runner.journal.prepare(self.owner,self.identifier,self.worker,self.lease['fence'],self.signer)
     def finality(self):self.rpc.request('anvil_mine',['0x40'])
 
+    def failing_journal(self,needle,failures):
+        class FailingConnection:
+            def __init__(self,conn):self.conn=conn
+            def __enter__(self):self.conn.__enter__();return self
+            def __exit__(self,*args):return self.conn.__exit__(*args)
+            def execute(self,query,args=None):
+                result=self.conn.execute(query,args)
+                if needle in query:
+                    failures.append(needle)
+                    raise RuntimeError('synthetic_journal_crash_before_commit')
+                return result
+        return ExecutionJournal(self.pg.settings,connect=lambda *a,**kw:FailingConnection(psycopg.connect(*a,**kw)))
+
     def test_signed_persist_before_broadcast_and_exactly_once_canonical_effect(self):
         original=self.rpc.request
         sends=[]
@@ -144,6 +157,81 @@ class DurableExecutorEvmTests(unittest.TestCase):
         self.runner=ExecutionRunner(self.pg.settings,self.signer,restore_only=True)
         self.assertEqual(self.step()['state'],'submitted')
         self.finality();self.assertEqual(self.step()['state'],'reconciled')
+
+    def test_crash_after_signature_before_attempt_commit_recovers_same_bytes_and_nonce(self):
+        self.prepare()
+        before=self.runner.journal.read(self.owner,self.identifier)
+        original=self.signer.sign;signatures=[];failures=[]
+        def watched(*args,**kwargs):
+            result=original(*args,**kwargs);signatures.append(result);return result
+        self.signer.sign=watched
+        try:
+            # Both the signed bytes and state update have executed in PostgreSQL;
+            # failing before commit must leave only the prior signing barrier.
+            journal=self.failing_journal("UPDATE journal SET state='signed'",failures)
+            with self.assertRaisesRegex(RuntimeError,'synthetic_journal_crash_before_commit'):
+                journal.persist_signed(self.owner,self.identifier,self.worker,self.lease['fence'],self.signer)
+            self.assertEqual(len(failures),1);self.assertEqual(len(signatures),1)
+            after=self.runner.journal.read(self.owner,self.identifier)
+            self.assertEqual(after['journal']['state'],'signing');self.assertEqual(after['attempts'],[])
+            self.assertEqual(after['journal']['nonce'],before['journal']['nonce'])
+            self.assertEqual(after['journal']['envelope'],before['journal']['envelope'])
+            self.assertIsNone(self.rpc.request('eth_getTransactionByHash',[signatures[0][1]]))
+            with self.assertRaises(ExecutionStoreError):
+                self.store.cancel(self.owner,self.identifier,self.worker,self.lease['fence'])
+            self.runner=ExecutionRunner(self.pg.settings,self.signer,restore_only=True)
+            status=self.step();self.assertEqual(status['state'],'submitted')
+            self.assertEqual(len(signatures),2);self.assertEqual(signatures[0],signatures[1])
+            committed=self.runner.journal.read(self.owner,self.identifier)
+            self.assertEqual(len(committed['attempts']),1)
+            self.assertEqual(bytes(committed['attempts'][0]['signed_bytes']),signatures[0][0])
+            self.assertEqual(committed['attempts'][0]['transaction_hash'],signatures[0][1])
+            self.assertEqual(committed['journal']['nonce'],before['journal']['nonce'])
+            self.finality();self.assertEqual(self.step()['state'],'reconciled')
+            with self.pg.admin() as conn:
+                self.assertEqual(conn.execute('SELECT count(*) FROM domino_execution.nonce_claims').fetchone()[0],1)
+                self.assertEqual(conn.execute('SELECT count(*) FROM domino_execution.effects WHERE canonical').fetchone()[0],1)
+        finally:self.signer.sign=original
+
+    def test_crash_during_effect_settlement_rolls_back_then_recovers_once(self):
+        self.assertEqual(self.step()['state'],'submitted');self.finality()
+        before=self.runner.journal.read(self.owner,self.identifier)
+        digest=before['attempts'][0]['transaction_hash'];failures=[]
+        self.runner.journal=self.failing_journal('INSERT INTO spends',failures)
+        with self.assertRaisesRegex(RuntimeError,'synthetic_journal_crash_before_commit'):
+            self.step()
+        self.assertEqual(len(failures),1)
+        unchanged=ExecutionJournal(self.pg.settings).read(self.owner,self.identifier)
+        self.assertEqual(unchanged['journal']['state'],'submitted');self.assertIsNone(unchanged['effect'])
+        with self.pg.admin() as conn:
+            for table in ('effects','origins','spends'):
+                self.assertEqual(conn.execute(f'SELECT count(*) FROM domino_execution.{table}').fetchone()[0],0,table)
+            claims=conn.execute('SELECT active FROM domino_execution.source_claims').fetchall()
+            self.assertTrue(claims);self.assertTrue(all(row[0] for row in claims))
+        self.assertEqual(self.rpc.request('eth_getTransactionReceipt',[digest])['status'],'0x1')
+        original=self.rpc.request
+        def no_new_broadcast(method,params):
+            if method=='eth_sendRawTransaction':raise AssertionError('canonical recovery must not broadcast again')
+            return original(method,params)
+        self.rpc.request=no_new_broadcast
+        try:
+            self.runner=ExecutionRunner(self.pg.settings,self.signer,restore_only=True)
+            first=self.step();self.assertEqual(first['state'],'reconciled')
+            with self.pg.admin() as conn:
+                effects=conn.execute('SELECT count(*) FROM domino_execution.effects WHERE canonical').fetchone()[0]
+                origins=conn.execute('SELECT lot_id,amount_raw FROM domino_execution.origins ORDER BY lot_id').fetchall()
+                spends=conn.execute('SELECT lot_id,amount_raw FROM domino_execution.spends ORDER BY lot_id').fetchall()
+            self.assertEqual(effects,1);self.assertTrue(origins);self.assertTrue(spends)
+            self.assertEqual(self.step()['receipt'],first['receipt'])
+            with self.pg.admin() as conn:
+                self.assertEqual(conn.execute('SELECT count(*) FROM domino_execution.effects WHERE canonical').fetchone()[0],1)
+                self.assertEqual(conn.execute('SELECT lot_id,amount_raw FROM domino_execution.origins ORDER BY lot_id').fetchall(),origins)
+                self.assertEqual(conn.execute('SELECT lot_id,amount_raw FROM domino_execution.spends ORDER BY lot_id').fetchall(),spends)
+            final=self.runner.journal.read(self.owner,self.identifier)
+            self.assertEqual(len(final['attempts']),1)
+            self.assertEqual(final['attempts'][0]['transaction_hash'],digest)
+            self.assertEqual(final['journal']['nonce'],before['journal']['nonce'])
+        finally:self.rpc.request=original
 
     def test_restricted_signer_disabled_wrong_identity_and_owner_revocation(self):
         disabled=RestrictedSigner(self.rpc,KEY,self.admission,SignerPolicy(3000000,10**10,10**6,10**17))

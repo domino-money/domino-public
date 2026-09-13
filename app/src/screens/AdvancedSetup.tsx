@@ -84,7 +84,9 @@ export default function AdvancedSetup() {
       if (generation.current === gen) { setForm(old => ({ ...old, transactionHash: hash, operationId: step.operationId ?? old.operationId })); setNotice('Transaction offered once. Check its receipt and the operation before the next stage.') }
     } catch (error) { if (generation.current === gen) setNotice(error instanceof Error && ['setup_admission_unavailable','setup_release_unavailable','invalid_setup_release','setup_release_expired','deployment_code_changed','deployment_identity_changed'].includes(error.message)
       ? 'The setup release is no longer available or its identities changed. No wallet transaction was requested. Reload the deployment, then prepare and review again. Existing operations can still be read and refunded.'
-      : 'The wallet outcome may be unknown. Check wallet activity and reload the operation before proceeding. This nonce will not be offered again here.') }
+      : error && typeof error === 'object' && (error as { code?: unknown }).code === 4001
+        ? 'Wallet request rejected. Prepare and review again if you want to continue.'
+        : 'The wallet outcome may be unknown. Check wallet activity and reload the operation before proceeding. This nonce remains protected against another offer, including after reload.') }
     finally { if (generation.current === gen) { running.current = false; setBusy(false) } }
   }
   const inputs = (names: (keyof typeof defaults)[]) => <div className="mt-4 grid gap-3 sm:grid-cols-2">{names.map(name => <label className="text-sm" key={name}>{labels[name]}<input disabled={busy} className="mt-1 block w-full rounded border bg-surface-1 p-2" value={form[name]} onChange={event => edit(name, event.target.value)} /></label>)}</div>

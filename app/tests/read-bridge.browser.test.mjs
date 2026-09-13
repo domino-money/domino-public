@@ -133,11 +133,13 @@ before(async () => {
 });
 
 after(async () => {
-  await browser?.close();
-  await new Promise((done) => {
-    server.close(done);
+  // Stop accepting requests and destroy keep-alive connections before awaiting
+  // Chromium teardown; neither resource should wait for the other to close.
+  const serverClosed = server ? new Promise((done, reject) => {
+    server.close((error) => error ? reject(error) : done());
     server.closeAllConnections();
-  });
+  }) : Promise.resolve();
+  await Promise.all([serverClosed, browser?.close()]);
 });
 
 /**
@@ -234,12 +236,14 @@ test('the bridge build reads through the same-origin bridge, adds no credential 
 
 test('Settings in the bridge-test build says what dist says: live reads built in, switched on by the server', async () => {
   const { context, page } = await visit();
-  await page.evaluate(() => { location.hash = '#/settings'; });
-  await page.waitForTimeout(150);
-  const text = await page.locator('#root').innerText();
-  assert.match(text, /Live reads\s+Built in, switched on by the server/);
-  assert.match(text, /Signing\s+Off/, 'reading is the only thing the test build turns on');
-  await closeContext(context);
+  try {
+    await page.evaluate(() => { location.hash = '#/settings'; });
+    await page.waitForTimeout(150);
+    const text = await page.locator('#root').innerText();
+    assert.match(text, /Live reads\s+Built in, switched on by the server/);
+    assert.match(text, /Automated signing\s+Not connected/, 'the read bridge never enables the executor');
+    assert.match(text, /Wallet transactions\s+Off/, 'this read-only build carries no wallet transaction handoff');
+  } finally { await closeContext(context); }
 });
 
 const cellStates = (page) => page.locator('#pools tbody [data-metric]').evaluateAll((els) => els.map((el) => el.getAttribute('data-metric')));

@@ -124,11 +124,12 @@ before(async () => {
 });
 
 after(async () => {
-  await browser?.close();
-  await new Promise((done) => {
-    server.close(done);
+  // Close the listener and keep-alive sockets before waiting for Chromium.
+  const serverClosed = server ? new Promise((done, reject) => {
+    server.close((error) => error ? reject(error) : done());
     server.closeAllConnections();
-  });
+  }) : Promise.resolve();
+  await Promise.all([serverClosed, browser?.close()]);
 });
 
 async function visit(route) {
