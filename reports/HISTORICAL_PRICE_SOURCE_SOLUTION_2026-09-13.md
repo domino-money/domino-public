@@ -9,9 +9,20 @@ assuming that Robinhood RPC support includes an address-based Prices API.
 
 ## Decision
 
-Start with the existing managed archive RPC for canonical token accounting,
-Alchemy for explicitly mapped canonical ETH/WETH/USDG references, and a
-CoinGecko contract-address-to-coin-ID adapter for listed assets such as MARLIN.
+For historical reference investigation, use the existing managed archive RPC
+for canonical token accounting and Alchemy for explicitly mapped canonical
+ETH/WETH/USDG references. The CoinGecko contract-address-to-coin-ID adapter
+remains an optional historical comparison for listed assets such as MARLIN.
+**Owner correction, 13 September:** CoinGecko is unsuitable for the requested
+up-to-date values and is not the selected live-price source. The earlier chart
+capture's latest point label was 106,240 ms old at receipt. Its five-minute
+sample grid does not establish low update latency. Live pool state should come
+from the chain; pool ratios and separately sourced USD conversions retain their
+own identity and freshness rather than treating USDG as one dollar.
+The subsequent [direct-RPC latency measurement](LOW_LATENCY_POOL_PRICES_2026-09-13.md)
+verified that current pool state is accessible through the existing product
+provider; it supersedes any interpretation of this historical-source research
+as a recommendation to obtain live prices from CoinGecko.
 Retain Chainlink as a separately named oracle reference and market comparison.
 Use indexed pool prices only as explicitly pool-derived references. An own
 archive node is a capacity/availability option, not the missing USD feed.

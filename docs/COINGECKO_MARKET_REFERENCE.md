@@ -1,5 +1,12 @@
 # CoinGecko market reference candidate
 
+**Role: optional historical comparison only.** The owner rejected CoinGecko
+for up-to-date values on 13 September 2026. This adapter must not provide live
+token prices, execution quotes or an automatic fallback for the on-chain price.
+Five-minute chart spacing is not a low-latency update guarantee.
+Use the [direct pool-state path](../reports/LOW_LATENCY_POOL_PRICES_2026-09-13.md)
+for current pool ratios, with dollar conversion tracked separately.
+
 `backend/coingecko_market_reference.py` obtains an attributed one-day USD chart
 for a Robinhood token. It discovers the CoinGecko coin ID through the fixed
 public contract endpoint and requires both `platforms.robinhood` and
@@ -34,6 +41,13 @@ CoinGecko ID also does not prove that the provider prices the Robinhood token's
 own market independently. The mapping is provider evidence, not an onchain
 identity proof. Missing or delayed market updates cannot be made current merely
 by retrieving or resampling the chart.
+
+Reports declare `intendedUse: historical_comparison` and
+`currentPriceAvailable: false`, even when the last sample label is recent.
+`latestPointAgeAtRetrievalMs` measures the last chart timestamp's age when the
+response arrived. It is not a measurement of first-publication latency or the
+underlying last trade. The original live capture's latest label was already
+106,240 ms old at receipt; that one observation is not a provider-wide SLA.
 
 Every result remains `provider_reference_only`, with unqualified timestamp
 semantics, independence and event-time coverage, and `executionAvailable: false`.

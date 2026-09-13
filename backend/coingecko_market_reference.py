@@ -124,6 +124,7 @@ a candle boundary, or convert these labels into event-publication timestamps.
     return {
         'schemaVersion': 1, 'source': SOURCE, 'provider': 'coingecko',
         'mode': 'provider_reference_only', 'status': 'unqualified',
+        'intendedUse': 'historical_comparison', 'currentPriceAvailable': False,
         'identity': identity, 'requestedAtMs': requested, 'retrievedAtMs': retrieved,
         'request': {'days': 1, 'vsCurrency': 'usd', 'coinId': identity['coinId']},
         'points': [{'timestampMs': at, 'priceUsd': by_timestamp[at]} for at in times],
@@ -132,6 +133,7 @@ a candle boundary, or convert these labels into event-publication timestamps.
             'requestedEndMs': requested, 'inputPointCount': len(rows),
             'pointCount': len(times), 'duplicatePointCount': len(rows)-len(times),
             'firstPointMs': times[0], 'lastPointMs': times[-1],
+            'latestPointAgeAtRetrievalMs': retrieved-times[-1],
             'firstPointOffsetFromRequestedStartMs': times[0]-start,
             'lastPointOffsetFromRequestedEndMs': times[-1]-requested,
             'sampleSpanMs': times[-1]-times[0], 'cadenceThresholdMs': SAMPLE_CADENCE_MS,

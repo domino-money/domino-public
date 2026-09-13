@@ -1,0 +1,110 @@
+{
+  "mode": "bounded_read_only_websocket",
+  "runtime": "Node built-in WebSocket",
+  "httpProbesAdditional": 0,
+  "maxConnectionDurationMs": 15000,
+  "maxSentJsonRpcMessages": 3,
+  "actualSentJsonRpcMessages": 2,
+  "receivedMessages": 144,
+  "receivedBytes": 236035,
+  "swapLogs": [
+    {
+      "address": "0x8366a39cc670b4001a1121b8f6a443a643e40951",
+      "poolId": "0x84bd4e2d8be11aeb0afc1195b38f587b61e90068548f1063fdbe448fb8cad0b6",
+      "blockNumber": 61941403,
+      "blockHash": "0xb41f261a0e14ba277beb8556ef964c50fb32a4f38a67cefcdc01bf9c5f8558cf",
+      "transactionHash": "0x1b46552c54f4c917f1b5772f3564bc40044c256a3fa3bc73072ced47e5997835",
+      "logIndex": 30,
+      "removed": false,
+      "receivedAt": 1789300922.437
+    },
+    {
+      "address": "0x8366a39cc670b4001a1121b8f6a443a643e40951",
+      "poolId": "0x84bd4e2d8be11aeb0afc1195b38f587b61e90068548f1063fdbe448fb8cad0b6",
+      "blockNumber": 61941424,
+      "blockHash": "0x1cf8a90e9ff24a795f7d74aad38da29f50dac38beb8e93761cfbb1ab7cef2e9d",
+      "transactionHash": "0x3849433069b2f7709d0bd29520c6e81ddd1549a69c31bfe06b468ed4ee0bc799",
+      "logIndex": 67,
+      "removed": false,
+      "receivedAt": 1789300924.553
+    }
+  ],
+  "subscriptionAcks": [
+    {
+      "subscription": "filteredSwapLogs",
+      "status": "acknowledged",
+      "ackLatencyMs": 150.815
+    },
+    {
+      "subscription": "newHeads",
+      "status": "acknowledged",
+      "ackLatencyMs": 152.059
+    }
+  ],
+  "propagationLatencyMs": null,
+  "propagationLatencyReason": "No independent block production clock observation",
+  "outgoingMethods": [
+    "eth_subscribe:newHeads",
+    "eth_subscribe:filteredSwapLogs"
+  ],
+  "poolIds": [
+    "0x84bd4e2d8be11aeb0afc1195b38f587b61e90068548f1063fdbe448fb8cad0b6",
+    "0xdb922f0619e11b0c1e6c3a142798f0243060b8a4331ea4f4e7de80e898cc02e7"
+  ],
+  "subscriptionIdsOmitted": true,
+  "credentialUrlsOmitted": true,
+  "startedAt": 1789300916.128,
+  "connectionLatencyMs": 578.288,
+  "status": "bounded_window_complete",
+  "finishedAt": 1789300931.131,
+  "observedConnectionDurationMs": 15003,
+  "connectionCloseRequested": true,
+  "swapLogsReceived": 2,
+  "headersReceived": 140,
+  "headerTimestampLagMs": {
+    "min": 208,
+    "median": 714.0,
+    "max": 1193
+  },
+  "offlineStreamChecks": {
+    "consecutiveBlockNumbers": true,
+    "parentHashesLinked": true,
+    "swapLogs": [
+      {
+        "blockNumber": 61941403,
+        "matchingStreamHeader": true,
+        "logTimestampLagMs": 437,
+        "logReceivedAfterHeaderMs": 20
+      },
+      {
+        "blockNumber": 61941424,
+        "matchingStreamHeader": true,
+        "logTimestampLagMs": 553,
+        "logReceivedAfterHeaderMs": 20
+      }
+    ]
+  },
+  "captureSha256": "6e95faa03c628ea10894f4fa33a648d4a8966f116b8b879be0f20085562a3ad1",
+  "sourceFile": "websocket-probe.json",
+  "headerBounds": {
+    "first": {
+      "number": 61941349,
+      "hash": "0x88239092b38076f87db027fe33c1723ec6a5a2d00445d786f50aa3161d35d409",
+      "parentHash": "0x431d96f67535bd2c843d51a6e9a76eb1a188e58ffb32f2b399f02381c5a829fa",
+      "timestamp": 1789300916,
+      "receivedAt": 1789300916.94,
+      "timestampLagMs": 940
+    },
+    "last": {
+      "number": 61941488,
+      "hash": "0x641d2741d16d63c1c0f246f03b09874728e7b5116a426c41ad0b23eccc6246e3",
+      "parentHash": "0x50d3ac3cd7856a3f28222503b48d7bb4a0c34dd588c522b764d91b946c860dcf",
+      "timestamp": 1789300930,
+      "receivedAt": 1789300931.018,
+      "timestampLagMs": 1018
+    }
+  },
+  "headerParentContinuityVerified": true,
+  "swapBlockHashesMatchObservedHeaders": true,
+  "independentCanonicalRecheck": false
+}

@@ -1,0 +1,68 @@
+{
+  "mode": "read_only_current_price_source_research",
+  "date": "2026-09-13",
+  "metadataOnly": true,
+  "priceUpdatesFetched": false,
+  "rpcCallsMade": false,
+  "credentialsUsed": false,
+  "pythMetadataProbes": [
+    {
+      "url": "https://hermes.pyth.network/v2/price_feeds?query=USDG",
+      "result": [
+        {
+          "id": "daa58c6a3ce7d4b9c46c32a6e646012c17c4a2b24c08dd8c5e476118b855a7da",
+          "market_hours": {
+            "is_open": true,
+            "next_open": null,
+            "next_close": null
+          },
+          "attributes": {
+            "asset_type": "Crypto",
+            "description": "GLOBAL DOLLAR / US DOLLAR",
+            "display_symbol": "USDGUSD",
+            "quote_currency": "USD",
+            "schedule": "America/New_York;O,O,O,O,O,O,O;",
+            "symbol": "Crypto.USDG/USD",
+            "min_channel": "fixed_rate@200ms"
+          }
+        }
+      ]
+    },
+    {
+      "url": "https://hermes.pyth.network/v2/price_feeds?query=MARLIN",
+      "result": []
+    },
+    {
+      "url": "https://hermes.pyth.network/v2/price_feeds?query=ab35d04e1ee39c789c4a65d522417b3c7f2e4723",
+      "result": []
+    }
+  ],
+  "pythLimits": [
+    "Metadata returned without credentials; this does not prove access to updates.",
+    "No chain or token address in returned USDG metadata.",
+    "No measured publication cadence or network latency.",
+    "Empty search results are not proof no private/new feed exists."
+  ],
+  "pythCurrentDocumentation": {
+    "upgrade": "https://docs.pyth.network/price-feeds/core/upgrade/preparing",
+    "architecture": "https://docs.pyth.network/price-feeds/pro/how-lazer-works",
+    "finding": "Official docs state Core upgrade completed August 26 2026 and Hermes now requires an API key."
+  },
+  "poolPriceSources": {
+    "robinhoodSubscriptions": "https://www.alchemy.com/docs/chains/robinhood-chain/robinhood-chain-api-endpoints/eth-subscribe",
+    "logsReorgSemantics": "https://www.alchemy.com/docs/reference/logs",
+    "pendingScope": "https://www.alchemy.com/docs/reference/newpendingtransactions",
+    "swapEvent": "https://raw.githubusercontent.com/Uniswap/v4-core/main/src/interfaces/IPoolManager.sol",
+    "stateView": "https://raw.githubusercontent.com/Uniswap/v4-periphery/main/src/lens/StateView.sol",
+    "finality": "https://docs.robinhood.com/chain/transaction-finality/"
+  },
+  "chainlinkStreams": {
+    "officialRobinhoodVerifier": "https://docs.robinhood.com/chain/data-streams/",
+    "verifier": "0xcE73c8ad08CBDEaCa6078BF0627C8fe0a9a536E7",
+    "chainId": 4663,
+    "currentExactMarlinFeedEstablished": false,
+    "currentExactRobinhoodUsdgMappingEstablished": false,
+    "access": "https://docs.chain.link/data-streams",
+    "note": "Sub-second delivery and verifier support do not establish coverage for a token. No signed reports fetched."
+  }
+}

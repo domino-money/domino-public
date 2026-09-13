@@ -165,7 +165,19 @@ class CoinGeckoMarketReferenceTests(unittest.TestCase):
         self.assertFalse(result['provenance']['providerPublicationTimeVerified'])
         self.assertFalse(result['provenance']['onchainCurrencyIdentityVerified'])
         self.assertFalse(result['executionAvailable'])
+        self.assertFalse(result['currentPriceAvailable'])
+        self.assertEqual(result['intendedUse'], 'historical_comparison')
         self.assertNotIn('feeAprPercent', result)
+
+    def test_new_retrieval_does_not_refresh_an_old_chart_price(self):
+        raw = chart([[NOW-120_000, '1.25']])
+        first = parse(raw, retrieved_at_ms=NOW+1_000)
+        later = parse(raw, retrieved_at_ms=NOW+11_000)
+        self.assertEqual(first['points'], later['points'])
+        self.assertEqual(first['diagnostics']['latestPointAgeAtRetrievalMs'], 121_000)
+        self.assertEqual(later['diagnostics']['latestPointAgeAtRetrievalMs'], 131_000)
+        self.assertFalse(first['currentPriceAvailable'])
+        self.assertFalse(later['currentPriceAvailable'])
 
     def test_sparse_or_single_point_data_retains_missing_cadence_evidence(self):
         one = parse(chart([[NOW-1_000, 1]]))
