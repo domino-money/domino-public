@@ -39,7 +39,9 @@ contract DominoRoutingHelperV4 {
         int24 floorTick = inverse ? upper : lower;
         int24 priorCeiling = inverse ? parent.tickLower : parent.tickUpper;
         uint160 anchorPrice = TickMath.getSqrtPriceAtTick(priorCeiling);
-        uint256 floorRatio = ratioBps(TickMath.getSqrtPriceAtTick(floorTick), anchorPrice, inverse);
+        uint160 floorPrice = TickMath.getSqrtPriceAtTick(floorTick);
+        if (inverse ? floorPrice < anchorPrice : floorPrice > anchorPrice) revert InvalidGeometry();
+        uint256 floorRatio = ratioBps(floorPrice, anchorPrice, inverse);
         if (floorRatio < 10000 - overlap || floorRatio > 10000
             || ratioBps(TickMath.getSqrtPriceAtTick(ceilingTick), anchorPrice, inverse) < 10000 + upside)
             revert InvalidGeometry();
@@ -59,7 +61,7 @@ contract DominoRoutingHelperV4 {
     }
 
     function compoundAmounts(T.CompoundAmounts memory value, uint128 added,
-        uint128 maxOriginal, uint128 maxCharged, uint16 feeBps, uint128 grossBefore)
+        uint128 maxOriginal, uint128 maxCharged, uint16 feeBps, uint128 grossBefore, uint128 minimumOriginal)
         external pure returns (T.CompoundAmounts memory) {
         if (feeBps > 200) revert InvalidAmount();
         uint256 available = uint256(value.originalBefore) + value.realized;
@@ -72,7 +74,9 @@ contract DominoRoutingHelperV4 {
         uint256 priorFee = uint256(grossBefore) * feeBps / 10000;
         uint256 totalNet = uint256(grossBefore) - priorFee + net;
         uint256 gross = net == 0 ? 0 : (totalNet - 1) * 10000 / (10000 - feeBps) + 1 - grossBefore;
-        if (gross > available || gross > maxOriginal) revert InvalidAmount();
+        if (gross < minimumOriginal) gross = minimumOriginal;
+        uint256 fee = (uint256(grossBefore)+gross)*feeBps/10000-priorFee;
+        if (gross > available || gross > maxOriginal || gross - fee != net) revert InvalidAmount();
         value.grossOriginalConsumed = uint128(gross);
         value.serviceFee = uint128((uint256(grossBefore) + gross) * feeBps / 10000 - priorFee);
         value.originalAfter = uint128(available - gross);

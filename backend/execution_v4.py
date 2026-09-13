@@ -406,6 +406,8 @@ class ReceiptReconciler(g.CompoundReceiptReconciler):
                     or charged!=spent+after_charged or gross+spent!=fee+added
                     or fee!=(r['grossOriginalConsumed']+gross)*policy[0]//10000-r['grossOriginalConsumed']*policy[0]//10000
                     or r['grossOriginalConsumed']+gross>int(b.maxOriginal)
+                    or r['grossOriginalConsumed']+gross>int(b.minOriginal)+min(int(b.maxOriginal)-int(b.minOriginal),r['realized']+realized)
+                    or r['originalBefore']<int(b.minOriginal) or r['chargedBefore']<int(b.minCharged)
                     or gross and currency!=r['originalCurrency']):raise ValueError('v4_conservation_mismatch')
             # Output created earlier in this receipt is distinct from admitted old
             # charged input. The immutable engine consumes charged balances first.

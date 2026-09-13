@@ -119,6 +119,7 @@ class ExecutionV4ReceiptEvmTests(unittest.TestCase):
         snapshot=self.rpc.request('evm_snapshot',[]);receipt,result=self.execute(plan)
         child=result['destinationTokenId'];self.assertEqual(result['successorCreated']['tokenId'],child)
         self.assertEqual(len(result['applications']),2)
+        self.swaps()
         next_plan=self.plan(2,10**10).model_copy(update={'destinationTokenId':child})
         _,funded=self.execute(next_plan);self.assertEqual(funded['liquidityAfterRaw'],str(2*10**10))
         self.assertTrue(self.rpc.request('evm_revert',[snapshot]))
@@ -174,13 +175,18 @@ class ExecutionV4ReceiptEvmTests(unittest.TestCase):
         self.assertGreater(int(out['chargedAfterRaw'])+int(out['liquidityFromSwapRaw']),0)
 
     def test_exact_allocation_floor_reverts_atomically_and_accepts_measured_debit(self):
-        self.setup_vault();self.swaps();plan=self.plan();snap=self.rpc.request('evm_snapshot',[])
-        _,result=self.execute(plan)
-        gross={(r['sourceId'],r['currency']):r['grossOriginalConsumedRaw'] for r in result['sources']}
-        self.assertTrue(self.rpc.request('evm_revert',[snap]))
-        impossible=plan.model_copy(update={'budgets':tuple(b.model_copy(update={'minOriginal':b.maxOriginal}) for b in plan.budgets)})
-        before=self.call(self.vault,'stateNonce()',['uint64'])[0]
-        with self.assertRaises(Exception):self.rpc.request('eth_call',[{'from':self.owner,'to':self.vault,'data':impossible.calldata()},'latest'])
-        self.assertEqual(self.call(self.vault,'stateNonce()',['uint64'])[0],before)
-        exact=plan.model_copy(update={'budgets':tuple(b.model_copy(update={'minOriginal':gross[(b.sourceId,b.currency)],'maxOriginal':gross[(b.sourceId,b.currency)]}) for b in plan.budgets)})
-        _,accepted=self.execute(exact);self.assertEqual({(r['sourceId'],r['currency']):r['grossOriginalConsumedRaw'] for r in accepted['sources']},gross)
+        self.setup_vault();self.swaps();self.execute(self.plan())
+        plan=self.plan();before=self.call(self.vault,'stateNonce()',['uint64'])[0]
+        with self.assertRaises(Exception):self.rpc.request('eth_call',[{'from':self.owner,'to':self.vault,'data':plan.calldata()},'latest'])
+        # Quote exact debts from the same fixed AMM slot/range for old allocations.
+        price=self.call(self.state,'getSlot0(bytes32)',['uint160','int24','uint24','uint24'],['bytes32'],[bytes.fromhex(self.admission.sequence.poolId[2:])])[0]
+        from v4_math import sqrt_at_tick as get_sqrt_ratio_at_tick
+        # Integer round-up is the manager's required settlement direction.
+        lower=get_sqrt_ratio_at_tick(-600);upper=get_sqrt_ratio_at_tick(600);liquidity=int(plan.authority.liquidityIncrease)
+        owed0=(liquidity*(upper-price)*(1<<96)+upper*price-1)//(upper*price)
+        owed1=(liquidity*(price-lower)+(1<<96)-1)//(1<<96)
+        grosses={self.key[0]:(owed0-1)*10000//9800+1,self.key[1]:(owed1-1)*10000//9800+1}
+        exact=plan.model_copy(update={'budgets':tuple(b.model_copy(update={'minOriginal':str(grosses[b.currency]),'maxOriginal':str(grosses[b.currency])}) for b in plan.budgets)})
+        _,accepted=self.execute(exact)
+        self.assertEqual(self.call(self.vault,'stateNonce()',['uint64'])[0],before+1)
+        self.assertEqual({r['currency']:int(r['grossOriginalConsumedRaw']) for r in accepted['sources']},grosses)

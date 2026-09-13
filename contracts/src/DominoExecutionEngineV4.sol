@@ -16,6 +16,7 @@ interface IPoolSwapV4 is IPoolManagerE4 {
 /// @notice Fixed noncustodial execution engine: no delegatecall, router calldata,
 /// wallet funding, allowance, native payable entry or configurable recipient.
 contract DominoExecutionEngineV4 {
+    struct Work { E.Plan plan; uint128[] collectionRemaining; uint128[] originalSpent; }
     error InvalidExecution();
     error InvalidAmount();
     error InvalidRoute();
@@ -80,10 +81,18 @@ contract DominoExecutionEngineV4 {
             || _delta(address(this),key.currency0) != 0 || _delta(address(this),key.currency1) != 0) revert InvalidExecution();
         if (plan.action == E.NET) _net(vault,plan,key);
         else {
-            for (uint256 i; i < plan.collect.length; ++i) _collect(vault,plan.authority.intentId,plan.collect[i].tokenId,key);
-            uint128 swapGross;
-            if (plan.swap.amountIn != 0) swapGross = _swap(vault,plan,key);
-            _fund(vault,plan,key,swapGross);
+            Work memory work = Work(plan,new uint128[](plan.budgets.length),new uint128[](plan.budgets.length));
+            for (uint256 i; i < plan.budgets.length; ++i) {
+                E.FeeBudget memory b = plan.budgets[i];
+                T.FeeBalance memory old = vault.feeBalance(b.sourceId,b.currency);
+                if (old.original < b.minOriginal || old.charged < b.minCharged) revert InvalidAmount();
+                work.collectionRemaining[i] = b.maxOriginal - b.minOriginal;
+                b.maxOriginal = b.minOriginal;
+                if (b.maxCharged > old.charged) b.maxCharged = old.charged;
+            }
+            for (uint256 i; i < plan.collect.length; ++i) _collect(vault,work,plan.collect[i].tokenId,key);
+            if (plan.swap.amountIn != 0) _swap(vault,work,key);
+            _fund(vault,work,key);
         }
         for (uint256 i; i < plan.budgets.length; ++i)
             if (plan.budgets[i].minOriginal != 0 || plan.budgets[i].minCharged != 0) revert InvalidAmount();
@@ -112,7 +121,7 @@ contract DominoExecutionEngineV4 {
             || afterPoint.feeGrowthInside1X128 != beforePoint.feeGrowthInside1X128) revert InvalidExecution();
     }
 
-    function _collect(IVaultExecutionV4 vault, bytes32 intentId, uint256 id, T.PoolKey memory key) private {
+    function _collect(IVaultExecutionV4 vault, Work memory work, uint256 id, T.PoolKey memory key) private {
         T.Checkpoint memory beforePoint = _before(vault,id);
         (uint128 a,uint128 b) = readHelper.accrued(beforePoint);
         uint256 old0 = _balance(key.currency0); uint256 old1 = _balance(key.currency1);
@@ -121,10 +130,20 @@ contract DominoExecutionEngineV4 {
             || _delta(vault.positionManager(),key.currency0) != 0 || _delta(vault.positionManager(),key.currency1) != 0) revert InvalidAmount();
         T.Checkpoint memory point = _point(vault,id); _after(beforePoint,point,0);
         vault.executionCredit(id,a,b); vault.executionCheckpoint(id,point);
-        emit FeesRealized(address(vault),intentId,id,beforePoint.commitment,point.commitment,a,b);
+        T.Position memory member = vault.position(id);
+        for (uint256 i; i < work.plan.budgets.length; ++i) {
+            E.FeeBudget memory budget = work.plan.budgets[i];
+            uint128 amount;
+            if (budget.sourceId == member.source0 && budget.currency == key.currency0) amount = a;
+            else if (budget.sourceId == member.source1 && budget.currency == key.currency1) amount = b;
+            uint128 admitted = amount < work.collectionRemaining[i] ? amount : work.collectionRemaining[i];
+            work.collectionRemaining[i] -= admitted; budget.maxOriginal += admitted;
+        }
+        emit FeesRealized(address(vault),work.plan.authority.intentId,id,beforePoint.commitment,point.commitment,a,b);
     }
 
-    function _fund(IVaultExecutionV4 vault, E.Plan memory plan, T.PoolKey memory key, uint128 swapGross) private {
+    function _fund(IVaultExecutionV4 vault, Work memory work, T.PoolKey memory key) private {
+        E.Plan memory plan = work.plan;
         uint256 id = plan.destinationTokenId;
         T.Checkpoint memory beforePoint;
         if (plan.action == E.MINT) id = vault.executionMint(plan.authority.intentId,plan.authority.tokenId,
@@ -134,7 +153,7 @@ contract DominoExecutionEngineV4 {
             // fees. Realize them into their own sources before increasing it.
             bool alreadyCollected;
             for (uint256 i; i < plan.collect.length; ++i) if (plan.collect[i].tokenId == id) alreadyCollected = true;
-            if (!alreadyCollected || plan.swap.amountIn != 0) _collect(vault,plan.authority.intentId,id,key);
+            if (!alreadyCollected || plan.swap.amountIn != 0) _collect(vault,work,id,key);
             beforePoint = _before(vault,id);
             vault.executionModify(id,plan.authority.liquidityIncrease,0,0,false);
         }
@@ -142,7 +161,7 @@ contract DominoExecutionEngineV4 {
         uint128 added0 = _debt(vault.positionManager(),key.currency0);
         uint128 added1 = _debt(vault.positionManager(),key.currency1);
         if ((added0 == 0 && added1 == 0) || added0 < plan.authority.minAdded0 || added1 < plan.authority.minAdded1) revert InvalidAmount();
-        _allocate(vault,plan,key.currency0,added0,swapGross); _allocate(vault,plan,key.currency1,added1,swapGross);
+        _allocate(vault,work,key.currency0,added0); _allocate(vault,work,key.currency1,added1);
         if (plan.action != E.MINT) {
             T.Checkpoint memory afterPoint = _point(vault,id); _after(beforePoint,afterPoint,plan.authority.liquidityIncrease);
             vault.executionCheckpoint(id,afterPoint);
@@ -153,26 +172,41 @@ contract DominoExecutionEngineV4 {
         private view returns (T.CompoundAmounts memory value) {
         T.FeeBalance memory balance = vault.feeBalance(budget.sourceId,budget.currency);
         value.originalBefore = balance.original; value.chargedBefore = balance.charged;
-        return routingHelper.compoundAmounts(value,wanted,budget.maxOriginal,budget.maxCharged,vault.policy().serviceFeeBps,priorGross);
+        return routingHelper.compoundAmounts(value,wanted,budget.maxOriginal,budget.maxCharged,vault.policy().serviceFeeBps,priorGross,budget.minOriginal);
     }
 
-    function _allocate(IVaultExecutionV4 vault, E.Plan memory plan, address currency, uint128 remaining, uint128 swapGross) private {
-        for (uint256 i; i < plan.budgets.length && remaining != 0; ++i) {
-            E.FeeBudget memory b = plan.budgets[i]; if (b.currency != currency) continue;
-            T.FeeBalance memory available = vault.feeBalance(b.sourceId,currency);
-            uint128 gross = available.original < b.maxOriginal ? available.original : b.maxOriginal;
-            uint128 charged = available.charged < b.maxCharged ? available.charged : b.maxCharged;
-            uint128 priorGross = b.sourceId == plan.swap.sourceId && currency == plan.swap.currencyIn ? swapGross : 0;
-            uint256 fee = (uint256(priorGross)+gross)*vault.policy().serviceFeeBps/10000
-                - uint256(priorGross)*vault.policy().serviceFeeBps/10000;
-            uint256 net = uint256(gross) - fee + charged;
-            uint128 wanted = net < remaining ? uint128(net) : remaining;
-            if (wanted == 0) continue;
-            T.CompoundAmounts memory value = _amounts(vault,b,wanted,priorGross);
-            vault.executionApply(b.sourceId,currency,value,vault.positionManager(),false);
-            emit BudgetApplied(address(vault),plan.authority.intentId,b.sourceId,currency,_destination,value);
-            _debit(plan.budgets[i],value.grossOriginalConsumed,value.chargedConsumed);
-            remaining -= wanted;
+    function _allocate(IVaultExecutionV4 vault, Work memory work, address currency, uint128 remaining) private {
+        E.Plan memory plan = work.plan;
+        uint16 feeBps = vault.policy().serviceFeeBps;
+        // Exact pre-existing allocations precede every optional collection cap.
+        // Otherwise an early cap could starve a later source's required debit.
+        for (uint256 pass; pass < 2; ++pass) {
+            for (uint256 i; i < plan.budgets.length; ++i) {
+                E.FeeBudget memory actualBudget = plan.budgets[i];
+                if (actualBudget.currency != currency) continue;
+                E.FeeBudget memory b = E.FeeBudget(actualBudget.sourceId,currency,actualBudget.maxOriginal,
+                    actualBudget.maxCharged,0,0);
+                if (pass == 0) {
+                    b.maxOriginal = actualBudget.minOriginal; b.minOriginal = actualBudget.minOriginal;
+                    b.maxCharged = actualBudget.minCharged;
+                    if (b.maxOriginal == 0 && b.maxCharged == 0) continue;
+                } else if (remaining == 0) continue;
+                T.FeeBalance memory available = vault.feeBalance(b.sourceId,currency);
+                uint128 gross = available.original < b.maxOriginal ? available.original : b.maxOriginal;
+                uint128 charged = available.charged < b.maxCharged ? available.charged : b.maxCharged;
+                uint128 priorGross = work.originalSpent[i];
+                uint256 fee = (uint256(priorGross)+gross)*feeBps/10000 - uint256(priorGross)*feeBps/10000;
+                uint256 net = uint256(gross) - fee + charged;
+                if (pass == 0 && net > remaining) revert InvalidAmount();
+                uint128 wanted = net < remaining ? uint128(net) : remaining;
+                if (pass != 0 && wanted == 0) continue;
+                T.CompoundAmounts memory value = _amounts(vault,b,wanted,priorGross);
+                vault.executionApply(b.sourceId,currency,value,vault.positionManager(),false);
+                emit BudgetApplied(address(vault),plan.authority.intentId,b.sourceId,currency,_destination,value);
+                _debit(actualBudget,value.grossOriginalConsumed,value.chargedConsumed);
+                work.originalSpent[i] += value.grossOriginalConsumed;
+                remaining -= wanted;
+            }
         }
         if (remaining != 0) revert InvalidAmount();
     }
@@ -194,7 +228,7 @@ contract DominoExecutionEngineV4 {
         for (uint256 i; i < 2; ++i) {
             E.FeeBudget memory budget = plan.budgets[i];
             bool zero = budget.currency == key.currency0;
-            if (budget.sourceId != (zero ? member.source0 : member.source1) || budget.maxCharged != 0) revert InvalidRoute();
+            if (budget.sourceId != (zero ? member.source0 : member.source1) || budget.maxCharged != 0 || budget.minOriginal != 0) revert InvalidRoute();
             T.FeeBalance memory balance = vault.feeBalance(budget.sourceId,budget.currency);
             T.CompoundAmounts memory value; value.originalBefore = balance.original; value.chargedBefore = balance.charged;
             value.realized = zero ? realized0 : realized1;
@@ -209,7 +243,8 @@ contract DominoExecutionEngineV4 {
         emit FeesRealized(address(vault),plan.authority.intentId,id,beforePoint.commitment,afterPoint.commitment,realized0,realized1);
     }
 
-    function _swap(IVaultExecutionV4 vault, E.Plan memory plan, T.PoolKey memory key) private returns(uint128) {
+    function _swap(IVaultExecutionV4 vault, Work memory work, T.PoolKey memory key) private {
+        E.Plan memory plan = work.plan;
         E.SwapPlan memory route = plan.swap;
         bool zeroForOne = route.currencyIn == key.currency0;
         if (!zeroForOne && route.currencyIn != key.currency1) revert InvalidRoute();
@@ -218,9 +253,10 @@ contract DominoExecutionEngineV4 {
         for (uint256 i; i < plan.budgets.length; ++i) {
             if (plan.budgets[i].sourceId == route.sourceId && plan.budgets[i].currency == route.currencyIn) budgetIndex = i;
         }
-        if (budgetIndex == type(uint256).max || route.maxOriginal > plan.budgets[budgetIndex].maxOriginal
-            || route.maxCharged > plan.budgets[budgetIndex].maxCharged) revert InvalidAmount();
-        E.FeeBudget memory budget = E.FeeBudget(route.sourceId,route.currencyIn,route.maxOriginal,route.maxCharged,0,0);
+        if (budgetIndex == type(uint256).max) revert InvalidAmount();
+        uint128 originalCap = route.maxOriginal < plan.budgets[budgetIndex].maxOriginal ? route.maxOriginal : plan.budgets[budgetIndex].maxOriginal;
+        uint128 chargedCap = route.maxCharged < plan.budgets[budgetIndex].maxCharged ? route.maxCharged : plan.budgets[budgetIndex].maxCharged;
+        E.FeeBudget memory budget = E.FeeBudget(route.sourceId,route.currencyIn,originalCap,chargedCap,0,0);
         T.CompoundAmounts memory value = _amounts(vault,budget,route.amountIn,0);
         T.ExecutionLimits memory limits = vault.executionLimits();
         uint160 anchorPrice = priceGuard.referencePrice(route.priceObservationId,vault.poolId(),plan.authority.observedAtBlock,
@@ -253,7 +289,7 @@ contract DominoExecutionEngineV4 {
         if (!outputBudget) revert InvalidAmount();
         emit FeesConverted(address(vault),plan.authority.intentId,route.sourceId,route.currencyIn,outputCurrency,
             route.amountIn,amountOut,value,outputBefore,vault.feeBalance(route.sourceId,outputCurrency).charged);
-        return value.grossOriginalConsumed;
+        work.originalSpent[budgetIndex] += value.grossOriginalConsumed;
     }
 
     function _debit(E.FeeBudget memory budget, uint128 original, uint128 charged) private pure {

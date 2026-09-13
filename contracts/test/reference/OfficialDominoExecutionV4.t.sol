@@ -3,6 +3,7 @@ pragma solidity 0.8.26;
 
 import {OfficialFixtureToken, OfficialV4Controller, OfficialV4SwapDriver, PoolManager,
     PositionManager, IPoolManager, PoolKey, Currency} from "./OfficialV4Fixture.sol";
+import {SqrtPriceMath} from "@uniswap/v4-core/src/libraries/SqrtPriceMath.sol";
 import {PoolId} from "@uniswap/v4-core/src/types/PoolId.sol";
 import {IHooks} from "@uniswap/v4-core/src/interfaces/IHooks.sol";
 import {TransientStateLibrary} from "@uniswap/v4-core/src/libraries/TransientStateLibrary.sol";
@@ -126,6 +127,20 @@ contract OfficialDominoExecutionV4Test {
             _balance(Currency.unwrap(key.currency0),RECIPIENT),_balance(Currency.unwrap(key.currency1),RECIPIENT),
             vault.accountedCurrency(Currency.unwrap(key.currency0)),vault.accountedCurrency(Currency.unwrap(key.currency1))));
     }
+    function _owed(uint256 id,uint128 liquidity) private view returns(uint128 a,uint128 b) {
+        T.Position memory m=vault.position(id);(uint160 price,,,)=state.getSlot0(PoolId.wrap(vault.poolId()));
+        uint160 lower=TickMath.getSqrtPriceAtTick(m.tickLower);uint160 upper=TickMath.getSqrtPriceAtTick(m.tickUpper);
+        if(price<upper)a=uint128(SqrtPriceMath.getAmount0Delta(price<lower?lower:price,upper,liquidity,true));
+        if(price>lower)b=uint128(SqrtPriceMath.getAmount1Delta(lower,price>upper?upper:price,liquidity,true));
+    }
+    function _oldAllocations(E.Plan memory p) private view {
+        (uint128 a,uint128 b)=_owed(p.destinationTokenId,p.authority.liquidityIncrease);
+        for(uint256 i;i<p.budgets.length;++i) {
+            E.FeeBudget memory budget=p.budgets[i];uint128 net=budget.currency==Currency.unwrap(key.currency0)?a:b;
+            budget.minOriginal=uint128(net==0?0:(uint256(net)-1)*10000/9800+1);
+            budget.maxOriginal=budget.minOriginal;
+        }
+    }
     function _backed() private view {
         require(manager.getNonzeroDeltaCount()==0,"no transient debt");
         require(_balance(Currency.unwrap(key.currency0),address(vault))>=vault.accountedCurrency(Currency.unwrap(key.currency0)),"backed0");
@@ -153,7 +168,7 @@ contract OfficialDominoExecutionV4Test {
     function testGeneralUsesWaitingFeesWithoutNewCollectionAndPreservesDonation() external {
         _setup(false,false);_swaps();_fund(Currency.unwrap(key.currency0),address(vault),123);
         uint256 owner0=_balance(Currency.unwrap(key.currency0),address(this));
-        vault.execute(_plan(0,1e12)); E.Plan memory p=_plan(0,1e12); p.collect=new E.PositionRef[](0);vault.execute(p);
+        vault.execute(_plan(0,1e12)); E.Plan memory p=_plan(0,1e12); p.collect=new E.PositionRef[](0);_oldAllocations(p);vault.execute(p);
         require(positions.getPositionLiquidity(tokenId)==OPENING+2e12,"waiting reserve reinvested");
         require(_balance(Currency.unwrap(key.currency0),address(this))==owner0,"no wallet pull");
         require(_balance(Currency.unwrap(key.currency0),address(vault))-vault.accountedCurrency(Currency.unwrap(key.currency0))==123,"donation not fees");_backed();
@@ -174,7 +189,7 @@ contract OfficialDominoExecutionV4Test {
     }
     function testOfficialInverseSuccessorMint() external { _mint(true); }
     function testFundExistingSuccessorUsingEligibleParentFees() external {
-        uint256 child=_mint(false); E.Plan memory p=_plan(2,1e10);p.destinationTokenId=child;vault.execute(p);
+        uint256 child=_mint(false); _swaps(); E.Plan memory p=_plan(2,1e10);p.destinationTokenId=child;vault.execute(p);
         require(positions.getPositionLiquidity(child)==2e10,"funded actual child");_backed();
     }
     function testSuccessorReorgReplayReturnsOneCanonicalChild() external {
@@ -209,6 +224,13 @@ contract OfficialDominoExecutionV4Test {
         E.Plan memory next=_plan(0,1e9);E.FeeBudget[] memory b=new E.FeeBudget[](2);
         b[0]=E.FeeBudget(member.source0,Currency.unwrap(key.currency0),type(uint128).max,0,0,0);
         b[1]=E.FeeBudget(member.source0,Currency.unwrap(key.currency1),0,type(uint128).max,0,0);_sort(b);next.budgets=b;
+        (uint128 owed0,uint128 owed1)=_owed(tokenId,1e9);
+        for(uint256 i;i<next.budgets.length;i++) {
+            if(next.budgets[i].currency==Currency.unwrap(key.currency0)) {
+                next.budgets[i].minOriginal=uint128((uint256(owed0)-1)*10000/9800+1);
+                next.budgets[i].maxOriginal=next.budgets[i].minOriginal;
+            } else { next.budgets[i].minCharged=owed1;next.budgets[i].maxCharged=owed1; }
+        }
         uint256 recipient1=_balance(Currency.unwrap(key.currency1),RECIPIENT);vault.execute(next);
         require(_balance(Currency.unwrap(key.currency1),RECIPIENT)==recipient1,"no second charge on converted output");_backed();
     }
@@ -229,4 +251,47 @@ contract OfficialDominoExecutionV4Test {
         (bool ok,)=address(engine).call(abi.encodeCall(engine.unlockCallback,(bytes("forged"))));require(!ok,"no arbitrary callback");
         (ok,)=address(vault).call(abi.encodeCall(vault.executionConvert,(keccak256("fake"),Currency.unwrap(key.currency0),uint128(1))));require(!ok,"no arbitrary fee credit");
     }
+    function testRootTransferAndUnexpectedNftRecoveryRemainOwnerOnly() external {
+        _setup(false,false);
+        OfficialV4Controller extra=new OfficialV4Controller(manager,positions);
+        _fund(Currency.unwrap(key.currency0),address(extra),1e18);
+        _fund(Currency.unwrap(key.currency1),address(extra),1e18);
+        extra.seed(key,1e12); uint256 id=extra.tokenId();
+        positions.transferFrom(address(this),address(vault),id);
+        vm.prank(address(0xBAD));(bool ok,)=address(vault).call(abi.encodeCall(vault.recoverUnmanagedPosition,(id)));
+        require(!ok,"foreign recovery denied");
+        vm.etch(address(reader),hex"00");vault.recoverUnmanagedPosition(id);
+        require(positions.ownerOf(id)==address(this),"unmanaged owner exit independent helper");
+        positions.transferFrom(address(this),address(0xBEEF),tokenId);
+        require(!vault.rootPermissionValid() && positions.ownerOf(tokenId)==address(0xBEEF),"root wallet transfer independent protocol");
+    }
+    function testCapIncludesRootAndUnconsumedFloorReverts() external {
+        _setup(false,false);_swaps();E.Plan memory p=_plan(0,1e10);
+        p.budgets[0].minOriginal=type(uint128).max;_reject(p);
+        IDominoVaultDraft.Policy memory policy=vault.policy();policy.maxPositions=1;policy.version++;
+        vault.setPolicy(policy);p=_plan(3,1e10);p.destinationTokenId=0;p.tickLower=-420;p.tickUpper=4680;_reject(p);
+        require(vault.activePositions()==1,"root occupies cap");
+    }
+    function testCumulativeFloorAndPriceImpactCeilingAreExact() external {
+        routing=new DominoRoutingHelperV4();T.CompoundAmounts memory input;input.originalBefore=100;
+        T.CompoundAmounts memory first=routing.compoundAmounts(input,25,100,0,200,0,0);
+        require(first.grossOriginalConsumed==25 && first.serviceFee==0,"first half floor");
+        input.originalBefore=75;
+        T.CompoundAmounts memory second=routing.compoundAmounts(input,24,75,0,200,25,25);
+        require(second.grossOriginalConsumed==25 && second.serviceFee==1,"aggregate 50 charges one");
+        uint160 referencePrice=uint160(1<<96);
+        // Strict upper bound: a fractional basis point over a zero impact
+        // tolerance is not admitted by a floor-to-integer comparison.
+        (bool ok,)=address(routing).call(abi.encodeCall(routing.checkSwapPrices,(referencePrice,referencePrice+1,referencePrice,uint16(0))));
+        require(!ok,"no sub-basis-point overrun");
+    }
+
+    function testCollectionCapCannotConsumeOldUnallocatedFees() external {
+        _setup(false,false);_swaps();vault.execute(_plan(0,1e12));
+        // Same source has plenty of waiting fees, but no new fees were earned.
+        // A future collection cap is not consent to debit that old balance.
+        E.Plan memory p=_plan(0,1e12);_reject(p);
+        _oldAllocations(p);vault.execute(p);_backed();
+    }
+
 }
