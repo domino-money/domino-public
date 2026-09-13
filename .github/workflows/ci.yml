@@ -99,6 +99,8 @@ jobs:
           cache-dependency-path: backend/requirements-api.lock
       - run: npm ci --no-audit --no-fund
       - run: python -m pip install -r backend/requirements-api.lock
+      - name: Build and qualify the local compound receipt fixture
+        run: node scripts/test-contracts.mjs --match-path test/reference/OfficialDominoCompound.t.sol
       - run: python scripts/export-read-contract.py --check
       - run: python scripts/export-read-v2-contract.py --check
       - run: python scripts/export-read-openapi.py --check

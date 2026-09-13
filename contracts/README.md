@@ -1,4 +1,6 @@
-# Public custody candidate and draft execution boundary
+# Public vault and general-compound candidates
+
+The [version-3 general compound candidate](../docs/PUBLIC_VAULT_V3_COMPOUND.md) adds a typed same-NFT financial path and a separately pinned, non-custodial engine. Local tests use official pinned Uniswap core/PositionManager source as well as adversarial custody fixtures. This candidate is undeployed and requires independent architecture/accounting review; no signer or public financial capability is enabled. The paragraphs below distinguish the earlier E2 custody surface and the old draft interface from this new ABI.
 
 [`DominoVault.sol`](src/DominoVault.sol) and [`DominoVaultFactory.sol`](src/DominoVaultFactory.sol) implement the E2 **custody and recovery candidate**: atomically owner-bound immutable clones, root subscription/rearm, owner-authorized child custody, operator revocation, policy guards and actual token/NFT exits. There is no compound/mint/swap/signing method or public deployment. See [E2 semantics and direct recovery](../docs/PUBLIC_VAULT_E2.md), [original implementation evidence](../reports/PUBLIC_VAULT_E2_IMPLEMENTATION.md) and [#101 review follow-up](../reports/PUBLIC_VAULT_E2_REVIEW_FOLLOWUP.md). Protected fee-credit sinks require E4/E7 provenance; only test harnesses expose artificial credits. The [version-2 architecture candidate](../docs/PUBLIC_VAULT_V2_ARCHITECTURE.md) extracts read/identity work into a fixed stateless helper and uses pinned via-IR compilation. It recovers space from the prior 24,113-byte runtime before E4, while owner exits remain local. This is a new immutable version for review, not an upgrade or execution activation.
 
@@ -33,7 +35,7 @@ The interval and position type ceilings are representational bounds, **not appro
 | Call | Required caller |
 | --- | --- |
 | Read getters | Anyone |
-| `compoundSelf` (draft only, not implemented by E2) | Owner or currently registered operator, while unpaused and subject to all execution checks |
+| `compoundSelf` (implemented by the separate V3 candidate) | Owner or currently registered operator, while unpaused and subject to all execution checks |
 | `setPolicy` | Owner only |
 | `pause` | Owner or currently registered operator for emergency stopping |
 | `resume` | Owner only |

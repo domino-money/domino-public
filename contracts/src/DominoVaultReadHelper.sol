@@ -3,7 +3,7 @@ pragma solidity 0.8.26;
 
 import {DominoVaultTypes as T, IPositionManagerE2, IStateViewE2} from "./DominoVaultTypes.sol";
 
-/// @notice Immutable read/identity utility for the version-2 custody vault.
+/// @notice Immutable read, identity, encoding and integer utility for the vault.
 /// @dev The vault invokes this contract through typed STATICCALLs after checking
 /// its pinned runtime hash. No mutable storage, custody, callback to the vault,
 /// approval or execution facility exists here. Public results are observations
@@ -11,6 +11,8 @@ import {DominoVaultTypes as T, IPositionManagerE2, IStateViewE2} from "./DominoV
 contract DominoVaultReadHelper {
     error InvalidIdentity();
     error InvalidPosition();
+    error InvalidExecution();
+    error InvalidAmount();
 
     address public immutable positionManager;
     address public immutable stateView;
@@ -69,8 +71,47 @@ contract DominoVaultReadHelper {
         bytes32 baseline;
     }
 
+    error PermissionUnavailable();
+
+    /// @dev No vault backcalls; arguments come from the caller's own state.
+    function rootCustody(uint256 tokenId, address owner, address vault) external view returns (address) {
+        IPositionManagerE2 manager = IPositionManagerE2(positionManager);
+        if (manager.ownerOf(tokenId) != owner || manager.getApproved(tokenId) != vault) revert PermissionUnavailable();
+        return manager.subscriber(tokenId);
+    }
+
+    /// @dev Encodes only fixed no-swap PM actions; it never executes them.
+    function compoundCall(uint256 tokenId, address currency0, address currency1, address vault, bool increase, uint128 amount)
+        external pure returns (bytes memory)
+    {
+        bytes[] memory params;
+        bytes memory actions;
+        if (increase) {
+            params = new bytes[](1);
+            params[0] = abi.encode(tokenId, uint256(amount), type(uint128).max, type(uint128).max, bytes(""));
+            actions = hex"00";
+        } else {
+            params = new bytes[](2);
+            params[0] = abi.encode(tokenId, uint256(0), uint128(0), uint128(0), bytes(""));
+            params[1] = abi.encode(currency0, currency1, vault);
+            actions = hex"0111";
+        }
+        return abi.encodeCall(IPositionManagerE2.modifyLiquiditiesWithoutUnlock, (actions, params));
+    }
+
+    function readInitialPosition(bytes32 poolId, uint256 tokenId, address base, address quote)
+        external view returns (T.PoolKey memory key, int24 lo, int24 hi)
+    {
+        (key, lo, hi) = readPosition(poolId, tokenId);
+        if (key.currency0 >= key.currency1 || key.fee > 1_000_000 || key.tickSpacing <= 0 || key.tickSpacing > 32767
+            || key.hooks != address(0) || key.currency1.code.length == 0
+            || (key.currency0 != address(0) && key.currency0.code.length == 0)
+            || base == quote || !((base == key.currency0 && quote == key.currency1)
+                || (base == key.currency1 && quote == key.currency0))) revert InvalidIdentity();
+    }
+
     function readPosition(bytes32 poolId, uint256 tokenId)
-        external
+        public
         view
         returns (T.PoolKey memory key, int24 lo, int24 hi)
     {
@@ -115,6 +156,67 @@ contract DominoVaultReadHelper {
                 point.observedAtBlock
             )
         );
+    }
+
+    function validateCompoundPrice(bytes32 poolId, T.CompoundPlan calldata plan, uint32 maxAge)
+        external view
+    {
+        // The timestamp is an operator commitment, independently matched to the
+        // canonical header by admission. Solidity can prove the recent hash,
+        // but cannot read that historical header's timestamp itself.
+        if (plan.observedAtBlock >= block.number || plan.observedBlockHash == bytes32(0)
+            || blockhash(plan.observedAtBlock) != plan.observedBlockHash
+            || plan.observedAtTimestamp > block.timestamp
+            || block.timestamp - plan.observedAtTimestamp > maxAge
+            || plan.deadline < block.timestamp || plan.deadline < plan.observedAtTimestamp
+            || plan.deadline - plan.observedAtTimestamp > maxAge
+            || plan.minSqrtPriceX96 == 0 || plan.minSqrtPriceX96 > plan.maxSqrtPriceX96) {
+            revert InvalidExecution();
+        }
+        (uint160 price,,,) = IStateViewE2(stateView).getSlot0(poolId);
+        if (price < plan.minSqrtPriceX96 || price > plan.maxSqrtPriceX96) revert InvalidExecution();
+    }
+
+    function accrued(T.Checkpoint calldata point) external pure returns (uint128 amount0, uint128 amount1) {
+        uint256 growth0;
+        uint256 growth1;
+        unchecked {
+            growth0 = point.feeGrowthInside0X128 - point.feeGrowthInside0LastX128;
+            growth1 = point.feeGrowthInside1X128 - point.feeGrowthInside1LastX128;
+        }
+        amount0 = _accrued(growth0, point.liquidity);
+        amount1 = _accrued(growth1, point.liquidity);
+    }
+
+    function _accrued(uint256 growth, uint128 liquidity) private pure returns (uint128) {
+        // Exact floor(growth * liquidity / 2^128), without an overflowing
+        // intermediate product. The manager's BalanceDelta is signed int128.
+        uint256 value = (growth >> 128) * liquidity + ((uint256(uint128(growth)) * liquidity) >> 128);
+        if (value > uint128(type(int128).max)) revert InvalidAmount();
+        return uint128(value);
+    }
+
+    function compoundAmounts(T.CompoundAmounts memory value, uint128 added,
+        uint128 maxOriginal, uint128 maxCharged, uint16 feeBps)
+        external pure returns (T.CompoundAmounts memory)
+    {
+        if (feeBps > 200) revert InvalidAmount();
+        uint256 available = uint256(value.originalBefore) + value.realized;
+        if (available + value.chargedBefore > type(uint128).max) revert InvalidAmount();
+        value.liquidityAdded = added;
+        uint128 charged = added < value.chargedBefore ? added : value.chargedBefore;
+        if (charged > maxCharged) charged = maxCharged;
+        value.chargedConsumed = charged;
+        uint128 net = added - charged;
+        // Minimal gross whose owner-favouring floor cut leaves exactly net.
+        // ceil(net / (1-fee)) would overcharge at integer boundaries.
+        uint256 gross = net == 0 ? 0 : (uint256(net - 1) * 10000) / (10000 - feeBps) + 1;
+        if (gross > available || gross > maxOriginal) revert InvalidAmount();
+        value.grossOriginalConsumed = uint128(gross);
+        value.serviceFee = uint128(gross * feeBps / 10000);
+        value.originalAfter = uint128(available - gross);
+        value.chargedAfter = value.chargedBefore - charged;
+        return value;
     }
 
     /// @dev E1 word order/type hashes are unchanged. Under the vault's STATICCALL

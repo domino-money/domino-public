@@ -9,7 +9,7 @@ import { CONTRACTS, LIMITS, PROFILE, checkContractSizes, formatReport, inspectAr
 
 const command = fileURLToPath(new URL('./check-contract-size.mjs', import.meta.url));
 const bytes = (length) => `0x${'01'.repeat(length)}`;
-function artifact(name = 'DominoVault', { runtime = 20_000, creation = 30_000 } = {}) {
+function artifact(name = 'DominoVault', { runtime = 10_000, creation = 30_000 } = {}) {
   const contract = CONTRACTS.find((value) => value.name === name);
   const metadata = { compiler: { version: PROFILE.compiler }, settings: { compilationTarget: { [`src/${name}.sol`]: name },
     evmVersion: 'cancun', optimizer: { enabled: true, runs: 200 }, viaIR: true, metadata: { bytecodeHash: 'none' } } };
@@ -45,10 +45,10 @@ test('EIP-170 exact runtime limit passes for non-reserved production contracts; 
 });
 
 test('vault architecture reserve has its own exact boundary below the chain limit', () => {
-  const exact = inspectArtifact('DominoVault', artifact('DominoVault', { runtime: 20_576 }));
+  const exact = inspectArtifact('DominoVault', artifact('DominoVault', { runtime: LIMITS.runtimeBytes - LIMITS.vaultReserveBytes }));
   assert.equal(exact.ok, true);
-  assert.equal(exact.runtimeHeadroomBytes, 4_000);
-  const over = inspectArtifact('DominoVault', artifact('DominoVault', { runtime: 20_577 }));
+  assert.equal(exact.runtimeHeadroomBytes, LIMITS.vaultReserveBytes);
+  const over = inspectArtifact('DominoVault', artifact('DominoVault', { runtime: LIMITS.runtimeBytes - LIMITS.vaultReserveBytes + 1 }));
   assert.deepEqual(over.issues, ['vault_runtime_reserve_exceeded']);
   assert.match(formatReport({ contracts: [over] }), /explicit architecture review/);
 });
@@ -143,13 +143,13 @@ test('constructor ABI changes cannot silently undercount dynamic or added deploy
 
 test('missing or malformed artifacts fail closed and still report the other contracts', (t) => {
   const output = directory(t);
-  assert.equal(checkContractSizes(output).contracts.filter((value) => value.issues.includes('missing_artifact')).length, 3);
+  assert.equal(checkContractSizes(output).contracts.filter((value) => value.issues.includes('missing_artifact')).length, CONTRACTS.length);
   populate(output);
   writeFileSync(path.join(output, 'DominoVault.sol/DominoVault.json'), '{');
   const report = checkContractSizes(output);
   assert.equal(report.ok, false);
   assert.deepEqual(report.contracts[0].issues, ['unreadable_artifact']);
-  assert.equal(report.contracts.filter((value) => value.ok).length, 2);
+  assert.equal(report.contracts.filter((value) => value.ok).length, CONTRACTS.length - 1);
 });
 
 test('CLI works with spaced paths, emits machine-readable results and propagates actual failure', (t) => {
@@ -198,4 +198,19 @@ test('helper ABI admits only nonpayable construction, view/pure functions and cu
   const vault = artifact('DominoVault');
   vault.abi.push({ type: 'function', name: 'pause', stateMutability: 'nonpayable', inputs: [], outputs: [] });
   assert.equal(inspectArtifact('DominoVault', vault).ok, true);
+});
+
+
+test('compound engine has its own runtime reserve and measured constructor arguments', () => {
+  const exact = inspectArtifact('DominoCompoundEngine', artifact('DominoCompoundEngine', {
+    runtime: LIMITS.runtimeBytes - LIMITS.engineReserveBytes,
+  }));
+  assert.equal(exact.ok, true);
+  assert.equal(exact.constructorArgumentsBytes, 128);
+  assert.equal(exact.requiredRuntimeReserveBytes, 8_000);
+  const over = inspectArtifact('DominoCompoundEngine', artifact('DominoCompoundEngine', {
+    runtime: LIMITS.runtimeBytes - LIMITS.engineReserveBytes + 1,
+  }));
+  assert.deepEqual(over.issues, ['engine_runtime_reserve_exceeded']);
+  assert.match(formatReport({ contracts: [over] }), /explicit architecture review/);
 });

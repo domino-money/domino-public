@@ -71,7 +71,7 @@ contract DominoVaultArchitectureTest {
     }
 
     function _assertMetadata(DominoVault target, address helper, bytes32 helperHash) private view {
-        require(target.implementationVersion() == 2, "wrong immutable vault version");
+        require(target.implementationVersion() == 3, "wrong immutable vault version");
         require(address(target.readHelper()) == helper && target.readHelperCodeHash() == helperHash,
             "helper metadata changed");
         require(helper != address(0) && helper.code.length != 0 && helper.codehash == helperHash,
@@ -118,9 +118,9 @@ contract DominoVaultArchitectureTest {
             key.currency0, key.currency1, RECIPIENT));
     }
 
-    function testVersionTwoUsesExistingIdentityDomainWithNewVersionValue() public view {
-        require(vault.sequenceIdentityHash() == _sequenceDigest(2), "version 2 E1 identity mismatch");
-        require(vault.sequenceIdentityHash() != _sequenceDigest(1), "version 1 identity replayed");
+    function testVersionThreeUsesExistingIdentityDomainWithNewVersionValue() public view {
+        require(vault.sequenceIdentityHash() == _sequenceDigest(3), "version 3 E1 identity mismatch");
+        require(vault.sequenceIdentityHash() != _sequenceDigest(2), "version 2 identity replayed");
     }
 
     function testHelperRejectsMutationAndCustodySelectorsWithoutChangingVault() public {

@@ -18,6 +18,13 @@ derived-record/JSON validation and offline plan/effect reconciliation for future
 executor work. Its observations and measurements remain caller-supplied; no
 public execution route, signer, live receipt collector or transaction is added.
 
+The [V3 compound receipt verifier](../docs/PUBLIC_VAULT_V3_COMPOUND.md#backend-receipt-boundary)
+now acquires a known transaction, its receipt and pinned canonical state. It
+reconstructs original/charged fee use, actual service cuts and added liquidity;
+optional E1 reconciliation still requires exact immutable allocations. This is
+an internal read-only module, with no automatic polling, persistence or route.
+Realization remains unqualified as earning time, USD income or a complete APR.
+
 The local [APR metrics candidate](../docs/APR_METRICS.md) adds exact pool-estimate
 and managed fee-performance calculators plus `preview_metrics.py`. Pool mode
 can use the existing on-demand reader; managed mode consumes explicit offline
@@ -413,9 +420,17 @@ The worker advances one existing activity chunk in bounded batches, up to 50 bat
 Run the complete backend suite including PostgreSQL and the independent original-v4 EVM reference:
 
 ```sh
+node scripts/test-contracts.mjs --match-path test/reference/OfficialDominoCompound.t.sol
 backend/.venv/bin/python backend/dev_postgres.py prepare-tests
 DOMINO_TEST_POSTGRES=1 DOMINO_TEST_EVM=1 backend/.venv/bin/python -m unittest discover -s backend/tests -q
+backend/.venv/bin/python backend/dev_postgres.py stop
 ```
+
+The contract command also builds the pinned official fixtures and V3 artifacts
+needed by the new compound receipt tests. Those tests deploy on a separate local
+chain 4663 and verify actual ERC20/native receipts; this local chain ID is not a
+Robinhood fork or mainnet qualification. Backend CI performs the same build in
+its own checkout and cannot depend on artifacts from the separate Contracts job.
 
 The EVM test uses the existing pinned local compiler and Anvil binary, a temporary loopback port and chain 31337, with no fork. It compiles a non-production harness, checks 1,024 swap steps, 128 tick roundtrips, four trading-fee Pool sequences and the additional position sequence described below, then stops Anvil. Recorded vectors and upstream hashes are also checked without EVM access. API 0.6.0 passes 161 tests, including 49 PostgreSQL tests and three EVM test methods. No dependency was added to the runtime environment. Supply `--require-fees` to `qualify_activity.py` to require reconciled values during HTTP qualification.
 

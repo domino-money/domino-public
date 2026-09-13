@@ -4,12 +4,13 @@ import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-export const LIMITS = Object.freeze({ runtimeBytes: 24_576, initcodeBytes: 49_152, vaultReserveBytes: 4_000 });
+export const LIMITS = Object.freeze({ runtimeBytes: 24_576, initcodeBytes: 49_152, vaultReserveBytes: 512, engineReserveBytes: 8_000 });
 export const PROFILE = Object.freeze({ compiler: '0.8.26+commit.8a97fa7a', evmVersion: 'cancun', optimizerRuns: 200, viaIR: true, bytecodeHash: 'none' });
 export const CONTRACTS = Object.freeze([
   Object.freeze({ name: 'DominoVault', constructorAddresses: 5, runtimeReserveBytes: LIMITS.vaultReserveBytes }),
   Object.freeze({ name: 'DominoVaultFactory', constructorAddresses: 4, runtimeReserveBytes: 0 }),
   Object.freeze({ name: 'DominoVaultReadHelper', constructorAddresses: 2, runtimeReserveBytes: 0 }),
+  Object.freeze({ name: 'DominoCompoundEngine', constructorAddresses: 4, runtimeReserveBytes: LIMITS.engineReserveBytes }),
 ]);
 
 const defaultOut = fileURLToPath(new URL('../contracts/out/', import.meta.url));
@@ -94,7 +95,7 @@ function constructorBytes(abi, contract) {
 
 export function inspectArtifact(name, artifact) {
   const contract = CONTRACTS.find((item) => item.name === name);
-  if (!contract) reject('unknown_contract', 'only the three production architecture artifacts are admitted');
+  if (!contract) reject('unknown_contract', 'only the four production architecture artifacts are admitted');
   if (!object(artifact)) reject('malformed_artifact', 'expected a Forge artifact object');
   checkMetadata(artifact, contract);
   const runtimeBytes = bytecodeSize(artifact.deployedBytecode, 'deployedBytecode');
@@ -106,7 +107,7 @@ export function inspectArtifact(name, artifact) {
   const issues = [];
   if (runtimeHeadroomBytes < 0) issues.push('runtime_limit_exceeded');
   if (initcodeHeadroomBytes < 0) issues.push('initcode_limit_exceeded');
-  if (runtimeHeadroomBytes >= 0 && runtimeHeadroomBytes < contract.runtimeReserveBytes) issues.push('vault_runtime_reserve_exceeded');
+  if (runtimeHeadroomBytes >= 0 && runtimeHeadroomBytes < contract.runtimeReserveBytes) issues.push(contract.name === 'DominoCompoundEngine' ? 'engine_runtime_reserve_exceeded' : 'vault_runtime_reserve_exceeded');
   return { name, ok: issues.length === 0, runtimeBytes, runtimeHeadroomBytes,
     requiredRuntimeReserveBytes: contract.runtimeReserveBytes, creationBytes, constructorArgumentsBytes: argumentsBytes,
     initcodeBytes, initcodeHeadroomBytes, issues };
@@ -139,8 +140,8 @@ export function formatReport(report) {
     const outcome = contract.ok ? 'PASS' : `FAIL ${contract.issues.join(', ')}`;
     return `${contract.name}: ${outcome}; runtime ${contract.runtimeBytes}/${LIMITS.runtimeBytes} B, headroom ${contract.runtimeHeadroomBytes} B (required ${contract.requiredRuntimeReserveBytes} B); initcode ${contract.initcodeBytes}/${LIMITS.initcodeBytes} B including ${contract.constructorArgumentsBytes} B constructor arguments`;
   });
-  if (report.contracts.some((contract) => contract.issues.includes('vault_runtime_reserve_exceeded'))) {
-    rows.push(`Vault runtime reserve must remain at least ${LIMITS.vaultReserveBytes} bytes. Consuming it requires an explicit architecture review and gate change.`);
+  if (report.contracts.some((contract) => contract.issues.some((issue) => issue.endsWith('_runtime_reserve_exceeded')))) {
+    rows.push(`Runtime reserves must remain at least ${LIMITS.vaultReserveBytes} bytes for the vault and ${LIMITS.engineReserveBytes} for the engine. Consuming them requires an explicit architecture review and gate change.`);
   }
   return rows.join('\n');
 }

@@ -3,7 +3,7 @@ pragma solidity 0.8.26;
 
 import {IDominoVaultDraft} from "./IDominoVaultDraft.sol";
 
-/// @notice E2 custody-only types. No execution, swapping or financial admission.
+/// @notice Custody and typed V3 general-compound boundaries. No swaps.
 library DominoVaultTypes {
     struct PoolKey {
         address currency0;
@@ -69,6 +69,45 @@ library DominoVaultTypes {
         uint128 original;
         uint128 charged;
     }
+
+    /// @notice Same-position, no-swap authority. Amounts are raw currency units.
+    /// An intent identifier is bound to this exact encoding by the emitted plan
+    /// hash; it is not a caller-supplied proof of economic or USD qualification.
+    struct CompoundPlan {
+        bytes32 intentId;
+        uint256 tokenId;
+        bytes32 positionIdentity;
+        bytes32 checkpointId;
+        uint64 policyVersion;
+        uint64 limitsVersion;
+        uint64 stateNonce;
+        uint64 authorityGeneration;
+        uint64 observedAtBlock;
+        bytes32 observedBlockHash;
+        uint64 observedAtTimestamp;
+        uint64 deadline;
+        uint128 liquidityIncrease;
+        uint128 maxOriginal0;
+        uint128 maxOriginal1;
+        uint128 maxCharged0;
+        uint128 maxCharged1;
+        uint128 minAdded0;
+        uint128 minAdded1;
+        uint160 minSqrtPriceX96;
+        uint160 maxSqrtPriceX96;
+    }
+
+    struct CompoundAmounts {
+        uint128 originalBefore;
+        uint128 chargedBefore;
+        uint128 realized;
+        uint128 grossOriginalConsumed;
+        uint128 chargedConsumed;
+        uint128 serviceFee;
+        uint128 liquidityAdded;
+        uint128 originalAfter;
+        uint128 chargedAfter;
+    }
 }
 
 /// @dev Minimal locally authored ABI declarations, checked against official
@@ -84,6 +123,14 @@ interface IPositionManagerE2 {
     function unsubscribe(uint256 tokenId) external;
     function safeTransferFrom(address from, address to, uint256 tokenId) external;
     function transferFrom(address from, address to, uint256 tokenId) external;
+    function modifyLiquiditiesWithoutUnlock(bytes calldata actions, bytes[] calldata params) external payable;
+}
+
+interface IPoolManagerE4 {
+    function unlock(bytes calldata data) external returns (bytes memory);
+    function exttload(bytes32 slot) external view returns (bytes32);
+    function sync(address currency) external;
+    function settleFor(address recipient) external payable returns (uint256 paid);
 }
 
 interface IStateViewE2 {
@@ -96,6 +143,7 @@ interface IStateViewE2 {
         external
         view
         returns (uint256 inside0, uint256 inside1);
+    function getSlot0(bytes32 poolId) external view returns (uint160 sqrtPriceX96, int24 tick, uint24 protocolFee, uint24 lpFee);
 }
 
 interface IERC20E2 {

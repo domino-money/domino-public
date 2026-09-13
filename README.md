@@ -13,7 +13,7 @@ Private source repository for a wallet-friendly Uniswap v4 liquidity app on Robi
 - **Wallet sessions candidate:** disabled SIWE backend with private PostgreSQL state and a separate session BFF; plain EOAs only. [Session runbook](docs/WALLET_SESSIONS.md). No frontend hookup or deployed login.
 - **Direct-deposit candidate:** durable owner-bound operations, one wallet-signed step at a time and verified receipts/NFT identity for admitted existing v4 pools. [Deposit runbook](docs/DIRECT_DEPOSITS.md). Disabled; no server signing/broadcast or public activation.
 - **Reviewed-token support:** WETH/USDG proxy profiles, fresh identity/state checks and explicit receipt amount bases in the disabled deposit candidate. Four deposit paths observed on a local Robinhood fork with the reviewed profiles. [Evidence and remaining gates](reports/UPGRADEABLE_ADMISSION_IMPLEMENTATION.md). No public activation or mainnet transactions.
-- **Contracts:** [E2 owner-bound vault/factory](docs/PUBLIC_VAULT_E2.md), fee/policy libraries and actual synthetic-EVM custody/recovery tests. No public financial deployment, compounding or swaps; the draft execution interface remains unimplemented. E2 runtime size leaves little room for E4 and requires a reviewed evolution before execution.
+- **Contracts:** [V3 general compound candidate](docs/PUBLIC_VAULT_V3_COMPOUND.md), following the E2 owner-bound custody vault. A fixed non-custodial engine orchestrates measured fee collection, same-NFT reinvestment and exact settlement. Local official-v4 and adversarial tests support review; no public financial deployment, signing or swaps are enabled. Domino and optimized netting remain separate financial work.
 
 The personal live bot, operator wallet, credentials and operational database are outside this repository. See [implementation status](IMPLEMENTATION_STATUS.md), [alpha scope](ALPHA_SCOPE.md) and [security specification](SECURITY_SPEC.md).
 
@@ -53,6 +53,7 @@ backend/.venv/bin/python scripts/export-onboarding-contract.py --check
 The default Python suite explicitly skips PostgreSQL and native EVM cases. To run the full suite:
 
 ```sh
+node scripts/test-contracts.mjs --match-path test/reference/OfficialDominoCompound.t.sol
 backend/.venv/bin/python backend/dev_postgres.py prepare-tests
 DOMINO_TEST_POSTGRES=1 DOMINO_TEST_EVM=1 backend/.venv/bin/python -m unittest discover -s backend/tests -v
 backend/.venv/bin/python backend/dev_postgres.py stop

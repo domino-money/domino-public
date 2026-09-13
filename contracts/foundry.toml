@@ -10,5 +10,11 @@ optimizer_runs = 200
 via_ir = true
 bytecode_hash = "none"
 ffi = false
+remappings = [
+  "@uniswap/v4-core/=test/reference/official-v4/v4-core/",
+  "permit2/=test/reference/official-v4/permit2/",
+  "solmate/=test/reference/official-v4/solmate/",
+  "@openzeppelin/contracts/=test/reference/official-v4/openzeppelin-contracts/contracts/",
+]
 [profile.default.fuzz]
 runs = 512

@@ -1,15 +1,16 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.26;
 
-import {DominoVaultTypes as T, IPositionManagerE2, IERC20E2} from "./DominoVaultTypes.sol";
+import {DominoVaultTypes as T, IPositionManagerE2, IPoolManagerE4, IERC20E2} from "./DominoVaultTypes.sol";
 import {IDominoVaultDraft} from "./IDominoVaultDraft.sol";
 import {DominoVaultReadHelper} from "./DominoVaultReadHelper.sol";
 import {PolicyValidation} from "./PolicyValidation.sol";
+import {DominoCompoundEngine} from "./DominoCompoundEngine.sol";
 
-/// @notice E2 owner-bound custody and recovery candidate. No execution or swaps.
+/// @notice V3 owner-bound custody and general same-NFT compound candidate.
 /// @dev Fixed EIP-1167 implementation; no upgrade, arbitrary call or signer path.
-/// Internal fee sinks are NOT collection proof. E4 must supply measured earned
-/// fees atomically; this deployed E2 surface cannot invoke those sinks.
+/// The fixed engine proves protocol fee accrual and settlement atomically.
+/// No swaps, arbitrary operator calls or wallet-funded execution is exposed.
 contract DominoVault {
     error Unauthorized();
     error AlreadyInitialized();
@@ -31,17 +32,20 @@ contract DominoVault {
     error TransferFailed();
     error UnbackedReserve();
     error ReadHelperUnavailable();
+    error InvalidExecution();
 
     /// @dev Fixed read-only dependency. Owner recovery never calls it.
     DominoVaultReadHelper public immutable readHelper;
     bytes32 public immutable readHelperCodeHash;
+    DominoCompoundEngine public immutable compoundEngine;
+    bytes32 public immutable compoundEngineCodeHash;
     address public immutable factory;
     address public immutable implementation;
     address public immutable poolManager;
     address public immutable positionManager;
     address public immutable stateView;
     address public immutable serviceFeeRecipient;
-    uint64 public constant implementationVersion = 2;
+    uint64 public constant implementationVersion = 3;
     bytes32 public immutable poolManagerCodeHash;
     bytes32 public immutable positionManagerCodeHash;
     bytes32 public immutable stateViewCodeHash;
@@ -73,6 +77,19 @@ contract DominoVault {
     mapping(bytes32 => T.Source) private _sources;
     mapping(bytes32 => mapping(address => T.FeeBalance)) private _balances;
     mapping(address => uint256) public accountedCurrency;
+    mapping(bytes32 => bool) public consumedIntent;
+    uint64 public lastExecutionAt;
+    uint8 private _compoundStage;
+    uint256 private _compoundTokenId;
+    uint128 private _compoundLiquidityIncrease;
+    bool private _compoundActive;
+    bool private _expectedModify;
+    int256 private _expectedLiquidityChange;
+    int256 private _expectedFeesAccrued;
+
+    event CompoundSelfCompleted(bytes32 indexed intentId, uint256 indexed tokenId,
+        bytes32 planHash, uint128 liquidityBefore, uint128 liquidityAfter,
+        uint64 policyVersion, uint64 authorityGeneration, uint64 stateNonce);
 
     event Initialized(address indexed owner, bytes32 indexed sequenceId, bytes32 identity, uint256 rootTokenId);
     event PolicyChanged(uint64 indexed version, uint64 stateNonce);
@@ -127,6 +144,8 @@ contract DominoVault {
         ) revert InvalidIdentity();
         readHelper = new DominoVaultReadHelper(positionManager_, stateView_);
         readHelperCodeHash = address(readHelper).codehash;
+        compoundEngine = new DominoCompoundEngine(address(this), poolManager_, positionManager_, address(readHelper));
+        compoundEngineCodeHash = address(compoundEngine).codehash;
         factory = factory_;
         implementation = address(this);
         poolManager = poolManager_;
@@ -151,18 +170,10 @@ contract DominoVault {
         sequenceId = sequenceId_;
         rootTokenId = params.rootTokenId;
         poolId = params.expectedPoolId;
-        (T.PoolKey memory key, int24 lo, int24 hi) = _readPosition(rootTokenId);
-        if (
-            key.currency0 >= key.currency1 || key.fee > 1_000_000 || key.tickSpacing <= 0 || key.tickSpacing > 32767
-                || key.hooks != address(0) || key.currency1.code.length == 0
-                || (key.currency0 != address(0) && key.currency0.code.length == 0)
-        ) revert InvalidIdentity();
+        _requireReadHelper();
+        (T.PoolKey memory key, int24 lo, int24 hi) = readHelper.readInitialPosition(poolId, rootTokenId,
+            params.baseCurrency, params.quoteCurrency);
         _key = key;
-        if (
-            params.baseCurrency == params.quoteCurrency
-                || !((params.baseCurrency == key.currency0 && params.quoteCurrency == key.currency1)
-                    || (params.baseCurrency == key.currency1 && params.quoteCurrency == key.currency0))
-        ) revert InvalidIdentity();
         baseCurrency = params.baseCurrency;
         quoteCurrency = params.quoteCurrency;
         PolicyValidation.validateInitial(params.policy, 1);
@@ -223,7 +234,7 @@ contract DominoVault {
         return who != address(0) && who == operator;
     }
 
-    /// @notice Authority preview only; E2 has no callable financial executor.
+    /// @notice Authority preview; it does not replace full compound admission.
     function validateAuthority(uint64 policyVersion, uint64 nonce, uint64 generation) external view {
         if (msg.sender != owner && !isOperator(msg.sender)) revert Unauthorized();
         if (_terminal()) revert NonceExhausted();
@@ -235,22 +246,91 @@ contract DominoVault {
 
     function rootPermissionValid() public view returns (bool) {
         if (!rootArmed || !_deploymentUnchanged()) return false;
-        IPositionManagerE2 manager = IPositionManagerE2(positionManager);
-        try manager.ownerOf(rootTokenId) returns (address holder) {
-            if (holder != owner) return false;
-        } catch {
-            return false;
+        try readHelper.rootCustody(rootTokenId, owner, address(this)) returns (address subscriber) {
+            return subscriber == address(this);
+        } catch { return false; }
+    }
+
+    /// @notice General fee-only collection and increase in this same NFT.
+    /// No arbitrary calls, swap route, wallet transferFrom or token approval.
+    function compoundSelf(T.CompoundPlan calldata plan) external nonReentrant {
+        if (msg.sender != owner && !isOperator(msg.sender)) revert Unauthorized();
+        if (_terminal()) revert NonceExhausted();
+        if (_policy.paused || !rootPermissionValid()) revert PermissionUnavailable();
+        uint128 beforeLiquidity = _checkpoints[plan.tokenId].liquidity;
+        _compoundActive = true;
+        _compoundStage = 1;
+        _compoundTokenId = plan.tokenId;
+        _compoundLiquidityIncrease = plan.liquidityIncrease;
+        bytes32 planHash = compoundEngine.execute(plan);
+        consumedIntent[plan.intentId] = true;
+        if (_compoundStage != 5 || !rootPermissionValid()) revert InvalidExecution();
+        _compoundActive = false;
+        delete _compoundStage;
+        delete _compoundTokenId;
+        delete _compoundLiquidityIncrease;
+        lastExecutionAt = uint64(block.timestamp);
+        _advance(false);
+        emit CompoundSelfCompleted(plan.intentId, plan.tokenId,
+            planHash,
+            beforeLiquidity, _checkpoints[plan.tokenId].liquidity, _policy.version, authorityGeneration, stateNonce);
+    }
+
+    /// @dev Fixed engine only, in strict collect -> increase -> apply -> checkpoint order.
+    function _requireCompoundStage(uint8 stage) private {
+        if (!_compoundActive || _entered != 1 || msg.sender != address(compoundEngine)
+            || address(compoundEngine).codehash != compoundEngineCodeHash || _compoundStage != stage) {
+            revert UnexpectedCallback();
         }
-        try manager.getApproved(rootTokenId) returns (address approved) {
-            if (approved != address(this)) return false;
-        } catch {
-            return false;
+        _compoundStage = stage + 1;
+    }
+
+    function compoundModify(bool increase, uint128 amount0, uint128 amount1) external {
+        _requireCompoundStage(increase ? 2 : 1);
+        uint256 tokenId = _compoundTokenId;
+        _expectedModify = tokenId == rootTokenId;
+        if (increase) {
+            if (amount0 != _compoundLiquidityIncrease || amount1 != 0) revert InvalidAmount();
+            _expectedLiquidityChange = int256(uint256(amount0));
+            _expectedFeesAccrued = 0;
+        } else {
+            _expectedLiquidityChange = 0;
+            _expectedFeesAccrued = int256((uint256(amount0) << 128) | amount1);
         }
-        try manager.subscriber(rootTokenId) returns (address target) {
-            return target == address(this);
-        } catch {
-            return false;
+        _requireReadHelper();
+        bytes memory payload = readHelper.compoundCall(tokenId, _key.currency0, _key.currency1, address(this), increase, amount0);
+        (bool ok, bytes memory reason) = positionManager.call(payload);
+        if (!ok) { assembly ("memory-safe") { revert(add(reason, 32), mload(reason)) } }
+        if (_expectedModify) revert UnexpectedCallback();
+    }
+
+    function compoundApply(T.CompoundAmounts[2] calldata values) external {
+        _requireCompoundStage(3);
+        T.Position storage member = _positions[_compoundTokenId];
+        for (uint256 i = 0; i < 2; ++i) {
+            _applyCompoundSource(i == 0 ? member.source0 : member.source1,
+                i == 0 ? _key.currency0 : _key.currency1, values[i]);
         }
+    }
+
+    function compoundCheckpoint(T.Checkpoint calldata point) external {
+        _requireCompoundStage(4);
+        if (point.liquidity != _checkpoints[_compoundTokenId].liquidity + _compoundLiquidityIncrease) revert InvalidPosition();
+        _checkpoints[_compoundTokenId] = point;
+    }
+
+    function _applyCompoundSource(bytes32 sourceId, address currency, T.CompoundAmounts calldata value) private {
+        _balances[sourceId][currency] = T.FeeBalance(value.originalAfter, value.chargedAfter);
+        accountedCurrency[currency] = accountedCurrency[currency] + value.realized - value.grossOriginalConsumed - value.chargedConsumed;
+        if (value.liquidityAdded != 0) {
+            IPoolManagerE4 manager = IPoolManagerE4(poolManager);
+            manager.sync(currency);
+            if (currency != address(0)) _payExact(currency, poolManager, value.liquidityAdded);
+            uint256 paid = manager.settleFor{value: currency == address(0) ? value.liquidityAdded : 0}(positionManager);
+            if (paid != value.liquidityAdded) revert InvalidAmount();
+        }
+        if (value.serviceFee != 0) _payExact(currency, serviceFeeRecipient, value.serviceFee);
+        if (_currencyBalance(currency, address(this)) < accountedCurrency[currency]) revert UnbackedReserve();
     }
 
     function setPolicy(IDominoVaultDraft.Policy calldata next) external onlyOwner nonReentrant {
@@ -422,14 +502,22 @@ contract DominoVault {
 
     function notifyUnsubscribe(uint256 tokenId) external {
         if (msg.sender != positionManager || tokenId != rootTokenId) revert UnexpectedCallback();
+        if (_compoundActive) revert UnexpectedCallback();
         if (_subscriptionTransition && _entered == 1) return;
         // Upstream may notify during an owner's receive callback. This path
         // only removes authority, with no external calls or asset movement.
         _invalidateRoot(1);
     }
 
-    function notifyModifyLiquidity(uint256 tokenId, int256, int256) external {
-        if (msg.sender != positionManager || tokenId != rootTokenId || _entered != 0) revert UnexpectedCallback();
+    function notifyModifyLiquidity(uint256 tokenId, int256 change, int256 fees) external {
+        if (msg.sender != positionManager || tokenId != rootTokenId) revert UnexpectedCallback();
+        if (_entered != 0) {
+            if (!_compoundActive || !_expectedModify || change != _expectedLiquidityChange || fees != _expectedFeesAccrued) {
+                revert UnexpectedCallback();
+            }
+            _expectedModify = false;
+            return;
+        }
         _invalidateRoot(2); // A callback amount is not proof of earned fees.
     }
 
@@ -444,10 +532,7 @@ contract DominoVault {
         T.Position storage root = _positions[rootTokenId];
         if (lo != root.tickLower || hi != root.tickUpper) revert InvalidPosition();
         IPositionManagerE2 manager = IPositionManagerE2(positionManager);
-        if (manager.ownerOf(rootTokenId) != owner || manager.getApproved(rootTokenId) != address(this)) {
-            revert PermissionUnavailable();
-        }
-        address previous = manager.subscriber(rootTokenId);
+        address previous = readHelper.rootCustody(rootTokenId, owner, address(this));
         if (previous != address(0) && previous != address(this)) revert ForeignSubscription();
         rootArmed = false;
         _subscriptionTransition = true;
@@ -455,10 +540,7 @@ contract DominoVault {
         _checkpoints[rootTokenId] = _readCheckpoint(rootTokenId, lo, hi);
         manager.subscribe(rootTokenId, address(this), abi.encode(_sequenceIdentity, authorityGeneration));
         _subscriptionTransition = false;
-        if (
-            manager.subscriber(rootTokenId) != address(this) || manager.ownerOf(rootTokenId) != owner
-                || manager.getApproved(rootTokenId) != address(this)
-        ) revert PermissionUnavailable();
+        if (readHelper.rootCustody(rootTokenId, owner, address(this)) != address(this)) revert PermissionUnavailable();
         rootArmed = true;
         emit RootRearmed(_checkpoints[rootTokenId].commitment, authorityGeneration, stateNonce);
     }
@@ -567,7 +649,8 @@ contract DominoVault {
     function _deploymentUnchanged() private view returns (bool) {
         return block.chainid == 4663 && poolManager.codehash == poolManagerCodeHash
             && positionManager.codehash == positionManagerCodeHash && stateView.codehash == stateViewCodeHash
-            && address(readHelper).codehash == readHelperCodeHash;
+            && address(readHelper).codehash == readHelperCodeHash
+            && address(compoundEngine).codehash == compoundEngineCodeHash;
     }
 
     function _requireCurrency(address currency) private view {
@@ -580,18 +663,29 @@ contract DominoVault {
     }
 
     function _payOwner(address currency, uint256 amount) private {
+        _payExact(currency, owner, amount);
+    }
+
+    function _payExact(address currency, address recipient, uint256 amount) private {
         if (currency == address(0)) {
-            (bool paid,) = payable(owner).call{value: amount}("");
+            uint256 beforeVault = address(this).balance;
+            uint256 beforeRecipient = recipient.balance;
+            (bool paid,) = payable(recipient).call{value: amount}("");
             if (!paid) revert TransferFailed();
+            // Preserve E2 owner-recovery callbacks; the financial path requires
+            // exact receipts even for a native fee recipient.
+            if (_compoundActive && (address(this).balance != beforeVault - amount || recipient.balance != beforeRecipient + amount)) {
+                revert TransferFailed();
+            }
         } else {
             uint256 beforeVault = _currencyBalance(currency, address(this));
-            uint256 beforeOwner = _currencyBalance(currency, owner);
-            (bool ok, bytes memory result) = currency.call(abi.encodeCall(IERC20E2.transfer, (owner, amount)));
+            uint256 beforeOwner = _currencyBalance(currency, recipient);
+            (bool ok, bytes memory result) = currency.call(abi.encodeCall(IERC20E2.transfer, (recipient, amount)));
             if (!ok || (result.length != 0 && (result.length != 32 || !abi.decode(result, (bool))))) {
                 revert TransferFailed();
             }
             uint256 afterVault = _currencyBalance(currency, address(this));
-            uint256 afterOwner = _currencyBalance(currency, owner);
+            uint256 afterOwner = _currencyBalance(currency, recipient);
             if (
                 afterVault > beforeVault || beforeVault - afterVault != amount || afterOwner < beforeOwner
                     || afterOwner - beforeOwner != amount
