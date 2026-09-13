@@ -1,0 +1,47 @@
+{
+  "contractVersion": "1.0.0-rc.1",
+  "requests": {
+    "list": {
+      "afterIntentId": null,
+      "limit": 10
+    },
+    "status": {
+      "intentId": "0x1212121212121212121212121212121212121212121212121212121212121212"
+    }
+  },
+  "responses": {
+    "list.empty": {
+      "chainId": 4663,
+      "contractVersion": "1.0.0-rc.1",
+      "executionAvailable": false,
+      "items": [],
+      "nextAfterIntentId": null,
+      "owner": "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    },
+    "status.missing": {
+      "chainId": 4663,
+      "contractVersion": "1.0.0-rc.1",
+      "executionAvailable": false,
+      "item": null,
+      "owner": "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    },
+    "status.reserved": {
+      "chainId": 4663,
+      "contractVersion": "1.0.0-rc.1",
+      "executionAvailable": false,
+      "item": {
+        "attempts": [],
+        "canCancel": true,
+        "intentId": "0x1212121212121212121212121212121212121212121212121212121212121212",
+        "nonceRaw": null,
+        "reason": "",
+        "receipt": null,
+        "sequenceHash": "0x3434343434343434343434343434343434343434343434343434343434343434",
+        "signer": null,
+        "state": "reserved"
+      },
+      "owner": "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    }
+  },
+  "syntheticOnly": true
+}

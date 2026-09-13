@@ -309,7 +309,7 @@ class UnsignedExecutionStore(_Store):
                 stored=conn.execute('SELECT * FROM origins WHERE owner=%s AND lot_id=%s FOR UPDATE',(owner,allocation.lotId)).fetchone()
                 if (not stored or stored['state']!='available' or stored['origin_id']!=lot.reconciliationId
                         or stored['source_id']!=lot.source.digest() or stored['currency']!=lot.currency
-                        or (stored['kind']=='converted')!=lot.convertedCharged or stored['amount_raw']!=int(lot.amountRaw)):
+                        or (stored['kind']=='converted')!=lot.convertedCharged or stored['amount_raw']-self._spent(conn,allocation.lotId)!=int(lot.amountRaw)):
                     raise ExecutionStoreError('execution_origin_unavailable')
                 conn.execute('INSERT INTO lot_claims(owner,intent_id,lot_id,amount_raw) VALUES(%s,%s,%s,%s)',(owner,identifier,allocation.lotId,int(allocation.amountRaw)))
             accruals={a.source.digest():a for a in observation.accruals}
@@ -322,6 +322,13 @@ class UnsignedExecutionStore(_Store):
             row=conn.execute("UPDATE intents SET state='reserved' WHERE intent_id=%s RETURNING *",(identifier,)).fetchone()
             return self._snapshot(row)
         return self._transaction(owner,operation,worker=worker_id,fence=fence)
+
+    @staticmethod
+    def _spent(conn, lot_id):
+        # Migration 019 is explicit and optional for old unsigned installations.
+        if conn.execute("SELECT to_regclass('domino_execution.spends') AS t").fetchone()['t'] is None:
+            return 0
+        return conn.execute('SELECT coalesce(sum(amount_raw),0) AS used FROM spends WHERE lot_id=%s',(lot_id,)).fetchone()['used']
 
     def reserve_nonce(self, owner, intent_id, worker_id, fence, *, signer, nonce_raw):
         identifier,signer,nonce=_hash(intent_id),_owner(signer),_raw(nonce_raw,2**64-2)

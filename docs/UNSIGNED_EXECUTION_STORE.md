@@ -2,6 +2,10 @@
 
 12 September 2026 · issue #89 · stacked on E1 hardening #99
 
+Migration 015 remains the unsigned foundation described below. The explicit
+migration 019 and concrete signer, runner, recovery and read-only status gateway
+are documented in [DURABLE_EXECUTOR.md](DURABLE_EXECUTOR.md).
+
 This is an internal, non-signing storage foundation. It has no listener, HTTP
 endpoint, frontend change, wallet session integration, RPC client, signer,
 transaction bytes, broadcast method or service activation. `executionEligible`
