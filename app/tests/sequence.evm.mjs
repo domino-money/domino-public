@@ -56,12 +56,19 @@ assert.equal(params.policy.paused,true);assert.equal(params.policy.serviceFeeBps
 assert.equal(params.baseCurrency.toLowerCase(),options.baseIsCurrency0?root.key.currency0:root.key.currency1);check();
 const createHash=await settle(client,creation);
 const created=await client.inspect(root.vault);assert.equal(created.paused,true);assert.equal(created.rootPermissionValid,true);assert.equal(created.rootTokenId,BigInt(f.root));check();
+const activation=await client.resume(root.vault,gas);assert.equal(activation.kind,'resume');assert(activation.summary.some(x=>x.includes('Policy version 1')));assert(activation.summary.some(x=>x.includes('Execution gas cost cap')));
+await assert.rejects(client.send(activation,false),/review_required/);check();
+mode='wrongcode';await assert.rejects(client.send(activation,true),/deployment_code_changed/);mode='normal';check();
+await settle(client,activation);assert.equal((await client.inspect(root.vault)).paused,false);check();
+await assert.rejects(client.resume(root.vault,gas),/sequence_activation_unavailable/);check();
+await settle(client,await client.recover(root.vault,'pause',gas));
 mode='wrongreceipt';await assert.rejects(client.receipt(createHash),/deployment_identity_changed/);mode='normal';check();
 mode='reorg';assert.equal((await client.receipt(approvalHash)).state,'reorged');mode='normal';check();
 await assert.rejects(createSequenceClient(wallet,d,()=>now).receipt(createHash),/receipt_not_from_this_review/);check();
 // Recovery ignores expiry and a missing engine, but still verifies clone/owner.
 const recovery=createSequenceClient(wallet,{...d,expiresAt:0},()=>now);
 await assert.rejects(recovery.create(options,gas),/sequence_release_expired/);check();
+await assert.rejects(recovery.resume(root.vault,gas),/sequence_release_expired/);check();
 const originalEngine=await rpc('eth_getCode',[d.engine,'latest']);await rpc('anvil_setCode',[d.engine,'0x']);
 const ownerOnlyStart=calls.length;
 assert.equal((await recovery.inspect(root.vault)).rootPermissionValid,false);
@@ -76,6 +83,7 @@ assert.equal(calls.slice(ownerOnlyStart).some(x=>x.method==='eth_getCode'&&x.par
 await assert.rejects(recovery.recover(f.oldVault,'withdraw-child',gas,{tokenId:BigInt(f.root)}),/invalid_child/);check();
 await assert.rejects(recovery.recover(f.oldVault,'withdraw-fees',gas,{...balance,original:balance.original+1n,charged:0n}),/fee_reserve_insufficient/);check();
 await rpc('anvil_setCode',[d.engine,originalEngine]);
+await assert.rejects(client.resume(root.vault,gas),/sequence_activation_unavailable/);check();
 // A definite rejection arriving after our UI timeout releases that exact
 // claim. The UI still requires a newly prepared and acknowledged review.
 const late=await recovery.recover(f.oldVault,'revoke-operator',gas);mode='late-reject';await assert.rejects(recovery.send(late,true),/wallet_timeout/);

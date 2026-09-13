@@ -1,4 +1,4 @@
-import { concatHex, decodeFunctionResult, encodeAbiParameters, encodeFunctionData, keccak256, numberToHex, parseAbi, parseAbiParameters, stringToHex, zeroAddress, type Address, type Hex } from 'viem'
+import { concatHex, decodeFunctionResult, encodeAbiParameters, encodeFunctionData, keccak256, numberToHex, parseAbi, parseAbiParameters, stringToHex, zeroAddress, type Abi, type Address, type ContractFunctionName, type ContractFunctionReturnType, type Hex } from 'viem'
 import type { GasBudget, WalletRpc } from './setup'
 
 export const sequenceAbi = parseAbi([
@@ -25,7 +25,7 @@ export const sequenceAbi = parseAbi([
   'function policy() view returns(Policy)', 'function executionLimits() view returns(Limits)', 'function stateNonce() view returns(uint64)',
   'function rootPermissionValid() view returns(bool)', 'function successorOf(uint256) view returns(uint256)',
   'function position(uint256) view returns(Position)', 'function source(bytes32) view returns(Source)', 'function feeBalance(bytes32,address) view returns(Balance)',
-  'function pause()', 'function revokeOperator()', 'function withdrawChildPosition(uint256)', 'function withdrawFeeReserves(bytes32,address,uint128,uint128)',
+  'function pause()', 'function resume()', 'function revokeOperator()', 'function withdrawChildPosition(uint256)', 'function withdrawFeeReserves(bytes32,address,uint128,uint128)',
   'function ownerOf(uint256) view returns(address)', 'function getApproved(uint256) view returns(address)', 'function approve(address,uint256)',
   'function getPoolAndPositionInfo(uint256) view returns(PoolKey,uint256)',
 ])
@@ -45,7 +45,7 @@ export interface SequenceState {
   baseCurrency: Address; quoteCurrency: Address; stateNonce: bigint
 }
 export interface PreparedSequence {
-  kind: 'approve-root' | 'create' | 'pause' | 'revoke-operator' | 'revoke-root' | 'withdraw-child' | 'withdraw-fees'
+  kind: 'approve-root' | 'create' | 'resume' | 'pause' | 'revoke-operator' | 'revoke-root' | 'withdraw-child' | 'withdraw-fees'
   owner: Address; vault: Address; expiresAt: number; summary: readonly string[]
   transaction: Readonly<{ from: Address; to: Address; data: Hex; value: '0x0'; nonce: Hex; gas: Hex; maxFeePerGas: Hex; maxPriorityFeePerGas: Hex; chainId: '0x1237'; type: '0x2' }>
 }
@@ -129,17 +129,18 @@ export function createSequenceClient(wallet: WalletRpc, deployment: SequenceDepl
     } finally { busy = false }
   }
   // Call signatures are selected from the local closed ABI, never public JSON.
-  async function call(c: Context, to: Address, name: string, args: readonly unknown[] = []): Promise<any> {
-    const abi = sequenceAbi as readonly any[]
-    return decodeFunctionResult({ abi, functionName: name, data: hex(await c.rpc('eth_call', [{ to, data: encodeFunctionData({ abi, functionName: name, args }) }, c.block])) })
+  type ViewName = ContractFunctionName<typeof sequenceAbi, 'view'>
+  async function call<Name extends ViewName>(c: Context, to: Address, name: Name, args: readonly unknown[] = []): Promise<ContractFunctionReturnType<typeof sequenceAbi, 'view', Name>> {
+    const abi: Abi = sequenceAbi, functionName: string = name
+    return decodeFunctionResult({ abi, functionName, data: hex(await c.rpc('eth_call', [{ to, data: encodeFunctionData({ abi, functionName, args }) }, c.block])) }) as ContractFunctionReturnType<typeof sequenceAbi, 'view', Name>
   }
-  const encode = (name: string, args: readonly unknown[] = []) => encodeFunctionData({ abi: sequenceAbi as readonly any[], functionName: name, args })
+  const encode = (name: ContractFunctionName<typeof sequenceAbi>, args: readonly unknown[] = []) => encodeFunctionData({ abi: sequenceAbi as Abi, functionName: name, args })
   const equal = (actual: unknown, expected: unknown) => { if (String(actual).toLowerCase() !== String(expected).toLowerCase()) fail('deployment_identity_changed') }
   async function code(c: Context, component: Component) {
     if (keccak256(hex(await c.rpc('eth_getCode', [d[component], c.block]))) !== d.codeHashes[component]) fail('deployment_code_changed')
   }
-  async function links(c: Context, to: Address, values: Record<string, unknown>) {
-    for (const [name, expected] of Object.entries(values)) equal(await call(c, to, name), expected)
+  async function links(c: Context, to: Address, values: Partial<Record<ViewName, unknown>>) {
+    for (const [name, expected] of Object.entries(values) as [ViewName,unknown][]) equal(await call(c, to, name), expected)
   }
   async function verify(c: Context, recovery = false) {
     if (!recovery && now() >= d.expiresAt) fail('sequence_release_expired')
@@ -181,7 +182,7 @@ export function createSequenceClient(wallet: WalletRpc, deployment: SequenceDepl
     if (uint(tokenId,256) === 0n) fail('invalid_root_nft')
     equal(await call(c, d.positionManager, 'ownerOf', [tokenId]), wallet.owner)
     const [rawKey, packed] = await call(c, d.positionManager, 'getPoolAndPositionInfo', [tokenId])
-    const key = { ...rawKey, currency0: rawKey.currency0.toLowerCase(), currency1: rawKey.currency1.toLowerCase(), hooks: rawKey.hooks.toLowerCase() }
+    const key = { ...rawKey, currency0: address(rawKey.currency0.toLowerCase()), currency1: address(rawKey.currency1.toLowerCase()), hooks: address(rawKey.hooks.toLowerCase()) }
     if (key.currency0 >= key.currency1 || key.hooks !== zeroAddress || key.fee > 1_000_000 || key.tickSpacing <= 0 || key.tickSpacing > 32767) fail('unsupported_pool')
     const poolId = keccak256(encodeAbiParameters(parseAbiParameters('(address currency0,address currency1,uint24 fee,int24 tickSpacing,address hooks)'), [key]))
     const lower = Number(BigInt.asIntN(24, packed >> 8n)), upper = Number(BigInt.asIntN(24, packed >> 32n))
@@ -240,6 +241,29 @@ export function createSequenceClient(wallet: WalletRpc, deployment: SequenceDepl
           `Trigger distance: ${o.triggerDistanceBps} bps; maximum overlap: ${o.maxOverlapBps} bps; minimum interval: ${o.minimumIntervalSeconds}s; maximum positions: ${o.maxPositions}.`,
           `Successor upside: ${o.upsideBps} bps; maximum slippage: ${o.maxSlippageBps} bps; maximum price impact: ${o.maxPriceImpactBps} bps.`,
           `Execution gas cost cap: ${o.maxGasCostWei} wei; observation age: ${o.maxObservationAgeSeconds}s; forecast horizon: ${o.forecastHorizonSeconds}s.`],guard)
+    }),
+    resume: (vault: Address, gas: GasBudget) => bounded(async c => {
+      async function activeProfile(next: Context) {
+        await verify(next); const state=await owned(next,vault)
+        if (!state.paused || !state.rootPermissionValid || state.operator !== d.operator) fail('sequence_activation_unavailable')
+        const policy=await call(next,vault,'policy'), limits=await call(next,vault,'executionLimits')
+        if (policy.serviceFeeBps !== d.serviceFeeBps) fail('sequence_tariff_changed')
+        return {state,policy,limits}
+      }
+      const before=await activeProfile(c), {state,policy,limits}=before
+      return prepare(c,'resume',vault,vault,encode('resume'),gas,[
+        `Activate execution for root NFT #${state.rootTokenId} with operator ${state.operator}.`,
+        `Base: ${state.baseCurrency}. Quote: ${state.quoteCurrency}. The root NFT remains in your wallet.`,
+        '2% on earned fees actually consumed for reinvestment, once, including already uncollected fees previously consented to. Never principal.',
+        `Fee recipient: ${d.serviceFeeRecipient}. Policy version ${policy.version}; limits version ${limits.version}.`,
+        `Trigger distance: ${policy.triggerDistanceBps} bps; maximum overlap: ${policy.maxOverlapBps} bps; minimum interval: ${policy.minimumIntervalSeconds}s; maximum positions: ${policy.maxPositions}.`,
+        `Successor upside: ${limits.upsideBps} bps; maximum slippage: ${limits.maxSlippageBps} bps; maximum price impact: ${limits.maxPriceImpactBps} bps.`,
+        `Execution gas cost cap: ${limits.maxGasCostWei} wei; observation age: ${limits.maxObservationAgeSeconds}s; forecast horizon: ${limits.forecastHorizonSeconds}s.`,
+        'This owner transaction enables the configured operator. No wallet sign-in or page visit activates execution by itself.',
+      ],async next=>{
+        const current=await activeProfile(next)
+        if (current.state.stateNonce !== state.stateNonce || current.policy.version !== policy.version || current.limits.version !== limits.version) fail('sequence_preparation_changed')
+      })
     }),
     recover: (vault: Address, action: 'pause'|'revoke-operator'|'revoke-root'|'withdraw-child'|'withdraw-fees', gas: GasBudget, values: {tokenId?:bigint;sourceId?:Hex;currency?:Address;original?:bigint;charged?:bigint} = {}) => bounded(async c => {
       // Capture values before an await; caller mutation cannot change a review.
