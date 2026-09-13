@@ -37,8 +37,13 @@ Public V2 activation still requires the Cloudflare change described in the
 The existing Actions token can access Pages, but Worker settings returned
 403/code10000 and Tunnel configuration returned 401/code1001 in the
 [actual inspection](https://github.com/domino-money/domino/actions/runs/34726730503).
-The owner explicitly directed this Cloudflare work to @OxDecimal. This is a
-missing provider credential scope, not a review or acknowledgement gate.
+The owner explicitly directed all Cloudflare work to @OxDecimal, including
+Pages publication. The consumer is integrated at `33b75e6`; its production
+build at `3822410` was recorded and verified as digest
+`96130544495ce5e10ece36404f5d6306379ee8f532286a980d681f328fd250a0`.
+It has not been claimed as uploaded to production. This is a missing provider
+credential scope and dispatched publication, not a review or acknowledgement
+gate.
 
 The manually dispatched `Publish read path` workflow supports `inspect`,
 `app`, `bridge` and `publish`, on an exact main commit. App publication uses
@@ -60,6 +65,11 @@ two token reads initially, one activity read on opening details, and one
 chart read for each explicit load/currency selection. No live-provider
 financial qualification or authenticated public V2 success is claimed by
 that fixture smoke.
+
+Consumer checks passed 308 of 309 tests, with one pre-existing skip and no
+failures; TypeScript, lint and production build passed. All 13 production
+browser tests passed, including V2-to-V1 fallback before a data POST, the beta
+gate, explicit retry, partial failures and layouts at 390/768/1280 pixels.
 
 The earlier #132 Windows/HMR/hot-admission acceptance waiver remains in force.
 No cancelled denial test was performed. Other report priorities, private
