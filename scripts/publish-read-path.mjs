@@ -5,6 +5,8 @@
 import { spawnSync } from 'node:child_process'
 import { readFileSync } from 'node:fs'
 import { fileURLToPath, pathToFileURL } from 'node:url'
+import { isDeepStrictEqual } from 'node:util'
+import { extendReadTunnelConfig } from './read-tunnel-config.mjs'
 
 const ROOT = fileURLToPath(new URL('../', import.meta.url))
 const KNOWN_READS = new Set(['token', 'pools', 'pool-market', 'wallet-assets', 'nft-positions', 'catalogue', 'pool-activity'])
@@ -24,12 +26,14 @@ export function releaseVars(settings) {
   return { ...vars, READ_V2_BRIDGE_ENABLED: 'true', ENABLED_V2_READS: 'pool-market' }
 }
 
-async function cloudflare(path) {
+async function cloudflare(path, payload) {
   const token = process.env.CLOUDFLARE_API_TOKEN
   const account = process.env.CLOUDFLARE_ACCOUNT_ID
   if (!token || !/^[0-9a-f]{32}$/.test(account ?? '')) throw new Error('Cloudflare token/account configuration is missing.')
   const response = await fetch(`https://api.cloudflare.com/client/v4/accounts/${account}/${path}`, {
-    headers: { Authorization: `Bearer ${token}` }, signal: AbortSignal.timeout(30_000),
+    method: payload === undefined ? 'GET' : 'PUT',
+    headers: { Authorization: `Bearer ${token}`, ...(payload === undefined ? {} : { 'Content-Type': 'application/json' }) },
+    body: payload === undefined ? undefined : JSON.stringify(payload), signal: AbortSignal.timeout(30_000),
   })
   const body = await response.json().catch(() => null)
   if (!response.ok || !body?.success) {
@@ -41,7 +45,23 @@ async function cloudflare(path) {
 }
 
 async function run(operation) {
-  if (operation !== 'inspect' && operation !== 'worker') throw new Error('Use inspect or worker.')
+  if (!['inspect', 'tunnels', 'worker'].includes(operation)) throw new Error('Use inspect, tunnels or worker.')
+  if (operation === 'tunnels') {
+    for (const id of ['31526265-ca63-40f2-bbb7-bd37a537f899', '7abb1264-ee70-4b69-a33c-b75a9deb4589']) {
+      const path = `cfd_tunnel/${id}/configurations`
+      const before = await cloudflare(path)
+      const config = extendReadTunnelConfig(id, before.config)
+      if (!isDeepStrictEqual(config, before.config)) {
+        const latest = await cloudflare(path)
+        if (latest.version !== before.version || !isDeepStrictEqual(latest.config, before.config)) throw new Error('Tunnel changed during publication; retry against its new configuration.')
+        await cloudflare(path, { config })
+      }
+      const after = await cloudflare(path)
+      if (!isDeepStrictEqual(after.config, config)) throw new Error('Published tunnel configuration differs from the intended path-only update.')
+      console.log(JSON.stringify({ tunnel: id, version: after.version, v2PathEnabled: true, otherSettingsPreserved: true }))
+    }
+    return
+  }
   if (operation === 'inspect') {
     const results = await Promise.allSettled([
       cloudflare('workers/scripts/domino-read-bridge/settings'),
