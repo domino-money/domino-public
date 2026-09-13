@@ -19,10 +19,18 @@ import { test } from 'node:test';
 import * as runtime from '../../api-contracts/read-v1/runtime.mjs';
 
 const require = createRequire(import.meta.url);
-const { PRODUCER_PIN, ACCEPTED_READ_CONTRACTS, REQUEST_READ_CONTRACT } = require('../.test-build/app/src/lib/read/pin.js');
+const { PRODUCER_PIN, ACCEPTED_READ_CONTRACTS, REQUEST_READ_CONTRACT, READ_V2_PIN } = require('../.test-build/app/src/lib/read/pin.js');
 
 const CONTRACTS = resolve(import.meta.dirname, '../../api-contracts');
 const sha256 = (bytes) => createHash('sha256').update(bytes).digest('hex');
+
+test('read-v2 estimate pin matches the package and every consumed file', () => {
+  const bytes = readFileSync(join(CONTRACTS, 'read-v2', 'manifest.json'));
+  const manifest = JSON.parse(bytes);
+  assert.equal(sha256(bytes), READ_V2_PIN.manifestSha256);
+  assert.equal(manifest.contractVersion, READ_V2_PIN.version);
+  for (const file of manifest.files) assert.equal(sha256(readFileSync(join(CONTRACTS, 'read-v2', file.path))), file.sha256, file.path);
+});
 
 test('the pin names exactly the four producer packages', () => {
   assert.deepEqual(Object.keys(PRODUCER_PIN.packages).sort(), ['deposit-v1', 'onboarding-v1', 'read-v1', 'session-v1']);

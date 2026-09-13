@@ -6,18 +6,18 @@
  * table, position lookup, pickers and figures dialog share one source.
  */
 import { CAPABILITIES } from '../../capabilities'
-import { createBridgeSource } from '../bridgeSource'
+import * as estimateRuntime from 'api-contracts/read-v2/runtime.mjs'
+import { createEstimateSource } from '../estimateSource'
 import { READ_RUNTIME } from '../contract'
 import { createScheduledSource } from '../scheduler'
 import type { ReadSource } from '../types'
 
-// Applies to logical job starts, paced from the previous job's last attempt.
-// Retries inside a job retain the existing Retry-After/60 s policy. Other
-// tabs/worktrees and reloads still share the authoritative remote budget.
+// Logical jobs are paced from the previous job's last attempt. Remote quotas
+// remain authoritative across tabs/worktrees and reloads.
 export const BRIDGE_SPACING_MS = __DOMINO_LOCAL_LIVE__ ? 10_100 : 1100
 
 export function createAppBridgeSource(): ReadSource {
-  return createScheduledSource(createBridgeSource({ enabled: CAPABILITIES.liveReadsBuilt, validators: READ_RUNTIME }), { minIntervalMs: BRIDGE_SPACING_MS })
+  return createScheduledSource(createEstimateSource({ enabled: CAPABILITIES.liveReadsBuilt, validators: READ_RUNTIME }, estimateRuntime), { minIntervalMs: BRIDGE_SPACING_MS })
 }
 
 let shared: ReadSource | null = null

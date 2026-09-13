@@ -20,6 +20,7 @@ execFileSync(
     'tests/domain.test.mjs',
     'tests/gate.test.mjs',
     'tests/read.test.mjs',
+    'tests/read-estimate.test.mjs',
     'tests/contract-pin.test.mjs',
     'tests/backend-contract.test.mjs',
     'tests/build-guard.test.mjs',

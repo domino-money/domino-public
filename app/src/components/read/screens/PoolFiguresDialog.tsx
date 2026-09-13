@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { formatUsdCompact } from '../../../lib/read/decimal'
-import { compactUsd, percentText, type Market, type Metric } from '../../../lib/markets'
+import { compactUsd, percentText, readNow, type Market, type Metric } from '../../../lib/markets'
 import { COPY, failureText } from '../../../lib/read/screens/copy'
 import { activityFacts, rowQualified, type ActivityFacts, type AttributedFigure } from '../../../lib/read/screens/figures'
 import { useReadSource } from '../../../lib/read/screens/readContext'
@@ -12,6 +12,8 @@ import { TokenLabel } from '../TokenLabel'
 import { Address } from './Address'
 import { ProviderFigure } from './ProviderFigure'
 import { ScreenStatus, type StatusLine } from './ScreenStatus'
+import { PoolAprEstimate } from './PoolAprEstimate'
+import { PoolPriceChart } from './PoolPriceChart'
 
 /** A row metric as a GeckoTerminal figure, when that is what it is. */
 export function rowProviderFigure(metric: Metric, cacheAgeSeconds: number | null): AttributedFigure | null {
@@ -93,6 +95,10 @@ export function PoolFiguresDialog({ market, onClose }: { market: Market; onClose
         </header>
 
         <div className="grid gap-4 overflow-y-auto p-5">
+          <section className="grid gap-2 rounded-[var(--radius)] border bg-surface-1 p-4" aria-labelledby="figures-estimate">
+            <h3 id="figures-estimate" className="text-[14px] font-medium">Estimated pool fee APR</h3>
+            <PoolAprEstimate observation={market.feeAprEstimate} now={readNow()} detailed />
+          </section>
           <section aria-labelledby="figures-qualified" className="rounded-[var(--radius)] border bg-surface-1 p-4" data-figures-qualified={qualified ? 'yes' : 'no'}>
             <h3 id="figures-qualified" className="text-[14px] font-medium">
               {qualified ? COPY.figures.qualified : COPY.figures.notQualified}
@@ -133,6 +139,8 @@ export function PoolFiguresDialog({ market, onClose }: { market: Market; onClose
             )}
             <p className="text-[12px] text-fg-subtle">{COPY.figures.providerDetail}</p>
           </section>
+
+          <PoolPriceChart market={market} />
 
           {reference.length > 0 && (
             <details className="rounded-[var(--radius)] border bg-surface-1 p-4" data-figures-reference="">

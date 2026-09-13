@@ -84,11 +84,11 @@ const section = (id) => page.locator(`[data-case="${id}"]`);
 /** The four figure cells of a case's single table row, and its ticker APR. */
 function figures(id) {
   return section(id).evaluate((root) => {
-    const cells = Array.from(root.querySelectorAll('tbody tr td')).slice(1);
-    const read = (el) => [el?.innerText.replace(/\s/g, '') ?? null, el?.getAttribute('data-metric') ?? null];
+    const cells = Array.from(root.querySelectorAll('tbody tr td')).slice(1, 5);
+    const read = (el) => [el?.innerText.replace(/\s/g, '') ?? null, el?.getAttribute('data-metric') ?? el?.getAttribute('data-apr-estimate') ?? null];
     return {
       cells: cells.map((td) => read(td.querySelector('[data-metric]'))),
-      ticker: read(root.querySelector('.dm-marquee [data-metric]')),
+      ticker: read(root.querySelector('.dm-marquee [data-apr-estimate]')),
     };
   });
 }
@@ -115,7 +115,7 @@ test('the lab renders every fixture case behind the gate, under the CSP, without
 
 test('market rows: every observation reaches the table and the ticker as itself, and the APR is never a figure', async () => {
   const unavailable = ['Unavailable', 'unavailable'];
-  const apr = ['APRunavailable', 'unavailable'];
+  const apr = ['Est.APRunavailable', 'unavailable'];
   const provider = [['$12.3K·GeckoTerminal', 'provider'], ['$0.00·GeckoTerminal', 'provider'], ['0.00·calculated', 'calculated'], unavailable];
   const rejected = [['Unavailable', 'rejected'], ['Unavailable', 'rejected'], unavailable, unavailable];
   const blank = [unavailable, unavailable, unavailable, unavailable];
@@ -142,7 +142,7 @@ test('market rows: every observation reaches the table and the ticker as itself,
   }
   // The APR says why it is unavailable; each row names the block its pool was verified at, and
   // dates GeckoTerminal's figures only by when they were retrieved, never "as of" or "updated at".
-  assert.equal(await section('market-provider').locator('tbody td').last().locator('[data-metric]').getAttribute('title'), 'Unavailable: APR not provided by the read service yet');
+  assert.equal(await section('market-provider').locator('tbody td').nth(4).locator('[data-metric]').getAttribute('title'), 'Unavailable: Qualified fee APR not provided by the read service');
   assert.match(await section('market-provider').locator('tbody tr p').innerText(), /^Pool verified on-chain at block 700 · Reported by GeckoTerminal, retrieved \d+ s ago$/);
   assert.match(await section('market-stale').locator('tbody tr p').innerText(), /^Pool verified on-chain at block 700 · Reported by GeckoTerminal, retrieved (6\d|[7-9]\d|1[01]\d) s ago · stale$/);
   assert.equal(await section('market-expired').locator('tbody tr p').innerText(), 'Pool verified on-chain at block 700 · GeckoTerminal figures unavailable: provider unavailable', 'no figure, so no age');
@@ -336,7 +336,7 @@ test('Refresh keeps keyboard focus through its read; it is busy, never unmounted
   assert.deepEqual(await root.evaluate((el) => [el.contains(document.activeElement), document.activeElement?.textContent]), [true, 'Refresh']);
   assert.deepEqual(await figures(id), {
     cells: [['$12.3K·GeckoTerminal', 'provider'], ['$0.00·GeckoTerminal', 'provider'], ['0.00·calculated', 'calculated'], ['Unavailable', 'unavailable']],
-    ticker: ['APRunavailable', 'unavailable'],
+    ticker: ['Est.APRunavailable', 'unavailable'],
   });
 });
 

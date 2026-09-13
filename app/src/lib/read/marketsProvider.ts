@@ -8,9 +8,10 @@
  *
  * The load is lean, on rugged97's read budget (#45): per selected pool, one
  * pool-market read that explicitly does not ask for price history, then each
- * distinct token once, only for pools that answered. No pool-metrics read,
- * so the APR shows as not provided. Through the bridge that is one
- * capabilities GET plus N + U POSTs for N pools and U distinct tokens, sent
+ * distinct token once, only for pools that answered. V2 includes the backend
+ * estimate in that same market read; qualified historical APR is separate.
+ * Capabilities are shared once per namespace, then N + U POSTs for N pools
+ * and U distinct tokens, sent
  * one after another. There is no client cache: every load reads again. An
  * empty selection reads nothing at all.
  *
@@ -72,6 +73,7 @@ export function retainAsStale(result: MarketsResult, receivedAtMs: number): Mark
       tvlUsd: age(row.tvlUsd),
       volume24hUsd: age(row.volume24hUsd),
       feeAprPercent: age(row.feeAprPercent),
+      ...(row.feeAprEstimate ? { feeAprEstimate: { ...row.feeAprEstimate, retained: true } } : {}),
     })),
   }
 }

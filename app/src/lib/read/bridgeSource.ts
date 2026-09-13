@@ -144,6 +144,8 @@ export async function rawReplyFrom(response: Response, signal?: AbortSignal): Pr
 }
 
 export interface BridgeOptions {
+  /** Closed same-origin namespaces; never supplied by a request or URL parameter. */
+  namespace?: 'v1' | 'v2'
   /** CAPABILITIES.liveDataEnabled. False means no request is ever made. */
   enabled: boolean
   validators: ReadValidators
@@ -166,6 +168,8 @@ export function createBridgeSource(options: BridgeOptions): ReadSource {
   const { enabled, validators, policy = BRIDGE_RETRY, clock = realClock } = options
   const fetchImpl: FetchLike = options.fetch ?? ((input, init) => fetch(input, init))
   let capabilities: SharedCheck | null = null
+  const prefix = options.namespace === 'v2' ? '/api/read/v2/' : READ_PREFIX
+  const headers = { ...READ_HEADERS, [CONTRACT_HEADER]: validators.CONTRACT_VERSION }
 
   const transport =
     (path: string, init: RequestInit): Transport =>
@@ -191,7 +195,7 @@ export function createBridgeSource(options: BridgeOptions): ReadSource {
     const result = runRead({
       route: 'capabilities',
       request: null,
-      transport: transport(`${READ_PREFIX}capabilities`, { method: 'GET', headers: { Accept: 'application/json', [CONTRACT_HEADER]: REQUEST_READ_CONTRACT } }),
+      transport: transport(`${prefix}capabilities`, { method: 'GET', headers: { Accept: 'application/json', [CONTRACT_HEADER]: validators.CONTRACT_VERSION } }),
       validators,
       policy,
       clock,
@@ -252,7 +256,7 @@ export function createBridgeSource(options: BridgeOptions): ReadSource {
       return runRead({
         route,
         request: request as RequestOf<R>,
-        transport: transport(`${READ_PREFIX}${route}`, { method: 'POST', headers: READ_HEADERS, body: JSON.stringify(request) }),
+        transport: transport(`${prefix}${route}`, { method: 'POST', headers, body: JSON.stringify(request) }),
         validators,
         policy,
         clock,

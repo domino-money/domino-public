@@ -100,7 +100,9 @@ const bridge = (status, body, headers = {}) => json(status, body, { 'X-Domino-Re
 /** The bridge, stubbed: the capabilities given, and each POST from the rewritten fixtures unless `reply` answers it. */
 function bridgeStub({ capabilities = fixture('capabilities.live_read_only'), reply = () => undefined } = {}) {
   return async (request) => {
-    const route = new URL(request.url).pathname.replace('/api/read/v1/', '');
+    const path = new URL(request.url).pathname;
+    if (path === '/api/read/v2/capabilities') return json(404, { error: 'not_found' });
+    const route = path.replace('/api/read/v1/', '');
     if (request.method === 'GET' && route === 'capabilities') return bridge(200, capabilities);
     const body = JSON.parse(await request.text());
     const custom = await reply(route, body);
@@ -176,7 +178,7 @@ async function settled(page) {
   }, null, { timeout: 30_000 });
   return statusOf(page).getAttribute('data-read-status');
 }
-const wire = () => reads.map((r) => `${r.method} ${r.path.replace('/api/read/v1/', '')}`);
+const wire = () => reads.map((r) => `${r.method} ${r.path.replace('/api/read/v1/', '').replace('/api/read/v2/', 'v2 ')}`);
 
 /** A failed landing shows no row, no figure and nothing called a sample: nothing stands in for the read. */
 async function nothingInvented(page, label) {
@@ -188,7 +190,7 @@ async function nothingInvented(page, label) {
   assert.deepEqual(found, { rows: 0, metrics: 0, sample: false }, label);
 }
 
-test('(a) no bridge behind the forwarder: live data is not connected, one GET, no POST, no Retry, and the ticker says the same', async () => {
+test('(a) no bridge behind the forwarder: live data is not connected, two namespace GETs, no POST, no Retry, and the ticker says the same', async () => {
   const { context, page, errors } = await visit(forwarder(503, 'bridge_unavailable'));
   try {
     assert.equal(await settled(page), 'not_connected');
@@ -197,21 +199,21 @@ test('(a) no bridge behind the forwarder: live data is not connected, one GET, n
     assert.equal(await page.locator('[data-ticker-status]').innerText(), "Live data isn't connected yet");
     await nothingInvented(page, 'not connected');
     await page.waitForTimeout(2500);
-    assert.deepEqual(wire(), ['GET capabilities'], 'asked once, and never again on its own');
+    assert.deepEqual(wire(), ['GET v2 capabilities', 'GET capabilities'], 'asked once, and never again on its own');
     assert.deepEqual(errors, []);
   } finally {
     await closeContext(context);
   }
 });
 
-test('(b) a forwarder that does not serve this address, as on a preview host: said so, one GET, no POST', async () => {
+test('(b) a forwarder that does not serve this address, as on a preview host: said so, two namespace GETs, no POST', async () => {
   const { context, page } = await visit(forwarder(404, 'not_found'));
   try {
     assert.equal(await settled(page), 'not_connected');
     assert.match(await statusOf(page).innerText(), /Live data isn't available on this address/);
     assert.equal(await page.locator('#pools').getByRole('button', { name: 'Retry' }).count(), 0);
     await nothingInvented(page, 'not found');
-    assert.deepEqual(wire(), ['GET capabilities']);
+    assert.deepEqual(wire(), ['GET v2 capabilities', 'GET capabilities']);
   } finally {
     await closeContext(context);
   }
@@ -230,18 +232,18 @@ test('(c) live reads switched off on the server, or the pool route not listed: s
       assert.match(await statusOf(page).innerText(), /Live data is switched off for now/, label);
       assert.equal(await page.locator('#pools').getByRole('button', { name: 'Retry' }).count(), 0, label);
       await nothingInvented(page, label);
-      assert.deepEqual(wire(), ['GET capabilities'], label);
+      assert.deepEqual(wire(), ['GET v2 capabilities', 'GET capabilities'], label);
     } finally {
       await closeContext(context);
     }
   }
 });
 
-test('(d) reads enabled: one GET and five POSTs in order, never pool-metrics; the APR unavailable, figures named with their age; a reload costs the same again', async () => {
+test('(d) reads enabled: one capabilities GET per namespace and five POSTs in order, never pool-metrics; the APR unavailable, figures named with their age; a reload costs the same again', async () => {
   const { context, page, errors } = await visit(bridgeStub());
   try {
     assert.equal(await settled(page), 'none');
-    const first = ['GET capabilities', ...LOAD];
+    const first = ['GET v2 capabilities', 'GET capabilities', ...LOAD];
     assert.deepEqual(wire(), first);
     assert.deepEqual(reads.filter((r) => r.path.endsWith('/pool-market')).map((r) => r.body), SELECTED.map((poolId) => ({ poolId, includePriceHistory: false })));
     assert.deepEqual(reads.filter((r) => r.path.endsWith('/token')).map((r) => r.body.token), [NATIVE, TOKEN_Y, TOKEN_Z], 'the shared token is read once');
@@ -253,9 +255,9 @@ test('(d) reads enabled: one GET and five POSTs in order, never pool-metrics; th
       assert.match(text, /\$12\.3K\s*·\s*GeckoTerminal/, 'the provider is named');
       assert.match(text, /Pool verified on-chain at block 700 · Reported by GeckoTerminal, retrieved \d+ s ago/, 'dated by its retrieval age');
       assert.doesNotMatch(text, /\bas of\b|updated at/i, 'never "as of" or "updated at": the provider update time is unknown');
-      const apr = row.locator('td').last();
+      const apr = row.locator('td').nth(4);
       assert.equal(await apr.innerText(), 'Unavailable');
-      assert.equal(await apr.locator('[data-metric]').getAttribute('title'), 'Unavailable: APR not provided by the read service yet');
+      assert.equal(await apr.locator('[data-metric]').getAttribute('title'), 'Unavailable: Qualified fee APR not provided by the read service');
     }
     // The stub reports each pool the provider's way round (base = currency1): the label keeps the pool's own order.
     assert.equal(await rows.nth(0).locator('td').first().locator('span.font-medium').innerText(), 'ETH/TKY', 'symbols come from the token reads, in the pool’s order');
@@ -265,14 +267,14 @@ test('(d) reads enabled: one GET and five POSTs in order, never pool-metrics; th
     for (const width of [1280, 390]) {
       await page.setViewportSize({ width, height: 900 });
       const heads = await page.locator('#pools thead th').evaluateAll((ths) => ths.map((th) => th.innerText.replace(/\s+/g, ' ').trim()));
-      assert.deepEqual(heads, ['Pool', 'TVL (reported by GeckoTerminal)', '24h volume (reported by GeckoTerminal)', '24h vol/TVL (calculated by Domino)', 'Pool APR'], `${width}px`);
+      assert.deepEqual(heads, ['Pool', 'TVL (reported by GeckoTerminal)', '24h volume (reported by GeckoTerminal)', '24h vol/TVL (calculated by Domino)', 'Qualified fee APR', 'Estimated pool fee APR (unreconciled provider inputs)'], `${width}px`);
     }
     await page.setViewportSize({ width: 1280, height: 900 });
     assert.doesNotMatch(await page.locator('body').innerText(), /geckoterminal\.com/i, 'nor shown');
     assert.match(await rows.nth(1).innerText(), /TKY[\s\S]*TKZ/);
     const ticker = await page.locator('.dm-marquee').innerText();
     assert.match(ticker, /TKZ[\s\S]*APR unavailable/, 'the ticker shows the same result set');
-    const aprStates = await page.locator('.dm-marquee [data-metric]').evaluateAll((els) => els.map((el) => el.getAttribute('data-metric')));
+    const aprStates = await page.locator('.dm-marquee [data-apr-estimate]').evaluateAll((els) => els.map((el) => el.getAttribute('data-apr-estimate')));
     assert.ok(aprStates.length >= 2 && aprStates.every((state) => state === 'unavailable'), `and no APR figure: ${aprStates}`);
 
     leaving(page);
@@ -291,7 +293,7 @@ test('(e) the pool route switched off between the GET and the first POST: said s
     assert.equal(await settled(page), 'disabled');
     assert.match(await statusOf(page).innerText(), /Live data is switched off for now/);
     await nothingInvented(page, 'route switched off');
-    assert.deepEqual(wire(), ['GET capabilities', 'POST pool-market']);
+    assert.deepEqual(wire(), ['GET v2 capabilities', 'GET capabilities', 'POST pool-market']);
   } finally {
     await closeContext(context);
   }
@@ -306,7 +308,7 @@ test('(f) a producer 503: temporarily unavailable with a Retry, never asked agai
     assert.equal(await page.locator('[data-ticker-status]').innerText(), 'Temporarily unavailable');
     await nothingInvented(page, 'producer 503');
     const failed = wire();
-    assert.deepEqual(failed, ['GET capabilities', 'POST pool-market', 'POST pool-market'], 'each pool asked once');
+    assert.deepEqual(failed, ['GET v2 capabilities', 'GET capabilities', 'POST pool-market', 'POST pool-market'], 'each pool asked once');
     await page.waitForTimeout(2500);
     assert.deepEqual(wire(), failed, 'and neither asked again on its own');
 
@@ -327,7 +329,7 @@ test('(g) a 429 read_capacity_busy is asked again under R-1 after its Retry-Afte
   );
   try {
     assert.equal(await settled(page), 'none');
-    assert.deepEqual(wire(), ['GET capabilities', 'POST pool-market', ...LOAD], 'one automatic retry, then the lean load');
+    assert.deepEqual(wire(), ['GET v2 capabilities', 'GET capabilities', 'POST pool-market', ...LOAD], 'one automatic retry, then the lean load');
     assert.equal(await page.locator('#pools tbody tr').count(), 2);
   } finally {
     await closeContext(context);
@@ -355,7 +357,7 @@ test('(h) without the access cookie a read is the gate’s 401: sign in again, n
 
 /** One row's cells and provenance, as a reader sees them. */
 async function rowView(row) {
-  const cells = await row.locator('td').evaluateAll((tds) => tds.slice(1).map((td) => {
+  const cells = await row.locator('td').evaluateAll((tds) => tds.slice(1, 5).map((td) => {
     const el = td.querySelector('[data-metric]');
     return { text: td.innerText.replace(/\s+/g, ' ').trim(), metric: el?.getAttribute('data-metric') ?? null, title: el?.getAttribute('title') ?? null };
   }));
@@ -381,7 +383,7 @@ test('(i) #93 per row: GeckoTerminal figures dated only by retrieval; a rejected
   );
   try {
     assert.equal(await settled(page), 'none', 'a rejected provider observation is a valid read, not a failure');
-    assert.deepEqual(wire(), ['GET capabilities', ...LOAD], 'the rejected pool still reads its tokens, so its row is labelled from them');
+    assert.deepEqual(wire(), ['GET v2 capabilities', 'GET capabilities', ...LOAD], 'the rejected pool still reads its tokens, so its row is labelled from them');
     const rows = page.locator('#pools tbody tr');
     assert.equal(await rows.count(), 2);
 
@@ -453,7 +455,7 @@ test('(k) #93 per row: a 504 on one pool drops only that pool, says which, and i
     assert.match(status, /Some pool data could not be read/);
     assert.ok(status.includes(`Pool ${shortPool(SELECTED[0])}, pool-market: temporarily unavailable.`), status);
     const settledWire = wire();
-    assert.deepEqual(settledWire, ['GET capabilities', 'POST pool-market', 'POST pool-market', 'POST token', 'POST token']);
+    assert.deepEqual(settledWire, ['GET v2 capabilities', 'GET capabilities', 'POST pool-market', 'POST pool-market', 'POST token', 'POST token']);
     await page.waitForTimeout(2500);
     assert.deepEqual(wire(), settledWire, 'nothing asked again on its own');
     await nothingStandsIn(page);
@@ -488,7 +490,7 @@ test('(l) #93 per row: a 429 that outlasts R-1 on one pool leaves the other pool
     assert.equal(await settled(page), 'partial');
     const pm = wire().filter((line) => line === 'POST pool-market').length;
     assert.ok(pm >= 2 && pm <= 4, `the busy pool is asked at most three times under R-1 (${wire()})`);
-    assert.deepEqual(wire().slice(0, 4), ['GET capabilities', 'POST pool-market', 'POST token', 'POST token']);
+    assert.deepEqual(wire().slice(0, 5), ['GET v2 capabilities', 'GET capabilities', 'POST pool-market', 'POST token', 'POST token']);
     const rows = page.locator('#pools tbody tr');
     assert.equal(await rows.count(), 1);
     assert.equal((await rowView(rows.nth(0))).pair, 'ETH/TKY');

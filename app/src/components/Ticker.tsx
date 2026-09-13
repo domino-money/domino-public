@@ -3,6 +3,8 @@ import { describeFailure } from '../lib/read/describe'
 import { shownResult, useMarkets } from '../lib/read/useMarkets'
 import { TokenLabel } from './read/TokenLabel'
 import { TokenMarkPair } from './TokenIcon'
+import { PoolAprEstimate } from './read/screens/PoolAprEstimate'
+import { useNow } from '../lib/read/useNow'
 
 /** The APR in the strip, under the same state rule as the table: never a retained value as current, never an invented one. */
 function Apr({ metric }: { metric: Metric }) {
@@ -45,13 +47,14 @@ function Apr({ metric }: { metric: Metric }) {
  * Scrolling strip of pools across the top of the page: pair, fee tier and
  * pool APR. It reads nothing of its own: it shows the result set of the
  * Selected pools table, from the same provider. Pair names come from the
- * token reads, and the APR reads "APR unavailable" until the read service
- * provides one. With nothing to scroll it says why, in the table's words.
+ * token reads. The backend estimate keeps its source, caveat and age,
+ * separate from qualified historical APR. With no rows it says why.
  */
 export function Ticker() {
   const { state, provider } = useMarkets()
   const result = shownResult(state)
   const markets = result?.markets ?? []
+  const now = useNow(markets.length > 0)
 
   const items = markets.map((m) => (
     <span key={m.key} className="flex items-center gap-2.5 whitespace-nowrap px-6 py-2.5 text-[12px]">
@@ -60,7 +63,8 @@ export function Ticker() {
         <TokenLabel token={m.tokens.base} />/<TokenLabel token={m.tokens.quote} />
       </span>
       <span className="font-mono text-fg-subtle">{feeLabel(m)}</span>
-      <Apr metric={m.feeAprPercent} />
+      {m.feeAprPercent.state === 'qualified' && <Apr metric={m.feeAprPercent} />}
+      <PoolAprEstimate observation={m.feeAprEstimate} now={now} />
     </span>
   ))
 

@@ -8,11 +8,14 @@
 import * as runtime from 'api-contracts/read-v1/runtime.mjs'
 import type { ReadContractVersion } from 'api-contracts/read-v1/types'
 import type { ReadContractPin } from './pin'
+import { READ_V2_PIN } from './pin'
+import type { ReadV2ContractVersion } from 'api-contracts/read-v2/types'
 import type { ReadValidators } from './types'
 
 type Same<A, B> = [A] extends [B] ? ([B] extends [A] ? true : false) : false
 
 // Fails typecheck as soon as the pinned version and the imported runtime disagree.
 void (true satisfies Same<ReadContractVersion, ReadContractPin>)
+void (true satisfies Same<ReadV2ContractVersion, typeof READ_V2_PIN.version>)
 
 export const READ_RUNTIME: ReadValidators = runtime

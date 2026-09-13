@@ -620,6 +620,13 @@ export function projectMarketRow({ market, metrics, tokens }: RowReads): Market 
     volume24hUsd: figure(metrics, d, (v) => v.grossInputVolumeUsd, (m) => m.volume24hUsd),
 
     feeAprPercent: apr(metrics),
+    feeAprEstimate: {
+      data: market.estimate ?? null,
+      reason: market.estimateReason ?? 'estimate_not_enabled',
+      receivedAt: market.provenance.receivedAt,
+      receivedMonotonic: market.provenance.receivedMonotonic,
+    },
+    ...(d.market.data ? { chartTokens: { base: d.market.data.baseToken, quote: d.market.data.quoteToken } } : {}),
     provenance,
   }
 }

@@ -6,7 +6,6 @@ import {
   percentText,
   presentMetric,
   providerStale,
-  readNow,
   retrievedAgeSeconds,
   retrievedText,
   turnover,
@@ -24,6 +23,8 @@ import { ReadStatus, marketsStatus } from './read/ReadStatus'
 import { TokenLabel } from './read/TokenLabel'
 import { TokenMarkPair } from './TokenIcon'
 import { Button, Display, Pill, cx } from './ui'
+import { PoolAprEstimate } from './read/screens/PoolAprEstimate'
+import { useNow } from '../lib/read/useNow'
 
 /**
  * Any presented figure: unavailable, not reported, not current, stale, a
@@ -124,22 +125,6 @@ function provenanceLine(p: MarketProvenance, age: number | null, stale: boolean)
   return `${verified} · ${market} · ${metrics}`
 }
 
-/** This page's clocks, once a second while `active`, so a retrieval age or time on screen keeps counting. */
-function useNow(active: boolean) {
-  const [now, setNow] = useState(readNow)
-  useEffect(() => {
-    if (!active) return
-    const tick = () => setNow(readNow())
-    const first = setTimeout(tick, 0)
-    const timer = setInterval(tick, 1000)
-    return () => {
-      clearTimeout(first)
-      clearInterval(timer)
-    }
-  }, [active])
-  return now
-}
-
 function Row({ m: read, now, onFigures }: { m: Market; now: Instant; onFigures?: () => void }) {
   const p = read.provenance
   const age = p ? retrievedAgeSeconds(p.market, now) : null
@@ -183,6 +168,7 @@ function Row({ m: read, now, onFigures }: { m: Market; now: Instant; onFigures?:
       <td className="px-5 py-4 text-right"><Cell metric={m.volume24hUsd} retrieved={retrieved} /></td>
       <td className="px-5 py-4 text-right"><Shown shown={turnover(m)} muted retrieved={retrieved} /></td>
       <td className="px-5 py-4 text-right"><Cell metric={m.feeAprPercent} percent strong /></td>
+      <td className="px-5 py-4 text-right"><PoolAprEstimate observation={m.feeAprEstimate} now={now} /></td>
     </tr>
   )
 }
@@ -201,16 +187,16 @@ function heads(markets: Market[]): [label: string, note?: string][] {
     ['TVL', lean ? '(reported by GeckoTerminal)' : undefined],
     ['24h volume', lean ? '(reported by GeckoTerminal)' : undefined],
     ['24h vol/TVL', lean ? '(calculated by Domino)' : undefined],
-    ['Pool APR'],
+    ['Qualified fee APR'],
+    ['Estimated pool fee APR', '(unreconciled provider inputs)'],
   ]
 }
 
 /**
  * The pools rugged97 selected for review (src/config/selectedPools.ts), in
  * that order, which is not a ranking. Every figure comes from a validated
- * read and names its provider and age; a figure the read service does not
- * provide, the pool APR today, says so. Nothing is shown in place of a read
- * that failed.
+ * read and names its provider and age. Backend estimates are separate from
+ * qualified historical APR, and missing figures stay unavailable.
  */
 export function MarketsTable() {
   const { state, provider } = useMarkets()

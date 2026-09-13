@@ -33,12 +33,13 @@ test('the real source factory paces only local-live at 10.1 s; deployed reads re
   const source = readFileSync(resolve(root, 'src/lib/read/screens/appSourceBridge.ts'), 'utf8')
   const compiled = ts.transpileModule(source, { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } }).outputText
   for (const localLive of [true, false]) {
-    const validators = {}; const bridge = {}; const scheduled = {}; const calls = []
+    const validators = {}; const estimateRuntime = {}; const bridge = {}; const scheduled = {}; const calls = []
     const exports = {}
     runInNewContext(compiled, { exports, __DOMINO_LOCAL_LIVE__: localLive, require: (path) => {
       if (path === '../../capabilities') return { CAPABILITIES: { liveReadsBuilt: true } }
       if (path === '../contract') return { READ_RUNTIME: validators }
-      if (path === '../bridgeSource') return { createBridgeSource: (options) => { calls.push(['bridge', options]); return bridge } }
+      if (path === 'api-contracts/read-v2/runtime.mjs') return estimateRuntime
+      if (path === '../estimateSource') return { createEstimateSource: (options, runtime) => { calls.push(['bridge', options, runtime]); return bridge } }
       if (path === '../scheduler') return { createScheduledSource: (input, options) => { calls.push(['scheduler', input, options]); return scheduled } }
       throw new Error(`Unexpected source dependency: ${path}`)
     } })
@@ -46,6 +47,7 @@ test('the real source factory paces only local-live at 10.1 s; deployed reads re
     assert.equal(exports.createAppBridgeSource(), scheduled)
     assert.equal(calls[0][1].validators, validators, 'same canonical validators')
     assert.equal(calls[0][1].enabled, true)
+    assert.equal(calls[0][2], estimateRuntime, 'canonical v2 validation is supplied to the same scheduled source')
     assert.deepEqual(Object.keys(calls[0][1]).sort(), ['enabled', 'validators'], 'no retry policy override')
     assert.equal(calls[1][1], bridge, 'same source through the existing scheduler')
     assert.equal(calls[1][2].minIntervalMs, localLive ? 10_100 : 1100)

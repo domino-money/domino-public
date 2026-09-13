@@ -111,3 +111,32 @@ test('an escaped credential in an otherwise valid diagnostic field never reaches
   try { const res = await fetch(`${s.origin}/api/dev/v1/status`); assert.equal(res.status, 502); assert.equal((await res.text()).includes(credentials.clientSecret), false) }
   finally { await s.close() }
 })
+
+test('v2 is a fixed pool-market namespace with its own version, strict request and response binding', async () => {
+  const payload = JSON.parse(readFileSync(resolve(import.meta.dirname, '../../api-contracts/read-v2/fixtures/producer/pool-market.available.json'), 'utf8'))
+  let calls = 0; let sent
+  const s = await server(async (url, options) => { calls++; sent = { url, options }; return new Response(JSON.stringify(payload), { headers: { ...headers, 'X-Domino-Read-Contract': '2.0.0-rc.1' } }) })
+  try {
+    const valid = await post(s, JSON.stringify({ poolId: payload.poolId }), '/api/read/v2/pool-market')
+    assert.equal(valid.status, 200); assert.equal(valid.headers.get('X-Domino-Read-Contract'), '2.0.0-rc.1')
+    assert.equal(sent.url, 'https://dev-read.domino.money/internal/read/v2/pool-market')
+    assert.equal(sent.options.headers['X-Domino-Read-Contract'], '2.0.0-rc.1')
+    for (const body of [{ poolId: payload.poolId, includePriceHistory: true }, { poolId: payload.poolId.toUpperCase() }, { poolId: payload.poolId, target: 'https://evil' }]) assert.equal((await post(s, JSON.stringify(body), '/api/read/v2/pool-market')).status, 422)
+    assert.equal((await post(s, '{}', '/api/read/v2/token')).status, 404)
+    assert.equal(calls, 1)
+    assert.equal((await post(s, JSON.stringify({ poolId: `0x${'f'.repeat(64)}` }), '/api/read/v2/pool-market')).status, 502)
+  } finally { await s.close() }
+})
+
+test('v2 capabilities retain their version and share the one local slot with v1', async () => {
+  const caps = JSON.parse(readFileSync(resolve(import.meta.dirname, '../../api-contracts/read-v2/fixtures/capabilities.enabled.json'), 'utf8'))
+  let release; const gate = new Promise((done) => { release = done })
+  const s = await server(async () => { await gate; return new Response(JSON.stringify(caps), { headers: { ...headers, 'X-Domino-Read-Contract': '2.0.0-rc.1' } }) })
+  try {
+    const pending = fetch(`${s.origin}/api/read/v2/capabilities`)
+    await new Promise((r) => setTimeout(r, 25))
+    assert.equal((await post(s)).status, 429)
+    release(); const result = await pending
+    assert.equal(result.status, 200); assert.equal((await result.json()).contractVersion, '2.0.0-rc.1')
+  } finally { release(); await s.close() }
+})

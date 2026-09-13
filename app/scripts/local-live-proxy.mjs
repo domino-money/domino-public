@@ -3,6 +3,7 @@
 // account. No production cookie, arbitrary target or activation lives here.
 import { createHash } from 'node:crypto'
 import { CONTRACT_VERSION, validateResponse, validateError } from '../../api-contracts/read-v1/runtime.mjs'
+import * as readV2 from '../../api-contracts/read-v2/runtime.mjs'
 import { parseStrictJson } from '../../bridge/src/strict-json.mjs'
 import { validateRequest } from '../../bridge/src/request-contract.mjs'
 import { REQUEST_LIMIT, RESPONSE_LIMIT, DEADLINE_MS, READS, readRoute } from './local-live-boundary.mjs'
@@ -10,7 +11,7 @@ import { validateStatus } from './local-live-status.mjs'
 
 const DESTINATION = 'https://dev-read.domino.money'
 const CONTRACT = 'X-Domino-Read-Contract'
-const error = (status, code) => ({ status, payload: { error: code }, headers: { [CONTRACT]: CONTRACT_VERSION } })
+const errorReply = (status, code, version) => ({ status, payload: { error: code }, headers: { [CONTRACT]: version } })
 function send(res, reply) {
   if (res.destroyed || res.writableEnded) return
   res.writeHead(reply.status, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store, no-transform', 'X-Content-Type-Options': 'nosniff', 'Content-Security-Policy': "default-src 'none'; frame-ancestors 'none'", ...reply.headers })
@@ -43,11 +44,13 @@ export function createLocalProxy({ credentials, statusSchema, fetchImpl = fetch,
   }
   async function upstream(operation, request, body) {
     const signal = operation.control.signal
+    const version = request.version === 'v2' ? readV2.CONTRACT_VERSION : CONTRACT_VERSION
+    const error = (status, code) => errorReply(status, code, version)
     try {
       const response = await fetchImpl(`${DESTINATION}${request.path}`, {
         method: body ? 'POST' : 'GET', body, signal, redirect: 'manual', credentials: 'omit',
         headers: { Accept: 'application/json', ...(body ? { 'Content-Type': 'application/json' } : {}),
-          [CONTRACT]: CONTRACT_VERSION, 'CF-Access-Client-Id': credentials.clientId, 'CF-Access-Client-Secret': credentials.clientSecret },
+          [CONTRACT]: version, 'CF-Access-Client-Id': credentials.clientId, 'CF-Access-Client-Secret': credentials.clientSecret },
       })
       if (response.status >= 300 && response.status < 400) { await response.body?.cancel(); return error(502, 'upstream_invalid_response') }
       // Access HTML, headers and error text never reach the browser. Status
@@ -65,11 +68,12 @@ export function createLocalProxy({ credentials, statusSchema, fetchImpl = fetch,
         payload = parseStrictJson(text)
         if (secrets.some((value) => JSON.stringify(payload).includes(value))) return error(502, 'upstream_invalid_response')
       } catch { return error(502, 'upstream_invalid_response') }
-      if (response.headers.get(CONTRACT) !== CONTRACT_VERSION) return error(502, 'upstream_contract_mismatch')
-      const valid = response.status === 200 ? request.route === 'status' ? validateStatus(statusSchema, payload) : validateResponse(request.route, payload) : validateError(response.status, payload)
+      if (response.headers.get(CONTRACT) !== version) return error(502, 'upstream_contract_mismatch')
+      const valid = response.status === 200 ? request.route === 'status' ? validateStatus(statusSchema, payload) : (request.version === 'v2' ? readV2.validateResponse : validateResponse)(request.route, payload) : validateError(response.status, payload)
       if (!valid) return error(502, 'upstream_invalid_response')
+      if (request.version === 'v2' && request.route === 'pool-market' && response.status === 200 && payload.poolId !== JSON.parse(body).poolId) return error(502, 'upstream_invalid_response')
       if (request.route === 'capabilities' && response.status === 200 && payload.enabledReads.some((name) => !READS.includes(name))) return error(502, 'upstream_invalid_response')
-      const headers = { [CONTRACT]: CONTRACT_VERSION }
+      const headers = { [CONTRACT]: version }
       const id = response.headers.get('X-Domino-Request-Id')
       if (id && /^[0-9a-f]{32}$/.test(id) && !secrets.includes(id)) headers['X-Domino-Request-Id'] = id
       const retry = response.headers.get('Retry-After')
@@ -80,6 +84,8 @@ export function createLocalProxy({ credentials, statusSchema, fetchImpl = fetch,
   const handler = async (req, res) => {
     const started = performance.now()
     const request = readRoute(req.url, req.method)
+    const version = req.url.startsWith('/api/read/v2/') ? readV2.CONTRACT_VERSION : CONTRACT_VERSION
+    const error = (status, code) => errorReply(status, code, version)
     if (!request) { send(res, error(404, 'route_not_available')); return }
     if (closed) { send(res, error(503, 'upstream_unavailable')); return }
     if (admitted >= 8) { send(res, error(429, 'read_capacity_busy')); return }
@@ -97,7 +103,7 @@ export function createLocalProxy({ credentials, statusSchema, fetchImpl = fetch,
         catch (e) { send(res, error(e.message === 'size' ? 413 : 408, e.message === 'size' ? 'request_too_large' : 'request_timeout')); return }
         let payload
         try { payload = parseStrictJson(new TextDecoder('utf-8', { fatal: true }).decode(body), { numberLexemes: true }) } catch { send(res, error(422, 'invalid_request')); return }
-        if (!validateRequest(request.route, payload)) { send(res, error(422, 'invalid_request')); return }
+        if (!(request.version === 'v2' ? readV2.validateRequest : validateRequest)(request.route, payload)) { send(res, error(422, 'invalid_request')); return }
       } else if (req.headers['content-length'] !== undefined && req.headers['content-length'] !== '0') { send(res, error(422, 'invalid_request')); return }
       if (control.signal.aborted) { send(res, error(504, 'upstream_timeout')); return }
       const key = createHash('sha256').update(req.url).update(body ?? '').digest('hex')

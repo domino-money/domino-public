@@ -23,7 +23,6 @@
  * Nothing here retries; pipeline.ts decides that from the outcome.
  */
 import { ERROR_CLASS } from './errors'
-import { ACCEPTED_READ_CONTRACTS } from './pin'
 import type {
   ErrorCode,
   FailedOutcome,
@@ -123,6 +122,9 @@ export function answersRequest<R extends ReadKey>(route: R, request: RequestOf<R
       if (market && (!sameAddress(market.poolId, d.poolId) || !sameList(market.currencies, d.pool.currencies))) return false
       const history = d.priceHistory.data
       if (history && (!sameAddress(history.poolId, d.poolId) || !sameList(history.currencies, d.pool.currencies))) return false
+      if (history && (!market || history.selectedToken !== (q.priceToken ?? 'base') ||
+        !sameAddress(history.currency, market[(q.priceToken ?? 'base') === 'base' ? 'baseToken' : 'quoteToken']) ||
+        !sameAddress(history.baseToken, market.baseToken) || !sameAddress(history.quoteToken, market.quoteToken))) return false
       // Omitted means the schema default, false.
       const wanted = q.includePriceHistory ?? false
       if (wanted && d.priceHistory.status === 'not_requested') return false
@@ -318,7 +320,7 @@ export function interpretReply<R extends ReadKey>(
     }
     return { ...base, state: 'incompatible', reason: 'contract_header_missing' }
   }
-  if (!ACCEPTED_READ_CONTRACTS.has(raw.contractHeader)) {
+  if (raw.contractHeader !== validators.CONTRACT_VERSION) {
     return { ...base, state: 'incompatible', reason: 'contract_version_not_accepted' }
   }
 
@@ -338,7 +340,8 @@ export function interpretReply<R extends ReadKey>(
       return { ...base, state: 'invalid', reason: 'response_contract' }
     }
     if (!answersRequest(route, request, data)) return { ...base, state: 'invalid', reason: 'identity_mismatch' }
-    return { ...base, state: 'ok', data, observation: observe(route, data) }
+    return { ...base, state: 'ok', data, observation: observe(route, data),
+      ...(route === 'pool-market' && validators.poolAprEstimate ? { estimate: validators.poolAprEstimate(parsed.value) } : {}) }
   }
 
   // 6. A producer error: finite code and matching status, or nothing.

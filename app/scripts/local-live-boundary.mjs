@@ -52,6 +52,8 @@ export function permittedBrowserRequest(req, port, websocket = false) {
 /** Exact raw paths only: no normalization can turn a forbidden URL into an
  * allowed operation. Query strings (including empty ones) are not accepted. */
 export function readRoute(path, method) {
+  if (path === '/api/read/v2/capabilities') return method === 'GET' ? { route: 'capabilities', path: '/internal/read/v2/capabilities', version: 'v2' } : null
+  if (path === '/api/read/v2/pool-market') return method === 'POST' ? { route: 'pool-market', path: '/internal/read/v2/pool-market', version: 'v2' } : null
   if (path === '/api/dev/v1/status') return method === 'GET' ? { route: 'status', path: '/internal/dev/v1/status' } : null
   if (path === '/api/read/v1/capabilities') return method === 'GET' ? { route: 'capabilities', path: '/internal/read/v1/capabilities' } : null
   const route = path.startsWith('/api/read/v1/') ? path.slice('/api/read/v1/'.length) : ''

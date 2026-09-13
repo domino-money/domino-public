@@ -62,7 +62,7 @@ const REASONS: Record<string, string> = {
   upstream_timeout: 'read service timed out',
   not_in_read_v1: 'read-v1 has no such field',
   mixed_basis: 'operands come from different sources',
-  fee_apr_not_provided: 'APR not provided by the read service yet',
+  fee_apr_not_provided: 'Qualified fee APR not provided by the read service',
   turnover_undefined: 'no TVL to divide by',
 }
 

@@ -906,7 +906,7 @@ test('the lean table: provider figures named with their age, the APR not provide
   assert.deepEqual(problems, []);
   assert.deepEqual(states(market), ['provider', 'provider', 'unavailable']);
   assert.deepEqual([market.feeAprPercent.value, market.feeAprPercent.reason], [null, 'fee_apr_not_provided']);
-  assert.equal(reasonText('fee_apr_not_provided'), 'APR not provided by the read service yet');
+  assert.equal(reasonText('fee_apr_not_provided'), 'Qualified fee APR not provided by the read service');
   assert.equal(markets.aprLabel(market.feeAprPercent).kind, 'unavailable', 'never 0, never an estimate');
   assert.deepEqual([market.tvlUsd.source, market.tvlUsd.asOf, market.volume24hUsd.source], ['GeckoTerminal', 1010, 'GeckoTerminal']);
   assert.equal(market.provenance.metrics, 'not_requested');

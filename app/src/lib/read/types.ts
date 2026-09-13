@@ -13,9 +13,13 @@ import type {
   CacheObservation,
   ErrorResponse,
   ReadRequests,
-  ReadResponses,
+  ReadResponses as V1ReadResponses,
   Snapshot,
 } from 'api-contracts/read-v1/types'
+import type { CapabilitiesResponse as V2Capabilities, PoolAprEstimate } from 'api-contracts/read-v2/types'
+
+/** Both namespaces expose the same flags; each wire validator requires its exact version. */
+export type ReadResponses = Omit<V1ReadResponses, 'capabilities'> & { capabilities: V1ReadResponses['capabilities'] | V2Capabilities }
 
 /** The nine read families, exactly the contract's `ReadRequests` keys. */
 export type ReadRoute = keyof ReadRequests
@@ -23,7 +27,7 @@ export type ReadRoute = keyof ReadRequests
 export type ReadKey = keyof ReadResponses
 export type RequestOf<R extends ReadKey> = R extends ReadRoute ? ReadRequests[R] : null
 export type ErrorCode = ErrorResponse['error']
-export type { ReadRequests, ReadResponses }
+export type { ReadRequests }
 
 /**
  * The shared validators, satisfied structurally by the package runtime. They
@@ -36,6 +40,8 @@ export interface ReadValidators {
   assertResponse<R extends keyof ReadResponses>(route: R, payload: unknown): ReadResponses[R]
   validateRequest<R extends ReadRoute>(route: R, payload: unknown): payload is ReadRequests[R]
   validateError(status: number, payload: unknown): payload is ErrorResponse
+  /** Only after assertResponse accepted a v2 wrapper; never computes an APR. */
+  poolAprEstimate?(payload: unknown): PoolAprEstimate
 }
 
 /** What a transport observed, before anything about it is believed. */
@@ -142,7 +148,7 @@ export type UnavailableCause =
  * carries nothing a screen could partly render.
  */
 export type ReadOutcome<R extends ReadKey = ReadRoute> = { route: R; provenance: Provenance } & (
-  | { state: 'ok'; data: ReadResponses[R]; observation: Observation }
+  | { state: 'ok'; data: ReadResponses[R]; observation: Observation; estimate?: PoolAprEstimate; estimateReason?: 'estimate_not_enabled' | 'estimate_transport_unavailable' }
   /** 401 `{"error":"beta_access_required"}`: the invitation cookie is missing or expired. */
   | { state: 'gate_required' }
   /** 503 access page: the gate's own configuration is broken. */

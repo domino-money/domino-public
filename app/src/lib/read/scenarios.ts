@@ -26,6 +26,8 @@ export const invalidFixture = (name: string) => `fixtures/invalid/${name}.json`
 export const REQUEST_OVERRIDES: Readonly<Record<string, Readonly<Record<string, unknown>>>> = {
   [gateway('token.native')]: { token: NATIVE },
   [gateway('pool-market.not-requested')]: { includePriceHistory: false },
+  [gateway('pool-market.missing')]: { priceToken: 'quote' },
+  [gateway('pool-market.zero')]: { priceToken: 'quote' },
   // Answered at block 650 for a request of block 700: "latest" is the question it fits.
   [gateway('nft-positions.stale')]: { blockNumber: null, tokenIds: ['1'] },
   // One position each: the question they answer asks for that one id.

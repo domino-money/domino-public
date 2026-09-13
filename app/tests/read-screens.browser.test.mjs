@@ -1078,8 +1078,8 @@ test('provider figures carry their source and retrieval; reasons are visible tex
   assert.match(cells[2].text, /calculated/, 'the ratio says whose calculation it is');
   // F3's lean table never reads pool-metrics, so the APR is unavailable for
   // that reason and not for the one pool-metrics would have given (project.ts
-  // apr(): no metrics -> fee_apr_not_provided). Never a zero, never an estimate.
-  assert.match(cells[3].note, /Unavailable: APR not provided by the read service yet\./, 'APR stays unavailable, and says why');
+  // apr(): no metrics -> fee_apr_not_provided). This qualified historical field never borrows the separate estimate.
+  assert.match(cells[3].note, /Unavailable: Qualified fee APR not provided by the read service\./, 'APR stays unavailable, and says why');
   const notes = page.locator('[data-provider-note]');
   const note = await notes.innerText();
   assert.match(note, /GeckoTerminal figures retrieved \d\d:\d\d:\d\d UTC, 1970-01-01, cache 0 s\. Provider-reported, not reconciled with chain data\. Retrieval age isn’t proof of a complete 24h window\./);

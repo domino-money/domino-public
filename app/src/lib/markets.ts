@@ -20,6 +20,7 @@
  */
 import { compare, formatUsdCompact, ratio, toFixed } from './read/decimal'
 import type { TokenDisplay } from './read/types'
+import type { AprEstimateObservation } from './read/aprEstimate'
 
 export type MetricState =
   | 'qualified'
@@ -117,6 +118,10 @@ export interface Market {
   tvlUsd: Metric
   volume24hUsd: Metric
   feeAprPercent: Metric
+  /** Attributed backend estimate, never a qualified historical APR. */
+  feeAprEstimate?: AprEstimateObservation
+  /** Provider orientation, used to ask for a chart by a verified token address. */
+  chartTokens?: { base: string; quote: string }
   /** Where the row's figures came from. */
   provenance?: MarketProvenance
 }
