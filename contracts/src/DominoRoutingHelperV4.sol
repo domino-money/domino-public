@@ -138,7 +138,9 @@ contract DominoRoutingHelperV4 {
         }
         for (uint256 i; i < plan.budgets.length; ++i) {
             E.FeeBudget calldata b = plan.budgets[i]; T.Source memory source = vault.source(b.sourceId);
-            if (!source.known || !vault.position(source.tokenId).active || (b.maxOriginal == 0 && b.maxCharged == 0)
+            if (!source.known || !vault.position(source.tokenId).active || b.minOriginal > b.maxOriginal || b.minCharged > b.maxCharged
+                || (b.maxOriginal == 0 && b.maxCharged == 0 && !(plan.swap.amountIn != 0
+                    && b.sourceId == plan.swap.sourceId && b.currency != plan.swap.currencyIn))
                 || (b.currency != key.currency0 && b.currency != key.currency1)
                 || (b.maxOriginal != 0 && source.originalCurrency != b.currency)) revert InvalidAmount();
             if (i != 0) {

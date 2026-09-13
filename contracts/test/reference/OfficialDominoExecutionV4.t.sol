@@ -109,8 +109,8 @@ contract OfficialDominoExecutionV4Test {
         p.action=action; p.destinationTokenId=tokenId;
         p.collect=new E.PositionRef[](1);p.collect[0]=E.PositionRef(tokenId,member.identity,p.authority.checkpointId);
         p.budgets=new E.FeeBudget[](2);
-        p.budgets[0]=E.FeeBudget(member.source0,Currency.unwrap(key.currency0),type(uint128).max,0);
-        p.budgets[1]=E.FeeBudget(member.source1,Currency.unwrap(key.currency1),type(uint128).max,0);
+        p.budgets[0]=E.FeeBudget(member.source0,Currency.unwrap(key.currency0),type(uint128).max,0,0,0);
+        p.budgets[1]=E.FeeBudget(member.source1,Currency.unwrap(key.currency1),type(uint128).max,0,0,0);
         _sort(p.budgets);
     }
     function _sort(E.FeeBudget[] memory b) private pure {
@@ -198,7 +198,7 @@ contract OfficialDominoExecutionV4Test {
         p.swap=E.SwapPlan(member.source0,Currency.unwrap(key.currency0),1e9,2e9,0,
             uint128(routing.minimumOutput(1e9,price,true,100)),TickMath.MIN_SQRT_PRICE+1,id);
         E.FeeBudget[] memory b=new E.FeeBudget[](3);b[0]=p.budgets[0];b[1]=p.budgets[1];
-        b[2]=E.FeeBudget(member.source0,Currency.unwrap(key.currency1),0,type(uint128).max);_sort(b);p.budgets=b;
+        b[2]=E.FeeBudget(member.source0,Currency.unwrap(key.currency1),0,0,0,0);_sort(b);p.budgets=b;
     }
     function testOfficialSwapConservationAndChargeOnceLineage() external {
         _setup(false,false);E.Plan memory p=_withSwap();T.Position memory member=vault.position(tokenId);
@@ -207,8 +207,8 @@ contract OfficialDominoExecutionV4Test {
         require(converted.original==0 && converted.charged>0,"converted output original source charged-only");
         require(_balance(Currency.unwrap(key.currency0),address(this))==owner0,"no wallet authority");
         E.Plan memory next=_plan(0,1e9);E.FeeBudget[] memory b=new E.FeeBudget[](2);
-        b[0]=E.FeeBudget(member.source0,Currency.unwrap(key.currency0),type(uint128).max,0);
-        b[1]=E.FeeBudget(member.source0,Currency.unwrap(key.currency1),0,type(uint128).max);_sort(b);next.budgets=b;
+        b[0]=E.FeeBudget(member.source0,Currency.unwrap(key.currency0),type(uint128).max,0,0,0);
+        b[1]=E.FeeBudget(member.source0,Currency.unwrap(key.currency1),0,type(uint128).max,0,0);_sort(b);next.budgets=b;
         uint256 recipient1=_balance(Currency.unwrap(key.currency1),RECIPIENT);vault.execute(next);
         require(_balance(Currency.unwrap(key.currency1),RECIPIENT)==recipient1,"no second charge on converted output");_backed();
     }

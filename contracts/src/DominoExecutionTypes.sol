@@ -13,7 +13,7 @@ library DominoExecutionTypes {
     uint8 internal constant FUND = 2;
     uint8 internal constant MINT = 3;
     struct PositionRef { uint256 tokenId; bytes32 positionIdentity; bytes32 checkpointId; }
-    struct FeeBudget { bytes32 sourceId; address currency; uint128 maxOriginal; uint128 maxCharged; }
+    struct FeeBudget { bytes32 sourceId; address currency; uint128 maxOriginal; uint128 maxCharged; uint128 minOriginal; uint128 minCharged; }
     struct SwapPlan {
         bytes32 sourceId;
         address currencyIn;

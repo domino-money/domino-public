@@ -85,6 +85,8 @@ contract DominoExecutionEngineV4 {
             if (plan.swap.amountIn != 0) swapGross = _swap(vault,plan,key);
             _fund(vault,plan,key,swapGross);
         }
+        for (uint256 i; i < plan.budgets.length; ++i)
+            if (plan.budgets[i].minOriginal != 0 || plan.budgets[i].minCharged != 0) revert InvalidAmount();
         readHelper.validateCompoundPrice(vault.poolId(),plan.authority,vault.executionLimits().maxObservationAgeSeconds);
         if (_delta(vault.positionManager(),key.currency0) != 0 || _delta(vault.positionManager(),key.currency1) != 0
             || _delta(address(this),key.currency0) != 0 || _delta(address(this),key.currency1) != 0) revert InvalidAmount();
@@ -169,6 +171,7 @@ contract DominoExecutionEngineV4 {
             T.CompoundAmounts memory value = _amounts(vault,b,wanted,priorGross);
             vault.executionApply(b.sourceId,currency,value,vault.positionManager(),false);
             emit BudgetApplied(address(vault),plan.authority.intentId,b.sourceId,currency,_destination,value);
+            _debit(plan.budgets[i],value.grossOriginalConsumed,value.chargedConsumed);
             remaining -= wanted;
         }
         if (remaining != 0) revert InvalidAmount();
@@ -198,6 +201,7 @@ contract DominoExecutionEngineV4 {
             value = readHelper.compoundAmounts(value,zero ? added0 : added1,budget.maxOriginal,0,vault.policy().serviceFeeBps);
             if (value.grossOriginalConsumed > value.realized) revert InvalidAmount();
             vault.executionApply(budget.sourceId,budget.currency,value,vault.positionManager(),true);
+            _debit(plan.budgets[i],value.grossOriginalConsumed,value.chargedConsumed);
             emit BudgetApplied(address(vault),plan.authority.intentId,budget.sourceId,budget.currency,id,value);
         }
         T.Checkpoint memory afterPoint = _point(vault,id); _after(beforePoint,afterPoint,plan.authority.liquidityIncrease);
@@ -216,7 +220,7 @@ contract DominoExecutionEngineV4 {
         }
         if (budgetIndex == type(uint256).max || route.maxOriginal > plan.budgets[budgetIndex].maxOriginal
             || route.maxCharged > plan.budgets[budgetIndex].maxCharged) revert InvalidAmount();
-        E.FeeBudget memory budget = E.FeeBudget(route.sourceId,route.currencyIn,route.maxOriginal,route.maxCharged);
+        E.FeeBudget memory budget = E.FeeBudget(route.sourceId,route.currencyIn,route.maxOriginal,route.maxCharged,0,0);
         T.CompoundAmounts memory value = _amounts(vault,budget,route.amountIn,0);
         T.ExecutionLimits memory limits = vault.executionLimits();
         uint160 anchorPrice = priceGuard.referencePrice(route.priceObservationId,vault.poolId(),plan.authority.observedAtBlock,
@@ -239,11 +243,23 @@ contract DominoExecutionEngineV4 {
             || _balance(outputCurrency) != beforeOutput+amountOut) revert InvalidAmount();
         uint128 outputBefore = vault.feeBalance(route.sourceId,outputCurrency).charged;
         vault.executionConvert(route.sourceId,outputCurrency,amountOut);
-        plan.budgets[budgetIndex].maxOriginal -= value.grossOriginalConsumed;
-        plan.budgets[budgetIndex].maxCharged -= value.chargedConsumed;
+        _debit(plan.budgets[budgetIndex],value.grossOriginalConsumed,value.chargedConsumed);
+        bool outputBudget;
+        for (uint256 i; i < plan.budgets.length; ++i) {
+            if (plan.budgets[i].sourceId == route.sourceId && plan.budgets[i].currency == outputCurrency) {
+                plan.budgets[i].maxCharged += amountOut; outputBudget = true;
+            }
+        }
+        if (!outputBudget) revert InvalidAmount();
         emit FeesConverted(address(vault),plan.authority.intentId,route.sourceId,route.currencyIn,outputCurrency,
             route.amountIn,amountOut,value,outputBefore,vault.feeBalance(route.sourceId,outputCurrency).charged);
         return value.grossOriginalConsumed;
+    }
+
+    function _debit(E.FeeBudget memory budget, uint128 original, uint128 charged) private pure {
+        budget.maxOriginal -= original; budget.maxCharged -= charged;
+        budget.minOriginal = original >= budget.minOriginal ? 0 : budget.minOriginal - original;
+        budget.minCharged = charged >= budget.minCharged ? 0 : budget.minCharged - charged;
     }
 
     function _balance(address currency) private view returns (uint256) {
