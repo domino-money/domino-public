@@ -94,7 +94,8 @@ export function sequenceDeploymentFrom(value: unknown, now = Date.now() / 1000):
 
 /** Closed owner-only calls: no backend calldata, signer, router or nonce is
  * accepted. Every logical action has one deadline and a fixed read ceiling. */
-export function createSequenceClient(wallet: WalletRpc, deployment: SequenceDeployment, now = () => Date.now() / 1000) {
+export function createSequenceClient(wallet: WalletRpc, deployment: SequenceDeployment, now = () => Date.now() / 1000,
+  currentAdmission?: () => Promise<SequenceDeployment | null>) {
   const d = Object.freeze({ ...deployment, codeHashes: Object.freeze({ ...deployment.codeHashes }) })
   type Rpc = (method: string, params: unknown[], rejected?: (error: unknown) => Promise<void>) => Promise<unknown>
   type Context = { rpc: Rpc; block: Hex; hash: Hex }
@@ -144,6 +145,14 @@ export function createSequenceClient(wallet: WalletRpc, deployment: SequenceDepl
   }
   async function verify(c: Context, recovery = false) {
     if (!recovery && now() >= d.expiresAt) fail('sequence_release_expired')
+    if (!recovery) {
+      // The UI performs one bounded same-origin GET here. OFF or a changed
+      // profile must stop a previously loaded client before the wallet opens.
+      const current=await currentAdmission?.()
+      if (!current || now() >= current.expiresAt
+        || [...components,'operator','pricePublisher','serviceFeeRecipient','serviceFeeBps'].some(k => current[k as keyof SequenceDeployment] !== d[k as keyof SequenceDeployment])
+        || Object.entries(d.codeHashes).some(([key,hash]) => current.codeHashes[key as keyof SequenceDeployment['codeHashes']] !== hash)) fail('sequence_admission_unavailable')
+    }
     if (keccak256(cloneRuntime(d.implementation)) !== d.codeHashes.vault) fail('invalid_clone_template')
     // Recovery does not require the engine, publisher, read service or session.
     for (const k of recovery ? ['factory','implementation'] as Component[] : components) await code(c, k)

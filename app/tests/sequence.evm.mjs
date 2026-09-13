@@ -5,8 +5,9 @@ import { pathToFileURL } from 'node:url';
 import { decodeFunctionData, zeroAddress } from 'viem';
 const f=JSON.parse(readFileSync(0,'utf8'));
 assert.match(f.url,/^http:\/\/127\.0\.0\.1:[0-9]+$/);
-const {createSequenceClient,sequenceDeploymentFrom,sequenceIdentity,sequenceAbi}=await import(pathToFileURL(process.env.DOMINO_SEQUENCE_SDK_MODULE).href);
-let now=f.now, current=true, mode='normal', checks=0;
+const {createSequenceClient:createClient,sequenceDeploymentFrom,sequenceIdentity,sequenceAbi}=await import(pathToFileURL(process.env.DOMINO_SEQUENCE_SDK_MODULE).href);
+let now=f.now, current=true, admitted=true, mode='normal', checks=0;
+const createSequenceClient=(wallet,deployment,clock)=>createClient(wallet,deployment,clock,async()=>admitted?sequenceDeploymentFrom(f.release,clock()):null);
 const claims=new Map(), calls=[];
 async function rpc(method,params=[]){
   const response=await fetch(f.url,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({jsonrpc:'2.0',id:1,method,params}),signal:AbortSignal.timeout(10_000)});
@@ -58,6 +59,10 @@ const createHash=await settle(client,creation);
 const created=await client.inspect(root.vault);assert.equal(created.paused,true);assert.equal(created.rootPermissionValid,true);assert.equal(created.rootTokenId,BigInt(f.root));check();
 const activation=await client.resume(root.vault,gas);assert.equal(activation.kind,'resume');assert(activation.summary.some(x=>x.includes('Policy version 1')));assert(activation.summary.some(x=>x.includes('Execution gas cost cap')));
 await assert.rejects(client.send(activation,false),/review_required/);check();
+admitted=false;const beforeOff=calls.filter(x=>x.method==='eth_sendTransaction').length;
+await assert.rejects(client.send(activation,true),/sequence_admission_unavailable/);
+await assert.rejects(client.create(options,gas),/sequence_admission_unavailable/);
+assert.equal(calls.filter(x=>x.method==='eth_sendTransaction').length,beforeOff);admitted=true;check();
 mode='wrongcode';await assert.rejects(client.send(activation,true),/deployment_code_changed/);mode='normal';check();
 await settle(client,activation);assert.equal((await client.inspect(root.vault)).paused,false);check();
 await assert.rejects(client.resume(root.vault,gas),/sequence_activation_unavailable/);check();
@@ -70,6 +75,7 @@ const recovery=createSequenceClient(wallet,{...d,expiresAt:0},()=>now);
 await assert.rejects(recovery.create(options,gas),/sequence_release_expired/);check();
 await assert.rejects(recovery.resume(root.vault,gas),/sequence_release_expired/);check();
 const originalEngine=await rpc('eth_getCode',[d.engine,'latest']);await rpc('anvil_setCode',[d.engine,'0x']);
+admitted=false;
 const ownerOnlyStart=calls.length;
 assert.equal((await recovery.inspect(root.vault)).rootPermissionValid,false);
 await settle(recovery,await recovery.recover(root.vault,'revoke-operator',gas));
@@ -83,6 +89,7 @@ assert.equal(calls.slice(ownerOnlyStart).some(x=>x.method==='eth_getCode'&&x.par
 await assert.rejects(recovery.recover(f.oldVault,'withdraw-child',gas,{tokenId:BigInt(f.root)}),/invalid_child/);check();
 await assert.rejects(recovery.recover(f.oldVault,'withdraw-fees',gas,{...balance,original:balance.original+1n,charged:0n}),/fee_reserve_insufficient/);check();
 await rpc('anvil_setCode',[d.engine,originalEngine]);
+admitted=true;
 await assert.rejects(client.resume(root.vault,gas),/sequence_activation_unavailable/);check();
 // A definite rejection arriving after our UI timeout releases that exact
 // claim. The UI still requires a newly prepared and acknowledged review.

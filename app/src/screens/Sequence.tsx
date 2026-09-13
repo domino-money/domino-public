@@ -21,6 +21,18 @@ type Root = Awaited<ReturnType<Client['inspectRoot']>>
 type Reserves = Awaited<ReturnType<Client['reserves']>>
 const cacheKey = 'domino.sequence.public-recovery.v1'
 
+async function currentSequenceDeployment():Promise<SequenceDeployment|null> {
+  const controller=new AbortController(), timer=setTimeout(()=>controller.abort(),10_000)
+  try {
+    const response=await financialFetch('/api/setup/v1/sequence-release',{signal:controller.signal,cache:'no-store',redirect:'error',headers:{'X-Domino-Setup-Contract':'1.0.0-rc.1'}})
+    if(!response.ok||response.headers.get('X-Domino-Setup-Contract')!=='1.0.0-rc.1'||!response.body)throw new Error('sequence_release_unavailable')
+    const reader=response.body.getReader(), chunks:Uint8Array[]=[];let size=0
+    while(true){const chunk=await reader.read();if(chunk.done)break;size+=chunk.value.byteLength;if(size>8192){await reader.cancel();throw new Error('invalid_sequence_release')}chunks.push(chunk.value)}
+    const bytes=new Uint8Array(size);let offset=0;for(const chunk of chunks){bytes.set(chunk,offset);offset+=chunk.length}
+    return sequenceDeploymentFrom(JSON.parse(new TextDecoder('utf-8',{fatal:true}).decode(bytes)))
+  } finally {clearTimeout(timer)}
+}
+
 /** Owner controls use the wallet directly. A wallet connection is deliberately
  * separate from a private Domino session and from executor availability. */
 export default function Sequence() {
@@ -49,22 +61,14 @@ export default function Sequence() {
     finally {if(generation.current===gen){running.current=false;setBusy(false)}}
   }
   async function connect() {
-    const gen=generation.current, controller=new AbortController(), timer=setTimeout(()=>controller.abort(),10_000)
+    const gen=generation.current
     let d:SequenceDeployment|null=null, saved=false
-    try {
-      const response=await financialFetch('/api/setup/v1/sequence-release',{signal:controller.signal,cache:'no-store',redirect:'error',headers:{'X-Domino-Setup-Contract':'1.0.0-rc.1'}})
-      if(!response.ok||response.headers.get('X-Domino-Setup-Contract')!=='1.0.0-rc.1'||!response.body)throw new Error('sequence_release_unavailable')
-      const reader=response.body.getReader(), chunks:Uint8Array[]=[];let size=0
-      while(true){const chunk=await reader.read();if(chunk.done)break;size+=chunk.value.byteLength;if(size>8192){await reader.cancel();throw new Error('invalid_sequence_release')}chunks.push(chunk.value)}
-      const bytes=new Uint8Array(size);let offset=0;for(const chunk of chunks){bytes.set(chunk,offset);offset+=chunk.length}
-      d=sequenceDeploymentFrom(JSON.parse(new TextDecoder('utf-8',{fatal:true}).decode(bytes)))
-    } catch { /* Previously verified public identities can recover existing assets. */ }
-    finally {clearTimeout(timer)}
+    try {d=await currentSequenceDeployment()} catch { /* Previously verified public identities can recover existing assets. */ }
     if(!d)try {const raw=localStorage.getItem(cacheKey);if(raw&&raw.length<=8192){const old=sequenceDeploymentFrom(JSON.parse(raw),0);if(old){d={...old,expiresAt:0};saved=true}}}catch{ /* Cache is optional; it never contains owner data or a key. */ }
     if(generation.current!==gen)return
     if(!d){setNotice('Sequence creation is not available on this deployment yet. No approval or transaction was requested.');return}
     const wallet=await setupWallet(), epoch=++connection.current
-    const next=createSequenceClient({...wallet,current:()=>wallet.current()&&connection.current===epoch},d)
+    const next=createSequenceClient({...wallet,current:()=>wallet.current()&&connection.current===epoch},d,()=>Date.now()/1000,currentSequenceDeployment)
     const rows=await next.recent()
     if(generation.current!==gen||!wallet.current())return
     if(!saved)try{localStorage.setItem(cacheKey,JSON.stringify({contractVersion:'1.0.0-rc.1',chainId:4663,available:true,deployment:d}))}catch{ /* Recovery still works while this verified profile is loaded. */ }
@@ -97,7 +101,10 @@ export default function Sequence() {
     const step=prepared,gen=generation.current
     running.current=true;setBusy(true);setPrepared(null);setAck(false);setHash(null)
     try {const result=await client.send(step,true);if(generation.current===gen){setHash(result);setForm(old=>({...old,vault:step.vault}));setNotice('Offered to your wallet once. Check the canonical receipt, then read the position or sequence again before the next step.')}}
-    catch(error){if(generation.current===gen)setNotice(error&&typeof error==='object'&&(error as {code?:unknown}).code===4001?'Wallet request rejected. Prepare and review again if you want to continue.':'The wallet outcome may be unknown. Check wallet activity and chain state. This nonce remains protected against another offer, including after reload.')}
+    catch(error){if(generation.current===gen){
+      const beforeWallet=error instanceof Error&&['review_required','sequence_admission_unavailable','sequence_release_expired','sequence_preparation_changed','sequence_activation_unavailable','sequence_tariff_changed','deployment_code_changed','deployment_identity_changed','root_approval_changed'].includes(error.message)
+      setNotice(beforeWallet?'The preparation is no longer valid. No wallet transaction was requested. Reload the deployment or sequence, then prepare and review again.':error&&typeof error==='object'&&(error as {code?:unknown}).code===4001?'Wallet request rejected. Prepare and review again if you want to continue.':'The wallet outcome may be unknown. Check wallet activity and chain state. This nonce remains protected against another offer, including after reload.')
+    }}
     finally {if(generation.current===gen){running.current=false;setBusy(false)}}
   }
   const fields=(names:(keyof typeof empty)[]) => <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">{names.map(name=><label className="text-sm" key={name}>{labels[name]}<input disabled={busy} className="mt-1 block w-full rounded border bg-surface-1 p-2" value={form[name]} onChange={e=>edit(name,e.target.value)} autoComplete="off" /></label>)}</div>
