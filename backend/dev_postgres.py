@@ -137,6 +137,10 @@ def create_database(name):
         conn.execute((ROOT/'migrations/016_managed_performance.sql').read_text())
 
 
+        conn.execute((ROOT/'migrations/017_performance_financial_history.sql').read_text())
+
+
+
 def main():
     parser=argparse.ArgumentParser(description=__doc__)
     parser.add_argument('action',choices=['start','stop','prepare-tests'])

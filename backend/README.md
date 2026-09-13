@@ -1,16 +1,22 @@
 # Backend foundation
 
 
+
 [Execution policy](../docs/EXECUTION_POLICY.md) supersedes historical owner, ACK
 and approval procedures here. Any authorized collaborator or agent may implement
 and operate within scope, recording results alongside or after execution.
 Technical controls, compatibility evidence and wallet consent still apply.
+
+
 
 The [managed-performance collection candidate](../docs/MANAGED_PERFORMANCE_COLLECTION.md)
 adds forward canonical opening/receipt acquisition, a private durable journal and
 an authenticated `performance-v1` card projection. Financial metrics remain null
 until the execution-effect adapter and qualified valuations complete their evidence.
 It adds no running listener, scheduler, frontend hook or live execution capability.
+
+
+
 
 
 The [E1 hardening boundary](../reports/EXECUTION_E1_HARDENING.md) supplies strict
@@ -24,6 +30,15 @@ reconstructs original/charged fee use, actual service cuts and added liquidity;
 optional E1 reconciliation still requires exact immutable allocations. This is
 an internal read-only module, with no automatic polling, persistence or route.
 Realization remains unqualified as earning time, USD income or a complete APR.
+
+
+
+The [forward financial history producer](../docs/MANAGED_FINANCIAL_HISTORY.md)
+connects persisted canonical pages to V3 receipt effects, exact capital/accrual
+observations and qualified event-time valuation. Its separate financial journal
+survives failed reads/replay and preserves owner isolation. This is an internal
+review candidate; the current card contract still requires null financial values.
+
 
 The local [APR metrics candidate](../docs/APR_METRICS.md) adds exact pool-estimate
 and managed fee-performance calculators plus `preview_metrics.py`. Pool mode

@@ -57,6 +57,66 @@ def calc(value):
 
 
 class ManagedPerformanceTests(unittest.TestCase):
+    def test_private_high_precision_inputs_do_not_round_before_apr(self):
+        from fractions import Fraction
+        from performance_valuation import exact_decimal
+        value = evidence()
+        price = Fraction(1, 10**36)
+        tiny = price / 10**255
+        value['capital'] = [segment(values={'1': exact_decimal(tiny), None: '0'})]
+        value['credits'] = [credit(raw='1')]
+        value['credits'][0]['amount'] = amount('1', decimals=255, price=exact_decimal(price))
+        value['debits'] = []
+        result = calc(value)
+        self.assertEqual(result['status'], 'available')
+        self.assertEqual(result['grossFeeAprPercent'], '36500.000000000000000000')
+        self.assertEqual(result['newTradingFeesUsd'], '0.000000000000000000')
+        # The zero above is display truncation only; the exact integral is nonzero.
+        self.assertEqual(result['decimalPlaces'], 18)
+
+    def test_private_precision_input_budget_still_rejects_oversized_numbers(self):
+        for number in ('0.'+'1'*401, '1'*513):
+            value = evidence()
+            value['capital'][0]['components'][0]['valueUsd'] = number
+            with self.assertRaises(ValidationError):
+                calc(value)
+
+    def test_post_opening_block_fees_in_same_second_are_included(self):
+        value = evidence()
+        value['openingBlockNumber'] = 100
+        value['credits'] = [credit(at=0)]
+        value['debits'] = [debit(at=0)]
+        for row in value['credits']+value['debits']:
+            row['blockNumber'] = 101
+        result = calc(value)
+        self.assertEqual(result['newTradingFeesUsd'], '10.000000000000000000')
+        self.assertEqual(result['actualServiceFeesUsd'], '0.200000000000000000')
+        for block in (None,100,90001):
+            invalid = copy.deepcopy(value)
+            invalid['credits'][0]['blockNumber'] = block
+            with self.assertRaisesRegex(ValueError,'event_outside_epoch_blocks'):
+                calc(invalid)
+
+    def test_block_anchor_does_not_include_rolling_window_cutoff(self):
+        value = evidence(end=DAY+10)
+        value['openingBlockNumber'] = 100
+        value['credits'] = [credit(at=10)]
+        value['debits'] = [debit(at=10)]
+        for row in value['credits']+value['debits']:
+            row['blockNumber'] = 101
+        self.assertEqual(calc(value)['newTradingFeesUsd'], '0.000000000000000000')
+        self.assertEqual(calc(value)['actualServiceFeesUsd'], '0.000000000000000000')
+
+    def test_missing_decimals_is_unknown_not_an_assumed_denomination(self):
+        value = evidence()
+        item = value['credits'][0]['amount']
+        item['decimals'] = None
+        with self.assertRaisesRegex(ValueError,'qualified_price_requires_decimals'):
+            calc(value)
+        item['price'].update(status='unavailable',usdPerToken=None)
+        self.assertIsNone(calc(value)['newTradingFeesUsd'])
+        self.assertIsNone(calc(value)['grossFeeAprPercent'])
+
     def test_full_day_hand_calculated_gross_and_net_apr(self):
         result = calc(evidence())
         self.assertEqual(result['status'], 'available')
@@ -368,7 +428,7 @@ class ManagedPerformanceTests(unittest.TestCase):
         before = copy.deepcopy(value)
         expected = calc(value)
         self.assertEqual(value, before)
-        self.assertEqual(validate_performance_evidence(value, now=DAY).model_dump(), value)
+        self.assertEqual(validate_performance_evidence(value, now=DAY).model_dump(exclude_unset=True), value)
         model = PerformanceEvidence.model_validate(value)
         self.assertEqual(calculate_performance(model, now=DAY), expected)
         model.credits[0].amount.raw = '-1'

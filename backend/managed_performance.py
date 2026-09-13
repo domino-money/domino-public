@@ -30,7 +30,10 @@ Hash = Annotated[str, Field(pattern=r'^0x[0-9a-f]{64}$')]
 Identifier = Annotated[str, Field(pattern=r'^[A-Za-z0-9:_-]{1,160}$')]
 Timestamp = Annotated[StrictInt, Field(ge=0, le=2**53 - 1)]
 UIntString = Annotated[str, Field(pattern=r'^(0|[1-9][0-9]{0,77})$')]
-UsdString = Annotated[str, Field(pattern=r'^(0|[1-9][0-9]{0,77})(\.[0-9]{1,18})?$')]
+# Private exact inputs may combine uint256 quantities, 255 token decimals and
+# 36-place observed prices. Rounding them to display precision here changes APR.
+# Output remains 18 places; size limits bound conversion/validation work.
+UsdString = Annotated[str, Field(pattern=r'^(0|[1-9][0-9]{0,511})(\.[0-9]{1,400})?$', max_length=512)]
 
 
 class EvidenceModel(BaseModel):
@@ -60,7 +63,7 @@ class Price(EvidenceModel):
 
 class ValuedAmount(EvidenceModel):
     currency: Address
-    decimals: Annotated[StrictInt, Field(ge=0, le=255)]
+    decimals: Annotated[StrictInt, Field(ge=0, le=255)] | None
     raw: UIntString
     price: Price
 
@@ -84,6 +87,7 @@ class FeeCredit(EvidenceModel):
     epochId: Identifier
     tokenId: UIntString
     timestamp: Timestamp
+    blockNumber: Timestamp | None = None
     kind: Literal['new_trading_fee', 'opening_fee', 'internal_transfer', 'donation']
     amount: ValuedAmount
 
@@ -93,6 +97,7 @@ class CostDebit(EvidenceModel):
     epochId: Identifier
     tokenId: UIntString | None
     timestamp: Timestamp
+    blockNumber: Timestamp | None = None
     kind: Literal['service_fee', 'dex_fee', 'network_gas']
     payer: Literal['strategy', 'operator']
     amount: ValuedAmount
@@ -105,6 +110,7 @@ class PerformanceEvidence(EvidenceModel):
     owner: Address
     positionManager: Address
     startedAt: Timestamp
+    openingBlockNumber: Timestamp | None = None
     snapshot: Snapshot
     coverageStart: Timestamp
     incomeCoverage: Literal['complete', 'partial', 'unavailable']
@@ -139,7 +145,7 @@ def _active(member, at):
 
 def _value(amount, at):
     price = amount.price
-    if (price.status != 'qualified' or price.usdPerToken is None or
+    if (price.status != 'qualified' or amount.decimals is None or price.usdPerToken is None or
             not price.timestamp <= at <= price.validUntil):
         return None
     return Fraction(_raw(amount.raw), 10**amount.decimals) * Fraction(price.usdPerToken)
@@ -153,6 +159,8 @@ def _validate(evidence, now):
     end = evidence.snapshot.timestamp
     if not evidence.startedAt <= evidence.coverageStart <= end:
         raise ValueError('invalid_epoch_coverage')
+    if evidence.openingBlockNumber is not None and evidence.openingBlockNumber > evidence.snapshot.blockNumber:
+        raise ValueError('invalid_opening_block')
     members = {m.tokenId: m for m in evidence.members}
     if len(members) != len(evidence.members) or (evidence.scope == 'nft' and len(members) != 1):
         raise ValueError('invalid_member_set')
@@ -178,11 +186,22 @@ def _validate(evidence, now):
                 (members[record.tokenId].endsAt is not None and
                  record.timestamp > members[record.tokenId].endsAt)):
             raise ValueError('event_outside_member_lifetime')
+        if evidence.openingBlockNumber is not None:
+            opening = isinstance(record, FeeCredit) and record.kind == 'opening_fee'
+            if record.blockNumber is None or (
+                    record.blockNumber != evidence.openingBlockNumber if opening else
+                    not evidence.openingBlockNumber < record.blockNumber <= evidence.snapshot.blockNumber):
+                raise ValueError('event_outside_epoch_blocks')
+        elif record.blockNumber is not None:
+            raise ValueError('missing_opening_block')
         amount, price = record.amount, record.amount.price
         _raw(amount.raw)
-        if amount.currency in decimals and decimals[amount.currency] != amount.decimals:
+        if amount.decimals is None and price.status == 'qualified':
+            raise ValueError('qualified_price_requires_decimals')
+        if amount.decimals is not None and amount.currency in decimals and decimals[amount.currency] != amount.decimals:
             raise ValueError('currency_decimals_mismatch')
-        decimals[amount.currency] = amount.decimals
+        if amount.decimals is not None:
+            decimals[amount.currency] = amount.decimals
         if price.validUntil < price.timestamp or (
                 price.usdPerToken is not None and Fraction(price.usdPerToken) <= 0):
             raise ValueError('invalid_price')
@@ -249,15 +268,19 @@ def calculate_performance(evidence, *, now):
     sums = {'newTradingFeesUsd': Fraction(), 'actualServiceFeesUsd': Fraction(),
             'otherStrategyCostsUsd': Fraction(), 'operatorCostsUsd': Fraction()}
     amounts_ok, operator_costs_ok = income_ok, income_ok
+    def in_window(record):
+        return start < record.timestamp <= end or (
+            start == e.startedAt == record.timestamp and e.openingBlockNumber is not None
+            and record.blockNumber is not None and record.blockNumber > e.openingBlockNumber)
     for credit in e.credits:
-        if start < credit.timestamp <= end and credit.kind == 'new_trading_fee':
+        if in_window(credit) and credit.kind == 'new_trading_fee':
             value = _value(credit.amount, credit.timestamp)
             if value is None:
                 amounts_ok = False
             else:
                 sums['newTradingFeesUsd'] += value
     for debit in e.debits:
-        if start < debit.timestamp <= end:
+        if in_window(debit):
             value = _value(debit.amount, debit.timestamp)
             if value is None:
                 if debit.payer == 'operator':

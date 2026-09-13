@@ -21,7 +21,7 @@
     "managed-unpriced.input.json": "45e097478369a9685abe7b57b108c360820ceabb6ec188c39228a204e2317b8e",
     "managed-unpriced.output.json": "0bc8bfa52fceb5e75f4e2bd8fe057efca73a4c4f7b5066f6a126a1961cbd00ba",
     "managed.input.json": "06e962d119ae8599a5e6b8b82ff20ccdd2e545f7de49799161696ecc3e188ef5",
-    "managed.input.schema.json": "b2af1f39b410c99a90dbf91d2f8cd931486a94cc90729ee38907d5d9467e65f1",
+    "managed.input.schema.json": "6d00fb894578606723382a225dd4be0b5ee7e87914a97f368c29fa17afc635b3",
     "managed.output.json": "7172d793a1e1335af6e07b5ad07191e09cb2e567ea29f9c2c814b603bfc01ccc",
     "pool-missing.input.json": "6fa21bde7a4fc87773e2d793ec845171518d66ac1462c8685725c9af1d0d5995",
     "pool-missing.output.json": "e5410e5bc81609e9cba1a912c526cb213f5ac6124b53468e0222414088b4d2a8",
@@ -34,7 +34,7 @@
   },
   "sources": {
     "api-contracts/read-v1/fixtures/producer/pool-market.success.json": "b8abee56a658da66ab75a11394da8a1a31159d0327e05cd3f39351b779782891",
-    "backend/managed_performance.py": "38816b9fd58f9f95e311bb0dbda8c73711709a81f68a998f5cc62bb5626ae669",
+    "backend/managed_performance.py": "bd5fd03eec50ae9fcc5f7e1b9a122298b860a98eefb9e8f1e19dc03c6920cc0b",
     "backend/pool_apr.py": "de6759e3430a179874b6b4b6f21d9c13ac1157fdeba3dbb87392fcccb90d92c8",
     "backend/preview_metrics.py": "06cd8d91ddfdeed7a40950513cc6a718ecf8c3eaef69ca00af761f44d28ed72e",
     "docs/APR_METRICS.md": "b476baf8b695e2f406b0d84b7a2534b07f38e59721cba0e39d26fb7510d00d8e",

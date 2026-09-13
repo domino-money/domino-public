@@ -18,6 +18,8 @@ OWNER = '0x'+'22'*20
 VAULT = '0x'+'44'*20
 IMPLEMENTATION = '0x'+'45'*20
 FACTORY = '0x'+'46'*20
+READ_HELPER = '0x'+'47'*20
+COMPOUND_ENGINE = '0x'+'48'*20
 TOKEN = '0x'+'77'*20
 NEXT_OWNER = '0x'+'88'*20
 CODE = '0x60006000f3'
@@ -38,7 +40,9 @@ class FakePerformanceRpc:
             'timestamp':hex(1000+n), 'transactions':[]} for n in range(1, 31)}
         self.receipts, self.transactions = {}, {}
         self.owner, self.root_owner = OWNER, OWNER
-        self.code = {a:CODE for a in (VAULT, IMPLEMENTATION, FACTORY, POSITION_MANAGER, POOL_MANAGER, STATE_VIEW)}
+        self.version = 1
+        self.code = {a:CODE for a in (VAULT, IMPLEMENTATION, FACTORY, POSITION_MANAGER, POOL_MANAGER, STATE_VIEW,
+                                    READ_HELPER, COMPOUND_ENGINE)}
         self.active = 1
         self.query_omit = self.query_duplicate = False
         self.receipt_disagrees = self.header_reorg_on_recheck = False
@@ -68,6 +72,7 @@ class FakePerformanceRpc:
             'owner()':([], 'address'), 'positionManager()':([], 'address'), 'poolManager()':([], 'address'),
             'stateView()':([], 'address'), 'rootTokenId()':([], 'uint256'), 'activePositions()':([], 'uint256'),
             'implementationVersion()':([], 'uint64'), 'implementation()':([], 'address'), 'factory()':([], 'address'),
+            'readHelper()':([], 'address'), 'compoundEngine()':([], 'address'),
             'sequenceIdentityHash()':([], 'bytes32'), 'poolId()':([], 'bytes32'),
             'poolKey()':([], '(address,address,uint24,int24,address)'),
             'position(uint256)':(['uint256'], POSITION_TYPE),
@@ -100,7 +105,8 @@ class FakePerformanceRpc:
             else:
                 value = {'owner()':self.owner, 'positionManager()':POSITION_MANAGER, 'poolManager()':POOL_MANAGER,
                     'stateView()':STATE_VIEW, 'rootTokenId()':1, 'activePositions()':self.active,
-                    'implementationVersion()':1, 'implementation()':IMPLEMENTATION, 'factory()':FACTORY,
+                    'implementationVersion()':self.version, 'implementation()':IMPLEMENTATION, 'factory()':FACTORY,
+                    'readHelper()':READ_HELPER, 'compoundEngine()':COMPOUND_ENGINE,
                     'sequenceIdentityHash()':bytes.fromhex(hash_(90)[2:]),'poolId()':bytes.fromhex(POOL_ID[2:]),
                     'poolKey()':KEY,'accountedCurrency(address)':7,'balanceOf(address)':20,
                     'getPositionLiquidity(uint256)':1000}[signature]
@@ -179,6 +185,19 @@ class PerformanceCollectionTests(unittest.TestCase):
                 self.collector.capture(owner,VAULT,ids,code)
         self.rpc.active=2
         with self.assertRaisesRegex(CollectionError,'incomplete_collection_members'):
+            self.collector.capture(OWNER,VAULT,['1'],CODE_HASH)
+
+    def test_capture_preserves_v1_v2_and_pins_v3_engine(self):
+        for version, count in ((1,6), (2,7), (3,8)):
+            with self.subTest(version=version):
+                self.rpc.version = version
+                baseline = self.collector.capture(OWNER,VAULT,['1'],CODE_HASH)
+                self.assertEqual(baseline.opening.implementationVersion,version)
+                self.assertEqual(len(baseline.opening.codePins),count)
+                self.assertEqual(COMPOUND_ENGINE in {p.address for p in baseline.opening.codePins},version == 3)
+                self.assertEqual(Baseline.model_validate(baseline.model_dump()),baseline)
+        self.rpc.code[COMPOUND_ENGINE] = '0x'
+        with self.assertRaisesRegex(CollectionError,'collection_code_unavailable'):
             self.collector.capture(OWNER,VAULT,['1'],CODE_HASH)
 
     def test_capture_checks_root_holder_and_complete_child_custody(self):

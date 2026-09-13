@@ -176,8 +176,14 @@ BEGIN
   EXECUTE format('REVOKE ALL ON SCHEMA domino_performance FROM %I',account);
  END LOOP;
 END $$;
-REVOKE ALL ON ALL TABLES IN SCHEMA domino_performance FROM PUBLIC,domino_performance_collector,domino_performance_reader;
-GRANT SELECT ON ALL TABLES IN SCHEMA domino_performance TO domino_performance_collector,domino_performance_reader;
+-- Limit reapplication to this migration's own objects. A later private
+-- subsystem's grants must neither be removed nor implicitly widened here.
+REVOKE ALL ON domino_performance.epochs,domino_performance.pages,
+ domino_performance.receipts,domino_performance.events,domino_performance.transitions
+ FROM PUBLIC,domino_performance_collector,domino_performance_reader;
+GRANT SELECT ON domino_performance.epochs,domino_performance.pages,
+ domino_performance.receipts,domino_performance.events,domino_performance.transitions
+ TO domino_performance_collector,domino_performance_reader;
 GRANT INSERT,UPDATE ON domino_performance.epochs,domino_performance.pages,
  domino_performance.receipts,domino_performance.events TO domino_performance_collector;
 GRANT INSERT ON domino_performance.transitions TO domino_performance_collector;

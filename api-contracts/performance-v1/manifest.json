@@ -91,7 +91,7 @@
     },
     {
       "path": "backend/performance_collection.py",
-      "sha256": "38a224bfc066da62267524c1d24c15dde5bba2c3ec57e7c285bd79174b25e586"
+      "sha256": "d6b5379d8384f2a30bc4bc288db3c887d6246ea08e2afb122813bacf7d297a69"
     },
     {
       "path": "backend/performance_worker.py",
@@ -99,7 +99,7 @@
     },
     {
       "path": "backend/migrations/016_managed_performance.sql",
-      "sha256": "04285cb7c846cc805e337edaff6b160088d6473cefd94b2ea5b1556d0a6ee568"
+      "sha256": "0fa1f815544d8f02b0a895b729dc4994bf64183b590b96492aa6d7aac2572ce9"
     },
     {
       "path": "backend/authenticated_api.py",
@@ -135,7 +135,7 @@
     },
     {
       "path": "backend/discovery.py",
-      "sha256": "3a1bce4dd8082b63e259ec36e74308561e3bc382ce799ce5b63c7621d34031af"
+      "sha256": "3136e4b14f76ea3e876362ee45c76c4ec530468bb85cdb799df948e318aa6e1a"
     },
     {
       "path": "backend/nft_ownership.py",

@@ -58,6 +58,7 @@ MIGRATIONS = tuple('backend/migrations/' + name + '.sql' for name in (
 PACKAGED_ONLY_MIGRATIONS = (
     'backend/migrations/015_unsigned_execution.sql',
     'backend/migrations/016_managed_performance.sql',
+    'backend/migrations/017_performance_financial_history.sql',
 )
 MAPPINGS = (
     ('domino', 'domino-admin', ADMIN),

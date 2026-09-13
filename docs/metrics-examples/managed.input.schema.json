@@ -19,7 +19,8 @@
         "valueUsd": {
           "anyOf": [
             {
-              "pattern": "^(0|[1-9][0-9]{0,77})(\\.[0-9]{1,18})?$",
+              "maxLength": 512,
+              "pattern": "^(0|[1-9][0-9]{0,511})(\\.[0-9]{1,400})?$",
               "type": "string"
             },
             {
@@ -84,6 +85,20 @@
         "amount": {
           "$ref": "#/$defs/ValuedAmount"
         },
+        "blockNumber": {
+          "anyOf": [
+            {
+              "maximum": 9007199254740991,
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Blocknumber"
+        },
         "epochId": {
           "pattern": "^[A-Za-z0-9:_-]{1,160}$",
           "title": "Epochid",
@@ -147,6 +162,20 @@
       "properties": {
         "amount": {
           "$ref": "#/$defs/ValuedAmount"
+        },
+        "blockNumber": {
+          "anyOf": [
+            {
+              "maximum": 9007199254740991,
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Blocknumber"
         },
         "epochId": {
           "pattern": "^[A-Za-z0-9:_-]{1,160}$",
@@ -259,7 +288,8 @@
         "usdPerToken": {
           "anyOf": [
             {
-              "pattern": "^(0|[1-9][0-9]{0,77})(\\.[0-9]{1,18})?$",
+              "maxLength": 512,
+              "pattern": "^(0|[1-9][0-9]{0,511})(\\.[0-9]{1,400})?$",
               "type": "string"
             },
             {
@@ -333,10 +363,17 @@
           "type": "string"
         },
         "decimals": {
-          "maximum": 255,
-          "minimum": 0,
-          "title": "Decimals",
-          "type": "integer"
+          "anyOf": [
+            {
+              "maximum": 255,
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Decimals"
         },
         "price": {
           "$ref": "#/$defs/Price"
@@ -422,6 +459,20 @@
       "minItems": 1,
       "title": "Members",
       "type": "array"
+    },
+    "openingBlockNumber": {
+      "anyOf": [
+        {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Openingblocknumber"
     },
     "owner": {
       "pattern": "^0x[0-9a-f]{40}$",

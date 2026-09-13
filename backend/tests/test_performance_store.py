@@ -262,7 +262,7 @@ class PerformanceStoreTests(unittest.TestCase):
                           'TRUNCATE domino_performance.epochs CASCADE'):
             with self.assertRaises(psycopg.errors.InsufficientPrivilege): reader.execute(statement)
         flags = self.admin.execute("SELECT relrowsecurity,relforcerowsecurity FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace WHERE n.nspname='domino_performance' AND c.relkind='r'").fetchall()
-        self.assertEqual(len(flags),5)
+        self.assertEqual(len(flags),7)
         self.assertTrue(all(row['relrowsecurity'] and row['relforcerowsecurity'] for row in flags))
 
     def test_actual_roles_cannot_enter_auth_deposit_execution_or_become_collector(self):

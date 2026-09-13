@@ -146,11 +146,11 @@ class Opening(Record):
     stateView: Address
     factory: Address
     implementation: Address
-    implementationVersion: Annotated[StrictInt, Field(ge=1, le=2)]
+    implementationVersion: Annotated[StrictInt, Field(ge=1, le=3)]
     poolId: Hash
     currencies: Annotated[list[Address], Field(min_length=2, max_length=2)]
     members: Annotated[list[MemberOpening], Field(min_length=1, max_length=MAX_MEMBERS)]
-    codePins: Annotated[list[CodePin], Field(min_length=6, max_length=7)]
+    codePins: Annotated[list[CodePin], Field(min_length=6, max_length=8)]
     heldRaw: Annotated[list[Raw], Field(min_length=2, max_length=2)]
     accountedRaw: Annotated[list[Raw], Field(min_length=2, max_length=2)]
     nativeHeldRaw: Raw
@@ -396,7 +396,7 @@ class CanonicalCollector:
         if root not in ids or get('activePositions()', 'uint256') != len(ids):
             raise CollectionError('incomplete_collection_members')
         version = get('implementationVersion()', 'uint64')
-        if version not in (1, 2): raise CollectionError('collection_vault_version_unsupported')
+        if version not in (1, 2, 3): raise CollectionError('collection_vault_version_unsupported')
         implementation, factory = address(get('implementation()', 'address')), address(get('factory()', 'address'))
         sequence = '0x' + get('sequenceIdentityHash()', 'bytes32').hex()
         pool_id = '0x' + get('poolId()', 'bytes32').hex()
@@ -405,7 +405,8 @@ class CanonicalCollector:
         if currencies[0] >= currencies[1] or raw_key[4] != ZERO:
             raise CollectionError('invalid_collection_pair')
         targets = [vault, implementation, factory, pm, pool_manager, state_view]
-        if version == 2: targets.append(address(get('readHelper()', 'address')))
+        if version >= 2: targets.append(address(get('readHelper()', 'address')))
+        if version == 3: targets.append(address(get('compoundEngine()', 'address')))
         pins = [CodePin(address=a, codeHash=self._code(a, block)) for a in targets]
         members = []
         for token_id in ids:
