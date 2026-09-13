@@ -14,7 +14,7 @@ function artifact(name = 'DominoVault', { runtime = 10_000, creation = 30_000 } 
   const metadata = { compiler: { version: PROFILE.compiler }, settings: { compilationTarget: { [`src/${name}.sol`]: name },
     evmVersion: 'cancun', optimizer: { enabled: true, runs: 200 }, viaIR: true, metadata: { bytecodeHash: 'none' } } };
   return { metadata, rawMetadata: JSON.stringify(metadata),
-    abi: [{ type: 'constructor', stateMutability: 'nonpayable', inputs: Array.from({ length: contract.constructorAddresses }, (_, index) => ({ name: `arg${index}`, type: 'address' })) }],
+    abi: [{ type: 'constructor', stateMutability: 'nonpayable', inputs: Array.from({ length: contract.constructorAddresses }, (_, index) => ({ name: `arg${index}`, type: contract.constructorTypes?.[index] ?? 'address' })) }],
     bytecode: { object: bytes(creation), linkReferences: {} }, deployedBytecode: { object: bytes(runtime), linkReferences: {} } };
 }
 function rewriteProfile(value, update) {
@@ -213,4 +213,20 @@ test('compound engine has its own runtime reserve and measured constructor argum
   }));
   assert.deepEqual(over.issues, ['engine_runtime_reserve_exceeded']);
   assert.match(formatReport({ contracts: [over] }), /explicit architecture review/);
+});
+
+
+test('V4 staged architecture and setup static tariff words have explicit size gates', () => {
+  for (const name of ['DominoVaultV4','DominoVaultFactoryV4','DominoExecutionEngineV4','DominoRoutingHelperV4','DominoPriceGuardV4','DominoSetup']) {
+    assert.equal(inspectArtifact(name, artifact(name)).ok, true);
+  }
+  const routing = artifact('DominoRoutingHelperV4'); routing.abi = [];
+  assert.equal(inspectArtifact('DominoRoutingHelperV4', routing).constructorArgumentsBytes, 0);
+  const setup = artifact('DominoSetup');
+  assert.equal(inspectArtifact('DominoSetup', setup).constructorArgumentsBytes, 192);
+  setup.abi[0].inputs[4].type = 'bytes';
+  assert.throws(() => inspectArtifact('DominoSetup', setup), { code: 'constructor_abi_changed' });
+  const boundary = inspectArtifact('DominoVaultV4',artifact('DominoVaultV4',{runtime:24263}));
+  assert.equal(boundary.ok,true); assert.equal(boundary.runtimeHeadroomBytes,313);
+  assert.deepEqual(inspectArtifact('DominoVaultV4',artifact('DominoVaultV4',{runtime:24264})).issues,['vault_runtime_reserve_exceeded']);
 });

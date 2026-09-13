@@ -190,3 +190,17 @@ class ExecutionV4ReceiptEvmTests(unittest.TestCase):
         _,accepted=self.execute(exact)
         self.assertEqual(self.call(self.vault,'stateNonce()',['uint64'])[0],before+1)
         self.assertEqual({r['currency']:int(r['grossOriginalConsumedRaw']) for r in accepted['sources']},grosses)
+
+    def test_netting_gas_parity_uses_separate_transactions_from_identical_snapshot(self):
+        for native in (False,True):
+            self.setup_vault(native=native);self.swaps();plan=self.plan()
+            snapshot=self.rpc.request('evm_snapshot',[])
+            general_receipt,general=self.execute(plan)
+            self.assertTrue(self.rpc.request('evm_revert',[snapshot]))
+            net_receipt,net=self.execute(plan.model_copy(update={'action':1}))
+            fields=('originalAfterRaw','chargedAfterRaw','grossOriginalConsumedRaw','serviceFeeRaw','liquidityAddedRaw')
+            self.assertEqual([tuple(r[f] for f in fields) for r in general['sources']], [tuple(r[f] for f in fields) for r in net['sources']])
+            self.assertEqual(general['liquidityAfterRaw'],net['liquidityAfterRaw'])
+            general_gas=int(general_receipt['gasUsed'],16);net_gas=int(net_receipt['gasUsed'],16)
+            self.assertLess(net_gas,general_gas)
+            print(json.dumps({'native':native,'generalGasUsed':general_gas,'netGasUsed':net_gas,'basis':'same_snapshot_separate_local_transactions'}))

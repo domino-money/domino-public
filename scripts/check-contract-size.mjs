@@ -11,6 +11,13 @@ export const CONTRACTS = Object.freeze([
   Object.freeze({ name: 'DominoVaultFactory', constructorAddresses: 4, runtimeReserveBytes: 0 }),
   Object.freeze({ name: 'DominoVaultReadHelper', constructorAddresses: 2, runtimeReserveBytes: 0 }),
   Object.freeze({ name: 'DominoCompoundEngine', constructorAddresses: 4, runtimeReserveBytes: LIMITS.engineReserveBytes }),
+  Object.freeze({ name: 'DominoVaultV4', constructorAddresses: 7, runtimeReserveBytes: 313 }),
+  Object.freeze({ name: 'DominoVaultFactoryV4', constructorAddresses: 4, runtimeReserveBytes: 0 }),
+  Object.freeze({ name: 'DominoExecutionEngineV4', constructorAddresses: 4, runtimeReserveBytes: 2_048 }),
+  Object.freeze({ name: 'DominoRoutingHelperV4', constructorAddresses: 0, runtimeReserveBytes: 0 }),
+  Object.freeze({ name: 'DominoPriceGuardV4', constructorAddresses: 1, runtimeReserveBytes: 0 }),
+  Object.freeze({ name: 'DominoSetup', constructorAddresses: 6,
+    constructorTypes: Object.freeze(['address', 'address', 'address', 'address', 'uint16', 'uint64']), runtimeReserveBytes: 0 }),
 ]);
 
 const defaultOut = fileURLToPath(new URL('../contracts/out/', import.meta.url));
@@ -71,12 +78,14 @@ function bytecodeSize(section, label) {
 function constructorBytes(abi, contract) {
   if (!Array.isArray(abi)) reject('missing_constructor_abi', 'ABI is required to measure constructor arguments');
   const constructors = abi.filter((entry) => object(entry) && entry.type === 'constructor');
-  if (constructors.length !== 1 || !Array.isArray(constructors[0].inputs)
-      || constructors[0].inputs.length !== contract.constructorAddresses
-      || constructors[0].inputs.some((input) => !object(input) || input.type !== 'address')) {
-    reject('constructor_abi_changed', `expected exactly ${contract.constructorAddresses} address constructor arguments; review the size gate when changing the constructor`);
+  const types = contract.constructorTypes ?? Array(contract.constructorAddresses).fill('address');
+  const absentEmptyConstructor = types.length === 0 && constructors.length === 0;
+  if (!absentEmptyConstructor && (constructors.length !== 1 || !Array.isArray(constructors[0].inputs)
+      || constructors[0].inputs.length !== types.length
+      || constructors[0].inputs.some((input, index) => !object(input) || input.type !== types[index]))) {
+    reject('constructor_abi_changed', `expected constructor (${types.join(',')}); review the size gate when changing its static ABI words`);
   }
-  if (contract.name === 'DominoVaultReadHelper') {
+  if (['DominoVaultReadHelper', 'DominoRoutingHelperV4'].includes(contract.name)) {
     for (const entry of abi) {
       // Custom errors describe revert data, not callable state-changing entry
       // points. The helper's current compiled ABI contains these declarations.
@@ -95,7 +104,7 @@ function constructorBytes(abi, contract) {
 
 export function inspectArtifact(name, artifact) {
   const contract = CONTRACTS.find((item) => item.name === name);
-  if (!contract) reject('unknown_contract', 'only the four production architecture artifacts are admitted');
+  if (!contract) reject('unknown_contract', 'only the enumerated architecture artifacts are admitted');
   if (!object(artifact)) reject('malformed_artifact', 'expected a Forge artifact object');
   checkMetadata(artifact, contract);
   const runtimeBytes = bytecodeSize(artifact.deployedBytecode, 'deployedBytecode');
@@ -107,7 +116,7 @@ export function inspectArtifact(name, artifact) {
   const issues = [];
   if (runtimeHeadroomBytes < 0) issues.push('runtime_limit_exceeded');
   if (initcodeHeadroomBytes < 0) issues.push('initcode_limit_exceeded');
-  if (runtimeHeadroomBytes >= 0 && runtimeHeadroomBytes < contract.runtimeReserveBytes) issues.push(contract.name === 'DominoCompoundEngine' ? 'engine_runtime_reserve_exceeded' : 'vault_runtime_reserve_exceeded');
+  if (runtimeHeadroomBytes >= 0 && runtimeHeadroomBytes < contract.runtimeReserveBytes) issues.push(['DominoCompoundEngine','DominoExecutionEngineV4'].includes(contract.name) ? 'engine_runtime_reserve_exceeded' : 'vault_runtime_reserve_exceeded');
   return { name, ok: issues.length === 0, runtimeBytes, runtimeHeadroomBytes,
     requiredRuntimeReserveBytes: contract.runtimeReserveBytes, creationBytes, constructorArgumentsBytes: argumentsBytes,
     initcodeBytes, initcodeHeadroomBytes, issues };
