@@ -1,0 +1,170 @@
+{
+  "contract": "performance-v1",
+  "contractVersion": "1.0.0-rc.1",
+  "files": [
+    {
+      "path": "fixtures/errors.json",
+      "sha256": "334e9d2436957db3c32f2b589cde2918756d17e9d397815b23307ac609a64272"
+    },
+    {
+      "path": "fixtures/requests/cards.json",
+      "sha256": "1f6cf63d184d85da6da15c1fa8bbddd37f2437e859c9a765b26835164c045eac"
+    },
+    {
+      "path": "fixtures/responses/cards.json",
+      "sha256": "a144ec5f32ad6baf32f373fe778ffe7d628e472ba15c63b6754583028a69c33f"
+    },
+    {
+      "path": "fixtures/variants/baseline-reorged.json",
+      "sha256": "84a5ef7caa078b2b790efa96cabe8276df3f5cf2da0eb8f1dc882bc9eb0a8165"
+    },
+    {
+      "path": "fixtures/variants/canonical-replay.json",
+      "sha256": "8dc3e8383968f3d5c3761891097be418158b0b9c3510fb0547e2e1f117b7fa03"
+    },
+    {
+      "path": "fixtures/variants/dated-snapshot.json",
+      "sha256": "a36ec01901778b1582d76faed00db2d0ce197b8dbb5ece5233194b652ae6278a"
+    },
+    {
+      "path": "fixtures/variants/last-good-read-failed.json",
+      "sha256": "bf561469f85889804bd702875f6c1905d438b0657a5a56608783e2cd927398b6"
+    },
+    {
+      "path": "fixtures/variants/unknown-or-foreign-epoch.json",
+      "sha256": "f0027fdfa7566c4c3fce913a4dc1077a606e82b934f7244fe00dac0b8fbf8e63"
+    },
+    {
+      "path": "runtime.d.mts",
+      "sha256": "2ac28a97e66053a0874c95935841a89e9b2d40c9a27b214211e96070e16d96b3"
+    },
+    {
+      "path": "schema-data.mjs",
+      "sha256": "6237dac15455f350f0a23a07845678ffafc7a7f41499881acddba92ed395239a"
+    },
+    {
+      "path": "schemas/cards.request.schema.json",
+      "sha256": "40435d33a8c942b3f41d3e8b32515aef1615c425a4008f489904d05f16eca886"
+    },
+    {
+      "path": "schemas/cards.response.schema.json",
+      "sha256": "e5162342544e27b535aa77fe16332fcd00a2ba723483b972d7036bd8fbf83a1f"
+    },
+    {
+      "path": "schemas/error.response.schema.json",
+      "sha256": "6fcc8a643a9ee8f44dbcf4c0a1c3ff12fc8332822ec9a503c15e7661fc3cf9f4"
+    },
+    {
+      "path": "types.ts",
+      "sha256": "c0d9f10065261c123d560a6f2de912ad080d12d98b416fd9cb744d1741e30b6c"
+    },
+    {
+      "path": "runtime.mjs",
+      "sha256": "e00496b53d82d37f01cca7aae4fae5c90b3ab8e9dc7e3f23a5b6ca65eafa63c2"
+    },
+    {
+      "path": "README.md",
+      "sha256": "5d6ac7324451e2c529848d5f39e5c8e527a9cb0ce3c38a1fb47301f6bb3a4b70"
+    },
+    {
+      "path": "consumer.typecheck.mts",
+      "sha256": "679bd95c6df844b3f10ef095174e57d64855124bced3d297d43520f7205b6e88"
+    }
+  ],
+  "generator": "scripts/export-performance-contract.py",
+  "sources": [
+    {
+      "path": "backend/performance_models.py",
+      "sha256": "6724779516825e36ab18e2e3add2dfd9a96ee4c322a2fddaaa832439b0a6d8cd"
+    },
+    {
+      "path": "backend/performance_api.py",
+      "sha256": "8d5908608032816156fb2af4bfd10253dab06c3a56c9d52e9f25aac7c249d8db"
+    },
+    {
+      "path": "backend/performance_service.py",
+      "sha256": "8e82d9c65a173f4185d9cbe3c901daa25dac9825e214cee45e79979a767cf8bd"
+    },
+    {
+      "path": "backend/performance_store.py",
+      "sha256": "f3be89b0cd941f7ab0e633b174a85cb231fcc2c1ccfb5b720962631e70e5545d"
+    },
+    {
+      "path": "backend/performance_collection.py",
+      "sha256": "38a224bfc066da62267524c1d24c15dde5bba2c3ec57e7c285bd79174b25e586"
+    },
+    {
+      "path": "backend/performance_worker.py",
+      "sha256": "c5295b647a1f53f0498aab9724d1bebb2aebbb9be9800a74d32a4d0c4f514cd5"
+    },
+    {
+      "path": "backend/migrations/016_managed_performance.sql",
+      "sha256": "04285cb7c846cc805e337edaff6b160088d6473cefd94b2ea5b1556d0a6ee568"
+    },
+    {
+      "path": "backend/authenticated_api.py",
+      "sha256": "d21f0a1488fabd8ed514b159d18831a36878d1bbd0837e1132774dd703522bf3"
+    },
+    {
+      "path": "backend/onboarding_auth.py",
+      "sha256": "0060646f6ceaf95da3b597c68110737d17129afae8dce4120f206de1ed5677d4"
+    },
+    {
+      "path": "backend/session_models.py",
+      "sha256": "3cda2e02ec83a30b82fc9344fd4fa0168b54ac0fa783cb18a72b3e2596ac6393"
+    },
+    {
+      "path": "backend/session_store.py",
+      "sha256": "a59aa12048b4bca60e72c789e4003dad78cc71704aa683a1fdc8308bdd6bc4d1"
+    },
+    {
+      "path": "backend/session_chain.py",
+      "sha256": "9bfca0671c8e90ecc325646b56aba6bbd21e2c31ea92166aa1bc6823b1401b7e"
+    },
+    {
+      "path": "backend/wallet_access.py",
+      "sha256": "e07e6eed8d323aac75f093fb8b1f6b7e8ad3035d9e42b40a9eac3b0ed9cd5820"
+    },
+    {
+      "path": "backend/read_deadline.py",
+      "sha256": "f74ec9bf421525cccde91e5f461479d36ff6155289a7d5db556820937e4786a8"
+    },
+    {
+      "path": "backend/bridge_state.py",
+      "sha256": "f120d5191a51bac01b53901b62c7ea587e280eb071e40b7085c4d52a39d5ac82"
+    },
+    {
+      "path": "backend/discovery.py",
+      "sha256": "3a1bce4dd8082b63e259ec36e74308561e3bc382ce799ce5b63c7621d34031af"
+    },
+    {
+      "path": "backend/nft_ownership.py",
+      "sha256": "90c261c82ea6206677c8e4baf554dd0c46c20b427cba4dd915f744533527ecb0"
+    },
+    {
+      "path": "backend/rpc_config.py",
+      "sha256": "92c09b1aebe54641d60e75ad4b85c82527472776a29fbcf177da2f48ae0374a4"
+    },
+    {
+      "path": "backend/position_accounting.py",
+      "sha256": "34a480c7c9c7445271c2e389f9d405c840ee546d71e2d239905515c9f6254e98"
+    },
+    {
+      "path": "backend/pool_activity.py",
+      "sha256": "382b41269e57eb62e00622bfd09ce2507588b707c387dfc55653afdce2f27f04"
+    },
+    {
+      "path": "backend/v4_math.py",
+      "sha256": "720324f050b056dc5af6a18be1e5c827df7fcdd5b49ea1c538d0e2b60116b1bf"
+    },
+    {
+      "path": "backend/tests/performance_contract_fixtures.py",
+      "sha256": "b21c578a45653a4c9bc36583489b44b6732eff8586743fe0b13586e8f35f1c35"
+    },
+    {
+      "path": "scripts/export-performance-contract.py",
+      "sha256": "cd0f25580e41b9fea98584e93a11e03eec9ffd4328014f7435e3689cef5fb55e"
+    }
+  ],
+  "status": "candidate_disabled_pending_consumer_acknowledgement"
+}

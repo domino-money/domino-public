@@ -1,0 +1,36 @@
+{
+  "cards": [
+    {
+      "collectionReason": "epoch_not_found",
+      "collectionStatus": "unavailable",
+      "complete24h": false,
+      "epochId": "0x1111111111111111111111111111111111111111111111111111111111111111",
+      "executionAvailable": false,
+      "kind": "not_found",
+      "metrics": {
+        "actualServiceFeesUsd": null,
+        "externalDepositsUsd": null,
+        "externalWithdrawalsUsd": null,
+        "grossFeeAprPercent": null,
+        "netFeeAprPercent": null,
+        "netFeeIncomeUsd": null,
+        "newTradingFeesUsd": null,
+        "operatorCostsUsd": null,
+        "otherStrategyCostsUsd": null,
+        "projectedApyPercent": null,
+        "reinvestedUsd": null,
+        "timeWeightedCapitalUsd": null
+      },
+      "performanceReasons": [
+        "financial_receipt_adapter_required",
+        "event_time_valuation_required"
+      ],
+      "performanceStatus": "unavailable"
+    }
+  ],
+  "chainId": 4663,
+  "contractVersion": "1.0.0-rc.1",
+  "executionAvailable": false,
+  "owner": "0x7777777777777777777777777777777777777777",
+  "refreshAfterSeconds": 30
+}

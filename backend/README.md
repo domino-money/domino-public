@@ -1,9 +1,17 @@
 # Backend foundation
 
+
 [Execution policy](../docs/EXECUTION_POLICY.md) supersedes historical owner, ACK
 and approval procedures here. Any authorized collaborator or agent may implement
 and operate within scope, recording results alongside or after execution.
 Technical controls, compatibility evidence and wallet consent still apply.
+
+The [managed-performance collection candidate](../docs/MANAGED_PERFORMANCE_COLLECTION.md)
+adds forward canonical opening/receipt acquisition, a private durable journal and
+an authenticated `performance-v1` card projection. Financial metrics remain null
+until the execution-effect adapter and qualified valuations complete their evidence.
+It adds no running listener, scheduler, frontend hook or live execution capability.
+
 
 The [E1 hardening boundary](../reports/EXECUTION_E1_HARDENING.md) supplies strict
 derived-record/JSON validation and offline plan/effect reconciliation for future

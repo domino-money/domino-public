@@ -1,0 +1,71 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "error": {
+      "enum": [
+        "account_check_unavailable",
+        "account_unsupported",
+        "challenge_invalid",
+        "csrf_invalid",
+        "invalid_request",
+        "invalid_signature",
+        "json_required",
+        "method_not_allowed",
+        "onboarding_capacity_busy",
+        "onboarding_rate_limited",
+        "origin_not_allowed",
+        "performance_capacity_busy",
+        "performance_store_unavailable",
+        "preauth_required",
+        "request_timeout",
+        "request_too_large",
+        "route_not_available",
+        "session_capacity_busy",
+        "session_exists",
+        "session_rate_limited",
+        "session_required",
+        "session_store_unavailable",
+        "upstream_contract_mismatch",
+        "upstream_invalid_response",
+        "upstream_timeout",
+        "upstream_unavailable",
+        "wallet_not_allowed"
+      ],
+      "type": "string"
+    }
+  },
+  "required": [
+    "error"
+  ],
+  "type": "object",
+  "x-status-by-code": {
+    "account_check_unavailable": 503,
+    "account_unsupported": 403,
+    "challenge_invalid": 401,
+    "csrf_invalid": 403,
+    "invalid_request": 400,
+    "invalid_signature": 401,
+    "json_required": 415,
+    "method_not_allowed": 405,
+    "onboarding_capacity_busy": 429,
+    "onboarding_rate_limited": 429,
+    "origin_not_allowed": 403,
+    "performance_capacity_busy": 429,
+    "performance_store_unavailable": 503,
+    "preauth_required": 401,
+    "request_timeout": 504,
+    "request_too_large": 413,
+    "route_not_available": 404,
+    "session_capacity_busy": 429,
+    "session_exists": 409,
+    "session_rate_limited": 429,
+    "session_required": 401,
+    "session_store_unavailable": 503,
+    "upstream_contract_mismatch": 502,
+    "upstream_invalid_response": 502,
+    "upstream_timeout": 504,
+    "upstream_unavailable": 503,
+    "wallet_not_allowed": 403
+  }
+}
