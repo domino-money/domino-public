@@ -90,7 +90,9 @@ explicitly unqualified in the manifest.
 ## Wallet execution and partial recovery
 
 The authorized deployer reviews and signs these requests in order with its
-wallet. Confirm the wallet's chain/account, current nonce, available balance and
+wallet. These are direct creation transactions from that account; Safe or other
+contract-wallet wrappers are not interchangeable with this CREATE/nonce package.
+Confirm the wallet's chain/account, current nonce, available balance and
 gas estimates immediately before each signature. Waiting for a successful
 receipt before the next step keeps failures concrete. A failed creation still
 consumes its nonce; do not shift later transactions or resend a fresh batch
