@@ -15,7 +15,7 @@
  *                provide yet (the pool APR today), even when a value was retained.
  *   rejected     The observation failed an identity check. Never shown.
  *
- * Every row is built from validated reads. There is no sample or placeholder
+ * Every row is built from validated reads. There is no stand-in or placeholder
  * state: a figure nobody observed is unavailable, and says why.
  */
 import { compare, formatUsdCompact, ratio, toFixed } from './read/decimal'
@@ -122,8 +122,29 @@ export interface Market {
   feeAprEstimate?: AprEstimateObservation
   /** Provider orientation, used to ask for a chart by a verified token address. */
   chartTokens?: { base: string; quote: string }
+  /** The pool's own state at the block the row was read at: where its price comes from (lib/read/marketPrice.ts). */
+  poolState?: MarketPoolState
   /** Where the row's figures came from. */
   provenance?: MarketProvenance
+}
+
+/**
+ * A pool's state as the chain holds it at one block: the square-root price
+ * and the tick, exactly as read, the tick spacing, and the two currencies in
+ * the pool's own order. Strings and small integers only: the price itself is
+ * worked out, and checked, in lib/read/marketPrice.ts.
+ */
+export interface MarketPoolState {
+  /** Q64.96, the decimal string as read. */
+  sqrtPriceX96: string
+  tick: number
+  tickSpacing: number
+  /** The block the state was read at. */
+  block: number
+  /** Lowercase. */
+  currency0: string
+  /** Lowercase. */
+  currency1: string
 }
 
 export interface MarketProvenance {
@@ -157,7 +178,7 @@ export interface MarketsResult {
   chainId: number
   network: string
   markets: Market[]
-  /** Present for fixture data; the UI must show it. */
+  /** Present for rows read from contract fixtures; the UI must show it. */
   notice?: string
 }
 

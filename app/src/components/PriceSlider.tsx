@@ -3,11 +3,13 @@ import { times } from '../lib/scenario'
 /**
  * A price control you can actually grab.
  *
- * A native range input sits invisibly over the whole track, so clicking or
+ * A native range input sits invisibly over the whole control, so clicking or
  * dragging anywhere on it works, the keyboard works and screen readers get a
- * real slider. The visuals underneath follow its value: a wide track, the
- * active range shaded, and a large thumb with the price written on it as a
- * multiple of the start price.
+ * real slider. The visuals underneath follow its value: a slim track, the
+ * active range shaded, and a thumb with the value written on it (a multiple of
+ * the start price by default). The thumb is the first `.pointer-events-none`
+ * element here and carries its position as `style.left`; when the input has
+ * keyboard focus, the thumb shows the focus ring.
  */
 export function PriceSlider({
   id,
@@ -37,39 +39,24 @@ export function PriceSlider({
   valueText?: (v: number) => string
 }) {
   const pct = (v: number) => ((v - min) / (max - min)) * 100
-  const inside = lower !== undefined && upper !== undefined && value >= lower && value < upper
+  const band = lower !== undefined && upper !== undefined
+  const inside = band && value >= lower && value < upper
+  // Inside the range (or with no range drawn) the thumb's ring is the informational Tangerine; outside it, the waiting tone.
+  const ring = inside || !band ? 'var(--primary-ink)' : 'var(--money-wait)'
 
   return (
-    <div className="relative select-none py-3">
-      <div className="relative h-3 rounded-full bg-surface-3">
-        {lower !== undefined && upper !== undefined && (
+    <div className="relative select-none pb-1 pt-4">
+      <div className="relative h-1.5 rounded-[var(--radius-pill)] bg-surface-3">
+        {band && (
           <div
-            className="absolute inset-y-0 rounded-full"
+            className="absolute inset-y-0 rounded-[var(--radius-pill)] transition-[left,width] duration-300 ease-enter"
             style={{
               left: `${pct(lower)}%`,
               width: `${pct(upper) - pct(lower)}%`,
-              background: 'var(--accent)',
-              boxShadow: 'inset 0 0 0 1px color-mix(in srgb, var(--primary) 45%, transparent)',
+              background: 'color-mix(in srgb, var(--primary-ink) 55%, transparent)',
             }}
           />
         )}
-        <div
-          className="absolute inset-y-0 left-0 rounded-full"
-          style={{ width: `${pct(value)}%`, background: 'var(--primary)', opacity: 0.35 }}
-        />
-      </div>
-
-      {/* thumb */}
-      <div
-        className="pointer-events-none absolute top-1/2 -translate-x-1/2 -translate-y-1/2"
-        style={{ left: `${pct(value)}%` }}
-      >
-        <div
-          className="flex h-8 items-center justify-center rounded-[var(--radius-pill)] border-2 bg-surface-2 px-2.5 font-mono text-[12px] shadow-[0_4px_16px_-4px_rgba(0,0,0,0.45)]"
-          style={{ borderColor: inside || lower === undefined ? 'var(--primary)' : 'var(--money-wait)' }}
-        >
-          <span className="tnum">{format(value)}</span>
-        </div>
       </div>
 
       <label htmlFor={id} className="sr-only">
@@ -86,12 +73,20 @@ export function PriceSlider({
         // The raw value can be a tick, which says nothing out loud. A screen
         // that knows what its numbers mean passes the words for them.
         aria-valuetext={valueText ? valueText(value) : undefined}
-        className="absolute inset-0 h-full w-full cursor-ew-resize opacity-0"
+        className="peer absolute inset-0 h-full w-full cursor-ew-resize opacity-0"
       />
 
-      <div className="mt-2 flex justify-between font-mono text-[11px] text-fg-subtle">
-        <span>{format(min)}</span>
-        <span>{format(max)}</span>
+      {/* thumb */}
+      <div
+        className="pointer-events-none absolute top-[19px] flex h-7 -translate-x-1/2 -translate-y-1/2 items-center whitespace-nowrap rounded-[var(--radius-pill)] bg-surface-2 px-2.5 text-caption font-medium text-fg peer-focus-visible:outline-2 peer-focus-visible:outline-offset-2 peer-focus-visible:outline-[var(--ring)]"
+        style={{ left: `${pct(value)}%`, boxShadow: `var(--elev-button), inset 0 0 0 1.5px ${ring}` }}
+      >
+        <span className="tnum">{format(value)}</span>
+      </div>
+
+      <div className="mt-5 flex justify-between text-caption text-fg-subtle">
+        <span className="tnum">{format(min)}</span>
+        <span className="tnum">{format(max)}</span>
       </div>
     </div>
   )

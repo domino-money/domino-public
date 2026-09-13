@@ -51,7 +51,7 @@ export const REFRESH_UNAVAILABLE =
   'The service could not renew your session just now. This page will try again shortly; if it cannot, the session ends after 30 minutes idle.'
 
 export const NOT_INVITED =
-  'This wallet isn’t on the invited list for the alpha. Public pages keep working. Ask the team for an invitation.'
+  'This wallet isn’t on the invited list. Public pages keep working. Ask the team for an invitation.'
 
 export function shortAddress(address: string): string {
   return address.length > 12 ? `${address.slice(0, 6)}…${address.slice(-4)}` : address

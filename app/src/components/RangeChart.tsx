@@ -1,4 +1,5 @@
 import { useMemo, useRef } from 'react'
+import type { CSSProperties } from 'react'
 import { previewPosition } from 'core/position'
 import { DEFAULT_DOMAIN, priceAt } from '../lib/geometry'
 import type { Domain } from '../lib/geometry'
@@ -26,11 +27,16 @@ export function useComposition(lower: number, upper: number, domain: Domain = DE
   }, [lower, upper, lo, hi])
 }
 
+/** The dotted plot sits on the card's own surface, so its dots dissolve into that ground at the top and bottom. */
+const PLOT_GROUND = { '--chart-ground': 'var(--surface-2)' } as CSSProperties
+
 /**
  * Token share against price, with the range shaded. The whole chart surface
  * is the handle: press anywhere and drag to move the price. The domain is a
  * fixed prop for the whole gesture, so a pointer held still holds the price
- * still. Prices are multiples of the start price.
+ * still. Prices are multiples of the start price. The marker's label is the
+ * first `.tnum` inside the drag surface; the axis below it names the range and
+ * never moves with the price.
  */
 export function RangeChart({
   curve,
@@ -69,7 +75,7 @@ export function RangeChart({
       <div
         ref={box}
         data-testid="range-chart-price"
-        className="relative cursor-ew-resize select-none touch-none"
+        className="relative mt-8 cursor-ew-resize select-none touch-none"
         style={{ height: H }}
         onPointerDown={(e) => {
           dragging.current = true
@@ -84,36 +90,42 @@ export function RangeChart({
           dragging.current = false
         }}
       >
-        <svg viewBox={`0 0 100 ${H}`} preserveAspectRatio="none" className="absolute inset-0 h-full w-full" aria-hidden="true">
+        {/* The grid is its own layer, so its edge fade never covers the curve or the marker. */}
+        <div aria-hidden="true" className="dm-dots-chart pointer-events-none absolute inset-0 rounded-[var(--radius-sm)]" style={PLOT_GROUND} />
+        <svg viewBox={`0 0 100 ${H}`} preserveAspectRatio="none" className="absolute inset-0 h-full w-full overflow-visible" aria-hidden="true">
           <defs>
             <linearGradient id="dm-token-fill" x1="0" y1="0" x2="0" y2="1">
-              <stop offset="0%" stopColor="var(--primary)" stopOpacity="0.45" />
-              <stop offset="100%" stopColor="var(--primary)" stopOpacity="0.04" />
+              <stop offset="0%" stopColor="var(--primary)" stopOpacity="0.28" />
+              <stop offset="100%" stopColor="var(--primary)" stopOpacity="0.02" />
             </linearGradient>
           </defs>
-          <rect x="0" y="0" width="100" height={H} fill="var(--fg)" opacity="0.04" />
-          <rect x={x(lower)} y="0" width={Math.max(0, x(upper) - x(lower))} height={H} fill="var(--accent)" opacity="0.55" />
+          <rect x={x(lower)} y="0" width={Math.max(0, x(upper) - x(lower))} height={H} fill="var(--primary)" fillOpacity="0.07" />
           <path d={area} fill="url(#dm-token-fill)" />
-          <path d={line} fill="none" stroke="var(--primary)" strokeWidth="1.6" vectorEffect="non-scaling-stroke" />
+          <path d={line} fill="none" stroke="var(--primary-ink)" strokeWidth="1.75" strokeLinejoin="round" vectorEffect="non-scaling-stroke" />
           {[lower, upper].map((b) => (
-            <line key={b} x1={x(b)} y1="0" x2={x(b)} y2={H} stroke="var(--primary)" strokeOpacity="0.7" strokeWidth={1} strokeDasharray="4 4" vectorEffect="non-scaling-stroke" />
+            <line key={b} x1={x(b)} y1="0" x2={x(b)} y2={H} stroke="var(--primary-ink)" strokeOpacity="0.6" strokeWidth={1} strokeDasharray="3 4" vectorEffect="non-scaling-stroke" />
           ))}
           <line x1={x(price)} y1="0" x2={x(price)} y2={H} stroke="var(--fg)" strokeWidth="1.5" vectorEffect="non-scaling-stroke" />
         </svg>
 
-        {/* Price marker */}
-        <div className="pointer-events-none absolute top-0 -translate-x-1/2" style={{ left: `${x(price)}%` }}>
-          <span className="tnum -mt-3 block rounded-[var(--radius-pill)] border bg-surface-3 px-2 py-0.5 font-mono text-[11px]">{times(price)}</span>
+        {/* Price marker: the label rides above the plot, the knob sits on its baseline. */}
+        <div className="pointer-events-none absolute bottom-full mb-2 -translate-x-1/2" style={{ left: `${x(price)}%` }}>
+          <span className="tnum block whitespace-nowrap rounded-[var(--radius-pill)] bg-surface-3 px-2 py-0.5 text-chip font-medium text-fg shadow-[inset_0_0_0_1px_var(--border)]">
+            {times(price)}
+          </span>
         </div>
-        <div className="pointer-events-none absolute -translate-x-1/2 rounded-full border-2 bg-surface-2" style={{ left: `${x(price)}%`, top: H - 9, width: 18, height: 18, borderColor: 'var(--primary)' }} />
+        <div
+          className="pointer-events-none absolute size-3 -translate-x-1/2 rounded-full bg-surface-2"
+          style={{ left: `${x(price)}%`, top: H - 6, boxShadow: 'inset 0 0 0 2px var(--fg), var(--elev-button)' }}
+        />
       </div>
 
-      <div className="mt-4 flex justify-between font-mono text-[11px] text-fg-subtle" data-range-axis="">
-        <span>{times(lo)}</span>
-        <span style={{ color: 'var(--primary)' }}>
+      <div className="mt-3 flex justify-between text-caption text-fg-subtle" data-range-axis="">
+        <span className="tnum">{times(lo)}</span>
+        <span className="tnum text-primary-ink">
           range {times(lower)} to {times(upper)}
         </span>
-        <span>{times(hi)}</span>
+        <span className="tnum">{times(hi)}</span>
       </div>
     </div>
   )

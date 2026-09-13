@@ -19,7 +19,7 @@ import { extname, join, normalize, resolve } from 'node:path';
 import { after, before, test } from 'node:test';
 import { chromium } from 'playwright-core';
 import { TEXT_FILE, findForbidden } from '../scripts/deploy-markers.mjs';
-import { apiOf, close, leaving, open as openPage, problemsOf, reload } from './page-watch.mjs';
+import { apiOf, close, leaving, open as openPage, problemsOf, reload, shown } from './page-watch.mjs';
 import { TOGGLE_VIEWPORTS, textUnderToggle } from './toggle-overlap.mjs';
 
 const DIST = resolve(import.meta.dirname, '../dist');
@@ -112,24 +112,12 @@ const open = (route = '/') => openPage(browser, { origin, route, ignore: (proble
 /** Nothing the browser reported on this page was the page's own doing. */
 const clean = (page, label) => assert.deepEqual(problemsOf(page), [], `${label} reported browser errors`);
 
-/** The element that has focus, described well enough to assert on. */
-const focusedIn = (page, selector) =>
-  page.evaluate((sel) => {
-    const active = document.activeElement;
-    const scope = document.querySelector(sel);
-    return { inside: Boolean(scope && active && scope.contains(active)), tag: active?.tagName ?? null };
-  }, selector);
-
-/** A modal has to say what it is; `role="dialog"` alone announces nothing. */
-async function assertNamed(page, label) {
-  const name = await page.evaluate(() => {
-    const node = document.querySelector('[role="dialog"]');
-    const id = node.getAttribute('aria-labelledby');
-    const labelled = id ? document.getElementById(id) : null;
-    return (labelled?.textContent ?? node.getAttribute('aria-label') ?? '').trim();
-  });
-  assert.ok(name.length > 0, `${label} has no accessible name`);
-}
+/**
+ * What a screen that shows the selected pools asks before it reads them: the
+ * estimate namespace's capabilities, then the read namespace's. Never a POST
+ * when live data is not connected.
+ */
+const CAPABILITIES = ['GET /api/read/v2/capabilities', 'GET /api/read/v1/capabilities'];
 
 test('the built landing page renders its content without a single browser error', async () => {
   const page = await open('/');
@@ -166,12 +154,22 @@ test('exactly one React instance rendered the page', async () => {
   await close(page);
 });
 
+/** Home, the three places in the header, the older spellings App.tsx keeps for two of them, and the two pages the menu and the footer add. */
+const ROUTES = ['/', '/markets', '/explore', '/pools', '/positions', '/app', '/portfolio', '/new', '/automate', '/settings'];
+
 test('every route in the header renders', async () => {
   for (const [route, expected] of [
     ['/', /Robinhood Chain/],
-    ['/app', /position/i],
-    ['/pools', /Explore pools/],
-    ['/settings', /Appearance|Compound|Availability/i],
+    ['/markets', /Markets[\s\S]*Selected pools[\s\S]*Search the pool catalogue/],
+    [`/markets/0x${'1'.repeat(40)}`, /Markets[\s\S]*Search the pool catalogue/],
+    ['/explore', /Markets[\s\S]*Selected pools[\s\S]*Search the pool catalogue/],
+    ['/pools', /Markets[\s\S]*Selected pools[\s\S]*Search the pool catalogue/],
+    ['/positions', /Positions[\s\S]*Managed positions/],
+    ['/app', /Positions[\s\S]*Managed positions/],
+    ['/portfolio', /Wallet/],
+    ['/new', /New position/],
+    ['/automate', /Automate[\s\S]*Auto-compound[\s\S]*Domino sequences/],
+    ['/settings', /Appearance|Compound|Capabilities/i],
   ]) {
     const page = await open(route);
     const body = await page.locator('#root').innerText();
@@ -182,61 +180,67 @@ test('every route in the header renders', async () => {
   }
 });
 
-test('the mobile Dashboard opens the public pool explorer: named, focused, bounded and idle until a read is requested', async () => {
-  const page = await open('/app');
-  assert.equal(await page.locator('header').getByRole('link', { name: 'Pools', exact: true }).getAttribute('href'), '#/pools');
-  await page.setViewportSize({ width: 375, height: 812 });
-  const entrance = page.locator('main').getByRole('link', { name: 'Explore pools' });
-  assert.equal(await entrance.isVisible(), true, 'the mobile Dashboard has a visible entrance');
-  await entrance.click();
-  await page.getByRole('heading', { name: 'Explore pools', exact: true }).waitFor();
-  const trigger = page.getByRole('button', { name: 'Choose first token', exact: true });
-  await trigger.waitFor();
-  assert.equal(await page.getByRole('button', { name: 'Choose second token (optional)' }).isVisible(), true);
-  assert.equal(await page.getByRole('button', { name: 'Explore range' }).isDisabled(), true);
-  await trigger.click();
-  const dialog = page.locator('[data-pool-selection-dialog]');
-  await dialog.waitFor();
-  await assertNamed(page, 'public pool explorer');
-  await page.getByRole('dialog', { name: 'Choose a token from chain data', exact: true }).waitFor();
-  assert.equal((await focusedIn(page, '#pool-selection-title')).inside, true, 'the picker heading receives focus');
-  assert.equal(await dialog.getByRole('button', { name: 'Use this token' }).isDisabled(), true);
-  await dialog.getByRole('button', { name: 'Back to pools' }).focus();
-  await page.keyboard.press('Tab');
-  assert.equal((await focusedIn(page, '[data-pool-selection-dialog]')).inside, true, 'Tab cannot leave the modal');
-  const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
-  assert.ok(overflow <= 1, `the picker scrolls ${overflow}px sideways at 375px`);
-  const bounds = await dialog.boundingBox();
-  assert.ok(bounds.y >= 0 && bounds.y + bounds.height <= 813, 'the modal is bounded to the mobile viewport');
-  assert.doesNotMatch(await dialog.innerText(), /\$\s?\d|\b0(?:\.0+)?%/, 'no figures before any answer');
+test('the header names the three places, each at its route, and marks the one that is open', async () => {
+  // Markets is lit on its page and its older spellings; Positions on its own, its older spellings and the flow it leads to; Home and Settings light nothing.
+  const LIT = { '/': null, '/markets': 'Markets', '/explore': 'Markets', '/pools': 'Markets', '/positions': 'Positions', '/app': 'Positions', '/portfolio': 'Positions', '/new': 'Positions', '/automate': 'Automate', '/settings': null };
+  for (const route of ROUTES) {
+    const page = await open(route);
+    // One nav in the header: the phone list lives in the menu, which renders only when open.
+    assert.equal(await page.locator('header nav[aria-label="Main"]').count(), 1, `one main nav on ${route}`);
+    const nav = page.locator('header nav[aria-label="Main"]').first();
+    const links = await nav.locator('a').evaluateAll((els) => els.map((a) => [a.textContent.trim(), a.getAttribute('href'), a.getAttribute('aria-current')]));
+    const current = (name) => (LIT[route] === name ? 'page' : null);
+    assert.deepEqual(links, [
+      ['Markets', '#/markets', current('Markets')],
+      ['Positions', '#/positions', current('Positions')],
+      ['Automate', '#/automate', current('Automate')],
+    ], `header on ${route}`);
+    clean(page, `header on ${route}`);
+    await close(page);
+  }
+});
 
-  await page.keyboard.press('Escape');
-  await dialog.waitFor({ state: 'detached' });
-  await trigger.click();
-  await dialog.getByRole('button', { name: 'Back to pools' }).click();
-  await dialog.waitFor({ state: 'detached' });
-  await trigger.click();
-  await page.getByRole('dialog', { name: 'Choose a token from chain data', exact: true }).waitFor();
-  await page.mouse.click(1, 1);
-  await dialog.waitFor({ state: 'detached' });
-  await trigger.click();
-  await dialog.getByRole('button', { name: 'Close pool explorer' }).click();
-  await dialog.waitFor({ state: 'detached' });
-  assert.equal(await trigger.evaluate((node) => node === document.activeElement), true, 'closing restores the entry button focus');
-  await trigger.click();
-  await dialog.waitFor();
-  assert.equal(await dialog.getByRole('button', { name: 'Use this token' }).isDisabled(), true, 'no token was chosen');
-  await page.keyboard.press('Escape');
-  await dialog.waitFor({ state: 'detached' });
-  assert.deepEqual(apiOf(page), [[]], 'opening the route, dialog and token picker sends no API request');
-  clean(page, 'mobile pool explorer');
+test('the mobile Positions screen leads to Markets: reachable, bounded to the viewport, and idle until a read is requested', async () => {
+  const page = await open('/app');
+  assert.equal(await page.locator('header').getByRole('link', { name: 'Markets', exact: true }).first().getAttribute('href'), '#/markets');
+  await page.setViewportSize({ width: 375, height: 812 });
+  const entrance = page.locator('main').getByRole('link', { name: 'Markets', exact: true });
+  assert.equal(await entrance.isVisible(), true, 'the mobile Positions screen has a visible entrance');
+  await entrance.click();
+  await page.getByRole('heading', { name: 'Markets', exact: true }).waitFor();
+  await shown(page, '/markets');
+  // The selected pools are on the page, so Markets asks the capabilities the way the landing does, and posts nothing.
+  const trail = () => [...(apiOf(page).at(-1) ?? [])];
+  assert.deepEqual(trail(), CAPABILITIES, 'Markets asks the capabilities once and posts nothing');
+
+  // A pair-name filter that no selected pool matches: nothing is read to decide.
+  const address = '0x1111111111111111111111111111111111111111';
+  const search = page.locator('#markets-search');
+  assert.equal(await search.isVisible(), true);
+  await search.fill(address);
+  await page.waitForTimeout(300);
+  assert.deepEqual(trail(), CAPABILITIES, 'filtering the selected pools reads nothing');
+
+  // The empty state offers the token search, already holding that address, and it reads nothing until a token is chosen.
+  const combobox = page.getByRole('combobox', { name: 'Token name or address' });
+  await combobox.waitFor();
+  assert.equal(await combobox.inputValue(), address, 'the token search starts from the address typed as a pair name');
+  await page.waitForTimeout(300);
+  assert.deepEqual(trail(), CAPABILITIES, 'an address in the token search reads nothing until it is chosen');
+
+  const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
+  assert.ok(overflow <= 1, `Markets scrolls ${overflow}px sideways at 375px`);
+  assert.doesNotMatch(await page.locator('main').innerText(), /\$\s?\d|\b0(?:\.0+)?%/, 'no figures before any answer');
+  assert.equal(await page.locator('main [data-metric], main [data-apr-estimate]').count(), 0, 'no figure on Markets before any answer');
+  assert.equal(await page.locator('[role="dialog"]').count(), 0, 'nothing opens over the page');
+  clean(page, 'mobile Markets');
   await close(page);
 });
 
 test('every form field on every route can be identified by the browser', async () => {
   // Chrome flags fields with neither an id nor a name: autofill and
   // password managers cannot tell them apart.
-  for (const route of ['/', '/app', '/pools', '/settings']) {
+  for (const route of ROUTES) {
     const page = await open(route);
     const anonymous = await page.evaluate(() =>
       Array.from(document.querySelectorAll('input, select, textarea'))
@@ -250,7 +254,7 @@ test('every form field on every route can be identified by the browser', async (
 });
 
 test('no dollar figure appears on any route when no read has answered', async () => {
-  for (const route of ['/', '/app', '/pools', '/settings']) {
+  for (const route of ROUTES) {
     const page = await open(route);
     await page.waitForTimeout(100);
     const text = await page.locator('#root').innerText();
@@ -396,28 +400,32 @@ test('section links land on their target, across routes and within one route', a
 
   // Cross-route to a route with no section: the header's Positions link opens that screen at its top.
   leaving(page);
-  await page.locator('header').getByRole('link', { name: 'Positions' }).click();
-  await page.waitForFunction(() => location.hash === '#/app');
+  await page.locator('header').getByRole('link', { name: 'Positions' }).first().click();
+  await page.waitForFunction(() => location.hash === '#/positions');
   await page.waitForTimeout(80);
   assert.equal(await page.evaluate(() => window.scrollY), 0, 'the positions screen did not start at the top');
 
-  // The positions screen leads to discovery; its selected-pools link returns to the landing section.
+  // The positions screen leads to Markets; from there the footer's learn link returns to the landing section.
   leaving(page);
-  await page.locator('main').getByRole('link', { name: 'Explore pools' }).click();
-  await page.waitForFunction(() => location.hash === '#/pools');
+  await page.locator('main').getByRole('link', { name: 'Markets', exact: true }).click();
+  await page.waitForFunction(() => location.hash === '#/markets');
+  await page.getByRole('heading', { name: 'Markets', exact: true }).waitFor();
   leaving(page);
-  await page.getByRole('link', { name: 'View selected pools' }).click();
-  await page.waitForFunction(() => location.hash === '#/#pools');
-  const poolsTop = await sectionTop(page, 'pools');
-  assert.ok(poolsTop >= 0 && poolsTop <= header + 40, `#pools landed at ${poolsTop}px, header is ${header}px`);
+  await page.locator('footer').getByRole('link', { name: 'How it works' }).click();
+  await page.waitForFunction(() => location.hash === '#/#learn');
+  const learnTop = await sectionTop(page, 'learn');
+  assert.ok(learnTop >= 0 && learnTop <= header + 40, `#learn landed at ${learnTop}px, header is ${header}px`);
 
   // Same route, different section: only the hash section changes.
-  await page.evaluate(() => { location.hash = '#/#learn'; });
-  const learnTop = await sectionTop(page, 'learn');
-  assert.ok(learnTop >= 0 && learnTop <= header + 40, `#learn landed at ${learnTop}px`);
   await page.evaluate(() => { location.hash = '#/#pools'; });
-  const backTop = await sectionTop(page, 'pools');
-  assert.ok(backTop >= 0 && backTop <= header + 40, `#pools (second time) landed at ${backTop}px`);
+  const poolsTop = await sectionTop(page, 'pools');
+  assert.ok(poolsTop >= 0 && poolsTop <= header + 40, `#pools landed at ${poolsTop}px`);
+  await page.evaluate(() => { location.hash = '#/#ranges'; });
+  const rangesTop = await sectionTop(page, 'ranges');
+  assert.ok(rangesTop >= 0 && rangesTop <= header + 40, `#ranges landed at ${rangesTop}px`);
+  await page.evaluate(() => { location.hash = '#/#learn'; });
+  const backTop = await sectionTop(page, 'learn');
+  assert.ok(backTop >= 0 && backTop <= header + 40, `#learn (second time) landed at ${backTop}px`);
 
   // A route with no section starts at the top.
   await page.evaluate(() => { location.hash = '#/settings'; });
@@ -434,16 +442,22 @@ test('every footer and navigation link goes somewhere this app has: no "#/" plac
       text: a.textContent.trim(),
       href: a.getAttribute('href'),
       footer: Boolean(a.closest('footer')),
-      overview: Boolean(a.closest('header')) && (a.textContent.trim() === 'Overview' || a.textContent.trim() === 'domino.'),
+      overview: Boolean(a.closest('header')) && a.textContent.trim() === 'domino.',
     })),
   );
   assert.ok(links.some((l) => l.footer), 'the footer has links');
-  const ROUTES = ['/', '/app', '/pools', '/settings'];
+  assert.deepEqual(
+    links.filter((l) => l.footer).map((l) => l.text),
+    ['Markets', 'Positions', 'Automate', 'New position', 'Settings', 'How it works', 'Ranges explained', 'What Domino does not do'],
+    'the footer names the product pages and the guides on the landing',
+  );
+  // The routes App.tsx wires, with the older spellings it keeps: `#/explore` and `#/pools` are Markets, `#/app` is Positions.
+  const ROUTES = ['/', '/markets', '/explore', '/pools', '/pool', '/positions', '/app', '/portfolio', '/new', '/automate', '/settings'];
   for (const link of links) {
     const label = `${link.footer ? 'footer' : 'header'} link "${link.text}" (${link.href})`;
     assert.ok(link.href !== null && link.href.trim() !== '', `${label} has no target`);
     assert.notEqual(link.href, '#', `${label} goes nowhere`);
-    // "#/" is the landing route itself: only the header's Overview link and wordmark may name it.
+    // "#/" is the landing route itself: only the header's wordmark may name it.
     if (link.href === '#/') assert.ok(link.overview, `${label} is a placeholder`);
     assert.ok(link.href.startsWith('#/'), `${label} leaves the app for an unconfirmed destination`);
     const raw = link.href.slice(1);
@@ -494,16 +508,66 @@ test('the price slider maps its value to the thumb label and position', async ()
   await close(page);
 });
 
-test('the landing reads through the bridge, and with no /api behind this server says live data is not connected, with no figure and no Retry', async () => {
+/**
+ * With nothing read, the six reviewed pools are still listed, from the
+ * catalogue's labels alone: every figure cell a dash that says it is
+ * unavailable, no `data-metric` and no estimate anywhere, no USD text, and
+ * each row saying live pool data is not available. Nothing stands in for a
+ * figure that was not read.
+ */
+async function catalogueOnly(page, label) {
+  const rows = page.locator('#pools tbody tr');
+  assert.equal(await rows.count(), 6, `${label}: the six reviewed pools, listed from the catalogue`);
+  assert.equal(await page.locator('#pools tbody tr[data-pool-catalogue]').count(), 6, `${label}: every row is a catalogue row, labels only`);
+  assert.equal(await page.locator('#pools tbody [data-metric], #pools tbody [data-apr-estimate]').count(), 0, `${label}: no figure in any cell`);
+  for (const row of await rows.all()) {
+    const cells = await row.locator('td').evaluateAll((tds) => tds.slice(1, 5).map((td) => [td.innerText.trim(), td.querySelector('[aria-label]')?.getAttribute('aria-label') ?? null]));
+    assert.deepEqual(cells, ['Price', 'TVL', '24h volume', 'Pool APR'].map((figure) => ['—', `${figure} unavailable`]), `${label}: every figure is a dash that says so`);
+    assert.equal(await row.locator('a').first().getAttribute('title'), 'Listed on Uniswap. Live pool data is not available yet.');
+  }
+  assert.doesNotMatch(await page.locator('#pools').innerText(), /\$\s?\d/, `${label}: no dollar figure`);
+  assert.equal(await page.locator('[data-metric], [data-apr-estimate]').count(), 0, `${label}: no figure anywhere on the landing`);
+  // The strip lists the same six by their labels, an APR dash each and no figure.
+  const items = page.locator('.dm-marquee > a[data-pool-catalogue]');
+  assert.equal(await items.count(), 6, `${label}: the ticker lists the six catalogue pools`);
+  for (const text of await items.allInnerTexts()) assert.match(text, /APR —$/, `${label}: the ticker names no APR`);
+  assert.equal(await page.locator('[data-ticker] [data-metric], [data-ticker] [data-apr-estimate]').count(), 0, `${label}: no figure in the ticker`);
+  // A fee tier (0.02%) is a label from the catalogue; a dollar figure or an APR percentage would be an invention.
+  assert.doesNotMatch(await page.locator('[data-ticker]').innerText(), /\$\s?\d|\d%\s*est/, `${label}: no figure in the ticker`);
+}
+
+/**
+ * Home and Markets show the selected pools and nothing else (the owner's decision on the redesign): how the reads
+ * went is only in the table's visually hidden live region, as the state's title, with no panel, Refresh or Retry.
+ */
+async function quietStatus(page, table, title, label) {
+  const status = page.locator(`${table} [data-read-status]`);
+  assert.equal(await status.textContent(), title, `${label}: the status is its title alone`);
+  assert.deepEqual(
+    await status.evaluate((el) => {
+      const box = el.getBoundingClientRect();
+      return { hidden: box.width <= 1 && box.height <= 1, inside: el.children.length };
+    }),
+    { hidden: true, inside: 0 },
+    `${label}: no status panel`,
+  );
+  assert.equal(await page.locator(table).getByRole('button', { name: /Refresh|Retry/ }).count(), 0, `${label}: no Refresh or Retry`);
+}
+
+test('the landing reads through the bridge, and with no /api behind this server says live data is not connected, with no figure and no Retry; Markets says it the same way', async () => {
   const page = await open('/');
   await page.waitForFunction(() => document.querySelector('#pools [data-read-status]')?.getAttribute('data-read-status') === 'not_connected');
-  assert.match(await page.locator('#pools [data-read-status]').innerText(), /Live data isn't connected yet/);
-  assert.equal(await page.locator('#pools').getByRole('button', { name: 'Retry' }).count(), 0, 'a Retry cannot connect anything');
-  assert.equal(await page.locator('#pools tbody tr').count(), 0);
-  assert.equal(await page.locator('[data-metric]').count(), 0, 'no figure anywhere on the landing');
-  assert.equal(await page.locator('[data-ticker-status]').innerText(), 'Live data isn\'t connected yet', 'the ticker says the same');
+  await quietStatus(page, '#pools', "Live data isn't connected yet", 'Home');
+  await catalogueOnly(page, 'not connected');
   clean(page, 'not connected');
   await close(page);
+
+  const markets = await open('/markets');
+  await markets.waitForFunction(() => document.querySelector('[data-selected-pools] [data-read-status]')?.getAttribute('data-read-status') === 'not_connected');
+  await quietStatus(markets, '[data-selected-pools]', "Live data isn't connected yet", 'Markets');
+  assert.doesNotMatch(await markets.locator('main').innerText(), /reported by GeckoTerminal and not reconciled|names its source and its age/, 'Markets: no footnote under the table');
+  clean(markets, 'Markets not connected');
+  await close(markets);
 });
 
 // ---------------------------------------------------------------------------
@@ -517,21 +581,27 @@ test('the landing reads through the bridge, and with no /api behind this server 
 
 const SELECTED = readFileSync(resolve(import.meta.dirname, '../src/config/selectedPools.ts'), 'utf8').match(/0x[0-9a-f]{64}/g);
 
-test('the landing asks the capabilities once and posts nothing when live data is not connected; other routes ask nothing', async () => {
+test('the screens that show the selected pools ask the capabilities once and post nothing when live data is not connected; every other route asks nothing', async () => {
   const seen = [];
-  for (const route of ['/', '/app', '/pools', '/settings']) {
+  for (const route of ROUTES) {
     const page = await open(route);
     await reload(page, route);
-    seen.push([route, apiOf(page).map(rows => [...rows].sort())]);
+    seen.push([route, apiOf(page)]);
     clean(page, `requests on ${route}`);
     await close(page);
   }
-  // Per document: the first load and the reload each ask once, and post nothing.
-  const once = ['GET /api/read/v1/capabilities', 'GET /api/read/v2/capabilities'];
+  // Per document: the first load and the reload each ask once per namespace, and post nothing.
+  const once = CAPABILITIES;
   assert.deepEqual(seen, [
     ['/', [once, once]],
+    ['/markets', [once, once]],
+    ['/explore', [once, once]],
+    ['/pools', [once, once]],
+    ['/positions', [[], []]],
     ['/app', [[], []]],
-    ['/pools', [[], []]],
+    ['/portfolio', [[], []]],
+    ['/new', [[], []]],
+    ['/automate', [[], []]],
     ['/settings', [[], []]],
   ]);
 });
@@ -555,7 +625,8 @@ test('the deployable build carries the live read path and the selected pools, no
   for (const marker of ['/api/read/v1', 'X-Domino-Read-Contract', 'assertResponse', ...SELECTED]) {
     assert.equal(code.includes(marker), true, `dist lacks ${marker}`);
   }
-  assert.equal(SELECTED.length, 2);
+  // The six reviewed pools (src/config/selectedPools.ts), every one of them in the build.
+  assert.equal(SELECTED.length, 6);
   for (const marker of [
     'fixtures/gateway',
     'onerror=alert',
@@ -573,20 +644,25 @@ test('the deployable build carries the live read path and the selected pools, no
   assert.equal(existsSync(join(DIST, 'read-lab.html')), false, 'the read lab is not part of the deployable build');
 });
 
-test('Settings distinguishes disconnected automation from separately reviewed wallet transactions', async () => {
+test('Settings distinguishes disconnected automation from separately reviewed wallet transactions, and live reads built in, switched on by the server; no practice mode is left', async () => {
   const page = await open('/settings');
   const text = await page.locator('#root').innerText();
-  assert.match(text, /Automated signing\s+Not connected/);
-  assert.match(text, /Wallet transactions\s+Built in; each step reviewed in wallet/);
-  assert.match(text, /Live reads\s+Built in, switched on by the server/);
+  // The stat labels are set in capitals by the stylesheet, and innerText follows that.
+  assert.match(text, /AUTOMATED SIGNING\s+Not connected/);
+  assert.match(text, /WALLET TRANSACTIONS\s+Built in; each step reviewed in wallet/);
+  assert.match(text, /Nothing in this build signs a transaction, grants a spending permission or moves funds; a wallet connection only proves an address\./);
+  assert.match(text, /Live reads are built in and switched on by the read service, never here\./);
   assert.match(text, /Compound[\s\S]*Not connected/);
+  assert.match(text, /Fee-balancing swaps[\s\S]*Not connected/);
+  assert.match(text, /Wallet permissions[\s\S]*Sign-in proves your address[\s\S]*Not connected/);
+  assert.doesNotMatch(text, /Enabled\b/, 'nothing is reported as enabled');
   assert.equal(await page.locator('[data-build-banner]').count(), 0, 'no fixture or test-build banner');
   clean(page, 'settings');
   await close(page);
 });
 
 test('the wallet control is on every route and ready, no route mentions practice, and only the appearance is stored', async () => {
-  for (const route of ['/', '/app', '/pools', '/settings']) {
+  for (const route of ROUTES) {
     const page = await open(route);
     // No wallet is injected in this suite, so the control invites one. It is
     // enabled: sign-in is built into the deployed site now, and opening it
@@ -605,56 +681,81 @@ test('the wallet control is on every route and ready, no route mentions practice
   }
 });
 
-test('the landing never shows an invented figure: no table row, no cell, no placeholder, nothing called a sample', async () => {
+test('the landing never shows an invented figure: catalogue labels in every row, not one cell with a value, no placeholder, nothing called a sample', async () => {
   const page = await open('/');
   await page.waitForFunction(() => document.querySelector('#pools [data-read-status]')?.getAttribute('data-read-status') !== 'loading');
   const found = await page.evaluate(() => ({
     rows: document.querySelectorAll('#pools tbody tr').length,
+    catalogue: document.querySelectorAll('#pools tbody tr[data-pool-catalogue]').length,
     metrics: document.querySelectorAll('[data-metric]').length,
+    estimates: document.querySelectorAll('[data-apr-estimate]').length,
     placeholder: document.querySelectorAll('[data-metric="placeholder"]').length,
     sample: /sample/i.test(document.body.innerText),
     dollars: /\$\s?\d/.test(document.body.innerText),
-    pair: /MEME|USDG|WETH|MARLIN/.test(document.body.innerText),
+    // The catalogue's labels (USDG, WETH, MARLIN…) are the reviewed pools' names; an example token would be an invention.
+    example: /MEME|Example token/.test(document.body.innerText),
   }));
-  assert.deepEqual(found, { rows: 0, metrics: 0, placeholder: 0, sample: false, dollars: false, pair: false });
+  assert.deepEqual(found, { rows: 6, catalogue: 6, metrics: 0, estimates: 0, placeholder: 0, sample: false, dollars: false, example: false });
+  await catalogueOnly(page, 'landing figures');
   clean(page, 'landing figures');
   await close(page);
 });
 
 // ---------------------------------------------------------------------------
 // No practice mode: the positions screen is an honest empty state, and the
-// explanatory sections stay, in relative terms, saying what the alpha lacks.
+// explanatory sections stay, in relative terms, saying what is not connected.
 // ---------------------------------------------------------------------------
 
-test('signed-out positions show no private data or numbers and retain public discovery', async () => {
+test('the positions screen is an honest empty state: no cards, totals or private figures, a sign-in for the managed side, and a way back to the pools', async () => {
   const page = await open('/app');
+  assert.equal(await page.getByRole('heading', { level: 1 }).innerText(), 'Positions');
+  // The lookup card arrives with the read screens' chunk.
+  await page.getByText('Look up a position NFT', { exact: true }).waitFor();
   const text = await page.locator('#root').innerText();
-  assert.match(text, /Sign in with your wallet to view private history/);
+  assert.match(text, /Look up a position NFT/);
   // The by-id lookup is here now; finding every position a wallet holds is not.
-  assert.match(text, /Look up any position NFT by its ID/);
+  assert.match(text, /Enter its id above/);
+  // The managed side asks for a wallet session and shows nothing private without one.
+  assert.match(text, /Sign in with your wallet to view private history/);
   assert.match(text, /Sign in with your wallet to view private execution receipts/);
-  assert.doesNotMatch(text, /\$\s?\d|[0-9]+%|practice/i);
+  assert.doesNotMatch(text, /practice|reinvested|awaiting|\$\s?\d|[0-9]+%/i);
   assert.equal(await page.locator('[role="dialog"]').count(), 0);
   // Nothing reads on load: the lookup asks only when someone asks it to, and
   // the screen shows no figure of its own until then.
   assert.deepEqual(apiOf(page), [[]], 'the positions screen reads nothing by itself');
   assert.equal(await page.locator('main [data-metric]').count(), 0, 'no figure appears before a lookup');
-  assert.equal(await page.locator('main').getByRole('link', { name: 'Explore pools' }).getAttribute('href'), '#/pools');
+  assert.equal(await page.locator('main').getByRole('link', { name: 'Markets', exact: true }).getAttribute('href'), '#/markets');
   clean(page, 'positions');
   await close(page);
 });
 
-test('the explanatory sections stay, in relative terms, and say what is not available in the alpha', async () => {
+test('the explanatory sections stay, in relative terms, and say plainly what is not enabled', async () => {
   const page = await open('/');
   const text = await page.locator('#root').innerText();
-  for (const heading of [/Move the price\. Watch what you own\./, /One position sets up the next\./, /Made for every way to hold liquidity\./, /Three decisions, then it runs itself\./]) {
+  // The Overview leads with the pools; below them: how it works, the range simulator, what Domino does not do.
+  for (const heading of [/Pick a pool\. Set a range\. Choose what fees do\./, /Move the price\. Watch what you own\./, /What Domino does not do\./, /Built on Uniswap/]) {
     assert.match(text, heading);
   }
-  assert.ok((text.match(/Not available in the alpha/g) ?? []).length >= 8, 'every product card, step and Domino callout says so');
-  assert.match(text, /Schematic, not a projection/);
+  // Automation is not connected, and every place that describes it says so in those words; the marketing cards that only said so are gone.
+  assert.ok((text.match(/Not connected/g) ?? []).length >= 2, 'the upkeep step and the Domino hand-off say so');
+  // The pools card has no caption any more (the owner's decision on the redesign): each figure names its source and age in its own title.
+  assert.doesNotMatch(text, /Every figure on this page names its source and its age|describes a pool, not a position, and is not a forecast/);
+  // The product describes itself as the product, never as an unfinished one.
+  assert.doesNotMatch(text, /\balpha\b|\bv4\b|not enabled yet|read-only/i, 'no self-description as an alpha, a version or a read-only build');
+  assert.doesNotMatch(text, /Made for every way to hold liquidity|One position sets up the next/, 'no product cards, no Domino sequence');
   assert.match(text, /0\.70× to 1\.50×/);
-  assert.doesNotMatch(text, /MEME|USDG|WETH|MARLIN|Example token/, 'no named pair or example token');
+  assert.doesNotMatch(text, /MEME|Example token/, 'no example token');
   assert.equal(await page.locator('#hero-amount, #amount').count(), 0, 'no amount to type in');
+  // The hero's two ways in, and the Domino token's place above the table, where a
+  // count of the selected pools used to sit: there will not be only six pools.
+  assert.equal(await page.locator('main').getByRole('link', { name: 'New position', exact: true }).first().getAttribute('href'), '#/new');
+  assert.equal(await page.locator('main').getByRole('link', { name: 'Explore markets', exact: true }).first().getAttribute('href'), '#/markets');
+  // The stat labels are set in capitals by the stylesheet, and innerText follows that.
+  const token = await page.locator('[data-domino-token]').innerText();
+  assert.match(token, /The Domino token is coming\.[\s\S]*TICKER[\s\S]*SUPPLY[\s\S]*LAUNCH/);
+  assert.doesNotMatch(token, /\$|\d/, 'nothing about the token is known, so no figure is invented for it');
+  assert.equal(await page.locator('[data-domino-token]').count(), 1);
+  assert.doesNotMatch(await page.locator('#pools').innerText(), /COMBINED TVL|NETWORK/, 'the six-pool stat strip is gone');
   clean(page, 'explanatory sections');
   await close(page);
 });

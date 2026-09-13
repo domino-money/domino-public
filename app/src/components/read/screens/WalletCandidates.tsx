@@ -4,19 +4,32 @@ import { parseAddressInput } from '../../../lib/read/screens/identity'
 import { candidatesFromWalletView, type TokenCandidate } from '../../../lib/read/screens/tokens'
 import { createWalletSession, type WalletSession, type WalletSnapshot } from '../../../lib/read/screens/walletSession'
 import type { ReadSource } from '../../../lib/read/types'
-import { Button, Pill } from '../../ui'
+import { IconChevronDown, IconWallet } from '../../icons'
+import { Button } from '../../ui'
 import { ScreenStatus } from './ScreenStatus'
 
 /**
  * Tokens held by a typed public address, as candidates. It is a public
  * lookup, not a wallet connection: nothing proves who controls the address,
- * and the pill says so. The continuation handle stays inside the pager; a new
+ * and the page says so. The continuation handle stays inside the pager; a new
  * address or token list starts a new session and drops any late page from
- * the old one.
+ * the old one. Nothing is read until "List tokens" is pressed.
  */
-export function WalletCandidates({ source, onRows }: { source: ReadSource; onRows: (rows: TokenCandidate[]) => void }) {
-  const [expanded, setExpanded] = useState(false)
-  const [wallet, setWallet] = useState('')
+export function WalletCandidates({
+  source,
+  onRows,
+  initialWallet,
+  fieldPrefix = 'wallet',
+}: {
+  source: ReadSource
+  onRows: (rows: TokenCandidate[]) => void
+  /** An address to start from, such as the header's connected wallet. It fills the field; nothing is read until asked. */
+  initialWallet?: string
+  /** The start of this listing's field ids (`wallet-address` by default), so two listings on one page never share an id. */
+  fieldPrefix?: string
+}) {
+  const [expanded, setExpanded] = useState(initialWallet !== undefined && initialWallet !== '')
+  const [wallet, setWallet] = useState(initialWallet ?? '')
   const [tokensText, setTokensText] = useState('')
   const [problem, setProblem] = useState<string | null>(null)
   const [snap, setSnap] = useState<WalletSnapshot | null>(null)
@@ -27,6 +40,18 @@ export function WalletCandidates({ source, onRows }: { source: ReadSource; onRow
   const running = useRef<AbortController | null>(null)
 
   useEffect(() => () => running.current?.abort(), [])
+
+  // A wallet connected after this mounted fills the field too, unless the
+  // person has already typed an address of their own, which stays theirs.
+  const seeded = useRef(initialWallet ?? '')
+  useEffect(() => {
+    const next = initialWallet ?? ''
+    if (next === seeded.current) return
+    const previous = seeded.current
+    seeded.current = next
+    setWallet((current) => (current === previous ? next : current))
+    if (next) setExpanded(true)
+  }, [initialWallet])
 
   const run = (step: (s: WalletSession, signal: AbortSignal) => Promise<WalletSnapshot>, describe: (before: WalletSnapshot | null, after: WalletSnapshot) => string) => {
     const current = session.current
@@ -100,49 +125,53 @@ export function WalletCandidates({ source, onRows }: { source: ReadSource; onRow
   const moreDisabled = loading || !snap || !(snap.canLoadMore || snap.status === 'handle_expired')
 
   return (
-    <div className="rounded-[var(--radius)] border bg-surface-1 p-3" data-wallet-candidates="">
-      <Button type="button" variant="ghost" className="px-0" aria-expanded={expanded} aria-controls="wallet-candidates-body" onClick={() => setExpanded(!expanded)}>
-        {COPY.picker.walletToggle}
-      </Button>
-      <div id="wallet-candidates-body" hidden={!expanded} className="mt-2 grid gap-3">
-        <Pill tone="wait" className="justify-self-start">
-          {COPY.picker.walletPill}
-        </Pill>
-        <p className="text-[12px] leading-relaxed text-fg-muted" data-wallet-public-note="">
-          {COPY.picker.walletPublicNote}
+    <div className="dm-flow-wallet" data-wallet-candidates="">
+      <button type="button" className="dm-flow-toggle" aria-expanded={expanded} aria-controls={`${fieldPrefix}-candidates-body`} onClick={() => setExpanded(!expanded)}>
+        <IconWallet className="shrink-0 text-fg-subtle" />
+        <span className="min-w-0 flex-1 text-left">{COPY.picker.walletToggle}</span>
+        <IconChevronDown size={14} className="dm-flow-toggle-chevron" />
+      </button>
+      <div id={`${fieldPrefix}-candidates-body`} hidden={!expanded} className="dm-flow-wallet-body">
+        <p className="text-caption text-fg-muted" data-wallet-public-note="">
+          Find tokens held by a wallet address.
         </p>
-        <form onSubmit={submit} className="grid gap-2" noValidate>
-          <label htmlFor="wallet-address" className="text-[12px] text-fg-muted">
-            {COPY.picker.walletLabel}
-          </label>
-          <input
-            id="wallet-address"
-            value={wallet}
-            onChange={(e) => setWallet(e.target.value)}
-            spellCheck={false}
-            autoComplete="off"
-            aria-invalid={problem ? true : undefined}
-            aria-describedby={problem ? 'wallet-address-error' : undefined}
-            className="w-full rounded-[var(--radius)] border bg-surface-2 px-3 py-2 font-mono text-[12px] outline-none focus-visible:outline-2 focus-visible:outline-[var(--ring)]"
-          />
-          <label htmlFor="wallet-tokens" className="text-[12px] text-fg-muted">
-            {COPY.picker.walletTokensLabel}
-          </label>
-          <textarea
-            id="wallet-tokens"
-            rows={2}
-            value={tokensText}
-            onChange={(e) => setTokensText(e.target.value)}
-            spellCheck={false}
-            autoComplete="off"
-            aria-describedby="wallet-tokens-hint"
-            className="w-full resize-y rounded-[var(--radius)] border bg-surface-2 px-3 py-2 font-mono text-[12px] outline-none focus-visible:outline-2 focus-visible:outline-[var(--ring)]"
-          />
-          <p id="wallet-tokens-hint" className="text-[11px] text-fg-subtle">
-            {COPY.picker.walletTokensHint}
-          </p>
+        <form onSubmit={submit} className="grid gap-3" noValidate>
+          <div>
+            <label htmlFor={`${fieldPrefix}-address`} className="dm-label">
+              {COPY.picker.walletLabel}
+            </label>
+            <input
+              id={`${fieldPrefix}-address`}
+              value={wallet}
+              onChange={(e) => setWallet(e.target.value)}
+              spellCheck={false}
+              autoComplete="off"
+              aria-invalid={problem ? true : undefined}
+              aria-describedby={problem ? `${fieldPrefix}-address-error` : undefined}
+              placeholder="0x…"
+              className="dm-field dm-flow-mono"
+            />
+          </div>
+          <div>
+            <label htmlFor={`${fieldPrefix}-tokens`} className="dm-label">
+              {COPY.picker.walletTokensLabel}
+            </label>
+            <textarea
+              id={`${fieldPrefix}-tokens`}
+              rows={2}
+              value={tokensText}
+              onChange={(e) => setTokensText(e.target.value)}
+              spellCheck={false}
+              autoComplete="off"
+              aria-describedby={`${fieldPrefix}-tokens-hint`}
+              className="dm-field dm-flow-mono resize-y"
+            />
+            <p id={`${fieldPrefix}-tokens-hint`} className="dm-hint">
+              {COPY.picker.walletTokensHint}
+            </p>
+          </div>
           {problem && (
-            <p id="wallet-address-error" role="alert" className="text-[12px]" style={{ color: 'var(--money-out)' }}>
+            <p id={`${fieldPrefix}-address-error`} role="alert" className="dm-error">
               {problem}
             </p>
           )}
@@ -153,12 +182,12 @@ export function WalletCandidates({ source, onRows }: { source: ReadSource; onRow
 
         {snap?.failure && snap.status !== 'restart_exhausted' && <ScreenStatus line={failureText(snap.failure, 'wallet')} />}
         {view && (
-          <div className="grid gap-1.5 text-[12px] text-fg-muted" data-wallet-pages={view.pages}>
+          <div className="grid gap-1.5 text-caption text-fg-muted" data-wallet-pages={view.pages}>
             {snap.restarted && <p className="text-money-wait">{COPY.picker.walletRestarted}</p>}
             {snap.status === 'restart_exhausted' && (
               <div className="grid gap-2">
                 <p className="text-money-wait">{COPY.picker.walletExhausted}</p>
-                <Button type="button" variant="outline" className="justify-self-start" onClick={restart}>
+                <Button type="button" variant="outline" size="sm" className="justify-self-start" onClick={restart}>
                   {COPY.picker.restartList}
                 </Button>
               </div>
@@ -169,17 +198,17 @@ export function WalletCandidates({ source, onRows }: { source: ReadSource; onRow
             {view.notes.map((note) => (
               <p key={note}>{note}</p>
             ))}
-            {view.freshness.length > 0 && <p className="font-mono text-[11px] text-fg-subtle">{view.freshness.join(' · ')}</p>}
+            {view.freshness.length > 0 && <p className="tnum text-fg-subtle">{view.freshness.join(' · ')}</p>}
             {view.pages > 0 && (
-              <div className="flex flex-wrap items-center gap-3">
-                <Button type="button" variant="outline" aria-disabled={moreDisabled ? true : undefined} onClick={more}>
+              <div className="mt-1 flex flex-wrap items-center gap-3">
+                <Button type="button" variant="outline" size="sm" aria-disabled={moreDisabled ? true : undefined} onClick={more}>
                   {moreLabel}
                 </Button>
               </div>
             )}
           </div>
         )}
-        <p role="status" aria-live="polite" className="text-[12px] text-fg-muted">
+        <p role="status" aria-live="polite" className="text-caption text-fg-muted">
           {said}
         </p>
       </div>

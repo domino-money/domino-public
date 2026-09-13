@@ -1,111 +1,209 @@
 @import 'tailwindcss';
+@import './shell.css';    /* foundation: header, menu, footer, ticker, primitives' component classes */
+@import './art.css';      /* home: hero and feature vignettes, nav icon gestures */
+@import './markets.css';  /* markets: carousel, filter bar */
+@import './pool.css';     /* pool: chart card, stat strip specifics */
+@import './flow.css';     /* new position: step list */
+@import './account.css';  /* positions, automate, settings, rugged screens */
 
 @custom-variant dark (&:is(.dark *));
 
-/* ---------------------------------------------------------------------------
-   Domino design tokens
-
-   Palette: the approved Tangerine direction, carried over from the workbench
-   (web/app/globals.css:137-195 and :1094-1109). The palette is rugged97's
-   decision and is not ours to change.
-
-   Structure: depth comes from stacked near-neutral surfaces separated by very
-   low-contrast borders, not from shadows. Radius is a single 12px step.
---------------------------------------------------------------------------- */
+/* Domino design tokens, 2026-09 redesign (DESIGN.md section B).
+   Tangerine (--primary, --accent, --accent-fg, --ring) keeps its approved values.
+   Surfaces are Domino's own warm near-black ladder. Elevation now uses a 1px
+   inner ring plus a soft shadow: the owner's 2026-09-13 direction supersedes the
+   earlier "depth from surfaces, never shadows" rule. One radius: 12px. */
 
 :root {
-  /* Surfaces — light */
-  --bg: #f0f1f2;
-  --surface-1: #f7f8f9;
-  --surface-2: #ffffff;
-  --surface-3: #ffffff;
+  color-scheme: light;
 
-  /* Text — light */
-  --fg: #232428;
-  --fg-muted: #64666e;
-  --fg-subtle: #8a8d95;
+  /* Surfaces: page, plate, card, control, control hover */
+  --bg: #f3f0ec;          /* page ground; table header band; hovered row */
+  --surface-1: #f9f7f4;   /* plates: hero, feature plates, chart panels, segmented track, inset panels */
+  --surface-2: #ffffff;   /* cards: table cards, rail cards, nav pill, menus, fields, dialogs */
+  --surface-3: #ebe7e2;   /* controls: chips on plates, active nav indicator, segmented thumb, markers */
+  --surface-4: #e0dbd5;   /* control hover (never behind fg-subtle text) */
+  --wash: rgb(28 24 20 / 0.05);         /* hover wash on transparent controls */
+  --wash-strong: rgb(28 24 20 / 0.07);  /* chip fill */
+  --skeleton: rgb(28 24 20 / 0.07);
 
-  /* Lines — light */
-  --border: rgb(0 0 0 / 0.09);
-  --border-strong: rgb(0 0 0 / 0.16);
+  /* Text: primary, secondary, muted, faint */
+  --fg: #1b1815;
+  --fg-muted: #48423c;    /* 8.7:1 on --bg: descriptions, idle nav, table cells that are not the figure */
+  --fg-subtle: #675f58;   /* 5.5:1 on --bg, 5.1:1 on --surface-3: labels, table headers, captions, placeholders */
+  --fg-faint: #8f8881;    /* 3.3:1 on --surface-1: graphics only (gridlines, idle bars, dotted underlines), never text */
 
-  /* Tangerine — light */
+  /* Lines */
+  --border: rgb(28 24 20 / 0.08);        /* inner ring, dividers */
+  --border-lip: rgb(28 24 20 / 0.11);    /* key/value row rules, outline-button ring */
+  --border-strong: rgb(28 24 20 / 0.18); /* hover ring, focus of fields, crosshair */
+
+  /* Primary button (white on dark, ink on light) */
+  --btn: #1b1815;
+  --btn-fg: #faf7f3;
+  --btn-hover: #36302b;
+
+  /* Tangerine: values unchanged */
   --primary: #ff843d;
-  --primary-fg: #24201c;
+  --primary-fg: #24201c;  /* 6.6:1 on --primary */
   --accent: #fff0e4;
   --accent-fg: #a43d0f;
   --ring: #b24413;
+  /* Tangerine that carries information on a light ground (text, chart line, inspected bar, range band, input accent):
+     5.0:1 on --bg, 5.6:1 on white, 4.6:1 on --surface-3. #ff843d there is 2.1 to 2.4:1 and fails. */
+  --primary-ink: #b24413;
 
-  /* Money semantics — light */
+  /* Semantics: up/in, down/out, wait/stale */
   --money-in: #17663e;
-  --money-in-bg: #edf8f0;
-  --money-out: #b33036;
-  --money-out-bg: #fff0f0;
+  --money-in-bg: #e7f5ec;
+  --money-out: #c62d4a;   /* hue 349; Tangerine is hue 23 */
+  --money-out-bg: #fdecef;
   --money-wait: #865100;
-  --money-wait-bg: #fff6df;
+  --money-wait-bg: #fcf1d9;
+
+  /* Dotted grids */
+  --dot-hero: rgb(28 24 20 / 0.10);
+  --dot-plate: rgb(28 24 20 / 0.06);
+  --dot-chart: rgb(28 24 20 / 0.09);
+
+  /* Elevation recipes: every ring is an INNER ring (inset) */
+  --elev-card: inset 0 0 0 1px rgb(28 24 20 / 0.08), 0 1px 2px rgb(28 24 20 / 0.05), 0 10px 28px -14px rgb(28 24 20 / 0.18);
+  --elev-pill: inset 0 0 0 1px rgb(28 24 20 / 0.08), 0 2px 8px -2px rgb(28 24 20 / 0.12);
+  --elev-button: 0 1px 2px rgb(28 24 20 / 0.10), 0 2px 6px -2px rgb(28 24 20 / 0.12);
+  --elev-menu: inset 0 0 0 1px rgb(28 24 20 / 0.09), 0 12px 36px -6px rgb(28 24 20 / 0.22);
+  --elev-field: inset 0 0 0 1px rgb(28 24 20 / 0.10), 0 1px 2px rgb(28 24 20 / 0.06);
+  /* The header's soft fall once something scrolls under it (D.2) */
+  --elev-header: 0 8px 16px -12px rgb(28 24 20 / 0.18);
 
   /* Shape */
-  --radius: 12px;
-  --radius-sm: 8px;
-  --radius-lg: 16px;
-  --radius-pill: 9999px;
+  --radius: 12px;       /* everything: cards, buttons, fields, menus, plates, dialogs */
+  --radius-lg: 12px;    /* kept as an alias so existing rounded-[var(--radius-lg)] resolves to 12 */
+  --radius-sm: 8px;     /* inside a 4px padding: nav items, menu items, table band ends, row ends, step markers */
+  --radius-inner: 9px;  /* inside a 2px padding: segmented thumb */
+  --radius-xs: 4px;     /* compact: tick marks; bar tops use 2px */
+  --radius-pill: 9999px;/* chips, status pills, dots only */
 
-  /* Type */
+  /* Spacing (4px base with half steps); Tailwind's default spacing already matches (p-1.5 = 6px) */
+  --space-0: 2px; --space-1: 4px; --space-1-5: 6px; --space-2: 8px; --space-2-5: 10px; --space-3: 12px;
+  --space-4: 16px; --space-5: 20px; --space-6: 24px; --space-7: 28px; --space-8: 32px; --space-10: 40px;
+  --space-12: 48px; --space-16: 64px; --space-24: 96px;
+
+  /* Layout */
+  --header-h: 72px;     /* 56px below 768px */
+  --ticker-h: 36px;
+  --gutter: 16px;       /* 24px from 768px, 40px from 1024px */
+  --content: 1200px;
+  --content-pool: 1040px;
+  --content-flow: 640px;
+  --content-narrow: 880px;
+
+  /* Type families: unchanged */
   --font-display: 'Instrument Serif', ui-serif, Georgia, 'Times New Roman', serif;
   --font-sans: 'Geist', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
   --font-mono: 'Geist Mono', ui-monospace, 'SFMono-Regular', Menlo, monospace;
 
-  /* Layout. The landing hero is pulled up by this much, to run under the header. */
-  --header-h: 72px;
+  /* Motion */
+  --dur-press: 0.1s;
+  --dur-hover: 0.15s;
+  --dur-fade: 0.2s;
+  --dur-menu: 0.14s;
+  --dur-step: 0.25s;
+  --dur-enter: 1s;
+  --dur-chart: 0.7s;
+  --ease-std: cubic-bezier(0.4, 0, 0.2, 1);
+  --ease-enter: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-fall: cubic-bezier(0.55, 0, 1, 0.45);
+  --press-scale: 0.99;
+  --press-scale-icon: 0.96;
+
+  /* Dialog backdrop (D.8) */
+  --backdrop: rgb(28 24 20 / 0.35);
 }
 
 .dark {
-  /* Surfaces — dark. Four stacked levels, each a small step up. */
-  --bg: #191b20;
-  --surface-1: #1f2229;
-  --surface-2: #282b32;
-  --surface-3: #32363f;
+  color-scheme: dark;
 
-  /* Text — dark */
-  --fg: #f5f4f2;
-  --fg-muted: #b9bbc4;
-  --fg-subtle: #82858f;
+  /* Hue 22 to 30 degrees, visibly warm; lightness 4 / 8 / 11 / 16 / 21 % */
+  --bg: #0d0a08;
+  --surface-1: #171310;
+  --surface-2: #1f1a17;
+  --surface-3: #2c2723;
+  --surface-4: #3a332f;
+  --wash: rgb(255 236 220 / 0.05);
+  --wash-strong: rgb(255 236 220 / 0.08);
+  --skeleton: rgb(255 236 220 / 0.08);
 
-  /* Lines — dark. Deliberately faint: the layer does the separating. */
-  --border: rgb(255 255 255 / 0.07);
-  --border-strong: rgb(255 255 255 / 0.14);
+  --fg: #f7f1ea;         /* 15.4:1 on --surface-2 */
+  --fg-muted: #c8beb4;   /* 9.4:1 on --surface-2 */
+  --fg-subtle: #9b9289;  /* 5.6:1 on --surface-2, 4.8:1 on --surface-3 */
+  --fg-faint: #6e665e;   /* 3.1:1 on --surface-2, 3.3:1 on --surface-1: graphics only */
 
-  /* Tangerine — dark */
+  --border: rgb(255 236 220 / 0.07);
+  --border-lip: rgb(255 236 220 / 0.10);
+  --border-strong: rgb(255 236 220 / 0.16);
+
+  --btn: #faf7f3;
+  --btn-fg: #161412;
+  --btn-hover: #ebe6e0;
+
   --primary: #ff9d62;
-  --primary-fg: #24201c;
+  --primary-fg: #24201c;  /* 7.9:1 on --primary */
   --accent: #422e25;
   --accent-fg: #ffb98c;
   --ring: #ff9d62;
+  --primary-ink: #ff9d62; /* 8.4:1 on --surface-2 */
 
-  /* Money semantics — dark */
-  --money-in: #80dfaa;
-  --money-in-bg: #203b2d;
-  --money-out: #ffaaaa;
-  --money-out-bg: #442b31;
-  --money-wait: #f6cd77;
-  --money-wait-bg: #423723;
+  --money-in: #5fd09a;                    /* 9.0:1 on --surface-2 */
+  --money-in-bg: rgb(95 208 154 / 0.12);
+  --money-out: #f4607a;                   /* 5.6:1 on --surface-2; on its pill 4.8:1 */
+  --money-out-bg: rgb(244 96 122 / 0.12);
+  --money-wait: #f2c14e;                  /* 10.3:1 */
+  --money-wait-bg: rgb(242 193 78 / 0.12);
+
+  --dot-hero: rgb(255 236 220 / 0.11);
+  --dot-plate: rgb(255 236 220 / 0.045);
+  --dot-chart: rgb(255 236 220 / 0.07);
+
+  --elev-card: inset 0 0 0 1px rgb(255 236 220 / 0.07), 0 12px 32px -12px rgb(0 0 0 / 0.65);
+  --elev-pill: inset 0 0 0 1px rgb(255 236 220 / 0.07), 0 4px 14px -6px rgb(0 0 0 / 0.55);
+  --elev-button: 0 1px 2px rgb(0 0 0 / 0.35), 0 3px 10px -4px rgb(0 0 0 / 0.45);
+  --elev-menu: inset 0 0 0 1px rgb(255 236 220 / 0.10), 0 16px 40px -10px rgb(0 0 0 / 0.65);
+  --elev-field: inset 0 0 0 1px rgb(255 236 220 / 0.10), 0 1px 3px rgb(0 0 0 / 0.20);
+  --elev-header: 0 8px 16px -12px rgb(0 0 0 / 0.6);
+
+  --backdrop: rgb(0 0 0 / 0.6);
 }
+
+@media (min-width: 768px) { :root { --gutter: 24px; } }
+@media (min-width: 1024px) { :root { --gutter: 40px; } }
+@media (max-width: 767px) { :root { --header-h: 56px; } }
 
 @theme inline {
   --color-bg: var(--bg);
   --color-surface-1: var(--surface-1);
   --color-surface-2: var(--surface-2);
   --color-surface-3: var(--surface-3);
+  --color-surface-4: var(--surface-4);
+  --color-wash: var(--wash);
+  --color-wash-strong: var(--wash-strong);
+  --color-skeleton: var(--skeleton);
 
   --color-fg: var(--fg);
   --color-fg-muted: var(--fg-muted);
   --color-fg-subtle: var(--fg-subtle);
+  --color-fg-faint: var(--fg-faint);
 
   --color-line: var(--border);
+  --color-line-lip: var(--border-lip);
   --color-line-strong: var(--border-strong);
+
+  --color-btn: var(--btn);
+  --color-btn-fg: var(--btn-fg);
+  --color-btn-hover: var(--btn-hover);
 
   --color-primary: var(--primary);
   --color-primary-fg: var(--primary-fg);
+  --color-primary-ink: var(--primary-ink);
   --color-accent: var(--accent);
   --color-accent-fg: var(--accent-fg);
   --color-ring: var(--ring);
@@ -117,13 +215,48 @@
   --color-money-wait: var(--money-wait);
   --color-money-wait-bg: var(--money-wait-bg);
 
+  --radius-xs: var(--radius-xs);
   --radius-sm: var(--radius-sm);
+  --radius-inner: var(--radius-inner);
   --radius-DEFAULT: var(--radius);
   --radius-lg: var(--radius-lg);
+
+  --shadow-card: var(--elev-card);
+  --shadow-pill: var(--elev-pill);
+  --shadow-button: var(--elev-button);
+  --shadow-menu: var(--elev-menu);
+  --shadow-field: var(--elev-field);
+
+  --ease-std: var(--ease-std);
+  --ease-enter: var(--ease-enter);
 
   --font-display: var(--font-display);
   --font-sans: var(--font-sans);
   --font-mono: var(--font-mono);
+
+  /* Type scale: text-chip, text-caption, text-body, text-lead, text-section, text-stat,
+     text-amount (Geist) and text-hero, text-h1, text-title, text-card, text-rail (Instrument Serif sizes).
+     Phone sizes live in the responsive .dm-display-* classes (shell.css). */
+  --text-chip: 11px;     --text-chip--line-height: 14px;    --text-chip--letter-spacing: -0.1px;
+  --text-caption: 12px;  --text-caption--line-height: 16px; --text-caption--letter-spacing: -0.12px;
+  --text-body: 14px;     --text-body--line-height: 20px;    --text-body--letter-spacing: -0.2px;
+  --text-lead: 16px;     --text-lead--line-height: 24px;    --text-lead--letter-spacing: -0.24px;
+  --text-section: 20px;  --text-section--line-height: 26px; --text-section--letter-spacing: -0.3px;
+  --text-stat: 24px;     --text-stat--line-height: 28px;    --text-stat--letter-spacing: -0.4px;
+  --text-amount: 36px;   --text-amount--line-height: 40px;  --text-amount--letter-spacing: -0.6px;
+  --text-hero: 56px;     --text-hero--line-height: 60px;    --text-hero--letter-spacing: -0.6px;
+  --text-h1: 44px;       --text-h1--line-height: 48px;      --text-h1--letter-spacing: -0.4px;
+  --text-title: 34px;    --text-title--line-height: 38px;   --text-title--letter-spacing: -0.2px;
+  --text-card: 28px;     --text-card--line-height: 32px;    --text-card--letter-spacing: 0px;
+  --text-rail: 24px;     --text-rail--line-height: 28px;    --text-rail--letter-spacing: 0px;
+
+  /* animate-rise staggers through --delay (60ms steps) set on the element. */
+  --animate-rise: dm-rise var(--dur-enter) var(--ease-enter) var(--delay, 0s) backwards;
+  --animate-fade: dm-fade var(--dur-fade) var(--ease-std) both;
+  --animate-pop: dm-pop var(--dur-menu) var(--ease-enter) both;
+  --animate-sheet: dm-sheet var(--dur-fade) var(--ease-enter) both;
+  --animate-step-in: dm-step-in var(--dur-step) var(--ease-enter) both;
+  --animate-pulse-soft: dm-pulse 1.6s ease-in-out infinite;
 }
 
 @layer base {
@@ -131,38 +264,41 @@
     border-color: var(--border);
   }
 
-  body {
+  html {
     background-color: var(--bg);
+  }
+
+  body {
+    background: var(--bg);
     color: var(--fg);
     font-family: var(--font-sans);
-    font-size: 15px;
-    line-height: 1.55;
+    font-size: 14px;
+    line-height: 20px;
+    letter-spacing: -0.2px;
     margin: 0;
     -webkit-font-smoothing: antialiased;
   }
 
-  /* Every money figure. Stops digits from shifting width as values update. */
+  /* Every figure. Stops digits from shifting width as values update. */
   .tnum {
-    font-variant-numeric: tabular-nums;
+    font-variant-numeric: lining-nums tabular-nums;
   }
 
-  /* Slow float for the token orbs behind the hero. Each orb sets its own
-     duration and delay, so the field never visibly repeats. */
-  @keyframes dm-float {
-    0% {
-      transform: translate3d(0, 0, 0);
-    }
-    33% {
-      transform: translate3d(var(--dx, 14px), var(--dy, -18px), 0);
-    }
-    66% {
-      transform: translate3d(calc(var(--dx, 14px) * -0.6), calc(var(--dy, -18px) * 0.5), 0);
-    }
-    100% {
-      transform: translate3d(0, 0, 0);
-    }
+  ::selection {
+    background: color-mix(in srgb, var(--primary) 32%, transparent);
+    color: var(--fg);
   }
 
+  :where(a, button, input, select, textarea, summary, [tabindex]):focus-visible {
+    outline: 2px solid var(--ring);
+    outline-offset: 2px;
+  }
+
+  section[id] {
+    scroll-margin-top: calc(var(--header-h) + 16px);
+  }
+
+  /* Token card mark only: a slow float. The element sets --dx, --dy, --dur and --delay. */
   .dm-float {
     animation: dm-float var(--dur, 22s) ease-in-out infinite;
     animation-delay: var(--delay, 0s);
@@ -170,18 +306,15 @@
   }
 
   /* Seamless marquee: the track holds two copies of the same list. */
-  @keyframes dm-marquee {
-    from {
-      transform: translate3d(0, 0, 0);
-    }
-    to {
-      transform: translate3d(-50%, 0, 0);
-    }
-  }
-
   .dm-marquee {
     animation: dm-marquee var(--dur, 60s) linear infinite;
     will-change: transform;
+  }
+
+  /* Once-only entrance; the same motion as the animate-rise utility. */
+  .dm-rise {
+    animation: dm-rise var(--dur-enter) var(--ease-enter) backwards;
+    animation-delay: var(--delay, 0s);
   }
 
   /* Number fields never show the browser's spin buttons. */
@@ -193,29 +326,6 @@
   input[type='number']::-webkit-inner-spin-button {
     -webkit-appearance: none;
     margin: 0;
-  }
-
-  /* Gentle, once-only entrance for the hero. */
-  @keyframes dm-rise {
-    from {
-      opacity: 0;
-      transform: translateY(14px);
-    }
-    to {
-      opacity: 1;
-      transform: translateY(0);
-    }
-  }
-
-  .dm-rise {
-    animation: dm-rise 0.7s cubic-bezier(0.2, 0.7, 0.2, 1) both;
-    animation-delay: var(--delay, 0s);
-  }
-
-  /* Soft glow used sparingly on primary actions and the active state. */
-  .dm-glow {
-    box-shadow: 0 0 0 1px color-mix(in srgb, var(--primary) 35%, transparent),
-      0 8px 32px -8px color-mix(in srgb, var(--primary) 45%, transparent);
   }
 
   .sr-only {
@@ -230,14 +340,109 @@
     border-width: 0;
   }
 
+  /* Stilled motion (B.7): under prefers-reduced-motion, and while the footer's "Pause motion" control puts
+     dm-still on <html>. Important declarations in this layer outrank every later layer. */
   @media (prefers-reduced-motion: reduce) {
     *,
     *::before,
     *::after {
       animation-duration: 0.01ms !important;
       animation-iteration-count: 1 !important;
+      animation-delay: 0s !important;
       transition-duration: 0.01ms !important;
+      transition-delay: 0s !important;
       scroll-behavior: auto !important;
     }
+    .dm-art,
+    .dm-art * {
+      animation: none !important; /* illustrations rest at their static composition */
+    }
+    .dm-marquee {
+      animation: none !important;
+    }
+    .dm-marquee > [aria-hidden='true'] {
+      display: none !important; /* the duplicate list is hidden; the strip scrolls by hand */
+    }
+    .dm-press:active,
+    .dm-press-icon:active {
+      scale: 1 !important;
+    }
   }
+  html.dm-still *,
+  html.dm-still *::before,
+  html.dm-still *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    animation-delay: 0s !important;
+    transition-delay: 0s !important;
+  }
+  html.dm-still .dm-art,
+  html.dm-still .dm-art * {
+    animation: none !important;
+  }
+  html.dm-still .dm-marquee {
+    animation: none !important;
+  }
+  html.dm-still .dm-marquee > [aria-hidden='true'] {
+    display: none !important;
+  }
+}
+
+/* Keyframes (DESIGN.md B.7). Art keyframes live in art.css. */
+@keyframes dm-rise {
+  from { opacity: 0; translate: 0 12px; }
+  to { opacity: 1; translate: 0 0; }
+}
+
+@keyframes dm-fade {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes dm-pop {
+  from { opacity: 0; scale: 0.97; translate: 0 -4px; }
+}
+
+@keyframes dm-sheet {
+  from { opacity: 0; translate: 0 12px; }
+}
+
+@keyframes dm-step-in {
+  from { opacity: 0; translate: 0 6px; }
+}
+
+@keyframes dm-live {
+  from { scale: 1; opacity: 0.55; }
+  to { scale: 2.6; opacity: 0; }
+}
+
+@keyframes dm-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.45; }
+}
+
+@keyframes dm-reveal {
+  from { clip-path: inset(0 100% 0 0); }
+  to { clip-path: inset(0 0 0 0); }
+}
+
+@keyframes dm-bar-rise {
+  from { scale: 1 0; }
+  to { scale: 1 1; }
+}
+
+@keyframes dm-ring-in {
+  from { opacity: 0; scale: 0.92; }
+}
+
+@keyframes dm-marquee {
+  from { transform: translate3d(0, 0, 0); }
+  to { transform: translate3d(-50%, 0, 0); }
+}
+
+@keyframes dm-float {
+  0% { transform: translate3d(0, 0, 0); }
+  33% { transform: translate3d(var(--dx, 14px), var(--dy, -18px), 0); }
+  66% { transform: translate3d(calc(var(--dx, 14px) * -0.6), calc(var(--dy, -18px) * 0.5), 0); }
+  100% { transform: translate3d(0, 0, 0); }
 }

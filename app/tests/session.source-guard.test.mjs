@@ -84,6 +84,13 @@ test('the wallet feature is reached only through the build flag', () => {
   const importers = ALL.filter(({ code }) => /import\(\s*'\.\/wallet\/WalletSessionIsland'\s*\)/.test(code));
   assert.deepEqual(importers.map(({ path }) => path), ['components/Header.tsx']);
   assert.match(importers[0].code, /__DOMINO_WALLET_SESSION__\s*\?\s*lazy\(/);
+  const localImporters = ALL.filter(({ code }) => /import\(\s*'\.\/wallet\/LocalWalletIsland'\s*\)/.test(code));
+  assert.deepEqual(localImporters.map(({ path }) => path), ['components/Header.tsx']);
+  assert.match(localImporters[0].code, /__DOMINO_LOCAL_LIVE__\s*\?\s*lazy\(/);
+  const local = ALL.find(({ path }) => path === 'components/wallet/LocalWalletIsland.tsx');
+  assert.ok(local);
+  assert.doesNotMatch(local.code, /\b(useSession|sessionController|signLoginMessage|switchToRobinhood|signMessage|privateQueryClient|createSessionApi)\b/);
+  assert.doesNotMatch(local.code, /\/api\/|wallet\/session|session\/controller|session\/privateQuery/);
 
   // Outside the feature, nothing imports wagmi, viem, TanStack Query or the
   // session modules statically. The error boundary is plain React and is the
@@ -103,7 +110,7 @@ test('the wallet feature is reached only through the build flag', () => {
       if (/^(wagmi|viem|@tanstack\/)/.test(spec)) offenders.push(`${path}: ${spec}`);
       if (!spec.startsWith('.')) continue;
       const target = posix.normalize(posix.join(posix.dirname(path), spec));
-      if (feature.test(target) && target !== 'components/wallet/WalletBoundary' && spec !== './wallet/WalletSessionIsland' && !consumerMayUse(path, target)) {
+      if (feature.test(target) && target !== 'components/wallet/WalletBoundary' && spec !== './wallet/WalletSessionIsland' && spec !== './wallet/LocalWalletIsland' && !consumerMayUse(path, target)) {
         offenders.push(`${path}: ${spec}`);
       }
     }

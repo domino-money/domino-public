@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState, type HTMLAttributes, type ReactNode } from 'react'
 import { formatUsdCompact } from '../../../lib/read/decimal'
 import { compactUsd, percentText, readNow, type Market, type Metric } from '../../../lib/markets'
 import { COPY, failureText } from '../../../lib/read/screens/copy'
@@ -6,8 +6,9 @@ import { activityFacts, rowQualified, type ActivityFacts, type AttributedFigure 
 import { useReadSource } from '../../../lib/read/screens/readContext'
 import { readWithin } from '../../../lib/read/screens/screenRead'
 import { useDialog } from '../../../lib/useDialog'
+import { IconClose } from '../../icons'
 import { TokenMarkPair } from '../../TokenIcon'
-import { Button, Card, Display, Eyebrow } from '../../ui'
+import { Button, IconButton } from '../../ui'
 import { TokenLabel } from '../TokenLabel'
 import { Address } from './Address'
 import { ProviderFigure } from './ProviderFigure'
@@ -30,10 +31,22 @@ export function rowProviderFigure(metric: Metric, cacheAgeSeconds: number | null
 
 type Activity = { kind: 'loading' } | { kind: 'ok'; facts: ActivityFacts } | { kind: 'failed'; line: StatusLine }
 
+/** A titled panel inside the dialog. */
+function Panel({ id, title, children, ...rest }: { id: string; title: string; children: ReactNode } & HTMLAttributes<HTMLElement>) {
+  return (
+    <section aria-labelledby={id} className="dm-inset grid gap-2 p-4" {...rest}>
+      <h3 id={id} className="text-body font-medium text-fg">
+        {title}
+      </h3>
+      {children}
+    </section>
+  )
+}
+
 /**
- * A pool's figures on demand, from the Top pools table. It opens with what
- * the row already read, and makes one pool-activity read for the pool's age
- * and coverage, only after the click. Provider figures are shown as the
+ * A pool's figures on demand, from the Selected pools table. It opens with
+ * what the row already read, and makes one pool-activity read for the pool's
+ * age and coverage, only after the click. Provider figures are shown as the
  * provider's; Domino's qualified 24h figures only when pool-metrics says they
  * are usable as current; reference analytics folded away and marked not
  * current.
@@ -71,101 +84,85 @@ export function PoolFiguresDialog({ market, onClose }: { market: Market; onClose
   const apr = percentText(market.feeAprPercent)
 
   return (
-    <div role="presentation" className="fixed inset-0 z-50 flex items-end justify-center bg-black/60 p-0 backdrop-blur-[2px] sm:items-center sm:p-4" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
-      <Card
-        ref={dialog}
-        level={2}
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="pool-figures-title"
-        className="grid max-h-[92vh] w-full max-w-[520px] grid-rows-[auto_minmax(0,1fr)_auto] rounded-b-none sm:max-h-[86vh] sm:rounded-b-[var(--radius-lg)]"
-        data-pool-figures-dialog=""
-      >
-        <header className="border-b p-5">
-          <Eyebrow>Pool figures · read only</Eyebrow>
-          <div className="mt-2 flex items-center gap-3">
-            <TokenMarkPair base={market.tokens.base} quote={market.tokens.quote} size={26} />
-            <Display as="h2" id="pool-figures-title" ref={heading} tabIndex={-1} className="text-[23px] outline-none">
+    <div role="presentation" className="dm-dialog-backdrop" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
+      <div ref={dialog} role="dialog" aria-modal="true" aria-labelledby="pool-figures-title" className="dm-dialog dm-dialog--wide" data-pool-figures-dialog="">
+        <div className="grid gap-2 pr-10">
+          <p className="text-caption font-medium text-fg-subtle">Pool figures and sources</p>
+          <div className="flex min-w-0 items-center gap-3">
+            <TokenMarkPair base={market.tokens.base} quote={market.tokens.quote} size={24} ring="var(--surface-2)" />
+            <h2 id="pool-figures-title" ref={heading} tabIndex={-1} className="dm-dialog-title min-w-0 outline-none">
               <TokenLabel token={market.tokens.base} />/<TokenLabel token={market.tokens.quote} /> {COPY.figures.open}
-            </Display>
+            </h2>
           </div>
-          <p className="mt-2">
+          <p className="text-fg-muted">
             <Address value={market.poolId} />
           </p>
-        </header>
+        </div>
+        <IconButton label="Close" icon={<IconClose />} variant="ghost" size="sm" className="dm-dialog-close" onClick={onClose} />
 
-        <div className="grid gap-4 overflow-y-auto p-5">
-          <section className="grid gap-2 rounded-[var(--radius)] border bg-surface-1 p-4" aria-labelledby="figures-estimate">
-            <h3 id="figures-estimate" className="text-[14px] font-medium">Estimated pool fee APR</h3>
+        <div className="grid gap-3">
+          <Panel id="figures-estimate" title="Estimated pool fee APR">
             <PoolAprEstimate observation={market.feeAprEstimate} now={readNow()} detailed />
-          </section>
-          <section aria-labelledby="figures-qualified" className="rounded-[var(--radius)] border bg-surface-1 p-4" data-figures-qualified={qualified ? 'yes' : 'no'}>
-            <h3 id="figures-qualified" className="text-[14px] font-medium">
-              {qualified ? COPY.figures.qualified : COPY.figures.notQualified}
-            </h3>
+          </Panel>
+
+          <Panel id="figures-qualified" title={qualified ? COPY.figures.qualified : COPY.figures.notQualified} data-figures-qualified={qualified ? 'yes' : 'no'}>
             {qualified ? (
-              <dl className="mt-2 grid gap-1 text-[13px]">
+              <dl className="grid gap-1 text-[13px] leading-[18px]">
                 <div className="flex justify-between gap-3">
                   <dt className="text-fg-muted">TVL</dt>
-                  <dd className="tnum font-mono">{market.tvlUsd.state === 'qualified' ? compactUsd(market.tvlUsd) : 'Not qualified'}</dd>
+                  <dd className="tnum font-medium">{market.tvlUsd.state === 'qualified' ? compactUsd(market.tvlUsd) : 'Not qualified'}</dd>
                 </div>
                 <div className="flex justify-between gap-3">
                   <dt className="text-fg-muted">24h volume</dt>
-                  <dd className="tnum font-mono">{market.volume24hUsd.state === 'qualified' ? compactUsd(market.volume24hUsd) : 'Not qualified'}</dd>
+                  <dd className="tnum font-medium">{market.volume24hUsd.state === 'qualified' ? compactUsd(market.volume24hUsd) : 'Not qualified'}</dd>
                 </div>
                 <div className="flex justify-between gap-3">
                   <dt className="text-fg-muted">Pool APR</dt>
-                  <dd className="tnum font-mono">{market.feeAprPercent.state === 'qualified' && apr ? `${apr}%` : 'Not qualified'}</dd>
+                  <dd className="tnum font-medium">{market.feeAprPercent.state === 'qualified' && apr ? `${apr}%` : 'Not qualified'}</dd>
                 </div>
               </dl>
             ) : (
-              <p className="mt-1 text-[13px] text-fg-muted">{COPY.figures.notQualifiedDetail}</p>
+              <p className="text-[13px] leading-[18px] text-fg-muted">{COPY.figures.notQualifiedDetail}</p>
             )}
-          </section>
+          </Panel>
 
-          <section aria-labelledby="figures-provider" className="grid gap-2 rounded-[var(--radius)] border bg-surface-1 p-4" data-figures-provider="">
-            <h3 id="figures-provider" className="text-[14px] font-medium">
-              {COPY.figures.provider}
-            </h3>
+          <Panel id="figures-provider" title={COPY.figures.provider} data-figures-provider="">
             {liquidity || volume ? (
               <>
                 {liquidity && <ProviderFigure label="Liquidity" figure={liquidity} full />}
                 {volume && <ProviderFigure label="24h volume" figure={volume} full />}
               </>
             ) : (
-              <p className="text-[13px] text-fg-muted">
+              <p className="text-[13px] leading-[18px] text-fg-muted">
                 {market.provenance ? `GeckoTerminal: ${market.provenance.market.status}${cacheAge === null ? '' : `, cache ${cacheAge} s`}. No provider figure is shown for this row.` : 'No provider figures.'}
               </p>
             )}
-            <p className="text-[12px] text-fg-subtle">{COPY.figures.providerDetail}</p>
-          </section>
+            <p className="text-caption text-fg-subtle">{COPY.figures.providerDetail}</p>
+          </Panel>
 
           <PoolPriceChart market={market} />
 
           {reference.length > 0 && (
-            <details className="rounded-[var(--radius)] border bg-surface-1 p-4" data-figures-reference="">
-              <summary className="cursor-pointer text-[14px] font-medium">{COPY.figures.reference}</summary>
-              <p className="mt-1 text-[12px] text-fg-subtle">{COPY.figures.referenceDetail}</p>
-              <dl className="mt-2 grid gap-1 text-[13px]">
-                {reference.map(([label, metric]) => (
-                  <div key={label} className="flex justify-between gap-3">
-                    <dt className="text-fg-muted">{label}</dt>
-                    <dd className="tnum font-mono">
-                      Not current: {label === 'Fee APR' ? `${percentText(metric) ?? 'Unavailable'}%` : compactUsd(metric)}
-                    </dd>
-                  </div>
-                ))}
-              </dl>
+            <details className="dm-details dm-inset" data-figures-reference="">
+              <summary>{COPY.figures.reference}</summary>
+              <div className="grid gap-2">
+                <p className="text-caption text-fg-subtle">{COPY.figures.referenceDetail}</p>
+                <dl className="grid gap-1 text-[13px] leading-[18px]">
+                  {reference.map(([label, metric]) => (
+                    <div key={label} className="flex justify-between gap-3">
+                      <dt className="text-fg-muted">{label}</dt>
+                      <dd className="tnum">Not current: {label === 'Fee APR' ? `${percentText(metric) ?? 'Unavailable'}%` : compactUsd(metric)}</dd>
+                    </div>
+                  ))}
+                </dl>
+              </div>
             </details>
           )}
 
-          <section aria-labelledby="figures-activity" className="grid gap-2 rounded-[var(--radius)] border bg-surface-1 p-4" data-figures-activity={activity.kind}>
-            <h3 id="figures-activity" className="text-[14px] font-medium">
-              {COPY.figures.activity}
-            </h3>
+          <Panel id="figures-activity" title={COPY.figures.activity} data-figures-activity={activity.kind}>
             <ScreenStatus line={activity.kind === 'loading' ? { code: 'loading', title: COPY.figures.activityLoading, detail: '' } : activity.kind === 'failed' ? activity.line : null} />
             {activity.kind === 'ok' && (
-              <div className="grid gap-1 text-[13px]" data-pool-age={activity.facts.age?.seconds ?? 'covered'}>
+              <div className="grid gap-1 text-[13px] leading-[18px]" data-pool-age={activity.facts.age?.seconds ?? 'covered'}>
                 {activity.facts.age ? (
                   <p>Pool is {activity.facts.age.seconds} s old; the 24h window isn’t complete, so no full-window figure applies.</p>
                 ) : (
@@ -175,21 +172,21 @@ export function PoolFiguresDialog({ market, onClose }: { market: Market; onClose
                   Verified since initialize at block {activity.facts.initializedBlock}; {activity.facts.swaps} swap event{activity.facts.swaps === 1 ? '' : 's'} in the window; fee accounting{' '}
                   {activity.facts.feeAccounting}.
                 </p>
-                <p className="font-mono text-[11px] text-fg-subtle">
+                <p className="tnum text-caption text-fg-subtle">
                   Block {activity.facts.block}
                   {activity.facts.stale ? ' · stale' : ''}
                 </p>
               </div>
             )}
-          </section>
+          </Panel>
 
-          <p className="text-[12px] leading-relaxed text-fg-subtle">{COPY.figures.caveat}</p>
+          <p className="text-caption text-fg-subtle">{COPY.figures.caveat}</p>
         </div>
 
-        <footer className="flex justify-end border-t p-5">
+        <div className="flex justify-end pt-1">
           <Button onClick={onClose}>{COPY.figures.done}</Button>
-        </footer>
-      </Card>
+        </div>
+      </div>
     </div>
   )
 }

@@ -30,7 +30,7 @@ function MarketCaseView({ scenario }: { scenario: MarketCase }) {
       <MarketsContext.Provider value={provider}>
         <Ticker />
         <div className="mt-4">
-          <MarketsTable />
+          <MarketsTable diagnostics />
         </div>
       </MarketsContext.Provider>
     </section>

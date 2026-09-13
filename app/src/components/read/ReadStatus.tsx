@@ -1,7 +1,7 @@
 import { describeFailure } from '../../lib/read/describe'
 import type { MarketsState } from '../../lib/read/marketsProvider'
 import type { FailedOutcome } from '../../lib/read/types'
-import { Button, cx } from '../ui'
+import { Button, LinkButton, cx } from '../ui'
 
 export interface StatusView {
   /** The outcome state, for tests and styling: `loading`, `partial` or a read state. */
@@ -44,7 +44,7 @@ export function marketsStatus(state: MarketsState): StatusView | null {
         title: 'Some pool data could not be read',
         detail: 'The figures that depend on it show as unavailable.',
         retry: true,
-        lines: state.problems.map(({ poolId, outcome }) => `Pool ${shortPool(poolId)}, ${outcome.route}: ${describeFailure(outcome).title.toLowerCase()}.`),
+        lines: [...new Set(state.problems.map(({ poolId, outcome }) => `Pool ${shortPool(poolId)}, ${outcome.route}: ${describeFailure(outcome).title.toLowerCase()}.`))],
       }
     default:
       return state satisfies never
@@ -58,34 +58,57 @@ export function marketsStatus(state: MarketsState): StatusView | null {
  * retry runs. "Sign in again" is a fixed link to this site's root, where the
  * gate shows its access page.
  */
-export function ReadStatus({ status, onRetry, className }: { status: StatusView | null; onRetry?: () => void; className?: string }) {
+export function ReadStatus({
+  status,
+  onRetry,
+  className,
+  quiet = false,
+}: {
+  status: StatusView | null
+  onRetry?: () => void
+  className?: string
+  /**
+   * The product tables show their rows and nothing about how the reads went:
+   * the status stays in the live region for assistive technology and tests,
+   * never on screen, and offers no buttons.
+   */
+  quiet?: boolean
+}) {
+  if (quiet) {
+    return (
+      <div role="status" aria-live="polite" data-read-status={status?.code ?? 'none'} {...(status?.code === 'loading' ? { 'data-loading': '' } : {})} className="sr-only">
+        {status?.title}
+      </div>
+    )
+  }
   return (
     <div
       role="status"
       aria-live="polite"
       data-read-status={status?.code ?? 'none'}
       {...(status?.code === 'loading' ? { 'data-loading': '' } : {})}
-      className={status ? cx('rounded-[14px] border bg-surface-1 px-4 py-3', className) : 'sr-only'}
+      className={status ? cx('dm-inset px-4 py-3', className) : 'sr-only'}
     >
       {status && (
         <>
-          <p className="text-[14px] font-medium">{status.title}</p>
-          {status.detail && <p className="mt-0.5 text-[13px] text-fg-muted">{status.detail}</p>}
+          <p className="text-body font-medium text-fg">{status.title}</p>
+          {status.detail && <p className="mt-0.5 text-[13px] leading-[18px] text-fg-muted">{status.detail}</p>}
           {status.lines?.map((line) => (
-            <p key={line} className="mt-1 text-[12px] text-fg-subtle">
+            <p key={line} className="mt-1 text-caption text-fg-subtle">
               {line}
             </p>
           ))}
           {(status.signIn || (status.retry && onRetry)) && (
-            <div className="mt-3 flex items-center gap-2">
+            <div className="mt-3 flex flex-wrap items-center gap-2">
               {status.signIn && (
-                <a href="/" className="rounded-[var(--radius-pill)] bg-primary px-4 py-2 text-[13px] font-medium text-primary-fg">
+                <LinkButton href="/" size="sm">
                   Sign in again
-                </a>
+                </LinkButton>
               )}
               {status.retry && onRetry && (
                 <Button
                   variant="outline"
+                  size="sm"
                   aria-disabled={status.busy ? true : undefined}
                   onClick={() => {
                     if (!status.busy) onRetry()

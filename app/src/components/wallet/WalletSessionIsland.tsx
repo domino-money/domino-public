@@ -1,10 +1,12 @@
 import { QueryClientProvider } from '@tanstack/react-query'
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { WagmiProvider } from 'wagmi'
+import { publishWalletIdentity } from '../../lib/walletIdentity'
 import { privateQueryClient } from '../../session/privateQuery'
 import { walletConfig } from '../../wallet/config'
 import { useSession } from '../../wallet/session'
 import { Button } from '../ui'
+import { IconChevronDown } from '../icons'
 import { announcement, shortAddress } from './copy'
 import { PrivateReadProbe } from './PrivateReadProbe'
 import { WalletSessionDialog } from './WalletSessionDialog'
@@ -30,15 +32,25 @@ function WalletControl() {
   const [open, setOpen] = useState(false)
   const { view, identity } = session
 
+  // Published outward for the screens that mention the connected address;
+  // they may not import this feature, so the store is their only way in.
+  // A connection, not the session: signed-in or not is never published.
+  useEffect(() => {
+    publishWalletIdentity(
+      identity.kind === 'connected'
+        ? { kind: 'connected', address: identity.address, chainId: identity.chainId, connectorName: identity.connectorName }
+        : { kind: identity.kind },
+    )
+  }, [identity])
+
   let label = <>Connect wallet</>
   if (identity.kind === 'connected') {
     label = (
       <>
+        <span aria-hidden="true" className="size-1.5 shrink-0 rounded-full bg-money-in" />
         <span className="sr-only">{view.status === 'signed_in' ? 'Signed in as ' : 'Connected wallet '}</span>
-        <span className="tnum font-mono">{shortAddress(identity.address)}</span>
-        <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
-          <path d="m3 4.5 3 3 3-3" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round" />
-        </svg>
+        <span className="tnum font-mono text-[13px] tracking-normal">{shortAddress(identity.address)}</span>
+        <IconChevronDown size={14} className="text-fg-subtle" />
       </>
     )
   }
@@ -53,7 +65,7 @@ function WalletControl() {
       {(
         <>
           <Button
-            variant="outline"
+            variant={identity.kind === 'connected' ? 'outline' : 'primary'}
             className="whitespace-nowrap"
             aria-haspopup="dialog"
             aria-expanded={open}

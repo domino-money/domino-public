@@ -1,72 +1,430 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useId, useLayoutEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type PointerEvent as ReactPointerEvent } from 'react'
+import type { Candle } from 'api-contracts/read-v1/types'
 import type { Market } from '../../../lib/markets'
-import { candleDescription, candleGeometry, chartMatches } from '../../../lib/read/chart'
+import { candleDescription, chartMatches } from '../../../lib/read/chart'
+import { compare, formatUsdPrice, toFixed } from '../../../lib/read/decimal'
 import { reasonText } from '../../../lib/read/describe'
+import { areaGeometry, changeOverWindow, midpoint, volumeGeometry, windowCandles, type AreaGeometry, type BarGeometry } from '../../../lib/read/priceSeries'
+import { unreadToken } from '../../../lib/read/project'
 import { useNow } from '../../../lib/read/useNow'
 import { failureText } from '../../../lib/read/screens/copy'
 import { utcTime } from '../../../lib/read/screens/figures'
 import { useReadSource } from '../../../lib/read/screens/readContext'
 import { readWithin, type ScreenOutcome } from '../../../lib/read/screens/screenRead'
-import { Button } from '../../ui'
+import { VolumeBarsGroup } from '../../charts/VolumeBars'
+import { Button, Pill, Segmented, Skeleton } from '../../ui'
+import { TokenLabel } from '../TokenLabel'
 import { Address } from './Address'
 import { ScreenStatus } from './ScreenStatus'
 
-export function PoolPriceChart({ market }: { market: Market }) {
+const CHANGE_TITLE = 'Domino’s calculation from GeckoTerminal’s hourly candles: first open to last close of the shown window. Not a return.'
+const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
+const INSPECT_KEYS = ['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'Home', 'End']
+/** Room left of the first hour, so its bar never touches the plot's edge. */
+const EDGE = 8
+/** The line keeps clear of its band's top and bottom by these. */
+const LINE_PAD_TOP = 16
+const LINE_PAD_BOTTOM = 12
+
+const two = (value: number) => String(value).padStart(2, '0')
+/** "13 Sep 14:00 UTC": the candle's start, in UTC, the same in every browser. */
+function hourText(seconds: number) {
+  const date = new Date(seconds * 1000)
+  return `${date.getUTCDate()} ${MONTHS[date.getUTCMonth()]} ${two(date.getUTCHours())}:${two(date.getUTCMinutes())} UTC`
+}
+const clock = (seconds: number) => new Date(seconds * 1000).toISOString().slice(11, 16)
+
+const placesOf = (text: string) => (text.includes('.') ? text.length - text.indexOf('.') - 1 : 0)
+/**
+ * The scale's labels, written to one precision: formatUsdPrice gives a value
+ * below one more places than a value above it, so a scale that crosses $1
+ * (a stablecoin) would read "$1.00" over "$0.999302". Each label is then
+ * written to the finest of them, from the provider's exact string.
+ */
+function scaleTexts(values: ReadonlyArray<string>): string[] {
+  const texts = values.map((value) => formatUsdPrice(value) ?? value)
+  const finest = Math.max(...texts.map(placesOf))
+  return values.map((value, index) => {
+    if (placesOf(texts[index]) >= finest) return texts[index]
+    const fixed = toFixed(value, finest)
+    if (fixed === null) return texts[index]
+    const [whole, fraction] = fixed.split('.')
+    return `$${whole.replace(/\B(?=(\d{3})+(?!\d))/g, ',')}.${fraction}`
+  })
+}
+
+/** About how wide a price label is at 12px in the tabular sans: digits and "$" are wide, separators narrow. */
+const labelWidth = (text: string) => [...text].reduce((width, char) => width + (/[\d$]/.test(char) ? 7.3 : 3.7), 0)
+
+interface Plot {
+  width: number
+  height: number
+  compact: boolean
+  lineHeight: number
+  barsTop: number
+  barsHeight: number
+  /** The price label column at the right. */
+  gutter: number
+  line: AreaGeometry
+  bars: BarGeometry[]
+  labels: Array<{ y: number; text: string }>
+  hours: Array<{ x: number; anchor: 'start' | 'middle' | 'end'; text: string }>
+  /** One column per candle, for the hooks and the hit area. */
+  columns: Array<{ start: number; x: number; width: number }>
+}
+
+/**
+ * Where everything sits for `width` pixels. The price line and the volume bars
+ * share one time scale: both are drawn with the same width and the same left
+ * and right pad, and the pad holds half a bar, so each bar sits under its
+ * close point. Only coordinates are numbers; every price stays the provider's
+ * decimal string until it is written as text.
+ */
+function plotFor(candles: ReadonlyArray<Candle>, intervalSeconds: number, width: number): Plot | null {
+  if (candles.length === 0 || width <= 0) return null
+  const compact = width < 560
+  const lineHeight = compact ? 200 : 236
+  const gap = compact ? 8 : 12
+  const barsHeight = compact ? 48 : 64
+  const labelRow = compact ? 24 : 28
+
+  // Label texts first: the gutter is as wide as the widest of them.
+  const first = candles[0].startTimestamp
+  const span = candles[candles.length - 1].startTimestamp - first
+  const steps = span > 0 && intervalSeconds > 0 ? span / intervalSeconds : 23
+  const probe = areaGeometry(candles, width, lineHeight, { top: LINE_PAD_TOP, right: 0, bottom: LINE_PAD_BOTTOM, left: 0 })
+  if (!probe) return null
+  const high = probe.high
+  const low = probe.low
+  const middle = midpoint(high, low)
+  const [highText, lowText, middleText = null] = scaleTexts(middle === null ? [high, low] : [high, low, middle])
+  const flat = compare(high, low) === 0 || highText === lowText
+  const texts = flat ? [highText] : [highText, lowText, ...(middleText ? [middleText] : [])]
+  const gutter = Math.max(52, Math.ceil(Math.max(...texts.map(labelWidth), labelWidth('UTC')) + 18))
+
+  // One hour's pitch fills the plot left of the gutter; half of it pads each end.
+  const pitch = (width - EDGE - gutter) / (steps + 1)
+  if (pitch <= 0) return null
+  const pad = { left: EDGE + pitch / 2, right: gutter + pitch / 2 }
+  const line = areaGeometry(candles, width, lineHeight, { top: LINE_PAD_TOP, right: pad.right, bottom: LINE_PAD_BOTTOM, left: pad.left })
+  const volume = volumeGeometry(candles, intervalSeconds, width, barsHeight, { top: 0, right: pad.right, bottom: 0, left: pad.left }, Math.max(2, pitch * 0.38))
+  if (!line) return null
+
+  const top = LINE_PAD_TOP
+  const bottom = lineHeight - LINE_PAD_BOTTOM
+  const labels = flat
+    ? [{ y: (top + bottom) / 2, text: highText }]
+    : [
+        { y: top, text: highText },
+        ...(!compact && middleText && middleText !== highText && middleText !== lowText ? [{ y: (top + bottom) / 2, text: middleText }] : []),
+        { y: bottom, text: lowText },
+      ]
+
+  const points = line.points
+  const barsTop = lineHeight + gap
+  const plotRight = width - gutter
+  const half = 18
+  const hourAt = (index: number) => {
+    const x = points[index].x
+    const anchor: 'start' | 'middle' | 'end' = x - half < 0 ? 'start' : x + half > plotRight ? 'end' : 'middle'
+    return { x: anchor === 'start' ? 0 : anchor === 'end' ? plotRight : x, anchor, text: clock(points[index].candle.startTimestamp) }
+  }
+  const indexes = [...new Set([0, ...(points.length >= 3 ? [Math.floor((points.length - 1) / 2)] : []), points.length - 1])]
+  const hours = indexes.map(hourAt)
+
+  const columns = points.map((point, index) => {
+    const left = index === 0 ? 0 : (points[index - 1].x + point.x) / 2
+    const right = index === points.length - 1 ? plotRight : (point.x + points[index + 1].x) / 2
+    return { start: point.candle.startTimestamp, x: left, width: Math.max(1, right - left) }
+  })
+
+  return { width, height: barsTop + barsHeight + labelRow, compact, lineHeight, barsTop, barsHeight, gutter, line, bars: volume?.bars ?? [], labels, hours, columns }
+}
+
+/**
+ * One token's reported hourly USD prices and volume, from one pool-market
+ * read made when a person asks for it: the close as a line with the area
+ * under it, the volume as bars on the same time scale beneath, and a readout
+ * that follows the pointer or the arrow keys. Every figure on it is a candle
+ * the provider returned, or Domino's arithmetic on two of them, said so. The
+ * contract returns up to 24 hourly candles and nothing longer, so there is no
+ * period to choose, and nothing here calls the window a day.
+ */
+export function PoolPriceChart({ market, autoLoad = false }: { market: Market; autoLoad?: boolean }) {
   const source = useReadSource()
-  const [selected, setSelected] = useState<'base' | 'quote'>('base')
+  const [selected, setSelected] = useState<'base' | 'quote'>(() => (market.chartTokens?.quote === market.tokens.base.address ? 'quote' : 'base'))
   const [attempt, setAttempt] = useState(0)
   const [read, setRead] = useState<{ key: string; outcome: ScreenOutcome<'pool-market'> } | null>(null)
-  const currency = market.chartTokens?.[selected]
+  const [inspected, setInspected] = useState<number | null>(null)
+  const [width, setWidth] = useState(0)
+  const box = useRef<HTMLDivElement>(null)
+  const fillId = `pool-chart-fill-${useId().replace(/[^a-zA-Z0-9_-]/g, '')}`
+  const chartTokens = market.chartTokens
+  const currency = chartTokens?.[selected]
   const key = `${market.poolId}:${currency}:${attempt}`
   const outcome = read?.key === key ? read.outcome : null
-  const active = attempt > 0 && !!currency
+  // While the same token is read again, the last candles stay on screen, dimmed, with their own age; another token's never do.
+  const retained = !outcome && read && read.outcome.state === 'ok' && read.key.startsWith(`${market.poolId}:${currency}:`) ? read : null
+  const answer = outcome ?? retained?.outcome ?? null
+  const shownKey = outcome ? key : (retained?.key ?? key)
+  const active = (autoLoad || attempt > 0) && !!currency
   const now = useNow(active)
 
   useEffect(() => {
     if (!active || !source || !currency) return
     const controller = new AbortController()
-    void readWithin(source, 'pool-market', { poolId: market.poolId, includePriceHistory: true, priceToken: selected }, { signal: controller.signal }).then((outcome) => {
-      if (!controller.signal.aborted && outcome.state !== 'aborted') setRead({ key, outcome })
+    void readWithin(source, 'pool-market', { poolId: market.poolId, includePriceHistory: true, priceToken: selected }, { signal: controller.signal }).then((result) => {
+      if (!controller.signal.aborted && result.state !== 'aborted') setRead({ key, outcome: result })
     })
     return () => controller.abort()
   }, [source, active, currency, market.poolId, selected, key])
 
-  const history = outcome?.state === 'ok' ? outcome.data.priceHistory : null
-  const matches = outcome?.state === 'ok' && currency ? chartMatches(outcome.data, currency, selected) : false
-  const age = history?.cache?.ageSeconds === null || history?.cache?.ageSeconds === undefined || outcome?.state !== 'ok' ? null : history.cache.ageSeconds + Math.max(0, Math.floor((outcome.provenance.receivedMonotonic !== undefined && now.monotonic !== undefined ? now.monotonic - outcome.provenance.receivedMonotonic : now.wall - outcome.provenance.receivedAt) / 1000))
-  const expired = history?.cache && age !== null && age > history.cache.maxStaleSeconds
-  const data = matches && !expired ? history?.data : null
-  const stale = history?.status === 'stale' || (!!history?.cache && age !== null && age >= history.cache.freshForSeconds)
-  const candles = data ? candleGeometry(data) : []
-  const reason = expired ? 'Chart retrieval has expired. Load again for a fresh provider observation.' : history?.data && !matches ? 'The chart currency changed during this read. Refresh the pool before trying again.' : history ? `Hourly prices ${history.status}: ${reasonText(history.reason)}` : ''
+  const measured = !!chartTokens
+  useLayoutEffect(() => {
+    const node = box.current
+    if (!node) return
+    const measure = () => setWidth(Math.floor(node.getBoundingClientRect().width))
+    measure()
+    const observer = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(measure)
+    observer?.observe(node)
+    return () => observer?.disconnect()
+  }, [measured])
 
-  return <section className="grid gap-3 rounded-[var(--radius)] border bg-surface-1 p-4" aria-labelledby="pool-chart-title" data-pool-chart="">
-    <h3 id="pool-chart-title" className="text-[14px] font-medium">Hourly token prices · USD</h3>
-    <p className="text-[12px] text-fg-subtle">GeckoTerminal candles, reported for the selected token address. Gaps and open intervals remain visible; complete 24h coverage is not established.</p>
-    {market.chartTokens ? <>
-      <div className="flex flex-wrap gap-2" role="group" aria-label="Chart currency">
-        {(['base', 'quote'] as const).map((side) => <button key={side} type="button" aria-pressed={selected === side} className="rounded border px-2 py-1 text-[12px]" onClick={() => setSelected(side)}>
-          <Address value={market.chartTokens![side]} />
-        </button>)}
+  const reading = active && !outcome
+  const history = answer?.state === 'ok' ? answer.data.priceHistory : null
+  const matches = answer?.state === 'ok' && currency ? chartMatches(answer.data, currency, selected) : false
+  const age =
+    history?.cache?.ageSeconds === null || history?.cache?.ageSeconds === undefined || answer?.state !== 'ok'
+      ? null
+      : history.cache.ageSeconds +
+        Math.max(0, Math.floor((answer.provenance.receivedMonotonic !== undefined && now.monotonic !== undefined ? now.monotonic - answer.provenance.receivedMonotonic : now.wall - answer.provenance.receivedAt) / 1000))
+  const expired = !!history?.cache && age !== null && age > history.cache.maxStaleSeconds
+  const data = matches && !expired ? (history?.data ?? null) : null
+  const stale = history?.status === 'stale' || (!!history?.cache && age !== null && age >= history.cache.freshForSeconds)
+  const reason = expired
+    ? 'Chart retrieval has expired. Read again for a fresh provider observation.'
+    : history?.data && !matches
+      ? 'The chart currency changed during this read. Refresh the pool before trying again.'
+      : history
+        ? `Hourly prices ${history.status}: ${reasonText(history.reason)}`
+        : ''
+  const tokenFor = (address: string) => [market.tokens.base, market.tokens.quote].find((token) => token.origin === 'read' && token.address.toLowerCase() === address.toLowerCase()) ?? unreadToken(address)
+
+  const candles = data ? windowCandles(data, null) : []
+  const plot = data ? plotFor(candles, data.intervalSeconds, width) : null
+  const points = plot?.line.points ?? []
+  const change = candles.length ? changeOverWindow(candles) : null
+  const inspecting = inspected !== null && points.some((point) => point.candle.startTimestamp === inspected)
+  const current = (inspecting ? points.find((point) => point.candle.startTimestamp === inspected) : undefined) ?? points.at(-1)
+  const index = current ? points.indexOf(current) : -1
+  const last = points.at(-1)
+
+  const ask = () => {
+    setInspected(null)
+    setAttempt((n) => n + 1)
+  }
+  const inspectAt = (event: ReactPointerEvent<SVGSVGElement>) => {
+    if (points.length === 0) return
+    const x = event.clientX - event.currentTarget.getBoundingClientRect().left
+    const nearest = points.reduce((best, point) => (Math.abs(point.x - x) < Math.abs(best.x - x) ? point : best))
+    if (nearest.candle.startTimestamp !== inspected) setInspected(nearest.candle.startTimestamp)
+  }
+  const inspectByKey = (event: ReactKeyboardEvent<SVGSVGElement>) => {
+    if (!INSPECT_KEYS.includes(event.key) || points.length === 0) return
+    event.preventDefault()
+    const from = index === -1 ? points.length - 1 : index
+    const next = event.key === 'Home' ? 0 : event.key === 'End' ? points.length - 1 : Math.max(0, Math.min(points.length - 1, from + (event.key === 'ArrowLeft' || event.key === 'ArrowDown' ? -1 : 1)))
+    setInspected(points[next].candle.startTimestamp)
+  }
+
+  const magnitude = change ? change.percentText.replace(/^[+−]/, '') : ''
+
+  return (
+    <section className="dm-card dm-pool-chart p-5" aria-labelledby="pool-chart-title" data-pool-chart="">
+      <div className="flex flex-wrap items-start justify-between gap-x-6 gap-y-3">
+        <div className="min-w-0">
+          <h2 id="pool-chart-title" className="dm-display dm-display-card">
+            USD price and volume
+          </h2>
+          <p className="mt-1 text-caption text-fg-subtle">
+            {currency ? (
+              <>
+                <TokenLabel token={tokenFor(currency)} /> in US dollars · hourly candles · GeckoTerminal
+              </>
+            ) : (
+              'Hourly candles · GeckoTerminal'
+            )}
+          </p>
+        </div>
+        {chartTokens && (
+          <div className="dm-pool-chart-controls flex flex-wrap items-center gap-2">
+            <Segmented
+              label="Chart currency"
+              value={selected}
+              onChange={(side) => {
+                setInspected(null)
+                setSelected(side)
+              }}
+              items={(['base', 'quote'] as const).map((side) => ({ key: side, label: <TokenLabel token={tokenFor(chartTokens[side])} /> }))}
+            />
+            {active && (outcome || retained) && (
+              <Button variant="ghost" size="sm" disabled={reading} onClick={ask}>
+                {reading ? 'Reading hourly prices…' : 'Read again'}
+              </Button>
+            )}
+          </div>
+        )}
       </div>
-      <p className="break-all font-mono text-[11px]" data-chart-currency="">Token {currency}</p>
-      <Button variant="ghost" disabled={active && !outcome} onClick={() => setAttempt((n) => n + 1)}>{active && !outcome ? 'Loading prices…' : attempt ? 'Reload hourly prices' : 'Load hourly prices'}</Button>
-    </> : <p className="text-[13px] text-fg-muted">A verified provider currency pair is needed before requesting a chart.</p>}
-    {active && !outcome && <ScreenStatus line={{ code: 'loading', title: 'Loading hourly prices…', detail: '' }} />}
-    {outcome && outcome.state !== 'ok' && <ScreenStatus line={failureText(outcome, 'pools')} />}
-    {outcome?.state === 'ok' && !data && <p role="status" className="text-[13px] text-fg-muted" data-chart-unavailable="">{reason}</p>}
-    {data && <>
-      <p className="text-[12px] text-fg-subtle" data-chart-provenance="">Retrieved {utcTime(data.retrievedAt)}{age === null ? '' : ` · ${age} s ago`}{stale ? ' · stale' : ''}. {data.coverage.returnedCandles} candles; {data.coverage.closedCandles} closed; {data.coverage.gapsDetected ? 'gaps detected' : 'no gaps reported'}.</p>
-      {candles.length ? <svg viewBox="0 0 440 200" role="img" aria-label={`Reported hourly USD candles for ${currency}${stale ? ', stale retrieval' : ''}`} className="w-full" data-candle-chart="">
-        {candles.map((g) => <g key={g.candle.startTimestamp} data-candle-timestamp={g.candle.startTimestamp} opacity={g.candle.closed ? 1 : 0.5}>
-          <title>{candleDescription(g.candle)}</title>
-          <line x1={g.x} x2={g.x} y1={g.high} y2={g.low} stroke="currentColor" />
-          <rect x={g.x - g.width / 2} y={Math.min(g.open, g.close)} width={g.width} height={Math.max(1, Math.abs(g.close - g.open))} fill={g.close <= g.open ? 'var(--money-in)' : 'var(--money-out)'} />
-        </g>)}
-      </svg> : <p>No candles reported.</p>}
-      <details><summary className="cursor-pointer text-[12px]">Exact candle values and timestamps</summary>
-        <ul className="mt-2 grid gap-2 break-words font-mono text-[10px]">{data.candles.map((c) => <li key={c.startTimestamp}>{candleDescription(c)}</li>)}</ul>
-      </details>
-    </>}
-  </section>
+
+      {!chartTokens && <p className="mt-4 text-body text-fg-muted">A verified provider currency pair is needed before requesting a chart.</p>}
+
+      {data && current && (
+        <div className="mt-5 min-w-0 animate-fade" data-candle-inspection="">
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+            <p className="tnum text-[24px] leading-[28px] font-medium tracking-[-0.4px] break-all">{formatUsdPrice(current.candle.closeUsd) ?? '—'}</p>
+            {change && (
+              <span className="inline-flex" title={CHANGE_TITLE} data-chart-change={change.sign}>
+                <Pill tone={change.sign > 0 ? 'in' : change.sign < 0 ? 'out' : 'neutral'} className="tnum">
+                  {change.sign !== 0 && <span aria-hidden="true">{change.sign > 0 ? '▲' : '▼'}</span>}
+                  <span className="sr-only">{change.sign > 0 ? 'Up ' : change.sign < 0 ? 'Down ' : ''}</span>
+                  {magnitude}
+                </Pill>
+              </span>
+            )}
+          </div>
+          <p className="mt-1 text-caption text-fg-subtle">
+            {hourText(current.candle.startTimestamp)} · {inspecting ? 'close' : 'latest close'}
+            {current.candle.closed ? '' : ' · open hour'}
+          </p>
+        </div>
+      )}
+
+      {chartTokens && (
+        <div ref={box} className="dm-pool-plot dm-dots-chart mt-4">
+          {!active ? (
+            <div className="dm-pool-plot-empty">
+              <p className="text-[13px] leading-[18px] text-fg-subtle">One read of hourly candles, when you ask.</p>
+              <Button variant="outline" size="sm" onClick={ask}>
+                Show hourly candles
+              </Button>
+            </div>
+          ) : !answer ? (
+            <div className="dm-pool-plot-empty">
+              <p role="status" className="sr-only">
+                Reading hourly prices…
+              </p>
+              <Button variant="outline" size="sm" disabled>
+                Reading hourly prices…
+              </Button>
+              <Skeleton className="dm-pool-plot-baseline" />
+            </div>
+          ) : answer.state !== 'ok' ? (
+            <div className="dm-pool-plot-empty">
+              <ScreenStatus line={failureText(answer, 'pools')} className="w-full max-w-[420px] text-left" />
+            </div>
+          ) : !data ? (
+            <div className="dm-pool-plot-empty">
+              <p role="status" className="max-w-[48ch] text-[13px] leading-[18px] text-fg-muted" data-chart-unavailable="">
+                {reason}
+              </p>
+            </div>
+          ) : candles.length === 0 ? (
+            <div className="dm-pool-plot-empty">
+              <p className="text-[13px] leading-[18px] text-fg-muted">No candles reported.</p>
+            </div>
+          ) : plot && current && last ? (
+            <svg
+              key={shownKey}
+              width={plot.width}
+              height={plot.height}
+              viewBox={`0 0 ${plot.width} ${plot.height}`}
+              role="slider"
+              aria-label={`Inspect reported hourly USD candles${stale ? ', stale retrieval' : ''}`}
+              aria-valuemin={1}
+              aria-valuemax={points.length}
+              aria-valuenow={Math.max(1, index + 1)}
+              aria-valuetext={candleDescription(current.candle)}
+              tabIndex={0}
+              className="dm-pool-chart-svg"
+              aria-busy={reading || undefined}
+              data-candle-chart=""
+              onPointerMove={inspectAt}
+              onPointerDown={inspectAt}
+              onPointerLeave={() => setInspected(null)}
+              onKeyDown={inspectByKey}
+              onBlur={() => setInspected(null)}
+            >
+              <defs>
+                <linearGradient id={fillId} x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0" stopColor="var(--primary-ink)" stopOpacity="0.24" />
+                  <stop offset="1" stopColor="var(--primary-ink)" stopOpacity="0" />
+                </linearGradient>
+              </defs>
+              {plot.labels.map((label) => (
+                <line key={`grid-${label.y}`} x1={0} x2={plot.width - plot.gutter + 6} y1={label.y} y2={label.y} className="dm-pool-grid" />
+              ))}
+              <g className="dm-pool-reveal">
+                <path d={plot.line.areaPath} fill={`url(#${fillId})`} />
+                <path d={plot.line.linePath} className="dm-pool-line" />
+                {!inspecting && <circle cx={last.x} cy={last.y} r="3.5" className="dm-pool-last" data-open={last.candle.closed ? undefined : ''} />}
+              </g>
+              {inspecting && (
+                <g>
+                  <line x1={current.x} x2={current.x} y1={0} y2={plot.barsTop + plot.barsHeight} className="dm-pool-crosshair" />
+                  <circle cx={current.x} cy={current.y} r="4" className="dm-pool-ring" />
+                </g>
+              )}
+              <g transform={`translate(0 ${plot.barsTop})`}>
+                <VolumeBarsGroup bars={plot.bars} inspected={inspecting ? inspected : null} />
+              </g>
+              {plot.columns.map((column) => (
+                <g key={column.start} data-candle-timestamp={column.start}>
+                  <rect x={column.x} y={0} width={column.width} height={plot.barsTop + plot.barsHeight} fill="transparent" />
+                </g>
+              ))}
+              {plot.labels.map((label) => (
+                <text key={`label-${label.y}`} x={plot.width - 8} y={label.y + 4} textAnchor="end" className="dm-pool-axis">
+                  {label.text}
+                </text>
+              ))}
+              {plot.hours.map((hour, at) => (
+                <text key={`hour-${at}`} x={hour.x} y={plot.height - 8} textAnchor={hour.anchor} className="dm-pool-axis">
+                  {hour.text}
+                </text>
+              ))}
+              <text x={plot.width - 8} y={plot.height - 8} textAnchor="end" className="dm-pool-axis">
+                UTC
+              </text>
+            </svg>
+          ) : (
+            <div className="dm-pool-plot-empty">{width > 0 && <p className="text-[13px] leading-[18px] text-fg-muted">These hourly prices couldn’t be drawn.</p>}</div>
+          )}
+        </div>
+      )}
+
+      {data && (
+        <>
+          <p className="mt-3 text-caption text-fg-subtle" data-chart-provenance="">
+            Retrieved {utcTime(data.retrievedAt)}
+            {age === null ? '' : ` · ${age} s ago`}
+            {stale ? ' · stale' : ''}. {data.coverage.returnedCandles} candles; {data.coverage.closedCandles} closed; {data.coverage.gapsDetected ? 'gaps detected' : 'no gaps reported'}.
+          </p>
+          <p className="mt-1 text-caption text-fg-subtle">Reported USD prices for one token, not the pool’s pair price or liquidity distribution. Complete 24h coverage is not established.</p>
+          <details className="dm-details -mx-3 mt-3">
+            <summary>Source and exact candle values</summary>
+            <div>
+              <p className="text-caption text-fg-muted" data-chart-currency="">
+                Token <Address value={currency ?? ''} />
+              </p>
+              <ul className="tnum mt-2 grid max-h-[240px] gap-1.5 overflow-y-auto text-caption break-words text-fg-muted">
+                {data.candles.map((candle) => (
+                  <li key={candle.startTimestamp}>{candleDescription(candle)}</li>
+                ))}
+              </ul>
+            </div>
+          </details>
+        </>
+      )}
+    </section>
+  )
 }

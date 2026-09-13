@@ -67,6 +67,9 @@ export async function createGuardedVite({ port, handleRead }) {
       return
     }
     if (!permittedFileRequest(req.url)) { res.writeHead(403, { 'Content-Type': 'application/json' }); res.end('{"error":"private_file_refused"}'); return }
+    // Image-only policy leaves Vite scripts/HMR unchanged. An approved CDN
+    // image cannot redirect the browser to an arbitrary or private host.
+    res.setHeader('Content-Security-Policy', "img-src 'self' data: https://cdn.dexscreener.com")
     vite.middlewares(req, res, () => { res.statusCode = 404; res.end() })
   })
   const close = async () => {

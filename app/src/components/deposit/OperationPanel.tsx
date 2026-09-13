@@ -39,18 +39,18 @@ export function OperationPanel({
   const [hash, setHash] = useState('')
   const report = view.actions.find((action) => action.id === 'report')
   return (
-    <section aria-labelledby={titleId} data-view={view.kind} className="rounded-[var(--radius-lg)] border bg-surface-1 p-5">
-      <div className="flex flex-wrap items-center gap-2">
-        <h3 id={titleId} className="text-[18px] font-medium">
+    <section aria-labelledby={titleId} data-view={view.kind} className="dm-card dm-acct-op">
+      <div className="dm-acct-op-head">
+        <h3 id={titleId} className="dm-acct-panel-title">
           {view.title}
         </h3>
         {view.supportRequired && <Pill tone="out">Support required</Pill>}
         {view.reserved && <Pill tone="wait">Reserved slot</Pill>}
       </div>
-      <p className="mt-1 font-mono text-[12px] text-fg-subtle">Deposit {op.id} · version {op.version}</p>
+      <p className="dm-acct-hash">Deposit {op.id} · version {op.version}</p>
 
       {view.conflicts.length > 0 && (
-        <div role="note" aria-label="Reported conflicts" data-testid="conflicts" className="mt-4 space-y-2">
+        <div role="note" aria-label="Reported conflicts" data-testid="conflicts" className="dm-acct-op-stack">
           {view.conflicts.map((conflict) => (
             <Callout key={`${conflict.step}:${conflict.text}`} tone="out">
               {conflict.text}
@@ -59,17 +59,17 @@ export function OperationPanel({
         </div>
       )}
 
-      <div className="mt-3 space-y-2 text-[14px]">
+      <div className="dm-acct-op-stack dm-acct-op-body">
         {view.body.map((line) => (
           <p key={line} className={line === SUPPORT_REQUIRED ? 'font-medium' : undefined}>
             {line}
           </p>
         ))}
-        {view.reserved && <p className="text-[13px] text-fg-muted">{view.reserved}</p>}
+        {view.reserved && <p className="dm-acct-panel-note">{view.reserved}</p>}
       </div>
 
       {view.actions.filter((action) => action.id !== 'report').length > 0 && (
-        <div className="mt-4 flex flex-wrap items-start gap-2" aria-label="Actions">
+        <div className="dm-acct-op-actions" aria-label="Actions">
           {view.actions
             .filter((action) => action.id !== 'report')
             .map((action) => (
@@ -83,7 +83,7 @@ export function OperationPanel({
                   {action.label}
                 </Button>
                 {action.reason && (
-                  <p id={`${reasonBase}-${action.id}`} className="mt-1 max-w-[46ch] text-[12px] text-fg-muted">
+                  <p id={`${reasonBase}-${action.id}`} className="dm-hint max-w-[46ch]">
                     {action.reason}
                   </p>
                 )}
@@ -94,36 +94,36 @@ export function OperationPanel({
 
       {report && (
         <form
-          className="mt-4 flex flex-wrap items-end gap-2"
+          className="dm-acct-op-report"
           onSubmit={(event) => {
             event.preventDefault()
             onAction('report', hash)
           }}
         >
-          <label className="text-[12px] text-fg-muted">
+          <label className="dm-label dm-acct-lf">
             Transaction hash from your wallet
             <input
               value={hash}
               onChange={(event) => setHash(event.target.value)}
               autoComplete="off"
               spellCheck={false}
-              className="mt-1 block w-[min(66ch,80vw)] rounded-[var(--radius)] border border-line-strong bg-surface-1 px-3 py-2 font-mono text-[12px] text-fg"
+              className="dm-field dm-acct-mono-field"
             />
           </label>
           <Button variant="outline" type="submit" disabled={!report.enabled}>
             Report hash
           </Button>
-          <p className="w-full text-[12px] text-fg-subtle">{REPORT_HINT}</p>
+          <p className="dm-hint w-full">{REPORT_HINT}</p>
         </form>
       )}
 
       {view.step && (
         <Section title={`Wallet step: ${view.step.summary}`}>
-          <div className="space-y-2 text-[14px]" data-testid="step-lines">
+          <div className="dm-acct-op-stack dm-acct-op-body" data-testid="step-lines">
             {view.step.lines.map((line) => (
               <p key={line}>{line}</p>
             ))}
-            <p className="text-[13px] text-fg-muted">{view.step.admission}</p>
+            <p className="dm-acct-panel-note">{view.step.admission}</p>
           </div>
           <div className="mt-3">
             <FactList facts={view.step.facts} label="Transaction summary" />
@@ -136,19 +136,19 @@ export function OperationPanel({
               <FactList facts={view.step.native} label="Native headroom" />
             </div>
           )}
-          <details className="mt-3 text-[12px]">
-            <summary className="cursor-pointer text-fg-muted">Exact transaction data ({view.step.selector})</summary>
-            <p className="mt-2 break-all font-mono text-fg-muted" data-testid="calldata">
+          <details className="dm-details dm-acct-disclosure">
+            <summary>Exact transaction data ({view.step.selector})</summary>
+            <p className="dm-acct-hash" data-testid="calldata">
               {view.step.calldata}
             </p>
           </details>
           {preSign && (
             <div className="mt-4">
-              <label className="flex items-center gap-2 text-[13px]">
+              <label className="dm-acct-check">
                 <input type="checkbox" checked={summaryAcknowledged} onChange={(event) => onAcknowledge(event.target.checked)} />
                 I reviewed every field of this wallet step
               </label>
-              <ul aria-label="Pre-sign checks" data-testid="presign" className="mt-3 space-y-1 text-[13px]">
+              <ul aria-label="Pre-sign checks" data-testid="presign" className="dm-acct-presign">
                 {preSign.map((row) => (
                   <li key={row.id} data-check={row.id} data-ok={row.ok}>
                     <Pill tone={row.ok ? 'in' : 'out'}>{row.ok ? 'Passed' : 'Not met'}</Pill> {row.label}
@@ -157,7 +157,7 @@ export function OperationPanel({
               </ul>
             </div>
           )}
-          <p role="note" data-testid="handoff-status" className="mt-4 text-[13px] font-medium">
+          <p role="note" data-testid="handoff-status" className="dm-inset dm-acct-notice mt-4">
             {handoffAvailable ? "Only your wallet can authorize this step. If its response is lost, reconcile the operation before any new attempt." : handoffStatus(op)}
           </p>
         </Section>
@@ -175,7 +175,7 @@ export function OperationPanel({
               {view.receipt.envelope}
             </Callout>
           )}
-          {view.receipt.notFinal && <p className="mb-2 text-[13px] text-money-wait">{view.receipt.notFinal}</p>}
+          {view.receipt.notFinal && <p className="dm-acct-wait">{view.receipt.notFinal}</p>}
           <div className="mt-3">
             <FactList facts={view.receipt.facts} label="Receipt facts" />
           </div>
@@ -188,7 +188,7 @@ export function OperationPanel({
               <div className="mt-3">
                 <FactList facts={view.receipt.position.amounts} label="Received amounts and their evidence" />
               </div>
-              <p className="mt-2 text-[13px] text-fg-muted">{view.receipt.position.owner}</p>
+              <p className="dm-acct-panel-note mt-2">{view.receipt.position.owner}</p>
             </div>
           )}
         </Section>
@@ -202,7 +202,7 @@ export function OperationPanel({
         </Section>
       )}
 
-      <ul className="mt-5 border-t pt-3 text-[12px] text-fg-subtle">
+      <ul className="dm-acct-op-facts">
         {view.facts.map((fact) => (
           <li key={fact}>{fact}</li>
         ))}
@@ -216,16 +216,16 @@ function AllowancesPanel({ report }: { report: AllowanceReport }) {
   const view = presentAllowances(report)
   return (
     <Section title="Allowances">
-      <p className="text-[13px] text-fg-muted">{view.header}</p>
-      <div className="mt-3 space-y-3" data-testid="allowances">
+      <p className="dm-acct-panel-note">{view.header}</p>
+      <div className="dm-acct-op-stack mt-3" data-testid="allowances">
         {view.rows.map((row) => (
           <div key={row.currency}>
-            <p className="font-mono text-[12px]">{row.currency}</p>
+            <p className="dm-acct-hash">{row.currency}</p>
             <FactList facts={[row.erc20, row.permit2]} label={`Allowances for ${row.currency}`} />
           </div>
         ))}
       </div>
-      <p className="mt-3 text-[13px]" data-testid="revocation-guidance">
+      <p className="dm-acct-line mt-3" data-testid="revocation-guidance">
         {view.guidance}
       </p>
     </Section>

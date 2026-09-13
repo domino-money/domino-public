@@ -17,7 +17,7 @@ test('local-live refuses every build, regardless of output directory', async () 
 test('ordinary Vite cannot bypass the guarded launcher', async () => {
   await assert.rejects(resolveConfig({ root, configFile, mode: 'local-live', logLevel: 'silent' }, 'serve'), /guarded launcher/)
 })
-test('guarded local-live keeps real source and selection, disables wallet and test hooks', async () => {
+test('guarded local-live keeps real source and selection, disables server sessions and test hooks', async () => {
   const config = await resolveConfig({ root, configFile, mode: 'local-live', server: { middlewareMode: true }, logLevel: 'silent' }, 'serve')
   assert.deepEqual([config.define.__DOMINO_READ_MODE__, config.define.__DOMINO_POOL_SET__, config.define.__DOMINO_WALLET_SESSION__, config.define.__DOMINO_TEST_HOOKS__, config.define.__DOMINO_LOCAL_LIVE__], ['"bridge"', '"selected"', 'false', 'false', 'true'])
 })

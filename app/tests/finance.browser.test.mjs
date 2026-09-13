@@ -76,9 +76,11 @@ test('setup asks for sign-in and makes no deposit request or wallet transaction 
   } finally { await s.close(); }
 });
 
-test('sequence is reachable from dashboard and requests no signature, approval or transaction before review', async () => {
+test('sequence is reachable from Automate and requests no signature, approval or transaction before review', async () => {
   const s = await scenario();
   try {
+    // The way into sequences lives on Automate (DESIGN.md E.6), where wallet builds render its link.
+    await s.page.goto(`${s.page.url().split('/#')[0]}/#/automate`);
     await s.page.getByRole('link', {name:'Create or manage a sequence'}).click();
     await s.page.getByRole('heading', {name:'Your sequences',exact:true}).waitFor();
     assert.equal(s.wallet.state.signed.length,0);assert.deepEqual(s.wallet.state.refused,[]);

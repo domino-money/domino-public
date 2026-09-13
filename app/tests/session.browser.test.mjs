@@ -997,7 +997,7 @@ test('signing in grants no wallet transaction or automated signing authority', a
   await connect(page);
   await signIn(s, page);
   // The owner removed the permanent explanatory paragraphs from this modal.
-  // Session authority stays separate from the optional wallet transaction UI.
+  // Permissions remain unchanged and the existing Settings explanation stays.
   assert.doesNotMatch(await dialog(page).innerText(), /Signing in is not a permission|Only standard wallets/);
   await dialog(page).getByRole('button', { name: 'Close' }).click();
   // Signed in is all the header claims: no mode label, and nothing about what
@@ -1007,19 +1007,23 @@ test('signing in grants no wallet transaction or automated signing authority', a
   assert.doesNotMatch(header, /practice/i);
 
   await page.evaluate(() => (window.location.hash = '#/settings'));
-  await until(page, () => /Automated signing/.test(document.body.innerText), null, 'settings');
+  // The stat label is set in capitals by the stylesheet, and innerText follows that.
+  await until(page, () => /AUTOMATED SIGNING/.test(document.body.innerText), null, 'settings');
   const settings = await page.locator('main').innerText();
-  assert.match(settings, /Automated signing\s+Not connected/);
-  assert.match(settings, /Wallet transactions\s+Built in; each step reviewed in wallet/);
+  // Session authority stays separate from the optional wallet transaction UI.
+  assert.match(settings, /AUTOMATED SIGNING\s+Not connected/);
+  assert.match(settings, /WALLET TRANSACTIONS\s+Built in; each step reviewed in wallet/);
+  assert.match(settings, /Sign-in proves your address/);
+  assert.match(settings, /Nothing in this build signs a transaction, grants a spending permission or moves funds/);
   assert.doesNotMatch(settings, /practice/i);
+  assert.equal(s.wallet.calls('eth_sendTransaction').length, 0, 'SIWE never submits a wallet transaction');
+  assert.equal(s.wallet.calls('eth_signTypedData_v4').length, 0, 'SIWE never signs a financial intent');
   // Moving between routes keeps the session without reading it again.
   const reads = s.fake.count('me');
   await page.evaluate(() => (window.location.hash = '#/'));
   await page.evaluate(() => (window.location.hash = '#/app'));
   await viewIs(page, 'signed_in');
   assert.equal(s.fake.count('me'), reads);
-  assert.equal(s.wallet.calls('eth_sendTransaction').length, 0, 'SIWE never submits a wallet transaction');
-  assert.equal(s.wallet.calls('eth_signTypedData_v4').length, 0, 'SIWE never signs a financial intent');
   await s.close();
 });
 

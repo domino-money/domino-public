@@ -104,6 +104,46 @@ export function formatUsdCompact(text: string): string | null {
   return `${sign}$${grouped(fixedText(units, places))}`
 }
 
+const NON_NEGATIVE = /^(\d+)(?:\.(\d+))?$/
+
+/** `units / 10^scale` to `places` fraction digits, half up, as a bigint scaled by 10^places. `units` is not negative. */
+function roundHalfUp(units: bigint, scale: number, places: number): bigint {
+  if (scale <= places) return units * pow10(places - scale)
+  const divisor = pow10(scale - places)
+  const quotient = units / divisor
+  return (units % divisor) * 2n >= divisor ? quotient + 1n : quotient
+}
+
+/**
+ * A USD price from a provider decimal string, for chart labels and the readout: "$2,492.94".
+ *
+ * Grouping with commas; at least 2 decimals. A value of 1 or more is written to
+ * exactly two places ("$2,492.94", "$1.00"); a value below 1 keeps up to 6
+ * significant digits, with trailing zeros dropped but never fewer than two
+ * places ("$0.0004123", "$0.99985", "$0.50"). Rounds half up on the string
+ * digits, and a value that rounds up to 1 is written as "$1.00"; zero is
+ * "$0.00". Null when `value` is not a non-negative decimal string ("-1", "1e6",
+ * ".5" and "" are all null). String and BigInt arithmetic only, like everything
+ * in this file: a JS number never holds the value.
+ */
+export function formatUsdPrice(value: string): string | null {
+  const match = NON_NEGATIVE.exec(value)
+  if (!match) return null
+  const [, whole, fraction = ''] = match
+  const scale = fraction.length
+  const units = BigInt(whole + fraction)
+  if (units >= pow10(scale)) return `$${grouped(fixedText(roundHalfUp(units, scale, 2), 2))}`
+  if (units === 0n) return '$0.00'
+  // Below one: the places that hold six significant digits, counted from the first non-zero digit.
+  const places = scale - units.toString().length + 6
+  const rounded = roundHalfUp(units, scale, places)
+  if (rounded >= pow10(places)) return '$1.00'
+  const text = fixedText(rounded, places)
+  const [integer, digits] = text.split('.')
+  const kept = digits.replace(/0+$/, '').padEnd(2, '0')
+  return `$${integer}.${kept}`
+}
+
 /**
  * `a / b` to `places` digits, half to even, or null when b is zero or either
  * side is not a decimal. Exact: both sides are brought to one scale as BigInt.

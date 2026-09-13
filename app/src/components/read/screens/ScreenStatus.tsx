@@ -16,16 +16,17 @@ export function ScreenStatus({ line, onRetry, busy, className }: { line: StatusL
       role="status"
       aria-live="polite"
       data-screen-status={line?.code ?? 'none'}
-      className={line ? cx('rounded-[14px] border bg-surface-1 px-4 py-3', className) : 'sr-only'}
+      className={line ? cx('dm-inset px-4 py-3', className) : 'sr-only'}
     >
       {line && (
         <>
-          <p className="text-[14px] font-medium">{line.title}</p>
-          {line.detail && <p className="mt-0.5 text-[13px] text-fg-muted">{line.detail}</p>}
+          <p className="text-body font-medium text-fg">{line.title}</p>
+          {line.detail && <p className="mt-0.5 text-[13px] leading-[18px] text-fg-muted">{line.detail}</p>}
           {line.retry && onRetry && (
             <div className="mt-3">
               <Button
                 variant="outline"
+                size="sm"
                 aria-disabled={busy ? true : undefined}
                 onClick={() => {
                   if (!busy) onRetry()

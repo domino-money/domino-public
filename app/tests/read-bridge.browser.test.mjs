@@ -27,16 +27,16 @@ const APP = 'https://app.test';
 const BRIDGE = {
   APP_ORIGIN: APP,
   READ_BRIDGE_ENABLED: 'true',
-  READ_V2_BRIDGE_ENABLED: 'false',
-  ENABLED_V2_READS: '',
   GATEWAY_ORIGIN: 'https://gateway.test',
   ENABLED_READS: 'token,pools,pool-market,wallet-assets,nft-positions,catalogue,pool-activity,pool-positions,pool-metrics',
   ACCESS_CLIENT_ID: 'bridge-test-client',
   ACCESS_CLIENT_SECRET: 'bridge-test-secret',
 };
 const RC3 = '1.1.0-rc.3';
+/** The estimate namespace's contract (read-v2, src/lib/read/pin.ts): what its own capabilities GET carries. */
 const V2 = '2.0.0-rc.1';
-const requestContract = (request) => request.path.startsWith('/api/read/v2/') ? V2 : RC3;
+/** The contract header a request must carry: its namespace's, and no other. */
+const contractFor = (path) => (path.startsWith('/api/read/v2/') ? V2 : RC3);
 const READ = resolve(import.meta.dirname, '../../api-contracts/read-v1/fixtures/gateway');
 const fixture = (name) => readFileSync(join(READ, `${name}.json`), 'utf8');
 /** The package's fixture pool, which the bridge-test build asks for. */
@@ -89,7 +89,7 @@ const worker = createWorker({
   fetch: async (url, init) => {
     const route = new URL(url).pathname.replace('/internal/read/v1/', '');
     const body = JSON.parse(init.body);
-    upstream.push({ route, body, headers: Object.fromEntries(new Headers(init.headers)) });
+    upstream.push({ route, body, headers: Object.fromEntries(new Headers(init.headers)), at: Date.now() });
     const reply = (await answer(route, body)) ?? DEFAULT_REPLY(route, body);
     return new Response(reply.text, {
       status: reply.status,
@@ -133,13 +133,8 @@ before(async () => {
 });
 
 after(async () => {
-  // Stop accepting requests and destroy keep-alive connections before awaiting
-  // Chromium teardown; neither resource should wait for the other to close.
-  const serverClosed = server ? new Promise((done, reject) => {
-    server.close((error) => error ? reject(error) : done());
-    server.closeAllConnections();
-  }) : Promise.resolve();
-  await Promise.all([serverClosed, browser?.close()]);
+  await browser?.close();
+  await new Promise((done) => server.close(done));
 });
 
 /**
@@ -187,18 +182,69 @@ async function settled(page) {
   }, null, { timeout: 30_000 });
   return statusOf(page).getAttribute('data-read-status');
 }
+/** Waits until the landing's status is `code`, whatever it passes through on the way. */
+const statusIs = (page, code) =>
+  page.waitForFunction((wanted) => document.querySelector('#pools [data-read-status]')?.getAttribute('data-read-status') === wanted, code, { timeout: 30_000 });
+
+const NATIVE = '0x0000000000000000000000000000000000000000';
+/** The read service's 429, asking for a wait of 1 s. */
+const BUSY = { status: 429, text: '{"error":"read_capacity_busy"}', headers: { 'Retry-After': '1' } };
+/** The fixture pool's other token stays busy past R-1: the pool's row stands, beside a problem that is only busy. */
+const TOKEN_BUSY = (route, body) => (route === 'token' && body.token !== NATIVE ? BUSY : undefined);
+
+/**
+ * Home asks a read service that was only busy again on its own, the first time
+ * once its Retry-After, and at least 4 s, have passed since the busy answer,
+ * then at twice that (useBusyRecovery in MarketsTable.tsx). Waiting past the
+ * first shows a state is not asked again at all.
+ */
+const BUSY_RECOVERY_MS = 4_000;
+const PAST_BUSY_RECOVERY_MS = BUSY_RECOVERY_MS + 1_500;
+
+/**
+ * How the landing says a read state: only in the table's polite live region,
+ * visually hidden, as the state's code and its title alone. No detail, no
+ * line and nothing to press in it, and no Refresh, Retry or sign-in link on
+ * the card: the owner's decision on the redesign.
+ */
+async function saidQuietly(page, code, title) {
+  const status = statusOf(page);
+  assert.equal(await status.getAttribute('data-read-status'), code);
+  assert.equal(await status.textContent(), title, `${code}: the status is its title alone`);
+  assert.deepEqual(
+    await status.evaluate((el) => {
+      const box = el.getBoundingClientRect();
+      return { hidden: box.width <= 1 && box.height <= 1, inside: el.children.length };
+    }),
+    { hidden: true, inside: 0 },
+    `${code}: no status panel on Home`,
+  );
+  assert.equal(await page.locator('#pools').getByRole('button', { name: /Refresh|Retry|Trying again/ }).count(), 0, `${code}: no Refresh or Retry on Home`);
+  assert.equal(await page.locator('#pools').getByRole('link', { name: 'Sign in again' }).count(), 0, `${code}: no sign-in link on Home`);
+}
 
 test('the bridge build reads through the same-origin bridge, adds no credential of its own, and no cookie gets past the gate', async () => {
   const { context, page, errors } = await visit({ session: true });
   assert.equal(await settled(page), 'none');
   const row = page.locator('#pools tbody tr');
   assert.equal(await row.count(), 1);
-  assert.match(await row.innerText(), /\$12\.3K\s*·\s*GeckoTerminal[\s\S]*Est\. APR unavailable/);
-  assert.equal(await row.locator('[data-metric]').last().getAttribute('data-metric'), 'unavailable', 'no qualified APR is provided');
-  assert.equal(await row.locator('td').last().locator('[data-apr-estimate]').getAttribute('data-apr-estimate'), 'unavailable', 'V2 is disabled, so no APR estimate is shown');
+  // The figure alone in its cell; the provider named in the row's provenance line, dated by its retrieval age, and in the cell's title.
+  assert.deepEqual(
+    await row.locator('[data-metric]').evaluateAll((els) => els.map((el) => [el.innerText.trim(), el.getAttribute('data-metric')])),
+    [['$12.3K', 'provider'], ['$0.00', 'provider']],
+  );
+  // The price is the pool's own ratio from chain state, in its own cell: never a figure attribute.
+  assert.equal(await row.locator('td').nth(1).locator('[data-pool-price]').count(), 1);
+  assert.equal(await row.locator('td').nth(1).locator('[data-metric]').count(), 0);
+  assert.match(await row.locator('[data-provenance]').getAttribute('data-provenance'), /^Pool verified on-chain at block 700 · Reported by GeckoTerminal, retrieved \d+ s ago$/);
+  assert.match(await row.locator('[data-metric]').first().getAttribute('title'), /^Reported by GeckoTerminal, retrieved \d+ s ago\. Not reconciled by Domino\.$/);
+  const apr = row.locator('td').nth(4);
+  assert.equal(await apr.innerText(), 'Unavailable');
+  assert.equal(await apr.locator('[data-apr-estimate]').getAttribute('data-apr-estimate'), 'unavailable', 'no APR is provided, so none is shown');
 
   const reads = seen.map((r) => `${r.method} ${r.path}`);
-  // Probe optional V2 before falling back: one lean V1 market read, then each token once.
+  // The lean path, in order: the estimate namespace's capabilities, then the read namespace's, then
+  // pool-market without price history, then each token once. Never pool-metrics.
   assert.deepEqual(reads, ['GET /api/read/v2/capabilities', 'GET /api/read/v1/capabilities', 'POST /api/read/v1/pool-market', 'POST /api/read/v1/token', 'POST /api/read/v1/token']);
   assert.deepEqual(upstream.find((call) => call.route === 'pool-market').body, { poolId: FIXTURE_POOL, includePriceHistory: false });
   // What the browser sent to this origin.
@@ -207,7 +253,7 @@ test('the bridge build reads through the same-origin bridge, adds no credential 
     const h = request.headers;
     assert.match(h.cookie ?? '', /__Host-domino-beta=/, 'the gate cookie reaches the gate');
     assert.equal(h['sec-fetch-site'], 'same-origin');
-    assert.equal(h['x-domino-read-contract'], requestContract(request));
+    assert.equal(h['x-domino-read-contract'], contractFor(request.path), `${request.path} names its namespace's contract`);
     for (const forbidden of ['authorization', 'x-domino-csrf', 'x-domino-session', 'x-domino-preauth']) assert.equal(h[forbidden], undefined, forbidden);
     // The browser attaches every cookie whose Path covers the read route; fetch cannot pick one out.
     // With session-v1's Path=/ that includes the session and preauth cookies, as far as the gate.
@@ -219,10 +265,10 @@ test('the bridge build reads through the same-origin bridge, adds no credential 
   for (const request of seen) {
     assert.equal(request.headers.cookie, undefined, `${request.path} went past the gate with a cookie`);
     for (const [name, value] of Object.entries(request.headers)) assert.doesNotMatch(value, /sessiontoken|preauthtoken|domino-beta/, `a credential went past the gate in ${name}`);
-    assert.equal(request.headers['x-domino-read-contract'], requestContract(request), 'the read itself went on unchanged');
+    assert.equal(request.headers['x-domino-read-contract'], contractFor(request.path), 'the read itself went on unchanged');
   }
   // The gateway never sees the browser's cookie, origin or headers, and no session credential in any header.
-  assert.deepEqual(upstream.map((call) => call.route), ['pool-market', 'token', 'token'], 'the gateway saw the same three reads');
+  assert.deepEqual(upstream.map((call) => call.route), ['pool-market', 'token', 'token'], 'the gateway saw the same three reads, and nothing for the estimate namespace');
   for (const call of upstream) {
     assert.equal(call.headers.cookie, undefined);
     assert.equal(call.headers.origin, undefined);
@@ -236,80 +282,79 @@ test('the bridge build reads through the same-origin bridge, adds no credential 
 
 test('Settings in the bridge-test build says what dist says: live reads built in, switched on by the server', async () => {
   const { context, page } = await visit();
-  try {
-    await page.evaluate(() => { location.hash = '#/settings'; });
-    await page.waitForTimeout(150);
-    const text = await page.locator('#root').innerText();
-    assert.match(text, /Live reads\s+Built in, switched on by the server/);
-    assert.match(text, /Automated signing\s+Not connected/, 'the read bridge never enables the executor');
-    assert.match(text, /Wallet transactions\s+Off/, 'this read-only build carries no wallet transaction handoff');
-  } finally { await closeContext(context); }
+  await page.evaluate(() => { location.hash = '#/settings'; });
+  await page.waitForTimeout(150);
+  const text = await page.locator('#root').innerText();
+  assert.match(text, /Live reads are built in and switched on by the read service, never here\./);
+  // The stat label is set in capitals by the stylesheet, and innerText follows that.
+  assert.match(text, /AUTOMATED SIGNING\s+Not connected/, 'the read bridge never enables the executor');
+  assert.match(text, /WALLET TRANSACTIONS\s+Off/, 'this read-only build carries no wallet transaction handoff');
+  assert.match(text, /Nothing in this build signs a transaction, grants a spending permission or moves funds/);
+  await closeContext(context);
 });
 
 const cellStates = (page) => page.locator('#pools tbody [data-metric]').evaluateAll((els) => els.map((el) => el.getAttribute('data-metric')));
 
-test('a refresh without the cookie is gate_required, and the last rows stay, marked stale', async () => {
+test('a read without the cookie is gate_required, the last rows stay, marked stale, and the gate is not asked again on its own', async () => {
+  // Home has no Refresh, so the read after the cookie is gone is the one Home makes on its own: a token read is
+  // still busy after R-1 on the first load, and the table asks again once its wait has passed.
   // Provider figures are what the lean table shows: they must turn stale too.
-  const { context, page } = await visit();
-  assert.equal(await settled(page), 'none');
-  const before = await cellStates(page);
-  assert.ok(before.includes('provider') && !before.includes('qualified'), `the page starts from current provider figures: ${before}`);
-  assert.match(await page.locator('#pools tbody tr').innerText(), /GeckoTerminal/);
-  await context.clearCookies();
-  await page.getByRole('button', { name: 'Refresh' }).click();
-  assert.equal(await settled(page), 'gate_required');
-  assert.match(await statusOf(page).innerText(), /Sign in again[\s\S]*|Beta access needed/);
-  assert.equal(await page.locator('#pools tbody tr').count(), 1, 'the last good rows stay');
-  const states = await cellStates(page);
-  assert.ok(!states.includes('qualified') && !states.includes('provider') && !states.includes('calculated'), `retained rows read as current: ${states}`);
-  // The provider's figures and the vol/TVL Domino calculates from them.
-  const current = before.filter((state) => state === 'provider' || state === 'calculated').length;
-  assert.equal(states.filter((state) => state === 'stale').length, current, `every provider and calculated cell turned stale: ${states}`);
-  assert.ok(states.includes('stale'));
-  assert.match(await statusOf(page).innerText(), /marked stale/);
-  // Refresh gave way to the failure's own controls: focus moved to the heading, not to the page.
-  assert.equal(await page.evaluate(() => document.activeElement?.textContent), 'Selected pools', 'focus fell to the page after a failed Refresh');
-  await closeContext(context);
+  const { context, page } = await visit({ reply: TOKEN_BUSY });
+  try {
+    assert.equal(await settled(page), 'partial');
+    const before = await cellStates(page);
+    assert.ok(before.includes('provider') && !before.includes('qualified'), `the page starts from current provider figures: ${before}`);
+    // The row names its provider in its provenance (title and data), not as a printed line under the pair.
+    assert.match(await page.locator('#pools tbody tr [data-provenance]').getAttribute('data-provenance'), /Reported by GeckoTerminal/);
+    await context.clearCookies();
+    const knocked = edge.length;
+    await statusIs(page, 'gate_required');
+    await saidQuietly(page, 'gate_required', 'Beta access needed');
+    assert.deepEqual(edge.slice(knocked).map((r) => `${r.method} ${r.path}`), ['POST /api/read/v1/pool-market'], 'the gate’s 401 stopped the load at its first read');
+    assert.equal(await page.locator('#pools tbody tr').count(), 1, 'the last good rows stay');
+    const states = await cellStates(page);
+    assert.ok(!states.includes('qualified') && !states.includes('provider') && !states.includes('calculated'), `retained rows read as current: ${states}`);
+    // The provider's figures, and anything Domino calculates from them.
+    const current = before.filter((state) => state === 'provider' || state === 'calculated').length;
+    assert.equal(states.filter((state) => state === 'stale').length, current, `every provider and calculated cell turned stale: ${states}`);
+    assert.ok(states.includes('stale'));
+    // No focus assertion after a failed Refresh any more: the owner removed Refresh and Retry from Home, so nothing there takes focus.
+    const refused = edge.length;
+    await page.waitForTimeout(PAST_BUSY_RECOVERY_MS);
+    assert.equal(edge.length, refused, 'the gate’s answer is never asked again on its own');
+  } finally {
+    await closeContext(context);
+  }
 });
 
-test('a gate configuration broken at runtime is gate_unavailable; once fixed, Retry recovers and focus lands on the heading', async () => {
-  const { context, page } = await visit();
-  // Closed even when an assertion fails, so a held read cannot leak into the next test.
+test('a gate configuration broken at runtime is gate_unavailable: the rows stay, marked stale, it is not asked again on its own, even once fixed, and a reload recovers', async () => {
+  // Home has no Refresh, so the read that meets the broken gate is the one Home makes on its own, as above.
+  const { context, page } = await visit({ reply: TOKEN_BUSY });
+  const password = GATE.BETA_PASSWORD;
+  // Closed, and the gate restored, even when an assertion fails, so nothing leaks into the next test.
   try {
-    await settled(page);
-    const password = GATE.BETA_PASSWORD;
+    assert.equal(await settled(page), 'partial');
     GATE.BETA_PASSWORD = '';
     try {
-      await page.getByRole('button', { name: 'Refresh' }).click();
-      assert.equal(await settled(page), 'gate_unavailable');
-      assert.match(await statusOf(page).innerText(), /Access is paused/);
+      await statusIs(page, 'gate_unavailable');
     } finally {
       GATE.BETA_PASSWORD = password;
     }
-    // Hold the gateway so the retry stays in flight: the kept rows must stay stale beside the failure it retries.
-    let release = () => undefined;
-    const held = new Promise((done) => {
-      release = done;
-    });
-    answer = async () => {
-      await held;
-      return undefined;
-    };
-    try {
-      await page.getByRole('button', { name: 'Retry' }).click();
-      await page.waitForFunction(() => document.querySelector('#pools [aria-disabled="true"]'));
-      assert.equal(await statusOf(page).getAttribute('data-read-status'), 'gate_unavailable');
-      const during = await page.evaluate(() =>
-        [...document.querySelectorAll('#pools tbody [data-metric], .dm-marquee [data-metric]')].map((el) => el.getAttribute('data-metric')),
-      );
-      assert.ok(during.includes('stale'), `rows during the retry: ${during}`);
-      assert.deepEqual(during.filter((state) => state === 'qualified' || state === 'provider'), [], 'retained rows read as current during the retry');
-    } finally {
-      release();
-    }
+    await saidQuietly(page, 'gate_unavailable', 'Access is paused');
+    const kept = await cellStates(page);
+    assert.ok(kept.includes('stale'), `rows kept beside the failure: ${kept}`);
+    assert.deepEqual(kept.filter((state) => state === 'qualified' || state === 'provider'), [], 'retained rows read as current beside the failure');
+    const paused = edge.length;
+    await page.waitForTimeout(PAST_BUSY_RECOVERY_MS);
+    assert.equal(edge.length, paused, 'a paused gate is never asked again on its own, even once it is fixed');
+    // No focus assertion after a Retry that recovers any more: the owner removed Retry from Home, so a reload is the way back.
+    answer = DEFAULT_REPLY;
+    leaving(page);
+    await page.reload({ waitUntil: 'networkidle' });
     assert.equal(await settled(page), 'none');
-    assert.equal(await page.evaluate(() => document.activeElement?.textContent), 'Selected pools');
+    assert.ok((await cellStates(page)).includes('provider'), 'the reload reads the rows again, current');
   } finally {
+    GATE.BETA_PASSWORD = password;
     await closeContext(context);
   }
 });
@@ -323,7 +368,9 @@ test('a gateway without the contract header is shown as a contract mismatch, and
   leaving(page);
   await page.reload({ waitUntil: 'networkidle' });
   assert.equal(await settled(page), 'incompatible');
-  assert.match(await statusOf(page).innerText(), /disagree on the contract version/);
+  // Which side disagreed ("disagree on the contract version") is the read lab's to show now; tests/read.test.mjs
+  // holds the bridge's upstream_contract_mismatch.
+  await saidQuietly(page, 'incompatible', 'Read contract mismatch');
   assert.equal(await page.locator('#pools tbody tr').count(), 0);
   await closeContext(context);
 });
@@ -333,21 +380,25 @@ test('with live reads off on the server, nothing is posted at all', async () => 
   try {
     const { context, page } = await visit();
     assert.equal(await settled(page), 'disabled');
-    assert.match(await statusOf(page).innerText(), /Live data is switched off for now[\s\S]*switched off on the server/);
-    assert.deepEqual(seen.map((r) => `${r.method} ${r.path}`), ['GET /api/read/v2/capabilities', 'GET /api/read/v1/capabilities']);
+    // "switched off on the server" is the read lab's to show now; tests/read.test.mjs holds bridge_data_mode_disabled.
+    await saidQuietly(page, 'disabled', 'Live data is switched off for now');
+    await page.waitForTimeout(PAST_BUSY_RECOVERY_MS);
+    assert.deepEqual(seen.map((r) => `${r.method} ${r.path}`), ['GET /api/read/v2/capabilities', 'GET /api/read/v1/capabilities'], 'one capabilities GET per namespace, no POST, and nothing asked again on its own');
     await closeContext(context);
   } finally {
     BRIDGE.READ_BRIDGE_ENABLED = 'true';
   }
 });
 
-test('a 503 is shown with Retry and never asked again on its own; a 429 is asked again after its Retry-After', async () => {
+test('a 503 is never asked again on its own, and Home has no Retry for it; a 429 is asked again after its Retry-After, and a service still busy after that is asked again by Home on its own, later each time', async () => {
   const { context, page } = await visit();
+  // A held read is released even when an assertion fails, so it cannot leak into the next test.
+  let release = () => undefined;
   try {
     await settled(page);
-    const marketReads = () => upstream.filter((call) => call.route === 'pool-market').length;
+    const marketReads = () => upstream.filter((call) => call.route === 'pool-market');
 
-    // A 503: shown as itself after one attempt, until the person presses Retry.
+    // A 503: shown as itself after one attempt, and never asked again on its own. With no Retry on Home, a reload asks again.
     upstream = [];
     let failed = false;
     answer = (route) => {
@@ -358,11 +409,13 @@ test('a 503 is shown with Retry and never asked again on its own; a 429 is asked
     leaving(page);
     await page.reload({ waitUntil: 'networkidle' });
     assert.equal(await settled(page), 'unavailable');
-    assert.match(await statusOf(page).innerText(), /Temporarily unavailable[\s\S]*answered: read service unavailable/);
-    assert.equal(marketReads(), 1, 'the 503 was asked again automatically');
-    await page.getByRole('button', { name: 'Retry' }).click();
+    await saidQuietly(page, 'unavailable', 'Temporarily unavailable');
+    await page.waitForTimeout(PAST_BUSY_RECOVERY_MS);
+    assert.equal(marketReads().length, 1, 'the 503 was asked again automatically');
+    leaving(page);
+    await page.reload({ waitUntil: 'networkidle' });
     assert.equal(await settled(page), 'none');
-    assert.equal(marketReads(), 2, 'Retry asked once more');
+    assert.equal(marketReads().length, 2, 'the reload asked once more');
 
     // One 429: asked again after its Retry-After, and the rows come back.
     upstream = [];
@@ -370,20 +423,62 @@ test('a 503 is shown with Retry and never asked again on its own; a 429 is asked
     answer = (route) => {
       if (route !== 'pool-market' || busy) return undefined;
       busy = true;
-      return { status: 429, text: '{"error":"read_capacity_busy"}', headers: { 'Retry-After': '1' } };
+      return BUSY;
     };
-    await page.getByRole('button', { name: 'Refresh' }).click();
+    leaving(page);
+    await page.reload({ waitUntil: 'networkidle' });
     assert.equal(await settled(page), 'none');
-    assert.equal(marketReads(), 2, 'one 429, one automatic retry');
+    assert.equal(marketReads().length, 2, 'one 429, one automatic retry');
 
-    // A 429 every time: three attempts in all, then shown with its wait.
+    // A token read busy past R-1: the pool's row stands, current, beside a problem that is only busy.
     upstream = [];
-    answer = (route) => (route === 'pool-market' ? { status: 429, text: '{"error":"read_capacity_busy"}', headers: { 'Retry-After': '1' } } : undefined);
-    await page.getByRole('button', { name: 'Refresh' }).click();
-    assert.equal(await settled(page), 'busy');
-    assert.match(await statusOf(page).innerText(), /Try again in 1 s/);
-    assert.equal(marketReads(), 3);
+    answer = TOKEN_BUSY;
+    leaving(page);
+    await page.reload({ waitUntil: 'networkidle' });
+    assert.equal(await settled(page), 'partial');
+    // The load's last request: its answer, and so the busy state, came after it. Timed on this side, however slow the page is to report.
+    const loadEnded = upstream.at(-1).at;
+    await saidQuietly(page, 'partial', 'Some pool data could not be read');
+    assert.ok((await cellStates(page)).includes('provider'));
+
+    // Home asks again on its own once the wait has passed (4 s at the least), never before. This time the pool's
+    // own read is busy every time: three attempts in all, then busy, with the last rows kept, marked stale.
+    answer = (route) => (route === 'pool-market' ? BUSY : undefined);
+    await statusIs(page, 'busy');
+    const again = marketReads().slice(1);
+    assert.equal(again.length, 3, 'asked again on its own, three attempts in all under R-1');
+    assert.ok(again[0].at - loadEnded >= BUSY_RECOVERY_MS - 100, `asked again ${again[0].at - loadEnded} ms after the busy answer, before its wait had passed`);
+    const retryEnded = upstream.at(-1).at;
+    await saidQuietly(page, 'busy', 'Read service busy');
+    const kept = await cellStates(page);
+    assert.ok(kept.includes('stale'), `rows kept beside a busy service: ${kept}`);
+    assert.deepEqual(kept.filter((state) => state === 'qualified' || state === 'provider'), [], 'retained rows read as current beside a busy service');
+
+    // Asked again once more, at twice the wait, and held in flight: the kept rows stay stale beside the failure it retries.
+    const held = new Promise((done) => {
+      release = done;
+    });
+    answer = async (route) => {
+      if (route === 'pool-market') await held;
+      return undefined;
+    };
+    const deadline = Date.now() + 30_000;
+    while (marketReads().length < 5) {
+      assert.ok(Date.now() < deadline, 'Home did not ask a busy service again the second time');
+      await page.waitForTimeout(100);
+    }
+    assert.ok(marketReads()[4].at - retryEnded >= 2 * BUSY_RECOVERY_MS - 100, `asked again ${marketReads()[4].at - retryEnded} ms after the second busy answer, before twice the wait had passed`);
+    assert.equal(await statusOf(page).getAttribute('data-read-status'), 'busy', 'the failure being retried stays said');
+    const during = await page.evaluate(() =>
+      [...document.querySelectorAll('#pools tbody [data-metric], .dm-marquee [data-metric]')].map((el) => el.getAttribute('data-metric')),
+    );
+    assert.ok(during.includes('stale'), `rows during the retry: ${during}`);
+    assert.deepEqual(during.filter((state) => state === 'qualified' || state === 'provider'), [], 'retained rows read as current during the retry');
+    release();
+    await statusIs(page, 'none');
+    assert.ok((await cellStates(page)).includes('provider'), 'and the rows come back current');
   } finally {
+    release();
     await closeContext(context);
   }
 });

@@ -61,16 +61,16 @@ const CANONICAL_HOST = 'domino.money'
 const MAX_FORM_BYTES = 1024
 
 /**
- * The app's CSP. Scripts, styles and images from this origin only, plus the
- * Google Fonts stylesheet and font files index.html already loads.
+ * Optional decorative token metadata/images use only the two explicitly
+ * authorized public DEX Screener hosts. No Domino credentials are forwarded.
  */
 export const APP_CSP = [
   "default-src 'self'",
   "script-src 'self'",
   "style-src 'self' https://fonts.googleapis.com",
   'font-src https://fonts.gstatic.com',
-  "img-src 'self' data:",
-  "connect-src 'self'",
+  "img-src 'self' data: https://cdn.dexscreener.com",
+  "connect-src 'self' https://api.dexscreener.com",
   "object-src 'none'",
   "frame-ancestors 'none'",
   "base-uri 'none'",

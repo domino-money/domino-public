@@ -1,0 +1,152 @@
+/* markets builder (DESIGN.md H.3, E.2): the Markets page, its rail of pool cards, the filter bar, the
+   markets table, the token view and the pool picker. Classes are prefixed dm-mkt-. Rules sit in the
+   components layer, so a Tailwind utility on the same element still wins. */
+
+@layer components {
+  /* ---- Title row: the page title on the left, the rail's arrows on the right (under it on a phone) ---- */
+  .dm-mkt-titlebar { display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: 16px 32px; }
+  .dm-mkt-arrows { display: flex; gap: 8px; margin-left: auto; }
+
+  /* ---- Rail: two cards a view (one and a peek on a phone), snapping per card. The 6px padding keeps
+     focus rings unclipped; the negative margin keeps the cards on the page's edges. ---- */
+  .dm-mkt-rail {
+    display: grid;
+    grid-auto-flow: column;
+    grid-auto-columns: calc((100% - 24px) / 2);
+    gap: 24px;
+    margin: 26px -6px -6px;
+    padding: 6px;
+    overflow-x: auto;
+    overscroll-behavior-x: contain;
+    scroll-snap-type: x mandatory;
+    scroll-padding-inline: 6px;
+    scroll-behavior: smooth;
+    scrollbar-width: none;
+  }
+  .dm-mkt-rail::-webkit-scrollbar { display: none; }
+  .dm-mkt-rail > * { scroll-snap-align: start; }
+  html.dm-still .dm-mkt-rail { scroll-behavior: auto; }
+  @media (max-width: 767px) {
+    .dm-mkt-rail { grid-auto-columns: 88%; gap: 12px; }
+  }
+
+  /* ---- A pool card: a dotted plate that is one link. Content sits above the plate's edge fade. ---- */
+  .dm-mkt-card {
+    --dm-mkt-card-hover: color-mix(in srgb, var(--surface-1), var(--fg) 5%);
+    --chart-ground: var(--surface-1);
+    display: block;
+    min-width: 0;
+    height: 216px;
+    padding: 20px;
+    color: var(--fg);
+    text-decoration: none;
+    transition: background-color var(--dur-fade) var(--ease-std);
+  }
+  .dm-mkt-card:hover { --chart-ground: var(--dm-mkt-card-hover); background-color: var(--dm-mkt-card-hover); }
+  .dm-mkt-card:focus-visible { outline: 2px solid var(--ring); outline-offset: -3px; }
+  .dm-mkt-card-head { position: relative; z-index: 1; display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; }
+  /* The chip gives way before the TVL does; inside it the fee gives way before the pair's name. */
+  .dm-mkt-pair { flex: 0 1 auto; min-width: 0; transition: box-shadow var(--dur-fade) var(--ease-std); }
+  .dm-mkt-card:hover .dm-mkt-pair { box-shadow: inset 0 0 0 1px var(--border-strong); }
+  .dm-mkt-pair > [aria-hidden="true"] { flex-shrink: 0; }
+  .dm-mkt-pair-name { flex: 0 1 auto; min-width: 2.5em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 500; }
+  .dm-mkt-pair-fee { flex: 0 1000 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--fg-subtle); font-variant-numeric: lining-nums tabular-nums; }
+  @media (max-width: 767px) {
+    .dm-mkt-pair-venue { display: none; }
+  }
+  .dm-mkt-disc { display: inline-block; width: 20px; height: 20px; flex-shrink: 0; border-radius: var(--radius-pill); background: var(--surface-4); box-shadow: 0 0 0 2px var(--surface-3); }
+  .dm-mkt-card-tvl { display: grid; flex-shrink: 0; justify-items: end; gap: 2px; text-align: right; }
+  .dm-mkt-card-label { font-size: 11px; line-height: 14px; font-weight: 500; letter-spacing: 0.6px; text-transform: uppercase; color: var(--fg-subtle); }
+  .dm-mkt-card-figure { font-size: 16px; line-height: 20px; letter-spacing: -0.24px; white-space: nowrap; }
+  .dm-mkt-plot { position: absolute; z-index: 1; left: 20px; right: 20px; bottom: 44px; height: 96px; }
+  /* The resting plot while figures are on their way: an empty grid and one faint baseline, never bars. */
+  .dm-mkt-baseline { position: absolute; left: 0; right: 0; bottom: 0; height: 2px; border-radius: 1px; background: var(--skeleton); animation: dm-pulse 1.6s ease-in-out infinite; }
+  .dm-mkt-plot-note { position: absolute; inset: 0; display: grid; place-items: center; margin: 0; padding: 0 16px; text-align: center; text-wrap: balance; font-size: 13px; line-height: 18px; color: var(--fg-subtle); }
+  .dm-mkt-card-caption { position: absolute; z-index: 1; left: 20px; right: 20px; bottom: 20px; margin: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; line-height: 16px; letter-spacing: -0.12px; color: var(--fg-subtle); }
+
+  /* ---- Selected pools: heading, filters, table ---- */
+  /* Above the blocks after it, so a list opened inside (the asset select, the token search) is never covered. */
+  .dm-mkt-pools { position: relative; z-index: 2; margin-top: 40px; }
+  .dm-mkt-pools-head { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 4px 16px; margin-bottom: 12px; }
+  .dm-mkt-filters { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; }
+  .dm-mkt-search { width: 280px; max-width: 100%; }
+  @media (max-width: 639px) {
+    .dm-mkt-filters { flex-wrap: nowrap; }
+    .dm-mkt-asset { flex-shrink: 0; }
+    .dm-mkt-search { flex: 1 1 auto; width: auto; min-width: 0; }
+  }
+
+  .dm-mkt-table { --dm-mkt-ring: var(--surface-2); }
+  .dm-mkt-table tbody tr { cursor: pointer; }
+  .dm-mkt-table tbody tr:hover, .dm-mkt-table tbody tr:focus-within { --dm-mkt-ring: var(--bg); }
+  .dm-mkt-pool { display: flex; align-items: center; gap: 12px; min-width: 0; }
+  a.dm-mkt-pool { width: fit-content; max-width: 100%; }
+  .dm-mkt-name { border-radius: 4px; color: var(--fg); text-decoration: none; }
+  .dm-mkt-venue { display: flex; width: fit-content; margin-top: 4px; }
+  .dm-mkt-col-price { width: 180px; }
+  .dm-mkt-col { width: 148px; }
+  .dm-mkt-end { width: 88px; }
+  .dm-mkt-price { display: inline-grid; justify-items: end; }
+  .dm-mkt-price-unit { font-size: 12px; line-height: 16px; letter-spacing: -0.12px; color: var(--fg-subtle); white-space: nowrap; }
+  @media (max-width: 767px) {
+    .dm-mkt-end { width: 48px; }
+  }
+  /* Home's footnote, inside the card under the rows. */
+  .dm-mkt-caption { caption-side: bottom; padding: 12px 16px 4px; text-align: left; font-size: 12px; line-height: 16px; letter-spacing: -0.12px; color: var(--fg-subtle); }
+  .dm-mkt-footnote { max-width: 100ch; margin-top: 12px; font-size: 12px; line-height: 16px; letter-spacing: -0.12px; color: var(--fg-subtle); }
+  .dm-mkt-notice { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; margin: 0 0 8px; font-size: 12px; line-height: 16px; color: var(--fg-muted); }
+  .dm-mkt-empty { padding: 24px 8px 32px; }
+  /* No rows, so nothing to scroll sideways: the token search's list may open past the card instead of inside it. */
+  .dm-mkt-table[data-filter-empty] > div:has(> .dm-table) { overflow: visible !important; }
+  .dm-mkt-empty-actions { display: grid; justify-items: center; gap: 12px; width: min(420px, calc(100vw - 88px)); text-align: left; }
+  .dm-mkt-empty-actions > [data-token-search] { width: 100%; }
+
+  /* ---- The catalogue disclosure ---- */
+  .dm-mkt-catalogue { margin-top: 48px; border-radius: var(--radius); background: var(--surface-1); box-shadow: inset 0 0 0 1px var(--border); }
+  .dm-mkt-catalogue > summary { min-height: 48px; padding: 0 16px; }
+  .dm-mkt-catalogue > :not(summary) { padding: 4px 16px 16px; }
+  .dm-mkt-catalogue-search { max-width: 520px; }
+
+  /* ---- Token view ---- */
+  .dm-mkt-crumbs { font-size: 13px; line-height: 16px; }
+  .dm-mkt-back { display: inline-flex; align-items: center; gap: 4px; border-radius: 4px; color: var(--fg-muted); text-decoration: none; transition: color var(--dur-hover) ease; }
+  .dm-mkt-back:hover { color: var(--fg); }
+  .dm-mkt-back > svg { transition: translate var(--dur-fade) var(--ease-std); }
+  .dm-mkt-back:hover > svg { translate: -2px 0; }
+  .dm-mkt-found { margin-top: 32px; }
+  .dm-mkt-lookup { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 16px; padding: 20px; }
+  .dm-mkt-lookup-token { display: flex; flex: 1 1 320px; align-items: center; gap: 12px; min-width: 0; }
+  .dm-mkt-lookup-name { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; }
+  .dm-mkt-lookup-symbol { font-size: 16px; line-height: 24px; font-weight: 500; letter-spacing: -0.24px; color: var(--fg); }
+  .dm-mkt-lookup-meta { font-size: 12px; line-height: 16px; letter-spacing: -0.12px; color: var(--fg-subtle); }
+  .dm-mkt-lookup-address { display: flex; flex-wrap: wrap; align-items: center; gap: 2px 6px; margin-top: 2px; font-size: 12px; line-height: 16px; color: var(--fg-subtle); }
+  .dm-mkt-lookup-address .font-mono { font-size: 13px; line-height: 18px; color: var(--fg-muted); }
+  .dm-mkt-lookup-why { margin-top: 4px; font-size: 12px; line-height: 16px; color: var(--money-out); }
+  .dm-mkt-lookup-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+  @media (max-width: 639px) {
+    .dm-mkt-lookup-actions { width: 100%; }
+    .dm-mkt-lookup-actions > .dm-btn { flex: 1 1 auto; }
+  }
+
+  /* ---- Pool picker rows (Markets token view, New position): a row pill that opens or chooses, its
+     provider figures under it, and the pool's details folded away ---- */
+  .dm-mkt-option { display: grid; gap: 6px; padding: 4px 4px 6px; border-radius: var(--radius); background: var(--surface-1); box-shadow: inset 0 0 0 1px var(--border); list-style: none; transition: box-shadow var(--dur-hover) ease; }
+  .dm-mkt-option--checked { box-shadow: inset 0 0 0 1px var(--fg-subtle); }
+  .dm-mkt-option-head { display: flex; align-items: center; gap: 12px; width: 100%; min-height: 56px; padding: 0 12px; border-radius: var(--radius-sm); text-align: left; cursor: pointer; transition: background-color var(--dur-fade) var(--ease-std); }
+  .dm-mkt-option-head:hover { background: var(--wash); }
+  .dm-mkt-option-head:focus-visible { outline-offset: -2px; }
+  .dm-mkt-option-head > .i-chev-r { flex-shrink: 0; color: var(--fg-subtle); transition: translate var(--dur-fade) var(--ease-std), color var(--dur-fade) ease; }
+  .dm-mkt-option-head:hover > .i-chev-r { color: var(--fg); translate: 2px 0; }
+  /* Each figure hugs its words on a laptop (label, value and source together); a phone stacks them full width. */
+  .dm-mkt-option-figures { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 48px; padding: 0 12px; }
+  .dm-mkt-option-apr { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 0 12px; font-size: 13px; line-height: 18px; color: var(--fg-subtle); }
+  .dm-mkt-option-note { padding: 0 12px; font-size: 12px; line-height: 16px; }
+  .dm-mkt-option-details > summary { min-height: 36px; font-size: 13px; }
+  @media (max-width: 767px) {
+    .dm-mkt-option-figures { display: grid; grid-template-columns: minmax(0, 1fr); }
+  }
+  .dm-mkt-coverage { border-radius: var(--radius); box-shadow: inset 0 0 0 1px var(--border); }
+  .dm-mkt-coverage > summary { font-size: 13px; }
+  .dm-mkt-catalogue-panel { display: grid; gap: 8px; padding: 12px; border-radius: var(--radius); background: var(--surface-1); box-shadow: inset 0 0 0 1px var(--border); }
+  .dm-mkt-candidate { display: grid; gap: 6px; padding: 10px 12px; border-radius: var(--radius-sm); background: var(--surface-2); box-shadow: inset 0 0 0 1px var(--border); list-style: none; }
+}

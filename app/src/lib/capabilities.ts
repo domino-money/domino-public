@@ -20,9 +20,9 @@ export const CAPABILITIES = {
   swapsEnabled: false,
 } as const
 
-export type Availability = 'not-in-alpha' | 'planned' | 'not-connected'
+export type Availability = 'planned' | 'not-connected'
 
-/** What Settings lists, and where each stands in this alpha. */
+/** What Settings lists, and where each stands today. */
 export const ROADMAP: Array<{ name: string; status: Availability; note: string }> = [
   { name: 'Compound', status: 'not-connected', note: 'Earned fees go back into the same position.' },
   { name: 'Fee-balancing swaps', status: 'not-connected', note: 'Bounded swaps so uneven fees can still be reinvested.' },

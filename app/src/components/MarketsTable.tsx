@@ -1,111 +1,87 @@
-import { Suspense, useEffect, useRef, useState } from 'react'
-import {
-  agedMarket,
-  compactUsd,
-  feeLabel,
-  percentText,
-  presentMetric,
-  providerStale,
-  retrievedAgeSeconds,
-  retrievedText,
-  turnover,
-  type Instant,
-  type Market,
-  type MarketProvenance,
-  type Metric,
-  type Presented,
-} from '../lib/markets'
-import { figureNoteId, presentedNoteCode } from '../lib/read/screens/figures'
+import { Suspense, useEffect, useRef, useState, type MouseEvent, type ReactNode } from 'react'
+import { catalogueTokenLabel, poolListings, type PoolCatalogueEntry, type PoolListing } from '../config/selectedPoolCatalogue'
+import { agedMarket, feeLabel, providerStale, retrievedAgeSeconds, retrievedText, type Instant, type Market, type MarketProvenance } from '../lib/markets'
 import { reasonText } from '../lib/read/describe'
-import { PoolFigureNotesSlot, PoolFiguresSlot, SlotBoundary, SlotFailed } from '../lib/read/screens/slots'
+import { marketPoolPrice } from '../lib/read/marketPrice'
+import type { MarketsProvider, MarketsState } from '../lib/read/marketsProvider'
+import { COPY } from '../lib/read/screens/copy'
+import { PoolFiguresSlot, SlotBoundary, SlotFailed } from '../lib/read/screens/slots'
+import type { TokenDisplay } from '../lib/read/types'
 import { shownResult, useMarkets } from '../lib/read/useMarkets'
-import { ReadStatus, marketsStatus } from './read/ReadStatus'
-import { TokenLabel } from './read/TokenLabel'
-import { TokenMarkPair } from './TokenIcon'
-import { Button, Display, Pill, cx } from './ui'
-import { PoolAprEstimate } from './read/screens/PoolAprEstimate'
 import { useNow } from '../lib/read/useNow'
+import { MetricCell } from './explore/MetricCell'
+import { marketsHref, poolHref } from './explore/routes'
+import { IconChevronRight, IconInfo } from './icons'
+import { PoolCatalogueIdentity, PoolTokenLabel } from './PoolCatalogueIdentity'
+import { ReadStatus, marketsStatus } from './read/ReadStatus'
+import { PoolAprEstimate } from './read/screens/PoolAprEstimate'
+import { TokenMarkPair } from './TokenIcon'
+import { Button, Chip, LinkButton, Pill, Skeleton, TableShell, Td, Th } from './ui'
+
+/** The pool page for a PoolId. Identity is chain and PoolId, never a symbol. */
+export { poolHref }
+
+/** How long a busy read service asked to wait, when being busy is the only thing that went wrong; null otherwise. */
+function busyWait(state: MarketsState): number | null {
+  if (state.phase === 'failed') return state.failure.state === 'busy' ? state.failure.retryAfterSeconds : null
+  if (state.phase !== 'ready' || state.problems.length === 0) return null
+  let wait = 0
+  for (const { outcome } of state.problems) {
+    if (outcome.state !== 'busy') return null
+    wait = Math.max(wait, outcome.retryAfterSeconds)
+  }
+  return wait
+}
+
+const BUSY_ATTEMPTS = 4
 
 /**
- * Any presented figure: unavailable, not reported, not current, stale, a
- * named provider's, Domino's calculation from a provider's figures, or
- * current. A provider figure is dated only by when it was retrieved
- * (`retrieved`), never "as of" a time: the provider's own update time is not
- * known. Titles carry only our own words for a state, never provider text.
+ * Home and Markets show no status and no Retry, so a read service that was
+ * only busy is asked again on its own: after the pipeline's own 429 retries
+ * gave up, the selected pools are read again once the service's wait has
+ * passed, at doubling intervals, a few times per visit, and only while the
+ * page is visible. Any other failure is left as it is: asking again on its
+ * own could not help, and the rows already say what is unavailable.
  */
-function Shown({ shown, strong, muted, retrieved }: { shown: Presented; strong?: boolean; muted?: boolean; retrieved?: string }) {
-  // A cell that shows no number points at the visible note that says why,
-  // which PoolFigureNotes renders under the table under this same id.
-  const code = presentedNoteCode(shown)
-  const describedBy = code ? figureNoteId(code) : undefined
-  if (shown.kind === 'unavailable') {
-    return (
-      <span
-        className="text-[13px] text-fg-subtle"
-        aria-describedby={describedBy}
-        data-metric={shown.rejected ? 'rejected' : 'unavailable'}
-        title={shown.reason ? `Unavailable: ${reasonText(shown.reason)}` : undefined}
-      >
-        Unavailable
-      </span>
-    )
-  }
-  if (shown.kind === 'absent') {
-    return (
-      <span
-        className="text-[13px] text-fg-subtle"
-        aria-describedby={describedBy}
-        data-metric="absent"
-        title={`Unavailable: ${shown.source ?? 'the source'} reported no value`}
-      >
-        {shown.source ? `Not reported by ${shown.source}` : 'Not reported'}
-      </span>
-    )
-  }
-  if (shown.kind === 'not_current') {
-    return (
-      <span
-        className="text-[13px] text-fg-subtle"
-        aria-describedby={describedBy}
-        data-metric="not-current"
-        title={shown.basis === 'reference' ? 'Reference analytics only, not a current figure' : 'Calculated over an incomplete window, not a current figure'}
-      >
-        Not current
-      </span>
-    )
-  }
-  return (
-    <span
-      className={cx(
-        'tnum font-mono text-[13px]',
-        strong && 'text-fg',
-        muted && !shown.stale && 'text-fg-muted',
-        shown.stale && 'text-money-wait',
-      )}
-      data-metric={shown.stale ? 'stale' : shown.source ? 'provider' : shown.calculatedFrom ? 'calculated' : 'qualified'}
-      title={valueTitle(shown, retrieved)}
-    >
-      {shown.text}
-      {shown.stale && <span className="ml-1 text-[11px]">· stale</span>}
-      {shown.source && <span className="ml-1 text-[11px] text-fg-subtle">· {shown.source}</span>}
-      {shown.calculatedFrom && <span className="ml-1 text-[11px] text-fg-subtle">· calculated</span>}
-    </span>
-  )
+function useBusyRecovery(state: MarketsState, provider: MarketsProvider, enabled: boolean) {
+  const attempts = useRef(0)
+  const wait = enabled ? busyWait(state) : null
+  const settledClean = state.phase === 'ready' && state.problems.length === 0
+  const phase = state.phase
+  useEffect(() => {
+    if (settledClean) attempts.current = 0
+  }, [settledClean])
+  useEffect(() => {
+    if (wait === null || phase === 'loading' || attempts.current >= BUSY_ATTEMPTS) return
+    let cancelled = false
+    const again = () => {
+      if (cancelled) return
+      attempts.current += 1
+      provider.refresh()
+    }
+    const whenVisible = () => {
+      if (!document.hidden) {
+        document.removeEventListener('visibilitychange', whenVisible)
+        again()
+      }
+    }
+    const timer = setTimeout(() => {
+      if (document.hidden) document.addEventListener('visibilitychange', whenVisible)
+      else again()
+    }, Math.max(wait, 4) * 1000 * 2 ** attempts.current)
+    return () => {
+      cancelled = true
+      clearTimeout(timer)
+      document.removeEventListener('visibilitychange', whenVisible)
+    }
+  }, [wait, phase, provider])
 }
 
-/** Who a shown figure comes from, and how old it is, in our own words. */
-function valueTitle(shown: Extract<Presented, { kind: 'value' }>, retrieved = 'retrieval time unknown') {
-  const stale = shown.stale ? ' Stale, not current.' : ''
-  if (shown.source) return `Reported by ${shown.source}, ${retrieved}. Not reconciled by Domino.${stale}`
-  // Only 24h vol/TVL is calculated from a provider's figures.
-  if (shown.calculatedFrom) return `Calculated by Domino from ${shown.calculatedFrom}'s reported 24h volume and TVL, ${retrieved}. Those figures are not reconciled by Domino.${stale}`
-  if (!shown.stale) return undefined
-  return shown.asOf ? `Last observed ${new Date(shown.asOf * 1000).toLocaleString('en-US')}` : 'Last observed value, not current'
-}
-
-function Cell({ metric, percent, strong, retrieved }: { metric: Metric; percent?: boolean; strong?: boolean; retrieved?: string }) {
-  const shown = presentMetric(metric, (m) => (percent ? `${percentText(m) ?? 'Unavailable'}%` : compactUsd(m)))
-  return <Shown shown={shown} strong={strong} retrieved={retrieved} />
+export interface MarketsFilter {
+  /** A token address, lowercase, or null for every token. */
+  asset: string | null
+  /** Words of a pair name, matched without case, spaces or slashes. */
+  query: string
 }
 
 /**
@@ -125,7 +101,77 @@ function provenanceLine(p: MarketProvenance, age: number | null, stale: boolean)
   return `${verified} · ${market} · ${metrics}`
 }
 
-function Row({ m: read, now, onFigures }: { m: Market; now: Instant; onFigures?: () => void }) {
+/**
+ * The whole row opens the pool page, the way a markets table does. The pool's
+ * name is a real link, so the keyboard and assistive technology reach the
+ * page through it; a plain click anywhere else on the row follows the same
+ * link. Clicks on the row's own controls, modified clicks and a text
+ * selection are left alone.
+ */
+function followRow(event: MouseEvent<HTMLTableRowElement>, href: string) {
+  if (event.defaultPrevented || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return
+  if ((event.target as Element).closest('a, button')) return
+  if (window.getSelection()?.toString()) return
+  window.location.hash = href.slice(1)
+}
+
+/** A token's name as a row shows it: the read symbol, the catalogue's label for its address, or its short address. */
+const nameOf = (token: TokenDisplay) => token.symbol ?? catalogueTokenLabel(token) ?? `${token.address.slice(0, 6)}…${token.address.slice(-4)}`
+
+/** Letters and digits only, lowercase: "WETH / USDG", "WETHUSDG" and "weth usdg" are one name. */
+const squeeze = (text: string) => text.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, '')
+
+function holds(listing: PoolListing, asset: string) {
+  const key = asset.toLowerCase()
+  if (listing.market) return [listing.market.tokens.base, listing.market.tokens.quote].some((token) => token.address.toLowerCase() === key)
+  // A catalogue row names its tokens only where its labels are bound to addresses.
+  return listing.catalogue?.addresses?.some((address) => address.toLowerCase() === key) ?? false
+}
+
+/** Whether a listing passes the Markets filters. Nothing is read to decide. */
+export function matchesFilter(listing: PoolListing, filter: MarketsFilter) {
+  if (filter.asset !== null && !holds(listing, filter.asset)) return false
+  const needle = squeeze(filter.query)
+  if (needle === '') return true
+  const pair = listing.market ? `${nameOf(listing.market.tokens.base)}/${nameOf(listing.market.tokens.quote)}` : (listing.catalogue?.labels.join('/') ?? '')
+  return squeeze(pair).includes(needle)
+}
+
+/** A figure that is not there, and which one: the dash is all a sighted reader needs, the label is for everyone else. */
+function Dash({ label }: { label: string }) {
+  return (
+    <span className="text-fg-subtle" title={`${label} unavailable`} aria-label={`${label} unavailable`}>
+      —
+    </span>
+  )
+}
+
+/**
+ * The pool's price as the chain holds it: a ratio in its quote token, never
+ * dollars. Unavailable says why in its title.
+ */
+function PriceCell({ market, now }: { market: Market; now: Instant }) {
+  const price = marketPoolPrice(market, now)
+  if (price.state === 'unavailable') {
+    const why = price.problem === 'not_read' ? 'The pool’s state was not in this read.' : COPY.range.problems[price.problem]
+    return (
+      <span className="text-fg-subtle" data-pool-price="unavailable" title={why}>
+        Unavailable
+      </span>
+    )
+  }
+  const title = `Pool price from on-chain state at block ${price.block}. A ratio between the two tokens, not a dollar price.${price.stale ? ' Stale, not current.' : ''}`
+  return (
+    <span className="dm-mkt-price" data-pool-price={price.stale ? 'stale' : 'usable'} title={title}>
+      <span className="tnum font-medium text-fg">{price.text}</span>
+      <span className="dm-mkt-price-unit">
+        <PoolTokenLabel token={price.quote} /> per <PoolTokenLabel token={price.base} />
+      </span>
+    </span>
+  )
+}
+
+function Row({ m: read, now, full, onFigures }: { m: Market; now: Instant; full: boolean; onFigures: () => void }) {
   const p = read.provenance
   const age = p ? retrievedAgeSeconds(p.market, now) : null
   const stale = p ? providerStale(p.market, now) : false
@@ -133,79 +179,143 @@ function Row({ m: read, now, onFigures }: { m: Market; now: Instant; onFigures?:
   // The same projection the figures dialog is given, so the row and the dialog
   // it opens never disagree about whether a figure is still current.
   const m = agedMarket(read, now)
+  const href = poolHref(m.poolId)
+  const line = p ? provenanceLine(p, age, stale) : undefined
+  // Domino's own qualified history when there is one; the attributed backend estimate otherwise, marked as one.
+  const qualified = m.feeAprPercent.value !== null && (m.feeAprPercent.state === 'qualified' || m.feeAprPercent.state === 'stale')
+  const name = (
+    <>
+      <PoolTokenLabel token={m.tokens.base} />/<PoolTokenLabel token={m.tokens.quote} />
+    </>
+  )
   return (
-    <tr className="border-b transition last:border-b-0 hover:bg-surface-2">
-      <td className="px-5 py-4">
-        <div className="flex items-center gap-3">
-          <TokenMarkPair base={m.tokens.base} quote={m.tokens.quote} size={30} ring="var(--surface-1)" />
-          {onFigures ? (
-            // The pool opens its figures on demand; its name is the button's name.
-            <button type="button" onClick={onFigures} data-pool-figures="" className="underline decoration-dotted underline-offset-4 hover:decoration-solid">
-              {/* The name keeps its own element inside the control: it is the
-                  pool's label whether or not there is anything to open. */}
-              <span className="text-[14px] font-medium">
-                <TokenLabel token={m.tokens.base} />/<TokenLabel token={m.tokens.quote} />
-              </span>
-            </button>
-          ) : (
-            <span className="text-[14px] font-medium">
-              <TokenLabel token={m.tokens.base} />/<TokenLabel token={m.tokens.quote} />
-            </span>
-          )}
-          <span className="flex items-center gap-1.5 text-[11px] text-fg-subtle">
-            <span className="rounded-[6px] bg-surface-3 px-1.5 py-0.5 font-mono">{m.protocol}</span>
-            <span>·</span>
-            <span className="font-mono">{feeLabel(m)}</span>
-          </span>
+    <tr className="dm-mkt-row animate-fade" onClick={(event) => followRow(event, href)} data-pool-row={full ? m.poolId : undefined}>
+      <Td>
+        <div className="dm-mkt-pool">
+          <TokenMarkPair base={m.tokens.base} quote={m.tokens.quote} size={30} ring="var(--dm-mkt-ring)" />
+          {/* Where the figures came from stays on the row, as its title and as data, never as a
+              printed line under the name: one hover, or the figures dialog, away. */}
+          <div className="min-w-0" data-provenance={line} title={line}>
+            <a href={href} className="dm-mkt-name">
+              <span className="font-medium">{name}</span>
+            </a>
+            <Chip className="dm-mkt-venue">Uniswap · {feeLabel(m)}</Chip>
+          </div>
         </div>
-        {p && (
-          <p className="mt-1.5 font-mono text-[10.5px] text-fg-subtle" data-provenance="">
-            {provenanceLine(p, age, stale)}
-          </p>
-        )}
-      </td>
-      <td className="px-5 py-4 text-right"><Cell metric={m.tvlUsd} strong retrieved={retrieved} /></td>
-      <td className="px-5 py-4 text-right"><Cell metric={m.volume24hUsd} retrieved={retrieved} /></td>
-      <td className="px-5 py-4 text-right"><Shown shown={turnover(m)} muted retrieved={retrieved} /></td>
-      <td className="px-5 py-4 text-right"><Cell metric={m.feeAprPercent} percent strong /></td>
-      <td className="px-5 py-4 text-right"><PoolAprEstimate observation={m.feeAprEstimate} now={now} /></td>
+      </Td>
+      <Td numeric col="wide">
+        <PriceCell market={m} now={now} />
+      </Td>
+      <Td numeric>
+        <MetricCell metric={m.tvlUsd} retrieved={retrieved} />
+      </Td>
+      <Td numeric col="wide">
+        <MetricCell metric={m.volume24hUsd} retrieved={retrieved} />
+      </Td>
+      <Td numeric col="wide">
+        {qualified ? <MetricCell metric={m.feeAprPercent} percent /> : <PoolAprEstimate observation={m.feeAprEstimate} now={now} compact />}
+      </Td>
+      <Td numeric className="dm-mkt-end">
+        <span className="dm-row-end">
+          <span className="dm-row-actions">
+            {/* The pool's figures, with their sources and ages, on demand. Nothing is read to open them. */}
+            <button
+              type="button"
+              data-pool-figures=""
+              onClick={(event) => {
+                event.stopPropagation()
+                onFigures()
+              }}
+              className="dm-icon-btn dm-icon-btn--ghost dm-icon-btn--sm dm-press-icon"
+            >
+              <IconInfo />
+              <span className="sr-only">Details: figures and sources for {name}</span>
+            </button>
+          </span>
+          <IconChevronRight size={14} />
+        </span>
+      </Td>
     </tr>
   )
 }
 
 /**
- * Column headers, each with what its figures are. The lean table reads
- * pool-market only, so its TVL and 24h volume can only be GeckoTerminal's,
- * and the headers say so (#93) on a second line that every width shows; the
- * ratio is Domino's own. Were a row to carry Domino's own history, they
- * would name no one.
+ * A pool from the reviewed catalogue whose live row has not arrived: its
+ * labels only, every figure a dash. It still opens its pool page.
  */
-function heads(markets: Market[]): [label: string, note?: string][] {
-  const lean = markets.every((m) => m.provenance?.metrics === 'not_requested')
-  return [
-    ['Pool'],
-    ['TVL', lean ? '(reported by GeckoTerminal)' : undefined],
-    ['24h volume', lean ? '(reported by GeckoTerminal)' : undefined],
-    ['24h vol/TVL', lean ? '(calculated by Domino)' : undefined],
-    ['Qualified fee APR'],
-    ['Estimated pool fee APR', '(unreconciled provider inputs)'],
-  ]
+function CatalogueRow({ poolId, entry, full }: { poolId: string; entry: PoolCatalogueEntry; full: boolean }) {
+  const href = poolHref(poolId)
+  return (
+    <tr className="dm-mkt-row" data-pool-catalogue={poolId} data-pool-row={full ? poolId : undefined} onClick={(event) => followRow(event, href)}>
+      <Td>
+        <a href={href} className="dm-mkt-pool dm-mkt-name" title="Listed on Uniswap. Live pool data is not available yet.">
+          <PoolCatalogueIdentity entry={entry} />
+        </a>
+      </Td>
+      <Td numeric col="wide">
+        <Dash label="Price" />
+      </Td>
+      <Td numeric>
+        <Dash label="TVL" />
+      </Td>
+      <Td numeric col="wide">
+        <Dash label="24h volume" />
+      </Td>
+      <Td numeric col="wide">
+        <Dash label="Pool APR" />
+      </Td>
+      <Td numeric className="dm-mkt-end">
+        <span className="dm-row-end">
+          <IconChevronRight size={14} />
+        </span>
+      </Td>
+    </tr>
+  )
 }
 
 /**
- * The pools rugged97 selected for review (src/config/selectedPools.ts), in
- * that order, which is not a ranking. Every figure comes from a validated
- * read and names its provider and age. Backend estimates are separate from
- * qualified historical APR, and missing figures stay unavailable.
+ * The selected pools, in the reviewed catalogue's order, which is not a
+ * ranking: Home's `featured` card ("Selected pools", with Refresh and the way
+ * to Markets) and the Markets page's `full` table, filtered by token and pair
+ * name. Every figure comes from a validated read and names its provider and
+ * age; the price is the pool's own ratio from chain state; backend estimates
+ * stay separate from qualified historical APR, and missing figures stay
+ * unavailable. The table reads nothing itself: the app's one markets provider
+ * does.
  */
-export function MarketsTable() {
+export function MarketsTable({
+  variant = 'featured',
+  filter,
+  onMatchCount,
+  footer,
+  empty,
+  diagnostics = false,
+}: {
+  variant?: 'featured' | 'full'
+  /** Full only. */
+  filter?: MarketsFilter
+  /** Full only: how many listings pass the filter, of how many. */
+  onMatchCount?: (count: number, total: number) => void
+  /** Featured only: a band under the rows, inside the card (Home's Uniswap strip). */
+  footer?: ReactNode
+  /** Full only: what stands in for the rows when the filter matches none of them. */
+  empty?: ReactNode
+  /**
+   * The read lab only: the status panel, Refresh and Retry, so every read
+   * state can be seen and driven. Home and Markets show the pools and their
+   * figures and nothing else; a busy read service is asked again on its own.
+   */
+  diagnostics?: boolean
+}) {
+  const full = variant === 'full'
   const { state, provider } = useMarkets()
+  useBusyRecovery(state, provider, !diagnostics)
   const result = shownResult(state)
   const markets = result?.markets ?? []
-  const network = result?.network ?? 'Robinhood Chain'
+  const listings = poolListings(markets, __DOMINO_POOL_SET__ === 'selected' && provider.kind === 'bridge')
+  const matches = full && filter ? listings.filter((listing) => matchesFilter(listing, filter)) : listings
   const now = useNow(markets.length > 0)
-  // The pool whose figures are open, if any. Nothing is read to open it.
-  // The pool the dialog is showing, held by key rather than by value: the
+  // The pool whose figures are open, held by key rather than by value: the
   // projection is taken again on every tick, so an open dialog ages with the
   // row behind it instead of keeping the market as it was when it opened.
   const [figuresKey, setFiguresKey] = useState<string | null>(null)
@@ -242,79 +352,134 @@ export function MarketsTable() {
     provider.refresh()
   }
 
-  return (
-    <div>
-      <div className="flex flex-wrap items-end justify-between gap-4">
-        <div>
-          <div className="flex items-center gap-3">
-            <Display ref={heading} className="text-[30px] outline-none" tabIndex={-1}>
-              Selected pools
-            </Display>
-            {fixtures && <Pill tone="wait">Fixture data</Pill>}
-          </div>
-          <p className="mt-2 max-w-[60ch] text-[14px] text-fg-muted">
-            {fixtures
-              ? `Pools on ${network}, read through the read pipeline from contract fixtures.`
-              : `Pools selected for review on ${network}, read live through this site's read service. Figures carry their provider and age; anything not provided shows as unavailable.`}
-            {result?.notice ? ` ${result.notice}` : ''}
-          </p>
-        </div>
-        <div className="flex items-center gap-2">
-          <span className="flex items-center gap-2 rounded-[var(--radius-pill)] border bg-surface-1 px-3 py-1.5 text-[12px]">
-            <span className="h-2 w-2 rounded-full" style={{ background: '#00c805' }} aria-hidden="true" />
-            {network}
-          </span>
-          {(state.phase === 'ready' || refreshing) && markets.length > 0 && (
-            <Button variant="ghost" aria-disabled={refreshing ? true : undefined} onClick={refresh}>
-              {refreshing ? 'Refreshing…' : 'Refresh'}
-            </Button>
+  // The count is the page's to show; the latest callback is kept so an inline one does not re-run this.
+  const counted = useRef(onMatchCount)
+  useEffect(() => {
+    counted.current = onMatchCount
+  }, [onMatchCount])
+  const matchCount = matches.length
+  const total = listings.length
+  useEffect(() => {
+    counted.current?.(matchCount, total)
+  }, [matchCount, total])
+
+  const lean = markets.length > 0 && markets.every((m) => m.provenance?.metrics === 'not_requested')
+  // A filter that changes which pools are listed remounts the rows, so they cross-fade in rather than jump;
+  // a keystroke that leaves the same pools listed changes nothing.
+  const filtering = full ? matches.map((listing) => listing.poolId).join(',') : 'all'
+  const nothingMatches = full && total > 0 && matchCount === 0
+
+  const notice = diagnostics && (fixtures || result?.notice) && (
+    <p className="dm-mkt-notice">
+      {fixtures && <Pill tone="wait">Fixture data</Pill>}
+      {result?.notice && <span>{result.notice}</span>}
+    </p>
+  )
+  const said = marketsStatus(state)
+  const status = diagnostics ? <ReadStatus status={said} onRetry={retry} /> : <ReadStatus status={said} quiet />
+
+  const table = (
+    <TableShell
+      label="Selected pools"
+      className="dm-mkt-table"
+      title={full ? undefined : 'Selected pools'}
+      titleRef={full ? undefined : heading}
+      action={
+        full ? undefined : (
+          <>
+            {diagnostics && (state.phase === 'ready' || refreshing) && markets.length > 0 && (
+              <Button variant="ghost" size="sm" aria-disabled={refreshing ? true : undefined} onClick={refresh}>
+                {refreshing ? 'Refreshing…' : 'Refresh'}
+              </Button>
+            )}
+            <LinkButton href={marketsHref()} variant="ghost" size="sm">
+              Find more pools
+              <IconChevronRight size={14} />
+            </LinkButton>
+          </>
+        )
+      }
+      status={
+        full ? undefined : (
+          <>
+            {notice}
+            {status}
+          </>
+        )
+      }
+      footer={full ? undefined : footer}
+      rowHeight={64}
+      // With no rows to scroll, the token search's list may open past the card's edge (markets.css).
+      data={nothingMatches ? { 'filter-empty': '' } : undefined}
+    >
+      <thead>
+        <tr>
+          <Th>Pool</Th>
+          <Th numeric col="wide" className="dm-mkt-col-price">
+            Price
+          </Th>
+          <Th numeric className="dm-mkt-col">
+            TVL{lean && <span className="sr-only">{' reported by GeckoTerminal'}</span>}
+          </Th>
+          <Th numeric col="wide" className="dm-mkt-col">
+            24h volume{lean && <span className="sr-only">{' reported by GeckoTerminal'}</span>}
+          </Th>
+          <Th numeric col="wide" className="dm-mkt-col">
+            Est. APR<span className="sr-only">{' from provider inputs'}</span>
+          </Th>
+          <Th numeric className="dm-mkt-end">
+            <span className="sr-only">Details</span>
+          </Th>
+        </tr>
+      </thead>
+      {matchCount > 0 && (
+        <tbody key={filtering} className={full ? 'animate-fade' : undefined}>
+          {matches.map(({ poolId, market, catalogue }) =>
+            market ? (
+              <Row key={poolId} m={market} now={now} full={full} onFigures={() => setFiguresKey(market.key)} />
+            ) : catalogue ? (
+              <CatalogueRow key={poolId} poolId={poolId} entry={catalogue} full={full} />
+            ) : null,
           )}
-        </div>
-      </div>
+        </tbody>
+      )}
+      {nothingMatches && (
+        <tfoot>
+          <tr>
+            <td colSpan={6}>{empty}</td>
+          </tr>
+        </tfoot>
+      )}
+      {total === 0 && (
+        // Never a body row: a table with nothing read has no rows, and says so under the header.
+        <tfoot>
+          <tr>
+            <td colSpan={6} className="text-center text-fg-subtle">
+              {state.phase === 'loading' ? (
+                <Skeleton className="mx-auto h-10 max-w-[480px]" />
+              ) : state.phase === 'ready' && state.problems.length === 0 ? (
+                <span data-empty="no-pools">No pools selected yet.</span>
+              ) : (
+                'Pool data unavailable'
+              )}
+            </td>
+          </tr>
+        </tfoot>
+      )}
+    </TableShell>
+  )
 
-      <ReadStatus status={marketsStatus(state)} onRetry={retry} className="mt-4" />
-
-      <div className="mt-6 overflow-hidden rounded-[20px] border bg-surface-1">
-        <div className="overflow-x-auto">
-          <table className="w-full min-w-[720px] border-collapse">
-            <thead>
-              <tr className="border-b bg-surface-2/60 text-left">
-                {heads(markets).map(([label, note], i) => (
-                  <th key={label} scope="col" className={cx('px-5 py-3 align-bottom text-[12px] font-normal text-fg-subtle', i >= 1 && 'text-right')}>
-                    {label}
-                    {note && (
-                      <>
-                        {' '}
-                        <span className="block text-[11px]">{note}</span>
-                      </>
-                    )}
-                  </th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {markets.map((m) => (
-                <Row key={m.key} m={m} now={now} onFigures={() => setFiguresKey(m.key)} />
-              ))}
-            </tbody>
-          </table>
+  return (
+    <>
+      {full ? (
+        <div data-selected-pools="">
+          {notice}
+          <div className={diagnostics && said ? 'mb-3' : undefined}>{status}</div>
+          {table}
         </div>
-        {state.phase === 'ready' && markets.length === 0 && (
-          <p className="border-t px-5 py-6 text-center text-[13px] text-fg-muted" data-empty="no-pools">
-            No pools selected yet.
-          </p>
-        )}
-        {PoolFigureNotesSlot && SlotBoundary && SlotFailed && markets.length > 0 && (
-          <SlotBoundary fallback={<SlotFailed />}>
-            <Suspense fallback={null}>
-              <PoolFigureNotesSlot markets={markets} />
-            </Suspense>
-          </SlotBoundary>
-        )}
-        <p className="border-t px-5 py-3 text-[12px] leading-relaxed text-fg-subtle">
-          Pool APR describes a pool, not a position. It is not a forecast, not a return on your deposit, and says nothing about what a given range would have earned.
-        </p>
-      </div>
+      ) : (
+        table
+      )}
       {figures && PoolFiguresSlot && SlotBoundary && SlotFailed && (
         <SlotBoundary fallback={<SlotFailed />}>
           <Suspense fallback={null}>
@@ -322,6 +487,6 @@ export function MarketsTable() {
           </Suspense>
         </SlotBoundary>
       )}
-    </div>
+    </>
   )
 }

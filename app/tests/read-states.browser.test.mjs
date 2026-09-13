@@ -81,17 +81,28 @@ after(async () => {
 
 const section = (id) => page.locator(`[data-case="${id}"]`);
 
-/** The four figure cells of a case's single table row, and its ticker APR. */
+/**
+ * The four cells after the pair in a case's single table row, and its ticker APR.
+ * The first is the pool's price, its own ratio from chain state, read through
+ * `data-pool-price` (it carries no figure attribute); each of the other three
+ * holds a figure (`data-metric`) or the pool APR estimate (`data-apr-estimate`).
+ * The provider's name is not in a cell but on the row's provenance, which
+ * `provenance` reads.
+ */
 function figures(id) {
   return section(id).evaluate((root) => {
-    const cells = Array.from(root.querySelectorAll('tbody tr td')).slice(1, 5);
+    const [price, ...cells] = Array.from(root.querySelectorAll('tbody tr td')).slice(1, 5);
     const read = (el) => [el?.innerText.replace(/\s/g, '') ?? null, el?.getAttribute('data-metric') ?? el?.getAttribute('data-apr-estimate') ?? null];
+    const pool = price?.querySelector('[data-pool-price]');
     return {
-      cells: cells.map((td) => read(td.querySelector('[data-metric]'))),
+      cells: [[pool?.innerText.replace(/\s/g, '') ?? null, pool?.getAttribute('data-pool-price') ?? null], ...cells.map((td) => read(td.querySelector('[data-metric], [data-apr-estimate]')))],
       ticker: read(root.querySelector('.dm-marquee [data-apr-estimate]')),
     };
   });
 }
+
+/** The row's provenance, carried as its title and data: the block its pool was verified at, and who reported its figures, dated only by retrieval. */
+const provenance = (id) => section(id).locator('tbody tr [data-provenance]').getAttribute('data-provenance');
 
 /** A labelled fact inside a family case: its text and its state. */
 function fact(id, label) {
@@ -116,37 +127,51 @@ test('the lab renders every fixture case behind the gate, under the CSP, without
 test('market rows: every observation reaches the table and the ticker as itself, and the APR is never a figure', async () => {
   const unavailable = ['Unavailable', 'unavailable'];
   const apr = ['Est.APRunavailable', 'unavailable'];
-  const provider = [['$12.3K·GeckoTerminal', 'provider'], ['$0.00·GeckoTerminal', 'provider'], ['0.00·calculated', 'calculated'], unavailable];
-  const rejected = [['Unavailable', 'rejected'], ['Unavailable', 'rejected'], unavailable, unavailable];
-  const blank = [unavailable, unavailable, unavailable, unavailable];
+  // The pool's price comes from the verified pool itself (ETH 18 and TOKEN 6 decimals at tick 0), whatever the provider said.
+  const price = ['≈1,000,000,000,000TOKENperETH', 'usable'];
+  // The figure alone in its cell: who reported it is on the row's provenance line, checked below.
+  const provider = [price, ['$12.3K', 'provider'], ['$0.00', 'provider'], unavailable];
+  const rejected = [price, ['Unavailable', 'rejected'], ['Unavailable', 'rejected'], unavailable];
+  const blank = [price, unavailable, unavailable, unavailable];
   const expected = {
     provider,
-    zero: [['$0.00·GeckoTerminal', 'provider'], ['$0.00·GeckoTerminal', 'provider'], unavailable, unavailable],
-    missing: [['NotreportedbyGeckoTerminal', 'absent'], ['NotreportedbyGeckoTerminal', 'absent'], unavailable, unavailable],
-    stale: [['$12.3K·stale·GeckoTerminal', 'stale'], ['$0.00·stale·GeckoTerminal', 'stale'], ['0.00·stale·calculated', 'stale'], unavailable],
+    zero: [price, ['$0.00', 'provider'], ['$0.00', 'provider'], unavailable],
+    missing: [price, ['NotreportedbyGeckoTerminal', 'absent'], ['NotreportedbyGeckoTerminal', 'absent'], unavailable],
+    // A stale figure has no "· stale" beside it (the owner's decision on the redesign): its state and its title say so, below.
+    stale: [price, ['$12.3K', 'stale'], ['$0.00', 'stale'], unavailable],
     expired: blank,
     'rejected-currencies': rejected,
     'rejected-dex': rejected,
     timeout: blank,
     'rate-limited': blank,
     'retry-recovers': provider,
-    'untrusted-symbol': provider,
+    // The symbol is untrusted text: literal in the price's unit too.
+    'untrusted-symbol': [[`≈1,000,000,000,000${SYMBOL.replace(/\s/g, '')}perETH`, 'usable'], ...provider.slice(1)],
   };
+  const reported = /^Pool verified on-chain at block 700 · Reported by GeckoTerminal, retrieved \d+ s ago$/;
   for (const [id, cells] of Object.entries(expected)) {
     assert.deepEqual(await figures(`market-${id}`), { cells, ticker: apr }, `market-${id}`);
     assert.equal(await section(`market-${id}`).locator('[data-read-status]').getAttribute('data-read-status'), 'none', id);
+    // A shown value names its provider and its retrieval in its title; a ratio would name Domino's calculation from the provider's figures.
+    const titles = await section(`market-${id}`).locator('tbody [data-metric="provider"], tbody [data-metric="calculated"]').evaluateAll((els) => els.map((el) => [el.getAttribute('data-metric'), el.getAttribute('title')]));
+    for (const [state, title] of titles) {
+      assert.match(title, state === 'calculated' ? /^Calculated by Domino from GeckoTerminal's reported 24h volume and TVL, retrieved \d+ s ago\. Those figures are not reconciled by Domino\.$/ : /^Reported by GeckoTerminal, retrieved \d+ s ago\. Not reconciled by Domino\.$/, `${id}: ${state}`);
+    }
   }
+  const staleTitles = await section('market-stale').locator('tbody [data-metric="stale"]').evaluateAll((els) => els.map((el) => el.getAttribute('title')));
+  assert.equal(staleTitles.length, 2, 'both provider figures are stale');
+  for (const title of staleTitles) assert.match(title, /^Reported by GeckoTerminal, retrieved \d+ s ago\. Not reconciled by Domino\. Stale, not current\.$/, 'a stale figure says so in its title');
   // Never-displayed values are absent from the whole case, not just from their cell.
   for (const id of ['expired', 'rejected-currencies', 'rejected-dex', 'timeout']) {
     assert.doesNotMatch(await section(`market-${id}`).innerText(), /\$12\.3K/, `${id} shows the provider figure`);
   }
   // The APR says why it is unavailable; each row names the block its pool was verified at, and
   // dates GeckoTerminal's figures only by when they were retrieved, never "as of" or "updated at".
-  assert.equal(await section('market-provider').locator('tbody td').nth(4).locator('[data-metric]').getAttribute('title'), 'Unavailable: Qualified fee APR not provided by the read service');
-  assert.match(await section('market-provider').locator('tbody tr p').innerText(), /^Pool verified on-chain at block 700 · Reported by GeckoTerminal, retrieved \d+ s ago$/);
-  assert.match(await section('market-stale').locator('tbody tr p').innerText(), /^Pool verified on-chain at block 700 · Reported by GeckoTerminal, retrieved (6\d|[7-9]\d|1[01]\d) s ago · stale$/);
-  assert.equal(await section('market-expired').locator('tbody tr p').innerText(), 'Pool verified on-chain at block 700 · GeckoTerminal figures unavailable: provider unavailable', 'no figure, so no age');
-  assert.equal(await section('market-rejected-currencies').locator('tbody tr p').innerText(), 'Pool verified on-chain at block 700 · GeckoTerminal figures rejected: provider data did not match this pool');
+  assert.match(await section('market-provider').locator('tbody td').nth(4).locator('[data-apr-estimate] [title]').getAttribute('title'), /^Estimated from GeckoTerminal’s reported 24h volume and current TVL using the current fixed LP fee\. Unreconciled, without full-day coverage; excludes rewards, gas, service fees and price changes\. Pool estimate, not position APR, APY or a return forecast\. Estimated APR is (not enabled on this connection|unavailable; market figures use the supported read connection)\.$/);
+  for (const id of ['provider', 'zero', 'missing', 'retry-recovers', 'untrusted-symbol']) assert.match(await provenance(`market-${id}`), reported, id);
+  assert.match(await provenance('market-stale'), /^Pool verified on-chain at block 700 · Reported by GeckoTerminal, retrieved (6\d|[7-9]\d|1[01]\d) s ago · stale$/);
+  assert.equal(await provenance('market-expired'), 'Pool verified on-chain at block 700 · GeckoTerminal figures unavailable: provider unavailable', 'no figure, so no age');
+  assert.equal(await provenance('market-rejected-currencies'), 'Pool verified on-chain at block 700 · GeckoTerminal figures rejected: provider data did not match this pool');
   for (const id of Object.keys(expected)) assert.doesNotMatch(await section(`market-${id}`).innerText(), /as of|updated at/i, `${id} dates a figure it cannot date`);
 });
 
@@ -296,17 +321,24 @@ test('Load more sends the handle back exactly, keeps focus, and the handle never
   assert.deepEqual(log.errors.filter((e) => !/status of 401/.test(e)), []);
 });
 
-test('the fixture landing is the real app, labelled as fixture data', async () => {
+test('the fixture landing is the real app, labelled as fixture data by its banner and its ticker; the table’s fixture notice is the lab’s', async () => {
   const landing = await context.newPage();
   await landing.goto(`${origin}/`, { waitUntil: 'networkidle' });
   await landing.locator('#pools tbody tr').first().waitFor();
   const text = await landing.locator('#pools').innerText();
   assert.match(text, /Selected pools/);
-  assert.match(text, /Fixture data/);
-  assert.match(text, /Contract fixtures from read-v1 1\.1\.0-rc\.3/);
   assert.match(text, /\$12\.3K/);
+  // Home's table shows the pools and their figures and nothing else (the owner's decision on the redesign), so the
+  // fixture build is labelled by its banner and its ticker there, and the notice stays in the read lab.
+  assert.doesNotMatch(text, /Fixture data|Contract fixtures from read-v1/);
   assert.equal(await landing.locator('[data-build-banner="fixture"]').count(), 1);
+  assert.match(await landing.locator('[data-build-banner="fixture"]').innerText(), /read-v1 contract fixtures[\s\S]*not deployable/);
+  // textContent: the tag is set in capitals by the stylesheet, and innerText follows that.
+  assert.equal(await landing.locator('[data-ticker] [title="Contract fixtures, not observations"]').textContent(), 'Fixture');
   await landing.close();
+  const lab = await section('market-provider').innerText();
+  assert.match(lab, /Fixture data/);
+  assert.match(lab, /Contract fixtures from read-v1 1\.1\.0-rc\.3/);
 });
 
 test('Refresh keeps keyboard focus through its read; it is busy, never unmounted, while the read runs', async () => {
@@ -335,9 +367,10 @@ test('Refresh keeps keyboard focus through its read; it is busy, never unmounted
   assert.ok(trace.includes('Refreshing…'), `Refresh was not shown busy while its read ran: ${trace}`);
   assert.deepEqual(await root.evaluate((el) => [el.contains(document.activeElement), document.activeElement?.textContent]), [true, 'Refresh']);
   assert.deepEqual(await figures(id), {
-    cells: [['$12.3K·GeckoTerminal', 'provider'], ['$0.00·GeckoTerminal', 'provider'], ['0.00·calculated', 'calculated'], ['Unavailable', 'unavailable']],
+    cells: [['≈1,000,000,000,000TOKENperETH', 'usable'], ['$12.3K', 'provider'], ['$0.00', 'provider'], ['Unavailable', 'unavailable']],
     ticker: ['Est.APRunavailable', 'unavailable'],
   });
+  assert.match(await provenance(id), /^Pool verified on-chain at block 700 · Reported by GeckoTerminal, retrieved \d+ s ago$/, 'the provider is still named after the refresh');
 });
 
 test('with no pools selected the table says so, reads nothing and offers nothing to refresh', async () => {

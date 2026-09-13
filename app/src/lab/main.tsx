@@ -13,6 +13,11 @@ import '../styles/tokens.css'
 const root = document.getElementById('root')
 if (!root) throw new Error('Missing #root')
 
+// This document is the lab's. The read screens its cases mount share modules
+// with the app's own entry chunk, so loading them here loads that chunk too:
+// src/main.tsx reads this mark and mounts nothing into this root.
+document.documentElement.dataset.dominoLab = ''
+
 if (__DOMINO_READ_MODE__ === 'fixture' && window.location.hash.startsWith('#screens')) {
   // The read screens' cases, one per page: read-lab.html#screens/<case>.
   const caseId = window.location.hash.slice('#screens/'.length)

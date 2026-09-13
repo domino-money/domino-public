@@ -826,6 +826,18 @@ test('identity is chain plus address or pool id, never a symbol', async () => {
   assert.equal(hostile.rows[0].tokens.quote.artwork, null);
 });
 
+test('bundled token artwork follows documented addresses, not claimed symbols', () => {
+  for (const [address, artwork] of [
+    ['0x0bd7d308f8e1639fab988df18a8011f41eacad73', 'WETH'],
+    ['0x5fc5360d0400a0fd4f2af552add042d716f1d168', 'USDG'],
+    ['0xab35d04e1ee39c789c4a65d522417b3c7f2e4723', 'MARLIN'],
+  ]) {
+    assert.equal(project.unreadToken(address.toUpperCase()).artwork, artwork);
+    assert.equal(project.tokenDisplay({ address, symbol: 'A DIFFERENT NAME', decimals: null, readStatus: 'unavailable' }).artwork, artwork);
+  }
+  assert.equal(project.tokenDisplay({ address: FIXTURE_TOKEN, symbol: 'MARLIN', decimals: null, readStatus: 'unavailable' }).artwork, null);
+});
+
 test('pagination: the handle is minted from the page and passed back verbatim; restart happens once', async () => {
   const cases = scenarios.familyCases(catalog);
   const pagesCase = cases.find((c) => c.id === 'wallet-assets.pages');
@@ -1575,16 +1587,50 @@ test('an empty selection reads nothing at all, not even the capabilities GET, an
   assert.deepEqual(bridge.wire, []);
 });
 
-test('the selected pools are exactly the two chain-4663 ids rugged97 chose on #45, and the config holds ids only', () => {
+test('the six selected chain-4663 pools retain the original two and exclude stock candidates', () => {
   const { SELECTED_POOLS } = require('../.test-build/app/src/config/selectedPools.js');
   assert.deepEqual(SELECTED_POOLS, [
     '0x84bd4e2d8be11aeb0afc1195b38f587b61e90068548f1063fdbe448fb8cad0b6',
     '0xdb922f0619e11b0c1e6c3a142798f0243060b8a4331ea4f4e7de80e898cc02e7',
+    '0x94c62eebf6454231b2fcd0259ede448ae3c6ad8617718cd88dab20b30cfae48a',
+    '0xf399bd1544377680d48c62fd85c2105b869e55906c4189cc5ab3b4e83446928c',
+    '0x24107d152f14a76d292123265ae3f3c71f863fc2f4ef7ba49d64e78d28ea379e',
+    '0x4be9657ec9002e528f4f17a5c43edc525a07f888f7b180c2afbf75e096c4f38a',
   ]);
   for (const id of SELECTED_POOLS) assert.match(id, /^0x[0-9a-f]{64}$/);
   const code = readFileSync(join(SRC, 'config/selectedPools.ts'), 'utf8').replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/.*$/gm, '');
   assert.doesNotMatch(code, /symbol|label|name|weth|usdg|marlin|tvl|volume|apr|price/i, 'no labels, symbols or figures');
-  assert.deepEqual(code.match(/0x[0-9a-f]+/g), SELECTED_POOLS, 'nothing but the two ids');
+  assert.deepEqual(code.match(/0x[0-9a-f]+/g), SELECTED_POOLS, 'nothing but pool ids');
+});
+
+test('the display catalogue has six immediate rows and no invented financial observations', () => {
+  const { poolListings, SELECTED_POOL_CATALOGUE } = require('../.test-build/app/src/config/selectedPoolCatalogue.js');
+  const first = poolListings([], true);
+  assert.equal(first.length, 6);
+  assert.ok(first.every((row) => row.market === undefined));
+  assert.ok(SELECTED_POOL_CATALOGUE.every((entry) => !/AAPL|SPY|GOOGL|NVDA|stock/i.test(entry.labels.join('/'))));
+  for (const entry of SELECTED_POOL_CATALOGUE) {
+    assert.deepEqual(Object.keys(entry).sort(), [...(entry.addresses ? ['addresses'] : []), 'artwork', 'fee', 'labels', 'poolId', 'sourceUrl']);
+    if (entry.addresses) for (const address of entry.addresses) assert.match(address, /^0x[0-9a-f]{40}$/);
+    assert.match(entry.sourceUrl, /^https:\/\/app\.uniswap\.org\/explore\/pools\/robinhood\/0x[0-9a-f]{64}$/);
+  }
+  const observed = { poolId: first[2].poolId, tvlUsd: { value: '0', state: 'provider' } };
+  const merged = poolListings([observed], true);
+  assert.equal(merged[2].market, observed);
+  assert.equal(merged.length, 6);
+  assert.deepEqual(poolListings([], false), [], 'fixtures and unconfigured readers do not get catalogue rows');
+});
+
+test('catalogue labels survive failed metadata without changing token identity or decimals', () => {
+  const { catalogueTokenLabel } = require('../.test-build/app/src/config/selectedPoolCatalogue.js');
+  const pons = project.unreadToken('0x39dBED3a2bd333467115dE45665cC57F813C4571');
+  assert.equal(catalogueTokenLabel(pons), 'PONS');
+  assert.equal(pons.symbol, null);
+  assert.equal(pons.decimals, null);
+  assert.equal(catalogueTokenLabel({ ...pons, chainId: 1 }), null);
+  assert.equal(catalogueTokenLabel({ ...pons, readStatus: 'no_contract' }), null);
+  assert.equal(catalogueTokenLabel({ ...pons, symbol: 'Live metadata' }), null);
+  assert.equal(catalogueTokenLabel(project.unreadToken(FIXTURE_TOKEN)), null);
 });
 
 // ---------------------------------------------------------------------------
@@ -2205,7 +2251,7 @@ test('no private API path, no signing or value transfer, no markup injection, no
       /dangerouslySetInnerHTML|innerHTML/,
       /\.sourceUrl\b/,
     ]) {
-      if (pattern.source.startsWith('eth_sendTransaction') && ['/finance/wallet.ts', '/finance/setup.ts', '/finance/sequence.ts'].some(suffix => file.endsWith(suffix))) continue;
+      if (pattern.source.startsWith('eth_sendTransaction') && ['/finance/wallet.ts', '/finance/setup.ts', '/finance/sequence.ts'].some(suffix => file.replace(/\\/g, '/').endsWith(suffix))) continue;
       if (pattern.test(code)) found.push(`${file.slice(SRC.length)}: ${pattern}`);
     }
   }
@@ -2226,7 +2272,7 @@ test('no private API path, no signing or value transfer, no markup injection, no
   // as well as retaining the complete source-tree fetcher allowlist.
   const fetchers = sources().filter((file) => /\bfetch\(/.test(readFileSync(file, 'utf8'))).map((file) => file.slice(SRC.length).replace(/\\/g, '/'));
   const diagnosticPath = '/components/read/LocalDevelopmentBanner.tsx';
-  assert.deepEqual(fetchers, [diagnosticPath, '/finance/http.ts', '/lib/read/bridgeSource.ts', '/screens/LivePreview.tsx', '/wallet/session.ts'], 'only the two product clients and the reviewed serve-only diagnostics fetch');
+  assert.deepEqual(fetchers, [diagnosticPath, '/finance/http.ts', '/lib/read/bridgeSource.ts', '/lib/tokenArtwork.ts', '/screens/LivePreview.tsx', '/wallet/session.ts'], 'product clients, the financial client, serve-only diagnostics, the consumer-test preview, and the explicitly authorized decorative token metadata client');
 
   const diagnostics = readFileSync(join(SRC, diagnosticPath), 'utf8');
   assert.equal([...diagnostics.matchAll(/\bfetch\s*\(/g)].length, 1, 'exactly one diagnostic fetch call');

@@ -7,6 +7,7 @@ import { connectWallet, disconnectWallet, switchToRobinhood } from '../../wallet
 import { sessionController } from '../../wallet/session'
 import { useDialog } from '../../lib/useDialog'
 import { Button, Card, Pill } from '../ui'
+import { IconChevronRight, IconClose } from '../icons'
 import { BrandMark } from '../BrandMark'
 import { describe, REFRESH_UNAVAILABLE } from './copy'
 import { WalletLogo } from './WalletLogo'
@@ -91,7 +92,7 @@ export function WalletSessionDialog({
   const disconnect = () => act(disconnectWallet, () => {})
 
   const disconnectButton = (
-    <Button variant="ghost" onClick={disconnect} disabled={pending}>
+    <Button variant="ghost" size="sm" onClick={disconnect} disabled={pending}>
       Disconnect wallet
     </Button>
   )
@@ -157,12 +158,12 @@ export function WalletSessionDialog({
 
   const details = signedIn.data
 
-  // Portalled to the body: the header's backdrop filter would otherwise become
-  // the containing block of this fixed overlay and trap it inside the header.
+  // Portalled to the body, outside #root: while it is open the rest of the page
+  // is marked inert and hidden from assistive technology.
   return createPortal(
     <div
       role="presentation"
-      className="fixed inset-0 z-50 flex items-end justify-center bg-black/60 p-0 backdrop-blur-[2px] sm:items-center sm:p-4"
+      className="dm-dialog-backdrop"
       onMouseDown={(e) => e.target === e.currentTarget && onClose()}
     >
       <Card
@@ -172,29 +173,27 @@ export function WalletSessionDialog({
         aria-labelledby="wallet-dialog-title"
         aria-describedby={view.status === 'no_wallet' ? undefined : 'wallet-dialog-status'}
         ref={dialog}
-        className="grid max-h-[92vh] w-full max-w-[480px] grid-rows-[auto_minmax(0,1fr)_auto] rounded-b-none sm:max-h-[86vh] sm:rounded-b-[var(--radius-lg)]"
+        className="dm-dialog"
       >
-        <header className="relative px-6 pt-7 pb-1">
-          <BrandMark width={20} height={34} className="mx-auto mb-3" />
-          <h2 id="wallet-dialog-title" tabIndex={-1} className="text-center font-display text-[30px] leading-tight font-normal outline-none">
+        <div className="relative grid grid-cols-[auto_minmax(0,1fr)] items-center gap-x-2.5 gap-y-1 pr-10">
+          <BrandMark width={12} height={21} />
+          <h2 id="wallet-dialog-title" tabIndex={-1} className="dm-dialog-title outline-none">
             {view.status === 'no_wallet' ? 'Connect' : 'Wallet'}
           </h2>
-          <button type="button" onClick={onClose} aria-label="Close" className="absolute top-3 right-3 flex size-9 items-center justify-center rounded-full text-fg-muted transition hover:bg-surface-3 hover:text-fg focus-visible:outline-2 focus-visible:outline-[var(--ring)]">
-            <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
-              <path d="m4 4 8 8M12 4l-8 8" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" />
-            </svg>
+          <button type="button" onClick={onClose} aria-label="Close" className="dm-icon-btn dm-icon-btn--ghost dm-icon-btn--sm dm-press-icon absolute -top-1.5 -right-1.5">
+            <IconClose />
           </button>
-          {view.status !== 'no_wallet' && <p id="wallet-dialog-status" className="mt-3 text-center text-[13px] text-fg-muted" data-status={view.status}>
+          {view.status !== 'no_wallet' && <p id="wallet-dialog-status" className="col-span-2 text-[13px] leading-[18px] text-fg-muted" data-status={view.status}>
             {describe(view)}
           </p>}
-        </header>
+        </div>
 
-        <div className="grid gap-4 overflow-y-auto p-6" aria-busy={busy || pending || undefined}>
+        <div className="grid gap-3" aria-busy={busy || pending || undefined}>
           {identity.kind === 'connected' && view.status !== 'no_wallet' && (
-            <div className="flex items-center justify-between gap-3 rounded-[var(--radius)] border bg-surface-1 px-4 py-3">
+            <div className="dm-inset flex items-center justify-between gap-3 px-3 py-2.5">
               <div className="min-w-0">
-                <p className="text-[12px] text-fg-subtle">{walletName(identity.connectorName)}</p>
-                <p className="tnum truncate font-mono text-[13px]" data-testid="wallet-address">
+                <p className="text-caption text-fg-subtle">{walletName(identity.connectorName)}</p>
+                <p className="tnum truncate font-mono text-[13px] leading-[18px] tracking-normal" data-testid="wallet-address">
                   {identity.address}
                 </p>
               </div>
@@ -204,25 +203,25 @@ export function WalletSessionDialog({
 
           {view.status === 'no_wallet' &&
             (connectors.length === 0 ? (
-              <p className="text-[13px] text-fg-muted">
+              <p className="text-[13px] leading-[18px] text-fg-muted">
                 No browser wallet detected. Wallets that announce themselves through EIP-6963 appear here.
               </p>
             ) : (
-              <ul className="grid gap-2" aria-label="Browser wallets">
+              <ul className="dm-wallet-list" aria-label="Browser wallets">
                 {connectors.map((connector) => (
                   <li key={connector.uid}>
                     <button
                       type="button"
-                      className="group flex min-h-12 w-full items-center gap-3 rounded-[var(--radius)] border border-transparent bg-surface-3 px-4 py-3 text-left text-[14px] font-medium transition hover:border-primary/30 hover:bg-accent focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--ring)] disabled:cursor-wait disabled:opacity-50"
+                      className="dm-wallet-row"
                       disabled={pending}
                       onClick={() => connect(connector)}
                     >
-                      <WalletLogo id={connector.id} />
+                      <span className="dm-wallet-logo">
+                        <WalletLogo id={connector.id} />
+                      </span>
                       <span className="sr-only">{'Connect '}</span>
                       <bdi className="min-w-0 truncate">{walletName(connector.name)}</bdi>
-                      <svg width="16" height="16" viewBox="0 0 16 16" className="ml-auto shrink-0 text-primary opacity-0 transition group-hover:opacity-100 group-focus-visible:opacity-100" fill="none" aria-hidden="true">
-                        <path d="M3 8h10m-4-4 4 4-4 4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
-                      </svg>
+                      <IconChevronRight />
                     </button>
                   </li>
                 ))}
@@ -230,19 +229,19 @@ export function WalletSessionDialog({
             ))}
 
           {view.status === 'signed_in' && details && (
-            <dl className="rounded-[var(--radius)] border bg-surface-1 px-4" data-testid="session-details">
-              <div className="flex items-baseline justify-between gap-4 border-b border-dashed py-3">
-                <dt className="text-[13px] text-fg-muted">Ends no later than</dt>
-                <dd className="tnum font-mono text-[13px]">{details.expiresAt.slice(0, 16).replace('T', ' ')} UTC</dd>
+            <dl className="dm-inset dm-kv" data-testid="session-details">
+              <div>
+                <dt className="text-[13px]">Ends no later than</dt>
+                <dd className="tnum font-mono text-[13px] tracking-normal">{details.expiresAt.slice(0, 16).replace('T', ' ')} UTC</dd>
               </div>
-              <div className="flex items-baseline justify-between gap-4 py-3">
-                <dt className="text-[13px] text-fg-muted">Latest account check</dt>
-                <dd className="tnum text-right font-mono text-[13px]">Plain EOA · block {details.validation.blockNumber}</dd>
+              <div>
+                <dt className="text-[13px]">Latest account check</dt>
+                <dd className="tnum font-mono text-[13px] tracking-normal">Plain EOA · block {details.validation.blockNumber}</dd>
               </div>
             </dl>
           )}
           {view.status === 'signed_in' && (
-            <p className="text-[12px] text-fg-subtle">
+            <p className="text-caption text-fg-subtle">
               The service ends a session sooner after 30 minutes idle. While you use this page in a visible tab, it
               renews the session before then; it checks with the service every few minutes and signs you out here
               when the session has ended. The account check is the latest one the service stored and may be out of
@@ -251,22 +250,22 @@ export function WalletSessionDialog({
           )}
 
           {view.status === 'signed_in' && view.notice === 'refresh_unavailable' && (
-            <p className="text-[13px]" data-testid="refresh-notice" style={{ color: 'var(--money-wait)' }}>
+            <p className="text-[13px] leading-[18px]" data-testid="refresh-notice" style={{ color: 'var(--money-wait)' }}>
               {REFRESH_UNAVAILABLE}
             </p>
           )}
 
           {shown && (
-            <p role="alert" className="text-[13px]" style={{ color: 'var(--money-out)' }}>
+            <p role="alert" className="text-[13px] leading-[18px]" style={{ color: 'var(--money-out)' }}>
               {shown}
             </p>
           )}
 
         </div>
 
-        {actions && <footer className="flex flex-wrap items-center justify-end gap-2 border-t px-6 py-4">
+        {actions && <div className="flex flex-wrap items-center justify-end gap-2 border-t border-line pt-3">
           {actions}
-        </footer>}
+        </div>}
       </Card>
     </div>,
     document.body,

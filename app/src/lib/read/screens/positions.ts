@@ -12,13 +12,16 @@
  * and range prices can be written in display units. A reply that does not
  * answer every ID asked for is refused as a whole.
  */
-import type { Freshness, LiveNft, NftPositionsResponse, Snapshot } from 'api-contracts/read-v1/types'
+import type { Freshness, LiveNft, NftPositionsResponse, PoolMarketResponse, Snapshot } from 'api-contracts/read-v1/types'
 import type { Clock } from '../pipeline'
 import { formatUnits } from '../decimal'
 import { tokenDisplay, unreadToken } from '../project'
 import type { ReadSource, TokenDisplay } from '../types'
 import { feeLabel } from './fee'
 import { NATIVE_CURRENCY, addressKey, poolIdKey, type AddressKey, type PoolIdKey } from './identity'
+// poolRange imports tickPriceText from here; the cycle is safe because
+// neither module calls the other while it loads, only from inside functions.
+import { rangePosition, tickAgrees, type PriceProblem } from './poolRange'
 import { readWithin, type ScreenOutcome } from './screenRead'
 
 export const MAX_TOKEN_IDS = 10
@@ -294,3 +297,139 @@ export function lookupReducer(state: LookupState, event: LookupEvent): LookupSta
 }
 
 export const isNative = (address: string) => address.toLowerCase() === NATIVE_CURRENCY
+
+// ---------------------------------------------------------------------------
+// Route parameters: what a shareable link carries, and nothing else
+// ---------------------------------------------------------------------------
+
+/** The route part of a hash, without the in-page section after a second `#`. */
+const routeSegments = (hash: string): [first: string, second: string] => {
+  const raw = hash.replace(/^#/, '')
+  const cut = raw.indexOf('#')
+  const route = cut === -1 ? raw : raw.slice(0, cut)
+  const [, first = '', second = ''] = route.split('/')
+  return [first, second]
+}
+
+const decodeSegment = (segment: string) => {
+  try {
+    return decodeURIComponent(segment)
+  } catch {
+    return segment
+  }
+}
+
+export type PositionsRoute = { onRoute: false } | { onRoute: true; ids: string }
+
+/**
+ * `#/positions/<ids>` (or the older `#/app/<ids>`): the NFT ids a link
+ * carries, as typed and not yet validated. Nothing else is read from the
+ * hash and nothing is stored: the link is the whole state.
+ */
+export function positionsRoute(hash: string): PositionsRoute {
+  const [first, second] = routeSegments(hash)
+  if (first !== 'positions' && first !== 'app') return { onRoute: false }
+  return { onRoute: true, ids: decodeSegment(second) }
+}
+
+/** The hash that carries these ids, so a card set can be shared as a link. */
+export const positionsHash = (ids: readonly string[]) => (ids.length === 0 ? '#/positions' : `#/positions/${ids.join(',')}`)
+
+export type PortfolioRoute = { onRoute: false } | { onRoute: true; address: string }
+
+/** `#/portfolio/<address>`: a pasted public address, as typed and not yet validated. */
+export function portfolioRoute(hash: string): PortfolioRoute {
+  const [first, second] = routeSegments(hash)
+  if (first !== 'portfolio') return { onRoute: false }
+  return { onRoute: true, address: decodeSegment(second) }
+}
+
+export const portfolioHash = (address: string | null) => (address ? `#/portfolio/${address}` : '#/portfolio')
+
+// ---------------------------------------------------------------------------
+// The range bar: a log price axis, in ticks
+// ---------------------------------------------------------------------------
+
+/** How much of the range's own width is drawn on each side of it. */
+export const RANGE_BAR_PADDING = 0.25
+
+export interface RangeBarScale {
+  /** 0 to 1 across the drawn width. */
+  lower: number
+  upper: number
+  /** 0 to 1, clamped to the drawn width, or null when no current tick was given. */
+  current: number | null
+  /** Set when the current tick had to be clamped: it lies beyond the drawn axis on that side. */
+  currentBeyond: 'below' | 'above' | null
+}
+
+/**
+ * Where a range and, when known, the pool's tick sit on the bar.
+ *
+ * Ticks are a log price axis already (price = 1.0001^tick, so equal tick
+ * distances are equal price ratios), which is the axis Uniswap draws ranges
+ * on: a range from 0.5× to 2× the price is centred on it. The drawn axis is
+ * the range widened by `padding` of its own width on each side, so the band
+ * never touches the edges and a price a little outside the range still lands
+ * inside the drawing; one far outside is clamped to the edge and said so.
+ */
+export function rangeBarScale(tickLower: number, tickUpper: number, currentTick: number | null, padding = RANGE_BAR_PADDING): RangeBarScale {
+  const width = Math.max(1, tickUpper - tickLower)
+  const axisMin = tickLower - width * padding
+  const axisMax = tickUpper + width * padding
+  const at = (tick: number) => (tick - axisMin) / (axisMax - axisMin)
+  const lower = at(tickLower)
+  const upper = at(tickUpper)
+  if (currentTick === null) return { lower, upper, current: null, currentBeyond: null }
+  const raw = at(currentTick)
+  return { lower, upper, current: Math.min(1, Math.max(0, raw)), currentBeyond: raw < 0 ? 'below' : raw > 1 ? 'above' : null }
+}
+
+// ---------------------------------------------------------------------------
+// The pool's price, read on demand for one card
+// ---------------------------------------------------------------------------
+
+export type CardPoolPriceProblem = PriceProblem | 'pool_mismatch'
+
+export type CardPoolPrice =
+  | { state: 'unavailable'; problem: CardPoolPriceProblem; block: number }
+  | {
+      state: 'usable'
+      /** The price read's own block, which is not the card's. */
+      block: number
+      tick: number
+      /** currency1 per currency0, written with the card's decimals: six significant digits, never an exponent. */
+      text: string
+      /** Where that tick sits against the card's range, at the price read's block. */
+      position: 'inside' | 'below' | 'above'
+    }
+
+const decimalsOf = (token: TokenDisplay) => (token.origin === 'read' ? token.decimals : null)
+
+/**
+ * The pool's price from a pool-market read made for one card: the verified
+ * pool's tick and square-root price at that read's block, checked exactly as
+ * poolRange.ts checks a pool's price, and written with the card's decimals.
+ * A reply about another pool, or one whose currencies are not the card's,
+ * shows nothing. The block is the read's own and is always shown beside it.
+ */
+export function cardPoolPrice(card: Extract<ChainPositionCard, { kind: 'live' }>, data: PoolMarketResponse): CardPoolPrice {
+  const pool = data.pool
+  const block = pool.snapshot.number
+  const sameCurrencies = pool.currencies.length === 2 && pool.currencies.every((currency, i) => currency.toLowerCase() === card.currencies[i].address)
+  if (pool.poolId.toLowerCase() !== card.poolId || !sameCurrencies) return { state: 'unavailable', problem: 'pool_mismatch', block }
+  let sqrt: bigint
+  try {
+    sqrt = BigInt(pool.sqrtPriceX96)
+  } catch {
+    return { state: 'unavailable', problem: 'tick_mismatch', block }
+  }
+  if (sqrt === 0n) return { state: 'unavailable', problem: 'not_initialized', block }
+  if (!tickAgrees(pool.tick, sqrt)) return { state: 'unavailable', problem: 'tick_mismatch', block }
+  const d0 = decimalsOf(card.currencies[0])
+  const d1 = decimalsOf(card.currencies[1])
+  if (d0 === null || d1 === null) return { state: 'unavailable', problem: 'decimals_unknown', block }
+  const text = tickPriceText(pool.tick, d0, d1)
+  if (text === null) return { state: 'unavailable', problem: 'beyond_display', block }
+  return { state: 'usable', block, tick: pool.tick, text, position: rangePosition({ lower: card.range.tickLower, upper: card.range.tickUpper }, pool.tick) }
+}

@@ -52,26 +52,26 @@ export function PoolExplorer({ onSelection }: { onSelection?: (pool: PoolOption 
   }
 
   return (
-    <div className="mt-7 grid items-start gap-5 md:grid-cols-[210px_minmax(0,1fr)]" data-pool-explorer="">
-      <aside aria-label="Pool exploration steps" className="rounded-[var(--radius-lg)] border p-4">
-        <ol className="grid grid-cols-2 gap-4 md:grid-cols-1 md:gap-6">
+    <div className="dm-acct-block dm-acct-explorer" data-pool-explorer="">
+      <aside aria-label="Pool exploration steps" className="dm-inset dm-acct-explorer-steps">
+        <ol className="dm-acct-explorer-list">
           {['Select a pool', 'Explore a range'].map((label, index) => (
-            <li key={label} aria-current={(choice === 'range' ? 1 : 0) === index ? 'step' : undefined} className="flex items-start gap-2.5 text-[12px]">
-              <span aria-hidden="true" className={cx('grid h-6 w-6 shrink-0 place-items-center rounded-full font-mono', (choice === 'range' ? 1 : 0) === index ? 'bg-primary text-primary-fg' : 'bg-surface-3 text-fg-subtle')}>{index + 1}</span>
-              <span><span className="block text-[11px] text-fg-subtle">Step {index + 1}</span>{label}</span>
+            <li key={label} aria-current={(choice === 'range' ? 1 : 0) === index ? 'step' : undefined} className="dm-acct-explorer-step">
+              <span aria-hidden="true" className={cx('dm-step-marker', (choice === 'range' ? 1 : 0) === index ? 'bg-primary text-primary-fg' : 'bg-surface-3 text-fg-subtle')}>{index + 1}</span>
+              <span><span className="dm-acct-explorer-kicker">Step {index + 1}</span>{label}</span>
             </li>
           ))}
         </ol>
       </aside>
 
-      <Card className="min-w-0 p-4 sm:p-5">
-        <h2 className="text-[16px] font-medium">Select a pair</h2>
-        <p className="mt-1 text-[12px] text-fg-muted">A pool pairs two assets. Choose a token; add a second to narrow the results.</p>
-        <div className="mt-4 grid grid-cols-1 gap-2 sm:grid-cols-2">
+      <Card className="dm-acct-explorer-card">
+        <h2 className="dm-acct-panel-title">Select a pair</h2>
+        <p className="dm-acct-panel-note">A pool pairs two assets. Choose a token; add a second to narrow the results.</p>
+        <div className="dm-acct-explorer-pair">
           {(['first', 'second'] as const).map((which) => {
             const token = which === 'first' ? first : second
             return (
-              <Button key={which} type="button" variant="outline" className="min-w-0 justify-between rounded-[var(--radius)] px-4 py-3.5"
+              <Button key={which} type="button" variant="outline" size="lg" className="min-w-0 justify-between"
                 disabled={!source || (which === 'second' && !first)}
                 aria-label={which === 'first' ? 'Choose first token' : 'Choose second token (optional)'} onClick={() => openToken(which)}>
                 <span className="flex min-w-0 items-center gap-2">
@@ -83,9 +83,9 @@ export function PoolExplorer({ onSelection }: { onSelection?: (pool: PoolOption 
           })}
         </div>
         {first && (
-          <details className="mt-3 text-[12px] text-fg-muted" data-pair-details="">
-            <summary className="cursor-pointer">Token details</summary>
-            <div className="mt-2 grid gap-2">
+          <details className="dm-details dm-acct-disclosure" data-pair-details="">
+            <summary>Token details</summary>
+            <div className="dm-acct-explorer-details">
               {[first, second].filter((token): token is TokenCandidate => token !== null).map((token) => (
                 <div key={token.key}><SymbolText token={token.token} /> · {token.kind === 'native' ? 'Native currency' : 'ERC-20 candidate'}<Address value={token.key} />{token.decimalsUnavailable && <p>{COPY.selection.decimalsUnavailable}</p>}</div>
               ))}
@@ -93,24 +93,24 @@ export function PoolExplorer({ onSelection }: { onSelection?: (pool: PoolOption 
             </div>
           </details>
         )}
-        {second && <Button type="button" variant="ghost" className="mt-2" onClick={() => { setSecond(null); setPool(null); setRange(null) }}>Clear second token</Button>}
+        {second && <Button type="button" variant="ghost" size="sm" className="justify-self-start" onClick={() => { setSecond(null); setPool(null); setRange(null) }}>Clear second token</Button>}
 
-        <section aria-label="Pool results" className="mt-5 border-t pt-5">
+        <section aria-label="Pool results" className="dm-acct-explorer-results">
           {first && source ? (
             <PoolPicker key={`${first.key}:${second?.key ?? ''}`} source={source} token={first.key} paired={second?.key ?? null} pending={pool}
               onPending={(next) => { if (next?.key !== pool?.key) setRange(null); setPool(next) }} compact />
           ) : (
-            <div className="grid min-h-[200px] content-center justify-items-center gap-2 px-4 text-center">
-              <span aria-hidden="true" className="mb-1 grid h-11 w-11 place-items-center rounded-full bg-surface-3 text-xl text-primary">⇄</span>
-              <h3 className="text-[14px] font-medium">Find your pair</h3>
-              <p className="max-w-[38ch] text-[12px] leading-relaxed text-fg-muted">Choose a token above to find existing pools and their fee tiers.</p>
+            <div className="dm-acct-explorer-empty">
+              <span aria-hidden="true" className="dm-empty-tile">⇄</span>
+              <h3 className="dm-acct-subtitle">Find your pair</h3>
+              <p className="dm-acct-panel-note">Choose a token above to find existing pools and their fee tiers.</p>
             </div>
           )}
         </section>
-        <Button type="button" className="mt-5 w-full py-3" disabled={!pool} onClick={openRange}>Explore range <span aria-hidden="true">→</span></Button>
-        <details className="mt-4 text-[12px] text-fg-subtle">
-          <summary className="cursor-pointer">Create a new pool · coming later</summary>
-          <p className="mt-2 leading-relaxed">{COPY.picker.newPool}</p>
+        <Button type="button" size="lg" className="w-full" disabled={!pool} onClick={openRange}>Explore range <span aria-hidden="true">→</span></Button>
+        <details className="dm-details dm-acct-disclosure">
+          <summary>Create a new pool · coming later</summary>
+          <p className="dm-acct-panel-note">{COPY.picker.newPool}</p>
         </details>
       </Card>
 

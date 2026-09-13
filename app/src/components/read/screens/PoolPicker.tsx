@@ -6,78 +6,63 @@ import { NATIVE_CURRENCY, type AddressKey, type PoolIdKey } from '../../../lib/r
 import { neutralOrder, poolsRequest, projectPoolsView, type PoolOption, type PoolsView } from '../../../lib/read/screens/poolsList'
 import { readWithin } from '../../../lib/read/screens/screenRead'
 import type { ReadSource } from '../../../lib/read/types'
-import { Button } from '../../ui'
+import { IconChevronRight } from '../../icons'
+import { TokenMarkPair } from '../../TokenIcon'
+import { Button, cx } from '../../ui'
 import { Address } from './Address'
 import { ProviderFigure } from './ProviderFigure'
 import { ScreenStatus, type StatusLine } from './ScreenStatus'
 import { SymbolText } from './SymbolText'
 
-function PoolRow({ option, checked, onPick, name, compact = false }: { option: PoolOption; checked: boolean; onPick: () => void; name: string; compact?: boolean }) {
-  if (compact) return (
-    <li className={`rounded-[var(--radius)] border p-3 ${checked ? 'border-primary bg-surface-2' : 'bg-surface-1'}`} data-pool-option={option.kind}>
-      <label className="flex cursor-pointer items-center gap-3">
-        <input type="radio" name={name} checked={checked} onChange={onPick} className="h-4 w-4 shrink-0 accent-[var(--primary)]" />
-        <span className="min-w-0 flex-1 text-[14px] font-medium"><SymbolText token={option.currencies[0]} /> / <SymbolText token={option.currencies[1]} /></span>
-        <span className="shrink-0 rounded-md bg-surface-3 px-2 py-1 font-mono text-[11px]" data-fee="">{option.fee}</span>
-      </label>
-      <div className="mt-3 grid gap-2">
-        {option.tokenMetadata === 'partial' && <p className="text-[12px] text-money-wait">{COPY.picker.partialMetadata}</p>}
-        {option.providerConflict && <p className="text-[12px] text-money-out">{COPY.picker.providerConflict}</p>}
-        <ProviderFigure label="Liquidity" figure={option.liquidity} />
+/**
+ * One verified pool. As a radio it is a choice inside a picker; with `open`
+ * it is a way in, and `onPick` opens the pool. The accessible name is the
+ * row's own text, never an attribute built from a symbol.
+ */
+function PoolRow({ option, checked, onPick, name, compact = false, open = false }: { option: PoolOption; checked: boolean; onPick: () => void; name: string; compact?: boolean; open?: boolean }) {
+  const identity = (
+    <>
+      <TokenMarkPair base={option.currencies[0]} quote={option.currencies[1]} size={compact ? 28 : 32} ring="var(--surface-1)" />
+      <span className="grid min-w-0 flex-1 gap-0.5 text-left">
+        <span className="text-body font-medium text-fg"><SymbolText token={option.currencies[0]} /> / <SymbolText token={option.currencies[1]} /></span>
+        <span className="text-caption text-fg-subtle">Uniswap · <Address value={option.key} short /></span>
+      </span>
+      <span className="dm-chip shrink-0" data-fee="">{option.fee}</span>
+    </>
+  )
+  return (
+    <li className={cx('dm-mkt-option', checked && 'dm-mkt-option--checked')} data-pool-option={option.kind}>
+      {open ? (
+        <button type="button" onClick={onPick} className="dm-mkt-option-head" data-open-pool="">
+          {identity}
+          <IconChevronRight size={14} />
+        </button>
+      ) : (
+        <label className="dm-mkt-option-head">
+          <input type="radio" name={name} checked={checked} onChange={onPick} className="shrink-0" />
+          {identity}
+        </label>
+      )}
+      <div className="dm-mkt-option-figures">
+        <ProviderFigure label="TVL" figure={option.liquidity} />
         <ProviderFigure label="24h volume" figure={option.volume} />
-        <p className="flex justify-between gap-3 text-[12px] text-fg-subtle"><span>Pool APR</span><span>Unavailable</span></p>
+        <p className="dm-mkt-option-apr"><span className="text-fg-muted">Pool APR</span><span>Unavailable</span></p>
       </div>
-      <details className="mt-3 border-t pt-2 text-[11px] leading-relaxed text-fg-muted">
-        <summary className="cursor-pointer">Pool details · verified at block {option.block}</summary>
-        <div className="mt-2 grid gap-2">
+      {option.tokenMetadata === 'partial' && <p className="dm-mkt-option-note text-money-wait">{COPY.picker.partialMetadata}</p>}
+      {option.providerConflict && <p className="dm-mkt-option-note text-money-out">{COPY.picker.providerConflict}</p>}
+      <details className="dm-details dm-mkt-option-details">
+        <summary>Pool details · verified at block {option.block}</summary>
+        <div className="grid gap-2 text-caption text-fg-muted">
           <Address value={option.key} />
           <p>{option.kind === 'discovery' ? 'Found by DexScreener discovery, verified on chain' : `From the catalogue (${option.catalogue?.source === 'initialize_event' ? 'initialize event' : 'verified observation'} at block ${option.catalogue?.block}), verified on chain`}{option.requestedById && ' · asked for by id'}</p>
-          <p>Tick spacing {option.tickSpacing} · {option.integration === 'hookless_fixed_fee' ? COPY.picker.hookless : COPY.picker.needsAdapter} · {option.hooks === NATIVE_CURRENCY ? 'no hooks' : <>hooks <Address value={option.hooks} /></>}</p>
+          <p>
+            Tick spacing <span className="tnum">{option.tickSpacing}</span> ·{' '}
+            {option.integration === 'hookless_fixed_fee' ? COPY.picker.hookless : <>{COPY.picker.needsAdapter} · {option.hooks === NATIVE_CURRENCY ? 'no hooks' : <>hooks <Address value={option.hooks} /></>}</>}
+          </p>
           {option.providerNote && <p data-provider-note="">{option.providerNote}</p>}
           <p>Pool APR unavailable: {reasonText(option.aprReason)}.</p>
         </div>
       </details>
-    </li>
-  )
-  return (
-    <li className="rounded-[var(--radius)] border bg-surface-1 px-3 py-2.5" data-pool-option={option.kind}>
-      <label className="flex cursor-pointer items-start gap-3">
-        <input type="radio" name={name} checked={checked} onChange={onPick} className="mt-1 h-4 w-4 shrink-0 accent-[var(--primary)]" />
-        <span className="grid min-w-0 flex-1 gap-1">
-          <span className="flex flex-wrap items-baseline gap-x-2 text-[13px]">
-            <span className="font-medium">
-              <SymbolText token={option.currencies[0]} /> / <SymbolText token={option.currencies[1]} />
-            </span>
-            <span className="rounded-[6px] bg-surface-3 px-1.5 py-0.5 font-mono text-[11px]" data-fee="">
-              {option.fee}
-            </span>
-            <span className="text-[11px] text-fg-subtle">
-              {COPY.selection.verifiedAt} {option.block}
-            </span>
-          </span>
-          <Address value={option.key} />
-          <span className="text-[12px] text-fg-muted">
-            {option.kind === 'discovery'
-              ? 'Found by DexScreener discovery, verified on chain'
-              : `From the catalogue (${option.catalogue?.source === 'initialize_event' ? 'initialize event' : 'verified observation'} at block ${option.catalogue?.block}), verified on chain`}
-            {option.requestedById && ' · asked for by id'}
-          </span>
-          <span className="text-[12px] text-fg-muted">
-            Tick spacing {option.tickSpacing} · {option.integration === 'hookless_fixed_fee' ? COPY.picker.hookless : COPY.picker.needsAdapter} ·{' '}
-            {option.hooks === NATIVE_CURRENCY ? 'no hooks' : <>hooks <Address value={option.hooks} /></>}
-          </span>
-          {option.tokenMetadata === 'partial' && <span className="text-[12px] text-money-wait">{COPY.picker.partialMetadata}</span>}
-          {option.providerConflict && <span className="text-[12px] text-money-out">{COPY.picker.providerConflict}</span>}
-          <ProviderFigure label="Liquidity" figure={option.liquidity} />
-          <ProviderFigure label="24h volume" figure={option.volume} />
-          {option.providerNote && (
-            <span className="text-[11px] leading-relaxed text-fg-subtle" data-provider-note="">
-              {option.providerNote}
-            </span>
-          )}
-          <span className="text-[12px] text-fg-subtle">Pool APR unavailable: {reasonText(option.aprReason)}.</span>
-        </span>
-      </label>
     </li>
   )
 }
@@ -86,19 +71,23 @@ function PoolRow({ option, checked, onPick, name, compact = false }: { option: P
  * Catalogue candidates for the token, paged (at most 5 pages). A candidate is
  * not verified at any block; "Verify at the latest block" asks the pools
  * route about that one pool id, and only a pool it returns becomes an option.
+ * `verifiedNote` is what a verified row says next: inside the picker, that
+ * it now sits with the existing pools; on Markets, that it is opening.
  */
-function CatalogueCandidates({
+export function CatalogueCandidates({
   source,
   token,
   paired,
   onVerified,
   verified,
+  verifiedNote = `${COPY.picker.verified}: listed with the existing pools above.`,
 }: {
   source: ReadSource
   token: AddressKey
   paired: AddressKey | null
   onVerified: (option: PoolOption) => void
   verified: ReadonlySet<string>
+  verifiedNote?: string
 }) {
   const [snap, setSnap] = useState<CatalogueSnapshot | null>(null)
   const [checking, setChecking] = useState<Record<string, StatusLine>>({})
@@ -168,51 +157,52 @@ function CatalogueCandidates({
 
   const view = snap?.view
   return (
-    <section aria-labelledby="catalogue-heading" className="grid gap-2 rounded-[var(--radius)] border border-dashed p-3" data-catalogue="">
-      <h3 id="catalogue-heading" className="text-[13px] font-medium">
+    <section aria-labelledby="catalogue-heading" className="dm-mkt-catalogue-panel" data-catalogue="">
+      <h3 id="catalogue-heading" className="text-body font-medium text-fg">
         {COPY.picker.catalogueHeading}
       </h3>
-      <p className="text-[12px] text-fg-muted">{COPY.picker.catalogueNote}</p>
+      <p className="text-caption text-fg-muted">Find more pools in the indexed catalogue, then verify one to select it.</p>
       {!snap && (
-        <Button type="button" variant="outline" className="justify-self-start" onClick={() => step((s, signal) => s.first(signal))}>
+        <Button type="button" variant="outline" size="sm" className="justify-self-start" onClick={() => step((s, signal) => s.first(signal))}>
           {COPY.picker.catalogueLoad}
         </Button>
       )}
-      {snap?.loading && view?.pages === 0 && <p className="text-[12px] text-fg-subtle">Reading the catalogue…</p>}
+      {snap?.loading && view?.pages === 0 && <p className="text-caption text-fg-subtle">Reading the catalogue…</p>}
       {snap?.failure && <ScreenStatus line={failureText(snap.failure, 'catalogue')} busy={snap.loading}
         onRetry={view?.pages === 0 ? () => step((s, signal) => s.first(signal)) : undefined} />}
       {view && view.pages > 0 && (
         <>
-          {view.restarted && <p className="text-[12px] text-money-wait">{COPY.picker.catalogueRestarted}</p>}
-          <p className="text-[12px] text-fg-muted">{view.facts.map((fact) => fact.text).join(' ')}</p>
-          {view.items.length === 0 && <p className="text-[12px] text-fg-muted">{COPY.picker.catalogueEmpty}</p>}
+          {view.restarted && <p className="text-caption text-money-wait">{COPY.picker.catalogueRestarted}</p>}
+          <p className="text-caption text-fg-muted">{view.facts.map((fact) => fact.text).join(' ')}</p>
+          {view.items.length === 0 && <p className="text-caption text-fg-muted">{COPY.picker.catalogueEmpty}</p>}
           <ul className="grid gap-2">
             {view.items.map((item) => {
               const poolId = cataloguePoolId(item.key)
               const done = verified.has(poolId)
               return (
-                <li key={item.key} className="rounded-[var(--radius)] border bg-surface-1 px-3 py-2" data-catalogue-item="" {...(item.old ? { 'data-old': '' } : {})}>
+                <li key={item.key} className="dm-mkt-candidate" data-catalogue-item="" {...(item.old ? { 'data-old': '' } : {})}>
                   <Address value={poolId} />
-                  <p className="text-[12px] text-fg-muted">
+                  <p className="text-caption text-fg-muted">
                     {item.facts.map((fact) => `${fact.label}: ${fact.text}`).join(' · ')}
                     {item.old && ` · ${COPY.picker.fromEarlier}`}
                   </p>
                   {done ? (
-                    <p className="text-[12px] text-money-in">{COPY.picker.verified}: listed with the existing pools above.</p>
+                    <p className="text-caption text-money-in">{verifiedNote}</p>
                   ) : (
-                    <Button type="button" variant="outline" className="mt-1.5" aria-disabled={checking[poolId]?.code === 'loading' ? true : undefined} onClick={() => checking[poolId]?.code !== 'loading' && verify(poolId)}>
+                    <Button type="button" variant="outline" size="sm" className="justify-self-start" aria-disabled={checking[poolId]?.code === 'loading' ? true : undefined} onClick={() => checking[poolId]?.code !== 'loading' && verify(poolId)}>
                       {COPY.picker.verify}
                     </Button>
                   )}
-                  {checking[poolId] && !done && <ScreenStatus line={checking[poolId]} className="mt-2" />}
+                  {checking[poolId] && !done && <ScreenStatus line={checking[poolId]} />}
                 </li>
               )
             })}
           </ul>
-          {snap.capped && <p className="text-[12px] text-fg-muted">Showing the first 5 pages.</p>}
+          {snap.capped && <p className="text-caption text-fg-muted">Showing the first 5 pages.</p>}
           <Button
             type="button"
             variant="outline"
+            size="sm"
             className="justify-self-start"
             aria-disabled={!snap.canLoadMore ? true : undefined}
             onClick={() => snap.canLoadMore && step((s, signal) => s.more(signal))}
@@ -230,7 +220,9 @@ type PoolsResult = { kind: 'loading'; retrying?: StatusLine } | { kind: 'ok'; vi
 /**
  * Existing pools for the chosen token (and second asset, if chosen), from the
  * pools route, in a neutral order, plus the stored catalogue on request.
- * Opening a new pool is described, never offered.
+ * Opening a new pool is described, never offered. With `onOpen` the rows are
+ * ways into a pool rather than a choice, and the catalogue can be left to
+ * the caller (`catalogue={false}`) when it is shown elsewhere on the page.
  */
 export function PoolPicker({
   source,
@@ -238,6 +230,8 @@ export function PoolPicker({
   paired,
   pending,
   onPending,
+  onOpen,
+  catalogue = true,
   compact = false,
 }: {
   source: ReadSource
@@ -245,6 +239,8 @@ export function PoolPicker({
   paired: AddressKey | null
   pending: PoolOption | null
   onPending: (option: PoolOption | null) => void
+  onOpen?: (option: PoolOption) => void
+  catalogue?: boolean
   compact?: boolean
 }) {
   const [result, setResult] = useState<PoolsResult>({ kind: 'loading' })
@@ -280,37 +276,45 @@ export function PoolPicker({
   const options = neutralOrder([...listed, ...verified.filter((v) => !listed.some((o) => o.key === v.key))])
 
   return (
-    <div className="grid gap-4" data-picker="pool">
+    <div className="grid gap-3" data-picker="pool">
       <ScreenStatus line={result.kind === 'loading' ? result.retrying ?? { code: 'loading', title: COPY.picker.poolsLoading, detail: '' } : result.kind === 'failed' ? result.line : null}
         onRetry={retry} busy={result.kind === 'loading'} />
       {result.kind === 'ok' && (
         <>
-          {result.restarted && <p className="text-[12px] text-money-wait">{COPY.picker.catalogueRestarted}</p>}
-          <ul className="grid gap-1 text-[12px] text-fg-muted" data-pools-coverage="">
-            {result.view.coverage.map((line) => (
-              <li key={line}>{line}</li>
-            ))}
-          </ul>
+          {result.restarted && <p className="px-1 text-caption text-money-wait">{COPY.picker.catalogueRestarted}</p>}
+          <details className="dm-details dm-mkt-coverage">
+            <summary>{options.length} verified pool{options.length === 1 ? '' : 's'} · {result.view.complete ? 'sources & coverage' : 'partial source coverage'}</summary>
+            <ul className="grid gap-1 text-caption text-fg-muted" data-pools-coverage="">
+              {result.view.coverage.map((line) => <li key={line}>{line}</li>)}
+            </ul>
+          </details>
+          {options.length === 0 && <p className="dm-inset px-4 py-5 text-center text-body text-fg-muted">{COPY.picker.noOptions}</p>}
         </>
       )}
-      {options.length > 0 && (
+      {options.length > 0 && (onOpen ? (
+        <ul className="grid gap-2" aria-label={COPY.picker.poolsLegend}>
+          {options.map((option) => (
+            <PoolRow key={option.key} option={option} name="pool-option" checked={false} onPick={() => onOpen(option)} compact={compact} open />
+          ))}
+        </ul>
+      ) : (
         <fieldset className="grid gap-2">
-          <legend className="mb-1 text-[13px] font-medium">{COPY.picker.poolsLegend}</legend>
+          <legend className="mb-2 text-body font-medium text-fg">{COPY.picker.poolsLegend}</legend>
           <ul className="grid gap-2">
             {options.map((option) => (
               <PoolRow key={option.key} option={option} name="pool-option" checked={pending?.key === option.key} onPick={() => onPending(option)} compact={compact} />
             ))}
           </ul>
         </fieldset>
-      )}
+      ))}
       {result.kind === 'ok' && result.view.rejected.length > 0 && (
         <section aria-labelledby="rejected-heading" className="grid gap-1.5" data-rejected-pools="">
-          <h3 id="rejected-heading" className="text-[13px] font-medium">
+          <h3 id="rejected-heading" className="text-body font-medium text-fg">
             {COPY.picker.rejectedHeading}
           </h3>
           <ul className="grid gap-1.5">
             {result.view.rejected.map((rejected) => (
-              <li key={rejected.key} className="rounded-[var(--radius)] border border-dashed px-3 py-2 text-[12px] text-fg-muted">
+              <li key={rejected.key} className="dm-inset px-3 py-2 text-caption text-fg-muted">
                 <Address value={rejected.key} />
                 <span className="block">Rejected: {reasonText(rejected.reason)}.</span>
               </li>
@@ -318,14 +322,16 @@ export function PoolPicker({
           </ul>
         </section>
       )}
-      <details open={compact ? undefined : true} className="text-[12px] text-fg-muted">
-        <summary className={compact ? 'cursor-pointer' : 'hidden'}>More sources · stored catalogue</summary>
-        <div className={compact ? 'mt-3' : ''}>
-          <CatalogueCandidates source={source} token={token} paired={paired} verified={new Set(verified.map((v) => v.key))} onVerified={(option) => setVerified((list) => [...list.filter((v) => v.key !== option.key), option])} />
-        </div>
-      </details>
-      {!compact && <p className="rounded-[var(--radius)] border border-dashed p-3 text-[12px] leading-relaxed text-fg-muted" data-new-pool-note="">
-        {COPY.picker.newPool}
+      {catalogue && (
+        <details open={compact ? undefined : true} className={compact ? 'dm-details' : undefined}>
+          <summary className={compact ? undefined : 'hidden'}>More sources · stored catalogue</summary>
+          <div className={compact ? 'pt-2' : ''}>
+            <CatalogueCandidates source={source} token={token} paired={paired} verified={new Set(verified.map((v) => v.key))} onVerified={(option) => setVerified((list) => [...list.filter((v) => v.key !== option.key), option])} />
+          </div>
+        </details>
+      )}
+      {!compact && <p className="px-1 text-caption text-fg-subtle" data-new-pool-note="">
+        Choose an existing pool to continue. Creating a new pool isn’t available here.
       </p>}
     </div>
   )

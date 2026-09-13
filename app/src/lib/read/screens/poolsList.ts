@@ -97,7 +97,7 @@ export function coverageLines(d: PoolsResponse): { lines: string[]; complete: bo
   let complete = true
   if (d.discovery.status === 'received') {
     const n = d.discovery.returned
-    lines.push(`DexScreener returned ${n} candidate${n === 1 ? '' : 's'} (${d.discovery.v4Candidates} on Uniswap v4). That covers the provider’s candidates only.`)
+    lines.push(`DexScreener returned ${n} candidate${n === 1 ? '' : 's'} (${d.discovery.v4Candidates} on Uniswap). That covers the provider’s candidates only.`)
   } else {
     complete = false
     lines.push(`DexScreener discovery was unavailable (${reasonText(d.discovery.reason)}), so this list may be incomplete.`)

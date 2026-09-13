@@ -272,7 +272,7 @@ function Budget({ source }: { source: ReadSource }) {
  * #72's create flow is the frame in the app; here the lab supplies the
  * smallest shell that panel needs — a heading that takes focus on every view
  * change, and Back and Next from the chrome the panel hands up. Nothing of
- * the old practice workspace is involved: no draft, no card, no book.
+ * the retired local workspace is involved: no draft, no card, no book.
  */
 function SelectionDialog({ onClose }: { onClose: () => void }) {
   const [chrome, setChrome] = useState<PickerChrome | null>(null)
@@ -302,14 +302,14 @@ function SelectionDialog({ onClose }: { onClose: () => void }) {
           <ChainSelectionPanel onChrome={setChrome} />
         </div>
         {chrome && (
-          <footer className="mt-5 flex items-center justify-between gap-3 border-t pt-4">
+          <div className="mt-5 flex items-center justify-between gap-3 border-t pt-4">
             <Button variant="ghost" onClick={chrome.onBack}>
               {chrome.backLabel}
             </Button>
             <Button onClick={chrome.onNext} aria-disabled={chrome.nextDisabled || undefined} disabled={chrome.nextDisabled}>
               {chrome.nextLabel}
             </Button>
-          </footer>
+          </div>
         )}
         {chrome?.error && (
           <p role="alert" className="mt-3 text-[13px]" style={{ color: 'var(--money-out)' }}>
@@ -347,7 +347,7 @@ function CaseView({ scenario }: { scenario: ScreenCase }) {
       <CreateCase />
     ) : scenario.kind === 'figures' && setup.markets ? (
       <MarketsContext.Provider value={setup.markets}>
-        <MarketsTable />
+        <MarketsTable diagnostics />
       </MarketsContext.Provider>
     ) : scenario.kind === 'flood' ? (
       <Flood source={setup.source} />

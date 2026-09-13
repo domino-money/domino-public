@@ -405,6 +405,82 @@ test('at most 8 token reads per lookup, one per distinct currency, and a new loo
   assert.equal(slow.log.find((entry) => entry.route === 'token')?.aborted, true, 'the token read was cancelled with the lookup');
 });
 
+test('the range bar is a log price axis in ticks: a quarter width of padding each side, the marker clamped to the edge and said so', () => {
+  const { rangeBarScale, RANGE_BAR_PADDING } = positions;
+  assert.equal(RANGE_BAR_PADDING, 0.25);
+  const close = (a, b) => Math.abs(a - b) < 1e-9;
+  const marker = (scale) => ({ current: scale.current, currentBeyond: scale.currentBeyond });
+  const noMarker = rangeBarScale(-60, 60, null);
+  assert.ok(close(noMarker.lower, 1 / 6) && close(noMarker.upper, 5 / 6), `the band sits inside the padding: ${noMarker.lower}..${noMarker.upper}`);
+  assert.deepEqual(marker(noMarker), { current: null, currentBeyond: null }, 'no current tick, no marker');
+  assert.ok(close(rangeBarScale(-60, 60, 0).current, 0.5), 'the middle tick is the middle of the band');
+  // Ticks are log prices: the geometric midpoint of the range's prices is the
+  // centre of the band, whatever the range's width or where it sits.
+  assert.ok(close(rangeBarScale(-100, 300, 100).current, 0.5));
+  assert.ok(close(rangeBarScale(1000, 1400, 1200).current, 0.5));
+  assert.ok(close(rangeBarScale(-887272, 887272, 0).current, 0.5), 'a full-range position too');
+  assert.ok(close(rangeBarScale(-60, 60, -60).current, 1 / 6), 'the lower tick is the band’s left edge');
+  assert.ok(close(rangeBarScale(-60, 60, 60).current, 5 / 6), 'the upper tick is its right edge');
+  // The axis for -60..60 runs from -90 to 90: a tick a little outside the range is still drawn where it is.
+  assert.ok(close(rangeBarScale(-60, 60, -75).current, 15 / 180));
+  assert.deepEqual(marker(rangeBarScale(-60, 60, -90)), { current: 0, currentBeyond: null }, 'exactly at the drawn edge is drawn, not beyond');
+  assert.deepEqual(marker(rangeBarScale(-60, 60, -1000)), { current: 0, currentBeyond: 'below' });
+  assert.deepEqual(marker(rangeBarScale(-60, 60, 1000)), { current: 1, currentBeyond: 'above' });
+  const flat = rangeBarScale(10, 10, 10);
+  assert.ok(flat.lower <= flat.upper && flat.current >= 0 && flat.current <= 1, 'a degenerate range still draws');
+  for (const scale of [noMarker, rangeBarScale(-60, 60, 1000), flat]) {
+    for (const value of [scale.lower, scale.upper, scale.current ?? 0]) assert.ok(value >= 0 && value <= 1, 'every position is a fraction of the drawn width');
+  }
+});
+
+test('a positions link carries ids and nothing else, a portfolio link an address; what is written is what is read back', () => {
+  assert.deepEqual(positions.positionsRoute('#/positions/1,2'), { onRoute: true, ids: '1,2' });
+  assert.deepEqual(positions.positionsRoute('#/app/1%2C2#chain-lookup'), { onRoute: true, ids: '1,2' }, 'the older route, an encoded comma and a section suffix');
+  assert.deepEqual(positions.positionsRoute('#/positions'), { onRoute: true, ids: '' });
+  assert.deepEqual(positions.positionsRoute('#/portfolio/0xabc'), { onRoute: false });
+  assert.deepEqual(positions.positionsRoute(''), { onRoute: false });
+  assert.equal(positions.positionsHash(['1', BIG]), `#/positions/1,${BIG}`);
+  assert.equal(positions.positionsHash([]), '#/positions');
+  const back = positions.positionsRoute(positions.positionsHash(['1', BIG]));
+  assert.ok(back.onRoute);
+  assert.deepEqual(positions.parseTokenIdsInput(back.ids), { ok: true, ids: ['1', BIG] });
+  assert.equal(positions.parseTokenIdsInput(positions.positionsRoute('#/positions/1,x').ids).ok, false, 'a link is validated exactly as typed ids are');
+
+  assert.deepEqual(positions.portfolioRoute(`#/portfolio/${FIXTURE_OWNER}`), { onRoute: true, address: FIXTURE_OWNER });
+  assert.deepEqual(positions.portfolioRoute('#/portfolio'), { onRoute: true, address: '' });
+  assert.deepEqual(positions.portfolioRoute('#/positions/1'), { onRoute: false });
+  assert.equal(positions.portfolioHash(FIXTURE_OWNER), `#/portfolio/${FIXTURE_OWNER}`);
+  assert.equal(positions.portfolioHash(null), '#/portfolio');
+  // The address in a link is checked exactly as a pasted one: 0x plus 40 hex characters, as typed, no trimming, no checksum needed.
+  assert.equal(identity.parseAddressInput(positions.portfolioRoute(`#/portfolio/${FIXTURE_OWNER}`).address).ok, true);
+  assert.equal(identity.parseAddressInput(positions.portfolioRoute(`#/portfolio/${FIXTURE_OWNER.toUpperCase().replace('0X', '0x')}`).address).ok, true);
+  assert.equal(identity.parseAddressInput(positions.portfolioRoute(`#/portfolio/${FIXTURE_OWNER}%20`).address).ok, false);
+  assert.equal(identity.parseAddressInput(positions.portfolioRoute('#/portfolio/0x1234').address).ok, false);
+});
+
+test('the pool price read for a card: the verified pool’s tick at that read’s own block, checked, in the card’s decimals; another pool shows nothing', () => {
+  const nft = runtime.assertResponse('nft-positions', fixture('nft-positions.success'));
+  const card = positions.projectNftBatch(FIXTURE_NFT_IDS, nft, tokenMap('token.native', 'token.success')).batch.cards[0];
+  const market = runtime.assertResponse('pool-market', fixture('pool-market.success'));
+  const price = positions.cardPoolPrice(card, market);
+  assert.deepEqual(price, { state: 'usable', block: 700, tick: 0, text: '≈1,000,000,000,000', position: 'inside' });
+  assert.equal(price.text, positions.tickPriceText(0, 18, 6), 'the same words as a bound price');
+  const at = (tick) => ({ ...market, pool: { ...market.pool, tick, sqrtPriceX96: poolRange.sqrtPriceAtTick(tick).toString() } });
+  assert.equal(positions.cardPoolPrice(card, at(-120)).position, 'below');
+  assert.equal(positions.cardPoolPrice(card, at(-60)).position, 'inside');
+  assert.equal(positions.cardPoolPrice(card, at(60)).position, 'above', 'v4 counts the upper tick as outside');
+  // Checked the way the range controls check a pool price: the tick has to agree with the square-root price.
+  assert.deepEqual(positions.cardPoolPrice(card, { ...market, pool: { ...market.pool, tick: 5000 } }), { state: 'unavailable', problem: 'tick_mismatch', block: 700 });
+  assert.deepEqual(positions.cardPoolPrice(card, { ...market, pool: { ...market.pool, sqrtPriceX96: '0' } }), { state: 'unavailable', problem: 'not_initialized', block: 700 });
+  // Another pool id, or the card's pool id with other currencies, is not this card's price.
+  assert.deepEqual(positions.cardPoolPrice(card, { ...market, pool: { ...market.pool, poolId: `0x${'1'.repeat(64)}` } }), { state: 'unavailable', problem: 'pool_mismatch', block: 700 });
+  const swapped = [market.pool.currencies[1], market.pool.currencies[0]];
+  assert.equal(positions.cardPoolPrice(card, { ...market, pool: { ...market.pool, currencies: swapped } }).problem, 'pool_mismatch');
+  // Without both tokens' decimals there is no price to write, only ticks.
+  const noDecimals = positions.projectNftBatch(FIXTURE_NFT_IDS, nft, tokenMap('token.native', 'token.missing-decimals')).batch.cards[0];
+  assert.deepEqual(positions.cardPoolPrice(noDecimals, market), { state: 'unavailable', problem: 'decimals_unknown', block: 700 });
+});
+
 // ---------------------------------------------------------------------------
 // Screen reads and slice A's scheduler (G8, T-G10)
 // ---------------------------------------------------------------------------

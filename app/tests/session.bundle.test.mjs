@@ -146,6 +146,11 @@ test('no connector SDK, relay or public RPC endpoint reached either build', () =
   // producer's JSON schemas, in the contract packages the read adapter
   // validates against. Both are identifiers: `.invalid` is reserved by RFC
   // 2606 so it can never resolve, and the vocabulary URI is never fetched.
+  // The two DexScreener hosts are token artwork's decoration source
+  // (src/lib/tokenArtwork.ts): an image CDN and the metadata endpoint that
+  // names an image, both named in the deployed CSP (functions/_middleware.ts,
+  // img-src and connect-src) and pinned by tests/token-artwork.test.mjs. Not
+  // an RPC endpoint, a relay or a connector; nothing about a wallet goes there.
   const allowedHosts = new Set([
     'viem.sh',
     'wagmi.sh',
@@ -160,7 +165,19 @@ test('no connector SDK, relay or public RPC endpoint reached either build', () =
     'fonts.gstatic.com',
     'domino.invalid',
     'json-schema.org',
+    'cdn.dexscreener.com',
+    'api.dexscreener.com',
+    // The reviewed pool catalogue records where its labels were inspected
+    // (src/config/selectedPoolCatalogue.ts, sourceUrl): a citation kept as
+    // data, never rendered as a link and never fetched (tests/read.test.mjs
+    // pins its shape; the render suite finds no such link on any route).
+    'app.uniswap.org',
   ]);
+  // Exactly those, and only where the deployed CSP admits the two that are ever contacted.
+  const csp = readFileSync(join(APP, 'functions', '_middleware.ts'), 'utf8');
+  assert.ok(csp.includes("img-src 'self' data: https://cdn.dexscreener.com"), 'the CSP names the artwork CDN');
+  assert.ok(csp.includes("connect-src 'self' https://api.dexscreener.com"), 'the CSP names the artwork metadata endpoint');
+  assert.doesNotMatch(csp, /app\.uniswap\.org/, 'the catalogue citation is never a destination');
   for (const [label, dir] of [
     ['dist', DIST],
     ['.wallet-test-dist', WALLET],
@@ -184,6 +201,9 @@ test('no connector SDK, relay or public RPC endpoint reached either build', () =
       }
       const hosts = new Set([...endpointText.matchAll(/https?:\/\/([a-z0-9.-]+)/gi)].map((match) => match[1].toLowerCase()));
       for (const host of hosts) assert.ok(allowedHosts.has(host) || file.endsWith('.css'), `${label}/${file} names ${host}`);
+      // The citation is the catalogue's source path, with the pool id interpolated into it, and nothing else.
+      const citations = [...text.matchAll(/https:\/\/app\.uniswap\.org[^"'`\s]*/g)].map((match) => match[0]);
+      for (const url of citations) assert.match(url, /^https:\/\/app\.uniswap\.org\/explore\/pools\/robinhood\/(?:\$\{[A-Za-z_$][\w$]*\}|0x[0-9a-f]{64})?$/, `${label}/${file} names app.uniswap.org for something else`);
     }
   }
 });

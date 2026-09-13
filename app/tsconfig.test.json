@@ -35,11 +35,14 @@
     "src/lib/read/scenarios.ts",
     "src/lib/read/scheduler.ts",
     "src/lib/read/decimal.ts",
+    "src/lib/read/priceSeries.ts",
+    "src/lib/read/marketPrice.ts",
     "src/lib/read/project.ts",
     "src/lib/read/pagers.ts",
     "src/lib/read/marketsProvider.ts",
     "src/lib/read/deferredMarkets.ts",
     "src/config/selectedPools.ts",
+    "src/config/selectedPoolCatalogue.ts",
     "src/session/api.ts",
     "src/session/errors.ts",
     "src/session/siwe.ts",
@@ -52,14 +55,17 @@
     "src/lib/read/screens/copy.ts",
     "src/lib/read/screens/positions.ts",
     "src/lib/read/screens/tokens.ts",
+    "src/lib/read/screens/tokenSearch.ts",
     "src/lib/read/screens/walletSession.ts",
     "src/lib/read/screens/poolsList.ts",
     "src/lib/read/screens/poolRange.ts",
+    "src/lib/read/screens/RangePriceInput.ts",
     "src/lib/read/screens/catalogueSession.ts",
     "src/lib/read/screens/figures.ts",
     "src/lib/read/screens/marketList.ts",
     "src/lib/read/screens/delayedSource.ts",
     "src/lib/read/screens/appScript.ts",
-    "src/lib/read/screens/appMarkets.ts"
+    "src/lib/read/screens/appMarkets.ts",
+    "src/lib/create/journey.ts"
   ]
 }

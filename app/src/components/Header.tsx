@@ -1,98 +1,134 @@
-import { lazy, Suspense, useEffect, useState } from 'react'
-import { Button, cx } from './ui'
+import { lazy, Suspense, useEffect, useLayoutEffect, useRef, useState } from 'react'
+import type { Page } from '../App'
+import { Button } from './ui'
 import { BrandMark } from './BrandMark'
 import { WalletBoundary } from './wallet/WalletBoundary'
+import { HeaderMenu, PRIMARY_NAV } from './HeaderMenu'
 
 // The wallet session is one lazy chunk, reached only through this constant.
 // Where it is false the bundler drops the import and no wallet code is
 // emitted at all. The condition is the defined identifier itself rather than
 // a re-export of it, so the bundler folds it for certain.
 const WalletSession = __DOMINO_WALLET_SESSION__ ? lazy(() => import('./wallet/WalletSessionIsland')) : null
+const LocalWallet = __DOMINO_LOCAL_LIVE__ ? lazy(() => import('./wallet/LocalWalletIsland')) : null
 
 /** Shown while the feature loads, or if it fails to. */
 function DisabledConnect({ title }: { title: string }) {
   return (
-    <Button variant="outline" disabled title={title} className="whitespace-nowrap">
+    <Button disabled title={title}>
       Connect wallet
     </Button>
   )
 }
 
+/** The mark stands upright with nothing behind it, and never moves. */
 function Wordmark() {
   return (
-    <a href="#/" className="flex items-center gap-2.5">
-      <BrandMark />
-      <span className="font-display text-[24px] leading-none">
-        domino<span style={{ color: 'var(--primary)' }}>.</span>
+    <a href="#/" className="dm-wordmark" aria-label="Domino, home">
+      <BrandMark width={16} height={28} />
+      <span className="dm-wordmark-text">
+        domino<span className="dm-wordmark-dot">.</span>
       </span>
     </a>
   )
 }
 
-const NAV = [
-  { label: 'Overview', href: '#/', route: '/' },
-  { label: 'Pools', href: '#/pools', route: '/pools' },
-  { label: 'Positions', href: '#/app', route: '/app' },
-  { label: 'Settings', href: '#/settings', route: '/settings' },
-]
-
-/** Whether the page is scrolled to its very top. */
-function useAtTop() {
-  const [atTop, setAtTop] = useState(true)
+/** Whether anything has scrolled under the header, for its hairline. */
+function useScrolled() {
+  const [scrolled, setScrolled] = useState(false)
   useEffect(() => {
-    const update = () => setAtTop(window.scrollY < 8)
+    const update = () => setScrolled(window.scrollY > 4)
     update()
     window.addEventListener('scroll', update, { passive: true })
     return () => window.removeEventListener('scroll', update)
   }, [])
-  return atTop
+  return scrolled
 }
 
-export function Header({ route }: { route: string }) {
-  // On the landing page the header starts clear, so the hero backdrop runs
-  // behind it, and takes its own background once anything scrolls beneath.
-  const clear = useAtTop() && route === '/'
+/**
+ * The centred nav pill. One indicator sits behind the lit item and slides to
+ * the next one on a route change; it fades out where nothing is lit. It is
+ * placed from the items' own boxes, again whenever they resize (a web font
+ * arriving changes their widths).
+ */
+function NavPill({ page }: { page: Page }) {
+  const nav = useRef<HTMLElement>(null)
+  const indicator = useRef<HTMLSpanElement>(null)
+  const lit = PRIMARY_NAV.findIndex((item) => item.pages.includes(page))
+
+  useLayoutEffect(() => {
+    const root = nav.current
+    const mark = indicator.current
+    if (!root || !mark) return
+    const links = root.querySelectorAll<HTMLElement>('a')
+    const place = () => {
+      const link = lit === -1 ? null : links[lit]
+      if (!link) {
+        mark.style.opacity = '0'
+        return
+      }
+      mark.style.width = `${link.offsetWidth}px`
+      mark.style.translate = `${link.offsetLeft}px 0`
+      mark.style.opacity = '1'
+    }
+    place()
+    let alive = true
+    let frame = 0
+    if (!root.hasAttribute('data-ready')) frame = requestAnimationFrame(() => root.setAttribute('data-ready', ''))
+    const observer = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(place)
+    links.forEach((link) => observer?.observe(link))
+    void document.fonts?.ready.then(() => {
+      if (alive) place()
+    })
+    return () => {
+      alive = false
+      cancelAnimationFrame(frame)
+      observer?.disconnect()
+    }
+  }, [lit])
+
   return (
-    <header
-      className={cx(
-        'sticky top-0 z-30 transition-[background-color,backdrop-filter] duration-300',
-        clear ? 'bg-transparent' : 'bg-[var(--bg)]/85 backdrop-blur-md',
-      )}
-    >
-      <div className="mx-auto flex h-[var(--header-h)] max-w-[1220px] items-center justify-between px-5">
+    <nav ref={nav} aria-label="Main" className="dm-nav">
+      <span ref={indicator} aria-hidden="true" className="dm-nav-indicator" />
+      {PRIMARY_NAV.map(({ label, href, icon: Icon }, index) => (
+        <a key={label} href={href} aria-current={index === lit ? 'page' : undefined} className="dm-nav-item">
+          <Icon />
+          {label}
+        </a>
+      ))}
+    </nav>
+  )
+}
+
+export function Header({ page }: { page: Page }) {
+  const scrolled = useScrolled()
+  return (
+    <header className="dm-header" data-scrolled={scrolled ? '' : undefined}>
+      <div className="dm-header-row">
         <Wordmark />
 
-        <nav className="hidden items-center gap-1 rounded-[var(--radius-pill)] border bg-surface-1 p-1 md:flex">
-          {NAV.map((item) => {
-            const active = item.route === route
-            return (
-              <a
-                key={item.label}
-                href={item.href}
-                aria-current={active ? 'page' : undefined}
-                className={cx('rounded-[var(--radius-pill)] px-3.5 py-1.5 text-[13px] transition', active ? 'bg-surface-3 text-fg' : 'text-fg-muted hover:text-fg')}
-              >
-                {item.label}
-              </a>
-            )
-          })}
-        </nav>
+        <NavPill page={page} />
 
-        <div className="flex shrink-0 items-center gap-2.5">
+        <div className="dm-header-actions">
           {/* One expression, so a build without the feature folds to exactly
               the disabled control the header had before it. */}
-          {__DOMINO_WALLET_SESSION__ && WalletSession ? (
+          {__DOMINO_LOCAL_LIVE__ && LocalWallet ? (
+            <WalletBoundary fallback={<DisabledConnect title="Wallet connection could not load. Reload the page to try again." />}>
+              <Suspense fallback={<DisabledConnect title="Loading wallet connection" />}><LocalWallet /></Suspense>
+            </WalletBoundary>
+          ) : __DOMINO_WALLET_SESSION__ && WalletSession ? (
             // Mounted on every route, so the session it holds and its status
-            // announcements survive navigation. On the landing it renders only
-            // its live region.
-            <WalletBoundary fallback={route === '/' ? null : <DisabledConnect title="Wallet sign-in could not load. Reload the page to try again." />}>
-              <Suspense fallback={route === '/' ? null : <DisabledConnect title="Loading wallet sign-in" />}>
+            // announcements survive navigation. While its chunk loads on the
+            // landing, the fallback is nothing rather than a disabled control.
+            <WalletBoundary fallback={page === 'overview' ? null : <DisabledConnect title="Wallet sign-in could not load. Reload the page to try again." />}>
+              <Suspense fallback={page === 'overview' ? null : <DisabledConnect title="Loading wallet sign-in" />}>
                 <WalletSession />
               </Suspense>
             </WalletBoundary>
           ) : (
-            <DisabledConnect title="Wallet connection is not implemented yet" />
+            <DisabledConnect title="Wallet connection isn’t available here" />
           )}
+          <HeaderMenu page={page} />
         </div>
       </div>
     </header>

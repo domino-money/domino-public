@@ -1,153 +1,197 @@
-import { DominoSequence } from '../components/DominoSequence'
-import { HeroWidget } from '../components/HeroWidget'
+import type { CSSProperties } from 'react'
 import { MarketsTable } from '../components/MarketsTable'
-import { ProductCards } from '../components/ProductCards'
 import { RangeSimulator } from '../components/RangeSimulator'
-import { HeroBackdrop } from '../components/HeroBackdrop'
-import { TokenIcon } from '../components/TokenIcon'
-import { Card, Display, Eyebrow, Pill } from '../components/ui'
+import { FeatureCards } from '../components/home/FeatureCards'
+import { HeroArt } from '../components/home/HeroArt'
+import { UniswapStrip } from '../components/home/UniswapStrip'
+import { useInView } from '../components/home/Vignettes'
+import { DominoTokenCard } from '../components/overview/DominoToken'
+import { Chip, Display, LinkButton, LiveDot, PageShell, Pill, cx } from '../components/ui'
+import { ROADMAP } from '../lib/capabilities'
+import type { MarketsState } from '../lib/read/marketsProvider'
+import { useMarkets } from '../lib/read/useMarkets'
 
-const STEPS = [
+/*
+ * Home. The headline and the two ways in, what automation does with fees, the
+ * Domino token's place, then the selected pools. Below them it explains: how
+ * a position comes together, what a range does as the price moves, and what
+ * Domino does not do. Home sends no read of its own: the hero chip and the
+ * table share the app's one markets provider.
+ */
+
+/**
+ * A one-time entrance: rise and fade in, then nothing stays applied (backwards
+ * fill only), so no block keeps a transform that would trap a fixed dialog.
+ */
+const RISE = 'animate-[dm-rise_var(--dur-enter)_var(--ease-enter)_backwards]'
+const delay = (ms: number): CSSProperties => ({ animationDelay: `${ms}ms` })
+
+const STEPS: ReadonlyArray<{ n: string; title: string; body: string; roadmap?: ReadonlyArray<string> }> = [
   {
     n: '01',
-    title: 'Choose a token and a range',
-    body: 'Start from what your wallet already holds. Domino shows the actual amount of each asset the position needs at today’s price, not a 50/50 guess.',
+    title: 'Choose a pool and a range',
+    body: 'Start from a pool you can see, with its price read from chain. The range planner shows where your band sits against that price.',
   },
   {
     n: '02',
     title: 'Review every signature',
-    body: 'Each approval and transaction is shown before you sign it: what it does, what it costs and where it goes. Nobody promises you a single signature.',
+    body: 'Each approval and transaction is shown before you sign it: what it does, what it costs and where it goes.',
   },
   {
     n: '03',
-    title: 'Let the upkeep run',
-    body: 'Earned fees are added back when the numbers justify it. When they are not, Domino waits and tells you why. Every run leaves a receipt you can read.',
+    title: 'Choose what fees do',
+    body: 'Leave them to collect, add them back to the position, or let them open the next range up.',
+    roadmap: ['Compound', 'Domino'],
   },
 ]
 
-const LIMITS = [
-  { title: 'It does not remove market risk', body: 'Prices move and your position moves with them. Below your range you hold the volatile token; above it, the stablecoin.' },
-  { title: 'It does not promise a return', body: 'Fees are separate from profit. A position can collect fees for weeks and still be worth less than if you had simply held the assets.' },
-  { title: 'It does not take custody', body: 'Your wallet stays the owner. In this alpha Domino only reads public data and cannot sign or move anything.' },
-  { title: 'It does not touch your principal', body: 'Automation only ever works with the fees a position has earned. Your deposit, your unused fee balance and any price appreciation are never touched.' },
+const LIMITS: ReadonlyArray<{ title: string; body: string }> = [
+  {
+    title: 'It does not remove market risk',
+    body: 'Prices move and your position moves with them. Outside its range a position holds only one of its two tokens: the one that lost value against the other.',
+  },
+  {
+    title: 'It does not promise a return',
+    body: 'Fees are not profit. A position can collect fees for weeks and still be worth less than holding the assets.',
+  },
+  {
+    title: 'It does not take custody',
+    body: 'Your wallet signs every deposit, permission and withdrawal. Automation acts only within the limits you signed, and you can pause or revoke it.',
+  },
+  {
+    title: 'It does not touch your principal',
+    body: 'Automation spends earned fees only, and the contract does not let it reduce a position’s liquidity.',
+  },
 ]
+
+/** True while ROADMAP marks any of the named capabilities as not connected. */
+const notConnected = (names: ReadonlyArray<string>) => ROADMAP.some((entry) => names.includes(entry.name) && entry.status === 'not-connected')
+
+/**
+ * The newest block a live pool row was read at, or null. Only a ready answer
+ * from the live read path counts: no loading state, no retained or fixture
+ * rows, and no row without its own verification block.
+ */
+function liveBlock(state: MarketsState): number | null {
+  if (state.phase !== 'ready' || state.result.source !== 'live') return null
+  let block: number | null = null
+  for (const market of state.result.markets) {
+    const at = market.provenance?.block
+    if (at !== undefined && (block === null || at > block)) block = at
+  }
+  return block
+}
+
+/** The chain the pools live on. Its dot lights, and the chip names the block, only once a live pool row has arrived. */
+function HeroChip() {
+  const { state } = useMarkets()
+  const block = liveBlock(state)
+  return (
+    <Chip
+      variant="plate"
+      icon={<LiveDot lit={block !== null} />}
+      title={block === null ? undefined : `Pool data read from Robinhood Chain at block ${block}`}
+      className={RISE}
+      style={delay(0)}
+    >
+      On Robinhood Chain
+    </Chip>
+  )
+}
+
+/** The headline plate. Its drawing plays while at least 30% of the plate is in view. */
+function Hero() {
+  const [plate, inView] = useInView<HTMLDivElement>(0.3)
+  return (
+    <div ref={plate} className="dm-plate dm-dots-hero dm-hero">
+      <div className="dm-hero-body">
+        <HeroChip />
+        <Display as="h1" className={cx('dm-display-hero mt-5 text-balance', RISE)} style={delay(0)}>
+          Put fees to work, <span className="dm-hero-accent">one tile at a time.</span>
+        </Display>
+        <p className={cx('mt-4 max-w-[60ch] text-body text-fg-muted', RISE)} style={delay(60)}>
+          Open a Uniswap position on Robinhood Chain, choose its range and decide what its earned fees do next. Nothing starts until your wallet signs.
+        </p>
+        <div className={cx('mt-6 flex w-full items-center justify-center gap-2', RISE)} style={delay(120)}>
+          <LinkButton href="#/markets" className="max-md:h-11 max-md:flex-1 max-md:px-[18px]">
+            Explore markets
+          </LinkButton>
+          <LinkButton href="#/new" variant="outline" className="max-md:h-11 max-md:flex-1 max-md:px-[18px]">
+            New position
+          </LinkButton>
+        </div>
+      </div>
+      <div className="dm-hero-band">
+        <HeroArt running={inView} />
+      </div>
+    </div>
+  )
+}
+
+function HowItWorks() {
+  return (
+    <section id="learn" className="mt-12 grid gap-x-10 gap-y-6 md:mt-16 lg:grid-cols-[minmax(0,1fr)_minmax(0,2fr)]">
+      <div className="min-w-0 lg:pt-5">
+        <h2 className="text-body font-medium text-fg-subtle">How it works</h2>
+        <p className="dm-display-title mt-3 max-w-[16ch] text-fg">Pick a pool. Set a range. Choose what fees do.</p>
+      </div>
+      <ol className="dm-card m-0 min-w-0 list-none p-2">
+        {STEPS.map((step, index) => (
+          <li key={step.n} className={cx('grid grid-cols-[28px_minmax(0,1fr)] gap-4 px-4 py-5 sm:px-5', index > 0 && 'border-t border-line')}>
+            <span aria-hidden="true" className="tnum grid size-7 place-items-center rounded-[var(--radius-sm)] bg-surface-3 text-caption font-medium text-fg-subtle">
+              {step.n}
+            </span>
+            <div className="min-w-0">
+              <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5">
+                <h3 className="text-lead font-medium text-fg">{step.title}</h3>
+                {step.roadmap && notConnected(step.roadmap) && <Pill>Not connected</Pill>}
+              </div>
+              <p className="mt-1 max-w-[62ch] text-body text-fg-muted">{step.body}</p>
+            </div>
+          </li>
+        ))}
+      </ol>
+    </section>
+  )
+}
+
+function Limits() {
+  return (
+    <section id="limits" className="mt-12 md:mt-16">
+      <div className="dm-card p-5 sm:p-6">
+        <Display as="h2" className="dm-display-card">
+          What Domino does not do.
+        </Display>
+        <div className="mt-5 grid gap-x-10 md:grid-cols-2">
+          {LIMITS.map((limit) => (
+            <div key={limit.title} className="min-w-0 border-t border-line py-5 last:pb-0 md:[&:nth-last-child(2)]:pb-0">
+              <h3 className="text-body font-medium text-fg">{limit.title}</h3>
+              <p className="mt-1 text-body text-fg-muted">{limit.body}</p>
+            </div>
+          ))}
+        </div>
+      </div>
+    </section>
+  )
+}
 
 export function Landing() {
   return (
-    <main>
-      {/* Hero: the headline and the product, nothing in between. Full width and
-          pulled up under the clear header, so the backdrop fills the page from
-          the top down to the pools. The 40px is the ticker above the header. */}
-      <section className="relative -mt-[var(--header-h)] flex min-h-[calc(100vh-40px)] flex-col justify-center overflow-hidden px-5 pb-24 pt-[calc(var(--header-h)+80px)] sm:pb-32 sm:pt-[calc(var(--header-h)+112px)]">
-        <HeroBackdrop />
-        <div className="relative text-center">
-          <Display as="h1" className="dm-rise mx-auto max-w-[14ch] text-[46px] leading-[1.04] sm:text-[66px]">
-            Liquidity you can <span style={{ color: 'var(--primary)' }}>actually see.</span>
-          </Display>
-        </div>
-        <div className="dm-rise relative mt-9" style={{ '--delay': '0.1s' } as React.CSSProperties}>
-          <HeroWidget />
-        </div>
-        <p className="dm-rise relative mx-auto mt-6 max-w-[46ch] text-center text-[13px] leading-relaxed text-fg-muted" style={{ '--delay': '0.18s' } as React.CSSProperties}>
-          See pools on Robinhood Chain read live. This alpha only reads public data; it asks for no signature, approval or deposit.
-        </p>
-      </section>
-
-      <div className="mx-auto max-w-[1220px] px-5">
-        {/* Pools come first, the way an exchange leads with its markets */}
-        <section id="pools" className="mt-6 scroll-mt-24">
-          <MarketsTable />
-        </section>
-
-        {/* Then the product */}
-        <section className="mt-28">
-          <div className="mb-8 text-center">
-            <Display className="mx-auto max-w-[18ch] text-[40px]">Made for every way to hold liquidity.</Display>
-            <p className="mx-auto mt-3 max-w-[54ch] text-[15px] text-fg-muted">What Domino is being built to do: positions, reinvestment, the Domino sequence and receipts you can read. None of it is available in the alpha yet.</p>
-          </div>
-          <ProductCards />
-        </section>
-
-        <section id="ranges" className="mt-24 scroll-mt-24">
-          <RangeSimulator />
-        </section>
-
-        <section className="mt-24">
-          <Card level={2} className="p-8 lg:p-10">
-            <div className="grid gap-8 lg:grid-cols-[0.85fr_1.15fr]">
-              <div>
-                <Pill tone="accent">Advanced</Pill>
-                <Display className="mt-4 text-[32px]">One position sets up the next.</Display>
-                <p className="mt-4 text-[14px] leading-relaxed text-fg-muted">
-                  Normally a position reinvests its fees into itself. As the price climbs into the top of its range, Domino points those fees at the next position instead, so each one stands up the one above it.
-                </p>
-                <p className="mt-3 text-[14px] leading-relaxed text-fg-muted">
-                  The successor is funded from earned fees only. Your deposit is never moved and nothing is pulled from your wallet. Every successor is another position in the same pool, not a new pool.
-                </p>
-                <p className="mt-4 text-[12px] leading-relaxed text-fg-subtle">Not available in the alpha. Invite only, after its own security review. Holding several positions at once can increase your exposure if the price reverses.</p>
-              </div>
-              <DominoSequence />
-            </div>
-          </Card>
-        </section>
-
-        <section id="learn" className="mt-24 scroll-mt-24">
-          <Eyebrow>How it works</Eyebrow>
-          <Display className="mt-3 max-w-[20ch] text-[34px]">Three decisions, then it runs itself.</Display>
-          <div className="mt-8 grid gap-5 md:grid-cols-3">
-            {STEPS.map((step) => (
-              <Card key={step.n} className="p-6">
-                <div className="flex items-center justify-between gap-3">
-                  <span className="font-mono text-[12px] tracking-[0.5px]" style={{ color: 'var(--primary)' }}>{step.n}</span>
-                  <Pill tone="neutral">Not available in the alpha</Pill>
-                </div>
-                <h3 className="mt-3 text-[16px] font-medium">{step.title}</h3>
-                <p className="mt-2 text-[14px] leading-relaxed text-fg-muted">{step.body}</p>
-              </Card>
-            ))}
-          </div>
-        </section>
-
-        <section className="mt-24">
-          <Eyebrow>Before you start</Eyebrow>
-          <Display className="mt-3 max-w-[22ch] text-[34px]">What Domino does not do.</Display>
-          <p className="mt-3 max-w-[58ch] text-[14px] text-fg-muted">Most of this lives in the small print elsewhere. Here it is the first thing you read.</p>
-          <div className="mt-8 grid gap-5 sm:grid-cols-2">
-            {LIMITS.map((limit) => (
-              <Card key={limit.title} className="p-6">
-                <h3 className="text-[15px] font-medium">{limit.title}</h3>
-                <p className="mt-2 text-[14px] leading-relaxed text-fg-muted">{limit.body}</p>
-              </Card>
-            ))}
-          </div>
-        </section>
-
-        <section className="mt-20">
-          <a
-            href="https://uniswap.org"
-            target="_blank"
-            rel="noreferrer"
-            className="group relative flex flex-col items-start gap-6 overflow-hidden rounded-[28px] p-7 transition-transform duration-300 hover:-translate-y-1 sm:flex-row sm:items-center sm:justify-between sm:p-8"
-            style={{ background: 'color-mix(in srgb, #FF007A 12%, transparent)' }}
-          >
-            <div className="pointer-events-none absolute -left-16 -top-16 h-64 w-64 rounded-full opacity-50 blur-3xl transition-opacity duration-500 group-hover:opacity-80" style={{ background: '#FF007A' }} aria-hidden="true" />
-            <div className="pointer-events-none absolute -bottom-20 right-10 h-56 w-56 rounded-full opacity-30 blur-3xl" style={{ background: '#FC72FF' }} aria-hidden="true" />
-            <div className="relative flex items-center gap-5">
-              <div className="dm-float rounded-full" style={{ '--dur': '9s', '--dx': '4px', '--dy': '-8px', boxShadow: '0 24px 60px -16px rgba(255,0,122,0.55)' } as React.CSSProperties}>
-                <TokenIcon symbol="UNI" size={64} />
-              </div>
-              <div>
-                <span className="font-mono text-[11px] uppercase tracking-[0.6px]" style={{ color: '#FF6FBE' }}>Protocol</span>
-                <h3 className="mt-1 font-display text-[26px] leading-tight">Built on Uniswap v4</h3>
-                <p className="mt-1.5 max-w-[52ch] text-[14px] leading-relaxed text-fg-muted">Every Domino position is a standard v4 position on Robinhood Chain. Domino looks after its upkeep and nothing else.</p>
-              </div>
-            </div>
-            <span className="relative inline-flex items-center gap-1.5 whitespace-nowrap rounded-[var(--radius-pill)] px-4 py-2 text-[13px] font-medium text-white transition group-hover:gap-2.5" style={{ background: '#FF007A' }}>
-              Learn about v4 <span aria-hidden="true">→</span>
-            </span>
-          </a>
-        </section>
+    <PageShell>
+      <Hero />
+      <FeatureCards className="mt-6" delay={60} />
+      <div className={cx('mt-10', RISE)} style={delay(120)}>
+        <DominoTokenCard />
       </div>
-    </main>
+      {/* The pools card holds an inline dialog, so it takes no entrance: nothing may leave a transform on its ancestors. */}
+      <section id="pools" className="mt-6">
+        <MarketsTable variant="featured" footer={<UniswapStrip />} />
+      </section>
+      <HowItWorks />
+      <section id="ranges" className="mt-12 md:mt-16">
+        <RangeSimulator />
+      </section>
+      <Limits />
+    </PageShell>
   )
 }

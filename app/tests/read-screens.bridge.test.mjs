@@ -166,7 +166,8 @@ async function settled(page) {
 }
 
 async function lookUp(page) {
-  await page.getByRole('button', { name: 'Show lookup' }).click();
+  const show = page.getByRole('button', { name: 'Show lookup' });
+  if (await show.count()) await show.click();
   await page.fill('#nft-ids', `1 ${BIG}`);
   await page.getByRole('button', { name: 'Look up positions' }).click();
 }
@@ -181,7 +182,10 @@ test('the lookup posts exactly the typed IDs, asks capabilities once, and spaces
   await lookUp(page);
   assert.equal(await settled(page), 'ok');
   assert.equal(await page.locator('[data-chain-card]').count(), 2);
-  assert.match(await page.locator('#chain-lookup').innerText(), /Chain read/);
+  // The section no longer carries a build pill; each card, opened, says its facts are read from chain.
+  const first = page.locator('[data-chain-card]').first();
+  await first.locator('summary').click();
+  assert.match(await first.innerText(), /Read from chain/);
 
   assert.deepEqual(edge.map((r) => `${r.method} ${r.path}`), [
     'GET /api/read/v1/capabilities',
@@ -252,10 +256,38 @@ test('position reads switched off on the server: said plainly, and not one posit
   }
 });
 
+
+/** The selected pools' lean load has finished on Markets: a row with a figure is on the page. */
+const poolsSettled = (page) => page.waitForFunction(() => document.querySelectorAll('[data-selected-pools] tbody [data-metric]').length > 0, null, { timeout: 30_000 });
+/** The fixture pool's card on the Markets rail has settled its hourly read: bars, or a line saying why there are none. */
+const cardSettled = (page) => page.waitForFunction(() => document.querySelector('[data-market-card] [data-volume-bar], [data-market-card] [data-chart-unavailable]'), null, { timeout: 30_000 });
+/**
+ * The route's own reading on mount: the capabilities once per namespace, then the fixture pool's market and its two
+ * tokens, then the rail card's one hourly read for that pool (with price history), queued behind the table's reads.
+ */
+const MOUNT = ['GET /api/read/v2/capabilities', 'GET /api/read/v1/capabilities', 'POST /api/read/v1/pool-market', 'POST /api/read/v1/token', 'POST /api/read/v1/token', 'POST /api/read/v1/pool-market'];
+const trail = () => edge.map((r) => `${r.method} ${r.path}`);
+const POOL = '0x0911afcb281d7bcae2d71443ceaeebd0f89b4537708449970d797622b4b4c941';
+
+/**
+ * Searches an address on Markets: typed as a pair name it matches no selected pool, so the empty state's token search
+ * starts from it, and choosing the address there is one token read that opens the token's view by the address bar.
+ */
+async function search(page, address) {
+  await poolsSettled(page);
+  await page.locator('#markets-search').fill(address);
+  const combobox = page.getByRole('combobox', { name: 'Token name or address' });
+  await combobox.waitFor();
+  assert.equal(await combobox.inputValue(), address, 'the token search starts from the typed address');
+  await combobox.click();
+  await page.locator(`[data-token-option="${address.toLowerCase()}"]`).click();
+  await page.waitForFunction((wire) => location.hash === `#/markets/${wire}`, address);
+}
+
 test('the landing reads one listed pool, never a placeholder id, and pool activity only when a pool is opened', async () => {
   const { context, page, errors } = await visit('/');
   await page.locator('#pools tbody tr').first().waitFor({ timeout: 30_000 });
-  await page.waitForFunction(() => document.querySelector('[data-pool-figure-notes]'), null, { timeout: 30_000 });
+  await page.waitForFunction(() => document.querySelector('#pools tbody tr [data-provenance]'), null, { timeout: 30_000 });
   const routes = () => posts().map((r) => r.path.replace('/api/read/v1/', ''));
   // F3's table path does not read pool-metrics (marketsProvider.ts:11, "No
   // pool-metrics read"), so the landing asks three times, not four.
@@ -275,85 +307,113 @@ test('the landing reads one listed pool, never a placeholder id, and pool activi
   await context.close();
 });
 
-test('the normal pool explorer reads the chosen token, discovery and catalogue only on demand, through the public bridge', async () => {
+test('Markets reads the searched token, then its pools and the catalogue only on demand, through the public bridge; a pool page opens only from a verified read', async () => {
   const { context, page, errors } = await visit('/pools');
   try {
-    await page.getByRole('heading', { name: 'Explore pools', exact: true }).waitFor();
-    assert.deepEqual(edge, [], 'route mount makes no API request');
-    await page.getByRole('button', { name: 'Choose first token', exact: true }).click();
-    const dialog = page.locator('[data-pool-selection-dialog]');
-    await page.fill('#token-address', TOKEN);
+    await page.getByRole('heading', { name: 'Markets', exact: true }).waitFor();
+    // The selected pools are on Markets: their lean load, and the rail card's one hourly read for its pool, are the route's only reading on mount.
+    await poolsSettled(page);
+    await cardSettled(page);
     await page.waitForTimeout(300);
-    assert.deepEqual(edge, [], 'opening the dialog, picker and typing an address reads nothing');
-    await dialog.getByRole('button', { name: 'Check address', exact: true }).click();
-    const candidate = dialog.locator('[data-candidate="erc20_candidate"]');
-    await candidate.waitFor({ timeout: 30_000 });
-    assert.match(await candidate.innerText(), new RegExp(TOKEN));
-    await candidate.getByRole('radio').check();
-    await dialog.getByRole('button', { name: 'Use this token' }).click();
-    await dialog.waitFor({ state: 'detached' });
-    const pool = page.locator('[data-pool-option="discovery"]');
+    assert.deepEqual(trail(), MOUNT, 'route mount reads the selected pools, then the card\'s hourly read, and nothing else');
+    const cardRead = JSON.parse(posts()[3].body);
+    assert.deepEqual(cardRead, { poolId: POOL, includePriceHistory: true, priceToken: 'quote' }, 'the card asks for the same candles the pool page would');
+    assert.ok(posts()[3].at - posts()[2].at >= 1050, 'and queues behind the table\'s reads');
+    await page.locator('#markets-search').fill(TOKEN);
+    const combobox = page.getByRole('combobox', { name: 'Token name or address' });
+    await combobox.waitFor();
+    assert.equal(await combobox.inputValue(), TOKEN, 'no selected pool matches, so the token search starts from the address');
+    await page.waitForTimeout(300);
+    assert.deepEqual(trail(), MOUNT, 'typing an address reads nothing: only choosing it asks');
+    await combobox.click();
+    await page.locator(`[data-token-option="${TOKEN}"]`).click();
+    const card = page.locator('[data-token-lookup="ok"]');
+    await card.waitFor({ timeout: 30_000 });
+    assert.equal(await page.evaluate(() => location.hash), `#/markets/${TOKEN}`, 'the searched token is the link');
+    assert.match(await card.innerText(), /Read at block 700/);
+    await page.waitForTimeout(300);
+    assert.equal(await page.locator('[data-found-pools]').count(), 0, 'a search asks first: no pools until Find pools');
+    assert.equal(posts().some((r) => r.path.endsWith('/pools')), false, 'and no pools read on its own');
+
+    await page.locator('[data-find-pools]').click();
+    const pool = page.locator('[data-found-pools] [data-pool-option="discovery"]');
     await pool.waitFor({ timeout: 30_000 });
+    assert.equal(await page.locator('[data-find-pools]').innerText(), 'Pools below');
     await pool.locator('summary').click();
     const poolText = await pool.innerText();
     assert.match(poolText, /Found by DexScreener discovery, verified on chain/);
     assert.match(poolText, /verified at block 700/);
     assert.match(poolText, /Pool APR unavailable/);
     assert.doesNotMatch(poolText, /APR\s*0(?:\.0+)?%/);
+    assert.equal(await pool.locator('input').count(), 0, 'on Explore a pool row is a way in, not a choice');
     assert.equal(posts().some((r) => r.path.endsWith('/catalogue')), false, 'catalogue is not loaded with discovery');
-    await page.getByText('More sources · stored catalogue', { exact: true }).click();
-    await page.getByRole('button', { name: 'Load catalogue candidates' }).click();
+    const browser = page.locator('[data-catalogue-browser]');
+    await browser.locator('summary').click();
+    assert.match(await browser.innerText(), /a candidate opens once verified at the latest block/);
+    await browser.getByRole('button', { name: 'Load catalogue candidates' }).click();
     await page.locator('[data-catalogue-item]').waitFor({ timeout: 30_000 });
-    assert.match(await page.locator('[data-catalogue]').innerText(), /configured block interval only/);
+    assert.match(await page.locator('[data-catalogue]').innerText(), /Configured interval only, blocks \d+–(?:\d+|not yet indexed)\. Not complete history\./);
     assert.equal(await page.locator('[data-catalogue-item] input[type="radio"]').count(), 0, 'a stored candidate is not a selectable verified pool');
+    assert.equal(await page.locator('[data-catalogue-item]').getByRole('button', { name: 'Verify at the latest block' }).count(), 1, 'a candidate opens only after a verification read');
 
-    await pool.getByRole('radio').check();
-    await page.getByRole('button', { name: 'Explore range' }).click();
-    await page.getByRole('dialog', { name: 'Range on this pool', exact: true }).waitFor();
-    assert.match(await dialog.innerText(), /Nothing is quoted, created, approved or signed/);
-    await page.keyboard.press('Escape');
-    assert.equal(await pool.getByRole('radio').isChecked(), true, 'closing range preserves the selected pool');
-    await dialog.waitFor({ state: 'detached' });
+    // The pool row opens its page, which starts from a verified read of that one id, then the page's lean market read.
+    await pool.locator('[data-open-pool]').click();
+    await page.waitForFunction((hash) => location.hash === hash, `#/pool/${POOL}/${TOKEN}`);
+    const workspace = page.locator(`[data-pool-workspace="${POOL}"]`);
+    await workspace.waitFor({ timeout: 30_000 });
+    assert.match(await workspace.innerText(), /Verified at block 700/);
+    await page.waitForFunction(() => document.querySelectorAll('[data-pool-figures] [data-metric]').length > 0, null, { timeout: 30_000 });
+    // The range planner is always on the pool page, not behind a tab.
+    const range = page.locator('[data-picker="range"]');
+    await range.waitFor();
+    assert.equal(await range.getAttribute('data-price-state'), 'usable');
+    assert.deepEqual(await range.locator('input[type="range"]').evaluateAll((els) => els.map((el) => el.id)), ['range-lower', 'range-upper']);
+    assert.equal(await page.locator('main').getByRole('link', { name: 'New position' }).getAttribute('href'), `#/new/${POOL}`);
+    const forbidden = /sign|approve|connect|deposit|swap|quote|mint|confirm|execute|buy|sell/i;
+    for (const name of await page.locator('main button').allInnerTexts()) assert.doesNotMatch(name, forbidden, name);
     await page.waitForTimeout(1200);
 
-    assert.deepEqual(edge.map((r) => `${r.method} ${r.path}`), [
-      'GET /api/read/v1/capabilities',
+    // The token search reads the chosen address, then the token's view reads it for itself (DESIGN.md E.2).
+    assert.deepEqual(trail().slice(MOUNT.length), [
+      'POST /api/read/v1/token',
       'POST /api/read/v1/token',
       'POST /api/read/v1/pools',
       'POST /api/read/v1/catalogue',
+      'POST /api/read/v1/pools',
+      'POST /api/read/v1/pool-market',
     ], 'only explicit public reads: no market polling, session or financial call');
-    assert.deepEqual(posts().map((r) => JSON.parse(r.body)), [{ token: TOKEN }, { token: TOKEN }, { token: TOKEN, limit: 20 }]);
+    assert.deepEqual(posts().slice(4).map((r) => JSON.parse(r.body)), [
+      { token: TOKEN },
+      { token: TOKEN },
+      { token: TOKEN },
+      { token: TOKEN, limit: 20 },
+      { token: TOKEN, maxPools: 1, poolIds: [POOL] },
+      { poolId: POOL, includePriceHistory: false },
+    ]);
     for (const r of edge) {
       assert.equal(r.headers['sec-fetch-site'], 'same-origin');
       for (const forbidden of ['authorization', 'x-domino-csrf', 'x-domino-session']) assert.equal(r.headers[forbidden], undefined, forbidden);
     }
     const starts = posts().map((r) => r.at);
-    for (let i = 1; i < starts.length; i++) assert.ok(starts[i] - starts[i - 1] >= 1050, `explorer POST starts ${starts[i] - starts[i - 1]} ms apart`);
+    for (let i = 1; i < starts.length; i++) assert.ok(starts[i] - starts[i - 1] >= 1050, `POST starts ${starts[i] - starts[i - 1]} ms apart`);
 
-    // A pair change cannot retain a pool or range from the old query.
-    await page.getByRole('button', { name: 'Choose second token (optional)' }).click();
-    assert.equal(await dialog.locator('[data-candidate="erc20_candidate"] input[type="radio"]').isDisabled(), true, 'the first token cannot also be the second');
+    // Back on Markets with no token in the link, nothing of the search remains; a new search starts from its own token reads.
+    await page.locator('nav[aria-label="Breadcrumb"]').getByRole('link', { name: 'Markets' }).click();
+    await page.waitForFunction(() => location.hash === '#/markets');
+    await page.getByRole('heading', { name: 'Markets', exact: true }).waitFor();
+    assert.equal(await page.locator('[data-token-lookup], [data-pool-option], [data-catalogue-item]').count(), 0, 'leaving the search discards its findings');
+    const before = posts().length;
     const native = '0x0000000000000000000000000000000000000000';
-    await page.fill('#token-address', native);
-    await dialog.getByRole('button', { name: 'Check address', exact: true }).click();
-    await dialog.locator('[data-candidate="native"]').waitFor({ timeout: 30_000 });
-    await dialog.locator('[data-candidate="native"]').getByRole('radio').check();
-    await dialog.getByRole('button', { name: 'Use this asset' }).click();
-    await dialog.waitFor({ state: 'detached' });
-    assert.equal(await page.getByRole('button', { name: 'Explore range' }).isDisabled(), true, 'changing the pair clears the previous pool');
-    assert.equal(await page.locator('[data-pool-option] input:checked').count(), 0);
-    await page.waitForFunction(() => !document.querySelector('[data-screen-status="loading"]'));
-    await page.getByRole('button', { name: 'Choose first token', exact: true }).click();
-    await dialog.locator('[data-candidate="native"]').getByRole('radio').check();
-    await dialog.getByRole('button', { name: 'Use this token' }).click();
-    await dialog.waitFor({ state: 'detached' });
-    assert.equal(await page.getByRole('button', { name: 'Clear second token' }).count(), 0, 'changing the first token clears the second');
-    assert.equal(await page.getByRole('button', { name: 'Explore range' }).isDisabled(), true);
+    await search(page, native);
+    await page.locator('[data-token-lookup="ok"][data-token-card="native"]').waitFor({ timeout: 30_000 });
+    await page.waitForTimeout(300);
+    assert.equal(await page.locator('[data-found-pools], [data-pool-option]').count(), 0, 'a new token has no pools until asked');
+    assert.deepEqual(posts().slice(before).map((r) => JSON.parse(r.body)), [{ token: native }, { token: native }], 'the search\'s token read and the view\'s own, and no pools read on its own');
     await page.goto(`${origin}/#/settings`);
     await page.getByRole('heading', { name: 'Settings', exact: true }).waitFor();
     await page.goto(`${origin}/#/pools`);
-    await page.getByRole('button', { name: 'Choose first token', exact: true }).waitFor();
-    assert.equal(await page.locator('[data-pool-option]').count(), 0, 'leaving the route discards its choices');
+    await page.getByRole('heading', { name: 'Markets', exact: true }).waitFor();
+    assert.equal(await page.locator('[data-token-lookup], [data-pool-option]').count(), 0, 'leaving the route discards its choices');
     assert.deepEqual(errors, []);
   } finally {
     await context.close();
@@ -361,7 +421,7 @@ test('the normal pool explorer reads the chosen token, discovery and catalogue o
 });
 
 for (const route of ['pools', 'catalogue']) {
-  test(`the normal pool explorer retries a failed first ${route} read explicitly without changing the pair`, { timeout: 45_000 }, async () => {
+  test(`Markets retries a failed first ${route} read explicitly, without losing the searched token`, { timeout: 45_000 }, async () => {
     const { context, page, errors } = await visit('/pools');
     let calls = 0;
     let release = () => undefined;
@@ -375,27 +435,22 @@ for (const route of ['pools', 'catalogue']) {
       return (async () => { started(); await held; return REPLY(read, body); })();
     };
     try {
-      await page.getByRole('button', { name: 'Choose first token', exact: true }).click();
-      const dialog = page.locator('[data-pool-selection-dialog]');
-      await page.fill('#token-address', TOKEN);
-      await dialog.getByRole('button', { name: 'Check address', exact: true }).click();
-      const candidate = dialog.locator('[data-candidate="erc20_candidate"]');
-      await candidate.waitFor({ timeout: 30_000 });
-      await candidate.getByRole('radio').check();
-      await dialog.getByRole('button', { name: 'Use this token' }).click();
-      await dialog.waitFor({ state: 'detached' });
+      await page.getByRole('heading', { name: 'Markets', exact: true }).waitFor();
+      await search(page, TOKEN);
+      await page.locator('[data-token-lookup="ok"]').waitFor({ timeout: 30_000 });
+      await page.locator('[data-find-pools]').click();
       if (route === 'catalogue') {
-        await page.locator('[data-pool-option="discovery"]').waitFor({ timeout: 30_000 });
-        await page.getByText('More sources · stored catalogue', { exact: true }).click();
-        await page.getByRole('button', { name: 'Load catalogue candidates' }).click();
+        await page.locator('[data-found-pools] [data-pool-option="discovery"]').waitFor({ timeout: 30_000 });
+        await page.locator('[data-catalogue-browser] summary').click();
+        await page.locator('[data-catalogue-browser]').getByRole('button', { name: 'Load catalogue candidates' }).click();
       }
-      const status = page.locator(route === 'pools' ? '[data-picker="pool"] > [data-screen-status]' : '[data-catalogue] > [data-screen-status]');
+      const status = page.locator(route === 'pools' ? '[data-found-pools] [data-picker="pool"] > [data-screen-status]' : '[data-catalogue] > [data-screen-status]');
       await status.getByText('The read service answered:', { exact: false }).waitFor({ timeout: 30_000 });
       assert.equal(await status.getAttribute('data-screen-status'), 'unavailable');
       await page.waitForTimeout(1200);
       assert.equal(calls, 1, '503 never starts an automatic retry');
       const retry = status.getByRole('button', { name: 'Retry', exact: true });
-      assert.equal(await retry.count(), 1, `${route}: a failed first read needs an explicit Retry without changing the pair`);
+      assert.equal(await retry.count(), 1, `${route}: a failed first read needs an explicit Retry, with the token as searched`);
       await retry.click();
       await retryStarted;
       const trying = status.getByRole('button', { name: 'Trying again…', exact: true });
@@ -404,13 +459,14 @@ for (const route of ['pools', 'catalogue']) {
       await page.waitForTimeout(100);
       assert.equal(calls, 2, 'busy Retry cannot start another logical read');
       release();
-      await page.locator(route === 'pools' ? '[data-pool-option="discovery"]' : '[data-catalogue-item]').waitFor({ timeout: 30_000 });
+      await page.locator(route === 'pools' ? '[data-found-pools] [data-pool-option="discovery"]' : '[data-catalogue-item]').waitFor({ timeout: 30_000 });
       assert.equal(await status.getByRole('button').count(), 0, 'a successful retry clears the failure');
-      assert.equal(await page.getByRole('button', { name: 'Choose second token (optional)' }).isDisabled(), false, 'the first token remains selected');
+      assert.equal(await page.locator('[data-token-lookup="ok"]').count(), 1, 'the searched token remains');
+      assert.equal(await page.locator('[data-find-pools]').innerText(), 'Pools below', 'and its pools stay asked for');
       const requests = posts().filter((r) => r.path.endsWith(`/${route}`));
       assert.equal(requests.length, 2);
       const expected = route === 'pools' ? { token: TOKEN } : { token: TOKEN, limit: 20 };
-      assert.deepEqual(requests.map((r) => JSON.parse(r.body)), [expected, expected], 'Retry repeats the same question, without a cursor or another pair');
+      assert.deepEqual(requests.map((r) => JSON.parse(r.body)), [expected, expected], 'Retry repeats the same question, without a cursor or another token');
       assert.ok(requests[1].at - requests[0].at >= 1050, 'Retry uses the shared paced source');
       assert.deepEqual(errors, []);
     } finally {
@@ -421,32 +477,42 @@ for (const route of ['pools', 'catalogue']) {
   });
 }
 
-// #3 gives the existing public-wallet selector a normal app entrance; B4 no
-// longer depends on the separate create/deposit flow or a lab-only modal.
+// The public-wallet selector's app entrance is New position's first step (DESIGN.md E.4): "More ways to find a
+// token", then the token picker's public listing. B4 does not depend on a lab-only modal.
 test('B4: the wallet handle goes back to the bridge byte for byte in the POST body, and never into a URL, a Referer, storage or the page', async () => {
-  const { context, page, errors } = await visit('/pools');
+  const { context, page, errors } = await visit('/new');
   // A fresh document with the watcher in place before any app code runs; the reads so far don't count.
   await page.addInitScript(watchForHandle, HANDLE.slice(0, 16));
   await page.reload({ waitUntil: 'networkidle' });
+  await page.getByRole('heading', { name: 'New position', exact: true }).waitFor();
   edge = [];
   upstream = [];
   walletReplies = [];
   const seen = [];
   page.on('request', (request) => seen.push({ url: request.url(), referer: request.headers().referer ?? '' }));
-  await page.getByRole('button', { name: 'Choose first token', exact: true }).click();
-  const dialog = page.locator('[data-pool-selection-dialog]');
-  await dialog.getByRole('button', { name: 'List tokens from a public address' }).click();
+  const moreWays = page.locator('summary', { hasText: 'More ways to find a token' });
+  await moreWays.click();
+  const ways = page.locator('details').filter({ has: moreWays });
+  const listing = ways.locator('[data-wallet-candidates]');
+  await listing.getByRole('button', { name: 'List tokens from a public address' }).click();
   await page.fill('#wallet-address', OWNER);
-  assert.deepEqual(edge, [], 'wallet listing waits for an explicit request, not opening the picker');
-  await dialog.getByRole('button', { name: 'List tokens', exact: true }).click();
-  const wallet = dialog.locator('[data-wallet-candidates]');
+  await page.waitForTimeout(300);
+  assert.deepEqual(edge, [], 'wallet listing waits for an explicit request, not opening the listing');
+  await listing.getByRole('button', { name: 'List tokens', exact: true }).click();
+  const wallet = listing;
   await page.waitForFunction(() => document.querySelector('[data-wallet-pages="1"]'), null, { timeout: 30_000 });
-  assert.match(await wallet.innerText(), /Public lookup, not your wallet/);
+  assert.match(await wallet.innerText(), /Balances at the snapshot block\. Not proof of wallet control\./);
   // The handle is live now (the first page's next handle, not yet sent back): look while it exists.
   assert.equal(JSON.parse(walletReplies[0]).inventory.nextCursor, HANDLE);
   assert.deepEqual(await handlePlaces(page, HANDLE.slice(0, 16)), NOWHERE, 'the live handle is in the page');
   await wallet.getByRole('button', { name: 'Load more' }).click();
   await page.waitForFunction(() => /All pages loaded/.test(document.querySelector('[data-wallet-candidates]')?.textContent ?? ''), null, { timeout: 30_000 });
+  // The listed tokens become candidates by address only, and no link anywhere carries the handle.
+  const listed = ways.locator('[data-candidate] [data-address]');
+  assert.ok((await listed.count()) > 0, 'the listed tokens are on the page');
+  for (const address of await listed.allTextContents()) assert.match(address.trim(), /^0x[0-9a-fA-F]{40}$/, address);
+  const linked = await page.locator('a[href]').evaluateAll((els, prefix) => els.map((a) => a.getAttribute('href')).filter((href) => href.includes(prefix)), HANDLE.slice(0, 16));
+  assert.deepEqual(linked, [], 'no link carries the handle');
 
   // What the browser received is the stub's handle, untouched by the bridge.
   assert.equal(walletReplies.length, 2);
@@ -457,6 +523,8 @@ test('B4: the wallet handle goes back to the bridge byte for byte in the POST bo
   const up = upstream.filter((r) => r.route === 'wallet-assets');
   assert.deepEqual(up.map((r) => r.raw), walletPosts.map((r) => r.body));
   assert.equal(up[1].body.cursor, HANDLE);
+  // New position reads nothing on mount, so the listing's first request asks the read capabilities, once (a screen
+  // read never probes the estimate namespace, as the lookup above shows); the listing itself is two POSTs and nothing else.
   assert.deepEqual(edge.map((r) => `${r.method} ${r.path}`), [
     'GET /api/read/v1/capabilities',
     'POST /api/read/v1/wallet-assets',

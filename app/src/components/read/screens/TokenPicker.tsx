@@ -5,14 +5,15 @@ import { parseAddressInput, screenPaste, searchByAddress, type AddressKey } from
 import { readWithin } from '../../../lib/read/screens/screenRead'
 import { candidateFromToken, excluding, mergeCandidates, selectable, type TokenCandidate } from '../../../lib/read/screens/tokens'
 import type { ReadSource } from '../../../lib/read/types'
+import { IconCheck } from '../../icons'
 import { TokenMark } from '../../TokenIcon'
-import { Button } from '../../ui'
+import { Button, Chip, cx } from '../../ui'
 import { Address } from './Address'
 import { ScreenStatus, type StatusLine } from './ScreenStatus'
 import { SymbolText } from './SymbolText'
 import { WalletCandidates } from './WalletCandidates'
 
-const KIND = { native: 'Native currency', erc20_candidate: 'ERC-20 candidate', unknown: 'Unknown' } as const
+const KIND = { native: 'Native ETH', erc20_candidate: 'Token', unknown: 'Unknown token' } as const
 
 export function whyText(candidate: TokenCandidate): string | null {
   switch (candidate.why) {
@@ -32,7 +33,7 @@ export function whyText(candidate: TokenCandidate): string | null {
 }
 
 /** A pasted address, checked exactly as typed, read once per "Check address". */
-function PasteForm({ source, onFound }: { source: ReadSource; onFound: (candidate: TokenCandidate) => void }) {
+function PasteForm({ source, onFound, id }: { source: ReadSource; onFound: (candidate: TokenCandidate) => void; id: string }) {
   const [value, setValue] = useState('')
   const [problem, setProblem] = useState<string | null>(null)
   const [line, setLine] = useState<StatusLine | null>(null)
@@ -76,35 +77,37 @@ function PasteForm({ source, onFound }: { source: ReadSource; onFound: (candidat
   }
 
   return (
-    <form onSubmit={submit} className="grid gap-2" noValidate>
-      <label htmlFor="token-address" className="text-[13px] text-fg-muted">
+    <form onSubmit={submit} className="dm-flow-paste" noValidate>
+      <label htmlFor={id} className="dm-label">
         {COPY.picker.pasteLabel}
       </label>
-      <div className="flex flex-wrap gap-2">
+      <div className="dm-flow-paste-row">
         <input
-          id="token-address"
+          id={id}
           value={value}
           onChange={(e) => setValue(e.target.value)}
           onPaste={paste}
           spellCheck={false}
           autoComplete="off"
+          autoCapitalize="off"
+          placeholder="0x…"
           aria-invalid={problem ? true : undefined}
-          aria-describedby={problem ? 'token-address-hint token-address-error' : 'token-address-hint'}
-          className="min-w-0 flex-1 rounded-[var(--radius)] border bg-surface-1 px-3 py-2 font-mono text-[13px] outline-none focus-visible:outline-2 focus-visible:outline-[var(--ring)]"
+          aria-describedby={problem ? `${id}-hint ${id}-error` : `${id}-hint`}
+          className="dm-field dm-flow-mono min-w-0 flex-1"
         />
-        <Button type="submit" variant="outline" aria-disabled={busy ? true : undefined}>
+        <Button type="submit" variant="outline" className="dm-flow-paste-submit" aria-disabled={busy ? true : undefined}>
           {busy ? COPY.picker.checking : COPY.picker.check}
         </Button>
       </div>
-      <p id="token-address-hint" className="text-[11px] text-fg-subtle">
-        {COPY.picker.pasteHint}
+      <p id={`${id}-hint`} className="dm-hint">
+        Find a token on Robinhood Chain by its contract address.
       </p>
       {problem && (
-        <p id="token-address-error" role="alert" className="text-[12px]" style={{ color: 'var(--money-out)' }}>
+        <p id={`${id}-error`} role="alert" className="dm-error">
           {problem}
         </p>
       )}
-      <ScreenStatus line={line} />
+      <ScreenStatus line={line} className="mt-2" />
     </form>
   )
 }
@@ -112,31 +115,49 @@ function PasteForm({ source, onFound }: { source: ReadSource; onFound: (candidat
 function CandidateRow({ candidate, name, checked, onPick, index }: { candidate: TokenCandidate; name: string; checked: boolean; onPick: () => void; index: number }) {
   const why = whyText(candidate)
   const whyId = `${name}-why-${index}`
+  const choosable = selectable(candidate)
   return (
-    <li className="rounded-[var(--radius)] border bg-surface-1 px-3 py-2.5" data-candidate={candidate.kind} {...(candidate.why ? { 'data-not-selectable': candidate.why } : {})}>
-      <label className="flex cursor-pointer items-start gap-3">
-        <input type="radio" name={name} checked={checked} disabled={!selectable(candidate)} onChange={onPick} aria-describedby={why ? whyId : undefined} className="mt-1 h-4 w-4 shrink-0 accent-[var(--primary)]" />
-        <TokenMark token={candidate.token} size={22} />
-        <span className="grid min-w-0 gap-0.5">
-          <span className="flex flex-wrap items-baseline gap-x-2 text-[13px]">
-            <span className="font-medium">
+    <li className="dm-flow-candidate" data-checked={checked ? '' : undefined} data-candidate={candidate.kind} {...(candidate.why ? { 'data-not-selectable': candidate.why } : {})}>
+      <label className={cx('dm-flow-candidate-main', choosable ? 'cursor-pointer' : 'cursor-not-allowed')}>
+        <input type="radio" name={name} checked={checked} disabled={!choosable} onChange={onPick} aria-describedby={why ? whyId : undefined} className="shrink-0" />
+        <TokenMark token={candidate.token} size={28} />
+        <span className="grid min-w-0 flex-1 gap-0.5">
+          <span className="flex min-w-0 flex-wrap items-baseline gap-x-2">
+            <span className="text-body font-medium text-fg">
               <SymbolText token={candidate.token} />
             </span>
-            <span className="text-[11px] text-fg-subtle">{KIND[candidate.kind]}</span>
-            {candidate.decimalsUnavailable && candidate.why === null && <span className="text-[11px] text-money-wait">{COPY.selection.decimalsUnavailable}</span>}
-            {candidate.old && <span className="text-[11px] text-fg-subtle">{COPY.picker.fromEarlier}</span>}
+            <span className="text-caption text-fg-subtle">{KIND[candidate.kind]}</span>
+            {candidate.decimalsUnavailable && candidate.why === null && <span className="text-caption text-money-wait">{COPY.selection.decimalsUnavailable}</span>}
+            {candidate.old && <span className="text-caption text-fg-subtle">{COPY.picker.fromEarlier}</span>}
           </span>
-          <Address value={candidate.key} />
+          <span className="text-caption text-fg-subtle">
+            <Address value={candidate.key} short />
+          </span>
           {candidate.balance && candidate.why === null && (
-            <span className="text-[12px] text-fg-muted">
-              Balance at the snapshot block: <span className="tnum font-mono">{candidate.balance.text}</span>
+            <span className="text-caption text-fg-muted">
+              Balance at snapshot: <span className="tnum text-fg">{candidate.balance.text}</span>
               {candidate.page !== null && <span className="text-fg-subtle"> · page {candidate.page}</span>}
             </span>
           )}
         </span>
+        {checked && (
+          <span aria-hidden="true" className="dm-flow-candidate-check">
+            <IconCheck size={14} />
+          </span>
+        )}
       </label>
+      <details className="dm-flow-candidate-details">
+        <summary>Token details</summary>
+        <div className="dm-flow-candidate-facts">
+          <Address value={candidate.key} />
+          <p>
+            Robinhood Chain · {candidate.kind === 'native' ? 'Native currency' : candidate.kind === 'erc20_candidate' ? 'ERC-20 candidate' : 'Token type unavailable'}
+            {candidate.token.decimals === null ? ' · decimals unavailable' : ` · ${candidate.token.decimals} decimals`}
+          </p>
+        </div>
+      </details>
       {why && (
-        <p id={whyId} className="ml-7 mt-1 text-[12px] text-fg-subtle">
+        <p id={whyId} className="dm-flow-candidate-why">
           {why}
         </p>
       )}
@@ -157,6 +178,7 @@ export function TokenPicker({
   onCandidates,
   pending,
   onPending,
+  initialWallet,
 }: {
   source: ReadSource
   variant: 'token' | 'pair'
@@ -165,6 +187,8 @@ export function TokenPicker({
   onCandidates: (next: TokenCandidate[]) => void
   pending: TokenCandidate | null
   onPending: (candidate: TokenCandidate | null) => void
+  /** An address to start the wallet list from, such as the header's connected wallet. */
+  initialWallet?: string
 }) {
   const [filter, setFilter] = useState('')
   const rows = candidates.map((candidate) => excluding(candidate, exclude))
@@ -183,44 +207,51 @@ export function TokenPicker({
   }
 
   return (
-    <div className="grid gap-4" data-picker={variant}>
-      <div className="grid gap-1.5 text-[12px] leading-relaxed text-fg-muted">
-        {variant === 'pair' && <p>{COPY.picker.secondNote}</p>}
-        <p>{COPY.picker.nativeNote}</p>
-      </div>
-      <PasteForm source={source} onFound={(candidate) => add([candidate])} />
-      <WalletCandidates source={source} onRows={(incoming) => add(incoming.map((row) => ({ ...row })))} />
+    <div className="dm-flow-picker" data-picker={variant}>
+      {/* A pair picker can be open in a dialog while the token picker stays mounted beside it: its fields take their own ids. */}
+      <PasteForm source={source} id={variant === 'pair' ? 'pair-address' : 'token-address'} onFound={(candidate) => add([candidate])} />
+      <WalletCandidates source={source} fieldPrefix={variant === 'pair' ? 'pair-wallet' : 'wallet'} initialWallet={initialWallet} onRows={(incoming) => add(incoming.map((row) => ({ ...row })))} />
       {rows.length > 0 && (
-        <fieldset className="grid gap-2">
-          <legend className="mb-1 text-[13px] font-medium">{COPY.picker.candidates}</legend>
-          <label htmlFor={`${variant}-filter`} className="text-[12px] text-fg-muted">
-            {COPY.picker.filterLabel}
-          </label>
-          <input
-            id={`${variant}-filter`}
-            value={filter}
-            onChange={(e) => setFilter(e.target.value)}
-            spellCheck={false}
-            autoComplete="off"
-            aria-describedby={`${variant}-filter-hint`}
-            className="rounded-[var(--radius)] border bg-surface-1 px-3 py-1.5 font-mono text-[12px] outline-none focus-visible:outline-2 focus-visible:outline-[var(--ring)]"
-          />
-          <p id={`${variant}-filter-hint`} className="text-[11px] text-fg-subtle">
-            {COPY.picker.filterHint}
-          </p>
-          {visible.length === 0 && <p className="text-[12px] text-fg-subtle">{COPY.picker.noMatch}</p>}
-          <ul className="grid gap-2">
+        <fieldset className="dm-flow-candidates">
+          <legend className="dm-flow-legend">
+            {COPY.picker.candidates} <Chip className="ml-1">{rows.length}</Chip>
+          </legend>
+          <div>
+            <label htmlFor={`${variant}-filter`} className="dm-label">
+              {COPY.picker.filterLabel}
+            </label>
+            <input
+              id={`${variant}-filter`}
+              value={filter}
+              onChange={(e) => setFilter(e.target.value)}
+              spellCheck={false}
+              autoComplete="off"
+              autoCapitalize="off"
+              placeholder="Filter these tokens by address…"
+              aria-describedby={`${variant}-filter-hint`}
+              className="dm-field dm-flow-mono"
+            />
+            <p id={`${variant}-filter-hint`} className="dm-hint">
+              {COPY.picker.filterHint}
+            </p>
+          </div>
+          {visible.length === 0 && <p className="text-caption text-fg-subtle">{COPY.picker.noMatch}</p>}
+          <ul className="dm-flow-candidate-list">
             {visible.map((candidate, i) => (
               <CandidateRow key={candidate.key} candidate={candidate} name={name} index={i} checked={pending?.key === candidate.key} onPick={() => onPending(candidate)} />
             ))}
           </ul>
           {hiddenPending && (
-            <p className="text-[12px] text-fg-muted" data-selected-hidden="">
+            <p className="text-caption text-fg-muted" data-selected-hidden="">
               {COPY.picker.selectedHidden} <SymbolText token={hiddenPending.token} /> <Address value={hiddenPending.key} />
             </p>
           )}
         </fieldset>
       )}
+      <details className="dm-details dm-flow-note">
+        <summary>About native ETH & wrapped tokens</summary>
+        <p>{COPY.picker.nativeNote}</p>
+      </details>
     </div>
   )
 }

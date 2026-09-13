@@ -3,18 +3,30 @@
  * where the /api forwarder and its bridge would be. Every honest state the
  * landing can be in, and exactly what each one costs on the wire:
  *
- *   (a) forwarder 503 bridge_unavailable   Live data isn't connected yet: 1 GET, 0 POST, no Retry
+ *   (a) forwarder 503 bridge_unavailable   Live data isn't connected yet: 2 GETs, 0 POST, no Retry
  *   (b) forwarder 404 not_found            Live data isn't available on this address
  *   (c) capabilities off, or no reads      Live data is switched off for now: 0 POST
- *   (d) reads enabled                      1 GET + 5 POSTs in order; APR unavailable; provider and age
+ *   (d) reads enabled                      2 GETs + the lean load in order; APR unavailable; provider and age
  *   (e) 404 route_not_available            switched off, after the first POST
- *   (f) producer 503                       Temporarily unavailable with Retry, never asked again on its own
+ *   (f) producer 503                       Temporarily unavailable, never asked again on its own
  *   (g) 429 read_capacity_busy             asked again under R-1 after its Retry-After
  *   (h) no access cookie                   the gate's 401: Beta access needed
  *   (i)-(l) #93's display rules, per row   provider figures dated by retrieval only; a rejected,
- *                                          stale, null or failed pool never takes the other with it
+ *                                          stale, null or failed pool never takes the others with it;
+ *                                          a pool still busy after R-1 is asked again on its own
  *
- * The stub serves test data only: package fixtures rewritten to the two
+ * Home's Selected pools card shows the pools and their figures and nothing
+ * else, as the owner decided on reviewing the redesign: no status panel, no
+ * Refresh, no Retry, no sign-in link. Each state above is said only in the
+ * table's visually hidden live region, as its code and its title. A read
+ * service that was only busy is asked again on its own; nothing else is.
+ *
+ * With nothing read, the six reviewed pools are still listed from the
+ * catalogue's labels alone (src/config/selectedPoolCatalogue.ts): every
+ * figure a dash that says it is unavailable, never a number. A read replaces
+ * exactly the row whose pool id it answers.
+ *
+ * The stub serves test data only: package fixtures rewritten to the six
  * selected pool ids, with made-up pairs and symbols. Everything else is the
  * real dist, the real gate and the real read pipeline, and R-1's pacing runs
  * in real time here, so this file is timing-sensitive: rerun it once if it flakes.
@@ -34,19 +46,55 @@ const RC3 = '1.1.0-rc.3';
 const READ = resolve(import.meta.dirname, '../../api-contracts/read-v1/fixtures/gateway');
 const fixture = (name) => JSON.parse(readFileSync(join(READ, `${name}.json`), 'utf8'));
 
-/** The pools dist reads, taken from the reviewed config itself. */
+/** The pools dist reads, taken from the reviewed config itself: six of them. */
 const SELECTED = readFileSync(resolve(import.meta.dirname, '../src/config/selectedPools.ts'), 'utf8').match(/0x[0-9a-f]{64}/g);
 const NATIVE = '0x0000000000000000000000000000000000000000';
 const TOKEN_Y = `0x${'22'.repeat(20)}`;
 const TOKEN_Z = `0x${'33'.repeat(20)}`;
-/** Test pairs, A/Y and Y/Z sharing Y. Not the pools' real pairs: only reads establish those. */
-const PAIRS = { [SELECTED[0]]: [NATIVE, TOKEN_Y], [SELECTED[1]]: [TOKEN_Y, TOKEN_Z] };
-const SYMBOLS = { [TOKEN_Y]: 'TKY', [TOKEN_Z]: 'TKZ' };
-const LOAD = ['POST pool-market', 'POST token', 'POST token', 'POST pool-market', 'POST token'];
+const TOKEN_W = `0x${'44'.repeat(20)}`;
+/**
+ * Test pairs on the six pool ids, four tokens between them, so the shared
+ * ones are read once. Not the pools' real pairs: only reads establish those.
+ */
+const PAIRS = {
+  [SELECTED[0]]: [NATIVE, TOKEN_Y],
+  [SELECTED[1]]: [TOKEN_Y, TOKEN_Z],
+  [SELECTED[2]]: [NATIVE, TOKEN_Z],
+  [SELECTED[3]]: [TOKEN_Y, TOKEN_W],
+  [SELECTED[4]]: [NATIVE, TOKEN_W],
+  [SELECTED[5]]: [TOKEN_Z, TOKEN_W],
+};
+const SYMBOLS = { [TOKEN_Y]: 'TKY', [TOKEN_Z]: 'TKZ', [TOKEN_W]: 'TKW' };
+/** Each row's label, in the pool's own order of currencies, from the token reads. */
+const LABELS = ['ETH/TKY', 'TKY/TKZ', 'ETH/TKZ', 'TKY/TKW', 'ETH/TKW', 'TKZ/TKW'];
+/**
+ * The lean load, in order: each pool's market without price history, then
+ * each token it holds that no earlier pool already had read. A pool whose
+ * market read failed has no tokens to read.
+ */
+function loadWire(failed = []) {
+  const wire = [];
+  const read = new Set();
+  for (const poolId of SELECTED) {
+    wire.push('POST pool-market');
+    if (failed.includes(poolId)) continue;
+    for (const token of PAIRS[poolId]) {
+      if (read.has(token)) continue;
+      read.add(token);
+      wire.push('POST token');
+    }
+  }
+  return wire;
+}
+const LOAD = loadWire();
+const TOKENS_IN_ORDER = [NATIVE, TOKEN_Y, TOKEN_Z, TOKEN_W];
 
 if (!existsSync(join(DIST, 'index.html'))) {
   throw new Error('dist/index.html is missing. Run `npm run build` before this test.');
 }
+
+assert.equal(SELECTED.length, 6, 'the reviewed selection is six pools');
+assert.deepEqual(LOAD, ['POST pool-market', 'POST token', 'POST token', 'POST pool-market', 'POST token', 'POST pool-market', 'POST pool-market', 'POST token', 'POST pool-market', 'POST pool-market']);
 
 function marketFor(poolId) {
   const body = fixture('pool-market.not-requested');
@@ -117,14 +165,21 @@ function bridgeStub({ capabilities = fixture('capabilities.live_read_only'), rep
 const forwarder = (status, code) => async () => json(status, `{"error":"${code}"}`);
 
 let handler = bridgeStub();
-/** Every request the gate let through to /api, as it arrived there. */
+/** Every request the gate let through to /api, as it arrived there, with the time it arrived. */
 let reads = [];
+/** Every request the browser sent to /api, before the gate, whether the gate let it through or not. */
+let edge = [];
 
 async function api(request) {
   const url = new URL(request.url);
   const body = request.method === 'POST' ? JSON.parse(await request.clone().text()) : null;
-  reads.push({ method: request.method, path: url.pathname, body });
+  reads.push({ method: request.method, path: url.pathname, body, at: Date.now() });
   return handler(request);
+}
+
+function observe(request) {
+  const path = new URL(request.url).pathname;
+  if (path.startsWith('/api/')) edge.push({ method: request.method, path });
 }
 
 const LAUNCHES = process.env.DOMINO_BROWSER_PATH
@@ -136,7 +191,7 @@ let origin;
 let browser;
 
 before(async () => {
-  server = createGatedServer({ env: GATE, api });
+  server = createGatedServer({ env: GATE, api, observe });
   await new Promise((done) => server.listen(0, '127.0.0.1', done));
   origin = `http://127.0.0.1:${server.address().port}`;
   for (const options of LAUNCHES) {
@@ -159,6 +214,7 @@ after(async () => {
 async function visit(stub) {
   handler = stub;
   reads = [];
+  edge = [];
   const context = await browser.newContext({ viewport: { width: 1280, height: 900 } });
   const page = await context.newPage();
   // Per page, and teardown-aware: an ERR_ABORTED of a view this test leaves is the test's doing (page-watch.mjs).
@@ -178,28 +234,83 @@ async function settled(page) {
   }, null, { timeout: 30_000 });
   return statusOf(page).getAttribute('data-read-status');
 }
+/** Waits until the landing's status is `code`, whatever it passes through on the way. */
+const statusIs = (page, code) =>
+  page.waitForFunction((wanted) => document.querySelector('#pools [data-read-status]')?.getAttribute('data-read-status') === wanted, code, { timeout: 30_000 });
 const wire = () => reads.map((r) => `${r.method} ${r.path.replace('/api/read/v1/', '').replace('/api/read/v2/', 'v2 ')}`);
 
-/** A failed landing shows no row, no figure and nothing called a sample: nothing stands in for the read. */
+/**
+ * Home asks a read service that was only busy again on its own, the first time
+ * once its Retry-After, and at least 4 s, have passed since the busy answer
+ * (useBusyRecovery in MarketsTable.tsx). Waiting past that shows a state is
+ * not asked again at all.
+ */
+const BUSY_RECOVERY_MS = 4_000;
+const PAST_BUSY_RECOVERY_MS = BUSY_RECOVERY_MS + 1_500;
+
+/**
+ * How the landing says a read state: only in the table's polite live region,
+ * visually hidden, as the state's code and its title alone. No detail, no
+ * line and nothing to press in it, and no Refresh, Retry or sign-in link on
+ * the card: the owner's decision on the redesign.
+ */
+async function saidQuietly(page, code, title, label = code) {
+  const status = statusOf(page);
+  assert.equal(await status.getAttribute('data-read-status'), code, label);
+  assert.equal(await status.textContent(), title, `${label}: the status is its title alone`);
+  assert.deepEqual(
+    await status.evaluate((el) => {
+      const box = el.getBoundingClientRect();
+      return { hidden: box.width <= 1 && box.height <= 1, inside: el.children.length };
+    }),
+    { hidden: true, inside: 0 },
+    `${label}: no status panel on Home`,
+  );
+  assert.equal(await page.locator('#pools').getByRole('button', { name: /Refresh|Retry|Trying again/ }).count(), 0, `${label}: no Refresh or Retry on Home`);
+  assert.equal(await page.locator('#pools').getByRole('link', { name: 'Sign in again' }).count(), 0, `${label}: no sign-in link on Home`);
+}
+
+/** The rows a read answered, and the rows still standing on the catalogue's labels alone. */
+const liveRows = (page) => page.locator('#pools tbody tr:not([data-pool-catalogue])');
+const catalogueRows = (page) => page.locator('#pools tbody tr[data-pool-catalogue]');
+
+/**
+ * A failed landing keeps the six catalogue rows, with a dash in every figure
+ * cell that says it is unavailable: no figure, no estimate, no dollar text,
+ * and nothing called a sample. Nothing stands in for the read.
+ */
 async function nothingInvented(page, label) {
   const found = await page.evaluate(() => ({
     rows: document.querySelectorAll('#pools tbody tr').length,
-    metrics: document.querySelectorAll('[data-metric]').length,
+    catalogue: document.querySelectorAll('#pools tbody tr[data-pool-catalogue]').length,
+    live: document.querySelectorAll('#pools tbody tr:not([data-pool-catalogue])').length,
+    metrics: document.querySelectorAll('[data-metric], [data-apr-estimate]').length,
+    dashes: Array.from(document.querySelectorAll('#pools tbody tr[data-pool-catalogue] td')).filter((td) => td.innerText.trim() === '—').length,
+    unavailable: Array.from(document.querySelectorAll('#pools tbody tr[data-pool-catalogue] [aria-label]')).map((el) => el.getAttribute('aria-label')).filter((text) => /^(Price|TVL|24h volume|Pool APR) unavailable$/.test(text)).length,
+    dollars: /\$\s?\d/.test(document.querySelector('#pools').innerText),
     sample: /sample|practice/i.test(document.body.innerText),
   }));
-  assert.deepEqual(found, { rows: 0, metrics: 0, sample: false }, label);
+  assert.deepEqual(found, { rows: 6, catalogue: 6, live: 0, metrics: 0, dashes: 24, unavailable: 24, dollars: false, sample: false }, label);
 }
 
-test('(a) no bridge behind the forwarder: live data is not connected, two namespace GETs, no POST, no Retry, and the ticker says the same', async () => {
+/** The strip lists the six catalogue pools by their labels, an APR dash each, and no figure. */
+async function tickerFromCatalogue(page, label) {
+  const items = page.locator('.dm-marquee > a[data-pool-catalogue]');
+  assert.equal(await items.count(), 6, `${label}: the ticker lists the six catalogue pools`);
+  for (const text of await items.allInnerTexts()) assert.match(text, /APR —$/, `${label}: the ticker names no APR`);
+  assert.equal(await page.locator('[data-ticker] [data-metric], [data-ticker] [data-apr-estimate]').count(), 0, `${label}: no figure in the ticker`);
+  assert.doesNotMatch(await page.locator('[data-ticker]').innerText(), /\$\s?\d|\d%\s*est/, `${label}: no figure in the ticker`);
+}
+
+test('(a) no bridge behind the forwarder: live data is not connected, two namespace GETs, no POST, no Retry, and the ticker shows no figure either', async () => {
   const { context, page, errors } = await visit(forwarder(503, 'bridge_unavailable'));
   try {
     assert.equal(await settled(page), 'not_connected');
-    assert.match(await statusOf(page).innerText(), /Live data isn't connected yet/);
-    assert.equal(await page.locator('#pools').getByRole('button', { name: /Retry|Refresh/ }).count(), 0, 'nothing to retry');
-    assert.equal(await page.locator('[data-ticker-status]').innerText(), "Live data isn't connected yet");
+    await saidQuietly(page, 'not_connected', "Live data isn't connected yet");
     await nothingInvented(page, 'not connected');
-    await page.waitForTimeout(2500);
-    assert.deepEqual(wire(), ['GET v2 capabilities', 'GET capabilities'], 'asked once, and never again on its own');
+    await tickerFromCatalogue(page, 'not connected');
+    await page.waitForTimeout(PAST_BUSY_RECOVERY_MS);
+    assert.deepEqual(wire(), ['GET v2 capabilities', 'GET capabilities'], 'asked once, and never again on its own, not even when a busy service would have been');
     assert.deepEqual(errors, []);
   } finally {
     await closeContext(context);
@@ -210,8 +321,7 @@ test('(b) a forwarder that does not serve this address, as on a preview host: sa
   const { context, page } = await visit(forwarder(404, 'not_found'));
   try {
     assert.equal(await settled(page), 'not_connected');
-    assert.match(await statusOf(page).innerText(), /Live data isn't available on this address/);
-    assert.equal(await page.locator('#pools').getByRole('button', { name: 'Retry' }).count(), 0);
+    await saidQuietly(page, 'not_connected', "Live data isn't available on this address");
     await nothingInvented(page, 'not found');
     assert.deepEqual(wire(), ['GET v2 capabilities', 'GET capabilities']);
   } finally {
@@ -229,9 +339,9 @@ test('(c) live reads switched off on the server, or the pool route not listed: s
     const { context, page } = await visit(bridgeStub({ capabilities }));
     try {
       assert.equal(await settled(page), 'disabled', label);
-      assert.match(await statusOf(page).innerText(), /Live data is switched off for now/, label);
-      assert.equal(await page.locator('#pools').getByRole('button', { name: 'Retry' }).count(), 0, label);
+      await saidQuietly(page, 'disabled', 'Live data is switched off for now', label);
       await nothingInvented(page, label);
+      await tickerFromCatalogue(page, label);
       assert.deepEqual(wire(), ['GET v2 capabilities', 'GET capabilities'], label);
     } finally {
       await closeContext(context);
@@ -239,43 +349,58 @@ test('(c) live reads switched off on the server, or the pool route not listed: s
   }
 });
 
-test('(d) reads enabled: one capabilities GET per namespace and five POSTs in order, never pool-metrics; the APR unavailable, figures named with their age; a reload costs the same again', async () => {
+test('(d) reads enabled: one capabilities GET per namespace and the lean load in order, never pool-metrics; the APR unavailable, figures named with their age; a reload costs the same again', async () => {
   const { context, page, errors } = await visit(bridgeStub());
   try {
     assert.equal(await settled(page), 'none');
     const first = ['GET v2 capabilities', 'GET capabilities', ...LOAD];
     assert.deepEqual(wire(), first);
     assert.deepEqual(reads.filter((r) => r.path.endsWith('/pool-market')).map((r) => r.body), SELECTED.map((poolId) => ({ poolId, includePriceHistory: false })));
-    assert.deepEqual(reads.filter((r) => r.path.endsWith('/token')).map((r) => r.body.token), [NATIVE, TOKEN_Y, TOKEN_Z], 'the shared token is read once');
+    assert.deepEqual(reads.filter((r) => r.path.endsWith('/token')).map((r) => r.body.token), TOKENS_IN_ORDER, 'each shared token is read once');
 
-    const rows = page.locator('#pools tbody tr');
-    assert.equal(await rows.count(), 2);
+    const rows = liveRows(page);
+    assert.equal(await rows.count(), 6, 'every pool has its read row');
+    assert.equal(await catalogueRows(page).count(), 0, 'no row is left on the catalogue alone');
     for (const row of await rows.all()) {
       const text = await row.innerText();
-      assert.match(text, /\$12\.3K\s*·\s*GeckoTerminal/, 'the provider is named');
-      assert.match(text, /Pool verified on-chain at block 700 · Reported by GeckoTerminal, retrieved \d+ s ago/, 'dated by its retrieval age');
+      // The figure itself, and beside it the row's provenance line: the provider, dated by its retrieval age.
+      assert.match(text, /\$12\.3K/);
+      assert.match(await row.locator('[data-provenance]').getAttribute('data-provenance'), /^Pool verified on-chain at block 700 · Reported by GeckoTerminal, retrieved \d+ s ago$/, 'the provider is named, dated by its retrieval age');
       assert.doesNotMatch(text, /\bas of\b|updated at/i, 'never "as of" or "updated at": the provider update time is unknown');
+      const figures = await row.locator('[data-metric]').evaluateAll((els) => els.map((el) => [el.innerText.trim(), el.getAttribute('data-metric'), el.getAttribute('title')]));
+      assert.deepEqual(figures.map(([value, state]) => [value, state]), [['$12.3K', 'provider'], ['$0.00', 'provider']], 'the two provider figures');
+      for (const [, , title] of figures) assert.match(title, expect.reportedByGecko, 'each figure carries its provenance');
+      // The price is the pool's own ratio from chain state: its own attribute, never a figure one.
+      const price = row.locator('td').nth(1);
+      assert.equal(await price.locator('[data-pool-price]').getAttribute('data-pool-price'), 'usable');
+      assert.equal(await price.locator('[data-metric], [data-apr-estimate]').count(), 0, 'the price carries no figure attribute');
+      assert.doesNotMatch(await price.innerText(), /\$/, 'a ratio between two tokens, never dollars');
       const apr = row.locator('td').nth(4);
       assert.equal(await apr.innerText(), 'Unavailable');
-      assert.equal(await apr.locator('[data-metric]').getAttribute('title'), 'Unavailable: Qualified fee APR not provided by the read service');
+      assert.equal(await apr.locator('[data-apr-estimate]').getAttribute('data-apr-estimate'), 'unavailable', 'no APR is provided, so none is shown');
+      assert.match(await apr.locator('[title]').getAttribute('title'), /Pool estimate, not position APR, APY or a return forecast\. Estimated APR is (not enabled on this connection|unavailable; market figures use the supported read connection)\./, 'and says why');
     }
     // The stub reports each pool the provider's way round (base = currency1): the label keeps the pool's own order.
-    assert.equal(await rows.nth(0).locator('td').first().locator('span.font-medium').innerText(), 'ETH/TKY', 'symbols come from the token reads, in the pool’s order');
-    assert.equal(await rows.nth(1).locator('td').first().locator('span.font-medium').innerText(), 'TKY/TKZ');
+    for (const [index, label] of LABELS.entries()) {
+      assert.equal(await rows.nth(index).locator('td').first().locator('span.font-medium').innerText(), label, 'symbols come from the token reads, in the pool’s order');
+    }
+    // And the price in the pool's own orientation, currency1 per currency0, with the read decimals (ETH 18, TKY 6).
+    assert.equal((await rowView(rows.nth(0))).price.text, '≈1,000,000,000,000 TKY per ETH');
     assert.equal(await page.locator('a[href*="geckoterminal"]').count(), 0, 'sourceUrl is never linked');
-    // #93: the headers name who reported each figure, on a phone as on a laptop; the ratio is Domino's.
+    // #93: the headers name who reported each figure, on a phone as on a laptop; the ratio is Domino's; the estimate says what it is.
     for (const width of [1280, 390]) {
       await page.setViewportSize({ width, height: 900 });
       const heads = await page.locator('#pools thead th').evaluateAll((ths) => ths.map((th) => th.innerText.replace(/\s+/g, ' ').trim()));
-      assert.deepEqual(heads, ['Pool', 'TVL (reported by GeckoTerminal)', '24h volume (reported by GeckoTerminal)', '24h vol/TVL (calculated by Domino)', 'Qualified fee APR', 'Estimated pool fee APR (unreconciled provider inputs)'], `${width}px`);
+      assert.deepEqual(heads, ['Pool', 'Price', 'TVL reported by GeckoTerminal', '24h volume reported by GeckoTerminal', 'Est. APR from provider inputs', 'Details'], `${width}px`);
     }
     await page.setViewportSize({ width: 1280, height: 900 });
     assert.doesNotMatch(await page.locator('body').innerText(), /geckoterminal\.com/i, 'nor shown');
     assert.match(await rows.nth(1).innerText(), /TKY[\s\S]*TKZ/);
     const ticker = await page.locator('.dm-marquee').innerText();
     assert.match(ticker, /TKZ[\s\S]*APR unavailable/, 'the ticker shows the same result set');
+    assert.equal(await page.locator('.dm-marquee > a[data-pool-catalogue]').count(), 0, 'and no catalogue-only item');
     const aprStates = await page.locator('.dm-marquee [data-apr-estimate]').evaluateAll((els) => els.map((el) => el.getAttribute('data-apr-estimate')));
-    assert.ok(aprStates.length >= 2 && aprStates.every((state) => state === 'unavailable'), `and no APR figure: ${aprStates}`);
+    assert.ok(aprStates.length >= 6 && aprStates.every((state) => state === 'unavailable'), `and no APR figure: ${aprStates}`);
 
     leaving(page);
     await page.reload({ waitUntil: 'networkidle' });
@@ -287,11 +412,16 @@ test('(d) reads enabled: one capabilities GET per namespace and five POSTs in or
   }
 });
 
+/** The provenance every value cell carries in its title, in the table's own words. */
+const expect = {
+  reportedByGecko: /^Reported by GeckoTerminal, retrieved \d+ s ago\. Not reconciled by Domino\.$/,
+};
+
 test('(e) the pool route switched off between the GET and the first POST: said so, and the second pool is never asked', async () => {
   const { context, page } = await visit(bridgeStub({ reply: (route) => (route === 'pool-market' ? bridge(404, { error: 'route_not_available' }) : undefined) }));
   try {
     assert.equal(await settled(page), 'disabled');
-    assert.match(await statusOf(page).innerText(), /Live data is switched off for now/);
+    await saidQuietly(page, 'disabled', 'Live data is switched off for now');
     await nothingInvented(page, 'route switched off');
     assert.deepEqual(wire(), ['GET v2 capabilities', 'GET capabilities', 'POST pool-market']);
   } finally {
@@ -299,24 +429,28 @@ test('(e) the pool route switched off between the GET and the first POST: said s
   }
 });
 
-test('(f) a producer 503: temporarily unavailable with a Retry, never asked again on its own; one Retry reads again', async () => {
+test('(f) a producer 503: temporarily unavailable, with no Retry on Home, never asked again on its own; a reload reads again', async () => {
   let down = true;
   const { context, page } = await visit(bridgeStub({ reply: (route) => (route === 'pool-market' && down ? bridge(503, { error: 'upstream_unavailable' }) : undefined) }));
   try {
     assert.equal(await settled(page), 'unavailable');
-    assert.match(await statusOf(page).innerText(), /Temporarily unavailable[\s\S]*answered: read service unavailable/);
-    assert.equal(await page.locator('[data-ticker-status]').innerText(), 'Temporarily unavailable');
+    // The read service's own words ("answered: read service unavailable") are the read lab's to show now.
+    await saidQuietly(page, 'unavailable', 'Temporarily unavailable');
     await nothingInvented(page, 'producer 503');
+    await tickerFromCatalogue(page, 'producer 503');
     const failed = wire();
-    assert.deepEqual(failed, ['GET v2 capabilities', 'GET capabilities', 'POST pool-market', 'POST pool-market'], 'each pool asked once');
-    await page.waitForTimeout(2500);
-    assert.deepEqual(wire(), failed, 'and neither asked again on its own');
+    assert.deepEqual(failed, ['GET v2 capabilities', 'GET capabilities', ...SELECTED.map(() => 'POST pool-market')], 'each pool asked once');
+    await page.waitForTimeout(PAST_BUSY_RECOVERY_MS);
+    assert.deepEqual(wire(), failed, 'and none asked again on its own, not even when a busy service would have been');
 
+    // With no Retry on Home, a reload is how a person asks again.
     down = false;
-    await page.getByRole('button', { name: 'Retry' }).click();
+    leaving(page);
+    await page.reload({ waitUntil: 'networkidle' });
     assert.equal(await settled(page), 'none');
-    assert.deepEqual(wire().slice(failed.length), LOAD, 'one Retry, one lean load; the capabilities answer is kept');
-    assert.equal(await page.locator('#pools tbody tr').count(), 2);
+    assert.deepEqual(wire().slice(failed.length), ['GET v2 capabilities', 'GET capabilities', ...LOAD], 'one reload, one lean load after the capabilities');
+    assert.equal(await liveRows(page).count(), 6);
+    assert.equal(await catalogueRows(page).count(), 0);
   } finally {
     await closeContext(context);
   }
@@ -330,79 +464,116 @@ test('(g) a 429 read_capacity_busy is asked again under R-1 after its Retry-Afte
   try {
     assert.equal(await settled(page), 'none');
     assert.deepEqual(wire(), ['GET v2 capabilities', 'GET capabilities', 'POST pool-market', ...LOAD], 'one automatic retry, then the lean load');
-    assert.equal(await page.locator('#pools tbody tr').count(), 2);
+    assert.equal(await liveRows(page).count(), 6);
   } finally {
     await closeContext(context);
   }
 });
 
-test('(h) without the access cookie a read is the gate’s 401: sign in again, nothing reaches the bridge, and the last rows stay, marked stale', async () => {
-  const { context, page } = await visit(bridgeStub());
+test('(h) without the access cookie a read is the gate’s 401: beta access needed, nothing reaches the bridge, the last rows stay, marked stale, and the gate is not asked again on its own', async () => {
+  // Home has no Refresh, so the read after the cookie is gone is the one Home makes on its own: the second
+  // pool's read service is still busy after R-1 on the first load, and the table asks again once its wait has passed.
+  const { context, page } = await visit(
+    bridgeStub({ reply: (route, body) => (route === 'pool-market' && body.poolId === SELECTED[1] ? bridge(429, { error: 'read_capacity_busy' }, { 'Retry-After': '1' }) : undefined) }),
+  );
   try {
-    assert.equal(await settled(page), 'none');
+    assert.equal(await settled(page), 'partial');
+    assert.equal(await liveRows(page).count(), 5);
     await context.clearCookies();
     const before = reads.length;
-    await page.getByRole('button', { name: 'Refresh' }).click();
-    assert.equal(await settled(page), 'gate_required');
-    assert.match(await statusOf(page).innerText(), /Beta access needed/);
-    assert.equal(await page.getByRole('link', { name: 'Sign in again' }).getAttribute('href'), '/');
+    const knocked = edge.length;
+    await statusIs(page, 'gate_required');
+    // The way back ("Sign in again") is the read lab's to show now; Home says only that access is needed.
+    await saidQuietly(page, 'gate_required', 'Beta access needed');
     assert.equal(reads.length, before, 'the gate refused the read: nothing reached the bridge');
-    assert.equal(await page.locator('#pools tbody tr').count(), 2, 'the last good rows stay');
+    assert.deepEqual(edge.slice(knocked).map((r) => `${r.method} ${r.path}`), ['POST /api/read/v1/pool-market'], 'the gate’s 401 stopped the load at its first read');
+    assert.equal(await liveRows(page).count(), 5, 'the last good rows stay');
     const states = await page.locator('#pools tbody [data-metric]').evaluateAll((els) => els.map((el) => el.getAttribute('data-metric')));
-    assert.ok(states.includes('stale') && !states.includes('provider'), `retained rows read as current: ${states}`);
+    assert.ok(states.includes('stale') && !states.includes('provider') && !states.includes('calculated'), `retained rows read as current: ${states}`);
+    const refused = edge.length;
+    await page.waitForTimeout(PAST_BUSY_RECOVERY_MS);
+    assert.equal(edge.length, refused, 'the gate’s answer is never asked again on its own');
   } finally {
     await closeContext(context);
   }
 });
 
-/** One row's cells and provenance, as a reader sees them. */
+/**
+ * One row's cells and provenance, as a reader sees them: the pool's price (its own ratio, with its state), then
+ * the three figures after it (TVL, 24h volume, APR), with the state and title of each.
+ */
 async function rowView(row) {
-  const cells = await row.locator('td').evaluateAll((tds) => tds.slice(1, 5).map((td) => {
-    const el = td.querySelector('[data-metric]');
-    return { text: td.innerText.replace(/\s+/g, ' ').trim(), metric: el?.getAttribute('data-metric') ?? null, title: el?.getAttribute('title') ?? null };
+  const [price, ...cells] = await row.locator('td').evaluateAll((tds) => tds.slice(1, 5).map((td) => {
+    const el = td.querySelector('[data-metric], [data-apr-estimate], [data-pool-price]');
+    return {
+      text: td.innerText.replace(/\s+/g, ' ').trim(),
+      metric: el?.getAttribute('data-metric') ?? el?.getAttribute('data-apr-estimate') ?? null,
+      state: el?.getAttribute('data-pool-price') ?? null,
+      title: el?.getAttribute('title') ?? el?.querySelector('[title]')?.getAttribute('title') ?? null,
+    };
   }));
   return {
     pair: await row.locator('td').first().locator('span.font-medium').innerText(),
-    provenance: await row.locator('[data-provenance]').innerText(),
+    provenance: await row.locator('[data-provenance]').getAttribute('data-provenance'),
+    price,
     cells,
   };
 }
 
-/** A pool that failed leaves no row, no figure and nothing called a sample in its place. */
-async function nothingStandsIn(page) {
+/**
+ * A pool that failed keeps its catalogue row, dashes only, and nothing called
+ * a sample stands in for it; every other row has its read figures and no more.
+ */
+async function nothingStandsIn(page, liveCount) {
   const text = await page.locator('#pools').innerText();
   assert.doesNotMatch(text, /sample|practice|placeholder/i);
-  assert.equal(await page.locator('#pools tbody [data-metric]').count(), 4, 'one row of four figures, no more');
+  assert.equal(await liveRows(page).count(), liveCount);
+  assert.equal(await liveRows(page).locator('[data-metric]').count(), liveCount * 2, 'two figures a read row, no more');
+  assert.equal(await liveRows(page).locator('[data-apr-estimate]').count(), liveCount, 'and one APR estimate cell each');
+  assert.equal(await liveRows(page).locator('td:nth-child(2) [data-pool-price]').count(), liveCount, 'and the pool’s price in its own cell');
+  assert.equal(await liveRows(page).locator('td:nth-child(2) [data-metric]').count(), 0, 'which is never a figure');
+  const fallen = catalogueRows(page);
+  assert.equal(await fallen.count(), 6 - liveCount, 'the failed pool falls back to its catalogue labels');
+  assert.equal(await fallen.locator('[data-metric], [data-apr-estimate]').count(), 0, 'with no figure at all');
+  for (const row of await fallen.all()) {
+    assert.deepEqual(await row.locator('td').evaluateAll((tds) => tds.slice(1, 5).map((td) => td.innerText.trim())), ['—', '—', '—', '—']);
+  }
 }
 
-const shortPool = (id) => `${id.slice(0, 6)}…${id.slice(-4)}`;
-
-test('(i) #93 per row: GeckoTerminal figures dated only by retrieval; a rejected pool keeps its verified row with its metrics unavailable, and the other row is untouched', async () => {
+test('(i) #93 per row: GeckoTerminal figures dated only by retrieval; a rejected pool keeps its verified row with its metrics unavailable, and the other rows are untouched', async () => {
   const { context, page, errors } = await visit(
     bridgeStub({ reply: (route, body) => (route === 'pool-market' && body.poolId === SELECTED[1] ? bridge(200, marketVariant(SELECTED[1], 'rejected-currencies')) : undefined) }),
   );
   try {
     assert.equal(await settled(page), 'none', 'a rejected provider observation is a valid read, not a failure');
     assert.deepEqual(wire(), ['GET v2 capabilities', 'GET capabilities', ...LOAD], 'the rejected pool still reads its tokens, so its row is labelled from them');
-    const rows = page.locator('#pools tbody tr');
-    assert.equal(await rows.count(), 2);
+    const rows = liveRows(page);
+    assert.equal(await rows.count(), 6);
 
     const ok = await rowView(rows.nth(0));
     assert.equal(ok.pair, 'ETH/TKY');
     assert.match(ok.provenance, /^Pool verified on-chain at block 700 · Reported by GeckoTerminal, retrieved \d+ s ago$/);
-    assert.deepEqual(ok.cells.map((c) => c.metric), ['provider', 'provider', 'calculated', 'unavailable']);
-    assert.match(ok.cells[0].text, /^\$12\.3K\s*·\s*GeckoTerminal$/);
-    assert.match(ok.cells[0].title, /^Reported by GeckoTerminal, retrieved \d+ s ago\. Not reconciled by Domino\.$/);
-    // 24h vol/TVL is Domino's division of GeckoTerminal's two figures: GeckoTerminal never reported it.
-    assert.match(ok.cells[2].text, /^0\.00\s*·\s*calculated$/);
-    assert.doesNotMatch(ok.cells[2].text, /GeckoTerminal/, 'no provider suffix on a ratio the provider did not report');
-    assert.match(ok.cells[2].title, /^Calculated by Domino from GeckoTerminal's reported 24h volume and TVL, retrieved \d+ s ago\. Those figures are not reconciled by Domino\.$/);
-    assert.equal(ok.cells[3].text, 'Unavailable', 'APR unavailable, never an estimate');
+    assert.deepEqual(ok.cells.map((c) => c.metric), ['provider', 'provider', 'unavailable']);
+    assert.equal(ok.cells[0].text, '$12.3K', 'the figure alone in the cell; the provider is named in the row’s provenance and the cell’s title');
+    assert.match(ok.cells[0].title, expect.reportedByGecko);
+    assert.equal(ok.cells[1].text, '$0.00');
+    assert.match(ok.cells[1].title, expect.reportedByGecko);
+    assert.equal(ok.cells[2].text, 'Unavailable', 'APR unavailable, never an estimate');
+    // The price comes from the verified pool's own state, not from the provider.
+    assert.equal(ok.price.state, 'usable');
+    assert.equal(ok.price.metric, null);
 
     const rejected = await rowView(rows.nth(1));
     assert.equal(rejected.pair, 'TKY/TKZ', 'the verified pool row stays, labelled from its own token reads');
     assert.equal(rejected.provenance, 'Pool verified on-chain at block 700 · GeckoTerminal figures rejected: provider data did not match this pool');
-    assert.deepEqual(rejected.cells.map((c) => [c.text, c.metric]), [['Unavailable', 'rejected'], ['Unavailable', 'rejected'], ['Unavailable', 'unavailable'], ['Unavailable', 'unavailable']]);
+    assert.deepEqual(rejected.cells.map((c) => [c.text, c.metric]), [['Unavailable', 'rejected'], ['Unavailable', 'rejected'], ['Unavailable', 'unavailable']]);
+    assert.equal(rejected.price.state, 'usable', 'a rejected provider observation takes nothing from the chain’s own price');
+
+    for (const index of [2, 3, 4, 5]) {
+      const other = await rowView(rows.nth(index));
+      assert.equal(other.pair, LABELS[index]);
+      assert.deepEqual(other.cells.map((c) => c.metric), ['provider', 'provider', 'unavailable'], `row ${index} is untouched`);
+    }
 
     assert.doesNotMatch(await page.locator('#pools').innerText(), /\bas of\b|updated at/i);
     assert.equal(await page.locator('a[href*="geckoterminal"]').count(), 0);
@@ -412,63 +583,72 @@ test('(i) #93 per row: GeckoTerminal figures dated only by retrieval; a rejected
   }
 });
 
-test('(j) #93 per row: a stale observation carries a visible stale marker, and a null figure is not reported, never $0', async () => {
+test('(j) #93 per row: a stale observation is marked stale in its state and its title, in the ink of a current figure with no word beside it, and a null figure is not reported, never $0', async () => {
   const missing = fixture('pool-market.missing').market.data;
   assert.deepEqual([missing.reportedLiquidityUsd, missing.volume24hUsd], [null, null], 'the package fixture reports both as null');
   const variant = { [SELECTED[0]]: 'stale', [SELECTED[1]]: 'missing' };
-  const { context, page } = await visit(bridgeStub({ reply: (route, body) => (route === 'pool-market' ? bridge(200, marketVariant(body.poolId, variant[body.poolId])) : undefined) }));
+  const { context, page } = await visit(bridgeStub({ reply: (route, body) => (route === 'pool-market' && variant[body.poolId] ? bridge(200, marketVariant(body.poolId, variant[body.poolId])) : undefined) }));
   try {
     assert.equal(await settled(page), 'none');
-    const rows = page.locator('#pools tbody tr');
-    assert.equal(await rows.count(), 2);
+    const rows = liveRows(page);
+    assert.equal(await rows.count(), 6);
 
     const stale = await rowView(rows.nth(0));
     assert.match(stale.provenance, /^Pool verified on-chain at block 700 · Reported by GeckoTerminal, retrieved \d+ s ago · stale$/);
-    assert.deepEqual(stale.cells.slice(0, 3).map((c) => c.metric), ['stale', 'stale', 'stale']);
-    assert.match(stale.cells[0].text, /^\$12\.3K\s*·\s*stale\s*·\s*GeckoTerminal$/, 'the stale marker is on screen, not only in a title');
+    assert.deepEqual(stale.cells.slice(0, 2).map((c) => c.metric), ['stale', 'stale']);
+    // The owner's decision on the redesign: a stale figure is never yellow and has no "· stale" beside it. That it
+    // is stale is its state, and its title in words.
+    assert.equal(stale.cells[0].text, '$12.3K', 'no stale word beside the figure');
     assert.match(stale.cells[0].title, /^Reported by GeckoTerminal, retrieved \d+ s ago\. Not reconciled by Domino\. Stale, not current\.$/);
-    assert.match(stale.cells[2].text, /^0\.00\s*·\s*stale\s*·\s*calculated$/);
-    assert.match(stale.cells[2].title, /^Calculated by Domino from GeckoTerminal's reported 24h volume and TVL, retrieved \d+ s ago\. Those figures are not reconciled by Domino\. Stale, not current\.$/);
+    assert.equal(stale.cells[1].text, '$0.00');
+    assert.match(stale.cells[1].title, /^Reported by GeckoTerminal, retrieved \d+ s ago\. Not reconciled by Domino\. Stale, not current\.$/);
 
     const nulls = await rowView(rows.nth(1));
     const notReported = ['Not reported by GeckoTerminal', 'absent'];
-    assert.deepEqual(nulls.cells.map((c) => [c.text, c.metric]), [notReported, notReported, ['Unavailable', 'unavailable'], ['Unavailable', 'unavailable']], 'unavailable, in the name of the source that reported null');
+    assert.deepEqual(nulls.cells.map((c) => [c.text, c.metric]), [notReported, notReported, ['Unavailable', 'unavailable']], 'unavailable, in the name of the source that reported null');
     assert.equal(nulls.cells[0].title, 'Unavailable: GeckoTerminal reported no value');
     assert.doesNotMatch(await rows.nth(1).innerText(), /\$\s*0|\b0\.00\b/, 'null never renders as zero');
+
+    const current = await rowView(rows.nth(2));
+    assert.deepEqual(current.cells.map((c) => c.metric), ['provider', 'provider', 'unavailable'], 'the other rows stay current');
+    const ink = (row) => row.locator('[data-metric]').evaluateAll((els) => els.slice(0, 2).map((el) => getComputedStyle(el).color));
+    assert.deepEqual(await ink(rows.nth(0)), await ink(rows.nth(2)), 'a stale figure is drawn in the same ink as a current one');
   } finally {
     await closeContext(context);
   }
 });
 
-test('(k) #93 per row: a 504 on one pool drops only that pool, says which, and is not asked again on its own', async () => {
+test('(k) #93 per row: a 504 on one pool drops only that pool, whose own row says so, and is not asked again on its own', async () => {
   const { context, page } = await visit(
     bridgeStub({ reply: (route, body) => (route === 'pool-market' && body.poolId === SELECTED[0] ? bridge(504, { error: 'upstream_timeout' }) : undefined) }),
   );
   try {
     assert.equal(await settled(page), 'partial');
-    const rows = page.locator('#pools tbody tr');
-    assert.equal(await rows.count(), 1, 'the other pool keeps its row');
+    const rows = liveRows(page);
+    assert.equal(await rows.count(), 5, 'the other pools keep their rows');
     const other = await rowView(rows.nth(0));
     assert.equal(other.pair, 'TKY/TKZ');
-    assert.match(other.cells[0].text, /^\$12\.3K\s*·\s*GeckoTerminal$/);
-    const status = await statusOf(page).innerText();
-    assert.match(status, /Some pool data could not be read/);
-    assert.ok(status.includes(`Pool ${shortPool(SELECTED[0])}, pool-market: temporarily unavailable.`), status);
+    assert.equal(other.cells[0].text, '$12.3K');
+    // Home no longer names the failed pool and its route in a status line (that is the read lab's now): the
+    // status is its title alone, and the failed pool's own row says its data is not available, below.
+    await saidQuietly(page, 'partial', 'Some pool data could not be read');
     const settledWire = wire();
-    assert.deepEqual(settledWire, ['GET v2 capabilities', 'GET capabilities', 'POST pool-market', 'POST pool-market', 'POST token', 'POST token']);
-    await page.waitForTimeout(2500);
-    assert.deepEqual(wire(), settledWire, 'nothing asked again on its own');
-    await nothingStandsIn(page);
+    assert.deepEqual(settledWire, ['GET v2 capabilities', 'GET capabilities', ...loadWire([SELECTED[0]])], 'the failed pool reads no tokens; the others read theirs');
+    await page.waitForTimeout(PAST_BUSY_RECOVERY_MS);
+    assert.deepEqual(wire(), settledWire, 'nothing asked again on its own: a timeout is not a busy service');
+    await nothingStandsIn(page, 5);
+    // The failed pool's row is the catalogue's, which says so.
+    assert.equal(await catalogueRows(page).first().locator('a').first().getAttribute('title'), 'Listed on Uniswap. Live pool data is not available yet.');
   } finally {
     await closeContext(context);
   }
 });
 
-test('(m) with both pools on screen, the appearance toggle covers no figure, heading or footer text at 390, 768 or 1280 wide', async () => {
+test('(m) with all six pools on screen, the appearance toggle covers no figure, heading or footer text at 390, 768 or 1280 wide', async () => {
   const { context, page, errors } = await visit(bridgeStub());
   try {
     assert.equal(await settled(page), 'none');
-    assert.equal(await page.locator('#pools tbody tr').count(), 2);
+    assert.equal(await liveRows(page).count(), 6);
     for (const [width, height] of TOGGLE_VIEWPORTS) {
       await page.setViewportSize({ width, height });
       await page.waitForTimeout(100);
@@ -482,20 +662,40 @@ test('(m) with both pools on screen, the appearance toggle covers no figure, hea
   }
 });
 
-test('(l) #93 per row: a 429 that outlasts R-1 on one pool leaves the other pool’s row', async () => {
+test('(l) #93 per row: a 429 that outlasts R-1 on one pool leaves the other pools’ rows, and Home asks again on its own once the wait has passed', async () => {
+  let busy = true;
   const { context, page } = await visit(
-    bridgeStub({ reply: (route, body) => (route === 'pool-market' && body.poolId === SELECTED[1] ? bridge(429, { error: 'read_capacity_busy' }, { 'Retry-After': '1' }) : undefined) }),
+    bridgeStub({ reply: (route, body) => (route === 'pool-market' && busy && body.poolId === SELECTED[1] ? bridge(429, { error: 'read_capacity_busy' }, { 'Retry-After': '1' }) : undefined) }),
   );
   try {
     assert.equal(await settled(page), 'partial');
+    // The load's last request: its answer, and so the busy state, came after it. Timed on this side, however slow the page is to report.
+    const loadEnded = reads.at(-1).at;
     const pm = wire().filter((line) => line === 'POST pool-market').length;
-    assert.ok(pm >= 2 && pm <= 4, `the busy pool is asked at most three times under R-1 (${wire()})`);
+    assert.ok(pm >= 6 && pm <= 8, `the busy pool is asked at most three times under R-1, the others once (${wire()})`);
     assert.deepEqual(wire().slice(0, 5), ['GET v2 capabilities', 'GET capabilities', 'POST pool-market', 'POST token', 'POST token']);
-    const rows = page.locator('#pools tbody tr');
-    assert.equal(await rows.count(), 1);
+    const rows = liveRows(page);
+    assert.equal(await rows.count(), 5);
     assert.equal((await rowView(rows.nth(0))).pair, 'ETH/TKY');
-    assert.ok((await statusOf(page).innerText()).includes(`Pool ${shortPool(SELECTED[1])}, pool-market: read service busy.`));
-    await nothingStandsIn(page);
+    // Which pool was busy is the read lab's to say now; Home says only that some pool data could not be read.
+    await saidQuietly(page, 'partial', 'Some pool data could not be read');
+    await nothingStandsIn(page, 5);
+
+    // Busy was all that went wrong, and Home has no Retry, so Home asks again on its own: not before the
+    // service's wait and 4 s have passed, then the whole lean load once, and the busy pool's row comes.
+    const first = reads.length;
+    busy = false;
+    await page.waitForFunction(
+      () => document.querySelector('#pools [data-read-status]')?.getAttribute('data-read-status') === 'none' && document.querySelectorAll('#pools tbody tr[data-pool-catalogue]').length === 0,
+      null,
+      { timeout: 30_000 },
+    );
+    assert.deepEqual(wire().slice(first), LOAD, 'asked again once, on its own: one lean load, the capabilities answer kept');
+    assert.ok(reads[first].at - loadEnded >= BUSY_RECOVERY_MS - 100, `asked again ${reads[first].at - loadEnded} ms after the busy answer, before its wait had passed`);
+    assert.equal(await liveRows(page).count(), 6);
+    await saidQuietly(page, 'none', '');
+    await page.waitForTimeout(PAST_BUSY_RECOVERY_MS);
+    assert.deepEqual(wire().slice(first), LOAD, 'and nothing more once every pool has its row');
   } finally {
     await closeContext(context);
   }

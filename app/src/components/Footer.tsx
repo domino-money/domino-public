@@ -6,63 +6,85 @@
  * are named as text, not linked.
  */
 import type { ReactNode } from 'react'
+import { BrandMark } from './BrandMark'
+import { CAPABILITIES } from '../lib/capabilities'
+import { automateHref, marketsHref, newPositionHref, positionsHref, settingsHref } from './explore/routes'
 
-const COLUMNS = [
-  {
-    heading: 'Learn',
-    links: [
-      { label: 'How a position works', href: '#/#learn' },
-      { label: 'Ranges explained', href: '#/#ranges' },
-    ],
-  },
+const COLUMNS: ReadonlyArray<{ heading: string; links: ReadonlyArray<{ label: string; href: string }> }> = [
   {
     heading: 'Product',
     links: [
-      { label: 'Explore pools', href: '#/pools' },
-      { label: 'Positions', href: '#/app' },
+      { label: 'Markets', href: marketsHref() },
+      { label: 'Positions', href: positionsHref },
+      { label: 'Automate', href: automateHref },
+      { label: 'New position', href: newPositionHref() },
+      { label: 'Settings', href: settingsHref },
+    ],
+  },
+  {
+    heading: 'Guides',
+    links: [
+      { label: 'How it works', href: '#/#learn' },
+      { label: 'Ranges explained', href: '#/#ranges' },
+      { label: 'What Domino does not do', href: '#/#limits' },
     ],
   },
 ]
 
-/** `appearance` is the appearance toggle: laid out in the footer's last row, in its flow, where it can never cover text. */
-export function Footer({ appearance }: { appearance?: ReactNode }) {
+/**
+ * The page's only `<footer>`. `motion` (Pause motion / Resume motion) and
+ * `appearance` (the appearance toggle) come from App and sit together in the
+ * last row, in the footer's own flow, where they can never cover text.
+ */
+export function Footer({ appearance, motion }: { appearance?: ReactNode; motion?: ReactNode }) {
   return (
-    <footer className="mt-24 border-t">
-      <div className="mx-auto max-w-[1220px] px-5 py-14">
-        <div className="grid gap-10 md:grid-cols-[1.4fr_repeat(2,minmax(0,1fr))]">
-          <div>
-            <span className="font-display text-[22px]">
-              domino<span style={{ color: 'var(--primary)' }}>.</span>
-            </span>
-            <p className="mt-3 max-w-[38ch] text-[13px] leading-relaxed text-fg-muted">
-              Guided liquidity positions on Uniswap v4, built for Robinhood Chain. Your wallet stays
-              the owner of everything it creates.
-            </p>
+    <footer className="dm-footer">
+      <div className="dm-footer-inner">
+        <div className="dm-footer-body">
+          <div className="dm-footer-grid">
+            {/* Not a link: only the header's wordmark points at Home. */}
+            <div className="dm-footer-brand">
+              <span className="inline-flex items-center gap-2 text-fg">
+                <BrandMark width={18} height={31} />
+                <span className="dm-display text-[26px] leading-[26px] md:text-[30px] md:leading-[30px]">
+                  domino<span className="text-primary">.</span>
+                </span>
+              </span>
+              <p className="mt-4 max-w-[42ch] text-body text-fg-muted">
+                Domino opens Uniswap positions on Robinhood Chain and puts their earned fees to work, only within limits your wallet signs.
+              </p>
+            </div>
+
+            {COLUMNS.map((column) => (
+              <nav key={column.heading} aria-label={column.heading}>
+                <h2 className="dm-footer-heading">{column.heading}</h2>
+                <ul className="dm-footer-links">
+                  {column.links.map((link) => (
+                    <li key={link.label}>
+                      <a href={link.href} className="dm-footer-link">
+                        {link.label}
+                      </a>
+                    </li>
+                  ))}
+                </ul>
+              </nav>
+            ))}
+
+            <div className="dm-footer-network">
+              <h2 className="dm-footer-heading">Network</h2>
+              <div className="mt-4 grid gap-3">
+                <p className="dm-footer-note">Robinhood Chain</p>
+                <p className="dm-footer-note tnum">Chain ID {CAPABILITIES.chainId}</p>
+              </div>
+            </div>
           </div>
 
-          {COLUMNS.map((col) => (
-            <nav key={col.heading} aria-label={col.heading}>
-              <h4 className="text-[13px] font-medium">{col.heading}</h4>
-              <ul className="mt-3 space-y-2.5">
-                {col.links.map((link) => (
-                  <li key={link.label}>
-                    <a href={link.href} className="text-[13px] text-fg-muted transition hover:text-fg">
-                      {link.label}
-                    </a>
-                  </li>
-                ))}
-              </ul>
-            </nav>
-          ))}
-        </div>
-
-        <div className="mt-12 flex flex-col gap-4 border-t pt-6 sm:flex-row sm:items-center sm:justify-between">
-          <p className="text-[12px] text-fg-subtle">
-            Invited read-only alpha. Figures come from live reads where enabled and show as unavailable otherwise.
-          </p>
-          <div className="flex flex-wrap items-center gap-4">
-            <p className="text-[12px] text-fg-subtle">Terms of Service and Privacy Policy: pending</p>
-            {appearance}
+          <div className="dm-footer-bottom">
+            <p className="dm-footer-note">Terms of Service and Privacy Policy: pending</p>
+            <div className="dm-footer-controls">
+              {motion}
+              {appearance}
+            </div>
           </div>
         </div>
       </div>

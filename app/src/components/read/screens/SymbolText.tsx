@@ -8,6 +8,6 @@ import { COPY } from '../../../lib/read/screens/copy'
  * with no readable symbol says so; its address is always shown beside it.
  */
 export function SymbolText({ token }: { token: TokenDisplay }) {
-  if (token.symbol === null) return <span className="text-fg-muted">{COPY.selection.unknownSymbol}</span>
+  if (token.symbol === null) return <span className="text-fg-subtle">{COPY.selection.unknownSymbol}</span>
   return <bdi className="inline-block max-w-[24ch] truncate align-bottom">{token.symbol}</bdi>
 }

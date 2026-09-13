@@ -6,6 +6,7 @@ import { tmpdir } from 'node:os'
 import { resolve, join } from 'node:path'
 import { chromium } from 'playwright-core'
 import { createGuardedVite } from '../scripts/local-live-vite.mjs'
+import { installWallets } from './support/mock-wallet.mjs'
 
 async function unusedPort() {
   const server = createServer()
@@ -17,20 +18,63 @@ async function unusedPort() {
 test('real Vite HMR connects through the admission gate; UI is read-only and reload works', { timeout: 60000 }, async () => {
   const port = await unusedPort()
   let admitted = 0
-  const shell = await createGuardedVite({ port, handleRead: async (_req, res) => { admitted++; res.writeHead(503, { 'Content-Type': 'application/json' }); res.end('{"error":"bridge_unavailable"}') } })
+  const apiPaths = []
+  const shell = await createGuardedVite({ port, handleRead: async (req, res) => { admitted++; apiPaths.push(req.url); res.writeHead(503, { 'Content-Type': 'application/json' }); res.end('{"error":"bridge_unavailable"}') } })
   let browser
   try {
     browser = await chromium.launch(process.env.DOMINO_BROWSER_PATH ? { executablePath: process.env.DOMINO_BROWSER_PATH, headless: true } : { channel: process.platform === 'win32' ? 'msedge' : 'chrome', headless: true })
-    const page = await browser.newPage()
+    const context = await browser.newContext()
+    const wallets = await installWallets(context, [
+      { id: 'a', name: 'Rabby Wallet', rdns: 'io.rabby', uuid: '8f2a7d1c-0000-4000-8000-00000000000a' },
+      { id: 'b', name: 'Second Wallet', rdns: 'io.rabby', uuid: '8f2a7d1c-0000-4000-8000-00000000000b' },
+    ])
+    const page = await context.newPage()
     const errors = []
     page.on('pageerror', (error) => errors.push(error.message))
     const connected = new Promise((done) => shell.vite.ws.on('connection', done))
-    await page.goto(`${shell.origin}/#/pools`)
-    await page.getByRole('heading', { name: 'Explore pools', exact: true }).waitFor()
+    // Settings, not Markets or Positions: Markets shows the selected pools and
+    // asks for them on mount, and Positions reads a connected wallet's public
+    // token balances by design (DESIGN.md E.5), while Settings reads nothing, so
+    // every request counted below is the wallet flow's own, or the two probes.
+    await page.goto(`${shell.origin}/#/settings`)
+    await page.getByRole('heading', { name: 'Settings', exact: true }).waitFor()
     await page.getByText('Local real-data development', { exact: true }).waitFor()
     await connected
-    assert.equal(await page.getByRole('button', { name: 'Connect wallet', exact: true }).isDisabled(), true)
-    assert.equal(admitted, 0, 'opening pool explorer does not issue reads')
+    const connect = page.getByRole('button', { name: 'Connect wallet', exact: true })
+    await connect.click()
+    const dialog = page.getByRole('dialog')
+    await dialog.getByRole('button', { name: 'Connect Rabby Wallet', exact: true }).waitFor()
+    assert.equal(await dialog.locator('img[src="/wallets/rabby.svg"]').count(), 2)
+    assert.equal(await dialog.locator('img[src^="data:"]').count(), 0)
+    await page.keyboard.press('Shift+Tab')
+    assert.equal(await dialog.evaluate((node) => node.contains(document.activeElement)), true)
+    // The current injected connector obtains account permission first, then
+    // reads eth_accounts. Reject the actual permission prompt, not an unused
+    // eth_requestAccounts fallback which would let this connection succeed.
+    wallets.rejectNext('b', 'wallet_requestPermissions')
+    await dialog.getByRole('button', { name: 'Connect Second Wallet', exact: true }).click()
+    await dialog.getByRole('alert').filter({ hasText: 'declined' }).waitFor()
+    await dialog.getByRole('button', { name: 'Connect Second Wallet', exact: true }).click()
+    await dialog.getByText('Connected · Not signed in', { exact: true }).waitFor()
+    assert.equal(wallets.calls('wallet_requestPermissions').filter((call) => call.id === 'a').length, 0, 'same-rdns selection uses the selected connector instance')
+    assert.equal(wallets.calls('wallet_requestPermissions').filter((call) => call.id === 'b').length, 2, 'only the selected wallet receives both explicit permission attempts')
+    assert.equal(await dialog.getByTestId('local-wallet-address').textContent(), wallets.address(0))
+    await wallets.switchAccount('b', 1)
+    await page.waitForFunction((address) => document.querySelector('[data-testid="local-wallet-address"]')?.textContent === address, wallets.address(1))
+    await wallets.switchChain('b', 1)
+    await dialog.getByText('Wallet network: 1. Public reads remain on Robinhood Chain.').waitFor()
+    await page.keyboard.press('Escape')
+    const connectedWallet = page.getByRole('button', { name: /^Connected wallet / })
+    assert.equal(await connectedWallet.evaluate((node) => node === document.activeElement), true)
+    await connectedWallet.click()
+    await dialog.getByRole('button', { name: 'Disconnect wallet', exact: true }).click()
+    await dialog.getByRole('heading', { name: 'Connect', exact: true }).waitFor()
+    await page.keyboard.press('Escape')
+    assert.equal(wallets.calls('personal_sign').length, 0)
+    assert.equal(wallets.calls('wallet_switchEthereumChain').length, 0)
+    assert.deepEqual(wallets.state.refused, [])
+    assert.equal(admitted, 0, 'opening Settings and the wallet dialog does not issue reads')
+    assert.deepEqual(apiPaths, [], 'wallet discovery, connection, account/network events and disconnection make no session or other API request')
     const status = await page.evaluate(async () => (await fetch('/api/read/v1/capabilities')).status)
     assert.equal(status, 503)
     assert.equal(admitted, 1, 'same-origin actual browser GET reaches the handler')
@@ -45,6 +89,7 @@ test('real Vite HMR connects through the admission gate; UI is read-only and rel
     assert.equal((await fetch(shell.origin)).status, 403, 'missing Fetch Metadata is refused before Vite')
     assert.equal((await fetch(`${shell.origin}/api/read/v1/capabilities`)).status, 403)
     assert.equal(admitted, 2)
+    assert.deepEqual(apiPaths, ['/api/read/v1/capabilities', '/api/read/v1/token'], 'only the two explicit read probes ran; no session request on reload')
     const privateDir = mkdtempSync(join(tmpdir(), 'domino-vite-canary-'))
     const canary = 'OFFLINE-NOT-A-CREDENTIAL-132'
     const privateFile = join(privateDir, 'renamed-private-canary.txt')

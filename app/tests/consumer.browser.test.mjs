@@ -1115,19 +1115,19 @@ test('boot reconciles only the outstanding deposit; a reported hash is checked, 
   await s.close();
 });
 
-test('the entry card on /app leads to both screens, and both have one React and no browser error', async () => {
+test('both consumer screens open by their own routes, each with one React and no browser error', async () => {
+  // No entry card leads to them from Positions (DESIGN.md I.1, J.3): the consumer-test build opens each by its route.
   const s = await scenario();
-  const page = await s.open('/app');
-  await page.getByText('Live preview (invited testers)').waitFor();
-  await page.getByRole('button', { name: 'Deposit fixture lab' }).click();
-  await page.locator('[data-testid="fixture-banner"]').waitFor();
-  const reacts = await page.evaluate(() => {
+  const reacts = (page) => page.evaluate(() => {
     const keys = new Set();
     for (const node of document.querySelectorAll('*')) for (const key of Object.keys(node)) if (key.startsWith('__reactFiber$')) keys.add(key);
     return keys.size;
   });
-  assert.equal(reacts, 1);
-  await page.goto(`${s.origin}/#/live-preview`, { waitUntil: 'load' });
-  await page.getByRole('heading', { name: 'Live preview' }).waitFor();
+  const deposits = await s.open('/deposits');
+  await deposits.locator('[data-testid="fixture-banner"]').waitFor();
+  assert.equal(await reacts(deposits), 1);
+  const preview = await s.open('/live-preview');
+  await preview.getByRole('heading', { name: 'Live preview' }).waitFor();
+  assert.equal(await reacts(preview), 1);
   await s.close();
 });

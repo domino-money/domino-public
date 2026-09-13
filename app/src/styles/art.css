@@ -1,0 +1,267 @@
+/* home builder (DESIGN.md H.2, E.1, F, D.2): the hero's domino chain, the three feature vignettes and the
+   nav icon gestures. Every colour is a token, so the light theme needs nothing of its own.
+   Art rests at its own composition: the static CSS, the 0% keyframe and the 100% keyframe of every loop
+   are the same complete picture, so a paused loop, a loop still inside its delay and `animation: none`
+   (reduced motion, html.dm-still: tokens.css) all show it. Loops play only while the art root carries
+   .is-running, which an IntersectionObserver sets while the art is in view. */
+
+@layer components {
+  /* ---- Shared art rules (F) ---------------------------------------------------------------- */
+  .dm-art { display: block; overflow: hidden; }
+  .dm-art:not(.is-running),
+  .dm-art:not(.is-running) * { animation-play-state: paused !important; }
+
+  /* A Tangerine-filled art tile: pips and divider in --primary-fg (never cream), divider at .28. */
+  .dm-art .tile-solid .t-body { fill: var(--primary); stroke: none; }
+  .dm-art .tile-solid .t-pip { fill: var(--primary-fg); }
+  .dm-art .tile-solid .t-div { stroke: var(--primary-fg); stroke-opacity: 0.28; stroke-width: 1px; stroke-linecap: round; }
+
+  /* ---- Hero plate (E.1) ---------------------------------------------------------------------- */
+  .dm-hero { display: flex; flex-direction: column; align-items: center; min-height: 440px; padding: 56px 40px 0; text-align: center; }
+  .dm-hero-body { position: relative; z-index: 1; display: flex; flex-direction: column; align-items: center; width: 100%; }
+  .dm-hero-accent { color: var(--primary-ink); white-space: nowrap; }
+  .dm-hero-band { position: relative; z-index: 1; width: 100%; height: 120px; margin-top: auto; pointer-events: none; }
+  /* Visible overflow: on a phone the cropped chain runs on to the plate's own edge instead of stopping at the drawing's box. */
+  .dm-hero-art { position: absolute; bottom: 0; left: 50%; translate: -50% 0; width: 560px; max-width: 100%; height: auto; overflow: visible; }
+  @media (max-width: 767px) {
+    .dm-hero { min-height: 0; padding: 36px 20px 0; }
+    .dm-hero-band { height: 96px; margin-top: 28px; }
+    .dm-hero-art { width: auto; height: 100%; }
+  }
+
+  /* ---- Hero art: the domino chain (F.1) ----------------------------------------------------- */
+  .dm-hero-art .ground { fill: none; stroke: var(--border-strong); stroke-width: 1px; }
+  .dm-hero-art .tile { transform-box: fill-box; transform-origin: 100% 100%; }
+  .dm-hero-art .tile .body { fill: var(--surface-1); stroke: color-mix(in srgb, var(--primary) 60%, transparent); stroke-width: 1.25px; }
+  .dm-hero-art .tile .divider { stroke: color-mix(in srgb, var(--primary) 45%, transparent); stroke-width: 1px; stroke-linecap: round; }
+  .dm-hero-art .tile .pip { fill: color-mix(in srgb, var(--primary) 70%, transparent); }
+  .dm-hero-art .next { transform-box: fill-box; transform-origin: 50% 100%; }
+  .dm-hero-art .next-ghost { fill: none; stroke: var(--fg-faint); stroke-width: 1px; stroke-dasharray: 3 3; opacity: 0; }
+
+  .dm-hero-art .tile { animation: dm-tile-topple 12s var(--ease-std) infinite; animation-delay: calc(var(--i, 0) * 160ms); }
+  .dm-hero-art .tile-7 { animation-name: dm-tile-topple-7; }
+  .dm-hero-art .tile-last { animation-name: dm-tile-topple-last; }
+  .dm-hero-art .tile .body { animation: dm-tile-fill 12s var(--ease-std) infinite; animation-delay: calc(var(--i, 0) * 160ms); }
+  .dm-hero-art .tile .pip { animation: dm-pip-fill 12s var(--ease-std) infinite; animation-delay: calc(var(--i, 0) * 160ms); }
+  .dm-hero-art .tile .divider { animation: dm-divider-fill 12s var(--ease-std) infinite; animation-delay: calc(var(--i, 0) * 160ms); }
+  .dm-hero-art .next { animation: dm-next-arrive 12s var(--ease-std) infinite; }
+  .dm-hero-art .next-ghost { animation: dm-next-ghost 12s var(--ease-std) infinite; }
+
+  /* ---- Feature plates (E.1) ------------------------------------------------------------------ */
+  /* Backwards fill only: once the entrance ends nothing stays applied, so the column never becomes a
+     containing block or a stacking context for what it holds. */
+  .dm-vig-feature { min-width: 0; animation: dm-vig-rise var(--dur-enter) var(--ease-enter) backwards; animation-delay: var(--delay, 0s); }
+  .dm-vig-plate { height: 180px; }
+  @media (min-width: 768px) { .dm-vig-plate { height: 200px; } }
+  .dm-vig { display: block; width: 100%; height: 100%; }
+  .dm-vig-link { display: inline-flex; align-items: center; gap: 4px; margin-top: 12px; border-radius: var(--radius-xs); font-size: 13px; line-height: 16px; font-weight: 500; color: var(--fg-subtle); text-decoration: none; transition: color var(--dur-hover) ease; }
+  .dm-vig-link:hover { color: var(--fg); }
+  .dm-vig-link .i-chev-r { transition: translate var(--dur-fade) var(--ease-std); }
+  .dm-vig-link:hover .i-chev-r { translate: 2px 0; }
+
+  /* ---- Auto-compound (F.2) ------------------------------------------------------------------- */
+  .dm-vig-compound .band { fill: color-mix(in srgb, var(--primary) 10%, transparent); }
+  .dm-vig-compound .band-clip { clip-path: inset(0 round 10px); }
+  .dm-vig-compound .band-fill { fill: color-mix(in srgb, var(--primary) 26%, transparent); transform-box: fill-box; transform-origin: 50% 100%; scale: 1 0.55; }
+  .dm-vig-compound .band-edge { fill: none; stroke: color-mix(in srgb, var(--primary) 55%, transparent); stroke-width: 1.25px; }
+  .dm-vig-compound .arc { fill: none; stroke: var(--fg-faint); stroke-width: 1px; stroke-dasharray: 2 5; }
+  .dm-vig-compound .lip { stroke: var(--border-strong); stroke-width: 1px; }
+  /* A drop's group travels the arc (drawn at 0,0, placed by offset-path in view-box space); its circle
+     grows and shrinks about its own centre. A scale on the travelling group would scale its offset too. */
+  .dm-vig-compound .drop { opacity: 0; transform-box: view-box; transform-origin: 0 0; offset-path: path('M 110 110 C 110 44, 210 44, 210 110'); offset-rotate: 0deg; offset-distance: 0%; }
+  .dm-vig-compound .drop-dot { fill: var(--primary); transform-box: fill-box; transform-origin: 50% 50%; scale: 0.6; }
+  .dm-vig-compound .mark { transform-box: fill-box; transform-origin: 50% 100%; }
+
+  .dm-vig-compound:not(.dm-vig-still) .vig { animation: dm-vig-reset 6s var(--ease-std) infinite; }
+  .dm-vig-compound:not(.dm-vig-still) .band-fill { animation: dm-band-fill 6s var(--ease-enter) infinite; }
+  .dm-vig-compound:not(.dm-vig-still) .mark { animation: dm-mark-pulse 6s var(--ease-enter) infinite; }
+  .dm-vig-compound:not(.dm-vig-still) .drop { animation: dm-drop-arc 6s cubic-bezier(0.45, 0, 0.55, 1) infinite; }
+  .dm-vig-compound:not(.dm-vig-still) .drop-dot { animation: dm-drop-scale 6s cubic-bezier(0.45, 0, 0.55, 1) infinite; }
+  .dm-vig-compound:not(.dm-vig-still) .drop-1,
+  .dm-vig-compound:not(.dm-vig-still) .drop-1 .drop-dot { animation-delay: 0.2s; }
+  .dm-vig-compound:not(.dm-vig-still) .drop-2,
+  .dm-vig-compound:not(.dm-vig-still) .drop-2 .drop-dot { animation-delay: 1.8s; }
+  .dm-vig-compound:not(.dm-vig-still) .drop-3,
+  .dm-vig-compound:not(.dm-vig-still) .drop-3 .drop-dot { animation-delay: 3.4s; }
+
+  /* ---- Domino sequences (F.3); SequenceFrame is the same drawing with .dm-vig-still ---------- */
+  .dm-vig-seq .range-a { fill: color-mix(in srgb, var(--primary) 10%, transparent); stroke: color-mix(in srgb, var(--primary) 55%, transparent); stroke-width: 1.25px; }
+  .dm-vig-seq .trigger { stroke: var(--primary); stroke-width: 1px; stroke-dasharray: 4 4; opacity: 0.35; }
+  .dm-vig-seq .price { fill: none; stroke: var(--fg-muted); stroke-width: 1.5px; stroke-linejoin: round; stroke-dasharray: 150; stroke-dashoffset: 0; }
+  .dm-vig-seq .dot-core { fill: var(--primary); }
+  .dm-vig-seq .dot-ring { fill: none; stroke: var(--primary); stroke-width: 1px; opacity: 0.25; }
+  .dm-vig-seq .arrive { transform-box: fill-box; transform-origin: 0% 100%; }
+  .dm-vig-seq .range-b { fill: color-mix(in srgb, var(--primary) 18%, transparent); stroke: var(--primary); stroke-width: 1.25px; }
+
+  .dm-vig-seq:not(.dm-vig-still) .scene { animation: dm-scene-fade 8s var(--ease-std) infinite; }
+  .dm-vig-seq:not(.dm-vig-still) .price { animation: dm-trace 8s var(--ease-std) infinite; }
+  .dm-vig-seq:not(.dm-vig-still) .dot { animation: dm-trace-dot 8s var(--ease-std) infinite; }
+  .dm-vig-seq:not(.dm-vig-still) .trigger { animation: dm-trigger 8s var(--ease-std) infinite; }
+  .dm-vig-seq:not(.dm-vig-still) .arrive { animation: dm-range-arrive 8s var(--ease-std) infinite; }
+
+  /* ---- Non-custodial (F.4) ------------------------------------------------------------------- */
+  .dm-vig-wallet .orbit { fill: none; stroke: var(--fg-faint); stroke-width: 1px; stroke-dasharray: 2 7; transform-box: fill-box; transform-origin: 50% 50%; }
+  .dm-vig-wallet .w-body { fill: var(--surface-3); stroke: var(--border-strong); stroke-width: 1px; }
+  .dm-vig-wallet .flap { fill: none; stroke: var(--border-strong); stroke-width: 1px; }
+  .dm-vig-wallet .clasp { fill: var(--surface-4); }
+  .dm-vig-wallet .clasp-dot { fill: var(--fg-faint); }
+
+  .dm-vig-wallet:not(.dm-vig-still) .orbit { animation: dm-orbit 24s linear infinite; }
+  .dm-vig-wallet:not(.dm-vig-still) .bob { animation: dm-bob 7.5s ease-in-out infinite; }
+  .dm-vig-wallet:not(.dm-vig-still) .flap { animation: dm-flap 7.5s var(--ease-std) infinite; }
+
+  /* ---- Nav icon gestures (D.2): one shot while a link is hovered; the markup is foundation's ---- */
+  .i-turn { transform-box: view-box; transform-origin: 8px 8px; }
+  a:hover .i-t1 { animation: dm-icon-tiles 360ms cubic-bezier(0, 0, 0.58, 1); }
+  a:hover .i-t2 { --icon-peak: 0.55; animation: dm-icon-tiles 360ms cubic-bezier(0, 0, 0.58, 1) 50ms; }
+  a:hover .i-t3 { animation: dm-icon-tiles 360ms cubic-bezier(0, 0, 0.58, 1) 100ms; }
+  a:hover .i-t4 { animation: dm-icon-tiles 360ms cubic-bezier(0, 0, 0.58, 1) 150ms; }
+  a:hover .i-tile { animation: dm-icon-lift 300ms var(--ease-std); }
+  a:hover .i-turn { animation: dm-icon-turn 600ms var(--ease-enter); }
+}
+
+/* ---- Hero keyframes (F.1): one 12 s cycle; each tile is delayed by its index, so every iteration keeps phase ---- */
+@keyframes dm-tile-topple {
+  0%, 10% { opacity: 1; rotate: 0deg; animation-timing-function: cubic-bezier(0.55, 0, 1, 0.45); }
+  14.33% { rotate: 45deg; }
+  86.7% { opacity: 1; rotate: 45deg; }
+  91% { opacity: 0; rotate: 45deg; }
+  91.01% { opacity: 0; rotate: 0deg; }
+  100% { opacity: 1; rotate: 0deg; }
+}
+@keyframes dm-tile-topple-7 {
+  0%, 10% { opacity: 1; rotate: 0deg; animation-timing-function: cubic-bezier(0.55, 0, 1, 0.45); }
+  14.33% { rotate: 55deg; }
+  86.7% { opacity: 1; rotate: 55deg; }
+  91% { opacity: 0; rotate: 55deg; }
+  91.01% { opacity: 0; rotate: 0deg; }
+  100% { opacity: 1; rotate: 0deg; }
+}
+@keyframes dm-tile-topple-last {
+  0%, 10% { opacity: 1; rotate: 0deg; animation-timing-function: cubic-bezier(0.55, 0, 1, 0.45); }
+  14.33% { rotate: 90deg; }
+  86.7% { opacity: 1; rotate: 90deg; }
+  91% { opacity: 0; rotate: 90deg; }
+  91.01% { opacity: 0; rotate: 0deg; }
+  100% { opacity: 1; rotate: 0deg; }
+}
+@keyframes dm-tile-fill {
+  0%, 12% { fill: var(--surface-1); stroke: color-mix(in srgb, var(--primary) 60%, transparent); }
+  15%, 91% { fill: var(--primary); stroke: var(--primary); }
+  91.01%, 100% { fill: var(--surface-1); stroke: color-mix(in srgb, var(--primary) 60%, transparent); }
+}
+@keyframes dm-pip-fill {
+  0%, 12% { fill: color-mix(in srgb, var(--primary) 70%, transparent); }
+  15%, 91% { fill: var(--primary-fg); }
+  91.01%, 100% { fill: color-mix(in srgb, var(--primary) 70%, transparent); }
+}
+@keyframes dm-divider-fill {
+  0%, 12% { stroke: color-mix(in srgb, var(--primary) 45%, transparent); stroke-opacity: 1; }
+  15%, 91% { stroke: var(--primary-fg); stroke-opacity: 0.28; }
+  91.01%, 100% { stroke: color-mix(in srgb, var(--primary) 45%, transparent); stroke-opacity: 1; }
+}
+@keyframes dm-next-arrive {
+  0%, 2% { opacity: 1; scale: 1; translate: 0 0; }
+  6%, 25% { opacity: 0; scale: 0.6; translate: 0 8px; animation-timing-function: cubic-bezier(0.16, 1, 0.3, 1); }
+  30%, 100% { opacity: 1; scale: 1; translate: 0 0; }
+}
+@keyframes dm-next-ghost {
+  0%, 6% { opacity: 0; }
+  10%, 26.7% { opacity: 0.8; }
+  30%, 100% { opacity: 0; }
+}
+
+/* ---- Feature entrance: rises 16px, once, on mount ---- */
+@keyframes dm-vig-rise {
+  from { opacity: 0; translate: 0 16px; }
+}
+
+/* ---- Auto-compound keyframes (F.2): 6 s; drops leave at 0.2 / 1.8 / 3.4 s and land 1.4 s later ---- */
+@keyframes dm-drop-arc {
+  0% { offset-distance: 0%; opacity: 0; }
+  2.33% { opacity: 1; }
+  21% { opacity: 1; }
+  23.33%, 100% { offset-distance: 100%; opacity: 0; }
+}
+@keyframes dm-drop-scale {
+  0% { scale: 0.6; }
+  11.67% { scale: 1; }
+  23.33%, 100% { scale: 0.6; }
+}
+@keyframes dm-band-fill {
+  0%, 26.67% { scale: 1 0.55; }
+  32.5%, 53.33% { scale: 1 0.65; }
+  59.17%, 80% { scale: 1 0.75; }
+  85.83%, 96.66% { scale: 1 0.85; }
+  96.67%, 100% { scale: 1 0.55; }
+}
+@keyframes dm-mark-pulse {
+  0%, 26.67% { scale: 1; }
+  29.58% { scale: 1.06; }
+  32.5%, 53.33% { scale: 1; }
+  56.25% { scale: 1.06; }
+  59.17%, 80% { scale: 1; }
+  82.92% { scale: 1.06; }
+  85.83%, 100% { scale: 1; }
+}
+@keyframes dm-vig-reset {
+  0%, 91.67% { opacity: 1; }
+  96.67% { opacity: 0; }
+  100% { opacity: 1; }
+}
+
+/* ---- Domino sequences keyframes (F.3): 8 s; the reset happens at 15% while the scene is invisible ---- */
+@keyframes dm-scene-fade {
+  0%, 7.5% { opacity: 1; }
+  15% { opacity: 0; }
+  20%, 100% { opacity: 1; }
+}
+@keyframes dm-trace {
+  0%, 14.99% { stroke-dashoffset: 0; }
+  15%, 17.5% { stroke-dashoffset: 150; animation-timing-function: cubic-bezier(0.4, 0, 0.2, 1); }
+  55%, 100% { stroke-dashoffset: 0; }
+}
+@keyframes dm-trace-dot {
+  0%, 14.99% { opacity: 1; }
+  15%, 55% { opacity: 0; }
+  57.5%, 100% { opacity: 1; }
+}
+@keyframes dm-trigger {
+  0%, 55% { opacity: 0.35; }
+  58.75% { opacity: 1; }
+  62.5%, 67.5% { opacity: 0.6; }
+  75%, 100% { opacity: 0.35; }
+}
+@keyframes dm-range-arrive {
+  0%, 14.99% { opacity: 1; scale: 1; translate: 0 0; }
+  15%, 60% { opacity: 0; scale: 0.92; translate: 0 8px; animation-timing-function: cubic-bezier(0.16, 1, 0.3, 1); }
+  67.5%, 100% { opacity: 1; scale: 1; translate: 0 0; }
+}
+
+/* ---- Non-custodial keyframes (F.4): the orbit on 24 s, the tile and the flap on 7.5 s ---- */
+@keyframes dm-orbit {
+  from { rotate: 0deg; }
+  to { rotate: 360deg; }
+}
+@keyframes dm-bob {
+  0%, 100% { translate: 0 0; }
+  50% { translate: 0 -4px; }
+}
+@keyframes dm-flap {
+  0%, 37.33% { stroke: var(--border-strong); }
+  45.33%, 60% { stroke: var(--primary); }
+  68%, 100% { stroke: var(--border-strong); }
+}
+
+/* ---- Nav icon gestures (D.2) ---- */
+@keyframes dm-icon-tiles {
+  50% { opacity: var(--icon-peak, 1); }
+}
+@keyframes dm-icon-lift {
+  0%, 100% { translate: 0 0; }
+  50% { translate: 0 -1.5px; }
+}
+@keyframes dm-icon-turn {
+  from { rotate: 0deg; }
+  to { rotate: 360deg; }
+}

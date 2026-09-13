@@ -62,11 +62,15 @@ export const identityKey = (id: string) => `${CHAIN}:${lower(id)}`
 export const shortId = (id: string) => (id.length > 14 ? `${id.slice(0, 6)}…${id.slice(-4)}` : id)
 
 /**
- * Curated artwork by address. Only the native currency is known on this chain
- * today; a symbol never selects artwork, whatever it claims to be.
+ * Bundled artwork for documented Robinhood Chain identities (see
+ * reports/ALPHA_MARKET_REQUALIFICATION_2026-09-11.md). This is presentation,
+ * not token admission or a verification badge. Symbols never select artwork.
  */
 const ARTWORK_BY_ADDRESS: Readonly<Record<string, ArtworkKey>> = {
   '0x0000000000000000000000000000000000000000': 'ETH',
+  '0x0bd7d308f8e1639fab988df18a8011f41eacad73': 'WETH',
+  '0x5fc5360d0400a0fd4f2af552add042d716f1d168': 'USDG',
+  '0xab35d04e1ee39c789c4a65d522417b3c7f2e4723': 'MARLIN',
 }
 
 export function tokenDisplay(asset: TokenMetadata | UnknownToken): TokenDisplay {
@@ -187,7 +191,7 @@ export function projectPools(d: PoolsResponse): Omit<FamilyView, 'freshness' | '
   const tokenAt = (address: string) => byAddress.get(lower(address)) ?? unreadToken(address)
   const discovery: Fact =
     d.discovery.status === 'received'
-      ? { label: 'Discovery (DexScreener)', text: `${d.discovery.returned} returned, ${d.discovery.v4Candidates} v4 candidates`, state: d.discovery.returned === 0 ? 'zero' : 'value' }
+      ? { label: 'Discovery (DexScreener)', text: `${d.discovery.returned} returned, ${d.discovery.v4Candidates} Uniswap candidates`, state: d.discovery.returned === 0 ? 'zero' : 'value' }
       : { label: 'Discovery (DexScreener)', text: `Partial list: ${reasonText(d.discovery.reason)}`, state: 'partial' }
   const catalogue: Fact =
     d.catalogue.status === 'available'
@@ -627,6 +631,16 @@ export function projectMarketRow({ market, metrics, tokens }: RowReads): Market 
       receivedMonotonic: market.provenance.receivedMonotonic,
     },
     ...(d.market.data ? { chartTokens: { base: d.market.data.baseToken, quote: d.market.data.quoteToken } } : {}),
+    // The verified pool's own state in this same read: the price is the pool's
+    // ratio from it (marketPrice.ts), never the provider's and never dollars.
+    poolState: {
+      sqrtPriceX96: d.pool.sqrtPriceX96,
+      tick: d.pool.tick,
+      tickSpacing: d.pool.poolKey.tick_spacing,
+      block: d.snapshot.number,
+      currency0: lower(d.pool.poolKey.currency0),
+      currency1: lower(d.pool.poolKey.currency1),
+    },
     provenance,
   }
 }

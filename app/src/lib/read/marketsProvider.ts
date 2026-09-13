@@ -94,7 +94,7 @@ export const tableMarketRequest = (poolId: string): ReadRequests['pool-market'] 
  * disabled pool-market route, which is disabled for every pool, stops them
  * too. A token shared by several pools is read once for the whole table.
  */
-export async function loadSelectedPools(source: ReadSource, poolIds: readonly string[], signal?: AbortSignal): Promise<LoadedMarkets> {
+export async function loadSelectedPools(source: ReadSource, poolIds: readonly string[], signal?: AbortSignal, onProgress?: (rows: Market[]) => void): Promise<LoadedMarkets> {
   const rows: Market[] = []
   const problems: MarketProblem[] = []
   const tokenReads = new Map<string, ReadOutcome<'token'>>()
@@ -124,6 +124,7 @@ export async function loadSelectedPools(source: ReadSource, poolIds: readonly st
       tokens.set(key, read)
     }
     rows.push(projectMarketRow({ market, metrics: null, tokens }))
+    onProgress?.([...rows])
   }
   return stopped(null)
 }
@@ -170,7 +171,16 @@ export function createReadMarketsProvider({ source, poolIds, kind, notice, now =
     controller = mine
     const retrying = state.phase === 'failed' ? state.failure : state.phase === 'loading' ? state.retrying : null
     set({ phase: 'loading', previous, retrying })
-    const loaded = await loadSelectedPools(source, poolIds, mine.signal)
+    const loaded = await loadSelectedPools(source, poolIds, mine.signal, (rows) => {
+      if (mine.signal.aborted || controller !== mine) return
+      const updated = new Map(rows.map((row) => [row.poolId, row]))
+      const retainedRows = previous?.markets ?? []
+      const combined = poolIds.flatMap((poolId) => {
+        const row = updated.get(poolId) ?? retainedRows.find((m) => m.poolId === poolId)
+        return row ? [row] : []
+      })
+      set({ phase: 'loading', retrying, previous: { source: kind === 'bridge' ? 'live' : kind, chainId: 4663, network: 'Robinhood Chain', markets: combined, notice } })
+    })
     if (mine.signal.aborted || controller !== mine) return
     controller = null
     const retained = lastGood ? { result: retainAsStale(lastGood.result, lastGood.receivedAt), receivedAt: lastGood.receivedAt } : null

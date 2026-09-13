@@ -41,6 +41,34 @@ were observed free by the VM operator on 2026-09-12 at 20:55:53 UTC; they
 must be checked and reserved at installation. Existing production 8876/8878 and
 the disabled private/financial listeners are outside this development path.
 
+## Stay current before frontend work
+
+Before designing or integrating a frontend change, fetch `origin/main` and
+compare it with the checkout actually serving the local app. Fast-forward a
+clean checkout when there are no local-only commits or active writers. Never
+silently stash, reset, discard work or switch another task's checkout. If local
+work prevents a fast-forward, preserve it and reconcile the relevant upstream
+changes in the current task before claiming the preview is current.
+
+Updating frontend source does not update the remote backend process: retain
+both the frontend commit/dirty state and the installed backend versions in
+connection diagnostics. Keep the development connection available; do not
+restart remote services or publish either site just to synchronize source.
+
+## Local wallet connection is not a session
+
+The local wallet chooser may connect an installed EIP-6963 browser wallet and
+display its actual address, account changes and chain. This is connection-only:
+it does not sign a login message, authenticate a backend session or enable
+private or financial operations. The UI must label the connected state as not
+signed in. Wallet metadata is untrusted; keep bundled artwork and identify the
+selected connector by its unique instance, not its claimed name or domain.
+
+Keep the server-session feature disabled in local-live mode. Do not add session
+routes to the read-only proxy or reuse its development service credential as a
+wallet identity. Full local sign-in requires the separate development session
+transport described in the future-capability map below.
+
 ## Interface and contract notice
 
 Read payloads remain **read-v1 1.1.0-rc.3**. No type, schema, producer fixture,

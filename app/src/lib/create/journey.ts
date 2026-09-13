@@ -1,0 +1,555 @@
+/**
+ * The new-position journey as a pure state machine: six stages, what each
+ * needs before Continue, what a step forward or back does to the state, the
+ * validation of budget, range and Domino limits, and the plain-text summary.
+ *
+ * No React and no reads. Everything a stage shows comes from the values the
+ * screens put here: a token candidate and a pool option from validated reads,
+ * ticks from the range controls, text from inputs. Nothing here computes a
+ * deposit composition: that is the position-preview service's, and it is not
+ * enabled on this connection (see `previewRequest`). Nothing here signs,
+ * approves, deposits or swaps, and nothing implies it can.
+ */
+import type { PositionPreviewRequest } from 'api-contracts/onboarding-v1/types'
+import { SELECTED_POOL_CATALOGUE, type PoolCatalogueEntry } from '../../config/selectedPoolCatalogue'
+import { CAPABILITIES } from '../capabilities'
+import { parseDecimal } from '../read/decimal'
+import { tokenText } from '../read/project'
+import { DYNAMIC_FEE_PIPS } from '../read/screens/fee'
+import { CHAIN_ID, NATIVE_CURRENCY, addressKey, poolIdKey, shortAddress, type AddressKey, type PoolIdKey } from '../read/screens/identity'
+import { boundPrice, poolPrice, presetRange, rangePosition, usableTicks, type PoolPrice } from '../read/screens/poolRange'
+import type { PoolOption } from '../read/screens/poolsList'
+import type { TokenCandidate } from '../read/screens/tokens'
+import type { TokenDisplay } from '../read/types'
+import { CREATE } from './copy'
+
+export type Stage = 'token' | 'pool' | 'amount' | 'balance' | 'automation' | 'review'
+export const STAGES: readonly Stage[] = ['token', 'pool', 'amount', 'balance', 'automation', 'review']
+export const stageIndex = (stage: Stage) => STAGES.indexOf(stage)
+
+/** Two ticks, multiples of the pool's spacing, lower below upper. */
+export interface TickRange {
+  lower: number
+  upper: number
+}
+
+export type Automation = 'none' | 'compound' | 'domino'
+
+/** Domino limits exactly as typed; `validateLimits` turns them into numbers. */
+export interface DominoLimits {
+  triggerPercent: string
+  maxOverlapPercent: string
+  sequenceCap: string
+}
+
+export const DEFAULT_LIMITS: DominoLimits = { triggerPercent: '5', maxOverlapPercent: '20', sequenceCap: '3' }
+export const DEFAULT_SLIPPAGE_BPS = '50'
+
+export const LIMIT_BOUNDS = {
+  trigger: { min: 0.1, max: 50 },
+  overlap: { min: 0, max: 50 },
+  cap: { min: 1, max: 5 },
+} as const
+
+export interface JourneyState {
+  stage: Stage
+  /** The furthest stage the person has continued to; the rail may reopen any stage up to it. */
+  furthest: Stage
+  token: TokenCandidate | null
+  /** An optional second asset that narrows the pool list. */
+  paired: TokenCandidate | null
+  pool: PoolOption | null
+  /** The budget as typed, in the selected token's units. */
+  budget: string
+  slippageBps: string
+  range: TickRange | null
+  automation: Automation
+  limits: DominoLimits
+}
+
+export function initialState(): JourneyState {
+  return {
+    stage: 'token',
+    furthest: 'token',
+    token: null,
+    paired: null,
+    pool: null,
+    budget: '',
+    slippageBps: DEFAULT_SLIPPAGE_BPS,
+    range: null,
+    automation: 'none',
+    limits: { ...DEFAULT_LIMITS },
+  }
+}
+
+export type Check = { ok: true } | { ok: false; reason: string }
+const OK: Check = { ok: true }
+const fail = (reason: string): Check => ({ ok: false, reason })
+
+/* ---------------------------------------------------------------------------
+   Identity helpers
+--------------------------------------------------------------------------- */
+
+const tokenAddress = (token: TokenDisplay) => token.address
+
+/** Whether a pool trades the currency at `key`. */
+export const poolHolds = (pool: PoolOption, key: AddressKey) => pool.currencies.some((currency) => tokenAddress(currency) === key)
+
+/** The pool's other currency, given one of its two. Null when `key` is not in the pool. */
+export function otherCurrency(pool: PoolOption, key: AddressKey): TokenDisplay | null {
+  if (!poolHolds(pool, key)) return null
+  return pool.currencies.find((currency) => tokenAddress(currency) !== key) ?? null
+}
+
+/** The decimals the read returned for a candidate. Never from a label. */
+export const candidateDecimals = (candidate: TokenCandidate): number | null => candidate.token.decimals
+
+/**
+ * The two currencies of a verified pool as token candidates, so a person who
+ * arrived by pool link can pick the one they deposit. Everything on the row
+ * is the pools read's own: address, symbol, decimals and read status.
+ */
+export function candidatesFromPool(option: PoolOption): TokenCandidate[] {
+  return option.currencies.map((token): TokenCandidate => {
+    const address = tokenAddress(token)
+    const key = addressKey(address)
+    const why = token.readStatus === 'no_contract' ? 'no_contract' : token.readStatus === 'unavailable' ? 'unreadable' : null
+    return {
+      key,
+      wire: address,
+      token,
+      kind: why !== null ? 'unknown' : key === NATIVE_CURRENCY ? 'native' : 'erc20_candidate',
+      why,
+      reasonCode: null,
+      decimalsUnavailable: token.decimals === null,
+      // The address came out of the pools read, lowercase, and goes back on the wire as it came.
+      source: 'pasted',
+      balance: null,
+      page: null,
+      old: false,
+      block: option.block,
+    }
+  })
+}
+
+/* ---------------------------------------------------------------------------
+   The pool id in the link
+--------------------------------------------------------------------------- */
+
+export type Preselect = { ok: true; key: PoolIdKey; catalogue: PoolCatalogueEntry | null } | { ok: false; reason: 'empty' | 'malformed' }
+
+/** USDG: every pool of the reviewed selection trades against it, so the verification read is asked about it. */
+export const USDG = addressKey('0x5fc5360d0400a0fd4f2af552add042d716f1d168')
+
+/**
+ * The second hash segment is untrusted: it becomes a pool id only when it is
+ * exactly one, and it is never shown as anything else. Verification against
+ * the chain happens in the screen, through `verifyCandidate`.
+ */
+export function preselectFrom(param: string): Preselect {
+  if (param === '') return { ok: false, reason: 'empty' }
+  if (!/^0x[0-9a-fA-F]{64}$/.test(param)) return { ok: false, reason: 'malformed' }
+  const key = poolIdKey(param)
+  return { ok: true, key, catalogue: SELECTED_POOL_CATALOGUE.find((entry) => entry.poolId === key) ?? null }
+}
+
+/** The address the verification read names for a linked pool: USDG, which every catalogue pool holds. */
+export const verificationToken = (preselect: Extract<Preselect, { ok: true }>): AddressKey => {
+  const paired = preselect.catalogue?.addresses?.[1]
+  return paired ? addressKey(paired) : USDG
+}
+
+/* ---------------------------------------------------------------------------
+   Validation
+--------------------------------------------------------------------------- */
+
+const MAX_UINT256 = (1n << 256n) - 1n
+const DECIMAL_TEXT = /^(?:0|[1-9]\d*)(?:\.\d+)?$/
+const PERCENT_TEXT = /^(?:0|[1-9]\d*)(?:\.\d{1,2})?$/
+
+export type BudgetCheck = { ok: true; raw: string } | { ok: false; reason: string }
+
+/**
+ * A decimal budget in the token's units to raw base units, with the decimals
+ * the read returned. Exact BigInt arithmetic; unknown decimals block, never
+ * guess. The result matches the preview contract's `amountRaw` pattern.
+ */
+export function validateBudget(text: string, decimals: number | null): BudgetCheck {
+  if (decimals === null) return { ok: false, reason: CREATE.amount.decimalsUnknown }
+  if (text === '') return { ok: false, reason: CREATE.amount.empty }
+  if (text.length > 100 || !DECIMAL_TEXT.test(text)) return { ok: false, reason: CREATE.amount.format }
+  const value = parseDecimal(text)
+  if (!value || value.coefficient === 0n) return { ok: false, reason: CREATE.amount.zero }
+  if (value.scale > decimals) return { ok: false, reason: CREATE.amount.tooManyPlaces(decimals) }
+  const raw = value.coefficient * 10n ** BigInt(decimals - value.scale)
+  if (raw > MAX_UINT256) return { ok: false, reason: CREATE.amount.tooLarge }
+  return { ok: true, raw: raw.toString() }
+}
+
+export type SlippageCheck = { ok: true; bps: number } | { ok: false; reason: string }
+
+export function validateSlippage(text: string): SlippageCheck {
+  if (!/^(?:0|[1-9]\d{0,3})$/.test(text)) return { ok: false, reason: CREATE.amount.slippageInvalid }
+  const bps = Number(text)
+  return bps <= 9999 ? { ok: true, bps } : { ok: false, reason: CREATE.amount.slippageInvalid }
+}
+
+/** A range on this pool: whole ticks, multiples of the spacing, inside v4's ticks, lower below upper. */
+export function validateRange(range: TickRange | null, pool: PoolOption): Check {
+  if (!range) return fail(CREATE.amount.noRange)
+  const spacing = pool.tickSpacing
+  if (!Number.isInteger(range.lower) || !Number.isInteger(range.upper)) return fail(CREATE.amount.rangeTicks)
+  if (range.lower % spacing !== 0 || range.upper % spacing !== 0) return fail(CREATE.amount.rangeSpacing)
+  const { min, max } = usableTicks(spacing)
+  if (range.lower < min || range.upper > max) return fail(CREATE.amount.rangeBounds)
+  if (range.lower >= range.upper) return fail(CREATE.amount.rangeOrder)
+  return OK
+}
+
+export interface LimitValues {
+  trigger: number
+  overlap: number
+  cap: number
+}
+export type LimitProblems = Record<keyof DominoLimits, string | null>
+export type LimitsCheck = { ok: true; values: LimitValues; problems: LimitProblems } | { ok: false; problems: LimitProblems }
+
+function percentWithin(text: string, min: number, max: number): number | null {
+  if (!PERCENT_TEXT.test(text)) return null
+  const value = Number(text)
+  return value >= min && value <= max ? value : null
+}
+
+/** The three Domino limits, each checked on its own so every problem is shown at once. */
+export function validateLimits(limits: DominoLimits): LimitsCheck {
+  const trigger = percentWithin(limits.triggerPercent, LIMIT_BOUNDS.trigger.min, LIMIT_BOUNDS.trigger.max)
+  const overlap = percentWithin(limits.maxOverlapPercent, LIMIT_BOUNDS.overlap.min, LIMIT_BOUNDS.overlap.max)
+  const capText = limits.sequenceCap
+  const cap = /^[1-9]\d*$/.test(capText) && Number(capText) >= LIMIT_BOUNDS.cap.min && Number(capText) <= LIMIT_BOUNDS.cap.max ? Number(capText) : null
+  const problems: LimitProblems = {
+    triggerPercent: trigger === null ? CREATE.automation.triggerInvalid : null,
+    maxOverlapPercent: overlap === null ? CREATE.automation.overlapInvalid : null,
+    sequenceCap: cap === null ? CREATE.automation.capInvalid : null,
+  }
+  if (trigger === null || overlap === null || cap === null) return { ok: false, problems }
+  return { ok: true, values: { trigger, overlap, cap }, problems }
+}
+
+/* ---------------------------------------------------------------------------
+   Transitions
+--------------------------------------------------------------------------- */
+
+const earlier = (a: Stage, b: Stage): Stage => (stageIndex(a) <= stageIndex(b) ? a : b)
+
+/** The pool's price as the range controls judge it, at `now` (the page's clock). */
+export const priceOf = (pool: PoolOption | null, now: number): PoolPrice | null => (pool ? poolPrice(pool, now) : null)
+
+/** What each stage needs before Continue. Review never continues: creation is gated (`createGate`). */
+export function canContinue(stage: Stage, state: JourneyState, now: number): Check {
+  switch (stage) {
+    case 'token':
+      if (!state.token) return fail(CREATE.token.needToken)
+      return state.token.why === null ? OK : fail(CREATE.token.notSelectable)
+    case 'pool':
+      if (!state.token) return fail(CREATE.token.needToken)
+      if (!state.pool) return fail(CREATE.pool.needPool)
+      return poolHolds(state.pool, state.token.key) ? OK : fail(CREATE.pool.poolMismatch)
+    case 'amount': {
+      if (!state.token || !state.pool) return fail(CREATE.pool.needPool)
+      const price = priceOf(state.pool, now)
+      if (!price || price.state !== 'usable') return fail(CREATE.amount.priceUnavailable)
+      const budget = validateBudget(state.budget, candidateDecimals(state.token))
+      if (!budget.ok) return fail(budget.reason)
+      const range = validateRange(state.range, state.pool)
+      if (!range.ok) return range
+      const slippage = validateSlippage(state.slippageBps)
+      return slippage.ok ? OK : fail(slippage.reason)
+    }
+    case 'balance':
+      // The preview is not enabled on this connection. The person may still see the rest.
+      return OK
+    case 'automation':
+      if (state.automation !== 'domino') return OK
+      return validateLimits(state.limits).ok ? OK : fail(CREATE.automation.limitsInvalid)
+    case 'review':
+      return fail(CREATE.review.gate)
+    default:
+      return stage satisfies never
+  }
+}
+
+/** The furthest stage the state allows: every stage before it can continue. */
+export function reachable(state: JourneyState, now: number): Stage {
+  for (const stage of STAGES) if (!canContinue(stage, state, now).ok) return stage
+  return 'review'
+}
+
+/** Whether the rail may open `stage`: reached before, and every stage before it still complete. */
+export const canOpen = (stage: Stage, state: JourneyState, now: number) => stageIndex(stage) <= stageIndex(earlier(state.furthest, reachable(state, now)))
+
+export function next(state: JourneyState, now: number): JourneyState {
+  const at = stageIndex(state.stage)
+  if (at >= STAGES.length - 1 || !canContinue(state.stage, state, now).ok) return state
+  const stage = STAGES[at + 1]
+  return { ...state, stage, furthest: stageIndex(stage) > stageIndex(state.furthest) ? stage : state.furthest }
+}
+
+export function back(state: JourneyState): JourneyState {
+  const at = stageIndex(state.stage)
+  return at === 0 ? state : { ...state, stage: STAGES[at - 1] }
+}
+
+export function goTo(state: JourneyState, stage: Stage, now: number): JourneyState {
+  return canOpen(stage, state, now) ? { ...state, stage } : state
+}
+
+/** A different token changes the units of the budget and may leave the chosen pool: both go. */
+export function withToken(state: JourneyState, token: TokenCandidate | null): JourneyState {
+  const same = token !== null && state.token !== null && token.key === state.token.key
+  const pool = token && state.pool && poolHolds(state.pool, token.key) ? state.pool : null
+  return {
+    ...state,
+    token,
+    paired: token && state.paired && state.paired.key === token.key ? null : state.paired,
+    pool,
+    range: pool ? state.range : null,
+    budget: same ? state.budget : '',
+  }
+}
+
+/** A second asset only narrows the pool list; a chosen pool that does not hold it goes. */
+export function withPaired(state: JourneyState, paired: TokenCandidate | null): JourneyState {
+  const pool = state.pool && (!paired || poolHolds(state.pool, paired.key)) ? state.pool : null
+  return { ...state, paired, pool, range: pool ? state.range : null }
+}
+
+/** A pool read again keeps its range; a different pool starts with the standard preset on its price, or no range. */
+export function withPool(state: JourneyState, pool: PoolOption | null, now: number): JourneyState {
+  if (pool && state.pool && pool.key === state.pool.key) return { ...state, pool }
+  if (!pool) return { ...state, pool: null, range: null }
+  const price = poolPrice(pool, now)
+  return { ...state, pool, range: price.state === 'usable' ? presetRange(price.tick, price.tickSpacing, 'standard') : null }
+}
+
+export const withRange = (state: JourneyState, range: TickRange | null): JourneyState => ({ ...state, range })
+export const withBudget = (state: JourneyState, budget: string): JourneyState => ({ ...state, budget })
+export const withSlippage = (state: JourneyState, slippageBps: string): JourneyState => ({ ...state, slippageBps })
+export const withAutomation = (state: JourneyState, automation: Automation): JourneyState => ({ ...state, automation })
+export const withLimits = (state: JourneyState, limits: Partial<DominoLimits>): JourneyState => ({ ...state, limits: { ...state.limits, ...limits } })
+
+/* ---------------------------------------------------------------------------
+   The preview request and the creation gate
+--------------------------------------------------------------------------- */
+
+export type PreviewRequest = { ok: true; request: PositionPreviewRequest } | { ok: false; reason: string }
+
+/**
+ * The position-preview request this journey would send, shaped exactly as
+ * onboarding-v1's `position-preview.request.schema.json`. Formed only from
+ * validated reads and validated inputs; never sent from here, because the
+ * preview service is not enabled on this connection. The pool key must be
+ * hookless with a fixed fee: that is what the service admits.
+ */
+export function previewRequest(state: JourneyState): PreviewRequest {
+  const { token, pool, range } = state
+  if (!token || !pool || !range) return { ok: false, reason: CREATE.balance.incomplete }
+  if (pool.hooks !== NATIVE_CURRENCY) return { ok: false, reason: CREATE.balance.hooks }
+  if (pool.feePips === DYNAMIC_FEE_PIPS) return { ok: false, reason: CREATE.balance.dynamicFee }
+  if (!poolHolds(pool, token.key)) return { ok: false, reason: CREATE.pool.poolMismatch }
+  const budget = validateBudget(state.budget, candidateDecimals(token))
+  if (!budget.ok) return { ok: false, reason: budget.reason }
+  const ticks = validateRange(range, pool)
+  if (!ticks.ok) return { ok: false, reason: ticks.reason }
+  const slippage = validateSlippage(state.slippageBps)
+  if (!slippage.ok) return { ok: false, reason: slippage.reason }
+  const [currency0, currency1] = pool.currencies
+  return {
+    ok: true,
+    request: {
+      chainId: CHAIN_ID,
+      poolId: pool.key,
+      poolKey: {
+        currency0: tokenAddress(currency0),
+        currency1: tokenAddress(currency1),
+        fee_pips: pool.feePips,
+        tick_spacing: pool.tickSpacing,
+        // The contract admits exactly the zero address here; `pool.hooks` was checked to be it above.
+        hooks: '0x0000000000000000000000000000000000000000',
+      },
+      independentToken: token.key,
+      amountRaw: budget.raw,
+      tickLower: range.lower,
+      tickUpper: range.upper,
+      slippageBps: slippage.bps,
+    },
+  }
+}
+
+export interface CreateGate {
+  enabled: boolean
+  reason: string
+  detail: string
+}
+
+/**
+ * Whether "Create position" may do anything. Derived from the build's
+ * signing flag, which is false. It cannot flip on this connection without a
+ * contract change either: read-v1 1.1.0-rc.3 types the capabilities answer's
+ * `ownerTransactions` as the literal `false` (api-contracts/read-v1/types.ts),
+ * so no server answer on this contract can enable an owner transaction.
+ */
+export function createGate(): CreateGate {
+  return { enabled: CAPABILITIES.signingEnabled, reason: CREATE.review.gate, detail: CREATE.review.gateDetail }
+}
+
+/* ---------------------------------------------------------------------------
+   Domino geometry, wallet steps, fee bases and the summary
+--------------------------------------------------------------------------- */
+
+const LOG_STEP = Math.log(1.0001)
+const ticksFor = (ratio: number) => Math.log(ratio) / LOG_STEP
+
+export interface SuccessorGeometry {
+  /** The tick at which the source becomes eligible to evaluate: trigger% below its upper bound. */
+  triggerTick: number
+  /** The lowest tick the successor's floor may take: overlap% below the source's upper bound, rounded up to the spacing. */
+  floorMinTick: number
+  /** The successor's target ceiling: 50% above the source's upper bound, rounded up to the spacing. */
+  ceilingTick: number
+}
+
+/**
+ * The agreed successor geometry from a range's upper bound, as ticks on the
+ * pool's spacing. An illustration of the rule in the pool's own price
+ * orientation, never a plan. Null when the spacing cannot hold it.
+ */
+export function successorGeometry(range: TickRange, limits: LimitValues, spacing: number): SuccessorGeometry | null {
+  const { min, max } = usableTicks(spacing)
+  const clamp = (tick: number) => Math.min(max, Math.max(min, tick))
+  const triggerTick = clamp(Math.floor(range.upper + ticksFor(1 - limits.trigger / 100)))
+  const floorMinTick = clamp(Math.ceil((range.upper + ticksFor(1 - limits.overlap / 100)) / spacing) * spacing)
+  const ceilingTick = clamp(Math.ceil((range.upper + ticksFor(1.5)) / spacing) * spacing)
+  if (floorMinTick >= ceilingTick) return null
+  return { triggerTick, floorMinTick, ceilingTick }
+}
+
+export interface WalletStep {
+  title: string
+  detail: string
+  /** The token the step concerns, for the screen to name by symbol and address. */
+  token?: TokenDisplay
+}
+
+/** What a real creation would ask a wallet for, in order. A description, not an action. */
+export function walletSteps(state: JourneyState): WalletStep[] {
+  const { token, pool } = state
+  if (!token || !pool) return []
+  const other = otherCurrency(pool, token.key)
+  const steps: WalletStep[] = []
+  if (token.key === NATIVE_CURRENCY) {
+    steps.push({ title: CREATE.review.nativeStep, detail: CREATE.review.nativeStepDetail, token: token.token })
+  } else {
+    steps.push({ title: CREATE.review.approveStep, detail: CREATE.review.approveStepDetail, token: token.token })
+  }
+  if (other) {
+    if (tokenAddress(other) === NATIVE_CURRENCY) {
+      steps.push({ title: CREATE.review.otherNativeStep, detail: CREATE.review.otherTokenStep, token: other })
+    } else {
+      steps.push({ title: CREATE.review.otherApproveStep, detail: CREATE.review.otherTokenStep, token: other })
+    }
+  }
+  steps.push({ title: CREATE.review.mintStep, detail: CREATE.review.mintStepDetail })
+  if (state.automation !== 'none') {
+    steps.push({ title: CREATE.review.automationStepTitle(CREATE.review.automationStepNames[state.automation]), detail: CREATE.review.automationStep })
+  }
+  return steps
+}
+
+export interface FeeBasis {
+  label: string
+  value: string
+  note: string
+}
+
+/** The fee bases side by side, each with its own basis. Never one number. */
+export function feeBases(state: JourneyState): FeeBasis[] {
+  const poolFee = state.pool ? state.pool.fee : CREATE.page.notChosen
+  const { feeLabels, feeValues, feeNotes } = CREATE.review
+  return [
+    { label: feeLabels.pool, value: poolFee, note: feeNotes.pool },
+    { label: feeLabels.service, value: feeValues.service, note: feeNotes.service },
+    { label: feeLabels.swap, value: feeValues.swap, note: feeNotes.swap },
+    { label: feeLabels.gas, value: feeValues.gas, note: feeNotes.gas },
+  ]
+}
+
+export interface SummaryLine {
+  stage: Stage
+  label: string
+  value: string
+  /** The stage's inputs are complete. */
+  done: boolean
+}
+
+const rangeText = (range: TickRange, price: PoolPrice | null): string => {
+  const words = CREATE.review.summary
+  if (price && price.state === 'usable') {
+    const lower = boundPrice(range.lower, price) ?? words.beyondDisplay
+    const upper = boundPrice(range.upper, price) ?? words.beyondDisplay
+    return words.rangePrices(lower, upper, range.lower, range.upper)
+  }
+  return words.rangeTicks(range.lower, range.upper)
+}
+
+const automationText = (state: JourneyState): string => {
+  const words = CREATE.review.summary
+  if (state.automation === 'none') return CREATE.automation.none
+  if (state.automation === 'compound') return `${CREATE.automation.compound} · ${words.notConnected}`
+  const limits = validateLimits(state.limits)
+  const values = limits.ok ? words.limits(limits.values.trigger, limits.values.overlap, limits.values.cap) : words.limitsInvalid
+  return `${CREATE.automation.domino} · ${values} · ${words.notConnected}`
+}
+
+/** One line per stage for the rail and the review, with "—" where nothing is chosen. */
+export function summaryLines(state: JourneyState, now: number): SummaryLine[] {
+  const none = CREATE.page.notChosen
+  const price = priceOf(state.pool, now)
+  const token = state.token
+  const tokenValue = token ? `${tokenText(token.token)} · ${shortAddress(token.key)}` : none
+  const pool = state.pool
+  const poolValue = pool ? `${tokenText(pool.currencies[0])}/${tokenText(pool.currencies[1])} · ${pool.fee} · ${shortAddress(pool.key)}` : none
+  const budget = token ? validateBudget(state.budget, candidateDecimals(token)) : null
+  const amountValue = budget?.ok && state.range && token ? `${state.budget} ${tokenText(token.token)} · ${rangeText(state.range, price)}` : none
+  return [
+    { stage: 'token', label: CREATE.stage.token.short, value: tokenValue, done: canContinue('token', state, now).ok },
+    { stage: 'pool', label: CREATE.stage.pool.short, value: poolValue, done: canContinue('pool', state, now).ok },
+    { stage: 'amount', label: CREATE.stage.amount.short, value: amountValue, done: canContinue('amount', state, now).ok },
+    { stage: 'balance', label: CREATE.stage.balance.short, value: stageIndex(state.furthest) > stageIndex('balance') ? CREATE.balance.notEnabled : none, done: stageIndex(state.furthest) > stageIndex('balance') },
+    { stage: 'automation', label: CREATE.stage.automation.short, value: stageIndex(state.furthest) >= stageIndex('automation') ? automationText(state) : none, done: stageIndex(state.furthest) > stageIndex('automation') && canContinue('automation', state, now).ok },
+    { stage: 'review', label: CREATE.stage.review.short, value: state.stage === 'review' ? CREATE.review.gate : none, done: false },
+  ]
+}
+
+/** Where the pool's price sits against the range, in words, or null without both. */
+export function positionText(state: JourneyState, now: number): string | null {
+  const price = priceOf(state.pool, now)
+  if (!price || price.state !== 'usable' || !state.range) return null
+  const inside = rangePosition(state.range, price.tick) === 'inside'
+  return `${inside ? CREATE.review.inRange : CREATE.review.outOfRange}${price.stale ? ` ${CREATE.review.stale}` : ''}`
+}
+
+/** The whole journey as plain text lines: the review's words, and what tests read. */
+export function serialiseSummary(state: JourneyState, now: number): string[] {
+  const words = CREATE.review.summary
+  const lines = summaryLines(state, now).map((line) => `${line.label}: ${line.value}`)
+  const position = positionText(state, now)
+  if (position) lines.push(`${words.price}: ${position}`)
+  const request = previewRequest(state)
+  lines.push(request.ok ? `${words.request}: ${JSON.stringify(request.request)}` : `${words.request}: ${CREATE.balance.cannotForm} ${request.reason}`)
+  lines.push(`${words.amounts}: ${CREATE.balance.notEnabled}`)
+  for (const [index, step] of walletSteps(state).entries()) lines.push(`${words.walletStep(index + 1)}: ${step.title}`)
+  for (const fee of feeBases(state)) lines.push(`${fee.label}: ${fee.value}`)
+  const gate = createGate()
+  lines.push(`${words.create}: ${gate.enabled ? words.enabled : words.disabled(gate.reason)}`)
+  return lines
+}

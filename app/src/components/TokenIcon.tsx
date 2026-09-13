@@ -1,15 +1,15 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import type { CSSProperties } from 'react'
 import type { TokenDisplay } from '../lib/read/types'
+import { tokenArtwork, tokenArtworkKey } from '../lib/tokenArtwork'
 
 /**
  * Token marks.
  *
- * Every symbol looks for its artwork at /tokens/<file> in this app, so adding a
- * logo is dropping a file in that folder. Nothing is fetched from a third-party
- * host at runtime. The keys are our curated artwork keys: a read token reaches
+ * Bundled artwork is preferred. The keys are our curated artwork keys: a read token reaches
  * one only through its address (project.ts), never through its symbol. A
- * missing file falls back to a coloured disc with letters.
+ * missing bundled file falls back to a coloured disc with letters. Unmapped
+ * read tokens may use separately bounded public decorative metadata below.
  *
  * `ext` exists because the Robinhood Chain tokens publish raster artwork, not
  * vectors. Those files are their projects' own marks, saved into this
@@ -54,10 +54,11 @@ export function TokenIcon({
   const key = symbol.toUpperCase()
   const spec = SPECS[key] ?? fallback(symbol)
   const src = spec.file === null ? null : `/tokens/${(spec.file ?? key).toLowerCase()}.${spec.ext ?? 'svg'}`
-  const [broken, setBroken] = useState(false)
+  // A failed previous token must not suppress the next token's artwork.
+  const [brokenSrc, setBrokenSrc] = useState<string | null>(null)
   const border = ring ? `2px solid ${ring}` : undefined
 
-  if (src && !broken) {
+  if (src && brokenSrc !== src) {
     return (
       <img
         src={src}
@@ -65,7 +66,7 @@ export function TokenIcon({
         width={size}
         height={size}
         draggable={false}
-        onError={() => setBroken(true)}
+        onError={() => setBrokenSrc(src)}
         className={className}
         style={{
           width: size,
@@ -112,27 +113,51 @@ export function TokenIcon({
 
 
 /**
- * The mark for a token as the read adapter describes it. Artwork comes only
- * from the curated key attached to it by address; a token without one gets a
- * plain disc. No letters are drawn from its symbol, which is untrusted text,
- * and nothing from it ever reaches `src` or `alt`.
+ * The mark for a token as the read adapter describes it. Curated artwork is
+ * preferred; other public token contracts may resolve decorative artwork by
+ * exact chain/address through the bounded provider helper. Symbols never
+ * select an image or supply fallback letters. Missing artwork is a plain disc.
  */
-export function TokenMark({ token, size = 24, ring, style }: { token: TokenDisplay; size?: number; ring?: string; style?: CSSProperties }) {
+type MarkProps = { token: TokenDisplay; size?: number; ring?: string; style?: CSSProperties }
+
+export function TokenMark({ token, size = 24, ring, style }: MarkProps) {
   if (token.artwork) return <TokenIcon symbol={token.artwork} size={size} ring={ring} style={style} />
+  return <RemoteTokenMark key={`${token.chainId}:${token.address}`} token={token} size={size} ring={ring} style={style} />
+}
+
+/** Decoration only: the provider never supplies a symbol, balance or verified badge. */
+function RemoteTokenMark({ token, size = 24, ring, style }: MarkProps) {
+  const [src, setSrc] = useState<string | null>(null)
+  const [loaded, setLoaded] = useState(false)
+  const [broken, setBroken] = useState(false)
+  useEffect(() => {
+    let alive = true
+    if (token.readStatus !== 'no_contract' && tokenArtworkKey(token.chainId, token.address)) {
+      void tokenArtwork.resolve(token.chainId, token.address).then((image) => { if (alive) setSrc(image) })
+    }
+    return () => { alive = false }
+  }, [token.chainId, token.address, token.readStatus])
+  useEffect(() => {
+    if (!src || loaded || broken) return
+    const timer = setTimeout(() => {
+      setBroken(true)
+      tokenArtwork.rejectImage(token.chainId, token.address)
+    }, 6000)
+    return () => clearTimeout(timer)
+  }, [src, loaded, broken, token.chainId, token.address])
+  const markStyle: CSSProperties = {
+    width: size, height: size, borderRadius: '50%', border: ring ? `2px solid ${ring}` : undefined,
+    display: 'inline-block', flexShrink: 0, background: 'var(--surface-3)', ...style,
+  }
+  if (src && !broken) return <img src={src} alt="" width={size} height={size} draggable={false}
+    decoding="async" referrerPolicy="no-referrer" data-token-mark="provider"
+    onLoad={() => setLoaded(true)} onError={() => { setBroken(true); tokenArtwork.rejectImage(token.chainId, token.address) }}
+    style={{ ...markStyle, objectFit: 'cover' }} />
   return (
     <span
       aria-hidden="true"
       data-token-mark="unknown"
-      style={{
-        width: size,
-        height: size,
-        borderRadius: '50%',
-        border: ring ? `2px solid ${ring}` : undefined,
-        display: 'inline-block',
-        flexShrink: 0,
-        background: 'var(--surface-3)',
-        ...style,
-      }}
+      style={markStyle}
     />
   )
 }
@@ -146,4 +171,3 @@ export function TokenMarkPair({ base, quote, size = 32, ring = 'var(--surface-2)
     </span>
   )
 }
-

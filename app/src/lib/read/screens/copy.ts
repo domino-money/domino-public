@@ -280,8 +280,13 @@ export function failureText(outcome: ScreenFailure, subject: Subject): ScreenTex
     case 'access_required':
       return { code: outcome.state, title: 'Blocked by an access check', detail: COPY.local.access, retry: false }
     case 'incompatible':
-      // Deliberately the same words as a reply that fails validation: to a
-      // person both mean this build needs an update, and screens.test.mjs
+      // A mismatch the read service reports about its own upstream reply is
+      // the server's, never this app's: it is not an update the visitor needs.
+      if (outcome.reason === 'upstream_contract_mismatch') {
+        return { code: outcome.state, title: `${name} data unavailable`, detail: 'The read service reported a contract mismatch for this read, so nothing is shown.', retry: true }
+      }
+      // Otherwise deliberately the same words as a reply that fails validation:
+      // to a person both mean this build needs an update, and screens.test.mjs
       // pins that. The state still differs in `code`.
       return { code: outcome.state, title: 'Update needed', detail: COPY.local.update, retry: true }
     case 'invalid':
@@ -292,6 +297,9 @@ export function failureText(outcome: ScreenFailure, subject: Subject): ScreenTex
       const cause = outcome.cause
       switch (cause.kind) {
         case 'producer':
+          if (cause.code === 'activity_pool_not_registered') {
+            return { code: outcome.state, title: 'Activity isn’t indexed for this pool', detail: 'The read service answered: activity pool not registered.', retry: outcome.retryable }
+          }
           return { code: outcome.state, title: `${name} data unavailable`, detail: `The read service answered: ${reasonText(cause.code)}.`, retry: outcome.retryable }
         case 'network':
           return { code: outcome.state, title: `${name} data unavailable`, detail: COPY.local.network, retry: true }

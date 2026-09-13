@@ -1,0 +1,88 @@
+/* pool builder (DESIGN.md H.4): chart card and stat strip specifics, classes prefixed dm-pool-. Rules go inside @layer components. */
+
+@layer components {
+  /* ---- Page frame: breadcrumb, title row, figures (E.3) ------------------------------------ */
+  .dm-pool-breadcrumb { display: flex; align-items: center; min-height: 20px; }
+  .dm-pool-back { display: inline-flex; align-items: center; gap: 6px; border-radius: 6px; font-size: 13px; line-height: 16px; font-weight: 500; letter-spacing: -0.13px; color: var(--fg-muted); text-decoration: none; transition: color var(--dur-hover) ease; }
+  .dm-pool-back:hover { color: var(--fg); }
+  .dm-pool-back-glyph { display: inline-block; font-size: 17px; line-height: 16px; transition: translate var(--dur-fade) var(--ease-std); }
+  .dm-pool-back:hover .dm-pool-back-glyph { translate: -2px 0; }
+
+  .dm-pool-marks { display: inline-flex; flex-shrink: 0; }
+  .dm-pool-id { display: inline-flex; align-items: center; gap: 2px; font-family: var(--font-mono); font-size: 13px; line-height: 18px; letter-spacing: 0; color: var(--fg-subtle); }
+
+  /* No card: a hairline above and below the five figures. */
+  .dm-pool-figures { border-block: 1px solid var(--border); padding-block: 20px; }
+
+  /* Key/value rows that read down the first column, then the second (DOM order is the reading order). */
+  .dm-pool-kv dt { flex-shrink: 0; white-space: nowrap; }
+  @media (min-width: 768px) {
+    .dm-pool-kv { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); grid-auto-flow: column; column-gap: 32px; }
+    .dm-pool-kv--3 { grid-template-rows: repeat(3, auto); }
+    .dm-pool-kv--4 { grid-template-rows: repeat(4, auto); }
+    .dm-pool-kv--5 { grid-template-rows: repeat(5, auto); }
+    .dm-pool-kv--3 > div:nth-child(3), .dm-pool-kv--4 > div:nth-child(4), .dm-pool-kv--5 > div:nth-child(5) { background: none; }
+  }
+
+  /* The dotted band that stands where activity will be, until a person asks. */
+  .dm-pool-band { position: relative; display: grid; place-items: center; height: 96px; padding: 0 16px; border-radius: var(--radius-sm); box-shadow: inset 0 0 0 1px var(--border); text-align: center; --chart-ground: var(--surface-2); }
+  .dm-pool-band > * { position: relative; z-index: 1; }
+
+  /* ---- USD price and volume (E.3) ----------------------------------------------------------- */
+  .dm-pool-plot { position: relative; border-radius: var(--radius-sm); box-shadow: inset 0 0 0 1px var(--border); --chart-ground: var(--surface-2); }
+  .dm-pool-plot-empty { position: relative; z-index: 1; display: grid; place-content: center; justify-items: center; gap: 12px; min-height: 200px; padding: 20px; text-align: center; }
+  .dm-pool-plot-baseline { position: absolute; left: 20px; right: 20px; bottom: 32px; height: 2px; }
+  .dm-pool-chart-svg { position: relative; z-index: 1; display: block; max-width: 100%; border-radius: inherit; touch-action: pan-y; cursor: crosshair; }
+  .dm-pool-chart-svg:focus-visible { outline-offset: -2px; }
+  .dm-pool-chart-svg { transition: opacity var(--dur-fade) var(--ease-std); }
+  .dm-pool-chart-svg[aria-busy="true"] { opacity: 0.5; }
+  .dm-pool-grid { stroke: var(--border); stroke-width: 1; stroke-dasharray: 3 5; }
+  .dm-pool-line { fill: none; stroke: var(--primary-ink); stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; }
+  .dm-pool-last { fill: var(--primary-ink); }
+  .dm-pool-last[data-open] { opacity: 0.55; }
+  .dm-pool-crosshair { stroke: var(--border-strong); stroke-width: 1; }
+  .dm-pool-ring { fill: var(--surface-2); stroke: var(--primary-ink); stroke-width: 2; }
+  .dm-pool-axis { fill: var(--fg-subtle); font-family: var(--font-sans); font-size: 12px; letter-spacing: 0; font-variant-numeric: lining-nums tabular-nums; }
+  /* Data arrival: the line and its area draw in from the left; the bars rise (VolumeBarsGroup). */
+  .dm-pool-reveal { animation: dm-reveal var(--dur-chart) var(--ease-enter) both; }
+
+  /* ---- Plan a range: PoolRangeControls (E.4) ------------------------------------------------ */
+  .dm-pool-widths { display: flex; width: 100%; }
+  @media (min-width: 640px) { .dm-pool-widths { max-width: 360px; } }
+  .dm-pool-widths > .dm-seg-item { flex: 1 1 0; min-width: 0; }
+
+  .dm-pool-interval { position: relative; height: 96px; overflow: hidden; border-radius: var(--radius-sm); background-color: var(--surface-1); box-shadow: inset 0 0 0 1px var(--border); --chart-ground: var(--surface-1); }
+  .dm-pool-interval > * { position: absolute; z-index: 1; }
+  .dm-pool-interval-band { top: 28px; bottom: 28px; background: color-mix(in srgb, var(--primary-ink) 22%, transparent); border-inline: 1px solid var(--primary-ink); transition: left var(--dur-hover) var(--ease-std), width var(--dur-hover) var(--ease-std); }
+  .dm-pool-interval-handle { top: 50%; width: 12px; height: 12px; margin: -6px 0 0 -6px; border-radius: var(--radius-pill); background: var(--btn); box-shadow: var(--elev-button); transition: left var(--dur-hover) var(--ease-std); }
+  .dm-pool-interval-price { top: 22px; bottom: 8px; width: 1px; margin-left: -0.5px; background: repeating-linear-gradient(to bottom, var(--fg) 0 3px, transparent 3px 6px); transition: left var(--dur-hover) var(--ease-std); }
+  .dm-pool-interval-label { top: 5px; translate: -50% 0; font-size: 11px; line-height: 14px; font-weight: 500; letter-spacing: -0.1px; color: var(--fg-muted); white-space: nowrap; }
+  .dm-pool-interval-end { bottom: 5px; font-size: 11px; line-height: 14px; color: var(--fg-subtle); white-space: nowrap; }
+  .dm-pool-interval-end--min { left: 8px; }
+  .dm-pool-interval-end--max { right: 8px; }
+
+  /* The bound's price: a borderless field, right-aligned, that shows its ring only on focus. */
+  .dm-pool-bound-input { flex: 1 1 auto; min-width: 0; height: 36px; padding: 0 8px; border-radius: var(--radius-sm); background: transparent; color: var(--fg); font: inherit; font-size: 16px; line-height: 24px; font-weight: 500; letter-spacing: -0.24px; text-align: right; font-variant-numeric: lining-nums tabular-nums; transition: background-color var(--dur-hover) ease; }
+  .dm-pool-bound-input:hover { background: var(--wash); }
+  .dm-pool-bound-input:focus-visible { background: var(--wash); outline: 2px solid var(--ring); outline-offset: 0; }
+  .dm-pool-bound-input[aria-invalid="true"] { box-shadow: inset 0 0 0 1px var(--money-out); }
+  .dm-pool-step-glyph { font-size: 18px; line-height: 18px; }
+
+  .dm-pool-position { display: flex; align-items: center; gap: 8px; font-size: 13px; line-height: 18px; color: var(--fg-muted); }
+  .dm-pool-dot { width: 6px; height: 6px; flex-shrink: 0; border-radius: var(--radius-pill); background: var(--fg-faint); }
+  .dm-pool-dot--in { background: var(--money-in); }
+  .dm-pool-dot--out { background: var(--money-out); }
+  .dm-pool-dot--wait { background: var(--money-wait); }
+
+  /* ---- Phone (E.3 Phone, 390) ---------------------------------------------------------------- */
+  @media (max-width: 639px) {
+    .dm-pool-price-stat { grid-column: span 2; }
+  }
+  @media (max-width: 767px) {
+    .dm-pool-marks { zoom: 0.8182; }
+    .dm-pool-actions { width: 100%; }
+    .dm-pool-new { width: 100%; height: 44px; padding: 0 18px; font-size: 14px; line-height: 20px; }
+    .dm-pool-chart-controls { width: 100%; }
+    .dm-pool-activity-button { width: 100%; }
+  }
+}

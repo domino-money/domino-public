@@ -1,0 +1,113 @@
+/** Optional decoration from https://docs.dexscreener.com/api/reference.
+ * Chain/address association is not token approval. Never use this API's prices,
+ * names or links as application data. A pair image belongs to its BASE token.
+ */
+const ADDRESS = /^0x[0-9a-fA-F]{40}$/
+const CDN_IMAGE = /^https:\/\/cdn\.dexscreener\.com\/cms\/images\/([A-Za-z0-9_-]{8,128})(?:\?[^#\s]*)?$/
+const MAX_BODY = 262144
+const TIMEOUT = 6000
+
+export function tokenArtworkKey(chainId: number, address: string): string | null {
+  return chainId === 4663 && ADDRESS.test(address) && !/^0x0{40}$/i.test(address) ? `4663:${address.toLowerCase()}` : null
+}
+
+export function safeTokenImage(value: unknown): string | null {
+  const match = typeof value === 'string' && value.length <= 2048 && CDN_IMAGE.exec(value)
+  return match ? `https://cdn.dexscreener.com/cms/images/${match[1]}?width=64&height=64&quality=85&format=auto` : null
+}
+
+export function artworkFromPairs(body: unknown, address: string): string | null {
+  if (!Array.isArray(body) || body.length > 100 || !ADDRESS.test(address)) return null
+  const urls = new Set<string>()
+  for (const pair of body) {
+    if (!pair || pair.chainId !== 'robinhood' || typeof pair.baseToken?.address !== 'string'
+      || pair.baseToken.address.toLowerCase() !== address.toLowerCase()) continue
+    const image = safeTokenImage(pair.info?.imageUrl)
+    if (image) urls.add(image)
+  }
+  return urls.size === 1 ? [...urls][0] : null
+}
+
+type Options = { fetch?: typeof fetch; now?: () => number }
+type Entry = { value: string | null; expires: number }
+
+export function createTokenArtworkResolver(options: Options = {}) {
+  const fetch = options.fetch ?? globalThis.fetch
+  const now = options.now ?? (() => performance.now())
+  const cache = new Map<string, Entry>()
+  const pending = new Map<string, Promise<string | null>>()
+  const queue: Array<() => void> = []
+  let active = 0
+
+  async function retrieve(address: string, remaining: number): Promise<string | null> {
+    const controller = new AbortController()
+    const timer = setTimeout(() => controller.abort(), remaining)
+    try {
+      const response = await fetch(`https://api.dexscreener.com/token-pairs/v1/robinhood/${address}`, {
+        signal: controller.signal, credentials: 'omit', referrerPolicy: 'no-referrer', redirect: 'error',
+        headers: { Accept: 'application/json' },
+      })
+      if (!response.ok || response.redirected || !response.headers.get('content-type')?.startsWith('application/json') || !response.body) return null
+      const declared = response.headers.get('content-length')
+      if (declared !== null && (!/^\d+$/.test(declared) || Number(declared) > MAX_BODY)) return null
+      const reader = response.body.getReader()
+      const parts: Uint8Array[] = []
+      let size = 0
+      while (true) {
+        const result = await reader.read()
+        if (result.done) break
+        size += result.value.byteLength
+        if (size > MAX_BODY) { await reader.cancel(); return null }
+        parts.push(result.value)
+      }
+      const bytes = new Uint8Array(size)
+      let offset = 0
+      for (const part of parts) { bytes.set(part, offset); offset += part.byteLength }
+      if (controller.signal.aborted) return null
+      return artworkFromPairs(JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(bytes)), address)
+    } catch { return null }
+    finally { clearTimeout(timer); controller.abort() }
+  }
+
+  function remember(key: string, value: string | null) {
+    cache.delete(key)
+    cache.set(key, { value, expires: now() + (value ? 3600000 : 300000) })
+    while (cache.size > 128) cache.delete(cache.keys().next().value!)
+  }
+
+  function resolve(chainId: number, address: string): Promise<string | null> {
+    const key = tokenArtworkKey(chainId, address)
+    if (!key) return Promise.resolve(null)
+    const cached = cache.get(key)
+    if (cached && cached.expires > now()) return Promise.resolve(cached.value)
+    const joined = pending.get(key)
+    if (joined) return joined
+    if (pending.size >= 32) { remember(key, null); return Promise.resolve(null) }
+    const queuedAt = now()
+    const result = new Promise<string | null>((done) => {
+      const run = () => {
+        active++
+        const remaining = TIMEOUT - (now() - queuedAt)
+        void (remaining <= 0 ? Promise.resolve(null) : retrieve(address.toLowerCase(), remaining)).then((value) => {
+          remember(key, value)
+          done(value)
+        }).finally(() => {
+          pending.delete(key)
+          active--
+          queue.shift()?.()
+        })
+      }
+      if (active < 2) run()
+      else queue.push(run)
+    })
+    pending.set(key, result)
+    return result
+  }
+
+  return { resolve, rejectImage: (chainId: number, address: string) => {
+    const key = tokenArtworkKey(chainId, address)
+    if (key) remember(key, null)
+  } }
+}
+
+export const tokenArtwork = createTokenArtworkResolver()
