@@ -47,7 +47,7 @@ test('actual compiled artifacts produce eight unsigned calls with exact construc
 });
 
 test('no inferred roles, excess tariff, exhausted nonce, bad gas or false chain can prepare', () => {
-  const changes = [{ feeRecipient: undefined }, { privateKey: 'never-read' }, { operator: parameters.pricePublisher },
+  const changes = [{ feeRecipient: undefined }, { privateKey: 'never-read' }, { operator: parameters.pricePublisher }, { operator: parameters.feeRecipient }, { pricePublisher: DEPENDENCIES.poolManager },
     { chainId: 1 }, { setupFeeBps: 66 }, { tariffVersion: '0' }, { expiresAt: 1 }, { nonce: (2n ** 64n - 1n).toString() },
     { maxTotalCostWei: '1' }, { gas: { ...parameters.gas, implementation: '53000' } }];
   for (const update of changes) assert.throws(() => prepare({ ...parameters, ...update }, artifacts, viem));

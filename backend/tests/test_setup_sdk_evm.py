@@ -48,6 +48,8 @@ class SetupSdkEvmTests(unittest.TestCase):
                         capture_output=True,text=True,timeout=60,env={**os.environ,'DOMINO_SETUP_SDK_MODULE':str(out/'setup.js')})
                     self.assertEqual(result.returncode,0,result.stdout+result.stderr)
                     report=json.loads(result.stdout);self.assertTrue(report['passed'])
+                    self.assertGreaterEqual(report['admissionChecks'],14)
+                    print(f'Setup live admission: {report["admissionChecks"]} checks, native={native}',flush=True)
                     self.assertEqual(self.call(positions,'ownerOf(uint256)',['address'],['uint256'],[1])[0],self.owner)
                     if not native:
                         fee=self.call(pair[0],'balanceOf(address)',['uint256'],['address'],[self.recipient])[0]

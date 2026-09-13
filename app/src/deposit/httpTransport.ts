@@ -1,9 +1,8 @@
 /**
- * The deposit service over same-origin HTTP. Node-tested only: nothing under
- * src imports this module in this phase, so no build carries a path to
- * /api/deposit/v1/*. Wiring it is part of the reviewed activation (consumer
- * acknowledgement, the R46b fix pinned, HTTPS staging, operator admission and
- * a reviewed wallet handoff).
+ * The deposit service over same-origin HTTP, loaded with the optional Setup
+ * screen. Requests use the authenticated session and CSRF contract; preparing
+ * an intent never sends a wallet transaction. The wallet handoff separately
+ * verifies the current release and requires the owner's transaction review.
  */
 import type { Clock } from '../lib/clock'
 import { fetchRaw, type FetchLike } from '../lib/http/rawReply'

@@ -15,6 +15,17 @@ const labels: Record<keyof typeof defaults, string> = { currency0: 'Token 0 addr
   tickLower: 'Lower tick', tickUpper: 'Upper tick', liquidity: 'Liquidity (raw)', maxAmount0: 'Mint token 0 cap (smallest units)', maxAmount1: 'Mint token 1 cap (smallest units)',
   minPrice: 'Minimum sqrtPriceX96', maxPrice: 'Maximum sqrtPriceX96', initialPrice: 'Initial sqrtPriceX96 (0 for an existing pool)', maxGas: 'Maximum gas units', maxFee: 'Maximum fee per gas (wei)', priorityFee: 'Maximum priority fee (wei)', reserve: 'Keep native gas reserve (wei)', operationId: 'Operation ID', transactionHash: 'Wallet transaction hash' }
 type Client = ReturnType<typeof createSetupClient>
+async function currentSetupDeployment(): Promise<SetupDeployment | null> {
+  const controller = new AbortController(), timer = setTimeout(() => controller.abort(), 10_000)
+  try {
+    const response = await financialFetch('/api/setup/v1/release', { signal: controller.signal, cache: 'no-store', redirect: 'error', headers: { 'X-Domino-Setup-Contract': '1.0.0-rc.1' } })
+    if (!response.ok || response.headers.get('X-Domino-Setup-Contract') !== '1.0.0-rc.1' || !response.body) throw new Error('setup_release_unavailable')
+    const reader = response.body.getReader(), chunks: Uint8Array[] = []; let size = 0
+    while (true) { const chunk = await reader.read(); if (chunk.done) break; size += chunk.value.byteLength; if (size > 8192) { await reader.cancel(); throw new Error('invalid_setup_release') } chunks.push(chunk.value) }
+    const bytes = new Uint8Array(size); let offset = 0; for (const chunk of chunks) { bytes.set(chunk, offset); offset += chunk.length }
+    return deploymentFrom(JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(bytes)))
+  } finally { clearTimeout(timer) }
+}
 /** Advanced owner actions remain usable without a private session. The release
  * holds public identities only; it grants no spending or automation authority. */
 export default function AdvancedSetup() {
@@ -35,18 +46,8 @@ export default function AdvancedSetup() {
   }
   async function connect() {
     const gen = generation.current
-    // The response is bounded before JSON parsing; release contains no user data.
-    const controller = new AbortController(), timer = setTimeout(() => controller.abort(), 10_000)
     let deployment: SetupDeployment | null = null, recovery = false
-    try {
-      const response = await financialFetch('/api/setup/v1/release', { signal: controller.signal, cache: 'no-store', redirect: 'error', headers: { 'X-Domino-Setup-Contract': '1.0.0-rc.1' } })
-      if (!response.ok || response.headers.get('X-Domino-Setup-Contract') !== '1.0.0-rc.1' || !response.body) throw new Error('setup_release_unavailable')
-      const reader = response.body.getReader(), chunks: Uint8Array[] = []; let size = 0
-      while (true) { const chunk = await reader.read(); if (chunk.done) break; size += chunk.value.byteLength; if (size > 8192) { await reader.cancel(); throw new Error('invalid_setup_release') } chunks.push(chunk.value) }
-      const bytes = new Uint8Array(size); let offset = 0; for (const chunk of chunks) { bytes.set(chunk, offset); offset += chunk.length }
-      deployment = deploymentFrom(JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(bytes)))
-    } catch { /* A previously verified public profile can still recover funds. */ }
-    finally { clearTimeout(timer) }
+    try { deployment = await currentSetupDeployment() } catch { /* A previously verified public profile can still recover funds. */ }
     if (!deployment) {
       try {
         const saved = localStorage.getItem('domino.setup.public-recovery.v1')
@@ -54,7 +55,7 @@ export default function AdvancedSetup() {
       } catch { /* Storage is optional and holds no wallet or operation data. */ }
     }
     if (!deployment) { if (generation.current === gen) setNotice('Setup deployment is not connected yet. No transaction was prepared.'); return }
-    const wallet = await setupWallet(), next = createSetupClient(wallet, deployment)
+    const wallet = await setupWallet(), next = createSetupClient(wallet, deployment, () => Date.now() / 1000, currentSetupDeployment)
     const rows = await next.recent()
     if (generation.current !== gen || !wallet.current()) return
     if (!recovery) {
@@ -81,7 +82,9 @@ export default function AdvancedSetup() {
     try {
       const hash = await client.send(step, true)
       if (generation.current === gen) { setForm(old => ({ ...old, transactionHash: hash, operationId: step.operationId ?? old.operationId })); setNotice('Transaction offered once. Check its receipt and the operation before the next stage.') }
-    } catch { if (generation.current === gen) setNotice('The wallet outcome may be unknown. Check wallet activity and reload the operation before proceeding. This nonce will not be offered again here.') }
+    } catch (error) { if (generation.current === gen) setNotice(error instanceof Error && ['setup_admission_unavailable','setup_release_unavailable','invalid_setup_release','setup_release_expired','deployment_code_changed','deployment_identity_changed'].includes(error.message)
+      ? 'The setup release is no longer available or its identities changed. No wallet transaction was requested. Reload the deployment, then prepare and review again. Existing operations can still be read and refunded.'
+      : 'The wallet outcome may be unknown. Check wallet activity and reload the operation before proceeding. This nonce will not be offered again here.') }
     finally { if (generation.current === gen) { running.current = false; setBusy(false) } }
   }
   const inputs = (names: (keyof typeof defaults)[]) => <div className="mt-4 grid gap-3 sm:grid-cols-2">{names.map(name => <label className="text-sm" key={name}>{labels[name]}<input disabled={busy} className="mt-1 block w-full rounded border bg-surface-1 p-2" value={form[name]} onChange={event => edit(name, event.target.value)} /></label>)}</div>

@@ -48,7 +48,7 @@ function setupFixture(){
  }};
  const gas={maxGas:100000n,maxFeePerGas:1n,maxPriorityFeePerGas:0n,reserveWei:0n};
  const key={currency0:address(0),currency1:address(9),fee:3000,tickSpacing:60,hooks:address(0)};
- return {wallet,journal,walletCalls,get deferred(){return deferred},client:()=>createSetupClient(wallet,deployment,()=>100),fund:client=>client.fund(key,1n,0n,gas)};
+ return {wallet,journal,walletCalls,get deferred(){return deferred},client:()=>createSetupClient(wallet,deployment,()=>100,async()=>deployment),fund:client=>client.fund(key,1n,0n,gas)};
 }
 async function timeoutSend(t,fixture,client,prepared){
  t.mock.timers.enable({apis:['setTimeout']});

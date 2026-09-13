@@ -991,13 +991,13 @@ test('a declined signature closes the login and is not asked again', async () =>
 
 // ---- what signing in does not change ----------------------------------------
 
-test('signing in grants nothing: the site says so, and signing stays off', async () => {
+test('signing in grants no wallet transaction or automated signing authority', async () => {
   const s = await scenario();
   const page = await s.open();
   await connect(page);
   await signIn(s, page);
   // The owner removed the permanent explanatory paragraphs from this modal.
-  // Permissions remain unchanged and the existing Settings explanation stays.
+  // Session authority stays separate from the optional wallet transaction UI.
   assert.doesNotMatch(await dialog(page).innerText(), /Signing in is not a permission|Only standard wallets/);
   await dialog(page).getByRole('button', { name: 'Close' }).click();
   // Signed in is all the header claims: no mode label, and nothing about what
@@ -1007,10 +1007,10 @@ test('signing in grants nothing: the site says so, and signing stays off', async
   assert.doesNotMatch(header, /practice/i);
 
   await page.evaluate(() => (window.location.hash = '#/settings'));
-  await until(page, () => /Signing/.test(document.body.innerText), null, 'settings');
+  await until(page, () => /Automated signing/.test(document.body.innerText), null, 'settings');
   const settings = await page.locator('main').innerText();
-  assert.match(settings, /Signing\s+Off/);
-  assert.match(settings, /grants no spending permission/);
+  assert.match(settings, /Automated signing\s+Not connected/);
+  assert.match(settings, /Wallet transactions\s+Built in; each step reviewed in wallet/);
   assert.doesNotMatch(settings, /practice/i);
   // Moving between routes keeps the session without reading it again.
   const reads = s.fake.count('me');
@@ -1018,6 +1018,8 @@ test('signing in grants nothing: the site says so, and signing stays off', async
   await page.evaluate(() => (window.location.hash = '#/app'));
   await viewIs(page, 'signed_in');
   assert.equal(s.fake.count('me'), reads);
+  assert.equal(s.wallet.calls('eth_sendTransaction').length, 0, 'SIWE never submits a wallet transaction');
+  assert.equal(s.wallet.calls('eth_signTypedData_v4').length, 0, 'SIWE never signs a financial intent');
   await s.close();
 });
 

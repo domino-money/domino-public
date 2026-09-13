@@ -2,15 +2,17 @@
  * What the builds contain for the previews (#38) and the deposit consumer
  * (#40/#44), read from the built files.
  *
- * The default build (dist, what Pages deploys) has none of it: no chunk, no
- * contract string, no fixture, no copy. The consumer-test build has it in two
+ * The default build (dist, what Pages deploys) excludes the preview/deposit
+ * labs and their fixtures. Its opt-in Setup screen now uses the real deposit
+ * client, behind the existing session and wallet-review gates. The consumer-test build has the labs in two
  * lazy chunks and what they alone import, found through the Vite manifest,
  * and even there no wallet method, no route to the live deposit service and
  * no second React.
  */
 import assert from 'node:assert/strict';
+import { parse } from '@babel/parser';
 import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
-import { join, resolve } from 'node:path';
+import { basename, join, resolve } from 'node:path';
 import { test } from 'node:test';
 import { gzipSync } from 'node:zlib';
 
@@ -28,46 +30,90 @@ const textFiles = (dir) =>
     .filter((file) => /\.(js|css|html)$/.test(file) && statSync(join(dir, file)).isFile())
     .map((file) => ({ file: file.replaceAll('\\', '/'), text: readFileSync(join(dir, file), 'utf8') }));
 
-const CONSUMER_MARKERS = [
-  '/api/onboarding/v1',
+// Shared production deposit code is admitted only in Setup's exclusive static
+// closure. These strings do not grant the old preview/lab code an exception.
+const SETUP_DEPOSIT_MARKERS = [
   '/api/deposit/v1',
-  'X-Domino-Onboarding-Contract',
   'X-Domino-Deposit-Contract',
-  'swap-preview',
-  'position-preview.native',
   'validateWalletStep',
-  'DISABLED_WALLET_HANDOFF',
   'Wallet sending isn',
   'preview_expired',
   'deposit_owner_busy',
+  'domino-deposit-last-operation-v1',
+];
+const CONSUMER_MARKERS = [
+  '/api/onboarding/v1',
+  'X-Domino-Onboarding-Contract',
+  'swap-preview',
+  'position-preview.native',
+  'DISABLED_WALLET_HANDOFF',
   '25431634fd7de725',
   'Synthetic fixture',
   'fixture-csrf-not-a-session',
   'domino-preview-budget-v1',
-  'domino-deposit-last-operation-v1',
   'Live preview (invited testers)',
   '__dominoDepositProbe',
   'live-preview',
 ];
 
-test('the default build carries nothing of the previews or the deposit consumer', () => {
+function productionClosures() {
+  const assets = join(DIST, 'assets');
+  const scripts = readdirSync(assets).filter((file) => file.endsWith('.js')).sort();
+  const html = readFileSync(join(DIST, 'index.html'), 'utf8');
+  const entry = scripts.filter((file) => html.includes(file));
+  const setup = scripts.filter((file) => file.startsWith('Setup-'));
+  assert.equal(entry.length, 1);
+  assert.equal(setup.length, 1);
+  const trees = new Map(scripts.map((file) => [file, parse(readFileSync(join(assets, file), 'utf8'), { sourceType: 'module' })]));
+  const reach = (roots) => {
+    const seen = new Set();
+    const walk = (file) => {
+      if (seen.has(file)) return;
+      assert.ok(trees.has(file), `missing local module ${file}`);
+      seen.add(file);
+      // Deliberately do not follow import(): opening another lazy screen is a
+      // separate user action, not part of the entry's static dependency graph.
+      for (const node of trees.get(file).program.body) {
+        if (!['ImportDeclaration', 'ExportNamedDeclaration', 'ExportAllDeclaration'].includes(node.type) || !node.source) continue;
+        assert.match(node.source.value, /^\.\/[\w.-]+\.js$/);
+        walk(basename(node.source.value));
+      }
+    };
+    roots.forEach(walk);
+    return seen;
+  };
+  const otherRoots = scripts.filter((file) => /^(index|WalletSessionIsland|PoolExplorer|TokenPicker|Sequence|Execution|Performance)-/.test(file));
+  const shared = reach([...entry, ...otherRoots]);
+  const setupClosure = reach(setup);
+  assert.ok(!shared.has(setup[0]), 'Setup must not be loaded statically by the entry or another screen');
+  const importsSetup = (node) => {
+    if (!node || typeof node !== 'object') return false;
+    if (node.type === 'CallExpression' && node.callee?.type === 'Import' && node.arguments[0]?.value === `./${setup[0]}`) return true;
+    return Object.values(node).some((child) => Array.isArray(child) ? child.some(importsSetup) : importsSetup(child));
+  };
+  assert.ok(importsSetup(trees.get(entry[0])), 'the entry opens Setup through a dynamic import');
+  assert.deepEqual([...new Set([...shared, ...setupClosure])].sort(), scripts, 'every production module belongs to an admitted screen closure');
+  return { setupOnly: new Set([...setupClosure].filter((file) => !shared.has(file))), setupClosure };
+}
+
+test('production excludes preview/deposit labs and confines the live deposit client to opt-in Setup', () => {
   const files = textFiles(DIST);
+  const { setupOnly, setupClosure } = productionClosures();
   for (const { file, text } of files) {
     for (const marker of CONSUMER_MARKERS) assert.ok(!text.includes(marker), `dist/${file} contains ${marker}`);
+    for (const marker of SETUP_DEPOSIT_MARKERS) {
+      if (text.includes(marker)) assert.ok(file.startsWith('assets/') && setupOnly.has(basename(file)), `dist/${file} contains ${marker} outside opt-in Setup`);
+    }
   }
   const assets = readdirSync(join(DIST, 'assets'));
   assert.deepEqual(assets.filter((file) => /^(LivePreview|Deposits|OperationPanel|PreviewPanels)/.test(file)), []);
-  // When this case was written the deployable build was a single script. It is
-  // four now, each one reviewed work already in main: the entry, its vendor
-  // half, the wallet session island (#111) and the dialog helper the read
-  // screens share (#112). What the case is about is that no preview or deposit
-  // chunk is among them, so it names what is allowed instead of counting to one.
-  const ALLOWED = /^(index|WalletSessionIsland|useDialog|appSourceBridge)-/;
-  assert.deepEqual(
-    assets.filter((file) => file.endsWith('.js')).filter((file) => !ALLOWED.test(file)),
-    [],
-    'no chunk beyond the reviewed ones reaches the build that deploys',
-  );
+  const setupText = [...setupClosure].map((file) => readFileSync(join(DIST, 'assets', file), 'utf8')).join('\n');
+  // Confirm that the real transport and existing review UI survived bundling.
+  // Behavioral request/session/pre-sign guards remain covered by the deposit
+  // client/flow tests; presence of these strings alone cannot prove authority.
+  for (const marker of ['/api/deposit/v1', 'X-Domino-CSRF', 'summaryAcknowledged', 'Review and send in wallet', 'wallet_review_required']) {
+    assert.ok(setupText.includes(marker), `the production Setup closure is missing ${marker}`);
+  }
 });
 
 test('the default stylesheet loads nothing from elsewhere (BUN-2)', (t) => {

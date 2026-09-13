@@ -58,7 +58,10 @@ export function loadArtifacts(repo, viem = toolsFor(repo), artifactDirectory = j
     const artifact = JSON.parse(raw);
     const metadata = artifact.metadata;
     assert(metadata?.compiler?.version === '0.8.26+commit.8a97fa7a'
-      && metadata.settings?.compilationTarget?.['src/' + name + '.sol'] === name, 'artifact_compiler_or_target_mismatch');
+      && metadata.settings?.compilationTarget?.['src/' + name + '.sol'] === name
+      && metadata.settings?.optimizer?.enabled === true && metadata.settings.optimizer.runs === 200
+      && metadata.settings?.viaIR === true && metadata.settings?.evmVersion === 'cancun'
+      && metadata.settings?.metadata?.bytecodeHash === 'none', 'artifact_compiler_or_target_mismatch');
     for (const [path, source] of Object.entries(metadata.sources)) {
       assert((path.startsWith('src/') || path.startsWith('lib/') || path.startsWith('test/reference/official-v4/'))
         && !path.split('/').some(p => p === '..' || p === '.') && !path.includes('\\'), 'unsafe_artifact_source');
@@ -110,6 +113,8 @@ export function prepare(parameters, artifacts, viem, now = Date.now() / 1000) {
   });
   assert(new Set(Object.values(addresses)).size === Object.values(addresses).length, 'component_address_collision');
   assert(!Object.values(addresses).includes(parameters.feeRecipient), 'fee_recipient_is_component');
+  assert(['operator','pricePublisher'].every(role => parameters[role] !== parameters.feeRecipient
+    && !Object.values(addresses).includes(parameters[role])), 'execution_role_is_component_or_recipient');
   const d = addresses, p = parameters;
   const argumentsByComponent = {
     factory: [d.poolManager, d.positionManager, d.stateView, p.feeRecipient],
@@ -197,6 +202,8 @@ export async function verify(manifest, transactionHashes, artifacts, viem, rpc, 
     }
     codeHashes[component] = viem.keccak256(code);
   }
+  for (const role of ['operator','pricePublisher'])
+    assert(hex(await rpc('eth_getCode', [p[role], block])) === '0x', 'execution_role_must_be_eoa');
   const checks = {
     factory: { poolManager: d.poolManager, positionManager: d.positionManager, stateView: d.stateView,
       serviceFeeRecipient: p.feeRecipient, deployer: p.deployer, implementation: d.implementation, implementationCodeHash: codeHashes.implementation },

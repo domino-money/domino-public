@@ -8,7 +8,7 @@ This file applies to the entire Domino repository. **Execute first, plan afterwa
 - Preserve the approved Tangerine direction, readable cards, one activity card per row at every viewport, semantic signed amounts and progressive modal/card procedures. No long scrolling wizard.
 - No fabricated APR, TVL, token prices or zeroes for missing data. Distinguish zero, unavailable, stale, partial and unqualified. Preserve snapshot and source coverage.
 - Fees should be reinvested to the greatest economically eligible extent, including bounded swaps when implemented. No fixed idle reserve. Charge the 2% earned-fee service cut only on consumed fees, once; never on principal. Read PRICING_POLICY.md and REINVESTMENT_POLICY.md before changing calculations.
-- Self-compound and Domino are both in approved alpha scope, but the current UI is practice-only and the public execution contract is not implemented. Do not enable live capabilities based on a mock or a personal-bot deployment.
+- Self-compound and Domino are both in approved alpha scope. P2 implements owner setup, sequence controls and the durable executor; their new production capabilities remain off until actual deployment, access and execution profiles exist. See reports/P2_DELIVERY_2026-09-13.md. Do not enable live capabilities based on a mock or a personal-bot deployment.
 
 ## Boundaries
 

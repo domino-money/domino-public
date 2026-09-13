@@ -61,7 +61,9 @@ export function poolKey(key: PoolKey): PoolKey {
 }
 // Each operation is bounded and uses the selected wallet's provider. No RPC URL,
 // signer, allowance spender or calldata comes from a backend response.
-export function createSetupClient(wallet: WalletRpc, deployment: SetupDeployment, now = () => Date.now() / 1000) {
+export function createSetupClient(wallet: WalletRpc, supplied: SetupDeployment, now = () => Date.now() / 1000,
+  currentAdmission?: () => Promise<SetupDeployment | null>) {
+  const deployment = Object.freeze({ ...supplied })
   const issued = new WeakSet<PreparedSetup>(), offered = new Set<string>()
   const returned = new Map<Hex, PreparedSetup>()
   let busy = false
@@ -99,6 +101,15 @@ export function createSetupClient(wallet: WalletRpc, deployment: SetupDeployment
   async function verify(rpc: Rpc, recovery = false) {
     await identity(rpc)
     if (!recovery && now() >= deployment.expiresAt) return fail('setup_release_expired')
+    if (!recovery) {
+      // The screen confirms the public release with one bounded same-origin
+      // GET. A loaded client cannot approve/fund/swap/mint after OFF or drift.
+      // Reads and cancellation deliberately remain independent of this API.
+      let current: SetupDeployment | null | undefined
+      try { current = await currentAdmission?.() } catch { return fail('setup_admission_unavailable') }
+      const identities: (keyof SetupDeployment)[] = ['setup','setupCodeHash','poolManager','poolManagerCodeHash','positionManager','positionManagerCodeHash','stateView','stateViewCodeHash','feeRecipient','feeBps','tariffVersion']
+      if (!current || now() >= current.expiresAt || identities.some(key => current[key] !== deployment[key])) return fail('setup_admission_unavailable')
+    }
     for (const [address, hash] of [[deployment.setup, deployment.setupCodeHash], [deployment.poolManager, deployment.poolManagerCodeHash], [deployment.positionManager, deployment.positionManagerCodeHash], [deployment.stateView, deployment.stateViewCodeHash]] as const) {
       if (keccak256(asHex(await rpc('eth_getCode', [address, 'latest']))) !== hash) return fail('deployment_code_changed')
     }
