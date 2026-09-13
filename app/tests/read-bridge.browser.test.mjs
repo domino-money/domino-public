@@ -27,12 +27,16 @@ const APP = 'https://app.test';
 const BRIDGE = {
   APP_ORIGIN: APP,
   READ_BRIDGE_ENABLED: 'true',
+  READ_V2_BRIDGE_ENABLED: 'false',
+  ENABLED_V2_READS: '',
   GATEWAY_ORIGIN: 'https://gateway.test',
   ENABLED_READS: 'token,pools,pool-market,wallet-assets,nft-positions,catalogue,pool-activity,pool-positions,pool-metrics',
   ACCESS_CLIENT_ID: 'bridge-test-client',
   ACCESS_CLIENT_SECRET: 'bridge-test-secret',
 };
 const RC3 = '1.1.0-rc.3';
+const V2 = '2.0.0-rc.1';
+const requestContract = (request) => request.path.startsWith('/api/read/v2/') ? V2 : RC3;
 const READ = resolve(import.meta.dirname, '../../api-contracts/read-v1/fixtures/gateway');
 const fixture = (name) => readFileSync(join(READ, `${name}.json`), 'utf8');
 /** The package's fixture pool, which the bridge-test build asks for. */
@@ -130,7 +134,10 @@ before(async () => {
 
 after(async () => {
   await browser?.close();
-  await new Promise((done) => server.close(done));
+  await new Promise((done) => {
+    server.close(done);
+    server.closeAllConnections();
+  });
 });
 
 /**
@@ -184,12 +191,13 @@ test('the bridge build reads through the same-origin bridge, adds no credential 
   assert.equal(await settled(page), 'none');
   const row = page.locator('#pools tbody tr');
   assert.equal(await row.count(), 1);
-  assert.match(await row.innerText(), /\$12\.3K\s*·\s*GeckoTerminal[\s\S]*Unavailable/);
-  assert.equal(await row.locator('td').last().locator('[data-metric]').getAttribute('data-metric'), 'unavailable', 'no APR is provided, so none is shown');
+  assert.match(await row.innerText(), /\$12\.3K\s*·\s*GeckoTerminal[\s\S]*Est\. APR unavailable/);
+  assert.equal(await row.locator('[data-metric]').last().getAttribute('data-metric'), 'unavailable', 'no qualified APR is provided');
+  assert.equal(await row.locator('td').last().locator('[data-apr-estimate]').getAttribute('data-apr-estimate'), 'unavailable', 'V2 is disabled, so no APR estimate is shown');
 
   const reads = seen.map((r) => `${r.method} ${r.path}`);
-  // The lean path, in order: pool-market without price history, then each token once. Never pool-metrics.
-  assert.deepEqual(reads, ['GET /api/read/v1/capabilities', 'POST /api/read/v1/pool-market', 'POST /api/read/v1/token', 'POST /api/read/v1/token']);
+  // Probe optional V2 before falling back: one lean V1 market read, then each token once.
+  assert.deepEqual(reads, ['GET /api/read/v2/capabilities', 'GET /api/read/v1/capabilities', 'POST /api/read/v1/pool-market', 'POST /api/read/v1/token', 'POST /api/read/v1/token']);
   assert.deepEqual(upstream.find((call) => call.route === 'pool-market').body, { poolId: FIXTURE_POOL, includePriceHistory: false });
   // What the browser sent to this origin.
   assert.deepEqual(edge.map((r) => `${r.method} ${r.path}`), reads, 'every read passed through the gate once');
@@ -197,7 +205,7 @@ test('the bridge build reads through the same-origin bridge, adds no credential 
     const h = request.headers;
     assert.match(h.cookie ?? '', /__Host-domino-beta=/, 'the gate cookie reaches the gate');
     assert.equal(h['sec-fetch-site'], 'same-origin');
-    assert.equal(h['x-domino-read-contract'], RC3);
+    assert.equal(h['x-domino-read-contract'], requestContract(request));
     for (const forbidden of ['authorization', 'x-domino-csrf', 'x-domino-session', 'x-domino-preauth']) assert.equal(h[forbidden], undefined, forbidden);
     // The browser attaches every cookie whose Path covers the read route; fetch cannot pick one out.
     // With session-v1's Path=/ that includes the session and preauth cookies, as far as the gate.
@@ -209,7 +217,7 @@ test('the bridge build reads through the same-origin bridge, adds no credential 
   for (const request of seen) {
     assert.equal(request.headers.cookie, undefined, `${request.path} went past the gate with a cookie`);
     for (const [name, value] of Object.entries(request.headers)) assert.doesNotMatch(value, /sessiontoken|preauthtoken|domino-beta/, `a credential went past the gate in ${name}`);
-    assert.equal(request.headers['x-domino-read-contract'], RC3, 'the read itself went on unchanged');
+    assert.equal(request.headers['x-domino-read-contract'], requestContract(request), 'the read itself went on unchanged');
   }
   // The gateway never sees the browser's cookie, origin or headers, and no session credential in any header.
   assert.deepEqual(upstream.map((call) => call.route), ['pool-market', 'token', 'token'], 'the gateway saw the same three reads');
@@ -322,7 +330,7 @@ test('with live reads off on the server, nothing is posted at all', async () => 
     const { context, page } = await visit();
     assert.equal(await settled(page), 'disabled');
     assert.match(await statusOf(page).innerText(), /Live data is switched off for now[\s\S]*switched off on the server/);
-    assert.deepEqual(seen.map((r) => r.method), ['GET']);
+    assert.deepEqual(seen.map((r) => `${r.method} ${r.path}`), ['GET /api/read/v2/capabilities', 'GET /api/read/v1/capabilities']);
     await closeContext(context);
   } finally {
     BRIDGE.READ_BRIDGE_ENABLED = 'true';

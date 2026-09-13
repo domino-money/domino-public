@@ -26,6 +26,8 @@ const ALL_READS = 'token,pools,pool-market,wallet-assets,nft-positions,catalogue
 const BRIDGE = {
   APP_ORIGIN: APP,
   READ_BRIDGE_ENABLED: 'true',
+  READ_V2_BRIDGE_ENABLED: 'false',
+  ENABLED_V2_READS: '',
   GATEWAY_ORIGIN: 'https://gateway.test',
   ENABLED_READS: ALL_READS,
   ACCESS_CLIENT_ID: 'screens-bridge-client',
@@ -123,7 +125,10 @@ before(async () => {
 
 after(async () => {
   await browser?.close();
-  await new Promise((done) => server.close(done));
+  await new Promise((done) => {
+    server.close(done);
+    server.closeAllConnections();
+  });
 });
 
 async function visit(route) {
@@ -254,6 +259,8 @@ test('the landing reads one listed pool, never a placeholder id, and pool activi
   // F3's table path does not read pool-metrics (marketsProvider.ts:11, "No
   // pool-metrics read"), so the landing asks three times, not four.
   assert.deepEqual(routes().sort(), ['pool-market', 'token', 'token']);
+  assert.deepEqual(edge.filter((r) => r.method === 'GET').map((r) => r.path), ['/api/read/v2/capabilities', '/api/read/v1/capabilities'], 'the optional estimate probe falls back before any V2 data POST');
+  assert.equal(await page.locator('#pools [data-apr-estimate]').getAttribute('data-apr-estimate'), 'unavailable');
   for (const r of upstream) assert.doesNotMatch(JSON.stringify(r.body), /0{62}a[2-5]/, 'a placeholder pool id was requested');
   assert.equal(routes().includes('pool-activity'), false);
   await page.locator('#pools [data-pool-figures]').click();
