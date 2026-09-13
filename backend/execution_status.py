@@ -1,4 +1,5 @@
 """Closed authenticated read-only execution status. No signing/cancellation API."""
+import hmac
 from types import SimpleNamespace
 from typing import Annotated, Literal
 
@@ -101,7 +102,33 @@ def validate_response(route,body):
 
 class ExecutionStatusReader(_Store):
     role='domino_execution_reader'
+    def _transaction(self, owner, operation):
+        import math
+        import psycopg
+        from psycopg.rows import dict_row
+        from execution_store import _owner
+        from read_deadline import read_timeout
+        from session_store import _DeadlineConnection
+        owner=_owner(owner)
+        try:
+            check_read_deadline()
+            millis=max(1,min(1000,int(read_timeout(1)*1000)))
+            with self.connect(**self.settings,user=self.role,row_factory=dict_row,
+                    connect_timeout=max(1,math.ceil(read_timeout(2))),
+                    options=f'-c statement_timeout={millis} -c lock_timeout=250 '
+                            '-c idle_in_transaction_session_timeout=5000 -c default_transaction_read_only=on '
+                            '-c search_path=domino_execution -c TimeZone=UTC') as connection:
+                conn=_DeadlineConnection(connection)
+                conn.execute("SELECT set_config('domino.execution_owner',%s,true)",(owner,))
+                result=operation(conn,owner)
+                check_read_deadline()
+                return result
+        except psycopg.Error:
+            raise ExecutionStoreError('execution_store_unavailable') from None
+
     def list(self,owner,*,identifier=None,after=None,limit=10):
+        if type(limit) is not int or not 1<=limit<=21:
+            raise ExecutionStoreError('execution_invalid_record')
         def op(conn,owner):
             # This role has no UPDATE privilege and cannot SELECT envelope,
             # plan, observation, origin evidence or signed_bytes columns.
@@ -111,6 +138,7 @@ class ExecutionStatusReader(_Store):
                 (owner,identifier,identifier,after,after,limit)).fetchall()
             result=[]
             for row in rows:
+                check_read_deadline()
                 identifier_=row['intent_id']
                 attempts=conn.execute('SELECT ordinal,transaction_hash FROM attempts WHERE owner=%s AND intent_id=%s ORDER BY ordinal',(owner,identifier_)).fetchall()
                 effect=conn.execute('SELECT receipt,canonical FROM effects WHERE owner=%s AND intent_id=%s',(owner,identifier_)).fetchone()
@@ -155,4 +183,50 @@ CONTRACT=SimpleNamespace(PREFIX=PREFIX,HEADER=HEADER,Error=ExecutionStatusError,
 class ExecutionStatusGateway(AuthenticatedGateway):
     def __init__(self,**kwargs):super().__init__(contract=CONTRACT,**kwargs)
 def create_execution_status_app(gateway=None):
-    return create_authenticated_app(gateway or ExecutionStatusGateway())
+    app=create_authenticated_app(gateway or ExecutionStatusGateway())
+    @app.middleware('http')
+    async def access_duplicate(request,call_next):
+        # Access can duplicate its service JWT in one cookie. Normalize only an
+        # exact duplicate; the assertion still goes through the JWT verifier.
+        headers=request.scope['headers']
+        cookies=[v for k,v in headers if k.lower()==b'cookie']
+        assertions=[v for k,v in headers if k.lower()==b'cf-access-jwt-assertion']
+        if (len(cookies)==len(assertions)==1 and 1<=len(assertions[0])<=8192
+                and hmac.compare_digest(cookies[0].strip(b' \t'),b'CF_Authorization='+assertions[0])):
+            request.scope['headers']=[(k,v) for k,v in headers if k.lower()!=b'cookie']
+        return await call_next(request)
+    return app
+
+
+def main(argv=None):
+    import argparse
+    import os
+    import uvicorn
+    from discovery import DataError
+    from execution_status_runtime import status_gateway
+    parser=argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('action',choices=('serve',))
+    parser.add_argument('--enable',action='store_true')
+    parser.add_argument('--config')
+    parser.add_argument('--port',type=int,default=8901)
+    args=parser.parse_args(argv)
+    lock=None
+    try:
+        if args.port!=8901 or any(os.environ.get(name,'1')!='1' for name in ('WEB_CONCURRENCY','UVICORN_WORKERS')):
+            raise ValueError()
+        if args.enable:
+            if not args.config:raise ValueError()
+            gateway,lock=status_gateway(args.config)
+        else:
+            if args.config:raise ValueError()
+            gateway=ExecutionStatusGateway()
+        uvicorn.run(create_execution_status_app(gateway),host='127.0.0.1',port=args.port,workers=1,
+            proxy_headers=False,access_log=False,server_header=False,limit_concurrency=16)
+    except (ValueError,DataError,OSError):
+        parser.exit(2,'Execution status configuration invalid or process already running.\n')
+    finally:
+        if lock is not None:os.close(lock)
+    return 0
+
+
+if __name__=='__main__':raise SystemExit(main())

@@ -128,3 +128,56 @@ DOMINO_TEST_POSTGRES=1 DOMINO_TEST_EVM=1 backend/.venv/bin/python -m unittest di
 backend/.venv/bin/python -m unittest discover -s backend/tests -p test_execution_status.py -v
 DOMINO_TEST_POSTGRES=1 backend/.venv/bin/python -m unittest discover -s backend/tests -p test_execution_store.py -v
 ```
+
+## Private status listener
+
+`python backend/execution_status.py serve` starts a disabled listener at
+`127.0.0.1:8901`. To enable only the authenticated read surface, use
+`serve --enable --config /absolute/private/execution-status.json`. This command
+does not load an execution key, signer, admission or transaction RPC client.
+No signing, replacement or cancellation route exists in this listener.
+
+The explicit JSON configuration has these exact keys:
+
+```json
+{
+  "schemaVersion": 1,
+  "kind": "domino-execution-status",
+  "runtimeDirectory": "/absolute/private/execution-status-runtime",
+  "database": {"host": "/absolute/private/pg-socket", "port": 5432, "dbname": "domino_catalogue"},
+  "session": {
+    "origin": "https://domino.money",
+    "abuseSecretFile": "/absolute/private/session-abuse-secret",
+    "rpcEndpoint": "https://rpc.mainnet.chain.robinhood.com",
+    "rpcAllowedHosts": ["rpc.mainnet.chain.robinhood.com"]
+  },
+  "access": {
+    "issuer": "https://example.cloudflareaccess.com",
+    "audience": "0000000000000000000000000000000000000000000000000000000000000000",
+    "serviceId": "replace-with-execution-service-identity"
+  }
+}
+```
+
+The example is a shape, not deployment qualification or usable Access settings.
+The status service gets its own Access identity. The session origin and abuse
+secret must match the session service; the secret file contains exactly 64
+lowercase hexadecimal characters, optionally followed by one newline. Database
+settings cannot choose a role: session authentication uses `domino_session_auth`
+and status reads use `domino_execution_reader`. The RPC endpoint is used only
+for the existing plain-EOA session check, with no fallback or environment override.
+
+The config, secret and runtime directory must be outside every product checkout,
+owned by the service user, with file mode `0600` and directory mode `0700`.
+Symlinks, hardlinked files, writable foreign ancestors, duplicate JSON keys,
+unknown fields and absent files are rejected. Startup holds a singleton lock;
+the server binds only loopback 8901, uses one process, disables forwarded-header
+trust and access logs, and retains the shared bounded authenticated worker slots.
+Each status SQL operation inherits the remaining request deadline and uses a
+read-only transaction. The schema still reports `executionAvailable: false`:
+reading receipts does not enable financial execution.
+
+Cloudflare Access may duplicate its service assertion as a single cookie.
+Only `CF_Authorization=<exact cf-access-jwt-assertion>` is normalized; the JWT is
+still verified. Other cookies, additional values and duplicate headers fail
+closed. Session and CSRF credentials remain in their dedicated internal headers.

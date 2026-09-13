@@ -3,9 +3,11 @@ from copy import deepcopy
 from pathlib import Path
 from types import SimpleNamespace
 import json
+import os
 import sys
+import tempfile
 import unittest
-from unittest.mock import Mock
+from unittest.mock import Mock, patch
 
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]))
 from fastapi.testclient import TestClient
@@ -91,3 +93,82 @@ class ExecutionStatusTests(unittest.TestCase):
                        {'signed_bytes':'0x00'},{'reason':'http://secret.invalid/key'}):
             self.reader.list.return_value=[{**item(),**change}]
             self.assertEqual(self.post().status_code,502)
+
+    def test_access_cookie_exact_duplicate_still_requires_verified_assertion(self):
+        assertion=HEADERS['CF-Access-Jwt-Assertion']
+        result=self.post(headers={**HEADERS,'Cookie':'CF_Authorization='+assertion})
+        self.assertEqual(result.status_code,200,result.text)
+        self.gateway.verifier.verify.assert_called_once_with(assertion)
+        self.gateway.verifier.verify.side_effect=ValueError()
+        self.assertEqual(self.post(headers={**HEADERS,'Cookie':'CF_Authorization='+assertion}).status_code,503)
+
+    def test_access_cookie_other_values_or_duplicate_headers_are_refused(self):
+        assertion=HEADERS['CF-Access-Jwt-Assertion']
+        for value in ('CF_Authorization=wrong','other='+assertion,
+                      'CF_Authorization='+assertion+'; other=x','CF_Authorization="'+assertion+'"'):
+            self.assertEqual(self.post(headers={**HEADERS,'Cookie':value}).status_code,403)
+        headers=list(HEADERS.items())+[('Cookie','CF_Authorization='+assertion)]*2
+        self.assertEqual(self.post(headers=headers).status_code,403)
+        headers=list(HEADERS.items())+[('Cookie','CF_Authorization='+assertion),('CF-Access-Jwt-Assertion',assertion)]
+        self.assertEqual(self.post(headers=headers).status_code,403)
+        self.reader.list.assert_not_called();self.gateway.verifier.verify.assert_not_called()
+
+
+class ExecutionStatusStartupTests(unittest.TestCase):
+    def setUp(self):
+        self.temporary=tempfile.TemporaryDirectory(prefix='domino-execution-status-')
+        self.addCleanup(self.temporary.cleanup)
+        self.directory=Path(self.temporary.name).resolve()
+        self.directory.chmod(0o700)
+        secret=self.directory/'abuse-secret';secret.write_text('ab'*32);secret.chmod(0o600)
+        self.config={'schemaVersion':1,'kind':'domino-execution-status','runtimeDirectory':str(self.directory),
+            'database':{'host':str(self.directory),'port':5432,'dbname':'domino_catalogue'},
+            'session':{'origin':auth_fixture.ORIGIN,'abuseSecretFile':str(secret),
+                'rpcEndpoint':'https://rpc.mainnet.chain.robinhood.com','rpcAllowedHosts':['rpc.mainnet.chain.robinhood.com']},
+            'access':{'issuer':'https://synthetic.cloudflareaccess.com','audience':'12'*32,'serviceId':'execution.synthetic'}}
+        self.path=self.directory/'status.json';self.write()
+    def write(self):
+        self.path.write_text(json.dumps(self.config));self.path.chmod(0o600)
+
+    def test_explicit_config_starts_fixed_loopback_no_signer_or_provider_calls(self):
+        from execution_status_runtime import status_gateway
+        from execution_status import main
+        with patch('uvicorn.run') as run:
+            self.assertEqual(main(['serve','--enable','--config',str(self.path)]),0)
+        app=run.call_args.args[0]
+        self.assertTrue(app.state.gateway.enabled)
+        self.assertEqual(app.state.gateway.service.reader.role,'domino_execution_reader')
+        self.assertEqual(app.state.gateway.verifier.service_id,'execution.synthetic')
+        self.assertEqual(run.call_args.kwargs,{'host':'127.0.0.1','port':8901,'workers':1,
+            'proxy_headers':False,'access_log':False,'server_header':False,'limit_concurrency':16})
+        gateway,lock=status_gateway(self.path)
+        try:
+            with self.assertRaises((OSError,ValueError)):status_gateway(self.path)
+        finally:os.close(lock)
+
+    def test_disabled_start_needs_no_config_and_cannot_enable_from_environment(self):
+        from execution_status import main
+        with patch('uvicorn.run') as run,patch.dict(os.environ,{'DOMINO_EXECUTION_ENABLE':'1'}):
+            self.assertEqual(main(['serve']),0)
+        self.assertFalse(run.call_args.args[0].state.gateway.enabled)
+        with patch('uvicorn.run') as run:
+            for args in (['serve','--enable'],['serve','--port','8900'],['serve','--config',str(self.path)]):
+                with self.assertRaises(SystemExit) as failure:main(args)
+                self.assertEqual(failure.exception.code,2)
+        run.assert_not_called()
+
+    def test_config_rejects_keys_permissions_aliases_duplicates_and_missing_secret(self):
+        from execution_status_runtime import status_gateway
+        for patch_ in ({'schemaVersion':True},{'keyFile':'do-not-read'},{'database':{'host':'localhost','port':5432,'dbname':'domino_catalogue'}},
+                       {'access':{**self.config['access'],'serviceId':''}}):
+            self.path.write_text(json.dumps({**self.config,**patch_}))
+            with self.assertRaises(Exception):status_gateway(self.path)
+        self.write();self.path.chmod(0o644)
+        with self.assertRaises(ValueError):status_gateway(self.path)
+        self.path.chmod(0o600)
+        alias=self.directory/'alias';alias.symlink_to(self.path)
+        with self.assertRaises(OSError):status_gateway(alias)
+        self.path.write_text('{"schemaVersion":1,"schemaVersion":1}')
+        with self.assertRaises(Exception):status_gateway(self.path)
+        self.write();Path(self.config['session']['abuseSecretFile']).unlink()
+        with self.assertRaises(OSError):status_gateway(self.path)
