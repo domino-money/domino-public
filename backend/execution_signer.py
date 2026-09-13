@@ -6,6 +6,7 @@ process owns its key, private DB role and RPC; the runner receives status only.
 from dataclasses import dataclass
 import json
 import time
+import urllib.error
 import urllib.request
 from urllib.parse import urlsplit
 
@@ -18,6 +19,8 @@ from eth_abi import encode
 import execution_models as m
 import general_compound_receipts as g
 from execution_store import _model
+from read_deadline import check_read_deadline, read_timeout
+from bridge_state import strict_json
 
 
 class ExecutionError(ValueError):
@@ -30,16 +33,20 @@ class ExecutionError(ValueError):
 class ExecutionRpc:
     """Fixed configured endpoint, bounded replies and no redirects; no failover."""
     def __init__(self, endpoint, *, timeout=5, max_bytes=1048576):
+        if type(endpoint) is not str or not 1<=len(endpoint)<=2048 or any(ord(c)<33 or ord(c)>126 for c in endpoint):
+            raise ExecutionError('execution_rpc_configuration')
         url = urlsplit(endpoint)
         if url.scheme != 'https' and not (url.scheme == 'http' and url.hostname in ('127.0.0.1', '::1')):
             raise ExecutionError('execution_rpc_configuration')
-        if url.username or url.password or url.fragment or not 0 < timeout <= 10 or not 1024 <= max_bytes <= 1048576:
+        if (not url.hostname or url.username or url.password or url.fragment or '\\' in endpoint
+                or type(timeout) not in (int,float) or not 0 < timeout <= 10
+                or type(max_bytes) is not int or not 1024 <= max_bytes <= 1048576):
             raise ExecutionError('execution_rpc_configuration')
         self._endpoint, self.timeout, self.max_bytes = endpoint, timeout, max_bytes
         class NoRedirect(urllib.request.HTTPRedirectHandler):
             def redirect_request(self, *args, **kwargs):
                 return None
-        self._opener = urllib.request.build_opener(NoRedirect())
+        self._opener = urllib.request.build_opener(urllib.request.ProxyHandler({}),NoRedirect())
 
     def request(self, method, params):
         allowed = {'eth_chainId','eth_getBlockByNumber','eth_getTransactionCount','eth_getCode','eth_call',
@@ -49,15 +56,20 @@ class ExecutionRpc:
             raise ExecutionError('execution_rpc_method')
         raw = json.dumps({'jsonrpc':'2.0','id':1,'method':method,'params':params}, allow_nan=False).encode()
         try:
+            check_read_deadline()
             req = urllib.request.Request(self._endpoint, raw, {'Content-Type':'application/json'})
-            with self._opener.open(req, timeout=self.timeout) as response:
+            with self._opener.open(req, timeout=read_timeout(self.timeout)) as response:
                 data = response.read(self.max_bytes+1)
+            check_read_deadline()
             if len(data)>self.max_bytes:
                 raise ValueError()
-            reply=json.loads(data)
-            if type(reply) is not dict or reply.get('id')!=1 or reply.get('jsonrpc')!='2.0' or 'error' in reply or 'result' not in reply:
+            reply=strict_json(data)
+            if type(reply) is not dict or set(reply)!={'jsonrpc','id','result'} or type(reply.get('id')) is not int or reply['id']!=1 or reply.get('jsonrpc')!='2.0':
                 raise ValueError()
             return reply['result']
+        except urllib.error.HTTPError as error:
+            error.close()
+            raise ExecutionError('execution_rpc_unavailable') from None
         except Exception:
             raise ExecutionError('execution_rpc_unavailable') from None
 
@@ -103,12 +115,29 @@ def rebuild_compound(plan, observation, checkpoint):
 
 
 class RestrictedSigner:
-    def __init__(self, rpc, key, admission, policy):
+    def __init__(self, rpc, key, admission, policy, *, price_observation_id=m.ZERO_HASH):
         self.rpc=rpc
         self._account=Account.from_key(key)
         self.address=self._account.address.lower()
-        self.admission=_model(g.CompoundAdmission,admission)
+        raw=admission.model_dump(mode='json') if hasattr(admission,'model_dump') else admission
+        if type(raw) is not dict or type(raw.get('sequence')) is not dict:
+            raise ExecutionError('execution_admission_invalid')
+        version=raw['sequence'].get('implementationVersion')
+        if version=='4':
+            from execution_v4 import Admission
+            self.admission=_model(Admission,raw)
+            if self.admission.pricePublisher==self.address:raise ExecutionError('execution_price_publisher_not_independent')
+        else:self.admission=_model(g.CompoundAdmission,raw)
+        self.action='typed_fee_execution_v4' if version=='4' else 'compound_self_general_v3'
+        if version!='4' and price_observation_id!=m.ZERO_HASH:raise ExecutionError('execution_unexpected_price_observation')
+        self.price_observation_id=price_observation_id
         self.policy=policy
+
+    def verifier(self):
+        if self.action=='typed_fee_execution_v4':
+            from execution_v4 import ReceiptReconciler
+            return ReceiptReconciler(self.rpc)
+        return g.CompoundReceiptReconciler(self.rpc)
 
     def qualify(self, plan, observation):
         if not self.policy.enabled:
@@ -116,7 +145,7 @@ class RestrictedSigner:
         plan=_model(m.ExecutionPlan,plan); observation=_model(m.Observation,observation)
         if self.admission.sequence!=plan.sequence or self.address!=observation.operator or self.address==plan.sequence.owner:
             raise ExecutionError('execution_signer_identity')
-        verifier=g.CompoundReceiptReconciler(self.rpc)
+        verifier=self.verifier()
         if g._quantity(verifier._request('eth_chainId'))!=4663:
             raise ExecutionError('execution_wrong_chain')
         head,_=verifier._block('latest')
@@ -142,8 +171,23 @@ class RestrictedSigner:
         lim=p.limits
         if actual!=(int(lim.version),lim.upsideBps,lim.maxSlippageBps,lim.maxPriceImpactBps,int(lim.maxGasCostWei),lim.maxObservationAgeSeconds,lim.forecastHorizonSeconds):
             raise ExecutionError('execution_policy_changed')
-        checkpoint=verifier._call(vault,'checkpoint(uint256)',[g.CHECKPOINT_TYPE],source,['uint256'],[int(plan.destination.tokenId)])[0]
-        compound=rebuild_compound(plan,observation,'0x'+checkpoint[6].hex())
+        if self.action=='typed_fee_execution_v4':
+            from execution_v4_adapter import rebuild_v4,selected_positions,qualify_price
+            members={p.position.tokenId:p for p in observation.positions}
+            checkpoints={}
+            for token in selected_positions(plan,observation):
+                actual=verifier._call(vault,'position(uint256)',[g.POSITION_TYPE],source,['uint256'],[int(token)])[0]
+                member=members[token].position
+                if actual[:8]!=(True,members[token].active,member.isRoot,int(member.parentTokenId),int(member.generation),
+                        member.tickLower,member.tickUpper,bytes.fromhex(member.registrationBaselineId[2:])) or '0x'+actual[8].hex()!=member.digest():
+                    raise ExecutionError('execution_position_identity_changed')
+                point=verifier._call(vault,'checkpoint(uint256)',[g.CHECKPOINT_TYPE],source,['uint256'],[int(token)])[0]
+                checkpoints[token]='0x'+point[6].hex()
+            compound=rebuild_v4(plan,observation,checkpoints,price_observation_id=self.price_observation_id if plan.swap.enabled else m.ZERO_HASH)
+            if plan.swap.enabled:qualify_price(verifier,self.admission,plan,observation,head,self.price_observation_id)
+        else:
+            checkpoint=verifier._call(vault,'checkpoint(uint256)',[g.CHECKPOINT_TYPE],source,['uint256'],[int(plan.destination.tokenId)])[0]
+            compound=rebuild_compound(plan,observation,'0x'+checkpoint[6].hex())
         call={'from':self.address,'to':vault,'data':compound.calldata(),'value':'0x0','gas':hex(self.policy.max_gas)}
         # Exact typed call at a hash-pinned current block proves the actual vault
         # accepts custody, fee-only caps, recipient, versions and price guards.
@@ -174,15 +218,17 @@ class RestrictedSigner:
     def sign(self, record, envelope):
         # The key boundary independently rebuilds even if its caller hands it an
         # internally consistent transaction. There is no raw-envelope authority.
-        expected=self.envelope(record,envelope['nonce'],fee=envelope['maxFeePerGas'],priority=envelope['maxPriorityFeePerGas'])
-        if envelope!=expected:
-            raise ExecutionError('execution_envelope_changed')
+        self.assert_envelope(record,envelope)
         from eth_utils import to_checksum_address
         signed=self._account.sign_transaction({**envelope,'to':to_checksum_address(envelope['to'])})
         raw=bytes(signed.raw_transaction)
         digest='0x'+keccak(raw).hex()
         verify_signed(raw,envelope,self.address,digest)
         return raw,digest
+
+    def assert_envelope(self,record,envelope):
+        expected=self.envelope(record,envelope['nonce'],fee=envelope['maxFeePerGas'],priority=envelope['maxPriorityFeePerGas'])
+        if envelope!=expected:raise ExecutionError('execution_envelope_changed')
 
 
 def verify_signed(raw,envelope,signer,digest):

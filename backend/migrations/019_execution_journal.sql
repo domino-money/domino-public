@@ -207,6 +207,52 @@ BEGIN
  RETURN NEW;
 END $$;
 CREATE TRIGGER execution_spend_guard BEFORE INSERT ON domino_execution.spends FOR EACH ROW EXECUTE FUNCTION domino_execution.guard_spend();
+
+-- E5 can qualify a NEW converted origin only in the same fenced transaction
+-- as the verified canonical effect and original debits. The ledger's older
+-- supplied conversions remain quarantined; there is no unquarantine shortcut.
+DO $$ DECLARE constraint_name text; matches integer;
+BEGIN
+ SELECT count(*),min(conname) INTO matches,constraint_name FROM pg_constraint
+ WHERE conrelid='domino_execution.origins'::regclass AND contype='c'
+   AND pg_get_constraintdef(oid) LIKE '%kind = ''original''%state = ''quarantined''%';
+ IF matches<>1 THEN RAISE EXCEPTION 'execution_origin_foundation_mismatch'; END IF;
+ EXECUTE format('ALTER TABLE domino_execution.origins DROP CONSTRAINT %I',constraint_name);
+END $$;
+ALTER TABLE domino_execution.origins ADD COLUMN qualification_intent_id text;
+ALTER TABLE domino_execution.origins ADD CONSTRAINT execution_conversion_qualification
+ CHECK(kind='original' OR state='quarantined' OR qualification_intent_id IS NOT NULL);
+ALTER TABLE domino_execution.origins ADD FOREIGN KEY(owner,qualification_intent_id)
+ REFERENCES domino_execution.intents(owner,intent_id);
+GRANT INSERT ON domino_execution.converted_inputs TO domino_execution_signer;
+CREATE FUNCTION domino_execution.guard_qualified_conversion() RETURNS trigger LANGUAGE plpgsql
+ SET search_path=pg_catalog,domino_execution AS $$
+DECLARE effect domino_execution.effects;
+BEGIN
+ IF NEW.kind='converted' AND NEW.state='available' THEN
+  IF current_user<>'domino_execution_signer' OR NEW.qualification_intent_id IS NULL THEN
+   RAISE EXCEPTION USING ERRCODE='23514',MESSAGE='execution_lineage_mismatch';
+  END IF;
+  PERFORM domino_execution.live_fence(NEW.qualification_intent_id);
+  SELECT * INTO effect FROM domino_execution.effects WHERE owner=NEW.owner
+   AND intent_id=NEW.qualification_intent_id AND canonical AND transaction_hash=NEW.transaction_hash;
+  IF NOT FOUND OR NEW.evidence->>'executionIntentId' IS DISTINCT FROM NEW.qualification_intent_id
+   OR NOT EXISTS(SELECT 1 FROM jsonb_array_elements(effect.receipt->'conversions') c
+      WHERE c->>'sourceId'=NEW.source_id AND c->>'currencyOut'=NEW.currency
+       AND (c->>'receiptLogIndex')::bigint=NEW.event_index AND (c->>'amountOutRaw')::numeric=NEW.amount_raw)
+   OR NOT EXISTS(SELECT 1 FROM jsonb_array_elements(NEW.evidence->'lineage'->'inputAllocations'))
+   OR EXISTS(SELECT 1 FROM jsonb_array_elements(NEW.evidence->'lineage'->'inputAllocations') a
+      LEFT JOIN domino_execution.spends s ON s.owner=NEW.owner AND s.intent_id=NEW.qualification_intent_id
+       AND s.lot_id=a->>'lotId' WHERE s.amount_raw IS NULL OR s.amount_raw<(a->>'amountRaw')::numeric) THEN
+   RAISE EXCEPTION USING ERRCODE='23514',MESSAGE='execution_lineage_mismatch';
+  END IF;
+ ELSIF NEW.qualification_intent_id IS NOT NULL THEN
+  RAISE EXCEPTION USING ERRCODE='23514',MESSAGE='execution_lineage_mismatch';
+ END IF;
+ RETURN NEW;
+END $$;
+CREATE TRIGGER execution_qualified_conversion BEFORE INSERT ON domino_execution.origins
+ FOR EACH ROW EXECUTE FUNCTION domino_execution.guard_qualified_conversion();
 REVOKE ALL ON ALL FUNCTIONS IN SCHEMA domino_execution FROM PUBLIC;
 
 GRANT SELECT(intent_id,canonical) ON domino_execution.effects TO domino_execution_worker;

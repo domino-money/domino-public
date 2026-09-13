@@ -53,13 +53,15 @@ def main(argv=None):
         owner=_owner(args.owner);identifier=_hash(args.intent)
         config=json.loads(private_file(args.config,65536))
         expected={'schemaVersion','database','rpcEndpoint','keyFile','admission','policy','restoreOnly'}
-        if type(config) is not dict or set(config)!=expected or config['schemaVersion']!=1 or type(config['restoreOnly']) is not bool:
+        if type(config) is not dict or set(config) not in (expected,expected|{'priceObservationId'}) or type(config['schemaVersion']) is not int or config['schemaVersion']!=1 or type(config['restoreOnly']) is not bool:
             raise ExecutionError('execution_private_configuration')
         policy=SignerPolicy(**config['policy'])
         key=private_file(config['keyFile'],128).decode('ascii').strip()
         if len(key)!=64 or any(c not in '0123456789abcdef' for c in key):
             raise ExecutionError('execution_private_configuration')
-        signer=RestrictedSigner(ExecutionRpc(config['rpcEndpoint']),bytes.fromhex(key),config['admission'],policy)
+        import execution_models as m
+        signer=RestrictedSigner(ExecutionRpc(config['rpcEndpoint']),bytes.fromhex(key),config['admission'],policy,
+            price_observation_id=config.get('priceObservationId',m.ZERO_HASH))
         runner=ExecutionRunner(config['database'],signer,restore_only=config['restoreOnly'])
         if args.operation=='status':result=runner.journal.status(owner,identifier)
         else:

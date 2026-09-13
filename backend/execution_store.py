@@ -88,6 +88,7 @@ def _dump(value):
 
 class _Store:
     role = WORKER_ROLE
+    idle_transaction_millis = 5000
 
     def __init__(self, settings, *, connect=psycopg.connect):
         if type(settings) is not dict or set(settings) != {'host','port','dbname'}:
@@ -103,7 +104,7 @@ class _Store:
                 _invalid()
         try:
             with self.connect(**self.settings, user=self.role, row_factory=dict_row, connect_timeout=2,
-                    options='-c statement_timeout=5000 -c lock_timeout=2000 -c idle_in_transaction_session_timeout=5000 '
+                    options=f'-c statement_timeout=5000 -c lock_timeout=2000 -c idle_in_transaction_session_timeout={self.idle_transaction_millis} '
                             '-c search_path=domino_execution -c TimeZone=UTC') as conn:
                 conn.execute("SELECT set_config('domino.execution_owner',%s,true)", (owner,))
                 if worker is not None:

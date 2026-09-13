@@ -181,3 +181,63 @@ Cloudflare Access may duplicate its service assertion as a single cookie.
 Only `CF_Authorization=<exact cf-access-jwt-assertion>` is normalized; the JWT is
 still verified. Other cookies, additional values and duplicate headers fail
 closed. Session and CSRF credentials remain in their dedicated internal headers.
+
+## V4 reconstruction and converted balances
+
+The same journal and restricted signer support admitted implementation version
+`4` through `execution_v4_adapter.py`. The registered calls cover general self
+compound, eligible net compound, funding an existing member and minting one
+successor. V3 calldata stays unchanged. A V4 admission pins ten runtimes and the
+separate price publisher; using the execution signer as that publisher fails.
+
+The adapter rebuilds the V4 authority, position identities, source checkpoints,
+sorted source/currency budgets and destination from the immutable E1 plan and
+observation. Original allocations become exact `minOriginal`; their sum plus
+collection caps becomes `maxOriginal`. Existing charged allocations become
+equal minimum/maximum charged budgets. A realized collection can enlarge its
+spend allowance only up to its authorized cap; existing unallocated original
+fees and incidental destination collections cannot provide that allowance.
+Every floor must be consumed on-chain or the entire operation reverts.
+
+An enabled swap uses only the admitted V4 one-pool exact-input route. The
+deterministic first sorted source whose admitted net budget funds the whole
+input is selected; a plan requiring a split across sources is unavailable for
+this adapter. Currency direction determines the limit from the plan's price
+bounds. The resulting route commitment must equal the E1 commitment. The
+optional signer-config `priceObservationId` is a distinct trusted record ID,
+never copied from the route hash or browser input. Its on-chain publisher,
+pool, source block/hash/time, reference price, revocation and expiry are checked
+at a canonical pinned head. Qualifying a publisher remains a deployment task;
+local test observations are not an external price oracle.
+
+The signer rebuilds the whole envelope again at the key boundary and again
+before sending its persisted bytes. A runner step shares one 90-second deadline
+across RPC calls; each HTTP request has its smaller timeout and a bounded reply.
+There is no RPC redirect or automatic failover. Its fenced SQL critical section
+has a 95-second idle limit under the existing 300-second lease; other store
+roles retain their original limit.
+
+V4 receipt verification retains all actual fee credits, including incidental
+destination credits, while keeping unplanned incidental credits outside the
+plan's consumption projection. A converted output gets one stable origin ID
+from its source, transaction, event and output currency. Its lineage names the
+actual debited input lots, including the one service fee on original input.
+The same transaction writes those debits, the qualified output origin and any
+same-intent liquidity spend; only the measured charged residual remains for a
+later intent. Converted output is never charged again.
+
+Migration 019 permits this new available converted origin only through the
+signer role, a live fence, an existing canonical execution effect, matching
+conversion event and already recorded input debits. Legacy supplied conversions
+remain quarantined, without a promotion path. Losing a canonical receipt keeps
+debits and nonce tombstones, marks the sequence for reconciliation and prevents
+new execution for that sequence. Neither a restart nor a reorg manufactures
+another converted credit.
+
+`test_execution_runner_v4_evm.py` exercises the V4 adapter, synthetic signatures,
+official local v4 contracts, real PostgreSQL roles and source settlement. Use
+the same disposable-PG/EVM flags as the V3 test, with
+`DOMINO_COMPOUND_EVM_ROOT` pointing to the checkout containing the matching
+compiled V4 artifacts. Pure adapter tests cover route, identity, original versus
+charged floors, canonical bytes and price-record boundaries; transport tests
+exercise actual loopback HTTP denial, timeout and no-retry behavior.

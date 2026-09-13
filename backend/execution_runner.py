@@ -17,7 +17,7 @@ from execution_store import _Store, _model, _hash, _raw, ExecutionStoreError, Un
 from execution_signer import ExecutionError, verify_signed
 
 SIGNER_ROLE='domino_execution_signer'
-TRANSIENT={'compound_receipt_unavailable','compound_finality_unavailable','compound_rpc_unavailable'}
+TRANSIENT={'compound_receipt_unavailable','compound_finality_unavailable','compound_rpc_unavailable','v4_rpc_unavailable'}
 
 
 def json_record(value):
@@ -26,6 +26,10 @@ def json_record(value):
 
 class ExecutionJournal(_Store):
     role=SIGNER_ROLE
+    # Signing holds the fencing row while independently qualifying the chain.
+    # Its whole step has a 90s monotonic ceiling, shorter than this idle guard
+    # and the 300s lease; other store roles retain the original 5s setting.
+    idle_transaction_millis=95000
 
     def read(self,owner,identifier):
         identifier=_hash(identifier)
@@ -81,8 +85,8 @@ class ExecutionJournal(_Store):
             envelope=signer.envelope({'plan':row['plan'],'observation':row['observation']},nonce)
             conn.execute('UPDATE signer_heads SET next_nonce=greatest(next_nonce,%s) WHERE chain_id=4663 AND signer=%s',(nonce+1,signer.address))
             self._fence(conn,identifier)
-            conn.execute("INSERT INTO journal(owner,intent_id,state,signer,nonce,action,admission,envelope) VALUES(%s,%s,'signing',%s,%s,'compound_self_general_v3',%s,%s)",
-                (owner,identifier,signer.address,nonce,Jsonb(signer.admission.model_dump(mode='json')),Jsonb(envelope)))
+            conn.execute("INSERT INTO journal(owner,intent_id,state,signer,nonce,action,admission,envelope) VALUES(%s,%s,'signing',%s,%s,%s,%s,%s)",
+                (owner,identifier,signer.address,nonce,signer.action,Jsonb(signer.admission.model_dump(mode='json')),Jsonb(envelope)))
         self._transaction(owner,op,worker=worker,fence=fence)
         return self.read(owner,identifier)
 
@@ -160,11 +164,16 @@ class ExecutionJournal(_Store):
         if not proof or not proof.get('projection'):
             raise ExecutionError('execution_effect_unqualified')
         observation=_model(m.Observation,intent['observation'])
-        sources={a.source.digest():a.source for a in observation.accruals}
+        sources={source.digest():source for member in observation.positions
+            for source in (m.FeeSourceIdentity(sequence=observation.sequence.digest(),position=member.position.digest(),currency=currency)
+                for currency in (observation.sequence.poolKey.currency0,observation.sequence.poolKey.currency1))}
         initial={b.lotId:int(b.amountRaw) for b in observation.balances}
+        lot_metadata={b.lotId:{'sourceId':b.source.digest(),'currency':b.currency,'charged':b.convertedCharged,'eventIndex':-1}
+            for b in observation.balances}
         for raw in result['collections']:
             credit=_model(m.FeeCredit,raw);source=sources[credit.source];lot=credit.credit_id()
             initial[lot]=int(credit.amountRaw)
+            lot_metadata[lot]={'sourceId':credit.source,'currency':source.currency,'charged':False,'eventIndex':credit.eventIndex}
             previous=conn.execute('SELECT amount_raw,source_id,currency,transaction_hash,event_index FROM origins WHERE owner=%s AND lot_id=%s FOR UPDATE',(owner,lot)).fetchone()
             if previous:
                 if (previous['amount_raw'],previous['source_id'],previous['currency'],previous['transaction_hash'],previous['event_index'])!=(int(credit.amountRaw),credit.source,source.currency,credit.transactionHash,credit.eventIndex):
@@ -173,14 +182,67 @@ class ExecutionJournal(_Store):
                 conn.execute("INSERT INTO origins(origin_id,owner,sequence_hash,source_id,lot_id,currency,kind,transaction_hash,event_index,amount_raw,state,source_record,evidence) VALUES(%s,%s,%s,%s,%s,%s,'original',%s,%s,%s,'available',%s,%s)",
                     (lot,owner,observation.sequence.digest(),credit.source,lot,source.currency,credit.transactionHash,credit.eventIndex,int(credit.amountRaw),
                      Jsonb(source.model_dump(mode='json')),Jsonb({'sequence':observation.sequence.model_dump(mode='json'),'credit':credit.model_dump(mode='json')})))
+        spent_lots={}
         for remaining in proof['projection']['remainingLots']:
             lot=remaining['lotId'];spent=initial[lot]-int(remaining['amountRaw'])
             if spent<=0:continue
+            spent_lots[lot]=spent
             prior=conn.execute('SELECT amount_raw FROM spends WHERE intent_id=%s AND lot_id=%s',(identifier,lot)).fetchone()
             if prior and prior['amount_raw']!=spent:raise ExecutionError('execution_effect_conflict')
             if not prior:conn.execute('INSERT INTO spends(owner,intent_id,lot_id,amount_raw) VALUES(%s,%s,%s,%s)',(owner,identifier,lot,spent))
+        ExecutionJournal._settle_conversions(conn,owner,identifier,observation,result,sources,spent_lots,lot_metadata)
         for table in ('lot_claims','source_claims'):
             conn.execute(f'UPDATE {table} SET active=false WHERE owner=%s AND intent_id=%s AND active',(owner,identifier))
+
+    @staticmethod
+    def _settle_conversions(conn,owner,identifier,observation,result,sources,spent_lots,metadata):
+        """Credit actual swap output with its measured, already-debited inputs.
+
+        Input lineage records gross original debits (including their one fee)
+        and old charged debits, never guessed output from a quote. Newly created
+        charged output has its own immutable origin; same-intent liquidity is a
+        spend against it, leaving only the measured residual for a later plan.
+        """
+        conversions=result.get('conversions',())
+        if len(conversions)>1:raise ExecutionError('execution_conversion_unqualified')
+        for conversion in conversions:
+            source=sources[conversion['sourceId']];event=conversion['receiptLogIndex']
+            portions=[]
+            for charged,field in ((True,'chargedConsumedRaw'),(False,'grossOriginalConsumedRaw')):
+                required=int(conversion['inputAmounts'][field])
+                candidates=sorted((lot for lot in spent_lots if metadata[lot]['sourceId']==conversion['sourceId']
+                    and metadata[lot]['currency']==conversion['currencyIn'] and metadata[lot]['charged']==charged
+                    and metadata[lot]['eventIndex']<event),key=lambda lot:(metadata[lot]['eventIndex'],lot))
+                for lot in candidates:
+                    amount=min(required,spent_lots[lot])
+                    if amount:portions.append(m.Allocation(lotId=lot,amountRaw=str(amount)));required-=amount
+                    if not required:break
+                if required:raise ExecutionError('execution_conversion_lineage_shortfall')
+            lineage=m.ConvertedLotLineage(source=conversion['sourceId'],transactionHash=result['transactionHash'],eventIndex=event,
+                currency=conversion['currencyOut'],inputAllocations=tuple(sorted(portions,key=lambda a:a.lotId)))
+            lot=lineage.allocation_id();output=int(conversion['amountOutRaw'])
+            row=next(r for r in result['sources'] if (r['sourceId'],r['currency'])==(conversion['sourceId'],conversion['currencyOut']))
+            consumed=int(row['liquidityFromSwapRaw'])
+            residual=next((int(r['amountRaw']) for r in result['e1Proof']['projection']['convertedResiduals']
+                if (r['sourceId'],r['currency'])==(conversion['sourceId'],conversion['currencyOut'])),0)
+            if output!=consumed+residual:raise ExecutionError('execution_conversion_residual_mismatch')
+            evidence={'sequence':observation.sequence.model_dump(mode='json'),'lineage':lineage.model_dump(mode='json'),
+                'executionIntentId':identifier,'chargeStatus':'converted_charged'}
+            previous=conn.execute('SELECT * FROM origins WHERE owner=%s AND origin_id=%s FOR UPDATE',(owner,lot)).fetchone()
+            if previous:
+                expected={'amount_raw':output,'source_id':source.digest(),'currency':conversion['currencyOut'],
+                    'kind':'converted','state':'available','qualification_intent_id':identifier,'evidence':evidence}
+                if any(previous[key]!=value for key,value in expected.items()):raise ExecutionError('execution_effect_conflict')
+            else:
+                conn.execute("INSERT INTO origins(origin_id,owner,sequence_hash,source_id,lot_id,currency,kind,transaction_hash,event_index,amount_raw,state,source_record,evidence,qualification_intent_id) VALUES(%s,%s,%s,%s,%s,%s,'converted',%s,%s,%s,'available',%s,%s,%s)",
+                    (lot,owner,observation.sequence.digest(),source.digest(),lot,conversion['currencyOut'],result['transactionHash'],event,output,
+                        Jsonb(source.model_dump(mode='json')),Jsonb(evidence),identifier))
+                for allocation in lineage.inputAllocations:
+                    conn.execute('INSERT INTO converted_inputs(owner,origin_id,input_lot_id,amount_raw) VALUES(%s,%s,%s,%s)',
+                        (owner,lot,allocation.lotId,int(allocation.amountRaw)))
+            prior=conn.execute('SELECT amount_raw FROM spends WHERE intent_id=%s AND lot_id=%s',(identifier,lot)).fetchone()
+            if prior and prior['amount_raw']!=consumed:raise ExecutionError('execution_effect_conflict')
+            if consumed and not prior:conn.execute('INSERT INTO spends(owner,intent_id,lot_id,amount_raw) VALUES(%s,%s,%s,%s)',(owner,identifier,lot,consumed))
 
     def release_reverted(self,owner,identifier,worker,fence):
         def op(conn,owner):
@@ -212,6 +274,11 @@ class ExecutionRunner:
         self.restore_only=restore_only
 
     def step(self,owner,identifier,worker,*,replace=False):
+        from read_deadline import read_deadline
+        with read_deadline(90):
+            return self._step(owner,identifier,worker,replace=replace)
+
+    def _step(self,owner,identifier,worker,*,replace=False):
         lease=self.store.acquire(owner,identifier,worker,lease_seconds=300)
         fence=lease['fence']
         data=self.journal.read(owner,identifier)
@@ -243,7 +310,7 @@ class ExecutionRunner:
                 return self.journal.status(owner,identifier)
             cp, _ = self._stored_compound(data)
             try:
-                result=g.CompoundReceiptReconciler(rpc).reconcile(cp,self.signer.admission,attempt['transaction_hash'],
+                result=self.signer.verifier().reconcile(cp,self.signer.admission,attempt['transaction_hash'],
                     e1_plan=_model(m.ExecutionPlan,data['intent']['plan']),observation=_model(m.Observation,data['intent']['observation']))
             except ValueError as error:
                 code=str(error)
@@ -272,7 +339,7 @@ class ExecutionRunner:
         # Restoration never invents a new transaction. Exact recorded bytes can
         # be re-sent only after independent requalification of the same intent.
         try:
-            self.signer.qualify(data['intent']['plan'],data['intent']['observation'])
+            self.signer.assert_envelope(data['intent'],attempt['envelope'])
         except ValueError:
             self.journal.state(owner,identifier,worker,fence,'attention','execution_revalidation_failed')
             return self.journal.status(owner,identifier)
@@ -315,6 +382,10 @@ class ExecutionRunner:
 
     @staticmethod
     def _stored_compound(data):
+        if data['journal']['action']=='typed_fee_execution_v4':
+            from execution_v4_adapter import decode_plan
+            return decode_plan(data['journal']['envelope']['data']),data['intent']
+        if data['journal']['action']!='compound_self_general_v3':raise ExecutionError('execution_action_not_registered')
         from eth_abi import decode
         raw=bytes.fromhex(data['journal']['envelope']['data'][2:])
         values=decode([g.PLAN_TYPE],raw[4:])[0]
