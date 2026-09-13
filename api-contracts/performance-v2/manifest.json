@@ -1,0 +1,162 @@
+{
+  "contract": "performance-v2",
+  "contractVersion": "2.0.0-rc.1",
+  "files": [
+    {
+      "path": "fixtures/errors.json",
+      "sha256": "4058a8855becbcd97a2e3dab1b59c5658e0cbb22c0b6aa018df2c16480f6899f"
+    },
+    {
+      "path": "fixtures/requests/cards.json",
+      "sha256": "e74d3b01480c7349f6045f1a2a52d1276d12bef0519502a093fb183c0cef1e13"
+    },
+    {
+      "path": "fixtures/requests/enroll.json",
+      "sha256": "c04620ed31e538be889ec7496117e3a44eed0c2b32fe657961940adbdb95f178"
+    },
+    {
+      "path": "fixtures/requests/epochs.json",
+      "sha256": "ca3d163bab055381827226140568f3bef7eaac187cebd76878e0b63e9e442356"
+    },
+    {
+      "path": "fixtures/responses/cards.json",
+      "sha256": "a9cb178749d1f692a74b82aa4f456d099530ae6b5773a4c97d3f77fd0706f7e6"
+    },
+    {
+      "path": "fixtures/responses/enroll.json",
+      "sha256": "fe886e1316b6ecc7f64789f7a3447d566744f948e5755e06e96ca48e396d9424"
+    },
+    {
+      "path": "fixtures/responses/epochs.json",
+      "sha256": "e49361c8d1690a961752dd113b604712df7119d728a6a46cf11719c53d4a600d"
+    },
+    {
+      "path": "fixtures/variants/stale.json",
+      "sha256": "09b95f0f8561bf40bbdd052cea1aad4329bf3799d17c9a094b306701a59d15cd"
+    },
+    {
+      "path": "fixtures/variants/unqualified-prices.json",
+      "sha256": "204ef48c7a94a799c937669fe4baaeb0cce0ce676a50a9da93f7dc1efc8ce0b3"
+    },
+    {
+      "path": "runtime.d.mts",
+      "sha256": "b0edcf4071f677d5382c9156d81914a17bc546d0c62d0b20a54847b150e730e2"
+    },
+    {
+      "path": "schema-data.mjs",
+      "sha256": "c25fb7d7d9d79bad645c348a7d48ad6c41ba017439bfa6723da6442bd160f285"
+    },
+    {
+      "path": "schemas/cards.request.schema.json",
+      "sha256": "077f3b50b2e53ab5ab3799f58d152369e4cb13644b24c0f362baf847f89a9410"
+    },
+    {
+      "path": "schemas/cards.response.schema.json",
+      "sha256": "c24f5390df9d23e73c1f261a3bac340239de80096ffad2c9d5a094ae9fd8a0e4"
+    },
+    {
+      "path": "schemas/enroll.request.schema.json",
+      "sha256": "177500466893747df9db5e33d9334f13372c386e9d47e136a25f56d3d5b8e1ed"
+    },
+    {
+      "path": "schemas/enroll.response.schema.json",
+      "sha256": "b55b4ca4a536eb43f49ea15cd4a126108889a0caaa46d37344674edf03b167bc"
+    },
+    {
+      "path": "schemas/epochs.request.schema.json",
+      "sha256": "a6cacd1274fcee7023ac0adb20aa5100975091c5342b0920e46227051ecd4941"
+    },
+    {
+      "path": "schemas/epochs.response.schema.json",
+      "sha256": "9d00b796f987d25bec6b1f9951db877a2dfa2986420d86e84af3dd45d3eb8f85"
+    },
+    {
+      "path": "schemas/error.response.schema.json",
+      "sha256": "3a68e3a0f662f6a86a2f7ff09acaa19d1247fe6257f4e8458f3195e56652400e"
+    },
+    {
+      "path": "types.ts",
+      "sha256": "4ad0fed10dfb1f899d1b13fa61bcf03512663d1de1dbd481811f475abf39e403"
+    },
+    {
+      "path": "runtime.mjs",
+      "sha256": "b3e3b2d76713a09102690d78b69567b1fcc3cc20f681ef4475e9e610721f86dc"
+    },
+    {
+      "path": "README.md",
+      "sha256": "e2b371e6a72b72f2add5cd77af6fa607e8796358f5fa1fe5ce4b85b4fa151dae"
+    },
+    {
+      "path": "consumer.typecheck.mts",
+      "sha256": "7acfa6064c270adb0ae5905b6da5e63c5363cca2c3612412d4e18716f1b229d5"
+    }
+  ],
+  "generator": "scripts/export-performance-v2-contract.py",
+  "sources": [
+    {
+      "path": "backend/performance_v2_models.py",
+      "sha256": "2110f063c8ea85c437db80d98ad4f8bf934fcd05526a720c09d5aa9f2a8a0dd6"
+    },
+    {
+      "path": "backend/performance_v2_service.py",
+      "sha256": "3e6c4e9c134a442a3a9c0df6222e3028a83b2ddb77db5de941879b5725b78124"
+    },
+    {
+      "path": "backend/performance_v2_api.py",
+      "sha256": "1df88cc0c43c30d3d6cd434a8ff5bc805b823ee1429954765dc3d90e71030250"
+    },
+    {
+      "path": "backend/performance_runtime.py",
+      "sha256": "e8656a7b409c0d5976e9e38728ad40bafc5a4bb5b533cf6431b936de8c0f0a37"
+    },
+    {
+      "path": "bridge/src/performance-worker.mjs",
+      "sha256": "4adf6f8cbf06960dbf5984591daf43a81688b9a9e7b1dcd779144c823738579d"
+    },
+    {
+      "path": "backend/performance_enrollment.py",
+      "sha256": "8663aa9e969a004932039093701aea286fd89b5cda5da030dc28e3bcfaff144e"
+    },
+    {
+      "path": "backend/performance_producer.py",
+      "sha256": "06075b8ab01631d84d3499e34612f9bfff70735b33a064d17a8b9c2943b934ad"
+    },
+    {
+      "path": "backend/migrations/018_performance_enrollment.sql",
+      "sha256": "9bb0238200062d505f55479224ed920bc097b5797d7d7fa30fa83154dd1caf8d"
+    },
+    {
+      "path": "backend/performance_history_projection.py",
+      "sha256": "1bc169ec17d0cae2a183f99e6cb27089efda7c5e922f404a1a4dbfca42f68ade"
+    },
+    {
+      "path": "backend/performance_history_store.py",
+      "sha256": "7ac4e0d85e2f76f281c3d552c5a7fb70b77743d0f23e7cd45ae91d1f3d29613e"
+    },
+    {
+      "path": "backend/performance_history_worker.py",
+      "sha256": "c6de91700829ceac6dbac99c5c57b7b668f8636617b5e75a3d163b348b5fe952"
+    },
+    {
+      "path": "backend/performance_valuation.py",
+      "sha256": "8e861e70cc8aa56b90a7676baea7207839cdf080e7ebd45b73b3ebc4d4cb8c08"
+    },
+    {
+      "path": "backend/authenticated_api.py",
+      "sha256": "d21f0a1488fabd8ed514b159d18831a36878d1bbd0837e1132774dd703522bf3"
+    },
+    {
+      "path": "backend/onboarding_auth.py",
+      "sha256": "0060646f6ceaf95da3b597c68110737d17129afae8dce4120f206de1ed5677d4"
+    },
+    {
+      "path": "backend/tests/performance_v2_contract_fixtures.py",
+      "sha256": "31e50dd78468d6ce33fac4de9a3fee8dfaa94bf7bc5175941f90afa28309b2c3"
+    },
+    {
+      "path": "scripts/export-performance-v2-contract.py",
+      "sha256": "c3072f3e91f9c32a7999b04b626a41b16dd3feb74b1ae519a3f217c32dbb9f95"
+    }
+  ],
+  "status": "implemented_default_off"
+}

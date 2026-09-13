@@ -1,0 +1,21 @@
+{
+  "chainId": 4663,
+  "contractVersion": "2.0.0-rc.1",
+  "enrollments": [
+    {
+      "enrollmentId": "0x1212121212121212121212121212121212121212121212121212121212121212",
+      "epochId": "0xe272a16bd4c5279a7af9cf3266761b02dc62e1de0105f8d7042f43218222ea51",
+      "reason": "forward_collection",
+      "status": "tracking",
+      "tokenIds": [
+        "1"
+      ],
+      "updatedAt": 87410,
+      "vault": "0x4444444444444444444444444444444444444444"
+    }
+  ],
+  "executionAvailable": false,
+  "nextAfter": null,
+  "owner": "0x2222222222222222222222222222222222222222",
+  "refreshAfterSeconds": 60
+}

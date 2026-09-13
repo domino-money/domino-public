@@ -1,0 +1,45 @@
+{
+  "$id": "https://domino.invalid/contracts/performance-v2/enroll.request.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "tokenIds": {
+      "items": {
+        "maxLength": 78,
+        "pattern": "^[1-9][0-9]{0,77}$(?![\\s\\S])",
+        "type": "string",
+        "x-maximum-raw": "115792089237316195423570985008687907853269984665640564039457584007913129639935"
+      },
+      "maxItems": 64,
+      "minItems": 1,
+      "title": "Tokenids",
+      "type": "array",
+      "uniqueItems": true
+    },
+    "vault": {
+      "maxLength": 42,
+      "minLength": 42,
+      "pattern": "^0x(?!0{40}$)[0-9a-f]{40}$",
+      "title": "Vault",
+      "type": "string"
+    }
+  },
+  "required": [
+    "vault",
+    "tokenIds"
+  ],
+  "title": "EnrollRequest",
+  "type": "object",
+  "x-contract-version": "2.0.0-rc.1",
+  "x-domino-constraints": [
+    "Strict safe JSON integers; nonzero canonical lowercase identities; unique requested/result epochs.",
+    "Cards accept 1..8 epochIds; enrollment accepts a vault and complete token set. Owner comes from the authenticated session.",
+    "Financial USD/APR amounts are decimal strings or null; APR requires available complete24h; APY and execution remain disabled.",
+    "Collection spans are snapshot.timestamp minus baseline.timestamp, not fee/capital coverage.",
+    "Same block number means same hash; snapshots cannot precede baseline.",
+    "Collection reason, status and 120-second age boundary must agree.",
+    "Pages zero implies receipts/events zero; receipts zero implies events zero.",
+    "The runtime also enforces cross-field semantics and x-maximum-raw, beyond generic schema checks.",
+    "Owner/epoch request binding and session reauthorization remain server/consumer integration checks."
+  ]
+}

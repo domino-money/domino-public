@@ -1,0 +1,146 @@
+{
+  "$defs": {
+    "Enrollment": {
+      "additionalProperties": false,
+      "properties": {
+        "enrollmentId": {
+          "maxLength": 66,
+          "minLength": 66,
+          "pattern": "^0x(?!0{64}$)[0-9a-f]{64}$",
+          "title": "Enrollmentid",
+          "type": "string"
+        },
+        "epochId": {
+          "anyOf": [
+            {
+              "maxLength": 66,
+              "minLength": 66,
+              "pattern": "^0x(?!0{64}$)[0-9a-f]{64}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Epochid"
+        },
+        "reason": {
+          "enum": [
+            "awaiting_baseline",
+            "forward_collection",
+            "collection_failed",
+            "baseline_reorged"
+          ],
+          "title": "Reason",
+          "type": "string"
+        },
+        "status": {
+          "enum": [
+            "queued",
+            "tracking",
+            "stale",
+            "blocked"
+          ],
+          "title": "Status",
+          "type": "string"
+        },
+        "tokenIds": {
+          "items": {
+            "maxLength": 78,
+            "pattern": "^[1-9][0-9]{0,77}$(?![\\s\\S])",
+            "type": "string",
+            "x-maximum-raw": "115792089237316195423570985008687907853269984665640564039457584007913129639935"
+          },
+          "maxItems": 64,
+          "minItems": 1,
+          "title": "Tokenids",
+          "type": "array"
+        },
+        "updatedAt": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "title": "Updatedat",
+          "type": "integer"
+        },
+        "vault": {
+          "maxLength": 42,
+          "minLength": 42,
+          "pattern": "^0x(?!0{40}$)[0-9a-f]{40}$",
+          "title": "Vault",
+          "type": "string"
+        }
+      },
+      "required": [
+        "enrollmentId",
+        "vault",
+        "tokenIds",
+        "epochId",
+        "status",
+        "reason",
+        "updatedAt"
+      ],
+      "title": "Enrollment",
+      "type": "object"
+    }
+  },
+  "$id": "https://domino.invalid/contracts/performance-v2/enroll.response.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "chainId": {
+      "const": 4663,
+      "title": "Chainid",
+      "type": "integer"
+    },
+    "contractVersion": {
+      "const": "2.0.0-rc.1",
+      "title": "Contractversion",
+      "type": "string"
+    },
+    "enrollment": {
+      "$ref": "#/$defs/Enrollment"
+    },
+    "executionAvailable": {
+      "const": false,
+      "title": "Executionavailable",
+      "type": "boolean"
+    },
+    "owner": {
+      "maxLength": 42,
+      "minLength": 42,
+      "pattern": "^0x(?!0{40}$)[0-9a-f]{40}$",
+      "title": "Owner",
+      "type": "string"
+    },
+    "refreshAfterSeconds": {
+      "enum": [
+        30,
+        60
+      ],
+      "title": "Refreshafterseconds",
+      "type": "integer"
+    }
+  },
+  "required": [
+    "contractVersion",
+    "chainId",
+    "owner",
+    "refreshAfterSeconds",
+    "executionAvailable",
+    "enrollment"
+  ],
+  "title": "EnrollResponse",
+  "type": "object",
+  "x-contract-version": "2.0.0-rc.1",
+  "x-domino-constraints": [
+    "Strict safe JSON integers; nonzero canonical lowercase identities; unique requested/result epochs.",
+    "Cards accept 1..8 epochIds; enrollment accepts a vault and complete token set. Owner comes from the authenticated session.",
+    "Financial USD/APR amounts are decimal strings or null; APR requires available complete24h; APY and execution remain disabled.",
+    "Collection spans are snapshot.timestamp minus baseline.timestamp, not fee/capital coverage.",
+    "Same block number means same hash; snapshots cannot precede baseline.",
+    "Collection reason, status and 120-second age boundary must agree.",
+    "Pages zero implies receipts/events zero; receipts zero implies events zero.",
+    "The runtime also enforces cross-field semantics and x-maximum-raw, beyond generic schema checks.",
+    "Owner/epoch request binding and session reauthorization remain server/consumer integration checks."
+  ]
+}

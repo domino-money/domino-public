@@ -1,0 +1,182 @@
+[
+  {
+    "body": {
+      "error": "account_check_unavailable"
+    },
+    "status": 503
+  },
+  {
+    "body": {
+      "error": "account_unsupported"
+    },
+    "status": 403
+  },
+  {
+    "body": {
+      "error": "challenge_invalid"
+    },
+    "status": 401
+  },
+  {
+    "body": {
+      "error": "csrf_invalid"
+    },
+    "status": 403
+  },
+  {
+    "body": {
+      "error": "invalid_request"
+    },
+    "status": 400
+  },
+  {
+    "body": {
+      "error": "invalid_signature"
+    },
+    "status": 401
+  },
+  {
+    "body": {
+      "error": "json_required"
+    },
+    "status": 415
+  },
+  {
+    "body": {
+      "error": "method_not_allowed"
+    },
+    "status": 405
+  },
+  {
+    "body": {
+      "error": "onboarding_capacity_busy"
+    },
+    "status": 429
+  },
+  {
+    "body": {
+      "error": "onboarding_rate_limited"
+    },
+    "status": 429
+  },
+  {
+    "body": {
+      "error": "origin_not_allowed"
+    },
+    "status": 403
+  },
+  {
+    "body": {
+      "error": "performance_capacity_busy"
+    },
+    "status": 429
+  },
+  {
+    "body": {
+      "error": "performance_enrollment_limit"
+    },
+    "status": 429
+  },
+  {
+    "body": {
+      "error": "performance_enrollment_unavailable"
+    },
+    "status": 503
+  },
+  {
+    "body": {
+      "error": "performance_store_unavailable"
+    },
+    "status": 503
+  },
+  {
+    "body": {
+      "error": "performance_subject_not_admitted"
+    },
+    "status": 403
+  },
+  {
+    "body": {
+      "error": "preauth_required"
+    },
+    "status": 401
+  },
+  {
+    "body": {
+      "error": "request_timeout"
+    },
+    "status": 504
+  },
+  {
+    "body": {
+      "error": "request_too_large"
+    },
+    "status": 413
+  },
+  {
+    "body": {
+      "error": "route_not_available"
+    },
+    "status": 404
+  },
+  {
+    "body": {
+      "error": "session_capacity_busy"
+    },
+    "status": 429
+  },
+  {
+    "body": {
+      "error": "session_exists"
+    },
+    "status": 409
+  },
+  {
+    "body": {
+      "error": "session_rate_limited"
+    },
+    "status": 429
+  },
+  {
+    "body": {
+      "error": "session_required"
+    },
+    "status": 401
+  },
+  {
+    "body": {
+      "error": "session_store_unavailable"
+    },
+    "status": 503
+  },
+  {
+    "body": {
+      "error": "upstream_contract_mismatch"
+    },
+    "status": 502
+  },
+  {
+    "body": {
+      "error": "upstream_invalid_response"
+    },
+    "status": 502
+  },
+  {
+    "body": {
+      "error": "upstream_timeout"
+    },
+    "status": 504
+  },
+  {
+    "body": {
+      "error": "upstream_unavailable"
+    },
+    "status": 503
+  },
+  {
+    "body": {
+      "error": "wallet_not_allowed"
+    },
+    "status": 403
+  }
+]

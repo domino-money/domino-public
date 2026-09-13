@@ -1,0 +1,36 @@
+{
+  "$id": "https://domino.invalid/contracts/performance-v2/epochs.request.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "after": {
+      "anyOf": [
+        {
+          "maxLength": 66,
+          "minLength": 66,
+          "pattern": "^0x(?!0{64}$)[0-9a-f]{64}$",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "After"
+    }
+  },
+  "title": "EpochsRequest",
+  "type": "object",
+  "x-contract-version": "2.0.0-rc.1",
+  "x-domino-constraints": [
+    "Strict safe JSON integers; nonzero canonical lowercase identities; unique requested/result epochs.",
+    "Cards accept 1..8 epochIds; enrollment accepts a vault and complete token set. Owner comes from the authenticated session.",
+    "Financial USD/APR amounts are decimal strings or null; APR requires available complete24h; APY and execution remain disabled.",
+    "Collection spans are snapshot.timestamp minus baseline.timestamp, not fee/capital coverage.",
+    "Same block number means same hash; snapshots cannot precede baseline.",
+    "Collection reason, status and 120-second age boundary must agree.",
+    "Pages zero implies receipts/events zero; receipts zero implies events zero.",
+    "The runtime also enforces cross-field semantics and x-maximum-raw, beyond generic schema checks.",
+    "Owner/epoch request binding and session reauthorization remain server/consumer integration checks."
+  ]
+}
