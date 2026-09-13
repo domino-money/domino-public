@@ -1,0 +1,368 @@
+{
+  "schemaVersion": 1,
+  "dateUtc": "2026-09-13",
+  "baselineCommit": "7e2384327baa808a744f9ed4840317d960998174",
+  "scope": "sanitized_read_only_source_research",
+  "directProviderRequests": 18,
+  "publicRpcProbeRequests": 5,
+  "databaseWrites": 0,
+  "executionAvailable": false,
+  "temporalSemanticsQualified": false,
+  "targetPoolIndependenceQualified": false,
+  "captures": [
+    {
+      "file": "live-probe.json",
+      "sha256": "134831d977c7dff4a3866c7e04fdfead6b0d5ab09dbb1842a2cdf1cf4fc5a07f",
+      "probes": [
+        {
+          "label": "alchemy_robinhood_WETH",
+          "httpStatus": 400,
+          "retrievedAt": 1789266678,
+          "providerHost": "api.g.alchemy.com",
+          "errorCategory": "unsupported_network"
+        },
+        {
+          "label": "alchemy_ETH_reference",
+          "httpStatus": 200,
+          "retrievedAt": 1789266679,
+          "providerHost": "api.g.alchemy.com",
+          "responseIdentity": {
+            "symbol": "ETH",
+            "currency": "usd"
+          },
+          "observations": {
+            "count": 290,
+            "firstTimestampMs": 1789179600000,
+            "lastTimestampMs": 1789266300000,
+            "maximumGapMs": 300000,
+            "gapsAbove300Seconds": 0,
+            "minimumUsd": "2510.0508742868",
+            "maximumUsd": "2543.6902893176"
+          }
+        },
+        {
+          "label": "alchemy_USDG_reference",
+          "httpStatus": 200,
+          "retrievedAt": 1789266679,
+          "providerHost": "api.g.alchemy.com",
+          "responseIdentity": {
+            "symbol": "USDG",
+            "currency": "usd"
+          },
+          "observations": {
+            "count": 290,
+            "firstTimestampMs": 1789179600000,
+            "lastTimestampMs": 1789266300000,
+            "maximumGapMs": 300000,
+            "gapsAbove300Seconds": 0,
+            "minimumUsd": "0.9998430394",
+            "maximumUsd": "1.0000649928"
+          }
+        },
+        {
+          "label": "gecko_token_WETH",
+          "httpStatus": 200,
+          "retrievedAt": 1789266679,
+          "providerHost": "api.geckoterminal.com"
+        },
+        {
+          "label": "gecko_token_USDG",
+          "httpStatus": 200,
+          "retrievedAt": 1789266680,
+          "providerHost": "api.geckoterminal.com"
+        },
+        {
+          "label": "gecko_token_MARLIN",
+          "httpStatus": 200,
+          "retrievedAt": 1789266680,
+          "providerHost": "api.geckoterminal.com"
+        },
+        {
+          "label": "defillama_historical",
+          "httpStatus": 200,
+          "retrievedAt": 1789266680,
+          "providerHost": "coins.llama.fi"
+        }
+      ]
+    },
+    {
+      "file": "followup-probe.json",
+      "sha256": "a5c0aed8e64d8f01e79c57369221eb6825a2f9dc6a2c45d4809dac1fcaf14702",
+      "probes": [
+        {
+          "label": "coingecko_jt_marlin_identity",
+          "httpStatus": 200,
+          "retrievedAt": 1789266768,
+          "identity": {
+            "id": "jt-marlin",
+            "platformAddress": "0xab35d04e1ee39c789c4a65d522417b3c7f2e4723",
+            "decimals": 18
+          },
+          "venues": [
+            {
+              "id": "pons-v2-dex",
+              "stale": false,
+              "anomaly": false
+            },
+            {
+              "id": "uniswap-v4-robinhood",
+              "stale": false,
+              "anomaly": false
+            },
+            {
+              "id": "uniswap-v4-robinhood",
+              "stale": false,
+              "anomaly": false
+            },
+            {
+              "id": "ramses-v3-robinhood",
+              "stale": false,
+              "anomaly": true
+            },
+            {
+              "id": "uniswap-v4-robinhood",
+              "stale": true,
+              "anomaly": true
+            }
+          ]
+        },
+        {
+          "label": "coingecko_jt_marlin_chart",
+          "httpStatus": 200,
+          "retrievedAt": 1789266769,
+          "observations": {
+            "count": 289,
+            "firstTimestampMs": 1789180500000,
+            "lastTimestampMs": 1789266660000,
+            "maximumGapMs": 300000,
+            "gapsAbove300Seconds": 0,
+            "minimumUsd": "0.00008501937089345955",
+            "maximumUsd": "0.0002539779731996454"
+          }
+        },
+        {
+          "label": "gecko_usdg_weth_base",
+          "httpStatus": 200,
+          "retrievedAt": 1789266769
+        },
+        {
+          "label": "gecko_usdg_weth_quote",
+          "httpStatus": 200,
+          "retrievedAt": 1789266770
+        },
+        {
+          "label": "gecko_marlin_pons",
+          "httpStatus": 200,
+          "retrievedAt": 1789266770
+        }
+      ]
+    },
+    {
+      "file": "canonical-ethereum-probe.json",
+      "sha256": "ce92f46220e71c5a242df0cb00884af5299dd908859ff1eeca21124512118625",
+      "probes": [
+        {
+          "label": "alchemy_ethereum_USDG",
+          "httpStatus": 200,
+          "retrievedAt": 1789266977,
+          "providerHost": "api.g.alchemy.com",
+          "responseIdentity": {
+            "network": "eth-mainnet",
+            "address": "0xe343167631d89b6ffc58b88d6b7fb0228795491d",
+            "currency": "usd"
+          },
+          "observations": {
+            "count": 290,
+            "firstTimestampMs": 1789179600000,
+            "lastTimestampMs": 1789266300000,
+            "maximumGapMs": 300000,
+            "gapsAbove300Seconds": 0,
+            "minimumUsd": "0.9998430394",
+            "maximumUsd": "1.0000649928"
+          }
+        },
+        {
+          "label": "alchemy_ethereum_WETH",
+          "httpStatus": 200,
+          "retrievedAt": 1789266977,
+          "providerHost": "api.g.alchemy.com",
+          "responseIdentity": {
+            "network": "eth-mainnet",
+            "address": "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2",
+            "currency": "usd"
+          },
+          "observations": {
+            "count": 290,
+            "firstTimestampMs": 1789179600000,
+            "lastTimestampMs": 1789266300000,
+            "maximumGapMs": 300000,
+            "gapsAbove300Seconds": 0,
+            "minimumUsd": "2510.5729648565",
+            "maximumUsd": "2543.2553063378"
+          }
+        }
+      ]
+    }
+  ],
+  "integrationBaseCommit": "1359a3b2e0503c4c723adcbfaee2dc35c8350f1c",
+  "initialResearchProviderRequests": 14,
+  "adapterValidationProviderRequests": 4,
+  "adapterValidation": [
+    {
+      "file": "coingecko-cli-live.json",
+      "sha256": "1d8399367934ce75a971189fab7d6a6fab4c43b3ab5869601d661312948b7484",
+      "status": "unqualified",
+      "source": "coingecko_market_chart_reference_v1",
+      "executionAvailable": false,
+      "identity": {
+        "chainId": 4663,
+        "coinId": "jt-marlin",
+        "currency": "0xab35d04e1ee39c789c4a65d522417b3c7f2e4723",
+        "currencyDecimals": 18,
+        "platform": "robinhood",
+        "status": "provider_chain_address_mapping_only"
+      },
+      "requestedAtMs": 1789267345965,
+      "retrievedAtMs": 1789267346240,
+      "diagnostics": {
+        "cadenceThresholdMs": 300000,
+        "canonicalEventTimeCoverage": "unqualified",
+        "duplicatePointCount": 0,
+        "firstPointMs": 1789181100000,
+        "firstPointOffsetFromRequestedStartMs": 154035,
+        "gapsAboveCadenceThreshold": 0,
+        "inputPointCount": 289,
+        "lastPointMs": 1789267240000,
+        "lastPointOffsetFromRequestedEndMs": -105965,
+        "maxGapMs": 300000,
+        "pointCount": 289,
+        "requestedEndMs": 1789267345965,
+        "requestedStartMs": 1789180945965,
+        "sampleSpanMs": 86140000,
+        "scope": "provider_sample_labels_only"
+      },
+      "provenance": {
+        "chartIdentity": "bound_to_validated_coin_id_request",
+        "interpolationApplied": false,
+        "onchainCurrencyIdentityVerified": false,
+        "providerPublicationTimeVerified": false,
+        "stablecoinParityAssumed": false,
+        "targetPoolIndependence": "unqualified",
+        "timestampSemantics": "provider_chart_timestamp_unqualified"
+      },
+      "providerRequests": 2
+    },
+    {
+      "file": "weth-cli-live.json",
+      "sha256": "c97fcb8750d56bbef288032fca46febec3d70de760e803ee2a1672846e02da4b",
+      "status": "observed_unqualified",
+      "source": "alchemy_canonical_market_reference_v1",
+      "executionAvailable": false,
+      "chainId": 4663,
+      "currency": "0x0bd7d308f8e1639fab988df18a8011f41eacad73",
+      "requestedAt": 1789267708,
+      "retrievedAt": 1789267709,
+      "reference": {
+        "provider": "alchemy",
+        "adapterVersion": 1,
+        "requestIdentity": {
+          "network": "eth-mainnet",
+          "address": "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2"
+        },
+        "currencyMapping": "canonical_weth_ethereum_reference",
+        "expectedCurrencyDecimals": 18,
+        "historicalCurrencyDecimalsVerified": false,
+        "providerIdentityEvidence": "network_address_echo",
+        "referenceScope": "crosschain_market_reference",
+        "robinhoodExecutablePriceQualified": false,
+        "intervalSeconds": 300,
+        "status": "external_observation_unqualified",
+        "targetPoolIndependenceVerified": false,
+        "sourceComposition": "unqualified",
+        "bucketTimestampSemantics": "unqualified",
+        "pointTimestampSemanticsQualified": false
+      },
+      "coverage": {
+        "status": "observed_grid_complete",
+        "diagnosticBasis": "utc_5m_grid_and_requested_boundaries",
+        "startTimestamp": 1789179600,
+        "endTimestamp": 1789266300,
+        "observationCount": 290,
+        "expectedTimestampCount": 290,
+        "firstTimestamp": 1789179600,
+        "lastTimestamp": 1789266300,
+        "largestObservedGapSeconds": 300,
+        "missingGridTimestamps": [],
+        "nullPriceTimestamps": [],
+        "unalignedObservationTimestamps": [],
+        "causalEventTimeCoverage": "unqualified",
+        "interpolationApplied": false
+      },
+      "sourceQualified": false,
+      "productionQualified": false,
+      "providerRequests": 1
+    },
+    {
+      "file": "usdg-cli-live.json",
+      "sha256": "e461209fb2cdc28b0bd1037b901f6a7149a671e039dd956d0db00fd0d9b85566",
+      "status": "observed_unqualified",
+      "source": "alchemy_canonical_market_reference_v1",
+      "executionAvailable": false,
+      "chainId": 4663,
+      "currency": "0x5fc5360d0400a0fd4f2af552add042d716f1d168",
+      "requestedAt": 1789267708,
+      "retrievedAt": 1789267709,
+      "reference": {
+        "provider": "alchemy",
+        "adapterVersion": 1,
+        "requestIdentity": {
+          "network": "eth-mainnet",
+          "address": "0xe343167631d89b6ffc58b88d6b7fb0228795491d"
+        },
+        "currencyMapping": "canonical_usdg_global_dollar_reference",
+        "expectedCurrencyDecimals": 6,
+        "historicalCurrencyDecimalsVerified": false,
+        "providerIdentityEvidence": "network_address_echo",
+        "referenceScope": "crosschain_market_reference",
+        "robinhoodExecutablePriceQualified": false,
+        "intervalSeconds": 300,
+        "status": "external_observation_unqualified",
+        "targetPoolIndependenceVerified": false,
+        "sourceComposition": "unqualified",
+        "bucketTimestampSemantics": "unqualified",
+        "pointTimestampSemanticsQualified": false
+      },
+      "coverage": {
+        "status": "observed_grid_complete",
+        "diagnosticBasis": "utc_5m_grid_and_requested_boundaries",
+        "startTimestamp": 1789179600,
+        "endTimestamp": 1789266300,
+        "observationCount": 290,
+        "expectedTimestampCount": 290,
+        "firstTimestamp": 1789179600,
+        "lastTimestamp": 1789266300,
+        "largestObservedGapSeconds": 300,
+        "missingGridTimestamps": [],
+        "nullPriceTimestamps": [],
+        "unalignedObservationTimestamps": [],
+        "causalEventTimeCoverage": "unqualified",
+        "interpolationApplied": false
+      },
+      "sourceQualified": false,
+      "productionQualified": false,
+      "providerRequests": 1
+    }
+  ],
+  "offlineValidation": {
+    "testCount": 90,
+    "failures": 0,
+    "skips": 0,
+    "modules": [
+      "test_market_reference_history",
+      "test_coingecko_market_reference",
+      "test_valuation",
+      "test_price_capacity",
+      "test_performance_valuation"
+    ]
+  }
+}

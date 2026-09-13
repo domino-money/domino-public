@@ -150,6 +150,23 @@ class CanonicalMarketHistoryTests(unittest.TestCase):
         with self.assertRaisesRegex(DataError, '^price_observation_budget_exhausted$'):
             provider.fetch(ZERO, 0, MAX_WINDOW_SECONDS)
 
+    def test_receipt_time_is_recorded_after_transport_without_changing_observation_time(self):
+        times = iter((100000, 100007))
+        provider, transport = self.provider(clock=lambda: next(times))
+        result = provider.fetch(ZERO, 300, 900)
+        self.assertEqual(transport.call_count, 1)
+        self.assertEqual((result['requestedAt'], result['retrievedAt']), (100000, 100007))
+        self.assertEqual([row['timestamp'] for row in result['observations']], [300, 600, 900])
+        self.assertTrue(all(row['retrievedAt'] == 100007 for row in result['observations']))
+
+    def test_invalid_receipt_clock_cannot_manufacture_earlier_availability(self):
+        for received in (99999, float('nan'), float('inf'), 253402300800, True, '100007'):
+            times = iter((100000, received))
+            provider, transport = self.provider(clock=lambda: next(times))
+            with self.subTest(received=received), self.assertRaisesRegex(DataError, '^invalid_price_history_bounds$'):
+                provider.fetch(ZERO, 300, 900)
+            self.assertEqual(transport.call_count, 1)
+
     def test_response_identity_currency_and_provider_errors_are_not_relabelled(self):
         for changes, reason in (({'symbol': 'WETH'}, 'asset_mismatch'),
                                 ({'symbol': None}, 'asset_mismatch'),

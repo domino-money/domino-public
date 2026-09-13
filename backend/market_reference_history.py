@@ -90,6 +90,10 @@ class CanonicalMarketHistorical(AlchemyHistorical):
             reason = str(error) if isinstance(error, DataError) else None
             raise DataError(reason if reason in _SAFE_TRANSPORT_REASONS else
                             'market_reference_provider_unavailable') from None
+        received = self.clock()
+        if (type(received) not in (int, float) or not now <= received < 253402300800):
+            raise DataError('invalid_price_history_bounds')
+        received = int(received)
         if not isinstance(result, dict):
             raise DataError('invalid_price_history_response')
         if result.get('error') is not None:
@@ -136,13 +140,13 @@ class CanonicalMarketHistorical(AlchemyHistorical):
             'pointTimestampSemanticsQualified': False,
         }
         rows = [{'chainId': CHAIN_ID, 'currency': currency, 'source': SOURCE,
-                 'timestamp': at, 'retrievedAt': now, 'priceUsd': values[at],
+                 'timestamp': at, 'retrievedAt': received, 'priceUsd': values[at],
                  'provenance': dict(provenance)}
                 for at in sorted(seen) if seen[at] is not None]
         return {
             'schemaVersion': 1, 'mode': 'bounded_canonical_market_reference_probe',
             'source': SOURCE, 'chainId': CHAIN_ID, 'currency': currency,
-            'retrievedAt': now,
+            'requestedAt': now, 'retrievedAt': received,
             'reference': provenance, 'observations': rows,
             'rowsReceived': len(data), 'duplicateRows': len(data)-len(seen),
             'status': 'observed_unqualified' if rows else 'unavailable',

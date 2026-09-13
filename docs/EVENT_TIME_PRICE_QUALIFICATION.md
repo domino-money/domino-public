@@ -14,6 +14,14 @@ It changes no policy, backend or runtime setting. The
 [execution policy](EXECUTION_POLICY.md) applies; no named acknowledgement or
 separate approval ceremony is needed to implement a supported qualification.
 
+**Subsequent source discovery on 13 September:** the bounded
+[source-solution investigation](../reports/HISTORICAL_PRICE_SOURCE_SOLUTION_2026-09-13.md)
+successfully fetched five-minute histories for explicitly mapped canonical
+Ethereum WETH and USDG addresses through Alchemy, and address-bound MARLIN
+history through CoinGecko. This replaces an absolute source-unavailable
+assumption with concrete reference adapters. It does not qualify historical
+publication, target-pool independence or the strict event-time valuation below.
+
 ## Chainlink: real feeds, insufficient freshness for the production policy
 
 The existing [archive adapter](../backend/chainlink_history.py) pins the

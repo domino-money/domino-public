@@ -38,6 +38,10 @@ points fail. An explicit null price remains a missing observation. Unknown
 provider metadata and raw exception text are excluded from reports. No fallback,
 interpolation, current-price fill or pagination is attempted.
 
+`requestedAt` records request start; `retrievedAt` is measured after transport
+returns and is copied to each observation. It never changes the provider's
+original observation timestamp or claims earlier historical availability.
+
 Coverage reports missing UTC five-minute grid points and requested boundaries.
 `observed_grid_complete` describes only this finite diagnostic. It proves neither
 causal event-time coverage nor availability at the provider bucket timestamp.
