@@ -109,6 +109,7 @@ export interface DepositView {
 }
 
 export interface PresentContext {
+  walletSendAvailable?: boolean
   monoNowMs: number
   /** Set only when the wallet step came from a prepare this page sent. */
   walletStepDeadlineMono: number | null
@@ -350,7 +351,7 @@ export function presentOperation(op: Operation, walletStep: PreparedArtifact | n
   } else if (op.state === 'awaiting_wallet' && walletStep !== null && fresh) {
     kind = 'step_ready'
     title = 'Wallet step ready to review'
-    body = ["Review every field below. Wallet sending isn't available in this build. Nothing has been sent."]
+    body = [ctx.walletSendAvailable ? "Review the amounts and limits below before opening your wallet. Each step requires your confirmation." : "Review every field below. Wallet sending isn't available in this build. Nothing has been sent."]
     tone = 'wait'
     actions = [report, cancel]
   } else if (op.state === 'awaiting_wallet' && walletStep !== null && ctx.walletStepDeadlineMono === null) {

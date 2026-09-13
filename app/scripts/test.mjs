@@ -52,6 +52,9 @@ execFileSync(
     'tests/consumer.fixtures.test.mjs',
     'tests/consumer.guard.test.mjs',
     'tests/consumer.port.test.mjs',
+    'tests/performance.controller.test.mjs',
+    'tests/execution.controller.test.mjs',
+    'tests/nonce.test.mjs',
   ],
   { stdio: 'inherit' },
 );

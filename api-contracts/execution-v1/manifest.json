@@ -1,0 +1,90 @@
+{
+  "contract": "execution-v1",
+  "contractVersion": "1.0.0-rc.1",
+  "files": [
+    {
+      "path": "fixtures/status-wire.json",
+      "sha256": "e52319bc3738274f09ae5dc58c244415670c7b9ae5f0a9db150d64f4ee992958"
+    },
+    {
+      "path": "runtime.d.mts",
+      "sha256": "0bfb5366bef85bb919bcfd67db9b62c9ddb5df92f697913d40cd4dc6beb62c83"
+    },
+    {
+      "path": "schema-data.mjs",
+      "sha256": "75a7d91892ce9e0cd97eeb92eed164b8f6332f189276db6754f08993ae5e387f"
+    },
+    {
+      "path": "schemas/list.request.schema.json",
+      "sha256": "c2984569d88be8d79e28229938e194812837321545e2fa6aace40259401eb659"
+    },
+    {
+      "path": "schemas/list.response.schema.json",
+      "sha256": "0db81fc211d810222eb9649d03a238c5ba0440ad9b16e6e6514527b8f8bc45e2"
+    },
+    {
+      "path": "schemas/status.request.schema.json",
+      "sha256": "34c0a84c49b68eaadbae7a3b85a95f726d0c983e3f74b67b75b77a48bce51d4b"
+    },
+    {
+      "path": "schemas/status.response.schema.json",
+      "sha256": "043e0a271717a74a63ea9dc2fb93190ca9e266e69e506a3af1dd7faf49c41740"
+    },
+    {
+      "path": "types.ts",
+      "sha256": "62ca1b225fb41dcda8bf462ab5888703ae5d00dab72c923ed979c6b235f91135"
+    },
+    {
+      "path": "runtime.mjs",
+      "sha256": "c399073b9c0d775caff12eb39984e76cef82780b7febbabc895e9a1162fd7859"
+    },
+    {
+      "path": "README.md",
+      "sha256": "779aefb8af21f037a98e505e0a2ceb33efefdf05d7cbff6b21ee5791113d3992"
+    },
+    {
+      "path": "consumer.test.mjs",
+      "sha256": "cc869fca954311145a626d503c470fe130d0604a3d1bbbab5bc6cfc5fc50ee66"
+    }
+  ],
+  "generator": "scripts/export-execution-contract.py",
+  "sources": [
+    {
+      "path": "backend/execution_status.py",
+      "sha256": "620dc7e96c4fb0f0d02ec98b86f384d678e1383eececd35ac57d37803fafe44e"
+    },
+    {
+      "path": "backend/access_transport.py",
+      "sha256": "4c168fa4843ba5d8b2c0c93bbe5d1474b9c9338e1ddd41bbd64835aa10d3e0ab"
+    },
+    {
+      "path": "backend/execution_status_runtime.py",
+      "sha256": "cf5dcffc2eceeea821a9196bd89f7bba00f452275ff251d6f527687e3cfbc800"
+    },
+    {
+      "path": "backend/authenticated_api.py",
+      "sha256": "6e1af780b6fbf4229afd1ccbef84b1310c00ae624156c2bc21722b216f6774fe"
+    },
+    {
+      "path": "backend/onboarding_auth.py",
+      "sha256": "0060646f6ceaf95da3b597c68110737d17129afae8dce4120f206de1ed5677d4"
+    },
+    {
+      "path": "backend/migrations/019_execution_journal.sql",
+      "sha256": "dc0663f0d5b130fbe17ae1b8e2ba3c18be355a53314c8d38a6d127d5603089fb"
+    },
+    {
+      "path": "bridge/src/execution-worker.mjs",
+      "sha256": "1874f61f673b98322674c0d664783679fbf454380fd2bfea8ed7b751e75aedef"
+    },
+    {
+      "path": "scripts/export-execution-contract.py",
+      "sha256": "6fff62ec717fc5929fb60ad336e27b3359658418dc6f725f73088aa1315cd27e"
+    },
+    {
+      "path": "backend/tests/fixtures/execution/status-wire.json",
+      "sha256": "e52319bc3738274f09ae5dc58c244415670c7b9ae5f0a9db150d64f4ee992958"
+    }
+  ],
+  "status": "implemented_default_off"
+}

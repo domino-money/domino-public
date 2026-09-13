@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { COPY } from '../../../lib/read/screens/copy'
 import { poolPrice, presetRange, type PracticeRange } from '../../../lib/read/screens/poolRange'
 import type { PoolOption } from '../../../lib/read/screens/poolsList'
@@ -17,11 +17,12 @@ type Choice = 'first' | 'second' | 'range' | null
 const TOKEN_ACTION_LABELS = { first: COPY.picker.useToken, second: COPY.picker.useAsset }
 
 /** Page-local selection. Never persisted or passed to a financial workflow. */
-export function PoolExplorer() {
+export function PoolExplorer({ onSelection }: { onSelection?: (pool: PoolOption | null) => void } = {}) {
   const source = useReadSource()
   const [first, setFirst] = useState<TokenCandidate | null>(null)
   const [second, setSecond] = useState<TokenCandidate | null>(null)
   const [pool, setPool] = useState<PoolOption | null>(null)
+  useEffect(() => { onSelection?.(pool) }, [pool, onSelection])
   const [range, setRange] = useState<PracticeRange | null>(null)
   const [choice, setChoice] = useState<Choice>(null)
   const [pending, setPending] = useState<TokenCandidate | null>(null)

@@ -37,7 +37,9 @@ FOUNDATION_MIGRATIONS = tuple('backend/migrations/' + name + '.sql' for name in 
     '014_deposit_draft_recovery'))
 PACKAGED_MIGRATIONS = ('backend/migrations/015_unsigned_execution.sql',
                        'backend/migrations/016_managed_performance.sql',
-                       'backend/migrations/017_performance_financial_history.sql')
+                       'backend/migrations/017_performance_financial_history.sql',
+                       'backend/migrations/018_performance_enrollment.sql',
+                       'backend/migrations/019_execution_journal.sql')
 
 
 def packaged_records(files):

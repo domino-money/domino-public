@@ -126,7 +126,7 @@ async function scenario({ clockAt, wallets } = {}) {
 // ---- helpers ---------------------------------------------------------------------
 
 const trigger = (page) => page.locator('header [aria-haspopup="dialog"]');
-const dialog = (page) => page.getByRole('dialog', { name: 'Wallet sign-in' });
+const dialog = (page) => page.locator('[role="dialog"][aria-labelledby="wallet-dialog-title"]');
 
 async function until(page, predicate, arg, label, timeout = 10_000) {
   const deadline = Date.now() + timeout;

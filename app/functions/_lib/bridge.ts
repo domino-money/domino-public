@@ -56,6 +56,9 @@ export interface BridgeEnv {
   SESSION_BRIDGE?: unknown
   ONBOARDING_BRIDGE?: unknown
   DEPOSIT_BRIDGE?: unknown
+  PERFORMANCE_BRIDGE?: unknown
+  SETUP_BRIDGE?: unknown
+  EXECUTION_BRIDGE?: unknown
 }
 
 /** The Workers' APP_ORIGIN, exactly: the only origin whose API calls are forwarded. */
@@ -71,6 +74,9 @@ interface Family {
 }
 
 const FAMILIES: readonly Family[] = [
+  { prefix: '/api/setup/v1/', binding: 'SETUP_BRIDGE', contract: 'x-domino-setup-contract', csrf: false, cookies: [] },
+  { prefix: '/api/execution/v1/', binding: 'EXECUTION_BRIDGE', contract: 'x-domino-execution-contract', csrf: true, cookies: ['__Host-domino-session'] },
+  { prefix: '/api/performance/v2/', binding: 'PERFORMANCE_BRIDGE', contract: 'x-domino-performance-contract', csrf: true, cookies: ['__Host-domino-session'] },
   { prefix: '/api/read/v1/', binding: 'READ_BRIDGE', contract: 'x-domino-read-contract', csrf: false, cookies: [] },
   { prefix: '/api/read/v2/', binding: 'READ_BRIDGE', contract: 'x-domino-read-contract', csrf: false, cookies: [] },
   {

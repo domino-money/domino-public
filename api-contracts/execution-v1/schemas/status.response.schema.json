@@ -1,0 +1,324 @@
+{
+  "$defs": {
+    "Attempt": {
+      "additionalProperties": false,
+      "properties": {
+        "ordinal": {
+          "maximum": 3,
+          "minimum": 0,
+          "title": "Ordinal",
+          "type": "integer"
+        },
+        "transactionHash": {
+          "maxLength": 66,
+          "minLength": 66,
+          "pattern": "^0x[0-9a-f]{64}$(?![\\s\\S])",
+          "title": "Transactionhash",
+          "type": "string"
+        }
+      },
+      "required": [
+        "ordinal",
+        "transactionHash"
+      ],
+      "title": "Attempt",
+      "type": "object"
+    },
+    "Receipt": {
+      "additionalProperties": false,
+      "properties": {
+        "blockHash": {
+          "maxLength": 66,
+          "minLength": 66,
+          "pattern": "^0x[0-9a-f]{64}$(?![\\s\\S])",
+          "title": "Blockhash",
+          "type": "string"
+        },
+        "blockNumberRaw": {
+          "maxLength": 78,
+          "pattern": "^(0|[1-9][0-9]{0,77})$(?![\\s\\S])",
+          "title": "Blocknumberraw",
+          "type": "string"
+        },
+        "canonical": {
+          "const": true,
+          "title": "Canonical",
+          "type": "boolean"
+        },
+        "finalized": {
+          "const": true,
+          "title": "Finalized",
+          "type": "boolean"
+        },
+        "fullL2CostWei": {
+          "title": "Fulll2Costwei",
+          "type": "null"
+        },
+        "liquidityIncreaseRaw": {
+          "maxLength": 78,
+          "pattern": "^(0|[1-9][0-9]{0,77})$(?![\\s\\S])",
+          "title": "Liquidityincreaseraw",
+          "type": "string"
+        },
+        "serviceFeeBps": {
+          "maximum": 200,
+          "minimum": 0,
+          "title": "Servicefeebps",
+          "type": "integer"
+        },
+        "serviceFeeRecipient": {
+          "maxLength": 42,
+          "minLength": 42,
+          "pattern": "^0x[0-9a-f]{40}$(?![\\s\\S])",
+          "title": "Servicefeerecipient",
+          "type": "string"
+        },
+        "sources": {
+          "items": {
+            "$ref": "#/$defs/SourceAmounts"
+          },
+          "maxItems": 128,
+          "minItems": 1,
+          "title": "Sources",
+          "type": "array"
+        },
+        "transactionHash": {
+          "maxLength": 66,
+          "minLength": 66,
+          "pattern": "^0x[0-9a-f]{64}$(?![\\s\\S])",
+          "title": "Transactionhash",
+          "type": "string"
+        }
+      },
+      "required": [
+        "transactionHash",
+        "blockNumberRaw",
+        "blockHash",
+        "canonical",
+        "finalized",
+        "serviceFeeBps",
+        "serviceFeeRecipient",
+        "liquidityIncreaseRaw",
+        "sources",
+        "fullL2CostWei"
+      ],
+      "title": "Receipt",
+      "type": "object"
+    },
+    "SourceAmounts": {
+      "additionalProperties": false,
+      "properties": {
+        "chargedAfterRaw": {
+          "maxLength": 78,
+          "pattern": "^(0|[1-9][0-9]{0,77})$(?![\\s\\S])",
+          "title": "Chargedafterraw",
+          "type": "string"
+        },
+        "chargedConsumedRaw": {
+          "maxLength": 78,
+          "pattern": "^(0|[1-9][0-9]{0,77})$(?![\\s\\S])",
+          "title": "Chargedconsumedraw",
+          "type": "string"
+        },
+        "currency": {
+          "maxLength": 42,
+          "minLength": 42,
+          "pattern": "^0x[0-9a-f]{40}$(?![\\s\\S])",
+          "title": "Currency",
+          "type": "string"
+        },
+        "grossOriginalConsumedRaw": {
+          "maxLength": 78,
+          "pattern": "^(0|[1-9][0-9]{0,77})$(?![\\s\\S])",
+          "title": "Grossoriginalconsumedraw",
+          "type": "string"
+        },
+        "liquidityAddedRaw": {
+          "maxLength": 78,
+          "pattern": "^(0|[1-9][0-9]{0,77})$(?![\\s\\S])",
+          "title": "Liquidityaddedraw",
+          "type": "string"
+        },
+        "originalAfterRaw": {
+          "maxLength": 78,
+          "pattern": "^(0|[1-9][0-9]{0,77})$(?![\\s\\S])",
+          "title": "Originalafterraw",
+          "type": "string"
+        },
+        "serviceFeeRaw": {
+          "maxLength": 78,
+          "pattern": "^(0|[1-9][0-9]{0,77})$(?![\\s\\S])",
+          "title": "Servicefeeraw",
+          "type": "string"
+        },
+        "sourceId": {
+          "maxLength": 66,
+          "minLength": 66,
+          "pattern": "^0x[0-9a-f]{64}$(?![\\s\\S])",
+          "title": "Sourceid",
+          "type": "string"
+        }
+      },
+      "required": [
+        "sourceId",
+        "currency",
+        "grossOriginalConsumedRaw",
+        "chargedConsumedRaw",
+        "serviceFeeRaw",
+        "liquidityAddedRaw",
+        "originalAfterRaw",
+        "chargedAfterRaw"
+      ],
+      "title": "SourceAmounts",
+      "type": "object"
+    },
+    "Status": {
+      "additionalProperties": false,
+      "properties": {
+        "attempts": {
+          "items": {
+            "$ref": "#/$defs/Attempt"
+          },
+          "maxItems": 4,
+          "title": "Attempts",
+          "type": "array"
+        },
+        "canCancel": {
+          "title": "Cancancel",
+          "type": "boolean"
+        },
+        "intentId": {
+          "maxLength": 66,
+          "minLength": 66,
+          "pattern": "^0x[0-9a-f]{64}$(?![\\s\\S])",
+          "title": "Intentid",
+          "type": "string"
+        },
+        "nonceRaw": {
+          "anyOf": [
+            {
+              "maxLength": 78,
+              "pattern": "^(0|[1-9][0-9]{0,77})$(?![\\s\\S])",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Nonceraw"
+        },
+        "reason": {
+          "pattern": "^[a-z0-9_]{0,100}$(?![\\s\\S])",
+          "title": "Reason",
+          "type": "string"
+        },
+        "receipt": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Receipt"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "sequenceHash": {
+          "maxLength": 66,
+          "minLength": 66,
+          "pattern": "^0x[0-9a-f]{64}$(?![\\s\\S])",
+          "title": "Sequencehash",
+          "type": "string"
+        },
+        "signer": {
+          "anyOf": [
+            {
+              "maxLength": 42,
+              "minLength": 42,
+              "pattern": "^0x[0-9a-f]{40}$(?![\\s\\S])",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Signer"
+        },
+        "state": {
+          "enum": [
+            "planned",
+            "reserved",
+            "cancelled",
+            "signing",
+            "signed",
+            "submitted",
+            "broadcast_unknown",
+            "included",
+            "reconciled",
+            "reverted",
+            "attention",
+            "reorged"
+          ],
+          "title": "State",
+          "type": "string"
+        }
+      },
+      "required": [
+        "intentId",
+        "sequenceHash",
+        "state",
+        "reason",
+        "signer",
+        "nonceRaw",
+        "attempts",
+        "receipt",
+        "canCancel"
+      ],
+      "title": "Status",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "chainId": {
+      "const": 4663,
+      "title": "Chainid",
+      "type": "integer"
+    },
+    "contractVersion": {
+      "const": "1.0.0-rc.1",
+      "title": "Contractversion",
+      "type": "string"
+    },
+    "executionAvailable": {
+      "const": false,
+      "title": "Executionavailable",
+      "type": "boolean"
+    },
+    "item": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/Status"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "owner": {
+      "maxLength": 42,
+      "minLength": 42,
+      "pattern": "^0x[0-9a-f]{40}$(?![\\s\\S])",
+      "title": "Owner",
+      "type": "string"
+    }
+  },
+  "required": [
+    "contractVersion",
+    "chainId",
+    "owner",
+    "item",
+    "executionAvailable"
+  ],
+  "title": "StatusResponse",
+  "type": "object"
+}

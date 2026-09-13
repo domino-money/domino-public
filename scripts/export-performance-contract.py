@@ -16,7 +16,7 @@ SOURCES = [
     'backend/performance_models.py', 'backend/performance_api.py', 'backend/performance_service.py',
     'backend/performance_store.py', 'backend/performance_collection.py', 'backend/performance_worker.py',
     'backend/migrations/016_managed_performance.sql',
-    'backend/authenticated_api.py', 'backend/onboarding_auth.py', 'backend/session_models.py',
+    'backend/authenticated_api.py', 'backend/access_transport.py', 'backend/onboarding_auth.py', 'backend/session_models.py',
     'backend/session_store.py', 'backend/session_chain.py', 'backend/wallet_access.py',
     'backend/read_deadline.py', 'backend/bridge_state.py',
     'backend/discovery.py', 'backend/nft_ownership.py', 'backend/rpc_config.py',

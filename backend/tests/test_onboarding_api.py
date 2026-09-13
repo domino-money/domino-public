@@ -62,6 +62,25 @@ class OnboardingApiTests(unittest.TestCase):
         self.verifier.verify.assert_called_once_with(HEADERS['CF-Access-Jwt-Assertion'])
         self.assertEqual(len(self.transport.calls),1)
 
+    def test_access_cookie_duplicate_preserves_verification_and_session_boundary(self):
+        assertion = HEADERS['CF-Access-Jwt-Assertion']
+        response = self.post(headers={**HEADERS, 'Cookie': 'CF_Authorization=' + assertion})
+        self.assertEqual(response.status_code, 200, response.text)
+        self.verifier.verify.assert_called_once_with(assertion)
+        self.auth.begin.assert_called_once_with('192.0.2.1', SESSION, CSRF)
+
+    def test_cookie_normalization_never_admits_other_credentials_or_invalid_assertion(self):
+        assertion = HEADERS['CF-Access-Jwt-Assertion']
+        for cookie in ('CF_Authorization=wrong', 'CF_Authorization=' + assertion + '; session=secret',
+                       'session=' + assertion, 'CF_Authorization=' + assertion + '; CF_Authorization=' + assertion):
+            self.assertEqual(self.post(headers={**HEADERS, 'Cookie': cookie}).status_code, 403)
+        self.verifier.verify.assert_not_called()
+        self.auth.begin.assert_not_called()
+        self.verifier.verify.side_effect = DataError('synthetic-invalid-jwt')
+        response = self.post(headers={**HEADERS, 'Cookie': 'CF_Authorization=' + assertion})
+        self.assertEqual(response.status_code, 503)
+        self.auth.begin.assert_not_called()
+
     def test_disabled_listener_exact_routes_and_methods(self):
         self.assertEqual(self.post(client=self.new_client(OnboardingGateway())).status_code,404)
         for path in ('swap-preview/','%73wap-preview','../swap-preview','position-preview?x=1',

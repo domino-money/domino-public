@@ -1,0 +1,19 @@
+name = "domino-performance-bridge"
+main = "src/performance-worker.mjs"
+compatibility_date = "2026-09-10"
+workers_dev = false
+preview_urls = false
+routes = []
+logpush = false
+
+[observability]
+enabled = false
+
+[vars]
+PERFORMANCE_BRIDGE_ENABLED = "false"
+APP_ORIGIN = "https://domino.money"
+PERFORMANCE_GATEWAY_ORIGIN = "https://vm-performance.domino.money"
+
+# OxDecimal provisions the matching dedicated Access identity and tunnel path
+# /internal/performance/v2/(epochs|enroll|cards) to the loopback listener8900.
+# PERFORMANCE_ACCESS_CLIENT_ID/SECRET are private Worker secrets, never values here.

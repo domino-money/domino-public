@@ -23,6 +23,7 @@ export function OperationPanel({
   summaryAcknowledged,
   onAcknowledge,
   allowances,
+  handoffAvailable = false,
 }: {
   op: Operation
   view: DepositView
@@ -31,6 +32,7 @@ export function OperationPanel({
   summaryAcknowledged: boolean
   onAcknowledge: (value: boolean) => void
   allowances: AllowanceReport | null
+  handoffAvailable?: boolean
 }) {
   const titleId = useId()
   const reasonBase = useId()
@@ -156,7 +158,7 @@ export function OperationPanel({
             </div>
           )}
           <p role="note" data-testid="handoff-status" className="mt-4 text-[13px] font-medium">
-            {handoffStatus(op)}
+            {handoffAvailable ? "Only your wallet can authorize this step. If its response is lost, reconcile the operation before any new attempt." : handoffStatus(op)}
           </p>
         </Section>
       )}

@@ -175,7 +175,11 @@
     },
     {
       "path": "backend/authenticated_api.py",
-      "sha256": "d21f0a1488fabd8ed514b159d18831a36878d1bbd0837e1132774dd703522bf3"
+      "sha256": "6e1af780b6fbf4229afd1ccbef84b1310c00ae624156c2bc21722b216f6774fe"
+    },
+    {
+      "path": "backend/access_transport.py",
+      "sha256": "4c168fa4843ba5d8b2c0c93bbe5d1474b9c9338e1ddd41bbd64835aa10d3e0ab"
     },
     {
       "path": "backend/onboarding_auth.py",
@@ -187,7 +191,7 @@
     },
     {
       "path": "scripts/export-performance-v2-contract.py",
-      "sha256": "af5bd4eadfeaec5bdf1d4884f8af7370d2e9e46b050121bdd9e09c485440cd16"
+      "sha256": "c9d56a4e5adbc6db320cd1519f4f4a0e42f59b50bd5f28bc0a8dcb8f6a7e5133"
     }
   ],
   "status": "implemented_default_off"

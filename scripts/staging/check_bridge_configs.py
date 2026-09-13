@@ -1,4 +1,4 @@
-"""Offline boundary check for the four disabled #45 Worker candidates.
+"""Offline boundary check for the disabled read and financial Worker candidates.
 
 Reads repository TOML only; does not inspect or change Cloudflare resources.
 """
@@ -12,6 +12,9 @@ SERVICES = {
     "session": ("session-worker", "SESSION_GATEWAY_ORIGIN", "2026-09-10"),
     "onboarding": ("onboarding-worker", "ONBOARDING_GATEWAY_ORIGIN", "2026-09-10"),
     "deposit": ("deposit-worker", "DEPOSIT_GATEWAY_ORIGIN", "2026-09-10"),
+    "performance": ("performance-worker", "PERFORMANCE_GATEWAY_ORIGIN", "2026-09-10"),
+    "execution": ("execution-worker", "EXECUTION_GATEWAY_ORIGIN", "2026-09-10"),
+    "setup": ("setup-release", None, "2026-09-10"),
 }
 KNOWN_CONFIGS = {
     "wrangler.example.toml", "wrangler.session.example.toml",
@@ -50,6 +53,8 @@ def validate(service, config):
                 "ENABLED_V2_READS": ""} if service == "read" else {}),
         },
     }
+    if service == "setup":
+        expected["vars"] = {"SETUP_WALLET_ENABLED": "false", "SEQUENCE_WALLET_ENABLED": "false"}
     errors = []
     if set(config) != set(expected):
         errors.append("unexpected or missing configuration fields")
@@ -95,7 +100,7 @@ def main():
     if failures:
         print("\n".join(failures), file=sys.stderr)
         return 1
-    print("Four disabled Worker configurations satisfy the repository policy; remote state unchecked.")
+    print(f"{len(SERVICES)} disabled Worker configurations satisfy the repository policy; remote state unchecked.")
     return 0
 
 

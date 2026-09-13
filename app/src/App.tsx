@@ -18,6 +18,8 @@ import { LocalDevelopmentBanner } from './components/read/LocalDevelopmentBanner
 // Everywhere else both constants are null: the bundler drops the imports, no
 // chunk is emitted, and both routes fall through to Landing like any unknown
 // route. A chunk that fails to load says so instead of showing a blank page.
+const Sequence = __DOMINO_WALLET_SESSION__ ? lazy(() => import('./screens/Sequence')) : null
+const Setup = __DOMINO_WALLET_SESSION__ ? lazy(() => import('./screens/Setup')) : null
 const LivePreview = __DOMINO_ONBOARDING_PREVIEW__ ? lazy(() => import('./screens/LivePreview').catch(() => ({ default: () => <p role="alert">This screen couldn’t load. Reload to try again.</p> }))) : null
 const Deposits = __DOMINO_DEPOSIT_LAB__ ? lazy(() => import('./screens/Deposits').catch(() => ({ default: () => <p role="alert">This screen couldn’t load. Reload to try again.</p> }))) : null
 
@@ -123,6 +125,10 @@ export default function App() {
         ) : (
           <Dashboard />
         )
+      ) : route === '/sequence' && Sequence ? (
+        <Suspense fallback={<p role="status">Loading sequences…</p>}><Sequence /></Suspense>
+      ) : route === '/setup' && Setup ? (
+        <Suspense fallback={<p role="status">Loading setup…</p>}><Setup /></Suspense>
       ) : route === '/pools' ? (
         <Pools />
       ) : route === '/settings' ? (

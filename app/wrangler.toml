@@ -55,3 +55,15 @@ service = "domino-onboarding-bridge"
 [[env.production.services]]
 binding = "DEPOSIT_BRIDGE"
 service = "domino-deposit-bridge"
+
+[[env.production.services]]
+binding = "PERFORMANCE_BRIDGE"
+service = "domino-performance-bridge"
+
+[[env.production.services]]
+binding = "EXECUTION_BRIDGE"
+service = "domino-execution-bridge"
+
+[[env.production.services]]
+binding = "SETUP_BRIDGE"
+service = "domino-setup-bridge"

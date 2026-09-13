@@ -1,0 +1,17 @@
+{
+  "additionalProperties": false,
+  "properties": {
+    "intentId": {
+      "maxLength": 66,
+      "minLength": 66,
+      "pattern": "^0x[0-9a-f]{64}$(?![\\s\\S])",
+      "title": "Intentid",
+      "type": "string"
+    }
+  },
+  "required": [
+    "intentId"
+  ],
+  "title": "StatusRequest",
+  "type": "object"
+}

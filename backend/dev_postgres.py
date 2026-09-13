@@ -133,11 +133,15 @@ def create_database(name):
         conn.execute((ROOT/'migrations/012_capital_work.sql').read_text())
         conn.execute((ROOT/'migrations/013_activity_diagnostics.sql').read_text())
         conn.execute((ROOT/'migrations/014_deposit_draft_recovery.sql').read_text())
-        # 015 is reserved by the separately reviewed private executor store.
+        # Execution migrations intentionally reject reapplication. Catalogue
+        # restore tests may revisit this initializer without dropping finance.
+        if conn.execute("SELECT to_regnamespace('domino_execution') IS NULL").fetchone()[0]:
+            conn.execute((ROOT/'migrations/015_unsigned_execution.sql').read_text())
         conn.execute((ROOT/'migrations/016_managed_performance.sql').read_text())
-
-
         conn.execute((ROOT/'migrations/017_performance_financial_history.sql').read_text())
+        conn.execute((ROOT/'migrations/018_performance_enrollment.sql').read_text())
+        if conn.execute("SELECT to_regclass('domino_execution.journal') IS NULL").fetchone()[0]:
+            conn.execute((ROOT/'migrations/019_execution_journal.sql').read_text())
 
 
 

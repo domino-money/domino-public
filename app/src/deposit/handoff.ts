@@ -27,7 +27,7 @@ export type HexHash = `0x${string}`
  */
 export interface WalletHandoff {
   readonly available: boolean
-  send(step: PreparedArtifact, context: { chainId: 4663; from: string }): Promise<HexHash>
+  send(step: PreparedArtifact, context: { chainId: 4663; from: string; isCurrent?: () => boolean }): Promise<HexHash>
 }
 
 export const FUTURE_WALLET_STEP =

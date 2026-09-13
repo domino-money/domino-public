@@ -33,17 +33,19 @@ const inside = (...dirs) => ALL.filter(({ path }) => dirs.some((dir) => path.sta
 const hits = (files, pattern) => files.flatMap(({ path, code }) => (pattern.test(code) ? [path] : []));
 const specifiers = (code) => [...code.matchAll(/(?:from|import)\s*\(?\s*'([^']+)'/g)].map((match) => match[1]);
 
-test('no wallet method that can move value or sign for anything but login appears as a string', () => {
+test('only closed financial adapters offer wallet transactions; login cannot spend', () => {
   // Any quote style, so a single-quoted literal is caught as well as a double one.
   const methods =
     /['"`](eth_sendTransaction|eth_signTransaction|eth_sendRawTransaction|eth_sign|eth_signTypedData(_v\d)?|wallet_sendCalls|wallet_addEthereumChain|wallet_watchAsset|eth_call|eth_estimateGas)['"`]/;
-  assert.deepEqual(hits(ALL, methods), []);
+  assert.deepEqual(hits(ALL, methods), ['finance/sequence.ts', 'finance/setup.ts', 'finance/wallet.ts']);
+  assert.deepEqual(hits(inside('session/', 'wallet/', 'components/wallet/'), methods), [], 'login still cannot spend');
+  assert.deepEqual([...ALL.find(f => f.path === 'finance/wallet.ts').code.matchAll(/method: '([^']+)'/g)].map(m => m[1]), ['eth_accounts', 'eth_chainId', 'eth_sendTransaction']);
 });
 
-test('no transaction, approval or typed-data API is used anywhere in the app', () => {
+test('exact approvals are confined to the closed setup and sequence ABIs', () => {
   const apis =
     /\b(sendTransaction|writeContract|sendCalls|signTypedData|simulateContract|useSendTransaction|useWriteContract|useSignTypedData|approve\s*\()/;
-  assert.deepEqual(hits(ALL, apis), []);
+  assert.deepEqual(hits(ALL, apis), ['finance/sequence.ts', 'finance/setup.ts'], 'only the closed owner ABIs declare exact token or NFT approval');
 });
 
 test('no connector SDK, public chain definition or network transport is used', () => {
@@ -86,7 +88,7 @@ test('the wallet feature is reached only through the build flag', () => {
   // Outside the feature, nothing imports wagmi, viem, TanStack Query or the
   // session modules statically. The error boundary is plain React and is the
   // one wallet component the header may import directly.
-  const feature = /^(session|wallet|components\/wallet)\//;
+  const feature = /^(session|wallet|finance|components\/wallet)\/|^screens\/(Setup|AdvancedSetup|Performance|Execution|Sequence)\.tsx$/;
   // The onboarding previews and the deposit consumer (#38, #40/#44) read the
   // session through session/port.ts, and the preview screen also through
   // session/livePort.ts. Both live in chunks of the consumer-test build only;

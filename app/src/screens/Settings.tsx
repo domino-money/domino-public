@@ -47,8 +47,8 @@ export function Settings() {
               [
                 ['Chain', `Robinhood Chain · ${CAPABILITIES.chainId}`],
                 ['Live reads', 'Built in, switched on by the server'],
-                ['Signing', CAPABILITIES.signingEnabled ? 'Enabled' : 'Off'],
-                ['Wallet funding', CAPABILITIES.walletFundingEnabled ? 'Enabled' : 'Off'],
+                ['Automated signing', CAPABILITIES.signingEnabled ? 'Enabled' : 'Not connected'],
+                ['Wallet transactions', CAPABILITIES.walletTransactionsBuilt ? 'Built in; each step reviewed in wallet' : 'Off'],
               ] as const
             ).map(([k, v]) => (
               <div key={k} className="flex items-baseline justify-between gap-4 border-b border-dashed py-2">

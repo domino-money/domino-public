@@ -3,7 +3,11 @@
   "extends": "./tsconfig.test.json",
   "compilerOptions": {
     "rootDir": "..",
-    "lib": ["ES2022", "DOM", "DOM.Iterable"]
+    "lib": [
+      "ES2022",
+      "DOM",
+      "DOM.Iterable"
+    ]
   },
   "files": [
     "src/lib/read/pin.ts",
@@ -41,6 +45,10 @@
     "src/deposit/fixtures/fixtureSession.ts",
     "src/deposit/fixtures/fixtureClock.ts",
     "src/deposit/fixtures/derive.ts",
-    "src/deposit/fixtures/scenarios.ts"
+    "src/deposit/fixtures/scenarios.ts",
+    "src/finance/performance.ts",
+    "src/finance/execution.ts",
+    "src/finance/setup.ts",
+    "src/finance/nonce.ts"
   ]
 }

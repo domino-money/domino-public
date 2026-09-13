@@ -139,6 +139,8 @@ def create_session_app(gateway=None):
 
     @app.middleware('http')
     async def boundary(request: Request,call_next):
+        from access_transport import normalize_access_cookie
+        normalize_access_cookie(request.scope)
         deadline=gateway.clock()+gateway.total_seconds
         upload_deadline=min(deadline,gateway.clock()+gateway.upload_seconds)
         request_id=secrets.token_hex(16)

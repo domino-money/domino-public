@@ -95,7 +95,11 @@
     },
     {
       "path": "backend/authenticated_api.py",
-      "sha256": "d21f0a1488fabd8ed514b159d18831a36878d1bbd0837e1132774dd703522bf3"
+      "sha256": "6e1af780b6fbf4229afd1ccbef84b1310c00ae624156c2bc21722b216f6774fe"
+    },
+    {
+      "path": "backend/access_transport.py",
+      "sha256": "4c168fa4843ba5d8b2c0c93bbe5d1474b9c9338e1ddd41bbd64835aa10d3e0ab"
     },
     {
       "path": "backend/onboarding_service.py",
@@ -151,7 +155,7 @@
     },
     {
       "path": "scripts/export-onboarding-contract.py",
-      "sha256": "07462670fd108ba500790791ab349c3b1c4ca30699195d5f631faeda00a24ff4"
+      "sha256": "bfeaa678bada8e7b098e5c7d95391605b6057d5792183ce615dadb41e53876e6"
     }
   ],
   "status": "candidate_disabled_pending_consumer_acknowledgement"

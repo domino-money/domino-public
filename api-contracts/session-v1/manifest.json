@@ -131,7 +131,11 @@
     },
     {
       "path": "backend/session_api.py",
-      "sha256": "529e26840080de40eef80a2659bdfb9908172ae21f5b694b746754836d3c0481"
+      "sha256": "380ff89811649a2cb9851bc0375e70f0046a02564b4eb4071ba2d65172f648c8"
+    },
+    {
+      "path": "backend/access_transport.py",
+      "sha256": "4c168fa4843ba5d8b2c0c93bbe5d1474b9c9338e1ddd41bbd64835aa10d3e0ab"
     },
     {
       "path": "backend/session_siwe.py",
@@ -159,7 +163,7 @@
     },
     {
       "path": "scripts/export-session-contract.py",
-      "sha256": "92c2e95feed185137bd278425c6d8bc26b3c2d8c565fd04859d5eabcd4f13dc2"
+      "sha256": "504cb600d73cf6d9f9132be4ed4e3694964367a525ed23c3355f965eb75ac4dd"
     }
   ],
   "status": "candidate_disabled_pending_consumer_acknowledgement"

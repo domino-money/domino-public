@@ -98,6 +98,7 @@ jobs:
           cache: pip
           cache-dependency-path: backend/requirements-api.lock
       - run: npm ci --no-audit --no-fund
+      - run: npm --prefix app ci --no-audit --no-fund
       - run: python -m pip install -r backend/requirements-api.lock
       - name: Build and qualify the local compound receipt fixture
         run: node scripts/test-contracts.mjs --match-path test/reference/OfficialDominoCompound.t.sol
@@ -108,6 +109,8 @@ jobs:
       - run: python scripts/export-onboarding-contract.py --check
       - run: python scripts/export-deposit-contract.py --check
       - run: python scripts/export-performance-contract.py --check
+      - run: python scripts/export-performance-v2-contract.py --check
+      - run: python scripts/export-execution-contract.py --check
       - run: npm run check:read-bridge
       - name: Check PostgreSQL tools
         run: test -x "$DOMINO_PG_BIN/initdb"
@@ -116,6 +119,7 @@ jobs:
           DOMINO_TEST_STAGING_POSTGRES=1 python -B -m unittest discover -s scripts/staging/tests -p test_catalogue_postgres.py -v
           DOMINO_TEST_STAGING_POSTGRES=1 python -B -m unittest discover -s scripts/staging/tests -p test_upgrade_postgres.py -v
           DOMINO_TEST_STAGING_POSTGRES=1 python -B -m unittest discover -s scripts/staging/tests -p test_dev_catalogue_profile.py -v
+          DOMINO_TEST_STAGING_POSTGRES=1 python -B -m unittest discover -s scripts/staging/tests -p test_upgrade_financial.py -v
       - run: python backend/dev_postgres.py prepare-tests
       - run: python -m unittest discover -s backend/tests -v
       - name: Stop isolated database

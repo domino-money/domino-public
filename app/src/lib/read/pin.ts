@@ -27,15 +27,15 @@ export const PRODUCER_PIN = {
     },
     'session-v1': {
       version: '3.0.0-rc.2',
-      manifestSha256: '278d5fa3f3a6571c92e13e39bddc3e1b9091a8ad82e4b83aa534cc9e83decd42',
+      manifestSha256: '78ca5e628cf81b1c47a1b8329bce3638d4342894c806eef1150c105e61f1685c',
     },
     'onboarding-v1': {
       version: '1.0.0',
-      manifestSha256: '2f6eb9f02b8cd2d06cddd4352e7db6fdae6b19bd7f2a91577a9ec15039b5d416',
+      manifestSha256: '1d6dc91e5f16a4b0f551840c4463c259f59d2078d95ed84008d8b662d205eda2',
     },
     'deposit-v1': {
       version: '1.1.0-rc.4',
-      manifestSha256: 'be0e22ddfb5b6ea437a88999c9d924013bb5128af13060bd2af6f28a803848df',
+      manifestSha256: '5446efcaa93b6688b1664e08ec52565a6dce110c5f74c43c8b9a8e7cf6fa63a9',
     },
   },
 } as const
@@ -43,7 +43,7 @@ export const PRODUCER_PIN = {
 /** Separately opted-in public pool estimates; never accepted as a v1 response. */
 export const READ_V2_PIN = {
   version: '2.0.0-rc.1',
-  manifestSha256: 'd516fe13f8c13fb2f70c4ad4ca287eb2ba006232ae94c33ba319f570fe6aab47',
+  manifestSha256: 'bbfaffd83dc64bcfdde2c225896c0719bc9dc150f603401598ad7d32218d17a0',
 } as const
 
 /**
@@ -74,3 +74,15 @@ export const ACCEPTED_READ_CONTRACTS: ReadonlySet<string> = new Set([PRODUCER_PI
 
 /** The version this build sends with every read, so the bridge can refuse a mismatch. */
 export const REQUEST_READ_CONTRACT: ReadContractPin = PRODUCER_PIN.packages['read-v1'].version
+
+/** Authenticated private numeric history, independent of public pool estimates. */
+export const PERFORMANCE_V2_PIN = {
+  version: '2.0.0-rc.1',
+  manifestSha256: '5d6d735ccf22cbbde5f8f493822f699afb1e1a0bf27f27ffe4526381bbb5162e',
+} as const
+
+/** Sanitized private execution status and finalized receipts only. */
+export const EXECUTION_V1_PIN = {
+  version: '1.0.0-rc.1',
+  manifestSha256: '3d13cdf1e2afa846f13763d5186c788ca2a843de85752a3937c8101706e3461b',
+} as const

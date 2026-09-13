@@ -1,16 +1,10 @@
-import { Suspense } from 'react'
+import { lazy, Suspense } from 'react'
 import { Card, Display } from '../components/ui'
 import { ChainPositionsSlot, SlotBoundary, SlotFailed } from '../lib/read/screens/slots'
+const Performance = __DOMINO_WALLET_SESSION__ ? lazy(() => import('./Performance')) : null
+const Execution = __DOMINO_WALLET_SESSION__ ? lazy(() => import('./Execution')) : null
 
-/**
- * Your positions, in the invited read-only alpha.
- *
- * There is nothing to list yet: finding a position takes a position lookup or
- * a wallet, and neither is part of this alpha. The screen says so, instead of
- * showing cards, totals, activity or receipts of any kind. A read-only lookup
- * by position id (#71) can replace this empty state; wallet discovery comes
- * after wallet sign-in has its own acceptance.
- */
+/** Private history and receipts are scoped to the signed-in wallet. */
 export function Dashboard() {
   return (
     <main className="mx-auto max-w-[1100px] px-5 py-10">
@@ -18,8 +12,11 @@ export function Dashboard() {
         Your positions
       </Display>
       <p className="mt-2 max-w-[56ch] text-[14px] text-fg-muted">Your liquidity positions on Robinhood Chain. Your wallet stays their owner.</p>
+      {__DOMINO_WALLET_SESSION__ && <div className="mt-4 flex flex-wrap gap-5"><a href="#/setup" className="underline underline-offset-4">Create or recover a position</a><a href="#/sequence" className="underline underline-offset-4">Create or manage a sequence</a><a href="#/pools" className="underline underline-offset-4">Explore pools</a></div>}
+      {Performance && <Suspense fallback={<p role="status">Loading private history…</p>}><Performance /></Suspense>}
+      {Execution && <Suspense fallback={<p role="status">Loading receipts…</p>}><Execution /></Suspense>}
 
-      <Card className="mt-8 flex flex-col items-center gap-3 p-12 text-center" data-empty="positions">
+      {!Performance && <Card className="mt-8 flex flex-col items-center gap-3 p-12 text-center" data-empty="positions">
         <p className="text-[16px] font-medium">Your positions will appear here</p>
         <p className="max-w-[48ch] text-[13px] leading-relaxed text-fg-muted">
           Look a position up by its id below. Finding every position a wallet holds comes with wallet discovery, which is not in the alpha yet.
@@ -30,7 +27,7 @@ export function Dashboard() {
         >
           Explore pools <span aria-hidden="true">→</span>
         </a>
-      </Card>
+      </Card>}
 
       {/* Public position NFTs, looked up by id: nothing is read until asked. */}
       {ChainPositionsSlot && SlotBoundary && SlotFailed && (
@@ -47,13 +44,12 @@ export function Dashboard() {
         </SlotBoundary>
       )}
 
-      <Card level={2} className="mt-5 p-4 md:px-5">
+      {!Performance && <Card level={2} className="mt-5 p-4 md:px-5">
         <h2 className="text-[14px] font-medium">Connect a wallet to see your positions</h2>
         <p className="mt-0.5 text-[12px] text-fg-muted">
-          Sign in with the wallet control at the top of the page. It only proves you control an address: nothing here asks your wallet to
-          approve, send or sign anything else.
+          Sign in with the wallet control at the top of the page. Sign-in only proves your address. Deposit approvals and transactions are reviewed separately in setup.
         </p>
-      </Card>
+      </Card>}
     </main>
   )
 }

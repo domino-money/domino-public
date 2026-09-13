@@ -1,0 +1,15 @@
+# Private, owner-isolated read-only execution receipts; never a signing API.
+name = "domino-execution-bridge"
+main = "src/execution-worker.mjs"
+compatibility_date = "2026-09-10"
+workers_dev = false
+preview_urls = false
+routes = []
+logpush = false
+[observability]
+enabled = false
+[vars]
+EXECUTION_BRIDGE_ENABLED = "false"
+APP_ORIGIN = "https://domino.money"
+EXECUTION_GATEWAY_ORIGIN = "https://vm-execution.domino.money"
+# Distinct Access service identity; map the tunnel to loopback port 8901.

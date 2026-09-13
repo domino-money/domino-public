@@ -522,12 +522,12 @@ test('the landing asks the capabilities once and posts nothing when live data is
   for (const route of ['/', '/app', '/pools', '/settings']) {
     const page = await open(route);
     await reload(page, route);
-    seen.push([route, apiOf(page)]);
+    seen.push([route, apiOf(page).map(rows => [...rows].sort())]);
     clean(page, `requests on ${route}`);
     await close(page);
   }
   // Per document: the first load and the reload each ask once, and post nothing.
-  const once = ['GET /api/read/v1/capabilities'];
+  const once = ['GET /api/read/v1/capabilities', 'GET /api/read/v2/capabilities'];
   assert.deepEqual(seen, [
     ['/', [once, once]],
     ['/app', [[], []]],
@@ -573,13 +573,13 @@ test('the deployable build carries the live read path and the selected pools, no
   assert.equal(existsSync(join(DIST, 'read-lab.html')), false, 'the read lab is not part of the deployable build');
 });
 
-test('Settings reports signing and wallet funding off and live reads built in, switched on by the server; no practice mode is left', async () => {
+test('Settings distinguishes disconnected automation from separately reviewed wallet transactions', async () => {
   const page = await open('/settings');
   const text = await page.locator('#root').innerText();
-  assert.match(text, /Signing\s+Off/);
-  assert.match(text, /Wallet funding\s+Off/);
+  assert.match(text, /Automated signing\s+Not connected/);
+  assert.match(text, /Wallet transactions\s+Built in; each step reviewed in wallet/);
   assert.match(text, /Live reads\s+Built in, switched on by the server/);
-  assert.match(text, /Compound[\s\S]*Not available in the alpha/);
+  assert.match(text, /Compound[\s\S]*Not connected/);
   assert.equal(await page.locator('[data-build-banner]').count(), 0, 'no fixture or test-build banner');
   clean(page, 'settings');
   await close(page);
@@ -626,13 +626,14 @@ test('the landing never shows an invented figure: no table row, no cell, no plac
 // explanatory sections stay, in relative terms, saying what the alpha lacks.
 // ---------------------------------------------------------------------------
 
-test('the positions screen is an honest empty state: no cards, totals, activity or receipts, and a way back to the pools', async () => {
+test('signed-out positions show no private data or numbers and retain public discovery', async () => {
   const page = await open('/app');
   const text = await page.locator('#root').innerText();
-  assert.match(text, /Your positions will appear here/);
+  assert.match(text, /Sign in with your wallet to view private history/);
   // The by-id lookup is here now; finding every position a wallet holds is not.
-  assert.match(text, /Look a position up by its id/);
-  assert.doesNotMatch(text, /practice|receipt|reinvested|awaiting|activity/i);
+  assert.match(text, /Look up any position NFT by its ID/);
+  assert.match(text, /Sign in with your wallet to view private execution receipts/);
+  assert.doesNotMatch(text, /\$\s?\d|[0-9]+%|practice/i);
   assert.equal(await page.locator('[role="dialog"]').count(), 0);
   // Nothing reads on load: the lookup asks only when someone asks it to, and
   // the screen shows no figure of its own until then.

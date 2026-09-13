@@ -30,16 +30,22 @@ globalThis.fetch = async (input) => {
 
 // Imported only now: each default export captures globalThis.fetch as it loads.
 const WORKERS = {
+  setup: (await import('../../bridge/src/setup-release.mjs')).default,
+  execution: (await import('../../bridge/src/execution-worker.mjs')).default,
   read: (await import('../../bridge/src/worker.mjs')).default,
   session: (await import('../../bridge/src/session-worker.mjs')).default,
   onboarding: (await import('../../bridge/src/onboarding-worker.mjs')).default,
   deposit: (await import('../../bridge/src/deposit-worker.mjs')).default,
+  performance: (await import('../../bridge/src/performance-worker.mjs')).default,
 };
 const RUNTIME = {
+  setup: await import('../../bridge/src/setup-release.mjs'),
+  execution: await import('../../api-contracts/execution-v1/runtime.mjs'),
   read: await import('../../api-contracts/read-v1/runtime.mjs'),
   session: await import('../../api-contracts/session-v1/runtime.mjs'),
   onboarding: await import('../../api-contracts/onboarding-v1/runtime.mjs'),
   deposit: await import('../../api-contracts/deposit-v1/runtime.mjs'),
+  performance: await import('../../api-contracts/performance-v2/runtime.mjs'),
 };
 
 const require = createRequire(import.meta.url);
@@ -53,6 +59,9 @@ const GATE = { BETA_PASSWORD: PASSWORD, BETA_COOKIE_KEY: 'Rk7sV2mQx9Lp4TbN8cWy3Z
 
 /** The committed disabled configs, including the separately disabled read-v2 candidate. */
 const DISABLED = {
+  setup: { SETUP_WALLET_ENABLED: 'false' },
+  execution: { EXECUTION_BRIDGE_ENABLED: 'false', APP_ORIGIN: ORIGIN, EXECUTION_GATEWAY_ORIGIN: 'https://vm-execution.domino.money' },
+  performance: { PERFORMANCE_BRIDGE_ENABLED: 'false', APP_ORIGIN: ORIGIN, PERFORMANCE_GATEWAY_ORIGIN: 'https://vm-performance.domino.money' },
   read: {
     READ_BRIDGE_ENABLED: 'false',
     READ_V2_BRIDGE_ENABLED: 'false',
@@ -84,6 +93,9 @@ const CSRF = 'c'.repeat(43);
 
 /** What this suite expects of each family, written out rather than read from the code under test. */
 const FAMILY = {
+  setup: { binding: 'SETUP_BRIDGE', service: 'domino-setup-bridge', contract: 'x-domino-setup-contract', csrf: false, cookie: null },
+  execution: { binding: 'EXECUTION_BRIDGE', service: 'domino-execution-bridge', contract: 'x-domino-execution-contract', csrf: true, cookie: SESSION },
+  performance: { binding: 'PERFORMANCE_BRIDGE', service: 'domino-performance-bridge', contract: 'x-domino-performance-contract', csrf: true, cookie: SESSION },
   read: { binding: 'READ_BRIDGE', service: 'domino-read-bridge', contract: 'x-domino-read-contract', csrf: false, cookie: null },
   session: {
     binding: 'SESSION_BRIDGE',
@@ -107,10 +119,13 @@ const FAMILY = {
     cookie: SESSION,
   },
 };
-const FAMILIES = Object.keys(FAMILY);
+const FAMILIES = ['read', 'session', 'onboarding', 'deposit', 'performance', 'execution', 'setup'];
 
 /** A well-formed browser call per family, on a route each Worker really has. */
 const ROUTE = {
+  setup: { path: '/api/setup/v1/release', body: '{}' },
+  execution: { path: '/api/execution/v1/list', body: '{}' },
+  performance: { path: '/api/performance/v2/epochs', body: '{}' },
   read: { path: '/api/read/v1/pools', body: JSON.stringify({ token: `0x${'1'.repeat(40)}` }) },
   session: { path: '/api/session/v1/bootstrap', body: '{}' },
   onboarding: { path: '/api/onboarding/v1/position-preview', body: '{}' },
@@ -619,7 +634,7 @@ test('duplicate and malformed family cookies arrive as they were sent, so the Wo
     'valueless part': '__Host-domino-session',
     'spaced part': '__Host-domino-session = A',
   };
-  for (const family of ['session', 'onboarding', 'deposit']) {
+  for (const family of ['session', 'onboarding', 'deposit', 'performance']) {
     for (const [label, parts] of Object.entries(jars)) {
       const { bound, env } = recorders();
       const { path, body } = ROUTE[family];
@@ -1004,7 +1019,7 @@ function wrangler() {
   return wranglerRead;
 }
 
-test('wrangler 4.130.0 reads four service bindings for production, to exactly the four bridge Workers, and none for preview', () => {
+test('wrangler 4.130.0 reads the declared production service bindings for the exact bridge Workers, and none for preview', () => {
   const read = wrangler();
   assert.equal(read.version, '4.130.0');
   assert.equal(read.production.targetEnvironment, 'production');
@@ -1250,7 +1265,7 @@ test('a signed-in POST read loses its cookies at the gate and keeps its method, 
 });
 
 test('session, onboarding and deposit go past the gate as the browser sent them and still get only their named cookies', async () => {
-  for (const family of ['session', 'onboarding', 'deposit']) {
+  for (const family of ['session', 'onboarding', 'deposit', 'performance']) {
     const { bound, env } = recorders();
     const { path, body } = ROUTE[family];
     const traced = tracedPages(call(path, { method: 'POST', body, cookie: JAR, headers: { 'X-Domino-CSRF': CSRF } }), env);
@@ -1311,12 +1326,16 @@ test('with CANONICAL_HOSTS_ONLY on, a signed-in read on domino.money still loses
 
 const { gzipSync } = require('node:zlib');
 const ENABLED_WORKERS = {
+  execution: (await import('../../bridge/src/execution-worker.mjs')).createExecutionWorker({ fetch: globalThis.fetch }),
   read: (await import('../../bridge/src/worker.mjs')).createWorker({ fetch: globalThis.fetch }),
   session: (await import('../../bridge/src/session-worker.mjs')).createSessionWorker({ fetch: globalThis.fetch }),
   onboarding: (await import('../../bridge/src/onboarding-worker.mjs')).createOnboardingWorker({ fetch: globalThis.fetch }),
   deposit: (await import('../../bridge/src/deposit-worker.mjs')).createDepositWorker({ fetch: globalThis.fetch }),
+  performance: (await import('../../bridge/src/performance-worker.mjs')).createPerformanceWorker({ fetch: globalThis.fetch }),
 };
 const ENABLED = {
+  execution: { EXECUTION_BRIDGE_ENABLED: 'true', APP_ORIGIN: ORIGIN, EXECUTION_GATEWAY_ORIGIN: 'https://vm-execution.domino.money', EXECUTION_ACCESS_CLIENT_ID: 'placeholder-client-id', EXECUTION_ACCESS_CLIENT_SECRET: 'placeholder-client-secret' },
+  performance: { PERFORMANCE_BRIDGE_ENABLED: 'true', APP_ORIGIN: ORIGIN, PERFORMANCE_GATEWAY_ORIGIN: 'https://vm-performance.domino.money', PERFORMANCE_ACCESS_CLIENT_ID: 'placeholder-client-id', PERFORMANCE_ACCESS_CLIENT_SECRET: 'placeholder-client-secret' },
   read: {
     READ_BRIDGE_ENABLED: 'true',
     APP_ORIGIN: ORIGIN,
@@ -1350,7 +1369,7 @@ const ENABLED = {
 
 function enabledWorkers() {
   const env = { ...GATE };
-  for (const family of FAMILIES) {
+  for (const family of FAMILIES.filter(family => family !== 'setup')) {
     env[FAMILY[family].binding] = { fetch: (request) => ENABLED_WORKERS[family].fetch(request, ENABLED[family]) };
   }
   return env;
@@ -1369,14 +1388,14 @@ function compressed(family, cookie = JAR) {
 
 test('F1V-C1: a Content-Encoding body reaches an enabled Worker through the forwarder without the header and is refused as invalid_request', async () => {
   const env = enabledWorkers();
-  for (const family of FAMILIES) {
+  for (const family of FAMILIES.filter(family => family !== 'setup')) {
     await workerSaid(await pages(compressed(family), env), family, 'invalid_request');
   }
   assert.deepEqual(upstream, []);
 });
 
 test('F1V-C1 control: the same request sent to an enabled Worker directly, header and all, is refused as json_required', async () => {
-  for (const family of FAMILIES) {
+  for (const family of FAMILIES.filter(family => family !== 'setup')) {
     const request = compressed(family, family === 'read' ? null : SESSION);
     const response = await ENABLED_WORKERS[family].fetch(request, ENABLED[family]);
     await workerSaid(response, family, 'json_required');
@@ -1386,4 +1405,13 @@ test('F1V-C1 control: the same request sent to an enabled Worker directly, heade
 
 test('no test in this file reached for an upstream', () => {
   assert.deepEqual(upstream, []);
+});
+
+// Setup uses GET only and never receives private session credentials.
+test('public setup identities remain explicitly unavailable until a real release is enabled', async () => {
+  const {env}=workers();
+  const result=await pages(call('/api/setup/v1/release'),env);
+  assert.equal(result.status,200);
+  assert.deepEqual(await result.json(),{contractVersion:'1.0.0-rc.1',chainId:4663,available:false,deployment:null});
+  assert.equal(result.headers.get('Set-Cookie'),null);
 });

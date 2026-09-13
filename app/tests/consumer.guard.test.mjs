@@ -89,7 +89,7 @@ test('GUARD-2: no Number, parseFloat, parseInt or toFixed on contract values; th
 
 test('GUARD-3: no route to the live deposit service; storage only for the remembered id; no HTML from strings; no URL writes', () => {
   const importers = ALL.filter(({ code }) => specifiers(code).some((spec) => /httpTransport$/.test(spec))).map(({ path }) => path);
-  assert.deepEqual(importers, [], 'the http transport is node-tested only in this phase');
+  assert.deepEqual(importers, ['screens/Setup.tsx'], 'only the reviewed live setup screen imports the live deposit transport');
   assert.deepEqual(hits(MINE, /\/api\/deposit\/v1/), ['deposit/transport.ts'], 'the prefix is declared once and used only by the unimported http transport');
   assert.deepEqual(hits(MINE, /\blocalStorage\b/), ['deposit/memory.ts']);
   assert.deepEqual(hits(MINE, /\b(sessionStorage|indexedDB|document\.cookie)\b/), []);
@@ -110,7 +110,7 @@ test('GUARD-4: the spending capabilities stay literally false and the consumer n
 
 test('GUARD-5: the consumer is reached only through the two flag-gated lazy screens', () => {
   const offenders = [];
-  for (const { path, code } of ALL.filter(({ path }) => !isConsumer(path))) {
+  for (const { path, code } of ALL.filter(({ path }) => !isConsumer(path) && !/^finance\/|^screens\/(Setup|AdvancedSetup|Performance|Execution|Sequence)\.tsx$/.test(path))) {
     for (const spec of specifiers(code)) {
       if (spec.startsWith('.') && isConsumerTarget(target(path, spec))) offenders.push(`${path}: ${spec}`);
     }
@@ -122,7 +122,7 @@ test('GUARD-5: the consumer is reached only through the two flag-gated lazy scre
 
   const importersOf = (wanted) =>
     ALL.filter(({ path, code }) => specifiers(code).some((spec) => spec.startsWith('.') && target(path, spec) === wanted)).map(({ path }) => path);
-  assert.deepEqual(importersOf('session/livePort'), ['screens/LivePreview.tsx']);
+  assert.deepEqual(importersOf('session/livePort'), ['finance/wallet.ts', 'screens/Execution.tsx', 'screens/LivePreview.tsx', 'screens/Performance.tsx', 'screens/Setup.tsx']);
   assert.deepEqual(importersOf('deposit/fixtures/fixtureSession'), ['screens/Deposits.tsx']);
   const deposits = byPath('screens/Deposits.tsx').code;
   assert.doesNotMatch(deposits, /session\/(port|livePort)'/, 'the lab never touches the real session');
@@ -141,8 +141,8 @@ test('DF-11: prepare has exactly one call site, inside issueWalletStep; create a
   const end = flow.indexOf('async function userAction');
   const at = flow.indexOf('.prepare(');
   assert.ok(start > 0 && start < at && at < end, 'the call sits in issueWalletStep');
-  assert.deepEqual(hits(ALL, /\.create\(/), []);
-  assert.deepEqual(hits(ALL, /\bhandoff\.send\(|HANDOFF\.send\(|\.send\(\s*(step|walletStep)/), []);
+  assert.deepEqual(hits(ALL, /\.create\(/), ['screens/Sequence.tsx', 'screens/Setup.tsx']);
+  assert.deepEqual(hits(ALL, /\bhandoff\.send\(|HANDOFF\.send\(|\.send\(\s*(step|walletStep)/), ['screens/AdvancedSetup.tsx', 'screens/Sequence.tsx']);
   assert.deepEqual(hits(MINE, /available:\s*true/), [], 'no handoff says it is available');
   assert.deepEqual(hits(MINE, /executionAvailable:\s*true|automationAvailable:\s*true|serverBroadcastAvailable:\s*true/), []);
 });

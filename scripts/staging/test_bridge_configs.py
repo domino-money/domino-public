@@ -49,8 +49,10 @@ class DisabledBridgeConfigs(unittest.TestCase):
                 {f"{service.upper()}_BRIDGE_ENABLED": "true"},
                 {f"{service.upper()}_BRIDGE_ENABLED": False},
                 {"ACCESS_CLIENT_SECRET": "synthetic-test-value"},
+                {"SETUP_WALLET_ENABLED": "true"},
+                {"SEQUENCE_WALLET_ENABLED": "true"},
                 {"APP_ORIGIN": "https://alternate.invalid"},
-                {SERVICES[service][1]: "https://other-service.invalid"},
+                {SERVICES[service][1] or "SETUP_DEPLOYMENT_JSON": "https://other-service.invalid"},
                 {"ENABLED_READS": "token"},
                 {"READ_V2_BRIDGE_ENABLED": "true"},
                 {"READ_V2_BRIDGE_ENABLED": False},
@@ -89,7 +91,7 @@ class DisabledBridgeConfigs(unittest.TestCase):
                     path.rmdir()
             self.assertTrue(inventory_errors(directory / "absent"))
 
-    def test_cli_fails_for_alternate_config_even_when_all_four_candidates_are_valid(self):
+    def test_cli_fails_for_alternate_config_even_when_all_candidates_are_valid(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
             directory = root / "bridge"

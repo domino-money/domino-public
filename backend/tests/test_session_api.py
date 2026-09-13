@@ -95,6 +95,19 @@ class SessionApiTests(unittest.TestCase):
         self.assertEqual(self.post(client=outside).status_code,403)
         self.service.execute.assert_not_called()
 
+    def test_access_cookie_is_only_a_duplicate_not_authentication(self):
+        response=self.post(headers={**HEADERS,'Cookie':'CF_Authorization=synthetic-assertion'})
+        self.assertEqual(response.status_code,200,response.text)
+        self.verifier.verify.assert_called_once_with('synthetic-assertion')
+        self.verifier.verify.side_effect=DataError('invalid signature')
+        self.service.execute.reset_mock()
+        response=self.post(headers={**HEADERS,'Cookie':'CF_Authorization=synthetic-assertion'})
+        self.assertEqual(response.status_code,503)
+        self.service.execute.assert_not_called()
+        for cookie in ('CF_Authorization=another','CF_Authorization=synthetic-assertion; other=x',
+                       'CF_Authorization=synthetic-assertion; CF_Authorization=synthetic-assertion',''):
+            self.assertEqual(self.post(headers={**HEADERS,'Cookie':cookie}).status_code,403,cookie)
+
     def test_duplicate_missing_and_malformed_internal_headers(self):
         for change in ({'X-Domino-CSRF':'bad'}, {'X-Domino-Session-Contract':'1.0.0'},
                        {'X-Domino-Client-Id':'example.com'}, {'X-Domino-CSRF':''}):

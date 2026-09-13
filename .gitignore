@@ -23,3 +23,6 @@ contracts/out/
 contracts/cache/
 # Historical owner-only hosting metadata stays on the deployment owner's machine.
 reports/private-site-release*.json
+
+# Local visual qualification evidence
+app/.test-artifacts/

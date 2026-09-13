@@ -19,7 +19,7 @@ import { test } from 'node:test';
 import * as runtime from '../../api-contracts/read-v1/runtime.mjs';
 
 const require = createRequire(import.meta.url);
-const { PRODUCER_PIN, ACCEPTED_READ_CONTRACTS, REQUEST_READ_CONTRACT, READ_V2_PIN } = require('../.test-build/app/src/lib/read/pin.js');
+const { PRODUCER_PIN, ACCEPTED_READ_CONTRACTS, REQUEST_READ_CONTRACT, READ_V2_PIN, PERFORMANCE_V2_PIN, EXECUTION_V1_PIN } = require('../.test-build/app/src/lib/read/pin.js');
 
 const CONTRACTS = resolve(import.meta.dirname, '../../api-contracts');
 const sha256 = (bytes) => createHash('sha256').update(bytes).digest('hex');
@@ -64,4 +64,20 @@ test('the runtime, the fixture index and the accepted header all agree with the 
   assert.equal(index.contractVersion, version);
   assert.equal(REQUEST_READ_CONTRACT, version);
   assert.deepEqual([...ACCEPTED_READ_CONTRACTS], [version], 'exactly the pinned candidate is accepted, no range');
+});
+
+test('performance-v2 private numeric contract matches every consumed file', () => {
+  const bytes = readFileSync(join(CONTRACTS, 'performance-v2', 'manifest.json'));
+  const manifest = JSON.parse(bytes);
+  assert.equal(sha256(bytes), PERFORMANCE_V2_PIN.manifestSha256);
+  assert.equal(manifest.contractVersion, PERFORMANCE_V2_PIN.version);
+  for (const file of manifest.files) assert.equal(sha256(readFileSync(join(CONTRACTS, 'performance-v2', file.path))), file.sha256, file.path);
+});
+
+test('execution-v1 has an exact version and source artifact manifest pin',()=>{
+  const bytes=readFileSync(join(CONTRACTS,'execution-v1','manifest.json'));
+  const manifest=JSON.parse(bytes);
+  assert.equal(sha256(bytes),EXECUTION_V1_PIN.manifestSha256);
+  assert.equal(manifest.contractVersion,EXECUTION_V1_PIN.version);
+  for(const file of manifest.files)assert.equal(sha256(readFileSync(join(CONTRACTS,'execution-v1',file.path))),file.sha256,file.path);
 });

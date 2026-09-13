@@ -1,0 +1,29 @@
+{
+  "additionalProperties": false,
+  "properties": {
+    "afterIntentId": {
+      "anyOf": [
+        {
+          "maxLength": 66,
+          "minLength": 66,
+          "pattern": "^0x[0-9a-f]{64}$(?![\\s\\S])",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Afterintentid"
+    },
+    "limit": {
+      "default": 10,
+      "maximum": 20,
+      "minimum": 1,
+      "title": "Limit",
+      "type": "integer"
+    }
+  },
+  "title": "ListRequest",
+  "type": "object"
+}

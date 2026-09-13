@@ -59,6 +59,8 @@ PACKAGED_ONLY_MIGRATIONS = (
     'backend/migrations/015_unsigned_execution.sql',
     'backend/migrations/016_managed_performance.sql',
     'backend/migrations/017_performance_financial_history.sql',
+    'backend/migrations/018_performance_enrollment.sql',
+    'backend/migrations/019_execution_journal.sql',
 )
 MAPPINGS = (
     ('domino', 'domino-admin', ADMIN),

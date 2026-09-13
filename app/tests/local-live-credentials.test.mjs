@@ -1,13 +1,13 @@
 import assert from 'node:assert/strict'
 import { execFileSync } from 'node:child_process'
-import { mkdtempSync, writeFileSync, rmSync, chmodSync, linkSync, unlinkSync } from 'node:fs'
+import { mkdtempSync, writeFileSync, rmSync, chmodSync, linkSync, unlinkSync, realpathSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { resolve, join } from 'node:path'
 import { test } from 'node:test'
 import { readCredentials } from '../scripts/local-live-credentials.mjs'
 
 test('private synthetic file must be owner-only, outside roots and not hardlinked; Windows setup parses', () => {
-  const dir = mkdtempSync(join(tmpdir(), 'domino-private-credential-test-'))
+  const dir = mkdtempSync(join(realpathSync(tmpdir()), 'domino-private-credential-test-'))
   const path = join(dir, 'access.json')
   const body = { version: 1, clientId: 'synthetic-local-test-132.access', clientSecret: 'e'.repeat(64) }
   writeFileSync(path, JSON.stringify(body))

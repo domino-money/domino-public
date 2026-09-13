@@ -1,0 +1,17 @@
+# Public deployment identities. No keys, RPC endpoints or financial authority.
+name = "domino-setup-bridge"
+main = "src/setup-release.mjs"
+compatibility_date = "2026-09-10"
+workers_dev = false
+preview_urls = false
+routes = []
+logpush = false
+
+[observability]
+enabled = false
+
+[vars]
+SETUP_WALLET_ENABLED = "false"
+SEQUENCE_WALLET_ENABLED = "false"
+# SETUP_DEPLOYMENT_JSON is supplied only after on-chain deployment verification.
+# SEQUENCE_DEPLOYMENT_JSON holds the corresponding V4 deployment profile.
