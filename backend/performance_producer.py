@@ -66,7 +66,10 @@ class PerformanceProducer:
                     # A committed raw page survives exhausted financial budget.
                     # Drain that exact durable page first, avoiding starvation
                     # from repeatedly spending the next budget on raw progress.
-                    elif pending['financial'] is not None and pending['page'] is None:
+                    elif pending['financial'] is not None and (pending['page'] is None or
+                            pending['financial'].get('lastError')=='financial_reorg_detected'):
+                        # A stale pending page must not prevent the raw worker
+                        # from confirming a reorg and fencing a new generation.
                         step = self.raw.advance(owner,epoch)
                         raw_outcome = step.outcome
                         if step.outcome == 'baseline_reorged': outcome='blocked'

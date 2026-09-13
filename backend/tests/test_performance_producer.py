@@ -76,5 +76,15 @@ class ProducerTests(unittest.TestCase):
         p.raw.advance.assert_not_called()
         p.financial.advance.assert_called_once_with('owner','saved')
 
+    def test_pending_reorganized_page_returns_to_raw_canonicality_fence(self):
+        p,q,job=self.producer(); job['epoch_id']='saved'
+        pending=p.financial_store.next_financial_page.return_value
+        pending['page']={'persisted':'old raw page'}
+        pending['financial']['lastError']='financial_reorg_detected'
+        p.raw.advance.return_value=SimpleNamespace(outcome='baseline_reorged')
+        self.assertEqual(p.tick(),'blocked')
+        p.raw.advance.assert_called_once_with('owner','saved')
+        p.financial.advance.assert_not_called()
+
 
 if __name__=='__main__': unittest.main()

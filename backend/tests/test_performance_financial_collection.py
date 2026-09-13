@@ -108,6 +108,23 @@ class FinancialCollectionTests(unittest.TestCase):
         self.assertEqual(len(point.sources), 4)
         self.assertEqual(FinancialPoint.model_validate(point.model_dump()), point)
 
+    def test_v4_points_preserve_inventory_and_recheck_all_execution_pins(self):
+        from test_performance_collection import EXECUTION_ENGINE, ROUTING_HELPER, PRICE_GUARD
+        self.rpc.version = 4
+        baseline = self.raw.capture(OWNER, VAULT, ['1'], CODE_HASH)
+        opening = self.collector.capture_point(baseline, baseline.baseline)
+        self.assertEqual(opening.status, 'complete')
+        self.assertEqual(opening.members[0].tokenId, '1')
+        self.rpc.finalized = 11
+        page = self.raw.collect(baseline, baseline.baseline)
+        points = self.collector.capture_points(baseline, page)
+        self.assertEqual(points.points[0].status, 'complete')
+        for target in (EXECUTION_ENGINE, ROUTING_HELPER, PRICE_GUARD):
+            self.rpc.code[target] = '0x60016000f3'
+            with self.assertRaisesRegex(CollectionError, 'collection_dependency_code_changed'):
+                self.collector.capture_points(baseline, page)
+            self.rpc.code[target] = CODE
+
     def test_every_block_and_real_empty_block_growth_are_preserved(self):
         page = self.page(13)
         result = self.collector.capture_points(self.baseline, page)

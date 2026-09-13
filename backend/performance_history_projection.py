@@ -95,6 +95,7 @@ class _SourceAmount(_Amount):
     tokenId: TokenId
     sourceId: Hash
     transactionHash: Hash
+    receiptLogIndex: Number | None = None
 
 
 class _Service(_SourceAmount):
@@ -429,7 +430,7 @@ def build_financial_projection(bundle, valuation, now):
                     if event_id in event_ids: raise ValueError('projection_duplicate_event')
                     event_ids.add(event_id)
                 else:
-                    key = (row.kind,row.transactionHash,row.sourceId,row.currency)
+                    key = (row.kind,row.transactionHash,row.sourceId,row.currency,row.receiptLogIndex)
                     if key in source_records: raise ValueError('projection_duplicate_source_fact')
                     source_records.add(key)
                 if category=='tradingAccrual':

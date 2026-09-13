@@ -119,15 +119,27 @@
     },
     {
       "path": "backend/performance_producer.py",
-      "sha256": "583899a2713044e404e8cdbb7e35f970125de0bb98db6b0ce44c2d7082371073"
+      "sha256": "dca1528883b98139daada2114c49e4c36d6cb6b1c8253633bd7ebdca5e227054"
     },
     {
       "path": "backend/migrations/018_performance_enrollment.sql",
       "sha256": "9bb0238200062d505f55479224ed920bc097b5797d7d7fa30fa83154dd1caf8d"
     },
     {
+      "path": "backend/performance_collection.py",
+      "sha256": "3b40147144120fe7ce05945e1ce940b98e93fe9903b7c99fa238257bc1424f92"
+    },
+    {
+      "path": "backend/performance_financial_collection.py",
+      "sha256": "16c892a38c1e9421d003861b431ee52f85bf9df89d0342df7b8ada2013db11c7"
+    },
+    {
+      "path": "backend/performance_history.py",
+      "sha256": "67a81e15c1fc592559e483ce428ef5e97859de9bae72ee09320433addbbbade5"
+    },
+    {
       "path": "backend/performance_history_projection.py",
-      "sha256": "1bc169ec17d0cae2a183f99e6cb27089efda7c5e922f404a1a4dbfca42f68ade"
+      "sha256": "0193b611cee44ba2a647c2a4bf2a2cd6516fb14acd4178e22dd04020a82c5446"
     },
     {
       "path": "backend/performance_history_store.py",
@@ -135,11 +147,23 @@
     },
     {
       "path": "backend/performance_history_worker.py",
-      "sha256": "c6de91700829ceac6dbac99c5c57b7b668f8636617b5e75a3d163b348b5fe952"
+      "sha256": "5c10202cad1135580b27cf41b35700c00acbeb76245e10c57d0072320ba196b5"
+    },
+    {
+      "path": "backend/performance_v4_history.py",
+      "sha256": "f6feb0217a225a111e156d38b3554d95c0483edce4b73d3da29254de8692bc36"
     },
     {
       "path": "backend/performance_valuation.py",
       "sha256": "8e861e70cc8aa56b90a7676baea7207839cdf080e7ebd45b73b3ebc4d4cb8c08"
+    },
+    {
+      "path": "backend/execution_v4.py",
+      "sha256": "af9bf364aae523a53f79eb25bc726add92ec41c468ff1770f24d1687b14b244c"
+    },
+    {
+      "path": "backend/general_compound_receipts.py",
+      "sha256": "7df7d958b4fedcef639c26e3bf13371c50b1f481c57d77bf6c55310eeff0aa8a"
     },
     {
       "path": "backend/authenticated_api.py",
@@ -155,7 +179,7 @@
     },
     {
       "path": "scripts/export-performance-v2-contract.py",
-      "sha256": "c3072f3e91f9c32a7999b04b626a41b16dd3feb74b1ae519a3f217c32dbb9f95"
+      "sha256": "5dcc63b7a058ad2f2c71b99a29971687ea74bce8bbdd3b519219c19bd84254db"
     }
   ],
   "status": "implemented_default_off"

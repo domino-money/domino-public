@@ -12,6 +12,8 @@ from eth_abi import decode, encode
 from eth_hash.auto import keccak
 
 import execution_models as m
+import execution_v4
+import performance_v4_history
 from general_compound_receipts import (COMPLETED, COMPOUND_SIGNATURE, PLAN_TYPE,
     CompoundAdmission, CompoundPlan, CompoundReceiptReconciler, RuntimePin)
 from performance_collection import (Baseline, CollectionError, Cursor, Page,
@@ -149,9 +151,29 @@ class FinancialHistoryWorker:
                 rpc.bind_receipts(financial.receipts)
                 reports, admission = [], None
                 for receipt in financial.receipts:
+                    v4_completions = [log for log in receipt.logs if log.address == baseline.vault
+                                      and log.topics and log.topics[0] == performance_v4_history.COMPLETED]
+                    if v4_completions:
+                        if baseline.opening.implementationVersion != 4:
+                            # Keep acquired evidence but never reinterpret a new
+                            # format through the V3 receipt verifier.
+                            continue
+                        if len(v4_completions) != 1: raise CollectionError('financial_v4_completion_invalid')
+                        if admission is None: admission = performance_v4_history.admission(baseline, collector)
+                        plan = performance_v4_history.decode_plan(receipt.rawTransaction.get('input'))
+                        try:
+                            result = execution_v4.ReceiptReconciler(rpc).reconcile(plan, admission, receipt.transactionHash)
+                        except Exception:
+                            raise CollectionError(rpc.failure or 'financial_v4_verification_failed') from None
+                        result['collections'] = [credit.model_dump(mode='json') for credit in result['collections']]
+                        for field in ('realizations','applications','conversions'):
+                            result[field] = list(result[field])
+                        reports.append(result)
+                        continue
                     completions = [log for log in receipt.logs if log.address == baseline.vault
                                    and log.topics and log.topics[0] == COMPLETED]
                     if not completions: continue
+                    if baseline.opening.implementationVersion == 4: continue
                     if len(completions) != 1: raise CollectionError('financial_compound_completion_invalid')
                     if admission is None: admission = compound_admission(baseline, collector)
                     plan = decode_compound_plan(receipt.rawTransaction.get('input'))

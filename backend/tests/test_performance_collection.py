@@ -20,6 +20,9 @@ IMPLEMENTATION = '0x'+'45'*20
 FACTORY = '0x'+'46'*20
 READ_HELPER = '0x'+'47'*20
 COMPOUND_ENGINE = '0x'+'48'*20
+EXECUTION_ENGINE = '0x'+'49'*20
+ROUTING_HELPER = '0x'+'4a'*20
+PRICE_GUARD = '0x'+'4b'*20
 TOKEN = '0x'+'77'*20
 NEXT_OWNER = '0x'+'88'*20
 CODE = '0x60006000f3'
@@ -42,7 +45,7 @@ class FakePerformanceRpc:
         self.owner, self.root_owner = OWNER, OWNER
         self.version = 1
         self.code = {a:CODE for a in (VAULT, IMPLEMENTATION, FACTORY, POSITION_MANAGER, POOL_MANAGER, STATE_VIEW,
-                                    READ_HELPER, COMPOUND_ENGINE)}
+                                    READ_HELPER, COMPOUND_ENGINE, EXECUTION_ENGINE, ROUTING_HELPER, PRICE_GUARD)}
         self.active = 1
         self.query_omit = self.query_duplicate = False
         self.receipt_disagrees = self.header_reorg_on_recheck = False
@@ -73,6 +76,7 @@ class FakePerformanceRpc:
             'stateView()':([], 'address'), 'rootTokenId()':([], 'uint256'), 'activePositions()':([], 'uint256'),
             'implementationVersion()':([], 'uint64'), 'implementation()':([], 'address'), 'factory()':([], 'address'),
             'readHelper()':([], 'address'), 'compoundEngine()':([], 'address'),
+            'executionEngine()':([], 'address'), 'routingHelper()':([], 'address'), 'priceGuard()':([], 'address'),
             'sequenceIdentityHash()':([], 'bytes32'), 'poolId()':([], 'bytes32'),
             'poolKey()':([], '(address,address,uint24,int24,address)'),
             'position(uint256)':(['uint256'], POSITION_TYPE),
@@ -107,6 +111,7 @@ class FakePerformanceRpc:
                     'stateView()':STATE_VIEW, 'rootTokenId()':1, 'activePositions()':self.active,
                     'implementationVersion()':self.version, 'implementation()':IMPLEMENTATION, 'factory()':FACTORY,
                     'readHelper()':READ_HELPER, 'compoundEngine()':COMPOUND_ENGINE,
+                    'executionEngine()':EXECUTION_ENGINE, 'routingHelper()':ROUTING_HELPER, 'priceGuard()':PRICE_GUARD,
                     'sequenceIdentityHash()':bytes.fromhex(hash_(90)[2:]),'poolId()':bytes.fromhex(POOL_ID[2:]),
                     'poolKey()':KEY,'accountedCurrency(address)':7,'balanceOf(address)':20,
                     'getPositionLiquidity(uint256)':1000}[signature]
@@ -207,6 +212,20 @@ class PerformanceCollectionTests(unittest.TestCase):
         self.rpc.root_owner=OWNER; self.rpc.active=2
         baseline=self.collector.capture(OWNER,VAULT,['2','1'],CODE_HASH)
         self.assertEqual(baseline.tokenIds,['1','2']); self.assertEqual(baseline.opening.members[1].holder,VAULT)
+
+    def test_v4_capture_pins_exact_execution_dependencies_and_keeps_root_custody(self):
+        self.rpc.version = 4
+        baseline = self.collector.capture(OWNER, VAULT, ['1'], CODE_HASH)
+        self.assertEqual(len(baseline.opening.codePins), 10)
+        self.assertEqual([p.address for p in baseline.opening.codePins[7:]],
+                         [EXECUTION_ENGINE, ROUTING_HELPER, PRICE_GUARD])
+        self.assertNotIn(COMPOUND_ENGINE, {p.address for p in baseline.opening.codePins})
+        self.assertEqual(baseline.opening.members[0].holder, OWNER)
+        for target in (EXECUTION_ENGINE, ROUTING_HELPER, PRICE_GUARD):
+            self.rpc.code[target] = '0x'
+            with self.assertRaisesRegex(CollectionError, 'collection_code_unavailable'):
+                self.collector.capture(OWNER, VAULT, ['1'], CODE_HASH)
+            self.rpc.code[target] = CODE
 
     def test_caught_up_returns_none_without_mutating_baseline(self):
         before=self.baseline.model_dump()

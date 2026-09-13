@@ -215,7 +215,14 @@ class FinancialCollector(CanonicalCollector):
                                    ('compoundEngine()', baseline.opening.implementationVersion == 3)):
             if enabled and self._get(baseline.vault, signature, 'address', block) not in targets:
                 raise CollectionError('financial_dependency_pin_missing')
-        if len(targets) != baseline.opening.implementationVersion+5:
+        if baseline.opening.implementationVersion == 4:
+            engine = self._get(baseline.vault, 'executionEngine()', 'address', block)
+            pins = baseline.opening.codePins
+            if (len(pins) != 10 or engine != pins[7].address
+                    or self._get(engine, 'routingHelper()', 'address', block) != pins[8].address
+                    or self._get(engine, 'priceGuard()', 'address', block) != pins[9].address):
+                raise CollectionError('financial_dependency_pin_missing')
+        if len(targets) != {1:6, 2:7, 3:8, 4:10}[baseline.opening.implementationVersion]:
             raise CollectionError('financial_dependency_pin_missing')
 
     @staticmethod

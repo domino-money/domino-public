@@ -42,6 +42,11 @@ does not establish provider capacity, deploy a vault, or qualify historical USD
 prices. Admission binds owner, exact vault and reviewed vault runtime hash. The
 session holder submits the complete active token-ID set; the finalized collector
 independently checks owner/custody, membership, manager, range and code identities.
+V4 uses ten exact dependency pins, including executionEngine, routingHelper and
+priceGuard. V3 keeps its separate compoundEngine adapter and eight pins. Capture
+does not interpret a receipt from another implementation version. V4 receipt
+verification decodes the six-field fee budgets, their exact floors and caps,
+and the fixed execution ABI before any source financial effects enter the journal.
 
 Run two independent singleton processes using the same profile:
 
@@ -102,3 +107,7 @@ The existing production pricing registry remains the authority: empty/partial
 qualification yields null USD or partial coverage. Only a complete valued rolling
 day yields observed APR. Synthetic fixture APR is not live history. Future receipt
 formats require their matching financial adapter before earning/cost attribution.
+The V4 adapter preserves each original NFT/source across collection, conversion
+and successor creation/funding. Converted output remains charged inventory;
+only actual liquidity settlement contributes reinvested amounts. A new child is
+internal capital and never an external deposit or a new earning by itself.

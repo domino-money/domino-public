@@ -91,7 +91,7 @@
     },
     {
       "path": "backend/performance_collection.py",
-      "sha256": "d6b5379d8384f2a30bc4bc288db3c887d6246ea08e2afb122813bacf7d297a69"
+      "sha256": "3b40147144120fe7ce05945e1ce940b98e93fe9903b7c99fa238257bc1424f92"
     },
     {
       "path": "backend/performance_worker.py",

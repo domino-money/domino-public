@@ -18,6 +18,7 @@ from discovery import ZERO
 from performance_collection import Baseline, Cursor, Record, Raw, Hash, Address, Number, TokenId, TRANSFER
 from performance_financial_collection import FinancialPoint, FinancialPage
 from general_compound_receipts import COMPLETED, APPLIED, REALIZED, AMOUNTS_TYPE
+import performance_v4_history
 from pool_activity import SWAP, DONATE, MODIFY
 
 VERSION = 1
@@ -179,6 +180,8 @@ def validate_history(baseline, state):
 
 def _compound_reports(baseline, page, reports):
     """Bind already reconciled results back to this page's actual receipt facts."""
+    if baseline.opening.implementationVersion == 4:
+        return performance_v4_history.bind_reports(baseline,page,reports)
     if type(reports) is not list or len(reports) > len(page.receipts):
         raise ValueError('history_invalid_compound_reports')
     by_tx = {}
@@ -279,6 +282,16 @@ def reduce_history(baseline, state, financial_page, reports):
         after = {m.tokenId:m for m in point.members}
         owned_before = {i for i,m in before.items() if _owned(m,baseline)}
         owned_after = {i for i,m in after.items() if _owned(m,baseline)}
+        block_receipts = receipts_by_block[point.block.blockNumber]
+        block_reports = [reports_by_tx[r.transactionHash] for r in block_receipts if r.transactionHash in reports_by_tx]
+        created = {token for report in block_reports for token in report.get('createdTokenIds',[])}
+        for token in created:
+            report = next(r for r in block_reports if token in r.get('createdTokenIds',[]))
+            member = after.get(token)
+            if (token in before or token not in owned_after or member is None or member.isRoot
+                    or member.parentTokenId!=report['parentTokenId'] or member.status!='complete'
+                    or member.liquidityRaw!=report['liquidityIncreaseRaw']):
+                raise ValueError('history_v4_created_member_mismatch')
         changes = []
         for token in sorted(owned_after-owned_before, key=int):
             changes.append({'kind':'position_entered','tokenId':token,'timestamp':point.block.timestamp,'blockNumber':point.block.blockNumber,'amountsRaw':None})
@@ -290,13 +303,12 @@ def reduce_history(baseline, state, financial_page, reports):
             changes.append({'kind':'position_left','tokenId':token,'timestamp':point.block.timestamp,'blockNumber':point.block.blockNumber,'amountsRaw':None})
             if token in lifetimes:
                 lifetimes[token]['endsAt'] = point.block.timestamp
-        if changes:
+        if any(change['kind']!='position_entered' or change['tokenId'] not in created for change in changes):
             issues.add('membership_transition_requires_attribution')
         if next_state['membershipAmbiguous']:
             issues.add('reentered_token_lifetime_unsupported')
-        block_receipts = receipts_by_block[point.block.blockNumber]
-        block_reports = [reports_by_tx[r.transactionHash] for r in block_receipts if r.transactionHash in reports_by_tx]
         settlements = defaultdict(lambda:[0,0])
+        settled_tokens = set()
         added_liquidity = defaultdict(int)
         costs, reinvestments, realizations, flows = [], [], [], []
         native_expected = 0
@@ -304,9 +316,55 @@ def reduce_history(baseline, state, financial_page, reports):
         accounted_expected = defaultdict(int)
         for report in block_reports:
             token = report['destinationTokenId']
-            if token not in owned_before or token not in owned_after:
+            if (token not in owned_before and token not in created) or token not in owned_after:
                 issues.add('compound_member_not_continuously_owned')
             added_liquidity[token] += int(report['liquidityIncreaseRaw'])
+            if report.get('version') == 4:
+                # Actual collection belongs to its original NFT, even when the
+                # reserves later fund another member or a newly minted child.
+                for row in report['realizations']:
+                    source_token = row['tokenId']
+                    settled_tokens.add(source_token)
+                    if source_token not in owned_before & owned_after:
+                        issues.add('compound_member_not_continuously_owned')
+                    member = before.get(source_token)
+                    if member is None: raise ValueError('history_v4_collection_member_missing')
+                    for i,currency in enumerate(point.currencies):
+                        raw = row[f'amount{i}Raw']
+                        settlements[source_token][i] += int(raw)
+                        realizations.append({'kind':'realized_accrual','tokenId':source_token,'currency':currency,
+                            'timestamp':point.block.timestamp,'blockNumber':point.block.blockNumber,
+                            'transactionHash':report['transactionHash'],'sourceId':getattr(member,f'source{i}'),'raw':raw,
+                            'receiptLogIndex':row['receiptLogIndex']})
+                        _add(totals,'realized',currency,raw)
+                        held_expected[currency] += int(raw); accounted_expected[currency] += int(raw)
+                        if currency == ZERO: native_expected += int(raw)
+                consumptions = [(row,row['currency'],False) for row in report['applications']]
+                consumptions += [({**row['inputAmounts'],**{k:row[k] for k in ('sourceId','sourceTokenId','receiptLogIndex')}},
+                                   row['currencyIn'],True) for row in report['conversions']]
+                for row,currency,converted in consumptions:
+                    common = {'tokenId':row['sourceTokenId'],'currency':currency,'timestamp':point.block.timestamp,
+                        'blockNumber':point.block.blockNumber,'transactionHash':report['transactionHash'],'sourceId':row['sourceId']}
+                    costs.append({**common,'kind':'service_fee','payer':'strategy','raw':row['serviceFeeRaw'],
+                        'eventId':_id(state.epochId,report['transactionHash'],row['receiptLogIndex'],'service')})
+                    _add(totals,'serviceFees',currency,row['serviceFeeRaw'])
+                    if not converted:
+                        reinvestments.append({**common,'kind':'reinvestment','raw':row['liquidityAddedRaw'],
+                                              'receiptLogIndex':row['receiptLogIndex']})
+                        _add(totals,'reinvested',currency,row['liquidityAddedRaw'])
+                    used = int(row['grossOriginalConsumedRaw'])+int(row['chargedConsumedRaw'])
+                    held_expected[currency] -= used; accounted_expected[currency] -= used
+                    if currency == ZERO: native_expected -= used
+                for row in report['conversions']:
+                    currency = row['currencyOut']; amount = int(row['amountOutRaw'])
+                    held_expected[currency] += amount; accounted_expected[currency] += amount
+                    if currency == ZERO: native_expected += amount
+                    changes.append({'kind':'fee_reserves_converted','tokenId':row['sourceTokenId'],
+                        'sourceId':row['sourceId'],'currencyIn':row['currencyIn'],'currencyOut':currency,
+                        'amountInRaw':row['amountInRaw'],'amountOutRaw':row['amountOutRaw'],
+                        'timestamp':point.block.timestamp,'blockNumber':point.block.blockNumber,
+                        'transactionHash':report['transactionHash']})
+                continue
             for i,row in enumerate(report['sources']):
                 currency = row['currency']
                 settlements[token][i] += int(row['realizedRaw'])
@@ -327,7 +385,7 @@ def reduce_history(baseline, state, financial_page, reports):
         for receipt in block_receipts:
             compound = receipt.transactionHash in reports_by_tx
             vault_logs = [log for log in receipt.logs if log.address == baseline.vault and log.topics]
-            if any(log.topics[0] == COMPLETED for log in vault_logs) and not compound:
+            if any(log.topics[0] in (COMPLETED,performance_v4_history.COMPLETED) for log in vault_logs) and not compound:
                 issues.add('compound_receipt_not_reconciled')
             for log in receipt.logs:
                 if log.address == baseline.positionManager and log.topics and log.topics[0] == TRANSFER:
@@ -337,7 +395,9 @@ def reduce_history(baseline, state, financial_page, reports):
                     if token in set(before)|set(after):
                         source,target = map(_address_topic,log.topics[1:3])
                         expected = baseline.owner if token == baseline.rootTokenId else baseline.vault
-                        if source != target and expected in (source,target):
+                        verified_mint = (compound and token in reports_by_tx[receipt.transactionHash].get('createdTokenIds',[])
+                                         and source==ZERO and target==baseline.vault)
+                        if source != target and expected in (source,target) and not verified_mint:
                             issues.add('ownership_transition_requires_attribution')
                             if token in owned_before & owned_after:
                                 next_state['membershipAmbiguous'] = True
@@ -403,7 +463,9 @@ def reduce_history(baseline, state, financial_page, reports):
                         changes.append({'kind':'external_liquidity_change','tokenId':token,
                             'liquidityDeltaRaw':str(delta),'timestamp':point.block.timestamp,'blockNumber':point.block.blockNumber,
                             'transactionHash':event.transactionHash,'amountsRaw':None})
-                    elif token != reports_by_tx[event.transactionHash]['destinationTokenId']:
+                    elif token != reports_by_tx[event.transactionHash]['destinationTokenId'] and not (
+                            reports_by_tx[event.transactionHash].get('version')==4 and delta==0 and token in
+                            {r['tokenId'] for r in reports_by_tx[event.transactionHash]['realizations']}):
                         raise ValueError('history_compound_modify_token_mismatch')
         if prior.nativeHeldRaw is None or point.nativeHeldRaw is None:
             issues.add('native_capital_observation_missing')
@@ -424,17 +486,17 @@ def reduce_history(baseline, state, financial_page, reports):
         if not block_reports and not any(c['kind']=='fee_reserves_withdrawn' for c in changes) and prior.sources != point.sources:
             issues.add('fee_source_change_unreconciled')
         candidates = []
-        for token in sorted(owned_before & owned_after, key=int):
-            a,b = before[token],after[token]
-            if (a.status!='complete' or b.status!='complete' or a.identity!=b.identity
+        for token in sorted((owned_before & owned_after)|created, key=int):
+            a,b = before.get(token),after[token]
+            if a is not None and (a.status!='complete' or b.status!='complete' or a.identity!=b.identity
                     or a.registrationBaselineId!=b.registrationBaselineId
                     or int(b.liquidityRaw)!=int(a.liquidityRaw)+added_liquidity[token]):
                 issues.add('position_continuity_unproven')
                 continue
-            if not added_liquidity[token] and (a.lastGrowthX128!=b.lastGrowthX128 or a.checkpoint!=b.checkpoint):
+            if a is not None and not added_liquidity[token] and token not in settled_tokens and (a.lastGrowthX128!=b.lastGrowthX128 or a.checkpoint!=b.checkpoint):
                 issues.add('fee_settlement_unreconciled')
             for i,currency in enumerate(point.currencies):
-                amount = int(b.unsettledFeesRaw[i])+settlements[token][i]-int(a.unsettledFeesRaw[i])
+                amount = int(b.unsettledFeesRaw[i])+settlements[token][i]-(int(a.unsettledFeesRaw[i]) if a is not None else 0)
                 if amount < 0 or amount >= 2**256:
                     issues.add('collectible_accrual_not_conserved')
                     continue
