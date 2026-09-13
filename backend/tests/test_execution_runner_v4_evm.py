@@ -63,7 +63,17 @@ class DurableV4ExecutorTests(unittest.TestCase):
             time.sleep(.01)
         self.fail('synthetic publisher transaction was not mined within two seconds')
     def candidate(self,*,action=1,net=False,swap=False,destination=None,charged_lot=None):
-        time.sleep(1.05);self.rpc.request('evm_mine',[])
+        # Pin a time that satisfies both the contract interval and PostgreSQL's
+        # real-time admission. Advancing Anvil into the future is not valid
+        # evidence; neither does a fixed host sleep prove the chain interval.
+        head=self.rpc.request('eth_getBlockByNumber',['latest',False])
+        last=self.call(self.vault,'lastExecutionAt()',['uint64'])[0]
+        target=max(int(head['timestamp'],16)+1,last+1,int(time.time()))
+        wait_until=time.monotonic()+5
+        while time.time()<target:
+            if time.monotonic()>=wait_until:self.fail('local chain is ahead of the database clock')
+            time.sleep(min(.01,max(.001,target-time.time())))
+        self.rpc.request('evm_setNextBlockTimestamp',[target]);self.rpc.request('evm_mine',[])
         block=self.rpc.request('eth_getBlockByNumber',['latest',False]);seq=self.admission.sequence
         members=[];points={}
         for token in (self.token,*self.children):
@@ -132,7 +142,23 @@ class DurableV4ExecutorTests(unittest.TestCase):
         lease=self.store.acquire(self.owner,self.identifier,self.worker,lease_seconds=300)
         self.store.reserve(self.owner,self.identifier,self.worker,lease['fence'])
         return plan
-    def step(self):return self.runner.step(self.owner,self.identifier,self.worker)
+    def step(self):
+        original=self.rpc.request;failures=[]
+        def diagnosed(method,params):
+            try:return original(method,params)
+            except Exception as error:
+                if method in ('eth_call','eth_estimateGas'):
+                    # This harness owns a disposable loopback chain and public
+                    # synthetic accounts. Keep the actual revert/transport cause
+                    # in test output; production diagnostics stay sanitized.
+                    failures.append(f'{method}: {str(error)[:800]}')
+                raise
+        self.rpc.request=diagnosed
+        try:return self.runner.step(self.owner,self.identifier,self.worker)
+        except ValueError as error:
+            for detail in failures:error.add_note('Synthetic local EVM '+detail)
+            raise
+        finally:self.rpc.request=original
     def finish(self):
         self.rpc.request('anvil_mine',['0x40','0x0'])
         status=self.step()
