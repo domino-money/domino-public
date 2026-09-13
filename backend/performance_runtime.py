@@ -18,6 +18,7 @@ from performance_enrollment import EnrollmentStore
 from performance_history_store import FinancialHistoryStore
 from performance_store import PerformanceStore, COLLECTOR_ROLE, _Connection
 from performance_producer import ProducerRpc, PerformanceProducer
+from performance_rollup_store import ProjectionStore, ProjectionWorker
 from performance_v2_service import StoredValuation
 from pydantic import Field
 from typing import Annotated, Literal
@@ -88,7 +89,8 @@ class Runtime:
         self.settings = database_settings(self.profile.databaseConfig)
         if self.settings is None: raise ValueError('performance_database_required')
         self.enrollments = EnrollmentStore(self.settings,role=COLLECTOR_ROLE)
-        self.history = FinancialHistoryStore(self.settings)
+        self.history = ProjectionStore(self.settings)
+        self.projection_writer = ProjectionStore(self.settings,role=COLLECTOR_ROLE)
         self.valuation = StoredValuation(self.price_connection)
 
     def admission(self, owner, vault):
@@ -121,4 +123,5 @@ class Runtime:
         return PerformanceProducer(rpc,self.enrollments,PerformanceStore(self.settings,role=COLLECTOR_ROLE),
             FinancialHistoryStore(self.settings,role=COLLECTOR_ROLE),
             sorted({subject.owner for subject in self.profile.subjects}),page_blocks=self.profile.pageBlocks,
-            max_requests=self.profile.maxRequestsPerStep)
+            max_requests=self.profile.maxRequestsPerStep,
+            projector=ProjectionWorker(self.projection_writer,self.valuation))

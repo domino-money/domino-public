@@ -8,7 +8,9 @@ publishes Cloudflare configuration nor signs or submits financial transactions.
 Apply migrations 016, 017 and 018 as the existing trusted DDL owner. The existing
 isolated `domino_performance_collector` role owns no schema and has forced owner
 RLS; it writes the enrollment queue and journals. `domino_performance_reader`
-reads journals. Price reads use the existing read-only catalogue role, and session
+reads journals and minute projections. Migration018 also creates owner-scoped
+`projection_heads` and `projection_buckets`; the collector alone can materialize
+or refresh them. Price reads use the existing read-only catalogue role, and session
 authentication uses the existing SIWE/session store. No role may be a superuser,
 bypass RLS, inherit roles, or gain another private tenant role membership.
 
@@ -79,9 +81,10 @@ The owner can list at most eight enrolled vaults and batch at most eight cards.
 Only enrollment/list/card activity extends a90s visible lease. Hidden-tab polling
 must stop; idle or unenrolled wallets make no collector RPC calls. Each claimed
 job has a45s fenced lease, then at most one raw page and one financial step, each
-with a15s deadline. Raw pages default to4 blocks, configurable from1 to16.
+with a15s deadline, plus one closed-minute projection with a5s deadline and no
+additional RPC. Raw pages default to4 blocks, configurable from1 to16.
 Progress schedules the next bounded step1s later; only a fully caught-up raw and
-financial cursor schedules30s later. Failure schedules60s later. A persisted raw
+financial cursor and minute projection schedules30s later. Failure schedules60s later. A persisted raw
 page awaiting financial processing is drained before collecting another raw page.
 Actual next observation can be later when finality, page backlog or budget delays
 work. Cards preserve the actual dated snapshot and return30–60s refresh guidance.
@@ -99,6 +102,27 @@ catch-up behavior with the fixture; it does not qualify remote provider latency
 or capacity. Configure page size and budget for the admitted account and observed
 workload. Exhaustion preserves committed pages for a later bounded tick.
 
+The numeric listener always uses durable minute projections. Each closed minute
+keeps exact fractional event-time sums and capital integrals, without rounding or
+sampling balances. The rolling24h read loads at most1442 summaries and recomputes
+only its two edge minutes from original evidence (each bounded to256 pages plus
+one spanning page,8MiB and20000 amount records). A minute is sealed only after the
+financial cursor passes its end, preserving multiple blocks with equal timestamps.
+An absent, oversized or not-yet-projected minute never becomes zero or complete APR.
+The projection queue resumes after restart, fences raw/financial/projection
+revisions and separates replay generations. Raw and financial journals remain
+auditable; replacing a derived minute does not rewrite its source evidence.
+
+Saved dollar values carry a fingerprint of their causal price observations and
+qualification. The listener revalidates it on every card read. Changed or revoked
+qualification withholds those values/APR and queues bounded recomputation from
+raw evidence. Gaps are explicit until that work catches up. An offline regression
+streams172800 synthetic blocks (120/minute for24h), with changing balances and
+86400 earning events, into1441 minute/edge records. It verifies exact day totals
+and capital using only the two raw edges at delivery, beyond the former4096-page
+window limit. This proves arithmetic and storage-read capacity; it is not a claim
+that any live deployment has already accumulated24h or qualified USD prices.
+
 Collection resumes durable raw/financial cursors after restart. Reorg generations
 invalidate old calculations; the original raw/financial audit remains. A changed
 opening returns `baseline_reorged` and requires a new trusted management epoch,
@@ -111,3 +135,7 @@ The V4 adapter preserves each original NFT/source across collection, conversion
 and successor creation/funding. Converted output remains charged inventory;
 only actual liquidity settlement contributes reinvested amounts. A new child is
 internal capital and never an external deposit or a new earning by itself.
+Gross external-flow coverage is reported separately: direct complete reconciled
+capital observations qualify its time integral without estimating balances from
+unknown flows. Missing capital observations still withhold APR; an unknown gross
+deposit/withdrawal is never shown as zero.

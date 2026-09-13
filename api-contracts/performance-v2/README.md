@@ -16,7 +16,10 @@ The collector runs only for enrolled subjects whose visible lease was refreshed
 in the last 90 seconds. Refresh a visible batch every 30–60 seconds; pause hidden
 tabs and clear all owner data when the session changes. The durable queue and raw
 and financial cursors survive restarts. RPC work has a global rolling budget,
-one process, two bounded steps per tick and 60-second restart cooldown.
+one process, two bounded collection steps per tick and 60-second restart cooldown.
+One additional bounded step materializes a closed minute without provider calls.
+Delivery reads at most1442 exact minute summaries and two raw edge minutes;
+changed price qualifications invalidate saved values and schedule recomputation.
 
 USD metrics come only from persisted reconciled financial evidence and admitted
 event-time price series. Missing prices, incomplete income/capital, reorgs and

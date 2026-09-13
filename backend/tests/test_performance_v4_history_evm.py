@@ -43,6 +43,7 @@ class V4PerformanceEvmTests(unittest.TestCase):
             self.swaps()
             first,created=self.execute(self.plan(3,10**10))
             child=created['destinationTokenId']
+            self.swaps()  # The second intent's collection caps admit only new fees.
             second,funded=self.execute(self.plan(2,10**10).model_copy(update={'destinationTokenId':child}))
             cursor=baseline.baseline
             for _ in range(96):

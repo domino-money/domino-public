@@ -34,7 +34,7 @@ class ProducerRpc:
 
 
 class PerformanceProducer:
-    def __init__(self, rpc, enrollments, raw_store, financial_store, owners, *, page_blocks=4, max_requests=1024):
+    def __init__(self, rpc, enrollments, raw_store, financial_store, owners, *, page_blocks=4, max_requests=1024, projector=None):
         if (not isinstance(rpc,ProducerRpc) or not 1 <= len(owners) <= 32 or len(set(owners)) != len(owners)
                 or type(max_requests) is not int or not 1 <= max_requests <= 2048):
             raise ValueError('invalid_performance_producer_config')
@@ -43,6 +43,7 @@ class PerformanceProducer:
         self.raw = PerformanceWorker(self.collector,raw_store)
         self.financial = FinancialHistoryWorker(rpc,financial_store,max_requests=max_requests)
         self.rpc,self.index = rpc,0
+        self.projector=projector
 
     def tick(self):
         """One owner queue check, at most one raw and one financial step. No catch-up loop."""
@@ -79,6 +80,9 @@ class PerformanceProducer:
                     step = self.financial.advance(owner,epoch)
                     outcome = ('failed' if step.outcome=='read_failed' else
                                'caught_up' if step.outcome==raw_outcome=='caught_up' else 'advanced')
+                if outcome!='failed' and self.projector is not None:
+                    with read_deadline(5): projected=self.projector.advance(owner,epoch)
+                    if projected=='advanced': outcome='advanced'
         except PerformanceStoreError as error:
             outcome = 'blocked' if error.code=='performance_epoch_blocked' else 'failed'
         except (CollectionError,DataError,ValueError):

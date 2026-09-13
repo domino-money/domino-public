@@ -84,7 +84,7 @@
     },
     {
       "path": "README.md",
-      "sha256": "e2b371e6a72b72f2add5cd77af6fa607e8796358f5fa1fe5ce4b85b4fa151dae"
+      "sha256": "000585848f83c8559b7243148519fbc762d288e5b624019fc5eb16fddeee7f96"
     },
     {
       "path": "consumer.typecheck.mts",
@@ -99,15 +99,15 @@
     },
     {
       "path": "backend/performance_v2_service.py",
-      "sha256": "3e6c4e9c134a442a3a9c0df6222e3028a83b2ddb77db5de941879b5725b78124"
+      "sha256": "a6e7faab64149b3be6d400e8d4c66cace66a3636b86e94607f5c84f414d4cf01"
     },
     {
       "path": "backend/performance_v2_api.py",
-      "sha256": "1df88cc0c43c30d3d6cd434a8ff5bc805b823ee1429954765dc3d90e71030250"
+      "sha256": "04da5039c9fb2d673064d50d736e095ebdcbe9dfeb028dc8c9242abb7a8a0c04"
     },
     {
       "path": "backend/performance_runtime.py",
-      "sha256": "476fc068ed8c0823e6359acc23a065905a258ae617c9fc449350397965e4b75e"
+      "sha256": "bb73fa3cf7e8b7a7c8bfb180b82580215efab5751ff5db37e23c080dcd305356"
     },
     {
       "path": "bridge/src/performance-worker.mjs",
@@ -119,11 +119,19 @@
     },
     {
       "path": "backend/performance_producer.py",
-      "sha256": "dca1528883b98139daada2114c49e4c36d6cb6b1c8253633bd7ebdca5e227054"
+      "sha256": "8056df1f12ad744dd5224015896bdcf8daacf9f23ed2eb5e28db562208ff3ffd"
+    },
+    {
+      "path": "backend/performance_rollup.py",
+      "sha256": "208636a411f6503faf9a71b33e6767beb2c15f87f76c2f8c9da58321b4ee1276"
+    },
+    {
+      "path": "backend/performance_rollup_store.py",
+      "sha256": "b148e846fb88c64f0a6674bdca4b722a6e6fd2a78336fe182de78e0adab887d5"
     },
     {
       "path": "backend/migrations/018_performance_enrollment.sql",
-      "sha256": "9bb0238200062d505f55479224ed920bc097b5797d7d7fa30fa83154dd1caf8d"
+      "sha256": "87f6426d4419722fe9c5f20a4dc4fdee6cc67caae957f259743846c4da5a1313"
     },
     {
       "path": "backend/performance_collection.py",
@@ -159,7 +167,7 @@
     },
     {
       "path": "backend/execution_v4.py",
-      "sha256": "af9bf364aae523a53f79eb25bc726add92ec41c468ff1770f24d1687b14b244c"
+      "sha256": "d2029edb43c1b338ff71d2cedb722f1f5bb3549d778648e403fa35a89ae9a3f2"
     },
     {
       "path": "backend/general_compound_receipts.py",
@@ -179,7 +187,7 @@
     },
     {
       "path": "scripts/export-performance-v2-contract.py",
-      "sha256": "5dcc63b7a058ad2f2c71b99a29971687ea74bce8bbdd3b519219c19bd84254db"
+      "sha256": "af5bd4eadfeaec5bdf1d4884f8af7370d2e9e46b050121bdd9e09c485440cd16"
     }
   ],
   "status": "implemented_default_off"

@@ -114,5 +114,38 @@ class PerformanceV2ApiTests(unittest.TestCase):
             self.assertIsNone(card['metrics']['grossFeeAprPercent'])
             self.assertIsNone(card['metrics']['netFeeAprPercent'])
 
+    def test_authenticated_compact_cards_and_price_revocation_schedule_repair(self):
+        from unittest.mock import patch
+        import price_history as ph
+        from performance_rollup import project
+        from test_performance_history_projection import fixture,FinancialHistoryProjectionTests
+        from test_performance_rollup import RollupTests
+        bundle=fixture(); owner=bundle['epoch']['owner']; epoch=bundle['epoch']['epochId']
+        with patch.dict(ph.PRODUCTION_QUALIFICATIONS,{},clear=True):
+            valuation=FinancialHistoryProjectionTests().value(bundle)
+            compact=RollupTests().compact(bundle,valuation)
+            refresh=Mock()
+            history=SimpleNamespace(read_projection_window=Mock(return_value=compact))
+            self.auth_store.owner=owner
+            self.enrollments.visible.return_value={'enrollments':[{'epochId':epoch}],'nextAfter':None}
+            self.gateway.service=PerformanceV2Service(self.auth,self.enrollments,history,lambda _:valuation,None,
+                clock=lambda:bundle['epoch']['cursor']['timestamp'],projection=project,projection_refresh=refresh)
+            response=self.post(body={'epochIds':[epoch]})
+            self.assertEqual(response.status_code,200,response.text)
+            card=response.json()['cards'][0]
+            self.assertEqual(card['performanceStatus'],'available')
+            self.assertEqual(card['metrics']['timeWeightedCapitalUsd'],'1000.000000000000000000')
+            self.assertTrue(card['complete24h'])
+            refresh.assert_not_called()
+            ph.PRODUCTION_QUALIFICATIONS.clear()
+            response=self.post(body={'epochIds':[epoch]})
+            self.assertEqual(response.status_code,200,response.text)
+            card=response.json()['cards'][0]
+            self.assertEqual(card['performanceStatus'],'partial')
+            self.assertIsNone(card['metrics']['netFeeAprPercent'])
+            self.assertFalse(card['complete24h'])
+            self.assertEqual(refresh.call_args.args[:3],(owner,epoch,1))
+            self.assertEqual(len(refresh.call_args.args[3]),1439)
+
 
 if __name__=='__main__': unittest.main()

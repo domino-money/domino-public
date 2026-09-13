@@ -14,6 +14,7 @@ def unavailable_valuation(bundle, reason='event_time_valuation_unavailable'):
     base, head = bundle['epoch']['baseline'], bundle['financial']
     end = head['cursor']['timestamp'] if head else base['baseline']['timestamp']
     start = max(base['baseline']['timestamp'],end-86400)
+    if 'valuationBounds' in bundle: start,end=bundle['valuationBounds']['start'],bundle['valuationBounds']['end']
     return ManagedValuation(base['opening']['poolId'],start,end,
         {currency: _Asset(None,(),(),reason) for currency in set(base['opening']['currencies']+[ZERO])})
 
@@ -27,6 +28,7 @@ class StoredValuation:
         base, head = bundle['epoch']['baseline'], bundle['financial']
         end = head['cursor']['timestamp'] if head else base['baseline']['timestamp']
         start = max(base['baseline']['timestamp'],end-86400)
+        if 'valuationBounds' in bundle: start,end=bundle['valuationBounds']['start'],bundle['valuationBounds']['end']
         try:
             with self.connection() as conn:
                 return load_managed_valuation(conn,pool_id=base['opening']['poolId'],
@@ -43,18 +45,22 @@ def _missing(epoch):
 
 
 class PerformanceV2Service:
-    def __init__(self, auth, enrollments, history, valuation, admission, *, clock=time.time):
+    def __init__(self, auth, enrollments, history, valuation, admission, *, clock=time.time, projection=None, projection_refresh=None):
         self.auth,self.enrollments,self.history,self.valuation,self.admission,self.clock = auth,enrollments,history,valuation,admission,clock
+        self.projection,self.projection_refresh=projection,projection_refresh
 
     def _card(self, owner, epoch, now):
         try:
-            bundle = self.history.read_financial_window(owner,epoch)
+            bundle = (self.history.read_projection_window(owner,epoch) if self.projection is not None
+                      else self.history.read_financial_window(owner,epoch))
         except PerformanceStoreError as error:
             if error.code == 'performance_not_found': return _missing(epoch)
             raise
         row = bundle['epoch']
         card = PerformanceService._project(row,owner,[epoch],now)
-        result = build_financial_projection(bundle,self.valuation(bundle),now)
+        result = (self.projection or build_financial_projection)(bundle,self.valuation(bundle),now)
+        if result.get('dirtyBuckets') and self.projection_refresh is not None:
+            self.projection_refresh(owner,epoch,result['replayGeneration'],result['dirtyBuckets'])
         if (result['owner'],result['epochId'],result['rawRevision'],result['replayGeneration']) != (owner,epoch,card['revision'],card['replayGeneration']):
             raise m.Error('upstream_invalid_response')
         performance = result['performance']

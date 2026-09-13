@@ -86,5 +86,20 @@ class ProducerTests(unittest.TestCase):
         p.raw.advance.assert_called_once_with('owner','saved')
         p.financial.advance.assert_not_called()
 
+    def test_pending_minute_keeps_short_cadence_without_extra_raw_or_financial_steps(self):
+        p,q,job=self.producer();job['epoch_id']='saved'
+        p.raw.advance.return_value=SimpleNamespace(outcome='caught_up')
+        p.financial.advance.return_value=SimpleNamespace(outcome='caught_up')
+        p.projector=SimpleNamespace(advance=Mock(return_value='advanced'))
+        self.assertEqual(p.tick(),'advanced')
+        p.projector.advance.assert_called_once_with('owner','saved')
+        p.raw.advance.assert_called_once();p.financial.advance.assert_called_once()
+        p.projector.advance.return_value='caught_up'
+        self.assertEqual(p.tick(),'caught_up')
+        p.financial.advance.return_value=SimpleNamespace(outcome='read_failed')
+        p.projector.advance.reset_mock()
+        self.assertEqual(p.tick(),'failed')
+        p.projector.advance.assert_not_called()
+
 
 if __name__=='__main__': unittest.main()

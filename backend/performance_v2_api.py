@@ -80,8 +80,10 @@ def main():
             if not re.fullmatch(r'[0-9a-f]{64}',secret): raise ValueError('session_secret_required')
             sessions = SessionStore(runtime.settings,abuse_secret=bytes.fromhex(secret))
             checker = PlainEoaChecker(configured_rpc_urls(runtime.config),allowed_hosts=runtime.config.get('rpcAllowedHosts',DEFAULT_RPC_HOSTS))
+            from performance_rollup import project
             service = PerformanceV2Service(OnboardingAuth(sessions,checker),runtime.enrollments,runtime.history,
-                runtime.valuation,runtime.admission)
+                runtime.valuation,runtime.admission,projection=project,
+                projection_refresh=runtime.projection_writer.request_projection_refresh)
             verifier = AccessVerifier(os.environ.get('DOMINO_PERFORMANCE_ACCESS_ISSUER'),
                 os.environ.get('DOMINO_PERFORMANCE_ACCESS_AUDIENCE'),os.environ.get('DOMINO_PERFORMANCE_ACCESS_SERVICE_ID'))
             gateway = PerformanceV2Gateway(service=service,verifier=verifier,origin=os.environ.get('DOMINO_SESSION_ORIGIN'),enabled=True)
