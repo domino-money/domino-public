@@ -67,7 +67,7 @@ class ExecutionJournal(_Store):
             if row['state']!='reserved':raise ExecutionError('execution_not_reserved')
             prior=conn.execute('SELECT * FROM journal WHERE intent_id=%s',(identifier,)).fetchone()
             if prior:return
-            if conn.execute("SELECT 1 FROM journal j JOIN intents i USING(intent_id) WHERE i.sequence_hash=%s AND j.state IN ('attention','reorged')",(row['sequence_hash'],)).fetchone():
+            if conn.execute("SELECT 1 FROM journal j JOIN intents i USING(intent_id) WHERE i.sequence_hash=%s AND (j.state IN ('attention','reorged') OR EXISTS(SELECT 1 FROM effects e WHERE e.intent_id=j.intent_id AND NOT e.canonical))",(row['sequence_hash'],)).fetchone():
                 raise ExecutionError('execution_sequence_attention')
             if conn.execute("SELECT 1 FROM lot_claims c JOIN origins o USING(owner,lot_id) WHERE c.intent_id=%s AND c.active AND o.state<>'available'",(identifier,)).fetchone():
                 raise ExecutionError('execution_origin_unavailable')
@@ -290,6 +290,17 @@ class ExecutionRunner:
         data=self.journal.read(owner,identifier)
         j=data['journal']; rpc=self.signer.rpc
         if g._quantity(rpc.request('eth_chainId',[]))!=4663:raise ExecutionError('execution_wrong_chain')
+        # Invalidate the saved inclusion before examining current receipts. A
+        # reorg can re-include the same hash immediately, including as a revert
+        # or before finality; none may keep the former financial receipt live.
+        effect=data['effect']
+        if effect and effect['canonical']:
+            saved=rpc.request('eth_getBlockByNumber',[hex(int(effect['block_number'])),False])
+            final=g._header(rpc.request('eth_getBlockByNumber',['finalized',False]))
+            if (saved is None or g._header(saved)['hash']!=effect['block_hash']
+                    or final['number']<int(effect['block_number'])):
+                self.journal.invalidate_effect(owner,identifier,worker,fence)
+                data=self.journal.read(owner,identifier);j=data['journal']
         # Every recorded attempt is checked: an earlier replacement can win.
         for attempt in data['attempts']:
             receipt=rpc.request('eth_getTransactionReceipt',[attempt['transaction_hash']])

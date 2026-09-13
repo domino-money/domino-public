@@ -202,6 +202,52 @@ class DurableExecutorEvmTests(unittest.TestCase):
         self.assertEqual(status['receipt']['transactionHash'],attempts[-1]['transaction_hash'])
         with self.pg.admin() as conn:self.assertEqual(conn.execute('SELECT count(*) FROM domino_execution.effects').fetchone()[0],1)
 
+    def reinclusion(self,*,revert=False,finalize=False):
+        snapshot=self.rpc.request('evm_snapshot',[])
+        self.assertEqual(self.step()['state'],'submitted');self.finality()
+        old=self.step();self.assertEqual(old['state'],'reconciled')
+        attempt=self.runner.journal.read(self.owner,self.identifier)['attempts'][0]
+        with self.pg.admin() as conn:
+            totals=(conn.execute('SELECT count(*),sum(amount_raw) FROM domino_execution.origins').fetchone(),
+                    conn.execute('SELECT count(*),sum(amount_raw) FROM domino_execution.spends').fetchone())
+        self.assertTrue(self.rpc.request('evm_revert',[snapshot]))
+        # No runner step occurs between loss of the old receipt and the new
+        # inclusion. A disappearance-only regression does not exercise this.
+        if revert:self.send(self.vault,calldata('revokeOperator()'))
+        else:self.rpc.request('evm_mine',[])
+        self.rpc.request('eth_sendRawTransaction',['0x'+bytes(attempt['signed_bytes']).hex()])
+        if finalize:self.finality()
+        return old,totals
+
+    def test_immediate_reinclusion_finalized_updates_one_effect_without_duplicate_spends(self):
+        old,totals=self.reinclusion(finalize=True)
+        new=self.step();self.assertEqual(new['state'],'reconciled')
+        self.assertEqual(new['receipt']['transactionHash'],old['receipt']['transactionHash'])
+        self.assertNotEqual(new['receipt']['block']['hash'],old['receipt']['block']['hash'])
+        with self.pg.admin() as conn:
+            self.assertEqual(conn.execute('SELECT count(*) FROM domino_execution.effects WHERE canonical').fetchone()[0],1)
+            self.assertEqual(totals,(conn.execute('SELECT count(*),sum(amount_raw) FROM domino_execution.origins').fetchone(),
+                                    conn.execute('SELECT count(*),sum(amount_raw) FROM domino_execution.spends').fetchone()))
+        self.assertEqual(self.step()['receipt'],new['receipt'])
+
+    def test_immediate_unfinalized_reinclusion_hides_old_receipt_and_blocks_sequence(self):
+        self.reinclusion()
+        status=self.step();self.assertEqual(status['state'],'included');self.assertIsNone(status['receipt'])
+        other=self.plan.model_copy(update={'maxGasCostWei':str(10**17-1)});identifier=other.intent_id()
+        self.store.persist(self.owner,other,self.obs,actor=self.operator)
+        lease=self.store.acquire(self.owner,identifier,self.worker,lease_seconds=300)
+        self.store.reserve(self.owner,identifier,self.worker,lease['fence'])
+        with self.assertRaisesRegex(ExecutionError,'execution_sequence_attention'):
+            self.runner.step(self.owner,identifier,self.worker)
+        self.finality();self.assertEqual(self.step()['state'],'reconciled')
+
+    def test_immediate_reverted_reinclusion_never_returns_old_financial_receipt(self):
+        self.reinclusion(revert=True,finalize=True)
+        status=self.step();self.assertEqual(status['state'],'reverted');self.assertIsNone(status['receipt'])
+        with self.pg.admin() as conn:
+            self.assertEqual(conn.execute('SELECT count(*) FROM domino_execution.effects WHERE canonical').fetchone()[0],0)
+            self.assertGreater(conn.execute('SELECT count(*) FROM domino_execution.spends').fetchone()[0],0)
+
     def test_signed_crash_before_send_reloads_bytes_without_resigning(self):
         self.prepare();self.runner.journal.persist_signed(self.owner,self.identifier,self.worker,self.lease['fence'],self.signer)
         before=self.runner.journal.read(self.owner,self.identifier)['attempts'][0]
