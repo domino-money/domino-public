@@ -65,8 +65,6 @@ contract DominoVaultV4 {
     bool private _initialized;
     uint256 private _entered;
     bool private _subscriptionTransition;
-    bool private _expectingChild;
-    uint256 private _expectedChild;
     bytes32 private _sequenceIdentity;
     T.PoolKey private _key;
     IDominoVaultDraft.Policy private _policy;
@@ -239,16 +237,6 @@ contract DominoVaultV4 {
         return who != address(0) && who == operator;
     }
 
-    /// @notice Authority preview; it does not replace full compound admission.
-    function validateAuthority(uint64 policyVersion, uint64 nonce, uint64 generation) external view {
-        if (msg.sender != owner && !isOperator(msg.sender)) revert Unauthorized();
-        if (_terminal()) revert NonceExhausted();
-        if (policyVersion != _policy.version || nonce != stateNonce || generation != authorityGeneration) {
-            revert StaleAuthority();
-        }
-        if (_policy.paused || !rootPermissionValid()) revert PermissionUnavailable();
-    }
-
     function rootPermissionValid() public view returns (bool) {
         if (!rootArmed || !_deploymentUnchanged()) return false;
         try readHelper.rootCustody(rootTokenId, owner, address(this)) returns (address subscriber) {
@@ -267,7 +255,9 @@ contract DominoVaultV4 {
         _compoundActive = true;
         _executionAction = plan.action;
         _executionParent = plan.authority.tokenId;
-        (bytes32 planHash, uint256 destination) = executionEngine.execute(plan);
+        (bool success, bytes memory returned) = address(executionEngine).call(msg.data);
+        if (!success) { assembly ("memory-safe") { revert(add(returned, 32), mload(returned)) } }
+        (bytes32 planHash, uint256 destination) = abi.decode(returned, (bytes32,uint256));
         if (_expectedModify || !rootPermissionValid()) revert InvalidExecution();
         consumedIntent[plan.authority.intentId] = true;
         _compoundActive = false;
@@ -328,9 +318,18 @@ contract DominoVaultV4 {
         if (value.originalBefore != previous.original || value.chargedBefore != previous.charged
             || uint256(value.originalAfter) + value.grossOriginalConsumed != uint256(previous.original) + value.realized
             || uint256(value.chargedAfter) + value.chargedConsumed != previous.charged
-            || value.serviceFee != uint256(value.grossOriginalConsumed) * _policy.serviceFeeBps / 10000
             || uint256(value.liquidityAdded) + value.serviceFee != uint256(value.grossOriginalConsumed) + value.chargedConsumed)
             revert InvalidAmount();
+        // A source may fund both a swap and direct liquidity in one action.
+        // Transient cumulative rounding charges floor(total original * rate)
+        // exactly once; stateNonce gives each action its own namespace.
+        bytes32 feeSlot = keccak256(abi.encode(sourceId, currency, stateNonce));
+        uint256 grossBefore;
+        assembly ("memory-safe") { grossBefore := tload(feeSlot) }
+        uint256 grossAfter = grossBefore + value.grossOriginalConsumed;
+        if (value.serviceFee != grossAfter * _policy.serviceFeeBps / 10000
+            - grossBefore * _policy.serviceFeeBps / 10000) revert InvalidAmount();
+        assembly ("memory-safe") { tstore(feeSlot, grossAfter) }
         _balances[sourceId][currency] = T.FeeBalance(value.originalAfter, value.chargedAfter);
         accountedCurrency[currency] = accountedCurrency[currency] + value.realized - value.grossOriginalConsumed - value.chargedConsumed;
         if (!netted && value.liquidityAdded != 0) {
@@ -420,46 +419,6 @@ contract DominoVaultV4 {
         _advance(false);
         _advanceGeneration();
         _armRoot();
-    }
-
-    function adoptChild(uint256 tokenId, uint256 parentTokenId, bool consentToUncollectedFees)
-        external
-        onlyOwner
-        nonReentrant
-    {
-        if (!consentToUncollectedFees) revert MissingConsent();
-        if (!rootPermissionValid()) revert PermissionUnavailable();
-        if (_positions[tokenId].known || !_positions[parentTokenId].active || successorOf[parentTokenId] != 0 || activePositions >= _policy.maxPositions) {
-            revert InvalidPosition();
-        }
-        (, int24 lo, int24 hi) = _readPosition(tokenId);
-        IPositionManagerE2 manager = IPositionManagerE2(positionManager);
-        if (manager.ownerOf(tokenId) != owner || manager.getApproved(tokenId) != address(this)) {
-            revert PermissionUnavailable();
-        }
-        // Do not silently evict another protocol's subscription.
-        if (manager.subscriber(tokenId) != address(0)) revert ForeignSubscription();
-        _advance(false);
-        _expectingChild = true;
-        _expectedChild = tokenId;
-        manager.safeTransferFrom(owner, address(this), tokenId);
-        if (_expectingChild || manager.ownerOf(tokenId) != address(this)) revert TransferFailed();
-        _expectedChild = 0;
-        _register(tokenId, false, parentTokenId, lo, hi);
-        successorOf[parentTokenId] = tokenId;
-        activePositions++;
-    }
-
-    function onERC721Received(address caller, address from, uint256 tokenId, bytes calldata data)
-        external
-        returns (bytes4)
-    {
-        if (
-            msg.sender != positionManager || !_expectingChild || _entered != 1 || caller != address(this)
-                || from != owner || tokenId != _expectedChild || data.length != 0
-        ) revert UnexpectedCallback();
-        _expectingChild = false;
-        return this.onERC721Received.selector;
     }
 
     function withdrawChildPosition(uint256 tokenId) external onlyOwner nonReentrant {

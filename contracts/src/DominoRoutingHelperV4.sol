@@ -1,7 +1,9 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.26;
 
-import {DominoVaultTypes as T} from "./DominoVaultTypes.sol";
+import {DominoVaultReadHelper} from "./DominoVaultReadHelper.sol";
+import {DominoExecutionTypes as E, IVaultExecutionV4} from "./DominoExecutionTypes.sol";
+import {DominoVaultTypes as T, IStateViewE2, IPositionManagerE2} from "./DominoVaultTypes.sol";
 import {IDominoVaultDraft} from "./IDominoVaultDraft.sol";
 import {FullMath} from "@uniswap/v4-core/src/libraries/FullMath.sol";
 import {TickMath} from "@uniswap/v4-core/src/libraries/TickMath.sol";
@@ -10,6 +12,9 @@ import {TickMath} from "@uniswap/v4-core/src/libraries/TickMath.sol";
 contract DominoRoutingHelperV4 {
     error InvalidGeometry();
     error InvalidPrice();
+    error InvalidExecution();
+    error InvalidRoute();
+    error InvalidAmount();
 
     function ratioBps(uint160 value, uint160 anchorPrice, bool inverse) public pure returns (uint256) {
         if (value == 0 || anchorPrice == 0) revert InvalidPrice();
@@ -53,6 +58,28 @@ contract DominoRoutingHelperV4 {
             || afterRatio < 10000 - impactBps || _ratioCeil(afterPrice, anchorPrice) > 10000 + impactBps) revert InvalidPrice();
     }
 
+    function compoundAmounts(T.CompoundAmounts memory value, uint128 added,
+        uint128 maxOriginal, uint128 maxCharged, uint16 feeBps, uint128 grossBefore)
+        external pure returns (T.CompoundAmounts memory) {
+        if (feeBps > 200) revert InvalidAmount();
+        uint256 available = uint256(value.originalBefore) + value.realized;
+        if (available + value.chargedBefore > type(uint128).max) revert InvalidAmount();
+        value.liquidityAdded = added;
+        uint128 charged = added < value.chargedBefore ? added : value.chargedBefore;
+        if (charged > maxCharged) charged = maxCharged;
+        value.chargedConsumed = charged;
+        uint256 net = added - charged;
+        uint256 priorFee = uint256(grossBefore) * feeBps / 10000;
+        uint256 totalNet = uint256(grossBefore) - priorFee + net;
+        uint256 gross = net == 0 ? 0 : (totalNet - 1) * 10000 / (10000 - feeBps) + 1 - grossBefore;
+        if (gross > available || gross > maxOriginal) revert InvalidAmount();
+        value.grossOriginalConsumed = uint128(gross);
+        value.serviceFee = uint128((uint256(grossBefore) + gross) * feeBps / 10000 - priorFee);
+        value.originalAfter = uint128(available - gross);
+        value.chargedAfter = value.chargedBefore - charged;
+        return value;
+    }
+
     function _ratioCeil(uint160 value, uint160 anchorPrice) private pure returns (uint256) {
         uint256 scaled = FullMath.mulDivRoundingUp(value, uint256(value) * 10000, anchorPrice);
         return scaled / anchorPrice + (scaled % anchorPrice == 0 ? 0 : 1);
@@ -73,4 +100,78 @@ contract DominoRoutingHelperV4 {
         }
         return FullMath.mulDiv(quote, 10000 - slippageBps, 10000);
     }
+    function validate(address vaultAddress, E.Plan calldata plan, DominoVaultReadHelper readHelper) external view {
+        IVaultExecutionV4 vault = IVaultExecutionV4(vaultAddress);
+        T.CompoundPlan calldata a = plan.authority;
+        IDominoVaultDraft.Policy memory rules = vault.policy();
+        T.ExecutionLimits memory limits = vault.executionLimits();
+        T.Position memory parent = vault.position(a.tokenId);
+        uint64 last = vault.lastExecutionAt();
+        if (plan.action > E.MINT || a.intentId == bytes32(0) || vault.consumedIntent(a.intentId)
+            || !parent.active || a.positionIdentity != parent.identity || a.checkpointId != vault.checkpoint(a.tokenId).commitment
+            || a.policyVersion != rules.version || a.limitsVersion != limits.version || a.stateNonce != vault.stateNonce()
+            || a.authorityGeneration != vault.authorityGeneration() || a.liquidityIncrease == 0
+            || a.liquidityIncrease > uint128(type(int128).max) || block.timestamp > type(uint64).max
+            || (last != 0 && block.timestamp - last < rules.minimumIntervalSeconds)
+            || a.maxOriginal0 != 0 || a.maxOriginal1 != 0 || a.maxCharged0 != 0 || a.maxCharged1 != 0
+            || plan.collect.length > 16 || plan.budgets.length == 0 || plan.budgets.length > 32)
+            revert InvalidExecution();
+        if (vault.positionManager() != readHelper.positionManager()) revert InvalidExecution();
+        readHelper.validateCompoundPrice(vault.poolId(), a, limits.maxObservationAgeSeconds);
+        T.PoolKey memory key = vault.poolKey();
+        if (key.hooks != address(0) || key.fee > 1_000_000) revert InvalidRoute();
+        (uint160 price,int24 tick,,) = IStateViewE2(readHelper.stateView()).getSlot0(vault.poolId());
+        bool inverse = vault.baseCurrency() == key.currency1;
+        if (plan.action <= E.NET) {
+            if (plan.destinationTokenId != a.tokenId || plan.tickLower != 0 || plan.tickUpper != 0) revert InvalidRoute();
+        } else if (plan.action == E.MINT) {
+            if (plan.destinationTokenId != 0 || vault.successorOf(a.tokenId) != 0 || vault.activePositions() >= rules.maxPositions
+                || !this.nearCeiling(parent,price,inverse,rules.triggerDistanceBps)) revert InvalidRoute();
+            this.validateSuccessor(parent,plan.tickLower,plan.tickUpper,key.tickSpacing,inverse,rules.maxOverlapBps,limits.upsideBps);
+        } else if (plan.tickLower != 0 || plan.tickUpper != 0 || !vault.position(plan.destinationTokenId).active) revert InvalidRoute();
+        for (uint256 i; i < plan.collect.length; ++i) {
+            E.PositionRef calldata ref = plan.collect[i]; T.Position memory member = vault.position(ref.tokenId);
+            if (!member.active || (i != 0 && plan.collect[i-1].tokenId >= ref.tokenId)
+                || member.identity != ref.positionIdentity || vault.checkpoint(ref.tokenId).commitment != ref.checkpointId)
+                revert InvalidExecution();
+            _custody(vault,ref.tokenId,member);
+        }
+        for (uint256 i; i < plan.budgets.length; ++i) {
+            E.FeeBudget calldata b = plan.budgets[i]; T.Source memory source = vault.source(b.sourceId);
+            if (!source.known || !vault.position(source.tokenId).active || (b.maxOriginal == 0 && b.maxCharged == 0)
+                || (b.currency != key.currency0 && b.currency != key.currency1)
+                || (b.maxOriginal != 0 && source.originalCurrency != b.currency)) revert InvalidAmount();
+            if (i != 0) {
+                E.FeeBudget calldata previous = plan.budgets[i-1];
+                if (previous.sourceId > b.sourceId || (previous.sourceId == b.sourceId && previous.currency >= b.currency))
+                    revert InvalidAmount();
+            }
+            _sourceRoute(vault,plan,source.tokenId,price,tick,inverse,rules);
+        }
+        if (plan.swap.amountIn == 0) {
+            E.SwapPlan memory empty;
+            if (keccak256(abi.encode(plan.swap)) != keccak256(abi.encode(empty))) revert InvalidRoute();
+        } else if (plan.action == E.NET || plan.swap.sourceId == bytes32(0) || plan.swap.minAmountOut == 0
+            || plan.swap.sqrtPriceLimitX96 == 0 || plan.swap.priceObservationId == bytes32(0)) revert InvalidRoute();
+    }
+
+    function _sourceRoute(IVaultExecutionV4 vault, E.Plan calldata p, uint256 tokenId, uint160 price,
+        int24 tick, bool inverse, IDominoVaultDraft.Policy memory rules) private view {
+        T.Position memory member = vault.position(tokenId); _custody(vault,tokenId,member);
+        if (p.action <= E.NET) { if (tokenId != p.destinationTokenId) revert InvalidRoute(); return; }
+        if (p.action == E.MINT) { if (tokenId != p.authority.tokenId) revert InvalidRoute(); return; }
+        if (tokenId == p.destinationTokenId) return;
+        T.Position memory target = vault.position(p.destinationTokenId);
+        bool sourceInside = tick >= member.tickLower && tick < member.tickUpper;
+        if (sourceInside) {
+            if (!this.nearCeiling(member,price,inverse,rules.triggerDistanceBps)
+                || vault.successorOf(tokenId) != p.destinationTokenId) revert InvalidRoute();
+        } else if (!(tick >= target.tickLower && tick < target.tickUpper)) revert InvalidRoute();
+    }
+
+    function _custody(IVaultExecutionV4 vault, uint256 id, T.Position memory member) private view {
+        if (IPositionManagerE2(vault.positionManager()).ownerOf(id) != (member.isRoot ? vault.owner() : address(vault)))
+            revert InvalidExecution();
+    }
+
 }

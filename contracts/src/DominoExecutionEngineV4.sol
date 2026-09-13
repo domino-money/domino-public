@@ -2,38 +2,10 @@
 pragma solidity 0.8.26;
 
 import {DominoVaultTypes as T, IPositionManagerE2, IStateViewE2, IERC20E2, IPoolManagerE4} from "./DominoVaultTypes.sol";
-import {DominoExecutionTypes as E, IVaultFactoryV4, IPriceGuardV4} from "./DominoExecutionTypes.sol";
+import {DominoExecutionTypes as E, IVaultFactoryV4, IPriceGuardV4, IVaultExecutionV4} from "./DominoExecutionTypes.sol";
 import {DominoVaultReadHelper} from "./DominoVaultReadHelper.sol";
 import {DominoRoutingHelperV4} from "./DominoRoutingHelperV4.sol";
 import {IDominoVaultDraft} from "./IDominoVaultDraft.sol";
-
-interface IVaultExecutionV4 {
-    function owner() external view returns (address);
-    function poolManager() external view returns (address);
-    function positionManager() external view returns (address);
-    function stateNonce() external view returns (uint64);
-    function authorityGeneration() external view returns (uint64);
-    function lastExecutionAt() external view returns (uint64);
-    function activePositions() external view returns (uint256);
-    function consumedIntent(bytes32) external view returns (bool);
-    function successorOf(uint256) external view returns (uint256);
-    function baseCurrency() external view returns (address);
-    function poolId() external view returns (bytes32);
-    function poolKey() external view returns (T.PoolKey memory);
-    function position(uint256) external view returns (T.Position memory);
-    function source(bytes32) external view returns (T.Source memory);
-    function checkpoint(uint256) external view returns (T.Checkpoint memory);
-    function sequenceIdentityHash() external view returns (bytes32);
-    function feeBalance(bytes32, address) external view returns (T.FeeBalance memory);
-    function policy() external view returns (IDominoVaultDraft.Policy memory);
-    function executionLimits() external view returns (T.ExecutionLimits memory);
-    function executionModify(uint256, uint128, uint128, uint128, bool) external;
-    function executionCredit(uint256, uint128, uint128) external;
-    function executionConvert(bytes32, address, uint128) external;
-    function executionCheckpoint(uint256, T.Checkpoint calldata) external;
-    function executionApply(bytes32, address, T.CompoundAmounts calldata, address, bool) external;
-    function executionMint(bytes32, uint256, int24, int24, uint128) external returns (uint256);
-}
 
 interface IPoolSwapV4 is IPoolManagerE4 {
     struct SwapParams { bool zeroForOne; int256 amountSpecified; uint160 sqrtPriceLimitX96; }
@@ -85,87 +57,16 @@ contract DominoExecutionEngineV4 {
             || address(readHelper).codehash != readHelperHash || address(routingHelper).codehash != routingHelperHash
             || address(priceGuard).codehash != priceGuardHash) revert InvalidExecution();
         IVaultExecutionV4 vault = IVaultExecutionV4(msg.sender);
-        _validate(vault, plan);
+        routingHelper.validate(address(vault), plan, readHelper);
         _activeVault = msg.sender;
-        bytes memory data = abi.encode(plan); _unlockHash = keccak256(data);
+        bytes memory data = abi.encode(plan);
+        if (keccak256(msg.data) != keccak256(bytes.concat(this.execute.selector,data))) revert InvalidExecution();
+        _unlockHash = keccak256(data);
         IPoolManagerE4(vault.poolManager()).unlock(data);
         if (_unlockHash != bytes32(0)) revert UnexpectedCallback();
         destination = _destination;
         planHash = keccak256(abi.encode(keccak256("DominoExecutionV4"),block.chainid,msg.sender,vault.sequenceIdentityHash(),plan));
         delete _activeVault; delete _destination;
-    }
-
-    function _validate(IVaultExecutionV4 vault, E.Plan calldata plan) private view {
-        T.CompoundPlan calldata a = plan.authority;
-        IDominoVaultDraft.Policy memory rules = vault.policy();
-        T.ExecutionLimits memory limits = vault.executionLimits();
-        T.Position memory parent = vault.position(a.tokenId);
-        uint64 last = vault.lastExecutionAt();
-        if (plan.action > E.MINT || a.intentId == bytes32(0) || vault.consumedIntent(a.intentId)
-            || !parent.active || a.positionIdentity != parent.identity || a.checkpointId != vault.checkpoint(a.tokenId).commitment
-            || a.policyVersion != rules.version || a.limitsVersion != limits.version || a.stateNonce != vault.stateNonce()
-            || a.authorityGeneration != vault.authorityGeneration() || a.liquidityIncrease == 0
-            || a.liquidityIncrease > uint128(type(int128).max) || block.timestamp > type(uint64).max
-            || (last != 0 && block.timestamp - last < rules.minimumIntervalSeconds)
-            || a.maxOriginal0 != 0 || a.maxOriginal1 != 0 || a.maxCharged0 != 0 || a.maxCharged1 != 0
-            || plan.collect.length > MAX_COLLECTIONS || plan.budgets.length == 0 || plan.budgets.length > MAX_BUDGETS)
-            revert InvalidExecution();
-        if (vault.positionManager() != readHelper.positionManager()) revert InvalidExecution();
-        readHelper.validateCompoundPrice(vault.poolId(), a, limits.maxObservationAgeSeconds);
-        T.PoolKey memory key = vault.poolKey();
-        if (key.hooks != address(0) || key.fee > 1_000_000) revert InvalidRoute();
-        (uint160 price,int24 tick,,) = IStateViewE2(readHelper.stateView()).getSlot0(vault.poolId());
-        bool inverse = vault.baseCurrency() == key.currency1;
-        if (plan.action <= E.NET) {
-            if (plan.destinationTokenId != a.tokenId || plan.tickLower != 0 || plan.tickUpper != 0) revert InvalidRoute();
-        } else if (plan.action == E.MINT) {
-            if (plan.destinationTokenId != 0 || vault.successorOf(a.tokenId) != 0 || vault.activePositions() >= rules.maxPositions
-                || !routingHelper.nearCeiling(parent,price,inverse,rules.triggerDistanceBps)) revert InvalidRoute();
-            routingHelper.validateSuccessor(parent,plan.tickLower,plan.tickUpper,key.tickSpacing,inverse,rules.maxOverlapBps,limits.upsideBps);
-        } else if (plan.tickLower != 0 || plan.tickUpper != 0 || !vault.position(plan.destinationTokenId).active) revert InvalidRoute();
-        for (uint256 i; i < plan.collect.length; ++i) {
-            E.PositionRef calldata ref = plan.collect[i]; T.Position memory member = vault.position(ref.tokenId);
-            if (!member.active || (i != 0 && plan.collect[i-1].tokenId >= ref.tokenId)
-                || member.identity != ref.positionIdentity || vault.checkpoint(ref.tokenId).commitment != ref.checkpointId)
-                revert InvalidExecution();
-            _custody(vault,ref.tokenId,member);
-        }
-        for (uint256 i; i < plan.budgets.length; ++i) {
-            E.FeeBudget calldata b = plan.budgets[i]; T.Source memory source = vault.source(b.sourceId);
-            if (!source.known || !vault.position(source.tokenId).active || (b.maxOriginal == 0 && b.maxCharged == 0)
-                || (b.currency != key.currency0 && b.currency != key.currency1)
-                || (b.maxOriginal != 0 && source.originalCurrency != b.currency)) revert InvalidAmount();
-            if (i != 0) {
-                E.FeeBudget calldata previous = plan.budgets[i-1];
-                if (previous.sourceId > b.sourceId || (previous.sourceId == b.sourceId && previous.currency >= b.currency))
-                    revert InvalidAmount();
-            }
-            _sourceRoute(vault,plan,source.tokenId,price,tick,inverse,rules);
-        }
-        if (plan.swap.amountIn == 0) {
-            E.SwapPlan memory empty;
-            if (keccak256(abi.encode(plan.swap)) != keccak256(abi.encode(empty))) revert InvalidRoute();
-        } else if (plan.action == E.NET || plan.swap.sourceId == bytes32(0) || plan.swap.minAmountOut == 0
-            || plan.swap.sqrtPriceLimitX96 == 0 || plan.swap.priceObservationId == bytes32(0)) revert InvalidRoute();
-    }
-
-    function _sourceRoute(IVaultExecutionV4 vault, E.Plan calldata p, uint256 tokenId, uint160 price,
-        int24 tick, bool inverse, IDominoVaultDraft.Policy memory rules) private view {
-        T.Position memory member = vault.position(tokenId); _custody(vault,tokenId,member);
-        if (p.action <= E.NET) { if (tokenId != p.destinationTokenId) revert InvalidRoute(); return; }
-        if (p.action == E.MINT) { if (tokenId != p.authority.tokenId) revert InvalidRoute(); return; }
-        if (tokenId == p.destinationTokenId) return;
-        T.Position memory target = vault.position(p.destinationTokenId);
-        bool sourceInside = tick >= member.tickLower && tick < member.tickUpper;
-        if (sourceInside) {
-            if (!routingHelper.nearCeiling(member,price,inverse,rules.triggerDistanceBps)
-                || vault.successorOf(tokenId) != p.destinationTokenId) revert InvalidRoute();
-        } else if (!(tick >= target.tickLower && tick < target.tickUpper)) revert InvalidRoute();
-    }
-
-    function _custody(IVaultExecutionV4 vault, uint256 id, T.Position memory member) private view {
-        if (IPositionManagerE2(readHelper.positionManager()).ownerOf(id) != (member.isRoot ? vault.owner() : address(vault)))
-            revert InvalidExecution();
     }
 
     function unlockCallback(bytes calldata data) external returns (bytes memory) {
@@ -180,8 +81,9 @@ contract DominoExecutionEngineV4 {
         if (plan.action == E.NET) _net(vault,plan,key);
         else {
             for (uint256 i; i < plan.collect.length; ++i) _collect(vault,plan.authority.intentId,plan.collect[i].tokenId,key);
-            if (plan.swap.amountIn != 0) _swap(vault,plan,key);
-            _fund(vault,plan,key);
+            uint128 swapGross;
+            if (plan.swap.amountIn != 0) swapGross = _swap(vault,plan,key);
+            _fund(vault,plan,key,swapGross);
         }
         readHelper.validateCompoundPrice(vault.poolId(),plan.authority,vault.executionLimits().maxObservationAgeSeconds);
         if (_delta(vault.positionManager(),key.currency0) != 0 || _delta(vault.positionManager(),key.currency1) != 0
@@ -220,7 +122,7 @@ contract DominoExecutionEngineV4 {
         emit FeesRealized(address(vault),intentId,id,beforePoint.commitment,point.commitment,a,b);
     }
 
-    function _fund(IVaultExecutionV4 vault, E.Plan memory plan, T.PoolKey memory key) private {
+    function _fund(IVaultExecutionV4 vault, E.Plan memory plan, T.PoolKey memory key, uint128 swapGross) private {
         uint256 id = plan.destinationTokenId;
         T.Checkpoint memory beforePoint;
         if (plan.action == E.MINT) id = vault.executionMint(plan.authority.intentId,plan.authority.tokenId,
@@ -238,30 +140,33 @@ contract DominoExecutionEngineV4 {
         uint128 added0 = _debt(vault.positionManager(),key.currency0);
         uint128 added1 = _debt(vault.positionManager(),key.currency1);
         if ((added0 == 0 && added1 == 0) || added0 < plan.authority.minAdded0 || added1 < plan.authority.minAdded1) revert InvalidAmount();
-        _allocate(vault,plan,key.currency0,added0); _allocate(vault,plan,key.currency1,added1);
+        _allocate(vault,plan,key.currency0,added0,swapGross); _allocate(vault,plan,key.currency1,added1,swapGross);
         if (plan.action != E.MINT) {
             T.Checkpoint memory afterPoint = _point(vault,id); _after(beforePoint,afterPoint,plan.authority.liquidityIncrease);
             vault.executionCheckpoint(id,afterPoint);
         } else if (_point(vault,id).liquidity != plan.authority.liquidityIncrease) revert InvalidExecution();
     }
 
-    function _amounts(IVaultExecutionV4 vault, E.FeeBudget memory budget, uint128 wanted)
+    function _amounts(IVaultExecutionV4 vault, E.FeeBudget memory budget, uint128 wanted, uint128 priorGross)
         private view returns (T.CompoundAmounts memory value) {
         T.FeeBalance memory balance = vault.feeBalance(budget.sourceId,budget.currency);
         value.originalBefore = balance.original; value.chargedBefore = balance.charged;
-        return readHelper.compoundAmounts(value,wanted,budget.maxOriginal,budget.maxCharged,vault.policy().serviceFeeBps);
+        return routingHelper.compoundAmounts(value,wanted,budget.maxOriginal,budget.maxCharged,vault.policy().serviceFeeBps,priorGross);
     }
 
-    function _allocate(IVaultExecutionV4 vault, E.Plan memory plan, address currency, uint128 remaining) private {
+    function _allocate(IVaultExecutionV4 vault, E.Plan memory plan, address currency, uint128 remaining, uint128 swapGross) private {
         for (uint256 i; i < plan.budgets.length && remaining != 0; ++i) {
             E.FeeBudget memory b = plan.budgets[i]; if (b.currency != currency) continue;
             T.FeeBalance memory available = vault.feeBalance(b.sourceId,currency);
             uint128 gross = available.original < b.maxOriginal ? available.original : b.maxOriginal;
             uint128 charged = available.charged < b.maxCharged ? available.charged : b.maxCharged;
-            uint256 net = uint256(gross) - uint256(gross)*vault.policy().serviceFeeBps/10000 + charged;
+            uint128 priorGross = b.sourceId == plan.swap.sourceId && currency == plan.swap.currencyIn ? swapGross : 0;
+            uint256 fee = (uint256(priorGross)+gross)*vault.policy().serviceFeeBps/10000
+                - uint256(priorGross)*vault.policy().serviceFeeBps/10000;
+            uint256 net = uint256(gross) - fee + charged;
             uint128 wanted = net < remaining ? uint128(net) : remaining;
             if (wanted == 0) continue;
-            T.CompoundAmounts memory value = _amounts(vault,b,wanted);
+            T.CompoundAmounts memory value = _amounts(vault,b,wanted,priorGross);
             vault.executionApply(b.sourceId,currency,value,vault.positionManager(),false);
             emit BudgetApplied(address(vault),plan.authority.intentId,b.sourceId,currency,_destination,value);
             remaining -= wanted;
@@ -300,7 +205,7 @@ contract DominoExecutionEngineV4 {
         emit FeesRealized(address(vault),plan.authority.intentId,id,beforePoint.commitment,afterPoint.commitment,realized0,realized1);
     }
 
-    function _swap(IVaultExecutionV4 vault, E.Plan memory plan, T.PoolKey memory key) private {
+    function _swap(IVaultExecutionV4 vault, E.Plan memory plan, T.PoolKey memory key) private returns(uint128) {
         E.SwapPlan memory route = plan.swap;
         bool zeroForOne = route.currencyIn == key.currency0;
         if (!zeroForOne && route.currencyIn != key.currency1) revert InvalidRoute();
@@ -312,7 +217,7 @@ contract DominoExecutionEngineV4 {
         if (budgetIndex == type(uint256).max || route.maxOriginal > plan.budgets[budgetIndex].maxOriginal
             || route.maxCharged > plan.budgets[budgetIndex].maxCharged) revert InvalidAmount();
         E.FeeBudget memory budget = E.FeeBudget(route.sourceId,route.currencyIn,route.maxOriginal,route.maxCharged);
-        T.CompoundAmounts memory value = _amounts(vault,budget,route.amountIn);
+        T.CompoundAmounts memory value = _amounts(vault,budget,route.amountIn,0);
         T.ExecutionLimits memory limits = vault.executionLimits();
         uint160 anchorPrice = priceGuard.referencePrice(route.priceObservationId,vault.poolId(),plan.authority.observedAtBlock,
             plan.authority.observedBlockHash,limits.maxObservationAgeSeconds);
@@ -338,6 +243,7 @@ contract DominoExecutionEngineV4 {
         plan.budgets[budgetIndex].maxCharged -= value.chargedConsumed;
         emit FeesConverted(address(vault),plan.authority.intentId,route.sourceId,route.currencyIn,outputCurrency,
             route.amountIn,amountOut,value,outputBefore,vault.feeBalance(route.sourceId,outputCurrency).charged);
+        return value.grossOriginalConsumed;
     }
 
     function _balance(address currency) private view returns (uint256) {

@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.26;
 
+import {IDominoVaultDraft} from "./IDominoVaultDraft.sol";
 import {DominoVaultTypes as T} from "./DominoVaultTypes.sol";
 
 /// @notice V4 fee-only execution wire. Existing V3 CompoundPlan is unchanged.
@@ -53,3 +54,32 @@ interface IPriceGuardV4 {
     function referencePrice(bytes32 observationId, bytes32 poolId, uint64 observedAtBlock,
         bytes32 observedBlockHash, uint32 maxAge) external view returns (uint160);
 }
+
+interface IVaultExecutionV4 {
+    function owner() external view returns (address);
+    function poolManager() external view returns (address);
+    function positionManager() external view returns (address);
+    function stateNonce() external view returns (uint64);
+    function authorityGeneration() external view returns (uint64);
+    function lastExecutionAt() external view returns (uint64);
+    function activePositions() external view returns (uint256);
+    function consumedIntent(bytes32) external view returns (bool);
+    function successorOf(uint256) external view returns (uint256);
+    function baseCurrency() external view returns (address);
+    function poolId() external view returns (bytes32);
+    function poolKey() external view returns (T.PoolKey memory);
+    function position(uint256) external view returns (T.Position memory);
+    function source(bytes32) external view returns (T.Source memory);
+    function checkpoint(uint256) external view returns (T.Checkpoint memory);
+    function sequenceIdentityHash() external view returns (bytes32);
+    function feeBalance(bytes32, address) external view returns (T.FeeBalance memory);
+    function policy() external view returns (IDominoVaultDraft.Policy memory);
+    function executionLimits() external view returns (T.ExecutionLimits memory);
+    function executionModify(uint256, uint128, uint128, uint128, bool) external;
+    function executionCredit(uint256, uint128, uint128) external;
+    function executionConvert(bytes32, address, uint128) external;
+    function executionCheckpoint(uint256, T.Checkpoint calldata) external;
+    function executionApply(bytes32, address, T.CompoundAmounts calldata, address, bool) external;
+    function executionMint(bytes32, uint256, int24, int24, uint128) external returns (uint256);
+}
+
