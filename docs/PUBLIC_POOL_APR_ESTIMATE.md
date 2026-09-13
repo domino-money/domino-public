@@ -1,8 +1,9 @@
-# Public pool estimate candidate — read-v2
+# Public pool estimate — read-v2
 
 Related to #95 and the pool-table/ticker consumer in #13. This is an opt-in,
-read-only API candidate. It creates no deployment, activates no Worker or
-listener, and changes no frontend metric presentation. The live read-v1
+read-only API. The table, ticker and figures dialog consume its separate
+estimate; deployment state and remaining Cloudflare activation are recorded
+in the [delivery report](../reports/APR_CHARTS_DELIVERY_2026-09-12.md). The live read-v1
 `1.1.0-rc.3` routes, schemas, fields, capabilities and headers remain available
 with their existing meaning. In particular, `feeApr24h` remains null.
 
