@@ -87,6 +87,17 @@ class FinancialTests(unittest.TestCase):
         self.assertIn(b'domino domino-execution-status domino_session_auth', new_ident)
         with self.assertRaises(ValueError): financial.peers(new_hba, new_ident)
 
+    def test_peer_reload_waits_only_for_bounded_new_connections(self):
+        calls = []
+        def query(text, *, os_user, role):
+            calls.append((os_user, role))
+            if len(calls) == 1: raise ValueError('reload_pending')
+            return role
+        with patch.object(financial.base, 'sql', side_effect=query), patch.object(financial.time, 'sleep') as pause:
+            financial.verify_peers()
+        self.assertEqual(len(calls), 1 + sum(len(roles) for roles in financial.PEERS.values()))
+        pause.assert_called_once_with(0.1)
+
     def test_bad_archives_fail_before_host_commands(self):
         with patch.object(financial.base, 'run', side_effect=AssertionError('host_command')):
             with self.assertRaises(ValueError): financial.archive_files(self.path, '0' * 64, self.commit)

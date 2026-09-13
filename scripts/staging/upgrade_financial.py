@@ -16,6 +16,7 @@ import pwd
 import re
 import stat
 import tarfile
+import time
 
 import prepare_disabled as base
 
@@ -208,6 +209,21 @@ def sql(query):
     return base.sql(query, os_user='postgres', role='postgres')
 
 
+def verify_peers():
+    # pg_reload_conf only queues SIGHUP. A new connection proves the postmaster
+    # has admitted the replacement files; tolerate that bounded signal delay.
+    for component, roles in PEERS.items():
+        for role in roles:
+            for attempt in range(20):
+                try:
+                    require(base.sql('SELECT current_user', os_user=OS_USERS[component], role=role) == role,
+                            'peer_identity_mismatch')
+                    break
+                except ValueError:
+                    if attempt == 19: raise
+                    time.sleep(0.1)
+
+
 def unit_state(name):
     raw = base.run(['/usr/bin/systemctl', 'show', name,
                     '--property=LoadState,ActiveState,SubState,MainPID,NRestarts,WorkingDirectory,FragmentPath,DropInPaths']).decode()
@@ -347,9 +363,7 @@ def apply(files, planned, expected):
             base.replace_pg_config(base.CONFIG / name, raw)
         base.validate_pg_files()
         require(sql('SELECT pg_reload_conf()') == 't', 'postgres_reload_failed')
-        for component, roles in PEERS.items():
-            for role in roles:
-                require(base.sql('SELECT current_user', os_user=OS_USERS[component], role=role) == role, 'peer_identity_mismatch')
+        verify_peers()
         base.run(['/usr/bin/systemctl', 'daemon-reload'])
         require({name: unit_state(name) for name in PROTECTED} == actual['protected'], 'protected_lane_changed')
         for component in COMPONENTS:
