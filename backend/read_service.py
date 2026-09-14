@@ -5,7 +5,8 @@ from functools import wraps
 import time
 
 from discovery import (CHAIN_ID, RPC_URL, ZERO, DataError, DiscoveryReader,
-                       ReadRpc, Block, address, bytes32, discover, json_http, parse_block)
+                       ReadRpc, Block, address, bytes32, decode_result, discover,
+                       json_http, parse_block)
 from inventory import AlchemyInventory, CursorCodec
 from rpc_failover import FailoverReadRpc
 from read_deadline import (ReadDeadline, check_read_deadline, current_read_deadline,
@@ -315,42 +316,185 @@ class ReadService:
                      'source': 'alchemy' if provider else None, 'asOfBlock': None,
                      'coverage': 'unknown', 'hasMore': None, 'nextCursor': None}
         candidates = []
+        skipped_candidates = 0
+        reader = DiscoveryReader(self._rpc(transport), clock=self.clock)
         if auto_discover and provider:
             try:
                 check_read_deadline()
                 page = provider.page(wallet, key)
                 check_read_deadline()
                 candidates = page['currencies']
+                # Bound the candidates probed on-chain so a full provider page
+                # cannot exceed the RPC budget (#149). Each probed erc20
+                # candidate costs four reads (code, decimals, symbol, balance);
+                # the snapshot costs seven, the native balance and the final
+                # canonical re-read one each, and twelve items stay reserved.
+                reserved = 12 + 4 * len(tokens)
+                probed_budget = max(0, (getattr(reader.rpc, 'max_requests', 160) - reserved) // 4)
+                probed = candidates[:min(len(candidates), probed_budget)]
+                skipped_candidates = len(candidates) - len(probed)
+                candidates = probed
                 next_cursor = (self.cursor_codec.issue(wallet, tokens, provider.context, page['nextKey'])
                                if page['nextKey'] else None)
                 inventory.update(status='page_received', coverage='provider_page_only',
                                  hasMore=bool(page['nextKey']), nextCursor=next_cursor,
                                  retrievedAt=page['retrievedAt'], rowsReceived=page['rowsReceived'],
-                                 excludedRows=page['excludedRows'])
+                                 excludedRows=page['excludedRows'],
+                                 candidatesProbed=len(candidates),
+                                 candidatesSkipped=skipped_candidates,
+                                 skippedReason='request_budget_exhausted' if skipped_candidates else None)
             except DataError as error:
                 inventory.update(status='unavailable', reason=str(error))
-        reader = DiscoveryReader(self._rpc(transport), clock=self.clock)
         block = reader.snapshot()  # Fresh balances after the indexed candidate page.
         items, failed = [], []
         currencies = list(dict.fromkeys([ZERO] + tokens + candidates))
-        for currency in currencies:
-            try:
-                metadata = reader.token(currency, block)
-                # One currency per call lets a broken token preserve other balances.
-                if currency == ZERO:
-                    raw = reader.balances(wallet, [], block)['items'][0]['amountRaw']
-                else:
-                    raw, = reader.rpc.call(currency, 'balanceOf(address)', ['address'], [wallet],
-                                           ['uint256'], block=block.tag)
-                    raw = str(raw)
-                items.append({**metadata, 'amountRaw': raw, 'balanceStatus': 'read_at_block',
-                              'requestedByAddress': currency in tokens,
-                              'discoveredByProvider': currency in candidates,
-                              'executionAvailable': False})
-            except DataError as error:
-                failed.append({'currency': currency, 'reason': str(error)})
+        try:
+            items, failed = self._probe_currencies(reader, block, wallet, currencies, tokens, candidates)
+        except DataError as error:
+            if str(error) != 'rpc_batch_unavailable':
+                raise
+            # Batched probing is unavailable on this transport: fall back to
+            # the sequential per-currency path, one currency per call so a
+            # broken token still preserves the other balances.
+            items, failed = [], []
+            for currency in currencies:
+                try:
+                    metadata = reader.token(currency, block)
+                    if currency == ZERO:
+                        raw = reader.balances(wallet, [], block)['items'][0]['amountRaw']
+                    else:
+                        raw, = reader.rpc.call(currency, 'balanceOf(address)', ['address'], [wallet],
+                                               ['uint256'], block=block.tag)
+                        raw = str(raw)
+                    items.append({**metadata, 'amountRaw': raw, 'balanceStatus': 'read_at_block',
+                                  'requestedByAddress': currency in tokens,
+                                  'discoveredByProvider': currency in candidates,
+                                  'executionAvailable': False})
+                except DataError as error:
+                    failed.append({'currency': currency, 'reason': str(error)})
         reader.assert_canonical(block)
         return {'schemaVersion': 2, 'mode': 'public_address_read_only', 'chainId': CHAIN_ID,
                 'snapshot': asdict(block), 'items': items, 'unavailableAssets': failed,
                 'balanceCoverage': 'requested_and_page_addresses_only', 'inventory': inventory,
                 'walletControlVerified': False, 'liveExecution': False}
+
+    def _probe_currencies(self, reader, block, wallet, currencies, tokens, candidates):
+        """Batched per-candidate reads: code, then decimals/symbol/balance (#148).
+
+        One envelope failure never discards other currencies: the failing chunk
+        falls back to sequential reads, preserving per-currency semantics.
+        Metadata mirrors DiscoveryReader.token: a failed optional read becomes
+        a metadata issue and the token stays 'partial'.
+        """
+        rpc = reader.rpc
+        if getattr(rpc, 'batch_reads', False) is not True:
+            raise DataError('rpc_batch_unavailable')
+        erc20 = [currency for currency in currencies if currency != ZERO]
+        has_code, meta = {}, {}
+        for currency in erc20:
+            meta[currency] = {'decimals_raw': None, 'symbol_raw': None, 'issues': {}}
+
+        def staged(signature, inputs, outputs, values=()):
+            """Run one read for every live currency; per-currency errors are kept."""
+            live = [currency for currency in erc20 if has_code.get(currency)]
+            for index in range(0, len(live), 8):
+                chunk = live[index:index + 8]
+                if signature is None:
+                    specs = [('eth_getCode', [currency, block.tag]) for currency in chunk]
+                else:
+                    specs = [('eth_call', rpc.call_params(currency, signature, inputs, values, block=block.tag))
+                             for currency in chunk]
+                try:
+                    results = rpc.batch(specs)
+                except DataError:
+                    results = []
+                    for currency in chunk:
+                        try:
+                            results.append(rpc.request('eth_getCode' if signature is None else 'eth_call',
+                                                       [currency, block.tag] if signature is None else
+                                                       rpc.call_params(currency, signature, inputs, values, block=block.tag)))
+                        except DataError as error:
+                            results.append(error)
+                for currency, result in zip(chunk, results):
+                    yield currency, result
+
+        for currency, result in staged(None, (), []):
+            has_code[currency] = isinstance(result, str) and bool(re.fullmatch(r'0x(?:[0-9a-fA-F]{2})+', result or ''))
+            if not has_code[currency]:
+                meta[currency]['dead'] = ('token_has_no_code' if result == '0x'
+                                          else 'token_code_unavailable')
+        for signature, inputs, outputs, key in (
+                ('decimals()', (), ['uint8'], 'decimals_raw'),
+                ('symbol()', (), [], 'symbol_raw'),
+                ('balanceOf(address)', (['address'], [wallet]), ['uint256'], 'balance_raw')):
+            for currency in erc20:
+                meta[currency].setdefault(key, None)
+            for currency, result in staged(signature, inputs, outputs):
+                if isinstance(result, DataError):
+                    if key == 'balance_raw':
+                        meta[currency][key] = result
+                    else:
+                        meta[currency]['issues'][key.removesuffix('_raw')] = str(result)
+                else:
+                    meta[currency][key] = result
+
+        items, failed = [], []
+        for currency in currencies:
+            if currency == ZERO:
+                try:
+                    raw = reader.balances(wallet, [], block)['items'][0]['amountRaw']
+                except DataError as error:
+                    failed.append({'currency': currency, 'reason': str(error)})
+                    continue
+                items.append({**reader.token(ZERO, block), 'amountRaw': raw, 'balanceStatus': 'read_at_block',
+                              'requestedByAddress': True, 'discoveredByProvider': False,
+                              'executionAvailable': False})
+                continue
+            record = meta.get(currency)
+            if record is None or record.get('dead'):
+                failed.append({'currency': currency,
+                               'reason': record.get('dead', 'token_has_no_code') if record else 'token_has_no_code'})
+                continue
+            balance = record['balance_raw']
+            if isinstance(balance, DataError):
+                failed.append({'currency': currency, 'reason': str(balance)})
+                continue
+            decimals, symbol, issues = None, None, dict(record['issues'])
+            try:
+                if isinstance(issues.get('decimals'), str):
+                    raise DataError(issues['decimals'])
+                decimals, = decode_result(['uint8'], record['decimals_raw'])
+                if type(decimals) is not int or not 0 <= decimals <= 255:
+                    raise DataError('invalid_token_decimals')
+            except DataError as error:
+                issues['decimals'] = str(error)
+                decimals = None
+            try:
+                if isinstance(issues.get('symbol'), str):
+                    raise DataError(issues['symbol'])
+                raw_symbol = self._decode_symbol(record['symbol_raw'])
+                if not isinstance(raw_symbol, str) or not raw_symbol or len(raw_symbol) > 40 or not raw_symbol.isprintable():
+                    raise DataError('invalid_symbol_text')
+                symbol = raw_symbol
+            except DataError as error:
+                issues['symbol'] = str(error)
+                symbol = None
+            raw, = decode_result(['uint256'], balance)
+            items.append({'address': currency, 'kind': 'erc20_candidate', 'decimals': decimals, 'symbol': symbol,
+                          'readStatus': 'partial' if issues else 'available', 'metadataIssues': issues,
+                          'displayUnitsAvailable': decimals is not None, 'executionAvailable': False,
+                          'amountRaw': str(raw), 'balanceStatus': 'read_at_block',
+                          'requestedByAddress': currency in tokens,
+                          'discoveredByProvider': currency in candidates})
+        return items, failed
+
+    @staticmethod
+    def _decode_symbol(raw):
+        if isinstance(raw, str) and len(raw) == 66:
+            value, = decode_result(['bytes32'], raw)
+            try:
+                return value.rstrip(b'\x00').decode('utf-8')
+            except UnicodeError:
+                raise DataError('invalid_symbol_text') from None
+        value, = decode_result(['string'], raw)
+        return value

@@ -3,12 +3,15 @@
   "chainId": 4663,
   "inventory": {
     "asOfBlock": null,
+    "candidatesProbed": 1,
+    "candidatesSkipped": 0,
     "coverage": "provider_page_only",
     "excludedRows": 0,
     "hasMore": true,
     "nextCursor": "abababababababababababababababababababababababababababababababab",
     "retrievedAt": 1010,
     "rowsReceived": 1,
+    "skippedReason": null,
     "source": "alchemy",
     "status": "page_received"
   },

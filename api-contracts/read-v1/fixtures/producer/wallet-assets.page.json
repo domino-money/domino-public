@@ -3,12 +3,15 @@
   "chainId": 4663,
   "inventory": {
     "asOfBlock": null,
+    "candidatesProbed": 1,
+    "candidatesSkipped": 0,
     "coverage": "provider_page_only",
     "excludedRows": 0,
     "hasMore": true,
     "nextCursor": "eyJjaGFpbiI6NDY2MywiZXhwaXJlcyI6MTMxMCwia2V5IjoiaW50ZXJuYWwtcHJvdmlkZXItcGFnZS0yIiwicHJvdmlkZXIiOiI4N2IxYWQ0ZWExNDY2Njg1NDk1N2NhZWViNTAxMmU4YjFjMjA4MGYyOTY3ZTU5Y2NmZjE0MDZkODg1ZDczZmI1IiwidG9rZW5zIjpbIjB4MTExMTExMTExMTExMTExMTExMTExMTExMTExMTExMTExMTExMTExMSJdLCJ2IjoxLCJ3YWxsZXQiOiIweDMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMifQ.5eYeKqiD-QeYYRKVBIoP0Hu7vocLZhxgQzuh9x1We9Y",
     "retrievedAt": 1010,
     "rowsReceived": 1,
+    "skippedReason": null,
     "source": "alchemy",
     "status": "page_received"
   },

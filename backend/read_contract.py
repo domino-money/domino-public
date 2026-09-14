@@ -169,6 +169,11 @@ class InventoryPage(InventoryBase):
     retrievedAt: UInt
     rowsReceived: Annotated[StrictInt, Field(ge=0, le=20)]
     excludedRows: Annotated[StrictInt, Field(ge=0, le=20)]
+    # Documented partial page: how many provider candidates were actually probed
+    # on-chain and how many were skipped to stay inside the read budget (#149).
+    candidatesProbed: Annotated[StrictInt, Field(ge=0, le=20)] | None = None
+    candidatesSkipped: Annotated[StrictInt, Field(ge=0, le=20)] | None = None
+    skippedReason: Reason | None = None
 
 
 Inventory = Annotated[InventoryIdle | InventoryUnavailable | InventoryPage, Field(discriminator='status')]

@@ -543,7 +543,7 @@
     },
     {
       "path": "fixtures/gateway/wallet-assets.last-page.json",
-      "sha256": "64797d675f1cbdfd0e618ec2a5b74e7a9f07474425830fa8e231d1cc16dc1f7b"
+      "sha256": "2d078ca53b3ee736401bffabd742f5e73b314563ec9990de6239c95e26c18bc3"
     },
     {
       "path": "fixtures/gateway/wallet-assets.missing-contract.json",
@@ -555,11 +555,11 @@
     },
     {
       "path": "fixtures/gateway/wallet-assets.opaque-page.json",
-      "sha256": "e4d039c3ffa00f98793b5454049c5d8d98d7b9d219c83b05ad383dcecdb0d549"
+      "sha256": "edfd5b5ffb7159b4c60e37d37e26a4f48b4ddeb71f2b10700437ddc23a785972"
     },
     {
       "path": "fixtures/gateway/wallet-assets.page.json",
-      "sha256": "e4d039c3ffa00f98793b5454049c5d8d98d7b9d219c83b05ad383dcecdb0d549"
+      "sha256": "edfd5b5ffb7159b4c60e37d37e26a4f48b4ddeb71f2b10700437ddc23a785972"
     },
     {
       "path": "fixtures/gateway/wallet-assets.partial-metadata.json",
@@ -823,7 +823,7 @@
     },
     {
       "path": "fixtures/producer/wallet-assets.last-page.json",
-      "sha256": "64797d675f1cbdfd0e618ec2a5b74e7a9f07474425830fa8e231d1cc16dc1f7b"
+      "sha256": "2d078ca53b3ee736401bffabd742f5e73b314563ec9990de6239c95e26c18bc3"
     },
     {
       "path": "fixtures/producer/wallet-assets.missing-contract.json",
@@ -835,7 +835,7 @@
     },
     {
       "path": "fixtures/producer/wallet-assets.page.json",
-      "sha256": "a61b36dfb10a70738b6031b20fb15412b0212a43b13dfd3e322a74a516ddd300"
+      "sha256": "949694436c7d4202f408501919f0b4ff76f55f3b6110b6fb669c6aef6aee5085"
     },
     {
       "path": "fixtures/producer/wallet-assets.partial-metadata.json",
@@ -907,7 +907,7 @@
     },
     {
       "path": "runtime.mjs",
-      "sha256": "f74c0ef409e693f541e357846efc8d7e83b4c2c1a80432a3f7b601531b9dc0f1"
+      "sha256": "f9dcf31c97aca16391f9d4d6466b60ac5364709e830de9422d12d13ed7f0b3a0"
     },
     {
       "path": "schemas/capabilities.response.schema.json",
@@ -987,11 +987,11 @@
     },
     {
       "path": "schemas/wallet-assets.response.schema.json",
-      "sha256": "3da4e08bbf711253c3cc48850c6676f746216dc0ef2107a624a4469ed14a2859"
+      "sha256": "6c4619aab22c31c2b261377646824a5c897e29d59939296c47de9990c1f064fa"
     },
     {
       "path": "types.ts",
-      "sha256": "a50c6b9114033c7fd560934784169a408f8be4e978ba23324788a1cb3c7675f3"
+      "sha256": "154a75ce73ec6608cf61a119d3b4b01f48db39f9b15e44a1a13ee25e8f652f79"
     }
   ],
   "generator": "scripts/export-read-contract.py",
@@ -999,7 +999,7 @@
   "sources": [
     {
       "path": "backend/read_contract.py",
-      "sha256": "539fa15678bd25df3db213180d40bbe30e98a463426856c7eeb5b39a102038da"
+      "sha256": "4ec1ef063bb1fbd850ff869adfeada9892987a80e096e9d59281ea44a45742d9"
     },
     {
       "path": "backend/read_api.py",
@@ -1007,7 +1007,7 @@
     },
     {
       "path": "backend/read_service.py",
-      "sha256": "078dc625543abe263226ae3a770b875fe5293286806c32a3a1352cb902129704"
+      "sha256": "36a10c1cade4c4dcc217a03db42711e43df3061a7a405aba5b3eae22d684293f"
     },
     {
       "path": "backend/rpc_failover.py",

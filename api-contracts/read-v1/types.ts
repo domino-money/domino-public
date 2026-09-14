@@ -397,6 +397,9 @@ export type InventoryPage = {
   "retrievedAt": number;
   "rowsReceived": number;
   "excludedRows": number;
+  "candidatesProbed"?: (number | null);
+  "candidatesSkipped"?: (number | null);
+  "skippedReason"?: ("upstream_unavailable" | "rpc_error" | "rpc_call_gas_limit" | "rpc_call_reverted" | "network_unavailable" | "invalid_abi_response" | "invalid_rpc_envelope" | "missing_rpc_result" | "request_budget_exhausted" | "invalid_json" | "response_too_large" | "invalid_quantity" | "quantity_too_large" | "token_has_no_code" | "token_code_unavailable" | "invalid_token_decimals" | "invalid_symbol_text" | "provider_unavailable" | "provider_rate_limited" | "provider_capacity_busy" | "invalid_discovery_response" | "invalid_inventory_response" | "invalid_inventory_page" | "invalid_inventory_cursor" | "invalid_pool_key" | "invalid_tick_spacing" | "pool_id_mismatch" | "invalid_pool_state" | "fixed_fee_mismatch" | "provider_currency_mismatch" | "selected_token_mismatch" | "selected_pair_mismatch" | "catalogue_database_unavailable" | "catalogue_schema_mismatch" | "catalogue_currency_mismatch" | "read_deadline_exceeded" | null);
 };
 
 export type InventoryUnavailable = {
