@@ -43,7 +43,7 @@ export const PRODUCER_PIN = {
 /** Separately opted-in public pool estimates; never accepted as a v1 response. */
 export const READ_V2_PIN = {
   version: '2.0.0-rc.1',
-  manifestSha256: 'bbfaffd83dc64bcfdde2c225896c0719bc9dc150f603401598ad7d32218d17a0',
+  manifestSha256: 'a91104568ba47fcf66430ac51daa78084d9a375bd5910804c20846e909da4ffb',
 } as const
 
 /**
@@ -58,7 +58,7 @@ export const READ_V2_PIN = {
 export const BACKEND_OPENAPI_PIN = {
   path: 'backend/openapi-read.json',
   infoVersion: '0.8.0',
-  sha256: '8de9a88b3c1535d0ba3cafcbc2b0917a09ae7f83ab755ec9ea994cb0d2ff23fc',
+  sha256: '4a8e4d7756964e40fa2b9e4c9922abc181b1f929db597ea2dfeab72e368d7220',
 } as const
 
 export type ReadContractPin = (typeof PRODUCER_PIN)['packages']['read-v1']['version']

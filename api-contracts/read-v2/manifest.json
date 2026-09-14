@@ -258,7 +258,7 @@
     },
     {
       "path": "backend/read_contract.py",
-      "sha256": "539fa15678bd25df3db213180d40bbe30e98a463426856c7eeb5b39a102038da"
+      "sha256": "4ec1ef063bb1fbd850ff869adfeada9892987a80e096e9d59281ea44a45742d9"
     },
     {
       "path": "backend/discovery.py",
@@ -266,7 +266,7 @@
     },
     {
       "path": "backend/read_service.py",
-      "sha256": "078dc625543abe263226ae3a770b875fe5293286806c32a3a1352cb902129704"
+      "sha256": "36a10c1cade4c4dcc217a03db42711e43df3061a7a405aba5b3eae22d684293f"
     },
     {
       "path": "backend/market_cache.py",
