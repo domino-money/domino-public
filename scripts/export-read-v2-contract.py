@@ -80,10 +80,14 @@ function decimal(value) {
   const [integer, fraction=''] = value.split('.');
   return [BigInt(integer + fraction), 10n ** BigInt(fraction.length)];
 }
-function checkedAmount(volume, tvl, fee) {
+function checkedAmount(volume, tvl, fee, protocolPips) {
   const [v, vd] = decimal(volume), [t, td] = decimal(tvl);
-  const numerator = v * td * BigInt(fee) * 36500n * 10n**18n;
-  const denominator = vd * t * 1000000n;
+  // The protocol fee leaves the input first; the LP fee applies to the
+  // remainder: lpFee pips scaled by (1 - protocol/1e6), as 36,500 × volume ×
+  // lpShare / 1e6 / tvl with one half-up rounding at 18 places.
+  const lpShare = BigInt(fee) * (1000000n - BigInt(protocolPips));
+  const numerator = v * td * lpShare * 36500n * 10n**18n;
+  const denominator = vd * t * 1000000n * 1000000n;
   let units = numerator / denominator;
   if ((numerator % denominator)*2n >= denominator) units++;
   if (units >= 10n**96n) return [null, 'estimate_out_of_bounds'];
@@ -110,7 +114,7 @@ function coherentPool(value) {
   if (pool.integrationClass !== 'hookless_fixed_fee') reasons.push('pool_integration_unsupported');
   if (key.feeMode === 'fixed' && key.fee_pips !== pool.currentLpFeePips) reasons.push('fixed_fee_mismatch');
   if ((pool.protocolFeeRaw & 0xfff) > 1000 || (pool.protocolFeeRaw >>> 12) > 1000) reasons.push('invalid_protocol_fee');
-  else if (pool.protocolFeeRaw !== 0) reasons.push('protocol_fee_unsupported');
+  else if (pool.protocolFeeRaw !== 0 && (pool.protocolFeeRaw & 0xfff) !== (pool.protocolFeeRaw >>> 12)) reasons.push('protocol_fee_directional_unsupported');
   const retrieved = data?.retrievedAt ?? null;
   const snapshotAge = snapshot.timestamp <= now ? now - snapshot.timestamp : null;
   if (snapshotAge === null) reasons.push('snapshot_timestamp_future');
@@ -134,7 +138,7 @@ function coherentPool(value) {
   if (volume === null && observation.status !== 'rejected') reasons.push('missing_volume24h');
   let amount = null, status = 'unavailable';
   if (!reasons.length) {
-    const [checked, error] = checkedAmount(volume, tvl, pool.currentLpFeePips);
+    const [checked, error] = checkedAmount(volume, tvl, pool.currentLpFeePips, pool.protocolFeeRaw & 0xfff);
     amount = checked;
     if (error) reasons.push(error);
     else {

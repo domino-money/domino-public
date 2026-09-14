@@ -49,7 +49,9 @@ test('available, exact zero, tiny positive and unavailable never replace one ano
   assert.equal(presentAprEstimate(observe(fixture('zero-volume').estimate), now(0)).text, '0.00');
   const tiny = { ...good.estimate, feeAprEstimate24hPercent: '0.000000000000000001' };
   assert.equal(presentAprEstimate(observe(tiny), now(0)).text, '<0.01');
-  for (const name of ['zero-tvl', 'missing-tvl', 'protocol-fee', 'dynamic', 'expired']) assert.equal(presentAprEstimate(observe(fixture(name).estimate), now(0)).text, null, name);
+  // T1.4: the equal-fee protocol fixture is available now — its adjusted value shows.
+  assert.equal(presentAprEstimate(observe(fixture('protocol-fee').estimate), now(0)).text, '10.94');
+  for (const name of ['zero-tvl', 'missing-tvl', 'invalid-protocol-fee', 'dynamic', 'expired']) assert.equal(presentAprEstimate(observe(fixture(name).estimate), now(0)).text, null, name);
 });
 
 test('estimates age on screen, expire after 300 seconds and ignore wall-clock jumps', () => {
