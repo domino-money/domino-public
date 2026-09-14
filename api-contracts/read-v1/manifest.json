@@ -1112,7 +1112,7 @@
     },
     {
       "path": "bridge/src/request-contract.mjs",
-      "sha256": "dd777e35402c3524dadc46ddbfdbc5209848597cf91dd170618e7c67f1a30d3c"
+      "sha256": "12dfcaf88709295b200b5226f6c02ceb9a5552b1ad4cd59f8c30eaaddce28cb7"
     },
     {
       "path": "backend/read_gateway.py",

@@ -23,6 +23,7 @@ const payloads = {
   'pool-market': { poolId, includePriceHistory: true, priceToken: 'quote' },
   'wallet-assets': { wallet: address, tokens: [otherAddress], autoDiscover: true, cursor: null },
   'nft-positions': { tokenIds: ['0', (2n ** 256n - 1n).toString()], blockNumber: null },
+  'markets-snapshot': { poolIds: [poolId] },
 };
 const responseFixtures = Object.fromEntries(await Promise.all(Object.keys(ROUTES).map(async (route) => [
   route,

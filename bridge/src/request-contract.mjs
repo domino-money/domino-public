@@ -6,7 +6,7 @@ export const CHAIN_ID = 4663;
 export const ROUTES = Object.freeze({
   token: { schemaVersion: RESPONSE_SCHEMA_VERSIONS.token, fields: ['token'], required: ['token'] },
   pools: { schemaVersion: RESPONSE_SCHEMA_VERSIONS.pools, fields: ['token', 'pairedToken', 'maxPools', 'poolIds'], required: ['token'] },
-  'pool-market': { schemaVersion: RESPONSE_SCHEMA_VERSIONS['pool-market'], fields: ['poolId', 'includePriceHistory', 'priceToken'], required: ['poolId'] },
+  'pool-market': { schemaVersion: RESPONSE_SCHEMA_VERSIONS['pool-market'], fields: ['poolId', 'includePriceHistory', 'priceToken', 'fromSnapshot'], required: ['poolId'] },
   'wallet-assets': { schemaVersion: RESPONSE_SCHEMA_VERSIONS['wallet-assets'], fields: ['wallet', 'tokens', 'autoDiscover', 'cursor'], required: ['wallet'] },
   'nft-positions': { schemaVersion: RESPONSE_SCHEMA_VERSIONS['nft-positions'], fields: ['tokenIds', 'blockNumber'], required: ['tokenIds'] },
   catalogue: { schemaVersion: RESPONSE_SCHEMA_VERSIONS.catalogue, fields: ['token', 'pairedToken', 'limit', 'afterPoolId', 'revision'], required: ['token'] },
@@ -44,7 +44,8 @@ export function validateRequest(route, body) {
   if (['pool-activity', 'pool-positions', 'pool-metrics'].includes(route)) return poolId(body.poolId);
   if (route === 'pool-market') return poolId(body.poolId) &&
     optional('includePriceHistory', (value) => typeof value === 'boolean') &&
-    optional('priceToken', (value) => value === 'base' || value === 'quote');
+    optional('priceToken', (value) => value === 'base' || value === 'quote') &&
+    optional('fromSnapshot', (value) => typeof value === 'boolean');
   if (route === 'wallet-assets') return address(body.wallet) &&
     optional('tokens', (value) => array(value, 10, address)) &&
     optional('autoDiscover', (value) => typeof value === 'boolean') &&

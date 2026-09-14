@@ -20,6 +20,7 @@ const bodies = {
   catalogue: { token: address }, 'pool-activity': { poolId }, 'pool-positions': { poolId }, 'pool-metrics': { poolId },
   token: { token: address }, pools: { token: address }, 'pool-market': { poolId },
   'wallet-assets': { wallet: address }, 'nft-positions': { tokenIds: ['1'] },
+  'markets-snapshot': { poolIds: [poolId] },
 };
 const env = {
   READ_BRIDGE_ENABLED: 'true', APP_ORIGIN: origin, GATEWAY_ORIGIN: 'https://gateway.example.invalid',
@@ -42,7 +43,7 @@ test('request field allowlists match each generated closed request schema', asyn
     const schema = JSON.parse(await read(`schemas/${route}.request.schema.json`));
     assert.equal(schema.additionalProperties, false);
     assert.deepEqual([...ROUTES[route].fields].sort(), Object.keys(schema.properties).sort());
-    assert.deepEqual([...ROUTES[route].required].sort(), [...schema.required].sort());
+    assert.deepEqual([...ROUTES[route].required].sort(), [...(schema.required ?? [])].sort());
   }
 });
 
