@@ -81,13 +81,22 @@ jobs:
   backend:
     name: Backend
     runs-on: ubuntu-24.04
-    timeout-minutes: 15
+    # The artifact build for the EVM tests (issue #144) adds a full Forge
+    # compilation; 15 minutes no longer leaves safe headroom.
+    timeout-minutes: 20
     env:
       DOMINO_TEST_POSTGRES: '1'
       DOMINO_TEST_EVM: '1'
       DOMINO_PG_BIN: /usr/lib/postgresql/16/bin
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - name: Cache Forge compilation artifacts
+        uses: actions/cache@0400d5f644dc74513175e3cd8d07132dd4860809 # v4.2.4
+        with:
+          path: |
+            contracts/cache
+            contracts/out
+          key: forge-${{ runner.os }}-${{ hashFiles('contracts/**/*.sol', 'contracts/foundry.toml', 'package-lock.json') }}
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version-file: .nvmrc
@@ -100,6 +109,10 @@ jobs:
       - run: npm ci --no-audit --no-fund
       - run: npm --prefix app ci --no-audit --no-fund
       - run: python -m pip install -r backend/requirements-api.lock
+      # Compile every contract artifact (forge build) so backend EVM tests can
+      # load e.g. contracts/out/DominoSetup.t.sol/SetupToken.json (issue #144).
+      - name: Build contract artifacts for backend EVM tests
+        run: node scripts/test-contracts.mjs build
       - name: Build and qualify the local compound receipt fixture
         run: node scripts/test-contracts.mjs --match-path test/reference/OfficialDominoCompound.t.sol
       - run: python scripts/export-read-contract.py --check
@@ -130,13 +143,23 @@ jobs:
   contracts:
     name: Contracts
     runs-on: ubuntu-24.04
-    timeout-minutes: 10
+    # A cold full Forge compilation of the vendored v4 reference tree routinely
+    # brushes against 10 minutes on hosted runners; give deliberate headroom so
+    # the job is not spuriously cancelled (issue #145).
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version-file: .nvmrc
           cache: npm
+      - name: Cache Forge compilation artifacts
+        uses: actions/cache@0400d5f644dc74513175e3cd8d07132dd4860809 # v4.2.4
+        with:
+          path: |
+            contracts/cache
+            contracts/out
+          key: forge-${{ runner.os }}-${{ hashFiles('contracts/**/*.sol', 'contracts/foundry.toml', 'package-lock.json') }}
       - run: npm ci --no-audit --no-fund
       - run: npm run test:contracts
   preview:

@@ -11,8 +11,8 @@ import { checkContractSizes, formatReport } from './check-contract-size.mjs';
 const require = createRequire(import.meta.url);
 const root = fileURLToPath(new URL('../', import.meta.url));
 
-export function contractArguments(extra = []) {
-  return ['test', '--root', path.join(root, 'contracts'), '--use', path.join(root, 'scripts/solc-wrapper.py'), '--offline', ...extra];
+export function contractArguments(extra = [], command = 'test') {
+  return [command, '--root', path.join(root, 'contracts'), '--use', path.join(root, 'scripts/solc-wrapper.py'), '--offline', ...extra];
 }
 
 export function runChecked(binary, args, options = {}) {
@@ -34,8 +34,15 @@ async function main() {
     binary = path.resolve(path.dirname(require.resolve('@foundry-rs/forge/package.json')), '../dist', name);
   }
   if (!existsSync(binary)) throw new Error('Pinned Forge binary missing; run npm ci in this checkout on macOS, Linux or WSL2.');
-  const status = runChecked(binary, contractArguments(process.argv.slice(2)));
+  // `build` compiles every source (including all test contracts) without
+  // running tests, so backend EVM tests can load artifacts such as
+  // contracts/out/DominoSetup.t.sol/SetupToken.json (issue #144).
+  const raw = process.argv.slice(2);
+  const build = raw[0] === 'build';
+  const extra = build ? raw.slice(1) : raw;
+  const status = runChecked(binary, contractArguments(extra, build ? 'build' : 'test'));
   if (status !== 0) return status;
+  if (build) return 0;
   // Keep npm's trailing Forge filters attached to this launcher, not to a
   // second shell command. Inspect only artifacts from the successful build.
   const report = checkContractSizes();
