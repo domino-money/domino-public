@@ -28,7 +28,7 @@
     },
     {
       "path": "consumer.test.mjs",
-      "sha256": "ec82abd53714bbb47eddbdbc95630f0d0259f2043c2e26deab3026a6c19370ce"
+      "sha256": "d17fefe6eed59f2597ea6bd6d40ab026a21eeec12bc2822e57f9d3bcd7b11e02"
     },
     {
       "path": "consumer.typecheck.mts",

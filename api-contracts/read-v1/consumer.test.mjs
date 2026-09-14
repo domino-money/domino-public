@@ -36,11 +36,12 @@ for (const item of corpus.requests) {
   test(`shared request: ${item.file}`, () => assert.equal(validateRequest(item.route, read(item.file)), true));
 }
 
-test('nine response schemas retain independent version numbers and exact amounts', () => {
+test('ten response schemas retain independent version numbers and exact amounts', () => {
   assert.equal(corpus.contractVersion, CONTRACT_VERSION);
-  assert.deepEqual(ENABLED_READS, ['token', 'pools', 'pool-market', 'wallet-assets', 'nft-positions', 'catalogue', 'pool-activity', 'pool-positions', 'pool-metrics']);
+  assert.deepEqual(ENABLED_READS,
+    ['token', 'pools', 'pool-market', 'wallet-assets', 'nft-positions', 'catalogue', 'pool-activity', 'pool-positions', 'pool-metrics', 'markets-snapshot']);
   assert.deepEqual(RESPONSE_SCHEMA_VERSIONS,
-    { token: 1, pools: 2, 'pool-market': 1, 'wallet-assets': 2, 'nft-positions': 1, catalogue: 1, 'pool-activity': 1, 'pool-positions': 1, 'pool-metrics': 1 });
+    { token: 1, pools: 2, 'pool-market': 1, 'wallet-assets': 2, 'nft-positions': 1, catalogue: 1, 'pool-activity': 1, 'pool-positions': 1, 'pool-metrics': 1, 'markets-snapshot': 1 });
   const wallet = fixture('wallet-assets', 'fallback');
   const text = wallet.items[1].amountRaw;
   assert.equal(typeof text, 'string');

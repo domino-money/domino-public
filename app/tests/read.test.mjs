@@ -39,7 +39,7 @@ const INDEX = JSON.parse(text('fixtures/index.json'));
 const catalog = { index: INDEX, text };
 const { FIXTURE_POOL, FIXTURE_TOKEN, NATIVE, MUTATED_CURSOR, gateway, errorFixture, invalidFixture, requestFor } = scenarios;
 
-const ROUTES = ['token', 'pools', 'pool-market', 'wallet-assets', 'nft-positions', 'catalogue', 'pool-activity', 'pool-positions', 'pool-metrics'];
+const ROUTES = ['token', 'pools', 'pool-market', 'wallet-assets', 'nft-positions', 'catalogue', 'pool-activity', 'pool-positions', 'pool-metrics', 'markets-snapshot'];
 const RC3 = '1.1.0-rc.3';
 
 /** A fixture source serving one script, with the real runtime. */
@@ -173,11 +173,14 @@ for (const entry of INDEX.fixtures.filter((f) => f.kind !== 'producer' && f.rout
     assert.equal(outcome.provenance.fixture, entry.file.replace(/^fixtures\//, ''));
     assert.equal(outcome.provenance.contract, RC3);
     assert.equal(outcome.provenance.attempts, 1);
-    if (entry.route === 'catalogue') {
+    if (entry.route === 'catalogue' || entry.route === 'markets-snapshot') {
+      // Stored views: no block evidence in the reply itself.
       assert.equal(outcome.observation.block, null);
+    }
+    if (entry.route === 'catalogue') {
       assert.deepEqual(outcome.observation.interval, { startBlock: 10, indexedThrough: 650, coverage: 'configured_interval_only' });
       assert.equal(outcome.observation.revision, 2);
-    } else {
+    } else if (entry.route !== 'markets-snapshot') {
       assert.equal(typeof outcome.observation.block.number, 'number');
       assert.match(outcome.observation.block.hash, /^0x[0-9a-f]{64}$/);
     }
