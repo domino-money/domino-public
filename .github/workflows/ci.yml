@@ -111,10 +111,14 @@ jobs:
       - run: python -m pip install -r backend/requirements-api.lock
       # Compile the artifact tree the backend EVM tests load: the DominoSetup
       # test pulls PoolManager, PositionManager, StateView and SetupToken.
-      # A full forge build OOMs soljson; match-path compiles only this tree
-      # (issue #144).
+      # A whole-tree forge build OOMs soljson; the positional path compiles
+      # only this closure (issue #144). This pinned forge has no --match-path
+      # on build, so the path is positional, and forge resolves it against
+      # the project root: run from contracts/ or the solc import callback
+      # receives doubled "contracts/contracts/..." paths.
       - name: Build contract artifacts for backend EVM tests
-        run: node scripts/test-contracts.mjs build --match-path test/setup/DominoSetup.t.sol
+        working-directory: contracts
+        run: node ../scripts/test-contracts.mjs build test/setup/DominoSetup.t.sol
       - name: Build and qualify the local compound receipt fixture
         run: node scripts/test-contracts.mjs --match-path test/reference/OfficialDominoCompound.t.sol
       - run: python scripts/export-read-contract.py --check
@@ -163,7 +167,18 @@ jobs:
             contracts/out
           key: forge-${{ runner.os }}-${{ hashFiles('contracts/**/*.sol', 'contracts/foundry.toml', 'package-lock.json') }}
       - run: npm ci --no-audit --no-fund
-      - run: npm run test:contracts
+      # One suite at a time: a single forge invocation compiles every source in
+      # one soljson payload and aborts (OOM) on the whole vendored v4 tree, so
+      # the job must build each suite's dependency closure separately with a
+      # shared Forge cache (issue #145).
+      - name: Run the contract suites, one dependency closure at a time
+        run: |
+          set -e
+          for suite in $(find contracts/test -name '*.t.sol' | sort); do
+            echo "::group::${suite}"
+            node scripts/test-contracts.mjs --match-path "${suite#contracts/}"
+            echo "::endgroup::"
+          done
   preview:
     name: Deploy gated preview
     needs: [hygiene, frontend, backend, contracts]
