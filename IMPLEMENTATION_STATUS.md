@@ -2,6 +2,16 @@
 
 10 September 2026. Scope: the first reviewable product package, not a production financial launch.
 
+> **Update — 14 September 2026.** Since this document was written: P2 (private
+> families, V4 successor contracts, unsigned release tooling) was delivered on
+> 12 September (see [reports/P2_DELIVERY_2026-09-13.md](reports/P2_DELIVERY_2026-09-13.md))
+> and installed at `fbc0d5e`; the redesigned app went live on domino.money and
+> the gated preview from `b3763f4` on 13 September; all seven bridge Workers
+> (`read`, `session`, `onboarding`, `deposit`, `performance`, `execution`,
+> `setup`) are bound in production with every flag off; read-v2
+> (`pool-market` estimate) is at the edge. Known open items and the full
+> backend audit are tracked in issue #138 and its sub-issues #144–#175.
+
 ## Implemented
 
 - Issue #88 adds the [V3 general same-NFT compound candidate](docs/PUBLIC_VAULT_V3_COMPOUND.md): fixed engine orchestration, exact fee realization/consumption events, same-position liquidity increase, fixed service recipient and atomic rollback. A bounded known-transaction verifier reconstructs canonical source effects, with optional exact E1 reconciliation. Official Uniswap source fixtures supplement synthetic authority/recovery tests. [Implementation evidence](reports/GENERAL_COMPOUND_IMPLEMENTATION.md) preserves the deployment, signer, optimized-netting, Domino, swaps and complete-performance gates.

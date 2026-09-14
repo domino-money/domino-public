@@ -3,7 +3,9 @@
 Source reference: `adba60f45fe20e53b2b38fde040c9eeb03fad380`, including the
 pre-dispatch failover correction. This candidate reduces serial network round
 trips while retaining each chain, deployment, manager, pool and canonicality
-check. It has not been deployed or timed as an integrated live candidate.
+check. It is deployed and live in the reader and gateway as `e4a989b`
+(included in reader/gateway `85e7511`), though production serving was not
+re-timed after the 13 September app redesign.
 
 ## Observation and expected cost
 

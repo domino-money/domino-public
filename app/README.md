@@ -241,7 +241,7 @@ move off that version (both run `scripts/release.mjs`, whose `WRANGLER`
 constant and deploy command it checks), so the routing is re-checked first. It also checks
 that `wrangler.toml` can give vars and bindings to production only, and reads
 the file with wrangler 4.130.0's own config reader (web's pinned copy,
-offline): production must bind exactly the four names `forward()` looks up,
+offline): production must bind exactly the seven names `forward()` looks up,
 each to its own Worker, and preview none. With those bindings and the real
 disabled Workers, every family gets its disabled answer and a preview host
 its 404, with no upstream call. It runs
@@ -310,15 +310,17 @@ name, offer to create one, and leave domino.money as it was.
 **After every Pages deploy, check the bindings (step C11).** In the
 dashboard, Workers & Pages → `domino-app` → Settings → Bindings:
 
-- *Choose Environment* on **Production**: exactly four, each a Service
+- *Choose Environment* on **Production**: exactly seven, each a Service
   binding: `READ_BRIDGE` → `domino-read-bridge`, `SESSION_BRIDGE` →
   `domino-session-bridge`, `ONBOARDING_BRIDGE` → `domino-onboarding-bridge`,
-  `DEPOSIT_BRIDGE` → `domino-deposit-bridge`.
+  `DEPOSIT_BRIDGE` → `domino-deposit-bridge`, `PERFORMANCE_BRIDGE` →
+  `domino-performance-bridge`, `EXECUTION_BRIDGE` → `domino-execution-bridge`
+  and `SETUP_BRIDGE` → `domino-setup-bridge`.
 - *Choose Environment* on **Preview**: none.
 
 Repeat both after every deploy, preview deploys included. Signed in on
 `domino.money`, `/api/read/v1/capabilities` then shows `dataMode: "disabled"`
-with an `X-Domino-Read-Contract` header. To roll back, delete the four
+with an `X-Domino-Read-Contract` header. To roll back, delete the seven
 `[[env.production.services]]` tables and release again (`npm run
 release:build`, `npm run deploy:preview`, `npm run deploy`: `wrangler.toml` is
 part of the recorded digest, so the old record no longer verifies): production

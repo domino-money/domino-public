@@ -27,7 +27,7 @@ compatibility_date = "2026-09-10"
 # hash URL of a production deployment is an entrance. It covers deployments
 # made from now on; older ones are closed by deleting them.
 #
-# Four service bindings, production only: functions/_lib/bridge.ts forwards
+# Seven service bindings, production only: functions/_lib/bridge.ts forwards
 # each /api family to one of them, and each names one bridge Worker from
 # bridge/, deployed with every flag off. There is no [env.preview] and no
 # top-level services, so a preview deployment has no binding at all and its
@@ -35,8 +35,8 @@ compatibility_date = "2026-09-10"
 # "binding" and "service" are set: wrangler 4.130.0 requires those two, and
 # the Workers' default entrypoint and environment are the ones meant.
 # tests/forwarder.test.mjs reads this file with wrangler 4.130.0's own reader
-# and fails unless production has exactly these four and preview none.
-# Rollback: remove the four tables and deploy production again.
+# and fails unless production has exactly these seven and preview none.
+# Rollback: remove the seven tables and deploy production again.
 [env.production.vars]
 CANONICAL_HOSTS_ONLY = "true"
 

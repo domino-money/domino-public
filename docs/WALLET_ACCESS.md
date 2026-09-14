@@ -131,7 +131,9 @@ The owner selected an isolated VM on their home Linux server. A dedicated SSH
 key is authorized and host inspection succeeded. The owner freed space on
 the Linux system NVMe; the 100 GiB VM and empty PostgreSQL foundation are now installed.
 Four initial wallet addresses were checksum-validated and saved privately for
-later operator provisioning; no real grants have been applied. No private key,
+later operator provisioning. Since then, per
+[reports/P2_DELIVERY_2026-09-13.md](../reports/P2_DELIVERY_2026-09-13.md), three
+pilot wallet grants remain present in the installed staging database. No private key,
 wallet list or host endpoint is stored in this repository. See the
 [home VM runbook](HOME_VM_RUNBOOK.md) for the backend/Decimal boundary, private
 database roles, secrets, backups and validation before any service is enabled.
