@@ -98,11 +98,36 @@ class CatalogueRequest(PairRequest):
 
 
 class ReadGate:
+    """One provider-touching read at a time, plus one stored-data slot.
+
+    Provider reads (chain RPC or market providers) keep the single slot and
+    start-interval they always had: their ceilings and the shared deadline
+    are per operation, so concurrent expensive reads are not admitted.
+    Stored reads (`catalogue`, `pool-metrics`) touch only PostgreSQL and get
+    their own slot so a slow provider read cannot serialise them (#157).
+    """
+
+    PROVIDER, STORED = 'provider', 'stored'
+    STORED_ROUTES = frozenset({'catalogue', 'pool-metrics'})
+
     def __init__(self, interval=1, clock=time.monotonic):
         self.slot, self.lock = BoundedSemaphore(1), Lock()
         self.interval, self.clock, self.last = interval, clock, float('-inf')
+        self.stored_slot, self.stored_last = BoundedSemaphore(1), float('-inf')
 
-    def enter(self):
+    def kind_of(self, route):
+        return self.STORED if route in self.STORED_ROUTES else self.PROVIDER
+
+    def enter(self, kind=PROVIDER):
+        if kind == self.STORED:
+            if not self.stored_slot.acquire(blocking=False):
+                return False
+            with self.lock:
+                if self.clock() - self.stored_last < self.interval:
+                    self.stored_slot.release()
+                    return False
+                self.stored_last = self.clock()
+            return True
         if not self.slot.acquire(blocking=False):
             return False
         with self.lock:
@@ -207,8 +232,12 @@ def create_app(service=None, *, gate=None, read_budget_seconds=60):
         idle = gate.slot.acquire(blocking=False)
         if idle:
             gate.slot.release()
+        stored_idle = gate.stored_slot.acquire(blocking=False)
+        if stored_idle:
+            gate.stored_slot.release()
         return {'status': 'ok', 'mode': 'local_read_only', 'generation': generation,
-                'readBudgetSeconds': read_budget_seconds, 'busy': not idle}
+                'readBudgetSeconds': read_budget_seconds, 'busy': not idle,
+                'storedBusy': not stored_idle}
 
     @app.get('/v1/capabilities')
     def capabilities():
@@ -233,7 +262,8 @@ def create_app(service=None, *, gate=None, read_budget_seconds=60):
                 'suggestions': False, 'ownerTransactions': False, 'automation': False, 'feeCollection': False}
 
     def run_read(operation, route):
-        if not gate.enter():
+        kind = gate.kind_of(route)
+        if not gate.enter(kind):
             return JSONResponse({'error': 'read_capacity_busy'}, status_code=429, headers={'Retry-After': '1'})
         try:
             with read_deadline(read_budget_seconds):
@@ -247,7 +277,7 @@ def create_app(service=None, *, gate=None, read_budget_seconds=60):
             status, data = sanitize_error(str(error))
             return JSONResponse(data, status_code=status)
         finally:
-            gate.slot.release()
+            (gate.stored_slot if kind == gate.STORED else gate.slot).release()
 
     error_responses = {code: {'model': ErrorResponse} for code in (400,403,408,409,413,415,422,429,502,503,504)}
 

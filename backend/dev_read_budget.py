@@ -114,13 +114,19 @@ class DevelopmentBudgets:
 
 
 class DevelopmentGate(ReadGate):
-    """No queue, one actual worker, six starts/window, >=2 s between starts."""
+    """No queue, one actual worker per kind, six starts/window, >=2 s between starts.
+
+    The dev lane's binding constraint is the per-provider budget, so both
+    kinds share one starts window and the same 2s start interval; the stored
+    slot only adds a second concurrent worker, not extra provider capacity.
+    """
     def __init__(self, budgets):
         super().__init__(interval=2, clock=budgets.clock)
         self.budgets, self.starts = budgets, deque()
 
-    def enter(self):
-        if not self.slot.acquire(blocking=False):
+    def enter(self, kind=ReadGate.PROVIDER):
+        slot = self.stored_slot if kind == self.STORED else self.slot
+        if not slot.acquire(blocking=False):
             return False
         admitted = False
         try:
@@ -136,7 +142,7 @@ class DevelopmentGate(ReadGate):
             pass
         finally:
             if not admitted:
-                self.slot.release()
+                slot.release()
         return admitted
 
     def admission(self):

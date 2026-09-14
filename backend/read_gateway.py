@@ -61,7 +61,9 @@ class Gateway:
         self.gate, self.clock, self.wall_clock = gate or ReadGate(), clock, wall_clock
 
     def execute(self, route, body, assertion, client, deadline, *, version='v1'):
-        # Admission was acquired before thread dispatch. Auth is inside the total budget.
+        # Admission was acquired before thread dispatch, on the route's own slot;
+        # kind routes the release below to the same slot.
+        kind = self.gate.kind_of(route)
         try:
             remaining = deadline - self.clock()
             if remaining <= 0:
@@ -136,7 +138,7 @@ class Gateway:
             return ERROR_STATUS_BY_CODE.get(code, 503), {'error': code}
         finally:
             # Entire synchronous operation runs in a shielded worker: disconnect is not completion.
-            self.gate.slot.release()
+            (self.gate.stored_slot if kind == self.gate.STORED else self.gate.slot).release()
 
 
 def create_gateway(gateway=None):
@@ -215,7 +217,8 @@ def create_gateway(gateway=None):
             return result(408, {'error': 'request_timeout'})
         except (DataError, ValidationError, ValueError, TypeError):
             return result(422, {'error': 'invalid_request'})
-        if not gateway.gate.enter():
+        kind = gateway.gate.kind_of(match[1])
+        if not gateway.gate.enter(kind):
             return result(429, {'error': 'read_capacity_busy'})
         started = Event()
         def execute():
@@ -234,10 +237,11 @@ def create_gateway(gateway=None):
         finally:
             # Dispatch failure must release admission; a started worker owns its release.
             if not started.is_set():
-                gateway.gate.slot.release()
+                (gateway.gate.stored_slot if kind == gateway.gate.STORED
+                 else gateway.gate.slot).release()
 
     app.state.gateway = gateway
-    app.state.worker_limiter = anyio.CapacityLimiter(1)
+    app.state.worker_limiter = anyio.CapacityLimiter(2)
     return app
 
 

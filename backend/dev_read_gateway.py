@@ -168,7 +168,8 @@ class DevGateway(Gateway):
         except DataError:
             return 403, {'error': 'upstream_unavailable'}
         finally:
-            self.gate.slot.release()
+            (self.gate.stored_slot if self.gate.kind_of(route) == self.gate.STORED
+             else self.gate.slot).release()
 
 
 def create_dev_gateway(gateway=None):

@@ -101,6 +101,16 @@ class ApiTests(unittest.TestCase):
         now[0] += 1
         self.assertTrue(gate.enter())
         gate.slot.release()
+        # Stored-data reads share the interval but run on their own slot (#157).
+        now[0] += 1
+        self.assertTrue(gate.enter(gate.STORED))
+        now[0] += 2
+        self.assertFalse(gate.enter(gate.STORED))
+        gate.stored_slot.release()
+        self.assertTrue(gate.enter(gate.PROVIDER))
+        gate.slot.release()
+        self.assertTrue(gate.enter(gate.STORED))
+        gate.stored_slot.release()
 
     def test_second_http_read_gets_429_while_first_in_progress(self):
         entered, release = Event(), Event()

@@ -278,11 +278,11 @@
     },
     {
       "path": "backend/read_gateway.py",
-      "sha256": "6b73a878445d5bc9e0a8e4c1906e0e87177fb50bbc18af7eaaa4ecc82bf1cc12"
+      "sha256": "6f63b131c666da2c0746d608b9629e6cc302dae7457262f2f0e169d3fbbdcadb"
     },
     {
       "path": "backend/read_api.py",
-      "sha256": "5d12391e4c76d4430b4003c8a931b26984094c9b929ab7ad5c95e929057fd7b6"
+      "sha256": "a830e493ded7d1716878fb00b810495977758e67d84a8771b3da4717a32d4648"
     },
     {
       "path": "backend/bridge_http.py",
@@ -290,7 +290,7 @@
     },
     {
       "path": "backend/dev_read_gateway.py",
-      "sha256": "eda74317ab46ab8df625b35ae409778762df2c0d1ee0c1573a95c3cda75e183a"
+      "sha256": "7ced0d80e390c76dead32cedd3db08739317a1a761b1def39e120832f6dc96f8"
     },
     {
       "path": "backend/dev_read_identity.py",
@@ -302,7 +302,7 @@
     },
     {
       "path": "backend/dev_read_budget.py",
-      "sha256": "e9133473fafa0f2e9ed1ac417c35060c2ca2c97cc024c4bfef854b5ca1872ded"
+      "sha256": "80d32fe6e28228b401667b5ff8181a1aa0b51e6a035fe9bbc7bf5e77c274f9c3"
     },
     {
       "path": "backend/bridge_identity.py",
@@ -342,7 +342,7 @@
     },
     {
       "path": "backend/tests/test_read_contract.py",
-      "sha256": "2836c032cf82c87a23d11cadb952a842832768d59614fcbd91b4af0553f2ba4d"
+      "sha256": "159486207b84ca11f077523c8bd83632b238ad20c716ed09bff812d929fc61ae"
     },
     {
       "path": "backend/tests/test_discovery.py",

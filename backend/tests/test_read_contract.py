@@ -212,9 +212,10 @@ def build_fixtures():
         payload = files[entry['file']]
         gate = ReadGate(interval=0)
         gateway = Gateway(verifier=Verifier(), upstream=Upstream(payload), gate=gate, cursors=OpaqueCursors(clock=lambda:1010))
-        if not gate.enter(): raise AssertionError('fixture gate unavailable')
+        if not gate.enter(gate.kind_of(entry['route'])): raise AssertionError('fixture gate unavailable')
         body = {'wallet':OWNER,'tokens':[TOKEN],'autoDiscover':True} if entry['route']=='wallet-assets' else {}
         with patch('bridge_state.secrets.token_hex', return_value='ab'*32):
+            # execute() releases the route's own slot in its finally.
             status, browser = gateway.execute(entry['route'], body, 'fixture_assertion', '192.0.2.10', gateway.clock()+20)
         if status != 200: raise AssertionError((entry['file'], status, browser))
         add(entry['route'], entry['file'].split('.',1)[1].removesuffix('.json'), browser, kind='gateway')

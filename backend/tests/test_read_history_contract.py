@@ -136,10 +136,10 @@ class ReadHistoryTests(IdentityFixtures, unittest.TestCase):
         # This is offline cohort capacity evidence, not a provider/staging throughput claim.
         with history_service() as (reader, _):
             gateway, app=self.pipeline(reader,interval=1)
-            barrier=Barrier(3); metrics=[]; lock=Lock(); starts=[]
+            barrier=Barrier(3); metrics=[]; lock=Lock(); starts=[]; self.seen_routes=[]
             original=gateway.upstream.request
             def measured(route,*args,**kwargs):
-                if route!='health': starts.append(time.monotonic())
+                if route!='health': starts.append(time.monotonic()); self.seen_routes.append(route)
                 return original(route,*args,**kwargs)
             gateway.upstream.request=measured
             # Five real historical reads per page; repeated metrics represent separate panels.
@@ -164,7 +164,13 @@ class ReadHistoryTests(IdentityFixtures, unittest.TestCase):
                                            'elapsedSeconds':round(time.monotonic()-begin,3)})
             with ThreadPoolExecutor(max_workers=3) as pool: list(pool.map(client_page,range(3)))
             self.assertEqual(len(starts),15)
-            self.assertTrue(all(b-a>=.95 for a,b in zip(starts,starts[1:])))
+            # Per-kind start spacing (#157): provider reads keep the one-second
+            # serial gate; stored reads (pool-metrics) run on their own slot,
+            # so cross-kind pairs may start sooner than 0.95s apart.
+            provider_starts=[t for t,route in zip(starts,self.seen_routes) if route not in ('catalogue','pool-metrics')]
+            stored_starts=[t for t,route in zip(starts,self.seen_routes) if route in ('catalogue','pool-metrics')]
+            self.assertTrue(all(b-a>=.95 for a,b in zip(provider_starts,provider_starts[1:])))
+            self.assertTrue(all(b-a>=.95 for a,b in zip(stored_starts,stored_starts[1:])))
             self.assertTrue(all(row['completed']==5 for row in metrics))
             self.assertGreater(sum(row['busyResponses'] for row in metrics),0)
             print('READ_COHORT_CAPACITY '+json.dumps(sorted(metrics,key=lambda row:row['client'])))
