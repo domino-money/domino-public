@@ -30,12 +30,12 @@
     "pool.input.json": "5aabfb401fed757e2df9d22491d0f35867e30e1eaa215444628dbac2c55c0f91",
     "pool.input.schema.json": "49dac6bf0b793c332f803ec7df73101195a0aa52879c846793fa3af8c433371f",
     "pool.output.json": "394e606df2ea0f71d6bfc5160b7a916c758109936249cd40aceae5a06dc56a76",
-    "pool.output.schema.json": "ea2cb19c923b630186ca969c4f4530d3c2fe664a93daab266a6ed4e420aeb1cf"
+    "pool.output.schema.json": "0313686e82679f2665a1242036a5126bb48e24099e8167fb6f9777b5604ecb81"
   },
   "sources": {
     "api-contracts/read-v1/fixtures/producer/pool-market.success.json": "b8abee56a658da66ab75a11394da8a1a31159d0327e05cd3f39351b779782891",
     "backend/managed_performance.py": "bd5fd03eec50ae9fcc5f7e1b9a122298b860a98eefb9e8f1e19dc03c6920cc0b",
-    "backend/pool_apr.py": "de6759e3430a179874b6b4b6f21d9c13ac1157fdeba3dbb87392fcccb90d92c8",
+    "backend/pool_apr.py": "851561cf94eab3da911f79746d62d7000074a4b9c1bb2783c19a408fed480dbd",
     "backend/preview_metrics.py": "06cd8d91ddfdeed7a40950513cc6a718ecf8c3eaef69ca00af761f44d28ed72e",
     "docs/APR_METRICS.md": "b476baf8b695e2f406b0d84b7a2534b07f38e59721cba0e39d26fb7510d00d8e",
     "scripts/export-metrics-examples.py": "16c81dbbcc4495d26a527ad8f7e406bdfc90e45e2f54aadd6476b09492efb4ac"

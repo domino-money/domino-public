@@ -96,15 +96,27 @@ class PoolAprTests(unittest.TestCase):
         self.assertEqual(result['feeAprEstimate24hPercent'], '0')
         self.assertEqual(result['status'], 'available')
 
-    def test_protocol_fee_directions_cannot_be_estimated_from_aggregate_volume(self):
-        for raw in (1, 1000, 1 << 12, 1000 << 12, (1000 << 12) | 1000, (200 << 12) | 500):
-            for volume in ('1000', '0'):
-                with self.subTest(raw=raw, volume=volume):
-                    response = example()
-                    response['pool']['protocolFeeRaw'] = raw
-                    response['market']['data']['volume24hUsd'] = volume
-                    result = self.assert_unavailable(response, 'protocol_fee_unsupported')
-                    self.assertEqual(result['inputs']['protocolFeeRaw'], raw)
+    def test_equal_protocol_fees_are_adjusted_and_directional_ones_stay_unavailable(self):
+        # Equal directional fees: the LP fee applies to the remainder after the
+        # protocol fee leaves the input (ProtocolFeeLibrary.calculateSwapFee),
+        # so the estimate scales by (1 - protocol/1e6) — well-defined for
+        # aggregate volume without a directional split.
+        response = example()
+        response['pool']['protocolFeeRaw'] = 1000 | (1000 << 12)
+        result = estimate_pool_apr(response, now=1010)
+        self.assertEqual(result['status'], 'available')
+        self.assertEqual(result['feeAprEstimate24hPercent'], '10.93905')  # 10.95 × (1 − 1000/1e6)
+        self.assertEqual(result['inputs']['protocolFeeRaw'], 1000 | (1000 << 12))
+        # Same protocol fee with zero volume stays a real zero.
+        response['market']['data']['volume24hUsd'] = '0'
+        result = estimate_pool_apr(response, now=1010)
+        self.assertEqual(result['feeAprEstimate24hPercent'], '0')
+        # Asymmetric fees: aggregate volume cannot apportion the directions.
+        for raw in (1, 1 << 12, (200 << 12) | 500, 1000, 1000 << 12):
+            with self.subTest(raw=raw):
+                response = example()
+                response['pool']['protocolFeeRaw'] = raw
+                self.assert_unavailable(response, 'protocol_fee_directional_unsupported')
 
     def test_invalid_packed_protocol_fees_are_rejected_in_either_direction(self):
         for raw in (1001, 1001 << 12, 0xffffff):

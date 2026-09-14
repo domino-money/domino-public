@@ -107,7 +107,7 @@ class ReadV2ContractTests(unittest.TestCase):
     def test_zero_missing_unsupported_and_expired_never_converge_to_false_zero(self):
         zero = self.files['fixtures/producer/pool-market.zero-volume.json']
         self.assertEqual((zero['estimate']['status'], zero['estimate']['feeAprEstimate24hPercent']), ('available', '0'))
-        for name in ('zero-tvl', 'missing-volume', 'missing-tvl', 'protocol-fee', 'invalid-protocol-fee',
+        for name in ('zero-tvl', 'missing-volume', 'missing-tvl', 'invalid-protocol-fee',
                      'dynamic', 'hooked', 'expired', 'snapshot-expired', 'rejected-currencies'):
             with self.subTest(name=name):
                 estimate = self.files[f'fixtures/producer/pool-market.{name}.json']['estimate']
@@ -116,6 +116,11 @@ class ReadV2ContractTests(unittest.TestCase):
         rejected = self.files['fixtures/producer/pool-market.rejected-currencies.json']['estimate']
         self.assertIn('market_identity_mismatch', rejected['reasons'])
         self.assertNotIn('missing_reported_tvl', rejected['reasons'])
+        # Equal directional protocol fees are adjusted, not refused (T1.4).
+        adjusted = self.files['fixtures/producer/pool-market.protocol-fee.json']['estimate']
+        self.assertEqual(adjusted['status'], 'available')
+        self.assertEqual(adjusted['reasons'], [])
+        self.assertLess(float(adjusted['feeAprEstimate24hPercent']), 10.95)
 
     def test_dates_are_retained_across_fresh_stale_and_expired_boundaries(self):
         for name, status, cache_age in (('cache-59', 'available', 59), ('stale', 'stale', 60),

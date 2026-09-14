@@ -40,6 +40,7 @@ const REASONS: Record<string, string> = {
   estimate_transport_unavailable: 'Estimated APR is unavailable; market figures use the supported read connection.',
   retained_after_refresh_failure: 'A refresh failed; this estimate is retained and is not current.',
   protocol_fee_unsupported: 'A nonzero protocol fee prevents this estimate.',
+  protocol_fee_directional_unsupported: 'Asymmetric directional protocol fees cannot be applied to aggregate volume.',
   invalid_protocol_fee: 'The protocol fee could not be validated.',
   market_data_expired: 'Provider inputs are older than the five-minute limit.',
   snapshot_expired: 'The pool snapshot is older than the five-minute limit.',

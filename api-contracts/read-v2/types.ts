@@ -164,7 +164,7 @@ export type PoolAprEstimate = {
   "poolId": string;
   "status": "available" | "stale" | "unavailable";
   "feeAprEstimate24hPercent": (string | null);
-  "reasons": Array<"pool_identity_mismatch" | "snapshot_mismatch" | "pool_state_unavailable" | "dynamic_fee_unsupported" | "hooked_pool_unsupported" | "pool_integration_unsupported" | "fixed_fee_mismatch" | "invalid_protocol_fee" | "protocol_fee_unsupported" | "market_unavailable" | "market_rejected" | "market_identity_mismatch" | "provider_dex_unconfirmed" | "missing_reported_tvl" | "zero_reported_tvl" | "missing_volume24h" | "market_age_unknown" | "market_timestamp_future" | "snapshot_timestamp_future" | "market_data_expired" | "snapshot_expired" | "estimate_out_of_bounds" | "estimate_below_display_precision" | "provider_observation_stale" | "market_cache_stale" | "onchain_snapshot_stale">;
+  "reasons": Array<"pool_identity_mismatch" | "snapshot_mismatch" | "pool_state_unavailable" | "dynamic_fee_unsupported" | "hooked_pool_unsupported" | "pool_integration_unsupported" | "fixed_fee_mismatch" | "invalid_protocol_fee" | "protocol_fee_unsupported" | "protocol_fee_directional_unsupported" | "market_unavailable" | "market_rejected" | "market_identity_mismatch" | "provider_dex_unconfirmed" | "missing_reported_tvl" | "zero_reported_tvl" | "missing_volume24h" | "market_age_unknown" | "market_timestamp_future" | "snapshot_timestamp_future" | "market_data_expired" | "snapshot_expired" | "estimate_out_of_bounds" | "estimate_below_display_precision" | "provider_observation_stale" | "market_cache_stale" | "onchain_snapshot_stale">;
   "method": "fixed_lp_fee_x_volume24h_over_reported_tvl_annualized_365";
   "inputs": AprInputs;
   "provenance": AprProvenance;

@@ -3,7 +3,7 @@
   "estimate": {
     "chainId": 4663,
     "executionAvailable": false,
-    "feeAprEstimate24hPercent": null,
+    "feeAprEstimate24hPercent": "10.93905",
     "inputs": {
       "currentLpFeePips": 3000,
       "protocolFeeRaw": 4097000,
@@ -51,12 +51,10 @@
       "sourceUrl": "https://api.geckoterminal.com/api/v2/networks/robinhood/pools/0x0911afcb281d7bcae2d71443ceaeebd0f89b4537708449970d797622b4b4c941"
     },
     "providerMetricsReconciled": false,
-    "reasons": [
-      "protocol_fee_unsupported"
-    ],
+    "reasons": [],
     "scope": "pool",
     "source": "geckoterminal",
-    "status": "unavailable",
+    "status": "available",
     "suggested": false,
     "version": "pool-apr-estimate-v0"
   },

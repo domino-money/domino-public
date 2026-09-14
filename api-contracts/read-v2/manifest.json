@@ -159,7 +159,7 @@
     },
     {
       "path": "fixtures/producer/pool-market.protocol-fee.json",
-      "sha256": "55b1dd92123d9f6535f7ededf9d67562dc094c4f7b4761742f9745e3713a9dad"
+      "sha256": "8f69b7d2a07661859efe72066ac3d0e56432c9b053805c7e04bfec05ee113ab4"
     },
     {
       "path": "fixtures/producer/pool-market.provider-rate-limited.json",
@@ -223,7 +223,7 @@
     },
     {
       "path": "runtime.mjs",
-      "sha256": "e8b52c72cbd4e7d538fc2455be19dd9e2f695ba28ea4f753e8373fb327618707"
+      "sha256": "425466014c381d3290d25b000cc3928276ea2e08f2f0f12bf4c028384525f7f4"
     },
     {
       "path": "schemas/capabilities.response.schema.json",
@@ -239,11 +239,11 @@
     },
     {
       "path": "schemas/pool-market.response.schema.json",
-      "sha256": "91578f8a301ace9f2769dbde7ca3ff7cfc2faf145bc2e4dc9c01158f708b199f"
+      "sha256": "32f5c392e4b0e0ad801aa6c98f4152584d4e0ce2ec379e293a11f798c8e5a3e9"
     },
     {
       "path": "types.ts",
-      "sha256": "8209445c6c27d847fc87e84013c799c1b07c4e548ca7bd9ec5df5bc3e3adfd59"
+      "sha256": "f2d5352e18baac2553c640a3966959a48e721b8a227e2d0391d7717c8141caf4"
     }
   ],
   "generator": "scripts/export-read-v2-contract.py",
@@ -254,7 +254,7 @@
     },
     {
       "path": "backend/pool_apr.py",
-      "sha256": "de6759e3430a179874b6b4b6f21d9c13ac1157fdeba3dbb87392fcccb90d92c8"
+      "sha256": "851561cf94eab3da911f79746d62d7000074a4b9c1bb2783c19a408fed480dbd"
     },
     {
       "path": "backend/read_contract.py",
@@ -338,7 +338,7 @@
     },
     {
       "path": "backend/tests/test_read_v2_contract.py",
-      "sha256": "4a9139f2aa2de62549e31a0d6def69f75251d2a5206d4b3541cd23dd4bd17803"
+      "sha256": "46169e1647e161721d27e149b27fd5ac5f57c092262cdd37ece89855cb927fd8"
     },
     {
       "path": "backend/tests/test_read_contract.py",

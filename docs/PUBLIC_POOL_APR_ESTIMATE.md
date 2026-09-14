@@ -42,13 +42,16 @@ inputs. It is neither a quoted provider APR nor independently reconciled LP
 income, selected-range performance, APY or a return forecast. The original
 coverage/qualification limitations remain part of every estimate.
 
-Available values require a current protocol fee of zero. Uniswap v4 encodes
-two directional protocol fees in 12-bit fields, each bounded at 1000 pips;
-nonzero valid fields yield `protocol_fee_unsupported`, invalid directional
-values yield `invalid_protocol_fee`. Aggregate 24h volume cannot establish the
-directional LP share. The zero-current-fee case still does not prove historical
-protocol fees; `protocol_fee_effect_not_reconciled` remains a limitation. See
-the vendored official [ProtocolFeeLibrary](../backend/tests/reference/v4/src/libraries/ProtocolFeeLibrary.sol).
+Available values allow an equal pair of directional protocol fees: the
+protocol fee leaves the input first and the LP fee applies to the remainder
+(`ProtocolFeeLibrary.calculateSwapFee`), so the estimate scales by
+`(1 − protocol/1,000,000)`. Asymmetric directional fees yield
+`protocol_fee_directional_unsupported` — aggregate 24h volume cannot
+apportion the directions — and invalid directional values yield
+`invalid_protocol_fee`. The zero-current-fee case still does not prove
+historical protocol fees; `protocol_fee_effect_not_reconciled` remains a
+limitation. See the vendored official
+[ProtocolFeeLibrary](../backend/tests/reference/v4/src/libraries/ProtocolFeeLibrary.sol).
 The raw fee is retained as `estimate.inputs.protocolFeeRaw`.
 
 `status` is `available`, `stale` or `unavailable`. A usable decimal string is

@@ -1073,6 +1073,7 @@
               "fixed_fee_mismatch",
               "invalid_protocol_fee",
               "protocol_fee_unsupported",
+              "protocol_fee_directional_unsupported",
               "market_unavailable",
               "market_rejected",
               "market_identity_mismatch",
@@ -1093,7 +1094,7 @@
             ],
             "type": "string"
           },
-          "maxItems": 26,
+          "maxItems": 27,
           "title": "Reasons",
           "type": "array"
         },

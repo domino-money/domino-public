@@ -42,6 +42,7 @@ UNAVAILABLE_REASONS = (
     'dynamic_fee_unsupported', 'hooked_pool_unsupported',
     'pool_integration_unsupported', 'fixed_fee_mismatch',
     'invalid_protocol_fee', 'protocol_fee_unsupported',
+    'protocol_fee_directional_unsupported',
     'market_unavailable', 'market_rejected', 'market_identity_mismatch',
     'provider_dex_unconfirmed', 'missing_reported_tvl', 'zero_reported_tvl',
     'missing_volume24h', 'market_age_unknown', 'market_timestamp_future',
@@ -181,13 +182,18 @@ def estimate_pool_apr(pool_market_response: Mapping, *, now: int) -> dict:
     if key['feeMode'] == 'fixed' and key['fee_pips'] != pool['currentLpFeePips']:
         reasons.append('fixed_fee_mismatch')
     # A v4 protocol fee is two packed 12-bit directional fees, at most 1000
-    # pips each. Reported aggregate volume cannot apportion the directions or
-    # establish historical protocol fees; do not emit an unadjusted LP rate.
+    # pips each. The protocol fee leaves the input first and the LP fee is
+    # taken from the remainder (ProtocolFeeLibrary.calculateSwapFee), so the
+    # LP share of any swap input is lpFee pips scaled by (1 - protocol/1e6).
+    # Reported aggregate volume spans both directions; a directional split
+    # would need per-direction volume, so only fees equal in both directions
+    # keep a well-defined aggregate adjustment and different fees stay
+    # unavailable without inventing an apportionment.
     protocol_fee = pool['protocolFeeRaw']
     if (protocol_fee & 0xfff) > 1000 or (protocol_fee >> 12) > 1000:
         reasons.append('invalid_protocol_fee')
-    elif protocol_fee:
-        reasons.append('protocol_fee_unsupported')
+    elif protocol_fee and (protocol_fee & 0xfff) != (protocol_fee >> 12):
+        reasons.append('protocol_fee_directional_unsupported')
 
     retrieved_at = data['retrievedAt'] if data else None
     snapshot_age = now - snapshot['timestamp'] if snapshot['timestamp'] <= now else None
@@ -235,7 +241,11 @@ def estimate_pool_apr(pool_market_response: Mapping, *, now: int) -> dict:
     value = None
     status = 'unavailable'
     if not reasons:
-        estimate = Fraction(volume) * Fraction(pool['currentLpFeePips'], 1_000_000) * 365 * 100 / Fraction(tvl)
+        # Protocol fee leaves the input first; the LP fee applies to the
+        # remainder: lpFee - lpFee*protocol/1e6 pips of every input unit.
+        protocol_pips = protocol_fee & 0xfff
+        lp_share = Fraction(pool['currentLpFeePips']) * Fraction(1_000_000 - protocol_pips, 1_000_000)
+        estimate = Fraction(volume) * lp_share / 1_000_000 * 365 * 100 / Fraction(tvl)
         value, render_reason = _render(estimate)
         if render_reason:
             reasons.append(render_reason)
