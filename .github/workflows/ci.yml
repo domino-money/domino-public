@@ -109,10 +109,12 @@ jobs:
       - run: npm ci --no-audit --no-fund
       - run: npm --prefix app ci --no-audit --no-fund
       - run: python -m pip install -r backend/requirements-api.lock
-      # Compile every contract artifact (forge build) so backend EVM tests can
-      # load e.g. contracts/out/DominoSetup.t.sol/SetupToken.json (issue #144).
+      # Compile the artifact tree the backend EVM tests load: the DominoSetup
+      # test pulls PoolManager, PositionManager, StateView and SetupToken.
+      # A full forge build OOMs soljson; match-path compiles only this tree
+      # (issue #144).
       - name: Build contract artifacts for backend EVM tests
-        run: node scripts/test-contracts.mjs build
+        run: node scripts/test-contracts.mjs build --match-path test/setup/DominoSetup.t.sol
       - name: Build and qualify the local compound receipt fixture
         run: node scripts/test-contracts.mjs --match-path test/reference/OfficialDominoCompound.t.sol
       - run: python scripts/export-read-contract.py --check
