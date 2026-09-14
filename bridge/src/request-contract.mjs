@@ -13,6 +13,7 @@ export const ROUTES = Object.freeze({
   'pool-activity': { schemaVersion: RESPONSE_SCHEMA_VERSIONS['pool-activity'], fields: ['poolId'], required: ['poolId'] },
   'pool-positions': { schemaVersion: RESPONSE_SCHEMA_VERSIONS['pool-positions'], fields: ['poolId'], required: ['poolId'] },
   'pool-metrics': { schemaVersion: RESPONSE_SCHEMA_VERSIONS['pool-metrics'], fields: ['poolId'], required: ['poolId'] },
+  'markets-snapshot': { schemaVersion: RESPONSE_SCHEMA_VERSIONS['markets-snapshot'], fields: ['poolIds'], required: [] },
 });
 
 const address = (value) => typeof value === 'string' && value.length === 42 && /^0x[0-9a-fA-F]{40}$/.test(value);
@@ -48,6 +49,7 @@ export function validateRequest(route, body) {
     optional('tokens', (value) => array(value, 10, address)) &&
     optional('autoDiscover', (value) => typeof value === 'boolean') &&
     optional('cursor', (value) => value === null || (typeof value === 'string' && [...value].length >= 1 && [...value].length <= 4096));
+  if (route === 'markets-snapshot') return optional('poolIds', (value) => array(value, 24, poolId));
   return array(body.tokenIds, 10, (value) => typeof value === 'string' && /^(0|[1-9][0-9]{0,77})(?![\s\S])/.test(value) && BigInt(value) < 2n ** 256n) &&
     body.tokenIds.length >= 1 && new Set(body.tokenIds).size === body.tokenIds.length &&
     optional('blockNumber', (value) => value === null || integer(value, 0n, 2n ** 53n - 1n));

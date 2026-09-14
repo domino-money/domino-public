@@ -2063,6 +2063,7 @@
               "fixed_fee_mismatch",
               "invalid_abi_response",
               "invalid_json",
+              "invalid_market_query",
               "invalid_nft_position_info",
               "invalid_nft_snapshot_block",
               "invalid_or_expired_cursor",
@@ -2071,6 +2072,7 @@
               "invalid_quantity",
               "invalid_request",
               "invalid_rpc_envelope",
+              "invalid_snapshot_request",
               "invalid_tick_spacing",
               "invalid_token_list",
               "json_required",
@@ -2099,6 +2101,7 @@
               "rpc_call_gas_limit",
               "rpc_call_reverted",
               "rpc_error",
+              "snapshot_not_built",
               "snapshot_reorganized",
               "stale_or_future_block",
               "upstream_contract_mismatch",
@@ -3348,6 +3351,134 @@
         "title": "MarketUnavailable",
         "type": "object"
       },
+      "MarketsSnapshotRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "poolIds": {
+            "items": {
+              "pattern": "^0x[0-9a-fA-F]{64}$",
+              "type": "string"
+            },
+            "maxItems": 24,
+            "title": "Poolids",
+            "type": "array"
+          }
+        },
+        "title": "MarketsSnapshotRequest",
+        "type": "object"
+      },
+      "MarketsSnapshotResponse": {
+        "additionalProperties": false,
+        "description": "Stored server-side snapshot; served without touching any provider.",
+        "properties": {
+          "ageSeconds": {
+            "anyOf": [
+              {
+                "maximum": 9007199254740991.0,
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ageseconds"
+          },
+          "builtAt": {
+            "anyOf": [
+              {
+                "maximum": 9007199254740991.0,
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Builtat"
+          },
+          "chainId": {
+            "const": 4663,
+            "title": "Chainid",
+            "type": "integer"
+          },
+          "generated": {
+            "const": false,
+            "title": "Generated",
+            "type": "boolean"
+          },
+          "mode": {
+            "const": "stored_markets_snapshot",
+            "title": "Mode",
+            "type": "string"
+          },
+          "pools": {
+            "items": {
+              "$ref": "#/components/schemas/SnapshotPoolEntry"
+            },
+            "maxItems": 24,
+            "title": "Pools",
+            "type": "array"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "const": "snapshot_refresh_pending",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          },
+          "requested": {
+            "items": {
+              "pattern": "^0x[0-9a-f]{64}$",
+              "type": "string"
+            },
+            "maxItems": 24,
+            "title": "Requested",
+            "type": "array"
+          },
+          "schemaVersion": {
+            "const": 1,
+            "title": "Schemaversion",
+            "type": "integer"
+          },
+          "stale": {
+            "title": "Stale",
+            "type": "boolean"
+          },
+          "status": {
+            "enum": [
+              "current",
+              "stale",
+              "not_built"
+            ],
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "schemaVersion",
+          "mode",
+          "chainId",
+          "status",
+          "reason",
+          "builtAt",
+          "ageSeconds",
+          "stale",
+          "generated",
+          "requested",
+          "pools"
+        ],
+        "title": "MarketsSnapshotResponse",
+        "type": "object",
+        "x-domino-constraints": [
+          "requested pool ids are echoed exactly as sent; pools lists every stored entry; not_built is the explicit empty state"
+        ]
+      },
       "MetadataIssues": {
         "additionalProperties": false,
         "properties": {
@@ -3817,6 +3948,11 @@
       "PoolMarketRequest": {
         "additionalProperties": false,
         "properties": {
+          "fromSnapshot": {
+            "default": false,
+            "title": "Fromsnapshot",
+            "type": "boolean"
+          },
           "includePriceHistory": {
             "default": false,
             "title": "Includepricehistory",
@@ -5304,6 +5440,53 @@
         "title": "Snapshot",
         "type": "object"
       },
+      "SnapshotPoolEntry": {
+        "additionalProperties": false,
+        "properties": {
+          "market": {
+            "discriminator": {
+              "mapping": {
+                "available": "#/components/schemas/MarketAvailable",
+                "rejected": "#/components/schemas/MarketUnavailable",
+                "stale": "#/components/schemas/MarketAvailable",
+                "unavailable": "#/components/schemas/MarketUnavailable"
+              },
+              "propertyName": "status"
+            },
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/MarketAvailable"
+              },
+              {
+                "$ref": "#/components/schemas/MarketUnavailable"
+              }
+            ],
+            "title": "Market"
+          },
+          "observedAt": {
+            "maximum": 9007199254740991.0,
+            "minimum": 0.0,
+            "title": "Observedat",
+            "type": "integer"
+          },
+          "pool": {
+            "$ref": "#/components/schemas/VerifiedPool"
+          },
+          "poolId": {
+            "pattern": "^0x[0-9a-f]{64}$",
+            "title": "Poolid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "poolId",
+          "pool",
+          "market",
+          "observedAt"
+        ],
+        "title": "SnapshotPoolEntry",
+        "type": "object"
+      },
       "StateSnapshot": {
         "additionalProperties": false,
         "properties": {
@@ -6435,6 +6618,144 @@
           }
         },
         "summary": "Catalogue"
+      }
+    },
+    "/v1/read/markets-snapshot": {
+      "post": {
+        "operationId": "markets_snapshot_v1_read_markets_snapshot_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MarketsSnapshotRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MarketsSnapshotResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "408": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request Timeout"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "413": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Content Too Large"
+          },
+          "415": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unsupported Media Type"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unprocessable Content"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Too Many Requests"
+          },
+          "502": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Bad Gateway"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Service Unavailable"
+          },
+          "504": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Gateway Timeout"
+          }
+        },
+        "summary": "Markets Snapshot"
       }
     },
     "/v1/read/nft-positions": {

@@ -32,7 +32,8 @@ from read_deadline import read_deadline
 from read_gateway import Gateway, MAX_BODY, REQUEST_MODELS
 from read_api import ReadGate
 
-DEV_READS = ('token', 'pools', 'pool-market', 'wallet-assets', 'nft-positions', 'catalogue', 'pool-activity')
+DEV_READS = ('token', 'pools', 'pool-market', 'wallet-assets', 'nft-positions', 'catalogue',
+             'pool-activity', 'markets-snapshot')
 READ_PREFIX = '/internal/read/v1/'
 V2_PREFIX = '/internal/read/v2/'
 STATUS_PATH = '/internal/dev/v1/status'

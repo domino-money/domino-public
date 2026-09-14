@@ -172,6 +172,15 @@ def build_fixtures():
         for key, value in updates.items(): setattr(transport, key, value)
         add('pool-market', name, current.pool_market(POOL, include_price_history=True, price_token='quote'))
 
+    # markets-snapshot: producer fixture = served envelope after one real pool-market read.
+    snapshot_service, snapshot_transport, snapshot_now = market_setup()
+    snapshot_service.pool_market(POOL, include_price_history=True)
+    add('markets-snapshot', 'success', snapshot_service.markets_snapshot())
+    add('markets-snapshot', 'subset', snapshot_service.markets_snapshot([POOL]))
+    add('markets-snapshot', 'empty', snapshot_service.markets_snapshot([]))
+    snapshot_now[0] = 61; snapshot_transport.failure = 'http_503'
+    add('markets-snapshot', 'stale', snapshot_service.markets_snapshot())
+
     rpc = NftRpc(); rpc.liquidity = 2**100
     add('nft-positions', 'success', service(rpc).nft_positions(['1', str(2**255+1)]))
     rpc = NftRpc(); rpc.empty = True
@@ -249,6 +258,7 @@ def build_fixtures():
         'nft-positions': {'tokenIds': ['1', str(2**255+1)], 'blockNumber': 700},
         'catalogue': {'token':TOKEN, 'pairedToken':ZERO, 'limit':20},
         'pool-activity': {'poolId':POOL}, 'pool-positions': {'poolId':POOL}, 'pool-metrics': {'poolId':POOL},
+        'markets-snapshot': {'poolIds': [POOL]},
     }.items():
         path = f'fixtures/requests/{route}.json'
         files[path] = payload

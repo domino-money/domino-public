@@ -79,6 +79,12 @@
   },
   {
     "payload": {
+      "error": "invalid_market_query"
+    },
+    "status": 503
+  },
+  {
+    "payload": {
       "error": "invalid_nft_position_info"
     },
     "status": 503
@@ -122,6 +128,12 @@
   {
     "payload": {
       "error": "invalid_rpc_envelope"
+    },
+    "status": 503
+  },
+  {
+    "payload": {
+      "error": "invalid_snapshot_request"
     },
     "status": 503
   },
@@ -290,6 +302,12 @@
   {
     "payload": {
       "error": "rpc_error"
+    },
+    "status": 503
+  },
+  {
+    "payload": {
+      "error": "snapshot_not_built"
     },
     "status": 503
   },

@@ -632,6 +632,13 @@ export type Snapshot = {
   "timestamp": number;
 };
 
+export type SnapshotPoolEntry = {
+  "poolId": string;
+  "pool": VerifiedPool;
+  "market": (MarketAvailable | MarketUnavailable);
+  "observedAt": number;
+};
+
 export type StateSnapshot = {
   "number": number;
   "hash": string;
@@ -889,11 +896,25 @@ export type PoolMetricsResponse = {
   "coverage": MetricsCoverage;
 };
 
+export type MarketsSnapshotResponse = {
+  "schemaVersion": 1;
+  "mode": "stored_markets_snapshot";
+  "chainId": 4663;
+  "status": "current" | "stale" | "not_built";
+  "reason": ("snapshot_refresh_pending" | null);
+  "builtAt": (number | null);
+  "ageSeconds": (number | null);
+  "stale": boolean;
+  "generated": false;
+  "requested": Array<string>;
+  "pools": Array<SnapshotPoolEntry>;
+};
+
 export type CapabilitiesResponse = {
   "contractVersion": "1.1.0-rc.3";
   "dataMode": "disabled" | "live_read_only";
   "chainId": 4663;
-  "enabledReads": Array<"token" | "pools" | "pool-market" | "wallet-assets" | "nft-positions" | "catalogue" | "pool-activity" | "pool-positions" | "pool-metrics">;
+  "enabledReads": Array<"token" | "pools" | "pool-market" | "wallet-assets" | "nft-positions" | "catalogue" | "pool-activity" | "pool-positions" | "pool-metrics" | "markets-snapshot">;
   "walletAuthentication": false;
   "privateAccounts": false;
   "ownerTransactions": false;
@@ -901,7 +922,7 @@ export type CapabilitiesResponse = {
 };
 
 export type ErrorResponse = {
-  "error": "activity_methodology_mismatch" | "activity_not_indexed" | "activity_pool_not_registered" | "activity_snapshot_reorganized" | "activity_window_budget_exhausted" | "block_unavailable" | "catalogue_database_unavailable" | "catalogue_not_configured" | "catalogue_revision_changed" | "catalogue_schema_mismatch" | "fixed_fee_mismatch" | "invalid_abi_response" | "invalid_json" | "invalid_nft_position_info" | "invalid_nft_snapshot_block" | "invalid_or_expired_cursor" | "invalid_pool_key" | "invalid_pool_state" | "invalid_quantity" | "invalid_request" | "invalid_rpc_envelope" | "invalid_tick_spacing" | "invalid_token_list" | "json_required" | "local_client_required" | "manager_mismatch" | "method_not_allowed" | "metrics_snapshot_reorganized" | "missing_contract_code" | "missing_rpc_result" | "network_unavailable" | "nft_core_liquidity_mismatch" | "nft_live_position_has_no_owner" | "nft_pool_or_range_mismatch" | "nft_snapshot_reorganized" | "origin_not_allowed" | "pool_id_mismatch" | "provider_currency_mismatch" | "quantity_too_large" | "read_capacity_busy" | "read_deadline_exceeded" | "request_budget_exhausted" | "request_timeout" | "request_too_large" | "response_too_large" | "route_not_available" | "rpc_call_gas_limit" | "rpc_call_reverted" | "rpc_error" | "snapshot_reorganized" | "stale_or_future_block" | "upstream_contract_mismatch" | "upstream_invalid_response" | "upstream_timeout" | "upstream_unavailable" | "wrong_chain";
+  "error": "activity_methodology_mismatch" | "activity_not_indexed" | "activity_pool_not_registered" | "activity_snapshot_reorganized" | "activity_window_budget_exhausted" | "block_unavailable" | "catalogue_database_unavailable" | "catalogue_not_configured" | "catalogue_revision_changed" | "catalogue_schema_mismatch" | "fixed_fee_mismatch" | "invalid_abi_response" | "invalid_json" | "invalid_market_query" | "invalid_nft_position_info" | "invalid_nft_snapshot_block" | "invalid_or_expired_cursor" | "invalid_pool_key" | "invalid_pool_state" | "invalid_quantity" | "invalid_request" | "invalid_rpc_envelope" | "invalid_snapshot_request" | "invalid_tick_spacing" | "invalid_token_list" | "json_required" | "local_client_required" | "manager_mismatch" | "method_not_allowed" | "metrics_snapshot_reorganized" | "missing_contract_code" | "missing_rpc_result" | "network_unavailable" | "nft_core_liquidity_mismatch" | "nft_live_position_has_no_owner" | "nft_pool_or_range_mismatch" | "nft_snapshot_reorganized" | "origin_not_allowed" | "pool_id_mismatch" | "provider_currency_mismatch" | "quantity_too_large" | "read_capacity_busy" | "read_deadline_exceeded" | "request_budget_exhausted" | "request_timeout" | "request_too_large" | "response_too_large" | "route_not_available" | "rpc_call_gas_limit" | "rpc_call_reverted" | "rpc_error" | "snapshot_not_built" | "snapshot_reorganized" | "stale_or_future_block" | "upstream_contract_mismatch" | "upstream_invalid_response" | "upstream_timeout" | "upstream_unavailable" | "wrong_chain";
 };
 
 export type TokenRequest = {
@@ -919,6 +940,7 @@ export type PoolMarketRequest = {
   "poolId": string;
   "includePriceHistory"?: boolean;
   "priceToken"?: "base" | "quote";
+  "fromSnapshot"?: boolean;
 };
 
 export type WalletAssetsRequest = {
@@ -953,6 +975,10 @@ export type PoolMetricsRequest = {
   "poolId": string;
 };
 
+export type MarketsSnapshotRequest = {
+  "poolIds"?: Array<string>;
+};
+
 export interface ReadResponses {
 
   "token": TokenResponse;
@@ -972,6 +998,8 @@ export interface ReadResponses {
   "pool-positions": PoolPositionsResponse;
 
   "pool-metrics": PoolMetricsResponse;
+
+  "markets-snapshot": MarketsSnapshotResponse;
 
   "capabilities": CapabilitiesResponse;
 
@@ -996,6 +1024,8 @@ export interface ReadRequests {
   "pool-positions": PoolPositionsRequest;
 
   "pool-metrics": PoolMetricsRequest;
+
+  "markets-snapshot": MarketsSnapshotRequest;
 
 }
 

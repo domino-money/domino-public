@@ -73,7 +73,7 @@ def bounded_transport(seconds=60):
 class ReadService:
     def __init__(self, *, rpc_url=RPC_URL, rpc_urls=None, inventory_url=None, clock=time.time,
                  rpc_factory=None, inventory=None, cursor_codec=None, transport_factory=bounded_transport,
-                 catalogue=None, market_cache=None):
+                 catalogue=None, market_cache=None, snapshot=None):
         self.rpc_url, self.inventory_url, self.clock = rpc_url, inventory_url, clock
         self.rpc_urls = tuple(rpc_urls) if rpc_urls is not None else None
         self.rpc_factory, self.inventory = rpc_factory, inventory
@@ -85,6 +85,10 @@ class ReadService:
             from market_data import GeckoMarketData
             market_cache = MarketCache(GeckoMarketData(clock=clock))
         self.market_cache = market_cache
+        if snapshot is None:
+            from markets_snapshot import MarketsSnapshot
+            snapshot = MarketsSnapshot(clock=clock, wall_clock=clock)
+        self.snapshot = snapshot
         # Validate configuration at startup, without sending network requests.
         if inventory_url:
             AlchemyInventory(inventory_url)
@@ -242,11 +246,38 @@ class ReadService:
         return report
 
     @public_response('pool-market')
-    def pool_market(self, pool_id, *, include_price_history=False, price_token='base'):
-        """On-demand provider observations; no catalogue or history replay required."""
+    def pool_market(self, pool_id, *, include_price_history=False, price_token='base',
+                    from_snapshot=False):
+        """On-demand provider observations; no catalogue or history replay required.
+
+        `from_snapshot` serves the stored verified pool state and market
+        observation from the T2.1 snapshot without re-reading chain state
+        (#156/T2.2). Its `issues` stay empty and its freshness is the
+        snapshot's own; a not-built snapshot answers explicitly.
+        """
         pool_id = bytes32(pool_id)
         if type(include_price_history) is not bool or price_token not in ('base', 'quote'):
             raise DataError('invalid_market_query')
+        if from_snapshot:
+            if include_price_history:
+                raise DataError('invalid_market_query')
+            with self.snapshot.lock:
+                state = self.snapshot.state
+                record = state['pools'].get(pool_id) if state else None
+            if record is None:
+                raise DataError('snapshot_not_built')
+            pool = deepcopy(record['pool'])
+            block = Block(**pool['snapshot'])
+            market = deepcopy(record['market'])
+            # Same wire shape as a fresh read; freshness is the snapshot's own.
+            return {'schemaVersion': 1, 'mode': 'on_demand_provider_market', 'chainId': CHAIN_ID,
+                    'poolId': pool_id, 'pool': pool, 'snapshot': asdict(block),
+                    'market': market,
+                    'priceHistory': {'status': 'not_requested', 'reason': None, 'data': None, 'cache': None},
+                    'issues': [], 'requiresLocalHistory': False,
+                    'providerMetricsReconciled': False, 'feeApr24h': None,
+                    'aprReason': 'provider_lp_fee_history_unavailable',
+                    'suggested': False, 'executionAvailable': False}
         reader = DiscoveryReader(self._rpc(self.transport_factory()), clock=self.clock)
         block = reader.snapshot()
         pool = reader.pool({'poolId': pool_id}, block)
@@ -283,12 +314,27 @@ class ReadService:
                     history = {**history, 'status': 'rejected',
                                'reason': 'provider_chart_currency_mismatch', 'data': None}
         reader.assert_canonical(block)
+        # T2.2/T2.1: the verified pool identity/state and the matched provider
+        # observation fold into the stored snapshot, so later reads serve it
+        # without re-reading chain state. Only verified results are stored.
+        self.snapshot.refresh(pool_id, pool, market)
         return {'schemaVersion': 1, 'mode': 'on_demand_provider_market', 'chainId': CHAIN_ID,
                 'poolId': pool_id, 'pool': pool, 'snapshot': asdict(block),
                 'market': market, 'priceHistory': history, 'issues': issues,
                 'requiresLocalHistory': False, 'providerMetricsReconciled': False,
                 'feeApr24h': None, 'aprReason': 'provider_lp_fee_history_unavailable',
                 'suggested': False, 'executionAvailable': False}
+
+    @public_response('markets-snapshot')
+    def markets_snapshot(self, pool_ids=()):
+        """Serve the stored snapshot; touches neither RPC nor providers (#155).
+
+        Only an explicitly requested subset is returned (requested echo keeps
+        the caller's evidence chain); unknown ids are absent, never invented.
+        """
+        if not isinstance(pool_ids, (list, tuple)) or len(pool_ids) > 24:
+            raise DataError('invalid_snapshot_request')
+        return self.snapshot.serve(list(pool_ids) if pool_ids else None)
 
 
     @public_response('token')

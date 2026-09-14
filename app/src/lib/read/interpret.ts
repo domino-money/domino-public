@@ -155,6 +155,14 @@ export function answersRequest<R extends ReadKey>(route: R, request: RequestOf<R
       const d = data as ReadResponses['pool-metrics']
       return sameAddress(d.poolId, q.poolId)
     }
+    case 'markets-snapshot': {
+      // Every stored entry was requested (or no filter was sent), none was not.
+      const q = request as unknown as ReadRequests['markets-snapshot']
+      const d = data as ReadResponses['markets-snapshot']
+      if (q.poolIds === undefined || q.poolIds.length === 0) return true
+      const asked = new Set(q.poolIds)
+      return d.pools.every((entry) => asked.has(entry.poolId)) && d.pools.length === asked.size
+    }
     default:
       return route satisfies never
   }
@@ -239,6 +247,17 @@ export function observe<R extends ReadKey>(route: R, data: ReadResponses[R]): Ob
         }
       }
       return { block: { number, hash, timestamp }, revision: d.revision, freshness: { ...d.freshness }, providers }
+    }
+    case 'markets-snapshot': {
+      // Stored entries only: the block evidence was observed when each entry was folded in.
+      const d = data as ReadResponses['markets-snapshot']
+      const providers: ProviderObservation[] = []
+      for (const entry of d.pools) {
+        if (entry.market.status === 'available' || entry.market.status === 'stale') {
+          providers.push({ scope: `pools[${entry.poolId}].market`, provider: 'geckoterminal', retrievedAt: entry.market.data.retrievedAt })
+        }
+      }
+      return { block: null, providers }
     }
     default:
       return route satisfies never

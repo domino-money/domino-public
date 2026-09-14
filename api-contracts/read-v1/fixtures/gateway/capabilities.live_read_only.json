@@ -12,7 +12,8 @@
     "catalogue",
     "pool-activity",
     "pool-positions",
-    "pool-metrics"
+    "pool-metrics",
+    "markets-snapshot"
   ],
   "ownerTransactions": false,
   "privateAccounts": false,

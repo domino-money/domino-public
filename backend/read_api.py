@@ -44,6 +44,12 @@ class ActivityRequest(BaseModel):
 class PoolMarketRequest(ActivityRequest):
     includePriceHistory: StrictBool = False
     priceToken: Literal['base', 'quote'] = 'base'
+    fromSnapshot: StrictBool = False
+
+
+class MarketsSnapshotRequest(BaseModel):
+    model_config = ConfigDict(extra='forbid')
+    poolIds: list[PoolId] = Field(default_factory=list, max_length=24)
 
 
 class NftPositionsRequest(BaseModel):
@@ -318,7 +324,24 @@ def create_app(service=None, *, gate=None, read_budget_seconds=60):
     @app.post('/v1/read/pool-market', responses={200: {'model': RESPONSE_MODELS['pool-market']}, **error_responses})
     def pool_market(body: PoolMarketRequest):
         return run_read(lambda: service.pool_market(body.poolId,
-                        include_price_history=body.includePriceHistory, price_token=body.priceToken), 'pool-market')
+                        include_price_history=body.includePriceHistory, price_token=body.priceToken,
+                        from_snapshot=body.fromSnapshot), 'pool-market')
+
+    @app.post('/v1/read/markets-snapshot', responses={200: {'model': RESPONSE_MODELS['markets-snapshot']}, **error_responses})
+    def markets_snapshot(body: MarketsSnapshotRequest):
+        # Stored snapshot: served outside the provider gate deliberately (#155);
+        # this route never dispatches RPC or provider work.
+        try:
+            result = service.markets_snapshot(body.poolIds)
+            validate_response('markets-snapshot', result)
+        except DataError as error:
+            status, data = sanitize_error(str(error))
+            return JSONResponse(data, status_code=status)
+        except (ValueError, TypeError):
+            return JSONResponse({'error': 'upstream_contract_mismatch'}, status_code=502)
+        response = JSONResponse(result)
+        response.headers['Cache-Control'] = 'no-store'
+        return response
 
     return app
 

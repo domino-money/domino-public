@@ -9,7 +9,7 @@ import { isDeepStrictEqual } from 'node:util'
 import { extendReadTunnelConfig } from './read-tunnel-config.mjs'
 
 const ROOT = fileURLToPath(new URL('../', import.meta.url))
-const KNOWN_READS = new Set(['token', 'pools', 'pool-market', 'wallet-assets', 'nft-positions', 'catalogue', 'pool-activity'])
+const KNOWN_READS = new Set(['token', 'pools', 'pool-market', 'wallet-assets', 'nft-positions', 'catalogue', 'pool-activity', 'markets-snapshot'])
 const VISIBLE_VARS = ['READ_BRIDGE_ENABLED', 'READ_V2_BRIDGE_ENABLED', 'ENABLED_READS', 'ENABLED_V2_READS', 'APP_ORIGIN', 'GATEWAY_ORIGIN']
 
 export function releaseVars(settings) {

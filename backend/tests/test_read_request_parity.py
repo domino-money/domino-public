@@ -6,13 +6,14 @@ import unittest
 
 sys.path[:0] = [str(Path(__file__).resolve().parents[1]), str(Path(__file__).resolve().parent)]
 from read_api import (TokenRequest, PoolsRequest, PoolMarketRequest, AssetsRequest,
-                      NftPositionsRequest, CatalogueRequest, ActivityRequest)
+                      NftPositionsRequest, CatalogueRequest, ActivityRequest, MarketsSnapshotRequest)
 from read_contract import ENABLED_READS
 from read_request_fixtures import request_boundaries
 
 MODELS={'token':TokenRequest,'pools':PoolsRequest,'pool-market':PoolMarketRequest,
         'wallet-assets':AssetsRequest,'nft-positions':NftPositionsRequest,'catalogue':CatalogueRequest,
-        'pool-activity':ActivityRequest,'pool-positions':ActivityRequest,'pool-metrics':ActivityRequest}
+        'pool-activity':ActivityRequest,'pool-positions':ActivityRequest,'pool-metrics':ActivityRequest,
+        'markets-snapshot':MarketsSnapshotRequest}
 
 
 class ReadRequestParityTests(unittest.TestCase):

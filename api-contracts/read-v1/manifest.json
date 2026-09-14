@@ -18,7 +18,8 @@
     "catalogue",
     "pool-activity",
     "pool-positions",
-    "pool-metrics"
+    "pool-metrics",
+    "markets-snapshot"
   ],
   "files": [
     {
@@ -63,6 +64,38 @@
     },
     {
       "path": "fixtures/error/catalogue.upstream_unavailable.json",
+      "sha256": "140dd3bfe182772842320d8920c99a837bc7fb3cb8c55032265e4ba8fe0d22cc"
+    },
+    {
+      "path": "fixtures/error/markets-snapshot.invalid_request.json",
+      "sha256": "2a77bb3fbb64052e95568069f1891ce6b43b5da9328476b890d78bda9c169166"
+    },
+    {
+      "path": "fixtures/error/markets-snapshot.read_capacity_busy.json",
+      "sha256": "d403ef64095c25a56e47a187a186e11273abde3db22b683833eb640bf8562021"
+    },
+    {
+      "path": "fixtures/error/markets-snapshot.rpc_call_gas_limit.json",
+      "sha256": "bf598fb526d88f37c5af62c7b5f67582274e2426b847b9e21f0584ae0f9119e4"
+    },
+    {
+      "path": "fixtures/error/markets-snapshot.rpc_call_reverted.json",
+      "sha256": "5716589b8bec838fbb7ee7d943043ed032165801f06c25eead72748f940b2063"
+    },
+    {
+      "path": "fixtures/error/markets-snapshot.stale_or_future_block.json",
+      "sha256": "be6818eb7ecba4e1f43c3dc7365f3a5773fe5e11c90168fb8fbc61a2556a41a0"
+    },
+    {
+      "path": "fixtures/error/markets-snapshot.upstream_contract_mismatch.json",
+      "sha256": "9ba89a4094fe375e9a80072f0fabe4156efd43a52d29604c10860d20f2934d02"
+    },
+    {
+      "path": "fixtures/error/markets-snapshot.upstream_timeout.json",
+      "sha256": "8230a2aeab84b5fcc23578948a1f96a1c005adf12a01c6b54cfbb465409f5fa6"
+    },
+    {
+      "path": "fixtures/error/markets-snapshot.upstream_unavailable.json",
       "sha256": "140dd3bfe182772842320d8920c99a837bc7fb3cb8c55032265e4ba8fe0d22cc"
     },
     {
@@ -335,7 +368,7 @@
     },
     {
       "path": "fixtures/gateway/capabilities.live_read_only.json",
-      "sha256": "ea2f269e07018a6faad10c0808cb13516f1c761f765fb3e0f0e70b8b94ef7f22"
+      "sha256": "7c987767b416cafed4edcb45ea39a2bcfc393f14b896de5a6fe762843902b07c"
     },
     {
       "path": "fixtures/gateway/catalogue.empty.json",
@@ -344,6 +377,22 @@
     {
       "path": "fixtures/gateway/catalogue.success.json",
       "sha256": "f4dc1ceb05343a597f876142c88b61faf0557910c9810c4693ae2b98935bc44f"
+    },
+    {
+      "path": "fixtures/gateway/markets-snapshot.empty.json",
+      "sha256": "78d1defc98ac59161c8b55fc07509e562701c502574421f22ae1834b7c7bb672"
+    },
+    {
+      "path": "fixtures/gateway/markets-snapshot.stale.json",
+      "sha256": "78d1defc98ac59161c8b55fc07509e562701c502574421f22ae1834b7c7bb672"
+    },
+    {
+      "path": "fixtures/gateway/markets-snapshot.subset.json",
+      "sha256": "4bc78dd1a84c28f9098f5163e4349535e444435b98e25a9ac641595d4873347c"
+    },
+    {
+      "path": "fixtures/gateway/markets-snapshot.success.json",
+      "sha256": "78d1defc98ac59161c8b55fc07509e562701c502574421f22ae1834b7c7bb672"
     },
     {
       "path": "fixtures/gateway/nft-positions.empty.json",
@@ -575,11 +624,15 @@
     },
     {
       "path": "fixtures/index.json",
-      "sha256": "b11399191bf58ff79a555444c9d1ef18f6b92d130b2dd777bc59f0501351b37a"
+      "sha256": "d62b704447bc9efe5e5311007f81fd471e2ba2bbfc78228eefa4bd68e686a568"
     },
     {
       "path": "fixtures/invalid/catalogue.incompatible-version.json",
       "sha256": "f781896188ae4cb722faa297e76d3aaec78806eedb812d30f24d355c4018f8a5"
+    },
+    {
+      "path": "fixtures/invalid/markets-snapshot.incompatible-version.json",
+      "sha256": "fa9c8105abf4d28c39063e66cc34a090bb6d93c9eecc75f7fe499728b0807228"
     },
     {
       "path": "fixtures/invalid/nft-positions.incompatible-version.json",
@@ -624,6 +677,22 @@
     {
       "path": "fixtures/producer/catalogue.success.json",
       "sha256": "f4dc1ceb05343a597f876142c88b61faf0557910c9810c4693ae2b98935bc44f"
+    },
+    {
+      "path": "fixtures/producer/markets-snapshot.empty.json",
+      "sha256": "78d1defc98ac59161c8b55fc07509e562701c502574421f22ae1834b7c7bb672"
+    },
+    {
+      "path": "fixtures/producer/markets-snapshot.stale.json",
+      "sha256": "78d1defc98ac59161c8b55fc07509e562701c502574421f22ae1834b7c7bb672"
+    },
+    {
+      "path": "fixtures/producer/markets-snapshot.subset.json",
+      "sha256": "4bc78dd1a84c28f9098f5163e4349535e444435b98e25a9ac641595d4873347c"
+    },
+    {
+      "path": "fixtures/producer/markets-snapshot.success.json",
+      "sha256": "78d1defc98ac59161c8b55fc07509e562701c502574421f22ae1834b7c7bb672"
     },
     {
       "path": "fixtures/producer/nft-positions.empty.json",
@@ -851,11 +920,15 @@
     },
     {
       "path": "fixtures/request-boundaries.json",
-      "sha256": "88ed0f123d7bdc3be7ecd2e0f04797ca89490f48d4178d73bef242d281b73093"
+      "sha256": "e6ff1121b58b7bc94b9ca8d1f0d08098e3004bbc5621159f2cdb14d1f49f774d"
     },
     {
       "path": "fixtures/requests/catalogue.json",
       "sha256": "d53b604ee738d85f0920c3c8b9b888fe6b2fc696ea9a9847a3467795c38bb300"
+    },
+    {
+      "path": "fixtures/requests/markets-snapshot.json",
+      "sha256": "22d561012bedd707af90e24f835418d0184cac41fdb2151ad73294de2d97804d"
     },
     {
       "path": "fixtures/requests/nft-positions.json",
@@ -907,11 +980,11 @@
     },
     {
       "path": "runtime.mjs",
-      "sha256": "f9dcf31c97aca16391f9d4d6466b60ac5364709e830de9422d12d13ed7f0b3a0"
+      "sha256": "fe18cb9594f9c816da28da2521113536ac0edfed1d0cfd5b456e890f44dab91f"
     },
     {
       "path": "schemas/capabilities.response.schema.json",
-      "sha256": "cc2f214c4316b6c385a7049a437cb2b9ffad458a4a988f204863d1ca36270672"
+      "sha256": "4661a7ee18d9e2ae9aa2949d1ac2ee9ea6900678e73e1ceed6fd6c191b77caa2"
     },
     {
       "path": "schemas/catalogue.request.schema.json",
@@ -923,7 +996,15 @@
     },
     {
       "path": "schemas/error.response.schema.json",
-      "sha256": "abfb54babbb13d8e84ed281ad4ef2eb0c7cef9d4c6e73a89c9a73908e7cfa4c1"
+      "sha256": "51cc50d1fc80d4ce85b4062f3f1d5f0054a49e5404d698c7dfecb62272ad1bd0"
+    },
+    {
+      "path": "schemas/markets-snapshot.request.schema.json",
+      "sha256": "a669f519f5198c5c7c12efcd8fbb9884c2d0ff3c11476d487b8a7dc6a8948fc9"
+    },
+    {
+      "path": "schemas/markets-snapshot.response.schema.json",
+      "sha256": "45aed39dc6ff4ddce0b730f93c15c2f96ea5c82639c566688a3648b4eab3235b"
     },
     {
       "path": "schemas/nft-positions.request.schema.json",
@@ -943,7 +1024,7 @@
     },
     {
       "path": "schemas/pool-market.request.schema.json",
-      "sha256": "67a896b437893ae7b1f451cc3d146c072bb0592715fded741b7a707684bbd566"
+      "sha256": "fd2398bfbf6e544a492f17153542bd00cc430372b676c6709c89528a891ea63e"
     },
     {
       "path": "schemas/pool-market.response.schema.json",
@@ -991,7 +1072,7 @@
     },
     {
       "path": "types.ts",
-      "sha256": "154a75ce73ec6608cf61a119d3b4b01f48db39f9b15e44a1a13ee25e8f652f79"
+      "sha256": "63c37695cda1daf6768a08bcc5fe0353eb1ce26ae9e2700749e6cbec65eac5d4"
     }
   ],
   "generator": "scripts/export-read-contract.py",
@@ -999,15 +1080,15 @@
   "sources": [
     {
       "path": "backend/read_contract.py",
-      "sha256": "4ec1ef063bb1fbd850ff869adfeada9892987a80e096e9d59281ea44a45742d9"
+      "sha256": "1c6d05ef25e7001eb8f61095074639a30033e5afe9b9673dfe12b60ccfd2916c"
     },
     {
       "path": "backend/read_api.py",
-      "sha256": "a830e493ded7d1716878fb00b810495977758e67d84a8771b3da4717a32d4648"
+      "sha256": "1d322a0482512ca4426b8a814767185664d47be49a78266cda6efb7947d615f4"
     },
     {
       "path": "backend/read_service.py",
-      "sha256": "36a10c1cade4c4dcc217a03db42711e43df3061a7a405aba5b3eae22d684293f"
+      "sha256": "0eb5a32194d4bdea745cc7a292fa479fd28038a76c4b5e09a71cf934059c7f48"
     },
     {
       "path": "backend/rpc_failover.py",
@@ -1031,11 +1112,11 @@
     },
     {
       "path": "bridge/src/request-contract.mjs",
-      "sha256": "786524b4cadde2df2b1275f041532c3c4c4f13fb988857149cd858d2b3821fda"
+      "sha256": "dd777e35402c3524dadc46ddbfdbc5209848597cf91dd170618e7c67f1a30d3c"
     },
     {
       "path": "backend/read_gateway.py",
-      "sha256": "6f63b131c666da2c0746d608b9629e6cc302dae7457262f2f0e169d3fbbdcadb"
+      "sha256": "8a6aa0e44218507c934e935b6c20d090db6b2ff1f276aaef18230faf6d6cc1e4"
     },
     {
       "path": "backend/bridge_state.py",
@@ -1127,19 +1208,19 @@
     },
     {
       "path": "backend/tests/read_request_fixtures.py",
-      "sha256": "2685f3686186534644117d5e177600ff9a18bda7763f23931426a064bbf4ea6c"
+      "sha256": "041e0f9fdc9a69888a928ba1a8c829f807c9ebd5500738985b265b4d82e2c158"
     },
     {
       "path": "backend/tests/test_read_contract.py",
-      "sha256": "159486207b84ca11f077523c8bd83632b238ad20c716ed09bff812d929fc61ae"
+      "sha256": "a44d017470b637ded608f7ad9236f90da7e47db4fe2350c4c92547c8f0664214"
     },
     {
       "path": "backend/tests/test_read_reconciliation.py",
-      "sha256": "59976d0ae212ed649991ca51679c2e34b08eec869ddafd9dce925b464bd966b0"
+      "sha256": "e09b9558d0db39540cd59dde1186b23d93ba9a3b030fbd7b134c0bcafc2ee62e"
     },
     {
       "path": "scripts/export-read-contract.py",
-      "sha256": "8ef574be4d81bbf62b82203cce04d75e27dc6f147ec9e1964be91f8ba98c4e68"
+      "sha256": "82541646deb038c17403828eea4a9fd190664a38e42d447a48222a5ac40ff25b"
     }
   ],
   "status": "candidate_disabled_pending_consumer_acknowledgement"

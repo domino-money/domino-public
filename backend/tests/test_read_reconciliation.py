@@ -169,8 +169,8 @@ class ReadReconciliationTests(unittest.TestCase):
 
     def test_all_read_routes_are_registered_once(self):
         routes = [route.path for route in create_app(SimpleNamespace()).routes if '/v1/read/' in route.path]
-        self.assertEqual(len(routes), 9)
-        self.assertEqual(len(set(routes)), 9)
+        self.assertEqual(len(routes), 10)
+        self.assertEqual(len(set(routes)), 10)
 
 
 if __name__ == '__main__':

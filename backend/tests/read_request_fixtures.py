@@ -15,15 +15,23 @@ def request_boundaries():
     bases = {'token':{'token':TOKEN}, 'pools':{'token':TOKEN}, 'pool-market':{'poolId':POOL},
              'wallet-assets':{'wallet':TOKEN}, 'nft-positions':{'tokenIds':['0']},
              'catalogue':{'token':TOKEN}, 'pool-activity':{'poolId':POOL},
-             'pool-positions':{'poolId':POOL}, 'pool-metrics':{'poolId':POOL}}
+             'pool-positions':{'poolId':POOL}, 'pool-metrics':{'poolId':POOL},
+             'markets-snapshot':{}}
     for route, base in bases.items():
         add(route,'minimum',base)
-        for name, body in [('empty',{}), ('array',[]), ('null',None), ('scalar',TOKEN),
-                           ('unknown-field',{**base,'rpcUrl':'https://untrusted.invalid'}),
-                           ('prototype-key',{**base,'__proto__':{}})]:
+        generic = [('array',[]), ('null',None), ('scalar',TOKEN),
+                   ('unknown-field',{**base,'rpcUrl':'https://untrusted.invalid'}),
+                   ('prototype-key',{**base,'__proto__':{}})]
+        if route == 'markets-snapshot':
+            # {} is the minimum itself (poolIds optional), so the empty case is valid there.
+            add(route,'empty',{},True)
+        else:
+            generic.insert(0, ('empty',{}))
+        for name, body in generic:
             add(route,name,body,False)
         # Every address/hash input checks exact length, casing, type and terminal characters.
         key = 'wallet' if route=='wallet-assets' else ('token' if route in ('token','pools','catalogue') else 'poolId')
+        if route=='markets-snapshot': continue  # poolIds boundaries are covered by field() below
         if route!='nft-positions':
             original=base[key]
             for name, value, valid in [('upper-digits','0x'+original[2:].upper(),True),
@@ -36,6 +44,9 @@ def request_boundaries():
 
     def field(route,key,values):
         for name,value,valid in values: add(route,key+'-'+name,{**bases[route],key:value},valid)
+    field('markets-snapshot','poolIds',[('empty',[],True),('five',[POOL]*5,True),
+        ('twenty-four',[POOL]*24,True),('twenty-five',[POOL]*25,False),('null',None,False),
+        ('bad-item',[POOL+'\\n'],False),('scalar-item',[TOKEN],False)])
     for route in ('pools','catalogue'):
         field(route,'pairedToken',[('null',None,True),('different',OTHER,True),('same',TOKEN,False),
             ('same-uppercase','0x'+TOKEN[2:].upper(),False),('newline',OTHER+'\n',False)])

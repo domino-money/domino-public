@@ -31,7 +31,7 @@
     },
     {
       "path": "fixtures/errors.json",
-      "sha256": "6265a318cb4a47165caad5dc67ed6a3583223c85ca9e78ff79692ce1f3601d49"
+      "sha256": "705f95d2bcea258442b6ef0be432d6ae62dcfc71408f033242b31699c8f93454"
     },
     {
       "path": "fixtures/index.json",
@@ -223,7 +223,7 @@
     },
     {
       "path": "runtime.mjs",
-      "sha256": "45f3d280c18baec1d71b318a0eb22de6fbabb031e5493be9873bf496fc99811e"
+      "sha256": "e8b52c72cbd4e7d538fc2455be19dd9e2f695ba28ea4f753e8373fb327618707"
     },
     {
       "path": "schemas/capabilities.response.schema.json",
@@ -231,7 +231,7 @@
     },
     {
       "path": "schemas/error.response.schema.json",
-      "sha256": "b104ab754e49457671719104c981d15d85db4e58357fe5a5f57e6178de7ffb62"
+      "sha256": "bc9fcb87e4245df4b6385e9cf618a5ecf89a2b6973d26915409be94b9de8e439"
     },
     {
       "path": "schemas/pool-market.request.schema.json",
@@ -243,7 +243,7 @@
     },
     {
       "path": "types.ts",
-      "sha256": "8c073a73887109ec6b8ea32f8bb0ae92e1a88c263241b464e7c70ffed65853f4"
+      "sha256": "8209445c6c27d847fc87e84013c799c1b07c4e548ca7bd9ec5df5bc3e3adfd59"
     }
   ],
   "generator": "scripts/export-read-v2-contract.py",
@@ -258,7 +258,7 @@
     },
     {
       "path": "backend/read_contract.py",
-      "sha256": "4ec1ef063bb1fbd850ff869adfeada9892987a80e096e9d59281ea44a45742d9"
+      "sha256": "1c6d05ef25e7001eb8f61095074639a30033e5afe9b9673dfe12b60ccfd2916c"
     },
     {
       "path": "backend/discovery.py",
@@ -266,7 +266,7 @@
     },
     {
       "path": "backend/read_service.py",
-      "sha256": "36a10c1cade4c4dcc217a03db42711e43df3061a7a405aba5b3eae22d684293f"
+      "sha256": "0eb5a32194d4bdea745cc7a292fa479fd28038a76c4b5e09a71cf934059c7f48"
     },
     {
       "path": "backend/market_cache.py",
@@ -278,11 +278,11 @@
     },
     {
       "path": "backend/read_gateway.py",
-      "sha256": "6f63b131c666da2c0746d608b9629e6cc302dae7457262f2f0e169d3fbbdcadb"
+      "sha256": "8a6aa0e44218507c934e935b6c20d090db6b2ff1f276aaef18230faf6d6cc1e4"
     },
     {
       "path": "backend/read_api.py",
-      "sha256": "a830e493ded7d1716878fb00b810495977758e67d84a8771b3da4717a32d4648"
+      "sha256": "1d322a0482512ca4426b8a814767185664d47be49a78266cda6efb7947d615f4"
     },
     {
       "path": "backend/bridge_http.py",
@@ -290,7 +290,7 @@
     },
     {
       "path": "backend/dev_read_gateway.py",
-      "sha256": "7ced0d80e390c76dead32cedd3db08739317a1a761b1def39e120832f6dc96f8"
+      "sha256": "bf940b9f8adcd7f3dcd49fb70032b08e2e44e1a32bd9e69fce95f4478e30ba0f"
     },
     {
       "path": "backend/dev_read_identity.py",
@@ -342,7 +342,7 @@
     },
     {
       "path": "backend/tests/test_read_contract.py",
-      "sha256": "159486207b84ca11f077523c8bd83632b238ad20c716ed09bff812d929fc61ae"
+      "sha256": "a44d017470b637ded608f7ad9236f90da7e47db4fe2350c4c92547c8f0664214"
     },
     {
       "path": "backend/tests/test_discovery.py",
@@ -350,7 +350,7 @@
     },
     {
       "path": "scripts/export-read-contract.py",
-      "sha256": "8ef574be4d81bbf62b82203cce04d75e27dc6f147ec9e1964be91f8ba98c4e68"
+      "sha256": "82541646deb038c17403828eea4a9fd190664a38e42d447a48222a5ac40ff25b"
     },
     {
       "path": "scripts/export-read-v2-contract.py",

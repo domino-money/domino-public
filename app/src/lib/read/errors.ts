@@ -64,6 +64,8 @@ export const ERROR_CLASS = {
   nft_snapshot_reorganized: TRANSIENT,
   activity_snapshot_reorganized: TRANSIENT,
   catalogue_database_unavailable: TRANSIENT,
+  // 503: the snapshot store is empty — a provider read must land first (T2.1).
+  snapshot_not_built: FINAL,
   // 503, not transient: integrity, configuration, indexing or budget.
   activity_methodology_mismatch: FINAL,
   activity_not_indexed: FINAL,
@@ -74,12 +76,14 @@ export const ERROR_CLASS = {
   fixed_fee_mismatch: FINAL,
   invalid_abi_response: FINAL,
   invalid_json: FINAL,
+  invalid_market_query: FINAL,
   invalid_nft_position_info: FINAL,
   invalid_nft_snapshot_block: FINAL,
   invalid_pool_key: FINAL,
   invalid_pool_state: FINAL,
   invalid_quantity: FINAL,
   invalid_rpc_envelope: FINAL,
+  invalid_snapshot_request: FINAL,
   invalid_tick_spacing: FINAL,
   manager_mismatch: FINAL,
   missing_contract_code: FINAL,

@@ -23,7 +23,8 @@ from pydantic import ValidationError
 from bridge_identity import AccessVerifier
 from bridge_state import ClientBudgets, OpaqueCursors, strict_json
 from discovery import DataError
-from read_api import AssetsRequest, TokenRequest, PoolsRequest, PoolMarketRequest, NftPositionsRequest, CatalogueRequest, ActivityRequest, ReadGate
+from read_api import (AssetsRequest, TokenRequest, PoolsRequest, PoolMarketRequest, NftPositionsRequest,
+                      CatalogueRequest, ActivityRequest, MarketsSnapshotRequest, ReadGate)
 from bridge_http import LocalReaderHTTP
 from read_deadline import read_deadline
 from read_contract import CONTRACT_VERSION, validate_response, sanitize_error, ERROR_STATUS_BY_CODE
@@ -34,7 +35,8 @@ from pool_apr_contract import (CONTRACT_VERSION as V2_CONTRACT_VERSION,
 REQUEST_MODELS = {'token': TokenRequest, 'pools': PoolsRequest, 'pool-market': PoolMarketRequest,
                   'wallet-assets': AssetsRequest, 'nft-positions': NftPositionsRequest,
                   'catalogue': CatalogueRequest, 'pool-activity': ActivityRequest,
-                  'pool-positions': ActivityRequest, 'pool-metrics': ActivityRequest}
+                  'pool-positions': ActivityRequest, 'pool-metrics': ActivityRequest,
+                  'markets-snapshot': MarketsSnapshotRequest}
 MAX_BODY = 8192
 MAX_RESPONSE = 1024 * 1024
 

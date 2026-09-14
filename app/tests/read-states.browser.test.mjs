@@ -115,8 +115,8 @@ function fact(id, label) {
 
 test('the lab renders every fixture case behind the gate, under the CSP, without an error', async () => {
   const count = await page.locator('[data-case]').count();
-  // 26 market scenarios, 59 gateway fixtures across the nine routes, 5 pagination and restart cases.
-  assert.equal(count, 90, `rendered ${count} cases`);
+  // 26 market scenarios, 63 gateway fixtures across the ten routes, 5 pagination and restart cases.
+  assert.equal(count, 94, `rendered ${count} cases`);
   assert.equal(await page.locator('[data-case^="market-"]').count(), 26);
   assert.deepEqual(await page.evaluate(() => window.__csp), [], 'CSP violations');
   // The only failure allowed is the access page's own 401 before signing in.

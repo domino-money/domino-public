@@ -12,7 +12,8 @@ from pydantic import BaseModel, ConfigDict, Field, StrictBool, StrictInt, String
 
 CONTRACT_VERSION = '1.1.0-rc.3'
 ENABLED_READS = ('token', 'pools', 'pool-market', 'wallet-assets', 'nft-positions',
-                 'catalogue', 'pool-activity', 'pool-positions', 'pool-metrics')
+                 'catalogue', 'pool-activity', 'pool-positions', 'pool-metrics',
+                 'markets-snapshot')
 ReadRoute = Literal[ENABLED_READS]
 Address = Annotated[str, StringConstraints(strict=True, pattern=r'^0x[0-9a-f]{40}$')]
 Hash = Annotated[str, StringConstraints(strict=True, pattern=r'^0x[0-9a-f]{64}$')]
@@ -462,6 +463,31 @@ class PoolMarketResponse(WireModel):
     aprReason: Literal['provider_lp_fee_history_unavailable']
     suggested: FalseFlag
     executionAvailable: FalseFlag
+
+
+class SnapshotPoolEntry(WireModel):
+    poolId: Hash
+    pool: VerifiedPool
+    market: MarketObservation
+    observedAt: UInt
+
+
+class MarketsSnapshotResponse(WireModel):
+    """Stored server-side snapshot; served without touching any provider."""
+    model_config = ConfigDict(extra='forbid', strict=True, json_schema_extra={
+        'x-domino-constraints': ['requested pool ids are echoed exactly as sent; '
+            'pools lists every stored entry; not_built is the explicit empty state']})
+    schemaVersion: Literal[1]
+    mode: Literal['stored_markets_snapshot']
+    chainId: Literal[4663]
+    status: Literal['current', 'stale', 'not_built']
+    reason: Literal['snapshot_refresh_pending'] | None
+    builtAt: UInt | None
+    ageSeconds: UInt | None
+    stale: StrictBool
+    generated: FalseFlag
+    requested: Annotated[list[Hash], Field(max_length=24)]
+    pools: Annotated[list[SnapshotPoolEntry], Field(max_length=24)]
 
 
 class EmptyNft(WireModel):
@@ -946,7 +972,7 @@ class BridgeCapabilities(WireModel):
     contractVersion: Literal['1.1.0-rc.3']
     dataMode: Literal['disabled', 'live_read_only']
     chainId: Literal[4663]
-    enabledReads: Annotated[list[ReadRoute], Field(max_length=9, json_schema_extra={"uniqueItems": True})]
+    enabledReads: Annotated[list[ReadRoute], Field(max_length=10, json_schema_extra={"uniqueItems": True})]
     walletAuthentication: FalseFlag
     privateAccounts: FalseFlag
     ownerTransactions: FalseFlag
@@ -988,6 +1014,7 @@ for _code in (
     'activity_window_budget_exhausted',
     'invalid_nft_snapshot_block', 'invalid_nft_position_info', 'nft_pool_or_range_mismatch',
     'nft_live_position_has_no_owner', 'nft_core_liquidity_mismatch',
+    'snapshot_not_built', 'invalid_snapshot_request', 'invalid_market_query',
 ):
     ERROR_STATUS_BY_CODE[_code] = 503
 ERROR_STATUS_BY_CODE['read_deadline_exceeded'] = 504
@@ -1003,6 +1030,7 @@ RESPONSE_MODELS = {
     'wallet-assets': WalletAssetsResponse, 'nft-positions': NftPositionsResponse,
     'catalogue': CatalogueResponse, 'pool-activity': PoolActivityResponse,
     'pool-positions': PoolPositionsResponse, 'pool-metrics': PoolMetricsResponse,
+    'markets-snapshot': MarketsSnapshotResponse,
 }
 
 

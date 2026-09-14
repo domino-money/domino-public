@@ -1,0 +1,19 @@
+{
+  "$id": "https://domino.invalid/contracts/read-v1/markets-snapshot.request.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "poolIds": {
+      "items": {
+        "pattern": "^0x[0-9a-fA-F]{64}$",
+        "type": "string"
+      },
+      "maxItems": 24,
+      "title": "Poolids",
+      "type": "array"
+    }
+  },
+  "title": "MarketsSnapshotRequest",
+  "type": "object",
+  "x-contract-version": "1.1.0-rc.3"
+}

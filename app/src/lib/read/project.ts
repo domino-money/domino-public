@@ -13,6 +13,7 @@ import type {
   CatalogueResponse,
   DynamicPoolKey,
   FixedPoolKey,
+  MarketsSnapshotResponse,
   NftPositionsResponse,
   PoolActivityResponse,
   PoolMarketResponse,
@@ -302,6 +303,36 @@ export function projectPoolMarket(d: PoolMarketResponse): Omit<FamilyView, 'fres
   return { facts, items: [], notes: d.issues.includes('provider_dex_label_unconfirmed') ? ['The provider’s exchange label is unconfirmed.'] : [] }
 }
 
+export function projectMarketsSnapshot(d: MarketsSnapshotResponse): Omit<FamilyView, 'freshness' | 'route'> {
+  if (d.status === 'not_built') {
+    return {
+      facts: [{ label: 'Snapshot', text: 'Not built yet: one provider read per pool fills it (pool-market)', state: 'absent' }],
+      items: [],
+      notes: [],
+    }
+  }
+  const stale = d.status === 'stale'
+  const facts: Fact[] = [
+    { label: 'Snapshot', text: `${stale ? 'Stale' : 'Current'}, built ${d.builtAt === null ? 'at an unknown time' : new Date(d.builtAt * 1000).toISOString()}, ${d.ageSeconds === null ? 'age unknown' : `${d.ageSeconds} s`}${d.reason === null ? '' : ` (${reasonText(d.reason)})`}`, state: stale ? 'stale' : 'value' },
+    { label: 'Stored pools', text: `${d.pools.length} of ${d.requested.length} requested`, state: d.pools.length === 0 ? 'zero' : 'value' },
+  ]
+  const items: ItemView[] = d.pools.map((entry) => {
+    const market = entry.market
+    const usable = market.status === 'available' || market.status === 'stale'
+    const stale = market.status === 'stale'
+    return {
+      key: entry.poolId,
+      title: { label: 'Pool', text: shortId(entry.poolId), state: 'value', tokens: entry.pool.currencies.map(unreadToken) },
+      facts: [
+        { label: 'Fee', text: feeText(entry.pool.poolKey), state: 'value' },
+        { label: 'Market (stored)', text: usable ? (stale ? 'Stale at fold time' : 'Available') : `Unavailable: ${reasonText(market.reason)}`, state: usable ? (stale ? 'stale' : 'value') : 'unavailable' },
+        { label: 'Observed at', text: `${entry.observedAt}`, state: 'value' },
+      ],
+    }
+  })
+  return { facts, items, notes: [] }
+}
+
 type Valuation = PoolMetricsResponse['valuation']
 type Calculated = Exclude<Valuation, { status: 'unavailable' }>
 
@@ -520,6 +551,8 @@ export function projectFamily<R extends ReadRoute>(outcome: Extract<ReadOutcome<
       return { ...base, ...projectNftPositions(data as NftPositionsResponse) }
     case 'catalogue':
       return { ...base, ...projectCatalogue(data as CatalogueResponse) }
+    case 'markets-snapshot':
+      return { ...base, ...projectMarketsSnapshot(data as MarketsSnapshotResponse) }
     case 'wallet-assets':
       throw new Error('wallet-assets pages are projected by the wallet pager')
     default:

@@ -9,7 +9,8 @@ import sys
 ROOT = Path(__file__).resolve().parents[1]
 sys.path[:0] = [str(ROOT/'backend'), str(ROOT/'backend/tests')]
 from read_contract import CONTRACT_VERSION, ENABLED_READS, ERROR_STATUS_BY_CODE, RESPONSE_MODELS, export_contract, unsigned_string_pattern
-from read_api import AssetsRequest, TokenRequest, PoolsRequest, PoolMarketRequest, NftPositionsRequest, CatalogueRequest, ActivityRequest
+from read_api import (AssetsRequest, TokenRequest, PoolsRequest, PoolMarketRequest, NftPositionsRequest,
+                      CatalogueRequest, ActivityRequest, MarketsSnapshotRequest)
 from test_read_contract import build_fixtures
 from read_request_fixtures import request_boundaries
 
@@ -17,7 +18,8 @@ DESTINATION = ROOT/'api-contracts/read-v1'
 REQUEST_MODELS = {'token': TokenRequest, 'pools': PoolsRequest, 'pool-market': PoolMarketRequest,
                   'wallet-assets': AssetsRequest, 'nft-positions': NftPositionsRequest,
                   'catalogue': CatalogueRequest, 'pool-activity': ActivityRequest,
-                  'pool-positions': ActivityRequest, 'pool-metrics': ActivityRequest}
+                  'pool-positions': ActivityRequest, 'pool-metrics': ActivityRequest,
+                  'markets-snapshot': MarketsSnapshotRequest}
 
 
 def json_text(value):

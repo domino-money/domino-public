@@ -37,11 +37,12 @@
           "catalogue",
           "pool-activity",
           "pool-positions",
-          "pool-metrics"
+          "pool-metrics",
+          "markets-snapshot"
         ],
         "type": "string"
       },
-      "maxItems": 9,
+      "maxItems": 10,
       "title": "Enabledreads",
       "type": "array",
       "uniqueItems": true

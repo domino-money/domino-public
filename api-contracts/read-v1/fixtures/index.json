@@ -254,6 +254,34 @@
       "valid": true
     },
     {
+      "file": "fixtures/producer/markets-snapshot.success.json",
+      "kind": "producer",
+      "route": "markets-snapshot",
+      "status": 200,
+      "valid": true
+    },
+    {
+      "file": "fixtures/producer/markets-snapshot.subset.json",
+      "kind": "producer",
+      "route": "markets-snapshot",
+      "status": 200,
+      "valid": true
+    },
+    {
+      "file": "fixtures/producer/markets-snapshot.empty.json",
+      "kind": "producer",
+      "route": "markets-snapshot",
+      "status": 200,
+      "valid": true
+    },
+    {
+      "file": "fixtures/producer/markets-snapshot.stale.json",
+      "kind": "producer",
+      "route": "markets-snapshot",
+      "status": 200,
+      "valid": true
+    },
+    {
       "file": "fixtures/producer/nft-positions.success.json",
       "kind": "producer",
       "route": "nft-positions",
@@ -656,6 +684,34 @@
       "file": "fixtures/gateway/pool-market.provider-timeout.json",
       "kind": "gateway",
       "route": "pool-market",
+      "status": 200,
+      "valid": true
+    },
+    {
+      "file": "fixtures/gateway/markets-snapshot.success.json",
+      "kind": "gateway",
+      "route": "markets-snapshot",
+      "status": 200,
+      "valid": true
+    },
+    {
+      "file": "fixtures/gateway/markets-snapshot.subset.json",
+      "kind": "gateway",
+      "route": "markets-snapshot",
+      "status": 200,
+      "valid": true
+    },
+    {
+      "file": "fixtures/gateway/markets-snapshot.empty.json",
+      "kind": "gateway",
+      "route": "markets-snapshot",
+      "status": 200,
+      "valid": true
+    },
+    {
+      "file": "fixtures/gateway/markets-snapshot.stale.json",
+      "kind": "gateway",
+      "route": "markets-snapshot",
       "status": 200,
       "valid": true
     },
@@ -1402,6 +1458,69 @@
       "valid": false
     },
     {
+      "file": "fixtures/error/markets-snapshot.invalid_request.json",
+      "kind": "error",
+      "route": "markets-snapshot",
+      "status": 422,
+      "valid": true
+    },
+    {
+      "file": "fixtures/error/markets-snapshot.read_capacity_busy.json",
+      "kind": "error",
+      "route": "markets-snapshot",
+      "status": 429,
+      "valid": true
+    },
+    {
+      "file": "fixtures/error/markets-snapshot.upstream_timeout.json",
+      "kind": "error",
+      "route": "markets-snapshot",
+      "status": 504,
+      "valid": true
+    },
+    {
+      "file": "fixtures/error/markets-snapshot.upstream_unavailable.json",
+      "kind": "error",
+      "route": "markets-snapshot",
+      "status": 503,
+      "valid": true
+    },
+    {
+      "file": "fixtures/error/markets-snapshot.upstream_contract_mismatch.json",
+      "kind": "error",
+      "route": "markets-snapshot",
+      "status": 502,
+      "valid": true
+    },
+    {
+      "file": "fixtures/error/markets-snapshot.stale_or_future_block.json",
+      "kind": "error",
+      "route": "markets-snapshot",
+      "status": 503,
+      "valid": true
+    },
+    {
+      "file": "fixtures/error/markets-snapshot.rpc_call_gas_limit.json",
+      "kind": "error",
+      "route": "markets-snapshot",
+      "status": 503,
+      "valid": true
+    },
+    {
+      "file": "fixtures/error/markets-snapshot.rpc_call_reverted.json",
+      "kind": "error",
+      "route": "markets-snapshot",
+      "status": 503,
+      "valid": true
+    },
+    {
+      "file": "fixtures/invalid/markets-snapshot.incompatible-version.json",
+      "kind": "invalid",
+      "route": "markets-snapshot",
+      "status": 200,
+      "valid": false
+    },
+    {
       "file": "fixtures/error/wallet-assets.invalid_or_expired_cursor.json",
       "kind": "error",
       "route": "wallet-assets",
@@ -1459,6 +1578,10 @@
     {
       "file": "fixtures/requests/pool-metrics.json",
       "route": "pool-metrics"
+    },
+    {
+      "file": "fixtures/requests/markets-snapshot.json",
+      "route": "markets-snapshot"
     }
   ]
 }
