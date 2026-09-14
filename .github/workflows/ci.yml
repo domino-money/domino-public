@@ -46,7 +46,10 @@ jobs:
   frontend:
     name: Frontend
     runs-on: ubuntu-24.04
-    timeout-minutes: 15
+    # check:app runs the app suite plus the render and browser gate passes and
+    # brushes against 15 minutes on hosted runners (runs #336/#337 were cancelled
+    # mid-suite); give deliberate headroom so the job is not spuriously cut.
+    timeout-minutes: 25
     env:
       WRANGLER_SEND_METRICS: 'false'
     steps:
