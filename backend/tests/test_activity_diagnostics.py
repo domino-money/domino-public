@@ -205,7 +205,7 @@ class ActivityDiagnosticsPostgresTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as folder:
             output=Path(folder)/'status.json';stream=io.StringIO()
             with patch('sys.argv',['manage_activity.py','--pool-id',POOL,'--status','--output',str(output)]), \
-                    patch('manage_activity.configured_catalogue',return_value=PgCatalogue(self.settings)), \
+                    patch('manage_activity.configured_writer_catalogue',return_value=PgCatalogue(self.settings)), \
                     patch('manage_activity.ReadRpc') as rpc, patch('manage_activity.load_config') as config, \
                     redirect_stdout(stream):
                 self.assertEqual(main(),0)

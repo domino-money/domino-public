@@ -1088,7 +1088,7 @@
     },
     {
       "path": "backend/read_service.py",
-      "sha256": "953611758c38ce8fb6bc45d17a43c01c0a270834719a7751835ab7eec4cd8398"
+      "sha256": "f9e06c22a7e5fcef833fccbcc9bcaa851d11542a9a83e4635c3f239fa30b3d82"
     },
     {
       "path": "backend/rpc_failover.py",
@@ -1184,7 +1184,7 @@
     },
     {
       "path": "backend/catalogue.py",
-      "sha256": "02bbe7c388150324026aca10056e31d5603f22c17d118f7f4cb3cedd54571b63"
+      "sha256": "4418e266d693b12ab2d0fd2eab5f56cbd731ed8de4e70674a5d85e6ce03a1068"
     },
     {
       "path": "backend/position_accounting.py",

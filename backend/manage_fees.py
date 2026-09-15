@@ -4,7 +4,7 @@ import json
 from pathlib import Path
 
 from activity_store import PgActivity
-from catalogue import configured_catalogue
+from catalogue import configured_writer_catalogue
 from discovery import DataError, DiscoveryReader, ReadRpc, bytes32
 from fee_store import FeeIndexer
 from historical_capacity import PROFILES
@@ -27,7 +27,7 @@ def main():
         if not 1<=args.max_steps<=50 or args.output.exists():
             raise DataError('invalid_fee_bounds_or_output_exists')
         pool_id=bytes32(args.pool_id)
-        catalogue=configured_catalogue()
+        catalogue=configured_writer_catalogue()
         if catalogue is None:
             raise DataError('catalogue_not_configured')
         url=load_config().get('rpcUrl')

@@ -266,7 +266,7 @@
     },
     {
       "path": "backend/read_service.py",
-      "sha256": "953611758c38ce8fb6bc45d17a43c01c0a270834719a7751835ab7eec4cd8398"
+      "sha256": "f9e06c22a7e5fcef833fccbcc9bcaa851d11542a9a83e4635c3f239fa30b3d82"
     },
     {
       "path": "backend/market_cache.py",

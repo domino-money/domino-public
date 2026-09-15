@@ -142,7 +142,7 @@ class ActivityCapacityUnitTests(unittest.TestCase):
                     output=Path(folder)/(name+'.json');factory=MagicMock()
                     factory.return_value.step.return_value={'status':'caught_up_to_activity' if module!=manage_activity else 'caught_up_to_target'}
                     with patch('sys.argv',[module.__name__,'--pool-id',POOL,flag,'extended','--output',str(output),'--max-steps','1']), \
-                         patch.object(module,'configured_catalogue',return_value=MagicMock()), \
+                         patch.object(module,'configured_writer_catalogue',return_value=MagicMock()), \
                          patch.object(module,'load_config',return_value={'rpcUrl':'https://synthetic.invalid'}), \
                          patch.object(module,'DiscoveryReader') as reader, \
                          patch.object(module,'PgActivity') as store, \

@@ -212,7 +212,7 @@ class HistoricalRecoveryTests(unittest.TestCase):
                 output = Path(directory) / 'reviewed-restart.json'
                 with patch.object(sys, 'argv', [module.__name__, '--pool-id', POOL,
                         '--restart-unpublished-work', '--max-steps', '1', '--output', str(output)]), \
-                        patch.object(module, 'configured_catalogue', return_value=self.catalogue), \
+                        patch.object(module, 'configured_writer_catalogue', return_value=self.catalogue), \
                         patch.object(module, 'load_config', return_value={'rpcUrl': 'http://offline.invalid'}), \
                         patch.object(module, 'ReadRpc', return_value=self.rpc), \
                         patch.object(module, 'DiscoveryReader'), redirect_stdout(io.StringIO()):

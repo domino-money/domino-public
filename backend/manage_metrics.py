@@ -5,7 +5,7 @@ from pathlib import Path
 
 from activity_store import PgActivity
 from capital_store import CapitalIndexer
-from catalogue import configured_catalogue
+from catalogue import configured_writer_catalogue
 from discovery import DataError, ReadRpc, bytes32
 from historical_capacity import PROFILES, unavailable_work
 from local_config import load_config
@@ -18,7 +18,7 @@ from read_service import bounded_transport
 def run(pool_id, max_steps, fetch_prices, *, capacity='standard', activity_capacity='standard', restart_capital_work=False):
     if type(max_steps) is not int or not 1 <= max_steps <= 50:
         raise DataError('invalid_metrics_bounds_or_output_exists')
-    catalogue = configured_catalogue()
+    catalogue = configured_writer_catalogue()
     if catalogue is None:
         raise DataError('catalogue_not_configured')
     url = load_config().get('rpcUrl')

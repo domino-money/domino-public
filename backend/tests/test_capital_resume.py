@@ -48,7 +48,7 @@ class CapitalWorkerUnitTests(unittest.TestCase):
 
     def test_invocation_bounds_reject_before_configuration_or_network(self):
         for steps in (0, 51, True, '1'):
-            with patch('manage_metrics.configured_catalogue') as configuration:
+            with patch('manage_metrics.configured_writer_catalogue') as configuration:
                 with self.assertRaisesRegex(DataError, 'invalid_metrics_bounds'):
                     run(POOL, steps, False)
                 configuration.assert_not_called()
@@ -396,7 +396,7 @@ class CapitalResumePostgresTests(unittest.TestCase):
         self.assertIsNone(self.work())
 
     def test_bounded_cli_reports_pending_without_valuation_or_price_acquisition(self):
-        with patch('manage_metrics.configured_catalogue', return_value=self.catalogue), \
+        with patch('manage_metrics.configured_writer_catalogue', return_value=self.catalogue), \
                 patch('manage_metrics.load_config', return_value={'rpcUrl': 'https://offline.invalid'}), \
                 patch('manage_metrics.ReadRpc', return_value=self.rpc) as rpc, \
                 patch('manage_metrics.stored_metrics') as metrics, \
