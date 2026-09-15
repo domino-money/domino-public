@@ -161,6 +161,8 @@ def main():
     parser.add_argument('--find-anchor',action='store_true',dest='find_anchor',
                         help='bounded PoolManager scan for a pool Initialize block; no write')
     parser.add_argument('--search-from',type=int)
+    parser.add_argument('--search-back-blocks',type=int,dest='search_back_blocks',
+                        help='scan back this many blocks from the head when --search-from is absent')
     parser.add_argument('--search-span',type=int,default=10000)
     parser.add_argument('--search-max-spans',type=int,default=100)
     parser.add_argument('--follow',action='store_true')
@@ -235,20 +237,28 @@ def main():
                                    capacity=args.capacity_profile,
                                    parallel_walks=args.parallel_walks)
         if args.queue_worker:
-            if not args.search_from or args.search_from<1:
-                raise DataError('invalid_search_range')
             if not 1<=args.max_pools<=64:
                 raise DataError('invalid_pool_request_claim')
             requests=PgRequests(catalogue,role=WRITER_ROLE)
             rpc=IndexRpc(url,transport=indexer_transport(90),max_requests=300)
             head=DiscoveryReader(ReadRpc(url,transport=indexer_transport(60))).snapshot()
             target=head.number-args.lag
+            # A service cannot pin a block number that the chain moves past: the
+            # window is relative to the head unless the operator names a start.
+            search_from=args.search_from
+            if search_from is None:
+                back=args.search_back_blocks if args.search_back_blocks is not None else 400_000
+                if not 1<=back<=50_000_000:
+                    raise DataError('invalid_search_range')
+                search_from=max(1,head.number-back)
+            if search_from<1:
+                raise DataError('invalid_search_range')
             results=[]
             for claim in requests.claim(limit=args.max_pools,stale_seconds=args.stale_claim_seconds):
                 pool_id=claim['pool_id']
                 try:
                     anchor,source=ensure_anchor(catalogue,rpc,url,pool_id,
-                                                search_from=args.search_from,
+                                                search_from=search_from,
                                                 span=args.search_span,
                                                 max_spans=args.search_max_spans,
                                                 head_number=head.number)
@@ -272,7 +282,8 @@ def main():
                     requests.record(pool_id,status,error=reason,detail={'reason':reason})
                     results.append({'poolId':pool_id,'status':status,'reason':reason})
             print(json.dumps({'schemaVersion':1,'mode':'pool_request_worker','chainId':4663,
-                              'targetBlock':target,'pools':results,'liveExecution':False}))
+                              'targetBlock':target,'searchFromBlock':search_from,
+                              'pools':results,'liveExecution':False}))
             return 0 if all(item['status']!='blocked' for item in results) else 1
         if args.register:
             if not pool_ids:
