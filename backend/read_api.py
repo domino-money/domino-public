@@ -15,6 +15,7 @@ from typing import Annotated, Literal
 from discovery import CHAIN_ID, RPC_URL, DataError
 from local_config import load_config, configured_rpc_urls
 from catalogue import configured_catalogue
+from pool_requests import configured_pool_requests
 from read_service import ReadService
 from read_contract import CONTRACT_VERSION, RESPONSE_MODELS, ErrorResponse, validate_response, sanitize_error, unsigned_string_pattern
 from read_deadline import read_deadline
@@ -199,9 +200,11 @@ def create_app(service=None, *, gate=None, read_budget_seconds=60):
     generation = secrets.token_hex(16)
     if service is None:
         config = load_config()
+        catalogue = configured_catalogue()
         service = ReadService(rpc_urls=configured_rpc_urls(config, os.environ.get('DOMINO_DISCOVERY_RPC_URL')),
                               inventory_url=os.environ.get('DOMINO_INVENTORY_RPC_URL') or config.get('inventoryUrl'),
-                              catalogue=configured_catalogue())
+                              catalogue=catalogue,
+                              requests=configured_pool_requests(catalogue))
     gate = gate or ReadGate()
     app = FastAPI(title='Domino internal read API', version='0.8.0', docs_url=None, redoc_url=None)
     app.add_middleware(LocalReadBoundary)

@@ -14,6 +14,7 @@ from fastapi import FastAPI
 from fastapi.responses import JSONResponse
 
 from catalogue import PgCatalogue
+from pool_requests import configured_pool_requests
 from discovery import DataError, json_http
 from dev_read_budget import DevelopmentBudgets, DevelopmentGate, DevelopmentTransport
 from inventory import CursorCodec, inventory_endpoint
@@ -224,10 +225,11 @@ class DevelopmentReadService(ReadService):
                                        inventory_url=profile['inventoryUrl'], transport=transport)
         market = MarketCache(GeckoMarketData(transport=bounded, clock=clock), clock=monotonic)
         market.requests_per_minute = 6
+        catalogue = DevelopmentCatalogue(profile['catalogue']) if profile['catalogue'] else None
         super().__init__(rpc_urls=tuple(profile['rpcUrls']), inventory_url=profile['inventoryUrl'],
                          clock=clock, transport_factory=lambda: bounded,
                          cursor_codec=CursorCodec(clock=clock), market_cache=market,
-                         catalogue=DevelopmentCatalogue(profile['catalogue']) if profile['catalogue'] else None)
+                         catalogue=catalogue, requests=configured_pool_requests(catalogue))
 
     token = _operation(ReadService.token)
     pools = _operation(ReadService.pools)

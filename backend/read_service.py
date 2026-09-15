@@ -73,11 +73,15 @@ def bounded_transport(seconds=60):
 class ReadService:
     def __init__(self, *, rpc_url=RPC_URL, rpc_urls=None, inventory_url=None, clock=time.time,
                  rpc_factory=None, inventory=None, cursor_codec=None, transport_factory=bounded_transport,
-                 catalogue=None, market_cache=None, snapshot=None):
+                 catalogue=None, market_cache=None, snapshot=None, requests=None):
         self.rpc_url, self.inventory_url, self.clock = rpc_url, inventory_url, clock
         self.rpc_urls = tuple(rpc_urls) if rpc_urls is not None else None
         self.rpc_factory, self.inventory = rpc_factory, inventory
         self.cursor_codec = cursor_codec or CursorCodec(clock=clock)
+        # Demand queue for pools a consumer asked to see. A public read may only
+        # ask (an insert through a narrowly granted function); the worker that
+        # indexes is a different role.
+        self.requests = requests
         self.transport_factory = transport_factory
         self.catalogue = catalogue
         if market_cache is None:
@@ -145,7 +149,15 @@ class ReadService:
         if not self.catalogue:
             raise DataError('catalogue_not_configured')
         store=PgActivity(self.catalogue)
-        report=store.read(pool_id,include_positions=True) if include_positions else store.read(pool_id)
+        try:
+            report=store.read(pool_id,include_positions=True) if include_positions else store.read(pool_id)
+        except DataError as error:
+            if str(error) not in ('activity_pool_not_registered','activity_not_indexed'):
+                raise
+            # A pool the ledger does not hold yet still deserves to be served:
+            # ask for it, then answer with today's not-indexed contract result.
+            self.request_pool(pool_id)
+            raise
         rpc=self._rpc(self.transport_factory())
         reader=DiscoveryReader(rpc,clock=self.clock)
         head=reader.snapshot()
@@ -161,6 +173,15 @@ class ReadService:
                              'checkedAgainstHead':head.number}
         report['window24h']['usableAsCurrent24h']=age<=120 and report['window24h']['completeWindow']
         return report
+
+    def request_pool(self,pool_id,*,reason='read'):
+        """Ask the durable queue for a pool; a read never fails because of it."""
+        if self.requests is None:
+            return False
+        try:
+            return self.requests.enqueue(pool_id,reason=reason)
+        except (DataError,OSError):
+            return False
 
     @public_response('pool-positions')
     def pool_positions(self,pool_id):

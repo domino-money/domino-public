@@ -30,7 +30,9 @@ from followers import follow_many
 from indexer_io import MAX_INDEXER_SPAN, AdaptiveSpan, indexer_transport
 from local_config import load_config
 from pool_activity import ACTIVITY_CAPACITY_PROFILES
+from pool_requests import PERMANENT, PgRequests
 from selected_pools import SELECTED_POOLS
+from manage_catalogue import anchor_candidate
 
 READ_FRESHNESS_SECONDS = 120
 DEFAULT_FOLLOW_LAG = 100
@@ -81,6 +83,30 @@ def find_initialize_anchor(rpc,pool_id,*,from_block,to_block,span,max_spans):
             'scannedThrough':min(to_block,cursor-1)}
 
 
+def ensure_anchor(catalogue,rpc,url,pool_id,*,search_from,span,max_spans,head_number):
+    """Where the pool's Initialize block is known, or how to prove it now.
+
+    The catalogue's own events are free; a seeded hint has no block, so the
+    bounded scan finds it and the identity is then taken from that log.
+    """
+    with catalogue.connection() as conn:
+        event=conn.execute('SELECT block_number FROM domino_catalogue.events WHERE pool_id=%s',
+                           (pool_id,)).fetchone()
+        hint=conn.execute('SELECT 1 AS present FROM domino_catalogue.hints WHERE pool_id=%s',
+                          (pool_id,)).fetchone()
+    if event is not None:
+        return event['block_number'],'catalogue_event'
+    found=find_initialize_anchor(rpc,pool_id,from_block=search_from,to_block=head_number-1,
+                                 span=span,max_spans=max_spans)
+    if found['status']!='found':
+        raise DataError('initialize_anchor_not_found')
+    anchor=found['blockNumber']
+    if hint is None:
+        candidate,block=anchor_candidate(url,pool_id,anchor,rpc=rpc)
+        catalogue.seed([candidate],block)
+    return anchor,'initialize_log'
+
+
 def write_report(path,report):
     path.parent.mkdir(parents=True,exist_ok=True)
     with path.open('x') as stream:
@@ -120,6 +146,16 @@ def main():
     parser.add_argument('--max-consecutive-failures',type=int,default=5)
     parser.add_argument('--capacity-profile',choices=ACTIVITY_CAPACITY_PROFILES,default='standard')
     parser.add_argument('--register',action='store_true')
+    parser.add_argument('--request',action='store_true',
+                        help='enqueue this pool (or --selected) for on-demand indexing')
+    parser.add_argument('--queue',action='store_true',
+                        help='read the demand queue; no RPC or provider configuration')
+    parser.add_argument('--queue-worker',action='store_true',dest='queue_worker',
+                        help='drain the demand queue: anchor, register, index, record')
+    parser.add_argument('--max-pools',type=int,default=4,dest='max_pools',
+                        help='requests claimed per worker round')
+    parser.add_argument('--stale-claim-seconds',type=int,default=300,dest='stale_claim_seconds',
+                        help='reclaim a request whose worker died mid-pool')
     parser.add_argument('--find-anchor',action='store_true',dest='find_anchor',
                         help='bounded PoolManager scan for a pool Initialize block; no write')
     parser.add_argument('--search-from',type=int)
@@ -134,6 +170,27 @@ def main():
         if not 1<=args.span<=MAX_INDEXER_SPAN or args.lag<0:
             raise DataError('invalid_activity_bounds')
         pool_ids=requested_pool_ids(args.pool_ids,selected=args.selected)
+        if args.queue:
+            catalogue=configured_catalogue()
+            if catalogue is None:
+                raise DataError('catalogue_not_configured')
+            requests=PgRequests(catalogue)
+            rows=requests.status(pool_ids[0] if len(pool_ids)==1 else None)
+            print(json.dumps({'schemaVersion':1,'mode':'pool_request_queue',
+                              'requests':rows if isinstance(rows,list) else [rows]}))
+            return 0
+        if args.request:
+            catalogue=configured_catalogue()
+            if catalogue is None:
+                raise DataError('catalogue_not_configured')
+            if not pool_ids:
+                raise DataError('pool_id_required')
+            requests=PgRequests(catalogue)
+            reason='selected' if args.selected else 'operator'
+            accepted=[requests.enqueue(pool_id,reason=reason) for pool_id in pool_ids]
+            print(json.dumps({'schemaVersion':1,'mode':'pool_request_enqueue','reason':reason,
+                              'pools':pool_ids,'accepted':accepted,'ledgerWrite':False}))
+            return 0
         if args.status:
             catalogue=configured_catalogue()
             if catalogue is None:
@@ -175,6 +232,45 @@ def main():
             return ActivityIndexer(store,IndexRpc(url,transport=indexer_transport(90),max_requests=300),
                                    capacity=args.capacity_profile,
                                    parallel_walks=args.parallel_walks)
+        if args.queue_worker:
+            if not args.search_from or args.search_from<1:
+                raise DataError('invalid_search_range')
+            if not 1<=args.max_pools<=64:
+                raise DataError('invalid_pool_request_claim')
+            requests=PgRequests(catalogue)
+            rpc=IndexRpc(url,transport=indexer_transport(90),max_requests=300)
+            head=DiscoveryReader(ReadRpc(url,transport=indexer_transport(60))).snapshot()
+            target=head.number-args.lag
+            results=[]
+            for claim in requests.claim(limit=args.max_pools,stale_seconds=args.stale_claim_seconds):
+                pool_id=claim['pool_id']
+                try:
+                    anchor,source=ensure_anchor(catalogue,rpc,url,pool_id,
+                                                search_from=args.search_from,
+                                                span=args.search_span,
+                                                max_spans=args.search_max_spans,
+                                                head_number=head.number)
+                    worker().register(pool_id,anchor)
+                    steps=[]
+                    for _ in range(args.max_steps):
+                        result=worker().step(pool_id,through=target,span=args.span)
+                        steps.append(result['status'])
+                        if result['status']!='indexed':break
+                    status='following' if steps and steps[-1] in ('caught_up_to_target','rewound') else 'indexing'
+                    requests.record(pool_id,status,
+                                    detail={'anchorBlock':anchor,'anchorSource':source,
+                                            'targetBlock':target,'steps':steps,
+                                            'capacityProfile':args.capacity_profile})
+                    results.append({'poolId':pool_id,'status':status,'anchorBlock':anchor,
+                                    'anchorSource':source,'steps':steps})
+                except DataError as error:
+                    reason=str(error)
+                    status='blocked' if reason in PERMANENT else 'indexing'
+                    requests.record(pool_id,status,error=reason,detail={'reason':reason})
+                    results.append({'poolId':pool_id,'status':status,'reason':reason})
+            print(json.dumps({'schemaVersion':1,'mode':'pool_request_worker','chainId':4663,
+                              'targetBlock':target,'pools':results,'liveExecution':False}))
+            return 0 if all(item['status']!='blocked' for item in results) else 1
         if args.register:
             if not pool_ids:
                 raise DataError('pool_id_required')
