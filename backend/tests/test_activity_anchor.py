@@ -48,7 +48,34 @@ class AnchorScanTests(unittest.TestCase):
     def test_absent_anchor_stops_at_the_scan_budget_and_says_where_it_stopped(self):
         rpc=StubRpc([])
         result=find_initialize_anchor(rpc,POOL_ID,from_block=1,to_block=10000,span=1000,max_spans=3)
-        self.assertEqual(result,{'status':'not_found_in_scanned_range','spansScanned':3,'scannedThrough':3000})
+        self.assertEqual(result,{'status':'not_found_in_scanned_range','spansScanned':3,
+                                 'scannedThrough':3000,'direction':'forward'})
+
+    def test_a_recent_anchor_is_found_in_the_first_reverse_window(self):
+        rpc=StubRpc([log(9950)])
+        result=find_initialize_anchor(rpc,POOL_ID,from_block=1,to_block=10000,span=1000,max_spans=10,
+                                      reverse=True)
+        self.assertEqual((result['status'],result['blockNumber'],result['spansScanned']),
+                         ('found',9950,1))
+        self.assertEqual(result['direction'],'reverse')
+        self.assertEqual(rpc.queries[0]['fromBlock'],hex(9001))
+        self.assertEqual(rpc.queries[0]['toBlock'],hex(10000))
+
+    def test_reverse_walks_towards_the_oldest_window_and_reports_where_it_stopped(self):
+        rpc=StubRpc([log(1500)])
+        found=find_initialize_anchor(rpc,POOL_ID,from_block=1,to_block=10000,span=1000,max_spans=10,
+                                     reverse=True)
+        self.assertEqual((found['blockNumber'],found['spansScanned']),(1500,9))
+        absent=find_initialize_anchor(StubRpc([]),POOL_ID,from_block=1,to_block=10000,span=1000,
+                                      max_spans=3,reverse=True)
+        self.assertEqual((absent['status'],absent['spansScanned'],absent['scannedThrough']),
+                         ('not_found_in_scanned_range',3,7001))
+
+    def test_the_direction_must_be_a_boolean(self):
+        for value in (1,'reverse',None):
+            with self.subTest(value=value), self.assertRaises(DataError):
+                find_initialize_anchor(StubRpc([]),POOL_ID,from_block=1,to_block=10,span=10,
+                                       max_spans=1,reverse=value)
 
     def test_scan_covers_the_requested_end_block_before_giving_up(self):
         rpc=StubRpc([])

@@ -58,18 +58,34 @@ def parse_anchors(values):
     return anchors
 
 
-def find_initialize_anchor(rpc,pool_id,*,from_block,to_block,span,max_spans):
+def find_initialize_anchor(rpc,pool_id,*,from_block,to_block,span,max_spans,reverse=False):
     """Bounded PoolManager log scan for one pool's Initialize event.
 
-    The found log is decoded here so the range and the identity are proven
-    before the block is offered as an anchor; registration re-verifies it at the
-    canonical block, so a stale scan cannot become stored history.
+    The log is decoded before its block is offered as an anchor, and
+    registration re-verifies it at the canonical block, so a stale scan cannot
+    become stored history.
+
+    `reverse` starts at the newest window and walks towards the oldest, which is
+    what a requested pool usually needs: a pool someone is trading now was
+    created recently, while an old pool costs the same as a forward walk.
     """
-    scanned,cursor=0,from_block
-    while cursor<=to_block and scanned<max_spans:
-        end=min(cursor+span-1,to_block)
+    if type(reverse) is not bool:
+        raise DataError('invalid_search_direction')
+    if type(from_block) is not int or type(to_block) is not int or from_block<1 or to_block<from_block:
+        raise DataError('invalid_search_range')
+    if not 1<=span<=10000 or not 1<=max_spans<=10000:
+        raise DataError('invalid_search_bounds')
+    scanned=0
+    window=to_block if reverse else from_block
+    lowest,highest=to_block,from_block
+    while scanned<max_spans:
+        start=max(from_block,window-span+1) if reverse else window
+        end=window if reverse else min(window+span-1,to_block)
+        if start>to_block or end<from_block:
+            break
+        lowest=min(lowest,start);highest=max(highest,end)
         logs=rpc.request('eth_getLogs',[{'address':POOL_MANAGER,'topics':[INITIALIZE_TOPIC,pool_id],
-                                        'fromBlock':hex(cursor),'toBlock':hex(end)}])
+                                        'fromBlock':hex(start),'toBlock':hex(end)}])
         if not isinstance(logs,list) or len(logs)>2000:
             raise DataError('invalid_logs_response')
         if logs:
@@ -77,10 +93,20 @@ def find_initialize_anchor(rpc,pool_id,*,from_block,to_block,span,max_spans):
                 raise DataError('ambiguous_initialize_anchor')
             event=decode_initialize(logs[0])
             return {'status':'found','blockNumber':event['blockNumber'],'blockHash':event['blockHash'],
-                    'spansScanned':scanned+1,'scannedThrough':end}
-        scanned,cursor=scanned+1,end+1
+                    'spansScanned':scanned+1,'scannedThrough':start if reverse else end,
+                    'direction':'reverse' if reverse else 'forward'}
+        scanned+=1
+        if reverse:
+            if start<=from_block:
+                break
+            window=start-1
+        else:
+            if end>=to_block:
+                break
+            window=end+1
     return {'status':'not_found_in_scanned_range','spansScanned':scanned,
-            'scannedThrough':min(to_block,cursor-1)}
+            'scannedThrough':lowest if reverse else highest,
+            'direction':'reverse' if reverse else 'forward'}
 
 
 def ensure_anchor(catalogue,rpc,url,pool_id,*,search_from,span,max_spans,head_number):
@@ -97,7 +123,7 @@ def ensure_anchor(catalogue,rpc,url,pool_id,*,search_from,span,max_spans,head_nu
     if event is not None:
         return event['block_number'],'catalogue_event'
     found=find_initialize_anchor(rpc,pool_id,from_block=search_from,to_block=head_number-1,
-                                 span=span,max_spans=max_spans)
+                                 span=span,max_spans=max_spans,reverse=True)
     if found['status']!='found':
         raise DataError('initialize_anchor_not_found')
     anchor=found['blockNumber']
@@ -165,6 +191,8 @@ def main():
                         help='scan back this many blocks from the head when --search-from is absent')
     parser.add_argument('--search-span',type=int,default=10000)
     parser.add_argument('--search-max-spans',type=int,default=100)
+    parser.add_argument('--search-direction',choices=('reverse','forward'),default='reverse',
+                        help='scan the anchor window from the head (default) or from its start')
     parser.add_argument('--follow',action='store_true')
     parser.add_argument('--status',action='store_true',
                         help='Read persisted operator status from PostgreSQL only; no RPC or current-data claim')
@@ -221,8 +249,10 @@ def main():
                 raise DataError('invalid_search_bounds')
             head=DiscoveryReader(ReadRpc(url,transport=indexer_transport(60))).snapshot()
             rpc=IndexRpc(url,transport=indexer_transport(90),max_requests=args.search_max_spans+16)
-            pools=[{'poolId':pool_id,**find_initialize_anchor(rpc,pool_id,from_block=args.search_from,
-                    to_block=head.number-1,span=args.search_span,max_spans=args.search_max_spans)}
+            pools=[{'poolId':pool_id,**find_initialize_anchor(
+                        rpc,pool_id,from_block=args.search_from,to_block=head.number-1,
+                        span=args.search_span,max_spans=args.search_max_spans,
+                        reverse=args.search_direction=='reverse')}
                    for pool_id in pool_ids]
             print(json.dumps({'schemaVersion':1,'mode':'activity_initialize_anchor_scan','chainId':4663,
                               'fromBlock':args.search_from,'headAtStart':asdict(head),'pools':pools,
