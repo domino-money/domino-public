@@ -21,7 +21,7 @@
  * route, schema or version.
  */
 export const PRODUCER_PIN = {
-  producerCommit: '8ee81245d5b8b394971b2412a6aaa273850d169d',
+  producerCommit: 'c0d647b9c7558f1b35ba9d6c2ab00f7736772c24',
   producerIssue: 95,
   packages: {
     'read-v1': {
