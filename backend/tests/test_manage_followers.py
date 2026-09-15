@@ -15,9 +15,9 @@ import manage_activity
 import manage_catalogue
 from activity_store import PgActivity
 from catalogue import PgCatalogue
-from catalogue_indexer import decode_initialize
+from catalogue_indexer import CatalogueIndexer, decode_initialize
 from dev_postgres import ADMIN, PORT, SOCKET
-from discovery import Block
+from discovery import Block, DataError
 from test_catalogue import FakeIndexRpc, block_hash, log, stored_candidate
 from test_discovery import POOL
 import test_pool_activity as activity_tests
@@ -88,6 +88,33 @@ class CatalogueFollowerCliTests(unittest.TestCase):
         # An empty chunk advances coverage; it does not invalidate paging clients.
         self.assertEqual(report['coverage']['revision'],0)
         self.assertEqual(self.state()['next_block'],801)
+
+    def test_a_rejected_range_is_retried_with_a_smaller_span_in_the_same_pass(self):
+        """A dense chunk is refused once, then accepted at a quarter of the span."""
+        self.rpc.logs=[]
+        seen=[]
+        real_step=CatalogueIndexer.step
+
+        def step(self,*,through,span=1000):
+            seen.append(span)
+            if len(seen)==1:
+                raise DataError('invalid_logs_response')
+            return real_step(self,through=through,span=span)
+
+        with patch.object(manage_catalogue.CatalogueIndexer,'step',step):
+            running=self.patches(manage_catalogue,reader_factory(1000))
+            for item in running:item.start()
+            try:
+                code,output=run_main(manage_catalogue,['manage_catalogue.py','follow','--span','100000',
+                                                       '--span-floor','1000','--lag','200',
+                                                       '--max-passes','1','--poll-seconds','0'])
+            finally:
+                for item in running:item.stop()
+        self.assertEqual(code,0)
+        self.assertEqual(seen[:2],[100000,25000])
+        report=json.loads(output.strip().splitlines()[-1])
+        self.assertEqual(report['follow']['failures'],[])
+        self.assertEqual(report['spanRuntime']['spanBlocks'],25000)
 
     def test_catalogue_follow_records_a_failed_round_without_losing_the_checkpoint(self):
         self.rpc.fail=True

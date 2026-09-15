@@ -189,12 +189,19 @@ def main():
         if args.start_block is not None:worker().start(args.start_block)
         span=AdaptiveSpan(args.span,floor=args.span_floor,ceiling=args.span_ceiling)
         def step(*,through):
-            try:
-                result=worker().step(through=through,span=span.next_span())
-            except (DataError,OSError) as error:
-                span.record(str(error));raise
-            span.record(None)
-            return result
+            # A rejected range is retried inside the same pass with the smaller
+            # span: with one pass per timer tick, waiting for the next tick would
+            # never use a span the provider just told us to take.
+            for attempt in range(3):
+                try:
+                    result=worker().step(through=through,span=span.next_span())
+                except (DataError,OSError) as error:
+                    reason=str(error);span.record(reason)
+                    if reason in AdaptiveSpan.SHRINK_REASONS and attempt<2:
+                        continue
+                    raise
+                span.record(None)
+                return result
         stop=StopRequests()
         signal.signal(signal.SIGTERM,stop.handle)
         signal.signal(signal.SIGINT,stop.handle)
