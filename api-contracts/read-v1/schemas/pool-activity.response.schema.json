@@ -670,6 +670,361 @@
       "title": "FixedPoolKey",
       "type": "object"
     },
+    "LiveWindowCoverage": {
+      "additionalProperties": false,
+      "description": "Coverage of a window served from live state: no stored interval exists.",
+      "properties": {
+        "canonicality": {
+          "const": "block_hash_rechecked",
+          "title": "Canonicality",
+          "type": "string"
+        },
+        "indexedThrough": {
+          "title": "Indexedthrough",
+          "type": "null"
+        },
+        "initializedAt": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "title": "Initializedat",
+          "type": "integer"
+        },
+        "initializedBlock": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "title": "Initializedblock",
+          "type": "integer"
+        },
+        "rpcCompleteness": {
+          "const": "single_provider_assumption",
+          "title": "Rpccompleteness",
+          "type": "string"
+        },
+        "scope": {
+          "const": "live_window_only",
+          "title": "Scope",
+          "type": "string"
+        },
+        "startBlock": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "title": "Startblock",
+          "type": "integer"
+        },
+        "windowStartBlock": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "title": "Windowstartblock",
+          "type": "integer"
+        },
+        "windowStartTimestamp": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "title": "Windowstarttimestamp",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "startBlock",
+        "indexedThrough",
+        "initializedBlock",
+        "initializedAt",
+        "scope",
+        "canonicality",
+        "rpcCompleteness",
+        "windowStartBlock",
+        "windowStartTimestamp"
+      ],
+      "title": "LiveWindowCoverage",
+      "type": "object"
+    },
+    "LiveWindowLiquidity": {
+      "additionalProperties": false,
+      "properties": {
+        "activeLiquidityRaw": {
+          "$ref": "#/$defs/Raw"
+        },
+        "isTvl": {
+          "const": false,
+          "title": "Istvl",
+          "type": "boolean"
+        },
+        "positionAccounting": {
+          "discriminator": {
+            "mapping": {
+              "reconciled_as_of": "#/$defs/PositionsReconciled",
+              "unavailable": "#/$defs/PositionsUnavailable"
+            },
+            "propertyName": "status"
+          },
+          "oneOf": [
+            {
+              "$ref": "#/$defs/PositionsUnavailable"
+            },
+            {
+              "$ref": "#/$defs/PositionsReconciled"
+            }
+          ],
+          "title": "Positionaccounting"
+        },
+        "rangeCount": {
+          "title": "Rangecount",
+          "type": "null"
+        },
+        "status": {
+          "const": "live_state_only",
+          "title": "Status",
+          "type": "string"
+        },
+        "tvlReason": {
+          "const": "pool_activity_not_indexed",
+          "title": "Tvlreason",
+          "type": "string"
+        },
+        "tvlUsd": {
+          "title": "Tvlusd",
+          "type": "null"
+        }
+      },
+      "required": [
+        "status",
+        "activeLiquidityRaw",
+        "rangeCount",
+        "isTvl",
+        "tvlUsd",
+        "tvlReason",
+        "positionAccounting"
+      ],
+      "title": "LiveWindowLiquidity",
+      "type": "object"
+    },
+    "PoolActivityLiveWindow": {
+      "additionalProperties": false,
+      "description": "A pool whose creation is verified but whose ledger is not walked yet.\n\nThe 24 h window is exact, computed from the pool's own logs over a block\nrange whose start timestamp proves every event lies inside the window. No\nstored revision, range model, lifetime total or fee ledger is claimed.",
+      "properties": {
+        "accountingScope": {
+          "const": "core_pool_events_only",
+          "title": "Accountingscope",
+          "type": "string"
+        },
+        "chainId": {
+          "const": 4663,
+          "title": "Chainid",
+          "type": "integer"
+        },
+        "coverage": {
+          "$ref": "#/$defs/LiveWindowCoverage"
+        },
+        "executionAvailable": {
+          "const": false,
+          "title": "Executionavailable",
+          "type": "boolean"
+        },
+        "fees": {
+          "$ref": "#/$defs/ActivityFees"
+        },
+        "freshness": {
+          "$ref": "#/$defs/ActivityFreshness"
+        },
+        "liquidity": {
+          "$ref": "#/$defs/LiveWindowLiquidity"
+        },
+        "methodologyVersion": {
+          "const": 1,
+          "title": "Methodologyversion",
+          "type": "integer"
+        },
+        "mode": {
+          "const": "live_window_only",
+          "title": "Mode",
+          "type": "string"
+        },
+        "poolId": {
+          "pattern": "^0x[0-9a-f]{64}$",
+          "title": "Poolid",
+          "type": "string"
+        },
+        "poolKey": {
+          "discriminator": {
+            "mapping": {
+              "dynamic": "#/$defs/DynamicPoolKey",
+              "fixed": "#/$defs/FixedPoolKey"
+            },
+            "propertyName": "feeMode"
+          },
+          "oneOf": [
+            {
+              "$ref": "#/$defs/FixedPoolKey"
+            },
+            {
+              "$ref": "#/$defs/DynamicPoolKey"
+            }
+          ],
+          "title": "Poolkey"
+        },
+        "revision": {
+          "title": "Revision",
+          "type": "null"
+        },
+        "schemaVersion": {
+          "const": 1,
+          "title": "Schemaversion",
+          "type": "integer"
+        },
+        "snapshot": {
+          "$ref": "#/$defs/StateSnapshot"
+        },
+        "storedEventCount": {
+          "const": 0,
+          "title": "Storedeventcount",
+          "type": "integer"
+        },
+        "suggested": {
+          "const": false,
+          "title": "Suggested",
+          "type": "boolean"
+        },
+        "window24h": {
+          "$ref": "#/$defs/ActivityWindow"
+        }
+      },
+      "required": [
+        "schemaVersion",
+        "methodologyVersion",
+        "mode",
+        "chainId",
+        "poolId",
+        "poolKey",
+        "revision",
+        "accountingScope",
+        "snapshot",
+        "coverage",
+        "freshness",
+        "window24h",
+        "liquidity",
+        "fees",
+        "storedEventCount",
+        "suggested",
+        "executionAvailable"
+      ],
+      "title": "PoolActivityLiveWindow",
+      "type": "object"
+    },
+    "PoolActivityStored": {
+      "additionalProperties": false,
+      "description": "A walked pool: the stored ledger answers with its own revision and model.",
+      "properties": {
+        "accountingScope": {
+          "const": "core_pool_events_only",
+          "title": "Accountingscope",
+          "type": "string"
+        },
+        "chainId": {
+          "const": 4663,
+          "title": "Chainid",
+          "type": "integer"
+        },
+        "coverage": {
+          "$ref": "#/$defs/ActivityCoverage"
+        },
+        "executionAvailable": {
+          "const": false,
+          "title": "Executionavailable",
+          "type": "boolean"
+        },
+        "fees": {
+          "$ref": "#/$defs/ActivityFees"
+        },
+        "freshness": {
+          "$ref": "#/$defs/ActivityFreshness"
+        },
+        "liquidity": {
+          "$ref": "#/$defs/ActivityLiquidity"
+        },
+        "methodologyVersion": {
+          "const": 1,
+          "title": "Methodologyversion",
+          "type": "integer"
+        },
+        "mode": {
+          "const": "core_pool_activity_read_only",
+          "title": "Mode",
+          "type": "string"
+        },
+        "poolId": {
+          "pattern": "^0x[0-9a-f]{64}$",
+          "title": "Poolid",
+          "type": "string"
+        },
+        "poolKey": {
+          "discriminator": {
+            "mapping": {
+              "dynamic": "#/$defs/DynamicPoolKey",
+              "fixed": "#/$defs/FixedPoolKey"
+            },
+            "propertyName": "feeMode"
+          },
+          "oneOf": [
+            {
+              "$ref": "#/$defs/FixedPoolKey"
+            },
+            {
+              "$ref": "#/$defs/DynamicPoolKey"
+            }
+          ],
+          "title": "Poolkey"
+        },
+        "revision": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "title": "Revision",
+          "type": "integer"
+        },
+        "schemaVersion": {
+          "const": 1,
+          "title": "Schemaversion",
+          "type": "integer"
+        },
+        "snapshot": {
+          "$ref": "#/$defs/StateSnapshot"
+        },
+        "storedEventCount": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "title": "Storedeventcount",
+          "type": "integer"
+        },
+        "suggested": {
+          "const": false,
+          "title": "Suggested",
+          "type": "boolean"
+        },
+        "window24h": {
+          "$ref": "#/$defs/ActivityWindow"
+        }
+      },
+      "required": [
+        "schemaVersion",
+        "methodologyVersion",
+        "mode",
+        "chainId",
+        "poolId",
+        "poolKey",
+        "revision",
+        "accountingScope",
+        "snapshot",
+        "coverage",
+        "freshness",
+        "window24h",
+        "liquidity",
+        "fees",
+        "storedEventCount",
+        "suggested",
+        "executionAvailable"
+      ],
+      "title": "PoolActivityStored",
+      "type": "object"
+    },
     "PositionProof": {
       "additionalProperties": false,
       "properties": {
@@ -1056,117 +1411,20 @@
   },
   "$id": "https://domino.invalid/contracts/read-v1/pool-activity.response.schema.json",
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "additionalProperties": false,
-  "properties": {
-    "accountingScope": {
-      "const": "core_pool_events_only",
-      "title": "Accountingscope",
-      "type": "string"
+  "discriminator": {
+    "mapping": {
+      "core_pool_activity_read_only": "#/$defs/PoolActivityStored",
+      "live_window_only": "#/$defs/PoolActivityLiveWindow"
     },
-    "chainId": {
-      "const": 4663,
-      "title": "Chainid",
-      "type": "integer"
-    },
-    "coverage": {
-      "$ref": "#/$defs/ActivityCoverage"
-    },
-    "executionAvailable": {
-      "const": false,
-      "title": "Executionavailable",
-      "type": "boolean"
-    },
-    "fees": {
-      "$ref": "#/$defs/ActivityFees"
-    },
-    "freshness": {
-      "$ref": "#/$defs/ActivityFreshness"
-    },
-    "liquidity": {
-      "$ref": "#/$defs/ActivityLiquidity"
-    },
-    "methodologyVersion": {
-      "const": 1,
-      "title": "Methodologyversion",
-      "type": "integer"
-    },
-    "mode": {
-      "const": "core_pool_activity_read_only",
-      "title": "Mode",
-      "type": "string"
-    },
-    "poolId": {
-      "pattern": "^0x[0-9a-f]{64}$",
-      "title": "Poolid",
-      "type": "string"
-    },
-    "poolKey": {
-      "discriminator": {
-        "mapping": {
-          "dynamic": "#/$defs/DynamicPoolKey",
-          "fixed": "#/$defs/FixedPoolKey"
-        },
-        "propertyName": "feeMode"
-      },
-      "oneOf": [
-        {
-          "$ref": "#/$defs/FixedPoolKey"
-        },
-        {
-          "$ref": "#/$defs/DynamicPoolKey"
-        }
-      ],
-      "title": "Poolkey"
-    },
-    "revision": {
-      "maximum": 9007199254740991,
-      "minimum": 0,
-      "title": "Revision",
-      "type": "integer"
-    },
-    "schemaVersion": {
-      "const": 1,
-      "title": "Schemaversion",
-      "type": "integer"
-    },
-    "snapshot": {
-      "$ref": "#/$defs/StateSnapshot"
-    },
-    "storedEventCount": {
-      "maximum": 9007199254740991,
-      "minimum": 0,
-      "title": "Storedeventcount",
-      "type": "integer"
-    },
-    "suggested": {
-      "const": false,
-      "title": "Suggested",
-      "type": "boolean"
-    },
-    "window24h": {
-      "$ref": "#/$defs/ActivityWindow"
-    }
+    "propertyName": "mode"
   },
-  "required": [
-    "schemaVersion",
-    "methodologyVersion",
-    "mode",
-    "chainId",
-    "poolId",
-    "poolKey",
-    "revision",
-    "accountingScope",
-    "snapshot",
-    "coverage",
-    "freshness",
-    "window24h",
-    "liquidity",
-    "fees",
-    "storedEventCount",
-    "suggested",
-    "executionAvailable"
+  "oneOf": [
+    {
+      "$ref": "#/$defs/PoolActivityStored"
+    },
+    {
+      "$ref": "#/$defs/PoolActivityLiveWindow"
+    }
   ],
-  "title": "PoolActivityResponse",
-  "type": "object",
   "x-contract-version": "1.1.0-rc.3"
 }

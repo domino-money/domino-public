@@ -170,15 +170,25 @@ def replay(model, events, pool_id, key, *, capacity='standard'):
     return state
 
 
-def window_metrics(events, *, initialized_at, as_of, window_seconds=86400):
-    """Raw swap legs in (as_of-window, as_of], never the sum of both legs in USD."""
+def window_metrics(events, *, initialized_at, as_of, window_seconds=86400, range_bounded=False):
+    """Raw swap legs in (as_of-window, as_of], never the sum of both legs in USD.
+
+    `range_bounded` says the caller already proved every event lies inside the
+    window by block range: the read fetched logs from a block whose verified
+    timestamp is at or after the window start. Only then may the events omit
+    their own timestamps, which is what lets a live window be served without
+    one header read per event block. Nothing else changes: the same totals, the
+    same reasons and the same "never the sum of both legs" rule apply.
+    """
     if type(window_seconds) is not int or not 1<=window_seconds<=86400 or initialized_at>as_of:
+        raise DataError('invalid_activity_window')
+    if type(range_bounded) is not bool:
         raise DataError('invalid_activity_window')
     lower=as_of-window_seconds
     swap_count=trade_count=donation_count=0
     gross_in=[0,0];gross_out=[0,0];donated=[0,0];fees=set()
     for event in events:
-        if not lower<event['timestamp']<=as_of:
+        if not range_bounded and not lower<event['timestamp']<=as_of:
             continue
         p=event['payload']
         if event['kind']=='swap':

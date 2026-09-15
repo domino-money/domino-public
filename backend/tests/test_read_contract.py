@@ -414,7 +414,10 @@ class ReadContractTests(unittest.TestCase):
         openapi = client.get('/openapi.json').json()
         for route in RESPONSE_MODELS:
             responses = openapi['paths']['/v1/read/'+route]['post']['responses']
-            self.assertIn('$ref', responses['200']['content']['application/json']['schema'])
+            # A single-model route references its schema directly; a route whose
+            # response is a discriminated union lists its members instead.
+            schema=responses['200']['content']['application/json']['schema']
+            self.assertTrue('$ref' in schema or 'oneOf' in schema, (route, schema))
             self.assertTrue(responses['422']['content']['application/json']['schema']['$ref'].endswith('/ErrorResponse'))
 
     def test_http_producer_rejects_nested_drift_and_sanitizes_unknown_errors(self):

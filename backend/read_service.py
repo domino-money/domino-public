@@ -155,9 +155,20 @@ class ReadService:
             if str(error) not in ('activity_pool_not_registered','activity_not_indexed'):
                 raise
             # A pool the ledger does not hold yet still deserves to be served:
-            # ask for it, then answer with today's not-indexed contract result.
+            # ask for it, then serve the live window when its creation is
+            # already verified. A pool nobody has anchored, or one whose live
+            # window cannot be built, keeps today's answer rather than turning
+            # "not indexed" into a provider error.
             self.request_pool(pool_id)
-            raise
+            anchor=self.registered_anchor(pool_id)
+            if anchor is None:
+                raise
+            try:
+                return self.live_window_activity(pool_id,anchor)
+            except DataError as live_error:
+                if str(live_error) in self.LIVE_WINDOW_UNSERVABLE:
+                    raise error from None
+                raise
         rpc=self._rpc(self.transport_factory())
         reader=DiscoveryReader(rpc,clock=self.clock)
         head=reader.snapshot()
@@ -173,6 +184,140 @@ class ReadService:
                              'checkedAgainstHead':head.number}
         report['window24h']['usableAsCurrent24h']=age<=120 and report['window24h']['completeWindow']
         return report
+
+    LIVE_WINDOW_SECONDS = 86400
+    # Blocks are one second on Robinhood Chain; the margin covers a run of
+    # sub-second blocks without ever moving the window start past its bound.
+    LIVE_WINDOW_BLOCK_MARGIN = 120
+    # Reasons that mean "this pool cannot be served live yet", as opposed to a
+    # provider or transport failure that the caller should see as such.
+    LIVE_WINDOW_UNSERVABLE = frozenset({'activity_pool_not_registered','invalid_pool_key',
+                                        'invalid_pool_state','fixed_fee_mismatch',
+                                        'initialize_anchor_not_found',
+                                        'activity_window_start_after_snapshot'})
+
+    def registered_anchor(self,pool_id):
+        """The verified creation anchor, or None when the catalogue cannot say."""
+        from activity_store import PgActivity
+        if not self.catalogue:
+            return None
+        try:
+            return PgActivity(self.catalogue).anchor(pool_id)
+        except (DataError,AttributeError,TypeError):
+            return None
+
+    def live_window_activity(self,pool_id,anchor):
+        """Exact last-24h window from live state, with no stored-ledger claim.
+
+        This is the answer for a pool that is anchored but not walked yet: the
+        active liquidity and fee growth come from the core state at a canonical
+        block, and the window comes from the pool's own logs over a block range
+        whose start timestamp proves every event is inside the window. Nothing
+        here claims a stored model, a lifetime total or a revision.
+        """
+        from catalogue_indexer import IndexRpc
+        from discovery import Block
+        from pool_activity import protocol_directions, window_metrics
+
+        # The window needs `eth_getLogs`, which the browser-facing read clients
+        # deliberately lack; an injected factory (tests, alternate lanes) wins.
+        rpc=self.rpc_factory() if self.rpc_factory else IndexRpc(
+            self.rpc_urls[0] if self.rpc_urls else self.rpc_url,
+            transport=self.transport_factory(),max_requests=4096)
+        reader=DiscoveryReader(rpc,clock=self.clock)
+        block=reader.snapshot()
+        pool=reader.pool({'poolId':bytes32(pool_id),'poolKey':None,'currencies':None,
+                          'providerMetrics':None},block)
+        reader.assert_canonical(block)
+        start_number=max(anchor['startBlock'],
+                         block.number-self.LIVE_WINDOW_SECONDS-self.LIVE_WINDOW_BLOCK_MARGIN)
+        lower=self._header(rpc,start_number)
+        if lower.timestamp>block.timestamp:
+            raise DataError('activity_window_start_after_snapshot')
+        anchor_at=self._header(rpc,anchor['startBlock']).timestamp
+        events=self._window_events(rpc,pool_id,lower.number,block)
+        state={'number':block.number,'hash':block.hash,'timestamp':block.timestamp,
+               'sqrtPriceX96':str(pool['sqrtPriceX96']),'tick':pool['tick'],
+               'activeLiquidityRaw':str(self._active_liquidity(rpc,pool_id,block)),
+               'protocolFeeRaw':pool['protocolFeeRaw'],
+               'lpFeePips':pool['currentLpFeePips'],
+               'feeGrowthGlobalX128':[str(value) for value in self._fee_growth(rpc,pool_id,block)]}
+        window=window_metrics(events,initialized_at=anchor_at,as_of=block.timestamp,
+                              window_seconds=self.LIVE_WINDOW_SECONDS,range_bounded=True)
+        age=max(0,int(self.clock())-block.timestamp)
+        window['usableAsCurrent24h']=age<=120 and window['completeWindow']
+        return {'schemaVersion':1,'methodologyVersion':1,'mode':'live_window_only',
+                'chainId':CHAIN_ID,'poolId':bytes32(pool_id),'poolKey':pool['poolKey'],
+                'revision':None,'accountingScope':'core_pool_events_only',
+                'snapshot':state,
+                'coverage':{'startBlock':anchor['startBlock'],'indexedThrough':None,
+                            'initializedBlock':anchor['startBlock'],'initializedAt':anchor_at,
+                            'scope':'live_window_only','canonicality':'block_hash_rechecked',
+                            'rpcCompleteness':'single_provider_assumption',
+                            'windowStartBlock':lower.number,'windowStartTimestamp':lower.timestamp},
+                'freshness':{'ageSeconds':age,'status':'fresh' if age<=120 else 'stale',
+                             'checkedAgainstHead':block.number},
+                'window24h':window,
+                'liquidity':{'status':'live_state_only',
+                             'activeLiquidityRaw':state['activeLiquidityRaw'],
+                             'rangeCount':None,'isTvl':False,'tvlUsd':None,
+                             'tvlReason':'pool_activity_not_indexed',
+                             'positionAccounting':{'methodologyVersion':1,'status':'unavailable',
+                                                   'reason':'position_ledger_not_caught_up',
+                                                   'lpAssetsRaw':None,'principalRaw':None,
+                                                   'unsettledFeesRaw':None}},
+                'fees':{'protocolDirectionalPips':protocol_directions(pool['protocolFeeRaw']),
+                        'lpFeePipsAtSnapshot':pool['currentLpFeePips'],
+                        'feeGrowthGlobalX128':state['feeGrowthGlobalX128'],
+                        'growthIsTokenAmount':False,'growthIncludesDonations':True,
+                        'accounting':{'methodologyVersion':1,'status':'unavailable',
+                                      'reason':'fee_ledger_not_caught_up','lpFeesRaw':None,
+                                      'protocolFeesRaw':None,'donationsRaw':None,
+                                      'basis':'core_trading_fee_before_Q128_distribution_rounding',
+                                      'isCollectedAmount':False,'isDominoServiceFee':False}},
+                'storedEventCount':0,'suggested':False,'executionAvailable':False}
+
+    @staticmethod
+    def _header(rpc,number):
+        from discovery import parse_block
+        return parse_block(rpc.request('eth_getBlockByNumber',[hex(number),False]))
+
+    def _active_liquidity(self,rpc,pool_id,block):
+        from discovery import STATE_VIEW
+        value,=rpc.call(STATE_VIEW,'getLiquidity(bytes32)',['bytes32'],
+                        [bytes.fromhex(bytes32(pool_id)[2:])],['uint128'],block=block.tag)
+        return value
+
+    def _fee_growth(self,rpc,pool_id,block):
+        from discovery import STATE_VIEW
+        return rpc.call(STATE_VIEW,'getFeeGrowthGlobals(bytes32)',['bytes32'],
+                        [bytes.fromhex(bytes32(pool_id)[2:])],['uint256','uint256'],block=block.tag)
+
+    def _window_events(self,rpc,pool_id,from_block,block):
+        """The pool's logs in the proved window, narrowed when a range is too big."""
+        from discovery import POOL_MANAGER
+        from pool_activity import TOPICS, decode_activity
+
+        events,start,span=[],from_block,max(1,block.number-from_block)
+        while start<block.number:
+            end=min(start+span-1,block.number)
+            try:
+                logs=rpc.request('eth_getLogs',[{'address':POOL_MANAGER,'topics':[TOPICS,pool_id],
+                                                'fromBlock':hex(start),'toBlock':hex(end)}])
+            except DataError as error:
+                if str(error) not in ('response_too_large','network_unavailable',
+                                      'read_deadline_exceeded') or span<=1000:
+                    raise
+                span=max(1000,span//4)
+                continue
+            if not isinstance(logs,list) or len(logs)>2000:
+                if span>1000:
+                    span=max(1000,span//4)
+                    continue
+                raise DataError('activity_log_budget_exhausted')
+            events.extend(decode_activity(raw,pool_id) for raw in logs)
+            start=end+1
+        return events
 
     def request_pool(self,pool_id,*,reason='read'):
         """Ask the durable queue for a pool; a read never fails because of it."""

@@ -439,6 +439,28 @@ export type LiveNft = {
   "tokenCompatibilityQualified": false;
 };
 
+export type LiveWindowCoverage = {
+  "startBlock": number;
+  "indexedThrough": null;
+  "initializedBlock": number;
+  "initializedAt": number;
+  "scope": "live_window_only";
+  "canonicality": "block_hash_rechecked";
+  "rpcCompleteness": "single_provider_assumption";
+  "windowStartBlock": number;
+  "windowStartTimestamp": number;
+};
+
+export type LiveWindowLiquidity = {
+  "status": "live_state_only";
+  "activeLiquidityRaw": Raw;
+  "rangeCount": null;
+  "isTvl": false;
+  "tvlUsd": null;
+  "tvlReason": "pool_activity_not_indexed";
+  "positionAccounting": (PositionsUnavailable | PositionsReconciled);
+};
+
 export type MarketAvailable = {
   "status": "available" | "stale";
   "reason": ("provider_capacity_busy" | "provider_rate_limited" | "provider_unavailable" | "provider_currency_or_pool_mismatch" | "provider_dex_unconfirmed" | null);
@@ -497,6 +519,46 @@ export type NftIdentity = {
   "ownershipBasis": "ownerOf_at_pinned_block";
   "walletControlVerified": false;
   "isWithdrawalQuote": false;
+  "executionAvailable": false;
+};
+
+export type PoolActivityLiveWindow = {
+  "schemaVersion": 1;
+  "methodologyVersion": 1;
+  "mode": "live_window_only";
+  "chainId": 4663;
+  "poolId": string;
+  "poolKey": (FixedPoolKey | DynamicPoolKey);
+  "revision": null;
+  "accountingScope": "core_pool_events_only";
+  "snapshot": StateSnapshot;
+  "coverage": LiveWindowCoverage;
+  "freshness": ActivityFreshness;
+  "window24h": ActivityWindow;
+  "liquidity": LiveWindowLiquidity;
+  "fees": ActivityFees;
+  "storedEventCount": 0;
+  "suggested": false;
+  "executionAvailable": false;
+};
+
+export type PoolActivityStored = {
+  "schemaVersion": 1;
+  "methodologyVersion": 1;
+  "mode": "core_pool_activity_read_only";
+  "chainId": 4663;
+  "poolId": string;
+  "poolKey": (FixedPoolKey | DynamicPoolKey);
+  "revision": number;
+  "accountingScope": "core_pool_events_only";
+  "snapshot": StateSnapshot;
+  "coverage": ActivityCoverage;
+  "freshness": ActivityFreshness;
+  "window24h": ActivityWindow;
+  "liquidity": ActivityLiquidity;
+  "fees": ActivityFees;
+  "storedEventCount": number;
+  "suggested": false;
   "executionAvailable": false;
 };
 
@@ -845,25 +907,7 @@ export type CatalogueResponse = {
   "items": Array<CatalogueCandidate>;
 };
 
-export type PoolActivityResponse = {
-  "schemaVersion": 1;
-  "methodologyVersion": 1;
-  "mode": "core_pool_activity_read_only";
-  "chainId": 4663;
-  "poolId": string;
-  "poolKey": (FixedPoolKey | DynamicPoolKey);
-  "revision": number;
-  "accountingScope": "core_pool_events_only";
-  "snapshot": StateSnapshot;
-  "coverage": ActivityCoverage;
-  "freshness": ActivityFreshness;
-  "window24h": ActivityWindow;
-  "liquidity": ActivityLiquidity;
-  "fees": ActivityFees;
-  "storedEventCount": number;
-  "suggested": false;
-  "executionAvailable": false;
-};
+export type PoolActivityResponse = (PoolActivityStored | PoolActivityLiveWindow);
 
 export type PoolPositionsResponse = {
   "schemaVersion": 1;

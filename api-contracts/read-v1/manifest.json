@@ -980,7 +980,7 @@
     },
     {
       "path": "runtime.mjs",
-      "sha256": "fe18cb9594f9c816da28da2521113536ac0edfed1d0cfd5b456e890f44dab91f"
+      "sha256": "c8155265e6290cf96ace538141167c5118931d42d10121f4b2b8819bfc02b960"
     },
     {
       "path": "schemas/capabilities.response.schema.json",
@@ -1020,7 +1020,7 @@
     },
     {
       "path": "schemas/pool-activity.response.schema.json",
-      "sha256": "2eed27194bb8dc8a9858234ec6479ee7f7c63ac72486ad88ebe7a7a0c50ca364"
+      "sha256": "37d3fddcd51fd189cdd5319ca73cf5ed793e9e531737f01dea3615a2b3c72fdd"
     },
     {
       "path": "schemas/pool-market.request.schema.json",
@@ -1072,7 +1072,7 @@
     },
     {
       "path": "types.ts",
-      "sha256": "63c37695cda1daf6768a08bcc5fe0353eb1ce26ae9e2700749e6cbec65eac5d4"
+      "sha256": "119ad81646e59f0cd38c2cd3e31b292732d6ca9637678e1e5d792e5b75259b11"
     }
   ],
   "generator": "scripts/export-read-contract.py",
@@ -1080,7 +1080,7 @@
   "sources": [
     {
       "path": "backend/read_contract.py",
-      "sha256": "1c6d05ef25e7001eb8f61095074639a30033e5afe9b9673dfe12b60ccfd2916c"
+      "sha256": "0772231ddf4d51c025ff968729b92798961ce2224b4d46b76c2b9f719682ec31"
     },
     {
       "path": "backend/read_api.py",
@@ -1088,7 +1088,7 @@
     },
     {
       "path": "backend/read_service.py",
-      "sha256": "789cd9d10aed5feb93f082a0daaead40a3f82aa9e5f1f5b584e5c11fa6a810f3"
+      "sha256": "953611758c38ce8fb6bc45d17a43c01c0a270834719a7751835ab7eec4cd8398"
     },
     {
       "path": "backend/rpc_failover.py",
@@ -1132,7 +1132,7 @@
     },
     {
       "path": "backend/activity_store.py",
-      "sha256": "1a0606cb757f2cf8b210429ac640c0d4fc5670980ee6ec9e8c8dba44a2ac0ead"
+      "sha256": "a251c447deb2b183f979a6668679b7c7770ea09635e8f3801253a71485fba5f3"
     },
     {
       "path": "backend/position_store.py",
@@ -1196,7 +1196,7 @@
     },
     {
       "path": "backend/pool_activity.py",
-      "sha256": "382b41269e57eb62e00622bfd09ce2507588b707c387dfc55653afdce2f27f04"
+      "sha256": "3b84b926aa30fbd0d9abe0571b8248e05a74ad34c4f1847deff6aa5268de3e1f"
     },
     {
       "path": "backend/tests/fixtures/position-reference.json",
@@ -1212,7 +1212,7 @@
     },
     {
       "path": "backend/tests/test_read_contract.py",
-      "sha256": "a44d017470b637ded608f7ad9236f90da7e47db4fe2350c4c92547c8f0664214"
+      "sha256": "eece3d9cc9b1becfd725055628d6a550f08baeb55ea7c5aef50ef16858b2bc88"
     },
     {
       "path": "backend/tests/test_read_reconciliation.py",
@@ -1220,7 +1220,7 @@
     },
     {
       "path": "scripts/export-read-contract.py",
-      "sha256": "82541646deb038c17403828eea4a9fd190664a38e42d447a48222a5ac40ff25b"
+      "sha256": "159a801a375891414b4dbc80d894db9cfcd2cf98997b3a0bfafb33ded5ec5b2a"
     }
   ],
   "status": "candidate_disabled_pending_consumer_acknowledgement"

@@ -232,7 +232,9 @@ export function observe<R extends ReadKey>(route: R, data: ReadResponses[R]): Ob
       const { number, hash, timestamp } = d.snapshot
       return {
         block: { number, hash, timestamp },
-        revision: 'revision' in d ? d.revision : undefined,
+        // A live-window response carries no stored revision; the app already
+        // treats "no revision" as undefined rather than zero.
+        revision: typeof d.revision === 'number' ? d.revision : undefined,
         freshness: { ...d.freshness },
         providers: [],
       }

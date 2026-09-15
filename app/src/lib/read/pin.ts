@@ -21,12 +21,12 @@
  * route, schema or version.
  */
 export const PRODUCER_PIN = {
-  producerCommit: '8bdf83182f27ff140d222434e8ffc95d3c23cbdd',
+  producerCommit: '8ee81245d5b8b394971b2412a6aaa273850d169d',
   producerIssue: 95,
   packages: {
     'read-v1': {
       version: '1.1.0-rc.3',
-      manifestSha256: 'c56df97da89f2ec263ce5044bf694cac8acb539d710c2e3c2a3f5382bbd07e7d',
+      manifestSha256: '139a293e70420333d920417b8999f99b5ce5125bd3e390f812d017f1101f3ab1',
     },
     'session-v1': {
       version: '3.0.0-rc.2',
@@ -46,7 +46,7 @@ export const PRODUCER_PIN = {
 /** Separately opted-in public pool estimates; never accepted as a v1 response. */
 export const READ_V2_PIN = {
   version: '2.0.0-rc.1',
-  manifestSha256: '4545c4514ca3eb4d13b2ffb12f595757c6b048348c4ceed84c09c8b59982852f',
+  manifestSha256: '94a2dfbe5ea741ff9f00448ffafd74fc0bbe0c2be3bc07a9aa4745608909c103',
 } as const
 
 /**
@@ -61,7 +61,7 @@ export const READ_V2_PIN = {
 export const BACKEND_OPENAPI_PIN = {
   path: 'backend/openapi-read.json',
   infoVersion: '0.8.0',
-  sha256: 'acfc9c0d4344bcfad75a300a2d12b10ccf7552133575f956e2b4133bd15e86fd',
+  sha256: '8eab5ee5ca8923f2fa58a3109e182ac02c56be1340771c2f10b49e84b9b35929',
 } as const
 
 export type ReadContractPin = (typeof PRODUCER_PIN)['packages']['read-v1']['version']

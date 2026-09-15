@@ -258,7 +258,7 @@
     },
     {
       "path": "backend/read_contract.py",
-      "sha256": "1c6d05ef25e7001eb8f61095074639a30033e5afe9b9673dfe12b60ccfd2916c"
+      "sha256": "0772231ddf4d51c025ff968729b92798961ce2224b4d46b76c2b9f719682ec31"
     },
     {
       "path": "backend/discovery.py",
@@ -266,7 +266,7 @@
     },
     {
       "path": "backend/read_service.py",
-      "sha256": "789cd9d10aed5feb93f082a0daaead40a3f82aa9e5f1f5b584e5c11fa6a810f3"
+      "sha256": "953611758c38ce8fb6bc45d17a43c01c0a270834719a7751835ab7eec4cd8398"
     },
     {
       "path": "backend/market_cache.py",
@@ -342,7 +342,7 @@
     },
     {
       "path": "backend/tests/test_read_contract.py",
-      "sha256": "a44d017470b637ded608f7ad9236f90da7e47db4fe2350c4c92547c8f0664214"
+      "sha256": "eece3d9cc9b1becfd725055628d6a550f08baeb55ea7c5aef50ef16858b2bc88"
     },
     {
       "path": "backend/tests/test_discovery.py",
@@ -350,7 +350,7 @@
     },
     {
       "path": "scripts/export-read-contract.py",
-      "sha256": "82541646deb038c17403828eea4a9fd190664a38e42d447a48222a5ac40ff25b"
+      "sha256": "159a801a375891414b4dbc80d894db9cfcd2cf98997b3a0bfafb33ded5ec5b2a"
     },
     {
       "path": "scripts/export-read-v2-contract.py",

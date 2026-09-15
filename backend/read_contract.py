@@ -8,7 +8,8 @@ are strings, never floating point. Provider labels remain untrusted text.
 from typing import Annotated, Literal, get_args, get_origin
 from types import UnionType
 from typing_extensions import TypeAliasType
-from pydantic import BaseModel, ConfigDict, Field, StrictBool, StrictInt, StringConstraints, model_validator
+from pydantic import (BaseModel, ConfigDict, Field, StrictBool, StrictInt, StringConstraints,
+                      TypeAdapter, model_validator)
 
 CONTRACT_VERSION = '1.1.0-rc.3'
 ENABLED_READS = ('token', 'pools', 'pool-market', 'wallet-assets', 'nft-positions',
@@ -771,7 +772,8 @@ class ActivityWindow(WireModel):
     usableAsCurrent24h: StrictBool
 
 
-class PoolActivityResponse(WireModel):
+class PoolActivityStored(WireModel):
+    """A walked pool: the stored ledger answers with its own revision and model."""
     schemaVersion: Literal[1]
     methodologyVersion: Literal[1]
     mode: Literal['core_pool_activity_read_only']
@@ -789,6 +791,60 @@ class PoolActivityResponse(WireModel):
     storedEventCount: UInt
     suggested: FalseFlag
     executionAvailable: FalseFlag
+
+
+class LiveWindowCoverage(WireModel):
+    """Coverage of a window served from live state: no stored interval exists."""
+    startBlock: UInt
+    indexedThrough: None
+    initializedBlock: UInt
+    initializedAt: UInt
+    scope: Literal['live_window_only']
+    canonicality: Literal['block_hash_rechecked']
+    rpcCompleteness: Literal['single_provider_assumption']
+    windowStartBlock: UInt
+    windowStartTimestamp: UInt
+
+
+class LiveWindowLiquidity(WireModel):
+    status: Literal['live_state_only']
+    activeLiquidityRaw: Raw
+    rangeCount: None
+    isTvl: FalseFlag
+    tvlUsd: None
+    tvlReason: Literal['pool_activity_not_indexed']
+    positionAccounting: Annotated[PositionsUnavailable | PositionsReconciled,
+                                  Field(discriminator='status')]
+
+
+class PoolActivityLiveWindow(WireModel):
+    """A pool whose creation is verified but whose ledger is not walked yet.
+
+    The 24 h window is exact, computed from the pool's own logs over a block
+    range whose start timestamp proves every event lies inside the window. No
+    stored revision, range model, lifetime total or fee ledger is claimed.
+    """
+    schemaVersion: Literal[1]
+    methodologyVersion: Literal[1]
+    mode: Literal['live_window_only']
+    chainId: Literal[4663]
+    poolId: Hash
+    poolKey: PoolKey
+    revision: None
+    accountingScope: Literal['core_pool_events_only']
+    snapshot: StateSnapshot
+    coverage: LiveWindowCoverage
+    freshness: ActivityFreshness
+    window24h: ActivityWindow
+    liquidity: LiveWindowLiquidity
+    fees: ActivityFees
+    storedEventCount: Literal[0]
+    suggested: FalseFlag
+    executionAvailable: FalseFlag
+
+
+PoolActivityResponses = Annotated[PoolActivityStored | PoolActivityLiveWindow,
+                                  Field(discriminator='mode')]
 
 
 class PoolPositionsResponse(WireModel):
@@ -1028,7 +1084,7 @@ class ErrorResponse(WireModel):
 RESPONSE_MODELS = {
     'token': TokenResponse, 'pools': PoolsResponse, 'pool-market': PoolMarketResponse,
     'wallet-assets': WalletAssetsResponse, 'nft-positions': NftPositionsResponse,
-    'catalogue': CatalogueResponse, 'pool-activity': PoolActivityResponse,
+    'catalogue': CatalogueResponse, 'pool-activity': PoolActivityResponses,
     'pool-positions': PoolPositionsResponse, 'pool-metrics': PoolMetricsResponse,
     'markets-snapshot': MarketsSnapshotResponse,
 }
@@ -1037,8 +1093,20 @@ RESPONSE_MODELS = {
 def validate_response(route, payload):
     """Raise on drift, return the exact input unchanged (no repair or dropping)."""
     model = BridgeCapabilities if route == 'capabilities' else RESPONSE_MODELS[route]
-    model.model_validate(payload, strict=True)
+    adapter = _response_adapter(model)
+    adapter.validate_python(payload, strict=True)
     return payload
+
+
+_ADAPTERS = {}
+
+
+def _response_adapter(model):
+    """One cached validator per route; a discriminated union has no `.model_validate`."""
+    adapter = _ADAPTERS.get(model)
+    if adapter is None:
+        adapter = _ADAPTERS[model] = TypeAdapter(model)
+    return adapter
 
 
 def sanitize_error(code):
@@ -1051,7 +1119,7 @@ def export_contract():
     """Return standalone draft 2020-12 schemas for the neutral shared package."""
     result = {}
     for route, model in {**RESPONSE_MODELS, 'capabilities': BridgeCapabilities, 'error': ErrorResponse}.items():
-        schema = model.model_json_schema()
+        schema = TypeAdapter(model).json_schema() if not hasattr(model, 'model_json_schema') else model.model_json_schema()
         # Omitted optional response fields must never advertise invalid null defaults.
         def remove_defaults(value):
             if isinstance(value, dict):

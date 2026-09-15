@@ -26,6 +26,27 @@ def json_text(value):
     return json.dumps(value, indent=2, sort_keys=True, ensure_ascii=False)+'\n'
 
 
+def response_schema_version(schema):
+    """The declared version of one response schema, union or single.
+
+    A route whose response is a discriminated union has no top-level
+    `properties`; every member still declares the same version, and disagreeing
+    members would be a contract error rather than a detail to paper over.
+    """
+    if 'properties' in schema:
+        return schema['properties']['schemaVersion']['const']
+    definitions = schema.get('$defs', {})
+    versions = set()
+    for member in schema.get('oneOf', schema.get('anyOf', [])):
+        resolved = (definitions.get(member['$ref'].rsplit('/', 1)[-1], {})
+                    if '$ref' in member else member)
+        if 'properties' in resolved:
+            versions.add(resolved['properties']['schemaVersion']['const'])
+    if len(versions) != 1:
+        raise ValueError('response_schema_without_one_version')
+    return versions.pop()
+
+
 def type_name(name):
     return ''.join(part.title() for part in name.replace('.', '-').split('-'))
 
@@ -199,7 +220,7 @@ def build_files():
     request_schemas = {route: schemas[f'{route}.request.schema.json'] for route in ENABLED_READS}
     prelude = [f'export const CONTRACT_VERSION = {json.dumps(CONTRACT_VERSION)};',
                f'export const ENABLED_READS = Object.freeze({json.dumps(list(ENABLED_READS))});',
-               f'export const RESPONSE_SCHEMA_VERSIONS = Object.freeze({json.dumps({route: schemas[route+".response.schema.json"]["properties"]["schemaVersion"]["const"] for route in ENABLED_READS}, sort_keys=True)});',
+               f'export const RESPONSE_SCHEMA_VERSIONS = Object.freeze({json.dumps({route: response_schema_version(schemas[route+".response.schema.json"]) for route in ENABLED_READS}, sort_keys=True)});',
                f'export const ERROR_STATUS_BY_CODE = Object.freeze({json.dumps(ERROR_STATUS_BY_CODE, sort_keys=True)});',
                'const RESPONSE_SCHEMAS = '+json.dumps(response_schemas, sort_keys=True, separators=(',', ':'))+';',
                'const REQUEST_SCHEMAS = '+json.dumps(request_schemas, sort_keys=True, separators=(',', ':'))+';',

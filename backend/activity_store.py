@@ -26,6 +26,18 @@ class PgActivity:
         return conn.execute('SELECT * FROM domino_activity.chunks WHERE pool_id=%s ORDER BY end_block DESC LIMIT 1',
                             (pool_id,)).fetchone()
 
+    def anchor(self,pool_id):
+        """Verified creation of a registered pool, or None when it is not registered.
+
+        The block is the one registration proved with the Initialize log; the
+        timestamp belongs to the chain, so the caller reads that header rather
+        than the store guessing it.
+        """
+        with self.catalogue.connection() as conn:
+            row=conn.execute('''SELECT start_block FROM domino_activity.pools WHERE pool_id=%s''',
+                             (bytes32(pool_id),)).fetchone()
+            return None if row is None else {'startBlock':row['start_block']}
+
     def commit(self,conn,row,end,model,snapshot,events):
         current=self.pool(conn,row['pool_id'])
         if current['next_block']!=row['next_block'] or current['revision']!=row['revision']:
