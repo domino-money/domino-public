@@ -46,8 +46,13 @@ class ReadHeadersTests(unittest.TestCase):
 
     def test_more_blocks_than_one_envelope_are_split(self):
         rpc = BatchSpy()
-        read_headers(rpc, list(range(100, 120)))
+        read_headers(rpc, list(range(100, 120)), batch_items=8)
         self.assertEqual([len(item) for item in rpc.batches], [8, 8, 4])
+
+    def test_the_default_envelope_is_the_measured_indexer_size(self):
+        rpc = BatchSpy()
+        read_headers(rpc, list(range(1, 121)))
+        self.assertEqual([len(item) for item in rpc.batches], [100, 20])
 
     def test_batch_items_override_is_honoured(self):
         rpc = BatchSpy()

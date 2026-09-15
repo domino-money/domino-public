@@ -17,7 +17,10 @@ from read_deadline import ReadDeadline, current_read_deadline, use_read_deadline
 # a wide log range; the public 8 s ceiling is a browser budget, not a provider
 # limit.
 INDEXER_REQUEST_TIMEOUT = 30
-INDEXER_BATCH_ITEMS = 8
+# Measured against Alchemy Robinhood: 200 headers cost 16.1 s in envelopes of
+# 8 and 2.2 s in envelopes of 200, so the indexer uses large envelopes while the
+# browser-facing read path keeps its own smaller cap.
+INDEXER_BATCH_ITEMS = 100
 # Design ceiling for one indexer chunk. Alchemy Robinhood answered a filtered
 # range of 100k blocks in ~4 s and rejected 1M blocks outright, so the useful
 # range is bounded by response size, not by this number.

@@ -263,14 +263,14 @@ def main():
             raise DataError('catalogue_not_configured')
         store=PgActivity(catalogue)
         def worker():
-            return ActivityIndexer(store,IndexRpc(url,transport=indexer_transport(90),max_requests=300),
+            return ActivityIndexer(store,IndexRpc(url,transport=indexer_transport(90),max_requests=20_000),
                                    capacity=args.capacity_profile,
                                    parallel_walks=args.parallel_walks)
         if args.queue_worker:
             if not 1<=args.max_pools<=64:
                 raise DataError('invalid_pool_request_claim')
             requests=PgRequests(catalogue,role=WRITER_ROLE)
-            rpc=IndexRpc(url,transport=indexer_transport(90),max_requests=300)
+            rpc=IndexRpc(url,transport=indexer_transport(90),max_requests=20_000)
             head=DiscoveryReader(ReadRpc(url,transport=indexer_transport(60))).snapshot()
             target=head.number-args.lag
             # A service cannot pin a block number that the chain moves past: the

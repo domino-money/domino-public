@@ -15,6 +15,9 @@ INITIALIZE_TOPIC = '0x' + keccak(b'Initialize(bytes32,address,address,uint24,int
 
 class IndexRpc(ReadRpc):
     METHODS = ReadRpc.METHODS | {'eth_getLogs'}
+    # An indexer envelope may carry many independent reads; the public read
+    # path keeps ReadRpc's smaller cap.
+    MAX_BATCH_ITEMS = 100
 
 
 def decode_initialize(raw):

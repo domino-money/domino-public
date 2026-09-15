@@ -154,7 +154,7 @@ def main():
                               'snapshot':asdict(block)}))
             return 0
         def worker():
-            return CatalogueIndexer(catalogue,IndexRpc(url,transport=indexer_transport(90),max_requests=300))
+            return CatalogueIndexer(catalogue,IndexRpc(url,transport=indexer_transport(90),max_requests=20_000))
         if args.action=='reset':
             if not args.confirm:
                 raise DataError('catalogue_reset_requires_confirmation')
