@@ -61,6 +61,9 @@ PACKAGED_ONLY_MIGRATIONS = (
     'backend/migrations/017_performance_financial_history.sql',
     'backend/migrations/018_performance_enrollment.sql',
     'backend/migrations/019_execution_journal.sql',
+    # The demand queue for on-demand pool indexing; applied by the
+    # post-foundation upgrade, not by the disabled foundation.
+    'backend/migrations/020_pool_requests.sql',
 )
 MAPPINGS = (
     ('domino', 'domino-admin', ADMIN),

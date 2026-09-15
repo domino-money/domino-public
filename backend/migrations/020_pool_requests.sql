@@ -20,9 +20,10 @@ ALTER TABLE domino_activity.pool_requests ALTER COLUMN status SET DEFAULT 'queue
 GRANT SELECT ON domino_activity.pool_requests TO domino_catalogue_reader;
 GRANT SELECT,INSERT,UPDATE,DELETE ON domino_activity.pool_requests TO domino_catalogue_writer;
 
--- A public read holds no table privilege at all: it may only ask through this
--- function, which needs the owner's rights to arbitrate the primary key. Asking
--- twice is the same as asking once, and asking cannot change a status.
+-- A public read gains no table privilege it did not already have: the only new
+-- capability is this function, which needs the owner's rights to arbitrate the
+-- primary key. Asking twice is the same as asking once, asking cannot change a
+-- status, and a read that cannot ask still reads.
 -- Parameter names must not shadow the columns the insert touches.
 DROP FUNCTION IF EXISTS domino_activity.request_pool(text,text);
 CREATE FUNCTION domino_activity.request_pool(requested_pool text, request_reason text) RETURNS boolean
@@ -38,5 +39,4 @@ BEGIN
 END
 $$;
 REVOKE ALL ON FUNCTION domino_activity.request_pool(text,text) FROM PUBLIC;
-GRANT USAGE ON SCHEMA domino_activity TO domino_activity_requester;
-GRANT EXECUTE ON FUNCTION domino_activity.request_pool(text,text) TO domino_activity_requester;
+GRANT EXECUTE ON FUNCTION domino_activity.request_pool(text,text) TO domino_catalogue_reader;

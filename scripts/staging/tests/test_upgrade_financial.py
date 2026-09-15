@@ -36,7 +36,9 @@ class FinancialTests(unittest.TestCase):
                                 env={'PATH': '/nonexistent', 'PYTHONDONTWRITEBYTECODE': '1'}, check=True)
         self.assertEqual(json.loads(result.stdout), self.planned)
         self.assertFalse(self.planned['servicesStarted'])
-        self.assertEqual(len(self.planned['migrations']), 5)
+        # The plan carries every post-foundation migration, in order.
+        self.assertEqual([row['path'] for row in self.planned['migrations']],
+                         list(financial.MIGRATIONS))
         self.assertEqual(set(self.planned['units']), {'domino-' + c + '.service' for c in financial.COMPONENTS})
 
     def test_units_scope_off_and_private_namespaces(self):

@@ -1,9 +1,9 @@
 """Durable demand queue for pools a consumer asked to see.
 
-Two narrow capabilities, never one wide one: the requester role may only insert
-a row (so a public read cannot touch the ledger), and the writer role that runs
-the indexers may claim and update rows. Nothing here publishes activity or
-changes a checkpoint.
+Two capabilities, never one wide one: the read role may only *ask*, through the
+`request_pool` function, and the writer role that runs the indexers may claim
+and update rows. Asking adds no table write to the read path and cannot change a
+status; nothing here publishes activity or changes a checkpoint.
 """
 from contextlib import contextmanager
 
@@ -13,7 +13,7 @@ from psycopg.types.json import Jsonb
 
 from discovery import DataError, bytes32
 
-REQUESTER_ROLE = 'domino_activity_requester'
+REQUESTER_ROLE = 'domino_catalogue_reader'
 WRITER_ROLE = 'domino_catalogue_writer'
 READER_ROLE = 'domino_catalogue_reader'
 CLAIMABLE = ('queued', 'indexing', 'registering')

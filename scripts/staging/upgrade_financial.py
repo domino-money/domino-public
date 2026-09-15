@@ -28,7 +28,10 @@ RUNTIME = Path('/var/lib/domino-financial')
 RECEIPTS = Path('/var/backups/domino-financial')
 MIGRATIONS = tuple('backend/migrations/' + name + '.sql' for name in (
     '015_unsigned_execution', '016_managed_performance',
-    '017_performance_financial_history', '018_performance_enrollment', '019_execution_journal'))
+    '017_performance_financial_history', '018_performance_enrollment', '019_execution_journal',
+    # Post-foundation migrations travel with this upgrade; the demand queue adds
+    # no role and no service, only a table and one reader-callable function.
+    '020_pool_requests'))
 NEW_ROLES = ('domino_performance_collector', 'domino_performance_reader',
              'domino_execution_worker', 'domino_execution_ledger',
              'domino_execution_signer', 'domino_execution_reader')

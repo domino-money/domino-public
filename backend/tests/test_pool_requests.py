@@ -69,17 +69,23 @@ class PoolRequestStoreTests(unittest.TestCase):
             return type(error).__name__
 
     def test_the_requester_may_only_ask(self):
-        # Only the function, and only these arguments.
+        # The read role may call the function and nothing else: the queue is not
+        # writable by the public read path, even though it may read it.
         self.assertTrue(self.requests.enqueue(POOL,reason='read'))
         with self.assertRaises(DataError):
             self.requests.enqueue(POOL,reason='guessing')
-        self.assertEqual(self.privileges(REQUESTER_ROLE,'SELECT * FROM domino_activity.pool_requests'),
-                         'InsufficientPrivilege')
         self.assertEqual(self.privileges(REQUESTER_ROLE,
                          "UPDATE domino_activity.pool_requests SET status='following'"),
                          'InsufficientPrivilege')
         self.assertEqual(self.privileges(REQUESTER_ROLE,
                          'DELETE FROM domino_activity.pool_requests'),'InsufficientPrivilege')
+        self.assertEqual(self.privileges(REQUESTER_ROLE,
+                         "INSERT INTO domino_activity.pool_requests(pool_id,reason) "
+                         "VALUES('0x"+'9f'*32+"','read')"),'InsufficientPrivilege')
+        # The one capability it gained is the function.
+        with psycopg.connect(**self.catalogue.settings,user=REQUESTER_ROLE) as conn:
+            self.assertTrue(conn.execute('SELECT domino_activity.request_pool(%s,%s)',
+                                         ('0x'+'9e'*32,'read')).fetchone()[0])
 
     def test_asking_twice_keeps_one_row_and_one_reason(self):
         self.assertTrue(self.requests.enqueue(POOL,reason='read'))
