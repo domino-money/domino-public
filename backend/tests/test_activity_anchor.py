@@ -7,6 +7,7 @@ sys.path.insert(0,str(Path(__file__).resolve().parents[1]))
 from catalogue_indexer import decode_initialize
 from discovery import DataError
 from manage_activity import find_initialize_anchor, parse_anchors, requested_pool_ids
+from manage_catalogue import anchor_candidate
 from selected_pools import SELECTED_POOLS
 from test_catalogue import log
 
@@ -20,6 +21,13 @@ class StubRpc:
         self.response=response
         self.queries=[]
     def request(self,method,params=()):
+        if method=='eth_getBlockByNumber':
+            number=int(params[0],16)
+            for item in self.logs:
+                if int(item['blockNumber'],16)==number:
+                    return {'number':item['blockNumber'],'hash':item['blockHash'],
+                            'timestamp':hex(1000+number)}
+            return {'number':hex(number),'hash':'0x'+'ab'*32,'timestamp':hex(1000+number)}
         if method!='eth_getLogs':raise AssertionError(method)
         query=params[0];self.queries.append(query)
         if self.response is not UNSET:return self.response
@@ -77,6 +85,39 @@ class AnchorArgumentTests(unittest.TestCase):
         with_selection=requested_pool_ids([SELECTED_POOLS[0]],selected=True)
         self.assertEqual(with_selection,[*SELECTED_POOLS])
         self.assertEqual(requested_pool_ids([],selected=True),list(SELECTED_POOLS))
+
+
+class AnchorCandidateTests(unittest.TestCase):
+    """Identity from the pool's own Initialize log, without the manager cache."""
+    def test_a_log_at_the_anchor_block_yields_a_verified_candidate(self):
+        raw=log(5000)
+        rpc=StubRpc([raw])
+        candidate,block=anchor_candidate('https://rpc.invalid',POOL_ID,5000,rpc=rpc)
+        self.assertEqual(candidate['poolId'],POOL_ID)
+        key=decode_initialize(raw)['poolKey']
+        self.assertEqual(candidate['currencies'],[key['currency0'],key['currency1']])
+        self.assertEqual(candidate['poolKey'],key)
+        self.assertEqual((block.number,block.hash),(5000,raw['blockHash']))
+        self.assertEqual(rpc.queries[0]['topics'][1],POOL_ID)
+        self.assertEqual((rpc.queries[0]['fromBlock'],rpc.queries[0]['toBlock']),(hex(5000),hex(5000)))
+
+    def test_a_missing_or_duplicated_anchor_is_refused(self):
+        for logs in ([], [log(5000),log(5000,index=1)]):
+            with self.subTest(logs=len(logs)), self.assertRaises(DataError):
+                anchor_candidate('https://rpc.invalid',POOL_ID,5000,rpc=StubRpc(logs))
+
+    def test_a_log_for_another_pool_is_refused(self):
+        with self.assertRaisesRegex(DataError,'initialize_anchor_mismatch'):
+            anchor_candidate('https://rpc.invalid',SELECTED_POOLS[0],5000,rpc=StubRpc([log(5000)]))
+
+    def test_an_empty_anchor_block_is_not_an_identity(self):
+        with self.assertRaisesRegex(DataError,'initialize_anchor_not_found'):
+            anchor_candidate('https://rpc.invalid',POOL_ID,6000,rpc=StubRpc([log(5000)]))
+
+    def test_an_invalid_anchor_block_is_refused_before_any_read(self):
+        for block in (0,-1,True,None):
+            with self.subTest(block=block), self.assertRaises(DataError):
+                anchor_candidate('https://rpc.invalid',POOL_ID,block,rpc=StubRpc([log(5000)]))
 
 
 if __name__=='__main__':unittest.main()

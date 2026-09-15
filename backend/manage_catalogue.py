@@ -6,12 +6,12 @@ import os
 from pathlib import Path
 import signal
 
-from discovery import DataError, DiscoveryReader, ReadRpc, bytes32, address
+from discovery import Block, DataError, DiscoveryReader, POOL_MANAGER, ReadRpc, bytes32, address
 from local_config import load_config
 from catalogue import configured_catalogue, checked_key
-from catalogue_indexer import CatalogueIndexer,IndexRpc
+from catalogue_indexer import INITIALIZE_TOPIC, CatalogueIndexer, IndexRpc, decode_initialize
 from followers import follow
-from indexer_io import MAX_INDEXER_SPAN, AdaptiveSpan, indexer_transport
+from indexer_io import MAX_INDEXER_SPAN, AdaptiveSpan, indexer_transport, read_headers
 from selected_pools import SELECTED_POOLS
 
 
@@ -53,6 +53,35 @@ def requested_pool_candidates(pool_ids, selected=False):
                        for pool_id in requested]
 
 
+def anchor_candidate(url,pool_id,anchor_block,*,rpc=None):
+    """Verified pool identity from its own Initialize log, not the manager cache.
+
+    `DiscoveryReader.pool` resolves the key through the PositionManager's bytes25
+    cache, which only holds pools that manager has seen. A pool created through
+    another manager, or one with no position yet, is refused as
+    `invalid_pool_key` even though its creation log proves the identity: the
+    configured PoolManager emitted it and the key hashes to the pool id. This
+    path uses that proof, and `register` re-verifies it at the canonical block.
+    """
+    if type(anchor_block) is not int or anchor_block<1:
+        raise DataError('invalid_anchor_block')
+    rpc=rpc if rpc is not None else IndexRpc(url,transport=indexer_transport(90),max_requests=16)
+    logs=rpc.request('eth_getLogs',[{'address':POOL_MANAGER,'topics':[INITIALIZE_TOPIC,pool_id],
+                                    'fromBlock':hex(anchor_block),'toBlock':hex(anchor_block)}])
+    if not isinstance(logs,list) or len(logs)!=1:
+        raise DataError('initialize_anchor_not_found')
+    event=decode_initialize(logs[0])
+    if event['poolId']!=bytes32(pool_id) or event['blockNumber']!=anchor_block:
+        raise DataError('initialize_anchor_mismatch')
+    block=read_headers(rpc,[anchor_block])[anchor_block]
+    if block.hash!=event['blockHash']:
+        raise DataError('initialize_anchor_mismatch')
+    candidate={'poolId':event['poolId'],'poolKey':event['poolKey'],
+               'currencies':[event['poolKey']['currency0'],event['poolKey']['currency1']],
+               'providerMetrics':None}
+    return candidate,Block(anchor_block,block.hash,block.timestamp)
+
+
 def observed_head(url):
     """Verified head snapshot: chain identity and freshness, not just a number."""
     return asdict(DiscoveryReader(ReadRpc(url,transport=indexer_transport(60))).snapshot())
@@ -88,6 +117,8 @@ def main():
                       help='repeatable; the pool key is read and verified on chain')
     seed.add_argument('--selected',action='store_true',
                       help='also seed every pool in backend/selected_pools.py')
+    seed.add_argument('--anchor-block',type=int,
+                      help='one --pool-id: take the identity from its Initialize log at this block')
     lookup=sub.add_parser('lookup');lookup.add_argument('--token',required=True)
     index=sub.add_parser('index')
     index.add_argument('--start-block',type=int)
@@ -126,6 +157,15 @@ def main():
             requested,from_ids=requested_pool_candidates(args.pool_ids,selected=args.selected)
             if not candidates and not from_ids:
                 raise DataError('invalid_seed_report')
+            if args.anchor_block is not None:
+                if len(requested)!=1 or candidates:
+                    raise DataError('anchor_block_needs_one_pool_id')
+                candidate,anchor=anchor_candidate(url,requested[0],args.anchor_block)
+                catalogue.seed([candidate],anchor)
+                print(json.dumps({'status':'seeded_initialize_identity','pools':1,'poolIds':requested,
+                                  'anchor':{'number':anchor.number,'hash':anchor.hash},
+                                  'identitySource':'initialize_log'}))
+                return 0
             candidates=[*candidates,*from_ids]
             if len(candidates)>100:raise DataError('too_many_seed_pools')
             reader=DiscoveryReader(ReadRpc(url,transport=indexer_transport(90),max_requests=160))
