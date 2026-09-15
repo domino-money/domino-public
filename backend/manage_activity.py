@@ -30,7 +30,7 @@ from followers import follow_many
 from indexer_io import MAX_INDEXER_SPAN, AdaptiveSpan, indexer_transport
 from local_config import load_config
 from pool_activity import ACTIVITY_CAPACITY_PROFILES
-from pool_requests import PERMANENT, PgRequests
+from pool_requests import PERMANENT, WRITER_ROLE, PgRequests
 from selected_pools import SELECTED_POOLS
 from manage_catalogue import anchor_candidate
 
@@ -176,7 +176,7 @@ def main():
             catalogue=configured_catalogue()
             if catalogue is None:
                 raise DataError('catalogue_not_configured')
-            requests=PgRequests(catalogue)
+            requests=PgRequests(catalogue,role=WRITER_ROLE)
             rows=requests.status(pool_ids[0] if len(pool_ids)==1 else None)
             print(json.dumps({'schemaVersion':1,'mode':'pool_request_queue',
                               'requests':rows if isinstance(rows,list) else [rows]}))
@@ -187,7 +187,7 @@ def main():
                 raise DataError('catalogue_not_configured')
             if not pool_ids:
                 raise DataError('pool_id_required')
-            requests=PgRequests(catalogue)
+            requests=PgRequests(catalogue,role=WRITER_ROLE)
             reason='selected' if args.selected else 'operator'
             accepted=[requests.enqueue(pool_id,reason=reason) for pool_id in pool_ids]
             print(json.dumps({'schemaVersion':1,'mode':'pool_request_enqueue','reason':reason,
@@ -239,7 +239,7 @@ def main():
                 raise DataError('invalid_search_range')
             if not 1<=args.max_pools<=64:
                 raise DataError('invalid_pool_request_claim')
-            requests=PgRequests(catalogue)
+            requests=PgRequests(catalogue,role=WRITER_ROLE)
             rpc=IndexRpc(url,transport=indexer_transport(90),max_requests=300)
             head=DiscoveryReader(ReadRpc(url,transport=indexer_transport(60))).snapshot()
             target=head.number-args.lag

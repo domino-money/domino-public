@@ -40,3 +40,6 @@ END
 $$;
 REVOKE ALL ON FUNCTION domino_activity.request_pool(text,text) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION domino_activity.request_pool(text,text) TO domino_catalogue_reader;
+-- The writer already owns table DML; it also asks through the function so an
+-- operator or the worker uses one code path.
+GRANT EXECUTE ON FUNCTION domino_activity.request_pool(text,text) TO domino_catalogue_writer;

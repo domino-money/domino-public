@@ -37,8 +37,12 @@ def _jsonable(row):
 
 
 class PgRequests:
-    def __init__(self, catalogue):
+    def __init__(self, catalogue, *, role=REQUESTER_ROLE):
+        """`role` is who may *ask*: the public read role, or the writer when an
+        operator or the worker itself enqueues. Claiming and recording are
+        always the writer's."""
         self.catalogue = catalogue
+        self.role = role
 
     @contextmanager
     def _connection(self, role):
@@ -60,7 +64,7 @@ class PgRequests:
         pool_id = bytes32(pool_id)
         if reason not in ('read', 'operator', 'selected'):
             raise DataError('invalid_pool_request_reason')
-        with self._connection(REQUESTER_ROLE) as conn:
+        with self._connection(self.role) as conn:
             row = conn.execute('SELECT domino_activity.request_pool(%s,%s) AS accepted',
                                (pool_id, reason)).fetchone()
             return bool(row and row['accepted'])
@@ -112,7 +116,7 @@ class PgRequests:
 
     def status(self, pool_id=None):
         pool_id = bytes32(pool_id) if pool_id is not None else None
-        with self._connection(READER_ROLE) as conn:
+        with self._connection(self.role) as conn:
             if pool_id is not None:
                 row = conn.execute('SELECT * FROM domino_activity.pool_requests WHERE pool_id=%s',
                                    (pool_id,)).fetchone()
