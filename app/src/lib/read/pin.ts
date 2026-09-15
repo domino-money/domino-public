@@ -15,15 +15,18 @@
  * The source commit integrates opt-in pool APR estimates (#127), explicit
  * chart currency identity (#128) and their development gateway path while
  * preserving RPC batching and the seven read-v1 routes. The independent V2
- * contract is pinned separately below; v1 remains exactly rc.3.
+ * contract is pinned separately below; v1 remains exactly rc.3. The last
+ * producer change is the T1.6/T1.7 indexing work, which touches
+ * backend/catalogue.py — a source the manifest digests — without changing any
+ * route, schema or version.
  */
 export const PRODUCER_PIN = {
-  producerCommit: '9f4195662f5cc859011dba8f631475b3daec1acd',
+  producerCommit: '55efb5a2e0a436d34dcd53271b9bca3613495596',
   producerIssue: 95,
   packages: {
     'read-v1': {
       version: '1.1.0-rc.3',
-      manifestSha256: '96b1ffd9e0d1a55b72bbf7ebb7504f01c499a672b617dfb83cc026f438d7774c',
+      manifestSha256: '690bdc98d974e848900c5b7110296298998be86fb3e24a571659ac6ecfd5c7ca',
     },
     'session-v1': {
       version: '3.0.0-rc.2',
