@@ -210,8 +210,15 @@ def main():
         if args.output is not None:write_report(args.output,report)
         else:print(json.dumps(report))
         return 0
-    except (DataError,ValueError,KeyError,TypeError,OSError):
-        print('Catalogue operation unavailable; no unverified chunk was committed.')
+    except DataError as error:
+        # The reason matters to an operator: a provider hiccup, a lock held by
+        # another writer and a malformed argument are different next steps.
+        print(json.dumps({'status':'catalogue_failed','reason':str(error),
+                          'previousCommittedProgressRetained':True}))
+        return 1
+    except (ValueError,KeyError,TypeError,OSError):
+        print(json.dumps({'status':'catalogue_failed','reason':'local_operation_unavailable',
+                          'previousCommittedProgressRetained':True}))
         return 1
 
 
