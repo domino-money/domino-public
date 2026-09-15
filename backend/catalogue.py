@@ -194,6 +194,27 @@ class PgCatalogue:
                 'previousNextBlock':state['next_block']}
 
 
+class WriterCatalogue(PgCatalogue):
+    """The same catalogue read through the writer role.
+
+    An indexer or operator CLI runs as the database writer. Peer authentication
+    binds one OS user to one role, so its reads of the catalogue and activity
+    tables must use that same role: the writer already holds SELECT on both
+    schemas, and no read-only guarantee is lost because the process is the one
+    that writes them anyway.
+    """
+
+    @contextmanager
+    def connection(self, *, writer=False, lock=False):
+        with super().connection(writer=True, lock=lock) as conn:
+            yield conn
+
+
 def configured_catalogue():
     settings = database_settings()
     return PgCatalogue(settings) if settings else None
+
+
+def configured_writer_catalogue():
+    settings = database_settings()
+    return WriterCatalogue(settings) if settings else None

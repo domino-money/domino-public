@@ -64,7 +64,7 @@ class CatalogueFollowerCliTests(unittest.TestCase):
         with self.store.connection() as conn:return self.store.state(conn)
 
     def patches(self,module,reader):
-        return [patch.object(module,'configured_catalogue',return_value=self.store),
+        return [patch.object(module,'configured_writer_catalogue',return_value=self.store),
                 patch.object(module,'load_config',return_value={'rpcUrl':'https://rpc.invalid'}),
                 patch.object(module,'IndexRpc',lambda *args,**kwargs:self.rpc),
                 patch.object(module,'ReadRpc',lambda *args,**kwargs:object()),
@@ -135,7 +135,7 @@ class ActivityFollowerCliTests(unittest.TestCase):
         self.store=PgActivity(self.catalogue)
 
     def patches(self,reader):
-        return [patch.object(manage_activity,'configured_catalogue',return_value=self.catalogue),
+        return [patch.object(manage_activity,'configured_writer_catalogue',return_value=self.catalogue),
                 patch.object(manage_activity,'load_config',return_value={'rpcUrl':'https://rpc.invalid'}),
                 patch.object(manage_activity,'IndexRpc',lambda *args,**kwargs:self.rpc),
                 patch.object(manage_activity,'ReadRpc',lambda *args,**kwargs:object()),

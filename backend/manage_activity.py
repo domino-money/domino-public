@@ -23,7 +23,7 @@ import signal
 
 from activity_indexer import ActivityIndexer
 from activity_store import PgActivity
-from catalogue import configured_catalogue
+from catalogue import configured_writer_catalogue
 from catalogue_indexer import INITIALIZE_TOPIC, IndexRpc, decode_initialize
 from discovery import POOL_MANAGER, DataError, DiscoveryReader, ReadRpc, bytes32
 from followers import follow_many
@@ -173,7 +173,7 @@ def main():
             raise DataError('invalid_activity_bounds')
         pool_ids=requested_pool_ids(args.pool_ids,selected=args.selected)
         if args.queue:
-            catalogue=configured_catalogue()
+            catalogue=configured_writer_catalogue()
             if catalogue is None:
                 raise DataError('catalogue_not_configured')
             requests=PgRequests(catalogue,role=WRITER_ROLE)
@@ -182,7 +182,7 @@ def main():
                               'requests':rows if isinstance(rows,list) else [rows]}))
             return 0
         if args.request:
-            catalogue=configured_catalogue()
+            catalogue=configured_writer_catalogue()
             if catalogue is None:
                 raise DataError('catalogue_not_configured')
             if not pool_ids:
@@ -194,7 +194,7 @@ def main():
                               'pools':pool_ids,'accepted':accepted,'ledgerWrite':False}))
             return 0
         if args.status:
-            catalogue=configured_catalogue()
+            catalogue=configured_writer_catalogue()
             if catalogue is None:
                 raise DataError('catalogue_not_configured')
             store=PgActivity(catalogue)
@@ -226,7 +226,7 @@ def main():
                               'fromBlock':args.search_from,'headAtStart':asdict(head),'pools':pools,
                               'storedWrite':False}))
             return 0 if all(pool['status']=='found' for pool in pools) else 1
-        catalogue=configured_catalogue()
+        catalogue=configured_writer_catalogue()
         if catalogue is None:
             raise DataError('catalogue_not_configured')
         store=PgActivity(catalogue)

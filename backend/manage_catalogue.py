@@ -8,7 +8,7 @@ import signal
 
 from discovery import Block, DataError, DiscoveryReader, POOL_MANAGER, ReadRpc, bytes32, address
 from local_config import load_config
-from catalogue import configured_catalogue, checked_key
+from catalogue import configured_writer_catalogue, checked_key
 from catalogue_indexer import INITIALIZE_TOPIC, CatalogueIndexer, IndexRpc, decode_initialize
 from followers import follow
 from indexer_io import MAX_INDEXER_SPAN, AdaptiveSpan, indexer_transport, read_headers
@@ -146,7 +146,7 @@ def main():
                        help='required: drops every stored chunk, event and seed hint')
     args=parser.parse_args()
     try:
-        catalogue=configured_catalogue()
+        catalogue=configured_writer_catalogue()
         if not catalogue:raise DataError('catalogue_not_configured')
         url=os.environ.get('DOMINO_DISCOVERY_RPC_URL') or load_config().get('rpcUrl')
         if not url:raise DataError('configured_rpc_required')
