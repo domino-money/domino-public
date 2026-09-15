@@ -7,7 +7,8 @@ from eth_hash.auto import keccak
 from discovery import (CHAIN_ID, POOL_MANAGER, DataError, ReadRpc, PoolKey,
                        address, bytes32, quantity, parse_block, decode_result)
 from catalogue import PgCatalogue
-from indexer_io import MAX_INDEXER_SPAN, read_headers
+from indexer_io import MAX_INDEXER_SPAN, indexer_transport, read_headers
+from discovery import Block
 
 INITIALIZE_TOPIC = '0x' + keccak(b'Initialize(bytes32,address,address,uint24,int24,address,uint160,int24)').hex()
 
@@ -39,6 +40,34 @@ def decode_initialize(raw):
     return {'poolId':pool_id,'poolKey':asdict(key), 'blockNumber':quantity(raw.get('blockNumber')),
             'blockHash':bytes32(raw.get('blockHash')), 'transactionHash':bytes32(raw.get('transactionHash')),
             'logIndex':quantity(raw.get('logIndex'))}
+
+
+def initialize_identity(url,pool_id,anchor_block,*,rpc=None):
+    """Verified pool identity from its own Initialize log, not the manager cache.
+
+    `DiscoveryReader.pool` resolves the key through the PositionManager's bytes25
+    cache, which only holds pools that manager has seen. A pool created another
+    way, or one with no position yet, is refused as `invalid_pool_key` even
+    though its creation log proves the identity: the configured PoolManager
+    emitted it and the key hashes to the pool id.
+    """
+    if type(anchor_block) is not int or anchor_block<1:
+        raise DataError('invalid_anchor_block')
+    rpc=rpc if rpc is not None else IndexRpc(url,transport=indexer_transport(90),max_requests=16)
+    logs=rpc.request('eth_getLogs',[{'address':POOL_MANAGER,'topics':[INITIALIZE_TOPIC,pool_id],
+                                    'fromBlock':hex(anchor_block),'toBlock':hex(anchor_block)}])
+    if not isinstance(logs,list) or len(logs)!=1:
+        raise DataError('initialize_anchor_not_found')
+    event=decode_initialize(logs[0])
+    if event['poolId']!=bytes32(pool_id) or event['blockNumber']!=anchor_block:
+        raise DataError('initialize_anchor_mismatch')
+    header=read_headers(rpc,[anchor_block])[anchor_block]
+    if header.hash!=event['blockHash']:
+        raise DataError('initialize_anchor_mismatch')
+    return ({'poolId':event['poolId'],'poolKey':event['poolKey'],
+             'currencies':[event['poolKey']['currency0'],event['poolKey']['currency1']],
+             'providerMetrics':None},
+            Block(anchor_block,header.hash,header.timestamp))
 
 
 class CatalogueIndexer:

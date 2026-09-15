@@ -17,7 +17,8 @@ from pool_requests import PgRequests
 from read_contract import validate_response
 from read_service import ReadService
 from test_catalogue import block_hash, stored_candidate
-from test_discovery import KEY, POOL
+from test_discovery import KEY, OTHER, POOL
+from discovery import ZERO
 from test_pool_activity import ActivityRpc, PACKED, event_log, initial_logs
 
 HEAD=200_000
@@ -127,6 +128,23 @@ class LiveWindowServeTests(unittest.TestCase):
         with self.assertRaisesRegex(DataError,'activity_pool_not_registered'):
             self.service().pool_activity(POOL)
         self.assertEqual(self.requests.status(POOL)['status'],'queued')
+
+    def test_a_pool_the_manager_cache_does_not_hold_is_still_served(self):
+        """The creation log proves the identity the cache cannot."""
+        self.register()
+
+        class CacheMissRpc(LiveWindowRpc):
+            def call(self,target,signature,inputs=(),values=(),outputs=(),*,block):
+                if signature=='poolKeys(bytes25)':
+                    # A cache entry that hashes to a different pool id.
+                    return (ZERO,OTHER,3000,60,ZERO)
+                return super().call(target,signature,inputs,values,outputs,block=block)
+
+        self.rpc=CacheMissRpc()
+        report=self.service().pool_activity(POOL)
+        validate_response('pool-activity',report)
+        self.assertEqual(report['mode'],'live_window_only')
+        self.assertEqual(report['poolKey']['fee_pips'],KEY[2])
 
     def test_a_walked_pool_still_serves_the_stored_ledger(self):
         self.register()

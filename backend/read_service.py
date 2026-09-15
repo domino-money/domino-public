@@ -226,8 +226,7 @@ class ReadService:
             transport=self.transport_factory(),max_requests=4096)
         reader=DiscoveryReader(rpc,clock=self.clock)
         block=reader.snapshot()
-        pool=reader.pool({'poolId':bytes32(pool_id),'poolKey':None,'currencies':None,
-                          'providerMetrics':None},block)
+        pool=self._pool_identity(rpc,reader,pool_id,block,anchor)
         reader.assert_canonical(block)
         start_number=max(anchor['startBlock'],
                          block.number-self.LIVE_WINDOW_SECONDS-self.LIVE_WINDOW_BLOCK_MARGIN)
@@ -281,6 +280,38 @@ class ReadService:
     def _header(rpc,number):
         from discovery import parse_block
         return parse_block(rpc.request('eth_getBlockByNumber',[hex(number),False]))
+
+    def _pool_identity(self,rpc,reader,pool_id,block,anchor):
+        """Core state plus a verified key: the manager cache first, then the log.
+
+        The PositionManager's bytes25 cache only holds pools it has seen, so a
+        pool created another way is refused as `invalid_pool_key`. The
+        registered anchor already proved that identity from the pool's own
+        Initialize log, so the same proof is used for the live state.
+        """
+        from catalogue import checked_key
+        from catalogue_indexer import initialize_identity
+        from discovery import STATE_VIEW
+
+        candidate={'poolId':bytes32(pool_id),'poolKey':None,'currencies':None,'providerMetrics':None}
+        try:
+            return reader.pool(candidate,block)
+        except DataError as error:
+            # The cache either has no entry or an entry that is not this pool.
+            if str(error) not in ('invalid_pool_key','pool_id_mismatch'):
+                raise
+        identity,_=initialize_identity(self.rpc_urls[0] if self.rpc_urls else self.rpc_url,
+                                       pool_id,anchor['startBlock'],rpc=rpc)
+        key=checked_key(identity['poolKey'],bytes32(pool_id))
+        sqrt,tick,protocol,lp_fee=rpc.call(STATE_VIEW,'getSlot0(bytes32)',['bytes32'],
+                                           [bytes.fromhex(bytes32(pool_id)[2:])],
+                                           ['uint160','int24','uint24','uint24'],block=block.tag)
+        if not 0<sqrt<2**160 or not -887272<=tick<=887272 or lp_fee>1_000_000:
+            raise DataError('invalid_pool_state')
+        if key.fee_pips!=0x800000 and lp_fee!=key.fee_pips:
+            raise DataError('fixed_fee_mismatch')
+        return {**identity,'sqrtPriceX96':str(sqrt),'tick':tick,'currentLpFeePips':lp_fee,
+                'protocolFeeRaw':protocol}
 
     def _active_liquidity(self,rpc,pool_id,block):
         from discovery import STATE_VIEW

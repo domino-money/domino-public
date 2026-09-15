@@ -9,7 +9,8 @@ import signal
 from discovery import Block, DataError, DiscoveryReader, POOL_MANAGER, ReadRpc, bytes32, address
 from local_config import load_config
 from catalogue import configured_writer_catalogue, checked_key
-from catalogue_indexer import INITIALIZE_TOPIC, CatalogueIndexer, IndexRpc, decode_initialize
+from catalogue_indexer import (INITIALIZE_TOPIC, CatalogueIndexer, IndexRpc, decode_initialize,
+                                initialize_identity)
 from followers import follow
 from indexer_io import MAX_INDEXER_SPAN, AdaptiveSpan, indexer_transport, read_headers
 from selected_pools import SELECTED_POOLS
@@ -54,32 +55,8 @@ def requested_pool_candidates(pool_ids, selected=False):
 
 
 def anchor_candidate(url,pool_id,anchor_block,*,rpc=None):
-    """Verified pool identity from its own Initialize log, not the manager cache.
-
-    `DiscoveryReader.pool` resolves the key through the PositionManager's bytes25
-    cache, which only holds pools that manager has seen. A pool created through
-    another manager, or one with no position yet, is refused as
-    `invalid_pool_key` even though its creation log proves the identity: the
-    configured PoolManager emitted it and the key hashes to the pool id. This
-    path uses that proof, and `register` re-verifies it at the canonical block.
-    """
-    if type(anchor_block) is not int or anchor_block<1:
-        raise DataError('invalid_anchor_block')
-    rpc=rpc if rpc is not None else IndexRpc(url,transport=indexer_transport(90),max_requests=16)
-    logs=rpc.request('eth_getLogs',[{'address':POOL_MANAGER,'topics':[INITIALIZE_TOPIC,pool_id],
-                                    'fromBlock':hex(anchor_block),'toBlock':hex(anchor_block)}])
-    if not isinstance(logs,list) or len(logs)!=1:
-        raise DataError('initialize_anchor_not_found')
-    event=decode_initialize(logs[0])
-    if event['poolId']!=bytes32(pool_id) or event['blockNumber']!=anchor_block:
-        raise DataError('initialize_anchor_mismatch')
-    block=read_headers(rpc,[anchor_block])[anchor_block]
-    if block.hash!=event['blockHash']:
-        raise DataError('initialize_anchor_mismatch')
-    candidate={'poolId':event['poolId'],'poolKey':event['poolKey'],
-               'currencies':[event['poolKey']['currency0'],event['poolKey']['currency1']],
-               'providerMetrics':None}
-    return candidate,Block(anchor_block,block.hash,block.timestamp)
+    """Kept for the CLI and its tests; the identity proof lives in the indexer."""
+    return initialize_identity(url,pool_id,anchor_block,rpc=rpc)
 
 
 def observed_head(url):
