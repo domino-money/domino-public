@@ -59,6 +59,8 @@ def follow_many(targets, observe_head, *, lag, max_passes, poll_seconds, max_sec
     progress = {name: {'indexedPasses': 0, 'rewinds': [], 'failures': [],
                        'consecutiveFailures': 0, 'lastResult': None} for name, _ in targets}
     rounds, stopped, target_block = 0, 'max_passes', None
+    failures_in_a_row = 0
+    head_failures = []
     while max_passes == 0 or rounds < max_passes:
         if should_stop is not None and should_stop():
             stopped = 'stop_requested'
@@ -66,9 +68,25 @@ def follow_many(targets, observe_head, *, lag, max_passes, poll_seconds, max_sec
         if deadline is not None and clock() >= deadline:
             stopped = 'max_seconds'
             break
-        head = observe_head()
-        target_block = follow_target(head['number'], lag)
+        try:
+            head = observe_head()
+            target_block = follow_target(head['number'], lag)
+        except (DataError, OSError) as error:
+            # A provider hiccup while asking the chain where it is must not end
+            # the follower: it is one failed round, under the same budget.
+            rounds += 1
+            failures_in_a_row += 1
+            failure = {'round': rounds, 'targetBlock': None, 'reason': str(error)}
+            head_failures.append(failure)
+            if on_pass is not None:
+                on_pass({'round': rounds, 'target': 'head', **failure})
+            if failures_in_a_row >= max_consecutive_failures:
+                stopped = 'failures'
+                break
+            sleep(poll_seconds)
+            continue
         rounds += 1
+        failures_in_a_row = 0
         catching_up = failed = False
         for name, step in targets:
             if should_stop is not None and should_stop():
@@ -114,7 +132,7 @@ def follow_many(targets, observe_head, *, lag, max_passes, poll_seconds, max_sec
     return {'schemaVersion': 1, 'mode': 'bounded_follower', 'lagBlocks': lag, 'rounds': rounds,
             'targets': progress, 'maxConsecutiveFailures': max_consecutive_failures,
             'stoppedBecause': stopped, 'lastTargetBlock': target_block,
-            'transactionSubmission': False}
+            'headFailures': head_failures, 'transactionSubmission': False}
 
 
 def follow(step, observe_head, **options):
@@ -126,4 +144,5 @@ def follow(step, observe_head, **options):
             'indexedPasses': single['indexedPasses'], 'rewinds': single['rewinds'],
             'failures': single['failures'], 'maxConsecutiveFailures': summary['maxConsecutiveFailures'],
             'stoppedBecause': summary['stoppedBecause'], 'lastTarget': summary['lastTargetBlock'],
+            'headFailures': summary['headFailures'],
             'lastResult': single['lastResult'], 'transactionSubmission': False}

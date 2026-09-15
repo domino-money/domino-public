@@ -142,6 +142,33 @@ class FollowLoopTests(unittest.TestCase):
         # One target still catching up keeps the round busy: no idle wait.
         self.assertEqual(clock.slept,[])
 
+    def test_a_failed_head_observation_is_one_failed_round_not_the_end(self):
+        clock=FakeClock()
+        heads=[DataError('read_deadline_exceeded'),{'number':1000},DataError('network_unavailable'),
+               {'number':1000},DataError('network_unavailable')]
+        def observe():
+            value=heads.pop(0)
+            if isinstance(value,Exception):raise value
+            return value
+        summary=follow(lambda *,through:{'status':'caught_up_to_target','through':through},
+                       observe,lag=100,max_passes=5,poll_seconds=5,
+                       max_consecutive_failures=3,sleep=clock.sleep,clock=clock)
+        self.assertEqual(summary['stoppedBecause'],'max_passes')
+        self.assertEqual([item['reason'] for item in summary['headFailures']],
+                         ['read_deadline_exceeded','network_unavailable','network_unavailable'])
+        self.assertEqual(summary['lastResult']['status'],'caught_up_to_target')
+
+    def test_a_head_that_never_answers_stops_at_the_failure_budget(self):
+        clock=FakeClock()
+        def observe():
+            raise DataError('network_unavailable')
+        summary=follow(lambda *,through:{'status':'caught_up_to_target','through':through},
+                       observe,lag=100,max_passes=10,poll_seconds=5,
+                       max_consecutive_failures=2,sleep=clock.sleep,clock=clock)
+        self.assertEqual(summary['stoppedBecause'],'failures')
+        self.assertEqual(len(summary['headFailures']),2)
+        self.assertEqual(summary['passes'],2)
+
     def test_one_stuck_target_stops_the_loop_instead_of_hiding_it(self):
         clock=FakeClock()
         def broken(*,through):
