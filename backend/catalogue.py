@@ -14,6 +14,16 @@ from discovery import CHAIN_ID, POOL_MANAGER, DataError, PoolKey, address, bytes
 
 DB_CONFIG = Path(__file__).resolve().parent / 'runtime' / 'catalogue-db.json'
 LOCK_ID = 46630001
+# Advisory key namespace for per-pool writers. The high bit keeps it disjoint
+# from LOCK_ID and from any other single-key guard added later.
+POOL_LOCK_BIT = 1 << 62
+
+
+def pool_lock_key(pool_id):
+    """Deterministic advisory key for one pool's own writer path."""
+    value = bytes32(pool_id)
+    # PostgreSQL advisory keys are signed 64-bit; stay below 2**63.
+    return POOL_LOCK_BIT | (int(value[2:], 16) % (1 << 61))
 
 
 def checked_key(value, pool_id):
@@ -54,12 +64,15 @@ class PgCatalogue:
     @contextmanager
     def connection(self, *, writer=False, lock=False):
         role = 'domino_catalogue_writer' if writer else 'domino_catalogue_reader'
+        if lock is not False and lock is not True and type(lock) is not int:
+            raise DataError('invalid_lock_key')
         try:
             with psycopg.connect(**self.settings, user=role, connect_timeout=3, row_factory=dict_row) as conn:
                 conn.execute("SET LOCAL statement_timeout='5000ms'")
                 if not writer:
                     conn.execute('SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY')
-                if lock and not conn.execute('SELECT pg_try_advisory_xact_lock(%s) AS held', (LOCK_ID,)).fetchone()['held']:
+                key = LOCK_ID if lock is True else lock
+                if lock and not conn.execute('SELECT pg_try_advisory_xact_lock(%s) AS held', (key,)).fetchone()['held']:
                     raise DataError('catalogue_writer_busy')
                 yield conn
         except psycopg.Error:
@@ -144,7 +157,12 @@ class PgCatalogue:
             conn.execute('''INSERT INTO domino_catalogue.events VALUES(%s,%s,%s,%s,%s,%s,%s,%s,%s)''',
                          (event['poolId'],key['currency0'],key['currency1'],Jsonb(key),event['blockNumber'],
                           event['blockHash'],event['transactionHash'],event['logIndex'],start))
-        conn.execute('UPDATE domino_catalogue.state SET next_block=%s,revision=revision+1 WHERE singleton', (end+1,))
+        # A revision is a content version, not a block cursor. Advancing the
+        # checkpoint over a chunk with no Initialize event changes no candidate
+        # and must not invalidate a paging client's `revision`, which would turn
+        # every pass of a follower over empty chunks into catalogue_revision_changed.
+        conn.execute('''UPDATE domino_catalogue.state SET next_block=%s,
+                      revision=revision+%s WHERE singleton''', (end+1, 1 if events else 0))
 
     @staticmethod
     def rewind(conn, through, base_hash=None):
@@ -154,6 +172,26 @@ class PgCatalogue:
         conn.execute('''UPDATE domino_catalogue.state SET next_block=%s,
                       base_hash=COALESCE(%s,base_hash),revision=revision+1 WHERE singleton''',
                      (max(state['start_block'],through+1),base_hash))
+
+    @staticmethod
+    def reset(conn, start_block, base_hash):
+        """Abandon stored catalogue history and restart at an explicit block.
+
+        The caller must already have verified `start_block-1` on chain for the
+        configured PoolManager. Chunks, events and seed hints are removed in the
+        same transaction, so a re-index from the PoolManager origin cannot leave
+        an older event or hint reachable. The revision advances: every stored
+        candidate set the readers held is now different.
+        """
+        state = PgCatalogue.state(conn)
+        conn.execute('DELETE FROM domino_catalogue.chunks')
+        conn.execute('DELETE FROM domino_catalogue.events')
+        conn.execute('DELETE FROM domino_catalogue.hints')
+        conn.execute('''UPDATE domino_catalogue.state SET start_block=%s,next_block=%s,
+                      base_hash=%s,revision=revision+1 WHERE singleton''',
+                     (start_block,start_block,base_hash))
+        return {'status':'reset','startBlock':start_block,'previousStartBlock':state['start_block'],
+                'previousNextBlock':state['next_block']}
 
 
 def configured_catalogue():

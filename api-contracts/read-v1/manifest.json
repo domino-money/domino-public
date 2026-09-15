@@ -1184,7 +1184,7 @@
     },
     {
       "path": "backend/catalogue.py",
-      "sha256": "5102587693051b281beec975289b3a0f942d0b45810d1f0ec4f729c19bbcb6a7"
+      "sha256": "02bbe7c388150324026aca10056e31d5603f22c17d118f7f4cb3cedd54571b63"
     },
     {
       "path": "backend/position_accounting.py",

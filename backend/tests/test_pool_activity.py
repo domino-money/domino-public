@@ -18,6 +18,7 @@ from activity_store import PgActivity
 from catalogue import PgCatalogue
 from dev_postgres import ADMIN, BIN, PORT, SOCKET, create_database
 from discovery import Block, CHAIN_ID, DataError, POOL_MANAGER
+from indexer_io import MAX_INDEXER_SPAN
 from pool_activity import (DONATE, INITIALIZE_TOPIC, MODIFY, PROTOCOL, SWAP, TOPICS,
                            active_liquidity, decode_activity, protocol_directions, replay, window_metrics)
 from read_api import ReadGate, create_app
@@ -307,7 +308,7 @@ class ActivityPostgresTests(unittest.TestCase):
         self.rpc.chain=1
         with self.assertRaisesRegex(DataError,'wrong_chain'):self.register()
         self.rpc.chain=CHAIN_ID;self.register()
-        for args in [dict(through=-1),dict(through=11,span=10001),dict(through=11,span=True)]:
+        for args in [dict(through=-1),dict(through=11,span=MAX_INDEXER_SPAN+1),dict(through=11,span=True)]:
             with self.assertRaisesRegex(DataError,'invalid_activity_bounds'):self.worker.step(POOL,**args)
         self.assertEqual(self.counts(),(0,0))
 

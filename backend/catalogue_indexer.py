@@ -7,6 +7,7 @@ from eth_hash.auto import keccak
 from discovery import (CHAIN_ID, POOL_MANAGER, DataError, ReadRpc, PoolKey,
                        address, bytes32, quantity, parse_block, decode_result)
 from catalogue import PgCatalogue
+from indexer_io import MAX_INDEXER_SPAN, read_headers
 
 INITIALIZE_TOPIC = '0x' + keccak(b'Initialize(bytes32,address,address,uint24,int24,address,uint160,int24)').hex()
 
@@ -68,6 +69,23 @@ class CatalogueIndexer:
             conn.execute('''UPDATE domino_catalogue.state SET start_block=%s,next_block=%s,
                           base_hash=%s,revision=revision+1 WHERE singleton''',(start_block,start_block,base.hash))
 
+    def reset(self, start_block):
+        """Restart the stored catalogue at an explicit, verified start block.
+
+        This is the only supported way to change an already-set start block:
+        the previous chunks, events and seed hints are dropped together, so a
+        re-index cannot mix two intervals. It never touches the chain.
+        """
+        if type(start_block) is not int or start_block<1:
+            raise DataError('invalid_catalogue_start')
+        self.check_chain()
+        base = self.block(start_block-1)
+        with self.catalogue.connection(writer=True,lock=True) as conn:
+            self.catalogue.state(conn)
+            if self.block(start_block-1) != base:
+                raise DataError('index_snapshot_reorganized')
+            return self.catalogue.reset(conn,start_block,base.hash)
+
     def _reconcile(self, conn):
         state = self.catalogue.state(conn)
         if state['start_block'] is None:
@@ -87,7 +105,7 @@ class CatalogueIndexer:
         return base.number
 
     def step(self, *, through, span=1000):
-        if type(through) is not int or type(span) is not int or not 1<=span<=1000:
+        if type(through) is not int or type(span) is not int or not 1<=span<=MAX_INDEXER_SPAN:
             raise DataError('invalid_indexer_bounds')
         self.check_chain()
         with self.catalogue.connection(writer=True,lock=True) as conn:
@@ -110,15 +128,16 @@ class CatalogueIndexer:
                                    'fromBlock':hex(start),'toBlock':hex(end)}])
             if not isinstance(raw,list) or len(raw)>2000:
                 raise DataError('invalid_logs_response')
-            events, identities, headers = [], {}, {}
+            events, identities, decoded = [], {}, []
             for log in raw:
                 event = decode_initialize(log)
                 number = event['blockNumber']
                 if not start<=number<=end:
                     raise DataError('event_outside_chunk')
-                if number not in headers:
-                    headers[number] = self.block(number)
-                if headers[number].hash != event['blockHash']:
+                decoded.append(event)
+            headers = read_headers(self.rpc, [event['blockNumber'] for event in decoded])
+            for event in decoded:
+                if headers[event['blockNumber']].hash != event['blockHash']:
                     raise DataError('event_block_mismatch')
                 identity = (event['blockHash'],event['logIndex'])
                 if identity in identities:

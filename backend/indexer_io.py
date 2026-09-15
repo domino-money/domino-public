@@ -1,0 +1,114 @@
+"""Read-only I/O helpers for the bounded indexers (never the public read path).
+
+The public read path caps one HTTP request at 8 seconds because a browser is
+waiting behind it. An indexer chunk is not a user request: it is a bounded
+batch of work whose whole point is to move millions of blocks, and the provider
+answers a filtered `eth_getLogs` for a wide range in a few seconds. These
+helpers keep the indexer's own budget explicit instead of inheriting the
+browser-facing one, and read block headers in batched envelopes instead of one
+round trip per event block.
+"""
+from discovery import DataError, json_http, parse_block
+from read_deadline import ReadDeadline, current_read_deadline, use_read_deadline
+
+# Measured against Alchemy Robinhood (2026-09-15): one round trip is about
+# 0.45-0.6 s, so a hundred sequential header reads cost ~46 s and a batched
+# envelope costs one round trip. The per-request ceiling is what actually bounds
+# a wide log range; the public 8 s ceiling is a browser budget, not a provider
+# limit.
+INDEXER_REQUEST_TIMEOUT = 30
+INDEXER_BATCH_ITEMS = 8
+# Design ceiling for one indexer chunk. Alchemy Robinhood answered a filtered
+# range of 100k blocks in ~4 s and rejected 1M blocks outright, so the useful
+# range is bounded by response size, not by this number.
+MAX_INDEXER_SPAN = 100_000
+
+
+def indexer_transport(seconds=90, request_timeout=INDEXER_REQUEST_TIMEOUT):
+    parent = current_read_deadline()
+    deadline = ReadDeadline(seconds, parents=(parent,) if parent else ())
+
+    def transport(url, body=None):
+        with use_read_deadline(deadline) as active:
+            return json_http(url, body, timeout=active.timeout(request_timeout))
+    return transport
+
+
+def read_headers(rpc, numbers, *, batch_items=INDEXER_BATCH_ITEMS, request=None):
+    """Return {block number: parsed block} for distinct numbers, batched.
+
+    Every header is parsed with the same `parse_block` validation the sequential
+    path used, so a truncated or inconsistent answer fails exactly as before.
+    Batching is an envelope change only: the same calls, the same checks, one
+    round trip per `batch_items` calls.
+    """
+    wanted = []
+    for number in numbers:
+        if type(number) is not int or number < 0:
+            raise DataError('invalid_block_number')
+        if number not in wanted:
+            wanted.append(number)
+    if not wanted:
+        return {}
+    request = request or rpc.request
+    batch = getattr(rpc, 'batch', None)
+    if not callable(batch) or batch_items < 1:
+        headers = {number: parse_block(request('eth_getBlockByNumber', [hex(number), False]))
+                   for number in wanted}
+        for number, block in headers.items():
+            if block.number != number:
+                raise DataError('unexpected_block_number')
+        return headers
+    headers = {}
+    for index in range(0, len(wanted), batch_items):
+        chunk = wanted[index:index + batch_items]
+        results = batch([('eth_getBlockByNumber', [hex(number), False]) for number in chunk])
+        for number, raw in zip(chunk, results):
+            block = parse_block(raw)
+            if block.number != number:
+                raise DataError('unexpected_block_number')
+            headers[number] = block
+    return headers
+
+
+class AdaptiveSpan:
+    """Chunk span that shrinks on provider/size rejection and regrows after wins.
+
+    A wide range is the cheapest way to walk history, but a dense pool can make
+    one range exceed the response ceiling. The span is a resource parameter, not
+    a correctness one: every accepted chunk is still validated and reconciled by
+    the indexer, and a rejected range commits nothing.
+    """
+    SHRINK_REASONS = frozenset({'response_too_large', 'activity_log_budget_exhausted',
+                                'invalid_logs_response', 'read_deadline_exceeded',
+                                'http_400', 'invalid_rpc_batch'})
+
+    def __init__(self, span, *, floor=1000, ceiling=100_000, growth_passes=8):
+        if not 1 <= floor <= span <= ceiling:
+            raise DataError('invalid_span_bounds')
+        if type(growth_passes) is not int or growth_passes < 1:
+            raise DataError('invalid_span_bounds')
+        self.span, self.floor, self.ceiling = span, floor, ceiling
+        self.growth_passes = growth_passes
+        self.successes = 0
+        self.shrinks = 0
+
+    def next_span(self):
+        return self.span
+
+    def record(self, reason=None):
+        """Update the span from one pass outcome; returns the span to use next."""
+        if reason is None:
+            self.successes += 1
+            if self.successes >= self.growth_passes and self.span < self.ceiling:
+                self.span, self.successes = min(self.ceiling, self.span * 2), 0
+            return self.span
+        if reason in self.SHRINK_REASONS and self.span > self.floor:
+            self.successes = 0
+            self.shrinks += 1
+            self.span = max(self.floor, self.span // 4)
+        return self.span
+
+    def as_dict(self):
+        return {'spanBlocks': self.span, 'spanFloor': self.floor, 'spanCeiling': self.ceiling,
+                'shrinks': self.shrinks}

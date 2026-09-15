@@ -16,7 +16,7 @@ from eth_abi import encode
 from eth_hash.auto import keccak
 from fastapi.testclient import TestClient
 
-from catalogue import PgCatalogue, database_settings
+from catalogue import LOCK_ID, PgCatalogue, database_settings, pool_lock_key
 from catalogue_indexer import CatalogueIndexer, IndexRpc, INITIALIZE_TOPIC, decode_initialize
 from dev_postgres import ADMIN, BIN, PORT, SOCKET, create_database
 from discovery import (Block, CHAIN_ID, DataError, KEY_TYPES, POOL_MANAGER, PoolKey, ZERO, discover)
@@ -333,6 +333,22 @@ class PostgresCatalogueTests(unittest.TestCase):
         self.worker.start(10)
         self.assertEqual(self.state()['next_block'],10)
 
+    def test_per_pool_writer_keys_are_stable_distinct_and_independent(self):
+        other='0x'+'11'*32
+        first,second=pool_lock_key(POOL),pool_lock_key(other)
+        self.assertEqual(pool_lock_key(POOL),first)
+        self.assertNotEqual(first,second)
+        self.assertNotEqual(first,LOCK_ID)
+        with self.store.connection(writer=True,lock=first):
+            # The same pool is still serialized...
+            with self.assertRaisesRegex(DataError,'catalogue_writer_busy'):
+                with self.store.connection(writer=True,lock=first): pass
+            # ...while another pool, and the cross-pool ledger guard, proceed.
+            with self.store.connection(writer=True,lock=second): pass
+            with self.store.connection(writer=True,lock=True): pass
+        with self.assertRaisesRegex(DataError,'invalid_lock_key'):
+            with self.store.connection(writer=True,lock='not-a-key'): pass
+
     def test_start_and_noncontiguous_commit_cannot_skip_history(self):
         self.worker.start(10);self.worker.start(10)
         with self.assertRaisesRegex(DataError,'catalogue_start_already_set'): self.worker.start(12)
@@ -391,6 +407,58 @@ class PostgresCatalogueTests(unittest.TestCase):
                             '--clean','--if-exists','--exit-on-error',str(archive)],check=True,capture_output=True)
         self.assertEqual(PgCatalogue(self.restore_settings).lookup(TOKEN),before)
         self.assertEqual(self.counts(),(1,1,1))
+
+    def test_empty_chunk_advances_coverage_without_invalidating_paging_clients(self):
+        self.worker.start(10)
+        self.rpc.logs=[]
+        self.assertEqual(self.worker.step(through=11,span=2)['events'],0)
+        page=self.store.lookup(TOKEN)
+        self.assertEqual(page['indexedThrough'],11)
+        self.assertEqual(self.counts(),(1,0,0))
+        # The candidate set did not change, so the revision a client holds stays
+        # valid and its next page is not rejected with catalogue_revision_changed.
+        self.assertEqual(self.store.lookup(TOKEN,revision=page['revision'])['revision'],page['revision'])
+        self.worker.step(through=13,span=2)
+        self.assertEqual(self.state()['revision'],page['revision'])
+        # A chunk that carries an Initialize event is a content change.
+        self.rpc.logs=[log(14,key=(ZERO,OTHER,500,10,ZERO))]
+        self.assertEqual(self.worker.step(through=15,span=2)['events'],1)
+        self.assertEqual(self.state()['revision'],page['revision']+1)
+        with self.assertRaisesRegex(DataError,'catalogue_revision_changed'):
+            self.store.lookup(TOKEN,revision=page['revision'])
+
+    def test_reset_drops_every_interval_and_restarts_at_a_verified_block(self):
+        self.worker.start(10)
+        self.rpc.logs=[log(11)]
+        self.worker.step(through=11)
+        self.store.seed([stored_candidate((TOKEN,OTHER,100,1,ZERO))],Block(11,block_hash(11),1011))
+        self.assertEqual(self.counts(),(1,1,1))
+        revision=self.state()['revision']
+        # The reset is one transaction: the old interval is replaced atomically
+        # rather than left half-indexed between two start blocks.
+        result=self.worker.reset(20)
+        self.assertEqual(result['status'],'reset')
+        self.assertEqual((result['previousStartBlock'],result['previousNextBlock']),(10,12))
+        state=self.state()
+        self.assertEqual((state['start_block'],state['next_block'],state['base_hash']),
+                         (20,20,block_hash(19)))
+        self.assertEqual(state['revision'],revision+1)
+        self.assertEqual(self.counts(),(0,0,0))
+        self.rpc.logs=[]
+        self.assertEqual(self.worker.step(through=21)['fromBlock'],20)
+        self.assertEqual(self.counts(),(1,0,0))
+
+    def test_rewind_and_reset_are_distinct(self):
+        self.worker.start(10);self.worker.step(through=11)
+        self.rpc.logs=[]
+        self.assertEqual(self.worker.reset(30)['status'],'reset')
+        self.assertEqual(self.state()['start_block'],30)
+        # A rewind keeps the configured interval and only drops unconfirmed
+        # checkpoints, so it cannot silently re-index a different range.
+        with self.store.connection(writer=True,lock=True) as conn:
+            self.store.rewind(conn,29,block_hash(29))
+        self.assertEqual(self.state()['start_block'],30)
+        self.assertEqual(self.state()['next_block'],30)
 
 
 if __name__=='__main__': unittest.main()
