@@ -139,6 +139,8 @@ def main():
                         help='per-pool writer lock; different pools may be walked at once')
     parser.add_argument('--lag',type=int,default=DEFAULT_FOLLOW_LAG)
     parser.add_argument('--max-steps',type=int,default=5)
+    parser.add_argument('--anchor-only',action='store_true',dest='anchor_only',
+                        help='with --queue-worker: anchor and register, index nothing yet')
     parser.add_argument('--max-passes',type=int,default=1,
                         help='0 runs until SIGTERM/SIGINT or --max-seconds')
     parser.add_argument('--poll-seconds',type=float,default=5.0)
@@ -252,11 +254,12 @@ def main():
                                                 head_number=head.number)
                     worker().register(pool_id,anchor)
                     steps=[]
-                    for _ in range(args.max_steps):
+                    for _ in range(0 if args.anchor_only else args.max_steps):
                         result=worker().step(pool_id,through=target,span=args.span)
                         steps.append(result['status'])
                         if result['status']!='indexed':break
-                    status='following' if steps and steps[-1] in ('caught_up_to_target','rewound') else 'indexing'
+                    status=('following' if steps and steps[-1] in ('caught_up_to_target','rewound')
+                            else 'indexing')
                     requests.record(pool_id,status,
                                     detail={'anchorBlock':anchor,'anchorSource':source,
                                             'targetBlock':target,'steps':steps,

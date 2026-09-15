@@ -204,5 +204,27 @@ class ActivityFollowerCliTests(unittest.TestCase):
         self.assertEqual(code,1)
         self.assertEqual(json.loads(output.strip())['reason'],'unbounded_follow_needs_a_stop')
 
+    def test_anchor_only_worker_registers_without_writing_a_chunk(self):
+        running=self.patches(reader_factory(111))
+        for item in running:item.start()
+        try:
+            queued=run_main(manage_activity,['manage_activity.py','--request','--pool-id',POOL])
+            anchored,output=run_main(manage_activity,['manage_activity.py','--queue-worker',
+                                                      '--search-from','1','--search-span','1000',
+                                                      '--search-max-spans','1','--max-pools','1',
+                                                      '--anchor-only'])
+        finally:
+            for item in running:item.stop()
+        self.assertEqual(queued[0],0)
+        self.assertEqual(anchored,0)
+        report=json.loads(output.strip().splitlines()[-1])
+        self.assertEqual(report['mode'],'pool_request_worker')
+        self.assertEqual(report['pools'][0]['status'],'indexing')
+        self.assertEqual(report['pools'][0]['steps'],[])
+        self.assertEqual(report['pools'][0]['anchorBlock'],10)
+        with self.catalogue.connection() as conn:
+            self.assertEqual(self.store.pool(conn,POOL)['next_block'],10)
+            self.assertEqual(conn.execute('SELECT count(*) AS n FROM domino_activity.chunks').fetchone()['n'],0)
+
 
 if __name__=='__main__':unittest.main()
