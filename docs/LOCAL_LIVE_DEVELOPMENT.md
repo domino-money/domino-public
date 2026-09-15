@@ -203,7 +203,9 @@ state before a new operation. No extra blind retries or automatic polling.
 Count provider work at the actual transport: RPC batch items, identity checks,
 fallback attempts and optional inventory all consume budget. Initial
 defensive ceilings are 64 logical RPC items per operation, 120/minute,
-GeckoTerminal 3 calls/minute and DexScreener 6 calls/minute. A reader restart
+GeckoTerminal 6 calls/minute (T1.5: one OHLCV candle call per listed pool;
+the markets snapshot serves the cards without provider calls) and
+DexScreener 6 calls/minute. A reader restart
 must not reset an allowance into an immediate new burst. Inputs remain generic
 and validated; a large request may honestly exhaust its budget. Do not claim
 all maximum-size requests have been qualified.
@@ -213,7 +215,7 @@ record the Alchemy account's actual throughput/CU limits, Robinhood method
 costs, other app consumption and a reserved development share (or genuinely
 independent quota). Another API key on the same account is insufficient.
 For Gecko, verify the actual shared-IP allowance and other consumers before
-claiming that production's 25 plus development's 3 fit. Include restarts and
+claiming that production's 25 plus development's 6 fit. Include restarts and
 every provider-using process in that aggregate. For Dex, likewise record other
 consumers and the endpoint allowance. Until this evidence and its enforcement
 are established, keep development admission disabled and perform only offline

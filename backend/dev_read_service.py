@@ -223,7 +223,7 @@ class DevelopmentReadService(ReadService):
         bounded = DevelopmentTransport(self.development_budgets, rpc_urls=profile['rpcUrls'],
                                        inventory_url=profile['inventoryUrl'], transport=transport)
         market = MarketCache(GeckoMarketData(transport=bounded, clock=clock), clock=monotonic)
-        market.requests_per_minute = 3
+        market.requests_per_minute = 6
         super().__init__(rpc_urls=tuple(profile['rpcUrls']), inventory_url=profile['inventoryUrl'],
                          clock=clock, transport_factory=lambda: bounded,
                          cursor_codec=CursorCodec(clock=clock), market_cache=market,

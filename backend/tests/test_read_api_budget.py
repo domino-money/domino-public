@@ -197,6 +197,18 @@ class ReadApiBudgetTests(unittest.TestCase):
         self.service.token.side_effect = None
         self.assertEqual(self.read('1000').status_code, 200)
 
+    def test_unexpected_mid_hop_failure_answers_with_contract_header(self):
+        # T1.3: no hop may answer without X-Domino-Read-Contract. An unexpected
+        # exception inside the pipeline is an upstream unavailability, not a
+        # headerless 500 that a browser would render as an opaque 502.
+        self.service.token.side_effect = RuntimeError('mid-hop failure')
+        response = self.read()
+        self.assertEqual(response.status_code, 503)
+        self.assertEqual(response.json(), {'error': 'upstream_unavailable'})
+        self.assertEqual(response.headers['X-Domino-Read-Contract'], CONTRACT_VERSION)
+        self.service.token.side_effect = None
+        self.assertEqual(self.read().status_code, 200)
+
 
 if __name__ == '__main__':
     unittest.main()

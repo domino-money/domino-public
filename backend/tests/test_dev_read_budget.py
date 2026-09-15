@@ -93,7 +93,7 @@ class DevelopmentBudgetTests(unittest.TestCase):
         self.assertEqual(len(self.calls), 2)
 
     def test_provider_caps_count_actual_http_and_cannot_be_hidden_as_optional_failure(self):
-        for url, limit, kind in ((GECKO, 3, 'gecko'), (DEX, 6, 'dex')):
+        for url, limit, kind in ((GECKO, 6, 'gecko'), (DEX, 6, 'dex')):
             with self.subTest(kind=kind):
                 for _ in range(limit):
                     with self.budgets.operation(): self.transport(url)

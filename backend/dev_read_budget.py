@@ -21,7 +21,7 @@ from read_deadline import check_read_deadline, read_deadline, read_timeout
 
 _OPERATION = ContextVar('domino_dev_read_operation', default=None)
 RPC_PER_OPERATION = 64
-CEILINGS = {'rpc': 120, 'gecko': 3, 'dex': 6}
+CEILINGS = {'rpc': 120, 'gecko': 6, 'dex': 6}
 WINDOW_SECONDS = 60
 GECKO_ROUTE = re.compile(
     r'https://api\.geckoterminal\.com/api/v2/networks/robinhood/pools/0x[0-9a-f]{64}'

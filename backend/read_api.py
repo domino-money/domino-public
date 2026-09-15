@@ -225,6 +225,10 @@ def create_app(service=None, *, gate=None, read_budget_seconds=60):
                     response = await call_next(request)
             except DataError:
                 response = JSONResponse({'error': 'read_deadline_exceeded'}, status_code=504)
+            except Exception:
+                # No hop may answer without the contract header (T1.3): an
+                # unexpected mid-hop failure is an upstream unavailability.
+                response = JSONResponse({'error': 'upstream_unavailable'}, status_code=503)
         response.headers['X-Domino-Read-Contract'] = CONTRACT_VERSION
         response.headers['X-Domino-Reader-Generation'] = generation
         return response
