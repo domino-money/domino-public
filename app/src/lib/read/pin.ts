@@ -21,12 +21,12 @@
  * route, schema or version.
  */
 export const PRODUCER_PIN = {
-  producerCommit: '55efb5a2e0a436d34dcd53271b9bca3613495596',
+  producerCommit: '8bdf83182f27ff140d222434e8ffc95d3c23cbdd',
   producerIssue: 95,
   packages: {
     'read-v1': {
       version: '1.1.0-rc.3',
-      manifestSha256: '690bdc98d974e848900c5b7110296298998be86fb3e24a571659ac6ecfd5c7ca',
+      manifestSha256: 'c56df97da89f2ec263ce5044bf694cac8acb539d710c2e3c2a3f5382bbd07e7d',
     },
     'session-v1': {
       version: '3.0.0-rc.2',
