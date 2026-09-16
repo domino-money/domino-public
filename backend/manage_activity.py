@@ -116,10 +116,16 @@ def ensure_anchor(catalogue,rpc,url,pool_id,*,search_from,span,max_spans,head_nu
     bounded scan finds it and the identity is then taken from that log.
     """
     with catalogue.connection() as conn:
+        registered=conn.execute('SELECT start_block FROM domino_activity.pools WHERE pool_id=%s',
+                                (pool_id,)).fetchone()
         event=conn.execute('SELECT block_number FROM domino_catalogue.events WHERE pool_id=%s',
                            (pool_id,)).fetchone()
         hint=conn.execute('SELECT 1 AS present FROM domino_catalogue.hints WHERE pool_id=%s',
                           (pool_id,)).fetchone()
+    if registered is not None:
+        # Registration already proved this anchor with the pool's own Initialize
+        # log, so a pool that is registered needs no scan at all.
+        return registered['start_block'],'stored_registration'
     if event is not None:
         return event['block_number'],'catalogue_event'
     found=find_initialize_anchor(rpc,pool_id,from_block=search_from,to_block=head_number-1,

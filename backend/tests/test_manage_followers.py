@@ -253,5 +253,23 @@ class ActivityFollowerCliTests(unittest.TestCase):
             self.assertEqual(self.store.pool(conn,POOL)['next_block'],10)
             self.assertEqual(conn.execute('SELECT count(*) AS n FROM domino_activity.chunks').fetchone()['n'],0)
 
+    def test_a_registered_pool_is_anchored_from_its_own_registration(self):
+        """The verified anchor in the registry beats a search window that misses."""
+        running=self.patches(reader_factory(5000))
+        for item in running:item.start()
+        try:
+            self.assertEqual(self.registered(POOL,10)[0],0)
+            run_main(manage_activity,['manage_activity.py','--request','--pool-id',POOL])
+            code,output=run_main(manage_activity,['manage_activity.py','--queue-worker',
+                                                  '--search-from','4000','--search-span','100',
+                                                  '--search-max-spans','1','--max-pools','1',
+                                                  '--anchor-only','--stale-claim-seconds','1'])
+        finally:
+            for item in running:item.stop()
+        self.assertEqual(code,0)
+        report=json.loads(output.strip().splitlines()[-1])
+        self.assertEqual(report['pools'][0]['anchorSource'],'stored_registration')
+        self.assertEqual(report['pools'][0]['anchorBlock'],10)
+
 
 if __name__=='__main__':unittest.main()
