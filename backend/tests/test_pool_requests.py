@@ -7,7 +7,7 @@ import unittest
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]))
 import psycopg
 
-from catalogue import configured_catalogue
+from catalogue import PgCatalogue
 from dev_postgres import ADMIN
 from discovery import DataError
 from pool_requests import PgRequests, REQUESTER_ROLE
@@ -54,8 +54,10 @@ class RequestTriggerTests(unittest.TestCase):
                      'set DOMINO_TEST_POSTGRES=1 after dev_postgres.py prepare-tests')
 class PoolRequestStoreTests(unittest.TestCase):
     def setUp(self):
-        self.catalogue=configured_catalogue()
-        assert self.catalogue.settings['dbname']=='domino_catalogue'
+        from dev_postgres import PORT, SOCKET
+        # The disposable test database: a development catalogue is never wiped.
+        self.catalogue=PgCatalogue({'host':str(SOCKET),'port':PORT,
+                                    'dbname':'domino_catalogue_tests'})
         with psycopg.connect(**self.catalogue.settings,user=ADMIN) as conn:
             conn.execute('TRUNCATE domino_activity.pool_requests')
         self.requests=PgRequests(self.catalogue)

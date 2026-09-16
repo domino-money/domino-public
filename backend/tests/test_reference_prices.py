@@ -11,7 +11,7 @@ from price_history import iso
 from reference_prices import (ALCHEMY_SOURCE, COINGECKO_SOURCE, MAPPINGS,
                               AlchemyCanonicalReference, coingecko_observations, mapping_for,
                               provenance, store_reference_observations)
-from catalogue import configured_catalogue
+from catalogue import PgCatalogue
 
 WETH='0x0bd7d308f8e1639fab988df18a8011f41eacad73'
 USDG='0x5fc5360d0400a0fd4f2af552add042d716f1d168'
@@ -127,8 +127,10 @@ class StoreValidationTests(unittest.TestCase):
 class ReferenceStorageTests(unittest.TestCase):
     """The migration's check admits a mapped reference and refuses a mismatched one."""
     def setUp(self):
-        self.catalogue=configured_catalogue()
-        assert self.catalogue.settings['dbname']=='domino_catalogue'
+        from dev_postgres import PORT, SOCKET
+        # The disposable test database: a development catalogue is never wiped.
+        self.catalogue=PgCatalogue({'host':str(SOCKET),'port':PORT,
+                                    'dbname':'domino_catalogue_tests'})
         with psycopg.connect(**self.catalogue.settings,user='domino_catalogue_admin') as conn:
             conn.execute("DELETE FROM domino_activity.price_observations "
                          "WHERE source IN ('alchemy_canonical_market_reference_v1',"
@@ -144,7 +146,8 @@ class ReferenceStorageTests(unittest.TestCase):
         self.assertEqual(store_reference_observations(self.catalogue,[self.row()]),1)
         with self.catalogue.connection() as conn:
             stored=conn.execute('''SELECT currency,source,observed_at,retrieved_at,price_usd,provenance
-              FROM domino_activity.price_observations''').fetchone()
+              FROM domino_activity.price_observations WHERE currency=%s AND source=%s''',
+              (WETH,ALCHEMY_SOURCE)).fetchone()
         self.assertEqual((stored['currency'],stored['source'],stored['price_usd']),
                          (WETH,ALCHEMY_SOURCE,'2500.0'))
         self.assertEqual(stored['provenance']['status'],'external_market_reference_unqualified')
@@ -162,8 +165,7 @@ class ReferenceStorageTests(unittest.TestCase):
 
     def test_the_reader_role_can_read_but_not_write_the_table(self):
         with psycopg.connect(**self.catalogue.settings,user='domino_catalogue_reader') as conn:
-            self.assertEqual(conn.execute('SELECT count(*) FROM domino_activity.price_observations')
-                             .fetchone()[0],0)
+            conn.execute('SELECT count(*) FROM domino_activity.price_observations').fetchone()
             with self.assertRaises(psycopg.errors.InsufficientPrivilege):
                 conn.execute("INSERT INTO domino_activity.price_observations VALUES "
                              "(4663,'0x"+'aa'*20+"','alchemy_historical',1,1,'1.0','{}'::jsonb)")
