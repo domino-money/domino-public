@@ -21,9 +21,9 @@ import type { CapabilitiesResponse as V2Capabilities, PoolAprEstimate } from 'ap
 /** Both namespaces expose the same flags; each wire validator requires its exact version. */
 export type ReadResponses = Omit<V1ReadResponses, 'capabilities'> & { capabilities: V1ReadResponses['capabilities'] | V2Capabilities }
 
-/** The nine read families, exactly the contract's `ReadRequests` keys. */
+/** The ten read families, exactly the contract's `ReadRequests` keys. */
 export type ReadRoute = keyof ReadRequests
-/** The nine routes plus the bridge's capabilities GET, which has a response but no request body. */
+/** The ten routes plus the bridge's capabilities GET, which has a response but no request body. */
 export type ReadKey = keyof ReadResponses
 export type RequestOf<R extends ReadKey> = R extends ReadRoute ? ReadRequests[R] : null
 export type ErrorCode = ErrorResponse['error']
@@ -41,7 +41,7 @@ export interface ReadValidators {
   validateRequest<R extends ReadRoute>(route: R, payload: unknown): payload is ReadRequests[R]
   validateError(status: number, payload: unknown): payload is ErrorResponse
   /** Only after assertResponse accepted a v2 wrapper; never computes an APR. */
-  poolAprEstimate?(payload: unknown): PoolAprEstimate
+  poolAprEstimate?(payload: unknown): PoolAprEstimate | undefined
 }
 
 /** What a transport observed, before anything about it is believed. */
@@ -59,7 +59,7 @@ export interface RawReply {
   contentType: string | null
   /** `X-Domino-Read-Contract`. */
   contractHeader: string | null
-  /** `X-Domino-Request-Id`, kept only when it looks like one. */
+  /** `X-Domino-Request-Id`, only in a shape requestId.ts accepts (a Worker UUID or a gateway's 32 lowercase hex), else null. */
   requestIdHeader: string | null
   retryAfterHeader: string | null
   body: RawBody
@@ -70,7 +70,7 @@ export interface Provenance {
   transport: 'fixture' | 'bridge'
   /** Package-relative fixture path, fixture transport only. */
   fixture?: string
-  /** Support identifier from the bridge. Never rendered. */
+  /** Support identifier from the Worker (a UUID) or, on the development lane, the gateway (32 lowercase hex). Never rendered as text. */
   requestId?: string
   /** The contract header as observed, null when absent. */
   contract: string | null
@@ -143,12 +143,21 @@ export type UnavailableCause =
   | { kind: 'read_deadline'; limit: 'attempt' | 'read' }
 
 /**
+ * Why a market read carries no pool APR estimate: read-v2 is off on this
+ * connection, its namespace could not be reached, its reply failed the
+ * estimate contract this build carries (a read service on another release),
+ * or the answer was served from the read service's stored snapshot, which
+ * keeps no estimate.
+ */
+export type EstimateReason = 'estimate_not_enabled' | 'estimate_transport_unavailable' | 'estimate_contract_mismatch' | 'estimate_not_in_snapshot'
+
+/**
  * Everything a read can come back as. Only `ok` carries data, and the data in
  * it has passed the package runtime and the identity checks. Every other state
  * carries nothing a screen could partly render.
  */
 export type ReadOutcome<R extends ReadKey = ReadRoute> = { route: R; provenance: Provenance } & (
-  | { state: 'ok'; data: ReadResponses[R]; observation: Observation; estimate?: PoolAprEstimate; estimateReason?: 'estimate_not_enabled' | 'estimate_transport_unavailable' }
+  | { state: 'ok'; data: ReadResponses[R]; observation: Observation; estimate?: PoolAprEstimate; estimateReason?: EstimateReason }
   /** 401 `{"error":"beta_access_required"}`: the invitation cookie is missing or expired. */
   | { state: 'gate_required' }
   /** 503 access page: the gate's own configuration is broken. */
@@ -196,9 +205,27 @@ export interface ReadOptions {
   onAttempt?: () => void
 }
 
+/**
+ * Whether this page's capabilities list a route, asked without a read of its
+ * own. `failed` carries what a read of that route would have come back as
+ * instead: the gate, a forwarder refusal, live data switched off, an abort.
+ */
+export type RouteCheck =
+  | { state: 'enabled' }
+  | { state: 'not_enabled' }
+  | { state: 'failed'; outcome: FailedOutcome<ReadRoute> }
+
 export interface ReadSource {
   readonly transport: 'fixture' | 'bridge'
   read<R extends ReadRoute>(route: R, request: ReadRequests[R], options?: ReadOptions): Promise<ReadOutcome<R>>
+  /**
+   * Whether the deployment lists `route`, from the source's one shared
+   * capabilities answer: never queued, paced or posted, so a route that is
+   * off costs a screen nothing, not even a place in the queue. Optional: a
+   * source without it is never asked, and its screens read as if the route
+   * were not listed.
+   */
+  routeEnabled?(route: ReadRoute, options?: Pick<ReadOptions, 'signal' | 'deadlineAt'>): Promise<RouteCheck>
 }
 
 declare const opaque: unique symbol

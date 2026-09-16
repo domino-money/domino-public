@@ -22,13 +22,13 @@ const { createFixtureSource } = built('fixtureSource');
 const { createBridgeSource, READ_HEADERS, READ_INIT } = built('bridgeSource');
 const { BRIDGE_RETRY } = built('pipeline');
 const { ERROR_CLASS } = built('errors');
-const { createScheduledSource } = built('scheduler');
+const { createScheduledSource, GATEWAY_BUDGET, BUDGET_RESERVE } = built('scheduler');
 const { describeFailure, reasonText } = built('describe');
 const decimal = built('decimal');
 const project = built('project');
 const pagers = built('pagers');
 const scenarios = built('scenarios');
-const { loadSelectedPools, createReadMarketsProvider, tableMarketRequest } = built('marketsProvider');
+const { loadSelectedPools, createReadMarketsProvider, tableMarketRequest, LEAVE_GRACE_MS, BUSY_RECOVERY_ATTEMPTS, PROVIDER_BUSY_ATTEMPTS, busyRecoveryDelayMs, providerBusyDelayMs } = built('marketsProvider');
 const markets = require('../.test-build/app/src/lib/markets.js');
 const middleware = require('../.test-build/app/functions/_middleware.js');
 
@@ -214,6 +214,34 @@ test('every mutation in the scenarios still passes the package runtime', () => {
     const body = scenarios.withoutHistory(JSON.parse(text(gateway(`pool-market.${name}`))));
     assert.equal(runtime.validateResponse('pool-market', body), true, `pool-market.${name} without history`);
   }
+  const stored = scenarios.MARKET_CASES.filter((c) => c.script['markets-snapshot']);
+  assert.equal(stored.length, 10, 'the snapshot cases of the read lab');
+  for (const { id, script } of stored) {
+    const [step] = script['markets-snapshot'];
+    if (!step.mutate) continue;
+    assert.equal(runtime.validateResponse('markets-snapshot', step.mutate(JSON.parse(text(step.fixture)))), true, id);
+  }
+});
+
+test('a fixture source lists exactly the routes its script answers, asked without a request; the screens’ wrappers and the queue pass the question on', async () => {
+  const { withReadBudget } = built('screens/screenRead');
+  const { withDelays } = built('screens/delayedSource');
+  const script = { 'markets-snapshot': [{ fixture: gateway('markets-snapshot.subset') }], token: [{ fixture: gateway('token.success') }] };
+  const source = fixtures(script);
+  assert.deepEqual(await source.routeEnabled('markets-snapshot'), { state: 'enabled' });
+  assert.deepEqual(await source.routeEnabled('pool-metrics'), { state: 'not_enabled' });
+  const cancelled = new AbortController();
+  cancelled.abort();
+  const stopped = await source.routeEnabled('token', { signal: cancelled.signal });
+  assert.deepEqual([stopped.state, stopped.outcome.route, stopped.outcome.state], ['failed', 'token', 'aborted']);
+  assert.deepEqual(source.requests, [], 'asking is not a read');
+  const logged = withDelays(source, () => ({ hang: true }));
+  const wrapped = withReadBudget(createScheduledSource(logged, { minIntervalMs: 0 }));
+  assert.deepEqual([await wrapped.routeEnabled('markets-snapshot'), await wrapped.routeEnabled('pool-positions')], [{ state: 'enabled' }, { state: 'not_enabled' }]);
+  assert.deepEqual(logged.log, [], 'never delayed, never logged');
+  const bare = { transport: 'fixture', read: source.read };
+  assert.equal('routeEnabled' in withReadBudget(bare), false, 'a source that cannot say still cannot through the wrapper');
+  assert.equal('routeEnabled' in withDelays(bare, () => undefined), false);
 });
 
 // ---------------------------------------------------------------------------
@@ -380,7 +408,7 @@ test('the honest states have their own words, and none offers a Retry that canno
     const text = describeFailure({ route: 'pool-market', provenance: {}, ...failure });
     return [text.title, text.retry, Boolean(text.signIn)];
   };
-  const NOT_CONNECTED = 'Live data isn\'t connected yet';
+  const NOT_CONNECTED = 'Live data unavailable';
   assert.deepEqual(words({ state: 'not_connected', reason: 'bridge_unavailable' }), [NOT_CONNECTED, false, false]);
   assert.deepEqual(words({ state: 'not_connected', reason: 'no_forwarder' }), [NOT_CONNECTED, false, false]);
   assert.deepEqual(words({ state: 'not_connected', reason: 'not_found' }), ['Live data isn\'t available on this address', false, false]);
@@ -388,7 +416,7 @@ test('the honest states have their own words, and none offers a Retry that canno
   for (const reason of ['bridge_data_mode_disabled', 'route_not_enabled', 'live_data_disabled']) {
     assert.deepEqual(words({ state: 'disabled', reason }), ['Live data is switched off for now', false, false], reason);
   }
-  assert.deepEqual(words({ state: 'gate_required' }), ['Beta access needed', false, true]);
+  assert.deepEqual(words({ state: 'gate_required' }), ['Access expired', false, true]);
   assert.deepEqual(words({ state: 'busy', retryAfterSeconds: 3 }), ['Read service busy', true, false]);
   assert.deepEqual(words({ state: 'unavailable', cause: { kind: 'read_deadline', limit: 'read' }, retryable: true }), ['Pool data unavailable', true, false]);
   // Every producer code the error table calls transient reads as temporarily unavailable, with a Retry for a person;
@@ -651,10 +679,53 @@ test('through the real bridge: a read is ok, with the bridge’s request id and 
   assert.equal(outcome.state, 'ok');
   assert.equal(outcome.provenance.transport, 'bridge');
   assert.equal(outcome.provenance.contract, RC3);
-  assert.match(outcome.provenance.requestId, /^[0-9a-f-]{36}$/);
+  // The Worker's own crypto.randomUUID(), exactly that shape.
+  assert.match(outcome.provenance.requestId, /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/);
   assert.deepEqual(bridge.browser.map((r) => [r.init.method, r.path]), [['GET', '/api/read/v1/capabilities'], ['POST', '/api/read/v1/pool-market']]);
   await source.read('token', tokenRequest);
   assert.equal(bridge.browser.filter((r) => r.init.method === 'GET').length, 1, 'capabilities are asked once');
+});
+
+test('a request id is kept in both shapes Domino writes: the gateway’s 32 hex through local-live, the Worker’s UUID', async () => {
+  const GATEWAY_ID = 'c549ebea4bfca053878e1646dfe6cf7d';
+  const WORKER_ID = '0f1e2d3c-4b5a-4968-8778-695a4b3c2d1e';
+  // Answers exactly as the local-live proxy passes a reply on: the contract header, and the id only when one is given.
+  const answer = (id) => async (path) =>
+    new Response(text(gateway(path.endsWith('/capabilities') ? 'capabilities.live_read_only' : 'token.success')), {
+      status: 200,
+      headers: { 'Content-Type': 'application/json; charset=utf-8', 'X-Domino-Read-Contract': RC3, ...(id === null ? {} : { 'X-Domino-Request-Id': id }) },
+    });
+  for (const [id, kept] of [
+    [GATEWAY_ID, GATEWAY_ID],
+    [WORKER_ID, WORKER_ID],
+    [GATEWAY_ID.toUpperCase(), undefined],
+    [GATEWAY_ID.slice(1), undefined],
+    [`${GATEWAY_ID}0`, undefined],
+    ['-'.repeat(36), undefined],
+    [WORKER_ID.toUpperCase(), undefined],
+    ['arbitrary-upstream-value', undefined],
+    [null, undefined],
+  ]) {
+    const outcome = await createBridgeSource({ enabled: true, validators: runtime, fetch: answer(id), clock: fakeClock() }).read('token', tokenRequest);
+    assert.equal(outcome.state, 'ok', String(id));
+    assert.equal(outcome.provenance.requestId, kept, String(id));
+  }
+  // A reply built by hand, as a fixture source or a test builds one, meets the same filter in the pipeline.
+  const { runRead } = built('pipeline');
+  const byHand = (requestIdHeader) =>
+    runRead({
+      route: 'token',
+      request: tokenRequest,
+      transport: async () => raw(200, 'application/json', text(gateway('token.success')), RC3, { requestIdHeader }),
+      validators: runtime,
+      policy: BRIDGE_RETRY,
+      clock: fakeClock(),
+      label: { transport: 'fixture' },
+    });
+  assert.equal((await byHand(GATEWAY_ID)).provenance.requestId, GATEWAY_ID);
+  assert.equal((await byHand('x'.repeat(32))).provenance.requestId, undefined);
+  const { requestIdOf } = built('requestId');
+  assert.deepEqual([GATEWAY_ID, WORKER_ID, '-'.repeat(36), 'x'.repeat(32), '', null, undefined].map((value) => requestIdOf(value)), [GATEWAY_ID, WORKER_ID, null, null, null, null, null]);
 });
 
 test('request hygiene: same-origin JSON, three headers, no credentials of our own, and nothing sent for a bad request', async () => {
@@ -752,7 +823,7 @@ test('through the real bridge: the wallet cursor goes back byte for byte and nev
   const second = await pager.more();
   assert.equal(second.failure, null);
   assert.equal(bridge.upstream.at(-1).body.cursor, MUTATED_CURSOR, 'the gateway received the exact handle');
-  assert.deepEqual(Object.keys(second.view).sort(), ['freshness', 'hasMore', 'notes', 'pages', 'restarted', 'rows', 'unavailable']);
+  assert.deepEqual(Object.keys(second.view).sort(), ['freshness', 'hasMore', 'notes', 'pages', 'probed', 'restarted', 'rows', 'skipped', 'skippedReason', 'unavailable']);
   assert.equal(second.view.hasMore, false);
   assert.doesNotMatch(JSON.stringify(second.view), /c0ffee/);
 });
@@ -887,6 +958,139 @@ test('pagination: the handle is minted from the page and passed back verbatim; r
   const pools = cases.find((c) => c.id === 'pools.revision-changed');
   const poolsResult = await pagers.readRestartingOnce(fixtures(pools.script), 'pools', pools.request);
   assert.deepEqual([poolsResult.outcome.state, poolsResult.restarted], ['ok', true]);
+});
+
+// ---------------------------------------------------------------------------
+// wallet-assets partial pages (2cb559e): candidatesProbed, candidatesSkipped, skippedReason
+// ---------------------------------------------------------------------------
+
+/** An InventoryPage that probed some provider candidates and skipped others. */
+const skippedPage = (skipped, probed = 13, reason = 'request_budget_exhausted') => (body) => ({
+  ...body,
+  inventory: { ...body.inventory, candidatesProbed: probed, candidatesSkipped: skipped, skippedReason: skipped > 0 ? reason : null },
+});
+const WALLET_REQUEST = () => requestFor(catalog, 'wallet-assets');
+const ALL_LOADED = 'All pages loaded.';
+
+test('a page that skipped candidates is counted, never called complete; an older producer counts as none', async () => {
+  const partial = await pagers.createWalletPager(one('wallet-assets', gateway('wallet-assets.last-page'), { mutate: skippedPage(7) }), WALLET_REQUEST()).first();
+  assert.equal(partial.failure, null);
+  assert.deepEqual([partial.view.skipped, partial.view.skippedReason, partial.view.probed, partial.view.hasMore], [7, 'request_budget_exhausted', 13, false]);
+  assert.ok(!partial.view.notes.includes(ALL_LOADED), 'a list that skipped candidates is not complete, and no sentence says it is');
+  assert.deepEqual(partial.view.notes, ['Balances at the snapshot block. Not proof of wallet control.'], 'and nothing is said in its place');
+
+  const whole = await pagers.createWalletPager(one('wallet-assets', gateway('wallet-assets.last-page')), WALLET_REQUEST()).first();
+  assert.deepEqual([whole.view.skipped, whole.view.skippedReason, whole.view.probed], [0, null, 0]);
+  // Changed on purpose (review of 2026-09-14, live step e): a provider page covers only what the provider indexes, so even a last page that skipped nothing is not called complete.
+  assert.ok(!whole.view.notes.includes(ALL_LOADED), 'a last page ends the pages, never the holdings');
+
+  const older = await pagers.createWalletPager(
+    one('wallet-assets', gateway('wallet-assets.last-page'), {
+      mutate: (body) => {
+        const { candidatesProbed: _p, candidatesSkipped: _s, skippedReason: _r, ...inventory } = body.inventory;
+        return { ...body, inventory };
+      },
+    }),
+    WALLET_REQUEST(),
+  ).first();
+  assert.equal(older.failure, null, 'the fields are optional in the contract');
+  assert.deepEqual([older.view.skipped, older.view.skippedReason, older.view.probed], [0, null, null], 'absent: none skipped, and nothing claimed about how many were checked');
+  const nulls = await pagers.createWalletPager(one('wallet-assets', gateway('wallet-assets.last-page'), { mutate: (b) => ({ ...b, inventory: { ...b.inventory, candidatesProbed: null, candidatesSkipped: null, skippedReason: null } }) }), WALLET_REQUEST()).first();
+  assert.deepEqual([nulls.view.skipped, nulls.view.probed], [0, null]);
+
+  // The contract bounds the count at a provider page's 20: more is a reply that fails validation, and nothing is listed.
+  const beyond = await one('wallet-assets', gateway('wallet-assets.last-page'), { mutate: skippedPage(21) }).read('wallet-assets', WALLET_REQUEST());
+  assert.deepEqual([beyond.state, beyond.reason], ['invalid', 'response_contract']);
+  // A page with more to come never said it was complete anyway.
+  const more = await pagers.createWalletPager(one('wallet-assets', gateway('wallet-assets.opaque-page'), { mutate: skippedPage(3) }), WALLET_REQUEST()).first();
+  assert.deepEqual([more.view.skipped, more.view.hasMore], [3, true]);
+  assert.ok(more.view.notes.includes('One page of the provider’s inventory. More are available.'));
+});
+
+test('no provider page calls the list complete: not a page of no provider rows, not a last page of rows', async () => {
+  const FOOTNOTE = 'Balances at the snapshot block. Not proof of wallet control.';
+  // The live review's address (a PoolManager holding a pool's reserves): the provider returned no rows, and the reply listed native ETH at 0.
+  const nothing = await pagers.createWalletPager(
+    one('wallet-assets', gateway('wallet-assets.last-page'), {
+      mutate: (body) => ({ ...body, items: [{ ...body.items[0], amountRaw: '0' }], inventory: { ...body.inventory, hasMore: false, nextCursor: null, rowsReceived: 0, candidatesProbed: 0, candidatesSkipped: 0, skippedReason: null } }),
+    }),
+    { wallet: `0x${'83'.repeat(20)}`, autoDiscover: true },
+  ).first();
+  assert.equal(nothing.failure, null);
+  assert.deepEqual(nothing.view.rows.map((row) => [row.key, row.amount.state]), [[`4663:${NATIVE}`, 'zero']]);
+  assert.deepEqual(nothing.view.notes, [FOOTNOTE], 'a page of no provider rows says nothing about what the address holds, and nothing says the list is whole');
+  const rows = await pagers.createWalletPager(
+    one('wallet-assets', gateway('wallet-assets.last-page'), { mutate: (body) => ({ ...body, inventory: { ...body.inventory, rowsReceived: 1, candidatesProbed: 1 } }) }),
+    WALLET_REQUEST(),
+  ).first();
+  assert.deepEqual([rows.view.hasMore, rows.view.skipped], [false, 0]);
+  assert.deepEqual(rows.view.notes, [FOOTNOTE], 'a last page of rows ends the pages, and that is all it ends');
+});
+
+test('skipped candidates add up over a list’s pages, and count again from a restarted first page', async () => {
+  const request = WALLET_REQUEST();
+  const firstPage = { fixture: gateway('wallet-assets.opaque-page'), mutate: (b) => skippedPage(2, 11)(scenarios.withCursor(MUTATED_CURSOR)(b)), expectRequest: request };
+  const source = fixtures({ 'wallet-assets': [firstPage, { fixture: gateway('wallet-assets.last-page'), mutate: skippedPage(3, 17), expectRequest: { ...request, cursor: MUTATED_CURSOR } }] });
+  const pager = pagers.createWalletPager(source, request);
+  assert.equal((await pager.first()).view.skipped, 2);
+  const second = await pager.more();
+  assert.equal(second.failure, null);
+  assert.deepEqual([second.view.skipped, second.view.probed, second.view.pages], [5, 28, 2]);
+  assert.ok(!second.view.notes.includes(ALL_LOADED), 'the last page of a list that skipped candidates on any page is not a complete list');
+
+  const restartSource = fixtures({
+    'wallet-assets': [firstPage, { fixture: errorFixture('wallet-assets.invalid_or_expired_cursor'), expectRequest: { ...request, cursor: MUTATED_CURSOR } }],
+  });
+  const restarting = pagers.createWalletPager(restartSource, request);
+  assert.equal((await restarting.first()).view.skipped, 2);
+  const restarted = await restarting.more();
+  assert.equal(restarted.failure, null);
+  assert.equal(restarted.view.restarted, true);
+  assert.deepEqual([restarted.view.pages, restarted.view.skipped, restarted.view.probed], [1, 2, 11], 'the restart’s first page counts from zero, not on top of the old list');
+});
+
+test('adopt() adds only the held balances a by-address check found for what it asked, and changes nothing else of the list', async () => {
+  const request = WALLET_REQUEST();
+  const HELD = `0x${'ab'.repeat(20)}`;
+  const ZERO_HOLD = `0x${'34'.repeat(20)}`;
+  const NOT_ASKED = `0x${'56'.repeat(20)}`;
+  const listSource = fixtures({
+    'wallet-assets': [
+      { fixture: gateway('wallet-assets.opaque-page'), mutate: scenarios.withCursor(MUTATED_CURSOR), expectRequest: request },
+      // The next page lists the token the check found.
+      { fixture: gateway('wallet-assets.last-page'), mutate: (body) => (body.items.push({ ...body.items[1], address: HELD }), body), expectRequest: { ...request, cursor: MUTATED_CURSOR } },
+    ],
+  });
+  const listed = pagers.createWalletPager(listSource, request);
+  const before = (await listed.first()).view;
+  assert.ok(before.rows.every((row) => row.via === 'page' && row.block === 700), 'a page’s rows say they came from a page, at its block');
+
+  const checkSource = one('wallet-assets', gateway('wallet-assets.not-requested'), {
+    mutate: (body) => {
+      const held = body.items[1];
+      body.snapshot = { ...body.snapshot, number: 705 };
+      body.items = [body.items[0], held, { ...held, address: HELD }, { ...held, address: ZERO_HOLD, amountRaw: '0' }, { ...held, address: NOT_ASKED }];
+      return body;
+    },
+  });
+  const check = await checkSource.read('wallet-assets', { wallet: request.wallet, tokens: [HELD, ZERO_HOLD], autoDiscover: false });
+  assert.equal(check.state, 'ok');
+  const after = listed.adopt(check, [`0x${'AB'.repeat(20)}`, ZERO_HOLD]);
+  const added = after.rows.filter((row) => !before.rows.some((b) => b.key === row.key));
+  assert.deepEqual(added.map((row) => [row.key, row.via, row.block, row.amount.state]), [[`4663:${HELD}`, 'address', 705, 'value']], 'only the held, asked-for token; an address asked in capitals is the same address');
+  assert.equal(after.rows.find((row) => row.key === `4663:${NATIVE}`).via, 'page', 'native ETH from the check adds nothing');
+  for (const key of ['hasMore', 'notes', 'freshness', 'pages', 'unavailable', 'skipped', 'skippedReason', 'probed', 'restarted']) {
+    assert.deepEqual(after[key], before[key], `${key} is the list’s own`);
+  }
+  // A token a page already listed stays the page's.
+  assert.equal(listed.adopt(check, [`0x${'11'.repeat(20)}`]).rows.find((row) => row.key === `4663:0x${'11'.repeat(20)}`).via, 'page');
+
+  // The handle was never touched: the next page follows it, and its row for the same token replaces the adopted one.
+  const next = await listed.more();
+  assert.equal(next.failure, null, 'the cursor went back exactly as received');
+  assert.equal(listSource.requests[1].request.cursor, MUTATED_CURSOR);
+  const paged = next.view.rows.find((row) => row.key === `4663:${HELD}`);
+  assert.deepEqual([paged.via, paged.page, paged.block], ['page', 2, 700]);
 });
 
 // ---------------------------------------------------------------------------
@@ -1281,15 +1485,17 @@ test('provider figures kept after a failed refresh, during Retry and after an ab
   assertProviderRowsStale(provider.getSnapshot().previous, 'Retry pressed again');
   viewer();
 
-  // An abandoned read, restarted by the next viewer.
+  // An abandoned read, restarted by the next viewer: abandoned once the last viewer has been gone past the grace period.
   const again = holdable(providerCase);
-  const restarted = createReadMarketsProvider({ source: again.source, poolIds: [FIXTURE_POOL], kind: 'fixture', now: () => 5_000_000 });
+  const timers = fakeClock();
+  const restarted = createReadMarketsProvider({ source: again.source, poolIds: [FIXTURE_POOL], kind: 'fixture', now: () => 5_000_000, clock: timers });
   assert.equal((await settled(restarted, () => restarted.ensure())).phase, 'ready');
   again.hold();
   const leaving = restarted.subscribe(() => undefined);
   restarted.refresh();
   assert.equal(restarted.getSnapshot().previous.markets[0].tvlUsd.state, 'provider', 'a refresh of current rows keeps them as they are');
   leaving();
+  timers.advance(LEAVE_GRACE_MS);
   const back = restarted.subscribe(() => undefined);
   restarted.ensure();
   assert.equal(restarted.getSnapshot().phase, 'loading');
@@ -1359,10 +1565,11 @@ function counted(provider) {
   };
 }
 
-test('D4: the last viewer leaving the deferred provider releases its inner subscription, which cancels the read; a viewer who returns reads again', async () => {
+test('D4: the last viewer leaving the deferred provider releases its inner subscription, which cancels the read after the grace period; a viewer who returns reads again', async () => {
   const { deferredMarkets } = built('deferredMarkets');
   const reads = gated(scenarios.MARKET_CASES.find((c) => c.id === 'provider').script);
-  const inner = counted(createReadMarketsProvider({ source: reads.source, poolIds: [FIXTURE_POOL], kind: 'fixture' }));
+  const timers = fakeClock();
+  const inner = counted(createReadMarketsProvider({ source: reads.source, poolIds: [FIXTURE_POOL], kind: 'fixture', clock: timers }));
   let loads = 0;
   const provider = deferredMarkets('fixture', async () => ((loads += 1), inner.provider));
 
@@ -1373,7 +1580,11 @@ test('D4: the last viewer leaving the deferred provider releases its inner subsc
   assert.equal(inner.active(), 1, 'one inner subscription while someone looks');
   viewer();
   assert.equal(inner.active(), 0, 'the last viewer leaving released the inner subscription');
-  assert.equal(reads.counts.aborted, 1, 'and the read nobody waited for was cancelled');
+  assert.equal(reads.counts.aborted, 0, 'not cancelled at once: a screen that follows straight away would join it');
+  timers.advance(LEAVE_GRACE_MS - 1);
+  assert.equal(reads.counts.aborted, 0, 'still inside the grace period');
+  timers.advance(1);
+  assert.equal(reads.counts.aborted, 1, 'and the read nobody came back for was cancelled');
 
   // Someone comes back: subscribed again, read again, and told.
   reads.hold(false);
@@ -1424,8 +1635,11 @@ test('D4: a viewer who leaves before the chunk arrives starts nothing; the next 
 
 // ---------------------------------------------------------------------------
 // The read budget (rugged97 on #45): per selected pool one pool-market read
-// without price history, then each distinct token once. No pool-metrics, one
-// capabilities GET per source, strictly one read at a time, and no cache.
+// without price history, and each distinct token once. A bare load uses no
+// optional route and keeps nothing; one capabilities GET per source, and
+// strictly one read at a time. Every row is out after its own pool-market
+// read, and the tokens it still needs are read right after it, so the rows
+// complete one by one (#138 §5).
 // ---------------------------------------------------------------------------
 
 const POOL_A = `0x${'a1'.repeat(32)}`;
@@ -1434,6 +1648,7 @@ const TOKEN_Y = `0x${'22'.repeat(20)}`;
 const TOKEN_Z = `0x${'33'.repeat(20)}`;
 /** Two pools that share one currency: A/Y and Y/Z, where A is the native currency. Test data only. */
 const BUDGET_POOLS = { [POOL_A]: [NATIVE, TOKEN_Y], [POOL_Z]: [TOKEN_Y, TOKEN_Z] };
+/** Each pool's market, then the tokens its row still needs: A's native and Y, then Z's Z alone, since Y is read. */
 const WIRE_ORDER = ['pool-market', 'token', 'token', 'pool-market', 'token'];
 
 /** The package's pool-market reply without history, rewritten to answer for another pool id and pair. */
@@ -1477,7 +1692,7 @@ const budgetAnswer = (route, body) => {
   throw new Error(`the table asked ${route}`);
 };
 
-test('the table’s load is N pool-market reads without price history plus U distinct token reads, one at a time, and never pool-metrics', async () => {
+test('a bare load is N pool-market reads without price history, each followed by the token reads its row still needs, U distinct in all, one at a time, and never pool-metrics', async () => {
   const script = {
     'pool-market': Object.entries(BUDGET_POOLS).map(([poolId, currencies]) => ({ fixture: gateway('pool-market.not-requested'), mutate: () => marketFor(poolId, currencies), expectRequest: { poolId, includePriceHistory: false } })),
     token: [NATIVE, TOKEN_Y, TOKEN_Z].map((address) => ({ fixture: gateway(address === NATIVE ? 'token.native' : 'token.success'), mutate: () => tokenFor(address, 'TKN'), expectRequest: { token: address } })),
@@ -1510,7 +1725,7 @@ test('the table’s load is N pool-market reads without price history plus U dis
   assert.deepEqual(calls.filter((c) => c.route === 'token').map((c) => c.request.token), [NATIVE, TOKEN_Y, TOKEN_Z], 'the shared token is read once');
   assert.deepEqual(loaded.rows.map((r) => r.poolId), Object.keys(BUDGET_POOLS), 'rows keep the configured order');
   assert.deepEqual(loaded.rows.map((r) => r.feeAprPercent.reason), ['fee_apr_not_provided', 'fee_apr_not_provided']);
-  // Nothing is kept between loads: the next load reads everything again.
+  // A bare load keeps nothing between loads: the next one reads everything again.
   await loadSelectedPools(source, Object.keys(BUDGET_POOLS));
   assert.deepEqual(calls.map((c) => c.route), [...WIRE_ORDER, ...WIRE_ORDER]);
 });
@@ -1588,6 +1803,1084 @@ test('an empty selection reads nothing at all, not even the capabilities GET, an
   const clock = fakeClock();
   await loadSelectedPools(createScheduledSource(createBridgeSource({ enabled: true, validators: runtime, fetch: bridge.fetch, clock }), { clock }), []);
   assert.deepEqual(bridge.wire, []);
+  // Nor does the provider ask which routes are listed for a table with no pools.
+  let asked = 0;
+  const probing = createReadMarketsProvider({ source: { ...idle, routeEnabled: async () => ((asked += 1), { state: 'enabled' }) }, poolIds: [], kind: 'bridge' });
+  assert.equal((await settled(probing, () => probing.ensure())).phase, 'ready');
+  assert.deepEqual([reads, asked], [0, 0]);
+});
+
+// ---------------------------------------------------------------------------
+// The provider's load (G0, G1, G2): which optional routes are listed is asked
+// without a POST or a place in the queue; the stored markets snapshot first,
+// when listed; pool-metrics for each row, when listed; token metadata kept
+// for the page. Every figure still comes from a validated reply.
+// ---------------------------------------------------------------------------
+
+const { createSnapshotMemo, planSnapshot, SNAPSHOT_RETRY_MS } = built('marketsSnapshot');
+const { marketPoolPrice } = built('marketPrice');
+const { OTHER_POOL } = scenarios;
+
+/** What production's capabilities list today: the seven public reads and no optional route. */
+const PRODUCTION_READS = ['token', 'pools', 'pool-market', 'wallet-assets', 'nft-positions', 'catalogue', 'pool-activity'];
+const capabilitiesListing = (enabledReads) => ({ ...JSON.parse(text(gateway('capabilities.live_read_only'))), enabledReads });
+const json200 = (body) => ({ status: 200, text: JSON.stringify(body) });
+const BUDGET_IDS = Object.keys(BUDGET_POOLS);
+
+/** One budget pool's stored entry, from its rewritten market read. */
+function storedEntry(poolId, { observedAt = 1010, cacheAgeSeconds = 0 } = {}) {
+  const read = marketFor(poolId, BUDGET_POOLS[poolId]);
+  return { poolId, pool: read.pool, market: { ...read.market, cache: { ...read.market.cache, ageSeconds: cacheAgeSeconds } }, observedAt };
+}
+
+/** The package's snapshot reply holding these entries, as an answer to `requested`. */
+function snapshotOf(pools, { requested = BUDGET_IDS, builtAt = 1010, ageSeconds = 0 } = {}) {
+  return { ...JSON.parse(text(gateway('markets-snapshot.subset'))), builtAt, ageSeconds, requested, pools };
+}
+
+/** pool-metrics fixture `name`, answering for `poolId`. */
+function metricsFor(poolId, name = 'qualified') {
+  const body = JSON.parse(text(gateway(`pool-metrics.${name}`)));
+  body.poolId = poolId;
+  if (body.coverage && 'poolId' in body.coverage) body.coverage.poolId = poolId;
+  return body;
+}
+
+/** The budget pools' bridge, with a stored snapshot of both and pool-metrics for the pool asked; any answer can be replaced. */
+function storeAnswer({ snapshot, metrics, market, token } = {}) {
+  return (route, body) => {
+    if (route === 'markets-snapshot') return snapshot?.(body) ?? json200(snapshotOf(BUDGET_IDS.map((id) => storedEntry(id))));
+    if (route === 'pool-metrics') return metrics?.(body.poolId) ?? json200(metricsFor(body.poolId));
+    if (route === 'pool-market') return market?.(body.poolId) ?? budgetAnswer(route, body);
+    if (route === 'token') return token?.(body.token) ?? budgetAnswer(route, body);
+    throw new Error(`the table asked ${route}`);
+  };
+}
+
+/** The app's provider over the app's source shape (the scheduler over a bridge source), with a fake clock for pacing and the snapshot's wait. */
+function bridgeProvider(answer, enabledReads) {
+  const bridge = stubBridge(answer, { capabilities: capabilitiesListing(enabledReads) });
+  const clock = fakeClock();
+  const source = createScheduledSource(createBridgeSource({ enabled: true, validators: runtime, fetch: bridge.fetch, clock }), { clock });
+  const provider = createReadMarketsProvider({ source, poolIds: BUDGET_IDS, kind: 'bridge', monotonic: clock.monotonic });
+  return { provider, bridge, clock, wire: () => bridge.wire.map((r) => `${r.method} ${r.path.replace('/api/read/v1/', '')}`) };
+}
+const LEAN_WIRE = WIRE_ORDER.map((route) => `POST ${route}`);
+
+test('markets-snapshot identity: a subset or an unbuilt store is an answer; an echo of another question, an entry twice, not asked for, or about another pool is not', () => {
+  const asked = { poolIds: [FIXTURE_POOL] };
+  const subset = () => JSON.parse(text(gateway('markets-snapshot.subset')));
+  const judge = (request, body) => {
+    assert.equal(runtime.validateResponse('markets-snapshot', body), true, 'the package runtime accepts the mutation');
+    const outcome = interpretReply('markets-snapshot', request, raw(200, 'application/json', JSON.stringify(body)), runtime, provenance);
+    return outcome.state === 'ok' ? 'ok' : `${outcome.state} ${outcome.reason}`;
+  };
+  const cases = [
+    ['the subset fixture, asked for its pool', asked, subset(), 'ok'],
+    ['asked for two, one stored: the other is absent', { poolIds: [FIXTURE_POOL, OTHER_POOL] }, { ...subset(), requested: [FIXTURE_POOL, OTHER_POOL] }, 'ok'],
+    ['an unbuilt store holds nothing', asked, { ...subset(), status: 'not_built', pools: [], builtAt: null, ageSeconds: null }, 'ok'],
+    ['asked in capitals', { poolIds: [`0x${FIXTURE_POOL.slice(2).toUpperCase()}`] }, subset(), 'ok'],
+    ['an unfiltered question, answered by the package’s own fixture', {}, JSON.parse(text(gateway('markets-snapshot.success'))), 'ok'],
+    ['an echo that is not the question', asked, { ...subset(), requested: [OTHER_POOL] }, 'invalid identity_mismatch'],
+    ['an echo of a filter nobody sent', {}, subset(), 'invalid identity_mismatch'],
+    ['no echo for a filtered question: the answer to an unfiltered one', asked, { ...subset(), requested: [] }, 'invalid identity_mismatch'],
+    ['the package’s unfiltered fixture, asked with the empty filter it answers', { poolIds: [] }, JSON.parse(text(gateway('markets-snapshot.success'))), 'ok'],
+    ['an unbuilt store with an entry', asked, { ...subset(), status: 'not_built', builtAt: null, ageSeconds: null }, 'invalid identity_mismatch'],
+    ['an entry twice', { poolIds: [FIXTURE_POOL, OTHER_POOL] }, (() => { const d = { ...subset(), requested: [FIXTURE_POOL, OTHER_POOL] }; d.pools = [d.pools[0], structuredClone(d.pools[0])]; return d; })(), 'invalid identity_mismatch'],
+    ['an entry not asked for', asked, (() => { const d = subset(); const e = d.pools[0]; e.poolId = OTHER_POOL; e.pool.poolId = OTHER_POOL; e.market.data.poolId = OTHER_POOL; return d; })(), 'invalid identity_mismatch'],
+    ['a verified pool that is another pool', asked, (() => { const d = subset(); d.pools[0].pool.poolId = OTHER_POOL; return d; })(), 'invalid identity_mismatch'],
+    ['a market about another pool', asked, (() => { const d = subset(); d.pools[0].market.data.poolId = OTHER_POOL; return d; })(), 'invalid identity_mismatch'],
+    ['a market with the currencies the other way round', asked, (() => { const d = subset(); d.pools[0].market.data.currencies.reverse(); return d; })(), 'invalid identity_mismatch'],
+  ];
+  for (const [label, request, body, expected] of cases) assert.equal(judge(request, body), expected, label);
+});
+
+test('G0: with no optional route listed, the provider sends exactly what a bare load sends, with not one pacing gap more', async () => {
+  const bare = stubBridge(budgetAnswer, { capabilities: capabilitiesListing(PRODUCTION_READS) });
+  const bareClock = fakeClock();
+  await loadSelectedPools(createScheduledSource(createBridgeSource({ enabled: true, validators: runtime, fetch: bare.fetch, clock: bareClock }), { clock: bareClock }), BUDGET_IDS);
+
+  const { provider, bridge, clock, wire } = bridgeProvider(budgetAnswer, PRODUCTION_READS);
+  const state = await settled(provider, () => provider.ensure());
+  assert.deepEqual([state.phase, state.result.markets.length, state.problems.length], ['ready', 2, 0]);
+  assert.deepEqual(wire(), ['GET capabilities', ...LEAN_WIRE], 'one capabilities GET and the lean POSTs: no snapshot, no pool-metrics');
+  assert.deepEqual(bridge.wire, bare.wire, 'byte for byte what a bare load sends');
+  assert.deepEqual(clock.delays, bareClock.delays, 'and not one pacing gap more: asking costs no place in the queue');
+  assert.deepEqual(state.result.markets.map((m) => [m.provenance.origin, m.provenance.metrics]), [['pool-market', 'not_requested'], ['pool-market', 'not_requested']]);
+});
+
+test('G0: through the provider, a refused capabilities answer still ends the load at its one GET, in the state a bare load ends in', async () => {
+  for (const [status, body, reason] of FORWARDER) {
+    const wire = [];
+    const fetch = async (path, init) => (wire.push(`${init.method} ${path}`), new Response(body, { status, headers: { 'Content-Type': 'application/json; charset=utf-8' } }));
+    const clock = fakeClock();
+    const provider = createReadMarketsProvider({ source: createScheduledSource(createBridgeSource({ enabled: true, validators: runtime, fetch, clock }), { clock }), poolIds: BUDGET_IDS, kind: 'bridge' });
+    const state = await settled(provider, () => provider.ensure());
+    assert.deepEqual([state.phase, state.failure.state, state.failure.reason, state.failure.route], ['failed', 'not_connected', reason, 'pool-market'], reason);
+    assert.deepEqual(wire, ['GET /api/read/v1/capabilities'], reason);
+  }
+  for (const [capabilities, reason] of [
+    [JSON.parse(text(gateway('capabilities.disabled'))), 'bridge_data_mode_disabled'],
+    [capabilitiesListing([]), 'bridge_data_mode_disabled'],
+    [capabilitiesListing(['token']), 'route_not_enabled'],
+  ]) {
+    const bridge = stubBridge(budgetAnswer, { capabilities });
+    const clock = fakeClock();
+    const provider = createReadMarketsProvider({ source: createScheduledSource(createBridgeSource({ enabled: true, validators: runtime, fetch: bridge.fetch, clock }), { clock }), poolIds: BUDGET_IDS, kind: 'bridge' });
+    const state = await settled(provider, () => provider.ensure());
+    assert.deepEqual([state.phase, state.failure.state, state.failure.reason], ['failed', 'disabled', reason], reason);
+    assert.equal(describeFailure(state.failure).title, 'Live data is switched off for now');
+    assert.deepEqual(bridge.wire.map((r) => r.method), ['GET'], `${reason}: nothing posted`);
+  }
+  // The snapshot listed and answering from an unbuilt store, with the pools' own reads not listed: those stop the table as they always did.
+  const unbuilt = storeAnswer({ snapshot: () => json200({ ...snapshotOf([]), status: 'not_built', builtAt: null, ageSeconds: null }) });
+  const { provider, wire } = bridgeProvider(unbuilt, ['token', 'markets-snapshot']);
+  const state = await settled(provider, () => provider.ensure());
+  assert.deepEqual([state.phase, state.failure.state, state.failure.reason], ['failed', 'disabled', 'route_not_enabled']);
+  assert.deepEqual(wire(), ['GET capabilities', 'POST markets-snapshot']);
+});
+
+test('G0: routeEnabled is the one capabilities GET a read would make, kept for that read; it never posts, and asks nothing when it cannot be answered', async () => {
+  const clock = fakeClock();
+  const bridge = stubBridge(budgetAnswer, { capabilities: capabilitiesListing([...PRODUCTION_READS, 'markets-snapshot']) });
+  const source = createBridgeSource({ enabled: true, validators: runtime, fetch: bridge.fetch, clock });
+  assert.deepEqual(await source.routeEnabled('markets-snapshot'), { state: 'enabled' });
+  assert.deepEqual(await source.routeEnabled('pool-metrics'), { state: 'not_enabled' });
+  assert.equal((await source.read('token', { token: NATIVE })).state, 'ok');
+  assert.deepEqual(bridge.wire.map((r) => r.method), ['GET', 'POST'], 'one GET for both questions and the read after them');
+
+  const off = await createBridgeSource({ enabled: false, validators: runtime, fetch: () => assert.fail('a source with live data off fetched'), clock }).routeEnabled('pool-market');
+  assert.deepEqual([off.state, off.outcome.route, off.outcome.state, off.outcome.reason], ['failed', 'pool-market', 'disabled', 'live_data_disabled']);
+  const unasked = stubBridge(budgetAnswer);
+  const quiet = createBridgeSource({ enabled: true, validators: runtime, fetch: unasked.fetch, clock });
+  const controller = new AbortController();
+  controller.abort();
+  const aborted = await quiet.routeEnabled('markets-snapshot', { signal: controller.signal });
+  assert.deepEqual([aborted.state, aborted.outcome.state], ['failed', 'aborted']);
+  const late = await quiet.routeEnabled('markets-snapshot', { deadlineAt: clock.monotonic() });
+  assert.deepEqual([late.state, late.outcome.state, late.outcome.cause.kind], ['failed', 'unavailable', 'read_deadline']);
+  assert.deepEqual(unasked.wire, [], 'an aborted or late question sends nothing');
+  const disabled = stubBridge(budgetAnswer, { capabilities: JSON.parse(text(gateway('capabilities.disabled'))) });
+  const mode = await createBridgeSource({ enabled: true, validators: runtime, fetch: disabled.fetch, clock }).routeEnabled('markets-snapshot');
+  assert.deepEqual([mode.state, mode.outcome.route, mode.outcome.state, mode.outcome.reason], ['failed', 'markets-snapshot', 'disabled', 'bridge_data_mode_disabled']);
+});
+
+test('G0: the scheduler passes routeEnabled straight through: answered while a read runs, and the next read is paced from that read alone', async () => {
+  const clock = fakeClock();
+  const starts = [];
+  const release = [];
+  let asked = 0;
+  const inner = {
+    transport: 'bridge',
+    read: (route) => new Promise((resolve) => {
+      starts.push([clock.now(), route]);
+      release.push(() => resolve({ route, state: 'ok', data: {}, provenance: {} }));
+    }),
+    routeEnabled: async (route) => ((asked += 1), { state: route === 'pool-metrics' ? 'enabled' : 'not_enabled' }),
+  };
+  const source = createScheduledSource(inner, { clock });
+  const first = source.read('token', { token: NATIVE });
+  await later();
+  assert.deepEqual(await source.routeEnabled('pool-metrics'), { state: 'enabled' }, 'answered with a read in flight: no queue');
+  assert.equal(asked, 1);
+  release.shift()();
+  await first;
+  const second = source.read('token', { token: FIXTURE_TOKEN });
+  await later();
+  release.shift()();
+  await second;
+  assert.deepEqual(starts, [[0, 'token'], [1100, 'token']], 'the question moved no pacing');
+  assert.equal('routeEnabled' in createScheduledSource({ transport: 'bridge', read: inner.read }, { clock }), false, 'a source that cannot answer gives the queue nothing to answer with');
+});
+
+test('G2: with markets-snapshot listed, one read puts every stored pool on screen before any token read, and fresh entries need no market read', async () => {
+  const { provider, bridge, clock, wire } = bridgeProvider(storeAnswer(), [...PRODUCTION_READS, 'markets-snapshot']);
+  const seen = [];
+  const watching = provider.subscribe(() => {
+    const now = provider.getSnapshot();
+    if (now.phase === 'loading' && now.previous) seen.push({ posts: bridge.wire.filter((r) => r.method === 'POST').length, rows: now.previous.markets.map((m) => [m.poolId, m.provenance.origin, m.tokens.quote.symbol]) });
+  });
+  const state = await settled(provider, () => provider.ensure());
+  watching();
+  assert.equal(state.phase, 'ready');
+  assert.deepEqual(wire(), ['GET capabilities', 'POST markets-snapshot', 'POST token', 'POST token', 'POST token'], 'no pool-market read, and no estimate namespace');
+  assert.deepEqual(bridge.wire[1].body, { poolIds: BUDGET_IDS }, 'the selected pools, and only them');
+  assert.deepEqual(seen[0], { posts: 1, rows: BUDGET_IDS.map((id) => [id, 'markets-snapshot', null]) }, 'both rows after the one snapshot read, before any token read');
+  assert.equal(clock.delays.length, 3, 'four POSTs, three gaps');
+  const rows = state.result.markets;
+  assert.deepEqual(rows.map((m) => [m.provenance.origin, m.tvlUsd.state, m.tvlUsd.source, m.tvlUsd.asOf, m.provenance.block, m.provenance.market.cacheAgeSeconds]), BUDGET_IDS.map(() => ['markets-snapshot', 'provider', 'GeckoTerminal', 1010, 700, 0]));
+  assert.deepEqual(rows.map((m) => [m.feeAprEstimate.data, m.feeAprEstimate.reason]), BUDGET_IDS.map(() => [null, 'estimate_not_in_snapshot']), 'the store keeps no estimate, and none is made from its inputs');
+  assert.deepEqual(rows.map((m) => [m.tokens.base.symbol, m.tokens.quote.symbol]), [['ETH', 'TKN'], ['TKN', 'TKN']], 'named from the token reads once they land');
+});
+
+test('G2: the plan maps every stored entry at once and reads again only absent, unbuilt, stale or unavailable pools; a rejected one waits out the window', () => {
+  const subset = () => JSON.parse(text(gateway('markets-snapshot.subset')));
+  const cases = [
+    ['current', (d) => d, true, false],
+    ['served 290 s after it was stored', (d) => ({ ...d, ageSeconds: 290 }), true, false],
+    ['served 400 s after it was stored', (d) => ({ ...d, ageSeconds: 400 }), true, true],
+    ['a stale store', (d) => ({ ...d, status: 'stale', stale: true, reason: 'snapshot_refresh_pending', ageSeconds: 400 }), true, true],
+    ['a store marked stale, whatever its entries say', (d) => ({ ...d, status: 'stale', stale: true, reason: 'snapshot_refresh_pending' }), true, true],
+    ['provider figures stored past the limit', (d) => { d.pools[0].market.cache.ageSeconds = 301; return d; }, true, true],
+    ['provider figures past the limit once served', (d) => { d.pools[0].market.cache.ageSeconds = 250; return { ...d, ageSeconds: 51 }; }, true, true],
+    ['stored without provider figures', (d) => { d.pools[0].market = { status: 'unavailable', reason: 'provider_unavailable', data: null, cache: { ...d.pools[0].market.cache, ageSeconds: null } }; return d; }, true, true],
+    ['stored with rejected provider figures', (d) => { d.pools[0].market = { status: 'rejected', reason: 'provider_currency_or_pool_mismatch', data: null, cache: d.pools[0].market.cache }; return d; }, true, false],
+    ['not stored', (d) => ({ ...d, pools: [] }), false, true],
+    ['not built', (d) => ({ ...d, status: 'not_built', pools: [], builtAt: null, ageSeconds: null }), false, true],
+  ];
+  for (const [label, mutate, mapped, refreshed] of cases) {
+    const body = mutate(subset());
+    assert.equal(runtime.validateResponse('markets-snapshot', body), true, `${label}: the package runtime accepts the mutation`);
+    const plan = planSnapshot(body, [FIXTURE_POOL]);
+    assert.equal(plan.entries.has(FIXTURE_POOL), mapped, `${label}: on screen at once`);
+    assert.deepEqual(plan.refresh, refreshed ? [FIXTURE_POOL] : [], `${label}: read on demand`);
+  }
+});
+
+/** A fixture source that says which routes its script lists, as a bridge source's capabilities would. */
+function listing(script, options) {
+  const base = fixtures(script, options);
+  return { transport: base.transport, requests: base.requests, read: (route, request, opts) => base.read(route, request, opts), routeEnabled: async (route) => ({ state: script[route]?.length ? 'enabled' : 'not_enabled' }) };
+}
+const storeOptions = () => ({ snapshot: createSnapshotMemo(() => 0), tokens: new Map(), metrics: true });
+
+test('G2: a stale or unavailable stored pool stays on screen while its own lean market read runs; an absent or unbuilt one is read before its tokens', async () => {
+  const leanMarket = { ...scenarios.MARKET_CASES.find((c) => c.id === 'provider').script['pool-market'][0] };
+  const cases = [
+    ['current', (d) => d, ['markets-snapshot', 'token', 'token']],
+    ['served 400 s after it was stored', (d) => ({ ...d, ageSeconds: 400 }), ['markets-snapshot', 'token', 'token', 'pool-market']],
+    ['a stale store', (d) => ({ ...d, status: 'stale', stale: true, reason: 'snapshot_refresh_pending', ageSeconds: 400 }), ['markets-snapshot', 'token', 'token', 'pool-market']],
+    ['provider figures stored past the limit', (d) => { d.pools[0].market.cache.ageSeconds = 301; return d; }, ['markets-snapshot', 'token', 'token', 'pool-market']],
+    ['stored without provider figures', (d) => { d.pools[0].market = { status: 'unavailable', reason: 'provider_unavailable', data: null, cache: { ...d.pools[0].market.cache, ageSeconds: null } }; return d; }, ['markets-snapshot', 'token', 'token', 'pool-market']],
+    ['not stored', (d) => ({ ...d, pools: [] }), ['markets-snapshot', 'pool-market', 'token', 'token']],
+    ['not built', (d) => ({ ...d, status: 'not_built', pools: [], builtAt: null, ageSeconds: null }), ['markets-snapshot', 'pool-market', 'token', 'token']],
+  ];
+  for (const [label, mutate, log] of cases) {
+    const script = {
+      'markets-snapshot': [{ fixture: gateway('markets-snapshot.subset'), mutate, expectRequest: { poolIds: [FIXTURE_POOL] } }],
+      'pool-market': [leanMarket],
+      token: scenarios.projectionTokens(),
+    };
+    const source = listing(script, { clock: fakeClock() });
+    const origins = [];
+    const loaded = await loadSelectedPools(source, [FIXTURE_POOL], undefined, (rows) => origins.push(rows.map((m) => m.provenance.origin)), storeOptions());
+    assert.deepEqual(source.requests.map((r) => r.route), log, label);
+    assert.deepEqual(source.requests.filter((r) => r.route === 'pool-market').map((r) => r.request), log.includes('pool-market') ? [{ poolId: FIXTURE_POOL, includePriceHistory: false }] : [], `${label}: the lean request`);
+    assert.deepEqual([loaded.rows.length, loaded.problems.length, loaded.blocking], [1, 0, null], label);
+    const stored = log[1] === 'token';
+    assert.deepEqual(origins[0], [stored ? 'markets-snapshot' : 'pool-market'], `${label}: the first row on screen`);
+    assert.equal(loaded.rows[0].provenance.origin, log.includes('pool-market') ? 'pool-market' : 'markets-snapshot', `${label}: the row ends on its freshest read`);
+  }
+});
+
+test('the read lab’s snapshot cases read what they say, through the provider’s own load: a current store alone, a store that is not enough then the pool’s own read, a failing one the lean load', async () => {
+  const STORED = ['markets-snapshot', 'token', 'token'];
+  const REFRESHED = [...STORED, 'pool-market'];
+  const LEAN = ['markets-snapshot', 'pool-market', 'token', 'token'];
+  const expected = {
+    'snapshot-current': [STORED, 'markets-snapshot'],
+    'snapshot-stale-entry': [REFRESHED, 'pool-market'],
+    'snapshot-stale-envelope': [REFRESHED, 'pool-market'],
+    'snapshot-provider-expired': [REFRESHED, 'pool-market'],
+    'snapshot-market-unavailable': [REFRESHED, 'pool-market'],
+    'snapshot-absent': [LEAN, 'pool-market'],
+    'snapshot-not-built': [LEAN, 'pool-market'],
+    'snapshot-identity': [LEAN, 'pool-market'],
+    'snapshot-broken': [LEAN, 'pool-market'],
+    'snapshot-invalid': [LEAN, 'pool-market'],
+  };
+  const cases = scenarios.MARKET_CASES.filter((c) => c.id.startsWith('snapshot-'));
+  assert.deepEqual(cases.map((c) => c.id), Object.keys(expected));
+  for (const scenario of cases) {
+    const [log, origin] = expected[scenario.id];
+    const source = fixtures(scenario.script, { clock: fakeClock() });
+    const loaded = await loadSelectedPools(source, [FIXTURE_POOL], undefined, undefined, storeOptions());
+    assert.deepEqual(source.requests.map((r) => r.route), log, scenario.id);
+    assert.deepEqual([loaded.rows.length, loaded.problems.length, loaded.blocking, loaded.rows[0].provenance.origin], [1, 0, null, origin], scenario.id);
+  }
+});
+
+test('G2: stored ages come from the payload alone and count on from the answer: provider age, stale on screen, the price’s age, its block, and no estimate', async () => {
+  const body = JSON.parse(text(gateway('markets-snapshot.subset')));
+  // Stored at 1000 with figures 5 s old; served at 1060 (built 1010, 50 s before the answer).
+  Object.assign(body, { builtAt: 1010, ageSeconds: 50 });
+  body.pools[0].observedAt = 1000;
+  body.pools[0].market.cache.ageSeconds = 5;
+  const source = listing({ 'markets-snapshot': [{ fixture: gateway('markets-snapshot.subset'), mutate: () => structuredClone(body) }], token: scenarios.projectionTokens() }, { clock: fakeClock() });
+  const loaded = await loadSelectedPools(source, [FIXTURE_POOL], undefined, undefined, storeOptions());
+  const row = loaded.rows[0];
+  assert.deepEqual([row.provenance.market.cacheAgeSeconds, row.poolState.servedAgeSeconds], [65, 60], 'provider age 5 + (1010 + 50 − 1000); served age 60');
+  assert.deepEqual([row.provenance.block, row.poolState.block], [700, 700], 'the block the stored pool was verified at');
+  assert.deepEqual([row.feeAprEstimate.data, row.feeAprEstimate.reason, row.provenance.origin], [null, 'estimate_not_in_snapshot', 'markets-snapshot']);
+  const answered = row.provenance.market;
+  const at = (ms) => ({ wall: answered.receivedAt + ms, monotonic: answered.receivedMonotonic + ms });
+  assert.equal(markets.retrievedText(markets.retrievedAgeSeconds(answered, at(0))), 'retrieved 65 s ago');
+  assert.equal(markets.providerStale(answered, at(0)), true, 'past the 60 s fresh window the moment it arrives');
+  assert.deepEqual([markets.agedMarket(row, at(0)).tvlUsd.state, markets.presentMetric(markets.agedMarket(row, at(0)).tvlUsd).text], ['stale', '$12.3K'], 'drawn with its value, stale in its state');
+  // The price: its state was 60 s old when served, so it turns stale 240 s on, not 300 s.
+  assert.deepEqual([marketPoolPrice(row, at(0)).state, marketPoolPrice(row, at(239_999)).stale, marketPoolPrice(row, at(240_000)).stale], ['usable', false, true]);
+
+  // Stored 10 s before the answer, with figures retrieved as it was stored: fresh for 50 s more on screen.
+  const snapshot = await source.read('markets-snapshot', { poolIds: [FIXTURE_POOL] });
+  const stored = snapshot.data.pools[0];
+  const younger = project.projectSnapshotRow({ snapshot, entry: { ...stored, observedAt: 1050, market: { ...stored.market, cache: { ...stored.market.cache, ageSeconds: 0 } } }, metrics: null, tokens: new Map() });
+  const youngAt = (ms) => ({ wall: younger.provenance.market.receivedAt + ms, monotonic: younger.provenance.market.receivedMonotonic + ms });
+  assert.deepEqual([younger.provenance.market.cacheAgeSeconds, younger.poolState.servedAgeSeconds], [10, 10]);
+  assert.equal(markets.providerStale(younger.provenance.market, youngAt(50_000)), false, '60 s in all: still inside the fresh window');
+  assert.equal(markets.providerStale(younger.provenance.market, youngAt(51_000)), true, '61 s in all: stale');
+});
+
+test('G2: the snapshot memo allows the snapshot again exactly SNAPSHOT_RETRY_MS after a failure, and a good answer clears it', () => {
+  assert.equal(SNAPSHOT_RETRY_MS, 300_000);
+  let now = 1_000;
+  const memo = createSnapshotMemo(() => now);
+  assert.equal(memo.allows(), true);
+  memo.failed();
+  now += SNAPSHOT_RETRY_MS - 1;
+  assert.equal(memo.allows(), false);
+  now += 1;
+  assert.equal(memo.allows(), true);
+  memo.failed();
+  assert.equal(memo.allows(), false);
+  memo.succeeded();
+  assert.equal(memo.allows(), true);
+});
+
+test('G2: a failed snapshot is never shown or said: the same load reads the pools itself, and the snapshot is left alone for five minutes', async () => {
+  const other = () => {
+    const entry = storedEntry(POOL_A);
+    entry.poolId = OTHER_POOL;
+    entry.pool = { ...entry.pool, poolId: OTHER_POOL };
+    entry.market = { ...entry.market, data: { ...entry.market.data, poolId: OTHER_POOL } };
+    return json200(snapshotOf([entry]));
+  };
+  for (const [label, failure] of [
+    ['a 503', () => ({ status: 503, text: '{"error":"upstream_unavailable"}' })],
+    ['the route switched off on the server', () => ({ status: 404, text: '{"error":"route_not_available"}' })],
+    ['an answer about another pool', other],
+    ['an answer outside the contract', () => json200({ ...snapshotOf([]), schemaVersion: 999 })],
+  ]) {
+    let failing = true;
+    const answer = storeAnswer({ snapshot: () => (failing ? failure() : json200(snapshotOf(BUDGET_IDS.map((id) => storedEntry(id))))) });
+    const { provider, clock, wire } = bridgeProvider(answer, [...PRODUCTION_READS, 'markets-snapshot']);
+    const first = await settled(provider, () => provider.ensure());
+    assert.deepEqual([first.phase, first.problems.length, first.result.markets.map((m) => m.provenance.origin)], ['ready', 0, ['pool-market', 'pool-market']], `${label}: nothing is said of it`);
+    assert.deepEqual(wire(), ['GET capabilities', 'POST markets-snapshot', ...LEAN_WIRE], `${label}: the pools are read in the same load`);
+
+    failing = false;
+    let mark = wire().length;
+    clock.advance(60_000);
+    await settled(provider, () => provider.refresh());
+    assert.deepEqual(wire().slice(mark), ['POST pool-market', 'POST pool-market'], `${label}: a minute on, no snapshot is asked, and no token either`);
+
+    mark = wire().length;
+    clock.advance(SNAPSHOT_RETRY_MS);
+    const back = await settled(provider, () => provider.refresh());
+    assert.deepEqual(wire().slice(mark), ['POST markets-snapshot'], `${label}: five minutes on it is asked again, and its fresh entries need nothing more`);
+    assert.deepEqual(back.result.markets.map((m) => m.provenance.origin), ['markets-snapshot', 'markets-snapshot'], label);
+  }
+});
+
+test('G2: a stored row whose own read fails stays on screen, stale in its state, beside that one problem', async () => {
+  // Stored 410 s before the answer: past the limit, so read again; that read fails.
+  const answer = storeAnswer({
+    snapshot: () => json200(snapshotOf([storedEntry(POOL_A, { observedAt: 600 }), storedEntry(POOL_Z)])),
+    market: (poolId) => (poolId === POOL_A ? { status: 503, text: '{"error":"upstream_unavailable"}' } : undefined),
+  });
+  const { provider, wire } = bridgeProvider(answer, [...PRODUCTION_READS, 'markets-snapshot']);
+  const state = await settled(provider, () => provider.ensure());
+  assert.deepEqual(wire(), ['GET capabilities', 'POST markets-snapshot', 'POST token', 'POST token', 'POST token', 'POST pool-market']);
+  assert.equal(state.phase, 'ready');
+  assert.deepEqual(state.problems.map((p) => [p.poolId, p.outcome.route, p.outcome.state]), [[POOL_A, 'pool-market', 'unavailable']]);
+  const [kept, fresh] = state.result.markets;
+  assert.deepEqual([kept.poolId, kept.provenance.origin, kept.provenance.market.cacheAgeSeconds, kept.poolState.servedAgeSeconds], [POOL_A, 'markets-snapshot', 410, 410]);
+  const at = { wall: kept.provenance.market.receivedAt, monotonic: kept.provenance.market.receivedMonotonic };
+  const shown = markets.agedMarket(kept, at);
+  assert.deepEqual([shown.tvlUsd.state, markets.presentMetric(shown.tvlUsd).text, markets.presentMetric(shown.tvlUsd).stale], ['stale', '$12.3K', true], 'its value, marked stale');
+  assert.equal(marketPoolPrice(kept, at).stale, true, 'and its price with it');
+  assert.equal(markets.providerStale(fresh.provenance.market, { wall: fresh.provenance.market.receivedAt, monotonic: fresh.provenance.market.receivedMonotonic }), false, 'the other row is current');
+});
+
+test('#138 §5: each row is out as soon as its own market read answers, and complete once the token reads right after it land, before the next pool is read', async () => {
+  const calls = [];
+  const bridge = stubBridge((route, body) => (calls.push(route), budgetAnswer(route, body)), { capabilities: capabilitiesListing(PRODUCTION_READS) });
+  const clock = fakeClock();
+  const source = createScheduledSource(createBridgeSource({ enabled: true, validators: runtime, fetch: bridge.fetch, clock }), { clock });
+  const progress = [];
+  const loaded = await loadSelectedPools(source, BUDGET_IDS, undefined, (rows) =>
+    progress.push({ reads: [...calls], rows: rows.map((m) => [m.poolId, m.tokens.base.symbol, m.tokens.quote.symbol, m.tokens.base.decimals, m.tokensPending ?? false]) }),
+  );
+  assert.deepEqual(progress, [
+    { reads: ['pool-market'], rows: [[POOL_A, null, null, null, true]] },
+    { reads: ['pool-market', 'token'], rows: [[POOL_A, 'ETH', null, 18, true]] },
+    { reads: ['pool-market', 'token', 'token'], rows: [[POOL_A, 'ETH', 'TKN', 18, false]] },
+    // The second pool's row: its shared token is already read, so it waits for its other one only.
+    { reads: ['pool-market', 'token', 'token', 'pool-market'], rows: [[POOL_A, 'ETH', 'TKN', 18, false], [POOL_Z, 'TKN', null, 6, true]] },
+    { reads: WIRE_ORDER, rows: [[POOL_A, 'ETH', 'TKN', 18, false], [POOL_Z, 'TKN', 'TKN', 6, false]] },
+  ], 'one row complete before the next pool is asked');
+  assert.deepEqual(loaded.rows.map((m) => m.tokensPending), [undefined, undefined], 'a settled load has nothing pending');
+});
+
+test('the price waits while a row’s token reads are pending; decimals unknown only once a token read settled without them', async () => {
+  const failing = { [TOKEN_Y]: { status: 503, text: '{"error":"upstream_unavailable"}' } };
+  const bridge = stubBridge((route, body) => (route === 'token' && failing[body.token] ? failing[body.token] : budgetAnswer(route, body)), { capabilities: capabilitiesListing(PRODUCTION_READS) });
+  const clock = fakeClock();
+  const source = createScheduledSource(createBridgeSource({ enabled: true, validators: runtime, fetch: bridge.fetch, clock }), { clock });
+  const seen = [];
+  const loaded = await loadSelectedPools(source, [POOL_A], undefined, (rows) => {
+    const [row] = rows;
+    const price = marketPoolPrice(row, { wall: row.provenance.market.receivedAt, monotonic: row.provenance.market.receivedMonotonic });
+    seen.push([row.tokensPending ?? false, price.state, price.problem ?? null]);
+  });
+  assert.deepEqual(seen, [
+    [true, 'unavailable', 'decimals_unknown'],
+    [true, 'unavailable', 'decimals_unknown'],
+    [false, 'unavailable', 'decimals_unknown'],
+  ], 'pending while a token read is to come, and no longer once the failed one settled');
+  assert.deepEqual(loaded.problems.map((p) => [p.poolId, p.token, p.outcome.route, p.outcome.state]), [[POOL_A, TOKEN_Y, 'token', 'unavailable']], 'the token problem names its token');
+  assert.equal(loaded.rows[0].tokensPending, undefined);
+});
+
+test('token metadata that read as available is kept for the page: a refresh reads no token again, and partial metadata is read again', async () => {
+  const partial = JSON.parse(text(gateway('token.missing-decimals')));
+  partial.asset.address = TOKEN_Z;
+  const { provider, bridge, wire } = bridgeProvider(storeAnswer({ token: (address) => (address === TOKEN_Z ? json200(partial) : undefined) }), PRODUCTION_READS);
+  const first = await settled(provider, () => provider.ensure());
+  assert.deepEqual([first.phase, wire()], ['ready', ['GET capabilities', ...LEAN_WIRE]]);
+  const mark = bridge.wire.length;
+  const second = await settled(provider, () => provider.refresh());
+  assert.deepEqual(wire().slice(mark), ['POST pool-market', 'POST pool-market', 'POST token'], 'the markets again, and only the token whose metadata was partial');
+  assert.deepEqual(bridge.wire.at(-1).body, { token: TOKEN_Z });
+  assert.deepEqual(second.result.markets.map((m) => [m.tokens.base.symbol, m.tokens.base.decimals, m.tokens.quote.decimals]), [['ETH', 18, 6], ['TKN', 6, null]], 'kept metadata still names the rows');
+  // Another provider is another page: it keeps nothing of this one.
+  const { provider: fresh, wire: freshWire } = bridgeProvider(budgetAnswer, PRODUCTION_READS);
+  await settled(fresh, () => fresh.ensure());
+  assert.deepEqual(freshWire(), ['GET capabilities', ...LEAN_WIRE]);
+});
+
+test('G1: with pool-metrics listed, each row reads it after its market and token reads, and qualified figures take precedence, LP fees and time-weighted TVL included', async () => {
+  const { provider, bridge, wire } = bridgeProvider(storeAnswer(), [...PRODUCTION_READS, 'pool-metrics']);
+  const state = await settled(provider, () => provider.ensure());
+  assert.deepEqual([state.phase, state.problems.length], ['ready', 0]);
+  assert.deepEqual(wire(), ['GET capabilities', ...LEAN_WIRE, 'POST pool-metrics', 'POST pool-metrics']);
+  assert.deepEqual(bridge.wire.filter((r) => r.path.endsWith('/pool-metrics')).map((r) => r.body), BUDGET_IDS.map((poolId) => ({ poolId })));
+  const valuation = JSON.parse(text(gateway('pool-metrics.qualified'))).valuation;
+  for (const row of state.result.markets) {
+    assert.deepEqual([row.tvlUsd, row.volume24hUsd, row.feeAprPercent, row.lpFees24hUsd, row.timeWeightedTvlUsd].map((m) => [m.state, m.value]), [
+      ['qualified', valuation.tvlUsd],
+      ['qualified', valuation.grossInputVolumeUsd],
+      ['qualified', valuation.feeAprPercent],
+      ['qualified', valuation.tradingLpFeesUsd],
+      ['qualified', valuation.timeWeightedAverageTvlUsd],
+    ]);
+    assert.deepEqual(row.provenance.metrics, { freshness: 'fresh', ageSeconds: 10 });
+  }
+  // A retained qualified row is stale, every Domino figure with it.
+  const retained = built('marketsProvider').retainAsStale(state.result, 5_000_000).markets[0];
+  assert.deepEqual([retained.lpFees24hUsd.state, retained.timeWeightedTvlUsd.state, retained.feeAprPercent.state], ['stale', 'stale', 'stale']);
+});
+
+test('G1: a pool-metrics read that fails keeps the provider figures and says why in the row only; busy is asked again with the table; switched off is as if not listed', async () => {
+  const unavailable = { status: 503, text: '{"error":"upstream_unavailable"}' };
+  const { provider, wire } = bridgeProvider(storeAnswer({ metrics: (poolId) => (poolId === POOL_A ? unavailable : json200(metricsFor(poolId, 'unqualified'))) }), [...PRODUCTION_READS, 'pool-metrics']);
+  const state = await settled(provider, () => provider.ensure());
+  assert.deepEqual([state.phase, state.problems], ['ready', []], 'a failed history read is no problem of the table');
+  assert.deepEqual(wire().slice(-2), ['POST pool-metrics', 'POST pool-metrics']);
+  const [failed, unqualified] = state.result.markets;
+  assert.deepEqual([failed.tvlUsd.state, failed.volume24hUsd.state, failed.feeAprPercent.state, failed.feeAprPercent.reason, failed.lpFees24hUsd.state, failed.provenance.metrics], ['provider', 'provider', 'unavailable', 'unavailable', 'unavailable', null]);
+  assert.deepEqual([unqualified.tvlUsd.state, unqualified.feeAprPercent.state, unqualified.feeAprPercent.reason, unqualified.provenance.metrics], ['provider', 'unavailable', 'qualified_usd_prices_required', { freshness: 'fresh', ageSeconds: 10 }]);
+
+  const busy = bridgeProvider(storeAnswer({ metrics: (poolId) => (poolId === POOL_A ? { status: 429, text: '{"error":"read_capacity_busy"}' } : undefined) }), [...PRODUCTION_READS, 'pool-metrics']);
+  const busyState = await settled(busy.provider, () => busy.provider.ensure());
+  assert.deepEqual(busyState.problems.map((p) => [p.poolId, p.outcome.route, p.outcome.state]), [[POOL_A, 'pool-metrics', 'busy']], 'busy after R-1: the one failure the table asks again on its own');
+
+  const off = bridgeProvider(storeAnswer({ metrics: () => ({ status: 404, text: '{"error":"route_not_available"}' }) }), [...PRODUCTION_READS, 'pool-metrics']);
+  const offState = await settled(off.provider, () => off.provider.ensure());
+  assert.deepEqual(off.wire().filter((line) => line === 'POST pool-metrics'), ['POST pool-metrics'], 'switched off on the server: not asked for the next row');
+  assert.deepEqual([offState.problems, offState.result.markets.map((m) => m.provenance.metrics)], [[], ['not_requested', 'not_requested']]);
+});
+
+test('G1 and G2 together: stored rows read their pool-metrics too, and a bare load asks for neither even when both are listed', async () => {
+  const { provider, wire } = bridgeProvider(storeAnswer(), [...PRODUCTION_READS, 'markets-snapshot', 'pool-metrics']);
+  const state = await settled(provider, () => provider.ensure());
+  assert.deepEqual(wire(), ['GET capabilities', 'POST markets-snapshot', 'POST token', 'POST token', 'POST token', 'POST pool-metrics', 'POST pool-metrics']);
+  assert.deepEqual(state.result.markets.map((m) => [m.provenance.origin, m.tvlUsd.state, m.feeAprPercent.state]), [['markets-snapshot', 'qualified', 'qualified'], ['markets-snapshot', 'qualified', 'qualified']]);
+  const bare = stubBridge(budgetAnswer, { capabilities: capabilitiesListing([...PRODUCTION_READS, 'markets-snapshot', 'pool-metrics']) });
+  const clock = fakeClock();
+  await loadSelectedPools(createScheduledSource(createBridgeSource({ enabled: true, validators: runtime, fetch: bare.fetch, clock }), { clock }), BUDGET_IDS);
+  assert.deepEqual(bare.wire.map((r) => `${r.method} ${r.path.replace('/api/read/v1/', '')}`), ['GET capabilities', ...LEAN_WIRE]);
+});
+
+// ---------------------------------------------------------------------------
+// What one read may take down: only an answer about the page stops a load, a
+// read never shortens the table, and a load nobody waits for is cancelled
+// only after a grace period (review 2026-09-14, read layer).
+// ---------------------------------------------------------------------------
+
+/** The read service's 429, with no Retry-After: a wait of 1 s. */
+const BUSY_429 = { status: 429, text: '{"error":"read_capacity_busy"}' };
+
+test('G1: a pool-metrics answer that is incompatible, or anything else not about the page, stays on its row; only a page-wide answer stops the load', async () => {
+  // The Worker's or the gateway's refusal of one route's payload (bridge/src/worker.mjs, backend/read_gateway.py).
+  const mismatch = { status: 502, text: '{"error":"upstream_contract_mismatch"}' };
+  const { provider, wire } = bridgeProvider(storeAnswer({ metrics: (poolId) => (poolId === POOL_A ? mismatch : undefined) }), [...PRODUCTION_READS, 'pool-metrics']);
+  const state = await settled(provider, () => provider.ensure());
+  assert.deepEqual([state.phase, state.problems], ['ready', []], 'one row’s history refused is no problem of the table');
+  assert.deepEqual(wire().slice(-2), ['POST pool-metrics', 'POST pool-metrics'], 'and the next row’s history is still read');
+  const [refused, qualified] = state.result.markets;
+  assert.deepEqual(
+    [refused.poolId, refused.tvlUsd.state, refused.feeAprPercent.state, refused.feeAprPercent.reason, refused.provenance.metrics],
+    [POOL_A, 'provider', 'unavailable', 'incompatible', null],
+    'the provider’s figures stay, and the row says why it has no history',
+  );
+  assert.deepEqual([qualified.poolId, qualified.tvlUsd.state, qualified.feeAprPercent.state], [POOL_Z, 'qualified', 'qualified']);
+
+  // A token whose payload was refused the same way is its rows' problem too, never the table's.
+  const tokenRefused = bridgeProvider(storeAnswer({ token: (address) => (address === TOKEN_Z ? mismatch : undefined) }), PRODUCTION_READS);
+  const tokenState = await settled(tokenRefused.provider, () => tokenRefused.provider.ensure());
+  assert.deepEqual(
+    [tokenState.phase, tokenState.result.markets.length, tokenState.problems.map((p) => [p.poolId, p.token, p.outcome.state])],
+    ['ready', 2, [[POOL_Z, TOKEN_Z, 'incompatible']]],
+  );
+
+  // The gate is about the page: met at any read, it stops the load there.
+  const gate = { status: 401, text: '{"error":"beta_access_required"}' };
+  const gated = bridgeProvider(storeAnswer({ metrics: (poolId) => (poolId === POOL_Z ? gate : undefined) }), [...PRODUCTION_READS, 'pool-metrics']);
+  const gatedState = await settled(gated.provider, () => gated.provider.ensure());
+  assert.deepEqual([gatedState.phase, gatedState.failure.route, gatedState.failure.state], ['failed', 'pool-metrics', 'gate_required']);
+});
+
+test('one pool whose market payload a hop refuses (502 upstream_contract_mismatch) is that row’s problem; a contract header the page does not accept still stops the table', async () => {
+  const mismatch = { status: 502, text: '{"error":"upstream_contract_mismatch"}' };
+  const { provider, wire } = bridgeProvider(storeAnswer({ market: (poolId) => (poolId === POOL_A ? mismatch : undefined) }), PRODUCTION_READS);
+  const state = await settled(provider, () => provider.ensure());
+  assert.equal(state.phase, 'ready', 'the other pool still makes a table');
+  assert.deepEqual(state.problems.map((p) => [p.poolId, p.outcome.route, p.outcome.state, p.outcome.reason]), [[POOL_A, 'pool-market', 'incompatible', 'upstream_contract_mismatch']]);
+  assert.deepEqual(state.result.markets.map((m) => m.poolId), [POOL_Z], 'the refused pool has no row of its own, and the next pool is read');
+  assert.equal(wire().filter((line) => line === 'POST pool-market').length, 2, 'the load went on past the refused pool');
+  // Only that one reason is the row's: every other incompatible answer, and every page-wide one, still stops the table.
+  const { stopsTable } = built('marketsProvider');
+  const base = { route: 'pool-market', provenance: { transport: 'bridge', contract: null, receivedAt: 0, attempts: 1 } };
+  assert.equal(stopsTable({ ...base, state: 'incompatible', reason: 'upstream_contract_mismatch' }), false);
+  assert.equal(stopsTable({ ...base, state: 'incompatible', reason: 'contract_version_not_accepted' }), true);
+  assert.equal(stopsTable({ ...base, state: 'incompatible', reason: 'contract_header_missing' }), true);
+  assert.equal(stopsTable({ ...base, state: 'gate_required' }), true);
+  assert.equal(stopsTable({ ...base, state: 'busy', retryAfterSeconds: 1 }), false);
+});
+
+test('a refresh never shortens the table: a pool whose read fails keeps its last good row in its place, stale and dated, beside the problem', async () => {
+  let failing = null;
+  const { provider } = bridgeProvider(storeAnswer({ market: (poolId) => (poolId === POOL_A ? (failing ?? undefined) : undefined) }), PRODUCTION_READS);
+  const first = await settled(provider, () => provider.ensure());
+  assert.deepEqual([first.phase, first.result.markets.map((m) => [m.poolId, m.tvlUsd.state])], ['ready', [[POOL_A, 'provider'], [POOL_Z, 'provider']]]);
+
+  failing = BUSY_429;
+  const busy = await settled(provider, () => provider.refresh());
+  assert.equal(busy.phase, 'ready');
+  assert.deepEqual(busy.problems.map((p) => [p.poolId, p.outcome.route, p.outcome.state]), [[POOL_A, 'pool-market', 'busy']]);
+  const [kept, fresh] = busy.result.markets;
+  assert.deepEqual(
+    [kept.poolId, kept.tvlUsd.state, kept.tvlUsd.asOf, kept.volume24hUsd.state, kept.feeAprEstimate.retained],
+    [POOL_A, 'stale', 1010, 'stale', true],
+    'kept in its place, stale, dated to its own observation',
+  );
+  assert.equal(kept.provenance.market.receivedAt, first.result.markets[0].provenance.market.receivedAt, 'never made younger by being kept');
+  assert.deepEqual([fresh.poolId, fresh.tvlUsd.state], [POOL_Z, 'provider']);
+
+  failing = { status: 503, text: '{"error":"upstream_unavailable"}' };
+  const unavailable = await settled(provider, () => provider.refresh());
+  assert.deepEqual([unavailable.phase, unavailable.result.markets.map((m) => [m.poolId, m.tvlUsd.state])], ['ready', [[POOL_A, 'stale'], [POOL_Z, 'provider']]], 'failing again, for another reason: still there');
+  assert.deepEqual(unavailable.problems.map((p) => [p.poolId, p.outcome.state]), [[POOL_A, 'unavailable']]);
+
+  failing = null;
+  const back = await settled(provider, () => provider.refresh());
+  assert.deepEqual([back.problems, back.result.markets.map((m) => m.tvlUsd.state)], [[], ['provider', 'provider']], 'and current again once it reads');
+});
+
+/** A bridge whose POSTs wait until the test answers them, one at a time; `sent` logs each as it goes out. */
+function heldBridge(answer) {
+  const bridge = stubBridge(answer, { capabilities: capabilitiesListing(PRODUCTION_READS) });
+  const waiting = [];
+  const sent = [];
+  const fetch = async (path, init) => {
+    if (init.method === 'POST') {
+      sent.push(path.replace('/api/read/v1/', ''));
+      await new Promise((go) => waiting.push(go));
+    }
+    return bridge.fetch(path, init);
+  };
+  return { fetch, sent, waiting, answerNext: () => waiting.shift()?.() };
+}
+
+test('Home to Markets: a viewer who comes within the grace period joins the running load; past it, the load is cancelled and the next viewer starts it again', async () => {
+  const clock = fakeClock();
+  const held = heldBridge(budgetAnswer);
+  const source = createScheduledSource(createBridgeSource({ enabled: true, validators: runtime, fetch: held.fetch, clock }), { clock });
+  const provider = createReadMarketsProvider({ source, poolIds: BUDGET_IDS, kind: 'bridge', clock });
+
+  const home = provider.subscribe(() => undefined);
+  provider.ensure();
+  await until(() => held.waiting.length === 1, 'pool A’s market read on the wire');
+  held.answerNext();
+  await until(() => provider.getSnapshot().previous?.markets.length === 1 && held.waiting.length === 1, 'pool A’s row on screen, its first token on the wire');
+  // React runs Home's cleanup before Markets subscribes.
+  home();
+  clock.advance(LEAVE_GRACE_MS - 1);
+  const markets = provider.subscribe(() => undefined);
+  provider.ensure();
+  clock.advance(10_000);
+  assert.equal(provider.getSnapshot().previous?.markets.length, 1, 'Markets shows the row Home had');
+  await until(() => (held.answerNext(), provider.getSnapshot().phase !== 'loading'), 'the joined load settles');
+  const state = provider.getSnapshot();
+  assert.deepEqual([state.phase, state.result.markets.length], ['ready', 2]);
+  assert.deepEqual(held.sent, WIRE_ORDER, 'one load, joined, not started over');
+  markets();
+
+  // Past the grace period nobody came: cancelled, and the next viewer reads from the start.
+  const second = heldBridge(budgetAnswer);
+  const clock2 = fakeClock();
+  const source2 = createScheduledSource(createBridgeSource({ enabled: true, validators: runtime, fetch: second.fetch, clock: clock2 }), { clock: clock2 });
+  const provider2 = createReadMarketsProvider({ source: source2, poolIds: BUDGET_IDS, kind: 'bridge', clock: clock2 });
+  const first = provider2.subscribe(() => undefined);
+  provider2.ensure();
+  await until(() => second.waiting.length === 1, 'the first read on the wire');
+  first();
+  clock2.advance(LEAVE_GRACE_MS);
+  const next = provider2.subscribe(() => undefined);
+  provider2.ensure();
+  await until(() => second.sent.length === 2, 'asked again from the start');
+  assert.deepEqual(second.sent, ['pool-market', 'pool-market']);
+  await until(() => (second.answerNext(), provider2.getSnapshot().phase !== 'loading'), 'the new load settles');
+  assert.equal(provider2.getSnapshot().result.markets.length, 2);
+  next();
+});
+
+// ---------------------------------------------------------------------------
+// Quiet re-asks (Home and Markets have no Retry): what a busy service refused,
+// alone; a row whose provider was busy, after the fresh window. Bounded, with
+// jitter, only while the page can be seen.
+// ---------------------------------------------------------------------------
+
+/** Lets reads the fake clock has made instant run to their end. */
+async function drain() {
+  for (let i = 0; i < 25; i++) await later();
+}
+
+/** The app's provider over the bridge on a fake clock, on a page whose visibility the test sets, holding quiet re-asks as Home does. */
+function quietProvider(answer, enabledReads = PRODUCTION_READS, { wrap = (fetch) => fetch } = {}) {
+  const bridge = stubBridge(answer, { capabilities: capabilitiesListing(enabledReads) });
+  const clock = fakeClock();
+  const source = createScheduledSource(createBridgeSource({ enabled: true, validators: runtime, fetch: wrap(bridge.fetch), clock }), { clock });
+  const page = { hidden: false, listeners: new Set() };
+  const visibility = { hidden: () => page.hidden, onChange: (listener) => (page.listeners.add(listener), () => page.listeners.delete(listener)) };
+  const provider = createReadMarketsProvider({ source, poolIds: BUDGET_IDS, kind: 'bridge', clock, visibility });
+  const phases = [];
+  const viewer = provider.subscribe(() => phases.push(provider.getSnapshot().phase));
+  const setHidden = (hidden) => {
+    page.hidden = hidden;
+    for (const listener of [...page.listeners]) listener();
+  };
+  const posts = () => bridge.wire.filter((r) => r.method === 'POST').map((r) => [r.path.replace('/api/read/v1/', ''), r.body.poolId ?? r.body.token]);
+  return { provider, clock, posts, phases, setHidden, viewer };
+}
+
+test('quiet re-ask: a token still busy after R-1 is asked again on its own once its wait has passed, that token alone, and the rows complete in place', async () => {
+  let busy = true;
+  const { provider, clock, posts, phases, viewer } = quietProvider(storeAnswer({ token: (address) => (address === TOKEN_Z && busy ? BUSY_429 : undefined) }));
+  const release = provider.recoverQuietly();
+  const first = await settled(provider, () => provider.ensure());
+  assert.deepEqual(first.problems.map((p) => [p.poolId, p.token, p.outcome.route, p.outcome.state]), [[POOL_Z, TOKEN_Z, 'token', 'busy']]);
+  assert.equal(first.result.markets[1].tokens.quote.decimals, null, 'the row is there, without the busy token’s decimals');
+  await drain();
+  const mark = posts().length;
+  phases.length = 0;
+  busy = false;
+  // The service asked for 1 s; the table waits 4 s at the least, drawn within ±25%: here the low end, 3 s.
+  clock.advance(busyRecoveryDelayMs(1, 0, () => 0) - 1);
+  await drain();
+  assert.equal(posts().length, mark, 'not a moment before its wait');
+  clock.advance(1);
+  await until(() => provider.getSnapshot().phase === 'ready' && provider.getSnapshot().problems.length === 0, 'the re-ask settles');
+  assert.deepEqual(posts().slice(mark), [['token', TOKEN_Z]], 'that token alone: no market read, no other token');
+  assert.deepEqual(provider.getSnapshot().result.markets.map((m) => [m.poolId, m.tokens.quote.symbol, m.tokens.quote.decimals]), [[POOL_A, 'TKN', 6], [POOL_Z, 'TKN', 6]]);
+  assert.equal(phases.includes('loading'), false, 'the rows on screen never went back to loading');
+  clock.advance(3_600_000);
+  await drain();
+  assert.deepEqual(posts().slice(mark), [['token', TOKEN_Z]], 'and nothing more once nothing is busy');
+  release();
+  viewer();
+});
+
+test('quiet re-ask: a busy pool-metrics read is asked again alone and never refreshes the table; a busy market read brings its row, its token and its history', async () => {
+  let metricsBusy = true;
+  const history = quietProvider(storeAnswer({ metrics: (poolId) => (poolId === POOL_A && metricsBusy ? BUSY_429 : undefined) }), [...PRODUCTION_READS, 'pool-metrics']);
+  const holdHistory = history.provider.recoverQuietly();
+  const first = await settled(history.provider, () => history.provider.ensure());
+  assert.deepEqual(first.problems.map((p) => [p.poolId, p.outcome.route, p.outcome.state]), [[POOL_A, 'pool-metrics', 'busy']]);
+  assert.deepEqual([first.result.markets[0].tvlUsd.state, first.result.markets[0].feeAprPercent.reason], ['provider', 'busy']);
+  await drain();
+  const mark = history.posts().length;
+  metricsBusy = false;
+  history.clock.advance(busyRecoveryDelayMs(1, 0, () => 0));
+  await until(() => history.provider.getSnapshot().problems?.length === 0, 'the history read settles');
+  assert.deepEqual(history.posts().slice(mark), [['pool-metrics', POOL_A]], 'that read alone: no market read, no other history');
+  assert.deepEqual(history.provider.getSnapshot().result.markets.map((m) => [m.tvlUsd.state, m.feeAprPercent.state]), [['qualified', 'qualified'], ['qualified', 'qualified']]);
+  holdHistory();
+  history.viewer();
+
+  let marketBusy = true;
+  const market = quietProvider(storeAnswer({ market: (poolId) => (poolId === POOL_Z && marketBusy ? BUSY_429 : undefined) }), [...PRODUCTION_READS, 'pool-metrics']);
+  const holdMarket = market.provider.recoverQuietly();
+  const lean = await settled(market.provider, () => market.provider.ensure());
+  assert.deepEqual([lean.result.markets.map((m) => m.poolId), lean.problems.map((p) => [p.poolId, p.outcome.route, p.outcome.state])], [[POOL_A], [[POOL_Z, 'pool-market', 'busy']]]);
+  assert.deepEqual(market.posts().map(([route]) => route), ['pool-market', 'token', 'token', 'pool-market', 'pool-market', 'pool-market', 'pool-metrics'], 'the busy pool has no tokens read and no history');
+  await drain();
+  const before = market.posts().length;
+  marketBusy = false;
+  market.clock.advance(busyRecoveryDelayMs(1, 0, () => 0));
+  await until(() => market.provider.getSnapshot().problems?.length === 0 && market.provider.getSnapshot().result.markets.length === 2, 'the row comes back');
+  assert.deepEqual(market.posts().slice(before), [['pool-market', POOL_Z], ['token', TOKEN_Z], ['pool-metrics', POOL_Z]], 'that pool’s market, the token it still needs, and its history');
+  holdMarket();
+  market.viewer();
+});
+
+test('a quiet re-ask nobody waits for any more is cancelled after the grace period, as if it had not run; the next visit asks again and loads nothing else', async () => {
+  let hang = false;
+  const sent = [];
+  const hold = (fetch) => async (path, init) => {
+    if (init.method === 'POST') sent.push(path.replace('/api/read/v1/', ''));
+    if (hang && init.method === 'POST' && path.endsWith('/token')) await new Promise(() => undefined);
+    return fetch(path, init);
+  };
+  let busy = true;
+  const { provider, clock, posts, viewer } = quietProvider(storeAnswer({ token: (address) => (address === TOKEN_Z && busy ? BUSY_429 : undefined) }), PRODUCTION_READS, { wrap: hold });
+  let release = provider.recoverQuietly();
+  const first = await settled(provider, () => provider.ensure());
+  await drain();
+  const mark = posts().length;
+  const sentMark = sent.length;
+  hang = true;
+  busy = false;
+  clock.advance(busyRecoveryDelayMs(1, 0, () => 0));
+  await drain();
+  // The re-ask's token read is on its way, and the visitor leaves: Home's table unmounts.
+  assert.deepEqual(sent.slice(sentMark), ['token'], 'the re-ask is on the wire');
+  assert.equal(provider.getSnapshot(), first, 'in place: nothing on screen moved while it ran');
+  release();
+  viewer();
+  clock.advance(LEAVE_GRACE_MS);
+  await drain();
+  assert.equal(provider.getSnapshot(), first, 'cancelled, the settled rows and their problem stand as they were');
+
+  // Back on Home: no load starts again, and the busy token is asked again on its own.
+  hang = false;
+  const back = provider.subscribe(() => undefined);
+  provider.ensure();
+  release = provider.recoverQuietly();
+  clock.advance(busyRecoveryDelayMs(1, 0, () => 0));
+  await until(() => provider.getSnapshot().problems?.length === 0, 'the re-ask of the next visit settles');
+  assert.deepEqual(sent.slice(sentMark), ['token', 'token'], 'one re-ask a visit, and no load started over');
+  assert.deepEqual(posts().slice(mark), [['token', TOKEN_Z]], 'the cancelled one never reached the bridge; the next visit’s is that token alone');
+  assert.equal(provider.getSnapshot().result.markets[1].tokens.quote.decimals, 6);
+  release();
+  back();
+});
+
+test('quiet re-asks are bounded: four, at doubling waits within ±25% and never sooner than asked, none while the page is hidden, and a new visit has its own', async () => {
+  assert.deepEqual([0, 1, 2, 3].map((attempt) => busyRecoveryDelayMs(1, attempt, () => 0)), [3_000, 6_000, 12_000, 24_000]);
+  assert.deepEqual([0, 1, 2, 3].map((attempt) => busyRecoveryDelayMs(1, attempt, () => 1)), [5_000, 10_000, 20_000, 40_000]);
+  assert.equal(busyRecoveryDelayMs(7, 0, () => 0.5), 7_000, 'the service’s own wait when longer than 4 s');
+  assert.equal(busyRecoveryDelayMs(60, 0, () => 0), 60_000, 'never sooner than the service asked');
+  assert.equal(BUSY_RECOVERY_ATTEMPTS, 4);
+
+  const { provider, clock, posts, setHidden, viewer } = quietProvider(storeAnswer({ market: (poolId) => (poolId === POOL_Z ? BUSY_429 : undefined) }));
+  let release = provider.recoverQuietly();
+  await settled(provider, () => provider.ensure());
+  await drain();
+  const reads = () => posts().filter(([route, id]) => route === 'pool-market' && id === POOL_Z).length;
+  assert.equal(reads(), 3, 'R-1: three attempts on the load');
+  const reask = async (label) => {
+    await until(() => reads() % 3 === 0 && reads() > 0 && provider.getSnapshot().phase === 'ready', label);
+    await drain();
+  };
+
+  clock.advance(2_999);
+  await drain();
+  assert.equal(reads(), 3, 'the first not before 3 s');
+  clock.advance(1);
+  await until(() => reads() === 6, 're-ask 1');
+  await reask('re-ask 1 settles');
+
+  setHidden(true);
+  clock.advance(600_000);
+  await drain();
+  assert.equal(reads(), 6, 'nothing while the page is hidden');
+  setHidden(false);
+  await until(() => reads() === 9, 're-ask 2, as soon as the page is seen');
+  await reask('re-ask 2 settles');
+
+  clock.advance(11_999);
+  await drain();
+  assert.equal(reads(), 9, 'the third not before 12 s');
+  clock.advance(1);
+  await until(() => reads() === 12, 're-ask 3');
+  await reask('re-ask 3 settles');
+  clock.advance(24_000);
+  await until(() => reads() === 15, 're-ask 4');
+  await reask('re-ask 4 settles');
+  clock.advance(3_600_000);
+  await drain();
+  assert.equal(reads(), 15, 'four re-asks a visit, and no more');
+  assert.equal(provider.getSnapshot().result.markets.length, 1, 'the rows on screen all along');
+
+  release();
+  release = provider.recoverQuietly();
+  clock.advance(3_000);
+  await until(() => reads() === 18, 'a new visit asks again');
+  await reask('the new visit’s re-ask settles');
+  release();
+  viewer();
+});
+
+test('a row whose provider figures were unavailable because the provider was busy is read again after the 60 s fresh window: that pool alone, three times a visit, only while visible', async () => {
+  assert.deepEqual([providerBusyDelayMs(() => 0), providerBusyDelayMs(() => 1)], [60_000, 75_000]);
+  assert.equal(PROVIDER_BUSY_ATTEMPTS, 3);
+  let providerBusy = true;
+  const busyMarket = (poolId) => {
+    const body = marketFor(poolId, BUDGET_POOLS[poolId]);
+    body.market = { status: 'unavailable', reason: 'provider_capacity_busy', data: null, cache: { ...body.market.cache, status: 'rate_limited', ageSeconds: null } };
+    return json200(body);
+  };
+  const { provider, clock, posts, phases, setHidden, viewer } = quietProvider(storeAnswer({ market: (poolId) => (poolId === POOL_Z && providerBusy ? busyMarket(poolId) : undefined) }));
+  let release = provider.recoverQuietly();
+  const first = await settled(provider, () => provider.ensure());
+  assert.deepEqual([first.problems, first.result.markets[1].tvlUsd.state, first.result.markets[1].tvlUsd.reason], [[], 'unavailable', 'provider_capacity_busy']);
+  await drain();
+  const reads = () => posts().filter(([route, id]) => route === 'pool-market' && id === POOL_Z).length;
+  const mark = posts().length;
+  phases.length = 0;
+
+  clock.advance(59_999);
+  await drain();
+  assert.equal(posts().length, mark, 'not inside the read service’s fresh window');
+  clock.advance(1);
+  await until(() => reads() === 2, 're-read 1');
+  await drain();
+  assert.deepEqual(posts().slice(mark), [['pool-market', POOL_Z]], 'that pool’s market read alone: its tokens are kept');
+  assert.equal(phases.includes('loading'), false, 'in place: the rows never went back to loading');
+
+  setHidden(true);
+  clock.advance(600_000);
+  await drain();
+  assert.equal(reads(), 2, 'not while the page is hidden');
+  setHidden(false);
+  await until(() => reads() === 3, 're-read 2, once the page is seen');
+  await drain();
+  clock.advance(60_000);
+  await until(() => reads() === 4, 're-read 3');
+  await drain();
+  clock.advance(3_600_000);
+  await drain();
+  assert.equal(reads(), 4, 'three re-reads a visit, and no more');
+
+  // A new visit asks again; figures that come back end it.
+  release();
+  release = provider.recoverQuietly();
+  providerBusy = false;
+  clock.advance(60_000);
+  await until(() => provider.getSnapshot().result?.markets[1].tvlUsd.state === 'provider', 'the figures come back');
+  await drain();
+  clock.advance(3_600_000);
+  await drain();
+  assert.equal(reads(), 5);
+  release();
+  viewer();
+});
+
+// ---------------------------------------------------------------------------
+// A hop's refusal (502 upstream_contract_mismatch). The dev and production
+// gateways on 85e7511 do not stamp their mid-hop failures, so a hop that is
+// only flapping reaches the app this way: at the capabilities GET a read waits
+// for as at the read itself (qa-final, 2026-09-15). It stops no table and is
+// asked again quietly, bounded, like a busy answer.
+// ---------------------------------------------------------------------------
+
+const HOP_REFUSAL = '{"error":"upstream_contract_mismatch"}';
+
+/** The bridge's capabilities GET, refused by a hop whenever `refused()` says so; `gets` has each GET's status, in order. */
+const refusingCapabilities = (refused, gets) => (fetch) => async (path, init) => {
+  if (init.method !== 'GET') return fetch(path, init);
+  const refusing = refused();
+  gets.push(refusing ? 502 : 200);
+  return refusing ? bridgeResponse(502, HOP_REFUSAL) : fetch(path, init);
+};
+
+test('a hop refusing the capabilities GET the snapshot’s check makes is the snapshot not listed: the pools’ own reads ask the capabilities again, and the table fills in the same load', async () => {
+  let refusals = 1;
+  const gets = [];
+  const { provider, posts, viewer } = quietProvider(budgetAnswer, PRODUCTION_READS, { wrap: refusingCapabilities(() => refusals-- > 0, gets) });
+  const state = await settled(provider, () => provider.ensure());
+  assert.deepEqual([state.phase, state.result.markets.map((m) => m.poolId), state.problems], ['ready', BUDGET_IDS, []], 'no failure, and no reload');
+  assert.deepEqual(gets, [502, 200], 'the check met the refusal; the first pool’s read asked again, and that answer is kept for every read after it');
+  assert.deepEqual(posts().map(([route]) => route), WIRE_ORDER, 'then the lean load, as if nothing had been refused');
+  // A contract header this page does not accept is still about the page: at the same check, it ends the load there.
+  const wire = [];
+  const rc2 = (fetch) => async (path, init) => (wire.push(init.method), init.method === 'GET' ? bridgeResponse(200, JSON.stringify(capabilitiesListing(PRODUCTION_READS)), { 'X-Domino-Read-Contract': '1.1.0-rc.2' }) : fetch(path, init));
+  const stopped = quietProvider(budgetAnswer, PRODUCTION_READS, { wrap: rc2 });
+  const failed = await settled(stopped.provider, () => stopped.provider.ensure());
+  assert.deepEqual([failed.phase, failed.failure.route, failed.failure.state, failed.failure.reason], ['failed', 'pool-market', 'incompatible', 'contract_version_not_accepted']);
+  assert.deepEqual(wire, ['GET'], 'one GET, and no read after it');
+  viewer();
+  stopped.viewer();
+});
+
+test('a first load that met nothing but a hop refusing the capabilities GET is asked again on its own once the wait has passed, and the table fills without a reload', async () => {
+  let refusing = true;
+  const gets = [];
+  const { provider, clock, posts, viewer } = quietProvider(budgetAnswer, PRODUCTION_READS, { wrap: refusingCapabilities(() => refusing, gets) });
+  const release = provider.recoverQuietly();
+  const first = await settled(provider, () => provider.ensure());
+  assert.deepEqual([first.phase, first.failure.route, first.failure.state, first.failure.reason, first.retained], ['failed', 'pool-market', 'incompatible', 'upstream_contract_mismatch', null]);
+  assert.deepEqual(gets, [502, 502, 502], 'the snapshot’s check, then each pool’s own read, asked the capabilities afresh');
+  assert.deepEqual(posts(), [], 'nothing was posted');
+  await drain();
+  refusing = false;
+  // A hop names no wait: 4 s at the least, drawn within ±25%: here the low end, 3 s.
+  clock.advance(busyRecoveryDelayMs(0, 0, () => 0) - 1);
+  await drain();
+  assert.equal(gets.length, 3, 'not a moment before its wait');
+  clock.advance(1);
+  await until(() => provider.getSnapshot().phase === 'ready', 'the pools are asked again, and answer');
+  const state = provider.getSnapshot();
+  assert.deepEqual([state.result.markets.map((m) => m.poolId), state.problems], [BUDGET_IDS, []]);
+  assert.deepEqual(gets, [502, 502, 502, 200], 'one capabilities GET more, kept for the reads after it');
+  assert.deepEqual(posts().map(([route]) => route), WIRE_ORDER, 'the lean reads of both pools, each row’s tokens right after it');
+  clock.advance(3_600_000);
+  await drain();
+  assert.deepEqual([gets.length, posts().length], [4, WIRE_ORDER.length], 'and nothing more once the rows are there');
+  release();
+  viewer();
+});
+
+test('a hop that keeps refusing the capabilities GET is asked again four times a visit, at doubling waits, none while the page is hidden, and then no more; a new visit has its own', async () => {
+  const gets = [];
+  const { provider, clock, posts, setHidden, viewer } = quietProvider(budgetAnswer, PRODUCTION_READS, { wrap: refusingCapabilities(() => true, gets) });
+  let release = provider.recoverQuietly();
+  await settled(provider, () => provider.ensure());
+  await drain();
+  assert.equal(gets.length, 3, 'the load: the snapshot’s check and each pool’s read');
+  // Each re-ask reads both pools again, and each read asks the capabilities again.
+  const reask = async (count, label) => {
+    await until(() => gets.length === count && provider.getSnapshot().phase === 'failed', label);
+    await drain();
+  };
+
+  clock.advance(2_999);
+  await drain();
+  assert.equal(gets.length, 3, 'the first not before 3 s');
+  clock.advance(1);
+  await reask(5, 're-ask 1');
+
+  setHidden(true);
+  clock.advance(600_000);
+  await drain();
+  assert.equal(gets.length, 5, 'nothing while the page is hidden');
+  setHidden(false);
+  await reask(7, 're-ask 2, as soon as the page is seen');
+
+  clock.advance(11_999);
+  await drain();
+  assert.equal(gets.length, 7, 'the third not before 12 s');
+  clock.advance(1);
+  await reask(9, 're-ask 3');
+  clock.advance(24_000);
+  await reask(11, 're-ask 4');
+  clock.advance(3_600_000);
+  await drain();
+  assert.equal(gets.length, 11, 'four re-asks a visit, and no more');
+  assert.deepEqual(posts(), [], 'nothing was ever posted');
+  assert.deepEqual([provider.getSnapshot().phase, provider.getSnapshot().retained], ['failed', null], 'the table stood on the catalogue all along');
+
+  release();
+  release = provider.recoverQuietly();
+  clock.advance(3_000);
+  await reask(13, 'a new visit asks again');
+  release();
+  viewer();
+});
+
+test('one pool’s market read a hop refused is asked again on its own, that pool alone, and its row lands in place; a refusal is asked again, other failures are not', async () => {
+  let refused = true;
+  const { provider, clock, posts, phases, viewer } = quietProvider(storeAnswer({ market: (poolId) => (poolId === POOL_Z && refused ? { status: 502, text: HOP_REFUSAL } : undefined) }));
+  const release = provider.recoverQuietly();
+  const first = await settled(provider, () => provider.ensure());
+  assert.deepEqual(
+    [first.phase, first.result.markets.map((m) => m.poolId), first.problems.map((p) => [p.poolId, p.outcome.route, p.outcome.state, p.outcome.reason])],
+    ['ready', [POOL_A], [[POOL_Z, 'pool-market', 'incompatible', 'upstream_contract_mismatch']]],
+  );
+  await drain();
+  const mark = posts().length;
+  phases.length = 0;
+  refused = false;
+  clock.advance(busyRecoveryDelayMs(0, 0, () => 0));
+  await until(() => provider.getSnapshot().problems?.length === 0 && provider.getSnapshot().result.markets.length === 2, 'the refused pool’s row lands');
+  assert.deepEqual(posts().slice(mark), [['pool-market', POOL_Z], ['token', TOKEN_Z]], 'that pool’s market read and the token its row still needs, nothing else');
+  assert.equal(phases.includes('loading'), false, 'in place: the rows on screen never went back to loading');
+  release();
+  viewer();
+
+  const { asksAgainQuietly } = built('marketsProvider');
+  const base = { route: 'pool-market', provenance: { transport: 'bridge', contract: null, receivedAt: 0, attempts: 1 } };
+  const asked = (outcome) => asksAgainQuietly({ ...base, ...outcome });
+  assert.deepEqual(
+    [
+      asked({ state: 'busy', retryAfterSeconds: 1 }),
+      asked({ state: 'incompatible', reason: 'upstream_contract_mismatch' }),
+      asked({ state: 'incompatible', reason: 'contract_version_not_accepted' }),
+      asked({ state: 'incompatible', reason: 'contract_header_missing' }),
+      asked({ state: 'unavailable', cause: { kind: 'producer', code: 'upstream_unavailable', status: 503 }, retryable: true }),
+      asked({ state: 'unavailable', cause: { kind: 'producer', code: 'upstream_timeout', status: 504 }, retryable: true }),
+      asked({ state: 'gate_unavailable' }),
+    ],
+    [true, true, false, false, false, false, false],
+    'the table asks again what a busy service or a hop refused, and nothing a reload is for (release.browser (f), (k))',
+  );
+});
+
+test('a first Home load of the six selected pools: 13 POSTs, each row’s tokens right after its market, none refused by a gateway keeping its own start interval and client budget', async () => {
+  const { SELECTED_POOLS } = require('../.test-build/app/src/config/selectedPools.js');
+  const { SELECTED_POOL_CATALOGUE, SELECTED_POOLS_COMMON_TOKEN: USDG } = require('../.test-build/app/src/config/selectedPoolCatalogue.js');
+  // Each pool in its currency order; the ETH/USDG row's catalogue entry carries no addresses: native ETH and USDG.
+  const currencies = Object.fromEntries(SELECTED_POOL_CATALOGUE.map((entry) => [entry.poolId, entry.addresses ? [...entry.addresses].map((a) => a.toLowerCase()).sort() : [NATIVE, USDG]]));
+  const clock = fakeClock();
+  // The gateway (backend read_gateway.py and ClientBudgets): 1 s between accepted starts, then five at once and 30 a minute.
+  let lastStart = -Infinity;
+  let bucket = { tokens: 5, at: 0 };
+  const wire = [];
+  const fetch = async (path, init) => {
+    if (init.method === 'GET') return bridgeResponse(200, JSON.stringify(capabilitiesListing(PRODUCTION_READS)));
+    const route = path.replace('/api/read/v1/', '');
+    const body = JSON.parse(init.body);
+    const at = clock.monotonic();
+    const tokens = Math.min(5, bucket.tokens + ((at - bucket.at) / 1000) * 0.5);
+    const refused = at - lastStart < 1000 || tokens < 1;
+    wire.push({ at, route, asked: body.poolId ?? body.token, status: refused ? 429 : 200 });
+    if (refused) return bridgeResponse(429, '{"error":"read_capacity_busy"}', { 'Retry-After': '2' });
+    lastStart = at;
+    bucket = { tokens: tokens - 1, at };
+    return bridgeResponse(200, JSON.stringify(route === 'pool-market' ? marketFor(body.poolId, currencies[body.poolId]) : tokenFor(body.token, 'TKN')));
+  };
+  const source = createScheduledSource(createBridgeSource({ enabled: true, validators: runtime, fetch, clock }), { clock });
+  const provider = createReadMarketsProvider({ source, poolIds: SELECTED_POOLS, kind: 'bridge', clock });
+  const state = await settled(provider, () => provider.ensure());
+  assert.deepEqual([state.phase, state.result.markets.length, state.problems], ['ready', 6, []]);
+  assert.deepEqual(wire.filter((request) => request.status === 429), [], 'not one 429');
+  const seen = new Set();
+  const expected = SELECTED_POOLS.flatMap((poolId) => [['pool-market', poolId], ...currencies[poolId].filter((token) => !seen.has(token) && seen.add(token)).map((token) => ['token', token])]);
+  assert.deepEqual(wire.map((request) => [request.route, request.asked]), expected);
+  assert.equal(wire.length, 13, 'six pools and the seven tokens between them, each once');
+  const inAnyMinute = Math.max(...wire.map(({ at }) => wire.filter((other) => other.at >= at && other.at < at + 60_000).length));
+  assert.ok(inAnyMinute <= 35, `${inAnyMinute} in a minute`);
 });
 
 test('the six selected chain-4663 pools retain the original two and exclude stock candidates', () => {
@@ -1622,6 +2915,44 @@ test('the display catalogue has six immediate rows and no invented financial obs
   assert.equal(merged[2].market, observed);
   assert.equal(merged.length, 6);
   assert.deepEqual(poolListings([], false), [], 'fixtures and unconfigured readers do not get catalogue rows');
+});
+
+test('a catalogue row names its pair in the pool’s own order of currencies, so the name does not flip when its read lands', async () => {
+  const { poolListings, inPoolOrder, catalogueTokenLabel, SELECTED_POOL_CATALOGUE } = require('../.test-build/app/src/config/selectedPoolCatalogue.js');
+  const rows = poolListings([], true);
+  assert.deepEqual(rows.map(({ catalogue }) => catalogue.labels.join('/')), ['WETH/USDG', 'USDG/MARLIN', 'USDG/cbBTC', 'USDG/U', 'ETH/USDG', 'PONS/USDG']);
+  for (const { poolId, catalogue } of rows) {
+    if (!catalogue.addresses) continue;
+    assert.ok(catalogue.addresses[0] < catalogue.addresses[1], `${poolId}: currency0, the lower address, comes first`);
+    assert.deepEqual(catalogue.addresses.map((address) => catalogueTokenLabel(project.unreadToken(address))), [...catalogue.labels], `${poolId}: each label stays on its address`);
+  }
+  assert.deepEqual(rows[2].catalogue.artwork, ['USDG', null], 'artwork moves with its token');
+  assert.deepEqual(SELECTED_POOL_CATALOGUE[2].labels, ['cbBTC', 'USDG'], 'the catalogue itself keeps the order it was inspected in');
+
+  // The same pool once its market read lands: the row names currency0 first, exactly as the catalogue row did.
+  const entry = SELECTED_POOL_CATALOGUE[2];
+  const currencies = [...entry.addresses].sort();
+  const rewrite = (body) => {
+    body.poolId = entry.poolId;
+    body.pool.poolId = entry.poolId;
+    body.pool.currencies = currencies;
+    body.pool.poolKey.currency0 = currencies[0];
+    body.pool.poolKey.currency1 = currencies[1];
+    Object.assign(body.market.data, { poolId: entry.poolId, currencies, baseToken: currencies[1], quoteToken: currencies[0] });
+    return body;
+  };
+  const market = await fixtures({ 'pool-market': [{ fixture: gateway('pool-market.not-requested'), mutate: rewrite }] }, { clock: fakeClock() }).read('pool-market', tableMarketRequest(entry.poolId));
+  assert.equal(market.state, 'ok');
+  const live = project.projectMarketRow({ market, metrics: null, tokens: new Map() });
+  assert.equal([live.tokens.base, live.tokens.quote].map((token) => catalogueTokenLabel(token)).join('/'), rows[2].catalogue.labels.join('/'));
+
+  // Native ETH, the zero address, sorts first; without both addresses nothing moves.
+  const ZERO = `0x${'0'.repeat(40)}`;
+  const usdg = entry.addresses[1];
+  const native = inPoolOrder({ poolId: entry.poolId, labels: ['USDG', 'ETH'], artwork: ['USDG', 'ETH'], addresses: [usdg, ZERO], fee: '0.01%', sourceUrl: entry.sourceUrl });
+  assert.deepEqual([native.labels, native.artwork, native.addresses], [['ETH', 'USDG'], ['ETH', 'USDG'], [ZERO, usdg]]);
+  const unbound = SELECTED_POOL_CATALOGUE.find((item) => !item.addresses);
+  assert.equal(inPoolOrder(unbound), unbound);
 });
 
 test('catalogue labels survive failed metadata without changing token identity or decimals', () => {
@@ -1704,6 +3035,62 @@ test('R-1 keeps the pacing: the read after an automatic retry starts 1.1 s after
   assert.deepEqual([token.state, token.provenance.attempts, metrics.state], ['ok', 2, 'ok']);
   // The retry waits the bridge's Retry-After; the next read waits the queue's 1.1 s from that retry.
   assert.deepEqual(starts, [[0, 'token'], [1000, 'token'], [2100, 'pool-metrics']]);
+});
+
+/** A source that answers at once, telling the queue of `attempts(request)` attempts on the wire, and logs when each read started. */
+function instantSource(clock, { attempts = () => 1, answer = (route) => ({ route, state: 'ok', data: {}, provenance: {} }) } = {}) {
+  const starts = [];
+  return {
+    starts,
+    source: {
+      transport: 'bridge',
+      read: async (route, request, opts = {}) => {
+        starts.push(clock.monotonic());
+        for (let n = 0; n < attempts(request); n++) opts.onAttempt?.();
+        return answer(route, request);
+      },
+    },
+  };
+}
+const tokenAt = (i) => ({ token: `0x${(i + 1).toString(16).padStart(40, '0')}` });
+
+test('the queue keeps the gateway’s budget for the tab: five at the 1.1 s pace, then 30 a minute, every attempt counted', async () => {
+  const clock = fakeClock();
+  const plain = instantSource(clock);
+  const queue = createScheduledSource(plain.source, { clock });
+  for (let i = 0; i < 14; i++) await queue.read('token', tokenAt(i));
+  // Five spent at once and half a read back every second, a quarter of one kept in hand: nine at the 1.1 s pace,
+  // then one every 2 s.
+  assert.deepEqual(plain.starts, [0, 1100, 2200, 3300, 4400, 5500, 6600, 7700, 8800, 10_500, 12_500, 14_500, 16_500, 18_500]);
+  const inAnyMinute = Math.max(...plain.starts.map((start) => plain.starts.filter((at) => at >= start && at < start + 60_000).length));
+  assert.ok(inAnyMinute <= 5 + 30, `${inAnyMinute} in a minute`);
+  assert.deepEqual([GATEWAY_BUDGET, BUDGET_RESERVE], [{ burst: 5, perMinute: 30 }, 0.25], 'the gateway’s own ClientBudgets, and 500 ms in hand');
+
+  // A retry is an attempt too: a read that took three leaves less for the reads after it.
+  const retryClock = fakeClock();
+  const retried = instantSource(retryClock, { attempts: (request) => (request.token === tokenAt(0).token ? 3 : 1) });
+  const retryQueue = createScheduledSource(retried.source, { clock: retryClock });
+  for (let i = 0; i < 6; i++) await retryQueue.read('token', tokenAt(i));
+  assert.deepEqual(retried.starts, [0, 1100, 2200, 3300, 4500, 6500]);
+
+  // Without a budget, the spacing alone.
+  const bareClock = fakeClock();
+  const bare = instantSource(bareClock);
+  const bareQueue = createScheduledSource(bare.source, { clock: bareClock, budget: null });
+  for (let i = 0; i < 12; i++) await bareQueue.read('token', tokenAt(i));
+  assert.deepEqual(bare.starts, Array.from({ length: 12 }, (_, i) => i * 1100));
+});
+
+test('after a read comes back busy the whole queue holds for its Retry-After, plus R-1’s jitter, before whichever read is next', async () => {
+  const clock = fakeClock({ random: () => 0.5 });
+  const { starts, source } = instantSource(clock, {
+    answer: (route, request) => (request.token === NATIVE ? { route, state: 'busy', retryAfterSeconds: 3, provenance: {} } : { route, state: 'ok', data: {}, provenance: {} }),
+  });
+  const queue = createScheduledSource(source, { clock });
+  const [busy, next, after] = await Promise.all([queue.read('token', { token: NATIVE }), queue.read('token', tokenRequest), queue.read('pool-metrics', { poolId: FIXTURE_POOL })]);
+  assert.deepEqual([busy.state, next.state, after.state], ['busy', 'ok', 'ok']);
+  // 3 s asked, plus half of R-1's 250 ms of jitter; then the usual 1.1 s.
+  assert.deepEqual(starts, [0, 3125, 4225]);
 });
 
 // ---------------------------------------------------------------------------
@@ -2274,6 +3661,8 @@ test('no private API path, no signing or value transfer, no markup injection, no
   // for components or new routes. Check its exact destination and build gate
   // as well as retaining the complete source-tree fetcher allowlist.
   const fetchers = sources().filter((file) => /\bfetch\(/.test(readFileSync(file, 'utf8'))).map((file) => file.slice(SRC.length).replace(/\\/g, '/'));
+  // The product now consumes onboarding-v1 (New position's deposit amounts, Setup's swap quote), deliberately
+  // through the financial client's same-origin fetch (/finance/http.ts), so no new fetcher joins this list.
   const diagnosticPath = '/components/read/LocalDevelopmentBanner.tsx';
   assert.deepEqual(fetchers, [diagnosticPath, '/finance/http.ts', '/lib/read/bridgeSource.ts', '/lib/tokenArtwork.ts', '/screens/LivePreview.tsx', '/wallet/session.ts'], 'product clients, the financial client, serve-only diagnostics, the consumer-test preview, and the explicitly authorized decorative token metadata client');
 
@@ -2346,6 +3735,8 @@ test('every failure state has words, and only the gate asks to sign in', () => {
     const words = describeFailure({ route: 'token', provenance: { attempts: 1 }, ...failure });
     assert.ok(words.title && words.detail, failure.state);
     assert.equal(Boolean(words.signIn), failure.state === 'gate_required', failure.state);
+    // A final product: no state calls the site a beta or says something is to come.
+    assert.doesNotMatch(`${words.title} ${words.detail}`, /\bbeta\b|\byet\b/i, failure.state);
   }
   assert.match(describeFailure({ route: 'token', provenance: {}, state: 'busy', retryAfterSeconds: 7 }).detail, /7 s/);
   const late = (limit) => describeFailure({ route: 'token', provenance: {}, state: 'unavailable', cause: { kind: 'read_deadline', limit }, retryable: true });

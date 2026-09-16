@@ -3,6 +3,7 @@ import { RANGES, type RangeKey } from '../../../lib/ranges'
 import { verifyCandidate } from '../../../lib/read/screens/catalogueSession'
 import { COPY, failureText } from '../../../lib/read/screens/copy'
 import type { AddressKey } from '../../../lib/read/screens/identity'
+import { askAgainLater } from '../../../lib/read/screens/screenRead'
 import {
   PRICE_STALE_MS,
   boundPrice,
@@ -21,9 +22,8 @@ import type { PoolOption } from '../../../lib/read/screens/poolsList'
 import { editablePrice, priceInputToTick } from '../../../lib/read/screens/RangePriceInput'
 import type { ReadSource } from '../../../lib/read/types'
 import { PriceSlider } from '../../PriceSlider'
-import { Button, IconButton, Pill, cx } from '../../ui'
+import { Button, IconButton, cx } from '../../ui'
 import { Address } from './Address'
-import { ScreenStatus, type StatusLine } from './ScreenStatus'
 import { SymbolText } from './SymbolText'
 
 type Usable = Extract<PoolPrice, { state: 'usable' }>
@@ -217,11 +217,91 @@ function RangeInterval({ range, price, bounds }: { range: PlannedRange; price: U
   )
 }
 
+type Said = { code: string; text: string }
+
+/**
+ * Reading a stale price again, for one pool: at most one read at a time, on
+ * the next change a person makes to the range. A read the service was busy
+ * for, or briefly could not answer, is asked again on its own by the quiet
+ * re-ask policy (screenRead.ts): after its wait, a few times, only while the
+ * page is shown, and changes to the range meanwhile send nothing. Once a read
+ * has failed for good, or its re-asks are spent, or the pools route did not
+ * return the pool, nothing is read again until the person leaves and comes
+ * back. Leaving cancels whatever is reading or waiting.
+ */
+export function useStalePriceRead(source: ReadSource, token: AddressKey, paired: AddressKey | null, poolKey: PoolOption['key'], onOption: (option: PoolOption) => void) {
+  const [said, setSaid] = useState<Said | null>(null)
+  const question = useRef<{ busy: boolean; done: boolean; attempts: number; controller: AbortController } | null>(null)
+  // The latest onOption, so an answer that lands after a re-render still reaches the page's own.
+  const latest = useRef(onOption)
+  useEffect(() => {
+    latest.current = onOption
+  }, [onOption])
+
+  useEffect(() => {
+    const current = { busy: false, done: false, attempts: 0, controller: new AbortController() }
+    question.current = current
+    return () => {
+      current.controller.abort()
+      if (question.current === current) question.current = null
+    }
+  }, [source, token, paired, poolKey])
+
+  const read = (current: NonNullable<typeof question.current>) => {
+    const { signal } = current.controller
+    current.busy = true
+    setSaid({ code: 'loading', text: COPY.range.rereading })
+    void verifyCandidate(source, token, paired, poolKey, { signal }).then(async (result) => {
+      if (signal.aborted) return
+      if (result.failure) {
+        if (result.failure.state === 'aborted') {
+          current.busy = false
+          setSaid(null)
+          return
+        }
+        const text = failureText(result.failure, 'pools')
+        setSaid({ code: text.code, text: [text.title, text.detail].filter(Boolean).join('. ') })
+        // Still busy while it waits, so a range change meanwhile sends nothing.
+        if (await askAgainLater(result.failure, current.attempts, signal)) {
+          current.attempts += 1
+          read(current)
+          return
+        }
+        current.busy = false
+        if (!signal.aborted) current.done = true
+        return
+      }
+      current.busy = false
+      current.attempts = 0
+      if (result.option) {
+        setSaid({ code: 'ok', text: `Price read again at block ${result.option.block}.` })
+        latest.current(result.option)
+      } else {
+        current.done = true
+        setSaid({ code: 'not_found', text: COPY.range.notReturned })
+      }
+    })
+  }
+
+  /** Reads the price again when it is stale and nothing is reading, waiting or finished for this pool. */
+  const readIfStale = (stale: boolean) => {
+    const current = question.current
+    if (!stale || !current || current.busy || current.done) return
+    read(current)
+  }
+
+  return { said, readIfStale }
+}
+
 /**
  * The range view of a chosen pool: its price as read, and range controls drawn
- * on it. With no usable price there are no controls. Nothing here reads
- * anything by itself; "Read the price again" is one pools read of this pool id,
- * on request.
+ * on it. With no usable price there are no controls, and the price is a dash
+ * with the reason in its title. Nothing here reads by itself: a price read
+ * more than 5 minutes ago on this page stays in normal type, marked stale in
+ * its title and data only, and the next change a person makes to the range
+ * reads it again, one pools read of this pool id at a time, asked again
+ * quietly only when that read was busy or briefly out (useStalePriceRead).
+ * There is no separate refresh control.
  */
 export function PoolRangeControls({
   source,
@@ -244,10 +324,8 @@ export function PoolRangeControls({
   const price = poolPrice(option, now)
   // Only a tie-break and an explicit "Custom"; the checked width is derived from the range below.
   const [picked, setPicked] = useState<RangeMode | null>(null)
-  const [line, setLine] = useState<StatusLine | null>(null)
-  const [busy, setBusy] = useState(false)
-  const running = useRef<AbortController | null>(null)
-  useEffect(() => () => running.current?.abort(), [])
+  // What the last price read came to, for the live region and data only.
+  const { said, readIfStale } = useStalePriceRead(source, token, paired, option.key, onOption)
 
   const usable = price.state === 'usable' ? price : null
   // Derived each render from the range and the price as read now, so reopening a kept range
@@ -256,58 +334,34 @@ export function PoolRangeControls({
   const widths: RangeMode[] = [...(Object.keys(RANGES) as RangeKey[]), 'custom']
   const { track, thumb } = useWidthThumb(mode === null ? -1 : widths.indexOf(mode))
 
-  const reread = () => {
-    if (busy) return
-    running.current?.abort()
-    const mine = new AbortController()
-    running.current = mine
-    setBusy(true)
-    setLine({ code: 'loading', title: COPY.range.rereading, detail: '' })
-    void verifyCandidate(source, token, paired, option.key, { signal: mine.signal }).then((result) => {
-      if (mine.signal.aborted) return
-      setBusy(false)
-      if (result.failure) {
-        setLine(result.failure.state === 'aborted' ? null : failureText(result.failure, 'pools'))
-      } else if (result.option) {
-        setLine({ code: 'ok', title: `Read again at block ${result.option.block}.`, detail: '' })
-        onOption(result.option)
-      } else {
-        setLine({ code: 'not_found', title: 'Not updated', detail: COPY.range.notReturned })
-      }
-    })
-  }
+  /** A stale price is read again on the next change to the range; the range as drawn stays. */
+  const readStalePrice = () => readIfStale(usable?.stale === true)
 
   const pick = (key: RangeKey) => {
     if (!usable) return
+    readStalePrice()
     setPicked(key)
     onRange(presetRange(usable.tick, usable.tickSpacing, key))
   }
   const custom = (next: PlannedRange) => {
+    readStalePrice()
     setPicked(null)
     onRange(next)
   }
 
   const position = usable && range ? rangePosition(range, usable.tick) : null
   const bounds = usable && range ? sliderWindow(usable.tick, usable.tickSpacing, range) : null
-  const tone = usable?.stale ? 'wait' : position === 'inside' ? 'in' : 'out'
+  const tone = position === 'inside' ? 'in' : 'out'
+  const unavailable = price.state === 'unavailable' ? `${COPY.range.unavailableTitle}: ${COPY.range.problems[price.problem]} ${COPY.range.noControls}` : null
 
   return (
-    <div className="grid gap-5" data-picker="range" data-price-state={price.state === 'usable' ? (price.stale ? 'stale' : price.partial ? 'partial' : 'usable') : 'unavailable'}>
-      {(usable?.partial || usable?.stale) && <div className="flex flex-wrap items-center gap-2">
-        {usable?.partial && <Pill>{COPY.range.partialPill}</Pill>}
-        {usable?.stale && <Pill tone="wait">{COPY.range.stalePill}</Pill>}
-      </div>}
-
+    <div className="grid gap-5" data-picker="range" data-price-state={price.state === 'usable' ? (price.stale ? 'stale' : price.partial ? 'partial' : 'usable') : 'unavailable'} data-price-read={said?.code}>
       <section aria-labelledby="range-price-heading" className="grid gap-1" data-pool-price="">
-        <div className="flex items-center justify-between gap-3">
-          <h3 id="range-price-heading" className="text-caption font-medium text-fg-muted">Pool price</h3>
-          <Button type="button" variant="ghost" size="sm" className="-mr-2" aria-label={COPY.range.reread} aria-disabled={busy ? true : undefined} onClick={reread}>
-            {busy ? 'Refreshing…' : 'Refresh price'}
-          </Button>
-        </div>
+        <h3 id="range-price-heading" className="text-caption font-medium text-fg-muted">Pool price</h3>
+        <p role="status" aria-live="polite" className="sr-only">{said?.text ?? ''}</p>
         {usable ? (
           <>
-            <div className="flex min-w-0 flex-wrap items-baseline gap-x-3 gap-y-0.5">
+            <div className="flex min-w-0 flex-wrap items-baseline gap-x-3 gap-y-0.5" {...(usable.stale ? { 'data-price-stale': '', title: COPY.range.stale } : {})}>
               <p className="tnum text-stat font-medium break-all" data-pool-price-text="">
                 {usable.text}
               </p>
@@ -316,28 +370,20 @@ export function PoolRangeControls({
               </p>
             </div>
             {usable.partial && (
-              <div className="mt-1 grid gap-0.5 text-caption text-money-wait" data-price-partial="">
-                <p>{COPY.range.partial}</p>
-                <p className="text-fg-muted">
+              <div className="mt-1 grid gap-0.5 text-caption text-fg-muted" data-price-partial="" title={COPY.range.partial}>
+                <p>
                   <SymbolText token={usable.base} /> <Address value={usable.base.address ?? ''} />
                 </p>
-                <p className="text-fg-muted">
+                <p>
                   <SymbolText token={usable.quote} /> <Address value={usable.quote.address ?? ''} />
                 </p>
               </div>
             )}
-            {usable.stale && (
-              <div className="grid gap-2" data-price-stale="">
-                <p className="text-caption text-money-wait">{COPY.range.stale}</p>
-              </div>
-            )}
-            <ScreenStatus line={line} className="mt-2" />
           </>
         ) : (
-          <div role="status" className="dm-inset mt-1 px-4 py-3" data-price-unavailable={price.state === 'unavailable' ? price.problem : ''}>
-            <p className="text-body font-medium">{COPY.range.unavailableTitle}</p>
-            {price.state === 'unavailable' && <p className="mt-0.5 text-[13px] leading-[18px] text-fg-muted">{COPY.range.problems[price.problem]}</p>}
-            <p className="mt-0.5 text-[13px] leading-[18px] text-fg-muted">{COPY.range.noControls}</p>
+          <div data-price-unavailable={price.state === 'unavailable' ? price.problem : ''} title={unavailable ?? undefined}>
+            <p className="tnum text-stat font-medium text-fg-subtle">—</p>
+            <p className="sr-only">{unavailable}</p>
           </div>
         )}
       </section>

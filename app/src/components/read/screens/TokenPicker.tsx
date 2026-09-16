@@ -2,14 +2,15 @@ import { useEffect, useRef, useState, type ClipboardEvent, type FormEvent } from
 import { reasonText } from '../../../lib/read/describe'
 import { ADDRESS_PROBLEM, COPY, failureText } from '../../../lib/read/screens/copy'
 import { parseAddressInput, screenPaste, searchByAddress, type AddressKey } from '../../../lib/read/screens/identity'
+import { failureCode, quietTitle, reaskDelayMs, whenVisibleAfter } from '../../../lib/read/screens/quietRead'
 import { readWithin } from '../../../lib/read/screens/screenRead'
 import { candidateFromToken, excluding, mergeCandidates, selectable, type TokenCandidate } from '../../../lib/read/screens/tokens'
 import type { ReadSource } from '../../../lib/read/types'
 import { IconCheck } from '../../icons'
+import { Figure } from '../../positions/Figure'
 import { TokenMark } from '../../TokenIcon'
 import { Button, Chip, cx } from '../../ui'
 import { Address } from './Address'
-import { ScreenStatus, type StatusLine } from './ScreenStatus'
 import { SymbolText } from './SymbolText'
 import { WalletCandidates } from './WalletCandidates'
 
@@ -32,14 +33,67 @@ export function whyText(candidate: TokenCandidate): string | null {
   }
 }
 
-/** A pasted address, checked exactly as typed, read once per "Check address". */
+/**
+ * A pasted address, checked exactly as typed, read once per "Check address".
+ * The button says "Checking…" while it reads. A read that failed only for the
+ * moment is asked again on its own, a few times, while the page is visible;
+ * one that stays failed leaves a single plain line, its reason in the line's
+ * title and data attribute. The live region says each step for a screen reader.
+ */
 function PasteForm({ source, onFound, id }: { source: ReadSource; onFound: (candidate: TokenCandidate) => void; id: string }) {
   const [value, setValue] = useState('')
   const [problem, setProblem] = useState<string | null>(null)
-  const [line, setLine] = useState<StatusLine | null>(null)
-  const [busy, setBusy] = useState(false)
+  const [said, setSaid] = useState<{ code: string; words: string } | null>(null)
+  const [failed, setFailed] = useState<{ code: string; reason: string } | null>(null)
+  // Reading: a read is in flight, and a second press waits for it. Waiting: a quiet re-ask is due, and a new press replaces it.
+  const [phase, setPhase] = useState<'idle' | 'reading' | 'waiting'>('idle')
   const running = useRef<AbortController | null>(null)
-  useEffect(() => () => running.current?.abort(), [])
+  const quiet = useRef<(() => void) | null>(null)
+  // The latest callback: an answer can land well after the press, and must merge into the candidates as they are then.
+  const found = useRef(onFound)
+  useEffect(() => {
+    found.current = onFound
+  }, [onFound])
+  useEffect(
+    () => () => {
+      running.current?.abort()
+      quiet.current?.()
+    },
+    [],
+  )
+
+  /** One token read of the checked address; `attempt` counts its quiet re-asks. */
+  const check = (wire: string, attempt: number) => {
+    running.current?.abort()
+    quiet.current?.()
+    quiet.current = null
+    const mine = new AbortController()
+    running.current = mine
+    setPhase('reading')
+    void readWithin(source, 'token', { token: wire }, { signal: mine.signal }).then((outcome) => {
+      if (mine.signal.aborted) return
+      if (outcome.state === 'aborted') {
+        setPhase('idle')
+        return
+      }
+      if (outcome.state === 'ok') {
+        setPhase('idle')
+        found.current(candidateFromToken(outcome.data, wire))
+        setSaid({ code: 'ok', words: `Read at block ${outcome.data.snapshot.number}.` })
+        return
+      }
+      const wait = reaskDelayMs(outcome, attempt)
+      if (wait !== null) {
+        setPhase('waiting')
+        quiet.current = whenVisibleAfter(wait, () => check(wire, attempt + 1))
+        return
+      }
+      const text = failureText(outcome, 'token')
+      setPhase('idle')
+      setFailed({ code: failureCode(outcome), reason: quietTitle(outcome, 'token') })
+      setSaid({ code: text.code, words: text.title })
+    })
+  }
 
   const paste = (event: ClipboardEvent<HTMLInputElement>) => {
     const screened = screenPaste(event.clipboardData.getData('text'))
@@ -51,29 +105,16 @@ function PasteForm({ source, onFound, id }: { source: ReadSource; onFound: (cand
 
   const submit = (event: FormEvent) => {
     event.preventDefault()
-    if (busy) return
+    if (phase === 'reading') return
     const parsed = parseAddressInput(value)
     if (!parsed.ok) {
       setProblem(ADDRESS_PROBLEM[parsed.reason])
       return
     }
     setProblem(null)
-    running.current?.abort()
-    const mine = new AbortController()
-    running.current = mine
-    setBusy(true)
-    setLine({ code: 'loading', title: COPY.picker.checking, detail: '' })
-    void readWithin(source, 'token', { token: parsed.wire }, { signal: mine.signal }).then((outcome) => {
-      if (mine.signal.aborted) return
-      setBusy(false)
-      if (outcome.state === 'ok') {
-        const candidate = candidateFromToken(outcome.data, parsed.wire)
-        onFound(candidate)
-        setLine({ code: 'ok', title: `Read at block ${outcome.data.snapshot.number}.`, detail: '' })
-      } else if (outcome.state !== 'aborted') {
-        setLine(failureText(outcome, 'token'))
-      }
-    })
+    setFailed(null)
+    setSaid({ code: 'loading', words: COPY.picker.checking })
+    check(parsed.wire, 0)
   }
 
   return (
@@ -95,8 +136,8 @@ function PasteForm({ source, onFound, id }: { source: ReadSource; onFound: (cand
           aria-describedby={problem ? `${id}-hint ${id}-error` : `${id}-hint`}
           className="dm-field dm-flow-mono min-w-0 flex-1"
         />
-        <Button type="submit" variant="outline" className="dm-flow-paste-submit" aria-disabled={busy ? true : undefined}>
-          {busy ? COPY.picker.checking : COPY.picker.check}
+        <Button type="submit" variant="outline" className="dm-flow-paste-submit" aria-disabled={phase === 'reading' ? true : undefined}>
+          {phase === 'idle' ? COPY.picker.check : COPY.picker.checking}
         </Button>
       </div>
       <p id={`${id}-hint`} className="dm-hint">
@@ -107,7 +148,14 @@ function PasteForm({ source, onFound, id }: { source: ReadSource; onFound: (cand
           {problem}
         </p>
       )}
-      <ScreenStatus line={line} className="mt-2" />
+      {failed && phase === 'idle' && (
+        <p className="dm-hint" data-token-check-failed={failed.code} title={failed.reason}>
+          {COPY.picker.checkFailed}
+        </p>
+      )}
+      <p role="status" aria-live="polite" className="sr-only" data-token-check-status={said?.code ?? 'none'}>
+        {said?.words}
+      </p>
     </form>
   )
 }
@@ -127,7 +175,11 @@ function CandidateRow({ candidate, name, checked, onPick, index }: { candidate: 
               <SymbolText token={candidate.token} />
             </span>
             <span className="text-caption text-fg-subtle">{KIND[candidate.kind]}</span>
-            {candidate.decimalsUnavailable && candidate.why === null && <span className="text-caption text-money-wait">{COPY.selection.decimalsUnavailable}</span>}
+            {candidate.decimalsUnavailable && candidate.why === null && (
+              <span className="text-caption text-fg-subtle" data-decimals="unavailable">
+                {COPY.selection.decimalsUnavailable}
+              </span>
+            )}
             {candidate.old && <span className="text-caption text-fg-subtle">{COPY.picker.fromEarlier}</span>}
           </span>
           <span className="text-caption text-fg-subtle">
@@ -135,7 +187,11 @@ function CandidateRow({ candidate, name, checked, onPick, index }: { candidate: 
           </span>
           {candidate.balance && candidate.why === null && (
             <span className="text-caption text-fg-muted">
-              Balance at snapshot: <span className="tnum text-fg">{candidate.balance.text}</span>
+              {/* A long balance wraps only between its digit groups, so the row never pushes the page sideways. */}
+              Balance at snapshot:{' '}
+              <span className="text-fg">
+                <Figure text={candidate.balance.text} />
+              </span>
               {candidate.page !== null && <span className="text-fg-subtle"> · page {candidate.page}</span>}
             </span>
           )}

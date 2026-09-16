@@ -137,7 +137,8 @@
   .dm-flow-facts--noted > div { align-items: baseline; }
   .dm-flow-facts--noted .dm-flow-fact-note { flex-basis: 100%; font-size: 12px; line-height: 16px; color: var(--fg-subtle); text-align: left; }
   .dm-flow-position { display: flex; align-items: flex-start; gap: 8px; margin: 0; font-size: 13px; line-height: 18px; color: var(--fg-muted); }
-  .dm-flow-position::before { content: ''; flex-shrink: 0; width: 6px; height: 6px; margin-top: 6px; border-radius: var(--radius-pill); background: var(--money-wait); }
+  /* The dot is neutral out of range; only a position inside its range takes the in-tone. */
+  .dm-flow-position::before { content: ''; flex-shrink: 0; width: 6px; height: 6px; margin-top: 6px; border-radius: var(--radius-pill); background: var(--fg-faint); }
   .dm-flow-position[data-tone="in"]::before { background: var(--money-in); }
   .dm-flow-wsteps { display: grid; gap: 4px; margin: 4px 0 0; padding: 0; list-style: none; }
   .dm-flow-wsteps > li { display: flex; align-items: flex-start; gap: 12px; min-width: 0; padding: 10px 12px; border-radius: var(--radius); background: var(--surface-2); box-shadow: inset 0 0 0 1px var(--border); }

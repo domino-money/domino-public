@@ -43,10 +43,6 @@ export function RangeSimulator() {
           <Display as="h2" className="dm-display-card">
             Move the price. Watch what you own.
           </Display>
-          <p className="mt-2 max-w-[60ch] text-body text-fg-muted">
-            A position opened at the start price, in a pool of a token against a stablecoin. Drag the chart or the handle below it. Every figure is relative to that start,
-            from the same maths the product runs.
-          </p>
         </div>
         <Segmented
           label="Range width"
@@ -88,9 +84,9 @@ export function RangeSimulator() {
         </div>
 
         <div className="flex min-w-0 flex-col gap-3 lg:pt-8">
-          {/* Where the position stands at this price. */}
+          {/* Where the position stands at this price: the in-tone inside the range, neutral outside it. */}
           <div className="dm-inset p-4">
-            <Pill tone={inRange ? 'in' : 'wait'} dot>
+            <Pill tone={inRange ? 'in' : 'neutral'} dot>
               {inRange ? 'Collecting trading fees' : p.status === 'above' ? 'Paused above the range' : 'Paused below the range'}
             </Pill>
             <p className="mt-3 text-body text-fg-muted">

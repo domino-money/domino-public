@@ -4,10 +4,12 @@ import { cx } from '../ui'
 
 /*
  * Domino's feature vignettes (DESIGN.md F.2 to F.4): small looping drawings
- * of what automation does with earned fees. Each one is only shapes: no text,
- * no digits, no title, no image and no colour literal (every colour is a token
- * in art.css). A tile always stands on an edge or rests in the wallet; nothing
- * is drawn behind a tile, and no tile uses the brand mark's pip layouts.
+ * of what automation does with earned fees, and of who holds the position.
+ * Each one is only shapes: no text, no digits, no title, no image and no
+ * colour literal (every colour is a token in art.css). A tile always stands on
+ * an edge; nothing is drawn behind a tile, and no tile uses the brand mark's
+ * pip layouts. A path that something travels along is written once here and
+ * once, identically, in art.css.
  *
  * The drawing is the caller's to frame: Home puts each one on a dotted plate,
  * Automate on its own card. A loop plays only while the drawing is in view,
@@ -142,73 +144,122 @@ export function VignetteCompound({ className, running }: VignetteProps) {
   )
 }
 
-/** Range A, the price line climbing to its trigger, and range B one step higher with its own tile. */
-function SequenceDrawing() {
+/** Range A: its top edge runs on under range B, so its top-right corner is square. */
+const RANGE_A = 'M 40 134 H 290 V 162 A 10 10 0 0 1 280 172 H 40 A 10 10 0 0 1 30 162 V 144 A 10 10 0 0 1 40 134 Z'
+/** Range B's left, top and right edges; its floor is range A's top edge. */
+const RANGE_B = 'M 160 134 V 106 A 10 10 0 0 1 170 96 H 280 A 10 10 0 0 1 290 106 V 134'
+/** The price's route (also the moving tip's offset-path in art.css). Its trigger, (152, 140), is 55.69% along it. */
+const PRICE = 'M 40 162 L 60 157 L 78 159 L 98 151 L 116 153 L 136 146 L 152 140 L 166 142 L 182 131 L 200 122 L 218 123 L 236 112'
+/** The fees' hop from range A's top to range B's top (also the drops' offset-path in art.css). */
+const HOP = 'M 136 132 C 136 96, 176 70, 204 94'
+
+/**
+ * One staircase: range A, and range B one step higher standing on it, each with
+ * its tile; the price line from A into B, the tip where it rests, and the
+ * dotted hop the fees take from A's top to B's. The still frame leaves out the
+ * parts that only move (the moving tip, the fees and B's ghost), all hidden at rest.
+ */
+function SequenceDrawing({ still }: { still: boolean }) {
   return (
     <g className="scene">
-      <rect className="range-a" x={40} y={104} width={150} height={56} rx={10} />
-      <line className="trigger" x1={44} y1={114} x2={186} y2={114} />
-      <g className="arrive">
-        <rect className="range-b" x={150} y={60} width={150} height={56} rx={10} />
-        <g transform="translate(158 28.5)">
-          <g className="tile-solid">
-            <ArtTile w={18} layout={[1, 3]} />
-          </g>
+      <path className="range-a" d={RANGE_A} />
+      {/* Where range B will stand, while it is away. */}
+      {!still && <path className="range-b-ghost" d={RANGE_B} />}
+      <g className="range-b">
+        <path className="range-b-fill" d={`${RANGE_B} Z`} />
+        <path className="range-b-edge" d={RANGE_B} />
+      </g>
+      <path className="price" d={PRICE} pathLength={100} />
+      <g className="tip-rest">
+        <circle className="tip-ring" cx={236} cy={112} r={8} />
+        <circle className="tip-core" cx={236} cy={112} r={4} />
+      </g>
+      {/* The tip that rides the price's route while the line draws; its ring pulses about its own centre. */}
+      {!still && (
+        <g className="tip">
+          <circle className="tip-ring" cx={0} cy={0} r={8} />
+          <circle className="tip-core" cx={0} cy={0} r={4} />
+        </g>
+      )}
+      <path className="hop" d={HOP} />
+      <line className="lip" x1={136} y1={128} x2={136} y2={134} />
+      <line className="lip" x1={204} y1={90} x2={204} y2={96} />
+      <g transform="translate(63 95.5)">
+        <g className="tile-solid">
+          <ArtTile w={22} layout={[3, 2]} />
         </g>
       </g>
-      <polyline className="price" points="44,150 62,142 78,146 96,134 112,138 128,126 146,128 162,118 176,116" />
-      <g className="dot">
-        <circle className="dot-ring" cx={176} cy={116} r={8} />
-        <circle className="dot-core" cx={176} cy={116} r={4} />
+      <g transform="translate(248 57.5)">
+        <g className="rise tile-solid">
+          <ArtTile w={22} layout={[1, 3]} />
+        </g>
       </g>
+      {!still &&
+        [1, 2, 3].map((n) => (
+          <g key={n} className={`drop drop-${n}`}>
+            <circle className="drop-dot" cx={0} cy={0} r={3.5} />
+          </g>
+        ))}
     </g>
   )
 }
 
 /**
- * Domino sequences: the price climbs inside a range; near its top edge the
- * trigger lights and the next range appears one step higher with its own tile.
- * The first range stays where it is.
+ * Domino Compounder: the price climbs inside range A; near its top edge the
+ * tip's ring pulses, three drops of earned fees hop up, range B lights one
+ * step higher, its tile rises, and the price carries on inside B. Range A and
+ * its tile never move, and only fees travel.
  */
 export function VignetteSequence({ className, running }: VignetteProps) {
   const [ref, seen] = useInView<SVGSVGElement>(0.4, running === undefined)
   return (
     <Frame kind="seq" className={className} live={running ?? seen} svgRef={ref}>
-      <SequenceDrawing />
+      <SequenceDrawing still={false} />
     </Frame>
   )
 }
 
-/** The sequence drawing at rest, with no motion at all (New position's automation step). */
+/** The staircase at rest, with no motion at all (New position's automation step). */
 export function SequenceFrame({ className }: { className?: string }) {
   return (
     <Frame kind="seq" className={className} live={false} still>
-      <SequenceDrawing />
+      <SequenceDrawing still />
     </Frame>
   )
 }
 
+/** The signature stroke's outline: about 3 wide at the wallet, tapering to 1.6 at the range, never to a point. */
+const SWASH = 'M 116 98.4 C 146 89.4, 172 135.2, 202 122.2 L 202 123.8 C 172 136.8, 146 94.6, 116 101.6 Z'
+/** The stroke's centre line, which the highlight is traced along. */
+const TRACE = 'M 121 100 C 146 92, 172 136, 200 123'
+
 /**
- * Non-custodial: the position is a tile resting in its owner's wallet, under a
- * slow dotted orbit; the wallet's flap lights once a cycle as it closes on the
- * tile. No check mark: nothing here verifies who controls a wallet.
+ * Non-custodial: the owner's wallet signs, and one stroke carries that control,
+ * one way only, to the position: its tile standing on its range. Once a cycle
+ * the wallet's seal rings, a highlight writes along the stroke, the range's
+ * edge lights and the tile answers; then a long rest. Nothing travels back,
+ * and there is no badge: nothing here verifies who controls a wallet.
  */
 export function VignetteWallet({ className, running }: VignetteProps) {
   const [ref, seen] = useInView<SVGSVGElement>(0.4, running === undefined)
   return (
     <Frame kind="wallet" className={className} live={running ?? seen} svgRef={ref}>
-      {/* pathLength makes the dash pattern close without a seam. */}
-      <circle className="orbit" cx={160} cy={104} r={70} pathLength={441} />
-      <g transform="translate(149 60)">
-        <g className="bob tile-solid">
+      {/* Drawn first, so both ends of the stroke tuck under the wallet and the range. */}
+      <path className="swash" d={SWASH} />
+      <path className="trace" d={TRACE} pathLength={100} />
+      <g transform="translate(28 68)">
+        <rect className="wallet-card" x={10} y={-9} width={62} height={22} rx={6} />
+        <rect className="wallet-body" width={92} height={62} rx={12} />
+        <path className="wallet-pocket" d="M 92 21 H 66 A 8 8 0 0 0 58 29 V 35 A 8 8 0 0 0 66 43 H 92" />
+        <circle className="seal-ring" cx={71} cy={32} r={6} />
+        <circle className="seal" cx={71} cy={32} r={3.5} />
+      </g>
+      <rect className="band" x={200} y={104} width={92} height={38} rx={10} />
+      <rect className="band-lit" x={200} y={104} width={92} height={38} rx={10} />
+      <g transform="translate(235 65.5)">
+        <g className="pos tile-solid">
           <ArtTile w={22} layout={[2, 3]} />
         </g>
-      </g>
-      <g transform="translate(112 96)">
-        <rect className="w-body" width={96} height={64} rx={12} />
-        <path className="flap" d="M0 20 H96" />
-        <rect className="clasp" x={70} y={30} width={26} height={16} rx={8} />
-        <circle className="clasp-dot" cx={83} cy={38} r={3} />
       </g>
     </Frame>
   )

@@ -4,39 +4,41 @@ import { CREATE } from '../../lib/create/copy'
 import type { JourneyState } from '../../lib/create/journey'
 import { shortAddress } from '../../lib/read/screens/identity'
 import type { PoolOption } from '../../lib/read/screens/poolsList'
+import type { StatusLine } from '../../lib/read/screens/statusLine'
 import { knownTokens } from '../../lib/read/screens/tokenSearch'
 import { mergeCandidates, type TokenCandidate } from '../../lib/read/screens/tokens'
 import type { ReadSource } from '../../lib/read/types'
 import { useWalletIdentity } from '../../lib/walletIdentity'
-import { ScreenStatus, type StatusLine } from '../read/screens/ScreenStatus'
 import { TokenPicker } from '../read/screens/TokenPicker'
 import { TokenSearch } from '../read/screens/TokenSearch'
-import { Button } from '../ui'
+import { Button, Skeleton } from '../ui'
 import { ChosenPool, PairedAsset, PoolList } from './StagePool'
 
 /** What the pool id in the link came to, while the person picks a token. */
 export type PreselectStatus =
   | { kind: 'none' }
   | { kind: 'malformed' }
-  | { kind: 'checking' }
+  /** `again` while a failed verification is read again on its own: the step stays usable meanwhile. */
+  | { kind: 'checking'; again: boolean }
   | { kind: 'verified'; block: number }
   | { kind: 'not_found' }
   | { kind: 'failed'; line: StatusLine }
 
-function preselectLine(status: PreselectStatus): StatusLine | null {
+/** What a screen reader hears about the link; nothing of it is a panel on screen. */
+function preselectWords(status: PreselectStatus): string {
   switch (status.kind) {
     case 'none':
-      return null
+      return ''
     case 'malformed':
-      return { code: 'malformed', title: CREATE.token.preselectHeading, detail: CREATE.token.preselectMalformed }
+      return `${CREATE.token.preselectHeading}: ${CREATE.token.preselectMalformed}`
     case 'checking':
-      return { code: 'loading', title: CREATE.token.preselectHeading, detail: CREATE.token.preselectChecking }
+      return `${CREATE.token.preselectHeading}: ${CREATE.token.preselectChecking}`
     case 'verified':
-      return { code: 'ok', title: CREATE.token.preselectHeading, detail: CREATE.token.preselectVerified(status.block) }
+      return `${CREATE.token.preselectHeading}: ${CREATE.token.preselectVerified(status.block)}`
     case 'not_found':
-      return { code: 'not_found', title: CREATE.token.preselectHeading, detail: CREATE.token.preselectNotFound }
+      return `${CREATE.token.preselectHeading}: ${CREATE.token.preselectNotFound}`
     case 'failed':
-      return status.line
+      return `${CREATE.token.preselectHeading}: ${status.line.title}.`
     default:
       return status satisfies never
   }
@@ -61,12 +63,16 @@ const searchName = (candidate: TokenCandidate) => {
  * disclosure away. Nothing is read until a person asks: the search reads a
  * token only when one is chosen, and the pool list reads once it mounts for
  * a chosen token.
+ *
+ * How the link's verification went is never a panel: while it runs the step
+ * holds its place, and whatever it came to is on the step's data attributes
+ * and in its live region. A failure that asking again could fix is asked
+ * again by the journey on its own; anything else leaves the search.
  */
 export function StageToken({
   source,
   state,
   preselect,
-  onRetry,
   candidates,
   onCandidates,
   onToken,
@@ -76,8 +82,6 @@ export function StageToken({
   source: ReadSource | null
   state: JourneyState
   preselect: PreselectStatus
-  /** One more verification read of the linked pool, offered only after a failure that says a retry could help. */
-  onRetry: () => void
   candidates: TokenCandidate[]
   onCandidates: (next: TokenCandidate[]) => void
   onToken: (candidate: TokenCandidate | null) => void
@@ -108,12 +112,16 @@ export function StageToken({
 
   const chosen = state.pool && !changing ? state.pool : null
   // While the linked pool is being verified its answer decides what this step shows, so nothing else is offered yet.
-  const checking = preselect.kind === 'checking' && !state.pool
+  const checking = preselect.kind === 'checking' && !preselect.again && !state.pool
 
   return (
-    <div className="dm-flow-stack" data-stage="token">
-      <ScreenStatus line={preselectLine(preselect)} onRetry={preselect.kind === 'failed' ? onRetry : undefined} busy={preselect.kind === 'checking'} />
-      {checking ? null : chosen ? (
+    <div className="dm-flow-stack" data-stage="token" data-preselect={preselect.kind} data-preselect-reason={preselect.kind === 'failed' ? preselect.line.code : undefined}>
+      <p role="status" aria-live="polite" className="sr-only">
+        {preselectWords(preselect)}
+      </p>
+      {checking ? (
+        <Skeleton className="h-[120px] w-full" />
+      ) : chosen ? (
         <ChosenPool option={chosen} state={state} candidates={candidates} onToken={fromElsewhere} onChange={() => setChanging(true)} />
       ) : (
         <>

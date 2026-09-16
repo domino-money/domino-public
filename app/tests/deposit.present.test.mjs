@@ -10,9 +10,10 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { build, clone, depositRuntime as runtime, depositSource, fixture } from './support/consumer-fakes.mjs';
 
-const { presentOperation, presentAllowances, handoffStatus } = build('deposit/present');
+const { presentOperation, presentAllowances, handoffStatus, presentListItem, tokenAmount, tokenName } = build('deposit/present');
 const { DERIVED, VARIANTS } = build('deposit/fixtures/derive');
-const { BASIS, PREPARE_OFF_WITHOUT_HANDOFF, LATCH_COPY, SUPPORT_REQUIRED } = build('deposit/copy');
+const { BASIS, PREPARE_OFF_WITHOUT_HANDOFF, LATCH_COPY, SUPPORT_REQUIRED, STATE_LABEL, failureCopy } = build('deposit/copy');
+const { DEPOSIT_ERROR_UI } = build('deposit/errors');
 
 const FRESH = { monoNowMs: 5_000, walletStepDeadlineMono: 25_000, issueWalletStepAllowed: true, latched: false, busy: false };
 const variant = (name) => fixture('deposit-v1', `variants/${name}.json`);
@@ -44,7 +45,8 @@ test('each of the 16 package variants renders its state (T5)', () => {
   for (const name of VARIANTS) {
     const view = present(variant(name));
     assert.deepEqual([view.kind, view.title], EXPECTED[name], name);
-    assert.ok(view.facts.includes('No server broadcast. No automation.'), name);
+    assert.ok(view.facts.includes('Your wallet sends every transaction. Depositing starts no automation.'), name);
+    assert.doesNotMatch(allText(view), /\bv4\b|No server broadcast|not enabled|aren't enabled|isn't enabled/i, name);
   }
 });
 
@@ -101,7 +103,7 @@ test('native and approval steps say exactly what they would do, with no call syn
   assert.deepEqual(native.step.native.map((fact) => fact.label), ['Planned native deposit', 'Selected gas reserve', 'Step max network fee']);
   assert.match(present(variant('erc20_reset')).step.lines[0], /^Reset the ERC-20 allowance 0x2222222222222222222222222222222222222222 gives Permit2 \(0x000000…c78ba3\) to 0/);
   assert.match(present(variant('erc20_approval')).step.lines[0], /^Approve exactly \S+ raw units of 0x2222222222222222222222222222222222222222 to Permit2.*never unlimited/);
-  assert.match(present(variant('permit2_approval')).step.lines[0], /^Allow the Uniswap v4 PositionManager .* through Permit2, until 20\d\d-\d\d-\d\d \d\d:\d\d:\d\d UTC/);
+  assert.match(present(variant('permit2_approval')).step.lines[0], /^Allow the Uniswap PositionManager .* through Permit2, until 20\d\d-\d\d-\d\d \d\d:\d\d:\d\d UTC/);
   assert.match(present(variant('reviewed-proxy')).step.admission, /^Reviewed upgradeable token .*upgrade, pause or freeze/);
   for (const name of ['erc20_reset', 'erc20_approval', 'permit2_approval', 'mint', 'native']) assert.doesNotMatch(allText(present(variant(name))), /approve\s*\(/, name);
 });
@@ -305,4 +307,57 @@ test('allowances: unreadable is "Could not read", expired Permit2 stays next to 
 
 test('the service fee on principal is shown as a percentage of 0, apart from gas (DEP-GEN-7)', () => {
   assert.ok(present(variant('confirmed')).facts.includes('Domino service fee on your principal: 0%. Network gas is separate.'));
+});
+
+const TKA = '0x1111111111111111111111111111111111111111';
+const TKB = '0x2222222222222222222222222222222222222222';
+const facts = (view) => Object.fromEntries(view.selection.map((fact) => [fact.label, fact]));
+
+test('every view carries the owner’s selection above its actions: pool, amount, range, budgets and limits, in token units only where decimals were read', () => {
+  const body = variant('mint');
+  const unknown = facts(present(body));
+  assert.deepEqual(Object.keys(unknown), ['Pool', 'Deposit amount', 'Range', 'Maximum spend', 'Slippage limit', 'Network limits per step', 'Gas reserve kept']);
+  assert.equal(unknown.Pool.value, '0x111111…111111 / 0x222222…222222 · 0.30%');
+  assert.equal(unknown.Pool.note, `Pool ID ${body.operation.selection.poolId}`);
+  assert.equal(unknown['Deposit amount'].value, '100 raw units of 0x111111…111111', 'decimals unknown: raw, and it says so');
+  assert.equal(unknown.Range.value, 'Ticks -120 to 180');
+  assert.equal(unknown['Maximum spend'].value, '110 raw units of 0x111111…111111 · 220 raw units of 0x222222…222222');
+  assert.equal(unknown['Slippage limit'].value, '0.5%');
+  assert.equal(unknown['Network limits per step'].value, '300,000 gas · 200 wei max fee · 100 wei priority fee');
+  assert.equal(unknown['Gas reserve kept'].value, '30,000,000 wei (0.00000000003 ETH)');
+  for (const fact of Object.values(unknown)) assert.equal(fact.unknown, undefined, 'a selection is what the owner chose, never an unknown figure');
+
+  const tokens = new Map([[TKA, { symbol: 'TKA', decimals: 2 }], [TKB, { symbol: 'TKB', decimals: 0 }]]);
+  const known = facts(present(body, { tokens }));
+  assert.equal(known.Pool.value, 'TKA / TKB · 0.30%');
+  assert.equal(known['Deposit amount'].value, '1 TKA');
+  assert.equal(known['Maximum spend'].value, '1.1 TKA · 220 TKB');
+
+  const reading = facts(present(body, { tokens: new Map([[TKA, 'reading'], [TKB, { symbol: null, decimals: 6 }]]) }));
+  assert.equal(reading['Deposit amount'].value, '—', 'while a token is read, no amount is guessed');
+  assert.equal(reading['Maximum spend'].value, '— · 0.00022 0x222222…222222', 'decimals without a symbol keep the address');
+  assert.equal(tokenAmount('12x', TKA, tokens), null);
+  assert.equal(tokenName(TKA.toUpperCase().replace('0X', '0x'), tokens), 'TKA', 'addresses compare in lower case');
+});
+
+test('a list row says the pair, the amount in token units, the update time and whether a slot is reserved, in words', () => {
+  const listed = fixture('deposit-v1', 'responses/list.json').operations[0];
+  const row = presentListItem(listed);
+  assert.deepEqual([row.id, row.state, row.pair, row.amount, row.reserved], [listed.id, 'Draft', '0x111111…111111 / 0x222222…222222 · 0.30%', '100 raw units of 0x111111…111111', false]);
+  assert.match(row.updated, /^Updated 2027-01-15 \d\d:\d\d:\d\d UTC$/);
+  const reserved = presentListItem({ ...listed, state: 'awaiting_wallet', outstanding: true }, new Map([[TKA, { symbol: 'TKA', decimals: 1 }], [TKB, 'reading']]));
+  assert.deepEqual([reserved.state, reserved.pair, reserved.amount, reserved.reserved], ['Awaiting wallet', 'TKA / 0x222222…222222 · 0.30%', '10 TKA', true]);
+  assert.equal(presentListItem(listed, new Map([[TKA, 'reading']])).amount, null);
+  assert.deepEqual(Object.keys(STATE_LABEL).sort(), ['attention', 'awaiting_wallet', 'cancel_requested', 'cancelled', 'confirmed', 'draft', 'pending', 'reverted', 'superseded']);
+  for (const label of Object.values(STATE_LABEL)) assert.doesNotMatch(label, /_/);
+});
+
+test('no deposit sentence describes the deployment as switched off, unfinished or in beta', () => {
+  const texts = [
+    ...Object.values(DEPOSIT_ERROR_UI).map((disposition) => disposition.copy),
+    ...['gate_required', 'gate_unavailable', 'not_deployed', 'request_invalid', 'network', 'timeout', 'aborted', 'session_gone'].map((kind) => failureCopy({ kind })),
+  ];
+  for (const text of texts) assert.doesNotMatch(text, /enabled|deployment|beta|not connected|coming soon|preview/i, text);
+  assert.equal(DEPOSIT_ERROR_UI.route_not_available.copy, 'The deposit service is unavailable right now. Nothing changed.');
+  assert.equal(failureCopy({ kind: 'not_deployed' }), 'The deposit service is unavailable right now. Nothing changed.');
 });

@@ -15,6 +15,7 @@ const IDLE: MarketsProvider = {
   subscribe: () => () => undefined,
   ensure: () => undefined,
   refresh: () => undefined,
+  recoverQuietly: () => () => undefined,
 }
 
 export const MarketsContext = createContext<MarketsProvider>(IDLE)

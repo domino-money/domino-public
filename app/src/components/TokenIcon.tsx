@@ -116,9 +116,13 @@ export function TokenIcon({
  * The mark for a token as the read adapter describes it. Curated artwork is
  * preferred; other public token contracts may resolve decorative artwork by
  * exact chain/address through the bounded provider helper. Symbols never
- * select an image or supply fallback letters. Missing artwork is a plain disc.
+ * select an image or supply fallback letters. Missing artwork is a plain disc
+ * drawn with a 1px theme line, so it still reads as a mark on a dark card.
  */
 type MarkProps = { token: TokenDisplay; size?: number; ring?: string; style?: CSSProperties }
+
+/** A 1px inner line from the theme's strong border: visible on light and dark cards alike. */
+const DISC_LINE = 'inset 0 0 0 1px var(--border-strong)'
 
 export function TokenMark({ token, size = 24, ring, style }: MarkProps) {
   if (token.artwork) return <TokenIcon symbol={token.artwork} size={size} ring={ring} style={style} />
@@ -147,7 +151,10 @@ function RemoteTokenMark({ token, size = 24, ring, style }: MarkProps) {
   }, [src, loaded, broken, token.chainId, token.address])
   const markStyle: CSSProperties = {
     width: size, height: size, borderRadius: '50%', border: ring ? `2px solid ${ring}` : undefined,
-    display: 'inline-block', flexShrink: 0, background: 'var(--surface-3)', ...style,
+    display: 'inline-block', flexShrink: 0, background: 'var(--surface-3)',
+    // The plain disc's own line, inside the overlap ring: until artwork paints, and when there is none. Never letters.
+    boxShadow: loaded ? undefined : DISC_LINE,
+    ...style,
   }
   if (src && !broken) return <img src={src} alt="" width={size} height={size} draggable={false}
     decoding="async" referrerPolicy="no-referrer" data-token-mark="provider"

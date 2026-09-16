@@ -3,8 +3,9 @@ import { watchConnection } from 'wagmi/actions'
 import { type Address, type Hex } from 'viem'
 import { walletConfig } from '../wallet/config'
 import { setupWallet } from '../finance/wallet'
-import { financialFetch } from '../finance/http'
+import { readRelease, type ReleaseRead } from '../finance/release'
 import { createSequenceClient, sequenceDeploymentFrom, sequenceRaw, type PreparedSequence, type SequenceDeployment, type SequenceState } from '../finance/sequence'
+import { RECEIPT_TEXT, SEQUENCE_STEP_TEXT, errorCode, financeErrorText } from '../finance/words'
 import { Button, Card, Display } from '../components/ui'
 
 const empty = { root: '', trigger: '', overlap: '', interval: '', positions: '', upside: '', slippage: '', impact: '', executionGas: '', age: '', horizon: '',
@@ -19,34 +20,40 @@ const labels: Record<keyof typeof empty,string> = {
 type Client = ReturnType<typeof createSequenceClient>
 type Root = Awaited<ReturnType<Client['inspectRoot']>>
 type Reserves = Awaited<ReturnType<Client['reserves']>>
+type Release = { kind: 'loading' } | ReleaseRead<SequenceDeployment>
+type Notice = { text: string; code: string | null }
 const cacheKey = 'domino.sequence.public-recovery.v1'
-
-async function currentSequenceDeployment():Promise<SequenceDeployment|null> {
-  const controller=new AbortController(), timer=setTimeout(()=>controller.abort(),10_000)
-  try {
-    const response=await financialFetch('/api/setup/v1/sequence-release',{signal:controller.signal,cache:'no-store',redirect:'error',headers:{'X-Domino-Setup-Contract':'1.0.0-rc.1'}})
-    if(!response.ok||response.headers.get('X-Domino-Setup-Contract')!=='1.0.0-rc.1'||!response.body)throw new Error('sequence_release_unavailable')
-    const reader=response.body.getReader(), chunks:Uint8Array[]=[];let size=0
-    while(true){const chunk=await reader.read();if(chunk.done)break;size+=chunk.value.byteLength;if(size>8192){await reader.cancel();throw new Error('invalid_sequence_release')}chunks.push(chunk.value)}
-    const bytes=new Uint8Array(size);let offset=0;for(const chunk of chunks){bytes.set(chunk,offset);offset+=chunk.length}
-    return sequenceDeploymentFrom(JSON.parse(new TextDecoder('utf-8',{fatal:true}).decode(bytes)))
-  } finally {clearTimeout(timer)}
+const readSequenceRelease = () => readRelease('/api/setup/v1/sequence-release', value => sequenceDeploymentFrom(value))
+/** For a loaded client: the published profile now, or null when it is no longer published. */
+const currentSequenceDeployment = async (): Promise<SequenceDeployment | null> => { const release = await readSequenceRelease(); return release.kind === 'available' ? release.deployment : null }
+/** Identities this browser saved after verifying them, for recovery when none are published. */
+function savedProfile(): SequenceDeployment | null {
+  try { const raw = localStorage.getItem(cacheKey); if (raw && raw.length <= 8192) { const old = sequenceDeploymentFrom(JSON.parse(raw), 0); if (old) return { ...old, expiresAt: 0 } } } catch { /* Cache is optional; it never contains owner data or a key. */ }
+  return null
 }
 
 /** Owner controls use the wallet directly. A wallet connection is deliberately
- * separate from a private Domino session and from executor availability. */
+ * separate from a private Domino session and from executor availability. The
+ * public release profile is read once on mount; without one, creation stays
+ * hidden and only the owner controls of a saved profile remain. With neither,
+ * there are no controls to offer, and the page says so in one plain line. */
 export default function Sequence() {
+  const [release,setRelease] = useState<Release>({kind:'loading'}), [saved] = useState(savedProfile)
   const [form,setForm] = useState(empty), [client,setClient] = useState<Client|null>(null), [recovery,setRecovery] = useState(false)
   const [recent,setRecent] = useState<Awaited<ReturnType<Client['recent']>>>([]), [state,setState] = useState<SequenceState|null>(null)
   const [root,setRoot] = useState<Root|null>(null), [reserves,setReserves] = useState<Reserves|null>(null), [balanceIndex,setBalanceIndex] = useState(0)
   const [base0,setBase0] = useState(true), [consent,setConsent] = useState(false), [prepared,setPrepared] = useState<PreparedSequence|null>(null)
-  const [ack,setAck] = useState(false), [hash,setHash] = useState<Hex|null>(null), [busy,setBusy] = useState(false), [notice,setNotice] = useState<string|null>(null)
+  const [ack,setAck] = useState(false), [hash,setHash] = useState<Hex|null>(null), [busy,setBusy] = useState(false), [notice,setNotice] = useState<Notice|null>(null)
   const generation = useRef(0), connection = useRef(0), running = useRef(false)
+  const say = (text:string, code:string|null = null) => setNotice({text,code})
+  useEffect(() => { let live = true; void readSequenceRelease().then(result => { if(live) setRelease(result) }); return () => { live = false } },[])
   useEffect(() => watchConnection(walletConfig,{onChange:()=>{
-    generation.current++; connection.current++; running.current=false; setBusy(false); setClient(null); setRecent([]); setState(null); setRoot(null); setReserves(null)
+    generation.current++; connection.current++; running.current=false; setBusy(false); setClient(null); setRecovery(false); setRecent([]); setState(null); setRoot(null); setReserves(null)
     setPrepared(null); setHash(null); setAck(false); setConsent(false); setForm(empty); setNotice(null)
   }}),[])
   useEffect(()=>()=>{generation.current++;connection.current++},[])
+  const available = release.kind === 'available'
+  const profile = available ? release.deployment : release.kind === 'unavailable' ? saved : null
   function edit(name:keyof typeof empty,value:string) {
     generation.current++; setForm(old=>({...old,[name]:value})); setPrepared(null); setAck(false)
     if(name==='root') {setRoot(null);setConsent(false)}
@@ -57,23 +64,24 @@ export default function Sequence() {
     if(running.current)return
     running.current=true;setBusy(true);setNotice(null);setPrepared(null);setAck(false)
     const gen=generation.current
-    try {await work()} catch(error) {if(generation.current===gen)setNotice(error instanceof Error && /^[a-z_]+$/.test(error.message)?error.message.replaceAll('_',' '):'The wallet read or simulation could not be completed. No new transaction was sent.')}
+    try {await work()} catch(error) {if(generation.current===gen)say(financeErrorText(errorCode(error),'The wallet read or simulation could not be completed. No new transaction was sent.','Read my sequences'),errorCode(error))}
     finally {if(generation.current===gen){running.current=false;setBusy(false)}}
   }
   async function connect() {
     const gen=generation.current
-    let d:SequenceDeployment|null=null, saved=false
-    try {d=await currentSequenceDeployment()} catch { /* Previously verified public identities can recover existing assets. */ }
-    if(!d)try {const raw=localStorage.getItem(cacheKey);if(raw&&raw.length<=8192){const old=sequenceDeploymentFrom(JSON.parse(raw),0);if(old){d={...old,expiresAt:0};saved=true}}}catch{ /* Cache is optional; it never contains owner data or a key. */ }
+    // Asked again at the owner's press, so a release switched off since the page opened never prepares an approval or creation.
+    const live=await readSequenceRelease()
     if(generation.current!==gen)return
-    if(!d){setNotice('Sequence creation is not available on this deployment yet. No approval or transaction was requested.');return}
+    setRelease(live)
+    const d=live.kind==='available'?live.deployment:savedProfile(), isRecovery=live.kind!=='available'
+    if(!d){say('The deployment could not be read. No approval or transaction was requested.',live.kind==='unavailable'?live.reason:null);return}
     const wallet=await setupWallet(), epoch=++connection.current
     const next=createSequenceClient({...wallet,current:()=>wallet.current()&&connection.current===epoch},d,()=>Date.now()/1000,currentSequenceDeployment)
     const rows=await next.recent()
     if(generation.current!==gen||!wallet.current())return
-    if(!saved)try{localStorage.setItem(cacheKey,JSON.stringify({contractVersion:'1.0.0-rc.1',chainId:4663,available:true,deployment:d}))}catch{ /* Recovery still works while this verified profile is loaded. */ }
-    setClient(next);setRecent(rows);setRecovery(saved);setState(null);setReserves(null);setRoot(null);setHash(null)
-    setNotice(saved?'Recovery mode. Previously saved deployment identities were checked on chain. New approvals and sequence creation are disabled.':'Deployment verified through your wallet. Create a paused sequence or manage one you own.')
+    if(!isRecovery)try{localStorage.setItem(cacheKey,JSON.stringify({contractVersion:'1.0.0-rc.1',chainId:4663,available:true,deployment:d}))}catch{ /* Recovery still works while this verified profile is loaded. */ }
+    setClient(next);setRecent(rows);setRecovery(isRecovery);setState(null);setReserves(null);setRoot(null);setHash(null)
+    say(isRecovery?'Previously saved deployment identities were checked on chain. Manage a sequence you own below.':'Deployment verified through your wallet. Create a paused sequence or manage one you own.')
   }
   const gas=()=>({maxGas:sequenceRaw(form.maxGas,64),maxFeePerGas:sequenceRaw(form.maxFee),maxPriorityFeePerGas:sequenceRaw(form.priority),reserveWei:sequenceRaw(form.reserve,256)})
   const integer=(value:string)=>{const n=sequenceRaw(value,32);return Number(n)}
@@ -100,25 +108,33 @@ export default function Sequence() {
     if(!client||!prepared||!ack||running.current)return
     const step=prepared,gen=generation.current
     running.current=true;setBusy(true);setPrepared(null);setAck(false);setHash(null)
-    try {const result=await client.send(step,true);if(generation.current===gen){setHash(result);setForm(old=>({...old,vault:step.vault}));setNotice('Offered to your wallet once. Check the canonical receipt, then read the position or sequence again before the next step.')}}
+    try {const result=await client.send(step,true);if(generation.current===gen){setHash(result);setForm(old=>({...old,vault:step.vault}));say('Offered to your wallet once. Check the canonical receipt, then read the position or sequence again before the next step.')}}
     catch(error){if(generation.current===gen){
       const beforeWallet=error instanceof Error&&['review_required','sequence_admission_unavailable','sequence_release_expired','sequence_preparation_changed','sequence_activation_unavailable','sequence_tariff_changed','deployment_code_changed','deployment_identity_changed','root_approval_changed'].includes(error.message)
-      setNotice(beforeWallet?'The preparation is no longer valid. No wallet transaction was requested. Reload the deployment or sequence, then prepare and review again.':error&&typeof error==='object'&&(error as {code?:unknown}).code===4001?'Wallet request rejected. Prepare and review again if you want to continue.':'The wallet outcome may be unknown. Check wallet activity and chain state. This nonce remains protected against another offer, including after reload.')
+      say(beforeWallet?'The preparation is no longer valid. No wallet transaction was requested. Read your sequences again, then prepare and review again.':error&&typeof error==='object'&&(error as {code?:unknown}).code===4001?'Wallet request rejected. Prepare and review again if you want to continue.':'The wallet outcome may be unknown. Check wallet activity and chain state. This nonce remains protected against another offer, including after reload.',errorCode(error))
     }}
     finally {if(generation.current===gen){running.current=false;setBusy(false)}}
   }
   const fields=(names:(keyof typeof empty)[]) => <div className="dm-acct-fields dm-acct-fields--3">{names.map(name=><label className="dm-label dm-acct-lf" key={name}>{labels[name]}<input disabled={busy} className="dm-field dm-acct-mono-field" value={form[name]} onChange={e=>edit(name,e.target.value)} autoComplete="off" /></label>)}</div>
+  // No published release, no saved profile, and nothing read, running or said on this visit: the owner controls would promise actions
+  // with no way into them. Once the release has answered, one plain line says so instead; why is its data and title. While it is read, nothing shows.
+  const noControls=!available&&!saved&&!client&&!notice&&!busy
   return <main className="dm-page dm-page--narrow">
     <Display as="h1" className="dm-display-title">Your sequences</Display>
-    <p className="dm-acct-lede">Keep your root NFT in your wallet while a dedicated sequence manages earned fees and child positions. Creating a sequence starts it paused. Each wallet transaction has its own review.</p>
-    <Card className="dm-acct-block dm-acct-panel"><h2 className="dm-acct-panel-title">Wallet and deployment</h2><p className="dm-acct-panel-note">Use a connected Robinhood Chain wallet. Owner recovery works without a Domino sign-in or a running executor.</p>
-      <Button className="justify-self-start" variant="outline" disabled={busy} onClick={()=>{void action(connect)}}>Load deployment and my sequences</Button>
-      {notice&&<p role="status" className="dm-inset dm-acct-notice dm-acct-wrap">{notice}</p>}
-      {client&&<p className="dm-acct-hash">Factory {client.deployment.factory} · {recovery?'Recovery only':'Verified deployment'} · 2% on earned fees consumed for reinvestment, once. No fee on principal.</p>}
-    </Card>
+    <p className="dm-acct-lede">Keep your root NFT in your wallet while a dedicated sequence manages earned fees and child positions. Each wallet transaction has its own review.</p>
+    {noControls?(release.kind==='unavailable'
+      ?<p className="dm-acct-block text-body text-fg-muted" data-sequence-release="unavailable" data-sequence-release-reason={release.reason} data-recovery-profile="none" title={`Sequence deployment unavailable: ${release.reason.replaceAll('_',' ')}.`}>No sequence to manage here.</p>
+      :<div hidden data-sequence-release={release.kind} data-recovery-profile="none" />)
+    :<Card className="dm-acct-block dm-acct-panel" data-sequence-release={release.kind} data-sequence-release-reason={release.kind==='unavailable'?release.reason:undefined} data-recovery-profile={saved?'saved':'none'}>
+      <h2 className="dm-acct-panel-title">Owner controls</h2>
+      <p className="dm-acct-panel-note">{available?'Create a paused sequence from a position NFT you hold, or manage one you own, directly through your wallet. Owner controls need no Domino sign-in.':'Pause, revoke permissions or recover assets of a sequence you own, directly through your wallet. Withdrawals have no Domino service fee.'}</p>
+      {profile&&<Button className="justify-self-start" variant="outline" disabled={busy} onClick={()=>{void action(connect)}}>Read my sequences</Button>}
+      {notice&&<p role="status" className="dm-acct-line dm-acct-wrap" data-notice-code={notice.code??undefined}>{notice.text}</p>}
+      {client&&<p className="dm-acct-hash">Factory {client.deployment.factory} · {recovery?'Saved deployment':'Verified deployment'} · 2% on earned fees consumed for reinvestment, once. No fee on principal.</p>}
+    </Card>}
     {client&&<>
       <Card className="dm-acct-block dm-acct-panel"><h2 className="dm-acct-panel-title">Network budget</h2><p className="dm-acct-panel-note">Set explicit limits for each approval, creation or owner action. These are wallet transaction limits; the sequence execution cap is configured separately.</p>{fields(['maxGas','maxFee','priority','reserve'])}</Card>
-      {!recovery&&<Card className="dm-acct-block dm-acct-panel"><h2 className="dm-acct-panel-title">Create a paused sequence</h2>{fields(['root'])}
+      {available&&!recovery&&<Card className="dm-acct-block dm-acct-panel"><h2 className="dm-acct-panel-title">Create a paused sequence</h2><p className="dm-acct-panel-note">Creating a sequence starts it paused; activating it is a separate owner transaction.</p>{fields(['root'])}
         <Button className="justify-self-start" variant="outline" disabled={busy} onClick={()=>{void action(async()=>{const gen=generation.current,result=await client.inspectRoot(sequenceRaw(form.root,256));if(generation.current===gen){setRoot(result);setConsent(false)}})}}>Read my root NFT</Button>
         {root&&<><p className="dm-acct-line dm-acct-wrap">Pool {root.poolId} · ticks {root.lower} to {root.upper}. Currency 0: {root.key.currency0}. Currency 1: {root.key.currency1}. The zero address denotes native currency.</p>
           <label className="dm-label dm-acct-lf">Price orientation<select disabled={busy} className="dm-field" value={base0?'0':'1'} onChange={e=>{generation.current++;setBase0(e.target.value==='0');setPrepared(null);setAck(false)}}><option value="0">Currency 0 is base; currency 1 is quote</option><option value="1">Currency 1 is base; currency 0 is quote</option></select></label>
@@ -128,10 +144,10 @@ export default function Sequence() {
           <p className="dm-acct-panel-note">First approve this NFT to its predicted sequence address. After its receipt is confirmed, prepare again to create the sequence. No approval for all NFTs is requested.</p>
         </>}
       </Card>}
-      <Card className="dm-acct-block dm-acct-panel"><h2 className="dm-acct-panel-title">Owner controls</h2><p className="dm-acct-panel-note">Pause, revoke permissions or recover assets directly through your wallet. These controls remain available when Domino services are off. Withdrawals have no Domino service fee.</p>
+      <Card className="dm-acct-block dm-acct-panel"><h2 className="dm-acct-panel-title">Manage a sequence</h2><p className="dm-acct-panel-note">Read a sequence you own, then pause it, revoke permissions or withdraw, one reviewed step each. Withdrawals have no Domino service fee.</p>
         <div className="dm-acct-choices">{recent.map(row=><Button key={row.vault} variant="outline" size="sm" disabled={busy} onClick={()=>{void action(()=>inspect(row.vault))}}>Sequence {row.ownerNonce.toString()} · {row.vault.slice(0,10)}</Button>)}</div>
         {fields(['vault'])}<Button className="justify-self-start" variant="outline" disabled={busy} onClick={()=>{void action(()=>inspect())}}>Read owned sequence</Button>
-        {state&&<><p className="dm-acct-line dm-acct-wrap">Root NFT #{state.rootTokenId.toString()} · {state.paused?'Paused':'Active'} · {state.operator==='0x0000000000000000000000000000000000000000'?'Operator revoked':`Operator ${state.operator}`} · root permission {state.rootPermissionValid?'valid':'unavailable'}.</p>
+        {state&&<><p className="dm-acct-line dm-acct-wrap">Root NFT #{state.rootTokenId.toString()} · {state.paused?'Paused':'Active'} · {state.operator==='0x0000000000000000000000000000000000000000'?'Operator revoked':`Operator ${state.operator}`} · root permission {state.rootPermissionValid?'valid':'not valid'}.</p>
           <div className="dm-acct-choices">{!recovery&&state.paused&&<Button disabled={busy||!state.rootPermissionValid||state.operator!==client.deployment.operator} onClick={()=>{void action(async()=>{const gen=generation.current,result=await client.resume(state.vault,gas());if(generation.current===gen)setPrepared(result)})}}>Review activation</Button>}<Button variant="outline" disabled={busy||state.paused} onClick={()=>{void action(()=>recover('pause'))}}>Review pause</Button><Button variant="outline" disabled={busy||state.operator==='0x0000000000000000000000000000000000000000'} onClick={()=>{void action(()=>recover('revoke-operator'))}}>Review operator revocation</Button><Button variant="outline" disabled={busy} onClick={()=>{void action(()=>recover('revoke-root'))}}>Review root NFT approval revocation</Button></div>
           <details className="dm-details dm-acct-disclosure"><summary>Child positions and fee reserves</summary><div className="dm-acct-disclosure-body">{fields(['member'])}<Button className="justify-self-start" variant="outline" disabled={busy} onClick={()=>{void action(async()=>{const gen=generation.current,result=await client.reserves(state.vault,sequenceRaw(form.member,256));if(generation.current===gen){setReserves(result);setBalanceIndex(0)}})}}>Read position and earned-fee reserves</Button>
             {reserves&&<><p className="dm-acct-line">NFT #{reserves.tokenId.toString()} · {reserves.isRoot?'Root':'Child'} · {reserves.active?'registered':'withdrawn'}. {reserves.successor>0n?`Successor NFT #${reserves.successor}.`:'No successor registered.'}</p>
@@ -144,8 +160,8 @@ export default function Sequence() {
           </div></details>
         </>}
       </Card>
-      {prepared&&<Card className="dm-acct-block dm-acct-panel" role="region" aria-label="Sequence wallet review"><h2 className="dm-acct-panel-title">Review {prepared.kind.replaceAll('-',' ')}</h2>{prepared.summary.map(line=><p key={line} className="dm-acct-line dm-acct-wrap">{line}</p>)}<label className="dm-acct-check"><input type="checkbox" checked={ack} disabled={busy} onChange={e=>setAck(e.target.checked)}/><span>I reviewed the NFT, owner, sequence address, currencies, fees and limits for this single step.</span></label><Button className="justify-self-start" variant="accent" disabled={busy||!ack} onClick={()=>{void send()}}>Send this step in wallet</Button></Card>}
-      {hash&&<Card className="dm-acct-block dm-acct-panel"><h2 className="dm-acct-panel-title">Transaction receipt</h2><p className="dm-acct-hash">{hash}</p><Button variant="outline" className="justify-self-start" disabled={busy} onClick={()=>{void action(async()=>{const gen=generation.current,result=await client.receipt(hash);if(generation.current===gen)setNotice(`Receipt: ${result.state}. ${result.state==='finalized'?'Read the root or owned sequence again before continuing.':'Check again explicitly when the chain has progressed. No transaction is retried.'}`)})}}>Check canonical receipt</Button></Card>}
+      {prepared&&<Card className="dm-acct-block dm-acct-panel" role="region" aria-label="Sequence wallet review"><h2 className="dm-acct-panel-title">Review {SEQUENCE_STEP_TEXT[prepared.kind]}</h2>{prepared.summary.map(line=><p key={line} className="dm-acct-line dm-acct-wrap">{line}</p>)}<label className="dm-acct-check"><input type="checkbox" checked={ack} disabled={busy} onChange={e=>setAck(e.target.checked)}/><span>I reviewed the NFT, owner, sequence address, currencies, fees and limits for this single step.</span></label><Button className="justify-self-start" variant="accent" disabled={busy||!ack} onClick={()=>{void send()}}>Send this step in wallet</Button></Card>}
+      {hash&&<Card className="dm-acct-block dm-acct-panel"><h2 className="dm-acct-panel-title">Transaction receipt</h2><p className="dm-acct-hash">{hash}</p><Button variant="outline" className="justify-self-start" disabled={busy} onClick={()=>{void action(async()=>{const gen=generation.current,result=await client.receipt(hash);if(generation.current===gen)say(`Receipt: ${RECEIPT_TEXT[result.state]}. ${result.state==='finalized'?'Read the root or owned sequence again before continuing.':'Check again when the chain has progressed. No transaction is retried.'}`)})}}>Check canonical receipt</Button></Card>}
     </>}
   </main>
 }

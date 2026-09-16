@@ -1,0 +1,214 @@
+/* docs builder: the documentation at #/docs and #/docs/<slug>. The frame (sidebar, article, "On this
+   page"), the prose blocks, the pager and the index. Classes are prefixed dm-docs-. Tokens only, both
+   themes; no Tangerine and no amber: a page's status is the neutral roadmap pill. */
+
+@layer components {
+  /* ---- Frame. The columns follow what DocsLayout rendered for the width: the sidebar from 1024px,
+     the rail from 1280px. Only the two side columns are sticky; nothing is sticky on a phone. ---- */
+  .dm-docs { display: grid; grid-template-columns: minmax(0, 1fr); align-items: start; column-gap: 48px; }
+  .dm-docs[data-docs-side] { grid-template-columns: 220px minmax(0, 1fr); }
+  .dm-docs[data-docs-side][data-docs-rail] { grid-template-columns: 220px minmax(0, 1fr) 200px; }
+  .dm-docs-main { min-width: 0; }
+  .dm-docs-side,
+  .dm-docs-rail { position: sticky; top: calc(var(--header-h) + 24px); max-height: calc(100dvh - var(--header-h) - 48px); overflow-y: auto; overscroll-behavior: contain; scrollbar-width: thin; }
+  /* The links' own padding sits in the gutter, so their words line up with the page's edge. The whole list
+     (17 links in six groups) is 752px tall, so it fits the column at 1440x900 without scrolling. */
+  .dm-docs-side { margin-left: -10px; padding: 2px 4px 4px 0; }
+  .dm-docs-rail { padding: 6px 0 16px; }
+  .dm-docs-article { max-width: 720px; }
+  /* A side column holding more than fits (a short window) fades at the edge where more links sit, following
+     its own scroll: the bottom until it is scrolled to the end, the top once it has left the start. A column
+     that fits has no scroll range, so its timeline is inactive and nothing fades. */
+  @supports (animation-timeline: scroll()) {
+    .dm-docs-side,
+    .dm-docs-rail {
+      -webkit-mask-image: linear-gradient(to bottom, transparent, #000 var(--dm-docs-fade-top), #000 calc(100% - var(--dm-docs-fade-bottom)), transparent);
+      mask-image: linear-gradient(to bottom, transparent, #000 var(--dm-docs-fade-top), #000 calc(100% - var(--dm-docs-fade-bottom)), transparent);
+      animation: dm-docs-edges linear both;
+      animation-timeline: scroll(self);
+    }
+  }
+
+  /* ---- Sidebar ---------------------------------------------------------------------------- */
+  .dm-docs-nav { display: grid; gap: 12px; }
+  .dm-docs-nav-list { display: grid; gap: 1px; margin: 0; padding: 0; list-style: none; }
+  .dm-docs-nav-label { margin: 0 0 4px; padding: 0 10px; font-size: 12px; line-height: 16px; font-weight: 500; letter-spacing: -0.12px; color: var(--fg-subtle); }
+  .dm-docs-nav-link { display: flex; align-items: center; min-height: 32px; padding: 6px 10px; border-radius: var(--radius-sm); font-size: 14px; line-height: 20px; letter-spacing: -0.2px; color: var(--fg-muted); text-decoration: none; transition: background-color var(--dur-hover) ease, color var(--dur-hover) ease; }
+  .dm-docs-nav-link:hover { background: var(--wash); color: var(--fg); }
+  .dm-docs-nav-link[aria-current="page"] { background: var(--surface-3); color: var(--fg); font-weight: 500; }
+  .dm-docs-nav-link:focus-visible { outline-offset: -2px; }
+
+  /* ---- The docs menu, below 1024px: a closed disclosure naming the page, opening the same list ---- */
+  .dm-docs-menu { margin-bottom: 24px; border-radius: var(--radius); background: var(--surface-1); box-shadow: inset 0 0 0 1px var(--border); }
+  .dm-docs-menu > summary { min-height: 48px; padding: 0 14px; }
+  .dm-docs-menu[open] > summary { border-radius: var(--radius) var(--radius) 0 0; box-shadow: inset 0 -1px 0 var(--border); }
+  .dm-docs-menu > .dm-docs-nav { padding: 12px 6px 10px; }
+  .dm-docs-menu-where { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0 8px; min-width: 0; }
+  .dm-docs-menu-group,
+  .dm-docs-menu-sep { font-weight: 400; color: var(--fg-subtle); }
+  .dm-docs-menu-page { color: var(--fg); }
+
+  /* ---- Breadcrumb and the page's head ------------------------------------------------------- */
+  .dm-docs-crumbs ol { display: flex; flex-wrap: wrap; align-items: center; margin: 0 0 14px; padding: 0; list-style: none; font-size: 13px; line-height: 16px; color: var(--fg-subtle); }
+  .dm-docs-crumbs li + li::before { content: '/'; margin: 0 8px; color: var(--fg-subtle); }
+  .dm-docs-crumbs a { border-radius: 4px; color: var(--fg-muted); text-decoration: none; transition: color var(--dur-hover) ease; }
+  .dm-docs-crumbs a:hover { color: var(--fg); }
+  .dm-docs-title { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; }
+  .dm-docs-lead { max-width: 62ch; margin-top: 10px; font-size: 16px; line-height: 24px; letter-spacing: -0.24px; color: var(--fg-muted); text-wrap: pretty; }
+
+  /* ---- "On this page": a rail beside the article, or a disclosure under the head ---------------- */
+  .dm-docs-rail-title { margin: 0 0 12px; font-size: 12px; line-height: 16px; font-weight: 500; letter-spacing: -0.12px; color: var(--fg-subtle); }
+  .dm-docs-toc-list { display: grid; margin: 0; padding: 0; list-style: none; box-shadow: inset 1px 0 0 var(--border); }
+  .dm-docs-toc-link { position: relative; display: block; padding: 5px 0 5px 14px; border-radius: 0 4px 4px 0; font-size: 13px; line-height: 18px; letter-spacing: -0.13px; color: var(--fg-subtle); text-decoration: none; text-wrap: pretty; transition: color var(--dur-hover) ease; }
+  .dm-docs-toc-link[data-depth="3"] { padding-left: 26px; }
+  .dm-docs-toc-link::before { content: ''; position: absolute; left: 0; top: 4px; bottom: 4px; width: 2px; border-radius: 2px; background: var(--fg); opacity: 0; transition: opacity var(--dur-fade) ease; }
+  .dm-docs-toc-link:hover,
+  .dm-docs-toc-link[aria-current="location"] { color: var(--fg); }
+  .dm-docs-toc-link[aria-current="location"]::before { opacity: 1; }
+  .dm-docs-toc-link:focus-visible { outline-offset: -2px; }
+  .dm-docs-toc-menu { margin-top: 24px; border-radius: var(--radius); box-shadow: inset 0 0 0 1px var(--border); }
+  .dm-docs-toc-menu > summary { min-height: 44px; padding: 0 14px; }
+  .dm-docs-toc-menu > .dm-docs-toc { padding: 2px 14px 14px; }
+
+  /* ---- Prose ----------------------------------------------------------------------------------- */
+  .dm-docs-section { margin-top: 48px; }
+  .dm-docs-prose > .dm-docs-section:first-child { margin-top: 40px; }
+  .dm-docs-sub { margin-top: 28px; }
+  .dm-docs-prose [id] { scroll-margin-top: calc(var(--header-h) + 16px); }
+  .dm-docs-h2 { font-family: var(--font-display); font-weight: 400; font-size: 22px; line-height: 26px; letter-spacing: 0; color: var(--fg); text-wrap: balance; }
+  .dm-docs-h3 { font-size: 16px; line-height: 24px; font-weight: 500; letter-spacing: -0.24px; color: var(--fg); }
+  .dm-docs-p { max-width: 68ch; margin-top: 12px; font-size: 15px; line-height: 24px; letter-spacing: -0.2px; color: var(--fg-muted); text-wrap: pretty; }
+  .dm-docs-article strong { font-weight: 500; color: var(--fg); }
+  .dm-docs-mono { padding: 1px 5px; border-radius: 4px; background: var(--wash-strong); font-family: var(--font-mono); font-size: 13px; letter-spacing: 0; color: var(--fg); overflow-wrap: anywhere; -webkit-box-decoration-break: clone; box-decoration-break: clone; }
+  .dm-docs-link { border-radius: 2px; color: var(--fg); text-decoration-line: underline; text-decoration-color: var(--border-strong); text-decoration-thickness: 1px; text-underline-offset: 3px; transition: text-decoration-color var(--dur-hover) ease; }
+  .dm-docs-link:hover { text-decoration-color: var(--fg-subtle); }
+  @media (min-width: 768px) { .dm-docs-h2 { font-size: 24px; line-height: 28px; } }
+
+  .dm-docs-list { display: grid; gap: 8px; max-width: 68ch; margin: 12px 0 0; padding: 0; list-style: none; }
+  .dm-docs-list > li { position: relative; padding-left: 20px; font-size: 15px; line-height: 24px; letter-spacing: -0.2px; color: var(--fg-muted); text-wrap: pretty; }
+  .dm-docs-list > li::before { content: ''; position: absolute; left: 4px; top: 8.5px; width: 5px; height: 7px; border-radius: 1.5px; background: var(--fg-faint); }
+
+  /* Numbered steps: the rows of Home's "How it works", in a card. */
+  .dm-docs-steps { margin: 16px 0 0; padding: 8px; list-style: none; }
+  .dm-docs-step { display: grid; grid-template-columns: 28px minmax(0, 1fr); gap: 16px; padding: 14px 12px; }
+  .dm-docs-step + .dm-docs-step { border-top: 1px solid var(--border); }
+  .dm-docs-step-n { display: grid; place-items: center; width: 28px; height: 28px; border-radius: var(--radius-sm); background: var(--surface-3); font-size: 12px; line-height: 16px; font-weight: 500; color: var(--fg-subtle); }
+  .dm-docs-step-title { padding-top: 3px; font-size: 15px; line-height: 22px; font-weight: 500; letter-spacing: -0.2px; color: var(--fg); }
+  .dm-docs-step-body { margin-top: 2px; font-size: 14px; line-height: 20px; color: var(--fg-muted); text-wrap: pretty; }
+
+  /* A callout: the quiet inset with an info mark, one kind only. */
+  .dm-docs-note { display: flex; align-items: flex-start; gap: 12px; margin-top: 16px; padding: 14px 16px; font-size: 14px; line-height: 20px; color: var(--fg-muted); }
+  .dm-docs-note > p { min-width: 0; text-wrap: pretty; }
+  .dm-docs-note-icon { flex-shrink: 0; margin-top: 2px; color: var(--fg-subtle); }
+  .dm-docs-note-title { display: block; margin-bottom: 2px; }
+
+  /* Facts: label beside value and note; stacked below 640px. */
+  .dm-docs-facts { margin: 16px 0 0; padding: 4px 20px; }
+  .dm-docs-fact { display: grid; gap: 4px; padding: 14px 0; }
+  .dm-docs-fact + .dm-docs-fact { border-top: 1px solid var(--border); }
+  .dm-docs-fact dt { font-size: 14px; line-height: 20px; color: var(--fg-muted); }
+  .dm-docs-fact dd { min-width: 0; margin: 0; }
+  .dm-docs-fact-value { display: block; font-size: 14px; line-height: 20px; font-weight: 500; letter-spacing: -0.2px; color: var(--fg); }
+  .dm-docs-fact-note { display: block; margin-top: 2px; font-size: 13px; line-height: 18px; color: var(--fg-muted); text-wrap: pretty; }
+  @media (min-width: 640px) { .dm-docs-fact { grid-template-columns: minmax(0, 180px) minmax(0, 1fr); gap: 24px; } }
+
+  /* Addresses: name and role, the address in full with its copy button. Below 768px the address takes
+     the row's whole width under the name, and the copy button moves up beside the name. */
+  .dm-docs-addresses { margin-top: 16px; padding: 4px; }
+  .dm-docs-addresses .dm-kv > div { min-height: 64px; padding-top: 10px; padding-bottom: 10px; }
+  .dm-docs-addresses dt { display: grid; gap: 2px; flex-shrink: 0; }
+  .dm-docs-addr-name { font-size: 14px; line-height: 20px; font-weight: 500; color: var(--fg); }
+  .dm-docs-addr-role { font-size: 12px; line-height: 16px; color: var(--fg-subtle); }
+  @media (max-width: 767px) {
+    .dm-docs-addresses { padding: 4px 0; }
+    .dm-docs-addresses .dm-kv { padding: 0 12px; }
+    .dm-docs-addresses .dm-kv > div { position: relative; flex-direction: column; align-items: stretch; justify-content: center; gap: 6px; }
+    .dm-docs-addresses dt { padding-right: 32px; }
+    .dm-docs-addresses .dm-kv .dm-kv-mono { text-align: left; font-size: 12px; }
+    .dm-docs-addresses .dm-kv-action { position: absolute; top: 10px; right: 0; margin-left: 0; }
+  }
+
+  /* Two columns side by side (what the operator can and cannot do); stacked below 640px. */
+  .dm-docs-split { display: grid; gap: 12px; margin-top: 16px; }
+  .dm-docs-split-col { padding: 16px 18px 18px; }
+  .dm-docs-split-title { font-size: 14px; line-height: 20px; font-weight: 500; color: var(--fg); }
+  .dm-docs-split-col .dm-docs-list { margin-top: 10px; }
+  .dm-docs-split-col .dm-docs-list > li { font-size: 14px; line-height: 20px; }
+  .dm-docs-split-col .dm-docs-list > li::before { top: 6.5px; }
+  @media (min-width: 640px) { .dm-docs-split { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+
+  /* Glossary terms. */
+  .dm-docs-terms { margin: 12px 0 0; }
+  .dm-docs-term { padding: 14px 0; }
+  .dm-docs-term + .dm-docs-term { border-top: 1px solid var(--border); }
+  .dm-docs-term dt { font-size: 15px; line-height: 22px; font-weight: 500; letter-spacing: -0.2px; color: var(--fg); }
+  .dm-docs-term dd { max-width: 68ch; margin: 2px 0 0; font-size: 14px; line-height: 21px; color: var(--fg-muted); text-wrap: pretty; }
+
+  /* ---- Previous and next -------------------------------------------------------------------- */
+  .dm-docs-pager { display: grid; gap: 12px; margin-top: 64px; }
+  .dm-docs-pager-link { display: flex; align-items: center; gap: 12px; min-width: 0; padding: 16px 20px; color: var(--fg); text-decoration: none; transition: box-shadow var(--dur-hover) ease; }
+  .dm-docs-pager-link:hover { box-shadow: var(--elev-card), inset 0 0 0 1px var(--border-strong); }
+  .dm-docs-pager-link[data-dir="next"] { justify-content: flex-end; text-align: right; }
+  .dm-docs-pager-text { display: grid; gap: 2px; min-width: 0; }
+  .dm-docs-pager-caption { font-size: 12px; line-height: 16px; color: var(--fg-subtle); }
+  .dm-docs-pager-title { font-size: 15px; line-height: 22px; font-weight: 500; letter-spacing: -0.2px; color: var(--fg); overflow-wrap: anywhere; }
+  .dm-docs-pager-chev { flex-shrink: 0; color: var(--fg-subtle); transition: translate var(--dur-fade) var(--ease-std), color var(--dur-hover) ease; }
+  .dm-docs-pager-link:hover .dm-docs-pager-chev { color: var(--fg); }
+  .dm-docs-pager-link[data-dir="previous"]:hover .dm-docs-pager-chev { translate: -2px 0; }
+  .dm-docs-pager-link[data-dir="next"]:hover .dm-docs-pager-chev { translate: 2px 0; }
+  @media (min-width: 640px) {
+    .dm-docs-pager { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .dm-docs-pager-link[data-dir="next"] { grid-column: 2; }
+  }
+
+  /* ---- The index ----------------------------------------------------------------------------- */
+  .dm-docs-label { font-size: 14px; line-height: 20px; font-weight: 500; letter-spacing: -0.2px; color: var(--fg-subtle); }
+  .dm-docs-start { margin-top: 40px; }
+  .dm-docs-start-grid { display: grid; gap: 12px; margin: 12px 0 0; padding: 0; list-style: none; }
+  .dm-docs-start-card { display: flex; flex-direction: column; align-items: flex-start; height: 100%; padding: 20px; text-decoration: none; transition: box-shadow var(--dur-hover) ease; }
+  .dm-docs-start-card:hover { box-shadow: var(--elev-card), inset 0 0 0 1px var(--border-strong); }
+  .dm-docs-start-icon { display: grid; place-items: center; width: 36px; height: 36px; border-radius: var(--radius-sm); background: var(--surface-1); box-shadow: inset 0 0 0 1px var(--border); color: var(--fg-muted); --icon-2: var(--fg-subtle); }
+  .dm-docs-start-title { display: inline-flex; align-items: center; gap: 4px; margin-top: 16px; font-size: 16px; line-height: 24px; font-weight: 500; letter-spacing: -0.24px; color: var(--fg); }
+  .dm-docs-start-title > svg { color: var(--fg-subtle); transition: translate var(--dur-fade) var(--ease-std), color var(--dur-hover) ease; }
+  .dm-docs-start-card:hover .dm-docs-start-title > svg { color: var(--fg); translate: 2px 0; }
+  .dm-docs-start-summary { margin-top: 4px; font-size: 14px; line-height: 20px; color: var(--fg-muted); text-wrap: pretty; }
+  .dm-docs-groups { display: grid; gap: 40px 48px; margin-top: 56px; }
+  .dm-docs-group { min-width: 0; }
+  .dm-docs-rows { display: grid; margin: 12px 0 0; padding: 0; list-style: none; }
+  .dm-docs-rows > li { border-top: 1px solid var(--border); }
+  .dm-docs-row { display: grid; grid-template-columns: minmax(0, 1fr) 14px; align-items: center; gap: 16px; padding: 12px 0; border-radius: var(--radius-xs); text-decoration: none; }
+  .dm-docs-row-title { display: block; font-size: 15px; line-height: 22px; font-weight: 500; letter-spacing: -0.2px; color: var(--fg); text-decoration-line: underline; text-decoration-color: transparent; text-underline-offset: 3px; transition: text-decoration-color var(--dur-hover) ease; }
+  .dm-docs-row-summary { display: block; margin-top: 2px; font-size: 13px; line-height: 18px; color: var(--fg-muted); text-wrap: pretty; }
+  .dm-docs-row > svg { color: var(--fg-subtle); transition: translate var(--dur-fade) var(--ease-std), color var(--dur-hover) ease; }
+  .dm-docs-row:hover .dm-docs-row-title { text-decoration-color: var(--border-strong); }
+  .dm-docs-row:hover > svg { color: var(--fg); translate: 2px 0; }
+  @media (min-width: 768px) {
+    .dm-docs-start-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+    .dm-docs-groups { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  }
+
+  /* ---- Phone ----------------------------------------------------------------------------------- */
+  @media (max-width: 767px) {
+    .dm-docs-lead { font-size: 15px; line-height: 22px; }
+    .dm-docs-facts { padding: 4px 16px; }
+    .dm-docs-step { gap: 12px; padding: 14px 8px; }
+    .dm-docs-pager { margin-top: 48px; }
+    .dm-docs-start { margin-top: 32px; }
+    /* A start card becomes a row: the mark beside its title and line. */
+    .dm-docs-start-card { display: grid; grid-template-columns: 36px minmax(0, 1fr); align-items: start; column-gap: 14px; padding: 16px; }
+    .dm-docs-start-icon { grid-row: span 2; }
+    .dm-docs-start-title { margin-top: 0; }
+    .dm-docs-groups { margin-top: 44px; }
+  }
+}
+
+/* The side columns' edge fades, driven by their own scroll (see .dm-docs-side above). Registered lengths, so
+   they interpolate; both rest at 0px, which is no fade, whenever the columns do not scroll. */
+@property --dm-docs-fade-top { syntax: '<length>'; inherits: false; initial-value: 0px; }
+@property --dm-docs-fade-bottom { syntax: '<length>'; inherits: false; initial-value: 0px; }
+@keyframes dm-docs-edges {
+  0% { --dm-docs-fade-top: 0px; --dm-docs-fade-bottom: 32px; }
+  15% { --dm-docs-fade-top: 32px; }
+  85% { --dm-docs-fade-bottom: 32px; }
+  100% { --dm-docs-fade-top: 32px; --dm-docs-fade-bottom: 0px; }
+}

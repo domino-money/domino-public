@@ -58,10 +58,10 @@ frontend files and Vite updates the local page. Ctrl+C stops HTTP, HMR and
 upstream operations. Nothing here pushes, merges or publishes frontend code.
 
 Only the fixed `https://dev-read.domino.money` target is possible. The proxy
-maps exactly the seven documented public read POSTs and capabilities GET,
-plus separate development status GET. It cannot reach sessions, deposits,
-pool-metrics, pool-positions, arbitrary paths/URLs/queries or redirects. Access
-headers are added server-side; browser cookies, authorization, Origin and
+maps exactly read-v1's ten read POSTs and its capabilities GET, read-v2's
+capabilities GET and pool-market POST, plus a separate development status GET.
+It cannot reach sessions, deposits, arbitrary paths/URLs/queries or redirects.
+Access headers are added server-side; browser cookies, authorization, Origin and
 client-IP headers never go upstream. Responses must match canonical contracts;
 only contract/request-ID/retry headers and validated JSON can return.
 

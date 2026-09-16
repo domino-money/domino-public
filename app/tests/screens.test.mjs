@@ -34,7 +34,7 @@ const { createFixtureSource } = built('fixtureSource');
 const { createScheduledSource } = built('scheduler');
 // F3 renamed this: the table loads exactly the reviewed pool selection.
 const { loadSelectedPools } = built('marketsProvider');
-const { MARKET_CASES, FIXTURE_POOL, FIXTURE_TOKEN, NATIVE, MUTATED_CURSOR, gateway, errorFixture, invalidFixture, withCursor, withNextCataloguePage } = built('scenarios');
+const { MARKET_CASES, PROJECTION_CASES, projectionTokens, FIXTURE_POOL, FIXTURE_TOKEN, NATIVE, MUTATED_CURSOR, gateway, errorFixture, invalidFixture, withCursor, withNextCataloguePage } = built('scenarios');
 const markets = require('../.test-build/app/src/lib/markets.js');
 const ts = require('typescript');
 
@@ -272,6 +272,8 @@ test('a live card: pool, fee, range in ticks and prices, amounts, owner at the b
   assert.equal(card.fee, '0.30%');
   assert.deepEqual([card.range.tickLower, card.range.tickUpper], [-60, 60]);
   assert.deepEqual(card.range.prices, { lower: '≈994,018,000,000', upper: '≈1,006,020,000,000' });
+  assert.equal(card.range.fullRange, false);
+  assert.equal(positions.rangePricesProblem(card.range), null);
   assert.equal(positions.tickPriceText(-60, 18, 6), '≈994,018,000,000');
   assert.equal(positions.tickPriceText(60, 18, 6), '≈1,006,020,000,000');
   assert.equal(positions.tickPriceText(887272, 18, 0), null, 'out of the formatter range: ticks only');
@@ -283,7 +285,8 @@ test('a live card: pool, fee, range in ticks and prices, amounts, owner at the b
   assert.equal(card.inRange, true);
   assert.equal(card.hasLiquidity, true);
   assert.equal(card.principal[0].kind, 'units');
-  assert.equal(card.principal[0].text, '3,797,063,507.756903070969194414');
+  // Changed on purpose (review of 2026-09-14): six significant digits on the card, never fewer than the whole part, and every digit for its title.
+  assert.deepEqual([card.principal[0].text, card.principal[0].exact], ['3,797,063,508', '3,797,063,507.756903070969194414']);
   assert.equal(card.unsettledFees[1].kind, 'zero');
   assert.deepEqual(Object.keys(card).filter((k) => /usd/i.test(k)), []);
   assert.equal(batch.block.number, 700);
@@ -304,8 +307,85 @@ test('without decimals the range is ticks only and amounts stay raw', () => {
   const data = runtime.assertResponse('nft-positions', fixture('nft-positions.success'));
   const { batch } = positions.projectNftBatch(FIXTURE_NFT_IDS, data, tokenMap('token.native', 'token.missing-decimals'));
   assert.equal(batch.cards[0].range.prices, null);
-  assert.equal(batch.cards[0].principal[1].kind, 'raw');
+  assert.equal(positions.rangePricesProblem(batch.cards[0].range), 'decimals_unknown', 'the one problem a card says in words');
+  assert.deepEqual([batch.cards[0].principal[1].kind, batch.cards[0].principal[1].exact], ['raw', null], 'raw, and never an exact amount in units');
+  assert.equal(batch.cards[0].principal[1].raw, '3797063507756903070969194400');
   assert.equal(batch.cards[0].principal[0].kind, 'units');
+});
+
+test('card amounts: six significant digits that never split a number, every digit kept for the title', () => {
+  // The live review's cards: an 18-decimal USDe principal that wrapped as "40." and "003206592866332023", and SMK4 amounts of 18 digits.
+  const amountOf = (raw, decimals) => {
+    const data = fixture('nft-positions.success');
+    data.items[0].principalRaw = [raw, '0'];
+    const tokens = new Map([[NATIVE, { origin: 'read', chainId: 4663, address: NATIVE, symbol: 'ETH', decimals, readStatus: 'available', artwork: null }]]);
+    const card = positions.projectNftBatch(FIXTURE_NFT_IDS, runtime.assertResponse('nft-positions', data), tokens).batch.cards[0];
+    return [card.principal[0].text, card.principal[0].exact, card.principal[0].kind];
+  };
+  assert.deepEqual(amountOf('40003206592866332023', 18), ['40.0032', '40.003206592866332023', 'units']);
+  assert.deepEqual(amountOf('997049999999999986', 18), ['0.99705', '0.997049999999999986', 'units']);
+  assert.deepEqual(amountOf('3000000000000005', 18), ['0.003', '0.003000000000000005', 'units']);
+  assert.deepEqual(amountOf('4553157887631', 18), ['0.00000455316', '0.000004553157887631', 'units']);
+  assert.deepEqual(amountOf('39996793', 6), ['39.9968', '39.996793', 'units']);
+  assert.deepEqual(amountOf('1', 18), ['0.000000000000000001', '0.000000000000000001', 'units'], 'the smallest unit is still not zero');
+  assert.deepEqual(amountOf('123456789', 0), ['123,456,789', '123,456,789', 'units'], 'never fewer digits than the whole part');
+  assert.deepEqual(amountOf('0', 18), ['0', '0', 'zero']);
+  for (const [text] of [amountOf('40003206592866332023', 18), amountOf('4553157887631', 18)]) assert.doesNotMatch(text, /e/i, 'never an exponent');
+});
+
+/** The success fixture with every NFT's range moved to these ticks, on this spacing. */
+const rangedBatch = (lower, upper, spacing, ...tokens) => {
+  const data = fixture('nft-positions.success');
+  for (const item of data.items) {
+    item.tickLower = lower;
+    item.tickUpper = upper;
+    item.poolKey.tick_spacing = spacing;
+  }
+  return positions.projectNftBatch(FIXTURE_NFT_IDS, runtime.assertResponse('nft-positions', data), tokenMap(...tokens)).batch.cards[0];
+};
+
+test('a full-range position is 0 to ∞ whatever the decimals, and never blamed on decimals', () => {
+  // Both ends at the usable limits of spacing 60: 1.0001^±887220 is far outside what a price can be written as, yet nothing is unknown.
+  const full = rangedBatch(-887220, 887220, 60, 'token.native', 'token.success');
+  assert.equal(full.range.fullRange, true);
+  assert.deepEqual(full.range.prices, { lower: '0', upper: '∞' });
+  assert.deepEqual(full.range.ends, { lower: { kind: 'limit', text: '0' }, upper: { kind: 'limit', text: '∞' } });
+  assert.equal(positions.rangePricesProblem(full.range), null);
+
+  const unread = rangedBatch(-887220, 887220, 60, 'token.native', 'token.missing-decimals');
+  assert.deepEqual(unread.range.prices, { lower: '0', upper: '∞' }, 'a limit needs no decimals');
+  assert.equal(positions.rangePricesProblem(unread.range), null);
+
+  assert.equal(rangedBatch(-887272, 887272, 1, 'token.native', 'token.success').range.fullRange, true, 'spacing 1 reaches the tick limits themselves');
+
+  const oneSided = rangedBatch(-60, 887220, 60, 'token.native', 'token.success');
+  assert.deepEqual(oneSided.range.prices, { lower: '≈994,018,000,000', upper: '∞' });
+  assert.equal(oneSided.range.fullRange, false);
+
+  // 18 and 6 decimals: tick 600000 is a real price, too large to write as a plain number, and not a limit of spacing 60.
+  const beyond = rangedBatch(-60, 600000, 60, 'token.native', 'token.success');
+  assert.equal(beyond.range.prices, null);
+  assert.deepEqual(beyond.range.ends.lower, { kind: 'price', text: '≈994,018,000,000' });
+  assert.deepEqual(beyond.range.ends.upper, { kind: 'tick', problem: 'beyond_display' });
+  assert.equal(positions.rangePricesProblem(beyond.range), 'beyond_display');
+  assert.equal(
+    positions.rangePricesProblem({ ends: { lower: { kind: 'tick', problem: 'beyond_display' }, upper: { kind: 'tick', problem: 'decimals_unknown' } } }),
+    'decimals_unknown',
+    'an unread decimal comes first: it is the one a reader can act on',
+  );
+});
+
+test('a range end at its pool’s usable tick limit is 0 below or ∞ above, on that side only, for any spacing', () => {
+  for (const s of [1, 10, 60, 200]) {
+    const { min, max } = poolRange.usableTicks(s);
+    assert.deepEqual(positions.rangeEnd(min, 'lower', s, null, null), { kind: 'limit', text: '0' }, `spacing ${s}`);
+    assert.deepEqual(positions.rangeEnd(max, 'upper', s, null, null), { kind: 'limit', text: '∞' }, `spacing ${s}`);
+    assert.deepEqual(positions.rangeEnd(min + s, 'lower', s, null, null), { kind: 'tick', problem: 'decimals_unknown' }, `spacing ${s}: one step inside is a price`);
+    assert.deepEqual(positions.rangeEnd(min + s, 'lower', s, 18, 18), { kind: 'tick', problem: 'beyond_display' }, `spacing ${s}`);
+    assert.notEqual(positions.rangeEnd(min, 'upper', s, 18, 18).kind, 'limit', `spacing ${s}: the lower limit is no upper end`);
+    assert.notEqual(positions.rangeEnd(max, 'lower', s, 18, 18).kind, 'limit', `spacing ${s}: the upper limit is no lower end`);
+  }
+  assert.deepEqual(positions.rangeEnd(-60, 'lower', 60, 18, 6), { kind: 'price', text: '≈994,018,000,000' });
 });
 
 test('a reply that does not answer every ID asked for is refused whole', () => {
@@ -339,6 +419,39 @@ test('lookup state: only the latest request lands; refresh keeps cards, new IDs 
   assert.equal(other.retained, null, 'new IDs drop the earlier cards');
   assert.deepEqual(reduce(other, { type: 'cancel', requestId: 5 }), s, 'hiding while loading restores what was there');
   assert.deepEqual(reduce(s, { type: 'clear' }), { phase: 'idle' });
+});
+
+test('Cancel stops the quiet re-asks too: the failure it restores is not asked again on its own, and the next Look up asks as before', () => {
+  // The read-layer review's sequence: a lookup fails busy, its first quiet re-ask goes out, and the person presses Cancel while it reads.
+  const { lookupReducer: reduce, lookupReaskDelay } = positions;
+  const MIDDLE = () => 0.5;
+  const provenance = { transport: 'bridge', contract: null, receivedAt: 0, attempts: 3 };
+  const busy = { route: 'nft-positions', state: 'busy', retryAfterSeconds: 2, provenance };
+  let s = reduce({ phase: 'idle' }, { type: 'submit', requestId: 1, ids: ['7'] });
+  assert.equal(lookupReaskDelay(s, 0), null, 'nothing to ask again while a lookup reads');
+  s = reduce(s, { type: 'result', requestId: 1, result: { kind: 'failed', failure: busy } });
+  // The quiet policy jitters its wait by up to ±25%; the middle draw is the 4 s wait itself.
+  assert.equal(lookupReaskDelay(s, 0, MIDDLE), 4000, 'a busy lookup is asked again on its own, after about 4 s');
+  const first = lookupReaskDelay(s, 0);
+  assert.ok(first >= 3000 && first <= 5000, `a real draw stays within ±25% of 4 s: ${first}`);
+  s = reduce(s, { type: 'submit', requestId: 2, ids: ['7'] });
+  const cancelled = reduce(s, { type: 'cancel', requestId: 2 });
+  assert.deepEqual([cancelled.phase, cancelled.failure, cancelled.cancelled], ['failed', busy, true], 'the failure is back on screen, marked cancelled');
+  assert.equal(lookupReaskDelay(cancelled, 1), null, 'and no automatic lookup follows the press');
+  // A lookup stopped by its signal without a Cancel press (the section leaving) settles the same way.
+  const aborted = reduce(s, { type: 'result', requestId: 2, result: { kind: 'aborted' } });
+  assert.deepEqual([aborted.phase, aborted.cancelled, lookupReaskDelay(aborted, 1)], ['failed', true, null]);
+  // Looking up the same IDs again is a new question: its failure is asked again as before.
+  let again = reduce(cancelled, { type: 'submit', requestId: 3, ids: ['7'] });
+  again = reduce(again, { type: 'result', requestId: 3, result: { kind: 'failed', failure: busy } });
+  assert.deepEqual([again.cancelled, lookupReaskDelay(again, 0, MIDDLE)], [undefined, 4000]);
+  assert.equal(lookupReaskDelay(again, 4), null, 'still bounded at four');
+  // A failure that cannot pass is never asked again; Cancel over cards that worked restores them untouched.
+  const refused = reduce(reduce({ phase: 'idle' }, { type: 'submit', requestId: 4, ids: ['7'] }), { type: 'result', requestId: 4, result: { kind: 'failed', failure: { route: 'nft-positions', state: 'disabled', reason: 'route_not_enabled', provenance } } });
+  assert.equal(lookupReaskDelay(refused, 0), null);
+  const data = runtime.assertResponse('nft-positions', fixture('nft-positions.stale'));
+  const ready = { phase: 'ready', requestId: 5, ids: ['1'], batch: positions.projectNftBatch(['1'], data, new Map()).batch };
+  assert.equal(reduce(reduce(ready, { type: 'submit', requestId: 6, ids: ['1'] }), { type: 'cancel', requestId: 6 }), ready);
 });
 
 test('a lookup is one NFT read with exactly the typed IDs and no pinned block, then one read per currency', async () => {
@@ -684,6 +797,287 @@ test('wallet: a full cursor table is busy, an empty unconfigured list asks for t
   const gas = await walletSession.createWalletSession(fixtures({ 'wallet-assets': [{ fixture: gateway('wallet-assets.call-gas-limit') }] }), { wallet: FIXTURE_OWNER, tokens: [] }).first();
   const rows = tokens.candidatesFromWalletView(gas.view);
   assert.deepEqual(rows.map((c) => c.why), [null, 'wallet_unavailable'], 'an unreadable balance leaves the others valid');
+});
+
+test('the empty hint counts held balances: zero rows and native ETH are nothing held, a finished list only, and never with typed tokens', async () => {
+  /** A finished provider page (no more pages) whose items are exactly `items`. */
+  const pageOf = (items, inventory = {}) => ({ fixture: gateway('wallet-assets.last-page'), mutate: (b) => ({ ...b, items: items(b.items), inventory: { ...b.inventory, ...inventory } }) });
+  const hint = async (reply, context = {}) => (await walletSession.createWalletSession(fixtures({ 'wallet-assets': [reply] }), { wallet: FIXTURE_OWNER, tokens: [], ...context }).first()).emptyHint;
+  const zeroNative = (items) => [{ ...items[0], amountRaw: '0' }];
+  // The live review's address: the provider returned no rows and the reply listed only native ETH at 0 (before: a list, so no hint, no check, no form).
+  assert.equal(await hint(pageOf(zeroNative, { rowsReceived: 0 })), true, 'only a zero native row');
+  assert.equal(await hint(pageOf((items) => items.map((item) => ({ ...item, amountRaw: '0' })))), true, 'every row a zero balance');
+  assert.equal(await hint(pageOf((items) => [{ ...items[0], amountRaw: '1000000000000000000' }])), true, 'native ETH is read for every address, so it says nothing about the tokens');
+  assert.equal(await hint(pageOf((items) => items)), false, 'a token with a balance is something held');
+  assert.equal(await hint(pageOf(zeroNative), { tokens: [FIXTURE_TOKEN] }), false, 'typed tokens were already asked about');
+  assert.equal(await hint({ ...pageOf(zeroNative, { hasMore: true, nextCursor: 'ab'.repeat(32) }) }), false, 'a list with pages to come is not finished');
+  // wallet-assets.call-gas-limit: native ETH at 0, and a token whose balance read hit the gas limit.
+  assert.equal(await hint({ fixture: gateway('wallet-assets.call-gas-limit') }), false, 'a token balance that could not be read may be something held');
+  assert.equal(walletSession.listsHeldTokens({ rows: [{ key: `4663:${NATIVE}`, amount: { state: 'value' } }], unavailable: [{ key: `4663:${NATIVE}` }] }), false, 'native ETH, read or not, says nothing about the tokens');
+  assert.equal(walletSession.listsHeldTokens({ rows: [{ key: `4663:${OTHER_ADDRESS}`, amount: { state: 'raw' } }], unavailable: [] }), true, 'a balance in raw units is held');
+});
+
+// A page that skipped provider candidates (2cb559e): the skipped addresses are not in the reply and the handle starts after them.
+const partialInventory = (n) => (b) => ({ ...b, inventory: { ...b.inventory, candidatesProbed: 13, candidatesSkipped: n, skippedReason: 'request_budget_exhausted' } });
+const skippedPage = { fixture: gateway('wallet-assets.opaque-page'), mutate: (b) => partialInventory(7)(withCursor(MUTATED_CURSOR)(b)), expectRequest: WALLET };
+const CHECK = { wallet: FIXTURE_OWNER, tokens: [OTHER_ADDRESS], autoDiscover: false };
+/** The by-address check's answer: native ETH, and OTHER_ADDRESS with a balance. */
+const heldCheck = { fixture: gateway('wallet-assets.not-requested'), mutate: (b) => ((b.items[1].address = OTHER_ADDRESS), b), expectRequest: CHECK };
+const FALLBACK = { wallet: FIXTURE_OWNER, tokens: [], fallbackTokens: [FIXTURE_TOKEN, OTHER_ADDRESS] };
+
+test('a partial page checks the fallback tokens once, by exact address and without discovery, and adds only held balances', async () => {
+  const source = fixtures({ 'wallet-assets': [skippedPage, heldCheck, { fixture: gateway('wallet-assets.last-page'), expectRequest: WALLET_MORE }] });
+  const session = walletSession.createWalletSession(source, FALLBACK);
+  const listed = await session.first();
+  assert.deepEqual([listed.status, listed.view.skipped, listed.pendingCheck], ['ready', 7, true]);
+  const checked = await session.check();
+  // FIXTURE_TOKEN is on the page already, so only OTHER_ADDRESS is asked about.
+  assert.deepEqual(source.requests.map((r) => r.request), [WALLET, CHECK]);
+  assert.deepEqual([checked.status, checked.failure, checked.reason, checked.pendingCheck, checked.canLoadMore], ['ready', null, null, false, true]);
+  const found = checked.view.rows.find((row) => row.key === `4663:${OTHER_ADDRESS}`);
+  assert.deepEqual([found?.via, found?.block], ['address', 700]);
+  assert.deepEqual(checked.view.notes, listed.view.notes, 'nothing is said about the check');
+  assert.equal(checked.view.rows.filter((row) => row.via === 'address').length, 1, 'native ETH from the check adds nothing');
+  await session.check();
+  assert.equal(source.requests.length, 2, 'a list is checked once');
+  const more = await session.more();
+  assert.deepEqual(source.requests.at(-1).request, WALLET_MORE, 'the handle is untouched by the check');
+  assert.deepEqual([more.status, more.view.pages, more.pendingCheck], ['ready', 2, false]);
+});
+
+test('a failed check is silent and not asked again; a cancelled one is still owed', async () => {
+  const failing = fixtures({ 'wallet-assets': [skippedPage, { fixture: errorFixture('wallet-assets.upstream_unavailable'), expectRequest: CHECK }] });
+  const session = walletSession.createWalletSession(failing, FALLBACK);
+  const listed = await session.first();
+  const after = await session.check();
+  assert.deepEqual([after.status, after.failure, after.pendingCheck], ['ready', null, false], 'no status, no failure, nothing owed');
+  assert.deepEqual(after.view.rows, listed.view.rows);
+  await session.check();
+  assert.equal(failing.requests.length, 2, 'any answer settles the check');
+
+  const owed = walletSession.createWalletSession(fixtures({ 'wallet-assets': [skippedPage, heldCheck] }), FALLBACK);
+  await owed.first();
+  const controller = new AbortController();
+  controller.abort();
+  assert.equal((await owed.check(controller.signal)).pendingCheck, true, 'a cancelled check answered nothing');
+  assert.equal((await owed.check()).pendingCheck, false);
+});
+
+test('a check on the wire is never sent twice: a call meanwhile joins it, the next page leaves it be and does not owe it again', async () => {
+  // The read-layer review's sequence: page 1 skipped candidates, its check goes out, Load more is pressed while the check is on the wire.
+  const scripted = fixtures({ 'wallet-assets': [skippedPage, heldCheck, { fixture: gateway('wallet-assets.last-page'), expectRequest: WALLET_MORE }] });
+  let release;
+  const held = new Promise((done) => (release = done));
+  const source = {
+    transport: 'fixture',
+    read(route, request, options) {
+      const answer = scripted.read(route, request, options);
+      // The check's answer waits on the wire until the test lets it through; pages answer at once.
+      return request.autoDiscover === false ? held.then(() => answer) : answer;
+    },
+  };
+  const session = walletSession.createWalletSession(source, FALLBACK);
+  assert.equal((await session.first()).pendingCheck, true);
+  const checking = session.check();
+  await flush();
+  assert.equal(session.snapshot().pendingCheck, false, 'a check on the wire is not owed');
+  const joined = session.check();
+  const page2 = await session.more();
+  assert.deepEqual([page2.status, page2.view.pages, page2.view.skipped, page2.pendingCheck], ['ready', 2, 7, false], 'the next page leaves the check on the wire, and does not owe it again');
+  release();
+  const [checked, same] = await Promise.all([checking, joined]);
+  assert.deepEqual(scripted.requests.map((r) => r.request), [WALLET, CHECK, WALLET_MORE], 'one check for one list');
+  assert.deepEqual(checked.view.rows.filter((row) => row.via === 'address').map((row) => row.key), [`4663:${OTHER_ADDRESS}`], 'its answer is adopted into the list as it is by then');
+  assert.equal(checked.view.pages, 2);
+  assert.deepEqual(same, checked, 'the call that joined gets the same answer');
+  assert.equal((await session.check()).pendingCheck, false);
+  assert.equal(scripted.requests.length, 3, 'answered: never asked again');
+
+  // Cancelled on the wire by its own signal (the list was left): owed again, and asked again once.
+  const again = fixtures({ 'wallet-assets': [skippedPage, heldCheck] });
+  let hung = false;
+  const hanging = {
+    transport: 'fixture',
+    read(route, request, options) {
+      if (request.autoDiscover !== false || hung) return again.read(route, request, options);
+      hung = true;
+      // The first check hangs on the wire until its signal is aborted, as a slow read would.
+      return new Promise((done) => options.signal.addEventListener('abort', () => done({ route, state: 'aborted', provenance: { transport: 'fixture', contract: null, receivedAt: 0, attempts: 1 } }), { once: true }));
+    },
+  };
+  const left = walletSession.createWalletSession(hanging, FALLBACK);
+  await left.first();
+  const controller = new AbortController();
+  const cancelled = left.check(controller.signal);
+  await flush();
+  assert.equal(left.snapshot().pendingCheck, false);
+  controller.abort();
+  assert.equal((await cancelled).pendingCheck, true, 'a check cancelled on the wire answered nothing, so it is owed again');
+  const answered = await left.check();
+  assert.deepEqual([answered.pendingCheck, again.requests.map((r) => r.request)], [false, [WALLET, CHECK]]);
+});
+
+test('no check without skipped candidates, without fallback tokens, or when every fallback token is listed', async () => {
+  const whole = fixtures({ 'wallet-assets': [firstPage] });
+  const session = walletSession.createWalletSession(whole, { ...FALLBACK, fallbackTokens: [OTHER_ADDRESS] });
+  assert.equal((await session.first()).pendingCheck, false);
+  await session.check();
+  assert.equal(whole.requests.length, 1, 'a list that skipped nothing is not checked');
+
+  const listedAll = walletSession.createWalletSession(fixtures({ 'wallet-assets': [skippedPage] }), { ...FALLBACK, fallbackTokens: [FIXTURE_TOKEN, NATIVE] });
+  assert.equal((await listedAll.first()).pendingCheck, false, 'every fallback token is on the page, or native');
+  const none = walletSession.createWalletSession(fixtures({ 'wallet-assets': [skippedPage] }), { wallet: FIXTURE_OWNER, tokens: [] });
+  assert.equal((await none.first()).pendingCheck, false, 'a screen with no fallback tokens checks nothing');
+});
+
+test('the fallback request: fallback tokens the list lacks, not asked, not native, once each, at most 10, in their own order', () => {
+  const token = (hex) => `0x${hex.repeat(20)}`;
+  const view = { rows: [{ key: `4663:${FIXTURE_TOKEN}`, old: false }, { key: `4663:${token('99')}`, old: true }], unavailable: [{ key: `4663:${token('77')}` }], skipped: 1 };
+  const many = Array.from({ length: 12 }, (_, i) => `0x${(i + 1).toString(16).padStart(2, '0').repeat(20)}`);
+  const context = {
+    wallet: FIXTURE_OWNER,
+    tokens: [token('88')],
+    fallbackTokens: [FIXTURE_TOKEN, NATIVE, token('77'), token('88'), token('AA'), token('aa'), token('99'), ...many],
+  };
+  const request = walletSession.fallbackRequest(context, view);
+  assert.deepEqual(Object.keys(request), ['wallet', 'tokens', 'autoDiscover'], 'a fixed key order: the scheduler coalesces by JSON');
+  assert.equal(request.autoDiscover, false);
+  assert.equal(request.tokens.length, 10);
+  assert.deepEqual(request.tokens.slice(0, 2), [token('AA'), token('99')], 'the first spelling of an address is kept; a row from an earlier list is checked again');
+  assert.equal(runtime.validateRequest('wallet-assets', request), true);
+  assert.equal(walletSession.fallbackRequest(context, { ...view, skipped: 0 }), null, 'nothing skipped, nothing to check');
+  assert.equal(walletSession.fallbackRequest({ ...context, fallbackTokens: [FIXTURE_TOKEN, NATIVE] }, view), null, 'nothing left to check');
+});
+
+test('a quiet re-ask waits longer each time, only while a failure can pass, and stops after four', () => {
+  const quiet = built('screens/quietRead');
+  const provenance = { transport: 'fixture', contract: null, receivedAt: 0, attempts: 1 };
+  const failure = (s) => ({ route: 'wallet-assets', provenance, ...s });
+  const busy = failure({ state: 'busy', retryAfterSeconds: 7 });
+  const [lowest, middle, highest] = [() => 0, () => 0.5, () => 1];
+  // About ±25% of jitter around the doubled wait, never before the service's own Retry-After.
+  assert.deepEqual([0, 1, 2, 3, 4].map((n) => quiet.reaskDelayMs(busy, n, lowest)), [7000, 10500, 21000, 42000, null], 'never before the service’s own Retry-After');
+  assert.deepEqual([0, 1, 2, 3, 4].map((n) => quiet.reaskDelayMs(busy, n, highest)), [8750, 17500, 35000, 70000, null]);
+  const transient = failure({ state: 'unavailable', cause: { kind: 'producer', code: 'upstream_unavailable', status: 503 }, retryable: true });
+  assert.deepEqual([0, 1, 2, 3, 4].map((n) => quiet.reaskDelayMs(transient, n, middle)), [4000, 8000, 16000, 32000, null]);
+  assert.deepEqual([0, 1, 2, 3].map((n) => [quiet.reaskDelayMs(transient, n, lowest), quiet.reaskDelayMs(transient, n, highest)]), [[3000, 5000], [6000, 10000], [12000, 20000], [24000, 40000]]);
+  for (let i = 0; i < 200; i += 1) {
+    const wait = quiet.reaskDelayMs(transient, 0);
+    assert.ok(wait >= 3000 && wait <= 5000, `${wait} ms, drawn with Math.random`);
+  }
+  assert.ok(new Set(Array.from({ length: 50 }, () => quiet.reaskDelayMs(transient, 2))).size > 1, 'screens that failed together do not come back together');
+  // A hop's refusal (502 upstream_contract_mismatch), which a gateway that does not stamp its mid-hop failures sends for a
+  // hop that is only flapping: asked again like any failure that names no wait of its own, 4 s give or take a quarter, four times.
+  const hop = failure({ state: 'incompatible', reason: 'upstream_contract_mismatch' });
+  assert.deepEqual([0, 1, 2, 3, 4].map((n) => quiet.reaskDelayMs(hop, n, middle)), [4000, 8000, 16000, 32000, null]);
+  assert.deepEqual([0, 1, 2, 3].map((n) => [quiet.reaskDelayMs(hop, n, lowest), quiet.reaskDelayMs(hop, n, highest)]), [[3000, 5000], [6000, 10000], [12000, 20000], [24000, 40000]]);
+  for (const passing of [
+    transient,
+    busy,
+    hop,
+    failure({ state: 'unavailable', cause: { kind: 'network' }, retryable: false }),
+    failure({ state: 'unavailable', cause: { kind: 'edge', status: 502 }, retryable: false }),
+    failure({ state: 'unavailable', cause: { kind: 'edge', status: 429 }, retryable: false }),
+    failure({ state: 'unavailable', cause: { kind: 'read_deadline', limit: 'read' }, retryable: true }),
+    failure({ state: 'unavailable', cause: { kind: 'queue_full' }, retryable: true }),
+    failure({ state: 'gate_unavailable' }),
+    failure({ state: 'restart_required', code: 'catalogue_revision_changed' }),
+    { route: 'wallet-assets', state: 'local', code: 'screen_budget_exceeded' },
+  ]) {
+    assert.equal(quiet.passing(passing), true, JSON.stringify(passing));
+  }
+  for (const final of [
+    failure({ state: 'unavailable', cause: { kind: 'producer', code: 'nft_live_position_has_no_owner', status: 503 }, retryable: false }),
+    failure({ state: 'unavailable', cause: { kind: 'edge', status: 403 }, retryable: false }),
+    failure({ state: 'gate_required' }),
+    failure({ state: 'access_required' }),
+    // A contract header this page does not accept meets every read the same: final.
+    failure({ state: 'incompatible', reason: 'contract_version_not_accepted' }),
+    failure({ state: 'incompatible', reason: 'contract_header_missing' }),
+    failure({ state: 'invalid', reason: 'identity_mismatch' }),
+    failure({ state: 'request_rejected', code: 'invalid_request', status: 422 }),
+    failure({ state: 'restart_required', code: 'invalid_or_expired_cursor' }),
+    failure({ state: 'disabled', reason: 'route_not_enabled' }),
+    failure({ state: 'not_connected', reason: 'bridge_unavailable' }),
+    failure({ state: 'aborted' }),
+    { state: 'incomplete_reply' },
+  ]) {
+    assert.equal(quiet.reaskDelayMs(final, 0), null, JSON.stringify(final));
+  }
+  assert.deepEqual(
+    [transient, busy, failure({ state: 'disabled', reason: 'route_not_enabled' }), failure({ state: 'unavailable', cause: { kind: 'network' }, retryable: false }), { route: 'token', state: 'local', code: 'screen_budget_exceeded' }].map(quiet.failureCode),
+    ['upstream_unavailable', 'busy', 'route_not_enabled', 'network', 'screen_budget_exceeded'],
+  );
+  // A title names a site without its read service plainly, never as something to come.
+  const offSite = quiet.quietTitle(failure({ state: 'not_connected', reason: 'bridge_unavailable' }), 'wallet');
+  assert.doesNotMatch(offSite, /yet|coming|soon|later/i);
+  // The access check is site access in a title, never a beta.
+  assert.equal(quiet.quietTitle(failure({ state: 'gate_required' }), 'wallet'), 'Site access expired. Reload the page to sign in again.');
+  assert.equal(quiet.quietTitle(failure({ state: 'gate_unavailable' }), 'wallet'), 'Site access is paused. Nothing is wrong on your side.');
+  for (const state of ['gate_required', 'gate_unavailable']) assert.doesNotMatch(quiet.quietTitle(failure({ state }), 'token'), /beta/i, state);
+  assert.equal(quiet.quietTitle(failure({ state: 'incompatible', reason: 'contract_version_not_accepted' }), 'wallet'), `Update needed. ${copy.COPY.local.update}`, 'a title and its detail, once each');
+  assert.equal(quiet.quietTitle(transient, 'wallet'), 'Wallet data unavailable. The read service answered: read service unavailable.');
+});
+
+test('one quiet re-ask policy: the pool screens and the wallet, token and position screens ask again after exactly the same failures, after the same waits', () => {
+  const quiet = built('screens/quietRead');
+  const screen = built('screens/screenRead');
+  const transient = built('screens/transient');
+  const { ERROR_CLASS } = built('errors');
+  const provenance = { transport: 'bridge', contract: null, receivedAt: 0, attempts: 1 };
+  const outcome = (s) => ({ route: 'pools', provenance, ...s });
+  // Every producer code as the pipeline hands it to a screen (interpret.ts), then every other way a read can end.
+  const fromCode = Object.entries(ERROR_CLASS).map(([code, rule]) => {
+    switch (rule.kind) {
+      case 'restart': return outcome({ state: 'restart_required', code });
+      case 'route_disabled': return outcome({ state: 'disabled', reason: 'route_not_enabled' });
+      case 'request_rejected': return outcome({ state: 'request_rejected', code, status: 400 });
+      case 'busy': return outcome({ state: 'busy', retryAfterSeconds: 2 });
+      case 'incompatible': return outcome({ state: 'incompatible', reason: 'upstream_contract_mismatch' });
+      default: return outcome({ state: 'unavailable', cause: { kind: 'producer', code, status: 503 }, retryable: rule.retryable });
+    }
+  });
+  const others = [
+    ...[0, 200, 400, 403, 404, 408, 429, 500, 502, 503, 504, 520, 530].map((status) => outcome({ state: 'unavailable', cause: { kind: 'edge', status }, retryable: false })),
+    outcome({ state: 'unavailable', cause: { kind: 'network' }, retryable: false }),
+    outcome({ state: 'unavailable', cause: { kind: 'queue_full' }, retryable: true }),
+    outcome({ state: 'unavailable', cause: { kind: 'read_deadline', limit: 'attempt' }, retryable: true }),
+    outcome({ state: 'unavailable', cause: { kind: 'read_deadline', limit: 'read' }, retryable: true }),
+    outcome({ state: 'gate_required' }),
+    outcome({ state: 'gate_unavailable' }),
+    outcome({ state: 'access_required' }),
+    ...['contract_header_missing', 'contract_version_not_accepted', 'upstream_contract_mismatch'].map((reason) => outcome({ state: 'incompatible', reason })),
+    ...['request_contract', 'not_json', 'response_contract', 'identity_mismatch'].map((reason) => outcome({ state: 'invalid', reason })),
+    ...['live_data_disabled', 'route_not_enabled', 'bridge_data_mode_disabled'].map((reason) => outcome({ state: 'disabled', reason })),
+    outcome({ state: 'not_connected', reason: 'bridge_unavailable' }),
+    outcome({ state: 'busy', retryAfterSeconds: 30 }),
+    outcome({ state: 'aborted' }),
+    { route: 'pools', state: 'local', code: 'screen_budget_exceeded' },
+    { state: 'incomplete_reply' },
+  ];
+  const draws = [0, 0.25, 0.5, 0.75, 1];
+  for (const failure of [...fromCode, ...others]) {
+    const label = JSON.stringify({ ...failure, provenance: undefined });
+    assert.equal(quiet.passing(failure), transient.isTransient(failure), label);
+    for (let attempt = 0; attempt <= 4; attempt += 1) {
+      for (const draw of draws) {
+        assert.equal(screen.quietRetryDelay(failure, attempt, () => draw), quiet.reaskDelayMs(failure, attempt, () => draw), `${label} #${attempt} at ${draw}`);
+      }
+      assert.equal(quiet.reaskDelayMs(failure, attempt, () => 0.5) !== null, transient.isTransient(failure) && attempt < 4, `${label} #${attempt}`);
+    }
+  }
+  // The rule itself, spelled out once: a producer code errors.ts marks transient, and these.
+  const name = (f) => (f.cause ? `${f.cause.kind}${f.cause.status === undefined ? '' : ` ${f.cause.status}`}` : f.code ?? f.reason ?? f.state);
+  assert.deepEqual(
+    fromCode.filter(transient.isTransient).map((f) => f.cause?.code ?? name(f)).sort(),
+    [...Object.entries(ERROR_CLASS).filter(([, rule]) => rule.kind === 'unavailable' && rule.retryable).map(([code]) => code), 'busy', 'catalogue_revision_changed', 'upstream_contract_mismatch'].sort(),
+    'every producer code errors.ts reads as transient, a busy service, a catalogue that moved under the read, and a hop that refused the reply',
+  );
+  assert.deepEqual(
+    others.filter(transient.isTransient).map(name),
+    ['edge 408', 'edge 429', 'edge 500', 'edge 502', 'edge 503', 'edge 504', 'edge 520', 'edge 530', 'network', 'queue_full', 'read_deadline', 'read_deadline', 'gate_unavailable', 'upstream_contract_mismatch', 'busy', 'screen_budget_exceeded'],
+    'an edge page with a server status, the network, this page’s queue and deadlines, the access check’s own outage, a hop’s refusal (never a contract header this page does not accept), a busy service and the screen budget',
+  );
 });
 
 test('existing pools: neutral order, DexScreener figures attributed, rejected candidates listed, never "no pool exists"', () => {
@@ -1134,14 +1528,71 @@ test('pool age comes from verified activity data only, and never an APR or USD f
   assert.equal(figures.activityFacts(runtime.assertResponse('pool-activity', fixture('pool-activity.unavailable'))).feeAccounting, 'unavailable');
 });
 
-// OPEN QUESTION for @rugged97, same reason: this case needs the market
-// scenarios 'qualified', 'reference', 'partial' and 'metrics-invalid', which
-// all came from pool-metrics. F3 dropped that read from the table's path
-// (marketsProvider.ts: "No pool-metrics read"), so no row can carry a
-// qualified metric and the scenarios no longer exist. Skipped until pool-metrics
-// returns to this path or the case is rewritten to today's contract.
-test.skip('only usableAsCurrent24h makes a row qualified; provider-derived turnover waits on the open question', async () => {
-  const row = async (id, script) => (await loadSelectedPools(fixtures(script ?? MARKET_CASES.find((c) => c.id === id).script), [FIXTURE_POOL])).rows[0];
+test('pool activity’s age: fresh up to the read service’s 120 s, shown stale up to 15 minutes behind, never the last 24 hours past that; time on the page counts on', () => {
+  const { activityAge, heldSeconds, lagText, activityStaleText, ACTIVITY_FRESH_SECONDS, ACTIVITY_SHOWN_SECONDS } = figures;
+  // The bound is grounded in the producer: its fresh line is 120 s, and it names no age at which stale history stops being served.
+  assert.equal(ACTIVITY_FRESH_SECONDS, 120);
+  assert.equal(ACTIVITY_SHOWN_SECONDS, 900);
+  const at = (ageSeconds) => ({ ageSeconds, status: ageSeconds > 120 ? 'stale' : 'fresh', checkedAgainstHead: 701 });
+  assert.deepEqual([0, 120, 121, 900, 901, 4_891_659].map((age) => activityAge(at(age)).state), ['fresh', 'fresh', 'stale', 'stale', 'too_old', 'too_old']);
+  assert.deepEqual(activityAge(at(10), 890.9), { seconds: 900, state: 'stale' }, 'whole seconds held, added to the reported age');
+  assert.deepEqual(activityAge(at(10), 891), { seconds: 901, state: 'too_old' });
+  assert.deepEqual(activityAge(at(10), -50), { seconds: 10, state: 'fresh' }, 'a clock that went backwards takes nothing off');
+  assert.equal(activityAge({ ageSeconds: 30, status: 'stale', checkedAgainstHead: 1 }).state, 'stale', 'the read service saying stale is enough');
+  assert.equal(heldSeconds({ receivedAt: 1_000, receivedMonotonic: 50 }, { wall: 10_000_000, monotonic: 3_049 }), 2, 'the monotonic clock when both have one');
+  assert.equal(heldSeconds({ receivedAt: 1_000 }, { wall: 4_500, monotonic: 99 }), 3, 'the wall clock otherwise');
+  assert.equal(heldSeconds({ receivedAt: 9_000 }, { wall: 1_000 }), 0);
+  assert.deepEqual([59, 119, 120, 7_199, 7_200, 172_799, 172_800, 4_891_659].map(lagText), ['59 s', '119 s', '2 min', '119 min', '2 h', '47 h', '2 days', '56 days']);
+  assert.equal(activityStaleText(activityAge(at(10)), 700), null);
+  assert.equal(activityStaleText(activityAge(at(300)), 700), 'Stale: indexed 5 min behind the chain head, at block 700.');
+  assert.equal(activityStaleText(activityAge(at(4_891_659)), 14_787_808), 'Stale: indexed 56 days behind the chain head, at block 14787808, too far behind to show as the last 24 hours.');
+});
+
+test('the pool page’s chain figures: amounts in each token’s own units from decimals already read, bound by address; never guessed, never USD', () => {
+  const tokens = [
+    { origin: 'read', chainId: 4663, address: NATIVE, symbol: 'ETH', decimals: 18, readStatus: 'available', artwork: null },
+    { origin: 'read', chainId: 4663, address: FIXTURE_TOKEN, symbol: 'TOKEN', decimals: 6, readStatus: 'available', artwork: null },
+  ];
+  assert.deepEqual(figures.tokenAmount('1635670293697', FIXTURE_TOKEN, tokens), { raw: '1635670293697', text: '1,635,670', exact: '1,635,670.293697' });
+  assert.deepEqual(figures.tokenAmount('28926913445278', NATIVE, tokens), { raw: '28926913445278', text: '0.0000289269', exact: '0.000028926913445278' }, 'six significant digits, never an exponent');
+  assert.equal(figures.tokenAmount('1234567', FIXTURE_TOKEN, tokens).text, '1.23457');
+  const lettered = { ...tokens[1], address: `0x${'ab'.repeat(20)}` };
+  assert.equal(figures.tokenAmount('1234567', `0x${'AB'.repeat(20)}`, [lettered]).text, '1.23457', 'the address binds without case');
+  assert.equal(figures.tokenAmount('0', NATIVE, tokens).text, '0');
+  assert.equal(figures.tokenAmount('999999999999', FIXTURE_TOKEN, tokens).text, '1,000,000', 'rounded at six significant digits, carried into the next place');
+  assert.deepEqual(figures.tokenAmount('5', OTHER_ADDRESS, tokens), { raw: '5', text: null, exact: null }, 'a token whose decimals were not read keeps its raw amount only');
+  assert.deepEqual(figures.tokenAmount('5', NATIVE, [{ ...tokens[0], decimals: null }]), { raw: '5', text: null, exact: null });
+
+  const view = figures.poolActivityView(runtime.assertResponse('pool-activity', fixture('pool-activity.success')), tokens);
+  assert.deepEqual(view.turnover.map((amount) => amount.text), ['0.0000289269', '1,635,670']);
+  assert.deepEqual(view.lpFees.amounts.map((amount) => amount.exact), ['0.000000086412877935', '300.000002']);
+  assert.equal(Object.keys(view).some((key) => /apr|usd/i.test(key)), false, 'no USD figure and no APR from pool activity');
+  const unreconciled = figures.poolActivityView(runtime.assertResponse('pool-activity', fixture('pool-activity.unavailable')), tokens);
+  assert.deepEqual([unreconciled.lpFees, unreconciled.lpAssets], [{ state: 'unavailable', reason: 'fee_ledger_not_caught_up' }, { state: 'unavailable', reason: 'position_ledger_not_caught_up' }]);
+
+  const positions = figures.poolPositionsView(runtime.assertResponse('pool-positions', fixture('pool-positions.success')), tokens);
+  assert.deepEqual([positions.state, positions.count, positions.withLiquidity, positions.rows.map((r) => [r.tickLower, r.tickUpper, r.hasLiquidity, r.nft])], ['reconciled', 3, 2, [[-60000, 60000, true, null], [-60, 60, true, null], [-60000, 60000, false, null]]], 'no NFT resolved: no owner is shown');
+  assert.deepEqual(figures.poolPositionsView(runtime.assertResponse('pool-positions', fixture('pool-positions.unavailable')), tokens), { state: 'unavailable', reason: 'position_ledger_not_caught_up', block: 700, stale: false });
+});
+
+test('a pool’s protocol fee reads per direction from its packed value, and anything outside the v4 bounds is invalid, never a rate', () => {
+  assert.deepEqual(figures.protocolFee(0), { state: 'none' });
+  assert.deepEqual(figures.protocolFee(820200), { state: 'directional', zeroForOne: '0.10%', oneForZero: '0.02%', zeroForOnePips: 1000, oneForZeroPips: 200 }, 'low 12 bits selling currency0, high 12 bits selling currency1');
+  assert.deepEqual(figures.protocolFee(1000 * 4096 + 1000), { state: 'directional', zeroForOne: '0.10%', oneForZero: '0.10%', zeroForOnePips: 1000, oneForZeroPips: 1000 });
+  assert.deepEqual(figures.protocolFee(1), { state: 'directional', zeroForOne: '0.0001%', oneForZero: '0.00%', zeroForOnePips: 1, oneForZeroPips: 0 });
+  for (const bad of [1001, 1001 * 4096, -1, 1 << 24, 0.5]) assert.deepEqual(figures.protocolFee(bad), { state: 'invalid' }, String(bad));
+});
+
+// The table reads pool-metrics where the capabilities list it (marketsProvider.ts),
+// and a fixture source lists exactly the routes its script answers, so these
+// rows come from the projection cases' pool-market and pool-metrics replies
+// through the table's own load.
+test('only usableAsCurrent24h makes a row qualified; provider-derived turnover waits on the open question', async () => {
+  const script = (id) => {
+    const c = PROJECTION_CASES.find((entry) => entry.id === id);
+    return { 'pool-market': [{ ...c.market, expectRequest: { poolId: FIXTURE_POOL, includePriceHistory: false } }], 'pool-metrics': [c.metrics], token: projectionTokens(c.token) };
+  };
+  const row = async (id) => (await loadSelectedPools(fixtures(script(id)), [FIXTURE_POOL], undefined, undefined, { metrics: true })).rows[0];
   assert.equal(figures.rowQualified(await row('qualified')), true);
   for (const id of ['provider', 'reference', 'partial', 'stale', 'metrics-invalid']) assert.equal(figures.rowQualified(await row(id)), false, id);
   const provider = await row('provider');
@@ -1179,10 +1630,13 @@ test('every fixed sentence is listed for the default-bundle check, and chain car
   assert.ok(all.length > 40, `${all.length} sentences`);
   assert.equal(new Set(all).size, all.length);
   for (const sentence of all) assert.ok(sentence.length >= 12, sentence);
-  for (const wanted of [copy.COPY.lookup.heading, copy.COPY.lookup.intro, copy.COPY.card.owner, copy.COPY.picker.tokenTitle, copy.COPY.figures.providerDetail]) assert.ok(all.includes(wanted), wanted);
+  for (const wanted of [copy.COPY.lookup.heading, copy.COPY.lookup.intro, copy.COPY.card.ownerNote, copy.COPY.picker.tokenTitle, copy.COPY.figures.providerDetail]) assert.ok(all.includes(wanted), wanted);
   for (const sentence of [...Object.values(copy.COPY.lookup), ...Object.values(copy.COPY.card)]) assert.doesNotMatch(sentence, /\byour\b|\byou own\b/i, sentence);
-  assert.match(copy.COPY.card.owner, /public data/);
+  // Changed on purpose (review of 2026-09-14): the owner is labelled Owner, and that it is public data proving nothing is its title, not a caption.
+  assert.equal(copy.COPY.card.owner, 'Owner');
   assert.match(copy.COPY.card.ownerNote, /proves nothing/);
+  // No card or picker sentence is a caption about where data comes from.
+  for (const sentence of [...Object.values(copy.COPY.card), copy.COPY.picker.walletEmpty]) assert.doesNotMatch(sentence, /read from chain|this server|read service/i, sentence);
   assert.match(copy.COPY.picker.walletPill, /not your wallet/);
 });
 
@@ -1219,7 +1673,9 @@ test('every read state has its own words, and the beta gate never offers a walle
   const update = (s) => copy.failureText({ route: 'nft-positions', provenance, ...s }, 'positions');
   assert.deepEqual(update(states[3]), { ...update(states[4]), code: 'incompatible' });
   assert.equal(seen.size, states.length - 1, 'every other pair of states reads differently');
-  assert.match(copy.failureText({ route: 'nft-positions', provenance, state: 'gate_required' }, 'positions').detail, /Reload the page to sign in to the beta/);
+  assert.match(copy.failureText({ route: 'nft-positions', provenance, state: 'gate_required' }, 'positions').detail, /Reload the page to sign in again/);
+  // Nothing a person can read about the site's access check calls the site a beta.
+  for (const state of ['gate_required', 'gate_unavailable']) assert.doesNotMatch(Object.values(copy.failureText({ route: 'nft-positions', provenance, state }, 'positions')).join(' '), /\bbeta\b|\byet\b/i, state);
   assert.equal(copy.failureText({ route: 'nft-positions', provenance, state: 'disabled', reason: 'route_not_enabled' }, 'positions').detail, 'Position reads aren’t enabled on this server.');
   assert.equal(copy.failureText({ route: 'nft-positions', provenance, state: 'aborted' }, 'positions').title, '', 'a cancelled read says nothing');
 });

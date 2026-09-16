@@ -72,3 +72,9 @@ export const positionsHref = '#/positions' as const
 export const automateHref = '#/automate' as const
 
 export const settingsHref = '#/settings' as const
+
+/**
+ * The docs, one of their pages, or a section of that page. A section link
+ * always carries its route: a bare `#<id>` would open Home.
+ */
+export const docsHref = (slug: string | null = null, section: string | null = null) => `#/docs${slug ? `/${slug}` : ''}${section ? `#${section}` : ''}`

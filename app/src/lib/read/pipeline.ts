@@ -30,6 +30,7 @@
  * a retry. The package's progressive.mjs asks again on the same terms.
  */
 import { interpretReply } from './interpret'
+import { requestIdOf } from './requestId'
 import type { RawReply, ReadKey, ReadOutcome, ReadValidators, RequestOf } from './types'
 
 export interface RetryPolicy {
@@ -140,15 +141,14 @@ export interface ReadRun<R extends ReadKey> {
   label: { transport: 'fixture' | 'bridge'; fixture?: (attempt: number) => string | undefined }
 }
 
-const REQUEST_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
-
 export async function runRead<R extends ReadKey>(run: ReadRun<R>): Promise<ReadOutcome<R>> {
   const { route, request, transport, validators, policy, clock, signal } = run
   const deadlineAt = run.deadlineAt ?? clock.monotonic() + policy.totalMs
   const provenance = (attempts: number, reply: RawReply | null) => ({
     transport: run.label.transport,
     fixture: run.label.fixture?.(attempts),
-    requestId: reply?.requestIdHeader && REQUEST_ID.test(reply.requestIdHeader) ? reply.requestIdHeader : undefined,
+    // Filtered here too: fixture sources and tests build a RawReply directly.
+    requestId: requestIdOf(reply?.requestIdHeader) ?? undefined,
     contract: reply?.contractHeader ?? null,
     receivedAt: clock.now(),
     receivedMonotonic: clock.monotonic(),

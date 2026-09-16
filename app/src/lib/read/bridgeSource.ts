@@ -4,7 +4,9 @@
  * Off unless the build enables live data: a disabled source answers every read
  * with `disabled` and never calls fetch. When on, it asks the bridge's
  * capabilities once, sends only routes the deployment lists, and sends each
- * request as a same-origin JSON POST. The app adds no credential of its own:
+ * request as a same-origin JSON POST. A screen may also ask whether a route is
+ * listed at all (`routeEnabled`), from that same answer and without a POST,
+ * before it spends a place in the queue on it. The app adds no credential of its own:
  * no wallet, session, CSRF or Authorization header, and no SIWE, because
  * public reads never need a signature. The browser still attaches every
  * same-origin cookie whose Path covers /api/read/v1/, which includes session-v1's
@@ -25,6 +27,7 @@
 import { MAX_PAGE_BYTES, MAX_RESPONSE_BYTES } from './interpret'
 import { REQUEST_READ_CONTRACT } from './pin'
 import { BRIDGE_RETRY, realClock, runRead, settleBy, type Clock, type RetryPolicy, type Settled, type Transport } from './pipeline'
+import { requestIdOf } from './requestId'
 import {
   reroute,
   type FailedOutcome,
@@ -38,6 +41,7 @@ import {
   type ReadSource,
   type ReadValidators,
   type RequestOf,
+  type RouteCheck,
 } from './types'
 
 export const READ_PREFIX = '/api/read/v1/'
@@ -137,7 +141,7 @@ export async function rawReplyFrom(response: Response, signal?: AbortSignal): Pr
     opaqueRedirect,
     contentType,
     contractHeader: response.headers.get(CONTRACT_HEADER),
-    requestIdHeader: response.headers.get('X-Domino-Request-Id'),
+    requestIdHeader: requestIdOf(response.headers.get('X-Domino-Request-Id')),
     retryAfterHeader: response.headers.get('Retry-After'),
     body: opaqueRedirect ? { kind: 'text', text: '' } : await boundedBody(response, isJson(contentType) ? MAX_RESPONSE_BYTES : MAX_PAGE_BYTES, signal),
   }
@@ -164,7 +168,10 @@ interface SharedCheck {
   settled: boolean
 }
 
-export function createBridgeSource(options: BridgeOptions): ReadSource {
+/** A bridge source always answers the capabilities question. */
+export type BridgeSource = ReadSource & Required<Pick<ReadSource, 'routeEnabled'>>
+
+export function createBridgeSource(options: BridgeOptions): BridgeSource {
   const { enabled, validators, policy = BRIDGE_RETRY, clock = realClock } = options
   const fetchImpl: FetchLike = options.fetch ?? ((input, init) => fetch(input, init))
   let capabilities: SharedCheck | null = null
@@ -233,25 +240,38 @@ export function createBridgeSource(options: BridgeOptions): ReadSource {
     return settled
   }
 
+  const stamp = (deadlineAt: number): Provenance => ({ transport: 'bridge', contract: null, receivedAt: clock.now(), receivedMonotonic: clock.monotonic(), attempts: 0, deadlineAt })
+
+  /**
+   * The routes this deployment lists, once live reads are on: the shared
+   * capabilities answer, or what a read of `route` comes back as without it.
+   * Past its deadline nothing is asked, the capabilities GET included:
+   * whatever it started would only be abandoned.
+   */
+  async function listedReads<R extends ReadRoute>(route: R, signal: AbortSignal | undefined, deadlineAt: number): Promise<{ ok: true; reads: ReadonlySet<ReadRoute> } | { ok: false; outcome: FailedOutcome<R> }> {
+    const failed = (outcome: FailedOutcome<R>) => ({ ok: false as const, outcome })
+    const late = (): FailedOutcome<R> => ({ route, provenance: stamp(deadlineAt), state: 'unavailable', cause: { kind: 'read_deadline', limit: 'read' }, retryable: true })
+    if (signal?.aborted) return failed({ route, provenance: stamp(deadlineAt), state: 'aborted' })
+    if (clock.monotonic() >= deadlineAt) return failed(late())
+    const waited = await capabilitiesFor(signal, deadlineAt)
+    if (waited.kind === 'aborted') return failed({ route, provenance: stamp(deadlineAt), state: 'aborted' })
+    if (waited.kind === 'deadline') return failed(late())
+    const check = waited.value
+    if (!check.ok) return failed(reroute(check.failure, route))
+    if (check.enabledReads.size === 0) return failed({ route, provenance: stamp(deadlineAt), state: 'disabled', reason: 'bridge_data_mode_disabled' })
+    return { ok: true, reads: check.enabledReads }
+  }
+
   return {
     transport: 'bridge',
     async read<R extends ReadRoute>(route: R, request: ReadRequests[R], opts: ReadOptions = {}): Promise<ReadOutcome<R>> {
       const deadlineAt = opts.deadlineAt ?? clock.monotonic() + policy.totalMs
-      const provenance = (): Provenance => ({ transport: 'bridge', contract: null, receivedAt: clock.now(), receivedMonotonic: clock.monotonic(), attempts: 0, deadlineAt })
-      const late = (): ReadOutcome<R> => ({ route, provenance: provenance(), state: 'unavailable', cause: { kind: 'read_deadline', limit: 'read' }, retryable: true })
-      if (!enabled) return { route, provenance: provenance(), state: 'disabled', reason: 'live_data_disabled' }
-      if (!validators.validateRequest(route, request)) return { route, provenance: provenance(), state: 'invalid', reason: 'request_contract' }
-      if (opts.signal?.aborted) return { route, provenance: provenance(), state: 'aborted' }
-      // Past its deadline a read asks for nothing, the capabilities GET included: whatever it started would only be abandoned.
-      if (clock.monotonic() >= deadlineAt) return late()
+      if (!enabled) return { route, provenance: stamp(deadlineAt), state: 'disabled', reason: 'live_data_disabled' }
+      if (!validators.validateRequest(route, request)) return { route, provenance: stamp(deadlineAt), state: 'invalid', reason: 'request_contract' }
 
-      const waited = await capabilitiesFor(opts.signal, deadlineAt)
-      if (waited.kind === 'aborted') return { route, provenance: provenance(), state: 'aborted' }
-      if (waited.kind === 'deadline') return late()
-      const check = waited.value
-      if (!check.ok) return reroute(check.failure, route)
-      if (check.enabledReads.size === 0) return { route, provenance: provenance(), state: 'disabled', reason: 'bridge_data_mode_disabled' }
-      if (!check.enabledReads.has(route)) return { route, provenance: provenance(), state: 'disabled', reason: 'route_not_enabled' }
+      const listed = await listedReads(route, opts.signal, deadlineAt)
+      if (!listed.ok) return listed.outcome
+      if (!listed.reads.has(route)) return { route, provenance: stamp(deadlineAt), state: 'disabled', reason: 'route_not_enabled' }
 
       return runRead({
         route,
@@ -265,6 +285,19 @@ export function createBridgeSource(options: BridgeOptions): ReadSource {
         onAttempt: opts.onAttempt,
         label: { transport: 'bridge' },
       })
+    },
+
+    /**
+     * The same capabilities answer a read would wait for, and nothing more: no
+     * POST, and the answer is kept for the next read, so asking first costs no
+     * second GET. A refusal comes back as the outcome a read would have had.
+     */
+    async routeEnabled(route: ReadRoute, opts: Pick<ReadOptions, 'signal' | 'deadlineAt'> = {}): Promise<RouteCheck> {
+      const deadlineAt = opts.deadlineAt ?? clock.monotonic() + policy.totalMs
+      if (!enabled) return { state: 'failed', outcome: { route, provenance: stamp(deadlineAt), state: 'disabled', reason: 'live_data_disabled' } }
+      const listed = await listedReads(route, opts.signal, deadlineAt)
+      if (!listed.ok) return { state: 'failed', outcome: listed.outcome }
+      return { state: listed.reads.has(route) ? 'enabled' : 'not_enabled' }
     },
   }
 }

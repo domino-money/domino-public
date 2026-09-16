@@ -1,4 +1,5 @@
-import { aprLabel, feeLabel, type Metric } from '../lib/markets'
+import { aprLabel, feeLabel, type Instant, type Metric } from '../lib/markets'
+import { estimateTitle, presentAprEstimate, type AprEstimateObservation } from '../lib/read/aprEstimate'
 import { describeFailure } from '../lib/read/describe'
 import { shownResult, useMarkets } from '../lib/read/useMarkets'
 import { TokenMarkPair } from './TokenIcon'
@@ -6,6 +7,33 @@ import { PoolAprEstimate } from './read/screens/PoolAprEstimate'
 import { useNow } from '../lib/read/useNow'
 import { poolListings } from '../config/selectedPoolCatalogue'
 import { PoolCatalogueIdentity, PoolTokenLabel } from './PoolCatalogueIdentity'
+
+/** The strip's words for an APR it has no figure for: the same for a pool not read yet and a read pool without an estimate. */
+const NO_APR = 'Est. APR —'
+
+/**
+ * The backend estimate in the strip: its figure when there is one; otherwise
+ * the one label a pool without a figure has, why in the title, and the
+ * estimate's state as data.
+ */
+function EstimateApr({ observation, now }: { observation?: AprEstimateObservation; now: Instant }) {
+  const shown = presentAprEstimate(observation, now)
+  if (shown.text !== null) return <PoolAprEstimate observation={observation} now={now} />
+  return (
+    <span data-apr-estimate={shown.state}>
+      <span className="tnum whitespace-nowrap text-fg-subtle" title={estimateTitle(observation, now)}>
+        {NO_APR}
+      </span>
+    </span>
+  )
+}
+
+/**
+ * Whether a row's APR is Domino's own qualified history, current or retained:
+ * the same test the table's APR cell makes, so the strip and the table show
+ * the same APR for a pool, and the backend estimate only where there is none.
+ */
+const historicalApr = (metric: Metric) => metric.value !== null && (metric.state === 'qualified' || metric.state === 'stale')
 
 /** The APR in the strip, under the same state rule as the table: never a retained value as current, never an invented one. */
 function Apr({ metric }: { metric: Metric }) {
@@ -47,10 +75,13 @@ function Apr({ metric }: { metric: Metric }) {
  * Scrolling strip of pools across the top of Home: pair, fee tier and pool
  * APR. It reads nothing of its own: it shows the result set of the Selected
  * pools table, from the same provider. Pair names come from the token reads.
- * The backend estimate keeps its source, caveat and age, separate from
- * qualified historical APR. With no rows it says why. The strip pauses while
- * it is hovered or holds focus; with reduced motion it stands still and
- * scrolls by hand.
+ * Domino's qualified historical APR, where pool-metrics provides one, stands
+ * where the table's APR cell has it; otherwise the backend estimate, with its
+ * source, caveat and age. A pool with no APR figure reads "Est. APR —"
+ * whether its row has not landed or landed without an estimate, so nothing
+ * changes words as the rows arrive; why is in the title. With no rows it
+ * says why. The strip pauses while it is hovered or holds focus; with
+ * reduced motion it stands still and scrolls by hand.
  */
 export function Ticker() {
   const { state, provider } = useMarkets()
@@ -69,12 +100,11 @@ export function Ticker() {
         <PoolTokenLabel token={m.tokens.base} />/<PoolTokenLabel token={m.tokens.quote} />
       </span>
       <span className="tnum">{feeLabel(m)}</span>
-      {m.feeAprPercent.state === 'qualified' && <Apr metric={m.feeAprPercent} />}
-      <PoolAprEstimate observation={m.feeAprEstimate} now={now} />
+      {historicalApr(m.feeAprPercent) ? <Apr metric={m.feeAprPercent} /> : <EstimateApr observation={m.feeAprEstimate} now={now} />}
     </a>
   ) : catalogue ? <a href={`#/pool/${poolId}`} key={poolId} tabIndex={copy ? -1 : undefined} className="dm-ticker-item" data-pool-catalogue={poolId}>
     <PoolCatalogueIdentity entry={catalogue} compact />
-    <span title="Pool APR unavailable">APR —</span>
+    <span className="tnum whitespace-nowrap text-fg-subtle" title="Pool figures are unavailable, so there is no estimated APR.">{NO_APR}</span>
   </a> : null)
   const items = render(false)
 

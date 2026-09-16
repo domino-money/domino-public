@@ -38,6 +38,17 @@ export interface TokenCandidate {
 
 export const selectable = (candidate: TokenCandidate) => candidate.why === null
 
+/**
+ * The candidate a token read produced for exactly `wire`, or null: what a
+ * search hands the view it opens, so the view need not read the same address
+ * again. Only a selectable answer is handed over. An unreadable one can carry
+ * a reason that passes (an RPC error, a deadline), and the view's own read is
+ * the one that can get past it; nothing else asks again. A wallet row (no
+ * block) or another spelling of the address is not that answer either.
+ */
+export const handoffFor = (candidate: TokenCandidate | null | undefined, wire: string): TokenCandidate | null =>
+  candidate != null && candidate.source === 'pasted' && candidate.block !== null && candidate.wire === wire && selectable(candidate) ? candidate : null
+
 export function candidateFromToken(data: TokenResponse, wire: string): TokenCandidate {
   const asset = data.asset
   const token = tokenDisplay(asset)

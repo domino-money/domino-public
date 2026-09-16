@@ -16,7 +16,7 @@
 import { FORWARDER_REFUSALS, GATE_PAGE_MARKER, GATE_REFUSAL } from './interpret'
 import { REQUEST_READ_CONTRACT } from './pin'
 import { BRIDGE_RETRY, realClock, runRead, type Clock, type RetryPolicy } from './pipeline'
-import type { RawReply, ReadOptions, ReadOutcome, ReadRequests, ReadRoute, ReadSource, ReadValidators, RequestOf } from './types'
+import type { RawReply, ReadOptions, ReadOutcome, ReadRequests, ReadRoute, ReadSource, ReadValidators, RequestOf, RouteCheck } from './types'
 
 /** The package's fixture index plus every fixture's text, keyed by package-relative path. */
 export interface FixtureCatalog {
@@ -164,6 +164,17 @@ export function createFixtureSource({ catalog, validators, script, clock = realC
   return {
     transport: 'fixture',
     requests,
+    /**
+     * A route is listed when the script has a reply for it, as a deployment's
+     * capabilities list the reads it serves. Asking sends nothing and records
+     * no request; a route with no reply would be answered as not enabled.
+     */
+    async routeEnabled(route: ReadRoute, opts: Pick<ReadOptions, 'signal' | 'deadlineAt'> = {}): Promise<RouteCheck> {
+      if (opts.signal?.aborted) {
+        return { state: 'failed', outcome: { route, state: 'aborted', provenance: { transport: 'fixture', contract: null, receivedAt: clock.now(), receivedMonotonic: clock.monotonic(), attempts: 0 } } }
+      }
+      return script[route]?.length ? { state: 'enabled' } : { state: 'not_enabled' }
+    },
     async read<R extends ReadRoute>(route: R, request: ReadRequests[R], opts: ReadOptions = {}): Promise<ReadOutcome<R>> {
       requests.push({ route, request })
       const steps = script[route]

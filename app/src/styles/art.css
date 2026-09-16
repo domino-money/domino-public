@@ -84,31 +84,64 @@
   .dm-vig-compound:not(.dm-vig-still) .drop-3,
   .dm-vig-compound:not(.dm-vig-still) .drop-3 .drop-dot { animation-delay: 3.4s; }
 
-  /* ---- Domino sequences (F.3); SequenceFrame is the same drawing with .dm-vig-still ---------- */
-  .dm-vig-seq .range-a { fill: color-mix(in srgb, var(--primary) 10%, transparent); stroke: color-mix(in srgb, var(--primary) 55%, transparent); stroke-width: 1.25px; }
-  .dm-vig-seq .trigger { stroke: var(--primary); stroke-width: 1px; stroke-dasharray: 4 4; opacity: 0.35; }
-  .dm-vig-seq .price { fill: none; stroke: var(--fg-muted); stroke-width: 1.5px; stroke-linejoin: round; stroke-dasharray: 150; stroke-dashoffset: 0; }
-  .dm-vig-seq .dot-core { fill: var(--primary); }
-  .dm-vig-seq .dot-ring { fill: none; stroke: var(--primary); stroke-width: 1px; opacity: 0.25; }
-  .dm-vig-seq .arrive { transform-box: fill-box; transform-origin: 0% 100%; }
-  .dm-vig-seq .range-b { fill: color-mix(in srgb, var(--primary) 18%, transparent); stroke: var(--primary); stroke-width: 1.25px; }
+  /* ---- Domino Compounder (F.3): the staircase; SequenceFrame is the same drawing with .dm-vig-still ---- */
+  /* Range B stands on range A, its floor at A's top edge. B's ghost (as the hero's next-tile ghost) shows only
+     while B is away. The resting tip is drawn in place; the moving tip and the fees travel on offset-path
+     (drawn at 0,0, placed in view-box space) and are hidden at rest, so the picture never depends on it. */
+  .dm-vig-seq .range-a { fill: color-mix(in srgb, var(--primary) 10%, transparent); stroke: color-mix(in srgb, var(--primary) 55%, transparent); stroke-width: 1.25px; stroke-linejoin: round; }
+  .dm-vig-seq .range-b-ghost { fill: none; stroke: var(--fg-faint); stroke-width: 1px; stroke-dasharray: 3 3; opacity: 0; }
+  .dm-vig-seq .range-b-fill { fill: color-mix(in srgb, var(--primary) 16%, transparent); }
+  .dm-vig-seq .range-b-edge { fill: none; stroke: var(--primary); stroke-width: 1.25px; stroke-linejoin: round; }
+  /* pathLength 100. The gap is longer than the line, so while it is undrawn it waits at offset 101, clear of its
+     start, and no round cap is left there. */
+  .dm-vig-seq .price { fill: none; stroke: var(--fg-muted); stroke-width: 1.5px; stroke-linejoin: round; stroke-linecap: round; stroke-dasharray: 100 110; stroke-dashoffset: 0; }
+  .dm-vig-seq .tip-core { fill: var(--primary); }
+  .dm-vig-seq .tip-ring { fill: none; stroke: var(--primary); stroke-width: 1px; opacity: 0.25; transform-box: fill-box; transform-origin: 50% 50%; }
+  .dm-vig-seq .tip { opacity: 0; transform-box: view-box; transform-origin: 0 0; offset-path: path('M 40 162 L 60 157 L 78 159 L 98 151 L 116 153 L 136 146 L 152 140 L 166 142 L 182 131 L 200 122 L 218 123 L 236 112'); offset-rotate: 0deg; offset-distance: 100%; }
+  .dm-vig-seq .hop { fill: none; stroke: var(--fg-faint); stroke-width: 1px; stroke-dasharray: 2 5; }
+  .dm-vig-seq .lip { stroke: var(--border-strong); stroke-width: 1px; }
+  .dm-vig-seq .rise { transform-box: fill-box; transform-origin: 50% 100%; }
+  .dm-vig-seq .drop { opacity: 0; transform-box: view-box; transform-origin: 0 0; offset-path: path('M 136 132 C 136 96, 176 70, 204 94'); offset-rotate: 0deg; offset-distance: 0%; }
+  .dm-vig-seq .drop-dot { fill: var(--primary); transform-box: fill-box; transform-origin: 50% 50%; scale: 0.6; }
 
-  .dm-vig-seq:not(.dm-vig-still) .scene { animation: dm-scene-fade 8s var(--ease-std) infinite; }
-  .dm-vig-seq:not(.dm-vig-still) .price { animation: dm-trace 8s var(--ease-std) infinite; }
-  .dm-vig-seq:not(.dm-vig-still) .dot { animation: dm-trace-dot 8s var(--ease-std) infinite; }
-  .dm-vig-seq:not(.dm-vig-still) .trigger { animation: dm-trigger 8s var(--ease-std) infinite; }
-  .dm-vig-seq:not(.dm-vig-still) .arrive { animation: dm-range-arrive 8s var(--ease-std) infinite; }
+  /* The loop runs only where offset-path can place the travelling parts; anywhere else the staircase rests. */
+  @supports (offset-path: path('M 0 0')) {
+    .dm-vig-seq:not(.dm-vig-still) .scene { animation: dm-stair-scene 8s var(--ease-std) infinite; }
+    .dm-vig-seq:not(.dm-vig-still) .range-b-ghost { animation: dm-stair-ghost 8s var(--ease-std) infinite; }
+    .dm-vig-seq:not(.dm-vig-still) .range-b { animation: dm-stair-lit 8s var(--ease-std) infinite; }
+    .dm-vig-seq:not(.dm-vig-still) .rise { animation: dm-stair-rise 8s var(--ease-std) infinite; }
+    .dm-vig-seq:not(.dm-vig-still) .price { animation: dm-stair-price 8s linear infinite; }
+    .dm-vig-seq:not(.dm-vig-still) .tip-rest { animation: dm-stair-rest 8s linear infinite; }
+    .dm-vig-seq:not(.dm-vig-still) .tip { animation: dm-stair-tip 8s linear infinite; }
+    .dm-vig-seq:not(.dm-vig-still) .tip .tip-ring { animation: dm-stair-pulse 8s var(--ease-std) infinite; }
+    .dm-vig-seq:not(.dm-vig-still) .drop { animation: dm-stair-drop 8s cubic-bezier(0.45, 0, 0.55, 1) infinite; }
+    .dm-vig-seq:not(.dm-vig-still) .drop-dot { animation: dm-stair-drop-scale 8s cubic-bezier(0.45, 0, 0.55, 1) infinite; }
+    .dm-vig-seq:not(.dm-vig-still) .drop-1,
+    .dm-vig-seq:not(.dm-vig-still) .drop-1 .drop-dot { animation-delay: 4s; }
+    .dm-vig-seq:not(.dm-vig-still) .drop-2,
+    .dm-vig-seq:not(.dm-vig-still) .drop-2 .drop-dot { animation-delay: 4.25s; }
+    .dm-vig-seq:not(.dm-vig-still) .drop-3,
+    .dm-vig-seq:not(.dm-vig-still) .drop-3 .drop-dot { animation-delay: 4.5s; }
+  }
 
-  /* ---- Non-custodial (F.4) ------------------------------------------------------------------- */
-  .dm-vig-wallet .orbit { fill: none; stroke: var(--fg-faint); stroke-width: 1px; stroke-dasharray: 2 7; transform-box: fill-box; transform-origin: 50% 50%; }
-  .dm-vig-wallet .w-body { fill: var(--surface-3); stroke: var(--border-strong); stroke-width: 1px; }
-  .dm-vig-wallet .flap { fill: none; stroke: var(--border-strong); stroke-width: 1px; }
-  .dm-vig-wallet .clasp { fill: var(--surface-4); }
-  .dm-vig-wallet .clasp-dot { fill: var(--fg-faint); }
+  /* ---- Non-custodial (F.4): the signature line ---------------------------------------------- */
+  /* The stroke and its highlight are drawn before the wallet and the range, so both ends tuck under them. The
+     seal ring is hidden at rest: the seal is a plain dot, never a badge. */
+  .dm-vig-wallet .swash { fill: var(--fg-faint); }
+  .dm-vig-wallet .trace { fill: none; stroke: var(--primary); stroke-width: 1.5px; stroke-linecap: round; stroke-dasharray: 16 100; stroke-dashoffset: 16; opacity: 0; }
+  .dm-vig-wallet .wallet-card { fill: var(--surface-4); stroke: var(--border-strong); stroke-width: 1px; }
+  .dm-vig-wallet .wallet-body { fill: var(--surface-3); stroke: var(--border-strong); stroke-width: 1px; }
+  .dm-vig-wallet .wallet-pocket { fill: var(--surface-4); stroke: var(--border-strong); stroke-width: 1px; stroke-linejoin: round; }
+  .dm-vig-wallet .seal { fill: var(--primary); }
+  .dm-vig-wallet .seal-ring { fill: none; stroke: var(--primary); stroke-width: 1px; opacity: 0; transform-box: fill-box; transform-origin: 50% 50%; }
+  .dm-vig-wallet .band { fill: color-mix(in srgb, var(--primary) 10%, transparent); stroke: color-mix(in srgb, var(--primary) 55%, transparent); stroke-width: 1.25px; }
+  .dm-vig-wallet .band-lit { fill: none; stroke: var(--primary); stroke-width: 1.25px; opacity: 0; }
+  .dm-vig-wallet .pos { transform-box: fill-box; transform-origin: 50% 100%; }
 
-  .dm-vig-wallet:not(.dm-vig-still) .orbit { animation: dm-orbit 24s linear infinite; }
-  .dm-vig-wallet:not(.dm-vig-still) .bob { animation: dm-bob 7.5s ease-in-out infinite; }
-  .dm-vig-wallet:not(.dm-vig-still) .flap { animation: dm-flap 7.5s var(--ease-std) infinite; }
+  .dm-vig-wallet:not(.dm-vig-still) .seal-ring { animation: dm-sign-seal 7.5s var(--ease-std) infinite; }
+  .dm-vig-wallet:not(.dm-vig-still) .trace { animation: dm-sign-trace 7.5s cubic-bezier(0.45, 0, 0.55, 1) infinite; }
+  .dm-vig-wallet:not(.dm-vig-still) .band-lit { animation: dm-sign-lit 7.5s var(--ease-std) infinite; }
+  .dm-vig-wallet:not(.dm-vig-still) .pos { animation: dm-sign-pos 7.5s var(--ease-enter) infinite; }
 
   /* ---- Nav icon gestures (D.2): one shot while a link is hovered; the markup is foundation's ---- */
   .i-turn { transform-box: view-box; transform-origin: 8px 8px; }
@@ -210,47 +243,97 @@
   100% { opacity: 1; }
 }
 
-/* ---- Domino sequences keyframes (F.3): 8 s; the reset happens at 15% while the scene is invisible ---- */
-@keyframes dm-scene-fade {
+/* ---- Domino Compounder keyframes (F.3): 8 s, every loop the same length, so delays keep phase.
+   0.6-1.0 s the whole drawing fades out and resets while hidden; 1.0-1.4 s range A, its tile and B's ghost return;
+   1.4-3.8 s the price climbs to its trigger, 6 under A's top (55.69% of the route, dashoffset 44.31);
+   3.8-4.3 s the tip's ring pulses; 4.0 / 4.25 / 4.5 s three fees hop up, 0.9 s each; 5.0-5.6 s B lights as its
+   ghost fades; 5.1-5.7 s B's tile rises from its base; 5.6-7.0 s the price carries on inside B, where the moving
+   tip hands over to the resting one; 7.0-8.0 s rest. ---- */
+@keyframes dm-stair-scene {
   0%, 7.5% { opacity: 1; }
-  15% { opacity: 0; }
-  20%, 100% { opacity: 1; }
+  12.5% { opacity: 0; }
+  17.5%, 100% { opacity: 1; }
 }
-@keyframes dm-trace {
-  0%, 14.99% { stroke-dashoffset: 0; }
-  15%, 17.5% { stroke-dashoffset: 150; animation-timing-function: cubic-bezier(0.4, 0, 0.2, 1); }
-  55%, 100% { stroke-dashoffset: 0; }
+@keyframes dm-stair-ghost {
+  0%, 12.5% { opacity: 0; }
+  12.51%, 62.5% { opacity: 0.8; }
+  70%, 100% { opacity: 0; }
 }
-@keyframes dm-trace-dot {
-  0%, 14.99% { opacity: 1; }
-  15%, 55% { opacity: 0; }
-  57.5%, 100% { opacity: 1; }
+@keyframes dm-stair-lit {
+  0%, 12.5% { opacity: 1; }
+  12.51%, 62.5% { opacity: 0; }
+  70%, 100% { opacity: 1; }
 }
-@keyframes dm-trigger {
-  0%, 55% { opacity: 0.35; }
-  58.75% { opacity: 1; }
-  62.5%, 67.5% { opacity: 0.6; }
-  75%, 100% { opacity: 0.35; }
+@keyframes dm-stair-rise {
+  0%, 12.5% { opacity: 1; scale: 1; }
+  12.51%, 63.75% { opacity: 0; scale: 0.6; animation-timing-function: cubic-bezier(0.16, 1, 0.3, 1); }
+  71.25%, 100% { opacity: 1; scale: 1; }
 }
-@keyframes dm-range-arrive {
-  0%, 14.99% { opacity: 1; scale: 1; translate: 0 0; }
-  15%, 60% { opacity: 0; scale: 0.92; translate: 0 8px; animation-timing-function: cubic-bezier(0.16, 1, 0.3, 1); }
-  67.5%, 100% { opacity: 1; scale: 1; translate: 0 0; }
+@keyframes dm-stair-price {
+  0%, 12.5% { stroke-dashoffset: 0; }
+  12.51%, 17.5% { stroke-dashoffset: 101; animation-timing-function: cubic-bezier(0.4, 0, 0.2, 1); }
+  47.5%, 70% { stroke-dashoffset: 44.31; animation-timing-function: cubic-bezier(0.4, 0, 0.2, 1); }
+  87.5%, 100% { stroke-dashoffset: 0; }
+}
+@keyframes dm-stair-rest {
+  0%, 12.5% { opacity: 1; }
+  12.51%, 87.5% { opacity: 0; }
+  87.51%, 100% { opacity: 1; }
+}
+@keyframes dm-stair-tip {
+  0%, 12.5% { opacity: 0; offset-distance: 100%; }
+  12.51%, 17.5% { opacity: 0; offset-distance: 0%; animation-timing-function: cubic-bezier(0.4, 0, 0.2, 1); }
+  18.13% { opacity: 1; }
+  47.5%, 70% { offset-distance: 55.69%; animation-timing-function: cubic-bezier(0.4, 0, 0.2, 1); }
+  87.5% { opacity: 1; offset-distance: 100%; }
+  87.51%, 100% { opacity: 0; offset-distance: 100%; }
+}
+@keyframes dm-stair-pulse {
+  0%, 47.5% { scale: 1; opacity: 0.25; }
+  48.75% { scale: 1; opacity: 0.6; }
+  53.75% { scale: 1.5; opacity: 0; }
+  53.76% { scale: 1; opacity: 0; }
+  60%, 100% { scale: 1; opacity: 0.25; }
+}
+@keyframes dm-stair-drop {
+  0% { offset-distance: 0%; opacity: 0; }
+  1.25% { opacity: 1; }
+  10% { opacity: 1; }
+  11.25% { offset-distance: 100%; opacity: 0; }
+  11.26%, 100% { offset-distance: 0%; opacity: 0; }
+}
+@keyframes dm-stair-drop-scale {
+  0% { scale: 0.6; }
+  5.63% { scale: 1; }
+  11.25%, 100% { scale: 0.6; }
 }
 
-/* ---- Non-custodial keyframes (F.4): the orbit on 24 s, the tile and the flap on 7.5 s ---- */
-@keyframes dm-orbit {
-  from { rotate: 0deg; }
-  to { rotate: 360deg; }
+/* ---- Non-custodial keyframes (F.4): 7.5 s, one beat in one direction, then rest. 0.6-1.2 s the seal's ring
+   opens once (it signs); 1.0-2.3 s a highlight writes along the stroke from the wallet to the range, never back;
+   2.3-3.9 s the range's edge lights; 2.5-3.1 s the tile answers with the "received" pulse of Auto-compound;
+   rest to 7.5 s. ---- */
+@keyframes dm-sign-seal {
+  0%, 8% { scale: 1; opacity: 0; }
+  9.33% { scale: 1; opacity: 0.7; }
+  16% { scale: 2; opacity: 0; }
+  16.01%, 100% { scale: 1; opacity: 0; }
 }
-@keyframes dm-bob {
-  0%, 100% { translate: 0 0; }
-  50% { translate: 0 -4px; }
+@keyframes dm-sign-trace {
+  0%, 13.33% { stroke-dashoffset: 16; opacity: 0; }
+  14.67% { opacity: 1; }
+  29.33% { opacity: 1; }
+  30.67% { stroke-dashoffset: -100; opacity: 0; }
+  30.68%, 100% { stroke-dashoffset: 16; opacity: 0; }
 }
-@keyframes dm-flap {
-  0%, 37.33% { stroke: var(--border-strong); }
-  45.33%, 60% { stroke: var(--primary); }
-  68%, 100% { stroke: var(--border-strong); }
+@keyframes dm-sign-lit {
+  0%, 30.67% { opacity: 0; }
+  34%, 42.67% { opacity: 1; }
+  52%, 100% { opacity: 0; }
+}
+@keyframes dm-sign-pos {
+  0%, 33.33% { scale: 1; }
+  37.33% { scale: 1.06; }
+  41.33%, 100% { scale: 1; }
 }
 
 /* ---- Nav icon gestures (D.2) ---- */

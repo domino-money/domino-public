@@ -160,3 +160,73 @@ test('derived positions: both native blocked reasons, and a provider gas estimat
   assert.equal(gasRow.value.text, '0.000000000001 ETH');
   assert.match(gasRow.value.note, /not verified/);
 });
+
+// ---- the product's projections: New position's deposit amounts (G8) and Setup's swap quote (G15) ----
+
+const { positionAmounts } = build('onboarding/amounts');
+const { swapRequest, swapRows, SWAP_CHECK_WORDS } = build('onboarding/swap');
+const cellText = (cell) => (cell.kind === 'amount' ? `${cell.text}${cell.units ? '' : ' raw'}` : `none: ${cell.why}`);
+
+test('deposit amounts: each currency in pool order, exact units with the decimals the pool read returned, raw units without them, no budget is none, never zero (G8)', () => {
+  const happy = fixture('onboarding-v1', 'responses/position-preview.json').preview;
+  const amounts = positionAmounts(happy, [18, 6]);
+  assert.deepEqual(amounts.expected.map(cellText), ['0.0000000000000001', '0.0002']);
+  assert.deepEqual(amounts.maximum.map(cellText), ['0.000000000000000101', '0.000202']);
+  assert.deepEqual(amounts.unspent.map(cellText), ['0.00000000000000001', '0.00002']);
+  assert.equal(amounts.liquidity, '12,345');
+  assert.equal(amounts.checks, 'within_selected_limits');
+  // Decimals not read: the raw integer, labelled raw by the screen. Never guessed.
+  assert.deepEqual(positionAmounts(happy, [null, 0]).expected.map(cellText), ['100 raw', '200']);
+  // The request New position sends carries no budget, so unspent is none and the checks are incomplete.
+  const incomplete = positionAmounts(fixture('onboarding-v1', 'variants/position-preview.incomplete.json').preview, [18, 18]);
+  assert.deepEqual(incomplete.unspent.map(cellText), ['none: no_budget', 'none: no_budget']);
+  assert.equal(incomplete.checks, 'incomplete');
+});
+
+test('swap quote: the typed gross less the published fee is the quoted input, validated as onboarding-v1 would, and the balancing amount is never derived (G15)', () => {
+  const fields = { tokenIn: '0x1111111111111111111111111111111111111111', tokenOut: '0x2222222222222222222222222222222222222222', grossRaw: '10000', feeBps: 30, slippageBps: '50', maxImpactBps: '100' };
+  const formed = swapRequest(fields);
+  assert.equal(formed.ok, true);
+  assert.deepEqual([formed.feeRaw, formed.netRaw], ['30', '9970'], 'floor(10000 x 30 / 10000) = 30, as the setup contract charges it');
+  assert.deepEqual(formed.request, { chainId: 4663, tokenIn: fields.tokenIn, tokenOut: fields.tokenOut, amountRaw: '9970', slippageBps: 50, maxPriceImpactBps: 100 });
+  assert.ok(runtime.validateRequest('swap-preview', formed.request), 'the request passes the pinned runtime');
+  assert.equal(swapRequest({ ...fields, grossRaw: '33', feeBps: 65 }).request.amountRaw, '33', 'the fee rounds down: 33 x 65 / 10000 is 0');
+  for (const [patch, problem] of [
+    [{ tokenOut: fields.tokenIn }, 'tokens'],
+    [{ tokenIn: 'USDG' }, 'tokens'],
+    [{ grossRaw: '' }, 'amount'],
+    [{ grossRaw: '0' }, 'amount'],
+    [{ grossRaw: '1.5' }, 'amount'],
+    [{ slippageBps: '1001' }, 'slippage'],
+    [{ slippageBps: '-1' }, 'slippage'],
+    [{ maxImpactBps: '10001' }, 'impact'],
+    [{ feeBps: 66 }, 'fee'],
+  ]) {
+    assert.deepEqual(swapRequest({ ...fields, ...patch }), { ok: false, problem }, JSON.stringify(patch));
+  }
+});
+
+test('swap quote rows: gross output and your slippage floor in smallest units, the provider fee, gas, simulation and checks, with unknowns as none (G15)', () => {
+  const text = (rows) => Object.fromEntries(rows.map((row) => [row.id, row.cell.kind === 'value' ? row.cell.text : `none: ${row.cell.why}`]));
+  assert.deepEqual(text(swapRows(swapBase().preview)), {
+    input: '1,000',
+    output: '2,000',
+    minimum: '1,990',
+    impact: '0.03%',
+    'provider-fee': 'None reported',
+    gas: '0.00001 ETH',
+    simulation: 'No failure reported',
+    checks: 'Within your limits',
+  });
+  assert.deepEqual(text(swapRows(fixture('onboarding-v1', 'variants/swap-preview.unknown.json').preview)), {
+    input: '1,000',
+    output: '2,000',
+    minimum: '1,990',
+    impact: 'none: price_impact_unknown',
+    'provider-fee': 'none: provider_output_fee_unknown',
+    gas: 'none: gas_estimate_incomplete',
+    simulation: 'none: simulation_unknown',
+    checks: [SWAP_CHECK_WORDS.price_impact_unknown, SWAP_CHECK_WORDS.provider_output_fee_unknown, SWAP_CHECK_WORDS.simulation_unknown, SWAP_CHECK_WORDS.gas_estimate_incomplete].join(' '),
+  });
+  for (const words of Object.values(SWAP_CHECK_WORDS)) assert.doesNotMatch(words, /beta|enabled|this build|preview only/i);
+});

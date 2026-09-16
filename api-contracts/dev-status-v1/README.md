@@ -16,6 +16,9 @@ part of this protocol.
 
 - `readEnabled`/`enabledReads` describe the gateway flag/scope. They do not
   establish reader readiness, provider health or positive indexed coverage.
+  When enabled, the scope lists each of the seven public reads and may add the
+  stored-data reads (`pool-positions`, `pool-metrics`, `markets-snapshot`), each
+  once, in any order; disabled lists none.
 - `readerConnection.state` is `ready`, `cooldown`, `qualification_disabled`,
   `qualification_expired`, `unavailable` or `incompatible`. A ready local
   admission can still have `busy:true`. A provider was not contacted by status.

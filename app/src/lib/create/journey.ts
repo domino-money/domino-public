@@ -6,8 +6,8 @@
  * No React and no reads. Everything a stage shows comes from the values the
  * screens put here: a token candidate and a pool option from validated reads,
  * ticks from the range controls, text from inputs. Nothing here computes a
- * deposit composition: that is the position-preview service's, and it is not
- * enabled on this connection (see `previewRequest`). Nothing here signs,
+ * deposit composition: that is the position-preview service's, which Review
+ * asks for with the request `previewRequest` forms. Nothing here signs,
  * approves, deposits or swaps, and nothing implies it can.
  */
 import type { PositionPreviewRequest } from 'api-contracts/onboarding-v1/types'
@@ -45,11 +45,25 @@ export interface DominoLimits {
 export const DEFAULT_LIMITS: DominoLimits = { triggerPercent: '5', maxOverlapPercent: '20', sequenceCap: '3' }
 export const DEFAULT_SLIPPAGE_BPS = '50'
 
+/**
+ * The contract's own domains (contracts/src/PolicyValidation.sol and the
+ * Policy struct in IDominoVaultDraft.sol): trigger distance and maximum
+ * overlap 0 to 2000 basis points each, 0 included, and 1 to 255 positions
+ * counting the root. A percentage with up to two decimal places is a whole
+ * number of basis points.
+ */
 export const LIMIT_BOUNDS = {
-  trigger: { min: 0.1, max: 50 },
-  overlap: { min: 0, max: 50 },
-  cap: { min: 1, max: 5 },
+  trigger: { min: 0, max: 20 },
+  overlap: { min: 0, max: 20 },
+  cap: { min: 1, max: 255 },
 } as const
+
+/**
+ * The successor upside the geometry is drawn with. On chain it is the
+ * sequence's own setting, 1 to 1,000,000 basis points (DominoVaultV4's
+ * limits check); 50% is the default, not a fixed rule.
+ */
+export const DEFAULT_UPSIDE_PERCENT = 50
 
 export interface JourneyState {
   stage: Stage
@@ -266,7 +280,7 @@ export function canContinue(stage: Stage, state: JourneyState, now: number): Che
       return slippage.ok ? OK : fail(slippage.reason)
     }
     case 'balance':
-      // The preview is not enabled on this connection. The person may still see the rest.
+      // The deposit amounts are an estimate shown in Review; nothing waits for them.
       return OK
     case 'automation':
       if (state.automation !== 'domino') return OK
@@ -344,11 +358,13 @@ export const withLimits = (state: JourneyState, limits: Partial<DominoLimits>): 
 export type PreviewRequest = { ok: true; request: PositionPreviewRequest } | { ok: false; reason: string }
 
 /**
- * The position-preview request this journey would send, shaped exactly as
+ * The position-preview request this journey sends, shaped exactly as
  * onboarding-v1's `position-preview.request.schema.json`. Formed only from
- * validated reads and validated inputs; never sent from here, because the
- * preview service is not enabled on this connection. The pool key must be
- * hookless with a fixed fee: that is what the service admits.
+ * validated reads and validated inputs, and never sent from here: Review's
+ * deposit amounts send it, in builds with wallet sign-in, for a signed-in
+ * wallet (components/create/DepositAmounts.tsx). Nothing optional is added:
+ * no budgets, native balance or gas reserve the person did not give. The pool
+ * key must be hookless with a fixed fee: that is what the service admits.
  */
 export function previewRequest(state: JourneyState): PreviewRequest {
   const { token, pool, range } = state
@@ -385,6 +401,45 @@ export function previewRequest(state: JourneyState): PreviewRequest {
   }
 }
 
+/**
+ * The choices Setup's deposit draft starts from when the person continues
+ * there: the verified pool, which of its currencies the amount is in, the
+ * amount in raw units, the range and the slippage. The same validated values
+ * as the preview request, so a pool the deposit service does not admit is
+ * never carried. Budgets and network limits are not: Setup asks for them.
+ */
+export interface SetupDraft {
+  pool: PoolOption
+  /** The index of the deposit token among the pool's currencies. */
+  independent: 0 | 1
+  amountRaw: string
+  tickLower: number
+  tickUpper: number
+  slippageBps: number
+}
+
+export function setupDraft(state: JourneyState): SetupDraft | null {
+  const formed = previewRequest(state)
+  if (!formed.ok || !state.pool || !state.token) return null
+  const index = state.pool.currencies.findIndex((currency) => tokenAddress(currency) === state.token?.key)
+  if (index !== 0 && index !== 1) return null
+  const { request } = formed
+  return { pool: state.pool, independent: index, amountRaw: request.amountRaw, tickLower: request.tickLower, tickUpper: request.tickUpper, slippageBps: request.slippageBps }
+}
+
+/**
+ * The line under Continue in Setup. It promises a Setup filled in only when
+ * these choices make a draft to carry (`setupDraft`), for a signed-in wallet
+ * or once one signs in. A pool Setup's deposits do not take (hooks, or a
+ * dynamic fee) is carried nowhere, so the line says what Setup takes; anything
+ * else without a draft gets the neutral line, never a promise.
+ */
+export function continueNote(state: JourneyState, signedIn: boolean): string {
+  if (setupDraft(state) !== null) return signedIn ? CREATE.review.setupNote : CREATE.review.setupNoteSignedOut
+  const pool = state.pool
+  return pool && (pool.hooks !== NATIVE_CURRENCY || pool.feePips === DYNAMIC_FEE_PIPS) ? CREATE.review.setupNoteUnsupported : CREATE.review.gate
+}
+
 export interface CreateGate {
   enabled: boolean
   reason: string
@@ -414,21 +469,22 @@ export interface SuccessorGeometry {
   triggerTick: number
   /** The lowest tick the successor's floor may take: overlap% below the source's upper bound, rounded up to the spacing. */
   floorMinTick: number
-  /** The successor's target ceiling: 50% above the source's upper bound, rounded up to the spacing. */
+  /** The successor's target ceiling at the default upside: 50% above the source's upper bound, rounded up to the spacing. */
   ceilingTick: number
 }
 
 /**
  * The agreed successor geometry from a range's upper bound, as ticks on the
- * pool's spacing. An illustration of the rule in the pool's own price
- * orientation, never a plan. Null when the spacing cannot hold it.
+ * pool's spacing, with the default upside. An illustration of the rule in the
+ * pool's own price orientation, never a plan. Null when the spacing cannot
+ * hold it.
  */
 export function successorGeometry(range: TickRange, limits: LimitValues, spacing: number): SuccessorGeometry | null {
   const { min, max } = usableTicks(spacing)
   const clamp = (tick: number) => Math.min(max, Math.max(min, tick))
   const triggerTick = clamp(Math.floor(range.upper + ticksFor(1 - limits.trigger / 100)))
   const floorMinTick = clamp(Math.ceil((range.upper + ticksFor(1 - limits.overlap / 100)) / spacing) * spacing)
-  const ceilingTick = clamp(Math.ceil((range.upper + ticksFor(1.5)) / spacing) * spacing)
+  const ceilingTick = clamp(Math.ceil((range.upper + ticksFor(1 + DEFAULT_UPSIDE_PERCENT / 100)) / spacing) * spacing)
   if (floorMinTick >= ceilingTick) return null
   return { triggerTick, floorMinTick, ceilingTick }
 }
@@ -440,27 +496,42 @@ export interface WalletStep {
   token?: TokenDisplay
 }
 
-/** What a real creation would ask a wallet for, in order. A description, not an action. */
+/**
+ * What a real creation would ask a wallet for, in order. A description, not
+ * an action. The deposit goes through the pool's currencies in pool order, as
+ * the deposit service prepares them: each ERC-20 gets an exact approval to
+ * Permit2, then a Permit2 allowance for the position manager; native ETH
+ * needs no approval and goes with the mint. Automation is three separate
+ * owner transactions on the sequence: approve this NFT to its predicted
+ * address, create the sequence paused, and activate it later.
+ */
 export function walletSteps(state: JourneyState): WalletStep[] {
   const { token, pool } = state
-  if (!token || !pool) return []
+  if (!token || !pool || !poolHolds(pool, token.key)) return []
+  const words = CREATE.review
   const other = otherCurrency(pool, token.key)
   const steps: WalletStep[] = []
-  if (token.key === NATIVE_CURRENCY) {
-    steps.push({ title: CREATE.review.nativeStep, detail: CREATE.review.nativeStepDetail, token: token.token })
-  } else {
-    steps.push({ title: CREATE.review.approveStep, detail: CREATE.review.approveStepDetail, token: token.token })
-  }
-  if (other) {
-    if (tokenAddress(other) === NATIVE_CURRENCY) {
-      steps.push({ title: CREATE.review.otherNativeStep, detail: CREATE.review.otherTokenStep, token: other })
+  for (const currency of pool.currencies) {
+    if (tokenAddress(currency) === NATIVE_CURRENCY) continue
+    if (tokenAddress(currency) === token.key) {
+      steps.push({ title: words.approveStep, detail: words.approveStepDetail, token: token.token })
+      steps.push({ title: words.permitStep, detail: words.permitStepDetail, token: token.token })
     } else {
-      steps.push({ title: CREATE.review.otherApproveStep, detail: CREATE.review.otherTokenStep, token: other })
+      steps.push({ title: words.otherApproveStep, detail: words.otherTokenStep, token: currency })
+      steps.push({ title: words.otherPermitStep, detail: words.otherTokenStep, token: currency })
     }
   }
-  steps.push({ title: CREATE.review.mintStep, detail: CREATE.review.mintStepDetail })
+  if (token.key === NATIVE_CURRENCY) {
+    steps.push({ title: words.mintStep, detail: words.nativeMintDetail, token: token.token })
+  } else if (other && tokenAddress(other) === NATIVE_CURRENCY) {
+    steps.push({ title: words.mintStep, detail: words.otherNativeMintDetail, token: other })
+  } else {
+    steps.push({ title: words.mintStep, detail: words.mintStepDetail })
+  }
   if (state.automation !== 'none') {
-    steps.push({ title: CREATE.review.automationStepTitle(CREATE.review.automationStepNames[state.automation]), detail: CREATE.review.automationStep })
+    steps.push({ title: words.automationApproveStep, detail: words.automationApproveDetail })
+    steps.push({ title: words.automationCreateStep, detail: words.automationCreateDetail })
+    steps.push({ title: words.automationActivateStep(words.automationStepNames[state.automation]), detail: words.automationActivateDetail })
   }
   return steps
 }
@@ -544,8 +615,6 @@ export function serialiseSummary(state: JourneyState, now: number): string[] {
   const lines = summaryLines(state, now).map((line) => `${line.label}: ${line.value}`)
   const position = positionText(state, now)
   if (position) lines.push(`${words.price}: ${position}`)
-  const request = previewRequest(state)
-  lines.push(request.ok ? `${words.request}: ${JSON.stringify(request.request)}` : `${words.request}: ${CREATE.balance.cannotForm} ${request.reason}`)
   lines.push(`${words.amounts}: ${CREATE.balance.notEnabled}`)
   for (const [index, step] of walletSteps(state).entries()) lines.push(`${words.walletStep(index + 1)}: ${step.title}`)
   for (const fee of feeBases(state)) lines.push(`${fee.label}: ${fee.value}`)

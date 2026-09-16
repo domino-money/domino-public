@@ -9,7 +9,7 @@ import { useDialog } from '../../lib/useDialog'
 import { Button, Card, Pill } from '../ui'
 import { IconChevronRight, IconClose } from '../icons'
 import { BrandMark } from '../BrandMark'
-import { describe, REFRESH_UNAVAILABLE } from './copy'
+import { describe, NO_BROWSER_WALLET, REFRESH_UNAVAILABLE } from './copy'
 import { WalletLogo } from './WalletLogo'
 
 /** Wallet names come from the extension that announced them: shown as text, shortened. */
@@ -204,7 +204,7 @@ export function WalletSessionDialog({
           {view.status === 'no_wallet' &&
             (connectors.length === 0 ? (
               <p className="text-[13px] leading-[18px] text-fg-muted">
-                No browser wallet detected. Wallets that announce themselves through EIP-6963 appear here.
+                {NO_BROWSER_WALLET}
               </p>
             ) : (
               <ul className="dm-wallet-list" aria-label="Browser wallets">
@@ -250,7 +250,7 @@ export function WalletSessionDialog({
           )}
 
           {view.status === 'signed_in' && view.notice === 'refresh_unavailable' && (
-            <p className="text-[13px] leading-[18px]" data-testid="refresh-notice" style={{ color: 'var(--money-wait)' }}>
+            <p className="text-[13px] leading-[18px] text-fg-muted" data-testid="refresh-notice">
               {REFRESH_UNAVAILABLE}
             </p>
           )}

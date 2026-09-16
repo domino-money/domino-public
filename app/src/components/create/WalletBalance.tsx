@@ -100,31 +100,63 @@ function Row({ fact, token, source, block, onUse }: { fact: Fact; token: TokenCa
   )
 }
 
+/** How many times a balance read that failed in a way asking again could fix is asked again on its own, and the first wait. */
+const BALANCE_ATTEMPTS = 3
+const BALANCE_WAIT_MS = 4000
+
 export function WalletBalance({ source, token, onUse }: { source: ReadSource | null; token: TokenCandidate; onUse: (decimalText: string) => void }) {
   const identity = useWalletIdentity()
   const connected = identity.kind === 'connected' ? identity.address : null
   const listed = token.source === 'wallet' && token.balance !== null
   const [attempt, setAttempt] = useState(0)
-  // The read's outcome, keyed by what it was about: a result for another address, token or attempt is never shown.
-  const [settled, setSettled] = useState<{ key: string; outcome: Outcome } | null>(null)
+  // The read's outcome, keyed by what it was about: a result for another address or token is never shown. A
+  // failure stays on the line while the same address and token are read again.
+  const [settled, setSettled] = useState<{ target: string; attempt: number; outcome: Outcome } | null>(null)
   const parsed = connected === null ? null : parseAddressInput(connected)
   const wallet = parsed?.ok ? parsed.wire : null
-  const requestKey = `${wallet ?? ''}|${token.key}|${attempt}`
+  const target = `${wallet ?? ''}|${token.key}`
 
-  // One read for this address and token, again when either changes or a
-  // retry asks; the previous read is cancelled first, and leaving cancels
-  // the last. A token from a wallet listing is not read again.
+  // One read for this address and token, again when either changes or the
+  // line asks again on its own; the previous read is cancelled first, and
+  // leaving cancels the last. A token from a wallet listing is not read again.
   useEffect(() => {
     if (!source || wallet === null || listed) return
     const controller = new AbortController()
-    const key = `${wallet}|${token.key}|${attempt}`
+    const at = { target: `${wallet}|${token.key}`, attempt }
     const session = createWalletSession(source, { wallet, tokens: [token.wire] })
     void session.first(controller.signal).then((snapshot) => {
       if (controller.signal.aborted) return
-      setSettled({ key, outcome: outcomeOf(snapshot, token.key) })
+      setSettled({ ...at, outcome: outcomeOf(snapshot, token.key) })
     })
     return () => controller.abort()
   }, [source, wallet, token.key, token.wire, attempt, listed])
+
+  const outcome = settled?.target === target ? settled.outcome : null
+  const failedNow = settled !== null && settled.target === target && settled.attempt === attempt && outcome?.kind === 'failed' && outcome.line.retry === true
+
+  // No Retry on this line: a read that failed in a way asking again could fix is read again by itself, a few
+  // times, at doubling intervals, and only while the page is visible. Anything else stays as it is.
+  useEffect(() => {
+    if (!failedNow || attempt >= BALANCE_ATTEMPTS) return
+    let cancelled = false
+    const again = () => {
+      if (!cancelled) setAttempt((count) => count + 1)
+    }
+    const whenVisible = () => {
+      if (document.hidden) return
+      document.removeEventListener('visibilitychange', whenVisible)
+      again()
+    }
+    const timer = setTimeout(() => {
+      if (document.hidden) document.addEventListener('visibilitychange', whenVisible)
+      else again()
+    }, BALANCE_WAIT_MS * 2 ** attempt)
+    return () => {
+      cancelled = true
+      clearTimeout(timer)
+      document.removeEventListener('visibilitychange', whenVisible)
+    }
+  }, [failedNow, attempt])
 
   if (connected === null) {
     return (
@@ -154,9 +186,6 @@ export function WalletBalance({ source, token, onUse }: { source: ReadSource | n
     )
   }
 
-  const outcome = settled?.key === requestKey ? settled.outcome : null
-  const retry = () => setAttempt((count) => count + 1)
-
   if (outcome === null) {
     return (
       <p role="status" className="dm-flow-balance-line text-fg-subtle" data-wallet-balance="loading">
@@ -165,29 +194,22 @@ export function WalletBalance({ source, token, onUse }: { source: ReadSource | n
     )
   }
   if (outcome.kind === 'failed') {
+    // A dash in normal type; what went wrong is the title and the data attributes, never a line of its own.
+    const why = [CREATE.amount.balanceFailed, outcome.line.title, outcome.line.detail].filter(Boolean).join(' ')
     return (
-      <div role="status" className="dm-flow-balance" data-wallet-balance="failed" data-wallet-balance-code={outcome.line.code}>
-        <div className="min-w-0">
-          <p className="dm-flow-balance-line font-medium text-fg-muted">{outcome.line.title}</p>
-          {outcome.line.detail && <p className="dm-flow-balance-why">{outcome.line.detail}</p>}
-        </div>
-        {outcome.line.retry && (
-          <Button type="button" variant="outline" size="sm" onClick={retry}>
-            {CREATE.amount.retry}
-          </Button>
-        )}
-      </div>
+      <p className="dm-flow-balance-line" data-wallet-balance="failed" data-wallet-balance-code={outcome.line.code} title={why}>
+        <span className="text-fg-subtle">{CREATE.amount.balanceAt(null)}</span> <span className="text-fg">—</span>
+        <span className="sr-only"> {why}</span>
+      </p>
     )
   }
   const block = blockOf(outcome.freshness)
   if (outcome.kind === 'not_returned') {
     return (
-      <div className="dm-flow-balance" data-wallet-balance="not_returned">
-        <p className="dm-flow-balance-line text-fg-subtle">{CREATE.amount.balanceNotReturned(block)}</p>
-        <Button type="button" variant="outline" size="sm" onClick={retry}>
-          {CREATE.amount.readAgain}
-        </Button>
-      </div>
+      <p className="dm-flow-balance-line" data-wallet-balance="not_returned" title={CREATE.amount.balanceNotReturned(block)}>
+        <span className="text-fg-subtle">{CREATE.amount.balanceAt(block)}</span> <span className="text-fg">—</span>
+        <span className="sr-only"> {CREATE.amount.balanceNotReturned(block)}</span>
+      </p>
     )
   }
   return <Row fact={outcome.fact} token={token} source="read" block={block} onUse={onUse} />

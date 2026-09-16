@@ -6,7 +6,7 @@ import { SequenceFrame } from '../home/Vignettes'
 import { Pill } from '../ui'
 import { TextField } from './fields'
 
-/** Each choice, and the ROADMAP entry whose status its pill shows (none for "None"). */
+/** Each choice, and the ROADMAP entry whose status its pill shows (none for "Self-managing"). */
 const OPTIONS: ReadonlyArray<{ key: Automation; roadmap: string | null }> = [
   { key: 'none', roadmap: null },
   { key: 'compound', roadmap: 'Compound' },
@@ -70,7 +70,10 @@ function Geometry({ state, now }: { state: JourneyState; now: number }) {
             </div>
           </dl>
         ) : (
-          <p className="mt-2 text-caption text-money-wait">{CREATE.automation.infeasible}</p>
+          // An error sentence in normal type, never a warning colour: the reason is the sentence itself.
+          <p className="mt-2 text-caption text-fg-muted" data-successor-geometry-state="infeasible">
+            {CREATE.automation.infeasible}
+          </p>
         )}
         <p className="dm-hint">
           {CREATE.automation.nextRangeNote} {CREATE.automation.fundingNote}

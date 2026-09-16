@@ -57,5 +57,9 @@ export function deferredMarkets(kind: 'fixture' | 'bridge', load: () => Promise<
       if (inner) inner.refresh()
       else connect()
     },
+    // Held by Home and Markets. Before the chunk arrives there is nothing to recover, so nothing to release.
+    recoverQuietly() {
+      return inner?.recoverQuietly?.() ?? (() => undefined)
+    },
   }
 }

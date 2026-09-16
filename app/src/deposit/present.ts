@@ -12,7 +12,9 @@
  * deadline the flow computed, compared with the `monoNowMs` passed in.
  * Timestamps are shown as fixed UTC text.
  */
-import { cmpRaw, formatTokenAmount, formatWeiEth, groupRaw, hundredthsToPercentText, mulRaw, parseSafeInteger } from '../lib/raw'
+import { cmpRaw, formatTokenAmount, formatWeiEth, groupRaw, hundredthsToPercentText, isRaw, mulRaw, parseSafeInteger } from '../lib/raw'
+import { formatUnits } from '../lib/read/decimal'
+import { fixedFeePercent } from '../lib/read/screens/fee'
 import {
   BASIS,
   FINALITY,
@@ -23,12 +25,13 @@ import {
   PREPARE_OFF_WITHOUT_HANDOFF,
   RECONCILIATION,
   SELECTOR_NAME,
+  STATE_LABEL,
   STEP_KIND,
   SUPPORT_REQUIRED,
   shortHex,
   utcTime,
 } from './copy'
-import type { AllowanceReport, Operation, PreparedArtifact, ReceiptSummary, StepSummary } from './types'
+import type { AllowanceReport, DepositSelection, Operation, OperationListItem, PreparedArtifact, ReceiptSummary, StepSummary } from './types'
 
 export type ViewKind =
   | 'attention_conflict'
@@ -106,6 +109,8 @@ export interface DepositView {
   receipt: ReceiptView | null
   history: Fact[]
   facts: string[]
+  /** What the owner selected for this deposit, in token units where the decimals are known. */
+  selection: Fact[]
 }
 
 export interface PresentContext {
@@ -117,6 +122,76 @@ export interface PresentContext {
   issueWalletStepAllowed: boolean
   latched: boolean
   busy: boolean
+  /** Token symbols and decimals read for the selection's currencies, when the page has them. */
+  tokens?: TokenBook
+}
+
+/** A token's symbol and decimals, as a public token read returned them. */
+export interface TokenDetails {
+  symbol: string | null
+  decimals: number | null
+}
+
+/** Details by lowercase address; `reading` while a read is on its way. A missing address is unknown. */
+export type TokenBook = ReadonlyMap<string, TokenDetails | 'reading'>
+
+/** A token by its symbol when one was read, otherwise by its short address. */
+export function tokenName(address: string, tokens?: TokenBook): string {
+  const details = tokens?.get(address.toLowerCase())
+  return details && details !== 'reading' && details.symbol ? details.symbol : shortHex(address.toLowerCase())
+}
+
+/**
+ * A raw amount in the token's own units, "1.5 WETH". With decimals unknown it
+ * stays raw and says so, "1,500 raw units of 0x1111…111111": decimals are
+ * never guessed. Null while the token is still being read, or for anything
+ * that is not a raw integer.
+ */
+export function tokenAmount(raw: string, address: string, tokens?: TokenBook): string | null {
+  if (!isRaw(raw)) return null
+  const details = tokens?.get(address.toLowerCase())
+  if (details === 'reading') return null
+  const units = details && details.decimals !== null ? formatUnits(raw, details.decimals) : null
+  return units && units.kind === 'units' ? `${units.text} ${tokenName(address, tokens)}` : `${groupRaw(raw)} raw units of ${tokenName(address, tokens)}`
+}
+
+const pairOf = (key: DepositSelection['poolKey'], tokens?: TokenBook) => `${tokenName(key.currency0, tokens)} / ${tokenName(key.currency1, tokens)} · ${fixedFeePercent(key.fee_pips)}`
+
+/** The owner's selection, fact by fact: pool, amount, range, budgets and limits. */
+export function presentSelection(selection: DepositSelection, tokens?: TokenBook): Fact[] {
+  const key = selection.poolKey
+  const amount = (raw: string, address: string) => tokenAmount(raw, address, tokens) ?? '—'
+  return [
+    { label: 'Pool', value: pairOf(key, tokens), note: `Pool ID ${selection.poolId}` },
+    { label: 'Deposit amount', value: amount(selection.amountRaw, selection.independentToken) },
+    { label: 'Range', value: `Ticks ${selection.tickLower} to ${selection.tickUpper}` },
+    { label: 'Maximum spend', value: `${amount(selection.budget0Raw, key.currency0)} · ${amount(selection.budget1Raw, key.currency1)}` },
+    { label: 'Slippage limit', value: `${hundredthsToPercentText(String(selection.slippageBps)) ?? selection.slippageBps}%` },
+    { label: 'Network limits per step', value: `${groupRaw(selection.maxGasLimitRaw)} gas · ${groupRaw(selection.maxFeePerGasRaw)} wei max fee · ${groupRaw(selection.maxPriorityFeePerGasRaw)} wei priority fee` },
+    { label: 'Gas reserve kept', value: `${groupRaw(selection.nativeGasReserveRaw)} wei (${formatWeiEth(selection.nativeGasReserveRaw) ?? '—'})` },
+  ]
+}
+
+/** One row of the owner's deposit list. */
+export interface DepositRowView {
+  id: string
+  state: string
+  pair: string
+  /** Null while the token is being read. */
+  amount: string | null
+  updated: string
+  reserved: boolean
+}
+
+export function presentListItem(item: OperationListItem, tokens?: TokenBook): DepositRowView {
+  return {
+    id: item.id,
+    state: STATE_LABEL[item.state],
+    pair: pairOf(item.selection.poolKey, tokens),
+    amount: tokenAmount(item.selection.amountRaw, item.selection.independentToken, tokens),
+    updated: `Updated ${utcTime(item.updatedAt)}`,
+    reserved: item.outstanding,
+  }
 }
 
 export const PERMIT2 = '0x000000000022d473030f116ddee9f6b43ac78ba3'
@@ -156,7 +231,7 @@ function stepLines(step: PreparedArtifact, op: Operation, last: StepSummary | un
       const until = seconds === null ? 'an unreadable time' : utcTime(seconds)
       const minutes = Math.ceil((step.preparedDeadline - step.sourceBlock.timestamp) / 60)
       return [
-        `Allow the Uniswap v4 PositionManager (${shortHex(POSITION_MANAGER)}) to use exactly ${amountOf(2)} raw units of ${permitToken} through Permit2, until ${until} (about ${minutes} min).`,
+        `Allow the Uniswap PositionManager (${shortHex(POSITION_MANAGER)}) to use exactly ${amountOf(2)} raw units of ${permitToken} through Permit2, until ${until} (about ${minutes} min).`,
       ]
     }
     case 'mint': {
@@ -493,6 +568,7 @@ export function presentOperation(op: Operation, walletStep: PreparedArtifact | n
       FIXED_FACTS,
       `Domino service fee on your principal: ${hundredthsToPercentText(String(op.serviceFeeBps)) ?? op.serviceFeeBps}%. Network gas is separate.`,
     ],
+    selection: presentSelection(op.selection, ctx.tokens),
   }
 }
 

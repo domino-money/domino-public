@@ -1,14 +1,16 @@
 /*
  * Every link here goes somewhere this app has: a route or a section of the
- * landing page. Social, documentation, security and status links are added
- * only once the owner confirms their URLs; until then they are not shown at
- * all, rather than pointing nowhere. The legal documents are pending, so they
- * are named as text, not linked.
+ * landing page. The docs are one of those routes (`#/docs`), written and
+ * served by this app. Social, external documentation, security and status
+ * links are added only once the owner confirms their URLs; until then they are
+ * not shown at all, rather than pointing nowhere. The same holds for the Terms
+ * of Service and the Privacy Policy: the footer neither links nor names them
+ * until the documents exist.
  */
 import type { ReactNode } from 'react'
 import { BrandMark } from './BrandMark'
 import { CAPABILITIES } from '../lib/capabilities'
-import { automateHref, marketsHref, newPositionHref, positionsHref, settingsHref } from './explore/routes'
+import { automateHref, docsHref, marketsHref, newPositionHref, positionsHref, settingsHref } from './explore/routes'
 
 const COLUMNS: ReadonlyArray<{ heading: string; links: ReadonlyArray<{ label: string; href: string }> }> = [
   {
@@ -24,6 +26,7 @@ const COLUMNS: ReadonlyArray<{ heading: string; links: ReadonlyArray<{ label: st
   {
     heading: 'Guides',
     links: [
+      { label: 'Docs', href: docsHref() },
       { label: 'How it works', href: '#/#learn' },
       { label: 'Ranges explained', href: '#/#ranges' },
       { label: 'What Domino does not do', href: '#/#limits' },
@@ -80,8 +83,8 @@ export function Footer({ appearance, motion }: { appearance?: ReactNode; motion?
           </div>
 
           <div className="dm-footer-bottom">
-            <p className="dm-footer-note">Terms of Service and Privacy Policy: pending</p>
-            <div className="dm-footer-controls">
+            {/* The motion and appearance controls: at the start of the row on a phone, like the rest of the footer, and at its end from 768px. */}
+            <div className="dm-footer-controls md:ml-auto">
               {motion}
               {appearance}
             </div>

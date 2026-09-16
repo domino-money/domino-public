@@ -91,6 +91,11 @@ export function createFakeOnboarding({ session }) {
     swapDerived: null,
     /** A key of DERIVED_POSITIONS: the only position the fake then answers, or null. */
     positionDerived: null,
+    /**
+     * Answers any valid position request that gives no budget or native balance, as New position sends it: the
+     * incomplete package variant moved onto the request's pool, ticks and amount (see adaptedPosition).
+     */
+    positionFromRequest: false,
     /** 'required' or 'unavailable': the beta gate answers the next request instead of the worker. */
     gateNext: null,
     errorNext: new Map(),
@@ -174,7 +179,39 @@ export function createFakeOnboarding({ session }) {
     return preview;
   }
 
+  /**
+   * The incomplete package variant for another request: its pool, ticks and owner, the independent token expecting
+   * exactly the amount asked, the other currency twice that plus one, and each maximum the expected amount plus the
+   * request's slippage. No budget and no native balance, so the checks stay incomplete. Null for a request that
+   * gives either: those have their own package fixtures.
+   */
+  function adaptedPosition(body, owner) {
+    const request = withNulls(body);
+    if ([request.budget0Raw, request.budget1Raw, request.nativeBalanceRaw, request.nativeGasReserveRaw].some((value) => value !== null)) return null;
+    const preview = read('variants/position-preview.incomplete.json').preview;
+    const independent = body.independentToken.toLowerCase();
+    const amount = BigInt(body.amountRaw);
+    const { currency0, currency1 } = body.poolKey;
+    preview.request = { ...request, owner };
+    Object.assign(preview.position, { poolId: body.poolId, poolKey: { ...body.poolKey }, tickLower: body.tickLower, tickUpper: body.tickUpper, recipient: owner });
+    preview.position.tokens = [currency0, currency1].map((address) => {
+      const expected = address === independent ? amount : amount * 2n + 1n;
+      return {
+        address,
+        budgetStatus: 'unknown',
+        estimatedUnspentBudgetRaw: null,
+        expectedDepositRaw: String(expected),
+        maximumDebitRaw: String(expected + (expected * BigInt(body.slippageBps)) / 10000n),
+        selectedBudgetRaw: null,
+        unspentAtMaximumRaw: null,
+      };
+    });
+    preview.nativeFunding.depositMaximumRaw = currency0 === '0x0000000000000000000000000000000000000000' ? preview.position.tokens[0].maximumDebitRaw : '0';
+    return stamp(preview);
+  }
+
   function positionPreview(body, owner) {
+    if (controls.positionFromRequest) return adaptedPosition(body, owner);
     const wanted = JSON.stringify(sorted(withNulls(body)));
     const candidates = controls.positionDerived ? [derivedPosition(controls.positionDerived)] : POSITIONS;
     const match = candidates.find((preview) => {

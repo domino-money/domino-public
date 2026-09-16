@@ -10,6 +10,7 @@
  */
 import type { Clock } from '../clock'
 import { parseSafeInteger } from '../raw'
+import { requestIdOf } from '../read/requestId'
 import type { RawBody, RawReply } from '../read/types'
 
 export type { RawBody, RawReply }
@@ -19,7 +20,6 @@ export const GATE_REFUSAL = '{"error":"beta_access_required"}'
 /** Non-JSON bodies are only ever inspected for the gate's refusal. */
 export const MAX_PAGE_BYTES = 16 * 1024
 export const JSON_MEDIA = /^application\/json(?:\s*;\s*charset\s*=\s*(?:utf-8|"utf-8"))?$/i
-const REQUEST_ID = /^[0-9a-f-]{36}$/
 
 /** The request options every private POST uses. */
 export const REQUEST_INIT = {
@@ -86,14 +86,14 @@ async function boundedBody(response: Response, limit: number): Promise<RawBody> 
 export async function rawReplyOf(response: Response, contractHeader: string, maxBytes: number): Promise<RawReply> {
   const contentType = response.headers.get('Content-Type')
   const opaqueRedirect = response.type === 'opaqueredirect'
-  const requestId = response.headers.get('X-Domino-Request-Id')
   const json = contentType !== null && /^application\/json\b/i.test(contentType)
   return {
     status: response.status,
     opaqueRedirect,
     contentType,
     contractHeader: response.headers.get(contractHeader),
-    requestIdHeader: requestId !== null && REQUEST_ID.test(requestId) ? requestId : null,
+    // A Worker's UUID or, on the development lane, a gateway's 32 hex; anything else is dropped.
+    requestIdHeader: requestIdOf(response.headers.get('X-Domino-Request-Id')),
     retryAfterHeader: response.headers.get('Retry-After'),
     body: opaqueRedirect ? { kind: 'text', text: '' } : await boundedBody(response, json ? maxBytes : MAX_PAGE_BYTES),
   }

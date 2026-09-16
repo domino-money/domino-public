@@ -20,9 +20,9 @@ export const SIGNED_OUT: Record<SignedOutReason, string> = {
 }
 
 export const FAILURE: Record<FailureKind, string> = {
-  gate_required: 'Your beta access expired. Reload the page and enter the password again.',
+  gate_required: 'Your site access expired. Reload the page and enter the password again.',
   gate_unavailable: 'This site is temporarily unavailable.',
-  service_disabled: 'Sign-in isn’t enabled on this deployment.',
+  service_disabled: 'Sign-in is unavailable right now. Public pages keep working.',
   store_unavailable: 'The sign-in service is temporarily unavailable. This is not a problem with your wallet.',
   account_check_unavailable: 'The account check is temporarily unavailable. This is not a problem with your wallet.',
   service_unavailable: 'The sign-in service is temporarily unavailable.',
@@ -51,7 +51,10 @@ export const REFRESH_UNAVAILABLE =
   'The service could not renew your session just now. This page will try again shortly; if it cannot, the session ends after 30 minutes idle.'
 
 export const NOT_INVITED =
-  'This wallet isn’t on the invited list. Public pages keep working. Ask the team for an invitation.'
+  'This wallet doesn’t have sign-in access. Public pages keep working. Ask the Domino team for access.'
+
+/** The Connect dialog when no browser wallet has announced itself (through EIP-6963). */
+export const NO_BROWSER_WALLET = 'No browser wallet found. Install or unlock a wallet extension, then open this again.'
 
 export function shortAddress(address: string): string {
   return address.length > 12 ? `${address.slice(0, 6)}…${address.slice(-4)}` : address

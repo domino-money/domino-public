@@ -45,7 +45,7 @@ export const GATE_REFUSAL = '{"error":"beta_access_required"}'
  * The access page's title. The gate answers every request with this page when
  * its configuration is broken; an edge error page never carries it.
  */
-export const GATE_PAGE_MARKER = '<title>Domino · Closed beta</title>'
+export const GATE_PAGE_MARKER = '<title>Domino · Access</title>'
 /**
  * The /api forwarder's refusals (#80), byte for byte as its refuse() writes
  * them: `JSON.stringify({ error })` as application/json, each code with
@@ -156,12 +156,30 @@ export function answersRequest<R extends ReadKey>(route: R, request: RequestOf<R
       return sameAddress(d.poolId, q.poolId)
     }
     case 'markets-snapshot': {
-      // Every stored entry was requested (or no filter was sent), none was not.
+      // A stored view answers with what it holds for the ids asked, and never
+      // invents the rest: a pool it does not hold is absent, and a store not
+      // built yet holds none. So a subset is an answer. What is not: an echo
+      // of another question, an entry twice or not asked for, an entry whose
+      // pool or market is about another pool, or a market whose currencies are
+      // not the verified pool's. Ids compare without case, as addresses do.
       const q = request as unknown as ReadRequests['markets-snapshot']
       const d = data as ReadResponses['markets-snapshot']
-      if (q.poolIds === undefined || q.poolIds.length === 0) return true
-      const asked = new Set(q.poolIds)
-      return d.pools.every((entry) => asked.has(entry.poolId)) && d.pools.length === asked.size
+      const asked = q.poolIds ?? []
+      // The echo is the question: the ids asked for, in order, or none for an
+      // unfiltered question. An empty echo answers only an unfiltered question.
+      if (!sameList(d.requested, asked)) return false
+      if (d.status === 'not_built' && d.pools.length > 0) return false
+      const wanted = new Set(asked.map(lower))
+      const seen = new Set<string>()
+      for (const entry of d.pools) {
+        const id = lower(entry.poolId)
+        if (seen.has(id) || (wanted.size > 0 && !wanted.has(id))) return false
+        seen.add(id)
+        if (!sameAddress(entry.pool.poolId, entry.poolId)) return false
+        const market = entry.market.data
+        if (market && (!sameAddress(market.poolId, entry.poolId) || !sameList(market.currencies, entry.pool.currencies))) return false
+      }
+      return true
     }
     default:
       return route satisfies never

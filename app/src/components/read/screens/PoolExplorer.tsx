@@ -108,10 +108,6 @@ export function PoolExplorer({ onSelection }: { onSelection?: (pool: PoolOption 
           )}
         </section>
         <Button type="button" size="lg" className="w-full" disabled={!pool} onClick={openRange}>Explore range <span aria-hidden="true">→</span></Button>
-        <details className="dm-details dm-acct-disclosure">
-          <summary>Create a new pool · coming later</summary>
-          <p className="dm-acct-panel-note">{COPY.picker.newPool}</p>
-        </details>
       </Card>
 
       {choice && source && (

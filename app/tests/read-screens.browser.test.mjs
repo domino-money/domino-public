@@ -123,18 +123,34 @@ const quiet = async (page, errors) => {
 
 // --- the lookup --------------------------------------------------------------
 
-const lookupStatus = (page) => page.locator('#chain-lookup [data-screen-status]');
+/** The lookup's polite live region: its state in words for a screen reader, drawn nowhere. */
+const lookupStatus = (page) => page.locator('#chain-lookup [data-lookup-status]');
 
 async function settledLookup(page) {
   await page.waitForFunction(
     () => {
-      const status = document.querySelector('#chain-lookup [data-screen-status]')?.getAttribute('data-screen-status');
+      const status = document.querySelector('#chain-lookup [data-lookup-status]')?.getAttribute('data-lookup-status');
       return status && status !== 'loading' && !document.querySelector('#chain-lookup [aria-disabled="true"]');
     },
     null,
     { timeout: 20_000 },
   );
-  return lookupStatus(page).getAttribute('data-screen-status');
+  return lookupStatus(page).getAttribute('data-lookup-status');
+}
+
+/** What the eye gets of an element: its text without the screen-reader-only parts. */
+const visibleText = (locator) =>
+  locator.evaluate((root) => {
+    const copy = root.cloneNode(true);
+    for (const hidden of copy.querySelectorAll('.sr-only')) hidden.remove();
+    return copy.textContent.replace(/\s+/g, ' ').trim();
+  });
+
+/** No status box, no Retry or Refresh, and no yellow anywhere in the section. */
+async function noStatusPanel(page, id) {
+  const section = page.locator('#chain-lookup');
+  assert.equal(await section.locator('[data-screen-status], .dm-inset[role="status"], .dm-pill--wait, .text-money-wait').count(), 0, `${id}: a status panel or a yellow mark`);
+  for (const name of ['Retry', 'Refresh', 'Read again', 'Read the price again']) assert.equal(await section.getByRole('button', { name, exact: true }).count(), 0, `${id}: ${name}`);
 }
 
 async function lookUp(page, ids = IDS) {
@@ -199,8 +215,9 @@ test('the app route reads nothing until asked: one NFT read with the typed IDs, 
   assert.equal(await cards(page).count(), 2);
   const card = cards(page).first();
   const text = await cardText(card);
-  assert.match(text, /Read from chain/);
-  assert.match(text, /Public data/);
+  // Changed on purpose (review of 2026-09-14): no caption or pill says where the facts come from; the row's title and data attributes do.
+  assert.doesNotMatch(text, /Read from chain|Public data|public data|Snapshot:|old when read|Totals from earlier collections|NOT YET COLLECTED/i);
+  assert.equal(await card.locator('.dm-pill', { hasText: /Read from chain|Public data/ }).count(), 0);
   assert.match(text, /0x0911afcb281d7bcae2d71443ceaeebd0f89b4537708449970d797622b4b4c941/);
   assert.match(text, /0\.30%/);
   assert.match(text, /Ticks -60 to 60/);
@@ -212,16 +229,25 @@ test('the app route reads nothing until asked: one NFT read with the typed IDs, 
   // The card carries no current price: the bar has no marker until one is read, on demand, and says so.
   assert.match(text, /Current price not read/);
   assert.equal(await card.locator('[data-current-price="not-read"]').count(), 1);
-  assert.match(text, /Owner[\s\S]*owner at block 700/);
-  assert.match(text, /3,797,063,507\.756903070969194414/);
-  // The column heading is set in capitals by the stylesheet, and innerText follows that.
-  assert.match(text, /UNSETTLED FEES \(NOT YET COLLECTED\)/);
-  assert.match(text, /Totals from earlier collections aren’t available/);
-  assert.match(text, /Owner at this block \(public data\)/);
-  assert.match(text, new RegExp(OWNER));
-  assert.match(text, /proves nothing about who is using this page/);
-  assert.match(text, /USD value[\s\S]*Unavailable: no qualified price source yet\./);
-  assert.match(text, /Block 700 · 00:16:40 UTC, 1970-01-01 · fresh, 10 s old when read/);
+  // Amounts to six significant digits, every digit in the title, and never split inside a number.
+  const principal = card.locator('[data-amount="units"]').first();
+  assert.equal(await principal.getAttribute('title'), '3,797,063,507.756903070969194414');
+  assert.match(await principal.innerText(), /^3,797,063,508\s+ETH$/);
+  assert.doesNotMatch(text, /3,797,063,507\.7569/, 'the exact amount is the title, not the row');
+  assert.equal(await principal.locator('.tnum').evaluate((el) => getComputedStyle(el).overflowWrap), 'normal');
+  // The owner at the snapshot block, labelled Owner; that it is public data proving nothing is its title.
+  assert.match(text, /Owner\s+0x3333333333333333333333333333333333333333/);
+  assert.equal(await card.locator('[data-owner-basis]').getAttribute('title'), `${OWNER}: the NFT’s owner at block 700, public data. It proves nothing about who is using this page and enables nothing here.`);
+  assert.doesNotMatch(text, /proves nothing/, 'said in the title, not printed');
+  assert.equal(await card.locator('[data-fee-history="unavailable"]').getAttribute('title'), 'Totals from earlier collections aren’t available from public data.');
+  // No USD value is a dash, its reason the title: nothing says a price source is to come.
+  assert.match(text, /USD value\s*—/);
+  assert.doesNotMatch(text, /price source yet/);
+  const valuation = card.locator('[data-valuation="unavailable"]');
+  assert.deepEqual([await valuation.getAttribute('title'), await valuation.getAttribute('data-valuation-reason')], ['No qualified USD price source.', 'no_qualified_price_source']);
+  // The snapshot every figure is from: the row's title and data attributes.
+  assert.equal(await card.locator('summary').getAttribute('title'), 'Block 700 · 00:16:40 UTC, 1970-01-01 · fresh, 10 s old when read');
+  assert.deepEqual([await card.getAttribute('data-snapshot'), await card.getAttribute('data-snapshot-age'), await card.getAttribute('data-stale')], ['700', '10', null]);
   assert.doesNotMatch(text, /\byour\b|you own|Fees awaiting reinvestment|Reinvested so far|Reinvested/i, 'nothing says the viewer owns it, and no practice figure appears');
 
   // The practice workspace is exactly as it was.
@@ -234,7 +260,11 @@ test('the app route reads nothing until asked: one NFT read with the typed IDs, 
     links: root.querySelectorAll('a').length,
   }));
   assert.deepEqual(controls.links, 0);
-  for (const label of controls.buttons) assert.match(label, /^(Look up positions|Refresh|Cancel|Clear|Retry|Show current price|Read the price again)$/, label);
+  for (const label of controls.buttons) assert.match(label, /^(Look up positions|Cancel|Clear|Show current price)$/, label);
+  // A lookup that worked says so to a screen reader only: no "Loaded N cards" line on screen.
+  assert.equal(await lookupStatus(page).innerText(), 'Loaded 2 cards at block 700.');
+  assert.doesNotMatch(await visibleText(page.locator('#chain-lookup')), /Loaded 2 cards/);
+  await noStatusPanel(page, 'a lookup that worked');
   assert.notEqual(await page.locator('#chain-lookup h2').innerText(), 'Practice cards');
   assert.deepEqual([...new Set(await page.getByRole('button', { name: 'Connect wallet' }).evaluateAll((els) => els.map((el) => el.disabled)))], [true], 'every Connect wallet stays disabled');
 
@@ -336,36 +366,73 @@ test('empty, zero and stale NFTs each read as themselves', async () => {
   await lookUp(stale.page, '1');
   await settledLookup(stale.page);
   const staleText = await cards(stale.page).innerText();
-  assert.match(staleText, /Stale/);
-  assert.match(staleText, /Block 650 · 00:13:20 UTC, 1970-01-01 · stale, 210 s old when read/);
+  // Stale in the snapshot's own words, in the row's title: no line, no yellow pill; the state is a data attribute (changed on purpose, review of 2026-09-14).
+  assert.doesNotMatch(staleText, /Block 650|old when read|Snapshot/);
+  const row = cards(stale.page).first();
+  assert.deepEqual([await row.getAttribute('data-snapshot'), await row.getAttribute('data-snapshot-age'), await row.getAttribute('data-stale')], ['650', '210', '']);
+  assert.equal(await row.locator('summary').getAttribute('title'), 'Block 650 · 00:13:20 UTC, 1970-01-01 · stale, 210 s old when read');
+  await noStatusPanel(stale.page, 'nft.stale');
   await stale.page.close();
 });
 
-test('partial token metadata: ticks only and raw amounts, labelled raw', async () => {
+test('a full-range position reads as full range, 0 to ∞, and says nothing about decimals', async () => {
+  const { page, errors } = await openCase('nft.fullRange');
+  await lookUp(page);
+  assert.equal(await settledLookup(page), 'ok');
+  const card = cards(page).first();
+  const text = await cardText(card);
+  assert.match(text, /Full range · Ticks -887220 to 887220/);
+  assert.match(text, /Min 0[\s\S]*TOKEN\s+per\s+ETH[\s\S]*Max ∞/);
+  assert.doesNotMatch(text, /Prices need both tokens’ decimals/);
+  assert.doesNotMatch(text, /Tick -887220\b|Tick 887220\b/, 'the ends are written as limits, not ticks');
+  const ends = card.locator('[data-range] .dm-acct-range-ends');
+  assert.deepEqual([await ends.getAttribute('data-full-range'), await ends.getAttribute('data-prices'), await ends.getAttribute('data-range-problem')], ['', '', null]);
+  assert.match(await card.locator('[data-range] [role="img"]').getAttribute('aria-label'), /^Price range full range, 0 to ∞; current price not read$/);
+  await quiet(page, errors);
+  await page.close();
+});
+
+test('partial token metadata: ticks only, and a raw amount is a dash with the raw amount in its title', async () => {
   const { page, errors } = await openCase('nft.noDecimals');
   await lookUp(page);
   await settledLookup(page);
   const text = await cards(page).first().innerText();
   assert.match(text, /Prices need both tokens’ decimals; showing ticks only\./);
-  assert.match(text, /raw units, decimals unknown/);
+  assert.equal(await cards(page).first().locator('[data-range-problem="decimals_unknown"]').count() > 0, true);
+  // Changed on purpose (review of 2026-09-14): a raw integer is never printed where units would be, so it cannot wrap across the row either.
+  const raw = cards(page).first().locator('[data-amount="raw"]').first();
+  assert.match(await raw.innerText(), /^—\s+TOKEN$/);
+  assert.equal(await raw.getAttribute('title'), 'Raw amount 3797063507756903070969194400: the token’s decimals were not read');
+  assert.doesNotMatch(text, /3,797,063,507,756|raw units, decimals unknown/);
   await quiet(page, errors);
   await page.close();
 });
 
-test('a failed refresh keeps the cards with their own block, and Retry keeps focus; new IDs clear them', async () => {
+const nftReads = async (page) => (await caseLog(page)).filter((r) => r.route === 'nft-positions');
+
+test('a failed lookup of the same ids keeps the cards with their own block, says why only in a title, and is asked again on its own; new IDs clear them', async () => {
   const { page, errors } = await openCase('nft.refreshFails');
   await lookUp(page);
   assert.equal(await settledLookup(page), 'ok');
-  await page.locator('#chain-lookup').getByRole('button', { name: 'Refresh' }).click();
+  // Looking up the same ids again reads them again; there is no Refresh and no Retry.
+  await page.locator('#chain-lookup').getByRole('button', { name: 'Look up positions' }).click();
   assert.equal(await settledLookup(page), 'unavailable');
-  assert.match(await lookupStatus(page).innerText(), /Position data unavailable[\s\S]*read service unavailable[\s\S]*last read that worked/);
+  const section = page.locator('#chain-lookup');
+  assert.equal(await section.getAttribute('data-lookup-reason'), 'upstream_unavailable');
   assert.equal(await cards(page).count(), 2, 'the earlier cards stay');
-  assert.match(await cards(page).first().innerText(), /Block 700 · 00:16:40 UTC/);
-  const retry = page.locator('#chain-lookup').getByRole('button', { name: 'Retry' });
-  await retry.focus();
-  await page.keyboard.press('Enter');
-  assert.equal(await settledLookup(page), 'unavailable');
-  assert.equal(await page.evaluate(() => document.activeElement?.textContent), 'Retry', 'focus stayed on Retry through its read');
+  // With their own block, which is the row's title and data attribute.
+  assert.equal(await cards(page).first().getAttribute('data-snapshot'), '700');
+  assert.match(await cards(page).first().locator('summary').getAttribute('title'), /^Block 700 · 00:16:40 UTC/);
+  const rows = section.locator('[data-chain-cards]');
+  assert.match(await rows.getAttribute('title'), /Position data unavailable[\s\S]*read service unavailable[\s\S]*last read that worked/);
+  assert.doesNotMatch(await visibleText(section), /Position data unavailable|read service unavailable|last read that worked/, 'nothing about the failure is printed');
+  assert.match(await lookupStatus(page).innerText(), /Position data unavailable/, 'a screen reader still hears it');
+  await noStatusPanel(page, 'nft.refreshFails');
+
+  // A transient 503 is asked again on its own, after about 4 s, with the cards still on screen.
+  const before = (await nftReads(page)).length;
+  await page.waitForFunction((n) => window.__screenCase.log.filter((r) => r.route === 'nft-positions').length > n, before, { timeout: 12_000 });
+  assert.equal(await cards(page).count(), 2);
 
   await page.fill('#nft-ids', '1');
   await page.locator('#chain-lookup').getByRole('button', { name: 'Look up positions' }).click();
@@ -375,28 +442,35 @@ test('a failed refresh keeps the cards with their own block, and Retry keeps foc
   await page.close();
 });
 
-test('an incompatible or invalid reply on refresh keeps the cards and says an update is needed', async () => {
+test('an incompatible or invalid reply keeps the cards, says an update is needed only in a title, and is not asked again', async () => {
   for (const id of ['nft.refreshIncompatible', 'nft.refreshInvalid']) {
     const { page, errors } = await openCase(id);
     await lookUp(page);
     await settledLookup(page);
-    await page.locator('#chain-lookup').getByRole('button', { name: 'Refresh' }).click();
+    await page.locator('#chain-lookup').getByRole('button', { name: 'Look up positions' }).click();
     const state = await settledLookup(page);
     assert.ok(['incompatible', 'invalid'].includes(state), `${id}: ${state}`);
-    assert.match(await lookupStatus(page).innerText(), /Update needed[\s\S]*can’t read the server’s reply\. It needs an update\./, id);
+    assert.match(await page.locator('#chain-lookup [data-chain-cards]').getAttribute('title'), /Update needed[\s\S]*can’t read the server’s reply\. It needs an update\./, id);
     assert.equal(await cards(page).count(), 2, `${id} keeps the cards`);
+    await noStatusPanel(page, id);
+    if (id === 'nft.refreshInvalid') {
+      const reads = (await nftReads(page)).length;
+      await page.waitForTimeout(5000);
+      assert.equal((await nftReads(page)).length, reads, 'a reply this build cannot read is the same reply next time: nothing is asked again');
+    }
     await quiet(page, errors);
     await page.close();
   }
 });
 
-test('one bad ID fails the whole batch and keeps earlier cards; an incomplete reply shows nothing new', async () => {
+test('one bad ID fails the whole batch and keeps earlier cards; an incomplete reply shows an empty state', async () => {
   const batch = await openCase('nft.batch503');
   await lookUp(batch.page);
   await settledLookup(batch.page);
-  await batch.page.locator('#chain-lookup').getByRole('button', { name: 'Refresh' }).click();
+  await batch.page.locator('#chain-lookup').getByRole('button', { name: 'Look up positions' }).click();
   assert.equal(await settledLookup(batch.page), 'unavailable');
-  assert.match(await lookupStatus(batch.page).innerText(), /nft live position has no owner/);
+  assert.equal(await batch.page.locator('#chain-lookup').getAttribute('data-lookup-reason'), 'nft_live_position_has_no_owner');
+  assert.match(await batch.page.locator('#chain-lookup [data-chain-cards]').getAttribute('title'), /nft live position has no owner/);
   assert.equal(await cards(batch.page).count(), 2);
   await batch.page.close();
 
@@ -404,8 +478,11 @@ test('one bad ID fails the whole batch and keeps earlier cards; an incomplete re
   await lookUp(incomplete.page);
   assert.equal(await settledLookup(incomplete.page), 'invalid');
   // F3 refuses a short batch as a wrong answer, not an incomplete one.
-  assert.match(await lookupStatus(incomplete.page).innerText(), /The reply was about something other than what was asked/);
+  const empty = incomplete.page.locator('#chain-lookup [data-empty="positions-failed"]');
+  assert.equal(await empty.innerText(), 'No positions to show');
+  assert.match(await empty.locator('xpath=..').getAttribute('title'), /The reply was about something other than what was asked/);
   assert.equal(await cards(incomplete.page).count(), 0);
+  await noStatusPanel(incomplete.page, 'nft.incomplete');
   await quiet(incomplete.page, incomplete.errors);
   await incomplete.page.close();
 });
@@ -447,18 +524,16 @@ test.skip('practice cards keep their practice labels beside chain cards, and nei
   assert.equal(await page.locator('#chain-lookup [aria-label^="Open practice card"]').count(), 0, 'no practice card inside the chain section');
   assert.equal(await practiceCard.evaluate((el) => el.closest('#chain-lookup') === null), true);
   for (const text of await cards(page).allInnerTexts()) {
-    assert.match(text, /Read from chain/);
-    assert.match(text, /Public data/);
     assert.doesNotMatch(text, /Practice on|Paused|Card \d\d|Reinvested/, 'a chain card never wears a practice label');
   }
   await quiet(page, errors);
   await page.close();
 });
 
-test('gate, busy, edge and disabled states: their own words, no sign-in link, no wallet', async () => {
+test('gate, busy, edge and disabled states: an empty state, their own words only in its title, no sign-in link, no wallet', async () => {
   const cases = {
-    'nft.gate401': ['gate_required', /Beta access expired[\s\S]*Reload the page to sign in to the beta\./],
-    'nft.gate503': ['gate_unavailable', /Access is paused/],
+    'nft.gate401': ['gate_required', /^Site access expired\. Reload the page to sign in again\.$/],
+    'nft.gate503': ['gate_unavailable', /^Site access is paused\. Nothing is wrong on your side\.$/],
     'nft.busy': ['busy', /Try again in 7 s\./],
     'nft.edge': ['unavailable', /error page \(HTTP 502\)/],
     'nft.disabled': ['disabled', /Position reads aren’t enabled on this server\./],
@@ -467,9 +542,13 @@ test('gate, busy, edge and disabled states: their own words, no sign-in link, no
     const { page, errors } = await openCase(id);
     await lookUp(page);
     assert.equal(await settledLookup(page), state, id);
-    const text = await lookupStatus(page).innerText();
-    assert.match(text, words, id);
-    assert.doesNotMatch(text, /connect|wallet/i, id);
+    const empty = page.locator('#chain-lookup [data-empty="positions-failed"]');
+    assert.equal(await empty.innerText(), 'No positions to show', id);
+    const title = await empty.locator('xpath=..').getAttribute('title');
+    assert.match(title, words, id);
+    assert.doesNotMatch(title, /connect|wallet|beta/i, id);
+    assert.doesNotMatch(await visibleText(page.locator('#chain-lookup')), words, `${id}: the reason is printed`);
+    await noStatusPanel(page, id);
     assert.equal(await page.locator('#chain-lookup a').count(), 0, `${id} links somewhere`);
     assert.equal(await cards(page).count(), 0, id);
     await quiet(page, errors);
@@ -487,7 +566,7 @@ test('only the latest lookup lands: a slow first answer is cancelled and never s
   await settledLookup(page);
   await page.waitForTimeout(1800);
   assert.equal(await cards(page).count(), 1);
-  assert.match(await cards(page).innerText(), /Block 650/);
+  assert.equal(await cards(page).getAttribute('data-snapshot'), '650', 'the card is the later read’s, at its block');
   const nft = (await caseLog(page)).filter((r) => r.route === 'nft-positions');
   assert.equal(nft[0].aborted, true, 'the slow first read was cancelled');
   await quiet(page, errors);
@@ -514,10 +593,11 @@ test('the same IDs again while they are read join that read: one NFT read, never
 test('Cancel while the lookup reads cancels the read and leaves what was there', async () => {
   const { page, errors } = await openCase('nft.hang');
   await lookUp(page);
-  await page.waitForFunction(() => document.querySelector('#chain-lookup [data-screen-status]')?.getAttribute('data-screen-status') === 'loading');
+  await page.waitForFunction(() => document.querySelector('#chain-lookup [data-lookup-status]')?.getAttribute('data-lookup-status') === 'loading');
+  assert.equal(await page.locator('#chain-lookup [data-lookup-loading]').count(), 1, 'while it reads, resting rows stand where the cards will be');
   await page.locator('#chain-lookup').getByRole('button', { name: 'Cancel' }).click();
   await page.waitForFunction(() => window.__screenCase.log.some((r) => r.route === 'nft-positions' && r.aborted));
-  assert.equal(await lookupStatus(page).getAttribute('data-screen-status'), 'none');
+  assert.equal(await lookupStatus(page).getAttribute('data-lookup-status'), 'none');
   assert.equal(await cards(page).count(), 0);
   assert.equal(await page.locator('#chain-lookup').getByRole('button', { name: 'Cancel' }).count(), 0, 'nothing left to cancel');
   await quiet(page, errors);
@@ -684,7 +764,7 @@ test.skip('the picker is a keyboard dialog: contained focus, arrow keys, Escape 
   await page.waitForFunction(() => document.activeElement?.textContent === 'Start with a token you know.');
   const summary = await dialog.locator('[data-chain-selection]').innerText();
   assert.match(summary, /Token: TOKEN · ERC-20 candidate/);
-  assert.match(summary, /Reference only/);
+  assert.match(summary, /Not saved/);
   assert.match(summary, /Nothing chosen here is saved/);
 
   await page.keyboard.press('Escape');
@@ -697,8 +777,14 @@ test.skip('the picker is a keyboard dialog: contained focus, arrow keys, Escape 
 test('the picker fits a 360 px screen without sideways scrolling', async () => {
   const narrow = await signedIn({ width: 360, height: 740 });
   const { page, errors } = await openCase('create.tokens', narrow);
-  await openPicker(page);
+  const dialog = await openPicker(page);
   for (const address of [NATIVE, at('2')]) await check(page, address);
+  // A listed balance as long as a uint256 (the fixture's) wraps between its digit groups instead of pushing the page sideways.
+  await dialog.getByRole('button', { name: 'List tokens from a public address' }).click();
+  await page.fill('#wallet-address', OWNER);
+  await dialog.getByRole('button', { name: 'List tokens', exact: true }).click();
+  await dialog.locator('[data-wallet-count]').waitFor();
+  await dialog.getByText('Balance at snapshot:', { exact: false }).first().waitFor();
   const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
   assert.ok(overflow <= 0, `the page scrolls sideways by ${overflow}px`);
   const dialogOverflow = await dialogOf(page).evaluate((el) => el.scrollWidth - el.clientWidth);
@@ -727,13 +813,19 @@ test('a public address lists tokens as a public lookup; Load more sends the hand
   const wallet = dialog.locator('[data-wallet-candidates]');
   // The handle is live now (the first page's next handle, not yet sent back): look while it exists.
   assert.deepEqual(await handlePlaces(page, CURSOR.slice(0, 12)), NOWHERE, 'the live handle is in the page');
-  // The listing says what it is: balances at one block, and no proof of who controls the address.
+  // The listing says what it is: balances at one block, and no proof of who controls the address, in its title rather than a footnote
+  // (changed on purpose: the review of 2026-09-14 moved data-source captions off product screens).
   assert.equal(await wallet.locator('[data-wallet-public-note]').innerText(), 'Find tokens held by a wallet address.');
-  assert.match(await wallet.innerText(), /Balances at the snapshot block\. Not proof of wallet control\./);
+  const count = wallet.locator('[data-wallet-count]');
+  assert.equal(await count.innerText(), '2 tokens listed · page 1 of up to 5');
+  assert.match(await count.getAttribute('title'), /Balances at the snapshot block\. Not proof of wallet control\./);
+  assert.doesNotMatch(await wallet.innerText(), /Balances at the snapshot block|Not proof of wallet control|Block \d/, 'no footnote about the data');
   assert.doesNotMatch(await wallet.innerText(), /\byour wallet\b|you own|connected/i, 'a listed address is never called the viewer’s own');
   await wallet.getByRole('button', { name: 'Load more' }).click();
   await waitIdle(page);
-  assert.equal(await wallet.getByRole('button', { name: 'All pages loaded' }).count(), 1);
+  await wallet.locator('[data-wallet-pages="2"] [data-wallet-count]').waitFor();
+  // No list is called complete: the last page leaves nothing to press.
+  assert.equal(await wallet.getByRole('button', { name: /All pages loaded|Load more/ }).count(), 0);
   const walletReads = (await caseLog(page)).filter((r) => r.route === 'wallet-assets');
   assert.deepEqual(walletReads.map((r) => r.request), [{ wallet: OWNER, autoDiscover: true }, { wallet: OWNER, autoDiscover: true, cursor: CURSOR }]);
   assert.deepEqual(await handlePlaces(page, CURSOR.slice(0, 12)), NOWHERE, 'the continuation handle is somewhere a person or a script can read it');
@@ -764,14 +856,17 @@ test('wallet restarts: once on its own, then left to the person; an empty list a
   assert.equal((await caseLog(twice.page)).length, before + 1, 'one fresh first page, no loop');
   await twice.page.close();
 
+  // The hint says what to do, nothing about the server (changed on purpose: it was a caption about the read service).
   const empty = await openCase('create.walletEmpty');
   const d3 = await listWallet(empty.page);
-  assert.match(await d3.locator('[data-wallet-hint]').innerText(), /This server can’t list tokens by itself\. Add token addresses to check\./);
+  assert.equal(await d3.locator('[data-wallet-hint]').innerText(), 'Add token addresses to check their balances.');
   await empty.page.close();
 
+  // Zero balances hold nothing: the rows are listed, and the hint is there too.
   const zero = await openCase('create.walletZero');
   const d4 = await listWallet(zero.page);
   assert.match(await d4.innerText(), /Balance at snapshot: 0\b/);
+  assert.equal(await d4.locator('[data-wallet-hint]').count(), 1);
   await zero.page.close();
 
   const cap = await openCase('create.walletCap');
@@ -794,7 +889,7 @@ async function toPools(page) {
   await dialog.getByRole('button', { name: 'Use this token' }).click();
   await dialog.getByRole('button', { name: 'Choose existing pool' }).click();
   await page.waitForFunction(() => document.activeElement?.textContent === 'Choose an existing pool');
-  await page.waitForFunction(() => document.querySelector('[data-picker="pool"] [data-screen-status]')?.getAttribute('data-screen-status') !== 'loading');
+  await page.waitForFunction(() => document.querySelector('[data-picker="pool"]')?.getAttribute('data-pools-state') !== 'loading');
   return dialog;
 }
 
@@ -1023,11 +1118,16 @@ test('no usable price, no range controls: unknown decimals and a tick that disag
     const { page, errors } = await openCase(id);
     const dialog = await toRange(page);
     assert.equal(await priceState(dialog), 'unavailable', id);
-    assert.equal(await dialog.locator('[data-price-unavailable]').getAttribute('data-price-unavailable'), problem, id);
-    const text = await dialog.innerText();
-    assert.match(text, /Pool price unavailable/, id);
-    assert.match(text, words, id);
-    assert.match(text, /Range controls need a price read from chain, so this pool has none\./, id);
+    const unavailable = dialog.locator('[data-price-unavailable]');
+    assert.equal(await unavailable.getAttribute('data-price-unavailable'), problem, id);
+    // No panel: the price is a dash, and why is its title (and words for assistive technology only).
+    const why = await unavailable.getAttribute('title');
+    assert.match(why, /^Pool price unavailable: /, id);
+    assert.match(why, words, id);
+    assert.match(why, /Range controls need a price read from chain, so this pool has none\.$/, id);
+    assert.equal(await unavailable.locator('.sr-only').textContent(), why, id);
+    assert.equal(await unavailable.locator('p:not(.sr-only)').innerText(), '—', `${id}: a dash in the price’s place`);
+    assert.equal(await dialog.locator('.dm-inset[role="status"], [data-price-unavailable].dm-inset').count(), 0, `${id}: no status panel`);
     assert.equal(await dialog.locator('[data-range-controls], input[type="range"], [data-pool-price-text]').count(), 0, `${id}: no controls and no invented price`);
     assert.doesNotMatch(await dialog.locator('[data-pool-price]').innerText(), /≈/, id);
     assert.equal(await dialog.getByRole('button', { name: 'Use this range' }).isDisabled(), true, id);
@@ -1040,9 +1140,9 @@ test('no usable price, no range controls: unknown decimals and a tick that disag
   const { page, errors } = await openCase('create.rangePartial');
   const dialog = await toRange(page);
   assert.equal(await priceState(dialog), 'partial');
-  const text = await dialog.innerText();
-  assert.match(text, /\bPartial\b/);
-  assert.match(text, /Token metadata is partial: a symbol may be missing, so both addresses are shown\./);
+  // Partial metadata is said in the title over both addresses, never in a pill or a coloured line.
+  assert.equal(await dialog.locator('[data-price-partial]').getAttribute('title'), 'Token metadata is partial: a symbol may be missing, so both addresses are shown. The price uses the decimals read from chain.');
+  assert.doesNotMatch(await dialog.locator('[data-pool-price]').innerHTML(), /money-wait|dm-pill/);
   const partial = await dialog.locator('[data-price-partial]').innerText();
   assert.match(partial, new RegExp(NATIVE));
   assert.match(partial, new RegExp(TOKEN));
@@ -1052,7 +1152,7 @@ test('no usable price, no range controls: unknown decimals and a tick that disag
   await page.close();
 });
 
-test('a price read more than 5 minutes ago on the page is marked stale, and read again only when asked', async () => {
+test('a price read more than 5 minutes ago on the page is marked stale in its title and data only, and the next change to the range reads it again', async () => {
   const { page, errors } = await tracked();
   await page.clock.install();
   await page.goto(`${origin}/read-lab.html#screens/create.range`, { waitUntil: 'networkidle' });
@@ -1065,18 +1165,18 @@ test('a price read more than 5 minutes ago on the page is marked stale, and read
   assert.equal(await priceState(dialog), 'usable', 'not yet five minutes');
   await page.clock.fastForward('00:15');
   await page.waitForFunction(() => document.querySelector('[data-picker="range"]')?.getAttribute('data-price-state') === 'stale');
-  const text = await dialog.innerText();
-  assert.match(text, /\bStale\b/);
-  assert.match(text, /This price was read more than 5 minutes ago on this page, and the pool’s price has probably moved since\./);
-  assert.equal(await dialog.locator('input[type="range"]').count(), 2, 'the controls stay, marked stale');
+  assert.equal(await dialog.locator('[data-price-stale]').getAttribute('title'), 'This price was read more than 5 minutes ago on this page, and the pool’s price has probably moved since.');
+  assert.match(await dialog.locator('[data-pool-price-text]').innerText(), /^≈1,000,000,000,000$/, 'the same price, in the same ink');
+  assert.doesNotMatch(await dialog.locator('[data-pool-price]').innerHTML(), /money-wait|dm-pill|>Stale</, 'no pill, no colour, no word');
+  assert.equal(await dialog.locator('[data-picker="range"] .dm-pill').count(), 0);
+  assert.equal(await dialog.getByRole('button', { name: /Refresh|Read the price again/ }).count(), 0, 'no refresh control');
+  assert.equal(await dialog.locator('input[type="range"]').count(), 2, 'the controls stay');
   assert.equal((await caseLog(page)).length, reads, 'nothing is read by itself');
 
-  // Closer chosen explicitly, so the pick is remembered; it must still give way once the price moves.
+  // Choosing a width is the next change to the range: it is drawn at once, and the stale price is read again, once.
   await dialog.getByRole('radio', { name: /Closer/ }).click();
-  assert.deepEqual(await boundTicks(dialog), ['-3600', '4080']);
-  assert.deepEqual(await widthChecked(dialog), ['Closer']);
-  await dialog.getByRole('button', { name: 'Read the price again' }).click();
-  await page.waitForFunction(() => /Read again at block 705\./.test(document.querySelector('[data-pool-price]')?.textContent ?? ''));
+  await page.waitForFunction(() => document.querySelector('[data-picker="range"]')?.getAttribute('data-price-read') === 'ok');
+  assert.match(await dialog.locator('[data-pool-price] [role="status"]').textContent(), /^Price read again at block 705\.$/, 'said to assistive technology only');
   assert.equal(await priceState(dialog), 'usable');
   // The lab's second reading moved the price one tick spacing, to tick 60.
   assert.match(await dialog.innerText(), /TOKEN per ETH · block 705/);
@@ -1104,11 +1204,19 @@ test('the range view fits a 360 px screen without sideways scrolling', async () 
   await narrow.close();
 });
 
-test('a wallet reply about another chain lists nothing', async () => {
+test('a wallet reply about another chain lists nothing, with one plain line and its reason only in a title', async () => {
   const { page, errors } = await openCase('create.walletOtherChain');
   const dialog = await listWallet(page);
   await waitIdle(page);
-  assert.match(await dialog.locator('[data-wallet-candidates]').innerText(), /Update needed/);
+  const listing = dialog.locator('[data-wallet-candidates]');
+  const failed = listing.locator('[data-wallet-failed]');
+  await failed.waitFor();
+  assert.equal(await failed.innerText(), 'No tokens to show.');
+  assert.equal(await failed.getAttribute('data-wallet-failed'), 'response_contract');
+  assert.match(await failed.getAttribute('title'), /Update needed/);
+  assert.doesNotMatch(await visibleText(listing), /Update needed/, 'the reason is not printed');
+  assert.equal(await listing.locator('[data-screen-status], .text-money-wait').count(), 0, 'no status panel and no yellow');
+  assert.equal(await listing.getByRole('button', { name: 'Retry' }).count(), 0);
   assert.equal(await dialog.locator('[data-candidate]').count(), 0);
   assert.doesNotMatch(await dialog.innerText(), /Balance at the snapshot block/);
   await quiet(page, errors);
@@ -1155,7 +1263,7 @@ test('provider figures carry their source and retrieval on the row; every cell w
   for (const cell of cells.filter((c) => ['unavailable', 'absent', 'not-current', 'rejected'].includes(c.state))) assert.ok(cell.title, `${cell.text} carries a reason`);
   // F3's lean table never reads pool-metrics, and the fixture lab has no estimate namespace, so the APR
   // is the estimate cell saying it is not enabled: never a figure, and never borrowed from the qualified field.
-  assert.equal(cells[2].text, 'Unavailable');
+  assert.equal(cells[2].text, '—', 'no estimate: the catalogue dash, reason in its title');
   assert.match(cells[2].title, /Pool estimate, not position APR, APY or a return forecast\. Estimated APR is (not enabled on this connection|unavailable; market figures use the supported read connection)\./, 'APR stays unavailable, and says why');
   // The provenance is the row's title and its data, not a line printed under the name.
   const provenance = await page.locator('tbody tr [data-provenance]').getAttribute('data-provenance');
@@ -1171,10 +1279,19 @@ test('provider figures carry their source and retrieval on the row; every cell w
   const dialog = await openFigures(page);
   assert.equal(await page.evaluate(() => document.activeElement?.id), 'pool-figures-title');
   const text = await dialog.innerText();
-  assert.match(text, /Not qualified/);
-  assert.match(text, /Reported by GeckoTerminal, retrieved \d\d:\d\d:\d\d UTC, 1970-01-01\. Provider-reported, not reconciled with chain data\./);
+  // Domino's 24h figures, not read for this row: each a dash that says why in its title, never a sentence.
+  const history = dialog.locator('[data-figures-qualified="no"]');
+  const reasons = await history.locator('dd [title]').evaluateAll((els) => els.map((el) => [el.textContent, el.getAttribute('title')]));
+  assert.deepEqual(reasons.map(([dash]) => dash), ['—', '—', '—', '—', '—']);
+  assert.deepEqual(reasons.slice(0, 2).map(([, why]) => why), ['Not qualified: the figure shown is GeckoTerminal’s', 'Not qualified: the figure shown is GeckoTerminal’s']);
+  assert.doesNotMatch(await history.innerText(), /yet|usable|need/i);
+  // Who reported the figures and when: the figure's title, not a caption under it.
+  assert.match(await dialog.locator('[data-provider-figure="attributed"]').first().getAttribute('title'), /^Reported by GeckoTerminal, retrieved \d\d:\d\d:\d\d UTC, 1970-01-01\. Provider-reported, not reconciled with chain data\.$/);
   assert.match(text, /Pool is 19 s old; the 24h window isn’t complete/);
-  assert.match(text, /Pool APR describes a pool, not a position/);
+  // What the estimate is not: its own title, not a closing caption.
+  assert.match(await dialog.locator('[data-figures-provider]').evaluate((el) => el.closest('[data-pool-figures-dialog]').querySelector('[data-apr-estimate] [title]').getAttribute('title')), /^Pool estimate, not position APR, APY or a return forecast\./);
+  assert.doesNotMatch(text, /Retrieval age isn’t proof of a complete 24h window|Pool APR describes a pool, not a position|Block \d+/, 'no captions about sources under the figures');
+  assert.doesNotMatch(await dialog.innerHTML(), /money-wait/);
   assert.equal((await caseLog(page)).filter((r) => r.route === 'pool-activity').length, 1, 'exactly one pool-activity read, after the click');
   await page.keyboard.press('Escape');
   await dialog.waitFor({ state: 'detached' });
@@ -1237,10 +1354,11 @@ test.skip('qualified, reference, stale, expired, missing and zero figures each r
 });
 
 // OPEN QUESTION for @rugged97, same root: this asserts the landing reads
-// ['pool-market','pool-metrics','token','token']. F3 reads no pool-metrics
-// (marketsProvider.ts says so), so the sequence is three reads, not four.
-// What it really guards — no pool-activity read until a pool is opened —
-// is worth keeping once the expected sequence is agreed.
+// ['pool-market','pool-metrics','token','token']. The table reads pool-metrics
+// only where the capabilities list it (marketsProvider.ts), after the tokens,
+// and the fixture build's source answers no capabilities question, so here the
+// sequence is three reads, not four. What it really guards — no pool-activity
+// read until a pool is opened — is worth keeping once the sequence is agreed.
 test.skip('the fixture landing reads no pool activity until a pool is opened', async () => {
   const { page, errors } = await tracked();
   await page.goto(`${origin}/`, { waitUntil: 'networkidle' });
@@ -1302,12 +1420,105 @@ test('the figures dialog ages with the row behind it, and says stale when the ro
   await page.clock.fastForward('01:05');
   await page.waitForFunction(() => document.querySelectorAll('[data-pool-figures-dialog] [data-provider-figure="attributed_stale"]').length > 0);
   const aged = await dialog.innerText();
-  assert.match(aged, /· stale/, 'the open dialog says stale in words, not only in colour');
+  // The owner's rule: a stale figure reads as the figure, in the same ink; that it is stale is its state and its title.
+  const staleFigure = dialog.locator('[data-provider-figure="attributed_stale"]').first();
+  assert.match(await staleFigure.getAttribute('title'), /This observation is stale\./, 'the open dialog says stale in the figure’s title');
+  assert.match(await staleFigure.locator('> div').innerText(), /^Liquidity\s+\$12\.3K · GeckoTerminal$/, 'and draws the figure as it was, with no stale word beside it');
+  assert.doesNotMatch(await staleFigure.innerHTML(), /money-wait/);
   assert.doesNotMatch(aged, /cache 0 s/, 'and stops reporting the retrieval cache age as if it were current');
   assert.doesNotMatch(aged, /A later refresh failed/i, 'aging alone does not imply a failed refresh');
   assert.deepEqual(await caseLog(page), readsBeforeAge, 'the display clock starts no new read');
   assert.deepEqual(await page.locator('tbody [data-metric="stale"]').count() > 0, true, 'the row behind it says the same');
 
+  await quiet(page, errors);
+  await page.close();
+});
+
+// --- markets-snapshot listed in the figures lab (G2 through the real table) -------
+
+test('with markets-snapshot listed, a current stored row is the row: one snapshot read, its tokens, and no market read; the dialog still reads activity only when opened', async () => {
+  const { page, errors } = await openCase('figures.snapshot');
+  await table(page);
+  await page.locator('tbody tr[data-row-source="markets-snapshot"]').waitFor();
+  assert.deepEqual((await caseLog(page)).map((r) => r.route), ['markets-snapshot', 'token', 'token'], 'no pool-market and no pool-metrics: neither is needed or listed');
+  assert.deepEqual((await caseLog(page))[0].request, { poolIds: ['0x0911afcb281d7bcae2d71443ceaeebd0f89b4537708449970d797622b4b4c941'] });
+  const cells = await page.locator('tbody [data-metric]').evaluateAll((els) => els.map((el) => [el.innerText, el.getAttribute('data-metric'), el.getAttribute('title')]));
+  assert.deepEqual(cells.map(([text, state]) => [text, state]), [['$12.3K', 'provider'], ['$0.00', 'provider']]);
+  for (const [, , title] of cells) assert.match(title, /^Reported by GeckoTerminal, retrieved \d+ s ago\. Not reconciled by Domino\.$/);
+  assert.doesNotMatch(await page.locator('tbody').innerText(), /snapshot|stored/i, 'where the row came from is data, never words');
+  await openFigures(page);
+  assert.equal((await caseLog(page)).filter((r) => r.route === 'pool-activity').length, 1, 'one pool-activity read, after the click');
+  await quiet(page, errors);
+  await page.close();
+});
+
+test('with markets-snapshot listed, a store served past its 300 s keeps the row in place while the pool’s own read replaces it', async () => {
+  const { page, errors } = await openCase('figures.snapshotStale');
+  await table(page);
+  await page.locator('tbody tr[data-row-source="pool-market"]').waitFor();
+  assert.deepEqual((await caseLog(page)).map((r) => r.route), ['markets-snapshot', 'token', 'token', 'pool-market']);
+  assert.deepEqual((await caseLog(page)).at(-1).request, { poolId: '0x0911afcb281d7bcae2d71443ceaeebd0f89b4537708449970d797622b4b4c941', includePriceHistory: false });
+  assert.equal(await page.locator('tbody tr').count(), 1, 'one row throughout');
+  assert.doesNotMatch(await page.locator('tbody').innerText(), /snapshot|stored|stale/i);
+  await quiet(page, errors);
+  await page.close();
+});
+
+// --- the pool page in the fixture build (G1, G11, G14 and the clean states) -------------
+
+test('the pool page reads its figures, Domino’s 24h history and its chain activity by itself, one after another, and shows no status, no retry, no footnote and no yellow', async () => {
+  const { page, errors } = await tracked();
+  const POOL = '0x0911afcb281d7bcae2d71443ceaeebd0f89b4537708449970d797622b4b4c941';
+  await page.goto(`${origin}/#/pool/${POOL}/${TOKEN}`, { waitUntil: 'networkidle' });
+  const workspace = page.locator(`[data-pool-workspace="${POOL}"]`);
+  await workspace.waitFor({ timeout: 20_000 });
+  await page.locator('[data-pool-activity="ok"]').waitFor({ timeout: 20_000 });
+  await page.waitForFunction(() => document.querySelector('[data-pool-figures] [data-metric="qualified"]'));
+  const routes = await page.evaluate(() => (window.__DOMINO_FIXTURE_READS__ ?? []).map((r) => [r.route, r.request]));
+  const pageReads = routes.slice(routes.findIndex(([route]) => route === 'pools'));
+  assert.deepEqual(pageReads, [
+    ['pools', { token: TOKEN, maxPools: 1, poolIds: [POOL] }],
+    ['pool-market', { poolId: POOL, includePriceHistory: false }],
+    ['pool-metrics', { poolId: POOL }],
+    ['pool-activity', { poolId: POOL }],
+  ], 'the fixture build lists pool-metrics and pool-activity; it lists no snapshot and no positions, so neither is read');
+
+  const figures = workspace.locator('[data-pool-figures]');
+  const stats = await figures.locator('dl > div').evaluateAll((divs) => divs.map((div) => [div.querySelector('dt').innerText.trim(), div.querySelector('dd').innerText.trim()]));
+  assert.deepEqual(stats.map(([label]) => label), ['PRICE', 'TVL', '24H VOLUME', '24H FEES', 'APR', 'FEE TIER'], 'Domino’s 24h fees beside the figures, and its APR where the estimate would be');
+  assert.deepEqual(stats.slice(1, 5).map(([, value]) => value), ['$0.000020', '$0.000029', '<$0.000001', '158.06%'], 'the qualified figures take precedence over the provider’s');
+  assert.match(await figures.innerText(), /Domino history/);
+  assert.equal(await workspace.locator('[data-pool-positions]').count(), 0, 'no positions section where pool-positions is not listed');
+
+  // The activity card: turnover, LP fees and LP assets in each token's units; no USD and no APR in it.
+  const activity = await page.locator('[data-activity-amounts]').evaluate((table) => Array.from(table.querySelectorAll('tr'), (tr) => Array.from(tr.children, (cell) => cell.textContent.trim())));
+  assert.deepEqual(activity, [['Figure', 'ETH', 'TOKEN'], ['Turnover (24h)', '0.0000289269', '1,635,670'], ['LP fees (24h)', '0.0000000864129', '300'], ['LP assets', '0.00000000101254', '20,025,853']]);
+  assert.doesNotMatch(await page.locator('[data-pool-activity]').innerText(), /\$|APR/);
+
+  // G14: the protocol fee per direction, and Domino's APR where the fixed "unavailable" line was.
+  const details = workspace.locator('.dm-card', { hasText: 'Pool details' });
+  assert.match(await details.locator('[data-protocol-fee]').innerText(), /Protocol fee\s+None/);
+  await details.getByText('About the APR').click();
+  assert.match(await details.locator('[data-history-apr]').innerText(), /Pool APR, Domino history\s+158\.06%/);
+  assert.equal(await details.locator('[data-apr-estimate]').getAttribute('data-apr-estimate'), 'unavailable');
+  assert.equal(await details.locator('[data-apr-estimate] [data-apr-figure]').innerText(), '—', 'no estimate here: a neutral dash');
+  assert.match(await details.locator('[data-apr-estimate] [data-apr-figure]').getAttribute('title'), /^Pool estimate, not position APR, APY or a return forecast\. Estimated APR is (not enabled on this connection|unavailable; market figures use the supported read connection)\.$/);
+
+  // Clean: nothing on the page says how a read went, and nothing offers to read again.
+  const main = await page.locator('main').innerText();
+  assert.doesNotMatch(main, /Read activity|Read market data again|Verify again|Refresh price|Read again|Retry|One read, when you ask|coming later|isn’t available here|not enabled/i);
+  assert.doesNotMatch(main, /GeckoTerminal market observation|Retrieved \d\d:\d\d UTC|No USD volume or APR comes from this read/, 'no footnotes about sources');
+  // Changed on purpose (qa:visual): no caption under the chart heading; who reports the candles is the plot's title and data.
+  const chart = page.locator('[data-pool-chart]');
+  assert.doesNotMatch(await chart.innerText(), /GeckoTerminal|in US dollars/, 'no caption under the chart heading');
+  const plot = chart.locator('.dm-pool-plot');
+  assert.deepEqual([await plot.getAttribute('data-chart-provider'), await plot.getAttribute('title')], ['GeckoTerminal', 'Hourly candles reported by GeckoTerminal.']);
+  for (const name of await page.locator('main button').allInnerTexts()) assert.doesNotMatch(name, /again|retry|refresh/i, name);
+  assert.equal(await page.locator('main .dm-inset[role="status"]').count(), 0, 'no status panel');
+  // The range slider's own handle ring is a design accent of the shared PriceSlider, not a state; everything the page reads is checked.
+  for (const part of ['[data-pool-figures]', '[data-pool-activity]', '[data-pool-price]', '.dm-card:has([data-protocol-fee])']) assert.doesNotMatch(await page.locator(part).innerHTML(), /money-wait/, `no yellow in ${part}`);
+  const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
+  assert.ok(overflow <= 0, `the pool page scrolls sideways by ${overflow}px`);
   await quiet(page, errors);
   await page.close();
 });

@@ -45,7 +45,11 @@ export function ChosenPool({
           </p>
           <p className="flex flex-wrap items-center gap-1.5">
             <Chip title={CREATE.pool.verifiedAt(option.block)}>Uniswap · {option.fee}</Chip>
-            {option.integration !== 'hookless_fixed_fee' && <span className="text-caption text-money-wait">{COPY.picker.needsAdapter}</span>}
+            {option.integration !== 'hookless_fixed_fee' && (
+              <span className="text-caption text-fg-muted" data-pool-integration={option.integration}>
+                {COPY.picker.needsAdapter}
+              </span>
+            )}
           </p>
         </div>
         <Button type="button" variant="ghost" size="sm" onClick={onChange}>
@@ -85,18 +89,15 @@ export function ChosenPool({
   )
 }
 
-/** The existing pools for the chosen token (and second asset), read when this list mounts. */
+/**
+ * The existing pools for the chosen token (and second asset), read when this
+ * list mounts. The rows are the whole step: no footnote under them. No row is
+ * suggested, and the flow's prices already name both tokens ("USDG per WETH").
+ */
 export function PoolList({ source, state, onPool }: { source: ReadSource; state: JourneyState; onPool: (option: PoolOption | null) => void }) {
   const token = state.token
   if (!token) return null
-  return (
-    <div className="grid gap-3">
-      <PoolPicker key={`${token.key}:${state.paired?.key ?? ''}`} source={source} token={token.key} paired={state.paired?.key ?? null} pending={state.pool} onPending={onPool} compact />
-      <p className="dm-hint" data-no-suggestion="">
-        {CREATE.pool.noSuggestion} {CREATE.pool.orientation}
-      </p>
-    </div>
-  )
+  return <PoolPicker key={`${token.key}:${state.paired?.key ?? ''}`} source={source} token={token.key} paired={state.paired?.key ?? null} pending={state.pool} onPending={onPool} compact />
 }
 
 /**

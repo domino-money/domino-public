@@ -18,9 +18,10 @@ export const PLACEHOLDER_POOL_IDS: readonly string[] = ['a2', 'a3', 'a4', 'a5'].
 /** At most this many pools on one landing load. */
 export const MARKET_POOL_BUDGET = 5
 /**
- * pool-market and the two currencies' token reads, shared across rows. The
- * table asks for no pool-metrics: F3 dropped it from this path, so the ceiling
- * is three reads a pool, not four (marketsProvider.ts says the same).
+ * The lean load's ceiling: pool-market and the two currencies' token reads,
+ * shared across rows. pool-metrics adds a fourth read a pool only where the
+ * capabilities list it, and a stored markets snapshot replaces a pool's
+ * market read with one read for the whole table (marketsProvider.ts).
  */
 export const READS_PER_POOL = 3
 

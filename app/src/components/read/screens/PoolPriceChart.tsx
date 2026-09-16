@@ -10,13 +10,15 @@ import { useNow } from '../../../lib/read/useNow'
 import { failureText } from '../../../lib/read/screens/copy'
 import { utcTime } from '../../../lib/read/screens/figures'
 import { useReadSource } from '../../../lib/read/screens/readContext'
-import { readWithin, type ScreenOutcome } from '../../../lib/read/screens/screenRead'
+import { askAgainLater, readWithin, type ScreenOutcome } from '../../../lib/read/screens/screenRead'
 import { VolumeBarsGroup } from '../../charts/VolumeBars'
 import { Button, Pill, Segmented, Skeleton } from '../../ui'
 import { TokenLabel } from '../TokenLabel'
 import { Address } from './Address'
-import { ScreenStatus } from './ScreenStatus'
 
+/** Who reports the candles: the plot's data and title, never a caption under the heading. */
+const PROVIDER = 'GeckoTerminal'
+const CANDLES_TITLE = `Hourly candles reported by ${PROVIDER}.`
 const CHANGE_TITLE = 'Domino’s calculation from GeckoTerminal’s hourly candles: first open to last close of the shown window. Not a return.'
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
 const INSPECT_KEYS = ['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'Home', 'End']
@@ -148,7 +150,10 @@ function plotFor(candles: ReadonlyArray<Candle>, intervalSeconds: number, width:
  * that follows the pointer or the arrow keys. Every figure on it is a candle
  * the provider returned, or Domino's arithmetic on two of them, said so. The
  * contract returns up to 24 hourly candles and nothing longer, so there is no
- * period to choose, and nothing here calls the window a day.
+ * period to choose, and nothing here calls the window a day. Where the
+ * candles came from and how old they are is the plot's title. A read the
+ * service was busy for is asked again on its own; candles that have expired
+ * on screen offer the same ask again, never a separate retry.
  */
 export function PoolPriceChart({ market, autoLoad = false }: { market: Market; autoLoad?: boolean }) {
   const source = useReadSource()
@@ -161,7 +166,11 @@ export function PoolPriceChart({ market, autoLoad = false }: { market: Market; a
   const fillId = `pool-chart-fill-${useId().replace(/[^a-zA-Z0-9_-]/g, '')}`
   const chartTokens = market.chartTokens
   const currency = chartTokens?.[selected]
-  const key = `${market.poolId}:${currency}:${attempt}`
+  // Quiet re-asks belong to one question: this pool, this token, this ask. Another starts from none.
+  const question = `${market.poolId}:${currency}:${attempt}`
+  const [asked, setAsked] = useState<{ question: string; quiet: number }>({ question, quiet: 0 })
+  const quiet = asked.question === question ? asked.quiet : 0
+  const key = `${question}:${quiet}`
   const outcome = read?.key === key ? read.outcome : null
   // While the same token is read again, the last candles stay on screen, dimmed, with their own age; another token's never do.
   const retained = !outcome && read && read.outcome.state === 'ok' && read.key.startsWith(`${market.poolId}:${currency}:`) ? read : null
@@ -173,11 +182,14 @@ export function PoolPriceChart({ market, autoLoad = false }: { market: Market; a
   useEffect(() => {
     if (!active || !source || !currency) return
     const controller = new AbortController()
-    void readWithin(source, 'pool-market', { poolId: market.poolId, includePriceHistory: true, priceToken: selected }, { signal: controller.signal }).then((result) => {
-      if (!controller.signal.aborted && result.state !== 'aborted') setRead({ key, outcome: result })
+    const { signal } = controller
+    void readWithin(source, 'pool-market', { poolId: market.poolId, includePriceHistory: true, priceToken: selected }, { signal }).then(async (result) => {
+      if (signal.aborted || result.state === 'aborted') return
+      setRead({ key, outcome: result })
+      if (result.state !== 'ok' && (await askAgainLater(result, quiet, signal))) setAsked({ question, quiet: quiet + 1 })
     })
     return () => controller.abort()
-  }, [source, active, currency, market.poolId, selected, key])
+  }, [source, active, currency, market.poolId, selected, key, question, quiet])
 
   const measured = !!chartTokens
   useLayoutEffect(() => {
@@ -201,13 +213,20 @@ export function PoolPriceChart({ market, autoLoad = false }: { market: Market; a
   const expired = !!history?.cache && age !== null && age > history.cache.maxStaleSeconds
   const data = matches && !expired ? (history?.data ?? null) : null
   const stale = history?.status === 'stale' || (!!history?.cache && age !== null && age >= history.cache.freshForSeconds)
-  const reason = expired
-    ? 'Chart retrieval has expired. Read again for a fresh provider observation.'
-    : history?.data && !matches
-      ? 'The chart currency changed during this read. Refresh the pool before trying again.'
-      : history
-        ? `Hourly prices ${history.status}: ${reasonText(history.reason)}`
-        : ''
+  const failure = answer && answer.state !== 'ok' ? failureText(answer, 'pools') : null
+  const reason = failure
+    ? [failure.title, failure.detail].filter(Boolean).join('. ')
+    : expired
+      ? 'These hourly prices were retrieved more than five minutes ago.'
+      : history?.data && !matches
+        ? 'The chart currency changed during this read.'
+        : history
+          ? `Hourly prices ${history.status}: ${reasonText(history.reason)}`
+          : ''
+  // Where the shown candles came from and how old they are: the plot's title and data, never a line under it.
+  const provenanceTitle = data
+    ? `Reported by GeckoTerminal, retrieved ${utcTime(data.retrievedAt)}${age === null ? '' : `, ${age} s ago`}${stale ? ', stale' : ''}. ${data.coverage.returnedCandles} candles; ${data.coverage.closedCandles} closed; ${data.coverage.gapsDetected ? 'gaps detected' : 'no gaps reported'}. Reported USD prices for one token, not the pool’s pair price or liquidity distribution. Complete 24h coverage is not established.`
+    : undefined
   const tokenFor = (address: string) => [market.tokens.base, market.tokens.quote].find((token) => token.origin === 'read' && token.address.toLowerCase() === address.toLowerCase()) ?? unreadToken(address)
 
   const candles = data ? windowCandles(data, null) : []
@@ -246,15 +265,6 @@ export function PoolPriceChart({ market, autoLoad = false }: { market: Market; a
           <h2 id="pool-chart-title" className="dm-display dm-display-card">
             USD price and volume
           </h2>
-          <p className="mt-1 text-caption text-fg-subtle">
-            {currency ? (
-              <>
-                <TokenLabel token={tokenFor(currency)} /> in US dollars · hourly candles · GeckoTerminal
-              </>
-            ) : (
-              'Hourly candles · GeckoTerminal'
-            )}
-          </p>
         </div>
         {chartTokens && (
           <div className="dm-pool-chart-controls flex flex-wrap items-center gap-2">
@@ -267,11 +277,6 @@ export function PoolPriceChart({ market, autoLoad = false }: { market: Market; a
               }}
               items={(['base', 'quote'] as const).map((side) => ({ key: side, label: <TokenLabel token={tokenFor(chartTokens[side])} /> }))}
             />
-            {active && (outcome || retained) && (
-              <Button variant="ghost" size="sm" disabled={reading} onClick={ask}>
-                {reading ? 'Reading hourly prices…' : 'Read again'}
-              </Button>
-            )}
           </div>
         )}
       </div>
@@ -300,33 +305,42 @@ export function PoolPriceChart({ market, autoLoad = false }: { market: Market; a
       )}
 
       {chartTokens && (
-        <div ref={box} className="dm-pool-plot dm-dots-chart mt-4">
+        <div
+          ref={box}
+          className="dm-pool-plot dm-dots-chart mt-4"
+          title={provenanceTitle ?? (reason ? `${CANDLES_TITLE} ${reason}` : CANDLES_TITLE)}
+          data-chart-provider={PROVIDER}
+          data-chart-provenance={provenanceTitle}
+          data-chart-state={!active ? 'idle' : !answer || (reading && !data) ? 'reading' : answer.state !== 'ok' ? 'failed' : expired ? 'expired' : !data ? 'unavailable' : stale ? 'stale' : 'shown'}
+        >
           {!active ? (
             <div className="dm-pool-plot-empty">
-              <p className="text-[13px] leading-[18px] text-fg-subtle">One read of hourly candles, when you ask.</p>
               <Button variant="outline" size="sm" onClick={ask}>
                 Show hourly candles
               </Button>
             </div>
-          ) : !answer ? (
+          ) : !answer || (reading && !data) ? (
             <div className="dm-pool-plot-empty">
               <p role="status" className="sr-only">
                 Reading hourly prices…
               </p>
-              <Button variant="outline" size="sm" disabled>
-                Reading hourly prices…
-              </Button>
               <Skeleton className="dm-pool-plot-baseline" />
             </div>
-          ) : answer.state !== 'ok' ? (
-            <div className="dm-pool-plot-empty">
-              <ScreenStatus line={failureText(answer, 'pools')} className="w-full max-w-[420px] text-left" />
+          ) : expired ? (
+            // Candles past the provider's limit are gone from the plot; the same ask reads fresh ones.
+            <div className="dm-pool-plot-empty" data-chart-unavailable="expired">
+              <Button variant="outline" size="sm" onClick={ask}>
+                Show hourly candles
+              </Button>
             </div>
-          ) : !data ? (
-            <div className="dm-pool-plot-empty">
-              <p role="status" className="max-w-[48ch] text-[13px] leading-[18px] text-fg-muted" data-chart-unavailable="">
+          ) : answer.state !== 'ok' || !data ? (
+            <div className="dm-pool-plot-empty" data-chart-unavailable={answer.state !== 'ok' ? answer.state : (history?.reason ?? 'unavailable')}>
+              <p role="status" className="sr-only">
                 {reason}
               </p>
+              <span className="text-[13px] leading-[18px] text-fg-subtle" title={reason}>
+                —
+              </span>
             </div>
           ) : candles.length === 0 ? (
             <div className="dm-pool-plot-empty">
@@ -404,12 +418,6 @@ export function PoolPriceChart({ market, autoLoad = false }: { market: Market; a
 
       {data && (
         <>
-          <p className="mt-3 text-caption text-fg-subtle" data-chart-provenance="">
-            Retrieved {utcTime(data.retrievedAt)}
-            {age === null ? '' : ` · ${age} s ago`}
-            {stale ? ' · stale' : ''}. {data.coverage.returnedCandles} candles; {data.coverage.closedCandles} closed; {data.coverage.gapsDetected ? 'gaps detected' : 'no gaps reported'}.
-          </p>
-          <p className="mt-1 text-caption text-fg-subtle">Reported USD prices for one token, not the pool’s pair price or liquidity distribution. Complete 24h coverage is not established.</p>
           <details className="dm-details -mx-3 mt-3">
             <summary>Source and exact candle values</summary>
             <div>

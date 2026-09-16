@@ -1,8 +1,9 @@
 import type { ReactNode } from 'react'
 import { COPY } from '../../../lib/read/screens/copy'
 import { utcTime } from '../../../lib/read/screens/figures'
-import type { AmountView, Batch, ChainPositionCard as Card } from '../../../lib/read/screens/positions'
+import { rangePricesProblem, type AmountView, type Batch, type ChainPositionCard as Card } from '../../../lib/read/screens/positions'
 import { NATIVE_CURRENCY, shortAddress } from '../../../lib/read/screens/identity'
+import { Figure } from '../../positions/Figure'
 import { PositionRange, rangeWords, useCardPrice } from '../../positions/PositionRange'
 import { TokenMarkPair } from '../../TokenIcon'
 import { IconChevronRight } from '../../icons'
@@ -13,10 +14,18 @@ import { Address } from './Address'
 type LiveCard = Extract<Card, { kind: 'live' }>
 type EmptyCard = Extract<Card, { kind: 'empty' }>
 
+/** The block, time and freshness of the read every figure in a row is from: the row's title, never a line on it. */
 export function snapshotText(batch: Batch) {
   const fresh = batch.freshness.status === 'stale' ? `stale, ${batch.freshness.ageSeconds} s old when read` : `fresh, ${batch.freshness.ageSeconds} s old when read`
   return `Block ${batch.block.number} · ${utcTime(batch.block.timestamp)} · ${fresh}`
 }
+
+/** The snapshot as data attributes on a row: its block, its age when read, and whether it was stale. */
+const snapshotData = (batch: Batch) => ({
+  'data-snapshot': batch.block.number,
+  'data-snapshot-age': batch.freshness.ageSeconds,
+  'data-stale': batch.freshness.status === 'stale' ? '' : undefined,
+})
 
 /** One fact in the opened row: label left, value right (`.dm-kv`, two columns from 768px). */
 function Fact({ label, children }: { label: string; children: ReactNode }) {
@@ -28,31 +37,23 @@ function Fact({ label, children }: { label: string; children: ReactNode }) {
   )
 }
 
-/** A long figure may wrap, but only after a group separator or the decimal point, never inside a digit group. */
-function Breakable({ text }: { text: string }) {
-  const parts = text.split(/(?<=[,.])/)
-  return (
-    <>
-      {parts.map((part, i) => (
-        <span key={i}>
-          {part}
-          {i < parts.length - 1 && <wbr />}
-        </span>
-      ))}
-    </>
-  )
-}
-
+/** An amount in its token's units to six significant digits, every digit in its title; a dash, with the raw amount in its title, when the token's decimals were not read. */
 function Amount({ amount }: { amount: AmountView }) {
-  return (
-    <span className="dm-acct-amount" data-amount={amount.kind}>
-      <span className="tnum">
-        <Breakable text={amount.text} />
-      </span>{' '}
-      <span className="dm-acct-amount-symbol">
-        <TokenLabel token={amount.token} />
+  const symbol = (
+    <span className="dm-acct-amount-symbol">
+      <TokenLabel token={amount.token} />
+    </span>
+  )
+  if (amount.kind === 'raw') {
+    return (
+      <span className="dm-acct-amount" data-amount="raw" title={`Raw amount ${amount.raw}: the token’s decimals were not read`}>
+        <span className="text-fg-subtle">—</span> {symbol}
       </span>
-      {amount.kind === 'raw' && <span className="dm-acct-amount-raw">raw units, decimals unknown</span>}
+    )
+  }
+  return (
+    <span className="dm-acct-amount" data-amount={amount.kind} title={amount.kind === 'units' ? (amount.exact ?? undefined) : undefined}>
+      <Figure text={amount.text} /> {symbol}
     </span>
   )
 }
@@ -86,44 +87,30 @@ function Chevron() {
 }
 
 /**
- * What stays on the row whether it is open or not: staleness, the notes that
- * change how the row's figures read, and the block every figure is from.
+ * What stays on the row whether it is open or not: the notes that change how
+ * the row's figures read, in normal type. Nothing when there are none; the
+ * block every figure is from, and whether it was stale, are the row's title
+ * and data attributes, never a line or a coloured pill.
  */
-function RowMeta({ batch, children }: { batch: Batch; children?: ReactNode }) {
-  return (
-    <span className="dm-acct-nft-meta">
-      {batch.freshness.status === 'stale' && <Pill tone="wait">{COPY.card.stalePill}</Pill>}
-      {children}
-      <span data-snapshot="">
-        {COPY.card.snapshot}: {snapshotText(batch)}
-      </span>
-    </span>
-  )
+function RowMeta({ children }: { children?: ReactNode }) {
+  return children ? <span className="dm-acct-nft-meta">{children}</span> : null
 }
 
-/** Where the facts in the opened row come from: chain, public, and nothing about who is looking. */
-function Provenance({ children }: { children?: ReactNode }) {
-  return (
-    <div className="dm-acct-nft-foot">
-      <span className="dm-acct-nft-pills">
-        <Pill>{COPY.card.chainPill}</Pill>
-        <Pill>{COPY.card.publicPill}</Pill>
-      </span>
-      {children}
-    </div>
-  )
-}
+/** The owner at the snapshot block, and what that is: public data that proves nothing about who is looking. */
+const ownerTitle = (card: LiveCard, batch: Batch) => `${card.owner.address}: the NFT’s owner at block ${batch.block.number}, public data. ${COPY.card.ownerNote}`
 
 function LiveRow({ card, batch, index }: { card: LiveCard; batch: Batch; index: number }) {
   const titleId = `chain-card-${index}`
   const price = useCardPrice(card)
   const { scale } = price
   const [base, quote] = card.currencies
+  const problem = rangePricesProblem(card.range)
+  const notes = !card.hasLiquidity || problem === 'decimals_unknown'
   return (
-    <article aria-labelledby={titleId} className="dm-acct-nft" data-chain-card="live">
+    <article aria-labelledby={titleId} className="dm-acct-nft" data-chain-card="live" {...snapshotData(batch)}>
       <details>
-        {/* The whole row is the summary: it holds no button and no link, and opening it shows the facts under it. */}
-        <summary>
+        {/* The whole row is the summary: it holds no button and no link, and opening it shows the facts under it. Its title is the snapshot every figure is from. */}
+        <summary title={snapshotText(batch)}>
           <span className="dm-acct-nft-pool">
             <TokenMarkPair base={base} quote={quote} size={28} ring="var(--surface-2)" />
             <span className="dm-acct-nft-name">
@@ -148,6 +135,7 @@ function LiveRow({ card, batch, index }: { card: LiveCard; batch: Batch; index: 
               </span>
             </span>
             <span className="dm-acct-nft-ticks tnum">
+              {card.range.fullRange && <span data-full-range="">{COPY.card.fullRange} · </span>}
               Ticks {card.range.tickLower} to {card.range.tickUpper}
             </span>
           </span>
@@ -160,7 +148,7 @@ function LiveRow({ card, batch, index }: { card: LiveCard; batch: Batch; index: 
             </span>
           </span>
 
-          <span className="dm-acct-nft-cell">
+          <span className="dm-acct-nft-cell" data-fee-history="unavailable" title={COPY.card.noHistory}>
             <span className="dm-acct-nft-label">{COPY.card.unsettled}</span>
             <span className="dm-acct-nft-amounts">
               <Amount amount={card.unsettledFees[0]} />
@@ -170,10 +158,13 @@ function LiveRow({ card, batch, index }: { card: LiveCard; batch: Batch; index: 
 
           <Chevron />
 
-          <RowMeta batch={batch}>
-            {!card.hasLiquidity && <span data-no-liquidity="">{COPY.card.noLiquidity}</span>}
-            {!card.range.prices && <span>{COPY.card.pricesUnavailable}</span>}
-          </RowMeta>
+          {notes && (
+            <RowMeta>
+              {!card.hasLiquidity && <span data-no-liquidity="">{COPY.card.noLiquidity}</span>}
+              {/* Only an unread decimal is said: an end beyond display already reads "Tick N", and a full-range end needs no decimals. */}
+              {problem === 'decimals_unknown' && <span data-range-problem={problem}>{COPY.card.pricesUnavailable}</span>}
+            </RowMeta>
+          )}
         </summary>
 
         <div className="dm-inset dm-acct-nft-body">
@@ -198,23 +189,18 @@ function LiveRow({ card, batch, index }: { card: LiveCard; batch: Batch; index: 
               </span>
             </Fact>
             <Fact label={COPY.card.owner}>
-              <Address value={card.owner.address} />
-              <span className="dm-acct-nft-owner-note">{COPY.card.ownerNote}</span>
+              {/* The owner at the block, as public data, is said in the title: nothing on the row says who is looking. */}
+              <span data-owner-basis={card.owner.basis} title={ownerTitle(card, batch)}>
+                <Address value={card.owner.address} />
+              </span>
             </Fact>
             <Fact label={COPY.card.value}>
-              <span className="text-fg-subtle" data-valuation="unavailable" title={`Reason: ${card.valuation.reason}`}>
-                {COPY.card.valueUnavailable}
+              {/* No value to show is a dash; why is the title, and the closed reason a data attribute. */}
+              <span className="text-fg-subtle" data-valuation="unavailable" data-valuation-reason={card.valuation.reason} title={COPY.card.valueUnavailable}>
+                —
               </span>
             </Fact>
           </dl>
-          <p className="dm-acct-nft-note">
-            <span className="dm-acct-caps-label">{COPY.card.unsettled}</span> {COPY.card.noHistory}
-          </p>
-          <Provenance>
-            <span className="dm-acct-nft-owner" title={`${card.owner.address} · ownerOf at block ${batch.block.number}, public data`}>
-              <span>Owner</span> <Address value={card.owner.address} short /> <span>· owner at block {batch.block.number}</span>
-            </span>
-          </Provenance>
         </div>
       </details>
     </article>
@@ -224,9 +210,9 @@ function LiveRow({ card, batch, index }: { card: LiveCard; batch: Batch; index: 
 function EmptyRow({ card, batch, index }: { card: EmptyCard; batch: Batch; index: number }) {
   const titleId = `chain-card-${index}`
   return (
-    <article aria-labelledby={titleId} className="dm-acct-nft" data-chain-card="empty">
+    <article aria-labelledby={titleId} className="dm-acct-nft" data-chain-card="empty" {...snapshotData(batch)}>
       <details>
-        <summary>
+        <summary title={snapshotText(batch)}>
           <span className="dm-acct-nft-pool">
             {/* Where the pair's marks would be: no currencies at this block, so two empty discs. */}
             <span aria-hidden="true" className="dm-acct-nft-nopair">
@@ -243,7 +229,6 @@ function EmptyRow({ card, batch, index }: { card: EmptyCard; batch: Batch; index
             {COPY.card.empty}
           </span>
           <Chevron />
-          <RowMeta batch={batch} />
         </summary>
 
         <div className="dm-inset dm-acct-nft-body">
@@ -252,7 +237,6 @@ function EmptyRow({ card, batch, index }: { card: EmptyCard; batch: Batch; index
               <Address value={card.tokenId} />
             </Fact>
           </dl>
-          <Provenance />
         </div>
       </details>
     </article>
@@ -262,12 +246,13 @@ function EmptyRow({ card, batch, index }: { card: EmptyCard; batch: Batch; index
 /**
  * One position NFT as public chain data, as one row of the Position NFTs
  * list: the pair and its fee, the producer's range state, the principal and
- * the fees not yet collected, and the block it was read at. The whole row is
- * the summary of a disclosure whose body holds the range against the pool's
- * price (read only on request) and the facts behind the row. No control on it
- * can sign or move anything, and no sentence says the viewer owns it: the
- * owner is the NFT's owner at the snapshot block, public data that proves
- * nothing about who is looking.
+ * the fees not collected. The whole row is the summary of a disclosure whose
+ * body holds the range against the pool's price (read only on request) and
+ * the facts behind the row. Where the figures come from (the block, its time
+ * and age, public data) is the row's title and data attributes, never a
+ * caption or a pill. No control on it can sign or move anything, and no
+ * sentence says the viewer owns it: the owner is the NFT's owner at the
+ * snapshot block, public data that proves nothing about who is looking.
  */
 export function ChainPositionCard({ card, batch, index }: { card: Card; batch: Batch; index: number }) {
   return card.kind === 'live' ? <LiveRow card={card} batch={batch} index={index} /> : <EmptyRow card={card} batch={batch} index={index} />

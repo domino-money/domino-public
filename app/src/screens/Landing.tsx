@@ -3,20 +3,18 @@ import { MarketsTable } from '../components/MarketsTable'
 import { RangeSimulator } from '../components/RangeSimulator'
 import { FeatureCards } from '../components/home/FeatureCards'
 import { HeroArt } from '../components/home/HeroArt'
-import { UniswapStrip } from '../components/home/UniswapStrip'
 import { useInView } from '../components/home/Vignettes'
-import { DominoTokenCard } from '../components/overview/DominoToken'
 import { Chip, Display, LinkButton, LiveDot, PageShell, Pill, cx } from '../components/ui'
 import { ROADMAP } from '../lib/capabilities'
 import type { MarketsState } from '../lib/read/marketsProvider'
 import { useMarkets } from '../lib/read/useMarkets'
 
 /*
- * Home. The headline and the two ways in, what automation does with fees, the
- * Domino token's place, then the selected pools. Below them it explains: how
- * a position comes together, what a range does as the price moves, and what
- * Domino does not do. Home sends no read of its own: the hero chip and the
- * table share the app's one markets provider.
+ * Home. The headline and the two ways in, what automation does with fees,
+ * then the selected pools. Below them it explains: how a position comes
+ * together, what a range does as the price moves, and what Domino does not
+ * do. Home sends no read of its own: the hero chip and the table share the
+ * app's one markets provider.
  */
 
 /**
@@ -29,18 +27,18 @@ const delay = (ms: number): CSSProperties => ({ animationDelay: `${ms}ms` })
 const STEPS: ReadonlyArray<{ n: string; title: string; body: string; roadmap?: ReadonlyArray<string> }> = [
   {
     n: '01',
-    title: 'Choose a pool and a range',
-    body: 'Start from a pool you can see, with its price read from chain. The range planner shows where your band sits against that price.',
+    title: 'Decide which tokens you want to pool, set your range',
+    body: 'Search for an existing pool or create a new one; the range customizer will allow you to decide a range and fee.',
   },
   {
     n: '02',
-    title: 'Review every signature',
-    body: 'Each approval and transaction is shown before you sign it: what it does, what it costs and where it goes.',
+    title: 'Review and sign',
+    body: 'Sign and approve the creation of your automation contract. Only your signed wallet can interact with it; your tokens are safe.',
   },
   {
     n: '03',
-    title: 'Choose what fees do',
-    body: 'Leave them to collect, add them back to the position, or let them open the next range up.',
+    title: 'Automation',
+    body: 'Three choices: self-managing, auto-compounding, Domino-compounding.',
     roadmap: ['Compound', 'Domino'],
   },
 ]
@@ -107,10 +105,10 @@ function Hero() {
       <div className="dm-hero-body">
         <HeroChip />
         <Display as="h1" className={cx('dm-display-hero mt-5 text-balance', RISE)} style={delay(0)}>
-          Put fees to work, <span className="dm-hero-accent">one tile at a time.</span>
+          Earn fees on your tokens, <span className="dm-hero-accent">hassle-free.</span>
         </Display>
         <p className={cx('mt-4 max-w-[60ch] text-body text-fg-muted', RISE)} style={delay(60)}>
-          Open a Uniswap position on Robinhood Chain, choose its range and decide what its earned fees do next. Nothing starts until your wallet signs.
+          Pick a range that suits your strategy, create a position and let us do the rest.
         </p>
         <div className={cx('mt-6 flex w-full items-center justify-center gap-2', RISE)} style={delay(120)}>
           <LinkButton href="#/markets" className="max-md:h-11 max-md:flex-1 max-md:px-[18px]">
@@ -133,7 +131,7 @@ function HowItWorks() {
     <section id="learn" className="mt-12 grid gap-x-10 gap-y-6 md:mt-16 lg:grid-cols-[minmax(0,1fr)_minmax(0,2fr)]">
       <div className="min-w-0 lg:pt-5">
         <h2 className="text-body font-medium text-fg-subtle">How it works</h2>
-        <p className="dm-display-title mt-3 max-w-[16ch] text-fg">Pick a pool. Set a range. Choose what fees do.</p>
+        <p className="dm-display-title mt-3 max-w-[16ch] text-fg">Pick a pool. Set a range. Amplify the fees you receive.</p>
       </div>
       <ol className="dm-card m-0 min-w-0 list-none p-2">
         {STEPS.map((step, index) => (
@@ -180,12 +178,9 @@ export function Landing() {
     <PageShell>
       <Hero />
       <FeatureCards className="mt-6" delay={60} />
-      <div className={cx('mt-10', RISE)} style={delay(120)}>
-        <DominoTokenCard />
-      </div>
       {/* The pools card holds an inline dialog, so it takes no entrance: nothing may leave a transform on its ancestors. */}
-      <section id="pools" className="mt-6">
-        <MarketsTable variant="featured" footer={<UniswapStrip />} />
+      <section id="pools" className="mt-10">
+        <MarketsTable variant="featured" />
       </section>
       <HowItWorks />
       <section id="ranges" className="mt-12 md:mt-16">

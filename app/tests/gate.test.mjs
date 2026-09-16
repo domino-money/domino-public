@@ -84,6 +84,24 @@ test('the unavailable page offers no form to submit', async () => {
   assert.match(text, /Access is paused/);
 });
 
+test('the access page calls nothing a beta and asks no one to come back later, in any state', async () => {
+  const pages = {
+    ask: await (await run(navigate('/'))).text(),
+    wrong: await (await run(loginPost('wrong'))).text(),
+    unavailable: await (await run(navigate('/'), {})).text(),
+  };
+  for (const [state, html] of Object.entries(pages)) {
+    // The app recognises this page by its exact title (GATE_PAGE_MARKER in src/lib/read/interpret.ts).
+    assert.match(html, /<title>Domino · Access<\/title>/, state);
+    // What a visitor reads: the markup and styles removed, so the login path's name does not count.
+    const words = html.replace(/<style>[\s\S]*<\/style>/, ' ').replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ');
+    assert.doesNotMatch(words, /\bbeta\b|\blater\b|temporarily/i, state);
+    assert.match(words, /Invitation only/, state);
+  }
+  assert.match(pages.ask, /Enter the access password from your invitation to continue\./);
+  assert.match(pages.unavailable, /<h1>Access is paused\.<\/h1>\s*<p class="lede">Nothing is wrong on your side\.<\/p>/);
+});
+
 // ---------------------------------------------------------------------------
 // Without the cookie nothing of the app leaves the server.
 // ---------------------------------------------------------------------------

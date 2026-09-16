@@ -13,7 +13,7 @@ import * as runtime from '../../api-contracts/read-v1/runtime.mjs';
 const require = createRequire(import.meta.url);
 const built = (name) => require(`../.test-build/app/src/${name}.js`);
 const { knownTokens, searchTokens } = built('lib/read/screens/tokenSearch');
-const { candidateFromToken } = built('lib/read/screens/tokens');
+const { candidateFromToken, handoffFor } = built('lib/read/screens/tokens');
 const { catalogueTokens } = built('config/selectedPoolCatalogue');
 
 const READ = resolve(import.meta.dirname, '../../api-contracts/read-v1');
@@ -176,6 +176,30 @@ test('exclusion is not the search’s business: an excluded token is still found
   assert.equal(searchTokens.length, 2, 'query and known; the limit has a default and there is no exclude');
   assert.deepEqual(hits(searchTokens('USDG', known)), [USDG]);
   assert.deepEqual(hits(searchTokens(USDG, known)), [USDG]);
+});
+
+test('a search’s token read is handed over only for exactly the wire it read', () => {
+  const read = pasted(USDG, 'USDG', `0x${USDG.slice(2).toUpperCase()}`);
+  assert.equal(handoffFor(read, read.wire), read);
+  assert.equal(handoffFor(read, USDG), null, 'another spelling is another request on the wire');
+  assert.equal(handoffFor(walletRow(USDG, 'USDG', '1'), USDG), null, 'a wallet row is not a token read');
+  assert.equal(handoffFor({ ...pasted(USDG, 'USDG'), block: null }, USDG), null, 'a candidate with no block was never read');
+  assert.equal(handoffFor(null, USDG), null);
+  assert.equal(handoffFor(undefined, USDG), null);
+});
+
+test('only a selectable answer is handed over: an unreadable token, whose reason may pass, is read again by the view it opens', () => {
+  const read = (name) => candidateFromToken(runtime.assertResponse('token', fixture(name)), OTHER);
+  for (const name of ['token.unavailable', 'token.call-gas-limit']) {
+    const unreadable = read(name);
+    assert.equal(unreadable.why, 'unreadable', name);
+    assert.equal(handoffFor(unreadable, OTHER), null, `${name}: a transient answer stays the search’s, and the view asks for itself`);
+  }
+  assert.equal(handoffFor(read('token.missing-contract'), OTHER), null, 'nothing that cannot be chosen is handed over');
+  for (const name of ['token.success', 'token.missing-decimals', 'token.zero-decimals']) {
+    const usable = read(name);
+    assert.equal(handoffFor(usable, OTHER), usable, `${name}: a selectable answer, partial metadata included, is handed over`);
+  }
 });
 
 test('the selected pools’ catalogue names six tokens by address, none of them ETH, and USDG is found by name', () => {

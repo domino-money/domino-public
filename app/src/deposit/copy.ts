@@ -5,7 +5,7 @@
  */
 import type { DepositFailure } from './client'
 import { DEPOSIT_ERROR_UI } from './errors'
-import type { AmountBasis, StepKind } from './types'
+import type { AmountBasis, OperationState, StepKind } from './types'
 
 export const LAB_BANNER = 'Synthetic fixture: not your wallet, not live. Every answer on this page comes from the deposit-v1 package fixtures.'
 export const NO_SEND_STATUS =
@@ -16,8 +16,21 @@ export const LATCH_COPY = "Prepare is off for this deposit: the service refused 
 export const SUPPORT_REQUIRED =
   "Support required. This can't be retried, cancelled or cleared here, and starting a new deposit won't resolve it. The evidence is kept."
 export const REPORT_HINT = 'The hash is only a hint. Status comes from the chain.'
-export const FIXED_FACTS = 'No server broadcast. No automation.'
+export const FIXED_FACTS = 'Your wallet sends every transaction. Depositing starts no automation.'
 export const HASH_PATTERN = /^0x[0-9a-f]{64}$/i
+
+/** Every operation state in words, for list rows. */
+export const STATE_LABEL: Readonly<Record<OperationState, string>> = {
+  draft: 'Draft',
+  awaiting_wallet: 'Awaiting wallet',
+  pending: 'Pending',
+  confirmed: 'Confirmed',
+  reverted: 'Reverted',
+  cancel_requested: 'Cancellation requested',
+  cancelled: 'Cancelled',
+  attention: 'Needs attention',
+  superseded: 'Replaced',
+}
 
 export const STEP_KIND: Readonly<Record<StepKind, string>> = {
   erc20_reset: 'ERC-20 allowance reset',
@@ -96,11 +109,11 @@ export function failureCopy(failure: DepositFailure, context: FailureContext = {
       return text
     }
     case 'gate_required':
-      return 'Your beta access has expired. Reload the page and enter the password again.'
+      return 'Your site access has expired. Reload the page and enter the password again.'
     case 'gate_unavailable':
       return 'The site is temporarily unavailable. Try again later.'
     case 'not_deployed':
-      return "Deposits aren't enabled on this deployment."
+      return 'The deposit service is unavailable right now. Nothing changed.'
     case 'contract':
       return failure.detail === 'owner'
         ? 'This answer was about another account, so nothing from it is shown or remembered.'

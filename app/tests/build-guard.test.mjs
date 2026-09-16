@@ -261,7 +261,7 @@ test('findForbidden: the words and values of sample, practice, fixture and test 
   ]) {
     assert.ok(findForbidden(text).length > 0, text);
   }
-  for (const text of ['/api/read/v1/capabilities', 'X-Domino-Read-Contract', 'Live data isn\'t connected yet', 'Selected pools', 'GeckoTerminal', 'provenance.fixture', 'Global Dollar', 'MEMEX', 'Not available in the alpha']) {
+  for (const text of ['/api/read/v1/capabilities', 'X-Domino-Read-Contract', 'Live data unavailable', 'Selected pools', 'GeckoTerminal', 'provenance.fixture', 'Global Dollar', 'MEMEX', 'Not available in the alpha']) {
     assert.deepEqual(findForbidden(text), [], text);
   }
   assert.equal(findForbidden('Sample sample SAMPLE sample', 2).length, 2, 'hits are capped per marker');

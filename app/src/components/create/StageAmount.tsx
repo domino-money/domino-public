@@ -9,8 +9,9 @@ import { WalletBalance } from './WalletBalance'
 
 /**
  * Step 2, Range: the price band, drawn on the pool's price as read, through
- * the shared range controls. "Refresh price" is the only read here: one
- * pools read of this pool, on request.
+ * the shared range controls. Their only read is the price again: once it is
+ * more than 5 minutes old, the next change to the range reads it, one pools
+ * read of this pool at a time. There is no control to press for it.
  */
 export function StageRange({
   source,
@@ -80,7 +81,7 @@ export function StageAmount({
         error={budgetError}
         below={
           budget.ok && decimals !== null ? (
-            <p className="dm-hint tnum break-all" data-budget-raw={budget.raw}>
+            <p className="dm-hint tnum break-all" data-budget-raw={budget.raw} title={CREATE.amount.rawUnitsTitle}>
               {CREATE.amount.rawUnits(budget.raw, decimals)}
             </p>
           ) : null

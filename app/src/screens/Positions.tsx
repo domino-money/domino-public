@@ -1,6 +1,5 @@
 import { lazy, Suspense, type CSSProperties, type ReactNode } from 'react'
 import PortfolioBody from '../components/portfolio/PortfolioBody'
-import { DominoTokenCard } from '../components/overview/DominoToken'
 import { automateHref, marketsHref, newPositionHref } from '../components/explore/routes'
 import { IconAutomate, IconPositions, IconReceipt } from '../components/icons'
 import { Chip, Display, EmptyState, LinkButton, PageShell } from '../components/ui'
@@ -140,7 +139,7 @@ function AutomationCard() {
           <IconPositions className="dm-acct-auto-icon" />
           <div className="min-w-0">
             <p className="dm-acct-auto-name">
-              <span>Domino sequences</span>
+              <span>Domino-compound</span>
               <RoadmapPill name="Domino" />
             </p>
             <p className="dm-acct-auto-text">The next range opens one step higher.</p>
@@ -217,9 +216,6 @@ export function Positions() {
         <div className="dm-acct-col">
           <div className="dm-acct-slot dm-acct-o3 animate-rise" style={rise(3)}>
             <PortfolioBody identity={identity} />
-          </div>
-          <div className="dm-acct-slot dm-acct-o5">
-            <DominoTokenCard variant="compact" />
           </div>
           <AutomationCard />
         </div>

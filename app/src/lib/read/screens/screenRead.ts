@@ -4,10 +4,13 @@
  * bounded to 12 distinct pending reads, and cancelled when its last waiter
  * leaves. This adds the one bound the scheduler does not have: a 60 s budget
  * per read that counts time spent queued, so a read stuck behind others is
- * given up rather than left waiting. It retries nothing.
+ * given up rather than left waiting. It retries nothing: `askAgainLater`
+ * below only says when a screen may ask again after a busy or transient
+ * failure, and the screen asks.
  */
 import { realClock, type Clock } from '../pipeline'
-import type { ReadOutcome, ReadRequests, ReadRoute, ReadSource } from '../types'
+import type { ReadOptions, ReadOutcome, ReadRequests, ReadRoute, ReadSource, RouteCheck } from '../types'
+import { quietDelayMs, type TransientCandidate } from './transient'
 
 export const SCREEN_BUDGET_MS = 60_000
 
@@ -79,8 +82,11 @@ export async function readWithin<R extends ReadRoute>(source: ReadSource, route:
  */
 export function withReadBudget(source: ReadSource, options: { budgetMs?: number; clock?: Clock } = {}): ReadSource {
   const { budgetMs = SCREEN_BUDGET_MS, clock = realClock } = options
+  const listed = source.routeEnabled?.bind(source)
   const budgeted: ReadSource = {
     transport: source.transport,
+    // Whether a route is listed is the source's capabilities answer, not a read: it passes through, unbudgeted.
+    ...(listed ? { routeEnabled: (route: ReadRoute, opts?: Pick<ReadOptions, 'signal' | 'deadlineAt'>): Promise<RouteCheck> => listed(route, opts) } : {}),
     async read(route, request, options) {
       const outcome = await readWithin(source, route, request, { signal: options?.signal ?? new AbortController().signal, budgetMs, clock, deadlineAt: options?.deadlineAt, onAttempt: options?.onAttempt })
       if (outcome.state !== 'local') return outcome
@@ -93,3 +99,68 @@ export function withReadBudget(source: ReadSource, options: { budgetMs?: number;
 
 /** Outcomes nobody sees: a read the screen itself cancelled. Never rendered, never announced. */
 export const isSilent = (outcome: { state: string }) => outcome.state === 'aborted'
+
+// ---------------------------------------------------------------------------
+// Asking again quietly
+// ---------------------------------------------------------------------------
+
+export { QUIET_ATTEMPTS } from './transient'
+
+/**
+ * How long a pool screen waits before asking again on its own, in ms, or
+ * null when it does not ask again. Which failures pass, how many times and
+ * how long, jitter included, is the one rule in transient.ts that the wallet,
+ * token and position screens follow too. Nothing is said while it waits; the
+ * figure it would fill shows a dash with the reason in its title.
+ */
+export function quietRetryDelay(outcome: TransientCandidate, attempt: number, random?: () => number): number | null {
+  return quietDelayMs(outcome, attempt, random)
+}
+
+/** The page's visibility, as `document` has it; absent outside a browser. */
+export interface PageVisibility {
+  readonly hidden: boolean
+  addEventListener(type: 'visibilitychange', listener: () => void): void
+  removeEventListener(type: 'visibilitychange', listener: () => void): void
+}
+
+const documentVisibility = (): PageVisibility | null => (typeof document === 'undefined' ? null : document)
+
+/**
+ * Waits until a failed read may be asked again: its quiet delay, then, while
+ * the page is hidden, until it is shown. Resolves true when it is time,
+ * false at once when this failure is not asked again, and false when the
+ * signal ends the wait. It reads nothing itself. The delay's jitter draws on
+ * `random` when given, else on the clock's own, so a test clock decides it.
+ */
+export async function askAgainLater(
+  outcome: TransientCandidate,
+  attempt: number,
+  signal: AbortSignal,
+  { clock = realClock, page = documentVisibility(), random }: { clock?: Clock; page?: PageVisibility | null; random?: () => number } = {},
+): Promise<boolean> {
+  // A partial test clock may have no random of its own: then Math.random draws.
+  const draw = random ?? (typeof clock.random === 'function' ? () => clock.random() : undefined)
+  const delay = quietRetryDelay(outcome, attempt, draw)
+  if (delay === null || signal.aborted) return false
+  try {
+    await clock.sleep(delay, signal)
+  } catch {
+    return false
+  }
+  if (signal.aborted) return false
+  if (!page?.hidden) return true
+  return new Promise<boolean>((resolve) => {
+    const done = (again: boolean) => {
+      page.removeEventListener('visibilitychange', shown)
+      signal.removeEventListener('abort', stop)
+      resolve(again)
+    }
+    const shown = () => {
+      if (!page.hidden) done(true)
+    }
+    const stop = () => done(false)
+    page.addEventListener('visibilitychange', shown)
+    signal.addEventListener('abort', stop, { once: true })
+  })
+}

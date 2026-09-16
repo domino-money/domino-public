@@ -161,6 +161,20 @@ export const SCREEN_CASES: ScreenCase[] = [
   lookup('nft.zero', [{ fixture: gateway('nft-positions.zero') }]),
   lookup('nft.stale', [{ fixture: gateway('nft-positions.stale') }]),
   lookup('nft.dynamicFee', [{ fixture: gateway('nft-positions.success'), mutate: dynamicFee }]),
+  // Every NFT's range at the usable tick limits of its pool's spacing: full range, 0 to ∞.
+  lookup('nft.fullRange', [
+    {
+      fixture: gateway('nft-positions.success'),
+      mutate: (body: unknown) => {
+        for (const item of obj(body).items as Json[]) {
+          const spacing = obj(item.poolKey).tick_spacing as number
+          item.tickLower = Math.ceil(-887272 / spacing) * spacing
+          item.tickUpper = Math.floor(887272 / spacing) * spacing
+        }
+        return body
+      },
+    },
+  ]),
   { id: 'nft.noDecimals', kind: 'lookup', script: { 'nft-positions': [success], token: [BASE_TOKENS[0], { fixture: gateway('token.missing-decimals'), expectRequest: { token: FIXTURE_TOKEN } }] } },
   lookup('nft.batch503', [success, { fixture: errorFixture('nft-positions.upstream_unavailable'), mutate: withError('nft_live_position_has_no_owner') }]),
   lookup('nft.refreshFails', [success, { fixture: errorFixture('nft-positions.upstream_unavailable') }]),
@@ -232,6 +246,9 @@ export const SCREEN_CASES: ScreenCase[] = [
   { id: 'figures.dynamicFee', kind: 'figures', script: withDynamicMarket(marketScript('provider', { fixture: gateway('pool-activity.partial') })) },
   // A pool-market read that never answers, under a 400 ms budget instead of the app's 60 s.
   { id: 'figures.budget', kind: 'figures', script: marketScript('provider', { fixture: gateway('pool-activity.partial') }), delay: (route) => (route === 'pool-market' ? { hang: true } : undefined), budgetMs: 400 },
+  // markets-snapshot listed: the stored row first; a store served 400 s after it was filled is read again on demand.
+  { id: 'figures.snapshot', kind: 'figures', script: marketScript('snapshot-current', { fixture: gateway('pool-activity.partial') }) },
+  { id: 'figures.snapshotStale', kind: 'figures', script: marketScript('snapshot-stale-entry', { fixture: gateway('pool-activity.partial') }) },
 
   { id: 'local.flood', kind: 'flood', script: { token: BASE_TOKENS }, delay: () => ({ hang: true }) },
   { id: 'local.budget', kind: 'budget', script: { token: BASE_TOKENS }, delay: () => ({ hang: true }) },

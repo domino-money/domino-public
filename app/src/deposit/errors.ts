@@ -43,7 +43,7 @@ export const DEPOSIT_ERROR_UI: Readonly<Record<DepositErrorCode, DepositDisposit
   deposit_invalid_request: { copy: 'The deposit service rejected this request. Nothing changed.', retry: 'none' },
   invalid_request: { copy: 'The deposit service rejected this request. Nothing changed.', retry: 'none' },
   deposit_not_found: { copy: 'Not found. It may have been archived.', retry: 'none', notFound: true },
-  route_not_available: { copy: "Deposits aren't enabled on this deployment.", retry: 'none' },
+  route_not_available: { copy: 'The deposit service is unavailable right now. Nothing changed.', retry: 'none' },
   deposit_idempotency_conflict: { copy: 'This draft request was already used with different details.', retry: 'none' },
   deposit_version_conflict: { copy: 'This deposit changed in another tab or session. Showing the latest state.', retry: 'none', autoGet: true },
   deposit_state_conflict: { copy: "That action doesn't apply to this deposit's current state. Showing the latest state.", retry: 'none', autoGet: true },

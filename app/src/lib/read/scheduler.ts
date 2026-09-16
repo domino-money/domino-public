@@ -9,6 +9,16 @@
  * an identical read sharing the request already queued or in flight, and a
  * read nobody waits for any more cancelled.
  *
+ * The queue also keeps the gateway's per-client budget for this tab: a burst
+ * of five, then one more read every two seconds (30 a minute). Every attempt
+ * on the wire takes one, an automatic retry included, so the queue waits for
+ * the budget the way the gateway counts it instead of drawing its 429, with
+ * a quarter of a read kept in hand for requests that meet less transit delay
+ * than the one before them. And
+ * after a read comes back busy, the whole queue holds for the Retry-After
+ * that answer asked for, plus up to R-1's 250 ms of jitter: the next read,
+ * whichever it is, is not sent into a service that has just said it is full.
+ *
  * R-1's 60 s for a read start here, when it is queued, so they cover the time
  * it waits in line; the source is handed what is left. They and the 1.1 s
  * between starts are measured on the monotonic clock (pipeline.ts), so a step
@@ -30,7 +40,18 @@
  * turn a gate 401 into a contract mismatch.
  */
 import { BRIDGE_RETRY, realClock, settleBy, type Clock } from './pipeline'
-import type { Provenance, ReadOptions, ReadOutcome, ReadRequests, ReadRoute, ReadSource } from './types'
+import type { Provenance, ReadOptions, ReadOutcome, ReadRequests, ReadRoute, ReadSource, RouteCheck } from './types'
+
+/** A per-client budget: `burst` attempts at once, then `perMinute` a minute. */
+export interface ReadBudget {
+  burst: number
+  perMinute: number
+}
+
+/** The gateway's per-client budget (backend ClientBudgets), which this tab keeps for itself. */
+export const GATEWAY_BUDGET: ReadBudget = { burst: 5, perMinute: 30 }
+/** Of an attempt, what the queue keeps in hand beyond the one it spends: 500 ms at 30 a minute, for transit jitter. */
+export const BUDGET_RESERVE = 0.25
 
 export interface SchedulerOptions {
   minIntervalMs?: number
@@ -38,6 +59,8 @@ export interface SchedulerOptions {
   /** A read's whole budget from the moment it is queued: R-1's 60 s. */
   totalMs?: number
   clock?: Clock
+  /** The attempts this tab may send: the gateway's budget unless given. Null: spacing alone. */
+  budget?: ReadBudget | null
 }
 
 interface Job {
@@ -51,12 +74,43 @@ interface Job {
 
 export function createScheduledSource(
   source: ReadSource,
-  { minIntervalMs = 1100, maxPending = 12, totalMs = BRIDGE_RETRY.totalMs, clock = realClock }: SchedulerOptions = {},
+  { minIntervalMs = 1100, maxPending = 12, totalMs = BRIDGE_RETRY.totalMs, clock = realClock, budget = GATEWAY_BUDGET }: SchedulerOptions = {},
 ): ReadSource {
   const queue: Job[] = []
   const byKey = new Map<string, Job>()
   let running = false
   let lastStart = -Infinity
+  /** No read starts before this monotonic reading: the Retry-After of the last busy answer. */
+  let holdUntil = -Infinity
+
+  // The per-client budget, on the monotonic clock: tokens refill at `perMinute` a minute up to `burst`.
+  const perMs = budget ? budget.perMinute / 60_000 : 0
+  let tokens = budget ? budget.burst : Infinity
+  let filledAt = clock.monotonic()
+  const refill = () => {
+    if (!budget) return
+    const at = clock.monotonic()
+    tokens = Math.min(budget.burst, tokens + Math.max(0, at - filledAt) * perMs)
+    filledAt = at
+  }
+  /**
+   * Ms until an attempt is in the budget, with a quarter of one more in hand; 0 when it is there now. The
+   * gateway counts an attempt when it arrives, and transit is not the same for every request: without the
+   * quarter, a request that met less delay than the one before it would arrive a moment early and draw the
+   * 429 this budget is here to avoid. The burst and the rate are the gateway's. A retry may have spent past zero.
+   */
+  const budgetWait = () => {
+    if (!budget) return 0
+    refill()
+    const wanted = 1 + BUDGET_RESERVE
+    // A thousandth of a millisecond forgiven, so the float sums of refilling never add a whole millisecond.
+    return tokens >= wanted - 1e-9 ? 0 : Math.ceil((wanted - tokens) / perMs - 1e-3)
+  }
+  const spend = () => {
+    if (!budget) return
+    refill()
+    tokens -= 1
+  }
 
   async function drain() {
     if (running) return
@@ -65,7 +119,9 @@ export function createScheduledSource(
       for (let job = queue.shift(); job; job = queue.shift()) {
         const { signal } = job.controller
         if (signal.aborted) continue
-        const wait = lastStart + minIntervalMs - clock.monotonic()
+        const now = clock.monotonic()
+        // One wait for all three: the spacing, a busy answer's hold, and the budget. Nothing else spends it meanwhile.
+        const wait = Math.max(lastStart + minIntervalMs - now, holdUntil - now, budgetWait())
         if (wait > 0) {
           try {
             await clock.sleep(wait, signal)
@@ -78,7 +134,13 @@ export function createScheduledSource(
         // of as soon as nobody waits: a source that ignores the abort cannot hold the queue.
         const settled = await settleBy(clock, job.run(signal), Infinity, signal)
         if (byKey.get(job.key) === job) byKey.delete(job.key)
-        if (settled.kind === 'done') job.resolve(settled.value)
+        if (settled.kind !== 'done') continue
+        // Busy after R-1, or with a wait its read could not afford: the whole queue waits what the service asked.
+        const outcome = settled.value
+        if (outcome.state === 'busy') {
+          holdUntil = Math.max(holdUntil, clock.monotonic() + outcome.retryAfterSeconds * 1000 + Math.floor(clock.random() * BRIDGE_RETRY.jitterMs))
+        }
+        job.resolve(outcome)
       }
     } finally {
       running = false
@@ -95,8 +157,12 @@ export function createScheduledSource(
     job.resolve(outcome)
   }
 
+  const inner = source.routeEnabled?.bind(source)
   return {
     transport: source.transport,
+    // Whether a route is listed is the source's own capabilities answer, never a job: it takes no place in
+    // the queue and moves no pacing, so a screen can skip a route that is off without waiting a turn for it.
+    ...(inner ? { routeEnabled: (route: ReadRoute, opts?: Pick<ReadOptions, 'signal' | 'deadlineAt'>): Promise<RouteCheck> => inner(route, opts) } : {}),
     read<R extends ReadRoute>(route: R, request: ReadRequests[R], opts: ReadOptions = {}): Promise<ReadOutcome<R>> {
       // The budget runs from here. A restart keeps what is left of the read it restarts.
       const deadlineAt = Math.min(opts.deadlineAt ?? Infinity, clock.monotonic() + totalMs)
@@ -116,9 +182,10 @@ export function createScheduledSource(
         const promise = new Promise<ReadOutcome>((done) => {
           resolve = done
         })
-        // Every attempt of the job, an automatic retry included, moves the pace on.
+        // Every attempt of the job, an automatic retry included, moves the pace on and spends the budget.
         const onAttempt = () => {
           lastStart = clock.monotonic()
+          spend()
         }
         job = { key, run: (signal) => source.read(route, request, { signal, deadlineAt, onAttempt }), controller: new AbortController(), waiters: 0, promise, resolve }
         byKey.set(key, job)

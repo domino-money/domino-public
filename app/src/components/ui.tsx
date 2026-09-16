@@ -622,9 +622,9 @@ export function Td({
 }
 
 /**
- * The table card: an optional serif title with an action, a status slot, the
- * table with its rounded header band and row pills, and a full-bleed footer
- * band. Horizontal scroll stays inside it, never on the page.
+ * The table card: an optional serif title with an action, a status slot, and
+ * the table with its rounded header band and row pills. Horizontal scroll
+ * stays inside it, never on the page.
  */
 export function TableShell({
   children,
@@ -634,7 +634,6 @@ export function TableShell({
   titleRef,
   action,
   status,
-  footer,
   rowHeight,
   data,
   style,
@@ -648,7 +647,6 @@ export function TableShell({
   titleRef?: Ref<HTMLHeadingElement>
   action?: ReactNode
   status?: ReactNode
-  footer?: ReactNode
   rowHeight?: 56 | 64 | 72
   /** Spread on the card as data attributes: `{ 'selected-pools': '' }` becomes `data-selected-pools=""`. */
   data?: Record<string, string>
@@ -678,7 +676,6 @@ export function TableShell({
           {children}
         </table>
       </div>
-      {footer && <div className="dm-table-footer">{footer}</div>}
     </div>
   )
 }

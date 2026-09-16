@@ -20,13 +20,16 @@ import type {
   PoolMetricsResponse,
   PoolPositionsResponse,
   PoolsResponse,
+  SnapshotPoolEntry,
   TokenMetadata,
   TokenResponse,
   UnknownToken,
+  VerifiedPool,
 } from 'api-contracts/read-v1/types'
+import type { PoolAprEstimate } from 'api-contracts/read-v2/types'
 import { formatUnits, formatUsdCompact, isZero, parseDecimal, toFixed } from './decimal'
 import { reasonText } from './describe'
-import type { ArtworkKey, Observation, ReadOutcome, ReadRoute, TokenDisplay } from './types'
+import type { ArtworkKey, EstimateReason, Observation, ReadOutcome, ReadRoute, TokenDisplay } from './types'
 import type { Market, MarketProvenance, Metric } from '../markets'
 
 export type FactState = 'value' | 'zero' | 'absent' | 'partial' | 'stale' | 'not-current' | 'unavailable' | 'rejected' | 'raw'
@@ -566,6 +569,8 @@ export function projectFamily<R extends ReadRoute>(outcome: Extract<ReadOutcome<
 
 const unavailable = (reason: string): Metric => ({ value: null, state: 'unavailable', reason })
 
+type MarketObservation = PoolMarketResponse['market']
+
 /**
  * TVL and 24h volume, in order of precedence: Domino's qualified figure when
  * pool-metrics says usableAsCurrent24h; otherwise the provider's, named, when
@@ -574,11 +579,10 @@ const unavailable = (reason: string): Metric => ({ value: null, state: 'unavaila
  */
 function figure(
   metrics: ReadOutcome<'pool-metrics'> | null,
-  market: PoolMarketResponse,
+  m: MarketObservation,
   qualified: (v: Calculated) => string,
-  provider: (m: NonNullable<PoolMarketResponse['market']['data']>) => string | null,
+  provider: (m: NonNullable<MarketObservation['data']>) => string | null,
 ): Metric {
-  const m = market.market
   const metricsData = metrics?.state === 'ok' ? metrics.data : null
   const v = metricsData?.valuation
   if (metricsData && v && v.status !== 'unavailable' && metricsData.usableAsCurrent24h) {
@@ -599,8 +603,8 @@ function figure(
 }
 
 function apr(metrics: ReadOutcome<'pool-metrics'> | null): Metric {
-  // The lean table never reads pool-metrics, and nothing else in read-v1 carries a fee APR:
-  // unavailable, with that reason. Never a zero, never an estimate.
+  // Without pool-metrics nothing in read-v1 carries a fee APR: unavailable,
+  // with that reason. Never a zero, never an estimate.
   if (!metrics) return unavailable('fee_apr_not_provided')
   if (metrics.state !== 'ok') return unavailable(metrics.state)
   const d = metrics.data
@@ -613,67 +617,178 @@ function apr(metrics: ReadOutcome<'pool-metrics'> | null): Metric {
   return { value: v.feeAprPercent, state: basis, reason: basis === 'reference' ? 'reference_analytics_only' : partialReason(d, v) }
 }
 
+/**
+ * A 24h figure only Domino's own history carries (LP fees, time-weighted
+ * TVL): qualified when pool-metrics says usableAsCurrent24h, otherwise on its
+ * non-current basis, otherwise unavailable with the reason. No provider
+ * reports these, so there is no provider figure to fall back on.
+ */
+function historyFigure(metrics: ReadOutcome<'pool-metrics'> | null, pick: (v: Calculated) => string): Metric {
+  if (!metrics) return unavailable('pool_metrics_not_requested')
+  if (metrics.state !== 'ok') return unavailable(metrics.state)
+  const d = metrics.data
+  const v = d.valuation
+  if (v.status === 'unavailable') return unavailable(v.reason)
+  if (d.usableAsCurrent24h) return { value: pick(v), state: 'qualified' }
+  const basis = metricsBasis(d, v)
+  if (basis === 'stale') return { value: pick(v), state: 'stale', asOf: d.snapshot.timestamp }
+  return { value: pick(v), state: basis, reason: basis === 'reference' ? 'reference_analytics_only' : partialReason(d, v) }
+}
+
 export interface RowReads {
   market: Extract<ReadOutcome<'pool-market'>, { state: 'ok' }>
-  /** Null when not requested, which every row of the lean table is. */
+  /** Null when not requested: pool-metrics is read only where the deployment lists it. */
   metrics: ReadOutcome<'pool-metrics'> | null
   /** Token reads by lowercase address. */
   tokens: ReadonlyMap<string, ReadOutcome<'token'>>
 }
 
-export function projectMarketRow({ market, metrics, tokens }: RowReads): Market {
-  const d = market.data
-  const [currency0, currency1] = d.pool.currencies
+/** Everything a row is made of, whichever read it came from. */
+interface RowInput {
+  poolId: string
+  pool: VerifiedPool
+  /** The block the pool was verified at. */
+  block: number
+  market: MarketObservation
+  /** Seconds since the provider figures were retrieved, when this answer arrived; null when unknown. */
+  cacheAgeSeconds: number | null
+  /** The answer the row came in: when it arrived, on both clocks. */
+  answer: Extract<ReadOutcome, { state: 'ok' }>
+  estimate: { data: PoolAprEstimate | null; reason: EstimateReason }
+  metrics: ReadOutcome<'pool-metrics'> | null
+  tokens: ReadonlyMap<string, ReadOutcome<'token'>>
+  origin: 'pool-market' | 'markets-snapshot'
+  /** A stored state's age when it was served. */
+  servedAgeSeconds?: number
+}
+
+function projectRow(input: RowInput): Market {
+  const { pool, market: m, metrics, tokens, answer } = input
+  const [currency0, currency1] = pool.currencies
   const token = (address: string) => {
     const read = tokens.get(lower(address))
     return read?.state === 'ok' ? tokenDisplay(read.data.asset) : unreadToken(address)
   }
   const base = token(currency0)
   const quote = token(currency1)
+  const received = answer.provenance
   const provenance: MarketProvenance = {
-    block: d.snapshot.number,
+    block: input.block,
     market: {
-      status: d.market.status,
-      reason: d.market.reason,
-      cacheAgeSeconds: d.market.cache.ageSeconds,
-      freshForSeconds: d.market.cache.freshForSeconds,
-      receivedAt: market.provenance.receivedAt,
-      ...(market.provenance.receivedMonotonic !== undefined ? { receivedMonotonic: market.provenance.receivedMonotonic } : {}),
+      status: m.status,
+      reason: m.reason,
+      cacheAgeSeconds: input.cacheAgeSeconds,
+      freshForSeconds: m.cache.freshForSeconds,
+      receivedAt: received.receivedAt,
+      ...(received.receivedMonotonic !== undefined ? { receivedMonotonic: received.receivedMonotonic } : {}),
     },
     metrics: metrics === null ? 'not_requested' : metrics.state === 'ok' ? { freshness: metrics.data.freshness.status, ageSeconds: metrics.data.freshness.ageSeconds } : null,
-    fixtures: [market, metrics, ...tokens.values()]
+    fixtures: [answer, metrics, ...tokens.values()]
       .map((outcome) => outcome?.provenance.fixture)
       .filter((file): file is string => typeof file === 'string'),
+    origin: input.origin,
   }
   return {
-    key: identityKey(d.poolId),
-    poolId: lower(d.poolId),
+    key: identityKey(input.poolId),
+    poolId: lower(input.poolId),
     base: tokenText(base),
     quote: tokenText(quote),
     tokens: { base, quote },
-    feePips: d.pool.poolKey.feeMode === 'fixed' ? d.pool.poolKey.fee_pips : null,
+    feePips: pool.poolKey.feeMode === 'fixed' ? pool.poolKey.fee_pips : null,
     protocol: 'v4',
-    tvlUsd: figure(metrics, d, (v) => v.tvlUsd, (m) => m.reportedLiquidityUsd),
-    volume24hUsd: figure(metrics, d, (v) => v.grossInputVolumeUsd, (m) => m.volume24hUsd),
+    tvlUsd: figure(metrics, m, (v) => v.tvlUsd, (data) => data.reportedLiquidityUsd),
+    volume24hUsd: figure(metrics, m, (v) => v.grossInputVolumeUsd, (data) => data.volume24hUsd),
 
     feeAprPercent: apr(metrics),
+    lpFees24hUsd: historyFigure(metrics, (v) => v.tradingLpFeesUsd),
+    timeWeightedTvlUsd: historyFigure(metrics, (v) => v.timeWeightedAverageTvlUsd),
     feeAprEstimate: {
-      data: market.estimate ?? null,
-      reason: market.estimateReason ?? 'estimate_not_enabled',
-      receivedAt: market.provenance.receivedAt,
-      receivedMonotonic: market.provenance.receivedMonotonic,
+      data: input.estimate.data,
+      reason: input.estimate.reason,
+      receivedAt: received.receivedAt,
+      receivedMonotonic: received.receivedMonotonic,
     },
-    ...(d.market.data ? { chartTokens: { base: d.market.data.baseToken, quote: d.market.data.quoteToken } } : {}),
-    // The verified pool's own state in this same read: the price is the pool's
+    ...(m.data ? { chartTokens: { base: m.data.baseToken, quote: m.data.quoteToken } } : {}),
+    // The verified pool's own state in this same answer: the price is the pool's
     // ratio from it (marketPrice.ts), never the provider's and never dollars.
     poolState: {
-      sqrtPriceX96: d.pool.sqrtPriceX96,
-      tick: d.pool.tick,
-      tickSpacing: d.pool.poolKey.tick_spacing,
-      block: d.snapshot.number,
-      currency0: lower(d.pool.poolKey.currency0),
-      currency1: lower(d.pool.poolKey.currency1),
+      sqrtPriceX96: pool.sqrtPriceX96,
+      tick: pool.tick,
+      tickSpacing: pool.poolKey.tick_spacing,
+      block: input.block,
+      currency0: lower(pool.poolKey.currency0),
+      currency1: lower(pool.poolKey.currency1),
+      ...(input.servedAgeSeconds !== undefined ? { servedAgeSeconds: input.servedAgeSeconds } : {}),
     },
     provenance,
   }
+}
+
+export function projectMarketRow({ market, metrics, tokens }: RowReads): Market {
+  const d = market.data
+  return projectRow({
+    poolId: d.poolId,
+    pool: d.pool,
+    block: d.snapshot.number,
+    market: d.market,
+    cacheAgeSeconds: d.market.cache.ageSeconds,
+    answer: market,
+    estimate: { data: market.estimate ?? null, reason: market.estimateReason ?? 'estimate_not_enabled' },
+    metrics,
+    tokens,
+    origin: 'pool-market',
+  })
+}
+
+/** How old a stored entry was when the snapshot answered, in whole seconds. */
+export interface StoredAges {
+  /** Since the entry was stored. */
+  servedAgeSeconds: number
+  /** Since its provider figures were retrieved; null when the store reported no cache age. */
+  providerAgeSeconds: number | null
+}
+
+/**
+ * A stored entry's ages from the payload's own times only, never this
+ * browser's clock: the store's clock when it answered is `builtAt +
+ * ageSeconds`, so the entry had been held `builtAt + ageSeconds − observedAt`
+ * seconds, and its provider figures were that much older than the cache age
+ * they were stored with. Null when the store reports no times.
+ */
+export function storedAges(d: MarketsSnapshotResponse, entry: SnapshotPoolEntry): StoredAges | null {
+  if (d.builtAt === null || d.ageSeconds === null) return null
+  const servedAgeSeconds = Math.max(0, d.builtAt + d.ageSeconds - entry.observedAt)
+  const cached = entry.market.cache.ageSeconds
+  return { servedAgeSeconds, providerAgeSeconds: cached === null ? null : cached + servedAgeSeconds }
+}
+
+export interface SnapshotRowReads {
+  snapshot: Extract<ReadOutcome<'markets-snapshot'>, { state: 'ok' }>
+  entry: SnapshotPoolEntry
+  metrics: ReadOutcome<'pool-metrics'> | null
+  tokens: ReadonlyMap<string, ReadOutcome<'token'>>
+}
+
+/**
+ * A row from a stored entry, as the snapshot served it. Its figures are the
+ * provider's as stored, dated by the ages above and counted on from the
+ * snapshot's arrival, so a stored figure turns stale on screen exactly when a
+ * fresh read of the same age would. The store keeps no estimate, and none is
+ * made from its inputs.
+ */
+export function projectSnapshotRow({ snapshot, entry, metrics, tokens }: SnapshotRowReads): Market {
+  const ages = storedAges(snapshot.data, entry)
+  return projectRow({
+    poolId: entry.poolId,
+    pool: entry.pool,
+    block: entry.pool.snapshot.number,
+    market: entry.market,
+    cacheAgeSeconds: ages?.providerAgeSeconds ?? null,
+    answer: snapshot,
+    estimate: { data: null, reason: 'estimate_not_in_snapshot' },
+    metrics,
+    tokens,
+    origin: 'markets-snapshot',
+    servedAgeSeconds: ages?.servedAgeSeconds ?? 0,
+  })
 }

@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, type CSSProperties } from 'react'
+import { flushSync } from 'react-dom'
 import { catalogueTokens } from '../config/selectedPoolCatalogue'
 import { exploreHref, marketsHref, parseExploreHash, poolHref } from '../components/explore/routes'
 import { useHash } from '../components/explore/useHash'
@@ -14,7 +15,7 @@ import { Button, Card, Display, EmptyState, PageShell } from '../components/ui'
 import { parseAddressInput } from '../lib/read/screens/identity'
 import { useReadSource } from '../lib/read/screens/readContext'
 import { knownTokens } from '../lib/read/screens/tokenSearch'
-import { selectable, type TokenCandidate } from '../lib/read/screens/tokens'
+import { handoffFor, selectable, type TokenCandidate } from '../lib/read/screens/tokens'
 
 const NONE: ReadonlySet<string> = new Set()
 
@@ -93,9 +94,7 @@ function MarketsList({ onToken }: { onToken: (candidate: TokenCandidate) => void
       <details className="dm-details dm-mkt-catalogue animate-rise" style={rise(3)} data-catalogue-search="" open={catalogueOpen} onToggle={(event) => setCatalogueOpen(event.currentTarget.open)}>
         <summary>Search the pool catalogue</summary>
         <div className="grid gap-4">
-          <p className="max-w-[64ch] text-body text-fg-muted">
-            For pools beyond the selected ones, choose a token by name or paste its address. Its pools are read from chain, and a stored catalogue candidate opens once verified at the latest block.
-          </p>
+          <p className="max-w-[64ch] text-body text-fg-muted">For pools beyond the selected ones, choose a token by name or paste its address.</p>
           {catalogueOpen && source && (
             <div className="dm-mkt-catalogue-search">
               <TokenSearch source={source} known={known} onFound={onToken} id="markets-catalogue-token" label="Find a token by name or address" />
@@ -111,16 +110,19 @@ function MarketsList({ onToken }: { onToken: (candidate: TokenCandidate) => void
  * Markets: the selected pools on a rail and in a table, and a way to any other
  * pool on Robinhood Chain through its token. A searched token lives in the
  * address bar (`#/markets/<address>`), so a search can be shared and a link
- * from another page opens it; one token read answers it, and its pools are
- * read only when asked for, or at once when a link from elsewhere opened it.
- * The catalogue is paged on request, and a candidate opens its page only once
- * the pools route has verified it at the latest block.
+ * from another page opens it; one token read answers it (the search's own,
+ * handed to the view it opens, or the view's when a link opened it), and its
+ * pools are read only when asked for, or at once when a link from elsewhere
+ * opened it. The catalogue is paged on request, and a candidate opens its page
+ * only once the pools route has verified it at the latest block.
  */
 export function Explore() {
   const source = useReadSource()
   const location = parseExploreHash(useHash())
   const [found, setFound] = useState<TokenCandidate | null>(null)
   const [finding, setFinding] = useState<string | null>(null)
+  // The answer the token search read for the address it opens, handed to that token view once.
+  const [handoff, setHandoff] = useState<TokenCandidate | null>(null)
   // The token chosen on this page, so a link from elsewhere is told apart
   // from a search made here: a link says "find pools", a search asks first.
   const typed = useRef<string | null>(null)
@@ -148,14 +150,20 @@ export function Explore() {
   // TokenLookup keeps the latest callback in a ref, so this needs no memo.
   const onFound = (next: TokenCandidate) => {
     setFound(next)
+    // Used once: back or forward to the same token, or a link to it, reads again.
+    setHandoff(null)
     if (autoFind.current === next.key && selectable(next)) setFinding(next.key)
     autoFind.current = null
   }
 
-  // A token chosen in a search here: its view opens by the address bar, and its pools wait to be asked for.
+  // A token chosen in a search here: its view opens by the address bar with the search's answer, and its pools wait to be asked for.
   const onToken = (chosen: TokenCandidate) => {
     typed.current = chosen.wire
     autoFind.current = null
+    // Committed before the hash moves: useHash re-renders on hashchange at sync priority
+    // (useSyncExternalStore), which would otherwise mount the token view before a
+    // default-priority update lands, and the view would read the token again.
+    flushSync(() => setHandoff(handoffFor(chosen, chosen.wire)))
     window.location.hash = exploreHref(chosen.wire)
   }
 
@@ -191,8 +199,10 @@ export function Explore() {
       {source && (
         <div className="mt-6 animate-rise" style={rise(2)}>
           <TokenLookup
+            key={wire}
             source={source}
             wire={wire}
+            initial={handoffFor(handoff, wire) ?? undefined}
             onFound={onFound}
             actions={(token) => (
               <Button onClick={() => setFinding(token.key)} aria-disabled={finding === token.key ? true : undefined} data-find-pools="">
@@ -209,7 +219,6 @@ export function Explore() {
             <Display as="h2" id="found-pools-title" className="dm-display-card">
               Pools for <SymbolText token={candidate.token} />
             </Display>
-            <span className="text-caption text-fg-subtle">Existing pools in a neutral order · figures reported by DexScreener · verified on chain</span>
           </div>
           <Card className="mt-3 p-2">
             <PoolPicker key={candidate.key} source={source} token={candidate.key} paired={null} pending={null} onPending={() => undefined} onOpen={(option) => open(option.key, candidate.wire)} catalogue={false} compact />
@@ -220,7 +229,6 @@ export function Explore() {
       <details className="dm-details dm-mkt-catalogue" data-catalogue-browser="">
         <summary>Search the pool catalogue</summary>
         <div className="grid gap-3">
-          <p className="text-caption text-fg-subtle">Stored candidates for one token, paged · a candidate opens once verified at the latest block</p>
           {canBrowse && candidate && source ? (
             <CatalogueCandidates key={candidate.key} source={source} token={candidate.key} paired={null} verified={NONE} verifiedNote="Verified: opening this pool." onVerified={(option) => open(option.key, candidate.wire)} />
           ) : (

@@ -9,7 +9,8 @@ import { isDeepStrictEqual } from 'node:util'
 import { extendReadTunnelConfig } from './read-tunnel-config.mjs'
 
 const ROOT = fileURLToPath(new URL('../', import.meta.url))
-const KNOWN_READS = new Set(['token', 'pools', 'pool-market', 'wallet-assets', 'nft-positions', 'catalogue', 'pool-activity', 'markets-snapshot'])
+// read-v1's ten POST routes: an existing Worker variable may name any of them and is retained as it is.
+const KNOWN_READS = new Set(['token', 'pools', 'pool-market', 'wallet-assets', 'nft-positions', 'catalogue', 'pool-activity', 'pool-positions', 'pool-metrics', 'markets-snapshot'])
 const VISIBLE_VARS = ['READ_BRIDGE_ENABLED', 'READ_V2_BRIDGE_ENABLED', 'ENABLED_READS', 'ENABLED_V2_READS', 'APP_ORIGIN', 'GATEWAY_ORIGIN']
 
 export function releaseVars(settings) {
@@ -58,7 +59,7 @@ async function run(operation) {
       }
       const after = await cloudflare(path)
       if (!isDeepStrictEqual(after.config, config)) throw new Error('Published tunnel configuration differs from the intended path-only update.')
-      console.log(JSON.stringify({ tunnel: id, version: after.version, v2PathEnabled: true, otherSettingsPreserved: true }))
+      console.log(JSON.stringify({ tunnel: id, version: after.version, v2PathEnabled: true, storedReadPathsEnabled: true, otherSettingsPreserved: true }))
     }
     return
   }

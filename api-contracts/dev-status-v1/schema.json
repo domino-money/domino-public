@@ -58,6 +58,7 @@
       "maxLength": 64
     },
     "enabledReads": {
+      "description": "The gateway read scope. The seven public reads, plus any of the stored-data reads the gateway serves, each once, in any order.",
       "type": "array",
       "items": {
         "enum": [
@@ -67,11 +68,14 @@
           "wallet-assets",
           "nft-positions",
           "catalogue",
-          "pool-activity"
+          "pool-activity",
+          "pool-positions",
+          "pool-metrics",
+          "markets-snapshot"
         ]
       },
       "uniqueItems": true,
-      "maxItems": 7
+      "maxItems": 10
     },
     "providerHealth": {
       "const": "not_probed"
@@ -208,14 +212,148 @@
       "then": {
         "properties": {
           "enabledReads": {
-            "const": [
-              "token",
-              "pools",
-              "pool-market",
-              "wallet-assets",
-              "nft-positions",
-              "catalogue",
-              "pool-activity"
+            "description": "When reads are enabled, each of the seven public reads is listed: a list in which every item is some other read matches nothing.",
+            "allOf": [
+              {
+                "if": {
+                  "items": {
+                    "enum": [
+                      "pools",
+                      "pool-market",
+                      "wallet-assets",
+                      "nft-positions",
+                      "catalogue",
+                      "pool-activity",
+                      "pool-positions",
+                      "pool-metrics",
+                      "markets-snapshot"
+                    ]
+                  }
+                },
+                "then": {
+                  "enum": []
+                }
+              },
+              {
+                "if": {
+                  "items": {
+                    "enum": [
+                      "token",
+                      "pool-market",
+                      "wallet-assets",
+                      "nft-positions",
+                      "catalogue",
+                      "pool-activity",
+                      "pool-positions",
+                      "pool-metrics",
+                      "markets-snapshot"
+                    ]
+                  }
+                },
+                "then": {
+                  "enum": []
+                }
+              },
+              {
+                "if": {
+                  "items": {
+                    "enum": [
+                      "token",
+                      "pools",
+                      "wallet-assets",
+                      "nft-positions",
+                      "catalogue",
+                      "pool-activity",
+                      "pool-positions",
+                      "pool-metrics",
+                      "markets-snapshot"
+                    ]
+                  }
+                },
+                "then": {
+                  "enum": []
+                }
+              },
+              {
+                "if": {
+                  "items": {
+                    "enum": [
+                      "token",
+                      "pools",
+                      "pool-market",
+                      "nft-positions",
+                      "catalogue",
+                      "pool-activity",
+                      "pool-positions",
+                      "pool-metrics",
+                      "markets-snapshot"
+                    ]
+                  }
+                },
+                "then": {
+                  "enum": []
+                }
+              },
+              {
+                "if": {
+                  "items": {
+                    "enum": [
+                      "token",
+                      "pools",
+                      "pool-market",
+                      "wallet-assets",
+                      "catalogue",
+                      "pool-activity",
+                      "pool-positions",
+                      "pool-metrics",
+                      "markets-snapshot"
+                    ]
+                  }
+                },
+                "then": {
+                  "enum": []
+                }
+              },
+              {
+                "if": {
+                  "items": {
+                    "enum": [
+                      "token",
+                      "pools",
+                      "pool-market",
+                      "wallet-assets",
+                      "nft-positions",
+                      "pool-activity",
+                      "pool-positions",
+                      "pool-metrics",
+                      "markets-snapshot"
+                    ]
+                  }
+                },
+                "then": {
+                  "enum": []
+                }
+              },
+              {
+                "if": {
+                  "items": {
+                    "enum": [
+                      "token",
+                      "pools",
+                      "pool-market",
+                      "wallet-assets",
+                      "nft-positions",
+                      "catalogue",
+                      "pool-positions",
+                      "pool-metrics",
+                      "markets-snapshot"
+                    ]
+                  }
+                },
+                "then": {
+                  "enum": []
+                }
+              }
             ]
           }
         }

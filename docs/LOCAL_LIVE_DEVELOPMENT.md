@@ -85,11 +85,16 @@ Non-200 responses retain the existing finite read-v1 error body.
 | `/api/read/v1/<enabled family>` | `/internal/read/v1/<enabled family>` | POST |
 | Launcher-owned local diagnostics | `/internal/dev/v1/status` | GET |
 
-Exactly seven families are permitted: `token`, `pools`, `pool-market`,
-`wallet-assets`, `nft-positions`, `catalogue`, `pool-activity`. The diagnostics
-route is authenticated, bounded, and must not become an admin/health proxy.
-`pool-positions` and `pool-metrics` are denied. Unknown paths, methods, query
-strings, URL destinations, redirects and ambiguous encoded paths are denied.
+Exactly ten families are permitted, read-v1's ten POST routes: `token`,
+`pools`, `pool-market`, `wallet-assets`, `nft-positions`, `catalogue`,
+`pool-activity`, `pool-positions`, `pool-metrics` and `markets-snapshot`
+(`READS` in `app/scripts/local-live-boundary.mjs`). A development gateway whose
+capabilities list any other read is refused as an invalid upstream response.
+The app asks for `pool-positions`, `pool-metrics` and `markets-snapshot` only
+where the capabilities list them. The diagnostics route is authenticated,
+bounded, and must not become an admin/health proxy. Unknown paths, methods,
+query strings, URL destinations, redirects and ambiguous encoded paths are
+denied.
 
 Reads preserve `X-Domino-Read-Contract`, the existing finite error vocabulary,
 safe request IDs and truthful source/snapshot/cache/coverage information. A
@@ -291,7 +296,7 @@ privately fills the qualified inventory URL and
 `catalogue:{"host":"<private Unix socket directory>","port":<reviewed port>,"dbname":"domino_catalogue"}`
 after installing the distinct `domino_dev_catalogue_reader` role and grants.
 Null configurations explicitly mean that coverage is not configured; they
-cannot be reported as evidence of positive coverage for all seven families.
+cannot be reported as evidence of positive coverage for all ten families.
 
 All profiles use the exact bounded schemas implemented by the entrypoints.
 The profile directory and its files must be owned by that component's dedicated
@@ -415,7 +420,7 @@ a block never proves wallet control or authority to transact.
 
 | Family | Normal UI and representative request | Observed coverage to preserve |
 | --- | --- | --- |
-| capabilities | Local startup; GET without body | Seven enabled reads when admitted, chain 4663 and contract rc.3; wallet/private/transactions/automation false. Not a provider-health assertion. |
+| capabilities | Local startup; GET without body | Seven enabled reads when admitted in the recorded receipt; the gateway may also list pool-positions, pool-metrics and markets-snapshot. Chain 4663 and contract rc.3; wallet/private/transactions/automation false. Not a provider-health assertion. |
 | token | `#/pools` token dialog, Check address; `{"token":"0x0bd7d308f8e1639fab988df18a8011f41eacad73"}` | WETH was available at block 61387684. Validate new address/chain/snapshot, not a historical block equality. |
 | pools | Apply the token; same request as token, optional explicit USDG `pairedToken` | Receipt returned 30 discovery candidates and 8 verified v4 pools at block 61387913. Counts can change. Discovery is partial; Dex figures are attributed; APR is unavailable. |
 | pool-market | Landing's selected pools; `{"poolId":"0x84bd4e2d8be11aeb0afc1195b38f587b61e90068548f1063fdbe448fb8cad0b6","includePriceHistory":false}` | Both maintained pools had available Gecko observations. Preserve retrieval age, cache state, snapshot, null APR and provider attribution; this does not qualify charts/history. |
@@ -423,7 +428,7 @@ a block never proves wallet control or authority to transact.
 | nft-positions | `#/app` → Positions → Public chain lookup; `{"tokenIds":["2235738"]}` | Receipt had one zero-liquidity card at block 61345052, USD unavailable, owner only at snapshot. Preserve a changed/nonexistent current outcome honestly. |
 | catalogue | Token dialog → More sources → Load catalogue candidates; `{"token":"0x0bd7d308f8e1639fab988df18a8011f41eacad73","limit":20}` | HTTP 200 with zero candidates in interval 58736592–not yet indexed. This does not mean no pools exist. Positive pagination/revision restart remains untested with live data. |
 | pool-activity | Open a selected pool's figures; same `poolId` request without price options | Both pools returned `activity_pool_not_registered` (503). This is absent indexed coverage, not zero activity or a broken credential. |
-| pool-positions / pool-metrics | No development forwarding | Disabled, regardless of the existence of response models. Public NFT lookup does not need pool-positions enabled. |
+| pool-positions / pool-metrics / markets-snapshot | Forwarded like the other families; the pool page and Markets ask for them only when the capabilities list them | No development coverage receipt is recorded for them. Public NFT lookup does not need pool-positions enabled. |
 
 Generic addresses/pool IDs remain supported within the existing schema bounds:
 up to 20 requested pools, 10 explicit PoolIds, 10 explicit token addresses,
@@ -443,6 +448,6 @@ coverage are still unqualified; labeled synthetic tests may cover their UI.
 | Missing private/financial screens | #124 / PR #129 | Resume only in the coordinated queue, with contract/pin/fixture and consumer notices. Do not import that candidate into the development read boundary or present fixtures as real balances. |
 
 These contract references are dependency pointers, not a claim that their
-historical disabled candidates are currently deployed. #132 grants only the
-explicit seven public read families. No personal bot/runtime, signer, fee
-switch/buyback/burn, compounding or transaction execution enters this path.
+historical disabled candidates are currently deployed. This path carries only
+the explicit public read families listed above. No personal bot/runtime, signer,
+fee switch/buyback/burn, compounding or transaction execution enters it.

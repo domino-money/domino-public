@@ -6,6 +6,7 @@
  * inputs are shaped exactly like the values the read screens hand over.
  */
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { test } from 'node:test';
 
@@ -13,6 +14,8 @@ const require = createRequire(import.meta.url);
 const journey = require('../.test-build/app/src/lib/create/journey.js');
 const { CREATE, allCreateStrings } = require('../.test-build/app/src/lib/create/copy.js');
 const { SELECTED_POOL_CATALOGUE } = require('../.test-build/app/src/config/selectedPoolCatalogue.js');
+// Compiled by tsconfig.consumer-test.json, next to the journey.
+const setupDrafts = require('../.test-build/app/src/lib/create/setupDraft.js');
 
 const ZERO = '0x0000000000000000000000000000000000000000';
 const addr = (letter) => `0x${letter.repeat(40)}`;
@@ -142,6 +145,15 @@ test('a deposit budget is converted with the decimals the read returned, exactly
   assert.match(v('0.001', 18).raw, /^[1-9][0-9]{0,77}$/);
 });
 
+test('the amount step says how many decimal places a budget may have; where its raw units come from is only the raw line’s title', () => {
+  assert.equal(CREATE.amount.budgetHint(6), 'Up to 6 decimal places.');
+  assert.equal(CREATE.amount.budgetHint(null), 'Decimals for this token could not be read.');
+  assert.equal(CREATE.amount.rawUnitsTitle, 'Converted to raw units with the decimals read from chain.');
+  const amount = readFileSync(new URL('../src/components/create/StageAmount.tsx', import.meta.url), 'utf8');
+  assert.match(amount, /data-budget-raw=\{budget\.raw\} title=\{CREATE\.amount\.rawUnitsTitle\}/);
+  assert.doesNotMatch(amount, /hint=\{[^}]*rawUnitsTitle/, 'never in the visible hint');
+});
+
 test('slippage is a whole number of basis points from 0 to 9999', () => {
   const v = journey.validateSlippage;
   assert.deepEqual(v('50'), { ok: true, bps: 50 });
@@ -175,32 +187,45 @@ test('Amount and range continues only with a usable price, a converted budget, a
   assert.deepEqual(journey.canContinue('amount', unpriced, NOW), { ok: false, reason: CREATE.amount.priceUnavailable });
 });
 
-test('Domino limits are checked one by one, each with its own words', () => {
+test('Domino limits are checked one by one, each with its own words, within the contract’s bounds', () => {
   const v = journey.validateLimits;
   const ok = v(journey.DEFAULT_LIMITS);
   assert.equal(ok.ok, true);
   assert.deepEqual(ok.values, { trigger: 5, overlap: 20, cap: 3 });
   assert.deepEqual(ok.problems, { triggerPercent: null, maxOverlapPercent: null, sequenceCap: null });
+  // PolicyValidation.sol: trigger distance and maximum overlap 0 to 2000 bps each, 0 included; 1 to 255 positions counting the root.
+  assert.deepEqual(journey.LIMIT_BOUNDS, { trigger: { min: 0, max: 20 }, overlap: { min: 0, max: 20 }, cap: { min: 1, max: 255 } });
   assert.deepEqual(v({ triggerPercent: '2.5', maxOverlapPercent: '0', sequenceCap: '1' }).values, { trigger: 2.5, overlap: 0, cap: 1 });
-  assert.deepEqual(v({ triggerPercent: '50', maxOverlapPercent: '50', sequenceCap: '5' }).values, { trigger: 50, overlap: 50, cap: 5 });
-  const bad = v({ triggerPercent: '0.05', maxOverlapPercent: '51', sequenceCap: '6' });
+  assert.deepEqual(v({ triggerPercent: '0', maxOverlapPercent: '0', sequenceCap: '1' }).values, { trigger: 0, overlap: 0, cap: 1 }, 'a 0 bps trigger is valid on chain: the price must reach the ceiling');
+  assert.deepEqual(v({ triggerPercent: '0.01', maxOverlapPercent: '19.99', sequenceCap: '254' }).values, { trigger: 0.01, overlap: 19.99, cap: 254 }, 'two decimal places of a percent are whole basis points');
+  assert.deepEqual(v({ triggerPercent: '20', maxOverlapPercent: '20', sequenceCap: '255' }).values, { trigger: 20, overlap: 20, cap: 255 });
+  const bad = v({ triggerPercent: '20.01', maxOverlapPercent: '21', sequenceCap: '256' });
   assert.equal(bad.ok, false);
   assert.deepEqual(bad.problems, { triggerPercent: CREATE.automation.triggerInvalid, maxOverlapPercent: CREATE.automation.overlapInvalid, sequenceCap: CREATE.automation.capInvalid });
-  for (const cap of ['0', '1.5', '', '-1', '03']) assert.equal(v({ ...journey.DEFAULT_LIMITS, sequenceCap: cap }).problems.sequenceCap, CREATE.automation.capInvalid, cap);
-  for (const trigger of ['', '5.123', '-5', '5%']) assert.equal(v({ ...journey.DEFAULT_LIMITS, triggerPercent: trigger }).problems.triggerPercent, CREATE.automation.triggerInvalid, trigger);
+  for (const cap of ['0', '1.5', '', '-1', '03', '256', '1000']) assert.equal(v({ ...journey.DEFAULT_LIMITS, sequenceCap: cap }).problems.sequenceCap, CREATE.automation.capInvalid, cap);
+  for (const trigger of ['', '5.123', '-5', '5%', '20.01', '50']) assert.equal(v({ ...journey.DEFAULT_LIMITS, triggerPercent: trigger }).problems.triggerPercent, CREATE.automation.triggerInvalid, trigger);
+  for (const overlap of ['', '0.001', '-1', '20.5', '50']) assert.equal(v({ ...journey.DEFAULT_LIMITS, maxOverlapPercent: overlap }).problems.maxOverlapPercent, CREATE.automation.overlapInvalid, overlap);
+  // The hints and the invalid messages name the same bounds the validator enforces.
+  const { trigger, overlap, cap } = journey.LIMIT_BOUNDS;
+  assert.ok(CREATE.automation.triggerHint.startsWith(`${trigger.min} to ${trigger.max}.`));
+  assert.ok(CREATE.automation.overlapHint.startsWith(`${overlap.min} to ${overlap.max}.`));
+  assert.ok(CREATE.automation.capHint.startsWith(`${cap.min} to ${cap.max},`));
+  assert.match(CREATE.automation.triggerInvalid, new RegExp(`from ${trigger.min} to ${trigger.max},`));
+  assert.match(CREATE.automation.overlapInvalid, new RegExp(`from ${overlap.min} to ${overlap.max},`));
+  assert.match(CREATE.automation.capInvalid, new RegExp(`from ${cap.min} to ${cap.max}\\.$`));
 });
 
 test('the journey walks forward only through complete stages, back freely, and the rail reopens what was reached', () => {
   let s = ready();
-  assert.equal(journey.reachable(s, NOW), 'review', 'nothing after the amount blocks: the preview is not enabled and automation defaults to none');
+  assert.equal(journey.reachable(s, NOW), 'review', 'nothing after the amount blocks: the deposit amounts wait for nothing and automation defaults to none');
   assert.equal(journey.canOpen('balance', s, NOW), false, 'not reached yet');
   s = journey.next(s, NOW);
   assert.equal(s.stage, 'balance');
-  assert.deepEqual(journey.canContinue('balance', s, NOW), { ok: true }, 'the person may continue past the preview that is not enabled');
+  assert.deepEqual(journey.canContinue('balance', s, NOW), { ok: true }, 'the person may continue whether or not an estimate of the amounts is shown');
   s = journey.next(s, NOW);
   assert.equal(s.stage, 'automation');
   s = journey.withAutomation(s, 'domino');
-  const broken = journey.withLimits(s, { sequenceCap: '9' });
+  const broken = journey.withLimits(s, { sequenceCap: '256' });
   assert.deepEqual(journey.canContinue('automation', broken, NOW), { ok: false, reason: CREATE.automation.limitsInvalid });
   assert.equal(journey.next(broken, NOW), broken);
   s = journey.next(s, NOW);
@@ -250,6 +275,62 @@ test('the preview request is shaped as onboarding-v1’s position-preview reques
   assert.deepEqual(journey.previewRequest(journey.withBudget(s, '')), { ok: false, reason: CREATE.amount.empty });
 });
 
+test('Setup’s draft starts from the same validated choices as the preview request: pool, deposit token, amount, range and slippage, and nothing else (G9)', () => {
+  const s = ready();
+  const draft = journey.setupDraft(s);
+  assert.equal(draft.pool, s.pool, 'the verified pool itself');
+  assert.deepEqual({ ...draft, pool: undefined }, { pool: undefined, independent: 0, amountRaw: '500000000000000000', tickLower: -3600, tickUpper: 4080, slippageBps: 50 });
+  assert.deepEqual(Object.keys(draft).sort(), ['amountRaw', 'independent', 'pool', 'slippageBps', 'tickLower', 'tickUpper'], 'no budgets or network limits are carried: Setup asks for them');
+  // The pool's other currency as the deposit token: its index and its own decimals.
+  const two = journey.setupDraft(journey.withBudget(journey.withToken(s, TWO), '1'));
+  assert.deepEqual([two.independent, two.amountRaw], [1, '1000000']);
+  // What the deposit service does not admit is never carried.
+  assert.equal(journey.setupDraft({ ...s, pool: pool({ hooks: addr('f') }) }), null);
+  assert.equal(journey.setupDraft({ ...s, pool: pool({ feePips: 8388608, fee: 'Dynamic' }) }), null);
+  assert.equal(journey.setupDraft(journey.withBudget(s, '')), null);
+  assert.equal(journey.setupDraft(journey.initialState()), null);
+});
+
+test('the line under Continue in Setup promises a filled-in Setup only for choices there is a draft to carry, and the link loading in its place promises nothing (G9)', () => {
+  const s = ready();
+  assert.equal(journey.continueNote(s, true), CREATE.review.setupNote);
+  assert.equal(journey.continueNote(s, false), CREATE.review.setupNoteSignedOut);
+  for (const other of [pool({ hooks: addr('f') }), pool({ feePips: 8388608, fee: 'Dynamic' })]) {
+    const state = { ...s, pool: other };
+    assert.equal(journey.setupDraft(state), null, 'Setup’s deposits take neither pool, so nothing is carried');
+    for (const signedIn of [true, false]) assert.equal(journey.continueNote(state, signedIn), CREATE.review.setupNoteUnsupported);
+  }
+  assert.equal(journey.continueNote(journey.withBudget(s, ''), true), CREATE.review.gate, 'no draft for any other reason: the neutral line');
+  for (const neutral of [CREATE.review.setupNoteUnsupported, CREATE.review.gate]) assert.doesNotMatch(neutral, /filled in|carr|opens with/i, neutral);
+  // While the chunk with the carrying link loads, a plain link stands in for it, carrying nothing: its line is the neutral one.
+  const review = readFileSync(new URL('../src/components/create/StageReview.tsx', import.meta.url), 'utf8');
+  assert.match(review, /<Suspense fallback=\{<SetupLink note=\{CREATE\.review\.gate\} \/>\}>/);
+  assert.doesNotMatch(review, /note=\{CREATE\.review\.setupNote(SignedOut)?\}/, 'the promise is made only where the link carries the choices');
+});
+
+test('a pool picked on Setup keeps the carried choices only when it is the pool they were carried for (G9)', () => {
+  const draft = journey.setupDraft(ready());
+  assert.equal(setupDrafts.carriedFor(draft, null), draft, 'nothing picked yet');
+  assert.equal(setupDrafts.carriedFor(draft, { ...pool() }), draft, 'the same pool, read again');
+  assert.equal(setupDrafts.carriedFor(draft, pool({ key: id('b') })), null, 'another pool: its token order, amount and ticks would mean something else');
+  assert.equal(setupDrafts.carriedFor(null, pool({ key: id('b') })), null);
+});
+
+test('carried choices live in memory for the session they were carried under: another session drops them, no session sees nothing (G9)', () => {
+  const draft = journey.setupDraft(ready());
+  setupDrafts.clearSetupDraft();
+  assert.equal(setupDrafts.setupDraftFor('1|uid|0xa'), null, 'nothing carried');
+  setupDrafts.putSetupDraft(draft, '1|uid|0xa');
+  assert.equal(setupDrafts.setupDraftFor(null), null, 'a page with no session sees nothing');
+  assert.equal(setupDrafts.setupDraftFor('1|uid|0xa'), draft, 'the session it was carried under reads it, as often as it renders');
+  assert.equal(setupDrafts.setupDraftFor('1|uid|0xa'), draft);
+  assert.equal(setupDrafts.setupDraftFor('2|uid|0xa'), null, 'another session never sees it');
+  assert.equal(setupDrafts.setupDraftFor('1|uid|0xa'), null, 'and it is gone for good once another session asked');
+  setupDrafts.putSetupDraft(draft, '1|uid|0xa');
+  setupDrafts.clearSetupDraft();
+  assert.equal(setupDrafts.setupDraftFor('1|uid|0xa'), null);
+});
+
 test('the creation gate is off, from the build’s signing flag, with its reason', () => {
   const gate = journey.createGate();
   assert.equal(gate.enabled, false);
@@ -263,24 +344,60 @@ test('the successor geometry follows the agreed rule on the pool’s spacing, or
   // Ceiling 50% above the upper bound, rounded up to the spacing; the floor's lowest tick rounded up, never below the overlap bound.
   assert.deepEqual(journey.successorGeometry({ lower: 0, upper: 6000 }, { trigger: 5, overlap: 5, cap: 3 }, 10), { triggerTick: 5487, floorMinTick: 5490, ceilingTick: 10060 });
   assert.equal(journey.successorGeometry({ lower: 887100, upper: 887220 }, { trigger: 5, overlap: 0, cap: 3 }, 60), null, 'at the top of the tick space the floor cannot sit below a ceiling');
+  // A 0% trigger waits for the ceiling itself; 20% is the contract's largest overlap.
+  assert.deepEqual(journey.successorGeometry({ lower: -3600, upper: 0 }, { trigger: 0, overlap: 20, cap: 255 }, 60), { triggerTick: 0, floorMinTick: -2220, ceilingTick: 4080 });
+  // The ceiling is drawn at the default upside; on chain the upside is the sequence's own setting, and the rule says so.
+  assert.equal(journey.DEFAULT_UPSIDE_PERCENT, 50);
+  // Your sequences asks for the upside with no default; New position only draws its illustration at 50% (docs: automation, Upside).
+  assert.ok(CREATE.automation.dominoRules.some((rule) => /ceiling sits above the previous ceiling by the upside you set for the sequence, .*drawn at 50%/.test(rule)));
+  assert.ok(CREATE.automation.dominoRules.every((rule) => !/50% by default/.test(rule)), 'no default the sequence screen does not have');
+  assert.ok(CREATE.automation.dominoRules.every((rule) => !/ceiling is 50% above/.test(rule)), 'no fixed 50% ceiling');
+  assert.match(CREATE.automation.nextRangeNote, /drawn at a 50% upside/);
 });
 
-test('the wallet steps describe approve and mint in order, native ETH without an approval, automation as not enabled', () => {
+test('the wallet steps are the real ones, in order: each ERC-20 through Permit2, native ETH with the mint and no approval, automation as three owner transactions', () => {
   const erc20 = journey.walletSteps(ready());
+  // docs/DIRECT_DEPOSITS.md: an exact approval to Permit2, then a Permit2 allowance for the position manager, currency by currency in pool order, then the mint.
   assert.deepEqual(erc20.map((step) => step.title), [
-    'Approve the selected token for the position manager',
-    'Approve the other token, if the composition needs it',
+    'Approve the selected token to Permit2',
+    'Allow the position manager to use the selected token through Permit2',
+    'Approve the other token to Permit2, if the composition needs it',
+    'Allow the position manager to use the other token through Permit2, if the composition needs it',
     'Mint the position NFT to your wallet',
   ]);
-  assert.equal(erc20[0].token.address, addr('1'));
-  assert.equal(erc20[1].token.address, addr('2'));
-  const native = journey.withToken(journey.withPool(journey.initialState(), pool({ currencies: [token(ZERO, 18, 'ETH'), token(addr('2'), 6, 'USDG')] }), NOW), candidate(ZERO, 18));
-  assert.equal(journey.walletSteps(native)[0].title, 'Send native ETH with the mint');
-  const automated = journey.withAutomation(ready(), 'domino');
-  assert.equal(journey.walletSteps(automated).at(-1).title, 'Grant Domino its fee-only permission');
-  // The step says what the permission is; that automation is not connected is the summary's `· not connected` (below) and CREATE.automation.notEnabled.
-  assert.equal(journey.walletSteps(automated).at(-1).detail, 'A separate permission over earned fees only, revocable by you.');
+  assert.deepEqual(erc20.map((step) => step.token?.address), [addr('1'), addr('1'), addr('2'), addr('2'), undefined]);
+  assert.match(erc20[0].detail, /never unlimited/);
+  assert.match(erc20[1].detail, /within an hour/);
+  // The deposit service prepares currency0 before currency1, whichever of them is deposited.
+  const second = journey.walletSteps(journey.withToken(ready(), TWO));
+  assert.deepEqual(second.map((step) => step.token?.address), [addr('1'), addr('1'), addr('2'), addr('2'), undefined]);
+  assert.equal(second[0].title, 'Approve the other token to Permit2, if the composition needs it');
+  assert.equal(second[2].title, 'Approve the selected token to Permit2');
+  // Native ETH needs no approval: only the other token goes through Permit2, and the ETH goes with the mint.
+  const ethPool = pool({ currencies: [token(ZERO, 18, 'ETH'), token(addr('2'), 6, 'USDG')] });
+  const native = journey.walletSteps(journey.withToken(journey.withPool(journey.initialState(), ethPool, NOW), candidate(ZERO, 18)));
+  assert.deepEqual(native.map((step) => step.title), [
+    'Approve the other token to Permit2, if the composition needs it',
+    'Allow the position manager to use the other token through Permit2, if the composition needs it',
+    'Mint the position NFT to your wallet',
+  ]);
+  assert.equal(native[2].token.address, ZERO);
+  assert.match(native[2].detail, /Native ETH needs no approval/);
+  const nativeOther = journey.walletSteps(journey.withToken(journey.withPool(journey.initialState(), ethPool, NOW), TWO));
+  assert.deepEqual(nativeOther.map((step) => step.title), ['Approve the selected token to Permit2', 'Allow the position manager to use the selected token through Permit2', 'Mint the position NFT to your wallet']);
+  assert.match(nativeOther[2].detail, /Native ETH needs no approval: if the composition needs it/);
+  assert.ok(!native.concat(nativeOther).some((step) => /Approve|Allow/.test(step.title) && step.token?.address === ZERO), 'no approval step names native ETH');
+  // finance/sequence.ts: approve only this NFT to its predicted sequence, create the sequence paused, activate it in a separate owner transaction.
+  const automated = journey.walletSteps(journey.withAutomation(ready(), 'domino'));
+  assert.deepEqual(automated.slice(5).map((step) => step.title), ['Approve this position NFT to its sequence', 'Create the sequence, paused', 'Activate Domino-compound']);
+  assert.match(automated[5].detail, /never approval for all NFTs/);
+  assert.match(automated[6].detail, /starts paused/);
+  // That automation is not connected is the summary's `· not connected` (below) and CREATE.automation.notEnabled, not the step's words.
+  assert.equal(automated.at(-1).detail, 'A separate owner transaction, when you choose. Nothing runs before it, and you can pause or revoke it from your wallet.');
+  assert.equal(journey.walletSteps(journey.withAutomation(ready(), 'compound')).at(-1).title, 'Activate Auto-compound');
+  assert.equal(new Set(automated.map((step) => step.title)).size, automated.length, 'every title is its own list key');
   assert.deepEqual(journey.walletSteps(journey.initialState()), []);
+  assert.deepEqual(journey.walletSteps({ ...ready(), pool: pool({ currencies: [token(addr('8')), token(addr('9'))] }) }), [], 'no steps for a pool that does not hold the token');
 });
 
 test('the fee bases stay apart: the pool’s LP fee and Domino’s 2% of consumed earned fees', () => {
@@ -305,15 +422,18 @@ test('the summary says — for what is not chosen and serialises every decision,
   // currency1 per currency0 with the read decimals (18 and 6): 1.0001^tick × 10^12, as the range controls write it.
   assert.equal(lines[2].value, '0.5 ONE · ≈697,689,000,000 to ≈1,503,780,000,000 (ticks -3600 to 4080)');
   assert.equal(lines[3].value, CREATE.balance.notEnabled);
-  assert.equal(lines[4].value, 'Domino · trigger 5%, overlap 20%, cap 3 · not connected');
+  assert.equal(lines[4].value, 'Domino-compound · trigger 5%, overlap 20%, cap 3 · not connected');
   assert.equal(lines[5].value, CREATE.review.gate);
   assert.equal(journey.positionText(s, NOW), CREATE.review.inRange);
   assert.equal(journey.positionText({ ...s, range: { lower: 60, upper: 120 } }, NOW), CREATE.review.outOfRange);
   assert.match(journey.positionText(s, 300_000), /read more than 5 minutes ago/);
   const text = journey.serialiseSummary(s, NOW);
-  assert.ok(text.some((line) => line.startsWith('Request: {"chainId":4663')));
+  // The request is sent for the deposit amounts in wallet builds, never printed: no JSON dump in the summary (G8).
+  assert.ok(!text.some((line) => line.startsWith('Request:') || line.includes('"chainId"')), 'no request JSON in the summary');
   assert.ok(text.includes('Deposit amounts: Exact amounts are calculated in Setup, at the price when you sign.'));
-  assert.ok(text.includes('Wallet step 1: Approve the selected token for the position manager'));
+  assert.ok(text.includes('Wallet step 1: Approve the selected token to Permit2'));
+  assert.ok(text.includes('Wallet step 2: Allow the position manager to use the selected token through Permit2'));
+  assert.ok(text.includes('Wallet step 8: Activate Domino-compound'));
   assert.ok(text.includes('Pool trading fee: 0.30%'));
   assert.ok(text.includes('Domino service fee: 2% of earned fees consumed'));
   assert.equal(text.at(-1), 'Create position: disabled — Deposits are made in Setup, one reviewed wallet step at a time.');
@@ -364,4 +484,18 @@ test('the copy never promises, never names a sample or a fixture, and never link
   }
   assert.match(CREATE.balance.notEnabled, /calculated in Setup/);
   assert.match(CREATE.automation.notEnabled, /^Not connected$/);
+});
+
+test('the automation choices carry the approved names, and the service fee keeps the company’s name', () => {
+  const { options } = CREATE.automation;
+  assert.deepEqual([options.none.title, options.compound.title, options.domino.title], ['Self-managing', 'Auto-compound', 'Domino-compound']);
+  assert.equal(CREATE.automation.none, 'Self-managing', 'the summary line says what the step row says');
+  assert.equal(CREATE.automation.domino, 'Domino-compound');
+  assert.equal(CREATE.automation.dominoRulesHeading, 'How Domino-compound works');
+  assert.equal(CREATE.review.automationStepNames.domino, 'Domino-compound');
+  assert.match(CREATE.review.feeNotes.service, /Auto-compound or Domino-compound consumes earned fees/);
+  assert.equal(CREATE.review.feeLabels.service, 'Domino service fee', 'the fee label names the company, not the product');
+  // "sequence" stays where it names the vault or its cap.
+  assert.equal(CREATE.automation.cap, 'Positions in the sequence');
+  for (const text of allCreateStrings()) assert.doesNotMatch(text, /Domino sequence|No automation|^None$/, text);
 });

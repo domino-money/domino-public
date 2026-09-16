@@ -48,17 +48,16 @@ function AddressForm({ id, onView, className }: { id: string; onView: (wire: str
       <label htmlFor={inputId} className="sr-only">
         Public address
       </label>
+      {/* No hint under the field: how the address is sent, and what viewing it proves, is its title. */}
       <SearchField
         id={inputId}
         value={text}
         onChange={(event) => setText(event.target.value)}
         placeholder="Public address, 0x…"
-        aria-describedby={problem ? `${id}-hint ${id}-error` : `${id}-hint`}
+        title="Sent exactly as typed; a checksum is not required. Viewing an address proves nothing about who controls it."
+        aria-describedby={problem ? `${id}-error` : undefined}
         aria-invalid={problem ? true : undefined}
       />
-      <p id={`${id}-hint`} className="dm-hint">
-        Sent exactly as typed; a checksum is not required. Viewing an address proves nothing about who controls it.
-      </p>
       {problem && (
         <p id={`${id}-error`} role="alert" className="dm-error">
           {problem}

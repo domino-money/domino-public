@@ -15,7 +15,6 @@
 import { Component, lazy, type ReactNode } from 'react'
 import type { Market } from '../../markets'
 import { COPY } from './copy'
-import type { ChainSelectionSlotProps } from './pickerChrome'
 
 // Every build reads now: F3 removed the sample mode, so the screens are part
 // of what deploys. The constant stays so the chunk keeps its own boundary.
@@ -44,16 +43,8 @@ export const SlotBoundary = READ_SCREENS
 
 export const ChainPositionsSlot = READ_SCREENS ? lazy(() => import('../../../components/read/screens').then((m) => ({ default: m.ChainPositionsSection }))) : null
 
-export const ChainSelectionSlot = READ_SCREENS
-  ? lazy<(props: ChainSelectionSlotProps) => ReactNode>(() => import('../../../components/read/screens').then((m) => ({ default: m.ChainSelectionPanel })))
-  : null
-
 export const PoolFiguresSlot = READ_SCREENS
   ? lazy<(props: { market: Market; onClose: () => void }) => ReactNode>(() => import('../../../components/read/screens').then((m) => ({ default: m.PoolFiguresDialog })))
-  : null
-
-export const PoolFigureNotesSlot = READ_SCREENS
-  ? lazy<(props: { markets: Market[] }) => ReactNode>(() => import('../../../components/read/screens').then((m) => ({ default: m.PoolFigureNotes })))
   : null
 
 export const SlotFailed = READ_SCREENS

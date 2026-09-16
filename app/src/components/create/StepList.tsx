@@ -68,7 +68,7 @@ export function AmountSummary({ state }: { state: JourneyState }) {
   )
 }
 
-/** "None", "Auto-compound" or "Domino sequence". */
+/** "Self-managing", "Auto-compound" or "Domino-compound". */
 export function AutomationSummary({ automation }: { automation: Automation }) {
   return <>{CREATE.automation.options[automation].title}</>
 }

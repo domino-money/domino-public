@@ -1,9 +1,11 @@
 /**
  * The bridge-test build's one read source for the whole app: the same-origin
- * bridge behind slice A's scheduler. Deployed reads keep 1.1 s spacing;
- * local-live uses 10.1 s to fit the development reader's six starts/minute
- * and two-second minimum, without increasing any remote limit. The landing
- * table, position lookup, pickers and figures dialog share one source.
+ * bridge behind slice A's scheduler. Deployed reads keep 1.1 s spacing, the
+ * gateway's per-client budget (five at once, then 30 a minute) and a hold for
+ * the Retry-After of any busy answer; local-live uses 10.1 s to fit the
+ * development reader's six starts/minute and two-second minimum, without
+ * increasing any remote limit. The landing table, position lookup, pickers
+ * and figures dialog share one source, so one budget.
  */
 import { CAPABILITIES } from '../../capabilities'
 import * as estimateRuntime from 'api-contracts/read-v2/runtime.mjs'

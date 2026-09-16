@@ -1,10 +1,19 @@
-/** Pure update of the two existing read tunnel configurations; no I/O. */
+/** Pure update of the two existing read tunnel configurations; no I/O.
+ *
+ * Each tunnel accepts every path state it has been published with, and
+ * writes `next`: `before` (read-v1 only), `after` (read-v2 pool-market added,
+ * the live state) and `next` itself, so running it again changes nothing.
+ * Production adds the stored markets snapshot to its read-v1 routes;
+ * development adds it with pool-positions and pool-metrics. Nothing else in a
+ * rule ever changes.
+ */
 const TARGETS = Object.freeze({
   '31526265-ca63-40f2-bbb7-bd37a537f899': {
     hostname: 'vm-read.domino.money',
     service: 'http://127.0.0.1:8878',
     before: '^/internal/read/v1/(token|pools|pool-market|wallet-assets|nft-positions|catalogue|pool-activity|pool-positions|pool-metrics)$',
     after: '^/internal/read/(v1/(token|pools|pool-market|wallet-assets|nft-positions|catalogue|pool-activity|pool-positions|pool-metrics)|v2/pool-market)$',
+    next: '^/internal/read/(v1/(token|pools|pool-market|wallet-assets|nft-positions|catalogue|pool-activity|pool-positions|pool-metrics|markets-snapshot)|v2/pool-market)$',
     controls: (rule) => record(rule.originRequest) && record(rule.originRequest.access) && rule.originRequest.access.required === true,
   },
   '7abb1264-ee70-4b69-a33c-b75a9deb4589': {
@@ -12,6 +21,7 @@ const TARGETS = Object.freeze({
     service: 'http://127.0.0.1:8891',
     before: '^/internal/(read/v1/(token|pools|pool-market|wallet-assets|nft-positions|catalogue|pool-activity|capabilities)|dev/v1/status)$',
     after: '^/internal/(read/v1/(token|pools|pool-market|wallet-assets|nft-positions|catalogue|pool-activity|capabilities)|read/v2/(pool-market|capabilities)|dev/v1/status)$',
+    next: '^/internal/(read/v1/(token|pools|pool-market|wallet-assets|nft-positions|catalogue|pool-activity|pool-positions|pool-metrics|markets-snapshot|capabilities)|read/v2/(pool-market|capabilities)|dev/v1/status)$',
     controls: (rule) => record(rule.originRequest) && rule.originRequest.httpHostHeader === '127.0.0.1:8891',
   },
 });
@@ -35,9 +45,9 @@ export function extendReadTunnelConfig(tunnelId, config) {
   if (matches.length !== 1) refuse();
   const index = matches[0];
   const rule = config.ingress[index];
-  if (rule.service !== target.service || ![target.before, target.after].includes(rule.path)
+  if (rule.service !== target.service || ![target.before, target.after, target.next].includes(rule.path)
       || !target.controls(rule)) refuse();
   const result = structuredClone(config);
-  result.ingress[index].path = target.after;
+  result.ingress[index].path = target.next;
   return result;
 }

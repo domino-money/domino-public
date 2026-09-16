@@ -1,34 +1,140 @@
-import { concatHex, decodeFunctionResult, encodeAbiParameters, encodeFunctionData, keccak256, numberToHex, parseAbi, parseAbiParameters, stringToHex, zeroAddress, type Abi, type Address, type ContractFunctionName, type ContractFunctionReturnType, type Hex } from 'viem'
+import { concatHex, decodeFunctionResult, encodeAbiParameters, encodeFunctionData, keccak256, numberToHex, stringToHex, zeroAddress, type Abi, type Address, type ContractFunctionName, type ContractFunctionReturnType, type Hex } from 'viem'
 import type { GasBudget, WalletRpc } from './setup'
 
-export const sequenceAbi = parseAbi([
-  'struct PoolKey { address currency0; address currency1; uint24 fee; int24 tickSpacing; address hooks; }',
-  'struct Policy { uint16 serviceFeeBps; uint16 triggerDistanceBps; uint16 maxOverlapBps; uint32 minimumIntervalSeconds; uint8 maxPositions; uint64 version; bool paused; }',
-  'struct Limits { uint64 version; uint32 upsideBps; uint16 maxSlippageBps; uint16 maxPriceImpactBps; uint128 maxGasCostWei; uint32 maxObservationAgeSeconds; uint32 forecastHorizonSeconds; }',
-  'struct InitParams { uint256 rootTokenId; bytes32 expectedPoolId; address baseCurrency; address quoteCurrency; address operator; bool consentToUncollectedFees; Policy policy; Limits limits; }',
-  'struct Position { bool known; bool active; bool isRoot; uint256 parentTokenId; uint64 generation; int24 tickLower; int24 tickUpper; bytes32 registrationBaselineId; bytes32 identity; bytes32 source0; bytes32 source1; }',
-  'struct Source { bool known; uint256 tokenId; address originalCurrency; bytes32 positionIdentity; }',
-  'struct Balance { uint128 original; uint128 charged; }',
-  'function factory() view returns(address)', 'function implementation() view returns(address)', 'function implementationVersion() view returns(uint64)',
-  'function poolManager() view returns(address)', 'function positionManager() view returns(address)', 'function stateView() view returns(address)',
-  'function readHelper() view returns(address)', 'function executionEngine() view returns(address)', 'function serviceFeeRecipient() view returns(address)',
-  'function routingHelper() view returns(address)', 'function priceGuard() view returns(address)', 'function publisher() view returns(address)',
-  'function implementationCodeHash() view returns(bytes32)', 'function readHelperCodeHash() view returns(bytes32)', 'function executionEngineCodeHash() view returns(bytes32)',
-  'function poolManagerCodeHash() view returns(bytes32)', 'function positionManagerCodeHash() view returns(bytes32)', 'function stateViewCodeHash() view returns(bytes32)',
-  'function readHelperHash() view returns(bytes32)', 'function routingHelperHash() view returns(bytes32)', 'function priceGuardHash() view returns(bytes32)',
-  'function nextOwnerNonce(address) view returns(uint256)', 'function predictVault(address,uint256) view returns(address)',
-  'function isVault(address) view returns(bool)', 'function vaultForSequence(bytes32) view returns(address)',
-  'function createVault(InitParams,uint256) returns(address)',
-  'function owner() view returns(address)', 'function operator() view returns(address)', 'function sequenceId() view returns(bytes32)',
-  'function rootTokenId() view returns(uint256)', 'function poolId() view returns(bytes32)', 'function poolKey() view returns(PoolKey)',
-  'function baseCurrency() view returns(address)', 'function quoteCurrency() view returns(address)',
-  'function policy() view returns(Policy)', 'function executionLimits() view returns(Limits)', 'function stateNonce() view returns(uint64)',
-  'function rootPermissionValid() view returns(bool)', 'function successorOf(uint256) view returns(uint256)',
-  'function position(uint256) view returns(Position)', 'function source(bytes32) view returns(Source)', 'function feeBalance(bytes32,address) view returns(Balance)',
-  'function pause()', 'function resume()', 'function revokeOperator()', 'function withdrawChildPosition(uint256)', 'function withdrawFeeReserves(bytes32,address,uint128,uint128)',
-  'function ownerOf(uint256) view returns(address)', 'function getApproved(uint256) view returns(address)', 'function approve(address,uint256)',
-  'function getPoolAndPositionInfo(uint256) view returns(PoolKey,uint256)',
-])
+/*
+ * The closed ABI is written as JSON: exactly what viem's parseAbi and
+ * parseAbiParameters make of the reviewed signatures listed with it, so the
+ * page ships no ABI parser. tests/performance.controller.test.mjs parses those
+ * signature lines and requires every JSON form here to equal the result.
+ */
+
+/**
+ * sequenceAbi signatures:
+ *   struct PoolKey { address currency0; address currency1; uint24 fee; int24 tickSpacing; address hooks; }
+ *   struct Policy { uint16 serviceFeeBps; uint16 triggerDistanceBps; uint16 maxOverlapBps; uint32 minimumIntervalSeconds; uint8 maxPositions; uint64 version; bool paused; }
+ *   struct Limits { uint64 version; uint32 upsideBps; uint16 maxSlippageBps; uint16 maxPriceImpactBps; uint128 maxGasCostWei; uint32 maxObservationAgeSeconds; uint32 forecastHorizonSeconds; }
+ *   struct InitParams { uint256 rootTokenId; bytes32 expectedPoolId; address baseCurrency; address quoteCurrency; address operator; bool consentToUncollectedFees; Policy policy; Limits limits; }
+ *   struct Position { bool known; bool active; bool isRoot; uint256 parentTokenId; uint64 generation; int24 tickLower; int24 tickUpper; bytes32 registrationBaselineId; bytes32 identity; bytes32 source0; bytes32 source1; }
+ *   struct Source { bool known; uint256 tokenId; address originalCurrency; bytes32 positionIdentity; }
+ *   struct Balance { uint128 original; uint128 charged; }
+ *   function factory() view returns(address)
+ *   function implementation() view returns(address)
+ *   function implementationVersion() view returns(uint64)
+ *   function poolManager() view returns(address)
+ *   function positionManager() view returns(address)
+ *   function stateView() view returns(address)
+ *   function readHelper() view returns(address)
+ *   function executionEngine() view returns(address)
+ *   function serviceFeeRecipient() view returns(address)
+ *   function routingHelper() view returns(address)
+ *   function priceGuard() view returns(address)
+ *   function publisher() view returns(address)
+ *   function implementationCodeHash() view returns(bytes32)
+ *   function readHelperCodeHash() view returns(bytes32)
+ *   function executionEngineCodeHash() view returns(bytes32)
+ *   function poolManagerCodeHash() view returns(bytes32)
+ *   function positionManagerCodeHash() view returns(bytes32)
+ *   function stateViewCodeHash() view returns(bytes32)
+ *   function readHelperHash() view returns(bytes32)
+ *   function routingHelperHash() view returns(bytes32)
+ *   function priceGuardHash() view returns(bytes32)
+ *   function nextOwnerNonce(address) view returns(uint256)
+ *   function predictVault(address,uint256) view returns(address)
+ *   function isVault(address) view returns(bool)
+ *   function vaultForSequence(bytes32) view returns(address)
+ *   function createVault(InitParams,uint256) returns(address)
+ *   function owner() view returns(address)
+ *   function operator() view returns(address)
+ *   function sequenceId() view returns(bytes32)
+ *   function rootTokenId() view returns(uint256)
+ *   function poolId() view returns(bytes32)
+ *   function poolKey() view returns(PoolKey)
+ *   function baseCurrency() view returns(address)
+ *   function quoteCurrency() view returns(address)
+ *   function policy() view returns(Policy)
+ *   function executionLimits() view returns(Limits)
+ *   function stateNonce() view returns(uint64)
+ *   function rootPermissionValid() view returns(bool)
+ *   function successorOf(uint256) view returns(uint256)
+ *   function activePositions() view returns(uint256)
+ *   function position(uint256) view returns(Position)
+ *   function source(bytes32) view returns(Source)
+ *   function feeBalance(bytes32,address) view returns(Balance)
+ *   function pause()
+ *   function resume()
+ *   function revokeOperator()
+ *   function withdrawChildPosition(uint256)
+ *   function withdrawFeeReserves(bytes32,address,uint128,uint128)
+ *   function ownerOf(uint256) view returns(address)
+ *   function getApproved(uint256) view returns(address)
+ *   function approve(address,uint256)
+ *   function getPoolAndPositionInfo(uint256) view returns(PoolKey,uint256)
+ */
+const poolKeyComponents = [{ name: 'currency0', type: 'address' }, { name: 'currency1', type: 'address' }, { name: 'fee', type: 'uint24' }, { name: 'tickSpacing', type: 'int24' }, { name: 'hooks', type: 'address' }] as const
+const policyComponents = [{ name: 'serviceFeeBps', type: 'uint16' }, { name: 'triggerDistanceBps', type: 'uint16' }, { name: 'maxOverlapBps', type: 'uint16' }, { name: 'minimumIntervalSeconds', type: 'uint32' }, { name: 'maxPositions', type: 'uint8' }, { name: 'version', type: 'uint64' }, { name: 'paused', type: 'bool' }] as const
+const limitsComponents = [{ name: 'version', type: 'uint64' }, { name: 'upsideBps', type: 'uint32' }, { name: 'maxSlippageBps', type: 'uint16' }, { name: 'maxPriceImpactBps', type: 'uint16' }, { name: 'maxGasCostWei', type: 'uint128' }, { name: 'maxObservationAgeSeconds', type: 'uint32' }, { name: 'forecastHorizonSeconds', type: 'uint32' }] as const
+const initParamsComponents = [{ name: 'rootTokenId', type: 'uint256' }, { name: 'expectedPoolId', type: 'bytes32' }, { name: 'baseCurrency', type: 'address' }, { name: 'quoteCurrency', type: 'address' }, { name: 'operator', type: 'address' }, { name: 'consentToUncollectedFees', type: 'bool' }, { name: 'policy', type: 'tuple', components: policyComponents }, { name: 'limits', type: 'tuple', components: limitsComponents }] as const
+const positionComponents = [{ name: 'known', type: 'bool' }, { name: 'active', type: 'bool' }, { name: 'isRoot', type: 'bool' }, { name: 'parentTokenId', type: 'uint256' }, { name: 'generation', type: 'uint64' }, { name: 'tickLower', type: 'int24' }, { name: 'tickUpper', type: 'int24' }, { name: 'registrationBaselineId', type: 'bytes32' }, { name: 'identity', type: 'bytes32' }, { name: 'source0', type: 'bytes32' }, { name: 'source1', type: 'bytes32' }] as const
+const sourceComponents = [{ name: 'known', type: 'bool' }, { name: 'tokenId', type: 'uint256' }, { name: 'originalCurrency', type: 'address' }, { name: 'positionIdentity', type: 'bytes32' }] as const
+const balanceComponents = [{ name: 'original', type: 'uint128' }, { name: 'charged', type: 'uint128' }] as const
+export const sequenceAbi = [
+  { name: 'factory', type: 'function', stateMutability: 'view', inputs: [], outputs: [{ type: 'address' }] },
+  { name: 'implementation', type: 'function', stateMutability: 'view', inputs: [], outputs: [{ type: 'address' }] },
+  { name: 'implementationVersion', type: 'function', stateMutability: 'view', inputs: [], outputs: [{ type: 'uint64' }] },
+  { name: 'poolManager', type: 'function', stateMutability: 'view', inputs: [], outputs: [{ type: 'address' }] },
+  { name: 'positionManager', type: 'function', stateMutability: 'view', inputs: [], outputs: [{ type: 'address' }] },
+  { name: 'stateView', type: 'function', stateMutability: 'view', inputs: [], outputs: [{ type: 'address' }] },
+  { name: 'readHelper', type: 'function', stateMutability: 'view', inputs: [], outputs: [{ type: 'address' }] },
+  { name: 'executionEngine', type: 'function', stateMutability: 'view', inputs: [], outputs: [{ type: 'address' }] },
+  { name: 'serviceFeeRecipient', type: 'function', stateMutability: 'view', inputs: [], outputs: [{ type: 'address' }] },
+  { name: 'routingHelper', type: 'function', stateMutability: 'view', inputs: [], outputs: [{ type: 'address' }] },
+  { name: 'priceGuard', type: 'function', stateMutability: 'view', inputs: [], outputs: [{ type: 'address' }] },
+  { name: 'publisher', type: 'function', stateMutability: 'view', inputs: [], outputs: [{ type: 'address' }] },
+  { name: 'implementationCodeHash', type: 'function', stateMutability: 'view', inputs: [], outputs: [{ type: 'bytes32' }] },
+  { name: 'readHelperCodeHash', type: 'function', stateMutability: 'view', inputs: [], outputs: [{ type: 'bytes32' }] },
+  { name: 'executionEngineCodeHash', type: 'function', stateMutability: 'view', inputs: [], outputs: [{ type: 'bytes32' }] },
+  { name: 'poolManagerCodeHash', type: 'function', stateMutability: 'view', inputs: [], outputs: [{ type: 'bytes32' }] },
+  { name: 'positionManagerCodeHash', type: 'function', stateMutability: 'view', inputs: [], outputs: [{ type: 'bytes32' }] },
+  { name: 'stateViewCodeHash', type: 'function', stateMutability: 'view', inputs: [], outputs: [{ type: 'bytes32' }] },
+  { name: 'readHelperHash', type: 'function', stateMutability: 'view', inputs: [], outputs: [{ type: 'bytes32' }] },
+  { name: 'routingHelperHash', type: 'function', stateMutability: 'view', inputs: [], outputs: [{ type: 'bytes32' }] },
+  { name: 'priceGuardHash', type: 'function', stateMutability: 'view', inputs: [], outputs: [{ type: 'bytes32' }] },
+  { name: 'nextOwnerNonce', type: 'function', stateMutability: 'view', inputs: [{ type: 'address' }], outputs: [{ type: 'uint256' }] },
+  { name: 'predictVault', type: 'function', stateMutability: 'view', inputs: [{ type: 'address' }, { type: 'uint256' }], outputs: [{ type: 'address' }] },
+  { name: 'isVault', type: 'function', stateMutability: 'view', inputs: [{ type: 'address' }], outputs: [{ type: 'bool' }] },
+  { name: 'vaultForSequence', type: 'function', stateMutability: 'view', inputs: [{ type: 'bytes32' }], outputs: [{ type: 'address' }] },
+  { name: 'createVault', type: 'function', stateMutability: 'nonpayable', inputs: [{ type: 'tuple', components: initParamsComponents }, { type: 'uint256' }], outputs: [{ type: 'address' }] },
+  { name: 'owner', type: 'function', stateMutability: 'view', inputs: [], outputs: [{ type: 'address' }] },
+  { name: 'operator', type: 'function', stateMutability: 'view', inputs: [], outputs: [{ type: 'address' }] },
+  { name: 'sequenceId', type: 'function', stateMutability: 'view', inputs: [], outputs: [{ type: 'bytes32' }] },
+  { name: 'rootTokenId', type: 'function', stateMutability: 'view', inputs: [], outputs: [{ type: 'uint256' }] },
+  { name: 'poolId', type: 'function', stateMutability: 'view', inputs: [], outputs: [{ type: 'bytes32' }] },
+  { name: 'poolKey', type: 'function', stateMutability: 'view', inputs: [], outputs: [{ type: 'tuple', components: poolKeyComponents }] },
+  { name: 'baseCurrency', type: 'function', stateMutability: 'view', inputs: [], outputs: [{ type: 'address' }] },
+  { name: 'quoteCurrency', type: 'function', stateMutability: 'view', inputs: [], outputs: [{ type: 'address' }] },
+  { name: 'policy', type: 'function', stateMutability: 'view', inputs: [], outputs: [{ type: 'tuple', components: policyComponents }] },
+  { name: 'executionLimits', type: 'function', stateMutability: 'view', inputs: [], outputs: [{ type: 'tuple', components: limitsComponents }] },
+  { name: 'stateNonce', type: 'function', stateMutability: 'view', inputs: [], outputs: [{ type: 'uint64' }] },
+  { name: 'rootPermissionValid', type: 'function', stateMutability: 'view', inputs: [], outputs: [{ type: 'bool' }] },
+  { name: 'successorOf', type: 'function', stateMutability: 'view', inputs: [{ type: 'uint256' }], outputs: [{ type: 'uint256' }] },
+  { name: 'activePositions', type: 'function', stateMutability: 'view', inputs: [], outputs: [{ type: 'uint256' }] },
+  { name: 'position', type: 'function', stateMutability: 'view', inputs: [{ type: 'uint256' }], outputs: [{ type: 'tuple', components: positionComponents }] },
+  { name: 'source', type: 'function', stateMutability: 'view', inputs: [{ type: 'bytes32' }], outputs: [{ type: 'tuple', components: sourceComponents }] },
+  { name: 'feeBalance', type: 'function', stateMutability: 'view', inputs: [{ type: 'bytes32' }, { type: 'address' }], outputs: [{ type: 'tuple', components: balanceComponents }] },
+  { name: 'pause', type: 'function', stateMutability: 'nonpayable', inputs: [], outputs: [] },
+  { name: 'resume', type: 'function', stateMutability: 'nonpayable', inputs: [], outputs: [] },
+  { name: 'revokeOperator', type: 'function', stateMutability: 'nonpayable', inputs: [], outputs: [] },
+  { name: 'withdrawChildPosition', type: 'function', stateMutability: 'nonpayable', inputs: [{ type: 'uint256' }], outputs: [] },
+  { name: 'withdrawFeeReserves', type: 'function', stateMutability: 'nonpayable', inputs: [{ type: 'bytes32' }, { type: 'address' }, { type: 'uint128' }, { type: 'uint128' }], outputs: [] },
+  { name: 'ownerOf', type: 'function', stateMutability: 'view', inputs: [{ type: 'uint256' }], outputs: [{ type: 'address' }] },
+  { name: 'getApproved', type: 'function', stateMutability: 'view', inputs: [{ type: 'uint256' }], outputs: [{ type: 'address' }] },
+  { name: 'approve', type: 'function', stateMutability: 'nonpayable', inputs: [{ type: 'address' }, { type: 'uint256' }], outputs: [] },
+  { name: 'getPoolAndPositionInfo', type: 'function', stateMutability: 'view', inputs: [{ type: 'uint256' }], outputs: [{ type: 'tuple', components: poolKeyComponents }, { type: 'uint256' }] },
+] as const
+/** sequenceIdParameters signature: bytes32,uint256,address,address,uint256 */
+export const sequenceIdParameters = [{ type: 'bytes32' }, { type: 'uint256' }, { type: 'address' }, { type: 'address' }, { type: 'uint256' }] as const
+/** poolKeyParameters signature: (address currency0,address currency1,uint24 fee,int24 tickSpacing,address hooks) */
+export const poolKeyParameters = [{ type: 'tuple', components: poolKeyComponents }] as const
 type Component = 'factory' | 'implementation' | 'poolManager' | 'positionManager' | 'stateView' | 'readHelper' | 'engine' | 'routing' | 'priceGuard'
 export interface SequenceDeployment extends Record<Component, Address> {
   serviceFeeRecipient: Address; operator: Address; pricePublisher: Address; serviceFeeBps: 200; expiresAt: number
@@ -44,6 +150,12 @@ export interface SequenceState {
   vault: Address; sequenceId: Hex; rootTokenId: bigint; operator: Address; paused: boolean; rootPermissionValid: boolean
   baseCurrency: Address; quoteCurrency: Address; stateNonce: bigint
 }
+/** A sequence this wallet created, as the factory lists it: newest first, with its root NFT. */
+export interface OwnedSequence { vault: Address; sequenceId: Hex; ownerNonce: bigint; rootTokenId: bigint }
+/** How many of a wallet's most recent sequences the client lists; `older` says whether it created more. */
+export const SEQUENCE_LIST_LIMIT = 8
+/** The most successors a member read follows, so one read stays inside its wallet-call ceiling. */
+export const SEQUENCE_MEMBER_STEPS = 30
 export interface PreparedSequence {
   kind: 'approve-root' | 'create' | 'resume' | 'pause' | 'revoke-operator' | 'revoke-root' | 'withdraw-child' | 'withdraw-fees'
   owner: Address; vault: Address; expiresAt: number; summary: readonly string[]
@@ -66,7 +178,7 @@ export function cloneRuntime(implementation: Address): Hex {
   return concatHex(['0x363d3d373d3d3d363d73', implementation, '0x5af43d82803e903d91602b57fd5bf3'])
 }
 export function sequenceIdentity(d: SequenceDeployment, owner: Address, nonce: bigint) {
-  const id = keccak256(encodeAbiParameters(parseAbiParameters('bytes32,uint256,address,address,uint256'),
+  const id = keccak256(encodeAbiParameters(sequenceIdParameters,
     [keccak256(stringToHex('DominoSequence(uint256 chainId,address factory,address owner,uint256 nonce)')),4663n,d.factory,owner,uint(nonce,256)]))
   const initHash = keccak256(concatHex(['0x3d602d80600a3d3981f3', cloneRuntime(d.implementation)]))
   const vault = `0x${keccak256(concatHex(['0xff', d.factory, id, initHash])).slice(-40)}` as Address
@@ -141,7 +253,11 @@ export function createSequenceClient(wallet: WalletRpc, deployment: SequenceDepl
     if (keccak256(hex(await c.rpc('eth_getCode', [d[component], c.block]))) !== d.codeHashes[component]) fail('deployment_code_changed')
   }
   async function links(c: Context, to: Address, values: Partial<Record<ViewName, unknown>>) {
-    for (const [name, expected] of Object.entries(values) as [ViewName,unknown][]) equal(await call(c, to, name), expected)
+    // The same call as `call`, left untyped: a link is only compared as text, and typing one result over every view name is needlessly deep for the compiler.
+    const abi: Abi = sequenceAbi
+    for (const [functionName, expected] of Object.entries(values) as [string,unknown][]) {
+      equal(decodeFunctionResult({ abi, functionName, data: hex(await c.rpc('eth_call', [{ to, data: encodeFunctionData({ abi, functionName, args: [] }) }, c.block])) }), expected)
+    }
   }
   async function verify(c: Context, recovery = false) {
     if (!recovery && now() >= d.expiresAt) fail('sequence_release_expired')
@@ -193,7 +309,7 @@ export function createSequenceClient(wallet: WalletRpc, deployment: SequenceDepl
     const [rawKey, packed] = await call(c, d.positionManager, 'getPoolAndPositionInfo', [tokenId])
     const key = { ...rawKey, currency0: address(rawKey.currency0.toLowerCase()), currency1: address(rawKey.currency1.toLowerCase()), hooks: address(rawKey.hooks.toLowerCase()) }
     if (key.currency0 >= key.currency1 || key.hooks !== zeroAddress || key.fee > 1_000_000 || key.tickSpacing <= 0 || key.tickSpacing > 32767) fail('unsupported_pool')
-    const poolId = keccak256(encodeAbiParameters(parseAbiParameters('(address currency0,address currency1,uint24 fee,int24 tickSpacing,address hooks)'), [key]))
+    const poolId = keccak256(encodeAbiParameters(poolKeyParameters, [key]))
     const lower = Number(BigInt.asIntN(24, packed >> 8n)), upper = Number(BigInt.asIntN(24, packed >> 32n))
     if (packed >> 56n !== BigInt(poolId) >> 56n || lower < -887272 || upper > 887272 || lower >= upper || lower % key.tickSpacing || upper % key.tickSpacing) fail('invalid_position_identity')
     for (const currency of [key.currency0,key.currency1]) if (currency !== zeroAddress && hex(await c.rpc('eth_getCode', [currency,c.block])) === '0x') fail('invalid_currency')
@@ -234,6 +350,39 @@ export function createSequenceClient(wallet: WalletRpc, deployment: SequenceDepl
       const rows: { vault: Address; sequenceId: Hex; ownerNonce: bigint }[] = []
       for (let n = nonce; n > 0n && n > nonce - 8n; n--) { const found = sequenceIdentity(d,wallet.owner,n-1n); equal(await call(c,d.factory,'vaultForSequence',[found.id]),found.vault); rows.push({vault:found.vault,sequenceId:found.id,ownerNonce:n-1n}) }
       await canonical(c); return rows
+    }),
+    /** Read-only, for tracking: the sequences `recent` lists, each with its root NFT, checked only as recovery checks a deployment. Prepares nothing. */
+    sequences: () => bounded(async c => {
+      await verify(c,true); const nonce = await call(c,d.factory,'nextOwnerNonce',[wallet.owner]) as bigint
+      const rows: OwnedSequence[] = []
+      for (let n = nonce; n > 0n && n > nonce - BigInt(SEQUENCE_LIST_LIMIT); n--) {
+        const found = sequenceIdentity(d,wallet.owner,n-1n); equal(await call(c,d.factory,'vaultForSequence',[found.id]),found.vault)
+        rows.push({vault:found.vault,sequenceId:found.id,ownerNonce:n-1n,rootTokenId:await call(c,found.vault,'rootTokenId') as bigint})
+      }
+      await canonical(c); return { rows, older: nonce > BigInt(SEQUENCE_LIST_LIMIT) }
+    }),
+    /**
+     * Read-only, for tracking: the complete active NFT set of a sequence this
+     * wallet owns, in the order the vault registered it: the root, then each
+     * successor still held. Every successor is walked from the root, and the
+     * count must equal the vault's own `activePositions`. Prepares nothing.
+     */
+    members: (vault: Address) => bounded(async c => {
+      await verify(c,true); const s = await owned(c,vault)
+      const root = await call(c,vault,'position',[s.rootTokenId])
+      if (!root.known || !root.active || !root.isRoot) fail('invalid_position_identity')
+      const tokenIds = [s.rootTokenId]
+      for (let parent = s.rootTokenId, steps = 0; ; steps++) {
+        const next = await call(c,vault,'successorOf',[parent]) as bigint
+        if (next === 0n) break
+        if (steps >= SEQUENCE_MEMBER_STEPS) fail('sequence_members_unbounded')
+        const p = await call(c,vault,'position',[next])
+        if (!p.known || p.isRoot || p.parentTokenId !== parent) fail('invalid_position_identity')
+        if (p.active) tokenIds.push(next)
+        parent = next
+      }
+      if (await call(c,vault,'activePositions') !== BigInt(tokenIds.length)) fail('sequence_members_incomplete')
+      await canonical(c); return { vault, rootTokenId: s.rootTokenId, tokenIds }
     }),
     create: (supplied: SequenceOptions, gas: GasBudget) => bounded(async c => {
       const o = Object.freeze({...supplied}); options(o); await verify(c); const r = await root(c,o.rootTokenId)

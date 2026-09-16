@@ -18,10 +18,12 @@ import { formatUnits } from '../decimal'
 import { tokenDisplay, unreadToken } from '../project'
 import type { ReadSource, TokenDisplay } from '../types'
 import { feeLabel } from './fee'
+import { tokenAmount } from './figures'
 import { NATIVE_CURRENCY, addressKey, poolIdKey, type AddressKey, type PoolIdKey } from './identity'
 // poolRange imports tickPriceText from here; the cycle is safe because
 // neither module calls the other while it loads, only from inside functions.
-import { rangePosition, tickAgrees, type PriceProblem } from './poolRange'
+import { rangePosition, tickAgrees, usableTicks, type PriceProblem } from './poolRange'
+import { reaskDelayMs } from './quietRead'
 import { readWithin, type ScreenOutcome } from './screenRead'
 
 export const MAX_TOKEN_IDS = 10
@@ -48,8 +50,15 @@ export function parseTokenIdsInput(text: string): { ok: true; ids: string[] } | 
 
 export interface AmountView {
   raw: string
-  /** Display units when the token's decimals are known, otherwise the raw integer. */
+  /**
+   * What a card shows: the amount in the token's units to six significant
+   * digits (never fewer than its whole part, never an exponent), as the pool
+   * page's activity card writes amounts; "0"; or, when the token's decimals
+   * are not known, the raw integer, which a card never shows as units.
+   */
   text: string
+  /** The amount in the token's units, every digit, for a title; null when the decimals are not known. */
+  exact: string | null
   kind: 'units' | 'raw' | 'zero'
   token: TokenDisplay
 }
@@ -69,7 +78,15 @@ export type ChainPositionCard =
       fee: string
       tickSpacing: number
       hooks: AddressKey
-      range: { tickLower: number; tickUpper: number; prices: { lower: string; upper: string } | null }
+      range: {
+        tickLower: number
+        tickUpper: number
+        /** Both ends at the pool's usable tick limits: the position covers every price the pool can have. */
+        fullRange: boolean
+        ends: { lower: RangeEnd; upper: RangeEnd }
+        /** Both ends written as prices or limits ('0', '∞'); null when either end is written as its tick. */
+        prices: { lower: string; upper: string } | null
+      }
       /** The producer's own answer at the snapshot, never recomputed here. */
       inRange: boolean
       hasLiquidity: boolean
@@ -97,11 +114,43 @@ export function tickPriceText(tick: number, decimals0: number, decimals1: number
   return `≈${new Intl.NumberFormat('en-US', { maximumSignificantDigits: 6 }).format(value)}`
 }
 
+/** One end of a position's range as a card writes it. */
+export type RangeEnd =
+  /** At the pool's usable tick limit on that side: every price below (0) or above (∞). Needs no decimals. */
+  | { kind: 'limit'; text: '0' | '∞' }
+  /** 1.0001^tick in display units, from tickPriceText. */
+  | { kind: 'price'; text: string }
+  /** Written as its tick, and why. */
+  | { kind: 'tick'; problem: Extract<PriceProblem, 'decimals_unknown' | 'beyond_display'> }
+
+/**
+ * One end of a range, on its own. An end at the pool's usable tick limit on
+ * its side covers every price the pool can have there, so it is 0 or ∞ and
+ * needs no decimals (Uniswap's own Min 0 / Max ∞). Any other end is a price
+ * when both decimals are known and the price can be written as a plain
+ * number; otherwise its tick, with the reason.
+ */
+export function rangeEnd(tick: number, side: 'lower' | 'upper', tickSpacing: number, decimals0: number | null, decimals1: number | null): RangeEnd {
+  const { min, max } = usableTicks(tickSpacing)
+  if (side === 'lower' && tick <= min) return { kind: 'limit', text: '0' }
+  if (side === 'upper' && tick >= max) return { kind: 'limit', text: '∞' }
+  if (decimals0 === null || decimals1 === null) return { kind: 'tick', problem: 'decimals_unknown' }
+  const text = tickPriceText(tick, decimals0, decimals1)
+  return text === null ? { kind: 'tick', problem: 'beyond_display' } : { kind: 'price', text }
+}
+
+/** Why a card writes a range end as a tick, or null. An unread decimal comes first: it is the one a reader can act on. */
+export function rangePricesProblem(range: { ends: { lower: RangeEnd; upper: RangeEnd } }): 'decimals_unknown' | 'beyond_display' | null {
+  const problems = [range.ends.lower, range.ends.upper].flatMap((end) => (end.kind === 'tick' ? [end.problem] : []))
+  return problems.includes('decimals_unknown') ? 'decimals_unknown' : (problems[0] ?? null)
+}
+
 function amount(raw: string, token: TokenDisplay): AmountView {
-  if (raw === '0') return { raw, text: '0', kind: 'zero', token }
-  const units = formatUnits(raw, token.origin === 'read' ? token.decimals : null)
-  if (units === null) return { raw, text: raw, kind: 'raw', token }
-  return { raw, text: units.text, kind: units.kind === 'units' ? 'units' : 'raw', token }
+  if (raw === '0') return { raw, text: '0', exact: '0', kind: 'zero', token }
+  // The activity card's own rule, bound to this token by its address: six significant digits, and every digit for the title.
+  const shown = tokenAmount(raw, token.address, [token])
+  if (shown.text === null || shown.exact === null) return { raw, text: formatUnits(raw, null)?.text ?? raw, exact: null, kind: 'raw', token }
+  return { raw, text: shown.text, exact: shown.exact, kind: 'units', token }
 }
 
 /** The distinct currencies whose details a batch needs, in order, and how many fall beyond the cap. */
@@ -129,12 +178,10 @@ function liveCard(item: LiveNft, tokens: ReadonlyMap<string, TokenDisplay>): Cha
   const quote = token(item.poolKey.currency1)
   const d0 = base.origin === 'read' ? base.decimals : null
   const d1 = quote.origin === 'read' ? quote.decimals : null
-  let prices: { lower: string; upper: string } | null = null
-  if (d0 !== null && d1 !== null) {
-    const lower = tickPriceText(item.tickLower, d0, d1)
-    const upper = tickPriceText(item.tickUpper, d0, d1)
-    prices = lower && upper ? { lower, upper } : null
-  }
+  const spacing = item.poolKey.tick_spacing
+  // Each end on its own: a full-range end is 0 or ∞ whatever the decimals, and an unwritable price is not blamed on them.
+  const ends = { lower: rangeEnd(item.tickLower, 'lower', spacing, d0, d1), upper: rangeEnd(item.tickUpper, 'upper', spacing, d0, d1) }
+  const prices = ends.lower.kind !== 'tick' && ends.upper.kind !== 'tick' ? { lower: ends.lower.text, upper: ends.upper.text } : null
   return {
     origin: 'chain',
     kind: 'live',
@@ -146,7 +193,7 @@ function liveCard(item: LiveNft, tokens: ReadonlyMap<string, TokenDisplay>): Cha
     fee: feeLabel(item.poolKey),
     tickSpacing: item.poolKey.tick_spacing,
     hooks: addressKey(item.poolKey.hooks),
-    range: { tickLower: item.tickLower, tickUpper: item.tickUpper, prices },
+    range: { tickLower: item.tickLower, tickUpper: item.tickUpper, fullRange: ends.lower.kind === 'limit' && ends.upper.kind === 'limit', ends, prices },
     inRange: item.inRange,
     hasLiquidity: item.hasLiquidity,
     principal: [amount(item.principalRaw[0], base), amount(item.principalRaw[1], quote)],
@@ -251,26 +298,38 @@ export function createLookupRunner(source: ReadSource, dispatch: (event: LookupE
 type Settled =
   | { phase: 'idle' }
   | { phase: 'ready'; requestId: number; ids: string[]; batch: Batch }
-  | { phase: 'failed'; requestId: number; ids: string[]; failure: LookupFailure; retained: Batch | null }
+  | {
+      phase: 'failed'
+      requestId: number
+      ids: string[]
+      failure: LookupFailure
+      retained: Batch | null
+      /** A lookup after this failure was cancelled: the failure is back on screen, and nothing asks again on its own. */
+      cancelled?: true
+    }
 
 export type LookupState = Settled | { phase: 'loading'; requestId: number; ids: string[]; retained: Batch | null; before: Settled }
 
 export type LookupEvent =
-  /** Look up, Refresh and Retry each take a new request id. */
+  /** Looking up, and each quiet re-ask, take a new request id. */
   | { type: 'submit'; requestId: number; ids: string[] }
   | { type: 'result'; requestId: number; result: LookupResult }
-  /** Hiding the lookup while it reads. */
+  /** Cancel while the lookup reads. */
   | { type: 'cancel'; requestId: number }
   | { type: 'clear' }
 
 const shownBatch = (state: LookupState): Batch | null =>
   state.phase === 'ready' ? state.batch : state.phase === 'failed' || state.phase === 'loading' ? state.retained : null
 
+/** What a stopped lookup leaves: what was there, and a failure there stays put rather than being asked again. */
+const stopped = (before: Settled): Settled => (before.phase === 'failed' ? { ...before, cancelled: true } : before)
+
 /**
  * The lookup's state. Only the latest request's result lands; any other is
  * dropped, so a slow first answer can never overwrite a later one. Earlier
- * cards stay through a failed refresh of the same IDs, with their own block
- * and time, and are dropped when the IDs change.
+ * cards stay through a failed lookup of the same IDs, with their own block
+ * and time, and are dropped when the IDs change. A cancelled lookup restores
+ * what was there, marked so it is not asked again on its own.
  */
 export function lookupReducer(state: LookupState, event: LookupEvent): LookupState {
   switch (event.type) {
@@ -283,17 +342,27 @@ export function lookupReducer(state: LookupState, event: LookupEvent): LookupSta
     case 'result': {
       if (state.phase !== 'loading' || state.requestId !== event.requestId) return state
       const { result } = event
-      if (result.kind === 'aborted') return state.before
+      if (result.kind === 'aborted') return stopped(state.before)
       if (result.kind === 'ok') return { phase: 'ready', requestId: state.requestId, ids: state.ids, batch: result.batch }
       return { phase: 'failed', requestId: state.requestId, ids: state.ids, failure: result.failure, retained: state.retained }
     }
     case 'cancel':
-      return state.phase === 'loading' && state.requestId === event.requestId ? state.before : state
+      return state.phase === 'loading' && state.requestId === event.requestId ? stopped(state.before) : state
     case 'clear':
       return { phase: 'idle' }
     default:
       return event satisfies never
   }
+}
+
+/**
+ * The wait before a failed lookup is asked again on its own (quietRead's
+ * policy, `attempts` re-asks already spent on these IDs), or null: nothing to
+ * ask while the lookup is anything but failed, never after the person
+ * cancelled, and never for a failure that cannot pass. `random` is for tests.
+ */
+export function lookupReaskDelay(state: LookupState, attempts: number, random?: () => number): number | null {
+  return state.phase === 'failed' && !state.cancelled ? reaskDelayMs(state.failure, attempts, random) : null
 }
 
 export const isNative = (address: string) => address.toLowerCase() === NATIVE_CURRENCY

@@ -4,15 +4,19 @@ import { COPY, failureText } from '../../../lib/read/screens/copy'
 import { cataloguePoolId, createCatalogueSession, verifyCandidate, type CatalogueSession, type CatalogueSnapshot } from '../../../lib/read/screens/catalogueSession'
 import { NATIVE_CURRENCY, type AddressKey, type PoolIdKey } from '../../../lib/read/screens/identity'
 import { neutralOrder, poolsRequest, projectPoolsView, type PoolOption, type PoolsView } from '../../../lib/read/screens/poolsList'
-import { readWithin } from '../../../lib/read/screens/screenRead'
+import { failureCode } from '../../../lib/read/screens/quietRead'
+import { askAgainLater, readWithin } from '../../../lib/read/screens/screenRead'
+import { asksAgain } from '../../../lib/read/screens/transient'
 import type { ReadSource } from '../../../lib/read/types'
 import { IconChevronRight } from '../../icons'
 import { TokenMarkPair } from '../../TokenIcon'
-import { Button, cx } from '../../ui'
+import { Button, Skeleton, cx } from '../../ui'
 import { Address } from './Address'
 import { ProviderFigure } from './ProviderFigure'
-import { ScreenStatus, type StatusLine } from './ScreenStatus'
 import { SymbolText } from './SymbolText'
+
+/** A candidate's verification: `loading`, `ok`, `not_found` or a read state, and its words for the title and the live region. */
+type Check = { code: string; text: string }
 
 /**
  * One verified pool. As a radio it is a choice inside a picker; with `open`
@@ -48,7 +52,7 @@ function PoolRow({ option, checked, onPick, name, compact = false, open = false 
         <ProviderFigure label="24h volume" figure={option.volume} />
         <p className="dm-mkt-option-apr"><span className="text-fg-muted">Pool APR</span><span>Unavailable</span></p>
       </div>
-      {option.tokenMetadata === 'partial' && <p className="dm-mkt-option-note text-money-wait">{COPY.picker.partialMetadata}</p>}
+      {option.tokenMetadata === 'partial' && <p className="dm-mkt-option-note text-fg-muted">{COPY.picker.partialMetadata}</p>}
       {option.providerConflict && <p className="dm-mkt-option-note text-money-out">{COPY.picker.providerConflict}</p>}
       <details className="dm-details dm-mkt-option-details">
         <summary>Pool details · verified at block {option.block}</summary>
@@ -90,8 +94,10 @@ export function CatalogueCandidates({
   verifiedNote?: string
 }) {
   const [snap, setSnap] = useState<CatalogueSnapshot | null>(null)
-  const [checking, setChecking] = useState<Record<string, StatusLine>>({})
+  const [checking, setChecking] = useState<Record<string, Check>>({})
   const session = useRef<CatalogueSession | null>(null)
+  /** Quiet asks already spent on the first page, and on each candidate's verification. */
+  const quiet = useRef(new Map<string, number>())
   /**
    * Every read still in flight, not just the last one started. Verifying a
    * second row, or paging while one verify runs, used to overwrite the single
@@ -121,58 +127,78 @@ export function CatalogueCandidates({
     return { mine, done: () => running.current.delete(mine) }
   }
 
-  const step = (go: (s: CatalogueSession, signal: AbortSignal) => Promise<CatalogueSnapshot>) => {
+  /** Waits out a busy or briefly unavailable answer, then asks again, a few times at most per `slot`. */
+  const again = (slot: string, failure: { state: string }, ask: () => void) => {
+    const spent = quiet.current.get(slot) ?? 0
+    const { mine, done } = start()
+    void askAgainLater(failure, spent, mine.signal).then((yes) => {
+      done()
+      if (!yes || mine.signal.aborted || !mounted.current) return
+      quiet.current.set(slot, spent + 1)
+      ask()
+    })
+  }
+
+  const step = (go: (s: CatalogueSession, signal: AbortSignal) => Promise<CatalogueSnapshot>, first = false) => {
     const current = (session.current ??= createCatalogueSession(source, token, paired))
     if (current.snapshot().loading) return
     const { mine, done } = start()
     const result = go(current, mine.signal)
-    // first/more set loading synchronously; retain any failure beside the busy Retry.
+    // first/more set loading synchronously; a failure stays in data and titles only.
     setSnap(current.snapshot())
     void result.then((next) => {
       done()
-      if (!mine.signal.aborted && mounted.current) setSnap({ ...next })
+      if (mine.signal.aborted || !mounted.current) return
+      setSnap({ ...next })
+      if (next.failure && first && next.view.pages === 0) again('first', next.failure, () => step((s, signal) => s.first(signal), true))
     })
   }
 
   const verify = (poolId: PoolIdKey) => {
     const { mine, done } = start()
-    setChecking((c) => ({ ...c, [poolId]: { code: 'loading', title: 'Verifying…', detail: '' } }))
+    setChecking((c) => ({ ...c, [poolId]: { code: 'loading', text: '' } }))
     void verifyCandidate(source, token, paired, poolId, { signal: mine.signal }).then((result) => {
       done()
       // A verify that comes back after the picker closed announces nothing and
       // chooses nothing: onVerified must not run for a screen that is gone.
       if (mine.signal.aborted || !mounted.current) return
       if (result.failure) {
-        if (result.failure.state !== 'aborted') setChecking((c) => ({ ...c, [poolId]: failureText(result.failure as Exclude<typeof result.failure, null>, 'pools') }))
+        if (result.failure.state === 'aborted') return
+        const text = failureText(result.failure, 'pools')
+        setChecking((c) => ({ ...c, [poolId]: { code: text.code, text: [text.title, text.detail].filter(Boolean).join('. ') } }))
+        again(poolId, result.failure, () => verify(poolId))
         return
       }
       if (result.option) {
         onVerified(result.option)
-        setChecking((c) => ({ ...c, [poolId]: { code: 'ok', title: `${COPY.picker.verified} at block ${result.option?.block}.`, detail: '' } }))
+        setChecking((c) => ({ ...c, [poolId]: { code: 'ok', text: `${COPY.picker.verified} at block ${result.option?.block}.` } }))
       } else {
-        setChecking((c) => ({ ...c, [poolId]: { code: 'not_found', title: 'Not verified', detail: 'The pools route did not return this pool, so it cannot be chosen.' } }))
+        setChecking((c) => ({ ...c, [poolId]: { code: 'not_found', text: 'Not verified: the pools route did not return this pool, so it cannot be chosen.' } }))
       }
     })
   }
 
   const view = snap?.view
+  const failed = snap?.failure ? failureText(snap.failure, 'catalogue') : null
+  const failureWords = failed ? [failed.title, failed.detail].filter(Boolean).join('. ') : undefined
+  // With no page read, the way to the catalogue is the button that asked for it.
+  const firstFailed = !!failed && view?.pages === 0 && !snap?.loading
   return (
-    <section aria-labelledby="catalogue-heading" className="dm-mkt-catalogue-panel" data-catalogue="">
+    <section aria-labelledby="catalogue-heading" className="dm-mkt-catalogue-panel" data-catalogue="" data-catalogue-state={snap?.loading ? 'loading' : snap?.failure ? snap.failure.state : snap ? 'ok' : 'idle'}>
       <h3 id="catalogue-heading" className="text-body font-medium text-fg">
         {COPY.picker.catalogueHeading}
       </h3>
       <p className="text-caption text-fg-muted">Find more pools in the indexed catalogue, then verify one to select it.</p>
-      {!snap && (
-        <Button type="button" variant="outline" size="sm" className="justify-self-start" onClick={() => step((s, signal) => s.first(signal))}>
+      <p role="status" className="sr-only">{snap?.loading && view?.pages === 0 ? 'Reading the catalogue…' : failureWords ?? ''}</p>
+      {(!snap || firstFailed) && (
+        <Button type="button" variant="outline" size="sm" className="justify-self-start" title={failureWords} onClick={() => step((s, signal) => s.first(signal), true)}>
           {COPY.picker.catalogueLoad}
         </Button>
       )}
-      {snap?.loading && view?.pages === 0 && <p className="text-caption text-fg-subtle">Reading the catalogue…</p>}
-      {snap?.failure && <ScreenStatus line={failureText(snap.failure, 'catalogue')} busy={snap.loading}
-        onRetry={view?.pages === 0 ? () => step((s, signal) => s.first(signal)) : undefined} />}
+      {snap?.loading && view?.pages === 0 && <Skeleton className="h-10 w-full" />}
       {view && view.pages > 0 && (
         <>
-          {view.restarted && <p className="text-caption text-money-wait">{COPY.picker.catalogueRestarted}</p>}
+          {view.restarted && <p className="text-caption text-fg-muted">{COPY.picker.catalogueRestarted}</p>}
           <p className="text-caption text-fg-muted">{view.facts.map((fact) => fact.text).join(' ')}</p>
           {view.items.length === 0 && <p className="text-caption text-fg-muted">{COPY.picker.catalogueEmpty}</p>}
           <ul className="grid gap-2">
@@ -189,11 +215,21 @@ export function CatalogueCandidates({
                   {done ? (
                     <p className="text-caption text-money-in">{verifiedNote}</p>
                   ) : (
-                    <Button type="button" variant="outline" size="sm" className="justify-self-start" aria-disabled={checking[poolId]?.code === 'loading' ? true : undefined} onClick={() => checking[poolId]?.code !== 'loading' && verify(poolId)}>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      className="justify-self-start"
+                      aria-disabled={checking[poolId]?.code === 'loading' ? true : undefined}
+                      title={checking[poolId]?.code === 'loading' ? undefined : checking[poolId]?.text || undefined}
+                      data-verify={checking[poolId]?.code}
+                      onClick={() => checking[poolId]?.code !== 'loading' && verify(poolId)}
+                    >
                       {COPY.picker.verify}
                     </Button>
                   )}
-                  {checking[poolId] && !done && <ScreenStatus line={checking[poolId]} />}
+                  {checking[poolId]?.code === 'not_found' && !done && <p className="text-caption text-fg-muted">{checking[poolId].text}</p>}
+                  <p role="status" className="sr-only">{checking[poolId]?.code === 'loading' ? 'Verifying…' : !done ? (checking[poolId]?.text ?? '') : ''}</p>
                 </li>
               )
             })}
@@ -205,6 +241,7 @@ export function CatalogueCandidates({
             size="sm"
             className="justify-self-start"
             aria-disabled={!snap.canLoadMore ? true : undefined}
+            title={failureWords}
             onClick={() => snap.canLoadMore && step((s, signal) => s.more(signal))}
           >
             {snap.loading ? 'Loading…' : snap.canLoadMore ? COPY.picker.loadMore : COPY.picker.allLoaded}
@@ -215,14 +252,21 @@ export function CatalogueCandidates({
   )
 }
 
-type PoolsResult = { kind: 'loading'; retrying?: StatusLine } | { kind: 'ok'; view: PoolsView; restarted: boolean } | { kind: 'failed'; line: StatusLine }
+type PoolsResult =
+  | { kind: 'loading' }
+  | { kind: 'ok'; view: PoolsView; restarted: boolean }
+  /** `code` is the read's state, `failure` its closed code, `reason` its words; `final` once nothing will ask again. */
+  | { kind: 'failed'; code: string; failure: string; reason: string; final: boolean }
 
 /**
  * Existing pools for the chosen token (and second asset, if chosen), from the
- * pools route, in a neutral order, plus the stored catalogue on request.
- * Opening a new pool is described, never offered. With `onOpen` the rows are
- * ways into a pool rather than a choice, and the catalogue can be left to
- * the caller (`catalogue={false}`) when it is shown elsewhere on the page.
+ * pools route, in a neutral order, plus the stored catalogue on request. With
+ * `onOpen` the rows are ways into a pool rather than a choice, and the
+ * catalogue can be left to the caller (`catalogue={false}`) when it is shown
+ * elsewhere on the page. While the list is read its rows rest, and they keep
+ * resting while a busy or briefly unavailable read waits to be asked again on
+ * its own. A list that failed for good is one plain muted line, its code in
+ * data and its reason in the title.
  */
 export function PoolPicker({
   source,
@@ -243,52 +287,72 @@ export function PoolPicker({
   catalogue?: boolean
   compact?: boolean
 }) {
-  const [result, setResult] = useState<PoolsResult>({ kind: 'loading' })
+  const question = `${token}:${paired ?? ''}`
+  const [answer, setAnswer] = useState<{ question: string; result: PoolsResult } | null>(null)
+  const result: PoolsResult = answer?.question === question ? answer.result : { kind: 'loading' }
   const [verified, setVerified] = useState<PoolOption[]>([])
-  const [attempt, setAttempt] = useState(0)
-  const retry = () => {
-    if (result.kind !== 'failed' || !result.line.retry) return
-    setResult({ kind: 'loading', retrying: result.line })
-    // An explicit Retry is a new logical read. Its internal 409 restart keeps that read's deadline.
-    setAttempt((value) => value + 1)
-  }
+  // Quiet re-asks spent on this token and pair; another question starts from none.
+  const [asked, setAsked] = useState<{ question: string; attempt: number } | null>(null)
+  const attempt = asked?.question === question ? asked.attempt : 0
+  useEffect(() => () => setAsked(null), [question])
 
   useEffect(() => {
     const controller = new AbortController()
+    const { signal } = controller
     const request = poolsRequest(token, paired)
     void (async () => {
-      let outcome = await readWithin(source, 'pools', request, { signal: controller.signal })
+      let outcome = await readWithin(source, 'pools', request, { signal })
       let restarted = false
       if (outcome.state === 'restart_required' && outcome.code === 'catalogue_revision_changed') {
         restarted = true
         // Same logical read, so the restart keeps the first attempt's deadline
         // instead of starting a fresh screen budget it has not earned.
         const deadlineAt = outcome.provenance.deadlineAt
-        outcome = await readWithin(source, 'pools', request, { signal: controller.signal, deadlineAt })
+        outcome = await readWithin(source, 'pools', request, { signal, deadlineAt })
       }
-      if (controller.signal.aborted || outcome.state === 'aborted') return
-      setResult(outcome.state === 'ok' ? { kind: 'ok', view: projectPoolsView(outcome.data, outcome.provenance.receivedAt), restarted } : { kind: 'failed', line: failureText(outcome, 'pools') })
+      if (signal.aborted || outcome.state === 'aborted') return
+      if (outcome.state === 'ok') {
+        setAnswer({ question, result: { kind: 'ok', view: projectPoolsView(outcome.data, outcome.provenance.receivedAt), restarted } })
+        return
+      }
+      const text = failureText(outcome, 'pools')
+      const final = !asksAgain(outcome, attempt)
+      setAnswer({ question, result: { kind: 'failed', code: text.code, failure: failureCode(outcome), reason: [text.title, text.detail].filter(Boolean).join('. '), final } })
+      // Asked again on its own when that could help: a new logical read, whose own 409 restart keeps its deadline.
+      if (await askAgainLater(outcome, attempt, signal)) setAsked({ question, attempt: attempt + 1 })
     })()
     return () => controller.abort()
-  }, [source, token, paired, attempt])
+  }, [source, token, paired, question, attempt])
 
   const listed = result.kind === 'ok' ? result.view.options : []
   const options = neutralOrder([...listed, ...verified.filter((v) => !listed.some((o) => o.key === v.key))])
+  // Still being read, or waiting to be asked again: the rows rest either way.
+  const resting = result.kind === 'loading' || (result.kind === 'failed' && !result.final)
 
   return (
-    <div className="grid gap-3" data-picker="pool">
-      <ScreenStatus line={result.kind === 'loading' ? result.retrying ?? { code: 'loading', title: COPY.picker.poolsLoading, detail: '' } : result.kind === 'failed' ? result.line : null}
-        onRetry={retry} busy={result.kind === 'loading'} />
+    <div className="grid gap-3" data-picker="pool" data-pools-state={result.kind === 'failed' ? result.code : result.kind}>
+      <p role="status" aria-live="polite" className="sr-only">{result.kind === 'loading' ? COPY.picker.poolsLoading : result.kind === 'failed' ? result.reason : ''}</p>
+      {resting && options.length === 0 && (
+        <div className="grid gap-2" aria-hidden="true">
+          <Skeleton className="h-16 w-full" />
+          <Skeleton className="h-16 w-full" />
+        </div>
+      )}
+      {result.kind === 'failed' && result.final && options.length === 0 && (
+        <p className="px-1 py-4 text-center text-body text-fg-muted" title={result.reason} data-pools-unavailable={result.failure}>
+          {paired ? COPY.picker.poolsNonePair : COPY.picker.poolsNone}
+        </p>
+      )}
       {result.kind === 'ok' && (
         <>
-          {result.restarted && <p className="px-1 text-caption text-money-wait">{COPY.picker.catalogueRestarted}</p>}
+          {result.restarted && <p className="px-1 text-caption text-fg-muted">{COPY.picker.catalogueRestarted}</p>}
           <details className="dm-details dm-mkt-coverage">
             <summary>{options.length} verified pool{options.length === 1 ? '' : 's'} · {result.view.complete ? 'sources & coverage' : 'partial source coverage'}</summary>
             <ul className="grid gap-1 text-caption text-fg-muted" data-pools-coverage="">
               {result.view.coverage.map((line) => <li key={line}>{line}</li>)}
             </ul>
           </details>
-          {options.length === 0 && <p className="dm-inset px-4 py-5 text-center text-body text-fg-muted">{COPY.picker.noOptions}</p>}
+          {options.length === 0 && <p className="px-1 py-4 text-center text-body text-fg-muted">{COPY.picker.noOptions}</p>}
         </>
       )}
       {options.length > 0 && (onOpen ? (
@@ -330,9 +394,6 @@ export function PoolPicker({
           </div>
         </details>
       )}
-      {!compact && <p className="px-1 text-caption text-fg-subtle" data-new-pool-note="">
-        Choose an existing pool to continue. Creating a new pool isn’t available here.
-      </p>}
     </div>
   )
 }

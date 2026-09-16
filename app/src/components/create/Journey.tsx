@@ -44,6 +44,10 @@ import { AmountSummary, AutomationSummary, PoolSummary, RangeSummary, StepList, 
 /** The outcomes only the verification read can produce. */
 type Verified = Extract<PreselectStatus, { kind: 'verified' | 'not_found' | 'failed' }>
 
+/** How many times a failed verification of the linked pool is asked again on its own, and the first wait. */
+const VERIFY_ATTEMPTS = 3
+const VERIFY_WAIT_MS = 4000
+
 /** Which half of the machine's `amount` stage is open: the range first, then the budget. */
 type AmountPart = 'range' | 'amount'
 
@@ -98,7 +102,7 @@ export function Journey({ poolId }: { poolId: string }) {
   const [kept, setKept] = useState<Partial<Record<VisualStep, string>>>({ pool: 'static' })
   // What the verification read of the linked pool came to, for the link and the attempt it was about.
   const [verified, setVerified] = useState<{ poolId: string; attempt: number; outcome: Verified } | null>(null)
-  // A Retry after a failed verification is one more read of the same id.
+  // Each attempt is one more read of the same id: asked again on its own after a failure that asking again could fix.
   const [attempt, setAttempt] = useState(0)
   const running = useRef<AbortController | null>(null)
 
@@ -126,19 +130,47 @@ export function Journey({ poolId }: { poolId: string }) {
         return
       }
       const at = Date.now()
-      setState((was) => withPool(was, option, at))
+      // A verification read again after a failure never replaces a pool the person chose in the meantime.
+      setState((was) => (attempt > 0 && was.pool ? was : withPool(was, option, at)))
       setCandidates((was) => mergeCandidates(was, candidatesFromPool(option)))
       setVerified({ poolId, attempt, outcome: { kind: 'verified', block: option.block } })
     })
     return () => controller.abort()
   }, [source, poolId, attempt])
 
+  // No Retry on this page: a verification that failed in a way asking again could fix (a busy or unreachable
+  // read service) is read again by itself, a few times, at doubling intervals, and only while the page is
+  // visible. Any other outcome stays as it is, with its reason on the step's data attributes.
+  useEffect(() => {
+    if (!verified || verified.poolId !== poolId || verified.attempt !== attempt) return
+    const outcome = verified.outcome
+    if (outcome.kind !== 'failed' || !outcome.line.retry || attempt >= VERIFY_ATTEMPTS) return
+    let cancelled = false
+    const again = () => {
+      if (!cancelled) setAttempt((count) => count + 1)
+    }
+    const whenVisible = () => {
+      if (document.hidden) return
+      document.removeEventListener('visibilitychange', whenVisible)
+      again()
+    }
+    const timer = setTimeout(() => {
+      if (document.hidden) document.addEventListener('visibilitychange', whenVisible)
+      else again()
+    }, VERIFY_WAIT_MS * 2 ** attempt)
+    return () => {
+      cancelled = true
+      clearTimeout(timer)
+      document.removeEventListener('visibilitychange', whenVisible)
+    }
+  }, [verified, poolId, attempt])
+
   const linked = preselectFrom(poolId)
   const preselect: PreselectStatus = !linked.ok
     ? { kind: linked.reason === 'malformed' ? 'malformed' : 'none' }
     : verified?.poolId === poolId && verified.attempt === attempt
       ? verified.outcome
-      : { kind: 'checking' }
+      : { kind: 'checking', again: attempt > 0 }
 
   const current = visualOf(state, part)
 
@@ -248,7 +280,7 @@ export function Journey({ poolId }: { poolId: string }) {
         {CREATE.page.back}
       </Button>
       {current === 'review' ? (
-        <FinalControl />
+        <FinalControl state={state} />
       ) : (
         <>
           <Button type="button" variant="primary" size="lg" disabled={!check.ok} aria-describedby={check.ok ? undefined : 'continue-reason'} onClick={forward}>
@@ -267,7 +299,7 @@ export function Journey({ poolId }: { poolId: string }) {
   const bodyOf = (step: VisualStep): ReactNode => {
     switch (step) {
       case 'pool':
-        return <StageToken source={source} state={state} preselect={preselect} onRetry={() => setAttempt((count) => count + 1)} candidates={candidates} onCandidates={setCandidates} onToken={setToken} onPool={setPool} onPaired={setPaired} />
+        return <StageToken source={source} state={state} preselect={preselect} candidates={candidates} onCandidates={setCandidates} onToken={setToken} onPool={setPool} onPaired={setPaired} />
       case 'range':
         return <StageRange source={source} state={state} onRange={setRange} onPool={setPool} />
       case 'amount':
@@ -275,7 +307,7 @@ export function Journey({ poolId }: { poolId: string }) {
       case 'automation':
         return <StageAutomation state={state} now={now} onAutomation={setAutomation} onLimits={setLimits} />
       case 'review':
-        return <StageReview state={state} now={now} />
+        return <StageReview state={state} now={now} open={current === 'review'} />
       default:
         return step satisfies never
     }

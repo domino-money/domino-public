@@ -118,6 +118,14 @@ export interface Market {
   tvlUsd: Metric
   volume24hUsd: Metric
   feeAprPercent: Metric
+  /**
+   * Domino's own 24h trading LP fees in USD, from pool-metrics: the fee APR's
+   * numerator. No provider reports it, so without that read it is unavailable.
+   * Absent on a row built without the table's projection.
+   */
+  lpFees24hUsd?: Metric
+  /** Domino's time-weighted average TVL over the same window, from pool-metrics: the fee APR's denominator. */
+  timeWeightedTvlUsd?: Metric
   /** Attributed backend estimate, never a qualified historical APR. */
   feeAprEstimate?: AprEstimateObservation
   /** Provider orientation, used to ask for a chart by a verified token address. */
@@ -126,6 +134,12 @@ export interface Market {
   poolState?: MarketPoolState
   /** Where the row's figures came from. */
   provenance?: MarketProvenance
+  /**
+   * Set while the markets load still has one of this row's token reads to
+   * make: its names and decimals are not known yet, which is not the same as
+   * a token read that settled without them. Never set on a settled result.
+   */
+  tokensPending?: true
 }
 
 /**
@@ -145,6 +159,12 @@ export interface MarketPoolState {
   currency0: string
   /** Lowercase. */
   currency1: string
+  /**
+   * Seconds this state had already been held by the read service when it was
+   * served from its stored snapshot, from the payload's own times. Absent for
+   * a state read on demand. Time on screen is counted on top of it.
+   */
+  servedAgeSeconds?: number
 }
 
 export interface MarketProvenance {
@@ -171,6 +191,11 @@ export interface MarketProvenance {
   metrics: { freshness: 'fresh' | 'stale'; ageSeconds: number } | 'not_requested' | null
   /** Package fixture files behind the row, fixture transport only. */
   fixtures: string[]
+  /**
+   * Which read the row stands on: the pool's own market read, or the read
+   * service's stored markets snapshot. For tests and diagnostics; never words.
+   */
+  origin?: 'pool-market' | 'markets-snapshot'
 }
 
 export interface MarketsResult {

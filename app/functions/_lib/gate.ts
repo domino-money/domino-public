@@ -155,20 +155,23 @@ export const PAGE_CSP = [
 
 export type PageState = 'ask' | 'wrong' | 'unavailable'
 
+/** The app's own favicon (public/favicon.svg): the domino tile, tilted 24 degrees, with nothing behind it. */
 const FAVICON =
-  "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%23ff843d'/%3E%3Ccircle cx='32' cy='19' r='5.5' fill='%2324201c'/%3E%3Crect x='16' y='30.5' width='32' height='3.2' rx='1.6' fill='%2324201c'/%3E%3Ccircle cx='32' cy='45' r='5.5' fill='%2324201c'/%3E%3C/svg%3E"
+  "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Cg transform='rotate(-24 32 32)'%3E%3Crect x='15' y='5' width='34' height='54' rx='6' fill='%23f49a57'/%3E%3Crect x='17.5' y='30.5' width='29' height='3' rx='1.5' fill='%23faf5ea' opacity='.5'/%3E%3Ccircle cx='24.5' cy='14' r='6' fill='%23faf5ea'/%3E%3Ccircle cx='39.5' cy='24' r='6' fill='%23faf5ea'/%3E%3Ccircle cx='32' cy='46' r='6' fill='%23faf5ea'/%3E%3C/g%3E%3C/svg%3E"
 
 /**
- * The access page. Self-contained, no script, the approved Tangerine palette,
- * following the viewer's light or dark preference like the app does.
+ * The access page. Self-contained and without script: the app's upright tile
+ * mark and wordmark (src/components/Header.tsx), and its warm palette
+ * (src/styles/tokens.css), inlined. Dark, as the app opens, and light where the
+ * viewer's system asks for light.
  */
 export function accessPage(state: PageState): string {
   const body =
     state === 'unavailable'
       ? `<h1>Access is paused.</h1>
-        <p class="lede">The beta is temporarily unavailable. Nothing is wrong on your side — please try again a little later.</p>`
+        <p class="lede">Nothing is wrong on your side.</p>`
       : `<h1>You’re early.</h1>
-        <p class="lede">Domino is in a closed beta. Enter the access password from your invitation to continue.</p>
+        <p class="lede">Enter the access password from your invitation to continue.</p>
         <form method="post" action="/__beta/login" novalidate>
           <label for="password">Access password</label>
           <input id="password" name="password" type="password" autocomplete="current-password"
@@ -183,109 +186,130 @@ export function accessPage(state: PageState): string {
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <meta name="robots" content="noindex, nofollow" />
-<meta name="color-scheme" content="light dark" />
-<title>Domino · Closed beta</title>
+<meta name="color-scheme" content="dark light" />
+<title>Domino · Access</title>
 <link rel="icon" type="image/svg+xml" href="${FAVICON}" />
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Instrument+Serif&family=Geist:wght@400;500&family=Geist+Mono:wght@400&display=swap" />
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Instrument+Serif&family=Geist:wght@400;500&display=swap" />
 <style>
   :root {
-    --bg: #f0f1f2; --surface: #ffffff; --field: #f7f8f9;
-    --fg: #232428; --muted: #64666e; --subtle: #8a8d95;
-    --line: rgb(0 0 0 / 0.09); --line-strong: rgb(0 0 0 / 0.16);
-    --primary: #ff843d; --primary-fg: #24201c; --ring: #b24413;
-    --error: #b33036; --error-bg: #fff0f0;
+    color-scheme: dark;
+    --bg: #0d0a08; --surface-1: #171310; --surface-2: #1f1a17; --surface-3: #2c2723;
+    --fg: #f7f1ea; --fg-muted: #c8beb4; --fg-subtle: #9b9289; --fg-faint: #6e665e;
+    --border: rgb(255 236 220 / 0.07); --border-lip: rgb(255 236 220 / 0.10); --border-strong: rgb(255 236 220 / 0.16);
+    --btn: #faf7f3; --btn-fg: #161412; --btn-hover: #ebe6e0;
+    --primary: #ff9d62; --primary-fg: #24201c; --ring: #ff9d62;
+    --money-out: #f4607a;
+    --pip: #faf5ea;
+    --elev-card: inset 0 0 0 1px rgb(255 236 220 / 0.07), 0 12px 32px -12px rgb(0 0 0 / 0.65);
+    --elev-button: 0 1px 2px rgb(0 0 0 / 0.35), 0 3px 10px -4px rgb(0 0 0 / 0.45);
+    --gutter: 16px; --header-h: 56px;
+    --font-display: 'Instrument Serif', ui-serif, Georgia, 'Times New Roman', serif;
+    --font-sans: 'Geist', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
   }
-  @media (prefers-color-scheme: dark) {
+  @media (prefers-color-scheme: light) {
     :root {
-      --bg: #191b20; --surface: #282b32; --field: #1f2229;
-      --fg: #f5f4f2; --muted: #b9bbc4; --subtle: #82858f;
-      --line: rgb(255 255 255 / 0.07); --line-strong: rgb(255 255 255 / 0.14);
-      --primary: #ff9d62; --ring: #ff9d62;
-      --error: #ffaaaa; --error-bg: #442b31;
+      color-scheme: light;
+      --bg: #f3f0ec; --surface-1: #f9f7f4; --surface-2: #ffffff; --surface-3: #ebe7e2;
+      --fg: #1b1815; --fg-muted: #48423c; --fg-subtle: #675f58; --fg-faint: #8f8881;
+      --border: rgb(28 24 20 / 0.08); --border-lip: rgb(28 24 20 / 0.11); --border-strong: rgb(28 24 20 / 0.18);
+      --btn: #1b1815; --btn-fg: #faf7f3; --btn-hover: #36302b;
+      --primary: #ff843d; --primary-fg: #24201c; --ring: #b24413;
+      --money-out: #c62d4a;
+      --elev-card: inset 0 0 0 1px rgb(28 24 20 / 0.08), 0 1px 2px rgb(28 24 20 / 0.05), 0 10px 28px -14px rgb(28 24 20 / 0.18);
+      --elev-button: 0 1px 2px rgb(28 24 20 / 0.10), 0 2px 6px -2px rgb(28 24 20 / 0.12);
     }
   }
+  @media (min-width: 768px) { :root { --gutter: 24px; --header-h: 72px; } }
+  @media (min-width: 1024px) { :root { --gutter: 40px; } }
   * { box-sizing: border-box; }
-  html, body { height: 100%; }
   body {
-    margin: 0; min-height: 100%;
+    margin: 0; min-height: 100vh; min-height: 100dvh;
     display: grid; grid-template-rows: auto 1fr auto;
     background: var(--bg); color: var(--fg);
-    font: 15px/1.55 'Geist', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
+    font: 14px/20px var(--font-sans); letter-spacing: -0.2px;
     -webkit-font-smoothing: antialiased;
-    background-image:
-      radial-gradient(60rem 30rem at 50% -8rem, color-mix(in srgb, var(--primary) 22%, transparent), transparent 70%);
-    background-repeat: no-repeat;
   }
-  header { padding: 22px 24px; display: flex; align-items: center; gap: 10px; }
-  .word { font-family: 'Instrument Serif', ui-serif, Georgia, serif; font-size: 24px; line-height: 1; }
+  header { width: 100%; max-width: calc(1200px + 2 * var(--gutter)); height: var(--header-h); margin-inline: auto; padding-inline: var(--gutter); display: flex; align-items: center; }
+  .wordmark { display: inline-flex; align-items: center; gap: 8px; }
+  .wordmark svg { display: block; flex-shrink: 0; }
+  .tile { fill: var(--primary); }
+  .rule { fill: var(--primary-fg); opacity: 0.32; }
+  .pip { fill: var(--pip); }
+  .word { font: 400 24px/24px var(--font-display); letter-spacing: 0; }
   .word span { color: var(--primary); }
-  main { display: grid; place-items: center; padding: 24px 20px 48px; }
+  main { display: grid; place-items: center; padding: 24px var(--gutter) 48px; }
   .card {
-    width: 100%; max-width: 420px;
-    background: var(--surface); border: 1px solid var(--line); border-radius: 16px;
-    padding: 32px 28px 28px;
+    width: 100%; max-width: 400px;
+    background: var(--surface-2); border-radius: 12px; box-shadow: var(--elev-card);
+    padding: 28px 24px 24px;
   }
   .eyebrow {
-    display: inline-flex; align-items: center; gap: 8px;
-    font: 500 11px/1 'Geist Mono', ui-monospace, monospace; letter-spacing: 0.7px; text-transform: uppercase;
-    color: var(--muted); padding: 7px 11px; border: 1px solid var(--line-strong); border-radius: 999px;
+    display: inline-flex; align-items: center; gap: 8px; min-height: 30px; padding: 7px 10px;
+    border-radius: 12px; background: var(--surface-3); box-shadow: inset 0 0 0 1px var(--border);
+    color: var(--fg); font-size: 13px; line-height: 16px; font-weight: 500; letter-spacing: -0.1px; white-space: nowrap;
   }
-  .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--primary); box-shadow: 0 0 0 3px color-mix(in srgb, var(--primary) 25%, transparent); }
-  h1 {
-    margin: 18px 0 8px;
-    font: 400 40px/1.05 'Instrument Serif', ui-serif, Georgia, serif; letter-spacing: -0.3px;
-  }
-  .lede { margin: 0 0 24px; color: var(--muted); font-size: 14px; }
-  label { display: block; font-size: 13px; color: var(--muted); margin-bottom: 6px; }
+  .eyebrow::before { content: ''; width: 6px; height: 6px; flex-shrink: 0; border-radius: 9999px; background: var(--fg-faint); }
+  h1 { margin: 20px 0 8px; font: 400 34px/38px var(--font-display); letter-spacing: -0.2px; }
+  .lede { margin: 0 0 24px; color: var(--fg-muted); text-wrap: pretty; }
+  .lede:last-child { margin-bottom: 0; }
+  label { display: block; margin-bottom: 6px; font-size: 12px; line-height: 16px; font-weight: 500; color: var(--fg-muted); }
   input {
-    width: 100%; height: 48px; padding: 0 14px;
-    background: var(--field); color: var(--fg);
-    border: 1px solid var(--line-strong); border-radius: 12px;
-    font: 15px 'Geist Mono', ui-monospace, monospace; letter-spacing: 0.5px;
-    outline: none; transition: border-color .15s, box-shadow .15s;
+    display: block; width: 100%; height: 44px; margin: 0; padding: 0 12px;
+    border: 0; border-radius: 12px; background: var(--surface-1); color: var(--fg);
+    box-shadow: inset 0 0 0 1px var(--border-lip);
+    font: inherit; letter-spacing: inherit; outline: none;
+    transition: box-shadow .15s ease;
   }
-  input:focus { border-color: var(--primary); box-shadow: 0 0 0 3px color-mix(in srgb, var(--primary) 28%, transparent); }
-  input[aria-invalid="true"] { border-color: var(--error); }
-  .error {
-    margin: 10px 0 0; padding: 9px 12px; border-radius: 10px;
-    background: var(--error-bg); color: var(--error); font-size: 13px;
-  }
+  input:hover { box-shadow: inset 0 0 0 1px var(--border-strong); }
+  input:focus-visible { box-shadow: inset 0 0 0 1px var(--border-strong); outline: 2px solid var(--ring); outline-offset: 1px; }
+  input[aria-invalid="true"] { box-shadow: inset 0 0 0 1px var(--money-out); }
+  input:-webkit-autofill { -webkit-text-fill-color: var(--fg); caret-color: var(--fg); box-shadow: inset 0 0 0 1px var(--border-lip), inset 0 0 0 44px var(--surface-1); }
+  input[aria-invalid="true"]:-webkit-autofill { box-shadow: inset 0 0 0 1px var(--money-out), inset 0 0 0 44px var(--surface-1); }
+  .error { margin: 8px 0 0; font-size: 13px; line-height: 18px; color: var(--money-out); }
   button {
-    margin-top: 16px; width: 100%; height: 48px;
-    border: 0; border-radius: 999px; cursor: pointer;
-    background: var(--primary); color: var(--primary-fg);
-    font: 500 15px 'Geist', ui-sans-serif, system-ui, sans-serif;
-    box-shadow: 0 0 0 1px color-mix(in srgb, var(--primary) 35%, transparent), 0 10px 32px -10px color-mix(in srgb, var(--primary) 60%, transparent);
-    transition: filter .15s, transform .05s;
+    display: flex; align-items: center; justify-content: center;
+    width: 100%; height: 44px; margin: 16px 0 0; padding: 0 18px;
+    border: 0; border-radius: 12px; cursor: pointer;
+    background: var(--btn); color: var(--btn-fg); box-shadow: var(--elev-button);
+    font: 500 14px/20px var(--font-sans); letter-spacing: -0.2px;
+    transition: background-color .15s ease, scale .1s cubic-bezier(0.4, 0, 0.2, 1);
   }
-  button:hover { filter: brightness(1.06); }
-  button:active { transform: translateY(1px); }
-  button:focus-visible { outline: 2px solid var(--ring); outline-offset: 3px; }
-  footer { padding: 20px 24px 28px; text-align: center; color: var(--subtle); font-size: 12px; }
-  @media (max-width: 480px) {
-    .card { padding: 26px 20px 22px; border-radius: 14px; }
-    h1 { font-size: 34px; }
+  button:hover { background: var(--btn-hover); }
+  button:active { scale: 0.99; }
+  button:focus-visible { outline: 2px solid var(--ring); outline-offset: 2px; }
+  footer { padding: 20px var(--gutter) 28px; text-align: center; color: var(--fg-subtle); font-size: 12px; line-height: 16px; }
+  @media (min-width: 768px) {
+    .word { font-size: 26px; line-height: 26px; }
+    .card { padding: 32px 28px 28px; }
+  }
+  @media (max-width: 479px) {
+    main { place-items: start center; padding-top: 12px; }
+    .card { padding: 24px 20px 20px; }
+    h1 { font-size: 28px; line-height: 32px; }
   }
   @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
 </style>
 </head>
 <body>
   <header>
-    <svg width="26" height="26" viewBox="0 0 26 26" aria-hidden="true">
-      <rect x="1" y="1" width="24" height="24" rx="7" fill="var(--primary)" />
-      <circle cx="13" cy="8" r="2.1" fill="var(--primary-fg)" />
-      <rect x="6.5" y="12.4" width="13" height="1.3" rx="0.65" fill="var(--primary-fg)" />
-      <circle cx="13" cy="18" r="2.1" fill="var(--primary-fg)" />
-    </svg>
-    <span class="word">domino<span>.</span></span>
+    <span class="wordmark">
+      <svg width="16" height="28" viewBox="0 0 20 34" aria-hidden="true">
+        <rect class="tile" x="0.6" y="0.6" width="18.8" height="32.8" rx="2.6" />
+        <rect class="rule" x="2.2" y="16.6" width="15.6" height="0.9" rx="0.45" />
+        <circle class="pip" cx="14.1" cy="5.85" r="1.95" />
+        <circle class="pip" cx="6.05" cy="12.7" r="1.95" />
+        <circle class="pip" cx="9.62" cy="25.2" r="1.95" />
+      </svg>
+      <span class="word">domino<span>.</span></span>
+    </span>
   </header>
   <main>
     <div class="card">
-      <span class="eyebrow"><span class="dot"></span>Closed beta</span>
+      <span class="eyebrow">Invitation only</span>
       ${body}
     </div>
   </main>
-  <footer>Robinhood Chain · Invitation only</footer>
+  <footer>Robinhood Chain</footer>
 </body>
 </html>`
 }

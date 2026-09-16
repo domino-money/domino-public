@@ -3,13 +3,13 @@ import { catalogueTokenLabel, poolListings, type PoolCatalogueEntry, type PoolLi
 import { agedMarket, feeLabel, providerStale, retrievedAgeSeconds, retrievedText, type Instant, type Market, type MarketProvenance } from '../lib/markets'
 import { reasonText } from '../lib/read/describe'
 import { marketPoolPrice } from '../lib/read/marketPrice'
-import type { MarketsProvider, MarketsState } from '../lib/read/marketsProvider'
+import type { MarketsProvider } from '../lib/read/marketsProvider'
 import { COPY } from '../lib/read/screens/copy'
 import { PoolFiguresSlot, SlotBoundary, SlotFailed } from '../lib/read/screens/slots'
 import type { TokenDisplay } from '../lib/read/types'
 import { shownResult, useMarkets } from '../lib/read/useMarkets'
 import { useNow } from '../lib/read/useNow'
-import { MetricCell } from './explore/MetricCell'
+import { MetricCell, PendingFigure } from './explore/MetricCell'
 import { marketsHref, poolHref } from './explore/routes'
 import { IconChevronRight, IconInfo } from './icons'
 import { PoolCatalogueIdentity, PoolTokenLabel } from './PoolCatalogueIdentity'
@@ -21,60 +21,18 @@ import { Button, Chip, LinkButton, Pill, Skeleton, TableShell, Td, Th } from './
 /** The pool page for a PoolId. Identity is chain and PoolId, never a symbol. */
 export { poolHref }
 
-/** How long a busy read service asked to wait, when being busy is the only thing that went wrong; null otherwise. */
-function busyWait(state: MarketsState): number | null {
-  if (state.phase === 'failed') return state.failure.state === 'busy' ? state.failure.retryAfterSeconds : null
-  if (state.phase !== 'ready' || state.problems.length === 0) return null
-  let wait = 0
-  for (const { outcome } of state.problems) {
-    if (outcome.state !== 'busy') return null
-    wait = Math.max(wait, outcome.retryAfterSeconds)
-  }
-  return wait
-}
-
-const BUSY_ATTEMPTS = 4
-
 /**
- * Home and Markets show no status and no Retry, so a read service that was
- * only busy is asked again on its own: after the pipeline's own 429 retries
- * gave up, the selected pools are read again once the service's wait has
- * passed, at doubling intervals, a few times per visit, and only while the
- * page is visible. Any other failure is left as it is: asking again on its
- * own could not help, and the rows already say what is unavailable.
+ * Home and Markets show no status and no Retry, so while the table is on
+ * screen the provider asks again on its own, quietly and bounded, and only
+ * while the page is visible, for what a busy service or a flapping hop kept
+ * from the rows: the one read that was busy or refused by a hop, never the
+ * whole table, and the pools of a first load that met nothing but such
+ * refusals (marketsProvider.ts). Any other failure is left as it is, and the
+ * rows already say what is unavailable. The read lab has its own Refresh and
+ * Retry and asks nothing on its own.
  */
-function useBusyRecovery(state: MarketsState, provider: MarketsProvider, enabled: boolean) {
-  const attempts = useRef(0)
-  const wait = enabled ? busyWait(state) : null
-  const settledClean = state.phase === 'ready' && state.problems.length === 0
-  const phase = state.phase
-  useEffect(() => {
-    if (settledClean) attempts.current = 0
-  }, [settledClean])
-  useEffect(() => {
-    if (wait === null || phase === 'loading' || attempts.current >= BUSY_ATTEMPTS) return
-    let cancelled = false
-    const again = () => {
-      if (cancelled) return
-      attempts.current += 1
-      provider.refresh()
-    }
-    const whenVisible = () => {
-      if (!document.hidden) {
-        document.removeEventListener('visibilitychange', whenVisible)
-        again()
-      }
-    }
-    const timer = setTimeout(() => {
-      if (document.hidden) document.addEventListener('visibilitychange', whenVisible)
-      else again()
-    }, Math.max(wait, 4) * 1000 * 2 ** attempts.current)
-    return () => {
-      cancelled = true
-      clearTimeout(timer)
-      document.removeEventListener('visibilitychange', whenVisible)
-    }
-  }, [wait, phase, provider])
+function useQuietRecovery(provider: MarketsProvider, enabled: boolean) {
+  useEffect(() => (enabled ? provider.recoverQuietly?.() : undefined), [provider, enabled])
 }
 
 export interface MarketsFilter {
@@ -148,10 +106,15 @@ function Dash({ label }: { label: string }) {
 
 /**
  * The pool's price as the chain holds it: a ratio in its quote token, never
- * dollars. Unavailable says why in its title.
+ * dollars. Unavailable says why in its title. Until the row's token reads
+ * have settled there are no decimals to write it with yet, which is no reason
+ * to call it unavailable: the cell waits quietly instead.
  */
 function PriceCell({ market, now }: { market: Market; now: Instant }) {
   const price = marketPoolPrice(market, now)
+  if (price.state === 'unavailable' && price.problem === 'decimals_unknown' && market.tokensPending) {
+    return <PendingFigure label="Price" data={{ 'data-pool-price': 'loading' }} />
+  }
   if (price.state === 'unavailable') {
     const why = price.problem === 'not_read' ? 'The pool’s state was not in this read.' : COPY.range.problems[price.problem]
     return (
@@ -189,7 +152,7 @@ function Row({ m: read, now, full, onFigures }: { m: Market; now: Instant; full:
     </>
   )
   return (
-    <tr className="dm-mkt-row animate-fade" onClick={(event) => followRow(event, href)} data-pool-row={full ? m.poolId : undefined}>
+    <tr className="dm-mkt-row animate-fade" onClick={(event) => followRow(event, href)} data-pool-row={full ? m.poolId : undefined} data-row-source={p?.origin}>
       <Td>
         <div className="dm-mkt-pool">
           <TokenMarkPair base={m.tokens.base} quote={m.tokens.quote} size={30} ring="var(--dm-mkt-ring)" />
@@ -248,7 +211,7 @@ function CatalogueRow({ poolId, entry, full }: { poolId: string; entry: PoolCata
   return (
     <tr className="dm-mkt-row" data-pool-catalogue={poolId} data-pool-row={full ? poolId : undefined} onClick={(event) => followRow(event, href)}>
       <Td>
-        <a href={href} className="dm-mkt-pool dm-mkt-name" title="Listed on Uniswap. Live pool data is not available yet.">
+        <a href={href} className="dm-mkt-pool dm-mkt-name" title="Listed on Uniswap. Pool figures are unavailable.">
           <PoolCatalogueIdentity entry={entry} />
         </a>
       </Td>
@@ -275,19 +238,18 @@ function CatalogueRow({ poolId, entry, full }: { poolId: string; entry: PoolCata
 
 /**
  * The selected pools, in the reviewed catalogue's order, which is not a
- * ranking: Home's `featured` card ("Selected pools", with Refresh and the way
- * to Markets) and the Markets page's `full` table, filtered by token and pair
- * name. Every figure comes from a validated read and names its provider and
- * age; the price is the pool's own ratio from chain state; backend estimates
- * stay separate from qualified historical APR, and missing figures stay
- * unavailable. The table reads nothing itself: the app's one markets provider
- * does.
+ * ranking: Home's `featured` card ("Selected pools" and the way to Markets;
+ * Refresh only in the read lab) and the Markets page's `full` table, filtered
+ * by token and pair name. Every figure comes from a validated read and names
+ * its provider and age; the price is the pool's own ratio from chain state;
+ * backend estimates stay separate from qualified historical APR, and missing
+ * figures stay unavailable. The table reads nothing itself: the app's one
+ * markets provider does.
  */
 export function MarketsTable({
   variant = 'featured',
   filter,
   onMatchCount,
-  footer,
   empty,
   diagnostics = false,
 }: {
@@ -296,8 +258,6 @@ export function MarketsTable({
   filter?: MarketsFilter
   /** Full only: how many listings pass the filter, of how many. */
   onMatchCount?: (count: number, total: number) => void
-  /** Featured only: a band under the rows, inside the card (Home's Uniswap strip). */
-  footer?: ReactNode
   /** Full only: what stands in for the rows when the filter matches none of them. */
   empty?: ReactNode
   /**
@@ -309,7 +269,7 @@ export function MarketsTable({
 }) {
   const full = variant === 'full'
   const { state, provider } = useMarkets()
-  useBusyRecovery(state, provider, !diagnostics)
+  useQuietRecovery(provider, !diagnostics)
   const result = shownResult(state)
   const markets = result?.markets ?? []
   const listings = poolListings(markets, __DOMINO_POOL_SET__ === 'selected' && provider.kind === 'bridge')
@@ -407,7 +367,6 @@ export function MarketsTable({
           </>
         )
       }
-      footer={full ? undefined : footer}
       rowHeight={64}
       // With no rows to scroll, the token search's list may open past the card's edge (markets.css).
       data={nothingMatches ? { 'filter-empty': '' } : undefined}

@@ -394,24 +394,45 @@ names and figures come from validated reads, and its order is not a ranking.
 The ticker and the Selected pools table share one provider and one result
 set. There are no sample rows anywhere.
 
-**Read budget.** Per selected pool, one `pool-market` read with
-`includePriceHistory: false` sent explicitly, then each distinct token once,
-strictly one read at a time, and no `pool-metrics`. Through the bridge that is
-one capabilities GET plus N + U POSTs for N pools and U distinct tokens: five
-POSTs for the two selected pools when they share a currency. There is no
-client cache, so every load reads again, and the bridge's own bounded
-observation cache keeps its original ages. The APR shows as unavailable ("APR
-not provided by the read service yet"), never 0, until the read service
-provides one. An empty selection reads nothing and says "No pools selected
-yet".
+**Read budget.** The read capabilities are asked first, with no POST and no
+place in the queue, and they decide which routes a load uses
+(`src/lib/read/marketsProvider.ts`). With only the lean routes listed, a load
+is one `pool-market` read per selected pool with `includePriceHistory: false`
+sent explicitly, each followed by the token reads its row still needs (a token
+shared by rows is read once), strictly one read at a time: N + U POSTs for N
+pools and U distinct tokens. Each row is on screen as soon as its market read
+answers, named from the catalogue's labels, and its price waits quietly until
+its token reads land. When `markets-snapshot` is listed, one snapshot read puts
+every stored entry on screen first, and only the pools it could not answer for
+well enough (absent, stale or unavailable) are read through `pool-market`. When
+`pool-metrics` is listed, each row reads it after its market and tokens, and its
+qualified figures take precedence; a refused pool-metrics or token read stays on
+its row, and so does one pool's market payload refused by a hop (502
+`upstream_contract_mismatch`). Apart from token metadata that read as available,
+kept in memory for the page, every load reads again, and the bridge's own
+bounded observation cache keeps its original ages. The Est. APR column shows
+Domino's qualified APR where pool-metrics gives one, otherwise the read
+service's estimate, and "Unavailable", never 0, when there is neither. An empty
+selection reads nothing and says "No pools selected yet".
+
+The shared scheduler (`src/lib/read/scheduler.ts`) keeps the tab inside the
+gateway's per-client budget (a burst of 5, then 30 reads a minute, counting every
+attempt), starts reads at least 1.1 s apart, and holds the whole queue for the
+service's Retry-After after any 429. A load whose last viewer leaves keeps
+running for 2 s, so going from Home to Markets joins it. A refresh never shortens
+the table: a pool whose read fails keeps its last good row, stale and dated.
+What a busy service refused (one pool's market, one token, one pool-metrics
+read), and rows whose provider figures were rate limited, are asked again on
+their own: only those reads, a few times per visit, only while the page is
+visible, with jitter.
 
 **Honest states** are decided in the shared read layer (`interpret.ts`,
 `describe.ts`), never per screen, and nothing ever stands in for a failed read:
 
 | Reply | Shown | Retry |
 |---|---|---|
-| Gate 401 | Beta access needed, with Sign in again | no |
-| /api forwarder 503 `bridge_unavailable`, or no /api at all (the site's index page) | Live data isn't connected yet | no |
+| Gate 401 | Access expired, with Sign in again | no |
+| /api forwarder 503 `bridge_unavailable`, or no /api at all (the site's index page) | Live data unavailable | no |
 | /api forwarder 404 `not_found` (a preview or any other host) | Live data isn't available on this address | no |
 | Capabilities `dataMode: "disabled"`, no enabled read, or 404 `route_not_available` | Live data is switched off for now | no |
 | 429 `read_capacity_busy` | asked again under R-1, then Read service busy | yes |
@@ -420,15 +441,18 @@ yet".
 
 The forwarder's refusals are recognised by their exact bytes and status, and
 only without the contract header; anything else without the header is still a
-contract mismatch or an edge page. None of these states is asked again on its
-own.
+contract mismatch or an edge page. The Retry column describes the read lab,
+which keeps its Retry buttons. The product screens show none of these states
+as a panel or a button: the state sits in titles, data attributes and an
+sr-only live region, and only busy and transient answers are asked again on
+their own, bounded, while the page is visible (`src/lib/read/screens/transient.ts`).
 
 **Build modes.** Only `--mode` chooses where data comes from; no environment
 variable does.
 
 | Command | Data | Output |
 |---|---|---|
-| `npm run build`, `npm run dev` | Deployable: live reads of the selected pools through the bridge. The dev server has no /api, so it shows "Live data isn't connected yet" | `dist` |
+| `npm run build`, `npm run dev` | Deployable: live reads of the selected pools through the bridge. The dev server has no /api, so it shows "Live data unavailable" | `dist` |
 | `npm run dev:fixtures`, `npm run build:fixtures` | Package fixtures through the real pipeline, plus the read lab at `/read-lab.html` | `.fixture-dist` |
 | `npm run build:bridge-test` | The bridge source for the package fixture pool, for a local stub only | `.bridge-dist` |
 
@@ -520,10 +544,15 @@ not part of the frontend CI job.
 
 | Route | Screen |
 |---|---|
-| `#/` | Landing: pool ticker, hero range widget, Selected pools, product cards, range simulator, Domino sequence, how it works, limits |
-| `#/app` | Your positions: public NFT lookup by ID, without proving wallet ownership or granting permissions |
-| `#/pools` | Explore pools: public-address/token lookup, existing-pool discovery, catalogue coverage and non-executable range exploration |
-| `#/settings` | Appearance, capability table, build facts |
+| `#/` | Home: pool ticker, hero, feature cards, Selected pools, how it works, range simulator, what Domino does not do |
+| `#/markets`, `#/markets/<token>` | Markets: hourly volume cards for the selected pools, asset and pair filters, Selected pools, and the pool catalogue search. Older links `#/explore` and `#/pools` open it too |
+| `#/pool/<id>`, `#/pool/<id>/<token>` | One pool, verified at the latest block: its figures, chart, range planner, and its activity and positions where the capabilities list them |
+| `#/positions` | Positions: managed positions, receipts, position NFTs looked up by ID, the Wallet card and automation. Older links `#/app` and `#/portfolio` open it too; `#/portfolio/<address>` shows a public address |
+| `#/new`, `#/new/<pool id>` | New position: pool, range, amount, automation and review, then Setup |
+| `#/automate` | Auto-compound and Domino-compound, with the ways into Setup and the sequence screen |
+| `#/setup`, `#/sequence` | The owner's wallet screens: create or recover a position, and create or manage a sequence |
+| `#/docs`, `#/docs/<slug>` | The documentation |
+| `#/settings` | Appearance, build facts, capabilities |
 
 ### Read-only pool exploration
 
@@ -605,7 +634,7 @@ at `/api/read/v1/*` through the Pages forwarder and a private service binding
 its own. It emits no CORS headers and requires `url.origin === APP_ORIGIN`, so
 a deployed worker cannot be called from a dev server on another port. The
 deployable build reads through that bridge; until a deployment connects it,
-the site says live data isn't connected yet and shows no figure.
+the site says live data is unavailable and shows no figure.
 
 Hosting is Cloudflare Pages at `https://domino.money`; see
 [Deploy and closed beta](#deploy-and-closed-beta). The decision is recorded in
@@ -643,11 +672,12 @@ figure), `provider` (named, unreconciled), `stale` (a figure that was current,
 with its original time; stale pool metrics count only when they would be
 `usableAsCurrent24h` if the snapshot were fresh, and are otherwise `partial`),
 `partial` and `reference` (never current, never a cell value), `absent`,
-`unavailable` or `rejected`. There is no sample or placeholder state. The lean
-table reads no pool-metrics, so its APR is `unavailable` with the reason
-`fee_apr_not_provided`. Token symbols from reads are untrusted text:
-`TokenLabel` renders them isolated in `<bdi>` and never as an attribute, URL or
-artwork key.
+`unavailable` or `rejected`. There is no sample or placeholder state. The
+table reads pool-metrics only where the capabilities list it; a row without it
+has its APR `unavailable` with the reason `fee_apr_not_provided`, and its Est.
+APR cell shows the read service's estimate instead. Token symbols from reads
+are untrusted text: `TokenLabel` renders them isolated in `<bdi>` and never as
+an attribute, URL or artwork key.
 
 The service fee appears nowhere in the alpha: nothing can be created or
 compounded.

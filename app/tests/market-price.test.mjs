@@ -130,6 +130,20 @@ test('a row retained after a failed refresh keeps the age of its own read', () =
   assert.equal(marketPoolPrice(retained, at(PRICE_STALE_MS + 1000)).stale, true, 'and stale once its own read is five minutes old');
 });
 
+test('a state served from the stored snapshot counts the time it had been stored: 290 s when served, stale 10 s on', () => {
+  const stored = row({ pool: { servedAgeSeconds: 290 } });
+  assert.equal(marketPoolPrice(stored, at(0)).state, 'usable');
+  assert.equal(marketPoolPrice(stored, at(0)).stale, false, 'not stale when it arrives');
+  assert.equal(marketPoolPrice(stored, at(9_999)).stale, false);
+  assert.equal(marketPoolPrice(stored, at(10_000)).stale, true, 'stale once served age and time on screen reach PRICE_STALE_MS');
+  // Counted on the monotonic clock like any other row: a wall-clock jump does not age it.
+  assert.equal(marketPoolPrice(stored, { wall: RECEIVED.wall + 86_400_000, monotonic: RECEIVED.monotonic + 1_000 }).stale, false);
+  // Kept after a failed refresh, it keeps its whole age; a row read on demand has no stored age to add.
+  const retained = retainAsStale({ source: 'live', chainId: 4663, network: 'Robinhood Chain', markets: [stored] }, RECEIVED.wall).markets[0];
+  assert.equal(marketPoolPrice(retained, at(10_000)).stale, true);
+  assert.equal(marketPoolPrice(row(), at(10_000)).stale, false);
+});
+
 test('a symbol that could not be read, or partial metadata, marks the price partial', () => {
   assert.equal(marketPoolPrice(row({ base: token(WETH, null, 18) }), at(0)).partial, true);
   assert.equal(marketPoolPrice(row({ quote: token(USDG, 'USDG', 6, 'partial') }), at(0)).partial, true);

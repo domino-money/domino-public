@@ -19,6 +19,8 @@ import { chromium } from 'playwright-core';
 import { createFakeOnboarding } from './support/fake-onboarding.mjs';
 import { createFakeSession } from './support/fake-session.mjs';
 import { ACCOUNTS, installWallets } from './support/mock-wallet.mjs';
+import { ARTWORK, footerButton, walkToReview } from './support/new-position.mjs';
+import { FIXTURE_POOL, FIXTURE_TOKEN, createReadStub } from './support/read-stub.mjs';
 import { createWalletServer } from './support/wallet-server.mjs';
 
 const DIST = resolve(import.meta.dirname, '../.consumer-test-dist');
@@ -28,6 +30,7 @@ const ADDR_A = ACCOUNTS[0].address;
 const ADDR_B = ACCOUNTS[1].address;
 const FONTS = /^https:\/\/fonts\.(googleapis|gstatic)\.com\//;
 const INJECTED = /^https?:\/\/[^/]*\.kaspersky-labs\.com\//;
+const ZERO = '0x0000000000000000000000000000000000000000';
 const OTHER_OWNER = '0x9999999999999999999999999999999999999999';
 const OPERATION_ID = '00000000-0000-4000-8000-000000000040';
 const EXPIRED_ON_ARRIVAL = 'This preview had already expired by the time it arrived, so its figures are hidden.';
@@ -57,15 +60,17 @@ after(async () => {
 
 const sleep = (ms) => new Promise((done) => setTimeout(done, ms));
 
-async function scenario({ clockAt, wallets } = {}) {
+async function scenario({ clockAt, wallets, reads = false } = {}) {
   const fake = createFakeSession();
   fake.admit(ADDR_A);
   fake.admit(ADDR_B);
   const onboarding = createFakeOnboarding({ session: fake });
+  // New position's scenarios also need the public reads: the real read Worker over the package fixtures.
+  const read = reads ? createReadStub() : null;
   const server = createWalletServer({
     fake,
     dist: DIST,
-    routes: [(request, url) => (url.pathname.startsWith('/api/onboarding/v1/') ? onboarding.handle(request) : undefined)],
+    routes: [(request, url) => (url.pathname.startsWith('/api/onboarding/v1/') ? onboarding.handle(request) : read?.handle(request, url))],
   });
   await new Promise((done) => server.listen(0, '127.0.0.1', done));
   servers.add(server);
@@ -78,6 +83,8 @@ async function scenario({ clockAt, wallets } = {}) {
   if (clockAt !== undefined) await context.clock.install({ time: clockAt });
   await context.route(FONTS, (route) => route.fulfill({ status: 200, contentType: 'text/css', body: '' }));
   await context.route(INJECTED, (route) => route.abort());
+  // New position shows token marks, whose optional artwork lookup the CSP admits; it is answered here with nothing.
+  if (reads) await context.route(ARTWORK, (route) => route.fulfill({ status: 200, contentType: 'application/json', body: '[]' }));
   const wallet = await installWallets(context, wallets);
   const problems = [];
   const external = [];
@@ -85,7 +92,7 @@ async function scenario({ clockAt, wallets } = {}) {
   context.on('request', (request) => {
     const url = request.url();
     requests.push(url);
-    if (!url.startsWith(origin) && !url.startsWith('data:') && !FONTS.test(url) && !INJECTED.test(url)) external.push(url);
+    if (!url.startsWith(origin) && !url.startsWith('data:') && !FONTS.test(url) && !INJECTED.test(url) && !(reads && ARTWORK.test(url))) external.push(url);
   });
 
   const s = {
@@ -350,6 +357,105 @@ test('signing out drops the preview; a new sign-in starts from ready, never from
   await viewIs(page, 'signed_in');
   await closeDialog(page);
   await previewState(page, 'ready');
+  await s.close();
+});
+
+// ---- New position: the deposit amounts in Review ask onboarding-v1 (G8) ------------
+
+const balance = (page) => page.locator('section[data-stage="balance"]');
+const amountsAre = (page, status) =>
+  until(page, (wanted) => document.querySelector('section[data-stage="balance"]')?.getAttribute('data-preview') === wanted, status, `deposit amounts ${status}`, 30_000);
+const rowLines = async (page, row) => (await balance(page).locator(`[data-balance-row="${row}"] dd`).innerText()).split('\n').map((line) => line.trim()).filter(Boolean);
+const positionCalls = (s) => s.onboarding.calls('position-preview');
+/** What New position's product rules keep off its screen now that it shows an estimate. */
+const REVIEW_FORBIDDEN = /Preview only|Request details|Onboarding contract|"chainId"|not enabled|not connected yet|isn.t enabled|\bbeta\b|read-only|Retry|Read again/i;
+
+/** Sign-in from the header on any page: connect Test Wallet A, then Sign in. */
+async function signInHere(s, page) {
+  await viewIs(page, 'no_wallet');
+  await openDialog(page);
+  await dialog(page).getByRole('button', { name: 'Connect Test Wallet A' }).click();
+  await viewIs(page, 'signed_out');
+  s.signClicks += 1;
+  await dialog(page).getByRole('button', { name: 'Sign in', exact: true }).click();
+  await viewIs(page, 'signed_in');
+  await closeDialog(page);
+}
+
+test('New position’s Review asks for the deposit amounts for the signed-in wallet once per opening, fills the rows while current, and returns them to a dash at expiry with nothing re-asked (G8)', async () => {
+  const s = await scenario({ reads: true, clockAt: Date.now() });
+  s.onboarding.controls.positionFromRequest = true;
+  const page = await s.open('/new');
+  await walkToReview(page);
+  await amountsAre(page, 'signed-out');
+  assert.equal(positionCalls(s).length, 0, 'nothing is asked for a wallet that is not signed in');
+  assert.deepEqual(await rowLines(page, 'expected'), ['—']);
+  assert.equal(await balance(page).locator('[data-balance-row="expected"] dd').getAttribute('title'), 'Sign in with your wallet to see these amounts.');
+
+  // Signing in while Review is open finishes the intent Review's opening made: one request.
+  await signInHere(s, page);
+  await amountsAre(page, 'current');
+  const [call] = positionCalls(s);
+  const [session] = s.fake.sessionsFor(ADDR_A).filter((row) => row.active);
+  assert.equal(call.csrf, session.csrf, 'the CSRF of this session, lent for the request');
+  assert.deepEqual(call.body, {
+    chainId: 4663,
+    poolId: FIXTURE_POOL,
+    poolKey: { currency0: ZERO, currency1: FIXTURE_TOKEN, fee_pips: 3000, tick_spacing: 60, hooks: ZERO },
+    independentToken: FIXTURE_TOKEN,
+    amountRaw: '1000000',
+    tickLower: -3600,
+    tickUpper: 4080,
+    slippageBps: 50,
+  }, 'exactly the request the journey forms: no budget, native balance or gas reserve is invented');
+  assert.deepEqual(await rowLines(page, 'expected'), ['0.000000000002000001 ETH', '1 TOKEN'], 'currency0 then currency1, with the decimals the pool read returned');
+  assert.deepEqual(await rowLines(page, 'maximum'), ['0.000000000002010001 ETH', '1.005 TOKEN']);
+  assert.deepEqual(await rowLines(page, 'unspent'), ['—'], 'no budget was set, so nothing is unspent: one dash for the row, never zero');
+  assert.deepEqual(await rowLines(page, 'liquidity'), ['12,345']);
+  assert.match(await balance(page).locator('[data-balance-row="expected"] [data-amount-cell]').first().getAttribute('title'), /^An estimate for these choices, current until \d\d:\d\d:\d\d\. What the deposit is expected to take of this token\.$/);
+  assert.equal(await balance(page).locator('[data-balance-row="unspent"] [data-amount-cell]').getAttribute('title'), 'No budget was set for this token.');
+  assert.equal(await balance(page).getAttribute('data-preview-checks'), 'incomplete');
+  const text = await page.locator('main').innerText();
+  assert.doesNotMatch(text, REVIEW_FORBIDDEN);
+  assert.match(text, /Exact amounts are calculated in Setup, at the price when you sign\./);
+  assert.match(await page.locator('#create-reason').innerText(), /^Setup opens with this pool, range and amount filled in\. Nothing is sent until you create the draft there\.$/);
+  await noSigningControls(page);
+
+  // The estimate is current for 30 s after it was asked; then its figures go back to a dash, with the time in the title.
+  await page.clock.fastForward('00:30');
+  await amountsAre(page, 'expired');
+  assert.deepEqual(await rowLines(page, 'maximum'), ['—']);
+  assert.match(await balance(page).locator('[data-balance-row="maximum"] dd').getAttribute('title'), /^This estimate expired at \d\d:\d\d:\d\d\.$/);
+  await page.clock.fastForward('05:00');
+  assert.equal(positionCalls(s).length, 1, 'no timer and no expiry asks again');
+
+  // Opening Review again is a new intent.
+  await footerButton(page, 'Back').click();
+  await page.locator('[data-stage-card="automation"]').waitFor();
+  await footerButton(page, 'Continue').click();
+  await amountsAre(page, 'current');
+  assert.equal(positionCalls(s).length, 2);
+  assert.equal(s.wallet.state.signed.length, 1, 'the sign-in signature only');
+  await s.close();
+});
+
+test('New position with the onboarding service switched off shows only dashes, says why in data attributes, and does not ask again (G8)', async () => {
+  const s = await scenario({ reads: true });
+  s.onboarding.controls.disabled = true;
+  const page = await s.open('/new');
+  await signInHere(s, page);
+  await walkToReview(page);
+  await amountsAre(page, 'off');
+  assert.equal(await balance(page).getAttribute('data-preview-reason'), 'feature_unavailable');
+  assert.equal(positionCalls(s).length, 1);
+  for (const row of ['expected', 'maximum', 'unspent', 'liquidity']) assert.deepEqual(await rowLines(page, row), ['—'], row);
+  assert.equal(await balance(page).locator('[data-balance-row="liquidity"] dd').getAttribute('title'), 'Exact amounts are calculated in Setup, at the price when you sign.');
+  assert.doesNotMatch(await page.locator('main').innerText(), REVIEW_FORBIDDEN);
+  await footerButton(page, 'Back').click();
+  await footerButton(page, 'Continue').click();
+  await page.locator('[data-stage-card="review"]').waitFor();
+  await sleep(1_000);
+  assert.equal(positionCalls(s).length, 1, 'a route that is not there is not asked again on this page');
   await s.close();
 });
 

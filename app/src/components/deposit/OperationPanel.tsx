@@ -1,9 +1,10 @@
 /**
  * One deposit operation on screen, rendered from presentOperation's view.
  * Conflicts sit on top and cannot be dismissed; attention is support-required;
- * a prepared step can be reviewed field by field, with the pre-sign checklist
- * and a status line where a send control would be. There is no Send button:
- * this build has no wallet handoff.
+ * the owner's selection sits above the actions; a prepared step can be
+ * reviewed field by field, with the pre-sign checklist and a status line where
+ * a send control would be. The Send control, where there is one, is the
+ * screen's, never this panel's. Notes are plain lines, never tinted panels.
  */
 import { useId, useState } from 'react'
 import type { AllowanceReport, Operation } from '../../deposit/types'
@@ -11,7 +12,7 @@ import { REPORT_HINT, SUPPORT_REQUIRED } from '../../deposit/copy'
 import { handoffStatus, presentAllowances, type ActionId, type DepositView } from '../../deposit/present'
 import type { PreSignRow } from '../../deposit/presign'
 import { Button, Pill } from '../ui'
-import { Callout, FactList, Section } from '../consumer/shared'
+import { FactList, Section } from '../consumer/shared'
 
 const TONE = { in: 'in', out: 'out', wait: 'wait', neutral: 'neutral' } as const
 
@@ -45,16 +46,16 @@ export function OperationPanel({
           {view.title}
         </h3>
         {view.supportRequired && <Pill tone="out">Support required</Pill>}
-        {view.reserved && <Pill tone="wait">Reserved slot</Pill>}
+        {view.reserved && <Pill>Reserved slot</Pill>}
       </div>
       <p className="dm-acct-hash">Deposit {op.id} · version {op.version}</p>
 
       {view.conflicts.length > 0 && (
         <div role="note" aria-label="Reported conflicts" data-testid="conflicts" className="dm-acct-op-stack">
           {view.conflicts.map((conflict) => (
-            <Callout key={`${conflict.step}:${conflict.text}`} tone="out">
+            <p key={`${conflict.step}:${conflict.text}`} className="dm-acct-line font-medium">
               {conflict.text}
-            </Callout>
+            </p>
           ))}
         </div>
       )}
@@ -66,6 +67,10 @@ export function OperationPanel({
           </p>
         ))}
         {view.reserved && <p className="dm-acct-panel-note">{view.reserved}</p>}
+      </div>
+
+      <div data-testid="selection">
+        <FactList facts={view.selection} label="Your selection" />
       </div>
 
       {view.actions.filter((action) => action.id !== 'report').length > 0 && (
@@ -157,7 +162,7 @@ export function OperationPanel({
               </ul>
             </div>
           )}
-          <p role="note" data-testid="handoff-status" className="dm-inset dm-acct-notice mt-4">
+          <p role="note" data-testid="handoff-status" className="dm-acct-panel-note mt-4">
             {handoffAvailable ? "Only your wallet can authorize this step. If its response is lost, reconcile the operation before any new attempt." : handoffStatus(op)}
           </p>
         </Section>
@@ -166,16 +171,16 @@ export function OperationPanel({
       {view.receipt && (
         <Section title="Receipt">
           {view.receipt.breach && (
-            <Callout tone="out" role="note" testId="breach">
+            <p role="note" data-testid="breach" className="dm-acct-line font-medium">
               {view.receipt.breach}
-            </Callout>
+            </p>
           )}
           {view.receipt.envelope && (
-            <Callout tone="wait" role="note" testId="envelope">
+            <p role="note" data-testid="envelope" className="dm-acct-line">
               {view.receipt.envelope}
-            </Callout>
+            </p>
           )}
-          {view.receipt.notFinal && <p className="dm-acct-wait">{view.receipt.notFinal}</p>}
+          {view.receipt.notFinal && <p className="dm-acct-line">{view.receipt.notFinal}</p>}
           <div className="mt-3">
             <FactList facts={view.receipt.facts} label="Receipt facts" />
           </div>

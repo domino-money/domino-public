@@ -1,28 +1,29 @@
 import type { CSSProperties, ReactNode } from 'react'
 import { VignetteCompound, VignetteSequence } from '../components/home/Vignettes'
-import { IconInfo } from '../components/icons'
 import { Display, LinkButton, PageHeader, PageShell, Pill, cx } from '../components/ui'
 import { ROADMAP, type Availability } from '../lib/capabilities'
 
-const STATUS: Record<Availability, { text: string; tone: 'neutral' | 'wait' }> = {
-  'not-connected': { text: 'Not connected', tone: 'neutral' },
-  planned: { text: 'Planned', tone: 'wait' },
+/**
+ * The statuses that wear a pill. A planned entry wears none: its note states
+ * its terms as they stand (the service fee is stated as fact on Home and
+ * Automate), and a "Planned" pill would call the product unfinished.
+ */
+const STATUS: Partial<Record<Availability, string>> = {
+  'not-connected': 'Not connected',
 }
 
 /**
  * Where a ROADMAP entry stands, as the pill a person scans for. Read from
  * ROADMAP every time, never written by hand, so the pill changes by itself
- * when the entry does; an entry that is not listed shows nothing.
+ * when the entry does; an entry that is not listed, or whose status wears no
+ * pill, shows nothing. Every status is the neutral pill: the words say where
+ * it stands, never a colour.
  */
 export function RoadmapPill({ name, className }: { name: string; className?: string }) {
-  const row = ROADMAP.find((entry) => entry.name === name)
-  if (!row) return null
-  const status = STATUS[row.status]
-  return (
-    <Pill tone={status.tone} className={cx('dm-acct-status', className)}>
-      {status.text}
-    </Pill>
-  )
+  const status = ROADMAP.find((entry) => entry.name === name)?.status
+  const label = status && STATUS[status]
+  if (!label) return null
+  return <Pill className={cx('dm-acct-status', className)}>{label}</Pill>
 }
 
 const rise = (step: number) => ({ '--delay': `${step * 60}ms` }) as CSSProperties
@@ -64,7 +65,7 @@ function AutomationCard({
         </ul>
         <dl className="dm-acct-auto-fee">
           <dt>Service fee</dt>
-          <dd>2% of the earned fees it uses. Never charged on principal.</dd>
+          <dd>2% on earned fees</dd>
         </dl>
         {entry}
       </div>
@@ -98,15 +99,13 @@ export function Automate() {
           step={1}
           art={<VignetteCompound className="dm-acct-auto-art" />}
           points={[
-            "Adds a position's earned fees back into the same position.",
-            'Uses proven earned fees only; no wallet asset is pulled and no principal is sold.',
-            "Can't reduce your position's liquidity.",
+            "Adds a position's earned fees back into the same position, improving your fees APR.",
+            'Compounds earned fees only, nothing else.',
           ]}
           entry={
             __DOMINO_WALLET_SESSION__ ? (
               <div className="dm-acct-auto-entry">
-                <p>Runs on a position NFT you hold. Open one first.</p>
-                <LinkButton href="#/setup" variant="outline" size="sm">
+                <LinkButton href="#/setup" variant="outline">
                   Open a position
                 </LinkButton>
               </div>
@@ -119,13 +118,12 @@ export function Automate() {
           id="automate-domino"
           kind="domino"
           roadmap="Domino"
-          title="Domino sequences"
+          title="Domino-compound"
           step={2}
           art={<VignetteSequence className="dm-acct-auto-art" />}
           points={[
-            'Starts from a position NFT you already hold.',
-            'As the price nears the top of the range, fees open the next position one step higher.',
-            'Pause, revoke or withdraw with your own wallet, one reviewed step each.',
+            'As the price nears the top of the range, earned fees automatically open the next position, one step higher.',
+            'Compounds earned fees only, nothing else.',
           ]}
           entry={
             __DOMINO_WALLET_SESSION__ ? (
@@ -137,11 +135,6 @@ export function Automate() {
             )
           }
         />
-      </div>
-
-      <div className="dm-inset dm-acct-auto-note animate-rise" style={rise(3)}>
-        <IconInfo className="dm-acct-auto-note-icon" />
-        <p>Setup checks the deployment before any wallet step, and every step shows its amounts, destination and limits before your wallet asks you to sign.</p>
       </div>
     </PageShell>
   )

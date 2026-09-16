@@ -321,3 +321,292 @@ test('disposing aborts what is in flight', async () => {
   h.controller.dispose();
   assert.equal(h.client.calls[0].options.signal.aborted, true);
 });
+
+// ---- a product screen's intent (onboarding/intent.ts: New position's deposit amounts, Setup's swap quote) ----
+
+const { createIntentDriver, formFromRequest, INTENT_PAUSE_MS } = build('onboarding/intent');
+/** The position fixture's request as this page sends it: the owner comes from the session, never from the page. */
+const POSITION_ASKED = (() => {
+  const request = clone(POSITION.request);
+  delete request.owner;
+  return request;
+})();
+const positionForm = (patch = {}) => formFromRequest('position-preview', { ...POSITION_ASKED, ...patch }, '');
+
+/** A controller the driver starts, as a product screen mounts it: nothing is asked until the figures open. */
+function intentHarness({ port = fakePort(), clock = fakeClock(), limit, form = positionForm() } = {}) {
+  const client = fakeClient();
+  const budget = createPreviewBudget({ clock, channel: null, ...(limit ? { limit } : {}) });
+  const controller = createPreviewController('position-preview', { client, port, clock, budget });
+  const driver = createIntentDriver({ controller, port, clock });
+  const stop = driver.start();
+  driver.setForm(form);
+  const view = () => driver.getView();
+  async function answer(result) {
+    const call = client.calls.at(-1);
+    call.resolve(result);
+    await flush();
+    return call;
+  }
+  return { client, port, clock, budget, controller, driver, stop, view, answer };
+}
+
+test('opening the figures is one intent: one request for it, none while folded, none at expiry, none on a timer (G8)', async () => {
+  const h = intentHarness();
+  await flush();
+  assert.equal(h.client.calls.length, 0, 'nothing is asked before the figures open');
+  assert.deepEqual([h.view().status, h.view().reason], ['off', 'not_open']);
+  h.driver.setOpen(true);
+  await flush();
+  assert.equal(h.client.calls.length, 1, 'opening them asks once');
+  assert.deepEqual(h.client.calls[0].request, POSITION_ASKED, 'exactly the request the page formed');
+  assert.equal(h.view().status, 'loading');
+  const wall = h.clock.wallMs();
+  await h.answer(ok(POSITION));
+  assert.equal(h.view().status, 'current');
+  assert.equal(h.view().preview, POSITION);
+  assert.equal(h.view().currentUntilWallMs, wall + 30_000, 'current for the 30 s the server measured, shown on the wall clock');
+  h.clock.advance(30_000);
+  assert.deepEqual([h.view().status, h.view().preview, h.view().expiredAtWallMs], ['expired', null, wall]);
+  h.clock.advance(3_600_000);
+  assert.equal(h.client.calls.length, 1, 'expiry and time send nothing');
+  h.driver.setOpen(false);
+  h.driver.setOpen(false);
+  await flush();
+  assert.equal(h.client.calls.length, 1, 'folding sends nothing');
+  h.driver.setOpen(true);
+  await flush();
+  assert.equal(h.client.calls.length, 2, 'opening again is a new intent');
+});
+
+test('a changed request while open is sent after a short pause, a burst of changes is one request, and the same request again is none (G8)', async () => {
+  const h = intentHarness();
+  h.driver.setOpen(true);
+  await flush();
+  await h.answer(ok(POSITION));
+  h.driver.setForm(positionForm({ slippageBps: 60 }));
+  assert.equal(h.view().status, 'loading', 'the old preview is dropped at once, and the new one is on its way');
+  h.clock.advance(INTENT_PAUSE_MS - 100);
+  h.driver.setForm(positionForm({ slippageBps: 70 }));
+  h.clock.advance(INTENT_PAUSE_MS - 1);
+  await flush();
+  assert.equal(h.client.calls.length, 1, 'still typing');
+  h.clock.advance(1);
+  await flush();
+  assert.equal(h.client.calls.length, 2);
+  assert.equal(h.client.calls[1].request.slippageBps, 70, 'only the last of the burst');
+  h.driver.setForm(positionForm({ slippageBps: 70 }));
+  h.clock.advance(INTENT_PAUSE_MS * 10);
+  await flush();
+  assert.equal(h.client.calls.length, 2, 'the same request is not a new intent');
+  h.driver.setForm(formFromRequest('position-preview', null, 'the earlier steps are not complete.'));
+  assert.deepEqual([h.view().status, h.view().reason], ['off', 'not_formed']);
+  h.clock.advance(INTENT_PAUSE_MS * 10);
+  await flush();
+  assert.equal(h.client.calls.length, 2, 'no request can be formed, so none is sent');
+});
+
+test('signed out, the intent waits; a sign-in finishes it once; the same session back after a flap sends nothing; a new session asks once more (G8)', async () => {
+  const h = intentHarness({ port: fakePort({ snapshot: { kind: 'signed_out' } }) });
+  h.driver.setOpen(true);
+  await flush();
+  assert.equal(h.client.calls.length, 0);
+  assert.deepEqual([h.view().status, h.view().reason], ['signed-out', 'signed_out']);
+  const signedIn = (epoch) => ({ kind: 'signed_in', owner: '0xabababababababababababababababababababab', chainId: 4663, epoch, connectorUid: 'uid-a' });
+  h.port.set(signedIn(1));
+  await flush();
+  assert.equal(h.client.calls.length, 1, 'the sign-in finished the waiting intent');
+  await h.answer(ok(POSITION));
+  assert.equal(h.view().status, 'current');
+  h.port.set({ kind: 'session_busy', retryAfterS: 5 });
+  assert.equal(h.view().status, 'signed-out', 'the preview goes with the session');
+  h.port.set(signedIn(1));
+  await flush();
+  assert.equal(h.client.calls.length, 1, 'the same server session back is not a new intent');
+  h.port.set(signedIn(2));
+  await flush();
+  assert.equal(h.client.calls.length, 2, 'a new server session while open asks once');
+  for (const kind of ['session_disabled', 'gate_required']) {
+    h.port.set({ kind });
+    assert.deepEqual([h.view().status, h.view().reason], ['off', kind], `${kind}: no sign-in on this page can bring the figures`);
+  }
+});
+
+test('a current preview answers a new opening; a failure stays until the next intent; a switched-off route is not asked again (G8)', async () => {
+  const h = intentHarness();
+  h.driver.setOpen(true);
+  await flush();
+  await h.answer(ok(POSITION));
+  h.driver.setOpen(false);
+  h.driver.setOpen(true);
+  await flush();
+  assert.equal(h.client.calls.length, 1, 'the current preview answers the new opening');
+  h.clock.advance(30_000);
+  await flush();
+  assert.deepEqual([h.view().status, h.client.calls.length], ['expired', 1], 'and its expiry sends nothing');
+
+  h.driver.setOpen(false);
+  h.driver.setOpen(true);
+  await flush();
+  await h.answer(failed({ kind: 'timed_out', retry: 'manual' }));
+  assert.deepEqual([h.view().status, h.view().reason], ['unavailable', 'timed_out']);
+  h.clock.advance(600_000);
+  await flush();
+  assert.equal(h.client.calls.length, 2, 'a failure is not asked again on its own');
+
+  h.driver.setOpen(false);
+  h.driver.setOpen(true);
+  await flush();
+  assert.equal(h.client.calls.length, 3, 'the next intent asks again');
+  await h.answer(failed({ kind: 'feature_unavailable', retry: 'none', code: 'route_not_available', status: 404 }));
+  assert.deepEqual([h.view().status, h.view().reason], ['off', 'feature_unavailable']);
+  h.driver.setOpen(false);
+  h.driver.setOpen(true);
+  h.driver.setForm(positionForm({ slippageBps: 80 }));
+  h.clock.advance(INTENT_PAUSE_MS * 10);
+  await flush();
+  assert.equal(h.client.calls.length, 3, 'a route that is not there is not asked again, whatever changes');
+  assert.equal(h.view().status, 'off');
+});
+
+// Changed on purpose (review:wallet, "never on a timer"): an intent that met a spent budget used to wait and be sent by the budget's wake
+// timer, up to 60 s later, with nothing pressed. It is now dropped: unavailable with the reason, and the next opening or change asks again.
+test('an intent that meets a spent preview budget is dropped: unavailable with that reason, nothing sent when the budget frees, and the next opening or change asks again (G8)', async () => {
+  const h = intentHarness({ limit: 1 });
+  h.driver.setOpen(true);
+  await flush();
+  await h.answer(failed({ kind: 'provider_unavailable', retry: 'manual', code: 'provider_unavailable', status: 503 }));
+  h.driver.setOpen(false);
+  h.driver.setOpen(true);
+  await flush();
+  assert.equal(h.client.calls.length, 1);
+  assert.deepEqual([h.view().status, h.view().reason], ['unavailable', 'budget']);
+  h.clock.advance(60_001);
+  await flush();
+  assert.equal(h.client.calls.length, 1, 'the budget freeing sends nothing');
+  assert.deepEqual([h.view().status, h.view().reason], ['unavailable', 'budget'], 'and the figures still say why they are a dash');
+  h.clock.advance(600_000);
+  await flush();
+  assert.equal(h.client.calls.length, 1, 'nor does time');
+  h.driver.setOpen(false);
+  h.driver.setOpen(true);
+  await flush();
+  assert.equal(h.client.calls.length, 2, 'the next opening asks again');
+  assert.equal(h.view().status, 'loading');
+
+  // A change is an intent of its own too: one that meets the spent budget is dropped the same way, and the change after it asks.
+  await h.answer(ok(POSITION));
+  h.driver.setForm(positionForm({ slippageBps: 60 }));
+  h.clock.advance(INTENT_PAUSE_MS);
+  await flush();
+  assert.deepEqual([h.client.calls.length, h.view().status, h.view().reason], [2, 'unavailable', 'budget']);
+  h.clock.advance(60_001);
+  await flush();
+  assert.equal(h.client.calls.length, 2, 'dropped, not kept for the budget');
+  h.driver.setForm(positionForm({ slippageBps: 70 }));
+  h.clock.advance(INTENT_PAUSE_MS);
+  await flush();
+  assert.deepEqual([h.client.calls.length, h.client.calls[2].request.slippageBps], [3, 70]);
+});
+
+test('an intent that meets the server’s cooldown is dropped: nothing is sent when the cooldown lifts, and the next opening asks again (G8)', async () => {
+  const h = intentHarness();
+  h.driver.setOpen(true);
+  await flush();
+  await h.answer(failed({ kind: 'rate_limited', retry: 'after', code: 'session_rate_limited', status: 429, retryAfterS: 30 }));
+  assert.equal(h.view().status, 'unavailable');
+  h.driver.setOpen(false);
+  h.driver.setOpen(true);
+  await flush();
+  assert.deepEqual([h.client.calls.length, h.view().status, h.view().reason], [1, 'unavailable', 'cooldown']);
+  h.clock.advance(30_001);
+  await flush();
+  assert.equal(h.client.calls.length, 1, 'the cooldown lifting sends nothing');
+  h.clock.advance(3_600_000);
+  await flush();
+  assert.equal(h.client.calls.length, 1);
+  h.driver.setOpen(false);
+  h.driver.setOpen(true);
+  await flush();
+  assert.equal(h.client.calls.length, 2, 'the next opening asks again');
+});
+
+test('signed out with the budget spent, the intent waits for the sign-in, and the sign-in that meets the budget drops it instead of waiting for a timer (G8)', async () => {
+  const signedIn = (epoch) => ({ kind: 'signed_in', owner: '0xabababababababababababababababababababab', chainId: 4663, epoch, connectorUid: 'uid-a' });
+  const h = intentHarness({ port: fakePort({ snapshot: signedIn(1) }), limit: 1 });
+  h.driver.setOpen(true);
+  await flush();
+  await h.answer(failed({ kind: 'timed_out', retry: 'manual' }));
+  h.port.set({ kind: 'signed_out' });
+  h.driver.setOpen(false);
+  h.driver.setOpen(true);
+  await flush();
+  assert.deepEqual([h.client.calls.length, h.view().status], [1, 'signed-out'], 'signed out: the opening waits for a sign-in');
+  h.port.set(signedIn(2));
+  await flush();
+  assert.deepEqual([h.client.calls.length, h.view().status, h.view().reason], [1, 'unavailable', 'budget'], 'the sign-in finished it against a spent budget: dropped');
+  h.clock.advance(60_001);
+  await flush();
+  assert.equal(h.client.calls.length, 1, 'and the budget freeing sends nothing');
+});
+
+test('where only typing asks (Setup’s swap quote): opening again asks for nothing already asked, even after expiry or a failure; a change does, and so does a new session (G15)', async () => {
+  const client = fakeClient();
+  const clock = fakeClock();
+  const port = fakePort();
+  const budget = createPreviewBudget({ clock, channel: null });
+  const controller = createPreviewController('position-preview', { client, port, clock, budget });
+  const driver = createIntentDriver({ controller, port, clock, openingAsks: false });
+  driver.start();
+  driver.setForm(positionForm());
+  const answer = async (result) => { client.calls.at(-1).resolve(result); await flush(); };
+  driver.setOpen(true);
+  await flush();
+  assert.equal(client.calls.length, 1, 'the first opening serves the request no intent served yet');
+  await answer(ok(POSITION));
+  clock.advance(30_000);
+  assert.equal(driver.getView().status, 'expired');
+  driver.setOpen(false);
+  driver.setOpen(true);
+  await flush();
+  assert.deepEqual([client.calls.length, driver.getView().status], [1, 'expired'], 'reopened after expiry: nothing is asked');
+  driver.setForm(positionForm({ slippageBps: 60 }));
+  clock.advance(INTENT_PAUSE_MS);
+  await flush();
+  assert.equal(client.calls.length, 2, 'a change asks');
+  await answer(failed({ kind: 'timed_out', retry: 'manual' }));
+  driver.setOpen(false);
+  driver.setOpen(true);
+  clock.advance(600_000);
+  await flush();
+  assert.deepEqual([client.calls.length, driver.getView().status, driver.getView().reason], [2, 'unavailable', 'timed_out'], 'reopened after a failure: nothing is asked');
+  driver.setOpen(false);
+  driver.setForm(positionForm({ slippageBps: 70 }));
+  clock.advance(INTENT_PAUSE_MS * 10);
+  await flush();
+  assert.equal(client.calls.length, 2, 'a change while folded sends nothing');
+  driver.setOpen(true);
+  await flush();
+  assert.equal(client.calls.length, 3, 'opening serves the change made while folded, once');
+  await answer(ok(POSITION));
+  port.set({ kind: 'signed_in', owner: port.getSnapshot().owner, chainId: 4663, epoch: 2, connectorUid: 'uid-a' });
+  await flush();
+  assert.equal(client.calls.length, 4, 'a new server session while open asks once');
+});
+
+test('stopping aborts what is in flight and drops the preview; starting again and opening is a new intent (G8)', async () => {
+  const h = intentHarness();
+  h.driver.setOpen(true);
+  await flush();
+  const first = h.client.calls[0];
+  h.stop();
+  assert.equal(first.options.signal.aborted, true);
+  h.driver.start();
+  h.driver.setOpen(true);
+  await flush();
+  assert.equal(h.client.calls.length, 2, 'a remount asks again for the same request');
+  const blocked = intentHarness({ port: fakePort({ csrfAccess: false }) });
+  blocked.driver.setOpen(true);
+  await flush();
+  assert.deepEqual([blocked.view().status, blocked.view().reason, blocked.client.calls.length], ['off', 'session_access_unavailable', 0]);
+});

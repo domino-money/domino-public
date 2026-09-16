@@ -12,9 +12,10 @@
  *
  * Orientation is the pool's: currency1 per currency0, written by
  * tickPriceText with its `≈` and six significant digits ("≈2,492.36" USDG
- * per WETH). A usable price read longer ago than PRICE_STALE_MS on this page
- * is stale; a row retained after a failed refresh keeps the age of the read
- * it came from, so it is never made younger by being kept.
+ * per WETH). A usable price read longer ago than PRICE_STALE_MS is stale: time
+ * on this page, plus the time a stored snapshot had already held the state
+ * when it served it. A row retained after a failed refresh keeps the age of
+ * the read it came from, so it is never made younger by being kept.
  */
 import type { Instant, Market } from '../markets'
 import type { TokenDisplay } from './types'
@@ -31,7 +32,7 @@ export type MarketPrice =
       /** The pool's currency1: the unit the price is in. */
       quote: TokenDisplay
       block: number
-      /** On screen for PRICE_STALE_MS or longer since the row's reply arrived. */
+      /** Read PRICE_STALE_MS or longer ago: served age plus time on screen since the row's reply arrived. */
       stale: boolean
       /** A symbol that could not be read, or token metadata the producer marked partial. */
       partial: boolean
@@ -43,12 +44,17 @@ export type MarketPrice =
       block: number | null
     }
 
-/** Milliseconds since the row's reply arrived, on the monotonic clock when both readings have it; null when the row says nothing. */
-function onScreenMs(market: Market, now: Instant): number | null {
+/**
+ * Milliseconds since the pool's state was read: the time it had already been
+ * stored when a snapshot served it, plus the time since the row's reply
+ * arrived, on the monotonic clock when both readings have it. Null when the
+ * row says nothing.
+ */
+function stateAgeMs(market: Market, now: Instant): number | null {
   const answer = market.provenance?.market
   if (!answer) return null
   const ms = answer.receivedMonotonic !== undefined && now.monotonic !== undefined ? now.monotonic - answer.receivedMonotonic : now.wall - answer.receivedAt
-  return Math.max(0, ms)
+  return Math.max(0, ms) + (market.poolState?.servedAgeSeconds ?? 0) * 1000
 }
 
 /** The row's token read for one of the pool's currencies, by address. */
@@ -75,6 +81,6 @@ export function marketPoolPrice(market: Market, now: Instant): MarketPrice {
   const text = tickPriceText(pool.tick, base.decimals, quote.decimals)
   if (text === null) return { state: 'unavailable', problem: 'beyond_display', block }
   const partial = [base, quote].some((token) => token.symbol === null || token.readStatus === 'partial')
-  const age = onScreenMs(market, now)
+  const age = stateAgeMs(market, now)
   return { state: 'usable', text, base, quote, block, stale: age !== null && age >= PRICE_STALE_MS, partial }
 }

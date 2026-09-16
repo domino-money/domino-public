@@ -40,9 +40,10 @@ export function PriceSlider({
 }) {
   const pct = (v: number) => ((v - min) / (max - min)) * 100
   const band = lower !== undefined && upper !== undefined
-  const inside = band && value >= lower && value < upper
-  // Inside the range (or with no range drawn) the thumb's ring is the informational Tangerine; outside it, the waiting tone.
-  const ring = inside || !band ? 'var(--primary-ink)' : 'var(--money-wait)'
+  // Both edges count as the band's own, so a range's Min and Max handles, each on its edge, look the same.
+  const inside = band && value >= lower && value <= upper
+  // Inside the range (or with no range drawn) the thumb's ring is the informational Tangerine; outside it, a neutral line.
+  const ring = inside || !band ? 'var(--primary-ink)' : 'var(--fg-faint)'
 
   return (
     <div className="relative select-none pb-1 pt-4">

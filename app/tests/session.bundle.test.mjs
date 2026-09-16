@@ -94,7 +94,8 @@ test('the feature is lazy: the entry closure holds no wallet code, and the islan
   const { entry, island } = shape(DIST);
   const initial = staticClosure(DIST, entry);
   const entryText = closureText(DIST, initial);
-  for (const needle of ['personal_sign', 'wallet_switchEthereumChain', '/api/session/v1/']) {
+  // New position consumes onboarding-v1 for the signed-in wallet (G8); its client stays out of the entry too.
+  for (const needle of ['personal_sign', 'wallet_switchEthereumChain', '/api/session/v1/', '/api/onboarding/v1/', 'X-Domino-Onboarding-Contract']) {
     assert.ok(!entryText.includes(needle), `dist/assets/${entry[0]} contains ${needle}: the feature must stay in its chunk`);
   }
   assert.ok(!initial.has(island[0]), 'the entry must not statically load the session island');
@@ -172,12 +173,19 @@ test('no connector SDK, relay or public RPC endpoint reached either build', () =
     // data, never rendered as a link and never fetched (tests/read.test.mjs
     // pins its shape; the render suite finds no such link on any route).
     'app.uniswap.org',
+    // The product now consumes onboarding-v1 (New position's deposit amounts,
+    // Setup's swap quote), so its runtime ships in those lazy chunks. Its swap
+    // response schema pins the provider the backend quoted from as a `const`
+    // (SwapProvenance.endpoint): a value the validator compares, never a
+    // destination. The page only ever posts to its own /api/onboarding/v1/.
+    'trade-api.gateway.uniswap.org',
   ]);
   // Exactly those, and only where the deployed CSP admits the two that are ever contacted.
   const csp = readFileSync(join(APP, 'functions', '_middleware.ts'), 'utf8');
   assert.ok(csp.includes("img-src 'self' data: https://cdn.dexscreener.com"), 'the CSP names the artwork CDN');
   assert.ok(csp.includes("connect-src 'self' https://api.dexscreener.com"), 'the CSP names the artwork metadata endpoint');
   assert.doesNotMatch(csp, /app\.uniswap\.org/, 'the catalogue citation is never a destination');
+  assert.doesNotMatch(csp, /gateway\.uniswap\.org/, 'the swap provenance label is never a destination');
   for (const [label, dir] of [
     ['dist', DIST],
     ['.wallet-test-dist', WALLET],
@@ -218,11 +226,18 @@ test('the lockfile holds no optional connector SDK', () => {
 });
 
 test('session/read closures retain their 90 kB budget; financial screens have a separate measured budget', (t) => {
-  // Preserve the original session + public-read ceiling. P2 adds four explicitly
-  // lazy financial screens and their schema/ABI clients, measured at 123.4 kB
-  // gzip including shared dependencies. The 150 kB financial and total-lazy
-  // ceilings leave ~9% over the measured 137.1 kB total, without charging these
-  // opt-in screens to visitors who only open wallet sign-in or public reads.
+  // Preserve the original session + public-read ceiling. P2 added four explicitly
+  // lazy financial screens and their schema/ABI clients; wave 2 added New
+  // position's deposit amounts and the onboarding client they share with Setup's
+  // swap quote. Measured on 2026-09-15, gzip level 9, shared dependencies
+  // included: before this branch the all-lazy closure was 145,806 B in dist and
+  // 146,328 B in .wallet-test-dist (financial 132,231 B), 2.8% and 2.4% under
+  // 150 kB. The closed owner ABIs now ship as JSON instead of being parsed at
+  // runtime, which drops abitype's parser: 143,468 B and 143,985 B (financial
+  // 129,891 B), 4.4% and 4.0% under the ceiling. The wallet-test build is the
+  // larger and fails first. The headroom is printed with every run below; the
+  // ceilings stay where they were, without charging these opt-in screens to
+  // visitors who only open wallet sign-in or public reads.
   for (const [label, dir] of [
     ['dist', DIST],
     ['.wallet-test-dist', WALLET],
@@ -230,8 +245,10 @@ test('session/read closures retain their 90 kB budget; financial screens have a 
     const { js, entry, island } = shape(dir);
     const initial = staticClosure(dir, entry);
     const readRoots = js.filter((file) => /^(PoolExplorer|TokenPicker|index)-/.test(file) && !initial.has(file));
-    const financialRoots = js.filter((file) => /^(Setup|Sequence|Execution|Performance)-/.test(file));
-    assert.equal(financialRoots.length, 4, 'the four P2 financial screens are explicit lazy roots');
+    // New position's deposit amounts are the fifth private lazy root: the product now consumes onboarding-v1 there
+    // (G8), for a signed-in wallet, from a chunk of its own that Review opens (components/create/DepositAmounts.tsx).
+    const financialRoots = js.filter((file) => /^(Setup|Sequence|Execution|Performance|DepositAmounts)-/.test(file));
+    assert.equal(financialRoots.length, 5, 'the four P2 financial screens and New position\'s deposit amounts are explicit lazy roots');
     assert.equal(readRoots.filter((file) => file.startsWith('index-')).length, 1, 'include the public read screen, even though Vite calls it index');
     const base = new Set([...staticClosure(dir, [...island, ...readRoots])].filter((file) => !initial.has(file)));
     const financial = new Set([...staticClosure(dir, financialRoots)].filter((file) => !initial.has(file)));
@@ -240,7 +257,8 @@ test('session/read closures retain their 90 kB budget; financial screens have a 
     assert.deepEqual([...new Set([...initial, ...allLazy])].sort(), js, 'every generated script belongs to a measured closure');
     for (const [family, files, budget] of [['session/public reads', base, 90_000], ['financial', financial, 150_000], ['all lazy', allLazy, 150_000]]) {
       const total = [...files].reduce((sum, file) => sum + gzip(join(dir, 'assets', file)), 0);
-      t.diagnostic(`${label} ${family}: ${total} bytes gzip (${files.size} scripts; ${budget} budget)`);
+      // The headroom is a diagnostic only, so the margin stays visible in every run; only the budget itself fails the test.
+      t.diagnostic(`${label} ${family}: ${total} bytes gzip (${files.size} scripts; ${budget} budget; ${budget - total} bytes, ${((100 * (budget - total)) / budget).toFixed(1)}% headroom)`);
       assert.ok(total <= budget, `${label} ${family} is ${total} bytes gzip, over the ${budget} budget`);
     }
   }

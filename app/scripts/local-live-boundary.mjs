@@ -3,7 +3,10 @@
 export const REQUEST_LIMIT = 8192
 export const RESPONSE_LIMIT = 1048576
 export const DEADLINE_MS = 20000
-export const READS = Object.freeze(['token', 'pools', 'pool-market', 'wallet-assets', 'nft-positions', 'catalogue', 'pool-activity'])
+// read-v1's ten POST routes, in the contract's order. A development gateway that
+// lists a route outside this set fails the capabilities check (local-live-proxy.mjs),
+// so the stored-data reads are here before the gateway serves them.
+export const READS = Object.freeze(['token', 'pools', 'pool-market', 'wallet-assets', 'nft-positions', 'catalogue', 'pool-activity', 'pool-positions', 'pool-metrics', 'markets-snapshot'])
 
 export function parsePort(args) {
   if (!args.length) return 5273

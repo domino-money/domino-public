@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, type ClipboardEvent, type KeyboardEvent } 
 import { unreadToken } from '../../../lib/read/project'
 import { ADDRESS_PROBLEM, failureText } from '../../../lib/read/screens/copy'
 import { parseAddressInput, screenPaste, shortAddress, type AddressKey } from '../../../lib/read/screens/identity'
+import { failureCode, quietTitle, reaskDelayMs, whenVisibleAfter } from '../../../lib/read/screens/quietRead'
 import { readWithin } from '../../../lib/read/screens/screenRead'
 import { searchTokens, type KnownToken, type SearchResult } from '../../../lib/read/screens/tokenSearch'
 import { candidateFromToken, selectable, type TokenCandidate } from '../../../lib/read/screens/tokens'
@@ -10,17 +11,18 @@ import { IconSearch } from '../../icons'
 import { TokenMark } from '../../TokenIcon'
 import { cx } from '../../ui'
 import { Address } from './Address'
-import { ScreenStatus, type StatusLine } from './ScreenStatus'
 
-const HINT = 'Names come from the selected pools, a wallet listing and tokens already read. A token is always its contract address, read from chain.'
-const NO_MATCH = 'No known token has that name. Paste its contract address to read it from chain.'
-const SOURCE_NOTE = { catalogue: 'Selected pool token', wallet: 'In a listed wallet', read: 'Read from chain' } as const
+const NO_MATCH = 'No token by that name. Paste its contract address.'
 const LISTBOX_LABEL = 'Matching tokens'
 const UNNAMED = 'Unnamed token'
-const READ_ADDRESS = 'Read this address from chain'
+const READ_ADDRESS = 'Look up this address'
 const ALREADY_CHOSEN = 'Already chosen'
-const reading = (name: string) => `Reading ${name} from chain…`
+const NOT_READ = 'This token couldn’t be read.'
+const reading = (name: string) => `Reading ${name}…`
 const readAt = (block: number) => `Read at block ${block}.`
+
+/** What the polite live region says about the chosen token's read. */
+type Said = { code: string; words: string }
 
 /** A label as one short line of text: cut where SymbolText cuts, so a long symbol never fills a status line. */
 const shortLabel = (label: string) => (label.length > 24 ? `${label.slice(0, 24)}…` : label)
@@ -44,8 +46,8 @@ function typedProblem(value: string): string | null {
   return ADDRESS_PROBLEM[parsed.reason]
 }
 
+/** A known token as a hit: its name and address, and a listed wallet's balance when there is one. Where the app knows it from is a data attribute only. */
 function KnownRow({ token }: { token: KnownToken }) {
-  const notes = token.sources.map((source) => (source === 'wallet' && token.balanceText !== null ? `${SOURCE_NOTE.wallet} · ${token.balanceText}` : SOURCE_NOTE[source]))
   return (
     <>
       <TokenMark token={displayOf(token)} size={28} />
@@ -55,8 +57,12 @@ function KnownRow({ token }: { token: KnownToken }) {
         </span>
         <span className="dm-flow-hit-meta">
           <Address value={token.key} short />
-          <span aria-hidden="true"> · </span>
-          <span className="tnum">{notes.join(' · ')}</span>
+          {token.balanceText !== null && (
+            <>
+              <span aria-hidden="true"> · </span>
+              <span className="tnum">Balance {token.balanceText}</span>
+            </>
+          )}
         </span>
       </span>
     </>
@@ -85,6 +91,12 @@ function AddressRow({ wire }: { wire: string }) {
  * address and hands over what it said. Nothing here is ever a symbol lookup.
  * The list is drawn only while it is open, so a closed search asks nothing
  * of anyone, artwork included.
+ *
+ * No status panel and no Retry: while the read runs the field is marked busy;
+ * a read that failed only for the moment is asked again on its own, a few
+ * times, while the page is visible; one that stays failed leaves a single
+ * plain line, its reason in the line's title and data attribute. The live
+ * region says each step in words for a screen reader.
  */
 export function TokenSearch({
   source,
@@ -113,17 +125,25 @@ export function TokenSearch({
   const [open, setOpen] = useState(false)
   const [active, setActive] = useState(0)
   const [problem, setProblem] = useState<string | null>(() => typedProblem(initialValue ?? ''))
-  const [line, setLine] = useState<StatusLine | null>(null)
+  const [said, setSaid] = useState<Said | null>(null)
+  const [failed, setFailed] = useState<{ code: string; reason: string } | null>(null)
   const [busy, setBusy] = useState(false)
-  const [choice, setChoice] = useState<{ wire: string; name: string } | null>(null)
   const input = useRef<HTMLInputElement>(null)
   const running = useRef<AbortController | null>(null)
+  // A quiet re-ask waiting for its time, cancelled by any newer choice.
+  const quiet = useRef<(() => void) | null>(null)
   // The latest callback, so the outcome of a read reaches the caller as it is now.
   const found = useRef(onFound)
   useEffect(() => {
     found.current = onFound
   }, [onFound])
-  useEffect(() => () => running.current?.abort(), [])
+  useEffect(
+    () => () => {
+      running.current?.abort()
+      quiet.current?.()
+    },
+    [],
+  )
   useEffect(() => {
     if (autoFocus) input.current?.focus()
   }, [autoFocus])
@@ -135,21 +155,47 @@ export function TokenSearch({
   const optionId = (result: SearchResult) => `${id}-option-${keyOf(result)}`
   const excluded = (result: SearchResult) => exclude !== null && keyOf(result) === exclude
 
-  const read = (wire: string, name: string) => {
+  /** Stops whatever the last choice still has running or waiting. */
+  const stop = () => {
     running.current?.abort()
+    running.current = null
+    quiet.current?.()
+    quiet.current = null
+  }
+
+  /** One token read for the chosen address; `attempt` counts the quiet re-asks of that same choice. */
+  const read = (wire: string, name: string, attempt = 0) => {
+    stop()
     const mine = new AbortController()
     running.current = mine
     setBusy(true)
-    setLine({ code: 'loading', title: reading(name), detail: '' })
+    if (attempt === 0) {
+      setFailed(null)
+      setSaid({ code: 'loading', words: reading(name) })
+    }
     void readWithin(source, 'token', { token: wire }, { signal: mine.signal }).then((outcome) => {
       if (mine.signal.aborted) return
-      setBusy(false)
-      if (outcome.state === 'ok') {
-        found.current(candidateFromToken(outcome.data, wire))
-        setLine({ code: 'ok', title: readAt(outcome.data.snapshot.number), detail: '' })
-      } else if (outcome.state !== 'aborted') {
-        setLine(failureText(outcome, 'token'))
+      if (running.current === mine) running.current = null
+      if (outcome.state === 'aborted') {
+        setBusy(false)
+        return
       }
+      if (outcome.state === 'ok') {
+        setBusy(false)
+        found.current(candidateFromToken(outcome.data, wire))
+        setSaid({ code: 'ok', words: readAt(outcome.data.snapshot.number) })
+        return
+      }
+      const wait = reaskDelayMs(outcome, attempt)
+      if (wait !== null) {
+        // Still being asked: the field stays busy and nothing new is said.
+        quiet.current = whenVisibleAfter(wait, () => read(wire, name, attempt + 1))
+        return
+      }
+      const text = failureText(outcome, 'token')
+      setBusy(false)
+      setFailed({ code: failureCode(outcome), reason: quietTitle(outcome, 'token') })
+      setSaid({ code: text.code, words: text.title })
     })
   }
 
@@ -160,7 +206,6 @@ export function TokenSearch({
     if (result.kind === 'address') {
       const name = shortAddress(result.wire)
       setValue(result.wire)
-      setChoice({ wire: result.wire, name })
       read(result.wire, name)
       return
     }
@@ -169,14 +214,13 @@ export function TokenSearch({
     const candidate = result.token.candidate
     if (candidate && selectable(candidate)) {
       // Already read, or listed with its balance: nothing to ask the chain again.
-      running.current?.abort()
+      stop()
       setBusy(false)
-      setChoice(null)
-      setLine(null)
+      setFailed(null)
+      setSaid(null)
       found.current(candidate)
       return
     }
-    setChoice({ wire: result.token.wire, name })
     read(result.token.wire, name)
   }
 
@@ -229,8 +273,8 @@ export function TokenSearch({
       <label htmlFor={id} className="dm-label">
         {label}
       </label>
-      <div className="dm-flow-combo">
-        <IconSearch size={14} className="dm-flow-combo-icon" />
+      <div className="dm-flow-combo" aria-busy={busy || undefined}>
+        <IconSearch size={14} className={cx('dm-flow-combo-icon', busy && 'animate-pulse-soft')} />
         <input
           ref={input}
           id={id}
@@ -241,7 +285,7 @@ export function TokenSearch({
           aria-autocomplete="list"
           aria-activedescendant={expanded && highlighted >= 0 ? optionId(results[highlighted]) : undefined}
           aria-invalid={problem ? true : undefined}
-          aria-describedby={problem ? `${id}-hint ${id}-error` : `${id}-hint`}
+          aria-describedby={problem ? `${id}-error` : undefined}
           value={value}
           onChange={(event) => {
             setValue(event.target.value)
@@ -278,6 +322,7 @@ export function TokenSearch({
                     aria-selected={current}
                     aria-disabled={disabled || undefined}
                     data-token-option={key}
+                    data-token-sources={result.kind === 'known' ? result.token.sources.join(' ') : undefined}
                     data-active={current ? '' : undefined}
                     onMouseDown={(event) => event.preventDefault()}
                     onMouseEnter={() => setActive(index)}
@@ -293,17 +338,19 @@ export function TokenSearch({
           {expanded && results.length === 0 && <p className="dm-flow-listbox-empty">{NO_MATCH}</p>}
         </div>
       </div>
-      <p id={`${id}-hint`} className="dm-hint">
-        {HINT}
-      </p>
       {problem && (
         <p id={`${id}-error`} role="alert" className="dm-error">
           {problem}
         </p>
       )}
-      <div data-token-search-status={line?.code ?? 'none'}>
-        <ScreenStatus line={line} busy={busy} onRetry={choice ? () => read(choice.wire, choice.name) : undefined} className="mt-2" />
-      </div>
+      {failed && !busy && (
+        <p className="dm-hint" data-token-search-failed={failed.code} title={failed.reason}>
+          {NOT_READ}
+        </p>
+      )}
+      <p role="status" aria-live="polite" className="sr-only" data-token-search-status={said?.code ?? 'none'}>
+        {said?.words}
+      </p>
     </div>
   )
 }

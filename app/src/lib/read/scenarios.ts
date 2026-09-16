@@ -33,6 +33,10 @@ export const REQUEST_OVERRIDES: Readonly<Record<string, Readonly<Record<string, 
   // One position each: the question they answer asks for that one id.
   [gateway('nft-positions.empty')]: { tokenIds: ['1'] },
   [gateway('nft-positions.zero')]: { tokenIds: ['1'] },
+  // These echo no ids: they answer the unfiltered question, which serves every stored pool.
+  [gateway('markets-snapshot.success')]: { poolIds: [] },
+  [gateway('markets-snapshot.empty')]: { poolIds: [] },
+  [gateway('markets-snapshot.stale')]: { poolIds: [] },
 }
 
 export function canonicalRequest<R extends ReadRoute>(catalog: FixtureCatalog, route: R): ReadRequests[R] {
@@ -133,9 +137,10 @@ const tokens = (script: ReplyScript = { fixture: gateway('token.success') }): Re
 /**
  * A case of the lean table: pool-market without price history, then each
  * token. Every pool-market reply answers only that exact request, so a table
- * asking anything else gets the bridge's refusal on screen. No case scripts
- * pool-metrics: the table never asks for it, and a fixture source with no
- * reply for a route answers it as not enabled.
+ * asking anything else gets the bridge's refusal on screen. The table reads
+ * markets-snapshot and pool-metrics only where they are listed, and a fixture
+ * source lists exactly the routes its script answers: these cases script
+ * neither, so they read neither.
  */
 function marketCase(id: string, title: string, market: ReplyScript | ReplyScript[], token?: ReplyScript, policy?: RetryPolicy): MarketCase {
   const lean = { poolId: FIXTURE_POOL, includePriceHistory: false }
@@ -151,6 +156,28 @@ function marketCase(id: string, title: string, market: ReplyScript | ReplyScript
 }
 
 const m = (name: string): ReplyScript => ({ fixture: gateway(`pool-market.${name}`), mutate: withoutHistory })
+
+/**
+ * The package's stored snapshot of the fixture pool, changed by `change`.
+ * The package's other snapshot fixtures are byte for byte the same entry and
+ * a stale store, an absent pool or an unbuilt store are not among them, so
+ * each is made from this one.
+ */
+const stored = (change?: (body: Record<string, unknown>) => void): ReplyScript => ({
+  fixture: gateway('markets-snapshot.subset'),
+  ...(change ? { mutate: (body: unknown) => (change(obj(body)), body) } : {}),
+})
+const storedEntry = (body: Record<string, unknown>) => obj((body.pools as unknown[])[0])
+
+/**
+ * A table case with markets-snapshot listed: the stored snapshot answers the
+ * table's one filtered question first, and the lean pool-market read is there
+ * for any pool the store could not answer for well enough.
+ */
+function snapshotCase(id: string, title: string, snapshot: ReplyScript): MarketCase {
+  const lean = marketCase(id, title, m('success'))
+  return { ...lean, script: { 'markets-snapshot': [{ ...snapshot, expectRequest: { poolIds: [FIXTURE_POOL] } }], ...lean.script } }
+}
 
 export const MARKET_CASES: MarketCase[] = [
   marketCase('provider', 'Provider figures', m('success')),
@@ -180,13 +207,28 @@ export const MARKET_CASES: MarketCase[] = [
   marketCase('invalid', 'Payload fails validation', { fixture: invalidFixture('pool-market.incompatible-version') }),
   marketCase('busy', 'Read capacity busy', { fixture: errorFixture('pool-market.read_capacity_busy'), retryAfter: '7' }),
   marketCase('transient', 'A 503, shown for the person to retry', { fixture: errorFixture('pool-market.upstream_unavailable') }, undefined, BRIDGE_RETRY),
+  // markets-snapshot listed: a stored row first, the pool's own read where the store is not enough.
+  snapshotCase('snapshot-current', 'Stored snapshot, current: no market read', stored()),
+  snapshotCase('snapshot-stale-entry', 'Stored entry served 400 s after it was stored', stored((body) => { body.ageSeconds = 400 })),
+  snapshotCase('snapshot-stale-envelope', 'Stored snapshot not refreshed for its 300 s', stored((body) => Object.assign(body, { status: 'stale', stale: true, reason: 'snapshot_refresh_pending', ageSeconds: 400 }))),
+  snapshotCase('snapshot-provider-expired', 'Stored provider figures past the 300 s limit', stored((body) => { obj(obj(storedEntry(body).market).cache).ageSeconds = 301 })),
+  snapshotCase('snapshot-market-unavailable', 'Stored without provider figures', stored((body) => {
+    const entry = storedEntry(body)
+    const market = obj(entry.market)
+    entry.market = { status: 'unavailable', reason: 'provider_unavailable', data: null, cache: { ...obj(market.cache), ageSeconds: null } }
+  })),
+  snapshotCase('snapshot-absent', 'Pool not in the store', stored((body) => { body.pools = [] })),
+  snapshotCase('snapshot-not-built', 'Store not built yet', stored((body) => Object.assign(body, { status: 'not_built', pools: [], builtAt: null, ageSeconds: null }))),
+  snapshotCase('snapshot-identity', 'Stored entry about another pool', stored((body) => { obj(storedEntry(body).pool).poolId = OTHER_POOL })),
+  snapshotCase('snapshot-broken', 'Snapshot read fails with a 503', { fixture: errorFixture('markets-snapshot.upstream_unavailable') }),
+  snapshotCase('snapshot-invalid', 'Snapshot payload fails validation', { fixture: invalidFixture('markets-snapshot.incompatible-version') }),
 ]
 
 // ---------------------------------------------------------------------------
 // Row projection with pool-metrics: the rules projectMarketRow applies when
-// metrics are given. The lean table never reads them; these keep the
-// qualification rules under test for the day the read service provides a
-// current APR. Tests only.
+// metrics are given. The table and the pool page read pool-metrics only where
+// the capabilities list it; these keep the qualification rules under test
+// whichever figures the read service provides. Tests only.
 // ---------------------------------------------------------------------------
 
 export interface ProjectionCase {

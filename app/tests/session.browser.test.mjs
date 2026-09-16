@@ -209,6 +209,19 @@ test('each announced wallet is listed by name, and no provider icon becomes an i
   await s.close();
 });
 
+test('with no browser wallet, Connect says so in plain words and lists nothing', async () => {
+  const s = await scenario({ wallets: [] });
+  const page = await s.open();
+  await viewIs(page, 'no_wallet');
+  await openDialog(page);
+  const text = await dialog(page).innerText();
+  assert.match(text, /No browser wallet found\. Install or unlock a wallet extension, then open this again\./);
+  assert.doesNotMatch(text, /EIP-6963|announce|detected/i, 'no protocol names on screen');
+  assert.equal(await dialog(page).getByRole('list', { name: 'Browser wallets' }).count(), 0);
+  assert.equal(s.fake.state.log.length, 0);
+  await s.close();
+});
+
 test('clean wallet picker uses only bundled brand icons; connection shows the address before sign-in', async () => {
   const s = await scenario({ wallets: [
     { id: 'rabby', name: 'Rabby Wallet', rdns: 'io.rabby', uuid: '8f2a7d1c-0000-4000-8000-000000000001' },
@@ -766,7 +779,8 @@ test('wallet_not_allowed after a valid signature shows the invitation state and 
   await sleep(3000);
   assert.equal(s.fake.state.log.length, requests, 'nothing is sent after the denial');
   const text = await dialog(page).innerText();
-  assert.match(text, /isn’t on the invited list/);
+  assert.match(text, /This wallet doesn’t have sign-in access\. Public pages keep working\./);
+  assert.doesNotMatch(text, /invited|beta/i, 'no closed-beta wording');
   assert.doesNotMatch(text, /unavailable|outage|network/i);
   assert.equal(await dialog(page).getByRole('button', { name: 'Sign in', exact: true }).count(), 0);
   await s.close();
@@ -806,7 +820,8 @@ test('an expired beta cookie is reported as such, through the real gate, and is 
   await clickSignIn(s, page);
   const out = await viewIs(page, 'blocked');
   assert.equal(out.failure, 'gate_required');
-  assert.match(await dialog(page).innerText(), /beta access expired/);
+  assert.match(await dialog(page).innerText(), /Your site access expired\. Reload the page and enter the password again\./);
+  assert.doesNotMatch(await dialog(page).innerText(), /beta/i);
   assert.equal(s.wallet.state.signed.length, 0);
   await s.close();
 });
@@ -924,7 +939,7 @@ test('session_exists is adopted through me, with no second signature', async () 
 
 // ---- misconfiguration and untrusted input -----------------------------------
 
-test('a switched-off or unrouted session service says sign-in is not enabled', async () => {
+test('a switched-off or unrouted session service says sign-in is unavailable, in words that do not describe the deployment', async () => {
   for (const setup of [(fake) => (fake.controls.disabled = true), (fake) => (fake.controls.notRouted = true)]) {
     const s = await scenario();
     setup(s.fake);
@@ -934,7 +949,8 @@ test('a switched-off or unrouted session service says sign-in is not enabled', a
     await dialog(page).getByRole('button', { name: 'Connect Test Wallet A' }).click();
     const out = await viewIs(page, 'blocked');
     assert.equal(out.failure, 'service_disabled');
-    assert.match(await dialog(page).innerText(), /isn’t enabled on this deployment/);
+    assert.match(await dialog(page).innerText(), /Sign-in is unavailable right now\. Public pages keep working\./);
+    assert.doesNotMatch(await dialog(page).innerText(), /enabled|deployment/i);
     await s.close();
   }
 });
@@ -1014,7 +1030,8 @@ test('signing in grants no wallet transaction or automated signing authority', a
   assert.match(settings, /AUTOMATED SIGNING\s+Not connected/);
   assert.match(settings, /WALLET TRANSACTIONS\s+Built in; each step reviewed in wallet/);
   assert.match(settings, /Sign-in proves your address/);
-  assert.match(settings, /Nothing in this build signs a transaction, grants a spending permission or moves funds/);
+  // Settings' footnote is gone on purpose (review:wallet): its "Nothing in this build signs a transaction" was false in the wallet build.
+  assert.doesNotMatch(settings, /Nothing in this build signs a transaction/);
   assert.doesNotMatch(settings, /practice/i);
   assert.equal(s.wallet.calls('eth_sendTransaction').length, 0, 'SIWE never submits a wallet transaction');
   assert.equal(s.wallet.calls('eth_signTypedData_v4').length, 0, 'SIWE never signs a financial intent');

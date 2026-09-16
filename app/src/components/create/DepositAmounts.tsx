@@ -1,0 +1,129 @@
+import { useEffect, useMemo, useSyncExternalStore } from 'react'
+import { financialFetch } from '../../finance/http'
+import { realClock } from '../../lib/clock'
+import { CREATE } from '../../lib/create/copy'
+import { continueNote, previewRequest, setupDraft, type JourneyState } from '../../lib/create/journey'
+import { clearSetupDraft, putSetupDraft } from '../../lib/create/setupDraft'
+import { positionAmounts, type AmountCell as EstimateCell } from '../../onboarding/amounts'
+import { broadcastBudgetChannel, createPreviewBudget } from '../../onboarding/budget'
+import { createOnboardingClient } from '../../onboarding/client'
+import { ONBOARDING_RUNTIME } from '../../onboarding/contract'
+import { createPreviewController } from '../../onboarding/controller'
+import { createIntentDriver, formFromRequest, type IntentView } from '../../onboarding/intent'
+import { livePort } from '../../session/livePort'
+import { sessionKey } from '../../session/port'
+import { AmountsSection, type AmountCell, type AmountsShown } from './StageBalance'
+import { SetupLink } from './StageReview'
+
+/**
+ * Review's deposit amounts and its way on to Setup, in builds with wallet
+ * sign-in. Its own chunk (StageBalance.tsx and StageReview.tsx load it
+ * lazily), so the entry never carries the session or the onboarding client.
+ *
+ * The amounts are onboarding-v1's position preview for exactly the request
+ * the journey forms (journey.ts previewRequest), asked for a signed-in wallet
+ * when Review opens, when its request changes, or when a sign-in finishes
+ * while it is open (onboarding/intent.ts). Never on a timer: a preview is
+ * current for 30 seconds, then its figures go back to a dash until the person
+ * opens Review again. Everything about it lives in this component's memory
+ * and goes with it.
+ */
+
+const timeText = (wallMs: number | null) => (wallMs === null ? '' : new Date(wallMs).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', second: '2-digit', hourCycle: 'h23' }))
+
+const shownCell = (cell: EstimateCell): AmountCell => (cell.kind === 'amount' ? { text: cell.text, units: cell.units } : null)
+
+function shownFrom(view: IntentView<'position-preview'>, state: JourneyState): AmountsShown {
+  const titles = CREATE.balance.titles
+  const quiet = { status: view.status, reason: view.reason, figures: null, checks: null }
+  switch (view.status) {
+    case 'current': {
+      const pool = state.pool
+      if (!view.preview || !pool) return { ...quiet, status: 'loading', title: titles.loading }
+      const amounts = positionAmounts(view.preview, [pool.currencies[0].decimals, pool.currencies[1].decimals])
+      return {
+        ...quiet,
+        figures: { expected: amounts.expected.map(shownCell), maximum: amounts.maximum.map(shownCell), unspent: amounts.unspent.map(shownCell), liquidity: amounts.liquidity },
+        title: titles.current(timeText(view.currentUntilWallMs)),
+        checks: amounts.checks,
+      }
+    }
+    case 'expired':
+      return { ...quiet, title: titles.expired(timeText(view.expiredAtWallMs)) }
+    case 'signed-out':
+      return { ...quiet, title: titles.signedOut }
+    case 'loading':
+      return { ...quiet, title: titles.loading }
+    case 'unavailable':
+      return { ...quiet, title: titles.unavailable }
+    case 'off':
+      return { ...quiet, title: titles.off }
+    default:
+      return view.status satisfies never
+  }
+}
+
+export default function DepositAmounts({ state, open }: { state: JourneyState; open: boolean }) {
+  // One client, budget, controller and intent per mounted Review. The budget hears other tabs only while mounted.
+  const deps = useMemo(() => {
+    const budget = createPreviewBudget({ clock: realClock, channel: broadcastBudgetChannel() })
+    const client = createOnboardingClient({ fetch: financialFetch, runtime: ONBOARDING_RUNTIME, clock: realClock })
+    const controller = createPreviewController('position-preview', { client, port: livePort, clock: realClock, budget })
+    return { budget, driver: createIntentDriver({ controller, port: livePort, clock: realClock }) }
+  }, [])
+  useEffect(() => deps.budget.connect(), [deps])
+  useEffect(() => deps.driver.start(), [deps])
+  const formed = previewRequest(state)
+  const request = formed.ok ? formed.request : null
+  const why = formed.ok ? '' : formed.reason
+  // The driver compares requests by their key, so handing it the same request again changes nothing.
+  useEffect(() => {
+    deps.driver.setForm(formFromRequest('position-preview', request, why))
+  })
+  useEffect(() => {
+    deps.driver.setOpen(open)
+  }, [deps, open])
+  const view = useSyncExternalStore(deps.driver.subscribe, deps.driver.getView)
+  return <AmountsSection state={state} shown={shownFrom(view, state)} />
+}
+
+/* ---------------------------------------------------------------------------
+   Continue in Setup
+--------------------------------------------------------------------------- */
+
+let stopWatching: (() => void) | null = null
+
+/**
+ * Carries these choices to Setup for the signed-in wallet, in memory only
+ * (lib/create/setupDraft.ts), and clears them on any session change from now
+ * on, whichever screen is open. Signed out, nothing is carried and anything
+ * carried before is dropped. Nothing is sent: Setup creates a draft only when
+ * the owner presses Create there.
+ */
+function carry(state: JourneyState) {
+  stopWatching?.()
+  stopWatching = null
+  const draft = setupDraft(state)
+  const session = sessionKey(livePort.getSnapshot())
+  if (draft === null || session === null) {
+    clearSetupDraft()
+    return
+  }
+  putSetupDraft(draft, session)
+  const stop = livePort.subscribe(() => {
+    if (sessionKey(livePort.getSnapshot()) === session) return
+    clearSetupDraft()
+    stop()
+    if (stopWatching === stop) stopWatching = null
+  })
+  stopWatching = stop
+}
+
+/**
+ * The final control in builds with wallet sign-in: the link to Setup, which takes these choices with it for a
+ * signed-in wallet. Its line promises that only for choices there is a draft to carry (journey.ts continueNote).
+ */
+export function ContinueInSetup({ state }: { state: JourneyState }) {
+  const session = useSyncExternalStore(livePort.subscribe, livePort.getSnapshot)
+  return <SetupLink note={continueNote(state, session.kind === 'signed_in')} onClick={() => carry(state)} />
+}

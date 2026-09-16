@@ -6,4 +6,3 @@
 export { ChainPositionsSection } from './ChainPositionsSection'
 export { ChainSelectionPanel } from './ChainSelectionPanel'
 export { PoolFiguresDialog } from './PoolFiguresDialog'
-export { PoolFigureNotes } from './PoolFigureNotes'

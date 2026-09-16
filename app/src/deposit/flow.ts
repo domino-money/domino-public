@@ -63,6 +63,14 @@ export interface FlowNotice {
   route: DepositRoute
   failure: DepositFailure
   text: string
+  /**
+   * True when the call that failed was one the page made on its own (the boot
+   * list, the remembered get, a boot reconcile, or the get that follows one of
+   * them). The live screen keeps such a notice silent: its reason goes to a
+   * title and data attributes, never to a line on screen. A user action's
+   * notice is always false.
+   */
+  automatic: boolean
 }
 
 export interface FlowState {
@@ -114,6 +122,11 @@ const INITIAL: FlowState = {
   latched: {},
   blockerId: null,
   knownPairs: [],
+}
+
+/** The operation that blocks another one of the owner's: still outstanding, or needing attention. */
+export function blockingOperation(items: readonly OperationListItem[], exceptId: string | null): OperationListItem | null {
+  return items.find((item) => item.id !== exceptId && (item.outstanding || item.state === 'attention')) ?? null
 }
 
 export function listItemOf(op: Operation): OperationListItem {
@@ -169,8 +182,8 @@ export function createDepositFlow({ client, session, memory, clock, handoff }: F
     return next
   }
 
-  function notice(route: DepositRoute, failure: DepositFailure): FlowNotice {
-    return { route, failure, text: failureCopy(failure, { nonce: state.current?.op.history.at(-1)?.nonceRaw ?? null, knownPairs: state.knownPairs }) }
+  function notice(route: DepositRoute, failure: DepositFailure, automatic: boolean): FlowNotice {
+    return { route, failure, automatic, text: failureCopy(failure, { nonce: state.current?.op.history.at(-1)?.nonceRaw ?? null, knownPairs: state.knownPairs }) }
   }
 
   function withOp(op: Operation, extra: Partial<CurrentOperation> = {}): CurrentOperation {
@@ -207,11 +220,12 @@ export function createDepositFlow({ client, session, memory, clock, handoff }: F
    * Returns false when the session the call ran under is gone (a denial can
    * end it at once), so the caller must not update anything after it.
    * `followUp` is false for the one get after a conflict, which never
-   * schedules another.
+   * schedules another. `automatic` is true for a call the page made on its
+   * own, and passes to that get.
    */
-  async function handleFailure(route: DepositRoute, failure: DepositFailure, operationId: string | null, followUp = true): Promise<boolean> {
+  async function handleFailure(route: DepositRoute, failure: DepositFailure, operationId: string | null, followUp = true, automatic = false): Promise<boolean> {
     const mine = run
-    const text = notice(route, failure)
+    const text = notice(route, failure, automatic)
     let patch: Partial<FlowState> = { notice: text, busy: null }
     if (failure.kind === 'contract' && failure.detail === 'owner') {
       // Nothing from a foreign answer is shown or remembered.
@@ -233,10 +247,7 @@ export function createDepositFlow({ client, session, memory, clock, handoff }: F
       }
       if (disposition.latch && operationId) patch.latched = { ...state.latched, [operationId]: failure.code }
       if (disposition.stop && state.current) patch.current = { ...state.current, walletStep: null, prepareResponse: null, walletStepDeadlineMono: null }
-      if (disposition.blocker) {
-        const blocker = state.items.find((item) => item.id !== operationId && (item.outstanding || item.state === 'attention'))
-        patch.blockerId = blocker?.id ?? null
-      }
+      if (disposition.blocker) patch.blockerId = blockingOperation(state.items, operationId)?.id ?? null
       if (disposition.notFound && operationId) {
         memory.forget()
         if (state.current?.op.id === operationId) patch.current = null
@@ -248,7 +259,7 @@ export function createDepositFlow({ client, session, memory, clock, handoff }: F
         set({ busy: 'get' })
         const got = await call('get', (options) => client.get({ intentId: operationId }, options))
         if (!got) return false
-        if (!got.ok) return handleFailure('get', got.failure, operationId, false)
+        if (!got.ok) return handleFailure('get', got.failure, operationId, false, automatic)
         set({ busy: null, current: withOp(got.data.operation), items: updateItem(got.data.operation) })
       }
       return mine === run
@@ -272,7 +283,7 @@ export function createDepositFlow({ client, session, memory, clock, handoff }: F
     if (!listed) return
     if (!listed.ok) {
       set({ phase: 'ready', items: [] })
-      await handleFailure('list', listed.failure, null)
+      await handleFailure('list', listed.failure, null, true, true)
       return
     }
     let items = listed.data.operations
@@ -290,7 +301,7 @@ export function createDepositFlow({ client, session, memory, clock, handoff }: F
         memory.forget()
       } else {
         set({ phase: 'ready' })
-        await handleFailure('get', got.failure, remembered, false)
+        await handleFailure('get', got.failure, remembered, false, true)
         return
       }
     }
@@ -301,7 +312,7 @@ export function createDepositFlow({ client, session, memory, clock, handoff }: F
       if (!reconciled) return
       if (!reconciled.ok) {
         set({ phase: 'ready' })
-        if (!(await handleFailure('reconcile', reconciled.failure, item.id))) return
+        if (!(await handleFailure('reconcile', reconciled.failure, item.id, true, true))) return
         set({ phase: 'ready', busy: null })
         return
       }

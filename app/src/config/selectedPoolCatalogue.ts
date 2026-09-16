@@ -90,15 +90,41 @@ export function catalogueTokens(): CatalogueToken[] {
   return [...seen.values()]
 }
 
+/**
+ * An entry as a row names it: its two sides in the pool's own order of
+ * currencies, the order a read of the pool gives them. currency0 is the lower
+ * address, so native ETH, the zero address, always comes first. Uniswap may
+ * list a pair the other way round (cbBTC/USDG for USDG/cbBTC), and a row
+ * would then swap its names when its read lands. Labels, artwork and
+ * addresses move together, so each label stays bound to its address. Without
+ * both addresses the order is not known and the labels stay as inspected.
+ * Display only: the catalogue itself keeps the inspected order.
+ */
+export function inPoolOrder(entry: PoolCatalogueEntry): PoolCatalogueEntry {
+  const addresses = entry.addresses
+  if (!addresses || addresses[0].toLowerCase() <= addresses[1].toLowerCase()) return entry
+  return {
+    ...entry,
+    labels: [entry.labels[1], entry.labels[0]],
+    artwork: [entry.artwork[1], entry.artwork[0]],
+    addresses: [addresses[1], addresses[0]],
+  }
+}
+
 export interface PoolListing { poolId: string; market?: Market; catalogue?: PoolCatalogueEntry }
 
-/** Stable rows immediately; live observations replace labels only by exact PoolId. */
+/**
+ * Stable rows immediately; live observations replace labels only by exact
+ * PoolId. A catalogue row names its pair in the pool's order, as its read
+ * will, so the ticker, the table and the Markets cards keep one name for a
+ * pool before and after its read lands.
+ */
 export function poolListings(markets: readonly Market[], includeCatalogue: boolean): PoolListing[] {
   if (!includeCatalogue) return markets.map((market) => ({ poolId: market.poolId, market }))
   const byId = new Map(markets.map((market) => [market.poolId.toLowerCase(), market]))
   return SELECTED_POOL_CATALOGUE.map((catalogue) => ({
     poolId: catalogue.poolId,
-    catalogue,
+    catalogue: inPoolOrder(catalogue),
     market: byId.get(catalogue.poolId),
   }))
 }

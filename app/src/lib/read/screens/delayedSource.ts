@@ -8,7 +8,7 @@
  * an app screen.
  */
 import { realClock, type Clock } from '../pipeline'
-import type { ReadOutcome, ReadRequests, ReadRoute, ReadSource } from '../types'
+import type { ReadOptions, ReadOutcome, ReadRequests, ReadRoute, ReadSource, RouteCheck } from '../types'
 
 export interface Delay {
   delayMs?: number
@@ -32,9 +32,12 @@ export interface DelayedSource extends ReadSource {
 export function withDelays(inner: ReadSource, plan: (route: ReadRoute, request: unknown, n: number) => Delay | undefined, clock: Clock = realClock): DelayedSource {
   const log: LoggedRead[] = []
   const counts = new Map<ReadRoute, number>()
+  const listed = inner.routeEnabled?.bind(inner)
   return {
     transport: inner.transport,
     log,
+    // Whether a route is listed is the inner source's capabilities answer, not a read: never delayed, never logged.
+    ...(listed ? { routeEnabled: (route: ReadRoute, options?: Pick<ReadOptions, 'signal' | 'deadlineAt'>): Promise<RouteCheck> => listed(route, options) } : {}),
     async read<R extends ReadRoute>(route: R, request: ReadRequests[R], options: { signal?: AbortSignal } = {}): Promise<ReadOutcome<R>> {
       const n = counts.get(route) ?? 0
       counts.set(route, n + 1)

@@ -20,16 +20,16 @@ const FEATURES: ReadonlyArray<{
   {
     key: 'compound',
     title: 'Auto-compound',
-    body: 'Earned fees are added back into the same position. Only fees are used; the deposit stays in the position.',
+    body: 'Sign and approve once. We calculate the best rate of compounding earned fees for maximum return.',
     href: '#/automate',
     link: 'Open Automate',
     roadmap: 'Compound',
     Art: VignetteCompound,
   },
   {
-    key: 'sequences',
-    title: 'Domino sequences',
-    body: 'As the price nears the top of a range, earned fees open the next position one step higher.',
+    key: 'domino',
+    title: 'Domino Compounder',
+    body: 'Our novel auto-compounder. As the token price goes up and out of range, we collect your earned fees and automatically create a new pool above your previous one, drastically reducing risk of impermanent loss. Even if a token runs out of your range, you still earn.',
     href: '#/automate',
     link: 'Open Automate',
     roadmap: 'Domino',
@@ -38,8 +38,9 @@ const FEATURES: ReadonlyArray<{
   {
     key: 'custody',
     title: 'Non-custodial',
-    body: 'Positions are standard Uniswap NFTs. The one you open goes straight to your wallet; positions a sequence opens stay in its vault until you withdraw them.',
-    href: '#/#learn',
+    body: 'When you create an automation using Domino, you are the sole owner and only you can control it. Every step is fully automated by a contract whose controller is your signed wallet.',
+    // The Non-custodial page of the docs; its route is added alongside the docs.
+    href: '#/docs/non-custodial',
     link: 'How it works',
     Art: VignetteWallet,
   },

@@ -32,6 +32,8 @@ export interface PoolOption {
   /** When the reply arrived, on the page's clock (provenance.receivedAt); null when unknown. Never shown as a data time. */
   readAt: number | null
   hooks: AddressKey
+  /** The pool's packed directional protocol fee at `block`, as read (figures.ts `protocolFee`). */
+  protocolFeeRaw?: number
   integration: 'hookless_fixed_fee' | 'requires_separate_adapter'
   /** The block the pool was verified at. */
   block: number
@@ -74,6 +76,7 @@ export function poolOption(pool: DiscoveryPool | CatalogueDiscoveryPool, tokens:
     sqrtPriceX96: pool.sqrtPriceX96,
     readAt,
     hooks: addressKey(pool.poolKey.hooks),
+    protocolFeeRaw: pool.protocolFeeRaw,
     integration: pool.integrationClass,
     block: pool.snapshot.number,
     catalogue: pool.poolKind === 'catalogue' ? { source: pool.catalogueSource, block: pool.catalogueObservation.number } : null,

@@ -9,10 +9,12 @@ import { PoolDetail } from './screens/PoolDetail'
 import { Positions } from './screens/Positions'
 import { Automate } from './screens/Automate'
 import { NewPosition } from './screens/NewPosition'
+import { Docs } from './screens/Docs'
 import { Button } from './components/ui'
 import { IconMoon, IconPause, IconPlay, IconSun } from './components/icons'
 import { BuildBanner } from './components/read/BuildBanner'
 import { useAppearance } from './lib/appearance'
+import { scrollToSection } from './lib/sectionScroll'
 import { appMarketsProvider } from './lib/read/buildMode'
 import { MarketsContext } from './lib/read/useMarkets'
 import { LocalDevelopmentBanner } from './components/read/LocalDevelopmentBanner'
@@ -33,12 +35,13 @@ const Deposits = __DOMINO_DEPOSIT_LAB__ ? lazy(() => import('./screens/Deposits'
 /**
  * The pages, by the first segment of the hash route. Older links keep
  * working: `#/explore` and `#/pools` are Markets; `#/app` and `#/portfolio`
- * are Positions. The two consumer screens have a route only in the build that
- * carries them: everywhere else their route names never reach the bundle
- * (the deployable build is scanned for them), and the route falls through to
- * Home like any unknown route.
+ * are Positions. The docs are `#/docs`, a page of them `#/docs/<slug>`. The
+ * two consumer screens have a route only in the build that carries them:
+ * everywhere else their route names never reach the bundle (the deployable
+ * build is scanned for them), and the route falls through to Home like any
+ * unknown route.
  */
-export type Page = 'overview' | 'markets' | 'pool' | 'positions' | 'new' | 'automate' | 'settings' | 'sequence' | 'setup' | 'live-preview' | 'deposits'
+export type Page = 'overview' | 'markets' | 'pool' | 'positions' | 'new' | 'automate' | 'settings' | 'docs' | 'sequence' | 'setup' | 'live-preview' | 'deposits'
 
 const PAGES: Readonly<Record<string, Page>> = {
   '': 'overview',
@@ -52,6 +55,7 @@ const PAGES: Readonly<Record<string, Page>> = {
   new: 'new',
   automate: 'automate',
   settings: 'settings',
+  docs: 'docs',
   sequence: 'sequence',
   setup: 'setup',
   ...(__DOMINO_ONBOARDING_PREVIEW__ ? ({ 'live-preview': 'live-preview' } as const) : {}),
@@ -60,7 +64,7 @@ const PAGES: Readonly<Record<string, Page>> = {
 
 export interface HashLocation {
   page: Page
-  /** The second segment: a pool id under `#/pool/<id>`, a pool id under `#/new/<id>`. Empty otherwise. */
+  /** The second segment: a pool id under `#/pool/<id>`, a pool id under `#/new/<id>`, a page's slug under `#/docs/<slug>`. Empty otherwise. */
   param: string
   /** The in-page section after a second `#`, e.g. `pools` in `#/#pools`. */
   section: string
@@ -83,24 +87,6 @@ export function parseHash(hash: string): HashLocation {
   return { page: Object.hasOwn(PAGES, first) ? PAGES[first] : 'overview', param: second, section }
 }
 
-/**
- * Puts the requested section under the header, or returns to the top when the
- * hash carries none.
- *
- * Positioned directly rather than with a smooth behaviour: smooth scrolling is
- * silently ignored by some embedded browsers, which would leave an in-page link
- * doing nothing at all.
- */
-function applyScroll(section: string) {
-  const target = section ? document.getElementById(section) : null
-  if (!target) {
-    window.scrollTo(0, 0)
-    return
-  }
-  const header = document.querySelector('header')?.getBoundingClientRect().height ?? 0
-  window.scrollTo(0, Math.max(0, target.getBoundingClientRect().top + window.scrollY - header - 16))
-}
-
 function useHashLocation() {
   const [location, setLocation] = useState(() => parseHash(window.location.hash))
   useEffect(() => {
@@ -112,7 +98,7 @@ function useHashLocation() {
       // torn down by the re-render that commits it. A timeout rather than a
       // frame callback, because a hidden or backgrounded tab never paints and
       // would silently skip the scroll entirely.
-      setTimeout(() => applyScroll(next.section), 0)
+      setTimeout(() => scrollToSection(next.section), 0)
     }
     window.addEventListener('hashchange', onChange)
     return () => window.removeEventListener('hashchange', onChange)
@@ -144,6 +130,8 @@ function Screen({ page, param }: { page: Page; param: string }) {
       return <Automate />
     case 'settings':
       return <Settings />
+    case 'docs':
+      return <Docs slug={param} />
     case 'sequence':
       return <Flagged screen={Sequence} loading="Loading your sequence…" />
     case 'setup':
@@ -186,7 +174,7 @@ export default function App() {
   // once; later changes are handled by the hash listener.
   useEffect(() => {
     const initial = parseHash(window.location.hash).section
-    if (initial) setTimeout(() => applyScroll(initial), 0)
+    if (initial) setTimeout(() => scrollToSection(initial), 0)
   }, [])
 
   return (

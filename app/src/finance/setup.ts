@@ -1,18 +1,62 @@
-import { decodeFunctionData, decodeFunctionResult, encodeAbiParameters, encodeFunctionData, keccak256, numberToHex, parseAbi, parseAbiParameters, zeroAddress, type Address, type Hex } from 'viem'
+import { decodeFunctionData, decodeFunctionResult, encodeAbiParameters, encodeFunctionData, keccak256, numberToHex, zeroAddress, type Address, type Hex } from 'viem'
 
-export const setupAbi = parseAbi([
-  'struct PoolKey { address currency0; address currency1; uint24 fee; int24 tickSpacing; address hooks; }',
-  'struct Operation { address owner; PoolKey key; uint128 balance0; uint128 balance1; bool swapped; bool closed; uint256 tokenId; }',
-  'struct SwapPlan { bytes32 operationId; bool zeroForOne; uint128 grossInput; uint128 minOutput; uint160 sqrtPriceLimitX96; uint64 deadline; }',
-  'struct MintPlan { bytes32 operationId; int24 tickLower; int24 tickUpper; uint128 liquidity; uint128 maxAmount0; uint128 maxAmount1; uint160 minSqrtPriceX96; uint160 maxSqrtPriceX96; uint160 initialSqrtPriceX96; uint64 deadline; }',
-  'function manager() view returns (address)', 'function positions() view returns (address)', 'function stateView() view returns (address)',
-  'function feeRecipient() view returns (address)', 'function assistedFeeBps() view returns (uint16)', 'function tariffVersion() view returns (uint64)',
-  'function ownerNonce(address) view returns (uint64)', 'function nextOperationId(address) view returns (bytes32)',
-  'function operation(bytes32) view returns (Operation)',
-  'function open(bytes32 id, PoolKey key, uint128 amount0, uint128 amount1) payable',
-  'function swap(SwapPlan) returns (uint128 output)', 'function mint(MintPlan)', 'function cancel(bytes32)',
-])
-const tokenAbi = parseAbi(['function allowance(address,address) view returns(uint256)', 'function approve(address,uint256) returns(bool)'])
+/*
+ * The closed ABIs are written as JSON: exactly what viem's parseAbi and
+ * parseAbiParameters make of the reviewed signatures listed with each one, so
+ * the page ships no ABI parser. tests/performance.controller.test.mjs parses
+ * those signature lines and requires every JSON form here to equal the result.
+ */
+
+/**
+ * setupAbi signatures:
+ *   struct PoolKey { address currency0; address currency1; uint24 fee; int24 tickSpacing; address hooks; }
+ *   struct Operation { address owner; PoolKey key; uint128 balance0; uint128 balance1; bool swapped; bool closed; uint256 tokenId; }
+ *   struct SwapPlan { bytes32 operationId; bool zeroForOne; uint128 grossInput; uint128 minOutput; uint160 sqrtPriceLimitX96; uint64 deadline; }
+ *   struct MintPlan { bytes32 operationId; int24 tickLower; int24 tickUpper; uint128 liquidity; uint128 maxAmount0; uint128 maxAmount1; uint160 minSqrtPriceX96; uint160 maxSqrtPriceX96; uint160 initialSqrtPriceX96; uint64 deadline; }
+ *   function manager() view returns (address)
+ *   function positions() view returns (address)
+ *   function stateView() view returns (address)
+ *   function feeRecipient() view returns (address)
+ *   function assistedFeeBps() view returns (uint16)
+ *   function tariffVersion() view returns (uint64)
+ *   function ownerNonce(address) view returns (uint64)
+ *   function nextOperationId(address) view returns (bytes32)
+ *   function operation(bytes32) view returns (Operation)
+ *   function open(bytes32 id, PoolKey key, uint128 amount0, uint128 amount1) payable
+ *   function swap(SwapPlan) returns (uint128 output)
+ *   function mint(MintPlan)
+ *   function cancel(bytes32)
+ */
+const poolKeyComponents = [{ name: 'currency0', type: 'address' }, { name: 'currency1', type: 'address' }, { name: 'fee', type: 'uint24' }, { name: 'tickSpacing', type: 'int24' }, { name: 'hooks', type: 'address' }] as const
+const operationComponents = [{ name: 'owner', type: 'address' }, { name: 'key', type: 'tuple', components: poolKeyComponents }, { name: 'balance0', type: 'uint128' }, { name: 'balance1', type: 'uint128' }, { name: 'swapped', type: 'bool' }, { name: 'closed', type: 'bool' }, { name: 'tokenId', type: 'uint256' }] as const
+const swapPlanComponents = [{ name: 'operationId', type: 'bytes32' }, { name: 'zeroForOne', type: 'bool' }, { name: 'grossInput', type: 'uint128' }, { name: 'minOutput', type: 'uint128' }, { name: 'sqrtPriceLimitX96', type: 'uint160' }, { name: 'deadline', type: 'uint64' }] as const
+const mintPlanComponents = [{ name: 'operationId', type: 'bytes32' }, { name: 'tickLower', type: 'int24' }, { name: 'tickUpper', type: 'int24' }, { name: 'liquidity', type: 'uint128' }, { name: 'maxAmount0', type: 'uint128' }, { name: 'maxAmount1', type: 'uint128' }, { name: 'minSqrtPriceX96', type: 'uint160' }, { name: 'maxSqrtPriceX96', type: 'uint160' }, { name: 'initialSqrtPriceX96', type: 'uint160' }, { name: 'deadline', type: 'uint64' }] as const
+export const setupAbi = [
+  { name: 'manager', type: 'function', stateMutability: 'view', inputs: [], outputs: [{ type: 'address' }] },
+  { name: 'positions', type: 'function', stateMutability: 'view', inputs: [], outputs: [{ type: 'address' }] },
+  { name: 'stateView', type: 'function', stateMutability: 'view', inputs: [], outputs: [{ type: 'address' }] },
+  { name: 'feeRecipient', type: 'function', stateMutability: 'view', inputs: [], outputs: [{ type: 'address' }] },
+  { name: 'assistedFeeBps', type: 'function', stateMutability: 'view', inputs: [], outputs: [{ type: 'uint16' }] },
+  { name: 'tariffVersion', type: 'function', stateMutability: 'view', inputs: [], outputs: [{ type: 'uint64' }] },
+  { name: 'ownerNonce', type: 'function', stateMutability: 'view', inputs: [{ type: 'address' }], outputs: [{ type: 'uint64' }] },
+  { name: 'nextOperationId', type: 'function', stateMutability: 'view', inputs: [{ type: 'address' }], outputs: [{ type: 'bytes32' }] },
+  { name: 'operation', type: 'function', stateMutability: 'view', inputs: [{ type: 'bytes32' }], outputs: [{ type: 'tuple', components: operationComponents }] },
+  { name: 'open', type: 'function', stateMutability: 'payable', inputs: [{ name: 'id', type: 'bytes32' }, { name: 'key', type: 'tuple', components: poolKeyComponents }, { name: 'amount0', type: 'uint128' }, { name: 'amount1', type: 'uint128' }], outputs: [] },
+  { name: 'swap', type: 'function', stateMutability: 'nonpayable', inputs: [{ type: 'tuple', components: swapPlanComponents }], outputs: [{ name: 'output', type: 'uint128' }] },
+  { name: 'mint', type: 'function', stateMutability: 'nonpayable', inputs: [{ type: 'tuple', components: mintPlanComponents }], outputs: [] },
+  { name: 'cancel', type: 'function', stateMutability: 'nonpayable', inputs: [{ type: 'bytes32' }], outputs: [] },
+] as const
+/**
+ * tokenAbi signatures:
+ *   function allowance(address,address) view returns(uint256)
+ *   function approve(address,uint256) returns(bool)
+ */
+export const tokenAbi = [
+  { name: 'allowance', type: 'function', stateMutability: 'view', inputs: [{ type: 'address' }, { type: 'address' }], outputs: [{ type: 'uint256' }] },
+  { name: 'approve', type: 'function', stateMutability: 'nonpayable', inputs: [{ type: 'address' }, { type: 'uint256' }], outputs: [{ type: 'bool' }] },
+] as const
+/** operationIdParameters signature: uint256,address,address,uint64 */
+export const operationIdParameters = [{ type: 'uint256' }, { type: 'address' }, { type: 'address' }, { type: 'uint64' }] as const
 export type PoolKey = { currency0: Address; currency1: Address; fee: number; tickSpacing: number; hooks: Address }
 export type SetupOperation = { owner: Address; key: PoolKey; balance0: bigint; balance1: bigint; swapped: boolean; closed: boolean; tokenId: bigint }
 export interface SetupDeployment {
@@ -148,7 +192,7 @@ export function createSetupClient(wallet: WalletRpc, supplied: SetupDeployment, 
       const n = decodeFunctionResult({ abi: setupAbi, functionName: 'ownerNonce', data: asHex(await rpc('eth_call', [{ to: deployment.setup, data }, 'latest'])) })
       const values: { id: Hex; operation: SetupOperation }[] = []
       for (let i = n; i > 0n && i > n - 8n; i--) {
-        const id = keccak256(encodeAbiParameters(parseAbiParameters('uint256,address,address,uint64'), [4663n, deployment.setup, wallet.owner, i - 1n]))
+        const id = keccak256(encodeAbiParameters(operationIdParameters, [4663n, deployment.setup, wallet.owner, i - 1n]))
         values.push({ id, operation: await operation(rpc, id) })
       }
       return values

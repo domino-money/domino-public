@@ -1,6 +1,21 @@
 import { compactUsd, percentText, presentMetric, turnover, type Market, type Metric, type Presented } from '../../lib/markets'
 import { reasonText } from '../../lib/read/describe'
-import { cx } from '../ui'
+import { Skeleton, cx } from '../ui'
+
+/**
+ * A figure whose reads have not settled yet: a quiet placeholder in the
+ * figure's place, named only for assistive technology. It is not
+ * "Unavailable": nothing has failed. `data` carries the caller's data-*
+ * hooks, so tests and styling can tell it from a settled figure.
+ */
+export function PendingFigure({ label, className, data }: { label: string; className?: string; data?: Record<`data-${string}`, string> }) {
+  return (
+    <span className={cx('inline-flex w-full justify-end', className)} {...data}>
+      <Skeleton className="h-4 w-20" />
+      <span className="sr-only">{label} loading</span>
+    </span>
+  )
+}
 
 /**
  * A presented figure in a cell, a card or a stat: unavailable, not reported,

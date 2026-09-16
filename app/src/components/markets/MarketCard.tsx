@@ -77,12 +77,33 @@ function Pair({ market, catalogue }: { market: Market | null; catalogue?: PoolCa
 }
 
 /**
+ * Why a plot has no bars, in words for its title only: a card never prints a
+ * sentence about a failure. Null while there are bars, or while they are on
+ * their way.
+ */
+function unavailableTitle(volume: CardVolume): string | null {
+  switch (volume.kind) {
+    case 'unavailable':
+      return `Hourly volume unavailable: ${volume.reason}.`
+    case 'failed':
+      return `Hourly volume unavailable. ${volume.title}. ${volume.detail}`
+    case 'expired':
+      return 'Hourly volume unavailable: the candles are older than the read service’s five-minute limit.'
+    case 'no-figures':
+      return 'Hourly volume unavailable: this pool’s figures didn’t load.'
+    default:
+      return null
+  }
+}
+
+/**
  * One selected pool as a wide card on the Markets rail: the pair, its TVL in
  * the table's own presented figure (the same state, title and data hooks),
  * and up to 24 bars of its reported hourly volume. The whole card opens the
  * pool page. Pointing along the plot names one hour and its volume in the
- * caption; colour is never the only cue. The rail decides what the plot
- * shows; the card only draws it.
+ * caption; colour is never the only cue. A plot with no bars to draw holds a
+ * dash, with the reason in its title and data only. The rail decides what the
+ * plot shows; the card only draws it.
  */
 export function MarketCard({ listing, index, now, volume }: { listing: PoolListing; index: number; now: Instant; volume: CardVolume }) {
   const [inspected, setInspected] = useState<Candle | null>(null)
@@ -91,14 +112,13 @@ export function MarketCard({ listing, index, now, volume }: { listing: PoolListi
   const retrieved = market?.provenance ? retrievedText(retrievedAgeSeconds(market.provenance.market, now)) : undefined
   const bars = volume.kind === 'bars' ? volume : null
   const shown = bars && inspected && bars.candles.some((candle) => candle.startTimestamp === inspected.startTimestamp) ? inspected : null
+  const unavailable = unavailableTitle(volume)
   // The plot's ground is set in markets.css, so hovering can change it with the plate.
   const style = { '--delay': `${Math.min(index, 3) * 60}ms` } as CSSProperties
 
   let caption = null
   if (volume.kind === 'loading') caption = <span>Reading pool figures…</span>
   else if (volume.kind === 'reading') caption = <span>Reading hourly volume…</span>
-  else if (volume.kind === 'expired') caption = <span data-chart-unavailable="">Hourly volume expired</span>
-  else if (volume.kind === 'no-figures') caption = <span data-chart-unavailable="">Hourly volume unavailable: this pool’s figures didn’t load.</span>
   else if (bars && shown) {
     caption = (
       <span className="tnum">
@@ -136,15 +156,11 @@ export function MarketCard({ listing, index, now, volume }: { listing: PoolListi
           <VolumeBarsSvg candles={bars.candles} intervalSeconds={bars.intervalSeconds} label="Hourly volume" height={96} title={bars.title} onInspect={setInspected} />
         )}
         {(volume.kind === 'loading' || volume.kind === 'reading') && <span aria-hidden="true" className="dm-mkt-baseline" />}
-        {volume.kind === 'unavailable' && (
-          <p className="dm-mkt-plot-note" data-chart-unavailable="">
-            Hourly volume unavailable: {volume.reason}
-          </p>
-        )}
-        {volume.kind === 'failed' && (
-          <p className="dm-mkt-plot-note" data-chart-unavailable="">
-            {volume.title} · {volume.detail}
-          </p>
+        {unavailable !== null && (
+          <span className="dm-mkt-plot-note" data-chart-unavailable={volume.kind} title={unavailable}>
+            <span aria-hidden="true">—</span>
+            <span className="sr-only">Hourly volume unavailable</span>
+          </span>
         )}
       </div>
       <p className="dm-mkt-card-caption">{caption}</p>

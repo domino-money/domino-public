@@ -115,9 +115,10 @@ function fact(id, label) {
 
 test('the lab renders every fixture case behind the gate, under the CSP, without an error', async () => {
   const count = await page.locator('[data-case]').count();
-  // 26 market scenarios, 63 gateway fixtures across the ten routes, 5 pagination and restart cases.
-  assert.equal(count, 94, `rendered ${count} cases`);
-  assert.equal(await page.locator('[data-case^="market-"]').count(), 26);
+  // 36 market scenarios (10 of them with markets-snapshot listed), 63 gateway fixtures across the ten routes, 5 pagination and restart cases.
+  assert.equal(count, 104, `rendered ${count} cases`);
+  assert.equal(await page.locator('[data-case^="market-"]').count(), 36);
+  assert.equal(await page.locator('[data-case^="market-snapshot-"]').count(), 10);
   assert.deepEqual(await page.evaluate(() => window.__csp), [], 'CSP violations');
   // The only failure allowed is the access page's own 401 before signing in.
   assert.deepEqual(log.errors.filter((e) => !/status of 401/.test(e)), []);
@@ -126,19 +127,22 @@ test('the lab renders every fixture case behind the gate, under the CSP, without
 
 test('market rows: every observation reaches the table and the ticker as itself, and the APR is never a figure', async () => {
   const unavailable = ['Unavailable', 'unavailable'];
-  const apr = ['Est.APRunavailable', 'unavailable'];
+  // A row without an estimate shows the same dash as a catalogue row; its reason stays in the title.
+  const noEstimate = ['—', 'unavailable'];
+  // One label for a pool with no APR figure, read or not ("Est. APR —"); why is in its title.
+  const apr = ['Est.APR—', 'unavailable'];
   // The pool's price comes from the verified pool itself (ETH 18 and TOKEN 6 decimals at tick 0), whatever the provider said.
   const price = ['≈1,000,000,000,000TOKENperETH', 'usable'];
   // The figure alone in its cell: who reported it is on the row's provenance line, checked below.
-  const provider = [price, ['$12.3K', 'provider'], ['$0.00', 'provider'], unavailable];
-  const rejected = [price, ['Unavailable', 'rejected'], ['Unavailable', 'rejected'], unavailable];
-  const blank = [price, unavailable, unavailable, unavailable];
+  const provider = [price, ['$12.3K', 'provider'], ['$0.00', 'provider'], noEstimate];
+  const rejected = [price, ['Unavailable', 'rejected'], ['Unavailable', 'rejected'], noEstimate];
+  const blank = [price, unavailable, unavailable, noEstimate];
   const expected = {
     provider,
-    zero: [price, ['$0.00', 'provider'], ['$0.00', 'provider'], unavailable],
-    missing: [price, ['NotreportedbyGeckoTerminal', 'absent'], ['NotreportedbyGeckoTerminal', 'absent'], unavailable],
+    zero: [price, ['$0.00', 'provider'], ['$0.00', 'provider'], noEstimate],
+    missing: [price, ['NotreportedbyGeckoTerminal', 'absent'], ['NotreportedbyGeckoTerminal', 'absent'], noEstimate],
     // A stale figure has no "· stale" beside it (the owner's decision on the redesign): its state and its title say so, below.
-    stale: [price, ['$12.3K', 'stale'], ['$0.00', 'stale'], unavailable],
+    stale: [price, ['$12.3K', 'stale'], ['$0.00', 'stale'], noEstimate],
     expired: blank,
     'rejected-currencies': rejected,
     'rejected-dex': rejected,
@@ -167,12 +171,43 @@ test('market rows: every observation reaches the table and the ticker as itself,
   }
   // The APR says why it is unavailable; each row names the block its pool was verified at, and
   // dates GeckoTerminal's figures only by when they were retrieved, never "as of" or "updated at".
-  assert.match(await section('market-provider').locator('tbody td').nth(4).locator('[data-apr-estimate] [title]').getAttribute('title'), /^Estimated from GeckoTerminal’s reported 24h volume and current TVL using the current fixed LP fee\. Unreconciled, without full-day coverage; excludes rewards, gas, service fees and price changes\. Pool estimate, not position APR, APY or a return forecast\. Estimated APR is (not enabled on this connection|unavailable; market figures use the supported read connection)\.$/);
+  // With no estimate there are no limitations of its own to name: what it would be, then why there is none (G14).
+  assert.match(await section('market-provider').locator('tbody td').nth(4).locator('[data-apr-estimate] [title]').getAttribute('title'), /^Pool estimate, not position APR, APY or a return forecast\. Estimated APR is (not enabled on this connection|unavailable; market figures use the supported read connection)\.$/);
   for (const id of ['provider', 'zero', 'missing', 'retry-recovers', 'untrusted-symbol']) assert.match(await provenance(`market-${id}`), reported, id);
   assert.match(await provenance('market-stale'), /^Pool verified on-chain at block 700 · Reported by GeckoTerminal, retrieved (6\d|[7-9]\d|1[01]\d) s ago · stale$/);
   assert.equal(await provenance('market-expired'), 'Pool verified on-chain at block 700 · GeckoTerminal figures unavailable: provider unavailable', 'no figure, so no age');
   assert.equal(await provenance('market-rejected-currencies'), 'Pool verified on-chain at block 700 · GeckoTerminal figures rejected: provider data did not match this pool');
   for (const id of Object.keys(expected)) assert.doesNotMatch(await section(`market-${id}`).innerText(), /as of|updated at/i, `${id} dates a figure it cannot date`);
+});
+
+test('markets-snapshot listed: a current store is the row; a store that is not enough, or fails, ends in the pool’s own read; none of it is said on screen', async () => {
+  const price = ['≈1,000,000,000,000TOKENperETH', 'usable'];
+  const provider = { cells: [price, ['$12.3K', 'provider'], ['$0.00', 'provider'], ['—', 'unavailable']], ticker: ['Est.APR—', 'unavailable'] };
+  const reported = /^Pool verified on-chain at block 700 · Reported by GeckoTerminal, retrieved \d+ s ago$/;
+  const ends = {
+    current: 'markets-snapshot',
+    'stale-entry': 'pool-market',
+    'stale-envelope': 'pool-market',
+    'provider-expired': 'pool-market',
+    'market-unavailable': 'pool-market',
+    absent: 'pool-market',
+    'not-built': 'pool-market',
+    identity: 'pool-market',
+    broken: 'pool-market',
+    invalid: 'pool-market',
+  };
+  for (const [id, origin] of Object.entries(ends)) {
+    const root = section(`market-snapshot-${id}`);
+    await root.locator(`tbody tr[data-row-source="${origin}"]`).waitFor({ timeout: 10_000 });
+    assert.deepEqual(await figures(`market-snapshot-${id}`), provider, id);
+    assert.equal(await root.locator('tbody tr').count(), 1, `${id}: one row, kept in its place`);
+    assert.equal(await root.locator('[data-read-status]').getAttribute('data-read-status'), 'none', `${id}: nothing to say`);
+    assert.match(await provenance(`market-snapshot-${id}`), reported, id);
+    assert.doesNotMatch(`${await root.locator('tbody').innerText()} ${await root.locator('.dm-marquee').innerText()}`, /snapshot|stored|store\b/i, `${id}: no word about where the row came from`);
+    assert.doesNotMatch(await root.locator('tbody').innerHTML(), /money-wait/, id);
+  }
+  // A stored row carries no estimate, and its title says why in the estimate's own words.
+  assert.match(await section('market-snapshot-current').locator('tbody td').nth(4).locator('[data-apr-estimate] [title]').getAttribute('title'), /^Pool estimate, not position APR, APY or a return forecast\. Estimated APR is read with the pool’s own market figures, not with stored ones\.$/);
 });
 
 test('an HTML-like token symbol renders as literal text, and nothing runs', async () => {
@@ -207,7 +242,7 @@ test('a bidi, zero-width and markup symbol is isolated and cut short, not laid o
 
 test('table-wide states: one polite status line, the right words, and not a single row', async () => {
   const cases = {
-    gate401: ['gate_required', /Beta access needed/],
+    gate401: ['gate_required', /Access expired/],
     gate503: ['gate_unavailable', /Access is paused/],
     edge502: ['unavailable', /error page \(HTTP 502\)/],
     access: ['access_required', /access check/],
@@ -216,9 +251,9 @@ test('table-wide states: one polite status line, the right words, and not a sing
     invalid: ['invalid', /did not match the read contract/],
     busy: ['busy', /Try again in 7 s/],
     transient: ['unavailable', /Temporarily unavailable[\s\S]*answered: read service unavailable/],
-    'not-connected': ['not_connected', /Live data isn't connected yet/],
+    'not-connected': ['not_connected', /Live data unavailable/],
     'not-found': ['not_connected', /Live data isn't available on this address/],
-    'no-forwarder': ['not_connected', /Live data isn't connected yet/],
+    'no-forwarder': ['not_connected', /Live data unavailable/],
     'route-disabled': ['disabled', /Live data is switched off for now/],
   };
   for (const [id, [state, words]] of Object.entries(cases)) {
@@ -367,8 +402,8 @@ test('Refresh keeps keyboard focus through its read; it is busy, never unmounted
   assert.ok(trace.includes('Refreshing…'), `Refresh was not shown busy while its read ran: ${trace}`);
   assert.deepEqual(await root.evaluate((el) => [el.contains(document.activeElement), document.activeElement?.textContent]), [true, 'Refresh']);
   assert.deepEqual(await figures(id), {
-    cells: [['≈1,000,000,000,000TOKENperETH', 'usable'], ['$12.3K', 'provider'], ['$0.00', 'provider'], ['Unavailable', 'unavailable']],
-    ticker: ['Est.APRunavailable', 'unavailable'],
+    cells: [['≈1,000,000,000,000TOKENperETH', 'usable'], ['$12.3K', 'provider'], ['$0.00', 'provider'], ['—', 'unavailable']],
+    ticker: ['Est.APR—', 'unavailable'],
   });
   assert.match(await provenance(id), /^Pool verified on-chain at block 700 · Reported by GeckoTerminal, retrieved \d+ s ago$/, 'the provider is still named after the refresh');
 });

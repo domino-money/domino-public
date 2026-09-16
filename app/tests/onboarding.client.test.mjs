@@ -160,6 +160,18 @@ test('the page gives up after 27 s of its own clock, a little after the worker w
   assert.deepEqual(await aborted, { ok: false, aborted: true }, 'an invalidation is silent');
 });
 
+test('a reply keeps its request id in either shape Domino writes, a Worker UUID or a gateway’s 32 hex, and drops anything else', async () => {
+  const replyWith = (id) => new Response('{}', { status: 200, headers: { 'Content-Type': 'application/json', [HEADER]: '1.0.0', 'X-Domino-Request-Id': id } });
+  const GATEWAY_ID = 'c549ebea4bfca053878e1646dfe6cf7d';
+  assert.equal((await rawReplyOf(replyWith(REQUEST_ID), HEADER, MAX_RESPONSE_BYTES)).requestIdHeader, REQUEST_ID);
+  assert.equal((await rawReplyOf(replyWith(GATEWAY_ID), HEADER, MAX_RESPONSE_BYTES)).requestIdHeader, GATEWAY_ID, 'the development gateway’s id, as the local-live proxy passes it on');
+  for (const junk of ['-'.repeat(36), GATEWAY_ID.toUpperCase(), 'x'.repeat(32), REQUEST_ID.toUpperCase(), `${GATEWAY_ID}0`]) {
+    assert.equal((await rawReplyOf(replyWith(junk), HEADER, MAX_RESPONSE_BYTES)).requestIdHeader, null, junk);
+  }
+  const without = new Response('{}', { status: 200, headers: { 'Content-Type': 'application/json', [HEADER]: '1.0.0' } });
+  assert.equal((await rawReplyOf(without, HEADER, MAX_RESPONSE_BYTES)).requestIdHeader, null);
+});
+
 test("the worker's own 504 reaches the user as timed out, with its request id (OC-10)", () => {
   const out = interpretPreview('swap-preview', REQUESTS['swap-preview'], onb(504, { error: 'request_timeout' }, { requestId: REQUEST_ID }), runtime, SWAP_OWNER);
   assert.equal(out.failure.kind, 'timed_out');

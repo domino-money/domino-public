@@ -81,7 +81,7 @@ test('a visitor without the password sees only the access page', async () => {
   const { context, page } = await visitor();
   const response = await page.goto(`${origin}/`, { waitUntil: 'networkidle' });
   assert.equal(response.status(), 401);
-  assert.equal(await page.title(), 'Domino · Closed beta');
+  assert.equal(await page.title(), 'Domino · Access');
   assert.equal(await page.locator('#password').getAttribute('type'), 'password');
   assert.equal(await page.locator('#root').count(), 0, 'the app shell was delivered');
   // Checked on the bytes the server sends, not on the DOM: desktop antivirus
@@ -161,11 +161,13 @@ test('the right password opens the full app, which runs under the CSP without a 
 test('the whole workspace works behind the gate, not only the landing', async () => {
   const { context, page, log } = await visitor();
   await signIn(page);
-  for (const route of ['/app', '/settings']) {
+  // The docs too: the index and a long page of static copy, under the real CSP.
+  for (const route of ['/app', '/settings', '/docs', '/docs/non-custodial']) {
     await page.evaluate((r) => { location.hash = `#${r}`; }, route);
     await page.waitForTimeout(150);
     assert.ok((await page.locator('#root').innerText()).length > 200, `${route} rendered almost nothing`);
   }
+  assert.equal(await page.locator('h1').first().innerText(), 'Non-custodial', 'the docs page rendered behind the gate');
   const images = await page.evaluate(() =>
     Array.from(document.querySelectorAll('img[src*="/tokens/"]')).filter((i) => i.complete && i.naturalWidth === 0).length,
   );

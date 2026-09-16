@@ -2,16 +2,16 @@ import { useCallback, useEffect, useState } from 'react'
 import { exploreHref, newPositionHref, parsePoolHash } from '../components/explore/routes'
 import { useHash } from '../components/explore/useHash'
 import { PoolWorkspace } from '../components/read/screens/PoolWorkspace'
-import { ScreenStatus, type StatusLine } from '../components/read/screens/ScreenStatus'
 import { TokenMarkPair } from '../components/TokenIcon'
-import { Button, EmptyState, LinkButton, Skeleton, Stat, StatStrip } from '../components/ui'
-import { SELECTED_POOL_CATALOGUE, SELECTED_POOLS_COMMON_TOKEN, type PoolCatalogueEntry } from '../config/selectedPoolCatalogue'
+import { EmptyState, LinkButton, Skeleton, Stat, StatStrip } from '../components/ui'
+import { SELECTED_POOL_CATALOGUE, SELECTED_POOLS_COMMON_TOKEN, inPoolOrder, type PoolCatalogueEntry } from '../config/selectedPoolCatalogue'
 import { verifyCandidate } from '../lib/read/screens/catalogueSession'
 import { failureText } from '../lib/read/screens/copy'
 import { parseAddressInput, poolIdKey, shortAddress } from '../lib/read/screens/identity'
 import { poolPrice, presetRange } from '../lib/read/screens/poolRange'
 import type { PoolOption } from '../lib/read/screens/poolsList'
 import { useReadSource } from '../lib/read/screens/readContext'
+import { askAgainLater } from '../lib/read/screens/screenRead'
 import type { TokenDisplay } from '../lib/read/types'
 
 /*
@@ -27,7 +27,8 @@ type PlannedRange = { lower: number; upper: number }
 
 type Resolution =
   | { kind: 'verifying' }
-  | { kind: 'failed'; line: StatusLine }
+  /** No answer to show: `code` is the read's state, `reason` its words, for the title and the live region only. */
+  | { kind: 'failed'; code: string; reason: string }
   /** The pools route answered and did not include this pool. */
   | { kind: 'not_returned' }
   | { kind: 'verified'; option: PoolOption; range: PlannedRange | null }
@@ -44,15 +45,16 @@ const catalogueMark = (entry: PoolCatalogueEntry, side: 0 | 1): TokenDisplay => 
 })
 
 /**
- * The page while the pool is still only an id: the catalogue's labels for one
- * of the six, the id alone for any other, laid out as the verified page will
- * be, so nothing jumps when it arrives. While verifying, the figures and the
- * chart are resting blocks; once verification has failed they say so in
- * words instead, so a failure never sits beside a "verifying" line.
+ * The page while the pool is still only an id: the catalogue's pair labels for
+ * one of the six, the id alone for any other, laid out as the verified page
+ * will be, so nothing jumps when it arrives. No fee tier is stated before the
+ * pool is verified, in the chip or the stat. While verifying, the figures and
+ * the chart are resting blocks; once verification has no answer they are
+ * dashes, with the reason in their title and in the live region, never a panel.
  */
-function Pending({ id, entry, verifying = true, status }: { id: string; entry?: PoolCatalogueEntry; verifying?: boolean; status?: React.ReactNode }) {
+function Pending({ id, entry, verifying = true, reason }: { id: string; entry?: PoolCatalogueEntry; verifying?: boolean; reason?: { code: string; text: string } }) {
   return (
-    <div aria-busy={verifying || undefined}>
+    <div aria-busy={verifying || undefined} data-pool-verification={verifying ? 'verifying' : reason?.code} title={reason?.text}>
       <div className="flex min-w-0 animate-rise items-center gap-4">
         <span className="dm-pool-marks">
           {entry ? <TokenMarkPair base={catalogueMark(entry, 0)} quote={catalogueMark(entry, 1)} size={44} ring="var(--bg)" /> : <Skeleton className="size-11 rounded-full" />}
@@ -62,10 +64,12 @@ function Pending({ id, entry, verifying = true, status }: { id: string; entry?: 
             {entry ? <><bdi>{entry.labels[0]}</bdi> / <bdi>{entry.labels[1]}</bdi></> : 'Pool'}
           </h1>
           <div className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1.5">
-            {entry && <span className="dm-chip">Uniswap · {entry.fee}</span>}
+            {/* The fee tier is the verified pool's to state, as its stat below is: until then the chip names the protocol only. */}
+            {entry && <span className="dm-chip">Uniswap</span>}
             <span className="dm-chip">Robinhood Chain</span>
             <span className="dm-pool-id" title={id} translate="no">{shortAddress(id)}</span>
             {verifying && <span role="status" className="text-caption text-fg-muted">Verifying this pool on Robinhood Chain…</span>}
+            {!verifying && <span role="status" className="sr-only">{reason?.text}</span>}
           </div>
         </div>
       </div>
@@ -83,17 +87,12 @@ function Pending({ id, entry, verifying = true, status }: { id: string; entry?: 
           ))}
         </StatStrip>
       </div>
-      {status}
       <div className="dm-card mt-8 animate-rise p-5 [--delay:120ms]">
         <h2 className="dm-display dm-display-card">USD price and volume</h2>
-        <p className="mt-1 text-caption text-fg-subtle">Hourly candles · GeckoTerminal</p>
-        <div className="dm-pool-plot dm-dots-chart mt-4">
+        {/* Who reports the candles is the plot's title and data, never a caption under the heading. */}
+        <div className="dm-pool-plot dm-dots-chart mt-4" title="Hourly candles reported by GeckoTerminal." data-chart-provider="GeckoTerminal">
           <div className="dm-pool-plot-empty">
-            {verifying ? (
-              <Skeleton className="dm-pool-plot-baseline" />
-            ) : (
-              <p className="max-w-[44ch] text-[13px] leading-[18px] text-fg-muted">The price chart, the figures and the range planner appear once this pool has been verified on chain.</p>
-            )}
+            {verifying ? <Skeleton className="dm-pool-plot-baseline" /> : <span className="text-fg-subtle" title={reason?.text}>—</span>}
           </div>
         </div>
       </div>
@@ -107,26 +106,39 @@ function Pending({ id, entry, verifying = true, status }: { id: string; entry?: 
  * verified against the token they all hold, any other against the token the
  * link names (`#/pool/<id>/<token>`), and a pool with neither is not read at
  * all. Only a verified pool gets a page; nothing is shown from a label alone.
+ * A verification the read service was too busy for, or briefly could not
+ * answer, is asked again on its own, a few times, while the page stays open.
  */
 export function PoolDetail({ poolId }: { poolId: string }) {
   const source = useReadSource()
   const linked = parsePoolHash(useHash())
   const id = POOL_ID.test(poolId) ? poolId.toLowerCase() : null
-  const entry = id ? SELECTED_POOL_CATALOGUE.find((item) => item.poolId === id) : undefined
+  // Named in the pool's order, as the verified page will name it, so the heading keeps its order when it arrives.
+  const listed = id ? SELECTED_POOL_CATALOGUE.find((item) => item.poolId === id) : undefined
+  const entry = listed && inPoolOrder(listed)
   const tokenInput = entry ? parseAddressInput(SELECTED_POOLS_COMMON_TOKEN) : linked.token ? parseAddressInput(linked.token) : null
   const tokenKey = tokenInput?.ok ? tokenInput.key : null
   const key = id && tokenKey ? `${id}:${tokenKey}` : null
   const [state, setState] = useState<{ key: string; resolution: Resolution } | null>(null)
-  const [attempt, setAttempt] = useState(0)
+  // Quiet re-asks already spent verifying this pool. The page stays mounted from one pool to the next,
+  // so the count belongs to the pool it was spent on: another pool starts from none.
+  const [asked, setAsked] = useState<{ key: string; attempt: number } | null>(null)
+  const attempt = key !== null && asked?.key === key ? asked.attempt : 0
+  // Leaving a pool forgets its count, so coming back to it starts from none as well.
+  useEffect(() => () => setAsked(null), [key])
 
   useEffect(() => {
     if (!source || !id || !tokenKey || !key) return
     const controller = new AbortController()
-    void verifyCandidate(source, tokenKey, null, poolIdKey(id), { signal: controller.signal }).then((result) => {
+    const { signal } = controller
+    void verifyCandidate(source, tokenKey, null, poolIdKey(id), { signal }).then(async (result) => {
       // A verification that comes back after the page moved on to another pool lands nowhere.
-      if (controller.signal.aborted) return
+      if (signal.aborted) return
       if (result.failure) {
-        if (result.failure.state !== 'aborted') setState({ key, resolution: { kind: 'failed', line: failureText(result.failure, 'pools') } })
+        if (result.failure.state === 'aborted') return
+        const text = failureText(result.failure, 'pools')
+        setState({ key, resolution: { kind: 'failed', code: text.code, reason: [text.title, text.detail].filter(Boolean).join('. ') } })
+        if (await askAgainLater(result.failure, attempt, signal)) setAsked({ key, attempt: attempt + 1 })
         return
       }
       if (!result.option) {
@@ -144,7 +156,6 @@ export function PoolDetail({ poolId }: { poolId: string }) {
   const onRange = useCallback((range: PlannedRange) => setState((current) => (current && current.resolution.kind === 'verified' ? { ...current, resolution: { ...current.resolution, range } } : current)), [])
 
   const resolution: Resolution | null = key ? (state?.key === key ? state.resolution : { kind: 'verifying' }) : null
-  const retry = () => { setState(null); setAttempt((n) => n + 1) }
 
   let body: React.ReactNode
   if (!id) {
@@ -172,17 +183,7 @@ export function PoolDetail({ poolId }: { poolId: string }) {
   } else if (!source || !resolution || resolution.kind === 'verifying') {
     body = <Pending id={id} entry={entry} />
   } else if (resolution.kind === 'failed') {
-    body = (
-      <Pending
-        id={id}
-        entry={entry}
-        verifying={false}
-        status={<>
-          <ScreenStatus line={resolution.line} className="mt-4" onRetry={retry} />
-          {!resolution.line.retry && <Button variant="outline" size="sm" className="mt-3" onClick={retry}>Verify again</Button>}
-        </>}
-      />
-    )
+    body = <Pending id={id} entry={entry} verifying={false} reason={{ code: resolution.code, text: resolution.reason }} />
   } else if (resolution.kind === 'not_returned') {
     body = (
       <div className="dm-card animate-rise">
@@ -190,7 +191,7 @@ export function PoolDetail({ poolId }: { poolId: string }) {
         <EmptyState
           title="This pool could not be verified"
           body={<>The pools route did not return pool <span className="font-mono" title={id}>{shortAddress(id)}</span> for token <span className="font-mono" title={tokenKey}>{shortAddress(tokenKey)}</span>, so nothing about it is shown. It may hold other tokens, or not exist at this block.</>}
-          action={<div className="flex flex-wrap items-center justify-center gap-2"><Button variant="outline" size="sm" onClick={retry}>Verify again</Button><LinkButton variant="ghost" size="sm" href={exploreHref()}>Back to Markets</LinkButton></div>}
+          action={<LinkButton variant="outline" size="sm" href={exploreHref()}>Back to Markets</LinkButton>}
         />
       </div>
     )

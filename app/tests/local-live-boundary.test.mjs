@@ -31,11 +31,15 @@ test('HMR requires exact Origin, protocol and path before Vite gets the upgrade'
   for (const headers of [{ origin: undefined }, { origin: 'http://evil.example' }, { 'sec-websocket-protocol': 'other' }, { 'sec-fetch-site': 'same-site' }, { 'sec-fetch-site': 'same-origin' }]) assert.equal(permittedBrowserRequest(request({ ...args, headers: { ...args.headers, ...headers } }), port, true), false)
   for (const path of ['/', '/api/read/v1/token', '/?token=abcdefgh&target=evil', '/?token=short']) assert.equal(permittedBrowserRequest(request({ ...args, path }), port, true), false)
 })
-test('seven exact read POSTs and two GETs; no queries, session, private routes or target URLs', () => {
+test('ten exact read POSTs and two GETs; no queries, session, private routes or target URLs', () => {
+  // read-v1's ten POST routes, the stored-data reads included, so a development gateway that lists them still passes.
+  assert.deepEqual([...READS], ['token', 'pools', 'pool-market', 'wallet-assets', 'nft-positions', 'catalogue', 'pool-activity', 'pool-positions', 'pool-metrics', 'markets-snapshot'])
   for (const route of READS) assert.deepEqual(readRoute(`/api/read/v1/${route}`, 'POST'), { route, path: `/internal/read/v1/${route}` })
+  assert.deepEqual(readRoute('/api/read/v1/markets-snapshot', 'POST'), { route: 'markets-snapshot', path: '/internal/read/v1/markets-snapshot' })
   assert.equal(readRoute('/api/read/v1/capabilities', 'GET').route, 'capabilities')
   assert.equal(readRoute('/api/dev/v1/status', 'GET').route, 'status')
-  for (const path of ['/api/read/v1/token?', '/api/read/v1/token?url=https://evil', '/api/read/v1//token', '/api/read/v1/%74oken', '/api/read/v1/a/../token', '/api/read/v1/pool-metrics', '/api/read/v1/pool-positions', '/api/session/v1/login', '/api/deposit/v1/quote', 'https://evil/api/read/v1/token']) assert.equal(readRoute(path, 'POST'), null)
+  for (const path of ['/api/read/v1/token?', '/api/read/v1/token?url=https://evil', '/api/read/v1//token', '/api/read/v1/%74oken', '/api/read/v1/a/../token', '/api/read/v1/swap-preview', '/api/read/v1/markets-snapshot/', '/api/read/v1/markets-snapshot?poolIds=1', '/api/read/v1/%6darkets-snapshot', '/api/read/v2/markets-snapshot', '/api/read/v2/pool-metrics', '/api/session/v1/login', '/api/deposit/v1/quote', 'https://evil/api/read/v1/token']) assert.equal(readRoute(path, 'POST'), null)
   assert.equal(readRoute('/api/read/v1/token', 'GET'), null)
+  assert.equal(readRoute('/api/read/v1/markets-snapshot', 'GET'), null)
   assert.equal(readRoute('/api/read/v1/capabilities', 'POST'), null)
 })

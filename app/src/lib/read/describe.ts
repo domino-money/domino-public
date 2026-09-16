@@ -8,8 +8,8 @@
  * Every screen takes its words, its Retry and its sign-in link from here, so
  * an honest state is decided once, in the shared read layer, never per screen:
  *
- *   gate 401                           Beta access needed, with Sign in again
- *   /api forwarder 503, or no /api     Live data isn't connected yet
+ *   gate 401                           Access expired, with Sign in again
+ *   /api forwarder 503, or no /api     Live data unavailable
  *   forwarder 404 (another address)    Live data isn't available on this address
  *   capabilities disabled, a route     Live data is switched off for now
  *     not enabled, 404 route_not_available
@@ -82,12 +82,12 @@ export interface FailureText {
 function notConnected(reason: NotConnectedReason): FailureText {
   switch (reason) {
     case 'not_found':
-      return { title: 'Live data isn\'t available on this address', detail: 'Live reads are not served on this address, such as a preview. Nothing is shown in their place.', retry: false }
+      return { title: 'Live data isn\'t available on this address', detail: 'Live data isn\'t served on this address.', retry: false }
     case 'worker_subrequest_refused':
       return { title: 'Request refused', detail: 'The site refused this read because it did not come straight from a browser.', retry: false }
     case 'bridge_unavailable':
     case 'no_forwarder':
-      return { title: 'Live data isn\'t connected yet', detail: 'This site\'s read service is not connected yet, so there are no pool figures to show. Nothing is shown in their place.', retry: false }
+      return { title: 'Live data unavailable', detail: 'This site\'s read service isn\'t reachable, so there are no pool figures to show. Nothing is shown in their place.', retry: false }
     default:
       return reason satisfies never
   }
@@ -96,9 +96,9 @@ function notConnected(reason: NotConnectedReason): FailureText {
 export function describeFailure(outcome: FailedOutcome<ReadKey>): FailureText {
   switch (outcome.state) {
     case 'gate_required':
-      return { title: 'Beta access needed', detail: 'Your access to the closed beta has expired or was signed out. Sign in again to load pool data.', retry: false, signIn: true }
+      return { title: 'Access expired', detail: 'Your access has expired or was signed out. Reload the page to sign in again.', retry: false, signIn: true }
     case 'gate_unavailable':
-      return { title: 'Access is paused', detail: 'The beta gate is temporarily unavailable. Nothing is wrong on your side.', retry: true }
+      return { title: 'Access is paused', detail: 'Site access is unavailable right now. Nothing is wrong on your side.', retry: true }
     case 'access_required':
       return { title: 'Blocked by an access check', detail: 'This environment sits behind an access check that redirected the read. Nothing was shown.', retry: false }
     case 'not_connected':

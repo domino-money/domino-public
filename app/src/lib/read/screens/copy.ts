@@ -31,13 +31,10 @@ export const COPY = {
     loading: 'Reading position NFTs…',
     retained: 'The cards below are from the last read that worked, with its own block and time.',
     changedIds: 'New IDs: earlier cards were cleared.',
-    tokenProblems: 'Some token details couldn’t be read, so those amounts are shown in raw units.',
-    tokenCap: 'Token details are read for at most 8 currencies per lookup; the rest are shown in raw units.',
+    tokenProblems: 'Some token details couldn’t be read, so those amounts are dashes, each with its raw amount in its title.',
+    tokenCap: 'Token details are read for at most 8 currencies per lookup; the other amounts are dashes, each with its raw amount in its title.',
   },
   card: {
-    chainPill: 'Read from chain',
-    publicPill: 'Public data',
-    stalePill: 'Stale',
     empty: 'Empty at this block: the NFT has no position info.',
     pool: 'Pool',
     pair: 'Pair',
@@ -50,22 +47,27 @@ export const COPY = {
     outOfRange: 'Out of range at this block',
     noLiquidity: 'No liquidity at this block (closed or zero)',
     pricesUnavailable: 'Prices need both tokens’ decimals; showing ticks only.',
+    fullRange: 'Full range',
+    /** A title only: the ends already say "Tick N". */
+    pricesBeyondDisplay: 'A range price is too large or too small to write as a plain number; its tick is shown.',
     principal: 'Principal',
-    unsettled: 'Unsettled fees (not yet collected)',
+    unsettled: 'Unsettled fees',
+    /** A title only, on the unsettled fees: what public data cannot say about them. */
     noHistory: 'Totals from earlier collections aren’t available from public data.',
-    owner: 'Owner at this block (public data)',
-    ownerNote: 'An NFT owner at one block, read from chain. It proves nothing about who is using this page and enables nothing here.',
+    owner: 'Owner',
+    /** A title only, after the owner's address and block. */
+    ownerNote: 'It proves nothing about who is using this page and enables nothing here.',
     value: 'USD value',
-    valueUnavailable: 'Unavailable: no qualified price source yet.',
+    /** The title of a USD value shown as a dash. */
+    valueUnavailable: 'No qualified USD price source.',
     manager: 'Position manager',
-    snapshot: 'Snapshot',
   },
   local: {
     queueFull: 'Too many reads queued. Try again in a moment.',
     budget: 'The read took too long and was stopped.',
     incomplete: 'The reply didn’t cover every ID asked for, so nothing new is shown.',
-    gate: 'Beta access expired. Reload the page to sign in to the beta.',
-    gatePaused: 'The beta gate is unavailable right now. Nothing is wrong on your side.',
+    gate: 'Your access has expired or was signed out. Reload the page to sign in again.',
+    gatePaused: 'Site access is unavailable right now. Nothing is wrong on your side.',
     access: 'An access check redirected this read. Nothing from it is shown.',
     update: 'This build can’t read the server’s reply. It needs an update.',
     identity: 'The reply was about something other than what was asked, so nothing from it is shown.',
@@ -76,8 +78,8 @@ export const COPY = {
     restart: 'The list changed on the server and has to start again.',
   },
   selection: {
-    heading: 'Chain data (read only)',
-    pill: 'Reference only',
+    heading: 'Chain data',
+    pill: 'Not saved',
     chooseToken: 'Choose token',
     changeToken: 'Change token',
     chooseSecond: 'Choose second asset (optional)',
@@ -105,11 +107,12 @@ export const COPY = {
     usePool: 'Use this pool',
     nativeNote:
       'Native ETH has the address 0x0000…0000. Wrapped ETH is a separate ERC-20 contract at its own address. They are different assets, and their pools are different pools.',
-    secondNote: 'Liquidity is always a pair: the pool trades one asset against the other, and a position holds some of each.',
     pasteLabel: 'Token contract address',
     pasteHint: '0x followed by 40 hexadecimal characters. Sent exactly as typed.',
     check: 'Check address',
     checking: 'Checking…',
+    /** A check that stayed failed: the reason is the line's title. */
+    checkFailed: 'This address couldn’t be checked.',
     walletToggle: 'List tokens from a public address',
     walletPill: 'Public lookup, not your wallet',
     walletPublicNote:
@@ -118,9 +121,12 @@ export const COPY = {
     walletTokensLabel: 'Token addresses to check (up to 10)',
     walletTokensHint: 'Optional. Separated by commas, spaces or new lines.',
     walletSubmit: 'List tokens',
-    walletEmpty: 'This server can’t list tokens by itself. Add token addresses to check.',
+    /** A finished list that shows no token the address holds: what to do next, nothing about the server. */
+    walletEmpty: 'Add token addresses to check their balances.',
+    /** A first page that stayed failed: the reason is the line's title. */
+    walletNothing: 'No tokens to show.',
     walletCapped: 'Showing the first 5 pages.',
-    walletRestarted: 'The list restarted from the first page. Rows marked “from earlier list” haven’t been seen again yet.',
+    walletRestarted: 'The list restarted from the first page. Rows marked “from earlier list” haven’t been seen again.',
     walletExhausted: 'The list changed again while restarting. Restart it when you’re ready.',
     walletExpired: 'The page handle has expired, so Load more starts the list again.',
     restartList: 'Restart list',
@@ -137,6 +143,9 @@ export const COPY = {
     sameAsFirst: 'Not selectable: this is the first token.',
     walletUnavailable: 'Not selectable: its balance couldn’t be read.',
     poolsLoading: 'Reading existing pools…',
+    /** A pool list that failed for good, with nothing else to choose from: the reason is the line's title. */
+    poolsNone: 'No pools to show for this token.',
+    poolsNonePair: 'No pools to show for this pair.',
     poolsLegend: 'Existing pools',
     rejectedHeading: 'Rejected candidates (not selectable)',
     catalogueHeading: 'Stored pool catalogue',
@@ -146,9 +155,6 @@ export const COPY = {
     verified: 'Verified',
     catalogueRestarted: 'The catalogue changed during the read, so it restarted from the first page.',
     catalogueEmpty: 'No catalogue candidates in the configured interval. That isn’t proof that none exist.',
-    newPool:
-      'Opening a brand-new pool is a separate, advanced path. It isn’t available here, and nothing on this screen can create, fund or sign anything.',
-    aprUnavailable: 'Pool APR unavailable: reconciled fee history unavailable.',
     needsAdapter: 'Needs a separate adapter',
     hookless: 'No hooks, fixed fee',
     providerConflict: 'Provider figures rejected: the provider’s currencies conflict with the chain.',
@@ -160,8 +166,6 @@ export const COPY = {
     description: 'A range drawn on this pool’s price as read, at one block. Nothing is quoted, created, approved or signed.',
     use: 'Use this range',
     pill: 'Not executable',
-    partialPill: 'Partial',
-    stalePill: 'Stale',
     priceHeading: 'Pool price read from chain',
     checked: 'The pool’s tick agrees with its square-root price at this block.',
     partial: 'Token metadata is partial: a symbol may be missing, so both addresses are shown. The price uses the decimals read from chain.',
@@ -192,18 +196,15 @@ export const COPY = {
   },
   figures: {
     open: 'figures',
-    qualified: 'Qualified 24h',
-    notQualified: 'Not qualified',
-    notQualifiedDetail: 'Domino’s own 24h figures for this pool aren’t usable yet: they need a qualified USD price source.',
     reference: 'Reference analytics, not current',
-    referenceDetail: 'Calculated for reference only. Never shown in the table.',
     provider: 'Provider figures',
     providerDetail: 'Provider-reported, not reconciled with chain data. Retrieval age isn’t proof of a complete 24h window.',
     activity: 'Pool age and coverage',
     activityLoading: 'Reading pool activity…',
+    /** The activity card's heading title: what the card covers, never a caption under it. */
+    activityScope: 'Swaps and fees over the 24 hours up to the last indexed block, from indexed chain events.',
     caveat: 'Pool APR describes a pool, not a position. It isn’t a forecast or a return on a deposit.',
     done: 'Done',
-    legend: 'About these figures',
     turnoverPending: 'Volume over TVL from provider figures waits on a decision about derived figures.',
   },
 } as const
@@ -274,7 +275,7 @@ export function failureText(outcome: ScreenFailure, subject: Subject): ScreenTex
   const name = SUBJECT[subject]
   switch (outcome.state) {
     case 'gate_required':
-      return { code: outcome.state, title: 'Beta access expired', detail: COPY.local.gate, retry: false }
+      return { code: outcome.state, title: 'Access expired', detail: COPY.local.gate, retry: false }
     case 'gate_unavailable':
       return { code: outcome.state, title: 'Access is paused', detail: COPY.local.gatePaused, retry: true }
     case 'access_required':

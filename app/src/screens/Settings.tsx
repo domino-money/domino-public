@@ -29,25 +29,19 @@ export function Settings() {
           </Button>
         </section>
 
-        <section className="dm-card dm-acct-set-card animate-rise" style={rise(2)} aria-labelledby="settings-build">
+        {/* The read contract version is for support and diagnostics, never shown as text. */}
+        <section className="dm-card dm-acct-set-card animate-rise" style={rise(2)} aria-labelledby="settings-build" data-read-contract={REQUEST_READ_CONTRACT}>
           <h2 id="settings-build" className="dm-acct-set-title">
             This build
           </h2>
           <dl className="dm-acct-build">
             <Stat label="Chain">Robinhood</Stat>
             <Stat label="Chain id">{CAPABILITIES.chainId}</Stat>
-            <Stat label="Read contract">
-              <span className="dm-acct-mono">{REQUEST_READ_CONTRACT}</span>
-            </Stat>
             <Stat label="Automated signing">{CAPABILITIES.signingEnabled ? 'Enabled' : 'Not connected'}</Stat>
             <Stat label="Wallet transactions">
               {__DOMINO_WALLET_SESSION__ && CAPABILITIES.walletTransactionsBuilt ? 'Built in; each step reviewed in wallet' : 'Off'}
             </Stat>
           </dl>
-          <p className="dm-acct-set-foot">
-            Live reads are built in and switched on by the read service, never here. Nothing in this build signs a transaction, grants a spending permission or
-            moves funds; a wallet connection only proves an address.
-          </p>
         </section>
 
         <section className="dm-card dm-acct-caps animate-rise" style={rise(3)} aria-labelledby="settings-capabilities">

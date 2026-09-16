@@ -1,24 +1,27 @@
+import { lazy, Suspense } from 'react'
 import { CREATE } from '../../lib/create/copy'
-import { candidateDecimals, feeBases, positionText, priceOf, serialiseSummary, validateBudget, walletSteps, type JourneyState } from '../../lib/create/journey'
+import { candidateDecimals, feeBases, priceOf, serialiseSummary, validateBudget, walletSteps, type JourneyState } from '../../lib/create/journey'
 import { rangePosition } from '../../lib/read/screens/poolRange'
 import { Address } from '../read/screens/Address'
 import { SymbolText } from '../read/screens/SymbolText'
 import { Button, LinkButton, Pill } from '../ui'
 import { automationPill } from './StageAutomation'
-import { RequestDetails, StageBalance } from './StageBalance'
+import { StageBalance } from './StageBalance'
 import { AutomationSummary, PoolPair, RangeSummary } from './StepList'
 
 /**
- * Step 5, Review: every choice, the deposit amounts (calculated in Setup),
- * the wallet steps Setup will ask for (a list, not buttons) and the fee bases
- * apart. Nothing here reads, and the request is shown, never sent.
+ * Step 5, Review: every choice, the deposit amounts (an estimate while one is
+ * current, StageBalance.tsx), the wallet steps in order (the deposit in Setup,
+ * then any automation from Automate; a list, not buttons) and the fee bases
+ * apart. `open` is whether Review is the open step: the amounts are asked for
+ * only then.
  */
-export function StageReview({ state, now }: { state: JourneyState; now: number }) {
+export function StageReview({ state, now, open }: { state: JourneyState; now: number; open: boolean }) {
   const token = state.token
   const pool = state.pool
   const price = priceOf(pool, now)
-  const position = positionText(state, now)
-  const inside = price && price.state === 'usable' && state.range ? rangePosition(state.range, price.tick) === 'inside' : null
+  const usable = price && price.state === 'usable' ? price : null
+  const inside = usable && state.range ? rangePosition(state.range, usable.tick) === 'inside' : null
   const budget = token ? validateBudget(state.budget, candidateDecimals(token)) : null
   const steps = walletSteps(state)
   const pill = automationPill(state.automation)
@@ -92,14 +95,15 @@ export function StageReview({ state, now }: { state: JourneyState; now: number }
             <dd className="text-fg-muted">{CREATE.review.recipientValue}</dd>
           </div>
         </dl>
-        {position && (
-          <p role="status" className="dm-flow-position" data-tone={inside ? 'in' : 'wait'} data-review-position="">
-            {position}
+        {inside !== null && usable && (
+          // A price read more than 5 minutes ago keeps its sentence in normal type; that it is stale is in the title only.
+          <p role="status" className="dm-flow-position" data-tone={inside ? 'in' : 'neutral'} data-review-position="" data-stale={usable.stale ? '' : undefined} title={usable.stale ? CREATE.review.stale : undefined}>
+            {inside ? CREATE.review.inRange : CREATE.review.outOfRange}
           </p>
         )}
       </section>
 
-      <StageBalance />
+      <StageBalance state={state} open={open} />
 
       <section aria-labelledby="create-steps-heading" className="dm-flow-section">
         <h3 id="create-steps-heading" className="dm-flow-subtitle">
@@ -153,31 +157,50 @@ export function StageReview({ state, now }: { state: JourneyState; now: number }
             {serialiseSummary(state, now).join('\n')}
           </pre>
         </details>
-        <RequestDetails state={state} />
       </div>
     </div>
   )
 }
 
+// The final control's own part in builds with wallet sign-in, from the same chunk as the deposit amounts: it
+// carries the choices to Setup for a signed-in wallet. While it loads, the plain link stands in for it with the
+// neutral line: that link carries nothing, so it promises nothing.
+const ContinueInSetup = __DOMINO_WALLET_SESSION__
+  ? lazy(() =>
+      import('./DepositAmounts')
+        .then((module) => ({ default: module.ContinueInSetup }))
+        .catch(() => ({ default: () => <SetupLink note={CREATE.review.gateDetail} /> })),
+    )
+  : null
+
+/** The link to Setup and the one line under it. `onClick` carries the choices; without it the link carries nothing. */
+export function SetupLink({ note, onClick }: { note: string; onClick?: () => void }) {
+  return (
+    <>
+      <LinkButton href="#/setup" variant="primary" size="lg" className="w-full" data-create-position="setup" aria-describedby="create-reason" onClick={onClick}>
+        {CREATE.review.setup}
+      </LinkButton>
+      <p id="create-reason" className="dm-flow-reason" data-align="start">
+        {note}
+      </p>
+    </>
+  )
+}
+
 /**
  * The last control of the flow. Deposits happen in Setup, one reviewed
- * wallet step at a time: a build that carries wallet sign-in links there and
- * says what Setup does and that nothing is carried over; any other build
- * shows the disabled action and why. This is the one sentence that depends
- * on the build, so it lives here, where the build flag is defined, and not in
+ * wallet step at a time: a build that carries wallet sign-in links there, and
+ * the link takes these choices along for a signed-in wallet; any other build
+ * shows the disabled action and why. This is the one control that depends on
+ * the build, so it lives here, where the build flag is defined, and not in
  * lib/create/copy.ts, which is compiled for tests without it.
  */
-export function FinalControl() {
-  if (__DOMINO_WALLET_SESSION__) {
+export function FinalControl({ state }: { state: JourneyState }) {
+  if (ContinueInSetup) {
     return (
-      <>
-        <LinkButton href="#/setup" variant="primary" size="lg" className="w-full" data-create-position="setup" aria-describedby="create-reason">
-          {CREATE.review.setup}
-        </LinkButton>
-        <p id="create-reason" className="dm-flow-reason" data-align="start">
-          {CREATE.review.setupNote}
-        </p>
-      </>
+      <Suspense fallback={<SetupLink note={CREATE.review.gate} />}>
+        <ContinueInSetup state={state} />
+      </Suspense>
     )
   }
   return (

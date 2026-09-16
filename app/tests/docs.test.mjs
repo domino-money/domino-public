@@ -1,0 +1,445 @@
+/**
+ * The in-app documentation (#/docs), checked as data before a browser sees it:
+ * every page, section and term id, every link, every sentence, the numbers
+ * that must match the contracts and the addresses that must match the
+ * backend, and the size the pages add to the entry bundle. The render suite
+ * drives the built pages themselves.
+ */
+import assert from 'node:assert/strict';
+import { readdirSync, readFileSync } from 'node:fs';
+import { createRequire } from 'node:module';
+import { join, resolve } from 'node:path';
+import { test } from 'node:test';
+import { gzipSync } from 'node:zlib';
+import { findForbidden } from '../scripts/deploy-markers.mjs';
+
+const require = createRequire(import.meta.url);
+const docs = require('../.test-build/app/src/lib/docs/registry.js');
+const { ROADMAP } = require('../.test-build/app/src/lib/capabilities.js');
+
+const APP = resolve(import.meta.dirname, '..');
+const REPO = resolve(APP, '..');
+const { DOC_GROUPS, DOC_PAGES } = docs;
+const SLUG = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
+const KINDS = new Set(['p', 'list', 'steps', 'note', 'facts', 'addresses', 'split', 'terms']);
+
+/** Every string under a value, however deep. */
+function strings(value, out = []) {
+  if (typeof value === 'string') out.push(value);
+  else if (Array.isArray(value)) for (const item of value) strings(item, out);
+  else if (value && typeof value === 'object') for (const item of Object.values(value)) strings(item, out);
+  return out;
+}
+
+const blocksOf = (page) => page.sections.flatMap((section) => [...section.blocks, ...(section.subsections ?? []).flatMap((sub) => sub.blocks)]);
+
+function inlinesOf(block) {
+  switch (block.kind) {
+    case 'p':
+    case 'note':
+      return block.text;
+    case 'list':
+      return block.items.flat();
+    case 'steps':
+      return block.items.flatMap((step) => step.body);
+    case 'split':
+      return block.columns.flatMap((column) => column.items.flat());
+    case 'terms':
+      return block.items.flatMap((item) => item.text);
+    default:
+      return [];
+  }
+}
+
+const linksOf = (page) => blocksOf(page).flatMap(inlinesOf).filter((part) => typeof part === 'object' && 'to' in part);
+
+/** Inline parts as the page reads them: words, bold words, code and link text, run together. */
+const inlineText = (parts) => parts.map((part) => (typeof part === 'string' ? part : (part.b ?? part.mono ?? part.text))).join('');
+
+function blockText(block) {
+  switch (block.kind) {
+    case 'p':
+      return inlineText(block.text);
+    case 'note':
+      return [block.title ?? '', inlineText(block.text)].join('\n');
+    case 'list':
+      return block.items.map(inlineText).join('\n');
+    case 'steps':
+      return block.items.map((step) => `${step.title}\n${inlineText(step.body)}`).join('\n');
+    case 'facts':
+      return block.rows.map((row) => [row.label, row.value, row.note ?? ''].join('\n')).join('\n');
+    case 'addresses':
+      return block.rows.map((row) => `${row.label}\n${row.role}\n${row.address}`).join('\n');
+    case 'split':
+      return block.columns.map((column) => `${column.title}\n${column.items.map(inlineText).join('\n')}`).join('\n');
+    case 'terms':
+      return block.items.map((item) => `${item.term}\n${inlineText(item.text)}`).join('\n');
+    default:
+      return '';
+  }
+}
+
+/** A page's readable text, one line per title, sentence group or row: what a reader sees, without ids or hrefs. */
+function textOf(page) {
+  const lines = [page.title, page.summary, page.lead ?? ''];
+  for (const section of page.sections) {
+    lines.push(section.title, ...section.blocks.map(blockText));
+    for (const sub of section.subsections ?? []) lines.push(sub.title, ...sub.blocks.map(blockText));
+  }
+  return lines.filter(Boolean).join('\n');
+}
+/** One section's readable text, its subsections included. */
+function sectionText(entry, id) {
+  const section = entry.sections.find((candidate) => candidate.id === id);
+  assert.ok(section, `${entry.slug} has no section ${id}`);
+  return [section.title, ...section.blocks.map(blockText), ...(section.subsections ?? []).flatMap((sub) => [sub.title, ...sub.blocks.map(blockText)])].join('\n');
+}
+/** One glossary term's definition, as the page reads it. */
+function termText(entry, id) {
+  const item = blocksOf(entry).filter((block) => block.kind === 'terms').flatMap((block) => block.items).find((candidate) => candidate.id === id);
+  assert.ok(item, `${entry.slug} has no term ${id}`);
+  return inlineText(item.text);
+}
+const sectionIds = (page) => page.sections.flatMap((section) => [section.id, ...(section.subsections ?? []).map((sub) => sub.id)]);
+const termIds = (page) => blocksOf(page).filter((block) => block.kind === 'terms').flatMap((block) => block.items.map((item) => item.id));
+const idsOf = (page) => [...sectionIds(page), ...termIds(page)];
+const rowsOf = (page, kind) => blocksOf(page).filter((block) => block.kind === kind).flatMap((block) => block.rows);
+const page = (slug) => {
+  const found = docs.findDocPage(slug);
+  assert.ok(found, `no page ${slug}`);
+  return found;
+};
+
+test('every group has pages, every slug is unique and kebab-case, and only a page’s own slug finds it', () => {
+  assert.equal(DOC_GROUPS.length, 6);
+  assert.equal(new Set(DOC_GROUPS.map((group) => group.key)).size, DOC_GROUPS.length);
+  for (const group of DOC_GROUPS) {
+    assert.match(group.key, SLUG);
+    assert.ok(group.pages.length > 0, `${group.key} has no page`);
+  }
+  assert.deepEqual(DOC_PAGES, DOC_GROUPS.flatMap((group) => group.pages), 'the pages in sidebar order');
+  const slugs = DOC_PAGES.map((entry) => entry.slug);
+  assert.equal(new Set(slugs).size, slugs.length, 'slugs are unique');
+  for (const slug of slugs) assert.match(slug, SLUG);
+  // Home's custody card and the naming the owner approved both link here.
+  assert.ok(docs.findDocPage('non-custodial'));
+  assert.ok(docs.findDocPage('domino-compounder'));
+  assert.equal(docs.findDocPage('domino-sequences'), null, 'the old name is gone');
+  for (const slug of ['constructor', 'toString', '__proto__', 'hasOwnProperty', 'Non-custodial', '', ' non-custodial']) assert.equal(docs.findDocPage(slug), null, JSON.stringify(slug));
+  assert.deepEqual([...docs.DOC_START], ['what-is-domino', 'ranges', 'non-custodial']);
+  for (const slug of docs.DOC_START) assert.ok(docs.findDocPage(slug), slug);
+  for (const entry of DOC_PAGES) {
+    assert.equal(docs.docGroupOf(entry.slug).pages.includes(entry), true, `${entry.slug} is in its group`);
+    assert.ok(entry.sections.length > 0, `${entry.slug} has sections`);
+    for (const block of blocksOf(entry)) assert.ok(KINDS.has(block.kind), `${entry.slug}: unknown block ${block.kind}`);
+  }
+  assert.equal(docs.docGroupOf('constructor'), null);
+});
+
+test('section, subsection and term ids are unique on their page, kebab-case, and never an id of the docs chrome or the shell', () => {
+  // Ids the shell renders around every screen: the React root, the menu and the wallet dialogs.
+  const shell = new Set(['root']);
+  const files = ['src/components/Header.tsx', 'src/components/HeaderMenu.tsx', 'src/components/Footer.tsx', 'src/components/ui.tsx', ...readdirSync(join(APP, 'src/components/wallet')).map((file) => `src/components/wallet/${file}`)];
+  for (const file of files) for (const match of readFileSync(join(APP, file), 'utf8').matchAll(/\bid="([^"]+)"/g)) shell.add(match[1]);
+  assert.ok(shell.has('site-menu'), 'the menu id is among the shell ids');
+  for (const entry of DOC_PAGES) {
+    const ids = idsOf(entry);
+    assert.equal(new Set(ids).size, ids.length, `${entry.slug} repeats an id: ${ids.join(', ')}`);
+    for (const id of ids) {
+      assert.match(id, SLUG, `${entry.slug}: ${id}`);
+      assert.ok(!id.startsWith('docs-'), `${entry.slug}: ${id} is the docs chrome's`);
+      assert.ok(!shell.has(id), `${entry.slug}: ${id} is the shell's`);
+    }
+    assert.deepEqual(
+      docs.tocOf(entry).map((line) => [line.id, line.depth]),
+      entry.sections.flatMap((section) => [[section.id, 2], ...(section.subsections ?? []).map((sub) => [sub.id, 3])]),
+      `${entry.slug}: On this page lists every section and subsection, in order`,
+    );
+    // The renderers key rows by these, so each must be unique within its block.
+    for (const block of blocksOf(entry)) {
+      const keys =
+        block.kind === 'facts' ? block.rows.map((row) => row.label)
+        : block.kind === 'addresses' ? block.rows.map((row) => row.address)
+        : block.kind === 'steps' ? block.items.map((step) => step.title)
+        : block.kind === 'split' ? block.columns.map((column) => column.title)
+        : [];
+      assert.equal(new Set(keys).size, keys.length, `${entry.slug}: a ${block.kind} block repeats ${keys.join(', ')}`);
+    }
+  }
+});
+
+test('every link stays inside this app, and names a docs page and a section of it that exist', () => {
+  // The routes and Home sections a docs page may send a reader to (tests/render.test.mjs keeps the same list for the footer).
+  const screens = new Set(['#/', '#/markets', '#/positions', '#/automate', '#/new', '#/settings', '#/#learn', '#/#ranges', '#/#limits']);
+  let count = 0;
+  for (const entry of DOC_PAGES) {
+    for (const link of linksOf(entry)) {
+      count += 1;
+      assert.ok(link.text.trim().length > 0, `${entry.slug}: a link without words`);
+      if (screens.has(link.to)) continue;
+      const match = /^#\/docs\/([a-z0-9-]+)(?:#([a-z0-9-]+))?$/.exec(link.to);
+      assert.ok(match, `${entry.slug}: ${link.to} is not a docs link or a screen of this app`);
+      const target = docs.findDocPage(match[1]);
+      assert.ok(target, `${entry.slug}: ${link.to} names no page`);
+      if (match[2]) assert.ok(idsOf(target).includes(match[2]), `${entry.slug}: ${link.to} names no section of ${target.slug}`);
+      assert.notEqual(target.slug === entry.slug && !match[2], true, `${entry.slug} links to itself`);
+    }
+  }
+  assert.ok(count >= 20, `${count} links`);
+});
+
+test('the words: no build marker, no URL, no self-description, no dollar figure, no wallet method or API path, no promise, no provider, no token', () => {
+  const all = strings([DOC_GROUPS, docs.DOCS_HOME]);
+  assert.ok(all.length > 300, `${all.length} strings`);
+  for (const text of all) {
+    assert.deepEqual(findForbidden(text), [], text);
+    assert.doesNotMatch(text, /(https?|wss?):\/\//, text);
+    assert.doesNotMatch(text, /\balpha\b|\bbeta\b|\bv4\b|\bpreview\b|not enabled yet|not connected yet|read-only|coming soon/i, text);
+    assert.doesNotMatch(text, /\$\s?\d/, text);
+    assert.doesNotMatch(
+      text,
+      /personal_sign|eth_[a-z]|wallet_[a-zA-Z]|\/api\/|fetch\(|innerHTML|127\.0\.0\.1|\.create\(|\.prepare\(|\.send\(|approve\s*\(|sendTransaction|writeContract|signTypedData|Wallet sending isn|Synthetic fixture|live-preview|swap-preview/,
+      text,
+    );
+    assert.doesNotMatch(text, /guarantee|risk-free|will earn|\bsafe(?:ly|ty)?\b|maximum return|impermanent loss|\bprofitable\b/i, text);
+    assert.doesNotMatch(text, /GeckoTerminal|DexScreener|CoinGecko|Alchemy/i, text);
+    assert.doesNotMatch(text, /Domino token|Domino sequences?\b/i, text);
+  }
+  // Figures are described by where they come from, never as current, live, updated or qualified.
+  for (const text of strings(page('figures'))) assert.doesNotMatch(text, /\b(current|live|updated|qualified)\b/i, text);
+});
+
+test('the automation is Domino Compounder in the docs and Domino-compound in the app; sequence names only the vault', () => {
+  const compounder = page('domino-compounder');
+  assert.equal(compounder.title, 'Domino Compounder');
+  assert.match(textOf(compounder), /In the app you choose it as Domino-compound\./);
+  assert.match(textOf(page('new-position')), /Choose Self-managing, Auto-compound or Domino-compound\./);
+  const glossary = termIds(page('glossary'));
+  for (const id of ['domino-compounder', 'sequence', 'self-managing', 'auto-compound', 'operator']) assert.ok(glossary.includes(id), id);
+  assert.equal(glossary.includes('domino-sequence'), false);
+  // Wherever a reader meets "sequence", it is the vault, the Automate button that creates one, or that creation.
+  const lines = DOC_PAGES.flatMap((entry) => textOf(entry).split('\n')).filter((line) => /\bsequences?\b/i.test(line));
+  assert.ok(lines.length >= 5, `${lines.length} lines name the sequence`);
+  for (const line of lines) {
+    for (const [phrase] of line.matchAll(/(?:\S+\s+){0,4}sequences?\b(?:\s+\S+)?/gi)) {
+      assert.match(phrase, /sequence vault|(your|the|its) sequence\b|Create or manage a sequence|^Sequence$/i, `"${phrase}" in: ${line}`);
+    }
+  }
+});
+
+test('the custody page opens with the approved sentence, word for word, then says who holds what, the operator’s limits and the owner’s controls', () => {
+  const custody = page('non-custodial');
+  assert.equal(
+    custody.lead,
+    'When you create an automation using Domino, you are the sole owner and only you can control it. Every step is fully automated by a contract whose controller is your signed wallet.',
+  );
+  assert.deepEqual(sectionIds(custody), ['your-wallet', 'sequence-vault', 'operator', 'pause-revoke-withdraw', 'sign-in-grants-nothing']);
+  const text = textOf(custody);
+  assert.match(text, /that NFT stays in your wallet/);
+  assert.match(text, /earned fees not yet reinvested, are held by your own sequence vault until you withdraw them/);
+  assert.match(text, /Only your wallet controls the vault/);
+  assert.match(text, /The operator cannot[\s\S]*Withdraw positions or fees/);
+  assert.deepEqual(rowsOf(custody, 'facts').map((row) => row.label), ['Pause', 'Revoke the operator', 'Revoke the NFT approval', 'Withdraw']);
+  assert.match(text, /This request does not authorize transactions or automation\./);
+
+  // The owner kept the lead; the operator section opens by squaring it with an operator that can act and pause.
+  const operator = custody.sections.find((section) => section.id === 'operator');
+  assert.deepEqual(operator.blocks[0], { kind: 'p', text: ['Your wallet stays the vault’s only owner. The operator named in your review can only run fee-only steps within your limits, and pause.'] });
+  // Both automations leave the NFT in the wallet (New position's review asks the same approval for either).
+  assert.match(sectionText(custody, 'your-wallet'), /When you start Auto-compound or Domino-compound from it, that NFT stays in your wallet\./);
+  // Funds in a setup operation (DominoSetup.sol open/cancel): held until mint or refund, which only the owner can do, with no fee.
+  assert.match(sectionText(custody, 'your-wallet'), /the tokens you fund wait in a setup operation until you mint or refund\. Only your wallet can do either, and a refund carries no Domino fee\./);
+  // The partner's list (PLANO D7): permission over earned fees only, and positions automation opens are standard NFTs too.
+  const vault = sectionText(custody, 'sequence-vault');
+  assert.match(vault, /Your permission covers earned fees only, including fees still uncollected on your starting position when you create the sequence\. Principal is never used\./);
+  assert.match(vault, /Positions it opens are standard Uniswap position NFTs too\./);
+  // DominoExecutionEngineV4 swaps earned fees in the vault's own pool, within the owner's slippage and price-impact limits.
+  const can = operator.blocks.find((block) => block.kind === 'split').columns.find((column) => column.title === 'The operator can').items.map(inlineText);
+  assert.deepEqual(can, ['Add a position’s earned fees back into it.', 'Open or fund the next position from earned fees, within your limits.', 'Swap earned fees in the same pool, within your slippage and price-impact limits.', 'Pause automation.']);
+});
+
+test('figures: Domino history first where the deployment provides it, the provider and the estimate after it, the protocol fee in the estimate, and every way a missing figure shows', () => {
+  const figures = page('figures');
+  assert.deepEqual(sectionIds(figures), ['read-from-chain', 'domino-history', 'reported-by-a-provider', 'calculated-by-domino', 'age', 'unavailable']);
+  // project.ts: TVL and volume take Domino's figure only when usableAsCurrent24h; the APR cell also shows a stale Domino APR before the estimate.
+  assert.match(sectionText(figures, 'domino-history'), /Where the deployment provides it, Domino keeps its own record of each pool’s last 24 hours\. When that record covers them in full, a pool’s TVL, 24h volume, 24h fees and APR come from it, marked Domino history\./);
+  assert.match(sectionText(figures, 'domino-history'), /Otherwise TVL and 24h volume are a provider’s, and the APR is the estimate below or an older full day of Domino history, dated in its title\. 24h fees come only from Domino history\./);
+  assert.match(sectionText(figures, 'reported-by-a-provider'), /^Reported by a provider\nTVL and 24h volume that Domino history does not cover, and hourly candles of either token’s USD price with volume, come from a market data provider/);
+  // backend/pool_apr.py scales the LP fee by the protocol fee, and gives no estimate when the two directions differ.
+  const estimate = blocksOf(figures).flatMap(inlinesOf).filter((part) => typeof part === 'object' && 'mono' in part).map((part) => part.mono);
+  assert.deepEqual(estimate.map((formula) => formula.replace(/\u00a0/g, ' ')), ['24h volume × fee tier × (1 − protocol fee) × 365 ÷ TVL']);
+  // No-break spaces hold each term together, so a narrow screen wraps the formula only at a ×.
+  assert.deepEqual(estimate[0].split(' × '), ['24h\u00a0volume', 'fee\u00a0tier', '(1\u00a0−\u00a0protocol\u00a0fee)', '365\u00a0÷\u00a0TVL']);
+  assert.match(sectionText(figures, 'calculated-by-domino'), /No estimate is given when a pool’s protocol fee differs by swap direction\./);
+  // Chain figures name their block; a provider's names the provider and its retrieval age; Domino history's age is on the row.
+  assert.match(sectionText(figures, 'read-from-chain'), /Each names the block it was read at\./);
+  assert.match(sectionText(figures, 'age'), /a figure read from chain names its block\. In a pools table, hover a pool’s name for its row’s sources, including how old its Domino history is\./);
+  assert.doesNotMatch(textOf(figures), /Every figure names its source and age|Hover a figure to see where it comes from and how long ago/);
+  // MetricCell: Unavailable, Not reported by <provider>, Not current. The figures page says the last without the word.
+  assert.match(sectionText(figures, 'unavailable'), /shows as a dash or as Unavailable, and one its source did not report shows as Not reported\. Domino history over less than a full 24 hours shows a word saying so, not a number\. None is shown as zero/);
+  const markets = page('markets');
+  assert.match(sectionText(markets, 'unavailable-figures'), /shows a dash, Unavailable, Not reported or Not current, never a zero\./);
+  assert.match(sectionText(markets, 'pools-table'), /The APR is Domino’s own where its history covers the day, and the estimated APR otherwise\./);
+  // Risks and the glossary say the same, and no page still calls TVL or volume a provider's figure only.
+  assert.match(sectionText(page('risks'), 'figures-describe-pools'), /TVL and 24h volume come from Domino history where the deployment provides it, and otherwise from a market data provider that Domino does not reconcile\./);
+  const glossary = page('glossary');
+  assert.equal(termText(glossary, 'domino-history'), 'Domino’s own record of a pool’s last 24 hours, where the deployment provides it. Figures from it are marked Domino history.');
+  assert.match(termText(glossary, 'tvl'), /from Domino history or, where it has none, a market data provider\.$/);
+  assert.match(termText(glossary, 'volume-24h'), /from Domino history or, where it has none, a market data provider\.$/);
+  assert.match(termText(glossary, 'estimated-apr'), /24h volume and TVL, its fee tier and its protocol fee\. It describes the pool, not a position, and is shown where Domino history gives no APR\.$/);
+  for (const entry of DOC_PAGES) assert.doesNotMatch(textOf(entry), /as a market data provider reports it|reported by a provider and not reconciled by Domino/, entry.slug);
+});
+
+test('Auto-compound starts on any position NFT you hold, with three wallet transactions and the custody of Domino Compounder, and names no screen that starts it', () => {
+  const auto = page('auto-compound');
+  const start = sectionText(auto, 'where-it-starts');
+  assert.match(start, /Auto-compound runs on a position NFT you hold, wherever you opened it\. Starting it takes three wallet transactions: approve that one NFT to its sequence vault, create the sequence, which starts paused, then activate it\./);
+  assert.match(start, /Custody is the same as for Domino Compounder: the NFT stays in your wallet, and your sequence vault holds earned fees not yet reinvested until you withdraw them\./);
+  assert.match(start, /Choosing it in New position only records the choice\./);
+  const links = linksOf(auto).map((link) => link.to);
+  for (const to of ['#/docs/non-custodial#sequence-vault', '#/docs/non-custodial#pause-revoke-withdraw', '#/docs/risks#automation-stops']) assert.ok(links.includes(to), to);
+  // No screen is named as the place a compound-only sequence starts: the owner has not chosen one.
+  assert.doesNotMatch(textOf(auto), /opened in Setup|Automate|Create or manage a sequence|Open a position/);
+  assert.ok(links.every((to) => to.startsWith('#/docs/')), links.join(', '));
+});
+
+test('Domino Compounder names the screen its Automate button opens, and Risks says what else stops automation and that restarting it takes a call no screen makes', () => {
+  const compounder = page('domino-compounder');
+  const start = sectionText(compounder, 'start-and-stop');
+  assert.match(start, /On Automate, Create or manage a sequence opens the screen that leads through these steps, each reviewed in your wallet\. It is also where you pause, revoke and withdraw\./);
+  assert.doesNotMatch(start, /The same screen is where/);
+  assert.ok(linksOf(compounder).some((link) => link.to === '#/docs/risks#automation-stops'));
+  // DominoVaultV4 notifyModifyLiquidity, notifyUnsubscribe and notifyBurn invalidate the root; rearmRoot and setOperator have no screen.
+  const stops = sectionText(page('risks'), 'automation-stops');
+  assert.match(stops, /Automation stops if the position you started from has its fees collected or its liquidity changed outside Domino, or leaves your wallet\./);
+  assert.match(stops, /Restarting it after that, or after you revoke the operator or the NFT approval, takes a contract call that no Domino screen makes\./);
+  // Your sequences starts the upside empty: 50% is only what New position draws with.
+  const glossary = page('glossary');
+  assert.equal(termText(glossary, 'upside'), 'How far above the previous ceiling a next position’s ceiling sits, at least. You set it; New position draws it at 50%.');
+  assert.equal(termText(glossary, 'sequence'), 'The vault contract created for your wallet that holds the positions automation opens and earned fees not yet reinvested. Only your wallet can withdraw from it.');
+  for (const entry of DOC_PAGES) assert.doesNotMatch(textOf(entry), /50% by default/, entry.slug);
+});
+
+test('the wallet, pools, fees, markets, new position, positions, risks and what Domino is pages say what the app and contracts do', () => {
+  const wallet = page('wallet');
+  const needs = blocksOf(wallet).find((block) => block.kind === 'list').items.map(inlineText);
+  assert.deepEqual(needs, [
+    'Direct deposits in Setup, and their receipts.',
+    'The deposit-amount estimate in New position’s Review, and carrying its choices to Setup.',
+    'The assisted swap quote in Setup.',
+    'Managed positions and automation receipts, on Positions.',
+  ]);
+  assert.match(sectionText(wallet, 'what-needs-sign-in'), /Neither do a setup operation’s steps \(fund, swap, mint and refund\) or the owner controls of your sequence vault: they work with your wallet alone\./);
+  assert.match(sectionText(wallet, 'sign-in'), /not an address with contract code, and a wallet also needs sign-in access from the Domino team\./);
+
+  // Outside its range a position holds one token, so the sentence says in range, and is written here, not imported.
+  const pools = page('pools');
+  assert.match(sectionText(pools, 'two-tokens'), /and a position in range holds some of each\./);
+  for (const entry of DOC_PAGES) assert.doesNotMatch(textOf(entry), /a position holds some of each/, entry.slug);
+  assert.match(sectionText(pools, 'fee-tiers'), /A pool can also carry Uniswap’s protocol fee, taken from what a swap sells into the pool before the fee tier\. It does not go to liquidity providers\./);
+  assert.match(termText(page('glossary'), 'protocol-fee'), /taken from what a swap sells into the pool before the fee tier/);
+  const fees = page('fees');
+  const trading = rowsOf(fees, 'facts').find((row) => row.label === 'Pool trading fee');
+  assert.equal(trading.note, 'Paid by swappers to the pool’s liquidity providers, on each trade. Not a charge on your deposit; a swap you make pays it.');
+  assert.match(sectionText(fees, 'pool-trading-fee'), /A swap you make, such as a balancing swap in Setup, pays it, and any protocol fee, like any other\./);
+
+  const markets = page('markets');
+  assert.match(sectionText(markets, 'find-a-token'), /Type the name of a token from the selected pools, or paste any token’s contract address\.\nThe token is read from chain\. Find pools then lists its existing pools, each verified on chain\./);
+  const poolPage = sectionText(markets, 'pool-page');
+  assert.match(poolPage, /hourly candles of either token’s USD price, with volume/);
+  assert.match(poolPage, /pool id, tokens, fee, protocol fee, tick spacing, hooks, 24h volume over TVL and the block the pool was verified at/);
+  assert.match(poolPage, /Where available, the page also shows the pool’s on-chain activity over the last 24 hours and the positions in the pool\./);
+  assert.doesNotMatch(poolPage, /hourly USD price and volume/);
+
+  assert.match(sectionText(page('new-position'), 'review'), /^Review\nReview lists every choice, the wallet steps in order and the fees side by side\. The steps are the deposit, made in Setup, then any automation’s own three transactions\. None of them starts from Review\./);
+  const positions = page('positions');
+  assert.match(sectionText(positions, 'position-nfts'), /so on Positions a position is looked up by its ID\. Where available, a pool’s page lists the positions in that pool\./);
+  assert.doesNotMatch(textOf(positions), /always looked up by its ID/);
+
+  assert.match(sectionText(page('risks'), 'tokens-and-contracts'), /Positions and automation run on smart contracts, and a contract can have defects\./);
+  const intro = page('what-is-domino');
+  assert.match(sectionText(intro, 'your-wallet-signs'), /^Your wallet signs every step you take\n/);
+  assert.match(sectionText(intro, 'your-wallet-signs'), /Once you activate automation, its operator sends automation transactions within the limits you signed\./);
+});
+
+test('a status names a ROADMAP entry, so the pill beside the title always comes from ROADMAP', () => {
+  const names = new Set(ROADMAP.map((entry) => entry.name));
+  const statuses = DOC_PAGES.filter((entry) => entry.status !== undefined).map((entry) => [entry.slug, entry.status]);
+  assert.deepEqual(statuses, [['auto-compound', 'Compound'], ['domino-compounder', 'Domino']]);
+  for (const [, status] of statuses) assert.ok(names.has(status), status);
+});
+
+test('the limits and fees match the contracts: 20% trigger and overlap, a positions cap, an upside the owner sets, 2% service and 0.65% swap caps', () => {
+  const contract = (name) => readFileSync(join(REPO, 'contracts/src', name), 'utf8');
+  const policy = contract('PolicyValidation.sol');
+  assert.match(policy, /MAX_TRIGGER_DISTANCE_BPS = 2000;/, 'trigger distance is capped at 2,000 bps');
+  assert.match(policy, /MAX_OVERLAP_BPS = 2000;/, 'overlap is capped at 2,000 bps');
+  assert.match(contract('FeeAccounting.sol'), /MAX_SERVICE_FEE_BPS = 200;/, 'the service fee is capped at 200 bps');
+  assert.match(contract('DominoSetup.sol'), /feeBps_ > 65\b/, 'the assisted swap fee is capped at 65 bps');
+  assert.match(contract('DominoVaultV4.sol'), /limits\.upsideBps == 0 \|\| limits\.upsideBps > 1_000_000/, 'the upside is the owner’s own limit');
+  assert.match(contract('DominoVaultV4.sol'), /activePositions >= _policy\.maxPositions/, 'a sequence has a positions cap');
+
+  const limits = Object.fromEntries(rowsOf(page('domino-compounder'), 'facts').map((row) => [row.label, row]));
+  assert.equal(limits['Trigger distance'].value, 'Up to 20%');
+  assert.equal(limits['Maximum overlap'].value, 'Up to 20%');
+  // Your sequences starts the field empty (Sequence.tsx); 50% is what New position draws the next range with (journey.ts).
+  assert.equal(limits.Upside.value, 'You set it; New position draws the next range at 50%');
+  assert.match(limits.Positions.note, /Counts the position it starts from/);
+
+  const fees = Object.fromEntries(rowsOf(page('fees'), 'facts').map((row) => [row.label, row]));
+  assert.equal(fees['Domino service fee'].value, '2% of earned fees consumed');
+  assert.match(fees['Domino service fee'].note, /Never on principal, never on a direct deposit/);
+  assert.equal(fees['Assisted swap fee'].value, 'At most 0.65% of the consumed swap budget');
+  assert.equal(fees['Network gas'].value, 'Paid by the wallet that sends it');
+});
+
+test('the Uniswap addresses are the ones the backend is configured with, each a lowercase address', () => {
+  const backend = (file) => readFileSync(join(REPO, 'backend', file), 'utf8');
+  const constant = (text, name) => new RegExp(`^${name} = '(0x[0-9a-f]{40})'`, 'm').exec(text)?.[1];
+  const discovery = backend('discovery.py');
+  const expected = [
+    ['PoolManager', constant(discovery, 'POOL_MANAGER')],
+    ['PositionManager', constant(discovery, 'POSITION_MANAGER')],
+    ['StateView', constant(discovery, 'STATE_VIEW')],
+    ['Permit2', constant(backend('deposit_prepare.py'), 'PERMIT2')],
+  ];
+  for (const [name, address] of expected) assert.match(address ?? '', /^0x[0-9a-f]{40}$/, `backend ${name}`);
+  assert.deepEqual(rowsOf(page('contracts'), 'addresses').map((row) => [row.label, row.address]), expected);
+  for (const entry of DOC_PAGES) for (const row of rowsOf(entry, 'addresses')) assert.match(row.address, /^0x[0-9a-f]{40}$/, `${entry.slug}: ${row.label}`);
+});
+
+test('previous and next walk the pages in sidebar order: nothing before the first, nothing after the last', () => {
+  DOC_PAGES.forEach((entry, index) => {
+    const { previous, next } = docs.docNeighbours(entry.slug);
+    assert.equal(previous?.slug ?? null, DOC_PAGES[index - 1]?.slug ?? null, `before ${entry.slug}`);
+    assert.equal(next?.slug ?? null, DOC_PAGES[index + 1]?.slug ?? null, `after ${entry.slug}`);
+  });
+  assert.equal(docs.docNeighbours(DOC_PAGES[0].slug).previous, null);
+  assert.equal(docs.docNeighbours(DOC_PAGES.at(-1).slug).next, null);
+  assert.deepEqual(docs.docNeighbours('constructor'), { previous: null, next: null });
+});
+
+test('titles are short, a summary is one line ending in a period, and every page stays short', (t) => {
+  assert.ok(docs.DOCS_HOME.summary.length <= 140 && docs.DOCS_HOME.summary.endsWith('.'));
+  for (const entry of DOC_PAGES) {
+    assert.ok(entry.title.length <= 40, `${entry.slug}: title`);
+    assert.ok(entry.summary.length <= 140, `${entry.slug}: summary is ${entry.summary.length} characters`);
+    assert.ok(entry.summary.endsWith('.'), `${entry.slug}: summary`);
+    if (entry.lead !== undefined) assert.ok(entry.lead.endsWith('.') && entry.lead !== entry.summary, `${entry.slug}: lead`);
+    for (const section of entry.sections) assert.ok(section.title.length <= 60, `${entry.slug}: ${section.title}`);
+    const words = textOf(entry).split(/\s+/).filter(Boolean).length;
+    t.diagnostic(`${entry.slug}: ${words} words`);
+    // 450: Non-custodial covers the partner's list and the setup operation; Figures, Domino history beside the provider and the estimate.
+    assert.ok(words <= (entry.slug === 'glossary' ? 600 : 450), `${entry.slug} has ${words} words`);
+  }
+});
+
+test('the docs source stays inside its budget in the entry bundle', (t) => {
+  const dir = join(APP, 'src/lib/docs');
+  const files = readdirSync(dir, { recursive: true }).map(String).filter((file) => file.endsWith('.ts')).sort();
+  assert.ok(files.length >= 8, files.join(', '));
+  const text = files.map((file) => readFileSync(join(dir, file), 'utf8')).join('\n');
+  const size = gzipSync(text, { level: 9 }).length;
+  t.diagnostic(`src/lib/docs: ${files.length} files, ${Buffer.byteLength(text)} bytes, ${size} bytes gzip (budget 24000)`);
+  assert.ok(size <= 24_000, `the docs source is ${size} bytes gzip, over the 24,000 byte budget: move the docs to a lazy chunk (docs-design.md 9.3)`);
+});

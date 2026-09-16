@@ -12,6 +12,28 @@ import { validateStatus } from './local-live-status.mjs'
 const DESTINATION = 'https://dev-read.domino.money'
 const CONTRACT = 'X-Domino-Read-Contract'
 const errorReply = (status, code, version) => ({ status, payload: { error: code }, headers: { [CONTRACT]: version } })
+const isRecord = (value) => value !== null && typeof value === 'object' && !Array.isArray(value)
+/** Every key of a read-v2 pool-market reply, and nothing else. */
+const ESTIMATE_REPLY_KEYS = ['chainId', 'estimate', 'executionAvailable', 'market', 'poolId', 'schemaVersion']
+/**
+ * A read-v2 pool-market reply this runtime refuses for its estimate alone, by
+ * the rule the app's estimateValidators apply (src/lib/read/estimateSource.ts):
+ * exactly the read-v2 envelope keys, schemaVersion 1, executionAvailable
+ * false, an estimate object, and a market part that passes read-v1 on its own,
+ * about the same pool and chain. A read service one release behind or ahead of
+ * this checkout sends it (the dev reader on 85e7511 answers
+ * protocol_fee_unsupported where this runtime derives an estimate). It goes to
+ * the app unchanged, whose tolerant path keeps the market figures without the
+ * estimate; any other refused reply stays refused.
+ */
+function refusedForEstimateOnly(payload) {
+  if (!isRecord(payload)) return false
+  const keys = Object.keys(payload).sort()
+  if (keys.length !== ESTIMATE_REPLY_KEYS.length || keys.some((name, index) => name !== ESTIMATE_REPLY_KEYS[index])) return false
+  if (payload.schemaVersion !== 1 || payload.executionAvailable !== false || !isRecord(payload.estimate)) return false
+  if (!validateResponse('pool-market', payload.market)) return false
+  return typeof payload.poolId === 'string' && payload.poolId.toLowerCase() === payload.market.poolId.toLowerCase() && payload.chainId === payload.market.chainId
+}
 function send(res, reply) {
   if (res.destroyed || res.writableEnded) return
   res.writeHead(reply.status, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store, no-transform', 'X-Content-Type-Options': 'nosniff', 'Content-Security-Policy': "default-src 'none'; frame-ancestors 'none'", ...reply.headers })
@@ -69,7 +91,11 @@ export function createLocalProxy({ credentials, statusSchema, fetchImpl = fetch,
         if (secrets.some((value) => JSON.stringify(payload).includes(value))) return error(502, 'upstream_invalid_response')
       } catch { return error(502, 'upstream_invalid_response') }
       if (response.headers.get(CONTRACT) !== version) return error(502, 'upstream_contract_mismatch')
-      const valid = response.status === 200 ? request.route === 'status' ? validateStatus(statusSchema, payload) : (request.version === 'v2' ? readV2.validateResponse : validateResponse)(request.route, payload) : validateError(response.status, payload)
+      const valid = response.status === 200
+        ? request.route === 'status' ? validateStatus(statusSchema, payload)
+          : request.version === 'v2' ? readV2.validateResponse(request.route, payload) || (request.route === 'pool-market' && refusedForEstimateOnly(payload))
+            : validateResponse(request.route, payload)
+        : validateError(response.status, payload)
       if (!valid) return error(502, 'upstream_invalid_response')
       if (request.version === 'v2' && request.route === 'pool-market' && response.status === 200 && payload.poolId !== JSON.parse(body).poolId) return error(502, 'upstream_invalid_response')
       if (request.route === 'capabilities' && response.status === 200 && payload.enabledReads.some((name) => !READS.includes(name))) return error(502, 'upstream_invalid_response')

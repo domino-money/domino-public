@@ -34,7 +34,8 @@ function amountFact(item: WalletItem): Fact {
   return { label: 'Balance', text: units.text, state: 'value' }
 }
 
-function inventoryNote(inventory: WalletAssetsResponse['inventory']): string {
+/** What the list's inventory says about itself; null when nothing true can be said in one sentence. */
+function inventoryNote(inventory: WalletAssetsResponse['inventory']): string | null {
   switch (inventory.status) {
     case 'not_configured':
       return 'Inventory discovery is not configured, so only the requested tokens are shown.'
@@ -43,7 +44,11 @@ function inventoryNote(inventory: WalletAssetsResponse['inventory']): string {
     case 'unavailable':
       return `Partial list: inventory unavailable (${reasonText(inventory.reason)}). Only the requested tokens are shown.`
     case 'page_received':
-      return inventory.hasMore ? 'One page of the provider’s inventory. More are available.' : 'All pages loaded.'
+      // A provider page lists what the provider indexes and nothing more (coverage
+      // provider_page_only), and a page of no rows can stand for an address that
+      // holds plenty. The last page ends the pages, never the holdings, so no
+      // sentence calls the list complete.
+      return inventory.hasMore ? 'One page of the provider’s inventory. More are available.' : null
     default:
       return inventory satisfies never
   }
@@ -53,10 +58,16 @@ export interface WalletRow {
   key: string
   token: TokenDisplay
   amount: Fact
+  /** The balance's raw integer, exactly as the payload has it. */
+  raw: string
   page: number
   /** Unix seconds this row's page was retrieved, as the payload says. */
   pageRetrievedAt: number
   old: boolean
+  /** A page of the list, or a by-address check made because a page skipped candidates. */
+  via: 'page' | 'address'
+  /** Snapshot block of the read that produced this row. */
+  block: number
 }
 
 export interface WalletView {
@@ -67,6 +78,16 @@ export interface WalletView {
   pages: number
   hasMore: boolean
   restarted: boolean
+  /**
+   * Provider candidates the service checked on this list's pages
+   * (InventoryPage.candidatesProbed, summed; reset on page 1), or null while
+   * no page has said: an older producer leaves the field out. Never rendered as text.
+   */
+  probed: number | null
+  /** Provider candidates the service skipped on this list's pages (InventoryPage.candidatesSkipped, summed; reset on page 1). Absent or null counts as none. Never rendered as text. */
+  skipped: number
+  /** Last non-null skippedReason of those pages: a closed contract code, for data attributes only. */
+  skippedReason: string | null
 }
 
 export interface Pager<V> {
@@ -75,7 +96,17 @@ export interface Pager<V> {
   view(): V
 }
 
-export function createWalletPager(source: ReadSource, request: WalletAssetsRequest): Pager<WalletView> {
+export interface WalletPager extends Pager<WalletView> {
+  /**
+   * Adds the held balances a by-address check (autoDiscover: false) found for
+   * `asked`: non-zero amounts only, for addresses asked about only. Never
+   * touches the handle, the notes, the freshness lines, the page count or the
+   * unavailable list. A later page that lists the same token replaces the row.
+   */
+  adopt(outcome: Extract<ReadOutcome<'wallet-assets'>, { state: 'ok' }>, asked: readonly string[]): WalletView
+}
+
+export function createWalletPager(source: ReadSource, request: WalletAssetsRequest): WalletPager {
   const base: WalletAssetsRequest = { ...request }
   delete base.cursor
   let cursor: OpaqueCursor | null = null
@@ -85,29 +116,59 @@ export function createWalletPager(source: ReadSource, request: WalletAssetsReque
   let unavailable: ItemView[] = []
   let notes: string[] = []
   let freshness: string[] = []
+  let probed: number | null = null
+  let skipped = 0
+  let skippedReason: string | null = null
 
-  const view = (): WalletView => ({ rows: [...rows.values()], unavailable, notes, freshness, pages, hasMore: cursor !== null, restarted })
+  const view = (): WalletView => ({ rows: [...rows.values()], unavailable, notes, freshness, pages, hasMore: cursor !== null, restarted, probed, skipped, skippedReason })
 
   function absorb(outcome: Extract<ReadOutcome<'wallet-assets'>, { state: 'ok' }>, page: number): number {
     const d = outcome.data
-    const retrievedAt = d.inventory.status === 'page_received' ? d.inventory.retrievedAt : d.snapshot.timestamp
+    const inventory = d.inventory
+    const retrievedAt = inventory.status === 'page_received' ? inventory.retrievedAt : d.snapshot.timestamp
+    if (page === 1) {
+      probed = null
+      skipped = 0
+      skippedReason = null
+    }
+    if (inventory.status === 'page_received') {
+      if (typeof inventory.candidatesProbed === 'number') probed = (probed ?? 0) + inventory.candidatesProbed
+      const here = inventory.candidatesSkipped ?? 0
+      if (here > 0) {
+        skipped += here
+        skippedReason = inventory.skippedReason ?? skippedReason
+      }
+    }
     let added = 0
     for (const item of d.items) {
       const key = identityKey(item.address)
       if (!rows.has(key) || rows.get(key)?.old) added += 1
-      rows.set(key, { key, token: tokenDisplay(item), amount: amountFact(item), page, pageRetrievedAt: retrievedAt, old: false })
+      rows.set(key, { key, token: tokenDisplay(item), amount: amountFact(item), raw: item.amountRaw, page, pageRetrievedAt: retrievedAt, old: false, via: 'page', block: d.snapshot.number })
     }
     unavailable = d.unavailableAssets.map((asset) => ({
       key: identityKey(asset.currency),
       title: { label: 'Token', text: '', state: 'unavailable', tokens: [unreadToken(asset.currency)] },
       facts: [{ label: 'Balance', text: `Unavailable: ${reasonText(asset.reason)}`, state: 'unavailable' }],
     }))
-    notes = [inventoryNote(d.inventory), 'Balances at the snapshot block. Not proof of wallet control.']
+    notes = [inventoryNote(inventory), 'Balances at the snapshot block. Not proof of wallet control.'].filter((note): note is string => note !== null)
     freshness = freshnessLines(outcome.observation)
-    const inventory = d.inventory
     cursor = inventory.status === 'page_received' && inventory.hasMore && inventory.nextCursor !== null ? (inventory.nextCursor as OpaqueCursor) : null
     pages = page
     return added
+  }
+
+  function adopt(outcome: Extract<ReadOutcome<'wallet-assets'>, { state: 'ok' }>, asked: readonly string[]): WalletView {
+    const d = outcome.data
+    const wanted = new Set(asked.map((address) => identityKey(address)))
+    for (const item of d.items) {
+      const key = identityKey(item.address)
+      // Only what was asked about, and only a balance someone holds: a zero or the native row adds nothing.
+      if (!wanted.has(key) || item.amountRaw === '0') continue
+      const existing = rows.get(key)
+      if (existing && !existing.old) continue
+      rows.set(key, { key, token: tokenDisplay(item), amount: amountFact(item), raw: item.amountRaw, page: Math.max(pages, 1), pageRetrievedAt: d.snapshot.timestamp, old: false, via: 'address', block: d.snapshot.number })
+    }
+    return view()
   }
 
   async function first(signal?: AbortSignal, deadlineAt?: number): Promise<PageStep<WalletView>> {
@@ -134,7 +195,7 @@ export function createWalletPager(source: ReadSource, request: WalletAssetsReque
     return { view: view(), failure: outcome, added: 0 }
   }
 
-  return { first, more, view }
+  return { first, more, view, adopt }
 }
 
 export interface CatalogueView {

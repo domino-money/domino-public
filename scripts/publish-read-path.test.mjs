@@ -31,3 +31,20 @@ test('does not turn an inactive or unknown v1 configuration on', () => {
   const unknown = settings(); unknown.bindings.find(binding => binding.name === 'ENABLED_READS').text = 'pool-market,new-operation'
   assert.throws(() => releaseVars(unknown), /existing enabled v1 reads/)
 })
+test('retains an existing v1 list that names the stored-data reads, exactly as it is', () => {
+  for (const reads of [
+    'token,pools,pool-market,wallet-assets,nft-positions,catalogue,pool-activity,markets-snapshot',
+    'token,pools,pool-market,wallet-assets,nft-positions,catalogue,pool-activity,pool-positions,pool-metrics',
+    'token,pools,pool-market,wallet-assets,nft-positions,catalogue,pool-activity,pool-positions,pool-metrics,markets-snapshot',
+  ]) {
+    const current = settings(); current.bindings.find(binding => binding.name === 'ENABLED_READS').text = reads
+    const next = releaseVars(current)
+    assert.equal(next.ENABLED_READS, reads, reads)
+    assert.equal(next.ENABLED_V2_READS, 'pool-market', reads)
+  }
+  // Still only read-v1's own routes: a name that is close is not one of them.
+  for (const reads of ['pool-market,pool-metric', 'pool-market,markets_snapshot', 'pool-market,capabilities']) {
+    const current = settings(); current.bindings.find(binding => binding.name === 'ENABLED_READS').text = reads
+    assert.throws(() => releaseVars(current), /existing enabled v1 reads/, reads)
+  }
+})

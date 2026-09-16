@@ -1,18 +1,19 @@
 import { useEffect, useRef, useState, type HTMLAttributes, type ReactNode } from 'react'
 import { formatUsdCompact } from '../../../lib/read/decimal'
-import { compactUsd, percentText, readNow, type Market, type Metric } from '../../../lib/markets'
+import { reasonText } from '../../../lib/read/describe'
+import { compactUsd, percentText, presentMetric, readNow, type Market, type Metric } from '../../../lib/markets'
 import { COPY, failureText } from '../../../lib/read/screens/copy'
-import { activityFacts, rowQualified, type ActivityFacts, type AttributedFigure } from '../../../lib/read/screens/figures'
+import { ACTIVITY_TOO_OLD, activityAge, activityFacts, activityStaleText, heldSeconds, type ActivityFacts, type AttributedFigure } from '../../../lib/read/screens/figures'
 import { useReadSource } from '../../../lib/read/screens/readContext'
-import { readWithin } from '../../../lib/read/screens/screenRead'
+import { askAgainLater, readWithin } from '../../../lib/read/screens/screenRead'
 import { useDialog } from '../../../lib/useDialog'
 import { IconClose } from '../../icons'
 import { TokenMarkPair } from '../../TokenIcon'
-import { Button, IconButton } from '../../ui'
+import { Button, IconButton, Skeleton } from '../../ui'
 import { TokenLabel } from '../TokenLabel'
 import { Address } from './Address'
+import { duration } from './PoolActivityCard'
 import { ProviderFigure } from './ProviderFigure'
-import { ScreenStatus, type StatusLine } from './ScreenStatus'
 import { PoolAprEstimate } from './PoolAprEstimate'
 import { PoolPriceChart } from './PoolPriceChart'
 
@@ -29,31 +30,59 @@ export function rowProviderFigure(metric: Metric, cacheAgeSeconds: number | null
   return null
 }
 
-type Activity = { kind: 'loading' } | { kind: 'ok'; facts: ActivityFacts } | { kind: 'failed'; line: StatusLine }
+/** Pool activity for the dialog: not listed, still reading, the facts with how old they were and when they came, or no answer and why. */
+type Activity =
+  | { kind: 'off' }
+  | { kind: 'loading' }
+  | { kind: 'ok'; facts: ActivityFacts; freshness: Parameters<typeof activityAge>[0]; received: { receivedAt: number; receivedMonotonic?: number } }
+  | { kind: 'failed'; code: string; reason: string }
 
-/** A titled panel inside the dialog. */
-function Panel({ id, title, children, ...rest }: { id: string; title: string; children: ReactNode } & HTMLAttributes<HTMLElement>) {
+/** A titled group inside the dialog. */
+function Panel({ id, heading, children, ...rest }: { id: string; heading: string; children: ReactNode } & HTMLAttributes<HTMLElement>) {
   return (
     <section aria-labelledby={id} className="dm-inset grid gap-2 p-4" {...rest}>
       <h3 id={id} className="text-body font-medium text-fg">
-        {title}
+        {heading}
       </h3>
       {children}
     </section>
   )
 }
 
+const Dash = ({ title }: { title?: string }) => (
+  <span className="text-fg-subtle" title={title}>
+    —
+  </span>
+)
+
+/** Domino's own 24h figure: its value when qualified, a dash with the reason when not. */
+function History({ metric, percent = false }: { metric: Metric | undefined; percent?: boolean }) {
+  if (!metric) return <Dash title="Unavailable: not in this row" />
+  // A provider's figure stands where Domino's did not qualify.
+  if (metric.source) return <Dash title={`Not qualified: the figure shown is ${metric.source}’s`} />
+  if (metric.state !== 'qualified') {
+    const shown = presentMetric(metric)
+    const why = shown.kind === 'value' ? (shown.stale ? 'Stale, not current' : 'Not qualified') : `${shown.kind === 'not_current' ? 'Not current' : 'Unavailable'}: ${reasonText(shown.reason)}`
+    return <Dash title={why} />
+  }
+  return <>{percent ? `${percentText(metric) ?? '—'}%` : compactUsd(metric)}</>
+}
+
 /**
  * A pool's figures on demand, from the Selected pools table. It opens with
- * what the row already read, and makes one pool-activity read for the pool's
- * age and coverage, only after the click. Provider figures are shown as the
- * provider's; Domino's qualified 24h figures only when pool-metrics says they
- * are usable as current; reference analytics folded away and marked not
- * current.
+ * what the row already read and, where pool-activity is listed, makes one
+ * pool-activity read for the pool's age and coverage, only after the click.
+ * Provider figures are shown as the provider's; Domino's 24h figures only
+ * when pool-metrics says they are usable as current, otherwise a dash with
+ * the reason in its title; reference analytics folded away and marked not
+ * current. Nothing in it says how a read went, and nothing is a caption.
  */
 export function PoolFiguresDialog({ market, onClose }: { market: Market; onClose: () => void }) {
   const source = useReadSource()
   const [activity, setActivity] = useState<Activity>({ kind: 'loading' })
+  // Quiet re-asks spent on this pool's activity; another pool starts from none.
+  const [asked, setAsked] = useState<{ key: string; attempt: number }>({ key: market.poolId, attempt: 0 })
+  const attempt = asked.key === market.poolId ? asked.attempt : 0
   const dialog = useDialog(true, onClose)
   const heading = useRef<HTMLHeadingElement>(null)
 
@@ -65,23 +94,48 @@ export function PoolFiguresDialog({ market, onClose }: { market: Market; onClose
   useEffect(() => {
     if (!source) return
     const controller = new AbortController()
-    void readWithin(source, 'pool-activity', { poolId: market.poolId }, { signal: controller.signal }).then((outcome) => {
-      if (controller.signal.aborted || outcome.state === 'aborted') return
-      setActivity(outcome.state === 'ok' ? { kind: 'ok', facts: activityFacts(outcome.data) } : { kind: 'failed', line: failureText(outcome, 'activity') })
-    })
+    const { signal } = controller
+    void (async () => {
+      // Only where the deployment lists pool-activity: a route that is off costs no read and shows no section.
+      const listed = source.routeEnabled ? await source.routeEnabled('pool-activity', { signal }).then((answer) => answer.state === 'enabled', () => false) : true
+      if (signal.aborted) return
+      if (!listed) return setActivity({ kind: 'off' })
+      const outcome = await readWithin(source, 'pool-activity', { poolId: market.poolId }, { signal })
+      if (signal.aborted || outcome.state === 'aborted') return
+      if (outcome.state === 'ok') {
+        const { receivedAt, receivedMonotonic } = outcome.provenance
+        return setActivity({ kind: 'ok', facts: activityFacts(outcome.data), freshness: outcome.data.freshness, received: { receivedAt, receivedMonotonic } })
+      }
+      const text = failureText(outcome, 'activity')
+      setActivity({ kind: 'failed', code: outcome.state === 'unavailable' && outcome.cause.kind === 'producer' ? outcome.cause.code : text.code, reason: [text.title, text.detail].filter(Boolean).join('. ') })
+      if (await askAgainLater(outcome, attempt, signal)) setAsked({ key: market.poolId, attempt: attempt + 1 })
+    })()
     return () => controller.abort()
-  }, [source, market.poolId])
+  }, [source, market.poolId, attempt])
 
   const cacheAge = market.provenance?.market.cacheAgeSeconds ?? null
   const liquidity = rowProviderFigure(market.tvlUsd, cacheAge)
   const volume = rowProviderFigure(market.volume24hUsd, cacheAge)
-  const qualified = rowQualified(market)
-  const reference = [
+  const qualified = [market.tvlUsd, market.volume24hUsd, market.feeAprPercent].some((metric) => metric.state === 'qualified')
+  // Domino's own 24h history carries two figures no provider reports: the LP fees and the time-weighted TVL the APR is worked out from.
+  const history: Array<[string, Metric | undefined]> = [
+    ['24h LP fees', market.lpFees24hUsd],
+    ['Time-weighted TVL', market.timeWeightedTvlUsd],
+  ]
+  const reference = ([
     ['TVL', market.tvlUsd],
     ['24h volume', market.volume24hUsd],
+    ...history,
     ['Fee APR', market.feeAprPercent],
-  ].filter(([, metric]) => (metric as Metric).state === 'reference') as Array<[string, Metric]>
-  const apr = percentText(market.feeAprPercent)
+  ] as Array<[string, Metric | undefined]>).filter((entry): entry is [string, Metric] => entry[1]?.state === 'reference')
+  const noProviderFigure = market.provenance ? `GeckoTerminal: ${market.provenance.market.status}${market.provenance.market.reason ? ` (${reasonText(market.provenance.market.reason)})` : ''}. No provider figure is shown for this row.` : 'No provider figures.'
+  // The pool's age and coverage count on while the dialog is open; a snapshot too far behind the chain gives neither.
+  const age = activity.kind === 'ok' ? activityAge(activity.freshness, heldSeconds(activity.received, readNow())) : null
+  const tooOld = age?.state === 'too_old'
+  const staleText = activity.kind === 'ok' && age ? activityStaleText(age, activity.facts.block) : null
+  const facts = activity.kind === 'ok' && !tooOld ? activity.facts : null
+  const activityReason = activity.kind === 'failed' ? activity.reason : (staleText ?? undefined)
+  const fact = (node: ReactNode) => (facts ? node : activity.kind === 'failed' || tooOld ? <Dash title={activityReason} /> : <Skeleton className="ml-auto h-4 w-16" />)
 
   return (
     <div role="presentation" className="dm-dialog-backdrop" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
@@ -101,43 +155,44 @@ export function PoolFiguresDialog({ market, onClose }: { market: Market; onClose
         <IconButton label="Close" icon={<IconClose />} variant="ghost" size="sm" className="dm-dialog-close" onClick={onClose} />
 
         <div className="grid gap-3">
-          <Panel id="figures-estimate" title="Estimated pool fee APR">
+          <Panel id="figures-estimate" heading="Estimated pool fee APR">
             <PoolAprEstimate observation={market.feeAprEstimate} now={readNow()} detailed />
           </Panel>
 
-          <Panel id="figures-qualified" title={qualified ? COPY.figures.qualified : COPY.figures.notQualified} data-figures-qualified={qualified ? 'yes' : 'no'}>
-            {qualified ? (
-              <dl className="grid gap-1 text-[13px] leading-[18px]">
-                <div className="flex justify-between gap-3">
-                  <dt className="text-fg-muted">TVL</dt>
-                  <dd className="tnum font-medium">{market.tvlUsd.state === 'qualified' ? compactUsd(market.tvlUsd) : 'Not qualified'}</dd>
+          <Panel id="figures-qualified" heading="Domino history, 24h" data-figures-qualified={qualified ? 'yes' : 'no'}>
+            <dl className="grid gap-1 text-[13px] leading-[18px]">
+              <div className="flex justify-between gap-3">
+                <dt className="text-fg-muted">TVL</dt>
+                <dd className="tnum font-medium"><History metric={market.tvlUsd} /></dd>
+              </div>
+              <div className="flex justify-between gap-3">
+                <dt className="text-fg-muted">24h volume</dt>
+                <dd className="tnum font-medium"><History metric={market.volume24hUsd} /></dd>
+              </div>
+              {history.map(([label, metric]) => (
+                <div key={label} className="flex justify-between gap-3">
+                  <dt className="text-fg-muted">{label}</dt>
+                  <dd className="tnum font-medium"><History metric={metric} /></dd>
                 </div>
-                <div className="flex justify-between gap-3">
-                  <dt className="text-fg-muted">24h volume</dt>
-                  <dd className="tnum font-medium">{market.volume24hUsd.state === 'qualified' ? compactUsd(market.volume24hUsd) : 'Not qualified'}</dd>
-                </div>
-                <div className="flex justify-between gap-3">
-                  <dt className="text-fg-muted">Pool APR</dt>
-                  <dd className="tnum font-medium">{market.feeAprPercent.state === 'qualified' && apr ? `${apr}%` : 'Not qualified'}</dd>
-                </div>
-              </dl>
-            ) : (
-              <p className="text-[13px] leading-[18px] text-fg-muted">{COPY.figures.notQualifiedDetail}</p>
-            )}
+              ))}
+              <div className="flex justify-between gap-3">
+                <dt className="text-fg-muted">Pool APR</dt>
+                <dd className="tnum font-medium"><History metric={market.feeAprPercent} percent /></dd>
+              </div>
+            </dl>
           </Panel>
 
-          <Panel id="figures-provider" title={COPY.figures.provider} data-figures-provider="">
+          <Panel id="figures-provider" heading={COPY.figures.provider} data-figures-provider="">
             {liquidity || volume ? (
               <>
                 {liquidity && <ProviderFigure label="Liquidity" figure={liquidity} full />}
                 {volume && <ProviderFigure label="24h volume" figure={volume} full />}
               </>
             ) : (
-              <p className="text-[13px] leading-[18px] text-fg-muted">
-                {market.provenance ? `GeckoTerminal: ${market.provenance.market.status}${cacheAge === null ? '' : `, cache ${cacheAge} s`}. No provider figure is shown for this row.` : 'No provider figures.'}
+              <p className="text-[13px] leading-[18px]" data-no-provider-figure="">
+                <Dash title={noProviderFigure} />
               </p>
             )}
-            <p className="text-caption text-fg-subtle">{COPY.figures.providerDetail}</p>
           </Panel>
 
           <PoolPriceChart market={market} />
@@ -145,42 +200,43 @@ export function PoolFiguresDialog({ market, onClose }: { market: Market; onClose
           {reference.length > 0 && (
             <details className="dm-details dm-inset" data-figures-reference="">
               <summary>{COPY.figures.reference}</summary>
-              <div className="grid gap-2">
-                <p className="text-caption text-fg-subtle">{COPY.figures.referenceDetail}</p>
-                <dl className="grid gap-1 text-[13px] leading-[18px]">
-                  {reference.map(([label, metric]) => (
-                    <div key={label} className="flex justify-between gap-3">
-                      <dt className="text-fg-muted">{label}</dt>
-                      <dd className="tnum">Not current: {label === 'Fee APR' ? `${percentText(metric) ?? 'Unavailable'}%` : compactUsd(metric)}</dd>
-                    </div>
-                  ))}
-                </dl>
-              </div>
+              <dl className="grid gap-1 text-[13px] leading-[18px]">
+                {reference.map(([label, metric]) => (
+                  <div key={label} className="flex justify-between gap-3">
+                    <dt className="text-fg-muted">{label}</dt>
+                    <dd className="tnum">Not current: {label === 'Fee APR' ? `${percentText(metric) ?? 'Unavailable'}%` : compactUsd(metric)}</dd>
+                  </div>
+                ))}
+              </dl>
             </details>
           )}
 
-          <Panel id="figures-activity" title={COPY.figures.activity} data-figures-activity={activity.kind}>
-            <ScreenStatus line={activity.kind === 'loading' ? { code: 'loading', title: COPY.figures.activityLoading, detail: '' } : activity.kind === 'failed' ? activity.line : null} />
-            {activity.kind === 'ok' && (
-              <div className="grid gap-1 text-[13px] leading-[18px]" data-pool-age={activity.facts.age?.seconds ?? 'covered'}>
-                {activity.facts.age ? (
-                  <p>Pool is {activity.facts.age.seconds} s old; the 24h window isn’t complete, so no full-window figure applies.</p>
-                ) : (
-                  <p>The 24h window is covered ({activity.facts.observedSeconds} s observed).</p>
-                )}
-                <p className="text-fg-muted">
-                  Verified since initialize at block {activity.facts.initializedBlock}; {activity.facts.swaps} swap event{activity.facts.swaps === 1 ? '' : 's'} in the window; fee accounting{' '}
-                  {activity.facts.feeAccounting}.
-                </p>
-                <p className="tnum text-caption text-fg-subtle">
-                  Block {activity.facts.block}
-                  {activity.facts.stale ? ' · stale' : ''}
-                </p>
-              </div>
-            )}
-          </Panel>
-
-          <p className="text-caption text-fg-subtle">{COPY.figures.caveat}</p>
+          {activity.kind !== 'off' && (
+            <Panel
+              id="figures-activity"
+              heading={COPY.figures.activity}
+              data-figures-activity={tooOld ? 'unavailable' : activity.kind}
+              data-activity-reason={activity.kind === 'failed' ? activity.code : tooOld ? ACTIVITY_TOO_OLD : undefined}
+              data-pool-age={facts ? (facts.age?.seconds ?? 'covered') : undefined}
+              title={activityReason}
+            >
+              <p role="status" className="sr-only">{activity.kind === 'loading' ? COPY.figures.activityLoading : activity.kind === 'failed' || tooOld ? activityReason : ''}</p>
+              {facts ? (
+                <div className="grid gap-1 text-[13px] leading-[18px]">
+                  {facts.age ? (
+                    <p>Pool is {duration(facts.age.seconds)} old; the 24h window isn’t complete, so no full-window figure applies.</p>
+                  ) : (
+                    <p>The 24h window is covered ({facts.observedSeconds} s observed).</p>
+                  )}
+                  <p className="text-fg-muted">
+                    Verified since initialize at block {facts.initializedBlock}; {facts.swaps} swap event{facts.swaps === 1 ? '' : 's'} in the window; fee accounting {facts.feeAccounting}.
+                  </p>
+                </div>
+              ) : (
+                <p className="text-[13px] leading-[18px]">{fact(null)}</p>
+              )}
+            </Panel>
+          )}
         </div>
 
         <div className="flex justify-end pt-1">

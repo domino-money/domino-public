@@ -66,6 +66,7 @@
     "src/lib/read/screens/delayedSource.ts",
     "src/lib/read/screens/appScript.ts",
     "src/lib/read/screens/appMarkets.ts",
-    "src/lib/create/journey.ts"
+    "src/lib/create/journey.ts",
+    "src/lib/docs/registry.ts"
   ]
 }

@@ -3,7 +3,13 @@
  *
  * Rules it keeps (C38, INV-1 to INV-8, E-1 to E-6):
  *   - A request is sent only when the user asks, from a ready, expired or
- *     retryable failed state, within the budget and outside a cooldown.
+ *     retryable failed state, within the budget and outside a cooldown. On the
+ *     lab screen the user asks with Get preview. On a product screen, which has
+ *     no such button, intent.ts asks on the person's behalf: when they open the
+ *     figures (Setup's swap quote: only for a request not asked yet), when they
+ *     change what would be sent while those are open, or when a sign-in
+ *     finishes an intent that waited for it. Never on a timer, at expiry, after
+ *     a failure, or when the budget or a cooldown lifts.
  *   - Any change of the inputs, or of the session (account, network, sign-out,
  *     a new server session, a denial), aborts what is in flight and drops the
  *     preview at once. A late answer is recognised by its sequence number and

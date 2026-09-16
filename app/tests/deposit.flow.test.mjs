@@ -11,7 +11,7 @@ import { test } from 'node:test';
 import { build, depositRuntime as runtime, depositSource, fakePort, fixtureText, flush } from './support/consumer-fakes.mjs';
 import { FIXTURES } from './support/session-fixtures.mjs';
 
-const { createDepositFlow } = build('deposit/flow');
+const { createDepositFlow, blockingOperation } = build('deposit/flow');
 const { createDepositClient } = build('deposit/client');
 const { createFixtureTransport, reply } = build('deposit/fixtureTransport');
 const { createMemory, inMemoryBackend } = build('deposit/memory');
@@ -290,9 +290,51 @@ test('owner busy points at the blocking operation and offers nothing else (T17)'
   await settle();
   await h.act('prepare');
   assert.equal(h.state().blockerId, '00000000-0000-4000-8000-000000000050');
+  assert.equal(blockingOperation(h.state().items, OPERATION_ID)?.id, '00000000-0000-4000-8000-000000000050', 'the same rule a create refusal uses');
+  assert.equal(blockingOperation(h.state().items, '00000000-0000-4000-8000-000000000050'), null, 'an operation never blocks itself');
   assert.equal(h.count('prepare'), 1);
   await h.act('open', { id: h.state().blockerId });
   assert.equal(h.state().current.op.id, '00000000-0000-4000-8000-000000000050');
+});
+
+test('a failed call the page made on its own is marked automatic, a user action is not; a switched-off service is never described as a deployment', async () => {
+  const booted = async (script) => {
+    const session = createFixtureSessionPort();
+    const fixture = createFixtureTransport({ csrf: FIXTURE_CSRF });
+    script(fixture);
+    const flow = createDepositFlow({ client: createDepositClient({ transport: fixture, runtime, session }), session, memory: createMemory(inMemoryBackend()), clock: createFixtureClock({ wallMs: WALL_2027 }), handoff: DISABLED_WALLET_HANDOFF });
+    flow.start();
+    await settle();
+    return { flow, fixture };
+  };
+  const scripts = {
+    'route_not_available': (fixture) => fixture.script('list', reply(404, { error: 'route_not_available' })),
+    'no Worker route': (fixture) => fixture.script('list', reply(404, 'not found', { contract: null, contentType: 'text/plain' })),
+    'a boot reconcile': (fixture) => {
+      fixture.script('list', reply(200, listBody([withoutStep(JSON.parse(fixtureText('deposit-v1', 'variants/mint.json'))).operation])));
+      fixture.script('reconcile', reply(runtime.ERROR_STATUS_BY_CODE.deposit_reconciliation_unavailable, { error: 'deposit_reconciliation_unavailable' }));
+    },
+  };
+  for (const [label, script] of Object.entries(scripts)) {
+    const { flow, fixture } = await booted(script);
+    const { phase, notice } = flow.getState();
+    assert.deepEqual([phase, notice.automatic], ['ready', true], label);
+    assert.doesNotMatch(notice.text, /enabled|deployment|beta/i, label);
+    assert.equal(fixture.calls('prepare').length + fixture.calls('create').length, 0, label);
+  }
+  assert.equal((await booted(scripts.route_not_available)).flow.getState().items.length, 0, 'the list stays empty, nothing else');
+  const foreign = lab('foreign-list');
+  await settle();
+  assert.equal(foreign.state().notice.automatic, true, 'a boot list about another owner');
+  const acted = lab('admission-denied');
+  await settle();
+  assert.equal(acted.state().notice, null);
+  await acted.act('prepare');
+  assert.equal(acted.state().notice.automatic, false, 'a refused prepare is said in words');
+  const conflict = lab('version-conflict');
+  await settle();
+  await conflict.act('cancel');
+  assert.equal(conflict.state().notice.automatic, false, 'the get after a user conflict belongs to the action');
 });
 
 test('owner binding at boot: a foreign remembered operation is forgotten silently; opened by hand it is refused (DC-7, DF-13)', async () => {

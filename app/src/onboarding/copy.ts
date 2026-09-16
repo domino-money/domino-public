@@ -1,6 +1,15 @@
 /**
- * Every sentence the preview screen says. Enums reach the screen only through
- * these maps, never as raw server text.
+ * Every sentence the lab's preview screen (#/live-preview, consumer-test build
+ * only) says. Enums reach the screen only through these maps, never as raw
+ * server text.
+ *
+ * Lab-only wording: the eligibility and failure sentences below name the beta
+ * and this build's deployment, which only the invited testers' lab may say.
+ * No product screen imports this module. The product's preview words live
+ * with the screens that show them: New position's deposit amounts in
+ * lib/create/copy.ts (CREATE.balance), Setup's swap quote in onboarding/swap.ts
+ * and components/preview/SwapQuote.tsx. tests/consumer.bundle.test.mjs checks
+ * that none of these lab sentences reaches the build that deploys.
  */
 import type { UnavailableDetail } from './client'
 import type { EligibilityBlock } from './controller'

@@ -27,9 +27,10 @@ export class ConsumerBoundary extends Component<{ children: ReactNode }, { faile
   }
 }
 
+/** An unknown value in normal type, never a warning colour; its reason is also its title. */
 export function Unknown({ reason }: { reason: string }) {
   return (
-    <span className="text-money-wait">
+    <span title={reason} data-unknown="">
       <span className="font-medium">Unknown</span>
       <span className="text-fg-muted">: {reason}</span>
     </span>

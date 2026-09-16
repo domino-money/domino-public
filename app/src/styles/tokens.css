@@ -5,6 +5,7 @@
 @import './pool.css';     /* pool: chart card, stat strip specifics */
 @import './flow.css';     /* new position: step list */
 @import './account.css';  /* positions, automate, settings, rugged screens */
+@import './docs.css';     /* docs: #/docs layout, sidebar, prose, on-this-page */
 
 @custom-variant dark (&:is(.dark *));
 
@@ -298,13 +299,6 @@
     scroll-margin-top: calc(var(--header-h) + 16px);
   }
 
-  /* Token card mark only: a slow float. The element sets --dx, --dy, --dur and --delay. */
-  .dm-float {
-    animation: dm-float var(--dur, 22s) ease-in-out infinite;
-    animation-delay: var(--delay, 0s);
-    will-change: transform;
-  }
-
   /* Seamless marquee: the track holds two copies of the same list. */
   .dm-marquee {
     animation: dm-marquee var(--dur, 60s) linear infinite;
@@ -438,11 +432,4 @@
 @keyframes dm-marquee {
   from { transform: translate3d(0, 0, 0); }
   to { transform: translate3d(-50%, 0, 0); }
-}
-
-@keyframes dm-float {
-  0% { transform: translate3d(0, 0, 0); }
-  33% { transform: translate3d(var(--dx, 14px), var(--dy, -18px), 0); }
-  66% { transform: translate3d(calc(var(--dx, 14px) * -0.6), calc(var(--dy, -18px) * 0.5), 0); }
-  100% { transform: translate3d(0, 0, 0); }
 }
