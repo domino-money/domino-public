@@ -231,7 +231,8 @@ def _reject_json_constant(value):
     raise ValueError('nonfinite_json_number')
 
 
-def json_http(url, body=None, *, timeout=12, opener=_JSON_OPENER, headers=None):
+def json_http(url, body=None, *, timeout=12, opener=_JSON_OPENER, headers=None,
+              max_bytes=MAX_RESPONSE_BYTES):
     try:
         parsed = urlsplit(url)
         valid = (parsed.scheme == 'https' and parsed.hostname and not parsed.fragment
@@ -260,12 +261,12 @@ def json_http(url, body=None, *, timeout=12, opener=_JSON_OPENER, headers=None):
                 read = getattr(response, 'read1', response.read)
                 while True:
                     deadline.remaining()
-                    chunk = read(min(64 * 1024, MAX_RESPONSE_BYTES + 1 - size))
+                    chunk = read(min(64 * 1024, max_bytes + 1 - size))
                     deadline.remaining()
                     if not chunk:
                         break
                     size += len(chunk)
-                    if size > MAX_RESPONSE_BYTES:
+                    if size > max_bytes:
                         raise DataError('response_too_large')
                     chunks.append(chunk)
             return json.loads(b''.join(chunks), parse_float=Decimal,

@@ -4,7 +4,7 @@ from dataclasses import asdict
 from catalogue import checked_key, pool_lock_key
 from catalogue_indexer import CatalogueIndexer, INITIALIZE_TOPIC
 from discovery import POOL_MANAGER, STATE_VIEW, DataError, bytes32
-from indexer_io import MAX_INDEXER_SPAN, read_headers
+from indexer_io import MAX_CHUNK_EVENTS, MAX_INDEXER_SPAN, read_headers
 from pool_activity import (TOPICS, active_liquidity, activity_range_limit,
                            decode_activity, replay, valid_price, protocol_directions)
 
@@ -123,7 +123,7 @@ class ActivityIndexer:
                 raise DataError('activity_snapshot_reorganized')
             logs=self.rpc.request('eth_getLogs',[{'address':POOL_MANAGER,'topics':[TOPICS,pool_id],
                                                  'fromBlock':hex(start),'toBlock':hex(end)}])
-            if not isinstance(logs,list) or len(logs)>2000:
+            if not isinstance(logs,list) or len(logs)>MAX_CHUNK_EVENTS:
                 raise DataError('activity_log_budget_exhausted')
             events,seen=[],{}
             decoded=[]

@@ -7,7 +7,7 @@ from eth_hash.auto import keccak
 from discovery import (CHAIN_ID, POOL_MANAGER, DataError, ReadRpc, PoolKey,
                        address, bytes32, quantity, parse_block, decode_result)
 from catalogue import PgCatalogue
-from indexer_io import MAX_INDEXER_SPAN, indexer_transport, read_headers
+from indexer_io import MAX_CHUNK_EVENTS, MAX_INDEXER_SPAN, indexer_transport, read_headers
 from discovery import Block
 
 INITIALIZE_TOPIC = '0x' + keccak(b'Initialize(bytes32,address,address,uint24,int24,address,uint160,int24)').hex()
@@ -158,7 +158,7 @@ class CatalogueIndexer:
                 raise DataError('missing_pool_manager')
             raw = self.rpc.request('eth_getLogs',[{'address':POOL_MANAGER,'topics':[INITIALIZE_TOPIC],
                                    'fromBlock':hex(start),'toBlock':hex(end)}])
-            if not isinstance(raw,list) or len(raw)>2000:
+            if not isinstance(raw,list) or len(raw)>MAX_CHUNK_EVENTS:
                 raise DataError('invalid_logs_response')
             events, identities, decoded = [], {}, []
             for log in raw:

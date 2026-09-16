@@ -21,19 +21,26 @@ INDEXER_REQUEST_TIMEOUT = 30
 # 8 and 2.2 s in envelopes of 200, so the indexer uses large envelopes while the
 # browser-facing read path keeps its own smaller cap.
 INDEXER_BATCH_ITEMS = 100
+# A dense factory burst can put thousands of Initialize events in one chunk; the
+# indexer reads them while the browser-facing path keeps its 2 MB ceiling.
+INDEXER_MAX_RESPONSE_BYTES = 32_000_000
+# Events one chunk may carry; the byte cap above is the real memory bound.
+MAX_CHUNK_EVENTS = 20_000
 # Design ceiling for one indexer chunk. Alchemy Robinhood answered a filtered
 # range of 100k blocks in ~4 s and rejected 1M blocks outright, so the useful
 # range is bounded by response size, not by this number.
 MAX_INDEXER_SPAN = 100_000
 
 
-def indexer_transport(seconds=90, request_timeout=INDEXER_REQUEST_TIMEOUT):
+def indexer_transport(seconds=90, request_timeout=INDEXER_REQUEST_TIMEOUT,
+                      max_bytes=INDEXER_MAX_RESPONSE_BYTES):
     parent = current_read_deadline()
     deadline = ReadDeadline(seconds, parents=(parent,) if parent else ())
 
     def transport(url, body=None):
         with use_read_deadline(deadline) as active:
-            return json_http(url, body, timeout=active.timeout(request_timeout))
+            return json_http(url, body, timeout=active.timeout(request_timeout),
+                             max_bytes=max_bytes)
     return transport
 
 
