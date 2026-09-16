@@ -132,6 +132,17 @@ class PoolRequestStoreTests(unittest.TestCase):
         self.assertIn(OTHER,self.requests.retry(OTHER))
         self.assertEqual(self.requests.status(OTHER)['status'],'queued')
 
+    def test_the_worker_rotates_instead_of_starving_the_queue(self):
+        """A long backfill at the front must not monopolise the worker."""
+        pools=['0x'+f'{index:02x}'*32 for index in (1,2,3)]
+        for pool in pools: self.requests.enqueue(pool)
+        first=self.requests.claim(limit=2)
+        self.assertEqual([row['pool_id'] for row in first],pools[:2])
+        for row in first:
+            self.requests.record(row['pool_id'],'indexing')
+        second=self.requests.claim(limit=2)
+        self.assertEqual([row['pool_id'] for row in second],[pools[2],pools[0]])
+
     def test_invalid_arguments_are_refused(self):
         with self.assertRaises(DataError): self.requests.enqueue('0x00')
         with self.assertRaises(DataError): self.requests.enqueue(POOL,reason='guessing')

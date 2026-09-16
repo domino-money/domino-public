@@ -72,22 +72,24 @@ class PgRequests:
     def claim(self, *, limit=1, stale_seconds=STALE_CLAIM_SECONDS):
         """Reserve up to `limit` requests for this worker without blocking peers.
 
-        A worker that dies mid-pool leaves its row in `registering`; that claim
-        is stale after `stale_seconds` and becomes claimable again, so a crash
-        cannot strand a request forever.
+        Ordering is least-recently-served first: a long backfill at the front of
+        a strict queue would starve every pool behind it, and the claim stamp
+        moves on each claim, so the worker rotates through the queue. A worker
+        that dies mid-pool leaves its row in `registering`; that claim is stale
+        after `stale_seconds` and becomes claimable again.
         """
         if type(limit) is not int or not 1 <= limit <= 64:
             raise DataError('invalid_pool_request_claim')
         if type(stale_seconds) is not int or not 1 <= stale_seconds <= 86400:
             raise DataError('invalid_pool_request_claim')
         with self._connection(WRITER_ROLE) as conn:
-            rows = conn.execute('''UPDATE domino_activity.pool_requests SET status='registering',
+            rows = conn.execute("""UPDATE domino_activity.pool_requests SET status='registering',
               attempts=attempts+1,updated_at=clock_timestamp()
               WHERE pool_id IN (SELECT pool_id FROM domino_activity.pool_requests
                 WHERE status=ANY(%s) AND (status<>'registering' OR
                   updated_at<clock_timestamp()-(%s*interval '1 second'))
-                ORDER BY requested_at FOR UPDATE SKIP LOCKED LIMIT %s)
-              RETURNING pool_id,reason,status,attempts''',
+                ORDER BY updated_at,requested_at FOR UPDATE SKIP LOCKED LIMIT %s)
+              RETURNING pool_id,reason,status,attempts""",
               (list(CLAIMABLE), stale_seconds, limit)).fetchall()
             return [dict(row) for row in rows]
 
