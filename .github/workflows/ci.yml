@@ -34,6 +34,7 @@ jobs:
           python3 -B -m unittest discover -s scripts/staging/tests -p test_dev_egress_policy.py -v
           python3 -B -m unittest discover -s scripts/staging/tests -p test_dev_network_off.py -v
           python3 -B -m unittest discover -s scripts/staging/tests -p test_dev_enable.py -v
+          python3 -B -m unittest discover -s scripts/staging/tests -p test_continuous_egress_write.py -v
       - name: Check disabled bridge deployment candidates
         run: |
           python3 scripts/staging/check_bridge_configs.py
