@@ -143,6 +143,7 @@ def create_database(name):
         if conn.execute("SELECT to_regclass('domino_execution.journal') IS NULL").fetchone()[0]:
             conn.execute((ROOT/'migrations/019_execution_journal.sql').read_text())
         conn.execute((ROOT/'migrations/020_pool_requests.sql').read_text())
+        conn.execute((ROOT/'migrations/021_reference_price_sources.sql').read_text())
 
 
 
