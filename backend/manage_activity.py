@@ -327,6 +327,7 @@ def main():
                     results.append({'poolId':pool_id,'status':status,'reason':reason})
             print(json.dumps({'schemaVersion':1,'mode':'pool_request_worker','chainId':4663,
                               'targetBlock':target,'searchFromBlock':search_from,
+                              'headerCalls':header_budget.calls,'headerBudget':args.max_header_calls,
                               'pools':results,'liveExecution':False}))
             return 0 if all(item['status']!='blocked' for item in results) else 1
         if args.register:
@@ -388,6 +389,7 @@ def main():
             report={'schemaVersion':1,'mode':'core_pool_activity_follower','chainId':4663,
                     'capacityProfile':args.capacity_profile,'readFreshnessSeconds':READ_FRESHNESS_SECONDS,
                     'span':span.as_dict(),'parallelWalks':args.parallel_walks,
+                    'headerCalls':header_budget.calls,'headerBudget':args.max_header_calls,
                     'follow':summary,'financialTransaction':False}
             if args.output is not None:write_report(args.output,report)
             else:print(json.dumps(report))
