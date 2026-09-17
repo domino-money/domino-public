@@ -139,6 +139,32 @@ After the separate service roots and PostgreSQL are provisioned, start only the 
 
 The disabled installer provides units with these actual commands, fixed working directories, one process each, restrictive umask, limited restart frequency, graceful shutdown and exact writable runtime paths. Code and the shared locked virtual environment remain deployment-owned. The units contain no credentials or `--enable`, and initially deny non-loopback IP traffic. Verify the installed units, peer-role matrix, positive/negative HTTP cases and restart behavior before calling the private preparation complete. A later enable step must supply the missing reviewed configuration and update the network policy explicitly; it is not an automatic restart side effect.
 
+### Stop and restore the read path through its target, never through its members
+
+`domino-continuous-reads.target` **requires** `domino-read.service`, `domino-gateway.service`, `domino-continuous-egress.service` and `domino-tunnel.service`. The tunnel is `PartOf=` that target and `UnitFileState=static`: it has no `[Install]` section, so it cannot be enabled on its own and nothing else will ever pull it up.
+
+That dependency is deliberately **one-way**. Stopping any required member collapses the target, and the collapse propagates back down to the tunnel. Starting that member again does **not** start the target, so the tunnel stays down. Restore is not the symmetric opposite of stop:
+
+```sh
+# Takes the whole read path down, tunnel included.
+sudo systemctl stop domino-gateway.service domino-read.service
+
+# Restores all four. Idempotent for members already running.
+sudo systemctl start domino-continuous-reads.target
+```
+
+Always check the target, not the individual services, before concluding the path is healthy:
+
+```sh
+systemctl is-active domino-continuous-reads.target domino-read.service \
+  domino-gateway.service domino-continuous-egress.service domino-tunnel.service
+curl -s --max-time 5 127.0.0.1:20241/metrics | grep '^cloudflared_tunnel_ha_connections'
+```
+
+`cloudflared_tunnel_ha_connections` reaching 4 is the connector's own proof that it registered with the edge; unit state alone does not show it. A reader answering `/health` with 200 while that counter is absent means the backend is alive and the public path is not.
+
+On 2026-09-15T02:05:20Z a debugging session stopped gateway and read, which took the target and the tunnel with them. The two services were started individually at 02:33:02Z and looked healthy; the tunnel stayed down until 2026-09-17T17:25Z, so every public pool figure rendered as a dash for 63 hours. Three of four units running is the failure mode this section exists to prevent.
+
 ## 7. Handoff and staging activation evidence
 
 The implementing collaborator records the pinned producer and consumer/Worker commits, `read-v1` and `session-v1` manifests/digests, exact route/port mapping, safe error fixtures, method/body limits, relevant checks and recovery procedure. Any authorized collaborator may supply or update both the backend and Cloudflare configuration; no named-person handoff or acknowledgement is required.
