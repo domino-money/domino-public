@@ -160,6 +160,10 @@ class ActivityFollowerCliTests(unittest.TestCase):
         activity_tests.ActivityPostgresTests.setUp(self)
         self.rpc=activity_tests.ActivityRpc()
         self.store=PgActivity(self.catalogue)
+        # The queue is this class's own fixture; the shared activity setUp
+        # predates it and would leave another test's request to be claimed.
+        with psycopg.connect(**self.catalogue.settings,user=ADMIN) as conn:
+            conn.execute('TRUNCATE domino_activity.pool_requests')
 
     def patches(self,reader):
         return [patch.object(manage_activity,'configured_writer_catalogue',return_value=self.catalogue),

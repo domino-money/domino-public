@@ -21,6 +21,7 @@ ALTER TABLE domino_activity.price_observations
   AND octet_length(provenance::text)<=4096
   AND provenance->>'status'='external_market_reference_unqualified'
   AND provenance->>'mappingVersion'='1'
+  AND provenance->>'decimals' ~ '^[0-9]{1,3}$'
   AND provenance->>'robinhoodCurrency'=currency
   AND provenance->>'pointTimestampSemanticsQualified'='false'
   AND provenance->>'targetPoolIndependenceVerified'='false'

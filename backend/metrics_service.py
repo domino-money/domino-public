@@ -47,6 +47,13 @@ def stored_metrics(catalogue, pool_id):
                     valuation = value_window(window, series, pool_id)
                 except DataError as error:
                     valuation = unavailable_valuation(str(error))
+                if valuation['status'] == 'unavailable':
+                    # The strict registry is empty and stays empty. The labelled
+                    # reference path answers only here, and only when both
+                    # currencies have a mapped series covering the window.
+                    reference = reference_valuation(conn, window, currencies, pool_id)
+                    if reference is not None:
+                        valuation, evidence = reference
         return {'schemaVersion': 1, 'mode': 'historical_pool_metrics_read_only', 'chainId': 4663,
                 'poolId': pool_id, 'poolKey': row['pool_key'], 'snapshot': tail['state_snapshot'],
                 'revision': row['revision'], 'capital': capital, 'prices': evidence, 'valuation': valuation,
@@ -56,6 +63,25 @@ def stored_metrics(catalogue, pool_id):
 
 CAPITAL_INCOMPLETE = frozenset({'reconciled_position_tail_required', 'capital_ledger_not_caught_up',
                                'capital_window_budget_exhausted'})
+
+
+def reference_valuation(conn, window, currencies, pool_id):
+    """The exchange-mapped reference valuation, or None when it cannot answer.
+
+    Its output carries `reference_analytics_only`; a caller that shows it must
+    keep that label, the mapping and the provider cadence visible.
+    """
+    from reference_prices import stored_reference_series
+    try:
+        series, evidence = [], []
+        for currency in currencies:
+            loaded, diagnostic = stored_reference_series(conn, currency=currency, target_pool=pool_id,
+                                                         start=window['start'], end=window['end'],
+                                                         currencies=currencies)
+            series.append(loaded); evidence.append(diagnostic)
+        return value_window(window, series, pool_id), evidence
+    except DataError:
+        return None
 
 
 def unavailable_valuation(reason):

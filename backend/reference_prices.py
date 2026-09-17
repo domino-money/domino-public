@@ -13,8 +13,9 @@ one dollar.
 from dataclasses import dataclass
 import time
 
-from discovery import CHAIN_ID, DataError, address, json_http
-from price_history import MAX_PRICE_ROWS, MAX_PRICE_WINDOW_SECONDS, iso, timestamp, usd
+from discovery import CHAIN_ID, DataError, address, bytes32, json_http
+from price_history import (MAX_PRICE_ROWS, MAX_PRICE_WINDOW_SECONDS, PriceSeries, iso,
+                           timestamp, usd)
 
 ALCHEMY_SOURCE = 'alchemy_canonical_market_reference_v1'
 COINGECKO_SOURCE = 'coingecko_market_chart_reference_v1'
@@ -39,6 +40,7 @@ class CanonicalMapping:
     reference: dict
     evidence: str
     provider: str
+    decimals: int
 
     def __post_init__(self):
         address(self.currency)
@@ -46,6 +48,8 @@ class CanonicalMapping:
             raise DataError('invalid_reference_provider')
         if not isinstance(self.evidence, str) or not 1 <= len(self.evidence) <= 300:
             raise DataError('invalid_reference_evidence')
+        if type(self.decimals) is not int or not 0 <= self.decimals <= 255:
+            raise DataError('invalid_reference_decimals')
         reference = self.reference
         if not isinstance(reference, dict):
             raise DataError('invalid_reference_identity')
@@ -66,18 +70,21 @@ MAPPINGS = {
     '0x0bd7d308f8e1639fab988df18a8011f41eacad73': CanonicalMapping(
         currency='0x0bd7d308f8e1639fab988df18a8011f41eacad73',
         provider='alchemy',
+        decimals=18,
         reference={'kind': 'canonical_ethereum_address', 'network': 'eth-mainnet',
                    'address': '0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2'},
         evidence='reports/price-source-candidates-2026-09-13.json canonical WETH probe'),
     '0x5fc5360d0400a0fd4f2af552add042d716f1d168': CanonicalMapping(
         currency='0x5fc5360d0400a0fd4f2af552add042d716f1d168',
         provider='alchemy',
+        decimals=6,
         reference={'kind': 'canonical_ethereum_address', 'network': 'eth-mainnet',
                    'address': '0xe343167631d89b6ffc58b88d6b7fb0228795491d'},
         evidence='reports/price-source-candidates-2026-09-13.json canonical USDG probe'),
     '0xab35d04e1ee39c789c4a65d522417b3c7f2e4723': CanonicalMapping(
         currency='0xab35d04e1ee39c789c4a65d522417b3c7f2e4723',
         provider='coingecko',
+        decimals=18,
         reference={'kind': 'coingecko_coin_id', 'coinId': 'jt-marlin'},
         evidence='reports/price-source-candidates-2026-09-13.json MARLIN address mapping'),
 }
@@ -94,7 +101,8 @@ def mapping_for(currency, *, provider=None):
 
 
 def provenance(mapping):
-    return {'provider': mapping.provider, 'status': STATUS, 'mappingVersion': MAPPING_VERSION,
+    return {'provider': mapping.provider, 'decimals': mapping.decimals, 'status': STATUS,
+            'mappingVersion': MAPPING_VERSION,
             'intervalSeconds': INTERVAL_SECONDS, 'robinhoodCurrency': mapping.currency,
             'reference': dict(mapping.reference), 'evidence': mapping.evidence,
             'pointTimestampSemanticsQualified': False, 'targetPoolIndependenceVerified': False}
@@ -179,6 +187,75 @@ def coingecko_observations(reference, mapping, *, retrieved_at):
     return [rows[key] for key in sorted(rows)]
 
 
+REFERENCE_MAX_AGE_SECONDS = 2 * INTERVAL_SECONDS
+
+
+@dataclass(frozen=True)
+class ReferenceQualification:
+    """The binding a reference series needs, without touching the strict registry."""
+
+    currency: str
+    decimals: int
+    target_pool: str
+    evidence: str
+    start: int
+    end: int
+    currencies: tuple
+    source: str
+    max_age: int = REFERENCE_MAX_AGE_SECONDS
+    reference_only: bool = True
+
+
+def stored_reference_series(conn, *, currency, target_pool, start, end, currencies):
+    """Build the retrospective reference series for one pool currency.
+
+    The qualification is explicit and local: the mapping is the one recorded in
+    this module, the source is that mapping's provider, and the tolerance is one
+    missed grid point. Nothing here consults or extends
+    `PRODUCTION_QUALIFICATIONS`.
+    """
+    from psycopg.rows import dict_row  # noqa: F401 - the connection supplies rows
+    mapping = mapping_for(currency)
+    source = ALCHEMY_SOURCE if mapping.provider == 'alchemy' else COINGECKO_SOURCE
+    expected = provenance(mapping)
+    rows = conn.execute(f'''SELECT chain_id AS "chainId",currency,source,observed_at AS timestamp,
+      retrieved_at AS "retrievedAt",price_usd AS "priceUsd",provenance
+      FROM domino_activity.price_observations
+      WHERE chain_id=%s AND currency=%s AND source=%s
+      AND observed_at>=%s AND observed_at<=%s ORDER BY observed_at LIMIT {MAX_REFERENCE_ROWS + 1}''',
+      (CHAIN_ID, mapping.currency, source, max(0, start - REFERENCE_MAX_AGE_SECONDS), end)).fetchall()
+    if len(rows) > MAX_REFERENCE_ROWS:
+        raise DataError('price_observation_budget_exhausted')
+    decimals = None
+    for row in rows:
+        stored = row.get('provenance') or {}
+        if (stored.get('status') != expected['status'] or stored.get('provider') != expected['provider']
+                or stored.get('reference') != expected['reference']
+                or stored.get('robinhoodCurrency') != mapping.currency
+                or stored.get('decimals') != mapping.decimals):
+            raise DataError('reference_observation_mapping_mismatch')
+        decimals = stored['decimals']
+    if decimals is None:
+        raise DataError('price_history_missing')
+    qualification = ReferenceQualification(currency=mapping.currency, decimals=decimals,
+                                           target_pool=bytes32(target_pool), evidence=mapping.evidence,
+                                           start=start, end=end, currencies=tuple(currencies),
+                                           source=source)
+    series = PriceSeries(qualification, rows)
+    series.require_coverage(start, end)
+    return series, {'currency': mapping.currency, 'observations': len(rows), 'observedSources': [source],
+                    'firstTimestamp': rows[0]['timestamp'] if rows else None,
+                    'lastTimestamp': rows[-1]['timestamp'] if rows else None,
+                    'status': 'reference_analytics_only', 'reason': None,
+                    'sourceQualification': 'explicit_market_reference_unqualified',
+                    'provider': mapping.provider, 'reference': dict(mapping.reference),
+                    'evidence': mapping.evidence, 'mappingVersion': MAPPING_VERSION,
+                    'intervalSeconds': INTERVAL_SECONDS, 'maxAgeSeconds': REFERENCE_MAX_AGE_SECONDS,
+                    'publicationTimeEstablished': False,
+                    'coverage': {'status': 'complete', 'startTimestamp': start, 'endTimestamp': end,
+                                 'maxAgeSeconds': REFERENCE_MAX_AGE_SECONDS}}
+
+
 def store_reference_observations(catalogue, rows, *, before_commit=None):
     """Insert validated reference rows; the caller owns the transaction guard."""
     if not isinstance(rows, list) or len(rows) > MAX_REFERENCE_ROWS:
@@ -202,8 +279,9 @@ def store_reference_observations(catalogue, rows, *, before_commit=None):
             conn.execute('''INSERT INTO domino_activity.price_observations
               VALUES(%s,%s,%s,%s,%s,%s,%s) ON CONFLICT(chain_id,currency,source,observed_at)
               DO UPDATE SET price_usd=EXCLUDED.price_usd,retrieved_at=EXCLUDED.retrieved_at,
-              provenance=EXCLUDED.provenance WHERE domino_activity.price_observations.price_usd
-              IS DISTINCT FROM EXCLUDED.price_usd''',
+              provenance=EXCLUDED.provenance WHERE
+              domino_activity.price_observations.price_usd IS DISTINCT FROM EXCLUDED.price_usd
+              OR domino_activity.price_observations.provenance IS DISTINCT FROM EXCLUDED.provenance''',
               (CHAIN_ID, row['currency'], row['source'], row['timestamp'], row['retrievedAt'],
                row['priceUsd'], Jsonb(row['provenance'])))
         if before_commit is not None:
