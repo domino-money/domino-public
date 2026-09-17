@@ -11,11 +11,17 @@ sys.path.insert(0,str(Path(__file__).resolve().parents[1]))
 from eth_abi import encode
 from eth_hash.auto import keccak
 from discovery import (CHAIN_ID, DEFAULT_READ_CALL_GAS, DataError, DiscoveryReader,
-                       POOL_MANAGER, POSITION_MANAGER, STATE_VIEW, ReadRpc, json_http)
+                       POOL_MANAGER, POSITION_MANAGER, STATE_VIEW, ZERO, ReadRpc, discover, json_http)
 from read_deadline import read_deadline
 from read_service import ReadService
 from rpc_failover import FailoverReadRpc
-from test_discovery import BLOCK, KEY, KEY_TYPES, POOL, TOKEN
+from test_discovery import BLOCK, KEY, KEY_TYPES, POOL, TOKEN, candidate
+
+# Four verified pools pairing the selected token with distinct counterparties,
+# so the token-metadata stage has real fan-out beyond the cached selection.
+COUNTERPARTIES = tuple('0x' + f'{0x21 + index:02x}' * 20 for index in range(4))
+PAIR_KEYS = {c: (TOKEN, c, 3000, 60, ZERO) for c in COUNTERPARTIES}
+PAIR_POOLS = {c: '0x' + keccak(encode(KEY_TYPES, PAIR_KEYS[c])).hex() for c in COUNTERPARTIES}
 
 PRIMARY='https://primary.example.invalid'
 SECOND='https://secondary.example.invalid'
@@ -26,6 +32,10 @@ CODES=[('eth_getCode',[POSITION_MANAGER,BLOCK['number']]),('eth_getCode',[STATE_
 class Provider:
     def __init__(self):
         self.envelopes=[]
+        self.pool_keys={}
+        self.gas_limited=set()
+        self.fail_batch_after=None
+        self.batch_served=0
         self.mutate=None
         self.fail={}
         self.chains={}
@@ -41,6 +51,9 @@ class Provider:
         if self.clock is not None:self.clock[0]+=0.5
         batch=isinstance(body,list)
         if (url,batch) in self.fail:raise DataError(self.fail[(url,batch)])
+        if batch and self.fail_batch_after is not None:
+            self.batch_served+=1
+            if self.batch_served>self.fail_batch_after:raise DataError('network_unavailable')
         records=body if batch else [body]
         responses=[]
         for record in records:
@@ -59,8 +72,18 @@ class Provider:
                 assert 21000<=int(params[0]['gas'],16)<=DEFAULT_READ_CALL_GAS
                 selector=params[0]['data'][2:10]
                 if selector==keccak(b'poolManager()')[:4].hex():result='0x'+encode(['address'],[self.managers.get(params[0]['to'],POOL_MANAGER)]).hex()
-                elif selector==keccak(b'poolKeys(bytes25)')[:4].hex():result='0x'+encode(KEY_TYPES,KEY).hex()
-                elif selector==keccak(b'getSlot0(bytes32)')[:4].hex():result='0x'+encode(['uint160','int24','uint24','uint24'],[2**96,0,0,KEY[2]]).hex()
+                elif selector==keccak(b'poolKeys(bytes25)')[:4].hex():
+                    key=self.pool_keys.get(params[0]['data'][10:60],KEY)
+                    result='0x'+encode(KEY_TYPES,key).hex()
+                elif selector==keccak(b'getSlot0(bytes32)')[:4].hex():
+                    key=self.pool_keys.get(params[0]['data'][10:60],KEY)
+                    result='0x'+encode(['uint160','int24','uint24','uint24'],[2**96+int(params[0]['data'][10:18],16),0,0,key[2]]).hex()
+                elif selector==keccak(b'decimals()')[:4].hex():
+                    if params[0]['to'] in self.gas_limited:
+                        responses.append({'jsonrpc':'2.0','id':record['id'],'error':{'code':-32000,'message':'out of gas'}})
+                        continue
+                    result='0x'+encode(['uint8'],[int(params[0]['to'][-2:],16)%9+6]).hex()
+                elif selector==keccak(b'symbol()')[:4].hex():result='0x'+encode(['string'],['TOK'+params[0]['to'][2:6].upper()]).hex()
                 else:raise AssertionError('unexpected read selector')
             else:raise AssertionError('unexpected RPC method')
             responses.append({'jsonrpc':'2.0','id':record['id'],'result':result})
@@ -381,6 +404,118 @@ class DiscoveryBatchTests(unittest.TestCase):
             reads=reader.pool_reads(candidates,block)
         self.assertEqual([reader.pool(candidate,block,reads=prefetch)
                           for candidate,prefetch in zip(candidates,reads)],expected)
+
+    def discover_report(self,batched,provider=None):
+        """Full discover() over four verified pools; returns report and transports."""
+        provider=provider or self.keyed_provider()
+        for counterparty in COUNTERPARTIES:
+            provider.pool_keys.setdefault(PAIR_POOLS[counterparty][2:52],PAIR_KEYS[counterparty])
+        rpc=FailoverReadRpc((PRIMARY,),transport=provider,batch_reads=batched)
+        report=discover(TOKEN,rpc=rpc,transport=lambda url:self.pair_payload(),clock=lambda:1010)
+        return report,rpc,provider
+
+    def test_discover_batches_verified_token_metadata_and_matches_sequential(self):
+        old,old_rpc,old_provider=self.discover_report(False)
+        new,new_rpc,new_provider=self.discover_report(True)
+        self.assertEqual(new,old)
+        self.assertEqual(len(new['pools']),4)
+        self.assertEqual({entry['address'] for entry in new['tokens']},{TOKEN,*COUNTERPARTIES})
+        self.assertEqual(old_rpc.count,new_rpc.count)
+        # 32 = 2 failover-bootstrap identity reads + 7 snapshot + 3 selected-token
+        # seed + 8 pool identity + 12 token metadata; batching folds the last
+        # three groups into 2 + 2 + 3 envelopes and leaves the rest alone.
+        self.assertEqual((len(old_provider.envelopes),len(new_provider.envelopes)),(32,12))
+
+    def test_a_dead_counterparty_spends_no_metadata_read_in_either_mode(self):
+        dead=COUNTERPARTIES[2]
+        providers=[]
+        reports=[]
+        for batched in (False,True):
+            provider=Provider()
+            provider.codes[dead]='0x'
+            reports.append(self.discover_report(batched,provider)[0])
+            providers.append(provider)
+        self.assertEqual(reports[1],reports[0])
+        entry={record['address']:record for record in reports[1]['tokens']}[dead]
+        self.assertEqual((entry['readStatus'],entry['kind']),('no_contract','unknown'))
+        metadata={keccak(b'decimals()')[:4].hex(),keccak(b'symbol()')[:4].hex()}
+        for provider in providers:
+            for _,body in provider.envelopes:
+                for item in body if isinstance(body,list) else [body]:
+                    if item['method']=='eth_call' and item['params'][0]['to']==dead:
+                        self.assertNotIn(item['params'][0]['data'][2:10],metadata)
+
+    def pair_payload(self,counterparties=COUNTERPARTIES):
+        return [{**candidate(),'pairAddress':PAIR_POOLS[c],'baseToken':{'address':TOKEN},
+                 'quoteToken':{'address':c}} for c in counterparties]
+
+    def keyed_provider(self):
+        provider=Provider()
+        for counterparty in COUNTERPARTIES:
+            provider.pool_keys[PAIR_POOLS[counterparty][2:52]]=PAIR_KEYS[counterparty]
+        return provider
+
+    def test_a_gas_limited_decimals_spends_no_symbol_read_in_either_mode(self):
+        capped=COUNTERPARTIES[1]
+        reports,rpcs,providers=[],[],[]
+        for batched in (False,True):
+            provider=self.keyed_provider()
+            provider.gas_limited.add(capped)
+            report,rpc,_=self.discover_report(batched,provider)
+            reports.append(report);rpcs.append(rpc);providers.append(provider)
+        self.assertEqual(reports[1],reports[0])
+        # A delivered refusal costs one read in both modes and re-spends nothing.
+        self.assertEqual(rpcs[0].count,rpcs[1].count)
+        entry={record['address']:record for record in reports[1]['tokens']}[capped]
+        self.assertEqual((entry['readStatus'],entry['reason']),('unavailable','rpc_call_gas_limit'))
+        symbol=keccak(b'symbol()')[:4].hex()
+        for provider in providers:
+            for _,body in provider.envelopes:
+                for item in body if isinstance(body,list) else [body]:
+                    if item['method']=='eth_call' and item['params'][0]['to']==capped:
+                        self.assertNotEqual(item['params'][0]['data'][2:10],symbol)
+
+    def test_a_rejected_candidate_never_costs_a_token_read(self):
+        stranger='0x'+'99'*20
+        reports,providers=[],[]
+        for batched in (False,True):
+            provider=self.keyed_provider()
+            rpc=FailoverReadRpc((PRIMARY,),transport=provider,batch_reads=batched)
+            payload=self.pair_payload(COUNTERPARTIES[:2])
+            payload.append({**candidate(),'pairAddress':POOL,'baseToken':{'address':TOKEN},
+                            'quoteToken':{'address':stranger}})
+            payload+=self.pair_payload(COUNTERPARTIES[2:])
+            reports.append(discover(TOKEN,rpc=rpc,transport=lambda url:payload,clock=lambda:1010))
+            providers.append(provider)
+        self.assertEqual(reports[1],reports[0])
+        self.assertEqual([row['reason'] for row in reports[1]['unverifiedCandidates']],
+                         ['provider_currency_mismatch'])
+        self.assertNotIn(stranger,{record['address'] for record in reports[1]['tokens']})
+        for provider in providers:
+            for _,body in provider.envelopes:
+                for item in body if isinstance(body,list) else [body]:
+                    target=(item['params'][0].get('to') if item['params'] and isinstance(item['params'][0],dict)
+                            else item['params'][0] if item['params'] else None)
+                    self.assertNotEqual(target,stranger,'a rejected candidate cost a token read')
+
+    def test_readrpc_staged_fallback_survives_a_transport_that_stops_batching(self):
+        expected,_,_=self.discover_report(False)
+        provider=self.keyed_provider()
+        provider.fail_batch_after=2   # both snapshot envelopes pass; every staged one fails
+        rpc=ReadRpc(PRIMARY,transport=provider,batch_reads=True)
+        report=discover(TOKEN,rpc=rpc,transport=lambda url:self.pair_payload(),clock=lambda:1010)
+        self.assertEqual(report,expected)
+        self.assertGreater(provider.batch_served,2)
+
+    def test_failover_batch_failure_after_the_snapshot_fails_the_read_closed(self):
+        # The failover deliberately poisons a non-retryable post-dispatch envelope
+        # failure, so _staged's sequential fallback cannot serve it: the whole
+        # read fails closed instead of answering from an ambiguous provider.
+        provider=self.keyed_provider()
+        provider.fail_batch_after=2
+        rpc=FailoverReadRpc((PRIMARY,),transport=provider,batch_reads=True)
+        with self.assertRaisesRegex(DataError,'network_unavailable'):
+            discover(TOKEN,rpc=rpc,transport=lambda url:self.pair_payload(),clock=lambda:1010)
 
     def test_service_enables_batching_but_injected_rpc_retains_its_contract(self):
         service=ReadService(rpc_urls=(PRIMARY,),transport_factory=lambda:Provider())

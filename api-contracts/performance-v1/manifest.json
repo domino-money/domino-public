@@ -139,7 +139,7 @@
     },
     {
       "path": "backend/discovery.py",
-      "sha256": "dd23f0886c972cd6bad974b6046993a5be62b02c68beaaed7546ad8f0732c140"
+      "sha256": "58f72606ef59246cd5065215281e4b73c34e4d4e6e469b9bed9f61bbd5c2b79c"
     },
     {
       "path": "backend/nft_ownership.py",

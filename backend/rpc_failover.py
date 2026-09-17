@@ -72,7 +72,7 @@ class FailoverReadRpc(ReadRpc):
                     self.failure = code
                 raise
 
-    def batch(self, calls):
+    def batch(self, calls, *, item_errors=False):
         calls = self._batch_specs(calls)
         if self.failure:
             raise DataError(self.failure)
@@ -86,11 +86,13 @@ class FailoverReadRpc(ReadRpc):
                     if method in ('eth_call','eth_getCode','eth_getBalance') and params[-1] not in self.anchors:
                         raise DataError('block_unavailable')
                 batch_attempted = True
-                results = super().batch(calls)
+                results = super().batch(calls, item_errors=item_errors)
                 # Commit anchors only after the entire envelope and every chain
                 # or block assertion validates. Never merge partial providers.
                 anchors = dict(self.anchors)
                 for (method,params),result in zip(calls,results):
+                    if isinstance(result, DataError):
+                        continue  # a delivered per-item refusal proves nothing about anchors
                     if method == 'eth_chainId' and quantity(result)!=CHAIN_ID:
                         raise DataError('wrong_chain')
                     if method == 'eth_getBlockByNumber':

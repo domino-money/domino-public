@@ -367,11 +367,15 @@ class ReadRpc:
             result.append((method,params))
         return result
 
-    def batch(self, calls):
+    def batch(self, calls, *, item_errors=False):
         """One bounded envelope; every attempted item spends the RPC budget.
 
         No partial results or sequential retry are returned after a batch fails.
         The HTTPS transport retains its aggregate response-byte/deadline limits.
+        With item_errors, a COMPLETED envelope returns a recognized per-item
+        refusal as a DataError in that item's position instead of failing the
+        envelope: the caller sees exactly what its own sequential read would
+        have raised, and an ambiguous transport/envelope failure still raises.
         """
         calls = self._batch_specs(calls)
         if self.count + len(calls) > self.max_requests:
@@ -396,11 +400,17 @@ class ReadRpc:
             by_id[item['id']] = item
         if set(by_id)!=expected:
             raise DataError('invalid_rpc_envelope')
+        outcomes = []
         for body in bodies:
             item = by_id[body['id']]
             if 'error' in item:
-                raise DataError(rpc_error_code(body['method'],item['error']))
-        return [by_id[body['id']]['result'] for body in bodies]
+                refusal = DataError(rpc_error_code(body['method'],item['error']))
+                if not item_errors:
+                    raise refusal
+                outcomes.append(refusal)
+            else:
+                outcomes.append(item['result'])
+        return outcomes
 
     def call_params(self, target, signature, inputs=(), values=(), *, block):
         calldata = '0x' + (keccak(signature.encode())[:4] + encode(inputs, values)).hex()
@@ -413,15 +423,19 @@ class ReadRpc:
         return decode_result(outputs, self.call_raw(target, signature, inputs, values, block=block))
 
     def symbol(self, target, *, block):
-        raw = self.call_raw(target, 'symbol()', block=block)
-        if isinstance(raw, str) and len(raw) == 66:
-            value, = decode_result(['bytes32'], raw)
-            try:
-                return value.rstrip(b'\x00').decode('utf-8')
-            except UnicodeError:
-                raise DataError('invalid_symbol_text') from None
-        value, = decode_result(['string'], raw)
-        return value
+        return decode_symbol(self.call_raw(target, 'symbol()', block=block))
+
+
+def decode_symbol(raw):
+    """bytes32 legacy symbols and string symbols share one wire shape check."""
+    if isinstance(raw, str) and len(raw) == 66:
+        value, = decode_result(['bytes32'], raw)
+        try:
+            return value.rstrip(b'\x00').decode('utf-8')
+        except UnicodeError:
+            raise DataError('invalid_symbol_text') from None
+    value, = decode_result(['string'], raw)
+    return value
 
 
 def prefetched(raw):
@@ -574,20 +588,23 @@ class DiscoveryReader:
             raise DataError('snapshot_reorganized')
         self._fresh(block)
 
-    def token(self, currency, block):
+    def token(self, currency, block, *, reads=None):
+        """`reads` carries the same three results already fetched by token_reads."""
         currency = address(currency)
         if currency == ZERO:
             return {'address': ZERO, 'kind': 'native', 'decimals': 18, 'symbol': 'ETH',
                     'readStatus': 'available', 'metadataIssues': {}, 'displayUnitsAvailable': True,
                     'executionAvailable': False}
-        code = self.rpc.request('eth_getCode', [currency, block.tag])
+        code = (prefetched(reads['code']) if reads is not None else
+                self.rpc.request('eth_getCode', [currency, block.tag]))
         if code == '0x':
             raise DataError('token_has_no_code')
         if not isinstance(code, str) or not re.fullmatch(r'0x(?:[0-9a-fA-F]{2})+', code):
             raise DataError('token_code_unavailable')
         decimals, symbol, issues = None, None, {}
         try:
-            decimals, = self.rpc.call(currency, 'decimals()', outputs=['uint8'], block=block.tag)
+            decimals, = (decode_result(['uint8'], prefetched(reads['decimals'])) if reads is not None
+                         else self.rpc.call(currency, 'decimals()', outputs=['uint8'], block=block.tag))
             if type(decimals) is not int or not 0 <= decimals <= 255:
                 raise DataError('invalid_token_decimals')
         except DataError as error:
@@ -595,7 +612,8 @@ class DiscoveryReader:
                 raise
             decimals, issues['decimals'] = None, str(error)
         try:
-            raw_symbol = self.rpc.symbol(currency, block=block.tag)
+            raw_symbol = (decode_symbol(prefetched(reads['symbol'])) if reads is not None
+                          else self.rpc.symbol(currency, block=block.tag))
             if not isinstance(raw_symbol, str) or not raw_symbol or len(raw_symbol) > 40 or not raw_symbol.isprintable():
                 raise DataError('invalid_symbol_text')
             symbol = raw_symbol
@@ -607,14 +625,14 @@ class DiscoveryReader:
                 'readStatus': 'partial' if issues else 'available', 'metadataIssues': issues,
                 'displayUnitsAvailable': decimals is not None, 'executionAvailable': False}
 
-    def token_lookup(self, currency, block):
+    def token_lookup(self, currency, block, reads=None):
         """Address lookup is useful even if optional metadata is absent.
 
         A contract exposing these methods is only a candidate, not proven ERC-20.
         """
         currency = address(currency)
         try:
-            return self.token(currency, block)
+            return self.token(currency, block, reads=reads)
         except DataError as error:
             return {'address': currency, 'kind': 'unknown', 'decimals': None, 'symbol': None,
                     'readStatus': 'no_contract' if str(error) == 'token_has_no_code' else 'unavailable',
@@ -662,15 +680,18 @@ class DiscoveryReader:
     def _staged(self, specs):
         """One result per spec, batched in chunks; a refused item keeps its own error.
 
-        Mirrors read_service._probe_currencies (#148): an envelope failure falls
-        back to sequential reads for that chunk alone, so a candidate the node
-        refuses never discards the others.
+        item_errors delivers a recognized refusal in place, so one refused item
+        never discards its chunk and the logical spend matches the sequential
+        loop exactly. A failed envelope (transport, malformed reply) falls back
+        to sequential reads for that chunk alone, as in _probe_currencies (#148);
+        under the failover transport such a failure is poisoned instead and the
+        read fails closed rather than answering from an ambiguous provider.
         """
         results = []
         for start in range(0, len(specs), self.BATCH_CHUNK):
             chunk = specs[start:start+self.BATCH_CHUNK]
             try:
-                results.extend(self.rpc.batch(chunk))
+                results.extend(self.rpc.batch(chunk, item_errors=True))
             except DataError:
                 for method, params in chunk:
                     try:
@@ -709,6 +730,38 @@ class DiscoveryReader:
             reads[index] = {'key': None, 'slot0': raw}
         for index, raw in zip(keyed, keys):
             reads[index]['key'] = raw
+        return reads
+
+    def token_reads(self, currencies, block):
+        """Fetch every currency's code/decimals/symbol reads in batched envelopes.
+
+        Stages mirror _probe_currencies and the sequential token() itself: code
+        first, metadata only for currencies whose code answered, and nothing
+        past a gas-limited read — a dead or capped address never spends a read
+        the sequential loop would not have spent. Native ZERO is never read.
+        Without batch_reads the map is empty and token() reads for itself.
+        A refused item is delivered in place (batch item_errors), so an error
+        never re-spends its chunk; only a failed envelope falls back, and under
+        the failover transport such a failure poisons the read closed instead.
+        """
+        if getattr(self.rpc, 'batch_reads', False) is not True:
+            return {}
+        erc20 = [currency for currency in currencies if currency != ZERO]
+        reads = {}
+        for currency, raw in zip(erc20, self._staged([('eth_getCode', [currency, block.tag])
+                                                      for currency in erc20])):
+            reads[currency] = {'code': raw, 'decimals': None, 'symbol': None}
+        live = [currency for currency in erc20 if isinstance(reads[currency]['code'], str)
+                and re.fullmatch(r'0x(?:[0-9a-fA-F]{2})+', reads[currency]['code'])]
+        for name in ('decimals', 'symbol'):
+            for currency, raw in zip(live, self._staged([('eth_call', self.rpc.call_params(
+                    currency, name+'()', block=block.tag)) for currency in live])):
+                reads[currency][name] = raw
+            # token() re-raises a gas-limited metadata read before spending the
+            # next one; a capped currency must not reach the next stage here either.
+            live = [currency for currency in live
+                    if not (isinstance(reads[currency][name], DataError)
+                            and str(reads[currency][name]) == 'rpc_call_gas_limit')]
         return reads
 
     def position_owner(self, token_id, block):
@@ -796,6 +849,7 @@ def discover(token, *, rpc=None, transport=json_http, clock=time.time, max_pools
     report['discovery'].update(requestedPoolIds=len(pool_ids), notProbed=max(0, len(candidates) - max_pools))
     report['pairedToken'] = paired_token
     probed = candidates[:max_pools]
+    verified = []
     for candidate, prefetch in zip(probed, reader.pool_reads(probed, block)):
         try:
             pool = reader.pool(candidate, block, reads=prefetch)
@@ -806,9 +860,16 @@ def discover(token, *, rpc=None, transport=json_http, clock=time.time, max_pools
         except DataError as error:
             report['unverifiedCandidates'].append({'poolId': candidate['poolId'], 'reason': str(error)})
             continue
+        verified.append(pool)
+    # Only currencies a verified pool actually names are read, exactly as the
+    # sequential loop spent them; rejected candidates never cost a token read.
+    wanted = dict.fromkeys(currency for pool in verified for currency in pool['currencies']
+                           if currency not in token_cache)
+    lookups = reader.token_reads(list(wanted), block)
+    for pool in verified:
         for currency in pool['currencies']:
             if currency not in token_cache:
-                token_cache[currency] = reader.token_lookup(currency, block)
+                token_cache[currency] = reader.token_lookup(currency, block, reads=lookups.get(currency))
         pool['tokenMetadataStatus'] = ('available' if all(token_cache[c]['readStatus'] == 'available'
                                                         for c in pool['currencies']) else 'partial')
         report['pools'].append(pool)
