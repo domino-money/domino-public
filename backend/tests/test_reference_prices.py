@@ -107,6 +107,151 @@ class CoinGeckoConversionTests(unittest.TestCase):
                 coingecko_observations(self.reference(points,coin),mapping_for(MARLIN),retrieved_at=NOW)
 
 
+class ReferenceRunTests(unittest.TestCase):
+    """The timer entry point: per-mapping isolation, hard budget, honest report."""
+
+    def run_pass(self,effects,*,budget=120,ticks=None):
+        import collect_reference_prices as module
+        from contextlib import redirect_stdout
+        import argparse,io
+        calls=[]
+        def fake_collect(child,*,transport=None,clock=None,emit=True):
+            calls.append(child)
+            effect=effects[child.currency]
+            if isinstance(effect,DataError):raise effect
+            return {'observations':effect,'stored':effect,'firstTimestamp':NOW-600,
+                    'lastTimestamp':NOW,'maxGapSeconds':300}
+        clock_values=list(ticks or [NOW])
+        def clock():
+            return clock_values.pop(0) if len(clock_values)>1 else clock_values[0]
+        args=argparse.Namespace(lookback=3600,budget_seconds=budget,provider_config=None,store=True)
+        original=module.collect
+        module.collect=fake_collect
+        try:
+            with redirect_stdout(io.StringIO()) as printed:
+                report,failures=module.run_every_mapping(args,clock=clock)
+        finally:
+            module.collect=original
+        return report,failures,calls,printed.getvalue()
+
+    def test_one_provider_refusal_is_that_mappings_own_failure(self):
+        report,failures,calls,printed=self.run_pass({WETH:289,USDG:289,
+            MARLIN:DataError('reference_rate_limited')})
+        self.assertEqual(failures,1)
+        by={row['currency']:row for row in report['mappings']}
+        self.assertEqual(by[MARLIN],{'currency':MARLIN,'status':'reference_collection_failed',
+                                     'reason':'reference_rate_limited'})
+        for currency in (WETH,USDG):
+            self.assertEqual((by[currency]['status'],by[currency]['stored']),('collected',289))
+        self.assertEqual(len(calls),3)
+        for child in calls:
+            self.assertEqual((child.start,child.end),(NOW-3600,NOW))
+            self.assertTrue(child.store)
+        self.assertEqual((report['requestedStart'],report['requestedEnd']),(NOW-3600,NOW))
+        self.assertFalse(report['productionQualification'])
+        self.assertIn('"external_market_reference_collection_run"',printed)
+
+    def test_budget_exhaustion_skips_and_reports_a_decision_point(self):
+        # The clock jumps past the budget right after the first mapping starts.
+        report,failures,calls,_=self.run_pass({currency:289 for currency in MAPPINGS},
+            budget=10,ticks=[NOW,NOW,NOW+11,NOW+11])
+        skipped=[row for row in report['mappings'] if row['status']=='reference_collection_skipped']
+        self.assertEqual(len(calls),1)
+        self.assertEqual(len(skipped),2)
+        self.assertTrue(all(row['stoppedBecause']=='budget' for row in skipped))
+        self.assertEqual(failures,2)
+
+    def test_reservation_refuses_a_start_that_could_not_finish_inside_the_budget(self):
+        # store=True reserves 12+3+5*15=90 s; at budget 120 the threshold is 30.
+        report,failures,calls,_=self.run_pass({currency:289 for currency in MAPPINGS},
+            budget=120,ticks=[NOW,NOW,NOW+31,NOW+31])
+        self.assertEqual(len(calls),1)
+        skipped=[row for row in report['mappings'] if row['status']=='reference_collection_skipped']
+        self.assertEqual(len(skipped),2)
+        self.assertEqual(failures,2)
+
+    def test_a_provider_answering_nothing_in_window_fails_the_pass(self):
+        report,failures,calls,_=self.run_pass({WETH:289,USDG:0,MARLIN:289})
+        by={row['currency']:row for row in report['mappings']}
+        self.assertEqual(by[USDG],{'currency':USDG,'status':'reference_collection_empty',
+                                   'observations':0,'stored':0})
+        self.assertEqual(failures,1)
+        self.assertEqual(len(calls),3)
+
+    def test_the_run_through_the_real_collect_reports_each_mapping_from_its_provider(self):
+        import collect_reference_prices as module
+        from contextlib import redirect_stdout
+        from unittest.mock import patch
+        import argparse,io
+        from price_history import iso
+        alchemy_calls=[]
+        def transport(url,body):
+            alchemy_calls.append(body['address'])
+            return {'network':body['network'],'address':body['address'],'currency':'usd',
+                    'data':[{'timestamp':iso(NOW-600),'value':'2500.5'}]}
+        def history(self_,currency,*,currency_decimals):
+            return {'source':COINGECKO_SOURCE,
+                    'identity':{'currency':MARLIN,'coinId':'jt-marlin'},
+                    'points':[{'timestampMs':(NOW-300)*1000,'priceUsd':'0.0001'}]}
+        args=argparse.Namespace(lookback=3600,budget_seconds=120,provider_config=None,store=False)
+        from coingecko_market_reference import CoinGeckoMarketReference
+        with patch.object(module,'load_config',lambda *a,**k:{'rpcUrl':'https://x/v2/k'}), \
+             patch.object(module,'alchemy_prices_url',lambda url:'https://api.g.alchemy.com/prices/v1/k/tokens/historical'), \
+             patch.object(CoinGeckoMarketReference,'history',history), \
+             redirect_stdout(io.StringIO()):
+            report,failures=module.run_every_mapping(args,transport=transport,clock=lambda:NOW)
+        self.assertEqual(failures,0)
+        by={row['currency']:row for row in report['mappings']}
+        for currency in (WETH,USDG):
+            self.assertEqual((by[currency]['status'],by[currency]['observations'],
+                              by[currency]['stored']),('collected',1,0))
+            self.assertEqual(by[currency]['firstTimestamp'],NOW-600)
+        self.assertEqual((by[MARLIN]['status'],by[MARLIN]['observations']),('collected',1))
+        self.assertEqual(len(alchemy_calls),2)
+
+    def test_every_mapping_and_single_currency_modes_exclude_each_other(self):
+        import collect_reference_prices as module
+        from unittest.mock import patch
+        for argv,accepted in ((['prog','--every-mapping','--lookback','3600'],True),
+                              (['prog','--every-mapping'],False),
+                              (['prog','--every-mapping','--lookback','3600','--currency',WETH],False),
+                              (['prog','--every-mapping','--lookback','120'],False),
+                              (['prog','--every-mapping','--lookback','3600','--budget-seconds','20'],False),
+                              (['prog','--currency',WETH,'--budget-seconds','120','--lookback','3600'],False),
+                              (['prog','--currency',WETH],False)):
+            with patch.object(sys,'argv',argv):
+                if accepted:
+                    with patch.object(module,'run_every_mapping',return_value=({},0)) as run:
+                        self.assertEqual(module.main(),0)
+                    self.assertEqual(run.call_args.args[0].lookback,3600)
+                    self.assertEqual(run.call_args.args[0].budget_seconds,120)
+                else:
+                    with self.assertRaises(SystemExit) as raised:
+                        module.main()
+                    self.assertNotEqual(raised.exception.code,0)
+
+    def test_failures_surface_as_exit_one_and_a_clean_pass_as_zero(self):
+        import collect_reference_prices as module
+        from unittest.mock import patch
+        for failures,expected in ((0,0),(2,1)):
+            with patch.object(sys,'argv',['prog','--every-mapping','--lookback','3600']), \
+                 patch.object(module,'run_every_mapping',return_value=({},failures)):
+                self.assertEqual(module.main(),expected)
+
+    def test_single_currency_lookback_derives_the_window_from_now(self):
+        import collect_reference_prices as module
+        from unittest.mock import patch
+        seen={}
+        def fake_collect(child,**kwargs):
+            seen['window']=(child.start,child.end)
+            return {'observations':1,'stored':0}
+        with patch.object(sys,'argv',['prog','--currency',WETH,'--lookback','3600']), \
+             patch.object(module,'collect',fake_collect), \
+             patch.object(module.time,'time',lambda:NOW):
+            self.assertEqual(module.main(),0)
+        self.assertEqual(seen['window'],(NOW-3600,NOW))
+
+
 class StoreValidationTests(unittest.TestCase):
     def test_a_row_must_carry_the_mapped_provenance_before_any_connection(self):
         class NoConnection:

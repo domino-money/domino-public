@@ -44,6 +44,11 @@ jobs:
           python3 -B -m unittest discover -s scripts/cloudflared/tests -v
           systemd-analyze --version
           systemd-analyze verify --man=no scripts/cloudflared/domino-tunnel.service
+      - name: Check the inactive reference-collector unit candidates
+        run: |
+          python3 -B -m unittest discover -s scripts/reference-collector/tests -v
+          systemd-analyze verify --man=no scripts/reference-collector/domino-reference-collector.service
+          systemd-analyze verify --man=no scripts/reference-collector/domino-reference-collector.timer
   frontend:
     name: Frontend
     runs-on: ubuntu-24.04

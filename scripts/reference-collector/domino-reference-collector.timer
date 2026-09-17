@@ -1,0 +1,14 @@
+# Candidate only. Enabling this timer is the single activation point for the
+# reference collection; the service alone stays a manual, bounded pass.
+[Unit]
+Description=Run the Domino reference collection on the five-minute grid
+
+[Timer]
+OnCalendar=*-*-* *:00/5:00
+AccuracySec=30
+RandomizedDelaySec=20
+Persistent=true
+Unit=domino-reference-collector.service
+
+[Install]
+WantedBy=timers.target
