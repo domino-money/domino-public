@@ -1461,6 +1461,10 @@ test('a refresh the store cannot serve keeps the session, says so, and retries a
     await sleep(200);
   }
   await eventually(() => s.fake.count('refresh') === 4, 'three retries');
+  await until(page, () => {
+    const v = window.__dominoSessionProbe.view();
+    return v.status === 'signed_in' && v.notice === 'refresh_unavailable' && !document.querySelector('[aria-busy="true"]');
+  }, null, 'the exhausted retries settled');
   await page.clock.fastForward('04:00');
   await sleep(300);
   assert.equal(s.fake.count('refresh'), 4, 'no more than three retries');
@@ -1491,6 +1495,10 @@ test('a tab whose outage retries ran out refreshes again once another tab has re
     await sleep(200);
   }
   await eventually(() => s.fake.count('refresh') === 4, 'three retries');
+  await until(first, () => {
+    const v = window.__dominoSessionProbe.view();
+    return v.status === 'signed_in' && v.notice === 'refresh_unavailable' && !document.querySelector('[aria-busy="true"]');
+  }, null, 'the exhausted retries settled in the first tab');
   await first.clock.fastForward('04:00');
   await sleep(300);
   assert.equal(s.fake.count('refresh'), 4, 'the retries stop within the outage');
@@ -1515,6 +1523,12 @@ test('a tab whose outage retries ran out refreshes again once another tab has re
   await eventually(() => s.fake.count('refresh') === 6, 'the first tab refreshes in the new window');
   assert.equal(s.fake.calls('refresh').at(-1).status, 200);
   assert.equal(s.fake.calls('refresh').at(-1).csrf, session.csrf);
+  // The fake saw the request; wait for the tab to apply the response before
+  // jumping the clock, or the jump lands mid-renewal and reads as an outage.
+  await until(first, () => {
+    const v = window.__dominoSessionProbe.view();
+    return v.status === 'signed_in' && v.notice === undefined && !document.querySelector('[aria-busy="true"]');
+  }, null, 'the sixth refresh settled in the first tab');
   // Past the deadline the second tab's renewal set, the session lives on.
   await act(first);
   s.fake.advance(11 * 60_000);
