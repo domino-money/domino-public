@@ -4,7 +4,7 @@ from datetime import datetime, timedelta, timezone
 import os
 from pathlib import Path
 import sys
-from threading import Barrier, Event
+from threading import Barrier, BrokenBarrierError, Event
 import time
 import unittest
 from unittest.mock import patch
@@ -25,6 +25,25 @@ from wallet_access import WalletAccessAdmin
 
 VALIDATION={'method':'plain_eoa','blockNumber':'123','blockHash':'0x'+'ab'*32}
 SECRET=b'synthetic shared abuse-key secret only'
+# A partner reaches the account check only after its own connect, advisory lock
+# and statements, each already bounded by the store (connect 2 s, statement 1 s,
+# lock 250 ms). The meeting only has to outlast a loaded runner, never a hang.
+MEETING_TIMEOUT=30
+
+
+class Meeting:
+    """Two threads that must be inside the account check at the same time.
+
+    A thread denied before it arrives abandons the meeting, so its partner fails
+    with the real reason instead of raising BrokenBarrierError out of the store
+    once the wait expires. That error is not a SessionError, so it escapes the
+    suite's handling and hides the denial behind a threading traceback.
+    """
+    def __init__(self,value=VALIDATION):self.barrier=Barrier(2);self.value=value
+    def arrive(self,_address=None):
+        self.barrier.wait(timeout=MEETING_TIMEOUT)
+        return dict(self.value)
+    def abandon(self):self.barrier.abort()
 
 
 class Checker:
@@ -53,6 +72,11 @@ class SessionStoreTests(unittest.TestCase):
 
     def call(self,route,body=None,*,service=None,**credentials):
         return (service or self.service).execute(route,body or {},client=credentials.pop('client','192.0.2.1'),**credentials)
+
+    def meet(self,meeting,route,body=None,**credentials):
+        """One side of a concurrent pair; a denial releases the waiting partner."""
+        try:return self.call(route,body,**credentials)
+        except BaseException:meeting.abandon();raise
 
     def pending(self,client='192.0.2.1'):
         initial=self.call('bootstrap',client=client)
@@ -87,13 +111,17 @@ class SessionStoreTests(unittest.TestCase):
 
     def test_two_concurrent_valid_submits_commit_one_session(self):
         credentials,body=self.pending()
-        barrier=Barrier(2)
-        self.checker.effect=lambda address: (barrier.wait(timeout=3),dict(VALIDATION))[1]
+        meeting=Meeting()
+        self.checker.effect=meeting.arrive
         def submit(service):
             try:return self.call('verify',body,service=service,**credentials)
-            except SessionError as error:return error.code
+            except SessionError as error:meeting.abandon();return error.code
+            except BrokenBarrierError:return 'partner_never_arrived'
         with ThreadPoolExecutor(2) as pool:
             outcomes=list(pool.map(submit,(self.service,self.peer)))
+        # Both submits have to be inside the check for the race to be the one
+        # under test; one denied earlier makes every assertion below vacuous.
+        self.assertEqual(len(self.checker.calls),2,outcomes)
         self.assertEqual(sum(isinstance(value,dict) for value in outcomes),1)
         self.assertIn('challenge_invalid',outcomes)
         self.assertEqual(self.admin.execute('SELECT count(*) AS n FROM domino_sessions.sessions').fetchone()['n'],1)
@@ -278,12 +306,12 @@ class SessionStoreTests(unittest.TestCase):
                            "expires_at=statement_timestamp()+interval '11 hours',last_used_at=statement_timestamp()-interval '20 minutes'")
         old=self.admin.execute('SELECT * FROM domino_sessions.sessions').fetchone()
         restored=self.call('me',service=self.peer,session=c['session'])['result']['csrfToken']
-        barrier=Barrier(2)
         latest={**VALIDATION,'blockNumber':'124','blockHash':'0x'+'cd'*32}
-        self.checker.effect=lambda _: (barrier.wait(timeout=3),latest)[1]
+        meeting=Meeting(latest)
+        self.checker.effect=meeting.arrive
         with ThreadPoolExecutor(2) as pool:
-            first=pool.submit(self.call,'refresh',**c)
-            second=pool.submit(self.call,'refresh',service=self.peer,session=c['session'],csrf=restored)
+            first=pool.submit(self.meet,meeting,'refresh',**c)
+            second=pool.submit(self.meet,meeting,'refresh',service=self.peer,session=c['session'],csrf=restored)
             results=[first.result(),second.result()]
         row=self.admin.execute('SELECT * FROM domino_sessions.sessions').fetchone()
         self.assertGreater(row['last_used_at'],old['last_used_at'])
