@@ -25,6 +25,7 @@ import check_disabled_http
 import check_filesystem
 import check_roles
 import prepare_disabled
+import upgrade_financial
 
 COMMIT = 'a' * 40
 # Independent release contract: adding a migration to production MIGRATIONS
@@ -50,6 +51,23 @@ def packaged_records(files):
 
 
 class ArchiveTests(unittest.TestCase):
+    def test_every_migration_on_disk_is_named_by_a_deployment_list(self):
+        """A new migration must be registered, or its release is refused.
+
+        This is the failure that reached CI twice: the packaging allowlist and the
+        post-foundation upgrade list both have to name a file under
+        `backend/migrations/`, and nothing else in the tree notices a new one.
+        """
+        on_disk = {path.name for path in (Path(__file__).resolve().parents[3] /
+                                          'backend' / 'migrations').glob('*.sql')}
+        packaged = {Path(name).name for name in
+                    (*prepare_disabled.MIGRATIONS, *prepare_disabled.PACKAGED_ONLY_MIGRATIONS)}
+        applied = {Path(name).name for name in
+                   (*upgrade_financial.base.MIGRATIONS, *upgrade_financial.MIGRATIONS)}
+        self.assertEqual(on_disk - packaged, set(), 'migrations no release may carry')
+        self.assertEqual((packaged | applied) - on_disk, set(), 'lists naming absent files')
+        self.assertEqual(on_disk, packaged, 'the packaging allowlist is the whole tree')
+
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)
