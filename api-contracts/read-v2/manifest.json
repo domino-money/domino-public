@@ -262,7 +262,7 @@
     },
     {
       "path": "backend/discovery.py",
-      "sha256": "8c9bc41df23339ea5aeb7ac700e77077f58ba4f4b6d609ad27c468e513fac5c5"
+      "sha256": "dd23f0886c972cd6bad974b6046993a5be62b02c68beaaed7546ad8f0732c140"
     },
     {
       "path": "backend/read_service.py",

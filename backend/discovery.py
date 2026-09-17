@@ -424,6 +424,13 @@ class ReadRpc:
         return value
 
 
+def prefetched(raw):
+    """A batched read, or the refusal the sequential call would have raised here."""
+    if isinstance(raw, DataError):
+        raise raw
+    return raw
+
+
 def decode_result(types, raw):
     if (not isinstance(raw, str) or not re.fullmatch(r'0x(?:[0-9a-fA-F]{2})*', raw)
             or len(raw) > 16_386):
@@ -520,6 +527,10 @@ def provider_candidates(payload, selected_token, retrieved_at):
 
 
 class DiscoveryReader:
+    # Same envelope width as the wallet-assets probe, so one slow node degrades
+    # the two paths identically.
+    BATCH_CHUNK = 8
+
     def __init__(self, rpc, *, clock=time.time, max_age=120):
         self.rpc, self.clock, self.max_age = rpc, clock, max_age
 
@@ -610,13 +621,16 @@ class DiscoveryReader:
                     'reason': str(error), 'metadataIssues': {}, 'displayUnitsAvailable': False,
                     'executionAvailable': False}
 
-    def pool(self, candidate, block):
+    def pool(self, candidate, block, *, reads=None):
+        """`reads` carries the same two results already fetched by pool_reads."""
         pool_id = bytes32(candidate['poolId'])
         if candidate.get('poolKey') is not None:
             value = candidate['poolKey']
             if not isinstance(value,dict) or set(value)!={'currency0','currency1','fee_pips','tick_spacing','hooks'}:
                 raise DataError('invalid_pool_key')
             raw_key = tuple(value[field] for field in ('currency0','currency1','fee_pips','tick_spacing','hooks'))
+        elif reads is not None:
+            raw_key = decode_result(KEY_TYPES, prefetched(reads['key']))
         else:
             # PositionManager's cache uses bytes25; verify the complete hash afterward.
             raw_key = self.rpc.call(POSITION_MANAGER, 'poolKeys(bytes25)', ['bytes25'],
@@ -624,10 +638,11 @@ class DiscoveryReader:
         key = PoolKey.checked(raw_key, pool_id)
         if candidate.get('currencies') is not None and [key.currency0, key.currency1] != candidate['currencies']:
             raise DataError('provider_currency_mismatch')
-        sqrt, tick, protocol, lp_fee = self.rpc.call(
-            STATE_VIEW, 'getSlot0(bytes32)', ['bytes32'], [bytes.fromhex(pool_id[2:])],
-            ['uint160', 'int24', 'uint24', 'uint24'], block=block.tag,
-        )
+        slot0_types = ['uint160', 'int24', 'uint24', 'uint24']
+        sqrt, tick, protocol, lp_fee = (
+            decode_result(slot0_types, prefetched(reads['slot0'])) if reads is not None else
+            self.rpc.call(STATE_VIEW, 'getSlot0(bytes32)', ['bytes32'],
+                          [bytes.fromhex(pool_id[2:])], slot0_types, block=block.tag))
         if not 0 < sqrt < 2**160 or not -887272 <= tick <= 887272 or lp_fee > 1_000_000:
             raise DataError('invalid_pool_state')
         if key.fee_pips != 0x800000 and lp_fee != key.fee_pips:
@@ -643,6 +658,58 @@ class DiscoveryReader:
             'suggested': False, 'suggestionReason': 'metrics_and_policy_not_qualified',
             'executionAvailable': False, 'executionReason': 'public_execution_not_implemented',
         }
+
+    def _staged(self, specs):
+        """One result per spec, batched in chunks; a refused item keeps its own error.
+
+        Mirrors read_service._probe_currencies (#148): an envelope failure falls
+        back to sequential reads for that chunk alone, so a candidate the node
+        refuses never discards the others.
+        """
+        results = []
+        for start in range(0, len(specs), self.BATCH_CHUNK):
+            chunk = specs[start:start+self.BATCH_CHUNK]
+            try:
+                results.extend(self.rpc.batch(chunk))
+            except DataError:
+                for method, params in chunk:
+                    try:
+                        results.append(self.rpc.request(method, params))
+                    except DataError as error:
+                        results.append(error)
+        return results
+
+    def pool_reads(self, candidates, block):
+        """Fetch every candidate's identity reads in batched envelopes, in order.
+
+        Returns one entry per candidate: a record pool() decodes, or None when
+        this transport cannot batch or the id is unreadable, in which case pool()
+        reads and rejects exactly as it does sequentially. A provider-supplied
+        key is never read back, so those candidates only need getSlot0.
+        """
+        if getattr(self.rpc, 'batch_reads', False) is not True:
+            return [None]*len(candidates)
+        ids = []
+        for candidate in candidates:
+            try:
+                ids.append(bytes32(candidate['poolId']))
+            except DataError:
+                ids.append(None)  # pool() raises invalid_bytes32 for this one
+        keyed = [index for index, candidate in enumerate(candidates)
+                 if ids[index] is not None and candidate.get('poolKey') is None]
+        slotted = [index for index, pool_id in enumerate(ids) if pool_id is not None]
+        keys = self._staged([('eth_call', self.rpc.call_params(
+            POSITION_MANAGER, 'poolKeys(bytes25)', ['bytes25'],
+            [bytes.fromhex(ids[index][2:52])], block=block.tag)) for index in keyed])
+        slots = self._staged([('eth_call', self.rpc.call_params(
+            STATE_VIEW, 'getSlot0(bytes32)', ['bytes32'],
+            [bytes.fromhex(ids[index][2:])], block=block.tag)) for index in slotted])
+        reads = [None]*len(candidates)
+        for index, raw in zip(slotted, slots):
+            reads[index] = {'key': None, 'slot0': raw}
+        for index, raw in zip(keyed, keys):
+            reads[index]['key'] = raw
+        return reads
 
     def position_owner(self, token_id, block):
         if type(token_id) is not int or not 0 < token_id < 2**256:
@@ -728,9 +795,10 @@ def discover(token, *, rpc=None, transport=json_http, clock=time.time, max_pools
     report['catalogue'] = catalogue_status or {'status':'not_configured','completeHistory':False}
     report['discovery'].update(requestedPoolIds=len(pool_ids), notProbed=max(0, len(candidates) - max_pools))
     report['pairedToken'] = paired_token
-    for candidate in candidates[:max_pools]:
+    probed = candidates[:max_pools]
+    for candidate, prefetch in zip(probed, reader.pool_reads(probed, block)):
         try:
-            pool = reader.pool(candidate, block)
+            pool = reader.pool(candidate, block, reads=prefetch)
             if token not in pool['currencies']:
                 raise DataError('selected_token_mismatch')
             if paired_token is not None and paired_token not in pool['currencies']:

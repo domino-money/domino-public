@@ -337,6 +337,51 @@ class DiscoveryBatchTests(unittest.TestCase):
             with self.subTest(kind=kind),self.assertRaisesRegex(DataError,reason):self.result(True,provider)
             if kind in ('chain','stale'):self.assertFalse(any(isinstance(body,list) and len(body)==5 for _,body in provider.envelopes))
 
+    def pools(self,batched,candidates,provider=None):
+        """Identity reads for many candidates; returns outcomes and their envelopes."""
+        provider=provider or Provider()
+        rpc=FailoverReadRpc((PRIMARY,),transport=provider,batch_reads=batched)
+        reader=DiscoveryReader(rpc,clock=lambda:1010)
+        block=reader.snapshot()
+        spent=len(provider.envelopes)
+        outcomes=[]
+        for candidate,prefetch in zip(candidates,reader.pool_reads(candidates,block)):
+            try:outcomes.append(reader.pool(candidate,block,reads=prefetch))
+            except DataError as error:outcomes.append(str(error))
+        return outcomes,rpc,len(provider.envelopes)-spent
+
+    def test_batched_pool_identity_matches_sequential_and_isolates_a_refused_id(self):
+        # Nine readable candidates cross the eight-wide envelope, so both call
+        # shapes chunk; the tenth is rejected before any read is planned for it.
+        candidates=[{'poolId':POOL} for _ in range(9)]+[{'poolId':'0x00'}]
+        old,old_rpc,old_envelopes=self.pools(False,candidates)
+        new,new_rpc,new_envelopes=self.pools(True,candidates)
+        self.assertEqual(new,old)
+        self.assertEqual(new[-1],'invalid_bytes32')
+        self.assertEqual(sum(isinstance(value,dict) for value in new),9)
+        self.assertEqual((old_envelopes,new_envelopes),(18,4))
+        self.assertEqual(old_rpc.count,new_rpc.count)
+
+    def test_a_provider_key_is_never_read_back_and_only_slot0_is_fetched(self):
+        candidates=[{'poolId':POOL,'poolKey':dict(zip(
+            ('currency0','currency1','fee_pips','tick_spacing','hooks'),KEY))} for _ in range(3)]
+        old,_,old_envelopes=self.pools(False,candidates)
+        new,_,new_envelopes=self.pools(True,candidates)
+        self.assertEqual(new,old)
+        self.assertEqual((old_envelopes,new_envelopes),(3,1))
+
+    def test_a_failed_envelope_falls_back_to_sequential_reads_for_that_chunk(self):
+        candidates=[{'poolId':POOL} for _ in range(9)]
+        expected,_,_=self.pools(False,candidates)
+        provider=Provider()
+        rpc=FailoverReadRpc((PRIMARY,),transport=provider,batch_reads=True)
+        reader=DiscoveryReader(rpc,clock=lambda:1010)
+        block=reader.snapshot()
+        with patch.object(type(rpc),'batch',side_effect=DataError('invalid_rpc_envelope')):
+            reads=reader.pool_reads(candidates,block)
+        self.assertEqual([reader.pool(candidate,block,reads=prefetch)
+                          for candidate,prefetch in zip(candidates,reads)],expected)
+
     def test_service_enables_batching_but_injected_rpc_retains_its_contract(self):
         service=ReadService(rpc_urls=(PRIMARY,),transport_factory=lambda:Provider())
         self.assertTrue(service._rpc(Provider()).batch_reads)
