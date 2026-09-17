@@ -64,6 +64,8 @@ PACKAGED_ONLY_MIGRATIONS = (
     # The demand queue for on-demand pool indexing; applied by the
     # post-foundation upgrade, not by the disabled foundation.
     'backend/migrations/020_pool_requests.sql',
+    # Explicitly mapped external market references; same vehicle.
+    'backend/migrations/021_reference_price_sources.sql',
 )
 MAPPINGS = (
     ('domino', 'domino-admin', ADMIN),

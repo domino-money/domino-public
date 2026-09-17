@@ -30,8 +30,9 @@ MIGRATIONS = tuple('backend/migrations/' + name + '.sql' for name in (
     '015_unsigned_execution', '016_managed_performance',
     '017_performance_financial_history', '018_performance_enrollment', '019_execution_journal',
     # Post-foundation migrations travel with this upgrade; the demand queue adds
-    # no role and no service, only a table and one reader-callable function.
-    '020_pool_requests'))
+    # no role and no service, only a table and one reader-callable function, and
+    # the reference price sources only widen an existing check.
+    '020_pool_requests', '021_reference_price_sources'))
 NEW_ROLES = ('domino_performance_collector', 'domino_performance_reader',
              'domino_execution_worker', 'domino_execution_ledger',
              'domino_execution_signer', 'domino_execution_reader')
