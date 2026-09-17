@@ -10,6 +10,8 @@ PostgreSQL 16.15 is installed with no TCP listener, a private Unix socket, fixed
 
 All authorized collaborators may configure Cloudflare, DNS, frontend routing/access gates, VM services and the wallet allowlist for login/private operations. No area is reserved to a named person. The wallet allowlist does not restrict public blockchain reads and does not grant token approvals, signing or financial execution. See [wallet access](WALLET_ACCESS.md), [wallet sessions](WALLET_SESSIONS.md), [read gateway](READ_GATEWAY_RUNBOOK.md) and [API compatibility](API_COMPATIBILITY.md).
 
+Operator connection procedure, on-VM layout and read-only checks: [home VM access](HOME_VM_ACCESS.md). Addresses, usernames and keys stay in the operator's private SSH configuration.
+
 ## 1. Inputs needed before provisioning
 
 | Input area | Required input or deliverable |
