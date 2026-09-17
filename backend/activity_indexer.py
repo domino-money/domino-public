@@ -157,9 +157,11 @@ class ActivityIndexer:
                 decoded.append(event)
             # Only events inside the retention window pay for a header; older
             # ones are interpolated between the chunk boundaries and labelled.
-            # The floor is the pool's own Initialize, not the chunk start: a
-            # chunk's first block is inside the window as often as not.
-            window_start=max(row['start_block'],end-RETENTION_BLOCKS)
+            # Exact headers are for the window the reads actually serve: the last
+            # 24 h of the chain, not of each chunk. A deep backfill's chunks are
+            # all older than that, so every event in them is derived and free;
+            # only the tail pays, once.
+            window_start=max(row['start_block'],through-RETENTION_BLOCKS)
             headers=read_headers(self.rpc,[event['blockNumber'] for event in decoded
                                            if event['blockNumber']>window_start],
                                  cache=self.header_cache,budget=self.header_budget)

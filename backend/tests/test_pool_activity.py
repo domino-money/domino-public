@@ -18,7 +18,7 @@ from activity_store import PgActivity
 from catalogue import PgCatalogue
 from dev_postgres import ADMIN, BIN, PORT, SOCKET, create_database
 from discovery import Block, CHAIN_ID, DataError, POOL_MANAGER
-from indexer_io import MAX_INDEXER_SPAN
+from indexer_io import MAX_INDEXER_SPAN, HeaderBudget
 from pool_activity import (DONATE, INITIALIZE_TOPIC, MODIFY, PROTOCOL, SWAP, TOPICS,
                            active_liquidity, decode_activity, protocol_directions, replay, window_metrics)
 from read_api import ReadGate, create_app
@@ -240,6 +240,18 @@ class ActivityPostgresTests(unittest.TestCase):
             self.assertEqual(row['s'],'exact' if row['n']>10 else 'block_range_derived')
         # A window is a claim about time, so it counts only exact rows.
         self.assertEqual(self.store.read(POOL)['window24h']['swapEventCount'],1)
+
+    def test_a_deep_chunk_pays_for_no_header_at_all(self):
+        """Depth must be free: only the tail's window is ever served."""
+        self.register()
+        budget=HeaderBudget(0)
+        worker=ActivityIndexer(self.store,self.rpc,header_cache={},header_budget=budget)
+        result=worker.step(POOL,through=200_000,span=1000)
+        self.assertTrue(result['stateReconciled'])
+        self.assertEqual(budget.calls,0)
+        with self.catalogue.connection() as conn:
+            sources=conn.execute('SELECT DISTINCT timestamp_source AS s FROM domino_activity.events').fetchall()
+        self.assertEqual([row['s'] for row in sources],['block_range_derived'])
 
     def test_derived_timestamps_interpolate_between_the_chunk_boundaries(self):
         before=Block(100,block_hash(100),1_100);end=Block(200,block_hash(200),1_300)
