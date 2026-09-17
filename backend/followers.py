@@ -17,6 +17,9 @@ import time
 from discovery import DataError
 
 STEP_STATUSES = ('indexed', 'caught_up_to_target', 'rewound')
+# A spent provider budget is an operator decision point, not a transient fault:
+# retrying would spend the same money again.
+STOP_REASONS = frozenset({'header_budget_exhausted'})
 
 
 def follow_target(head_number, lag):
@@ -102,9 +105,12 @@ def follow_many(targets, observe_head, *, lag, max_passes, poll_seconds, max_sec
                 failure = {'round': rounds, 'targetBlock': target_block, 'reason': str(error)}
                 entry['failures'].append(failure)
                 entry['lastResult'] = failure
-                failed = True
                 if on_pass is not None:
                     on_pass({'round': rounds, 'target': name, 'targetBlock': target_block, **failure})
+                if str(error) in STOP_REASONS:
+                    stopped = 'budget'
+                    break
+                failed = True
                 if entry['consecutiveFailures'] >= max_consecutive_failures:
                     stopped = 'failures'
                     break

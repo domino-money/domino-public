@@ -1132,7 +1132,7 @@
     },
     {
       "path": "backend/activity_store.py",
-      "sha256": "a251c447deb2b183f979a6668679b7c7770ea09635e8f3801253a71485fba5f3"
+      "sha256": "512b12a0f2d0112c3dbfb6458f17d8ab45df23b0d96c1631f808657b46b1a15e"
     },
     {
       "path": "backend/position_store.py",

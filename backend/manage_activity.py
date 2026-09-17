@@ -27,7 +27,7 @@ from catalogue import configured_writer_catalogue
 from catalogue_indexer import INITIALIZE_TOPIC, IndexRpc, decode_initialize
 from discovery import POOL_MANAGER, DataError, DiscoveryReader, ReadRpc, bytes32
 from followers import follow_many
-from indexer_io import MAX_INDEXER_SPAN, AdaptiveSpan, indexer_transport
+from indexer_io import MAX_INDEXER_SPAN, AdaptiveSpan, HeaderBudget, indexer_transport
 from local_config import load_config
 from pool_activity import ACTIVITY_CAPACITY_PROFILES
 from pool_requests import PERMANENT, WRITER_ROLE, PgRequests
@@ -179,6 +179,8 @@ def main():
     parser.add_argument('--max-seconds',type=float)
     parser.add_argument('--max-consecutive-failures',type=int,default=5)
     parser.add_argument('--capacity-profile',choices=ACTIVITY_CAPACITY_PROFILES,default='standard')
+    parser.add_argument('--max-header-calls',type=int,dest='max_header_calls',default=20_000,
+                        help='hard ceiling on provider header reads per invocation')
     parser.add_argument('--register',action='store_true')
     parser.add_argument('--request',action='store_true',
                         help='enqueue this pool (or --selected) for on-demand indexing')
@@ -268,10 +270,16 @@ def main():
         if catalogue is None:
             raise DataError('catalogue_not_configured')
         store=PgActivity(catalogue)
+        # One cache and one budget per invocation: the same block is never paid
+        # for twice across pools or chunks, and the run stops at the ceiling
+        # instead of spending whatever the walk needs.
+        header_cache={}
+        header_budget=HeaderBudget(args.max_header_calls)
         def worker():
             return ActivityIndexer(store,IndexRpc(url,transport=indexer_transport(90),max_requests=20_000),
                                    capacity=args.capacity_profile,
-                                   parallel_walks=args.parallel_walks)
+                                   parallel_walks=args.parallel_walks,
+                                   header_cache=header_cache,header_budget=header_budget)
         if args.queue_worker:
             if not 1<=args.max_pools<=64:
                 raise DataError('invalid_pool_request_claim')

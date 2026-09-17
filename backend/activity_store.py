@@ -46,9 +46,13 @@ class PgActivity:
         conn.execute('INSERT INTO domino_activity.chunks VALUES(%s,%s,%s,%s,%s,%s,%s)',
                      (pool_id,start,end.number,end.hash,end.timestamp,Jsonb(model),Jsonb(snapshot)))
         for e in events:
-            conn.execute('INSERT INTO domino_activity.events VALUES(%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)',
+            conn.execute('''INSERT INTO domino_activity.events
+                         (pool_id,chunk_start,block_number,block_hash,block_timestamp,tx_hash,
+                          log_index,kind,payload,raw_fingerprint,timestamp_source)
+                         VALUES(%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)''',
                          (pool_id,start,e['blockNumber'],e['blockHash'],e['timestamp'],e['transactionHash'],
-                          e['logIndex'],e['kind'],Jsonb(e['payload']),e['rawFingerprint']))
+                          e['logIndex'],e['kind'],Jsonb(e['payload']),e['rawFingerprint'],
+                          e.get('timestampSource','exact')))
         conn.execute('''UPDATE domino_activity.pools SET next_block=%s,revision=revision+1,
                      activity_diagnostic=NULL WHERE pool_id=%s''',
                      (end.number+1,pool_id))
@@ -117,8 +121,12 @@ class PgActivity:
             tail=self.tail(conn,pool_id)
             if not tail:
                 raise DataError('activity_not_indexed')
+            # A window is a claim about time, so it only counts rows whose
+            # timestamp was read from their own block; an interpolated one can
+            # never enter a window.
             events=conn.execute('''SELECT block_timestamp AS timestamp,kind,payload FROM domino_activity.events
               WHERE pool_id=%s AND block_timestamp>%s AND block_timestamp<=%s
+              AND timestamp_source='exact'
               AND kind IN ('swap','donate') ORDER BY block_number,log_index LIMIT 50001''',
               (pool_id,tail['end_timestamp']-86400,tail['end_timestamp'])).fetchall()
             if len(events)>50000:

@@ -26,7 +26,7 @@ export const PRODUCER_PIN = {
   packages: {
     'read-v1': {
       version: '1.1.0-rc.3',
-      manifestSha256: '0691815fe5e65a3181882331deea56c55409064144bd05dcaa6e7623e4898091',
+      manifestSha256: 'e20cdf6b48224eaeb1441557baa947632cf9d85fff928ebf93c8ded6fd9004c9',
     },
     'session-v1': {
       version: '3.0.0-rc.2',

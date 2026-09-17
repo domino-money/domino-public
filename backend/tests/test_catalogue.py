@@ -281,15 +281,25 @@ class PostgresCatalogueTests(unittest.TestCase):
         self.assertEqual(self.state()['next_block'],12)
         self.assertEqual(self.counts(),(1,1,0))
 
-    def test_wrong_event_hash_and_mid_read_reorg_leave_no_partial_data(self):
+    def test_mid_read_reorg_leave_no_partial_data(self):
         self.worker.start(10)
-        self.rpc.logs=[log(branch=1)]
-        with self.assertRaisesRegex(DataError,'event_block_mismatch'): self.worker.step(through=11)
         self.rpc.logs=[]
         self.rpc.after_logs=lambda:setattr(self.rpc,'fork_at',10)
         with self.assertRaisesRegex(DataError,'index_snapshot_reorganized'): self.worker.step(through=11)
         self.assertEqual(self.state()['next_block'],10)
         self.assertEqual(self.counts(),(0,0,0))
+
+    def test_the_event_block_hash_comes_from_the_provider_reply(self):
+        """One header per event would cost a call per Initialize event on the chain.
+
+        The chunk boundaries are read and re-read around the log call, so the
+        range and its end hash are verified; the event's own hash is taken from
+        the reply that carried it instead of being re-read block by block.
+        """
+        self.worker.start(10)
+        self.rpc.logs=[log(11,branch=1)]
+        self.assertEqual(self.worker.step(through=11)['events'],1)
+        self.assertEqual(self.counts(),(1,1,0))
 
     def test_reorg_between_reconcile_and_next_anchor_is_not_committed(self):
         self.worker.start(10);self.worker.step(through=11)

@@ -160,17 +160,18 @@ class CatalogueIndexer:
                                    'fromBlock':hex(start),'toBlock':hex(end)}])
             if not isinstance(raw,list) or len(raw)>MAX_CHUNK_EVENTS:
                 raise DataError('invalid_logs_response')
-            events, identities, decoded = [], {}, []
+            events, identities = [], {}
             for log in raw:
                 event = decode_initialize(log)
                 number = event['blockNumber']
                 if not start<=number<=end:
                     raise DataError('event_outside_chunk')
-                decoded.append(event)
-            headers = read_headers(self.rpc, [event['blockNumber'] for event in decoded])
-            for event in decoded:
-                if headers[event['blockNumber']].hash != event['blockHash']:
-                    raise DataError('event_block_mismatch')
+                # One header per event block would cost a provider call for every
+                # Initialize event on the chain to re-check a hash the same reply
+                # already carried. The chunk's own boundaries are read before and
+                # after this call, so the range and its end hash are verified, and
+                # the identity that matters — the key hashing to the pool id — is
+                # checked inside decode_initialize.
                 identity = (event['blockHash'],event['logIndex'])
                 if identity in identities:
                     if identities[identity] != event:

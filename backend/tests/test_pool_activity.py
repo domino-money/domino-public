@@ -13,7 +13,7 @@ sys.path.insert(0,str(Path(__file__).resolve().parents[1]))
 import psycopg
 from eth_abi import encode
 from fastapi.testclient import TestClient
-from activity_indexer import ActivityIndexer
+from activity_indexer import ActivityIndexer, derived_timestamp
 from activity_store import PgActivity
 from catalogue import PgCatalogue
 from dev_postgres import ADMIN, BIN, PORT, SOCKET, create_database
@@ -222,6 +222,33 @@ class ActivityPostgresTests(unittest.TestCase):
         self.assertEqual(worker.step(POOL,through=13)['fromBlock'],12)
         self.assertEqual(worker.step(POOL,through=13)['status'],'caught_up_to_target')
         self.assertEqual(self.counts(),(2,4))
+
+    def test_events_outside_the_retention_window_are_derived_and_labelled(self):
+        """A deep backfill must not pay a provider header per event block."""
+        with patch('activity_indexer.RETENTION_BLOCKS',1):
+            self.register()
+            result=self.worker.step(POOL,through=11)
+        self.assertTrue(result['stateReconciled'])
+        with self.catalogue.connection() as conn:
+            rows=conn.execute('''SELECT block_number AS n,block_timestamp AS t,timestamp_source AS s
+                                 FROM domino_activity.events ORDER BY block_number,log_index''').fetchall()
+        self.assertTrue(rows)
+        self.assertEqual({row['s'] for row in rows},{'exact','block_range_derived'})
+        for row in rows:
+            # The fixture chain is linear, so the interpolation reproduces it.
+            self.assertEqual(row['t'],1_000+row['n'])
+            self.assertEqual(row['s'],'exact' if row['n']>10 else 'block_range_derived')
+        # A window is a claim about time, so it counts only exact rows.
+        self.assertEqual(self.store.read(POOL)['window24h']['swapEventCount'],1)
+
+    def test_derived_timestamps_interpolate_between_the_chunk_boundaries(self):
+        before=Block(100,block_hash(100),1_100);end=Block(200,block_hash(200),1_300)
+        self.assertEqual(derived_timestamp(before,end,100),1_100)
+        self.assertEqual(derived_timestamp(before,end,150),1_200)
+        self.assertEqual(derived_timestamp(before,end,200),1_300)
+        # A chunk whose boundaries share a timestamp yields that timestamp.
+        flat=Block(200,block_hash(200),1_100)
+        self.assertEqual(derived_timestamp(before,flat,150),1_100)
 
     def test_bad_anchor_does_not_create_activity_record(self):
         with self.assertRaisesRegex(DataError,'initialize_anchor_not_found'):self.worker.register(POOL,12)

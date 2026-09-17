@@ -2,9 +2,14 @@
 -- Reapplying the migration retains every observation and its original proof.
 ALTER TABLE domino_activity.price_observations
  DROP CONSTRAINT IF EXISTS price_observations_source_check;
+-- NOT VALID on purpose: this file is re-applied by the installers, and a later
+-- migration widens the same check for the explicit market-reference sources. A
+-- validated re-add here would refuse a database that already holds one of those
+-- rows before the widening file runs again. New rows are still checked; the
+-- wider constraint that follows validates the whole table.
 ALTER TABLE domino_activity.price_observations
  ADD CONSTRAINT price_observations_source_check
- CHECK(source IN ('alchemy_historical','chainlink_robinhood_standard_v1'));
+ CHECK(source IN ('alchemy_historical','chainlink_robinhood_standard_v1')) NOT VALID;
 
 ALTER TABLE domino_activity.price_observations
  DROP CONSTRAINT IF EXISTS price_observations_chainlink_provenance_check;

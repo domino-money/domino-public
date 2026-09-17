@@ -9,14 +9,35 @@ from pool_activity import (TOPICS, active_liquidity, activity_range_limit,
                            decode_activity, replay, valid_price, protocol_directions)
 
 
+# The read's window is 24 h; on this chain a block is one second, so the window
+# is that many blocks of a chunk. Only events inside it need a provider header.
+RETENTION_BLOCKS = 86_400
+
+
+def derived_timestamp(before,end,number):
+    """Interpolate between the two verified chunk boundaries.
+
+    Monotone in the block number, exact when the block time is constant, and
+    labelled in the row as derived. It is never used inside the retention
+    window, where the real header is read.
+    """
+    span=end.number-before.number
+    if span<=0:
+        return end.timestamp
+    return before.timestamp+(number-before.number)*(end.timestamp-before.timestamp)//span
+
+
 class ActivityIndexer:
-    def __init__(self,store,rpc,*,capacity='standard',parallel_walks=False):
+    def __init__(self,store,rpc,*,capacity='standard',parallel_walks=False,
+                 header_cache=None,header_budget=None):
         self.range_limit=activity_range_limit(capacity)
         self.capacity=capacity
         # One writer per pool by default; `parallel_walks` narrows the global
         # catalogue lock to the pool being walked so different pools can be
         # indexed at the same time. The same pool is always serialized.
         self.parallel_walks=parallel_walks
+        self.header_cache=header_cache if header_cache is not None else {}
+        self.header_budget=header_budget
         self.store,self.rpc=store,rpc
         self.chain=CatalogueIndexer(store.catalogue,rpc)
 
@@ -111,6 +132,8 @@ class ActivityIndexer:
             row=self.store.pool(conn,pool_id)
             rewind=self.reconcile(conn,row)
             if rewind is not None:
+                # The branch changed, so every cached header from it is stale.
+                self.header_cache.clear()
                 return {'status':'rewound','through':rewind}
             if row['next_block']>through:
                 return {'status':'caught_up_to_target','through':row['next_block']-1}
@@ -132,16 +155,30 @@ class ActivityIndexer:
                 if not start<=number<=end:
                     raise DataError('activity_event_outside_chunk')
                 decoded.append(event)
-            # One batched envelope per `INDEXER_BATCH_ITEMS` distinct event
-            # blocks instead of one round trip per block; the per-event checks
-            # below are unchanged.
-            headers=read_headers(self.rpc,[event['blockNumber'] for event in decoded])
+            # Only events inside the retention window pay for a header; older
+            # ones are interpolated between the chunk boundaries and labelled.
+            # The floor is the pool's own Initialize, not the chunk start: a
+            # chunk's first block is inside the window as often as not.
+            window_start=max(row['start_block'],end-RETENTION_BLOCKS)
+            headers=read_headers(self.rpc,[event['blockNumber'] for event in decoded
+                                           if event['blockNumber']>window_start],
+                                 cache=self.header_cache,budget=self.header_budget)
             for event in decoded:
                 number=event['blockNumber']
-                header=headers[number]
-                if header.hash!=event['blockHash'] or not before.timestamp<=header.timestamp<=block.timestamp:
-                    raise DataError('activity_event_block_mismatch')
-                event['timestamp']=header.timestamp
+                header=headers.get(number)
+                if header is not None and header.hash!=event['blockHash']:
+                    # A cached header may come from the branch this event
+                    # replaced; the live one decides, so refetch just this block.
+                    self.header_cache.pop(number,None)
+                    header=read_headers(self.rpc,[number],cache=self.header_cache)[number]
+                if header is not None:
+                    if header.hash!=event['blockHash'] or not before.timestamp<=header.timestamp<=block.timestamp:
+                        raise DataError('activity_event_block_mismatch')
+                    event['timestamp']=header.timestamp
+                    event['timestampSource']='exact'
+                else:
+                    event['timestamp']=derived_timestamp(before,block,number)
+                    event['timestampSource']='block_range_derived'
                 identity=(number,event['logIndex'])
                 if identity in seen:
                     if seen[identity]!=event:

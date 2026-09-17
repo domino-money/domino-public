@@ -5,7 +5,7 @@ import unittest
 
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]))
 from discovery import DataError
-from indexer_io import MAX_INDEXER_SPAN, AdaptiveSpan, read_headers
+from indexer_io import MAX_INDEXER_SPAN, AdaptiveSpan, HeaderBudget, read_headers
 
 
 def raw_block(number, *, number_override=None):
@@ -36,6 +36,30 @@ class SequentialSpy(BatchSpy):
 
 
 class ReadHeadersTests(unittest.TestCase):
+    def test_a_shared_cache_pays_for_a_block_once(self):
+        rpc = BatchSpy()
+        cache = {}
+        read_headers(rpc, [7, 8], cache=cache)
+        read_headers(rpc, [7, 8, 9], cache=cache)
+        self.assertEqual(rpc.calls, [7, 8, 9])
+        self.assertEqual(sorted(cache), [7, 8, 9])
+
+    def test_the_budget_counts_only_what_was_fetched_and_refuses_overspend(self):
+        budget = HeaderBudget(3)
+        cache = {}
+        read_headers(BatchSpy(), [1, 2], cache=cache, budget=budget)
+        self.assertEqual(budget.calls, 2)
+        read_headers(BatchSpy(), [1, 2], cache=cache, budget=budget)
+        self.assertEqual(budget.calls, 2)
+        with self.assertRaisesRegex(DataError, 'header_budget_exhausted'):
+            read_headers(BatchSpy(), [3, 4], cache=cache, budget=budget)
+        self.assertEqual(budget.calls, 2)
+
+    def test_an_invalid_budget_is_refused(self):
+        for value in (-1, True, '10'):
+            with self.subTest(value=value), self.assertRaises(DataError):
+                HeaderBudget(value)
+
     def test_distinct_blocks_are_read_once_in_one_envelope(self):
         rpc = BatchSpy()
         headers = read_headers(rpc, [5, 3, 5, 4])

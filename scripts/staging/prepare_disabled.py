@@ -66,6 +66,8 @@ PACKAGED_ONLY_MIGRATIONS = (
     'backend/migrations/020_pool_requests.sql',
     # Explicitly mapped external market references; same vehicle.
     'backend/migrations/021_reference_price_sources.sql',
+    # The event timestamp source; same vehicle.
+    'backend/migrations/022_event_timestamp_source.sql',
 )
 MAPPINGS = (
     ('domino', 'domino-admin', ADMIN),

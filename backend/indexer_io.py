@@ -44,13 +44,40 @@ def indexer_transport(seconds=90, request_timeout=INDEXER_REQUEST_TIMEOUT,
     return transport
 
 
-def read_headers(rpc, numbers, *, batch_items=INDEXER_BATCH_ITEMS, request=None):
+class HeaderBudget:
+    """Hard ceiling on header reads in one invocation.
+
+    A dense pool costs one header per distinct event block, and a deep backfill
+    across many pools multiplies that without bound. A budget turns "the walk
+    keeps going" into "the walk stops and says so", which is the only way an
+    operator can keep a provider bill predictable.
+    """
+
+    def __init__(self, max_calls):
+        if type(max_calls) is not int or max_calls < 0:
+            raise DataError('invalid_header_budget')
+        self.max_calls, self.calls = max_calls, 0
+
+    def spend(self, count):
+        if count < 0:
+            raise DataError('invalid_header_budget')
+        if self.calls + count > self.max_calls:
+            raise DataError('header_budget_exhausted')
+        self.calls += count
+
+
+def read_headers(rpc, numbers, *, batch_items=INDEXER_BATCH_ITEMS, request=None, cache=None,
+                 budget=None):
     """Return {block number: parsed block} for distinct numbers, batched.
 
     Every header is parsed with the same `parse_block` validation the sequential
     path used, so a truncated or inconsistent answer fails exactly as before.
     Batching is an envelope change only: the same calls, the same checks, one
     round trip per `batch_items` calls.
+
+    A caller may pass a `cache` (number → block) shared across pools and chunks,
+    so the same block is never paid for twice, and a `budget` that counts only
+    the headers actually fetched.
     """
     wanted = []
     for number in numbers:
@@ -60,25 +87,33 @@ def read_headers(rpc, numbers, *, batch_items=INDEXER_BATCH_ITEMS, request=None)
             wanted.append(number)
     if not wanted:
         return {}
+    missing = [number for number in wanted if cache is None or number not in cache]
+    if budget is not None:
+        budget.spend(len(missing))
+    if not missing:
+        return {number: cache[number] for number in wanted}
     request = request or rpc.request
     batch = getattr(rpc, 'batch', None)
+    fetched = {}
     if not callable(batch) or batch_items < 1:
-        headers = {number: parse_block(request('eth_getBlockByNumber', [hex(number), False]))
-                   for number in wanted}
-        for number, block in headers.items():
+        for number in missing:
+            block = parse_block(request('eth_getBlockByNumber', [hex(number), False]))
             if block.number != number:
                 raise DataError('unexpected_block_number')
-        return headers
-    headers = {}
-    for index in range(0, len(wanted), batch_items):
-        chunk = wanted[index:index + batch_items]
-        results = batch([('eth_getBlockByNumber', [hex(number), False]) for number in chunk])
-        for number, raw in zip(chunk, results):
-            block = parse_block(raw)
-            if block.number != number:
-                raise DataError('unexpected_block_number')
-            headers[number] = block
-    return headers
+            fetched[number] = block
+    else:
+        for index in range(0, len(missing), batch_items):
+            chunk = missing[index:index + batch_items]
+            results = batch([('eth_getBlockByNumber', [hex(number), False]) for number in chunk])
+            for number, raw in zip(chunk, results):
+                block = parse_block(raw)
+                if block.number != number:
+                    raise DataError('unexpected_block_number')
+                fetched[number] = block
+    if cache is None:
+        return fetched
+    cache.update(fetched)
+    return {number: cache[number] for number in wanted}
 
 
 class AdaptiveSpan:

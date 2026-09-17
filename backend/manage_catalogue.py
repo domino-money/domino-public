@@ -116,6 +116,8 @@ def main():
     run.add_argument('--poll-seconds',type=float,default=5.0)
     run.add_argument('--max-seconds',type=float)
     run.add_argument('--max-consecutive-failures',type=int,default=5)
+    # No header budget here: the catalogue reads its chunk boundaries and the
+    # anchor block, never one header per event.
     run.add_argument('--output',type=Path)
     reset=sub.add_parser('reset')
     reset.add_argument('--start-block',type=int,required=True)
