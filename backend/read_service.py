@@ -3,6 +3,7 @@ from dataclasses import asdict
 from copy import deepcopy
 from functools import wraps
 import time
+import re
 
 from discovery import (CHAIN_ID, RPC_URL, ZERO, DataError, DiscoveryReader,
                        ReadRpc, Block, address, bytes32, decode_result, discover,
@@ -624,10 +625,15 @@ class ReadService:
     def _probe_currencies(self, reader, block, wallet, currencies, tokens, candidates):
         """Batched per-candidate reads: code, then decimals/symbol/balance (#148).
 
-        One envelope failure never discards other currencies: the failing chunk
-        falls back to sequential reads, preserving per-currency semantics.
-        Metadata mirrors DiscoveryReader.token: a failed optional read becomes
-        a metadata issue and the token stays 'partial'.
+        A refused read is delivered in that item's position (batch item_errors),
+        so one wallet-hostile token — an airdropped contract whose decimals()
+        reverts — costs its own metadata issue and nothing else; it can no
+        longer fail the envelope and poison the failover for the whole read.
+        An envelope failure proper (transport, malformed reply) still falls
+        back to sequential reads for that chunk, and under the failover
+        transport is poisoned closed instead. Metadata mirrors
+        DiscoveryReader.token: a failed optional read becomes a metadata issue
+        and the token stays 'partial'.
         """
         rpc = reader.rpc
         if getattr(rpc, 'batch_reads', False) is not True:
@@ -639,7 +645,8 @@ class ReadService:
 
         def staged(signature, inputs, outputs, values=()):
             """Run one read for every live currency; per-currency errors are kept."""
-            live = [currency for currency in erc20 if has_code.get(currency)]
+            # The code stage probes everyone; only later stages gate on its answer.
+            live = [currency for currency in erc20 if signature is None or has_code.get(currency)]
             for index in range(0, len(live), 8):
                 chunk = live[index:index + 8]
                 if signature is None:
@@ -648,7 +655,7 @@ class ReadService:
                     specs = [('eth_call', rpc.call_params(currency, signature, inputs, values, block=block.tag))
                              for currency in chunk]
                 try:
-                    results = rpc.batch(specs)
+                    results = rpc.batch(specs, item_errors=True)
                 except DataError:
                     results = []
                     for currency in chunk:
@@ -666,13 +673,13 @@ class ReadService:
             if not has_code[currency]:
                 meta[currency]['dead'] = ('token_has_no_code' if result == '0x'
                                           else 'token_code_unavailable')
-        for signature, inputs, outputs, key in (
-                ('decimals()', (), ['uint8'], 'decimals_raw'),
-                ('symbol()', (), [], 'symbol_raw'),
-                ('balanceOf(address)', (['address'], [wallet]), ['uint256'], 'balance_raw')):
+        for signature, inputs, values, outputs, key in (
+                ('decimals()', (), (), ['uint8'], 'decimals_raw'),
+                ('symbol()', (), (), [], 'symbol_raw'),
+                ('balanceOf(address)', ['address'], [wallet], ['uint256'], 'balance_raw')):
             for currency in erc20:
                 meta[currency].setdefault(key, None)
-            for currency, result in staged(signature, inputs, outputs):
+            for currency, result in staged(signature, inputs, outputs, values):
                 if isinstance(result, DataError):
                     if key == 'balance_raw':
                         meta[currency][key] = result

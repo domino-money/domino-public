@@ -84,6 +84,7 @@ class Provider:
                         continue
                     result='0x'+encode(['uint8'],[int(params[0]['to'][-2:],16)%9+6]).hex()
                 elif selector==keccak(b'symbol()')[:4].hex():result='0x'+encode(['string'],['TOK'+params[0]['to'][2:6].upper()]).hex()
+                elif selector==keccak(b'balanceOf(address)')[:4].hex():result='0x'+encode(['uint256'],[5]).hex()
                 else:raise AssertionError('unexpected read selector')
             else:raise AssertionError('unexpected RPC method')
             responses.append({'jsonrpc':'2.0','id':record['id'],'result':result})
@@ -506,6 +507,29 @@ class DiscoveryBatchTests(unittest.TestCase):
         report=discover(TOKEN,rpc=rpc,transport=lambda url:self.pair_payload(),clock=lambda:1010)
         self.assertEqual(report,expected)
         self.assertGreater(provider.batch_served,2)
+
+    def test_a_hostile_wallet_token_costs_its_own_issue_and_nothing_else(self):
+        # An airdropped token whose decimals() reverts lands in the victim's
+        # probe; delivered per item, it cannot fail its envelope and poison the
+        # failover, so the wallet read completes for every other asset.
+        capped='0x'+'25'*20
+        others=[COUNTERPARTIES[0],COUNTERPARTIES[3]]
+        provider=self.keyed_provider()
+        provider.gas_limited.add(capped)
+        service=ReadService(rpc_urls=(PRIMARY,),transport_factory=lambda:provider,clock=lambda:1010)
+        result=service.wallet_assets('0x'+'44'*20,[others[0],capped,others[1]])
+        by_address={item['address']:item for item in result['items']}
+        self.assertEqual(set(by_address),{ZERO,others[0],capped,others[1]})
+        self.assertEqual(by_address[capped]['metadataIssues'].get('decimals'),'rpc_call_gas_limit')
+        for currency in others:
+            self.assertEqual(by_address[currency]['metadataIssues'],{})
+            self.assertEqual(by_address[currency]['decimals'],int(currency[-2:],16)%9+6)
+        decimals=keccak(b'decimals()')[:4].hex()
+        spent=sum(1 for _,body in provider.envelopes
+                  for item in (body if isinstance(body,list) else [body])
+                  if item['method']=='eth_call' and item['params'][0]['to']==capped
+                  and item['params'][0]['data'][2:10]==decimals)
+        self.assertEqual(spent,1,'a refused item must not re-spend its chunk')
 
     def test_failover_batch_failure_after_the_snapshot_fails_the_read_closed(self):
         # The failover deliberately poisons a non-retryable post-dispatch envelope
