@@ -79,10 +79,11 @@ What Cloudflare offers, from its documentation on 2026-09-18:
 | Workers Logpush | Workers Trace Events to a destination such as R2 | the destination's | Workers Paid, plus an account role with Logpush access or a token with Logs Edit |
 | OpenTelemetry export | traces and logs to an OTLP destination, `persist: false` possible | the destination's | — |
 
-The specification's seven days is met by Workers Logs on the Paid plan and
-not on Free; which plan the account is on is a question for the account
-holder. For anything past seven days, or the thirty-day aggregates, Logpush
-or OpenTelemetry export are the next step, later.
+The account is on Workers Paid (confirmed by the owner on 2026-09-18), so
+Workers Logs keeps the line seven days: the specification's floor, met once
+the configuration below is published. For anything past seven days, or the
+thirty-day aggregates, Logpush or OpenTelemetry export are the next step,
+later.
 
 The configuration that keeps the hop line and nothing more:
 
@@ -101,11 +102,15 @@ exists not to record. With it off, the custom line is the record on the
 Worker as it is on the VM. The alpha's volume is far below the included
 events, so sampling stays at 1.
 
-This is a change to the guard and its test before it is a change to the
-file: the repository refuses logging by design today, and turning it on for
-the read Worker (and, family by family, the others) is a decision to record
-in `check_bridge_configs.py` and `test_bridge_configs.py`, not to slip past
-them. It is not made here.
+That is now the read Worker's committed configuration, authorized on
+2026-09-18: `check_bridge_configs.py` pins exactly this shape for the read
+Worker (`test_the_read_worker_keeps_its_record_and_nothing_more`) and still
+refuses logging for every other Worker until its family is switched on. It
+takes effect at the next Worker publication (`docs/READ_PATH_SWITCH_ON.md`,
+step 1); until then the deployed Worker keeps discarding its line. After the
+publication the records are in the dashboard under Workers & Pages →
+`domino-read-bridge` → Observability, kept seven days on the account's Paid
+plan, and `wrangler tail` shows them live.
 
 ## Not configured anywhere
 

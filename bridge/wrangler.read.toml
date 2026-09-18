@@ -9,8 +9,16 @@ preview_urls = false
 routes = []
 logpush = false
 
+# The Worker's one hop record per request is kept in Workers Logs (authorized
+# 2026-09-18, docs/READ_PATH_RECORDS.md). Invocation logs stay off: they carry
+# the raw method and URL that record exists not to keep. Retention is the
+# account's Workers plan: 3 days on Free, 7 on Paid.
 [observability]
-enabled = false
+enabled = true
+head_sampling_rate = 1
+
+[observability.logs]
+invocation_logs = false
 
 [vars]
 READ_BRIDGE_ENABLED = "false"

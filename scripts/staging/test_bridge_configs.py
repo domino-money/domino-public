@@ -43,6 +43,38 @@ class DisabledBridgeConfigs(unittest.TestCase):
                     config[key] = value
                     self.assertTrue(validate(service, config))
 
+    def test_the_read_worker_keeps_its_record_and_nothing_more(self):
+        """Authorized 2026-09-18: the read Worker's hop line is retained; no other Worker's is."""
+        record_only = {"enabled": True, "head_sampling_rate": 1, "logs": {"invocation_logs": False}}
+        self.assertEqual(self.configs["read"]["observability"], record_only)
+        refused = [
+            {"enabled": False},                                   # the record would be dropped again
+            {"enabled": True},
+            {"enabled": True, "head_sampling_rate": 1},           # invocation logs would be kept
+            {"enabled": True, "head_sampling_rate": 0.5, "logs": {"invocation_logs": False}},
+            {"enabled": True, "head_sampling_rate": 1.0, "logs": {"invocation_logs": False}},
+            {"enabled": True, "head_sampling_rate": 1, "logs": {"invocation_logs": True}},
+            {"enabled": True, "head_sampling_rate": 1, "logs": {"invocation_logs": False, "extra": 1}},
+            {"enabled": True, "head_sampling_rate": 1, "logs": {"invocation_logs": False}, "persist": False},
+        ]
+        for value in refused:
+            with self.subTest(observability=value):
+                config = copy.deepcopy(self.configs["read"])
+                config["observability"] = value
+                self.assertTrue(validate("read", config))
+        for key, value in (("logpush", True), ("tail_consumers", [{"service": "logs"}])):
+            with self.subTest(key=key):
+                config = copy.deepcopy(self.configs["read"])
+                config[key] = value
+                self.assertTrue(validate("read", config))
+        for service, original in self.configs.items():
+            if service == "read":
+                continue
+            with self.subTest(service=service):
+                config = copy.deepcopy(original)
+                config["observability"] = copy.deepcopy(record_only)
+                self.assertTrue(validate(service, config))
+
     def test_refuses_enabled_flags_secrets_and_cross_service_origins(self):
         for service, original in self.configs.items():
             variants = [

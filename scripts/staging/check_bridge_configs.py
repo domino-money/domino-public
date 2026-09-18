@@ -1,6 +1,13 @@
 """Offline boundary check for the disabled read and financial Worker candidates.
 
 Reads repository TOML only; does not inspect or change Cloudflare resources.
+
+One exception to "disabled", authorized on 2026-09-18 (docs/READ_PATH_RECORDS.md):
+the read Worker keeps its own hop record in Workers Logs, and nothing more.
+Its observability block is pinned to exactly that shape — enabled, every
+request, invocation logs off — because the invocation log carries the raw
+method and URL the hop record exists not to record. Every other Worker stays
+without logging until its family is switched on.
 """
 from pathlib import Path
 import sys
@@ -16,6 +23,9 @@ SERVICES = {
     "execution": ("execution-worker", "EXECUTION_GATEWAY_ORIGIN", "2026-09-10"),
     "setup": ("setup-release", None, "2026-09-10"),
 }
+# The one retained record per request, and nothing else: no invocation log.
+RECORD_ONLY = {"enabled": True, "head_sampling_rate": 1, "logs": {"invocation_logs": False}}
+OBSERVABILITY = {"read": RECORD_ONLY}
 KNOWN_CONFIGS = {
     "wrangler.example.toml", "wrangler.session.example.toml",
     "wrangler.onboarding.example.toml", "wrangler.deposit.example.toml",
@@ -44,7 +54,7 @@ def validate(service, config):
         "preview_urls": False,
         "routes": [],
         "logpush": False,
-        "observability": {"enabled": False},
+        "observability": OBSERVABILITY.get(service, {"enabled": False}),
         "vars": {
             f"{service.upper()}_BRIDGE_ENABLED": "false",
             "APP_ORIGIN": "https://domino.money",

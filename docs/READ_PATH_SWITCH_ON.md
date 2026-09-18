@@ -151,6 +151,9 @@ curl -s --max-time 8 http://127.0.0.1:8876/health
 # One structured line per hop, with the gateway's id carried into the reader.
 sudo journalctl -u domino-gateway -u domino-read --since '-5 min' --no-pager -o cat | grep '^{' | tail
 
+# The Worker's own hop records, kept from this publication on (Workers Logs;
+# dashboard: Workers & Pages → domino-read-bridge → Observability), or live:
+#   npx wrangler tail domino-read-bridge --format json
 # The markets snapshot survived the restart and is being refreshed: status is
 # stale or current, never not_built, and the refresher's ticks are in the journal.
 curl -s --max-time 8 http://127.0.0.1:8876/health | grep -o '"snapshotRefresh":{[^}]*}'
