@@ -334,7 +334,7 @@
     },
     {
       "path": "bridge/wrangler.read.toml",
-      "sha256": "a9d8be47c1f769b19b42f09f800590b388c655822ef0a984cffb933d1727b673"
+      "sha256": "66dd50f7c0484d4a7f45218a5b34a8538beaaecbcc588d729534b685acb0de5d"
     },
     {
       "path": "backend/tests/read_v2_contract_fixtures.py",

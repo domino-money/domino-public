@@ -46,7 +46,7 @@ export const PRODUCER_PIN = {
 /** Separately opted-in public pool estimates; never accepted as a v1 response. */
 export const READ_V2_PIN = {
   version: '2.0.0-rc.1',
-  manifestSha256: '93bff509e9ccd47d9ecfb0b9876ca2c7bafd99388859bebda12e9d963abf4ba5',
+  manifestSha256: 'b5eac3520868ae4f1743a6cbea932201e642232abe5290bc84b8726a11545390',
 } as const
 
 /**
