@@ -10,8 +10,9 @@ services keep access_log disabled on purpose — raw paths and peers never reach
 the journal; this line is the record.
 
 Records go to stderr so a CLI that runs one of these apps in process keeps its
-own stdout contract. Retention follows the spec: application diagnostics seven
-days, aggregate counts up to thirty.
+own stdout contract. Where each record lands and how long it stays is the
+host's and the Worker's configuration, not this module's: it is measured and
+recorded in docs/READ_PATH_RECORDS.md.
 """
 from contextvars import ContextVar
 import json

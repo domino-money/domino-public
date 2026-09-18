@@ -358,7 +358,8 @@ Record request ID, route, contract/build version, duration, status, safe reason,
 cache/limiter outcome and deployment-mode changes. Do not record JSON bodies,
 full addresses/cursors, cookie values, signatures, Access assertions or upstream
 payloads. Keep application diagnostic records seven days initially; aggregate
-operational counts may remain 30 days. Short-lived rate keys use a server-keyed
+operational counts may remain 30 days. Where each hop's record lands today and
+how long each store keeps it is measured in [READ_PATH_RECORDS.md](READ_PATH_RECORDS.md). Short-lived rate keys use a server-keyed
 identifier; do not call them anonymous identities. Configure edge, tunnel and
 error-reporting logs consistently before release, including redaction tests.
 

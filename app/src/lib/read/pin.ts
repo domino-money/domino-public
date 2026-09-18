@@ -26,19 +26,19 @@ export const PRODUCER_PIN = {
   packages: {
     'read-v1': {
       version: '1.1.0-rc.3',
-      manifestSha256: 'a2d56b679251a84cf5a5858189f9a49e1b0f9bed469a2c3726e97ab5c420e570',
+      manifestSha256: '72f3b9710658b8705bf2d6c4c6f179abacbdd6a901ad971106664a8ce2185cf4',
     },
     'session-v1': {
       version: '3.0.0-rc.2',
-      manifestSha256: 'a3211fc7f7d9a2b83685c3a2cc51bae791271f4413de07d0e631e0d9a2494313',
+      manifestSha256: '28412404c6b8b93e1be6d04291c8ef5042319151d9f905e193ee1a02aa230501',
     },
     'onboarding-v1': {
       version: '1.0.0',
-      manifestSha256: '69ef37ef7b32fada39bd908fb484ea7b570934b7fb2353a9f9b15b46af67916f',
+      manifestSha256: '4dac7c9118f2c2799321dad5b78d123609200a05e4125fd0197ed5e43b8bfc91',
     },
     'deposit-v1': {
       version: '1.1.0-rc.4',
-      manifestSha256: '4fba39794f642966b9c6d698ab1d1f351e06b1dfea6230ad5834bceb7a1deaf1',
+      manifestSha256: '40d7e7343f41fba4681811d4f8606e22a2ba1f6fe682d6f7baf234383f5c4f3e',
     },
   },
 } as const
@@ -46,7 +46,7 @@ export const PRODUCER_PIN = {
 /** Separately opted-in public pool estimates; never accepted as a v1 response. */
 export const READ_V2_PIN = {
   version: '2.0.0-rc.1',
-  manifestSha256: '1239a9fb345024f25e290b31da498c10100040447b45e50fdffbd7bac57e7e41',
+  manifestSha256: '93bff509e9ccd47d9ecfb0b9876ca2c7bafd99388859bebda12e9d963abf4ba5',
 } as const
 
 /**
@@ -81,11 +81,11 @@ export const REQUEST_READ_CONTRACT: ReadContractPin = PRODUCER_PIN.packages['rea
 /** Authenticated private numeric history, independent of public pool estimates. */
 export const PERFORMANCE_V2_PIN = {
   version: '2.0.0-rc.1',
-  manifestSha256: '79e7b8c4bb3c9bc05bc095c6cde5b7fe06fc049a9a31039f4c4eec67b18a2964',
+  manifestSha256: '8e38b4898cf556f29c5d198d45175a2a5a9cbd676910486010b16736831cd6ae',
 } as const
 
 /** Sanitized private execution status and finalized receipts only. */
 export const EXECUTION_V1_PIN = {
   version: '1.0.0-rc.1',
-  manifestSha256: '14d86562da63abbde2e1dd371d7e33c21f003419efe1fdf004f4c555880d0c7b',
+  manifestSha256: '73c3c425d6ac92bca08110c1448a63809285297a33b6e9884f78b0f7f24c2efd',
 } as const
