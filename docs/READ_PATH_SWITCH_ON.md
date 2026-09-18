@@ -88,13 +88,49 @@ secrets already on the Worker.
 ## Step 3 — the VM
 
 Production keeps one tree per service identity under
-`/opt/domino/releases/<commit>/{read,gateway}`, each with its own venv and its
-own `0600` runtime configuration. Install the new release beside the old one —
-never in place, and never shared with the development lane, which has its own
-root under `/opt/domino/dev/releases/`. Then repoint the two drop-ins and
-restart through the target:
+`/opt/domino/releases/<commit>/{read,gateway}`. Each carries two links rather
+than copies: `backend/.venv` to the shared interpreter, and `backend/runtime`
+to the directory holding that identity's private configuration, which lives
+once and is inherited by every release after it.
+
+`scripts/staging/upgrade_disabled.py` cannot perform this install. It validates
+the whole host as the only thing on it, and this host also runs a financial
+installation, a development lane, a tunnel, a continuous egress policy and the
+indexer with its timers. `scripts/staging/install_read_release.py` claims only
+the two read-path roots: it reads the release the units actually name, carries
+the two links forward, requires the dependency lock to be unchanged because it
+installs no package, and writes one directory and nothing else.
+
+Run it from a root-owned path — it refuses a toolchain anyone else could have
+written to:
 
 ```sh
+sudo install -d -m 755 -o root -g root /opt/domino/upgrade-staging
+sudo tar xf <archive> -C /opt/domino/upgrade-staging scripts/staging
+sudo cp <archive> /opt/domino/upgrade-staging/
+sudo chown -R root:root /opt/domino/upgrade-staging
+sudo chmod -R go-w /opt/domino/upgrade-staging
+
+cd /opt/domino/upgrade-staging/scripts/staging
+sudo python3 -B install_read_release.py --inspect \
+  --archive /opt/domino/upgrade-staging/<archive> \
+  --archive-sha256 <sha256> --commit <commit>
+# then the same command with --apply
+```
+
+The archive is a plain `git archive --format=tar <commit>`; its pax comment
+carries the commit and is checked against `--commit`.
+
+Installing changes nothing that is running. Activation is the drop-in swap and
+the restart, and the order above still governs: the Worker moves first. Back the
+drop-ins up, repoint them at the new release, then restart through the target:
+
+```sh
+for c in reader gateway; do
+  u=$([ $c = reader ] && echo read || echo gateway)
+  sudo sed -i "s|/opt/domino/releases/<previous>/|/opt/domino/releases/<commit>/|g" \
+    /etc/systemd/system/domino-$u.service.d/70-$c-release.conf
+done
 sudo systemctl daemon-reload
 sudo systemctl restart domino-continuous-reads.target
 systemctl is-active domino-continuous-reads.target domino-read.service \
