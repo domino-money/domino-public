@@ -34,19 +34,24 @@ it; only turning it off across the switch does.
 
 ## The order
 
-1. **Turn read-v2 off** on the Worker, so `pool-market` v2 degrades to
-   unavailable rather than answering 502 during the switch. The app already
-   renders an unavailable state; a 502 is a failure it reports.
-2. **Publish the Worker** (O5) — from `main`, keeping its enabled v1 reads and
+1. **Publish the Worker** (O5) — from `main`, keeping its enabled v1 reads and
    Access secrets. A Worker at `main` accepts the old reader on every enabled
-   v1 route, so this step alone changes nothing a user sees.
-3. **Move the VM** (O4) — install the new release for both service identities
+   v1 route, so this step changes nothing a user sees on read-v1.
+2. **Move the VM** (O4) — install the new release for both service identities
    and restart through `domino-continuous-reads.target`, never the members.
-4. **Turn read-v2 back on**, now that both sides derive the estimate the same
-   way.
 
-Steps 2 and 3 are each individually safe in that order. The window that the
-earlier plan called unavoidable applies only to read-v2, and step 1 removes it.
+Each step is individually safe in that order. The window that the earlier plan
+called unavoidable applies only to read-v2 `pool-market`, and it is the time
+between the two steps: minutes, when they run back to back.
+
+The release tooling cannot close that window by turning read-v2 off —
+`releaseVars()` in `scripts/publish-read-path.mjs` publishes
+`READ_V2_BRIDGE_ENABLED=true` unconditionally — and changing the Worker's
+variables by hand outside the release script is not part of this procedure.
+During the window every v2 `pool-market` answers 502
+`upstream_contract_mismatch`, which the app treats as transient and bounded;
+v1 market figures are unaffected. Run the two steps together and the window is
+as short as the restart.
 
 ## Before starting
 
