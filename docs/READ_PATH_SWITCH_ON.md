@@ -150,6 +150,11 @@ curl -s --max-time 8 http://127.0.0.1:8876/health
 
 # One structured line per hop, with the gateway's id carried into the reader.
 sudo journalctl -u domino-gateway -u domino-read --since '-5 min' --no-pager -o cat | grep '^{' | tail
+
+# The markets snapshot survived the restart and is being refreshed: status is
+# stale or current, never not_built, and the refresher's ticks are in the journal.
+curl -s --max-time 8 http://127.0.0.1:8876/health | grep -o '"snapshotRefresh":{[^}]*}'
+sudo journalctl -u domino-read --since '-10 min' --no-pager -o cat | grep '"mode":"refresh"' | tail -3
 ```
 
 A served read leaves three lines under one `requestId`: the reader's health and

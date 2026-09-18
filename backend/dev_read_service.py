@@ -226,10 +226,13 @@ class DevelopmentReadService(ReadService):
         market = MarketCache(GeckoMarketData(transport=bounded, clock=clock), clock=monotonic)
         market.requests_per_minute = 6
         catalogue = DevelopmentCatalogue(profile['catalogue']) if profile['catalogue'] else None
+        from markets_snapshot import MarketsSnapshot
         super().__init__(rpc_urls=tuple(profile['rpcUrls']), inventory_url=profile['inventoryUrl'],
                          clock=clock, transport_factory=lambda: bounded,
                          cursor_codec=CursorCodec(clock=clock), market_cache=market,
-                         catalogue=catalogue, requests=configured_pool_requests(catalogue))
+                         catalogue=catalogue, requests=configured_pool_requests(catalogue),
+                         snapshot=MarketsSnapshot(clock=monotonic, wall_clock=clock,
+                                                  path=Path(profile['runtimeDirectory']) / 'markets-snapshot.json'))
 
     token = _operation(ReadService.token)
     pools = _operation(ReadService.pools)
@@ -299,7 +302,7 @@ class DevelopmentBoundary:
 
 
 def create_dev_app(profile=None, *, enable=False, transport=json_http,
-                   clock=time.time, monotonic=time.monotonic):
+                   clock=time.time, monotonic=time.monotonic, snapshot_refresh_seconds=None):
     if type(enable) is not bool:
         raise DataError('development_profile_unavailable')
     gate = None
@@ -310,7 +313,8 @@ def create_dev_app(profile=None, *, enable=False, transport=json_http,
             raise DataError('development_qualification_required')
         service = DevelopmentReadService(profile, transport=transport, clock=clock, monotonic=monotonic)
         gate = DevelopmentGate(service.development_budgets)
-        app = create_app(service, gate=gate, read_budget_seconds=15)
+        app = create_app(service, gate=gate, read_budget_seconds=15,
+                         snapshot_refresh_seconds=snapshot_refresh_seconds)
     else:
         # Avoid create_app(None): that would read production runtime defaults.
         app = FastAPI(docs_url=None, redoc_url=None, openapi_url=None)
@@ -350,6 +354,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--enable', action='store_true')
     parser.add_argument('--profile')
+    parser.add_argument('--snapshot-refresh', type=int, default=None, metavar='SECONDS')
     args = parser.parse_args()
     if any(os.environ.get(name, '1') != '1' for name in ('WEB_CONCURRENCY', 'UVICORN_WORKERS')):
         parser.error('single development reader required')
@@ -359,7 +364,7 @@ def main():
                 raise DataError('development_profile_required')
             profile = load_profile(args.profile)
             with reader_lock(profile['runtimeDirectory']):
-                app = create_dev_app(profile, enable=True)
+                app = create_dev_app(profile, enable=True, snapshot_refresh_seconds=args.snapshot_refresh)
                 uvicorn.run(app, host='127.0.0.1', port=PORT, access_log=False, proxy_headers=False,
                             server_header=False, limit_concurrency=8, workers=1)
         else:

@@ -43,7 +43,7 @@ This checkout has these launchers:
 
 | Component | Existing command, from its product checkout | Exposure/default |
 | --- | --- | --- |
-| Public data reader | `backend/.venv/bin/python backend/read_api.py --port 8876 --read-budget 15` | `127.0.0.1:8876`; local API, rejects browser origins |
+| Public data reader | `backend/.venv/bin/python backend/read_api.py --port 8876 --read-budget 15` | `127.0.0.1:8876`; local API, rejects browser origins; keeps `backend/runtime/markets-snapshot.json` and refreshes it in the background ([read gateway](READ_GATEWAY_RUNBOOK.md)) |
 | Read gateway | `backend/.venv/bin/python backend/read_gateway.py --port 8878 --reader-port 8876` | `127.0.0.1:8878`; disabled without `--enable` |
 | Wallet session listener | `backend/.venv/bin/python backend/session_api.py --port 8879` | `127.0.0.1:8879`; disabled without `--enable` |
 | Onboarding listener | `backend/.venv/bin/python backend/onboarding_api.py --port 8880` | `127.0.0.1:8880`; disabled without `--enable` |

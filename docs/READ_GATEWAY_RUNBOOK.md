@@ -25,6 +25,22 @@ Run the reader in one terminal, explicitly using the bridge's shorter budget:
 backend/.venv/bin/python backend/read_api.py --port 8876 --read-budget 15
 ```
 
+The reader keeps its markets snapshot (`markets-snapshot`, #155) between
+visitors and across restarts. Every provider-slot `pool-market` read folds its
+verified result into the store and writes it, atomically and `0600`, to
+`backend/runtime/markets-snapshot.json`; at startup the reader adopts that
+file, if it is its own and well-formed, and serves it with its real age — a
+restart answers `stale` rather than `not_built`. A refresher then re-reads
+one stored pool per period through the same admission gate and read deadline
+a visitor's read takes, so every entry is observed again inside the
+consumer's 300 s window without a visitor paying for it. It yields whenever
+the gate refuses it and never retries. `--snapshot-refresh SECONDS` sets the
+interval each pool is re-read at (default 240; the period is the interval
+divided by the stored pool count, never under 10 s); `0` disables it.
+`GET /health` reports `snapshotRefresh` (interval, period, counts, whether it
+is running) and `snapshotStoreFailures`; each tick leaves one hop record with
+`"mode":"refresh"` in the journal.
+
 Run the gateway in another terminal, disabled by default:
 
 ```sh

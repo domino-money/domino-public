@@ -1,5 +1,7 @@
 """Internal loopback API for public chain reads, not authenticated account data."""
 import asyncio
+from contextlib import asynccontextmanager
+from pathlib import Path
 import math
 import os
 import re
@@ -233,9 +235,24 @@ class LocalReadBoundary:
         await self.app(scope, receive, secured_send)
 
 
-def create_app(service=None, *, gate=None, read_budget_seconds=60):
+SNAPSHOT_STORE = Path(__file__).resolve().parent / 'runtime' / 'markets-snapshot.json'
+
+
+def checked_refresh_interval(value):
+    """0 disables the refresher; otherwise a bounded whole number of seconds."""
+    from markets_snapshot import MAX_REFRESH_SECONDS, MIN_REFRESH_SECONDS
+    if type(value) is not int or not (value == 0 or MIN_REFRESH_SECONDS <= value <= MAX_REFRESH_SECONDS):
+        raise ValueError('invalid_snapshot_refresh_interval')
+    return value
+
+
+def create_app(service=None, *, gate=None, read_budget_seconds=60,
+               snapshot_refresh_seconds=None):
+    from markets_snapshot import DEFAULT_REFRESH_SECONDS, MarketsSnapshot, SnapshotRefresher
     if type(read_budget_seconds) not in (int, float) or not 0 < read_budget_seconds <= 60:
         raise ValueError('invalid_read_budget')
+    refresh_seconds = checked_refresh_interval(
+        DEFAULT_REFRESH_SECONDS if snapshot_refresh_seconds is None else snapshot_refresh_seconds)
     generation = secrets.token_hex(16)
     if service is None:
         config = load_config()
@@ -243,10 +260,35 @@ def create_app(service=None, *, gate=None, read_budget_seconds=60):
         service = ReadService(rpc_urls=configured_rpc_urls(config, os.environ.get('DOMINO_DISCOVERY_RPC_URL')),
                               inventory_url=os.environ.get('DOMINO_INVENTORY_RPC_URL') or config.get('inventoryUrl'),
                               catalogue=catalogue,
-                              requests=configured_pool_requests(catalogue))
+                              requests=configured_pool_requests(catalogue),
+                              # The store lives beside the reader's other private
+                              # runtime files; a restart serves it with its real age.
+                              snapshot=MarketsSnapshot(clock=time.time, wall_clock=time.time,
+                                                       path=SNAPSHOT_STORE))
     gate = gate or ReadGate()
-    app = FastAPI(title='Domino internal read API', version='0.8.0', docs_url=None, redoc_url=None)
+    # A schema export or a test double may hand in a service with no store;
+    # the refresher exists only for a service that can feed one.
+    snapshot = getattr(service, 'snapshot', None)
+    refresher = None
+    if refresh_seconds and snapshot is not None and hasattr(service, 'pool_market'):
+        refresher = SnapshotRefresher(snapshot, read=lambda pool_id: service.pool_market(pool_id),
+                                      gate=gate, interval=refresh_seconds, budget_seconds=read_budget_seconds)
+    # The refresher starts with the server, not with the app object: a test
+    # client that never enters the app's lifespan never spawns the thread.
+    @asynccontextmanager
+    async def lifespan(_app):
+        if refresher is not None:
+            refresher.start()
+        try:
+            yield
+        finally:
+            if refresher is not None:
+                refresher.stop()
+
+    app = FastAPI(title='Domino internal read API', version='0.8.0', docs_url=None, redoc_url=None,
+                  lifespan=lifespan)
     app.add_middleware(LocalReadBoundary)
+    app.state.snapshot_refresher = refresher
 
     @app.middleware('http')
     async def contract_headers(request, call_next):
@@ -305,7 +347,9 @@ def create_app(service=None, *, gate=None, read_budget_seconds=60):
             gate.stored_slot.release()
         return {'status': 'ok', 'mode': 'local_read_only', 'generation': generation,
                 'readBudgetSeconds': read_budget_seconds, 'busy': not idle,
-                'storedBusy': not stored_idle}
+                'storedBusy': not stored_idle,
+                'snapshotRefresh': None if refresher is None else refresher.describe(),
+                'snapshotStoreFailures': None if snapshot is None else snapshot.store_failures}
 
     @app.get('/v1/capabilities')
     def capabilities():
@@ -419,13 +463,21 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--port', type=int, default=8876)
     parser.add_argument('--read-budget', type=int, default=60, choices=range(1,61))
+    parser.add_argument('--snapshot-refresh', type=int, default=None, metavar='SECONDS',
+                        help='re-read one stored pool per period so every entry stays inside the '
+                             'consumer window; 0 disables (default 240)')
     args = parser.parse_args()
     if not 1024 <= args.port <= 65535:
         parser.error('port must be between 1024 and 65535')
+    try:
+        checked_refresh_interval(args.snapshot_refresh if args.snapshot_refresh is not None else 0)
+    except ValueError:
+        parser.error('snapshot refresh must be 0 or between 30 and 3600 seconds')
     if any(os.environ.get(name, '1') != '1' for name in ('WEB_CONCURRENCY', 'UVICORN_WORKERS')):
         parser.error('single reader process required')
     # Explicit loopback only. No proxy-trust or request-body/access logging.
-    uvicorn.run(create_app(read_budget_seconds=args.read_budget), host='127.0.0.1', port=args.port, access_log=False,
+    uvicorn.run(create_app(read_budget_seconds=args.read_budget, snapshot_refresh_seconds=args.snapshot_refresh),
+                host='127.0.0.1', port=args.port, access_log=False,
                 proxy_headers=False, server_header=False, limit_concurrency=8, workers=1)
 
 
