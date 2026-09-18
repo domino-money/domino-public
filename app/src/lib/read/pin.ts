@@ -30,15 +30,15 @@ export const PRODUCER_PIN = {
     },
     'session-v1': {
       version: '3.0.0-rc.2',
-      manifestSha256: '78ca5e628cf81b1c47a1b8329bce3638d4342894c806eef1150c105e61f1685c',
+      manifestSha256: 'a3211fc7f7d9a2b83685c3a2cc51bae791271f4413de07d0e631e0d9a2494313',
     },
     'onboarding-v1': {
       version: '1.0.0',
-      manifestSha256: '1d6dc91e5f16a4b0f551840c4463c259f59d2078d95ed84008d8b662d205eda2',
+      manifestSha256: '69ef37ef7b32fada39bd908fb484ea7b570934b7fb2353a9f9b15b46af67916f',
     },
     'deposit-v1': {
       version: '1.1.0-rc.4',
-      manifestSha256: '5446efcaa93b6688b1664e08ec52565a6dce110c5f74c43c8b9a8e7cf6fa63a9',
+      manifestSha256: '4fba39794f642966b9c6d698ab1d1f351e06b1dfea6230ad5834bceb7a1deaf1',
     },
   },
 } as const
@@ -81,11 +81,11 @@ export const REQUEST_READ_CONTRACT: ReadContractPin = PRODUCER_PIN.packages['rea
 /** Authenticated private numeric history, independent of public pool estimates. */
 export const PERFORMANCE_V2_PIN = {
   version: '2.0.0-rc.1',
-  manifestSha256: '5d6d735ccf22cbbde5f8f493822f699afb1e1a0bf27f27ffe4526381bbb5162e',
+  manifestSha256: '79e7b8c4bb3c9bc05bc095c6cde5b7fe06fc049a9a31039f4c4eec67b18a2964',
 } as const
 
 /** Sanitized private execution status and finalized receipts only. */
 export const EXECUTION_V1_PIN = {
   version: '1.0.0-rc.1',
-  manifestSha256: '3d13cdf1e2afa846f13763d5186c788ca2a843de85752a3937c8101706e3461b',
+  manifestSha256: '14d86562da63abbde2e1dd371d7e33c21f003419efe1fdf004f4c555880d0c7b',
 } as const

@@ -13,6 +13,7 @@ import math
 import os
 import re
 import secrets
+import hop_log
 import stat
 from threading import BoundedSemaphore
 import time
@@ -139,92 +140,112 @@ def create_session_app(gateway=None):
 
     @app.middleware('http')
     async def boundary(request: Request,call_next):
-        from access_transport import normalize_access_cookie
-        normalize_access_cookie(request.scope)
-        deadline=gateway.clock()+gateway.total_seconds
-        upload_deadline=min(deadline,gateway.clock()+gateway.upload_seconds)
-        request_id=secrets.token_hex(16)
-        def result(status,body):
-            headers={'Cache-Control':'no-store, no-transform','X-Content-Type-Options':'nosniff',
-                     'Content-Security-Policy':"default-src 'none'; frame-ancestors 'none'",
-                     'X-Domino-Session-Contract':CONTRACT_VERSION,'X-Domino-Request-Id':request_id}
-            if status==429:headers['Retry-After']='2'
-            return JSONResponse(body,status_code=status,headers=headers)
-        def error(code):
-            item=SessionError(code)
-            return result(item.status,{'error':item.code})
-        path=request.scope.get('raw_path',b'').decode('ascii',errors='replace')
-        route=path[len(PREFIX):] if path.startswith(PREFIX) else ''
-        if route not in REQUEST_MODELS or request.scope.get('query_string') or not gateway.enabled:
-            return error('route_not_available')
-        if request.method!='POST':return error('method_not_allowed')
         try:
-            if not ipaddress.ip_address(request.client.host).is_loopback:
+            from access_transport import normalize_access_cookie
+            normalize_access_cookie(request.scope)
+            deadline=gateway.clock()+gateway.total_seconds
+            upload_deadline=min(deadline,gateway.clock()+gateway.upload_seconds)
+            request_id=secrets.token_hex(16)
+            opened=gateway.clock()
+            logged_route='unmatched'
+            notes=hop_log.open_notes()
+            recorded=[]
+            def record(status,reason=None):
+                # The raw path never reaches the record: only a declared route name.
+                if recorded:return
+                recorded.append(status)
+                hop_log.emit(service='session-v1',requestId=request_id,route=logged_route,
+                             contractVersion=CONTRACT_VERSION,method=request.method,status=status,
+                             reason=reason,durationMs=int((gateway.clock()-opened)*1000),
+                             **hop_log.close_notes(notes))
+            def result(status,body):
+                record(status,body.get('error') if isinstance(body,dict) else None)
+                headers={'Cache-Control':'no-store, no-transform','X-Content-Type-Options':'nosniff',
+                         'Content-Security-Policy':"default-src 'none'; frame-ancestors 'none'",
+                         'X-Domino-Session-Contract':CONTRACT_VERSION,'X-Domino-Request-Id':request_id}
+                if status==429:headers['Retry-After']='2'
+                return JSONResponse(body,status_code=status,headers=headers)
+            def error(code):
+                item=SessionError(code)
+                return result(item.status,{'error':item.code})
+            path=request.scope.get('raw_path',b'').decode('ascii',errors='replace')
+            route=path[len(PREFIX):] if path.startswith(PREFIX) else ''
+            if route in REQUEST_MODELS:
+                logged_route=route
+            if route not in REQUEST_MODELS or request.scope.get('query_string') or not gateway.enabled:
+                return error('route_not_available')
+            if request.method!='POST':return error('method_not_allowed')
+            try:
+                if not ipaddress.ip_address(request.client.host).is_loopback:
+                    return error('origin_not_allowed')
+            except (ValueError,AttributeError):return error('origin_not_allowed')
+            headers={}
+            total=0
+            for name,value in request.scope['headers']:
+                name=name.lower()
+                total+=len(name)+len(value)
+                if name in (b'origin',b'cookie',b'authorization'):return error('origin_not_allowed')
+                if name in headers or total>16384:return error('invalid_request')
+                headers[name]=value
+            if headers.get(b'x-domino-browser-origin')!=gateway.origin.encode('ascii'):
                 return error('origin_not_allowed')
-        except (ValueError,AttributeError):return error('origin_not_allowed')
-        headers={}
-        total=0
-        for name,value in request.scope['headers']:
-            name=name.lower()
-            total+=len(name)+len(value)
-            if name in (b'origin',b'cookie',b'authorization'):return error('origin_not_allowed')
-            if name in headers or total>16384:return error('invalid_request')
-            headers[name]=value
-        if headers.get(b'x-domino-browser-origin')!=gateway.origin.encode('ascii'):
-            return error('origin_not_allowed')
-        if headers.get(b'x-domino-session-contract')!=CONTRACT_VERSION.encode('ascii'):
-            return error('invalid_request')
-        if (not re.fullmatch(rb'application/json(?:;\s*charset=utf-8)?',headers.get(b'content-type',b''),re.I) or
-                headers.get(b'content-encoding',b'identity')!=b'identity'):
-            return error('json_required')
-        length=headers.get(b'content-length')
-        if length is not None:
-            if not re.fullmatch(rb'(0|[1-9][0-9]{0,9})',length) or b'transfer-encoding' in headers:
+            if headers.get(b'x-domino-session-contract')!=CONTRACT_VERSION.encode('ascii'):
                 return error('invalid_request')
-            if int(length)>MAX_BODY:return error('request_too_large')
-        try:
-            assertion=headers[b'cf-access-jwt-assertion'].decode('ascii')
-            client=headers[b'x-domino-client-id'].decode('ascii')
-            if not 1<=len(assertion)<=8192 or not 1<=len(client)<=45:raise ValueError()
-            ipaddress.ip_address(client)
-            credentials={name:token(headers[('x-domino-'+name).encode()].decode('ascii'))
-                         if ('x-domino-'+name).encode() in headers else None
-                         for name in ('preauth','session','csrf')}
-        except (KeyError,ValueError,UnicodeError,SessionError):return error('invalid_request')
-        raw=bytearray()
-        try:
-            async with asyncio.timeout(max(0,upload_deadline-gateway.clock())):
-                async for chunk in request.stream():
-                    if gateway.clock()>=upload_deadline:raise TimeoutError()
-                    if len(raw)+len(chunk)>MAX_BODY:return error('request_too_large')
-                    raw.extend(chunk)
-            if length is not None and len(raw)!=int(length):return error('invalid_request')
-            body=strict_json(raw)
-            validate_body(route,body)
-            REQUEST_MODELS[route].model_validate(body)
-            if gateway.clock()>=upload_deadline:raise TimeoutError()
-        except TimeoutError:return error('request_timeout')
-        except (DataError,ValidationError,ValueError,TypeError,SessionError):return error('invalid_request')
-        if gateway.clock()>=deadline:return error('request_timeout')
-        if not gateway.slot.acquire(blocking=False):return error('session_capacity_busy')
-        try:
-            future=asyncio.get_running_loop().run_in_executor(executor,gateway.execute,route,body,
-                {'assertion':assertion,'client':client,**credentials},deadline)
-        except Exception:
-            gateway.slot.release()
-            return error('upstream_unavailable')
-        pending.add(future)
-        future.add_done_callback(pending.discard)
-        try:
-            # shield keeps the actual worker and admission alive on timeout or
-            # disconnect; the HTTP response itself is still bounded by 20s.
-            async with asyncio.timeout(max(0,deadline-gateway.clock())):
-                status,response=await asyncio.shield(future)
+            if (not re.fullmatch(rb'application/json(?:;\s*charset=utf-8)?',headers.get(b'content-type',b''),re.I) or
+                    headers.get(b'content-encoding',b'identity')!=b'identity'):
+                return error('json_required')
+            length=headers.get(b'content-length')
+            if length is not None:
+                if not re.fullmatch(rb'(0|[1-9][0-9]{0,9})',length) or b'transfer-encoding' in headers:
+                    return error('invalid_request')
+                if int(length)>MAX_BODY:return error('request_too_large')
+            try:
+                assertion=headers[b'cf-access-jwt-assertion'].decode('ascii')
+                client=headers[b'x-domino-client-id'].decode('ascii')
+                if not 1<=len(assertion)<=8192 or not 1<=len(client)<=45:raise ValueError()
+                ipaddress.ip_address(client)
+                credentials={name:token(headers[('x-domino-'+name).encode()].decode('ascii'))
+                             if ('x-domino-'+name).encode() in headers else None
+                             for name in ('preauth','session','csrf')}
+            except (KeyError,ValueError,UnicodeError,SessionError):return error('invalid_request')
+            raw=bytearray()
+            try:
+                async with asyncio.timeout(max(0,upload_deadline-gateway.clock())):
+                    async for chunk in request.stream():
+                        if gateway.clock()>=upload_deadline:raise TimeoutError()
+                        if len(raw)+len(chunk)>MAX_BODY:return error('request_too_large')
+                        raw.extend(chunk)
+                if length is not None and len(raw)!=int(length):return error('invalid_request')
+                body=strict_json(raw)
+                validate_body(route,body)
+                REQUEST_MODELS[route].model_validate(body)
+                if gateway.clock()>=upload_deadline:raise TimeoutError()
+            except TimeoutError:return error('request_timeout')
+            except (DataError,ValidationError,ValueError,TypeError,SessionError):return error('invalid_request')
             if gateway.clock()>=deadline:return error('request_timeout')
-            return result(status,response)
-        except TimeoutError:return error('request_timeout')
-        except Exception:return error('upstream_unavailable')
+            if not gateway.slot.acquire(blocking=False):return error('session_capacity_busy')
+            try:
+                future=asyncio.get_running_loop().run_in_executor(executor,gateway.execute,route,body,
+                    {'assertion':assertion,'client':client,**credentials},deadline)
+            except Exception:
+                gateway.slot.release()
+                return error('upstream_unavailable')
+            pending.add(future)
+            future.add_done_callback(pending.discard)
+            try:
+                # shield keeps the actual worker and admission alive on timeout or
+                # disconnect; the HTTP response itself is still bounded by 20s.
+                async with asyncio.timeout(max(0,deadline-gateway.clock())):
+                    status,response=await asyncio.shield(future)
+                if gateway.clock()>=deadline:return error('request_timeout')
+                return result(status,response)
+            except TimeoutError:return error('request_timeout')
+            except Exception:return error('upstream_unavailable')
 
+        except BaseException:
+            # A caller that vanishes mid-body must still leave a record.
+            record(499, "client_disconnected")
+            raise
     return app
 
 

@@ -131,7 +131,7 @@
     },
     {
       "path": "backend/session_api.py",
-      "sha256": "380ff89811649a2cb9851bc0375e70f0046a02564b4eb4071ba2d65172f648c8"
+      "sha256": "562af82fc5f739e551d40d409dd3a2ab0cdba0152f7b81dc1c0fb389352e4363"
     },
     {
       "path": "backend/access_transport.py",
@@ -150,6 +150,10 @@
       "sha256": "a59aa12048b4bca60e72c789e4003dad78cc71704aa683a1fdc8308bdd6bc4d1"
     },
     {
+      "path": "backend/hop_log.py",
+      "sha256": "352ff8a68a0574144da745d524b1c09e52c0be04044d04c241eabcdd1bbb2f96"
+    },
+    {
       "path": "backend/wallet_access.py",
       "sha256": "e07e6eed8d323aac75f093fb8b1f6b7e8ad3035d9e42b40a9eac3b0ed9cd5820"
     },
@@ -163,7 +167,7 @@
     },
     {
       "path": "scripts/export-session-contract.py",
-      "sha256": "504cb600d73cf6d9f9132be4ed4e3694964367a525ed23c3355f965eb75ac4dd"
+      "sha256": "e87657ad44bf8b234952be78db79864d58402aa2a9dd22a03b89e1aced29040a"
     }
   ],
   "status": "candidate_disabled_pending_consumer_acknowledgement"

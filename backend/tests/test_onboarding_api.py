@@ -47,6 +47,31 @@ class OnboardingApiTests(unittest.TestCase):
             content=raw if raw is not None else json.dumps(self.body if body is None else body),
             headers={'content-type':'application/json',**{k.lower():v for k,v in (HEADERS if headers is None else headers).items()}})
 
+    def test_a_private_hop_records_its_family_route_and_nothing_else(self):
+        from contextlib import redirect_stderr
+        import io as _io, json as _json, re as _re
+        import hop_log
+        with redirect_stderr(_io.StringIO()) as printed:
+            served = self.post()
+            refused = self.post(path='0x' + 'ab' * 20)
+        records = [_json.loads(line) for line in printed.getvalue().splitlines() if line]
+        self.assertEqual(len(records), 2, printed.getvalue())
+        ok, unmatched = records
+        self.assertEqual((ok['service'], ok['route'], ok['status']),
+                         ('internal-onboarding-v1', 'swap-preview', served.status_code))
+        self.assertEqual(ok['requestId'], served.headers['X-Domino-Request-Id'])
+        # A path naming no declared route is never echoed back into the record.
+        self.assertEqual((unmatched['route'], unmatched['status']),
+                         ('unmatched', refused.status_code))
+        self.assertIsNone(_re.search(r'0x[0-9a-fA-F]{40}', printed.getvalue()))
+        for record in records:
+            self.assertLessEqual(set(record), hop_log.ALLOWED_KEYS)
+            self.assertIn('durationMs', record)
+            # No session, CSRF, Access assertion or caller address may reach one.
+            for name in ('CF-Access-Jwt-Assertion', 'X-Domino-Session',
+                         'X-Domino-CSRF', 'X-Domino-Client-Id'):
+                self.assertNotIn(HEADERS[name], printed.getvalue())
+
     def test_success_uses_full_service_adapter_and_safe_headers(self):
         response=self.post()
         self.assertEqual(response.status_code,200,response.text)

@@ -103,7 +103,7 @@
     },
     {
       "path": "backend/authenticated_api.py",
-      "sha256": "6e1af780b6fbf4229afd1ccbef84b1310c00ae624156c2bc21722b216f6774fe"
+      "sha256": "09977e592db34742baf81da794bd27b47547caf0b88586884812cad8fbb245d1"
     },
     {
       "path": "backend/access_transport.py",
@@ -132,6 +132,10 @@
     {
       "path": "backend/read_deadline.py",
       "sha256": "f74ec9bf421525cccde91e5f461479d36ff6155289a7d5db556820937e4786a8"
+    },
+    {
+      "path": "backend/hop_log.py",
+      "sha256": "352ff8a68a0574144da745d524b1c09e52c0be04044d04c241eabcdd1bbb2f96"
     },
     {
       "path": "backend/bridge_state.py",
@@ -167,7 +171,7 @@
     },
     {
       "path": "scripts/export-performance-contract.py",
-      "sha256": "b2689797272d12eeb41cf130ae292eba11baa11cd7a75483bde225dbfdda572a"
+      "sha256": "086495dddae4be8d67f197fb88552fe23882cdcefcfcfb54414982136c1248b9"
     }
   ],
   "status": "candidate_disabled_pending_consumer_acknowledgement"

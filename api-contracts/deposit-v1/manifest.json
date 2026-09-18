@@ -239,7 +239,11 @@
     },
     {
       "path": "backend/authenticated_api.py",
-      "sha256": "6e1af780b6fbf4229afd1ccbef84b1310c00ae624156c2bc21722b216f6774fe"
+      "sha256": "09977e592db34742baf81da794bd27b47547caf0b88586884812cad8fbb245d1"
+    },
+    {
+      "path": "backend/hop_log.py",
+      "sha256": "352ff8a68a0574144da745d524b1c09e52c0be04044d04c241eabcdd1bbb2f96"
     },
     {
       "path": "backend/access_transport.py",
@@ -299,7 +303,7 @@
     },
     {
       "path": "scripts/export-deposit-contract.py",
-      "sha256": "f3cd83d15a6d56ff716d75f0d16428ddb4ff222e9e9d7bee9c5d111f381ba36f"
+      "sha256": "b5e8852b956c2c4eed5776693b04e9d4957927f10a492f006aa53edfb19138c6"
     }
   ],
   "status": "candidate_disabled_pending_consumer_acknowledgement"

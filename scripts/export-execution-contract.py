@@ -6,7 +6,7 @@ ROOT=Path(__file__).resolve().parents[1]
 sys.path.insert(0,str(ROOT/'backend'))
 from execution_status import CONTRACT_VERSION, REQUEST_MODELS, RESPONSE_MODELS, ERROR_STATUS_BY_CODE
 DEST=ROOT/'api-contracts/execution-v1'
-SOURCES=['backend/execution_status.py', 'backend/access_transport.py','backend/execution_status_runtime.py', 'backend/authenticated_api.py', 'backend/onboarding_auth.py','backend/migrations/019_execution_journal.sql','bridge/src/execution-worker.mjs','scripts/export-execution-contract.py']
+SOURCES=['backend/execution_status.py', 'backend/access_transport.py','backend/execution_status_runtime.py', 'backend/authenticated_api.py', 'backend/hop_log.py', 'backend/onboarding_auth.py','backend/migrations/019_execution_journal.sql','bridge/src/execution-worker.mjs','scripts/export-execution-contract.py']
 def text(value):return json.dumps(value,indent=2,sort_keys=True)+'\n'
 def typename(route, kind):
     return ''.join(part.title() for part in route.split('-')) + kind.title()

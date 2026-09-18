@@ -63,7 +63,11 @@
     },
     {
       "path": "backend/authenticated_api.py",
-      "sha256": "6e1af780b6fbf4229afd1ccbef84b1310c00ae624156c2bc21722b216f6774fe"
+      "sha256": "09977e592db34742baf81da794bd27b47547caf0b88586884812cad8fbb245d1"
+    },
+    {
+      "path": "backend/hop_log.py",
+      "sha256": "352ff8a68a0574144da745d524b1c09e52c0be04044d04c241eabcdd1bbb2f96"
     },
     {
       "path": "backend/onboarding_auth.py",
@@ -79,7 +83,7 @@
     },
     {
       "path": "scripts/export-execution-contract.py",
-      "sha256": "6fff62ec717fc5929fb60ad336e27b3359658418dc6f725f73088aa1315cd27e"
+      "sha256": "843a643e7e3f061e8515f0c960cf98c3403c54d8e0fcb76715b202f396775d19"
     },
     {
       "path": "backend/tests/fixtures/execution/status-wire.json",
