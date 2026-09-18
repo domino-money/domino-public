@@ -79,7 +79,7 @@ class FinancialTests(unittest.TestCase):
     def test_only_the_pinned_foundation_succession_is_accepted(self):
         """The installers re-apply the foundation; one deliberate change travels."""
         name = 'backend/migrations/006_chainlink_prices.sql'
-        successors = financial.FOUNDATION_SUCCESSORS
+        successors = financial.base.FOUNDATION_SUCCESSORS
         self.assertEqual(set(successors), {name}, 'a second exemption needs its own review')
         (installed, expected), = successors[name].items()
         # The pin names the release this upgrade reads and the file it carries.

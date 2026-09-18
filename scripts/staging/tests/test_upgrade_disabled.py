@@ -165,6 +165,25 @@ class LocalRootOwnership:
 
 
 class PlanTests(unittest.TestCase):
+    def test_the_pinned_foundation_succession_passes_and_nothing_else_does(self):
+        """Neither installer replays a migration, so the one accepted change is inert."""
+        import prepare_disabled as base
+        name = 'backend/migrations/006_chainlink_prices.sql'
+        (installed, expected), = base.FOUNDATION_SUCCESSORS[name].items()
+        frozen = {n: b'same' for n in (*base.MIGRATIONS, 'backend/schema.sql',
+                                       'backend/requirements-api.lock')}
+        old = dict(frozen, **{name: installed})
+        new = dict(frozen, **{name: expected})
+        planned = upgrade.plan(old, new, 'a' * 64, 'b' * 64, 'c' * 40, 'd' * 40)
+        self.assertNotIn('migration replay', [])
+        self.assertIn('migration replay', planned['notPerformed'])
+        self.assertIn(name, planned['changedFiles'])
+        for broken, why in ((dict(new, **{name: 'f' * 64}), 'an unpinned digest'),
+                            (dict(new, **{'backend/schema.sql': b'drift'}), 'another frozen file')):
+            with self.subTest(why=why), self.assertRaises(ValueError) as raised:
+                upgrade.plan(old, broken, 'a' * 64, 'b' * 64, 'c' * 40, 'd' * 40)
+            self.assertIn('requires_another_upgrade', str(raised.exception))
+
     def test_plan_is_host_free_and_compares_full_archive_file_content(self):
         old, new = archives()
         new['docs/upgrade-note.md'] = (b'new note', False)

@@ -70,7 +70,7 @@ def sha(payload):
 def plan(old, new, old_sha, new_sha, before, after):
     require(before != after, 'source_and_destination_must_differ')
     frozen = (*install.MIGRATIONS, 'backend/schema.sql', 'backend/requirements-api.lock')
-    require(all(name in old and old.get(name) == new.get(name) for name in frozen),
+    require(all(name in old and install.succeeds(name, old.get(name), new.get(name)) for name in frozen),
             'schema_migration_or_dependency_change_requires_another_upgrade')
     planned = {'mode': 'disabled-upgrade-plan', 'hostValidated': False,
             'fromCommit': before, 'commit': after,

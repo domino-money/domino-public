@@ -46,6 +46,38 @@ SERVICES = {
     'deposit': ('deposit_api.py', '--port 8881'),
 }
 ROOTS = (*SERVICES, 'operator', 'write')
+# A foundation file must match between the installed release and the one being
+# installed, because these installers re-apply those files and neither replays a
+# migration during an upgrade. One exact transition is accepted, pinned by both
+# digests so anything else still fails closed: 006 re-adds its source check
+# NOT VALID, so a re-apply cannot refuse a database that already holds a row for
+# a source 021 admits, and the wider constraint 021 adds validates the table.
+FOUNDATION_SUCCESSORS = {
+    'backend/migrations/006_chainlink_prices.sql': {
+        '52e16a5775278a297cfbfdc560d7b8183da33946c0f13b60a9d21c137fc0b1f3':
+            '256c574f256c4481655cda4c0f794854ef5e5c23a6cf3a71363d8bf024db4574'},
+}
+
+
+def succeeds(name, installed, wanted):
+    """True when a frozen file is unchanged, or changed exactly as one pin allows.
+
+    Callers hold either the digests themselves or the archive's
+    (contents, executable) pairs; a missing file reaches here as None and is
+    never a succession. An executable bit change is a change like any other.
+    """
+    if installed == wanted:
+        return True
+    allowed = FOUNDATION_SUCCESSORS.get(name, {})
+    if isinstance(installed, str) and isinstance(wanted, str):
+        return allowed.get(installed) == wanted
+    if (isinstance(installed, tuple) and isinstance(wanted, tuple)
+            and len(installed) == len(wanted) == 2 and installed[1] == wanted[1]):
+        return allowed.get(hashlib.sha256(installed[0]).hexdigest()) == \
+            hashlib.sha256(wanted[0]).hexdigest()
+    return False
+
+
 # The fixed foundation applied by this installer, not every SQL file in a release.
 MIGRATIONS = tuple('backend/migrations/' + name + '.sql' for name in (
     '001_catalogue', '002_activity', '003_fee_ledger', '004_positions',

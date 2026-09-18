@@ -22,18 +22,6 @@ import prepare_disabled as base
 
 require = base.require
 OLD = '4c3ee322308900303c679088bc4712ef16500763'
-# A foundation file must match the installed release byte for byte, because the
-# installers re-apply those files and this upgrade never replays them. One exact
-# transition is accepted, pinned by both digests so anything else still fails
-# closed: 006 re-adds its source check NOT VALID, so that a re-apply cannot
-# refuse a database already holding a row for a source that 021 admits, and the
-# wider constraint 021 adds validates the table. This upgrade does not apply it
-# — the file only has to travel with the release the next re-apply reads.
-FOUNDATION_SUCCESSORS = {
-    'backend/migrations/006_chainlink_prices.sql': {
-        '52e16a5775278a297cfbfdc560d7b8183da33946c0f13b60a9d21c137fc0b1f3':
-            '256c574f256c4481655cda4c0f794854ef5e5c23a6cf3a71363d8bf024db4574'},
-}
 ROOT = Path('/opt/domino/financial')
 PRIVATE = Path('/etc/domino/financial')
 RUNTIME = Path('/var/lib/domino-financial')
@@ -261,10 +249,7 @@ def baseline(files, planned):
     base.dependency_preflight(files)
     original = base.BASE / 'releases' / OLD / 'auth'
     for name, digest in planned['foundation'].items():
-        installed = sha(read_file(original / name))
-        if installed == digest:
-            continue
-        require(FOUNDATION_SUCCESSORS.get(name, {}).get(installed) == digest,
+        require(base.succeeds(name, sha(read_file(original / name)), digest),
                 'foundation_or_dependency_change')
     state = {name: unit_state(name) for name in PROTECTED}
     for component in OLD_COMPONENTS:
