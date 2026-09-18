@@ -113,11 +113,16 @@ sudo cp -p /etc/domino/continuous-reads/policy.nft \
 # 3. Check the file before it is loaded; nothing is applied by this.
 sudo nft -c -f /etc/domino/continuous-reads/policy.nft
 
-# 4. Load it. The file's own delete/add pair rebuilds the table from the file,
-#    and every rule counter restarts at zero: that is the evidence the live
-#    chain now comes from the file.
+# 4. Load it the way the egress service does, as one nft transaction. The
+#    file's own delete/add pair rebuilds the table from the file, and every
+#    rule counter restarts at zero: that is the evidence the live chain now
+#    comes from the file. Do NOT restart the egress service for this: the
+#    reader, gateway and tunnel are BindsTo= it, and an explicit restart
+#    propagates to them — on 16 September it stopped and restarted the reader
+#    and the gateway (journal: Stopping, Deactivated, Stopped, Started at
+#    11:33:46Z), which that day's record did not notice.
+sudo nft -f /etc/domino/continuous-reads/policy.nft
 sudo systemctl daemon-reload
-sudo systemctl restart domino-continuous-egress.service
 
 # 5. Nothing else moved.
 systemctl is-active domino-continuous-reads.target domino-read.service \
@@ -126,7 +131,9 @@ curl -s --max-time 5 127.0.0.1:20241/metrics | grep '^cloudflared_tunnel_ha_conn
 sudo nft list chain inet domino_continuous_reads tunnel
 ```
 
-Rollback is the backup copied back and the egress service restarted.
+The drop-in and target changes take effect at each unit's next start; the
+address allow-lists they carry are unchanged in content, so nothing waits on
+that. Rollback is the backup copied back and loaded the same way.
 
 ### The first apply
 

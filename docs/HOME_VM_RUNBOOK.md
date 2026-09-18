@@ -165,6 +165,12 @@ curl -s --max-time 5 127.0.0.1:20241/metrics | grep '^cloudflared_tunnel_ha_conn
 
 On 2026-09-15T02:05:20Z a debugging session stopped gateway and read, which took the target and the tunnel with them. The two services were started individually at 02:33:02Z and looked healthy; the tunnel stayed down until 2026-09-17T17:25Z, so every public pool figure rendered as a dash for 63 hours. Three of four units running is the failure mode this section exists to prevent.
 
+The same propagation runs through `domino-continuous-egress.service`: the
+reader, gateway and tunnel are `BindsTo=` it, so an explicit restart of the
+egress service restarts all three. Reload the continuous policy with
+`nft -f` on its file, never by restarting that service —
+[continuous egress](CONTINUOUS_EGRESS.md).
+
 ## 7. Handoff and staging activation evidence
 
 The implementing collaborator records the pinned producer and consumer/Worker commits, `read-v1` and `session-v1` manifests/digests, exact route/port mapping, safe error fixtures, method/body limits, relevant checks and recovery procedure. Any authorized collaborator may supply or update both the backend and Cloudflare configuration; no named-person handoff or acknowledgement is required.
