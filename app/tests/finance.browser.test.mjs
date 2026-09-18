@@ -1,3 +1,4 @@
+import { jump } from './support/clock.mjs';
 import assert from 'node:assert/strict';
 import { after, before, test } from 'node:test';
 import { readFileSync, mkdirSync } from 'node:fs';
@@ -164,7 +165,7 @@ test('switched off, history and receipts are quiet empty cards with their reason
     await s.page.screenshot({ path: join(screenshots, 'p2-private-off.png'), fullPage: true });
     s.set({ performance: 'available', execution: 'on' });
     const asked = [s.calls.length, s.executions.length];
-    await s.page.clock.fastForward('10:00');
+    await jump(s.page, '10:00');
     assert.deepEqual([s.calls.length, s.executions.length], asked, 'a route that is not there is not asked again while the tab stays visible');
     await setVisibility(s.page, 'hidden');
     await setVisibility(s.page, 'visible');
@@ -642,7 +643,7 @@ test('a finalized receipt shows its transaction hash, block hash and fee recipie
     await s.page.screenshot({ path: join(shots(), 'p2-receipt-identity.png'), fullPage: true });
 
     assert.deepEqual(sent.map(call => call.path), ['/api/execution/v1/list'], 'only the page so far');
-    await s.page.clock.fastForward('00:31');
+    await jump(s.page, '00:31');
     await receipts.locator(`[data-execution-intent="${reserved.intentId}"][data-execution-state="signing"]`).waitFor();
     assert.deepEqual(sent.map(call => [call.path, call.body, Boolean(call.csrf)]), [['/api/execution/v1/list', { afterIntentId: null, limit: 10 }, true], ['/api/execution/v1/status', { intentId: reserved.intentId }, true]]);
     assert.equal(await open.getByRole('link', { name: 'Pause the sequence' }).count(), 0, 'signed: no longer offered as stoppable');

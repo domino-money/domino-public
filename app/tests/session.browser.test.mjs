@@ -10,6 +10,7 @@
  * wallet method outside the login allowlist, a challenge verified twice, or a
  * signature that no Sign in click asked for.
  */
+import { jump } from './support/clock.mjs';
 import assert from 'node:assert/strict';
 import { existsSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
@@ -324,7 +325,7 @@ test("a sign-out in one tab reaches the other even while that tab's own me is in
   // The second tab comes back into view and reads me. The service answers it
   // while the session is still alive, and the answer is delivered late.
   const held = s.fake.hold('me', 'after');
-  await second.clock.fastForward('00:31');
+  await jump(second, '00:31', { pending: true });
   await second.evaluate(() => document.dispatchEvent(new Event('visibilitychange')));
   await held.arrived;
 
@@ -352,7 +353,7 @@ test('a Sign out click while this tab is checking its session is not lost', asyn
 
   // The tab comes back into view and reads me; its answer is delivered late.
   const held = s.fake.hold('me', 'after');
-  await page.clock.fastForward('00:31');
+  await jump(page, '00:31', { pending: true });
   await page.evaluate(() => document.dispatchEvent(new Event('visibilitychange')));
   await held.arrived;
 
@@ -388,7 +389,7 @@ test('a new session another tab made for the same account gets a new private sco
   // The first tab reads me while the old session is still alive; the answer
   // is delivered late, so it misses the other tab's sign-out in between.
   const held = s.fake.hold('me', 'after');
-  await first.clock.fastForward('00:31');
+  await jump(first, '00:31', { pending: true });
   await first.evaluate(() => document.dispatchEvent(new Event('visibilitychange')));
   await held.arrived;
 
@@ -588,7 +589,7 @@ test('the absolute expiry is noticed on time: me, then signed out with private d
   await connect(page);
   await signIn(s, page);
   s.fake.advance(12 * HOUR + 60_000);
-  await page.clock.fastForward('12:02:00');
+  await jump(page, '12:02:00');
   const ended = await viewIs(page, 'signed_out');
   assert.equal(ended.reason, 'session_ended');
   assert.deepEqual(await privateKeys(page), []);
@@ -602,7 +603,7 @@ test('an idle expiry is found when the tab comes back into view', async () => {
   await signIn(s, page);
   s.fake.advance(31 * 60_000);
   // Past the visibility throttle, but before any scheduled check.
-  await page.clock.fastForward('00:31');
+  await jump(page, '00:31');
   const reads = s.fake.count('me');
   await page.evaluate(() => document.dispatchEvent(new Event('visibilitychange')));
   const ended = await viewIs(page, 'signed_out');
@@ -624,7 +625,7 @@ test('an idle expiry is noticed while the tab stays in view, and the end time is
 
   // No visibility change, no other tab: the page's own checks find it.
   s.fake.advance(31 * 60_000);
-  await page.clock.fastForward('31:00');
+  await jump(page, '31:00');
   const ended = await viewIs(page, 'signed_out');
   assert.equal(ended.reason, 'session_ended');
   assert.deepEqual(await privateKeys(page), []);
@@ -640,7 +641,7 @@ test('after a reload the restored session is still checked every few minutes', a
   await page.reload({ waitUntil: 'load' });
   await viewIs(page, 'signed_in');
   s.fake.advance(31 * 60_000);
-  await page.clock.fastForward('05:01');
+  await jump(page, '05:01');
   const ended = await viewIs(page, 'signed_out');
   assert.equal(ended.reason, 'session_ended');
   assert.deepEqual(await privateKeys(page), []);
@@ -654,7 +655,7 @@ test('a browser clock running ahead of the server does not loop on me', async ()
   await connect(page);
   await signIn(s, page);
   const reads = s.fake.count('me');
-  await page.clock.fastForward('02:00');
+  await jump(page, '02:00');
   await sleep(300);
   assert.equal(s.fake.count('me'), reads);
   assert.equal((await view(page)).status, 'signed_in');
@@ -1328,7 +1329,7 @@ test('while the user is active in a visible tab, refresh keeps the session alive
   for (let round = 1; round <= 3; round += 1) {
     await act(page);
     s.fake.advance(21 * 60_000);
-    await page.clock.fastForward('21:00');
+    await jump(page, '21:00');
     await eventually(() => s.fake.count('refresh') === round, `refresh ${round}`);
     await until(page, () => window.__dominoSessionProbe.view().status === 'signed_in' && !document.querySelector('[aria-busy="true"]'), null, 'settled');
   }
@@ -1353,7 +1354,7 @@ test('without activity the session is not refreshed and idles out as before', as
   await connect(page);
   await signIn(s, page);
   s.fake.advance(31 * 60_000);
-  await page.clock.fastForward('31:00');
+  await jump(page, '31:00');
   const ended = await viewIs(page, 'signed_out');
   assert.equal(ended.reason, 'session_ended');
   assert.equal(s.fake.count('refresh'), 0);
@@ -1381,7 +1382,7 @@ test("two tabs refreshing the same session keep one CSRF, and neither breaks the
   await act(first);
   await act(second);
   s.fake.advance(21 * 60_000);
-  await first.clock.fastForward('21:00');
+  await jump(first, '21:00');
   await eventually(() => s.fake.count('refresh') >= 2, 'a refresh in the next window');
   await sleep(500);
   const refreshes = s.fake.calls('refresh');
@@ -1420,7 +1421,7 @@ test('a refresh after revocation signs out and clears private data, with no sign
   await act(page);
   const held = s.fake.hold('refresh', 'before');
   s.fake.advance(21 * 60_000);
-  await page.clock.fastForward('21:00');
+  await jump(page, '21:00');
   await held.arrived;
   s.fake.revoke(ADDR_A);
   held.release();
@@ -1444,7 +1445,7 @@ test('a refresh the store cannot serve keeps the session, says so, and retries a
   await act(page);
   s.fake.controls.storeDown.add('refresh');
   s.fake.advance(21 * 60_000);
-  await page.clock.fastForward('21:00');
+  await jump(page, '21:00');
   await eventually(() => s.fake.count('refresh') === 1, 'the first refresh');
   const kept = await until(page, () => {
     const v = window.__dominoSessionProbe.view();
@@ -1457,7 +1458,7 @@ test('a refresh the store cannot serve keeps the session, says so, and retries a
 
   // Retries back off, and stop.
   for (const step of ['00:31', '01:01', '02:01']) {
-    await page.clock.fastForward(step);
+    await jump(page, step);
     await sleep(200);
   }
   await eventually(() => s.fake.count('refresh') === 4, 'three retries');
@@ -1465,7 +1466,7 @@ test('a refresh the store cannot serve keeps the session, says so, and retries a
     const v = window.__dominoSessionProbe.view();
     return v.status === 'signed_in' && v.notice === 'refresh_unavailable' && !document.querySelector('[aria-busy="true"]');
   }, null, 'the exhausted retries settled');
-  await page.clock.fastForward('04:00');
+  await jump(page, '04:00');
   await sleep(300);
   assert.equal(s.fake.count('refresh'), 4, 'no more than three retries');
   assert.ok(s.fake.calls('refresh').every((call) => call.status === 503));
@@ -1488,10 +1489,10 @@ test('a tab whose outage retries ran out refreshes again once another tab has re
   await act(first);
   s.fake.controls.storeDown.add('refresh');
   s.fake.advance(21 * 60_000);
-  await first.clock.fastForward('21:00');
+  await jump(first, '21:00');
   await eventually(() => s.fake.count('refresh') === 1, 'the first refresh');
   for (const step of ['00:31', '01:01', '02:01']) {
-    await first.clock.fastForward(step);
+    await jump(first, step);
     await sleep(200);
   }
   await eventually(() => s.fake.count('refresh') === 4, 'three retries');
@@ -1499,7 +1500,7 @@ test('a tab whose outage retries ran out refreshes again once another tab has re
     const v = window.__dominoSessionProbe.view();
     return v.status === 'signed_in' && v.notice === 'refresh_unavailable' && !document.querySelector('[aria-busy="true"]');
   }, null, 'the exhausted retries settled in the first tab');
-  await first.clock.fastForward('04:00');
+  await jump(first, '04:00');
   await sleep(300);
   assert.equal(s.fake.count('refresh'), 4, 'the retries stop within the outage');
 
@@ -1519,7 +1520,7 @@ test('a tab whose outage retries ran out refreshes again once another tab has re
   // itself before the idle deadline the second tab's renewal set.
   await act(first);
   s.fake.advance(21 * 60_000);
-  await first.clock.fastForward('21:00');
+  await jump(first, '21:00');
   await eventually(() => s.fake.count('refresh') === 6, 'the first tab refreshes in the new window');
   assert.equal(s.fake.calls('refresh').at(-1).status, 200);
   assert.equal(s.fake.calls('refresh').at(-1).csrf, session.csrf);
@@ -1532,7 +1533,7 @@ test('a tab whose outage retries ran out refreshes again once another tab has re
   // Past the deadline the second tab's renewal set, the session lives on.
   await act(first);
   s.fake.advance(11 * 60_000);
-  await first.clock.fastForward('11:00');
+  await jump(first, '11:00');
   await sleep(300);
   assert.equal(activeSessions(s, ADDR_A).length, 1, 'the server session is still active');
   assert.equal((await view(first)).status, 'signed_in');
@@ -1549,10 +1550,10 @@ test('a refresh that fails once and then succeeds clears the notice and renews t
   await act(page);
   s.fake.controls.failNext.set('refresh', 'upstream_timeout');
   s.fake.advance(21 * 60_000);
-  await page.clock.fastForward('21:00');
+  await jump(page, '21:00');
   await eventually(() => s.fake.count('refresh') === 1, 'the first refresh');
   await until(page, () => window.__dominoSessionProbe.view().notice === 'refresh_unavailable', null, 'the notice');
-  await page.clock.fastForward('00:31');
+  await jump(page, '00:31');
   await eventually(() => s.fake.count('refresh') === 2, 'the retry');
   await until(page, () => {
     const v = window.__dominoSessionProbe.view();
@@ -1605,7 +1606,7 @@ test('the CSRF is only compared in memory: never stored, in a URL, a query key, 
   // An active tab refreshes; the other hears of the renewal.
   await act(first);
   s.fake.advance(21 * 60_000);
-  await first.clock.fastForward('21:00');
+  await jump(first, '21:00');
   await eventually(() => s.fake.count('refresh') === 1, 'the refresh');
   await until(first, () => window.__dominoSessionProbe.view().status === 'signed_in' && !document.querySelector('[aria-busy="true"]'), null, 'settled');
 
@@ -1647,7 +1648,7 @@ test('no refresh while signed out, nor while the tab is hidden; coming back into
   await connect(page);
   // Signed out: activity and time never refresh.
   await act(page);
-  await page.clock.fastForward('25:00');
+  await jump(page, '25:00');
   await sleep(300);
   assert.equal(s.fake.count('refresh'), 0, 'nothing to refresh while signed out');
 
@@ -1655,12 +1656,12 @@ test('no refresh while signed out, nor while the tab is hidden; coming back into
   await act(page);
   await setVisibility(page, 'hidden');
   s.fake.advance(21 * 60_000);
-  await page.clock.fastForward('21:00');
+  await jump(page, '21:00');
   await sleep(500);
   assert.equal(s.fake.count('refresh'), 0, 'a hidden tab never refreshes');
   assert.equal((await view(page)).status, 'signed_in');
 
-  await page.clock.fastForward('00:31');
+  await jump(page, '00:31');
   await setVisibility(page, 'visible');
   await eventually(() => s.fake.count('refresh') === 1, 'the refresh on coming back');
   assert.equal(s.fake.calls('refresh')[0].status, 200);

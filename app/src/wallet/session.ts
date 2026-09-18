@@ -105,6 +105,9 @@ if (__DOMINO_TEST_HOOKS__) {
       resolvePrivateReads: (match: string, value: string) => probeReads.resolve(match, value),
       privateReads: () => probeReads.log(),
       view: () => sessionController.getSnapshot().view,
+      // True from a dispatch until its response is applied: what a clock jump
+      // must not land inside (tests/support/clock.mjs).
+      busy: () => sessionController.getSnapshot().busy,
     }),
   })
 }

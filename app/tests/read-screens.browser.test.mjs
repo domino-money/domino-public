@@ -9,6 +9,7 @@
  * and the real components: the Dashboard lookup, the real create dialog and
  * the real Top pools table. Only which package fixture answers is scripted.
  */
+import { jump } from './support/clock.mjs';
 import assert from 'node:assert/strict';
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -1161,9 +1162,9 @@ test('a price read more than 5 minutes ago on the page is marked stale in its ti
   assert.equal(await priceState(dialog), 'usable');
   const reads = (await caseLog(page)).length;
 
-  await page.clock.fastForward('04:50');
+  await jump(page, '04:50');
   assert.equal(await priceState(dialog), 'usable', 'not yet five minutes');
-  await page.clock.fastForward('00:15');
+  await jump(page, '00:15');
   await page.waitForFunction(() => document.querySelector('[data-picker="range"]')?.getAttribute('data-price-state') === 'stale');
   assert.equal(await dialog.locator('[data-price-stale]').getAttribute('title'), 'This price was read more than 5 minutes ago on this page, and the pool’s price has probably moved since.');
   assert.match(await dialog.locator('[data-pool-price-text]').innerText(), /^≈1,000,000,000,000$/, 'the same price, in the same ink');
@@ -1417,7 +1418,7 @@ test('the figures dialog ages with the row behind it, and says stale when the ro
 
   const readsBeforeAge = await caseLog(page);
   // Past the read service's fresh window, with the dialog left open.
-  await page.clock.fastForward('01:05');
+  await jump(page, '01:05');
   await page.waitForFunction(() => document.querySelectorAll('[data-pool-figures-dialog] [data-provider-figure="attributed_stale"]').length > 0);
   const aged = await dialog.innerText();
   // The owner's rule: a stale figure reads as the figure, in the same ink; that it is stale is its state and its title.

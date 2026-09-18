@@ -11,6 +11,7 @@
  * login allowlist, a signature no Sign in click asked for, or any request to
  * /api/deposit/.
  */
+import { jump } from './support/clock.mjs';
 import assert from 'node:assert/strict';
 import { existsSync, readFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
@@ -275,15 +276,15 @@ test('a preview is current until 29 s and gone at 30 s, focus moves to the expir
     node.setAttribute('tabindex', '-1');
     node.focus();
   });
-  await page.clock.fastForward('00:29');
+  await jump(page, '00:29');
   await until(page, () => document.querySelector('[data-testid="preview-expiry"]')?.textContent === 'Expires in 1 s', null, 'one second left');
   assert.equal(await figures(page).count(), 1);
-  await page.clock.fastForward('00:01');
+  await jump(page, '00:01');
   await previewState(page, 'expired');
   assert.equal(await figures(page).count(), 0, 'the figures are gone');
   assert.match(await page.locator('main').innerText(), /This preview expired at .*Its figures are hidden\./);
   assert.equal(await page.evaluate(() => document.activeElement?.textContent), 'Preview expired');
-  await page.clock.fastForward('05:00');
+  await jump(page, '05:00');
   assert.equal(onboardingCount(s), 1, 'no timer asks again');
   assert.equal(await getPreview(page).innerText(), 'Refresh preview');
   assert.equal(await getPreview(page).isEnabled(), true);
@@ -422,11 +423,11 @@ test('New position’s Review asks for the deposit amounts for the signed-in wal
   await noSigningControls(page);
 
   // The estimate is current for 30 s after it was asked; then its figures go back to a dash, with the time in the title.
-  await page.clock.fastForward('00:30');
+  await jump(page, '00:30');
   await amountsAre(page, 'expired');
   assert.deepEqual(await rowLines(page, 'maximum'), ['—']);
   assert.match(await balance(page).locator('[data-balance-row="maximum"] dd').getAttribute('title'), /^This estimate expired at \d\d:\d\d:\d\d\.$/);
-  await page.clock.fastForward('05:00');
+  await jump(page, '05:00');
   assert.equal(positionCalls(s).length, 1, 'no timer and no expiry asks again');
 
   // Opening Review again is a new intent.
@@ -887,7 +888,7 @@ test('a request still open at 27 s is abandoned as timed out; one that arrives a
   await getPreview(page).click();
   await held.arrived;
   await previewState(page, 'loading');
-  await page.clock.fastForward('00:27');
+  await jump(page, '00:27', { pending: true });
   await previewState(page, 'failed');
   assert.match(await failure(page), /^The preview request timed out\. Nothing from it is shown\./);
   held.release();
