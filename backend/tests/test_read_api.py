@@ -129,7 +129,12 @@ class ApiTests(unittest.TestCase):
             self.assertTrue(entered.wait(2))
             response = self.client.post('/v1/read/pools', json={'token': TOKEN})
             self.assertEqual(response.status_code, 429)
-            self.assertEqual(response.headers['Retry-After'], '1')
+            # The delay reports the read still holding the slot, not a constant:
+            # a second against a read that owns the slot for several sends the
+            # caller back again and again, which is what the old '1' did.
+            delay = int(response.headers['Retry-After'])
+            self.assertGreater(delay, 1)
+            self.assertLessEqual(delay, ReadGate.MAX_RETRY_AFTER)
         finally:
             release.set()
             worker.join(4)

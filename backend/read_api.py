@@ -1,5 +1,6 @@
 """Internal loopback API for public chain reads, not authenticated account data."""
 import asyncio
+import math
 import os
 import re
 import secrets
@@ -19,7 +20,7 @@ from pool_requests import configured_pool_requests
 from read_service import ReadService
 from read_contract import CONTRACT_VERSION, RESPONSE_MODELS, ErrorResponse, validate_response, sanitize_error, unsigned_string_pattern
 import hop_log
-from read_deadline import read_deadline
+from read_deadline import current_read_deadline, read_deadline, read_timeout
 
 Address = Annotated[str, StringConstraints(strict=True, pattern=r'^0x[0-9a-fA-F]{40}$')]
 PoolId = Annotated[str, StringConstraints(strict=True, pattern=r'^0x[0-9a-fA-F]{64}$')]
@@ -117,33 +118,70 @@ class ReadGate:
 
     PROVIDER, STORED = 'provider', 'stored'
     STORED_ROUTES = frozenset({'catalogue', 'pool-metrics'})
+    # Admission stays fail-fast with a client backoff, the reviewed design of
+    # #157. What it never did was tell the truth about the wait: a constant one
+    # second against a slot a six-second read owns sent three visitors opening
+    # Home back five times each. A refusal now reports the delay the gate can
+    # actually see, so one honest answer replaces a run of hopeful ones.
+    MIN_RETRY_AFTER, MAX_RETRY_AFTER = 1, 10
+    # The start interval paces a caller and must not punish one pacing itself
+    # correctly: a client spacing 1.1 s against a 1 s rule loses to scheduling
+    # jitter alone without this tolerance.
+    INTERVAL_TOLERANCE = 0.05
 
     def __init__(self, interval=1, clock=time.monotonic):
         self.slot, self.lock = BoundedSemaphore(1), Lock()
         self.interval, self.clock, self.last = interval, clock, float('-inf')
         self.stored_slot, self.stored_last = BoundedSemaphore(1), float('-inf')
+        self.held = {self.PROVIDER: None, self.STORED: None}
 
     def kind_of(self, route):
         return self.STORED if route in self.STORED_ROUTES else self.PROVIDER
 
+    def retry_after(self, kind=PROVIDER):
+        """The delay this gate can actually justify, never a hopeful constant.
+
+        Two things can refuse a caller: the slot a read still holds, and the
+        start interval. The wait is whichever is further away, and the holder's
+        own remaining budget is what bounds the first — an admitted read cannot
+        outlive it.
+        """
+        with self.lock:
+            last = self.stored_last if kind == self.STORED else self.last
+            started = self.held[kind]
+            interval_left = self.interval - (self.clock() - last)
+            slot_left = 0.0 if started is None else started[1] - (self.clock() - started[0])
+        return max(self.MIN_RETRY_AFTER,
+                   min(self.MAX_RETRY_AFTER, math.ceil(max(interval_left, slot_left))))
+
     def enter(self, kind=PROVIDER):
-        if kind == self.STORED:
-            if not self.stored_slot.acquire(blocking=False):
-                return False
-            with self.lock:
-                if self.clock() - self.stored_last < self.interval:
-                    self.stored_slot.release()
-                    return False
-                self.stored_last = self.clock()
-            return True
-        if not self.slot.acquire(blocking=False):
+        slot = self.stored_slot if kind == self.STORED else self.slot
+        if not slot.acquire(blocking=False):
             return False
         with self.lock:
-            if self.clock() - self.last < self.interval:
-                self.slot.release()
+            if self.clock() - (self.stored_last if kind == self.STORED
+                               else self.last) < self.interval - self.INTERVAL_TOLERANCE:
+                slot.release()
                 return False
-            self.last = self.clock()
+            if kind == self.STORED:
+                self.stored_last = self.clock()
+            else:
+                self.last = self.clock()
+            # Record when this read started and what it may still spend, so a
+            # refused caller is told how long the slot is plausibly taken.
+            budget = self.MAX_RETRY_AFTER
+            if current_read_deadline() is not None:
+                try:
+                    budget = read_timeout(self.MAX_RETRY_AFTER)
+                except DataError:
+                    budget = 0.0
+            self.held[kind] = (self.clock(), budget)
         return True
+
+    def leave(self, kind=PROVIDER):
+        with self.lock:
+            self.held[kind] = None
+        (self.stored_slot if kind == self.STORED else self.slot).release()
 
 
 class LocalReadBoundary:
@@ -295,7 +333,8 @@ def create_app(service=None, *, gate=None, read_budget_seconds=60):
         kind = gate.kind_of(route)
         if not gate.enter(kind):
             hop_log.note(gate=kind, admitted=False, reason='read_capacity_busy')
-            return JSONResponse({'error': 'read_capacity_busy'}, status_code=429, headers={'Retry-After': '1'})
+            return JSONResponse({'error': 'read_capacity_busy'}, status_code=429,
+                                headers={'Retry-After': str(gate.retry_after(kind))})
         hop_log.note(gate=kind, admitted=True)
         try:
             with read_deadline(read_budget_seconds):
@@ -311,7 +350,7 @@ def create_app(service=None, *, gate=None, read_budget_seconds=60):
             hop_log.note(reason=data.get('error'))
             return JSONResponse(data, status_code=status)
         finally:
-            (gate.stored_slot if kind == gate.STORED else gate.slot).release()
+            gate.leave(kind)
 
     error_responses = {code: {'model': ErrorResponse} for code in (400,403,408,409,413,415,422,429,502,503,504)}
 

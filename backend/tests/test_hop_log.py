@@ -8,8 +8,12 @@ import sys
 import unittest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from threading import Thread
+import time
+
 from fastapi.testclient import TestClient
 from discovery import DataError
+from read_deadline import read_deadline
 import hop_log
 from read_api import ReadGate, create_app
 from read_contract import sanitize_error
@@ -158,3 +162,90 @@ class ReaderHopTests(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class AdmissionRefusalTests(unittest.TestCase):
+    """Admission stays fail-fast; what changed is that the delay is honest."""
+
+    def gate(self, interval=0, clock=time.monotonic):
+        from read_api import ReadGate
+        return ReadGate(interval=interval, clock=clock)
+
+    def test_a_taken_slot_still_refuses_immediately(self):
+        gate = self.gate()
+        self.assertTrue(gate.enter())
+        started = time.monotonic()
+        self.assertFalse(gate.enter(), 'admission must not queue')
+        self.assertLess(time.monotonic() - started, 0.2)
+
+    def test_the_delay_reported_covers_the_read_that_owns_the_slot(self):
+        from read_api import ReadGate
+        ticks = [0.0]
+        gate = ReadGate(interval=1, clock=lambda: ticks[0])
+        with read_deadline(12):
+            self.assertTrue(gate.enter())
+        # The holder may still spend its budget, so a refused caller is told
+        # seconds, not the old constant one.
+        ticks[0] = 2.0
+        self.assertFalse(gate.enter())
+        self.assertGreater(gate.retry_after(), 1)
+        self.assertLessEqual(gate.retry_after(), ReadGate.MAX_RETRY_AFTER)
+
+    def test_a_released_slot_reports_only_the_interval_that_remains(self):
+        from read_api import ReadGate
+        ticks = [0.0]
+        gate = ReadGate(interval=4, clock=lambda: ticks[0])
+        self.assertTrue(gate.enter())
+        gate.leave()
+        ticks[0] = 1.0
+        self.assertEqual(gate.retry_after(), 3)
+        ticks[0] = 9.0
+        self.assertEqual(gate.retry_after(), ReadGate.MIN_RETRY_AFTER)
+
+    def test_the_reported_delay_is_bounded_at_both_ends(self):
+        from read_api import ReadGate
+        # A gate nobody has entered has nothing pending, however long its
+        # interval: the delay is only ever about a read or a pacing in flight.
+        self.assertEqual(ReadGate(interval=10_000).retry_after(), ReadGate.MIN_RETRY_AFTER)
+        ticks = [0.0]
+        gate = ReadGate(interval=10_000, clock=lambda: ticks[0])
+        self.assertTrue(gate.enter())
+        gate.leave()
+        ticks[0] = 1.0
+        self.assertEqual(gate.retry_after(), ReadGate.MAX_RETRY_AFTER)
+
+    def test_leaving_clears_the_holder_so_no_delay_is_invented(self):
+        gate = self.gate()
+        with read_deadline(10):
+            self.assertTrue(gate.enter())
+        self.assertIsNotNone(gate.held[gate.PROVIDER])
+        gate.leave()
+        self.assertIsNone(gate.held[gate.PROVIDER])
+        self.assertEqual(gate.retry_after(), ReadGate_MIN())
+
+    def test_the_start_interval_tolerates_a_client_pacing_itself_correctly(self):
+        from read_api import ReadGate
+        ticks = [0.0]
+        gate = ReadGate(interval=1, clock=lambda: ticks[0])
+        self.assertTrue(gate.enter())
+        gate.leave()
+        # A client spacing itself just under the interval by jitter alone is
+        # inside the tolerance and must not be refused.
+        ticks[0] = 1 - ReadGate.INTERVAL_TOLERANCE / 2
+        self.assertTrue(gate.enter())
+
+    def test_the_two_kinds_report_their_own_delays(self):
+        from read_api import ReadGate
+        ticks = [0.0]
+        gate = ReadGate(interval=3, clock=lambda: ticks[0])
+        self.assertTrue(gate.enter(gate.STORED))
+        gate.leave(gate.STORED)
+        ticks[0] = 1.0
+        # The stored kind is pacing; the provider kind was never entered.
+        self.assertEqual(gate.retry_after(gate.STORED), 2)
+        self.assertEqual(gate.retry_after(gate.PROVIDER), ReadGate.MIN_RETRY_AFTER)
+
+
+def ReadGate_MIN():
+    from read_api import ReadGate
+    return ReadGate.MIN_RETRY_AFTER

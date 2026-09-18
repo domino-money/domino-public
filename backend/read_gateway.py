@@ -141,7 +141,7 @@ class Gateway:
             return ERROR_STATUS_BY_CODE.get(code, 503), {'error': code}
         finally:
             # Entire synchronous operation runs in a shielded worker: disconnect is not completion.
-            (self.gate.stored_slot if kind == self.gate.STORED else self.gate.slot).release()
+            self.gate.leave(kind)
 
 
 def create_gateway(gateway=None):
@@ -261,8 +261,7 @@ def create_gateway(gateway=None):
             finally:
                 # Dispatch failure must release admission; a started worker owns its release.
                 if not started.is_set():
-                    (gateway.gate.stored_slot if kind == gateway.gate.STORED
-                     else gateway.gate.slot).release()
+                    gateway.gate.leave(kind)
 
         except BaseException:
             # A client that vanishes mid-body must still leave a record.

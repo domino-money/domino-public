@@ -170,8 +170,7 @@ class DevGateway(Gateway):
         except DataError:
             return 403, {'error': 'upstream_unavailable'}
         finally:
-            (self.gate.stored_slot if self.gate.kind_of(route) == self.gate.STORED
-             else self.gate.slot).release()
+            self.gate.leave(self.gate.kind_of(route))
 
 
 def create_dev_gateway(gateway=None):
@@ -287,7 +286,7 @@ def create_dev_gateway(gateway=None):
                 return result(503, {'error': 'upstream_unavailable'})
             finally:
                 if not started.is_set():
-                    gateway.gate.slot.release()
+                    gateway.gate.leave(gateway.gate.PROVIDER)
 
         except BaseException:
             # A client that vanishes mid-body must still leave a record.
