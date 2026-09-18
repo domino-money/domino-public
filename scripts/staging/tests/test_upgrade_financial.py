@@ -76,6 +76,51 @@ class FinancialTests(unittest.TestCase):
         self.assertIn('financial_schema_already_exists', query)
         self.assertIn('domino_financial_install.receipt', query)
 
+    def test_only_the_pinned_foundation_succession_is_accepted(self):
+        """The installers re-apply the foundation; one deliberate change travels."""
+        name = 'backend/migrations/006_chainlink_prices.sql'
+        successors = financial.FOUNDATION_SUCCESSORS
+        self.assertEqual(set(successors), {name}, 'a second exemption needs its own review')
+        (installed, expected), = successors[name].items()
+        # The pin names the release this upgrade reads and the file it carries.
+        self.assertEqual(expected, financial.sha(self.files[name][0]))
+        self.assertEqual(expected, self.planned['foundation'][name])
+        self.assertNotEqual(installed, expected)
+        previous = subprocess.check_output(
+            ['git', 'show', f'{financial.OLD}:{name}'], cwd=REPO)
+        self.assertEqual(financial.sha(previous), installed,
+                         'the pin must name the digest the installed release actually holds')
+        # What it accepts: NOT VALID on the re-added check, and the comment that
+        # explains it. Ignoring comment lines, the two files differ by that alone.
+        def statements(raw):
+            lines = [l for l in raw.decode().splitlines() if not l.lstrip().startswith('--')]
+            return '\n'.join(lines).replace(') NOT VALID;', ');')
+        self.assertIn(b'NOT VALID', self.files[name][0])
+        self.assertNotIn(b'NOT VALID', previous)
+        self.assertEqual(statements(previous), statements(self.files[name][0]),
+                         'the accepted change adds NOT VALID and a comment, nothing else')
+
+    def test_a_foundation_change_that_is_not_pinned_still_fails_closed(self):
+        from unittest.mock import patch as _patch
+        name = 'backend/migrations/006_chainlink_prices.sql'
+        other = 'backend/migrations/005_capital_prices.sql'
+        installed = {n: self.files[n][0] for n in self.planned['foundation']}
+        def read(path, maximum=64*1024*1024):
+            return installed[str(path).split('/auth/', 1)[1]]
+        with _patch.object(financial, 'read_file', read), \
+             _patch.object(financial.os, 'geteuid', lambda: 0), \
+             _patch.object(financial.base, 'trusted_parents', lambda *a: None), \
+             _patch.object(financial.base, 'pg_parents', lambda *a: None), \
+             _patch.object(financial.base, 'dependency_preflight', lambda *a: None), \
+             _patch.object(financial, 'unit_state', lambda name: self.fail('reached the host')):
+            for changed, reason in ((name, 'an unpinned digest for the exempt file'),
+                                    (other, 'any other foundation file')):
+                installed[changed] = b'-- drifted\n' + self.files[changed][0]
+                with self.subTest(reason=reason), self.assertRaises(ValueError) as raised:
+                    financial.baseline(self.files, self.planned)
+                self.assertIn('foundation_or_dependency_change', str(raised.exception))
+                installed[changed] = self.files[changed][0]
+
     def test_peers_preserve_existing_rows_and_reject_boundary(self):
         hba = b'local all postgres peer\nlocal domino_catalogue domino_session_auth peer map=domino\nlocal all all reject\nhost all all 0.0.0.0/0 reject\n'
         ident = b'domino domino-auth domino_session_auth\ndomino_dev domino-dev-read domino_dev_catalogue_reader\n'
