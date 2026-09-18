@@ -24,7 +24,7 @@ from inventory import AlchemyInventory
 
 class Upstream:
     def __init__(self, *, inventory=None, budget=15):
-        self.rpc, self.calls = FakeRpc(), []
+        self.rpc, self.calls, self.request_ids = FakeRpc(), [], []
         self.now = time.time()
         self.service = ReadService(rpc_factory=lambda: self.rpc, clock=lambda:1010,
                                   transport_factory=lambda:lambda url:[candidate()], inventory=inventory,
@@ -34,9 +34,10 @@ class Upstream:
         self.http = LocalReaderHTTP(client=self.client)
         self.change = None
 
-    def request(self, route, body=None, *, deadline):
+    def request(self, route, body=None, *, deadline, request_id=None):
         self.calls.append((route,deepcopy(body)))
-        status,data,metadata = self.http.request(route,body,deadline=deadline)
+        self.request_ids.append(request_id)
+        status,data,metadata = self.http.request(route,body,deadline=deadline,request_id=request_id)
         if self.change and route != 'health': return self.change(status,data,metadata)
         return status,data,metadata
 
@@ -54,6 +55,43 @@ class GatewayTests(IdentityFixtures, unittest.TestCase):
     def post(self, path='token', body=None, **kwargs):
         return self.client.post('/internal/read/v1/'+path,json=body if body is not None else {'token':TOKEN},
                                 headers=kwargs.pop('headers',self.headers),**kwargs)
+
+    def test_every_gateway_hop_records_one_line_and_propagates_its_id(self):
+        from contextlib import redirect_stderr
+        import io, json as _json, re as _re
+        import hop_log
+        with redirect_stderr(io.StringIO()) as printed:
+            served = self.post()
+            refused = self.client.post('/internal/read/v1/' + TOKEN, json={}, headers=self.headers)
+        records = [_json.loads(line) for line in printed.getvalue().splitlines() if line]
+        # This harness runs a real reader behind the gateway, so one served read
+        # leaves three lines: the reader's health and route hops, then the
+        # gateway's own — all three carrying the one id, which is the point.
+        served_lines = [record for record in records if record['route'] != 'unmatched']
+        self.assertEqual(len({record['requestId'] for record in served_lines}), 1, printed.getvalue())
+        self.assertEqual([record['service'] for record in served_lines],
+                         ['read-api', 'read-api', 'read-gateway'])
+        self.assertEqual(served_lines[-1]['requestId'], served.headers['X-Domino-Request-Id'])
+        self.assertTrue(_re.fullmatch(r'[0-9a-f]{32}', served_lines[-1]['requestId']))
+        for record in served_lines:
+            self.assertEqual(record['status'], 200)
+            self.assertNotIn('reason', record)
+        self.assertEqual((served.status_code, served_lines[-1]['route']), (200, 'token'))
+        self.assertEqual((served_lines[-1]['gate'], served_lines[-1]['admitted']), ('provider', True))
+        # A path naming no declared route is never echoed, and gets its own id.
+        unmatched, = [record for record in records if record['route'] == 'unmatched']
+        self.assertEqual((refused.status_code, unmatched['service'], unmatched['reason']),
+                         (404, 'read-gateway', 'route_not_available'))
+        self.assertNotEqual(unmatched['requestId'], served_lines[-1]['requestId'])
+        self.assertIsNone(_re.search(r'0x[0-9a-fA-F]{40}', printed.getvalue()))
+        for record in records:
+            self.assertLessEqual(set(record), hop_log.ALLOWED_KEYS)
+            self.assertIn('durationMs', record)
+
+    def test_the_reader_receives_the_gateways_own_request_id(self):
+        response = self.post()
+        forwarded = set(self.upstream.request_ids)
+        self.assertEqual(forwarded, {response.headers['X-Domino-Request-Id']})
 
     def test_real_local_reader_pipeline_preserves_output_and_blocks_browser_direct_access(self):
         response = self.post()
@@ -219,11 +257,11 @@ class GatewayTests(IdentityFixtures, unittest.TestCase):
     def test_timed_out_reader_must_be_idle_before_another_operation(self):
         original = self.upstream.request
         busy = [False]
-        def interrupted(route, body=None, *, deadline):
+        def interrupted(route, body=None, *, deadline, request_id=None):
             if route != 'health' and not busy[0]:
                 busy[0] = True
                 raise DataError('upstream_timeout')
-            result = original(route, body, deadline=deadline)
+            result = original(route, body, deadline=deadline, request_id=request_id)
             if route == 'health': result[1]['busy'] = busy[0]
             return result
         self.upstream.request = interrupted
@@ -237,11 +275,11 @@ class GatewayTests(IdentityFixtures, unittest.TestCase):
     def test_actual_inflight_operation_holds_gateway_gate_until_exit(self):
         entered,release=Event(),Event()
         original=self.upstream.request
-        def blocked(route,body=None,*,deadline):
+        def blocked(route,body=None,*,deadline,request_id=None):
             if route=='token':
                 entered.set()
                 if not release.wait(3): raise RuntimeError('test_timeout')
-            return original(route,body,deadline=deadline)
+            return original(route,body,deadline=deadline,request_id=request_id)
         self.upstream.request=blocked
         results=[]
         worker=Thread(target=lambda:results.append(self.post()))

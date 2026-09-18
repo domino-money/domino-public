@@ -100,8 +100,12 @@ class LocalReaderHTTP:
             self.client.close()
 
     @staticmethod
-    def _request_headers(method, budget):
+    def _request_headers(method, budget, request_id=None):
         headers = {'Accept': 'application/json', 'Accept-Encoding': 'identity', 'Connection': 'close'}
+        if request_id is not None:
+            # Correlation only: the hop that mints it decides its shape, and the
+            # reader re-checks it before recording. Never an identity or a grant.
+            headers['X-Domino-Request-Id'] = request_id
         if method == 'POST':
             headers['Content-Type'] = 'application/json'
             headers['X-Domino-Read-Budget-Ms'] = str(
@@ -125,11 +129,11 @@ class LocalReaderHTTP:
             raw.extend(chunk)
         return raw
 
-    def _network(self, method, path, payload, budget):
+    def _network(self, method, path, payload, budget, request_id=None):
         connection = _LoopbackConnection(self.port, budget)
         try:
             connection.connect()
-            headers = self._request_headers(method, budget)
+            headers = self._request_headers(method, budget, request_id)
             connection.request(method, path, body=payload, headers=headers)
             with connection.getresponse() as response:
                 budget.remaining()
@@ -150,17 +154,17 @@ class LocalReaderHTTP:
         finally:
             connection.close()
 
-    def _injected(self, method, path, payload, budget):
+    def _injected(self, method, path, payload, budget, request_id=None):
         remaining = budget.remaining()
         with self.client.stream(method, self.origin + path, content=payload,
-                                headers=self._request_headers(method, budget), follow_redirects=False,
+                                headers=self._request_headers(method, budget, request_id), follow_redirects=False,
                                 timeout=httpx.Timeout(remaining, connect=min(2, remaining))) as response:
             budget.remaining()
             received = _response_headers(response.headers.multi_items(), response.status_code)
             chunks = (response.content,) if response.is_stream_consumed else response.iter_raw()
             return response.status_code, self._collect(chunks, budget), received
 
-    def request(self, route, body=None, *, deadline):
+    def request(self, route, body=None, *, deadline, request_id=None):
         if not isinstance(route, str) or (route != 'health' and route not in READ_ROUTES):
             raise DataError('route_not_available')
         budget = _Budget(deadline, self.clock)
@@ -172,7 +176,7 @@ class LocalReaderHTTP:
             if payload is not None and len(payload) > MAX_BODY:
                 raise DataError('invalid_request')
             operation = self._network if self.client is None else self._injected
-            status, raw, headers = operation(method, path, payload, budget)
+            status, raw, headers = operation(method, path, payload, budget, request_id)
             budget.remaining()
             try:
                 data = strict_json(raw)

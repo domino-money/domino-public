@@ -245,13 +245,15 @@ async function upstreamRead(request, body, payload, route, settings, fetchImpl, 
       // original JSON bytes/names/numbers, including the gateway's opaque cursor.
       const output = new Response(text, { status: 200, headers: headersFor(requestId, protocol) });
       scope.check();
-      return output;
+      return { response: output };
     }
     if (!isObject(result) || Object.keys(result).length !== 1 || typeof result.error !== 'string') fail('upstream_invalid_response');
     if (!Object.hasOwn(protocol.errors, result.error) || protocol.errors[result.error] !== response.status) fail('upstream_unavailable');
     const output = errorResponse(result.error, requestId, protocol, response.status === 429 ? { 'Retry-After': retryAfter(response.headers) } : undefined);
     scope.check();
-    return output;
+    // The code is already checked against the reviewed table above, so the
+    // record can name it without reading the relayed body back.
+    return { response: output, reason: result.error };
   } catch (error) {
     if (error instanceof BridgeError) throw error;
     if (scope.signal.aborted) throw scope.signal.reason;
@@ -270,6 +272,21 @@ export function createWorker({ fetch: fetchImpl = globalThis.fetch, getClientIp 
       const requestId = crypto.randomUUID();
       const started = Date.now();
       let protocol = V1_PROTOCOL;
+      // The raw URL never reaches the record: only a declared route name does.
+      let loggedRoute = 'unmatched';
+      const finish = (response, reason) => {
+        // An upstream-mapped error answers with its own reviewed code in the
+        // body's shape; the record names it rather than leaving the line silent.
+        console.log(JSON.stringify({
+          service: 'read-bridge', requestId, route: loggedRoute,
+          contractVersion: protocol.version,
+          // Bounded like the Python hops: a method is short or it is not one.
+          method: String(request.method).slice(0, 16),
+          status: response.status, durationMs: Date.now() - started,
+          ...(reason ? { reason } : {}),
+        }));
+        return response;
+      };
       try {
         const url = new URL(request.url);
         if (url.pathname.startsWith(V2_PROTOCOL.prefix)) protocol = V2_PROTOCOL;
@@ -277,6 +294,7 @@ export function createWorker({ fetch: fetchImpl = globalThis.fetch, getClientIp 
         const route = url.pathname.startsWith(protocol.prefix) ? url.pathname.slice(protocol.prefix.length) : null;
         if (url.search || url.hash || !route || (route !== 'capabilities' && !Object.hasOwn(protocol.routes, route))) fail('route_not_available');
         const capability = route === 'capabilities';
+        loggedRoute = route;
         if (request.method !== (capability ? 'GET' : 'POST')) fail('method_not_allowed');
         checkBrowser(request, settings.appOrigin, capability);
         const requestedContract = request.headers.get(CONTRACT_HEADER);
@@ -293,7 +311,7 @@ export function createWorker({ fetch: fetchImpl = globalThis.fetch, getClientIp 
             automation: false,
           }), { headers: headersFor(requestId, protocol) });
           if (Date.now() - started >= LIMITS.totalMs) fail('request_timeout');
-          return output;
+          return finish(output);
         }
         if (!settings.enabledReads.includes(route)) fail('route_not_available');
         const encoding = request.headers.get('Content-Encoding');
@@ -316,10 +334,11 @@ export function createWorker({ fetch: fetchImpl = globalThis.fetch, getClientIp 
           if (error instanceof BridgeError) throw error;
           fail('invalid_request');
         } finally { scope.dispose(); }
-        return await upstreamRead(request, text, body, route, settings, fetchImpl, getClientIp(request), started, requestId, protocol);
+        const relayed = await upstreamRead(request, text, body, route, settings, fetchImpl, getClientIp(request), started, requestId, protocol);
+        return finish(relayed.response, relayed.reason);
       } catch (error) {
         const code = error instanceof BridgeError ? error.code : 'upstream_unavailable';
-        return errorResponse(code, requestId, protocol);
+        return finish(errorResponse(code, requestId, protocol), code);
       }
     },
   };

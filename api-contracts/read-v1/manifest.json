@@ -1084,7 +1084,7 @@
     },
     {
       "path": "backend/read_api.py",
-      "sha256": "7d36b963ab101a90f7dfdc537f2027e6553117dcf666450a5a3b0e2754a8b5dd"
+      "sha256": "3190f15a07a85aebfa546fef02893c51935c9ed0548d79c2de17c558a81e278e"
     },
     {
       "path": "backend/read_service.py",
@@ -1116,7 +1116,7 @@
     },
     {
       "path": "backend/read_gateway.py",
-      "sha256": "8a6aa0e44218507c934e935b6c20d090db6b2ff1f276aaef18230faf6d6cc1e4"
+      "sha256": "e48c44c81102926310a755cee68bcd037bb1c24ff85d5ff7e8f02d7d77bccacf"
     },
     {
       "path": "backend/bridge_state.py",
@@ -1124,7 +1124,7 @@
     },
     {
       "path": "backend/bridge_http.py",
-      "sha256": "9e839b84104d80c67cb59b474f2694e9ab7c29e10ab806b05b4ba57200f73f84"
+      "sha256": "7758214b4fd96b4d58c4afcf9a8ecb415771203131016e163bbfd6425e39db73"
     },
     {
       "path": "backend/metrics_service.py",
@@ -1183,6 +1183,10 @@
       "sha256": "f74ec9bf421525cccde91e5f461479d36ff6155289a7d5db556820937e4786a8"
     },
     {
+      "path": "backend/hop_log.py",
+      "sha256": "352ff8a68a0574144da745d524b1c09e52c0be04044d04c241eabcdd1bbb2f96"
+    },
+    {
       "path": "backend/catalogue.py",
       "sha256": "4418e266d693b12ab2d0fd2eab5f56cbd731ed8de4e70674a5d85e6ce03a1068"
     },
@@ -1220,7 +1224,7 @@
     },
     {
       "path": "scripts/export-read-contract.py",
-      "sha256": "159a801a375891414b4dbc80d894db9cfcd2cf98997b3a0bfafb33ded5ec5b2a"
+      "sha256": "b088c0041cc5fc5f497c74b126c7dbff17eb574fdb4651e3916d74b4cc0d8479"
     }
   ],
   "status": "candidate_disabled_pending_consumer_acknowledgement"

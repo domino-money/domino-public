@@ -27,6 +27,7 @@ from bridge_state import strict_json
 from dev_read_identity import Admission, DevProfile, GATEWAY_PORT, READER_PORT, PrincipalBudget, RevocableVerifier, private_directory
 from discovery import DataError
 from read_contract import CONTRACT_VERSION
+import hop_log
 from pool_apr_contract import CONTRACT_VERSION as V2_CONTRACT_VERSION, REQUEST_MODELS as V2_REQUEST_MODELS
 from read_deadline import read_deadline
 from read_gateway import Gateway, MAX_BODY, REQUEST_MODELS
@@ -68,7 +69,7 @@ class GuardedReader:
     def __init__(self, upstream, admission):
         self.upstream, self.admission = upstream, admission
 
-    def request(self, route, body=None, *, deadline):
+    def request(self, route, body=None, *, deadline, request_id=None):
         # Recheck after potentially slow health/JWKS work, before any new read.
         self.admission.check()
         if route == 'health':
@@ -79,7 +80,7 @@ class GuardedReader:
             if connection['state'] != 'ready':
                 raise DataError('upstream_unavailable')
             return result
-        return self.upstream.request(route, body, deadline=deadline)
+        return self.upstream.request(route, body, deadline=deadline, request_id=request_id)
 
     def health(self, *, deadline):
         self.admission.check()
@@ -179,99 +180,119 @@ def create_dev_gateway(gateway=None):
 
     @app.middleware('http')
     async def boundary(request: Request, call_next):
-        deadline, request_id = gateway.clock() + 20, secrets.token_hex(16)
-        path = request.scope.get('raw_path', b'').decode('ascii', errors='replace')
-        version = 'v2' if path.startswith(V2_PREFIX) else 'v1'
-        contract = V2_CONTRACT_VERSION if version == 'v2' else CONTRACT_VERSION
-        def result(status, data):
-            headers = {'Cache-Control': 'no-store, no-transform', 'X-Content-Type-Options': 'nosniff',
-                       'X-Domino-Read-Contract': contract, 'X-Domino-Request-Id': request_id,
-                       'Content-Security-Policy': "default-src 'none'; frame-ancestors 'none'"}
-            if status == 429:
-                headers['Retry-After'] = '2'
-            return JSONResponse(data, status_code=status, headers=headers)
-        prefix = V2_PREFIX if version == 'v2' else READ_PREFIX
-        models = V2_REQUEST_MODELS if version == 'v2' else REQUEST_MODELS
-        reads = ('pool-market',) if version == 'v2' else DEV_READS
-        route = 'status' if path == STATUS_PATH else path[len(prefix):] if path.startswith(prefix) else None
-        if route not in (*reads, 'capabilities', 'status') or request.scope.get('query_string') or (route == 'status' and path != STATUS_PATH):
-            return result(404, {'error': 'route_not_available'})
-        control = route in ('capabilities', 'status')
-        if request.method != ('GET' if control else 'POST'):
-            return result(405, {'error': 'method_not_allowed'})
-        headers = {}
-        if sum(len(k) + len(v) for k, v in request.scope['headers']) > 32768:
-            return result(422, {'error': 'invalid_request'})
-        for name, value in request.scope['headers']:
-            name = name.lower()
-            if name in headers:
-                return result(422, {'error': 'invalid_request'})
-            headers[name] = value
-        if headers.get(b'host') != b'127.0.0.1:8891' or any(k in headers for k in (b'origin', b'authorization', b'x-domino-client-id')):
-            return result(403, {'error': 'origin_not_allowed'})
-        if headers.get(b'x-domino-read-contract', contract.encode()) != contract.encode():
-            return result(502, {'error': 'upstream_contract_mismatch'})
         try:
-            if not ipaddress.ip_address(request.client.host).is_loopback:
-                raise ValueError()
-        except (AttributeError, ValueError):
-            return result(403, {'error': 'origin_not_allowed'})
-        # Proxy IP headers are neither required nor trusted. Cloudflare may add
-        # them; all callers still share the one authenticated principal/bucket.
-        assertion = headers.get(b'cf-access-jwt-assertion', b'')
-        if len(assertion) > 8192 or not re.fullmatch(rb'[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+', assertion):
-            return result(403, {'error': 'upstream_unavailable'})
-        cookie = headers.get(b'cookie')
-        if cookie is not None and not hmac.compare_digest(cookie.strip(b' \t'), b'CF_Authorization=' + assertion):
-            return result(403, {'error': 'origin_not_allowed'})
-        if not gateway.allowed():
-            return result(403, {'error': 'upstream_unavailable'})
-        if not control and not (gateway.enabled_v2 if version == 'v2' else gateway.enabled):
-            return result(404, {'error': 'route_not_available'})
-        body = None
-        if control:
-            if headers.get(b'content-length', b'0') != b'0' or b'transfer-encoding' in headers:
+            opened = gateway.clock()
+            deadline, request_id = opened + 20, secrets.token_hex(16)
+            path = request.scope.get('raw_path', b'').decode('ascii', errors='replace')
+            version = 'v2' if path.startswith(V2_PREFIX) else 'v1'
+            contract = V2_CONTRACT_VERSION if version == 'v2' else CONTRACT_VERSION
+            logged_route = 'unmatched'
+            notes = hop_log.open_notes()
+            recorded = []
+            def record(status, reason=None):
+                # The raw path never reaches the record: only a declared route name.
+                if recorded:
+                    return
+                recorded.append(status)
+                hop_log.emit(service='dev-read-gateway', requestId=request_id, route=logged_route,
+                             contractVersion=contract, method=request.method, status=status,
+                             reason=reason, durationMs=int((gateway.clock() - opened) * 1000),
+                             **hop_log.close_notes(notes))
+            def result(status, data):
+                record(status, data.get('error') if isinstance(data, dict) else None)
+                headers = {'Cache-Control': 'no-store, no-transform', 'X-Content-Type-Options': 'nosniff',
+                           'X-Domino-Read-Contract': contract, 'X-Domino-Request-Id': request_id,
+                           'Content-Security-Policy': "default-src 'none'; frame-ancestors 'none'"}
+                if status == 429:
+                    headers['Retry-After'] = '2'
+                return JSONResponse(data, status_code=status, headers=headers)
+            prefix = V2_PREFIX if version == 'v2' else READ_PREFIX
+            models = V2_REQUEST_MODELS if version == 'v2' else REQUEST_MODELS
+            reads = ('pool-market',) if version == 'v2' else DEV_READS
+            route = 'status' if path == STATUS_PATH else path[len(prefix):] if path.startswith(prefix) else None
+            if route not in (*reads, 'capabilities', 'status') or request.scope.get('query_string') or (route == 'status' and path != STATUS_PATH):
+                return result(404, {'error': 'route_not_available'})
+            logged_route = route
+            control = route in ('capabilities', 'status')
+            if request.method != ('GET' if control else 'POST'):
+                return result(405, {'error': 'method_not_allowed'})
+            headers = {}
+            if sum(len(k) + len(v) for k, v in request.scope['headers']) > 32768:
                 return result(422, {'error': 'invalid_request'})
-        else:
-            if (headers.get(b'content-type', b'').split(b';')[0].strip().lower() != b'application/json' or
-                    headers.get(b'content-encoding', b'identity') != b'identity'):
-                return result(415, {'error': 'json_required'})
-            raw = bytearray()
+            for name, value in request.scope['headers']:
+                name = name.lower()
+                if name in headers:
+                    return result(422, {'error': 'invalid_request'})
+                headers[name] = value
+            if headers.get(b'host') != b'127.0.0.1:8891' or any(k in headers for k in (b'origin', b'authorization', b'x-domino-client-id')):
+                return result(403, {'error': 'origin_not_allowed'})
+            if headers.get(b'x-domino-read-contract', contract.encode()) != contract.encode():
+                return result(502, {'error': 'upstream_contract_mismatch'})
             try:
-                async with asyncio.timeout(5):
-                    async for chunk in request.stream():
-                        raw.extend(chunk)
-                        if len(raw) > MAX_BODY:
-                            return result(413, {'error': 'request_too_large'})
-                body = strict_json(raw)
-                models[route].model_validate(body)
-            except TimeoutError:
-                return result(408, {'error': 'request_timeout'})
-            except (DataError, ValidationError, ValueError, TypeError):
-                return result(422, {'error': 'invalid_request'})
-        # Re-read operator admission after upload, immediately before acquiring
-        # the global slot. Verification and upstream dispatch check it again.
-        if not gateway.allowed():
-            return result(403, {'error': 'upstream_unavailable'})
-        # Control metadata needs the same actual worker/slot but spends neither
-        # the read quota nor its start interval. Its own bucket bounds GETs.
-        admitted = gateway.gate.slot.acquire(blocking=False) if control else gateway.gate.enter()
-        if not admitted:
-            return result(429, {'error': 'read_capacity_busy'})
-        started = Event()
-        def execute():
-            started.set()
-            return gateway.execute_dev(route, body, assertion.decode('ascii'), deadline, version=version)
-        try:
-            with anyio.CancelScope(shield=True):
-                status, data = await anyio.to_thread.run_sync(execute, abandon_on_cancel=False, limiter=app.state.worker_limiter)
-            return result(status, data)
-        except Exception:
-            return result(503, {'error': 'upstream_unavailable'})
-        finally:
-            if not started.is_set():
-                gateway.gate.slot.release()
+                if not ipaddress.ip_address(request.client.host).is_loopback:
+                    raise ValueError()
+            except (AttributeError, ValueError):
+                return result(403, {'error': 'origin_not_allowed'})
+            # Proxy IP headers are neither required nor trusted. Cloudflare may add
+            # them; all callers still share the one authenticated principal/bucket.
+            assertion = headers.get(b'cf-access-jwt-assertion', b'')
+            if len(assertion) > 8192 or not re.fullmatch(rb'[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+', assertion):
+                return result(403, {'error': 'upstream_unavailable'})
+            cookie = headers.get(b'cookie')
+            if cookie is not None and not hmac.compare_digest(cookie.strip(b' \t'), b'CF_Authorization=' + assertion):
+                return result(403, {'error': 'origin_not_allowed'})
+            if not gateway.allowed():
+                return result(403, {'error': 'upstream_unavailable'})
+            if not control and not (gateway.enabled_v2 if version == 'v2' else gateway.enabled):
+                return result(404, {'error': 'route_not_available'})
+            body = None
+            if control:
+                if headers.get(b'content-length', b'0') != b'0' or b'transfer-encoding' in headers:
+                    return result(422, {'error': 'invalid_request'})
+            else:
+                if (headers.get(b'content-type', b'').split(b';')[0].strip().lower() != b'application/json' or
+                        headers.get(b'content-encoding', b'identity') != b'identity'):
+                    return result(415, {'error': 'json_required'})
+                raw = bytearray()
+                try:
+                    async with asyncio.timeout(5):
+                        async for chunk in request.stream():
+                            raw.extend(chunk)
+                            if len(raw) > MAX_BODY:
+                                return result(413, {'error': 'request_too_large'})
+                    body = strict_json(raw)
+                    models[route].model_validate(body)
+                except TimeoutError:
+                    return result(408, {'error': 'request_timeout'})
+                except (DataError, ValidationError, ValueError, TypeError):
+                    return result(422, {'error': 'invalid_request'})
+            # Re-read operator admission after upload, immediately before acquiring
+            # the global slot. Verification and upstream dispatch check it again.
+            if not gateway.allowed():
+                return result(403, {'error': 'upstream_unavailable'})
+            # Control metadata needs the same actual worker/slot but spends neither
+            # the read quota nor its start interval. Its own bucket bounds GETs.
+            admitted = gateway.gate.slot.acquire(blocking=False) if control else gateway.gate.enter()
+            if not admitted:
+                return result(429, {'error': 'read_capacity_busy'})
+            started = Event()
+            def execute():
+                started.set()
+                return gateway.execute_dev(route, body, assertion.decode('ascii'), deadline, version=version)
+            try:
+                with anyio.CancelScope(shield=True):
+                    status, data = await anyio.to_thread.run_sync(execute, abandon_on_cancel=False, limiter=app.state.worker_limiter)
+                return result(status, data)
+            except Exception:
+                return result(503, {'error': 'upstream_unavailable'})
+            finally:
+                if not started.is_set():
+                    gateway.gate.slot.release()
 
+        except BaseException:
+            # A client that vanishes mid-body must still leave a record.
+            record(499, "client_disconnected")
+            raise
     app.state.gateway, app.state.worker_limiter = gateway, anyio.CapacityLimiter(1)
     return app
 

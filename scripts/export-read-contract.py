@@ -254,7 +254,7 @@ export function validateError(status: number, payload: unknown): payload is Erro
                                          'backend/fee_store.py', 'backend/capital_store.py', 'backend/price_history.py',
                                          'backend/valuation.py', 'backend/chainlink_reference.py', 'backend/discovery.py', 'backend/nft_ownership.py',
                                          'backend/inventory.py', 'backend/market_cache.py', 'backend/market_data.py',
-                                         'backend/read_deadline.py', 'backend/catalogue.py', 'backend/position_accounting.py',
+                                         'backend/read_deadline.py', 'backend/hop_log.py', 'backend/catalogue.py', 'backend/position_accounting.py',
                                          'backend/fee_accounting.py', 'backend/pool_activity.py',
                                          'backend/tests/fixtures/position-reference.json',
                                          'backend/tests/read_history_fixtures.py', 'backend/tests/read_request_fixtures.py',

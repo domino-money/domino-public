@@ -18,6 +18,7 @@ from catalogue import configured_catalogue
 from pool_requests import configured_pool_requests
 from read_service import ReadService
 from read_contract import CONTRACT_VERSION, RESPONSE_MODELS, ErrorResponse, validate_response, sanitize_error, unsigned_string_pattern
+import hop_log
 from read_deadline import read_deadline
 
 Address = Annotated[str, StringConstraints(strict=True, pattern=r'^0x[0-9a-fA-F]{40}$')]
@@ -211,6 +212,10 @@ def create_app(service=None, *, gate=None, read_budget_seconds=60):
 
     @app.middleware('http')
     async def contract_headers(request, call_next):
+        opened = time.monotonic()
+        notes = hop_log.open_notes()
+        request_id = (hop_log.checked_request_id(request.headers.get('x-domino-request-id'))
+                      or secrets.token_hex(16))
         budget = read_budget_seconds
         if 'x-domino-read-budget-ms' in request.headers:
             value = request.headers['x-domino-read-budget-ms']
@@ -227,13 +232,25 @@ def create_app(service=None, *, gate=None, read_budget_seconds=60):
                 with read_deadline(budget):
                     response = await call_next(request)
             except DataError:
+                hop_log.note(reason='read_deadline_exceeded')
                 response = JSONResponse({'error': 'read_deadline_exceeded'}, status_code=504)
             except Exception:
                 # No hop may answer without the contract header (T1.3): an
                 # unexpected mid-hop failure is an upstream unavailability.
+                hop_log.note(reason='upstream_unavailable')
                 response = JSONResponse({'error': 'upstream_unavailable'}, status_code=503)
         response.headers['X-Domino-Read-Contract'] = CONTRACT_VERSION
         response.headers['X-Domino-Reader-Generation'] = generation
+        # The path never reaches the record: only a declared route name does.
+        tail = request.url.path.rsplit('/', 1)[-1]
+        route = (tail if request.url.path == '/v1/read/' + tail and tail in RESPONSE_MODELS
+                 else {'/health': 'health', '/v1/capabilities': 'capabilities'}.get(
+                     request.url.path, 'unmatched'))
+        hop_log.emit(service='read-api', requestId=request_id, route=route,
+                     contractVersion=CONTRACT_VERSION, method=request.method,
+                     status=response.status_code,
+                     durationMs=int((time.monotonic() - opened) * 1000),
+                     **hop_log.close_notes(notes))
         return response
 
     @app.exception_handler(RequestValidationError)
@@ -277,17 +294,21 @@ def create_app(service=None, *, gate=None, read_budget_seconds=60):
     def run_read(operation, route):
         kind = gate.kind_of(route)
         if not gate.enter(kind):
+            hop_log.note(gate=kind, admitted=False, reason='read_capacity_busy')
             return JSONResponse({'error': 'read_capacity_busy'}, status_code=429, headers={'Retry-After': '1'})
+        hop_log.note(gate=kind, admitted=True)
         try:
             with read_deadline(read_budget_seconds):
                 result = operation()
                 try:
                     validate_response(route, result)
                 except (ValueError, TypeError):
+                    hop_log.note(reason='upstream_contract_mismatch')
                     return JSONResponse({'error': 'upstream_contract_mismatch'}, status_code=502)
                 return result
         except DataError as error:
             status, data = sanitize_error(str(error))
+            hop_log.note(reason=data.get('error'))
             return JSONResponse(data, status_code=status)
         finally:
             (gate.stored_slot if kind == gate.STORED else gate.slot).release()

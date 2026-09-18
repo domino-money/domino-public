@@ -44,7 +44,7 @@ class MarketReader:
         self.busy = False
         self.on_request = None
 
-    def request(self, route, body=None, *, deadline):
+    def request(self, route, body=None, *, deadline, request_id=None):
         self.calls.append((route, deepcopy(body)))
         self.deadlines.append(deadline)
         if self.on_request is not None:

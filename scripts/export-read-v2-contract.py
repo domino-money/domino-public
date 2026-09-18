@@ -239,7 +239,7 @@ export function validateError(status:number, value:unknown):value is ErrorRespon
                'backend/discovery.py', 'backend/read_service.py', 'backend/market_cache.py', 'backend/market_data.py',
                'backend/read_gateway.py', 'backend/read_api.py', 'backend/bridge_http.py',
                'backend/dev_read_gateway.py', 'backend/dev_read_identity.py', 'backend/dev_read_service.py', 'backend/dev_read_budget.py',
-               'backend/bridge_identity.py', 'backend/bridge_state.py', 'backend/read_deadline.py',
+               'backend/bridge_identity.py', 'backend/bridge_state.py', 'backend/read_deadline.py', 'backend/hop_log.py',
                'bridge/src/worker.mjs', 'bridge/src/strict-json.mjs', 'app/functions/_lib/bridge.ts',
                'bridge/wrangler.read.toml',
                'backend/tests/read_v2_contract_fixtures.py', 'backend/tests/test_read_v2_contract.py', 'backend/tests/test_read_contract.py',

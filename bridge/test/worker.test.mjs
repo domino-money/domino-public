@@ -67,6 +67,39 @@ async function expectError(response, status, error) {
   assert.equal(response.headers.get('Access-Control-Allow-Origin'), null);
 }
 
+test('every request emits one structured line with a declared route and no address', async () => {
+  const emitted = [];
+  const original = console.log;
+  console.log = (line) => emitted.push(line);
+  try {
+    const h = harness();
+    await h.worker.fetch(new Request(`${origin}/api/read/v1/capabilities`), { APP_ORIGIN: origin });
+    await h.worker.fetch(new Request(`${origin}/api/read/v1/0x${'ab'.repeat(20)}`, { method: 'POST' }),
+                         { APP_ORIGIN: origin });
+  } finally {
+    console.log = original;
+  }
+  assert.equal(emitted.length, 2);
+  const [capability, unmatched] = emitted.map((line) => JSON.parse(line));
+  assert.equal(capability.service, 'read-bridge');
+  assert.equal(capability.route, 'capabilities');
+  assert.equal(capability.status, 200);
+  assert.equal(capability.contractVersion, CONTRACT_VERSION);
+  assert.match(capability.requestId, /^[a-f0-9-]{36}$/);
+  assert.equal(typeof capability.durationMs, 'number');
+  assert.equal(capability.reason, undefined);
+  // A path that names no declared route is logged as unmatched, never echoed.
+  assert.equal(unmatched.route, 'unmatched');
+  assert.equal(unmatched.reason, 'route_not_available');
+  assert.equal(unmatched.status, ERROR_STATUS_BY_CODE.route_not_available);
+  assert.ok(!emitted.join(' ').match(/0x[0-9a-fA-F]{40}/), 'an address reached the record');
+  const allowed = new Set(['service', 'requestId', 'route', 'contractVersion', 'method',
+                           'status', 'durationMs', 'reason']);
+  for (const record of [capability, unmatched]) {
+    for (const key of Object.keys(record)) assert.ok(allowed.has(key), key);
+  }
+});
+
 test('default-off config exposes only disabled, read-only local capabilities', async () => {
   const h = harness();
   const response = await h.worker.fetch(new Request(`${origin}/api/read/v1/capabilities`), { APP_ORIGIN: origin });

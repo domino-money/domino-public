@@ -29,7 +29,7 @@ from test_read_gateway import Upstream
 
 class DevUpstream(Upstream):
     """Existing real rc3 fixture with the dedicated development health shape."""
-    def request(self, route, body=None, *, deadline):
+    def request(self, route, body=None, *, deadline, request_id=None):
         status, data, metadata = super().request(route, body, deadline=deadline)
         if route == 'health':
             data['devAdmission'] = {'state': 'ready', 'retryAfterSeconds': 0,
@@ -106,7 +106,7 @@ class DevGatewayTests(IdentityFixtures, unittest.TestCase):
         from test_read_v2_gateway import MarketReader
         reader = MarketReader()
         original = reader.request
-        def request(route, body=None, *, deadline):
+        def request(route, body=None, *, deadline, request_id=None):
             status, data, metadata = original(route, body, deadline=deadline)
             if route == 'health':
                 data['devAdmission'] = {'state': 'ready', 'retryAfterSeconds': 0,
@@ -222,7 +222,7 @@ class DevGatewayTests(IdentityFixtures, unittest.TestCase):
         self.assertEqual(self.upstream.calls, [])
         self.grant()
         original_read = self.upstream.request
-        def revoke_health(route, body=None, *, deadline):
+        def revoke_health(route, body=None, *, deadline, request_id=None):
             result = original_read(route, body, deadline=deadline)
             if route == 'health': self.grant(enabled=False)
             return result
@@ -297,7 +297,7 @@ class DevGatewayTests(IdentityFixtures, unittest.TestCase):
         original = self.upstream.request
         state = ['ready']
         changes = [{}]
-        def reader_health(route, body=None, *, deadline):
+        def reader_health(route, body=None, *, deadline, request_id=None):
             self.assertEqual(route, 'health')
             self.assertLessEqual(deadline - time.monotonic(), 3)
             status, data, metadata = original(route, body, deadline=deadline)
@@ -323,7 +323,7 @@ class DevGatewayTests(IdentityFixtures, unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json()['readerConnection'], {'state': 'unavailable'})
         self.assertEqual(response.json()['providerHealth'], 'not_probed')
-        def revoked(route, body=None, *, deadline):
+        def revoked(route, body=None, *, deadline, request_id=None):
             self.grant(enabled=False)
             raise DataError('upstream_timeout')
         self.upstream.request = revoked
@@ -343,7 +343,7 @@ class DevGatewayTests(IdentityFixtures, unittest.TestCase):
             ('wrong_generation', 503, 'upstream_unavailable'),
         ]
         for state, expected_status, expected_error in cases:
-            def transport(route, body=None, *, deadline):
+            def transport(route, body=None, *, deadline, request_id=None):
                 self.assertEqual(route, 'health')
                 status, data, metadata = original(route, body, deadline=deadline)
                 if state == 'legacy':
@@ -376,7 +376,7 @@ class DevGatewayTests(IdentityFixtures, unittest.TestCase):
                              upstream=self.upstream, clock=lambda: now[0])
         client = self.make_client(gateway)
         original = self.upstream.request
-        def transport(route, body=None, *, deadline):
+        def transport(route, body=None, *, deadline, request_id=None):
             return original(route, body, deadline=time.monotonic() + 15)
         self.upstream.request = transport
         for path in ('/internal/dev/v1/status', '/internal/read/v1/capabilities'):
@@ -483,7 +483,7 @@ class DevGatewayTests(IdentityFixtures, unittest.TestCase):
     def test_timeout_reconciles_busy_and_actual_inflight_work_holds_admission(self):
         original = self.upstream.request
         busy = [False]
-        def interrupted(route, body=None, *, deadline):
+        def interrupted(route, body=None, *, deadline, request_id=None):
             if route != 'health' and not busy[0]:
                 busy[0] = True
                 raise DataError('upstream_timeout')
@@ -496,7 +496,7 @@ class DevGatewayTests(IdentityFixtures, unittest.TestCase):
         self.assertEqual([name for name, _ in self.upstream.calls], ['health', 'health'])
         self.upstream.request = original
         entered, release = Event(), Event()
-        def held(route, body=None, *, deadline):
+        def held(route, body=None, *, deadline, request_id=None):
             if route == 'token':
                 entered.set()
                 if not release.wait(3): raise RuntimeError('test timeout')
@@ -534,7 +534,7 @@ class DevGatewayTests(IdentityFixtures, unittest.TestCase):
     def test_cancelling_http_caller_does_not_release_actual_worker_admission(self):
         entered, release = Event(), Event()
         original = self.upstream.request
-        def held(route, body=None, *, deadline):
+        def held(route, body=None, *, deadline, request_id=None):
             if route == 'token':
                 entered.set()
                 if not release.wait(3): raise RuntimeError('test timeout')
