@@ -86,16 +86,21 @@ class FinancialTests(unittest.TestCase):
         self.assertEqual(expected, financial.sha(self.files[name][0]))
         self.assertEqual(expected, self.planned['foundation'][name])
         self.assertNotEqual(installed, expected)
-        previous = subprocess.check_output(
-            ['git', 'show', f'{financial.OLD}:{name}'], cwd=REPO)
+        # What the pin accepts: the re-added check marked NOT VALID.
+        self.assertIn(b'NOT VALID', self.files[name][0])
+        # The rest compares against the release the pin names, which needs that
+        # commit present. A shallow checkout does not have it, and the pin is
+        # still held to its digests above; skip only the content comparison.
+        if subprocess.run(['git', 'cat-file', '-e', f'{financial.OLD}:{name}'],
+                          cwd=REPO, capture_output=True).returncode:
+            self.skipTest('the release the pin names is outside this checkout')
+        previous = subprocess.check_output(['git', 'show', f'{financial.OLD}:{name}'], cwd=REPO)
         self.assertEqual(financial.sha(previous), installed,
                          'the pin must name the digest the installed release actually holds')
-        # What it accepts: NOT VALID on the re-added check, and the comment that
-        # explains it. Ignoring comment lines, the two files differ by that alone.
+        # Ignoring comment lines, the two files differ by NOT VALID alone.
         def statements(raw):
             lines = [l for l in raw.decode().splitlines() if not l.lstrip().startswith('--')]
             return '\n'.join(lines).replace(') NOT VALID;', ');')
-        self.assertIn(b'NOT VALID', self.files[name][0])
         self.assertNotIn(b'NOT VALID', previous)
         self.assertEqual(statements(previous), statements(self.files[name][0]),
                          'the accepted change adds NOT VALID and a comment, nothing else')
