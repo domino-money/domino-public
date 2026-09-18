@@ -35,6 +35,10 @@ function refuse() {
   throw new Error('read_tunnel_configuration_mismatch');
 }
 
+// The tunnels this release path touches, so inspection and publication can
+// never disagree about which ones that is.
+export const READ_TUNNEL_IDS = Object.freeze(Object.keys(TARGETS));
+
 /** Pass the API response's config object, never the full response envelope. */
 export function extendReadTunnelConfig(tunnelId, config) {
   if (typeof tunnelId !== 'string' || !Object.hasOwn(TARGETS, tunnelId) || !record(config)

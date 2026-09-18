@@ -6,7 +6,7 @@ import { spawnSync } from 'node:child_process'
 import { readFileSync } from 'node:fs'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { isDeepStrictEqual } from 'node:util'
-import { extendReadTunnelConfig } from './read-tunnel-config.mjs'
+import { READ_TUNNEL_IDS, extendReadTunnelConfig } from './read-tunnel-config.mjs'
 
 const ROOT = fileURLToPath(new URL('../', import.meta.url))
 // read-v1's ten POST routes: an existing Worker variable may name any of them and is retained as it is.
@@ -26,6 +26,27 @@ export function releaseVars(settings) {
   if (!reads.includes('pool-market') || reads.some(value => !KNOWN_READS.has(value))) throw new Error('Unexpected existing enabled v1 reads; refusing to replace them.')
   return { ...vars, READ_V2_BRIDGE_ENABLED: 'true', ENABLED_V2_READS: 'pool-market' }
 }
+
+/** Summarise one settled result per key, and name every resource refused. */
+export function inspection(keys, results) {
+  const summary = {}
+  for (const [index, key] of keys.entries()) {
+    const result = results[index]
+    if (result.status === 'rejected') { summary[key] = { error: result.reason.message }; continue }
+    const value = result.value
+    if (key === 'worker') summary[key] = { name: 'domino-read-bridge', vars: Object.fromEntries((value.bindings ?? [])
+      .filter(binding => binding.type === 'plain_text' && VISIBLE_VARS.includes(binding.name))
+      .map(binding => [binding.name, binding.text])),
+      accessCredentialNames: (value.bindings ?? []).filter(binding => binding.type === 'secret_text').map(binding => binding.name) }
+    if (key === 'pages') summary[key] = { name: value.name, productionBranch: value.production_branch,
+      productionDeployment: value.canonical_deployment?.id ?? null,
+      productionCommit: value.canonical_deployment?.deployment_trigger?.metadata?.commit_hash ?? null }
+    if (key.startsWith('tunnel:')) summary[key] = { version: value.version, ingress: (value.config?.ingress ?? [])
+      .map(rule => ({ hostname: rule.hostname, path: rule.path, service: rule.service })) }
+  }
+  return { summary, refused: Object.entries(summary).filter(([, value]) => value.error).map(([key]) => key) }
+}
+
 
 async function cloudflare(path, payload) {
   const token = process.env.CLOUDFLARE_API_TOKEN
@@ -48,7 +69,7 @@ async function cloudflare(path, payload) {
 async function run(operation) {
   if (!['inspect', 'tunnels', 'worker'].includes(operation)) throw new Error('Use inspect, tunnels or worker.')
   if (operation === 'tunnels') {
-    for (const id of ['31526265-ca63-40f2-bbb7-bd37a537f899', '7abb1264-ee70-4b69-a33c-b75a9deb4589']) {
+    for (const id of READ_TUNNEL_IDS) {
       const path = `cfd_tunnel/${id}/configurations`
       const before = await cloudflare(path)
       const config = extendReadTunnelConfig(id, before.config)
@@ -64,27 +85,21 @@ async function run(operation) {
     return
   }
   if (operation === 'inspect') {
+    // Inspect every resource a publication touches, including both tunnels:
+    // reading one of them proves nothing about the other.
+    const keys = ['worker', 'pages', ...READ_TUNNEL_IDS.map(id => `tunnel:${id}`)]
     const results = await Promise.allSettled([
       cloudflare('workers/scripts/domino-read-bridge/settings'),
       cloudflare('pages/projects/domino-app'),
-      cloudflare('cfd_tunnel/7abb1264-ee70-4b69-a33c-b75a9deb4589/configurations'),
+      ...READ_TUNNEL_IDS.map(id => cloudflare(`cfd_tunnel/${id}/configurations`)),
     ])
-    const summary = {}
-    for (const [index, key] of ['worker', 'pages', 'devTunnel'].entries()) {
-      const result = results[index]
-      if (result.status === 'rejected') { summary[key] = { error: result.reason.message }; continue }
-      const value = result.value
-      if (key === 'worker') summary[key] = { name: 'domino-read-bridge', vars: Object.fromEntries((value.bindings ?? [])
-        .filter(binding => binding.type === 'plain_text' && VISIBLE_VARS.includes(binding.name))
-        .map(binding => [binding.name, binding.text])),
-        accessCredentialNames: (value.bindings ?? []).filter(binding => binding.type === 'secret_text').map(binding => binding.name) }
-      if (key === 'pages') summary[key] = { name: value.name, productionBranch: value.production_branch,
-        productionDeployment: value.canonical_deployment?.id ?? null,
-        productionCommit: value.canonical_deployment?.deployment_trigger?.metadata?.commit_hash ?? null }
-      if (key === 'devTunnel') summary[key] = { version: value.version, ingress: (value.config?.ingress ?? [])
-        .map(rule => ({ hostname: rule.hostname, path: rule.path, service: rule.service })) }
-    }
+    const { summary, refused } = inspection(keys, results)
+    // Report everything first: a refused resource is the diagnosis. Then fail,
+    // because a run that exits successfully is read as access being complete.
     console.log(JSON.stringify(summary, null, 2))
+    if (refused.length) {
+      throw new Error(`Inspection could not read ${refused.join(', ')}; the release token is missing a permission. See docs/CLOUDFLARE_RELEASE_TOKEN.md.`)
+    }
     return
   }
   const settings = await cloudflare('workers/scripts/domino-read-bridge/settings')

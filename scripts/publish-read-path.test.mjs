@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { releaseVars } from './publish-read-path.mjs'
+import { inspection, releaseVars } from './publish-read-path.mjs'
+import { READ_TUNNEL_IDS } from './read-tunnel-config.mjs'
 
 const settings = () => ({ bindings: [
   ...Object.entries({ READ_BRIDGE_ENABLED: 'true', ENABLED_READS: 'token,pools,pool-market,wallet-assets,nft-positions,catalogue,pool-activity',
@@ -47,4 +48,47 @@ test('retains an existing v1 list that names the stored-data reads, exactly as i
     const current = settings(); current.bindings.find(binding => binding.name === 'ENABLED_READS').text = reads
     assert.throws(() => releaseVars(current), /existing enabled v1 reads/, reads)
   }
+})
+
+const fulfilled = (value) => ({ status: 'fulfilled', value })
+const rejected = (message) => ({ status: 'rejected', reason: new Error(message) })
+const inspectKeys = () => ['worker', 'pages', ...READ_TUNNEL_IDS.map(id => `tunnel:${id}`)]
+
+test('inspection covers every tunnel a publication writes, not just one', () => {
+  // Reading one tunnel proves nothing about the other; both are published to.
+  assert.equal(READ_TUNNEL_IDS.length, 2)
+  assert.equal(new Set(READ_TUNNEL_IDS).size, 2)
+  const keys = inspectKeys()
+  assert.deepEqual(keys.slice(2), READ_TUNNEL_IDS.map(id => `tunnel:${id}`))
+})
+
+test('a refused resource is reported and named, never passed over in silence', () => {
+  const keys = inspectKeys()
+  const { summary, refused } = inspection(keys, [
+    rejected('Cloudflare workers HTTP 403; error codes 10000.'),
+    fulfilled({ name: 'domino-app', production_branch: 'main' }),
+    rejected('Cloudflare cfd_tunnel HTTP 401; error codes 1001.'),
+    fulfilled({ version: 7, config: { ingress: [] } }),
+  ])
+  assert.deepEqual(refused, ['worker', keys[2]])
+  assert.match(summary.worker.error, /403/)
+  assert.equal(summary.pages.name, 'domino-app')
+  assert.equal(summary[keys[3]].version, 7)
+})
+
+test('nothing is refused when every resource answers', () => {
+  const keys = inspectKeys()
+  const { summary, refused } = inspection(keys, [
+    fulfilled({ bindings: [{ type: 'plain_text', name: 'READ_V2_BRIDGE_ENABLED', text: 'false' },
+                           { type: 'secret_text', name: 'ACCESS_CLIENT_ID' }] }),
+    fulfilled({ name: 'domino-app' }),
+    fulfilled({ version: 1, config: { ingress: [{ hostname: 'a', path: '^/x$', service: 'http://127.0.0.1:1' }] } }),
+    fulfilled({ version: 2, config: { ingress: [] } }),
+  ])
+  assert.deepEqual(refused, [])
+  // The flag this release is waiting on is reported, and no secret value is.
+  assert.equal(summary.worker.vars.READ_V2_BRIDGE_ENABLED, 'false')
+  assert.deepEqual(summary.worker.accessCredentialNames, ['ACCESS_CLIENT_ID'])
+  assert.equal(JSON.stringify(summary).includes('secret_text'), false)
+  assert.deepEqual(summary[keys[2]].ingress, [{ hostname: 'a', path: '^/x$', service: 'http://127.0.0.1:1' }])
 })
