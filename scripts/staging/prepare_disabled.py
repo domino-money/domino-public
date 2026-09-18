@@ -59,6 +59,35 @@ FOUNDATION_SUCCESSORS = {
 }
 
 
+# pg_hba matches the first row that fits, so an owned row must keep its position
+# and no other row may claim its (connection, database, user). The ident map has
+# no order, but a foreign row must not rebind a (map, system user) pair this
+# installer owns. Rows beyond those belong to whoever added them: the financial
+# upgrade and the development lane each add their own roles, ahead of the
+# catch-all reject, which is the only place such a row can work.
+AUTH_KEY = {'pg_hba.conf': 3, 'pg_ident.conf': 2}
+# An ident row is exactly (map, system user, database user); an hba row carries
+# at least a connection, a database, a user and a method. A row of any other
+# shape belongs to no installer and is refused whatever it claims.
+AUTH_SHAPE = {'pg_hba.conf': lambda row: 4 <= len(row) <= 6,
+              'pg_ident.conf': lambda row: len(row) == 3}
+
+
+def owns_auth(name, rows, expected):
+    """True when every owned row is present, in order, and nothing shadows one."""
+    if not all(AUTH_SHAPE[name](row) for row in rows):
+        return False
+    owned = {row[:AUTH_KEY[name]] for row in expected}
+    if any(row[:AUTH_KEY[name]] in owned for row in rows if row not in expected):
+        return False
+    remaining = list(rows)
+    for row in expected:
+        if row not in remaining:
+            return False
+        remaining = remaining[remaining.index(row) + 1:]
+    return True
+
+
 def succeeds(name, installed, wanted):
     """True when a frozen file is unchanged, or changed exactly as one pin allows.
 

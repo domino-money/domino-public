@@ -324,9 +324,9 @@ def foundation_preflight():
     postgres = pwd.getpwnam('postgres')
     for name, expected in expected_auth.items():
         payload = read_regular(install.CONFIG / name, limit=65536, owner=postgres.pw_uid, mode=0o600)
-        rows = tuple(tuple(line.split('#', 1)[0].split()) for line in payload.decode().splitlines()
-                     if line.split('#', 1)[0].strip())
-        require(rows == expected, 'postgres_auth_foundation_changed')
+        rows = [tuple(line.split('#', 1)[0].split()) for line in payload.decode().splitlines()
+                if line.split('#', 1)[0].strip()]
+        require(install.owns_auth(name, rows, expected), 'postgres_auth_foundation_changed')
     settings = json.loads(install.sql("SELECT pg_catalog.json_object_agg(name,setting) "
         "FROM pg_catalog.pg_settings WHERE name IN ('server_version_num','server_encoding',"
         "'data_directory','config_file','hba_file','ident_file','port','listen_addresses',"

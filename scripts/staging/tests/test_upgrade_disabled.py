@@ -165,6 +165,31 @@ class LocalRootOwnership:
 
 
 class PlanTests(unittest.TestCase):
+    def test_auth_tolerates_another_installers_rows_but_never_a_shadowed_one(self):
+        """The financial upgrade and the development lane add their own roles."""
+        import prepare_disabled as base
+        expected = [('local', 'all', 'postgres', 'peer'),
+                    ('local', base.DB, 'domino_catalogue_reader', 'peer', 'map=domino'),
+                    ('local', 'all', 'all', 'reject')]
+        foreign = ('local', base.DB, 'domino_performance_collector', 'peer', 'map=domino_financial')
+        # Ahead of the catch-all reject is the only place a foreign row works.
+        self.assertTrue(base.owns_auth('pg_hba.conf', expected[:2] + [foreign] + expected[2:], expected))
+        for rows, why in (
+                ([('local', 'all', 'all', 'trust')] + expected, 'a row shadowing the reject'),
+                ([expected[0], ('local', base.DB, 'domino_catalogue_reader', 'trust'), expected[2]],
+                 'an owned row rebound to another method'),
+                ([expected[2], expected[0], expected[1]], 'an owned row moved after the reject'),
+                (expected[:2], 'an owned row removed')):
+            with self.subTest(why=why):
+                self.assertFalse(base.owns_auth('pg_hba.conf', rows, expected))
+        # The ident map has no order, but an owned pair may not be rebound.
+        ident = [('domino', 'domino-read', 'domino_catalogue_reader')]
+        self.assertTrue(base.owns_auth('pg_ident.conf', [
+            ('domino_financial', 'domino-performance', 'domino_performance_collector'),
+            *ident, ('domino', 'domino-dev-read', 'domino_dev_catalogue_reader')], ident))
+        self.assertFalse(base.owns_auth('pg_ident.conf', [
+            *ident, ('domino', 'domino-read', 'domino_catalogue_admin')], ident))
+
     def test_the_pinned_foundation_succession_passes_and_nothing_else_does(self):
         """Neither installer replays a migration, so the one accepted change is inert."""
         import prepare_disabled as base
