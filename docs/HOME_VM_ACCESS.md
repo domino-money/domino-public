@@ -77,7 +77,7 @@ account against the provisioning record before changing anything.
 | Indexer virtualenv | `/opt/domino/queue-worker/venv` (uv, CPython 3.14) |
 | Provider credential | `<release>/backend/runtime/providers.json`, mode 600, owned by the indexer account |
 | Database descriptor | `<release>/backend/runtime/catalogue-db.json`, mode 600, owned by the account that reads it |
-| Continuous egress policy | `/etc/domino/continuous-reads/policy.nft` (and its dated backup) |
+| Continuous egress policy | `/etc/domino/continuous-reads/policy.nft` (and its dated backup); rendered whole, with each unit's activation drop-in, by `scripts/staging/continuous_egress_policy.py` — see [continuous egress](CONTINUOUS_EGRESS.md) |
 | Followers and workers | `domino-queue-worker.timer`, `domino-catalogue-follower.timer` |
 | Database | Unix socket only, private port, database `domino_catalogue`; administrative role reached with `sudo -u <db-admin-os-user> psql -h <socket> -p <port> -U <db-admin-role> -d domino_catalogue` |
 

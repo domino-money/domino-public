@@ -48,9 +48,10 @@ mapping with an explicit window.
 4. The shipped service denies every non-loopback address. Approve a separate
    egress drop-in pinning the two provider destinations
    (`api.g.alchemy.com:443`, `api.coingecko.com:443`) and the matching hosts
-   bind, exactly as the tunnel's drop-in does. Extending
-   `scripts/staging/egress_policy.py` with this role is deliberately left to
-   the egress tooling work (#171's family), not done here.
+   bind, exactly as the tunnel's drop-in does. The continuous
+   policy is now rendered whole by `scripts/staging/continuous_egress_policy.py`
+   (see `docs/CONTINUOUS_EGRESS.md`); this role is added there once the
+   account exists on the host, with these two providers as a class of its own.
 5. `systemd-analyze verify` both units, install, then enable **the timer**:
    `systemctl enable --now domino-reference-collector.timer`. The service has
    no install section on purpose.

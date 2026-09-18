@@ -25,6 +25,7 @@ jobs:
           python3 -B -m unittest discover -s scripts/staging/tests -p test_staging_helpers.py -v
           python3 -B -m unittest discover -s scripts/staging/tests -p test_upgrade_disabled.py -v
           python3 -B -m unittest discover -s scripts/staging/tests -p test_egress_probe.py -v
+          python3 -B -m unittest discover -s scripts/staging/tests -p test_continuous_egress_policy.py -v
       - name: Check offline staging egress policy candidates
         run: |
           python3 -B -m unittest discover -s scripts/staging/tests -p test_egress_policy.py -v
