@@ -282,7 +282,7 @@
     },
     {
       "path": "backend/read_api.py",
-      "sha256": "e2a272b9f794d065c6528dd6643fa260bb125e2ee1e24a72360e583f4a0b05de"
+      "sha256": "b33ef153c48d77867f2110f678554f8436c7591e8057e3a3be13777e68bc54bb"
     },
     {
       "path": "backend/bridge_http.py",

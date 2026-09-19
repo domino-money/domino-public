@@ -1,4 +1,5 @@
 """Disposable E5-only PostgreSQL fixture; no shared dev cluster/config mutation."""
+import os
 from pathlib import Path
 import shutil
 import shlex
@@ -7,7 +8,7 @@ import tempfile
 
 import psycopg
 
-from dev_postgres import postgres_bin
+from dev_postgres import C_LOCALE, postgres_bin
 
 
 class ExecutionPostgres:
@@ -20,7 +21,9 @@ class ExecutionPostgres:
         self.settings={'host':str(self.socket),'port':18897,'dbname':'execution_test'}
 
     def run(self,*args):
-        result=subprocess.run([str(self.bin/args[0]),*args[1:]],stdout=subprocess.PIPE,stderr=subprocess.STDOUT,text=True,timeout=30)
+        # Started in the cluster's own C locale; see dev_postgres.C_LOCALE.
+        result=subprocess.run([str(self.bin/args[0]),*args[1:]],stdout=subprocess.PIPE,stderr=subprocess.STDOUT,text=True,timeout=30,
+                              env={**os.environ, **C_LOCALE})
         if result.returncode:
             raise RuntimeError(f'Execution PostgreSQL fixture failed: {args[0]}: {result.stdout[-1800:]}')
 

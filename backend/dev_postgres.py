@@ -65,8 +65,16 @@ def private_directory(path):
         raise DataError('private_postgres_directory_required')
 
 
+# The clusters here are created with --locale=C, so every tool that touches one
+# runs in it. PostgreSQL 18 refuses to start under a locale it cannot set
+# ("postmaster became multithreaded during startup"), and inheriting the
+# caller's is neither needed nor reproducible.
+C_LOCALE = {'LC_ALL': 'C', 'LANG': 'C'}
+
+
 def pg_command(args):
-    result = subprocess.run(args,stdout=subprocess.PIPE,stderr=subprocess.STDOUT,text=True,timeout=30)
+    result = subprocess.run(args,stdout=subprocess.PIPE,stderr=subprocess.STDOUT,text=True,timeout=30,
+                            env={**os.environ, **C_LOCALE})
     if result.returncode:
         raise DataError('local_postgres_command_failed')
 

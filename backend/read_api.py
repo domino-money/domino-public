@@ -237,6 +237,13 @@ class LocalReadBoundary:
 
 SNAPSHOT_STORE = Path(__file__).resolve().parent / 'runtime' / 'markets-snapshot.json'
 
+# A probe is not a read. Neither route touches the chain, the store or the
+# provider, so the read budget - the caller's patience for a *read* - has no
+# claim on it. They keep the contract's own ceiling instead of no bound at all,
+# so a wedged process still fails rather than hanging its caller.
+PROBE_PATHS = ('/health', '/v1/capabilities')
+PROBE_BUDGET_SECONDS = 15
+
 
 def checked_refresh_interval(value):
     """0 disables the refresher; otherwise a bounded whole number of seconds."""
@@ -296,14 +303,21 @@ def create_app(service=None, *, gate=None, read_budget_seconds=60,
         notes = hop_log.open_notes()
         request_id = (hop_log.checked_request_id(request.headers.get('x-domino-request-id'))
                       or secrets.token_hex(16))
-        budget = read_budget_seconds
+        # Bounding a liveness answer by the read budget lets a reader that is
+        # only slow to warm up report 504, which the gateway reads as the whole
+        # upstream being unavailable. A probe answers on its own bound.
+        probe = request.url.path in PROBE_PATHS
+        budget = PROBE_BUDGET_SECONDS if probe else read_budget_seconds
         if 'x-domino-read-budget-ms' in request.headers:
             value = request.headers['x-domino-read-budget-ms']
             if (len(request.headers.getlist('x-domino-read-budget-ms')) != 1 or
                     not re.fullmatch(r'[1-9][0-9]{0,4}', value) or int(value) > 15000):
                 response = JSONResponse({'error': 'invalid_request'}, status_code=422)
             else:
-                budget = min(budget, int(value) / 1000)
+                # Still rejected above when malformed: a bad header is a bad
+                # request on any route. It only narrows an actual read.
+                if not probe:
+                    budget = min(budget, int(value) / 1000)
                 response = None
         else:
             response = None

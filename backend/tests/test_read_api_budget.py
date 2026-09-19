@@ -10,7 +10,7 @@ from unittest.mock import Mock, patch
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from fastapi.testclient import TestClient
 from discovery import DataError, ReadRpc
-from read_api import create_app, ReadGate
+from read_api import create_app, ReadGate, PROBE_BUDGET_SECONDS
 from read_contract import CONTRACT_VERSION
 from read_deadline import current_read_deadline, read_deadline, read_timeout
 from read_service import ReadService
@@ -28,7 +28,7 @@ class ReadApiBudgetTests(unittest.TestCase):
         # scheduling, thread coordination and upload timeouts retain real clocks.
         deadline_patch = patch('read_api.read_deadline',
                                side_effect=lambda seconds: read_deadline(seconds, clock=self.clock))
-        deadline_patch.start()
+        self.deadline = deadline_patch.start()
         self.addCleanup(deadline_patch.stop)
         self.client = self.reader_client()
 
@@ -148,6 +148,30 @@ class ReadApiBudgetTests(unittest.TestCase):
         self.assertEqual(response.status_code, 504, response.text)
         self.assertEqual(response.json(), {'error': 'read_deadline_exceeded'})
         self.service.token.assert_not_called()
+
+    def test_a_probe_is_bounded_by_its_own_budget_and_never_by_the_read_budget(self):
+        """A liveness answer is not a read (#177).
+
+        The gateway reads any non-200 health as the whole upstream being
+        unavailable. Charging the probe to the read budget therefore turns a
+        reader that is merely slow to warm up into a refused hop, which is what
+        a 200ms budget produced on a loaded runner.
+        """
+        client = self.reader_client(budget=0.05)
+        for path in ('/health', '/v1/capabilities'):
+            for supplied in ({}, {'X-Domino-Read-Budget-Ms': '1'}):
+                with self.subTest(path=path, supplied=bool(supplied)):
+                    self.deadline.reset_mock()
+                    response = client.get(path, headers=supplied)
+                    self.assertEqual(response.status_code, 200, response.text)
+                    self.assertEqual([call.args[0] for call in self.deadline.call_args_list],
+                                     [PROBE_BUDGET_SECONDS])
+        # A read is still bounded by the smaller of the two, unchanged. The
+        # worker re-enters the same budget, so every context it opens is 0.05.
+        self.deadline.reset_mock()
+        response = self.read('9000', client=client)
+        self.assertEqual(response.status_code, 200, response.text)
+        self.assertEqual({call.args[0] for call in self.deadline.call_args_list}, {0.05})
 
     def test_busy_health_tracks_actual_worker_after_budget_expiry_until_exit(self):
         entered, release, finished = Event(), Event(), Event()
