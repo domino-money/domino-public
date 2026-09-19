@@ -29,6 +29,21 @@ token1/token0 units and is not a human token price. No LP math is implemented he
 Swap tariff remains unselected; direct deposits have no Domino setup percentage.
 Every `executionAvailable` flag remains false, even when observed limits pass.
 
+`previewChecks` on a position is derived, not declared: runtime validation
+recomputes `reasons` from the response's own fields and refuses any array that
+differs, order included. Blocked reasons come first — `token{i}_maximum_exceeds_budget`
+per token in index order, then `native_deposit_exceeds_balance` when
+`nativeFunding.depositMaximumRaw` exceeds `reportedBalanceRaw`, then
+`native_gas_reserve_exceeded` when that deposit plus `selectedGasReserveRaw`
+does — then the incomplete ones: `token{i}_budget_unknown` in index order,
+`native_balance_unknown` and `native_gas_reserve_unspecified` for a null balance
+or reserve. A null balance excludes the exceeds-balance reason instead of adding
+one. `status` follows from the array: `blocked` when a reason ends in `_exceeded`,
+`_exceeds_budget` or `_exceeds_balance`, `incomplete` when other reasons remain,
+`within_selected_limits` when none do; duplicates are refused. Every one of these,
+and any value that makes the derivation throw, reaches the caller as a bare
+`false` from `validateResponse` — the same answer a schema violation gives.
+
 Import `runtime.mjs` for closed-shape validation and `types.ts` for types. Runtime
 validation uses the exported schemas plus semantic range/status/amount checks.
 The Python backend additionally recomputes Keccak PoolId from the PoolKey; the

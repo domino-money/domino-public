@@ -26,7 +26,7 @@ export const PRODUCER_PIN = {
   packages: {
     'read-v1': {
       version: '1.1.0-rc.3',
-      manifestSha256: '00f3d9c558210d3728fd06e0f048c5d7363aade61dd3fe2a7b21d7326ee896fc',
+      manifestSha256: '858dd90e05ee1bbe5afbb8240d4012f18a32e366be181d15338ad3ec7c0bc28e',
     },
     'session-v1': {
       version: '3.0.0-rc.2',
@@ -34,7 +34,7 @@ export const PRODUCER_PIN = {
     },
     'onboarding-v1': {
       version: '1.0.0',
-      manifestSha256: '4dac7c9118f2c2799321dad5b78d123609200a05e4125fd0197ed5e43b8bfc91',
+      manifestSha256: 'a8967fb4e67fe87a5c9da1f6a2638e1ba9a9b5b781ecee6f2894ca946adc3898',
     },
     'deposit-v1': {
       version: '1.1.0-rc.4',
@@ -46,7 +46,7 @@ export const PRODUCER_PIN = {
 /** Separately opted-in public pool estimates; never accepted as a v1 response. */
 export const READ_V2_PIN = {
   version: '2.0.0-rc.1',
-  manifestSha256: '634d77cec51cfd94be30614a1130f10c79d853ba6f56792d7327890f58d2ad73',
+  manifestSha256: 'af32b1af9e3b3bd2dce8a536ae483eaa034a2a23c2916392a5d94eebfe4ef41e',
 } as const
 
 /**

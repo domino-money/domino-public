@@ -203,6 +203,9 @@ export const COPY = {
     activityLoading: 'Reading pool activity…',
     /** The activity card's heading title: what the card covers, never a caption under it. */
     activityScope: 'Swaps and fees over the 24 hours up to the last indexed block, from indexed chain events.',
+    /** Shown on the card only while a pool is served from a live window instead of the index. */
+    activityLiveWindow:
+      'This pool is not in the activity index yet. These figures were read directly from the chain over the span shown above, not the last 24 hours, and its positions are unavailable until indexing catches up.',
     caveat: 'Pool APR describes a pool, not a position. It isn’t a forecast or a return on a deposit.',
     done: 'Done',
     turnoverPending: 'Volume over TVL from provider figures waits on a decision about derived figures.',

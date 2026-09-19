@@ -12,6 +12,8 @@ import { SymbolText } from './SymbolText'
 export const duration = (seconds: number) =>
   seconds < 120 ? `${seconds} s` : seconds < 7200 ? `${Math.floor(seconds / 60)} min` : `${Math.floor(seconds / 3600)} h ${Math.floor((seconds % 3600) / 60)} min`
 
+const DAY_SECONDS = 86400
+
 const Dash = ({ title }: { title?: string }) => (
   <span className="text-fg-subtle" title={title}>
     —
@@ -64,8 +66,9 @@ export function CurrencyHead({ option, first }: { option: PoolOption; first: Rea
 const sentence = (text: { title: string; detail: string }) => [text.title, text.detail].filter(Boolean).join('. ').replace(/\.\./g, '.')
 
 /**
- * The pool's own chain activity over the 24 hours up to its last indexed
- * block: swaps, turnover per token, LP fees once fee accounting is
+ * The pool's own chain activity over the window up to its last indexed block —
+ * 24 hours from the index, or the hours a live window reached back, which the
+ * card's own labels say: swaps, turnover per token, LP fees once fee accounting is
  * reconciled, and the pool's LP assets, in each token's units. Nothing here
  * is in dollars and nothing is an APR. The card is on the page only where
  * pool-activity is listed; while its read runs the figures rest, and when
@@ -88,6 +91,13 @@ export function PoolActivityCard({ read, option, now }: { read: ScreenOutcome<'p
   const state = view ? (age?.state === 'stale' ? 'stale' : 'ok') : blocked ? 'unavailable' : 'loading'
   const code = failure ? (failure.state === 'unavailable' && failure.cause.kind === 'producer' ? failure.cause.code : failure.state) : tooOld ? ACTIVITY_TOO_OLD : undefined
   const cell = (node: ReactNode) => (view ? node : blocked ? <Dash title={reason} /> : <Skeleton className="ml-auto h-4 w-16" />)
+  // The figures cover the span the read asked for. That is 24 h for a stored
+  // window; a live window is bounded by a block count and blocks here are far
+  // shorter than a second, so it reaches back hours. The card says which it is
+  // rather than labelling hours as a day.
+  const windowSeconds = view?.windowSeconds ?? DAY_SECONDS
+  const span = windowSeconds === DAY_SECONDS ? '24h' : duration(windowSeconds)
+  const spanText = span === '24h' ? '24 h' : span
   const blank = (
     <>
       <td>{cell(null)}</td>
@@ -99,21 +109,26 @@ export function PoolActivityCard({ read, option, now }: { read: ScreenOutcome<'p
       <h2 id="pool-activity-title" className="dm-display dm-display-card" title={COPY.figures.activityScope}>On-chain activity</h2>
       <p role="status" className="sr-only">{state === 'loading' ? 'Reading pool activity…' : blocked ? reason : ''}</p>
       <dl className="dm-kv dm-pool-kv dm-pool-kv--2 -mx-5 mt-3">
-        <div><dt>Swaps (24h)</dt><dd>{cell(view && view.swaps.toLocaleString('en-US'))}</dd></div>
-        <div><dt>Pool age</dt><dd>{cell(view && (view.age ? duration(view.age.seconds) : 'Older than 24 h'))}</dd></div>
-        <div><dt>Window</dt><dd>{cell(view && (view.window === 'covered' ? '24 h covered' : `${duration(view.observedSeconds)} observed`))}</dd></div>
+        <div><dt>Swaps ({span})</dt><dd>{cell(view && view.swaps.toLocaleString('en-US'))}</dd></div>
+        <div><dt>Pool age</dt><dd>{cell(view && (view.age ? duration(view.age.seconds) : `Older than ${spanText}`))}</dd></div>
+        <div><dt>Window</dt><dd>{cell(view && (view.window === 'covered' ? `${spanText} covered` : `${duration(view.observedSeconds)} observed`))}</dd></div>
         <div><dt>Blocks covered</dt><dd>{cell(view && `${view.initializedBlock} to ${view.block}`)}</dd></div>
       </dl>
+      {view?.live ? (
+        <p className="dm-note mt-3" data-activity-live="">
+          {COPY.figures.activityLiveWindow}
+        </p>
+      ) : null}
       <div className="dm-pool-table-wrap mt-2">
         <table className="dm-pool-table" data-activity-amounts="">
           <CurrencyHead option={option} first={<span className="sr-only">Figure</span>} />
           <tbody>
             <tr data-activity-row="turnover">
-              <th scope="row">Turnover (24h)</th>
+              <th scope="row">Turnover ({span})</th>
               {view ? <><td><Amount amount={view.turnover[0]} /></td><td><Amount amount={view.turnover[1]} /></td></> : blank}
             </tr>
             <tr data-activity-row="lp-fees">
-              <th scope="row">LP fees (24h)</th>
+              <th scope="row">LP fees ({span})</th>
               {view ? <PairCells pair={view.lpFees} /> : blank}
             </tr>
             <tr data-activity-row="lp-assets">

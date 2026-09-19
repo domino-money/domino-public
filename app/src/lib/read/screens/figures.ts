@@ -168,7 +168,16 @@ export const ACTIVITY_TOO_OLD = 'activity_stale'
 
 export interface ActivityFacts {
   window: 'covered' | 'young'
-  /** Seconds of the 24h window the pool has existed for, from the payload alone. */
+  /**
+   * The span the read actually asked for, which is 24h only for a stored
+   * window. A live window is bounded by a block count, and blocks here are far
+   * shorter than a second, so it reaches back hours; the card says whichever
+   * it is rather than claiming a day.
+   */
+  windowSeconds: number
+  /** Served from a live window read instead of the index: transitional, until the pool is anchored. */
+  live: boolean
+  /** Seconds of the window the pool has existed for, from the payload alone. */
   observedSeconds: number
   /** A young pool's age, from verified discovery data; null when the pool is older than the window. */
   age: { seconds: number; basis: 'observedSeconds' | 'snapshot_minus_initializedAt' } | null
@@ -189,6 +198,8 @@ export function activityFacts(d: PoolActivityResponse): ActivityFacts {
   const derived = d.snapshot.timestamp - d.coverage.initializedAt
   return {
     window: young ? 'young' : 'covered',
+    windowSeconds: w.requestedSeconds,
+    live: d.mode === 'live_window_only',
     observedSeconds: w.observedSeconds,
     age: young ? (Math.trunc(w.observedSeconds) === w.observedSeconds ? { seconds: w.observedSeconds, basis: 'observedSeconds' } : { seconds: derived, basis: 'snapshot_minus_initializedAt' }) : null,
     swaps: w.swapEventCount,
@@ -255,6 +266,10 @@ export interface PoolActivityView {
   freshnessSeconds: number
   swaps: number
   window: 'covered' | 'young'
+  /** The span the figures cover; 24h only for a stored window. */
+  windowSeconds: number
+  /** Served from a live window read instead of the index. */
+  live: boolean
   observedSeconds: number
   /** A young pool's age; null when the pool is older than the window. */
   age: ActivityFacts['age']
@@ -282,6 +297,8 @@ export function poolActivityView(d: PoolActivityResponse, tokens: readonly Token
     freshnessSeconds: d.freshness.ageSeconds,
     swaps: facts.swaps,
     window: facts.window,
+    windowSeconds: facts.windowSeconds,
+    live: facts.live,
     observedSeconds: facts.observedSeconds,
     age: facts.age,
     initializedBlock: facts.initializedBlock,

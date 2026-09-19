@@ -187,8 +187,10 @@ class ReadService:
         return report
 
     LIVE_WINDOW_SECONDS = 86400
-    # Blocks are one second on Robinhood Chain; the margin covers a run of
-    # sub-second blocks without ever moving the window start past its bound.
+    # Read as a block count, not a duration: the chain's own recorded heads move
+    # 7 to 13 blocks a second, so this bound reaches back hours. The response
+    # reports the span it actually covered rather than claiming a day; the
+    # margin only keeps the window start from passing its bound.
     LIVE_WINDOW_BLOCK_MARGIN = 120
     # Reasons that mean "this pool cannot be served live yet", as opposed to a
     # provider or transport failure that the caller should see as such.

@@ -11,6 +11,20 @@ validates the returned identity and spending limits, then discards the executabl
 payload. There is no second liquidity formula, swap-ratio solver or fallback
 engine in this integration.
 
+That statement is about this backend adapter, and only it. The browser does
+derive the dependent amount, in `app/src/lib/create/pairAmount.ts`: exact
+integer arithmetic on the pool's own `sqrtPriceX96` as read and the chosen
+ticks through `sqrtPriceAtTick`, which is v4-core's `TickMath` — the same
+inputs and the same v4-core formulas this adapter's provider uses, with no
+floating point and no price approximation. It exists because a person cannot
+choose a range or an amount without seeing what the other field becomes, and
+onboarding-v1 is a disabled candidate. It fills that field and nothing else:
+the expected deposit, the maximum debit with slippage and whether a wallet
+covers them remain this preview's to report, and Review shows this preview's
+figures, never the browser's. The browser's number is the amount at the price
+of the read it came from; the mint rounds in the pool's favour and the price
+moves.
+
 This is a backend candidate stacked on #35. No public route, shared `read-v1`
 field, browser hook, frontend file or deployment configuration changes. Frontend
 integration requires a defined and validated browser contract, which any
@@ -21,7 +35,7 @@ The personal bot is independent.
 
 | Component | Responsibility |
 | --- | --- |
-| Frontend + official Uniswap SDK | Pair/fee/range/amount selection; human-price orientation and conversion to canonical spaced ticks; later review and wallet interaction. |
+| Frontend + official Uniswap SDK | Pair/fee/range/amount selection, including the dependent amount shown in the field a person types into (see above); human-price orientation and conversion to canonical spaced ticks; later review and wallet interaction. |
 | Uniswap LP API | Fetch pool state, calculate dependent amount and liquidity, prepare the mint using its SDK. |
 | Domino backend | Keep the API key private; bind chain, pool, owner, range and request; inspect mint maxima; report selected-budget checks, uncertainty and freshness. |
 | Later execution integration | Authenticate owner, refresh balances/allowances/state, validate complete transaction and slippage semantics, simulate, review/sign, broadcast and reconcile the receipt. |

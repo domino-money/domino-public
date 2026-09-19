@@ -491,6 +491,78 @@ const okRead = (route, name, mutate = (body) => body) => ({ route, state: 'ok', 
 const markupText = (html) => html.replace(/<p role="status" class="sr-only">.*?<\/p>/gs, '').replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim()
 const rowCells = (html, row) => [...new RegExp(`<tr data-activity-row="${row}">(.*?)</tr>`, 's').exec(html)[1].matchAll(/<td>(.*?)<\/td>/gs)].map(([, cell]) => cell)
 
+/**
+ * A pool the activity index does not hold yet is served from a live window:
+ * the read is bounded by a block count, and blocks on this chain are far
+ * shorter than a second, so the range reaches back hours. Derived from the
+ * stored fixture and proved against the contract runtime, because the
+ * producer package ships no live_window_only fixture yet.
+ */
+const liveWindowActivity = (body) => {
+  const covered = 7500
+  const through = body.snapshot.timestamp
+  const lower = through - covered
+  return {
+    ...body,
+    mode: 'live_window_only',
+    revision: null,
+    storedEventCount: 0,
+    coverage: {
+      startBlock: body.coverage.startBlock,
+      indexedThrough: null,
+      initializedBlock: body.coverage.initializedBlock,
+      initializedAt: body.coverage.initializedAt,
+      scope: 'live_window_only',
+      canonicality: 'block_hash_rechecked',
+      rpcCompleteness: 'single_provider_assumption',
+      windowStartBlock: body.coverage.initializedBlock,
+      windowStartTimestamp: lower,
+    },
+    window24h: {
+      ...body.window24h,
+      requestedSeconds: covered,
+      fromTimestampExclusive: lower,
+      throughTimestamp: through,
+      observedSinceTimestamp: Math.max(body.coverage.initializedAt, lower),
+      observedSeconds: Math.min(covered, through - body.coverage.initializedAt),
+      completeWindow: true,
+      status: 'covered_as_of',
+      usableAsCurrent24h: false,
+    },
+    liquidity: {
+      status: 'live_state_only',
+      activeLiquidityRaw: body.liquidity.activeLiquidityRaw,
+      rangeCount: null,
+      isTvl: false,
+      tvlUsd: null,
+      tvlReason: 'pool_activity_not_indexed',
+      positionAccounting: gatewayFixture('pool-activity.unavailable').liquidity.positionAccounting,
+    },
+  }
+}
+
+test('a live window says the span it actually covered and never calls it a day (#177)', () => {
+  const { PoolActivityCard } = real('src/components/read/screens/PoolActivityCard.tsx')
+  const html = renderToStaticMarkup(
+    React.createElement(PoolActivityCard, { read: okRead('pool-activity', 'pool-activity.success', liveWindowActivity), option: fixturePool() }),
+  )
+  const text = markupText(html)
+  assert.match(text, /Swaps \(2 h 5 min\) 4/, 'the count is labelled with the span it came from')
+  assert.match(text, /Window 2 h 5 min covered/)
+  assert.match(text, /Pool age Older than 2 h 5 min/)
+  assert.match(text, /Turnover \(2 h 5 min\)/)
+  assert.match(text, /LP fees \(2 h 5 min\)/)
+  assert.match(html, /data-activity-live=""/)
+  assert.match(text, /not in the activity index yet/)
+  // Only the note may say "24 hours", and only to deny it: no figure claims a day the read never saw.
+  assert.doesNotMatch(markupText(html.replace(/<p class="dm-note mt-3" data-activity-live="">.*?<\/p>/s, '')), /24 ?h/)
+
+  // The stored window is unchanged: it really is the last 24 hours.
+  const stored = markupText(renderToStaticMarkup(React.createElement(PoolActivityCard, { read: okRead('pool-activity', 'pool-activity.success'), option: fixturePool() })))
+  assert.match(stored, /Swaps \(24h\) 4 Pool age Older than 24 h Window 24 h covered/)
+  assert.doesNotMatch(stored, /data-activity-live|activity index/)
+})
+
 test('G11: the activity card shows the 24h turnover, the LP fees and the LP assets in each token’s units, the exact amount in each title, and no USD figure or APR', () => {
   const { PoolActivityCard } = real('src/components/read/screens/PoolActivityCard.tsx')
   const html = renderToStaticMarkup(React.createElement(PoolActivityCard, { read: okRead('pool-activity', 'pool-activity.success'), option: fixturePool() }))
