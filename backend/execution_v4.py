@@ -54,7 +54,11 @@ class SwapPlan(m.Record):
     @model_validator(mode='after')
     def checked(self):
         if self.amountIn == '0':
-            if (self.sourceId != ZERO_ID or self.currencyIn != ZERO_ADDRESS or self.priceObservationId != ZERO_ID
+            # Every action carries a published observation, swap or not: the
+            # anchor binds the whole execution, not only a conversion. Without
+            # a swap the id is the one field this plan may set, and it must be.
+            if (self.priceObservationId == ZERO_ID or self.sourceId != ZERO_ID
+                or self.currencyIn != ZERO_ADDRESS
                 or any(getattr(self, name) != '0' for name in ('maxOriginal','maxCharged','minAmountOut','sqrtPriceLimitX96'))):
                 raise ValueError('invalid_disabled_v4_swap')
         elif (self.sourceId == ZERO_ID or self.priceObservationId == ZERO_ID or self.minAmountOut == '0'

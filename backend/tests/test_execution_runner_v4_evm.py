@@ -119,13 +119,14 @@ class DurableV4ExecutorTests(unittest.TestCase):
             liquidityIncrease=str(10**10 if swap or action in (2,3) or charged_lot else 5*10**13),maxGrossFee0=str(10**15),maxGrossFee1=str(10**15),
             maxChargedInput0=str(charged[0]),maxChargedInput1=str(charged[1]),minNetAdded0='1',minNetAdded1='1',
             minSqrtPriceX96=str(2**95),maxSqrtPriceX96=str(2**97),maxGasCostWei=str(10**17),swap=disabled)
-        price_id=m.ZERO_HASH
         self.rpc.request('evm_mine',[])
+        # Every action carries a published observation, swap or not: the engine
+        # anchors the whole execution, so the signer requires one to sign at all.
+        point=(bytes.fromhex(seq.poolId[2:]),int(observation.blockNumber),bytes.fromhex(observation.blockHash[2:]),int(observation.blockTimestamp),int(plan.deadline),price)
+        tx=self.rpc.request('eth_sendTransaction',[{'from':self.admission.pricePublisher,'to':self.admission.priceGuard,'gas':hex(1000000),
+            'data':calldata('publish((bytes32,uint64,bytes32,uint64,uint64,uint160))',['(bytes32,uint64,bytes32,uint64,uint64,uint160)'],[point])}])
+        receipt=self.mined_receipt(tx);self.assertEqual(receipt['status'],'0x1');price_id=receipt['logs'][0]['topics'][1]
         if swap:
-            point=(bytes.fromhex(seq.poolId[2:]),int(observation.blockNumber),bytes.fromhex(observation.blockHash[2:]),int(observation.blockTimestamp),int(plan.deadline),price)
-            tx=self.rpc.request('eth_sendTransaction',[{'from':self.admission.pricePublisher,'to':self.admission.priceGuard,'gas':hex(1000000),
-                'data':calldata('publish((bytes32,uint64,bytes32,uint64,uint64,uint160))',['(bytes32,uint64,bytes32,uint64,uint64,uint160)'],[point])}])
-            receipt=self.mined_receipt(tx);self.assertEqual(receipt['status'],'0x1');price_id=receipt['logs'][0]['topics'][1]
             incoming=10**9
             minimum=self.call(self.admission.routingHelper,'minimumOutput(uint128,uint160,bool,uint16)',['uint256'],
                 ['uint128','uint160','bool','uint16'],[incoming,price,True,100])[0]

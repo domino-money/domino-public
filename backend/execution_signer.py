@@ -130,6 +130,10 @@ class RestrictedSigner:
         else:self.admission=_model(g.CompoundAdmission,raw)
         self.action='typed_fee_execution_v4' if version=='4' else 'compound_self_general_v3'
         if version!='4' and price_observation_id!=m.ZERO_HASH:raise ExecutionError('execution_unexpected_price_observation')
+        # A V4 signer without an observation can sign nothing: the engine
+        # refuses every action that does not carry one.
+        if version=='4' and price_observation_id==m.ZERO_HASH:
+            raise ExecutionError('execution_price_observation_required')
         self.price_observation_id=price_observation_id
         self.policy=policy
 
@@ -183,8 +187,10 @@ class RestrictedSigner:
                     raise ExecutionError('execution_position_identity_changed')
                 point=verifier._call(vault,'checkpoint(uint256)',[g.CHECKPOINT_TYPE],source,['uint256'],[int(token)])[0]
                 checkpoints[token]='0x'+point[6].hex()
-            compound=rebuild_v4(plan,observation,checkpoints,price_observation_id=self.price_observation_id if plan.swap.enabled else m.ZERO_HASH)
-            if plan.swap.enabled:qualify_price(verifier,self.admission,plan,observation,head,self.price_observation_id)
+            # The anchor binds every action on chain, so it is required and
+            # qualified for every action here, not only for a conversion.
+            compound=rebuild_v4(plan,observation,checkpoints,price_observation_id=self.price_observation_id)
+            qualify_price(verifier,self.admission,plan,observation,head,self.price_observation_id)
         else:
             checkpoint=verifier._call(vault,'checkpoint(uint256)',[g.CHECKPOINT_TYPE],source,['uint256'],[int(plan.destination.tokenId)])[0]
             compound=rebuild_compound(plan,observation,'0x'+checkpoint[6].hex())

@@ -35,7 +35,7 @@ def fixture(*,swap=False):
             ([v4.FeeBudget(sourceId=hash_(93),currency=TOKEN,maxOriginal='0',maxCharged='18',minOriginal='0',minCharged='0')] if swap else [])),
         swap=v4.SwapPlan(sourceId=hash_(93) if swap else v4.ZERO_ID,currencyIn=ZERO,amountIn='20' if swap else '0',
             maxOriginal='20' if swap else '0',maxCharged='0',minAmountOut='18' if swap else '0',
-            sqrtPriceLimitX96=str((1<<96)-1) if swap else '0',priceObservationId=hash_(999) if swap else v4.ZERO_ID))
+            sqrtPriceLimitX96=str((1<<96)-1) if swap else '0',priceObservationId=hash_(999)))
     digest='0x'+keccak(encode(['bytes32','uint256','address','bytes32',v4.PLAN_TYPE],
         [keccak(b'DominoExecutionV4'),4663,VAULT,bytes.fromhex(base.opening.sequenceIdentity[2:]),plan.values()])).hex()
     logs=[]

@@ -18,7 +18,9 @@ class SequenceSdkEvmTests(unittest.TestCase):
     stop = classmethod(evm.ExecutionV4ReceiptEvmTests.stop.__func__)
     send, deploy, call = evm.ExecutionV4ReceiptEvmTests.send, evm.ExecutionV4ReceiptEvmTests.deploy, evm.ExecutionV4ReceiptEvmTests.call
     setup_vault, swaps = evm.ExecutionV4ReceiptEvmTests.setup_vault, evm.ExecutionV4ReceiptEvmTests.swaps
+    # plan() publishes an observation for every action, so observe() comes with it.
     plan, execute = evm.ExecutionV4ReceiptEvmTests.plan, evm.ExecutionV4ReceiptEvmTests.execute
+    observe = evm.ExecutionV4ReceiptEvmTests.observe
 
     def test_owner_creation_recovery_identity_nonce_and_canonical_receipts(self):
         with tempfile.TemporaryDirectory(prefix='domino-sequence-sdk-') as directory:

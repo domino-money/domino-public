@@ -45,7 +45,10 @@ class ExecutionV4ReceiptEvmTests(unittest.TestCase):
         helper=self.deploy('DominoVaultReadHelper.sol','DominoVaultReadHelper',['address']*2,[self.positions,self.state])
         routing=self.deploy('DominoRoutingHelperV4.sol','DominoRoutingHelperV4')
         publisher=self.rpc.request('eth_accounts',[])[2]
-        guard=self.deploy('DominoPriceGuardV4.sol','DominoPriceGuardV4',['address'],[publisher])
+        # The guard bounds a published price against the pool's own reading:
+        # publisher, that reader, and the band in basis points of sqrt price.
+        guard=self.deploy('DominoPriceGuardV4.sol','DominoPriceGuardV4',
+            ['address','address','uint256'],[publisher,self.state,2000])
         engine=self.deploy('DominoExecutionEngineV4.sol','DominoExecutionEngineV4',['address']*4,[factory,helper,routing,guard])
         implementation=self.deploy('DominoVaultV4.sol','DominoVaultV4',['address']*7,
             [factory,self.manager,self.positions,self.state,self.recipient,helper,engine])
@@ -72,6 +75,21 @@ class ExecutionV4ReceiptEvmTests(unittest.TestCase):
         self.admission = v.Admission(sequence=seq,stateView=self.state,readHelper=helper,
             executionEngine=engine,routingHelper=routing,priceGuard=guard,pricePublisher=publisher,runtimePins=pins)
 
+    def observe(self, a):
+        """Publish this plan's observation at the pool's current price."""
+        price=self.call(self.state,'getSlot0(bytes32)',['uint160','int24','uint24','uint24'],
+            ['bytes32'],[bytes.fromhex(self.admission.sequence.poolId[2:])])[0]
+        point=(bytes.fromhex(self.admission.sequence.poolId[2:]),int(a.observedAtBlock),
+            bytes.fromhex(a.observedBlockHash[2:]),int(a.observedAtTimestamp),int(a.deadline),price)
+        tx=self.rpc.request('eth_sendTransaction',[{'from':self.admission.pricePublisher,
+            'to':self.admission.priceGuard,'gas':hex(1000000),
+            'data':calldata('publish((bytes32,uint64,bytes32,uint64,uint64,uint160))',
+                ['(bytes32,uint64,bytes32,uint64,uint64,uint160)'],[point])}])
+        self.rpc.request('evm_mine',[])
+        receipt=self.rpc.request('eth_getTransactionReceipt',[tx])
+        if receipt['status']!='0x1': raise AssertionError('observation not published')
+        return receipt['logs'][0]['topics'][1]
+
     def plan(self, action=0, increase=10**12):
         # Include the observed block strictly before the compound transaction.
         self.rpc.request('evm_increaseTime', [2])
@@ -90,7 +108,9 @@ class ExecutionV4ReceiptEvmTests(unittest.TestCase):
             maxOriginal0='0', maxOriginal1='0', maxCharged0='0', maxCharged1='0',
             minAdded0='1', minAdded1='1', minSqrtPriceX96=str(2**95), maxSqrtPriceX96=str(2**97))
         budgets=tuple(sorted((v.FeeBudget(sourceId='0x'+member[9+i].hex(),currency=self.key[i],maxOriginal=str(2**128-1),maxCharged='0',minOriginal='0',minCharged='0') for i in (0,1)),key=lambda b:(b.sourceId,b.currency)))
-        swap=v.SwapPlan(sourceId=m.ZERO_HASH,currencyIn=m.ZERO,amountIn='0',maxOriginal='0',maxCharged='0',minAmountOut='0',sqrtPriceLimitX96='0',priceObservationId=m.ZERO_HASH)
+        # Every action carries a published observation, swap or not.
+        swap=v.SwapPlan(sourceId=m.ZERO_HASH,currencyIn=m.ZERO,amountIn='0',maxOriginal='0',maxCharged='0',
+            minAmountOut='0',sqrtPriceLimitX96='0',priceObservationId=self.observe(plan))
         return v.Plan(authority=plan,action=action,destinationTokenId='0' if action==3 else str(self.token),
             tickLower=-420 if action==3 else 0,tickUpper=4680 if action==3 else 0,
             collect=(v.PositionRef(tokenId=str(self.token),positionIdentity=plan.positionIdentity,checkpointId=plan.checkpointId),),budgets=budgets,swap=swap)
@@ -148,14 +168,10 @@ class ExecutionV4ReceiptEvmTests(unittest.TestCase):
     def test_actual_swap_receipt_lineage_and_cumulative_cut(self):
         self.setup_vault();self.swaps();plan=self.plan(0,10**10)
         price=self.call(self.state,'getSlot0(bytes32)',['uint160','int24','uint24','uint24'],['bytes32'],[bytes.fromhex(self.admission.sequence.poolId[2:])])[0]
-        a=plan.authority
-        point=(bytes.fromhex(self.admission.sequence.poolId[2:]),int(a.observedAtBlock),bytes.fromhex(a.observedBlockHash[2:]),int(a.observedAtTimestamp),int(a.deadline),price)
-        signature='publish((bytes32,uint64,bytes32,uint64,uint64,uint160))'
-        tx=self.rpc.request('eth_sendTransaction',[{'from':self.admission.pricePublisher,'to':self.admission.priceGuard,'gas':hex(1000000),
-            'data':calldata(signature,['(bytes32,uint64,bytes32,uint64,uint64,uint160)'],[point])}])
-        self.rpc.request('evm_mine',[])
-        receipt=self.rpc.request('eth_getTransactionReceipt',[tx]);self.assertEqual(receipt['status'],'0x1')
-        observation_id=receipt['logs'][0]['topics'][1]
+        # plan() already published this plan's observation; the guard
+        # refuses a second identical one, and one anchor governs the whole
+        # execution, so reuse it rather than publishing again.
+        observation_id=plan.swap.priceObservationId
         member=self.call(self.vault,'position(uint256)',[g.POSITION_TYPE],['uint256'],[self.token])[0]
         sid='0x'+member[9].hex()
         minimum=self.call(self.admission.routingHelper,'minimumOutput(uint128,uint160,bool,uint16)',['uint256'],

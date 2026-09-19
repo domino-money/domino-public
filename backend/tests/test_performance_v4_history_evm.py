@@ -24,7 +24,9 @@ class V4PerformanceEvmTests(unittest.TestCase):
     call=fixture.ExecutionV4ReceiptEvmTests.call
     swaps=fixture.ExecutionV4ReceiptEvmTests.swaps
     setup_vault=fixture.ExecutionV4ReceiptEvmTests.setup_vault
+    # plan() publishes an observation for every action, so observe() comes with it.
     plan=fixture.ExecutionV4ReceiptEvmTests.plan
+    observe=fixture.ExecutionV4ReceiptEvmTests.observe
     execute=fixture.ExecutionV4ReceiptEvmTests.execute
 
     def test_actual_created_then_funded_successor_preserves_root_and_fee_origins(self):

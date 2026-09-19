@@ -11,6 +11,10 @@ import execution_models as m
 import execution_v4 as v4
 from execution_v4_adapter import rebuild_v4,decode_plan,qualify_price,selected_positions
 
+# Every action carries a published observation; these offline rebuilds
+# assert the plan's shape, not the publisher record, so one id serves.
+OBSERVATION = '0x'+'a7'*32
+
 
 def changed(record,**values):
     return type(record).model_validate_json(json.dumps({**record.model_dump(mode='json'),**values}))
@@ -29,7 +33,7 @@ class V4AdapterTests(unittest.TestCase):
         for action in (1,2,3):
             for charged in (False,True):
                 observation,plan,points=fixture(action=action,charged=charged)
-                typed=rebuild_v4(plan,observation,points)
+                typed=rebuild_v4(plan,observation,points,price_observation_id=OBSERVATION)
                 self.assertEqual(typed.action,0 if action==1 else action)
                 self.assertEqual(typed.authority.intentId,plan.intent_id())
                 self.assertEqual(typed.destinationTokenId,'0' if action==3 else plan.destination.tokenId)
@@ -47,13 +51,13 @@ class V4AdapterTests(unittest.TestCase):
 
     def test_collection_binding_rejects_wrong_or_extra_checkpoint(self):
         observation,plan,points=fixture(collection=True)
-        typed=rebuild_v4(plan,observation,points)
+        typed=rebuild_v4(plan,observation,points,price_observation_id=OBSERVATION)
         self.assertEqual(len(typed.collect),1)
         self.assertEqual(typed.budgets[0].minOriginal,'0')
         self.assertEqual(typed.collect[0].positionIdentity,observation.positions[0].position.digest())
         for wrong in ({},{**points,'999':cases.identity(701)},{k:cases.identity(702) for k in points}):
-            with self.assertRaises(ValueError):rebuild_v4(plan,observation,wrong)
-        with self.assertRaises(ValueError):rebuild_v4(plan,changed(observation,canonical=False),points)
+            with self.assertRaises(ValueError):rebuild_v4(plan,observation,wrong,price_observation_id=OBSERVATION)
+        with self.assertRaises(ValueError):rebuild_v4(plan,changed(observation,canonical=False),points,price_observation_id=OBSERVATION)
 
     def swap_fixture(self):
         observation,plan,points=fixture(collection=True,swap=True)
@@ -75,7 +79,11 @@ class V4AdapterTests(unittest.TestCase):
         self.assertEqual((output.sourceId,output.maxOriginal,output.maxCharged,output.minOriginal,output.minCharged),
             (typed.swap.sourceId,'0','0','0','0'))
         self.assertEqual(decode_plan(typed.calldata()),typed)
+        # A swap-shaped plan with no observation, and one whose id is not a
+        # hash, are both refused before anything is signed.
         with self.assertRaises(ValueError):rebuild_v4(plan,observation,points)
+        for bad_id in ('0x'+'0'*64,'not-a-hash',None):
+            with self.assertRaises(ValueError):rebuild_v4(plan,observation,points,price_observation_id=bad_id)
         for name,value in (('routeCommitment',cases.identity(999)),('adapterId',cases.identity(888)),('adapterVersion','2')):
             bad=changed(plan,swap=changed(plan.swap,**{name:value}).model_dump(mode='json'))
             with self.assertRaises(ValueError):rebuild_v4(bad,observation,points,price_observation_id=cases.identity(900))
@@ -84,7 +92,7 @@ class V4AdapterTests(unittest.TestCase):
         for native in (True,False):
             for reverse in (True,False):
                 observation,plan,points=fixture(native=native,reverse=reverse,collection=True)
-                typed=rebuild_v4(plan,observation,points)
+                typed=rebuild_v4(plan,observation,points,price_observation_id=OBSERVATION)
                 self.assertEqual(typed.budgets[0].currency,plan.sequence.poolKey.currency0)
                 self.assertEqual(typed.budgets[0].sourceId,observation.accruals[0].source.digest())
 
@@ -93,7 +101,7 @@ class V4AdapterTests(unittest.TestCase):
         lot=changed(observation.balances[0],currency=plan.sequence.poolKey.currency1)
         observation=changed(observation,balances=[lot.model_dump(mode='json')])
         plan=changed(plan,observationHash=observation.digest(),maxChargedInput0='0',maxChargedInput1='1000',minNetAdded0='0',minNetAdded1='980')
-        typed=rebuild_v4(plan,observation,points)
+        typed=rebuild_v4(plan,observation,points,price_observation_id=OBSERVATION)
         self.assertEqual(typed.budgets[0].sourceId,lot.source.digest())
         self.assertEqual(typed.budgets[0].currency,plan.sequence.poolKey.currency1)
         self.assertNotEqual(typed.budgets[0].currency,lot.source.currency)

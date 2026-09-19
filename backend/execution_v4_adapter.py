@@ -28,6 +28,12 @@ def selected_positions(plan,observation):
 
 
 def rebuild_v4(plan,observation,checkpoints,*,price_observation_id=m.ZERO_HASH):
+    # Every action carries a published observation, swap or not: the anchor
+    # binds the whole execution on chain, so a plan without one is refused
+    # there and must be refused here, before anything is signed.
+    if (type(price_observation_id) is not str or not re.fullmatch(r'0x[0-9a-f]{64}',price_observation_id)
+            or price_observation_id==m.ZERO_HASH):
+        raise ValueError('execution_price_observation_required')
     plan=_model(m.ExecutionPlan,plan);observation=_model(m.Observation,observation)
     m.validate_candidate(plan,observation,now=int(observation.blockTimestamp),actor=observation.operator)
     if plan.sequence.implementationVersion!='4':raise ValueError('execution_action_not_registered')
@@ -66,11 +72,10 @@ def rebuild_v4(plan,observation,checkpoints,*,price_observation_id=m.ZERO_HASH):
             minOriginal=str(floors[(source,currency)][0]),minCharged=str(floors[(source,currency)][1]))
         for (source,currency),raw in sorted(amounts.items()))
     swap=v4.SwapPlan(sourceId=m.ZERO_HASH,currencyIn=m.ZERO,amountIn='0',maxOriginal='0',maxCharged='0',
-        minAmountOut='0',sqrtPriceLimitX96='0',priceObservationId=m.ZERO_HASH)
+        minAmountOut='0',sqrtPriceLimitX96='0',priceObservationId=price_observation_id)
     if plan.swap.enabled:
         if (plan.swap.adapterId!=v4.ADAPTER_ID or plan.swap.adapterVersion!=v4.ADAPTER_VERSION
-                or type(price_observation_id) is not str or not re.fullmatch(r'0x[0-9a-f]{64}',price_observation_id)
-                or price_observation_id==m.ZERO_HASH):raise ValueError('execution_swap_not_registered')
+                ):raise ValueError('execution_swap_not_registered')
         fee=observation.policy.serviceFeeBps;incoming=int(plan.swap.amountInRaw)
         # Stable sorted source selection; never split an input among identities
         # which the fixed V4 route cannot represent. Every candidate was already
@@ -91,8 +96,6 @@ def rebuild_v4(plan,observation,checkpoints,*,price_observation_id=m.ZERO_HASH):
         if not any(b.sourceId==swap.sourceId and b.currency==plan.swap.currencyOut for b in budgets):
             budgets=tuple(sorted((*budgets,v4.FeeBudget(sourceId=swap.sourceId,currency=plan.swap.currencyOut,
                 maxOriginal='0',maxCharged='0',minOriginal='0',minCharged='0')),key=lambda b:(b.sourceId,b.currency)))
-    elif price_observation_id!=m.ZERO_HASH:
-        raise ValueError('execution_unexpected_price_observation')
     return v4.Plan(authority=authority,action=(plan.path if plan.action==1 else plan.action),
         destinationTokenId='0' if plan.action==3 else plan.destination.tokenId,
         tickLower=plan.destination.tickLower if plan.action==3 else 0,
