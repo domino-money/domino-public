@@ -86,7 +86,12 @@ def endpoint(value, hosts):
     n.need(all(33 <= ord(c) <= 126 for c in value) and '\\' not in value and
            parts.scheme == 'https' and parts.netloc == parts.hostname and parts.hostname in hosts
            and not parts.query and not parts.fragment, 'invalid_reader_endpoint')
-    pattern = r'/v2/[A-Za-z0-9_-]{1,128}' if parts.hostname == 'robinhood-mainnet.g.alchemy.com' else r'/?'
+    if parts.hostname == 'robinhood-mainnet.g.alchemy.com':
+        pattern = r'/v2/[A-Za-z0-9_-]{1,128}'
+    elif parts.hostname == 'rpc.domino.money':
+        pattern = r'/[A-Za-z0-9_-]{16,256}/'
+    else:
+        pattern = r'/?'
     n.need(re.fullmatch(pattern, parts.path) is not None, 'invalid_reader_endpoint')
 
 

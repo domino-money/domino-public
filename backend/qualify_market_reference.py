@@ -5,6 +5,7 @@ from pathlib import Path
 
 from discovery import DataError
 from local_config import load_config
+from rpc_config import configured_inventory_url
 from market_reference_history import CanonicalMarketHistorical, _SAFE_TRANSPORT_REASONS
 from read_service import bounded_transport
 
@@ -15,7 +16,7 @@ _SAFE_REASONS = _SAFE_TRANSPORT_REASONS | frozenset({
     'price_observation_budget_exhausted', 'price_outside_requested_window',
     'conflicting_price_observation', 'invalid_price_timestamp', 'invalid_usd_price',
     'market_reference_provider_unavailable', 'market_reference_provider_error',
-    'configured_rpc_required', 'invalid_inventory_endpoint',
+    'configured_rpc_required', 'configured_inventory_required', 'invalid_inventory_endpoint',
     'local_provider_config_unreadable', 'local_provider_config_permissions',
     'invalid_local_provider_config', 'output_exists',
 })
@@ -25,7 +26,7 @@ def qualify(currency, start, end, *, provider_config):
     config = load_config(provider_config)
     if not config:
         raise DataError('configured_rpc_required')
-    return CanonicalMarketHistorical(config['rpcUrl'], transport=bounded_transport(30)).fetch(
+    return CanonicalMarketHistorical(configured_inventory_url(config), transport=bounded_transport(30)).fetch(
         currency, start, end)
 
 

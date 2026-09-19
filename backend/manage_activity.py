@@ -29,6 +29,7 @@ from discovery import POOL_MANAGER, DataError, DiscoveryReader, ReadRpc, bytes32
 from followers import follow_many
 from indexer_io import MAX_INDEXER_SPAN, AdaptiveSpan, HeaderBudget, indexer_transport
 from local_config import load_config
+from rpc_config import configured_history_rpc_url, configured_rpc_urls
 from pool_activity import ACTIVITY_CAPACITY_PROFILES
 from pool_requests import PERMANENT, WRITER_ROLE, PgRequests
 from selected_pools import SELECTED_POOLS
@@ -245,9 +246,17 @@ def main():
                 write_report(args.output,reports[0] if len(reports)==1 else
                              {'schemaVersion':1,'mode':'activity_operator_status','pools':reports})
             return 0
-        url=os.environ.get('DOMINO_DISCOVERY_RPC_URL') or load_config().get('rpcUrl')
-        if not url:
+        config=load_config()
+        override=os.environ.get('DOMINO_DISCOVERY_RPC_URL')
+        if not config and not override:
             raise DataError('configured_rpc_required')
+        current_url=configured_rpc_urls(config,override)[0]
+        # Walks reconcile state at old checkpoints; registration/anchor discovery
+        # use retained logs and headers only and can use the current node.
+        url=(configured_history_rpc_url(config) if config.get('version')==3 or not override
+             else current_url)
+        if args.find_anchor or args.register or (args.queue_worker and args.anchor_only):
+            url=current_url
         if args.find_anchor:
             if not pool_ids:
                 raise DataError('pool_id_required')

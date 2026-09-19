@@ -8,6 +8,7 @@ import signal
 
 from discovery import Block, DataError, DiscoveryReader, POOL_MANAGER, ReadRpc, bytes32, address
 from local_config import load_config
+from rpc_config import configured_history_rpc_url, configured_rpc_urls
 from catalogue import configured_writer_catalogue, checked_key
 from catalogue_indexer import (INITIALIZE_TOPIC, CatalogueIndexer, IndexRpc, decode_initialize,
                                 initialize_identity)
@@ -127,8 +128,15 @@ def main():
     try:
         catalogue=configured_writer_catalogue()
         if not catalogue:raise DataError('catalogue_not_configured')
-        url=os.environ.get('DOMINO_DISCOVERY_RPC_URL') or load_config().get('rpcUrl')
-        if not url:raise DataError('configured_rpc_required')
+        config=load_config()
+        override=os.environ.get('DOMINO_DISCOVERY_RPC_URL')
+        if not config and not override:raise DataError('configured_rpc_required')
+        # Catalogue chunks verify contract code at their historical end block.
+        # Keep a v3 archive route isolated from a current-read environment override.
+        current_url=configured_rpc_urls(config,override)[0]
+        url=(configured_history_rpc_url(config) if config.get('version')==3 or not override
+             else current_url)
+        if args.action=='seed':url=current_url
         if args.action=='lookup':
             print(json.dumps(catalogue.lookup(address(args.token))));return 0
         if args.action=='seed':

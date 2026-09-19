@@ -397,7 +397,7 @@ class CapitalResumePostgresTests(unittest.TestCase):
 
     def test_bounded_cli_reports_pending_without_valuation_or_price_acquisition(self):
         with patch('manage_metrics.configured_writer_catalogue', return_value=self.catalogue), \
-                patch('manage_metrics.load_config', return_value={'rpcUrl': 'https://offline.invalid'}), \
+                patch('manage_metrics.load_config', return_value={'rpcUrl': 'https://rpc.mainnet.chain.robinhood.com'}), \
                 patch('manage_metrics.ReadRpc', return_value=self.rpc) as rpc, \
                 patch('manage_metrics.stored_metrics') as metrics, \
                 patch('manage_metrics.AlchemyHistorical') as prices, \

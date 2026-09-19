@@ -107,18 +107,30 @@ Checking the existing hash and deployer nonce is a read-only recovery action.
 ## Verify before publishing profiles
 
 Save the eight transaction hashes in order as a JSON array. Run verification
-against the same pinned source checkout/artifacts and an explicit HTTPS public
-RPC URL. Credential-bearing query strings, URL user information and redirects
-are rejected. Loopback HTTP exists only for local qualification.
+against the same pinned source checkout/artifacts and an explicit HTTPS RPC
+URL. For the self-hosted Domino RPC, keep the complete authenticated URL in a
+private file outside the checkout and use `--rpc-file`; the token never needs
+to enter the command line, shell history, output or public release profiles.
+The file must belong to the current Unix user, have no group/other permissions
+(mode `0600` or `0400`), be a regular file without symlinks or hard links, and
+contain one URL, optionally followed by a newline. Do not commit this file.
+Credential-bearing query strings, URL user information and redirects are
+rejected. Loopback HTTP exists only for local qualification.
 
 ```sh
 node scripts/prepare-financial-release.mjs verify \
   --repo /absolute/final-checkout \
   --package /absolute/operator/unsigned-release.json \
   --transactions /absolute/operator/deployment-hashes.json \
-  --rpc https://rpc.mainnet.chain.robinhood.com \
+  --rpc-file /absolute/private/domino-rpc-url \
   --out /absolute/operator/verified-release.json
 ```
+
+Use exactly one of `--rpc-file` and `--rpc`. The existing public endpoint form,
+`--rpc https://rpc.mainnet.chain.robinhood.com`, remains supported for URLs
+without secrets. Verification does not silently switch providers: choose an
+archive-capable endpoint if the deployment's historical state has been pruned
+by the self-hosted node.
 
 Verification reconstructs the package, checks all eight canonical successful
 finalized receipts and block membership, and compares the sender, nonce,
@@ -145,8 +157,12 @@ absolute timestamp, without renewal by verification.
 ## Local qualification
 
 ```sh
+node --test scripts/prepare-financial-release-rpc.test.mjs
 DOMINO_TEST_EVM=1 node --test scripts/prepare-financial-release.test.mjs
 ```
+
+The RPC input suite checks exclusive source selection, private file permissions,
+ownership and links, bounded input, secret-safe failures and read-only transport.
 
 Five tests cover exact unsigned order/constructors/CREATE addresses, missing or
 invalid public inputs, tariff/nonce/gas/size limits, inability of the RPC adapter

@@ -88,6 +88,31 @@ class ContinuousEgressTests(unittest.TestCase):
             policy.render(data)
         self.assertEqual(str(raised.exception), code)
 
+    def test_domino_rpc_and_existing_providers_have_only_pinned_https_egress(self):
+        pins = {**PINS, 'rpc.domino.money': ['16.0.0.1'],
+                'rpc.mainnet.chain.robinhood.com': ['16.0.0.2']}
+        result = policy.render(snapshot(pins=pins))
+        for role in ('read', 'write'):
+            self.assertTrue({'rpc.domino.money', 'rpc.mainnet.chain.robinhood.com',
+                             'robinhood-mainnet.g.alchemy.com'} <= set(result['roleHosts'][role]))
+        self.assertIn('16.0.0.1 rpc.domino.money\n', result['artifacts'][policy.ROOT + '/read.hosts'])
+        self.assertIn('IPAddressAllow=16.0.0.1/32\n', dropin(result, 'read'))
+        self.assertIn('IPAddressDeny=any\n', dropin(result, 'read'))
+        chains, _ = parse(nft(result))
+        self.assertTrue(chains['read'][-1].endswith('drop'))
+        self.assertTrue(chains['write'][-1].endswith('drop'))
+        self.assertTrue(all('tcp dport 443' in rule for role in ('read', 'write')
+                            for rule in chains[role] if 'oifname != "lo"' in rule))
+        self.assertNotIn('ws.domino.money', json.dumps(result))
+
+    def test_domino_rpc_does_not_admit_sibling_suffix_or_credential_hosts(self):
+        for host, reason in (('ws.domino.money', 'unapproved_hostname'),
+                             ('other.domino.money', 'unapproved_hostname'),
+                             ('rpc.domino.money.evil.example', 'unapproved_hostname'),
+                             ('rpc.domino.money/PRIVATE_CANARY/', 'invalid_hostname')):
+            with self.subTest(host=host):
+                self.reject(snapshot(pins={**PINS, host: ['16.0.0.1']}), reason)
+
     def test_describes_the_live_host_exactly_and_closes_the_four_identity_gaps(self):
         live_chains, live_sets = parse(BASELINE)
         chains, sets = parse(mask(nft(policy.render(snapshot()))))

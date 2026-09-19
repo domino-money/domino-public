@@ -2,7 +2,7 @@
 /** Build unsigned deployment transactions, or verify their finalized receipts.
  * This module has no key loader, signer, send method or wallet integration.
  */
-import { readFileSync, writeFileSync, openSync, closeSync, fstatSync, constants, realpathSync } from 'node:fs';
+import { readFileSync, readSync, writeFileSync, openSync, closeSync, fstatSync, constants, realpathSync } from 'node:fs';
 import { resolve, join, sep } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { createRequire } from 'node:module';
@@ -252,10 +252,41 @@ export async function verify(manifest, transactionHashes, artifacts, viem, rpc, 
     receipts, setup, sequence, executionAvailable: false, operatorFundingQualified: false, priceObservationQualified: false };
 }
 
+function rpcUrl(endpoint) {
+  try {
+    assert(typeof endpoint === 'string' && /^[\x21-\x7e]{1,1536}$/.test(endpoint), 'public_rpc_url_required');
+    const url = new URL(endpoint);
+    assert((url.protocol === 'https:' || url.protocol === 'http:' && ['127.0.0.1', '[::1]'].includes(url.hostname))
+      && !url.username && !url.password && !url.hash && !url.search, 'public_rpc_url_required');
+    return url;
+  } catch { throw new Error('public_rpc_url_required'); }
+}
+
+/** Read the URL from an owner-only regular file; never include its path/content in errors. */
+export function verificationRpcEndpoint(options) {
+  const direct = Object.hasOwn(options, 'rpc'), file = Object.hasOwn(options, 'rpc-file');
+  assert(direct !== file, 'exactly_one_rpc_source_required');
+  if (direct) { rpcUrl(options.rpc); return options.rpc; }
+  let fd;
+  try {
+    fd = openSync(options['rpc-file'], constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK);
+    const info = fstatSync(fd);
+    assert(info.isFile() && info.nlink === 1 && info.size > 0 && info.size <= 1538
+      && typeof process.getuid === 'function' && info.uid === process.getuid() && !(info.mode & 0o077), 'invalid_private_rpc_file');
+    // Bound the read too: a file growing after fstat must not allocate without limit.
+    const buffer = Buffer.alloc(1539);
+    let size = 0, count;
+    while (size < buffer.length && (count = readSync(fd, buffer, size, buffer.length - size, null)) > 0) size += count;
+    assert(size <= 1538, 'invalid_private_rpc_file');
+    const endpoint = buffer.subarray(0, size).toString('utf8').replace(/\r?\n$/, '');
+    rpcUrl(endpoint);
+    return endpoint;
+  } catch { throw new Error('invalid_private_rpc_file'); }
+  finally { if (fd !== undefined) closeSync(fd); }
+}
+
 export function readOnlyRpc(endpoint) {
-  const url = new URL(endpoint);
-  assert((url.protocol === 'https:' || url.protocol === 'http:' && ['127.0.0.1', '[::1]'].includes(url.hostname))
-    && !url.username && !url.password && !url.hash && !url.search, 'public_rpc_url_required');
+  const url = rpcUrl(endpoint);
   const allowed = new Set(['eth_chainId', 'eth_getBlockByNumber', 'eth_getCode', 'eth_call',
     'eth_getTransactionReceipt', 'eth_getTransactionByHash']);
   let calls = 0;
@@ -284,7 +315,9 @@ export async function main(argv) {
     assert(args[index].startsWith('--') && !Object.hasOwn(options, args[index].slice(2)), 'invalid_cli_option');
     options[args[index].slice(2)] = args[index + 1];
   }
-  const expected = action === 'prepare' ? ['repo', 'parameters', 'out'] : ['repo', 'package', 'transactions', 'rpc', 'out'];
+  const endpoint = action === 'verify' ? verificationRpcEndpoint(options) : undefined;
+  const expected = action === 'prepare' ? ['repo', 'parameters', 'out']
+    : ['repo', 'package', 'transactions', Object.hasOwn(options, 'rpc-file') ? 'rpc-file' : 'rpc', 'out'];
   keys(options, Object.hasOwn(options, 'artifacts') ? [...expected, 'artifacts'] : expected);
   const repo = resolve(options.repo), viem = toolsFor(repo), artifacts = loadArtifacts(repo, viem, options.artifacts);
   let result;
@@ -299,7 +332,7 @@ export async function main(argv) {
     assert(manifest.sourceCommit === execFileSync('git', ['rev-parse', 'HEAD'], { cwd: repo, encoding: 'utf8' }).trim(), 'source_commit_mismatch');
     execFileSync('git', ['diff', '--quiet', 'HEAD', '--', 'contracts/src', 'contracts/foundry.toml'], { cwd: repo });
     result = await verify(manifest, JSON.parse(readBounded(options.transactions, 4096)),
-      artifacts, viem, readOnlyRpc(options.rpc));
+      artifacts, viem, readOnlyRpc(endpoint));
   }
   writeFileSync(options.out, json(result), { flag: 'wx', mode: 0o600 });
   return { kind: result.kind, transactions: result.steps?.length ?? result.receipts.length, available: result.available ?? true };

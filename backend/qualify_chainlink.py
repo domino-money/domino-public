@@ -9,8 +9,9 @@ import time
 from catalogue import configured_catalogue
 from chainlink_history import ChainlinkHistorical, FEEDS
 from chainlink_reference import reference_series
-from discovery import RPC_URL, DataError, DiscoveryReader, ReadRpc, bytes32, parse_block
+from discovery import DataError, DiscoveryReader, ReadRpc, bytes32, parse_block
 from local_config import load_config
+from rpc_config import configured_history_rpc_url
 from price_history import store_observations
 from read_service import bounded_transport
 
@@ -19,10 +20,10 @@ def qualify(pool_id, hours=24, *, persist=False, provider_config=None):
     pool_id = bytes32(pool_id)
     if type(hours) is not int or not 1 <= hours <= 24:
         raise DataError('invalid_chainlink_probe_bounds')
-    config = load_config(provider_config) if provider_config is not None else {}
+    config = load_config(provider_config) if provider_config is not None else load_config()
     if provider_config is not None and not config:
         raise DataError('configured_rpc_required')
-    url = config.get('rpcUrl', RPC_URL)
+    url = configured_history_rpc_url(config)
     rpc = ReadRpc(url, transport=bounded_transport(30), max_requests=30)
     reader = DiscoveryReader(rpc)
     snapshot = reader.snapshot()
@@ -113,7 +114,7 @@ def qualify(pool_id, hours=24, *, persist=False, provider_config=None):
         'referenceCoverageComplete': all(c['status'] == 'reference_analytics_only' for c in cases),
         'capitalHistoryAssessed': False, 'tvlUsd': None, 'feeApr24h': None,
         'productionQualified': False, 'executionAvailable': False,
-        'transport': 'configured_alchemy_rpc' if provider_config is not None else 'public_robinhood_rpc',
+        'transport': 'configured_historical_rpc' if config else 'public_robinhood_rpc',
         'walletAccessed': False}
 
 

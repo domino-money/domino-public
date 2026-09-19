@@ -195,7 +195,8 @@ class ReferenceRunTests(unittest.TestCase):
                     'points':[{'timestampMs':(NOW-300)*1000,'priceUsd':'0.0001'}]}
         args=argparse.Namespace(lookback=3600,budget_seconds=120,provider_config=None,store=False)
         from coingecko_market_reference import CoinGeckoMarketReference
-        with patch.object(module,'load_config',lambda *a,**k:{'rpcUrl':'https://x/v2/k'}), \
+        with patch.object(module,'load_config',lambda *a,**k:{'rpcUrl':'https://rpc.mainnet.chain.robinhood.com',
+                 'inventoryUrl':'https://robinhood-mainnet.g.alchemy.com/v2/k'}), \
              patch.object(module,'alchemy_prices_url',lambda url:'https://api.g.alchemy.com/prices/v1/k/tokens/historical'), \
              patch.object(CoinGeckoMarketReference,'history',history), \
              redirect_stdout(io.StringIO()):

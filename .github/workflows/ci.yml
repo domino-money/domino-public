@@ -156,7 +156,7 @@ jobs:
       - run: python backend/dev_postgres.py prepare-tests
       - run: python -m unittest discover -s backend/tests -v
       - name: Verify unsigned financial deployment tooling on disposable EVM
-        run: node --test scripts/prepare-financial-release.test.mjs
+        run: node --test scripts/prepare-financial-release.test.mjs scripts/prepare-financial-release-rpc.test.mjs
       - name: Stop isolated database
         if: always()
         run: python backend/dev_postgres.py stop

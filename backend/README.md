@@ -568,6 +568,11 @@ restrictions stay enabled. No changes to local personal-bot services are needed.
 
 ## Multiple read RPC providers — issue #24
 
+For the node on clawber, use the [local RPC integration](../docs/LOCAL_RPC_SOURCE.md):
+`configure_rpc.py --local` creates version 3 with separate current, historical
+and Alchemy sources. The token stays in each service's private configuration;
+the existing browser bridge inherits the backend's current data source.
+
 The local configuration separates generic RPC endpoints from Alchemy inventory.
 Version1 files remain readable and retain their shape. They now allow either the
 known Alchemy RPC shape or the public Robinhood default in `rpcUrl`. Inventory
@@ -578,7 +583,7 @@ Version2 adds `rpcFallbackUrls` (at most two) and `rpcAllowedHosts` (at most eig
 exact, lowercase DNS names); `rpcUrl` remains the primary for compatibility with
 local audit tools. `inventoryUrl` can be null. All URLs must be HTTPS with no
 userinfo, query, fragment, explicit port or browser-selected destination. Defaults
-include only the public Robinhood and Alchemy hosts. An operator can add a new
+include the public Robinhood, Alchemy and exact `rpc.domino.money` hosts. An operator can add a new
 provider by local configuration, without relaxing inventory admission or editing
 code. Host admission is not evidence of chain/provider qualification.
 
@@ -608,7 +613,9 @@ are mixed into a response.
 `DOMINO_DISCOVERY_RPC_URL` is a trusted, validated single-endpoint override and
 intentionally disables configured fallbacks for that process. Legacy historical
 CLI tools still use `rpcUrl` as their primary; this slice enables automatic
-failover in ReadService/API only. Public response shapes and field names are
+failover in ReadService/API only for legacy configurations. Version 3 historical
+tools use `historicalRpcUrl`; Alchemy-only consumers use `inventoryUrl`.
+Public response shapes and field names are
 unchanged. Staging must qualify an independent secondary endpoint and exercise
 outage/identity failure before claiming deployed redundancy.
 

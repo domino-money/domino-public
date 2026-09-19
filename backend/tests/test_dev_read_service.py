@@ -97,6 +97,25 @@ class DevelopmentReaderTests(unittest.TestCase):
         profile = deepcopy(self.profile); profile['rpcUrl'] = 'private-canary'
         with self.assertRaises(DataError): checked_profile(profile)
 
+    def test_domino_rpc_uses_shared_endpoint_validation_and_preserves_inventory(self):
+        profile = deepcopy(self.profile)
+        profile['rpcUrls'] = ['https://rpc.domino.money/SYNTHETIC_ONLY_0123456789/',
+                              'https://rpc.mainnet.chain.robinhood.com',
+                              'https://robinhood-mainnet.g.alchemy.com/v2/offline-fixture']
+        profile['inventoryUrl'] = 'https://robinhood-mainnet.g.alchemy.com/v2/offline-inventory'
+        self.assertEqual(checked_profile(profile), profile)
+        for endpoint in ('https://rpc.domino.money/', 'https://rpc.domino.money/short/',
+                         'https://rpc.domino.money/SYNTHETIC_ONLY_0123456789',
+                         'wss://rpc.domino.money/SYNTHETIC_ONLY_0123456789/',
+                         'https://rpc.domino.money.evil.example/SYNTHETIC_ONLY_0123456789/'):
+            rejected = deepcopy(profile)
+            rejected['rpcUrls'][0] = endpoint
+            with self.subTest(endpoint=endpoint), self.assertRaisesRegex(DataError, '^development_profile_unavailable$'):
+                checked_profile(rejected)
+        profile['inventoryUrl'] = profile['rpcUrls'][0]
+        with self.assertRaisesRegex(DataError, '^development_profile_unavailable$'):
+            checked_profile(profile)
+
     def test_default_off_never_loads_provider_config_or_constructs_read_service(self):
         with (patch('read_api.load_config', side_effect=AssertionError('production config read')),
               patch('dev_read_service.DevelopmentReadService', side_effect=AssertionError('service created'))):

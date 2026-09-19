@@ -14,6 +14,7 @@ from catalogue import configured_catalogue
 from discovery import DataError, address, json_http
 from inventory import inventory_endpoint
 from local_config import load_config
+from rpc_config import configured_inventory_url
 from read_service import bounded_transport
 from reference_prices import (ALCHEMY_SOURCE, COINGECKO_SOURCE, MAPPINGS, AlchemyCanonicalReference,
                               coingecko_observations, mapping_for, store_reference_observations)
@@ -32,9 +33,7 @@ def collect(args, *, transport=None, clock=None, emit=True):
     mapping = mapping_for(args.currency, provider=args.provider)
     if mapping.provider == 'alchemy':
         config = load_config(args.provider_config) if args.provider_config else load_config()
-        url = config.get('rpcUrl')
-        if not url:
-            raise DataError('configured_rpc_required')
+        url = configured_inventory_url(config)
         fetch = AlchemyCanonicalReference(alchemy_prices_url(url),
                                           transport=transport or json_http, clock=clock)
         rows = fetch.fetch(mapping, args.start, args.end)

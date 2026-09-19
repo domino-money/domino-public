@@ -6,6 +6,7 @@ import time
 
 from discovery import DataError, POSITION_MANAGER, ReadRpc, bytes32
 from local_config import load_config
+from rpc_config import configured_history_rpc_url
 from nft_ownership import token_id
 from qualify_read_api import request
 from read_service import bounded_transport
@@ -42,7 +43,10 @@ def qualify(port, pool_ids, explicit_ids):
         print(json.dumps({'poolId': pool_id, 'checksPassed': passed, 'nftMappingsCompared': len(nft_checks)}), flush=True)
     if explicit_ids:
         nfts = request(port, '/v1/read/nft-positions', {'tokenIds': explicit_ids})
-        rpc = ReadRpc(load_config()['rpcUrl'], transport=bounded_transport())
+        config = load_config()
+        if not config:
+            raise DataError('configured_rpc_required')
+        rpc = ReadRpc(configured_history_rpc_url(config), transport=bounded_transport())
         checked = 0
         for nft in nfts['items']:
             if nft['nftOwnershipResolved']:

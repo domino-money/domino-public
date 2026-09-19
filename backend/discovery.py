@@ -43,6 +43,25 @@ class DataError(ValueError):
     """A fixed safe code; never include provider URLs, payloads or credentials."""
 
 
+class RpcStateUnavailable(DataError):
+    """Internal retry signal; the existing public error contract stays rpc_error."""
+
+
+def rpc_failure(method, error):
+    code = rpc_error_code(method, error)
+    # Geth/Nitro's missing-node shape, not arbitrary provider text. Reverts,
+    # nested error data and application failures must never trigger failover.
+    if (code == 'rpc_error' and method in ('eth_call', 'eth_getCode', 'eth_getBalance')
+            and isinstance(error, dict) and type(error.get('code')) is int
+            and error['code'] == -32000 and error.get('data') in (None, '0x')
+            and isinstance(error.get('message'), str) and len(error['message']) <= 512
+            and re.fullmatch(r'missing trie node [0-9a-f]{64} '
+                             r'(?:\(owner [0-9a-f]{64}\) )?\(path [0-9a-f]*\) [^\r\n]+',
+                             error['message'])):
+        return RpcStateUnavailable('rpc_error')
+    return DataError(code)
+
+
 def rpc_error_code(method, error):
     """Recognize explicit eth_call failures; ambiguous provider text stays generic.
 
@@ -321,7 +340,7 @@ class ReadRpc:
                 or type(payload.get('id')) is not int or payload['id'] != self.count):
             raise DataError('invalid_rpc_envelope')
         if 'error' in payload:
-            raise DataError(rpc_error_code(method, payload['error']))
+            raise rpc_failure(method, payload['error'])
         if 'result' not in payload:
             raise DataError('missing_rpc_result')
         return payload['result']
@@ -404,7 +423,7 @@ class ReadRpc:
         for body in bodies:
             item = by_id[body['id']]
             if 'error' in item:
-                refusal = DataError(rpc_error_code(body['method'],item['error']))
+                refusal = rpc_failure(body['method'],item['error'])
                 if not item_errors:
                     raise refusal
                 outcomes.append(refusal)

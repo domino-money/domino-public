@@ -23,7 +23,7 @@ from performance_v2_service import StoredValuation
 from pydantic import Field
 from typing import Annotated, Literal
 from read_deadline import check_read_deadline, read_timeout
-from rpc_config import DEFAULT_RPC_HOSTS
+from rpc_config import DEFAULT_RPC_HOSTS, configured_history_rpc_url
 
 
 class Subject(StrictModel):
@@ -82,7 +82,7 @@ class Runtime:
             raise ValueError('private_runtime_required')
         self.runtime = runtime
         self.config = checked_config(private_json(self.profile.rpcConfig,8192))
-        if self.config.get('rpcFallbackUrls'):
+        if self.config.get('rpcFallbackUrls') and self.config.get('version') != 3:
             raise ValueError('single_budgeted_performance_rpc_required')
         # Validate the same explicit private file, then the existing database schema.
         private_json(self.profile.databaseConfig,4096)
@@ -117,7 +117,10 @@ class Runtime:
                 if time.time() >= runtime.profile.expiresAt: raise DataError('performance_profile_expired')
                 # ReadRpc's counter is operation-local. The outer ProducerRpc
                 # owns the persistent rolling transport budget across factories.
-                return PerformanceRpc(runtime.config['rpcUrl'],max_requests=1,
+                # A producer may resume any enrolled historical block. Keep a
+                # single explicitly qualified historical endpoint so every
+                # transport request remains charged to ProducerRpc's budget.
+                return PerformanceRpc(configured_history_rpc_url(runtime.config),max_requests=1,
                     allowed_hosts=runtime.config.get('rpcAllowedHosts',DEFAULT_RPC_HOSTS)).request(method,params)
         rpc = ProducerRpc(AdmittedRpc(),maximum=self.profile.maxRequestsPerMinute)
         return PerformanceProducer(rpc,self.enrollments,PerformanceStore(self.settings,role=COLLECTOR_ROLE),

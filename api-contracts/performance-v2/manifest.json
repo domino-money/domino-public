@@ -107,7 +107,7 @@
     },
     {
       "path": "backend/performance_runtime.py",
-      "sha256": "bb73fa3cf7e8b7a7c8bfb180b82580215efab5751ff5db37e23c080dcd305356"
+      "sha256": "f9b171fcfbb72bfd7d6ca8f515dacc19c3d12f54af2eccfb68157b8a6db97cfe"
     },
     {
       "path": "bridge/src/performance-worker.mjs",

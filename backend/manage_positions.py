@@ -7,6 +7,7 @@ from activity_store import PgActivity
 from catalogue import configured_writer_catalogue
 from discovery import DataError, DiscoveryReader, ReadRpc, bytes32
 from local_config import load_config
+from rpc_config import configured_history_rpc_url
 from pool_activity import ACTIVITY_CAPACITY_PROFILES
 from historical_capacity import PROFILES
 from position_store import PositionIndexer
@@ -28,7 +29,8 @@ def main():
             raise DataError('invalid_position_bounds_or_output_exists')
         pool_id=bytes32(args.pool_id);catalogue=configured_writer_catalogue()
         if catalogue is None:raise DataError('catalogue_not_configured')
-        url=load_config().get('rpcUrl')
+        config=load_config()
+        url=configured_history_rpc_url(config) if config else None
         if not url:raise DataError('configured_rpc_required')
         DiscoveryReader(ReadRpc(url,transport=bounded_transport())).snapshot()
         store=PgActivity(catalogue);results=[]

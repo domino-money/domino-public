@@ -15,6 +15,34 @@ import dev_enable as d
 
 
 class EnableTests(unittest.TestCase):
+    def test_domino_rpc_token_path_is_accepted_only_by_explicit_host_pin(self):
+        endpoint = 'https://rpc.domino.money/' + 'SYNTHETIC_ONLY_01' + '/'
+        d.endpoint(endpoint, {'rpc.domino.money'})
+        with self.assertRaises(d.n.Refused):
+            d.endpoint(endpoint, {'robinhood-mainnet.g.alchemy.com'})
+        c, b, p, _, _ = self.fixture()
+        b['snapshot']['rpcHosts'].append('rpc.domino.money')
+        value = d.n.parse(p['files'][d.READER]['bytes'])
+        value['rpcUrls'].insert(0, endpoint)
+        value['inventoryUrl'] = 'https://robinhood-mainnet.g.alchemy.com/v2/offline-fixture'
+        self.changed_artifact(p, d.READER, value)
+        self.load(c, b, p)
+
+    def test_domino_rpc_token_paths_and_transport_fail_closed_without_echo(self):
+        token = 'PRIVATE_CANARY_123456789'
+        good = 'https://rpc.domino.money/' + token + '/'
+        for endpoint in ('https://rpc.domino.money/', 'https://rpc.domino.money/short/',
+                         good[:-1], good + 'extra', good + '?secret=' + token,
+                         good + '#' + token, good.replace('https:', 'http:'),
+                         good.replace('https:', 'wss:'),
+                         good.replace('rpc.domino.money', 'rpc.domino.money.evil.example'),
+                         'https://rpc.domino.money/' + 'a' * 257 + '/'):
+            with self.subTest(endpoint=endpoint), self.assertRaises(d.n.Refused) as raised:
+                d.endpoint(endpoint, {'rpc.domino.money'})
+            self.assertNotIn(token, str(raised.exception))
+        for size in (16, 256):
+            d.endpoint('https://rpc.domino.money/' + 'a' * size + '/', {'rpc.domino.money'})
+
     def fixture(self):
         now = datetime.now(timezone.utc).replace(microsecond=0)
         auth = {'authorizationId': 'a'*64, 'grantedAt': now.isoformat(),

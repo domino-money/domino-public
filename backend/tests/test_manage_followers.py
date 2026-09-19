@@ -65,7 +65,7 @@ class CatalogueFollowerCliTests(unittest.TestCase):
 
     def patches(self,module,reader):
         return [patch.object(module,'configured_writer_catalogue',return_value=self.store),
-                patch.object(module,'load_config',return_value={'rpcUrl':'https://rpc.invalid'}),
+                patch.object(module,'load_config',return_value={'rpcUrl':'https://rpc.mainnet.chain.robinhood.com'}),
                 patch.object(module,'IndexRpc',lambda *args,**kwargs:self.rpc),
                 patch.object(module,'ReadRpc',lambda *args,**kwargs:object()),
                 patch.object(module,'DiscoveryReader',reader)]
@@ -167,7 +167,7 @@ class ActivityFollowerCliTests(unittest.TestCase):
 
     def patches(self,reader):
         return [patch.object(manage_activity,'configured_writer_catalogue',return_value=self.catalogue),
-                patch.object(manage_activity,'load_config',return_value={'rpcUrl':'https://rpc.invalid'}),
+                patch.object(manage_activity,'load_config',return_value={'rpcUrl':'https://rpc.mainnet.chain.robinhood.com'}),
                 patch.object(manage_activity,'IndexRpc',lambda *args,**kwargs:self.rpc),
                 patch.object(manage_activity,'ReadRpc',lambda *args,**kwargs:object()),
                 patch.object(manage_activity,'DiscoveryReader',reader)]

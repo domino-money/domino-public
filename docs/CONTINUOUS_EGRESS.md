@@ -42,8 +42,9 @@ rendered only for an enabled role and only for the hostnames actually pinned.
 | `write` | — | rpc | the indexer's provider |
 | `operator`, `admin` | — | — | never |
 
-Classes: `rpc` is `rpc.mainnet.chain.robinhood.com` or
-`robinhood-mainnet.g.alchemy.com`; `analytics` is `api.geckoterminal.com` or
+Classes: `rpc` is `rpc.mainnet.chain.robinhood.com`,
+`robinhood-mainnet.g.alchemy.com` or the private `rpc.domino.money` route;
+`analytics` is `api.geckoterminal.com` or
 `api.dexscreener.com`; `uniswap` is `trade-api.gateway.uniswap.org`; `jwks` is
 exactly the pinned Access issuer; `edges` are the two `argotunnel.com` names,
 whose pins must be members of the official inventory the module carries.

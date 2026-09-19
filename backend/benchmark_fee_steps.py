@@ -19,6 +19,7 @@ from discovery import CHAIN_ID, POOL_MANAGER, RPC_URL, DataError, bytes32, parse
 from fee_accounting import MAX_CHUNK_STEPS, MAX_STEPS, replay_fees, simulate, supported
 from historical_capacity import MAX_BATCH_EVENTS, replay_batch
 from local_config import load_config
+from rpc_config import configured_history_rpc_url
 from pool_activity import TOPICS, SWAP, active_liquidity, decode_activity, replay
 from v4_math import sqrt_at_tick
 from read_service import bounded_transport
@@ -648,7 +649,7 @@ def dense_study(args):
                 if args.provider_config is None: raise DataError('configured_rpc_required')
                 config=load_config(args.provider_config)
                 if not config.get('rpcUrl'): raise DataError('configured_rpc_required')
-                url=config['rpcUrl']
+                url=configured_history_rpc_url(config)
             else: url=RPC_URL
             rpc=StudyRpc(BatchIndexRpc(url,transport=paced_public_transport(DENSE_SECONDS),max_requests=DENSE_RPC_REQUESTS),
                          max_requests=DENSE_RPC_REQUESTS,seconds=DENSE_SECONDS)
@@ -974,7 +975,7 @@ def main(argv=None):
             config = load_config(args.provider_config) if args.source == 'configured-rpc' and args.provider_config else {}
             if args.source == 'configured-rpc' and not config:
                 raise DataError('configured_rpc_required')
-            rpc = IndexRpc(config.get('rpcUrl', RPC_URL), transport=bounded_transport(ACQUISITION_SECONDS),
+            rpc = IndexRpc(configured_history_rpc_url(config), transport=bounded_transport(ACQUISITION_SECONDS),
                            max_requests=MAX_RPC_REQUESTS)
             dataset = rpc_input(rpc, spec)
         if (dataset['poolId'] != spec['poolId'] or dataset['poolKey'] != spec['poolKey'] or

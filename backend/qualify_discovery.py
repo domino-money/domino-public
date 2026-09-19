@@ -4,7 +4,10 @@ import json
 import os
 from pathlib import Path
 
-from discovery import DataError, ReadRpc, RPC_URL, discover
+from discovery import DataError, discover
+from local_config import load_config
+from rpc_config import configured_rpc_urls
+from rpc_failover import FailoverReadRpc
 
 
 def main():
@@ -19,9 +22,9 @@ def main():
     args = parser.parse_args()
     if args.probe_inventory and not (args.wallet or args.position_id):
         parser.error('--probe-inventory requires --wallet or --position-id')
-    # Only this dedicated variable; never read the personal bot's configuration.
-    rpc = ReadRpc(os.environ.get('DOMINO_DISCOVERY_RPC_URL', RPC_URL))
     try:
+        config = load_config()
+        rpc = FailoverReadRpc(configured_rpc_urls(config, os.environ.get('DOMINO_DISCOVERY_RPC_URL')))
         report = discover(args.token, rpc=rpc, max_pools=args.max_pools, wallet=args.wallet,
                           position_id=args.position_id, probe_inventory=args.probe_inventory)
     except DataError as error:

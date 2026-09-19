@@ -7,7 +7,9 @@ import tempfile
 
 from discovery import DataError
 from inventory import inventory_endpoint
-from rpc_config import DEFAULT_RPC_HOSTS, MAX_RPC_ENDPOINTS, rpc_endpoint, rpc_hosts, configured_rpc_urls
+from rpc_config import (DEFAULT_RPC_HOSTS, LOCAL_RPC_HOST, MAX_RPC_ENDPOINTS,
+                        rpc_endpoint, rpc_hosts, configured_rpc_urls)
+from urllib.parse import urlsplit
 
 CONFIG_PATH = Path(__file__).resolve().parent / 'runtime' / 'providers.json'
 
@@ -19,7 +21,8 @@ def checked_config(data):
     modern = legacy | {'rpcFallbackUrls', 'rpcAllowedHosts'}
     if (data['version'] == 1 and set(data) == legacy):
         hosts, fallbacks = DEFAULT_RPC_HOSTS, []
-    elif data['version'] == 2 and set(data) == modern:
+    elif ((data['version'] == 2 and set(data) == modern) or
+          (data['version'] == 3 and set(data) == modern | {'historicalRpcUrl'})):
         hosts = rpc_hosts(data['rpcAllowedHosts'])
         fallbacks = data['rpcFallbackUrls']
         if not isinstance(fallbacks, list) or len(fallbacks) >= MAX_RPC_ENDPOINTS:
@@ -27,6 +30,10 @@ def checked_config(data):
     else:
         raise DataError('invalid_local_provider_config')
     rpc_endpoint(data['rpcUrl'], hosts)
+    if data['version'] == 3:
+        history = rpc_endpoint(data['historicalRpcUrl'], hosts, field='historical_rpc_url')
+        if urlsplit(history).hostname == LOCAL_RPC_HOST:
+            raise DataError('historical_rpc_requires_archive_source')
     for url in fallbacks:
         rpc_endpoint(url, hosts, field='rpc_fallback_url')
     if len(set([data['rpcUrl'], *fallbacks])) != len(fallbacks) + 1:

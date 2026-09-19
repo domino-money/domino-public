@@ -5,7 +5,8 @@ from urllib.parse import urlsplit
 
 from discovery import DataError, RPC_URL
 
-DEFAULT_RPC_HOSTS = ('rpc.mainnet.chain.robinhood.com', 'robinhood-mainnet.g.alchemy.com')
+LOCAL_RPC_HOST = 'rpc.domino.money'
+DEFAULT_RPC_HOSTS = ('rpc.mainnet.chain.robinhood.com', 'robinhood-mainnet.g.alchemy.com', LOCAL_RPC_HOST)
 MAX_RPC_ENDPOINTS = 3
 MAX_RPC_HOSTS = 8
 
@@ -44,6 +45,8 @@ def rpc_endpoint(url, allowed_hosts=DEFAULT_RPC_HOSTS, *, field='rpc_url'):
             valid = re.fullmatch(r'/v2/[A-Za-z0-9_-]{1,128}', parsed.path) is not None
         if valid and parsed.hostname == 'rpc.mainnet.chain.robinhood.com':
             valid = parsed.path in ('', '/')
+        if valid and parsed.hostname == LOCAL_RPC_HOST:
+            valid = re.fullmatch(r'/[A-Za-z0-9_-]{16,256}/', parsed.path) is not None
     except (ValueError, TypeError, AttributeError):
         valid = False
     if not valid:
@@ -59,3 +62,25 @@ def configured_rpc_urls(config, override=None):
     primary = config.get('rpcUrl', RPC_URL)
     return (rpc_endpoint(primary, hosts), *(
         rpc_endpoint(url, hosts, field='rpc_fallback_url') for url in config.get('rpcFallbackUrls', [])))
+
+
+def configured_history_rpc_url(config):
+    """Pinned historical work uses its explicit source, never a pruned primary.
+
+    Legacy files retain their previous single-source behavior. Version 3 makes
+    the operator's historical-state qualification independent of current reads.
+    No environment override can silently replace that historical source.
+    """
+    hosts = config.get('rpcAllowedHosts', DEFAULT_RPC_HOSTS)
+    if config.get('version') == 3:
+        return rpc_endpoint(config.get('historicalRpcUrl'), hosts, field='historical_rpc_url')
+    return configured_rpc_urls(config)[0]
+
+
+def configured_inventory_url(config):
+    """Alchemy-only capabilities do not borrow credentials from a generic RPC."""
+    from inventory import inventory_endpoint
+    url = config.get('inventoryUrl')
+    if not url:
+        raise DataError('configured_inventory_required')
+    return inventory_endpoint(url)

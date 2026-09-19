@@ -5,11 +5,12 @@ and transport deadline. A provider is attempted at most once per read. Invalid
 identity or an inconsistent snapshot poisons the whole read even if a metadata
 caller catches its first exception.
 """
-from discovery import CHAIN_ID, DataError, ReadRpc, parse_block, quantity
+from discovery import CHAIN_ID, DataError, ReadRpc, RpcStateUnavailable, parse_block, quantity
 from read_deadline import check_read_deadline
 from rpc_config import MAX_RPC_ENDPOINTS
 
-RETRYABLE = frozenset({'network_unavailable', 'http_429', 'http_502', 'http_503', 'http_504'})
+RETRYABLE = frozenset({'network_unavailable', 'http_429', 'http_502', 'http_503', 'http_504',
+                       'http_520', 'http_521', 'http_522', 'http_523', 'http_524', 'http_530'})
 MAX_ANCHORS = 16
 
 
@@ -53,6 +54,8 @@ class FailoverReadRpc(ReadRpc):
                     raise DataError('wrong_chain')
                 if method == 'eth_getBlockByNumber':
                     block = parse_block(result)
+                    if params[0] != 'latest' and block.tag != params[0]:
+                        raise DataError('snapshot_reorganized')
                     if block.tag in self.anchors and block != self.anchors[block.tag]:
                         raise DataError('snapshot_reorganized')
                     if block.tag not in self.anchors and len(self.anchors) >= MAX_ANCHORS:
@@ -61,13 +64,14 @@ class FailoverReadRpc(ReadRpc):
                 return result
             except DataError as error:
                 code = str(error)
-                if code in RETRYABLE and self.index + 1 < len(self.urls):
+                if (code in RETRYABLE or isinstance(error, RpcStateUnavailable)) and self.index + 1 < len(self.urls):
                     self.index += 1
                     self.url, self.verified = self.urls[self.index], False
                     continue
                 # Transport exhaustion and proof/budget failures cannot be hidden
                 # as optional metadata. Application RPC reverts remain token-local.
-                if (verifying or method not in ('eth_call', 'eth_getCode', 'eth_getBalance')
+                if (verifying or isinstance(error, RpcStateUnavailable)
+                        or method not in ('eth_call', 'eth_getCode', 'eth_getBalance')
                         or code not in ('rpc_error', 'rpc_call_reverted', 'rpc_call_gas_limit')):
                     self.failure = code
                 raise
@@ -86,12 +90,17 @@ class FailoverReadRpc(ReadRpc):
                     if method in ('eth_call','eth_getCode','eth_getBalance') and params[-1] not in self.anchors:
                         raise DataError('block_unavailable')
                 batch_attempted = True
-                results = super().batch(calls, item_errors=item_errors)
+                # Inspect every delivered identity proof before any state
+                # refusal can trigger recovery. A mixed batch must not hide a
+                # wrong chain/header behind another item's missing-state error.
+                results = super().batch(calls, item_errors=True)
                 # Commit anchors only after the entire envelope and every chain
                 # or block assertion validates. Never merge partial providers.
                 anchors = dict(self.anchors)
                 for (method,params),result in zip(calls,results):
                     if isinstance(result, DataError):
+                        if method in ('eth_chainId', 'eth_getBlockByNumber'):
+                            raise result
                         continue  # a delivered per-item refusal proves nothing about anchors
                     if method == 'eth_chainId' and quantity(result)!=CHAIN_ID:
                         raise DataError('wrong_chain')
@@ -104,6 +113,9 @@ class FailoverReadRpc(ReadRpc):
                         if block.tag not in anchors and len(anchors)>=MAX_ANCHORS:
                             raise DataError('request_budget_exhausted')
                         anchors[block.tag] = block
+                for result in results:
+                    if isinstance(result, RpcStateUnavailable) or (isinstance(result, DataError) and not item_errors):
+                        raise result
                 self.anchors = anchors
                 return results
             except DataError as error:
@@ -118,7 +130,9 @@ class FailoverReadRpc(ReadRpc):
                 # mean unknown completion and must not replay it. Explicit HTTP
                 # failures still allow fresh chain/all-anchor verification on
                 # the next provider, within the same deadline and count.
-                retryable = code in RETRYABLE and (code != 'network_unavailable' or not batch_attempted)
+                state_only = all(method in ('eth_call', 'eth_getCode', 'eth_getBalance') for method, _ in calls)
+                retryable = ((code in RETRYABLE or (isinstance(error, RpcStateUnavailable) and state_only))
+                             and (code != 'network_unavailable' or not batch_attempted))
                 if retryable and self.index+1<len(self.urls):
                     self.index += 1
                     self.url,self.verified = self.urls[self.index],False

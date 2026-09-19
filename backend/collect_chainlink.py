@@ -8,8 +8,9 @@ from chainlink_checkpoint import Checkpoint
 from chainlink_collection import (BudgetRpc, DEFAULT_SLICE_SECONDS, INVOCATION_RPC_REQUESTS,
     INVOCATION_SECONDS, MAX_STEPS, STORAGE_RPC_REQUESTS, advance_collection, begin_collection,
     integer, store_collection, validate_collection)
-from discovery import RPC_URL, DataError, ReadRpc, address
+from discovery import DataError, ReadRpc, address
 from local_config import load_config
+from rpc_config import configured_history_rpc_url
 from read_service import bounded_transport
 
 RUNTIME = Path(__file__).resolve().parent/'runtime'
@@ -32,10 +33,10 @@ def collect(args, *, rpc=None, clock=None):
                 raise DataError('chainlink_collection_identity_mismatch')
         request_budget = INVOCATION_RPC_REQUESTS + (STORAGE_RPC_REQUESTS if args.store_observations else 0)
         if rpc is None:
-            config = load_config(args.provider_config) if args.provider_config is not None else {}
+            config = load_config(args.provider_config) if args.provider_config is not None else load_config()
             if args.provider_config is not None and not config:
                 raise DataError('configured_rpc_required')
-            rpc = ReadRpc(config.get('rpcUrl', RPC_URL), transport=bounded_transport(INVOCATION_SECONDS),
+            rpc = ReadRpc(configured_history_rpc_url(config), transport=bounded_transport(INVOCATION_SECONDS),
                           max_requests=request_budget)
         rpc = BudgetRpc(rpc, max_requests=request_budget, seconds=INVOCATION_SECONDS)
         if collection is None:

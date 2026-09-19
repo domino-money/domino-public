@@ -16,7 +16,8 @@ from read_deadline import (ReadDeadline, check_read_deadline, current_read_deadl
 
 # These are known transport failures, not a fallback for arbitrary producer text.
 _HTTP_REASONS = {f'http_{code}': 'upstream_unavailable'
-                 for code in (400, 401, 403, 404, 408, 500, 502, 503, 504)}
+                 for code in (400, 401, 403, 404, 408, 500, 502, 503, 504,
+                              520, 521, 522, 523, 524, 530)}
 _HTTP_REASONS['http_429'] = 'provider_rate_limited'
 
 
@@ -72,11 +73,12 @@ def bounded_transport(seconds=60):
 
 
 class ReadService:
-    def __init__(self, *, rpc_url=RPC_URL, rpc_urls=None, inventory_url=None, clock=time.time,
+    def __init__(self, *, rpc_url=RPC_URL, rpc_urls=None, inventory_url=None, historical_rpc_url=None, clock=time.time,
                  rpc_factory=None, inventory=None, cursor_codec=None, transport_factory=bounded_transport,
                  catalogue=None, market_cache=None, snapshot=None, requests=None):
         self.rpc_url, self.inventory_url, self.clock = rpc_url, inventory_url, clock
         self.rpc_urls = tuple(rpc_urls) if rpc_urls is not None else None
+        self.historical_rpc_url = historical_rpc_url
         self.rpc_factory, self.inventory = rpc_factory, inventory
         self.cursor_codec = cursor_codec or CursorCodec(clock=clock)
         # Demand queue for pools a consumer asked to see. A public read may only
@@ -102,10 +104,12 @@ class ReadService:
     def inventory_configured(self):
         return bool(self.inventory_url or self.inventory)
 
-    def _rpc(self, transport):
+    def _rpc(self, transport, *, historical=False):
         check_read_deadline()
         if self.rpc_factory:
             return self.rpc_factory()
+        if historical and self.historical_rpc_url:
+            return FailoverReadRpc((self.historical_rpc_url,), transport=transport, batch_reads=True)
         if self.rpc_urls is not None:
             return FailoverReadRpc(self.rpc_urls, transport=transport, batch_reads=True)
         return ReadRpc(self.rpc_url, transport=transport, batch_reads=True)
@@ -385,7 +389,7 @@ class ReadService:
                     **{k:report[k] for k in ('chainId','poolId','poolKey','snapshot','coverage','freshness')},
                     'positionAccounting':positions,'executionAvailable':False}
         from nft_ownership import resolve_core_owners
-        rpc = self._rpc(self.transport_factory())
+        rpc = self._rpc(self.transport_factory(), historical=True)
         # Explicit per-read budget; never silently truncate a pool's known identities.
         rpc.max_requests = 600
         snap = report['snapshot']
@@ -414,7 +418,7 @@ class ReadService:
         for value in token_ids: token_id(value)
         if len(set(token_ids)) != len(token_ids):
             raise DataError('duplicate_nft_token_ids')
-        rpc = self._rpc(self.transport_factory())
+        rpc = self._rpc(self.transport_factory(), historical=block_number is not None)
         reader = DiscoveryReader(rpc, clock=self.clock)
         head = reader.snapshot()
         if block_number is None:

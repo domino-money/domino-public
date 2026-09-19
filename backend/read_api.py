@@ -17,6 +17,7 @@ from typing import Annotated, Literal
 
 from discovery import CHAIN_ID, RPC_URL, DataError
 from local_config import load_config, configured_rpc_urls
+from rpc_config import configured_history_rpc_url
 from catalogue import configured_catalogue
 from pool_requests import configured_pool_requests
 from read_service import ReadService
@@ -265,6 +266,8 @@ def create_app(service=None, *, gate=None, read_budget_seconds=60,
         config = load_config()
         catalogue = configured_catalogue()
         service = ReadService(rpc_urls=configured_rpc_urls(config, os.environ.get('DOMINO_DISCOVERY_RPC_URL')),
+                              historical_rpc_url=(configured_history_rpc_url(config)
+                                                  if config.get('version') == 3 else None),
                               inventory_url=os.environ.get('DOMINO_INVENTORY_RPC_URL') or config.get('inventoryUrl'),
                               catalogue=catalogue,
                               requests=configured_pool_requests(catalogue),

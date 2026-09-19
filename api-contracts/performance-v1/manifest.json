@@ -143,7 +143,7 @@
     },
     {
       "path": "backend/discovery.py",
-      "sha256": "58f72606ef59246cd5065215281e4b73c34e4d4e6e469b9bed9f61bbd5c2b79c"
+      "sha256": "ea37c67768ea406a204e1a2f3e66096ce3f0b62063540206fb597c6847ee99af"
     },
     {
       "path": "backend/nft_ownership.py",
@@ -151,7 +151,7 @@
     },
     {
       "path": "backend/rpc_config.py",
-      "sha256": "92c09b1aebe54641d60e75ad4b85c82527472776a29fbcf177da2f48ae0374a4"
+      "sha256": "3a96d8674b15594db7378cb69cfc4e3854b94ccf72d77f92b0754ef377b9dfc8"
     },
     {
       "path": "backend/position_accounting.py",

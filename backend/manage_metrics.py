@@ -9,6 +9,7 @@ from catalogue import configured_writer_catalogue
 from discovery import DataError, ReadRpc, bytes32
 from historical_capacity import PROFILES, unavailable_work
 from local_config import load_config
+from rpc_config import configured_history_rpc_url, configured_inventory_url
 from pool_activity import ACTIVITY_CAPACITY_PROFILES
 from metrics_service import stored_metrics
 from price_history import AlchemyHistorical, store_observations
@@ -21,9 +22,10 @@ def run(pool_id, max_steps, fetch_prices, *, capacity='standard', activity_capac
     catalogue = configured_writer_catalogue()
     if catalogue is None:
         raise DataError('catalogue_not_configured')
-    url = load_config().get('rpcUrl')
-    if not url:
+    config = load_config()
+    if not config:
         raise DataError('configured_rpc_required')
+    url = configured_history_rpc_url(config)
     store = PgActivity(catalogue);steps = []
     def worker():
         return CapitalIndexer(store, ReadRpc(url, transport=bounded_transport(90), max_requests=160), capacity=capacity,
@@ -52,7 +54,7 @@ def run(pool_id, max_steps, fetch_prices, *, capacity='standard', activity_capac
         if start < end:
             for currency in (metrics['poolKey']['currency0'], metrics['poolKey']['currency1']):
                 try:
-                    rows = AlchemyHistorical(url, transport=bounded_transport(30)).fetch(currency, start, end)
+                    rows = AlchemyHistorical(configured_inventory_url(config), transport=bounded_transport(30)).fetch(currency, start, end)
                     store_observations(catalogue, rows)
                     result = {'currency': currency, 'status': 'observations_saved', 'observations': len(rows),
                               'qualifiedForUsdValuation': False}

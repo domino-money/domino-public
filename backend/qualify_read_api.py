@@ -7,7 +7,9 @@ import time
 import urllib.error
 import urllib.request
 
-from discovery import CHAIN_ID, RPC_URL, DataError, DiscoveryReader, ReadRpc
+from discovery import CHAIN_ID, DataError, DiscoveryReader
+from rpc_config import configured_rpc_urls
+from rpc_failover import FailoverReadRpc
 from local_config import load_config
 
 
@@ -43,7 +45,8 @@ def main():
         if capabilities['chainId'] != CHAIN_ID or capabilities['automation'] or capabilities['feeCollection']:
             raise DataError('unexpected_api_capabilities')
         config = load_config()
-        reader = DiscoveryReader(ReadRpc(os.environ.get('DOMINO_DISCOVERY_RPC_URL') or config.get('rpcUrl', RPC_URL)))
+        reader = DiscoveryReader(FailoverReadRpc(configured_rpc_urls(
+            config, os.environ.get('DOMINO_DISCOVERY_RPC_URL'))))
         block = reader.snapshot()
         owner = reader.position_owner(args.position_id, block)
         reader.assert_canonical(block)

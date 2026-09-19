@@ -6,6 +6,7 @@ import sys
 import tempfile
 import time
 import unittest
+from unittest.mock import patch
 
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]))
 from performance_runtime import Runtime, private_json
@@ -35,6 +36,21 @@ class RuntimeTests(unittest.TestCase):
         self.assertEqual(value.admission(OWNER,self.base.vault),self.base.vaultCodeHash)
         self.assertIsNone(value.admission('0x'+'f'*40,self.base.vault))
         self.assertEqual(value.producer().tick(),'cooldown')
+
+    def test_local_primary_retains_single_counted_archive_source_for_replay(self):
+        from configure_rpc import prepare_local_config
+        data = prepare_local_config({'rpcUrl':'https://rpc.mainnet.chain.robinhood.com'},
+                                    'SYNTHETIC_LOCAL_TOKEN_123')
+        self.write('provider.json',data)
+        runtime = Runtime(self.path)
+        producer = runtime.producer()
+        producer.rpc.ready_at = 0
+        with patch('performance_runtime.PerformanceRpc') as client:
+            client.return_value.request.return_value = '0x1237'
+            self.assertEqual(producer.rpc.request('eth_chainId', []), '0x1237')
+        self.assertEqual(client.call_args.args, (data['historicalRpcUrl'],))
+        self.assertEqual(client.call_args.kwargs['max_requests'], 1)
+        self.assertEqual(len(producer.rpc.calls), 1)
 
     def test_missing_or_linked_or_shared_configuration_fails_closed(self):
         with self.assertRaises(OSError): private_json(self.directory/'absent.json')

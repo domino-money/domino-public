@@ -1084,23 +1084,23 @@
     },
     {
       "path": "backend/read_api.py",
-      "sha256": "b33ef153c48d77867f2110f678554f8436c7591e8057e3a3be13777e68bc54bb"
+      "sha256": "a782acf5daedc0f79c27dd0f16b2bba36c8c9279021b5900eac3ea64f6c29ea8"
     },
     {
       "path": "backend/read_service.py",
-      "sha256": "0d6acc00772c7a50813ab31a398e96f6ceb7faf327340116482711fba666eb58"
+      "sha256": "8165bb96306f31e23fb423f865a6cfe63a59aa40fa87858d50a36f04ab4f329a"
     },
     {
       "path": "backend/rpc_failover.py",
-      "sha256": "0da67cd27d0482d76d76d47c87f47170a353309dc80c76a4fb56bd5310d9b5a6"
+      "sha256": "2e1cfa6ddf3a2d5b974043f0a55d1f92a3bd97256ed29fee68cd963a682d0d2d"
     },
     {
       "path": "backend/rpc_config.py",
-      "sha256": "92c09b1aebe54641d60e75ad4b85c82527472776a29fbcf177da2f48ae0374a4"
+      "sha256": "3a96d8674b15594db7378cb69cfc4e3854b94ccf72d77f92b0754ef377b9dfc8"
     },
     {
       "path": "backend/local_config.py",
-      "sha256": "0ed9d3d4d3316c2560f57d144bfd6fb42256999cfd98e30959a66fbd49a9d826"
+      "sha256": "f148b85be7c6cdd907def7cc5fea926c9336c089fbd0815e5f4e103a51ab8413"
     },
     {
       "path": "backend/historical_read.py",
@@ -1160,7 +1160,7 @@
     },
     {
       "path": "backend/discovery.py",
-      "sha256": "58f72606ef59246cd5065215281e4b73c34e4d4e6e469b9bed9f61bbd5c2b79c"
+      "sha256": "ea37c67768ea406a204e1a2f3e66096ce3f0b62063540206fb597c6847ee99af"
     },
     {
       "path": "backend/nft_ownership.py",

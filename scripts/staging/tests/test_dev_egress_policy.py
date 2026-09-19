@@ -53,6 +53,33 @@ class DevEgressPolicyTests(unittest.TestCase):
     def setUp(self):
         self.data = snapshot()
 
+    def test_domino_rpc_uses_exact_pins_with_existing_rpc_and_inventory(self):
+        self.data['rpcHosts'] += ['rpc.domino.money', 'rpc.mainnet.chain.robinhood.com']
+        for host, address in (('rpc.domino.money', '11.0.0.1'),
+                              ('rpc.mainnet.chain.robinhood.com', '11.0.0.2')):
+            self.data['hosts'].append({'hostname': host, 'addresses': [address],
+                                      'observedAt': self.data['observedAt'],
+                                      'expiresAt': self.data['expiresAt']})
+        result = self.render()
+        reader = result['artifacts']['/etc/domino/dev/reader/hosts']
+        for host in self.data['rpcHosts']:
+            self.assertIn(host, reader)
+        self.assertIn('11.0.0.1 rpc.domino.money\n', reader)
+        self.assertIn('IPAddressAllow=11.0.0.1/32', self.dropin('reader'))
+        self.assertNotIn('ws.domino.money', json.dumps(result))
+        self.assertIn('tcp dport 443', self.nft())
+        self.assertIn('drop', self.nft())
+
+    def test_domino_rpc_does_not_expand_inventory_or_admit_other_hosts(self):
+        for host in ('ws.domino.money', 'other.domino.money', 'rpc.domino.money.evil.example'):
+            self.data = snapshot()
+            self.data['rpcHosts'].append(host)
+            with self.subTest(host=host):
+                self.reject()
+        self.data = snapshot()
+        self.data['inventoryHost'] = 'rpc.domino.money'
+        self.reject()
+
     def render(self, now=NOW):
         return policy.render(self.data, now=now)
 
