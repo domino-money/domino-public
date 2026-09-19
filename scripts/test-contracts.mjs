@@ -7,6 +7,7 @@ import { createRequire } from 'node:module';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { checkContractSizes, formatReport } from './check-contract-size.mjs';
+import { checkVaultAbiDrift, formatDriftReport } from './check-vault-abi-drift.mjs';
 
 const require = createRequire(import.meta.url);
 const root = fileURLToPath(new URL('../', import.meta.url));
@@ -47,7 +48,11 @@ async function main() {
   // second shell command. Inspect only artifacts from the successful build.
   const report = checkContractSizes();
   console.log(formatReport(report));
-  return report.ok ? 0 : 1;
+  // The two vaults share most of their text; an undeclared divergence between
+  // them is the mistake H-01 recorded, and it costs no contract bytes to catch.
+  const drift = checkVaultAbiDrift();
+  console.log(formatDriftReport(drift));
+  return report.ok && drift.ok ? 0 : 1;
 }
 
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
