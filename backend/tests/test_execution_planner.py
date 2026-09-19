@@ -82,6 +82,10 @@ def quote(obs, dest, amount_in, minimum, expected, *, impact=100, **changes):
     return p.SwapQuote(**{**data, **changes})
 
 
+def _widen(amount, slippage_bps):
+    return amount * (10000 + int(slippage_bps)) // 10000
+
+
 def assert_e1_consistent(obs, candidate):
     """Test-only general-path translation checks the unchanged E1 boundary.
     It is not a production plan builder or execution qualification.
@@ -96,6 +100,13 @@ def assert_e1_consistent(obs, candidate):
         maxGrossFee0=str(candidate.grossConsumed[0]),maxGrossFee1=str(candidate.grossConsumed[1]),
         maxChargedInput0=str(candidate.chargedConsumed[0]),maxChargedInput1=str(candidate.chargedConsumed[1]),
         minNetAdded0=str(candidate.netAdded[0]),minNetAdded1=str(candidate.netAdded[1]),
+        # The ceiling is the simulated addition widened by the owner's own
+        # maxSlippageBps - the same field that already sizes minAmountOut - so
+        # the tolerance stays an owner setting rather than a constant anyone
+        # picked. An operator who prefers liveness to tightness may sign
+        # uint128 max instead; what it may not do is leave it unsaid.
+        maxNetAdded0=str(_widen(candidate.netAdded[0],obs.policy.limits.maxSlippageBps)),
+        maxNetAdded1=str(_widen(candidate.netAdded[1],obs.policy.limits.maxSlippageBps)),
         minSqrtPriceX96=obs.sqrtPriceX96,maxSqrtPriceX96=obs.sqrtPriceX96,
         swap=candidate.swap or template.swap)
     m.validate_candidate(plan,obs,now=NOW,actor=obs.operator)

@@ -15,7 +15,8 @@ ZERO_ADDRESS = '0x' + '00' * 20
 POSITION_REF_TYPE = '(uint256,bytes32,bytes32)'
 BUDGET_TYPE = '(bytes32,address,uint128,uint128,uint128,uint128)'
 SWAP_TYPE = '(bytes32,address,uint128,uint128,uint128,uint128,uint160,bytes32)'
-PLAN_TYPE = '(' + ','.join((g.PLAN_TYPE, 'uint8', 'uint256', 'int24', 'int24', POSITION_REF_TYPE+'[]', BUDGET_TYPE+'[]', SWAP_TYPE)) + ')'
+PLAN_TYPE = '(' + ','.join((g.PLAN_TYPE, 'uint8', 'uint256', 'int24', 'int24', 'uint128', 'uint128',
+                           POSITION_REF_TYPE+'[]', BUDGET_TYPE+'[]', SWAP_TYPE)) + ')'
 EXECUTE_SIGNATURE = 'execute(' + PLAN_TYPE + ')'
 ADAPTER_ID = '0x' + keccak(b'DominoExecutionEngineV4:single-pool-exact-input').hex()
 ADAPTER_VERSION = '1'
@@ -83,6 +84,11 @@ class Plan(m.Record):
     destinationTokenId: m.Raw256
     tickLower: m.Tick
     tickUpper: m.Tick
+    # The ceiling on what the add may cost, per currency. The authority's
+    # minAdded0/1 are floors; without these the composition of the add is free
+    # anywhere inside maxPriceImpactBps.
+    maxAdded0: m.Raw128
+    maxAdded1: m.Raw128
     collect: Annotated[tuple[PositionRef, ...], Field(max_length=16)]
     budgets: Annotated[tuple[FeeBudget, ...], Field(min_length=1, max_length=32)]
     swap: SwapPlan
@@ -91,6 +97,13 @@ class Plan(m.Record):
         a = self.authority
         if any(getattr(a, name) != '0' for name in ('maxOriginal0','maxOriginal1','maxCharged0','maxCharged1')):
             raise ValueError('duplicate_v4_budget_authority')
+        # Mirrors DominoRoutingHelperV4.validate: a caller that never learned
+        # about the ceiling sends zero for both and is refused here, and a
+        # ceiling below its own floor is unsatisfiable.
+        if self.maxAdded0 == self.maxAdded1 == '0':
+            raise ValueError('missing_v4_add_ceiling')
+        if int(self.maxAdded0) < int(a.minAdded0) or int(self.maxAdded1) < int(a.minAdded1):
+            raise ValueError('invalid_v4_add_ceiling')
         ids = [int(p.tokenId) for p in self.collect]
         budgets = [(p.sourceId,p.currency) for p in self.budgets]
         if ids != sorted(set(ids)) or any(i == 0 for i in ids) or budgets != sorted(set(budgets)):
@@ -116,6 +129,7 @@ class Plan(m.Record):
         return self
     def values(self):
         return (self.authority.values(), self.action, int(self.destinationTokenId), self.tickLower, self.tickUpper,
+            int(self.maxAdded0), int(self.maxAdded1),
             tuple(p.values() for p in self.collect), tuple(b.values() for b in self.budgets), self.swap.values())
     def calldata(self):
         checked = m.revalidate_record(Plan,self)
@@ -531,6 +545,7 @@ class ReceiptReconciler(g.CompoundReceiptReconciler):
             ('minAdded0',plan.minNetAdded0),('minAdded1',plan.minNetAdded1),
             ('minSqrtPriceX96',plan.minSqrtPriceX96),('maxSqrtPriceX96',plan.maxSqrtPriceX96)]
         if (plan.sequence!=admission.sequence or typed.action!=expected_action
+                or typed.maxAdded0!=plan.maxNetAdded0 or typed.maxAdded1!=plan.maxNetAdded1
                 or any(getattr(a,name)!=value for name,value in pairs)
                 or observation.policy.serviceFeeBps!=result['serviceFeeBps']):raise ValueError('v4_e1_plan_mismatch')
         if plan.swap.enabled:

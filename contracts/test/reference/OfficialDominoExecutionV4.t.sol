@@ -46,6 +46,9 @@ contract OfficialDominoExecutionV4Test {
     // reading; wide enough for the fixture's moves, far from unbounded.
     uint256 constant GUARD_DEVIATION_BPS=2000;
     uint128 private constant OPENING = 1e18;
+    // Sized so the price moves the add's composition while staying inside
+    // maxPriceImpactBps; the test asserts both halves of that.
+    uint128 private constant SHIFT = 2e16;
     IPoolManager private manager;
     PositionManager private positions;
     StateView private state;
@@ -110,6 +113,9 @@ contract OfficialDominoExecutionV4Test {
         p.authority.observedAtTimestamp=uint64(block.timestamp-1); p.authority.deadline=uint64(block.timestamp+60);
         p.authority.liquidityIncrease=liquidity; p.authority.minAdded0=1; p.authority.minAdded1=1;
         p.authority.minSqrtPriceX96=uint160(1<<95); p.authority.maxSqrtPriceX96=uint160(1<<97);
+        // Wide by default so the existing cases measure what they always did;
+        // the ceiling's own behaviour is pinned by the two tests below.
+        p.maxAdded0=type(uint128).max; p.maxAdded1=type(uint128).max;
         p.action=action; p.destinationTokenId=tokenId;
         // Every action carries a published observation now, swap or not.
         p.swap.priceObservationId=_observe(p);
@@ -151,6 +157,16 @@ contract OfficialDominoExecutionV4Test {
         require(_balance(Currency.unwrap(key.currency0),address(vault))>=vault.accountedCurrency(Currency.unwrap(key.currency0)),"backed0");
         require(_balance(Currency.unwrap(key.currency1),address(vault))>=vault.accountedCurrency(Currency.unwrap(key.currency1)),"backed1");
     }
+    /// Rejected, and rejected by the guard named - a plan refused late by the
+    /// engine is not the same as one refused early by validate.
+    function _rejectWith(E.Plan memory p, bytes4 expected, string memory what) private {
+        bytes32 before_=_stateHash(); uint64 nonce=vault.stateNonce();
+        (bool ok, bytes memory out)=address(vault).call(abi.encodeCall(vault.execute,(p)));
+        require(!ok && out.length>=4 && bytes4(out)==expected, what);
+        require(before_==_stateHash() && nonce==vault.stateNonce()
+            && !vault.consumedIntent(p.authority.intentId), what);
+    }
+
     function _reject(E.Plan memory p) private {
         bytes32 before_=_stateHash(); uint64 nonce=vault.stateNonce();
         (bool ok,)=address(vault).call(abi.encodeCall(vault.execute,(p)));
@@ -223,6 +239,79 @@ contract OfficialDominoExecutionV4Test {
         // move exactly, and this suite has none.
         vault.rearmRoot(true);
         require(vault.rootArmed(),"owner rearm admitted after an execution");
+        _backed();
+    }
+
+    /**
+     * The ceiling binds every action and an absent one fails closed.
+     *
+     * Before it existed the plan could state only a floor, so for a committed
+     * liquidity the composition of the add was free anywhere inside
+     * maxPriceImpactBps - a global owner knob whose job is liveness.
+     */
+    function testAddCeilingBindsEveryActionAndFailsClosed() external {
+        _setup(false,false); _swaps();
+        // A plan that never learned about the field is refused in validate,
+        // before anything executes - InvalidExecution, not the engine's
+        // InvalidAmount, which is what makes the failure early and legible.
+        E.Plan memory p=_plan(0,1e12); p.maxAdded0=0; p.maxAdded1=0;
+        _rejectWith(p, DominoRoutingHelperV4.InvalidExecution.selector, "absent ceiling refused in validate");
+        // A ceiling below the plan's own floor is unsatisfiable; refused there too.
+        p=_plan(0,1e12); p.maxAdded0=0;
+        _rejectWith(p, DominoRoutingHelperV4.InvalidExecution.selector, "ceiling below its own floor");
+        // Past validate, each action's own site must trip.
+        p=_plan(0,1e12); p.maxAdded0=1; _reject(p);
+        p=_plan(1,1e12); p.maxAdded1=1; _reject(p);
+        E.Plan memory mint=_plan(3,1e10); mint.destinationTokenId=0;
+        mint.tickLower=-420; mint.tickUpper=4680; mint.maxAdded0=1; _reject(mint);
+        // Wide, and the committed liquidity is what it always was.
+        vault.execute(_plan(0,1e12));
+        require(positions.getPositionLiquidity(tokenId)==OPENING+1e12,"committed liquidity unchanged");
+        _backed();
+    }
+
+    /**
+     * The finding itself, measured: one plan, three worlds.
+     *
+     * A third party moves the price - not the operator - and the composition
+     * of the add moves with it under calldata that never changes. Measured on
+     * this fixture with the band an owner may legitimately choose: the same
+     * plan costs 29,555,984,009 of currency1 at the unmoved price,
+     * 49,495,984,009 after an outside buy and 10,005,699,277 after an outside
+     * sell. Every other check admits all three, which the second world proves
+     * by executing the identical plan with only the ceiling widened.
+     *
+     * COST cannot rot unnoticed: the add is asserted to succeed at exactly
+     * COST and to fail at COST - 1, so a fixture change that moves the real
+     * cost fails here instead of quietly weakening the test.
+     */
+    function testAddCeilingRefusesInBandCompositionShift() external {
+        _setup(false,false); _swaps();
+        // maxPriceImpactBps is a liveness knob an owner may set as wide as
+        // 9999. At the fixture's 100 the composition barely moves; at 1000 it
+        // moves by two thirds, and nothing but a ceiling can refuse that.
+        vault.setExecutionLimits(T.ExecutionLimits(2,5000,1000,1000,1e12,120,3600));
+        uint128 cost=29555984009;
+        E.Plan memory p=_plan(0,1e12);
+        p.maxAdded0=type(uint128).max; p.maxAdded1=cost-1;
+        _reject(p);
+
+        p.maxAdded1=cost;
+        uint256 root=vm.snapshotState();
+        trader.swap(key,false,SHIFT);
+        _reject(p);                               // refused by the ceiling alone
+        require(vm.revertToState(root),"restore");
+
+        root=vm.snapshotState();
+        trader.swap(key,false,SHIFT);
+        E.Plan memory wide=p; wide.maxAdded1=type(uint128).max;
+        vault.execute(wide);                      // and admitted by everything else
+        require(positions.getPositionLiquidity(tokenId)==OPENING+1e12,"the shift is inside the band");
+        _backed();
+        require(vm.revertToState(root),"restore");
+
+        vault.execute(p);
+        require(positions.getPositionLiquidity(tokenId)==OPENING+1e12,"exactly the honest cost is admitted");
         _backed();
     }
 

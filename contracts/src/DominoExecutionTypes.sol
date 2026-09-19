@@ -30,6 +30,12 @@ library DominoExecutionTypes {
         uint256 destinationTokenId;
         int24 tickLower;
         int24 tickUpper;
+        // The ceiling on what this one add may cost, per currency. minAdded0/1
+        // on the authority are floors; without these the composition of the
+        // add is free anywhere inside maxPriceImpactBps, which is a global
+        // liveness knob, not a per-execution commitment.
+        uint128 maxAdded0;
+        uint128 maxAdded1;
         PositionRef[] collect;
         FeeBudget[] budgets;
         SwapPlan swap;

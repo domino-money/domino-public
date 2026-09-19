@@ -64,7 +64,8 @@ def scenario(action=1, *, native=False, reverse=False, owner=1, number=11, manag
             tickLower=0 if action==3 else destination.tickLower, tickUpper=600 if action==3 else destination.tickUpper),
         liquidityIncrease='1', maxGrossFee0='0' if charged else '1000', maxGrossFee1='0',
         maxChargedInput0='1000' if charged else '0', maxChargedInput1='0',
-        minNetAdded0='980', minNetAdded1='0', minSqrtPriceX96=str(2**96-1), maxSqrtPriceX96=str(2**96+1),
+        minNetAdded0='980', minNetAdded1='0', maxNetAdded0='1000', maxNetAdded1='1000',
+        minSqrtPriceX96=str(2**96-1), maxSqrtPriceX96=str(2**96+1),
         maxGasCostWei='1000000000000', swap=disabled)
     credit = m.FeeCredit(source=source.digest(), transactionHash=identity(401), eventIndex=3,
         amountRaw='1300', blockNumber='1234', blockHash=identity(301), canonical=True, finalized=False)
@@ -75,7 +76,8 @@ def scenario(action=1, *, native=False, reverse=False, owner=1, number=11, manag
         changes = {'observationHash': observation.digest(), 'allocations': [],
             'collections': [{'sourceId': source.digest(), 'maxGrossRaw': '1000'}], 'path': 1 if net else 0}
         if swap:
-            changes.update(minNetAdded0='0', minNetAdded1='500', swap=m.SwapBounds(
+            changes.update(minNetAdded0='0', minNetAdded1='500', maxNetAdded0='1000', maxNetAdded1='1000',
+                swap=m.SwapBounds(
                 enabled=True, adapterId=identity(800), adapterVersion='1', routeCommitment=identity(801),
                 currencyIn=seq.poolKey.currency0, currencyOut=seq.poolKey.currency1,
                 amountInRaw='980', minAmountOutRaw='500').model_dump(mode='json'))

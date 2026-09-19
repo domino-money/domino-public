@@ -113,6 +113,7 @@ class ExecutionV4ReceiptEvmTests(unittest.TestCase):
             minAmountOut='0',sqrtPriceLimitX96='0',priceObservationId=self.observe(plan))
         return v.Plan(authority=plan,action=action,destinationTokenId='0' if action==3 else str(self.token),
             tickLower=-420 if action==3 else 0,tickUpper=4680 if action==3 else 0,
+            maxAdded0=str(2**127-1),maxAdded1=str(2**127-1),
             collect=(v.PositionRef(tokenId=str(self.token),positionIdentity=plan.positionIdentity,checkpointId=plan.checkpointId),),budgets=budgets,swap=swap)
 
     def execute(self,plan):

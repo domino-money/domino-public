@@ -16,7 +16,7 @@
       "creditHash": "0xc8393092f0013c2973c9e6686cd389f59357b0f95fd8d3fda0527861fe5cbe0b",
       "creditId": "0x5002539c39c27549c5cdc9a6945271e1d27a61b511b4090bcab0535fb8a337c6",
       "domainHash": "0xd5ee4d7435a354f0bb715719447e1a2a7012e585e8f5b93a0ba7b0122f8c78ba",
-      "intentId": "0x13590632a80ac560d49d631fc1e3a76fedddc316ee631ac89863a582787ca074",
+      "intentId": "0x7a76a546826b6c2ac1258c42e707b9fae12b39301d8a89991101d8153895354b",
       "name": "self",
       "observation": {
         "accruals": [],
@@ -131,6 +131,8 @@
         "maxGasCostWei": "1000000000000",
         "maxGrossFee0": "1000",
         "maxGrossFee1": "0",
+        "maxNetAdded0": "1000",
+        "maxNetAdded1": "1000",
         "maxSqrtPriceX96": "79228162514264337593543950337",
         "minNetAdded0": "980",
         "minNetAdded1": "0",
@@ -173,7 +175,7 @@
           "routeCommitment": "0x0000000000000000000000000000000000000000000000000000000000000000"
         }
       },
-      "planHash": "0x0dd95ff2f5b135c1bb91c48b480ecc7b60de525f1c47b898583ee2fff2b51921",
+      "planHash": "0xae20a2badc8ac86afc1465468e8fbe8fb44547f5d8a51c6f7ee344da2e1bc5c4",
       "positionHash": "0x7b5cabf5a46156e83a94b460cd50d975d6c2cc4ecb9ef98accfdfe1a4bec571d",
       "sequenceHash": "0x84f994fc05446f7808a37698238c00f6deb5c2979644edd5b7901c6209371661",
       "sourceHash": "0x412c17918c0c3ac3af2ffa9806045a71dd16254962c0e1d543e9316e49a9eb2e",
@@ -195,7 +197,7 @@
       "creditHash": "0xc8393092f0013c2973c9e6686cd389f59357b0f95fd8d3fda0527861fe5cbe0b",
       "creditId": "0x5002539c39c27549c5cdc9a6945271e1d27a61b511b4090bcab0535fb8a337c6",
       "domainHash": "0xd5ee4d7435a354f0bb715719447e1a2a7012e585e8f5b93a0ba7b0122f8c78ba",
-      "intentId": "0x7c130b23b4232ee1b993c19ce90fbb4f60f9a241de2aa3ac1a3d619f2702c0b7",
+      "intentId": "0xbdaf3a6c49836c6eff06beb515baaabf2e6d66b6d515a9c5c690ba6ca745d4b3",
       "name": "redirect",
       "observation": {
         "accruals": [],
@@ -326,6 +328,8 @@
         "maxGasCostWei": "1000000000000",
         "maxGrossFee0": "1000",
         "maxGrossFee1": "0",
+        "maxNetAdded0": "1000",
+        "maxNetAdded1": "1000",
         "maxSqrtPriceX96": "79228162514264337593543950337",
         "minNetAdded0": "980",
         "minNetAdded1": "0",
@@ -368,7 +372,7 @@
           "routeCommitment": "0x0000000000000000000000000000000000000000000000000000000000000000"
         }
       },
-      "planHash": "0x2d72beb5604a41ab72d981b36c2e9585e7a697060806c191c04ce86337e1d867",
+      "planHash": "0xef1fa83a9e108996a0f569a3f35b99480bc09d9266057d5a962868aadb19996d",
       "positionHash": "0x7b5cabf5a46156e83a94b460cd50d975d6c2cc4ecb9ef98accfdfe1a4bec571d",
       "sequenceHash": "0x84f994fc05446f7808a37698238c00f6deb5c2979644edd5b7901c6209371661",
       "sourceHash": "0x412c17918c0c3ac3af2ffa9806045a71dd16254962c0e1d543e9316e49a9eb2e",
@@ -390,7 +394,7 @@
       "creditHash": "0xc8393092f0013c2973c9e6686cd389f59357b0f95fd8d3fda0527861fe5cbe0b",
       "creditId": "0x5002539c39c27549c5cdc9a6945271e1d27a61b511b4090bcab0535fb8a337c6",
       "domainHash": "0xd5ee4d7435a354f0bb715719447e1a2a7012e585e8f5b93a0ba7b0122f8c78ba",
-      "intentId": "0xd6179e6f43a0c31c501f3ebaccbec1e2b6dac079c8dbeab963e0d24eb25e5066",
+      "intentId": "0xae79109720dcb9e4cfa9cda3d742d1f640c129d738632f0fa3a0d3b4fcd48b0f",
       "name": "domino",
       "observation": {
         "accruals": [],
@@ -505,6 +509,8 @@
         "maxGasCostWei": "1000000000000",
         "maxGrossFee0": "1000",
         "maxGrossFee1": "0",
+        "maxNetAdded0": "1000",
+        "maxNetAdded1": "1000",
         "maxSqrtPriceX96": "79228162514264337593543950337",
         "minNetAdded0": "980",
         "minNetAdded1": "0",
@@ -547,7 +553,7 @@
           "routeCommitment": "0x0000000000000000000000000000000000000000000000000000000000000000"
         }
       },
-      "planHash": "0x19fb167fbe81f87a3e66c00464aae6d0eeb89570f6fc2d675da279d468436e02",
+      "planHash": "0x3779b64e949dcf1bce5b0393e1b1139c5622ae58fc95668e2047539c0c2a84eb",
       "positionHash": "0x7b5cabf5a46156e83a94b460cd50d975d6c2cc4ecb9ef98accfdfe1a4bec571d",
       "sequenceHash": "0x84f994fc05446f7808a37698238c00f6deb5c2979644edd5b7901c6209371661",
       "sourceHash": "0x412c17918c0c3ac3af2ffa9806045a71dd16254962c0e1d543e9316e49a9eb2e",
@@ -569,7 +575,7 @@
       "creditHash": "0xeab6135717e67fee882c5a1c9fcfb303d11718789ee6b897af428215a550bdd3",
       "creditId": "0xb121144fa181cd6a290b52ea2ecd0c711e04ee15033d8f451bb4320c977473e3",
       "domainHash": "0xd5ee4d7435a354f0bb715719447e1a2a7012e585e8f5b93a0ba7b0122f8c78ba",
-      "intentId": "0x28fd4f1985ea7d9f9c186a87c1ac569d7f66d3a96249b3ab89c63a086dbd1674",
+      "intentId": "0x85ea2f49ca4a5335c7cd5f2e8a39c4a93b1a33affec4b2d181d80211a94b2da1",
       "name": "native",
       "observation": {
         "accruals": [],
@@ -684,6 +690,8 @@
         "maxGasCostWei": "1000000000000",
         "maxGrossFee0": "1000",
         "maxGrossFee1": "0",
+        "maxNetAdded0": "1000",
+        "maxNetAdded1": "1000",
         "maxSqrtPriceX96": "79228162514264337593543950337",
         "minNetAdded0": "980",
         "minNetAdded1": "0",
@@ -726,7 +734,7 @@
           "routeCommitment": "0x0000000000000000000000000000000000000000000000000000000000000000"
         }
       },
-      "planHash": "0x15413d7c7bb6d94ae0581ae10a996170c1282b64cab6eb66b3b98036da0220d8",
+      "planHash": "0x08c3ade9519aef61dd66bb35734b31fc6ed6dbbba684dba875a768213ed8c434",
       "positionHash": "0xe96483c9a30b7d68d7ba2f390d56035634d2c83d0316f29659c04fe9aa29645c",
       "sequenceHash": "0x528476e35bc885ca622066cb3b9d89cb0c6126ba16df2584cddb0f3aead34e0d",
       "sourceHash": "0x579be3b925c847a91a42100318f7bb98fe7a845db44066179f8b9816c1d6dd59",
@@ -748,7 +756,7 @@
       "creditHash": "0x2d87450956abfb5556a7a971bf5994bcdabd08faf03bd63bc0af0f1ea61cb729",
       "creditId": "0xc1137bf4ee84c5738f5e22a87303cb44ceefe1f8cd16fc0f7c137248d3e37317",
       "domainHash": "0xd5ee4d7435a354f0bb715719447e1a2a7012e585e8f5b93a0ba7b0122f8c78ba",
-      "intentId": "0xdb1b86993fcbc27d7321a8bd43f2eef6e26ab64c286ae3c6bc6bf581800a6b2f",
+      "intentId": "0xd04a3fa2e4ceb1469bf57d645806d171d4155c33d1d5a8115e26cfaa87020234",
       "name": "reversed",
       "observation": {
         "accruals": [],
@@ -863,6 +871,8 @@
         "maxGasCostWei": "1000000000000",
         "maxGrossFee0": "1000",
         "maxGrossFee1": "0",
+        "maxNetAdded0": "1000",
+        "maxNetAdded1": "1000",
         "maxSqrtPriceX96": "79228162514264337593543950337",
         "minNetAdded0": "980",
         "minNetAdded1": "0",
@@ -905,7 +915,7 @@
           "routeCommitment": "0x0000000000000000000000000000000000000000000000000000000000000000"
         }
       },
-      "planHash": "0x02a40f2ff9e595ac746af1dc212accb862c2561045043f254b14daf773a0ec00",
+      "planHash": "0x0480cae6ecfbba84d88327596f3935916009bf49a76976b48477755d9b9c71f5",
       "positionHash": "0x758ca6b1029929d39a10e0eb4fcafae22ba8a904c6facc2859cf7c2e4b4e6cfb",
       "sequenceHash": "0xff7ffa9d90dee6ae350e358e1c2b28b1e9fce43de8ed30d31a8c848f5739d4e2",
       "sourceHash": "0x729ec35b529cc0fd05d9b135b264105966ccae0d27e2581cb86b40206e3b5de3",
@@ -927,7 +937,7 @@
       "creditHash": "0x608bcf9a3ee4a7a15cc3cf47602a8483f275066f014e6929610d4ca9bbf64d70",
       "creditId": "0x1f239866fb2323345da885b026b5c278a164ccf0a75ccf965c085f262047b9c7",
       "domainHash": "0xd5ee4d7435a354f0bb715719447e1a2a7012e585e8f5b93a0ba7b0122f8c78ba",
-      "intentId": "0xc851c3fc03e9be07716d30d41f03fca5608b53c22e455bc780f7b2ed84291680",
+      "intentId": "0xc77a1015a9a71c767b64a712f4d05d13c06bc9622e2b190910aa0cff4635ab42",
       "name": "other_owner",
       "observation": {
         "accruals": [],
@@ -1042,6 +1052,8 @@
         "maxGasCostWei": "1000000000000",
         "maxGrossFee0": "1000",
         "maxGrossFee1": "0",
+        "maxNetAdded0": "1000",
+        "maxNetAdded1": "1000",
         "maxSqrtPriceX96": "79228162514264337593543950337",
         "minNetAdded0": "980",
         "minNetAdded1": "0",
@@ -1084,7 +1096,7 @@
           "routeCommitment": "0x0000000000000000000000000000000000000000000000000000000000000000"
         }
       },
-      "planHash": "0x6d19d957feca2a59fffe9b33b0afa822d56a312862adcb6040892f84fbcbb977",
+      "planHash": "0x11ab57eb51e2b8da596ff7c6e599ff7e370821ea0bd940a0620736c9c018395b",
       "positionHash": "0x0399ba5f30d370342d85a0607f84995f607b6332986fee049ce5f12bf9589807",
       "sequenceHash": "0xf864ff6fc488aaad8f10129037de84ae70750afb0291500a8a518f1916004fad",
       "sourceHash": "0x771834bb05fbaf72a3e1443de695f7bfe1721abc36615d702b772495c1346678",
@@ -1106,7 +1118,7 @@
       "creditHash": "0x6a05d266e746b98dd5a1ddae989eaeb175bea42d5ab77a3bf24cc6e7c243e5e0",
       "creditId": "0x104fe909ccc5d292d08c0655b27ef597bbd754456534ff730cabfa9c4d0836e4",
       "domainHash": "0xd5ee4d7435a354f0bb715719447e1a2a7012e585e8f5b93a0ba7b0122f8c78ba",
-      "intentId": "0x5b63019834fe67df9f6a3b74acde3567f42f8dc26fe5389735a170d4c21f139c",
+      "intentId": "0x5fecb9974ecb92f7538f5a7ec11e457ec7ca370e301fb955ab59bd0fa2989251",
       "name": "other_sequence",
       "observation": {
         "accruals": [],
@@ -1221,6 +1233,8 @@
         "maxGasCostWei": "1000000000000",
         "maxGrossFee0": "1000",
         "maxGrossFee1": "0",
+        "maxNetAdded0": "1000",
+        "maxNetAdded1": "1000",
         "maxSqrtPriceX96": "79228162514264337593543950337",
         "minNetAdded0": "980",
         "minNetAdded1": "0",
@@ -1263,7 +1277,7 @@
           "routeCommitment": "0x0000000000000000000000000000000000000000000000000000000000000000"
         }
       },
-      "planHash": "0x4d507fabe8e41107d5899cfa3b8e2f0f98f0a85f1a5da54931ade04531b962a4",
+      "planHash": "0x725198eef5dbd80a03fa21ffd63c261149b5a6a91918d230f2e3026bc0de6680",
       "positionHash": "0xde487f6653d236fa83c0ad184a315548aebb57e92339daf358c5c0acd2e31bfd",
       "sequenceHash": "0x19e069f0401ac3b4ff3ecb4925e0cc274629b7dd924747a605bf3dfe77cf9227",
       "sourceHash": "0x1598b0456a4f167f6d88d221c489c558f510cefbfd435344351a61f7a9baca73",
@@ -1285,7 +1299,7 @@
       "creditHash": "0x68846bb8d559efc8ee9f0b2bc39d8de5cb94f7ddf3e3f2969b73efa1e842f240",
       "creditId": "0xe8324646e2d5a7538add6bce69ddb4ab62021cf9129440bd8897a40e28be993f",
       "domainHash": "0xd5ee4d7435a354f0bb715719447e1a2a7012e585e8f5b93a0ba7b0122f8c78ba",
-      "intentId": "0xe3bb7e2cf9237a43373341d7a267322e71813a1416d6ea56da6ab4ed59efe160",
+      "intentId": "0x91f2a21ad11914da39f963c9e3e439e6511f63f7140667c851ef3891b7fef7a0",
       "name": "other_manager",
       "observation": {
         "accruals": [],
@@ -1400,6 +1414,8 @@
         "maxGasCostWei": "1000000000000",
         "maxGrossFee0": "1000",
         "maxGrossFee1": "0",
+        "maxNetAdded0": "1000",
+        "maxNetAdded1": "1000",
         "maxSqrtPriceX96": "79228162514264337593543950337",
         "minNetAdded0": "980",
         "minNetAdded1": "0",
@@ -1442,7 +1458,7 @@
           "routeCommitment": "0x0000000000000000000000000000000000000000000000000000000000000000"
         }
       },
-      "planHash": "0x0567ca0e6b91f92423475a6be81f373f20e7f40203aad59ef88800c6add8d426",
+      "planHash": "0x0a1608b2911edcccb6e0a4e3678900b089e0b090e5b188a1f90f64955d134ef5",
       "positionHash": "0xad4c8183f5ed5e950fdd1f144de81f68852d115b112bc9b67c1894d1ae3292e4",
       "sequenceHash": "0xc66fa27e4f358c0da635cac5be8d931e25c311834406d2062b254cd7196b41a6",
       "sourceHash": "0xeeed551c7f604e6381ab2600740a44dedf84a9ca7d07248a1579349eeb2beda8",
@@ -1464,7 +1480,7 @@
       "creditHash": "0xc8393092f0013c2973c9e6686cd389f59357b0f95fd8d3fda0527861fe5cbe0b",
       "creditId": "0x5002539c39c27549c5cdc9a6945271e1d27a61b511b4090bcab0535fb8a337c6",
       "domainHash": "0xd5ee4d7435a354f0bb715719447e1a2a7012e585e8f5b93a0ba7b0122f8c78ba",
-      "intentId": "0xf2a5c9d5d20a35d0a53f8c1aea6c4ead76622f1bac6f6bf2e4fddb86f741f8dd",
+      "intentId": "0x48064f6a866aa4083d846076ede02e25475bc717561eef7fb886f0732a1bd8a3",
       "name": "charged_residual",
       "observation": {
         "accruals": [],
@@ -1579,6 +1595,8 @@
         "maxGasCostWei": "1000000000000",
         "maxGrossFee0": "0",
         "maxGrossFee1": "0",
+        "maxNetAdded0": "1000",
+        "maxNetAdded1": "1000",
         "maxSqrtPriceX96": "79228162514264337593543950337",
         "minNetAdded0": "980",
         "minNetAdded1": "0",
@@ -1621,7 +1639,7 @@
           "routeCommitment": "0x0000000000000000000000000000000000000000000000000000000000000000"
         }
       },
-      "planHash": "0x21589a783f509f53e67d2f5c58e6ff00b450bff2378be83d5c02c21b29b002e9",
+      "planHash": "0xf9f1594d36f9fd47eaa08d8a2db86245223c764e0b11c86482fda56c9ec26565",
       "positionHash": "0x7b5cabf5a46156e83a94b460cd50d975d6c2cc4ecb9ef98accfdfe1a4bec571d",
       "sequenceHash": "0x84f994fc05446f7808a37698238c00f6deb5c2979644edd5b7901c6209371661",
       "sourceHash": "0x412c17918c0c3ac3af2ffa9806045a71dd16254962c0e1d543e9316e49a9eb2e",
@@ -1647,7 +1665,7 @@
       "creditHash": "0xc8393092f0013c2973c9e6686cd389f59357b0f95fd8d3fda0527861fe5cbe0b",
       "creditId": "0x5002539c39c27549c5cdc9a6945271e1d27a61b511b4090bcab0535fb8a337c6",
       "domainHash": "0xd5ee4d7435a354f0bb715719447e1a2a7012e585e8f5b93a0ba7b0122f8c78ba",
-      "intentId": "0x264a23f02b05cf3d82bb598f783693e8336ad11ccad7e14b3f9d3552e2157e78",
+      "intentId": "0x880ed51aae8f4556ede5982a39607a3aef6fd33aa8be80c316099490902bc4fd",
       "name": "collection_general",
       "observation": {
         "accruals": [
@@ -1758,6 +1776,8 @@
         "maxGasCostWei": "1000000000000",
         "maxGrossFee0": "1000",
         "maxGrossFee1": "0",
+        "maxNetAdded0": "1000",
+        "maxNetAdded1": "1000",
         "maxSqrtPriceX96": "79228162514264337593543950337",
         "minNetAdded0": "980",
         "minNetAdded1": "0",
@@ -1800,7 +1820,7 @@
           "routeCommitment": "0x0000000000000000000000000000000000000000000000000000000000000000"
         }
       },
-      "planHash": "0xa3d8b304222e3f4ad4d1df7b35b39151f30819850e5d782efab133f68a24123d",
+      "planHash": "0xce62a8b1bff2dd7d958e80eb6c5cd564ee276dcf9a49d8dace53b43d0c0ded02",
       "positionHash": "0x7b5cabf5a46156e83a94b460cd50d975d6c2cc4ecb9ef98accfdfe1a4bec571d",
       "sequenceHash": "0x84f994fc05446f7808a37698238c00f6deb5c2979644edd5b7901c6209371661",
       "sourceHash": "0x412c17918c0c3ac3af2ffa9806045a71dd16254962c0e1d543e9316e49a9eb2e",
@@ -1826,7 +1846,7 @@
       "creditHash": "0xc8393092f0013c2973c9e6686cd389f59357b0f95fd8d3fda0527861fe5cbe0b",
       "creditId": "0x5002539c39c27549c5cdc9a6945271e1d27a61b511b4090bcab0535fb8a337c6",
       "domainHash": "0xd5ee4d7435a354f0bb715719447e1a2a7012e585e8f5b93a0ba7b0122f8c78ba",
-      "intentId": "0x063816d76a31ddc57ccaa66b68fc4afa6d00594de40a34d963348e3c92f9cefd",
+      "intentId": "0x8c40ae5321722e702b7373d3ae5ea056754eff7d2802a71b3e9ffce3e1da9235",
       "name": "collection_swap",
       "observation": {
         "accruals": [
@@ -1937,6 +1957,8 @@
         "maxGasCostWei": "1000000000000",
         "maxGrossFee0": "1000",
         "maxGrossFee1": "0",
+        "maxNetAdded0": "1000",
+        "maxNetAdded1": "1000",
         "maxSqrtPriceX96": "79228162514264337593543950337",
         "minNetAdded0": "0",
         "minNetAdded1": "500",
@@ -1979,7 +2001,7 @@
           "routeCommitment": "0x0000000000000000000000000000000000000000000000000000000000000321"
         }
       },
-      "planHash": "0xd58c2c67e761430717f993c3b8bd527ab2608e413d1a13774b5af3102fbd3100",
+      "planHash": "0xd66b5cdd3e97e87913fccf3cf06efa448b528f284604266a0ce130c10e21ff8e",
       "positionHash": "0x7b5cabf5a46156e83a94b460cd50d975d6c2cc4ecb9ef98accfdfe1a4bec571d",
       "sequenceHash": "0x84f994fc05446f7808a37698238c00f6deb5c2979644edd5b7901c6209371661",
       "sourceHash": "0x412c17918c0c3ac3af2ffa9806045a71dd16254962c0e1d543e9316e49a9eb2e",
@@ -2005,7 +2027,7 @@
       "creditHash": "0xc8393092f0013c2973c9e6686cd389f59357b0f95fd8d3fda0527861fe5cbe0b",
       "creditId": "0x5002539c39c27549c5cdc9a6945271e1d27a61b511b4090bcab0535fb8a337c6",
       "domainHash": "0xd5ee4d7435a354f0bb715719447e1a2a7012e585e8f5b93a0ba7b0122f8c78ba",
-      "intentId": "0x776bec5362e5b74cc9b9e72b0b4aa146af975f8212198eb571bd29a6f2b5ce16",
+      "intentId": "0xaad0f4270483931ea5f09b3a06dc195b41fa594a145417e2d0de87806966593e",
       "name": "collection_net",
       "observation": {
         "accruals": [
@@ -2116,6 +2138,8 @@
         "maxGasCostWei": "1000000000000",
         "maxGrossFee0": "1000",
         "maxGrossFee1": "0",
+        "maxNetAdded0": "1000",
+        "maxNetAdded1": "1000",
         "maxSqrtPriceX96": "79228162514264337593543950337",
         "minNetAdded0": "980",
         "minNetAdded1": "0",
@@ -2158,7 +2182,7 @@
           "routeCommitment": "0x0000000000000000000000000000000000000000000000000000000000000000"
         }
       },
-      "planHash": "0xe95bcda313d4eba3bd1d67c67937106758f1335dd29d384a78656b79bba414cd",
+      "planHash": "0xf88308e60c27756cae08b6bfff699ceb01ec4b75afd0dfb488dd7a3446867014",
       "positionHash": "0x7b5cabf5a46156e83a94b460cd50d975d6c2cc4ecb9ef98accfdfe1a4bec571d",
       "sequenceHash": "0x84f994fc05446f7808a37698238c00f6deb5c2979644edd5b7901c6209371661",
       "sourceHash": "0x412c17918c0c3ac3af2ffa9806045a71dd16254962c0e1d543e9316e49a9eb2e",
@@ -2194,7 +2218,7 @@
     "CustodyObservation": "CustodyObservation(bytes32 position,address holder,address individualApproval,bool active)",
     "Destination": "Destination(bool createChild,uint256 tokenId,int24 tickLower,int24 tickUpper)",
     "ExecutionLimits": "ExecutionLimits(uint64 version,address baseCurrency,address quoteCurrency,uint32 upsideBps,uint16 maxSlippageBps,uint16 maxPriceImpactBps,uint128 maxGasCostWei,uint32 maxObservationAgeSeconds,uint32 forecastHorizonSeconds)",
-    "ExecutionPlan": "ExecutionPlan(bytes32 sequence,bytes32 policyHash,bytes32 observationHash,uint8 action,uint8 path,uint64 expectedPolicyVersion,uint64 expectedStateNonce,uint64 expectedAuthorityGeneration,uint64 sourceBlockNumber,bytes32 sourceBlockHash,uint64 deadline,bytes32 allocations,bytes32 collections,bytes32 destination,uint128 liquidityIncrease,uint128 maxGrossFee0,uint128 maxGrossFee1,uint128 maxChargedInput0,uint128 maxChargedInput1,uint128 minNetAdded0,uint128 minNetAdded1,uint160 minSqrtPriceX96,uint160 maxSqrtPriceX96,uint128 maxGasCostWei,bytes32 swap)",
+    "ExecutionPlan": "ExecutionPlan(bytes32 sequence,bytes32 policyHash,bytes32 observationHash,uint8 action,uint8 path,uint64 expectedPolicyVersion,uint64 expectedStateNonce,uint64 expectedAuthorityGeneration,uint64 sourceBlockNumber,bytes32 sourceBlockHash,uint64 deadline,bytes32 allocations,bytes32 collections,bytes32 destination,uint128 liquidityIncrease,uint128 maxGrossFee0,uint128 maxGrossFee1,uint128 maxChargedInput0,uint128 maxChargedInput1,uint128 minNetAdded0,uint128 minNetAdded1,uint128 maxNetAdded0,uint128 maxNetAdded1,uint160 minSqrtPriceX96,uint160 maxSqrtPriceX96,uint128 maxGasCostWei,bytes32 swap)",
     "FeeCredit": "FeeCredit(bytes32 source,bytes32 transactionHash,uint32 eventIndex,uint128 amountRaw,uint64 blockNumber,bytes32 blockHash,bool canonical,bool finalized)",
     "FeeCreditId": "FeeCreditId(bytes32 source,bytes32 transactionHash,uint32 eventIndex)",
     "FeeSourceIdentity": "FeeSourceIdentity(bytes32 sequence,bytes32 position,address currency)",

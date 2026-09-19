@@ -100,6 +100,8 @@ def rebuild_v4(plan,observation,checkpoints,*,price_observation_id=m.ZERO_HASH):
         destinationTokenId='0' if plan.action==3 else plan.destination.tokenId,
         tickLower=plan.destination.tickLower if plan.action==3 else 0,
         tickUpper=plan.destination.tickUpper if plan.action==3 else 0,
+        # Carried from the signed plan, never chosen here.
+        maxAdded0=plan.maxNetAdded0,maxAdded1=plan.maxNetAdded1,
         collect=tuple(collect[k] for k in sorted(collect,key=int)),budgets=budgets,swap=swap)
 
 
@@ -107,11 +109,11 @@ def decode_plan(calldata):
     """Decode only the registered selector and require canonical byte equality."""
     try:
         raw=g._hex(calldata)
-        authority,action,destination,lower,upper,collect,budgets,swap=decode([v4.PLAN_TYPE],raw[4:])[0]
+        authority,action,destination,lower,upper,ceiling0,ceiling1,collect,budgets,swap=decode([v4.PLAN_TYPE],raw[4:])[0]
         record={name:'0x'+value.hex() if typ=='bytes32' else str(value)
             for (name,typ),value in zip(g.CompoundPlan.ABI,authority)}
         value=v4.Plan(authority=g.CompoundPlan.model_validate(record),action=action,destinationTokenId=str(destination),
-            tickLower=lower,tickUpper=upper,
+            tickLower=lower,tickUpper=upper,maxAdded0=str(ceiling0),maxAdded1=str(ceiling1),
             collect=tuple(v4.PositionRef(tokenId=str(i),positionIdentity='0x'+p.hex(),checkpointId='0x'+c.hex()) for i,p,c in collect),
             budgets=tuple(v4.FeeBudget(sourceId='0x'+s.hex(),currency=c,maxOriginal=str(o),maxCharged=str(x),
                 minOriginal=str(mo),minCharged=str(mx)) for s,c,o,x,mo,mx in budgets),

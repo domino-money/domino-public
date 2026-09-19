@@ -28,11 +28,12 @@ def decode_plan(calldata):
         if raw[:4] != keccak(v4.EXECUTE_SIGNATURE.encode())[:4]: raise ValueError()
         values, = decode([v4.PLAN_TYPE],raw[4:],strict=True)
         if encode([v4.PLAN_TYPE],[values]) != raw[4:]: raise ValueError()
-        authority,action,destination,lower,upper,collect,budgets,swap = values
+        authority,action,destination,lower,upper,ceiling0,ceiling1,collect,budgets,swap = values
         plan = v4.Plan(authority=g.CompoundPlan(**{
             name:'0x'+value.hex() if kind=='bytes32' else str(value)
             for (name,kind),value in zip(g.CompoundPlan.ABI,authority)}),
             action=action,destinationTokenId=str(destination),tickLower=lower,tickUpper=upper,
+            maxAdded0=str(ceiling0),maxAdded1=str(ceiling1),
             collect=tuple(v4.PositionRef(tokenId=str(token),positionIdentity='0x'+identity.hex(),
                 checkpointId='0x'+checkpoint.hex()) for token,identity,checkpoint in collect),
             budgets=tuple(v4.FeeBudget(sourceId='0x'+source.hex(),currency=currency,

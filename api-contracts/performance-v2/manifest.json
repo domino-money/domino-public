@@ -159,7 +159,7 @@
     },
     {
       "path": "backend/performance_v4_history.py",
-      "sha256": "f6feb0217a225a111e156d38b3554d95c0483edce4b73d3da29254de8692bc36"
+      "sha256": "0e61a39974bcae7bd8e8206951336b35bf0d235a8d7e379690265d634c03feb3"
     },
     {
       "path": "backend/performance_valuation.py",
@@ -167,7 +167,7 @@
     },
     {
       "path": "backend/execution_v4.py",
-      "sha256": "8d80c199d1fb3a20b8b10812d282d944a17b807043a8ca38c896fb337caadce4"
+      "sha256": "97f86c7bfbca59226f5763cb5393a78b72562047b4914ae020f698031f1bc5bc"
     },
     {
       "path": "backend/general_compound_receipts.py",

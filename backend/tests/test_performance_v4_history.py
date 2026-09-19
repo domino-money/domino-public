@@ -30,6 +30,7 @@ def fixture(*,swap=False):
         maxOriginal0='0',maxOriginal1='0',maxCharged0='0',maxCharged1='0',minAdded0='98',minAdded1='0',
         minSqrtPriceX96=str((1<<96)-1),maxSqrtPriceX96=str((1<<96)+1))
     plan=v4.Plan(authority=authority,action=3,destinationTokenId='0',tickLower=-60,tickUpper=60,
+        maxAdded0=str(2**127-1),maxAdded1=str(2**127-1),
         collect=(v4.PositionRef(tokenId='1',positionIdentity=hash_(92),checkpointId=hash_(91)),),
         budgets=tuple([v4.FeeBudget(sourceId=hash_(93),currency=ZERO,maxOriginal='120' if swap else '100',maxCharged='0',minOriginal='0',minCharged='0')]+
             ([v4.FeeBudget(sourceId=hash_(93),currency=TOKEN,maxOriginal='0',maxCharged='18',minOriginal='0',minCharged='0')] if swap else [])),

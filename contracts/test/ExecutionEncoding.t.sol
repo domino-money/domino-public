@@ -69,6 +69,8 @@ contract ExecutionEncodingTest {
         uint128 maxChargedInput1;
         uint128 minNetAdded0;
         uint128 minNetAdded1;
+        uint128 maxNetAdded0;
+        uint128 maxNetAdded1;
         uint160 minSqrtPriceX96;
         uint160 maxSqrtPriceX96;
         uint128 maxGasCostWei;
@@ -332,7 +334,7 @@ contract ExecutionEncodingTest {
         returns (PlanWords memory value)
     {
         value.typeHash = keccak256(
-            "ExecutionPlan(bytes32 sequence,bytes32 policyHash,bytes32 observationHash,uint8 action,uint8 path,uint64 expectedPolicyVersion,uint64 expectedStateNonce,uint64 expectedAuthorityGeneration,uint64 sourceBlockNumber,bytes32 sourceBlockHash,uint64 deadline,bytes32 allocations,bytes32 collections,bytes32 destination,uint128 liquidityIncrease,uint128 maxGrossFee0,uint128 maxGrossFee1,uint128 maxChargedInput0,uint128 maxChargedInput1,uint128 minNetAdded0,uint128 minNetAdded1,uint160 minSqrtPriceX96,uint160 maxSqrtPriceX96,uint128 maxGasCostWei,bytes32 swap)"
+            "ExecutionPlan(bytes32 sequence,bytes32 policyHash,bytes32 observationHash,uint8 action,uint8 path,uint64 expectedPolicyVersion,uint64 expectedStateNonce,uint64 expectedAuthorityGeneration,uint64 sourceBlockNumber,bytes32 sourceBlockHash,uint64 deadline,bytes32 allocations,bytes32 collections,bytes32 destination,uint128 liquidityIncrease,uint128 maxGrossFee0,uint128 maxGrossFee1,uint128 maxChargedInput0,uint128 maxChargedInput1,uint128 minNetAdded0,uint128 minNetAdded1,uint128 maxNetAdded0,uint128 maxNetAdded1,uint160 minSqrtPriceX96,uint160 maxSqrtPriceX96,uint128 maxGasCostWei,bytes32 swap)"
         );
         value.sequence = sequenceHash(currency0, baseCurrency, quoteCurrency);
         value.policyHash = policyHash(baseCurrency, quoteCurrency);
@@ -365,6 +367,9 @@ contract ExecutionEncodingTest {
         value.maxChargedInput1 = 0;
         value.minNetAdded0 = 980;
         value.minNetAdded1 = 0;
+        // The signed ceiling; mirrors backend/tests/execution_cases.py.
+        value.maxNetAdded0 = 1000;
+        value.maxNetAdded1 = 1000;
         value.minSqrtPriceX96 = 79_228_162_514_264_337_593_543_950_335;
         value.maxSqrtPriceX96 = 79_228_162_514_264_337_593_543_950_337;
         value.maxGasCostWei = 1_000_000_000_000;
@@ -404,6 +409,8 @@ contract ExecutionEncodingTest {
         if (swapEnabled) {
             plan.minNetAdded0 = 0;
             plan.minNetAdded1 = 500;
+            plan.maxNetAdded0 = 1000;
+            plan.maxNetAdded1 = 1000;
             plan.swap = keccak256(abi.encode(
                 keccak256("SwapBounds(bool enabled,bytes32 adapterId,uint64 adapterVersion,bytes32 routeCommitment,address currencyIn,address currencyOut,uint128 amountInRaw,uint128 minAmountOutRaw)"),
                 true, bytes32(uint256(800)), uint64(1), bytes32(uint256(801)),
@@ -413,25 +420,25 @@ contract ExecutionEncodingTest {
 
     function testNonemptyAccrualCollectionAndGeneralPathGolden() public pure {
         PlanWords memory plan = collectionPlan(false, false);
-        require(keccak256(abi.encode(plan)) == 0xa3d8b304222e3f4ad4d1df7b35b39151f30819850e5d782efab133f68a24123d, "general collection plan");
-        require(intentId(plan, 4663, address(3)) == 0x264a23f02b05cf3d82bb598f783693e8336ad11ccad7e14b3f9d3552e2157e78, "general collection intent");
+        require(keccak256(abi.encode(plan)) == 0xce62a8b1bff2dd7d958e80eb6c5cd564ee276dcf9a49d8dace53b43d0c0ded02, "general collection plan");
+        require(intentId(plan, 4663, address(3)) == 0x880ed51aae8f4556ede5982a39607a3aef6fd33aa8be80c316099490902bc4fd, "general collection intent");
     }
 
     function testEnabledSwapGeneralAndSeparateNetNoSwapGoldens() public pure {
         PlanWords memory plan = collectionPlan(false, true);
-        require(keccak256(abi.encode(plan)) == 0xd58c2c67e761430717f993c3b8bd527ab2608e413d1a13774b5af3102fbd3100, "swap plan");
-        require(intentId(plan, 4663, address(3)) == 0x063816d76a31ddc57ccaa66b68fc4afa6d00594de40a34d963348e3c92f9cefd, "swap intent");
+        require(keccak256(abi.encode(plan)) == 0xd66b5cdd3e97e87913fccf3cf06efa448b528f284604266a0ce130c10e21ff8e, "swap plan");
+        require(intentId(plan, 4663, address(3)) == 0x8c40ae5321722e702b7373d3ae5ea056754eff7d2802a71b3e9ffce3e1da9235, "swap intent");
         plan = collectionPlan(true, false);
-        require(keccak256(abi.encode(plan)) == 0xe95bcda313d4eba3bd1d67c67937106758f1335dd29d384a78656b79bba414cd, "net plan");
-        require(intentId(plan, 4663, address(3)) == 0x776bec5362e5b74cc9b9e72b0b4aa146af975f8212198eb571bd29a6f2b5ce16, "net intent");
+        require(keccak256(abi.encode(plan)) == 0xf88308e60c27756cae08b6bfff699ceb01ec4b75afd0dfb488dd7a3446867014, "net plan");
+        require(intentId(plan, 4663, address(3)) == 0xaad0f4270483931ea5f09b3a06dc195b41fa594a145417e2d0de87806966593e, "net intent");
     }
 
     function testDominoAndStableSuccessorReservationGoldens() public pure {
         PlanWords memory plan = selfPlan(address(0x10), address(0x10), address(0x20));
         plan.action = 3;
         plan.destination = destinationHash(true, 101, 0, 600);
-        require(keccak256(abi.encode(plan)) == 0x19fb167fbe81f87a3e66c00464aae6d0eeb89570f6fc2d675da279d468436e02, "domino plan");
-        require(intentId(plan, 4663, address(3)) == 0xd6179e6f43a0c31c501f3ebaccbec1e2b6dac079c8dbeab963e0d24eb25e5066, "domino intent");
+        require(keccak256(abi.encode(plan)) == 0x3779b64e949dcf1bce5b0393e1b1139c5622ae58fc95668e2047539c0c2a84eb, "domino plan");
+        require(intentId(plan, 4663, address(3)) == 0xae79109720dcb9e4cfa9cda3d742d1f640c129d738632f0fa3a0d3b4fcd48b0f, "domino intent");
         bytes32 successor = keccak256(abi.encode(
             keccak256("SuccessorId(bytes32 sequence,uint256 parentTokenId)"), plan.sequence, uint256(101)));
         require(successor == 0x4e538f78c2669bce781c529a53f2b9f8cc6142a57bcc613a28b7cdd3650ce10f, "successor id");
@@ -454,8 +461,8 @@ contract ExecutionEncodingTest {
         plan.observationHash = keccak256(abi.encode(obs));
         plan.action = 2;
         plan.destination = destinationHash(false, 102, 0, 600);
-        require(keccak256(abi.encode(plan)) == 0x2d72beb5604a41ab72d981b36c2e9585e7a697060806c191c04ce86337e1d867, "redirect plan");
-        require(intentId(plan, 4663, address(3)) == 0x7c130b23b4232ee1b993c19ce90fbb4f60f9a241de2aa3ac1a3d619f2702c0b7, "redirect intent");
+        require(keccak256(abi.encode(plan)) == 0xef1fa83a9e108996a0f569a3f35b99480bc09d9266057d5a962868aadb19996d, "redirect plan");
+        require(intentId(plan, 4663, address(3)) == 0xbdaf3a6c49836c6eff06beb515baaabf2e6d66b6d515a9c5c690ba6ca745d4b3, "redirect intent");
     }
 
     function testConvertedAllocationIdentityAndInputLineageGolden() public pure {
@@ -515,11 +522,11 @@ contract ExecutionEncodingTest {
             "domain hash"
         );
         require(
-            keccak256(abi.encode(plan)) == 0x0dd95ff2f5b135c1bb91c48b480ecc7b60de525f1c47b898583ee2fff2b51921,
+            keccak256(abi.encode(plan)) == 0xae20a2badc8ac86afc1465468e8fbe8fb44547f5d8a51c6f7ee344da2e1bc5c4,
             "plan hash"
         );
         require(
-            intentId(plan, 4663, address(3)) == 0x13590632a80ac560d49d631fc1e3a76fedddc316ee631ac89863a582787ca074,
+            intentId(plan, 4663, address(3)) == 0x7a76a546826b6c2ac1258c42e707b9fae12b39301d8a89991101d8153895354b,
             "intent id"
         );
     }
@@ -538,11 +545,11 @@ contract ExecutionEncodingTest {
             "native credit"
         );
         require(
-            keccak256(abi.encode(plan)) == 0x15413d7c7bb6d94ae0581ae10a996170c1282b64cab6eb66b3b98036da0220d8,
+            keccak256(abi.encode(plan)) == 0x08c3ade9519aef61dd66bb35734b31fc6ed6dbbba684dba875a768213ed8c434,
             "native plan"
         );
         require(
-            intentId(plan, 4663, address(3)) == 0x28fd4f1985ea7d9f9c186a87c1ac569d7f66d3a96249b3ab89c63a086dbd1674,
+            intentId(plan, 4663, address(3)) == 0x85ea2f49ca4a5335c7cd5f2e8a39c4a93b1a33affec4b2d181d80211a94b2da1,
             "native intent"
         );
     }
@@ -560,11 +567,11 @@ contract ExecutionEncodingTest {
             "reversed credit"
         );
         require(
-            keccak256(abi.encode(plan)) == 0x02a40f2ff9e595ac746af1dc212accb862c2561045043f254b14daf773a0ec00,
+            keccak256(abi.encode(plan)) == 0x0480cae6ecfbba84d88327596f3935916009bf49a76976b48477755d9b9c71f5,
             "reversed plan"
         );
         require(
-            intentId(plan, 4663, address(3)) == 0xdb1b86993fcbc27d7321a8bd43f2eef6e26ab64c286ae3c6bc6bf581800a6b2f,
+            intentId(plan, 4663, address(3)) == 0xd04a3fa2e4ceb1469bf57d645806d171d4155c33d1d5a8115e26cfaa87020234,
             "reversed intent"
         );
     }

@@ -118,6 +118,7 @@ class DurableV4ExecutorTests(unittest.TestCase):
             destination=m.Destination(createChild=action==3,tokenId=target.tokenId,tickLower=-420 if action==3 else target.tickLower,tickUpper=4680 if action==3 else target.tickUpper),
             liquidityIncrease=str(10**10 if swap or action in (2,3) or charged_lot else 5*10**13),maxGrossFee0=str(10**15),maxGrossFee1=str(10**15),
             maxChargedInput0=str(charged[0]),maxChargedInput1=str(charged[1]),minNetAdded0='1',minNetAdded1='1',
+            maxNetAdded0=str(2**127-1),maxNetAdded1=str(2**127-1),
             minSqrtPriceX96=str(2**95),maxSqrtPriceX96=str(2**97),maxGasCostWei=str(10**17),swap=disabled)
         self.rpc.request('evm_mine',[])
         # Every action carries a published observation, swap or not: the engine

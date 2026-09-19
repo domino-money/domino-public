@@ -174,7 +174,7 @@ contract DominoExecutionEngineV4 {
         _destination = id;
         uint128 added0 = _debt(vault.positionManager(),key.currency0);
         uint128 added1 = _debt(vault.positionManager(),key.currency1);
-        if ((added0 == 0 && added1 == 0) || added0 < plan.authority.minAdded0 || added1 < plan.authority.minAdded1) revert InvalidAmount();
+        _bound(added0,added1,plan);
         _allocate(vault,work,key.currency0,added0); _allocate(vault,work,key.currency1,added1);
         if (plan.action != E.MINT) {
             T.Checkpoint memory afterPoint = _point(vault,id); _after(beforePoint,afterPoint,plan.authority.liquidityIncrease);
@@ -238,7 +238,7 @@ contract DominoExecutionEngineV4 {
         uint256 received1 = _balance(key.currency1)-old1;
         if (received0 > realized0 || received1 > realized1) revert InvalidAmount();
         uint128 added0 = realized0-uint128(received0); uint128 added1 = realized1-uint128(received1);
-        if ((added0 == 0 && added1 == 0) || added0 < plan.authority.minAdded0 || added1 < plan.authority.minAdded1) revert InvalidAmount();
+        _bound(added0,added1,plan);
         for (uint256 i; i < 2; ++i) {
             E.FeeBudget memory budget = plan.budgets[i];
             bool zero = budget.currency == key.currency0;
@@ -303,6 +303,14 @@ contract DominoExecutionEngineV4 {
         emit FeesConverted(address(vault),plan.authority.intentId,route.sourceId,route.currencyIn,outputCurrency,
             route.amountIn,amountOut,value,outputBefore,vault.feeBalance(route.sourceId,outputCurrency).charged);
         work.originalSpent[budgetIndex] += value.grossOriginalConsumed;
+    }
+
+    /// What the add actually cost, against the plan's own floor and ceiling.
+    /// Both sites share this deliberately: kept inline, the IR pipeline emits
+    /// the condition twice and the ceiling no longer fits the engine's reserve.
+    function _bound(uint128 added0, uint128 added1, E.Plan memory plan) private pure {
+        if ((added0 == 0 && added1 == 0) || added0 < plan.authority.minAdded0 || added1 < plan.authority.minAdded1
+            || added0 > plan.maxAdded0 || added1 > plan.maxAdded1) revert InvalidAmount();
     }
 
     function _debit(E.FeeBudget memory budget, uint128 original, uint128 charged) private pure {

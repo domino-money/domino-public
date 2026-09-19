@@ -507,6 +507,12 @@ class ExecutionPlan(Record):
     maxChargedInput1: Raw128
     minNetAdded0: Raw128
     minNetAdded1: Raw128
+    # The ceiling the owner's planner commits to, per currency. It has to be
+    # signed here rather than supplied at relay time: a ceiling the relayer
+    # picks is a ceiling the relayer can set to uint128 max, which is no
+    # commitment at all.
+    maxNetAdded0: Raw128
+    maxNetAdded1: Raw128
     minSqrtPriceX96: Raw160
     maxSqrtPriceX96: Raw160
     maxGasCostWei: Raw128
@@ -518,6 +524,7 @@ class ExecutionPlan(Record):
            ('allocations', 'bytes32'), ('collections', 'bytes32'), ('destination', 'bytes32'), ('liquidityIncrease', 'uint128'),
            ('maxGrossFee0', 'uint128'), ('maxGrossFee1', 'uint128'), ('maxChargedInput0', 'uint128'),
            ('maxChargedInput1', 'uint128'), ('minNetAdded0', 'uint128'), ('minNetAdded1', 'uint128'),
+           ('maxNetAdded0', 'uint128'), ('maxNetAdded1', 'uint128'),
            ('minSqrtPriceX96', 'uint160'), ('maxSqrtPriceX96', 'uint160'), ('maxGasCostWei', 'uint128'),
            ('swap', 'bytes32'))
 
@@ -536,8 +543,11 @@ class ExecutionPlan(Record):
             raise ValueError('action_destination_mismatch')
         if self.path == 1 and (self.action != 1 or self.swap.enabled or self.allocations):
             raise ValueError('net_path_not_eligible')
-        if self.minNetAdded0 == self.minNetAdded1 == '0' or self.maxGasCostWei == '0':
+        if (self.minNetAdded0 == self.minNetAdded1 == '0' or self.maxGasCostWei == '0'
+                or self.maxNetAdded0 == self.maxNetAdded1 == '0'):
             raise ValueError('missing_execution_bound')
+        if int(self.maxNetAdded0) < int(self.minNetAdded0) or int(self.maxNetAdded1) < int(self.minNetAdded1):
+            raise ValueError('addition_ceiling_below_its_floor')
         if not 0 < int(self.liquidityIncrease) < 2**127:
             raise ValueError('invalid_positive_liquidity_delta')
         return self

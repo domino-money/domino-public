@@ -129,6 +129,11 @@ contract DominoRoutingHelperV4 {
             || a.liquidityIncrease > uint128(type(int128).max) || block.timestamp > type(uint64).max
             || (last != 0 && block.timestamp - last < rules.minimumIntervalSeconds)
             || a.maxOriginal0 != 0 || a.maxOriginal1 != 0 || a.maxCharged0 != 0 || a.maxCharged1 != 0
+            // An encoder that never learned about the ceiling sends zero for
+            // both and is refused here, early, rather than deep inside _fund.
+            // A one-sided add legitimately zeroes one of the two, so `&&`.
+            || (plan.maxAdded0 == 0 && plan.maxAdded1 == 0)
+            || plan.maxAdded0 < a.minAdded0 || plan.maxAdded1 < a.minAdded1
             || plan.collect.length > 16 || plan.budgets.length == 0 || plan.budgets.length > 32)
             revert InvalidExecution();
         if (vault.positionManager() != readHelper.positionManager()) revert InvalidExecution();

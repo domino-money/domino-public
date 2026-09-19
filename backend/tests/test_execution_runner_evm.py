@@ -81,7 +81,8 @@ class DurableExecutorEvmTests(unittest.TestCase):
             allocations=(),collections=tuple(m.CollectionBudget(sourceId=a.source.digest(),maxGrossRaw=str(10**15)) for a in accruals),
             destination=m.Destination(createChild=False,tokenId=str(self.token),tickLower=pos.tickLower,tickUpper=pos.tickUpper),
             liquidityIncrease=str(5*10**13),maxGrossFee0=str(10**15),maxGrossFee1=str(10**15),maxChargedInput0='0',maxChargedInput1='0',
-            minNetAdded0='1',minNetAdded1='1',minSqrtPriceX96=str(2**95),maxSqrtPriceX96=str(2**97),maxGasCostWei=str(10**17),swap=swap)
+            minNetAdded0='1',minNetAdded1='1',maxNetAdded0=str(2**127-1),maxNetAdded1=str(2**127-1),
+            minSqrtPriceX96=str(2**95),maxSqrtPriceX96=str(2**97),maxGasCostWei=str(10**17),swap=swap)
         self.store=UnsignedExecutionStore(self.pg.settings)
         self.worker=str(uuid.uuid4())
         self.signer=RestrictedSigner(self.rpc,KEY,self.admission,SignerPolicy(3000000,10**10,10**6,10**17,enabled=True))

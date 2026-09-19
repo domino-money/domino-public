@@ -65,18 +65,49 @@ observation read and two `mulDiv` calls on the hot path, and it makes every
 execution depend on publisher liveness — which is why D-03 and D-04 below
 have to be answered with it, not after it.
 
-### 2. Liquidity adds disable the periphery's own slippage guard (D-02)
+### 2. A plan cannot say what one add may cost (D-02) — FIXED, and restated
 
-`executionModify` and `executionMint` pass `type(uint128).max` for both
-`amount0Max` and `amount1Max` (`contracts/src/DominoVaultV4.sol:286`, `:355`),
-which turns off v4's `validateMaxIn`. The replacement is `minAdded0/1`
-(`DominoExecutionEngineV4.sol:163`), which are **lower** bounds on tokens
-spent and come from the same operator. There is no ceiling of the form "spend
-at most X for this much liquidity"; the only limit is budget exhaustion.
-Adding `maxAdded0/1` and feeding them to the periphery restores an
-independent check — at the cost of new fields in a plan struct that is hashed
-into `planHash`, so every off-chain encoder and the `ExecutionEncoding`
-goldens move with it.
+*Corrected and closed after measurement; see the note at the end of this
+section for what the original text got wrong.*
+
+For a committed `liquidityIncrease` the **value** of an add is bounded by the
+D-01 price anchor, but its **composition** is not: `amount1 = L(√P − √Pa)`
+collapses toward a range edge, so a price move well inside
+`ExecutionLimits.maxPriceImpactBps` changes the raw per-currency spend by
+orders of magnitude. That knob is a single global owner setting, admitted up
+to 9999 bps, whose job is liveness — not a per-execution statement of what
+this add may cost. The engine bounded the spend only from below, at two
+byte-identical floors, and the periphery's own ceiling was switched off.
+
+Measured on the real contracts with one plan and three worlds, at a 1000 bps
+band an owner may legitimately choose: the same calldata costs 29,555,984,009
+of currency1 at the unmoved price, 49,495,984,009 after an outside buy and
+10,005,699,277 after an outside sell. The mover is a third party, not the
+operator.
+
+The fix is a plan-declared per-currency ceiling on `E.Plan`, enforced in the
+engine beside the existing floors, and signed as `maxNetAdded0/1` on the E1
+`ExecutionPlan` so a relaying party cannot widen it. **Not** a ceiling derived
+on-chain: for fixed `L` the amounts are monotone in price, so a derived
+ceiling widened by `t ≥ band` can never fire and one with `t < band` is just a
+tighter band the owner could already set. There is no tolerance that makes a
+derived ceiling informative.
+
+Four corrections to the original text, all measured:
+
+1. The cites were stale: the disabled ceilings are at `DominoVaultV4.sol:311`
+   and `:380`, and the floor at `DominoExecutionEngineV4.sol:177` has an
+   identical twin at `:241` that the section never mentioned.
+2. "The only limit is budget exhaustion" undersold what exists — the per-budget
+   `maxOriginal`/`maxCharged` are absolute raw-token ceilings — and oversold the
+   gap: the loss is the overpay against the anchor, not the raw token swing, and
+   at the 100 bps every deployment runs it is about 4 bps.
+3. Feeding the ceiling to the periphery is the *more* expensive placement, not
+   the only one: engine +118 B against periphery +255 B engine and +92 B vault.
+   It also bounds the wrong quantity, and on the `increase == 0` branch those
+   same ABI words are minimums.
+4. The `ExecutionEncoding` goldens move because the **signed** plan gains the
+   field, not because `E.Plan` does. `E.Plan` is not what those goldens hash.
 
 ### 3. The price publisher is a single key with no on-chain sanity check (D-03, D-04)
 
