@@ -101,12 +101,36 @@ addresses during their token probes, with no Alchemy connection in either trace.
 Tracing ended immediately after each probe. Browser-origin calls directly to
 both readers were still refused with HTTP 403 (`local_client_required`).
 
-The public site presents its beta login normally. A fully authenticated public
-bridge request was **not** repeated because no beta session/password was
-available. The already published Worker revision `0f01f8f` has identical read
-Worker source and read-v1/v2 wire contracts to this release; no Worker deployment
-was needed. Runtime health and backend probes do not replace that missing
-authenticated end-to-end check.
+### Authenticated public validation
+
+The owner subsequently supplied beta access, completing the previously pending
+public-path check on 19 September. Login succeeded in the browser and through
+the bounded probe (HTTP 303, Secure/HttpOnly beta cookie). The default Python
+user agent initially received Cloudflare error 1010 before authentication; the
+identified deployment-probe user agent was accepted without a WAF change.
+The password and probe cookie were held in memory, never in a report, credential
+file or command-line argument.
+
+| Authenticated route on `https://domino.money` | HTTP | Time | Snapshot block | Result |
+| --- | --- | --- | --- | --- |
+| `/api/read/v1/token` | 200 | 0.456 s | 67,405,779 | WETH available |
+| `/api/read/v1/wallet-assets` | 200 | 1.624 s | 67,405,817 | Zero-address read; Alchemy inventory page received |
+| `/api/read/v2/pool-market` | 200 | 0.782 s | 67,405,843 | WETH/USDG market and APR estimate available |
+
+Each call traversed the public beta gate and authenticated read bridge. All
+three bodies passed the local v1/v2 validators, including recomputation of v2
+APR evidence. Chain 4663, the respective contract response headers
+(`1.1.0-rc.3` / `2.0.0-rc.1`) and `no-store` were verified. No wallet signature
+or transaction was requested. The browser also displayed current pool prices,
+provider TVL/volume and estimated APR; its temporary tab was closed afterward.
+
+A separate limitation was visible in PONS/USDG's on-chain activity panel:
+indexed block 50,906,349 was reported as 19 days behind, so the panel withheld
+24-hour activity figures. Current pool state and market/APR reads succeeded;
+these checks do not qualify the completeness or freshness of historical indexes.
+
+The already published Worker revision `0f01f8f` has identical read Worker source
+and read-v1/v2 wire contracts to this release; no Worker deployment was needed.
 
 Development's existing qualification and egress deadline was preserved:
 **19 September 2026, 22:47:32 UTC / 19:47:32 America/Sao_Paulo**. Production's
