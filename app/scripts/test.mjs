@@ -43,6 +43,7 @@ execFileSync(
     'tests/token-artwork.test.mjs',
     'tests/pool-workspace.test.mjs',
     'tests/create-journey.test.mjs',
+    'tests/create-budgets.test.mjs',
     'tests/docs.test.mjs',
     'tests/price-series.test.mjs',
     'tests/token-search.test.mjs',

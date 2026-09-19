@@ -275,6 +275,27 @@ test('the preview request is shaped as onboarding-v1’s position-preview reques
   assert.deepEqual(journey.previewRequest(journey.withBudget(s, '')), { ok: false, reason: CREATE.amount.empty });
 });
 
+test('the wallet’s balance of each currency goes with the request: a position holds both, and only the service can say the wallet is short of one', () => {
+  const s = ready();
+  const withBoth = journey.previewRequest(s, { budget0Raw: '7', budget1Raw: '9', nativeBalanceRaw: '7' });
+  assert.equal(withBoth.ok, true);
+  assert.equal(withBoth.request.budget0Raw, '7');
+  assert.equal(withBoth.request.budget1Raw, '9');
+  assert.equal(withBoth.request.nativeBalanceRaw, '7');
+  // A budget adds fields and changes no choice.
+  const { budget0Raw, budget1Raw, nativeBalanceRaw, ...choices } = withBoth.request;
+  assert.deepEqual(choices, journey.previewRequest(s).request);
+  // One currency read and the other not: one field, never a zero standing in for the one that was not read.
+  assert.deepEqual(
+    Object.keys(journey.previewRequest(s, { budget1Raw: '9' }).request).filter((key) => key.startsWith('budget')),
+    ['budget1Raw'],
+  );
+  // Nothing read at all is exactly the request that existed before budgets.
+  assert.deepEqual(journey.previewRequest(s, {}).request, journey.previewRequest(s).request);
+  // A budget never rescues a request the service would not admit.
+  assert.deepEqual(journey.previewRequest({ ...s, pool: pool({ hooks: addr('f') }) }, { budget0Raw: '7' }), { ok: false, reason: CREATE.balance.hooks });
+});
+
 test('Setup’s draft starts from the same validated choices as the preview request: pool, deposit token, amount, range and slippage, and nothing else (G9)', () => {
   const s = ready();
   const draft = journey.setupDraft(s);

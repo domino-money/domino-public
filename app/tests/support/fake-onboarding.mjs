@@ -92,8 +92,11 @@ export function createFakeOnboarding({ session }) {
     /** A key of DERIVED_POSITIONS: the only position the fake then answers, or null. */
     positionDerived: null,
     /**
-     * Answers any valid position request that gives no budget or native balance, as New position sends it: the
-     * incomplete package variant moved onto the request's pool, ticks and amount (see adaptedPosition).
+     * Answers any valid position request New position sends: the incomplete
+     * package variant moved onto the request's pool, ticks and amount, with the
+     * budget checks answered against whatever budgets the request carries (see
+     * adaptedPosition). A request that names a gas reserve is still refused:
+     * New position never chooses one.
      */
     positionFromRequest: false,
     /** 'required' or 'unavailable': the beta gate answers the next request instead of the worker. */
@@ -187,26 +190,49 @@ export function createFakeOnboarding({ session }) {
    */
   function adaptedPosition(body, owner) {
     const request = withNulls(body);
-    if ([request.budget0Raw, request.budget1Raw, request.nativeBalanceRaw, request.nativeGasReserveRaw].some((value) => value !== null)) return null;
+    if (request.nativeGasReserveRaw !== null) return null;
     const preview = read('variants/position-preview.incomplete.json').preview;
     const independent = body.independentToken.toLowerCase();
     const amount = BigInt(body.amountRaw);
     const { currency0, currency1 } = body.poolKey;
     preview.request = { ...request, owner };
     Object.assign(preview.position, { poolId: body.poolId, poolKey: { ...body.poolKey }, tickLower: body.tickLower, tickUpper: body.tickUpper, recipient: owner });
-    preview.position.tokens = [currency0, currency1].map((address) => {
+    // The budgets New position now sends are the wallet's own balances, so the
+    // checks are answered against them: a maximum a budget does not cover is
+    // `exceeded` and blocks, and a budget that was not sent stays unknown.
+    const budgets = [request.budget0Raw, request.budget1Raw];
+    const reasons = [];
+    preview.position.tokens = [currency0, currency1].map((address, index) => {
       const expected = address === independent ? amount : amount * 2n + 1n;
+      const maximum = expected + (expected * BigInt(body.slippageBps)) / 10000n;
+      const token = { address, expectedDepositRaw: String(expected), maximumDebitRaw: String(maximum) };
+      const budget = budgets[index];
+      if (budget === null) {
+        reasons.push(`token${index}_budget_unknown`);
+        return { ...token, budgetStatus: 'unknown', estimatedUnspentBudgetRaw: null, selectedBudgetRaw: null, unspentAtMaximumRaw: null };
+      }
+      if (BigInt(budget) < maximum) {
+        reasons.push(`token${index}_maximum_exceeds_budget`);
+        return { ...token, budgetStatus: 'exceeded', estimatedUnspentBudgetRaw: null, selectedBudgetRaw: budget, unspentAtMaximumRaw: null };
+      }
       return {
-        address,
-        budgetStatus: 'unknown',
-        estimatedUnspentBudgetRaw: null,
-        expectedDepositRaw: String(expected),
-        maximumDebitRaw: String(expected + (expected * BigInt(body.slippageBps)) / 10000n),
-        selectedBudgetRaw: null,
-        unspentAtMaximumRaw: null,
+        ...token,
+        budgetStatus: 'within_limit',
+        estimatedUnspentBudgetRaw: String(BigInt(budget) - expected),
+        selectedBudgetRaw: budget,
+        unspentAtMaximumRaw: String(BigInt(budget) - maximum),
       };
     });
     preview.nativeFunding.depositMaximumRaw = currency0 === '0x0000000000000000000000000000000000000000' ? preview.position.tokens[0].maximumDebitRaw : '0';
+    if (request.nativeBalanceRaw === null) reasons.push('native_balance_unknown');
+    else {
+      preview.nativeFunding.reportedBalanceRaw = request.nativeBalanceRaw;
+      if (BigInt(preview.nativeFunding.depositMaximumRaw) > BigInt(request.nativeBalanceRaw)) reasons.push('native_deposit_exceeds_balance');
+    }
+    // New position never chooses a gas reserve, so this one is always open.
+    reasons.push('native_gas_reserve_unspecified');
+    const blocked = reasons.some((reason) => reason === 'native_deposit_exceeds_balance' || reason.endsWith('_maximum_exceeds_budget'));
+    preview.previewChecks = { reasons, status: blocked ? 'blocked' : reasons.length > 1 ? 'incomplete' : 'within_selected_limits' };
     return stamp(preview);
   }
 

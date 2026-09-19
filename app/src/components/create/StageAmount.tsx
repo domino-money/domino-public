@@ -5,6 +5,8 @@ import type { ReadSource } from '../../lib/read/types'
 import { PoolRangeControls } from '../read/screens/PoolRangeControls'
 import { SymbolText } from '../read/screens/SymbolText'
 import { AmountField, TextField } from './fields'
+import { PairedBalance } from './PairedBalance'
+import type { PairBalancesState } from './usePairBalances'
 import { WalletBalance } from './WalletBalance'
 
 /**
@@ -48,11 +50,13 @@ export function StageRange({
 export function StageAmount({
   source,
   state,
+  balances,
   onBudget,
   onSlippage,
 }: {
   source: ReadSource | null
   state: JourneyState
+  balances: PairBalancesState
   onBudget: (text: string) => void
   onSlippage: (text: string) => void
 }) {
@@ -77,14 +81,22 @@ export function StageAmount({
         value={state.budget}
         disabled={decimals === null}
         onChange={(event) => onBudget(event.target.value)}
-        footer={<WalletBalance source={source} token={token} onUse={onBudget} />}
+        footer={
+          <>
+            <WalletBalance source={source} token={token} onUse={onBudget} />
+            <PairedBalance pair={balances} pool={state.pool} token={token} />
+          </>
+        }
         error={budgetError}
         below={
-          budget.ok && decimals !== null ? (
-            <p className="dm-hint tnum break-all" data-budget-raw={budget.raw} title={CREATE.amount.rawUnitsTitle}>
-              {CREATE.amount.rawUnits(budget.raw, decimals)}
-            </p>
-          ) : null
+          <>
+            {budget.ok && decimals !== null ? (
+              <p className="dm-hint tnum break-all" data-budget-raw={budget.raw} title={CREATE.amount.rawUnitsTitle}>
+                {CREATE.amount.rawUnits(budget.raw, decimals)}
+              </p>
+            ) : null}
+            <p className="dm-hint">{CREATE.amount.pairNote}</p>
+          </>
         }
         hint={`${CREATE.amount.budgetHint(decimals)} ${CREATE.amount.budgetNote}`}
       />

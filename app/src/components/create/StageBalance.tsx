@@ -1,4 +1,5 @@
 import { lazy, Suspense } from 'react'
+import type { PairBalancesState } from './usePairBalances'
 import { CREATE } from '../../lib/create/copy'
 import type { JourneyState } from '../../lib/create/journey'
 import { SymbolText } from '../read/screens/SymbolText'
@@ -27,13 +28,20 @@ export interface AmountsShown {
   title: string
   /** The estimate's own checks status, for data attributes only. */
   checks: string | null
+  /**
+   * The pool currencies, in pool order, the estimate reported the wallet does
+   * not cover. A deposit is funded with both currencies, so this is where the
+   * person learns they are short of the one they did not choose. Empty when no
+   * balance could be read, which is also when the check cannot run.
+   */
+  short: readonly (0 | 1)[]
 }
 
 const TOKEN_ROWS = ['expected', 'maximum', 'unspent'] as const
 const ROW_TITLES = { expected: CREATE.balance.titles.expected, maximum: CREATE.balance.titles.maximum, unspent: '' } as const
 
-const NOT_ASKED: AmountsShown = { status: 'off', reason: 'no_wallet_sign_in', figures: null, title: CREATE.balance.titles.off, checks: null }
-const LOADING: AmountsShown = { status: 'loading', reason: null, figures: null, title: CREATE.balance.titles.loading, checks: null }
+const NOT_ASKED: AmountsShown = { status: 'off', reason: 'no_wallet_sign_in', figures: null, title: CREATE.balance.titles.off, checks: null, short: [] }
+const LOADING: AmountsShown = { status: 'loading', reason: null, figures: null, title: CREATE.balance.titles.loading, checks: null, short: [] }
 
 // The consumer of the position preview, in builds that carry wallet sign-in: its own chunk, loaded when Review
 // first renders, as Positions loads Performance and Execution. Elsewhere the constant is null, nothing is
@@ -41,7 +49,7 @@ const LOADING: AmountsShown = { status: 'loading', reason: null, figures: null, 
 const DepositAmounts = __DOMINO_WALLET_SESSION__
   ? lazy(() =>
       import('./DepositAmounts').catch(() => ({
-        default: ({ state }: { state: JourneyState; open: boolean }) => <AmountsSection state={state} shown={{ ...NOT_ASKED, reason: 'not_loaded' }} />,
+        default: ({ state }: { state: JourneyState; open: boolean; balances: PairBalancesState }) => <AmountsSection state={state} shown={{ ...NOT_ASKED, reason: 'not_loaded' }} />,
       })),
     )
   : null
@@ -55,11 +63,11 @@ const DepositAmounts = __DOMINO_WALLET_SESSION__
  * builds with wallet sign-in and for a signed-in wallet (DepositAmounts.tsx).
  * Exact amounts are still calculated in Setup, and nothing here can sign.
  */
-export function StageBalance({ state, open }: { state: JourneyState; open: boolean }) {
+export function StageBalance({ state, open, balances }: { state: JourneyState; open: boolean; balances: PairBalancesState }) {
   if (!DepositAmounts) return <AmountsSection state={state} shown={NOT_ASKED} />
   return (
     <Suspense fallback={<AmountsSection state={state} shown={LOADING} />}>
-      <DepositAmounts state={state} open={open} />
+      <DepositAmounts state={state} open={open} balances={balances} />
     </Suspense>
   )
 }
@@ -69,6 +77,8 @@ export function AmountsSection({ state, shown }: { state: JourneyState; shown: A
   const currencies = state.pool?.currencies ?? []
   const titles = CREATE.balance.titles
   const { figures } = shown
+  // Named only when the pool read gave the currency a symbol: an unnamed one is left out rather than guessed.
+  const shortLines = shown.short.map((index) => currencies[index]?.symbol).filter((symbol): symbol is string => typeof symbol === 'string' && symbol.length > 0)
   const tokenLines = (cells: readonly AmountCell[], row: (typeof TOKEN_ROWS)[number]) =>
     // A row the estimate has nothing for is one dash, not a dash per token.
     cells.every((cell) => cell === null) ? (
@@ -126,6 +136,11 @@ export function AmountsSection({ state, shown }: { state: JourneyState; shown: A
           </dd>
         </div>
       </dl>
+      {shortLines.length > 0 && (
+        <p className="dm-flow-short" data-balance-short={shown.short.join(',')}>
+          {CREATE.balance.short(shortLines)}
+        </p>
+      )}
       <p className="dm-hint">{CREATE.balance.notEnabled}</p>
       <p role="status" aria-live="polite" className="sr-only">
         {shown.status === 'current' ? CREATE.balance.announce.current : shown.status === 'expired' ? CREATE.balance.announce.expired : ''}

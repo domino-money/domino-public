@@ -111,12 +111,35 @@ export const CREATE = {
     balanceNoDecimals: 'The token’s decimals were not read, so the balance cannot fill the budget.',
     /** The balance line's title when it shows a dash: why there is no balance. */
     balanceFailed: 'The wallet balance could not be read.',
+    /**
+     * The pool's other token on the amount step. A position is funded with
+     * both of a pool's tokens: the budget above is in the one chosen, and the
+     * service derives the other from the range and the price. So the balance
+     * that decides whether the deposit can go through is often this one.
+     */
+    pairNote: 'A position holds both of the pool’s tokens. How much of each this budget takes is calculated in Review, from the range and the price at that moment.',
+    pairLabel: 'The pool’s other token',
+    pairBalanceAt: (block: string | null) => (block ? `Your balance at block ${block}:` : 'Your balance:'),
+    pairNone: 'Your balance of this token could not be read, so nothing here can say whether it covers the deposit.',
+    pairConnect: 'Connect a wallet in the header to see what you hold of both tokens.',
+    pairReading: 'Reading your balance of both tokens…',
   },
   balance: {
     /** The one line under the deposit amount rows (the docs' New position page shows it too, lib/docs/pages/using.ts). */
     notEnabled: 'Exact amounts are calculated in Setup, at the price when you sign.',
     /** Why no request can be formed, from previewRequest in journey.ts. */
     incomplete: 'the earlier steps are not complete.',
+    /** The estimate waits for the balances, because they are part of its own request. */
+    balances: 'your balances of this pool’s tokens are still being read.',
+    /**
+     * The line that says the wallet does not cover the deposit, by token. Shown
+     * only for a currency the estimate itself reported short in `previewChecks`;
+     * nothing here compares an amount to a balance.
+     */
+    short: (symbols: readonly string[]) =>
+      `A position holds both of this pool’s tokens, and your wallet does not cover the most this deposit may take of ${
+        symbols.length > 1 ? `${symbols.slice(0, -1).join(', ')} and ${symbols[symbols.length - 1]}` : symbols[0]
+      }. Lower the budget, or swap into ${symbols.length > 1 ? 'them' : 'it'} in Setup before depositing.`,
     hooks: 'this pool has hooks, and deposits support hookless pools only.',
     dynamicFee: 'this pool has a dynamic fee, and deposits support fixed fees only.',
     /** The four rows, filled while an estimate for these choices is current. */

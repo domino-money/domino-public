@@ -4,6 +4,7 @@ import { realClock } from '../../lib/clock'
 import { CREATE } from '../../lib/create/copy'
 import { continueNote, previewRequest, setupDraft, type JourneyState } from '../../lib/create/journey'
 import { clearSetupDraft, putSetupDraft } from '../../lib/create/setupDraft'
+import type { PairBalancesState } from './usePairBalances'
 import { positionAmounts, type AmountCell as EstimateCell } from '../../onboarding/amounts'
 import { broadcastBudgetChannel, createPreviewBudget } from '../../onboarding/budget'
 import { createOnboardingClient } from '../../onboarding/client'
@@ -35,7 +36,7 @@ const shownCell = (cell: EstimateCell): AmountCell => (cell.kind === 'amount' ? 
 
 function shownFrom(view: IntentView<'position-preview'>, state: JourneyState): AmountsShown {
   const titles = CREATE.balance.titles
-  const quiet = { status: view.status, reason: view.reason, figures: null, checks: null }
+  const quiet = { status: view.status, reason: view.reason, figures: null, checks: null, short: [] }
   switch (view.status) {
     case 'current': {
       const pool = state.pool
@@ -46,6 +47,7 @@ function shownFrom(view: IntentView<'position-preview'>, state: JourneyState): A
         figures: { expected: amounts.expected.map(shownCell), maximum: amounts.maximum.map(shownCell), unspent: amounts.unspent.map(shownCell), liquidity: amounts.liquidity },
         title: titles.current(timeText(view.currentUntilWallMs)),
         checks: amounts.checks,
+        short: amounts.short,
       }
     }
     case 'expired':
@@ -63,7 +65,7 @@ function shownFrom(view: IntentView<'position-preview'>, state: JourneyState): A
   }
 }
 
-export default function DepositAmounts({ state, open }: { state: JourneyState; open: boolean }) {
+export default function DepositAmounts({ state, open, balances }: { state: JourneyState; open: boolean; balances: PairBalancesState }) {
   // One client, budget, controller and intent per mounted Review. The budget hears other tabs only while mounted.
   const deps = useMemo(() => {
     const budget = createPreviewBudget({ clock: realClock, channel: broadcastBudgetChannel() })
@@ -73,9 +75,22 @@ export default function DepositAmounts({ state, open }: { state: JourneyState; o
   }, [])
   useEffect(() => deps.budget.connect(), [deps])
   useEffect(() => deps.driver.start(), [deps])
-  const formed = previewRequest(state)
-  const request = formed.ok ? formed.request : null
-  const why = formed.ok ? '' : formed.reason
+  // `budgets` are the connected wallet's balances of this pool's two
+  // currencies, read once by the journey as soon as the pool was chosen
+  // (create/usePairBalances.ts), so they are part of the request from its
+  // first form rather than a second ask later. They are what let the service
+  // report that the wallet does not cover the currency the person did not
+  // choose. A wallet that is not connected, or a balance that could not be
+  // read, adds no field, and the request is then exactly what it was before.
+  // Until that read has settled, no estimate is asked: the balances are part
+  // of the request, so asking without them and again with them would be two
+  // estimates for one opening. The wait is short — the read starts when the
+  // pool is chosen, stages before this one — and the rows say "loading"
+  // meanwhile, which is what they are.
+  const waiting = balances.status === 'loading'
+  const formed = previewRequest(state, balances.budgets)
+  const request = waiting || !formed.ok ? null : formed.request
+  const why = waiting ? CREATE.balance.balances : formed.ok ? '' : formed.reason
   // The driver compares requests by their key, so handing it the same request again changes nothing.
   useEffect(() => {
     deps.driver.setForm(formFromRequest('position-preview', request, why))
@@ -84,7 +99,8 @@ export default function DepositAmounts({ state, open }: { state: JourneyState; o
     deps.driver.setOpen(open)
   }, [deps, open])
   const view = useSyncExternalStore(deps.driver.subscribe, deps.driver.getView)
-  return <AmountsSection state={state} shown={shownFrom(view, state)} />
+  const shown = shownFrom(view, state)
+  return <AmountsSection state={state} shown={waiting ? { ...shown, status: 'loading', reason: null, figures: null, title: CREATE.balance.titles.loading } : shown} />
 }
 
 /* ---------------------------------------------------------------------------

@@ -21,6 +21,7 @@ import { boundPrice, poolPrice, presetRange, rangePosition, usableTicks, type Po
 import type { PoolOption } from '../read/screens/poolsList'
 import type { TokenCandidate } from '../read/screens/tokens'
 import type { TokenDisplay } from '../read/types'
+import type { BudgetFields } from './budgets'
 import { CREATE } from './copy'
 
 export type Stage = 'token' | 'pool' | 'amount' | 'balance' | 'automation' | 'review'
@@ -362,11 +363,19 @@ export type PreviewRequest = { ok: true; request: PositionPreviewRequest } | { o
  * onboarding-v1's `position-preview.request.schema.json`. Formed only from
  * validated reads and validated inputs, and never sent from here: Review's
  * deposit amounts send it, in builds with wallet sign-in, for a signed-in
- * wallet (components/create/DepositAmounts.tsx). Nothing optional is added:
- * no budgets, native balance or gas reserve the person did not give. The pool
- * key must be hookless with a fixed fee: that is what the service admits.
+ * wallet (components/create/DepositAmounts.tsx). The pool key must be hookless
+ * with a fixed fee: that is what the service admits.
+ *
+ * `budgets` are the connected wallet's balances of the pool's two currencies,
+ * read at a block and converted exactly (create/budgets.ts). They are what
+ * lets the service report `token0_maximum_exceeds_budget` or
+ * `token1_maximum_exceeds_budget` and an unspent figure per currency: a
+ * deposit is funded with both currencies, and without them nothing can say
+ * the wallet is short of the one the person did not choose. Still nothing is
+ * invented — a currency whose balance could not be read adds no field, and a
+ * gas reserve is never assumed.
  */
-export function previewRequest(state: JourneyState): PreviewRequest {
+export function previewRequest(state: JourneyState, budgets: BudgetFields = {}): PreviewRequest {
   const { token, pool, range } = state
   if (!token || !pool || !range) return { ok: false, reason: CREATE.balance.incomplete }
   if (pool.hooks !== NATIVE_CURRENCY) return { ok: false, reason: CREATE.balance.hooks }
@@ -397,6 +406,7 @@ export function previewRequest(state: JourneyState): PreviewRequest {
       tickLower: range.lower,
       tickUpper: range.upper,
       slippageBps: slippage.bps,
+      ...budgets,
     },
   }
 }

@@ -26,6 +26,24 @@ export interface PositionAmounts {
   liquidity: string
   /** `previewChecks.status`, for data attributes only. */
   checks: PositionPreview['previewChecks']['status']
+  /**
+   * The pool currencies, in pool order, whose maximum debit exceeds the budget
+   * sent for them: the wallet does not cover this deposit in that currency.
+   * Empty whenever no budget was sent, because the check cannot run without one.
+   */
+  short: readonly (0 | 1)[]
+}
+
+/**
+ * The currencies a check reported short. The service names them by their
+ * position in the pool key, which is the order these rows are already in, and
+ * these two codes are the only ones that mean a wallet does not cover the mint.
+ */
+const SHORT_OF: Readonly<Record<string, 0 | 1>> = { token0_maximum_exceeds_budget: 0, token1_maximum_exceeds_budget: 1 }
+
+function shortCurrencies(reasons: readonly string[]): readonly (0 | 1)[] {
+  const named = reasons.map((reason) => SHORT_OF[reason]).filter((index): index is 0 | 1 => index !== undefined)
+  return [...new Set(named)].sort()
 }
 
 function amount(raw: string, decimals: number | null): AmountCell {
@@ -49,5 +67,6 @@ export function positionAmounts(preview: PositionPreview, decimals: readonly [nu
     unspent: tokens.map((token, index) => (token.estimatedUnspentBudgetRaw === null ? { kind: 'none', why: 'no_budget' } : amount(token.estimatedUnspentBudgetRaw, at(index)))),
     liquidity: formatUnits(preview.position.mintLiquidityRaw, 0)?.text ?? preview.position.mintLiquidityRaw,
     checks: preview.previewChecks.status,
+    short: shortCurrencies(preview.previewChecks.reasons),
   }
 }

@@ -32,6 +32,7 @@ import { verifyCandidate } from '../../lib/read/screens/catalogueSession'
 import { failureText } from '../../lib/read/screens/copy'
 import type { PoolOption } from '../../lib/read/screens/poolsList'
 import { useReadSource } from '../../lib/read/screens/readContext'
+import { usePairBalances } from './usePairBalances'
 import { mergeCandidates, type TokenCandidate } from '../../lib/read/screens/tokens'
 import { useNow } from '../../lib/read/useNow'
 import { Button, PageHeader, PageShell } from '../ui'
@@ -296,6 +297,12 @@ export function Journey({ poolId }: { poolId: string }) {
     </div>
   )
 
+  // One wallet read for both of the pool's currencies, owned here so it starts
+  // as soon as a pool is chosen and is settled by the time Review asks for an
+  // estimate: the amount step names the second token with it, and the estimate
+  // carries it as its budgets. One read, one owner, one estimate per opening.
+  const pair = usePairBalances(source, state.pool)
+
   const bodyOf = (step: VisualStep): ReactNode => {
     switch (step) {
       case 'pool':
@@ -303,11 +310,11 @@ export function Journey({ poolId }: { poolId: string }) {
       case 'range':
         return <StageRange source={source} state={state} onRange={setRange} onPool={setPool} />
       case 'amount':
-        return <StageAmount source={source} state={state} onBudget={setBudget} onSlippage={setSlippage} />
+        return <StageAmount source={source} state={state} balances={pair} onBudget={setBudget} onSlippage={setSlippage} />
       case 'automation':
         return <StageAutomation state={state} now={now} onAutomation={setAutomation} onLimits={setLimits} />
       case 'review':
-        return <StageReview state={state} now={now} open={current === 'review'} />
+        return <StageReview state={state} now={now} open={current === 'review'} balances={pair} />
       default:
         return step satisfies never
     }

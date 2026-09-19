@@ -1,5 +1,6 @@
 import { lazy, Suspense } from 'react'
 import { CREATE } from '../../lib/create/copy'
+import type { PairBalancesState } from './usePairBalances'
 import { candidateDecimals, feeBases, priceOf, serialiseSummary, validateBudget, walletSteps, type JourneyState } from '../../lib/create/journey'
 import { rangePosition } from '../../lib/read/screens/poolRange'
 import { Address } from '../read/screens/Address'
@@ -16,7 +17,7 @@ import { AutomationSummary, PoolPair, RangeSummary } from './StepList'
  * apart. `open` is whether Review is the open step: the amounts are asked for
  * only then.
  */
-export function StageReview({ state, now, open }: { state: JourneyState; now: number; open: boolean }) {
+export function StageReview({ state, now, open, balances }: { state: JourneyState; now: number; open: boolean; balances: PairBalancesState }) {
   const token = state.token
   const pool = state.pool
   const price = priceOf(pool, now)
@@ -103,7 +104,7 @@ export function StageReview({ state, now, open }: { state: JourneyState; now: nu
         )}
       </section>
 
-      <StageBalance state={state} open={open} />
+      <StageBalance state={state} open={open} balances={balances} />
 
       <section aria-labelledby="create-steps-heading" className="dm-flow-section">
         <h3 id="create-steps-heading" className="dm-flow-subtitle">

@@ -32,6 +32,8 @@ const ADDR_B = ACCOUNTS[1].address;
 const FONTS = /^https:\/\/fonts\.(googleapis|gstatic)\.com\//;
 const INJECTED = /^https?:\/\/[^/]*\.kaspersky-labs\.com\//;
 const ZERO = '0x0000000000000000000000000000000000000000';
+/** What the read package's wallet page holds of FIXTURE_TOKEN, and none of ETH: the budgets New position reads from it. */
+const WALLET_TOKEN_BALANCE_RAW = '57896044618658097711785492504343953926634992332820282019728792003956564820091';
 const OTHER_OWNER = '0x9999999999999999999999999999999999999999';
 const OPERATION_ID = '00000000-0000-4000-8000-000000000040';
 const EXPIRED_ON_ARRIVAL = 'This preview had already expired by the time it arrived, so its figures are hidden.';
@@ -408,14 +410,28 @@ test('New position’s Review asks for the deposit amounts for the signed-in wal
     tickLower: -3600,
     tickUpper: 4080,
     slippageBps: 50,
-  }, 'exactly the request the journey forms: no budget, native balance or gas reserve is invented');
+    // A position holds both of the pool's currencies, so the wallet's balance of
+    // each goes with the request: only the service can say the wallet does not
+    // cover the one the person did not choose. These are read balances, at a
+    // block, not figures this page computed — the wallet holds no ETH here. No
+    // gas reserve is sent: that is a number the person chooses, in Setup.
+    budget0Raw: '0',
+    budget1Raw: WALLET_TOKEN_BALANCE_RAW,
+    nativeBalanceRaw: '0',
+  }, 'exactly the request the journey forms, with the balances it read and nothing invented');
   assert.deepEqual(await rowLines(page, 'expected'), ['0.000000000002000001 ETH', '1 TOKEN'], 'currency0 then currency1, with the decimals the pool read returned');
   assert.deepEqual(await rowLines(page, 'maximum'), ['0.000000000002010001 ETH', '1.005 TOKEN']);
-  assert.deepEqual(await rowLines(page, 'unspent'), ['—'], 'no budget was set, so nothing is unspent: one dash for the row, never zero');
+  // The budgets are the wallet's own balances: it holds no ETH, so that currency's maximum
+  // exceeds it and nothing of it is unspent — a dash, never a zero — while the token it does
+  // hold reports what would be left.
+  assert.deepEqual(await rowLines(page, 'unspent'), ['—', '57,896,044,618,658,097,711,785,492,504,343,953,926,634,992,332,820,282,019,728,792,003,956,563.820091 TOKEN']);
   assert.deepEqual(await rowLines(page, 'liquidity'), ['12,345']);
   assert.match(await balance(page).locator('[data-balance-row="expected"] [data-amount-cell]').first().getAttribute('title'), /^An estimate for these choices, current until \d\d:\d\d:\d\d\. What the deposit is expected to take of this token\.$/);
-  assert.equal(await balance(page).locator('[data-balance-row="unspent"] [data-amount-cell]').getAttribute('title'), 'No budget was set for this token.');
-  assert.equal(await balance(page).getAttribute('data-preview-checks'), 'incomplete');
+  assert.equal(await balance(page).locator('[data-balance-row="unspent"] [data-amount-cell]').first().getAttribute('title'), 'No budget was set for this token.');
+  // ETH is short, so the estimate blocks and the line names it: a position holds both currencies.
+  assert.equal(await balance(page).getAttribute('data-preview-checks'), 'blocked');
+  assert.equal(await balance(page).locator('[data-balance-short]').getAttribute('data-balance-short'), '0');
+  assert.match(await balance(page).locator('[data-balance-short]').innerText(), /^A position holds both of this pool’s tokens, and your wallet does not cover the most this deposit may take of ETH\./);
   const text = await page.locator('main').innerText();
   assert.doesNotMatch(text, REVIEW_FORBIDDEN);
   assert.match(text, /Exact amounts are calculated in Setup, at the price when you sign\./);
