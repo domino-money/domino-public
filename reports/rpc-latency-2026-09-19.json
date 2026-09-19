@@ -1,0 +1,1876 @@
+{
+  "chainIdCheck": {
+    "allMatched": true,
+    "expected": 4663,
+    "samples": 40
+  },
+  "edge": {
+    "benchmarkWindow": {
+      "end": "2026-09-19T22:48:13.287762+00:00",
+      "httpStatuses": {
+        "200": 160
+      },
+      "rateLimited429": 0,
+      "requestMaxMs": 4.0,
+      "requestP50Ms": 1.0,
+      "requestP95Ms": 3.0,
+      "requests": 160,
+      "start": "2026-09-19T22:47:02.761930+00:00"
+    },
+    "last15Minutes": {
+      "end": "2026-09-19T22:48:13.287762+00:00",
+      "httpStatuses": {
+        "200": 799
+      },
+      "rateLimited429": 0,
+      "requestMaxMs": 4.0,
+      "requestP50Ms": 0.0,
+      "requestP95Ms": 3.0,
+      "requests": 799,
+      "start": "2026-09-19T22:33:13.287762+00:00"
+    }
+  },
+  "elapsedSeconds": 70.526,
+  "endedAt": "2026-09-19T22:48:13.287762+00:00",
+  "headFreshness": {
+    "local": {
+      "maxAgeSeconds": 1.288,
+      "minAgeSeconds": 0.273,
+      "p50AgeSeconds": 0.777,
+      "samples": 21
+    },
+    "official": {
+      "maxAgeSeconds": 2.961,
+      "minAgeSeconds": 0.947,
+      "p50AgeSeconds": 1.449,
+      "samples": 21
+    },
+    "tunnel": {
+      "maxAgeSeconds": 0.835,
+      "minAgeSeconds": 0.311,
+      "p50AgeSeconds": 0.5745,
+      "samples": 20
+    }
+  },
+  "headSamples": [
+    {
+      "iteration": 1,
+      "localBlock": 67451419,
+      "note": "Sequential captures: official captured up to ~2s after local; includes elapsed block production.",
+      "officialBlock": 67451431,
+      "officialMinusLocalBlocks": 12,
+      "officialMinusTunnelBlocks": -3,
+      "tunnelBlock": 67451434
+    },
+    {
+      "iteration": 2,
+      "localBlock": 67451454,
+      "note": "Sequential captures: official captured up to ~2s after local; includes elapsed block production.",
+      "officialBlock": 67451467,
+      "officialMinusLocalBlocks": 13,
+      "officialMinusTunnelBlocks": -2,
+      "tunnelBlock": 67451469
+    },
+    {
+      "iteration": 3,
+      "localBlock": 67451487,
+      "note": "Sequential captures: official captured up to ~2s after local; includes elapsed block production.",
+      "officialBlock": 67451485,
+      "officialMinusLocalBlocks": -2,
+      "officialMinusTunnelBlocks": -18,
+      "tunnelBlock": 67451503
+    },
+    {
+      "iteration": 4,
+      "localBlock": 67451531,
+      "note": "Sequential captures: official captured up to ~2s after local; includes elapsed block production.",
+      "officialBlock": 67451545,
+      "officialMinusLocalBlocks": 14,
+      "officialMinusTunnelBlocks": -2,
+      "tunnelBlock": 67451547
+    },
+    {
+      "iteration": 5,
+      "localBlock": 67451565,
+      "note": "Sequential captures: official captured up to ~2s after local; includes elapsed block production.",
+      "officialBlock": 67451579,
+      "officialMinusLocalBlocks": 14,
+      "officialMinusTunnelBlocks": -1,
+      "tunnelBlock": 67451580
+    },
+    {
+      "iteration": 6,
+      "localBlock": 67451600,
+      "note": "Sequential captures: official captured up to ~2s after local; includes elapsed block production.",
+      "officialBlock": 67451614,
+      "officialMinusLocalBlocks": 14,
+      "officialMinusTunnelBlocks": -1,
+      "tunnelBlock": 67451615
+    },
+    {
+      "iteration": 7,
+      "localBlock": 67451634,
+      "note": "Sequential captures: official captured up to ~2s after local; includes elapsed block production.",
+      "officialBlock": 67451648,
+      "officialMinusLocalBlocks": 14,
+      "officialMinusTunnelBlocks": -1,
+      "tunnelBlock": 67451649
+    },
+    {
+      "iteration": 8,
+      "localBlock": 67451669,
+      "note": "Sequential captures: official captured up to ~2s after local; includes elapsed block production.",
+      "officialBlock": 67451683,
+      "officialMinusLocalBlocks": 14,
+      "officialMinusTunnelBlocks": -1,
+      "tunnelBlock": 67451684
+    },
+    {
+      "iteration": 9,
+      "localBlock": 67451703,
+      "note": "Sequential captures: official captured up to ~2s after local; includes elapsed block production.",
+      "officialBlock": 67451719,
+      "officialMinusLocalBlocks": 16,
+      "officialMinusTunnelBlocks": 0,
+      "tunnelBlock": 67451719
+    },
+    {
+      "iteration": 10,
+      "localBlock": 67451737,
+      "note": "Sequential captures: official captured up to ~2s after local; includes elapsed block production.",
+      "officialBlock": 67451753,
+      "officialMinusLocalBlocks": 16,
+      "officialMinusTunnelBlocks": 1,
+      "tunnelBlock": 67451752
+    },
+    {
+      "iteration": 11,
+      "localBlock": 67451772,
+      "note": "Sequential captures: official captured up to ~2s after local; includes elapsed block production.",
+      "officialBlock": 67451786,
+      "officialMinusLocalBlocks": 14,
+      "officialMinusTunnelBlocks": 0,
+      "tunnelBlock": 67451786
+    },
+    {
+      "iteration": 12,
+      "localBlock": 67451806,
+      "note": "Sequential captures: official captured up to ~2s after local; includes elapsed block production.",
+      "officialBlock": 67451818,
+      "officialMinusLocalBlocks": 12,
+      "officialMinusTunnelBlocks": -2,
+      "tunnelBlock": 67451820
+    },
+    {
+      "iteration": 13,
+      "localBlock": 67451840,
+      "note": "Sequential captures: official captured up to ~2s after local; includes elapsed block production.",
+      "officialBlock": 67451855,
+      "officialMinusLocalBlocks": 15,
+      "officialMinusTunnelBlocks": 1,
+      "tunnelBlock": 67451854
+    },
+    {
+      "iteration": 14,
+      "localBlock": 67451872,
+      "note": "Sequential captures: official captured up to ~2s after local; includes elapsed block production.",
+      "officialBlock": 67451888,
+      "officialMinusLocalBlocks": 16,
+      "officialMinusTunnelBlocks": 0,
+      "tunnelBlock": 67451888
+    },
+    {
+      "iteration": 15,
+      "localBlock": 67451907,
+      "note": "Sequential captures: official captured up to ~2s after local; includes elapsed block production.",
+      "officialBlock": 67451921,
+      "officialMinusLocalBlocks": 14,
+      "officialMinusTunnelBlocks": -1,
+      "tunnelBlock": 67451922
+    },
+    {
+      "iteration": 16,
+      "localBlock": 67451941,
+      "note": "Sequential captures: official captured up to ~2s after local; includes elapsed block production.",
+      "officialBlock": 67451958,
+      "officialMinusLocalBlocks": 17,
+      "officialMinusTunnelBlocks": 2,
+      "tunnelBlock": 67451956
+    },
+    {
+      "iteration": 17,
+      "localBlock": 67451976,
+      "note": "Sequential captures: official captured up to ~2s after local; includes elapsed block production.",
+      "officialBlock": 67451993,
+      "officialMinusLocalBlocks": 17,
+      "officialMinusTunnelBlocks": 2,
+      "tunnelBlock": 67451991
+    },
+    {
+      "iteration": 18,
+      "localBlock": 67452011,
+      "note": "Sequential captures: official captured up to ~2s after local; includes elapsed block production.",
+      "officialBlock": 67452028,
+      "officialMinusLocalBlocks": 17,
+      "officialMinusTunnelBlocks": 1,
+      "tunnelBlock": 67452027
+    },
+    {
+      "iteration": 19,
+      "localBlock": 67452045,
+      "note": "Sequential captures: official captured up to ~2s after local; includes elapsed block production.",
+      "officialBlock": 67452062,
+      "officialMinusLocalBlocks": 17,
+      "officialMinusTunnelBlocks": 2,
+      "tunnelBlock": 67452060
+    },
+    {
+      "iteration": 20,
+      "localBlock": 67452080,
+      "note": "Sequential captures: official captured up to ~2s after local; includes elapsed block production.",
+      "officialBlock": 67452098,
+      "officialMinusLocalBlocks": 18,
+      "officialMinusTunnelBlocks": 3,
+      "tunnelBlock": 67452095
+    }
+  ],
+  "hostAfter": {
+    "cpuCount": 16,
+    "diskFreeBytes": 247666130944,
+    "diskTotalBytes": 479480770560,
+    "loadAverage": [
+      0.33154296875,
+      0.2509765625,
+      0.26171875
+    ],
+    "memoryAvailableBytes": 67559976960,
+    "memoryTotalBytes": 98471710720,
+    "uptimeSeconds": 701187.53
+  },
+  "hostBefore": {
+    "cpuCount": 16,
+    "diskFreeBytes": 247666651136,
+    "diskTotalBytes": 479480770560,
+    "loadAverage": [
+      0.20166015625,
+      0.20703125,
+      0.24853515625
+    ],
+    "memoryAvailableBytes": 67460513792,
+    "memoryTotalBytes": 98471710720,
+    "uptimeSeconds": 701117.01
+  },
+  "hostDuring": {
+    "cpuBusyPercent": 1.691,
+    "cpuIowaitPercent": 0.158
+  },
+  "interpretation": {
+    "limits": [
+      "These calls do not benchmark expensive eth_call, historical state, indexer queries, inventory providers, gateway queuing, or browser scheduling.",
+      "Measurements originate on the host. The production VM and browser have separate network and queuing paths.",
+      "Sequential latest-head comparisons include new block production between requests. Same-height hash parity was checked separately.",
+      "Host filesystem utilization is measured at /srv, not asserted as the Nitro data-volume utilization.",
+      "Edge summaries include all gateway requests present in the window, including concurrent production activity and these probes."
+    ],
+    "result": "Local Nitro and authenticated tunnel were responsive for the three lightweight methods measured, without RPC/HTTP errors or edge rate limiting during this window."
+  },
+  "methodology": {
+    "httpClient": "Python urllib; fresh connection per call, standard TLS validation, no proxy, no retries",
+    "location": "RPC host; local loopback versus public authenticated Cloudflare tunnel",
+    "mainEndpointMethods": [
+      "eth_chainId",
+      "eth_blockNumber",
+      "eth_getBlockByNumber(latest,false)"
+    ],
+    "maxGlobalRequestsPerSecond": 2,
+    "officialReferenceHost": "rpc.mainnet.chain.robinhood.com",
+    "readOnly": true,
+    "samplesPerMainEndpointMethod": 20,
+    "secretHandling": "Credential read into memory from host private config; URL/token omitted from report"
+  },
+  "parity": {
+    "localHeaderAvailable": true,
+    "referenceBlock": 67452103,
+    "sameBlockHash": true
+  },
+  "samples": [
+    {
+      "chainId": 4663,
+      "durationMs": 1.237,
+      "endpoint": "local",
+      "httpStatus": 200,
+      "method": "eth_chainId",
+      "ok": true,
+      "timestamp": "2026-09-19T22:47:02.771557+00:00"
+    },
+    {
+      "blockNumber": 67451414,
+      "durationMs": 0.898,
+      "endpoint": "local",
+      "httpStatus": 200,
+      "method": "eth_blockNumber",
+      "ok": true,
+      "timestamp": "2026-09-19T22:47:03.271633+00:00"
+    },
+    {
+      "blockHash": "0x13cbd9fa7671e9ed30e398432d1daf8804c1bc3527b69da2701bd0b61292cd36",
+      "blockNumber": 67451419,
+      "blockTimestamp": 1789858023,
+      "durationMs": 0.813,
+      "endpoint": "local",
+      "headAgeSeconds": 0.773,
+      "httpStatus": 200,
+      "method": "eth_getBlockByNumber",
+      "ok": true,
+      "timestamp": "2026-09-19T22:47:03.771708+00:00"
+    },
+    {
+      "chainId": 4663,
+      "durationMs": 65.073,
+      "endpoint": "tunnel",
+      "httpStatus": 200,
+      "method": "eth_chainId",
+      "ok": true,
+      "timestamp": "2026-09-19T22:47:04.271772+00:00"
+    },
+    {
+      "blockNumber": 67451429,
+      "durationMs": 57.52,
+      "endpoint": "tunnel",
+      "httpStatus": 200,
+      "method": "eth_blockNumber",
+      "ok": true,
+      "timestamp": "2026-09-19T22:47:04.771838+00:00"
+    },
+    {
+      "blockHash": "0x68860bdf3d6a1ecd04d6e7060c738ef800b615425c700d1c6175b60198403784",
+      "blockNumber": 67451434,
+      "blockTimestamp": 1789858025,
+      "durationMs": 52.634,
+      "endpoint": "tunnel",
+      "headAgeSeconds": 0.325,
+      "httpStatus": 200,
+      "method": "eth_getBlockByNumber",
+      "ok": true,
+      "timestamp": "2026-09-19T22:47:05.271912+00:00"
+    },
+    {
+      "blockHash": "0xab5ced6d34c757427a1df340e33cf729f0d990ae8335c23778cac707b4ebf574",
+      "blockNumber": 67451431,
+      "blockTimestamp": 1789858024,
+      "durationMs": 169.486,
+      "endpoint": "official",
+      "headAgeSeconds": 1.941,
+      "httpStatus": 200,
+      "method": "eth_getBlockByNumber",
+      "ok": true,
+      "timestamp": "2026-09-19T22:47:05.771993+00:00"
+    },
+    {
+      "chainId": 4663,
+      "durationMs": 0.859,
+      "endpoint": "local",
+      "httpStatus": 200,
+      "method": "eth_chainId",
+      "ok": true,
+      "timestamp": "2026-09-19T22:47:06.272078+00:00"
+    },
+    {
+      "blockNumber": 67451448,
+      "durationMs": 0.866,
+      "endpoint": "local",
+      "httpStatus": 200,
+      "method": "eth_blockNumber",
+      "ok": true,
+      "timestamp": "2026-09-19T22:47:06.772161+00:00"
+    },
+    {
+      "blockHash": "0xd8d64c32949787c78952b6a9aa6fe8c1ce6ae8183ccb870fdb2e55a8f8a1a6f9",
+      "blockNumber": 67451454,
+      "blockTimestamp": 1789858027,
+      "durationMs": 0.915,
+      "endpoint": "local",
+      "headAgeSeconds": 0.273,
+      "httpStatus": 200,
+      "method": "eth_getBlockByNumber",
+      "ok": true,
+      "timestamp": "2026-09-19T22:47:07.272234+00:00"
+    },
+    {
+      "chainId": 4663,
+      "durationMs": 35.17,
+      "endpoint": "tunnel",
+      "httpStatus": 200,
+      "method": "eth_chainId",
+      "ok": true,
+      "timestamp": "2026-09-19T22:47:07.772611+00:00"
+    },
+    {
+      "blockNumber": 67451463,
+      "durationMs": 42.429,
+      "endpoint": "tunnel",
+      "httpStatus": 200,
+      "method": "eth_blockNumber",
+      "ok": true,
+      "timestamp": "2026-09-19T22:47:08.273139+00:00"
+    },
+    {
+      "blockHash": "0xbaf2444cef609b1a00094441a3c62c89e728d655ac99bcf870f618c8ae0f7793",
+      "blockNumber": 67451469,
+      "blockTimestamp": 1789858028,
+      "durationMs": 61.722,
+      "endpoint": "tunnel",
+      "headAgeSeconds": 0.835,
+      "httpStatus": 200,
+      "method": "eth_getBlockByNumber",
+      "ok": true,
+      "timestamp": "2026-09-19T22:47:08.773203+00:00"
+    },
+    {
+      "blockHash": "0xbb19050082a0c4795ea07fc692110187563489456538b7fb1cfb0d6133a5f78e",
+      "blockNumber": 67451467,
+      "blockTimestamp": 1789858028,
+      "durationMs": 163.238,
+      "endpoint": "official",
+      "headAgeSeconds": 1.437,
+      "httpStatus": 200,
+      "method": "eth_getBlockByNumber",
+      "ok": true,
+      "timestamp": "2026-09-19T22:47:09.273576+00:00"
+    },
+    {
+      "chainId": 4663,
+      "durationMs": 0.719,
+      "endpoint": "local",
+      "httpStatus": 200,
+      "method": "eth_chainId",
+      "ok": true,
+      "timestamp": "2026-09-19T22:47:09.773644+00:00"
+    },
+    {
+      "blockNumber": 67451483,
+      "durationMs": 0.769,
+      "endpoint": "local",
+      "httpStatus": 200,
+      "method": "eth_blockNumber",
+      "ok": true,
+      "timestamp": "2026-09-19T22:47:10.273724+00:00"
+    },
+    {
+      "blockHash": "0x7eb6d0fb73c1b2ccfe890d5328118df048128deb5b7ead8cd033ae786494132e",
+      "blockNumber": 67451487,
+      "blockTimestamp": 1789858030,
+      "durationMs": 1.039,
+      "endpoint": "local",
+      "headAgeSeconds": 0.775,
+      "httpStatus": 200,
+      "method": "eth_getBlockByNumber",
+      "ok": true,
+      "timestamp": "2026-09-19T22:47:10.773797+00:00"
+    },
+    {
+      "chainId": 4663,
+      "durationMs": 43.653,
+      "endpoint": "tunnel",
+      "httpStatus": 200,
+      "method": "eth_chainId",
+      "ok": true,
+      "timestamp": "2026-09-19T22:47:11.273870+00:00"
+    },
+    {
+      "blockNumber": 67451497,
+      "durationMs": 44.073,
+      "endpoint": "tunnel",
+      "httpStatus": 200,
+      "method": "eth_blockNumber",
+      "ok": true,
+      "timestamp": "2026-09-19T22:47:11.773953+00:00"
+    },
+    {
+      "blockHash": "0x9057f2fe79fe5fa4c374b793885050191aad1f4eda0eda83f89b1f2fab9534ec",
+      "blockNumber": 67451503,
+      "blockTimestamp": 1789858032,
+      "durationMs": 48.703,
+      "endpoint": "tunnel",
+      "headAgeSeconds": 0.323,
+      "httpStatus": 200,
+      "method": "eth_getBlockByNumber",
+      "ok": true,
+      "timestamp": "2026-09-19T22:47:12.274019+00:00"
+    },
+    {
+      "blockHash": "0x4cf040f8a68c087f440a40f4dfb6cb5dd55765401f041f61dc6073c6dadd4bb2",
+      "blockNumber": 67451485,
+      "blockTimestamp": 1789858030,
+      "durationMs": 186.943,
+      "endpoint": "official",
+      "headAgeSeconds": 2.961,
+      "httpStatus": 200,
+      "method": "eth_getBlockByNumber",
+      "ok": true,
+      "timestamp": "2026-09-19T22:47:12.774097+00:00"
+    },
+    {
+      "chainId": 4663,
+      "durationMs": 0.861,
+      "endpoint": "local",
+      "httpStatus": 200,
+      "method": "eth_chainId",
+      "ok": true,
+      "timestamp": "2026-09-19T22:47:13.274172+00:00"
+    },
+    {
+      "blockNumber": 67451516,
+      "durationMs": 0.825,
+      "endpoint": "local",
+      "httpStatus": 200,
+      "method": "eth_blockNumber",
+      "ok": true,
+      "timestamp": "2026-09-19T22:47:13.774246+00:00"
+    },
+    {
+      "blockHash": "0xb3e8a5134a41b44169a7bfb46817a509314837e3a2b479515b38388b91dd5c02",
+      "blockNumber": 67451531,
+      "blockTimestamp": 1789858033,
+      "durationMs": 0.784,
+      "endpoint": "local",
+      "headAgeSeconds": 1.275,
+      "httpStatus": 200,
+      "method": "eth_getBlockByNumber",
+      "ok": true,
+      "timestamp": "2026-09-19T22:47:14.274318+00:00"
+    },
+    {
+      "chainId": 4663,
+      "durationMs": 31.506,
+      "endpoint": "tunnel",
+      "httpStatus": 200,
+      "method": "eth_chainId",
+      "ok": true,
+      "timestamp": "2026-09-19T22:47:14.774383+00:00"
+    },
+    {
+      "blockNumber": 67451542,
+      "durationMs": 38.843,
+      "endpoint": "tunnel",
+      "httpStatus": 200,
+      "method": "eth_blockNumber",
+      "ok": true,
+      "timestamp": "2026-09-19T22:47:15.274469+00:00"
+    },
+    {
+      "blockHash": "0x98e9bbb225b20f1f3fadf81b0c24b7077aa06fb860d3db179fb699cfe1f64854",
+      "blockNumber": 67451547,
+      "blockTimestamp": 1789858035,
+      "durationMs": 34.873,
+      "endpoint": "tunnel",
+      "headAgeSeconds": 0.809,
+      "httpStatus": 200,
+      "method": "eth_getBlockByNumber",
+      "ok": true,
+      "timestamp": "2026-09-19T22:47:15.774550+00:00"
+    },
+    {
+      "blockHash": "0x3768104ab048c421072b6e3a2b9979beb8a2b5d9afc85b9a286d5f773588d2f8",
+      "blockNumber": 67451545,
+      "blockTimestamp": 1789858035,
+      "durationMs": 172.403,
+      "endpoint": "official",
+      "headAgeSeconds": 1.447,
+      "httpStatus": 200,
+      "method": "eth_getBlockByNumber",
+      "ok": true,
+      "timestamp": "2026-09-19T22:47:16.274624+00:00"
+    },
+    {
+      "chainId": 4663,
+      "durationMs": 0.645,
+      "endpoint": "local",
+      "httpStatus": 200,
+      "method": "eth_chainId",
+      "ok": true,
+      "timestamp": "2026-09-19T22:47:16.774682+00:00"
+    },
+    {
+      "blockNumber": 67451560,
+      "durationMs": 0.593,
+      "endpoint": "local",
+      "httpStatus": 200,
+      "method": "eth_blockNumber",
+      "ok": true,
+      "timestamp": "2026-09-19T22:47:17.274740+00:00"
+    },
+    {
+      "blockHash": "0x3e63df3d0eb98986825415b8e4145e61a005fe8c172ddea96769ea8b7610be8a",
+      "blockNumber": 67451565,
+      "blockTimestamp": 1789858037,
+      "durationMs": 1.059,
+      "endpoint": "local",
+      "headAgeSeconds": 0.776,
+      "httpStatus": 200,
+      "method": "eth_getBlockByNumber",
+      "ok": true,
+      "timestamp": "2026-09-19T22:47:17.774834+00:00"
+    },
+    {
+      "chainId": 4663,
+      "durationMs": 44.848,
+      "endpoint": "tunnel",
+      "httpStatus": 200,
+      "method": "eth_chainId",
+      "ok": true,
+      "timestamp": "2026-09-19T22:47:18.274904+00:00"
+    },
+    {
+      "blockNumber": 67451575,
+      "durationMs": 57.446,
+      "endpoint": "tunnel",
+      "httpStatus": 200,
+      "method": "eth_blockNumber",
+      "ok": true,
+      "timestamp": "2026-09-19T22:47:18.774985+00:00"
+    },
+    {
+      "blockHash": "0x31301ecf0516bc47b871f811951b77c811b9e344c92126416f4b31dd047eed85",
+      "blockNumber": 67451580,
+      "blockTimestamp": 1789858039,
+      "durationMs": 35.73,
+      "endpoint": "tunnel",
+      "headAgeSeconds": 0.311,
+      "httpStatus": 200,
+      "method": "eth_getBlockByNumber",
+      "ok": true,
+      "timestamp": "2026-09-19T22:47:19.275071+00:00"
+    },
+    {
+      "blockHash": "0x885be82bab6489dde0611b615f867529f3d73a070ca60a171988a70375a9a040",
+      "blockNumber": 67451579,
+      "blockTimestamp": 1789858038,
+      "durationMs": 179.436,
+      "endpoint": "official",
+      "headAgeSeconds": 1.955,
+      "httpStatus": 200,
+      "method": "eth_getBlockByNumber",
+      "ok": true,
+      "timestamp": "2026-09-19T22:47:19.775148+00:00"
+    },
+    {
+      "chainId": 4663,
+      "durationMs": 0.862,
+      "endpoint": "local",
+      "httpStatus": 200,
+      "method": "eth_chainId",
+      "ok": true,
+      "timestamp": "2026-09-19T22:47:20.275220+00:00"
+    },
+    {
+      "blockNumber": 67451594,
+      "durationMs": 0.939,
+      "endpoint": "local",
+      "httpStatus": 200,
+      "method": "eth_blockNumber",
+      "ok": true,
+      "timestamp": "2026-09-19T22:47:20.775275+00:00"
+    },
+    {
+      "blockHash": "0xe7e69d3625ea9f34560dad334ba2157062ead7b8f7a3e78c8d7c4c02efd773f6",
+      "blockNumber": 67451600,
+      "blockTimestamp": 1789858041,
+      "durationMs": 0.672,
+      "endpoint": "local",
+      "headAgeSeconds": 0.276,
+      "httpStatus": 200,
+      "method": "eth_getBlockByNumber",
+      "ok": true,
+      "timestamp": "2026-09-19T22:47:21.275348+00:00"
+    },
+    {
+      "chainId": 4663,
+      "durationMs": 46.618,
+      "endpoint": "tunnel",
+      "httpStatus": 200,
+      "method": "eth_chainId",
+      "ok": true,
+      "timestamp": "2026-09-19T22:47:21.775440+00:00"
+    },
+    {
+      "blockNumber": 67451610,
+      "durationMs": 52.957,
+      "endpoint": "tunnel",
+      "httpStatus": 200,
+      "method": "eth_blockNumber",
+      "ok": true,
+      "timestamp": "2026-09-19T22:47:22.275529+00:00"
+    },
+    {
+      "blockHash": "0xf1ee43696beb3a399ac44debba4d5193eb28f434f63298089d2c1efd1b27e8d9",
+      "blockNumber": 67451615,
+      "blockTimestamp": 1789858042,
+      "durationMs": 52.572,
+      "endpoint": "tunnel",
+      "headAgeSeconds": 0.828,
+      "httpStatus": 200,
+      "method": "eth_getBlockByNumber",
+      "ok": true,
+      "timestamp": "2026-09-19T22:47:22.775599+00:00"
+    },
+    {
+      "blockHash": "0x9a0001c04a73cbac934353a8853d06f842cd39d0841c4ce9258fd53c34fbbdad",
+      "blockNumber": 67451614,
+      "blockTimestamp": 1789858042,
+      "durationMs": 159.048,
+      "endpoint": "official",
+      "headAgeSeconds": 1.435,
+      "httpStatus": 200,
+      "method": "eth_getBlockByNumber",
+      "ok": true,
+      "timestamp": "2026-09-19T22:47:23.275683+00:00"
+    },
+    {
+      "chainId": 4663,
+      "durationMs": 0.918,
+      "endpoint": "local",
+      "httpStatus": 200,
+      "method": "eth_chainId",
+      "ok": true,
+      "timestamp": "2026-09-19T22:47:23.775770+00:00"
+    },
+    {
+      "blockNumber": 67451630,
+      "durationMs": 0.696,
+      "endpoint": "local",
+      "httpStatus": 200,
+      "method": "eth_blockNumber",
+      "ok": true,
+      "timestamp": "2026-09-19T22:47:24.275835+00:00"
+    },
+    {
+      "blockHash": "0x5cdefad358a61e0c0006b4a821554bdb85050cfc71428aa32aec6be327a56ff1",
+      "blockNumber": 67451634,
+      "blockTimestamp": 1789858044,
+      "durationMs": 1.03,
+      "endpoint": "local",
+      "headAgeSeconds": 0.777,
+      "httpStatus": 200,
+      "method": "eth_getBlockByNumber",
+      "ok": true,
+      "timestamp": "2026-09-19T22:47:24.775911+00:00"
+    },
+    {
+      "chainId": 4663,
+      "durationMs": 54.849,
+      "endpoint": "tunnel",
+      "httpStatus": 200,
+      "method": "eth_chainId",
+      "ok": true,
+      "timestamp": "2026-09-19T22:47:25.275976+00:00"
+    },
+    {
+      "blockNumber": 67451644,
+      "durationMs": 41.005,
+      "endpoint": "tunnel",
+      "httpStatus": 200,
+      "method": "eth_blockNumber",
+      "ok": true,
+      "timestamp": "2026-09-19T22:47:25.776070+00:00"
+    },
+    {
+      "blockHash": "0x0a16a3ff99761ea50a78d114486c9ebd3cee182ff617720f47822458c5b9376a",
+      "blockNumber": 67451649,
+      "blockTimestamp": 1789858046,
+      "durationMs": 40.616,
+      "endpoint": "tunnel",
+      "headAgeSeconds": 0.317,
+      "httpStatus": 200,
+      "method": "eth_getBlockByNumber",
+      "ok": true,
+      "timestamp": "2026-09-19T22:47:26.276134+00:00"
+    },
+    {
+      "blockHash": "0xbda58a815793d480d4d70c9cc045038fdb2fd6be5fc5fe02f2a4c1121ee3f36c",
+      "blockNumber": 67451648,
+      "blockTimestamp": 1789858045,
+      "durationMs": 168.083,
+      "endpoint": "official",
+      "headAgeSeconds": 1.944,
+      "httpStatus": 200,
+      "method": "eth_getBlockByNumber",
+      "ok": true,
+      "timestamp": "2026-09-19T22:47:26.776200+00:00"
+    },
+    {
+      "chainId": 4663,
+      "durationMs": 0.731,
+      "endpoint": "local",
+      "httpStatus": 200,
+      "method": "eth_chainId",
+      "ok": true,
+      "timestamp": "2026-09-19T22:47:27.276272+00:00"
+    },
+    {
+      "blockNumber": 67451664,
+      "durationMs": 0.637,
+      "endpoint": "local",
+      "httpStatus": 200,
+      "method": "eth_blockNumber",
+      "ok": true,
+      "timestamp": "2026-09-19T22:47:27.776340+00:00"
+    },
+    {
+      "blockHash": "0x49099c2fd019a2adc563ae52c80cbf08c3778c04b99ef222d55f6174e1c5481b",
+      "blockNumber": 67451669,
+      "blockTimestamp": 1789858048,
+      "durationMs": 1.016,
+      "endpoint": "local",
+      "headAgeSeconds": 0.277,
+      "httpStatus": 200,
+      "method": "eth_getBlockByNumber",
+      "ok": true,
+      "timestamp": "2026-09-19T22:47:28.276418+00:00"
+    },
+    {
+      "chainId": 4663,
+      "durationMs": 45.755,
+      "endpoint": "tunnel",
+      "httpStatus": 200,
+      "method": "eth_chainId",
+      "ok": true,
+      "timestamp": "2026-09-19T22:47:28.776489+00:00"
+    },
+    {
+      "blockNumber": 67451679,
+      "durationMs": 41.727,
+      "endpoint": "tunnel",
+      "httpStatus": 200,
+      "method": "eth_blockNumber",
+      "ok": true,
+      "timestamp": "2026-09-19T22:47:29.276586+00:00"
+    },
+    {
+      "blockHash": "0xecdbfa1e943158e8c7aca1074b8393460c992a7c7cdf991addd04f36c0317292",
+      "blockNumber": 67451684,
+      "blockTimestamp": 1789858049,
+      "durationMs": 36.854,
+      "endpoint": "tunnel",
+      "headAgeSeconds": 0.814,
+      "httpStatus": 200,
+      "method": "eth_getBlockByNumber",
+      "ok": true,
+      "timestamp": "2026-09-19T22:47:29.777086+00:00"
+    },
+    {
+      "blockHash": "0xa01735eb6fff7910f445affff8ac9fca9491b720338fa54d00d1344bcb6a7eee",
+      "blockNumber": 67451683,
+      "blockTimestamp": 1789858049,
+      "durationMs": 175.614,
+      "endpoint": "official",
+      "headAgeSeconds": 1.453,
+      "httpStatus": 200,
+      "method": "eth_getBlockByNumber",
+      "ok": true,
+      "timestamp": "2026-09-19T22:47:30.277159+00:00"
+    },
+    {
+      "chainId": 4663,
+      "durationMs": 0.697,
+      "endpoint": "local",
+      "httpStatus": 200,
+      "method": "eth_chainId",
+      "ok": true,
+      "timestamp": "2026-09-19T22:47:30.777223+00:00"
+    },
+    {
+      "blockNumber": 67451698,
+      "durationMs": 0.959,
+      "endpoint": "local",
+      "httpStatus": 200,
+      "method": "eth_blockNumber",
+      "ok": true,
+      "timestamp": "2026-09-19T22:47:31.277297+00:00"
+    },
+    {
+      "blockHash": "0xb662c126dbbbceab7d3e01281f2d531bbe38f2915d38acf539b3767b4d0c60f9",
+      "blockNumber": 67451703,
+      "blockTimestamp": 1789858051,
+      "durationMs": 0.763,
+      "endpoint": "local",
+      "headAgeSeconds": 0.778,
+      "httpStatus": 200,
+      "method": "eth_getBlockByNumber",
+      "ok": true,
+      "timestamp": "2026-09-19T22:47:31.777315+00:00"
+    },
+    {
+      "chainId": 4663,
+      "durationMs": 37.537,
+      "endpoint": "tunnel",
+      "httpStatus": 200,
+      "method": "eth_chainId",
+      "ok": true,
+      "timestamp": "2026-09-19T22:47:32.277387+00:00"
+    },
+    {
+      "blockNumber": 67451713,
+      "durationMs": 43.552,
+      "endpoint": "tunnel",
+      "httpStatus": 200,
+      "method": "eth_blockNumber",
+      "ok": true,
+      "timestamp": "2026-09-19T22:47:32.777460+00:00"
+    },
+    {
+      "blockHash": "0x8a9b2a4b5d168d66ac97d18b4c2ea4c0148dfdceb3f06227414420360f6d24af",
+      "blockNumber": 67451719,
+      "blockTimestamp": 1789858053,
+      "durationMs": 57.477,
+      "endpoint": "tunnel",
+      "headAgeSeconds": 0.335,
+      "httpStatus": 200,
+      "method": "eth_getBlockByNumber",
+      "ok": true,
+      "timestamp": "2026-09-19T22:47:33.277524+00:00"
+    },
+    {
+      "blockHash": "0x8a9b2a4b5d168d66ac97d18b4c2ea4c0148dfdceb3f06227414420360f6d24af",
+      "blockNumber": 67451719,
+      "blockTimestamp": 1789858053,
+      "durationMs": 170.146,
+      "endpoint": "official",
+      "headAgeSeconds": 0.948,
+      "httpStatus": 200,
+      "method": "eth_getBlockByNumber",
+      "ok": true,
+      "timestamp": "2026-09-19T22:47:33.777590+00:00"
+    },
+    {
+      "chainId": 4663,
+      "durationMs": 0.828,
+      "endpoint": "local",
+      "httpStatus": 200,
+      "method": "eth_chainId",
+      "ok": true,
+      "timestamp": "2026-09-19T22:47:34.277655+00:00"
+    },
+    {
+      "blockNumber": 67451733,
+      "durationMs": 0.735,
+      "endpoint": "local",
+      "httpStatus": 200,
+      "method": "eth_blockNumber",
+      "ok": true,
+      "timestamp": "2026-09-19T22:47:34.777719+00:00"
+    },
+    {
+      "blockHash": "0x1b936cfca892216d323acd52d8295dd56a782f3699f028f6dc00fde1f47d161c",
+      "blockNumber": 67451737,
+      "blockTimestamp": 1789858054,
+      "durationMs": 0.943,
+      "endpoint": "local",
+      "headAgeSeconds": 1.279,
+      "httpStatus": 200,
+      "method": "eth_getBlockByNumber",
+      "ok": true,
+      "timestamp": "2026-09-19T22:47:35.277797+00:00"
+    },
+    {
+      "chainId": 4663,
+      "durationMs": 39.234,
+      "endpoint": "tunnel",
+      "httpStatus": 200,
+      "method": "eth_chainId",
+      "ok": true,
+      "timestamp": "2026-09-19T22:47:35.777872+00:00"
+    },
+    {
+      "blockNumber": 67451747,
+      "durationMs": 55.182,
+      "endpoint": "tunnel",
+      "httpStatus": 200,
+      "method": "eth_blockNumber",
+      "ok": true,
+      "timestamp": "2026-09-19T22:47:36.277943+00:00"
+    },
+    {
+      "blockHash": "0xbb9e391b9a9dc0bf6c55ddd738f74bf828a6691103a1ce24168f4c6935ed2694",
+      "blockNumber": 67451752,
+      "blockTimestamp": 1789858056,
+      "durationMs": 42.467,
+      "endpoint": "tunnel",
+      "headAgeSeconds": 0.821,
+      "httpStatus": 200,
+      "method": "eth_getBlockByNumber",
+      "ok": true,
+      "timestamp": "2026-09-19T22:47:36.778376+00:00"
+    },
+    {
+      "blockHash": "0xd9ef7eda0eefad5a17de98753a28436ac5e421af965c15c7771d21728687ef86",
+      "blockNumber": 67451753,
+      "blockTimestamp": 1789858056,
+      "durationMs": 168.582,
+      "endpoint": "official",
+      "headAgeSeconds": 1.447,
+      "httpStatus": 200,
+      "method": "eth_getBlockByNumber",
+      "ok": true,
+      "timestamp": "2026-09-19T22:47:37.278445+00:00"
+    },
+    {
+      "chainId": 4663,
+      "durationMs": 0.931,
+      "endpoint": "local",
+      "httpStatus": 200,
+      "method": "eth_chainId",
+      "ok": true,
+      "timestamp": "2026-09-19T22:47:37.778816+00:00"
+    },
+    {
+      "blockNumber": 67451766,
+      "durationMs": 0.886,
+      "endpoint": "local",
+      "httpStatus": 200,
+      "method": "eth_blockNumber",
+      "ok": true,
+      "timestamp": "2026-09-19T22:47:38.278872+00:00"
+    },
+    {
+      "blockHash": "0xb5bf93ff50c32674207c8caa0a0e4b1bd2258cf14472add746ab89a680183c22",
+      "blockNumber": 67451772,
+      "blockTimestamp": 1789858058,
+      "durationMs": 0.894,
+      "endpoint": "local",
+      "headAgeSeconds": 0.78,
+      "httpStatus": 200,
+      "method": "eth_getBlockByNumber",
+      "ok": true,
+      "timestamp": "2026-09-19T22:47:38.778941+00:00"
+    },
+    {
+      "chainId": 4663,
+      "durationMs": 37.254,
+      "endpoint": "tunnel",
+      "httpStatus": 200,
+      "method": "eth_chainId",
+      "ok": true,
+      "timestamp": "2026-09-19T22:47:39.279028+00:00"
+    },
+    {
+      "blockNumber": 67451782,
+      "durationMs": 46.452,
+      "endpoint": "tunnel",
+      "httpStatus": 200,
+      "method": "eth_blockNumber",
+      "ok": true,
+      "timestamp": "2026-09-19T22:47:39.779123+00:00"
+    },
+    {
+      "blockHash": "0x50f6a9ab2671222908bc63e96bc3f720ef79a8ce71d54a1d36c38e30ff2dcbc1",
+      "blockNumber": 67451786,
+      "blockTimestamp": 1789858060,
+      "durationMs": 60.503,
+      "endpoint": "tunnel",
+      "headAgeSeconds": 0.34,
+      "httpStatus": 200,
+      "method": "eth_getBlockByNumber",
+      "ok": true,
+      "timestamp": "2026-09-19T22:47:40.279197+00:00"
+    },
+    {
+      "blockHash": "0x50f6a9ab2671222908bc63e96bc3f720ef79a8ce71d54a1d36c38e30ff2dcbc1",
+      "blockNumber": 67451786,
+      "blockTimestamp": 1789858060,
+      "durationMs": 167.425,
+      "endpoint": "official",
+      "headAgeSeconds": 0.947,
+      "httpStatus": 200,
+      "method": "eth_getBlockByNumber",
+      "ok": true,
+      "timestamp": "2026-09-19T22:47:40.779281+00:00"
+    },
+    {
+      "chainId": 4663,
+      "durationMs": 0.763,
+      "endpoint": "local",
+      "httpStatus": 200,
+      "method": "eth_chainId",
+      "ok": true,
+      "timestamp": "2026-09-19T22:47:41.279357+00:00"
+    },
+    {
+      "blockNumber": 67451800,
+      "durationMs": 0.828,
+      "endpoint": "local",
+      "httpStatus": 200,
+      "method": "eth_blockNumber",
+      "ok": true,
+      "timestamp": "2026-09-19T22:47:41.779423+00:00"
+    },
+    {
+      "blockHash": "0x9efdca81d9f6318991afe676d629388ca57a5c20c7bc35394f0488530acb595e",
+      "blockNumber": 67451806,
+      "blockTimestamp": 1789858062,
+      "durationMs": 1.05,
+      "endpoint": "local",
+      "headAgeSeconds": 0.281,
+      "httpStatus": 200,
+      "method": "eth_getBlockByNumber",
+      "ok": true,
+      "timestamp": "2026-09-19T22:47:42.279509+00:00"
+    },
+    {
+      "chainId": 4663,
+      "durationMs": 33.585,
+      "endpoint": "tunnel",
+      "httpStatus": 200,
+      "method": "eth_chainId",
+      "ok": true,
+      "timestamp": "2026-09-19T22:47:42.779583+00:00"
+    },
+    {
+      "blockNumber": 67451816,
+      "durationMs": 37.639,
+      "endpoint": "tunnel",
+      "httpStatus": 200,
+      "method": "eth_blockNumber",
+      "ok": true,
+      "timestamp": "2026-09-19T22:47:43.279653+00:00"
+    },
+    {
+      "blockHash": "0xbba4c33c914ce5b9f0b7d18015ff2beb16eb7f0b74c047d0d7a99f1fa70f1e9d",
+      "blockNumber": 67451820,
+      "blockTimestamp": 1789858063,
+      "durationMs": 52.446,
+      "endpoint": "tunnel",
+      "headAgeSeconds": 0.832,
+      "httpStatus": 200,
+      "method": "eth_getBlockByNumber",
+      "ok": true,
+      "timestamp": "2026-09-19T22:47:43.780025+00:00"
+    },
+    {
+      "blockHash": "0x4b378b241aed92e9155f4af4c296249b48befee9bb7d98d902cd81db8dde734e",
+      "blockNumber": 67451818,
+      "blockTimestamp": 1789858063,
+      "durationMs": 174.301,
+      "endpoint": "official",
+      "headAgeSeconds": 1.454,
+      "httpStatus": 200,
+      "method": "eth_getBlockByNumber",
+      "ok": true,
+      "timestamp": "2026-09-19T22:47:44.280100+00:00"
+    },
+    {
+      "chainId": 4663,
+      "durationMs": 0.744,
+      "endpoint": "local",
+      "httpStatus": 200,
+      "method": "eth_chainId",
+      "ok": true,
+      "timestamp": "2026-09-19T22:47:44.780182+00:00"
+    },
+    {
+      "blockNumber": 67451835,
+      "durationMs": 0.989,
+      "endpoint": "local",
+      "httpStatus": 200,
+      "method": "eth_blockNumber",
+      "ok": true,
+      "timestamp": "2026-09-19T22:47:45.280266+00:00"
+    },
+    {
+      "blockHash": "0xc21967bb85458130466598fa613f0719ba6141fd936fee806455015f1830dd77",
+      "blockNumber": 67451840,
+      "blockTimestamp": 1789858065,
+      "durationMs": 1.025,
+      "endpoint": "local",
+      "headAgeSeconds": 0.782,
+      "httpStatus": 200,
+      "method": "eth_getBlockByNumber",
+      "ok": true,
+      "timestamp": "2026-09-19T22:47:45.780760+00:00"
+    },
+    {
+      "chainId": 4663,
+      "durationMs": 55.785,
+      "endpoint": "tunnel",
+      "httpStatus": 200,
+      "method": "eth_chainId",
+      "ok": true,
+      "timestamp": "2026-09-19T22:47:46.280829+00:00"
+    },
+    {
+      "blockNumber": 67451850,
+      "durationMs": 40.277,
+      "endpoint": "tunnel",
+      "httpStatus": 200,
+      "method": "eth_blockNumber",
+      "ok": true,
+      "timestamp": "2026-09-19T22:47:46.780893+00:00"
+    },
+    {
+      "blockHash": "0x989a2ecec4a1ea74fcb48ebccd42e8be8394ac2a018e43b804bb28563cf7f0d7",
+      "blockNumber": 67451854,
+      "blockTimestamp": 1789858067,
+      "durationMs": 41.976,
+      "endpoint": "tunnel",
+      "headAgeSeconds": 0.323,
+      "httpStatus": 200,
+      "method": "eth_getBlockByNumber",
+      "ok": true,
+      "timestamp": "2026-09-19T22:47:47.280957+00:00"
+    },
+    {
+      "blockHash": "0x080a19f8602ea7546e8418549367e61eff10ddf2bb9ee4f7d0eb357bbb08b654",
+      "blockNumber": 67451855,
+      "blockTimestamp": 1789858067,
+      "durationMs": 183.415,
+      "endpoint": "official",
+      "headAgeSeconds": 0.965,
+      "httpStatus": 200,
+      "method": "eth_getBlockByNumber",
+      "ok": true,
+      "timestamp": "2026-09-19T22:47:47.781330+00:00"
+    },
+    {
+      "chainId": 4663,
+      "durationMs": 0.893,
+      "endpoint": "local",
+      "httpStatus": 200,
+      "method": "eth_chainId",
+      "ok": true,
+      "timestamp": "2026-09-19T22:47:48.281406+00:00"
+    },
+    {
+      "blockNumber": 67451868,
+      "durationMs": 0.882,
+      "endpoint": "local",
+      "httpStatus": 200,
+      "method": "eth_blockNumber",
+      "ok": true,
+      "timestamp": "2026-09-19T22:47:48.781487+00:00"
+    },
+    {
+      "blockHash": "0x88c78f118ad5311cde77cc886a0a26ebb724ab6a3480628cadcd663202b49058",
+      "blockNumber": 67451872,
+      "blockTimestamp": 1789858069,
+      "durationMs": 1.033,
+      "endpoint": "local",
+      "headAgeSeconds": 0.283,
+      "httpStatus": 200,
+      "method": "eth_getBlockByNumber",
+      "ok": true,
+      "timestamp": "2026-09-19T22:47:49.281554+00:00"
+    },
+    {
+      "chainId": 4663,
+      "durationMs": 51.119,
+      "endpoint": "tunnel",
+      "httpStatus": 200,
+      "method": "eth_chainId",
+      "ok": true,
+      "timestamp": "2026-09-19T22:47:49.781624+00:00"
+    },
+    {
+      "blockNumber": 67451882,
+      "durationMs": 41.194,
+      "endpoint": "tunnel",
+      "httpStatus": 200,
+      "method": "eth_blockNumber",
+      "ok": true,
+      "timestamp": "2026-09-19T22:47:50.281712+00:00"
+    },
+    {
+      "blockHash": "0xd191686718c25e07899b55b3cc3531dc8c7cc2846df9a6dfa54bbb0a70145340",
+      "blockNumber": 67451888,
+      "blockTimestamp": 1789858070,
+      "durationMs": 39.032,
+      "endpoint": "tunnel",
+      "headAgeSeconds": 0.821,
+      "httpStatus": 200,
+      "method": "eth_getBlockByNumber",
+      "ok": true,
+      "timestamp": "2026-09-19T22:47:50.781791+00:00"
+    },
+    {
+      "blockHash": "0xd191686718c25e07899b55b3cc3531dc8c7cc2846df9a6dfa54bbb0a70145340",
+      "blockNumber": 67451888,
+      "blockTimestamp": 1789858070,
+      "durationMs": 193.329,
+      "endpoint": "official",
+      "headAgeSeconds": 1.476,
+      "httpStatus": 200,
+      "method": "eth_getBlockByNumber",
+      "ok": true,
+      "timestamp": "2026-09-19T22:47:51.282167+00:00"
+    },
+    {
+      "chainId": 4663,
+      "durationMs": 0.638,
+      "endpoint": "local",
+      "httpStatus": 200,
+      "method": "eth_chainId",
+      "ok": true,
+      "timestamp": "2026-09-19T22:47:51.782240+00:00"
+    },
+    {
+      "blockNumber": 67451902,
+      "durationMs": 1.13,
+      "endpoint": "local",
+      "httpStatus": 200,
+      "method": "eth_blockNumber",
+      "ok": true,
+      "timestamp": "2026-09-19T22:47:52.282324+00:00"
+    },
+    {
+      "blockHash": "0xe4aaafbf70e64bc01c33d3cc9fac295d06e255d27ea09332d640eb06b5128345",
+      "blockNumber": 67451907,
+      "blockTimestamp": 1789858072,
+      "durationMs": 1.06,
+      "endpoint": "local",
+      "headAgeSeconds": 0.783,
+      "httpStatus": 200,
+      "method": "eth_getBlockByNumber",
+      "ok": true,
+      "timestamp": "2026-09-19T22:47:52.782412+00:00"
+    },
+    {
+      "chainId": 4663,
+      "durationMs": 38.843,
+      "endpoint": "tunnel",
+      "httpStatus": 200,
+      "method": "eth_chainId",
+      "ok": true,
+      "timestamp": "2026-09-19T22:47:53.282480+00:00"
+    },
+    {
+      "blockNumber": 67451916,
+      "durationMs": 56.461,
+      "endpoint": "tunnel",
+      "httpStatus": 200,
+      "method": "eth_blockNumber",
+      "ok": true,
+      "timestamp": "2026-09-19T22:47:53.782552+00:00"
+    },
+    {
+      "blockHash": "0xe261d600d045dc5a20d2f824b20060f149529a800b1898101bdcd7403d06bf35",
+      "blockNumber": 67451922,
+      "blockTimestamp": 1789858074,
+      "durationMs": 44.559,
+      "endpoint": "tunnel",
+      "headAgeSeconds": 0.327,
+      "httpStatus": 200,
+      "method": "eth_getBlockByNumber",
+      "ok": true,
+      "timestamp": "2026-09-19T22:47:54.282621+00:00"
+    },
+    {
+      "blockHash": "0x569863a97badc3b098f4c42dab4e4b207363583df3e0484dac63eeba698abfb9",
+      "blockNumber": 67451921,
+      "blockTimestamp": 1789858073,
+      "durationMs": 173.12,
+      "endpoint": "official",
+      "headAgeSeconds": 1.956,
+      "httpStatus": 200,
+      "method": "eth_getBlockByNumber",
+      "ok": true,
+      "timestamp": "2026-09-19T22:47:54.782685+00:00"
+    },
+    {
+      "chainId": 4663,
+      "durationMs": 0.599,
+      "endpoint": "local",
+      "httpStatus": 200,
+      "method": "eth_chainId",
+      "ok": true,
+      "timestamp": "2026-09-19T22:47:55.282750+00:00"
+    },
+    {
+      "blockNumber": 67451937,
+      "durationMs": 0.917,
+      "endpoint": "local",
+      "httpStatus": 200,
+      "method": "eth_blockNumber",
+      "ok": true,
+      "timestamp": "2026-09-19T22:47:55.782838+00:00"
+    },
+    {
+      "blockHash": "0x44b81e6117686bcfd82bab97c0149cdefb483a548448ec540e6a50e56580e11b",
+      "blockNumber": 67451941,
+      "blockTimestamp": 1789858075,
+      "durationMs": 0.93,
+      "endpoint": "local",
+      "headAgeSeconds": 1.284,
+      "httpStatus": 200,
+      "method": "eth_getBlockByNumber",
+      "ok": true,
+      "timestamp": "2026-09-19T22:47:56.282908+00:00"
+    },
+    {
+      "chainId": 4663,
+      "durationMs": 44.273,
+      "endpoint": "tunnel",
+      "httpStatus": 200,
+      "method": "eth_chainId",
+      "ok": true,
+      "timestamp": "2026-09-19T22:47:56.782992+00:00"
+    },
+    {
+      "blockNumber": 67451951,
+      "durationMs": 36.316,
+      "endpoint": "tunnel",
+      "httpStatus": 200,
+      "method": "eth_blockNumber",
+      "ok": true,
+      "timestamp": "2026-09-19T22:47:57.283077+00:00"
+    },
+    {
+      "blockHash": "0xd9cd181219ff141adbd79e341b6291b7bd14527fc21bfa3d7239d66f0a2d66bb",
+      "blockNumber": 67451956,
+      "blockTimestamp": 1789858077,
+      "durationMs": 36.927,
+      "endpoint": "tunnel",
+      "headAgeSeconds": 0.82,
+      "httpStatus": 200,
+      "method": "eth_getBlockByNumber",
+      "ok": true,
+      "timestamp": "2026-09-19T22:47:57.783135+00:00"
+    },
+    {
+      "blockHash": "0x8a190270f64d35193626a25b19de7e12b5ddfe4c2222d7af942282f22bdf31bf",
+      "blockNumber": 67451958,
+      "blockTimestamp": 1789858077,
+      "durationMs": 165.426,
+      "endpoint": "official",
+      "headAgeSeconds": 1.449,
+      "httpStatus": 200,
+      "method": "eth_getBlockByNumber",
+      "ok": true,
+      "timestamp": "2026-09-19T22:47:58.283195+00:00"
+    },
+    {
+      "chainId": 4663,
+      "durationMs": 0.902,
+      "endpoint": "local",
+      "httpStatus": 200,
+      "method": "eth_chainId",
+      "ok": true,
+      "timestamp": "2026-09-19T22:47:58.783288+00:00"
+    },
+    {
+      "blockNumber": 67451971,
+      "durationMs": 0.621,
+      "endpoint": "local",
+      "httpStatus": 200,
+      "method": "eth_blockNumber",
+      "ok": true,
+      "timestamp": "2026-09-19T22:47:59.283355+00:00"
+    },
+    {
+      "blockHash": "0x6cb0af7fd5e4b245f04ec24ccdd60e40bb9eefe711e942178af972876ff4097e",
+      "blockNumber": 67451976,
+      "blockTimestamp": 1789858079,
+      "durationMs": 0.711,
+      "endpoint": "local",
+      "headAgeSeconds": 0.784,
+      "httpStatus": 200,
+      "method": "eth_getBlockByNumber",
+      "ok": true,
+      "timestamp": "2026-09-19T22:47:59.783426+00:00"
+    },
+    {
+      "chainId": 4663,
+      "durationMs": 40.921,
+      "endpoint": "tunnel",
+      "httpStatus": 200,
+      "method": "eth_chainId",
+      "ok": true,
+      "timestamp": "2026-09-19T22:48:00.283512+00:00"
+    },
+    {
+      "blockNumber": 67451987,
+      "durationMs": 51.503,
+      "endpoint": "tunnel",
+      "httpStatus": 200,
+      "method": "eth_blockNumber",
+      "ok": true,
+      "timestamp": "2026-09-19T22:48:00.783575+00:00"
+    },
+    {
+      "blockHash": "0x6a9f2ef1b7153a394ee469ac1cae188b84f427ac236996f61261e3e95aaf0916",
+      "blockNumber": 67451991,
+      "blockTimestamp": 1789858081,
+      "durationMs": 47.811,
+      "endpoint": "tunnel",
+      "headAgeSeconds": 0.331,
+      "httpStatus": 200,
+      "method": "eth_getBlockByNumber",
+      "ok": true,
+      "timestamp": "2026-09-19T22:48:01.283650+00:00"
+    },
+    {
+      "blockHash": "0xe0a0eeb8f6e2418ae29b9d62da7fea65af6f517d785eb4345f517ac60bccbd65",
+      "blockNumber": 67451993,
+      "blockTimestamp": 1789858081,
+      "durationMs": 163.223,
+      "endpoint": "official",
+      "headAgeSeconds": 0.947,
+      "httpStatus": 200,
+      "method": "eth_getBlockByNumber",
+      "ok": true,
+      "timestamp": "2026-09-19T22:48:01.783716+00:00"
+    },
+    {
+      "chainId": 4663,
+      "durationMs": 0.906,
+      "endpoint": "local",
+      "httpStatus": 200,
+      "method": "eth_chainId",
+      "ok": true,
+      "timestamp": "2026-09-19T22:48:02.283795+00:00"
+    },
+    {
+      "blockNumber": 67452006,
+      "durationMs": 0.586,
+      "endpoint": "local",
+      "httpStatus": 200,
+      "method": "eth_blockNumber",
+      "ok": true,
+      "timestamp": "2026-09-19T22:48:02.783859+00:00"
+    },
+    {
+      "blockHash": "0x527da2fa6a6a5a2e07a37476053cd7232305400449398262d36a4d23cf514ff7",
+      "blockNumber": 67452011,
+      "blockTimestamp": 1789858083,
+      "durationMs": 0.789,
+      "endpoint": "local",
+      "headAgeSeconds": 0.285,
+      "httpStatus": 200,
+      "method": "eth_getBlockByNumber",
+      "ok": true,
+      "timestamp": "2026-09-19T22:48:03.283925+00:00"
+    },
+    {
+      "chainId": 4663,
+      "durationMs": 43.752,
+      "endpoint": "tunnel",
+      "httpStatus": 200,
+      "method": "eth_chainId",
+      "ok": true,
+      "timestamp": "2026-09-19T22:48:03.783988+00:00"
+    },
+    {
+      "blockNumber": 67452021,
+      "durationMs": 55.822,
+      "endpoint": "tunnel",
+      "httpStatus": 200,
+      "method": "eth_blockNumber",
+      "ok": true,
+      "timestamp": "2026-09-19T22:48:04.284073+00:00"
+    },
+    {
+      "blockHash": "0xc9a49ce2d7d854f79fbaa785dfa4e1c4183489120b063d9d3863cfb6ee1dadef",
+      "blockNumber": 67452027,
+      "blockTimestamp": 1789858084,
+      "durationMs": 46.213,
+      "endpoint": "tunnel",
+      "headAgeSeconds": 0.83,
+      "httpStatus": 200,
+      "method": "eth_getBlockByNumber",
+      "ok": true,
+      "timestamp": "2026-09-19T22:48:04.784142+00:00"
+    },
+    {
+      "blockHash": "0x3e6eed2572e48659509c7d895f0a283901c6941bea5ba02a0d1e6680cd33b785",
+      "blockNumber": 67452028,
+      "blockTimestamp": 1789858084,
+      "durationMs": 166.875,
+      "endpoint": "official",
+      "headAgeSeconds": 1.451,
+      "httpStatus": 200,
+      "method": "eth_getBlockByNumber",
+      "ok": true,
+      "timestamp": "2026-09-19T22:48:05.284210+00:00"
+    },
+    {
+      "chainId": 4663,
+      "durationMs": 0.933,
+      "endpoint": "local",
+      "httpStatus": 200,
+      "method": "eth_chainId",
+      "ok": true,
+      "timestamp": "2026-09-19T22:48:05.784646+00:00"
+    },
+    {
+      "blockNumber": 67452040,
+      "durationMs": 0.76,
+      "endpoint": "local",
+      "httpStatus": 200,
+      "method": "eth_blockNumber",
+      "ok": true,
+      "timestamp": "2026-09-19T22:48:06.284718+00:00"
+    },
+    {
+      "blockHash": "0x3e9ee6d1836732be7da2c60b5776e94c6a05b4a895630baea45088967a15f950",
+      "blockNumber": 67452045,
+      "blockTimestamp": 1789858086,
+      "durationMs": 0.982,
+      "endpoint": "local",
+      "headAgeSeconds": 0.786,
+      "httpStatus": 200,
+      "method": "eth_getBlockByNumber",
+      "ok": true,
+      "timestamp": "2026-09-19T22:48:06.784794+00:00"
+    },
+    {
+      "chainId": 4663,
+      "durationMs": 46.718,
+      "endpoint": "tunnel",
+      "httpStatus": 200,
+      "method": "eth_chainId",
+      "ok": true,
+      "timestamp": "2026-09-19T22:48:07.284858+00:00"
+    },
+    {
+      "blockNumber": 67452056,
+      "durationMs": 58.191,
+      "endpoint": "tunnel",
+      "httpStatus": 200,
+      "method": "eth_blockNumber",
+      "ok": true,
+      "timestamp": "2026-09-19T22:48:07.784930+00:00"
+    },
+    {
+      "blockHash": "0xf9568c42dae2a95b1d9413b4a9868ccc6f7ec5b1a1d1ff9253fddb254eacace3",
+      "blockNumber": 67452060,
+      "blockTimestamp": 1789858088,
+      "durationMs": 37.11,
+      "endpoint": "tunnel",
+      "headAgeSeconds": 0.322,
+      "httpStatus": 200,
+      "method": "eth_getBlockByNumber",
+      "ok": true,
+      "timestamp": "2026-09-19T22:48:08.284994+00:00"
+    },
+    {
+      "blockHash": "0xd9a16261b9daaa250acd71acddae65848009d8435a401655b767b91d1a54fecf",
+      "blockNumber": 67452062,
+      "blockTimestamp": 1789858088,
+      "durationMs": 172.357,
+      "endpoint": "official",
+      "headAgeSeconds": 0.958,
+      "httpStatus": 200,
+      "method": "eth_getBlockByNumber",
+      "ok": true,
+      "timestamp": "2026-09-19T22:48:08.785371+00:00"
+    },
+    {
+      "chainId": 4663,
+      "durationMs": 0.667,
+      "endpoint": "local",
+      "httpStatus": 200,
+      "method": "eth_chainId",
+      "ok": true,
+      "timestamp": "2026-09-19T22:48:09.285440+00:00"
+    },
+    {
+      "blockNumber": 67452075,
+      "durationMs": 0.892,
+      "endpoint": "local",
+      "httpStatus": 200,
+      "method": "eth_blockNumber",
+      "ok": true,
+      "timestamp": "2026-09-19T22:48:09.785822+00:00"
+    },
+    {
+      "blockHash": "0xaf430d8114ff946e6700e19cb20ac3efb27de28d975d0497a281bf1f6383515f",
+      "blockNumber": 67452080,
+      "blockTimestamp": 1789858090,
+      "durationMs": 0.812,
+      "endpoint": "local",
+      "headAgeSeconds": 0.287,
+      "httpStatus": 200,
+      "method": "eth_getBlockByNumber",
+      "ok": true,
+      "timestamp": "2026-09-19T22:48:10.285883+00:00"
+    },
+    {
+      "chainId": 4663,
+      "durationMs": 35.099,
+      "endpoint": "tunnel",
+      "httpStatus": 200,
+      "method": "eth_chainId",
+      "ok": true,
+      "timestamp": "2026-09-19T22:48:10.786250+00:00"
+    },
+    {
+      "blockNumber": 67452090,
+      "durationMs": 36.802,
+      "endpoint": "tunnel",
+      "httpStatus": 200,
+      "method": "eth_blockNumber",
+      "ok": true,
+      "timestamp": "2026-09-19T22:48:11.286323+00:00"
+    },
+    {
+      "blockHash": "0xf1867ca19a8a00d54e463d2cbd7265ed0e3766b662f3f7a55bea6fc0dd6602c4",
+      "blockNumber": 67452095,
+      "blockTimestamp": 1789858091,
+      "durationMs": 46.219,
+      "endpoint": "tunnel",
+      "headAgeSeconds": 0.833,
+      "httpStatus": 200,
+      "method": "eth_getBlockByNumber",
+      "ok": true,
+      "timestamp": "2026-09-19T22:48:11.786491+00:00"
+    },
+    {
+      "blockHash": "0xf506d0aecb711d8de158b829a43a2620b7e573f6ee687564642b7d2652a52bde",
+      "blockNumber": 67452098,
+      "blockTimestamp": 1789858091,
+      "durationMs": 192.905,
+      "endpoint": "official",
+      "headAgeSeconds": 1.48,
+      "httpStatus": 200,
+      "method": "eth_getBlockByNumber",
+      "ok": true,
+      "timestamp": "2026-09-19T22:48:12.286921+00:00"
+    },
+    {
+      "blockHash": "0xce6a1563d141bd8dfd9db72a329e0a3dad60f4fb08e8e6c4bad76a6f29b0ed30",
+      "blockNumber": 67452103,
+      "blockTimestamp": 1789858092,
+      "durationMs": 178.79,
+      "endpoint": "official",
+      "headAgeSeconds": 0.966,
+      "httpStatus": 200,
+      "method": "eth_getBlockByNumber",
+      "ok": true,
+      "timestamp": "2026-09-19T22:48:12.786995+00:00"
+    },
+    {
+      "blockHash": "0xce6a1563d141bd8dfd9db72a329e0a3dad60f4fb08e8e6c4bad76a6f29b0ed30",
+      "blockNumber": 67452103,
+      "blockTimestamp": 1789858092,
+      "durationMs": 0.686,
+      "endpoint": "local",
+      "headAgeSeconds": 1.288,
+      "httpStatus": 200,
+      "method": "eth_getBlockByNumber",
+      "ok": true,
+      "timestamp": "2026-09-19T22:48:13.287066+00:00"
+    }
+  ],
+  "schema": 1,
+  "startedAt": "2026-09-19T22:47:02.761930+00:00",
+  "summary": {
+    "local": {
+      "eth_blockNumber": {
+        "errorTypes": {},
+        "errors": 0,
+        "httpStatuses": {
+          "200": 20
+        },
+        "maxMs": 1.13,
+        "p50Ms": 0.847,
+        "p95Ms": 0.996,
+        "samples": 20,
+        "totalMs": 16.408
+      },
+      "eth_chainId": {
+        "errorTypes": {},
+        "errors": 0,
+        "httpStatuses": {
+          "200": 20
+        },
+        "maxMs": 1.237,
+        "p50Ms": 0.843,
+        "p95Ms": 0.948,
+        "samples": 20,
+        "totalMs": 16.333
+      },
+      "eth_getBlockByNumber": {
+        "errorTypes": {},
+        "errors": 0,
+        "httpStatuses": {
+          "200": 20
+        },
+        "maxMs": 1.06,
+        "p50Ms": 0.936,
+        "p95Ms": 1.059,
+        "samples": 20,
+        "totalMs": 18.32
+      }
+    },
+    "official": {
+      "eth_blockNumber": {
+        "errorTypes": {},
+        "errors": 0,
+        "httpStatuses": {},
+        "maxMs": null,
+        "p50Ms": null,
+        "p95Ms": null,
+        "samples": 0,
+        "totalMs": 0
+      },
+      "eth_chainId": {
+        "errorTypes": {},
+        "errors": 0,
+        "httpStatuses": {},
+        "maxMs": null,
+        "p50Ms": null,
+        "p95Ms": null,
+        "samples": 0,
+        "totalMs": 0
+      },
+      "eth_getBlockByNumber": {
+        "errorTypes": {},
+        "errors": 0,
+        "httpStatuses": {
+          "200": 21
+        },
+        "maxMs": 193.329,
+        "p50Ms": 172.357,
+        "p95Ms": 192.905,
+        "samples": 21,
+        "totalMs": 3644.145
+      }
+    },
+    "tunnel": {
+      "eth_blockNumber": {
+        "errorTypes": {},
+        "errors": 0,
+        "httpStatuses": {
+          "200": 20
+        },
+        "maxMs": 58.191,
+        "p50Ms": 43.812,
+        "p95Ms": 57.554,
+        "samples": 20,
+        "totalMs": 935.391
+      },
+      "eth_chainId": {
+        "errorTypes": {},
+        "errors": 0,
+        "httpStatuses": {
+          "200": 20
+        },
+        "maxMs": 65.073,
+        "p50Ms": 43.703,
+        "p95Ms": 56.249,
+        "samples": 20,
+        "totalMs": 871.592
+      },
+      "eth_getBlockByNumber": {
+        "errorTypes": {},
+        "errors": 0,
+        "httpStatuses": {
+          "200": 20
+        },
+        "maxMs": 61.722,
+        "p50Ms": 45.386,
+        "p95Ms": 60.564,
+        "samples": 20,
+        "totalMs": 916.444
+      }
+    }
+  }
+}

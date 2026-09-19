@@ -1,0 +1,170 @@
+{
+  "scope": "Production data pipeline from Mac, three independent cold frontend in-memory sessions; runs2/3 after65s quiet intervals; notDOMpainttimings",
+  "publicAsset": "/assets/index-D30hKfvI.js",
+  "runs": [
+    {
+      "event": "benchmark_summary",
+      "atMs": 21243.4,
+      "elapsedMs": 21243.2,
+      "firstRowMs": 1548.5,
+      "allRowsMs": 19360.8,
+      "settledRows": 6,
+      "aborted": false,
+      "blocking": null,
+      "requestCount": 17,
+      "recordedResponses": 17,
+      "schedulerSleepMs": 14508.5,
+      "capabilityAnswers": [
+        {
+          "path": "/api/read/v1/capabilities",
+          "dataMode": "live_read_only",
+          "enabledReads": [
+            "token",
+            "pool-market",
+            "pools",
+            "catalogue",
+            "nft-positions",
+            "wallet-assets",
+            "pool-activity"
+          ]
+        },
+        {
+          "path": "/api/read/v2/capabilities",
+          "dataMode": "live_read_only",
+          "enabledReads": [
+            "pool-market"
+          ]
+        }
+      ],
+      "statuses": {
+        "200": 15,
+        "429": 2
+      },
+      "problems": [],
+      "file": "frontend-data-baseline-2026-09-19.jsonl",
+      "successfulPostMedianMs": 374.3,
+      "successfulPostMaxMs": 1183,
+      "successfulPostCount": 13,
+      "networkTotalMs": 6638.5,
+      "staleMarketReasons": [
+        {
+          "status": "stale",
+          "reason": "provider_rate_limited",
+          "cacheAgeSeconds": 133,
+          "retrievedAt": 1789857950
+        },
+        {
+          "status": "stale",
+          "reason": "provider_rate_limited",
+          "cacheAgeSeconds": 108,
+          "retrievedAt": 1789857980
+        }
+      ]
+    },
+    {
+      "event": "benchmark_summary",
+      "atMs": 21184.3,
+      "elapsedMs": 21184.2,
+      "firstRowMs": 593.7,
+      "allRowsMs": 19031.1,
+      "settledRows": 6,
+      "aborted": false,
+      "blocking": null,
+      "requestCount": 17,
+      "recordedResponses": 17,
+      "schedulerSleepMs": 15528.1,
+      "capabilityAnswers": [
+        {
+          "path": "/api/read/v1/capabilities",
+          "dataMode": "live_read_only",
+          "enabledReads": [
+            "token",
+            "pool-market",
+            "pools",
+            "catalogue",
+            "nft-positions",
+            "wallet-assets",
+            "pool-activity"
+          ]
+        },
+        {
+          "path": "/api/read/v2/capabilities",
+          "dataMode": "live_read_only",
+          "enabledReads": [
+            "pool-market"
+          ]
+        }
+      ],
+      "statuses": {
+        "200": 15,
+        "429": 2
+      },
+      "problems": [],
+      "file": "frontend-data-baseline-run2-2026-09-19.jsonl",
+      "successfulPostMedianMs": 348.2,
+      "successfulPostMaxMs": 626.6,
+      "successfulPostCount": 13,
+      "networkTotalMs": 5628.8,
+      "staleMarketReasons": []
+    },
+    {
+      "event": "benchmark_summary",
+      "atMs": 19459.5,
+      "elapsedMs": 19459.5,
+      "firstRowMs": 842.1,
+      "allRowsMs": 15119.6,
+      "settledRows": 6,
+      "aborted": false,
+      "blocking": null,
+      "requestCount": 17,
+      "recordedResponses": 17,
+      "schedulerSleepMs": 13530.4,
+      "capabilityAnswers": [
+        {
+          "path": "/api/read/v1/capabilities",
+          "dataMode": "live_read_only",
+          "enabledReads": [
+            "token",
+            "pool-market",
+            "pools",
+            "catalogue",
+            "nft-positions",
+            "wallet-assets",
+            "pool-activity"
+          ]
+        },
+        {
+          "path": "/api/read/v2/capabilities",
+          "dataMode": "live_read_only",
+          "enabledReads": [
+            "pool-market"
+          ]
+        }
+      ],
+      "statuses": {
+        "200": 15,
+        "429": 2
+      },
+      "problems": [],
+      "file": "frontend-data-baseline-run3-2026-09-19.jsonl",
+      "successfulPostMedianMs": 380.2,
+      "successfulPostMaxMs": 600,
+      "successfulPostCount": 13,
+      "networkTotalMs": 5907.1,
+      "staleMarketReasons": [
+        {
+          "status": "stale",
+          "reason": "provider_rate_limited",
+          "cacheAgeSeconds": 87,
+          "retrievedAt": 1789858220
+        },
+        {
+          "status": "stale",
+          "reason": "provider_rate_limited",
+          "cacheAgeSeconds": 90,
+          "retrievedAt": 1789858224
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,39 @@
+{
+  "completed": true,
+  "productionTouched": false,
+  "rpcBlocksRead": 0,
+  "probes": [
+    {
+      "probe": "catalogue_while_reader_provider_busy",
+      "actualStatus": 429,
+      "desiredStatus": 200,
+      "matchesDesiredBehavior": false,
+      "retryAfterSeconds": "10",
+      "durationMs": 15.2
+    },
+    {
+      "probe": "snapshot_while_reader_provider_busy",
+      "actualStatus": 429,
+      "desiredStatus": 200,
+      "matchesDesiredBehavior": false,
+      "retryAfterSeconds": "10",
+      "durationMs": 3.2
+    },
+    {
+      "probe": "snapshot_while_gateway_provider_busy",
+      "actualStatus": 429,
+      "desiredStatus": 200,
+      "matchesDesiredBehavior": false,
+      "retryAfterSeconds": "10",
+      "durationMs": 1.08
+    },
+    {
+      "probe": "snapshot_while_gateway_stored_busy",
+      "actualStatus": 200,
+      "desiredStatus": 429,
+      "matchesDesiredBehavior": false,
+      "retryAfterSeconds": null,
+      "durationMs": 5.03
+    }
+  ]
+}

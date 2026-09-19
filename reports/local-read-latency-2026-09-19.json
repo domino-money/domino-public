@@ -1,0 +1,569 @@
+{
+  "mode": "live_vm_loopback_read_api",
+  "readerRevision": "b2dcc8cf1da3bb4126e3dbc0285189889551841a",
+  "samplesPerCase": 3,
+  "rows": [
+    {
+      "iteration": 0,
+      "case": "snapshot",
+      "route": "markets-snapshot",
+      "requestId": "dde6bcbcbc4b4ffdb7787c096a822e26",
+      "utc": "2026-09-19T22:45:43Z",
+      "durationMs": 13.04,
+      "status": 200,
+      "retryAfter": null,
+      "error": null,
+      "snapshot": null,
+      "freshness": null,
+      "entries": [
+        {
+          "poolId": "0xf399bd1544377680d48c62fd85c2105b869e55906c4189cc5ab3b4e83446928c",
+          "observedAt": 1789857784,
+          "ageSeconds": 159.9,
+          "marketStatus": "available"
+        },
+        {
+          "poolId": "0x24107d152f14a76d292123265ae3f3c71f863fc2f4ef7ba49d64e78d28ea379e",
+          "observedAt": 1789857787,
+          "ageSeconds": 156.9,
+          "marketStatus": "stale"
+        },
+        {
+          "poolId": "0x4be9657ec9002e528f4f17a5c43edc525a07f888f7b180c2afbf75e096c4f38a",
+          "observedAt": 1789857791,
+          "ageSeconds": 152.9,
+          "marketStatus": "stale"
+        },
+        {
+          "poolId": "0x84bd4e2d8be11aeb0afc1195b38f587b61e90068548f1063fdbe448fb8cad0b6",
+          "observedAt": 1789857858,
+          "ageSeconds": 85.9,
+          "marketStatus": "available"
+        },
+        {
+          "poolId": "0xdb922f0619e11b0c1e6c3a142798f0243060b8a4331ea4f4e7de80e898cc02e7",
+          "observedAt": 1789857889,
+          "ageSeconds": 54.9,
+          "marketStatus": "available"
+        },
+        {
+          "poolId": "0x94c62eebf6454231b2fcd0259ede448ae3c6ad8617718cd88dab20b30cfae48a",
+          "observedAt": 1789857919,
+          "ageSeconds": 24.9,
+          "marketStatus": "available"
+        }
+      ]
+    },
+    {
+      "iteration": 0,
+      "case": "token",
+      "route": "token",
+      "requestId": "6ce8527b8013475094643d0a9d59571a",
+      "utc": "2026-09-19T22:45:45Z",
+      "durationMs": 275.03,
+      "status": 200,
+      "retryAfter": null,
+      "error": null,
+      "snapshot": {
+        "number": 67450644,
+        "hash": "0xaa6bdd5b5fe5f0709149c4d98c104f009cd81a058e2e2e48c8b4e6a6bc910bd2",
+        "timestamp": 1789857944
+      },
+      "freshness": null
+    },
+    {
+      "iteration": 0,
+      "case": "market",
+      "route": "pool-market",
+      "requestId": "c5cf795177224f9e8df0e3baa13d8359",
+      "utc": "2026-09-19T22:45:46Z",
+      "durationMs": 271.62,
+      "status": 200,
+      "retryAfter": null,
+      "error": null,
+      "snapshot": {
+        "number": 67450656,
+        "hash": "0xbc6d2aa7356bd54aabba7b94b4f46dd1c06aff295bdc522901f6666141600ced",
+        "timestamp": 1789857946
+      },
+      "freshness": null,
+      "marketStatus": "available",
+      "marketCache": {
+        "status": "miss",
+        "ageSeconds": 0,
+        "freshForSeconds": 60,
+        "maxStaleSeconds": 300,
+        "scope": "process_local",
+        "providerUpdateTimeKnown": false
+      },
+      "chartStatus": "not_requested"
+    },
+    {
+      "iteration": 0,
+      "case": "chart",
+      "route": "pool-market",
+      "requestId": "ec8c9e212dea4e31aec60f6df13cb496",
+      "utc": "2026-09-19T22:45:48Z",
+      "durationMs": 682.98,
+      "status": 200,
+      "retryAfter": null,
+      "error": null,
+      "snapshot": {
+        "number": 67450668,
+        "hash": "0x85b4923cc12405a68aae7400b510f8e120eb01fe61b472aabf82ccfaebf04e7e",
+        "timestamp": 1789857947
+      },
+      "freshness": null,
+      "marketStatus": "available",
+      "marketCache": {
+        "status": "hit",
+        "ageSeconds": 1,
+        "freshForSeconds": 60,
+        "maxStaleSeconds": 300,
+        "scope": "process_local",
+        "providerUpdateTimeKnown": false
+      },
+      "chartStatus": "available"
+    },
+    {
+      "iteration": 0,
+      "case": "metrics",
+      "route": "pool-metrics",
+      "requestId": "008cf15c6b72452f979304ce3ffdca94",
+      "utc": "2026-09-19T22:45:48Z",
+      "durationMs": 227.47,
+      "status": 200,
+      "retryAfter": null,
+      "error": null,
+      "snapshot": {
+        "hash": "0x6dde5e2af19581cc52cc983249aace061588b35556f8a95bb37becd39b10c30f",
+        "tick": -198452,
+        "number": 64744074,
+        "lpFeePips": 200,
+        "timestamp": 1789585416,
+        "sqrtPriceX96": "3888513877636328774959104",
+        "protocolFeeRaw": 213044,
+        "activeLiquidityRaw": "42825862972617490",
+        "feeGrowthGlobalX128": [
+          "37040766497505488808783817851156814599896",
+          "83260436848722858263102585095237"
+        ]
+      },
+      "freshness": {
+        "ageSeconds": 272532,
+        "status": "stale"
+      }
+    },
+    {
+      "iteration": 0,
+      "case": "pools",
+      "route": "pools",
+      "requestId": "e5ef90076fd041468826eb9c741034c2",
+      "utc": "2026-09-19T22:45:49Z",
+      "durationMs": 1.75,
+      "status": 429,
+      "retryAfter": "10",
+      "error": "read_capacity_busy",
+      "snapshot": null,
+      "freshness": null
+    },
+    {
+      "iteration": 1,
+      "case": "snapshot",
+      "route": "markets-snapshot",
+      "requestId": "7ce791bddcec40e1b767f832f20c79cc",
+      "utc": "2026-09-19T22:45:51Z",
+      "durationMs": 2.82,
+      "status": 200,
+      "retryAfter": null,
+      "error": null,
+      "snapshot": null,
+      "freshness": null,
+      "entries": [
+        {
+          "poolId": "0x24107d152f14a76d292123265ae3f3c71f863fc2f4ef7ba49d64e78d28ea379e",
+          "observedAt": 1789857787,
+          "ageSeconds": 164.1,
+          "marketStatus": "stale"
+        },
+        {
+          "poolId": "0x4be9657ec9002e528f4f17a5c43edc525a07f888f7b180c2afbf75e096c4f38a",
+          "observedAt": 1789857791,
+          "ageSeconds": 160.1,
+          "marketStatus": "stale"
+        },
+        {
+          "poolId": "0xdb922f0619e11b0c1e6c3a142798f0243060b8a4331ea4f4e7de80e898cc02e7",
+          "observedAt": 1789857889,
+          "ageSeconds": 62.1,
+          "marketStatus": "available"
+        },
+        {
+          "poolId": "0x94c62eebf6454231b2fcd0259ede448ae3c6ad8617718cd88dab20b30cfae48a",
+          "observedAt": 1789857919,
+          "ageSeconds": 32.1,
+          "marketStatus": "available"
+        },
+        {
+          "poolId": "0x84bd4e2d8be11aeb0afc1195b38f587b61e90068548f1063fdbe448fb8cad0b6",
+          "observedAt": 1789857948,
+          "ageSeconds": 3.1,
+          "marketStatus": "available"
+        },
+        {
+          "poolId": "0xf399bd1544377680d48c62fd85c2105b869e55906c4189cc5ab3b4e83446928c",
+          "observedAt": 1789857950,
+          "ageSeconds": 1.1,
+          "marketStatus": "available"
+        }
+      ]
+    },
+    {
+      "iteration": 1,
+      "case": "token",
+      "route": "token",
+      "requestId": "0db4ba9374a841f19a1a60c4aa143c97",
+      "utc": "2026-09-19T22:45:52Z",
+      "durationMs": 264.23,
+      "status": 200,
+      "retryAfter": null,
+      "error": null,
+      "snapshot": {
+        "number": 67450715,
+        "hash": "0x6b06bb9e341fcac4a9f0324ae4347830b7587ce6dd04b82e9a39dac8e3956bea",
+        "timestamp": 1789857952
+      },
+      "freshness": null
+    },
+    {
+      "iteration": 1,
+      "case": "market",
+      "route": "pool-market",
+      "requestId": "eeb3df0f632c412db38d78b65586e219",
+      "utc": "2026-09-19T22:45:53Z",
+      "durationMs": 235.65,
+      "status": 200,
+      "retryAfter": null,
+      "error": null,
+      "snapshot": {
+        "number": 67450727,
+        "hash": "0x0d23f45a93d55a8db89acb0a85f9106cd87c405a58cc953d46b27c63341febb9",
+        "timestamp": 1789857953
+      },
+      "freshness": null,
+      "marketStatus": "available",
+      "marketCache": {
+        "status": "hit",
+        "ageSeconds": 7,
+        "freshForSeconds": 60,
+        "maxStaleSeconds": 300,
+        "scope": "process_local",
+        "providerUpdateTimeKnown": false
+      },
+      "chartStatus": "not_requested"
+    },
+    {
+      "iteration": 1,
+      "case": "chart",
+      "route": "pool-market",
+      "requestId": "bcba4e1ba0ac446d8dc38e9b4999cbec",
+      "utc": "2026-09-19T22:45:54Z",
+      "durationMs": 226.61,
+      "status": 200,
+      "retryAfter": null,
+      "error": null,
+      "snapshot": {
+        "number": 67450739,
+        "hash": "0x46f4572d40726f8447a1e3da5ddd5eb13f561775a16436bc43945d2be7b3bf2e",
+        "timestamp": 1789857954
+      },
+      "freshness": null,
+      "marketStatus": "available",
+      "marketCache": {
+        "status": "hit",
+        "ageSeconds": 8,
+        "freshForSeconds": 60,
+        "maxStaleSeconds": 300,
+        "scope": "process_local",
+        "providerUpdateTimeKnown": false
+      },
+      "chartStatus": "available"
+    },
+    {
+      "iteration": 1,
+      "case": "metrics",
+      "route": "pool-metrics",
+      "requestId": "c862ae5705504d67b8951cbf0e875bf8",
+      "utc": "2026-09-19T22:45:56Z",
+      "durationMs": 194.44,
+      "status": 200,
+      "retryAfter": null,
+      "error": null,
+      "snapshot": {
+        "hash": "0x6dde5e2af19581cc52cc983249aace061588b35556f8a95bb37becd39b10c30f",
+        "tick": -198452,
+        "number": 64744074,
+        "lpFeePips": 200,
+        "timestamp": 1789585416,
+        "sqrtPriceX96": "3888513877636328774959104",
+        "protocolFeeRaw": 213044,
+        "activeLiquidityRaw": "42825862972617490",
+        "feeGrowthGlobalX128": [
+          "37040766497505488808783817851156814599896",
+          "83260436848722858263102585095237"
+        ]
+      },
+      "freshness": {
+        "ageSeconds": 272540,
+        "status": "stale"
+      }
+    },
+    {
+      "iteration": 1,
+      "case": "pools",
+      "route": "pools",
+      "requestId": "c35ca3df966a4759b0130c8428ad1aa3",
+      "utc": "2026-09-19T22:45:57Z",
+      "durationMs": 635.11,
+      "status": 200,
+      "retryAfter": null,
+      "error": null,
+      "snapshot": {
+        "number": 67450762,
+        "hash": "0xf467f5e1b0afbb9c4c4a4fde1eaea99583bccc5b75c96596644fa372743e4322",
+        "timestamp": 1789857956
+      },
+      "freshness": null
+    },
+    {
+      "iteration": 2,
+      "case": "snapshot",
+      "route": "markets-snapshot",
+      "requestId": "81bc292074c64c3bac34389e5fdcd8c4",
+      "utc": "2026-09-19T22:45:58Z",
+      "durationMs": 2.59,
+      "status": 200,
+      "retryAfter": null,
+      "error": null,
+      "snapshot": null,
+      "freshness": null,
+      "entries": [
+        {
+          "poolId": "0x24107d152f14a76d292123265ae3f3c71f863fc2f4ef7ba49d64e78d28ea379e",
+          "observedAt": 1789857787,
+          "ageSeconds": 171.3,
+          "marketStatus": "stale"
+        },
+        {
+          "poolId": "0x4be9657ec9002e528f4f17a5c43edc525a07f888f7b180c2afbf75e096c4f38a",
+          "observedAt": 1789857791,
+          "ageSeconds": 167.3,
+          "marketStatus": "stale"
+        },
+        {
+          "poolId": "0xdb922f0619e11b0c1e6c3a142798f0243060b8a4331ea4f4e7de80e898cc02e7",
+          "observedAt": 1789857889,
+          "ageSeconds": 69.3,
+          "marketStatus": "available"
+        },
+        {
+          "poolId": "0x94c62eebf6454231b2fcd0259ede448ae3c6ad8617718cd88dab20b30cfae48a",
+          "observedAt": 1789857919,
+          "ageSeconds": 39.3,
+          "marketStatus": "available"
+        },
+        {
+          "poolId": "0xf399bd1544377680d48c62fd85c2105b869e55906c4189cc5ab3b4e83446928c",
+          "observedAt": 1789857950,
+          "ageSeconds": 8.3,
+          "marketStatus": "available"
+        },
+        {
+          "poolId": "0x84bd4e2d8be11aeb0afc1195b38f587b61e90068548f1063fdbe448fb8cad0b6",
+          "observedAt": 1789857954,
+          "ageSeconds": 4.3,
+          "marketStatus": "available"
+        }
+      ]
+    },
+    {
+      "iteration": 2,
+      "case": "token",
+      "route": "token",
+      "requestId": "49325e26edae466d959baa672fa0f5f7",
+      "utc": "2026-09-19T22:45:59Z",
+      "durationMs": 325.34,
+      "status": 200,
+      "retryAfter": null,
+      "error": null,
+      "snapshot": {
+        "number": 67450785,
+        "hash": "0x5a7ca62dbbe9b4b3285f8061d4e2d2889a6aa41d29b9ebb238d8d44e0b54dcd5",
+        "timestamp": 1789857959
+      },
+      "freshness": null
+    },
+    {
+      "iteration": 2,
+      "case": "market",
+      "route": "pool-market",
+      "requestId": "98f3a4997d354314a9341ca0296b2e88",
+      "utc": "2026-09-19T22:46:00Z",
+      "durationMs": 238.59,
+      "status": 200,
+      "retryAfter": null,
+      "error": null,
+      "snapshot": {
+        "number": 67450798,
+        "hash": "0x5a4c737691f8247a5b2f8e783fa910456459d1a75e4e05ab746af3cb8cb4b1dc",
+        "timestamp": 1789857960
+      },
+      "freshness": null,
+      "marketStatus": "available",
+      "marketCache": {
+        "status": "hit",
+        "ageSeconds": 14,
+        "freshForSeconds": 60,
+        "maxStaleSeconds": 300,
+        "scope": "process_local",
+        "providerUpdateTimeKnown": false
+      },
+      "chartStatus": "not_requested"
+    },
+    {
+      "iteration": 2,
+      "case": "chart",
+      "route": "pool-market",
+      "requestId": "eea2f54e08ee43e6b957e2cab02c826a",
+      "utc": "2026-09-19T22:46:02Z",
+      "durationMs": 214.57,
+      "status": 200,
+      "retryAfter": null,
+      "error": null,
+      "snapshot": {
+        "number": 67450810,
+        "hash": "0x9287cfbf781d70b05ea2c913377fbf750164d59539de4e35760ec44bb9721d03",
+        "timestamp": 1789857961
+      },
+      "freshness": null,
+      "marketStatus": "available",
+      "marketCache": {
+        "status": "hit",
+        "ageSeconds": 15,
+        "freshForSeconds": 60,
+        "maxStaleSeconds": 300,
+        "scope": "process_local",
+        "providerUpdateTimeKnown": false
+      },
+      "chartStatus": "available"
+    },
+    {
+      "iteration": 2,
+      "case": "metrics",
+      "route": "pool-metrics",
+      "requestId": "bc6849afd4df4ee0b254494aa6ce8701",
+      "utc": "2026-09-19T22:46:03Z",
+      "durationMs": 227.88,
+      "status": 200,
+      "retryAfter": null,
+      "error": null,
+      "snapshot": {
+        "hash": "0x6dde5e2af19581cc52cc983249aace061588b35556f8a95bb37becd39b10c30f",
+        "tick": -198452,
+        "number": 64744074,
+        "lpFeePips": 200,
+        "timestamp": 1789585416,
+        "sqrtPriceX96": "3888513877636328774959104",
+        "protocolFeeRaw": 213044,
+        "activeLiquidityRaw": "42825862972617490",
+        "feeGrowthGlobalX128": [
+          "37040766497505488808783817851156814599896",
+          "83260436848722858263102585095237"
+        ]
+      },
+      "freshness": {
+        "ageSeconds": 272547,
+        "status": "stale"
+      }
+    },
+    {
+      "iteration": 2,
+      "case": "pools",
+      "route": "pools",
+      "requestId": "08e344a61e81485aab5a1bb0c31b7d16",
+      "utc": "2026-09-19T22:46:04Z",
+      "durationMs": 554.12,
+      "status": 200,
+      "retryAfter": null,
+      "error": null,
+      "snapshot": {
+        "number": 67450833,
+        "hash": "0x8e053345f2bf97843551017f7db59f939396030dc1ef0a9eed5ee32a847229f8",
+        "timestamp": 1789857964
+      },
+      "freshness": null
+    }
+  ],
+  "summary": {
+    "snapshot": {
+      "count": 3,
+      "medianMs": 2.82,
+      "maxMs": 13.04,
+      "statuses": [
+        200,
+        200,
+        200
+      ]
+    },
+    "token": {
+      "count": 3,
+      "medianMs": 275.03,
+      "maxMs": 325.34,
+      "statuses": [
+        200,
+        200,
+        200
+      ]
+    },
+    "market": {
+      "count": 3,
+      "medianMs": 238.59,
+      "maxMs": 271.62,
+      "statuses": [
+        200,
+        200,
+        200
+      ]
+    },
+    "chart": {
+      "count": 3,
+      "medianMs": 226.61,
+      "maxMs": 682.98,
+      "statuses": [
+        200,
+        200,
+        200
+      ]
+    },
+    "metrics": {
+      "count": 3,
+      "medianMs": 227.47,
+      "maxMs": 227.88,
+      "statuses": [
+        200,
+        200,
+        200
+      ]
+    },
+    "pools": {
+      "count": 2,
+      "medianMs": 594.615,
+      "maxMs": 635.11,
+      "statuses": [
+        429,
+        200,
+        200
+      ]
+    }
+  }
+}
