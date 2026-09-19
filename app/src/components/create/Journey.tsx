@@ -189,6 +189,10 @@ export function Journey({ poolId }: { poolId: string }) {
   const setPool = (option: PoolOption | null) => update(withPool(state, option, Date.now()))
   const setRange = (range: TickRange) => update(withRange(state, range))
   const setBudget = (text: string) => update(withBudget(state, text))
+  // Typing in the other token's row is one change, not two: switching the
+  // independent token clears the amount (withToken), so setting them
+  // separately from the same state would lose whichever landed first.
+  const setDeposit = (candidate: TokenCandidate, text: string) => update(withBudget(withToken(state, candidate), text))
   const setSlippage = (text: string) => update(withSlippage(state, text))
   const setAutomation = (choice: Automation) => update(withAutomation(state, choice))
   const setLimits = (limits: Partial<DominoLimits>) => update(withLimits(state, limits))
@@ -310,7 +314,7 @@ export function Journey({ poolId }: { poolId: string }) {
       case 'range':
         return <StageRange source={source} state={state} onRange={setRange} onPool={setPool} />
       case 'amount':
-        return <StageAmount state={state} balances={pair} onBudget={setBudget} onToken={setToken} onSlippage={setSlippage} />
+        return <StageAmount state={state} balances={pair} onBudget={setBudget} onDeposit={setDeposit} onSlippage={setSlippage} />
       case 'automation':
         return <StageAutomation state={state} now={now} onAutomation={setAutomation} onLimits={setLimits} />
       case 'review':

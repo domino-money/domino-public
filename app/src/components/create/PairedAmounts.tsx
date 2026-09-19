@@ -28,12 +28,12 @@ export function PairedAmounts({
   state,
   balances,
   onBudget,
-  onToken,
+  onDeposit,
 }: {
   state: JourneyState
   balances: PairBalancesState
   onBudget: (text: string) => void
-  onToken: (candidate: TokenCandidate) => void
+  onDeposit: (candidate: TokenCandidate, text: string) => void
 }) {
   const pool = state.pool
   if (!pool) return null
@@ -92,10 +92,7 @@ export function PairedAmounts({
               placeholder="0.0"
               value={shown.value}
               disabled={unreadable}
-              onChange={(event) => {
-                if (!mine) onToken(choice)
-                onBudget(event.target.value)
-              }}
+              onChange={(event) => (mine ? onBudget(event.target.value) : onDeposit(choice, event.target.value))}
               error={mine && state.budget !== '' && !budget.ok ? budget.reason : unreadable ? CREATE.amount.pairUnreadable : null}
               below={shown.note ? <p className="dm-hint">{shown.note}</p> : null}
               footer={
@@ -118,10 +115,7 @@ export function PairedAmounts({
                       variant="outline"
                       size="sm"
                       data-pair-max={side}
-                      onClick={() => {
-                        if (!mine) onToken(choice)
-                        onBudget(fill)
-                      }}
+                      onClick={() => (mine ? onBudget(fill) : onDeposit(choice, fill))}
                     >
                       {CREATE.amount.maxLabel}
                     </Button>

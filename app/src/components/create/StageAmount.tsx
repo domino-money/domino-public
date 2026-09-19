@@ -54,13 +54,14 @@ export function StageAmount({
   state,
   balances,
   onBudget,
-  onToken,
+  onDeposit,
   onSlippage,
 }: {
   state: JourneyState
   balances: PairBalancesState
   onBudget: (text: string) => void
-  onToken: (candidate: TokenCandidate) => void
+  /** The other token's row: switch the independent token and set its amount in one change. */
+  onDeposit: (candidate: TokenCandidate, text: string) => void
   onSlippage: (text: string) => void
 }) {
   const token = state.token
@@ -70,7 +71,7 @@ export function StageAmount({
   const slippage = validateSlippage(state.slippageBps)
   return (
     <div className="dm-flow-stack" data-stage="amount">
-      <PairedAmounts state={state} balances={balances} onBudget={onBudget} onToken={onToken} />
+      <PairedAmounts state={state} balances={balances} onBudget={onBudget} onDeposit={onDeposit} />
       {budget.ok && decimals !== null && (
         <p className="dm-hint tnum break-all" data-budget-raw={budget.raw} title={CREATE.amount.rawUnitsTitle}>
           {CREATE.amount.rawUnits(budget.raw, decimals)}
