@@ -29,6 +29,9 @@ contract DominoExecutionEngineV4 {
     bytes32 public immutable routingHelperHash;
     bytes32 public immutable priceGuardHash;
     address private _activeVault;
+    // The vault's pool manager, read once per execution: _delta asked the
+    // clone for it on every one of its dozen calls.
+    address private _activeManager;
     bytes32 private _unlockHash;
     uint256 private _destination;
     uint256 public constant MAX_COLLECTIONS = 16;
@@ -60,25 +63,36 @@ contract DominoExecutionEngineV4 {
         IVaultExecutionV4 vault = IVaultExecutionV4(msg.sender);
         routingHelper.validate(address(vault), plan, readHelper);
         _activeVault = msg.sender;
+        _activeManager = vault.poolManager();
         bytes memory data = abi.encode(plan);
         if (keccak256(msg.data) != keccak256(bytes.concat(this.execute.selector,data))) revert InvalidExecution();
         _unlockHash = keccak256(data);
-        IPoolManagerE4(vault.poolManager()).unlock(data);
+        IPoolManagerE4(_activeManager).unlock(data);
         if (_unlockHash != bytes32(0)) revert UnexpectedCallback();
         destination = _destination;
         planHash = keccak256(abi.encode(keccak256("DominoExecutionV4"),block.chainid,msg.sender,vault.sequenceIdentityHash(),plan));
-        delete _activeVault; delete _destination;
+        delete _activeVault; delete _activeManager; delete _destination;
     }
 
     function unlockCallback(bytes calldata data) external returns (bytes memory) {
         IVaultExecutionV4 vault = IVaultExecutionV4(_activeVault);
-        if (_activeVault == address(0) || msg.sender != vault.poolManager() || _unlockHash == bytes32(0)
+        if (_activeVault == address(0) || msg.sender != _activeManager || _unlockHash == bytes32(0)
             || keccak256(data) != _unlockHash) revert UnexpectedCallback();
         delete _unlockHash;
         E.Plan memory plan = abi.decode(data,(E.Plan));
         T.PoolKey memory key = vault.poolKey();
         if (_delta(vault.positionManager(),key.currency0) != 0 || _delta(vault.positionManager(),key.currency1) != 0
             || _delta(address(this),key.currency0) != 0 || _delta(address(this),key.currency1) != 0) revert InvalidExecution();
+        // The anchor binds every action, not only a swap. A GENERAL, NET, FUND
+        // or MINT whose only price check is the plan's own band would let the
+        // caller contribute the reserve at a price it moved itself.
+        T.ExecutionLimits memory limits = vault.executionLimits();
+        uint160 anchorPrice = priceGuard.referencePrice(plan.swap.priceObservationId,vault.poolId(),
+            plan.authority.observedAtBlock,plan.authority.observedBlockHash,limits.maxObservationAgeSeconds);
+        {
+            (uint160 spot,,,) = IStateViewE2(readHelper.stateView()).getSlot0(vault.poolId());
+            routingHelper.checkSwapPrices(spot,spot,anchorPrice,limits.maxPriceImpactBps);
+        }
         if (plan.action == E.NET) _net(vault,plan,key);
         else {
             Work memory work = Work(plan,new uint128[](plan.budgets.length),new uint128[](plan.budgets.length));
@@ -91,7 +105,7 @@ contract DominoExecutionEngineV4 {
                 if (b.maxCharged > old.charged) b.maxCharged = old.charged;
             }
             for (uint256 i; i < plan.collect.length; ++i) _collect(vault,work,plan.collect[i].tokenId,key);
-            if (plan.swap.amountIn != 0) _swap(vault,work,key);
+            if (plan.swap.amountIn != 0) _swap(vault,work,key,anchorPrice,limits);
             _fund(vault,work,key);
         }
         for (uint256 i; i < plan.budgets.length; ++i)
@@ -243,7 +257,8 @@ contract DominoExecutionEngineV4 {
         emit FeesRealized(address(vault),plan.authority.intentId,id,beforePoint.commitment,afterPoint.commitment,realized0,realized1);
     }
 
-    function _swap(IVaultExecutionV4 vault, Work memory work, T.PoolKey memory key) private {
+    function _swap(IVaultExecutionV4 vault, Work memory work, T.PoolKey memory key,
+        uint160 anchorPrice, T.ExecutionLimits memory limits) private {
         E.Plan memory plan = work.plan;
         E.SwapPlan memory route = plan.swap;
         bool zeroForOne = route.currencyIn == key.currency0;
@@ -258,9 +273,7 @@ contract DominoExecutionEngineV4 {
         uint128 chargedCap = route.maxCharged < plan.budgets[budgetIndex].maxCharged ? route.maxCharged : plan.budgets[budgetIndex].maxCharged;
         E.FeeBudget memory budget = E.FeeBudget(route.sourceId,route.currencyIn,originalCap,chargedCap,0,0);
         T.CompoundAmounts memory value = _amounts(vault,budget,route.amountIn,0);
-        T.ExecutionLimits memory limits = vault.executionLimits();
-        uint160 anchorPrice = priceGuard.referencePrice(route.priceObservationId,vault.poolId(),plan.authority.observedAtBlock,
-            plan.authority.observedBlockHash,limits.maxObservationAgeSeconds);
+        // The anchor and the limits are the ones unlockCallback already bound.
         (uint160 beforePrice,,,) = IStateViewE2(readHelper.stateView()).getSlot0(vault.poolId());
         routingHelper.checkSwapPrices(beforePrice,beforePrice,anchorPrice,limits.maxPriceImpactBps);
         if (route.minAmountOut < routingHelper.minimumOutput(route.amountIn,anchorPrice,zeroForOne,limits.maxSlippageBps)) revert InvalidRoute();
@@ -302,7 +315,7 @@ contract DominoExecutionEngineV4 {
         return currency == address(0) ? _activeVault.balance : IERC20E2(currency).balanceOf(_activeVault);
     }
     function _delta(address account, address currency) private view returns (int256) {
-        return int256(uint256(IPoolManagerE4(IVaultExecutionV4(_activeVault).poolManager()).exttload(keccak256(abi.encode(account,currency)))));
+        return int256(uint256(IPoolManagerE4(_activeManager).exttload(keccak256(abi.encode(account,currency)))));
     }
     function _debt(address account, address currency) private view returns (uint128) {
         int256 delta = _delta(account,currency);

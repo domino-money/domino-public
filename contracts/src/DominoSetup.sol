@@ -85,6 +85,13 @@ contract DominoSetup {
         if (id != nextOperationId(msg.sender) || _operations[id].owner != address(0) || key.currency0 >= key.currency1
             || key.hooks != address(0) || key.fee > 1_000_000 || key.tickSpacing <= 0 || key.tickSpacing > 32767
             || (amount0 == 0 && amount1 == 0)
+            // Both currencies must be native or a real token, as the read
+            // helper already requires of a pool. Without this a code-less
+            // address is only caught later, by a balance read, after funds
+            // have moved. Pool existence is deliberately not required: mint
+            // may initialize the pool itself.
+            || (key.currency0 != address(0) && key.currency0.code.length == 0)
+            || key.currency1.code.length == 0
             || msg.value != (key.currency0 == address(0) ? amount0 : 0)) revert InvalidSetup();
         _pull(key.currency0, amount0); _pull(key.currency1, amount1);
         ownerNonce[msg.sender]++;
@@ -99,6 +106,11 @@ contract DominoSetup {
             || plan.grossInput > (plan.zeroForOne ? op.balance0 : op.balance1)) revert InvalidSetup();
         uint128 beforeOutput = plan.zeroForOne ? op.balance1 : op.balance0;
         _unlock(abi.encode(uint8(1), abi.encode(plan)));
+        // Outside the unlock: the swap has settled and the manager is locked,
+        // so this transfer cannot reach it mid-operation. The amount is the
+        // one _swap withheld from the gross input.
+        _send(plan.zeroForOne ? op.key.currency0 : op.key.currency1, feeRecipient,
+              uint128(uint256(plan.grossInput) * assistedFeeBps / 10_000));
         return (plan.zeroForOne ? op.balance1 : op.balance0) - beforeOutput;
     }
 
@@ -154,7 +166,9 @@ contract DominoSetup {
         uint256 beforeOutput = _balance(output);
         manager.take(output, address(this), uint256(out));
         if (_balance(output) != beforeOutput + uint256(out)) revert InvalidSetup();
-        _send(input, feeRecipient, fee);
+        // The fee is paid by swap() once the manager is locked again: handing
+        // control to feeRecipient inside the unlock would let it call the
+        // manager in the middle of this operation.
         if (plan.zeroForOne) { op.balance0 -= plan.grossInput; op.balance1 += uint128(uint256(out)); }
         else { op.balance1 -= plan.grossInput; op.balance0 += uint128(uint256(out)); }
         op.swapped = true;

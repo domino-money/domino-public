@@ -16,9 +16,19 @@ contract DominoRoutingHelperV4 {
     error InvalidRoute();
     error InvalidAmount();
 
+    // Above this the exact ratio has no uint256 and FullMath panics instead of
+    // reverting: a caller could not tell "geometry rejected" from "arithmetic
+    // could not be evaluated". Refusing here keeps the same inputs rejected and
+    // names the reason. The bound is far beyond any usable ratio - every caller
+    // compares against 10000 plus or minus basis points, so a pair this far
+    // apart is meaningless - and it keeps both the intermediate and the
+    // quotient inside 2**228.
+    uint256 private constant MAX_PRICE_SPREAD = 1 << 54;
+
     function ratioBps(uint160 value, uint160 anchorPrice, bool inverse) public pure returns (uint256) {
         if (value == 0 || anchorPrice == 0) revert InvalidPrice();
         if (inverse) (value, anchorPrice) = (anchorPrice, value);
+        if (value / anchorPrice > MAX_PRICE_SPREAD) revert InvalidPrice();
         // Exact floor(value squared * 10000 / anchorPrice squared).
         uint256 scaled = FullMath.mulDiv(value, uint256(value) * 10000, anchorPrice);
         return scaled / anchorPrice;
@@ -85,6 +95,7 @@ contract DominoRoutingHelperV4 {
     }
 
     function _ratioCeil(uint160 value, uint160 anchorPrice) private pure returns (uint256) {
+        if (anchorPrice == 0 || value / anchorPrice > MAX_PRICE_SPREAD) revert InvalidPrice();
         uint256 scaled = FullMath.mulDivRoundingUp(value, uint256(value) * 10000, anchorPrice);
         return scaled / anchorPrice + (scaled % anchorPrice == 0 ? 0 : 1);
     }
@@ -154,11 +165,17 @@ contract DominoRoutingHelperV4 {
             }
             _sourceRoute(vault,plan,source.tokenId,price,tick,inverse,rules);
         }
+        // Every action carries a published observation, swap or not: without one
+        // the only price bound is the band the caller supplied in its own plan,
+        // which it may widen to nothing. A plan with no swap must still be
+        // otherwise empty, so the id is the single field it may set.
+        if (plan.swap.priceObservationId == bytes32(0)) revert InvalidRoute();
         if (plan.swap.amountIn == 0) {
             E.SwapPlan memory empty;
+            empty.priceObservationId = plan.swap.priceObservationId;
             if (keccak256(abi.encode(plan.swap)) != keccak256(abi.encode(empty))) revert InvalidRoute();
         } else if (plan.action == E.NET || plan.swap.sourceId == bytes32(0) || plan.swap.minAmountOut == 0
-            || plan.swap.sqrtPriceLimitX96 == 0 || plan.swap.priceObservationId == bytes32(0)) revert InvalidRoute();
+            || plan.swap.sqrtPriceLimitX96 == 0) revert InvalidRoute();
     }
 
     function _sourceRoute(IVaultExecutionV4 vault, E.Plan calldata p, uint256 tokenId, uint160 price,

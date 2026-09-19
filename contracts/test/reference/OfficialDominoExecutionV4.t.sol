@@ -42,6 +42,9 @@ contract OfficialDominoExecutionV4Test {
     VmExecutionV4 private constant vm = VmExecutionV4(address(uint160(uint256(keccak256("hevm cheat code")))));
     address private constant RECIPIENT = address(0xFEE);
     address private constant PUBLISHER = address(0xA11CE);
+    // The published price must sit within this band of the pool's own
+    // reading; wide enough for the fixture's moves, far from unbounded.
+    uint256 constant GUARD_DEVIATION_BPS=2000;
     uint128 private constant OPENING = 1e18;
     IPoolManager private manager;
     PositionManager private positions;
@@ -75,7 +78,7 @@ contract OfficialDominoExecutionV4Test {
         manager.initialize(key,uint160(1<<96)); seed.seed(key,OPENING); seed.refundSetup(); tokenId=seed.tokenId();
         factory=new DominoVaultFactoryV4(address(manager),address(positions),address(state),RECIPIENT);
         reader=new DominoVaultReadHelper(address(positions),address(state));
-        routing=new DominoRoutingHelperV4(); oracle=new DominoPriceGuardV4(PUBLISHER);
+        routing=new DominoRoutingHelperV4(); oracle=new DominoPriceGuardV4(PUBLISHER,address(state),GUARD_DEVIATION_BPS);
         engine=new DominoExecutionEngineV4(address(factory),address(reader),address(routing),address(oracle));
         DominoVaultV4 implementation=new DominoVaultV4(address(factory),address(manager),address(positions),
             address(state),RECIPIENT,address(reader),address(engine));
@@ -108,6 +111,8 @@ contract OfficialDominoExecutionV4Test {
         p.authority.liquidityIncrease=liquidity; p.authority.minAdded0=1; p.authority.minAdded1=1;
         p.authority.minSqrtPriceX96=uint160(1<<95); p.authority.maxSqrtPriceX96=uint160(1<<97);
         p.action=action; p.destinationTokenId=tokenId;
+        // Every action carries a published observation now, swap or not.
+        p.swap.priceObservationId=_observe(p);
         p.collect=new E.PositionRef[](1);p.collect[0]=E.PositionRef(tokenId,member.identity,p.authority.checkpointId);
         p.budgets=new E.FeeBudget[](2);
         p.budgets[0]=E.FeeBudget(member.source0,Currency.unwrap(key.currency0),type(uint128).max,0,0,0);
@@ -204,14 +209,20 @@ contract OfficialDominoExecutionV4Test {
         IDominoVaultDraft.Policy memory rules=vault.policy();rules.triggerDistanceBps=100;rules.version++;
         vault.setPolicy(rules);p=_plan(3,1e10);p.destinationTokenId=0;p.tickLower=-420;p.tickUpper=4680;_reject(p);
     }
+    /// @dev Publish this plan's observation at the pool's current price.
+    function _observe(E.Plan memory p) private returns(bytes32) {
+        (uint160 price,,,)=state.getSlot0(PoolId.wrap(vault.poolId()));
+        DominoPriceGuardV4.Observation memory observation=DominoPriceGuardV4.Observation(vault.poolId(),
+            p.authority.observedAtBlock,p.authority.observedBlockHash,p.authority.observedAtTimestamp,
+            uint64(block.timestamp+60),price);
+        vm.prank(PUBLISHER);return oracle.publish(observation);
+    }
+
     function _withSwap() private returns(E.Plan memory p) {
         _swaps();p=_plan(0,1e10);T.Position memory member=vault.position(tokenId);
         (uint160 price,,,)=state.getSlot0(PoolId.wrap(vault.poolId()));
-        DominoPriceGuardV4.Observation memory observation=DominoPriceGuardV4.Observation(vault.poolId(),p.authority.observedAtBlock,
-            p.authority.observedBlockHash,p.authority.observedAtTimestamp,uint64(block.timestamp+60),price);
-        vm.prank(PUBLISHER);bytes32 id=oracle.publish(observation);
         p.swap=E.SwapPlan(member.source0,Currency.unwrap(key.currency0),1e9,2e9,0,
-            uint128(routing.minimumOutput(1e9,price,true,100)),TickMath.MIN_SQRT_PRICE+1,id);
+            uint128(routing.minimumOutput(1e9,price,true,100)),TickMath.MIN_SQRT_PRICE+1,p.swap.priceObservationId);
         E.FeeBudget[] memory b=new E.FeeBudget[](3);b[0]=p.budgets[0];b[1]=p.budgets[1];
         b[2]=E.FeeBudget(member.source0,Currency.unwrap(key.currency1),0,0,0,0);_sort(b);p.budgets=b;
     }

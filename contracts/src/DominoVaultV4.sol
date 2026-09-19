@@ -23,7 +23,6 @@ contract DominoVaultV4 {
     error UnexpectedCallback();
     error ReentrantCall();
     error NonceExhausted();
-    error StaleAuthority();
     error InvalidTransition();
     error UnknownSource();
     error InvalidCurrency();
@@ -85,10 +84,6 @@ contract DominoVaultV4 {
     int256 private _expectedLiquidityChange;
     int256 private _expectedFeesAccrued;
 
-    event CompoundSelfCompleted(bytes32 indexed intentId, uint256 indexed tokenId,
-        bytes32 planHash, uint128 liquidityBefore, uint128 liquidityAfter,
-        uint64 policyVersion, uint64 authorityGeneration, uint64 stateNonce);
-
     event Initialized(address indexed owner, bytes32 indexed sequenceId, bytes32 identity, uint256 rootTokenId);
     event PolicyChanged(uint64 indexed version, uint64 stateNonce);
     event ExecutionLimitsChanged(uint64 indexed version, uint64 stateNonce);
@@ -117,14 +112,29 @@ contract DominoVaultV4 {
     );
     event TerminalRecovery(bytes4 indexed action, uint64 stateNonce, uint64 authorityGeneration);
 
-    modifier onlyOwner() {
+    // The guard bodies live out of line: the IR pipeline inlines a modifier at
+    // every decorated function, and this contract has no bytecode headroom to
+    // spend on twenty-three copies of two checks.
+    function _checkOwner() private view {
         if (msg.sender != owner || owner == address(0)) revert Unauthorized();
+    }
+
+    function _checkOwnerOrOperator() private view {
+        if (msg.sender != owner && !isOperator(msg.sender)) revert Unauthorized();
+    }
+
+    function _enter() private {
+        if (_entered != 0) revert ReentrantCall();
+        _entered = 1;
+    }
+
+    modifier onlyOwner() {
+        _checkOwner();
         _;
     }
 
     modifier nonReentrant() {
-        if (_entered != 0) revert ReentrantCall();
-        _entered = 1;
+        _enter();
         _;
         _entered = 0;
     }
@@ -249,7 +259,7 @@ contract DominoVaultV4 {
     event SuccessorCreated(bytes32 indexed intentId, uint256 indexed parentTokenId, uint256 indexed tokenId);
 
     function execute(E.Plan calldata plan) external nonReentrant {
-        if (msg.sender != owner && !isOperator(msg.sender)) revert Unauthorized();
+        _checkOwnerOrOperator();
         if (_terminal()) revert NonceExhausted();
         if (_policy.paused || !rootPermissionValid()) revert PermissionUnavailable();
         _compoundActive = true;
@@ -397,7 +407,7 @@ contract DominoVaultV4 {
     }
 
     function pause() external nonReentrant {
-        if (msg.sender != owner && !isOperator(msg.sender)) revert Unauthorized();
+        _checkOwnerOrOperator();
         if (_policy.paused) revert InvalidTransition();
         _advance(true);
         _policy.paused = true;
@@ -427,10 +437,7 @@ contract DominoVaultV4 {
         _advance(true);
         member.active = false;
         activePositions--;
-        // The owner explicitly requested its own NFT. Do not require a receiver
-        // hook: immutable contract wallets can hold NFTs without implementing it.
-        IPositionManagerE2(positionManager).transferFrom(address(this), owner, tokenId);
-        if (IPositionManagerE2(positionManager).ownerOf(tokenId) != owner) revert TransferFailed();
+        _returnToOwner(tokenId);
         emit ChildPositionWithdrawn(tokenId, owner, stateNonce);
     }
 
@@ -446,8 +453,7 @@ contract DominoVaultV4 {
             _advanceGeneration();
             emit RootInvalidated(4, authorityGeneration, stateNonce);
         }
-        IPositionManagerE2(positionManager).transferFrom(address(this), owner, tokenId);
-        if (IPositionManagerE2(positionManager).ownerOf(tokenId) != owner) revert TransferFailed();
+        _returnToOwner(tokenId);
         emit UnmanagedPositionRecovered(tokenId, owner, tokenId == rootTokenId, stateNonce);
     }
 
@@ -492,7 +498,7 @@ contract DominoVaultV4 {
     }
 
     function notifyUnsubscribe(uint256 tokenId) external {
-        if (msg.sender != positionManager || tokenId != rootTokenId) revert UnexpectedCallback();
+        _requireRootNotification(tokenId);
         if (_compoundActive) revert UnexpectedCallback();
         if (_subscriptionTransition && _entered == 1) return;
         // Upstream may notify during an owner's receive callback. This path
@@ -501,7 +507,7 @@ contract DominoVaultV4 {
     }
 
     function notifyModifyLiquidity(uint256 tokenId, int256 change, int256 fees) external {
-        if (msg.sender != positionManager || tokenId != rootTokenId) revert UnexpectedCallback();
+        _requireRootNotification(tokenId);
         if (_entered != 0) {
             if (!_compoundActive || !_expectedModify || change != _expectedLiquidityChange || fees != _expectedFeesAccrued) {
                 revert UnexpectedCallback();
@@ -513,7 +519,8 @@ contract DominoVaultV4 {
     }
 
     function notifyBurn(uint256 tokenId, address, uint256, uint256, int256) external {
-        if (msg.sender != positionManager || tokenId != rootTokenId || _entered != 0) revert UnexpectedCallback();
+        _requireRootNotification(tokenId);
+        if (_entered != 0) revert UnexpectedCallback();
         _invalidateRoot(3); // ownerOf can already revert; recovery stays available.
     }
 
@@ -545,13 +552,11 @@ contract DominoVaultV4 {
     }
 
     function _readPosition(uint256 tokenId) private view returns (T.PoolKey memory key, int24 lo, int24 hi) {
-        _requireReadHelper();
-        return readHelper.readPosition(poolId, tokenId);
+        return _helper().readPosition(poolId, tokenId);
     }
 
     function _readCheckpoint(uint256 tokenId, int24 lo, int24 hi) private view returns (T.Checkpoint memory point) {
-        _requireReadHelper();
-        return readHelper.readCheckpoint(poolId, _sequenceIdentity, tokenId, lo, hi);
+        return _helper().readCheckpoint(poolId, _sequenceIdentity, tokenId, lo, hi);
     }
 
     function _register(uint256 tokenId, bool isRoot, uint256 parent, int24 lo, int24 hi) private {
@@ -577,8 +582,7 @@ contract DominoVaultV4 {
     }
 
     function _positionIdentity(uint256 tokenId, T.Position storage member) private view returns (bytes32) {
-        _requireReadHelper();
-        return readHelper.positionIdentity(_sequenceIdentity, tokenId, member);
+        return _helper().positionIdentity(_sequenceIdentity, tokenId, member);
     }
 
     function _sourceIdentity(bytes32 positionId, address currency) private view returns (bytes32) {
@@ -613,7 +617,26 @@ contract DominoVaultV4 {
         if (address(readHelper).codehash != readHelperCodeHash) revert ReadHelperUnavailable();
     }
 
-    function _validateLimits(T.ExecutionLimits memory limits) private pure {
+    /// @notice The pinned helper, checked once; callers hold it instead of
+    /// loading the immutable a second time at every use.
+    function _helper() private view returns (DominoVaultReadHelper helper) {
+        helper = readHelper;
+        if (address(helper).codehash != readHelperCodeHash) revert ReadHelperUnavailable();
+    }
+
+    /// @notice Only the pinned manager may notify, and only about the root.
+    function _requireRootNotification(uint256 tokenId) private view {
+        if (msg.sender != positionManager || tokenId != rootTokenId) revert UnexpectedCallback();
+    }
+
+    /// @notice Return an NFT the owner asked for. No receiver hook is required:
+    /// immutable contract wallets can hold NFTs without implementing one.
+    function _returnToOwner(uint256 tokenId) private {
+        IPositionManagerE2(positionManager).transferFrom(address(this), owner, tokenId);
+        if (IPositionManagerE2(positionManager).ownerOf(tokenId) != owner) revert TransferFailed();
+    }
+
+    function _validateLimits(T.ExecutionLimits calldata limits) private pure {
         if (
             limits.version == 0 || limits.upsideBps == 0 || limits.upsideBps > 1_000_000
                 || limits.maxSlippageBps >= 10000 || limits.maxPriceImpactBps >= 10000 || limits.maxGasCostWei == 0
@@ -677,10 +700,17 @@ contract DominoVaultV4 {
             }
             uint256 afterVault = _currencyBalance(currency, address(this));
             uint256 afterOwner = _currencyBalance(currency, recipient);
-            if (
-                afterVault > beforeVault || beforeVault - afterVault != amount || afterOwner < beforeOwner
-                    || afterOwner - beforeOwner != amount
-            ) revert TransferFailed();
+            // The vault-side debit is always exact: it is what keeps
+            // accountedCurrency honest, and nothing may leave beyond `amount`.
+            if (afterVault > beforeVault || beforeVault - afterVault != amount) revert TransferFailed();
+            // The recipient-side receipt is required of the financial path only,
+            // as the native branch above already does. Demanding it of owner
+            // recovery would strand the reserve for good behind any token that
+            // does not credit exactly - fee-on-transfer, rebasing, a recipient
+            // that forwards inside a hook - with no partial exit to fall back on.
+            if (_compoundActive && (afterOwner < beforeOwner || afterOwner - beforeOwner != amount)) {
+                revert TransferFailed();
+            }
         }
     }
 

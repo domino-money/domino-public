@@ -15,7 +15,10 @@ export const CONTRACTS = Object.freeze([
   Object.freeze({ name: 'DominoVaultFactoryV4', constructorAddresses: 4, runtimeReserveBytes: 0 }),
   Object.freeze({ name: 'DominoExecutionEngineV4', constructorAddresses: 4, runtimeReserveBytes: 2_048 }),
   Object.freeze({ name: 'DominoRoutingHelperV4', constructorAddresses: 0, runtimeReserveBytes: 0 }),
-  Object.freeze({ name: 'DominoPriceGuardV4', constructorAddresses: 1, runtimeReserveBytes: 0 }),
+  // Publisher, the state view it bounds a published price against, and the
+  // band in basis points (reviewed 2026-09-19 with the price-guard hardening).
+  Object.freeze({ name: 'DominoPriceGuardV4', constructorAddresses: 3,
+    constructorTypes: Object.freeze(['address', 'address', 'uint256']), runtimeReserveBytes: 0 }),
   Object.freeze({ name: 'DominoSetup', constructorAddresses: 6,
     constructorTypes: Object.freeze(['address', 'address', 'address', 'address', 'uint16', 'uint64']), runtimeReserveBytes: 0 }),
 ]);
