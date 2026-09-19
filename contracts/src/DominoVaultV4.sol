@@ -731,7 +731,11 @@ contract DominoVaultV4 {
 
     /// @dev Protected accounting sinks for E4 measured collection/E7 conversion.
     /// Backing excludes insolvency; it does NOT distinguish donations from fees.
-    /// No external E2 function exposes these sinks or accepts caller credit data.
+    /// Unlike V3, where nothing reaches these, executionCredit and
+    /// executionConvert do expose them and do take caller amounts. What stands
+    /// between the two is _requireExecution: the pinned engine, at its pinned
+    /// codehash, inside one authenticated action of this vault - never an
+    /// arbitrary caller, and never outside an execution.
     function _creditOriginalFees(uint256 tokenId, uint128 amount0, uint128 amount1) internal {
         T.Position storage member = _positions[tokenId];
         if (!member.active) revert InvalidPosition();

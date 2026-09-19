@@ -72,8 +72,13 @@ Verification on the integrated candidate:
   27 offline receipt tests and found no remaining blocker in its reviewed scope.
 - All 1,341 backend tests passed with PostgreSQL/EVM enabled, zero skips, in
   161 seconds on the integrated candidate after the final verifier corrections.
-- All 98 vendored upstream source/license files match their recorded hashes.
-  They are test-only references with preserved licenses; production imports none.
+- All 98 vendored upstream source/license files match their recorded hashes,
+  with preserved licenses. Two of them are NOT test-only: DominoRoutingHelperV4
+  imports FullMath and TickMath from `@uniswap/v4-core/`, which
+  contracts/foundry.toml:14 remaps into test/reference/official-v4/. A shipped
+  artifact's source set therefore includes files under a directory named
+  `test/`, and the release generator hashes every one it references. No other
+  production source imports the vendored tree.
 - Read, OpenAPI, session, onboarding and deposit exports match their producers.
   Shared API schemas, frontend source and deployment flags are unchanged.
 
