@@ -163,10 +163,13 @@ jobs:
   contracts:
     name: Contracts
     runs-on: ubuntu-24.04
-    # A cold full Forge compilation of the vendored v4 reference tree routinely
-    # brushes against 10 minutes on hosted runners; give deliberate headroom so
+    # Every .sol change misses the artifact cache, because the key hashes
+    # contracts/**/*.sol - so a cold full Forge compilation of the vendored v4
+    # reference tree is the normal case here, not the exception. Measured on run
+    # 35466837442: about 23 minutes of solc across the per-suite closures, which
+    # cancelled a 20-minute job whose every suite had passed. Give headroom so
     # the job is not spuriously cancelled (issue #145).
-    timeout-minutes: 20
+    timeout-minutes: 35
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
