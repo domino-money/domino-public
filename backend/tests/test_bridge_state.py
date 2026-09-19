@@ -67,3 +67,21 @@ class BridgeStateTests(unittest.TestCase):
 
 
 if __name__ == '__main__': unittest.main()
+
+
+class ClientBudgetRetryAfterTests(unittest.TestCase):
+    def test_the_wait_is_the_time_until_one_token_returns_bounded(self):
+        now = [1000.0]
+        budgets = ClientBudgets(clock=lambda: now[0], burst=1, per_minute=30)
+        self.assertEqual(budgets.retry_after('192.0.2.1'), 1, 'unknown client: nothing to wait for')
+        self.assertTrue(budgets.admit('192.0.2.1'))
+        self.assertFalse(budgets.admit('192.0.2.1'))
+        self.assertEqual(budgets.retry_after('192.0.2.1'), 2, 'one token every two seconds')
+        now[0] += 1
+        self.assertEqual(budgets.retry_after('192.0.2.1'), 1)
+        now[0] += 2
+        self.assertEqual(budgets.retry_after('192.0.2.1'), 1)
+        self.assertTrue(budgets.admit('192.0.2.1'))
+        slow = ClientBudgets(clock=lambda: now[0], burst=1, per_minute=1)
+        self.assertTrue(slow.admit('192.0.2.1'))
+        self.assertEqual(slow.retry_after('192.0.2.1'), 10, 'a minute becomes the ten-second ceiling')

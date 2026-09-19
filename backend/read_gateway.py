@@ -47,6 +47,15 @@ def safe_error(code):
     return sanitize_error(code)[1]['error']
 
 
+def checked_retry_after(value):
+    """A whole number of seconds between one and ten, or None: never a guess."""
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, str) and value.isdigit():
+        value = int(value)
+    return value if isinstance(value, int) and 1 <= value <= 10 else None
+
+
 class Gateway:
     def __init__(self, *, verifier=None, upstream=None, enabled=False, enabled_reads=(),
                  enabled_v2=False, enabled_v2_reads=(), budgets=None, cursors=None,
@@ -64,6 +73,12 @@ class Gateway:
         self.gate, self.clock, self.wall_clock = gate or ReadGate(), clock, wall_clock
 
     def execute(self, route, body, assertion, client, deadline, *, version='v1', request_id=None):
+        status, data, _ = self.execute_with_hints(route, body, assertion, client, deadline,
+                                                  version=version, request_id=request_id)
+        return status, data
+
+    def execute_with_hints(self, route, body, assertion, client, deadline, *, version='v1', request_id=None):
+        """Like execute, plus hints the boundary needs for headers: a 429's honest Retry-After."""
         # Admission was acquired before thread dispatch, on the route's own slot;
         # kind routes the release below to the same slot.
         kind = self.gate.kind_of(route)
@@ -75,9 +90,13 @@ class Gateway:
                 try:
                     self.verifier.verify(assertion)
                 except DataError:
-                    return 403, {'error': 'upstream_unavailable'}
+                    return 403, {'error': 'upstream_unavailable'}, {}
             if not self.budgets.admit(client):
-                return 429, {'error': 'read_capacity_busy'}
+                # The budget knows when a token returns; a budget that cannot say
+                # (the development lane's principal budget) defers to the gate.
+                wait = getattr(self.budgets, 'retry_after', None)
+                return 429, {'error': 'read_capacity_busy'}, {
+                    'retryAfter': (wait(client) if callable(wait) else None) or self.gate.retry_after(kind)}
             deadline = min(deadline, self.clock() + 15)
             if self.clock() >= deadline:
                 raise DataError('upstream_timeout')
@@ -90,7 +109,9 @@ class Gateway:
             # A previous HTTP timeout does not prove reader work ended. Reconcile
             # actual reader admission before submitting any new operation.
             if health['busy']:
-                return 429, {'error': 'read_capacity_busy'}
+                # The reader's own number, or this gate's if the reader gave none.
+                return 429, {'error': 'read_capacity_busy'}, {
+                    'retryAfter': checked_retry_after(health.get('retryAfterSeconds')) or self.gate.retry_after(kind)}
             generation = health.get('generation')
             self.cursors.observe_generation(generation)
             sent = deepcopy(body)
@@ -112,7 +133,11 @@ class Gateway:
                 expected = ERROR_STATUS_BY_CODE.get(code, 503)
                 if status != expected:
                     code, expected = 'upstream_unavailable', 503
-                return expected, {'error': code}
+                hints = {}
+                if expected == 429:
+                    hints['retryAfter'] = (checked_retry_after(metadata.get('retryAfter'))
+                                           or self.gate.retry_after(kind))
+                return expected, {'error': code}, hints
             try:
                 validate_response(route, data)
             except (ValidationError, ValueError, TypeError):
@@ -135,10 +160,17 @@ class Gateway:
                 raise DataError('upstream_invalid_response')
             if self.clock() >= deadline:
                 raise DataError('upstream_timeout')
-            return 200, output
+            return 200, output, {}
         except DataError as error:
             code = safe_error(str(error))
-            return ERROR_STATUS_BY_CODE.get(code, 503), {'error': code}
+            status = ERROR_STATUS_BY_CODE.get(code, 503)
+            hints = {}
+            if status == 429:
+                # A refusal raised deeper down may know its own wait (the
+                # development reader reports one); otherwise this gate's.
+                hints['retryAfter'] = (checked_retry_after(getattr(error, 'retry_after', None))
+                                       or self.gate.retry_after(kind))
+            return status, {'error': code}, hints
         finally:
             # Entire synchronous operation runs in a shielded worker: disconnect is not completion.
             self.gate.leave(kind)
@@ -169,14 +201,16 @@ def create_gateway(gateway=None):
                              method=request.method, status=status, reason=reason,
                              durationMs=int((gateway.clock() - opened) * 1000),
                              **hop_log.close_notes(notes))
-            def result(status, data):
+            def result(status, data, retry_after=None):
                 record(status, data.get('error') if isinstance(data, dict) else None)
                 headers = {'Cache-Control': 'no-store, no-transform', 'X-Content-Type-Options': 'nosniff',
                            'X-Domino-Read-Contract': V2_CONTRACT_VERSION if version == 'v2' else CONTRACT_VERSION,
                            'X-Domino-Request-Id': request_id,
                            'Content-Security-Policy': "default-src 'none'; frame-ancestors 'none'"}
                 if status == 429:
-                    headers['Retry-After'] = '2'
+                    # The wait a refusal can actually justify: the reader's own,
+                    # the client budget's, or this gate's — never a constant.
+                    headers['Retry-After'] = str(retry_after or gateway.gate.retry_after(gateway.gate.PROVIDER))
                 return JSONResponse(data, status_code=status, headers=headers)
             models = V2_REQUEST_MODELS if version == 'v2' else REQUEST_MODELS
             match = re.fullmatch(r'/internal/read/' + version + r'/(' + '|'.join(models) + r')', path)
@@ -241,21 +275,21 @@ def create_gateway(gateway=None):
             kind = gateway.gate.kind_of(match[1])
             if not gateway.gate.enter(kind):
                 hop_log.note(gate=kind, admitted=False)
-                return result(429, {'error': 'read_capacity_busy'})
+                return result(429, {'error': 'read_capacity_busy'}, retry_after=gateway.gate.retry_after(kind))
             hop_log.note(gate=kind, admitted=True)
             started = Event()
             def execute():
                 started.set()
                 if version == 'v2':
-                    return gateway.execute(match[1], body, assertion, client, deadline,
-                                           version=version, request_id=request_id)
-                return gateway.execute(match[1], body, assertion, client, deadline, request_id=request_id)
+                    return gateway.execute_with_hints(match[1], body, assertion, client, deadline,
+                                                      version=version, request_id=request_id)
+                return gateway.execute_with_hints(match[1], body, assertion, client, deadline, request_id=request_id)
             try:
                 # Only an admitted operation can enter the pool; no pending read queue.
                 with anyio.CancelScope(shield=True):
-                    status, data = await anyio.to_thread.run_sync(execute,
-                                                                abandon_on_cancel=False, limiter=app.state.worker_limiter)
-                return result(status, data)
+                    status, data, hints = await anyio.to_thread.run_sync(execute,
+                                                                       abandon_on_cancel=False, limiter=app.state.worker_limiter)
+                return result(status, data, retry_after=hints.get('retryAfter'))
             except Exception:
                 return result(503, {'error': 'upstream_unavailable'})
             finally:

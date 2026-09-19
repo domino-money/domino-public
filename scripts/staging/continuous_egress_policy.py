@@ -44,7 +44,10 @@ LISTENERS = {'read': 8876, 'gateway': 8878, 'auth': 8879, 'onboarding': 8880,
              'tunnel': 20241}
 RPC_HOSTS = frozenset(('rpc.mainnet.chain.robinhood.com', 'robinhood-mainnet.g.alchemy.com'))
 ANALYTICS_HOSTS = frozenset(('api.geckoterminal.com', 'api.dexscreener.com'))
-UNISWAP_HOSTS = frozenset(('trade-api.gateway.uniswap.org',))
+# The quote gateway (onboarding and deposit quotes) and the liquidity API the
+# position preview and pool-info reads post to (backend/uniswap_position.py,
+# backend/uniswap_liquidity.py): a listener that reaches one reaches the other.
+UNISWAP_HOSTS = frozenset(('trade-api.gateway.uniswap.org', 'liquidity.api.uniswap.org'))
 EDGE_HOSTS = frozenset(shared.EDGE_ADDRESSES)
 ISSUER = re.compile(r'[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.cloudflareaccess\.com')
 # What each identity's own code reaches for, by hostname class. `jwks` is the
@@ -68,10 +71,21 @@ ORIGINS = {'gateway': ('read',),
 # Identities that resolve names at runtime. Every other enabled unit reads a
 # pinned hosts file bound over /etc/hosts and never needs the stub resolver.
 DNS_STUB = ('tunnel', 'write')
+# Every listener refuses to start enabled without its private operator file:
+# session_api.load_session_rpc_config raises session_rpc_config_required when
+# --rpc-config is absent, and onboarding and deposit call the same loader. The
+# file lives in the family's private directory, bound read-only at the config
+# path the installer's unit already names.
+def private_config(component, name):
+    return f'/run/domino-financial-{component}-config/{name}'
+
+
 ENABLE_ARGUMENTS = {
-    'auth': '--enable', 'onboarding': '--enable', 'deposit': '--enable',
-    'performance': '--enable --profile /run/domino-financial-performance-config/profile.json',
-    'execution-status': '--enable --config /run/domino-financial-execution-status-config/profile.json'}
+    'auth': f'--enable --rpc-config {private_config("auth", "rpc.json")}',
+    'onboarding': f'--enable --rpc-config {private_config("onboarding", "rpc.json")}',
+    'deposit': f'--enable --rpc-config {private_config("deposit", "rpc.json")}',
+    'performance': f'--enable --profile {private_config("performance", "profile.json")}',
+    'execution-status': f'--enable --config {private_config("execution-status", "profile.json")}'}
 UNSET = ('UnsetEnvironment=HTTP_PROXY HTTPS_PROXY ALL_PROXY NO_PROXY http_proxy https_proxy '
          'all_proxy no_proxy SSL_CERT_FILE SSL_CERT_DIR REQUESTS_CA_BUNDLE CURL_CA_BUNDLE '
          'PYTHONPATH PYTHONHOME')

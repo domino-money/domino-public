@@ -76,7 +76,11 @@ class GuardedReader:
             result = self.health(deadline=deadline)
             connection = classify_reader_health(*result)
             if connection['state'] == 'cooldown':
-                raise DataError('read_capacity_busy')
+                # The reader said how long its own window is taken; carry it so
+                # the refusal's Retry-After is that number, not a constant.
+                busy = DataError('read_capacity_busy')
+                busy.retry_after = connection['retryAfterSeconds']
+                raise busy
             if connection['state'] != 'ready':
                 raise DataError('upstream_unavailable')
             return result
@@ -150,25 +154,31 @@ class DevGateway(Gateway):
         if route not in ('capabilities', 'status'):
             # Existing execution owns and releases admission, including shielded
             # upstream work. Its client is the configured, verified principal.
-            result = super().execute(route, body, assertion, self.profile.service_id, deadline, version=version)
-            return result if self.allowed() else (403, {'error': 'upstream_unavailable'})
+            status, data, hints = super().execute_with_hints(route, body, assertion, self.profile.service_id,
+                                                              deadline, version=version)
+            if not self.allowed():
+                return 403, {'error': 'upstream_unavailable'}, {}
+            return status, data, hints
         try:
             remaining = deadline - self.clock()
             if remaining <= 0:
-                return 504, {'error': 'upstream_timeout'}
+                return 504, {'error': 'upstream_timeout'}, {}
             with read_deadline(remaining, clock=self.clock):
                 self.verifier.verify(assertion)
             if self.clock() >= deadline:
-                return 504, {'error': 'upstream_timeout'}
+                return 504, {'error': 'upstream_timeout'}, {}
             if not self.control_budget.admit(self.profile.service_id):
-                return 429, {'error': 'read_capacity_busy'}
+                # The control budget's own wait, bounded like every other.
+                return 429, {'error': 'read_capacity_busy'}, {
+                    'retryAfter': self.control_budget.retry_after(self.profile.service_id)}
             connection = self.reader_connection(deadline) if route == 'status' else None
             self.admission.check()
             if self.clock() >= deadline:
-                return 504, {'error': 'upstream_timeout'}
-            return 200, self.capabilities(version=version) if route == 'capabilities' else self.status(connection)
+                return 504, {'error': 'upstream_timeout'}, {}
+            return 200, (self.capabilities(version=version) if route == 'capabilities'
+                         else self.status(connection)), {}
         except DataError:
-            return 403, {'error': 'upstream_unavailable'}
+            return 403, {'error': 'upstream_unavailable'}, {}
         finally:
             self.gate.leave(self.gate.kind_of(route))
 
@@ -197,13 +207,14 @@ def create_dev_gateway(gateway=None):
                              contractVersion=contract, method=request.method, status=status,
                              reason=reason, durationMs=int((gateway.clock() - opened) * 1000),
                              **hop_log.close_notes(notes))
-            def result(status, data):
+            def result(status, data, retry_after=None):
                 record(status, data.get('error') if isinstance(data, dict) else None)
                 headers = {'Cache-Control': 'no-store, no-transform', 'X-Content-Type-Options': 'nosniff',
                            'X-Domino-Read-Contract': contract, 'X-Domino-Request-Id': request_id,
                            'Content-Security-Policy': "default-src 'none'; frame-ancestors 'none'"}
                 if status == 429:
-                    headers['Retry-After'] = '2'
+                    # The reader's own number when it gave one, else this gate's.
+                    headers['Retry-After'] = str(retry_after or gateway.gate.retry_after(gateway.gate.PROVIDER))
                 return JSONResponse(data, status_code=status, headers=headers)
             prefix = V2_PREFIX if version == 'v2' else READ_PREFIX
             models = V2_REQUEST_MODELS if version == 'v2' else REQUEST_MODELS
@@ -273,15 +284,16 @@ def create_dev_gateway(gateway=None):
             # the read quota nor its start interval. Its own bucket bounds GETs.
             admitted = gateway.gate.slot.acquire(blocking=False) if control else gateway.gate.enter()
             if not admitted:
-                return result(429, {'error': 'read_capacity_busy'})
+                return result(429, {'error': 'read_capacity_busy'},
+                              retry_after=gateway.gate.retry_after(gateway.gate.kind_of(route)))
             started = Event()
             def execute():
                 started.set()
                 return gateway.execute_dev(route, body, assertion.decode('ascii'), deadline, version=version)
             try:
                 with anyio.CancelScope(shield=True):
-                    status, data = await anyio.to_thread.run_sync(execute, abandon_on_cancel=False, limiter=app.state.worker_limiter)
-                return result(status, data)
+                    status, data, hints = await anyio.to_thread.run_sync(execute, abandon_on_cancel=False, limiter=app.state.worker_limiter)
+                return result(status, data, retry_after=hints.get('retryAfter'))
             except Exception:
                 return result(503, {'error': 'upstream_unavailable'})
             finally:

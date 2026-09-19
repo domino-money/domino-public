@@ -25,7 +25,7 @@ PINS = {'api.geckoterminal.com': ['11.0.0.1', '11.0.0.2'],
         'api.dexscreener.com': ['13.0.0.1', '13.0.0.2'],
         ISSUER: ['14.0.0.1', '14.0.0.2'],
         **{host: sorted(addresses) for host, addresses in shared.EDGE_ADDRESSES.items()}}
-UNISWAP = {'trade-api.gateway.uniswap.org': ['15.0.0.1']}
+UNISWAP = {'trade-api.gateway.uniswap.org': ['15.0.0.1'], 'liquidity.api.uniswap.org': ['15.0.0.2']}
 NEW_CHAINS = ('performance', 'performance_collector', 'execution_status', 'execution_signer')
 
 
@@ -171,7 +171,8 @@ class ContinuousEgressTests(unittest.TestCase):
                       'counter accept comment "exact auth origin"', chains['tunnel'])
         text = dropin(result, 'auth')
         self.assertIn('ExecStart=\n' + policy.enable_command('auth') + '\n', text)
-        self.assertTrue(policy.enable_command('auth').endswith('backend/session_api.py --port 8879 --enable'))
+        self.assertTrue(policy.enable_command('auth').endswith(
+            'backend/session_api.py --port 8879 --enable --rpc-config /run/domino-financial-auth-config/rpc.json'))
         self.assertIn('BindReadOnlyPaths=/etc/domino/continuous-reads/auth.hosts:/etc/hosts', text)
         self.assertNotIn('EnvironmentFile', text)
         # The reset line, loopback, and one line per pinned address.
@@ -275,6 +276,31 @@ class ContinuousEgressTests(unittest.TestCase):
         self.reject(data, 'invalid_access_issuer')
         data = snapshot(); data['apiKey'] = 'not-a-real-key'
         self.reject(data, 'invalid_snapshot_fields')
+
+    def test_every_listener_is_started_with_the_private_file_it_refuses_to_run_without(self):
+        # session_api.load_session_rpc_config raises without --rpc-config;
+        # onboarding and deposit use the same loader. A bare --enable exits.
+        for role in ('auth', 'onboarding', 'deposit'):
+            with self.subTest(role=role):
+                self.assertIn(f' --enable --rpc-config /run/domino-financial-{role}-config/rpc.json',
+                              policy.enable_command(role))
+        self.assertIn(' --enable --profile /run/domino-financial-performance-config/profile.json',
+                      policy.enable_command('performance'))
+        self.assertIn(' --enable --config /run/domino-financial-execution-status-config/profile.json',
+                      policy.enable_command('execution-status'))
+
+    def test_the_uniswap_class_covers_every_host_the_listeners_post_to(self):
+        # onboarding and deposit quote through the trade gateway and preview or
+        # read pool info through the liquidity API; pinning only one host would
+        # have the other refused at the socket while the family is enabled.
+        self.assertEqual(policy.UNISWAP_HOSTS,
+                         frozenset(('trade-api.gateway.uniswap.org', 'liquidity.api.uniswap.org')))
+        both = policy.render(snapshot(LIVE_ENABLED + ('onboarding',), {**PINS, **UNISWAP}))
+        self.assertEqual(sorted(both['roleHosts']['onboarding']),
+                         ['liquidity.api.uniswap.org', 'robinhood-mainnet.g.alchemy.com',
+                          'team-example.cloudflareaccess.com', 'trade-api.gateway.uniswap.org'])
+        one = {**PINS, 'trade-api.gateway.uniswap.org': ['15.0.0.1']}
+        self.assertEqual(policy.render(snapshot(LIVE_ENABLED + ('onboarding',), one))['roleHosts']['onboarding'].count('liquidity.api.uniswap.org'), 0)
 
     def test_enable_commands_are_derived_from_the_installer_not_copied(self):
         for role in policy.ENABLE_ARGUMENTS:

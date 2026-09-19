@@ -183,8 +183,13 @@ class LocalReaderHTTP:
             except DataError:
                 raise DataError('upstream_invalid_response') from None
             budget.remaining()
-            return status, data, {'generation': headers.get('x-domino-reader-generation'),
-                                  'contract': headers.get('x-domino-read-contract')}
+            metadata = {'generation': headers.get('x-domino-reader-generation'),
+                        'contract': headers.get('x-domino-read-contract')}
+            # Only when the reader actually sent one: the gateway relays its
+            # number on a 429 and falls back to its own gate otherwise.
+            if headers.get('retry-after') is not None:
+                metadata['retryAfter'] = headers['retry-after']
+            return status, data, metadata
         except (httpx.TimeoutException, TimeoutError):
             raise DataError('upstream_timeout') from None
         except (httpx.HTTPError, OSError, http.client.HTTPException):

@@ -157,9 +157,13 @@ the fall-through.
 Add it to `enabled`, pin what its classes need, render, review, apply as
 above, then `systemctl start domino-<role>.service` — the target now requires
 it, so the next restart of the target brings it too. The rest of a family's
-activation is its own work and is not here: the private environment and
-profile under `/etc/domino/financial/<component>/`, the Access application
-and hostname, the tunnel route, the Worker's service token and flag (#170–#174).
+activation is its own work and is not here: the private files under
+`/etc/domino/financial/<component>/` — `environment`, and the file the
+rendered command names: `rpc.json` for `auth`, `onboarding` and `deposit`
+(the listener refuses to start enabled without it; owned by the family's
+account, mode `0600`, an `rpcUrl` on an allowed host), `profile.json` for
+`performance` and `execution-status` — the Access application and hostname,
+the tunnel route, the Worker's service token and flag (#170–#174).
 
 ## Not yet a role
 

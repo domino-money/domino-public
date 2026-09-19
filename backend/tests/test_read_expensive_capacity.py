@@ -185,7 +185,11 @@ const metrics = [];
 const start = performance.now();
 const pages = await Promise.all(Array.from({length:5}, async (_, i) => {
   const attempts = [];
-  const reader = createProgressiveReader({random:()=>0, fetch:async (url, options)=>{
+  // One retry, not the default two: a refusal now carries the wait the gate
+  // can justify (up to ten seconds), so two retries would outlast the
+  // controlled stall and the last attempt would succeed instead of being
+  // refused. One still exhausts the budget, which is what this measures.
+  const reader = createProgressiveReader({random:()=>0, maxRetries:1, fetch:async (url, options)=>{
     const route = url.split('/').at(-1);
     const response = await fetch(origin + '/internal/read/v1/' + route, {...options,
       headers: {'Content-Type':'application/json', 'Cf-Access-Jwt-Assertion':'synthetic-identity',
@@ -237,7 +241,7 @@ class ExpensiveCapacityTests(unittest.TestCase):
                 collector = threading.Thread(target=read_events, daemon=True)
                 collector.start()
                 completed = []
-                until = time.monotonic() + 10
+                until = time.monotonic() + 14
                 while len(completed) < 5:
                     event = events.get(timeout=max(.01, until-time.monotonic()))
                     self.assertEqual(event.get('event'), 'token-finished', event)
@@ -261,8 +265,10 @@ class ExpensiveCapacityTests(unittest.TestCase):
                 self.assertEqual(process.returncode, 0, process.stderr.read())
                 final = events.get(timeout=2)
                 self.assertEqual(final.get('event'), 'complete', final)
+                # One initial attempt plus the one retry the probe allows: every
+                # page exhausted its budget against the stall, none succeeded.
                 self.assertTrue(all(len([attempt for attempt in page['attempts']
-                    if attempt['route']=='token']) == 3 for page in final['pages']), final)
+                    if attempt['route']=='token']) == 2 for page in final['pages']), final)
                 items=responses[0].json()['positionAccounting']['items']
                 self.assertEqual(len(items),128)
                 self.assertTrue(all(item['nft']['owner']==OWNER for item in items))
@@ -309,7 +315,11 @@ class ExpensiveCapacityTests(unittest.TestCase):
             with ThreadPoolExecutor(max_workers=5) as pool:
                 responses=list(pool.map(lambda i:pipeline.post(origin,'token',{'token':TOKEN},i+2),range(5)))
             self.assertEqual([r.status_code for r in responses],[429]*5)
-            self.assertTrue(all(r.headers['retry-after']=='2' for r in responses))
+            # Each refusal reports the wait its gate can justify, bounded to ten
+            # seconds, and they agree with each other: not a constant.
+            waits={int(r.headers['retry-after']) for r in responses}
+            self.assertTrue(all(1<=w<=10 for w in waits),waits)
+            self.assertLessEqual(max(waits)-min(waits),1,waits)
             self.assertEqual(len(pipeline.transport.calls),before)
             self.assertEqual(pipeline.identity.calls,identities)
             self.assertFalse(pipeline.reader_gate.slot.acquire(blocking=False))

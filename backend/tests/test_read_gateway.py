@@ -272,6 +272,52 @@ class GatewayTests(IdentityFixtures, unittest.TestCase):
         self.upstream.request = original
         self.assertEqual(self.post().status_code, 200)
 
+    def test_a_reader_429_is_relayed_with_the_readers_own_retry_after(self):
+        original = self.upstream.request
+        _, health, _ = original('health', deadline=time.monotonic() + 5)
+        def relayed(value):
+            def request(route, body=None, *, deadline, request_id=None):
+                if route == 'token':
+                    return 429, {'error': 'read_capacity_busy'}, {'generation': health['generation'],
+                                                                  'contract': CONTRACT_VERSION, 'retryAfter': value}
+                return original(route, body, deadline=deadline, request_id=request_id)
+            return request
+        self.upstream.request = relayed('7')
+        response = self.post()
+        self.assertEqual(response.status_code, 429)
+        self.assertEqual(response.headers['retry-after'], '7')
+        # A number the reader cannot justify is not relayed as-is: the gate's own bound stands in.
+        for value in ('99', '0', 'soon', None, True):
+            with self.subTest(value=value):
+                self.upstream.request = relayed(value)
+                response = self.post()
+                self.assertEqual(response.status_code, 429)
+                self.assertTrue(1 <= int(response.headers['retry-after']) <= 10)
+
+    def test_a_busy_reader_relays_the_wait_it_reports(self):
+        original = self.upstream.request
+        def busy(route, body=None, *, deadline, request_id=None):
+            result = original(route, body, deadline=deadline, request_id=request_id)
+            if route == 'health':
+                result[1]['busy'] = True
+                result[1]['retryAfterSeconds'] = 6
+            return result
+        self.upstream.request = busy
+        response = self.post()
+        self.assertEqual(response.status_code, 429)
+        self.assertEqual(response.headers['retry-after'], '6')
+
+    def test_a_client_budget_refusal_says_when_a_token_returns(self):
+        gateway = Gateway(enabled=True, enabled_reads=('token',), verifier=self.verifier(), upstream=self.upstream,
+                          gate=ReadGate(interval=0), budgets=ClientBudgets(burst=1, per_minute=30))
+        client = TestClient(create_gateway(gateway), base_url='http://127.0.0.1:8878', client=('127.0.0.1', 40000))
+        first = client.post('/internal/read/v1/token', json={'token': TOKEN}, headers=self.headers)
+        self.assertEqual(first.status_code, 200)
+        second = client.post('/internal/read/v1/token', json={'token': TOKEN}, headers=self.headers)
+        self.assertEqual(second.status_code, 429)
+        # Thirty a minute is one token every two seconds: the budget's number, not the gate's.
+        self.assertEqual(second.headers['retry-after'], '2')
+
     def test_actual_inflight_operation_holds_gateway_gate_until_exit(self):
         entered,release=Event(),Event()
         original=self.upstream.request
@@ -288,7 +334,11 @@ class GatewayTests(IdentityFixtures, unittest.TestCase):
             self.assertTrue(entered.wait(2))
             response=self.post()
             self.assertEqual(response.status_code,429)
-            self.assertEqual(response.headers['retry-after'],'2')
+            # The wait the gate can justify for the read still holding its slot,
+            # bounded to ten seconds — not the constant this header used to carry.
+            wait = int(response.headers['retry-after'])
+            self.assertTrue(1 <= wait <= 10, wait)
+            self.assertLessEqual(abs(wait - self.gateway.gate.retry_after('provider')), 1)
         finally:
             release.set();worker.join(4)
         self.assertEqual(results[0].status_code,200)

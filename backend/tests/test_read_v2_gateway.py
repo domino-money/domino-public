@@ -350,7 +350,10 @@ class ReadV2GatewayTests(IdentityFixtures, unittest.TestCase):
                     response = self.post(path=second)
                     self.assert_error(response, 429, 'read_capacity_busy',
                                       version=V2_VERSION if second == V2_PATH else CONTRACT_VERSION)
-                    self.assertEqual(response.headers['retry-after'], '2')
+                    # The wait the shared gate can justify while a read holds
+                    # its slot, bounded to ten seconds — not a constant.
+                    wait = int(response.headers['retry-after'])
+                    self.assertTrue(1 <= wait <= 10, wait)
                     self.assertEqual(len(self.reader.calls), 2)
                 finally:
                     release.set()

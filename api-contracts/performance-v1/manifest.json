@@ -139,7 +139,7 @@
     },
     {
       "path": "backend/bridge_state.py",
-      "sha256": "f120d5191a51bac01b53901b62c7ea587e280eb071e40b7085c4d52a39d5ac82"
+      "sha256": "4aa0f085c9805bb193aef2fb9c2fc13a755f6479d70768b90f94b67a2dedcb2e"
     },
     {
       "path": "backend/discovery.py",

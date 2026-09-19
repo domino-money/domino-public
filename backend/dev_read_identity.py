@@ -128,6 +128,19 @@ class PrincipalBudget:
         self.burst, self.rate = profile.burst, profile.requests_per_minute / 60
         self.available, self.at, self.lock = float(self.burst), clock(), Lock()
 
+    def retry_after(self, principal, *, floor=1, ceiling=10):
+        """Seconds until this principal holds a whole token again, bounded."""
+        if principal != self.principal:
+            raise DataError('invalid_client_identity')
+        with self.lock:
+            now, available, at = self.clock(), self.available, self.at
+        if not math.isfinite(now) or now < at:
+            return ceiling
+        available = min(self.burst, available + (now - at) * self.rate)
+        if available >= 1:
+            return floor
+        return max(floor, min(ceiling, math.ceil((1 - available) / self.rate)))
+
     def admit(self, principal):
         self.admission.check()
         if principal != self.principal:

@@ -19,6 +19,19 @@ class ApiTests(unittest.TestCase):
         self.app = create_app(self.service, gate=ReadGate(interval=0))
         self.client = TestClient(self.app, base_url='http://127.0.0.1:8876')
 
+    def test_health_reports_the_wait_only_while_the_provider_slot_is_held(self):
+        gate = ReadGate(interval=0)
+        client = TestClient(create_app(self.service, gate=gate), base_url='http://127.0.0.1:8876')
+        self.assertIsNone(client.get('/health').json()['retryAfterSeconds'])
+        self.assertTrue(gate.enter(gate.PROVIDER))
+        try:
+            health = client.get('/health').json()
+            self.assertTrue(health['busy'])
+            self.assertTrue(1 <= health['retryAfterSeconds'] <= 10)
+        finally:
+            gate.leave(gate.PROVIDER)
+        self.assertIsNone(client.get('/health').json()['retryAfterSeconds'])
+
     def test_http_wallet_read_has_exact_units_and_explicit_capabilities(self):
         response = self.client.post('/v1/read/wallet-assets', json={'wallet': OWNER, 'tokens': [TOKEN]})
         self.assertEqual(response.status_code, 200)

@@ -355,7 +355,7 @@ class DevGatewayTests(IdentityFixtures, unittest.TestCase):
                 elif state == 'wrong_generation':
                     metadata['generation'] = 'f' * 32
                 else:
-                    data['devAdmission'].update(state=state, retryAfterSeconds=2 if state == 'cooldown' else 0)
+                    data['devAdmission'].update(state=state, retryAfterSeconds=7 if state == 'cooldown' else 0)
                     status = 503
                 return status, data, metadata
             self.upstream.request = transport
@@ -363,7 +363,9 @@ class DevGatewayTests(IdentityFixtures, unittest.TestCase):
                 response = self.post()
                 self.assertEqual(response.status_code, expected_status, response.text)
                 self.assertEqual(response.json(), {'error': expected_error})
-                if state == 'cooldown': self.assertEqual(response.headers['Retry-After'], '2')
+                # The reader's own number reaches the caller. Seven, not the
+                # constant this header carried, and not the gate's own bound.
+                if state == 'cooldown': self.assertEqual(response.headers['Retry-After'], '7')
             now[0] += 2
         self.assertEqual([route for route, _ in self.upstream.calls], ['health'] * len(cases))
         self.upstream.request = original

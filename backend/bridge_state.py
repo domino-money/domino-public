@@ -43,7 +43,7 @@ class ClientBudgets:
         self.burst, self.rate = burst, per_minute / 60
         self.secret, self.items, self.lock = secrets.token_bytes(32), OrderedDict(), Lock()
 
-    def admit(self, client):
+    def _key(self, client):
         try:
             # Collapse IPv6 /64 to avoid inexpensive per-address budget evasion.
             value = ipaddress.ip_address(client)
@@ -52,7 +52,23 @@ class ClientBudgets:
             identity = str(ipaddress.ip_network(f'{value}/64', strict=False)) if value.version == 6 else str(value)
         except (ValueError, TypeError):
             raise DataError('invalid_client_identity') from None
-        key = hmac.digest(self.secret, identity.encode(), 'sha256')
+        return hmac.digest(self.secret, identity.encode(), 'sha256')
+
+    def retry_after(self, client, *, floor=1, ceiling=10):
+        """Seconds until this client holds a whole token again, bounded, never a constant."""
+        key = self._key(client)
+        with self.lock:
+            now = self.clock()
+            old = self.items.get(key)
+        if old is None:
+            return floor
+        available = min(self.burst, old[0] + max(0, now - old[1]) * self.rate)
+        if available >= 1:
+            return floor
+        return max(floor, min(ceiling, math.ceil((1 - available) / self.rate)))
+
+    def admit(self, client):
+        key = self._key(client)
         with self.lock:
             now = self.clock()
             while self.items and next(iter(self.items.values()))[1] + 300 <= now:

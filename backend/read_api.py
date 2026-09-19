@@ -348,6 +348,9 @@ def create_app(service=None, *, gate=None, read_budget_seconds=60,
         return {'status': 'ok', 'mode': 'local_read_only', 'generation': generation,
                 'readBudgetSeconds': read_budget_seconds, 'busy': not idle,
                 'storedBusy': not stored_idle,
+                # The wait the gate can justify while its provider slot is held;
+                # the gateway relays it instead of guessing.
+                'retryAfterSeconds': None if idle else gate.retry_after(gate.PROVIDER),
                 'snapshotRefresh': None if refresher is None else refresher.describe(),
                 'snapshotStoreFailures': None if snapshot is None else snapshot.store_failures}
 

@@ -278,23 +278,23 @@
     },
     {
       "path": "backend/read_gateway.py",
-      "sha256": "e19536dd319073e294db9fe800ee3aae646077925a80fdde55738701dcb4c473"
+      "sha256": "a6662276eb8ba6616c09a96e564f2babeb37d62beb86aac4344834b1220d4437"
     },
     {
       "path": "backend/read_api.py",
-      "sha256": "7e68edc391df15f3745499ace9d380c53ff402686de008142fde11a62a322fcb"
+      "sha256": "e2a272b9f794d065c6528dd6643fa260bb125e2ee1e24a72360e583f4a0b05de"
     },
     {
       "path": "backend/bridge_http.py",
-      "sha256": "7758214b4fd96b4d58c4afcf9a8ecb415771203131016e163bbfd6425e39db73"
+      "sha256": "0421f6a1eedcb8c18b22a225b28cfc8f416e20b18bd930ab29cdb3a2ab7ebba2"
     },
     {
       "path": "backend/dev_read_gateway.py",
-      "sha256": "035600acc7ffa39a1779adedb849d1b72b6c6b45a67c63bbf7c40c765f1cc642"
+      "sha256": "a9f41be8d0794c11a9191894b9b02321fa9f5ca89587ec16d93ddd7410844db3"
     },
     {
       "path": "backend/dev_read_identity.py",
-      "sha256": "7005ea74d6bd8cc33e92e2d41b300ee5c22a071ca62c69e2f6959fc3f0965c4e"
+      "sha256": "482ba88059f385470de4ea50e0f627825ccf00bb0d265fe7609638fe93cc55a1"
     },
     {
       "path": "backend/dev_read_service.py",
@@ -310,7 +310,7 @@
     },
     {
       "path": "backend/bridge_state.py",
-      "sha256": "f120d5191a51bac01b53901b62c7ea587e280eb071e40b7085c4d52a39d5ac82"
+      "sha256": "4aa0f085c9805bb193aef2fb9c2fc13a755f6479d70768b90f94b67a2dedcb2e"
     },
     {
       "path": "backend/read_deadline.py",
