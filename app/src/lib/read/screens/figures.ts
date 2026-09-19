@@ -185,6 +185,12 @@ export interface ActivityFacts {
   stale: boolean
   block: number
   initializedBlock: number
+  /**
+   * The first block the figures actually cover. A stored window is indexed
+   * since the pool's initialize, so the two are the same; a live window starts
+   * at `coverage.windowStartBlock`, hours back, not at initialize.
+   */
+  coveredFromBlock: number
   feeAccounting: 'reconciled' | 'unavailable'
 }
 
@@ -206,6 +212,7 @@ export function activityFacts(d: PoolActivityResponse): ActivityFacts {
     stale: d.freshness.status === 'stale',
     block: d.snapshot.number,
     initializedBlock: d.coverage.initializedBlock,
+    coveredFromBlock: d.mode === 'live_window_only' ? d.coverage.windowStartBlock : d.coverage.initializedBlock,
     feeAccounting: d.fees.accounting.status === 'unavailable' ? 'unavailable' : 'reconciled',
   }
 }
@@ -274,6 +281,8 @@ export interface PoolActivityView {
   /** A young pool's age; null when the pool is older than the window. */
   age: ActivityFacts['age']
   initializedBlock: number
+  /** The first block the figures cover: the window start, which is initialize only for a stored window. */
+  coveredFromBlock: number
   /** Swapped in plus swapped out over the window, per currency in pool order: the chain's own turnover. */
   turnover: [TokenAmount | null, TokenAmount | null]
   /** The window's LP fees, only when fee accounting is reconciled. */
@@ -302,6 +311,7 @@ export function poolActivityView(d: PoolActivityResponse, tokens: readonly Token
     observedSeconds: facts.observedSeconds,
     age: facts.age,
     initializedBlock: facts.initializedBlock,
+    coveredFromBlock: facts.coveredFromBlock,
     turnover: [leg(0), leg(1)],
     lpFees: pair(w.lpFeesRaw, currencies, tokens, w.lpFeesReason ?? d.fees.accounting.reason),
     lpAssets: pair(positions.lpAssetsRaw, currencies, tokens, positions.status === 'unavailable' ? positions.reason : null),

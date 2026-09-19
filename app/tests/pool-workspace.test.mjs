@@ -515,7 +515,7 @@ const liveWindowActivity = (body) => {
       scope: 'live_window_only',
       canonicality: 'block_hash_rechecked',
       rpcCompleteness: 'single_provider_assumption',
-      windowStartBlock: body.coverage.initializedBlock,
+      windowStartBlock: body.snapshot.number - 600,
       windowStartTimestamp: lower,
     },
     window24h: {
@@ -552,6 +552,7 @@ test('a live window says the span it actually covered and never calls it a day (
   assert.match(text, /Pool age Older than 2 h 5 min/)
   assert.match(text, /Turnover \(2 h 5 min\)/)
   assert.match(text, /LP fees \(2 h 5 min\)/)
+  assert.match(text, /Blocks covered 100 to 700/, 'the window start, not the pool\u2019s initialize')
   assert.match(html, /data-activity-live=""/)
   assert.match(text, /not in the activity index yet/)
   // Only the note may say "24 hours", and only to deny it: no figure claims a day the read never saw.

@@ -226,10 +226,13 @@ export function PoolFiguresDialog({ market, onClose }: { market: Market; onClose
                   {facts.age ? (
                     <p>Pool is {duration(facts.age.seconds)} old; the 24h window isn’t complete, so no full-window figure applies.</p>
                   ) : (
-                    <p>The 24h window is covered ({facts.observedSeconds} s observed).</p>
+                    <p>The {facts.windowSeconds === 86400 ? '24h' : `${facts.windowSeconds} s`} window is covered ({facts.observedSeconds} s observed).</p>
                   )}
                   <p className="text-fg-muted">
-                    Verified since initialize at block {facts.initializedBlock}; {facts.swaps} swap event{facts.swaps === 1 ? '' : 's'} in the window; fee accounting {facts.feeAccounting}.
+                    {facts.live
+                      ? `Read live from block ${facts.coveredFromBlock}, not indexed since initialize`
+                      : `Verified since initialize at block ${facts.initializedBlock}`}
+                    ; {facts.swaps} swap event{facts.swaps === 1 ? '' : 's'} in the window; fee accounting {facts.feeAccounting}.
                   </p>
                 </div>
               ) : (

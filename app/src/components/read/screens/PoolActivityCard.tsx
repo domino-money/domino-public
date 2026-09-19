@@ -112,7 +112,7 @@ export function PoolActivityCard({ read, option, now }: { read: ScreenOutcome<'p
         <div><dt>Swaps ({span})</dt><dd>{cell(view && view.swaps.toLocaleString('en-US'))}</dd></div>
         <div><dt>Pool age</dt><dd>{cell(view && (view.age ? duration(view.age.seconds) : `Older than ${spanText}`))}</dd></div>
         <div><dt>Window</dt><dd>{cell(view && (view.window === 'covered' ? `${spanText} covered` : `${duration(view.observedSeconds)} observed`))}</dd></div>
-        <div><dt>Blocks covered</dt><dd>{cell(view && `${view.initializedBlock} to ${view.block}`)}</dd></div>
+        <div><dt>Blocks covered</dt><dd>{cell(view && `${view.coveredFromBlock} to ${view.block}`)}</dd></div>
       </dl>
       {view?.live ? (
         <p className="dm-note mt-3" data-activity-live="">
