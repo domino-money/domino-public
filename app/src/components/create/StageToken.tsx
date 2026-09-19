@@ -122,7 +122,7 @@ export function StageToken({
       {checking ? (
         <Skeleton className="h-[120px] w-full" />
       ) : chosen ? (
-        <ChosenPool option={chosen} state={state} candidates={candidates} onToken={fromElsewhere} onChange={() => setChanging(true)} />
+        <ChosenPool option={chosen} onChange={() => setChanging(true)} />
       ) : (
         <>
           {state.pool && (

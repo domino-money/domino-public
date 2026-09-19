@@ -22,9 +22,9 @@ export const CREATE = {
   },
   /** The five visual steps of the flow, over the six stages of the state machine. */
   step: {
-    pool: { title: 'Pool', lead: 'Choose the pool and the token you deposit.' },
+    pool: { title: 'Pool', lead: 'Choose the pool this position trades in.' },
     range: { title: 'Range', lead: 'Choose the price band this position earns fees in.' },
-    amount: { title: 'Amount', lead: 'How much of the token you deposit.' },
+    amount: { title: 'Amount', lead: 'How much of each token this position holds.' },
     automation: { title: 'Automation', lead: 'What happens to the fees this position earns.' },
     review: { title: 'Review', lead: 'Every choice, the fees and the wallet steps, before Setup.' },
   },
@@ -32,7 +32,7 @@ export const CREATE = {
   stage: {
     token: { title: 'Deposit token', short: 'Token', lead: 'The asset you deposit. Identity is the chain and the contract address, never a symbol.' },
     pool: { title: 'Pool', short: 'Pool', lead: 'A position holds two assets. Pick an existing pool that trades your token against the other.' },
-    amount: { title: 'Amount and range', short: 'Amount', lead: 'The budget in the deposit token, and the price band the position earns fees in.' },
+    amount: { title: 'Amount and range', short: 'Amount', lead: 'How much of each token, and the price band the position earns fees in.' },
     balance: { title: 'Deposit amounts', short: 'Balance', lead: 'How much of each token the deposit is expected to take, and the most it may take.' },
     automation: { title: 'Automation', short: 'Automation', lead: 'What happens to the fees this position earns.' },
     review: { title: 'Review', short: 'Review', lead: 'Every choice, the fees and the wallet steps, before Setup.' },
@@ -40,9 +40,8 @@ export const CREATE = {
   token: {
     needToken: 'Choose a token to continue.',
     notSelectable: 'The chosen token cannot be deposited: it could not be read.',
-    searchLabel: 'Token you deposit',
+    searchLabel: 'Token in the pool',
     searchPlaceholder: 'Token name or address',
-    depositWith: 'Deposit with',
     moreWays: 'More ways to find a token',
     walletHeading: 'From a wallet',
     walletNote: 'Check a contract address, or list the tokens a public address holds. Balances are public chain data at one block.',
@@ -117,12 +116,20 @@ export const CREATE = {
      * service derives the other from the range and the price. So the balance
      * that decides whether the deposit can go through is often this one.
      */
-    pairNote: 'A position holds both of the pool’s tokens. How much of each this budget takes is calculated in Review, from the range and the price at that moment.',
-    pairLabel: 'The pool’s other token',
-    pairBalanceAt: (block: string | null) => (block ? `Your balance at block ${block}:` : 'Your balance:'),
-    pairNone: 'Your balance of this token could not be read, so nothing here can say whether it covers the deposit.',
-    pairConnect: 'Connect a wallet in the header to see what you hold of both tokens.',
-    pairReading: 'Reading your balance of both tokens…',
+    /**
+     * A position holds both of the pool's tokens, so the amount step shows one
+     * row per token: the one an amount is typed in fixes the liquidity and the
+     * other follows from the range and the price. There is no choice of "which
+     * token to deposit" to make — typing is the choice.
+     */
+    pairNote: (block: number | null) =>
+      `Type an amount in either token; the other follows from your range and the pool’s price${block === null ? '' : ` at block ${block}`}. Exact amounts, with slippage, are calculated in Review.`,
+    pairUnused: (symbol: string) => `At this price your range takes only ${symbol}, so an amount of this token would buy no position.`,
+    pairOneSided: (symbol: string) => `At this price your range takes only ${symbol}.`,
+    pairUnknown: 'The pool’s price or the range could not be used, so the other amount is not shown.',
+    pairUnreadable: 'This token’s decimals or contract could not be read, so an amount cannot be entered in it.',
+    pairNone: 'Your balance of this token could not be read.',
+    pairReading: 'Reading your balance…',
   },
   balance: {
     /** The one line under the deposit amount rows (the docs' New position page shows it too, lib/docs/pages/using.ts). */

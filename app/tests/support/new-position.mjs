@@ -14,7 +14,7 @@ export const footerButton = (page, name) => page.locator('[data-journey-footer]'
 
 /** To Review: deposit TOKEN into ETH / TOKEN, the standard range the pool's price gives, a budget of 1 TOKEN, Self-managing. */
 export async function walkToReview(page) {
-  await page.getByRole('combobox', { name: 'Token you deposit' }).fill(FIXTURE_TOKEN);
+  await page.getByRole('combobox', { name: 'Token in the pool' }).fill(FIXTURE_TOKEN);
   await page.locator(`[data-token-option="${FIXTURE_TOKEN}"]`).click();
   // Choosing a pool replaces the list with the chosen pool, so the radio is clicked, not checked and read back.
   await page.locator('[data-picker="pool"] input[name="pool-option"]').first().click({ timeout: 30_000 });
@@ -22,7 +22,8 @@ export async function walkToReview(page) {
   await footerButton(page, 'Continue').click();
   await page.locator('[data-stage="range"]').waitFor();
   await footerButton(page, 'Continue').click();
-  await page.locator('#create-budget').fill('1');
+  // The amount step has a row per pool token; typing in one makes it the independent token.
+  await page.locator('[data-pair-side="1"] input[inputmode="decimal"]').fill('1');
   await footerButton(page, 'Continue').click();
   await page.locator('[data-stage-card="automation"]').waitFor();
   await footerButton(page, 'Continue').click();

@@ -3,11 +3,10 @@ import { candidateDecimals, validateBudget, validateSlippage, type JourneyState,
 import type { PoolOption } from '../../lib/read/screens/poolsList'
 import type { ReadSource } from '../../lib/read/types'
 import { PoolRangeControls } from '../read/screens/PoolRangeControls'
-import { SymbolText } from '../read/screens/SymbolText'
-import { AmountField, TextField } from './fields'
-import { PairedBalance } from './PairedBalance'
+import type { TokenCandidate } from '../../lib/read/screens/tokens'
+import { TextField } from './fields'
+import { PairedAmounts } from './PairedAmounts'
 import type { PairBalancesState } from './usePairBalances'
-import { WalletBalance } from './WalletBalance'
 
 /**
  * Step 2, Range: the price band, drawn on the pool's price as read, through
@@ -43,21 +42,25 @@ export function StageRange({
 }
 
 /**
- * Step 3, Amount: the budget in the deposit token, converted to raw units
- * with the decimals the read returned, the connected wallet's balance of it
- * under the figure, and the slippage tolerance one disclosure away.
+ * Step 3, Amount: one row per pool token, the amount typed in either, the
+ * other following from the range and the pool's price, each row carrying the
+ * connected wallet's balance of its token, and the slippage tolerance one
+ * disclosure away.
+ *
+ * A position holds both currencies, so there is no "deposit with" choice: the
+ * token an amount is typed in is the independent one (PairedAmounts.tsx).
  */
 export function StageAmount({
-  source,
   state,
   balances,
   onBudget,
+  onToken,
   onSlippage,
 }: {
-  source: ReadSource | null
   state: JourneyState
   balances: PairBalancesState
   onBudget: (text: string) => void
+  onToken: (candidate: TokenCandidate) => void
   onSlippage: (text: string) => void
 }) {
   const token = state.token
@@ -65,41 +68,14 @@ export function StageAmount({
   const decimals = candidateDecimals(token)
   const budget = validateBudget(state.budget, decimals)
   const slippage = validateSlippage(state.slippageBps)
-  const budgetError = decimals === null ? CREATE.amount.decimalsUnknown : state.budget !== '' && !budget.ok ? budget.reason : null
   return (
     <div className="dm-flow-stack" data-stage="amount">
-      <AmountField
-        id="create-budget"
-        label={
-          <>
-            {CREATE.amount.budgetLabel} (<SymbolText token={token.token} />)
-          </>
-        }
-        unit={<SymbolText token={token.token} />}
-        inputMode="decimal"
-        placeholder="0.0"
-        value={state.budget}
-        disabled={decimals === null}
-        onChange={(event) => onBudget(event.target.value)}
-        footer={
-          <>
-            <WalletBalance source={source} token={token} onUse={onBudget} />
-            <PairedBalance pair={balances} pool={state.pool} token={token} />
-          </>
-        }
-        error={budgetError}
-        below={
-          <>
-            {budget.ok && decimals !== null ? (
-              <p className="dm-hint tnum break-all" data-budget-raw={budget.raw} title={CREATE.amount.rawUnitsTitle}>
-                {CREATE.amount.rawUnits(budget.raw, decimals)}
-              </p>
-            ) : null}
-            <p className="dm-hint">{CREATE.amount.pairNote}</p>
-          </>
-        }
-        hint={`${CREATE.amount.budgetHint(decimals)} ${CREATE.amount.budgetNote}`}
-      />
+      <PairedAmounts state={state} balances={balances} onBudget={onBudget} onToken={onToken} />
+      {budget.ok && decimals !== null && (
+        <p className="dm-hint tnum break-all" data-budget-raw={budget.raw} title={CREATE.amount.rawUnitsTitle}>
+          {CREATE.amount.rawUnits(budget.raw, decimals)}
+        </p>
+      )}
       <details className="dm-details dm-flow-disclosure">
         <summary>{CREATE.amount.advanced}</summary>
         <div>

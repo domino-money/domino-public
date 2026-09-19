@@ -310,7 +310,7 @@ export function Journey({ poolId }: { poolId: string }) {
       case 'range':
         return <StageRange source={source} state={state} onRange={setRange} onPool={setPool} />
       case 'amount':
-        return <StageAmount source={source} state={state} balances={pair} onBudget={setBudget} onSlippage={setSlippage} />
+        return <StageAmount state={state} balances={pair} onBudget={setBudget} onToken={setToken} onSlippage={setSlippage} />
       case 'automation':
         return <StageAutomation state={state} now={now} onAutomation={setAutomation} onLimits={setLimits} />
       case 'review':

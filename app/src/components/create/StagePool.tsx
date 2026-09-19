@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { CREATE } from '../../lib/create/copy'
-import { candidatesFromPool, type JourneyState } from '../../lib/create/journey'
+import type { JourneyState } from '../../lib/create/journey'
 import { COPY } from '../../lib/read/screens/copy'
 import type { PoolOption } from '../../lib/read/screens/poolsList'
 import { selectable, type TokenCandidate } from '../../lib/read/screens/tokens'
@@ -9,32 +9,20 @@ import { Address } from '../read/screens/Address'
 import { PoolPicker } from '../read/screens/PoolPicker'
 import { PoolSelectionDialog } from '../read/screens/PoolSelectionDialog'
 import { SymbolText } from '../read/screens/SymbolText'
-import { TokenPicker, whyText } from '../read/screens/TokenPicker'
+import { TokenPicker } from '../read/screens/TokenPicker'
 import { TokenMark, TokenMarkPair } from '../TokenIcon'
 import { Button, Chip } from '../ui'
 
 /**
  * The chosen pool: its pair and fee, with where it was verified in the chip's
- * title rather than a line under the name, and the two currencies as the
- * choice of what to deposit. A currency the read could not identify stays
- * visible, not choosable, and says why.
+ * title rather than a line under the name.
+ *
+ * There is no choice of what to deposit here. A position holds both of the
+ * pool's currencies, so the amount step shows a row for each and the token an
+ * amount is typed in is the independent one (PairedAmounts.tsx). A currency
+ * the read could not identify is said there, on its own row.
  */
-export function ChosenPool({
-  option,
-  state,
-  candidates,
-  onToken,
-  onChange,
-}: {
-  option: PoolOption
-  state: JourneyState
-  /** Candidates already known for this flow; a richer one (a read, a wallet row) wins over the pool read's own. */
-  candidates: readonly TokenCandidate[]
-  onToken: (candidate: TokenCandidate) => void
-  onChange: () => void
-}) {
-  const choices = candidatesFromPool(option).map((fromPool) => candidates.find((known) => known.key === fromPool.key && selectable(known)) ?? fromPool)
-  const reasons = choices.map((choice, index) => ({ id: `create-deposit-why-${index}`, text: whyText(choice) }))
+export function ChosenPool({ option, onChange }: { option: PoolOption; onChange: () => void }) {
   return (
     <div className="dm-flow-panel" data-chosen-pool={option.key}>
       <div className="dm-flow-pool-head">
@@ -56,35 +44,6 @@ export function ChosenPool({
           {CREATE.pool.change}
         </Button>
       </div>
-      <fieldset className="dm-flow-deposit">
-        <legend className="dm-flow-deposit-legend">{CREATE.token.depositWith}</legend>
-        <div className="dm-flow-choices">
-          {choices.map((choice, index) => (
-            <label key={choice.key} className="dm-flow-choice" data-disabled={selectable(choice) ? undefined : ''}>
-              <input
-                type="radio"
-                name="create-deposit-token"
-                value={choice.key}
-                checked={state.token?.key === choice.key}
-                disabled={!selectable(choice)}
-                onChange={() => onToken(choice)}
-                aria-describedby={reasons[index].text ? reasons[index].id : undefined}
-                className="dm-flow-choice-input"
-              />
-              <TokenMark token={choice.token} size={20} />
-              <SymbolText token={choice.token} />
-            </label>
-          ))}
-        </div>
-        {reasons.map(
-          (reason) =>
-            reason.text && (
-              <p key={reason.id} id={reason.id} className="dm-hint">
-                {reason.text}
-              </p>
-            ),
-        )}
-      </fieldset>
     </div>
   )
 }
