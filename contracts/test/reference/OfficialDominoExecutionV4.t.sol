@@ -203,6 +203,29 @@ contract OfficialDominoExecutionV4Test {
         require(vm.revertToState(snap) && vault.successorOf(tokenId)==0 && !vault.consumedIntent(p.authority.intentId),"reorg removes action");
         vault.execute(p);require(vault.successorOf(tokenId)==id && vault.activePositions()==2,"canonical reexecution");
     }
+    /// The per-execution scratch is transient (EIP-1153), so it is discarded at
+    /// the end of the TRANSACTION, not the end of the call. A forge test body is
+    /// one transaction, so this pins what that lifetime actually costs: after a
+    /// success and after a rejection, every flag is back to zero and the next
+    /// guarded call is admitted. If any clear were dropped, the second execute
+    /// would revert ReentrantCall or InvalidExecution instead.
+    function testTransientScratchClearsBetweenCallsInOneTransaction() external {
+        _setup(false,false); _swaps();
+        vault.execute(_plan(0,1e12));
+        E.Plan memory bad=_plan(1,1e12); bad.budgets[0].maxCharged=1; _reject(bad);
+        _swaps(); vault.execute(_plan(0,1e12));
+        require(vault.activePositions()==1,"two executions and a rejection in one transaction");
+        // An owner action in the same transaction as an execution: the guard
+        // and the modify flag are provably clear, since dropping either clear
+        // fails this test. The compound flag's own clear is NOT pinned here -
+        // its only same-transaction consequence is that _payExact tightens the
+        // recipient receipt, which needs a recipient whose balance does not
+        // move exactly, and this suite has none.
+        vault.rearmRoot(true);
+        require(vault.rootArmed(),"owner rearm admitted after an execution");
+        _backed();
+    }
+
     function testBadGeometryAndIndependentTriggerDenied() external {
         _setup(false,false);_swaps();E.Plan memory p=_plan(3,1e10);p.destinationTokenId=0;p.tickLower=-420;p.tickUpper=4620;_reject(p);
         p.tickUpper=4680;p.tickLower=-600;_reject(p);

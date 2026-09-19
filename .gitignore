@@ -21,6 +21,9 @@ __pycache__/
 *.tsbuildinfo
 contracts/out/
 contracts/cache/
+# npm run test:contracts runs forge from the repository root, which puts its
+# fuzz corpus here rather than under contracts/.
+/cache/
 # Historical owner-only hosting metadata stays on the deployment owner's machine.
 reports/private-site-release*.json
 

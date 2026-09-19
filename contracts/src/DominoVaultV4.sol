@@ -62,8 +62,6 @@ contract DominoVaultV4 {
     bool public rootArmed;
 
     bool private _initialized;
-    uint256 private _entered;
-    bool private _subscriptionTransition;
     bytes32 private _sequenceIdentity;
     T.PoolKey private _key;
     IDominoVaultDraft.Policy private _policy;
@@ -76,13 +74,22 @@ contract DominoVaultV4 {
     mapping(address => uint256) public accountedCurrency;
     mapping(bytes32 => bool) public consumedIntent;
     uint64 public lastExecutionAt;
-    uint8 private _executionAction;
-    uint256 private _executionParent;
     mapping(uint256 => uint256) public successorOf;
-    bool private _compoundActive;
-    bool private _expectedModify;
-    int256 private _expectedLiquidityChange;
-    int256 private _expectedFeesAccrued;
+    // Per-execution scratch: written and cleared inside one call, so it is
+    // transient (EIP-1153), not storage. Fixed low slots; the cumulative fee
+    // accumulator below keys its own slot by keccak256 and cannot collide, but
+    // anyone adding a second hand-numbered transient user must check both.
+    // _initialized stays in storage deliberately: a constructor's TSTORE is
+    // discarded with the deploy transaction, which would leave the
+    // implementation initializable by anyone, for ever.
+    uint256 private constant _T_ENTERED = 0;
+    uint256 private constant _T_TRANSITION = 1;
+    uint256 private constant _T_ACTION = 2;
+    uint256 private constant _T_PARENT = 3;
+    uint256 private constant _T_COMPOUND = 4;
+    uint256 private constant _T_MODIFY = 5;
+    uint256 private constant _T_LIQ = 6;
+    uint256 private constant _T_FEES = 7;
 
     event Initialized(address indexed owner, bytes32 indexed sequenceId, bytes32 identity, uint256 rootTokenId);
     event PolicyChanged(uint64 indexed version, uint64 stateNonce);
@@ -123,9 +130,17 @@ contract DominoVaultV4 {
         if (msg.sender != owner && !isOperator(msg.sender)) revert Unauthorized();
     }
 
+    function _tget(uint256 slot) private view returns (uint256 v) {
+        assembly ("memory-safe") { v := tload(slot) }
+    }
+
+    function _tset(uint256 slot, uint256 v) private {
+        assembly ("memory-safe") { tstore(slot, v) }
+    }
+
     function _enter() private {
-        if (_entered != 0) revert ReentrantCall();
-        _entered = 1;
+        if (_tget(_T_ENTERED) != 0) revert ReentrantCall();
+        _tset(_T_ENTERED, 1);
     }
 
     modifier onlyOwner() {
@@ -136,7 +151,7 @@ contract DominoVaultV4 {
     modifier nonReentrant() {
         _enter();
         _;
-        _entered = 0;
+        _tset(_T_ENTERED, 0);
     }
 
     constructor(
@@ -262,17 +277,17 @@ contract DominoVaultV4 {
         _checkOwnerOrOperator();
         if (_terminal()) revert NonceExhausted();
         if (_policy.paused || !rootPermissionValid()) revert PermissionUnavailable();
-        _compoundActive = true;
-        _executionAction = plan.action;
-        _executionParent = plan.authority.tokenId;
+        _tset(_T_COMPOUND, 1);
+        _tset(_T_ACTION, plan.action);
+        _tset(_T_PARENT, plan.authority.tokenId);
         (bool success, bytes memory returned) = address(executionEngine).call(msg.data);
         if (!success) { assembly ("memory-safe") { revert(add(returned, 32), mload(returned)) } }
         (bytes32 planHash, uint256 destination) = abi.decode(returned, (bytes32,uint256));
-        if (_expectedModify || !rootPermissionValid()) revert InvalidExecution();
+        if (_tget(_T_MODIFY) != 0 || !rootPermissionValid()) revert InvalidExecution();
         consumedIntent[plan.authority.intentId] = true;
-        _compoundActive = false;
-        delete _executionAction;
-        delete _executionParent;
+        _tset(_T_COMPOUND, 0);
+        _tset(_T_ACTION, 0);
+        _tset(_T_PARENT, 0);
         lastExecutionAt = uint64(block.timestamp);
         _advance(false);
         emit ExecutionCompleted(plan.authority.intentId, planHash, plan.action,
@@ -280,7 +295,7 @@ contract DominoVaultV4 {
     }
 
     function _requireExecution() private view {
-        if (!_compoundActive || _entered != 1 || msg.sender != address(executionEngine)
+        if (_tget(_T_COMPOUND) == 0 || _tget(_T_ENTERED) != 1 || msg.sender != address(executionEngine)
             || address(executionEngine).codehash != executionEngineCodeHash) revert UnexpectedCallback();
     }
 
@@ -289,9 +304,9 @@ contract DominoVaultV4 {
     function executionModify(uint256 tokenId, uint128 increase, uint128 fees0, uint128 fees1, bool take) external {
         _requireExecution();
         if (!_positions[tokenId].active || increase > uint128(type(int128).max)) revert InvalidPosition();
-        _expectedModify = tokenId == rootTokenId;
-        _expectedLiquidityChange = int256(uint256(increase));
-        _expectedFeesAccrued = int256((uint256(fees0) << 128) | fees1);
+        _tset(_T_MODIFY, tokenId == rootTokenId ? 1 : 0);
+        _tset(_T_LIQ, uint256(increase));
+        _tset(_T_FEES, (uint256(fees0) << 128) | fees1);
         bytes[] memory params = new bytes[](take ? 2 : 1);
         params[0] = abi.encode(tokenId, uint256(increase), increase == 0 ? uint128(0) : type(uint128).max,
             increase == 0 ? uint128(0) : type(uint128).max, bytes(""));
@@ -300,7 +315,7 @@ contract DominoVaultV4 {
         actions[0] = increase == 0 ? bytes1(0x01) : bytes1(0x00);
         if (take) actions[1] = bytes1(0x11);
         IPositionManagerE2(positionManager).modifyLiquiditiesWithoutUnlock(actions, params);
-        if (_expectedModify) revert UnexpectedCallback();
+        if (_tget(_T_MODIFY) != 0) revert UnexpectedCallback();
     }
 
     function executionCheckpoint(uint256 tokenId, T.Checkpoint calldata point) external {
@@ -322,7 +337,7 @@ contract DominoVaultV4 {
         _requireExecution();
         _requireCurrency(currency);
         if (!_sources[sourceId].known || (debtor != positionManager && debtor != address(executionEngine))
-            || (netted && (_executionAction != E.NET || debtor != positionManager))
+            || (netted && (_tget(_T_ACTION) != E.NET || debtor != positionManager))
             || (!netted && value.realized != 0)) revert InvalidExecution();
         T.FeeBalance memory previous = _balances[sourceId][currency];
         if (value.originalBefore != previous.original || value.chargedBefore != previous.charged
@@ -356,7 +371,7 @@ contract DominoVaultV4 {
     function executionMint(bytes32 intentId, uint256 parent, int24 lo, int24 hi, uint128 liquidity)
         external returns (uint256 tokenId) {
         _requireExecution();
-        if (_executionAction != E.MINT || parent != _executionParent || !_positions[parent].active
+        if (_tget(_T_ACTION) != E.MINT || parent != _tget(_T_PARENT) || !_positions[parent].active
             || successorOf[parent] != 0 || activePositions >= _policy.maxPositions || liquidity == 0)
             revert InvalidPosition();
         tokenId = IPositionManagerV4(positionManager).nextTokenId();
@@ -492,15 +507,15 @@ contract DominoVaultV4 {
 
     function notifySubscribe(uint256 tokenId, bytes calldata data) external view {
         if (
-            msg.sender != positionManager || !_subscriptionTransition || _entered != 1 || tokenId != rootTokenId
+            msg.sender != positionManager || _tget(_T_TRANSITION) == 0 || _tget(_T_ENTERED) != 1 || tokenId != rootTokenId
                 || keccak256(data) != keccak256(abi.encode(_sequenceIdentity, authorityGeneration))
         ) revert UnexpectedCallback();
     }
 
     function notifyUnsubscribe(uint256 tokenId) external {
         _requireRootNotification(tokenId);
-        if (_compoundActive) revert UnexpectedCallback();
-        if (_subscriptionTransition && _entered == 1) return;
+        if (_tget(_T_COMPOUND) != 0) revert UnexpectedCallback();
+        if (_tget(_T_TRANSITION) != 0 && _tget(_T_ENTERED) == 1) return;
         // Upstream may notify during an owner's receive callback. This path
         // only removes authority, with no external calls or asset movement.
         _invalidateRoot(1);
@@ -508,11 +523,11 @@ contract DominoVaultV4 {
 
     function notifyModifyLiquidity(uint256 tokenId, int256 change, int256 fees) external {
         _requireRootNotification(tokenId);
-        if (_entered != 0) {
-            if (!_compoundActive || !_expectedModify || change != _expectedLiquidityChange || fees != _expectedFeesAccrued) {
+        if (_tget(_T_ENTERED) != 0) {
+            if (_tget(_T_COMPOUND) == 0 || _tget(_T_MODIFY) == 0 || uint256(change) != _tget(_T_LIQ) || uint256(fees) != _tget(_T_FEES)) {
                 revert UnexpectedCallback();
             }
-            _expectedModify = false;
+            _tset(_T_MODIFY, 0);
             return;
         }
         _invalidateRoot(2); // A callback amount is not proof of earned fees.
@@ -520,7 +535,7 @@ contract DominoVaultV4 {
 
     function notifyBurn(uint256 tokenId, address, uint256, uint256, int256) external {
         _requireRootNotification(tokenId);
-        if (_entered != 0) revert UnexpectedCallback();
+        if (_tget(_T_ENTERED) != 0) revert UnexpectedCallback();
         _invalidateRoot(3); // ownerOf can already revert; recovery stays available.
     }
 
@@ -533,11 +548,11 @@ contract DominoVaultV4 {
         address previous = readHelper.rootCustody(rootTokenId, owner, address(this));
         if (previous != address(0) && previous != address(this)) revert ForeignSubscription();
         rootArmed = false;
-        _subscriptionTransition = true;
+        _tset(_T_TRANSITION, 1);
         if (previous == address(this)) manager.unsubscribe(rootTokenId);
         _checkpoints[rootTokenId] = _readCheckpoint(rootTokenId, lo, hi);
         manager.subscribe(rootTokenId, address(this), abi.encode(_sequenceIdentity, authorityGeneration));
-        _subscriptionTransition = false;
+        _tset(_T_TRANSITION, 0);
         if (readHelper.rootCustody(rootTokenId, owner, address(this)) != address(this)) revert PermissionUnavailable();
         rootArmed = true;
         emit RootRearmed(_checkpoints[rootTokenId].commitment, authorityGeneration, stateNonce);
@@ -688,7 +703,7 @@ contract DominoVaultV4 {
             if (!paid) revert TransferFailed();
             // Preserve E2 owner-recovery callbacks; the financial path requires
             // exact receipts even for a native fee recipient.
-            if (_compoundActive && (address(this).balance != beforeVault - amount || recipient.balance != beforeRecipient + amount)) {
+            if (_tget(_T_COMPOUND) != 0 && (address(this).balance != beforeVault - amount || recipient.balance != beforeRecipient + amount)) {
                 revert TransferFailed();
             }
         } else {
@@ -708,7 +723,7 @@ contract DominoVaultV4 {
             // recovery would strand the reserve for good behind any token that
             // does not credit exactly - fee-on-transfer, rebasing, a recipient
             // that forwards inside a hook - with no partial exit to fall back on.
-            if (_compoundActive && (afterOwner < beforeOwner || afterOwner - beforeOwner != amount)) {
+            if (_tget(_T_COMPOUND) != 0 && (afterOwner < beforeOwner || afterOwner - beforeOwner != amount)) {
                 revert TransferFailed();
             }
         }
