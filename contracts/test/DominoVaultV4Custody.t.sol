@@ -33,6 +33,9 @@ contract VaultV4TestHarness is DominoVaultV4 {
         address readHelper_, address engine_)
         DominoVaultV4(factory_, pool_, positions_, state_, recipient_, readHelper_, engine_) {}
     function forceNonce(uint64 nonce) external { stateNonce = nonce; }
+    /// The V4 fee-credit sinks are reachable only through the pinned engine,
+    /// so a custody test cannot credit the ledger the way the V3 harness does.
+    function forceAccounted(address currency, uint256 amount) external { accountedCurrency[currency] = amount; }
     function forceGeneration(uint64 generation) external { authorityGeneration = generation; }
 }
 
@@ -277,6 +280,35 @@ contract DominoVaultV4CustodyTest is IERC721ReceiverE2 {
         uint256 before_ = address(this).balance;
         vault.recoverUntrackedCurrency(address(0), 3 ether);
         require(address(this).balance == before_ + 3 ether, "untracked native returns to the owner");
+    }
+
+    /**
+     * Only the surplus above the ledger may leave by this door.
+     *
+     * Nothing tested this: deleting the insolvency arm of the guard entirely -
+     * leaving `amount > held` - left all 213 contract tests green, which is how
+     * the gap was found. The name of the test above promised this and did not
+     * deliver it, because the V4 fee sinks are unreachable from a custody test.
+     */
+    function testRecoverUntrackedCurrencyNeverReachesTheLedgerItTracks() external {
+        vm.deal(address(vault), 10 ether);
+        vault.forceAccounted(address(0), 7 ether);
+
+        (bool ok, bytes memory out) = address(vault).call(abi.encodeCall(
+            DominoVaultV4.recoverUntrackedCurrency, (address(0), 3 ether + 1)));
+        require(!ok && bytes4(out) == DominoVaultV4.InsufficientReserve.selector, "one wei past the surplus");
+
+        uint256 before_ = address(this).balance;
+        vault.recoverUntrackedCurrency(address(0), 3 ether);
+        require(address(this).balance == before_ + 3 ether, "exactly the surplus leaves");
+        require(address(vault).balance == 7 ether, "the tracked ledger is untouched");
+
+        // And an insolvent vault - held below what it tracks - lets nothing out
+        // at all, rather than underflowing into a large allowance.
+        vault.forceAccounted(address(0), 9 ether);
+        (ok, out) = address(vault).call(abi.encodeCall(
+            DominoVaultV4.recoverUntrackedCurrency, (address(0), 1)));
+        require(!ok && bytes4(out) == DominoVaultV4.InsufficientReserve.selector, "insolvent: nothing leaves");
     }
 
     function testSetOperatorRefusesZeroAndANoOpChange() external {

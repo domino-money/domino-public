@@ -26,7 +26,7 @@ export const PRODUCER_PIN = {
   packages: {
     'read-v1': {
       version: '1.1.0-rc.3',
-      manifestSha256: '858dd90e05ee1bbe5afbb8240d4012f18a32e366be181d15338ad3ec7c0bc28e',
+      manifestSha256: 'aa231ef449a55961ecefbf427eb48b807ff2efeae048a5cea1e0ea61d4d46536',
     },
     'session-v1': {
       version: '3.0.0-rc.2',
@@ -46,7 +46,7 @@ export const PRODUCER_PIN = {
 /** Separately opted-in public pool estimates; never accepted as a v1 response. */
 export const READ_V2_PIN = {
   version: '2.0.0-rc.1',
-  manifestSha256: 'af32b1af9e3b3bd2dce8a536ae483eaa034a2a23c2916392a5d94eebfe4ef41e',
+  manifestSha256: 'd19937609e9ff90d3a35a9771f2092c26255538acc4e0f3a1cec895653c4056e',
 } as const
 
 /**
@@ -81,7 +81,7 @@ export const REQUEST_READ_CONTRACT: ReadContractPin = PRODUCER_PIN.packages['rea
 /** Authenticated private numeric history, independent of public pool estimates. */
 export const PERFORMANCE_V2_PIN = {
   version: '2.0.0-rc.1',
-  manifestSha256: '41332ae10a056932852f51e7c327b77045fdd9748a0b2433db7d62aaa7a06308',
+  manifestSha256: 'd5665e0b15c3ab982f95c56263d3cab7182f6c92deb1f07389c18c319aaab4a8',
 } as const
 
 /** Sanitized private execution status and finalized receipts only. */

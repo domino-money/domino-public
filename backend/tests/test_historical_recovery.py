@@ -25,6 +25,12 @@ import test_pool_activity as activity_tests
 from test_position_accounting import PositionFixtureRpc, reference
 
 
+# ReadRpc is patched in the operator-CLI test, so nothing is dialled; the URL
+# only has to clear rpc_endpoint's host allow-list, which those CLIs now apply
+# through configured_history_rpc_url.
+OFFLINE_CONFIG = {'rpcUrl': 'https://rpc.mainnet.chain.robinhood.com'}
+
+
 @unittest.skipUnless(os.environ.get('DOMINO_TEST_POSTGRES') == '1', 'requires disposable PostgreSQL databases')
 class HistoricalRecoveryTests(unittest.TestCase):
     settings = activity_tests.ActivityPostgresTests.settings
@@ -213,7 +219,7 @@ class HistoricalRecoveryTests(unittest.TestCase):
                 with patch.object(sys, 'argv', [module.__name__, '--pool-id', POOL,
                         '--restart-unpublished-work', '--max-steps', '1', '--output', str(output)]), \
                         patch.object(module, 'configured_writer_catalogue', return_value=self.catalogue), \
-                        patch.object(module, 'load_config', return_value={'rpcUrl': 'http://offline.invalid'}), \
+                        patch.object(module, 'load_config', return_value=OFFLINE_CONFIG), \
                         patch.object(module, 'ReadRpc', return_value=self.rpc), \
                         patch.object(module, 'DiscoveryReader'), redirect_stdout(io.StringIO()):
                     self.assertEqual(module.main(), 0)
