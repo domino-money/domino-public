@@ -97,6 +97,33 @@ contract DominoSetupTest {
         require(!ok && setup.operation(id).balance0 == beforeOp.balance0 && setup.operation(id).balance1 == beforeOp.balance1, "swap recovery survives failed mint");
         setup.cancel(id);
     }
+    /**
+     * The unlock callback, forged. Nothing referenced it before: it is the one
+     * entry point on this contract that the pool manager alone may call, and
+     * all four of its clauses were unreachable from any suite.
+     */
+    function testUnlockCallbackRefusesEveryForgedEntry() external {
+        _deploy(false);
+        bytes memory payload = abi.encode(uint8(1), bytes(""));
+
+        // Not the pool manager, and no operation in flight.
+        (bool ok, bytes memory out) = address(setup).call(
+            abi.encodeCall(DominoSetup.unlockCallback, (payload)));
+        require(!ok && bytes4(out) == DominoSetup.InvalidSetup.selector, "only the pool manager");
+
+        // The pool manager itself, but outside any operation: `_entered` is
+        // false and `_callback` is unset, so the payload cannot match.
+        vm.prank(address(manager));
+        (ok, out) = address(setup).call(abi.encodeCall(DominoSetup.unlockCallback, (payload)));
+        require(!ok && bytes4(out) == DominoSetup.InvalidSetup.selector, "no operation is in flight");
+
+        // An empty payload is refused for the same reason and not, for
+        // instance, by decoding into a zero `kind`.
+        vm.prank(address(manager));
+        (ok, out) = address(setup).call(abi.encodeCall(DominoSetup.unlockCallback, (bytes(""))));
+        require(!ok && bytes4(out) == DominoSetup.InvalidSetup.selector, "an empty payload is not a plan");
+    }
+
     function testOwnerBoundOperationIdsPreventFrontRunningAndReplay() public {
         _deploy(false); bytes32 id = setup.nextOperationId(address(this));
         vm.prank(address(0xBAD)); (bool ok,) = address(setup).call(abi.encodeCall(setup.open, (id, key, uint128(1), uint128(1))));
