@@ -242,10 +242,18 @@ class ReadService:
                'protocolFeeRaw':pool['protocolFeeRaw'],
                'lpFeePips':pool['currentLpFeePips'],
                'feeGrowthGlobalX128':[str(value) for value in self._fee_growth(rpc,pool_id,block)]}
+        # The read is bounded by blocks, and a block here is not a second: the
+        # chain's own recorded heads move 7 to 13 blocks a second, so a range of
+        # LIVE_WINDOW_SECONDS blocks reaches back hours, not a day. Report the
+        # span the range actually covers, which is also what makes
+        # range_bounded's precondition true - every event read lies inside it.
+        covered=min(self.LIVE_WINDOW_SECONDS,max(1,block.timestamp-lower.timestamp))
         window=window_metrics(events,initialized_at=anchor_at,as_of=block.timestamp,
-                              window_seconds=self.LIVE_WINDOW_SECONDS,range_bounded=True)
+                              window_seconds=covered,range_bounded=True)
         age=max(0,int(self.clock())-block.timestamp)
-        window['usableAsCurrent24h']=age<=120 and window['completeWindow']
+        # A shorter span is never the current 24 hours, however complete it is.
+        window['usableAsCurrent24h']=(age<=120 and window['completeWindow']
+                                      and covered==self.LIVE_WINDOW_SECONDS)
         return {'schemaVersion':1,'methodologyVersion':1,'mode':'live_window_only',
                 'chainId':CHAIN_ID,'poolId':bytes32(pool_id),'poolKey':pool['poolKey'],
                 'revision':None,'accountingScope':'core_pool_events_only',
@@ -363,6 +371,12 @@ class ReadService:
     @public_response('pool-positions')
     def pool_positions(self,pool_id):
         report=self.pool_activity(pool_id,include_positions=True)
+        # A live window holds no stored interval, so its coverage is a different
+        # shape than this response declares and its positions are unavailable by
+        # construction. Refuse with the code the caller already handles rather
+        # than assembling a body that fails its own contract at the next hop.
+        if report['mode']!='core_pool_activity_read_only':
+            raise DataError('activity_not_indexed')
         positions=report['liquidity']['positionAccounting']
         if positions['status']!='reconciled_as_of':
             return {'schemaVersion':1,'mode':'core_pool_positions_read_only',

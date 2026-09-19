@@ -157,3 +157,36 @@ class LiveWindowServeTests(unittest.TestCase):
 
 
 if __name__=='__main__':unittest.main()
+
+
+class LiveWindowHonestyTests(unittest.TestCase):
+    """The window may only claim the span its block range actually covered."""
+
+    def test_a_block_range_shorter_than_a_day_is_not_reported_as_a_day(self):
+        # Robinhood Chain records 7 to 13 blocks a second (four dated heads in
+        # reports/), so LIVE_WINDOW_SECONDS blocks reach back hours. The body
+        # must say how long it covered, and must not call it the current 24h.
+        from pool_activity import window_metrics
+        as_of = 1_800_000_000
+        covered = 9_400
+        window = window_metrics([], initialized_at=as_of - 10 * 86_400, as_of=as_of,
+                                window_seconds=covered, range_bounded=True)
+        self.assertEqual(window['requestedSeconds'], covered)
+        self.assertEqual(window['observedSeconds'], covered)
+        self.assertEqual(window['fromTimestampExclusive'], as_of - covered)
+        self.assertTrue(window['completeWindow'], 'the pool is older than the span read')
+        usable = window['completeWindow'] and covered == 86_400
+        self.assertFalse(usable, 'a partial span is never the current 24 hours')
+
+    def test_pool_positions_refuses_a_live_window_instead_of_a_wrong_shape(self):
+        # PoolPositionsResponse.coverage is ActivityCoverage: indexedThrough is
+        # a required integer, scope is since_verified_initialize, and the model
+        # forbids extras. A live window satisfies none of the three.
+        from read_contract import ActivityCoverage
+        live = {'startBlock': 10, 'indexedThrough': None, 'initializedBlock': 10,
+                'initializedAt': 1_800_000_000, 'scope': 'live_window_only',
+                'canonicality': 'block_hash_rechecked',
+                'rpcCompleteness': 'single_provider_assumption',
+                'windowStartBlock': 20, 'windowStartTimestamp': 1_800_000_100}
+        with self.assertRaises(Exception):
+            ActivityCoverage.model_validate(live)
