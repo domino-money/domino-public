@@ -64,8 +64,11 @@ export function PairedAmounts({
       const kept = pool.currencies[other.only]
       return { value: '', note: CREATE.amount.pairUnused(kept.symbol ?? '') }
     }
+    // Plain decimal, not the grouped display text: this sits in a field the
+    // person may type over, and a thousands separator would not be an amount.
     const units = formatUnits(other.raw, currency.decimals)
-    return { value: units ? units.text : other.raw, note: other.only === null ? null : CREATE.amount.pairOneSided(pool.currencies[other.only].symbol ?? '') }
+    const value = units && units.kind === 'units' ? units.text.replace(/,/g, '') : other.raw
+    return { value, note: other.only === null ? null : CREATE.amount.pairOneSided(pool.currencies[other.only].symbol ?? '') }
   }
 
   return (
