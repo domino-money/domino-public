@@ -1,0 +1,125 @@
+{
+  "scope": "three cold frontend in-memory data pipelines from Mac, authenticated production; not DOM-paint timing",
+  "releaseCommit": "b0efeb30548c72e75c806c45cb31bac9437e04d1",
+  "deploymentRun": 35483926504,
+  "baselineElapsedMs": [
+    21243.2,
+    21184.2,
+    19459.5
+  ],
+  "storedElapsedMs": [
+    1487.1,
+    389.8,
+    430.4
+  ],
+  "baselineRequestCount": [
+    17,
+    17,
+    17
+  ],
+  "storedRequestCount": [
+    2,
+    2,
+    2
+  ],
+  "medianSpeedup": 49.22,
+  "runs": [
+    {
+      "file": "frontend-stored-production-2026-09-20-1.jsonl",
+      "event": "benchmark_summary",
+      "atMs": 1487.6,
+      "elapsedMs": 1487.1,
+      "firstRowMs": 1485.6,
+      "allRowsMs": 1485.6,
+      "firstPricedRowMs": 1485.6,
+      "allPricedRowsMs": 1485.6,
+      "priceTimingMeaning": "token_metadata_reads_settled_not_verified_price",
+      "settledRows": 6,
+      "aborted": false,
+      "blocking": null,
+      "requestCount": 2,
+      "recordedResponses": 2,
+      "schedulerSleepMs": 0,
+      "capabilityAnswers": [
+        {
+          "path": "/api/read/v3/capabilities",
+          "dataMode": "live_read_only",
+          "enabledReads": [
+            "overview",
+            "history",
+            "search"
+          ]
+        }
+      ],
+      "statuses": {
+        "200": 2
+      },
+      "problems": []
+    },
+    {
+      "file": "frontend-stored-production-2026-09-20-2.jsonl",
+      "event": "benchmark_summary",
+      "atMs": 389.9,
+      "elapsedMs": 389.8,
+      "firstRowMs": 388,
+      "allRowsMs": 388,
+      "firstPricedRowMs": 388.1,
+      "allPricedRowsMs": 388.1,
+      "priceTimingMeaning": "token_metadata_reads_settled_not_verified_price",
+      "settledRows": 6,
+      "aborted": false,
+      "blocking": null,
+      "requestCount": 2,
+      "recordedResponses": 2,
+      "schedulerSleepMs": 0,
+      "capabilityAnswers": [
+        {
+          "path": "/api/read/v3/capabilities",
+          "dataMode": "live_read_only",
+          "enabledReads": [
+            "overview",
+            "history",
+            "search"
+          ]
+        }
+      ],
+      "statuses": {
+        "200": 2
+      },
+      "problems": []
+    },
+    {
+      "file": "frontend-stored-production-2026-09-20-3.jsonl",
+      "event": "benchmark_summary",
+      "atMs": 431,
+      "elapsedMs": 430.4,
+      "firstRowMs": 429,
+      "allRowsMs": 429,
+      "firstPricedRowMs": 429,
+      "allPricedRowsMs": 429,
+      "priceTimingMeaning": "token_metadata_reads_settled_not_verified_price",
+      "settledRows": 6,
+      "aborted": false,
+      "blocking": null,
+      "requestCount": 2,
+      "recordedResponses": 2,
+      "schedulerSleepMs": 0,
+      "capabilityAnswers": [
+        {
+          "path": "/api/read/v3/capabilities",
+          "dataMode": "live_read_only",
+          "enabledReads": [
+            "overview",
+            "history",
+            "search"
+          ]
+        }
+      ],
+      "statuses": {
+        "200": 2
+      },
+      "problems": []
+    }
+  ],
+  "qualification": "All six stored rows and metadata settled; this does not assert fresh external-provider analytics or fully backfilled history."
+}

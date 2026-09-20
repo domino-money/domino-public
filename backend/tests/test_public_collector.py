@@ -165,7 +165,7 @@ class PublicCollectorTests(unittest.TestCase):
     def test_thirty_two_pools_are_collected_without_the_legacy_twenty_four_limit(self):
         _,market=fixtures();markets={row['poolId']:row for row in (another_market(market,i) for i in range(32))}
         for pool in markets:self.writer.request('pool',pool)
-        with patch.object(self.service,'pool_market',side_effect=lambda pool:markets[pool]):
+        with patch.object(self.service,'pool_market',side_effect=lambda pool,**kwargs:markets[pool]):
             result=[]
             for _ in range(8):result.extend(self.collector.tick(token_limit=0,pool_limit=4))
         self.assertEqual(len(result),32);self.assertTrue(all(row['status']=='published' for row in result))
@@ -444,6 +444,71 @@ class PublicCollectorTests(unittest.TestCase):
         with psycopg.connect(**self.settings,user=ADMIN) as conn:conn.execute(migration)
         self.assertEqual(self.row()['last_requested_at'],explicit['last_requested_at'])
         self.assertTrue(self.row()['discovery_requested'])
+
+    def restart_at(self,now):
+        self.writer.clock=lambda:now
+        self.service.market_cache=MarketCache(self.provider,clock=lambda:now)
+        self.service.clock=lambda:now
+        self.collector=PublicCollector(self.writer,self.service,clock=lambda:now,
+                                       requests=self.requests,history=self.history)
+
+    def test_cold_restart_keeps_persisted_market_original_age_when_quota_is_full(self):
+        _,market=fixtures();self.writer.request('pool',POOL)
+        self.writer.publish(self.writer.claim('pool')[0],market)
+        self.assertTrue(all(self.writer.reserve_provider() for _ in range(25)))
+        self.restart_at(1040);self.due('pool',POOL)
+        self.assertEqual(self.collector.tick(token_limit=0,pool_limit=1)[0]['status'],'published')
+        first=self.row('pool',POOL)
+        self.assertEqual(first['observed_at'],1040)
+        self.assertEqual(first['payload']['market']['cache']['ageSeconds'],30)
+        self.assertEqual(first['payload']['market']['data'],market['market']['data'])
+        self.restart_at(1080);self.due('pool',POOL)
+        self.assertEqual(self.collector.tick(token_limit=0,pool_limit=1)[0]['status'],'published')
+        second=self.row('pool',POOL)['payload']['market']
+        self.assertEqual((second['status'],second['reason'],second['cache']['ageSeconds']),
+                         ('stale','provider_capacity_busy',70))
+        self.assertEqual(second['data']['retrievedAt'],1010)
+        self.assertEqual(self.provider.calls,[])
+        self.assertFalse(self.writer.reserve_provider())
+
+    def test_background_pool_keeps_onchain_state_without_consuming_provider_quota(self):
+        self.writer.ensure('pool',POOL)
+        self.assertEqual(self.collector.tick(token_limit=0,pool_limit=1)[0]['status'],'published')
+        value=self.row('pool',POOL)['payload']
+        self.assertEqual(value['pool']['identityStatus'],'verified_at_block')
+        self.assertEqual(value['market']['status'],'unavailable')
+        self.assertEqual(self.provider.calls,[])
+        self.assertTrue(all(self.writer.reserve_provider() for _ in range(25)))
+
+    def test_background_pool_reuses_valid_stale_market_without_provider_attempt(self):
+        _,market=fixtures();self.writer.import_market(market,1010)
+        self.restart_at(1080);self.due('pool',POOL)
+        self.assertEqual(self.collector.tick(token_limit=0,pool_limit=1)[0]['status'],'published')
+        value=self.row('pool',POOL)['payload']['market']
+        self.assertEqual((value['status'],value['cache']['ageSeconds']),('stale',70))
+        self.assertEqual(value['data'],market['market']['data'])
+        self.assertEqual(self.provider.calls,[])
+        self.assertTrue(all(self.writer.reserve_provider() for _ in range(25)))
+
+    def test_restored_market_still_rejects_reorganized_current_snapshot(self):
+        _,market=fixtures();self.writer.request('pool',POOL)
+        self.writer.publish(self.writer.claim('pool')[0],market)
+        self.restart_at(1040);self.due('pool',POOL)
+        self.rpc.reorg=True;self.rpc.blocks_read=0
+        result=self.collector.tick(token_limit=0,pool_limit=1)
+        self.assertEqual(result[0]['reason'],'snapshot_reorganized')
+        self.assertEqual(self.row('pool',POOL)['observed_at'],1010)
+        self.assertEqual(self.row('pool',POOL)['payload'],market)
+
+    def test_new_provider_identity_rejection_cannot_fall_back_to_persisted_good_data(self):
+        _,market=fixtures();self.writer.request('pool',POOL)
+        self.writer.publish(self.writer.claim('pool')[0],market)
+        self.restart_at(1080);self.due('pool',POOL)
+        self.provider.dex='unverified-fork'
+        self.assertEqual(self.collector.tick(token_limit=0,pool_limit=1)[0]['status'],'published')
+        value=self.row('pool',POOL)['payload']['market']
+        self.assertEqual((value['status'],value['reason']),('rejected','provider_dex_unconfirmed'))
+        self.assertIsNone(value['data'])
 
 
 if __name__=='__main__':unittest.main()

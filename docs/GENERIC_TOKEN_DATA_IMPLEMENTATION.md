@@ -85,6 +85,16 @@ token denomination invalidate the affected projection rather than silently
 relabeling its prices. Current observations preserve provider ages on cache hits
 and import; stored reads do not make old data fresh.
 
+A collector restart warms its provider cache from the last valid persisted
+market observation, retaining both `retrievedAt` and elapsed age. It refuses
+expired/rejected observations, and the next on-chain read still checks pool
+identity and canonicality. Background pools that have never been explicitly
+requested use on-chain state and any valid cached analytics without consuming
+the shared external-provider quota. This prevents prerequisites from exhausting
+the 25/minute budget needed by requested pools. The production current-state
+unit pauses 0.2 seconds between bounded cycles; its RPC and per-cycle quotas are
+unchanged.
+
 Recent history computes its exact window boundary with bounded batches of header
 probes, then persists `lowerBlock` inside the pinned target JSON before fetching
 logs. Subsequent chunks verify the two adjacent headers and reuse that boundary;

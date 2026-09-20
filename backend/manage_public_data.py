@@ -123,13 +123,17 @@ class PublicCollector:
                 discovery_revision=page['revision'] if page['hasMore'] else None,
                 delay=5 if page['hasMore'] else 300)
         else:
-            payload = self.service.pool_market(entity_id)
+            previous=claim.get('payload')
+            if previous is not None and claim.get('observed_at') is not None:
+                self.service.market_cache.restore_pool(entity_id,previous['market'],
+                    elapsed_seconds=max(0,int(self.clock())-claim['observed_at']))
+            explicit=claim['last_requested_at'].timestamp()>0
+            payload = self.service.pool_market(entity_id,allow_provider=explicit)
             # Browser demand is debounced by 15s in PostgreSQL. A minute of
             # grace tolerates that debounce without keeping abandoned tabs hot.
             # Claim order stays oldest-due first for active and idle pools alike.
             active = self.clock() - claim['last_requested_at'].timestamp() <= 60
             self.repository.publish(claim,payload,delay=5 if active else 120)
-            explicit=claim['last_requested_at'].timestamp()>0
             if explicit and self.requests is not None:
                 self.requests.enqueue(entity_id)
             if explicit and self.history is not None:

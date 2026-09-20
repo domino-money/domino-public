@@ -1,4 +1,5 @@
 from pathlib import Path
+from copy import deepcopy
 import sys
 from threading import Event, Thread
 import unittest
@@ -135,6 +136,56 @@ class MarketCacheTests(unittest.TestCase):
             with self.assertRaises(DataError):
                 self.cache.get(kind, pool, token=token)
         self.assertEqual(self.provider.calls, [])
+
+    def stored_pool(self):
+        value=self.cache.get('pool',POOL)
+        value['data'].update(chainId=4663,source='geckoterminal')
+        return value
+
+    def test_restart_restores_original_age_and_attribution_without_refetching(self):
+        stored=self.stored_pool();self.now+=45
+        restarted=MarketCache(self.provider,clock=lambda:self.now)
+        self.assertTrue(restarted.restore_pool(POOL,stored,elapsed_seconds=45))
+        stored['data']['reportedLiquidityUsd']='mutated'
+        value=restarted.get('pool',POOL)
+        self.assertEqual(value['data']['reportedLiquidityUsd'],'1.23')
+        self.assertEqual(value['data']['retrievedAt'],1000)
+        self.assertEqual(value['cache']['ageSeconds'],45)
+        self.assertEqual(len(self.provider.calls),1)
+        # Repeated restarts preserve the age already accumulated before them.
+        self.now+=30;again=MarketCache(self.provider,clock=lambda:self.now)
+        self.assertTrue(again.restore_pool(POOL,value,elapsed_seconds=30))
+        self.provider.error=DataError('http_429')
+        stale=again.get('pool',POOL)
+        self.assertEqual((stale['status'],stale['reason'],stale['cache']['ageSeconds']),
+                         ('stale','provider_rate_limited',75))
+        self.assertEqual(stale['data']['retrievedAt'],1000)
+        self.now+=226
+        self.assertIsNone(again.get('pool',POOL,allow_provider=False)['data'])
+        self.assertEqual(len(self.provider.calls),2)
+
+    def test_restore_refuses_rejected_expired_mismatched_or_existing_entries(self):
+        stored=self.stored_pool()
+        for change,elapsed in (({'status':'rejected'},0),({'status':'unavailable'},0),({},301)):
+            with self.subTest(change=change,elapsed=elapsed):
+                restarted=MarketCache(self.provider,clock=lambda:self.now)
+                self.assertFalse(restarted.restore_pool(POOL,{**stored,**change},elapsed_seconds=elapsed))
+        for field,value in (('chainId',1),('poolId','0x'+'cc'*32),('source','unverified')):
+            bad=deepcopy(stored);bad['data'][field]=value
+            self.assertFalse(MarketCache(self.provider).restore_pool(POOL,bad,elapsed_seconds=0))
+        self.assertFalse(self.cache.restore_pool(POOL,stored,elapsed_seconds=0))
+
+    def test_background_cache_only_never_reserves_quota_or_calls_provider(self):
+        cache=MarketCache(self.provider,clock=lambda:self.now,
+                          reserve_provider=lambda:self.fail('background reserved provider quota'))
+        self.assertEqual(cache.get('pool',POOL,allow_provider=False)['status'],'unavailable')
+        self.assertEqual(self.provider.calls,[])
+        stored=self.stored_pool()
+        self.assertTrue(cache.restore_pool(POOL,stored,elapsed_seconds=75))
+        value=cache.get('pool',POOL,allow_provider=False)
+        self.assertEqual((value['status'],value['cache']['ageSeconds']),('stale',75))
+        self.assertEqual(value['data']['retrievedAt'],1000)
+        self.assertEqual(len(self.provider.calls),1)
 
 
 if __name__ == '__main__':

@@ -480,7 +480,7 @@ class ReadService:
 
     @public_response('pool-market')
     def pool_market(self, pool_id, *, include_price_history=False, price_token='base',
-                    from_snapshot=False):
+                    from_snapshot=False,allow_provider=True):
         """On-demand provider observations; no catalogue or history replay required.
 
         `from_snapshot` serves the stored verified pool state and market
@@ -490,7 +490,7 @@ class ReadService:
         """
         pool_id = bytes32(pool_id)
         self._request_public('pool', pool_id)
-        if type(include_price_history) is not bool or price_token not in ('base', 'quote'):
+        if type(include_price_history) is not bool or type(allow_provider) is not bool or price_token not in ('base', 'quote'):
             raise DataError('invalid_market_query')
         if from_snapshot:
             if include_price_history:
@@ -545,7 +545,7 @@ class ReadService:
                         'reason': 'provider_currency_or_pool_mismatch', 'data': None}
             return observation
 
-        market = matched(self._market('pool', pool_id))
+        market = matched(self._market('pool', pool_id,allow_provider=allow_provider))
         issues = []
         if market.get('data') and market['data'].get('dexLabel') != 'uniswap-v4-robinhood':
             issues.append('provider_dex_label_unconfirmed')
@@ -558,7 +558,7 @@ class ReadService:
             else:
                 requested_currency = market['data'][price_token + 'Token']
                 history = matched(self._market('hourly_prices', pool_id, token=price_token,
-                                               currency=requested_currency))
+                                               currency=requested_currency,allow_provider=allow_provider))
                 data = history.get('data')
                 if data is not None and (data.get('selectedToken') != price_token or
                         data.get('currency') != requested_currency or

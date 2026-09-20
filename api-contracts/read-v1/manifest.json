@@ -1088,7 +1088,7 @@
     },
     {
       "path": "backend/read_service.py",
-      "sha256": "72beef24329113e1b4df9bc9ef73f95924a7f5fb36d1961c4173765e4383fd73"
+      "sha256": "b90de3b057f8e78eb575c71c19818395383c220c1fb9d81d0ccaf899cd02bce9"
     },
     {
       "path": "backend/rpc_failover.py",
@@ -1172,7 +1172,7 @@
     },
     {
       "path": "backend/market_cache.py",
-      "sha256": "38674872b9be2283216d4e0c8c56933ddc5ecc26ff8896ebbe758357c2ebb937"
+      "sha256": "a0a25688e1d28e1b01eec0679a176e400b1476e94cec75f6beb9760a0394889e"
     },
     {
       "path": "backend/market_data.py",

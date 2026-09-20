@@ -1,0 +1,6 @@
+{"at":"2026-09-20T02:37:21.398Z","round":0,"route":"overview","status":200,"ms":775.16,"valid":true,"error":null,"pools":15,"readyPools":15,"hasMore":false}
+{"at":"2026-09-20T02:37:21.511Z","round":0,"route":"history","status":200,"ms":110.22,"valid":true,"error":null,"state":"stale","candles":1,"covered":1,"gaps":1}
+{"at":"2026-09-20T02:37:21.620Z","round":0,"route":"search","status":200,"ms":108.01,"valid":true,"error":null,"tokens":1}
+{"at":"2026-09-20T02:37:21.781Z","round":1,"route":"overview","status":200,"ms":161.23,"valid":true,"error":null,"pools":15,"readyPools":15,"hasMore":false}
+{"at":"2026-09-20T02:37:21.869Z","round":1,"route":"history","status":200,"ms":87.53,"valid":true,"error":null,"state":"stale","candles":1,"covered":1,"gaps":1}
+{"at":"2026-09-20T02:37:21.937Z","round":1,"route":"search","status":429,"ms":67.73,"valid":false,"error":"read_capacity_busy"}

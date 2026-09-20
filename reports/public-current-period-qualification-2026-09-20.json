@@ -1,0 +1,831 @@
+{
+  "schemaVersion": 1,
+  "generatedAt": "2026-09-20T02:32:28.918402+00:00",
+  "releaseCommit": "b0efeb30548c72e75c806c45cb31bac9437e04d1",
+  "scope": "Bounded VM observation; journal and existing loopback qualification only. This analysis made no RPC requests or VM changes.",
+  "collectorPeriodSeconds": 0.2,
+  "window": {
+    "start": "2026-09-20T02:27:11.242221+00:00",
+    "end": "2026-09-20T02:28:31.291991+00:00",
+    "seconds": 80.04977,
+    "samples": 9
+  },
+  "sources": {
+    "sampling": "reports/public-data-vm-period-2026-09-20.jsonl",
+    "journalUnits": [
+      "domino-public-current.service",
+      "domino-public-history.service",
+      "domino-public-accounting.service",
+      "domino-queue-worker.service",
+      "domino-catalogue-follower.service"
+    ],
+    "journalClock": "__REALTIME_TIMESTAMP, microseconds since epoch",
+    "journalQueryBoundsUtc": [
+      "2026-09-20 02:27:00 UTC",
+      "2026-09-20 02:28:32 UTC"
+    ],
+    "analysisFilter": "Only structured JSON messages whose journal timestamp is inside the exact sampling start/end window."
+  },
+  "current": {
+    "selectedPoolCount": 6,
+    "selectedPublicationCount": 82,
+    "selectedPublicationIntervalSeconds": {
+      "count": 76,
+      "min": 4.236262,
+      "p50": 6.02458,
+      "p95": 6.746158,
+      "max": 7.014866
+    },
+    "perPool": [
+      {
+        "poolId": "0x84bd4e2d8be11aeb0afc1195b38f587b61e90068548f1063fdbe448fb8cad0b6",
+        "publications": 14,
+        "intervalSeconds": {
+          "count": 13,
+          "min": 4.236262,
+          "p50": 6.00527,
+          "p95": 6.746158,
+          "max": 6.746158
+        },
+        "publicationBatchFinishedAt": [
+          "2026-09-20T02:27:14.267842+00:00",
+          "2026-09-20T02:27:18.999425+00:00",
+          "2026-09-20T02:27:25.388937+00:00",
+          "2026-09-20T02:27:31.459410+00:00",
+          "2026-09-20T02:27:37.277356+00:00",
+          "2026-09-20T02:27:44.023514+00:00",
+          "2026-09-20T02:27:50.539430+00:00",
+          "2026-09-20T02:27:56.522147+00:00",
+          "2026-09-20T02:28:02.900750+00:00",
+          "2026-09-20T02:28:07.137012+00:00",
+          "2026-09-20T02:28:13.142282+00:00",
+          "2026-09-20T02:28:19.255425+00:00",
+          "2026-09-20T02:28:25.039903+00:00",
+          "2026-09-20T02:28:30.772040+00:00"
+        ]
+      },
+      {
+        "poolId": "0xdb922f0619e11b0c1e6c3a142798f0243060b8a4331ea4f4e7de80e898cc02e7",
+        "publications": 13,
+        "intervalSeconds": {
+          "count": 12,
+          "min": 4.93261,
+          "p50": 6.02458,
+          "p95": 7.014866,
+          "max": 7.014866
+        },
+        "publicationBatchFinishedAt": [
+          "2026-09-20T02:27:14.267842+00:00",
+          "2026-09-20T02:27:20.567412+00:00",
+          "2026-09-20T02:27:26.903461+00:00",
+          "2026-09-20T02:27:32.915303+00:00",
+          "2026-09-20T02:27:38.728181+00:00",
+          "2026-09-20T02:27:45.743047+00:00",
+          "2026-09-20T02:27:52.037673+00:00",
+          "2026-09-20T02:27:57.968140+00:00",
+          "2026-09-20T02:28:02.900750+00:00",
+          "2026-09-20T02:28:08.577409+00:00",
+          "2026-09-20T02:28:14.674910+00:00",
+          "2026-09-20T02:28:20.712227+00:00",
+          "2026-09-20T02:28:26.424451+00:00"
+        ]
+      },
+      {
+        "poolId": "0x94c62eebf6454231b2fcd0259ede448ae3c6ad8617718cd88dab20b30cfae48a",
+        "publications": 13,
+        "intervalSeconds": {
+          "count": 12,
+          "min": 5.725607,
+          "p50": 6.079427,
+          "p95": 7.014866,
+          "max": 7.014866
+        },
+        "publicationBatchFinishedAt": [
+          "2026-09-20T02:27:14.267842+00:00",
+          "2026-09-20T02:27:20.567412+00:00",
+          "2026-09-20T02:27:26.903461+00:00",
+          "2026-09-20T02:27:32.915303+00:00",
+          "2026-09-20T02:27:38.728181+00:00",
+          "2026-09-20T02:27:45.743047+00:00",
+          "2026-09-20T02:27:52.037673+00:00",
+          "2026-09-20T02:27:57.968140+00:00",
+          "2026-09-20T02:28:04.316460+00:00",
+          "2026-09-20T02:28:10.042067+00:00",
+          "2026-09-20T02:28:16.129242+00:00",
+          "2026-09-20T02:28:22.200920+00:00",
+          "2026-09-20T02:28:27.932642+00:00"
+        ]
+      },
+      {
+        "poolId": "0xf399bd1544377680d48c62fd85c2105b869e55906c4189cc5ab3b4e83446928c",
+        "publications": 14,
+        "intervalSeconds": {
+          "count": 13,
+          "min": 4.812987,
+          "p50": 5.875979,
+          "p95": 6.401495,
+          "max": 6.401495
+        },
+        "publicationBatchFinishedAt": [
+          "2026-09-20T02:27:12.735279+00:00",
+          "2026-09-20T02:27:17.548266+00:00",
+          "2026-09-20T02:27:23.811430+00:00",
+          "2026-09-20T02:27:29.889589+00:00",
+          "2026-09-20T02:27:35.749981+00:00",
+          "2026-09-20T02:27:42.059754+00:00",
+          "2026-09-20T02:27:47.172949+00:00",
+          "2026-09-20T02:27:53.574444+00:00",
+          "2026-09-20T02:27:59.450423+00:00",
+          "2026-09-20T02:28:04.316460+00:00",
+          "2026-09-20T02:28:10.042067+00:00",
+          "2026-09-20T02:28:16.129242+00:00",
+          "2026-09-20T02:28:22.200920+00:00",
+          "2026-09-20T02:28:27.932642+00:00"
+        ]
+      },
+      {
+        "poolId": "0x24107d152f14a76d292123265ae3f3c71f863fc2f4ef7ba49d64e78d28ea379e",
+        "publications": 14,
+        "intervalSeconds": {
+          "count": 13,
+          "min": 4.646089,
+          "p50": 5.998532,
+          "p95": 6.746158,
+          "max": 6.746158
+        },
+        "publicationBatchFinishedAt": [
+          "2026-09-20T02:27:12.735279+00:00",
+          "2026-09-20T02:27:18.999425+00:00",
+          "2026-09-20T02:27:25.388937+00:00",
+          "2026-09-20T02:27:31.459410+00:00",
+          "2026-09-20T02:27:37.277356+00:00",
+          "2026-09-20T02:27:44.023514+00:00",
+          "2026-09-20T02:27:48.669603+00:00",
+          "2026-09-20T02:27:54.996429+00:00",
+          "2026-09-20T02:28:00.932425+00:00",
+          "2026-09-20T02:28:05.720632+00:00",
+          "2026-09-20T02:28:11.719164+00:00",
+          "2026-09-20T02:28:17.835025+00:00",
+          "2026-09-20T02:28:23.627540+00:00",
+          "2026-09-20T02:28:29.349410+00:00"
+        ]
+      },
+      {
+        "poolId": "0x4be9657ec9002e528f4f17a5c43edc525a07f888f7b180c2afbf75e096c4f38a",
+        "publications": 14,
+        "intervalSeconds": {
+          "count": 13,
+          "min": 4.456999,
+          "p50": 6.070473,
+          "p95": 6.746158,
+          "max": 6.746158
+        },
+        "publicationBatchFinishedAt": [
+          "2026-09-20T02:27:12.735279+00:00",
+          "2026-09-20T02:27:18.999425+00:00",
+          "2026-09-20T02:27:25.388937+00:00",
+          "2026-09-20T02:27:31.459410+00:00",
+          "2026-09-20T02:27:37.277356+00:00",
+          "2026-09-20T02:27:44.023514+00:00",
+          "2026-09-20T02:27:50.539430+00:00",
+          "2026-09-20T02:27:54.996429+00:00",
+          "2026-09-20T02:28:00.932425+00:00",
+          "2026-09-20T02:28:07.137012+00:00",
+          "2026-09-20T02:28:13.142282+00:00",
+          "2026-09-20T02:28:19.255425+00:00",
+          "2026-09-20T02:28:25.039903+00:00",
+          "2026-09-20T02:28:30.772040+00:00"
+        ]
+      }
+    ],
+    "tickCount": 53,
+    "tickDurationMs": {
+      "count": 53,
+      "min": 1184,
+      "p50": 1286,
+      "p95": 1671,
+      "max": 1768
+    },
+    "resultCounts": {
+      "pool:published": 212,
+      "token:published": 106
+    },
+    "retryReasonCounts": {},
+    "selectedRetryReasonCounts": {}
+  },
+  "earlierObservation": {
+    "source": "Parent task measurement supplied for comparison; not recalculated in this artifact.",
+    "periodSeconds": 1,
+    "hotPoolPopulation": 21,
+    "publicationIntervalSeconds": {
+      "p50": 16.78,
+      "max": 18.19
+    },
+    "comparableControlledExperiment": false,
+    "additionalTokenFixture": {
+      "source": "public-data-vm-repair-2026-09-20.jsonl",
+      "address": "0x80baa4b3bfac6f4978700df824b1b3d98e889136",
+      "previouslyKnown": false,
+      "firstPoolCount": 0,
+      "lastPoolCount": 15,
+      "lastReadyPoolCount": 15
+    }
+  },
+  "loopback": {
+    "overviewMs": {
+      "count": 9,
+      "min": 18.9,
+      "p50": 20.48,
+      "p95": 55.77,
+      "max": 55.77
+    },
+    "historyMs": {
+      "count": 9,
+      "min": 12.96,
+      "p50": 14.92,
+      "p95": 49.9,
+      "max": 49.9
+    },
+    "chainAgeSecondsAllSamples": {
+      "count": 54,
+      "min": 1,
+      "p50": 4.0,
+      "p95": 115,
+      "max": 117
+    },
+    "chainAgeSecondsAfterInitialSample": {
+      "count": 48,
+      "min": 1,
+      "p50": 4.0,
+      "p95": 6,
+      "max": 6
+    },
+    "lastProviderMarketStatusCounts": {
+      "unavailable": 4,
+      "available": 2
+    },
+    "firstNewTokenMetadataSampleSeconds": 10.109,
+    "firstNewTokenAllPoolsReadySampleSeconds": 20.052,
+    "additionalTokenFixture": {
+      "source": "public-data-vm-period-2026-09-20.jsonl",
+      "address": "0x5942e47cc8057ac76a779f7499cd762cdd335b48",
+      "previouslyKnown": false,
+      "firstPoolCount": 0,
+      "lastPoolCount": 1,
+      "lastReadyPoolCount": 1
+    }
+  },
+  "history": {
+    "statusCounts": {
+      "indexed": 9
+    },
+    "reasonCounts": {},
+    "durationMs": {
+      "count": 9,
+      "min": 5212,
+      "p50": 6153,
+      "p95": 10121,
+      "max": 10121
+    },
+    "coverageBefore": {
+      "pools": 33,
+      "blocks": "3307810"
+    },
+    "coverageAfter": {
+      "pools": 36,
+      "blocks": "3814058"
+    },
+    "coveredBlocksAdded": 506248,
+    "jobsBefore": {
+      "count": 443,
+      "completed": 0,
+      "cachedboundaries": 22,
+      "maxspan": 100000,
+      "maxspansuccesses": 2,
+      "sample_error": null
+    },
+    "jobsAfter": {
+      "count": 444,
+      "completed": 0,
+      "cachedboundaries": 26,
+      "maxspan": 100000,
+      "maxspansuccesses": 3,
+      "sample_error": null
+    },
+    "requestedPoolReadinessBefore": {
+      "status": 200,
+      "ms": 14.92,
+      "state": "stale",
+      "candles": 1,
+      "coveredIntervals": 1,
+      "gaps": 1
+    },
+    "requestedPoolReadinessAfter": {
+      "status": 200,
+      "ms": 13.29,
+      "state": "stale",
+      "candles": 1,
+      "coveredIntervals": 1,
+      "gaps": 1
+    },
+    "completedWindowDelta": 0,
+    "events": [
+      {
+        "at": "2026-09-20T02:27:16.291833+00:00",
+        "durationMs": 9720,
+        "status": "indexed",
+        "poolId": "0x00bf320d1c7f3f932b9737b731b69e046a19028758a3a485cc64bbf3731e940d",
+        "windowSeconds": 86400,
+        "rpcCalls": 78,
+        "spanBlocks": 100000
+      },
+      {
+        "at": "2026-09-20T02:27:27.413878+00:00",
+        "durationMs": 10121,
+        "status": "indexed",
+        "poolId": "0x00d3546a046f8efc064d410b35a2e8a03192b1d1cad57d51a0fa00d281bb7b35",
+        "windowSeconds": 86400,
+        "rpcCalls": 79,
+        "spanBlocks": 100000
+      },
+      {
+        "at": "2026-09-20T02:27:34.011790+00:00",
+        "durationMs": 5597,
+        "status": "indexed",
+        "poolId": "0xf399bd1544377680d48c62fd85c2105b869e55906c4189cc5ab3b4e83446928c",
+        "windowSeconds": 86400,
+        "rpcCalls": 16,
+        "spanBlocks": 1562
+      },
+      {
+        "at": "2026-09-20T02:27:40.398493+00:00",
+        "durationMs": 5386,
+        "status": "indexed",
+        "poolId": "0x24107d152f14a76d292123265ae3f3c71f863fc2f4ef7ba49d64e78d28ea379e",
+        "windowSeconds": 86400,
+        "rpcCalls": 32,
+        "spanBlocks": 1562
+      },
+      {
+        "at": "2026-09-20T02:27:47.553584+00:00",
+        "durationMs": 6153,
+        "status": "indexed",
+        "poolId": "0x4be9657ec9002e528f4f17a5c43edc525a07f888f7b180c2afbf75e096c4f38a",
+        "windowSeconds": 86400,
+        "rpcCalls": 18,
+        "spanBlocks": 1562
+      },
+      {
+        "at": "2026-09-20T02:27:58.365150+00:00",
+        "durationMs": 9811,
+        "status": "indexed",
+        "poolId": "0x00d41df55339fb12563a603dc9f4f84a385993aa14787352f0dbe12e112ae232",
+        "windowSeconds": 86400,
+        "rpcCalls": 78,
+        "spanBlocks": 100000
+      },
+      {
+        "at": "2026-09-20T02:28:05.056145+00:00",
+        "durationMs": 5690,
+        "status": "indexed",
+        "poolId": "0x84bd4e2d8be11aeb0afc1195b38f587b61e90068548f1063fdbe448fb8cad0b6",
+        "windowSeconds": 86400,
+        "rpcCalls": 37,
+        "spanBlocks": 1562
+      },
+      {
+        "at": "2026-09-20T02:28:11.268898+00:00",
+        "durationMs": 5212,
+        "status": "indexed",
+        "poolId": "0xdb922f0619e11b0c1e6c3a142798f0243060b8a4331ea4f4e7de80e898cc02e7",
+        "windowSeconds": 86400,
+        "rpcCalls": 15,
+        "spanBlocks": 100000
+      },
+      {
+        "at": "2026-09-20T02:28:21.910421+00:00",
+        "durationMs": 9641,
+        "status": "indexed",
+        "poolId": "0x94c62eebf6454231b2fcd0259ede448ae3c6ad8617718cd88dab20b30cfae48a",
+        "windowSeconds": 86400,
+        "rpcCalls": 337,
+        "spanBlocks": 100000
+      }
+    ]
+  },
+  "accounting": {
+    "statusCounts": {
+      "pending": 10,
+      "fee_chunk_reconciled": 7,
+      "caught_up_to_activity": 2
+    },
+    "reasonCounts": {
+      "reconciled_position_tail_required": 5,
+      "reconciled_fee_chunk_required": 1,
+      "catalogue_writer_busy": 3,
+      "position_accounting_adapter_required": 1
+    },
+    "events": [
+      {
+        "at": "2026-09-20T02:27:11.693689+00:00",
+        "durationMs": 1403,
+        "status": "pending",
+        "poolId": "0x0076879a556eb4bc1004e472c41d12008c8ee70a76c80f8de300fc6c772b6f5e",
+        "reason": "reconciled_position_tail_required",
+        "stage": "capital"
+      },
+      {
+        "at": "2026-09-20T02:27:17.922172+00:00",
+        "durationMs": 4227,
+        "status": "fee_chunk_reconciled",
+        "poolId": "0x01038a2d4c6238ec7d53fd2bf3a669640412b0412a334aa6528dc121ceed0da4",
+        "stage": "fee",
+        "fromBlock": 65131116,
+        "through": 65231115,
+        "swapEvents": 9
+      },
+      {
+        "at": "2026-09-20T02:27:23.980960+00:00",
+        "durationMs": 4059,
+        "status": "fee_chunk_reconciled",
+        "poolId": "0x010d049d75e0da8a685d74e26c09083010567f15c13cb25e2e402e85eee992f3",
+        "stage": "fee",
+        "fromBlock": 62520854,
+        "through": 62620853,
+        "swapEvents": 7
+      },
+      {
+        "at": "2026-09-20T02:27:27.281467+00:00",
+        "durationMs": 1300,
+        "status": "pending",
+        "poolId": "0x00b6c0f2e5860f8bf2c7b6e8eeb0be1080bf2905f1ee2f69a23c176659a0dbd9",
+        "reason": "reconciled_fee_chunk_required",
+        "stage": "position"
+      },
+      {
+        "at": "2026-09-20T02:27:30.627349+00:00",
+        "durationMs": 1345,
+        "status": "pending",
+        "poolId": "0x007c1d0dc417fa5450cda47e66cefb6518e75579f51a4835f5d5fb4b1484ef80",
+        "reason": "reconciled_position_tail_required",
+        "stage": "capital"
+      },
+      {
+        "at": "2026-09-20T02:27:36.815051+00:00",
+        "durationMs": 4187,
+        "status": "fee_chunk_reconciled",
+        "poolId": "0xdb922f0619e11b0c1e6c3a142798f0243060b8a4331ea4f4e7de80e898cc02e7",
+        "stage": "fee",
+        "fromBlock": 57012314,
+        "through": 57022313,
+        "swapEvents": 1
+      },
+      {
+        "at": "2026-09-20T02:27:39.717547+00:00",
+        "durationMs": 902,
+        "status": "pending",
+        "poolId": "0x010faf7af474a7cbf64537e45dfb2c728ce96162a3aa2c9b860b7c107a7d0b69",
+        "reason": "catalogue_writer_busy",
+        "stage": "fee"
+      },
+      {
+        "at": "2026-09-20T02:27:46.084460+00:00",
+        "durationMs": 4366,
+        "status": "fee_chunk_reconciled",
+        "poolId": "0x94c62eebf6454231b2fcd0259ede448ae3c6ad8617718cd88dab20b30cfae48a",
+        "stage": "fee",
+        "fromBlock": 48648245,
+        "through": 48658244,
+        "swapEvents": 3
+      },
+      {
+        "at": "2026-09-20T02:27:52.305301+00:00",
+        "durationMs": 4220,
+        "status": "fee_chunk_reconciled",
+        "poolId": "0xf399bd1544377680d48c62fd85c2105b869e55906c4189cc5ab3b4e83446928c",
+        "stage": "fee",
+        "fromBlock": 59283988,
+        "through": 59293987,
+        "swapEvents": 0
+      },
+      {
+        "at": "2026-09-20T02:27:55.665294+00:00",
+        "durationMs": 1359,
+        "status": "pending",
+        "poolId": "0x008e90855f559605c5d54cbd87a61580c5c70b221142ae8017d8b4b0ac6f6450",
+        "reason": "reconciled_position_tail_required",
+        "stage": "capital"
+      },
+      {
+        "at": "2026-09-20T02:27:58.645888+00:00",
+        "durationMs": 980,
+        "status": "pending",
+        "poolId": "0x00bf320d1c7f3f932b9737b731b69e046a19028758a3a485cc64bbf3731e940d",
+        "reason": "position_accounting_adapter_required",
+        "stage": "position"
+      },
+      {
+        "at": "2026-09-20T02:28:02.049954+00:00",
+        "durationMs": 1403,
+        "status": "caught_up_to_activity",
+        "poolId": "0x00169f66395dba961277862acfddd836af362078948c90aa4a9983e5114bc098",
+        "stage": "fee",
+        "through": 67564695
+      },
+      {
+        "at": "2026-09-20T02:28:04.991836+00:00",
+        "durationMs": 941,
+        "status": "pending",
+        "poolId": "0x0098ddd3e9b6e59ae506e1bd5628cede6f0473600f0bbeda6f896ff93b615b84",
+        "reason": "catalogue_writer_busy",
+        "stage": "capital"
+      },
+      {
+        "at": "2026-09-20T02:28:11.289699+00:00",
+        "durationMs": 4297,
+        "status": "fee_chunk_reconciled",
+        "poolId": "0x24107d152f14a76d292123265ae3f3c71f863fc2f4ef7ba49d64e78d28ea379e",
+        "stage": "fee",
+        "fromBlock": 1146712,
+        "through": 1147711,
+        "swapEvents": 10
+      },
+      {
+        "at": "2026-09-20T02:28:14.777989+00:00",
+        "durationMs": 1488,
+        "status": "pending",
+        "poolId": "0x009ea3627e64dc5aab33441ead0c003ea69aae9b4aa98f73b7bd4672efdc1dfc",
+        "reason": "reconciled_position_tail_required",
+        "stage": "capital"
+      },
+      {
+        "at": "2026-09-20T02:28:18.202534+00:00",
+        "durationMs": 1424,
+        "status": "caught_up_to_activity",
+        "poolId": "0x002ad5dec68d2d9f20716a265246e11c462b8ff848e91862ceaad164ad3283c2",
+        "stage": "fee",
+        "through": 61744447
+      },
+      {
+        "at": "2026-09-20T02:28:24.392998+00:00",
+        "durationMs": 4190,
+        "status": "fee_chunk_reconciled",
+        "poolId": "0x011149df48786b555e43346dbb62575e8cfc96b146f973a8aec469729f64c65d",
+        "stage": "fee",
+        "fromBlock": 66017098,
+        "through": 66117097,
+        "swapEvents": 18
+      },
+      {
+        "at": "2026-09-20T02:28:27.330093+00:00",
+        "durationMs": 937,
+        "status": "pending",
+        "poolId": "0x00a95504b1674eda880f3723fe4f46345c5f26977ad129cf5b67edb76c742dbc",
+        "reason": "catalogue_writer_busy",
+        "stage": "capital"
+      },
+      {
+        "at": "2026-09-20T02:28:30.735891+00:00",
+        "durationMs": 1405,
+        "status": "pending",
+        "poolId": "0x00b19732a67d66db01d918d6f56588c7febf82a7a71da6b808d3686e5a3f4bfb",
+        "reason": "reconciled_position_tail_required",
+        "stage": "capital"
+      }
+    ]
+  },
+  "queue": {
+    "passes": [
+      {
+        "at": "2026-09-20T02:27:52.581775+00:00",
+        "targetBlock": 67582046,
+        "rpcCalls": 107,
+        "pools": 8,
+        "poolStatusCounts": {
+          "indexing": 8
+        },
+        "indexedSteps": 7,
+        "reasonCounts": {
+          "read_deadline_exceeded": 1
+        }
+      }
+    ],
+    "before": [
+      {
+        "status": "indexing",
+        "count": 53
+      },
+      {
+        "status": "queued",
+        "count": 389
+      },
+      {
+        "status": "registering",
+        "count": 1
+      }
+    ],
+    "after": [
+      {
+        "status": "indexing",
+        "count": 56
+      },
+      {
+        "status": "queued",
+        "count": 387
+      },
+      {
+        "status": "registering",
+        "count": 1
+      }
+    ],
+    "activityBefore": {
+      "chunks": 2940,
+      "latestblock": 67564695
+    },
+    "activityAfter": {
+      "chunks": 2948,
+      "latestblock": 67564695
+    },
+    "postWindowInspection": {
+      "classification": "handled_retryable_deadline_with_nonzero_pass_exit",
+      "fatalProcessExceptionObserved": false,
+      "cause": "The bounded queue pass reaches its configured 50-second deadline after persisting 6-8 successful indexing steps. Its final pool is deferred with read_deadline_exceeded. manage_activity.py returns exit1 whenever any result carries a reason, so systemd records failed even though the timer subsequently runs another pass.",
+      "codeReference": "b0efeb3:backend/manage_activity.py:374",
+      "configuredBudgetSeconds": 50,
+      "autoTimerContinuationObserved": true,
+      "passesSincePeriodRestart": [
+        {
+          "at": "2026-09-20T02:27:52.581775+00:00",
+          "poolCount": 8,
+          "indexedSteps": 7,
+          "rpcCalls": 107,
+          "reasonCounts": {
+            "read_deadline_exceeded": 1
+          }
+        },
+        {
+          "at": "2026-09-20T02:28:59.576427+00:00",
+          "poolCount": 8,
+          "indexedSteps": 7,
+          "rpcCalls": 106,
+          "reasonCounts": {
+            "read_deadline_exceeded": 1
+          }
+        },
+        {
+          "at": "2026-09-20T02:30:06.578420+00:00",
+          "poolCount": 9,
+          "indexedSteps": 8,
+          "rpcCalls": 106,
+          "reasonCounts": {
+            "read_deadline_exceeded": 1
+          }
+        },
+        {
+          "at": "2026-09-20T02:31:12.580415+00:00",
+          "poolCount": 7,
+          "indexedSteps": 6,
+          "rpcCalls": 112,
+          "reasonCounts": {
+            "read_deadline_exceeded": 1
+          }
+        },
+        {
+          "at": "2026-09-20T02:32:19.574430+00:00",
+          "poolCount": 9,
+          "indexedSteps": 8,
+          "rpcCalls": 114,
+          "reasonCounts": {
+            "read_deadline_exceeded": 1
+          }
+        }
+      ],
+      "limitation": "This is the existing queue lane; current/history collectors had zero retries in the exact qualification window. No restart or product modification was made by this investigation."
+    }
+  },
+  "follower": {
+    "passes": [
+      {
+        "at": "2026-09-20T02:27:17.591739+00:00",
+        "indexedPasses": 0,
+        "stoppedBecause": "max_passes",
+        "indexedThrough": 67581614,
+        "failures": [
+          {
+            "reason": "catalogue_writer_busy"
+          }
+        ],
+        "headFailureCount": 0
+      },
+      {
+        "at": "2026-09-20T02:27:42.346411+00:00",
+        "indexedPasses": 1,
+        "stoppedBecause": "max_passes",
+        "indexedThrough": 67582273,
+        "failures": [],
+        "headFailureCount": 0
+      },
+      {
+        "at": "2026-09-20T02:28:06.422424+00:00",
+        "indexedPasses": 1,
+        "stoppedBecause": "max_passes",
+        "indexedThrough": 67582511,
+        "failures": [],
+        "headFailureCount": 0
+      },
+      {
+        "at": "2026-09-20T02:28:30.170162+00:00",
+        "indexedPasses": 1,
+        "stoppedBecause": "max_passes",
+        "indexedThrough": 67582748,
+        "failures": [],
+        "headFailureCount": 0
+      }
+    ]
+  },
+  "serviceState": {
+    "observedAt": "2026-09-20T02:30:19.370168+00:00",
+    "units": [
+      {
+        "Id": "domino-public-data.target",
+        "LoadState": "loaded",
+        "ActiveState": "active",
+        "SubState": "active",
+        "ActiveEnterTimestamp": "Sun 2026-09-20 02:27:06 UTC"
+      },
+      {
+        "Type": "simple",
+        "NRestarts": "0",
+        "ExecMainStatus": "0",
+        "Id": "domino-public-current.service",
+        "LoadState": "loaded",
+        "ActiveState": "active",
+        "SubState": "running",
+        "ActiveEnterTimestamp": "Sun 2026-09-20 02:27:00 UTC"
+      },
+      {
+        "Type": "simple",
+        "NRestarts": "0",
+        "ExecMainStatus": "0",
+        "Id": "domino-public-history.service",
+        "LoadState": "loaded",
+        "ActiveState": "active",
+        "SubState": "running",
+        "ActiveEnterTimestamp": "Sun 2026-09-20 02:27:06 UTC"
+      },
+      {
+        "Type": "simple",
+        "NRestarts": "0",
+        "ExecMainStatus": "0",
+        "Id": "domino-public-accounting.service",
+        "LoadState": "loaded",
+        "ActiveState": "active",
+        "SubState": "running",
+        "ActiveEnterTimestamp": "Sun 2026-09-20 02:27:00 UTC"
+      },
+      {
+        "Type": "oneshot",
+        "NRestarts": "0",
+        "ExecMainStatus": "1",
+        "Id": "domino-queue-worker.service",
+        "LoadState": "loaded",
+        "ActiveState": "failed",
+        "SubState": "failed",
+        "ActiveEnterTimestamp": ""
+      },
+      {
+        "Id": "domino-queue-worker.timer",
+        "LoadState": "loaded",
+        "ActiveState": "active",
+        "SubState": "waiting",
+        "ActiveEnterTimestamp": "Sun 2026-09-20 02:27:00 UTC"
+      },
+      {
+        "Type": "oneshot",
+        "NRestarts": "0",
+        "ExecMainStatus": "0",
+        "Id": "domino-catalogue-follower.service",
+        "LoadState": "loaded",
+        "ActiveState": "inactive",
+        "SubState": "dead",
+        "ActiveEnterTimestamp": ""
+      },
+      {
+        "Id": "domino-catalogue-follower.timer",
+        "LoadState": "loaded",
+        "ActiveState": "active",
+        "SubState": "waiting",
+        "ActiveEnterTimestamp": "Sun 2026-09-20 02:27:00 UTC"
+      }
+    ],
+    "interpretation": "The three public lanes are active/running with no automatic restarts. Queue is failed/exit1 at inspection, while its timer remains active. Follower is inactive/dead between bounded oneshot passes and its timer remains active. Queue failure is a handled per-pass deadline deferral, documented separately; it is not an assertion of a healthy exit status."
+  },
+  "limitations": [
+    "Each published marker is emitted after its whole collector tick. Individual database commits occur earlier within that tick; these intervals are journal publication-batch markers, not exact per-entity commit timestamps.",
+    "First/last intervals crossing the observation boundary are censored and excluded. p50 is median; p95 uses nearest rank.",
+    "The earlier repair samples requested an additional token whose final result contained 15 pools; this period-0.2 run requested a different token whose final result contained one pool. Both separately tracked six selected pools. Demand, cache state and restart/warm-up differ, so the improvement cannot be attributed solely to changing the period.",
+    "Zero current retries does not mean all provider analytics are ready. Last sample still had four unavailable and two available provider market projections despite fresh chain snapshots.",
+    "History made durable partial progress but no 24h window completed; the requested history remained stale with a gap. This is not a backfill completion or production SLA claim.",
+    "Service state was inspected after the sample window. This report excludes public Cloudflare/TLS/browser latency. Existing sample calls generated their own normal bounded demand; this log analysis generated none."
+  ]
+}

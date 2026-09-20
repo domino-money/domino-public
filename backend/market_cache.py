@@ -4,7 +4,7 @@ from copy import deepcopy
 from threading import Lock
 import time
 
-from discovery import DataError, address, bytes32
+from discovery import CHAIN_ID, DataError, address, bytes32
 
 
 class MarketCache:
@@ -23,9 +23,36 @@ class MarketCache:
         self.capacity, self.requests_per_minute = 256, 25
         self.reserve_provider = reserve_provider
 
-    def get(self, kind, pool_id, *, token='base', currency=None):
+    def restore_pool(self,pool_id,observation,*,elapsed_seconds):
+        """Warm an empty process cache from a previously validated observation.
+
+        Its original age and attribution survive process restarts. Current pool
+        identity and canonicality are still checked by the caller's live read.
+        """
+        pool_id=bytes32(pool_id)
+        if (type(elapsed_seconds) is not int or elapsed_seconds<0 or
+                not isinstance(observation,dict) or observation.get('status') not in ('available','stale')):
+            return False
+        cache,data=observation.get('cache'),observation.get('data')
+        if (not isinstance(cache,dict) or not isinstance(data,dict) or
+                data.get('chainId')!=CHAIN_ID or data.get('poolId')!=pool_id or
+                data.get('source')!='geckoterminal' or
+                type(cache.get('ageSeconds')) is not int or cache['ageSeconds']<0 or
+                cache.get('freshForSeconds')!=self.ttl or cache.get('maxStaleSeconds')!=self.max_stale):
+            return False
+        age=cache['ageSeconds']+elapsed_seconds
+        if age>self.max_stale:return False
+        with self.lock:
+            key=('pool',pool_id,None,None)
+            if key in self.entries:return False
+            now=self.clock()
+            self._store(key,{'data':deepcopy(data),'stored':now-age,'attempted':now-age,
+                             'retryAt':now,'reason':observation.get('reason')})
+        return True
+
+    def get(self, kind, pool_id, *, token='base', currency=None,allow_provider=True):
         pool_id = bytes32(pool_id)
-        if kind not in ('pool', 'hourly_prices') or token not in ('base', 'quote'):
+        if kind not in ('pool', 'hourly_prices') or token not in ('base', 'quote') or type(allow_provider) is not bool:
             raise DataError('invalid_market_query')
         if kind == 'hourly_prices':
             currency = address(currency)
@@ -47,6 +74,10 @@ class MarketCache:
                     return self._result(entry, now, 'hit')
                 if now < entry['retryAt']:
                     return self._result(entry, now, 'cooldown', entry['reason'])
+            if not allow_provider:
+                usable=entry is not None and entry['data'] is not None and now-entry['stored']<=self.max_stale
+                return self._result(entry,now,'hit' if usable else 'miss',
+                                    entry['reason'] if usable else 'provider_unavailable')
             while self.requests and self.requests[0] <= now - 60:
                 self.requests.popleft()
             if len(self.requests) >= self.requests_per_minute:

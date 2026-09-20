@@ -1,0 +1,115 @@
+{
+  "commit": "b0efeb30548c72e75c806c45cb31bac9437e04d1",
+  "source": "public-data-vm-repair-2026-09-20.jsonl",
+  "overviewMs": {
+    "min": 19.57,
+    "p50": 21.23,
+    "p95": 84.87,
+    "max": 84.87,
+    "samples": 9
+  },
+  "historyMs": {
+    "min": 13.27,
+    "p50": 14.28,
+    "p95": 16.35,
+    "max": 16.35,
+    "samples": 9
+  },
+  "tokenOverviewMs": {
+    "min": 9.36,
+    "p50": 32.21,
+    "p95": 35.19,
+    "max": 35.19,
+    "samples": 9
+  },
+  "chainAgeSeconds": {
+    "min": 1,
+    "p50": 10.5,
+    "p95": 23,
+    "max": 25,
+    "samples": 54
+  },
+  "lastThreeChainAgeSeconds": {
+    "min": 1,
+    "p50": 9.0,
+    "p95": 14,
+    "max": 14,
+    "samples": 18
+  },
+  "firstGenericMetadataObservedSeconds": 10,
+  "allGenericPoolsObservedSeconds": 30,
+  "genericPools": 15,
+  "historyCoverageStart": {
+    "pools": 14,
+    "blocks": "1401562"
+  },
+  "historyCoverageEnd": {
+    "pools": 19,
+    "blocks": "1707810"
+  },
+  "finalHistoryJobs": {
+    "count": 443,
+    "completed": 0,
+    "cachedboundaries": 8,
+    "maxspan": 100000,
+    "maxspansuccesses": 2,
+    "sample_error": null
+  },
+  "entitiesStart": [
+    {
+      "kind": "pool",
+      "status": "pending",
+      "count": 815,
+      "sample_error": null
+    },
+    {
+      "kind": "pool",
+      "status": "ready",
+      "count": 437,
+      "sample_error": null
+    },
+    {
+      "kind": "token",
+      "status": "pending",
+      "count": 161,
+      "sample_error": null
+    },
+    {
+      "kind": "token",
+      "status": "ready",
+      "count": 215,
+      "sample_error": null
+    }
+  ],
+  "entitiesEnd": [
+    {
+      "kind": "pool",
+      "status": "pending",
+      "count": 782,
+      "sample_error": null
+    },
+    {
+      "kind": "pool",
+      "status": "ready",
+      "count": 485,
+      "sample_error": null
+    },
+    {
+      "kind": "token",
+      "status": "pending",
+      "count": 115,
+      "sample_error": null
+    },
+    {
+      "kind": "token",
+      "status": "ready",
+      "count": 276,
+      "sample_error": null
+    }
+  ],
+  "limitations": [
+    "nine loopback samples; excludes Cloudflare/TLS/browser",
+    "new token readiness sampled every10seconds, not exact acquisition duration",
+    "warm-up includes17 legacy pool requests; no SLA assertion"
+  ]
+}
