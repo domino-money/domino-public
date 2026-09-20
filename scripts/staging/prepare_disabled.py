@@ -133,6 +133,7 @@ PACKAGED_ONLY_MIGRATIONS = (
     'backend/migrations/023_pool_request_scheduling.sql',
     'backend/migrations/024_public_observations.sql',
     'backend/migrations/025_public_history.sql',
+    'backend/migrations/026_public_demand.sql',
 )
 MAPPINGS = (
     ('domino', 'domino-admin', ADMIN),

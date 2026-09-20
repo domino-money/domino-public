@@ -1088,7 +1088,7 @@
     },
     {
       "path": "backend/read_service.py",
-      "sha256": "a28ee8b0eda4f28d0949f15bb9da44ba16852e3d4b45c82c52e3aa9cfb1cd6fc"
+      "sha256": "72beef24329113e1b4df9bc9ef73f95924a7f5fb36d1961c4173765e4383fd73"
     },
     {
       "path": "backend/rpc_failover.py",

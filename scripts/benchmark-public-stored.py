@@ -39,7 +39,7 @@ from test_public_observations import fixtures,another_market
 DATABASE='domino_public_benchmark_tests'
 SETTINGS={'host':str(SOCKET),'port':PORT,'dbname':DATABASE}
 MIGRATIONS=('001_catalogue.sql','002_activity.sql','020_pool_requests.sql',
-            '023_pool_request_scheduling.sql','024_public_observations.sql','025_public_history.sql')
+            '023_pool_request_scheduling.sql','024_public_observations.sql','025_public_history.sql','026_public_demand.sql')
 
 
 def describe(values):

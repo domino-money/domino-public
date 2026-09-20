@@ -60,6 +60,10 @@ BIN = postgres_bin()
 
 def private_directory(path):
     path.mkdir(mode=0o700,parents=True,exist_ok=True)
+    check_private_directory(path)
+
+
+def check_private_directory(path):
     info = path.lstat()
     if not stat.S_ISDIR(info.st_mode) or info.st_uid!=os.getuid() or info.st_mode & 0o077:
         raise DataError('private_postgres_directory_required')
@@ -77,6 +81,51 @@ def pg_command(args):
                             env={**os.environ, **C_LOCALE})
     if result.returncode:
         raise DataError('local_postgres_command_failed')
+
+
+def stop():
+    """Stop only this task's cluster; cleanup before initialization is harmless."""
+    for directory in (RUNTIME, DATA):
+        try:
+            check_private_directory(directory)
+        except FileNotFoundError:
+            return False
+    version = DATA/'PG_VERSION'
+    pid_file = DATA/'postmaster.pid'
+    if not version.exists() and not version.is_symlink():
+        if pid_file.exists() or pid_file.is_symlink():
+            raise DataError('invalid_local_postgres_cluster')
+        return False
+    if version.is_symlink() or not version.is_file():
+        raise DataError('invalid_local_postgres_cluster')
+
+    def status():
+        return subprocess.run([str(BIN/'pg_ctl'),'-D',str(DATA),'status'],
+                              capture_output=True,timeout=5,
+                              env={**os.environ, **C_LOCALE}).returncode
+
+    state = status()
+    if state == 3:  # pg_ctl's documented "server is not running" result.
+        return False
+    if state != 0:
+        raise DataError('local_postgres_command_failed')
+    # pg_ctl signals the PID from this file. Refuse a symlink or a PID file
+    # belonging to a different data directory before invoking its stop action.
+    info = pid_file.lstat()
+    if not stat.S_ISREG(info.st_mode) or info.st_uid != os.getuid() or info.st_mode & 0o077:
+        raise DataError('invalid_local_postgres_cluster')
+    lines = pid_file.read_text().splitlines()
+    if (len(lines) < 2 or not lines[0].isdigit() or int(lines[0]) <= 0
+            or Path(lines[1]).resolve() != DATA.resolve()):
+        raise DataError('invalid_local_postgres_cluster')
+    try:
+        pg_command([str(BIN/'pg_ctl'),'-D',str(DATA),'-m','fast','-w','-t','15','stop'])
+    except DataError:
+        # Another cleanup may have completed between status and stop.
+        if status() == 3:
+            return False
+        raise
+    return True
 
 
 def start():
@@ -156,6 +205,7 @@ def create_database(name):
         conn.execute((ROOT/'migrations/023_pool_request_scheduling.sql').read_text())
         conn.execute((ROOT/'migrations/024_public_observations.sql').read_text())
         conn.execute((ROOT/'migrations/025_public_history.sql').read_text())
+        conn.execute((ROOT/'migrations/026_public_demand.sql').read_text())
 
 
 
@@ -165,8 +215,9 @@ def main():
     args=parser.parse_args()
     try:
         if args.action=='stop':
-            pg_command([str(BIN/'pg_ctl'),'-D',str(DATA),'-m','fast','-w','-t','15','stop'])
-            print('Task-local PostgreSQL stopped; stored catalogue retained.')
+            stopped = stop()
+            print('Task-local PostgreSQL stopped; stored catalogue retained.' if stopped
+                  else 'Task-local PostgreSQL is not running; nothing to stop.')
         else:
             start()
             if args.action=='prepare-tests':

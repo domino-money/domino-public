@@ -89,12 +89,23 @@ class DisabledBridgeConfigs(unittest.TestCase):
                 {"READ_V2_BRIDGE_ENABLED": "true"},
                 {"READ_V2_BRIDGE_ENABLED": False},
                 {"ENABLED_V2_READS": "pool-market"},
+                {"READ_V3_BRIDGE_ENABLED": "true"},
+                {"READ_V3_BRIDGE_ENABLED": False},
+                {"ENABLED_V3_READS": "overview,history,search"},
             ]
             for update in variants:
                 with self.subTest(service=service, update=update):
                     config = copy.deepcopy(original)
                     config["vars"].update(update)
                     self.assertTrue(validate(service, config))
+
+    def test_requires_explicit_disabled_read_versions_and_empty_route_lists(self):
+        for key in ("READ_BRIDGE_ENABLED", "READ_V2_BRIDGE_ENABLED", "READ_V3_BRIDGE_ENABLED",
+                    "ENABLED_READS", "ENABLED_V2_READS", "ENABLED_V3_READS"):
+            with self.subTest(missing=key):
+                config = copy.deepcopy(self.configs["read"])
+                del config["vars"][key]
+                self.assertTrue(validate("read", config))
 
     def test_requires_explicit_disabled_public_entry_points(self):
         for service, original in self.configs.items():

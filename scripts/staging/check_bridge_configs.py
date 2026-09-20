@@ -60,7 +60,8 @@ def validate(service, config):
             "APP_ORIGIN": "https://domino.money",
             origin_key: f"https://vm-{service}.domino.money",
             **({"ENABLED_READS": "", "READ_V2_BRIDGE_ENABLED": "false",
-                "ENABLED_V2_READS": ""} if service == "read" else {}),
+                "ENABLED_V2_READS": "", "READ_V3_BRIDGE_ENABLED": "false",
+                "ENABLED_V3_READS": ""} if service == "read" else {}),
         },
     }
     if service == "setup":

@@ -3,10 +3,10 @@
  * where the /api forwarder and its bridge would be. Every honest state the
  * landing can be in, and exactly what each one costs on the wire:
  *
- *   (a) forwarder 503 bridge_unavailable   Live data unavailable: 1 GET, 0 POST, no Retry
+ *   (a) forwarder 503 bridge_unavailable   Live data unavailable: 2 GETs, 0 POST, no Retry
  *   (b) forwarder 404 not_found            Live data isn't available on this address
  *   (c) capabilities off, or no reads      Live data is switched off for now: 0 POST
- *   (d) reads enabled                      2 GETs + the lean load in order; APR unavailable; provider and age
+ *   (d) reads enabled                      3 GETs + the lean load in order; APR unavailable; provider and age
  *   (e) 404 route_not_available            switched off, after the first POST
  *   (f) producer 503                       Temporarily unavailable, never asked again on its own
  *   (g) 429 read_capacity_busy             asked again under R-1 after its Retry-After
@@ -23,8 +23,8 @@
  *                                          quietly until then, never Unavailable for decimals not read
  *
  * The stub's capabilities are production's by default: the seven public reads,
- * so the optional routes are not listed and cost nothing (the capabilities GET
- * is asked first, and answers whether they are). Listing one is what turns it on.
+ * with V3 disabled, so the optional legacy routes are not listed and cost no
+ * POST (the capabilities GETs answer whether they are). Listing one is what turns it on.
  *
  * Home's Selected pools card shows the pools and their figures and nothing
  * else, as the owner decided on reviewing the redesign: no status panel, no
@@ -57,6 +57,7 @@ const GATE = { BETA_PASSWORD: PASSWORD, BETA_COOKIE_KEY: 'Rk2mP9vQx4Lr7TbW1cNy6Z
 const RC3 = '1.1.0-rc.3';
 const READ = resolve(import.meta.dirname, '../../api-contracts/read-v1/fixtures/gateway');
 const fixture = (name) => JSON.parse(readFileSync(join(READ, `${name}.json`), 'utf8'));
+const V3_DISABLED = { ...JSON.parse(readFileSync(new URL('../../api-contracts/read-v3/fixtures/capabilities.json', import.meta.url), 'utf8')), dataMode: 'disabled', enabledReads: [] };
 
 /** The pools dist reads, taken from the reviewed config itself: six of them. */
 const SELECTED = readFileSync(resolve(import.meta.dirname, '../src/config/selectedPools.ts'), 'utf8').match(/0x[0-9a-f]{64}/g);
@@ -201,6 +202,8 @@ const bridge = (status, body, headers = {}) => json(status, body, { 'X-Domino-Re
 function bridgeStub({ capabilities = listing(PRODUCTION_READS), reply = () => undefined } = {}) {
   return async (request) => {
     const path = new URL(request.url).pathname;
+    // The additive stored namespace is disabled here so these scenarios exercise the legacy reads.
+    if (path === '/api/read/v3/capabilities' && request.method === 'GET') return json(200, V3_DISABLED, { 'X-Domino-Read-Contract': V3_DISABLED.contractVersion });
     if (path === '/api/read/v2/capabilities') return json(404, { error: 'not_found' });
     const route = path.replace('/api/read/v1/', '');
     if (request.method === 'GET' && route === 'capabilities') return bridge(200, capabilities);
@@ -293,7 +296,7 @@ async function settled(page) {
 /** Waits until the landing's status is `code`, whatever it passes through on the way. */
 const statusIs = (page, code) =>
   page.waitForFunction((wanted) => document.querySelector('#pools [data-read-status]')?.getAttribute('data-read-status') === wanted, code, { timeout: 30_000 });
-const wire = () => reads.map((r) => `${r.method} ${r.path.replace('/api/read/v1/', '').replace('/api/read/v2/', 'v2 ')}`);
+const wire = () => reads.map((r) => `${r.method} ${r.path.replace('/api/read/v1/', '').replace('/api/read/v2/', 'v2 ').replace('/api/read/v3/', 'v3 ')}`);
 
 /**
  * Home asks a read service that was only busy again on its own, the one read
@@ -360,7 +363,7 @@ async function tickerFromCatalogue(page, label) {
   assert.doesNotMatch(await page.locator('[data-ticker]').innerText(), /\$\s?\d|\d%\s*est/, `${label}: no figure in the ticker`);
 }
 
-test('(a) no bridge behind the forwarder: live data is not connected, one capabilities GET, no POST, no Retry, and the ticker shows no figure either', async () => {
+test('(a) no bridge behind the forwarder: live data is not connected, one capabilities GET per attempted namespace, no POST, no Retry, and the ticker shows no figure either', async () => {
   const { context, page, errors } = await visit(forwarder(503, 'bridge_unavailable'));
   try {
     assert.equal(await settled(page), 'not_connected');
@@ -368,21 +371,21 @@ test('(a) no bridge behind the forwarder: live data is not connected, one capabi
     await nothingInvented(page, 'not connected');
     await tickerFromCatalogue(page, 'not connected');
     await page.waitForTimeout(PAST_BUSY_RECOVERY_MS);
-    // The read capabilities are asked first, for which routes are listed; their refusal ends the load before the estimate namespace is asked.
-    assert.deepEqual(wire(), ['GET capabilities'], 'asked once, and never again on its own, not even when a busy service would have been');
+    // The stored capabilities refusal permits the legacy check; that refusal ends the load before the estimate namespace is asked.
+    assert.deepEqual(wire(), ['GET v3 capabilities', 'GET capabilities'], 'each namespace asked once, and never again on its own, not even when a busy service would have been');
     assert.deepEqual(errors, []);
   } finally {
     await closeContext(context);
   }
 });
 
-test('(b) a forwarder that does not serve this address, as on a preview host: said so, one capabilities GET, no POST', async () => {
+test('(b) a forwarder that does not serve this address, as on a preview host: said so, one capabilities GET per attempted namespace, no POST', async () => {
   const { context, page } = await visit(forwarder(404, 'not_found'));
   try {
     assert.equal(await settled(page), 'not_connected');
     await saidQuietly(page, 'not_connected', "Live data isn't available on this address");
     await nothingInvented(page, 'not found');
-    assert.deepEqual(wire(), ['GET capabilities']);
+    assert.deepEqual(wire(), ['GET v3 capabilities', 'GET capabilities']);
   } finally {
     await closeContext(context);
   }
@@ -390,10 +393,10 @@ test('(b) a forwarder that does not serve this address, as on a preview host: sa
 
 test('(c) live reads switched off on the server, or the pool route not listed: said so, and nothing posted', async () => {
   for (const [label, capabilities, expected] of [
-    ['data mode disabled', fixture('capabilities.disabled'), ['GET capabilities']],
-    ['no reads enabled', listing([]), ['GET capabilities']],
+    ['data mode disabled', fixture('capabilities.disabled'), ['GET v3 capabilities', 'GET capabilities']],
+    ['no reads enabled', listing([]), ['GET v3 capabilities', 'GET capabilities']],
     // Reads are on, so the pools are asked for, through the estimate namespace first: the route is refused before any POST.
-    ['pool-market not enabled', listing(['token']), ['GET capabilities', 'GET v2 capabilities']],
+    ['pool-market not enabled', listing(['token']), ['GET v3 capabilities', 'GET capabilities', 'GET v2 capabilities']],
   ]) {
     const { context, page } = await visit(bridgeStub({ capabilities }));
     try {
@@ -412,7 +415,7 @@ test('(d) reads enabled: one capabilities GET per namespace and the lean load in
   const { context, page, errors } = await visit(bridgeStub());
   try {
     assert.equal(await settled(page), 'none');
-    const first = ['GET capabilities', 'GET v2 capabilities', ...LOAD];
+    const first = ['GET v3 capabilities', 'GET capabilities', 'GET v2 capabilities', ...LOAD];
     assert.deepEqual(wire(), first);
     assert.deepEqual(reads.filter((r) => r.path.endsWith('/pool-market')).map((r) => r.body), SELECTED.map((poolId) => ({ poolId, includePriceHistory: false })));
     assert.deepEqual(reads.filter((r) => r.path.endsWith('/token')).map((r) => r.body.token), TOKENS_IN_ORDER, 'each shared token is read once');
@@ -486,7 +489,7 @@ test('(e) the pool route switched off between the GET and the first POST: said s
     assert.equal(await settled(page), 'disabled');
     await saidQuietly(page, 'disabled', 'Live data is switched off for now');
     await nothingInvented(page, 'route switched off');
-    assert.deepEqual(wire(), ['GET capabilities', 'GET v2 capabilities', 'POST pool-market']);
+    assert.deepEqual(wire(), ['GET v3 capabilities', 'GET capabilities', 'GET v2 capabilities', 'POST pool-market']);
   } finally {
     await closeContext(context);
   }
@@ -502,7 +505,7 @@ test('(f) a producer 503: temporarily unavailable, with no Retry on Home, never 
     await nothingInvented(page, 'producer 503');
     await tickerFromCatalogue(page, 'producer 503');
     const failed = wire();
-    assert.deepEqual(failed, ['GET capabilities', 'GET v2 capabilities', ...SELECTED.map(() => 'POST pool-market')], 'each pool asked once');
+    assert.deepEqual(failed, ['GET v3 capabilities', 'GET capabilities', 'GET v2 capabilities', ...SELECTED.map(() => 'POST pool-market')], 'each pool asked once');
     await page.waitForTimeout(PAST_BUSY_RECOVERY_MS);
     assert.deepEqual(wire(), failed, 'and none asked again on its own, not even when a busy service would have been');
 
@@ -511,7 +514,7 @@ test('(f) a producer 503: temporarily unavailable, with no Retry on Home, never 
     leaving(page);
     await page.reload({ waitUntil: 'networkidle' });
     assert.equal(await settled(page), 'none');
-    assert.deepEqual(wire().slice(failed.length), ['GET capabilities', 'GET v2 capabilities', ...LOAD], 'one reload, one lean load after the capabilities');
+    assert.deepEqual(wire().slice(failed.length), ['GET v3 capabilities', 'GET capabilities', 'GET v2 capabilities', ...LOAD], 'one reload, one lean load after the capabilities');
     assert.equal(await liveRows(page).count(), 6);
     assert.equal(await catalogueRows(page).count(), 0);
   } finally {
@@ -526,7 +529,7 @@ test('(g) a 429 read_capacity_busy is asked again under R-1 after its Retry-Afte
   );
   try {
     assert.equal(await settled(page), 'none');
-    assert.deepEqual(wire(), ['GET capabilities', 'GET v2 capabilities', 'POST pool-market', ...LOAD], 'one automatic retry, then the lean load');
+    assert.deepEqual(wire(), ['GET v3 capabilities', 'GET capabilities', 'GET v2 capabilities', 'POST pool-market', ...LOAD], 'one automatic retry, then the lean load');
     assert.equal(await liveRows(page).count(), 6);
   } finally {
     await closeContext(context);
@@ -609,7 +612,7 @@ test('(i) #93 per row: GeckoTerminal figures dated only by retrieval; a rejected
   );
   try {
     assert.equal(await settled(page), 'none', 'a rejected provider observation is a valid read, not a failure');
-    assert.deepEqual(wire(), ['GET capabilities', 'GET v2 capabilities', ...LOAD], 'the rejected pool still reads its tokens, so its row is labelled from them');
+    assert.deepEqual(wire(), ['GET v3 capabilities', 'GET capabilities', 'GET v2 capabilities', ...LOAD], 'the rejected pool still reads its tokens, so its row is labelled from them');
     const rows = liveRows(page);
     assert.equal(await rows.count(), 6);
 
@@ -696,7 +699,7 @@ test('(k) #93 per row: a 504 on one pool drops only that pool, whose own row say
     // status is its title alone, and the failed pool's own row says its data is not available, below.
     await saidQuietly(page, 'partial', 'Some pool data could not be read');
     const settledWire = wire();
-    assert.deepEqual(settledWire, ['GET capabilities', 'GET v2 capabilities', ...loadWire([SELECTED[0]])], 'the failed pool reads no tokens; the others read theirs');
+    assert.deepEqual(settledWire, ['GET v3 capabilities', 'GET capabilities', 'GET v2 capabilities', ...loadWire([SELECTED[0]])], 'the failed pool reads no tokens; the others read theirs');
     await page.waitForTimeout(PAST_BUSY_RECOVERY_MS);
     assert.deepEqual(wire(), settledWire, 'nothing asked again on its own: a timeout is not a busy service');
     await nothingStandsIn(page, 5);
@@ -739,8 +742,8 @@ test('(l) #93 per row: a 429 that outlasts R-1 on one pool leaves the other pool
     assert.ok(attempts >= 1 && attempts <= 3, `the busy pool is asked at most three times under R-1 (${wire()})`);
     // Every other read in its place: each row's tokens right after its market read, the busy pool reading none.
     assert.deepEqual(
-      reads.filter((r) => !busyPool(r)).map((r) => `${r.method} ${r.path.replace('/api/read/v1/', '').replace('/api/read/v2/', 'v2 ')}`),
-      ['GET capabilities', 'GET v2 capabilities', ...loadWire([SELECTED[1]]).filter((line, index) => !(line === 'POST pool-market' && index === 3))],
+      reads.filter((r) => !busyPool(r)).map((r) => `${r.method} ${r.path.replace('/api/read/v1/', '').replace('/api/read/v2/', 'v2 ').replace('/api/read/v3/', 'v3 ')}`),
+      ['GET v3 capabilities', 'GET capabilities', 'GET v2 capabilities', ...loadWire([SELECTED[1]]).filter((line, index) => !(line === 'POST pool-market' && index === 3))],
     );
     const rows = liveRows(page);
     assert.equal(await rows.count(), 5);
@@ -778,7 +781,7 @@ test('(n) pool-metrics listed: the lean load, then one pool-metrics read a row; 
   );
   try {
     assert.equal(await settled(page), 'none');
-    assert.deepEqual(wire(), ['GET capabilities', 'GET v2 capabilities', ...LOAD, ...SELECTED.map(() => 'POST pool-metrics')], 'listing it is the consent: one read a row, after the rows and their tokens');
+    assert.deepEqual(wire(), ['GET v3 capabilities', 'GET capabilities', 'GET v2 capabilities', ...LOAD, ...SELECTED.map(() => 'POST pool-metrics')], 'listing it is the consent: one read a row, after the rows and their tokens');
     assert.deepEqual(reads.filter((r) => r.path.endsWith('/pool-metrics')).map((r) => r.body), SELECTED.map((poolId) => ({ poolId })));
     const rows = liveRows(page);
     assert.equal(await rows.count(), 6);
@@ -839,14 +842,14 @@ test('(o) markets-snapshot listed: one snapshot read puts all six rows on screen
   );
   try {
     assert.equal(await settled(page), 'none');
-    assert.deepEqual(atFirstToken.wire, ['GET capabilities', 'POST markets-snapshot', 'POST token'], 'the snapshot was the only read answered when the first token read arrived');
+    assert.deepEqual(atFirstToken.wire, ['GET v3 capabilities', 'GET capabilities', 'POST markets-snapshot', 'POST token'], 'the snapshot was the only read answered when the first token read arrived');
     // Not read yet is not unavailable: the price cell waits quietly for the decimals the token reads bring.
     assert.deepEqual(atFirstToken.rows, SELECTED.map(() => ['markets-snapshot', ['loading', 'provider', 'provider', 'unavailable']]), 'and all six rows were on screen with their stored figures, the price waiting for the decimals the token reads bring');
     const pending = await page.evaluate(() => document.querySelectorAll('#pools [data-pool-price="loading"]').length);
     assert.equal(pending, 0, 'and nothing is left waiting once the reads have settled');
     assert.deepEqual(reads.find((r) => r.path.endsWith('/markets-snapshot')).body, { poolIds: SELECTED }, 'the selected pools, and only them');
     assert.equal(await catalogueRows(page).count(), 0);
-    assert.deepEqual(wire(), ['GET capabilities', 'POST markets-snapshot', ...tokenWire()], 'no pool-market read and no estimate namespace');
+    assert.deepEqual(wire(), ['GET v3 capabilities', 'GET capabilities', 'POST markets-snapshot', ...tokenWire()], 'no pool-market read and no estimate namespace');
     const rows = liveRows(page);
     assert.equal(await rows.count(), 6);
     for (const [index, label] of LABELS.entries()) {
@@ -874,7 +877,7 @@ test('(p) markets-snapshot listed: a pool the store does not hold is read on dem
       assert.equal(await settled(page), 'none');
       assert.deepEqual(
         wire(),
-        ['GET capabilities', 'POST markets-snapshot', ...tokenWire(SELECTED.slice(1)), 'GET v2 capabilities', 'POST pool-market'],
+        ['GET v3 capabilities', 'GET capabilities', 'POST markets-snapshot', ...tokenWire(SELECTED.slice(1)), 'GET v2 capabilities', 'POST pool-market'],
         'stored rows and their tokens first, then the one pool the store did not hold',
       );
       assert.deepEqual(reads.filter((r) => r.path.endsWith('/pool-market')).map((r) => r.body), [{ poolId: SELECTED[0], includePriceHistory: false }]);
@@ -892,7 +895,7 @@ test('(p) markets-snapshot listed: a pool the store does not hold is read on dem
     try {
       assert.equal(await settled(page), 'none', 'a failed snapshot is no problem of the table');
       await saidQuietly(page, 'none', '');
-      assert.deepEqual(wire(), ['GET capabilities', 'POST markets-snapshot', 'GET v2 capabilities', ...LOAD], 'the pools are read as before, in the same load');
+      assert.deepEqual(wire(), ['GET v3 capabilities', 'GET capabilities', 'POST markets-snapshot', 'GET v2 capabilities', ...LOAD], 'the pools are read as before, in the same load');
       const sources = await liveRows(page).evaluateAll((trs) => trs.map((tr) => tr.getAttribute('data-row-source')));
       assert.deepEqual(sources, SELECTED.map(() => 'pool-market'));
       assert.deepEqual(errors, []);
@@ -925,7 +928,7 @@ test('(q) the rows complete one by one: a price waits quietly while its row’s 
   );
   try {
     assert.equal(await settled(page), 'none');
-    assert.deepEqual(wire(), ['GET capabilities', 'GET v2 capabilities', ...LOAD]);
+    assert.deepEqual(wire(), ['GET v3 capabilities', 'GET capabilities', 'GET v2 capabilities', ...LOAD]);
     const markets = seen.filter((entry) => entry.route === 'pool-market');
     assert.equal(markets.length, 6);
     for (const [index, entry] of markets.entries()) {

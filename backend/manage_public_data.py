@@ -49,13 +49,16 @@ class PublicCollector:
     def _tick(self, *, token_limit, pool_limit):
         results = []
         # Separate quotas prevent either metadata or popular pools monopolizing
-        # the collector. Due order is preserved independently within each class.
-        for kind,limit in (('token',token_limit),('pool',pool_limit)):
+        # the collector. Reserve the final slot for background progress so a
+        # large discovered graph cannot delay visible pools, nor starve itself.
+        for kind,limit in (('pool',pool_limit),('token',token_limit)):
+            seen=[]
             for _ in range(limit):
-                claims = self.repository.claim(kind)
+                claims = self.repository.claim(kind,demand='scheduled',exclude=seen)
                 if not claims:
                     break
                 claim = claims[0]
+                seen.append(claim['entity_id'])
                 try:
                     with read_deadline(12):
                         self.collect(claim)
@@ -83,6 +86,9 @@ class PublicCollector:
                 self.repository.publish(claim,payload,delay=86400)
                 return
             observed_at=int(self.clock())
+            if not claim.get('discovery_requested',False):
+                self.repository.publish(claim,payload,observed_at=observed_at,delay=300)
+                return
             # Metadata is independently useful. Retain the lease/cursor so an
             # optional discovery failure can schedule a fenced retry without
             # throwing away the already verified address and display units.
@@ -123,9 +129,10 @@ class PublicCollector:
             # Claim order stays oldest-due first for active and idle pools alike.
             active = self.clock() - claim['last_requested_at'].timestamp() <= 60
             self.repository.publish(claim,payload,delay=5 if active else 120)
-            if self.requests is not None:
+            explicit=claim['last_requested_at'].timestamp()>0
+            if explicit and self.requests is not None:
                 self.requests.enqueue(entity_id)
-            if self.history is not None:
+            if explicit and self.history is not None:
                 self.history.request(entity_id,86400)
 
 

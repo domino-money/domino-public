@@ -27,8 +27,9 @@ the development tunnel does not acquire V3 routes.
 Overview and history can register bounded aggregate interest through narrow
 database functions, then read stored data. They do not fetch RPC/provider data or
 replay history inside HTTP requests. Unknown valid addresses remain pending until
-verified. The initial global admission ceiling is 1,000 pending entities and
-1,000 unfinished history jobs; these are not a 1,000-row retention ceiling.
+verified. Explicit demand admits up to 1,000 pending entities separately from 1,000
+background metadata/pool prerequisites. History admits up to 1,000 unfinished
+jobs; none of these bounds is a retention ceiling for acquired rows.
 
 The frontend prefers bundled stored reads when their capability is enabled,
 retains successful observations with their original ages, and refreshes visible
@@ -57,6 +58,25 @@ Apply migrations in order through the existing privileged deployment path:
 | `023_pool_request_scheduling.sql` | Recurring due times, backoff, leases/generations and adaptive span state on the existing activity request queue. It preserves acquired checkpoints. |
 | `024_public_observations.sql` | Public entity observations, token/pool links, revisioned lookup, narrow interest admission and a shared 25/minute external-provider allowance. |
 | `025_public_history.sql` | Recent-history jobs, canonical coverage, Swap observations and ratio candles. |
+| `026_public_demand.sql` | Explicit token-discovery demand separated from metadata prerequisites, plus durable history span recovery. |
+
+Token metadata prerequisites do not request discovery. Only an explicit token
+lookup starts its catalogue/provider pool discovery; discovering a pool may
+request its two currencies' metadata without traversing those currencies' entire
+pool graphs. A page returned by overview refreshes interest only in its returned
+pools, bounded to 24. Current observation claims and the existing deep queue
+serve three recently requested pools for each background pool, with persistent
+claim generations preserving that cadence across restarts. Token metadata has a
+separate alternating quota. Metadata keeps its own TTL/backoff, and browser
+interest does not make old observations fresh.
+
+Migration 026 repairs interest recorded by the initial recursive implementation
+once: it clears artificial demand and outstanding observation leases while
+preserving observations, relationships, original request times and indexing
+checkpoints. The deployment re-admits the prior explicitly requested pool set.
+Repeated application does not clear new demand. Background admission cannot use
+up the reserved first-search capacity, including promotion of an existing pending
+prerequisite to explicit demand.
 
 The HTTP database role cannot publish observations or modify projections. Current
 and history workers publish with lease/generation checks; history publication also
@@ -64,6 +84,21 @@ checks canonical boundaries and exact event headers. Reorganizations or changed
 token denomination invalidate the affected projection rather than silently
 relabeling its prices. Current observations preserve provider ages on cache hits
 and import; stored reads do not make old data fresh.
+
+Recent history computes its exact window boundary with bounded batches of header
+probes, then persists `lowerBlock` inside the pinned target JSON before fetching
+logs. Subsequent chunks verify the two adjacent headers and reuse that boundary;
+they do not repeat a search from genesis or estimate block time. Completion and
+reorganization clear the target. Claim scheduling favors recently requested pools
+for three turns and background work on the fourth, with a fallback when either
+group is empty and 24h before longer windows within each priority. The cadence
+uses durable generations, so a worker restart does not reset background fairness.
+
+The history job's `span_successes` column retains consecutive successful steps
+across chunks, target completion and worker restart. Eight successful steps double
+the span up to 100,000 blocks, following the existing adaptive policy. A refusal,
+timeout or reorganization resets that streak; a rejected publication cannot earn
+growth. Span recovery preserves acquired coverage, events and candles.
 
 There is no initial age-based deletion of acquired Swap events or candles.
 The 30-day API window bounds a request, not retention. Explicit canonicality or
@@ -73,7 +108,7 @@ introducing archival/compaction.
 
 ## Activation and rollback
 
-1. Prepare the exact tested release and apply migrations 023–025. Preserve the
+1. Prepare the exact tested release and apply migrations 023–026. Preserve the
    prior release/drop-ins and private runtime configuration. The existing
    `scripts/staging/install_read_release.py` installs reader/gateway code only;
    it does not apply migrations, install collectors or activate services.
@@ -118,6 +153,21 @@ additive schemas and acquired observations; rollback requires no table drop,
 checkpoint reset or destructive down-migration. The frontend falls back only
 when the V3 capability is absent/disabled, not after a failed data POST.
 
+Before starting an older history worker that constructs `Block(**target)`, remove
+only the added boundary-cache key from its targets while the public-data workers
+are stopped:
+
+```sql
+UPDATE domino_public.history_jobs
+SET target = target - 'lowerBlock'
+WHERE target ? 'lowerBlock';
+```
+
+The original target number/hash/timestamp and all acquired projections remain
+intact. Keep the additive `span_successes` column; older workers ignore it. The
+new worker accepts legacy three-field targets and rebuilds the boundary cache
+lazily. No history reset is needed for either direction.
+
 ## Verification and practical limits
 
 Local evidence for routing/admission: the four-case original reproduction passes
@@ -130,10 +180,13 @@ overlapping suites, not an aggregate test total. The new capacity extension,
 full integration, PostgreSQL deployment and live benchmarks have their own
 verification records.
 
-The 19 `test_public_history` tests also passed against the task-local disposable
+The 32 `test_public_history` tests also passed against the task-local disposable
 PostgreSQL database, including publication more than 31 days later without
 deleting prior swaps/candles, bounded reads after restart, reorg/lease fencing,
-exact denomination, timestamp coverage and empty covered ranges.
+exact denomination, timestamp coverage and empty covered ranges. The later
+history regressions cover progress within a simulated 20-second network budget,
+cached-boundary validation, priority fairness, adaptive growth across restarts,
+failure resets, refused publication and idempotent migration reapplication.
 
 A bounded [local ASGI/PostgreSQL qualification](../reports/public-stored-local-qualification-2026-09-20.json)
 used 32 synthetic pools, two token metadata records and stored hourly ratio

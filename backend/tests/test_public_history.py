@@ -17,6 +17,7 @@ from dev_postgres import ADMIN, PORT, SOCKET
 from discovery import Block, CHAIN_ID, DataError
 from pool_activity import SWAP, decode_activity
 from public_history import PublicHistory, aggregate, first_after, intervals, missing_range, ratios
+from read_deadline import check_read_deadline, read_deadline
 from test_catalogue import block_hash, stored_candidate
 from test_discovery import KEY, POOL
 from test_pool_activity import event_log
@@ -25,7 +26,7 @@ from test_pool_activity import event_log
 class HistoryRpc:
     def __init__(self):
         self.head=1_000_103
-        self.fork=None;self.requests=[];self.fail=None;self.after_logs=None
+        self.fork=None;self.requests=[];self.batches=[];self.fail=None;self.after_logs=None
         self.logs=[event_log(SWAP,[-10,9,2**96,100,0,3000],number=999980),
                    event_log(SWAP,[-10,9,2*2**96,100,0,3000],number=999990),
                    event_log(SWAP,[-10,9,3*2**95,100,0,3000],number=999999)]
@@ -45,7 +46,9 @@ class HistoryRpc:
             if self.after_logs:self.after_logs()
             return rows
         raise AssertionError(method)
-    def batch(self,calls):return [self.request(method,params) for method,params in calls]
+    def batch(self,calls):
+        self.batches.append(calls)
+        return [self.request(method,params) for method,params in calls]
 
 
 class HistoryDomainTests(unittest.TestCase):
@@ -55,7 +58,31 @@ class HistoryDomainTests(unittest.TestCase):
         lower=first_after(chain,target.timestamp-86400,target)
         self.assertEqual(lower,136010)
         self.assertGreater(target.number-lower,800000)
-        self.assertLess(len(rpc.requests),28)
+        self.assertLess(len(rpc.requests),80)
+        self.assertLessEqual(len(rpc.batches),9)
+        self.assertTrue(all(len(batch)<=8 for batch in rpc.batches))
+
+    def test_timestamp_search_finds_exact_edges_of_timestamp_plateaus(self):
+        rpc=HistoryRpc();rpc.head=127;chain=CatalogueIndexer(None,rpc)
+        head=chain.block(rpc.head)
+        for timestamp in range(rpc.timestamp(0)-1,head.timestamp+2):
+            with self.subTest(timestamp=timestamp):
+                expected=next((number for number in range(1,rpc.head+1)
+                               if rpc.timestamp(number)>timestamp),rpc.head+1)
+                self.assertEqual(first_after(chain,timestamp,head),expected)
+
+    def test_timestamp_search_refuses_nonmonotonic_pivot_headers(self):
+        rpc=HistoryRpc();chain=CatalogueIndexer(None,rpc)
+        head=chain.block(rpc.head)
+        original=rpc.request
+        def request(method,params=()):
+            result=original(method,params)
+            if method=='eth_getBlockByNumber' and int(params[0],16)==111123:
+                result['timestamp']=hex(head.timestamp+1)
+            return result
+        rpc.request=request
+        with self.assertRaisesRegex(DataError,'history_timestamp_boundary_mismatch'):
+            first_after(chain,head.timestamp-86400,head)
 
     def test_exact_decimals_and_inverse_ohlc(self):
         self.assertEqual(ratios(2**96,6,18),(Decimal('0.000000000001'),Decimal('1000000000000')))
@@ -149,6 +176,98 @@ class HistoryPostgresTests(unittest.TestCase):
             self.writer.guard(conn,claim);self.writer.finish(conn,claim,complete=True)
         self.assertEqual(self.writer.claim()['window_seconds'],604800)
 
+    def test_claim_reserves_every_fourth_turn_for_background_across_restart(self):
+        hot=['0x'+format(number,'064x') for number in range(1,7)]
+        cold=['0x'+format(number,'064x') for number in range(7,9)]
+        with psycopg.connect(**self.settings,user=ADMIN) as conn:
+            for pool_id in hot+cold:
+                conn.execute("""INSERT INTO domino_public.entities(kind,entity_id,last_requested_at)
+                  VALUES('pool',%s,clock_timestamp()-(%s*interval '1 second'))""",
+                  (pool_id,0 if pool_id in hot else 600))
+                conn.execute("""INSERT INTO domino_public.history_jobs(pool_id,window_seconds,next_due)
+                  VALUES(%s,86400,clock_timestamp()-(%s*interval '1 second'))""",
+                  (pool_id,1 if pool_id in hot else 3600))
+        chosen=[]
+        for index in range(8):
+            if index==3:self.writer=PublicHistory(self.catalogue,writer=True,clock=lambda:self.now)
+            chosen.append(self.writer.claim()['pool_id'])
+        self.assertTrue(all(pool_id in hot for pool_id in chosen[:3]+chosen[4:7]))
+        self.assertIn(chosen[3],cold);self.assertIn(chosen[7],cold)
+        self.assertEqual(set(chosen),set(hot+cold))
+
+    def test_claim_prefers_recent_day_within_priority_and_falls_back_to_background(self):
+        hot='0x'+format(1,'064x');cold='0x'+format(2,'064x')
+        with psycopg.connect(**self.settings,user=ADMIN) as conn:
+            conn.execute("INSERT INTO domino_public.entities(kind,entity_id,last_requested_at) VALUES('pool',%s,clock_timestamp())",(hot,))
+            for pool_id,window in ((hot,86400),(hot,604800),(cold,86400),(cold,604800)):
+                conn.execute("""INSERT INTO domino_public.history_jobs(pool_id,window_seconds,next_due,completed_at)
+                  VALUES(%s,%s,clock_timestamp()-(%s*interval '1 second'),%s)""",
+                  (pool_id,window,3600 if window==604800 else 1,
+                   '2026-01-01T00:00:00Z' if pool_id==hot and window==86400 else None))
+        first=self.writer.claim();second=self.writer.claim();third=self.writer.claim()
+        self.assertEqual((first['pool_id'],first['window_seconds']),(hot,86400))
+        self.assertEqual((second['pool_id'],second['window_seconds']),(hot,604800))
+        self.assertEqual((third['pool_id'],third['window_seconds']),(cold,86400))
+        self.assertIsNone(self.writer.claim())  # Cold seven-day job still needs its recent day.
+
+    def test_pinned_exact_boundary_is_reused_after_log_timeout(self):
+        self.reader.request(POOL,86400);self.rpc.fail='read_deadline_exceeded'
+        self.assertEqual(self.tick()['reason'],'read_deadline_exceeded')
+        with self.catalogue.connection() as conn:
+            target=conn.execute('SELECT target FROM domino_public.history_jobs').fetchone()['target']
+        self.assertEqual(target['lowerBlock'],136010)
+        self.assertFalse(self.read()['covered'])
+        self.rpc.fail=None;self.rpc.requests.clear();self.rpc.batches.clear();self.due()
+        self.assertEqual(self.tick()['status'],'indexed')
+        self.assertLess(len(self.rpc.requests),20)
+        with self.catalogue.connection() as conn:
+            self.assertEqual(conn.execute('SELECT target FROM domino_public.history_jobs').fetchone()['target'],target)
+
+    def test_legacy_three_field_target_lazily_persists_its_boundary(self):
+        self.reader.request(POOL,86400)
+        target=Block(1_000_003,block_hash(1_000_003),self.rpc.timestamp(1_000_003))
+        with psycopg.connect(**self.settings,user=ADMIN) as conn:
+            conn.execute('UPDATE domino_public.history_jobs SET target=%s',
+                         (Jsonb({'number':target.number,'hash':target.hash,'timestamp':target.timestamp}),))
+        self.assertEqual(self.tick()['status'],'indexed')
+        with self.catalogue.connection() as conn:
+            self.assertEqual(conn.execute('SELECT target FROM domino_public.history_jobs').fetchone()['target']['lowerBlock'],136010)
+
+    def test_cached_boundary_rejects_wrong_types_range_and_window_before_logs(self):
+        self.reader.request(POOL,86400)
+        target={'number':1_000_003,'hash':block_hash(1_000_003),'timestamp':self.rpc.timestamp(1_000_003)}
+        for lower in (True,136010.0,-1,1_000_005,136009,136011):
+            with self.subTest(lower=lower):
+                with psycopg.connect(**self.settings,user=ADMIN) as conn:
+                    conn.execute('UPDATE domino_public.history_jobs SET target=%s',
+                                 (Jsonb({**target,'lowerBlock':lower}),))
+                self.due();self.rpc.requests.clear()
+                self.assertEqual(self.tick()['reason'],'history_timestamp_boundary_mismatch')
+                self.assertFalse(any(method=='eth_getLogs' for method,_ in self.rpc.requests))
+                self.assertFalse(self.read()['covered'])
+
+    def test_batched_search_publishes_a_chunk_within_twenty_second_network_budget(self):
+        self.rpc.head=67_563_374;self.now=self.rpc.timestamp(self.rpc.head)
+        self.reader.request(POOL,86400)
+        elapsed=[0.0];in_batch=[False]
+        original_request,original_batch=self.rpc.request,self.rpc.batch
+        def spend():
+            elapsed[0]+=0.7
+            check_read_deadline()
+        def request(method,params=()):
+            if not in_batch[0]:spend()
+            return original_request(method,params)
+        def batch(calls):
+            spend();in_batch[0]=True
+            try:return original_batch(calls)
+            finally:in_batch[0]=False
+        self.rpc.request=request;self.rpc.batch=batch
+        with read_deadline(20,clock=lambda:elapsed[0]):
+            result=self.tick()
+        self.assertEqual(result['status'],'indexed',result)
+        self.assertLess(elapsed[0],15)
+        self.assertTrue(self.read()['covered'])
+
     def test_expired_worker_cannot_publish_after_reclaim(self):
         self.reader.request(POOL,86400);old=self.writer.claim()
         with psycopg.connect(**self.settings,user=ADMIN) as conn:
@@ -160,12 +279,14 @@ class HistoryPostgresTests(unittest.TestCase):
 
     def test_reorg_invalidates_candles_coverage_and_all_window_leases(self):
         self.reader.request(POOL,604800);self.tick();self.due()
+        with psycopg.connect(**self.settings,user=ADMIN) as conn:
+            conn.execute('UPDATE domino_public.history_jobs SET span_successes=5')
         self.rpc.fork=999990
         result=self.tick();self.assertEqual(result['status'],'rewound',result)
         data=self.read();self.assertEqual(data['status'],'not_built');self.assertFalse(data['candles'])
         self.assertEqual(data['reason'],'history_snapshot_reorganized')
         with self.catalogue.connection() as conn:
-            self.assertTrue(all(x['lease_token'] is None and x['completed_at'] is None for x in
+            self.assertTrue(all(x['lease_token'] is None and x['completed_at'] is None and x['target'] is None and x['span_successes']==0 for x in
                                 conn.execute('SELECT * FROM domino_public.history_jobs').fetchall()))
 
     def test_mid_fetch_reorg_publishes_nothing(self):
@@ -199,6 +320,71 @@ class HistoryPostgresTests(unittest.TestCase):
         result=self.tick();self.assertEqual(result['status'],'indexed',result);self.assertEqual(result['spanBlocks'],25000)
         with self.catalogue.connection() as conn:
             self.assertEqual(conn.execute('SELECT span_blocks FROM domino_public.history_jobs').fetchone()['span_blocks'],25000)
+
+    def test_span_recovers_only_after_eight_committed_ticks_across_restart(self):
+        self.reader.request(POOL,86400)
+        with psycopg.connect(**self.settings,user=ADMIN) as conn:
+            conn.execute('UPDATE domino_public.history_jobs SET span_blocks=1562')
+        for count in range(1,8):
+            self.due();self.assertEqual(self.tick()['spanBlocks'],1562)
+            with self.catalogue.connection() as conn:
+                self.assertEqual(conn.execute('SELECT span_successes FROM domino_public.history_jobs').fetchone()['span_successes'],count)
+        self.writer=PublicHistory(self.catalogue,writer=True,clock=lambda:self.now)
+        self.due();self.assertEqual(self.tick()['spanBlocks'],3124)
+        with self.catalogue.connection() as conn:
+            self.assertEqual(conn.execute('SELECT span_successes FROM domino_public.history_jobs').fetchone()['span_successes'],0)
+            self.assertEqual(conn.execute('SELECT sum(end_block-start_block+1) AS blocks FROM domino_public.history_coverage').fetchone()['blocks'],1562*8)
+
+    def test_span_streak_survives_completed_target_cycles(self):
+        self.reader.request(POOL,86400);self.finish_day()
+        with psycopg.connect(**self.settings,user=ADMIN) as conn:
+            conn.execute('UPDATE domino_public.history_jobs SET span_blocks=1562,span_successes=6')
+        self.due();self.assertEqual(self.tick()['status'],'current')
+        with self.catalogue.connection() as conn:
+            row=conn.execute('SELECT target,span_successes FROM domino_public.history_jobs').fetchone()
+            self.assertIsNone(row['target']);self.assertEqual(row['span_successes'],7)
+        self.writer=PublicHistory(self.catalogue,writer=True,clock=lambda:self.now)
+        self.due();self.assertEqual(self.tick()['spanBlocks'],3124)
+
+    def test_failed_tick_resets_growth_streak_without_erasing_coverage(self):
+        self.reader.request(POOL,86400)
+        with psycopg.connect(**self.settings,user=ADMIN) as conn:
+            conn.execute('UPDATE domino_public.history_jobs SET span_blocks=1562,span_successes=4')
+        self.tick();covered=self.read()['covered']
+        for reason in ('http_400','read_deadline_exceeded'):
+            with self.subTest(reason=reason):
+                with psycopg.connect(**self.settings,user=ADMIN) as conn:
+                    conn.execute('UPDATE domino_public.history_jobs SET span_successes=5')
+                self.rpc.fail=reason;self.due();self.assertEqual(self.tick()['reason'],reason)
+                self.assertEqual(self.read()['covered'],covered)
+                with self.catalogue.connection() as conn:
+                    self.assertEqual(conn.execute('SELECT span_successes FROM domino_public.history_jobs').fetchone()['span_successes'],0)
+        self.rpc.fail=None;self.due();self.assertEqual(self.tick()['status'],'indexed')
+        with self.catalogue.connection() as conn:
+            self.assertEqual(conn.execute('SELECT span_successes FROM domino_public.history_jobs').fetchone()['span_successes'],1)
+
+    def test_rejected_publication_does_not_earn_span_growth(self):
+        self.reader.request(POOL,86400)
+        with psycopg.connect(**self.settings,user=ADMIN) as conn:
+            conn.execute('UPDATE domino_public.history_jobs SET span_blocks=1562,span_successes=7')
+        with patch.object(self.writer,'publish',side_effect=DataError('history_range_changed')):
+            result=self.tick()
+        self.assertEqual(result['reason'],'history_range_changed');self.assertEqual(result['spanBlocks'],1562)
+        with self.catalogue.connection() as conn:
+            row=conn.execute('SELECT span_blocks,span_successes FROM domino_public.history_jobs').fetchone()
+            self.assertEqual((row['span_blocks'],row['span_successes']),(1562,0))
+        self.assertFalse(self.read()['covered'])
+
+    def test_span_migration_is_reapplicable_without_resetting_acquired_state(self):
+        self.reader.request(POOL,86400);self.tick()
+        migration=(Path(__file__).resolve().parents[1]/'migrations'/'026_public_demand.sql').read_text()
+        with psycopg.connect(**self.settings,user=ADMIN) as conn:
+            conn.execute('UPDATE domino_public.history_jobs SET span_blocks=1562,span_successes=5')
+            conn.execute(migration);conn.execute(migration)
+        with self.catalogue.connection() as conn:
+            row=conn.execute('SELECT span_blocks,span_successes FROM domino_public.history_jobs').fetchone()
+            self.assertEqual((row['span_blocks'],row['span_successes']),(1562,5))
+        self.assertTrue(self.read()['covered'])
 
     def test_missing_decimals_never_defaults_to_eighteen(self):
         with psycopg.connect(**self.settings,user=ADMIN) as conn:

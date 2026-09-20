@@ -42,7 +42,7 @@ class PublicCollectorTests(unittest.TestCase):
         migrations=Path(__file__).resolve().parents[1]/'migrations'
         with psycopg.connect(**cls.settings,user=ADMIN) as conn:
             for name in ('001_catalogue','002_activity','020_pool_requests','023_pool_request_scheduling',
-                         '024_public_observations','025_public_history'):
+                         '024_public_observations','025_public_history','026_public_demand'):
                 conn.execute((migrations/(name+'.sql')).read_text())
 
     def setUp(self):
@@ -338,6 +338,112 @@ class PublicCollectorTests(unittest.TestCase):
             conn.execute("""UPDATE domino_public.entities SET next_due=clock_timestamp()-interval '1 second',
               last_requested_at=clock_timestamp() WHERE kind='pool' AND entity_id=%s""",(POOL,))
         self.assertEqual(self.writer.claim('pool')[0]['entity_id'],older)
+
+    def test_pool_currency_metadata_never_recursively_discovers_stablecoin_pools(self):
+        candidates=[stored_candidate((ZERO,TOKEN,500+i,60,ZERO)) for i in range(105)]
+        self.catalogue.seed(candidates,Block(700,BLOCK['hash'],1000))
+        _,market=fixtures()
+        self.writer.request('pool',POOL)
+        with patch.object(self.service,'pool_market',return_value=market):
+            self.collector.tick(token_limit=0,pool_limit=1)
+        self.assertFalse(self.row()['discovery_requested'])
+        self.assertEqual(self.row()['last_requested_at'].timestamp(),0)
+        with (patch.object(self.catalogue,'lookup',side_effect=AssertionError('dependency requested discovery')),
+              patch.object(self.service,'pools',side_effect=AssertionError('dependency called provider'))):
+            rows=self.collector.tick(token_limit=2,pool_limit=0)
+        self.assertTrue(all(row['status']=='published' for row in rows),rows)
+        self.assertEqual(len(rows),2)
+        with self.writer.connection() as conn:
+            self.assertEqual(conn.execute("SELECT count(*) AS n FROM domino_public.entities WHERE kind='pool'").fetchone()['n'],1)
+        # A subsequent explicit search can discover the same stablecoin's pools.
+        self.writer.request('token',TOKEN);self.due()
+        self.assertTrue(self.row()['discovery_requested'])
+        self.assertEqual(self.collector.tick(token_limit=1,pool_limit=0)[0]['status'],'published')
+        with self.writer.connection() as conn:
+            self.assertEqual(conn.execute("SELECT count(*) AS n FROM domino_public.entities WHERE kind='pool'").fetchone()['n'],101)
+            self.assertEqual(conn.execute("SELECT count(*) AS n FROM domino_public.entities WHERE kind='pool' AND last_requested_at>'epoch'::timestamptz").fetchone()['n'],1)
+
+    def test_legacy_token_metadata_does_not_admit_discovery(self):
+        self.service.public_data=Mock()
+        self.service.token(TOKEN)
+        self.service.public_data.repository.request.assert_not_called()
+        self.service.pools(TOKEN)
+        self.service.public_data.repository.request.assert_called_once_with('token',TOKEN)
+
+    def test_large_background_backlog_preserves_three_hot_slots_and_one_oldest_slot(self):
+        with self.writer.connection(write=True) as conn:
+            conn.execute("""INSERT INTO domino_public.entities(kind,entity_id,last_requested_at,next_due)
+              SELECT 'pool','0x'||lpad(to_hex(n),64,'0'),'epoch'::timestamptz,clock_timestamp()-interval '1 day'
+              FROM generate_series(1,1000) AS numbers(n)""")
+        hot=['0x'+f'{index+2000:064x}' for index in range(3)]
+        self.writer.request_many('pool',hot)
+        collected=[]
+        def collect(claim):
+            collected.append(claim['entity_id'])
+            self.writer.fail(claim,'fixture_finished',delay=120)
+        # One slot per invocation simulates repeated budget exhaustion or
+        # service restarts. The fourth turn must still belong to background.
+        for _ in range(4):
+            collector=PublicCollector(self.writer,self.service)
+            with patch.object(collector,'collect',side_effect=collect):
+                collector.tick(token_limit=0,pool_limit=1)
+        self.assertEqual(set(collected[:3]),set(hot))
+        self.assertEqual(collected[3],'0x'+f'{1:064x}')
+
+    def test_background_capacity_does_not_reject_first_explicit_search(self):
+        with self.writer.connection(write=True) as conn:
+            conn.execute("""INSERT INTO domino_public.entities(kind,entity_id,last_requested_at)
+              SELECT 'pool','0x'||lpad(to_hex(n),64,'0'),'epoch'::timestamptz
+              FROM generate_series(1,1000) AS numbers(n)""")
+        self.assertFalse(self.writer.ensure('token',TOKEN))
+        self.assertTrue(self.writer.request('token',TOKEN))
+        self.assertTrue(self.row()['discovery_requested'])
+        self.assertGreater(self.row()['last_requested_at'].timestamp(),0)
+        # The explicit ceiling still holds, including promotion of a prerequisite.
+        with self.writer.connection(write=True) as conn:
+            conn.execute("UPDATE domino_public.entities SET last_requested_at=clock_timestamp() WHERE kind='pool' AND entity_id<>%s",('0x'+f'{1:064x}',))
+        self.assertFalse(self.writer.request('pool','0x'+f'{1:064x}'))
+
+    def test_explicit_search_during_metadata_lease_schedules_discovery_promptly(self):
+        token,_=fixtures();self.writer.ensure('token',TOKEN)
+        claim=self.writer.claim('token')[0]
+        self.assertFalse(claim['discovery_requested'])
+        self.writer.request('token',TOKEN)
+        before=time.time();self.writer.publish(claim,token,delay=300)
+        self.assertLess(self.row()['next_due'].timestamp()-before,6)
+        self.assertTrue(self.row()['discovery_requested'])
+
+    def test_background_pool_observation_does_not_admit_deep_or_recent_history(self):
+        _,market=fixtures();self.writer.ensure('pool',POOL)
+        with patch.object(self.service,'pool_market',return_value=market):
+            self.assertEqual(self.collector.tick(token_limit=0,pool_limit=1)[0]['status'],'published')
+        self.requests.enqueue.assert_not_called()
+        self.history.request.assert_not_called()
+        self.assertIsNotNone(self.row('pool',POOL)['payload'])
+
+    def test_demand_repair_preserves_data_and_only_resets_legacy_interest_once(self):
+        token,_=fixtures();self.writer.request('token',TOKEN)
+        self.writer.publish(self.writer.claim('token')[0],token,delay=300)
+        before=self.row()
+        migration=(Path(__file__).resolve().parents[1]/'migrations/026_public_demand.sql').read_text()
+        with psycopg.connect(**self.settings,user=ADMIN) as conn:
+            conn.execute("INSERT INTO domino_public.entities(kind,entity_id) VALUES('pool',%s)",(POOL,))
+            conn.execute("INSERT INTO domino_activity.pool_requests(pool_id,reason,status,detail) VALUES(%s,'read','following','{\"saved\":true}') ON CONFLICT(pool_id) DO UPDATE SET last_requested_at=clock_timestamp(),status='following',detail=EXCLUDED.detail",(POOL,))
+            conn.execute('ALTER TABLE domino_public.entities DROP COLUMN discovery_requested')
+            conn.execute(migration)
+            queue=conn.execute('SELECT last_requested_at,status,detail FROM domino_activity.pool_requests WHERE pool_id=%s',(POOL,)).fetchone()
+            self.assertEqual(queue[0].timestamp(),0)
+            self.assertEqual(queue[1:],('following',{'saved':True}))
+        repaired=self.row()
+        self.assertEqual(repaired['payload'],before['payload'])
+        self.assertEqual(repaired['observed_at'],before['observed_at'])
+        self.assertEqual(repaired['requested_at'],before['requested_at'])
+        self.assertEqual(repaired['last_requested_at'].timestamp(),0)
+        self.assertFalse(repaired['discovery_requested'])
+        self.writer.request('token',TOKEN);explicit=self.row()
+        with psycopg.connect(**self.settings,user=ADMIN) as conn:conn.execute(migration)
+        self.assertEqual(self.row()['last_requested_at'],explicit['last_requested_at'])
+        self.assertTrue(self.row()['discovery_requested'])
 
 
 if __name__=='__main__':unittest.main()

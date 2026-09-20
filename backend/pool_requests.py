@@ -19,6 +19,7 @@ WRITER_ROLE = 'domino_catalogue_writer'
 READER_ROLE = 'domino_catalogue_reader'
 CLAIMABLE = ('queued', 'indexing', 'registering', 'following')
 STALE_CLAIM_SECONDS = 300
+RECENT_REQUEST_SECONDS = 60
 STATUSES = ('queued', 'registering', 'indexing', 'following', 'blocked')
 # Reasons a pool cannot be indexed at all; everything else is retried, because a
 # provider outage must not turn into a permanently blocked pool.
@@ -70,12 +71,14 @@ class PgRequests:
                                (pool_id, reason)).fetchone()
             return bool(row and row['accepted'])
 
-    def claim(self, *, limit=1, stale_seconds=STALE_CLAIM_SECONDS, exclude=()):
-        """Reserve up to `limit` requests for this worker without blocking peers.
+    def claim(self, *, limit=1, stale_seconds=STALE_CLAIM_SECONDS, exclude=(), priority='auto'):
+        """Reserve up to `limit` requests without waiting on busy pool rows.
 
-        Ordering is least-recently-served first: a long backfill at the front of
-        a strict queue would starve every pool behind it, and the claim stamp
-        moves on each claim, so the worker rotates through the queue. A worker
+        Recent user interest takes precedence over the old background backlog.
+        Auto reserves every fourth claim for background requests, using persisted
+        generations so a short run or restart cannot reset the quota. Either
+        priority falls back to the other when its due lane is empty. Within a
+        lane, due time and least-recent service preserve rotation. A worker
         that dies mid-pool leaves its row in `registering`; that claim is stale
         after `stale_seconds` and becomes claimable again.
         """
@@ -85,23 +88,46 @@ class PgRequests:
             raise DataError('invalid_pool_request_claim')
         if not isinstance(exclude,(list,tuple)) or len(exclude)>64:
             raise DataError('invalid_pool_request_claim')
+        if priority not in ('auto','recent','background'):
+            raise DataError('invalid_pool_request_claim')
         excluded=[bytes32(value) for value in exclude]
         with self._connection(WRITER_ROLE) as conn:
-            rows = conn.execute("""WITH picked AS (
-              SELECT pool_id FROM domino_activity.pool_requests
+            # Only claim selection is serialized, never the RPC/indexing work.
+            # Every claim increments a generation, including explicit priorities.
+            conn.execute('SELECT pg_advisory_xact_lock(46630201)')
+            phase=conn.execute('''SELECT COALESCE(SUM(claim_generation),0)::bigint % 4 AS phase
+              FROM domino_activity.pool_requests''').fetchone()['phase'] if priority=='auto' else 0
+            def pick(lane,count):
+                return conn.execute("""WITH picked AS (
+              SELECT pool_id,updated_at AS previous_updated_at,
+                CASE WHEN (last_requested_at>=statement_timestamp()-(%s*interval '1 second'))=%s
+                  THEN 0 ELSE 1 END AS priority_rank
+              FROM domino_activity.pool_requests
               WHERE status=ANY(%s) AND due_at<=clock_timestamp()
                 AND NOT(pool_id=ANY(%s))
                 AND (lease_until IS NULL OR lease_until<=clock_timestamp())
                 AND (status<>'registering' OR lease_until IS NOT NULL OR
                   updated_at<clock_timestamp()-(%s*interval '1 second'))
-              ORDER BY due_at,updated_at,pool_id FOR UPDATE SKIP LOCKED LIMIT %s)
+              ORDER BY priority_rank,due_at,updated_at,pool_id FOR UPDATE SKIP LOCKED LIMIT %s)
               UPDATE domino_activity.pool_requests q SET status='registering',
                 attempts=attempts+1,updated_at=clock_timestamp(),claim_token=%s,
                 claim_generation=claim_generation+1,
                 lease_until=clock_timestamp()+(%s*interval '1 second')
-              FROM picked WHERE q.pool_id=picked.pool_id RETURNING q.*""",
-              (list(CLAIMABLE),excluded,stale_seconds,limit,secrets.token_hex(32),stale_seconds)).fetchall()
-            rows.sort(key=lambda row:(row['due_at'],row['requested_at'],row['pool_id']))
+              FROM picked WHERE q.pool_id=picked.pool_id
+              RETURNING q.*,picked.priority_rank,picked.previous_updated_at""",
+                  (RECENT_REQUEST_SECONDS,lane=='recent',list(CLAIMABLE),excluded,
+                   stale_seconds,count,secrets.token_hex(32),stale_seconds)).fetchall()
+            if priority=='auto':
+                rows=[]
+                for index in range(limit):
+                    picked=pick('background' if (phase+index)%4==3 else 'recent',1)
+                    if not picked:break
+                    rows.extend(picked)
+            else:
+                rows=pick(priority,limit)
+                rows.sort(key=lambda row:(row['priority_rank'],row['due_at'],row['previous_updated_at'],row['pool_id']))
+            for row in rows:
+                row.pop('priority_rank');row.pop('previous_updated_at')
             return [dict(row) for row in rows]
 
     @staticmethod

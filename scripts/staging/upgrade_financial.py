@@ -2,7 +2,7 @@
 """Scoped financial source/schema installation; never starts a service.
 
 The active public/development read lanes are outside this installer's write set.
-SQL 015–019 commits once, together. Operational rollback retains committed
+SQL 015–022 commits once, together. Operational rollback retains committed
 financial data and disables/removes only this installer's service/peer bindings.
 """
 import argparse
@@ -34,6 +34,14 @@ MIGRATIONS = tuple('backend/migrations/' + name + '.sql' for name in (
     # the reference price sources only widen an existing check.
     '020_pool_requests', '021_reference_price_sources',
     '022_event_timestamp_source'))
+# Public collector deployment owns these migrations. They can accompany this
+# release as source, but must never enter financial SQL or its applied receipt.
+PACKAGED_ONLY_MIGRATIONS = (
+    'backend/migrations/023_pool_request_scheduling.sql',
+    'backend/migrations/024_public_observations.sql',
+    'backend/migrations/025_public_history.sql',
+    'backend/migrations/026_public_demand.sql',
+)
 NEW_ROLES = ('domino_performance_collector', 'domino_performance_reader',
              'domino_execution_worker', 'domino_execution_ledger',
              'domino_execution_signer', 'domino_execution_reader')
@@ -96,7 +104,8 @@ def archive_files(path, digest, commit):
                 'backend/session_api.py', 'backend/onboarding_api.py', 'backend/deposit_api.py',
                 'backend/performance_v2_api.py', 'backend/execution_status.py', 'backend/execution_cli.py')
     require(all(name in files for name in required), 'required_release_file_missing')
-    require({name for name in files if name.startswith('backend/migrations/')} == set(base.MIGRATIONS + MIGRATIONS),
+    require({name for name in files if name.startswith('backend/migrations/')}
+            <= set(base.MIGRATIONS + MIGRATIONS + PACKAGED_ONLY_MIGRATIONS),
             'unexpected_migration')
     return files
 
@@ -172,6 +181,8 @@ KillMode=control-group
 def plan(files, commit, digest):
     return {'version': 1, 'kind': 'domino-financial-upgrade', 'commit': commit, 'archiveSha256': digest,
             'foundationCommit': OLD, 'migrations': [{'path': p, 'sha256': sha(files[p][0])} for p in MIGRATIONS],
+            'packagedOnlyMigrations': [{'path': p, 'sha256': sha(files[p][0])}
+                                       for p in PACKAGED_ONLY_MIGRATIONS if p in files],
             'foundation': {p: sha(files[p][0]) for p in (*base.MIGRATIONS, 'backend/schema.sql', 'backend/requirements-api.lock')},
             'units': {f'domino-{c}.service': unit_text(c, commit) for c in COMPONENTS},
             'sourceDirectory': str(ROOT / 'releases' / commit),

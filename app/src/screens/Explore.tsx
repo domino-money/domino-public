@@ -122,12 +122,15 @@ export function Explore() {
   const location = parseExploreHash(useHash())
   const [storedReads, setStoredReads] = useState<'checking' | 'enabled' | 'legacy' | 'failed'>('checking')
   useEffect(() => {
+    // The selected table owns its capability check. Only a token detail
+    // needs a separate choice between stored and legacy exploration.
+    if (!location.token) return
     const controller = new AbortController()
     void (source?.supportsStoredReads ? source.routeEnabled?.('overview', { signal: controller.signal }) ?? Promise.resolve({ state: 'not_enabled' as const }) : Promise.resolve({ state: 'not_enabled' as const })).then((check) => {
       if (!controller.signal.aborted) setStoredReads(check.state === 'enabled' ? 'enabled' : check.state === 'not_enabled' ? 'legacy' : 'failed')
     })
     return () => controller.abort()
-  }, [source])
+  }, [source, location.token])
   const [found, setFound] = useState<TokenCandidate | null>(null)
   const [finding, setFinding] = useState<string | null>(null)
   // The answer the token search read for the address it opens, handed to that token view once.

@@ -320,7 +320,10 @@ def main():
             for _ in range(args.max_pools):
                 try:run_deadline.remaining()
                 except DataError:break
-                claims=requests.claim(limit=1,stale_seconds=args.stale_claim_seconds,exclude=seen)
+                # The persisted claim counter reserves every fourth slot for
+                # background work even when budgets stop this run after one pool.
+                claims=requests.claim(limit=1,stale_seconds=args.stale_claim_seconds,
+                                      exclude=seen,priority='auto')
                 if not claims:break
                 claim=claims[0]
                 pool_id=claim['pool_id']

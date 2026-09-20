@@ -46,7 +46,8 @@ PACKAGED_MIGRATIONS = ('backend/migrations/015_unsigned_execution.sql',
                        'backend/migrations/022_event_timestamp_source.sql',
                        'backend/migrations/023_pool_request_scheduling.sql',
                        'backend/migrations/024_public_observations.sql',
-                       'backend/migrations/025_public_history.sql')
+                       'backend/migrations/025_public_history.sql',
+                       'backend/migrations/026_public_demand.sql')
 
 
 def packaged_records(files):
@@ -66,11 +67,13 @@ class ArchiveTests(unittest.TestCase):
                                           'backend' / 'migrations').glob('*.sql')}
         packaged = {Path(name).name for name in
                     (*prepare_disabled.MIGRATIONS, *prepare_disabled.PACKAGED_ONLY_MIGRATIONS)}
-        applied = {Path(name).name for name in
-                   (*upgrade_financial.base.MIGRATIONS, *upgrade_financial.MIGRATIONS)}
+        financial_packaged = {Path(name).name for name in
+                   (*upgrade_financial.base.MIGRATIONS, *upgrade_financial.MIGRATIONS,
+                    *upgrade_financial.PACKAGED_ONLY_MIGRATIONS)}
         self.assertEqual(on_disk - packaged, set(), 'migrations no release may carry')
-        self.assertEqual((packaged | applied) - on_disk, set(), 'lists naming absent files')
+        self.assertEqual((packaged | financial_packaged) - on_disk, set(), 'lists naming absent files')
         self.assertEqual(on_disk, packaged, 'the packaging allowlist is the whole tree')
+        self.assertEqual(on_disk, financial_packaged, 'the financial archive must also accept every known source migration')
 
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()

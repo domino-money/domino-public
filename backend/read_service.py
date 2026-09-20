@@ -613,7 +613,6 @@ class ReadService:
     @public_response('token')
     def token(self, token):
         token = address(token)
-        self._request_public('token', token)
         reader = DiscoveryReader(self._rpc(self.transport_factory()), clock=self.clock)
         block = reader.snapshot()
         asset = reader.token_lookup(token, block)

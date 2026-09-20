@@ -114,11 +114,11 @@ const clean = (page, label) => assert.deepEqual(problemsOf(page), [], `${label} 
 
 /**
  * What a screen that shows the selected pools asks before it reads them: the
- * read namespace's capabilities first. On a site with no /api their
- * not_connected answer ends the load, so the estimate namespace is never
- * asked and no POST is sent when live data is not connected.
+ * stored namespace's capabilities, then the legacy read namespace on a site
+ * with no /api. Its not_connected answer ends the load, so the estimate
+ * namespace is never asked and no data POST is sent.
  */
-const CAPABILITIES = ['GET /api/read/v1/capabilities'];
+const CAPABILITIES = ['GET /api/read/v3/capabilities', 'GET /api/read/v1/capabilities'];
 
 test('the built landing page renders its content without a single browser error', async () => {
   const page = await open('/');
@@ -221,7 +221,7 @@ test('the mobile Positions screen leads to Markets: reachable, bounded to the vi
   await shown(page, '/markets');
   // The selected pools are on the page, so Markets asks the capabilities the way the landing does, and posts nothing.
   const trail = () => [...(apiOf(page).at(-1) ?? [])];
-  assert.deepEqual(trail(), CAPABILITIES, 'Markets asks the capabilities once and posts nothing');
+  assert.deepEqual(trail(), CAPABILITIES, 'Markets checks each needed namespace once and posts nothing');
 
   // A pair-name filter that no selected pool matches: nothing is read to decide.
   const address = '0x1111111111111111111111111111111111111111';
@@ -584,7 +584,7 @@ test('the landing reads through the bridge, and with no /api behind this server 
 // ---------------------------------------------------------------------------
 // The deployable build reads live through the same-origin bridge. This server
 // has no /api behind it, like a deployment without the forwarder, so the
-// landing shows the not-connected state: one capabilities GET, no POST and
+// landing shows the not-connected state: one GET per needed namespace, no POST and
 // no figure. read-states and read-bridge cover the fixture and bridge-test
 // builds, and release.browser.test.mjs covers dist behind the gate, with a
 // stub bridge.
@@ -592,7 +592,7 @@ test('the landing reads through the bridge, and with no /api behind this server 
 
 const SELECTED = readFileSync(resolve(import.meta.dirname, '../src/config/selectedPools.ts'), 'utf8').match(/0x[0-9a-f]{64}/g);
 
-test('the screens that show the selected pools ask the capabilities once and post nothing when live data is not connected; the owner screens ask only their release; every other route asks nothing', async () => {
+test('selected pool screens check each needed namespace once and post nothing when disconnected; owner screens ask only their release; other routes ask nothing', async () => {
   const seen = [];
   for (const route of ROUTES) {
     const page = await open(route);

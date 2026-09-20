@@ -79,19 +79,43 @@ def intervals(rows,start,end):
     return covered,gaps
 
 
-def first_after(chain, timestamp, head):
-    """First block strictly after a timestamp: logarithmic, not a block-time guess."""
-    low,high=1,head.number+1
-    while low<high:
-        mid=(low+high)//2
-        block=head if mid==head.number else chain.block(mid)
-        if block.timestamp<=timestamp:low=mid+1
-        else:high=mid
+def verify_boundary(chain,timestamp,head,lower):
+    """Prove a cached boundary against this exact target and requested window."""
+    if type(lower) is not int or not 1<=lower<=head.number+1:
+        raise DataError('history_timestamp_boundary_mismatch')
     # Prove the located adjacent boundary; timestamp monotonicity is a chain
     # invariant, and checking both sides refuses provider/binary-search drift.
-    before=chain.block(low-1)
-    if (low>1 and before.timestamp>timestamp) or (low<=head.number and chain.block(low).timestamp<=timestamp):
+    numbers=[lower-1]+([lower] if lower<=head.number else [])
+    blocks=read_headers(chain.rpc,numbers)
+    before=blocks[lower-1]
+    if (lower>1 and before.timestamp>timestamp) or (lower<=head.number and blocks[lower].timestamp<=timestamp):
         raise DataError('history_timestamp_boundary_mismatch')
+    return lower
+
+
+def first_after(chain, timestamp, head):
+    """Exact monotonic search with bounded parallel pivots; no block-time guess.
+
+    Eight headers share one envelope. This trades a bounded number of RPC items
+    for fewer serial round trips, leaving the worker budget for logs and commit.
+    Every item still spends the transport's RequestBudget.
+    """
+    low,high=1,head.number+1
+    width=8 if callable(getattr(chain.rpc,'batch',None)) else 1
+    while low<high:
+        count=min(width,high-low)
+        numbers=sorted({low+(high-low)*i//(count+1) for i in range(1,count+1)})
+        blocks=read_headers(chain.rpc,[number for number in numbers if number!=head.number])
+        if head.number in numbers:blocks[head.number]=head
+        ordered=[blocks[number] for number in numbers]
+        if any(a.timestamp>b.timestamp for a,b in zip(ordered,ordered[1:])):
+            raise DataError('history_timestamp_boundary_mismatch')
+        for block in ordered:
+            if block.timestamp<=timestamp:low=block.number+1
+            else:
+                high=block.number
+                break
+    verify_boundary(chain,timestamp,head,low)
     return low
 
 
@@ -184,14 +208,24 @@ class PublicHistory:
 
     def claim(self,*,lease_seconds=90):
         with self.store.connection(write=True) as conn:
+            # Three claims favor recently requested pools; the fourth favors
+            # background work. Persist the cadence in existing generations so
+            # restarts cannot repeatedly reset and starve the background lane.
+            # This lock covers only selection/update, never acquisition I/O.
+            conn.execute('SELECT pg_advisory_xact_lock(46630251)')
+            background=conn.execute('''SELECT mod(COALESCE(sum(generation),0),4)=3 AS turn
+              FROM domino_public.history_jobs''').fetchone()['turn']
             return conn.execute('''UPDATE domino_public.history_jobs j SET lease_token=%s,
               lease_until=clock_timestamp()+(%s*interval '1 second'),generation=j.generation+1,attempts=j.attempts+1
               WHERE (j.pool_id,j.window_seconds)=(SELECT pool_id,window_seconds FROM domino_public.history_jobs q
                 WHERE next_due<=clock_timestamp() AND (lease_until IS NULL OR lease_until<clock_timestamp())
                 AND (window_seconds=86400 OR EXISTS(SELECT 1 FROM domino_public.history_jobs recent
                   WHERE recent.pool_id=q.pool_id AND recent.window_seconds=86400 AND recent.completed_at IS NOT NULL))
-                ORDER BY next_due,window_seconds,pool_id FOR UPDATE SKIP LOCKED LIMIT 1)
-              RETURNING *''',(secrets.token_hex(16),lease_seconds)).fetchone()
+                ORDER BY CASE WHEN EXISTS(SELECT 1 FROM domino_public.entities e
+                  WHERE e.kind='pool' AND e.entity_id=q.pool_id
+                    AND e.last_requested_at>=clock_timestamp()-interval '60 seconds')=%s THEN 1 ELSE 0 END,
+                  window_seconds,next_due,pool_id FOR UPDATE SKIP LOCKED LIMIT 1)
+              RETURNING *''',(secrets.token_hex(16),lease_seconds,background)).fetchone()
 
     @staticmethod
     def guard(conn,claim):
@@ -201,15 +235,17 @@ class PublicHistory:
         if row is None:raise DataError('history_lease_lost')
 
     @staticmethod
-    def finish(conn,claim,*,complete=False,reason=None,span=None):
+    def finish(conn,claim,*,complete=False,reason=None,span=None,span_successes=None):
         delay=min(900,5*2**min(8,claim['attempts']-1)) if reason else (30 if complete else 1)
         conn.execute('''UPDATE domino_public.history_jobs SET lease_token=NULL,lease_until=NULL,
           next_due=clock_timestamp()+(%s*interval '1 second'),last_error=%s,
           attempts=CASE WHEN %s::text IS NULL THEN 0 ELSE attempts END,
-          span_blocks=COALESCE(%s,span_blocks),completed_at=CASE WHEN %s THEN clock_timestamp() ELSE completed_at END,
+          span_blocks=COALESCE(%s,span_blocks),
+          span_successes=CASE WHEN %s::text IS NOT NULL THEN 0 ELSE COALESCE(%s,span_successes) END,
+          completed_at=CASE WHEN %s THEN clock_timestamp() ELSE completed_at END,
           target=CASE WHEN %s THEN NULL ELSE target END
           WHERE pool_id=%s AND window_seconds=%s''',
-          (delay,reason,reason,span,complete,complete,claim['pool_id'],claim['window_seconds']))
+          (delay,reason,reason,span,reason,span_successes,complete,complete,claim['pool_id'],claim['window_seconds']))
 
     def invalidate(self,claim,reason='history_snapshot_reorganized'):
         with self.store.connection(write=True) as conn:
@@ -218,11 +254,11 @@ class PublicHistory:
             for table in ('history_coverage','history_swaps','history_candles'):
                 conn.execute(f'DELETE FROM domino_public.{table} WHERE pool_id=%s',(claim['pool_id'],))
             # Invalidate other window leases too: no old-branch worker may publish.
-            conn.execute('''UPDATE domino_public.history_jobs SET completed_at=NULL,target=NULL,generation=generation+1,
+            conn.execute('''UPDATE domino_public.history_jobs SET completed_at=NULL,target=NULL,span_successes=0,generation=generation+1,
               lease_token=NULL,lease_until=NULL,last_error=%s,next_due=clock_timestamp()
               WHERE pool_id=%s''',(reason,claim['pool_id']))
 
-    def publish(self,claim,before,end,events,candles,*,span,complete=False,denomination=None):
+    def publish(self,claim,before,end,events,candles,*,span,complete=False,denomination=None,span_successes=None):
         with self.store.connection(write=True) as conn:
             conn.execute('SELECT pg_advisory_xact_lock(%s)',(pool_lock_key(claim['pool_id']),))
             self.guard(conn,claim)
@@ -258,7 +294,7 @@ class PublicHistory:
             # Request windows bound the response, never retention. Preserve
             # acquired events/candles until a separately reviewed archival
             # policy exists; reorg/denomination invalidation remains explicit.
-            self.finish(conn,claim,complete=complete,span=span)
+            self.finish(conn,claim,complete=complete,span=span,span_successes=span_successes)
 
     @staticmethod
     def merge_coverage(conn,pool_id):
@@ -280,6 +316,7 @@ class PublicHistory:
         if claim is None:return {'status':'idle','rpcCalls':0}
         budget=RequestBudget(max_rpc_calls)
         span=AdaptiveSpan(claim['span_blocks'],floor=1)
+        span.successes=claim['span_successes']
         try:
             with read_deadline(budget_seconds):
                 transport=indexer_transport(budget_seconds,request_timeout=min(10,budget_seconds),budget=budget)
@@ -290,7 +327,14 @@ class PublicHistory:
                 url=service.historical_rpc_url or (service.rpc_urls[0] if service.rpc_urls else service.rpc_url)
                 history=IndexRpc(url,transport=transport,max_requests=max_rpc_calls,batch_reads=True)
                 chain=CatalogueIndexer(self.catalogue,history);chain.check_chain()
-                target=Block(**claim['target']) if claim['target'] else chain.block(max(1,head.number-100))
+                stored_target=claim['target']
+                if stored_target:
+                    if (not isinstance(stored_target,dict) or
+                        any(type(stored_target.get(key)) is not int for key in ('number','timestamp')) or
+                        stored_target['number']<1 or stored_target['timestamp']<0):
+                        raise DataError('invalid_history_target')
+                    target=Block(stored_target['number'],bytes32(stored_target.get('hash')),stored_target['timestamp'])
+                else:target=chain.block(max(1,head.number-100))
                 # Pin one acquisition cycle. Otherwise every tick would spend
                 # itself on the new tail and never advance the recent backfill.
                 if not claim['target']:
@@ -312,7 +356,19 @@ class PublicHistory:
                     if chain.block(latest['end_block']).hash!=latest['end_hash']:
                         self.invalidate(claim)
                         return {'status':'rewound','rpcCalls':budget.calls}
-                lower=first_after(chain,max(0,target.timestamp-claim['window_seconds']),target)
+                boundary_timestamp=max(0,target.timestamp-claim['window_seconds'])
+                if stored_target and 'lowerBlock' in stored_target:
+                    lower=verify_boundary(chain,boundary_timestamp,target,stored_target['lowerBlock'])
+                else:
+                    lower=first_after(chain,boundary_timestamp,target)
+                    # Persist independently of the log chunk. A later timeout
+                    # resumes the same target without another timestamp search.
+                    # Old three-field targets remain valid and acquire this
+                    # field lazily; completion/reorg clears both together.
+                    with self.store.connection(write=True) as conn:
+                        self.guard(conn,claim)
+                        conn.execute('UPDATE domino_public.history_jobs SET target=%s WHERE pool_id=%s AND window_seconds=%s',
+                                     (Jsonb({**asdict(target),'lowerBlock':lower}),claim['pool_id'],claim['window_seconds']))
                 def acquire(size):
                     bounds=missing_range(rows,lower,target.number,size)
                     if bounds is None:return None
@@ -341,24 +397,30 @@ class PublicHistory:
                         raise DataError('history_snapshot_reorganized')
                     return before,end,events,aggregate(events,currencies,decimals)
                 acquired=span.run(acquire)
+                # AdaptiveSpan doubles after eight wins. Persist only bounded
+                # useful state; at the ceiling, no growth streak is needed.
+                successes=span.successes if span.span<span.ceiling else 0
                 if acquired is None:
                     with self.store.connection(write=True) as conn:
-                        self.guard(conn,claim);self.finish(conn,claim,complete=True,span=span.span)
+                        self.guard(conn,claim);self.finish(conn,claim,complete=True,span=span.span,span_successes=successes)
                     status='current'
                 else:
                     before,end,events,candles=acquired
                     covered=rows+[{'start_block':before.number+1,'end_block':end.number}]
                     complete=missing_range(covered,lower,target.number,span.span) is None
                     self.publish(claim,before,end,events,candles,span=span.span,complete=complete,
-                                 denomination={'currencies':list(currencies),'decimals':decimals})
+                                 denomination={'currencies':list(currencies),'decimals':decimals},span_successes=successes)
                     status='current' if complete else 'indexed'
                 return {'status':status,'poolId':claim['pool_id'],'windowSeconds':claim['window_seconds'],'rpcCalls':budget.calls,'spanBlocks':span.span}
         except DataError as error:
             reason=str(error)
             if not reason.replace('_','').isalnum() or len(reason)>96:reason='upstream_unavailable'
+            # A rejected publication did not earn a growth step. Preserve a
+            # measured shrink, but never enlarge based on uncommitted work.
+            failed_span=min(span.span,claim['span_blocks'])
             try:
                 with self.store.connection(write=True) as conn:
-                    self.guard(conn,claim);self.finish(conn,claim,reason=reason,span=span.span)
+                    self.guard(conn,claim);self.finish(conn,claim,reason=reason,span=failed_span)
             except DataError as failure:
                 if str(failure)!='history_lease_lost':raise
-            return {'status':'deferred','reason':reason,'rpcCalls':budget.calls,'spanBlocks':span.span}
+            return {'status':'deferred','reason':reason,'rpcCalls':budget.calls,'spanBlocks':failed_span}
