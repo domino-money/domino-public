@@ -8,6 +8,8 @@ import {DominoVaultTypes as T} from "./DominoVaultTypes.sol";
 library DominoExecutionTypes {
     // GENERAL and NET increase the authority.tokenId; FUND uses an existing
     // eligible destination; MINT creates exactly one successor of that parent.
+    // The routing helper admits the range once and then names GENERAL, NET
+    // and MINT; FUND is what remains, and the branches that handle it say so.
     uint8 internal constant GENERAL = 0;
     uint8 internal constant NET = 1;
     uint8 internal constant FUND = 2;

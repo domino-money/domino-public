@@ -103,7 +103,8 @@ contract DominoVaultReadHelper {
         external view returns (T.PoolKey memory key, int24 lo, int24 hi)
     {
         (key, lo, hi) = readPosition(poolId, tokenId);
-        if (key.currency0 >= key.currency1 || key.fee > 1_000_000 || key.tickSpacing <= 0 || key.tickSpacing > 32767
+        // readPosition has already refused a non-positive tick spacing.
+        if (key.currency0 >= key.currency1 || key.fee > 1_000_000 || key.tickSpacing > 32767
             || key.hooks != address(0) || key.currency1.code.length == 0
             || (key.currency0 != address(0) && key.currency0.code.length == 0)
             || base == quote || !((base == key.currency0 && quote == key.currency1)
@@ -168,7 +169,9 @@ contract DominoVaultReadHelper {
             || blockhash(plan.observedAtBlock) != plan.observedBlockHash
             || plan.observedAtTimestamp > block.timestamp
             || block.timestamp - plan.observedAtTimestamp > maxAge
-            || plan.deadline < block.timestamp || plan.deadline < plan.observedAtTimestamp
+            // deadline >= observedAtTimestamp follows from the two bounds on
+            // block.timestamp above, so the subtraction below cannot underflow.
+            || plan.deadline < block.timestamp
             || plan.deadline - plan.observedAtTimestamp > maxAge
             || plan.minSqrtPriceX96 == 0 || plan.minSqrtPriceX96 > plan.maxSqrtPriceX96) {
             revert InvalidExecution();

@@ -229,7 +229,9 @@ accounting, so they need receipt gas from Anvil as well as the snapshot delta.
    built on a contract whose owner surface is untested. Run the V3 custody
    suites against V4 through a shared interface, add a factory rejection
    suite, and add forged-call tests for the six callbacks and
-   `DominoSetup.unlockCallback`.
+   `DominoSetup.unlockCallback`. *Done: the factory and forged-call suites
+   came with H-02, and V4 inherits 46 custody tests through
+   `contracts/test/shared/CustodyBehaviour.sol` as of 20 September.*
 2. **Buy the room (V1, F1, F11, V4, V5, V6, V8).** All zero-behaviour, and
    two are already measured at −234 B together. Measure V1 first: it is the
    smallest patch with the largest zero-risk estimate, and it tests the
@@ -248,7 +250,10 @@ accounting, so they need receipt gas from Anvil as well as the snapshot delta.
    findings re-derived from the code, numbered into that range, are in
    [CONTRACT_HYGIENE_MINOR_2026-09-19](CONTRACT_HYGIENE_MINOR_2026-09-19.md);
    they are not the originals. H-01 and H-02 are closed
-   ([CONTRACT_HYGIENE_2026-09-19](CONTRACT_HYGIENE_2026-09-19.md)).*
+   ([CONTRACT_HYGIENE_2026-09-19](CONTRACT_HYGIENE_2026-09-19.md)), and as of
+   20 September so is every item in the minor report - see its status section.
+   The V3/V4 decision is still open: the shared base is extracted, and V3's
+   twelve remaining tests are the ones that would go with it.*
 
 ## What was verified sound
 

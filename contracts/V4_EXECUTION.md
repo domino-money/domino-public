@@ -13,7 +13,7 @@ Deployment is staged and its implementation may be finalized exactly once:
 
 1. `DominoVaultFactoryV4(poolManager, positionManager, stateView, serviceFeeRecipient)`.
 2. Existing `DominoVaultReadHelper(positionManager, stateView)`.
-3. `DominoRoutingHelperV4()` and `DominoPriceGuardV4(pricePublisher)`.
+3. `DominoRoutingHelperV4()` and `DominoPriceGuardV4(pricePublisher, stateView, maxDeviationBps)`.
 4. `DominoExecutionEngineV4(factory, readHelper, routingHelper, priceGuard)`.
 5. `DominoVaultV4(factory, poolManager, positionManager, stateView, serviceFeeRecipient, readHelper, engine)`.
 6. The factory deployer calls `finalizeImplementation(implementation)` once.

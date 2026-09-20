@@ -45,19 +45,6 @@ interface IDominoVaultDraft {
         uint160 minSqrtPriceX96;
         uint160 maxSqrtPriceX96;
     }
-    event FeesApplied(
-        bytes32 indexed intentId,
-        uint256 indexed sourceTokenId,
-        uint256 indexed destinationTokenId,
-        uint128 gross0,
-        uint128 gross1,
-        uint128 protocol0,
-        uint128 protocol1,
-        uint128 netAdded0,
-        uint128 netAdded1,
-        uint128 remaining0,
-        uint128 remaining1
-    );
     /// @dev A completed owner policy write; stateNonce also advances exactly once.
     event PolicyChanged(uint64 indexed version);
     event AutomationPaused(address indexed caller, uint64 indexed policyVersion, uint64 stateNonce);

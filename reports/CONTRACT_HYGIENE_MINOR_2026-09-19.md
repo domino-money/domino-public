@@ -174,16 +174,80 @@ specialised function. With the vault now holding 638 B of slack and nothing
 pending that needs them, worse code to outwit an optimiser pass is a bad
 trade. Declined, with the number recorded so it is not re-derived.
 
-## Not fixed here
+## Status — 20 September 2026
 
-This is the enumeration the review's reference needs.
+Every finding above is closed, each in one of three ways: fixed, recorded as a redundancy the
+tests now name, or - twice - fixed and then found to have been claimed rather than covered.
+Mutations for this pass ran in a disposable copy of the last commit, never in the tree, with
+one snapshot per batch; every verdict below is from that run.
 
-**Since written:** the six test findings (M-12 … M-17) are fixed, each proved by deleting every
-clause of the guard it covers and watching the test die. M-19 and M-20 were found during that
-work and are recorded rather than removed - they are correct, cheap, and several would become
-load-bearing again if a neighbouring check were relaxed.
+| finding | disposition |
+| --- | --- |
+| M-03 | Dead as claimed: the `_T_MODIFY` operand is deletable with both the official execution suite and the custody suite green. Kept as a backstop and commented at the site - `executionModify` already reverts when the flag survives its own call, so the operand cannot fire unless that tail check moves. |
+| M-04 | Removed. `readPosition` refuses a non-positive tick spacing first and has to, since it divides by it, so nothing can make the duplicate live again. Verified deletable against `DominoCompoundHelper.t.sol` before removal. |
+| M-05 | Read-helper half removed on the same reasoning: `deadline >= observedAtTimestamp` follows from the two bounds on `block.timestamp` beside it, and the comment now says so at the subtraction that relies on it. Price-guard half recorded, below. |
+| M-06 | Both recorded in the guard suite's redundancy list; neither can decide, and the suite says which clause does. |
+| M-07 | The routing helper names `E.GENERAL` where it selected by range, and the two branches that handle `E.FUND` by elimination say so; the declaration points at them. The routing helper's bytecode moved with that rewrite; the vault's and the engine's did not. |
+| M-08 | `FeesApplied` removed. Nothing in the repository emitted, decoded or documented it; the vaults do not inherit the interface, so no vault ABI moved and the drift script's counts are unchanged. |
+| M-09 | Both documents corrected: `V4_EXECUTION.md` shows the three-argument constructor, and `FINANCIAL_RELEASE.md`'s input table has the `priceGuardDeviationBps` row the release script already required. |
+| M-10 | The NatSpec now states the constant as the exclusive bound it is - admitted while strictly under 256 blocks old, so 255 at most. The comparison is untouched. |
+| M-11 | The guard's NatSpec moved from `IStateViewGuard` to the contract; the interface has a one-line `@dev` of its own. |
+| M-18 | Closed by the guard suite: `referencePrice`'s expiry clause fails a test when deleted. |
+| M-19, M-20 | Unchanged: recorded, not removed. |
 
-The remaining dead-clause findings are cosmetic and touch hardening guards, so each needs its
-own judgement about whether removing a clause is worth the diff. M-09 and M-10 are documentation
-and mine; M-10 in particular must not be "fixed" by widening the comparison, which would change
-a hardening guard's behaviour rather than clean it.
+### The price guard, clause by clause
+
+Every clause of the constructor, `_withinBand`, `publish`, `revoke` and `referencePrice` was
+deleted in turn against `DominoPriceGuardV4.t.sol` - 33 mutations. Before this pass 21 failed
+a test and 12 did not. Three of the twelve were gaps, not redundancies, and each has a test now:
+
+- `revoke` refusing an id that was never published - without it the publisher could pre-revoke
+  an observation and have its later, honest publication refused as already revoked;
+- `referencePrice` re-checking `blockhash` at read time - the only clause that refuses a stored
+  observation the chain has since reorganised away;
+- `referencePrice` enforcing the block window on the way out - an observation admitted at 255
+  blocks old is refused one block later, while its hash still resolves.
+
+The other nine are redundancies, named in the suite beside the clause that decides instead. The
+suite's comment used to say "fifteen of nineteen"; it counted differently, and the enumeration
+replaces it.
+
+### Found on the way
+
+**M-21 - my new V4 test claimed a clause it could not reach.**
+`testERC20TransferFeeIsAbsorbedByTheOwnerWhileTheLedgerStaysBacked` asserted that `_payExact`'s
+vault-side debit stayed exact, and did not: `MockERC20`'s fee comes off the recipient, so
+`beforeVault - afterVault != amount` could never fire. The same shape as M-12 … M-17, in a test
+written the night that shape was documented. Found by mutation against the ported suite;
+`MockERC20` gained a sender-surcharge mode, and the clause now fails a test in both lineages.
+*Mine.*
+
+**M-22 - `resume()`'s permission check was covered by nothing in the tree.**
+`if (!rootPermissionValid()) revert PermissionUnavailable()` was deletable from either vault
+with every suite green. It is the one owner action that re-arms automation, so it is the one
+that must refuse while the root permission is gone. A shared test pins that resume refuses and
+pause does not. Pre-existing.
+
+### The V3→V4 port, as it stands
+
+`contracts/test/shared/CustodyBehaviour.sol` holds 47 tests both vaults inherit. V4's custody
+suite went from 16 tests to 67; V3's from 55 to 59. Twelve V3 tests stay in their leaf: five
+are adoption, which V4 does not have; three turn on `validateAuthority`, V3's pre-execution
+entry point; three pin behaviour the lineages differ on by design (V4 declares no receiver
+hook, and requires the recipient-side receipt of the financial path only); one enumerates V3's
+owner-only surface. V4 acquires children through the real `executionMint` path in its suite -
+a stub engine mints on `execute()` and the mock position manager answers `MINT_POSITION` - so
+the thirteen child-custody tests exercise the code the release ships rather than a sink.
+
+Those thirteen were mutated against before they were trusted. Of nine clauses on V4's child
+paths - `withdrawChildPosition`'s guard and its `activePositions` decrement,
+`recoverUnmanagedPosition`'s two refusals, `executionMint`'s successor rule and its two
+post-mint checks on the manager, and `notifyUnsubscribe`'s refusal during an execution - only
+two failed a test; the port's happy paths reached the rest. Two tests now pin seven of them: a
+shared one for the managed child exit refusing the root, a withdrawn child and an unknown
+token, and for recovery refusing a token the vault does not hold; and a V4 one for a second
+successor of the same parent, and for a manager that minted to someone else or minted nothing
+(the mock can now do both). Re-run, all seven fail a test, in V3 as well where the clause
+exists. The ninth is recorded rather than pinned: `notifyUnsubscribe` refusing while
+`_T_COMPOUND` is set cannot be told apart from outside, because the execution then fails its
+own permission check and the frame reverts either way.

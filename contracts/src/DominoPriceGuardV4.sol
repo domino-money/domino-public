@@ -1,20 +1,23 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.26;
 
-/// @notice Immutable publisher trust for operation-specific price attestations.
-/// @dev A publisher is a separately admitted price-integrity service, not the
-/// executor. No price is inferred from symbols or current manipulated pool spot.
-/// Deployments must qualify that publisher/source; local fixtures do not do so.
+/// @dev The one StateView reading the guard bounds a published price against.
 interface IStateViewGuard {
     function getSlot0(bytes32 poolId) external view returns (uint160 sqrtPriceX96, int24 tick, uint24, uint24);
 }
 
+/// @notice Immutable publisher trust for operation-specific price attestations.
+/// @dev A publisher is a separately admitted price-integrity service, not the
+/// executor. No price is inferred from symbols or current manipulated pool spot.
+/// Deployments must qualify that publisher/source; local fixtures do not do so.
 contract DominoPriceGuardV4 {
     struct Observation { bytes32 poolId; uint64 blockNumber; bytes32 blockHash; uint64 timestamp; uint64 expiresAt; uint160 sqrtPriceX96; }
-    /// @notice An observation older than this cannot be proven canonical: EVM
-    /// `blockhash` answers for the last 256 blocks only. Stating it here makes
-    /// the real lifetime explicit instead of leaving callers to discover that
-    /// a longer declared window silently cannot be reached.
+    /// @notice The exclusive bound on an observation's age in blocks: it is
+    /// admitted while `block.number - blockNumber` is strictly below this, so
+    /// the oldest observation accepted is 255 blocks old - one short of the
+    /// 256 whose hashes EVM `blockhash` still answers for. Stating the window
+    /// here keeps the real lifetime explicit instead of leaving callers to
+    /// discover that a longer declared window silently cannot be reached.
     uint64 public constant MAX_OBSERVATION_BLOCKS = 256;
     address public immutable publisher;
     /// @notice The reader used to bound a published price against the pool's

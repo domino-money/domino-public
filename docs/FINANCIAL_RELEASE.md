@@ -20,6 +20,7 @@ hex; integer strings are canonical unsigned decimal strings.
 | feeRecipient | Explicit service-fee recipient; never inferred from admitted users |
 | operator | Intended execution principal for the public Sequence profile |
 | pricePublisher | Independent price publisher; must differ from operator |
+| priceGuardDeviationBps | Band, in basis points of the square-root price, inside which a published price must sit against the pool's live reading; integer 1–9999 |
 | setupFeeBps | Explicit assisted Setup tariff, integer 0–65 |
 | tariffVersion | Nonzero uint64 tariff version as a decimal string |
 | expiresAt | Absolute Unix-second expiry for the resulting public profiles |

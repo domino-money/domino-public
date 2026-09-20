@@ -159,24 +159,40 @@ contract DominoPriceGuardV4Test {
     }
 
     /**
-     * Four of publish's clauses cannot be the one that decides, and this
-     * records which - deleting any of them leaves all nine tests green, and
-     * that is a property of the guard rather than a gap in the suite. The
-     * other fifteen clauses across publish, revoke and referencePrice each
-     * fail a test when deleted.
+     * Nine of the guard's clauses cannot be the one that decides, and this
+     * records which. Every clause of the constructor, _withinBand, publish,
+     * revoke and referencePrice was deleted in turn against this suite (the
+     * batch is in reports/CONTRACT_HYGIENE_MINOR_2026-09-19.md): 24 fail a
+     * test, these nine leave all of them green, and that is a property of the
+     * guard rather than a gap in the suite.
      *
-     *   poolId == 0        a pool with no reading is outside any band
-     *   sqrtPriceX96 == 0  and so is a zero price
-     *     - both became redundant when the deviation band was added with the
-     *       D-03/D-04 hardening; before it they were load-bearing.
-     *   blockNumber >= block.number
-     *     - blockhash answers zero for the current block and later, and a zero
-     *       hash is refused just above, so the hash comparison decides first.
-     *   expiresAt <= timestamp
-     *     - it could only decide for a stamp in the future, which the clause
-     *       before it already refuses.
+     *   publish
+     *     poolId == 0        a pool with no reading is outside any band
+     *     sqrtPriceX96 == 0  and so is a zero price
+     *       - both became redundant when the deviation band was added with
+     *         the D-03/D-04 hardening; before it they were load-bearing.
+     *     blockNumber >= block.number
+     *       - blockhash answers zero for the current block and later, and a
+     *         zero hash is refused just above, so the hash comparison decides.
+     *     expiresAt <= timestamp
+     *       - could only decide for a stamp in the future, which the clause
+     *         before it already refuses.
+     *     revoked[id]
+     *       - revoke keeps the observation, so a revoked id is also an already
+     *         published one and the clause beside it decides.
+     *   _withinBand
+     *     value == 0, anchor == 0
+     *       - nothing positive is at most zero, and zero is at least nothing,
+     *         so the band arithmetic refuses both without the early return.
+     *   referencePrice
+     *     sqrtPriceX96 == 0
+     *       - an unknown id has a zero pool, and a caller naming that zero
+     *         pool is still refused by the zero expiry it also has.
+     *     block.timestamp < timestamp
+     *       - publish refuses a stamp in the future and chain time does not
+     *         go backwards; it stays as the underflow guard on the age below.
      */
-    function testTheFourRedundantClausesAreStillRefusedBySomethingElse() external {
+    function testEveryRedundantClauseIsStillRefusedBySomethingElse() external {
         DominoPriceGuardV4.Observation memory point = _point();
         point.poolId = bytes32(0);
         _refused(point, "no pool");
@@ -186,6 +202,53 @@ contract DominoPriceGuardV4Test {
         _refused(point, "the current block has no hash");
         point = _point(); point.expiresAt = point.timestamp;
         _refused(point, "expiring at its own stamp");
+
+        point = _point();
+        bytes32 id = _publish(point);
+        vm.prank(PUBLISHER);
+        guard.revoke(id);
+        _refused(point, "a revoked id is an already published one");
+
+        _rejectRead(keccak256("no such id"), bytes32(0), 0, bytes32(0), 3600, "an unknown id claiming a zero pool");
+    }
+
+    /// revoke has no once-only guard, but it does refuse an id that was never
+    /// published - otherwise the publisher could pre-revoke an observation and
+    /// have its later, honest publication refused as already revoked. Found
+    /// by mutation: nothing pinned this clause before.
+    function testRevokeRefusesAnIdThatWasNeverPublished() external {
+        bytes32 id = keccak256("never published");
+        vm.prank(PUBLISHER);
+        (bool ok, bytes memory out) = address(guard).call(abi.encodeCall(DominoPriceGuardV4.revoke, (id)));
+        require(!ok && out.length >= 4 && bytes4(out) == DominoPriceGuardV4.InvalidObservation.selector,
+            "an unknown id was revoked");
+        require(!guard.revoked(id), "and nothing was marked");
+    }
+
+    /// The publisher's hash was checked against the chain at publish time;
+    /// referencePrice checks it again, because the chain can have reorganised
+    /// since. Only this clause refuses a stored observation whose block hash
+    /// the chain no longer agrees with. Found by mutation.
+    function testReferencePriceRefusesAnObservationTheChainHasReorganisedAway() external {
+        DominoPriceGuardV4.Observation memory point = _point();
+        bytes32 id = _publish(point);
+        vm.setBlockhash(point.blockNumber, keccak256("a different canonical block"));
+        _rejectRead(id, POOL, point.blockNumber, point.blockHash, 3600, "reorganised away");
+    }
+
+    /// The window is enforced on the way out as well as on the way in: an
+    /// observation admitted at 255 blocks old is refused one block later,
+    /// while its hash still resolves and its expiry is minutes away. Found by
+    /// mutation.
+    function testReferencePriceRefusesTheObservationTheMomentItLeavesTheBlockWindow() external {
+        vm.roll(2000);
+        DominoPriceGuardV4.Observation memory point = _point();
+        point.blockNumber = uint64(block.number - 255);
+        point.blockHash = keccak256(abi.encode("hash", point.blockNumber));
+        bytes32 id = _publish(point);
+        require(guard.referencePrice(id, POOL, point.blockNumber, point.blockHash, 3600) == SPOT, "readable at 255");
+        vm.roll(2001);
+        _rejectRead(id, POOL, point.blockNumber, point.blockHash, 3600, "256 blocks old on the way out");
     }
 
     /// MAX_OBSERVATION_BLOCKS says 256 and the comparison admits 255. The

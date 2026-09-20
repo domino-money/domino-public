@@ -145,7 +145,7 @@ contract DominoRoutingHelperV4 {
         if (key.hooks != address(0) || key.fee > 1_000_000) revert InvalidRoute();
         (uint160 price,int24 tick,,) = IStateViewE2(readHelper.stateView()).getSlot0(vault.poolId());
         bool inverse = vault.baseCurrency() == key.currency1;
-        if (plan.action <= E.NET) {
+        if (plan.action == E.GENERAL || plan.action == E.NET) {
             if (plan.destinationTokenId != a.tokenId || plan.tickLower != 0 || plan.tickUpper != 0) revert InvalidRoute();
         } else if (plan.action == E.MINT) {
             if (plan.destinationTokenId != 0 || vault.successorOf(a.tokenId) != 0 || vault.activePositions() >= rules.maxPositions
@@ -189,8 +189,10 @@ contract DominoRoutingHelperV4 {
     function _sourceRoute(IVaultExecutionV4 vault, E.Plan calldata p, uint256 tokenId, uint160 price,
         int24 tick, bool inverse, IDominoVaultDraft.Policy memory rules) private view {
         T.Position memory member = vault.position(tokenId); _custody(vault,tokenId,member);
-        if (p.action <= E.NET) { if (tokenId != p.destinationTokenId) revert InvalidRoute(); return; }
+        if (p.action == E.GENERAL || p.action == E.NET) { if (tokenId != p.destinationTokenId) revert InvalidRoute(); return; }
         if (p.action == E.MINT) { if (tokenId != p.authority.tokenId) revert InvalidRoute(); return; }
+        // E.FUND, the only action left after the range check in validatePlan:
+        // a source may be the destination itself or any other member.
         if (tokenId == p.destinationTokenId) return;
         T.Position memory target = vault.position(p.destinationTokenId);
         bool sourceInside = tick >= member.tickLower && tick < member.tickUpper;

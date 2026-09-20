@@ -283,6 +283,10 @@ contract DominoVaultV4 {
         (bool success, bytes memory returned) = address(executionEngine).call(msg.data);
         if (!success) { assembly ("memory-safe") { revert(add(returned, 32), mload(returned)) } }
         (bytes32 planHash, uint256 destination) = abi.decode(returned, (bytes32,uint256));
+        // The _T_MODIFY operand is a backstop, not the check: executionModify
+        // already reverts when the root callback never cleared the flag, so the
+        // engine call above cannot return with it set. It stays as the vault's
+        // own statement of that invariant should the tail check ever move.
         if (_tget(_T_MODIFY) != 0 || !rootPermissionValid()) revert InvalidExecution();
         consumedIntent[plan.authority.intentId] = true;
         _tset(_T_COMPOUND, 0);
