@@ -1,0 +1,24 @@
+[Unit]
+Description=Validate and recover the Domino development lease before startup
+Wants=network-online.target time-sync.target
+After=network-online.target time-sync.target
+Before=domino-dev-egress.service domino-dev-read.service domino-dev-gateway.service domino-dev-tunnel.service
+StartLimitIntervalSec=0
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+Environment=TZ=UTC
+ExecStart=/usr/bin/python3 -B /usr/local/lib/domino-dev-maintenance/dev_read_maintenance.py boot
+TimeoutStartSec=240
+Restart=on-failure
+RestartSec=60
+UMask=0077
+NoNewPrivileges=yes
+ProtectHome=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ReadWritePaths=/etc/domino/dev /etc/domino/dev-maintenance /var/lib/domino-dev-maintenance /run
+ReadWritePaths=/etc/systemd/system/domino-dev-read.service.d /etc/systemd/system/domino-dev-gateway.service.d /etc/systemd/system/domino-dev-tunnel.service.d
+MemoryMax=256M
+TasksMax=64

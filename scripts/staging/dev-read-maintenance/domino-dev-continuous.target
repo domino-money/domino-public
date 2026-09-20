@@ -1,0 +1,8 @@
+[Unit]
+Description=Domino authorized continuous development reads
+Requires=domino-dev-maintenance-boot.service domino-dev-egress.service
+Wants=domino-dev-read.service domino-dev-gateway.service domino-dev-tunnel.service
+After=domino-dev-maintenance-boot.service domino-dev-egress.service domino-dev-read.service domino-dev-gateway.service domino-dev-tunnel.service
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,11 @@
+[Unit]
+Description=Check the authorized development lease every 15 minutes
+
+[Timer]
+OnBootSec=2min
+OnUnitInactiveSec=15min
+AccuracySec=15s
+Unit=domino-dev-maintenance.service
+
+[Install]
+WantedBy=timers.target

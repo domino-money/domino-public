@@ -1,0 +1,15 @@
+[Unit]
+Description=Observe development tunnel, application and authorization health
+After=network-online.target
+
+[Service]
+Type=oneshot
+Environment=TZ=UTC
+ExecStart=/usr/bin/python3 -B /usr/local/lib/domino-dev-maintenance/dev_read_health.py
+TimeoutStartSec=75
+UMask=0077
+NoNewPrivileges=yes
+ProtectSystem=strict
+ReadWritePaths=/var/lib/domino-dev-maintenance
+ProtectHome=yes
+PrivateTmp=yes

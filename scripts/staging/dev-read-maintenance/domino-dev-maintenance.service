@@ -1,0 +1,19 @@
+[Unit]
+Description=Renew and reconcile the Domino development lease
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=oneshot
+Environment=TZ=UTC
+ExecStart=/usr/bin/python3 -B /usr/local/lib/domino-dev-maintenance/dev_read_maintenance.py ensure
+TimeoutStartSec=300
+UMask=0077
+NoNewPrivileges=yes
+ProtectHome=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ReadWritePaths=/etc/domino/dev /etc/domino/dev-maintenance /var/lib/domino-dev-maintenance /run
+ReadWritePaths=/etc/systemd/system/domino-dev-read.service.d /etc/systemd/system/domino-dev-gateway.service.d /etc/systemd/system/domino-dev-tunnel.service.d
+MemoryMax=256M
+TasksMax=64
