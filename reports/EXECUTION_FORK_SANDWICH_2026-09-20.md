@@ -116,6 +116,37 @@ root: token 3011465, ticks [-199552, -195548], liquidity 1056926085997426; fees 
 | swap-pre-observation | 20.0% | executed | +2.00 | 92.52 | 0.1547 |
 | swap-post-observation | 20.0% | refused (InvalidPrice()) | no change | 92.69 | - |
 
+### Lifecycle on the real pool: a successor, then every owner exit
+
+The same tool with `--lifecycle` (block 68250367, root token 3011978) continues from the honest
+compound: with the spot inside the trigger distance of the root's ceiling, the operator's MINT plan
+mints a successor through the real engine and the real PositionManager, and then the owner takes
+every exit the vault offers. Nothing here uses a harness sink.
+
+| step | outcome | L2 gas | paid to the owner (raw) |
+| --- | --- | ---: | ---: |
+| mint successor (execute, MINT) | executed | 1,742,808 | - |
+| withdrawChildPosition | executed | 71,936 | - |
+| withdrawFeeReserves currency0 | executed | 69,634 | 155963123686528 |
+| withdrawFeeReserves currency1 | executed | 77,839 | 4077974 |
+| recoverUntrackedCurrency currency0 | executed | 67,458 | 1000000000000000 |
+
+The successor is token 3011979, ticks [-197616, -193360], liquidity
+367253381229, owned by the vault until `withdrawChildPosition` hands it to the owner. The reserve
+withdrawals pay exactly what the ledger held (0.000156 WETH and
+4.077974 USDG), the recovery returns the donation to the wei, and
+`accountedCurrency` reads zero for both currencies afterwards.
+
+### Gas, read rather than estimated
+
+The honest compound's receipt shows **1,162,940 gas** on the L2 for 1,764 bytes of
+calldata; the live node's `NodeInterface.gasEstimateL1Component` puts the L1 data component of that
+calldata at **0** with an L1 base-fee estimate of 0 wei, at an L2 base fee of
+0.0547 gwei - about 0.000064 ETH per compound at that moment. A point sample
+from one block, recorded because SECURITY_SPEC §8 asks for L1 and L2 cost evidence and the release
+manifest calls the extra fee components unqualified; the successor mint is the most expensive
+action at 1,742,808 gas, and every owner exit is under 80,000.
+
 ## What the numbers say
 
 **D-01 holds on a real pool.** Every post-observation move at or beyond the limit — 1.1%, 5%,
@@ -169,7 +200,8 @@ backend/.venv/bin/python backend/qualify_execution_fork.py \
 ```
 
 with `127.0.0.1:18547` forwarded to a Nitro node's HTTP port, or `--rpc-config` naming a private
-`providers.json` whose historical source is archive-capable. A pruned node keeps state for its
+`providers.json` whose historical source is archive-capable. `--lifecycle` adds the successor mint
+and the owner exits after the scenarios. A pruned node keeps state for its
 block-age window only, so the fork starts at the head and a run must finish inside that
 window; these took about four minutes each. The raw outputs of the runs summarised above are
 in [`fork/`](fork/). `backend/tests/test_qualify_execution_fork.py` checks the tool's

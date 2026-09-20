@@ -47,8 +47,10 @@ class ExecutionV4ReceiptEvmTests(unittest.TestCase):
         publisher=self.rpc.request('eth_accounts',[])[2]
         # The guard bounds a published price against the pool's own reading:
         # publisher, that reader, and the band in basis points of sqrt price.
+        # A cold guardian key can rotate the publisher; it is a fourth account here.
+        guardian=self.rpc.request('eth_accounts',[])[3]
         guard=self.deploy('DominoPriceGuardV4.sol','DominoPriceGuardV4',
-            ['address','address','uint256'],[publisher,self.state,2000])
+            ['address','address','uint256','address'],[publisher,self.state,2000,guardian])
         engine=self.deploy('DominoExecutionEngineV4.sol','DominoExecutionEngineV4',['address']*4,[factory,helper,routing,guard])
         implementation=self.deploy('DominoVaultV4.sol','DominoVaultV4',['address']*7,
             [factory,self.manager,self.positions,self.state,self.recipient,helper,engine])

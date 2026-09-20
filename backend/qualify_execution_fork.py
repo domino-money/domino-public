@@ -61,6 +61,7 @@ OWNER = '0x000000000000000000000000000000000000dead'
 OPERATOR = '0x0000000000000000000000000000000000000b0b'
 PUBLISHER = '0x000000000000000000000000000000000000f00d'
 ATTACKER = '0x000000000000000000000000000000000000bad0'
+GUARDIAN = '0x0000000000000000000000000000000000006a2d'
 RECIPIENT = '0x0000000000000000000000000000000000000fee'
 
 # The vault's own limits: 1% price impact against the anchor, 200 bps service fee.
@@ -159,7 +160,13 @@ class Experiment:
         raise DataError('fork_receipt_unavailable')
 
     def must(self, sender, target, data='0x', value=0, what='transaction'):
-        receipt = self.send(sender, target, data, value)
+        try:
+            receipt = self.send(sender, target, data, value)
+        except DataError as error:
+            # Anvil refuses a transaction whose estimation reverts; say why.
+            if str(error) != 'fork_rpc_rejected':
+                raise
+            raise DataError(f'fork_step_failed:{what}:{self.revert_reason(sender, target, data, value)}') from None
         if receipt['status'] != '0x1':
             raise DataError(f'fork_step_failed:{what}:{self.revert_reason(sender, target, data, value)}')
         return receipt
@@ -232,8 +239,8 @@ class Experiment:
         self.helper = d(DEPLOYER, 'DominoVaultReadHelper.sol', 'DominoVaultReadHelper', ['address'] * 2,
             [POSITION_MANAGER, STATE_VIEW])
         self.routing = d(DEPLOYER, 'DominoRoutingHelperV4.sol', 'DominoRoutingHelperV4')
-        self.guard = d(DEPLOYER, 'DominoPriceGuardV4.sol', 'DominoPriceGuardV4', ['address', 'address', 'uint256'],
-            [PUBLISHER, STATE_VIEW, self.band_bps])
+        self.guard = d(DEPLOYER, 'DominoPriceGuardV4.sol', 'DominoPriceGuardV4', ['address', 'address', 'uint256', 'address'],
+            [PUBLISHER, STATE_VIEW, self.band_bps, GUARDIAN])
         self.engine = d(DEPLOYER, 'DominoExecutionEngineV4.sol', 'DominoExecutionEngineV4', ['address'] * 4,
             [self.factory, self.helper, self.routing, self.guard])
         self.implementation = d(DEPLOYER, 'DominoVaultV4.sol', 'DominoVaultV4', ['address'] * 7,
@@ -347,6 +354,118 @@ class Experiment:
         self.move_amounts[move_bps] = high
         return high
 
+    def amount_for_rise(self, target, cap):
+        """Bisect the currency1 sale, up to `cap`, that lifts currency0's sqrt price to at least `target`."""
+        low, high = 0, min(10**9, cap)
+        while self.price_after(False, high) < target:
+            if high >= cap:
+                raise DataError('fork_rise_unreachable_within_budget')
+            high = min(high * 4, cap)
+        for _ in range(16):
+            mid = (low + high) // 2
+            if self.price_after(False, mid) < target:
+                low = mid
+            else:
+                high = mid
+        return high
+
+    def successor_range(self, parent):
+        """A successor geometry validateSuccessor accepts: floor 2% under the
+        parent's ceiling, ceiling the first aligned tick at least 50% above it."""
+        spacing = self.key.tick_spacing
+        lower = (self.upper - 200) // spacing * spacing
+        upper = -((-(self.upper + 4000)) // spacing) * spacing
+        for _ in range(60):
+            data = calldata('validateSuccessor(' + g.POSITION_TYPE + ',int24,int24,int24,bool,uint16,uint32)',
+                [g.POSITION_TYPE, 'int24', 'int24', 'int24', 'bool', 'uint16', 'uint32'],
+                [parent, lower, upper, spacing, False, 1000, 5000])
+            try:
+                self.fork.request('eth_call', [{'to': self.routing, 'data': data, 'gas': hex(2_000_000)}, 'latest'])
+                return lower, upper
+            except DataError:
+                upper += spacing
+        raise DataError('fork_no_successor_geometry')
+
+    def owner_exit(self, what, data, sender=OWNER):
+        receipt = self.send(sender, self.vault, data)
+        step = {'step': what, 'outcome': 'executed' if receipt['status'] == '0x1' else 'refused',
+            'gasUsed': int(receipt['gasUsed'], 16)}
+        if receipt['status'] != '0x1':
+            step['reason'] = self.revert_reason(sender, self.vault, data)
+        return step
+
+    def lifecycle(self):
+        """A successor minted through the real engine once the root is near its
+        ceiling, then every owner exit, all against the real position manager."""
+        checkpoint = self.fork.request('evm_snapshot')
+        out = {'steps': []}
+        try:
+            return self._lifecycle(out)
+        except Exception as error:  # noqa: BLE001 - keep the steps that did run
+            out['outcome'] = 'harness-error'
+            out['reason'] = type(error).__name__ + ': ' + str(error)[:160]
+            return out
+        finally:
+            self.fork.request('evm_revert', [checkpoint])
+
+    def _lifecycle(self, out):
+        if True:
+            parent = self.call(self.vault, 'position(uint256)', [g.POSITION_TYPE], ['uint256'], [self.token])[0]
+            ceiling = sqrt_at_tick(self.upper)
+            target = int(ceiling * math.sqrt(0.97))
+            if self.spot()[0] < target:
+                # The lift is paid in currency1, funded before any probe and
+                # capped at a tenth of what the pool manager holds; every unit
+                # sold comes straight back to the pool.
+                budget = self.balance(self.currencies[1], POOL_MANAGER) // 10 if self.currencies[1] != ZERO else 10**24
+                self.fund_driver(0, budget)
+                bought = self.amount_for_rise(target, budget)
+                self.swap(False, bought)
+                out['currency1SoldToLift'] = str(bought)
+            out['sqrtPriceNearCeiling'] = str(self.spot()[0])
+            lower, upper = self.successor_range(parent)
+            out['successorTicks'] = [lower, upper]
+            range_prices = (sqrt_at_tick(lower), sqrt_at_tick(upper))
+            increase, fees = self.feasible_increase(range_prices)
+            out['accruedFees'] = [str(f) for f in fees]
+            out['successorLiquidity'] = str(increase)
+            child = self.call(POSITION_MANAGER, 'nextTokenId()', ['uint256'])[0]
+            plan, _ = self.plan(increase, (2**127 - 1, 2**127 - 1), action=3, ticks=(lower, upper), range_prices=range_prices)
+            step = self.owner_exit('mint successor (execute, MINT)', plan.calldata(), OPERATOR)
+            out['steps'].append(step)
+            if step['outcome'] == 'executed':
+                member = self.call(self.vault, 'position(uint256)', [g.POSITION_TYPE], ['uint256'], [child])[0]
+                out['child'] = {'tokenId': child, 'active': member[1], 'liquidity':
+                    str(self.call(POSITION_MANAGER, 'getPositionLiquidity(uint256)', ['uint128'], ['uint256'], [child])[0]),
+                    'ownedByVault': self.call(POSITION_MANAGER, 'ownerOf(uint256)', ['address'], ['uint256'], [child])[0] == self.vault}
+                out['steps'].append(self.owner_exit('withdrawChildPosition', calldata('withdrawChildPosition(uint256)', ['uint256'], [child])))
+                out['childOwnedByOwnerAfterExit'] = self.call(POSITION_MANAGER, 'ownerOf(uint256)', ['address'], ['uint256'], [child])[0] == OWNER
+            # Fee reserves left by the compound, both currencies, exact and to the owner.
+            for i, currency in enumerate(self.currencies):
+                source = parent[9 + i]
+                balance = self.call(self.vault, 'feeBalance(bytes32,address)', ['(uint128,uint128)'], ['bytes32', 'address'], [source, currency])[0]
+                if balance[0] or balance[1]:
+                    before = self.balance(currency, OWNER)
+                    step = self.owner_exit(f'withdrawFeeReserves currency{i}', calldata('withdrawFeeReserves(bytes32,address,uint128,uint128)',
+                        ['bytes32', 'address', 'uint128', 'uint128'], [source, currency, balance[0], balance[1]]))
+                    step['paidRaw'] = str(self.balance(currency, OWNER) - before); step['reserveRaw'] = [str(balance[0]), str(balance[1])]
+                    out['steps'].append(step)
+            # A donation, then its recovery: the ledger never sees it, the owner gets it back.
+            donation = 10**15
+            if self.currencies[0] == ZERO:
+                self.fund_native(self.vault, self.balance(ZERO, self.vault) + donation)
+            else:
+                self.fund(self.currencies[0], ATTACKER, donation)
+                self.must(ATTACKER, self.currencies[0], calldata('transfer(address,uint256)', ['address', 'uint256'],
+                    [self.vault, donation]), what='donate')
+            before = self.balance(self.currencies[0], OWNER)
+            step = self.owner_exit('recoverUntrackedCurrency currency0', calldata('recoverUntrackedCurrency(address,uint256)', ['address', 'uint256'], [self.currencies[0], donation]))
+            step['recoveredRaw'] = str(self.balance(self.currencies[0], OWNER) - before)
+            out['steps'].append(step)
+            out['accountedAfter'] = [str(self.call(self.vault, 'accountedCurrency(address)', ['uint256'], ['address'], [c])[0]) for c in self.currencies]
+            out['outcome'] = 'completed'
+            return out
+
     # --------------------------------------------------------- compounds
     def accrued(self):
         point = self.call(self.helper, 'readCheckpoint(bytes32,bytes32,uint256,int24,int24)', [g.CHECKPOINT_TYPE],
@@ -364,7 +483,8 @@ class Experiment:
             [OBSERVATION_TYPE], [point]), what='publish')
         return receipt['logs'][0]['topics'][1], price
 
-    def plan(self, liquidity_increase, max_added, swap_in=0):
+    def plan(self, liquidity_increase, max_added, swap_in=0, action=0, ticks=(0, 0), range_prices=None):
+        lower_price, upper_price = range_prices or (self.lower_price, self.upper_price)
         self.fork.mine()
         source = self.fork.request('eth_getBlockByNumber', ['latest', False])
         member = self.call(self.vault, 'position(uint256)', [g.POSITION_TYPE], ['uint256'], [self.token])[0]
@@ -384,7 +504,7 @@ class Experiment:
             # empty side's floor and compound anyway. That is the worst case, so
             # the floors follow where the spot sits against the range.
             maxOriginal0='0', maxOriginal1='0', maxCharged0='0', maxCharged1='0',
-            minAdded0='0' if spot >= self.upper_price else '1', minAdded1='0' if spot <= self.lower_price else '1',
+            minAdded0='0' if spot >= upper_price else '1', minAdded1='0' if spot <= lower_price else '1',
             minSqrtPriceX96=str(2**80), maxSqrtPriceX96=str(2**110))
         budgets = [v.FeeBudget(sourceId='0x' + member[9 + i].hex(), currency=self.currencies[i],
             maxOriginal=str(2**128 - 1), maxCharged='0', minOriginal='0', minCharged='0') for i in (0, 1)]
@@ -410,20 +530,22 @@ class Experiment:
             swap = v.SwapPlan(sourceId=m.ZERO_HASH, currencyIn=ZERO, amountIn='0', maxOriginal='0', maxCharged='0',
                 minAmountOut='0', sqrtPriceLimitX96='0', priceObservationId=observation)
         # GENERAL carries the swap; NET is the optimised path with none.
-        plan = v.Plan(authority=authority, action=0, destinationTokenId=str(self.token), tickLower=0, tickUpper=0,
+        plan = v.Plan(authority=authority, action=action, destinationTokenId='0' if action == 3 else str(self.token),
+            tickLower=ticks[0], tickUpper=ticks[1],
             maxAdded0=str(max_added[0]), maxAdded1=str(max_added[1]),
             collect=(v.PositionRef(tokenId=str(self.token), positionIdentity=authority.positionIdentity,
                 checkpointId=authority.checkpointId),), budgets=budgets, swap=swap)
         return plan, anchor
 
-    def feasible_increase(self):
+    def feasible_increase(self, range_prices=None):
         """The liquidity the accrued fees fund at the current spot, after the service fee."""
+        lower_price, upper_price = range_prices or (self.lower_price, self.upper_price)
         fee0, fee1 = self.accrued()
         net0, net1 = fee0 * (10000 - SERVICE_FEE_BPS) // 10000, fee1 * (10000 - SERVICE_FEE_BPS) // 10000
         price = self.spot()[0]
         # The operator's slack: 90% of what the fees fund at the observed spot,
         # so a composition shift inside the impact band still fits.
-        return liquidity_for_amounts(net0, net1, price, self.lower_price, self.upper_price) * 90 // 100, (fee0, fee1)
+        return liquidity_for_amounts(net0, net1, price, lower_price, upper_price) * 90 // 100, (fee0, fee1)
 
     def vault_state(self):
         liquidity = self.call(POSITION_MANAGER, 'getPositionLiquidity(uint256)', ['uint128'], ['uint256'], [self.token])[0]
@@ -512,6 +634,7 @@ def main(argv=None):
     parser.add_argument('--root0', default='2000000000000000000', help='root deposit of currency0, raw')
     parser.add_argument('--root1', default='8000000000', help='root deposit of currency1, raw')
     parser.add_argument('--width', type=int, default=200, help='root range half-width, ticks')
+    parser.add_argument('--lifecycle', action='store_true', help='also mint a successor near the ceiling and run every owner exit')
     parser.add_argument('--output', required=True, type=Path)
     args = parser.parse_args(argv)
     moves = [int(x) for x in args.moves.split(',') if x]
@@ -567,6 +690,20 @@ def main(argv=None):
             report['referenceSqrtPrice'] = str(reference)
             honest, honest_added = x.run_scenario('honest', 0, False, False, reference, (0, 0))
             report['scenarios'].append(honest)
+            # Gas on the L2 is in every receipt; the L1 data component is what the
+            # live node's NodeInterface estimates for this calldata, a point sample.
+            try:
+                sample_plan, _ = x.plan(int(honest['liquidityIncrease']), (2**127 - 1, 2**127 - 1))
+                data = sample_plan.calldata()
+                estimate = gateway.request('eth_call', [{'to': '0x00000000000000000000000000000000000000c8', 'from': OPERATOR,
+                    'data': calldata('gasEstimateL1Component(address,bool,bytes)', ['address', 'bool', 'bytes'],
+                        [x.vault, False, bytes.fromhex(data[2:])])}, 'latest'])
+                l1_gas, base_fee, l1_base_fee = decode(['uint64', 'uint256', 'uint256'], bytes.fromhex(estimate[2:]))
+                report['gas'] = {'compoundCalldataBytes': len(data) // 2 - 1, 'l2GasUsedHonest': honest.get('gasUsed'),
+                    'l1ComponentGas': int(l1_gas), 'l2BaseFeeWei': str(base_fee), 'l1BaseFeeEstimateWei': str(l1_base_fee),
+                    'source': 'NodeInterface.gasEstimateL1Component on the live node'}
+            except Exception as error:  # noqa: BLE001
+                report['gas'] = {'unavailable': type(error).__name__}
             print(json.dumps({'stage': 'scenario', **{k: honest[k] for k in ('scenario', 'outcome', 'liquidityAdded')}}), flush=True)
             honest_value = int(honest['vaultValueAfterQuote'])
             compounded = quote_value(*honest_added, reference)
@@ -604,6 +741,13 @@ def main(argv=None):
                     print(json.dumps({'stage': 'scenario', **{k: result.get(k) for k in
                         ('scenario', 'moveBps', 'outcome', 'reason', 'lossVersusHonestQuote', 'attackerCostQuote',
                          'breakevenCompoundedQuote')}}), flush=True)
+            if args.lifecycle:
+                try:
+                    report['lifecycle'] = x.lifecycle()
+                except Exception as error:  # noqa: BLE001
+                    report['lifecycle'] = {'outcome': 'harness-error', 'reason': type(error).__name__ + ': ' + str(error)[:160]}
+                print(json.dumps({'stage': 'lifecycle', **{k: v for k, v in report['lifecycle'].items() if k != 'steps'},
+                    'steps': [(s['step'], s['outcome'], s.get('reason')) for s in report['lifecycle'].get('steps', [])]}), flush=True)
             report['finishedAt'] = int(time.time())
     args.output.parent.mkdir(parents=True, exist_ok=True)
     with open(args.output, 'x') as handle:

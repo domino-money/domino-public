@@ -18,6 +18,7 @@ before(() => {
     chainId: CHAIN_ID, sourceCommit: execFileSync('git', ['rev-parse', 'HEAD'], { cwd: repo, encoding: 'utf8' }).trim(),
     deployer: '0x' + '11'.repeat(20), nonce: '3', feeRecipient: '0x' + '22'.repeat(20),
     operator: '0x' + '33'.repeat(20), pricePublisher: '0x' + '44'.repeat(20), priceGuardDeviationBps: 2000,
+    priceGuardGuardian: '0x' + '55'.repeat(20),
     setupFeeBps: 65, tariffVersion: '1',
     expiresAt: Math.floor(Date.now() / 1000) + 3600,
     gas: { ...Object.fromEntries(Object.keys(CONTRACTS).map(name => [name, '8000000'])), finalize: '300000' },
@@ -49,7 +50,7 @@ test('actual compiled artifacts produce eight unsigned calls with exact construc
 
 test('no inferred roles, excess tariff, exhausted nonce, bad gas or false chain can prepare', () => {
   const changes = [{ feeRecipient: undefined }, { privateKey: 'never-read' }, { operator: parameters.pricePublisher }, { operator: parameters.feeRecipient }, { pricePublisher: DEPENDENCIES.poolManager },
-    { chainId: 1 }, { setupFeeBps: 66 }, { priceGuardDeviationBps: 0 }, { priceGuardDeviationBps: 10000 }, { tariffVersion: '0' }, { expiresAt: 1 }, { nonce: (2n ** 64n - 1n).toString() },
+    { chainId: 1 }, { setupFeeBps: 66 }, { priceGuardDeviationBps: 0 }, { priceGuardDeviationBps: 10000 }, { priceGuardGuardian: undefined }, { priceGuardGuardian: '0x' + '44'.repeat(20) }, { priceGuardGuardian: '0x' + '33'.repeat(20) }, { tariffVersion: '0' }, { expiresAt: 1 }, { nonce: (2n ** 64n - 1n).toString() },
     { maxTotalCostWei: '1' }, { gas: { ...parameters.gas, implementation: '53000' } }];
   for (const update of changes) assert.throws(() => prepare({ ...parameters, ...update }, artifacts, viem));
 });
@@ -114,7 +115,8 @@ test('actual official-v4 dependency code and all unsigned deployments verify int
       await dependency('PositionManager', [DEPENDENCIES.poolManager, accounts[8], 100000n, accounts[7], accounts[6]], DEPENDENCIES.positionManager);
       await dependency('StateView', [DEPENDENCIES.poolManager], DEPENDENCIES.stateView);
       const input = { ...parameters, deployer: accounts[0], nonce: BigInt(await rpc('eth_getTransactionCount', [accounts[0], 'pending'])).toString(),
-        feeRecipient: accounts[1], operator: accounts[2], pricePublisher: accounts[3], priceGuardDeviationBps: 2000 };
+        feeRecipient: accounts[1], operator: accounts[2], pricePublisher: accounts[3], priceGuardDeviationBps: 2000,
+        priceGuardGuardian: accounts[4] };
       const manifest = prepare(input, artifacts, viem), hashes = [];
       for (const step of manifest.steps) hashes.push((await send(step.transaction)).transactionHash);
       await rpc('anvil_mine', ['0x40']);

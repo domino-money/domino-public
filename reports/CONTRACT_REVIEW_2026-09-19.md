@@ -137,6 +137,17 @@ to `block.timestamp`, so neither age bound binds. The one hard anchor is
 observations really die at the 256-block cliff. Expressing freshness in
 blocks would make the configured limit mean what owners think it means.
 
+*Since written: `28eeaa9` gave the guard the `stateView` and the deviation band
+(D-04, and the sanity check this finding asked for). On 20 September the
+rotation half was taken too: `DominoPriceGuardV4` now has an immutable
+`guardian` - a cold key whose only powers are to propose the next publisher,
+which must accept, and to revoke an observation without the publisher key.
+Earlier observations stay readable until they expire; the release inputs
+carry `priceGuardGuardian`, independent of the operator and the publisher.
+No threshold: one live publisher is still the liveness dependency, by
+choice, and re-admission of a rotated publisher is explicit - the signer
+refuses until the profiles name the new key.*
+
 ### 4. The shipping vault is tested only through its twin (hygiene H-01, H-02)
 
 `DominoVault.sol` and `DominoVaultV4.sol` share **601 identical lines** and
@@ -291,6 +302,12 @@ Absence of findings in those areas is evidence, not silence.
   The anchor refuses every post-observation move at or beyond the impact
   limit, the ceiling is the deciding clause on a wide range, and the
   pre-observation sandwich is real but costs the attacker dollars to extract
-  cents. D-09's threshold and the gas snapshots are still estimates.*
+  cents. The same run reads the L2 gas of a compound from its receipt
+  (1,162,908 for 1,764 bytes of calldata) and the L1 component from the live
+  node's NodeInterface (zero on this chain, a point sample). D-09's overflow
+  threshold is still an arithmetic estimate. `DominoVaultV4Invariants.t.sol`
+  now holds the custody ledger's five invariants under a fuzzed owner and
+  engine, which the "Contract unit, fuzz, invariant tests" row of
+  SECURITY_SPEC §8 asked for and nothing held before.*
 - **`api-contracts/`** — the wire packages are a different thing from these
   contracts and were not part of this review.

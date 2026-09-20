@@ -19,7 +19,15 @@ contract DominoPriceGuardV4 {
     /// here keeps the real lifetime explicit instead of leaving callers to
     /// discover that a longer declared window silently cannot be reached.
     uint64 public constant MAX_OBSERVATION_BLOCKS = 256;
-    address public immutable publisher;
+    /// @notice The key that publishes. Not immutable: the guardian below can
+    /// hand the role to another address, so a rotated or stolen key does not
+    /// force a redeployment of the engine and every vault that pins it.
+    address public publisher;
+    /// @notice A cold key with exactly two powers - proposing the next publisher
+    /// and revoking an observation - and no say in what gets published. The
+    /// proposed key must accept, so a typo cannot hand the role to nobody.
+    address public immutable guardian;
+    address public pendingPublisher;
     /// @notice The reader used to bound a published price against the pool's
     /// own current reading. It does not make the publisher trusted-less: a
     /// publisher that also moves the pool can still move the band. It does
@@ -35,13 +43,32 @@ contract DominoPriceGuardV4 {
     error InvalidObservation();
     event PriceObserved(bytes32 indexed id, bytes32 indexed poolId, uint64 blockNumber, uint64 expiresAt);
     event PriceRevoked(bytes32 indexed id);
+    event PublisherProposed(address indexed current, address indexed proposed);
+    event PublisherChanged(address indexed previous, address indexed current);
 
-    constructor(address publisher_, address stateView_, uint256 maxDeviationBps_) {
-        if (publisher_ == address(0) || stateView_ == address(0)
+    constructor(address publisher_, address stateView_, uint256 maxDeviationBps_, address guardian_) {
+        if (publisher_ == address(0) || stateView_ == address(0) || guardian_ == address(0) || guardian_ == publisher_
             || maxDeviationBps_ == 0 || maxDeviationBps_ >= 10000) revert InvalidObservation();
         publisher = publisher_;
         stateView = IStateViewGuard(stateView_);
         maxDeviationBps = maxDeviationBps_;
+        guardian = guardian_;
+    }
+
+    /// @notice Hand the publisher role to `candidate`, once it accepts. Earlier
+    /// observations stay readable until they expire: the band bounded them when
+    /// they were published, and the engine's own limits bound them at execution.
+    function proposePublisher(address candidate) external {
+        if (msg.sender != guardian || candidate == address(0) || candidate == publisher) revert InvalidObservation();
+        pendingPublisher = candidate;
+        emit PublisherProposed(publisher, candidate);
+    }
+
+    function acceptPublisher() external {
+        if (msg.sender != pendingPublisher) revert InvalidObservation();
+        emit PublisherChanged(publisher, msg.sender);
+        publisher = msg.sender;
+        pendingPublisher = address(0);
     }
 
     /// @dev Exact band check on the square-root price. Squaring first would
@@ -70,8 +97,10 @@ contract DominoPriceGuardV4 {
         emit PriceObserved(id, point.poolId, point.blockNumber, point.expiresAt);
     }
 
+    /// @notice The publisher, or the guardian as an emergency brake that needs
+    /// no publisher key, retires one observation before it expires.
     function revoke(bytes32 id) external {
-        if (msg.sender != publisher || observations[id].sqrtPriceX96 == 0) revert InvalidObservation();
+        if ((msg.sender != publisher && msg.sender != guardian) || observations[id].sqrtPriceX96 == 0) revert InvalidObservation();
         revoked[id] = true;
         emit PriceRevoked(id);
     }

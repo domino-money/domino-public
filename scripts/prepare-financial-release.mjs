@@ -89,11 +89,15 @@ export function loadArtifacts(repo, viem = toolsFor(repo), artifactDirectory = j
 
 export function prepare(parameters, artifacts, viem, now = Date.now() / 1000) {
   keys(parameters, ['chainId', 'sourceCommit', 'deployer', 'nonce', 'feeRecipient', 'operator', 'pricePublisher',
-    'priceGuardDeviationBps',
+    'priceGuardDeviationBps', 'priceGuardGuardian',
     'setupFeeBps', 'tariffVersion', 'expiresAt', 'gas', 'maxFeePerGas', 'maxPriorityFeePerGas', 'maxTotalCostWei', 'reserveWei']);
   assert(parameters.chainId === CHAIN_ID && /^[0-9a-f]{40}$/.test(parameters.sourceCommit), 'wrong_chain_or_commit');
-  for (const name of ['deployer', 'feeRecipient', 'operator', 'pricePublisher']) address(parameters[name]);
+  for (const name of ['deployer', 'feeRecipient', 'operator', 'pricePublisher', 'priceGuardGuardian']) address(parameters[name]);
   assert(parameters.operator !== parameters.pricePublisher, 'price_publisher_must_be_independent');
+  // The guardian can replace the publisher, so it is neither the publisher
+  // nor the operator: one key must not be able to hand itself the anchor.
+  assert(parameters.priceGuardGuardian !== parameters.pricePublisher && parameters.priceGuardGuardian !== parameters.operator,
+    'price_guard_guardian_must_be_independent');
   // The band a published price must sit within, against the pool's own
   // reading. Zero would admit any anchor; the contract refuses both ends.
   assert(Number.isSafeInteger(parameters.priceGuardDeviationBps) && parameters.priceGuardDeviationBps > 0
@@ -118,12 +122,12 @@ export function prepare(parameters, artifacts, viem, now = Date.now() / 1000) {
   });
   assert(new Set(Object.values(addresses)).size === Object.values(addresses).length, 'component_address_collision');
   assert(!Object.values(addresses).includes(parameters.feeRecipient), 'fee_recipient_is_component');
-  assert(['operator','pricePublisher'].every(role => parameters[role] !== parameters.feeRecipient
+  assert(['operator','pricePublisher','priceGuardGuardian'].every(role => parameters[role] !== parameters.feeRecipient
     && !Object.values(addresses).includes(parameters[role])), 'execution_role_is_component_or_recipient');
   const d = addresses, p = parameters;
   const argumentsByComponent = {
     factory: [d.poolManager, d.positionManager, d.stateView, p.feeRecipient],
-    readHelper: [d.positionManager, d.stateView], routing: [], priceGuard: [p.pricePublisher, d.stateView, p.priceGuardDeviationBps],
+    readHelper: [d.positionManager, d.stateView], routing: [], priceGuard: [p.pricePublisher, d.stateView, p.priceGuardDeviationBps, p.priceGuardGuardian],
     engine: [d.factory, d.readHelper, d.routing, d.priceGuard],
     implementation: [d.factory, d.poolManager, d.positionManager, d.stateView, p.feeRecipient, d.readHelper, d.engine],
     setup: [d.poolManager, d.positionManager, d.stateView, p.feeRecipient, p.setupFeeBps, BigInt(p.tariffVersion)],
@@ -212,7 +216,7 @@ export async function verify(manifest, transactionHashes, artifacts, viem, rpc, 
   const checks = {
     factory: { poolManager: d.poolManager, positionManager: d.positionManager, stateView: d.stateView,
       serviceFeeRecipient: p.feeRecipient, deployer: p.deployer, implementation: d.implementation, implementationCodeHash: codeHashes.implementation },
-    readHelper: { positionManager: d.positionManager, stateView: d.stateView }, routing: {}, priceGuard: { publisher: p.pricePublisher, stateView: d.stateView, maxDeviationBps: p.priceGuardDeviationBps },
+    readHelper: { positionManager: d.positionManager, stateView: d.stateView }, routing: {}, priceGuard: { publisher: p.pricePublisher, stateView: d.stateView, maxDeviationBps: p.priceGuardDeviationBps, guardian: p.priceGuardGuardian },
     engine: { factory: d.factory, readHelper: d.readHelper, routingHelper: d.routing, priceGuard: d.priceGuard,
       readHelperHash: codeHashes.readHelper, routingHelperHash: codeHashes.routing, priceGuardHash: codeHashes.priceGuard },
     implementation: { factory: d.factory, implementation: d.implementation, implementationVersion: 4,

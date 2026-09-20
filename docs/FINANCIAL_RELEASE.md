@@ -21,6 +21,7 @@ hex; integer strings are canonical unsigned decimal strings.
 | operator | Intended execution principal for the public Sequence profile |
 | pricePublisher | Independent price publisher; must differ from operator |
 | priceGuardDeviationBps | Band, in basis points of the square-root price, inside which a published price must sit against the pool's live reading; integer 1–9999 |
+| priceGuardGuardian | Cold key that can propose the next price publisher (the proposed key must accept) and revoke an observation; must differ from operator and pricePublisher |
 | setupFeeBps | Explicit assisted Setup tariff, integer 0–65 |
 | tariffVersion | Nonzero uint64 tariff version as a decimal string |
 | expiresAt | Absolute Unix-second expiry for the resulting public profiles |
@@ -87,6 +88,27 @@ check includes intrinsic calldata/initcode and runtime code deposit; constructor
 execution still requires additional gas. The supplied limits are caps, not a
 claim that an estimate succeeded on mainnet. Extra L2 fee components remain
 explicitly unqualified in the manifest.
+
+## Rotating the price publisher after deployment
+
+The price guard's publisher is the one role that can change after the eight
+transactions, because every execution depends on its liveness and a key does
+not stay clean forever. Rotation is a two-key handshake and needs no
+redeployment: the `priceGuardGuardian` calls `proposePublisher(next)` on the
+deployed `DominoPriceGuardV4`, and `next` calls `acceptPublisher()`. Until it
+accepts, nothing changes; a proposal to a mistyped address hands the role to
+nobody. The guardian can also `revoke(id)` any observation without the
+publisher key - the emergency brake against a key that is publishing inside
+the band but should not be publishing at all. Observations the old key
+published stay readable until they expire (at most 255 blocks).
+
+Rotation does not admit the new key anywhere else. The sequence profiles name
+`pricePublisher`, and the signer refuses to sign while `publisher()` on the
+guard differs from the admitted address (`execution_v4.py`), so a rotation is
+followed by re-issuing the profiles with the new publisher, through the same
+verified-release path. The guardian must differ from the operator and from
+the publisher, and it is a cold key: it publishes nothing and cannot widen the
+band.
 
 ## Wallet execution and partial recovery
 

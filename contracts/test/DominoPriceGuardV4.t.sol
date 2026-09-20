@@ -34,6 +34,8 @@ contract DominoPriceGuardV4Test {
     GuardVm private constant vm = GuardVm(address(uint160(uint256(keccak256("hevm cheat code")))));
     address private constant PUBLISHER = address(0xB0B);
     address private constant STRANGER = address(0xBAD);
+    address private constant GUARDIAN = address(0x6A2D);
+    address private constant SUCCESSOR = address(0x5E11);
     bytes32 private constant POOL = keccak256("pool");
     uint160 private constant SPOT = uint160(1 << 96);
     uint256 private constant BAND = 100;
@@ -47,7 +49,7 @@ contract DominoPriceGuardV4Test {
         vm.warp(1_700_000_000);
         state = new MockGuardStateView();
         state.set(POOL, SPOT);
-        guard = new DominoPriceGuardV4(PUBLISHER, address(state), BAND);
+        guard = new DominoPriceGuardV4(PUBLISHER, address(state), BAND, GUARDIAN);
     }
 
     function _point() private view returns (DominoPriceGuardV4.Observation memory point) {
@@ -78,21 +80,89 @@ contract DominoPriceGuardV4Test {
     }
 
     function testConstructorRefusesAnUnusableTrustConfiguration() external {
-        (bool ok,) = address(this).call(abi.encodeCall(this.deploy, (address(0), address(state), BAND)));
+        (bool ok,) = address(this).call(abi.encodeCall(this.deploy, (address(0), address(state), BAND, GUARDIAN)));
         require(!ok, "a publisher is required");
-        (ok,) = address(this).call(abi.encodeCall(this.deploy, (PUBLISHER, address(0), BAND)));
+        (ok,) = address(this).call(abi.encodeCall(this.deploy, (PUBLISHER, address(0), BAND, GUARDIAN)));
         require(!ok, "a state view is required");
-        (ok,) = address(this).call(abi.encodeCall(this.deploy, (PUBLISHER, address(state), 0)));
+        (ok,) = address(this).call(abi.encodeCall(this.deploy, (PUBLISHER, address(state), BAND, address(0))));
+        require(!ok, "a guardian is required");
+        (ok,) = address(this).call(abi.encodeCall(this.deploy, (PUBLISHER, address(state), BAND, PUBLISHER)));
+        require(!ok, "the guardian must not be the publisher it can replace");
+        (ok,) = address(this).call(abi.encodeCall(this.deploy, (PUBLISHER, address(state), 0, GUARDIAN)));
         require(!ok, "a zero band would admit any price");
-        (ok,) = address(this).call(abi.encodeCall(this.deploy, (PUBLISHER, address(state), 10000)));
+        (ok,) = address(this).call(abi.encodeCall(this.deploy, (PUBLISHER, address(state), 10000, GUARDIAN)));
         require(!ok, "a band of 100% would admit any price");
-        (ok,) = address(this).call(abi.encodeCall(this.deploy, (PUBLISHER, address(state), 9999)));
+        (ok,) = address(this).call(abi.encodeCall(this.deploy, (PUBLISHER, address(state), 9999, GUARDIAN)));
         require(ok, "one basis point short of everything is still a band");
     }
 
     /// External so the constructor's reverts are catchable.
-    function deploy(address publisher, address stateView, uint256 band) external {
-        new DominoPriceGuardV4(publisher, stateView, band);
+    function deploy(address publisher, address stateView, uint256 band, address guardian) external {
+        new DominoPriceGuardV4(publisher, stateView, band, guardian);
+    }
+
+    function _call(address from, bytes memory data) private returns (bool ok) {
+        vm.prank(from);
+        (ok,) = address(guard).call(data);
+    }
+
+    /// Rotation is a two-key handshake: the guardian names the next publisher,
+    /// the named key accepts, and only then does the role move. Nobody else
+    /// can start it, and nobody but the named key can finish it.
+    function testOnlyTheGuardianProposesAndOnlyTheProposedAccepts() external {
+        bytes memory propose = abi.encodeCall(DominoPriceGuardV4.proposePublisher, (SUCCESSOR));
+        require(!_call(STRANGER, propose), "a stranger proposed");
+        require(!_call(PUBLISHER, propose), "the publisher proposed its own successor");
+        require(_call(GUARDIAN, propose) && guard.pendingPublisher() == SUCCESSOR, "the guardian could not propose");
+        require(guard.publisher() == PUBLISHER, "a proposal moved the role by itself");
+
+        bytes memory accept = abi.encodeCall(DominoPriceGuardV4.acceptPublisher, ());
+        require(!_call(STRANGER, accept), "a stranger accepted");
+        require(!_call(GUARDIAN, accept), "the guardian accepted on the successor's behalf");
+        require(!_call(PUBLISHER, accept), "the old publisher accepted");
+        require(_call(SUCCESSOR, accept), "the successor could not accept");
+        require(guard.publisher() == SUCCESSOR && guard.pendingPublisher() == address(0), "the role did not move");
+        require(!_call(SUCCESSOR, accept), "a spent proposal was accepted again");
+
+        // The old key is out, the new one is in.
+        DominoPriceGuardV4.Observation memory point = _point();
+        _armHash(point);
+        vm.prank(PUBLISHER);
+        (bool ok,) = address(guard).call(abi.encodeCall(DominoPriceGuardV4.publish, (point)));
+        require(!ok, "the rotated-out key still publishes");
+        vm.prank(SUCCESSOR);
+        guard.publish(point);
+    }
+
+    function testAProposalRefusesNobodyAndTheCurrentPublisher() external {
+        require(!_call(GUARDIAN, abi.encodeCall(DominoPriceGuardV4.proposePublisher, (address(0)))), "proposed nobody");
+        require(!_call(GUARDIAN, abi.encodeCall(DominoPriceGuardV4.proposePublisher, (PUBLISHER))), "proposed the incumbent");
+        require(guard.pendingPublisher() == address(0), "a refused proposal was recorded");
+    }
+
+    /// The guardian's other power: it can retire an observation without the
+    /// publisher key, which is the brake against a key that is publishing
+    /// inside the band but should not be publishing at all.
+    function testTheGuardianCanRevokeWithoutThePublisherKey() external {
+        bytes32 id = _publish(_point());
+        require(!_call(STRANGER, abi.encodeCall(DominoPriceGuardV4.revoke, (id))), "a stranger revoked");
+        require(!guard.revoked(id), "and nothing was revoked");
+        require(_call(GUARDIAN, abi.encodeCall(DominoPriceGuardV4.revoke, (id))), "the guardian could not revoke");
+        require(guard.revoked(id), "the guardian's revocation did not take");
+    }
+
+    /// Rotation does not touch what the old key published: those observations
+    /// were bounded by the band when published and by the engine's limits when
+    /// read. They die at their own expiry, or by revocation.
+    function testRotationKeepsEarlierObservationsReadableUntilTheyExpire() external {
+        DominoPriceGuardV4.Observation memory point = _point();
+        bytes32 id = _publish(point);
+        _call(GUARDIAN, abi.encodeCall(DominoPriceGuardV4.proposePublisher, (SUCCESSOR)));
+        _call(SUCCESSOR, abi.encodeCall(DominoPriceGuardV4.acceptPublisher, ()));
+        require(guard.referencePrice(id, POOL, point.blockNumber, point.blockHash, 3600) == SPOT,
+            "rotation erased a live observation");
+        vm.warp(point.expiresAt + 1);
+        _rejectRead(id, POOL, point.blockNumber, point.blockHash, 3600, "and it still expires");
     }
 
     function testOnlyThePublisherPublishesOrRevokes() external {
@@ -161,10 +231,11 @@ contract DominoPriceGuardV4Test {
     /**
      * Nine of the guard's clauses cannot be the one that decides, and this
      * records which. Every clause of the constructor, _withinBand, publish,
-     * revoke and referencePrice was deleted in turn against this suite (the
-     * batch is in reports/CONTRACT_HYGIENE_MINOR_2026-09-19.md): 24 fail a
-     * test, these nine leave all of them green, and that is a property of the
-     * guard rather than a gap in the suite.
+     * revoke, referencePrice and the publisher rotation was deleted in turn
+     * against this suite (the batch is in
+     * reports/CONTRACT_HYGIENE_MINOR_2026-09-19.md): 30 of 39 fail a test,
+     * these nine leave all of them green, and that is a property of the guard
+     * rather than a gap in the suite.
      *
      *   publish
      *     poolId == 0        a pool with no reading is outside any band

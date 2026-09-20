@@ -42,6 +42,7 @@ contract OfficialDominoExecutionV4Test {
     VmExecutionV4 private constant vm = VmExecutionV4(address(uint160(uint256(keccak256("hevm cheat code")))));
     address private constant RECIPIENT = address(0xFEE);
     address private constant PUBLISHER = address(0xA11CE);
+    address private constant GUARDIAN = address(0x6A2D);
     // The published price must sit within this band of the pool's own
     // reading; wide enough for the fixture's moves, far from unbounded.
     uint256 constant GUARD_DEVIATION_BPS=2000;
@@ -81,7 +82,7 @@ contract OfficialDominoExecutionV4Test {
         manager.initialize(key,uint160(1<<96)); seed.seed(key,OPENING); seed.refundSetup(); tokenId=seed.tokenId();
         factory=new DominoVaultFactoryV4(address(manager),address(positions),address(state),RECIPIENT);
         reader=new DominoVaultReadHelper(address(positions),address(state));
-        routing=new DominoRoutingHelperV4(); oracle=new DominoPriceGuardV4(PUBLISHER,address(state),GUARD_DEVIATION_BPS);
+        routing=new DominoRoutingHelperV4(); oracle=new DominoPriceGuardV4(PUBLISHER,address(state),GUARD_DEVIATION_BPS,GUARDIAN);
         engine=new DominoExecutionEngineV4(address(factory),address(reader),address(routing),address(oracle));
         DominoVaultV4 implementation=new DominoVaultV4(address(factory),address(manager),address(positions),
             address(state),RECIPIENT,address(reader),address(engine));

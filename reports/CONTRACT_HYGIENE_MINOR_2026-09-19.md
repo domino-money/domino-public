@@ -212,6 +212,13 @@ The other nine are redundancies, named in the suite beside the clause that decid
 suite's comment used to say "fifteen of nineteen"; it counted differently, and the enumeration
 replaces it.
 
+*Re-run on 20 September after the guard gained publisher rotation (D-03's other half: an
+immutable guardian proposes, the proposed key accepts, and the guardian may revoke): 39
+mutations, 30 fail a test, the same nine survive. Every rotation clause - the two constructor
+checks on the guardian, guardian-only proposal, no proposal of nobody or of the incumbent,
+acceptance by the proposed key only, the pending slot cleared, and both arms of revoke - is
+pinned by the four tests added with it.*
+
 ### Found on the way
 
 **M-21 - my new V4 test claimed a clause it could not reach.**
