@@ -1,11 +1,10 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.26;
 
-import {DominoVaultTypes as T, IPositionManagerE2, IStateViewE2, IERC20E2, IPoolManagerE4} from "./DominoVaultTypes.sol";
+import {DominoVaultTypes as T, IStateViewE2, IERC20E2, IPoolManagerE4} from "./DominoVaultTypes.sol";
 import {DominoExecutionTypes as E, IVaultFactoryV4, IPriceGuardV4, IVaultExecutionV4} from "./DominoExecutionTypes.sol";
 import {DominoVaultReadHelper} from "./DominoVaultReadHelper.sol";
 import {DominoRoutingHelperV4} from "./DominoRoutingHelperV4.sol";
-import {IDominoVaultDraft} from "./IDominoVaultDraft.sol";
 
 interface IPoolSwapV4 is IPoolManagerE4 {
     struct SwapParams { bool zeroForOne; int256 amountSpecified; uint160 sqrtPriceLimitX96; }

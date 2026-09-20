@@ -149,6 +149,31 @@ pinned for V3 and unpinned for V4, the vault the release ships. Not mine — pre
 its observation and the deadline is checked first, so `|| block.timestamp > point.expiresAt` can
 be deleted with all 214 tests green. The guard is correct; nothing exercises it.
 
+## One measurement that closes a compaction item
+
+**V2 is not reachable through the compiler, and the source route is worth less
+than it looks.** The review attributes 300-600 B to the Yul FunctionSpecializer
+cloning `_register`, `_credit` and `_invalidateRoot` where they take literal
+arguments. Compiling `DominoVaultV4` alone with the default step sequence minus
+`F` gives 21,443 B against 23,625 B — **2,182 B**, four times the top of that
+estimate and more than every other compaction item combined.
+
+It cannot be taken. Building the whole tree with that sequence fails:
+
+```
+Yul exception: Variable cleaned_1 is 1 too deep in the stack
+```
+
+The default sequence is what keeps this project compilable — the review's own
+opening notes the same class of stack error at
+`DominoExecutionEngineV4.sol:183` — and `F` is part of it. So the 2,182 B is a
+real measurement of what the pass costs and not an available saving.
+
+That leaves the source route: contorting call sites so no literal reaches a
+specialised function. With the vault now holding 638 B of slack and nothing
+pending that needs them, worse code to outwit an optimiser pass is a bad
+trade. Declined, with the number recorded so it is not re-derived.
+
 ## Not fixed here
 
 This is the enumeration the review's reference needs.
