@@ -16,7 +16,6 @@ import {
   withAutomation,
   withBudget,
   withLimits,
-  withPaired,
   withPool,
   withRange,
   withSlippage,
@@ -185,7 +184,6 @@ export function Journey({ poolId }: { poolId: string }) {
   const update = (updated: JourneyState) => setState(updated)
 
   const setToken = (candidate: TokenCandidate | null) => update(withToken(state, candidate))
-  const setPaired = (candidate: TokenCandidate | null) => update(withPaired(state, candidate))
   const setPool = (option: PoolOption | null) => update(withPool(state, option, Date.now()))
   const setRange = (range: TickRange) => update(withRange(state, range))
   const setBudget = (text: string) => update(withBudget(state, text))
@@ -310,7 +308,7 @@ export function Journey({ poolId }: { poolId: string }) {
   const bodyOf = (step: VisualStep): ReactNode => {
     switch (step) {
       case 'pool':
-        return <StageToken source={source} state={state} preselect={preselect} candidates={candidates} onCandidates={setCandidates} onToken={setToken} onPool={setPool} onPaired={setPaired} />
+        return <StageToken source={source} state={state} preselect={preselect} candidates={candidates} onCandidates={setCandidates} onToken={setToken} onPool={setPool} />
       case 'range':
         return <StageRange source={source} state={state} onRange={setRange} onPool={setPool} />
       case 'amount':

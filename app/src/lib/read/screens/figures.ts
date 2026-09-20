@@ -18,11 +18,18 @@ import { fixedFeePercent } from './fee'
 
 export type ProviderId = 'geckoterminal' | 'dexscreener'
 
-export const PROVIDER_NAME: Record<ProviderId, string> = { geckoterminal: 'GeckoTerminal', dexscreener: 'DexScreener' }
+/**
+ * What a provider is called on screen: the part it plays, never its name,
+ * which stays in the data alone (`data-provider`). Long form for a sentence,
+ * short form for the word beside a figure.
+ */
+export const PROVIDER_LONG = 'a market data provider'
+export const PROVIDER_SHORT = 'Provider'
 
 export type AttributedFigure =
-  | { state: 'attributed'; value: string; zero: boolean; provider: ProviderId; retrievedAt: number; cacheAgeSeconds: number | null }
-  | { state: 'attributed_stale'; value: string; zero: boolean; provider: ProviderId; retrievedAt: number; cacheAgeSeconds: number | null; refreshReason: string | null }
+  /** `raw` is the provider's own decimal, kept so a list can work the fee APR estimate out without a read per row (rowApr.ts). */
+  | { state: 'attributed'; value: string; raw: string; zero: boolean; provider: ProviderId; retrievedAt: number; cacheAgeSeconds: number | null }
+  | { state: 'attributed_stale'; value: string; raw: string; zero: boolean; provider: ProviderId; retrievedAt: number; cacheAgeSeconds: number | null; refreshReason: string | null }
   | { state: 'not_reported'; provider: ProviderId }
   | { state: 'unavailable'; provider: ProviderId; reason: string }
   | { state: 'rejected'; provider: ProviderId; reason: string }
@@ -42,7 +49,7 @@ export function figureFromProviderMetrics(metrics: ProviderMetrics | null, pick:
   if (raw === null) return { state: 'not_reported', provider }
   const v = valued(raw)
   if (!v) return { state: 'unavailable', provider, reason: 'invalid_quantity' }
-  return { state: 'attributed', ...v, provider, retrievedAt: metrics.retrievedAt, cacheAgeSeconds: null }
+  return { state: 'attributed', ...v, raw, provider, retrievedAt: metrics.retrievedAt, cacheAgeSeconds: null }
 }
 
 /** GeckoTerminal figures from pool-market. The envelope's status decides, never a non-null cache age. */
@@ -54,7 +61,7 @@ export function figureFromMarket(market: PoolMarketResponse['market'], pick: 'li
   if (raw === null) return { state: 'not_reported', provider }
   const v = valued(raw)
   if (!v) return { state: 'unavailable', provider, reason: 'invalid_quantity' }
-  const base = { ...v, provider, retrievedAt: market.data.retrievedAt, cacheAgeSeconds: market.cache.ageSeconds }
+  const base = { ...v, raw, provider, retrievedAt: market.data.retrievedAt, cacheAgeSeconds: market.cache.ageSeconds }
   // A stale envelope is still a retained observation; a reason describes why no fresher observation is available.
   return market.status === 'stale' ? { state: 'attributed_stale', ...base, refreshReason: market.reason } : { state: 'attributed', ...base }
 }
@@ -70,30 +77,30 @@ export function utcTime(seconds: number): string {
  * pools route gives DexScreener figures no cache age, so the payload's
  * retrieval time, in UTC, is the only age there is. Never the client clock.
  */
-export function retrievalNote(provider: ProviderId, retrievedAt: number): string {
-  return `${PROVIDER_NAME[provider]} figures retrieved ${utcTime(retrievedAt)}. Provider-reported, not reconciled with chain data.`
+export function retrievalNote(retrievedAt: number): string {
+  return `${PROVIDER_SHORT} figures retrieved ${utcTime(retrievedAt)}. Provider-reported, not reconciled with chain data.`
 }
 
-/** Where a figure came from. Never says current, live, updated or qualified. */
+/** Where a figure came from. Never says current, live, updated or qualified, and never the provider's name. */
 export function provenanceText(figure: AttributedFigure): { short: string; long: string } {
-  const name = PROVIDER_NAME[figure.provider]
+  const word = PROVIDER_SHORT
   const tail = 'Provider-reported, not reconciled with chain data.'
   switch (figure.state) {
     case 'attributed': {
       const age = figure.cacheAgeSeconds === null ? '' : ` · cache ${figure.cacheAgeSeconds} s`
-      return { short: `${name}${age}`, long: `Reported by ${name}, retrieved ${utcTime(figure.retrievedAt)}. ${tail}` }
+      return { short: `${word}${age}`, long: `Reported by ${PROVIDER_LONG}, retrieved ${utcTime(figure.retrievedAt)}. ${tail}` }
     }
     case 'attributed_stale':
       return {
-        short: `${name} · stale`,
-        long: `Reported by ${name}, retrieved ${utcTime(figure.retrievedAt)}. This observation is stale${figure.refreshReason === null ? '' : ` (${reasonText(figure.refreshReason)})`}. ${tail}`,
+        short: `${word} · stale`,
+        long: `Reported by ${PROVIDER_LONG}, retrieved ${utcTime(figure.retrievedAt)}. This observation is stale${figure.refreshReason === null ? '' : ` (${reasonText(figure.refreshReason)})`}. ${tail}`,
       }
     case 'not_reported':
-      return { short: `${name} · not reported`, long: `${name} was retrieved but reported no value for this figure. ${tail}` }
+      return { short: `${word} · not reported`, long: `Retrieved from ${PROVIDER_LONG}, which reported no value for this figure. ${tail}` }
     case 'unavailable':
-      return { short: `${name} · unavailable`, long: `Nothing usable was retrieved from ${name} (${reasonText(figure.reason)}). ${tail}` }
+      return { short: `${word} · unavailable`, long: `Nothing usable was retrieved from ${PROVIDER_LONG} (${reasonText(figure.reason)}). ${tail}` }
     case 'rejected':
-      return { short: `${name} · rejected`, long: `What was retrieved from ${name} failed an identity check (${reasonText(figure.reason)}) and is not shown. ${tail}` }
+      return { short: `${word} · rejected`, long: `What was retrieved from ${PROVIDER_LONG} failed an identity check (${reasonText(figure.reason)}) and is not shown. ${tail}` }
     default:
       return figure satisfies never
   }

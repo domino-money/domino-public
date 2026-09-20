@@ -8,11 +8,9 @@ import type { StatusLine } from '../../lib/read/screens/statusLine'
 import { knownTokens } from '../../lib/read/screens/tokenSearch'
 import { mergeCandidates, type TokenCandidate } from '../../lib/read/screens/tokens'
 import type { ReadSource } from '../../lib/read/types'
-import { useWalletIdentity } from '../../lib/walletIdentity'
-import { TokenPicker } from '../read/screens/TokenPicker'
 import { TokenSearch } from '../read/screens/TokenSearch'
 import { Button, Skeleton } from '../ui'
-import { ChosenPool, PairedAsset, PoolList } from './StagePool'
+import { ChosenPool, PoolList } from './StagePool'
 
 /** What the pool id in the link came to, while the person picks a token. */
 export type PreselectStatus =
@@ -56,13 +54,11 @@ const searchName = (candidate: TokenCandidate) => {
  *
  * With a pool chosen (from the link, once verified, or from the list) the
  * step shows that pool and its two currencies as the deposit choice. Without
- * one: a search by name over the tokens this app knows (the selected pools'
- * tokens, a wallet listing's rows, tokens already read), then the existing
- * pools for the chosen token. A second asset narrows the list, and the token
- * picker (check an address, list a public address's tokens) is one
- * disclosure away. Nothing is read until a person asks: the search reads a
- * token only when one is chosen, and the pool list reads once it mounts for
- * a chosen token.
+ * one: one search field that takes a name or a contract address, then the
+ * existing pools for the chosen token. Nothing else: the field is the whole
+ * way in. Nothing is read until a person asks — the search reads a token only
+ * when one is chosen, and the pool list reads once it mounts for a chosen
+ * token.
  *
  * How the link's verification went is never a panel: while it runs the step
  * holds its place, and whatever it came to is on the step's data attributes
@@ -77,7 +73,6 @@ export function StageToken({
   onCandidates,
   onToken,
   onPool,
-  onPaired,
 }: {
   source: ReadSource | null
   state: JourneyState
@@ -86,23 +81,12 @@ export function StageToken({
   onCandidates: (next: TokenCandidate[]) => void
   onToken: (candidate: TokenCandidate | null) => void
   onPool: (option: PoolOption | null) => void
-  onPaired: (candidate: TokenCandidate | null) => void
 }) {
-  // The header's connection, as the store outside the wallet feature
-  // publishes it: an address to start the list from, never a session.
-  const identity = useWalletIdentity()
-  const connected = identity.kind === 'connected' ? identity.address : undefined
   const [changing, setChanging] = useState(false)
-  // The search starts again, showing the chosen token's name, when a token is chosen some other way.
-  const [searchKey, setSearchKey] = useState(0)
   const known = knownTokens({ catalogue: catalogueTokens(), candidates })
 
   const fromSearch = (candidate: TokenCandidate) => {
     onCandidates(mergeCandidates(candidates, [candidate]))
-    onToken(candidate)
-  }
-  const fromElsewhere = (candidate: TokenCandidate | null) => {
-    setSearchKey((count) => count + 1)
     onToken(candidate)
   }
   const pickPool = (option: PoolOption | null) => {
@@ -134,7 +118,6 @@ export function StageToken({
           )}
           {source ? (
             <TokenSearch
-              key={searchKey}
               source={source}
               known={known}
               onFound={fromSearch}
@@ -149,25 +132,6 @@ export function StageToken({
             </p>
           )}
           {source && state.token && <PoolList source={source} state={state} onPool={pickPool} />}
-          <div className="dm-flow-disclosures">
-            <PairedAsset source={source} state={state} onPaired={onPaired} />
-            <details className="dm-details dm-flow-disclosure">
-              <summary>{CREATE.token.moreWays}</summary>
-              <div className="grid gap-4">
-                <p className="text-caption text-fg-muted">{CREATE.token.walletNote}</p>
-                <p className="text-caption text-fg-subtle" data-connected-note={connected ? 'connected' : 'disconnected'}>
-                  {connected ? CREATE.token.connectedNote(shortAddress(connected)) : CREATE.token.disconnectedNote}
-                </p>
-                {source ? (
-                  <TokenPicker source={source} variant="token" exclude={null} candidates={candidates} onCandidates={onCandidates} pending={state.token} onPending={fromElsewhere} initialWallet={connected} />
-                ) : (
-                  <p role="status" className="text-body text-fg-muted">
-                    {CREATE.page.sourceLoading}
-                  </p>
-                )}
-              </div>
-            </details>
-          </div>
         </>
       )}
     </div>

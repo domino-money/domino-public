@@ -74,11 +74,21 @@ test('token picker exposes address search and wallet lookup without issuing read
 
 test('pool cards preserve real zero, unavailable APR and provider attribution in both layouts', () => {
   for (const compact of [true, false]) {
-    const rendered = html(PoolRow, { option: { ...option, volume: { state: 'attributed', value: '$0.00', zero: true, provider: 'dexscreener', retrievedAt: 1000, cacheAgeSeconds: null } }, checked: true, onPick() {}, name: 'pool', compact })
+    const rendered = html(PoolRow, { option: { ...option, volume: { state: 'attributed', value: '$0.00', raw: '0', zero: true, provider: 'dexscreener', retrievedAt: 1000, cacheAgeSeconds: null } }, checked: true, onPick() {}, name: 'pool', compact })
     assert.match(rendered, /\$0\.00/)
-    assert.match(rendered, /DexScreener/)
+    assert.match(rendered, /Reported by a market data provider, retrieved/, 'the figure is attributed to a provider')
+    assert.doesNotMatch(rendered, /GeckoTerminal|DexScreener/, 'the provider is never named on a screen')
     assert.match(rendered, />TVL</)
-    assert.match(rendered, />Pool APR<\/span><span>Unavailable/)
+    // Changed on purpose (2026-09-20): a pool that genuinely traded nothing earns
+    // nothing, and zero is a figure — the producer's own `_render` prints it and
+    // refuses only a POSITIVE estimate too small to show. A dash here said "we do
+    // not know" about something we do know.
+    assert.match(rendered, /data-row-apr="estimate"/)
+    assert.match(rendered, />Pool APR<\/span><span class="tnum font-medium text-fg"[^>]*>0% est\./)
+    assert.doesNotMatch(rendered, /data-row-apr-reason/, 'nothing was refused')
+    // The caveat that used to sit under every row, contradicting the figure above
+    // it on every pool, is gone for good.
+    assert.doesNotMatch(rendered, /Pool APR unavailable/, 'no constant caveat under the details')
     assert.match(rendered, /type="radio"/)
     assert.ok(rendered.includes(option.key))
     assert.match(rendered, /Pool details · verified at block/)
@@ -101,8 +111,11 @@ test('on Explore a pool row is a way in, not a choice: a button named by its own
   assert.match(rendered, /&lt;img src=x onerror=alert\(1\)&gt;/)
   assert.doesNotMatch(rendered, /<img src="x"/)
   assert.ok(rendered.includes(option.key))
-  assert.match(rendered, /DexScreener/)
-  assert.match(rendered, />Pool APR<\/span><span>Unavailable/)
+  assert.match(rendered, /Reported by a market data provider, retrieved/, 'the figure is attributed to a provider')
+  assert.doesNotMatch(rendered, /GeckoTerminal|DexScreener/, 'the provider is never named on a screen')
+  // The row works the estimate out from the figures this read already returned: no read per row.
+  assert.match(rendered, /data-row-apr="estimate"/)
+  assert.match(rendered, />Pool APR<\/span><span class="tnum font-medium text-fg"[^>]*>[\d.]+% est\./)
 })
 
 test('the picker with onOpen and the catalogue left to the page renders no catalogue section and reads nothing on render', () => {
@@ -112,4 +125,15 @@ test('the picker with onOpen and the catalogue left to the page renders no catal
   assert.equal(calls, 0)
   assert.doesNotMatch(rendered, /Stored pool catalogue|Load catalogue candidates/)
   assert.doesNotMatch(rendered, /New pool creation/, 'the compact form carries no new-pool note')
+})
+
+// A positive estimate too small for two places is still refused, and still says
+// so by name — the row shows a dash only when it truly has nothing to show.
+test('an estimate below what two places can show is refused by name, not rounded to zero', () => {
+  const tiny = { state: 'attributed', value: '$0.0001', raw: '0.0001', zero: false, provider: 'dexscreener', retrievedAt: 1000, cacheAgeSeconds: null }
+  const rendered = html(PoolRow, { option: { ...option, volume: tiny }, checked: false, onPick() {}, name: 'pool', compact: true })
+  assert.match(rendered, /data-row-apr="none" data-row-apr-reason="estimate_rounds_to_zero"/)
+  assert.match(rendered, />Pool APR<\/span><span class="text-fg-subtle" title="[^"]+">—/)
+  assert.doesNotMatch(rendered, /0% est\./, 'a figure too small to show is never printed as a zero')
+  assert.doesNotMatch(rendered, /Pool APR unavailable/)
 })

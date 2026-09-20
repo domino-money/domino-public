@@ -105,6 +105,29 @@
   .dm-flow-balance-line { margin: 0; min-width: 0; font-size: 13px; line-height: 18px; letter-spacing: -0.12px; overflow-wrap: anywhere; }
   .dm-flow-balance-why { margin: 2px 0 0; min-width: 0; font-size: 12px; line-height: 16px; color: var(--fg-subtle); }
 
+  /* ---- Slippage tolerance ------------------------------------------------------------------------------ */
+  /* A percentage you drag. The native range input lies invisible over the whole rail, so a pointer, a finger
+     and the keyboard all move the same control; the track, its marks and the thumb only draw where its
+     position is, and the box under them takes a percentage between the marks. */
+  .dm-flow-slip { display: grid; gap: 8px; min-width: 0; }
+  .dm-flow-slip-head { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 4px 12px; min-width: 0; }
+  .dm-flow-slip-head > .dm-label { margin-bottom: 0; }
+  .dm-flow-slip-value { font-size: 32px; line-height: 36px; font-weight: 500; letter-spacing: -0.5px; color: var(--fg); }
+  .dm-flow-slip-rail { position: relative; height: 54px; min-width: 0; }
+  .dm-flow-slip-track { position: absolute; top: 14px; left: 0; right: 0; height: 6px; border-radius: var(--radius-pill); background: var(--surface-3); }
+  .dm-flow-slip-fill { position: absolute; top: 0; bottom: 0; left: 0; border-radius: var(--radius-pill); background: color-mix(in srgb, var(--primary-ink) 55%, transparent); }
+  .dm-flow-slip-mark { position: absolute; top: -4px; width: 2px; height: 14px; margin-left: -1px; border-radius: 1px; background: var(--fg-faint); transition: background-color var(--dur-hover) ease; }
+  .dm-flow-slip-mark[data-taken] { background: var(--primary-ink); }
+  .dm-flow-slip-input { position: absolute; inset: 0; width: 100%; height: 100%; margin: 0; opacity: 0; cursor: ew-resize; }
+  .dm-flow-slip-thumb { position: absolute; top: 17px; width: 20px; height: 20px; translate: -50% -50%; border-radius: var(--radius-pill); background: var(--btn); box-shadow: var(--elev-button), inset 0 0 0 1.5px var(--primary-ink); pointer-events: none; }
+  .dm-flow-slip-input:focus-visible ~ .dm-flow-slip-thumb { outline: 2px solid var(--ring); outline-offset: 2px; }
+  .dm-flow-slip-scale { position: absolute; top: 32px; left: 0; right: 0; height: 16px; font-size: 11px; line-height: 16px; letter-spacing: -0.1px; color: var(--fg-subtle); font-variant-numeric: lining-nums tabular-nums; pointer-events: none; }
+  .dm-flow-slip-scale > span { position: absolute; translate: -50% 0; white-space: nowrap; }
+  /* The lowest mark is the track's own start and the end is its finish, so neither label is centred on a position that would hang off the rail. */
+  .dm-flow-slip-scale > span:first-child { translate: 0 0; }
+  .dm-flow-slip-scale > .dm-flow-slip-end { left: auto; right: 0; translate: 0 0; }
+  .dm-flow-slip-exact { max-width: 220px; }
+
   /* ---- Automation choices ----------------------------------------------------------------------------- */
   .dm-flow-options { display: grid; gap: 8px; min-width: 0; }
   .dm-flow-option { display: flex; flex-direction: column; align-items: flex-start; gap: 6px; min-width: 0; padding: 12px; border-radius: var(--radius); background: var(--surface-2); box-shadow: inset 0 0 0 1px var(--border); cursor: pointer; transition: box-shadow var(--dur-hover) ease; }
@@ -137,9 +160,8 @@
   .dm-flow-facts--noted > div { align-items: baseline; }
   .dm-flow-facts--noted .dm-flow-fact-note { flex-basis: 100%; font-size: 12px; line-height: 16px; color: var(--fg-subtle); text-align: left; }
   .dm-flow-position { display: flex; align-items: flex-start; gap: 8px; margin: 0; font-size: 13px; line-height: 18px; color: var(--fg-muted); }
-  /* The dot is neutral out of range; only a position inside its range takes the in-tone. */
+  /* The line appears only out of range, so its dot is always the neutral one. */
   .dm-flow-position::before { content: ''; flex-shrink: 0; width: 6px; height: 6px; margin-top: 6px; border-radius: var(--radius-pill); background: var(--fg-faint); }
-  .dm-flow-position[data-tone="in"]::before { background: var(--money-in); }
   .dm-flow-wsteps { display: grid; gap: 4px; margin: 4px 0 0; padding: 0; list-style: none; }
   .dm-flow-wsteps > li { display: flex; align-items: flex-start; gap: 12px; min-width: 0; padding: 10px 12px; border-radius: var(--radius); background: var(--surface-2); box-shadow: inset 0 0 0 1px var(--border); }
 
@@ -211,9 +233,18 @@
     .dm-flow-amount { padding: 12px 16px; }
     .dm-flow-amount-input { height: 36px; font-size: 30px; line-height: 36px; }
   }
+  /* Review's headline: what is being created, read at a glance, before any list. */
+  .dm-flow-headline { display: grid; gap: 6px; min-width: 0; padding: 16px; border: 1px solid var(--border-strong); border-radius: 14px; background: var(--surface-2); }
+  .dm-flow-headline-pair { display: flex; flex-wrap: wrap; align-items: baseline; gap: 8px; min-width: 0; font-size: 16px; line-height: 24px; font-weight: 500; color: var(--fg); }
+  .dm-flow-headline-amounts { font-size: 20px; line-height: 28px; font-weight: 500; color: var(--fg); overflow-wrap: anywhere; }
+  .dm-flow-headline-line { font-size: 13px; line-height: 18px; color: var(--fg-muted); overflow-wrap: anywhere; }
+  .dm-flow-headline-foot { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 2px; }
+  .dm-flow-fee { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 4px 16px; min-width: 0; }
+  .dm-flow-fee-value { font-size: 14px; line-height: 20px; color: var(--fg); }
 }
 
 /* Clips the opening step's content to its growing box, and releases it when the box has grown. */
 @keyframes dm-flow-clip {
   from, to { clip-path: inset(0); }
+
 }

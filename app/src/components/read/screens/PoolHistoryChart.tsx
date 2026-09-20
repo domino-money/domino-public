@@ -1,6 +1,7 @@
 import { useEffect, useId, useState, type KeyboardEvent, type PointerEvent } from 'react'
 import type { HistoryResponse } from 'api-contracts/read-v3/types'
 import type { Market } from '../../../lib/markets'
+import { reasonText } from '../../../lib/read/describe'
 import { watchPublicHistory, type HistoryEvent } from '../../../lib/read/historyRead'
 import { ratioCandleText, ratioGeometry, ratioText } from '../../../lib/read/ratioSeries'
 import type { PoolOption } from '../../../lib/read/screens/poolsList'
@@ -8,7 +9,7 @@ import type { ReadSource } from '../../../lib/read/types'
 import { useNow } from '../../../lib/read/useNow'
 import { Segmented, Skeleton } from '../../ui'
 import { PoolTokenLabel } from '../../PoolCatalogueIdentity'
-import { PoolPriceChart } from './PoolPriceChart'
+import { CANDLES_TITLE, PoolPriceChart } from './PoolPriceChart'
 import { Address } from './Address'
 
 const WINDOWS = { day: 86400, week: 604800, month: 2592000 } as const
@@ -53,8 +54,8 @@ export function PoolHistoryChart({ source, option, market, loading, failed }: {
 
   const provider = market ? <PoolPriceChart market={market} /> : <div className="dm-card p-5">
     <h2 className="dm-display dm-display-card">USD price and volume</h2>
-    <div className="dm-pool-plot dm-dots-chart mt-4" title="Hourly candles reported by GeckoTerminal." data-chart-provider="GeckoTerminal">
-      <div className="dm-pool-plot-empty">{loading ? <Skeleton className="dm-pool-plot-baseline" /> : <span title={failed}>—</span>}</div>
+    <div className="dm-pool-plot dm-dots-chart mt-4" title={CANDLES_TITLE} data-chart-provider="GeckoTerminal">
+      <div className="dm-pool-plot-empty">{loading ? <Skeleton className="dm-pool-plot-baseline" /> : <span className="text-fg-subtle" title={failed}>—</span>}</div>
     </div>
   </div>
   if (disabled) return provider
@@ -65,8 +66,17 @@ export function PoolHistoryChart({ source, option, market, loading, failed }: {
   const recentFailure = current?.failed === true
   const aged = data?.snapshot && now.wall / 1000 - data.snapshot.timestamp > 120
   const stale = data?.status === 'stale' || aged || recentFailure
-  const coverage = data?.status === 'not_built' ? 'History is being acquired.' : data?.status === 'unavailable' ? 'History is unavailable for this pool.' :
-    data?.gaps.length ? 'Partial coverage · shaded intervals have not been acquired.' : 'Requested window covered.'
+  // The producer's `reason` defaults to a restatement of the status
+  // (backend/public_history.py: history_refresh_pending for stale,
+  // history_acquisition_pending for not_built and partial). Appending those
+  // says the same thing twice. Anything else is a real cause — a recorded
+  // last_error, or the DataError code behind an unavailable window — and is
+  // the only thing on this card that could tell a person why.
+  const RESTATED = ['history_refresh_pending', 'history_acquisition_pending']
+  const said = (code: string) => { const words = reasonText(code); return ` ${words.charAt(0).toUpperCase()}${words.slice(1)}.` }
+  const cause = data?.reason && !RESTATED.includes(data.reason) ? said(data.reason) : ''
+  const coverage = (data?.status === 'not_built' ? 'History is being acquired.' : data?.status === 'unavailable' ? 'History is unavailable for this pool.' :
+    data?.gaps.length ? 'Partial coverage · shaded intervals have not been acquired.' : 'Requested window covered.') + cause
 
   const inspectAt = (event: PointerEvent<SVGSVGElement>) => {
     if (!plot) return
@@ -82,10 +92,10 @@ export function PoolHistoryChart({ source, option, market, loading, failed }: {
     setInspected({ key, index: event.key === 'Home' ? 0 : event.key === 'End' ? plot.points.length - 1 : Math.max(0, Math.min(plot.points.length - 1, index + (event.key === 'ArrowLeft' ? -1 : 1))) })
   }
 
-  return <div data-history-mode={mode}>
+  return <div data-history-mode={mode} data-history-reason={data?.reason ?? undefined}>
     <div className="mb-3 flex flex-wrap justify-end gap-2">
       <Segmented label="Price history source" value={mode} onChange={setMode}
-        items={[{ key: 'chain', label: 'Pool ratio' }, { key: 'provider', label: 'USD · GeckoTerminal' }]} />
+        items={[{ key: 'chain', label: 'Pool ratio' }, { key: 'provider', label: 'USD · provider' }]} />
     </div>
     {mode === 'provider' ? provider : <section className="dm-card dm-pool-chart p-5" aria-labelledby={titleId} data-pool-ratio-chart="" data-ratio-status={data?.status ?? current?.state ?? 'reading'}>
       <div className="flex flex-wrap items-start justify-between gap-4">

@@ -129,9 +129,6 @@ export function PairedAmounts({
           </div>
         )
       })}
-      <p className="dm-hint" data-pair-note="">
-        {CREATE.amount.pairNote(pool.block)}
-      </p>
     </div>
   )
 }

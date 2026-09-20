@@ -12,16 +12,20 @@
  * reaching the screen. `producerCommit` is informational: CI can check the
  * bytes, not which commit produced them.
  *
- * The source commit integrates opt-in pool APR estimates (#127), explicit
- * chart currency identity (#128) and their development gateway path while
- * preserving RPC batching and the seven read-v1 routes. The independent V2
- * contract is pinned separately below; v1 remains exactly rc.3. The last
- * producer change is the T1.6/T1.7 indexing work, which touches
- * backend/catalogue.py — a source the manifest digests — without changing any
- * route, schema or version.
+ * Three independent contracts are pinned below, each with its own version and
+ * its own digest: read-v1 (rc.3, unchanged), read-v2's opt-in pool APR
+ * estimates, and read-v3's stored public observations, paged discovery and
+ * denominated history. read-v3 is additive — it took nothing away from v1 or
+ * v2, and the Worker serves all three at once.
+ *
+ * The producer commit below is a5f71f1, which carries the local RPC source,
+ * persisted public token data, and acquisition separated from reads. Later
+ * producer commits changed backend sources the manifests digest without
+ * changing a route, a schema or a version, which is why the versions here did
+ * not move while the digests did.
  */
 export const PRODUCER_PIN = {
-  producerCommit: 'c0d647b9c7558f1b35ba9d6c2ab00f7736772c24',
+  producerCommit: 'a5f71f19e6391f3eab52ee6e51417be211bc8ea5',
   producerIssue: 95,
   packages: {
     'read-v1': {

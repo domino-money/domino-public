@@ -47,7 +47,7 @@ before(async () => {
   })
   await new Promise(resolve => server.listen(0, '127.0.0.1', resolve))
   origin = `http://127.0.0.1:${server.address().port}`
-  const launches = process.env.DOMINO_BROWSER_PATH ? [{ executablePath: process.env.DOMINO_BROWSER_PATH }] : [{ channel: 'chrome' }, { channel: 'chromium' }, {}]
+  const launches = process.env.DOMINO_BROWSER_PATH ? [{ executablePath: process.env.DOMINO_BROWSER_PATH }] : [{ channel: 'chrome' }, { channel: 'chromium' }, { channel: 'msedge' }, {}]
   for (const options of launches) { try { browser = await chromium.launch(options); break } catch {} }
   if (!browser) throw new Error('Chromium is required; set DOMINO_BROWSER_PATH')
 })

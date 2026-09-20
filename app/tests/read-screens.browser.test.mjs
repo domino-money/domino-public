@@ -906,7 +906,7 @@ test('existing pools: fee, verification, provenance, attributed figures, no reco
   const dialog = await toPools(page);
   assert.match(await dialog.innerText(), /1 verified pool · partial source coverage/);
   const sources = await coverage(dialog);
-  assert.match(sources, /DexScreener returned 1 candidate \(1 on Uniswap\)\. That covers the provider’s candidates only\./);
+  assert.match(sources, /The discovery provider returned 1 candidate \(1 on Uniswap\)\. That covers the provider’s candidates only\./);
   assert.match(sources, /No pool catalogue is configured on this server/);
   const text = await dialog.innerText();
   const option = dialog.locator('[data-pool-option]').first();
@@ -915,11 +915,19 @@ test('existing pools: fee, verification, provenance, attributed figures, no reco
   const optionText = await option.innerText();
   assert.match(optionText, /0\.30%/);
   assert.match(optionText, /verified at block 700/);
-  assert.match(optionText, /Found by DexScreener discovery, verified on chain/);
-  assert.match(optionText, /\$10\.00 · DexScreener/);
-  assert.match(optionText, /\$1\.2K · DexScreener/);
-  assert.match(optionText, /DexScreener figures retrieved 00:16:50 UTC, 1970-01-01\. Provider-reported, not reconciled with chain data\./, 'source and age beside the figures');
-  assert.match(optionText, /Pool APR unavailable: reconciled fee history unavailable\./);
+  assert.match(optionText, /Found by provider discovery, verified on chain/);
+  // The figures stand alone; who reported them is in the figure's title and in the details below.
+  assert.match(optionText, /\$10\.00/);
+  assert.match(optionText, /\$1\.2K/);
+  assert.doesNotMatch(optionText, /\$10\.00 · Provider/, 'a provider is not a caption beside every number');
+  assert.match(optionText, /Provider figures retrieved 00:16:50 UTC, 1970-01-01\. Provider-reported, not reconciled with chain data\./, 'source and age beside the figures');
+  assert.doesNotMatch(optionText, /GeckoTerminal|DexScreener/, 'the provider is never named on a screen');
+  // Changed on purpose (2026-09-20): this line sat under EVERY row, always the
+  // same words, contradicting the estimate printed a few lines above it. The row
+  // now carries its outcome on the figure itself, and nothing restates it below.
+  assert.doesNotMatch(optionText, /Pool APR unavailable/, 'no constant caveat under the details');
+  assert.match(optionText, /Pool APR/, 'the figure itself is still there');
+  assert.equal(await option.locator('[data-row-apr]').count(), 1, 'exactly one APR outcome per row');
   assert.doesNotMatch(text, /recommended|top pick|best pool|suggested/i);
   assert.equal(await dialog.locator('[data-new-pool-note] button, [data-new-pool-note] a, [data-new-pool-note] input').count(), 0, 'the new-pool path has no control');
 
@@ -966,7 +974,7 @@ test('rejected candidates are listed but not selectable; an unknown provider or 
   await rejected.page.close();
 
   for (const [id, words] of [
-    ['create.poolsProviderUnavailable', /DexScreener discovery was unavailable \(network unavailable\), so this list may be incomplete\./],
+    ['create.poolsProviderUnavailable', /Provider discovery was unavailable \(network unavailable\), so this list may be incomplete\./],
     ['create.poolsMissing', /No verified pool was found in these sources\. That isn’t proof that none exists\./],
     ['create.pools409', /The catalogue changed during the read/],
   ]) {
@@ -998,12 +1006,6 @@ async function toRange(page) {
 
 const boundTicks = (dialog) => dialog.locator('[data-bound-tick]').evaluateAll((els) => els.map((el) => el.textContent.trim()));
 const priceState = (dialog) => dialog.locator('[data-picker="range"]').getAttribute('data-price-state');
-/** The range's own words, folded under "Range details"; opened to read. */
-async function rangeDetails(dialog) {
-  const details = dialog.locator('details:has([data-range-text])');
-  if (!(await details.getAttribute('open'))) await details.locator('summary').click();
-  return details.innerText();
-}
 /** The width radios marked checked, by their text; exactly one is expected. */
 const widthChecked = (dialog) =>
   dialog.locator('[role="radiogroup"] [role="radio"][aria-checked="true"]').allInnerTexts();
@@ -1022,18 +1024,21 @@ test('a chosen pool gets range controls on its read price: presets, steppers and
   assert.match(text, /A range drawn on this pool’s price as read, at one block\. Nothing is quoted, created, approved or signed\./);
   assert.match(text, /Pool price/);
   assert.match(await dialog.locator('[data-pool-price-text]').innerText(), /^≈1,000,000,000,000$/);
-  assert.match(text, /TOKEN per ETH · block 700/);
+  assert.match(text, /TOKEN per ETH/);
+  assert.doesNotMatch(text, /· block 700/, 'the block a price was read at is not something to read beside it');
   assert.match(text, /Enter a price and apply, or drag a handle\. Prices snap outward to the pool’s tick spacing\./);
   assert.equal(await priceState(dialog), 'usable');
-  const details = await rangeDetails(dialog);
-  assert.match(details, /Tick spacing 60 · pool tick 0\. The pool’s tick agrees with its square-root price at this block\./);
+  // The tick arithmetic behind the range is no longer read on screen: the range is prices and handles.
+  assert.equal(await dialog.locator('details:has([data-range-text])').count(), 0);
   assert.doesNotMatch(text, /\$\s?\d|amount|deposit/i, 'no amount and no money: an illustration of a range on a price');
 
   // The app's "Closer" preset, 0.7× to 1.5× of the pool price, on multiples of 60.
   assert.deepEqual(await boundTicks(dialog), ['-3600', '4080']);
   assert.equal(await dialog.getByRole('radio', { name: /Closer/ }).getAttribute('aria-checked'), 'true');
-  assert.equal(await dialog.locator('[data-range-position]').getAttribute('data-range-position'), 'inside');
-  assert.match(await dialog.locator('[data-range-text]').innerText(), /^≈.+ to ≈.+ TOKEN per ETH · ticks -3600 to 4080$/);
+  // A range that holds the price says so to assistive technology and nothing on
+  // screen; the line appears only when the range does not hold it.
+  assert.equal(await dialog.locator('[data-range-position="inside"]').getAttribute('data-range-position'), 'inside');
+  assert.equal(await dialog.locator('p[data-range-position]').count(), 0, 'nothing to warn about, nothing printed');
 
   await dialog.getByRole('button', { name: 'Raise the max price by one tick spacing' }).click();
   assert.deepEqual(await boundTicks(dialog), ['-3600', '4140']);
@@ -1180,8 +1185,7 @@ test('a price read more than 5 minutes ago on the page is marked stale in its ti
   assert.match(await dialog.locator('[data-pool-price] [role="status"]').textContent(), /^Price read again at block 705\.$/, 'said to assistive technology only');
   assert.equal(await priceState(dialog), 'usable');
   // The lab's second reading moved the price one tick spacing, to tick 60.
-  assert.match(await dialog.innerText(), /TOKEN per ETH · block 705/);
-  assert.match(await rangeDetails(dialog), /Tick spacing 60 · pool tick 60\./);
+  assert.match(await dialog.innerText(), /TOKEN per ETH/);
   assert.deepEqual(await boundTicks(dialog), ['-3600', '4080'], 'the practice range stays');
   assert.deepEqual(await widthChecked(dialog), ['Custom'], 'the kept range is no longer Closer on the moved price');
   const log = await caseLog(page);
@@ -1257,8 +1261,8 @@ test('provider figures carry their source and retrieval on the row; every cell w
   assert.deepEqual(cells.map((c) => c.state), ['provider', 'provider', 'unavailable']);
   // The figure alone in its cell; who reported it is on the row's provenance line and in the cell's own title.
   assert.equal(cells[0].text, '$12.3K');
-  assert.match(cells[0].title, /^Reported by GeckoTerminal, retrieved \d+ s ago\. Not reconciled by Domino\.$/);
-  assert.match(cells[1].title, /^Reported by GeckoTerminal, retrieved \d+ s ago\. Not reconciled by Domino\.$/);
+  assert.match(cells[0].title, /^Reported by a market data provider, retrieved \d+ s ago\. Not reconciled by Domino\.$/);
+  assert.match(cells[1].title, /^Reported by a market data provider, retrieved \d+ s ago\. Not reconciled by Domino\.$/);
   assert.equal(await page.locator('tbody tr td').nth(1).locator('[data-pool-price]').count(), 1, 'the price is the pool’s own ratio, in its own cell');
   // Every cell showing no number carries its reason.
   for (const cell of cells.filter((c) => ['unavailable', 'absent', 'not-current', 'rejected'].includes(c.state))) assert.ok(cell.title, `${cell.text} carries a reason`);
@@ -1268,7 +1272,7 @@ test('provider figures carry their source and retrieval on the row; every cell w
   assert.match(cells[2].title, /Pool estimate, not position APR, APY or a return forecast\. Estimated APR is (not enabled on this connection|unavailable; market figures use the supported read connection)\./, 'APR stays unavailable, and says why');
   // The provenance is the row's title and its data, not a line printed under the name.
   const provenance = await page.locator('tbody tr [data-provenance]').getAttribute('data-provenance');
-  assert.match(provenance, /^Pool verified on-chain at block 700 · Reported by GeckoTerminal, retrieved \d+ s ago$/, 'source and retrieval age on the row');
+  assert.match(provenance, /^Pool verified on-chain at block 700 · Reported by a market data provider, retrieved \d+ s ago$/, 'source and retrieval age on the row');
   assert.equal(await page.locator('tbody tr [data-provenance]').getAttribute('title'), provenance, 'the same words on hover');
   assert.doesNotMatch(`${provenance} ${cells[0].text}`, /\b(current|live|updated|qualified)\b/i);
   assert.doesNotMatch(provenance, /\$\d|as of|updated at/i, 'the provenance never repeats a figure, nor dates one it cannot date');
@@ -1284,10 +1288,10 @@ test('provider figures carry their source and retrieval on the row; every cell w
   const history = dialog.locator('[data-figures-qualified="no"]');
   const reasons = await history.locator('dd [title]').evaluateAll((els) => els.map((el) => [el.textContent, el.getAttribute('title')]));
   assert.deepEqual(reasons.map(([dash]) => dash), ['—', '—', '—', '—', '—']);
-  assert.deepEqual(reasons.slice(0, 2).map(([, why]) => why), ['Not qualified: the figure shown is GeckoTerminal’s', 'Not qualified: the figure shown is GeckoTerminal’s']);
+  assert.deepEqual(reasons.slice(0, 2).map(([, why]) => why), ['Not qualified: the figure shown is the provider’s', 'Not qualified: the figure shown is the provider’s']);
   assert.doesNotMatch(await history.innerText(), /yet|usable|need/i);
   // Who reported the figures and when: the figure's title, not a caption under it.
-  assert.match(await dialog.locator('[data-provider-figure="attributed"]').first().getAttribute('title'), /^Reported by GeckoTerminal, retrieved \d\d:\d\d:\d\d UTC, 1970-01-01\. Provider-reported, not reconciled with chain data\.$/);
+  assert.match(await dialog.locator('[data-provider-figure="attributed"]').first().getAttribute('title'), /^Reported by a market data provider, retrieved \d\d:\d\d:\d\d UTC, 1970-01-01\. Provider-reported, not reconciled with chain data\.$/);
   assert.match(text, /Pool is 19 s old; the 24h window isn’t complete/);
   // What the estimate is not: its own title, not a closing caption.
   assert.match(await dialog.locator('[data-figures-provider]').evaluate((el) => el.closest('[data-pool-figures-dialog]').querySelector('[data-apr-estimate] [title]').getAttribute('title')), /^Pool estimate, not position APR, APY or a return forecast\./);
@@ -1414,7 +1418,13 @@ test('the figures dialog ages with the row behind it, and says stale when the ro
 
   const dialog = await openFigures(page);
   assert.equal(await dialog.locator('[data-provider-figure="attributed_stale"]').count(), 0, 'nothing is stale yet');
-  assert.match(await dialog.innerText(), /cache 0 s/);
+  // The provenance moved off the line into the figure's title with the rest of the
+  // provider captions, and says when the observation was retrieved rather than how
+  // long a cache had held it: the age is the retrieval, read against the clock.
+  assert.match(await dialog.locator('[data-provider-figure="attributed"]').first().getAttribute('title'), /Reported by a market data provider, retrieved .*not reconciled with chain data\./);
+  // The dialog still offers the long provenance to assistive technology; what went
+  // is the caption printed beside every number.
+  assert.doesNotMatch(await dialog.locator('[data-provider-figure="attributed"]').first().locator('> div').innerText(), /provider|cache 0 s/i, 'no provider caption on the figure line');
 
   const readsBeforeAge = await caseLog(page);
   // Past the read service's fresh window, with the dialog left open.
@@ -1424,9 +1434,9 @@ test('the figures dialog ages with the row behind it, and says stale when the ro
   // The owner's rule: a stale figure reads as the figure, in the same ink; that it is stale is its state and its title.
   const staleFigure = dialog.locator('[data-provider-figure="attributed_stale"]').first();
   assert.match(await staleFigure.getAttribute('title'), /This observation is stale\./, 'the open dialog says stale in the figure’s title');
-  assert.match(await staleFigure.locator('> div').innerText(), /^Liquidity\s+\$12\.3K · GeckoTerminal$/, 'and draws the figure as it was, with no stale word beside it');
+  assert.match(await staleFigure.locator('> div').innerText(), /^Liquidity\s+\$12\.3K$/, 'and draws the figure as it was, with no stale word and no provider beside it');
   assert.doesNotMatch(await staleFigure.innerHTML(), /money-wait/);
-  assert.doesNotMatch(aged, /cache 0 s/, 'and stops reporting the retrieval cache age as if it were current');
+  assert.match(await staleFigure.getAttribute('title'), /This observation is stale\./, 'and the title says so rather than reporting a cache age as if it were current');
   assert.doesNotMatch(aged, /A later refresh failed/i, 'aging alone does not imply a failed refresh');
   assert.deepEqual(await caseLog(page), readsBeforeAge, 'the display clock starts no new read');
   assert.deepEqual(await page.locator('tbody [data-metric="stale"]').count() > 0, true, 'the row behind it says the same');
@@ -1445,7 +1455,7 @@ test('with markets-snapshot listed, a current stored row is the row: one snapsho
   assert.deepEqual((await caseLog(page))[0].request, { poolIds: ['0x0911afcb281d7bcae2d71443ceaeebd0f89b4537708449970d797622b4b4c941'] });
   const cells = await page.locator('tbody [data-metric]').evaluateAll((els) => els.map((el) => [el.innerText, el.getAttribute('data-metric'), el.getAttribute('title')]));
   assert.deepEqual(cells.map(([text, state]) => [text, state]), [['$12.3K', 'provider'], ['$0.00', 'provider']]);
-  for (const [, , title] of cells) assert.match(title, /^Reported by GeckoTerminal, retrieved \d+ s ago\. Not reconciled by Domino\.$/);
+  for (const [, , title] of cells) assert.match(title, /^Reported by a market data provider, retrieved \d+ s ago\. Not reconciled by Domino\.$/);
   assert.doesNotMatch(await page.locator('tbody').innerText(), /snapshot|stored/i, 'where the row came from is data, never words');
   await openFigures(page);
   assert.equal((await caseLog(page)).filter((r) => r.route === 'pool-activity').length, 1, 'one pool-activity read, after the click');
@@ -1508,12 +1518,12 @@ test('the pool page reads its figures, Domino’s 24h history and its chain acti
   // Clean: nothing on the page says how a read went, and nothing offers to read again.
   const main = await page.locator('main').innerText();
   assert.doesNotMatch(main, /Read activity|Read market data again|Verify again|Refresh price|Read again|Retry|One read, when you ask|coming later|isn’t available here|not enabled/i);
-  assert.doesNotMatch(main, /GeckoTerminal market observation|Retrieved \d\d:\d\d UTC|No USD volume or APR comes from this read/, 'no footnotes about sources');
+  assert.doesNotMatch(main, /Provider market observation|Retrieved \d\d:\d\d UTC|No USD volume or APR comes from this read/, 'no footnotes about sources');
   // Changed on purpose (qa:visual): no caption under the chart heading; who reports the candles is the plot's title and data.
   const chart = page.locator('[data-pool-chart]');
-  assert.doesNotMatch(await chart.innerText(), /GeckoTerminal|in US dollars/, 'no caption under the chart heading');
+  assert.doesNotMatch(await chart.innerText(), /GeckoTerminal|market data provider|in US dollars/i, 'no caption under the chart heading');
   const plot = chart.locator('.dm-pool-plot');
-  assert.deepEqual([await plot.getAttribute('data-chart-provider'), await plot.getAttribute('title')], ['GeckoTerminal', 'Hourly candles reported by GeckoTerminal.']);
+  assert.deepEqual([await plot.getAttribute('data-chart-provider'), await plot.getAttribute('title')], ['GeckoTerminal', 'Hourly candles reported by a market data provider.']);
   for (const name of await page.locator('main button').allInnerTexts()) assert.doesNotMatch(name, /again|retry|refresh/i, name);
   assert.equal(await page.locator('main .dm-inset[role="status"]').count(), 0, 'no status panel');
   // The range slider's own handle ring is a design accent of the shared PriceSlider, not a state; everything the page reads is checked.

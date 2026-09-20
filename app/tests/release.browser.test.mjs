@@ -427,11 +427,11 @@ test('(d) reads enabled: one capabilities GET per namespace and the lean load in
       const text = await row.innerText();
       // The figure itself, and beside it the row's provenance line: the provider, dated by its retrieval age.
       assert.match(text, /\$12\.3K/);
-      assert.match(await row.locator('[data-provenance]').getAttribute('data-provenance'), /^Pool verified on-chain at block 700 · Reported by GeckoTerminal, retrieved \d+ s ago$/, 'the provider is named, dated by its retrieval age');
+      assert.match(await row.locator('[data-provenance]').getAttribute('data-provenance'), /^Pool verified on-chain at block 700 · Reported by a market data provider, retrieved \d+ s ago$/, 'the figure is the provider’s, dated by its retrieval age');
       assert.doesNotMatch(text, /\bas of\b|updated at/i, 'never "as of" or "updated at": the provider update time is unknown');
       const figures = await row.locator('[data-metric]').evaluateAll((els) => els.map((el) => [el.innerText.trim(), el.getAttribute('data-metric'), el.getAttribute('title')]));
       assert.deepEqual(figures.map(([value, state]) => [value, state]), [['$12.3K', 'provider'], ['$0.00', 'provider']], 'the two provider figures');
-      for (const [, , title] of figures) assert.match(title, expect.reportedByGecko, 'each figure carries its provenance');
+      for (const [, , title] of figures) assert.match(title, expect.reportedByProvider, 'each figure carries its provenance');
       // The price is the pool's own ratio from chain state: its own attribute, never a figure one.
       const price = row.locator('td').nth(1);
       assert.equal(await price.locator('[data-pool-price]').getAttribute('data-pool-price'), 'usable');
@@ -454,7 +454,7 @@ test('(d) reads enabled: one capabilities GET per namespace and the lean load in
     for (const width of [1280, 390]) {
       await page.setViewportSize({ width, height: 900 });
       const heads = await page.locator('#pools thead th').evaluateAll((ths) => ths.map((th) => th.innerText.replace(/\s+/g, ' ').trim()));
-      assert.deepEqual(heads, ['Pool', 'Price', 'TVL reported by GeckoTerminal', '24h volume reported by GeckoTerminal', 'Est. APR from provider inputs', 'Details'], `${width}px`);
+      assert.deepEqual(heads, ['Pool', 'Price', 'TVL reported by a market data provider', '24h volume reported by a market data provider', 'Est. APR from provider inputs', 'Details'], `${width}px`);
     }
     await page.setViewportSize({ width: 1280, height: 900 });
     assert.doesNotMatch(await page.locator('body').innerText(), /geckoterminal\.com/i, 'nor shown');
@@ -480,7 +480,7 @@ test('(d) reads enabled: one capabilities GET per namespace and the lean load in
 
 /** The provenance every value cell carries in its title, in the table's own words. */
 const expect = {
-  reportedByGecko: /^Reported by GeckoTerminal, retrieved \d+ s ago\. Not reconciled by Domino\.$/,
+  reportedByProvider: /^Reported by a market data provider, retrieved \d+ s ago\. Not reconciled by Domino\.$/,
 };
 
 test('(e) the pool route switched off between the GET and the first POST: said so, and the second pool is never asked', async () => {
@@ -606,7 +606,7 @@ async function nothingStandsIn(page, liveCount) {
   }
 }
 
-test('(i) #93 per row: GeckoTerminal figures dated only by retrieval; a rejected pool keeps its verified row with its metrics unavailable, and the other rows are untouched', async () => {
+test('(i) #93 per row: provider figures dated only by retrieval; a rejected pool keeps its verified row with its metrics unavailable, and the other rows are untouched', async () => {
   const { context, page, errors } = await visit(
     bridgeStub({ reply: (route, body) => (route === 'pool-market' && body.poolId === SELECTED[1] ? bridge(200, marketVariant(SELECTED[1], 'rejected-currencies')) : undefined) }),
   );
@@ -618,12 +618,12 @@ test('(i) #93 per row: GeckoTerminal figures dated only by retrieval; a rejected
 
     const ok = await rowView(rows.nth(0));
     assert.equal(ok.pair, 'ETH/TKY');
-    assert.match(ok.provenance, /^Pool verified on-chain at block 700 · Reported by GeckoTerminal, retrieved \d+ s ago$/);
+    assert.match(ok.provenance, /^Pool verified on-chain at block 700 · Reported by a market data provider, retrieved \d+ s ago$/);
     assert.deepEqual(ok.cells.map((c) => c.metric), ['provider', 'provider', 'unavailable']);
-    assert.equal(ok.cells[0].text, '$12.3K', 'the figure alone in the cell; the provider is named in the row’s provenance and the cell’s title');
-    assert.match(ok.cells[0].title, expect.reportedByGecko);
+    assert.equal(ok.cells[0].text, '$12.3K', 'the figure alone in the cell; the row’s provenance and the cell’s title say it is a provider’s');
+    assert.match(ok.cells[0].title, expect.reportedByProvider);
     assert.equal(ok.cells[1].text, '$0.00');
-    assert.match(ok.cells[1].title, expect.reportedByGecko);
+    assert.match(ok.cells[1].title, expect.reportedByProvider);
     assert.equal(ok.cells[2].text, '—', 'APR unavailable, never an estimate: the same dash as a catalogue row');
     // The price comes from the verified pool's own state, not from the provider.
     assert.equal(ok.price.state, 'usable');
@@ -631,7 +631,7 @@ test('(i) #93 per row: GeckoTerminal figures dated only by retrieval; a rejected
 
     const rejected = await rowView(rows.nth(1));
     assert.equal(rejected.pair, 'TKY/TKZ', 'the verified pool row stays, labelled from its own token reads');
-    assert.equal(rejected.provenance, 'Pool verified on-chain at block 700 · GeckoTerminal figures rejected: provider data did not match this pool');
+    assert.equal(rejected.provenance, 'Pool verified on-chain at block 700 · Provider figures rejected: provider data did not match this pool');
     assert.deepEqual(rejected.cells.map((c) => [c.text, c.metric]), [['Unavailable', 'rejected'], ['Unavailable', 'rejected'], ['—', 'unavailable']]);
     assert.equal(rejected.price.state, 'usable', 'a rejected provider observation takes nothing from the chain’s own price');
 
@@ -660,19 +660,19 @@ test('(j) #93 per row: a stale observation is marked stale in its state and its 
     assert.equal(await rows.count(), 6);
 
     const stale = await rowView(rows.nth(0));
-    assert.match(stale.provenance, /^Pool verified on-chain at block 700 · Reported by GeckoTerminal, retrieved \d+ s ago · stale$/);
+    assert.match(stale.provenance, /^Pool verified on-chain at block 700 · Reported by a market data provider, retrieved \d+ s ago · stale$/);
     assert.deepEqual(stale.cells.slice(0, 2).map((c) => c.metric), ['stale', 'stale']);
     // The owner's decision on the redesign: a stale figure is never yellow and has no "· stale" beside it. That it
     // is stale is its state, and its title in words.
     assert.equal(stale.cells[0].text, '$12.3K', 'no stale word beside the figure');
-    assert.match(stale.cells[0].title, /^Reported by GeckoTerminal, retrieved \d+ s ago\. Not reconciled by Domino\. Stale, not current\.$/);
+    assert.match(stale.cells[0].title, /^Reported by a market data provider, retrieved \d+ s ago\. Not reconciled by Domino\. Stale, not current\.$/);
     assert.equal(stale.cells[1].text, '$0.00');
-    assert.match(stale.cells[1].title, /^Reported by GeckoTerminal, retrieved \d+ s ago\. Not reconciled by Domino\. Stale, not current\.$/);
+    assert.match(stale.cells[1].title, /^Reported by a market data provider, retrieved \d+ s ago\. Not reconciled by Domino\. Stale, not current\.$/);
 
     const nulls = await rowView(rows.nth(1));
-    const notReported = ['Not reported by GeckoTerminal', 'absent'];
-    assert.deepEqual(nulls.cells.map((c) => [c.text, c.metric]), [notReported, notReported, ['—', 'unavailable']], 'unavailable, in the name of the source that reported null; no estimate is a dash');
-    assert.equal(nulls.cells[0].title, 'Unavailable: GeckoTerminal reported no value');
+    const notReported = ['Not reported by the provider', 'absent'];
+    assert.deepEqual(nulls.cells.map((c) => [c.text, c.metric]), [notReported, notReported, ['—', 'unavailable']], 'unavailable, said as the provider that reported null; no estimate is a dash');
+    assert.equal(nulls.cells[0].title, 'Unavailable: the market data provider reported no value');
     assert.doesNotMatch(await rows.nth(1).innerText(), /\$\s*0|\b0\.00\b/, 'null never renders as zero');
 
     const current = await rowView(rows.nth(2));
@@ -788,7 +788,7 @@ test('(n) pool-metrics listed: the lean load, then one pool-metrics read a row; 
     for (const row of await rows.all()) {
       const view = await rowView(row);
       assert.deepEqual(view.cells.map((c) => [c.text, c.metric]), [['$0.000020', 'qualified'], ['$0.000029', 'qualified'], ['158.06%', 'qualified']], 'Domino’s qualified figures, its APR where the estimate would be');
-      assert.match(view.provenance, /^Pool verified on-chain at block 700 · Reported by GeckoTerminal, retrieved \d+ s ago · Domino history fresh, 10 s$/);
+      assert.match(view.provenance, /^Pool verified on-chain at block 700 · Reported by a market data provider, retrieved \d+ s ago · Domino history fresh, 10 s$/);
       assert.equal(await row.locator('[data-apr-estimate]').count(), 0, 'no estimate beside a qualified APR');
     }
     const heads = await page.locator('#pools thead th').evaluateAll((ths) => ths.map((th) => th.innerText.replace(/\s+/g, ' ').trim()));
@@ -856,7 +856,7 @@ test('(o) markets-snapshot listed: one snapshot read puts all six rows on screen
       const view = await rowView(rows.nth(index));
       assert.equal(view.pair, label);
       assert.equal(await rows.nth(index).getAttribute('data-row-source'), 'markets-snapshot');
-      assert.match(view.provenance, /^Pool verified on-chain at block 700 · Reported by GeckoTerminal, retrieved \d+ s ago$/, 'the usual provenance, dated by the stored retrieval age');
+      assert.match(view.provenance, /^Pool verified on-chain at block 700 · Reported by a market data provider, retrieved \d+ s ago$/, 'the usual provenance, dated by the stored retrieval age');
       assert.deepEqual(view.cells.map((c) => [c.text, c.metric]), [['$12.3K', 'provider'], ['$0.00', 'provider'], ['—', 'unavailable']]);
       // G14: an estimate's title comes from its own limitations; a stored row has none, so it says what the figure would be and why it is missing.
       assert.equal(view.cells[2].title, 'Pool estimate, not position APR, APY or a return forecast. Estimated APR is read with the pool’s own market figures, not with stored ones.', 'the estimate cell says what it is and why a stored row has none');

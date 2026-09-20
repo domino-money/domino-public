@@ -16,10 +16,14 @@ import { Button, Pill, Segmented, Skeleton } from '../../ui'
 import { TokenLabel } from '../TokenLabel'
 import { Address } from './Address'
 
-/** Who reports the candles: the plot's data and title, never a caption under the heading. */
+/**
+ * Who reports the candles: the plot's data and title, never a caption under
+ * the heading. The name stays in the data alone; the title says only that a
+ * market data provider reported them.
+ */
 const PROVIDER = 'GeckoTerminal'
-const CANDLES_TITLE = `Hourly candles reported by ${PROVIDER}.`
-const CHANGE_TITLE = 'Domino’s calculation from GeckoTerminal’s hourly candles: first open to last close of the shown window. Not a return.'
+export const CANDLES_TITLE = 'Hourly candles reported by a market data provider.'
+const CHANGE_TITLE = 'Domino’s calculation from a market data provider’s hourly candles: first open to last close of the shown window. Not a return.'
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
 const INSPECT_KEYS = ['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'Home', 'End']
 /** Room left of the first hour, so its bar never touches the plot's edge. */
@@ -225,7 +229,7 @@ export function PoolPriceChart({ market, autoLoad = false }: { market: Market; a
           : ''
   // Where the shown candles came from and how old they are: the plot's title and data, never a line under it.
   const provenanceTitle = data
-    ? `Reported by GeckoTerminal, retrieved ${utcTime(data.retrievedAt)}${age === null ? '' : `, ${age} s ago`}${stale ? ', stale' : ''}. ${data.coverage.returnedCandles} candles; ${data.coverage.closedCandles} closed; ${data.coverage.gapsDetected ? 'gaps detected' : 'no gaps reported'}. Reported USD prices for one token, not the pool’s pair price or liquidity distribution. Complete 24h coverage is not established.`
+    ? `Reported by a market data provider, retrieved ${utcTime(data.retrievedAt)}${age === null ? '' : `, ${age} s ago`}${stale ? ', stale' : ''}. ${data.coverage.returnedCandles} candles; ${data.coverage.closedCandles} closed; ${data.coverage.gapsDetected ? 'gaps detected' : 'no gaps reported'}. Reported USD prices for one token, not the pool’s pair price or liquidity distribution. Complete 24h coverage is not established.`
     : undefined
   const tokenFor = (address: string) => [market.tokens.base, market.tokens.quote].find((token) => token.origin === 'read' && token.address.toLowerCase() === address.toLowerCase()) ?? unreadToken(address)
 

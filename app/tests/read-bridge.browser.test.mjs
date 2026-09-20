@@ -245,8 +245,8 @@ test('the bridge build reads through the same-origin bridge, adds no credential 
   // The price is the pool's own ratio from chain state, in its own cell: never a figure attribute.
   assert.equal(await row.locator('td').nth(1).locator('[data-pool-price]').count(), 1);
   assert.equal(await row.locator('td').nth(1).locator('[data-metric]').count(), 0);
-  assert.match(await row.locator('[data-provenance]').getAttribute('data-provenance'), /^Pool verified on-chain at block 700 · Reported by GeckoTerminal, retrieved \d+ s ago$/);
-  assert.match(await row.locator('[data-metric]').first().getAttribute('title'), /^Reported by GeckoTerminal, retrieved \d+ s ago\. Not reconciled by Domino\.$/);
+  assert.match(await row.locator('[data-provenance]').getAttribute('data-provenance'), /^Pool verified on-chain at block 700 · Reported by a market data provider, retrieved \d+ s ago$/);
+  assert.match(await row.locator('[data-metric]').first().getAttribute('title'), /^Reported by a market data provider, retrieved \d+ s ago\. Not reconciled by Domino\.$/);
   const apr = row.locator('td').nth(4);
   assert.equal(await apr.innerText(), '—', 'no estimate: the catalogue dash, reason in its title');
   assert.equal(await apr.locator('[data-apr-estimate]').getAttribute('data-apr-estimate'), 'unavailable', 'no APR is provided, so none is shown');
@@ -313,8 +313,8 @@ test('a read without the cookie is gate_required, the last rows stay, marked sta
     assert.equal(await settled(page), 'partial');
     const before = await cellStates(page);
     assert.ok(before.includes('provider') && !before.includes('qualified'), `the page starts from current provider figures: ${before}`);
-    // The row names its provider in its provenance (title and data), not as a printed line under the pair.
-    assert.match(await page.locator('#pools tbody tr [data-provenance]').getAttribute('data-provenance'), /Reported by GeckoTerminal/);
+    // The row attributes its figures in its provenance (title and data), not as a printed line under the pair.
+    assert.match(await page.locator('#pools tbody tr [data-provenance]').getAttribute('data-provenance'), /Reported by a market data provider/);
     await context.clearCookies();
     const knocked = edge.length;
     await statusIs(page, 'gate_required');
@@ -533,7 +533,7 @@ test('markets-snapshot enabled on the Worker: one snapshot read puts the row on 
       assert.equal(await row.count(), 1);
       assert.equal(await row.getAttribute('data-row-source'), 'markets-snapshot');
       assert.deepEqual(await row.locator('[data-metric]').evaluateAll((els) => els.map((el) => [el.innerText.trim(), el.getAttribute('data-metric')])), [['$12.3K', 'provider'], ['$0.00', 'provider']]);
-      assert.match(await row.locator('[data-provenance]').getAttribute('data-provenance'), /^Pool verified on-chain at block 700 · Reported by GeckoTerminal, retrieved \d+ s ago$/);
+      assert.match(await row.locator('[data-provenance]').getAttribute('data-provenance'), /^Pool verified on-chain at block 700 · Reported by a market data provider, retrieved \d+ s ago$/);
       assert.equal(await row.locator('td').nth(1).locator('[data-pool-price]').getAttribute('data-pool-price'), 'usable');
       assert.deepEqual(errors, []);
     } finally {

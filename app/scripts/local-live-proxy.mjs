@@ -4,15 +4,29 @@
 import { createHash } from 'node:crypto'
 import { CONTRACT_VERSION, validateResponse, validateError } from '../../api-contracts/read-v1/runtime.mjs'
 import * as readV2 from '../../api-contracts/read-v2/runtime.mjs'
+import * as readV3 from '../../api-contracts/read-v3/runtime.mjs'
 import { parseStrictJson } from '../../bridge/src/strict-json.mjs'
 import { validateRequest } from '../../bridge/src/request-contract.mjs'
-import { REQUEST_LIMIT, RESPONSE_LIMIT, DEADLINE_MS, READS, readRoute } from './local-live-boundary.mjs'
+import { REQUEST_LIMIT, RESPONSE_LIMIT, DEADLINE_MS, READS, READS_V3, readRoute } from './local-live-boundary.mjs'
 import { validateStatus } from './local-live-status.mjs'
 
 const DESTINATION = 'https://dev-read.domino.money'
 const CONTRACT = 'X-Domino-Read-Contract'
 const errorReply = (status, code, version) => ({ status, payload: { error: code }, headers: { [CONTRACT]: version } })
 const isRecord = (value) => value !== null && typeof value === 'object' && !Array.isArray(value)
+/**
+ * One read family per version, chosen by the route's own version and never by
+ * the URL alone. A reply is validated by the contract it was asked under, and
+ * a capabilities reply is checked against that version's routes: read-v1's ten
+ * names would reject a perfectly good v3 ["overview","history","search"].
+ */
+const FAMILY = {
+  v1: { version: CONTRACT_VERSION, reads: READS, validateResponse, validateRequest },
+  v2: { version: readV2.CONTRACT_VERSION, reads: readV2.ENABLED_READS, validateResponse: readV2.validateResponse, validateRequest: readV2.validateRequest },
+  v3: { version: readV3.CONTRACT_VERSION, reads: READS_V3, validateResponse: readV3.validateResponse, validateRequest: readV3.validateRequest },
+}
+/** The family a raw URL belongs to, for the replies sent before a route is resolved. */
+const familyForUrl = (url) => url.startsWith('/api/read/v3/') ? FAMILY.v3 : url.startsWith('/api/read/v2/') ? FAMILY.v2 : FAMILY.v1
 /** Every key of a read-v2 pool-market reply, and nothing else. */
 const ESTIMATE_REPLY_KEYS = ['chainId', 'estimate', 'executionAvailable', 'market', 'poolId', 'schemaVersion']
 /**
@@ -66,7 +80,7 @@ export function createLocalProxy({ credentials, statusSchema, fetchImpl = fetch,
   }
   async function upstream(operation, request, body) {
     const signal = operation.control.signal
-    const version = request.version === 'v2' ? readV2.CONTRACT_VERSION : CONTRACT_VERSION
+    const version = FAMILY[request.version ?? 'v1'].version
     const error = (status, code) => errorReply(status, code, version)
     try {
       const response = await fetchImpl(`${DESTINATION}${request.path}`, {
@@ -94,11 +108,11 @@ export function createLocalProxy({ credentials, statusSchema, fetchImpl = fetch,
       const valid = response.status === 200
         ? request.route === 'status' ? validateStatus(statusSchema, payload)
           : request.version === 'v2' ? readV2.validateResponse(request.route, payload) || (request.route === 'pool-market' && refusedForEstimateOnly(payload))
-            : validateResponse(request.route, payload)
+            : FAMILY[request.version ?? 'v1'].validateResponse(request.route, payload)
         : validateError(response.status, payload)
       if (!valid) return error(502, 'upstream_invalid_response')
       if (request.version === 'v2' && request.route === 'pool-market' && response.status === 200 && payload.poolId !== JSON.parse(body).poolId) return error(502, 'upstream_invalid_response')
-      if (request.route === 'capabilities' && response.status === 200 && payload.enabledReads.some((name) => !READS.includes(name))) return error(502, 'upstream_invalid_response')
+      if (request.route === 'capabilities' && response.status === 200 && payload.enabledReads.some((name) => !FAMILY[request.version ?? 'v1'].reads.includes(name))) return error(502, 'upstream_invalid_response')
       const headers = { [CONTRACT]: version }
       const id = response.headers.get('X-Domino-Request-Id')
       if (id && /^[0-9a-f]{32}$/.test(id) && !secrets.includes(id)) headers['X-Domino-Request-Id'] = id
@@ -110,7 +124,7 @@ export function createLocalProxy({ credentials, statusSchema, fetchImpl = fetch,
   const handler = async (req, res) => {
     const started = performance.now()
     const request = readRoute(req.url, req.method)
-    const version = req.url.startsWith('/api/read/v2/') ? readV2.CONTRACT_VERSION : CONTRACT_VERSION
+    const version = familyForUrl(req.url).version
     const error = (status, code) => errorReply(status, code, version)
     if (!request) { send(res, error(404, 'route_not_available')); return }
     if (closed) { send(res, error(503, 'upstream_unavailable')); return }
@@ -129,7 +143,7 @@ export function createLocalProxy({ credentials, statusSchema, fetchImpl = fetch,
         catch (e) { send(res, error(e.message === 'size' ? 413 : 408, e.message === 'size' ? 'request_too_large' : 'request_timeout')); return }
         let payload
         try { payload = parseStrictJson(new TextDecoder('utf-8', { fatal: true }).decode(body), { numberLexemes: true }) } catch { send(res, error(422, 'invalid_request')); return }
-        if (!(request.version === 'v2' ? readV2.validateRequest : validateRequest)(request.route, payload)) { send(res, error(422, 'invalid_request')); return }
+        if (!FAMILY[request.version ?? 'v1'].validateRequest(request.route, payload)) { send(res, error(422, 'invalid_request')); return }
       } else if (req.headers['content-length'] !== undefined && req.headers['content-length'] !== '0') { send(res, error(422, 'invalid_request')); return }
       if (control.signal.aborted) { send(res, error(504, 'upstream_timeout')); return }
       const key = createHash('sha256').update(req.url).update(body ?? '').digest('hex')

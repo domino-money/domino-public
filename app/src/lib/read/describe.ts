@@ -20,7 +20,7 @@
  * None of these is asked again on its own; only R-1's 429 retry does that,
  * inside the pipeline. Nothing here ever puts sample data in their place.
  */
-import { REQUEST_READ_CONTRACT } from './pin'
+import { REQUEST_READ_CONTRACT, READ_V3_PIN } from './pin'
 import { BRIDGE_RETRY } from './pipeline'
 import type { FailedOutcome, NotConnectedReason, ReadKey } from './types'
 
@@ -93,6 +93,11 @@ function notConnected(reason: NotConnectedReason): FailureText {
   }
 }
 
+/** read-v3's own routes; a mismatch on one of them is about 3.0.0-rc.1, not read-v1's version. */
+const V3_ONLY = new Set(['overview', 'history', 'search'])
+/** The version the app asked that route under, so the sentence names the contract that actually disagreed. */
+const expectedContract = (route: string) => (V3_ONLY.has(route) ? READ_V3_PIN.version : REQUEST_READ_CONTRACT)
+
 export function describeFailure(outcome: FailedOutcome<ReadKey>): FailureText {
   switch (outcome.state) {
     case 'gate_required':
@@ -111,7 +116,7 @@ export function describeFailure(outcome: FailedOutcome<ReadKey>): FailureText {
             ? 'The read service did not say which contract it speaks, so nothing it sent is shown.'
             : outcome.reason === 'upstream_contract_mismatch'
               ? 'The read bridge and its gateway disagree on the contract version.'
-              : `The read service speaks a contract this app was not built for. It expects ${REQUEST_READ_CONTRACT}.`,
+              : `The read service speaks a contract this app was not built for. It expects ${expectedContract(outcome.route)}.`,
         retry: true,
       }
     case 'invalid':

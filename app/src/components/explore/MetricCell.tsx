@@ -19,7 +19,7 @@ export function PendingFigure({ label, className, data }: { label: string; class
 
 /**
  * A presented figure in a cell, a card or a stat: unavailable, not reported,
- * not current, stale, a named provider's, Domino's calculation from a
+ * not current, stale, a provider's, Domino's calculation from a
  * provider's figures, or current. One rule for the Markets table, the Markets
  * cards, Home and the pool page, so no screen reads a figure differently from
  * another. A provider figure is dated only by when it was retrieved: the
@@ -39,8 +39,8 @@ export function PresentedFigure({ shown, retrieved, strong = true, className }: 
   }
   if (shown.kind === 'absent') {
     return (
-      <span className={cx('text-fg-subtle', className)} data-metric="absent" title={`Unavailable: ${shown.source ?? 'the source'} reported no value`}>
-        {shown.source ? `Not reported by ${shown.source}` : 'Not reported'}
+      <span className={cx('text-fg-subtle', className)} data-metric="absent" title={`Unavailable: ${shown.source ? 'the market data provider' : 'the source'} reported no value`}>
+        {shown.source ? 'Not reported by the provider' : 'Not reported'}
       </span>
     )
   }
@@ -69,12 +69,12 @@ export function PresentedFigure({ shown, retrieved, strong = true, className }: 
   )
 }
 
-/** Who a shown figure comes from, and how old it is, in our own words. */
+/** Who a shown figure comes from, and how old it is, in our own words. A provider is the part it plays, never its name. */
 export function valueTitle(shown: Extract<Presented, { kind: 'value' }>, retrieved = 'retrieval time unknown'): string | undefined {
   const stale = shown.stale ? ' Stale, not current.' : ''
-  if (shown.source) return `Reported by ${shown.source}, ${retrieved}. Not reconciled by Domino.${stale}`
+  if (shown.source) return `Reported by a market data provider, ${retrieved}. Not reconciled by Domino.${stale}`
   // Only 24h vol/TVL is calculated from a provider's figures.
-  if (shown.calculatedFrom) return `Calculated by Domino from ${shown.calculatedFrom}'s reported 24h volume and TVL, ${retrieved}. Those figures are not reconciled by Domino.${stale}`
+  if (shown.calculatedFrom) return `Calculated by Domino from a market data provider's reported 24h volume and TVL, ${retrieved}. Those figures are not reconciled by Domino.${stale}`
   if (!shown.stale) return undefined
   return shown.asOf ? `Last observed ${new Date(shown.asOf * 1000).toLocaleString('en-US')}` : 'Last observed value, not current'
 }

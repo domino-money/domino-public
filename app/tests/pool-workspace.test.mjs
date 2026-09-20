@@ -163,7 +163,10 @@ test('stored token explorer pages a pinned revision, restarts a changed catalogu
   await flush(); host.render();
   assert.equal(part(host, 'MarketsTable').props.includeCatalogue, false, 'arbitrary-token data is not mixed with the selected six');
   assert.equal(part(host, 'MarketsTable').props.poolToken, token, 'links keep the token needed to verify arbitrary pools');
-  assert.equal(waits[0].ms, 5_000);
+  // Changed on purpose (2026-09-20): this fixture has nothing pending, and a
+  // settled page asked again every five seconds was twelve reads a minute
+  // through a one-slot gateway for figures that had already arrived.
+  assert.equal(waits[0].ms, 60_000, 'a settled page waits a minute');
   buttonNamed(host, 'More pools').props.onClick(); host.render();
   assert.equal(waits[0].cancelled, true);
   assert.deepEqual(reads[1].request, { token, afterPoolId: data.nextAfterPoolId, revision: 9, limit: 24 });
@@ -271,10 +274,10 @@ test('G10: until the pool’s own read lands, stored provider figures carry an u
   assert.deepEqual(cells(host.tree), [['stale', 'retrieval time unknown'], ['stale', 'retrieval time unknown']], 'TVL and 24h volume: stale, age unknown')
   const shown = visibleText(host)
   assert.doesNotMatch(shown, /retrieved 0 s ago/)
-  assert.match(shown, /GeckoTerminal\s*retrieval time unknown/)
+  assert.match(shown, /Market data provider\s*retrieval time unknown/)
   // The provider line is a stat's `sub`, so it is read from the markup.
   const provenance = (tree) => /data-market-provenance="" title="([^"]*)"/.exec(renderToStaticMarkup(tree))?.[1]
-  assert.match(provenance(host.tree), /^GeckoTerminal market observation, as the read service stored it: stale, retrieval time unknown;/)
+  assert.match(provenance(host.tree), /^Provider market observation, as the read service stored it: stale, retrieval time unknown;/)
   assert.equal(elements(host.tree, (node) => node.type === parts.TurnoverCell)[0].props.retrieved, 'retrieval time unknown')
 
   // The pool's own read lands: its figures, dated as it reports them.
@@ -303,7 +306,9 @@ test('a failed market read shows dashes with the reason in their titles, no pane
   assert.doesNotMatch(onPage, /Unavailable|No response|Retry|\bagain\b/, 'and never words on the page: only the polite live region says it')
   assert.match(renderToStaticMarkup(host.tree), /<p role="status" aria-live="polite" class="sr-only"[^>]*>Unavailable\. No response<\/p>/)
   // Changed on purpose (qa:visual): the chart card has no caption under its heading; who reports the candles is the plot's title and data.
-  assert.doesNotMatch(onPage, /Hourly candles|GeckoTerminal/, 'no caption under the chart heading')
+  // Ours is the stricter guard: the chart component replaced the inline markup,
+  // and no provider wording of any kind may reach the page.
+  assert.doesNotMatch(onPage, /Hourly candles|GeckoTerminal|DexScreener|market data provider/i, 'no caption under the chart heading')
   assert.equal(part(host, 'PoolHistoryChart').props.failed, 'Unavailable. No response')
   assert.equal(part(host, 'PoolHistoryChart').props.loading, false)
   assert.deepEqual(fixture.asks.map(({ outcome, attempt }) => [outcome.state, attempt]), [['unavailable', 0]])
@@ -370,7 +375,8 @@ test('provider attribution is visible text rather than a hover-only title, and t
   const fixture = workspace(); const host = mount(fixture.PoolWorkspace, fixture.props)
   fixture.reads[0].resolve({ state: 'ok', data: { poolId: id('a') } }); await flush(); host.render()
   const visible = renderToStaticMarkup(host.tree).replace(/<[^>]+>/g, '')
-  assert.match(visible, /GeckoTerminal/)
+  assert.match(visible, /Market data provider/, 'the figures are attributed in visible text, the provider never named')
+  assert.doesNotMatch(visible, /GeckoTerminal|DexScreener/)
   assert.match(visible, /retrieved 12 s ago/)
   assert.match(visible, /Verified at block 700/)
   assert.ok(visible.includes(id('a')), 'the full pool id is in the page')
@@ -467,8 +473,8 @@ test('a verification with no answer leaves the page’s dashes, the reason in th
     assert.match(markup, /data-pool-verification="offline" title="Unavailable\. No response"/)
     assert.doesNotMatch(markup.replace(/<span role="status" class="sr-only">.*?<\/span>/g, '').replace(/<[^>]+>/g, ''), /Unavailable|No response|\bagain\b/)
     // Changed on purpose (qa:visual): no caption under the chart heading; who reports the candles is the plot's title and data, and the dash keeps the reason.
-    assert.doesNotMatch(markup.replace(/<[^>]+>/g, ''), /Hourly candles|GeckoTerminal/, 'no caption under the chart heading')
-    assert.match(markup, /<div class="dm-pool-plot dm-dots-chart mt-4" title="Hourly candles reported by GeckoTerminal\." data-chart-provider="GeckoTerminal"><div class="dm-pool-plot-empty"><span class="text-fg-subtle" title="Unavailable\. No response">—<\/span>/)
+    assert.doesNotMatch(markup.replace(/<[^>]+>/g, ''), /Hourly candles|GeckoTerminal|market data provider/i, 'no caption under the chart heading')
+    assert.match(markup, /<div class="dm-pool-plot dm-dots-chart mt-4" title="Hourly candles reported by a market data provider\." data-chart-provider="GeckoTerminal"><div class="dm-pool-plot-empty"><span class="text-fg-subtle" title="Unavailable\. No response">—<\/span>/)
     assert.deepEqual(asks.map(({ outcome, attempt }) => [outcome.state, attempt]), [['busy', 0]])
     assert.equal(verifications.length, 1)
     asks[0].resolve(true); await flush(); host.render()
@@ -771,8 +777,8 @@ test('G14: the detailed estimate lists its inputs and takes its title from its o
   const now = { wall: 0, monotonic: 0 }
   const html = renderToStaticMarkup(React.createElement(PoolAprEstimate, { observation: observed(producer('available').estimate), now, detailed: true }))
   const inputs = [...html.matchAll(/<dt>(.*?)<\/dt><dd[^>]*>(.*?)<\/dd>/g)].map(([, dt, dd]) => [dt, dd])
-  assert.deepEqual(inputs.slice(0, 5), [['LP fee', '0.30%'], ['Protocol fee', 'None'], ['24h volume, GeckoTerminal', '$1.0K'], ['TVL, GeckoTerminal', '$10.0K'], ['Method', '365 × LP fee × (1 − protocol fee) × 24h volume ÷ TVL']])
-  assert.match(html, /title="From GeckoTerminal’s reported 24h volume and TVL, not reconciled\. The provider’s update time is unknown\. Current TVL, not time-weighted\. Assumes the current fixed LP fee for the whole 24h volume\. The protocol fee’s effect is not reconciled\. Full-day coverage is not proven\. Excludes rewards, gas, service fees and price changes\. Pool estimate, not position APR or APY\. Not a return forecast or a recommendation\." data-apr-figure="">10\.95% est\. APR/)
+  assert.deepEqual(inputs.slice(0, 5), [['LP fee', '0.30%'], ['Protocol fee', 'None'], ['24h volume, provider-reported', '$1.0K'], ['TVL, provider-reported', '$10.0K'], ['Method', '365 × LP fee × (1 − protocol fee) × 24h volume ÷ TVL']])
+  assert.match(html, /title="From a market data provider’s reported 24h volume and TVL, not reconciled\. The provider’s update time is unknown\. Current TVL, not time-weighted\. Assumes the current fixed LP fee for the whole 24h volume\. The protocol fee’s effect is not reconciled\. Full-day coverage is not proven\. Excludes rewards, gas, service fees and price changes\. Pool estimate, not position APR or APY\. Not a return forecast or a recommendation\." data-apr-figure="">10\.95% est\. APR/)
 
   const protocolFee = producer('protocol-fee').estimate
   const protocol = renderToStaticMarkup(React.createElement(PoolAprEstimate, { observation: observed(protocolFee), now, detailed: true }))
@@ -1186,3 +1192,52 @@ test('hash routes: a token or a pool id is taken only in its exact shape, and ol
     assert.deepEqual(routes.parseExploreHash(href).token ?? routes.parsePoolHash(href).token, upper, 'what a link writes, the page reads back')
   }
 })
+
+// Added 2026-09-20. OverviewResponse.acquisitionAccepted is the producer saying
+// whether it took the acquisition on at all; false is its capacity ceiling. The
+// page read only `acquisition.status`, so a refused batch looked identical to a
+// running one: "Collecting data" forever, re-asked every five seconds, for work
+// that had not started and could not start until the ceiling drained.
+test('a refused acquisition is said, and asked about less often, not more', async () => {
+  for (const [accepted, pending, expected, state] of [[true, true, 5_000, 'pending'], [false, true, 30_000, 'at_capacity'], [true, false, 60_000, 'settled']]) {
+    const reads = []; const waits = [];
+    const data = JSON.parse(readFileSync(resolve(root, '../api-contracts/read-v3/fixtures/overview.json'), 'utf8'));
+    const token = data.tokens[0].address;
+    data.selectedToken = token; data.requestedPoolIds = []; data.hasMore = false; data.nextAfterPoolId = null;
+    data.acquisitionAccepted = accepted;
+    data.tokens[0].acquisition = { ...data.tokens[0].acquisition, status: pending ? 'pending' : 'ready' };
+    const { StoredTokenExplorer } = load('src/components/read/screens/StoredTokenExplorer.tsx', {
+      MarketsContext: { Provider: Container }, overviewRows: () => [row(id('a'))],
+      candidateFromToken: (value) => ({ token: { ...value.asset, chainId: 4663 } }),
+      readWithin(_s, route, request, options) { const p = deferred(); reads.push({ route, request, options, ...p }); return p.promise; },
+      whenVisibleAfter(ms, run) { const wait = { ms, run, cancelled: false }; waits.push(wait); return () => { wait.cancelled = true }; },
+    });
+    const host = mount(StoredTokenExplorer, { source: { transport: 'bridge' }, token });
+    reads[0].resolve({ state: 'ok', route: 'overview', data, provenance: { receivedAt: 1010_000, receivedMonotonic: 0, attempts: 1 } });
+    await flush(); host.render();
+    assert.equal(waits[0].ms, expected, `accepted=${accepted} pending=${pending}`);
+    const markup = renderToStaticMarkup(host.tree);
+    assert.match(markup, new RegExp(`data-acquisition="${state}"`), `accepted=${accepted} pending=${pending}`);
+    if (state === 'at_capacity') {
+      assert.match(markup, /New acquisition is at capacity/, 'the refusal is said in words, not left as "Collecting data"');
+      assert.doesNotMatch(markup, /Collecting data/, 'nothing is being collected');
+    }
+    if (state === 'pending') assert.match(markup, /Collecting data/);
+    host.unmount();
+  }
+});
+
+// Added 2026-09-20. HistoryResponse.reason was read by nothing, so a chart that
+// could not be built said only "History is unavailable for this pool." and kept
+// the cause to itself. The producer's own default reasons restate the status
+// (backend/public_history.py), so appending those would say it twice.
+test('the history card gives the cause when there is one, and does not restate the status', () => {
+  const chart = readFileSync(resolve(root, 'src/components/read/screens/PoolHistoryChart.tsx'), 'utf8');
+  assert.match(chart, /const RESTATED = \['history_refresh_pending', 'history_acquisition_pending'\]/);
+  assert.match(chart, /data\?\.reason && !RESTATED\.includes\(data\.reason\)/, 'a default reason is not appended');
+  assert.match(chart, /data-history-reason=\{data\?\.reason \?\? undefined\}/, 'the raw closed code stays an attribute');
+  assert.match(chart, /reasonText\(code\)/, 'the code reaches the page as words, never raw');
+  // The provider name must not have come back with rugged's new chart.
+  assert.doesNotMatch(chart, /GeckoTerminal\.|USD · GeckoTerminal/, 'no provider name in text a person reads');
+  assert.match(chart, /title=\{CANDLES_TITLE\}/, 'one copy of that sentence, shared with the v1 chart');
+});

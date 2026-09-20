@@ -1,11 +1,11 @@
 import { CREATE } from '../../lib/create/copy'
-import { candidateDecimals, validateBudget, validateSlippage, type JourneyState, type TickRange } from '../../lib/create/journey'
+import type { JourneyState, TickRange } from '../../lib/create/journey'
 import type { PoolOption } from '../../lib/read/screens/poolsList'
 import type { ReadSource } from '../../lib/read/types'
 import { PoolRangeControls } from '../read/screens/PoolRangeControls'
 import type { TokenCandidate } from '../../lib/read/screens/tokens'
-import { TextField } from './fields'
 import { PairedAmounts } from './PairedAmounts'
+import { SlippageSlider } from './SlippageSlider'
 import type { PairBalancesState } from './usePairBalances'
 
 /**
@@ -44,8 +44,8 @@ export function StageRange({
 /**
  * Step 3, Amount: one row per pool token, the amount typed in either, the
  * other following from the range and the pool's price, each row carrying the
- * connected wallet's balance of its token, and the slippage tolerance one
- * disclosure away.
+ * connected wallet's balance of its token, and the slippage tolerance dragged
+ * under them.
  *
  * A position holds both currencies, so there is no "deposit with" choice: the
  * token an amount is typed in is the independent one (PairedAmounts.tsx).
@@ -66,32 +66,10 @@ export function StageAmount({
 }) {
   const token = state.token
   if (!token || !state.pool) return null
-  const decimals = candidateDecimals(token)
-  const budget = validateBudget(state.budget, decimals)
-  const slippage = validateSlippage(state.slippageBps)
   return (
     <div className="dm-flow-stack" data-stage="amount">
       <PairedAmounts state={state} balances={balances} onBudget={onBudget} onDeposit={onDeposit} />
-      {budget.ok && decimals !== null && (
-        <p className="dm-hint tnum break-all" data-budget-raw={budget.raw} title={CREATE.amount.rawUnitsTitle}>
-          {CREATE.amount.rawUnits(budget.raw, decimals)}
-        </p>
-      )}
-      <details className="dm-details dm-flow-disclosure">
-        <summary>{CREATE.amount.advanced}</summary>
-        <div>
-          <TextField
-            id="create-slippage"
-            label={CREATE.amount.slippageLabel}
-            inputMode="numeric"
-            value={state.slippageBps}
-            onChange={(event) => onSlippage(event.target.value)}
-            hint={CREATE.amount.slippageHint}
-            error={slippage.ok ? null : slippage.reason}
-            trailing="bps"
-          />
-        </div>
-      </details>
+      <SlippageSlider bps={state.slippageBps} onSlippage={onSlippage} />
     </div>
   )
 }

@@ -23,9 +23,9 @@ import type { ReadV3Requests, ReadV3Responses } from 'api-contracts/read-v3/type
 export type ReadResponses = Omit<V1ReadResponses, 'capabilities'> & Omit<ReadV3Responses, 'capabilities'> & { capabilities: V1ReadResponses['capabilities'] | V2Capabilities | ReadV3Responses['capabilities'] }
 export type ReadRequests = V1ReadRequests & ReadV3Requests
 
-/** The ten read families, exactly the contract's `ReadRequests` keys. */
+/** Every read family across the three contracts, exactly the `ReadRequests` keys. */
 export type ReadRoute = keyof ReadRequests
-/** The ten routes plus the bridge's capabilities GET, which has a response but no request body. */
+/** Those routes plus the bridge's capabilities GET, which has a response but no request body. */
 export type ReadKey = keyof ReadResponses
 export type RequestOf<R extends ReadKey> = R extends ReadRoute ? ReadRequests[R] : null
 export type ErrorCode = ErrorResponse['error']

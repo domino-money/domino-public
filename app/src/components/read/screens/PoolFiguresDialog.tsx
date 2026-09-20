@@ -24,7 +24,7 @@ export function rowProviderFigure(metric: Metric, cacheAgeSeconds: number | null
   if (metric.state === 'absent') return { state: 'not_reported', provider }
   if ((metric.state === 'provider' || metric.state === 'stale') && metric.value !== null && metric.asOf !== undefined) {
     const value = formatUsdCompact(metric.value) ?? 'Unavailable'
-    const base = { value, zero: /^\$0\.00$/.test(value), provider, retrievedAt: metric.asOf, cacheAgeSeconds }
+    const base = { value, raw: metric.value, zero: /^\$0\.00$/.test(value), provider, retrievedAt: metric.asOf, cacheAgeSeconds }
     return metric.state === 'stale' ? { state: 'attributed_stale', ...base, refreshReason: null } : { state: 'attributed', ...base }
   }
   return null
@@ -59,7 +59,7 @@ const Dash = ({ title }: { title?: string }) => (
 function History({ metric, percent = false }: { metric: Metric | undefined; percent?: boolean }) {
   if (!metric) return <Dash title="Unavailable: not in this row" />
   // A provider's figure stands where Domino's did not qualify.
-  if (metric.source) return <Dash title={`Not qualified: the figure shown is ${metric.source}’s`} />
+  if (metric.source) return <Dash title="Not qualified: the figure shown is the provider’s" />
   if (metric.state !== 'qualified') {
     const shown = presentMetric(metric)
     const why = shown.kind === 'value' ? (shown.stale ? 'Stale, not current' : 'Not qualified') : `${shown.kind === 'not_current' ? 'Not current' : 'Unavailable'}: ${reasonText(shown.reason)}`
@@ -128,7 +128,7 @@ export function PoolFiguresDialog({ market, onClose }: { market: Market; onClose
     ...history,
     ['Fee APR', market.feeAprPercent],
   ] as Array<[string, Metric | undefined]>).filter((entry): entry is [string, Metric] => entry[1]?.state === 'reference')
-  const noProviderFigure = market.provenance ? `GeckoTerminal: ${market.provenance.market.status}${market.provenance.market.reason ? ` (${reasonText(market.provenance.market.reason)})` : ''}. No provider figure is shown for this row.` : 'No provider figures.'
+  const noProviderFigure = market.provenance ? `Provider observation: ${market.provenance.market.status}${market.provenance.market.reason ? ` (${reasonText(market.provenance.market.reason)})` : ''}. No provider figure is shown for this row.` : 'No provider figures.'
   // The pool's age and coverage count on while the dialog is open; a snapshot too far behind the chain gives neither.
   const age = activity.kind === 'ok' ? activityAge(activity.freshness, heldSeconds(activity.received, readNow())) : null
   const tooOld = age?.state === 'too_old'

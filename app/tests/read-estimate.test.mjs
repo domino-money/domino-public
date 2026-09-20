@@ -70,7 +70,7 @@ test('estimates age on screen, expire after 300 seconds and ignore wall-clock ju
 test('G14: an estimate’s title is its own limitations, then why it is stale or unavailable; with none, what it would be and why there is none', () => {
   const title = estimateTitle(observe(good.estimate), now(0));
   assert.deepEqual(good.estimate.limitations.map(limitationText).join(' '), title, 'every limitation the payload carries, in its order, and nothing else while it is current');
-  assert.match(title, /^From GeckoTerminal’s reported 24h volume and TVL, not reconciled\. .* Pool estimate, not position APR or APY\. Not a return forecast or a recommendation\.$/);
+  assert.match(title, /^From a market data provider’s reported 24h volume and TVL, not reconciled\. .* Pool estimate, not position APR or APY\. Not a return forecast or a recommendation\.$/);
   assert.equal(estimateTitle({ ...observe({ ...good.estimate, limitations: ['no_full_day_coverage_proof'] }) }, now(0)), 'Full-day coverage is not proven.', 'the payload decides, not a caveat written in the app');
   assert.match(estimateTitle(observe(good.estimate), now(60)), / Provider inputs are stale\. Stale, not current\.$/);
   assert.match(estimateTitle(observe(fixture('protocol-fee').estimate), now(0)), /The protocol fee’s effect is not reconciled\./);

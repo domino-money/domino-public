@@ -6,7 +6,7 @@
  * figure carries a state, and the state decides what reaches the screen:
  *
  *   qualified    Domino's own history, usableAsCurrent24h. The only current 24h/APR figure.
- *   provider     Reported by a named provider, unreconciled. Shown with its name.
+ *   provider     Reported by a market data provider, unreconciled. Shown as the provider's.
  *   stale        A retained value, shown with its original time.
  *   partial      Calculated over an incomplete window. Not current.
  *   reference    Reference analytics. Not current, never in a table cell.
@@ -32,7 +32,7 @@ export type MetricState =
   | 'unavailable'
   | 'rejected'
 
-/** Who reported a provider figure. Absent for Domino's own history. */
+/** Which provider reported a figure. Data only, like `data-provider`: the name never reaches a screen. Absent for Domino's own history. */
 export type MetricSource = 'GeckoTerminal' | 'DexScreener'
 
 export interface Metric {
@@ -75,7 +75,7 @@ export type Presented =
  *
  * An unavailable or rejected metric is shown as unavailable even when it
  * still carries a retained value, a stale one shows its value with its
- * original time, and a provider figure names its provider. Reference and
+ * original time, and a provider figure is shown as the provider's. Reference and
  * partial values never reach a cell as a number. Nothing here is decided by
  * whether `value` happens to be null.
  */
@@ -86,7 +86,7 @@ export function presentMetric(metric: Metric, format: (m: Metric) => string = co
     case 'rejected':
       return { kind: 'unavailable', reason: metric.reason, rejected: true }
     case 'absent':
-      // A null a provider reported is unavailable in that provider's name.
+      // A null a provider reported is unavailable, said as the provider's.
       return { kind: 'absent', reason: metric.reason, ...(metric.source ? { source: metric.source } : {}) }
     case 'reference':
     case 'partial':

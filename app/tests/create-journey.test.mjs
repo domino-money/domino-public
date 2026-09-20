@@ -13,6 +13,7 @@ import { test } from 'node:test';
 const require = createRequire(import.meta.url);
 const journey = require('../.test-build/app/src/lib/create/journey.js');
 const { CREATE, allCreateStrings } = require('../.test-build/app/src/lib/create/copy.js');
+const slippage = require('../.test-build/app/src/lib/create/slippage.js');
 const { SELECTED_POOL_CATALOGUE } = require('../.test-build/app/src/config/selectedPoolCatalogue.js');
 // Compiled by tsconfig.consumer-test.json, next to the journey.
 const setupDrafts = require('../.test-build/app/src/lib/create/setupDraft.js');
@@ -145,13 +146,15 @@ test('a deposit budget is converted with the decimals the read returned, exactly
   assert.match(v('0.001', 18).raw, /^[1-9][0-9]{0,77}$/);
 });
 
-test('the amount step says how many decimal places a budget may have; where its raw units come from is only the raw line’s title', () => {
+test('the amount step shows amounts, never the integers underneath them', () => {
   assert.equal(CREATE.amount.budgetHint(6), 'Up to 6 decimal places.');
   assert.equal(CREATE.amount.budgetHint(null), 'Decimals for this token could not be read.');
-  assert.equal(CREATE.amount.rawUnitsTitle, 'Converted to raw units with the decimals read from chain.');
+  // Raw units are what the request carries, not something to read on screen: the
+  // line that printed them was debugging left in the product.
   const amount = readFileSync(new URL('../src/components/create/StageAmount.tsx', import.meta.url), 'utf8');
-  assert.match(amount, /data-budget-raw=\{budget\.raw\} title=\{CREATE\.amount\.rawUnitsTitle\}/);
-  assert.doesNotMatch(amount, /hint=\{[^}]*rawUnitsTitle/, 'never in the visible hint');
+  assert.doesNotMatch(amount, /data-budget-raw|rawUnits/);
+  assert.equal(CREATE.amount.rawUnits, undefined);
+  assert.equal(CREATE.amount.rawUnitsTitle, undefined);
 });
 
 test('slippage is a whole number of basis points from 0 to 9999', () => {
@@ -160,6 +163,69 @@ test('slippage is a whole number of basis points from 0 to 9999', () => {
   assert.deepEqual(v('0'), { ok: true, bps: 0 });
   assert.deepEqual(v('9999'), { ok: true, bps: 9999 });
   for (const text of ['', '10000', '-1', '1.5', '050', 'abc']) assert.deepEqual(v(text), { ok: false, reason: CREATE.amount.slippageInvalid }, text);
+});
+
+test('the slippage track runs 0.1% to 5%, every hundredth of a percent to 1% and every twentieth above it', () => {
+  const steps = slippage.SLIPPAGE_STEPS;
+  assert.equal(steps[0], 10);
+  assert.equal(steps[steps.length - 1], 500);
+  for (let i = 1; i < steps.length; i += 1) assert.ok(steps[i] > steps[i - 1], `position ${i} moves to a different value`);
+  for (const mark of slippage.SLIPPAGE_MARKS) assert.ok(steps.includes(mark), `${mark} is on the track`);
+  assert.deepEqual([10, 11, 99, 100, 105].map((bps) => steps.includes(bps)), [true, true, true, true, true]);
+  assert.equal(steps.includes(101), false, 'above 1% the steps are twentieths of a percent');
+  // The marks share the half of the track nearest the left, where the tolerances people choose between are.
+  assert.deepEqual(slippage.SLIPPAGE_MARKS.map(slippage.slippageIndex), [0, 40, 90]);
+  assert.equal(slippage.slippageIndex(500), steps.length - 1);
+  assert.equal(slippage.slippageIndex(137), slippage.slippageIndex(135), 'a value between two steps sits on the nearer one');
+});
+
+test('slippage is written as a percentage, and kept as the basis points behind it', () => {
+  assert.equal(slippage.slippageWritten(50), '0.5%');
+  assert.equal(slippage.slippageWritten(37), '0.37%');
+  assert.equal(slippage.slippageWritten(10), '0.1%');
+  assert.equal(slippage.slippageWritten(500), '5%');
+  assert.equal(slippage.slippagePercent(50), '0.5');
+  assert.equal(slippage.slippageValue('50'), 50);
+  assert.equal(slippage.slippageValue('9999'), 500, 'the track cannot draw more than its end');
+  assert.equal(slippage.slippageValue('0'), 10);
+  assert.equal(slippage.slippageValue('abc'), 10);
+});
+
+test('an exact percentage typed beside the slider becomes whole basis points, or nothing', () => {
+  const v = slippage.slippageFromPercent;
+  assert.equal(v('0.37'), 37);
+  assert.equal(v('0.1'), 10);
+  assert.equal(v('0.10'), 10);
+  assert.equal(v('1'), 100);
+  assert.equal(v('5'), 500);
+  assert.equal(v('5.00'), 500);
+  // A third decimal place is not a whole basis point, and the ends are the ends.
+  for (const text of ['0.375', '0.09', '5.01', '6', '', '.5', '00.5', '-1', '1,5', 'abc']) assert.equal(v(text), null, text);
+});
+
+test('the thumb settles on a mark only when it is let go beside one', () => {
+  const v = slippage.slippageMark;
+  assert.equal(v(47), 50);
+  assert.equal(v(54), 50);
+  assert.equal(v(55), null, 'further than 0.04% away, what was dragged is what is kept');
+  assert.equal(v(50), null, 'already on the mark');
+  assert.equal(v(12), 10);
+  assert.equal(v(98), 100);
+  assert.equal(v(300), null);
+});
+
+test('the amount step chooses slippage by dragging, in percent, not in a disclosure', () => {
+  const stage = readFileSync(new URL('../src/components/create/StageAmount.tsx', import.meta.url), 'utf8');
+  const slider = readFileSync(new URL('../src/components/create/SlippageSlider.tsx', import.meta.url), 'utf8');
+  assert.doesNotMatch(stage, /<details|dm-flow-disclosure/, 'the slider is on the step, not behind a disclosure');
+  assert.match(stage, /<SlippageSlider/);
+  assert.match(slider, /type="range"/, 'a real range input: the keyboard, touch and assistive technology all work');
+  assert.match(slider, /aria-valuetext/, 'the position says nothing out loud, so the percentage does');
+  // The strings the disclosure and the basis-point field used are gone with them.
+  assert.equal(CREATE.amount.advanced, undefined);
+  assert.equal(CREATE.amount.slippageValue, undefined);
+  assert.equal(CREATE.amount.slippageLabel, 'Slippage tolerance');
+  assert.match(CREATE.amount.slippageExactInvalid, /^Enter a percentage from 0.1 to 5/);
 });
 
 test('a range is whole ticks on the pool’s spacing, inside v4’s ticks, lower below upper', () => {
@@ -327,6 +393,40 @@ test('the line under Continue in Setup promises a filled-in Setup only for choic
   const review = readFileSync(new URL('../src/components/create/StageReview.tsx', import.meta.url), 'utf8');
   assert.match(review, /<Suspense fallback=\{<SetupLink note=\{CREATE\.review\.gate\} \/>\}>/);
   assert.doesNotMatch(review, /note=\{CREATE\.review\.setupNote(SignedOut)?\}/, 'the promise is made only where the link carries the choices');
+});
+
+// Changed on purpose (owner, 2026-09-19): the Review opened with a green dot
+// beside "the pool price is inside this range" — the ordinary case, stated as
+// if it were news. The range step had already been reduced the same way: the
+// sentence is shown only when the range does NOT hold the price, because that
+// position earns no fees until the price moves into it. Nothing green is left
+// in the flow.
+test('the Review states its range position only when the range misses the price, and never in green', () => {
+  const review = readFileSync(new URL('../src/components/create/StageReview.tsx', import.meta.url), 'utf8');
+  const css = readFileSync(new URL('../src/styles/flow.css', import.meta.url), 'utf8');
+  assert.match(review, /inside === false && usable && \(/, 'the visible line is the out-of-range case only');
+  assert.match(review, /inside === true && usable && <span className="sr-only"/, 'the ordinary case is still said to a screen reader');
+  assert.doesNotMatch(review, /data-tone=\{inside/, 'no tone is chosen from the position any more');
+  assert.doesNotMatch(review, /CREATE\.review\.inRange\s*:/, 'the in-range sentence is never the visible branch');
+  assert.doesNotMatch(css, /dm-flow-position\[data-tone="in"\]/, 'the green dot rule is gone, not merely unused');
+  assert.doesNotMatch(css, /dm-flow-position[^;]*--money-in/, 'nothing in the line takes the in-the-money colour');
+});
+
+// Changed on purpose (owner, 2026-09-19): the Review said the fee twice --
+// PoolPair ends in it and a chip repeated it -- and said "Exact amounts are
+// calculated in Setup" both above and below the four dashes, which read as two
+// different remarks rather than one explanation.
+test('the Review says the fee once, and explains the empty deposit rows once', () => {
+  const review = readFileSync(new URL('../src/components/create/StageReview.tsx', import.meta.url), 'utf8');
+  const balance = readFileSync(new URL('../src/components/create/StageBalance.tsx', import.meta.url), 'utf8');
+  assert.match(review, /<PoolPair option=\{pool\} \/>/, 'the pair still carries the fee');
+  assert.doesNotMatch(review, /data-fee=/, 'no chip repeats it');
+  assert.match(balance, /\{figures && <p className="dm-hint">\{CREATE\.balance\.notEnabled\}<\/p>\}/,
+    'the trailing hint appears only under rows that carry numbers');
+  // Without figures the section already opens with the same sentence, so the
+  // explanation is still on screen exactly once.
+  assert.equal(CREATE.balance.titles.off, CREATE.balance.notEnabled);
+  assert.match(balance, /data-balance-waiting=\{shown\.status\}>\s*\{shown\.title\}/, 'that opening line is still rendered');
 });
 
 test('a pool picked on Setup keeps the carried choices only when it is the pool they were carried for (G9)', () => {

@@ -576,7 +576,7 @@ test('the landing reads through the bridge, and with no /api behind this server 
   const markets = await open('/markets');
   await markets.waitForFunction(() => document.querySelector('[data-selected-pools] [data-read-status]')?.getAttribute('data-read-status') === 'not_connected');
   await quietStatus(markets, '[data-selected-pools]', 'Live data unavailable', 'Markets');
-  assert.doesNotMatch(await markets.locator('main').innerText(), /reported by GeckoTerminal and not reconciled|names its source and its age/, 'Markets: no footnote under the table');
+  assert.doesNotMatch(await markets.locator('main').innerText(), /reported by a market data provider and not reconciled|names its source and its age/, 'Markets: no footnote under the table');
   clean(markets, 'Markets not connected');
   await close(markets);
 });
@@ -632,7 +632,7 @@ test('a pool page that could not be verified states no fee tier, and its chart n
   assert.match(main, /FEE TIER\s+—/, 'the Fee tier stat is a dash');
   assert.doesNotMatch(main, /%|GeckoTerminal|Hourly candles/, 'no fee tier and no caption anywhere on the page');
   const plot = page.locator('main .dm-card', { hasText: 'USD price and volume' }).locator('.dm-pool-plot');
-  assert.deepEqual([await plot.getAttribute('title'), await plot.getAttribute('data-chart-provider')], ['Hourly candles reported by GeckoTerminal.', 'GeckoTerminal']);
+  assert.deepEqual([await plot.getAttribute('title'), await plot.getAttribute('data-chart-provider')], ['Hourly candles reported by a market data provider.', 'GeckoTerminal']);
   clean(page, 'unverified pool page');
   await close(page);
 });

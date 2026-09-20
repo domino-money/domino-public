@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { parsePort, permittedBrowserRequest, readRoute, READS } from '../scripts/local-live-boundary.mjs'
+import { ENABLED_READS as V3_ENABLED_READS } from '../../api-contracts/read-v3/runtime.mjs'
+import { parsePort, permittedBrowserRequest, readRoute, READS, READS_V3 } from '../scripts/local-live-boundary.mjs'
 
 const port = 5273
 const origin = `http://127.0.0.1:${port}`
@@ -42,4 +43,30 @@ test('ten exact read POSTs and two GETs; no queries, session, private routes or 
   assert.equal(readRoute('/api/read/v1/token', 'GET'), null)
   assert.equal(readRoute('/api/read/v1/markets-snapshot', 'GET'), null)
   assert.equal(readRoute('/api/read/v1/capabilities', 'POST'), null)
+})
+
+// Added 2026-09-20. rugged put read-v3 behind the Pages forwarder
+// (functions/_lib/bridge.ts) and the Worker (bridge/src/worker.mjs) but not
+// here, so on the owner's own machine every v3 read resolved to no route, came
+// back stamped with read-v1's version, and the app read that as
+// contract_version_not_accepted — a blocking failure that empties the table
+// with no retry. The local lane has to know all three families or the PC and
+// the site disagree about what the backend speaks.
+test('the local lane routes read-v3, keeps the families apart, and cannot drift from the contract', () => {
+  assert.deepEqual([...READS_V3], [...V3_ENABLED_READS], 'the list here is exactly what read-v3 enables')
+  assert.deepEqual(readRoute('/api/read/v3/capabilities', 'GET'), { route: 'capabilities', path: '/internal/read/v3/capabilities', version: 'v3' })
+  for (const route of READS_V3) {
+    assert.deepEqual(readRoute(`/api/read/v3/${route}`, 'POST'), { route, path: `/internal/read/v3/${route}`, version: 'v3' })
+    assert.equal(readRoute(`/api/read/v3/${route}`, 'GET'), null, 'a v3 read is a POST')
+  }
+  // No name may cross between families, in either direction.
+  for (const route of READS) assert.equal(readRoute(`/api/read/v3/${route}`, 'POST'), null, `${route} is not a v3 route`)
+  for (const route of READS_V3) {
+    assert.equal(readRoute(`/api/read/v1/${route}`, 'POST'), null, `${route} is not a v1 route`)
+    assert.equal(readRoute(`/api/read/v2/${route}`, 'POST'), null, `${route} is not a v2 route`)
+  }
+  assert.equal(readRoute('/api/read/v3/capabilities', 'POST'), null)
+  for (const path of ['/api/read/v3/overview?', '/api/read/v3//overview', '/api/read/v3/a/../overview', '/api/read/v3/%6fverview', '/api/read/v3/overview/', '/api/read/v4/overview']) {
+    assert.equal(readRoute(path, 'POST'), null, path)
+  }
 })

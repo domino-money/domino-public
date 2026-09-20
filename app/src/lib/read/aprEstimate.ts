@@ -19,7 +19,7 @@ type Limitation = PoolAprEstimate['limitations'][number]
  * from a caveat written here.
  */
 const LIMITATIONS: Record<Limitation, string> = {
-  provider_reported_volume_and_tvl_unreconciled: 'From GeckoTerminal’s reported 24h volume and TVL, not reconciled.',
+  provider_reported_volume_and_tvl_unreconciled: 'From a market data provider’s reported 24h volume and TVL, not reconciled.',
   provider_update_time_unknown: 'The provider’s update time is unknown.',
   current_tvl_not_time_weighted: 'Current TVL, not time-weighted.',
   assumes_current_fixed_lp_fee_for_24h_volume: 'Assumes the current fixed LP fee for the whole 24h volume.',

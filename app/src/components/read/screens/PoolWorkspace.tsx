@@ -53,7 +53,8 @@ async function listedRoutes(source: ReadSource, signal: AbortSignal): Promise<Li
 
 type OkMarket = Extract<ReadOutcome<'pool-market'>, { state: 'ok' }>
 /** The page's market figures for one pool: the last good answer and which read it was, and the last failure since. */
-type MarketAnswer = { key: string; ok: OkMarket | null; origin: 'stored' | 'read' | 'overview' | null; acquiring?: boolean; failure: Exclude<ScreenOutcome<'pool-market' | 'overview'>, { state: 'ok' | 'aborted' }> | null }
+/** `accepted` is the producer's own word on whether it took the acquisition on; false is its capacity ceiling, not a failure. */
+type MarketAnswer = { key: string; ok: OkMarket | null; origin: 'stored' | 'read' | 'overview' | null; acquiring?: boolean; accepted?: boolean; failure: Exclude<ScreenOutcome<'pool-market' | 'overview'>, { state: 'ok' | 'aborted' }> | null }
 
 /**
  * A stored answer's provider figures as the page shows them until the pool's
@@ -164,9 +165,13 @@ export function PoolWorkspace({ source, option, onOption, range, onRange, action
           const entry = overview.data.pools.find((pool) => pool.poolId === poolId)
           const outcome = entry ? storedPoolRead(entry, overview.data.generatedAt, overview.provenance) : null
           const next = overviewPoolOption(overview, poolId)
-          setMarket({ key: poolId, ok: outcome, origin: 'overview', acquiring: entry?.acquisition.status === 'pending', failure: null })
+          const accepted = overview.data.acquisitionAccepted !== false
+          const acquiring = entry?.acquisition.status === 'pending'
+          setMarket({ key: poolId, ok: outcome, origin: 'overview', acquiring, accepted, failure: null })
           if (next) optionChanged.current(next)
-          cancelRefresh = whenVisibleAfter(5_000, () => setMarketAttempt((n) => n + 1))
+          // Refused acquisition cannot start until the producer's ceiling drains;
+          // asking every five seconds only spends the gateway slot it needs.
+          cancelRefresh = whenVisibleAfter(acquiring && !accepted ? 30_000 : 5_000, () => setMarketAttempt((n) => n + 1))
         } else {
           setMarket((current) => current?.key === poolId ? { ...current, failure: overview } : { key: poolId, ok: null, origin: null, failure: overview })
           if (await askAgainLater(overview, marketAttempt, signal)) setMarketAttempt((n) => n + 1)
@@ -211,9 +216,12 @@ export function PoolWorkspace({ source, option, onOption, range, onRange, action
   const shown = row ? agedMarket(row, now) : null
   const provenance = shown?.provenance
   const retrieved = retrievedText(provenance ? retrievedAgeSeconds(provenance.market, now) : null)
-  const loading = answered === null || (answered.ok === null && answered.acquiring === true)
+  // A refused acquisition with nothing stored is not loading: nothing is coming
+  // until the ceiling drains, and an endless skeleton says nothing at all.
+  const atCapacity = answered?.ok === null && answered.acquiring === true && answered.accepted === false
+  const loading = answered === null || (answered.ok === null && answered.acquiring === true && answered.accepted !== false)
   const failure = answered && !answered.ok ? answered.failure : null
-  const failed = failure ? sentence(failureText(failure, 'pools')) : undefined
+  const failed = failure ? sentence(failureText(failure, 'pools')) : atCapacity ? 'New acquisition is at capacity; no figures are stored for this pool yet.' : undefined
   const [currency0, currency1] = option.currencies
   const price = poolPrice(option, now.wall)
   const fee = option.fee === 'Dynamic' ? 'Dynamic fee' : option.fee
@@ -221,12 +229,12 @@ export function PoolWorkspace({ source, option, onOption, range, onRange, action
   const resting = <span className="mt-2 grid gap-1.5"><Skeleton className="h-2.5 w-20" /><Skeleton className="h-2.5 w-24" /></span>
   // Who reported the figures and when they were retrieved, as words under them; the whole observation is their title.
   const observation = provenance
-    ? `GeckoTerminal market observation${answered?.origin === 'stored' ? ', as the read service stored it' : ''}: ${provenance.market.status}${provenance.market.reason ? ` (${reasonText(provenance.market.reason)})` : ''}, ${retrieved}${provenance.market.cacheAgeSeconds === null ? '' : `, reported cache age ${provenance.market.cacheAgeSeconds} s`}; counted current for ${provenance.market.freshForSeconds} s.`
+    ? `Provider market observation${answered?.origin === 'stored' ? ', as the read service stored it' : ''}: ${provenance.market.status}${provenance.market.reason ? ` (${reasonText(provenance.market.reason)})` : ''}, ${retrieved}${provenance.market.cacheAgeSeconds === null ? '' : `, reported cache age ${provenance.market.cacheAgeSeconds} s`}; counted current for ${provenance.market.freshForSeconds} s.`
     : undefined
   const providerLine = !shown
     ? loading ? resting : undefined
     : <span className="block" data-market-provenance="" title={observation}>
-        <span className="block">GeckoTerminal</span>
+        <span className="block">Market data provider</span>
         {(status === 'available' || status === 'stale') && <span className="block">{retrieved}</span>}
       </span>
   const HISTORY = 'Domino history'
@@ -326,7 +334,7 @@ export function PoolWorkspace({ source, option, onOption, range, onRange, action
         <div>
           <dt>Verification</dt>
           <dd>
-            Verified at block {option.block} · {option.kind === 'stored' ? 'stored on-chain observation' : option.kind === 'discovery' ? 'found by DexScreener discovery' : `from the catalogue (${option.catalogue?.source === 'initialize_event' ? 'initialize event' : 'verified observation'} at block ${option.catalogue?.block})`}
+            Verified at block {option.block} · {option.kind === 'stored' ? 'stored on-chain observation' : option.kind === 'discovery' ? 'found by provider discovery' : `from the catalogue (${option.catalogue?.source === 'initialize_event' ? 'initialize event' : 'verified observation'} at block ${option.catalogue?.block})`}
             {option.requestedById && ' · asked for by id'}
           </dd>
         </div>

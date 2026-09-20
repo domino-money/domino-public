@@ -1080,15 +1080,15 @@ test('one quiet re-ask policy: the pool screens and the wallet, token and positi
   );
 });
 
-test('existing pools: neutral order, DexScreener figures attributed, rejected candidates listed, never "no pool exists"', () => {
+test('existing pools: neutral order, provider figures attributed, rejected candidates listed, never "no pool exists"', () => {
   const view = pools.projectPoolsView(runtime.assertResponse('pools', fixture('pools.success')));
   const [option] = view.options;
   assert.equal(option.fee, '0.30%');
   assert.equal(option.kind, 'discovery');
-  assert.deepEqual(option.liquidity, { state: 'attributed', value: '$10.00', zero: false, provider: 'dexscreener', retrievedAt: 1010, cacheAgeSeconds: null });
+  assert.deepEqual(option.liquidity, { state: 'attributed', value: '$10.00', raw: '10.00', zero: false, provider: 'dexscreener', retrievedAt: 1010, cacheAgeSeconds: null }, 'the provider decimal is kept beside the formatted one, so a list can work the APR estimate out without a read per row');
   assert.equal(option.volume.value, '$1.2K');
-  // Source and age for the DexScreener figures: the payload's retrieval time, the only age the pools route gives.
-  assert.equal(option.providerNote, 'DexScreener figures retrieved 00:16:50 UTC, 1970-01-01. Provider-reported, not reconciled with chain data.');
+  // Source and age for the discovery provider's figures: the payload's retrieval time, the only age the pools route gives.
+  assert.equal(option.providerNote, 'Provider figures retrieved 00:16:50 UTC, 1970-01-01. Provider-reported, not reconciled with chain data.');
   assert.doesNotMatch(option.providerNote, PROVENANCE_BANNED);
   assert.equal(option.aprReason, 'reconciled_fee_history_unavailable');
 
@@ -1452,9 +1452,9 @@ test('the Top pools reads have the same 60 s budget as the screens, worded as a 
 // ---------------------------------------------------------------------------
 
 
-test('GeckoTerminal figures keep every envelope state apart, dated only by the payload', () => {
+test('pool-market figures keep every envelope state apart, dated only by the payload', () => {
   const market = (name) => runtime.assertResponse('pool-market', fixture(`pool-market.${name}`)).market;
-  assert.deepEqual(figures.figureFromMarket(market('success'), 'liquidity'), { state: 'attributed', value: '$12.3K', zero: false, provider: 'geckoterminal', retrievedAt: market('success').data.retrievedAt, cacheAgeSeconds: 0 });
+  assert.deepEqual(figures.figureFromMarket(market('success'), 'liquidity'), { state: 'attributed', value: '$12.3K', raw: market('success').data.reportedLiquidityUsd, zero: false, provider: 'geckoterminal', retrievedAt: market('success').data.retrievedAt, cacheAgeSeconds: 0 });
   const stale = figures.figureFromMarket(market('stale'), 'liquidity');
   assert.equal(stale.state, 'attributed_stale', 'a stale envelope with a reason is still a retained observation');
   assert.equal(stale.refreshReason, 'provider_unavailable');
@@ -1467,7 +1467,7 @@ test('GeckoTerminal figures keep every envelope state apart, dated only by the p
   assert.equal(figures.utcTime(1010), '00:16:50 UTC, 1970-01-01');
 });
 
-test('provenance names the provider and the retrieval, says not reconciled, never claims current, and ignores the client clock', () => {
+test('provenance attributes the figure to a provider without naming it, gives the retrieval, says not reconciled, never claims current, and ignores the client clock', () => {
   const states = [
     { state: 'attributed', value: '$1', zero: false, provider: 'geckoterminal', retrievedAt: 1010, cacheAgeSeconds: 0 },
     { state: 'attributed_stale', value: '$1', zero: false, provider: 'geckoterminal', retrievedAt: 1010, cacheAgeSeconds: 200, refreshReason: 'provider_unavailable' },
@@ -1486,9 +1486,10 @@ test('provenance names the provider and the retrieval, says not reconciled, neve
     Date.now = realNow;
   }
   for (const [i, { short, long }] of render().entries()) {
-    const name = states[i].provider === 'geckoterminal' ? 'GeckoTerminal' : 'DexScreener';
-    assert.ok(short.includes(name) && long.includes(name), `state ${states[i].state} names ${name}`);
-    assert.match(long, /retrieved/);
+    assert.match(short, /^Provider\b/, `state ${states[i].state} says a provider reported it`);
+    assert.match(long, /market data provider/, `state ${states[i].state} attributes the figure to a provider`);
+    assert.doesNotMatch(`${short} ${long}`, /GeckoTerminal|DexScreener/, 'the provider is never named on a screen');
+    assert.match(long, /retrieved/i, 'the retrieval is stated');
     assert.match(long, /not reconciled/);
     assert.doesNotMatch(`${short} ${long}`, PROVENANCE_BANNED);
   }

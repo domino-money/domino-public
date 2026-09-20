@@ -1313,10 +1313,10 @@ test('candle coverage is source, age and coverage, never a 24h figure', () => {
   const byLabel = Object.fromEntries(view.facts.map((f) => [f.label, f]));
   assert.deepEqual([byLabel['24h coverage'].text, byLabel['24h coverage'].state], ['Not established', 'partial']);
   assert.match(byLabel['Latest hour'].text, /inferred from the backend clock/);
-  assert.match(byLabel['Price history (GeckoTerminal)'].text, /cache 0 s/);
+  assert.match(byLabel['Price history (provider-reported)'].text, /cache 0 s/);
   assert.equal(view.facts.some((f) => /24h (volume|figure)/i.test(f.label) && f.label !== '24h volume'), false);
   const stale = project.projectPoolMarket(JSON.parse(text(gateway('pool-market.stale'))));
-  assert.equal(stale.facts.find((f) => f.label === 'Price history (GeckoTerminal)').state, 'stale');
+  assert.equal(stale.facts.find((f) => f.label === 'Price history (provider-reported)').state, 'stale');
   const notRequested = project.projectPoolMarket(JSON.parse(text(gateway('pool-market.not-requested'))));
   assert.deepEqual(notRequested.facts.find((f) => f.label === 'Price history'), { label: 'Price history', text: 'Not requested', state: 'absent' });
 });
@@ -1344,7 +1344,7 @@ test('every family view distinguishes its own partial, stale and unavailable sta
   assert.match(view('nft-positions', 'nft-positions.success').items[0].facts[0].text, /not proof of wallet control/);
   assert.equal(fact(view('nft-positions', 'nft-positions.stale'), 'Snapshot').state, 'stale');
   assert.deepEqual(view('nft-positions', 'nft-positions.zero').items[0].facts.find((f) => f.label === 'Liquidity'), { label: 'Liquidity', text: '0 (raw units)', state: 'zero' });
-  assert.equal(fact(view('pools', 'pools.provider-unavailable'), 'Discovery (DexScreener)').state, 'partial');
+  assert.equal(fact(view('pools', 'pools.provider-unavailable'), 'Discovery (provider)').state, 'partial');
   assert.deepEqual(view('pools', 'pools.missing').notes, ['No verified pools found. That is not proof none exist.']);
   assert.ok(view('pools', 'pools.rejected-candidate').notes.some((note) => /1 candidate rejected and not listed/.test(note)));
   const zeroMetrics = view('pools', 'pools.zero-and-missing-metrics').items[0].facts;

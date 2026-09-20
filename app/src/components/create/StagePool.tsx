@@ -1,16 +1,11 @@
-import { useState } from 'react'
 import { CREATE } from '../../lib/create/copy'
 import type { JourneyState } from '../../lib/create/journey'
 import { COPY } from '../../lib/read/screens/copy'
 import type { PoolOption } from '../../lib/read/screens/poolsList'
-import { selectable, type TokenCandidate } from '../../lib/read/screens/tokens'
 import type { ReadSource } from '../../lib/read/types'
-import { Address } from '../read/screens/Address'
 import { PoolPicker } from '../read/screens/PoolPicker'
-import { PoolSelectionDialog } from '../read/screens/PoolSelectionDialog'
 import { SymbolText } from '../read/screens/SymbolText'
-import { TokenPicker } from '../read/screens/TokenPicker'
-import { TokenMark, TokenMarkPair } from '../TokenIcon'
+import { TokenMarkPair } from '../TokenIcon'
 import { Button, Chip } from '../ui'
 
 /**
@@ -57,91 +52,4 @@ export function PoolList({ source, state, onPool }: { source: ReadSource; state:
   const token = state.token
   if (!token) return null
   return <PoolPicker key={`${token.key}:${state.paired?.key ?? ''}`} source={source} token={token.key} paired={state.paired?.key ?? null} pending={state.pool} onPending={onPool} compact />
-}
-
-/**
- * An optional second asset that narrows the pool list; never a requirement.
- * It is chosen in a dialog with the same token picker, and excludes the token
- * being deposited.
- */
-export function PairedAsset({
-  source,
-  state,
-  onPaired,
-}: {
-  source: ReadSource | null
-  state: JourneyState
-  onPaired: (candidate: TokenCandidate | null) => void
-}) {
-  const [choosing, setChoosing] = useState(false)
-  const [pendingPaired, setPendingPaired] = useState<TokenCandidate | null>(null)
-  const [pairedCandidates, setPairedCandidates] = useState<TokenCandidate[]>([])
-  const token = state.token
-  if (!token) return null
-  const pairedOk = pendingPaired !== null && selectable(pendingPaired) && pendingPaired.key !== token.key
-  return (
-    <details className="dm-details dm-flow-disclosure">
-      <summary>
-        {CREATE.pool.pairedHeading}
-        {state.paired && (
-          <span className="dm-flow-disclosure-value">
-            <SymbolText token={state.paired.token} />
-          </span>
-        )}
-      </summary>
-      <div className="grid gap-3">
-        <p className="text-caption text-fg-muted">{CREATE.pool.pairedNote}</p>
-        {state.paired && (
-          <p className="flex min-w-0 items-center gap-2 text-body" data-paired={state.paired.key}>
-            <TokenMark token={state.paired.token} size={20} />
-            <SymbolText token={state.paired.token} />
-            <span className="text-caption text-fg-subtle">
-              <Address value={state.paired.key} short />
-            </span>
-          </p>
-        )}
-        <div className="flex flex-wrap gap-2">
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            disabled={!source}
-            onClick={() => {
-              setPendingPaired(state.paired)
-              setChoosing(true)
-            }}
-          >
-            {state.paired ? CREATE.pool.changePaired : CREATE.pool.choosePaired}
-          </Button>
-          {state.paired && (
-            <Button type="button" variant="ghost" size="sm" onClick={() => onPaired(null)}>
-              {CREATE.pool.clearPaired}
-            </Button>
-          )}
-        </div>
-      </div>
-      {choosing && source && (
-        <PoolSelectionDialog
-          title={CREATE.pool.pairedDialogTitle}
-          description={CREATE.pool.pairedDialogDescription}
-          onClose={() => setChoosing(false)}
-          footer={
-            <Button
-              type="button"
-              disabled={!pairedOk}
-              onClick={() => {
-                if (!pairedOk) return
-                onPaired(pendingPaired)
-                setChoosing(false)
-              }}
-            >
-              {CREATE.pool.selectPaired}
-            </Button>
-          }
-        >
-          <TokenPicker source={source} variant="pair" exclude={token.key} candidates={pairedCandidates} onCandidates={setPairedCandidates} pending={pendingPaired} onPending={setPendingPaired} />
-        </PoolSelectionDialog>
-      )}
-    </details>
-  )
 }

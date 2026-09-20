@@ -212,7 +212,7 @@ export function ChainSelectionPanel({ onChrome }: ChainSelectionSlotProps) {
             <span className="font-mono"> · {pool.fee}</span>
             <span className="text-fg-subtle">
               {' '}
-              · {COPY.selection.verifiedAt} {pool.block} · {pool.kind === 'discovery' ? 'DexScreener discovery' : 'catalogue'}
+              · {COPY.selection.verifiedAt} {pool.block} · {pool.kind === 'discovery' ? 'provider discovery' : 'catalogue'}
             </span>
           </p>
           <Address value={pool.key} />

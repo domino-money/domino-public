@@ -1,7 +1,9 @@
 import { lazy, Suspense } from 'react'
 import { CREATE } from '../../lib/create/copy'
 import type { PairBalancesState } from './usePairBalances'
-import { candidateDecimals, feeBases, priceOf, serialiseSummary, validateBudget, walletSteps, type JourneyState } from '../../lib/create/journey'
+import { candidateDecimals, priceOf, validateBudget, walletSteps, type JourneyState } from '../../lib/create/journey'
+import { pairedAmount } from '../../lib/create/pairAmount'
+import { formatUnits } from '../../lib/read/decimal'
 import { rangePosition } from '../../lib/read/screens/poolRange'
 import { Address } from '../read/screens/Address'
 import { SymbolText } from '../read/screens/SymbolText'
@@ -11,97 +13,88 @@ import { StageBalance } from './StageBalance'
 import { AutomationSummary, PoolPair, RangeSummary } from './StepList'
 
 /**
- * Step 5, Review: every choice, the deposit amounts (an estimate while one is
- * current, StageBalance.tsx), the wallet steps in order (the deposit in Setup,
- * then any automation from Automate; a list, not buttons) and the fee bases
- * apart. `open` is whether Review is the open step: the amounts are asked for
- * only then.
+ * The position in one line: how much of each token it holds, at the pool's
+ * price. Both figures are the ones the amount step showed — the typed one and
+ * the one the range and the price make of it (create/pairAmount.ts) — so
+ * Review opens with what is being created rather than with a list of settings.
+ *
+ * Null when a choice is missing or the price cannot be used; the service's own
+ * expected and maximum amounts, with slippage, arrive below in StageBalance
+ * when onboarding answers, and they remain the authority.
+ */
+function heldAmounts(state: JourneyState): string | null {
+  const { pool, token, range } = state
+  if (!pool || !token || !range) return null
+  const independent = pool.currencies.findIndex((currency) => currency.address === token.key)
+  if (independent !== 0 && independent !== 1) return null
+  const budget = validateBudget(state.budget, candidateDecimals(token))
+  if (!budget.ok) return null
+  const other = pairedAmount({ sqrtPriceX96: pool.sqrtPriceX96, tickLower: range.lower, tickUpper: range.upper, independent, amountRaw: budget.raw })
+  if (other.kind !== 'amount') return null
+  const side = (index: 0 | 1, raw: string) => {
+    const currency = pool.currencies[index]
+    const units = formatUnits(raw, currency.decimals)
+    return `${units && units.kind === 'units' ? units.text : raw} ${currency.symbol ?? ''}`.trim()
+  }
+  const mine = side(independent, budget.raw)
+  const theirs = side(independent === 0 ? 1 : 0, other.raw)
+  return independent === 0 ? `${mine} + ${theirs}` : `${theirs} + ${mine}`
+}
+
+/**
+ * Step 5, Review: what is being created at the top, the deposit amounts the
+ * service reports when it answers (StageBalance.tsx), the wallet steps in
+ * order, and the one fee Domino charges when automation can charge it. `open`
+ * is whether Review is the open step: the amounts are asked for only then.
  */
 export function StageReview({ state, now, open, balances }: { state: JourneyState; now: number; open: boolean; balances: PairBalancesState }) {
-  const token = state.token
   const pool = state.pool
   const price = priceOf(pool, now)
   const usable = price && price.state === 'usable' ? price : null
   const inside = usable && state.range ? rangePosition(state.range, usable.tick) === 'inside' : null
-  const budget = token ? validateBudget(state.budget, candidateDecimals(token)) : null
   const steps = walletSteps(state)
   const pill = automationPill(state.automation)
-  const lines = CREATE.review.lines
+  const held = heldAmounts(state)
   return (
     <div className="dm-flow-stack" data-stage="review">
       <section aria-labelledby="create-choices-heading" className="dm-flow-section">
         <h3 id="create-choices-heading" className="dm-flow-subtitle">
           {CREATE.review.choices}
         </h3>
-        <dl className="dm-flow-facts">
-          <div data-review-line="pool">
-            <dt>{lines.pool}</dt>
-            <dd>{pool ? <PoolPair option={pool} /> : CREATE.page.notChosen}</dd>
-          </div>
-          <div data-review-line="token">
-            <dt>{lines.token}</dt>
-            <dd>
-              {token ? (
-                <>
-                  <SymbolText token={token.token} />
-                  <span className="dm-flow-fact-sub">
-                    <Address value={token.key} short />
-                  </span>
-                </>
-              ) : (
-                CREATE.page.notChosen
-              )}
-            </dd>
-          </div>
-          <div data-review-line="range">
-            <dt>{lines.range}</dt>
-            <dd className="tnum">
-              {state.range && price && price.state === 'usable' ? (
-                <>
-                  <RangeSummary range={state.range} price={price} />
-                  <span className="dm-flow-fact-sub">{CREATE.review.summary.rangeTicks(state.range.lower, state.range.upper)}</span>
-                </>
-              ) : state.range ? (
-                CREATE.review.summary.rangeTicks(state.range.lower, state.range.upper)
-              ) : (
-                CREATE.page.notChosen
-              )}
-            </dd>
-          </div>
-          <div data-review-line="budget">
-            <dt>{lines.budget}</dt>
-            <dd className="tnum">
-              {token && budget?.ok ? (
-                <>
-                  {state.budget} <SymbolText token={token.token} />
-                </>
-              ) : (
-                CREATE.page.notChosen
-              )}
-            </dd>
-          </div>
-          <div data-review-line="slippage">
-            <dt>{lines.slippage}</dt>
-            <dd className="tnum">{CREATE.amount.slippageValue(state.slippageBps)}</dd>
-          </div>
-          <div data-review-line="automation">
-            <dt>{lines.automation}</dt>
-            <dd>
-              <AutomationSummary automation={state.automation} />
-              {pill && <Pill className="ml-2">{pill}</Pill>}
-            </dd>
-          </div>
-          <div>
-            <dt>{CREATE.review.recipient}</dt>
-            <dd className="text-fg-muted">{CREATE.review.recipientValue}</dd>
-          </div>
-        </dl>
-        {inside !== null && usable && (
+        <div className="dm-flow-headline" data-review-headline="">
+          {/* PoolPair already ends in the fee ("ETH / TOKEN · 0.30%"); a chip beside it said the same thing twice. */}
+          <p className="dm-flow-headline-pair">
+            {pool ? <PoolPair option={pool} /> : CREATE.page.notChosen}
+          </p>
+          <p className="dm-flow-headline-amounts tnum" data-review-amounts="">
+            {held ?? CREATE.page.notChosen}
+          </p>
+          <p className="dm-flow-headline-line tnum" data-review-range="">
+            {state.range && price && price.state === 'usable' ? (
+              <>
+                {CREATE.review.rangeBetween} <RangeSummary range={state.range} price={price} />
+              </>
+            ) : state.range ? (
+              CREATE.review.summary.rangeTicks(state.range.lower, state.range.upper)
+            ) : (
+              CREATE.page.notChosen
+            )}
+          </p>
+          <p className="dm-flow-headline-foot">
+            <AutomationSummary automation={state.automation} />
+            {pill && <Pill>{pill}</Pill>}
+          </p>
+        </div>
+        {/* Only when there is something to warn about, as the range step does:
+            a range that does not hold the price earns no fees until the price
+            moves into it. The ordinary case is silent on screen. */}
+        {inside === false && usable && (
           // A price read more than 5 minutes ago keeps its sentence in normal type; that it is stale is in the title only.
-          <p role="status" className="dm-flow-position" data-tone={inside ? 'in' : 'neutral'} data-review-position="" data-stale={usable.stale ? '' : undefined} title={usable.stale ? CREATE.review.stale : undefined}>
-            {inside ? CREATE.review.inRange : CREATE.review.outOfRange}
+          <p role="status" className="dm-flow-position" data-tone="neutral" data-review-position="" data-stale={usable.stale ? '' : undefined} title={usable.stale ? CREATE.review.stale : undefined}>
+            {CREATE.review.outOfRange}
           </p>
         )}
+        {inside === true && usable && <span className="sr-only" data-review-position="inside">{CREATE.review.inRange}</span>}
       </section>
 
       <StageBalance state={state} open={open} balances={balances} />
@@ -132,33 +125,20 @@ export function StageReview({ state, now, open, balances }: { state: JourneyStat
             </li>
           ))}
         </ol>
-        <p className="dm-hint">{CREATE.review.gateDetail}</p>
       </section>
 
-      <section aria-labelledby="create-fees-heading" className="dm-flow-section">
-        <h3 id="create-fees-heading" className="dm-flow-subtitle">
-          {CREATE.review.fees}
-        </h3>
-        <p className="text-caption text-fg-muted">{CREATE.review.feesNote}</p>
-        <dl className="dm-flow-facts dm-flow-facts--noted" data-fee-bases="">
-          {feeBases(state).map((fee) => (
-            <div key={fee.label}>
-              <dt>{fee.label}</dt>
-              <dd className="tnum">{fee.value}</dd>
-              <dd className="dm-flow-fact-note">{fee.note}</dd>
-            </div>
-          ))}
-        </dl>
-      </section>
+      {state.automation !== 'none' && (
+        <section aria-labelledby="create-fees-heading" className="dm-flow-section" data-review-fee="">
+          <h3 id="create-fees-heading" className="dm-flow-subtitle">
+            {CREATE.review.serviceFee}
+          </h3>
+          <p className="dm-flow-fee">
+            <span className="dm-flow-fee-value tnum">{CREATE.review.serviceFeeValue}</span>
+          </p>
+          <p className="dm-hint">{CREATE.review.serviceFeeNote}</p>
+        </section>
+      )}
 
-      <div className="dm-flow-disclosures">
-        <details className="dm-details dm-flow-disclosure">
-          <summary>{CREATE.review.summaryHeading}</summary>
-          <pre className="dm-pre" data-summary-text="">
-            {serialiseSummary(state, now).join('\n')}
-          </pre>
-        </details>
-      </div>
     </div>
   )
 }

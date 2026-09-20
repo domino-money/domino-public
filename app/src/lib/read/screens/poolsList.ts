@@ -83,7 +83,7 @@ export function poolOption(pool: DiscoveryPool | CatalogueDiscoveryPool, tokens:
     requestedById: pool.requestedById === true,
     liquidity: figureFromProviderMetrics(pool.providerMetrics, 'liquidity', conflict),
     volume: figureFromProviderMetrics(pool.providerMetrics, 'volume', conflict),
-    providerNote: pool.providerMetrics && !conflict ? retrievalNote('dexscreener', pool.providerMetrics.retrievedAt) : null,
+    providerNote: pool.providerMetrics && !conflict ? retrievalNote(pool.providerMetrics.retrievedAt) : null,
     aprReason: pool.aprReason,
     tokenMetadata: pool.tokenMetadataStatus,
     providerConflict: conflict,
@@ -100,10 +100,10 @@ export function coverageLines(d: PoolsResponse): { lines: string[]; complete: bo
   let complete = true
   if (d.discovery.status === 'received') {
     const n = d.discovery.returned
-    lines.push(`DexScreener returned ${n} candidate${n === 1 ? '' : 's'} (${d.discovery.v4Candidates} on Uniswap). That covers the provider’s candidates only.`)
+    lines.push(`The discovery provider returned ${n} candidate${n === 1 ? '' : 's'} (${d.discovery.v4Candidates} on Uniswap). That covers the provider’s candidates only.`)
   } else {
     complete = false
-    lines.push(`DexScreener discovery was unavailable (${reasonText(d.discovery.reason)}), so this list may be incomplete.`)
+    lines.push(`Provider discovery was unavailable (${reasonText(d.discovery.reason)}), so this list may be incomplete.`)
   }
   if (d.catalogue.status === 'available') {
     lines.push(`Catalogue revision ${d.catalogue.revision} covers blocks ${d.catalogue.startBlock}–${d.catalogue.indexedThrough ?? 'not yet indexed'} only, not complete history.`)

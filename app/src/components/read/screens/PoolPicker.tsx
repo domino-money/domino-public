@@ -13,6 +13,7 @@ import { TokenMarkPair } from '../../TokenIcon'
 import { Button, Skeleton, cx } from '../../ui'
 import { Address } from './Address'
 import { ProviderFigure } from './ProviderFigure'
+import { rowApr, rowAprReasonText } from '../../../lib/read/screens/rowApr'
 import { SymbolText } from './SymbolText'
 
 /** A candidate's verification: `loading`, `ok`, `not_found` or a read state, and its words for the title and the live region. */
@@ -50,7 +51,7 @@ function PoolRow({ option, checked, onPick, name, compact = false, open = false 
       <div className="dm-mkt-option-figures">
         <ProviderFigure label="TVL" figure={option.liquidity} />
         <ProviderFigure label="24h volume" figure={option.volume} />
-        <p className="dm-mkt-option-apr"><span className="text-fg-muted">Pool APR</span><span>Unavailable</span></p>
+        <RowAprFigure option={option} />
       </div>
       {option.tokenMetadata === 'partial' && <p className="dm-mkt-option-note text-fg-muted">{COPY.picker.partialMetadata}</p>}
       {option.providerConflict && <p className="dm-mkt-option-note text-money-out">{COPY.picker.providerConflict}</p>}
@@ -58,13 +59,12 @@ function PoolRow({ option, checked, onPick, name, compact = false, open = false 
         <summary>Pool details · verified at block {option.block}</summary>
         <div className="grid gap-2 text-caption text-fg-muted">
           <Address value={option.key} />
-          <p>{option.kind === 'discovery' ? 'Found by DexScreener discovery, verified on chain' : `From the catalogue (${option.catalogue?.source === 'initialize_event' ? 'initialize event' : 'verified observation'} at block ${option.catalogue?.block}), verified on chain`}{option.requestedById && ' · asked for by id'}</p>
+          <p>{option.kind === 'discovery' ? 'Found by provider discovery, verified on chain' : `From the catalogue (${option.catalogue?.source === 'initialize_event' ? 'initialize event' : 'verified observation'} at block ${option.catalogue?.block}), verified on chain`}{option.requestedById && ' · asked for by id'}</p>
           <p>
             Tick spacing <span className="tnum">{option.tickSpacing}</span> ·{' '}
             {option.integration === 'hookless_fixed_fee' ? COPY.picker.hookless : <>{COPY.picker.needsAdapter} · {option.hooks === NATIVE_CURRENCY ? 'no hooks' : <>hooks <Address value={option.hooks} /></>}</>}
           </p>
           {option.providerNote && <p data-provider-note="">{option.providerNote}</p>}
-          <p>Pool APR unavailable: {reasonText(option.aprReason)}.</p>
         </div>
       </details>
     </li>
@@ -268,6 +268,38 @@ type PoolsResult =
  * its own. A list that failed for good is one plain muted line, its code in
  * data and its reason in the title.
  */
+/**
+ * The row's fee APR estimate, worked out here from the figures this row already
+ * carries (rowApr.ts). The service's own estimate, on the pool page, is built on
+ * a different provider's reported TVL and volume, so the two can differ for one
+ * pool; neither is described as the other. Refusals say which input was missing.
+ */
+const ROW_APR_TITLE = 'Estimate from this pool’s fixed LP fee and the 24h volume and liquidity reported in this list, annualised. A pool estimate, not a position’s APR, not APY and not a forecast, and not the pool page’s figure, which a different provider reports.'
+
+function RowAprFigure({ option }: { option: PoolOption }) {
+  const apr = rowApr({
+    integration: option.integration,
+    currentLpFeePips: option.feePips,
+    protocolFeeRaw: option.protocolFeeRaw,
+    liquidity: option.liquidity,
+    volume: option.volume,
+  })
+  return (
+    <p className="dm-mkt-option-apr" data-row-apr={apr.kind === 'estimate' ? (apr.stale ? 'stale' : 'estimate') : 'none'} data-row-apr-reason={apr.kind === 'none' ? apr.reason : undefined}>
+      <span className="text-fg-muted">Pool APR</span>
+      {apr.kind === 'estimate' ? (
+        <span className="tnum font-medium text-fg" title={ROW_APR_TITLE}>
+          {apr.text}% est.
+        </span>
+      ) : (
+        <span className="text-fg-subtle" title={rowAprReasonText(apr.reason)}>
+          —
+        </span>
+      )}
+    </p>
+  )
+}
+
 export function PoolPicker({
   source,
   token,

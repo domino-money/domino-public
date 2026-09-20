@@ -27,14 +27,12 @@ const VALUE_TEXT = (figure: AttributedFigure) => {
 export function ProviderFigure({ label, figure, full = false }: { label: string; figure: AttributedFigure; full?: boolean }) {
   const provenance = provenanceText(figure)
   const valued = figure.state === 'attributed' || figure.state === 'attributed_stale'
-  const name = figure.provider === 'geckoterminal' ? 'GeckoTerminal' : 'DexScreener'
-  const source = figure.state === 'attributed' ? provenance.short : name
   return (
     <div className="grid min-w-0 gap-0.5" data-provider-figure={figure.state} data-provider={figure.provider} title={provenance.long}>
       <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-0.5">
         <span className="text-[13px] leading-[18px] text-fg-muted">{label}</span>
         <span className={cx('tnum text-[13px] leading-[18px]', valued ? 'font-medium text-fg' : 'text-fg-subtle')}>
-          {VALUE_TEXT(figure)} <span className="text-caption font-normal text-fg-subtle">· {source}</span>
+          {VALUE_TEXT(figure)}
         </span>
       </div>
       {full && <p className="sr-only">{provenance.long}</p>}

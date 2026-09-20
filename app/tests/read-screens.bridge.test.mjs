@@ -371,14 +371,20 @@ test('Markets reads the searched token, then its pools and the catalogue only on
     assert.equal(await page.locator('[data-find-pools]').innerText(), 'Pools below');
     await pool.locator('summary').click();
     const poolText = await pool.innerText();
-    assert.match(poolText, /Found by DexScreener discovery, verified on chain/);
+    assert.match(poolText, /Found by provider discovery, verified on chain/);
+    assert.doesNotMatch(poolText, /GeckoTerminal|DexScreener/, 'the provider is never named on a screen');
     assert.match(poolText, /verified at block 700/);
-    assert.match(poolText, /Pool APR unavailable/);
-    assert.doesNotMatch(poolText, /APR\s*0(?:\.0+)?%/);
+    // Live pool: whether an estimate exists is not knowable ahead of time, so the
+    // outcome is read off the attribute and the words are required to agree with it.
+    assert.doesNotMatch(poolText, /Pool APR unavailable/, 'the constant caveat is gone');
+    const aprState = await pool.locator('[data-row-apr]').getAttribute('data-row-apr');
+    assert.ok(['estimate', 'stale', 'none'].includes(aprState), `unexpected APR state ${aprState}`);
+    if (aprState === 'none') assert.doesNotMatch(poolText, /% est\./, 'a refusal prints no percentage');
+    else assert.match(poolText, /% est\./, 'an estimate prints its percentage');
     assert.equal(await pool.locator('input').count(), 0, 'on Explore a pool row is a way in, not a choice');
     assert.equal(posts().some((r) => r.path.endsWith('/catalogue')), false, 'catalogue is not loaded with discovery');
     // No caption about where the pools or the catalogue come from: the rows and the candidates say it themselves.
-    assert.doesNotMatch(await page.locator('[data-found-pools]').innerText(), /figures reported by DexScreener|neutral order/);
+    assert.doesNotMatch(await page.locator('[data-found-pools]').innerText(), /figures reported by a market data provider|neutral order/);
     const browser = page.locator('[data-catalogue-browser]');
     await browser.locator('summary').click();
     assert.doesNotMatch(await browser.innerText(), /Stored candidates for one token, paged/);
@@ -775,119 +781,22 @@ test('Load more pressed while a partial list’s check is on the wire waits for 
 
 // The public-wallet selector's app entrance is New position's first step (DESIGN.md E.4): "More ways to find a
 // token", then the token picker's public listing. B4 does not depend on a lab-only modal.
-test('B4: the wallet handle goes back to the bridge byte for byte in the POST body, and never into a URL, a Referer, storage or the page', async () => {
-  const { context, page, errors } = await visit('/new');
-  // A fresh document with the watcher in place before any app code runs; the reads so far don't count.
-  await page.addInitScript(watchForHandle, HANDLE.slice(0, 16));
-  await page.reload({ waitUntil: 'networkidle' });
-  await page.getByRole('heading', { name: 'New position', exact: true }).waitFor();
-  edge = [];
-  upstream = [];
-  walletReplies = [];
-  const seen = [];
-  page.on('request', (request) => seen.push({ url: request.url(), referer: request.headers().referer ?? '' }));
-  const moreWays = page.locator('summary', { hasText: 'More ways to find a token' });
-  await moreWays.click();
-  const ways = page.locator('details').filter({ has: moreWays });
-  const listing = ways.locator('[data-wallet-candidates]');
-  await listing.getByRole('button', { name: 'List tokens from a public address' }).click();
-  await page.fill('#wallet-address', OWNER);
-  await page.waitForTimeout(300);
-  assert.deepEqual(edge, [], 'wallet listing waits for an explicit request, not opening the listing');
-  await listing.getByRole('button', { name: 'List tokens', exact: true }).click();
-  const wallet = listing;
-  await page.waitForFunction(() => document.querySelector('[data-wallet-pages="1"]'), null, { timeout: 30_000 });
-  // What the list says about itself is its title, never a footnote (changed on purpose: the review of 2026-09-14 moved data-source captions off product screens).
-  const about = wallet.locator('[data-wallet-count]');
-  assert.equal(await about.innerText(), '2 tokens listed · page 1 of up to 5');
-  assert.match(await about.getAttribute('title'), /^One page of the provider’s inventory\. More are available\. Balances at the snapshot block\. Not proof of wallet control\. Block 700 · Alchemy \(inventory\)\.$/);
-  assert.doesNotMatch(await wallet.innerText(), /Balances at the snapshot block|Not proof of wallet control|Block \d/);
-  // The handle is live now (the first page's next handle, not yet sent back): look while it exists.
-  assert.equal(JSON.parse(walletReplies[0]).inventory.nextCursor, HANDLE);
-  assert.deepEqual(await handlePlaces(page, HANDLE.slice(0, 16)), NOWHERE, 'the live handle is in the page');
-  await wallet.getByRole('button', { name: 'Load more' }).click();
-  await page.waitForFunction(() => document.querySelector('[data-wallet-candidates] [data-wallet-pages="2"]'), null, { timeout: 30_000 });
-  // No list is called complete: after the last page there is nothing to press, and no "All pages loaded".
-  assert.equal(await wallet.getByRole('button', { name: /Load more|All pages loaded/ }).count(), 0);
-  // The listed tokens become candidates by address only, and no link anywhere carries the handle.
-  const listed = ways.locator('[data-candidate] [data-address]');
-  assert.ok((await listed.count()) > 0, 'the listed tokens are on the page');
-  for (const address of await listed.allTextContents()) assert.match(address.trim(), /^0x[0-9a-fA-F]{40}$/, address);
-  const linked = await page.locator('a[href]').evaluateAll((els, prefix) => els.map((a) => a.getAttribute('href')).filter((href) => href.includes(prefix)), HANDLE.slice(0, 16));
-  assert.deepEqual(linked, [], 'no link carries the handle');
-
-  // What the browser received is the stub's handle, untouched by the bridge.
-  assert.equal(walletReplies.length, 2);
-  assert.equal(JSON.parse(walletReplies[0]).inventory.nextCursor, HANDLE);
-  const walletPosts = posts().filter((r) => r.path === '/api/read/v1/wallet-assets');
-  assert.deepEqual(walletPosts.map((r) => r.body), [JSON.stringify({ wallet: OWNER, autoDiscover: true }), JSON.stringify({ wallet: OWNER, autoDiscover: true, cursor: HANDLE })]);
-  // ...and the bridge hands the gateway those same bytes.
-  const up = upstream.filter((r) => r.route === 'wallet-assets');
-  assert.deepEqual(up.map((r) => r.raw), walletPosts.map((r) => r.body));
-  assert.equal(up[1].body.cursor, HANDLE);
-  // New position reads nothing on mount, so the listing's first request asks the read capabilities, once (a screen
-  // read never probes the estimate namespace, as the lookup above shows); the listing itself is two POSTs and nothing else.
-  assert.deepEqual(edge.map((r) => `${r.method} ${r.path}`), [
-    'GET /api/read/v1/capabilities',
-    'POST /api/read/v1/wallet-assets',
-    'POST /api/read/v1/wallet-assets',
-  ], 'a public wallet listing never starts a login or private operation');
-  assert.ok(walletPosts[1].at - walletPosts[0].at >= 1050, 'wallet pages share the public read pacing');
-
-  const inUrlOrReferer = [
-    ...edge.map((r) => [`${r.method} ${r.path}`, r.path, r.headers.referer ?? '']),
-    ...seen.map((r) => [r.url, r.url, r.referer]),
-  ].filter(([, url, referer]) => url.includes(HANDLE) || referer.includes(HANDLE) || url.includes(HANDLE.slice(0, 16)) || referer.includes(HANDLE.slice(0, 16)));
-  assert.deepEqual(inUrlOrReferer, [], 'the handle reached a URL or a Referer');
-  assert.deepEqual(await handlePlaces(page, HANDLE.slice(0, 16)), NOWHERE, 'the handle is in the page after the last page');
-  assert.deepEqual(await handleSightings(page), [], 'the handle was written into the page at some moment');
-  assert.deepEqual(errors, []);
-  await context.close();
-});
-
-test('New position’s public listing: Load more pressed while a partial list’s check is on the wire waits for it, and the check is sent once', async () => {
-  const USDG = SELECTED_TOKENS[1];
-  overrideReply = async (route, body) => {
-    if (route !== 'wallet-assets') return null;
-    if (body.autoDiscover === false) {
-      await sleep(2500);
-      const check = JSON.parse(fixture('wallet-assets.not-requested'));
-      check.items[1].address = USDG;
-      return { status: 200, text: JSON.stringify(check) };
-    }
-    if (body.cursor !== undefined) return { status: 200, text: fixture('wallet-assets.last-page') };
-    const first = JSON.parse(firstWalletPage());
-    first.inventory = { ...first.inventory, candidatesProbed: 13, candidatesSkipped: 7, skippedReason: 'request_budget_exhausted' };
-    return { status: 200, text: JSON.stringify(first) };
-  };
-  try {
-    const { context, page, errors } = await visit('/new');
-    try {
-      await page.getByRole('heading', { name: 'New position', exact: true }).waitFor();
-      const moreWays = page.locator('summary', { hasText: 'More ways to find a token' });
-      await moreWays.click();
-      const listing = page.locator('details').filter({ has: moreWays }).locator('[data-wallet-candidates]');
-      await listing.getByRole('button', { name: 'List tokens from a public address' }).click();
-      await page.fill('#wallet-address', OWNER);
-      await listing.getByRole('button', { name: 'List tokens', exact: true }).click();
-      await listing.locator('[data-wallet-pages="1"]').waitFor({ timeout: 30_000 });
-      for (const started = Date.now(); !walletBodies().some((b) => b.autoDiscover === false) && Date.now() - started < 30_000; ) await page.waitForTimeout(50);
-      assert.equal(walletBodies().filter((b) => b.autoDiscover === false).length, 1, 'the check is on the wire');
-      await listing.getByRole('button', { name: 'Load more' }).click();
-      await listing.locator('[data-wallet-pages="2"]').waitFor({ timeout: 30_000 });
-      // The check's balance became a candidate, by address.
-      await page.locator('[data-candidate] [data-address]', { hasText: /0x5fc5/i }).first().waitFor({ state: 'attached', timeout: 30_000 });
-      await page.waitForTimeout(2000);
-      assert.deepEqual(walletBodies(), [
-        { wallet: OWNER, autoDiscover: true },
-        { wallet: OWNER, tokens: SELECTED_TOKENS, autoDiscover: false },
-        { wallet: OWNER, autoDiscover: true, cursor: HANDLE },
-      ], 'one check for one list: Load more never cancels it and asks again');
-      assert.deepEqual(errors, []);
-    } finally {
-      await context.close();
-    }
-  } finally {
-    overrideReply = null;
-  }
-});
+// Removed with the surface they drove. Both tests reached the public wallet
+// listing through New position's "More ways to find a token" disclosure, which
+// the owner's review of 2026-09-19 deleted: step 1 is now one search field.
+//
+// What still covers their subject:
+//   - the handle goes back exactly and never leaves the pager
+//     -> tests/screens.test.mjs, "the wallet handle goes back exactly as received"
+//   - the handle never reaches the page, a URL, a Referer or storage
+//     -> tests/read-screens.browser.test.mjs, "a public address lists tokens as a
+//        public lookup; Load more sends the handle back exactly"
+//   - Load more waiting behind an in-flight check
+//     -> src/components/portfolio/PortfolioTokens.tsx carries that behaviour now
+//
+// What is not covered any more, and should be restored against
+// `#/portfolio/<address>`: these two assertions through the real Worker bridge
+// in a browser — that the POST body reaching the bridge is byte for byte the
+// handle the stub sent, and that the bridge hands the gateway those same bytes.
+// The portfolio sends a different request shape (it carries `tokens`), so the
+// rewrite is not a selector swap and was not folded into this change.

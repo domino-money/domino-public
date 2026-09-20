@@ -12,7 +12,7 @@
  * chance to overwrite dist.
  */
 import assert from 'node:assert/strict';
-import { existsSync, lstatSync, mkdirSync, readFileSync, rmSync, symlinkSync, unlinkSync, writeFileSync } from 'node:fs';
+import { existsSync, lstatSync, mkdirSync, readFileSync, readdirSync, rmSync, symlinkSync, unlinkSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { test } from 'node:test';
 import { resolveConfig } from 'vite';
@@ -268,4 +268,22 @@ test('findForbidden: the words and values of sample, practice, fixture and test 
   assert.ok(FORBIDDEN.length >= 10);
   assert.ok(TEXT_FILE.test('assets/index-abc.js') && TEXT_FILE.test('tokens/usdg.svg') && TEXT_FILE.test('index.html'));
   assert.ok(!TEXT_FILE.test('tokens/marlin.jpg'), 'binary artwork is not scanned as text');
+});
+
+// Added 2026-09-20 after the same gap bit twice: tests/finance.browser.test.mjs
+// and then rugged's new tests/read-public.browser.test.mjs each listed chrome
+// and chromium but not msedge, so on a Windows machine with only Edge every
+// case in them failed with "a Chromium browser is required" — a suite that
+// reads as broken when only its launch list is short. Any new browser suite
+// now has to include the channel or this fails by name.
+test('every browser suite offers the msedge channel, so Edge-only machines can run them', () => {
+  const dir = new URL('./', import.meta.url);
+  const files = readdirSync(dir).filter((name) => name.endsWith('.mjs'));
+  const missing = [];
+  for (const name of files) {
+    const text = readFileSync(new URL(name, dir), 'utf8');
+    if (!text.includes('chromium.launch')) continue;
+    if (!text.includes("channel: 'msedge'") && !text.includes("'msedge'")) missing.push(name);
+  }
+  assert.deepEqual(missing, [], `these launch a browser without offering Edge: ${missing.join(', ')}`);
 });

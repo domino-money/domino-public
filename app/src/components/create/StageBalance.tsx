@@ -120,6 +120,17 @@ export function AmountsSection({ state, shown }: { state: JourneyState; shown: A
       <h3 id="create-amounts-heading" className="dm-flow-subtitle">
         {CREATE.review.amounts}
       </h3>
+      {!figures && (
+        // The service is the authority on these figures, and it is a disabled
+        // candidate until onboarding-v1 is switched on. Four dashes read as a
+        // fault; what this page does know — how much of each token the deposit
+        // holds at the price it read — is true, and is said instead, in the
+        // headline above. Here the rows stay, so the shape does not move when
+        // the service answers, but the section says why they are empty.
+        <p className="dm-hint" data-balance-waiting={shown.status}>
+          {shown.title}
+        </p>
+      )}
       <dl className="dm-flow-facts">
         {TOKEN_ROWS.map((row) => (
           <div key={row} data-balance-row={row}>
@@ -141,7 +152,10 @@ export function AmountsSection({ state, shown }: { state: JourneyState; shown: A
           {CREATE.balance.short(shortLines)}
         </p>
       )}
-      <p className="dm-hint">{CREATE.balance.notEnabled}</p>
+      {/* Without figures the line above is already this same sentence, as
+          titles.off; printing it again top and bottom of four dashes read as
+          two different remarks. It belongs under rows that carry numbers. */}
+      {figures && <p className="dm-hint">{CREATE.balance.notEnabled}</p>}
       <p role="status" aria-live="polite" className="sr-only">
         {shown.status === 'current' ? CREATE.balance.announce.current : shown.status === 'expired' ? CREATE.balance.announce.expired : ''}
       </p>

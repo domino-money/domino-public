@@ -140,7 +140,7 @@ test('market rows: every observation reaches the table and the ticker as itself,
   const expected = {
     provider,
     zero: [price, ['$0.00', 'provider'], ['$0.00', 'provider'], noEstimate],
-    missing: [price, ['NotreportedbyGeckoTerminal', 'absent'], ['NotreportedbyGeckoTerminal', 'absent'], noEstimate],
+    missing: [price, ['Notreportedbytheprovider', 'absent'], ['Notreportedbytheprovider', 'absent'], noEstimate],
     // A stale figure has no "· stale" beside it (the owner's decision on the redesign): its state and its title say so, below.
     stale: [price, ['$12.3K', 'stale'], ['$0.00', 'stale'], noEstimate],
     expired: blank,
@@ -152,38 +152,38 @@ test('market rows: every observation reaches the table and the ticker as itself,
     // The symbol is untrusted text: literal in the price's unit too.
     'untrusted-symbol': [[`≈1,000,000,000,000${SYMBOL.replace(/\s/g, '')}perETH`, 'usable'], ...provider.slice(1)],
   };
-  const reported = /^Pool verified on-chain at block 700 · Reported by GeckoTerminal, retrieved \d+ s ago$/;
+  const reported = /^Pool verified on-chain at block 700 · Reported by a market data provider, retrieved \d+ s ago$/;
   for (const [id, cells] of Object.entries(expected)) {
     assert.deepEqual(await figures(`market-${id}`), { cells, ticker: apr }, `market-${id}`);
     assert.equal(await section(`market-${id}`).locator('[data-read-status]').getAttribute('data-read-status'), 'none', id);
-    // A shown value names its provider and its retrieval in its title; a ratio would name Domino's calculation from the provider's figures.
+    // A shown value says a provider reported it, and when it was retrieved, in its title; a ratio says Domino calculated it from the provider's figures.
     const titles = await section(`market-${id}`).locator('tbody [data-metric="provider"], tbody [data-metric="calculated"]').evaluateAll((els) => els.map((el) => [el.getAttribute('data-metric'), el.getAttribute('title')]));
     for (const [state, title] of titles) {
-      assert.match(title, state === 'calculated' ? /^Calculated by Domino from GeckoTerminal's reported 24h volume and TVL, retrieved \d+ s ago\. Those figures are not reconciled by Domino\.$/ : /^Reported by GeckoTerminal, retrieved \d+ s ago\. Not reconciled by Domino\.$/, `${id}: ${state}`);
+      assert.match(title, state === 'calculated' ? /^Calculated by Domino from a market data provider's reported 24h volume and TVL, retrieved \d+ s ago\. Those figures are not reconciled by Domino\.$/ : /^Reported by a market data provider, retrieved \d+ s ago\. Not reconciled by Domino\.$/, `${id}: ${state}`);
     }
   }
   const staleTitles = await section('market-stale').locator('tbody [data-metric="stale"]').evaluateAll((els) => els.map((el) => el.getAttribute('title')));
   assert.equal(staleTitles.length, 2, 'both provider figures are stale');
-  for (const title of staleTitles) assert.match(title, /^Reported by GeckoTerminal, retrieved \d+ s ago\. Not reconciled by Domino\. Stale, not current\.$/, 'a stale figure says so in its title');
+  for (const title of staleTitles) assert.match(title, /^Reported by a market data provider, retrieved \d+ s ago\. Not reconciled by Domino\. Stale, not current\.$/, 'a stale figure says so in its title');
   // Never-displayed values are absent from the whole case, not just from their cell.
   for (const id of ['expired', 'rejected-currencies', 'rejected-dex', 'timeout']) {
     assert.doesNotMatch(await section(`market-${id}`).innerText(), /\$12\.3K/, `${id} shows the provider figure`);
   }
   // The APR says why it is unavailable; each row names the block its pool was verified at, and
-  // dates GeckoTerminal's figures only by when they were retrieved, never "as of" or "updated at".
+  // dates the provider's figures only by when they were retrieved, never "as of" or "updated at".
   // With no estimate there are no limitations of its own to name: what it would be, then why there is none (G14).
   assert.match(await section('market-provider').locator('tbody td').nth(4).locator('[data-apr-estimate] [title]').getAttribute('title'), /^Pool estimate, not position APR, APY or a return forecast\. Estimated APR is (not enabled on this connection|unavailable; market figures use the supported read connection)\.$/);
   for (const id of ['provider', 'zero', 'missing', 'retry-recovers', 'untrusted-symbol']) assert.match(await provenance(`market-${id}`), reported, id);
-  assert.match(await provenance('market-stale'), /^Pool verified on-chain at block 700 · Reported by GeckoTerminal, retrieved (6\d|[7-9]\d|1[01]\d) s ago · stale$/);
-  assert.equal(await provenance('market-expired'), 'Pool verified on-chain at block 700 · GeckoTerminal figures unavailable: provider unavailable', 'no figure, so no age');
-  assert.equal(await provenance('market-rejected-currencies'), 'Pool verified on-chain at block 700 · GeckoTerminal figures rejected: provider data did not match this pool');
+  assert.match(await provenance('market-stale'), /^Pool verified on-chain at block 700 · Reported by a market data provider, retrieved (6\d|[7-9]\d|1[01]\d) s ago · stale$/);
+  assert.equal(await provenance('market-expired'), 'Pool verified on-chain at block 700 · Provider figures unavailable: provider unavailable', 'no figure, so no age');
+  assert.equal(await provenance('market-rejected-currencies'), 'Pool verified on-chain at block 700 · Provider figures rejected: provider data did not match this pool');
   for (const id of Object.keys(expected)) assert.doesNotMatch(await section(`market-${id}`).innerText(), /as of|updated at/i, `${id} dates a figure it cannot date`);
 });
 
 test('markets-snapshot listed: a current store is the row; a store that is not enough, or fails, ends in the pool’s own read; none of it is said on screen', async () => {
   const price = ['≈1,000,000,000,000TOKENperETH', 'usable'];
   const provider = { cells: [price, ['$12.3K', 'provider'], ['$0.00', 'provider'], ['—', 'unavailable']], ticker: ['Est.APR—', 'unavailable'] };
-  const reported = /^Pool verified on-chain at block 700 · Reported by GeckoTerminal, retrieved \d+ s ago$/;
+  const reported = /^Pool verified on-chain at block 700 · Reported by a market data provider, retrieved \d+ s ago$/;
   const ends = {
     current: 'markets-snapshot',
     'stale-entry': 'pool-market',
@@ -314,9 +314,9 @@ test('family panels keep zero, unknown, partial, stale, unavailable and rejected
     ['family-nft-positions.empty', 'Position', ['Position empty at snapshot', 'absent']],
     ['family-nft-positions.zero', 'Liquidity', ['0 (raw units)', 'zero']],
     ['family-nft-positions.stale', 'Snapshot', ['Stale, 210 s old', 'stale']],
-    ['family-pools.provider-unavailable', 'Discovery (DexScreener)', ['Partial list: network unavailable', 'partial']],
-    ['family-pools.zero-and-missing-metrics', 'Liquidity (DexScreener, not reconciled)', ['Not reported', 'absent']],
-    ['family-pools.zero-and-missing-metrics', '24h volume (DexScreener, not reconciled)', ['$0.00', 'zero']],
+    ['family-pools.provider-unavailable', 'Discovery (provider)', ['Partial list: network unavailable', 'partial']],
+    ['family-pools.zero-and-missing-metrics', 'Liquidity (provider-reported, not reconciled)', ['Not reported', 'absent']],
+    ['family-pools.zero-and-missing-metrics', '24h volume (provider-reported, not reconciled)', ['$0.00', 'zero']],
   ];
   for (const [id, label, want] of cases) assert.deepEqual(await fact(id, label), want, `${id} ${label}`);
   assert.doesNotMatch(await section('family-pool-market.expired').innerText(), /\$12\.3K/);
@@ -405,7 +405,7 @@ test('Refresh keeps keyboard focus through its read; it is busy, never unmounted
     cells: [['≈1,000,000,000,000TOKENperETH', 'usable'], ['$12.3K', 'provider'], ['$0.00', 'provider'], ['—', 'unavailable']],
     ticker: ['Est.APR—', 'unavailable'],
   });
-  assert.match(await provenance(id), /^Pool verified on-chain at block 700 · Reported by GeckoTerminal, retrieved \d+ s ago$/, 'the provider is still named after the refresh');
+  assert.match(await provenance(id), /^Pool verified on-chain at block 700 · Reported by a market data provider, retrieved \d+ s ago$/, 'the provider attribution survives the refresh');
 });
 
 test('with no pools selected the table says so, reads nothing and offers nothing to refresh', async () => {

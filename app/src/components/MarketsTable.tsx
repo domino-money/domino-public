@@ -44,16 +44,17 @@ export interface MarketsFilter {
 
 /**
  * Where a row's figures came from: the block the pool was verified at, and
- * what GeckoTerminal reported, dated by when it was retrieved, or why it has
- * nothing to show. Never "as of" or "updated at": the provider's own update
- * time is not known.
+ * what the market data provider reported, dated by when it was retrieved,
+ * or why it has nothing to show. Never "as of" or "updated at": the
+ * provider's own update time is not known. The provider is the part it
+ * plays, never its name.
  */
 function provenanceLine(p: MarketProvenance, age: number | null, stale: boolean) {
   const verified = `Pool verified on-chain at block ${p.block}`
   const market =
     p.market.status === 'available' || p.market.status === 'stale'
-      ? `Reported by GeckoTerminal, ${retrievedText(age)}${stale ? ' · stale' : ''}`
-      : `GeckoTerminal figures ${p.market.status}: ${reasonText(p.market.reason)}`
+      ? `Reported by a market data provider, ${retrievedText(age)}${stale ? ' · stale' : ''}`
+      : `Provider figures ${p.market.status}: ${reasonText(p.market.reason)}`
   if (p.metrics === 'not_requested') return `${verified} · ${market}`
   const metrics = p.metrics ? `Domino history ${p.metrics.freshness}, ${p.metrics.ageSeconds} s` : 'Domino history unavailable'
   return `${verified} · ${market} · ${metrics}`
@@ -384,10 +385,10 @@ export function MarketsTable({
             Price
           </Th>
           <Th numeric className="dm-mkt-col">
-            TVL{lean && <span className="sr-only">{' reported by GeckoTerminal'}</span>}
+            TVL{lean && <span className="sr-only">{' reported by a market data provider'}</span>}
           </Th>
           <Th numeric col="wide" className="dm-mkt-col">
-            24h volume{lean && <span className="sr-only">{' reported by GeckoTerminal'}</span>}
+            24h volume{lean && <span className="sr-only">{' reported by a market data provider'}</span>}
           </Th>
           <Th numeric col="wide" className="dm-mkt-col">
             Est. APR<span className="sr-only">{' from provider inputs'}</span>

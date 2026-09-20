@@ -7,6 +7,8 @@ export const DEADLINE_MS = 20000
 // lists a route outside this set fails the capabilities check (local-live-proxy.mjs),
 // so the stored-data reads are here before the gateway serves them.
 export const READS = Object.freeze(['token', 'pools', 'pool-market', 'wallet-assets', 'nft-positions', 'catalogue', 'pool-activity', 'pool-positions', 'pool-metrics', 'markets-snapshot'])
+/** read-v3's own routes; never merged with READS, so a v1 name can never open a v3 path or the reverse. */
+export const READS_V3 = Object.freeze(['overview', 'history', 'search'])
 
 export function parsePort(args) {
   if (!args.length) return 5273
@@ -58,6 +60,9 @@ export function readRoute(path, method) {
   if (path === '/api/read/v2/capabilities') return method === 'GET' ? { route: 'capabilities', path: '/internal/read/v2/capabilities', version: 'v2' } : null
   if (path === '/api/read/v2/pool-market') return method === 'POST' ? { route: 'pool-market', path: '/internal/read/v2/pool-market', version: 'v2' } : null
   if (path === '/api/dev/v1/status') return method === 'GET' ? { route: 'status', path: '/internal/dev/v1/status' } : null
+  if (path === '/api/read/v3/capabilities') return method === 'GET' ? { route: 'capabilities', path: '/internal/read/v3/capabilities', version: 'v3' } : null
+  const v3 = path.startsWith('/api/read/v3/') ? path.slice('/api/read/v3/'.length) : ''
+  if (v3) return method === 'POST' && READS_V3.includes(v3) ? { route: v3, path: `/internal/read/v3/${v3}`, version: 'v3' } : null
   if (path === '/api/read/v1/capabilities') return method === 'GET' ? { route: 'capabilities', path: '/internal/read/v1/capabilities' } : null
   const route = path.startsWith('/api/read/v1/') ? path.slice('/api/read/v1/'.length) : ''
   return method === 'POST' && READS.includes(route) ? { route, path: `/internal/read/v1/${route}` } : null

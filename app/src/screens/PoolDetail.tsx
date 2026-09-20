@@ -92,7 +92,7 @@ function Pending({ id, entry, verifying = true, reason }: { id: string; entry?: 
       <div className="dm-card mt-8 animate-rise p-5 [--delay:120ms]">
         <h2 className="dm-display dm-display-card">USD price and volume</h2>
         {/* Who reports the candles is the plot's title and data, never a caption under the heading. */}
-        <div className="dm-pool-plot dm-dots-chart mt-4" title="Hourly candles reported by GeckoTerminal." data-chart-provider="GeckoTerminal">
+        <div className="dm-pool-plot dm-dots-chart mt-4" title="Hourly candles reported by a market data provider." data-chart-provider="GeckoTerminal">
           <div className="dm-pool-plot-empty">
             {verifying ? <Skeleton className="dm-pool-plot-baseline" /> : <span className="text-fg-subtle" title={reason?.text}>—</span>}
           </div>

@@ -198,7 +198,6 @@ function RangeInterval({ range, price, bounds }: { range: PlannedRange; price: U
     <div className="grid gap-2" data-range-interval="">
       <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 text-caption text-fg-subtle">
         <span>Selected price interval</span>
-        <span>Logarithmic price scale</span>
       </div>
       <div
         role="img"
@@ -366,7 +365,7 @@ export function PoolRangeControls({
                 {usable.text}
               </p>
               <p className="text-caption text-fg-subtle">
-                <Units price={usable} /> · block {usable.block}
+                <Units price={usable} />
               </p>
             </div>
             {usable.partial && (
@@ -431,22 +430,20 @@ export function PoolRangeControls({
             <BoundControl which="upper" range={range} price={usable} bounds={bounds} onRange={custom} />
           </div>
           <div className="grid gap-1.5">
-            <p role="status" aria-live="polite" className="dm-pool-position" data-range-position={position ?? ''}>
-              <span aria-hidden="true" className={cx('dm-pool-dot', `dm-pool-dot--${tone}`)} />
-              {position === 'inside' ? COPY.range.inside : position === 'below' ? COPY.range.below : COPY.range.above}
-            </p>
+            {/* Only when there is something to warn about: a range that does not
+                hold the price earns no fees until the price moves into it. The
+                ordinary case says nothing. */}
+            {position !== 'inside' && (
+              <p role="status" aria-live="polite" className="dm-pool-position" data-range-position={position ?? ''}>
+                <span aria-hidden="true" className={cx('dm-pool-dot', `dm-pool-dot--${tone}`)} />
+                {position === 'below' ? COPY.range.below : COPY.range.above}
+              </p>
+            )}
+            {position === 'inside' && <span className="sr-only" data-range-position="inside">{COPY.range.inside}</span>}
             <p className="text-caption text-fg-subtle">
               Enter a price and apply, or drag a handle. Prices snap outward to the pool’s tick spacing.
             </p>
           </div>
-          <details className="dm-details -mx-3">
-            <summary>Range details</summary>
-            <div className="grid gap-1 text-caption text-fg-subtle">
-              <p data-range-text="">{priceOrWords(range.lower, usable)} to {priceOrWords(range.upper, usable)} <Units price={usable} /> · ticks {range.lower} to {range.upper}</p>
-              <p>Tick spacing {usable.tickSpacing} · pool tick {usable.tick}. {COPY.range.checked}</p>
-              <div className="mt-1"><Address value={option.key} /></div>
-            </div>
-          </details>
         </section>
       )}
 

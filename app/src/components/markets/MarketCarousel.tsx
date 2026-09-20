@@ -97,7 +97,7 @@ function volumeOf(listing: PoolListing, settled: boolean, entry: Remembered | un
   if (data.candles.length === 0) return { kind: 'unavailable', reason: 'no candles reported' }
   if (!volumeGeometry(data.candles, data.intervalSeconds, 240, 96, NO_PAD, 0)) return { kind: 'unavailable', reason: 'the reported volumes could not be read' }
   const stale = history.status === 'stale' || age.seconds >= history.cache.freshForSeconds
-  const title = `Reported by GeckoTerminal, ${retrievedText(age.known ? age.seconds : null)}. Not reconciled by Domino.${stale ? ' Stale, not current.' : ''}`
+  const title = `Reported by a market data provider, ${retrievedText(age.known ? age.seconds : null)}. Not reconciled by Domino.${stale ? ' Stale, not current.' : ''}`
   return { kind: 'bars', candles: data.candles, intervalSeconds: data.intervalSeconds, returned: data.coverage.returnedCandles, stale, title }
 }
 

@@ -51,8 +51,8 @@ export function PoolAprEstimate({ observation, now, detailed = false, compact = 
           <dl className="grid gap-1.5 text-caption text-fg-subtle" data-apr-inputs="">
             <div className="flex flex-wrap justify-between gap-x-3"><dt>LP fee</dt><dd className="tnum text-fg-muted">{fixedFeePercent(inputs.currentLpFeePips)}</dd></div>
             <div className="flex flex-wrap justify-between gap-x-3"><dt>Protocol fee</dt><dd className="tnum text-fg-muted" title={`Selling the pool’s first token / its second. Packed value ${inputs.protocolFeeRaw}.`}>{protocolFeeWords(inputs.protocolFeeRaw)}</dd></div>
-            <div className="flex flex-wrap justify-between gap-x-3"><dt>24h volume, GeckoTerminal</dt><dd className="tnum text-fg-muted" title={inputs.volume24hUsd ?? undefined}>{usd(inputs.volume24hUsd)}</dd></div>
-            <div className="flex flex-wrap justify-between gap-x-3"><dt>TVL, GeckoTerminal</dt><dd className="tnum text-fg-muted" title={inputs.reportedLiquidityUsd ?? undefined}>{usd(inputs.reportedLiquidityUsd)}</dd></div>
+            <div className="flex flex-wrap justify-between gap-x-3"><dt>24h volume, provider-reported</dt><dd className="tnum text-fg-muted" title={inputs.volume24hUsd ?? undefined}>{usd(inputs.volume24hUsd)}</dd></div>
+            <div className="flex flex-wrap justify-between gap-x-3"><dt>TVL, provider-reported</dt><dd className="tnum text-fg-muted" title={inputs.reportedLiquidityUsd ?? undefined}>{usd(inputs.reportedLiquidityUsd)}</dd></div>
             <div className="flex flex-wrap justify-between gap-x-3"><dt>Method</dt><dd className="text-fg-muted">365 × LP fee × (1 − protocol fee) × 24h volume ÷ TVL</dd></div>
             {data.provenance.retrievedAt !== null && (
               <div className="flex flex-wrap justify-between gap-x-3"><dt>Inputs retrieved</dt><dd className="tnum text-fg-muted">{utcTime(data.provenance.retrievedAt)}</dd></div>
@@ -81,7 +81,7 @@ export function PoolAprEstimate({ observation, now, detailed = false, compact = 
       <span className={cx('tnum whitespace-nowrap', compact ? 'font-medium' : undefined, tone)} title={title}>
         {shown.text === null ? 'Est. APR unavailable' : `${shown.text}% ${compact ? 'est.' : 'est. APR'}`}
       </span>
-      {!compact && shown.text !== null && <span className="ml-1 text-fg-subtle">from GeckoTerminal inputs</span>}
+      {!compact && shown.text !== null && <span className="ml-1 text-fg-subtle">from provider-reported inputs</span>}
     </span>
   )
 }

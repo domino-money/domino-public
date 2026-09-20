@@ -17,7 +17,7 @@ import * as depositRuntime from '../../api-contracts/deposit-v1/runtime.mjs';
 
 let browser;
 before(async () => {
-  for (const options of process.env.DOMINO_BROWSER_PATH ? [{ executablePath: process.env.DOMINO_BROWSER_PATH }] : [{ channel: 'chrome' }, { channel: 'chromium' }, {}]) {
+  for (const options of process.env.DOMINO_BROWSER_PATH ? [{ executablePath: process.env.DOMINO_BROWSER_PATH }] : [{ channel: 'chrome' }, { channel: 'chromium' }, { channel: 'msedge' }, {}]) {
     try { browser = await chromium.launch({ ...options, headless: true }); break; } catch {}
   }
   if (!browser) throw new Error('A Chromium browser is required.');

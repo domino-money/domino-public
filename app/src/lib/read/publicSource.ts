@@ -8,6 +8,9 @@ import type { ReadSource, ReadRoute, ReadValidators } from './types'
 
 const stored = (route: ReadRoute): route is ReadV3Route => route === 'overview' || route === 'history' || route === 'search'
 
+/** The only failures a fallback must not paper over: the person has to sign in. */
+const GATE = new Set(['gate_required', 'gate_unavailable', 'access_required'])
+
 export function createPublicSource(legacy: ReadSource, options: BridgeOptions, runtime: typeof V3): ReadSource {
   const source = createBridgeSource({ ...options, namespace: 'v3', validators: runtime as unknown as ReadValidators })
   return {
@@ -17,9 +20,19 @@ export function createPublicSource(legacy: ReadSource, options: BridgeOptions, r
     routeEnabled: async (route, opts) => {
       if (!stored(route)) return legacy.routeEnabled?.(route, opts) ?? { state: 'not_enabled' }
       const check = await source.routeEnabled(route, opts)
-      // Older deployments omit the namespace. Only an absent/disabled
-      // capability allows the existing V1/V2 path; gate errors stay failures.
-      if (check.state === 'failed' && (check.outcome.state === 'disabled' || check.outcome.state === 'not_connected')) return { state: 'not_enabled' }
+      // This check asks one question: can THIS deployment serve read-v3? Any
+      // answer but a gate one means no, and V1/V2 is a complete read path that
+      // can carry the page — so it does, instead of the page dying whole.
+      //
+      // Narrowing this to disabled/not_connected was not enough. A reader that
+      // simply has no /internal/read/v3 route answers 404 with an empty body;
+      // the bridge calls that invalid, `invalid` is a blocking outcome, and the
+      // markets table stops with no rows and no retry while every V1 and V2 read
+      // beside it answers 200. Seen 2026-09-20 against the development reader.
+      //
+      // Gate states are the exception and stay failures: the way out of those is
+      // signing in, not reading the same data somewhere else.
+      if (check.state === 'failed' && !GATE.has(check.outcome.state)) return { state: 'not_enabled' }
       return check
     },
   }

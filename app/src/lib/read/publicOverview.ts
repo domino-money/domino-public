@@ -61,7 +61,7 @@ export function overviewPoolOption(outcome: Extract<ReadOutcome<'overview'>, { s
     readAt: read.provenance.receivedAt, hooks: addressKey(pool.poolKey.hooks), protocolFeeRaw: pool.protocolFeeRaw,
     integration: pool.integrationClass, block: pool.snapshot.number, catalogue: null, requestedById: true,
     liquidity: figureFromMarket(read.data.market, 'liquidity'), volume: figureFromMarket(read.data.market, 'volume'),
-    providerNote: read.data.market.data ? retrievalNote('geckoterminal', read.data.market.data.retrievedAt) : null,
+    providerNote: read.data.market.data ? retrievalNote(read.data.market.data.retrievedAt) : null,
     aprReason: pool.aprReason, tokenMetadata: currencies.every((token) => token.readStatus === 'available') ? 'available' : 'partial', providerConflict: false,
   }
 }

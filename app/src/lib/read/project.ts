@@ -119,9 +119,10 @@ const count = (label: string, n: number, unit: string): Fact => ({ label, text: 
 /** A fixed fee in pips as a percentage, or the dynamic sentinel as what it means. Pips are small integers, not amounts. */
 export const feeText = (key: FixedPoolKey | DynamicPoolKey) => (key.feeMode === 'dynamic' ? 'Dynamic fee' : fixedFeePercent(key.fee_pips))
 
+// A market data provider is named on screen by the part it plays, never by its company name; the id stays in the payload.
 const PROVIDER_NAME: Record<string, string> = {
-  geckoterminal: 'GeckoTerminal',
-  dexscreener: 'DexScreener',
+  geckoterminal: 'Market data provider',
+  dexscreener: 'Pool discovery provider',
   alchemy: 'Alchemy',
   alchemy_historical: 'Alchemy history',
   chainlink_robinhood_standard_v1: 'Chainlink',
@@ -195,8 +196,8 @@ export function projectPools(d: PoolsResponse): Omit<FamilyView, 'freshness' | '
   const tokenAt = (address: string) => byAddress.get(lower(address)) ?? unreadToken(address)
   const discovery: Fact =
     d.discovery.status === 'received'
-      ? { label: 'Discovery (DexScreener)', text: `${d.discovery.returned} returned, ${d.discovery.v4Candidates} Uniswap candidates`, state: d.discovery.returned === 0 ? 'zero' : 'value' }
-      : { label: 'Discovery (DexScreener)', text: `Partial list: ${reasonText(d.discovery.reason)}`, state: 'partial' }
+      ? { label: 'Discovery (provider)', text: `${d.discovery.returned} returned, ${d.discovery.v4Candidates} Uniswap candidates`, state: d.discovery.returned === 0 ? 'zero' : 'value' }
+      : { label: 'Discovery (provider)', text: `Partial list: ${reasonText(d.discovery.reason)}`, state: 'partial' }
   const catalogue: Fact =
     d.catalogue.status === 'available'
       ? { label: 'Catalogue', text: `Revision ${d.catalogue.revision}, blocks ${d.catalogue.startBlock}–${d.catalogue.indexedThrough ?? 'not yet indexed'}`, state: 'value' }
@@ -211,11 +212,11 @@ export function projectPools(d: PoolsResponse): Omit<FamilyView, 'freshness' | '
       { label: 'Kind', text: pool.poolKind === 'discovery' ? 'Verified by discovery' : 'From the catalogue', state: 'value' },
       { label: 'Fee', text: feeText(pool.poolKey), state: 'value' },
       pm
-        ? usd('Liquidity (DexScreener, not reconciled)', pm.reportedLiquidityUsd)
-        : { label: 'Liquidity (DexScreener, not reconciled)', text: 'No provider figures', state: 'absent' },
+        ? usd('Liquidity (provider-reported, not reconciled)', pm.reportedLiquidityUsd)
+        : { label: 'Liquidity (provider-reported, not reconciled)', text: 'No provider figures', state: 'absent' },
       pm
-        ? usd('24h volume (DexScreener, not reconciled)', pm.volume24hUsd)
-        : { label: '24h volume (DexScreener, not reconciled)', text: 'No provider figures', state: 'absent' },
+        ? usd('24h volume (provider-reported, not reconciled)', pm.volume24hUsd)
+        : { label: '24h volume (provider-reported, not reconciled)', text: 'No provider figures', state: 'absent' },
       { label: 'Fee APR', text: `Not available: ${reasonText(pool.aprReason)}`, state: 'unavailable' },
       { label: 'Token metadata', text: pool.tokenMetadataStatus === 'available' ? 'Available' : 'Partial', state: pool.tokenMetadataStatus === 'available' ? 'value' : 'partial' },
     ]
@@ -258,7 +259,7 @@ function historyFacts(h: PoolMarketResponse['priceHistory']): Fact[] {
   const stale = h.status === 'stale'
   const facts: Fact[] = [
     {
-      label: 'Price history (GeckoTerminal)',
+      label: 'Price history (provider-reported)',
       text: `${stale ? 'Stale' : 'Available'}, cache ${h.cache.ageSeconds === null ? 'age unknown' : `${h.cache.ageSeconds} s`}`,
       state: stale ? 'stale' : 'value',
     },
@@ -282,7 +283,7 @@ export function projectPoolMarket(d: PoolMarketResponse): Omit<FamilyView, 'fres
     const stale = m.status === 'stale'
     const mark = (fact: Fact): Fact => (stale && fact.state !== 'absent' ? { ...fact, text: `${fact.text} · stale`, state: 'stale' } : fact)
     facts.push(
-      { label: 'Market (GeckoTerminal, provider-reported)', text: stale ? `Stale: ${reasonText(m.reason)}` : 'Available', state: stale ? 'stale' : 'value' },
+      { label: 'Market (provider-reported)', text: stale ? `Stale: ${reasonText(m.reason)}` : 'Available', state: stale ? 'stale' : 'value' },
       mark(usd('Liquidity', m.data.reportedLiquidityUsd)),
       mark(usd('24h volume', m.data.volume24hUsd)),
     )
@@ -293,7 +294,7 @@ export function projectPoolMarket(d: PoolMarketResponse): Omit<FamilyView, 'fres
     const text = rejected ? `Rejected: ${reasonText(m.reason)}` : `Unavailable: ${reasonText(m.reason)}`
     const state: FactState = rejected ? 'rejected' : 'unavailable'
     facts.push(
-      { label: 'Market (GeckoTerminal, provider-reported)', text, state },
+      { label: 'Market (provider-reported)', text, state },
       { label: 'Liquidity', text: rejected ? 'Rejected, not shown' : 'Unavailable', state },
       { label: '24h volume', text: rejected ? 'Rejected, not shown' : 'Unavailable', state },
     )

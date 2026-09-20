@@ -274,6 +274,16 @@ interface Load extends LoadedMarkets {
   /** Pools whose own market read, stored entry or pool-metrics this load read. */
   read: Set<string>
   acquiring?: boolean
+  /**
+   * When the producer says it will try again, as a delay in MILLISECONDS, taken
+   * entirely in server time: `nextAttemptAt - generatedAt`, both from the same
+   * reply. Never `nextAttemptAt` against this browser's clock — a machine ten
+   * minutes fast would schedule nonsense (figures.ts: times come only from the
+   * payload). Null when the producer named no time.
+   */
+  acquisitionInMs?: number | null
+  /** A lease is held: an attempt is in flight right now, so `nextAttemptAt` is already behind. */
+  acquisitionRunning?: boolean
   stored?: boolean
 }
 
@@ -404,7 +414,15 @@ async function readMarkets(
         read.add(key(entry.poolId))
       }
       emit()
-      return { ...finish(null), stored: true, acquiring: [...overview.data.pools, ...overview.data.tokens].some((entry) => entry.acquisition.status === 'pending') }
+      const waiting = [...overview.data.pools, ...overview.data.tokens].filter((entry) => entry.acquisition.status === 'pending')
+      // The soonest any pending entry will be tried, so one slow row never holds the others.
+      const due = waiting.map((entry) => entry.acquisition.nextAttemptAt).filter((at): at is number => typeof at === 'number')
+      return {
+        ...finish(null), stored: true,
+        acquiring: waiting.length > 0,
+        acquisitionRunning: waiting.some((entry) => entry.acquisition.refreshing),
+        acquisitionInMs: due.length ? Math.max(0, Math.min(...due) - overview.data.generatedAt) * 1000 : null,
+      }
     }
   }
 
@@ -589,14 +607,21 @@ export function createReadMarketsProvider({ source, poolIds, kind, notice, now, 
   let cancelRefreshVisibility: (() => void) | null = null
   let refreshDueAt: number | null = null
   let refreshFailures = 0
-  let acquisitionChecks = 0
   let activeRefreshMs = refreshMs
 
-  const nextRefresh = (failed: boolean, hasData: boolean, acquiring = false) => {
+  /** Never ask faster than this, whatever the producer's schedule says. */
+  const ACQUISITION_FLOOR_MS = 5000
+  const nextRefresh = (failed: boolean, hasData: boolean, acquiring = false, schedule?: { inMs: number | null; running: boolean }) => {
     if (refreshMs <= 0 || (!hasData && !acquiring)) { refreshDueAt = null; return }
     refreshFailures = failed ? Math.min(refreshFailures + 1, 3) : 0
-    const interval = acquiring ? Math.min(activeRefreshMs, 5000 * 2 ** Math.min(acquisitionChecks++, 4)) : activeRefreshMs * 2 ** refreshFailures
-    if (!acquiring) acquisitionChecks = 0
+    // While acquiring, the producer publishes when it will try again; use that
+    // instead of a guess. A lease in flight means the published time is already
+    // past, so fall to the floor. Bounded by the ordinary interval either way,
+    // so a row backed off for an hour does not park a timer for an hour.
+    const acquisitionMs = schedule?.running || schedule?.inMs == null
+      ? ACQUISITION_FLOOR_MS
+      : Math.min(activeRefreshMs, Math.max(ACQUISITION_FLOOR_MS, schedule.inMs))
+    const interval = acquiring ? acquisitionMs : activeRefreshMs * 2 ** refreshFailures
     refreshDueAt = clock.monotonic() + interval * (1 + clock.random() * 0.1)
   }
 
@@ -700,7 +725,7 @@ export function createReadMarketsProvider({ source, poolIds, kind, notice, now, 
       const good = kept.get(key(poolId))
       return good ? [retainRowAsStale(good.row, good.receivedAt)] : []
     })
-    if (!quiet) nextRefresh(loaded.problems.length > 0, markets.length > 0, loaded.acquiring)
+    if (!quiet) nextRefresh(loaded.problems.length > 0, markets.length > 0, loaded.acquiring, { inMs: loaded.acquisitionInMs ?? null, running: loaded.acquisitionRunning === true })
     set({ phase: 'ready', result: resultOf(markets), problems: loaded.problems, ...(loaded.acquiring ? { acquiring: true } : {}) })
   }
 

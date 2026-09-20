@@ -126,3 +126,51 @@ test('legacy source still rejects V3 routes through its original contract', asyn
   const source = createBridgeSource({ enabled: true, validators: v1, fetch: () => { throw new Error('no request should escape'); } });
   assert.equal((await source.read('overview', { poolIds: [pool] })).state, 'invalid');
 });
+
+// Added 2026-09-20. The producer publishes exactly when it will try an
+// acquisition again (Acquisition.nextAttemptAt) and whether one is in flight
+// (refreshing). The provider ignored both and invented
+// `5000 * 2 ** min(acquisitionChecks++, 4)`, which line 684 plus refreshMs made
+// unreachable anyway. The trap in using nextAttemptAt is that it is the read
+// service's wall clock: comparing it to the browser's would import arbitrary
+// skew into a schedule, which figures.ts forbids outright. The same reply
+// carries generatedAt, so the wait is derived entirely in server time.
+test('the acquisition wait comes from the producer’s own schedule, in server time, never from this browser’s clock', () => {
+  const provider = readFileSync(new URL('../src/lib/read/marketsProvider.ts', import.meta.url), 'utf8');
+  const scheduling = provider.slice(provider.indexOf('const waiting ='), provider.indexOf('const set = ('));
+
+  assert.match(scheduling, /Math\.min\(\.\.\.due\) - overview\.data\.generatedAt/, 'the delay is a difference of two server times');
+  assert.doesNotMatch(scheduling, /Date\.now\(\)|clock\.wall/, 'no browser clock anywhere near the schedule');
+  assert.match(scheduling, /acquisition\.refreshing/, 'a lease in flight is honoured');
+  assert.match(scheduling, /ACQUISITION_FLOOR_MS = 5000/, 'there is a floor');
+  assert.match(scheduling, /Math\.min\(activeRefreshMs, Math\.max\(ACQUISITION_FLOOR_MS, schedule\.inMs\)\)/, 'and a ceiling, so a long backoff parks no long timer');
+  assert.doesNotMatch(provider, /acquisitionChecks/, 'the unreachable invented backoff is gone, not left beside its replacement');
+  // The soonest pending entry sets the pace, so one slow row cannot stall the page.
+  assert.match(scheduling, /due\.length \? Math\.max\(0, Math\.min\(\.\.\.due\)/);
+});
+
+// Added 2026-09-20 after watching it happen. rugged's development reader has no
+// /internal/read/v3 route yet: it answers 404 with an empty body. The bridge
+// calls that `invalid`, `invalid` is a blocking outcome, and the markets table
+// stopped with no rows and no retry — while every read-v1 and read-v2 call
+// beside it answered 200 with real figures. read-v3 is an addition over a
+// complete read path; it must never be able to take the page down with it.
+test('read-v3 failing does not take the page down when V1/V2 can still serve it', async () => {
+  const gone = async (path, init) => {
+    if (path.startsWith('/api/read/v3/')) return new Response('', { status: 404 });
+    return new Response(JSON.stringify(fixture('capabilities')), { headers: { 'Content-Type': 'application/json', 'X-Domino-Read-Contract': v3.CONTRACT_VERSION } });
+  };
+  const options = { enabled: true, validators: v1, fetch: gone };
+  const legacy = { transport: 'bridge', read: async () => ({ state: 'ok', route: 'pools', data: {} }), routeEnabled: async () => ({ state: 'enabled' }) };
+  const source = createPublicSource(legacy, options, v3);
+  const check = await source.routeEnabled('overview', {});
+  assert.equal(check.state, 'not_enabled', 'a reader without the namespace falls back, it does not fail the page');
+  // A legacy route is untouched by any of this.
+  assert.deepEqual(await source.routeEnabled('pools', {}), { state: 'enabled' });
+});
+
+test('a gate failure on read-v3 is still a failure: signing in is the way out, not another route', async () => {
+  const source = readFileSync(new URL('../src/lib/read/publicSource.ts', import.meta.url), 'utf8');
+  assert.match(source, /const GATE = new Set\(\['gate_required', 'gate_unavailable', 'access_required'\]\)/);
+  assert.match(source, /!GATE\.has\(check\.outcome\.state\)/, 'everything but a gate state falls back');
+});
