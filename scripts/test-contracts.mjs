@@ -21,7 +21,8 @@ export function runChecked(binary, args, options = {}) {
   return Number.isInteger(result.status) ? result.status : 1;
 }
 
-async function main() {
+/** The pinned Forge binary, never a global tool; shared with the gas baseline. */
+export async function resolveForge() {
   if (process.platform === 'win32') throw new Error('Native Windows contract tests are unsupported; run npm ci and npm run test:contracts inside WSL2.');
   const { PLATFORM_SPECIFIC_PACKAGE_NAME, BINARY_NAME } = await import('@foundry-rs/forge/const.mjs');
   const platformPackage = PLATFORM_SPECIFIC_PACKAGE_NAME('forge');
@@ -34,6 +35,11 @@ async function main() {
     binary = path.resolve(path.dirname(require.resolve('@foundry-rs/forge/package.json')), '../dist', name);
   }
   if (!existsSync(binary)) throw new Error('Pinned Forge binary missing; run npm ci in this checkout on macOS, Linux or WSL2.');
+  return binary;
+}
+
+async function main() {
+  const binary = await resolveForge();
   // `build` compiles every source (including all test contracts) without
   // running tests, so backend EVM tests can load artifacts such as
   // contracts/out/DominoSetup.t.sol/SetupToken.json (issue #144).

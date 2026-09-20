@@ -20,6 +20,8 @@ jobs:
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - run: python3 scripts/check-repository.py
+      - name: Check Solidity hygiene
+        run: node --test scripts/check-contract-hygiene.test.mjs && node scripts/check-contract-hygiene.mjs
       - name: Check staging helpers without host access
         run: |
           python3 -B -m unittest discover -s scripts/staging/tests -p test_staging_helpers.py -v
@@ -207,6 +209,10 @@ jobs:
             node scripts/test-contracts.mjs --match-path "${suite#contracts/}"
             echo "::endgroup::"
           done
+      # Deterministic gas per test against the committed baseline; a regression
+      # fails here instead of surfacing in a report months later.
+      - name: Check the gas baseline
+        run: node --test scripts/gas-baseline.test.mjs && node scripts/gas-baseline.mjs --check
   preview:
     name: Deploy gated preview
     needs: [hygiene, frontend, backend, contracts]
