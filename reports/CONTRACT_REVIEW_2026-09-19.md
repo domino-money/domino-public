@@ -232,6 +232,11 @@ accounting, so they need receipt gas from Anvil as well as the snapshot delta.
 5. **Hygiene as it is touched (H-01, M-03 … M-10),** starting with the two
    false records above, and taking the V3/V4 duplication decision: extract a
    shared base, or retire V3 — the release order names no V3 artifact.
+   *This report never enumerated M-03 … M-10 and they are lost. Fifteen minor
+   findings re-derived from the code, numbered into that range, are in
+   [CONTRACT_HYGIENE_MINOR_2026-09-19](CONTRACT_HYGIENE_MINOR_2026-09-19.md);
+   they are not the originals. H-01 and H-02 are closed
+   ([CONTRACT_HYGIENE_2026-09-19](CONTRACT_HYGIENE_2026-09-19.md)).*
 
 ## What was verified sound
 
