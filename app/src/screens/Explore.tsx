@@ -11,6 +11,7 @@ import { CatalogueCandidates, PoolPicker } from '../components/read/screens/Pool
 import { SymbolText } from '../components/read/screens/SymbolText'
 import { TokenLookup } from '../components/read/screens/TokenLookup'
 import { TokenSearch } from '../components/read/screens/TokenSearch'
+import { StoredTokenExplorer } from '../components/read/screens/StoredTokenExplorer'
 import { Button, Card, Display, EmptyState, PageShell } from '../components/ui'
 import { parseAddressInput } from '../lib/read/screens/identity'
 import { useReadSource } from '../lib/read/screens/readContext'
@@ -119,6 +120,14 @@ function MarketsList({ onToken }: { onToken: (candidate: TokenCandidate) => void
 export function Explore() {
   const source = useReadSource()
   const location = parseExploreHash(useHash())
+  const [storedReads, setStoredReads] = useState<'checking' | 'enabled' | 'legacy' | 'failed'>('checking')
+  useEffect(() => {
+    const controller = new AbortController()
+    void (source?.supportsStoredReads ? source.routeEnabled?.('overview', { signal: controller.signal }) ?? Promise.resolve({ state: 'not_enabled' as const }) : Promise.resolve({ state: 'not_enabled' as const })).then((check) => {
+      if (!controller.signal.aborted) setStoredReads(check.state === 'enabled' ? 'enabled' : check.state === 'not_enabled' ? 'legacy' : 'failed')
+    })
+    return () => controller.abort()
+  }, [source])
   const [found, setFound] = useState<TokenCandidate | null>(null)
   const [finding, setFinding] = useState<string | null>(null)
   // The answer the token search read for the address it opens, handed to that token view once.
@@ -196,7 +205,10 @@ export function Explore() {
         </div>
       </div>
 
-      {source && (
+      {source && storedReads === 'enabled' && searchedKey && <StoredTokenExplorer key={searchedKey} source={source} token={searchedKey} />}
+      {source && storedReads === 'checking' && <p className="mt-6 text-body text-fg-muted" role="status">Loading token data…</p>}
+      {source && storedReads === 'failed' && <p className="mt-6 text-body text-fg-muted" role="status">Token data is unavailable. Reload to reconnect.</p>}
+      {source && storedReads === 'legacy' && (
         <div className="mt-6 animate-rise" style={rise(2)}>
           <TokenLookup
             key={wire}
@@ -213,7 +225,7 @@ export function Explore() {
         </div>
       )}
 
-      {showPools && candidate && source && (
+      {storedReads === 'legacy' && showPools && candidate && source && (
         <section className="dm-mkt-found animate-rise" aria-labelledby="found-pools-title" data-found-pools="">
           <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
             <Display as="h2" id="found-pools-title" className="dm-display-card">
@@ -226,7 +238,7 @@ export function Explore() {
         </section>
       )}
 
-      <details className="dm-details dm-mkt-catalogue" data-catalogue-browser="">
+      {storedReads === 'legacy' && <details className="dm-details dm-mkt-catalogue" data-catalogue-browser="">
         <summary>Search the pool catalogue</summary>
         <div className="grid gap-3">
           {canBrowse && candidate && source ? (
@@ -235,7 +247,7 @@ export function Explore() {
             <p className="text-body text-fg-muted">The catalogue is read for one token at a time, once the token above has been read.</p>
           )}
         </div>
-      </details>
+      </details>}
     </PageShell>
   )
 }

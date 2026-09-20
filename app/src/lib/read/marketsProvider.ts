@@ -42,9 +42,9 @@
  *
  * With nothing listed but the lean routes, that is N pool-market and U token
  * POSTs for N pools and U distinct tokens. Token metadata that read as
- * available is kept in memory for the provider's life, which is the
- * document's, so a refresh on the same page reads no token again; nothing is
- * stored anywhere else. An empty selection reads nothing at all.
+ * available is reused in memory for at most five minutes, retaining its
+ * original observation time. The optional V3 bundle supplies markets,
+ * metadata and APR together. An empty selection reads nothing at all.
  *
  * A read never shortens the table. Each pool's last good row is kept, and a
  * pool whose read fails keeps that row on screen, dated and marked stale,
@@ -78,6 +78,8 @@ import type { PoolMarketResponse, SnapshotPoolEntry } from 'api-contracts/read-v
 import type { Market, MarketsResult, Metric } from '../markets'
 import { createSnapshotMemo, planSnapshot, SNAPSHOT_MAX_POOLS, type SnapshotMemo } from './marketsSnapshot'
 import { realClock, type Clock } from './pipeline'
+import { TOKEN_METADATA_CACHE_MS } from './publicMetadataCache'
+import { storedPoolRead, storedTokenRead } from './publicOverview'
 import { projectMarketRow, projectSnapshotRow } from './project'
 import { reroute, type FailedOutcome, type ReadOutcome, type ReadRequests, type ReadSource } from './types'
 
@@ -97,7 +99,7 @@ export interface Retained {
 export type MarketsState =
   /** `retrying` is the failure a refresh is trying to get past, still on screen meanwhile. */
   | { phase: 'loading'; previous: MarketsResult | null; retrying: FailedOutcome | null }
-  | { phase: 'ready'; result: MarketsResult; problems: MarketProblem[] }
+  | { phase: 'ready'; result: MarketsResult; problems: MarketProblem[]; acquiring?: boolean }
   /** Nothing new to show. `retained` is the last good read, already marked stale. */
   | { phase: 'failed'; failure: FailedOutcome; retained: Retained | null }
 
@@ -241,6 +243,8 @@ export interface LoadOptions {
   snapshot?: SnapshotMemo
   /** Read each row's pool-metrics when the capabilities list the route. Absent or false: never asked. */
   metrics?: boolean
+  /** The additive stored bundle, preferred when its namespace advertises it. */
+  overview?: boolean
 }
 
 /** A row's own read: the pool's market read, or its entry in the stored snapshot. */
@@ -269,6 +273,8 @@ interface Load extends LoadedMarkets {
   ledger: Ledger
   /** Pools whose own market read, stored entry or pool-metrics this load read. */
   read: Set<string>
+  acquiring?: boolean
+  stored?: boolean
 }
 
 /** One problem per read: a pool's market read, a pool's pool-metrics read, or a token. */
@@ -296,6 +302,7 @@ async function readMarkets(
   /** Tokens to ask again that this load has not asked yet. Their failed answers stay in the ledger until the new ones land. */
   const tokensAgain = new Set(again?.plan.tokens ?? [])
   const metricsAgain = new Set(again?.plan.metrics ?? [])
+  const pendingTokens = new Set<string>()
 
   const setProblem = (problem: MarketProblem) => {
     const at = ledger.problems.findIndex((p) => problemKey(p) === problemKey(problem))
@@ -324,7 +331,7 @@ async function readMarkets(
       const tokens = tokensFor(row)
       const reads = { metrics: ledger.metrics.get(key(poolId)) ?? null, tokens }
       const projected = row.kind === 'market' ? projectMarketRow({ market: row.outcome, ...reads }) : projectSnapshotRow({ snapshot: row.outcome, entry: row.entry, ...reads })
-      const pending = !settled && tokens.size < new Set(currenciesOf(row).map(key)).size
+      const pending = (!settled && tokens.size < new Set(currenciesOf(row).map(key)).size) || currenciesOf(row).some((address) => pendingTokens.has(key(address)))
       return [pending ? { ...projected, tokensPending: true as const } : projected]
     })
   const emit = () => onProgress?.(rows(false))
@@ -365,6 +372,41 @@ async function readMarkets(
   }
 
   if (poolIds.length === 0) return finish(null)
+
+  // The stored overview includes metadata and V2 estimates in one bounded
+  // response. Once advertised, a data failure is its own answer, never an
+  // excuse to fan out provider reads. Older deployments keep the V1/V2 path.
+  if (!again && options.overview && source.supportsStoredReads && source.routeEnabled && poolIds.length <= 24) {
+    const check = await source.routeEnabled('overview', { signal })
+    if (check.state === 'failed') {
+      if (check.outcome.state === 'aborted') return finish(null, true)
+      if (stopsTable(check.outcome)) return finish(check.outcome)
+      for (const poolId of poolIds) setProblem({ poolId, outcome: check.outcome })
+      return finish(null)
+    } else if (check.state === 'enabled') {
+      const overview = await source.read('overview', { poolIds: poolIds.map(key) }, { signal })
+      if (overview.state === 'aborted') return finish(null, true)
+      if (overview.state !== 'ok') {
+        if (stopsTable(overview)) return finish(overview)
+        for (const poolId of poolIds) setProblem({ poolId, outcome: overview })
+        return finish(null)
+      }
+      for (const entry of overview.data.tokens) {
+        const outcome = storedTokenRead(entry, overview.data.generatedAt, overview.provenance)
+        if (!outcome) { if (entry.acquisition.status === 'pending') pendingTokens.add(key(entry.address)); continue }
+        ledger.tokens.set(key(entry.address), outcome)
+        if (outcome.data.asset.readStatus === 'available') options.tokens?.set(key(entry.address), outcome)
+      }
+      for (const entry of overview.data.pools) {
+        const outcome = storedPoolRead(entry, overview.data.generatedAt, overview.provenance)
+        if (!outcome) continue
+        ledger.sources.set(key(entry.poolId), { kind: 'market', outcome })
+        read.add(key(entry.poolId))
+      }
+      emit()
+      return { ...finish(null), stored: true, acquiring: [...overview.data.pools, ...overview.data.tokens].some((entry) => entry.acquisition.status === 'pending') }
+    }
+  }
 
   // 1. The stored snapshot, when listed and not failing lately. A quiet re-ask never asks it.
   let markets: readonly string[] = again ? poolIds.filter((poolId) => again.plan.markets.includes(key(poolId))) : poolIds
@@ -512,9 +554,12 @@ export interface ReadMarketsOptions {
   clock?: Clock
   /** Whether the page can be seen, for the quiet re-asks: the document's unless a test gives its own. */
   visibility?: PageVisibility
+  /** Successful visible data is revalidated at this interval; zero keeps a
+   * diagnostic/fixture provider manually driven. Failures back off to 8x. */
+  refreshMs?: number
 }
 
-export function createReadMarketsProvider({ source, poolIds, kind, notice, now, monotonic, clock = realClock, visibility = documentVisibility }: ReadMarketsOptions): MarketsProvider {
+export function createReadMarketsProvider({ source, poolIds, kind, notice, now, monotonic, clock = realClock, visibility = documentVisibility, refreshMs = 0 }: ReadMarketsOptions): MarketsProvider {
   const wall = now ?? (() => clock.now())
   const steady = monotonic ?? (() => clock.monotonic())
   const resultOf = (markets: Market[]): MarketsResult => ({ source: kind === 'bridge' ? 'live' : kind, chainId: 4663, network: 'Robinhood Chain', markets, notice })
@@ -522,7 +567,7 @@ export function createReadMarketsProvider({ source, poolIds, kind, notice, now, 
   let state: MarketsState = { phase: 'loading', previous: null, retrying: null }
   let controller: AbortController | null = null
   /** The read running: a load, or a quiet re-ask with the settled state it started from. */
-  let running: { kind: 'load' } | { kind: 'again'; from: MarketsState } | null = null
+  let running: { kind: 'load' } | { kind: 'again' | 'refresh'; from: MarketsState } | null = null
   let started = false
   /** The last settled load's reads, unless a page-wide answer ended it: what a quiet re-ask starts from. */
   let ledger: Ledger | null = null
@@ -531,7 +576,7 @@ export function createReadMarketsProvider({ source, poolIds, kind, notice, now, 
   const listeners = new Set<() => void>()
   // Kept for the provider's life, which is the page's: token metadata that read as available, and
   // when the snapshot last failed. Both in memory only. Optional routes are used where they are listed.
-  const memory: LoadOptions = { tokens: new Map(), snapshot: createSnapshotMemo(steady), metrics: true }
+  const memory: LoadOptions = { tokens: new Map(), snapshot: createSnapshotMemo(steady), metrics: true, overview: true }
   let cancelGrace: (() => void) | null = null
 
   // The quiet re-asks: how many this visit, and when the next is due, on the monotonic clock their timers run on.
@@ -541,6 +586,19 @@ export function createReadMarketsProvider({ source, poolIds, kind, notice, now, 
   const providerBusy = new Map<string, { attempts: number; dueAt: number | null }>()
   let cancelTimer: (() => void) | null = null
   let cancelVisible: (() => void) | null = null
+  let cancelRefreshVisibility: (() => void) | null = null
+  let refreshDueAt: number | null = null
+  let refreshFailures = 0
+  let acquisitionChecks = 0
+  let activeRefreshMs = refreshMs
+
+  const nextRefresh = (failed: boolean, hasData: boolean, acquiring = false) => {
+    if (refreshMs <= 0 || (!hasData && !acquiring)) { refreshDueAt = null; return }
+    refreshFailures = failed ? Math.min(refreshFailures + 1, 3) : 0
+    const interval = acquiring ? Math.min(activeRefreshMs, 5000 * 2 ** Math.min(acquisitionChecks++, 4)) : activeRefreshMs * 2 ** refreshFailures
+    if (!acquiring) acquisitionChecks = 0
+    refreshDueAt = clock.monotonic() + interval * (1 + clock.random() * 0.1)
+  }
 
   const set = (next: MarketsState) => {
     state = next
@@ -573,17 +631,24 @@ export function createReadMarketsProvider({ source, poolIds, kind, notice, now, 
     return retained()?.result ?? null
   }
 
-  async function run(again?: RecoveryPlan) {
+  async function run(again?: RecoveryPlan, background = false) {
     const from = state
     const quiet = again !== undefined && ledger !== null
     // A quiet re-ask of settled rows keeps them settled: rows land in place, and nothing else on the page moves.
-    const inPlace = quiet && from.phase === 'ready'
+    const inPlace = (quiet || background) && from.phase === 'ready'
     const previous = rowsWhileLoading()
     controller?.abort()
     const mine = new AbortController()
     controller = mine
-    running = quiet ? { kind: 'again', from } : { kind: 'load' }
+    running = quiet ? { kind: 'again', from } : background ? { kind: 'refresh', from } : { kind: 'load' }
     stopTimer()
+    // Metadata retained by the provider follows the shared public cache's
+    // maximum age too; refreshing a row cannot make stale decimals eternal.
+    for (const [address, read] of memory.tokens ?? []) {
+      const at = read.provenance.receivedMonotonic
+      const age = at === undefined ? wall() - read.provenance.receivedAt : steady() - at
+      if (age >= TOKEN_METADATA_CACHE_MS || age < 0) memory.tokens?.delete(address)
+    }
     const retrying = from.phase === 'failed' ? from.failure : from.phase === 'loading' ? from.retrying : null
     const problemsBefore = from.phase === 'ready' ? from.problems : []
     if (!inPlace) set({ phase: 'loading', previous, retrying })
@@ -609,10 +674,14 @@ export function createReadMarketsProvider({ source, poolIds, kind, notice, now, 
     if (loaded.blocking) {
       // Never asked again on its own: nothing a quiet re-ask could start from.
       ledger = null
+      // Auth/config/contract failures require a new page decision. Do not
+      // keep polling behind an expired gate or a disabled deployment.
+      refreshDueAt = null
       set({ phase: 'failed', failure: loaded.blocking, retained: retained() })
       return
     }
     ledger = loaded.ledger
+    activeRefreshMs = loaded.stored ? Math.min(refreshMs, 5_000) : refreshMs
     const at = wall()
     for (const row of loaded.rows) {
       const id = key(row.poolId)
@@ -620,6 +689,7 @@ export function createReadMarketsProvider({ source, poolIds, kind, notice, now, 
     }
     const failure = loaded.rows.length === 0 && loaded.problems.length > 0 ? loaded.problems[0].outcome : null
     if (failure) {
+      if (!quiet) nextRefresh(true, kept.size > 0)
       set({ phase: 'failed', failure, retained: retained() })
       return
     }
@@ -630,7 +700,8 @@ export function createReadMarketsProvider({ source, poolIds, kind, notice, now, 
       const good = kept.get(key(poolId))
       return good ? [retainRowAsStale(good.row, good.receivedAt)] : []
     })
-    set({ phase: 'ready', result: resultOf(markets), problems: loaded.problems })
+    if (!quiet) nextRefresh(loaded.problems.length > 0, markets.length > 0, loaded.acquiring)
+    set({ phase: 'ready', result: resultOf(markets), problems: loaded.problems, ...(loaded.acquiring ? { acquiring: true } : {}) })
   }
 
   function stopTimer() {
@@ -688,7 +759,7 @@ export function createReadMarketsProvider({ source, poolIds, kind, notice, now, 
       if (entry.dueAt === null && entry.attempts < PROVIDER_BUSY_ATTEMPTS) entry.dueAt = at + providerBusyDelayMs(clock.random)
       providerBusy.set(id, entry)
     }
-    const due = [recoveryDueAt, ...[...providerBusy.values()].map((entry) => entry.dueAt)].filter((dueAt): dueAt is number => dueAt !== null)
+    const due = [refreshDueAt, recoveryDueAt, ...[...providerBusy.values()].map((entry) => entry.dueAt)].filter((dueAt): dueAt is number => dueAt !== null)
     if (due.length === 0) return
     cancelTimer = clock.timer(Math.max(0, Math.min(...due) - at), askAgain)
   }
@@ -707,6 +778,13 @@ export function createReadMarketsProvider({ source, poolIds, kind, notice, now, 
       return
     }
     const at = clock.monotonic()
+    // A full background revalidation also covers due recovery work. Running
+    // both would duplicate provider reads and spend the same client budget.
+    if (refreshDueAt !== null && refreshDueAt <= at) {
+      refreshDueAt = null
+      void run(undefined, true)
+      return
+    }
     const markets = new Set<string>()
     const tokens = new Set<string>()
     const metrics = new Set<string>()
@@ -749,9 +827,10 @@ export function createReadMarketsProvider({ source, poolIds, kind, notice, now, 
           controller.abort()
           controller = null
           running = null
-          if (was?.kind === 'again') {
+          if (was?.kind === 'again' || was?.kind === 'refresh') {
             // A quiet re-ask nobody waited for is as if it had not run; the next visit plans it again.
             state = was.from
+            if (was.kind === 'refresh') refreshDueAt = clock.monotonic()
             plan()
           } else {
             // A load nobody waited for starts again for the next viewer.
@@ -776,6 +855,17 @@ export function createReadMarketsProvider({ source, poolIds, kind, notice, now, 
         recoveryAttempts = 0
         recoveryDueAt = null
         providerBusy.clear()
+        if (refreshMs > 0) cancelRefreshVisibility = visibility.onChange(() => {
+          if (visibility.hidden() && running?.kind === 'refresh') {
+            const from = running.from
+            controller?.abort()
+            controller = null
+            running = null
+            // Resume later with the original data still dated as observed.
+            refreshDueAt = clock.monotonic()
+            set(from)
+          } else if (!visibility.hidden()) plan()
+        })
         plan()
       }
       let held = true
@@ -783,7 +873,11 @@ export function createReadMarketsProvider({ source, poolIds, kind, notice, now, 
         if (!held) return
         held = false
         holders -= 1
-        if (holders === 0) stopTimer()
+        if (holders === 0) {
+          stopTimer()
+          cancelRefreshVisibility?.()
+          cancelRefreshVisibility = null
+        }
       }
     },
   }

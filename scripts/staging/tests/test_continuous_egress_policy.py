@@ -78,6 +78,24 @@ def nft(result):
     return result['artifacts'][policy.ROOT + '/policy.nft']
 
 
+class PublicCollectorPolicyTests(unittest.TestCase):
+    def test_analytics_grant_is_explicit_and_scoped_to_existing_writer_identity(self):
+        original=snapshot()
+        before=policy.render(original)
+        after=policy.render({**original,'publicDataCollectors':True})
+        self.assertNotIn('api.geckoterminal.com',before['roleHosts']['write'])
+        self.assertIn('api.geckoterminal.com',after['roleHosts']['write'])
+        for role,hosts in before['roleHosts'].items():
+            if role!='write':self.assertEqual(hosts,after['roleHosts'][role])
+        self.assertNotEqual(before['pinSetSha256'],after['pinSetSha256'])
+
+    def test_invalid_or_disabled_collector_identity_refused(self):
+        for change in ({'publicDataCollectors':'true'},
+                       {'publicDataCollectors':True,'enabled':['read','gateway','tunnel']}):
+            with self.subTest(change=change),self.assertRaises(policy.InvalidSnapshot):
+                policy.render({**snapshot(),**change})
+
+
 def dropin(result, role):
     return result['artifacts'][f'/etc/systemd/system/domino-{role}.service.d/{policy.DROPIN}']
 

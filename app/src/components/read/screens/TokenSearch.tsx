@@ -4,7 +4,7 @@ import { ADDRESS_PROBLEM, failureText } from '../../../lib/read/screens/copy'
 import { parseAddressInput, screenPaste, shortAddress, type AddressKey } from '../../../lib/read/screens/identity'
 import { failureCode, quietTitle, reaskDelayMs, whenVisibleAfter } from '../../../lib/read/screens/quietRead'
 import { readWithin } from '../../../lib/read/screens/screenRead'
-import { searchTokens, type KnownToken, type SearchResult } from '../../../lib/read/screens/tokenSearch'
+import { knownTokens, searchTokens, type KnownToken, type SearchResult } from '../../../lib/read/screens/tokenSearch'
 import { candidateFromToken, selectable, type TokenCandidate } from '../../../lib/read/screens/tokens'
 import type { ReadSource, TokenDisplay } from '../../../lib/read/types'
 import { IconSearch } from '../../icons'
@@ -128,6 +128,7 @@ export function TokenSearch({
   const [said, setSaid] = useState<Said | null>(null)
   const [failed, setFailed] = useState<{ code: string; reason: string } | null>(null)
   const [busy, setBusy] = useState(false)
+  const [stored, setStored] = useState<{ query: string; candidates: TokenCandidate[] } | null>(null)
   const input = useRef<HTMLInputElement>(null)
   const running = useRef<AbortController | null>(null)
   // A quiet re-ask waiting for its time, cancelled by any newer choice.
@@ -148,7 +149,25 @@ export function TokenSearch({
     if (autoFocus) input.current?.focus()
   }, [autoFocus])
 
-  const results = searchTokens(value, known)
+  // Names search persisted verified metadata after a short debounce. Results
+  // belong only to the exact current query; wallet balances never enter it.
+  useEffect(() => {
+    const query = value.trim()
+    if (!open || query.length < 2 || query.length > 96 || /^0x/i.test(query) || !source.supportsStoredReads || !source.routeEnabled) return
+    const controller = new AbortController()
+    const timer = setTimeout(() => {
+      void source.routeEnabled?.('search', { signal: controller.signal }).then(async (check) => {
+        if (check?.state !== 'enabled' || controller.signal.aborted) return
+        const outcome = await readWithin(source, 'search', { query, limit: 20 }, { signal: controller.signal })
+        if (controller.signal.aborted || outcome.state !== 'ok') return
+        setStored({ query, candidates: outcome.data.tokens.flatMap((entry) => entry.value ? [candidateFromToken(entry.value, entry.address)] : []) })
+      })
+    }, 350)
+    return () => { clearTimeout(timer); controller.abort() }
+  }, [source, value, open])
+  const persisted = stored?.query === value.trim() ? knownTokens({ catalogue: [], candidates: stored.candidates }) : []
+  const present = new Set(known.map((token) => token.key))
+  const results = searchTokens(value, [...known, ...persisted.filter((token) => !present.has(token.key))])
   const expanded = open && problem === null
   const highlighted = results.length === 0 ? -1 : Math.min(active, results.length - 1)
   const listboxId = `${id}-listbox`

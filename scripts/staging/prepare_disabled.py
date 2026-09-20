@@ -129,6 +129,10 @@ PACKAGED_ONLY_MIGRATIONS = (
     'backend/migrations/021_reference_price_sources.sql',
     # The event timestamp source; same vehicle.
     'backend/migrations/022_event_timestamp_source.sql',
+    # Public collector activation applies these separately from financial services.
+    'backend/migrations/023_pool_request_scheduling.sql',
+    'backend/migrations/024_public_observations.sql',
+    'backend/migrations/025_public_history.sql',
 )
 MAPPINGS = (
     ('domino', 'domino-admin', ADMIN),

@@ -12,14 +12,16 @@
 import type {
   CacheObservation,
   ErrorResponse,
-  ReadRequests,
+  ReadRequests as V1ReadRequests,
   ReadResponses as V1ReadResponses,
   Snapshot,
 } from 'api-contracts/read-v1/types'
 import type { CapabilitiesResponse as V2Capabilities, PoolAprEstimate } from 'api-contracts/read-v2/types'
+import type { ReadV3Requests, ReadV3Responses } from 'api-contracts/read-v3/types'
 
 /** Both namespaces expose the same flags; each wire validator requires its exact version. */
-export type ReadResponses = Omit<V1ReadResponses, 'capabilities'> & { capabilities: V1ReadResponses['capabilities'] | V2Capabilities }
+export type ReadResponses = Omit<V1ReadResponses, 'capabilities'> & Omit<ReadV3Responses, 'capabilities'> & { capabilities: V1ReadResponses['capabilities'] | V2Capabilities | ReadV3Responses['capabilities'] }
+export type ReadRequests = V1ReadRequests & ReadV3Requests
 
 /** The ten read families, exactly the contract's `ReadRequests` keys. */
 export type ReadRoute = keyof ReadRequests
@@ -27,7 +29,6 @@ export type ReadRoute = keyof ReadRequests
 export type ReadKey = keyof ReadResponses
 export type RequestOf<R extends ReadKey> = R extends ReadRoute ? ReadRequests[R] : null
 export type ErrorCode = ErrorResponse['error']
-export type { ReadRequests }
 
 /**
  * The shared validators, satisfied structurally by the package runtime. They
@@ -42,6 +43,7 @@ export interface ReadValidators {
   validateError(status: number, payload: unknown): payload is ErrorResponse
   /** Only after assertResponse accepted a v2 wrapper; never computes an APR. */
   poolAprEstimate?(payload: unknown): PoolAprEstimate | undefined
+  matchesRequest?(route: ReadRoute, request: unknown, response: unknown): boolean
 }
 
 /** What a transport observed, before anything about it is believed. */
@@ -217,6 +219,8 @@ export type RouteCheck =
 
 export interface ReadSource {
   readonly transport: 'fixture' | 'bridge'
+  /** This source has a separate V3 namespace adapter; not a deployment capability. */
+  readonly supportsStoredReads?: true
   read<R extends ReadRoute>(route: R, request: ReadRequests[R], options?: ReadOptions): Promise<ReadOutcome<R>>
   /**
    * Whether the deployment lists `route`, from the source's one shared

@@ -65,10 +65,12 @@ const DISABLED = {
   read: {
     READ_BRIDGE_ENABLED: 'false',
     READ_V2_BRIDGE_ENABLED: 'false',
+    READ_V3_BRIDGE_ENABLED: 'false',
     APP_ORIGIN: 'https://domino.money',
     GATEWAY_ORIGIN: 'https://vm-read.domino.money',
     ENABLED_READS: '',
     ENABLED_V2_READS: '',
+    ENABLED_V3_READS: '',
   },
   session: {
     SESSION_BRIDGE_ENABLED: 'false',
@@ -432,7 +434,7 @@ test('an /api path no family owns gets a JSON 404 from the forwarder, never inde
     '/api/x',
     '/api/read',
     '/api/read/v1',
-    '/api/read/v3/capabilities',
+    '/api/read/v4/capabilities',
     '/api/readx/v1/capabilities',
     '/api/sessions/v1/me',
     '/api/deposit/v1',
@@ -1226,6 +1228,39 @@ test('read-v2 uses the existing binding with no cookies and remains independentl
   assert.equal(traced.handed[0]?.headers.get('Cookie'), null);
   assert.deepEqual(calls, ['read GET https://domino.money/api/read/v2/capabilities']);
   assert.deepEqual(upstream, []);
+});
+
+test('read-v3 uses the existing beta-gated binding and remains independently disabled', async () => {
+  const { env, calls } = workers();
+  const traced = tracedPages(call('/api/read/v3/capabilities', { cookie: JAR }), env);
+  const response = await traced.response;
+  assert.equal(response.status, 200);
+  assert.equal(response.headers.get('x-domino-read-contract'), '3.0.0-rc.1');
+  const data = await response.json();
+  assert.equal(data.dataMode, 'disabled');
+  assert.deepEqual(data.enabledReads, []);
+  assert.equal(traced.handed[0]?.headers.get('Cookie'), null);
+  assert.deepEqual(calls, ['read GET https://domino.money/api/read/v3/capabilities']);
+  assert.deepEqual(upstream, []);
+});
+
+test('read-v3 forwarding preserves selection and removes cookies and credentials', async () => {
+  const { bound, env } = recorders();
+  const body = JSON.stringify({ poolIds: [`0x${'a'.repeat(64)}`] });
+  const traced = tracedPages(call('/api/read/v3/overview', {
+    method: 'POST', body, cookie: JAR,
+    headers: { 'X-Domino-Read-Contract': '3.0.0-rc.1', Authorization: 'Bearer forbidden',
+      'CF-Access-Client-Secret': 'forbidden', 'X-Domino-Client-Id': '192.0.2.99' },
+  }), env);
+  assert.equal((await traced.response).status, 200);
+  assert.equal(traced.handed[0]?.headers.get('Cookie'), null);
+  const [seen] = bound.read.calls;
+  assert.equal(seen.url, `${ORIGIN}/api/read/v3/overview`);
+  assert.equal(new TextDecoder().decode(seen.body), body);
+  assert.equal(seen.headers['x-domino-read-contract'], '3.0.0-rc.1');
+  for (const name of ['cookie', 'authorization', 'cf-access-client-secret', 'x-domino-client-id']) {
+    assert.equal(name in seen.headers, false, name);
+  }
 });
 
 test('read-v2 POST preserves request bytes and version while discarding credentials at Pages', async () => {

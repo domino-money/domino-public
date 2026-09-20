@@ -1,10 +1,15 @@
-import { parseStrictJson } from './strict-json.mjs';
+import { JsonNumber, parseStrictJson } from './strict-json.mjs';
 import { CHAIN_ID, CONTRACT_VERSION, ROUTES, isObject, validateRequest } from './request-contract.mjs';
 import { ERROR_STATUS_BY_CODE, validateResponse } from '../../api-contracts/read-v1/runtime.mjs';
 import {
   CONTRACT_VERSION as V2_CONTRACT_VERSION, ERROR_STATUS_BY_CODE as V2_ERROR_STATUS_BY_CODE,
   validateRequest as validateV2Request, validateResponse as validateV2Response,
 } from '../../api-contracts/read-v2/runtime.mjs';
+import {
+  CONTRACT_VERSION as V3_CONTRACT_VERSION, ERROR_STATUS_BY_CODE as V3_ERROR_STATUS_BY_CODE,
+  ROUTES as V3_ROUTES, validateRequest as validateV3Request, validateResponse as validateV3Response,
+  matchesRequest as matchesV3Request,
+} from '../../api-contracts/read-v3/runtime.mjs';
 
 const CONTRACT_HEADER = 'X-Domino-Read-Contract';
 // Only the exact public path chooses a protocol. Neither deployment variables
@@ -22,6 +27,12 @@ const V2_PROTOCOL = Object.freeze({
   validateRequest: validateV2Request, validateResponse: validateV2Response, errors: V2_ERROR_STATUS_BY_CODE,
   matchesRequest: (request, response) => request.poolId === response.poolId,
 });
+const V3_PROTOCOL = Object.freeze({
+  prefix: '/api/read/v3/', upstreamPrefix: '/internal/read/v3/', version: V3_CONTRACT_VERSION,
+  enabledFlag: 'READ_V3_BRIDGE_ENABLED', readsFlag: 'ENABLED_V3_READS', routes: V3_ROUTES,
+  validateRequest: validateV3Request, validateResponse: validateV3Response, errors: V3_ERROR_STATUS_BY_CODE,
+  matchesRequest: (request, response, route) => matchesV3Request(route, request, response),
+});
 export const LIMITS = Object.freeze({ requestBytes: 8192, responseBytes: 1024 * 1024, bodyMs: 5000, totalMs: 20000, upstreamMs: 15000 });
 
 // Shared, finite and status-specific. Unknown producer failures never reach clients.
@@ -31,6 +42,23 @@ class BridgeError extends Error {
   constructor(code) { super(code); this.code = code; }
 }
 const fail = (code) => { throw new BridgeError(code); };
+
+// V3's generated validator consumes JS integers, while the strict parser keeps
+// raw number spelling. Convert only exact safe integer lexemes; 24.0, 24e0 and
+// values rounded by Number are not equivalent to a strict producer integer.
+function safeRequestIntegers(value) {
+  if (value instanceof JsonNumber) {
+    if (!/^-?(0|[1-9][0-9]*)$/.test(value.source)) fail('invalid_request');
+    const number = Number(value.source);
+    if (!Number.isSafeInteger(number)) fail('invalid_request');
+    return number;
+  }
+  if (Array.isArray(value)) return value.map(safeRequestIntegers);
+  if (value !== null && typeof value === 'object') {
+    for (const key of Object.keys(value)) value[key] = safeRequestIntegers(value[key]);
+  }
+  return value;
+}
 
 function exactOrigin(value) {
   if (typeof value !== 'string' || value.length > 2048) return null;
@@ -238,7 +266,7 @@ async function upstreamRead(request, body, payload, route, settings, fetchImpl, 
     if (response.status === 200) {
       if (!isObject(result) || Object.hasOwn(result, 'error')) fail('upstream_invalid_response');
       if (result.schemaVersion !== protocol.routes[route].schemaVersion || result.chainId !== CHAIN_ID) fail('upstream_contract_mismatch');
-      const valid = protocol.validateResponse(route, result) && protocol.matchesRequest(payload, result);
+      const valid = protocol.validateResponse(route, result) && protocol.matchesRequest(payload, result, route);
       scope.check();
       if (!valid) fail('upstream_contract_mismatch');
       // Both gateway and BFF validate the full pinned response schema. Preserve
@@ -289,7 +317,8 @@ export function createWorker({ fetch: fetchImpl = globalThis.fetch, getClientIp 
       };
       try {
         const url = new URL(request.url);
-        if (url.pathname.startsWith(V2_PROTOCOL.prefix)) protocol = V2_PROTOCOL;
+        if (url.pathname.startsWith(V3_PROTOCOL.prefix)) protocol = V3_PROTOCOL;
+        else if (url.pathname.startsWith(V2_PROTOCOL.prefix)) protocol = V2_PROTOCOL;
         const settings = config(env, protocol);
         const route = url.pathname.startsWith(protocol.prefix) ? url.pathname.slice(protocol.prefix.length) : null;
         if (url.search || url.hash || !route || (route !== 'capabilities' && !Object.hasOwn(protocol.routes, route))) fail('route_not_available');
@@ -325,6 +354,7 @@ export function createWorker({ fetch: fetchImpl = globalThis.fetch, getClientIp 
           text = await readText(request.body, LIMITS.requestBytes, scope, 'request_too_large');
           scope.check();
           body = parseStrictJson(text, { numberLexemes: true });
+          if (protocol === V3_PROTOCOL) body = safeRequestIntegers(body);
           scope.check();
           const valid = protocol.validateRequest(route, body);
           scope.check();

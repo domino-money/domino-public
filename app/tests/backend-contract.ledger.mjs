@@ -36,8 +36,11 @@
  * @property {string} [endAssertion] For a pattern difference: what OpenAPI appends to the read-v1 pattern, exactly.
  */
 
-/** OpenAPI paths that are not one of the nine POST read routes. The bridge relays none of them. */
-export const OPENAPI_NON_READ_PATHS = ['GET /health', 'GET /v1/capabilities'];
+/** Paths outside read-v1. V3 is additive, versioned separately, and relayed only by its own bridge namespace. */
+export const OPENAPI_NON_READ_PATHS = [
+  'GET /health', 'GET /v1/capabilities',
+  'POST /v3/read/history', 'POST /v3/read/overview', 'POST /v3/read/search',
+];
 
 /** Error statuses in read-v1 that no OpenAPI read route declares, with their codes. */
 export const BRIDGE_ONLY_ERROR_STATUSES = {

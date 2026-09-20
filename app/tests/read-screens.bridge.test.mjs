@@ -14,7 +14,7 @@
 import assert from 'node:assert/strict';
 import { existsSync, readFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
-import { after, before, test } from 'node:test';
+import { after, afterEach, before, test } from 'node:test';
 import { chromium } from 'playwright-core';
 import { createWorker } from '../../bridge/src/worker.mjs';
 import { BRIDGE_DIST, createGatedServer } from '../scripts/gated-server.mjs';
@@ -132,6 +132,7 @@ after(async () => {
   }) : Promise.resolve();
   await Promise.all([serverClosed, browser?.close()]);
 });
+afterEach(async () => { await Promise.all(browser.contexts().map(context => context.close())); });
 
 async function visit(route) {
   edge = [];
@@ -141,16 +142,12 @@ async function visit(route) {
   const page = await context.newPage();
   const errors = [];
   page.on('pageerror', (error) => errors.push(`uncaught: ${error.message}`));
-  await page.goto(`${origin}/`, { waitUntil: 'networkidle' });
-  await page.fill('#password', PASSWORD);
-  await Promise.all([page.waitForNavigation({ waitUntil: 'networkidle' }), page.click('button[type="submit"]')]);
-  if (route !== '/') {
-    // A fresh document on the route: the landing's own reads from signing in must not be counted here.
-    await page.goto(`${origin}/#${route}`, { waitUntil: 'networkidle' });
-    edge = [];
-    upstream = [];
-    await page.reload({ waitUntil: 'networkidle' });
-  }
+  // Authenticate through the real gate before loading the requested route.
+  // A temporary Home document would schedule reads that can outlive its
+  // navigation and contaminate the next route's request trace.
+  const login = await context.request.post(`${origin}/__beta/login`, { form: { password: PASSWORD }, headers: { Origin: origin }, maxRedirects: 0 });
+  assert.equal(login.status(), 303);
+  await page.goto(`${origin}/#${route}`, { waitUntil: 'networkidle' });
   return { context, page, errors };
 }
 
@@ -288,13 +285,12 @@ const poolsSettled = (page) =>
 /** The fixture pool's card on the Markets rail has settled its hourly read: bars, or a line saying why there are none. */
 const cardSettled = (page) => page.waitForFunction(() => document.querySelector('[data-market-card] [data-volume-bar], [data-market-card] [data-chart-unavailable]'), null, { timeout: 30_000 });
 /**
- * The route's own reading on mount: the read capabilities, which list pool-metrics here, then the estimate
- * namespace's; the fixture pool's market and its two tokens, then its pool-metrics; then the rail card's one hourly
- * read for that pool (with price history), queued behind the table's reads.
+ * The route's reads on mount: the disabled stored namespace, V1/V2 capabilities,
+ * the fixture pool's market and two tokens, pool-metrics and one visible-card
+ * hourly read. The card is independent of the rest of the table's readiness.
  */
-const MOUNT = ['GET /api/read/v1/capabilities', 'GET /api/read/v2/capabilities', 'POST /api/read/v1/pool-market', 'POST /api/read/v1/token', 'POST /api/read/v1/token', 'POST /api/read/v1/pool-metrics', 'POST /api/read/v1/pool-market'];
-/** The rail card's hourly read: the last POST of the mount. */
-const CARD_READ = MOUNT.filter((line) => line.startsWith('POST')).length - 1;
+const MOUNT = ['GET /api/read/v3/capabilities', 'GET /api/read/v1/capabilities', 'GET /api/read/v2/capabilities', 'POST /api/read/v1/pool-market', 'POST /api/read/v1/token', 'POST /api/read/v1/token', 'POST /api/read/v1/pool-metrics', 'POST /api/read/v1/pool-market'];
+const MOUNT_POSTS = MOUNT.filter((line) => line.startsWith('POST')).length;
 const trail = () => edge.map((r) => `${r.method} ${r.path}`);
 const POOL = '0x0911afcb281d7bcae2d71443ceaeebd0f89b4537708449970d797622b4b4c941';
 
@@ -322,7 +318,7 @@ test('the landing reads one listed pool, never a placeholder id, and pool activi
   // This Worker lists pool-metrics, which is the read service's consent: the row reads it once, after its market and
   // tokens. The snapshot is not listed, so it is never asked.
   assert.deepEqual(routes(), ['pool-market', 'token', 'token', 'pool-metrics']);
-  assert.deepEqual(edge.filter((r) => r.method === 'GET').map((r) => r.path), ['/api/read/v1/capabilities', '/api/read/v2/capabilities'], 'the read capabilities first, then the optional estimate probe, which falls back before any V2 data POST');
+  assert.deepEqual(edge.filter((r) => r.method === 'GET').map((r) => r.path), ['/api/read/v3/capabilities', '/api/read/v1/capabilities', '/api/read/v2/capabilities'], 'disabled V3 falls back to V1 and the optional estimate probe, with no V2/V3 data POST');
   assert.equal(await page.locator('#pools [data-apr-estimate]').getAttribute('data-apr-estimate'), 'unavailable');
   for (const r of upstream) assert.doesNotMatch(JSON.stringify(r.body), /0{62}a[2-5]/, 'a placeholder pool id was requested');
   assert.equal(routes().includes('pool-activity'), false);
@@ -345,16 +341,17 @@ test('Markets reads the searched token, then its pools and the catalogue only on
     await poolsSettled(page);
     await cardSettled(page);
     await page.waitForTimeout(300);
-    assert.deepEqual(trail(), MOUNT, 'route mount reads the selected pools, then the card\'s hourly read, and nothing else');
-    const cardRead = JSON.parse(posts()[CARD_READ].body);
+    assert.deepEqual(trail().sort(), [...MOUNT].sort(), 'route mount reads the selected pools and the visible card, and nothing else');
+    const cardIndex = posts().findIndex((read) => JSON.parse(read.body).includePriceHistory === true);
+    const cardRead = JSON.parse(posts()[cardIndex].body);
     assert.deepEqual(cardRead, { poolId: POOL, includePriceHistory: true, priceToken: 'quote' }, 'the card asks for the same candles the pool page would');
-    assert.ok(posts()[CARD_READ].at - posts()[CARD_READ - 1].at >= 1050, 'and queues behind the table\'s reads');
+    assert.ok(cardIndex > 0 && posts()[cardIndex].at - posts()[cardIndex - 1].at >= 1050, 'the independent card still shares the request budget');
     await page.locator('#markets-search').fill(TOKEN);
     const combobox = page.getByRole('combobox', { name: 'Token name or address' });
     await combobox.waitFor();
     assert.equal(await combobox.inputValue(), TOKEN, 'no selected pool matches, so the token search starts from the address');
     await page.waitForTimeout(300);
-    assert.deepEqual(trail(), MOUNT, 'typing an address reads nothing: only choosing it asks');
+    assert.deepEqual(trail().sort(), [...MOUNT].sort(), 'typing an address reads nothing: only choosing it asks');
     await combobox.click();
     await page.locator(`[data-token-option="${TOKEN}"]`).click();
     const card = page.locator('[data-token-lookup="ok"]');
@@ -410,9 +407,9 @@ test('Markets reads the searched token, then its pools and the catalogue only on
     for (const name of await page.locator('main button').allInnerTexts()) assert.doesNotMatch(name, forbidden, name);
     await page.waitForTimeout(1200);
 
-    // The token search reads the chosen address once and hands its answer to the token's view, which does not read it again (#138 §5).
+    // The metadata already read for this address is reused by the search and
+    // token view; neither creates another token request within its TTL.
     assert.deepEqual(trail().slice(MOUNT.length), [
-      'POST /api/read/v1/token',
       'POST /api/read/v1/pools',
       'POST /api/read/v1/catalogue',
       'POST /api/read/v1/pools',
@@ -421,8 +418,7 @@ test('Markets reads the searched token, then its pools and the catalogue only on
       'POST /api/read/v1/pool-activity',
       'POST /api/read/v1/pool-positions',
     ], 'only the public reads the page lists: no market polling, session or financial call');
-    assert.deepEqual(posts().slice(CARD_READ + 1).map((r) => JSON.parse(r.body)), [
-      { token: TOKEN }, // the search's token read, handed to the view
+    assert.deepEqual(posts().slice(MOUNT_POSTS).map((r) => JSON.parse(r.body)), [
       { token: TOKEN }, // Find pools
       { token: TOKEN, limit: 20 },
       { token: TOKEN, maxPools: 1, poolIds: [POOL] },
@@ -449,7 +445,7 @@ test('Markets reads the searched token, then its pools and the catalogue only on
     await page.locator('[data-token-lookup="ok"][data-token-card="native"]').waitFor({ timeout: 30_000 });
     await page.waitForTimeout(300);
     assert.equal(await page.locator('[data-found-pools], [data-pool-option]').count(), 0, 'a new token has no pools until asked');
-    assert.deepEqual(posts().slice(before).map((r) => JSON.parse(r.body)), [{ token: native }], 'the search’s one token read, handed to the view, and no pools read on its own');
+    assert.deepEqual(posts().slice(before), [], 'the native metadata is still cached; selecting it starts no pool read');
     await page.goto(`${origin}/#/settings`);
     await page.getByRole('heading', { name: 'Settings', exact: true }).waitFor();
     await page.goto(`${origin}/#/pools`);
@@ -489,16 +485,17 @@ test('Markets with markets-snapshot listed: the stored pool is on screen from on
       await poolsSettled(page);
       await cardSettled(page);
       await page.waitForTimeout(300);
-      assert.deepEqual(trail(), [
+      assert.deepEqual(trail().sort(), [
+        'GET /api/read/v3/capabilities',
         'GET /api/read/v1/capabilities',
         'POST /api/read/v1/markets-snapshot',
         'POST /api/read/v1/token',
         'POST /api/read/v1/token',
         'POST /api/read/v1/pool-metrics',
         'POST /api/read/v1/pool-market',
-      ], 'a fresh stored entry needs no market read of its own: the only pool-market is the card’s hourly read, which is read-v1’s');
+      ].sort(), 'a fresh stored entry needs no market read of its own: the only pool-market is the card’s hourly read, which is read-v1’s');
       assert.deepEqual(JSON.parse(posts()[0].body), { poolIds: [POOL] });
-      assert.deepEqual(JSON.parse(posts().at(-1).body), { poolId: POOL, includePriceHistory: true, priceToken: 'quote' });
+      assert.deepEqual(JSON.parse(posts().find((read) => JSON.parse(read.body).includePriceHistory === true).body), { poolId: POOL, includePriceHistory: true, priceToken: 'quote' });
       assert.equal(await page.locator('[data-selected-pools] tbody tr[data-row-source="markets-snapshot"]').count(), 1);
       const starts = posts().map((r) => r.at);
       for (let i = 1; i < starts.length; i++) assert.ok(starts[i] - starts[i - 1] >= 1050, `POST starts ${starts[i] - starts[i - 1]} ms apart`);

@@ -18,6 +18,8 @@ from catalogue import PgCatalogue
 from catalogue_indexer import CatalogueIndexer, decode_initialize
 from dev_postgres import ADMIN, PORT, SOCKET
 from discovery import Block, DataError
+from pool_requests import PgRequests
+from activity_indexer import ActivityIndexer
 from test_catalogue import FakeIndexRpc, block_hash, log, stored_candidate
 from test_discovery import POOL
 import test_pool_activity as activity_tests
@@ -234,6 +236,72 @@ class ActivityFollowerCliTests(unittest.TestCase):
             for item in running:item.stop()
         self.assertEqual(code,1)
         self.assertEqual(json.loads(output.strip())['reason'],'unbounded_follow_needs_a_stop')
+
+    def test_queue_retries_overflow_and_reuses_the_persisted_span(self):
+        running=self.patches(reader_factory(111))
+        for item in running:item.start()
+        observed=[]
+        real=ActivityIndexer.step
+        def step(worker,*,through,span=1000,**kwargs):
+            observed.append(span)
+            if len(observed)==1:raise DataError('rpc_log_range_too_large')
+            return real(worker,POOL,through=through,span=span)
+        def called(worker,pool_id,**kwargs):return step(worker,**kwargs)
+        try:
+            self.assertEqual(self.registered(POOL,10)[0],0)
+            run_main(manage_activity,['manage_activity.py','--request','--pool-id',POOL])
+            args=['manage_activity.py','--queue-worker','--max-pools','1','--max-steps','1','--span','100000']
+            with patch.object(ActivityIndexer,'step',called):
+                code,output=run_main(manage_activity,args)
+                self.assertEqual(code,0,output)
+                with psycopg.connect(**self.catalogue.settings,user=ADMIN) as conn:
+                    conn.execute("UPDATE domino_activity.pool_requests SET due_at=clock_timestamp()-interval '1 second'")
+                second,output=run_main(manage_activity,args)
+                self.assertEqual(second,0,output)
+        finally:
+            for item in running:item.stop()
+        self.assertEqual(observed,[100000,25000,25000])
+        self.assertEqual(PgRequests(self.catalogue).status(POOL)['status'],'following')
+
+    def test_expired_claim_cannot_publish_an_activity_chunk(self):
+        running=self.patches(reader_factory(111))
+        for item in running:item.start()
+        try:self.assertEqual(self.registered(POOL,10)[0],0)
+        finally:
+            for item in running:item.stop()
+        requests=PgRequests(self.catalogue)
+        requests.enqueue(POOL);old=requests.claim()[0]
+        with psycopg.connect(**self.catalogue.settings,user=ADMIN) as conn:
+            conn.execute("UPDATE domino_activity.pool_requests SET lease_until=clock_timestamp()-interval '1 second'")
+        requests.claim()
+        worker=ActivityIndexer(self.store,self.rpc,publication_guard=lambda conn:requests.guard(old,conn))
+        with self.assertRaisesRegex(DataError,'pool_request_lease_lost'):
+            worker.step(POOL,through=11)
+        with self.catalogue.connection() as conn:
+            self.assertEqual(self.store.pool(conn,POOL)['next_block'],10)
+            self.assertEqual(conn.execute('SELECT count(*) AS n FROM domino_activity.chunks').fetchone()['n'],0)
+
+    def test_queue_wall_budget_stops_before_claiming_another_pool(self):
+        from read_deadline import ReadDeadline
+        running=self.patches(reader_factory(111))
+        for item in running:item.start()
+        clock=[0.0];real=ActivityIndexer.step
+        def timed(worker,pool_id,**kwargs):
+            result=real(worker,pool_id,**kwargs);clock[0]=51.0
+            return result
+        try:
+            self.assertEqual(self.registered(POOL,10)[0],0)
+            requests=PgRequests(self.catalogue)
+            requests.enqueue(POOL);requests.enqueue(ABSENT_POOL)
+            with patch.object(manage_activity,'ReadDeadline',lambda seconds:ReadDeadline(seconds,clock=lambda:clock[0])),\
+                 patch.object(ActivityIndexer,'step',timed):
+                code,output=run_main(manage_activity,['manage_activity.py','--queue-worker','--max-pools','64',
+                    '--max-steps','1','--span','100000','--max-seconds','50'])
+            self.assertEqual(code,1,output)
+            self.assertEqual(json.loads(output)['pools'][0]['reason'],'read_deadline_exceeded')
+            self.assertEqual(requests.status(ABSENT_POOL)['attempts'],0)
+        finally:
+            for item in running:item.stop()
 
     def test_anchor_only_worker_registers_without_writing_a_chunk(self):
         running=self.patches(reader_factory(111))

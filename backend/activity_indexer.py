@@ -29,7 +29,7 @@ def derived_timestamp(before,end,number):
 
 class ActivityIndexer:
     def __init__(self,store,rpc,*,capacity='standard',parallel_walks=False,
-                 header_cache=None,header_budget=None):
+                 header_cache=None,header_budget=None,publication_guard=None):
         self.range_limit=activity_range_limit(capacity)
         self.capacity=capacity
         # One writer per pool by default; `parallel_walks` narrows the global
@@ -38,11 +38,15 @@ class ActivityIndexer:
         self.parallel_walks=parallel_walks
         self.header_cache=header_cache if header_cache is not None else {}
         self.header_budget=header_budget
+        self.publication_guard=publication_guard
         self.store,self.rpc=store,rpc
         self.chain=CatalogueIndexer(store.catalogue,rpc)
 
     def lock(self,pool_id):
         return pool_lock_key(pool_id) if self.parallel_walks else True
+
+    def guard(self,conn):
+        if self.publication_guard is not None:self.publication_guard(conn)
 
     def register(self,pool_id,initialization_block=None):
         pool_id=bytes32(pool_id)
@@ -74,6 +78,7 @@ class ActivityIndexer:
             if self.chain.block(start)!=block or self.chain.block(start-1)!=base:
                 raise DataError('activity_snapshot_reorganized')
             from psycopg.types.json import Jsonb
+            self.guard(conn)
             conn.execute('''INSERT INTO domino_activity.pools(pool_id,pool_key,start_block,base_hash,next_block)
                             VALUES(%s,%s,%s,%s,%s)''',(pool_id,Jsonb(asdict(key)),start,base.hash,start))
             return {'status':'registered','startBlock':start,
@@ -88,9 +93,11 @@ class ActivityIndexer:
             return None
         for check in checks[1:]:
             if self.chain.block(check['end_block']).hash==check['end_hash']:
+                self.guard(conn)
                 self.store.rewind(conn,row,check['end_block'])
                 return check['end_block']
         base=self.chain.block(row['start_block']-1)
+        self.guard(conn)
         self.store.rewind(conn,row,base.number,base.hash)
         return base.number
 
@@ -205,6 +212,7 @@ class ActivityIndexer:
                 raise DataError('activity_state_reconciliation_failed')
             if self.chain.block(end)!=block or self.chain.block(start-1)!=before:
                 raise DataError('activity_snapshot_reorganized')
+            self.guard(conn)
             self.store.commit(conn,row,block,model,state,events)
             return {'status':'indexed','fromBlock':start,'through':end,'events':len(events),
                     'activeRanges':len(model['ranges']),'stateReconciled':True,

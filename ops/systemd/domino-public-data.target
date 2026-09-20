@@ -1,0 +1,9 @@
+[Unit]
+Description=Domino persistent public data collectors
+Requires=domino-public-current.service domino-public-history.service domino-public-accounting.service
+Wants=domino-queue-worker.timer domino-catalogue-follower.timer
+After=network-online.target domino-continuous-egress.service
+BindsTo=domino-continuous-egress.service
+
+[Install]
+WantedBy=multi-user.target

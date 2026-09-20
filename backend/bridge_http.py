@@ -18,6 +18,7 @@ from discovery import DataError, _DeadlineHTTPResponse
 
 
 from read_contract import ENABLED_READS
+from public_data_contract import ENABLED_READS as V3_ENABLED_READS
 
 READ_ROUTES = frozenset(ENABLED_READS)
 MAX_RESPONSE = 1024 * 1024
@@ -164,13 +165,15 @@ class LocalReaderHTTP:
             chunks = (response.content,) if response.is_stream_consumed else response.iter_raw()
             return response.status_code, self._collect(chunks, budget), received
 
-    def request(self, route, body=None, *, deadline, request_id=None):
-        if not isinstance(route, str) or (route != 'health' and route not in READ_ROUTES):
+    def request(self, route, body=None, *, deadline, request_id=None, version='v1'):
+        routes = READ_ROUTES if version == 'v1' else V3_ENABLED_READS if version == 'v3' else ()
+        if (version not in ('v1', 'v3') or not isinstance(route, str)
+                or (route != 'health' and route not in routes) or route == 'health' and version != 'v1'):
             raise DataError('route_not_available')
         budget = _Budget(deadline, self.clock)
         budget.remaining()
         method = 'GET' if route == 'health' else 'POST'
-        path = '/health' if route == 'health' else '/v1/read/' + route
+        path = '/health' if route == 'health' else '/' + version + '/read/' + route
         try:
             payload = None if body is None else json.dumps(body, allow_nan=False, separators=(',', ':')).encode()
             if payload is not None and len(payload) > MAX_BODY:

@@ -1,11 +1,14 @@
 """Indexer I/O: batched headers keep every check, adaptive span stays bounded."""
 from pathlib import Path
+import io
+import json
 import sys
 import unittest
+from urllib.error import HTTPError
 
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]))
 from discovery import DataError
-from indexer_io import MAX_INDEXER_SPAN, AdaptiveSpan, HeaderBudget, read_headers
+from indexer_io import MAX_INDEXER_SPAN, AdaptiveSpan, HeaderBudget, RequestBudget, indexer_transport, read_headers
 
 
 def raw_block(number, *, number_override=None):
@@ -105,12 +108,32 @@ class ReadHeadersTests(unittest.TestCase):
 
 
 class AdaptiveSpanTests(unittest.TestCase):
+    def test_unknown_http_400_does_not_trigger_a_size_retry(self):
+        span=AdaptiveSpan(100000)
+        self.assertEqual(span.record('http_400'),100000)
+
+    def test_bounded_run_retries_at_smaller_span_but_stops_at_floor(self):
+        span=AdaptiveSpan(100000,floor=1000)
+        observed=[]
+        def step(value):
+            observed.append(value)
+            if value>6250:raise DataError('rpc_log_range_too_large')
+            return {'status':'indexed'}
+        self.assertEqual(span.run(step)['status'],'indexed')
+        self.assertEqual(observed,[100000,25000,6250])
+        floor=AdaptiveSpan(1000)
+        observed.clear()
+        def refused(value):
+            observed.append(value);raise DataError('rpc_log_range_too_large')
+        with self.assertRaises(DataError):floor.run(refused)
+        self.assertEqual(observed,[1000])
+
     def test_size_rejections_shrink_the_span_to_the_floor_and_never_below(self):
         span = AdaptiveSpan(100_000, floor=1_000, ceiling=MAX_INDEXER_SPAN)
         self.assertEqual(span.record('response_too_large'), 25_000)
         self.assertEqual(span.record('activity_log_budget_exhausted'), 6_250)
         self.assertEqual(span.record('read_deadline_exceeded'), 1_562)
-        self.assertEqual(span.record('http_400'), 1_000)
+        self.assertEqual(span.record('rpc_log_range_too_large'), 1_000)
         self.assertEqual(span.record('response_too_large'), 1_000)
         self.assertEqual(span.shrinks, 4)
 
@@ -142,6 +165,32 @@ class AdaptiveSpanTests(unittest.TestCase):
         for options in ({'floor': 0}, {'floor': 2_000}, {'ceiling': 500}, {'growth_passes': 0}):
             with self.subTest(options=options), self.assertRaises(DataError):
                 AdaptiveSpan(1_000, **options)
+
+
+class IndexerTransportTests(unittest.TestCase):
+    def test_only_structural_log_size_error_is_classified_and_private_text_dropped(self):
+        request={'jsonrpc':'2.0','id':1,'method':'eth_getLogs','params':[]}
+        for code,message,expected in [
+            (-32602,'Log response size exceeded. private-provider-detail','rpc_log_range_too_large'),
+            (-32602,'invalid address','http_400'),(-32000,'Log response size exceeded','http_400')]:
+            with self.subTest(code=code,message=message):
+                stream=io.BytesIO(json.dumps({'error':{'code':code,'message':message}}).encode())
+                def opened(*args,**kwargs):raise HTTPError('https://private.invalid/secret',400,'secret',{},stream)
+                with self.assertRaises(DataError) as caught:
+                    indexer_transport(opener=opened)('https://private.invalid/secret',request)
+                self.assertEqual(str(caught.exception),expected)
+                self.assertTrue(stream.closed)
+
+    def test_budget_is_shared_across_transports_and_counts_batch_items(self):
+        budget=RequestBudget(3)
+        def opened(*args,**kwargs):return io.BytesIO(b'{"result":[]}')
+        first=indexer_transport(budget=budget,opener=opened)
+        second=indexer_transport(budget=budget,opener=opened)
+        first('https://private.invalid',{'method':'eth_chainId'})
+        second('https://private.invalid',[{},{}])
+        self.assertEqual(budget.calls,3)
+        with self.assertRaisesRegex(DataError,'indexer_rpc_budget_exhausted'):
+            first('https://private.invalid',{})
 
 
 if __name__=='__main__':unittest.main()

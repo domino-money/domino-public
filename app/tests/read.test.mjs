@@ -23,6 +23,7 @@ const { createBridgeSource, READ_HEADERS, READ_INIT } = built('bridgeSource');
 const { BRIDGE_RETRY } = built('pipeline');
 const { ERROR_CLASS } = built('errors');
 const { createScheduledSource, GATEWAY_BUDGET, BUDGET_RESERVE } = built('scheduler');
+const { createPublicMetadataCache, TOKEN_METADATA_CACHE_MS } = built('publicMetadataCache');
 const { describeFailure, reasonText } = built('describe');
 const decimal = built('decimal');
 const project = built('project');
@@ -2176,7 +2177,7 @@ test('G2: a failed snapshot is never shown or said: the same load reads the pool
     mark = wire().length;
     clock.advance(SNAPSHOT_RETRY_MS);
     const back = await settled(provider, () => provider.refresh());
-    assert.deepEqual(wire().slice(mark), ['POST markets-snapshot'], `${label}: five minutes on it is asked again, and its fresh entries need nothing more`);
+    assert.deepEqual(wire().slice(mark), ['POST markets-snapshot', 'POST token', 'POST token', 'POST token'], `${label}: five minutes on the snapshot is asked again and token metadata past its own TTL is revalidated`);
     assert.deepEqual(back.result.markets.map((m) => m.provenance.origin), ['markets-snapshot', 'markets-snapshot'], label);
   }
 });
@@ -2467,13 +2468,13 @@ async function drain() {
 }
 
 /** The app's provider over the bridge on a fake clock, on a page whose visibility the test sets, holding quiet re-asks as Home does. */
-function quietProvider(answer, enabledReads = PRODUCTION_READS, { wrap = (fetch) => fetch } = {}) {
+function quietProvider(answer, enabledReads = PRODUCTION_READS, { wrap = (fetch) => fetch, refreshMs = 0 } = {}) {
   const bridge = stubBridge(answer, { capabilities: capabilitiesListing(enabledReads) });
   const clock = fakeClock();
   const source = createScheduledSource(createBridgeSource({ enabled: true, validators: runtime, fetch: wrap(bridge.fetch), clock }), { clock });
   const page = { hidden: false, listeners: new Set() };
   const visibility = { hidden: () => page.hidden, onChange: (listener) => (page.listeners.add(listener), () => page.listeners.delete(listener)) };
-  const provider = createReadMarketsProvider({ source, poolIds: BUDGET_IDS, kind: 'bridge', clock, visibility });
+  const provider = createReadMarketsProvider({ source, poolIds: BUDGET_IDS, kind: 'bridge', clock, visibility, refreshMs });
   const phases = [];
   const viewer = provider.subscribe(() => phases.push(provider.getSnapshot().phase));
   const setHidden = (hidden) => {
@@ -2483,6 +2484,115 @@ function quietProvider(answer, enabledReads = PRODUCTION_READS, { wrap = (fetch)
   const posts = () => bridge.wire.filter((r) => r.method === 'POST').map((r) => [r.path.replace('/api/read/v1/', ''), r.body.poolId ?? r.body.token]);
   return { provider, clock, posts, phases, setHidden, viewer };
 }
+
+test('visible successful rows refresh in place, pause while hidden or unmounted, and revalidate on the next visible visit', async () => {
+  const { provider, clock, posts, phases, setHidden, viewer } = quietProvider(budgetAnswer, PRODUCTION_READS, { refreshMs: 60_000 });
+  let release = provider.recoverQuietly();
+  const first = await settled(provider, () => provider.ensure());
+  const mark = posts().length;
+  phases.length = 0;
+  clock.advance(59_999); await drain();
+  assert.equal(posts().length, mark);
+  clock.advance(1); await drain();
+  assert.deepEqual(posts().slice(mark), [['pool-market', POOL_A], ['pool-market', POOL_Z]], 'fresh metadata is reused and only pool figures are revalidated');
+  assert.equal(phases.includes('loading'), false, 'background revalidation keeps usable rows visible');
+  assert.notEqual(provider.getSnapshot().result.markets[0].provenance.market.receivedAt, first.result.markets[0].provenance.market.receivedAt);
+  setHidden(true);
+  const hiddenMark = posts().length;
+  clock.advance(60_000); await drain();
+  assert.equal(posts().length, hiddenMark, 'hidden pages do not ask');
+  setHidden(false); clock.advance(0); await drain();
+  assert.equal(posts().length, hiddenMark + 2, 'one refresh after becoming visible, without catching up missed intervals');
+  release(); viewer();
+  const awayMark = posts().length;
+  clock.advance(600_000); await drain();
+  assert.equal(posts().length, awayMark, 'no mounted holder means no polling');
+  const back = provider.subscribe(() => undefined);
+  provider.ensure(); release = provider.recoverQuietly();
+  clock.advance(0); await drain();
+  assert.deepEqual(posts().slice(awayMark).map(([route]) => route), WIRE_ORDER, 'expired metadata is read again on the next visit');
+  release(); back();
+});
+
+test('leaving or hiding during successful refresh aborts it and the next visible visit still revalidates', async () => {
+  for (const reason of ['hidden', 'unmounted']) {
+    let hang = false;
+    const attempted = [];
+    const wrap = (fetch) => async (path, init) => {
+      if (hang && init.method === 'POST') {
+        attempted.push(init.signal);
+        await new Promise(() => undefined);
+      }
+      return fetch(path, init);
+    };
+    const { provider, clock, posts, setHidden, viewer } = quietProvider(budgetAnswer, PRODUCTION_READS, { refreshMs: 60_000, wrap });
+    let release = provider.recoverQuietly();
+    const first = await settled(provider, () => provider.ensure());
+    const mark = posts().length;
+    hang = true; clock.advance(60_000); await drain();
+    assert.equal(attempted.length, 1);
+    if (reason === 'hidden') setHidden(true);
+    else { release(); viewer(); clock.advance(LEAVE_GRACE_MS); }
+    await drain();
+    assert.equal(attempted[0].aborted, true, reason);
+    assert.equal(provider.getSnapshot(), first, 'an abandoned refresh does not renew the old observations');
+    hang = false;
+    let back = viewer;
+    if (reason === 'hidden') setHidden(false);
+    else { back = provider.subscribe(() => undefined); provider.ensure(); release = provider.recoverQuietly(); }
+    clock.advance(0); await drain();
+    assert.equal(posts().length, mark + 2, 'revalidation was not lost with the cancelled read');
+    release(); back();
+  }
+});
+
+test('public metadata cache coalesces canonical addresses, preserves observation age, expires, and isolates source instances', async () => {
+  const clock = fakeClock();
+  const address = `0x${'ab'.repeat(20)}`;
+  const fixture = fixtures({ token: [{ fixture: gateway('token.success'), mutate: (data) => ({ ...data, asset: { ...data.asset, address } }) }] }, { clock });
+  const source = createPublicMetadataCache(createScheduledSource(fixture, { clock }), clock);
+  const [first, joined] = await Promise.all([source.read('token', { token: address.toUpperCase().replace('0X', '0x') }), source.read('token', { token: address })]);
+  assert.equal(first.state, 'ok'); assert.equal(joined.state, 'ok');
+  assert.equal(fixture.requests.length, 1, 'canonical equivalent requests share the scheduled flight');
+  clock.advance(10_000);
+  const cached = await source.read('token', { token: address }, { deadlineAt: clock.monotonic() + 1000 });
+  assert.equal(fixture.requests.length, 1);
+  assert.equal(cached.provenance.receivedAt, first.provenance.receivedAt);
+  assert.equal(cached.provenance.receivedMonotonic, first.provenance.receivedMonotonic);
+  assert.equal(cached.provenance.attempts, 0);
+  assert.equal(cached.provenance.deadlineAt, clock.monotonic() + 1000);
+  const stopped = new AbortController(); stopped.abort();
+  assert.equal((await source.read('token', { token: address }, { signal: stopped.signal })).state, 'aborted');
+  assert.equal((await source.read('token', { token: address }, { deadlineAt: clock.monotonic() })).state, 'unavailable');
+  const other = createPublicMetadataCache(fixture, clock);
+  await other.read('token', { token: address });
+  assert.equal(fixture.requests.length, 2, 'another origin/source has a separate cache');
+  clock.advance(TOKEN_METADATA_CACHE_MS - 10_000);
+  const refreshed = await source.read('token', { token: address });
+  assert.equal(fixture.requests.length, 3);
+  assert.ok(refreshed.provenance.receivedMonotonic > first.provenance.receivedMonotonic);
+});
+
+test('public metadata cache never caches partial metadata or private reads, and clears public entries after a gate failure', async () => {
+  const clock = fakeClock();
+  const fixture = fixtures({
+    token: [{ fixture: gateway('token.missing-decimals') }, { fixture: gateway('token.success') }],
+    'pool-market': [{ transport: 'gate401' }],
+    'wallet-assets': [{ fixture: gateway('wallet-assets.success') }],
+  }, { clock });
+  const source = createPublicMetadataCache(fixture, clock);
+  const first = await source.read('token', tokenRequest);
+  assert.notEqual(first.data.asset.readStatus, 'available');
+  assert.equal((await source.read('token', tokenRequest)).data.asset.readStatus, 'available');
+  await source.read('token', tokenRequest);
+  assert.equal(fixture.requests.filter((r) => r.route === 'token').length, 2);
+  assert.equal((await source.read('pool-market', requestFor(catalog, 'pool-market'))).state, 'gate_required');
+  await source.read('token', tokenRequest);
+  assert.equal(fixture.requests.filter((r) => r.route === 'token').length, 3, 'the gate invalidated earlier public cache entries');
+  await source.read('wallet-assets', requestFor(catalog, 'wallet-assets'));
+  await source.read('wallet-assets', requestFor(catalog, 'wallet-assets'));
+  assert.equal(fixture.requests.filter((r) => r.route === 'wallet-assets').length, 2);
+});
 
 test('quiet re-ask: a token still busy after R-1 is asked again on its own once its wait has passed, that token alone, and the rows complete in place', async () => {
   let busy = true;

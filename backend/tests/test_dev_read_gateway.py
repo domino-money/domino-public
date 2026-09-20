@@ -533,6 +533,26 @@ class DevGatewayTests(IdentityFixtures, unittest.TestCase):
         self.assertEqual(self.post().status_code, 504)
         self.assertEqual(len(self.upstream.calls), before)
 
+    def test_stored_reads_release_the_shared_development_worker_slot(self):
+        # The dev gateway intentionally remains maxInFlight=1. A stored reader
+        # route must not release a stored gateway slot it never acquired.
+        for _ in range(2):
+            self.assertEqual(self.post('markets-snapshot', {}).status_code, 200)
+        self.assertEqual(self.post().status_code, 200)
+        self.assertTrue(self.gateway.gate.slot.acquire(blocking=False))
+        try:
+            self.assertEqual(self.post('markets-snapshot', {}).status_code, 429)
+        finally:
+            self.gateway.gate.slot.release()
+        self.assertTrue(self.gateway.gate.stored_slot.acquire(blocking=False))
+        self.gateway.gate.stored_slot.release()
+
+    def test_failed_stored_dispatch_releases_the_shared_development_slot(self):
+        with patch('dev_read_gateway.anyio.to_thread.run_sync', side_effect=RuntimeError('dispatch failed')):
+            self.assertEqual(self.post('markets-snapshot', {}).status_code, 503)
+        self.assertEqual(self.post('markets-snapshot', {}).status_code, 200)
+        self.assertEqual(self.post().status_code, 200)
+
     def test_cancelling_http_caller_does_not_release_actual_worker_admission(self):
         entered, release = Event(), Event()
         original = self.upstream.request

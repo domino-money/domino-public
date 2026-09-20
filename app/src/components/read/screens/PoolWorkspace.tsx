@@ -1,7 +1,9 @@
-import { useEffect, useState, type ReactNode } from 'react'
+import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { agedMarket, percentText, presentMetric, retrievedAgeSeconds, retrievedText, type Metric } from '../../../lib/markets'
 import { reasonText } from '../../../lib/read/describe'
 import { projectMarketRow } from '../../../lib/read/project'
+import { overviewPoolOption, storedPoolRead } from '../../../lib/read/publicOverview'
+import { whenVisibleAfter } from '../../../lib/read/screens/quietRead'
 import { COPY, failureText } from '../../../lib/read/screens/copy'
 import { protocolFee } from '../../../lib/read/screens/figures'
 import { NATIVE_CURRENCY, addressKey, shortAddress } from '../../../lib/read/screens/identity'
@@ -19,7 +21,7 @@ import { CopyButton } from './CopyButton'
 import { PoolActivityCard } from './PoolActivityCard'
 import { PoolAprEstimate } from './PoolAprEstimate'
 import { PoolPositionsCard } from './PoolPositionsCard'
-import { PoolPriceChart } from './PoolPriceChart'
+import { PoolHistoryChart } from './PoolHistoryChart'
 import { PoolRangeControls } from './PoolRangeControls'
 import { ProviderFigure } from './ProviderFigure'
 import { SymbolText } from './SymbolText'
@@ -35,22 +37,23 @@ import { SymbolText } from './SymbolText'
 type PlannedRange = { lower: number; upper: number }
 
 /** The routes this page reads only where the page's capabilities list them. */
-type Optional = 'markets-snapshot' | 'pool-metrics' | 'pool-activity' | 'pool-positions'
+type Optional = 'markets-snapshot' | 'pool-metrics' | 'pool-activity' | 'pool-positions' | 'overview'
 type Listed = Record<Optional, boolean>
-const OPTIONAL: readonly Optional[] = ['markets-snapshot', 'pool-metrics', 'pool-activity', 'pool-positions']
-const NOTHING_LISTED: Listed = { 'markets-snapshot': false, 'pool-metrics': false, 'pool-activity': false, 'pool-positions': false }
+const OPTIONAL: readonly Optional[] = ['markets-snapshot', 'pool-metrics', 'pool-activity', 'pool-positions', 'overview']
+const NOTHING_LISTED: Listed = { 'markets-snapshot': false, 'pool-metrics': false, 'pool-activity': false, 'pool-positions': false, overview: false }
 
 /** Which optional routes are listed, from the source's capabilities answer: no read, no place in the queue. A failed answer lists nothing. */
 async function listedRoutes(source: ReadSource, signal: AbortSignal): Promise<Listed> {
   const check = source.routeEnabled
   if (!check) return NOTHING_LISTED
-  const answers = await Promise.all(OPTIONAL.map((route) => check.call(source, route, { signal }).then((answer) => answer.state === 'enabled', () => false)))
-  return { 'markets-snapshot': answers[0], 'pool-metrics': answers[1], 'pool-activity': answers[2], 'pool-positions': answers[3] }
+  const routes = source.supportsStoredReads ? OPTIONAL : OPTIONAL.filter((route) => route !== 'overview')
+  const answers = await Promise.all(routes.map((route) => check.call(source, route, { signal }).then((answer) => answer.state === 'enabled', () => false)))
+  return { 'markets-snapshot': answers[0], 'pool-metrics': answers[1], 'pool-activity': answers[2], 'pool-positions': answers[3], overview: answers[4] ?? false }
 }
 
 type OkMarket = Extract<ReadOutcome<'pool-market'>, { state: 'ok' }>
 /** The page's market figures for one pool: the last good answer and which read it was, and the last failure since. */
-type MarketAnswer = { key: string; ok: OkMarket | null; origin: 'stored' | 'read' | null; failure: Exclude<ScreenOutcome<'pool-market'>, { state: 'ok' | 'aborted' }> | null }
+type MarketAnswer = { key: string; ok: OkMarket | null; origin: 'stored' | 'read' | 'overview' | null; acquiring?: boolean; failure: Exclude<ScreenOutcome<'pool-market' | 'overview'>, { state: 'ok' | 'aborted' }> | null }
 
 /**
  * A stored answer's provider figures as the page shows them until the pool's
@@ -125,6 +128,8 @@ export function PoolWorkspace({ source, option, onOption, range, onRange, action
   actions?: ReactNode
 }) {
   const poolId = option.key
+  const optionChanged = useRef(onOption)
+  useEffect(() => { optionChanged.current = onOption }, [onOption])
   const [checked, setChecked] = useState<{ key: string; listed: Listed } | null>(null)
   const [market, setMarket] = useState<MarketAnswer | null>(null)
   const [marketAttempt, setMarketAttempt] = useState(0)
@@ -134,6 +139,7 @@ export function PoolWorkspace({ source, option, onOption, range, onRange, action
   const listed: Listed | null = !checkable ? NOTHING_LISTED : checked?.key === poolId ? checked.listed : null
   const ready = listed !== null
   const storedFirst = listed?.['markets-snapshot'] === true
+  const bundled = listed?.overview === true
 
   useEffect(() => {
     if (!checkable) return
@@ -148,8 +154,25 @@ export function PoolWorkspace({ source, option, onOption, range, onRange, action
     if (!ready) return
     const controller = new AbortController()
     const { signal } = controller
+    let cancelRefresh: (() => void) | null = null
     const lean = { poolId, includePriceHistory: false }
-    void (async () => {
+    const load = async () => {
+      if (bundled) {
+        const overview = await readWithin(source, 'overview', { poolIds: [poolId] }, { signal })
+        if (signal.aborted || overview.state === 'aborted') return
+        if (overview.state === 'ok') {
+          const entry = overview.data.pools.find((pool) => pool.poolId === poolId)
+          const outcome = entry ? storedPoolRead(entry, overview.data.generatedAt, overview.provenance) : null
+          const next = overviewPoolOption(overview, poolId)
+          setMarket({ key: poolId, ok: outcome, origin: 'overview', acquiring: entry?.acquisition.status === 'pending', failure: null })
+          if (next) optionChanged.current(next)
+          cancelRefresh = whenVisibleAfter(5_000, () => setMarketAttempt((n) => n + 1))
+        } else {
+          setMarket((current) => current?.key === poolId ? { ...current, failure: overview } : { key: poolId, ok: null, origin: null, failure: overview })
+          if (await askAgainLater(overview, marketAttempt, signal)) setMarketAttempt((n) => n + 1)
+        }
+        return
+      }
       // The stored snapshot paints the figures first; the pool's own read then brings them up to date, with the estimate.
       // A store that holds nothing for the pool (503 snapshot_not_built), or any other failed stored read, shows
       // nothing: the pool's own read follows it through the same paced queue, as it follows a stored answer.
@@ -167,9 +190,11 @@ export function PoolWorkspace({ source, option, onOption, range, onRange, action
       // A stored answer already on screen stays there; the failure only says why nothing newer came.
       setMarket((current) => (current?.key === poolId ? { ...current, failure: outcome } : { key: poolId, ok: null, origin: null, failure: outcome }))
       if (await askAgainLater(outcome, marketAttempt, signal)) setMarketAttempt((n) => n + 1)
-    })()
-    return () => controller.abort()
-  }, [source, poolId, ready, storedFirst, marketAttempt])
+    }
+    if (bundled && typeof document !== 'undefined' && document.hidden) cancelRefresh = whenVisibleAfter(0, () => void load())
+    else void load()
+    return () => { controller.abort(); cancelRefresh?.() }
+  }, [source, poolId, ready, storedFirst, bundled, marketAttempt])
 
   const answered = market?.key === poolId ? market : null
   const metricsListed = listed?.['pool-metrics'] === true
@@ -186,7 +211,7 @@ export function PoolWorkspace({ source, option, onOption, range, onRange, action
   const shown = row ? agedMarket(row, now) : null
   const provenance = shown?.provenance
   const retrieved = retrievedText(provenance ? retrievedAgeSeconds(provenance.market, now) : null)
-  const loading = answered === null
+  const loading = answered === null || (answered.ok === null && answered.acquiring === true)
   const failure = answered && !answered.ok ? answered.failure : null
   const failed = failure ? sentence(failureText(failure, 'pools')) : undefined
   const [currency0, currency1] = option.currencies
@@ -274,17 +299,7 @@ export function PoolWorkspace({ source, option, onOption, range, onRange, action
     </div>
 
     <div className="mt-8">
-      {shown ? <PoolPriceChart market={shown} /> : (
-        <div className="dm-card p-5">
-          <h2 className="dm-display dm-display-card">USD price and volume</h2>
-          {/* Who reports the candles is the plot's title and data, never a caption under the heading. */}
-          <div className="dm-pool-plot dm-dots-chart mt-4" title="Hourly candles reported by GeckoTerminal." data-chart-provider="GeckoTerminal">
-            <div className="dm-pool-plot-empty">
-              {loading ? <Skeleton className="dm-pool-plot-baseline" /> : <Dash title={failed} />}
-            </div>
-          </div>
-        </div>
-      )}
+      <PoolHistoryChart source={source} option={option} market={shown} loading={loading} failed={failed} />
     </div>
 
     <div className="dm-card mt-6 animate-rise p-5">
@@ -311,7 +326,7 @@ export function PoolWorkspace({ source, option, onOption, range, onRange, action
         <div>
           <dt>Verification</dt>
           <dd>
-            Verified at block {option.block} · {option.kind === 'discovery' ? 'found by DexScreener discovery' : `from the catalogue (${option.catalogue?.source === 'initialize_event' ? 'initialize event' : 'verified observation'} at block ${option.catalogue?.block})`}
+            Verified at block {option.block} · {option.kind === 'stored' ? 'stored on-chain observation' : option.kind === 'discovery' ? 'found by DexScreener discovery' : `from the catalogue (${option.catalogue?.source === 'initialize_event' ? 'initialize event' : 'verified observation'} at block ${option.catalogue?.block})`}
             {option.requestedById && ' · asked for by id'}
           </dd>
         </div>

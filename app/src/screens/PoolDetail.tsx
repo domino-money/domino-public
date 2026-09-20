@@ -6,12 +6,14 @@ import { TokenMarkPair } from '../components/TokenIcon'
 import { EmptyState, LinkButton, Skeleton, Stat, StatStrip } from '../components/ui'
 import { SELECTED_POOL_CATALOGUE, SELECTED_POOLS_COMMON_TOKEN, inPoolOrder, type PoolCatalogueEntry } from '../config/selectedPoolCatalogue'
 import { verifyCandidate } from '../lib/read/screens/catalogueSession'
+import { overviewPoolOption } from '../lib/read/publicOverview'
 import { failureText } from '../lib/read/screens/copy'
 import { parseAddressInput, poolIdKey, shortAddress } from '../lib/read/screens/identity'
 import { poolPrice, presetRange } from '../lib/read/screens/poolRange'
 import type { PoolOption } from '../lib/read/screens/poolsList'
 import { useReadSource } from '../lib/read/screens/readContext'
-import { askAgainLater } from '../lib/read/screens/screenRead'
+import { askAgainLater, readWithin } from '../lib/read/screens/screenRead'
+import { whenVisibleAfter } from '../lib/read/screens/quietRead'
 import type { TokenDisplay } from '../lib/read/types'
 
 /*
@@ -131,7 +133,34 @@ export function PoolDetail({ poolId }: { poolId: string }) {
     if (!source || !id || !tokenKey || !key) return
     const controller = new AbortController()
     const { signal } = controller
-    void verifyCandidate(source, tokenKey, null, poolIdKey(id), { signal }).then(async (result) => {
+    let cancel: (() => void) | null = null
+    void (async () => {
+      const capability = source.supportsStoredReads ? await source.routeEnabled?.('overview', { signal }) : undefined
+      if (signal.aborted) return
+      if (capability?.state === 'enabled') {
+        const overview = await readWithin(source, 'overview', { poolIds: [id] }, { signal })
+        if (signal.aborted || overview.state === 'aborted') return
+        if (overview.state !== 'ok') {
+          const text = failureText(overview, 'pools')
+          setState({ key, resolution: { kind: 'failed', code: text.code, reason: [text.title, text.detail].filter(Boolean).join('. ') } })
+          if (await askAgainLater(overview, attempt, signal)) setAsked({ key, attempt: attempt + 1 })
+          return
+        }
+        const option = overviewPoolOption(overview, id)
+        if (option && option.currencies.some((currency) => currency.address === tokenKey)) {
+          const price = poolPrice(option, Date.now())
+          setState({ key, resolution: { kind: 'verified', option, range: price.state === 'usable' ? presetRange(price.tick, price.tickSpacing, 'standard') : null } })
+        } else if (overview.data.pools.some((entry) => entry.poolId === id && entry.acquisition.status === 'pending')) {
+          cancel = whenVisibleAfter(5_000, () => setAsked({ key, attempt: attempt + 1 }))
+        } else setState({ key, resolution: { kind: 'not_returned' } })
+        return
+      }
+      if (capability?.state === 'failed') {
+        const text = failureText(capability.outcome, 'pools')
+        setState({ key, resolution: { kind: 'failed', code: text.code, reason: [text.title, text.detail].filter(Boolean).join('. ') } })
+        return
+      }
+      const result = await verifyCandidate(source, tokenKey, null, poolIdKey(id), { signal })
       // A verification that comes back after the page moved on to another pool lands nowhere.
       if (signal.aborted) return
       if (result.failure) {
@@ -147,8 +176,8 @@ export function PoolDetail({ poolId }: { poolId: string }) {
       }
       const price = poolPrice(result.option, Date.now())
       setState({ key, resolution: { kind: 'verified', option: result.option, range: price.state === 'usable' ? presetRange(price.tick, price.tickSpacing, 'standard') : null } })
-    })
-    return () => controller.abort()
+    })()
+    return () => { controller.abort(); cancel?.() }
   }, [source, id, tokenKey, key, attempt])
 
   // A price read again moves the pool's price; the range drawn on it stays.

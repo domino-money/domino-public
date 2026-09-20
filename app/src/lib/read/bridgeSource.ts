@@ -149,7 +149,7 @@ export async function rawReplyFrom(response: Response, signal?: AbortSignal): Pr
 
 export interface BridgeOptions {
   /** Closed same-origin namespaces; never supplied by a request or URL parameter. */
-  namespace?: 'v1' | 'v2'
+  namespace?: 'v1' | 'v2' | 'v3'
   /** CAPABILITIES.liveDataEnabled. False means no request is ever made. */
   enabled: boolean
   validators: ReadValidators
@@ -175,7 +175,7 @@ export function createBridgeSource(options: BridgeOptions): BridgeSource {
   const { enabled, validators, policy = BRIDGE_RETRY, clock = realClock } = options
   const fetchImpl: FetchLike = options.fetch ?? ((input, init) => fetch(input, init))
   let capabilities: SharedCheck | null = null
-  const prefix = options.namespace === 'v2' ? '/api/read/v2/' : READ_PREFIX
+  const prefix = options.namespace ? `/api/read/${options.namespace}/` : READ_PREFIX
   const headers = { ...READ_HEADERS, [CONTRACT_HEADER]: validators.CONTRACT_VERSION }
 
   const transport =

@@ -19,7 +19,7 @@ import { test } from 'node:test';
 import * as runtime from '../../api-contracts/read-v1/runtime.mjs';
 
 const require = createRequire(import.meta.url);
-const { PRODUCER_PIN, ACCEPTED_READ_CONTRACTS, REQUEST_READ_CONTRACT, READ_V2_PIN, PERFORMANCE_V2_PIN, EXECUTION_V1_PIN } = require('../.test-build/app/src/lib/read/pin.js');
+const { PRODUCER_PIN, ACCEPTED_READ_CONTRACTS, REQUEST_READ_CONTRACT, READ_V2_PIN, READ_V3_PIN, PERFORMANCE_V2_PIN, EXECUTION_V1_PIN } = require('../.test-build/app/src/lib/read/pin.js');
 
 const CONTRACTS = resolve(import.meta.dirname, '../../api-contracts');
 const sha256 = (bytes) => createHash('sha256').update(bytes).digest('hex');
@@ -30,6 +30,14 @@ test('read-v2 estimate pin matches the package and every consumed file', () => {
   assert.equal(sha256(bytes), READ_V2_PIN.manifestSha256);
   assert.equal(manifest.contractVersion, READ_V2_PIN.version);
   for (const file of manifest.files) assert.equal(sha256(readFileSync(join(CONTRACTS, 'read-v2', file.path))), file.sha256, file.path);
+});
+
+test('read-v3 stored public read pin matches the package and every consumed file', () => {
+  const bytes = readFileSync(join(CONTRACTS, 'read-v3', 'manifest.json'));
+  const manifest = JSON.parse(bytes);
+  assert.equal(sha256(bytes), READ_V3_PIN.manifestSha256);
+  assert.equal(manifest.contractVersion, READ_V3_PIN.version);
+  for (const file of manifest.files) assert.equal(sha256(readFileSync(join(CONTRACTS, 'read-v3', file.path))), file.sha256, file.path);
 });
 
 test('the pin names exactly the four producer packages', () => {

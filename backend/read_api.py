@@ -22,6 +22,12 @@ from catalogue import configured_catalogue
 from pool_requests import configured_pool_requests
 from read_service import ReadService
 from read_contract import CONTRACT_VERSION, RESPONSE_MODELS, ErrorResponse, validate_response, sanitize_error, unsigned_string_pattern
+from public_data_contract import (CONTRACT_VERSION as V3_CONTRACT_VERSION,
+                                  REQUEST_MODELS as V3_REQUEST_MODELS,
+                                  RESPONSE_MODELS as V3_RESPONSE_MODELS,
+                                  OverviewRequest, HistoryRequest, SearchRequest,
+                                  validate_response as validate_v3_response,
+                                  validate_request_response as validate_v3_request_response)
 import hop_log
 from read_deadline import current_read_deadline, read_deadline, read_timeout
 
@@ -115,12 +121,13 @@ class ReadGate:
     Provider reads (chain RPC or market providers) keep the single slot and
     start-interval they always had: their ceilings and the shared deadline
     are per operation, so concurrent expensive reads are not admitted.
-    Stored reads (`catalogue`, `pool-metrics`) touch only PostgreSQL and get
-    their own slot so a slow provider read cannot serialise them (#157).
+    Stored catalogue/snapshot reads get their own bounded slot so a slow
+    provider read cannot serialise them. Pool metrics still verify canonicality
+    through RPC and therefore belong to the provider lane.
     """
 
     PROVIDER, STORED = 'provider', 'stored'
-    STORED_ROUTES = frozenset({'catalogue', 'pool-metrics'})
+    STORED_ROUTES = frozenset({'catalogue', 'markets-snapshot', *V3_REQUEST_MODELS})
     # Admission stays fail-fast with a client backoff, the reviewed design of
     # #157. What it never did was tell the truth about the wait: a constant one
     # second against a slot a six-second read owns sent three visitors opening
@@ -132,14 +139,28 @@ class ReadGate:
     # jitter alone without this tolerance.
     INTERVAL_TOLERANCE = 0.05
 
-    def __init__(self, interval=1, clock=time.monotonic):
+    def __init__(self, interval=1, clock=time.monotonic, *, stored_capacity=1, stored_interval=None):
+        if type(stored_capacity) is not int or not 1 <= stored_capacity <= 8:
+            raise ValueError('invalid_stored_capacity')
         self.slot, self.lock = BoundedSemaphore(1), Lock()
         self.interval, self.clock, self.last = interval, clock, float('-inf')
-        self.stored_slot, self.stored_last = BoundedSemaphore(1), float('-inf')
+        self.stored_interval = interval if stored_interval is None else stored_interval
+        if type(self.stored_interval) not in (int,float) or not math.isfinite(self.stored_interval) or self.stored_interval < 0:
+            raise ValueError('invalid_stored_interval')
+        self.stored_capacity,self.stored_inflight = stored_capacity,0
+        self.stored_slot, self.stored_last = BoundedSemaphore(stored_capacity), float('-inf')
         self.held = {self.PROVIDER: None, self.STORED: None}
 
-    def kind_of(self, route):
-        return self.STORED if route in self.STORED_ROUTES else self.PROVIDER
+    def kind_of(self, route, body=None):
+        """Classify actual work only after the route's request was validated.
+
+        Unknown/new routes conservatively use provider capacity until their
+        implementation is proven cache-only. The explicit snapshot variant of
+        pool-market never falls back to provider work on a cache miss.
+        """
+        snapshot = (route == 'pool-market' and isinstance(body, dict)
+                    and body.get('fromSnapshot') is True)
+        return self.STORED if route in self.STORED_ROUTES or snapshot else self.PROVIDER
 
     def retry_after(self, kind=PROVIDER):
         """The delay this gate can actually justify, never a hopeful constant.
@@ -152,8 +173,11 @@ class ReadGate:
         with self.lock:
             last = self.stored_last if kind == self.STORED else self.last
             started = self.held[kind]
-            interval_left = self.interval - (self.clock() - last)
+            interval = self.stored_interval if kind == self.STORED else self.interval
+            interval_left = interval - (self.clock() - last)
             slot_left = 0.0 if started is None else started[1] - (self.clock() - started[0])
+            if kind == self.STORED and self.stored_capacity > 1:
+                slot_left = 1 if self.stored_inflight else 0
         return max(self.MIN_RETRY_AFTER,
                    min(self.MAX_RETRY_AFTER, math.ceil(max(interval_left, slot_left))))
 
@@ -162,12 +186,14 @@ class ReadGate:
         if not slot.acquire(blocking=False):
             return False
         with self.lock:
+            interval = self.stored_interval if kind == self.STORED else self.interval
             if self.clock() - (self.stored_last if kind == self.STORED
-                               else self.last) < self.interval - self.INTERVAL_TOLERANCE:
+                               else self.last) < interval - self.INTERVAL_TOLERANCE:
                 slot.release()
                 return False
             if kind == self.STORED:
                 self.stored_last = self.clock()
+                self.stored_inflight += 1
             else:
                 self.last = self.clock()
             # Record when this read started and what it may still spend, so a
@@ -178,12 +204,20 @@ class ReadGate:
                     budget = read_timeout(self.MAX_RETRY_AFTER)
                 except DataError:
                     budget = 0.0
-            self.held[kind] = (self.clock(), budget)
+            if self.held[kind] is None:
+                self.held[kind] = (self.clock(), budget)
         return True
 
     def leave(self, kind=PROVIDER):
         with self.lock:
-            self.held[kind] = None
+            if kind == self.STORED:
+                if self.stored_inflight < 1:
+                    raise ValueError('stored_admission_not_held')
+                self.stored_inflight -= 1
+                if self.stored_inflight == 0:
+                    self.held[kind] = None
+            else:
+                self.held[kind] = None
         (self.stored_slot if kind == self.STORED else self.slot).release()
 
 
@@ -265,22 +299,32 @@ def create_app(service=None, *, gate=None, read_budget_seconds=60,
     if service is None:
         config = load_config()
         catalogue = configured_catalogue()
+        public_data = None
+        if catalogue is not None and os.environ.get('DOMINO_PUBLIC_DATA') == '1':
+            from public_observations import PgPublicData
+            from public_data_service import PublicDataService
+            public_data = PublicDataService(PgPublicData(catalogue))
         service = ReadService(rpc_urls=configured_rpc_urls(config, os.environ.get('DOMINO_DISCOVERY_RPC_URL')),
                               historical_rpc_url=(configured_history_rpc_url(config)
                                                   if config.get('version') == 3 else None),
                               inventory_url=os.environ.get('DOMINO_INVENTORY_RPC_URL') or config.get('inventoryUrl'),
                               catalogue=catalogue,
                               requests=configured_pool_requests(catalogue),
+                              public_data=public_data,
                               # The store lives beside the reader's other private
                               # runtime files; a restart serves it with its real age.
                               snapshot=MarketsSnapshot(clock=time.time, wall_clock=time.time,
                                                        path=SNAPSHOT_STORE))
-    gate = gate or ReadGate()
+        if public_data is not None:
+            service.market_cache.reserve_provider = public_data.repository.reserve_provider
+    gate = gate or (ReadGate(stored_capacity=4,stored_interval=0)
+                   if getattr(service,'public_data',None) is not None else ReadGate())
     # A schema export or a test double may hand in a service with no store;
     # the refresher exists only for a service that can feed one.
     snapshot = getattr(service, 'snapshot', None)
     refresher = None
-    if refresh_seconds and snapshot is not None and hasattr(service, 'pool_market'):
+    if (refresh_seconds and snapshot is not None and hasattr(service, 'pool_market')
+            and getattr(service, 'public_data', None) is None):
         refresher = SnapshotRefresher(snapshot, read=lambda pool_id: service.pool_market(pool_id),
                                       gate=gate, interval=refresh_seconds, budget_seconds=read_budget_seconds)
     # The refresher starts with the server, not with the app object: a test
@@ -306,6 +350,8 @@ def create_app(service=None, *, gate=None, read_budget_seconds=60,
         notes = hop_log.open_notes()
         request_id = (hop_log.checked_request_id(request.headers.get('x-domino-request-id'))
                       or secrets.token_hex(16))
+        v3 = request.url.path.startswith('/v3/read/')
+        contract_version = V3_CONTRACT_VERSION if v3 else CONTRACT_VERSION
         # Bounding a liveness answer by the read budget lets a reader that is
         # only slow to warm up report 504, which the gateway reads as the whole
         # upstream being unavailable. A probe answers on its own bound.
@@ -336,15 +382,16 @@ def create_app(service=None, *, gate=None, read_budget_seconds=60,
                 # unexpected mid-hop failure is an upstream unavailability.
                 hop_log.note(reason='upstream_unavailable')
                 response = JSONResponse({'error': 'upstream_unavailable'}, status_code=503)
-        response.headers['X-Domino-Read-Contract'] = CONTRACT_VERSION
+        response.headers['X-Domino-Read-Contract'] = contract_version
         response.headers['X-Domino-Reader-Generation'] = generation
         # The path never reaches the record: only a declared route name does.
         tail = request.url.path.rsplit('/', 1)[-1]
-        route = (tail if request.url.path == '/v1/read/' + tail and tail in RESPONSE_MODELS
+        route = (tail if (request.url.path == '/v1/read/' + tail and tail in RESPONSE_MODELS
+                         or request.url.path == '/v3/read/' + tail and tail in V3_RESPONSE_MODELS)
                  else {'/health': 'health', '/v1/capabilities': 'capabilities'}.get(
                      request.url.path, 'unmatched'))
         hop_log.emit(service='read-api', requestId=request_id, route=route,
-                     contractVersion=CONTRACT_VERSION, method=request.method,
+                     contractVersion=contract_version, method=request.method,
                      status=response.status_code,
                      durationMs=int((time.monotonic() - opened) * 1000),
                      **hop_log.close_notes(notes))
@@ -368,6 +415,7 @@ def create_app(service=None, *, gate=None, read_budget_seconds=60,
                 # The wait the gate can justify while its provider slot is held;
                 # the gateway relays it instead of guessing.
                 'retryAfterSeconds': None if idle else gate.retry_after(gate.PROVIDER),
+                'storedRetryAfterSeconds': None if stored_idle else gate.retry_after(gate.STORED),
                 'snapshotRefresh': None if refresher is None else refresher.describe(),
                 'snapshotStoreFailures': None if snapshot is None else snapshot.store_failures}
 
@@ -393,8 +441,8 @@ def create_app(service=None, *, gate=None, read_budget_seconds=60,
                 'walletAuthentication': False, 'privateAccounts': False, 'feeApr': False,
                 'suggestions': False, 'ownerTransactions': False, 'automation': False, 'feeCollection': False}
 
-    def run_read(operation, route):
-        kind = gate.kind_of(route)
+    def run_read(operation, route, body=None, *, validator=validate_response):
+        kind = gate.kind_of(route, body)
         if not gate.enter(kind):
             hop_log.note(gate=kind, admitted=False, reason='read_capacity_busy')
             return JSONResponse({'error': 'read_capacity_busy'}, status_code=429,
@@ -404,7 +452,7 @@ def create_app(service=None, *, gate=None, read_budget_seconds=60,
             with read_deadline(read_budget_seconds):
                 result = operation()
                 try:
-                    validate_response(route, result)
+                    validator(route, result)
                 except (ValueError, TypeError):
                     hop_log.note(reason='upstream_contract_mismatch')
                     return JSONResponse({'error': 'upstream_contract_mismatch'}, status_code=502)
@@ -456,23 +504,38 @@ def create_app(service=None, *, gate=None, read_budget_seconds=60,
     def pool_market(body: PoolMarketRequest):
         return run_read(lambda: service.pool_market(body.poolId,
                         include_price_history=body.includePriceHistory, price_token=body.priceToken,
-                        from_snapshot=body.fromSnapshot), 'pool-market')
+                        from_snapshot=body.fromSnapshot), 'pool-market', body.model_dump())
 
     @app.post('/v1/read/markets-snapshot', responses={200: {'model': RESPONSE_MODELS['markets-snapshot']}, **error_responses})
     def markets_snapshot(body: MarketsSnapshotRequest):
-        # Stored snapshot: served outside the provider gate deliberately (#155);
-        # this route never dispatches RPC or provider work.
-        try:
-            result = service.markets_snapshot(body.poolIds)
-            validate_response('markets-snapshot', result)
-        except DataError as error:
-            status, data = sanitize_error(str(error))
-            return JSONResponse(data, status_code=status)
-        except (ValueError, TypeError):
-            return JSONResponse({'error': 'upstream_contract_mismatch'}, status_code=502)
-        response = JSONResponse(result)
-        response.headers['Cache-Control'] = 'no-store'
-        return response
+        # This lane remains available during provider work, but its own slot
+        # bounds concurrent store reads and response validation.
+        return run_read(lambda: service.markets_snapshot(body.poolIds), 'markets-snapshot')
+
+    def stored_public(route, body):
+        def operation():
+            public_data = getattr(service, 'public_data', None)
+            if public_data is None:
+                raise DataError('upstream_unavailable')
+            result = getattr(public_data, route)(**body.model_dump())
+            try:
+                validate_v3_request_response(route, body.model_dump(), result)
+            except (ValueError, TypeError):
+                raise DataError('upstream_contract_mismatch') from None
+            return result
+        return run_read(operation, route, body.model_dump(), validator=validate_v3_response)
+
+    @app.post('/v3/read/overview', responses={200: {'model': V3_RESPONSE_MODELS['overview']}, **error_responses})
+    def overview(body: OverviewRequest):
+        return stored_public('overview', body)
+
+    @app.post('/v3/read/history', responses={200: {'model': V3_RESPONSE_MODELS['history']}, **error_responses})
+    def history(body: HistoryRequest):
+        return stored_public('history', body)
+
+    @app.post('/v3/read/search', responses={200: {'model': V3_RESPONSE_MODELS['search']}, **error_responses})
+    def search(body: SearchRequest):
+        return stored_public('search', body)
 
     return app
 

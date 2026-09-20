@@ -85,6 +85,7 @@ export function withReadBudget(source: ReadSource, options: { budgetMs?: number;
   const listed = source.routeEnabled?.bind(source)
   const budgeted: ReadSource = {
     transport: source.transport,
+    ...(source.supportsStoredReads ? { supportsStoredReads: true as const } : {}),
     // Whether a route is listed is the source's capabilities answer, not a read: it passes through, unbudgeted.
     ...(listed ? { routeEnabled: (route: ReadRoute, opts?: Pick<ReadOptions, 'signal' | 'deadlineAt'>): Promise<RouteCheck> => listed(route, opts) } : {}),
     async read(route, request, options) {

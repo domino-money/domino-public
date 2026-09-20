@@ -118,7 +118,9 @@ def classes_of(hostname, issuer):
 
 
 def validate(snapshot):
-    exact(snapshot, FIELDS, 'invalid_snapshot_fields')
+    fields = (*FIELDS,'publicDataCollectors') if 'publicDataCollectors' in snapshot else FIELDS
+    exact(snapshot, fields, 'invalid_snapshot_fields')
+    require(type(snapshot.get('publicDataCollectors',False)) is bool,'invalid_public_data_collectors')
     require(type(snapshot['version']) is int and snapshot['version'] == 1, 'invalid_snapshot_version')
     require(snapshot['resolver'] == '127.0.0.53', 'invalid_resolver')
     issuer = snapshot['accessIssuer']
@@ -128,6 +130,7 @@ def validate(snapshot):
             and len(set(enabled)) == len(enabled), 'invalid_enabled_roles')
     require(all(role in ROLES and role not in ('operator', 'admin') for role in enabled),
             'unknown_enabled_role')
+    require(not snapshot.get('publicDataCollectors') or 'write' in enabled,'public_collectors_require_writer')
     enabled = tuple(role for role in ROLES if role in enabled)
     exact(snapshot['identities'], ROLES, 'invalid_identity_roles')
     seen_uids = set()
@@ -169,6 +172,8 @@ def validate(snapshot):
     role_hosts = {}
     for role in ROLES:
         wanted = set(CLASSES[role]) if role in enabled else set()
+        if role == 'write' and snapshot.get('publicDataCollectors'):
+            wanted.add('analytics')
         role_hosts[role] = sorted(host for host in pins if classes_of(host, issuer) & wanted)
         for kind in wanted & REQUIRED:
             present = {host for host in pins if kind in classes_of(host, issuer)}
@@ -296,6 +301,8 @@ def render(snapshot):
     metadata[UNIT_DIR + TARGET] = {'uid': 0, 'gid': 0, 'mode': 0o644}
     digest = lambda text: hashlib.sha256(text.encode()).hexdigest()
     pin_scope = json.dumps({'issuer': issuer, 'enabled': enabled, 'pins': pins}, sort_keys=True)
+    if snapshot.get('publicDataCollectors'):
+        pin_scope += ':public-data-collectors'
     return {'version': 1, 'kind': 'domino-continuous-egress-v1', 'applied': False,
             'policyQualified': False, 'enabled': list(enabled),
             'roleHosts': {role: hosts for role, hosts in role_hosts.items() if hosts},

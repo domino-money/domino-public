@@ -27,11 +27,12 @@ from catalogue import configured_writer_catalogue
 from catalogue_indexer import INITIALIZE_TOPIC, IndexRpc, decode_initialize
 from discovery import POOL_MANAGER, DataError, DiscoveryReader, ReadRpc, bytes32
 from followers import follow_many
-from indexer_io import MAX_INDEXER_SPAN, AdaptiveSpan, HeaderBudget, indexer_transport
+from indexer_io import MAX_INDEXER_SPAN, AdaptiveSpan, HeaderBudget, RequestBudget, indexer_transport
 from local_config import load_config
 from rpc_config import configured_history_rpc_url, configured_rpc_urls
 from pool_activity import ACTIVITY_CAPACITY_PROFILES
-from pool_requests import PERMANENT, WRITER_ROLE, PgRequests
+from pool_requests import WRITER_ROLE, PgRequests, error_class
+from read_deadline import ReadDeadline, read_deadline, use_read_deadline
 from selected_pools import SELECTED_POOLS
 from manage_catalogue import anchor_candidate
 
@@ -182,6 +183,8 @@ def main():
     parser.add_argument('--capacity-profile',choices=ACTIVITY_CAPACITY_PROFILES,default='standard')
     parser.add_argument('--max-header-calls',type=int,dest='max_header_calls',default=20_000,
                         help='hard ceiling on provider header reads per invocation')
+    parser.add_argument('--max-rpc-calls',type=int,default=20_000,
+                        help='shared RPC item ceiling including retries for this invocation')
     parser.add_argument('--register',action='store_true')
     parser.add_argument('--request',action='store_true',
                         help='enqueue this pool (or --selected) for on-demand indexing')
@@ -284,17 +287,24 @@ def main():
         # instead of spending whatever the walk needs.
         header_cache={}
         header_budget=HeaderBudget(args.max_header_calls)
-        def worker():
-            return ActivityIndexer(store,IndexRpc(url,transport=indexer_transport(90),max_requests=20_000),
+        rpc_budget=RequestBudget(args.max_rpc_calls)
+        def worker(claim=None):
+            return ActivityIndexer(store,IndexRpc(url,transport=indexer_transport(90,budget=rpc_budget),max_requests=20_000),
                                    capacity=args.capacity_profile,
                                    parallel_walks=args.parallel_walks,
-                                   header_cache=header_cache,header_budget=header_budget)
+                                   header_cache=header_cache,header_budget=header_budget,
+                                   publication_guard=(None if claim is None else lambda conn:PgRequests.guard(claim,conn)))
         if args.queue_worker:
-            if not 1<=args.max_pools<=64:
+            if not 1<=args.max_pools<=64 or not 1<=args.max_steps<=50:
                 raise DataError('invalid_pool_request_claim')
+            if not 1<=args.span_floor<=args.span<=args.span_ceiling<=MAX_INDEXER_SPAN:
+                raise DataError('invalid_span_bounds')
+            if args.max_seconds is not None and not 1<=args.max_seconds<=300:
+                raise DataError('invalid_follow_bounds')
+            run_deadline=ReadDeadline(args.max_seconds or 90)
             requests=PgRequests(catalogue,role=WRITER_ROLE)
-            rpc=IndexRpc(url,transport=indexer_transport(90),max_requests=20_000)
-            head=DiscoveryReader(ReadRpc(url,transport=indexer_transport(60))).snapshot()
+            with use_read_deadline(run_deadline):
+                head=DiscoveryReader(ReadRpc(current_url,transport=indexer_transport(60,budget=rpc_budget))).snapshot()
             target=head.number-args.lag
             # A service cannot pin a block number that the chain moves past: the
             # window is relative to the head unless the operator names a start.
@@ -306,39 +316,59 @@ def main():
                 search_from=max(1,head.number-back)
             if search_from<1:
                 raise DataError('invalid_search_range')
-            results=[]
-            for claim in requests.claim(limit=args.max_pools,stale_seconds=args.stale_claim_seconds):
+            results=[];seen=[]
+            for _ in range(args.max_pools):
+                try:run_deadline.remaining()
+                except DataError:break
+                claims=requests.claim(limit=1,stale_seconds=args.stale_claim_seconds,exclude=seen)
+                if not claims:break
+                claim=claims[0]
                 pool_id=claim['pool_id']
+                seen.append(pool_id)
+                span=AdaptiveSpan(min(args.span_ceiling,max(args.span_floor,claim['span_blocks'] or args.span)),
+                                  floor=args.span_floor,ceiling=args.span_ceiling)
                 try:
-                    anchor,source=ensure_anchor(catalogue,rpc,url,pool_id,
-                                                search_from=search_from,
-                                                span=args.search_span,
-                                                max_spans=args.search_max_spans,
-                                                head_number=head.number)
-                    worker().register(pool_id,anchor)
-                    steps=[]
-                    for _ in range(0 if args.anchor_only else args.max_steps):
-                        result=worker().step(pool_id,through=target,span=args.span)
-                        steps.append(result['status'])
-                        if result['status']!='indexed':break
-                    status=('following' if steps and steps[-1] in ('caught_up_to_target','rewound')
+                    # One bounded task cannot hold a claim indefinitely. Current
+                    # headers/logs find the identity; old state stays on history RPC.
+                    with use_read_deadline(run_deadline),read_deadline(min(90,args.stale_claim_seconds)):
+                        rpc=IndexRpc(current_url,transport=indexer_transport(90,budget=rpc_budget),max_requests=20_000)
+                        anchor,source=ensure_anchor(catalogue,rpc,current_url,pool_id,
+                                                    search_from=search_from,
+                                                    span=args.search_span,
+                                                    max_spans=args.search_max_spans,
+                                                    head_number=head.number)
+                        worker(claim).register(pool_id,anchor)
+                        steps=[]
+                        for _ in range(0 if args.anchor_only else args.max_steps):
+                            requests.renew(claim,lease_seconds=args.stale_claim_seconds)
+                            result=span.run(lambda value:worker(claim).step(pool_id,through=target,span=value))
+                            steps.append(result['status'])
+                            if result['status']!='indexed':break
+                    status=('following' if steps and steps[-1]=='caught_up_to_target'
                             else 'indexing')
-                    requests.record(pool_id,status,
+                    requests.record(pool_id,status,claim=claim,span=span.next_span(),
                                     detail={'anchorBlock':anchor,'anchorSource':source,
                                             'targetBlock':target,'steps':steps,
                                             'capacityProfile':args.capacity_profile})
                     results.append({'poolId':pool_id,'status':status,'anchorBlock':anchor,
-                                    'anchorSource':source,'steps':steps})
+                                    'anchorSource':source,'steps':steps,'span':span.as_dict()})
                 except DataError as error:
                     reason=str(error)
-                    status='blocked' if reason in PERMANENT else 'indexing'
-                    requests.record(pool_id,status,error=reason,detail={'reason':reason})
+                    classification=error_class(reason)
+                    status='blocked' if classification in ('identity','authorization') else 'indexing'
+                    try:
+                        requests.record(pool_id,status,claim=claim,error=reason,span=span.next_span(),detail={'reason':reason})
+                    except DataError as lost:
+                        if str(lost)!='pool_request_lease_lost':raise
+                        status='lease_lost'
                     results.append({'poolId':pool_id,'status':status,'reason':reason})
+                    if classification=='run_budget':break
             print(json.dumps({'schemaVersion':1,'mode':'pool_request_worker','chainId':4663,
                               'targetBlock':target,'searchFromBlock':search_from,
                               'headerCalls':header_budget.calls,'headerBudget':args.max_header_calls,
+                              'rpcCalls':rpc_budget.calls,'rpcBudget':rpc_budget.max_calls,
                               'pools':results,'liveExecution':False}))
-            return 0 if all(item['status']!='blocked' for item in results) else 1
+            return 0 if all(item['status'] in ('following','indexing') and 'reason' not in item for item in results) else 1
         if args.register:
             if not pool_ids:
                 raise DataError('pool_id_required')

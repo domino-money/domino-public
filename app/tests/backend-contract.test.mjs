@@ -24,6 +24,7 @@ import { createRequire } from 'node:module';
 import { join, resolve } from 'node:path';
 import { test } from 'node:test';
 import * as runtime from '../../api-contracts/read-v1/runtime.mjs';
+import * as publicRuntime from '../../api-contracts/read-v3/runtime.mjs';
 import { validateRequest as bridgeValidateRequest } from '../../bridge/src/request-contract.mjs';
 import { parseStrictJson } from '../../bridge/src/strict-json.mjs';
 import { createWorker } from '../../bridge/src/worker.mjs';
@@ -84,6 +85,19 @@ test('the OpenAPI read routes are exactly the nine read-v1 routes, each a POST w
     .flatMap(([path, item]) => Object.keys(item).map((method) => `${method.toUpperCase()} ${path}`))
     .sort();
   assert.deepEqual(others, [...ledger.OPENAPI_NON_READ_PATHS].sort());
+});
+
+test('the additive public data routes match the separately pinned V3 contract', () => {
+  const paths = Object.entries(OPENAPI.paths).filter(([path]) => path.startsWith('/v3/read/'));
+  assert.deepEqual(paths.map(([path]) => path.slice('/v3/read/'.length)).sort(), [...publicRuntime.ENABLED_READS].sort());
+  for (const [path, item] of paths) {
+    assert.deepEqual(Object.keys(item), ['post']);
+    assert.deepEqual(item.post.parameters ?? [], []);
+    const name = path.split('/').at(-1);
+    const title = name[0].toUpperCase() + name.slice(1);
+    assert.equal(item.post.requestBody.content['application/json'].schema.$ref, `#/components/schemas/${title}Request`);
+    assert.equal(item.post.responses['200'].content['application/json'].schema.$ref, `#/components/schemas/${title}Response`);
+  }
 });
 
 // ---------------------------------------------------------------------------

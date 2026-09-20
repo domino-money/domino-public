@@ -22,5 +22,5 @@ export function bridgeMarkets() {
   // instead of each path spacing only itself.
   const source = appBridgeSource()
   const poolIds = __DOMINO_POOL_SET__ === 'selected' ? SELECTED_POOLS : BRIDGE_TEST_POOLS
-  return createReadMarketsProvider({ source, poolIds, kind: 'bridge' })
+  return createReadMarketsProvider({ source, poolIds, kind: 'bridge', refreshMs: 60_000 })
 }

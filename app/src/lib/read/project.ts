@@ -558,6 +558,10 @@ export function projectFamily<R extends ReadRoute>(outcome: Extract<ReadOutcome<
       return { ...base, ...projectMarketsSnapshot(data as MarketsSnapshotResponse) }
     case 'wallet-assets':
       throw new Error('wallet-assets pages are projected by the wallet pager')
+    case 'overview':
+    case 'history':
+    case 'search':
+      throw new Error('stored public reads are projected by their dedicated consumers')
     default:
       return outcome.route satisfies never
   }

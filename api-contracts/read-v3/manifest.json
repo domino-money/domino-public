@@ -1,0 +1,94 @@
+{
+  "contract": "read-v3",
+  "contractVersion": "3.0.0-rc.1",
+  "files": [
+    {
+      "path": "README.md",
+      "sha256": "31cccf797eaa6295736d70613b0838914072e2258725e0820b89b03ac48b2efb"
+    },
+    {
+      "path": "consumer.test.mjs",
+      "sha256": "e53f9b9c311911e7dfb1e2e262a15d56d64a0274b29ea3a45fcf41ea582d3e29"
+    },
+    {
+      "path": "consumer.typecheck.mts",
+      "sha256": "20738c07de6f2909bf290d264c2729593c3bac5862705978d3907cd227901f00"
+    },
+    {
+      "path": "fixtures/capabilities.json",
+      "sha256": "71dcd8116628e2cc224a51f99ff2ff81e159f37ce26bf24e77b390213fce4fa5"
+    },
+    {
+      "path": "fixtures/history.json",
+      "sha256": "bc153d6471227ad58e095f94133c39c3b6b42d130036b8ae71bd0a9a5c063983"
+    },
+    {
+      "path": "fixtures/overview.json",
+      "sha256": "bbe2121aad21e8966aa14461800e480b42b0cb017689f819549b4421ac2d01ae"
+    },
+    {
+      "path": "fixtures/search.json",
+      "sha256": "01bed543781040191ad051dda61aa015dd4da134eeb4a5d849b0637ff94f5990"
+    },
+    {
+      "path": "runtime.d.mts",
+      "sha256": "1c353221169bd5a09e8e225b236cba723eee33e4323c8051b8d01ca4c93e95c6"
+    },
+    {
+      "path": "runtime.mjs",
+      "sha256": "c48d5dee0c5e3d99ca671deae8e47eca5616cb1c52a4513212ae088e8c69ee43"
+    },
+    {
+      "path": "schemas/capabilities.response.schema.json",
+      "sha256": "f39673eab422f277cff2a1ff73eb005f0b45a1367fbc393ba7c9afefc1d3f64e"
+    },
+    {
+      "path": "schemas/error.response.schema.json",
+      "sha256": "c449c747b2e917ea0cc8eacc71863381d22a75bede7f7340aee78a0ff48df23c"
+    },
+    {
+      "path": "schemas/history.request.schema.json",
+      "sha256": "215f8f4b11d4587a5937c44f126d3e72210dfd22389ad5538b0119f0f5bd7d9e"
+    },
+    {
+      "path": "schemas/history.response.schema.json",
+      "sha256": "f6d1fdc910a26f91b65e3177af2d094dd74fe3bbe9c1d456fd3c90594bff8900"
+    },
+    {
+      "path": "schemas/overview.request.schema.json",
+      "sha256": "064610e01a4425d2d78325d6059c668b01c585c0438152e83907e24e341ca6cc"
+    },
+    {
+      "path": "schemas/overview.response.schema.json",
+      "sha256": "66844b30099c463d8ac9a222c97713d0ee460c54a8f301f13d800255ef57c216"
+    },
+    {
+      "path": "schemas/search.request.schema.json",
+      "sha256": "6e7baeee9bcd88dc8f053cfb49c99e981c7a616ab94de86655b3c1a54a41f45a"
+    },
+    {
+      "path": "schemas/search.response.schema.json",
+      "sha256": "8732a183b8f166078a3e1d171c7567bcb87e37a8511cbc6c3eea1f3cac48e308"
+    },
+    {
+      "path": "types.ts",
+      "sha256": "a0b1b47dde8b877194386ac0e0d70516064f6ca174c70d96c388fcec815c746d"
+    }
+  ],
+  "generator": "scripts/export-read-v3-contract.py",
+  "sources": [
+    {
+      "path": "backend/public_data_contract.py",
+      "sha256": "717d9750cb10f3a666801cce63c4f59271054624f77668e2a7fe824320c0727e"
+    },
+    {
+      "path": "scripts/export-read-v3-contract.py",
+      "sha256": "63b9ca31d88230587e63583436fec843d58e0024882b61cf6fa9862caf02fd2f"
+    },
+    {
+      "path": "scripts/export-read-contract.py",
+      "sha256": "b088c0041cc5fc5f497c74b126c7dbff17eb574fdb4651e3916d74b4cc0d8479"
+    }
+  ],
+  "status": "opt_in_public_read_only"
+}

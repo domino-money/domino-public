@@ -89,6 +89,12 @@ export function answersRequest<R extends ReadKey>(route: R, request: RequestOf<R
   switch (route) {
     case 'capabilities':
       return true
+    // Public stored reads provide their exact identity checks through their
+    // contract runtime. They must never pass through the V1-only validator.
+    case 'overview':
+    case 'history':
+    case 'search':
+      return false
     case 'token': {
       const q = request as unknown as ReadRequests['token']
       const d = data as ReadResponses['token']
@@ -190,6 +196,14 @@ export function answersRequest<R extends ReadKey>(route: R, request: RequestOf<R
 export function observe<R extends ReadKey>(route: R, data: ReadResponses[R]): Observation {
   switch (route) {
     case 'capabilities':
+      return { block: null, providers: [] }
+    case 'overview': {
+      const d = data as ReadResponses['overview']
+      return { block: null, revision: d.revision, providers: d.pools.flatMap((entry) => entry.value ? observe('pool-market', entry.value.market).providers : []) }
+    }
+    case 'history':
+      return { block: (data as ReadResponses['history']).snapshot, providers: [] }
+    case 'search':
       return { block: null, providers: [] }
     case 'token': {
       const d = data as ReadResponses['token']
@@ -378,7 +392,7 @@ export function interpretReply<R extends ReadKey>(
     } catch {
       return { ...base, state: 'invalid', reason: 'response_contract' }
     }
-    if (!answersRequest(route, request, data)) return { ...base, state: 'invalid', reason: 'identity_mismatch' }
+    if (!(route !== 'capabilities' && validators.matchesRequest ? validators.matchesRequest(route, request, data) : answersRequest(route, request, data))) return { ...base, state: 'invalid', reason: 'identity_mismatch' }
     return { ...base, state: 'ok', data, observation: observe(route, data),
       ...(route === 'pool-market' && validators.poolAprEstimate ? { estimate: validators.poolAprEstimate(parsed.value) } : {}) }
   }

@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { inspection, releaseVars } from './publish-read-path.mjs'
+import { inspection, publicDataRelease, releaseVars } from './publish-read-path.mjs'
 import { READ_TUNNEL_IDS } from './read-tunnel-config.mjs'
 
 const settings = () => ({ bindings: [
@@ -9,6 +9,19 @@ const settings = () => ({ bindings: [
     .map(([name, text]) => ({ type: 'plain_text', name, text })),
   { type: 'secret_text', name: 'ACCESS_CLIENT_ID' }, { type: 'secret_text', name: 'ACCESS_CLIENT_SECRET' },
 ] })
+
+test('the workflow V3 input is explicit and inspect remains read-only', () => {
+  for (const operation of ['worker', 'tunnels']) {
+    assert.equal(publicDataRelease(operation), false)
+    assert.equal(publicDataRelease(operation, 'false'), false)
+    assert.equal(publicDataRelease(operation, 'true'), true)
+    assert.equal(publicDataRelease(`${operation}-v3`), true)
+  }
+  assert.equal(publicDataRelease('inspect', 'true'), false)
+  for (const invalid of ['', '1', 'yes', true, false, null]) {
+    assert.throws(() => publicDataRelease('worker', invalid), /must be true or false/)
+  }
+})
 
 test('enables only v2 pool-market and retains the exact existing v1 read list', () => {
   const current = settings()
@@ -19,6 +32,19 @@ test('enables only v2 pool-market and retains the exact existing v1 read list', 
   assert.equal(next.ENABLED_V2_READS, 'pool-market')
   assert.equal(next.ACCESS_CLIENT_SECRET, undefined)
   assert.equal(next.UNRELATED, undefined)
+})
+test('V3 is an explicit release option and an existing enabled V3 is preserved', () => {
+  const current = settings()
+  assert.equal(releaseVars(current).READ_V3_BRIDGE_ENABLED, undefined)
+  const enabled = releaseVars(current, { enableV3: true })
+  assert.equal(enabled.READ_V3_BRIDGE_ENABLED, 'true')
+  assert.equal(enabled.ENABLED_V3_READS, 'overview,history,search')
+  for (const name of ['READ_V3_BRIDGE_ENABLED', 'ENABLED_V3_READS']) {
+    current.bindings.push({ type: 'plain_text', name, text: enabled[name] })
+  }
+  assert.equal(releaseVars(current).READ_V3_BRIDGE_ENABLED, 'true')
+  assert.equal(releaseVars(current).ENABLED_V3_READS, 'overview,history,search')
+  assert.throws(() => releaseVars(current, { enableV3: 'true' }), /Invalid V3/)
 })
 test('refuses missing Access secrets and changed routing', () => {
   const missing = settings(); missing.bindings.pop()

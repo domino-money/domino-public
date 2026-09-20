@@ -153,6 +153,9 @@ def create_database(name):
         conn.execute((ROOT/'migrations/020_pool_requests.sql').read_text())
         conn.execute((ROOT/'migrations/021_reference_price_sources.sql').read_text())
         conn.execute((ROOT/'migrations/022_event_timestamp_source.sql').read_text())
+        conn.execute((ROOT/'migrations/023_pool_request_scheduling.sql').read_text())
+        conn.execute((ROOT/'migrations/024_public_observations.sql').read_text())
+        conn.execute((ROOT/'migrations/025_public_history.sql').read_text())
 
 
 

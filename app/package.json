@@ -20,7 +20,7 @@
     "test:gate": "node --test tests/gate.browser.test.mjs tests/release.browser.test.mjs && npm run test:read",
     "build:fixtures": "vite build --mode fixtures",
     "build:bridge-test": "vite build --mode bridge-test",
-    "test:read": "npm run build:fixtures && npm run build:bridge-test && node --test tests/read-states.browser.test.mjs tests/read-bridge.browser.test.mjs tests/read-screens.browser.test.mjs tests/read-screens.bridge.test.mjs",
+    "test:read": "npm run build:fixtures && npm run build:bridge-test && node --test tests/read-states.browser.test.mjs tests/read-bridge.browser.test.mjs tests/read-screens.browser.test.mjs tests/read-screens.bridge.test.mjs tests/read-public.browser.test.mjs",
     "serve:gated": "node scripts/gated-server.mjs",
     "release:build": "npm run build && node scripts/release.mjs record",
     "release:verify": "node scripts/release.mjs verify",

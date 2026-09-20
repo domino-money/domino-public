@@ -155,7 +155,8 @@ class DevGateway(Gateway):
             # Existing execution owns and releases admission, including shielded
             # upstream work. Its client is the configured, verified principal.
             status, data, hints = super().execute_with_hints(route, body, assertion, self.profile.service_id,
-                                                              deadline, version=version)
+                                                              deadline, version=version,
+                                                              acquired_kind=self.gate.PROVIDER)
             if not self.allowed():
                 return 403, {'error': 'upstream_unavailable'}, {}
             return status, data, hints
@@ -180,7 +181,7 @@ class DevGateway(Gateway):
         except DataError:
             return 403, {'error': 'upstream_unavailable'}, {}
         finally:
-            self.gate.leave(self.gate.kind_of(route))
+            self.gate.leave(self.gate.PROVIDER)
 
 
 def create_dev_gateway(gateway=None):
@@ -285,7 +286,7 @@ def create_dev_gateway(gateway=None):
             admitted = gateway.gate.slot.acquire(blocking=False) if control else gateway.gate.enter()
             if not admitted:
                 return result(429, {'error': 'read_capacity_busy'},
-                              retry_after=gateway.gate.retry_after(gateway.gate.kind_of(route)))
+                              retry_after=gateway.gate.retry_after(gateway.gate.PROVIDER))
             started = Event()
             def execute():
                 started.set()

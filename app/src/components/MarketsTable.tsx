@@ -134,7 +134,7 @@ function PriceCell({ market, now }: { market: Market; now: Instant }) {
   )
 }
 
-function Row({ m: read, now, full, onFigures }: { m: Market; now: Instant; full: boolean; onFigures: () => void }) {
+function Row({ m: read, now, full, onFigures, poolToken }: { m: Market; now: Instant; full: boolean; onFigures: () => void; poolToken?: string }) {
   const p = read.provenance
   const age = p ? retrievedAgeSeconds(p.market, now) : null
   const stale = p ? providerStale(p.market, now) : false
@@ -142,7 +142,7 @@ function Row({ m: read, now, full, onFigures }: { m: Market; now: Instant; full:
   // The same projection the figures dialog is given, so the row and the dialog
   // it opens never disagree about whether a figure is still current.
   const m = agedMarket(read, now)
-  const href = poolHref(m.poolId)
+  const href = poolHref(m.poolId, poolToken)
   const line = p ? provenanceLine(p, age, stale) : undefined
   // Domino's own qualified history when there is one; the attributed backend estimate otherwise, marked as one.
   const qualified = m.feeAprPercent.value !== null && (m.feeAprPercent.state === 'qualified' || m.feeAprPercent.state === 'stale')
@@ -252,6 +252,8 @@ export function MarketsTable({
   onMatchCount,
   empty,
   diagnostics = false,
+  includeCatalogue = true,
+  poolToken,
 }: {
   variant?: 'featured' | 'full'
   /** Full only. */
@@ -266,13 +268,17 @@ export function MarketsTable({
    * figures and nothing else; a busy read service is asked again on its own.
    */
   diagnostics?: boolean
+  /** Token explorer pages already define their complete bounded selection. */
+  includeCatalogue?: boolean
+  /** Preserve an arbitrary pool's verified token in its shareable link. */
+  poolToken?: string
 }) {
   const full = variant === 'full'
   const { state, provider } = useMarkets()
   useQuietRecovery(provider, !diagnostics)
   const result = shownResult(state)
   const markets = result?.markets ?? []
-  const listings = poolListings(markets, __DOMINO_POOL_SET__ === 'selected' && provider.kind === 'bridge')
+  const listings = poolListings(markets, includeCatalogue && __DOMINO_POOL_SET__ === 'selected' && provider.kind === 'bridge')
   const matches = full && filter ? listings.filter((listing) => matchesFilter(listing, filter)) : listings
   const now = useNow(markets.length > 0)
   // The pool whose figures are open, held by key rather than by value: the
@@ -395,7 +401,7 @@ export function MarketsTable({
         <tbody key={filtering} className={full ? 'animate-fade' : undefined}>
           {matches.map(({ poolId, market, catalogue }) =>
             market ? (
-              <Row key={poolId} m={market} now={now} full={full} onFigures={() => setFiguresKey(market.key)} />
+              <Row key={poolId} m={market} now={now} full={full} onFigures={() => setFiguresKey(market.key)} poolToken={poolToken} />
             ) : catalogue ? (
               <CatalogueRow key={poolId} poolId={poolId} entry={catalogue} full={full} />
             ) : null,
@@ -417,7 +423,7 @@ export function MarketsTable({
               {state.phase === 'loading' ? (
                 <Skeleton className="mx-auto h-10 max-w-[480px]" />
               ) : state.phase === 'ready' && state.problems.length === 0 ? (
-                <span data-empty="no-pools">No pools selected yet.</span>
+                empty ?? <span data-empty="no-pools">{state.acquiring ? 'Pool data is being collected.' : 'No pools selected yet.'}</span>
               ) : (
                 'Pool data unavailable'
               )}

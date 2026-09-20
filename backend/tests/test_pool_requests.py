@@ -107,7 +107,7 @@ class PoolRequestStoreTests(unittest.TestCase):
         # only thing that makes it claimable again.
         with psycopg.connect(**self.catalogue.settings,user=ADMIN) as conn:
             conn.execute("UPDATE domino_activity.pool_requests "
-                         "SET updated_at=clock_timestamp()-interval '1 hour'")
+                         "SET lease_until=clock_timestamp()-interval '1 hour'")
         reclaimed=self.requests.claim(limit=1,stale_seconds=300)
         self.assertEqual(reclaimed[0]['attempts'],2)
 
@@ -116,19 +116,22 @@ class PoolRequestStoreTests(unittest.TestCase):
         for row in self.requests.claim(limit=2,stale_seconds=1):
             pool_id=row['pool_id']
             if pool_id==POOL:
-                self.requests.record(pool_id,'following',detail={'anchorBlock':10})
+                self.requests.record(pool_id,'following',claim=row,detail={'anchorBlock':10})
             else:
-                self.requests.record(pool_id,'blocked',error='initialize_anchor_not_found')
+                self.requests.record(pool_id,'blocked',claim=row,error='initialize_anchor_mismatch')
         following=self.requests.status(POOL)
         blocked=self.requests.status(OTHER)
         self.assertEqual((following['status'],following['detail']),
                          ('following',{'anchorBlock':10}))
         self.assertEqual((blocked['status'],blocked['last_error']),
-                         ('blocked','initialize_anchor_not_found'))
+                         ('blocked','initialize_anchor_mismatch'))
         # A blocked pool is not claimed again by itself; a transient one is.
         self.requests.enqueue('0x'+'7c'*32)
         transient=self.requests.claim(limit=1,stale_seconds=1)[0]
-        self.requests.record(transient['pool_id'],'indexing',error='network_unavailable')
+        self.requests.record(transient['pool_id'],'indexing',claim=transient,error='network_unavailable')
+        self.assertEqual(self.requests.claim(limit=4),[])
+        with psycopg.connect(**self.catalogue.settings,user=ADMIN) as conn:
+            conn.execute("UPDATE domino_activity.pool_requests SET due_at=clock_timestamp()-interval '1 second' WHERE pool_id=%s",(transient['pool_id'],))
         self.assertEqual([row['pool_id'] for row in self.requests.claim(limit=4,stale_seconds=1)],
                          [transient['pool_id']])
         self.assertIn(OTHER,self.requests.retry(OTHER))
@@ -141,7 +144,9 @@ class PoolRequestStoreTests(unittest.TestCase):
         first=self.requests.claim(limit=2)
         self.assertEqual([row['pool_id'] for row in first],pools[:2])
         for row in first:
-            self.requests.record(row['pool_id'],'indexing')
+            self.requests.record(row['pool_id'],'indexing',claim=row)
+        with psycopg.connect(**self.catalogue.settings,user=ADMIN) as conn:
+            conn.execute("UPDATE domino_activity.pool_requests SET due_at=clock_timestamp()-interval '1 second'")
         second=self.requests.claim(limit=2)
         self.assertEqual([row['pool_id'] for row in second],[pools[2],pools[0]])
 
@@ -152,6 +157,43 @@ class PoolRequestStoreTests(unittest.TestCase):
         with self.assertRaises(DataError): self.requests.claim(stale_seconds=0)
         with self.assertRaises(DataError): self.requests.record(POOL,'queued')
         with self.assertRaises(DataError): self.requests.record('0x'+'7e'*32,'following')
+
+    def test_following_is_due_again_without_manual_requeue(self):
+        self.requests.enqueue(POOL)
+        claim=self.requests.claim()[0]
+        self.requests.record(POOL,'following',claim=claim,span=6250)
+        self.assertEqual(self.requests.claim(),[])
+        with psycopg.connect(**self.catalogue.settings,user=ADMIN) as conn:
+            conn.execute("UPDATE domino_activity.pool_requests SET due_at=clock_timestamp()-interval '1 second'")
+        again=self.requests.claim()[0]
+        self.assertEqual(again['pool_id'],POOL)
+        self.assertEqual(again['span_blocks'],6250)
+        self.assertGreater(again['claim_generation'],claim['claim_generation'])
+
+    def test_reclaimed_lease_rejects_old_publication_and_completion(self):
+        self.requests.enqueue(POOL)
+        old=self.requests.claim()[0]
+        with psycopg.connect(**self.catalogue.settings,user=ADMIN) as conn:
+            conn.execute("UPDATE domino_activity.pool_requests SET lease_until=clock_timestamp()-interval '1 second'")
+        new=self.requests.claim()[0]
+        with self.assertRaisesRegex(DataError,'pool_request_lease_lost'):
+            self.requests.record(POOL,'following',claim=old)
+        with psycopg.connect(**self.catalogue.settings,user='domino_catalogue_writer') as conn:
+            with self.assertRaisesRegex(DataError,'pool_request_lease_lost'):
+                self.requests.guard(old,conn)
+        self.requests.record(POOL,'following',claim=new)
+
+    def test_demand_cannot_override_a_lease_or_failed_job_backoff(self):
+        self.requests.enqueue(POOL)
+        claim=self.requests.claim()[0]
+        self.requests.enqueue(POOL)
+        self.assertEqual(self.requests.claim(),[])
+        self.requests.record(POOL,'indexing',claim=claim,error='http_429',span=1000)
+        self.requests.enqueue(POOL)
+        self.assertEqual(self.requests.claim(),[])
+        row=self.requests.status(POOL)
+        self.assertEqual(row['error_class'],'provider_rate_limit')
+        self.assertEqual(row['consecutive_failures'],1)
 
 
 if __name__=='__main__':unittest.main()

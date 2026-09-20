@@ -19,7 +19,7 @@ from discovery import DataError
 STEP_STATUSES = ('indexed', 'caught_up_to_target', 'rewound')
 # A spent provider budget is an operator decision point, not a transient fault:
 # retrying would spend the same money again.
-STOP_REASONS = frozenset({'header_budget_exhausted'})
+STOP_REASONS = frozenset({'header_budget_exhausted','indexer_rpc_budget_exhausted'})
 
 
 def follow_target(head_number, lag):
@@ -127,9 +127,7 @@ def follow_many(targets, observe_head, *, lag, max_passes, poll_seconds, max_sec
                 catching_up = True
             if on_pass is not None:
                 on_pass({'round': rounds, 'target': name, 'targetBlock': target_block, **result})
-        if stopped == 'failures':
-            break
-        if stopped == 'stop_requested':
+        if stopped in ('failures','stop_requested','budget'):
             break
         # Idle only when nothing is catching up; a backfill is not slowed by the
         # poll interval, and a failed round waits before it is retried.

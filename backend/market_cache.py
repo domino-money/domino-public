@@ -14,13 +14,14 @@ class MarketCache:
     duplicate provider calls by other in-process callers. No threads or jobs run
     in the background; upstream timeouts are enforced by the provider adapter.
     """
-    def __init__(self, provider, *, clock=time.monotonic):
+    def __init__(self, provider, *, clock=time.monotonic, reserve_provider=None):
         self.provider, self.clock = provider, clock
         self.entries = OrderedDict()
         self.requests = deque()
         self.lock = Lock()
         self.ttl, self.max_stale, self.retry_delay = 60, 300, 15
         self.capacity, self.requests_per_minute = 256, 25
+        self.reserve_provider = reserve_provider
 
     def get(self, kind, pool_id, *, token='base', currency=None):
         pool_id = bytes32(pool_id)
@@ -50,6 +51,13 @@ class MarketCache:
                 self.requests.popleft()
             if len(self.requests) >= self.requests_per_minute:
                 return self._result(entry, now, 'rate_limited', 'provider_capacity_busy')
+            if self.reserve_provider is not None:
+                try:
+                    allowed = self.reserve_provider()
+                except DataError:
+                    allowed = False
+                if not allowed:
+                    return self._result(entry, now, 'rate_limited', 'provider_capacity_busy')
             self.requests.append(now)
             try:
                 data = (self.provider.pool(pool_id) if kind == 'pool' else

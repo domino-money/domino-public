@@ -20,7 +20,7 @@ import { figureFromProviderMetrics, retrievalNote, type AttributedFigure } from 
 
 export interface PoolOption {
   key: PoolIdKey
-  kind: 'discovery' | 'catalogue'
+  kind: 'discovery' | 'catalogue' | 'stored'
   currencies: [TokenDisplay, TokenDisplay]
   fee: string
   /** For ordering only; the dynamic sentinel sorts last. */

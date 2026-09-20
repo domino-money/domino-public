@@ -131,7 +131,7 @@ class PgCatalogue:
             return {**self.coverage(state), 'items': items,
                     'hasMore': len(rows)>limit, 'nextAfterPoolId': items[-1]['poolId'] if len(rows)>limit else None}
 
-    def seed(self, pools, block):
+    def seed(self, pools, block, *, publication_guard=None):
         checked = []
         for pool in pools:
             pool_id = bytes32(pool['poolId'])
@@ -139,6 +139,7 @@ class PgCatalogue:
             checked.append((pool_id, key.currency0, key.currency1, Jsonb(asdict(key)), block.number, block.hash))
         with self.connection(writer=True, lock=True) as conn:
             self.state(conn)
+            if publication_guard is not None:publication_guard(conn)
             for values in checked:
                 conn.execute('''INSERT INTO domino_catalogue.hints VALUES(%s,%s,%s,%s,%s,%s)
                   ON CONFLICT(pool_id) DO UPDATE SET observed_block=EXCLUDED.observed_block,

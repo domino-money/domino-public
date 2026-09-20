@@ -32,6 +32,10 @@ import hop_log
 from pool_apr_contract import (CONTRACT_VERSION as V2_CONTRACT_VERSION,
                                REQUEST_MODELS as V2_REQUEST_MODELS,
                                build_pool_market_estimate)
+from public_data_contract import (CONTRACT_VERSION as V3_CONTRACT_VERSION,
+                                  REQUEST_MODELS as V3_REQUEST_MODELS,
+                                  validate_response as validate_v3_response,
+                                  validate_request_response as validate_v3_request_response)
 
 REQUEST_MODELS = {'token': TokenRequest, 'pools': PoolsRequest, 'pool-market': PoolMarketRequest,
                   'wallet-assets': AssetsRequest, 'nft-positions': NftPositionsRequest,
@@ -58,30 +62,38 @@ def checked_retry_after(value):
 
 class Gateway:
     def __init__(self, *, verifier=None, upstream=None, enabled=False, enabled_reads=(),
-                 enabled_v2=False, enabled_v2_reads=(), budgets=None, cursors=None,
+                 enabled_v2=False, enabled_v2_reads=(), enabled_v3=False, enabled_v3_reads=(), budgets=None, cursors=None,
                  gate=None, clock=time.monotonic, wall_clock=time.time):
         if (type(enabled) is not bool or not set(enabled_reads) <= set(REQUEST_MODELS) or
-                type(enabled_v2) is not bool or not set(enabled_v2_reads) <= set(V2_REQUEST_MODELS)):
+                type(enabled_v2) is not bool or not set(enabled_v2_reads) <= set(V2_REQUEST_MODELS) or
+                type(enabled_v3) is not bool or not set(enabled_v3_reads) <= set(V3_REQUEST_MODELS)):
             raise DataError('invalid_gateway_config')
         if ((enabled and (verifier is None or not enabled_reads)) or
-                (enabled_v2 and (verifier is None or not enabled_v2_reads))):
+                (enabled_v2 and (verifier is None or not enabled_v2_reads)) or
+                (enabled_v3 and (verifier is None or not enabled_v3_reads))):
             raise DataError('invalid_gateway_config')
         self.enabled, self.enabled_reads = enabled, frozenset(enabled_reads)
         self.enabled_v2, self.enabled_v2_reads = enabled_v2, frozenset(enabled_v2_reads)
+        self.enabled_v3, self.enabled_v3_reads = enabled_v3, frozenset(enabled_v3_reads)
         self.verifier, self.upstream = verifier, upstream or LocalReaderHTTP()
         self.budgets, self.cursors = budgets or ClientBudgets(), cursors or OpaqueCursors()
-        self.gate, self.clock, self.wall_clock = gate or ReadGate(), clock, wall_clock
+        self.gate = gate or (ReadGate(stored_capacity=4,stored_interval=0) if enabled_v3 else ReadGate())
+        self.clock, self.wall_clock = clock, wall_clock
 
     def execute(self, route, body, assertion, client, deadline, *, version='v1', request_id=None):
         status, data, _ = self.execute_with_hints(route, body, assertion, client, deadline,
                                                   version=version, request_id=request_id)
         return status, data
 
-    def execute_with_hints(self, route, body, assertion, client, deadline, *, version='v1', request_id=None):
+    def execute_with_hints(self, route, body, assertion, client, deadline, *, version='v1', request_id=None,
+                           acquired_kind=None):
         """Like execute, plus hints the boundary needs for headers: a 429's honest Retry-After."""
         # Admission was acquired before thread dispatch, on the route's own slot;
         # kind routes the release below to the same slot.
-        kind = self.gate.kind_of(route)
+        reader_kind = self.gate.kind_of(route, body)
+        # Development has one shared worker irrespective of the reader's lane.
+        # Release the admission actually acquired, not a newly inferred slot.
+        kind = reader_kind if acquired_kind is None else acquired_kind
         try:
             remaining = deadline - self.clock()
             if remaining <= 0:
@@ -107,11 +119,18 @@ class Gateway:
                     not 0 < health['readBudgetSeconds'] <= 15 or type(health.get('busy')) is not bool):
                 raise DataError('upstream_unavailable')
             # A previous HTTP timeout does not prove reader work ended. Reconcile
-            # actual reader admission before submitting any new operation.
-            if health['busy']:
+            # the lane this request actually uses; provider work cannot veto a
+            # cached response. Older readers omit storedBusy: their own route
+            # admission still bounds the operation after this gateway's slot.
+            busy_key = 'storedBusy' if reader_kind == self.gate.STORED else 'busy'
+            wait_key = 'storedRetryAfterSeconds' if reader_kind == self.gate.STORED else 'retryAfterSeconds'
+            reader_busy = health.get(busy_key, False)
+            if type(reader_busy) is not bool:
+                raise DataError('upstream_unavailable')
+            if reader_busy:
                 # The reader's own number, or this gate's if the reader gave none.
                 return 429, {'error': 'read_capacity_busy'}, {
-                    'retryAfter': checked_retry_after(health.get('retryAfterSeconds')) or self.gate.retry_after(kind)}
+                    'retryAfter': checked_retry_after(health.get(wait_key)) or self.gate.retry_after(kind)}
             generation = health.get('generation')
             self.cursors.observe_generation(generation)
             sent = deepcopy(body)
@@ -121,12 +140,15 @@ class Gateway:
                 sent = {'poolId': body['poolId'], 'includePriceHistory': False}
             if route == 'wallet-assets' and sent.get('cursor') is not None:
                 sent['cursor'] = self.cursors.unwrap(sent['cursor'], body)
-            status, data, metadata = self.upstream.request(route, sent, deadline=deadline, request_id=request_id)
+            protocol = {'version': 'v3'} if version == 'v3' else {}
+            status, data, metadata = self.upstream.request(route, sent, deadline=deadline, request_id=request_id, **protocol)
             if metadata.get('generation') != generation:
                 if metadata.get('generation'):
                     self.cursors.observe_generation(metadata['generation'])
                 raise DataError('upstream_unavailable')
-            if metadata.get('contract') != CONTRACT_VERSION:
+            producer_contract = V3_CONTRACT_VERSION if version == 'v3' else CONTRACT_VERSION
+            validator = validate_v3_response if version == 'v3' else validate_response
+            if metadata.get('contract') != producer_contract:
                 raise DataError('upstream_contract_mismatch')
             if status != 200:
                 code = safe_error(data.get('error') if isinstance(data, dict) and set(data) == {'error'} else None)
@@ -139,14 +161,16 @@ class Gateway:
                                            or self.gate.retry_after(kind))
                 return expected, {'error': code}, hints
             try:
-                validate_response(route, data)
+                validator(route, data)
+                if version == 'v3':
+                    validate_v3_request_response(route, body, data)
             except (ValidationError, ValueError, TypeError):
                 raise DataError('upstream_contract_mismatch') from None
             output = deepcopy(data)
             if route == 'wallet-assets' and output['inventory']['nextCursor'] is not None:
                 output['inventory']['nextCursor'] = self.cursors.wrap(output['inventory']['nextCursor'], body)
             # The declared cursor substitution is the only payload transformation.
-            validate_response(route, output)
+            validator(route, output)
             if version == 'v2':
                 now = self.wall_clock()
                 if type(now) not in (int, float) or not math.isfinite(now):
@@ -187,7 +211,9 @@ def create_gateway(gateway=None):
             deadline = opened + 20
             request_id = secrets.token_hex(16)
             path = request.scope.get('raw_path', b'').decode('ascii', errors='replace')
-            version = 'v2' if path.startswith('/internal/read/v2/') else 'v1'
+            version = ('v3' if path.startswith('/internal/read/v3/') else
+                       'v2' if path.startswith('/internal/read/v2/') else 'v1')
+            contract_version = {'v1': CONTRACT_VERSION, 'v2': V2_CONTRACT_VERSION, 'v3': V3_CONTRACT_VERSION}[version]
             route_name = 'unmatched'
             notes = hop_log.open_notes()
             recorded = []
@@ -197,14 +223,14 @@ def create_gateway(gateway=None):
                     return
                 recorded.append(status)
                 hop_log.emit(service='read-gateway', requestId=request_id, route=route_name,
-                             contractVersion=V2_CONTRACT_VERSION if version == 'v2' else CONTRACT_VERSION,
+                             contractVersion=contract_version,
                              method=request.method, status=status, reason=reason,
                              durationMs=int((gateway.clock() - opened) * 1000),
                              **hop_log.close_notes(notes))
             def result(status, data, retry_after=None):
                 record(status, data.get('error') if isinstance(data, dict) else None)
                 headers = {'Cache-Control': 'no-store, no-transform', 'X-Content-Type-Options': 'nosniff',
-                           'X-Domino-Read-Contract': V2_CONTRACT_VERSION if version == 'v2' else CONTRACT_VERSION,
+                           'X-Domino-Read-Contract': contract_version,
                            'X-Domino-Request-Id': request_id,
                            'Content-Security-Policy': "default-src 'none'; frame-ancestors 'none'"}
                 if status == 429:
@@ -212,7 +238,7 @@ def create_gateway(gateway=None):
                     # the client budget's, or this gate's — never a constant.
                     headers['Retry-After'] = str(retry_after or gateway.gate.retry_after(gateway.gate.PROVIDER))
                 return JSONResponse(data, status_code=status, headers=headers)
-            models = V2_REQUEST_MODELS if version == 'v2' else REQUEST_MODELS
+            models = {'v1': REQUEST_MODELS, 'v2': V2_REQUEST_MODELS, 'v3': V3_REQUEST_MODELS}[version]
             match = re.fullmatch(r'/internal/read/' + version + r'/(' + '|'.join(models) + r')', path)
             if match:
                 route_name = match[1]
@@ -220,8 +246,9 @@ def create_gateway(gateway=None):
                 return result(404, {'error': 'route_not_available'})
             if request.method != 'POST':
                 return result(405, {'error': 'method_not_allowed'})
-            enabled = gateway.enabled_v2 if version == 'v2' else gateway.enabled
-            enabled_reads = gateway.enabled_v2_reads if version == 'v2' else gateway.enabled_reads
+            enabled = {'v1': gateway.enabled, 'v2': gateway.enabled_v2, 'v3': gateway.enabled_v3}[version]
+            enabled_reads = {'v1': gateway.enabled_reads, 'v2': gateway.enabled_v2_reads,
+                             'v3': gateway.enabled_v3_reads}[version]
             if not enabled or match[1] not in enabled_reads:
                 return result(404, {'error': 'route_not_available'})
             headers = {}
@@ -272,7 +299,7 @@ def create_gateway(gateway=None):
                 return result(408, {'error': 'request_timeout'})
             except (DataError, ValidationError, ValueError, TypeError):
                 return result(422, {'error': 'invalid_request'})
-            kind = gateway.gate.kind_of(match[1])
+            kind = gateway.gate.kind_of(match[1], body)
             if not gateway.gate.enter(kind):
                 hop_log.note(gate=kind, admitted=False)
                 return result(429, {'error': 'read_capacity_busy'}, retry_after=gateway.gate.retry_after(kind))
@@ -280,7 +307,7 @@ def create_gateway(gateway=None):
             started = Event()
             def execute():
                 started.set()
-                if version == 'v2':
+                if version != 'v1':
                     return gateway.execute_with_hints(match[1], body, assertion, client, deadline,
                                                       version=version, request_id=request_id)
                 return gateway.execute_with_hints(match[1], body, assertion, client, deadline, request_id=request_id)
@@ -316,6 +343,7 @@ def main():
     parser.add_argument('--reader-port', type=int, default=8876)
     parser.add_argument('--enable', action='store_true')
     parser.add_argument('--enable-v2', action='store_true', help='Opt in to the separate pool estimate candidate')
+    parser.add_argument('--enable-v3', action='store_true', help='Opt in to the durable stored public read contract')
     args = parser.parse_args()
     try:
         if args.port in (8765, args.reader_port) or not 1024 <= args.port <= 65535:
@@ -329,7 +357,8 @@ def main():
         verifier = None
         reads = ()
         v2_reads = ()
-        if args.enable or args.enable_v2:
+        v3_reads = ()
+        if args.enable or args.enable_v2 or args.enable_v3:
             verifier = AccessVerifier(os.environ.get('DOMINO_ACCESS_ISSUER'),
                                       os.environ.get('DOMINO_ACCESS_AUDIENCE'),
                                       os.environ.get('DOMINO_ACCESS_SERVICE_ID'))
@@ -337,8 +366,11 @@ def main():
             reads = tuple(os.environ.get('DOMINO_BRIDGE_READS', '').split(','))
         if args.enable_v2:
             v2_reads = tuple(os.environ.get('DOMINO_BRIDGE_V2_READS', '').split(','))
+        if args.enable_v3:
+            v3_reads = tuple(os.environ.get('DOMINO_BRIDGE_V3_READS', '').split(','))
         gateway = Gateway(enabled=args.enable, enabled_reads=reads, verifier=verifier,
                           enabled_v2=args.enable_v2, enabled_v2_reads=v2_reads,
+                          enabled_v3=args.enable_v3, enabled_v3_reads=v3_reads,
                           upstream=LocalReaderHTTP(args.reader_port))
     except (DataError, OSError):
         parser.exit(2, 'Gateway configuration invalid or process already running.\n')

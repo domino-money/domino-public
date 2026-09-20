@@ -79,6 +79,7 @@ const FAMILIES: readonly Family[] = [
   { prefix: '/api/performance/v2/', binding: 'PERFORMANCE_BRIDGE', contract: 'x-domino-performance-contract', csrf: true, cookies: ['__Host-domino-session'] },
   { prefix: '/api/read/v1/', binding: 'READ_BRIDGE', contract: 'x-domino-read-contract', csrf: false, cookies: [] },
   { prefix: '/api/read/v2/', binding: 'READ_BRIDGE', contract: 'x-domino-read-contract', csrf: false, cookies: [] },
+  { prefix: '/api/read/v3/', binding: 'READ_BRIDGE', contract: 'x-domino-read-contract', csrf: false, cookies: [] },
   {
     prefix: '/api/session/v1/',
     binding: 'SESSION_BRIDGE',

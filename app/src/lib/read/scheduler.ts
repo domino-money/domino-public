@@ -160,6 +160,7 @@ export function createScheduledSource(
   const inner = source.routeEnabled?.bind(source)
   return {
     transport: source.transport,
+    ...(source.supportsStoredReads ? { supportsStoredReads: true as const } : {}),
     // Whether a route is listed is the source's own capabilities answer, never a job: it takes no place in
     // the queue and moves no pacing, so a screen can skip a route that is off without waiting a turn for it.
     ...(inner ? { routeEnabled: (route: ReadRoute, opts?: Pick<ReadOptions, 'signal' | 'deadlineAt'>): Promise<RouteCheck> => inner(route, opts) } : {}),

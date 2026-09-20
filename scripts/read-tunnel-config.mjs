@@ -14,6 +14,7 @@ const TARGETS = Object.freeze({
     before: '^/internal/read/v1/(token|pools|pool-market|wallet-assets|nft-positions|catalogue|pool-activity|pool-positions|pool-metrics)$',
     after: '^/internal/read/(v1/(token|pools|pool-market|wallet-assets|nft-positions|catalogue|pool-activity|pool-positions|pool-metrics)|v2/pool-market)$',
     next: '^/internal/read/(v1/(token|pools|pool-market|wallet-assets|nft-positions|catalogue|pool-activity|pool-positions|pool-metrics|markets-snapshot)|v2/pool-market)$',
+    v3: '^/internal/read/(v1/(token|pools|pool-market|wallet-assets|nft-positions|catalogue|pool-activity|pool-positions|pool-metrics|markets-snapshot)|v2/pool-market|v3/(overview|history|search))$',
     controls: (rule) => record(rule.originRequest) && record(rule.originRequest.access) && rule.originRequest.access.required === true,
   },
   '7abb1264-ee70-4b69-a33c-b75a9deb4589': {
@@ -38,9 +39,10 @@ function refuse() {
 // The tunnels this release path touches, so inspection and publication can
 // never disagree about which ones that is.
 export const READ_TUNNEL_IDS = Object.freeze(Object.keys(TARGETS));
+export const V3_READ_TUNNEL_IDS = Object.freeze(Object.keys(TARGETS).filter((id) => TARGETS[id].v3));
 
 /** Pass the API response's config object, never the full response envelope. */
-export function extendReadTunnelConfig(tunnelId, config) {
+export function extendReadTunnelConfig(tunnelId, config, { enableV3 = false } = {}) {
   if (typeof tunnelId !== 'string' || !Object.hasOwn(TARGETS, tunnelId) || !record(config)
       || !Array.isArray(config.ingress) || !config.ingress.every(record)) refuse();
   const target = TARGETS[tunnelId];
@@ -49,9 +51,11 @@ export function extendReadTunnelConfig(tunnelId, config) {
   if (matches.length !== 1) refuse();
   const index = matches[0];
   const rule = config.ingress[index];
-  if (rule.service !== target.service || ![target.before, target.after, target.next].includes(rule.path)
+  if (typeof enableV3 !== 'boolean' || enableV3 && !target.v3) refuse();
+  if (rule.service !== target.service || ![target.before, target.after, target.next, target.v3].filter(Boolean).includes(rule.path)
       || !target.controls(rule)) refuse();
   const result = structuredClone(config);
-  result.ingress[index].path = target.next;
+  // A normal V1/V2 publication must not roll back an already enabled V3 route.
+  result.ingress[index].path = enableV3 || rule.path === target.v3 ? target.v3 : target.next;
   return result;
 }

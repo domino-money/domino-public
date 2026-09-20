@@ -75,7 +75,7 @@ def bounded_transport(seconds=60):
 class ReadService:
     def __init__(self, *, rpc_url=RPC_URL, rpc_urls=None, inventory_url=None, historical_rpc_url=None, clock=time.time,
                  rpc_factory=None, inventory=None, cursor_codec=None, transport_factory=bounded_transport,
-                 catalogue=None, market_cache=None, snapshot=None, requests=None):
+                 catalogue=None, market_cache=None, snapshot=None, requests=None, public_data=None):
         self.rpc_url, self.inventory_url, self.clock = rpc_url, inventory_url, clock
         self.rpc_urls = tuple(rpc_urls) if rpc_urls is not None else None
         self.historical_rpc_url = historical_rpc_url
@@ -85,6 +85,7 @@ class ReadService:
         # ask (an insert through a narrowly granted function); the worker that
         # indexes is a different role.
         self.requests = requests
+        self.public_data = public_data
         self.transport_factory = transport_factory
         self.catalogue = catalogue
         if market_cache is None:
@@ -122,9 +123,23 @@ class ReadService:
         check_read_deadline()
         return result
 
+    def _request_public(self, kind, entity_id):
+        """A legacy live read also records aggregate interest when configured.
+
+        The new stored API reports durable admission explicitly. An optional
+        queue outage must not erase a legacy live response or grant table writes.
+        """
+        service = getattr(self, 'public_data', None)
+        if service is not None:
+            try:
+                service.repository.request(kind, entity_id)
+            except DataError:
+                pass
+
     @public_response('pools')
     def pools(self, token, max_pools=12, pool_ids=(), *, paired_token=None):
         token=address(token)
+        self._request_public('token', token)
         paired_token=address(paired_token) if paired_token is not None else None
         candidates=[]
         status={'status':'not_configured','completeHistory':False}
@@ -474,11 +489,18 @@ class ReadService:
         snapshot's own; a not-built snapshot answers explicitly.
         """
         pool_id = bytes32(pool_id)
+        self._request_public('pool', pool_id)
         if type(include_price_history) is not bool or price_token not in ('base', 'quote'):
             raise DataError('invalid_market_query')
         if from_snapshot:
             if include_price_history:
                 raise DataError('invalid_market_query')
+            public_data = getattr(self,'public_data',None)
+            if public_data is not None:
+                from public_observations import aged_market
+                row = public_data.repository.get('pool',pool_id)
+                if row is not None and row['payload'] is not None:
+                    return aged_market(row['payload'],row['observed_at'],int(self.clock()))
             with self.snapshot.lock:
                 state = self.snapshot.state
                 record = state['pools'].get(pool_id) if state else None
@@ -498,7 +520,20 @@ class ReadService:
                     'suggested': False, 'executionAvailable': False}
         reader = DiscoveryReader(self._rpc(self.transport_factory()), clock=self.clock)
         block = reader.snapshot()
-        pool = reader.pool({'poolId': pool_id}, block)
+        candidate = {'poolId':pool_id}
+        # A known Initialize key also covers pools never seen by PositionManager.
+        # It is still rehashed and its current state checked by DiscoveryReader.
+        if self.catalogue is not None:
+            try:
+                with self.catalogue.connection() as conn:
+                    stored = conn.execute('''SELECT pool_key FROM domino_catalogue.events WHERE pool_id=%s
+                      UNION ALL SELECT pool_key FROM domino_catalogue.hints WHERE pool_id=%s LIMIT 1''',
+                      (pool_id,pool_id)).fetchone()
+                if stored:
+                    candidate['poolKey'] = stored['pool_key']
+            except (DataError, AttributeError, TypeError):
+                pass
+        pool = reader.pool(candidate, block)
 
         def matched(observation):
             data = observation.get('data')
@@ -552,11 +587,33 @@ class ReadService:
         """
         if not isinstance(pool_ids, (list, tuple)) or len(pool_ids) > 24:
             raise DataError('invalid_snapshot_request')
+        public_data = getattr(self,'public_data',None)
+        if public_data is not None:
+            repo = public_data.repository
+            ids = list(pool_ids) if pool_ids else repo.snapshot_pool_ids()
+            rows = repo.overview(pool_ids=ids)['pools']
+            ready = [row for row in rows if row['payload'] is not None]
+            if ready:
+                from public_observations import aged_market
+                now = int(self.clock())
+                built = min(row['observed_at'] for row in ready)
+                entries = []
+                for row in ready:
+                    value = aged_market(row['payload'],row['observed_at'],now)
+                    entries.append({'poolId':row['entity_id'],'pool':value['pool'],
+                                    'market':value['market'],'observedAt':row['observed_at']})
+                age = max(0,now-built)
+                return {'schemaVersion':1,'mode':'stored_markets_snapshot','chainId':CHAIN_ID,
+                        'status':'stale' if age>300 else 'current','reason':'snapshot_refresh_pending' if age>300 else None,
+                        'builtAt':built,'ageSeconds':age,'stale':age>300,'generated':False,
+                        'requested':list(pool_ids),'pools':entries}
         return self.snapshot.serve(list(pool_ids) if pool_ids else None)
 
 
     @public_response('token')
     def token(self, token):
+        token = address(token)
+        self._request_public('token', token)
         reader = DiscoveryReader(self._rpc(self.transport_factory()), clock=self.clock)
         block = reader.snapshot()
         asset = reader.token_lookup(token, block)

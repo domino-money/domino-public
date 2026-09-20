@@ -130,12 +130,13 @@ class SnapshotServiceTests(unittest.TestCase):
         self.cache = MarketCache(self.provider, clock=lambda: self.now)
         self.service = ReadService(rpc_factory=lambda: self.rpc, clock=lambda: 1010,
                                    market_cache=self.cache, catalogue=None)
-        self.app = create_app(self.service, gate=ReadGate(interval=0))
+        self.gate = ReadGate(interval=0)
+        self.app = create_app(self.service, gate=self.gate)
         self.client = TestClient(self.app, base_url='http://127.0.0.1:8876')
 
-    def test_pool_market_feeds_snapshot_and_serve_bypasses_gate(self):
+    def test_pool_market_feeds_snapshot_and_serve_uses_only_stored_capacity(self):
         self.assertEqual(self.client.post('/v1/read/pool-market', json={'poolId': POOL}).status_code, 200)
-        # The snapshot route answers from the store: no gate slot, no RPC reads.
+        # The snapshot route answers from the store without RPC reads.
         reads_before = self.rpc.blocks_read
         response = self.client.post('/v1/read/markets-snapshot', json={'poolIds': [POOL]})
         self.assertEqual(response.status_code, 200, response.text)
@@ -163,11 +164,12 @@ class SnapshotServiceTests(unittest.TestCase):
 
     def test_snapshot_served_even_when_provider_gate_is_held(self):
         self.client.post('/v1/read/pool-market', json={'poolId': POOL})
-        gate = self.app.routes  # locate the gate through the app's state
         # Hold the provider slot directly, as an in-flight expensive read would.
-        held = ReadGate(interval=0)
-        self.assertTrue(True)  # slot semantics covered by ReadGate tests
-        response = self.client.post('/v1/read/markets-snapshot', json={})
+        self.assertTrue(self.gate.enter(ReadGate.PROVIDER))
+        try:
+            response = self.client.post('/v1/read/markets-snapshot', json={})
+        finally:
+            self.gate.leave(ReadGate.PROVIDER)
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json()['status'], 'current')
 

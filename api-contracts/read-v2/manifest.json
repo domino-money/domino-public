@@ -266,11 +266,11 @@
     },
     {
       "path": "backend/read_service.py",
-      "sha256": "8165bb96306f31e23fb423f865a6cfe63a59aa40fa87858d50a36f04ab4f329a"
+      "sha256": "a28ee8b0eda4f28d0949f15bb9da44ba16852e3d4b45c82c52e3aa9cfb1cd6fc"
     },
     {
       "path": "backend/market_cache.py",
-      "sha256": "97ff52dce966a54e2173d806fc558bd4030df8d3e3beefb50922408aaa02894b"
+      "sha256": "38674872b9be2283216d4e0c8c56933ddc5ecc26ff8896ebbe758357c2ebb937"
     },
     {
       "path": "backend/market_data.py",
@@ -278,19 +278,19 @@
     },
     {
       "path": "backend/read_gateway.py",
-      "sha256": "a6662276eb8ba6616c09a96e564f2babeb37d62beb86aac4344834b1220d4437"
+      "sha256": "a0cdb688a87129bba53f4eebbd2fc11837ea8a99560d934380cf4a3e29fd4464"
     },
     {
       "path": "backend/read_api.py",
-      "sha256": "a782acf5daedc0f79c27dd0f16b2bba36c8c9279021b5900eac3ea64f6c29ea8"
+      "sha256": "507959eb92bdfff674d0e43a58343c9f5e8f8d9d65cfd87085a3007ad91efcea"
     },
     {
       "path": "backend/bridge_http.py",
-      "sha256": "0421f6a1eedcb8c18b22a225b28cfc8f416e20b18bd930ab29cdb3a2ab7ebba2"
+      "sha256": "6935b953b3200f69a8d964b8125ef88820747b5c1d629153dcf7db7c7b2a5977"
     },
     {
       "path": "backend/dev_read_gateway.py",
-      "sha256": "a9f41be8d0794c11a9191894b9b02321fa9f5ca89587ec16d93ddd7410844db3"
+      "sha256": "9f8f202c7e7d2b5ebacba6649c9864faf6e71d623f57dd59a9d5a6ba5ac6c215"
     },
     {
       "path": "backend/dev_read_identity.py",
@@ -322,7 +322,7 @@
     },
     {
       "path": "bridge/src/worker.mjs",
-      "sha256": "764a4cb3205bff2563a749333eb18af7686003bebf638448ceba01bee5255d81"
+      "sha256": "56bf8e6754e2309db4fdaf526b4f7dc316a110bd4f5b47c7cdaa527e1d26397f"
     },
     {
       "path": "bridge/src/strict-json.mjs",
@@ -330,11 +330,11 @@
     },
     {
       "path": "app/functions/_lib/bridge.ts",
-      "sha256": "6d7d502b0c6094eb5add007d83d5a47dbdd4b4ed585e82a809bdabaf8be462ff"
+      "sha256": "4de557e26be76aad70f3d82319ca6c779de314ad6bcef1fb9c1beee8d95dad05"
     },
     {
       "path": "bridge/wrangler.read.toml",
-      "sha256": "66dd50f7c0484d4a7f45218a5b34a8538beaaecbcc588d729534b685acb0de5d"
+      "sha256": "ac1346bcc211541e7768eda9e4c4df0e98a59379efcbe0560b3a97071420df47"
     },
     {
       "path": "backend/tests/read_v2_contract_fixtures.py",

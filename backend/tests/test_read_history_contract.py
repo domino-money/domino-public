@@ -165,10 +165,10 @@ class ReadHistoryTests(IdentityFixtures, unittest.TestCase):
             with ThreadPoolExecutor(max_workers=3) as pool: list(pool.map(client_page,range(3)))
             self.assertEqual(len(starts),15)
             # Per-kind start spacing (#157): provider reads keep the one-second
-            # serial gate; stored reads (pool-metrics) run on their own slot,
-            # so cross-kind pairs may start sooner than 0.95s apart.
-            provider_starts=[t for t,route in zip(starts,self.seen_routes) if route not in ('catalogue','pool-metrics')]
-            stored_starts=[t for t,route in zip(starts,self.seen_routes) if route in ('catalogue','pool-metrics')]
+            # serial gate, including pool-metrics' RPC canonicality proof.
+            # Stored catalogue/snapshot reads have an independent interval.
+            provider_starts=[t for t,route in zip(starts,self.seen_routes) if route not in ('catalogue','markets-snapshot')]
+            stored_starts=[t for t,route in zip(starts,self.seen_routes) if route in ('catalogue','markets-snapshot')]
             self.assertTrue(all(b-a>=.95 for a,b in zip(provider_starts,provider_starts[1:])))
             self.assertTrue(all(b-a>=.95 for a,b in zip(stored_starts,stored_starts[1:])))
             self.assertTrue(all(row['completed']==5 for row in metrics))

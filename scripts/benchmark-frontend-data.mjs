@@ -21,6 +21,7 @@ import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import * as v1 from '../api-contracts/read-v1/runtime.mjs';
 import * as v2 from '../api-contracts/read-v2/runtime.mjs';
+import * as v3 from '../api-contracts/read-v3/runtime.mjs';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const APP = resolve(ROOT, 'app');
@@ -29,13 +30,14 @@ const USER_AGENT = 'Mozilla/5.0 (compatible; DominoLatencyProbe/1.0)';
 const MAX_REQUESTS = 60;
 const TOTAL_MS = 300_000;
 const MAX_BYTES = 1024 * 1024;
-const SAFE_ROUTES = new Set(['capabilities', 'token', 'pools', 'pool-market', 'wallet-assets', 'nft-positions', 'catalogue', 'pool-activity', 'pool-positions', 'pool-metrics', 'markets-snapshot']);
+const SAFE_ROUTES = new Set(['capabilities', 'token', 'pools', 'pool-market', 'wallet-assets', 'nft-positions', 'catalogue', 'pool-activity', 'pool-positions', 'pool-metrics', 'markets-snapshot', 'overview', 'history', 'search']);
+const storedMode = process.argv.length === 3 && process.argv[2] === '--stored';
 const require = createRequire(import.meta.url);
 const built = (name) => require(resolve(APP, '.test-build/app/src/lib/read', `${name}.js`));
 
-if (process.argv.length > 2) {
+if (process.argv.length > 2 && !storedMode) {
   if (process.argv.length === 3 && process.argv[2] === '--help') {
-    console.log('Read one beta password line from stdin; emit sanitized JSONL for one cold production Markets load. Max 60 reads / 300 seconds. Run npm ci --prefix app --ignore-scripts first.');
+    console.log('Read one beta password line from stdin; emit sanitized JSONL for one cold production Markets load. --stored exercises the additive V3 overview adapter; no flag preserves the original legacy baseline. Max 60 reads / 300 seconds. Run npm ci --prefix app --ignore-scripts first.');
     process.exit(0);
   }
   console.error('No command-line credentials or target overrides are accepted. Use --help.');
@@ -85,6 +87,8 @@ if (login.status !== 303 || !cookie || /[\r\n]/.test(cookie)) {
 }
 
 const { createEstimateSource } = built('estimateSource');
+const { createPublicSource } = built('publicSource');
+const { createPublicMetadataCache } = built('publicMetadataCache');
 const { createScheduledSource } = built('scheduler');
 const { loadSelectedPools } = built('marketsProvider');
 const { createSnapshotMemo } = built('marketsSnapshot');
@@ -119,7 +123,7 @@ const clock = {
 };
 
 async function tracedFetch(path, init) {
-  if (!/^\/api\/read\/v[12]\/[a-z-]+$/.test(path)) throw new Error('route_refused');
+  if (!/^\/api\/read\/v[123]\/[a-z-]+$/.test(path)) throw new Error('route_refused');
   const route = path.split('/').at(-1);
   if (!SAFE_ROUTES.has(route)) throw new Error('route_refused');
   if (abort.signal.aborted || requestCount >= MAX_REQUESTS) {
@@ -178,6 +182,12 @@ async function tracedFetch(path, init) {
       status: word(reply?.status), ageSeconds: number(reply?.ageSeconds), builtAt: number(reply?.builtAt),
       poolCount: Array.isArray(reply?.pools) ? reply.pools.length : null,
     };
+    if (route === 'overview') result.overview = {
+      generatedAt: number(reply?.generatedAt), revision: number(reply?.revision),
+      acquisitionAccepted: reply?.acquisitionAccepted === true,
+      pools: Array.isArray(reply?.pools) ? reply.pools.map((entry) => ({ poolId: identifier(entry.poolId), observedAt: number(entry.observedAt), acquisition: word(entry.acquisition?.status), hasValue: entry.value !== null })) : null,
+      tokenCount: Array.isArray(reply?.tokens) ? reply.tokens.length : null,
+    };
     const market = path.includes('/v2/') ? reply?.market?.market : reply?.market;
     if (route === 'pool-market') result.market = { status: word(market?.status), reason: word(market?.reason), cacheAgeSeconds: number(market?.cache?.ageSeconds), retrievedAt: number(market?.data?.retrievedAt) };
     ends.push(result);
@@ -191,14 +201,16 @@ async function tracedFetch(path, init) {
   } finally { activeRequest = null; }
 }
 
-const raw = createEstimateSource({ enabled: true, validators: v1, fetch: tracedFetch, clock }, v2);
-const scheduler = createScheduledSource(raw, { minIntervalMs: 1100, clock });
+const options = { enabled: true, validators: v1, fetch: tracedFetch, clock };
+const legacy = createEstimateSource(options, v2);
+const raw = storedMode ? createPublicSource(legacy, options, v3) : legacy;
+const scheduler = createPublicMetadataCache(createScheduledSource(raw, { minIntervalMs: 1100, clock }), clock);
 const source = {
   ...scheduler,
   read: (route, request, opts = {}) => scheduler.read(route, request, { ...opts, signal: AbortSignal.any([abort.signal, opts.signal].filter(Boolean)) }),
   routeEnabled: (route, opts = {}) => scheduler.routeEnabled(route, { ...opts, signal: AbortSignal.any([abort.signal, opts.signal].filter(Boolean)) }),
 };
-emit('benchmark_start', { startedAt, revision, origin: ORIGIN, userAgent: USER_AGENT, mode: 'cold_markets_pipeline', priceTimingMeaning: 'token_metadata_reads_settled_not_verified_price', maxRequests: MAX_REQUESTS, totalBudgetMs: TOTAL_MS, poolCount: SELECTED_POOLS.length, minIntervalMs: 1100, burst: 5, perMinute: 30 });
+emit('benchmark_start', { startedAt, revision, origin: ORIGIN, userAgent: USER_AGENT, mode: storedMode ? 'cold_stored_overview_pipeline' : 'cold_markets_pipeline', priceTimingMeaning: 'token_metadata_reads_settled_not_verified_price', maxRequests: MAX_REQUESTS, totalBudgetMs: TOTAL_MS, poolCount: SELECTED_POOLS.length, minIntervalMs: 1100, burst: 5, perMinute: 30 });
 try {
   const loaded = await loadSelectedPools(source, SELECTED_POOLS, abort.signal, (rows) => {
     const newlyVisible = [];
@@ -214,7 +226,7 @@ try {
       marketStatus: word(row.provenance?.market?.status), metricStatus: word(row.provenance?.metrics?.freshness),
       hasEstimate: Boolean(row.feeAprEstimate),
     })) });
-  }, { tokens: new Map(), snapshot: createSnapshotMemo(clock.monotonic), metrics: true });
+  }, { tokens: new Map(), snapshot: createSnapshotMemo(clock.monotonic), metrics: true, overview: storedMode });
   emit('benchmark_summary', {
     elapsedMs: elapsed(), firstRowMs, allRowsMs, firstPricedRowMs, allPricedRowsMs,
     priceTimingMeaning: 'token_metadata_reads_settled_not_verified_price', settledRows: loaded.rows.length,

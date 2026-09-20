@@ -43,7 +43,10 @@ PACKAGED_MIGRATIONS = ('backend/migrations/015_unsigned_execution.sql',
                        'backend/migrations/019_execution_journal.sql',
                        'backend/migrations/020_pool_requests.sql',
                        'backend/migrations/021_reference_price_sources.sql',
-                       'backend/migrations/022_event_timestamp_source.sql')
+                       'backend/migrations/022_event_timestamp_source.sql',
+                       'backend/migrations/023_pool_request_scheduling.sql',
+                       'backend/migrations/024_public_observations.sql',
+                       'backend/migrations/025_public_history.sql')
 
 
 def packaged_records(files):

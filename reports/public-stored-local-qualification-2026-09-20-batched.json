@@ -1,0 +1,668 @@
+{
+  "generatedAt": "2026-09-20T01:45:17.416715+00:00",
+  "scope": "local ASGI reader + real isolated PostgreSQL, synthetic fixtures",
+  "productionTouched": false,
+  "externalNetworkUsed": false,
+  "database": "domino_public_benchmark_tests",
+  "syntheticPools": 32,
+  "syntheticTokens": 2,
+  "storedCapacity": 4,
+  "storedStartIntervalSeconds": 0,
+  "databaseCacheFlushed": false,
+  "fixtureLoadBeforeMeasurement": true,
+  "p95Estimator": "nearest rank",
+  "rpcCalls": 0,
+  "cases": [
+    {
+      "case": "overview_six",
+      "latency": {
+        "n": 20,
+        "p50Ms": 923.512,
+        "p95Ms": 1766.805,
+        "maxMs": 3202.477,
+        "sumMs": 21175.86
+      },
+      "statuses": {
+        "200": 20
+      },
+      "elapsedMs": 24006.598,
+      "databaseConnections": 40,
+      "connectionsPerRequest": 2.0,
+      "connectionOpening": {
+        "n": 40,
+        "p50Ms": 36.72,
+        "p95Ms": 231.199,
+        "maxMs": 312.997,
+        "sumMs": 2905.388
+      },
+      "demandAdmission": {
+        "n": 20,
+        "p50Ms": 168.26,
+        "p95Ms": 304.199,
+        "maxMs": 872.711,
+        "sumMs": 4058.011
+      },
+      "admissionShareOfSequentialDurationPercent": 19.16
+    },
+    {
+      "case": "overview_twenty_four",
+      "latency": {
+        "n": 8,
+        "p50Ms": 1635.055,
+        "p95Ms": 3499.408,
+        "maxMs": 3499.408,
+        "sumMs": 15220.274
+      },
+      "statuses": {
+        "200": 8
+      },
+      "elapsedMs": 17901.935,
+      "databaseConnections": 16,
+      "connectionsPerRequest": 2.0,
+      "connectionOpening": {
+        "n": 16,
+        "p50Ms": 45.305,
+        "p95Ms": 145.582,
+        "maxMs": 145.582,
+        "sumMs": 793.937
+      },
+      "demandAdmission": {
+        "n": 8,
+        "p50Ms": 167.031,
+        "p95Ms": 437.705,
+        "maxMs": 437.705,
+        "sumMs": 1412.875
+      },
+      "admissionShareOfSequentialDurationPercent": 9.28
+    },
+    {
+      "case": "history_stored",
+      "latency": {
+        "n": 20,
+        "p50Ms": 386.041,
+        "p95Ms": 1121.151,
+        "maxMs": 1232.923,
+        "sumMs": 9451.137
+      },
+      "statuses": {
+        "200": 20
+      },
+      "elapsedMs": 9478.287,
+      "databaseConnections": 60,
+      "connectionsPerRequest": 3.0,
+      "connectionOpening": {
+        "n": 60,
+        "p50Ms": 27.833,
+        "p95Ms": 119.027,
+        "maxMs": 218.295,
+        "sumMs": 2550.706
+      },
+      "demandAdmission": {
+        "n": 20,
+        "p50Ms": 66.636,
+        "p95Ms": 177.71,
+        "maxMs": 316.641,
+        "sumMs": 1727.853
+      },
+      "admissionShareOfSequentialDurationPercent": 18.28
+    },
+    {
+      "case": "search_stored",
+      "latency": {
+        "n": 20,
+        "p50Ms": 198.901,
+        "p95Ms": 310.958,
+        "maxMs": 450.421,
+        "sumMs": 3755.098
+      },
+      "statuses": {
+        "200": 20
+      },
+      "elapsedMs": 3788.975,
+      "databaseConnections": 20,
+      "connectionsPerRequest": 1.0,
+      "connectionOpening": {
+        "n": 20,
+        "p50Ms": 40.8,
+        "p95Ms": 173.548,
+        "maxMs": 223.252,
+        "sumMs": 1060.984
+      },
+      "demandAdmission": {
+        "n": 0
+      },
+      "admissionShareOfSequentialDurationPercent": 0.0
+    }
+  ],
+  "pagination": {
+    "pages": [
+      24,
+      8
+    ],
+    "uniquePools": 32,
+    "complete32": true,
+    "revisionStable": true,
+    "attempts": [
+      {
+        "status": 200,
+        "durationMs": 2562.046
+      },
+      {
+        "status": 200,
+        "durationMs": 4575.413
+      }
+    ]
+  },
+  "tenConcurrentClients": {
+    "clients": 10,
+    "maxAttemptsPerClient": 4,
+    "elapsedMs": 16594.632,
+    "completed": 10,
+    "refusals": 11,
+    "errors": 0,
+    "attemptLatency": {
+      "n": 21,
+      "p50Ms": 4782.847,
+      "p95Ms": 9314.627,
+      "maxMs": 9459.101,
+      "sumMs": 79843.972
+    },
+    "completionLatency": {
+      "n": 10,
+      "p50Ms": 11527.382,
+      "p95Ms": 16185.059,
+      "maxMs": 16185.059,
+      "sumMs": 100614.429
+    },
+    "visitors": [
+      {
+        "client": 1,
+        "finalStatus": 200,
+        "attempts": [
+          {
+            "status": 200,
+            "durationMs": 1124.334
+          }
+        ],
+        "completionMs": 1223.778
+      },
+      {
+        "client": 2,
+        "finalStatus": 200,
+        "attempts": [
+          {
+            "status": 200,
+            "durationMs": 7317.0
+          }
+        ],
+        "completionMs": 7899.792
+      },
+      {
+        "client": 3,
+        "finalStatus": 200,
+        "attempts": [
+          {
+            "status": 200,
+            "durationMs": 3092.227
+          }
+        ],
+        "completionMs": 3559.863
+      },
+      {
+        "client": 4,
+        "finalStatus": 200,
+        "attempts": [
+          {
+            "status": 200,
+            "durationMs": 4782.847
+          }
+        ],
+        "completionMs": 6780.599
+      },
+      {
+        "client": 5,
+        "finalStatus": 200,
+        "attempts": [
+          {
+            "status": 429,
+            "durationMs": 635.186,
+            "errorCode": "read_capacity_busy",
+            "retryAfterSeconds": 1
+          },
+          {
+            "status": 200,
+            "durationMs": 9314.627
+          }
+        ],
+        "completionMs": 11745.943
+      },
+      {
+        "client": 6,
+        "finalStatus": 200,
+        "attempts": [
+          {
+            "status": 429,
+            "durationMs": 525.031,
+            "errorCode": "read_capacity_busy",
+            "retryAfterSeconds": 1
+          },
+          {
+            "status": 200,
+            "durationMs": 9459.101
+          }
+        ],
+        "completionMs": 11931.768
+      },
+      {
+        "client": 7,
+        "finalStatus": 200,
+        "attempts": [
+          {
+            "status": 429,
+            "durationMs": 515.581,
+            "errorCode": "read_capacity_busy",
+            "retryAfterSeconds": 1
+          },
+          {
+            "status": 200,
+            "durationMs": 8721.642
+          }
+        ],
+        "completionMs": 11308.821
+      },
+      {
+        "client": 8,
+        "finalStatus": 200,
+        "attempts": [
+          {
+            "status": 429,
+            "durationMs": 509.15,
+            "errorCode": "read_capacity_busy",
+            "retryAfterSeconds": 1
+          },
+          {
+            "status": 429,
+            "durationMs": 4850.343,
+            "errorCode": "read_capacity_busy",
+            "retryAfterSeconds": 1
+          },
+          {
+            "status": 200,
+            "durationMs": 5547.276
+          }
+        ],
+        "completionMs": 13939.481
+      },
+      {
+        "client": 9,
+        "finalStatus": 200,
+        "attempts": [
+          {
+            "status": 429,
+            "durationMs": 337.422,
+            "errorCode": "read_capacity_busy",
+            "retryAfterSeconds": 1
+          },
+          {
+            "status": 429,
+            "durationMs": 4850.495,
+            "errorCode": "read_capacity_busy",
+            "retryAfterSeconds": 1
+          },
+          {
+            "status": 429,
+            "durationMs": 500.206,
+            "errorCode": "read_capacity_busy",
+            "retryAfterSeconds": 1
+          },
+          {
+            "status": 200,
+            "durationMs": 6420.061
+          }
+        ],
+        "completionMs": 16185.059
+      },
+      {
+        "client": 10,
+        "finalStatus": 200,
+        "attempts": [
+          {
+            "status": 429,
+            "durationMs": 290.288,
+            "errorCode": "read_capacity_busy",
+            "retryAfterSeconds": 1
+          },
+          {
+            "status": 429,
+            "durationMs": 4792.18,
+            "errorCode": "read_capacity_busy",
+            "retryAfterSeconds": 1
+          },
+          {
+            "status": 429,
+            "durationMs": 503.61,
+            "errorCode": "read_capacity_busy",
+            "retryAfterSeconds": 1
+          },
+          {
+            "status": 200,
+            "durationMs": 5755.365
+          }
+        ],
+        "completionMs": 16039.325
+      }
+    ]
+  },
+  "rawSequential": [
+    {
+      "case": "overview_six",
+      "attempts": [
+        {
+          "status": 200,
+          "durationMs": 3202.477
+        },
+        {
+          "status": 200,
+          "durationMs": 936.184
+        },
+        {
+          "status": 200,
+          "durationMs": 1479.762
+        },
+        {
+          "status": 200,
+          "durationMs": 1283.892
+        },
+        {
+          "status": 200,
+          "durationMs": 834.293
+        },
+        {
+          "status": 200,
+          "durationMs": 529.443
+        },
+        {
+          "status": 200,
+          "durationMs": 788.684
+        },
+        {
+          "status": 200,
+          "durationMs": 659.329
+        },
+        {
+          "status": 200,
+          "durationMs": 546.952
+        },
+        {
+          "status": 200,
+          "durationMs": 608.661
+        },
+        {
+          "status": 200,
+          "durationMs": 340.212
+        },
+        {
+          "status": 200,
+          "durationMs": 1072.772
+        },
+        {
+          "status": 200,
+          "durationMs": 1479.76
+        },
+        {
+          "status": 200,
+          "durationMs": 932.271
+        },
+        {
+          "status": 200,
+          "durationMs": 1139.625
+        },
+        {
+          "status": 200,
+          "durationMs": 493.947
+        },
+        {
+          "status": 200,
+          "durationMs": 434.822
+        },
+        {
+          "status": 200,
+          "durationMs": 1731.216
+        },
+        {
+          "status": 200,
+          "durationMs": 1766.805
+        },
+        {
+          "status": 200,
+          "durationMs": 914.753
+        }
+      ]
+    },
+    {
+      "case": "overview_twenty_four",
+      "attempts": [
+        {
+          "status": 200,
+          "durationMs": 1534.279
+        },
+        {
+          "status": 200,
+          "durationMs": 1020.943
+        },
+        {
+          "status": 200,
+          "durationMs": 596.251
+        },
+        {
+          "status": 200,
+          "durationMs": 1269.352
+        },
+        {
+          "status": 200,
+          "durationMs": 2915.46
+        },
+        {
+          "status": 200,
+          "durationMs": 3499.408
+        },
+        {
+          "status": 200,
+          "durationMs": 2648.749
+        },
+        {
+          "status": 200,
+          "durationMs": 1735.832
+        }
+      ]
+    },
+    {
+      "case": "history_stored",
+      "attempts": [
+        {
+          "status": 200,
+          "durationMs": 597.417
+        },
+        {
+          "status": 200,
+          "durationMs": 561.623
+        },
+        {
+          "status": 200,
+          "durationMs": 864.648
+        },
+        {
+          "status": 200,
+          "durationMs": 792.548
+        },
+        {
+          "status": 200,
+          "durationMs": 575.244
+        },
+        {
+          "status": 200,
+          "durationMs": 592.821
+        },
+        {
+          "status": 200,
+          "durationMs": 399.434
+        },
+        {
+          "status": 200,
+          "durationMs": 323.687
+        },
+        {
+          "status": 200,
+          "durationMs": 1232.923
+        },
+        {
+          "status": 200,
+          "durationMs": 1121.151
+        },
+        {
+          "status": 200,
+          "durationMs": 555.007
+        },
+        {
+          "status": 200,
+          "durationMs": 243.821
+        },
+        {
+          "status": 200,
+          "durationMs": 230.866
+        },
+        {
+          "status": 200,
+          "durationMs": 296.252
+        },
+        {
+          "status": 200,
+          "durationMs": 372.648
+        },
+        {
+          "status": 200,
+          "durationMs": 118.114
+        },
+        {
+          "status": 200,
+          "durationMs": 123.502
+        },
+        {
+          "status": 200,
+          "durationMs": 121.461
+        },
+        {
+          "status": 200,
+          "durationMs": 158.009
+        },
+        {
+          "status": 200,
+          "durationMs": 169.961
+        }
+      ]
+    },
+    {
+      "case": "search_stored",
+      "attempts": [
+        {
+          "status": 200,
+          "durationMs": 88.372
+        },
+        {
+          "status": 200,
+          "durationMs": 132.778
+        },
+        {
+          "status": 200,
+          "durationMs": 56.329
+        },
+        {
+          "status": 200,
+          "durationMs": 67.73
+        },
+        {
+          "status": 200,
+          "durationMs": 96.339
+        },
+        {
+          "status": 200,
+          "durationMs": 91.715
+        },
+        {
+          "status": 200,
+          "durationMs": 200.419
+        },
+        {
+          "status": 200,
+          "durationMs": 81.254
+        },
+        {
+          "status": 200,
+          "durationMs": 193.203
+        },
+        {
+          "status": 200,
+          "durationMs": 450.421
+        },
+        {
+          "status": 200,
+          "durationMs": 277.222
+        },
+        {
+          "status": 200,
+          "durationMs": 310.958
+        },
+        {
+          "status": 200,
+          "durationMs": 286.507
+        },
+        {
+          "status": 200,
+          "durationMs": 239.115
+        },
+        {
+          "status": 200,
+          "durationMs": 231.117
+        },
+        {
+          "status": 200,
+          "durationMs": 53.247
+        },
+        {
+          "status": 200,
+          "durationMs": 197.383
+        },
+        {
+          "status": 200,
+          "durationMs": 246.221
+        },
+        {
+          "status": 200,
+          "durationMs": 221.707
+        },
+        {
+          "status": 200,
+          "durationMs": 233.061
+        }
+      ]
+    }
+  ],
+  "totalElapsedMs": 86015.481,
+  "limitations": [
+    "In-process ASGI, no TCP/TLS/Cloudflare/Access/gateway or browser cost.",
+    "Synthetic stored observations; not evidence of fresh live data or public latency.",
+    "One local run; existing host activity and database cache influence results.",
+    "Connection-opening totals measure psycopg.connect only; not full SQL time.",
+    "Client retries honor reader Retry-After with deterministic per-client staggering; not a production workload."
+  ],
+  "benchmarkPhase": "after_batched_entity_admission",
+  "observedHostContention": {
+    "observedAt": "2026-09-20T01:44:22Z",
+    "loadAverages": [
+      39.82,
+      21.68,
+      19.68
+    ],
+    "note": "Host strongly occupied by other applications during this run. No user applications were stopped. Timings are not a controlled before/after latency comparison."
+  }
+}

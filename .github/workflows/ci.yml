@@ -49,6 +49,8 @@ jobs:
         run: node --test scripts/publish-read-path.test.mjs scripts/read-tunnel-config.test.mjs
       - name: Check the read-path release installer without host access
         run: python3 -B -m unittest discover -s scripts/staging/tests -p test_install_read_release.py -v
+      - name: Check the public-data installer and rollback without host access
+        run: python3 -B -m unittest discover -s scripts/staging/tests -p test_install_public_data.py -v
       - name: Check the inactive reference-collector unit candidates
         run: |
           python3 -B -m unittest discover -s scripts/reference-collector/tests -v
@@ -80,6 +82,10 @@ jobs:
         run: node web/node_modules/typescript/bin/tsc --noEmit --strict --target ES2022 --module NodeNext --moduleResolution NodeNext api-contracts/read-v1/types.ts api-contracts/read-v1/runtime.d.mts api-contracts/read-v1/consumer.typecheck.mts
       - name: Check opt-in pool estimate types
         run: node web/node_modules/typescript/bin/tsc --noEmit --strict --target ES2022 --module NodeNext --moduleResolution NodeNext api-contracts/read-v2/types.ts api-contracts/read-v2/runtime.d.mts api-contracts/read-v2/consumer.typecheck.mts
+      - name: Check stored public read types and validators
+        run: |
+          node web/node_modules/typescript/bin/tsc --noEmit --strict --target ES2022 --module NodeNext --moduleResolution NodeNext api-contracts/read-v3/types.ts api-contracts/read-v3/runtime.d.mts api-contracts/read-v3/consumer.typecheck.mts
+          node --test api-contracts/read-v3/consumer.test.mjs
       - name: Check shared session types
         run: node web/node_modules/typescript/bin/tsc --noEmit --strict --target ES2022 --module NodeNext --moduleResolution NodeNext api-contracts/session-v1/types.ts api-contracts/session-v1/runtime.d.mts
       - name: Check shared onboarding types
@@ -137,6 +143,8 @@ jobs:
         run: node scripts/test-contracts.mjs --match-path test/reference/OfficialDominoCompound.t.sol
       - run: python scripts/export-read-contract.py --check
       - run: python scripts/export-read-v2-contract.py --check
+      - run: python scripts/export-read-v3-contract.py --check
+      - run: python scripts/check-read-v3-parity.py
       - run: python scripts/export-read-openapi.py --check
       - run: python scripts/export-session-contract.py --check
       - run: python scripts/export-onboarding-contract.py --check

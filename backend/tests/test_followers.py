@@ -188,5 +188,18 @@ class FollowLoopTests(unittest.TestCase):
         with self.assertRaises(DataError):
             follow_many((('a',None),),lambda:head(1000),lag=10,max_passes=1,poll_seconds=1)
 
+    def test_shared_budget_exhaustion_stops_before_another_target_or_round(self):
+        calls=[]
+        def exhausted(*,through):
+            calls.append('exhausted')
+            raise DataError('indexer_rpc_budget_exhausted')
+        def healthy(*,through):
+            calls.append('healthy')
+            return {'status':'indexed','through':through}
+        summary=follow_many((('a',exhausted),('b',healthy)),lambda:head(1000),lag=100,
+                            max_passes=5,poll_seconds=1)
+        self.assertEqual(calls,['exhausted'])
+        self.assertEqual(summary['stoppedBecause'],'budget')
+
 
 if __name__=='__main__':unittest.main()

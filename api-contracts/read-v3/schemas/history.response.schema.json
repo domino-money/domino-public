@@ -1,0 +1,270 @@
+{
+  "$defs": {
+    "Interval": {
+      "additionalProperties": false,
+      "properties": {
+        "endTimestamp": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "title": "Endtimestamp",
+          "type": "integer"
+        },
+        "startTimestamp": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "title": "Starttimestamp",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "startTimestamp",
+        "endTimestamp"
+      ],
+      "title": "Interval",
+      "type": "object"
+    },
+    "RatioCandle": {
+      "additionalProperties": false,
+      "properties": {
+        "close": {
+          "maxLength": 224,
+          "pattern": "^[0-9]+(?:\\.[0-9]+)?$",
+          "title": "Close",
+          "type": "string"
+        },
+        "complete": {
+          "title": "Complete",
+          "type": "boolean"
+        },
+        "high": {
+          "maxLength": 224,
+          "pattern": "^[0-9]+(?:\\.[0-9]+)?$",
+          "title": "High",
+          "type": "string"
+        },
+        "low": {
+          "maxLength": 224,
+          "pattern": "^[0-9]+(?:\\.[0-9]+)?$",
+          "title": "Low",
+          "type": "string"
+        },
+        "open": {
+          "maxLength": 224,
+          "pattern": "^[0-9]+(?:\\.[0-9]+)?$",
+          "title": "Open",
+          "type": "string"
+        },
+        "startTimestamp": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "title": "Starttimestamp",
+          "type": "integer"
+        },
+        "swapCount": {
+          "minimum": 1,
+          "title": "Swapcount",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "startTimestamp",
+        "open",
+        "high",
+        "low",
+        "close",
+        "swapCount",
+        "complete"
+      ],
+      "title": "RatioCandle",
+      "type": "object"
+    },
+    "Snapshot": {
+      "additionalProperties": false,
+      "properties": {
+        "hash": {
+          "pattern": "^0x[0-9a-f]{64}$",
+          "title": "Hash",
+          "type": "string"
+        },
+        "number": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "title": "Number",
+          "type": "integer"
+        },
+        "timestamp": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "title": "Timestamp",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "number",
+        "hash",
+        "timestamp"
+      ],
+      "title": "Snapshot",
+      "type": "object"
+    }
+  },
+  "$id": "https://domino.invalid/contracts/read-v3/history.response.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "acquisitionAccepted": {
+      "title": "Acquisitionaccepted",
+      "type": "boolean"
+    },
+    "candles": {
+      "items": {
+        "$ref": "#/$defs/RatioCandle"
+      },
+      "maxItems": 600,
+      "title": "Candles",
+      "type": "array"
+    },
+    "chainId": {
+      "const": 4663,
+      "title": "Chainid",
+      "type": "integer"
+    },
+    "covered": {
+      "items": {
+        "$ref": "#/$defs/Interval"
+      },
+      "maxItems": 128,
+      "title": "Covered",
+      "type": "array"
+    },
+    "currency": {
+      "pattern": "^0x[0-9a-f]{40}$",
+      "title": "Currency",
+      "type": "string"
+    },
+    "executionAvailable": {
+      "const": false,
+      "title": "Executionavailable",
+      "type": "boolean"
+    },
+    "gaps": {
+      "items": {
+        "$ref": "#/$defs/Interval"
+      },
+      "maxItems": 129,
+      "title": "Gaps",
+      "type": "array"
+    },
+    "methodology": {
+      "const": "pool_ratio_v1",
+      "title": "Methodology",
+      "type": "string"
+    },
+    "poolId": {
+      "pattern": "^0x[0-9a-f]{64}$",
+      "title": "Poolid",
+      "type": "string"
+    },
+    "poolManager": {
+      "const": "0x8366a39cc670b4001a1121b8f6a443a643e40951",
+      "title": "Poolmanager",
+      "type": "string"
+    },
+    "quoteCurrency": {
+      "anyOf": [
+        {
+          "pattern": "^0x[0-9a-f]{40}$",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Quotecurrency"
+    },
+    "reason": {
+      "anyOf": [
+        {
+          "pattern": "^[a-z][a-z0-9_]{0,95}$",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Reason"
+    },
+    "requestedWindow": {
+      "$ref": "#/$defs/Interval"
+    },
+    "resolutionSeconds": {
+      "enum": [
+        60,
+        3600,
+        86400
+      ],
+      "title": "Resolutionseconds",
+      "type": "integer"
+    },
+    "schemaVersion": {
+      "const": 1,
+      "title": "Schemaversion",
+      "type": "integer"
+    },
+    "snapshot": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/Snapshot"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "source": {
+      "const": "robinhood_pool_swap_logs",
+      "title": "Source",
+      "type": "string"
+    },
+    "status": {
+      "enum": [
+        "available",
+        "stale",
+        "partial",
+        "not_built",
+        "unavailable"
+      ],
+      "title": "Status",
+      "type": "string"
+    },
+    "unit": {
+      "const": "quote_per_base",
+      "title": "Unit",
+      "type": "string"
+    }
+  },
+  "required": [
+    "schemaVersion",
+    "chainId",
+    "poolManager",
+    "poolId",
+    "currency",
+    "quoteCurrency",
+    "source",
+    "methodology",
+    "unit",
+    "status",
+    "reason",
+    "requestedWindow",
+    "resolutionSeconds",
+    "snapshot",
+    "covered",
+    "gaps",
+    "candles",
+    "acquisitionAccepted",
+    "executionAvailable"
+  ],
+  "title": "HistoryResponse",
+  "type": "object",
+  "x-contract-version": "3.0.0-rc.1"
+}

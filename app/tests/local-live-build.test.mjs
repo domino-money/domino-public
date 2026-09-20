@@ -33,24 +33,31 @@ test('the real source factory paces only local-live at 10.1 s; deployed reads re
   const source = readFileSync(resolve(root, 'src/lib/read/screens/appSourceBridge.ts'), 'utf8')
   const compiled = ts.transpileModule(source, { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } }).outputText
   for (const localLive of [true, false]) {
-    const validators = {}; const estimateRuntime = {}; const bridge = {}; const scheduled = {}; const calls = []
+    const validators = {}; const estimateRuntime = {}; const publicRuntime = {}; const bridge = {}; const publicSource = {}; const scheduled = {}; const cached = {}; const calls = []
     const exports = {}
     runInNewContext(compiled, { exports, __DOMINO_LOCAL_LIVE__: localLive, require: (path) => {
       if (path === '../../capabilities') return { CAPABILITIES: { liveReadsBuilt: true } }
       if (path === '../contract') return { READ_RUNTIME: validators }
       if (path === 'api-contracts/read-v2/runtime.mjs') return estimateRuntime
+      if (path === 'api-contracts/read-v3/runtime.mjs') return publicRuntime
       if (path === '../estimateSource') return { createEstimateSource: (options, runtime) => { calls.push(['bridge', options, runtime]); return bridge } }
+      if (path === '../publicSource') return { createPublicSource: (input, options, runtime) => { calls.push(['public', input, options, runtime]); return publicSource } }
       if (path === '../scheduler') return { createScheduledSource: (input, options) => { calls.push(['scheduler', input, options]); return scheduled } }
+      if (path === '../publicMetadataCache') return { createPublicMetadataCache: input => { calls.push(['cache', input]); return cached } }
       throw new Error(`Unexpected source dependency: ${path}`)
     } })
     assert.equal(exports.BRIDGE_SPACING_MS, localLive ? 10_100 : 1100)
-    assert.equal(exports.createAppBridgeSource(), scheduled)
+    assert.equal(exports.createAppBridgeSource(), cached)
     assert.equal(calls[0][1].validators, validators, 'same canonical validators')
     assert.equal(calls[0][1].enabled, true)
     assert.equal(calls[0][2], estimateRuntime, 'canonical v2 validation is supplied to the same scheduled source')
     assert.deepEqual(Object.keys(calls[0][1]).sort(), ['enabled', 'validators'], 'no retry policy override')
-    assert.equal(calls[1][1], bridge, 'same source through the existing scheduler')
-    assert.equal(calls[1][2].minIntervalMs, localLive ? 10_100 : 1100)
-    assert.deepEqual(Object.keys(calls[1][2]), ['minIntervalMs'], '60 s total deadline and queue bounds are not changed')
+    assert.equal(calls[1][1], bridge, 'V3 keeps the legacy V1/V2 source')
+    assert.equal(calls[1][2], calls[0][1], 'the additive source uses the same options')
+    assert.equal(calls[1][3], publicRuntime, 'canonical V3 validation is supplied')
+    assert.equal(calls[2][1], publicSource, 'all versions share the existing scheduler')
+    assert.equal(calls[2][2].minIntervalMs, localLive ? 10_100 : 1100)
+    assert.deepEqual(Object.keys(calls[2][2]), ['minIntervalMs'], '60 s total deadline and queue bounds are not changed')
+    assert.equal(calls[3][1], scheduled, 'only scheduled public outcomes enter the metadata cache')
   }
 })

@@ -1,0 +1,641 @@
+{
+  "generatedAt": "2026-09-20T01:39:49.025439+00:00",
+  "scope": "local ASGI reader + real isolated PostgreSQL, synthetic fixtures",
+  "productionTouched": false,
+  "externalNetworkUsed": false,
+  "database": "domino_public_benchmark_tests",
+  "syntheticPools": 32,
+  "syntheticTokens": 2,
+  "storedCapacity": 4,
+  "storedStartIntervalSeconds": 0,
+  "rpcCalls": 0,
+  "cases": [
+    {
+      "case": "overview_six",
+      "latency": {
+        "n": 20,
+        "p50Ms": 134.064,
+        "p95Ms": 203.843,
+        "maxMs": 207.008,
+        "sumMs": 2818.684
+      },
+      "statuses": {
+        "200": 20
+      },
+      "elapsedMs": 2981.466,
+      "databaseConnections": 140,
+      "connectionsPerRequest": 7.0,
+      "connectionOpening": {
+        "n": 140,
+        "p50Ms": 5.306,
+        "p95Ms": 9.243,
+        "maxMs": 12.951,
+        "sumMs": 780.225
+      },
+      "demandAdmission": {
+        "n": 120,
+        "p50Ms": 12.631,
+        "p95Ms": 19.843,
+        "maxMs": 50.188,
+        "sumMs": 1673.955
+      },
+      "admissionShareOfSequentialDurationPercent": 59.39
+    },
+    {
+      "case": "overview_twenty_four",
+      "latency": {
+        "n": 8,
+        "p50Ms": 480.524,
+        "p95Ms": 537.39,
+        "maxMs": 537.39,
+        "sumMs": 3900.437
+      },
+      "statuses": {
+        "200": 8
+      },
+      "elapsedMs": 4328.448,
+      "databaseConnections": 200,
+      "connectionsPerRequest": 25.0,
+      "connectionOpening": {
+        "n": 200,
+        "p50Ms": 4.972,
+        "p95Ms": 7.027,
+        "maxMs": 68.598,
+        "sumMs": 1084.621
+      },
+      "demandAdmission": {
+        "n": 192,
+        "p50Ms": 12.176,
+        "p95Ms": 16.732,
+        "maxMs": 77.04,
+        "sumMs": 2510.714
+      },
+      "admissionShareOfSequentialDurationPercent": 64.37
+    },
+    {
+      "case": "history_stored",
+      "latency": {
+        "n": 20,
+        "p50Ms": 48.968,
+        "p95Ms": 81.766,
+        "maxMs": 105.972,
+        "sumMs": 1061.935
+      },
+      "statuses": {
+        "200": 20
+      },
+      "elapsedMs": 1066.816,
+      "databaseConnections": 60,
+      "connectionsPerRequest": 3.0,
+      "connectionOpening": {
+        "n": 60,
+        "p50Ms": 5.48,
+        "p95Ms": 10.411,
+        "maxMs": 14.786,
+        "sumMs": 360.412
+      },
+      "demandAdmission": {
+        "n": 20,
+        "p50Ms": 13.513,
+        "p95Ms": 18.736,
+        "maxMs": 27.179,
+        "sumMs": 293.591
+      },
+      "admissionShareOfSequentialDurationPercent": 27.65
+    },
+    {
+      "case": "search_stored",
+      "latency": {
+        "n": 20,
+        "p50Ms": 13.837,
+        "p95Ms": 15.813,
+        "maxMs": 16.251,
+        "sumMs": 277.535
+      },
+      "statuses": {
+        "200": 20
+      },
+      "elapsedMs": 283.893,
+      "databaseConnections": 20,
+      "connectionsPerRequest": 1.0,
+      "connectionOpening": {
+        "n": 20,
+        "p50Ms": 4.718,
+        "p95Ms": 5.5,
+        "maxMs": 6.745,
+        "sumMs": 95.164
+      },
+      "demandAdmission": {
+        "n": 0
+      },
+      "admissionShareOfSequentialDurationPercent": 0.0
+    }
+  ],
+  "pagination": {
+    "pages": [
+      24,
+      8
+    ],
+    "uniquePools": 32,
+    "complete32": true,
+    "revisionStable": true,
+    "attempts": [
+      {
+        "status": 200,
+        "durationMs": 165.297
+      },
+      {
+        "status": 200,
+        "durationMs": 72.193
+      }
+    ]
+  },
+  "tenConcurrentClients": {
+    "clients": 10,
+    "maxAttemptsPerClient": 4,
+    "elapsedMs": 2388.744,
+    "completed": 10,
+    "refusals": 8,
+    "errors": 0,
+    "attemptLatency": {
+      "n": 18,
+      "p50Ms": 127.032,
+      "p95Ms": 342.709,
+      "maxMs": 342.709,
+      "sumMs": 2590.308
+    },
+    "completionLatency": {
+      "n": 10,
+      "p50Ms": 1274.307,
+      "p95Ms": 2383.053,
+      "maxMs": 2383.053,
+      "sumMs": 11250.819
+    },
+    "visitors": [
+      {
+        "client": 1,
+        "finalStatus": 200,
+        "attempts": [
+          {
+            "status": 200,
+            "durationMs": 318.173
+          }
+        ],
+        "completionMs": 327.033
+      },
+      {
+        "client": 2,
+        "finalStatus": 200,
+        "attempts": [
+          {
+            "status": 200,
+            "durationMs": 189.988
+          }
+        ],
+        "completionMs": 198.39
+      },
+      {
+        "client": 3,
+        "finalStatus": 200,
+        "attempts": [
+          {
+            "status": 200,
+            "durationMs": 342.709
+          }
+        ],
+        "completionMs": 350.308
+      },
+      {
+        "client": 4,
+        "finalStatus": 200,
+        "attempts": [
+          {
+            "status": 429,
+            "durationMs": 20.7,
+            "errorCode": "read_capacity_busy",
+            "retryAfterSeconds": 1
+          },
+          {
+            "status": 200,
+            "durationMs": 167.543
+          }
+        ],
+        "completionMs": 1232.285
+      },
+      {
+        "client": 5,
+        "finalStatus": 200,
+        "attempts": [
+          {
+            "status": 200,
+            "durationMs": 333.08
+          }
+        ],
+        "completionMs": 341.618
+      },
+      {
+        "client": 6,
+        "finalStatus": 200,
+        "attempts": [
+          {
+            "status": 429,
+            "durationMs": 20.353,
+            "errorCode": "read_capacity_busy",
+            "retryAfterSeconds": 1
+          },
+          {
+            "status": 200,
+            "durationMs": 235.595
+          }
+        ],
+        "completionMs": 1316.33
+      },
+      {
+        "client": 7,
+        "finalStatus": 200,
+        "attempts": [
+          {
+            "status": 429,
+            "durationMs": 20.162,
+            "errorCode": "read_capacity_busy",
+            "retryAfterSeconds": 1
+          },
+          {
+            "status": 200,
+            "durationMs": 273.671
+          }
+        ],
+        "completionMs": 1365.237
+      },
+      {
+        "client": 8,
+        "finalStatus": 200,
+        "attempts": [
+          {
+            "status": 429,
+            "durationMs": 20.068,
+            "errorCode": "read_capacity_busy",
+            "retryAfterSeconds": 1
+          },
+          {
+            "status": 200,
+            "durationMs": 331.705
+          }
+        ],
+        "completionMs": 1432.141
+      },
+      {
+        "client": 9,
+        "finalStatus": 200,
+        "attempts": [
+          {
+            "status": 429,
+            "durationMs": 21.522,
+            "errorCode": "read_capacity_busy",
+            "retryAfterSeconds": 1
+          },
+          {
+            "status": 429,
+            "durationMs": 7.86,
+            "errorCode": "read_capacity_busy",
+            "retryAfterSeconds": 1
+          },
+          {
+            "status": 200,
+            "durationMs": 104.326
+          }
+        ],
+        "completionMs": 2304.424
+      },
+      {
+        "client": 10,
+        "finalStatus": 200,
+        "attempts": [
+          {
+            "status": 429,
+            "durationMs": 23.031,
+            "errorCode": "read_capacity_busy",
+            "retryAfterSeconds": 1
+          },
+          {
+            "status": 429,
+            "durationMs": 10.083,
+            "errorCode": "read_capacity_busy",
+            "retryAfterSeconds": 1
+          },
+          {
+            "status": 200,
+            "durationMs": 149.739
+          }
+        ],
+        "completionMs": 2383.053
+      }
+    ]
+  },
+  "rawSequential": [
+    {
+      "case": "overview_six",
+      "attempts": [
+        {
+          "status": 200,
+          "durationMs": 207.008
+        },
+        {
+          "status": 200,
+          "durationMs": 162.654
+        },
+        {
+          "status": 200,
+          "durationMs": 203.843
+        },
+        {
+          "status": 200,
+          "durationMs": 126.717
+        },
+        {
+          "status": 200,
+          "durationMs": 133.762
+        },
+        {
+          "status": 200,
+          "durationMs": 126.579
+        },
+        {
+          "status": 200,
+          "durationMs": 137.014
+        },
+        {
+          "status": 200,
+          "durationMs": 123.892
+        },
+        {
+          "status": 200,
+          "durationMs": 133.611
+        },
+        {
+          "status": 200,
+          "durationMs": 134.365
+        },
+        {
+          "status": 200,
+          "durationMs": 115.014
+        },
+        {
+          "status": 200,
+          "durationMs": 135.033
+        },
+        {
+          "status": 200,
+          "durationMs": 121.077
+        },
+        {
+          "status": 200,
+          "durationMs": 157.649
+        },
+        {
+          "status": 200,
+          "durationMs": 144.262
+        },
+        {
+          "status": 200,
+          "durationMs": 135.855
+        },
+        {
+          "status": 200,
+          "durationMs": 139.634
+        },
+        {
+          "status": 200,
+          "durationMs": 124.303
+        },
+        {
+          "status": 200,
+          "durationMs": 128.127
+        },
+        {
+          "status": 200,
+          "durationMs": 128.285
+        }
+      ]
+    },
+    {
+      "case": "overview_twenty_four",
+      "attempts": [
+        {
+          "status": 200,
+          "durationMs": 523.667
+        },
+        {
+          "status": 200,
+          "durationMs": 441.559
+        },
+        {
+          "status": 200,
+          "durationMs": 454.973
+        },
+        {
+          "status": 200,
+          "durationMs": 537.39
+        },
+        {
+          "status": 200,
+          "durationMs": 455.615
+        },
+        {
+          "status": 200,
+          "durationMs": 457.884
+        },
+        {
+          "status": 200,
+          "durationMs": 503.163
+        },
+        {
+          "status": 200,
+          "durationMs": 526.186
+        }
+      ]
+    },
+    {
+      "case": "history_stored",
+      "attempts": [
+        {
+          "status": 200,
+          "durationMs": 81.766
+        },
+        {
+          "status": 200,
+          "durationMs": 53.293
+        },
+        {
+          "status": 200,
+          "durationMs": 105.972
+        },
+        {
+          "status": 200,
+          "durationMs": 47.474
+        },
+        {
+          "status": 200,
+          "durationMs": 44.071
+        },
+        {
+          "status": 200,
+          "durationMs": 41.686
+        },
+        {
+          "status": 200,
+          "durationMs": 50.015
+        },
+        {
+          "status": 200,
+          "durationMs": 38.197
+        },
+        {
+          "status": 200,
+          "durationMs": 40.673
+        },
+        {
+          "status": 200,
+          "durationMs": 41.817
+        },
+        {
+          "status": 200,
+          "durationMs": 42.669
+        },
+        {
+          "status": 200,
+          "durationMs": 51.273
+        },
+        {
+          "status": 200,
+          "durationMs": 40.167
+        },
+        {
+          "status": 200,
+          "durationMs": 47.921
+        },
+        {
+          "status": 200,
+          "durationMs": 61.53
+        },
+        {
+          "status": 200,
+          "durationMs": 56.036
+        },
+        {
+          "status": 200,
+          "durationMs": 51.821
+        },
+        {
+          "status": 200,
+          "durationMs": 46.795
+        },
+        {
+          "status": 200,
+          "durationMs": 63.217
+        },
+        {
+          "status": 200,
+          "durationMs": 55.542
+        }
+      ]
+    },
+    {
+      "case": "search_stored",
+      "attempts": [
+        {
+          "status": 200,
+          "durationMs": 14.102
+        },
+        {
+          "status": 200,
+          "durationMs": 15.251
+        },
+        {
+          "status": 200,
+          "durationMs": 14.025
+        },
+        {
+          "status": 200,
+          "durationMs": 14.81
+        },
+        {
+          "status": 200,
+          "durationMs": 15.702
+        },
+        {
+          "status": 200,
+          "durationMs": 13.356
+        },
+        {
+          "status": 200,
+          "durationMs": 16.251
+        },
+        {
+          "status": 200,
+          "durationMs": 15.813
+        },
+        {
+          "status": 200,
+          "durationMs": 13.648
+        },
+        {
+          "status": 200,
+          "durationMs": 11.812
+        },
+        {
+          "status": 200,
+          "durationMs": 13.501
+        },
+        {
+          "status": 200,
+          "durationMs": 13.275
+        },
+        {
+          "status": 200,
+          "durationMs": 11.381
+        },
+        {
+          "status": 200,
+          "durationMs": 12.327
+        },
+        {
+          "status": 200,
+          "durationMs": 14.153
+        },
+        {
+          "status": 200,
+          "durationMs": 13.609
+        },
+        {
+          "status": 200,
+          "durationMs": 12.858
+        },
+        {
+          "status": 200,
+          "durationMs": 14.215
+        },
+        {
+          "status": 200,
+          "durationMs": 14.151
+        },
+        {
+          "status": 200,
+          "durationMs": 13.295
+        }
+      ]
+    }
+  ],
+  "totalElapsedMs": 11678.333,
+  "limitations": [
+    "In-process ASGI, no TCP/TLS/Cloudflare/Access/gateway or browser cost.",
+    "Synthetic stored observations; not evidence of fresh live data or public latency.",
+    "One local run; existing host activity and database cache influence results.",
+    "Connection-opening totals measure psycopg.connect only; not full SQL time.",
+    "Client retries honor reader Retry-After with deterministic per-client staggering; not a production workload."
+  ],
+  "benchmarkPhase": "before_batched_entity_admission",
+  "databaseCacheFlushed": false,
+  "fixtureLoadBeforeMeasurement": true,
+  "p95Estimator": "nearest rank"
+}

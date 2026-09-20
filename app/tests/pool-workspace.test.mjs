@@ -22,9 +22,9 @@ const row = (poolId) => ({ poolId, tokens: { base: token('1'), quote: token('2')
 const Container = ({ children }) => React.createElement('div', null, children)
 const stub = (name) => Object.defineProperty(() => null, 'displayName', { value: name })
 const parts = Object.fromEntries([
-  'PoolPicker', 'PoolSelectionDialog', 'PoolWorkspace', 'TokenPicker', 'TokenLookup', 'CatalogueCandidates', 'WalletCandidates', 'PoolPriceChart', 'PoolRangeControls',
+  'PoolPicker', 'PoolSelectionDialog', 'PoolWorkspace', 'TokenPicker', 'TokenLookup', 'CatalogueCandidates', 'WalletCandidates', 'PoolPriceChart', 'PoolHistoryChart', 'PoolRangeControls',
   'PoolAprEstimate', 'PoolCatalogueIdentity', 'PoolTokenLabel', 'TokenMark', 'TokenMarkPair', 'SymbolText', 'Address', 'MetricCell', 'TurnoverCell', 'Tabs', 'Skeleton',
-  'CopyButton', 'ProviderFigure', 'EmptyState', 'LinkButton', 'SelectedPoolsTable', 'TokensTable', 'SearchField', 'PageHeader', 'PoolActivityCard', 'PoolPositionsCard',
+  'CopyButton', 'ProviderFigure', 'EmptyState', 'LinkButton', 'SelectedPoolsTable', 'MarketsTable', 'TokensTable', 'SearchField', 'PageHeader', 'PoolActivityCard', 'PoolPositionsCard',
 ].map((name) => [name, stub(name)]))
 
 // Deterministic effect harness around the actual component source. It models
@@ -35,6 +35,7 @@ const hooks = {
   useState(initial) { const host = active, index = host.cursor++; if (!(index in host.values)) host.values[index] = typeof initial === 'function' ? initial() : initial; return [host.values[index], (value) => { host.writes++; host.values[index] = typeof value === 'function' ? value(host.values[index]) : value }] },
   useRef(initial) { const host = active, index = host.cursor++; return host.values[index] ??= { current: initial } },
   useCallback(callback, deps) { const host = active, index = host.cursor++; const prior = host.memo[index]; if (!prior || deps.some((d, i) => !Object.is(d, prior.deps[i]))) host.memo[index] = { callback, deps }; return host.memo[index].callback },
+  useMemo(factory, deps) { const host = active, index = host.cursor++; const prior = host.memo[index]; if (!prior || deps.some((d, i) => !Object.is(d, prior.deps[i]))) host.memo[index] = { value: factory(), deps }; return host.memo[index].value },
   useEffect(effect, deps) { const host = active, index = host.cursor++; const prior = host.effects[index]; if (!prior || !deps || deps.some((d, i) => !Object.is(d, prior.deps?.[i]))) host.pending.push(() => { prior?.cleanup?.(); host.effects[index] = { deps, cleanup: effect() } }) },
 }
 function mount(Component, props) {
@@ -108,10 +109,76 @@ const unavailable = { state: 'unavailable', cause: { kind: 'producer', code: 'up
 /** Every dash the page drew in place of a figure (its own Dash component), by title. */
 const dashes = (host) => elements(host.tree, (node) => node.type?.name === 'Dash').map((node) => node.props.title)
 
+test('a visible carousel card asks for its own verified candles while other rows are still loading', () => {
+  const beforeSet = globalThis.__DOMINO_POOL_SET__;
+  const beforeCancel = globalThis.cancelAnimationFrame;
+  globalThis.__DOMINO_POOL_SET__ = 'selected';
+  globalThis.cancelAnimationFrame = () => {};
+  const reads = [];
+  const market = { ...row(id('a')), chartTokens: { base: addr('1'), quote: addr('2') } };
+  const listings = [{ poolId: id('a'), market }, { poolId: id('b') }];
+  const { MarketCarousel } = load('src/components/markets/MarketCarousel.tsx', {
+    useReadSource: () => ({ transport: 'bridge' }),
+    useMarkets: () => ({ state: { phase: 'loading' }, provider: { kind: 'bridge' } }),
+    shownResult: () => ({ markets: [market] }), poolListings: () => listings,
+    MarketCard: Container, IconButton: Container, IconChevronLeft: Container, IconChevronRight: Container,
+    readWithin(_source, route, request, options) { reads.push({ route, request, options }); return new Promise(() => {}); },
+  });
+  let host;
+  try {
+    host = mount(MarketCarousel, { heading: 'Markets' });
+    assert.equal(reads.length, 0, 'an offscreen card does not ask');
+    // The observer's visible-set state: both cards are visible, but only A
+    // has a verified row. The hook harness does not emulate browser layout.
+    host.values[1] = new Set([id('a'), id('b')]);
+    host.render();
+    assert.deepEqual(reads.map(({ route, request }) => ({ route, request })), [{ route: 'pool-market', request: { poolId: id('a'), includePriceHistory: true, priceToken: 'base' } }]);
+    host.render();
+    assert.equal(reads.length, 1, 'the in-flight card does not duplicate its read');
+    host.unmount(); host = null;
+    assert.equal(reads[0].options.signal.aborted, true);
+  } finally {
+    host?.unmount();
+    globalThis.__DOMINO_POOL_SET__ = beforeSet;
+    globalThis.cancelAnimationFrame = beforeCancel;
+  }
+});
+
+test('stored token explorer pages a pinned revision, restarts a changed catalogue, and cancels its visible refresh on exit', async () => {
+  const reads = [], waits = [];
+  const data = JSON.parse(readFileSync(resolve(root, '../api-contracts/read-v3/fixtures/overview.json'), 'utf8'));
+  const token = data.tokens[0].address;
+  data.selectedToken = token; data.requestedPoolIds = [];
+  data.hasMore = true; data.nextAfterPoolId = data.pools[0].poolId; data.revision = 9;
+  const source = { transport: 'bridge' };
+  const { StoredTokenExplorer } = load('src/components/read/screens/StoredTokenExplorer.tsx', {
+    MarketsContext: { Provider: Container }, overviewRows: () => [row(id('a'))],
+    candidateFromToken: (value) => ({ token: { ...value.asset, chainId: 4663 } }),
+    readWithin(_source, route, request, options) { const pending = deferred(); reads.push({ route, request, options, ...pending }); return pending.promise; },
+    whenVisibleAfter(ms, run) { const wait = { ms, run, cancelled: false }; waits.push(wait); return () => { wait.cancelled = true }; },
+  });
+  const host = mount(StoredTokenExplorer, { source, token });
+  assert.deepEqual(reads[0].request, { token, limit: 24 });
+  reads[0].resolve({ state: 'ok', route: 'overview', data, provenance: { receivedAt: 1010_000, receivedMonotonic: 0, attempts: 1 } });
+  await flush(); host.render();
+  assert.equal(part(host, 'MarketsTable').props.includeCatalogue, false, 'arbitrary-token data is not mixed with the selected six');
+  assert.equal(part(host, 'MarketsTable').props.poolToken, token, 'links keep the token needed to verify arbitrary pools');
+  assert.equal(waits[0].ms, 5_000);
+  buttonNamed(host, 'More pools').props.onClick(); host.render();
+  assert.equal(waits[0].cancelled, true);
+  assert.deepEqual(reads[1].request, { token, afterPoolId: data.nextAfterPoolId, revision: 9, limit: 24 });
+  reads[1].resolve({ state: 'restart_required', route: 'overview', code: 'catalogue_revision_changed' });
+  await flush(); host.render();
+  assert.deepEqual(reads[2].request, { token, limit: 24 }, 'changed revision resets paging instead of mixing generations');
+  assert.equal(part(host, 'MarketsTable'), undefined, 'the previous page does not become the new page');
+  host.unmount();
+  assert.equal(reads[2].options.signal.aborted, true);
+});
+
 test('workspace requests one lean market read and aborts/discards its result on unmount', async () => {
   const fixture = workspace(); const host = mount(fixture.PoolWorkspace, fixture.props)
   assert.deepEqual(fixture.reads.map(({ route, request }) => ({ route, request })), [{ route: 'pool-market', request: { poolId: id('a'), includePriceHistory: false } }])
-  assert.equal(part(host, 'PoolPriceChart'), undefined, 'no chart until the market read names its currencies')
+  assert.equal(part(host, 'PoolHistoryChart').props.market, null, 'no provider market is passed before its read answers')
   assert.ok(elements(host.tree, (node) => node.type === parts.Skeleton).length > 0, 'figures rest while the read is in flight')
   host.unmount(); const before = host.writes
   assert.equal(fixture.reads[0].options.signal.aborted, true)
@@ -119,12 +186,13 @@ test('workspace requests one lean market read and aborts/discards its result on 
   assert.equal(host.writes, before)
 })
 
-test('the chart is mounted once the market answers, and reads only when asked: still one read', async () => {
+test('the chart receives the answered market without dispatching another market read', async () => {
   const fixture = workspace(); const host = mount(fixture.PoolWorkspace, fixture.props)
   fixture.reads[0].resolve({ state: 'ok', data: { poolId: id('a') } }); await flush(); host.render()
-  const chart = part(host, 'PoolPriceChart')
+  const chart = part(host, 'PoolHistoryChart')
   assert.ok(chart, 'the chart is on the page')
-  assert.notEqual(chart.props.autoLoad, true, 'hourly prices are a read the person asks for')
+  assert.equal(chart.props.market.poolId, id('a'))
+  assert.equal(chart.props.source, fixture.props.source, 'the wrapper uses the shared capability-aware source')
   assert.equal(fixture.reads.length, 1)
   assert.equal(elements(host.tree, (node) => node.type === parts.Skeleton).length, 0, 'nothing rests once the figures arrived')
   host.unmount()
@@ -157,7 +225,7 @@ test('with every optional route listed: the stored snapshot paints first, the po
   assert.equal(part(host, 'PoolActivityCard').props.read, null, 'resting until its read answers')
   assert.match(visibleText(host), /24h fees/)
   fixture.reads[0].resolve(ok({ estimateReason: 'estimate_not_in_snapshot', data: { poolId: id('a'), market: { status: 'available', reason: null, cache: { ageSeconds: 0 } } } })); await flush(); host.render()
-  assert.ok(part(host, 'PoolPriceChart'), 'the stored figures are on screen')
+  assert.ok(part(host, 'PoolHistoryChart').props.market, 'the stored figures are available to the chart')
   assert.deepEqual(fixture.reads.map(({ route, request }) => [route, request]), [
     ['pool-market', { ...lean, fromSnapshot: true }],
     ['pool-market', lean],
@@ -236,12 +304,13 @@ test('a failed market read shows dashes with the reason in their titles, no pane
   assert.match(renderToStaticMarkup(host.tree), /<p role="status" aria-live="polite" class="sr-only"[^>]*>Unavailable\. No response<\/p>/)
   // Changed on purpose (qa:visual): the chart card has no caption under its heading; who reports the candles is the plot's title and data.
   assert.doesNotMatch(onPage, /Hourly candles|GeckoTerminal/, 'no caption under the chart heading')
-  assert.match(renderToStaticMarkup(host.tree), /<div class="dm-pool-plot dm-dots-chart mt-4" title="Hourly candles reported by GeckoTerminal\." data-chart-provider="GeckoTerminal">/)
+  assert.equal(part(host, 'PoolHistoryChart').props.failed, 'Unavailable. No response')
+  assert.equal(part(host, 'PoolHistoryChart').props.loading, false)
   assert.deepEqual(fixture.asks.map(({ outcome, attempt }) => [outcome.state, attempt]), [['unavailable', 0]])
   fixture.asks[0].resolve(true); await flush(); host.render()
   assert.deepEqual(fixture.reads.map(({ request }) => request), [lean, lean], 'one more lean read, on its own')
   fixture.reads[1].resolve(ok()); await flush(); host.render()
-  assert.ok(part(host, 'PoolPriceChart'))
+  assert.ok(part(host, 'PoolHistoryChart').props.market)
   assert.deepEqual(dashes(host).filter((title) => title === 'Unavailable. No response'), [], 'the figures replace the dashes')
   host.unmount()
 })

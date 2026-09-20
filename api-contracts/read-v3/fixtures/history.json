@@ -1,0 +1,52 @@
+{
+  "acquisitionAccepted": true,
+  "candles": [
+    {
+      "close": "0.6",
+      "complete": false,
+      "high": "0.7",
+      "low": "0.4",
+      "open": "0.5",
+      "startTimestamp": 0,
+      "swapCount": 2
+    }
+  ],
+  "chainId": 4663,
+  "covered": [
+    {
+      "endTimestamp": 1000,
+      "startTimestamp": 900
+    }
+  ],
+  "currency": "0x0000000000000000000000000000000000000000",
+  "executionAvailable": false,
+  "gaps": [
+    {
+      "endTimestamp": 900,
+      "startTimestamp": 0
+    },
+    {
+      "endTimestamp": 86400,
+      "startTimestamp": 1000
+    }
+  ],
+  "methodology": "pool_ratio_v1",
+  "poolId": "0x0911afcb281d7bcae2d71443ceaeebd0f89b4537708449970d797622b4b4c941",
+  "poolManager": "0x8366a39cc670b4001a1121b8f6a443a643e40951",
+  "quoteCurrency": "0x1111111111111111111111111111111111111111",
+  "reason": "history_partial",
+  "requestedWindow": {
+    "endTimestamp": 86400,
+    "startTimestamp": 0
+  },
+  "resolutionSeconds": 3600,
+  "schemaVersion": 1,
+  "snapshot": {
+    "hash": "0xabababababababababababababababababababababababababababababababab",
+    "number": 700,
+    "timestamp": 1000
+  },
+  "source": "robinhood_pool_swap_logs",
+  "status": "partial",
+  "unit": "quote_per_base"
+}

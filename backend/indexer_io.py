@@ -8,7 +8,10 @@ helpers keep the indexer's own budget explicit instead of inheriting the
 browser-facing one, and read block headers in batched envelopes instead of one
 round trip per event block.
 """
-from discovery import DataError, json_http, parse_block
+import json
+import urllib.error
+
+from discovery import DataError, json_http, parse_block, _JSON_OPENER
 from read_deadline import ReadDeadline, current_read_deadline, use_read_deadline
 
 # Measured against Alchemy Robinhood (2026-09-15): one round trip is about
@@ -33,15 +36,52 @@ MAX_INDEXER_SPAN = 100_000
 
 
 def indexer_transport(seconds=90, request_timeout=INDEXER_REQUEST_TIMEOUT,
-                      max_bytes=INDEXER_MAX_RESPONSE_BYTES):
+                      max_bytes=INDEXER_MAX_RESPONSE_BYTES, budget=None, opener=None):
     parent = current_read_deadline()
     deadline = ReadDeadline(seconds, parents=(parent,) if parent else ())
 
     def transport(url, body=None):
         with use_read_deadline(deadline) as active:
-            return json_http(url, body, timeout=active.timeout(request_timeout),
-                             max_bytes=max_bytes)
+            if budget is not None:budget.spend(len(body) if isinstance(body,list) else 1)
+            def open_response(request,**kwargs):
+                try:return (opener or _JSON_OPENER)(request,**kwargs)
+                except urllib.error.HTTPError as error:
+                    try:
+                        # Inspect only the bounded JSON error, never propagate a
+                        # provider URL/message. Unknown HTTP 400 is not a size error.
+                        raw=error.read(8193) if error.code==400 else b''
+                        active.remaining()
+                        try:parsed=json.loads(raw or b'{}') if len(raw)<=8192 else None
+                        except (ValueError,UnicodeError):parsed=None
+                        if log_size_error(body,parsed):
+                            raise DataError('rpc_log_range_too_large') from None
+                    finally:error.close()
+                    raise
+            result=json_http(url,body,timeout=active.timeout(request_timeout),
+                             max_bytes=max_bytes,opener=open_response)
+            if log_size_error(body,result):raise DataError('rpc_log_range_too_large')
+            return result
     return transport
+
+
+def log_size_error(request,response):
+    if not isinstance(request,dict) or request.get('method')!='eth_getLogs' or not isinstance(response,dict):
+        return False
+    error=response.get('error')
+    if not isinstance(error,dict) or error.get('code')!=-32602:return False
+    message=error.get('message')
+    return isinstance(message,str) and any(text in message.lower() for text in
+        ('log response size exceeded','query returned more than','block range is too wide','block range exceeds'))
+
+
+class RequestBudget:
+    """Shared count of RPC items, including retries and head/identity checks."""
+    def __init__(self,max_calls):
+        if type(max_calls) is not int or max_calls<1:raise DataError('invalid_indexer_rpc_budget')
+        self.max_calls,self.calls=max_calls,0
+    def spend(self,count):
+        if count<0 or self.calls+count>self.max_calls:raise DataError('indexer_rpc_budget_exhausted')
+        self.calls+=count
 
 
 class HeaderBudget:
@@ -126,7 +166,7 @@ class AdaptiveSpan:
     """
     SHRINK_REASONS = frozenset({'response_too_large', 'activity_log_budget_exhausted',
                                 'invalid_logs_response', 'read_deadline_exceeded',
-                                'http_400', 'invalid_rpc_batch'})
+                                'rpc_log_range_too_large', 'invalid_rpc_batch'})
 
     def __init__(self, span, *, floor=1000, ceiling=100_000, growth_passes=8):
         if not 1 <= floor <= span <= ceiling:
@@ -157,3 +197,16 @@ class AdaptiveSpan:
     def as_dict(self):
         return {'spanBlocks': self.span, 'spanFloor': self.floor, 'spanCeiling': self.ceiling,
                 'shrinks': self.shrinks}
+
+    def run(self,step,*,attempts=3):
+        """Bounded same-unit retry; at the floor, return the actual refusal."""
+        if type(attempts) is not int or not 1<=attempts<=8:raise DataError('invalid_span_attempts')
+        for attempt in range(attempts):
+            prior=self.span
+            try:result=step(self.span)
+            except DataError as error:
+                self.record(str(error))
+                if self.span<prior and attempt+1<attempts:continue
+                raise
+            self.record(None)
+            return result

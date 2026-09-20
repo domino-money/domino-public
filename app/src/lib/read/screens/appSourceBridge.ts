@@ -9,9 +9,12 @@
  */
 import { CAPABILITIES } from '../../capabilities'
 import * as estimateRuntime from 'api-contracts/read-v2/runtime.mjs'
+import * as publicRuntime from 'api-contracts/read-v3/runtime.mjs'
 import { createEstimateSource } from '../estimateSource'
+import { createPublicSource } from '../publicSource'
 import { READ_RUNTIME } from '../contract'
 import { createScheduledSource } from '../scheduler'
+import { createPublicMetadataCache } from '../publicMetadataCache'
 import type { ReadSource } from '../types'
 
 // Logical jobs are paced from the previous job's last attempt. Remote quotas
@@ -19,7 +22,9 @@ import type { ReadSource } from '../types'
 export const BRIDGE_SPACING_MS = __DOMINO_LOCAL_LIVE__ ? 10_100 : 1100
 
 export function createAppBridgeSource(): ReadSource {
-  return createScheduledSource(createEstimateSource({ enabled: CAPABILITIES.liveReadsBuilt, validators: READ_RUNTIME }, estimateRuntime), { minIntervalMs: BRIDGE_SPACING_MS })
+  const options = { enabled: CAPABILITIES.liveReadsBuilt, validators: READ_RUNTIME }
+  const source = createPublicSource(createEstimateSource(options, estimateRuntime), options, publicRuntime)
+  return createPublicMetadataCache(createScheduledSource(source, { minIntervalMs: BRIDGE_SPACING_MS }))
 }
 
 let shared: ReadSource | null = null

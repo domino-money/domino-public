@@ -1,0 +1,40 @@
+{
+  "chainId": 4663,
+  "coverage": "known_verified_tokens_only",
+  "executionAvailable": false,
+  "query": "TOKEN",
+  "schemaVersion": 1,
+  "tokens": [
+    {
+      "acquisition": {
+        "nextAttemptAt": null,
+        "reason": null,
+        "refreshing": false,
+        "status": "ready"
+      },
+      "address": "0x1111111111111111111111111111111111111111",
+      "observedAt": 1010,
+      "value": {
+        "asset": {
+          "address": "0x1111111111111111111111111111111111111111",
+          "decimals": 6,
+          "displayUnitsAvailable": true,
+          "executionAvailable": false,
+          "kind": "erc20_candidate",
+          "metadataIssues": {},
+          "readStatus": "available",
+          "symbol": "TOKEN"
+        },
+        "chainId": 4663,
+        "liveExecution": false,
+        "mode": "public_token_read_only",
+        "schemaVersion": 1,
+        "snapshot": {
+          "hash": "0xabababababababababababababababababababababababababababababababab",
+          "number": 700,
+          "timestamp": 1000
+        }
+      }
+    }
+  ]
+}

@@ -1,0 +1,38 @@
+[Unit]
+Description=Domino persisted public recent Swap history
+After=postgresql@16-domino.service domino-continuous-egress.service
+BindsTo=domino-continuous-egress.service
+PartOf=domino-public-data.target
+StartLimitIntervalSec=300
+StartLimitBurst=6
+
+[Service]
+Type=simple
+User=domino-write
+Group=domino-write
+SupplementaryGroups=domino-db
+WorkingDirectory=@PUBLIC_ROOT@/current/backend
+ExecStart=@QUEUE_ROOT@/venv/bin/python -B manage_public_data.py --lane history --period 1
+Restart=on-failure
+RestartSec=10
+TimeoutStopSec=30
+UMask=0077
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+ProtectKernelLogs=yes
+ProtectClock=yes
+RestrictSUIDSGID=yes
+RestrictNamespaces=yes
+LockPersonality=yes
+RestrictRealtime=yes
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+CapabilityBoundingSet=
+TasksMax=32
+MemoryMax=512M
+CPUQuota=100%

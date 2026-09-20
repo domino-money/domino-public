@@ -15,7 +15,7 @@
 import assert from 'node:assert/strict';
 import { existsSync, readFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
-import { after, before, test } from 'node:test';
+import { after, afterEach, before, test } from 'node:test';
 import { chromium } from 'playwright-core';
 import { closeContext, leaving, watch } from './page-watch.mjs';
 import { createWorker } from '../../bridge/src/worker.mjs';
@@ -41,7 +41,7 @@ const RC3 = '1.1.0-rc.3';
 /** The estimate namespace's contract (read-v2, src/lib/read/pin.ts): what its own capabilities GET carries. */
 const V2 = '2.0.0-rc.1';
 /** The contract header a request must carry: its namespace's, and no other. */
-const contractFor = (path) => (path.startsWith('/api/read/v2/') ? V2 : RC3);
+const contractFor = (path) => (path.startsWith('/api/read/v3/') ? '3.0.0-rc.1' : path.startsWith('/api/read/v2/') ? V2 : RC3);
 const READ = resolve(import.meta.dirname, '../../api-contracts/read-v1/fixtures/gateway');
 const fixture = (name) => readFileSync(join(READ, `${name}.json`), 'utf8');
 /** The package's fixture pool, which the bridge-test build asks for. */
@@ -136,6 +136,8 @@ before(async () => {
   }
   if (!browser) throw new Error('No Chromium build could be launched. Set DOMINO_BROWSER_PATH.');
 });
+
+afterEach(async () => { await Promise.all(browser.contexts().map(context => context.close())); });
 
 after(async () => {
   await browser?.close();
@@ -250,9 +252,9 @@ test('the bridge build reads through the same-origin bridge, adds no credential 
   assert.equal(await apr.locator('[data-apr-estimate]').getAttribute('data-apr-estimate'), 'unavailable', 'no APR is provided, so none is shown');
 
   const reads = seen.map((r) => `${r.method} ${r.path}`);
-  // The lean path, in order: the read namespace's capabilities, which say no optional route is listed, then the
+  // The lean path starts with the disabled V3 namespace, then the read namespace's capabilities and the
   // estimate namespace's, then pool-market without price history, then each token once. Never pool-metrics.
-  assert.deepEqual(reads, ['GET /api/read/v1/capabilities', 'GET /api/read/v2/capabilities', 'POST /api/read/v1/pool-market', 'POST /api/read/v1/token', 'POST /api/read/v1/token']);
+  assert.deepEqual(reads, ['GET /api/read/v3/capabilities', 'GET /api/read/v1/capabilities', 'GET /api/read/v2/capabilities', 'POST /api/read/v1/pool-market', 'POST /api/read/v1/token', 'POST /api/read/v1/token']);
   assert.deepEqual(upstream.find((call) => call.route === 'pool-market').body, { poolId: FIXTURE_POOL, includePriceHistory: false });
   // What the browser sent to this origin.
   assert.deepEqual(edge.map((r) => `${r.method} ${r.path}`), reads, 'every read passed through the gate once');
@@ -391,7 +393,7 @@ test('with live reads off on the server, nothing is posted at all', async () => 
     await saidQuietly(page, 'disabled', 'Live data is switched off for now');
     await page.waitForTimeout(PAST_BUSY_RECOVERY_MS);
     // The read namespace's capabilities say reads are off, so the estimate namespace is never asked.
-    assert.deepEqual(seen.map((r) => `${r.method} ${r.path}`), ['GET /api/read/v1/capabilities'], 'one capabilities GET, no POST, and nothing asked again on its own');
+    assert.deepEqual(seen.map((r) => `${r.method} ${r.path}`), ['GET /api/read/v3/capabilities', 'GET /api/read/v1/capabilities'], 'one capabilities GET per checked namespace, no POST, and nothing asked again on its own');
     await closeContext(context);
   } finally {
     BRIDGE.READ_BRIDGE_ENABLED = 'true';
@@ -525,7 +527,7 @@ test('markets-snapshot enabled on the Worker: one snapshot read puts the row on 
       assert.deepEqual(upstream[0].body, { poolIds: [FIXTURE_POOL] }, 'the pool this build reads, and only it');
       release();
       assert.equal(await settled(page), 'none');
-      assert.deepEqual(edgeTrail(), ['GET /api/read/v1/capabilities', 'POST /api/read/v1/markets-snapshot', 'POST /api/read/v1/token', 'POST /api/read/v1/token'], 'no estimate namespace and no market read: the stored entry is fresh');
+      assert.deepEqual(edgeTrail(), ['GET /api/read/v3/capabilities', 'GET /api/read/v1/capabilities', 'POST /api/read/v1/markets-snapshot', 'POST /api/read/v1/token', 'POST /api/read/v1/token'], 'no estimate namespace and no market read: the stored entry is fresh');
       assert.deepEqual(upstream.map((call) => call.route), ['markets-snapshot', 'token', 'token']);
       const row = page.locator('#pools tbody tr');
       assert.equal(await row.count(), 1);
@@ -547,7 +549,7 @@ test('markets-snapshot enabled but failing at the gateway: the pool is read in t
     try {
       assert.equal(await settled(page), 'none');
       await saidQuietly(page, 'none', '');
-      assert.deepEqual(edgeTrail(), ['GET /api/read/v1/capabilities', 'POST /api/read/v1/markets-snapshot', 'GET /api/read/v2/capabilities', 'POST /api/read/v1/pool-market', 'POST /api/read/v1/token', 'POST /api/read/v1/token']);
+      assert.deepEqual(edgeTrail(), ['GET /api/read/v3/capabilities', 'GET /api/read/v1/capabilities', 'POST /api/read/v1/markets-snapshot', 'GET /api/read/v2/capabilities', 'POST /api/read/v1/pool-market', 'POST /api/read/v1/token', 'POST /api/read/v1/token']);
       const row = page.locator('#pools tbody tr');
       assert.equal(await row.getAttribute('data-row-source'), 'pool-market');
       assert.deepEqual(await cellStates(page), ['provider', 'provider']);

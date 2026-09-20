@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { extendReadTunnelConfig } from './read-tunnel-config.mjs';
+import { extendReadTunnelConfig, V3_READ_TUNNEL_IDS } from './read-tunnel-config.mjs';
 
 const PROD = '31526265-ca63-40f2-bbb7-bd37a537f899';
 const DEV = '7abb1264-ee70-4b69-a33c-b75a9deb4589';
@@ -19,6 +19,30 @@ const PUBLISHED = {
     '^/internal/(read/v1/(token|pools|pool-market|wallet-assets|nft-positions|catalogue|pool-activity|capabilities)|read/v2/(pool-market|capabilities)|dev/v1/status)$',
   ],
 };
+
+test('V3 opens only exact stored production routes and keeps Access and prior protocols', () => {
+  assert.deepEqual(V3_READ_TUNNEL_IDS, [PROD]);
+  const input = extendReadTunnelConfig(PROD, fixture(PROD));
+  const before = structuredClone(input);
+  const result = extendReadTunnelConfig(PROD, input, { enableV3: true });
+  assert.deepEqual(input, before);
+  const expected = structuredClone(before);
+  expected.ingress[1].path = result.ingress[1].path;
+  assert.deepEqual(result, expected);
+  const pattern = new RegExp(result.ingress[1].path);
+  for (const route of ['overview', 'history', 'search']) {
+    assert.ok(pattern.test('/internal/read/v3/' + route));
+  }
+  for (const path of ['/internal/read/v3/token', '/internal/read/v3/capabilities', '/internal/read/v3/overview/',
+                      '/internal/read/v3/%6fverview', '/internal/read/v3/overview/extra']) {
+    assert.equal(pattern.test(path), false, path);
+  }
+  for (const route of [...V1, ...STORED]) assert.ok(pattern.test('/internal/read/v1/' + route));
+  assert.ok(pattern.test('/internal/read/v2/pool-market'));
+  assert.deepEqual(extendReadTunnelConfig(PROD, result), result);
+  assert.deepEqual(extendReadTunnelConfig(PROD, result, { enableV3: true }), result);
+  assert.throws(() => extendReadTunnelConfig(DEV, fixture(DEV), { enableV3: true }), /mismatch/);
+})
 
 function fixture(id, path = PUBLISHED[id][0]) {
   const rule = id === PROD ? {

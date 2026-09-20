@@ -1,0 +1,44 @@
+{
+  "$id": "https://domino.invalid/contracts/read-v3/history.request.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "currency": {
+      "pattern": "^0x[0-9a-f]{40}$",
+      "title": "Currency",
+      "type": "string"
+    },
+    "poolId": {
+      "pattern": "^0x[0-9a-f]{64}$",
+      "title": "Poolid",
+      "type": "string"
+    },
+    "resolutionSeconds": {
+      "default": 3600,
+      "enum": [
+        60,
+        3600,
+        86400
+      ],
+      "title": "Resolutionseconds",
+      "type": "integer"
+    },
+    "windowSeconds": {
+      "default": 86400,
+      "enum": [
+        86400,
+        604800,
+        2592000
+      ],
+      "title": "Windowseconds",
+      "type": "integer"
+    }
+  },
+  "required": [
+    "poolId",
+    "currency"
+  ],
+  "title": "HistoryRequest",
+  "type": "object",
+  "x-contract-version": "3.0.0-rc.1"
+}

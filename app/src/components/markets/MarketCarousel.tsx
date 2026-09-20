@@ -105,8 +105,8 @@ function volumeOf(listing: PoolListing, settled: boolean, entry: Remembered | un
  * The top of Markets: the page's title block with the rail's arrows, and the
  * rail of wide cards, one per selected pool, in the table's order.
  *
- * Reads: after the markets load has finished (or failed with rows kept), a
- * card with a live row asks for its pool's hourly candles once, through the
+ * Reads: as soon as its own verified row is available, a card asks for its
+ * pool's hourly candles once, through the
  * app's one scheduled source, but only while it is at least 60% inside the
  * rail: cards come into the queue in rail order as they come into view. The
  * view gates only the asking. A read that has been asked for is kept to its
@@ -121,7 +121,6 @@ export function MarketCarousel({ heading }: { heading: ReactNode }) {
   const { state, provider } = useMarkets()
   const markets = shownResult(state)?.markets ?? []
   const listings = poolListings(markets, __DOMINO_POOL_SET__ === 'selected' && provider.kind === 'bridge')
-  const ready = state.phase === 'ready' || (state.phase === 'failed' && state.retained !== null)
   const settled = state.phase !== 'loading'
 
   const rail = useRef<HTMLDivElement>(null)
@@ -193,7 +192,7 @@ export function MarketCarousel({ heading }: { heading: ReactNode }) {
 
   // Ask for the hourly candles of each card in view that needs them, in rail order.
   useEffect(() => {
-    if (!source || !ready) return
+    if (!source) return
     for (const { poolId, market } of listings) {
       if (!market?.chartTokens || !visible.has(poolId) || running.current.has(poolId)) continue
       const side = chartSide(market)
@@ -212,7 +211,7 @@ export function MarketCarousel({ heading }: { heading: ReactNode }) {
         setReads((current) => new Map(current).set(poolId, remembered))
       })
     }
-  }, [source, ready, listings, visible, reads, now])
+  }, [source, listings, visible, reads, now])
 
   const scrollPage = (direction: 1 | -1) => {
     const node = rail.current
