@@ -260,7 +260,7 @@ export function WalletCandidates({
               <p className="tnum" data-wallet-count="" title={listNotes(view)}>
                 {view.rows.length} token{view.rows.length === 1 ? '' : 's'} listed
                 {view.unavailable.length > 0 && `, ${view.unavailable.length} unavailable`}
-                {' · '}page {view.pages}{view.localPages === 0 && <> of up to {WALLET_PAGE_CAP}</>}
+                {' · '}page {view.pages} of up to {WALLET_PAGE_CAP}
               </p>
             )}
             {snap.restarted && <p>{COPY.picker.walletRestarted}</p>}
@@ -274,7 +274,7 @@ export function WalletCandidates({
             )}
             {snap.status === 'handle_expired' && <p>{COPY.picker.walletExpired}</p>}
             {snap.emptyHint && <p data-wallet-hint="">{COPY.picker.walletEmpty}</p>}
-            {snap.capped && <p>{view.localPages > 0 ? COPY.picker.walletMixedCapped : COPY.picker.walletCapped}</p>}
+            {snap.capped && <p>{COPY.picker.walletCapped}</p>}
             {/* No list is called complete: Load more is there while pages remain, and gone after. */}
             {view.pages > 0 && (canAskMore || loading) && (
               <div className="mt-1 flex flex-wrap items-center gap-3">

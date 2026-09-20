@@ -36,7 +36,7 @@
     },
     {
       "path": "runtime.mjs",
-      "sha256": "a4cda5916d42bb9f0700efd10761bd403e32059eeff1968ea86a347a269a7371"
+      "sha256": "c48d5dee0c5e3d99ca671deae8e47eca5616cb1c52a4513212ae088e8c69ee43"
     },
     {
       "path": "schemas/capabilities.response.schema.json",
@@ -87,7 +87,7 @@
     },
     {
       "path": "scripts/export-read-contract.py",
-      "sha256": "c5ecdf55ba0c533faf2a6cdbbb89e61cd3242e8fa2b143e901b4506be19370c4"
+      "sha256": "b088c0041cc5fc5f497c74b126c7dbff17eb574fdb4651e3916d74b4cc0d8479"
     }
   ],
   "status": "opt_in_public_read_only"

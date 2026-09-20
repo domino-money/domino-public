@@ -44,12 +44,6 @@ function inventoryNote(inventory: WalletAssetsResponse['inventory']): string | n
     case 'unavailable':
       return `Partial list: inventory unavailable (${reasonText(inventory.reason)}). Only the requested tokens are shown.`
     case 'page_received':
-      if (inventory.coverage === 'local_catalogue_only') {
-        return 'Balances checked for tokens known to Domino. Tokens outside this catalogue may be missing.'
-      }
-      if (inventory.fallbackReason) {
-        return 'Additional token discovery used a fallback source. The list may still be incomplete.'
-      }
       // A provider page lists what the provider indexes and nothing more (coverage
       // provider_page_only), and a page of no rows can stand for an address that
       // holds plenty. The last page ends the pages, never the holdings, so no
@@ -82,10 +76,6 @@ export interface WalletView {
   notes: string[]
   freshness: string[]
   pages: number
-  /** Successful local catalogue pages, separate from the external discovery budget. */
-  localPages: number
-  /** Successful external inventory pages; local pages never consume this allowance. */
-  providerPages: number
   hasMore: boolean
   restarted: boolean
   /**
@@ -121,8 +111,6 @@ export function createWalletPager(source: ReadSource, request: WalletAssetsReque
   delete base.cursor
   let cursor: OpaqueCursor | null = null
   let pages = 0
-  let localPages = 0
-  let providerPages = 0
   let restarted = false
   const rows = new Map<string, WalletRow>()
   let unavailable: ItemView[] = []
@@ -132,22 +120,18 @@ export function createWalletPager(source: ReadSource, request: WalletAssetsReque
   let skipped = 0
   let skippedReason: string | null = null
 
-  const view = (): WalletView => ({ rows: [...rows.values()], unavailable, notes, freshness, pages, localPages, providerPages, hasMore: cursor !== null, restarted, probed, skipped, skippedReason })
+  const view = (): WalletView => ({ rows: [...rows.values()], unavailable, notes, freshness, pages, hasMore: cursor !== null, restarted, probed, skipped, skippedReason })
 
   function absorb(outcome: Extract<ReadOutcome<'wallet-assets'>, { state: 'ok' }>, page: number): number {
     const d = outcome.data
     const inventory = d.inventory
     const retrievedAt = inventory.status === 'page_received' ? inventory.retrievedAt : d.snapshot.timestamp
     if (page === 1) {
-      localPages = 0
-      providerPages = 0
       probed = null
       skipped = 0
       skippedReason = null
     }
     if (inventory.status === 'page_received') {
-      if (inventory.source === 'local_catalogue') localPages += 1
-      else providerPages += 1
       if (typeof inventory.candidatesProbed === 'number') probed = (probed ?? 0) + inventory.candidatesProbed
       const here = inventory.candidatesSkipped ?? 0
       if (here > 0) {

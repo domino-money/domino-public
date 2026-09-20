@@ -124,7 +124,6 @@ const PROVIDER_NAME: Record<string, string> = {
   geckoterminal: 'Market data provider',
   dexscreener: 'Pool discovery provider',
   alchemy: 'Alchemy',
-  local_catalogue: 'Local token catalogue',
   alchemy_historical: 'Alchemy history',
   chainlink_robinhood_standard_v1: 'Chainlink',
 }

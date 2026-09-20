@@ -240,8 +240,8 @@ export function observe<R extends ReadKey>(route: R, data: ReadResponses[R]): Ob
       const d = data as ReadResponses['wallet-assets']
       const inventory = d.inventory
       const providers: ProviderObservation[] =
-        inventory.source === 'alchemy' || inventory.source === 'local_catalogue'
-          ? [{ scope: 'inventory', provider: inventory.source, retrievedAt: inventory.status === 'page_received' ? inventory.retrievedAt : null }]
+        inventory.source === 'alchemy'
+          ? [{ scope: 'inventory', provider: 'alchemy', retrievedAt: inventory.status === 'page_received' ? inventory.retrievedAt : null }]
           : []
       return { block: d.snapshot, providers }
     }

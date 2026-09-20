@@ -13,15 +13,16 @@
  * bytes, not which commit produced them.
  *
  * Three independent contracts are pinned below, each with its own version and
- * its own digest: read-v1 (rc.3), read-v2's opt-in pool APR
+ * its own digest: read-v1 (rc.3, unchanged), read-v2's opt-in pool APR
  * estimates, and read-v3's stored public observations, paged discovery and
  * denominated history. read-v3 is additive — it took nothing away from v1 or
  * v2, and the Worker serves all three at once.
  *
- * The historical producer commit below records the original integration base.
- * The manifest digests pin the current producer, including additive local
- * inventory source/coverage and explicit fallback attribution. Publish this
- * consumer and the Worker before activating that producer on the VM.
+ * The producer commit below is a5f71f1, which carries the local RPC source,
+ * persisted public token data, and acquisition separated from reads. Later
+ * producer commits changed backend sources the manifests digest without
+ * changing a route, a schema or a version, which is why the versions here did
+ * not move while the digests did.
  */
 export const PRODUCER_PIN = {
   producerCommit: 'a5f71f19e6391f3eab52ee6e51417be211bc8ea5',
@@ -29,7 +30,7 @@ export const PRODUCER_PIN = {
   packages: {
     'read-v1': {
       version: '1.1.0-rc.3',
-      manifestSha256: '77a5d7c3d698aeec06f6cf6500c94810b242213987216f20a150a91cf8e96c57',
+      manifestSha256: 'a57a2124be81faf48207d13415736044ae2564bd772923f86be9717dfaeb503b',
     },
     'session-v1': {
       version: '3.0.0-rc.2',
@@ -49,13 +50,13 @@ export const PRODUCER_PIN = {
 /** Separately opted-in public pool estimates; never accepted as a v1 response. */
 export const READ_V2_PIN = {
   version: '2.0.0-rc.1',
-  manifestSha256: '347cb7887011afc1ef9d62d161fd2eec59f4b6459fa4e5dec580f9f678d14767',
+  manifestSha256: '717a999813b8081ff3809e13355f22ed2e074d7628bf9513684565cafae49e26',
 } as const
 
 /** Stored public observations, paged discovery and explicitly denominated history. */
 export const READ_V3_PIN = {
   version: '3.0.0-rc.1',
-  manifestSha256: 'ea2c6deb7932e389bc04ea5bfbff3e9665ed20c0a84d5d9b565f2726c30ccf22',
+  manifestSha256: '33e1ab5984c9a0fdf3033ff36885453bfb375c37acf413ccfcdc82ca39e604bd',
 } as const
 
 /**
@@ -70,7 +71,7 @@ export const READ_V3_PIN = {
 export const BACKEND_OPENAPI_PIN = {
   path: 'backend/openapi-read.json',
   infoVersion: '0.8.0',
-  sha256: '3ef1538ace11117bfa1dd523548792ff6d7cfb0e7da5e35b77f82ea8a220a1e1',
+  sha256: 'd49a40a2d8713941b23f701082d52d8a4b75c8658ccf73672a4372afbadd2cdb',
 } as const
 
 export type ReadContractPin = (typeof PRODUCER_PIN)['packages']['read-v1']['version']

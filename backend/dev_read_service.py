@@ -7,7 +7,6 @@ from pathlib import Path
 import re
 import stat
 import time
-from urllib.parse import urlsplit
 
 import psycopg
 from psycopg.rows import dict_row
@@ -25,7 +24,7 @@ from read_api import LocalReadBoundary, create_app
 from read_contract import CONTRACT_VERSION
 from read_deadline import check_read_deadline, read_timeout
 from read_service import ReadService
-from rpc_config import DEFAULT_RPC_HOSTS, LOCAL_RPC_HOST, rpc_endpoint
+from rpc_config import DEFAULT_RPC_HOSTS, rpc_endpoint
 
 
 PORT = 8890
@@ -184,10 +183,6 @@ class _DevelopmentConnection:
 
 
 class DevelopmentCatalogue(PgCatalogue):
-    # The existing development role can inspect public pool identities, but
-    # intentionally has no grant on the production searched-token store.
-    inventory_public_tokens = False
-
     @contextmanager
     def connection(self, *, writer=False, lock=False):
         if writer or lock:
@@ -233,7 +228,6 @@ class DevelopmentReadService(ReadService):
         catalogue = DevelopmentCatalogue(profile['catalogue']) if profile['catalogue'] else None
         from markets_snapshot import MarketsSnapshot
         super().__init__(rpc_urls=tuple(profile['rpcUrls']), inventory_url=profile['inventoryUrl'],
-                         inventory_local_first=urlsplit(profile['rpcUrls'][0]).hostname==LOCAL_RPC_HOST,
                          clock=clock, transport_factory=lambda: bounded,
                          cursor_codec=CursorCodec(clock=clock), market_cache=market,
                          catalogue=catalogue, requests=configured_pool_requests(catalogue),

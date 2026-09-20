@@ -126,7 +126,6 @@ export const COPY = {
     /** A first page that stayed failed: the reason is the line's title. */
     walletNothing: 'No tokens to show.',
     walletCapped: 'Showing the first 5 pages.',
-    walletMixedCapped: 'Showing the catalogue results and the first 5 fallback pages. The list may be incomplete.',
     walletRestarted: 'The list restarted from the first page. Rows marked “from earlier list” haven’t been seen again.',
     walletExhausted: 'The list changed again while restarting. Restart it when you’re ready.',
     walletExpired: 'The page handle has expired, so Load more starts the list again.',

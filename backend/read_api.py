@@ -307,7 +307,6 @@ def create_app(service=None, *, gate=None, read_budget_seconds=60,
         service = ReadService(rpc_urls=configured_rpc_urls(config, os.environ.get('DOMINO_DISCOVERY_RPC_URL')),
                               historical_rpc_urls=(configured_history_rpc_urls(config)
                                                    if config.get('version') in (3,4) else None),
-                              inventory_local_first=config.get('version') == 4,
                               inventory_url=os.environ.get('DOMINO_INVENTORY_RPC_URL') or config.get('inventoryUrl'),
                               catalogue=catalogue,
                               requests=configured_pool_requests(catalogue),

@@ -64,15 +64,7 @@ function check(value, schema, root, depth = 0) {
       if (!Object.keys(value).every(key => Object.hasOwn(schema.properties, key))) return false;
       if (!Object.entries(value).every(([key, child]) => check(child, schema.properties[key], root, depth + 1))) return false;
       break;
-    case undefined:
-      // Property-only branches in allOf/anyOf constrain a parent object.
-      // They must validate the named fields without rejecting its other keys.
-      if (value && typeof value === 'object' && !Array.isArray(value)) {
-        if (schema.required && !schema.required.every(key => Object.hasOwn(value, key))) return false;
-        if (schema.properties && !Object.entries(schema.properties).every(([key, child]) =>
-            !Object.hasOwn(value, key) || check(value[key], child, root, depth + 1))) return false;
-      }
-      break;
+    case undefined: break;
     default: return false;
   }
   return true;

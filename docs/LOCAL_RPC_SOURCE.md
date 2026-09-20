@@ -17,7 +17,7 @@ Ethereum execution and Beacon upstreams remain separate and unchanged.
 | NFT reads requesting a block; owner resolution for stored pool positions | Local primary, then verified configured fallback |
 | Catalogue/activity reconstruction, fees, positions, capital and Chainlink replay | Local primary for each operation; fallback for transport failure or unavailable old state, with chain/block proofs |
 | Managed performance collector and qualification forks | Local first; fallback attempts and identity proofs spend the existing transport budgets |
-| Wallet token inventory | Local catalogue and searched tokens first, balances reread on-chain; Alchemy continuation only when local coverage is exhausted or unavailable |
+| Wallet token inventory | Alchemy exclusively for candidate discovery; every balance is reread through the local-first RPC |
 | Explicit external price-reference tools | Separate provider capability; no credentials extracted from the local `rpcUrl` |
 | Browser product data | Existing same-origin read bridge and backend; inherits their source |
 
@@ -61,13 +61,12 @@ URL from the fallback list. URLs and private files retain their existing exact
 host/path, ownership, mode and no-redirect validation. Operator overrides remain
 explicit; the deployed units unset shell RPC overrides.
 
-Local inventory reports `source: local_catalogue` and
-`coverage: local_catalogue_only`. Its pages include catalogue currencies and
-persisted searched tokens, not an assertion that every token in a wallet is
-known. A provider-bound opaque continuation can recover additional candidates
-from Alchemy with an explicit `fallbackReason`; native and requested-address
-balances always remain available through the chain reader. Development uses
-its admitted local catalogue and does not gain new database privileges.
+Wallet token discovery deliberately remains on Alchemy's inventory API, as
+requested by the owner. It is separate from the standard Robinhood RPC routes:
+Alchemy supplies candidate contract addresses, and Domino rereads their balances
+through the local node. No global-catalogue walk or local inventory scan is added
+to the wallet request. Existing pagination, latency budgets and response schemas
+remain unchanged. The configured inventory endpoint survives v4 migration.
 
 The operator financial release verifier also accepts `--rpc-file` containing one
 HTTPS URL in a private regular file, avoiding credentials in process arguments.
@@ -110,22 +109,18 @@ Code support and live activation are separate. Each production/development role
 has its own private provider/profile file and network policy. The VM's
 `127.0.0.1` is **not** the clawber host; use the authenticated HTTPS route.
 
-1. Publish the compatible Worker and app before activating the VM. The additive
-   local inventory source/coverage fields require the updated strict validators;
-   the new consumers still accept the previous producer. Existing browser tabs
-   must reload to receive the new app validator.
-2. Install the source revision using the existing release procedure.
+1. Install the source revision using the existing release procedure.
    `install_read_release.py` preserves runtime symlinks and updates read/gateway;
    it does not update every financial/indexer service.
-3. Add current public IPv4 pins for exactly `rpc.domino.money` to the applicable
+2. Add current public IPv4 pins for exactly `rpc.domino.money` to the applicable
    continuous/development egress input. Preserve historical/Alchemy pins. Render
    and apply the policy through existing tools, including each role's hosts file
    and `IPAddressAllow`. See [continuous egress](CONTINUOUS_EGRESS.md).
-4. Update each applicable private provider file. Development `rpcUrls` profiles
+3. Update each applicable private provider file. Development `rpcUrls` profiles
    use the same private current list. Units intentionally unset environment RPC
    overrides; use their private files rather than shell exports. Migrate active provider
    files to v4 only alongside compatible code; preserve private rollback copies.
-5. Restart through `domino-continuous-reads.target` for its members, then perform
+4. Restart through `domino-continuous-reads.target` for its members, then perform
    bounded current-data, historical-state, inventory and public-bridge checks.
    Development also has a hash-guarded maintenance lease: update its snapshot
    transactionally when replacing tracked unit/profile files, without extending

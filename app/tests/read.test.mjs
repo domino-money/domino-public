@@ -824,7 +824,7 @@ test('through the real bridge: the wallet cursor goes back byte for byte and nev
   const second = await pager.more();
   assert.equal(second.failure, null);
   assert.equal(bridge.upstream.at(-1).body.cursor, MUTATED_CURSOR, 'the gateway received the exact handle');
-  assert.deepEqual(Object.keys(second.view).sort(), ['freshness', 'hasMore', 'localPages', 'notes', 'pages', 'probed', 'providerPages', 'restarted', 'rows', 'skipped', 'skippedReason', 'unavailable']);
+  assert.deepEqual(Object.keys(second.view).sort(), ['freshness', 'hasMore', 'notes', 'pages', 'probed', 'restarted', 'rows', 'skipped', 'skippedReason', 'unavailable']);
   assert.equal(second.view.hasMore, false);
   assert.doesNotMatch(JSON.stringify(second.view), /c0ffee/);
 });
@@ -972,27 +972,6 @@ const skippedPage = (skipped, probed = 13, reason = 'request_budget_exhausted') 
 });
 const WALLET_REQUEST = () => requestFor(catalog, 'wallet-assets');
 const ALL_LOADED = 'All pages loaded.';
-
-test('local wallet discovery retains partial coverage and fallback provenance', async () => {
-  const local = one('wallet-assets', gateway('wallet-assets.last-page'), {
-    mutate: (body) => ({ ...body, inventory: { ...body.inventory,
-      source: 'local_catalogue', coverage: 'local_catalogue_only' } }),
-  });
-  const response = await local.read('wallet-assets', WALLET_REQUEST());
-  assert.equal(response.state, 'ok');
-  assert.equal(response.observation.providers[0].provider, 'local_catalogue');
-  const page = await pagers.createWalletPager(local, WALLET_REQUEST()).first();
-  assert.equal(page.failure, null);
-  assert.ok(page.view.notes.some((note) => note.includes('Tokens outside this catalogue may be missing.')));
-  assert.ok(!page.view.notes.includes(ALL_LOADED));
-  const fallback = await pagers.createWalletPager(one('wallet-assets', gateway('wallet-assets.last-page'), {
-    mutate: (body) => ({ ...body, inventory: { ...body.inventory,
-      fallbackReason: 'local_inventory_coverage_partial' } }),
-  }), WALLET_REQUEST()).first();
-  assert.equal(fallback.failure, null);
-  assert.ok(fallback.view.notes.some((note) => note.includes('used a fallback source')));
-  assert.ok(!fallback.view.notes.includes(ALL_LOADED));
-});
 
 test('a page that skipped candidates is counted, never called complete; an older producer counts as none', async () => {
   const partial = await pagers.createWalletPager(one('wallet-assets', gateway('wallet-assets.last-page'), { mutate: skippedPage(7) }), WALLET_REQUEST()).first();

@@ -595,18 +595,6 @@
       "sha256": "2d078ca53b3ee736401bffabd742f5e73b314563ec9990de6239c95e26c18bc3"
     },
     {
-      "path": "fixtures/gateway/wallet-assets.local-catalogue.json",
-      "sha256": "13b8c42799fb3642c0ddd03459e0240b235d910faca212ddfecf554502d59c43"
-    },
-    {
-      "path": "fixtures/gateway/wallet-assets.local-coverage-fallback.json",
-      "sha256": "9e1539ee2ddd27a26befcdd4301666fc3acb034e8ea703e27e718c6d3cb77b28"
-    },
-    {
-      "path": "fixtures/gateway/wallet-assets.local-unavailable-fallback.json",
-      "sha256": "48e2bb43728966c5f2fbe90b4735e8c8df9a59fcefb65c082613f48217c5a5c0"
-    },
-    {
       "path": "fixtures/gateway/wallet-assets.missing-contract.json",
       "sha256": "3b0418b5ab3966e1a2cf9af38e3c33f661a94850470cf3347c96678a515a57cc"
     },
@@ -636,7 +624,7 @@
     },
     {
       "path": "fixtures/index.json",
-      "sha256": "bc0f463f962d4edd930e4ddec051834bfc7f032e9fc917c44f5f317000a98945"
+      "sha256": "d62b704447bc9efe5e5311007f81fd471e2ba2bbfc78228eefa4bd68e686a568"
     },
     {
       "path": "fixtures/invalid/catalogue.incompatible-version.json",
@@ -681,18 +669,6 @@
     {
       "path": "fixtures/invalid/wallet-assets.incompatible-version.json",
       "sha256": "166070a1722254e9cf4380590b5e4c78344bd78d9d2295ca0d04108bb9c03b48"
-    },
-    {
-      "path": "fixtures/invalid/wallet-assets.local-has-more-without-cursor.json",
-      "sha256": "42861620417411a75014938080ca0a4486b534ae0536b12fcbe72e654d844166"
-    },
-    {
-      "path": "fixtures/invalid/wallet-assets.local-with-fallback-reason.json",
-      "sha256": "0fad73c580df309a1af2368c79240fd183956b2fef865d4bc938461eb2e8c35f"
-    },
-    {
-      "path": "fixtures/invalid/wallet-assets.local-with-provider-coverage.json",
-      "sha256": "495a2d36bc2aaf3c7b6f4de02a52e6c9440f084093532fd966cf13872b7c0340"
     },
     {
       "path": "fixtures/producer/catalogue.empty.json",
@@ -919,18 +895,6 @@
       "sha256": "2d078ca53b3ee736401bffabd742f5e73b314563ec9990de6239c95e26c18bc3"
     },
     {
-      "path": "fixtures/producer/wallet-assets.local-catalogue.json",
-      "sha256": "9b85901e4419a8009cf3fc260447b900eae360835f1aa982b7b1277db6112fc7"
-    },
-    {
-      "path": "fixtures/producer/wallet-assets.local-coverage-fallback.json",
-      "sha256": "9e1539ee2ddd27a26befcdd4301666fc3acb034e8ea703e27e718c6d3cb77b28"
-    },
-    {
-      "path": "fixtures/producer/wallet-assets.local-unavailable-fallback.json",
-      "sha256": "48e2bb43728966c5f2fbe90b4735e8c8df9a59fcefb65c082613f48217c5a5c0"
-    },
-    {
       "path": "fixtures/producer/wallet-assets.missing-contract.json",
       "sha256": "3b0418b5ab3966e1a2cf9af38e3c33f661a94850470cf3347c96678a515a57cc"
     },
@@ -1016,7 +980,7 @@
     },
     {
       "path": "runtime.mjs",
-      "sha256": "63dd4caa6956594e6b3aba690ee7a1b78d702a10162715b6d05dc022cf3b7b97"
+      "sha256": "c8155265e6290cf96ace538141167c5118931d42d10121f4b2b8819bfc02b960"
     },
     {
       "path": "schemas/capabilities.response.schema.json",
@@ -1104,11 +1068,11 @@
     },
     {
       "path": "schemas/wallet-assets.response.schema.json",
-      "sha256": "8baff5d31c097d02e3815e8bf7e5c376933b332022bb166569a99cc3872dfca2"
+      "sha256": "6c4619aab22c31c2b261377646824a5c897e29d59939296c47de9990c1f064fa"
     },
     {
       "path": "types.ts",
-      "sha256": "9100657d15ad00870bd01bf5d990c4b6fb8909123d77a42242ed32893a5f539b"
+      "sha256": "119ad81646e59f0cd38c2cd3e31b292732d6ca9637678e1e5d792e5b75259b11"
     }
   ],
   "generator": "scripts/export-read-contract.py",
@@ -1116,15 +1080,15 @@
   "sources": [
     {
       "path": "backend/read_contract.py",
-      "sha256": "af96a0a2b470f76e5302f5137d976c12f18db62f1c8a0dae0e7bcf77afe7769d"
+      "sha256": "0772231ddf4d51c025ff968729b92798961ce2224b4d46b76c2b9f719682ec31"
     },
     {
       "path": "backend/read_api.py",
-      "sha256": "1653836df26fa2f8ffb8d44ea4fce43ee42de8a762c591424f8667a456f22275"
+      "sha256": "79de375a34c3c5c1837cbbe5507bb786fb7fd84585d3c09a5ef37ec39c4ab8a8"
     },
     {
       "path": "backend/read_service.py",
-      "sha256": "f6b79b8ccb6247aaccf057b0206f538ff2002efad73c0f9600c0d0a30985727c"
+      "sha256": "9ac4ce210ad2ed266d040c559766e13fa15c1dd969c3c6d386cd83ef463c7b26"
     },
     {
       "path": "backend/rpc_failover.py",
@@ -1204,7 +1168,7 @@
     },
     {
       "path": "backend/inventory.py",
-      "sha256": "01b42e7196cea421902687a31e61195551970b2592a67ffde96dfa66edd770ad"
+      "sha256": "2810a21b0eb44f4fec329e85bc18ffea0e518788da6dd1bd86b70ae499f7d56f"
     },
     {
       "path": "backend/market_cache.py",
@@ -1252,7 +1216,7 @@
     },
     {
       "path": "backend/tests/test_read_contract.py",
-      "sha256": "da4af075b1278b6aa8014b3b692dc676693c36299f59af47a2fe6a69dd5b2ad3"
+      "sha256": "eece3d9cc9b1becfd725055628d6a550f08baeb55ea7c5aef50ef16858b2bc88"
     },
     {
       "path": "backend/tests/test_read_reconciliation.py",
@@ -1260,7 +1224,7 @@
     },
     {
       "path": "scripts/export-read-contract.py",
-      "sha256": "c5ecdf55ba0c533faf2a6cdbbb89e61cd3242e8fa2b143e901b4506be19370c4"
+      "sha256": "b088c0041cc5fc5f497c74b126c7dbff17eb574fdb4651e3916d74b4cc0d8479"
     }
   ],
   "status": "candidate_disabled_pending_consumer_acknowledgement"

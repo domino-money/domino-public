@@ -223,7 +223,7 @@
     },
     {
       "path": "runtime.mjs",
-      "sha256": "234d1396c71e8d49a06b3a957846da28dddc7c2ef899d1fe290b890e6fdb564d"
+      "sha256": "ab0441f74980cbf4885cdca57ea0e8b1c86d020a4873109af54d9586254b50a5"
     },
     {
       "path": "schemas/capabilities.response.schema.json",
@@ -258,7 +258,7 @@
     },
     {
       "path": "backend/read_contract.py",
-      "sha256": "af96a0a2b470f76e5302f5137d976c12f18db62f1c8a0dae0e7bcf77afe7769d"
+      "sha256": "0772231ddf4d51c025ff968729b92798961ce2224b4d46b76c2b9f719682ec31"
     },
     {
       "path": "backend/discovery.py",
@@ -266,7 +266,7 @@
     },
     {
       "path": "backend/read_service.py",
-      "sha256": "f6b79b8ccb6247aaccf057b0206f538ff2002efad73c0f9600c0d0a30985727c"
+      "sha256": "9ac4ce210ad2ed266d040c559766e13fa15c1dd969c3c6d386cd83ef463c7b26"
     },
     {
       "path": "backend/market_cache.py",
@@ -282,7 +282,7 @@
     },
     {
       "path": "backend/read_api.py",
-      "sha256": "1653836df26fa2f8ffb8d44ea4fce43ee42de8a762c591424f8667a456f22275"
+      "sha256": "79de375a34c3c5c1837cbbe5507bb786fb7fd84585d3c09a5ef37ec39c4ab8a8"
     },
     {
       "path": "backend/bridge_http.py",
@@ -298,7 +298,7 @@
     },
     {
       "path": "backend/dev_read_service.py",
-      "sha256": "60da623a67a9a5ca9cb4e906c7a20e5bfe0670144fc1794abe9c70dca5fe9852"
+      "sha256": "0958624e61d1f554570c35ba5763a68bfe766efb63adae4356f617177b28c514"
     },
     {
       "path": "backend/dev_read_budget.py",
@@ -346,7 +346,7 @@
     },
     {
       "path": "backend/tests/test_read_contract.py",
-      "sha256": "da4af075b1278b6aa8014b3b692dc676693c36299f59af47a2fe6a69dd5b2ad3"
+      "sha256": "eece3d9cc9b1becfd725055628d6a550f08baeb55ea7c5aef50ef16858b2bc88"
     },
     {
       "path": "backend/tests/test_discovery.py",
@@ -354,7 +354,7 @@
     },
     {
       "path": "scripts/export-read-contract.py",
-      "sha256": "c5ecdf55ba0c533faf2a6cdbbb89e61cd3242e8fa2b143e901b4506be19370c4"
+      "sha256": "b088c0041cc5fc5f497c74b126c7dbff17eb574fdb4651e3916d74b4cc0d8479"
     },
     {
       "path": "scripts/export-read-v2-contract.py",

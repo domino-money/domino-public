@@ -185,7 +185,7 @@ function listTitle(snap: WalletSnapshot, view: WalletView, block: string | null,
     provenance.length > 0 ? `${provenance.join(' · ')}.` : null,
     view.skipped > 0 ? `${view.skipped} provider candidate${view.skipped === 1 ? ' wasn’t' : 's weren’t'} checked in this read.` : null,
     checkedByAddress ? 'Balances checked for the verified pool tokens by their exact addresses.' : null,
-    snap.capped ? (view.localPages > 0 ? COPY.picker.walletMixedCapped : COPY.picker.walletCapped) : null,
+    snap.capped ? COPY.picker.walletCapped : null,
     snap.restarted ? COPY.picker.walletRestarted : null,
   ]
   return lines.filter((line): line is string => line !== null).join(' ')
@@ -363,7 +363,7 @@ export function PortfolioTokens({ address }: { address: string }) {
                 , <span className="tnum">{unavailable.length}</span> unavailable
               </>
             )}
-            {' · '}page <span className="tnum">{view.pages}</span>{view.localPages === 0 && <> of up to <span className="tnum">{WALLET_PAGE_CAP}</span></>}
+            {' · '}page <span className="tnum">{view.pages}</span> of up to <span className="tnum">{WALLET_PAGE_CAP}</span>
           </>
         ) : (
           ''

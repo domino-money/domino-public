@@ -48,15 +48,13 @@ class MetadataRpc(FakeRpc):
         return self.text if target == TOKEN else super().symbol(target, block=block)
 
 
-def service(rpc=None, *, discovery=None, inventory=None, market=None, catalogue=None,
-            inventory_local_first=False,local_inventory=None):
+def service(rpc=None, *, discovery=None, inventory=None, market=None, catalogue=None):
     rpc = rpc or FakeRpc()
     transport = discovery if discovery is not None else lambda url: [candidate()]
     return ReadService(rpc_factory=lambda: rpc, clock=lambda: 1010,
                        transport_factory=lambda: transport, inventory=inventory,
                        cursor_codec=CursorCodec(secret=b'fixture-key-is-not-a-secret-000000', clock=lambda: 1010),
-                       market_cache=market, catalogue=catalogue,
-                       inventory_local_first=inventory_local_first,local_inventory=local_inventory)
+                       market_cache=market, catalogue=catalogue)
 
 
 class MarketTransport:
@@ -152,18 +150,6 @@ def build_fixtures():
     add('wallet-assets', 'last-page', paged.wallet_assets(OWNER, [TOKEN], cursor=restored))
     def failed_inventory(*args): raise DataError('http_503')
     add('wallet-assets', 'provider-unavailable', service(inventory=AlchemyInventory(URL, transport=failed_inventory)).wallet_assets(OWNER, [TOKEN]))
-    class LocalInventoryFixture:
-        context='fixture-local-catalogue'
-        def page(self,wallet,cursor=None,*,limit=20):
-            return {'currencies':[TOKEN],'nextKey':None,'excludedRows':0,'rowsReceived':1,'retrievedAt':1010}
-    local_paged=service(inventory_local_first=True,local_inventory=LocalInventoryFixture(),
-        inventory=AlchemyInventory(URL,transport=ProviderTransport([page([OTHER])]),clock=lambda:1010))
-    local_first=local_paged.wallet_assets(OWNER,[TOKEN])
-    add('wallet-assets','local-catalogue',local_first)
-    add('wallet-assets','local-coverage-fallback',local_paged.wallet_assets(
-        OWNER,[TOKEN],cursor=local_first['inventory']['nextCursor']))
-    add('wallet-assets','local-unavailable-fallback',service(inventory_local_first=True,
-        inventory=AlchemyInventory(URL,transport=ProviderTransport([page([TOKEN])]),clock=lambda:1010)).wallet_assets(OWNER,[TOKEN]))
 
     def market_setup():
         transport, now = MarketTransport(), [0]
@@ -263,13 +249,6 @@ def build_fixtures():
     reference_as_current = copy.deepcopy(files['fixtures/producer/pool-metrics.reference-analytics.json'])
     reference_as_current['usableAsCurrent24h'] = True
     add('pool-metrics', 'reference-claimed-current', reference_as_current, kind='invalid', valid=False)
-    for name,change in (
-            ('local-with-provider-coverage',{'coverage':'provider_page_only'}),
-            ('local-with-fallback-reason',{'fallbackReason':'local_inventory_unavailable'}),
-            ('local-has-more-without-cursor',{'nextCursor':None})):
-        invalid_inventory=copy.deepcopy(local_first)
-        invalid_inventory['inventory'].update(change)
-        add('wallet-assets',name,invalid_inventory,kind='invalid',valid=False)
     requests = []
     for route, payload in {
         'token': {'token': TOKEN},
