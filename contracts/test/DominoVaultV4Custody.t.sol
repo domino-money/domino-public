@@ -6,8 +6,7 @@ import {DominoExecutionTypes as E} from "../src/DominoExecutionTypes.sol";
 import {DominoVaultReadHelper} from "../src/DominoVaultReadHelper.sol";
 import {DominoVaultTypes as T, IERC721ReceiverE2} from "../src/DominoVaultTypes.sol";
 import {IDominoVaultDraft} from "../src/IDominoVaultDraft.sol";
-import {VmE2, MockPoolManager, MockPositionManager, MockStateView, MockERC20, E2OwnerReceiver,
-    E2ForeignSubscriber, E2OwnerWithoutNFTReceiver} from "./E2Mocks.sol";
+import {MockPoolManager, MockPositionManager, MockStateView, MockERC20} from "./E2Mocks.sol";
 import {CustodyBehaviour, ICustodyVault} from "./shared/CustodyBehaviour.sol";
 
 interface VmEtch {

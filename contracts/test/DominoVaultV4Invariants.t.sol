@@ -1,12 +1,11 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.26;
 
-import {DominoVaultV4} from "../src/DominoVaultV4.sol";
 import {DominoVaultReadHelper} from "../src/DominoVaultReadHelper.sol";
 import {DominoVaultTypes as T} from "../src/DominoVaultTypes.sol";
 import {DominoExecutionTypes as E} from "../src/DominoExecutionTypes.sol";
 import {IDominoVaultDraft} from "../src/IDominoVaultDraft.sol";
-import {VmE2, MockPoolManager, MockPositionManager, MockStateView, MockERC20} from "./E2Mocks.sol";
+import {MockPoolManager, MockPositionManager, MockStateView, MockERC20} from "./E2Mocks.sol";
 import {VaultV4TestHarness, StubEngineV4} from "./DominoVaultV4Custody.t.sol";
 
 interface VmInvariant {

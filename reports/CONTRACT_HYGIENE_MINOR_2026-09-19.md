@@ -296,3 +296,17 @@ thirty tests were ported as `DominoVaultFactoryV4Creation.t.sol` (28; the two co
 the V4 factory suite already had are not repeated), and the architecture suite's seven as
 `DominoVaultV4Architecture.t.sol`, both green on first compile - the two factories differ only
 in how the implementation is bound, and the helper pin is the same contract.
+
+### Sealed — 20 September 2026
+
+Hygiene is closed as a track, and what keeps it closed is a check rather than a promise:
+`scripts/check-contract-hygiene.mjs` runs in the repository-hygiene CI job and in
+`npm run test:contracts`. Over every Solidity source outside the vendored Uniswap tree it
+requires one licence line and exactly `pragma solidity 0.8.26;`, refuses leftover
+`TODO`/`FIXME`/`XXX`/`HACK`/`TBD` markers, refuses development-only imports (`forge-std`,
+`hardhat`, `ds-test`) in shipped code, and refuses an imported name that nothing uses - counting
+a name another file imports from this one as a use, since a fixture may re-export on purpose.
+Its first run over the tree found seven dead imports in four test files, all left behind by the
+custody port and the V3 retirement, and none in `contracts/src`; they are gone. The dead-code
+findings above (M-03 … M-08) stay closed as recorded, and the two redundancy lists (M-19, M-20)
+are the standing statement of what is deliberately kept.

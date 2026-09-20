@@ -2,9 +2,8 @@
 pragma solidity 0.8.26;
 import {DominoSetup} from "../../src/DominoSetup.sol";
 import {DominoVaultTypes as T} from "../../src/DominoVaultTypes.sol";
-import {PoolManager, PositionManager, IPoolManager, PoolKey, Currency} from "../reference/OfficialV4Fixture.sol";
+import {PoolManager, PositionManager, IPoolManager, PoolKey} from "../reference/OfficialV4Fixture.sol";
 import {StateView} from "../reference/official-v4/v4-periphery/src/lens/StateView.sol";
-import {IHooks} from "@uniswap/v4-core/src/interfaces/IHooks.sol";
 import {IAllowanceTransfer} from "permit2/src/interfaces/IAllowanceTransfer.sol";
 import {IPositionDescriptor} from "../reference/official-v4/v4-periphery/src/interfaces/IPositionDescriptor.sol";
 import {IWETH9} from "../reference/official-v4/v4-periphery/src/interfaces/external/IWETH9.sol";
