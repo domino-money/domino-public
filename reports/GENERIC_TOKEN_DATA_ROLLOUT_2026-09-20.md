@@ -137,3 +137,39 @@ budget and returns exit1 for that deferred pass. Systemd can show that oneshot
 as failed; the active timer schedules its next pass. The inspected passes each
 persisted6–8 indexed steps. This is an observed retryable budget condition,
 separate from the three continuously running collector services.
+
+
+## Final deployment and interrupted qualification
+
+Final runtime: `3e304d8e268b1b9ffda55771adfbf6a2471272e4`.
+[Publication35484580611](https://github.com/domino-money/domino/actions/runs/35484580611)
+succeeded. The VM activation confirmed reader, gateway and all three collector
+services active at that release. The second release archive SHA256 was
+`b65633575d12991dd9d5fa8ce4db4f44a686d4d8f7afbe62b55b960d398ad80e`.
+The prior release's [full CI35483815064](https://github.com/domino-money/domino/actions/runs/35483815064)
+passed Backend, Contracts, Repository hygiene, Frontend and Deploy gated preview.
+The final cache delta passed its73 focused tests and28 pins/reconciliation checks;
+its full CI was still running when the network interruption was diagnosed.
+
+The final fixed-load run could not start: the clawber tailnet peer became offline,
+with lastSeen `2026-09-20T02:40:19.1Z`. Local Tailscale stayed online. SSH to the
+host and the VM failed before executing commands. The separate RPC endpoint
+returned HTTP530/Cloudflare1033 (no connector), and the public data route returned
+HTTP503/upstream_unavailable. The operator reported a possible residential-network
+outage and was away from home. The exact failure cause has not been established;
+no claim of successful final production qualification is made.
+
+The earlier unpaced ad-hoc public probe files are retained: one transient503,
+then five validated successes and a429 on the sixth immediate request. That429
+matches the unchanged five-request client burst. The later paced attempt stopped
+on upstream_unavailable while the host was offline. These probes are separate
+from the three successful frontend-pipeline benchmark runs above.
+
+A single [bounded recovery script](../scripts/watch-public-data-recovery.py)
+waits up to120minutes without AI calls or saved credentials. It checks for the
+known host, expected release and active services, then runs the fixed CRUMBS
+(15pools)+six selected-pool loopback qualification once. It does not restart or
+reconfigure infrastructure. Mutable status is written to
+`reports/public-data-recovery-status.json`; completed samples, if obtained, go to
+`reports/public-data-vm-final-2026-09-20.jsonl`. A timeout or failed attempt is
+recorded explicitly. No unbounded watcher or recurring AI task was created.

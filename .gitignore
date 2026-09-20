@@ -29,3 +29,6 @@ reports/private-site-release*.json
 
 # Local visual qualification evidence
 app/.test-artifacts/
+
+# Mutable state of the bounded operational recovery watcher.
+reports/public-data-recovery-status.json
