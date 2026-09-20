@@ -304,8 +304,20 @@ Absence of findings in those areas is evidence, not silence.
   pre-observation sandwich is real but costs the attacker dollars to extract
   cents. The same run reads the L2 gas of a compound from its receipt
   (1,162,908 for 1,764 bytes of calldata) and the L1 component from the live
-  node's NodeInterface (zero on this chain, a point sample). D-09's overflow
-  threshold is still an arithmetic estimate. `DominoVaultV4Invariants.t.sol`
+  node's NodeInterface (zero on this chain, a point sample). D-09's overflow threshold was measured
+  on 20 September: `DominoRoutingArithmetic.t.sol` pins the routing helper's
+  arithmetic at its edges with constants computed outside Solidity - the
+  spread guard sits at exactly 2^54; the multiplication would first overflow
+  at a spread of 2^82.71 (anchor 184467440737095516160000 with the value at
+  uint160 max, measured against FullMath itself), so the guard is 2^28 inside
+  the line; `minimumOutput` overflows only below a sqrt price of 2^32, and the
+  smallest price Uniswap v4 admits is 161,443 above that; the two quote
+  branches meet at 2^128 with one unit of rounding between them, and the
+  boundary is not a convention (at 2^128 - 1 they differ for some amounts);
+  the impact check is exact to the wei on both sides. Fifteen mutations of
+  those guards: thirteen fail a test, two are `_ratioCeil` repeating guards
+  `ratioBps` has already applied to the same operands, recorded in the suite.
+  `DominoVaultV4Invariants.t.sol`
   now holds the custody ledger's five invariants under a fuzzed owner and
   engine, which the "Contract unit, fuzz, invariant tests" row of
   SECURITY_SPEC §8 asked for and nothing held before.*
