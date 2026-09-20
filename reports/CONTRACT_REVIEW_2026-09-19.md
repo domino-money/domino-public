@@ -285,6 +285,12 @@ Absence of findings in those areas is evidence, not silence.
   needs a forked-pool test that manipulates spot around a compound and
   measures the value delta; D-09's overflow threshold is an arithmetic
   estimate; the gas figures need snapshots. Nothing here asserts a measured
-  exploit.
+  exploit. *Since written: D-01 and D-02 were reproduced on a fork of the
+  real `weth-usdg` pool on 20 September -
+  [EXECUTION_FORK_SANDWICH_2026-09-20](EXECUTION_FORK_SANDWICH_2026-09-20.md).
+  The anchor refuses every post-observation move at or beyond the impact
+  limit, the ceiling is the deciding clause on a wide range, and the
+  pre-observation sandwich is real but costs the attacker dollars to extract
+  cents. D-09's threshold and the gas snapshots are still estimates.*
 - **`api-contracts/`** — the wire packages are a different thing from these
   contracts and were not part of this review.

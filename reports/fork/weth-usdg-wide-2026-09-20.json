@@ -1,0 +1,962 @@
+{
+ "tool": "qualify_execution_fork",
+ "chainId": 4663,
+ "pool": "weth-usdg",
+ "poolId": "0x84bd4e2d8be11aeb0afc1195b38f587b61e90068548f1063fdbe448fb8cad0b6",
+ "guardBandBps": 2000,
+ "maxPriceImpactBps": 100,
+ "serviceFeeBps": 200,
+ "planSlackPercent": 10,
+ "rootWidthTicks": 2000,
+ "startedAt": 1789937061,
+ "scenarios": [
+  {
+   "scenario": "honest",
+   "moveBps": 0,
+   "preObservation": false,
+   "ceiling": false,
+   "swap": false,
+   "sqrtPriceBefore": "4067829141224187652071390",
+   "accruedFees": [
+    "164974714141408",
+    "434355"
+   ],
+   "liquidityIncrease": "78316521227",
+   "anchorSqrtPrice": "4067829141224187652071390",
+   "sqrtPriceAtCompound": "4067829141224187652071390",
+   "gasUsed": 1162987,
+   "outcome": "executed",
+   "liquidityAdded": "78316521227",
+   "reservesAfter": [
+    "16762236922254",
+    "43436"
+   ],
+   "addedAmounts": [
+    "145248227676256",
+    "383100"
+   ],
+   "vaultValueBeforeQuote": "10337512000",
+   "vaultValueAfterQuote": "10338365616",
+   "attackerPnlQuote": "0",
+   "attackerBalanceDelta": [
+    "0",
+    "0"
+   ]
+  },
+  {
+   "scenario": "swap-honest",
+   "moveBps": 0,
+   "preObservation": false,
+   "ceiling": false,
+   "swap": true,
+   "sqrtPriceBefore": "4067829141224187652071390",
+   "accruedFees": [
+    "164974714141408",
+    "434355"
+   ],
+   "swapIn0": "80837609929289",
+   "liquidityIncrease": "19579130306",
+   "anchorSqrtPrice": "4067829141224187652071390",
+   "sqrtPriceAtCompound": "4067829141224187652071390",
+   "gasUsed": 1483824,
+   "outcome": "executed",
+   "liquidityAdded": "19579130306",
+   "reservesAfter": [
+    "45434739985229",
+    "549670"
+   ],
+   "addedAmounts": [
+    "36312056917673",
+    "95775"
+   ],
+   "vaultValueBeforeQuote": "10337512000",
+   "vaultValueAfterQuote": "10338372940",
+   "attackerPnlQuote": "0",
+   "attackerBalanceDelta": [
+    "0",
+    "0"
+   ]
+  },
+  {
+   "scenario": "pre-observation",
+   "moveBps": 50,
+   "preObservation": true,
+   "ceiling": false,
+   "swap": false,
+   "sqrtPriceBefore": "4067829141224187652071390",
+   "attackerSold0": "1506225585937500000",
+   "accruedFees": [
+    "175308874958703",
+    "434355"
+   ],
+   "liquidityIncrease": "80429650164",
+   "anchorSqrtPrice": "4057646779869088791791251",
+   "sqrtPriceAtCompound": "4057646779869088791791251",
+   "gasUsed": 1162987,
+   "outcome": "executed",
+   "sqrtPriceAfterRestore": "4067826548692273694704693",
+   "liquidityAdded": "80429650164",
+   "reservesAfter": [
+    "19086078708410",
+    "43436"
+   ],
+   "addedAmounts": [
+    "153098340326813",
+    "383100"
+   ],
+   "vaultValueBeforeQuote": "10337539169",
+   "vaultValueAfterQuote": "10338419579",
+   "attackerPnlQuote": "-1998402",
+   "attackerBalanceDelta": [
+    "-758082922625879",
+    "0"
+   ],
+   "lossVersusHonestQuote": "-53963",
+   "attackerCostQuote": "1998402"
+  },
+  {
+   "scenario": "post-observation",
+   "moveBps": 50,
+   "preObservation": false,
+   "ceiling": false,
+   "swap": false,
+   "sqrtPriceBefore": "4067829141224187652071390",
+   "accruedFees": [
+    "164974714141408",
+    "434355"
+   ],
+   "liquidityIncrease": "78316521227",
+   "anchorSqrtPrice": "4067829141224187652071390",
+   "attackerSold0": "1506225585937500000",
+   "sqrtPriceAtCompound": "4057646779869088791791251",
+   "gasUsed": 1163059,
+   "outcome": "executed",
+   "sqrtPriceAfterRestore": "4067826549390463320308946",
+   "liquidityAdded": "78316521227",
+   "reservesAfter": [
+    "23190521668219",
+    "53707"
+   ],
+   "addedAmounts": [
+    "149075986226160",
+    "373035"
+   ],
+   "vaultValueBeforeQuote": "10337539169",
+   "vaultValueAfterQuote": "10338420002",
+   "attackerPnlQuote": "-1998403",
+   "attackerBalanceDelta": [
+    "-758083181019834",
+    "0"
+   ],
+   "lossVersusHonestQuote": "-54386",
+   "attackerCostQuote": "1998403"
+  },
+  {
+   "scenario": "ceiling",
+   "moveBps": 50,
+   "preObservation": false,
+   "ceiling": true,
+   "swap": false,
+   "sqrtPriceBefore": "4067829141224187652071390",
+   "accruedFees": [
+    "164974714141408",
+    "434355"
+   ],
+   "liquidityIncrease": "78316521227",
+   "maxAdded": [
+    "145974468814638",
+    "385016"
+   ],
+   "anchorSqrtPrice": "4067829141224187652071390",
+   "attackerSold0": "1506225585937500000",
+   "sqrtPriceAtCompound": "4057646779869088791791251",
+   "gasUsed": 860488,
+   "outcome": "refused",
+   "reason": "InvalidAmount()",
+   "sqrtPriceAfterRestore": "4067826575266747734034950",
+   "liquidityAdded": "0",
+   "reservesAfter": [
+    "0",
+    "0"
+   ],
+   "addedAmounts": [
+    "0",
+    "0"
+   ],
+   "vaultValueBeforeQuote": "10338435659",
+   "vaultValueAfterQuote": "10338435659",
+   "attackerPnlQuote": "-1998428",
+   "attackerBalanceDelta": [
+    "-758092757609336",
+    "0"
+   ],
+   "lossVersusHonestQuote": "-70043",
+   "attackerCostQuote": "1998428"
+  },
+  {
+   "scenario": "swap-pre-observation",
+   "moveBps": 50,
+   "preObservation": true,
+   "ceiling": false,
+   "swap": true,
+   "sqrtPriceBefore": "4067829141224187652071390",
+   "attackerSold0": "1506225585937500000",
+   "accruedFees": [
+    "175308874958703",
+    "434355"
+   ],
+   "swapIn0": "85901348729764",
+   "liquidityIncrease": "20107412541",
+   "anchorSqrtPrice": "4057646779869088791791251",
+   "sqrtPriceAtCompound": "4057646779869088791791251",
+   "gasUsed": 1482919,
+   "outcome": "executed",
+   "sqrtPriceAfterRestore": "4067825989367916340017510",
+   "liquidityAdded": "20107412541",
+   "reservesAfter": [
+    "48599270591449",
+    "561883"
+   ],
+   "addedAmounts": [
+    "38274585081703",
+    "95775"
+   ],
+   "vaultValueBeforeQuote": "10337539167",
+   "vaultValueAfterQuote": "10338425829",
+   "attackerPnlQuote": "-1997290",
+   "attackerBalanceDelta": [
+    "-757661006241273",
+    "0"
+   ],
+   "lossVersusHonestQuote": "-60213",
+   "attackerCostQuote": "1997290"
+  },
+  {
+   "scenario": "swap-post-observation",
+   "moveBps": 50,
+   "preObservation": false,
+   "ceiling": false,
+   "swap": true,
+   "sqrtPriceBefore": "4067829141224187652071390",
+   "accruedFees": [
+    "164974714141408",
+    "434355"
+   ],
+   "swapIn0": "80837609929289",
+   "liquidityIncrease": "19579130306",
+   "anchorSqrtPrice": "4067829141224187652071390",
+   "attackerSold0": "1506225585937500000",
+   "sqrtPriceAtCompound": "4057646779869088791791251",
+   "gasUsed": 1483111,
+   "outcome": "executed",
+   "sqrtPriceAfterRestore": "4067826023688571325405188",
+   "liquidityAdded": "19579130306",
+   "reservesAfter": [
+    "54792431784728",
+    "551172"
+   ],
+   "addedAmounts": [
+    "37268996555112",
+    "93258"
+   ],
+   "vaultValueBeforeQuote": "10337539167",
+   "vaultValueAfterQuote": "10338426277",
+   "attackerPnlQuote": "-1997357",
+   "attackerBalanceDelta": [
+    "-757686376913353",
+    "0"
+   ],
+   "lossVersusHonestQuote": "-60661",
+   "attackerCostQuote": "1997357"
+  },
+  {
+   "scenario": "pre-observation",
+   "moveBps": 90,
+   "preObservation": true,
+   "ceiling": false,
+   "swap": false,
+   "sqrtPriceBefore": "4067829141224187652071390",
+   "attackerSold0": "2744934082031250000",
+   "accruedFees": [
+    "183632634056127",
+    "434355"
+   ],
+   "liquidityIncrease": "82208211705",
+   "anchorSqrtPrice": "4049482279895411999866239",
+   "sqrtPriceAtCompound": "4049482279895411999866239",
+   "gasUsed": 1162987,
+   "outcome": "executed",
+   "sqrtPriceAfterRestore": "4067824425665988173243789",
+   "liquidityAdded": "82208211705",
+   "reservesAfter": [
+    "20652881835210",
+    "43436"
+   ],
+   "addedAmounts": [
+    "159720157178057",
+    "383100"
+   ],
+   "vaultValueBeforeQuote": "10337560954",
+   "vaultValueAfterQuote": "10338462890",
+   "attackerPnlQuote": "-3638116",
+   "attackerBalanceDelta": [
+    "-1380099209004756",
+    "0"
+   ],
+   "lossVersusHonestQuote": "-97274",
+   "attackerCostQuote": "3638116"
+  },
+  {
+   "scenario": "post-observation",
+   "moveBps": 90,
+   "preObservation": false,
+   "ceiling": false,
+   "swap": false,
+   "sqrtPriceBefore": "4067829141224187652071390",
+   "accruedFees": [
+    "164974714141408",
+    "434355"
+   ],
+   "liquidityIncrease": "78316521227",
+   "anchorSqrtPrice": "4067829141224187652071390",
+   "attackerSold0": "2744934082031250000",
+   "sqrtPriceAtCompound": "4049482279895411999866239",
+   "gasUsed": 1163059,
+   "outcome": "executed",
+   "sqrtPriceAfterRestore": "4067824427987754574151574",
+   "liquidityAdded": "78316521227",
+   "reservesAfter": [
+    "28368251585632",
+    "61942"
+   ],
+   "addedAmounts": [
+    "152159094822571",
+    "364964"
+   ],
+   "vaultValueBeforeQuote": "10337560954",
+   "vaultValueAfterQuote": "10338463671",
+   "attackerPnlQuote": "-3638118",
+   "attackerBalanceDelta": [
+    "-1380100031824323",
+    "0"
+   ],
+   "lossVersusHonestQuote": "-98055",
+   "attackerCostQuote": "3638118"
+  },
+  {
+   "scenario": "ceiling",
+   "moveBps": 90,
+   "preObservation": false,
+   "ceiling": true,
+   "swap": false,
+   "sqrtPriceBefore": "4067829141224187652071390",
+   "accruedFees": [
+    "164974714141408",
+    "434355"
+   ],
+   "liquidityIncrease": "78316521227",
+   "maxAdded": [
+    "145974468814638",
+    "385016"
+   ],
+   "anchorSqrtPrice": "4067829141224187652071390",
+   "attackerSold0": "2744934082031250000",
+   "sqrtPriceAtCompound": "4049482279895411999866239",
+   "gasUsed": 860488,
+   "outcome": "refused",
+   "reason": "InvalidAmount()",
+   "sqrtPriceAfterRestore": "4067824474614485929325088",
+   "liquidityAdded": "0",
+   "reservesAfter": [
+    "0",
+    "0"
+   ],
+   "addedAmounts": [
+    "0",
+    "0"
+   ],
+   "vaultValueBeforeQuote": "10338479385",
+   "vaultValueAfterQuote": "10338479385",
+   "attackerPnlQuote": "-3638199",
+   "attackerBalanceDelta": [
+    "-1380130856089021",
+    "0"
+   ],
+   "lossVersusHonestQuote": "-113769",
+   "attackerCostQuote": "3638199"
+  },
+  {
+   "scenario": "swap-pre-observation",
+   "moveBps": 90,
+   "preObservation": true,
+   "ceiling": false,
+   "swap": true,
+   "sqrtPriceBefore": "4067829141224187652071390",
+   "attackerSold0": "2744934082031250000",
+   "accruedFees": [
+    "183632634056127",
+    "434355"
+   ],
+   "swapIn0": "89979990687502",
+   "liquidityIncrease": "20552052926",
+   "anchorSqrtPrice": "4049482279895411999866239",
+   "sqrtPriceAtCompound": "4049482279895411999866239",
+   "gasUsed": 1483504,
+   "outcome": "executed",
+   "sqrtPriceAfterRestore": "4067823858057320927810198",
+   "liquidityAdded": "20552052926",
+   "reservesAfter": [
+    "51071898070239",
+    "571630"
+   ],
+   "addedAmounts": [
+    "39930039294028",
+    "95775"
+   ],
+   "vaultValueBeforeQuote": "10337560951",
+   "vaultValueAfterQuote": "10338468227",
+   "attackerPnlQuote": "-3636045",
+   "attackerBalanceDelta": [
+    "-1379313638808746",
+    "0"
+   ],
+   "lossVersusHonestQuote": "-102611",
+   "attackerCostQuote": "3636045"
+  },
+  {
+   "scenario": "swap-post-observation",
+   "moveBps": 90,
+   "preObservation": false,
+   "ceiling": false,
+   "swap": true,
+   "sqrtPriceBefore": "4067829141224187652071390",
+   "accruedFees": [
+    "164974714141408",
+    "434355"
+   ],
+   "swapIn0": "80837609929289",
+   "liquidityIncrease": "19579130306",
+   "anchorSqrtPrice": "4067829141224187652071390",
+   "attackerSold0": "2744934082031250000",
+   "sqrtPriceAtCompound": "4049482279895411999866239",
+   "gasUsed": 1483684,
+   "outcome": "executed",
+   "sqrtPriceAfterRestore": "4067823920038569350461467",
+   "liquidityAdded": "19579130306",
+   "reservesAfter": [
+    "62329650154359",
+    "552378"
+   ],
+   "addedAmounts": [
+    "38039773704185",
+    "91241"
+   ],
+   "vaultValueBeforeQuote": "10337560951",
+   "vaultValueAfterQuote": "10338469136",
+   "attackerPnlQuote": "-3636263",
+   "attackerBalanceDelta": [
+    "-1379396203229739",
+    "0"
+   ],
+   "lossVersusHonestQuote": "-103520",
+   "attackerCostQuote": "3636263"
+  },
+  {
+   "scenario": "pre-observation",
+   "moveBps": 110,
+   "preObservation": true,
+   "ceiling": false,
+   "swap": false,
+   "sqrtPriceBefore": "4067829141224187652071390",
+   "attackerSold0": "3474975585937500000",
+   "accruedFees": [
+    "187813147861472",
+    "434355"
+   ],
+   "liquidityIncrease": "83128661843",
+   "anchorSqrtPrice": "4045394134313281091496422",
+   "sqrtPriceAtCompound": "4045394134313281091496422",
+   "gasUsed": 1162987,
+   "outcome": "executed",
+   "sqrtPriceAfterRestore": "4067823179806874088305611",
+   "liquidityAdded": "83128661843",
+   "reservesAfter": [
+    "21331437332542",
+    "43436"
+   ],
+   "addedAmounts": [
+    "163152076319929",
+    "383100"
+   ],
+   "vaultValueBeforeQuote": "10337571861",
+   "vaultValueAfterQuote": "10338484589",
+   "attackerPnlQuote": "-4603024",
+   "attackerBalanceDelta": [
+    "-1746131886505927",
+    "0"
+   ],
+   "lossVersusHonestQuote": "-118973",
+   "attackerCostQuote": "4603024"
+  },
+  {
+   "scenario": "post-observation",
+   "moveBps": 110,
+   "preObservation": false,
+   "ceiling": false,
+   "swap": false,
+   "sqrtPriceBefore": "4067829141224187652071390",
+   "accruedFees": [
+    "164974714141408",
+    "434355"
+   ],
+   "liquidityIncrease": "78316521227",
+   "anchorSqrtPrice": "4067829141224187652071390",
+   "attackerSold0": "3474975585937500000",
+   "sqrtPriceAtCompound": "4045394134313281091496422",
+   "gasUsed": 310988,
+   "outcome": "refused",
+   "reason": "InvalidPrice()",
+   "sqrtPriceAfterRestore": "4067823240322720196380139",
+   "liquidityAdded": "0",
+   "reservesAfter": [
+    "0",
+    "0"
+   ],
+   "addedAmounts": [
+    "0",
+    "0"
+   ],
+   "vaultValueBeforeQuote": "10338501311",
+   "vaultValueAfterQuote": "10338501311",
+   "attackerPnlQuote": "-4603155",
+   "attackerBalanceDelta": [
+    "-1746181445061850",
+    "0"
+   ],
+   "lossVersusHonestQuote": "-135695",
+   "attackerCostQuote": "4603155"
+  },
+  {
+   "scenario": "swap-pre-observation",
+   "moveBps": 110,
+   "preObservation": true,
+   "ceiling": false,
+   "swap": true,
+   "sqrtPriceBefore": "4067829141224187652071390",
+   "attackerSold0": "3474975585937500000",
+   "accruedFees": [
+    "187813147861472",
+    "434355"
+   ],
+   "swapIn0": "92028442452121",
+   "liquidityIncrease": "20782165460",
+   "anchorSqrtPrice": "4045394134313281091496422",
+   "sqrtPriceAtCompound": "4045394134313281091496422",
+   "gasUsed": 1483636,
+   "outcome": "executed",
+   "sqrtPriceAfterRestore": "4067822608363272647634694",
+   "liquidityAdded": "20782165460",
+   "reservesAfter": [
+    "52286593375067",
+    "576495"
+   ],
+   "addedAmounts": [
+    "40788019078510",
+    "95775"
+   ],
+   "vaultValueBeforeQuote": "10337571858",
+   "vaultValueAfterQuote": "10338489452",
+   "attackerPnlQuote": "-4600456",
+   "attackerBalanceDelta": [
+    "-1745157392532430",
+    "0"
+   ],
+   "lossVersusHonestQuote": "-123836",
+   "attackerCostQuote": "4600456"
+  },
+  {
+   "scenario": "swap-post-observation",
+   "moveBps": 110,
+   "preObservation": false,
+   "ceiling": false,
+   "swap": true,
+   "sqrtPriceBefore": "4067829141224187652071390",
+   "accruedFees": [
+    "164974714141408",
+    "434355"
+   ],
+   "swapIn0": "80837609929289",
+   "liquidityIncrease": "19579130306",
+   "anchorSqrtPrice": "4067829141224187652071390",
+   "attackerSold0": "3474975585937500000",
+   "sqrtPriceAtCompound": "4045394134313281091496422",
+   "gasUsed": 333913,
+   "outcome": "refused",
+   "reason": "InvalidPrice()",
+   "sqrtPriceAfterRestore": "4067823240322720196380139",
+   "liquidityAdded": "0",
+   "reservesAfter": [
+    "0",
+    "0"
+   ],
+   "addedAmounts": [
+    "0",
+    "0"
+   ],
+   "vaultValueBeforeQuote": "10338501311",
+   "vaultValueAfterQuote": "10338501311",
+   "attackerPnlQuote": "-4603155",
+   "attackerBalanceDelta": [
+    "-1746181445061850",
+    "0"
+   ],
+   "lossVersusHonestQuote": "-135695",
+   "attackerCostQuote": "4603155"
+  },
+  {
+   "scenario": "pre-observation",
+   "moveBps": 500,
+   "preObservation": true,
+   "ceiling": false,
+   "swap": false,
+   "sqrtPriceBefore": "4067829141224187652071390",
+   "attackerSold0": "20049804687500000000",
+   "accruedFees": [
+    "271960583535302",
+    "434355"
+   ],
+   "liquidityIncrease": "101612758542",
+   "anchorSqrtPrice": "3964826200077438450311883",
+   "sqrtPriceAtCompound": "3964826200077438450311883",
+   "gasUsed": 1162975,
+   "outcome": "executed",
+   "sqrtPriceAfterRestore": "4067795472736242925465268",
+   "liquidityAdded": "101612758542",
+   "reservesAfter": [
+    "27196058358375",
+    "61953"
+   ],
+   "addedAmounts": [
+    "239869234675316",
+    "364953"
+   ],
+   "vaultValueBeforeQuote": "10337786823",
+   "vaultValueAfterQuote": "10338914315",
+   "attackerPnlQuote": "-26276605",
+   "attackerBalanceDelta": [
+    "-9967884935993142",
+    "0"
+   ],
+   "lossVersusHonestQuote": "-548699",
+   "attackerCostQuote": "26276605"
+  },
+  {
+   "scenario": "post-observation",
+   "moveBps": 500,
+   "preObservation": false,
+   "ceiling": false,
+   "swap": false,
+   "sqrtPriceBefore": "4067829141224187652071390",
+   "accruedFees": [
+    "164974714141408",
+    "434355"
+   ],
+   "liquidityIncrease": "78316521227",
+   "anchorSqrtPrice": "4067829141224187652071390",
+   "attackerSold0": "20049804687500000000",
+   "sqrtPriceAtCompound": "3964826200077438450311883",
+   "gasUsed": 310988,
+   "outcome": "refused",
+   "reason": "InvalidPrice()",
+   "sqrtPriceAfterRestore": "4067795812335126702957644",
+   "liquidityAdded": "0",
+   "reservesAfter": [
+    "0",
+    "0"
+   ],
+   "addedAmounts": [
+    "0",
+    "0"
+   ],
+   "vaultValueBeforeQuote": "10338938076",
+   "vaultValueAfterQuote": "10338938076",
+   "attackerPnlQuote": "-26280035",
+   "attackerBalanceDelta": [
+    "-9969186035221017",
+    "0"
+   ],
+   "lossVersusHonestQuote": "-572460",
+   "attackerCostQuote": "26280035"
+  },
+  {
+   "scenario": "swap-pre-observation",
+   "moveBps": 500,
+   "preObservation": true,
+   "ceiling": false,
+   "swap": true,
+   "sqrtPriceBefore": "4067829141224187652071390",
+   "attackerSold0": "20049804687500000000",
+   "accruedFees": [
+    "271960583535302",
+    "434355"
+   ],
+   "swapIn0": "133260685932297",
+   "liquidityIncrease": "25403189635",
+   "anchorSqrtPrice": "3964826200077438450311883",
+   "sqrtPriceAtCompound": "3964826200077438450311883",
+   "gasUsed": 1483720,
+   "outcome": "executed",
+   "sqrtPriceAfterRestore": "4067794869466385321933231",
+   "liquidityAdded": "25403189635",
+   "reservesAfter": [
+    "74789738270630",
+    "674896"
+   ],
+   "addedAmounts": [
+    "59967308667648",
+    "91238"
+   ],
+   "vaultValueBeforeQuote": "10337786804",
+   "vaultValueAfterQuote": "10338907318",
+   "attackerPnlQuote": "-26261622",
+   "attackerBalanceDelta": [
+    "-9962201215492151",
+    "0"
+   ],
+   "lossVersusHonestQuote": "-541702",
+   "attackerCostQuote": "26261622"
+  },
+  {
+   "scenario": "swap-post-observation",
+   "moveBps": 500,
+   "preObservation": false,
+   "ceiling": false,
+   "swap": true,
+   "sqrtPriceBefore": "4067829141224187652071390",
+   "accruedFees": [
+    "164974714141408",
+    "434355"
+   ],
+   "swapIn0": "80837609929289",
+   "liquidityIncrease": "19579130306",
+   "anchorSqrtPrice": "4067829141224187652071390",
+   "attackerSold0": "20049804687500000000",
+   "sqrtPriceAtCompound": "3964826200077438450311883",
+   "gasUsed": 333913,
+   "outcome": "refused",
+   "reason": "InvalidPrice()",
+   "sqrtPriceAfterRestore": "4067795812335126702957644",
+   "liquidityAdded": "0",
+   "reservesAfter": [
+    "0",
+    "0"
+   ],
+   "addedAmounts": [
+    "0",
+    "0"
+   ],
+   "vaultValueBeforeQuote": "10338938076",
+   "vaultValueAfterQuote": "10338938076",
+   "attackerPnlQuote": "-26280035",
+   "attackerBalanceDelta": [
+    "-9969186035221017",
+    "0"
+   ],
+   "lossVersusHonestQuote": "-572460",
+   "attackerCostQuote": "26280035"
+  },
+  {
+   "scenario": "pre-observation",
+   "moveBps": 2000,
+   "preObservation": true,
+   "ceiling": false,
+   "swap": false,
+   "sqrtPriceBefore": "4067829141224187652071390",
+   "attackerSold0": "73058593750000000000",
+   "accruedFees": [
+    "598645362485068",
+    "434355"
+   ],
+   "liquidityIncrease": "135189081774",
+   "anchorSqrtPrice": "3638375308068303905092856",
+   "sqrtPriceAtCompound": "3638375308068303905092856",
+   "gasUsed": 1062106,
+   "outcome": "executed",
+   "sqrtPriceAfterRestore": "4067713897216917038198610",
+   "liquidityAdded": "135189081774",
+   "reservesAfter": [
+    "59864536252980",
+    "434355"
+   ],
+   "addedAmounts": [
+    "528005209706813",
+    "0"
+   ],
+   "vaultValueBeforeQuote": "10338546118",
+   "vaultValueAfterQuote": "10340460533",
+   "attackerPnlQuote": "-92619123",
+   "attackerBalanceDelta": [
+    "-35134552330959731",
+    "0"
+   ],
+   "lossVersusHonestQuote": "-2094917",
+   "attackerCostQuote": "92619123"
+  },
+  {
+   "scenario": "post-observation",
+   "moveBps": 2000,
+   "preObservation": false,
+   "ceiling": false,
+   "swap": false,
+   "sqrtPriceBefore": "4067829141224187652071390",
+   "accruedFees": [
+    "164974714141408",
+    "434355"
+   ],
+   "liquidityIncrease": "78316521227",
+   "anchorSqrtPrice": "4067829141224187652071390",
+   "attackerSold0": "73058593750000000000",
+   "sqrtPriceAtCompound": "3638375308068303905092856",
+   "gasUsed": 310988,
+   "outcome": "refused",
+   "reason": "InvalidPrice()",
+   "sqrtPriceAfterRestore": "4067715597269427977984583",
+   "liquidityAdded": "0",
+   "reservesAfter": [
+    "0",
+    "0"
+   ],
+   "addedAmounts": [
+    "0",
+    "0"
+   ],
+   "vaultValueBeforeQuote": "10340558450",
+   "vaultValueAfterQuote": "10340558450",
+   "attackerPnlQuote": "-92688725",
+   "attackerBalanceDelta": [
+    "-35160955484601942",
+    "0"
+   ],
+   "lossVersusHonestQuote": "-2192834",
+   "attackerCostQuote": "92688725"
+  },
+  {
+   "scenario": "swap-pre-observation",
+   "moveBps": 2000,
+   "preObservation": true,
+   "ceiling": false,
+   "swap": true,
+   "sqrtPriceBefore": "4067829141224187652071390",
+   "attackerSold0": "73058593750000000000",
+   "accruedFees": [
+    "598645362485068",
+    "434355"
+   ],
+   "swapIn0": "293336227617683",
+   "liquidityIncrease": "33797270443",
+   "anchorSqrtPrice": "3638375308068303905092856",
+   "sqrtPriceAtCompound": "3638375308068303905092856",
+   "gasUsed": 1374009,
+   "outcome": "executed",
+   "sqrtPriceAfterRestore": "4067713581881149921045985",
+   "liquidityAdded": "33797270443",
+   "reservesAfter": [
+    "164627474686505",
+    "1052815"
+   ],
+   "addedAmounts": [
+    "132001302424750",
+    "0"
+   ],
+   "vaultValueBeforeQuote": "10338546017",
+   "vaultValueAfterQuote": "10340363373",
+   "attackerPnlQuote": "-92516740",
+   "attackerBalanceDelta": [
+    "-35095713852912924",
+    "0"
+   ],
+   "lossVersusHonestQuote": "-1997757",
+   "attackerCostQuote": "92516740"
+  },
+  {
+   "scenario": "swap-post-observation",
+   "moveBps": 2000,
+   "preObservation": false,
+   "ceiling": false,
+   "swap": true,
+   "sqrtPriceBefore": "4067829141224187652071390",
+   "accruedFees": [
+    "164974714141408",
+    "434355"
+   ],
+   "swapIn0": "80837609929289",
+   "liquidityIncrease": "19579130306",
+   "anchorSqrtPrice": "4067829141224187652071390",
+   "attackerSold0": "73058593750000000000",
+   "sqrtPriceAtCompound": "3638375308068303905092856",
+   "gasUsed": 333913,
+   "outcome": "refused",
+   "reason": "InvalidPrice()",
+   "sqrtPriceAfterRestore": "4067715597269427977984583",
+   "liquidityAdded": "0",
+   "reservesAfter": [
+    "0",
+    "0"
+   ],
+   "addedAmounts": [
+    "0",
+    "0"
+   ],
+   "vaultValueBeforeQuote": "10340558450",
+   "vaultValueAfterQuote": "10340558450",
+   "attackerPnlQuote": "-92688725",
+   "attackerBalanceDelta": [
+    "-35160955484601942",
+    "0"
+   ],
+   "lossVersusHonestQuote": "-2192834",
+   "attackerCostQuote": "92688725"
+  }
+ ],
+ "valuation": "currency1 units at the pre-scenario sqrt price; position amounts from liquidity and range, plus vault reserves",
+ "controls": "synthetic accounts impersonated on the child; balances set locally; WETH wrapped; other tokens moved from the pool manager",
+ "upstream": "loopback source",
+ "source": {
+  "number": "0x4112e64",
+  "hash": "0x5a1618abcd6d894348f924907914dcc9e5a0d30080289705b22a6b2ef6b16fe5",
+  "timestamp": "0x6ab045a5"
+ },
+ "anvilVersion": "anvil/v1.7.1",
+ "stack": {
+  "factory": "0xa0eea81e1edc2a8b3bcde726bb3072e42bdbab7d",
+  "helper": "0xb9699de6663eb2956a105180757637e2395a01da",
+  "routing": "0xd5ad8066820406a6b2ac6f71056e0cf195e6c61d",
+  "guard": "0xafbb67783fa563baa4249b6b39293029b7d7628f",
+  "engine": "0xe8f0380e124251d6287ae4816a453e731c9e6cb3",
+  "implementation": "0x73966fa3fd7c5b4772510d536147f3b12653bb3d",
+  "setup": "0x45839045354a18773555d1e0d69297fbd0b7d3b2",
+  "driver": "0x7256e0609adc3a9e781b04456665e78e08e95b09"
+ },
+ "root": {
+  "tokenId": 3011465,
+  "tickLower": -199552,
+  "tickUpper": -195548,
+  "liquidity": "1056926085997426",
+  "tickAtOpen": -197550,
+  "sqrtPriceAtOpen": "4067870166413754093753185"
+ },
+ "vault": "0x7449cd0e6c390b19aba9f1dffe9f91feebdba690",
+ "fees": {
+  "rounds": 40,
+  "legCurrency0": "601135253906250000",
+  "accrued": [
+   "164974714141408",
+   "434355"
+  ],
+  "sqrtPriceBefore": "4067870166413754093753185",
+  "sqrtPriceAfter": "4067829141224187652071390"
+ },
+ "referenceSqrtPrice": "4067829141224187652071390",
+ "honestCompoundedQuote": "765992",
+ "finishedAt": 1789937272
+}

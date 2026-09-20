@@ -35,10 +35,11 @@ class _NoRedirect(urllib.request.HTTPRedirectHandler):
 
 class DepositFork:
     """Own one loopback node, with no option to attach to an existing wallet RPC."""
-    def __init__(self, gateway, *, block, anvil=None, total_seconds=1200):
+    def __init__(self, gateway, *, block, anvil=None, total_seconds=1200, max_requests=5000):
         if (not isinstance(block, dict) or not isinstance(block.get('number'), str)
                 or not isinstance(block.get('hash'), str)
-                or type(total_seconds) is not int or not 1 <= total_seconds <= 1800):
+                or type(total_seconds) is not int or not 1 <= total_seconds <= 1800
+                or type(max_requests) is not int or not 1 <= max_requests <= 100_000):
             raise DataError('invalid_fork_configuration')
         try:
             number = int(block['number'], 16)
@@ -48,7 +49,7 @@ class DepositFork:
         except (TypeError, ValueError):
             raise DataError('invalid_fork_configuration') from None
         self.gateway, self.source_block = gateway, dict(block)
-        self.number, self.total_seconds = number, total_seconds
+        self.number, self.total_seconds, self.max_requests = number, total_seconds, max_requests
         self.anvil = Path(anvil) if anvil else ROOT/'node_modules/.bin/anvil'
         self.process = self.temp = None
         self._verified = False
@@ -126,7 +127,7 @@ class DepositFork:
         self.counts[method] += 1
         body = json.dumps({'jsonrpc': '2.0', 'id': sum(self.counts.values()),
             'method': method, 'params': params}, allow_nan=False).encode()
-        if len(body) > 140_000 or sum(self.counts.values()) > 5000:
+        if len(body) > 140_000 or sum(self.counts.values()) > self.max_requests:
             raise DataError('fork_request_budget')
         request = urllib.request.Request(self.url, body, {'Content-Type': 'application/json'})
         with self._opener.open(request, timeout=min(20, remaining)) as response:
