@@ -44,7 +44,7 @@
     },
     {
       "path": "schema-data.mjs",
-      "sha256": "c7cee628f97e502f4ca1ace4457f5c4abbd0d70b3774fa095ad310a66d485b87"
+      "sha256": "7b02d7d4882501665787c1dea4ce19306ab825e8347a8a73ab70112d5887298a"
     },
     {
       "path": "schemas/error.response.schema.json",
@@ -52,19 +52,19 @@
     },
     {
       "path": "schemas/position-preview.request.schema.json",
-      "sha256": "9f14d56a7cda669c098e538160d11f37282ed44f5bb45dd22062e151e6b7afbf"
+      "sha256": "6127fbe4ff8e8646c444ec7366ab041d9d6324bc4ee11eeeca6f45ec1ccb0e80"
     },
     {
       "path": "schemas/position-preview.response.schema.json",
-      "sha256": "e3b4cff99e794692cd2ff07bb559a8732c0720eef279cb780c82f969901b9f9d"
+      "sha256": "a38ef3c3354088c694a304c1af59631af055e2975b56d494e71c7fb13101a025"
     },
     {
       "path": "schemas/swap-preview.request.schema.json",
-      "sha256": "f8edafeb824011f075d7a9bfa3e2d475898dfa5b427554d4c160c3bd206fc913"
+      "sha256": "982cb7030ef820124a75d5a8a7c2336f59d55df7a04e0e2c349206fc6dac0aad"
     },
     {
       "path": "schemas/swap-preview.response.schema.json",
-      "sha256": "ce670fc8d27ef1fe385b0371d8435a7287121c23a6be5cec844bf1f17651f37c"
+      "sha256": "f52a8af836a1a8a680557b948701e750e8fd9f47cf8cc0b5602712ea5159d7e3"
     },
     {
       "path": "types.ts",
@@ -76,7 +76,7 @@
     },
     {
       "path": "README.md",
-      "sha256": "30c8284a2d0eb1e4f3aa18bb1e419cf7fa9e86f34ac8e9b2c01cb1fc462d7a68"
+      "sha256": "75aff773378afe01632648b9e145bb5c4ed3279c8b181f80c02ef4b63b7889c4"
     },
     {
       "path": "consumer.typecheck.mts",
@@ -87,7 +87,7 @@
   "sources": [
     {
       "path": "backend/onboarding_models.py",
-      "sha256": "c8ad0867124c839c519197b0521f16c0f7e428e727a842414a8929bab2f13167"
+      "sha256": "4c28456815938a590d8f29d373a23afd29b6aeef3d516a6c75405fa98d94e5ae"
     },
     {
       "path": "backend/onboarding_api.py",

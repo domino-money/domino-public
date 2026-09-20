@@ -59,7 +59,10 @@ Selection fields are `chainId:4663`, `poolId`, `poolKey`, `independentToken`,
 canonical lowercase. Amounts/gas/nonce quantities are integer strings; selectors
 are strict safe integers. Both token budgets are explicit uint128 strings;
 selected EVM gas is 21,000–3,000,000 units with a positive max fee and priority
-fee at most that max. No USD price or tariff is inferred from these values.
+fee at most that max. `slippageBps` is 10–500 basis points (0.1% to 5%), both
+ends included: the person's own choice from New position or Setup, and the
+tolerance the mint's amount caps are prepared with. No USD price or tariff is
+inferred from these values.
 
 Single-operation success returns `contractVersion`, `operation`, nullable
 `walletStep`, `serverBroadcastAvailable:false`, `automationAvailable:false`.

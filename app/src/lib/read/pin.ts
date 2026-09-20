@@ -22,7 +22,10 @@
  * persisted public token data, and acquisition separated from reads. Later
  * producer commits changed backend sources the manifests digest without
  * changing a route, a schema or a version, which is why the versions here did
- * not move while the digests did.
+ * not move while the digests did. The onboarding-v1 and deposit-v1 digests
+ * moved again with the slippage bound: every request that carries a
+ * `slippageBps` now takes 10 to 500 basis points (lib/create/slippage.ts holds
+ * the same numbers), and the versions stayed where they were.
  */
 export const PRODUCER_PIN = {
   producerCommit: 'a5f71f19e6391f3eab52ee6e51417be211bc8ea5',
@@ -38,11 +41,11 @@ export const PRODUCER_PIN = {
     },
     'onboarding-v1': {
       version: '1.0.0',
-      manifestSha256: 'a8967fb4e67fe87a5c9da1f6a2638e1ba9a9b5b781ecee6f2894ca946adc3898',
+      manifestSha256: '9ce8821d4e7604105c84126f282e19d3f2aab7de40c0cecb8ad8d8b07d098ed2',
     },
     'deposit-v1': {
       version: '1.1.0-rc.4',
-      manifestSha256: '40d7e7343f41fba4681811d4f8606e22a2ba1f6fe682d6f7baf234383f5c4f3e',
+      manifestSha256: 'fa84d370fc4f9b941946ec5ad04f9d2b251a8f9f7f6173600c8cd7ea78b82f29',
     },
   },
 } as const

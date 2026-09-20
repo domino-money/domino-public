@@ -72,6 +72,23 @@ the reader-only `no-store` policy on 8876 remain unchanged.
 
 ## Version and field rules
 
+### Slippage bound on a person's own requests
+
+`slippageBps` on `onboarding-v1` swap-preview and position-preview and on the
+`deposit-v1` create selection is now 10 to 500 basis points (0.1% to 5%), both
+ends included, instead of 0 to 9999. The wider range was the provider adapters'
+guard, never a product limit; the bound is now the one the app offers a person
+(presets of 0.1%, 0.5% and 1%, a default of 0.5%, any exact hundredth of a
+percent up to 5%, a warning above 1%) and the request models check the same
+numbers. Contract versions are unchanged: request and response names, types
+and requiredness are the same, both producer and the only consumer moved in
+the same commit, and both packages remain disabled candidates. Regeneration
+changes only the `slippageBps` `minimum`/`maximum` in the schemas that carry
+it, `schema-data.mjs`, the READMEs and the manifests; the app's producer pins
+follow the new manifest digests. A stored deposit draft with a slippage outside
+the bound would now fail response validation; none exists on any deployment,
+and the fixtures all carry 50.
+
 The [#123 bounded RPC batching notice](READ_RPC_BATCHING.md) records source
 `adba60f45fe20e53b2b38fde040c9eeb03fad380` and the regenerated read manifest.
 Only three backend source hashes change; the shared wire files, OpenAPI,

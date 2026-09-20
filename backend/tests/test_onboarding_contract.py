@@ -33,8 +33,10 @@ def boundary_cases():
             add('response', route, {**responses[route], field: 'untrusted'})
         for field, values in [('chainId', [True, '4663', 1, None]),
                               ('amountRaw', ['0', '01', '-1', '1e18', str(2**256), 10, True, '1\n']),
-                              ('slippageBps', [-1, 10000, True, '50'])]:
+                              ('slippageBps', [-1, 0, 9, 501, 9999, 10000, True, '50'])]:
             for value in values: add('request', route, {**requests[route], field: value})
+        # The product's own slippage bound, 10 to 500 basis points, both ends included (onboarding_models.Slippage).
+        for value in (10, 500): add('request', route, {**requests[route], 'slippageBps': value}, True)
         for field in ('executionAvailable',):
             for value in (0, 1, True, None): add('response', route, replace(responses[route], ['preview', field], value))
         for field, value in [('contractVersion', '2.0.0')]: add('response', route, {**responses[route], field: value})

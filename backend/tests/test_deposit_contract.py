@@ -43,6 +43,17 @@ class DepositContractTests(unittest.TestCase):
             invalid=deepcopy(body);invalid['selection'][path]=value
             with self.subTest(path=path),self.assertRaises(ValidationError): validate_request('create',invalid)
 
+    def test_slippage_is_the_product_bound_not_the_provider_guard(self):
+        # 10 to 500 basis points (0.1% to 5%), the bound the app offers a person; the provider
+        # adapters' 0..9999 guard is not a product limit and never admits a request past this one.
+        body=build_fixtures()[0]['create']
+        for value in (10, 50, 500):
+            valid=deepcopy(body);valid['selection']['slippageBps']=value
+            with self.subTest(value=value): self.assertEqual(validate_request('create',valid)['selection']['slippageBps'],value)
+        for value in (0, 9, 501, 9999, -1, 50.0, '50', True):
+            invalid=deepcopy(body);invalid['selection']['slippageBps']=value
+            with self.subTest(value=value),self.assertRaises(ValidationError): validate_request('create',invalid)
+
     def test_transaction_nonce_expiry_and_gas_bounds(self):
         for field,value in (('nonceRaw',str(2**64)),('gasLimitRaw','3000001'),('maxPriorityFeePerGasRaw','11')):
             invalid=artifact();invalid['transaction'][field]=value

@@ -162,6 +162,16 @@ class DepositPreparationTests(unittest.TestCase):
         self.assertEqual(PreparedArtifact.model_validate(result).model_dump(by_alias=True), result)
         self.assertNotIn(KEY, json.dumps(result))
 
+    def test_selected_slippage_reaches_the_provider_as_its_tolerance(self):
+        # The person's own slippage limit is what the mint's caps are drawn with: it goes to
+        # the provider as the percentage behind the basis points, never a fixed tolerance.
+        for bps, tolerance in ((10, 0.1), (120, 1.2), (500, 5.0)):
+            self.setup_pipeline()
+            self.selected['slippageBps'] = bps
+            self.run_prepare()
+            with self.subTest(bps=bps):
+                self.assertEqual([body['slippageTolerance'] for _, body, _ in self.provider.calls], [tolerance])
+
     def test_missing_manifest_denies_before_factory_and_provider(self):
         self.setup_pipeline(manifest=False)
         self.reject('deposit_admission_required')

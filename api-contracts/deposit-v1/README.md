@@ -41,7 +41,10 @@ existing HttpOnly SIWE session cookie and `X-Domino-CSRF`. Optional request and
 mandatory response version header: `X-Domino-Deposit-Contract: 1.1.0-rc.4`.
 
 - `create`: idempotencyKey UUID and immutable selection (pool, spaced ticks,
-  exact amounts/budgets and explicit per-step gas caps).
+  exact amounts/budgets and explicit per-step gas caps). Its `slippageBps` is a
+  whole number of basis points from 10 to 500 (0.1% to 5%), both ends included:
+  the bound the app offers a person, and the tolerance the mint's amount caps
+  are drawn with. The provider adapter's own 0–9999 guard is not a product limit.
 - `get`, `allowances`: intentId. `list`: optional limit, 1–20, and owner-bound `before` UUID.
   Compact summaries return `hasMore` and `nextBefore`; `get` supplies history.
 - `prepare`, `reconcile`, `cancel`: intentId and current version.

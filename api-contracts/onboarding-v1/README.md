@@ -21,6 +21,12 @@ expires 30 seconds after request start. `preparedDeadline` on a position is
 provider preparation metadata, never permission to execute an expired preview.
 No calldata, transaction, permit, API key or session bearer is returned.
 
+`slippageBps` on both requests is a whole number of basis points from 10 to 500
+(0.1% to 5%), both ends included: the bound the app offers a person, checked by
+the request models and this runtime alike. The provider adapters keep a wider
+0–9999 guard of their own; it is not a product limit, and nothing past this
+bound reaches them.
+
 Raw amounts are canonical integer strings, never JavaScript numbers. Nullable
 budgets, prices, gas observations and checks retain their meaning; unavailable
 is not zero. Position `expectedDepositRaw` is distinct from `maximumDebitRaw`;

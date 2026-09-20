@@ -299,8 +299,8 @@ export const SCHEMAS = {
               "$ref": "#/$defs/PoolKeyModel"
             },
             "slippageBps": {
-              "maximum": 9999,
-              "minimum": 0,
+              "maximum": 500,
+              "minimum": 10,
               "title": "Slippagebps",
               "type": "integer"
             },
@@ -1433,8 +1433,8 @@ export const SCHEMAS = {
               "$ref": "#/$defs/PoolKeyModel"
             },
             "slippageBps": {
-              "maximum": 9999,
-              "minimum": 0,
+              "maximum": 500,
+              "minimum": 10,
               "title": "Slippagebps",
               "type": "integer"
             },
@@ -2456,8 +2456,8 @@ export const SCHEMAS = {
               "$ref": "#/$defs/PoolKeyModel"
             },
             "slippageBps": {
-              "maximum": 9999,
-              "minimum": 0,
+              "maximum": 500,
+              "minimum": 10,
               "title": "Slippagebps",
               "type": "integer"
             },
@@ -2715,8 +2715,8 @@ export const SCHEMAS = {
               "$ref": "#/$defs/PoolKeyModel"
             },
             "slippageBps": {
-              "maximum": 9999,
-              "minimum": 0,
+              "maximum": 500,
+              "minimum": 10,
               "title": "Slippagebps",
               "type": "integer"
             },
@@ -3838,8 +3838,8 @@ export const SCHEMAS = {
               "$ref": "#/$defs/PoolKeyModel"
             },
             "slippageBps": {
-              "maximum": 9999,
-              "minimum": 0,
+              "maximum": 500,
+              "minimum": 10,
               "title": "Slippagebps",
               "type": "integer"
             },
@@ -4901,8 +4901,8 @@ export const SCHEMAS = {
               "$ref": "#/$defs/PoolKeyModel"
             },
             "slippageBps": {
-              "maximum": 9999,
-              "minimum": 0,
+              "maximum": 500,
+              "minimum": 10,
               "title": "Slippagebps",
               "type": "integer"
             },
@@ -5818,8 +5818,8 @@ export const SCHEMAS = {
               "$ref": "#/$defs/PoolKeyModel"
             },
             "slippageBps": {
-              "maximum": 9999,
-              "minimum": 0,
+              "maximum": 500,
+              "minimum": 10,
               "title": "Slippagebps",
               "type": "integer"
             },
@@ -6948,8 +6948,8 @@ export const SCHEMAS = {
               "$ref": "#/$defs/PoolKeyModel"
             },
             "slippageBps": {
-              "maximum": 9999,
-              "minimum": 0,
+              "maximum": 500,
+              "minimum": 10,
               "title": "Slippagebps",
               "type": "integer"
             },
@@ -8086,8 +8086,8 @@ export const SCHEMAS = {
               "$ref": "#/$defs/PoolKeyModel"
             },
             "slippageBps": {
-              "maximum": 9999,
-              "minimum": 0,
+              "maximum": 500,
+              "minimum": 10,
               "title": "Slippagebps",
               "type": "integer"
             },

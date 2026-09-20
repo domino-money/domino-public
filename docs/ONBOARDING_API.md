@@ -28,6 +28,11 @@ and full PoolId use canonical lowercase. Only existing hookless fixed-fee v4
 pools are admitted. Human-price orientation and spaced ticks come from the
 official frontend/SDK. Native ETH and WETH remain distinct identities.
 
+`slippageBps` is a whole number of basis points from 10 to 500 (0.1% to 5%),
+both ends included, on both routes: the bound the app offers a person, and the
+tolerance the position's amount caps and the swap's minimum output are drawn
+with. The adapters' 0–9999 guard is the provider's, not a product limit.
+
 Unknown fields are rejected, including browser `owner`, `recipient`, `tenant`,
 provider URLs, keys, signatures and calldata. Owner/recipient always comes from
 the authenticated session. Wallet/network switching still requires the

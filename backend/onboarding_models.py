@@ -95,7 +95,15 @@ LiquidityRaw = Annotated[PositiveRaw, AfterValidator(_liquidity), Field(json_sch
 Chain = Annotated[StrictInt, Field(ge=4663, le=4663)]
 SchemaVersion = Annotated[StrictInt, Field(ge=1, le=1)]
 Tick = Annotated[StrictInt, Field(ge=-887272, le=887272)]
-Slippage = Annotated[StrictInt, Field(ge=0, le=9999)]
+# The slippage a person may choose for a position or its balancing swap, in
+# basis points: 0.1% to 5%. This is the product's own bound, the one the app
+# offers (app/src/lib/create/slippage.ts) and every request that carries a
+# slippage checks. The provider adapters (uniswap_quote.py, uniswap_position.py)
+# keep their wider 0..9999 guard: that is what the provider admits, not what a
+# person is offered, and a request outside this bound never reaches them.
+SLIPPAGE_MIN_BPS = 10
+SLIPPAGE_MAX_BPS = 500
+Slippage = Annotated[StrictInt, Field(ge=SLIPPAGE_MIN_BPS, le=SLIPPAGE_MAX_BPS)]
 Impact = Annotated[StrictInt, Field(ge=0, le=10000)]
 Timestamp = Annotated[StrictInt, Field(ge=0, le=2**53-1)]
 FalseFlag = Annotated[Literal[False], BeforeValidator(_boolean)]
