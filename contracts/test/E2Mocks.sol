@@ -258,7 +258,8 @@ contract MockStateView {
 contract MockERC20 {
     mapping(address => uint256) public balanceOf;
     uint8 public failureMode; // 1 returns false, 2 reverts.
-    uint16 public transferFeeBps;
+    uint16 public transferFeeBps;      // withheld from the recipient.
+    uint16 public senderSurchargeBps;  // burnt from the sender, on top of `amount`.
     address public reentryTarget;
     bytes public reentryData;
     bool public reentryAttempted;
@@ -267,6 +268,7 @@ contract MockERC20 {
 
     function mint(address to, uint256 amount) external { balanceOf[to] += amount; }
     function configureTransfer(uint8 failure, uint16 fee) external { failureMode = failure; transferFeeBps = fee; }
+    function configureSenderSurcharge(uint16 bps) external { senderSurchargeBps = bps; }
     function configureReentry(address target, bytes calldata data, bool required) external {
         reentryTarget = target; reentryData = data; requireReentrySuccess = required;
         reentryAttempted = false; reentrySucceeded = false;
@@ -275,7 +277,7 @@ contract MockERC20 {
     function transfer(address to, uint256 amount) external returns (bool) {
         if (failureMode == 1) return false;
         require(failureMode != 2, "mock ERC20 failed");
-        balanceOf[msg.sender] -= amount;
+        balanceOf[msg.sender] -= amount + amount * senderSurchargeBps / 10000;
         balanceOf[to] += amount - amount * transferFeeBps / 10000;
         if (reentryTarget != address(0) && !reentryAttempted) {
             reentryAttempted = true;

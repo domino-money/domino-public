@@ -7,6 +7,7 @@ import {DominoVaultTypes as T, IERC721ReceiverE2} from "../src/DominoVaultTypes.
 import {IDominoVaultDraft} from "../src/IDominoVaultDraft.sol";
 import {VmE2, MockPoolManager, MockPositionManager, MockStateView, MockERC20, E2OwnerReceiver,
     E2ForeignSubscriber, E2OwnerWithoutNFTReceiver} from "./E2Mocks.sol";
+import {CustodyBehaviour, ICustodyVault} from "./shared/CustodyBehaviour.sol";
 
 interface VmEtch {
     function etch(address target, bytes calldata runtime) external;
@@ -41,6 +42,15 @@ contract VaultV4TestHarness is DominoVaultV4 {
     constructor(address factory_, address pool_, address positions_, address state_, address recipient_,
         address readHelper_, address engine_)
         DominoVaultV4(factory_, pool_, positions_, state_, recipient_, readHelper_, engine_) {}
+    /// The same artificial sinks the V3 harness exposes, so the shared
+    /// custody behaviour can credit a reserve without an execution. In
+    /// production these are reachable only through the pinned engine.
+    function creditOriginal(uint256 id, uint128 amount0, uint128 amount1) external {
+        _creditOriginalFees(id, amount0, amount1);
+    }
+    function creditConverted(bytes32 sourceId, address currency, uint128 amount) external {
+        _creditConvertedFees(sourceId, currency, amount);
+    }
     function forceNonce(uint64 nonce) external { stateNonce = nonce; }
     /// The V4 fee-credit sinks are reachable only through the pinned engine,
     /// so a custody test cannot credit the ledger the way the V3 harness does.
@@ -59,22 +69,11 @@ contract VaultV4TestHarness is DominoVaultV4 {
  * reports/CONTRACT_REVIEW_2026-09-19.md). Everything here therefore asserts
  * against V4 directly, never through the twin.
  */
-contract DominoVaultV4CustodyTest is IERC721ReceiverE2 {
-    VmE2 private constant vm = VmE2(address(uint160(uint256(keccak256("hevm cheat code")))));
+contract DominoVaultV4CustodyTest is IERC721ReceiverE2, CustodyBehaviour {
     VmEtch private constant vmEtch = VmEtch(address(uint160(uint256(keccak256("hevm cheat code")))));
-    address private constant OPERATOR = address(0xB0B);
-    address private constant STRANGER = address(0xBAD);
-    address private constant RECIPIENT = address(0xFEE);
-    MockPoolManager private poolManager;
-    MockPositionManager private positions;
-    MockStateView private stateView;
     DominoVaultReadHelper private readHelper;
     StubEngineV4 private engine;
-    MockERC20 private token;
-    MockERC20 private secondToken;
-    T.PoolKey private key;
-    VaultV4TestHarness private vault;
-    address private owner;
+    VaultV4TestHarness private harness;
 
     receive() external payable {}
     function onERC721Received(address, address, uint256, bytes calldata) external pure returns (bytes4) {
@@ -83,7 +82,7 @@ contract DominoVaultV4CustodyTest is IERC721ReceiverE2 {
 
     function setUp() public { _setup(address(this), true); }
 
-    function _setup(address owner_, bool nativePair) private {
+    function _setup(address owner_, bool nativePair) internal override {
         vm.chainId(4663);
         owner = owner_;
         poolManager = new MockPoolManager();
@@ -106,7 +105,8 @@ contract DominoVaultV4CustodyTest is IERC721ReceiverE2 {
         address clone;
         assembly ("memory-safe") { clone := create(0, add(creation, 32), mload(creation)) }
         require(clone != address(0), "clone deployment failed");
-        vault = VaultV4TestHarness(payable(clone));
+        harness = VaultV4TestHarness(payable(clone));
+        vault = ICustodyVault(clone);
         vm.prank(owner);
         positions.approve(clone, 11);
         T.InitParams memory params = T.InitParams({
@@ -115,7 +115,7 @@ contract DominoVaultV4CustodyTest is IERC721ReceiverE2 {
             policy: IDominoVaultDraft.Policy(200, 500, 1000, 60, 4, 1, false),
             limits: T.ExecutionLimits(1, 5000, 100, 100, 1 ether, 60, 3600)
         });
-        vault.initialize(owner, keccak256("synthetic sequence"), params);
+        harness.initialize(owner, keccak256("synthetic sequence"), params);
     }
 
     // ---------------------------------------------------------------
@@ -301,7 +301,7 @@ contract DominoVaultV4CustodyTest is IERC721ReceiverE2 {
      */
     function testRecoverUntrackedCurrencyNeverReachesTheLedgerItTracks() external {
         vm.deal(address(vault), 10 ether);
-        vault.forceAccounted(address(0), 7 ether);
+        harness.forceAccounted(address(0), 7 ether);
 
         (bool ok, bytes memory out) = address(vault).call(abi.encodeCall(
             DominoVaultV4.recoverUntrackedCurrency, (address(0), 3 ether + 1)));
@@ -314,7 +314,7 @@ contract DominoVaultV4CustodyTest is IERC721ReceiverE2 {
 
         // And an insolvent vault - held below what it tracks - lets nothing out
         // at all, rather than underflowing into a large allowance.
-        vault.forceAccounted(address(0), 9 ether);
+        harness.forceAccounted(address(0), 9 ether);
         (ok, out) = address(vault).call(abi.encodeCall(
             DominoVaultV4.recoverUntrackedCurrency, (address(0), 1)));
         require(!ok && bytes4(out) == DominoVaultV4.InsufficientReserve.selector, "insolvent: nothing leaves");
@@ -353,7 +353,7 @@ contract DominoVaultV4CustodyTest is IERC721ReceiverE2 {
         require(!ok && bytes4(out) == DominoVaultV4.UnexpectedCallback.selector, "only the root token");
 
         vm.prank(address(positions));
-        vault.notifyBurn(11, address(this), 0, 0, 0);
+        harness.notifyBurn(11, address(this), 0, 0, 0);
         require(!vault.rootArmed(), "a burnt root disarms the vault");
     }
 
@@ -477,7 +477,103 @@ contract DominoVaultV4CustodyTest is IERC721ReceiverE2 {
         require(vault.rootTokenId() == 11 && vault.rootArmed(), "root armed");
         require(vault.isOperator(OPERATOR), "operator set");
         require(vault.rootPermissionValid(), "root permission live");
-        require(address(vault.readHelper()) == address(readHelper), "helper pinned");
-        require(address(vault.executionEngine()) == address(engine), "engine pinned");
+        require(address(harness.readHelper()) == address(readHelper), "helper pinned");
+        require(address(harness.executionEngine()) == address(engine), "engine pinned");
+    }
+
+    /**
+     * V4 declares no `onERC721Received`, so an unsolicited push cannot enter
+     * the vault at all - the transfer reverts on the unrecognised selector
+     * rather than on a typed guard. V3 needs the hook because `adoptChild`
+     * takes a child by safe transfer; V4 has no adoption, and the only NFT it
+     * ever acquires is one `executionMint` creates.
+     *
+     * That mint is safe without a hook, verified against the vendored official
+     * source rather than assumed: `PositionManager._mint`
+     * (test/reference/official-v4/v4-periphery/src/PositionManager.sol:369)
+     * calls solmate's `_mint` (solmate/src/tokens/ERC721.sol:157), which does
+     * not call the receiver. `_safeMint` exists beside it and is not used.
+     */
+    function testNoNFTCanBePushedIntoTheVaultBecauseItDeclaresNoReceiverHook() public {
+        _setup(address(this), true);
+        (bool ok,) = address(vault).call(abi.encodeWithSignature(
+            "onERC721Received(address,address,uint256,bytes)", address(this), address(this), uint256(11), ""));
+        require(!ok, "the vault answers a receiver hook it does not declare");
+
+        vm.expectRevert();
+        positions.safeTransferFrom(owner, address(vault), 11);
+        positions.mint(owner, 12, key, -300, 900, 500);
+        vm.expectRevert();
+        positions.safeTransferFrom(owner, address(vault), 12);
+        require(positions.ownerOf(11) == owner && positions.subscriber(11) == address(vault), "root rollback failed");
+        require(positions.ownerOf(12) == owner && !vault.position(12).known, "unsolicited NFT accepted");
+    }
+
+    /**
+     * The other half of `28eeaa9`: V4 requires the recipient-side receipt of
+     * the financial path only, while the vault-side debit stays exact on every
+     * payout. V3 demands both on its ERC20 branch, which strands an untracked
+     * surplus for good behind a fee-on-transfer token - there is no partial
+     * exit to fall back on. V3's own native branch already tolerated this, so
+     * V4 made the two currencies agree.
+     *
+     * What must not weaken is the vault side: whatever the token does to the
+     * recipient, nothing beyond `amount` may leave, because that is what keeps
+     * `accountedCurrency` honest for the reserves that are tracked.
+     */
+    function testTaxedUntrackedRecoveryPaysOutWhileTheVaultSideDebitStaysExact() public {
+        _setup(address(this), false);
+        _fund(key.currency1, 1000);
+        MockERC20(key.currency1).configureTransfer(0, 100);
+
+        uint64 nonce = vault.stateNonce();
+        vault.recoverUntrackedCurrency(key.currency1, 100);
+        require(_balance(key.currency1, address(vault)) == 900, "the vault was debited by more than it sent");
+        require(_balance(key.currency1, owner) == 99, "the tax reached the owner as a shortfall, not a revert");
+        require(vault.stateNonce() > nonce, "recovery did not advance state");
+
+        // The reserved side is untouchable either way: a tracked balance still
+        // cannot be recovered as if it were surplus.
+        _credit(11, 0, 400);
+        vm.expectRevert(ICustodyVault.InsufficientReserve.selector);
+        vault.recoverUntrackedCurrency(key.currency1, 901);
+    }
+
+    /**
+     * The tracked half of the `28eeaa9` trade, and the one that has to be
+     * tight. A taxing token no longer strands a fee reserve: the withdrawal
+     * goes through and the owner absorbs the tax. What may not move is the
+     * ledger's relationship to the vault's own balance - the reserve is
+     * debited by exactly what left the vault, so the remainder is still fully
+     * backed and still withdrawable once the tax is off.
+     */
+    function testERC20TransferFeeIsAbsorbedByTheOwnerWhileTheLedgerStaysBacked() public {
+        _setup(address(this), false);
+        _credit(11, 0, 1000);
+        bytes32 source1 = vault.position(11).source1;
+        MockERC20(key.currency1).configureTransfer(0, 100);
+
+        _withdraw(11, key.currency1, 100, 0);
+        require(_balance(key.currency1, owner) == 99, "the owner was not paid the taxed remainder");
+        require(_balance(key.currency1, address(vault)) == 900, "the vault lost more than the reserve released");
+        require(vault.feeBalance(source1, key.currency1).original == 900, "the ledger and the vault disagree");
+
+        // And the vault-side debit is the half that may not weaken. A token
+        // that burns from the sender takes more out of the vault than the
+        // reserve released, which would leave the ledger claiming backing that
+        // is no longer there - so the whole withdrawal reverts instead.
+        MockERC20(key.currency1).configureSenderSurcharge(100);
+        vm.expectRevert(ICustodyVault.TransferFailed.selector);
+        vault.withdrawFeeReserves(source1, key.currency1, 100, 0);
+        require(vault.feeBalance(source1, key.currency1).original == 900 &&
+            _balance(key.currency1, address(vault)) == 900, "an over-debiting token moved state");
+        MockERC20(key.currency1).configureSenderSurcharge(0);
+
+        // Backed means withdrawable: the untaxed remainder still comes out whole.
+        MockERC20(key.currency1).configureTransfer(0, 0);
+        _withdraw(11, key.currency1, 900, 0);
+        require(vault.feeBalance(source1, key.currency1).original == 0 &&
+            _balance(key.currency1, address(vault)) == 0 && _balance(key.currency1, owner) == 999,
+            "the remainder was not fully backed");
     }
 }
