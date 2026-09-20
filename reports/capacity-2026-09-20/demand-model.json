@@ -1,0 +1,712 @@
+{
+  "schema_version": 1,
+  "kind": "source_derived_offered_demand_estimate",
+  "date": "2026-09-20",
+  "source_commit": "03e1184094ae929985e57f6e0acfecdc094e64e3",
+  "source_worktree": "redacted:private-worktree",
+  "measurement": false,
+  "network_calls_performed": false,
+  "implementation_changes": false,
+  "scenario_concurrent_users": [
+    10,
+    100,
+    1000
+  ],
+  "scope": "Public Robinhood read path. Static assets, boot/auth/session/receipt requests, optional pool-detail diagnostics, background collectors and retries/failover are identified separately.",
+  "assumptions": [
+    "One visible tab per modeled concurrent user; composition 80% Home/selected Markets/PoolDetail, 10% ready token explorer, 10% other screens.",
+    "Fast overview polling rounded conservatively to 12/min; actual timer is 5s plus request duration, and Home/Markets adds 0-10% jitter.",
+    "Successful requests, no retries/failover, normal ERC20 contracts, healthy local v4 primary.",
+    "Each modeled wallet page has 20 distinct ERC20 candidates and no extra explicit addresses; empty/smaller pages cost less.",
+    "Each modeled NFT lookup has two live IDs. Uncached token metadata from NFT or other screens is included in A, not counted again.",
+    "Alchemy inventory remains intentional and exclusively Alchemy; generic Robinhood reads use local primary with configured fallback.",
+    "Rates are offered demand, not accepted throughput or measured capacity.",
+    "Optional enabledReads in production are not inferred from the disabled candidate wrangler file."
+  ],
+  "variables": {
+    "M": "Fraction visible on fast-overview pages",
+    "T": "Fraction on ready token explorer",
+    "C": "Average active chain-history charts per user",
+    "S": "Settled name-search requests per user/min",
+    "W": "Wallet inventory pages per user/min, including mounting, pagination and any extra discovery",
+    "A": "Uncached normal ERC20 metadata reads per user/min",
+    "P": "Two-live-NFT lookups per user/min",
+    "D": "Optional pool-detail entries per user/min",
+    "K": "Live official-manager NFT positions resolved per optional pool-position response",
+    "B_collectors": "Measured shared collector logical RPC/s, dependent on unique hot entities and historical coverage",
+    "F": "Additional RPC/s from retries and generic/history fallback"
+  },
+  "formulas": {
+    "stored_post_per_min": "12*M + T + C + S",
+    "provider_post_per_min": "W + A + P",
+    "app_data_post_per_min": "12*M + T + C + S + W + A + P",
+    "local_rpc_logical_per_min": "90*W + 12*A + 22*P",
+    "local_rpc_http_per_min": "17*W + 7*A + 17*P",
+    "alchemy_inventory_rpc_per_min": "2*W",
+    "scale": "users * rate_per_min / 60",
+    "total_local_rpc": "incremental_local_rpc + B_collectors + local retry/failover attempts",
+    "total_alchemy_rpc": "inventory_rpc + generic/history fallback attempts",
+    "boot_public_app_http": "2*new_tabs (1 capabilities GET + 1 overview POST per tab), before assets/auth",
+    "gateway_to_reader_http": "2*accepted_data_POST (health GET + operation POST), excluding errors before the second hop",
+    "optional_pool_detail_app_post_per_min": "3*D if all three optional routes advertised",
+    "optional_pool_detail_rpc_logical_per_min": "(41 + 3*K)*D for successful already-indexed, reconciled pools; live-window/unindexed cases differ",
+    "capacity_provider_lane": "sum(arrival_rate_i * mean_lane_seconds_i) < 1, plus approximately 1 admitted start/s interval",
+    "capacity_gateway_workers": "sum(arrival_rate_i * mean_worker_seconds_i) < 2",
+    "production_optional_pool_detail_app_post_per_min": "D",
+    "production_optional_pool_detail_rpc_logical_per_min": "10*D for indexed pool-activity; unindexed/live-window differs",
+    "production_optional_pool_detail_rpc_http_per_min": "5*D for indexed pool-activity"
+  },
+  "operation_costs": [
+    {
+      "operation": "stored overview/search/history",
+      "app_post": 1,
+      "local_rpc_logical": 0,
+      "local_rpc_http": 0,
+      "alchemy_rpc": 0,
+      "notes": "Immediate request path only; can enqueue shared background acquisition."
+    },
+    {
+      "operation": "uncached normal ERC20 token",
+      "app_post": 1,
+      "local_rpc_logical": 12,
+      "local_rpc_http": 7,
+      "alchemy_rpc": 0
+    },
+    {
+      "operation": "wallet page of E valid distinct ERC20",
+      "app_post": 1,
+      "local_rpc_logical": "10 + 4*E",
+      "local_rpc_http": "5 + 4*ceil(E/8)",
+      "alchemy_rpc": 2
+    },
+    {
+      "operation": "wallet page 20 ERC20",
+      "app_post": 1,
+      "local_rpc_logical": 90,
+      "local_rpc_http": 17,
+      "alchemy_rpc": 2
+    },
+    {
+      "operation": "NFT lookup n live IDs, metadata cached",
+      "app_post": 1,
+      "local_rpc_logical": "10 + 6*n",
+      "local_rpc_http": "5 + 6*n",
+      "alchemy_rpc": 0
+    },
+    {
+      "operation": "NFT lookup 2 live IDs, metadata cached",
+      "app_post": 1,
+      "local_rpc_logical": 22,
+      "local_rpc_http": 17,
+      "alchemy_rpc": 0
+    }
+  ],
+  "profiles": [
+    {
+      "id": "low",
+      "label": "Baixo",
+      "M": 0.8,
+      "T": 0.1,
+      "C": 0.1,
+      "S": 0.1,
+      "W": 0.02,
+      "A": 0.02,
+      "P": 0.005,
+      "per_user_per_minute": {
+        "app_data_post": 9.945,
+        "stored_post": 9.9,
+        "provider_post": 0.045,
+        "local_rpc_logical": 2.15,
+        "local_rpc_http_envelopes": 0.565,
+        "alchemy_inventory_rpc": 0.04
+      }
+    },
+    {
+      "id": "base",
+      "label": "Base",
+      "M": 0.8,
+      "T": 0.1,
+      "C": 0.2,
+      "S": 1,
+      "W": 0.1,
+      "A": 0.1,
+      "P": 0.02,
+      "per_user_per_minute": {
+        "app_data_post": 11.12,
+        "stored_post": 10.9,
+        "provider_post": 0.22,
+        "local_rpc_logical": 10.64,
+        "local_rpc_http_envelopes": 2.74,
+        "alchemy_inventory_rpc": 0.2
+      }
+    },
+    {
+      "id": "high",
+      "label": "Alto",
+      "M": 0.8,
+      "T": 0.1,
+      "C": 0.3,
+      "S": 3,
+      "W": 0.5,
+      "A": 0.5,
+      "P": 0.1,
+      "per_user_per_minute": {
+        "app_data_post": 14.1,
+        "stored_post": 13,
+        "provider_post": 1.1,
+        "local_rpc_logical": 53.2,
+        "local_rpc_http_envelopes": 13.7,
+        "alchemy_inventory_rpc": 1
+      }
+    }
+  ],
+  "scenarios": [
+    {
+      "users": 10,
+      "profile": "low",
+      "offered_per_second": {
+        "app_data_post": 1.6575,
+        "stored_post": 1.65,
+        "provider_post": 0.0075,
+        "local_rpc_logical": 0.358333,
+        "local_rpc_http_envelopes": 0.094167,
+        "alchemy_inventory_rpc": 0.006667
+      }
+    },
+    {
+      "users": 10,
+      "profile": "base",
+      "offered_per_second": {
+        "app_data_post": 1.853333,
+        "stored_post": 1.816667,
+        "provider_post": 0.036667,
+        "local_rpc_logical": 1.773333,
+        "local_rpc_http_envelopes": 0.456667,
+        "alchemy_inventory_rpc": 0.033333
+      }
+    },
+    {
+      "users": 10,
+      "profile": "high",
+      "offered_per_second": {
+        "app_data_post": 2.35,
+        "stored_post": 2.166667,
+        "provider_post": 0.183333,
+        "local_rpc_logical": 8.866667,
+        "local_rpc_http_envelopes": 2.283333,
+        "alchemy_inventory_rpc": 0.166667
+      }
+    },
+    {
+      "users": 100,
+      "profile": "low",
+      "offered_per_second": {
+        "app_data_post": 16.575,
+        "stored_post": 16.5,
+        "provider_post": 0.075,
+        "local_rpc_logical": 3.583333,
+        "local_rpc_http_envelopes": 0.941667,
+        "alchemy_inventory_rpc": 0.066667
+      }
+    },
+    {
+      "users": 100,
+      "profile": "base",
+      "offered_per_second": {
+        "app_data_post": 18.533333,
+        "stored_post": 18.166667,
+        "provider_post": 0.366667,
+        "local_rpc_logical": 17.733333,
+        "local_rpc_http_envelopes": 4.566667,
+        "alchemy_inventory_rpc": 0.333333
+      }
+    },
+    {
+      "users": 100,
+      "profile": "high",
+      "offered_per_second": {
+        "app_data_post": 23.5,
+        "stored_post": 21.666667,
+        "provider_post": 1.833333,
+        "local_rpc_logical": 88.666667,
+        "local_rpc_http_envelopes": 22.833333,
+        "alchemy_inventory_rpc": 1.666667
+      }
+    },
+    {
+      "users": 1000,
+      "profile": "low",
+      "offered_per_second": {
+        "app_data_post": 165.75,
+        "stored_post": 165,
+        "provider_post": 0.75,
+        "local_rpc_logical": 35.833333,
+        "local_rpc_http_envelopes": 9.416667,
+        "alchemy_inventory_rpc": 0.666667
+      }
+    },
+    {
+      "users": 1000,
+      "profile": "base",
+      "offered_per_second": {
+        "app_data_post": 185.333333,
+        "stored_post": 181.666667,
+        "provider_post": 3.666667,
+        "local_rpc_logical": 177.333333,
+        "local_rpc_http_envelopes": 45.666667,
+        "alchemy_inventory_rpc": 3.333333
+      }
+    },
+    {
+      "users": 1000,
+      "profile": "high",
+      "offered_per_second": {
+        "app_data_post": 235,
+        "stored_post": 216.666667,
+        "provider_post": 18.333333,
+        "local_rpc_logical": 886.666667,
+        "local_rpc_http_envelopes": 228.333333,
+        "alchemy_inventory_rpc": 16.666667
+      }
+    }
+  ],
+  "bottlenecks": [
+    {
+      "id": "per_ip_budget",
+      "value": {
+        "requests_per_minute": 30,
+        "burst": 5,
+        "ipv6_grouping": "/64",
+        "budget_capacity": 10000
+      },
+      "notes": "Three Home tabs behind one IPv4 or IPv6/64 can exceed the quota. One-IP public load test measures this before global capacity.",
+      "source": "ip_budget"
+    },
+    {
+      "id": "provider_lane",
+      "value": {
+        "concurrency": 1,
+        "minimum_start_interval_seconds": 1,
+        "interval_tolerance_seconds": 0.05
+      },
+      "notes": "Shared global lane in gateway and reader; request durations can impose lower capacity.",
+      "source": "reader_gate"
+    },
+    {
+      "id": "stored_lane",
+      "value": {
+        "gateway_slots": 4,
+        "reader_slots": 4,
+        "gateway_worker_threads_shared": 2,
+        "gateway_uvicorn_concurrency": 16,
+        "reader_uvicorn_concurrency": 8,
+        "processes_each": 1
+      },
+      "source": "gateway_gate"
+    },
+    {
+      "id": "database_connections",
+      "notes": "New psycopg connection per PgPublicData method; normal pool-ID overview uses two connections, token overview up to three. No connection pool in this code.",
+      "source": "connections",
+      "runtime_max_connections": 40,
+      "runtime_source": "infrastructure.json vm.postgresql.settings"
+    },
+    {
+      "id": "demand_lock",
+      "notes": "Shared advisory transaction lock 46630240 per demand function. Updates throttled per entity to 15s, function/lock calls not eliminated.",
+      "source": "demand_lock"
+    },
+    {
+      "id": "no_shared_response_cache",
+      "notes": "Worker/gateway no-store POST. Frontend metadata 5min/256 tokens and overview 2s/32 entries are per tab only. Read family receives no browser cookies.",
+      "source": "cache"
+    },
+    {
+      "id": "frontend_scheduler",
+      "value": {
+        "max_pending": 12,
+        "per_minute": 30,
+        "burst": 5,
+        "remote_spacing_ms": 1100
+      },
+      "notes": "Identical route+JSON request joins in-flight. Successful capability GET cached per namespace source lifetime; bypasses paced queue.",
+      "source": "scheduler"
+    },
+    {
+      "id": "collector",
+      "value": {
+        "pool_limit_per_tick": 4,
+        "token_limit_per_tick": 2,
+        "logical_rpc_budget_per_tick": 256,
+        "active_pool_next_due_seconds": 5,
+        "idle_pool_next_due_seconds": 120,
+        "explicit_pending_entity_limit": 1000
+      },
+      "notes": "Shared by entity, not per visitor; unique entity cardinality changes acquisition pressure.",
+      "source": "collector"
+    },
+    {
+      "id": "opaque_cursors",
+      "value": {
+        "capacity": 2048,
+        "ttl_seconds": 300
+      },
+      "notes": "Gateway-local state; restart/generation invalidates cursors. Horizontal scaling needs coordination or routing design.",
+      "source": "ip_budget"
+    }
+  ],
+  "priorities": [
+    "Measure actual service-time and accepted throughput for stored and provider lanes separately, with live collectors accounted for.",
+    "Coalesce/cache validated public responses by canonical request, generation and genuine observation freshness; keep wallet/session/cursors outside shared caching.",
+    "Amortize aggregate demand heartbeats and evaluate PostgreSQL connection pooling.",
+    "Align or separate gateway worker capacity with independent stored/provider lane capacity; preserve bounded admission and budgets.",
+    "Avoid Alchemy discovery for an explicitly requested single-token balance when discovery is not needed, preserving intentional wallet inventory.",
+    "Benchmark popular shared pools and diverse cold tokens as distinct workloads; avoid calling one-IP throttling global capacity."
+  ],
+  "sources": {
+    "markets_poll": {
+      "path": "app/src/lib/read/marketsProvider.ts",
+      "lines": [
+        625,
+        709,
+        795
+      ]
+    },
+    "markets_singleton": {
+      "path": "app/src/App.tsx",
+      "lines": [
+        161,
+        184
+      ]
+    },
+    "bridge_singleton": {
+      "path": "app/src/lib/read/screens/appSourceBridge.ts",
+      "lines": [
+        22,
+        27,
+        30
+      ]
+    },
+    "pool_detail": {
+      "path": "app/src/components/read/screens/PoolWorkspace.tsx",
+      "lines": [
+        94,
+        162,
+        174,
+        206,
+        207,
+        208
+      ]
+    },
+    "token_explorer": {
+      "path": "app/src/components/read/screens/StoredTokenExplorer.tsx",
+      "lines": [
+        35,
+        53
+      ]
+    },
+    "history": {
+      "path": "app/src/lib/read/historyRead.ts",
+      "lines": [
+        26,
+        35,
+        38
+      ]
+    },
+    "search": {
+      "path": "app/src/components/read/screens/TokenSearch.tsx",
+      "lines": [
+        152,
+        158,
+        161
+      ]
+    },
+    "wallet_mount": {
+      "path": "app/src/components/portfolio/PortfolioTokens.tsx",
+      "lines": [
+        262,
+        271,
+        276,
+        279
+      ]
+    },
+    "wallet_paging": {
+      "path": "app/src/lib/read/screens/walletSession.ts",
+      "lines": [
+        47,
+        84,
+        109,
+        187
+      ]
+    },
+    "wallet_explicit_discovery": {
+      "path": "app/src/components/create/WalletBalance.tsx",
+      "lines": [
+        126
+      ]
+    },
+    "nft_frontend": {
+      "path": "app/src/lib/read/screens/positions.ts",
+      "lines": [
+        29,
+        30,
+        231,
+        239
+      ]
+    },
+    "cache": {
+      "path": "app/src/lib/read/publicMetadataCache.ts",
+      "lines": [
+        10,
+        11,
+        33,
+        50,
+        53
+      ]
+    },
+    "scheduler": {
+      "path": "app/src/lib/read/scheduler.ts",
+      "lines": [
+        52,
+        77,
+        176,
+        179,
+        186
+      ]
+    },
+    "capabilities": {
+      "path": "app/src/lib/read/bridgeSource.ts",
+      "lines": [
+        177,
+        193,
+        205
+      ]
+    },
+    "session": {
+      "path": "app/src/session/controller.ts",
+      "lines": [
+        99,
+        106,
+        113,
+        276
+      ]
+    },
+    "execution": {
+      "path": "app/src/finance/execution.ts",
+      "lines": [
+        14,
+        20,
+        22,
+        236,
+        252
+      ]
+    },
+    "wallet_chain": {
+      "path": "app/src/wallet/chain.ts",
+      "lines": [
+        6,
+        15
+      ]
+    },
+    "inventory": {
+      "path": "backend/inventory.py",
+      "lines": [
+        13,
+        49,
+        52,
+        57
+      ]
+    },
+    "rpc_snapshot": {
+      "path": "backend/discovery.py",
+      "lines": [
+        570,
+        590,
+        600
+      ]
+    },
+    "rpc_identity": {
+      "path": "backend/rpc_failover.py",
+      "lines": [
+        54
+      ]
+    },
+    "wallet_backend": {
+      "path": "backend/read_service.py",
+      "lines": [
+        627,
+        675,
+        698,
+        704
+      ]
+    },
+    "token_backend": {
+      "path": "backend/read_service.py",
+      "lines": [
+        616,
+        620
+      ]
+    },
+    "nft_backend": {
+      "path": "backend/read_service.py",
+      "lines": [
+        432,
+        450,
+        451,
+        453
+      ]
+    },
+    "nft_cost": {
+      "path": "backend/nft_ownership.py",
+      "lines": [
+        35,
+        66
+      ]
+    },
+    "optional_pool_cost": {
+      "path": "backend/read_service.py",
+      "lines": [
+        169,
+        195,
+        395,
+        410,
+        412,
+        461
+      ]
+    },
+    "stored_service": {
+      "path": "backend/public_data_service.py",
+      "lines": [
+        32,
+        39,
+        41,
+        42,
+        47,
+        72,
+        79
+      ]
+    },
+    "connections": {
+      "path": "backend/public_observations.py",
+      "lines": [
+        43,
+        49,
+        82,
+        120,
+        150
+      ]
+    },
+    "demand_lock": {
+      "path": "backend/migrations/026_public_demand.sql",
+      "lines": [
+        22,
+        29,
+        43
+      ]
+    },
+    "collector": {
+      "path": "backend/manage_public_data.py",
+      "lines": [
+        30,
+        135,
+        136
+      ]
+    },
+    "gateway_gate": {
+      "path": "backend/read_gateway.py",
+      "lines": [
+        80,
+        115,
+        144,
+        232,
+        318,
+        332,
+        378
+      ]
+    },
+    "reader_gate": {
+      "path": "backend/read_api.py",
+      "lines": [
+        142,
+        145,
+        320,
+        564
+      ]
+    },
+    "ip_budget": {
+      "path": "backend/bridge_state.py",
+      "lines": [
+        41,
+        48,
+        52,
+        95
+      ]
+    },
+    "worker": {
+      "path": "bridge/src/worker.mjs",
+      "lines": [
+        36,
+        192,
+        227,
+        331
+      ]
+    },
+    "cookie_boundary": {
+      "path": "app/functions/_lib/bridge.ts",
+      "lines": [
+        80,
+        81,
+        82,
+        158,
+        161
+      ]
+    },
+    "candidate_flags": {
+      "path": "bridge/wrangler.read.toml",
+      "lines": [
+        1,
+        26
+      ]
+    }
+  },
+  "runtime_context": {
+    "source": "infrastructure.md and infrastructure.json, separately observed by infrastructure agent",
+    "enabled_reads_provenance": "allowlisted live gateway environment fields; reader health does not expose enabledReads",
+    "enabled_reads": {
+      "v1": [
+        "token",
+        "pool-market",
+        "pools",
+        "catalogue",
+        "nft-positions",
+        "wallet-assets",
+        "pool-activity"
+      ],
+      "v2": [
+        "pool-market"
+      ],
+      "v3": [
+        "overview",
+        "history",
+        "search"
+      ]
+    },
+    "active_pool_detail_optional_routes": [
+      "pool-activity"
+    ],
+    "postgresql_max_connections": 40,
+    "note": "Observed runtime configuration, not a demand/capacity measurement; connections are shared with other consumers."
+  },
+  "production_optional_example": {
+    "included_in_core_scenario_tables": false,
+    "users": 1000,
+    "pool_detail_entries_per_user_per_minute": 0.1,
+    "additional_per_second": {
+      "app_data_post": 1.6666666666666667,
+      "provider_post": 1.6666666666666667,
+      "local_rpc_logical": 16.666666666666668,
+      "local_rpc_http_envelopes": 8.333333333333334,
+      "alchemy_inventory_rpc": 0
+    }
+  }
+}

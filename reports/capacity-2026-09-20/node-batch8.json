@@ -1,0 +1,2009 @@
+{
+  "startedAt": "2026-09-20T21:04:05.562286+00:00",
+  "profile": "node",
+  "batch": 8,
+  "scope": "loopback on production host; normal collectors active; unchanged production configuration",
+  "poolCount": 64,
+  "pools": [
+    "0x00003bad12a24ea7bd5daeec9033ce3f28ea491a8ce8a4b4fc09b95e57efd741",
+    "0x0000482ca896d0c93ed68066c959b2781d7ebfeee870501d7a7f3f216ed99818",
+    "0x0000b006c7d8c9ca58f918462646a9ca12af741c1cc982447776a802c42b2a77",
+    "0x000213930d7fbbfe4b54a79dc7611e788da6b15a7fbbe09a18478ad988496b75",
+    "0x00023f6d1391a793d7fd4664ca9edcaed210964e5517925de61494b0c13a144b",
+    "0x00025f0a3c83320667934e27edb18add268c0c6ef17d9a0fdeea61bd14e71b58",
+    "0x0002cafe94d266e8523f1bf3f7e0b9cb3af4b5c70ff853737fbc8a40222a71c1",
+    "0x00030e68838ebbcb3295d1f9cd9afb17169f2cbfde545084c7cedabbe510d454",
+    "0x000344fb951128f9f29862872476316437a38d86ff269b540dd5a5973ae5afe1",
+    "0x00040d11b5c0f136c047a474d3be610266c61c92f28183d320536eb8394520db",
+    "0x00047a8fd31fd418ff8fc7b2b6b18d8dff23900f38bc25f8e90b8bca901a760a",
+    "0x000482ba6d4e95675f10b6f17c5a721b10c8c87592b465963a2417af80b1383b",
+    "0x00063aa996f530db3a8f8b895d2689e1f011ad6a9876cf13fd18b18a7588f48a",
+    "0x00069062f9d40e2d0e6766eca2a5c30c69aa4cce9559231a292ac7b1dddf172b",
+    "0x00071eaa0ebc36f5066df72d4c9fc57d3fb523175a082f9c597a144142e01e6b",
+    "0x0007bd6884738d2e6d99619994fa72c35aab576e920d6df563955d40be439357",
+    "0x0007d08655680732ab3d80bc7e2176d7c96d5ecc6f05754e0c09ce5457b82d9e",
+    "0x0007dfb75dc48c13207bc6b5120d2b7d90530d92baf72b15d05c42d174ff0fc4",
+    "0x00086a3b97b1e62ff69b1211bae5e3cf65d5cb46a9413623945389ce10342507",
+    "0x00090cd181c6d60c877940fc79fadda4a77cec6c51e6658500c34938c5637ab5",
+    "0x00096d694cf2f0bb562ded77500d82b3ed86b1e6ef6c85dc15109ed726e580d7",
+    "0x0009f0b753b605d25297a5a90df93965bc8900ac2e3e2dd1ca44d8abbfaa4325",
+    "0x000a35bf2fdec79507a7338f8e4b4029369d2f7c0270c9ac51ab9219a8aaeb4b",
+    "0x000a6af8252faac819dae38eb920ce8fa39a93d6a632686fb25f2f32bd8503da",
+    "0x000af342d6e6ddd397ac8d95b9eb11368cde4b7031923f7f0004c55243a596e2",
+    "0x000c4dfb9bb7a2a704c6bc060035cf8dd7e5c96f29a335799400e185a5c2879a",
+    "0x000d08a2291b6152bfd5b275bff403fd87dc4fda9be63cc6e8bfa53ca00cfc84",
+    "0x000d21af0a5b73651e79a799412f20b4b8612b6649913063d684dc48bc8f0379",
+    "0x000d7d272004541b642ebc701ff97ae10aebd5e528be3e7badb80ced0230e834",
+    "0x000df8c6508ab1f59ad80ceebdb8232e50409697812f8496ab01700d5de0e29e",
+    "0x000e3c49a9c687ffe53a3cca682d96756e1438161e83e98e2683bce0eb1876fb",
+    "0x000e47d0dc8ddaa69644a9dda2ace2118705bfeca1dba29ae7240f82a4473f29",
+    "0x001093daf94f1ca67ee8fd503da3a999c9269f50df81c455bb8bd18ad658f85d",
+    "0x0011c63dfa64cda29e637c57756c56fef1f626ef8e9f568074b9f8724571f3b4",
+    "0x0011fb7e41090865ec2078bbcfbe06e78cc092d8dc37d0af374f4c9db3d83f19",
+    "0x001214618bf5517e4628bfb1fecef8faef97401baa907fab29edde250f585f3f",
+    "0x00124183b4a7fe1eb7b94c284468dfa63ca689e026daebf12a1ace1181a71104",
+    "0x0012bb2e4548a9c602269431c48d7792e55ff0fe0e39e0e0165fdd326541f909",
+    "0x0013659417f15e26d882e5b52a8d783dfac3219265d5dd937d1dd1391e750e2d",
+    "0x0013c4f06023b9c65f22e085e69d7d00fac793f13afe9db4ff166d495d2b901e",
+    "0x0013ec82c6f41983a1bf8beeba984f9ae7e49558c01abc6d9bd2dff5411f5ff6",
+    "0x001470d1ef92edb2eb2e463d22c9dcbf64d965586de8ba07a53cb1ccee07a089",
+    "0x00150a250b72e8bf03d310ae36cce60a1f15c40ff3ea9c325fa52612f224ae20",
+    "0x001613e639825943e6595da9f63be1233d54d1ba7ac99b84f04fd41fdc063ced",
+    "0x00161938d84aa831809e5da5cec632a8fb4e211c13abced6e796c74f2b974f98",
+    "0x00165dbf9fb2ca25fe06f2b914d7684888eec75d5400722e3ca272cada9bab7c",
+    "0x00169f66395dba961277862acfddd836af362078948c90aa4a9983e5114bc098",
+    "0x0016be0376db2b80ff57f1670bb389a557d15653cf68832f8f86ff9bfcf45709",
+    "0x0016cf014524c077fe583b3152970680bb61171b04a3f3e559e0ce941f780515",
+    "0x0017059743fc3ea594650ad2366bb594c78f55a1d391531ca83fb4844d0f39ff",
+    "0x001719d29e6297c7a939d6f894e0e32b9d7254411b3277d06242d1053bcfc80d",
+    "0x0017bf631f02618d3b552d0ddd01fc6c0486d202b4d2a4d2e0e3f4940874ebb1",
+    "0x0017e522f431108f82b9e68e6bfdbfdb2bef352530a07af4b5b6c90595be3dd6",
+    "0x00180ec4afc47e286ffd58d8585586c4fe7b01d13c616fcdc71d6edae0e1c246",
+    "0x001884989011142c7d216572fe17fb1cd5c7cdb2096a859c85c13c5b132710ad",
+    "0x0019bc338f1f43a0e3a27a42e2b78ead31514739f948eb3bf47acd5957e7330e",
+    "0x001a0bf01848834ab7da3ee2f4bbb315e6f18cf20862e23553eacc527c43a8ca",
+    "0x001a20b5780a8bc3d3cab83c7399bf7cb62a1941d5914aa4db9c27b615d3e74f",
+    "0x001ae7dd908cbc48676d54c89094cab305a371c93bb5234efa0aed05e932c9d1",
+    "0x001b31ca70230b0482b7654e8e1ecea45b37da42b7cb4c78973f716c4aa83b42",
+    "0x001b34078121c4cdd8d013cd39c6def92fb78689642b82208c96bbc4c7dc2c6d",
+    "0x001b4f6c27c925fff6b5a56dfcacbb7c49c63b9587f9430ffe0888fc072d05af",
+    "0x001b5f23aab29ae0e7bebeac53f26c46723fca68258f5d89ee787ca53c46ffa2",
+    "0x001bf08d905a1fe380f1bc3079205ce90849499290ed1eade9b0975812cf8f9e"
+  ],
+  "stages": [
+    {
+      "n": 113,
+      "successes": 113,
+      "outcomes": {
+        "ok": 113
+      },
+      "httpStatuses": {
+        "200": 113
+      },
+      "successLatencyMs": {
+        "p50": 1.487,
+        "p95": 3.384,
+        "p99": 9.659
+      },
+      "maxSuccessMs": 121.94,
+      "meanSuccessBytes": 10295.6,
+      "offeredHttpPerSecond": 2.5,
+      "offeredRpcItemsPerSecond": 20.0,
+      "plannedSeconds": 45,
+      "elapsedSeconds": 45.0,
+      "scheduled": 113,
+      "dropped": 0,
+      "maxInflightHttp": 1,
+      "maxInflightRpcItems": 8,
+      "successHttpPerSecond": 2.511,
+      "generatorCpuSeconds": 0.182,
+      "methodEnvelopeLatency": {
+        "eth_call": {
+          "n": 113,
+          "successes": 113,
+          "outcomes": {
+            "ok": 113
+          },
+          "httpStatuses": {
+            "200": 113
+          },
+          "successLatencyMs": {
+            "p50": 1.487,
+            "p95": 3.384,
+            "p99": 9.659
+          },
+          "maxSuccessMs": 121.94,
+          "meanSuccessBytes": 10295.6
+        },
+        "eth_getBlockByNumber": {
+          "n": 90,
+          "successes": 90,
+          "outcomes": {
+            "ok": 90
+          },
+          "httpStatuses": {
+            "200": 90
+          },
+          "successLatencyMs": {
+            "p50": 1.454,
+            "p95": 2.083,
+            "p99": 9.659
+          },
+          "maxSuccessMs": 9.659,
+          "meanSuccessBytes": 10825.8
+        },
+        "eth_getCode": {
+          "n": 90,
+          "successes": 90,
+          "outcomes": {
+            "ok": 90
+          },
+          "httpStatuses": {
+            "200": 90
+          },
+          "successLatencyMs": {
+            "p50": 1.476,
+            "p95": 3.384,
+            "p99": 121.94
+          },
+          "maxSuccessMs": 121.94,
+          "meanSuccessBytes": 11419.7
+        },
+        "eth_getLogs": {
+          "n": 90,
+          "successes": 90,
+          "outcomes": {
+            "ok": 90
+          },
+          "httpStatuses": {
+            "200": 90
+          },
+          "successLatencyMs": {
+            "p50": 1.476,
+            "p95": 3.384,
+            "p99": 121.94
+          },
+          "maxSuccessMs": 121.94,
+          "meanSuccessBytes": 11419.7
+        }
+      },
+      "stopReasons": [],
+      "stoppedEarly": false
+    },
+    {
+      "n": 446,
+      "successes": 446,
+      "outcomes": {
+        "ok": 446
+      },
+      "httpStatuses": {
+        "200": 446
+      },
+      "successLatencyMs": {
+        "p50": 1.349,
+        "p95": 2.135,
+        "p99": 7.052
+      },
+      "maxSuccessMs": 313.217,
+      "meanSuccessBytes": 10384.0,
+      "offeredHttpPerSecond": 10.0,
+      "offeredRpcItemsPerSecond": 80.0,
+      "plannedSeconds": 45,
+      "elapsedSeconds": 45.0,
+      "scheduled": 450,
+      "dropped": 4,
+      "maxInflightHttp": 1,
+      "maxInflightRpcItems": 8,
+      "successHttpPerSecond": 9.911,
+      "generatorCpuSeconds": 0.284,
+      "methodEnvelopeLatency": {
+        "eth_call": {
+          "n": 446,
+          "successes": 446,
+          "outcomes": {
+            "ok": 446
+          },
+          "httpStatuses": {
+            "200": 446
+          },
+          "successLatencyMs": {
+            "p50": 1.349,
+            "p95": 2.135,
+            "p99": 7.052
+          },
+          "maxSuccessMs": 313.217,
+          "meanSuccessBytes": 10384.0
+        },
+        "eth_getBlockByNumber": {
+          "n": 357,
+          "successes": 357,
+          "outcomes": {
+            "ok": 357
+          },
+          "httpStatuses": {
+            "200": 357
+          },
+          "successLatencyMs": {
+            "p50": 1.31,
+            "p95": 2.038,
+            "p99": 7.052
+          },
+          "maxSuccessMs": 313.217,
+          "meanSuccessBytes": 10921.6
+        },
+        "eth_getCode": {
+          "n": 357,
+          "successes": 357,
+          "outcomes": {
+            "ok": 357
+          },
+          "httpStatuses": {
+            "200": 357
+          },
+          "successLatencyMs": {
+            "p50": 1.342,
+            "p95": 2.611,
+            "p99": 7.45
+          },
+          "maxSuccessMs": 313.217,
+          "meanSuccessBytes": 11535.8
+        },
+        "eth_getLogs": {
+          "n": 357,
+          "successes": 357,
+          "outcomes": {
+            "ok": 357
+          },
+          "httpStatuses": {
+            "200": 357
+          },
+          "successLatencyMs": {
+            "p50": 1.342,
+            "p95": 2.611,
+            "p99": 7.45
+          },
+          "maxSuccessMs": 313.217,
+          "meanSuccessBytes": 11535.8
+        }
+      },
+      "stopReasons": [],
+      "stoppedEarly": false
+    },
+    {
+      "n": 1117,
+      "successes": 1117,
+      "outcomes": {
+        "ok": 1117
+      },
+      "httpStatuses": {
+        "200": 1117
+      },
+      "successLatencyMs": {
+        "p50": 1.223,
+        "p95": 2.036,
+        "p99": 6.831
+      },
+      "maxSuccessMs": 169.607,
+      "meanSuccessBytes": 10262.0,
+      "offeredHttpPerSecond": 25.0,
+      "offeredRpcItemsPerSecond": 200.0,
+      "plannedSeconds": 45,
+      "elapsedSeconds": 45.0,
+      "scheduled": 1125,
+      "dropped": 8,
+      "maxInflightHttp": 1,
+      "maxInflightRpcItems": 8,
+      "successHttpPerSecond": 24.822,
+      "generatorCpuSeconds": 0.472,
+      "methodEnvelopeLatency": {
+        "eth_call": {
+          "n": 1117,
+          "successes": 1117,
+          "outcomes": {
+            "ok": 1117
+          },
+          "httpStatuses": {
+            "200": 1117
+          },
+          "successLatencyMs": {
+            "p50": 1.223,
+            "p95": 2.036,
+            "p99": 6.831
+          },
+          "maxSuccessMs": 169.607,
+          "meanSuccessBytes": 10262.0
+        },
+        "eth_getBlockByNumber": {
+          "n": 894,
+          "successes": 894,
+          "outcomes": {
+            "ok": 894
+          },
+          "httpStatuses": {
+            "200": 894
+          },
+          "successLatencyMs": {
+            "p50": 1.195,
+            "p95": 2.073,
+            "p99": 7.114
+          },
+          "maxSuccessMs": 169.607,
+          "meanSuccessBytes": 10769.1
+        },
+        "eth_getCode": {
+          "n": 894,
+          "successes": 894,
+          "outcomes": {
+            "ok": 894
+          },
+          "httpStatuses": {
+            "200": 894
+          },
+          "successLatencyMs": {
+            "p50": 1.209,
+            "p95": 2.06,
+            "p99": 7.028
+          },
+          "maxSuccessMs": 169.607,
+          "meanSuccessBytes": 11387.4
+        },
+        "eth_getLogs": {
+          "n": 894,
+          "successes": 894,
+          "outcomes": {
+            "ok": 894
+          },
+          "httpStatuses": {
+            "200": 894
+          },
+          "successLatencyMs": {
+            "p50": 1.209,
+            "p95": 2.06,
+            "p99": 7.028
+          },
+          "maxSuccessMs": 169.607,
+          "meanSuccessBytes": 11387.4
+        }
+      },
+      "stopReasons": [],
+      "stoppedEarly": false
+    },
+    {
+      "n": 1681,
+      "successes": 1681,
+      "outcomes": {
+        "ok": 1681
+      },
+      "httpStatuses": {
+        "200": 1681
+      },
+      "successLatencyMs": {
+        "p50": 1.205,
+        "p95": 1.857,
+        "p99": 4.81
+      },
+      "maxSuccessMs": 197.785,
+      "meanSuccessBytes": 9913.4,
+      "offeredHttpPerSecond": 37.5,
+      "offeredRpcItemsPerSecond": 300.0,
+      "plannedSeconds": 45,
+      "elapsedSeconds": 45.0,
+      "scheduled": 1688,
+      "dropped": 7,
+      "maxInflightHttp": 1,
+      "maxInflightRpcItems": 8,
+      "successHttpPerSecond": 37.355,
+      "generatorCpuSeconds": 0.622,
+      "methodEnvelopeLatency": {
+        "eth_call": {
+          "n": 1681,
+          "successes": 1681,
+          "outcomes": {
+            "ok": 1681
+          },
+          "httpStatuses": {
+            "200": 1681
+          },
+          "successLatencyMs": {
+            "p50": 1.205,
+            "p95": 1.857,
+            "p99": 4.81
+          },
+          "maxSuccessMs": 197.785,
+          "meanSuccessBytes": 9913.4
+        },
+        "eth_getBlockByNumber": {
+          "n": 1344,
+          "successes": 1344,
+          "outcomes": {
+            "ok": 1344
+          },
+          "httpStatuses": {
+            "200": 1344
+          },
+          "successLatencyMs": {
+            "p50": 1.17,
+            "p95": 1.827,
+            "p99": 4.81
+          },
+          "maxSuccessMs": 197.785,
+          "meanSuccessBytes": 10331.6
+        },
+        "eth_getCode": {
+          "n": 1344,
+          "successes": 1344,
+          "outcomes": {
+            "ok": 1344
+          },
+          "httpStatuses": {
+            "200": 1344
+          },
+          "successLatencyMs": {
+            "p50": 1.19,
+            "p95": 1.883,
+            "p99": 4.504
+          },
+          "maxSuccessMs": 197.785,
+          "meanSuccessBytes": 11086.6
+        },
+        "eth_getLogs": {
+          "n": 1344,
+          "successes": 1344,
+          "outcomes": {
+            "ok": 1344
+          },
+          "httpStatuses": {
+            "200": 1344
+          },
+          "successLatencyMs": {
+            "p50": 1.19,
+            "p95": 1.883,
+            "p99": 4.504
+          },
+          "maxSuccessMs": 197.785,
+          "meanSuccessBytes": 11086.6
+        }
+      },
+      "stopReasons": [],
+      "stoppedEarly": false
+    }
+  ],
+  "guardModule": "/srv/robinhood-rpc/scripts/load-health.py",
+  "percentileEstimator": "nearest rank, successful responses only; batch method latency is full envelope latency",
+  "health": [
+    {
+      "at": 1789938245.8127124,
+      "head": 68246643,
+      "public_head": 68246638,
+      "lag_blocks": 0,
+      "syncing": false,
+      "memory_available_pct": 58.60131122133511,
+      "memory_available_gib": 53.74263381958008,
+      "disk_free_pct": 63.66490760190273,
+      "tunnel_ready": true,
+      "cpu_busy_pct": null,
+      "iowait_pct": null,
+      "disk_util_pct": null,
+      "disk_await_ms": null,
+      "swapout_bytes_sec": null,
+      "nitro_restarted": false,
+      "sample_seconds": 0.2504000290064141,
+      "edge": {
+        "windowSeconds": 20,
+        "requests": 461,
+        "statusCounts": {
+          "200": 455,
+          "503": 6
+        },
+        "http503Rate": 0.013015184381778741,
+        "noUpstream503": 6,
+        "requestP95Ms": 3.0,
+        "upstreamP95Ms": 3.0
+      }
+    },
+    {
+      "at": 1789938251.1604757,
+      "head": 68246697,
+      "public_head": 68246695,
+      "lag_blocks": 0,
+      "syncing": false,
+      "memory_available_pct": 58.6042146013811,
+      "memory_available_gib": 53.745296478271484,
+      "disk_free_pct": 63.664907393756486,
+      "tunnel_ready": true,
+      "cpu_busy_pct": 4.033672395650649,
+      "iowait_pct": 0.36244592540629017,
+      "disk_util_pct": 2.169131158091042,
+      "disk_await_ms": 0.45990566037735847,
+      "swapout_bytes_sec": 0.0,
+      "nitro_restarted": false,
+      "sample_seconds": 0.18210374598857015,
+      "edge": {
+        "windowSeconds": 20,
+        "requests": 462,
+        "statusCounts": {
+          "200": 459,
+          "503": 3
+        },
+        "http503Rate": 0.006493506493506494,
+        "noUpstream503": 3,
+        "requestP95Ms": 3.0,
+        "upstreamP95Ms": 3.0
+      }
+    },
+    {
+      "at": 1789938256.501525,
+      "head": 68246751,
+      "public_head": 68246744,
+      "lag_blocks": 0,
+      "syncing": false,
+      "memory_available_pct": 58.58256819771436,
+      "memory_available_gib": 53.72544479370117,
+      "disk_free_pct": 63.664868470407946,
+      "tunnel_ready": true,
+      "cpu_busy_pct": 4.2765084944346805,
+      "iowait_pct": 0.18746338605741067,
+      "disk_util_pct": 2.602484922763984,
+      "disk_await_ms": 0.49114331723027377,
+      "swapout_bytes_sec": 0.0,
+      "nitro_restarted": false,
+      "sample_seconds": 0.1777814800152555,
+      "edge": {
+        "windowSeconds": 20,
+        "requests": 453,
+        "statusCounts": {
+          "200": 451,
+          "503": 2
+        },
+        "http503Rate": 0.004415011037527594,
+        "noUpstream503": 2,
+        "requestP95Ms": 3.0,
+        "upstreamP95Ms": 3.0
+      }
+    },
+    {
+      "at": 1789938261.8480463,
+      "head": 68246804,
+      "public_head": 68246800,
+      "lag_blocks": 0,
+      "syncing": false,
+      "memory_available_pct": 58.59114523160384,
+      "memory_available_gib": 53.73331069946289,
+      "disk_free_pct": 63.664868470407946,
+      "tunnel_ready": true,
+      "cpu_busy_pct": 2.3310296357034086,
+      "iowait_pct": 0.10542345086095818,
+      "disk_util_pct": 1.571115012323781,
+      "disk_await_ms": 0.4975845410628019,
+      "swapout_bytes_sec": 0.0,
+      "nitro_restarted": false,
+      "sample_seconds": 0.18651069200132042,
+      "edge": {
+        "windowSeconds": 20,
+        "requests": 480,
+        "statusCounts": {
+          "200": 478,
+          "503": 2
+        },
+        "http503Rate": 0.004166666666666667,
+        "noUpstream503": 2,
+        "requestP95Ms": 3.0,
+        "upstreamP95Ms": 3.0
+      }
+    },
+    {
+      "at": 1789938267.1980674,
+      "head": 68246856,
+      "public_head": 68246854,
+      "lag_blocks": 0,
+      "syncing": false,
+      "memory_available_pct": 58.586311810954186,
+      "memory_available_gib": 53.728878021240234,
+      "disk_free_pct": 63.6648682622617,
+      "tunnel_ready": true,
+      "cpu_busy_pct": 3.031367041198502,
+      "iowait_pct": 0.17556179775280897,
+      "disk_util_pct": 1.6635448335454954,
+      "disk_await_ms": 0.4192546583850932,
+      "swapout_bytes_sec": 0.0,
+      "nitro_restarted": false,
+      "sample_seconds": 0.1878348069731146,
+      "edge": {
+        "windowSeconds": 20,
+        "requests": 429,
+        "statusCounts": {
+          "200": 427,
+          "503": 2
+        },
+        "http503Rate": 0.004662004662004662,
+        "noUpstream503": 2,
+        "requestP95Ms": 3.0,
+        "upstreamP95Ms": 3.0
+      }
+    },
+    {
+      "at": 1789938272.5433483,
+      "head": 68246910,
+      "public_head": 68246904,
+      "lag_blocks": 0,
+      "syncing": false,
+      "memory_available_pct": 58.57884122275559,
+      "memory_available_gib": 53.72202682495117,
+      "disk_free_pct": 63.6648682622617,
+      "tunnel_ready": true,
+      "cpu_busy_pct": 3.477751756440281,
+      "iowait_pct": 0.16393442622950818,
+      "disk_util_pct": 1.8521009862160267,
+      "disk_await_ms": 0.36813186813186816,
+      "swapout_bytes_sec": 0.0,
+      "nitro_restarted": false,
+      "sample_seconds": 0.1863226710120216,
+      "edge": {
+        "windowSeconds": 20,
+        "requests": 429,
+        "statusCounts": {
+          "200": 427,
+          "503": 2
+        },
+        "http503Rate": 0.004662004662004662,
+        "noUpstream503": 2,
+        "requestP95Ms": 3.0,
+        "upstreamP95Ms": 3.0
+      }
+    },
+    {
+      "at": 1789938276.1591492,
+      "head": 68246945,
+      "public_head": 68246940,
+      "lag_blocks": 0,
+      "syncing": false,
+      "memory_available_pct": 58.54083106966053,
+      "memory_available_gib": 53.68716812133789,
+      "disk_free_pct": 63.6648682622617,
+      "tunnel_ready": true,
+      "cpu_busy_pct": 11.309627059843885,
+      "iowait_pct": 0.15611448395490027,
+      "disk_util_pct": 1.9082909352167328,
+      "disk_await_ms": 0.38636363636363635,
+      "swapout_bytes_sec": 0.0,
+      "nitro_restarted": false,
+      "sample_seconds": 0.18078900093678385,
+      "edge": {
+        "windowSeconds": 20,
+        "requests": 459,
+        "statusCounts": {
+          "200": 459
+        },
+        "http503Rate": 0.0,
+        "noUpstream503": 0,
+        "requestP95Ms": 3.0,
+        "upstreamP95Ms": 3.0
+      }
+    },
+    {
+      "at": 1789938281.5015352,
+      "head": 68247005,
+      "public_head": 68246984,
+      "lag_blocks": 0,
+      "syncing": false,
+      "memory_available_pct": 58.54541907566445,
+      "memory_available_gib": 53.691375732421875,
+      "disk_free_pct": 63.664830795936886,
+      "tunnel_ready": true,
+      "cpu_busy_pct": 4.59608394888029,
+      "iowait_pct": 0.26966819087818034,
+      "disk_util_pct": 2.526960796455094,
+      "disk_await_ms": 0.5834829443447038,
+      "swapout_bytes_sec": 0.0,
+      "nitro_restarted": false,
+      "sample_seconds": 0.1799473479622975,
+      "edge": {
+        "windowSeconds": 20,
+        "requests": 512,
+        "statusCounts": {
+          "200": 512
+        },
+        "http503Rate": 0.0,
+        "noUpstream503": 0,
+        "requestP95Ms": 3.0,
+        "upstreamP95Ms": 3.0
+      }
+    },
+    {
+      "at": 1789938286.8350296,
+      "head": 68247061,
+      "public_head": 68247055,
+      "lag_blocks": 0,
+      "syncing": false,
+      "memory_available_pct": 58.55531053375813,
+      "memory_available_gib": 53.70044708251953,
+      "disk_free_pct": 63.664830795936886,
+      "tunnel_ready": true,
+      "cpu_busy_pct": 3.369335524771073,
+      "iowait_pct": 0.1643578304766377,
+      "disk_util_pct": 2.099936572142963,
+      "disk_await_ms": 0.4156769596199525,
+      "swapout_bytes_sec": 0.0,
+      "nitro_restarted": false,
+      "sample_seconds": 0.17625762394163758,
+      "edge": {
+        "windowSeconds": 20,
+        "requests": 545,
+        "statusCounts": {
+          "200": 544,
+          "503": 1
+        },
+        "http503Rate": 0.001834862385321101,
+        "noUpstream503": 1,
+        "requestP95Ms": 3.0,
+        "upstreamP95Ms": 3.0
+      }
+    },
+    {
+      "at": 1789938292.1749976,
+      "head": 68247113,
+      "public_head": 68247110,
+      "lag_blocks": 0,
+      "syncing": false,
+      "memory_available_pct": 58.571445506821796,
+      "memory_available_gib": 53.71524429321289,
+      "disk_free_pct": 63.66483058779065,
+      "tunnel_ready": true,
+      "cpu_busy_pct": 2.3926812104152004,
+      "iowait_pct": 0.17593244194229415,
+      "disk_util_pct": 5.0562101067849285,
+      "disk_await_ms": 0.44141689373297005,
+      "swapout_bytes_sec": 0.0,
+      "nitro_restarted": false,
+      "sample_seconds": 0.17802905105054379,
+      "edge": {
+        "windowSeconds": 20,
+        "requests": 449,
+        "statusCounts": {
+          "200": 445,
+          "503": 4
+        },
+        "http503Rate": 0.008908685968819599,
+        "noUpstream503": 4,
+        "requestP95Ms": 3.0,
+        "upstreamP95Ms": 3.0
+      }
+    },
+    {
+      "at": 1789938297.5128055,
+      "head": 68247166,
+      "public_head": 68247160,
+      "lag_blocks": 0,
+      "syncing": false,
+      "memory_available_pct": 58.6376783441749,
+      "memory_available_gib": 53.77598571777344,
+      "disk_free_pct": 63.66483058779065,
+      "tunnel_ready": true,
+      "cpu_busy_pct": 3.251173708920188,
+      "iowait_pct": 0.18779342723004694,
+      "disk_util_pct": 1.8359596664145865,
+      "disk_await_ms": 0.4223918575063613,
+      "swapout_bytes_sec": 0.0,
+      "nitro_restarted": false,
+      "sample_seconds": 0.17969130701385438,
+      "edge": {
+        "windowSeconds": 20,
+        "requests": 443,
+        "statusCounts": {
+          "200": 439,
+          "503": 4
+        },
+        "http503Rate": 0.009029345372460496,
+        "noUpstream503": 4,
+        "requestP95Ms": 3.0,
+        "upstreamP95Ms": 3.0
+      }
+    },
+    {
+      "at": 1789938302.8553042,
+      "head": 68247220,
+      "public_head": 68247217,
+      "lag_blocks": 0,
+      "syncing": false,
+      "memory_available_pct": 58.60238855003412,
+      "memory_available_gib": 53.743621826171875,
+      "disk_free_pct": 63.66479145629585,
+      "tunnel_ready": true,
+      "cpu_busy_pct": 3.415092125337402,
+      "iowait_pct": 0.16429996479286468,
+      "disk_util_pct": 2.246139961042596,
+      "disk_await_ms": 0.49019607843137253,
+      "swapout_bytes_sec": 0.0,
+      "nitro_restarted": false,
+      "sample_seconds": 0.18385356198996305,
+      "edge": {
+        "windowSeconds": 20,
+        "requests": 443,
+        "statusCounts": {
+          "200": 439,
+          "503": 4
+        },
+        "http503Rate": 0.009029345372460496,
+        "noUpstream503": 4,
+        "requestP95Ms": 3.0,
+        "upstreamP95Ms": 3.0
+      }
+    },
+    {
+      "at": 1789938308.2051597,
+      "head": 68247273,
+      "public_head": 68247267,
+      "lag_blocks": 0,
+      "syncing": false,
+      "memory_available_pct": 58.61829058716286,
+      "memory_available_gib": 53.75820541381836,
+      "disk_free_pct": 63.6637769514788,
+      "tunnel_ready": true,
+      "cpu_busy_pct": 4.135910954891623,
+      "iowait_pct": 0.210896309314587,
+      "disk_util_pct": 2.934658744716769,
+      "disk_await_ms": 1.6428571428571428,
+      "swapout_bytes_sec": 0.0,
+      "nitro_restarted": false,
+      "sample_seconds": 0.19009631604421884,
+      "edge": {
+        "windowSeconds": 20,
+        "requests": 445,
+        "statusCounts": {
+          "200": 442,
+          "503": 3
+        },
+        "http503Rate": 0.006741573033707865,
+        "noUpstream503": 3,
+        "requestP95Ms": 3.0,
+        "upstreamP95Ms": 3.0
+      }
+    },
+    {
+      "at": 1789938313.566585,
+      "head": 68247326,
+      "public_head": 68247323,
+      "lag_blocks": 0,
+      "syncing": false,
+      "memory_available_pct": 58.59785045887339,
+      "memory_available_gib": 53.73945999145508,
+      "disk_free_pct": 63.66377674333255,
+      "tunnel_ready": true,
+      "cpu_busy_pct": 2.571595558153127,
+      "iowait_pct": 0.19871420222092342,
+      "disk_util_pct": 1.5107922606424704,
+      "disk_await_ms": 0.49074074074074076,
+      "swapout_bytes_sec": 0.0,
+      "nitro_restarted": false,
+      "sample_seconds": 0.20182706892956048,
+      "edge": {
+        "windowSeconds": 20,
+        "requests": 516,
+        "statusCounts": {
+          "200": 513,
+          "503": 3
+        },
+        "http503Rate": 0.005813953488372093,
+        "noUpstream503": 3,
+        "requestP95Ms": 3.0,
+        "upstreamP95Ms": 3.0
+      }
+    },
+    {
+      "at": 1789938318.9310334,
+      "head": 68247379,
+      "public_head": 68247372,
+      "lag_blocks": 0,
+      "syncing": false,
+      "memory_available_pct": 58.59471830246273,
+      "memory_available_gib": 53.73658752441406,
+      "disk_free_pct": 63.66377674333255,
+      "tunnel_ready": true,
+      "cpu_busy_pct": 3.5902233656882236,
+      "iowait_pct": 0.19880715705765406,
+      "disk_util_pct": 2.274231998779385,
+      "disk_await_ms": 0.32582322357019067,
+      "swapout_bytes_sec": 0.0,
+      "nitro_restarted": false,
+      "sample_seconds": 0.20054508396424353,
+      "edge": {
+        "windowSeconds": 20,
+        "requests": 518,
+        "statusCounts": {
+          "200": 512,
+          "503": 6
+        },
+        "http503Rate": 0.011583011583011582,
+        "noUpstream503": 6,
+        "requestP95Ms": 3.0,
+        "upstreamP95Ms": 3.0
+      }
+    },
+    {
+      "at": 1789938324.2736468,
+      "head": 68247432,
+      "public_head": 68247427,
+      "lag_blocks": 0,
+      "syncing": false,
+      "memory_available_pct": 58.584760291244784,
+      "memory_available_gib": 53.727455139160156,
+      "disk_free_pct": 63.6637765351863,
+      "tunnel_ready": true,
+      "cpu_busy_pct": 2.638058389025677,
+      "iowait_pct": 0.12897174346347756,
+      "disk_util_pct": 1.6845688106925283,
+      "disk_await_ms": 0.5777126099706745,
+      "swapout_bytes_sec": 0.0,
+      "nitro_restarted": false,
+      "sample_seconds": 0.1815716059645638,
+      "edge": {
+        "windowSeconds": 20,
+        "requests": 487,
+        "statusCounts": {
+          "200": 479,
+          "503": 8
+        },
+        "http503Rate": 0.01642710472279261,
+        "noUpstream503": 8,
+        "requestP95Ms": 3.0,
+        "upstreamP95Ms": 3.0
+      }
+    },
+    {
+      "at": 1789938329.6344256,
+      "head": 68247484,
+      "public_head": 68247482,
+      "lag_blocks": 0,
+      "syncing": false,
+      "memory_available_pct": 58.577364575310995,
+      "memory_available_gib": 53.720672607421875,
+      "disk_free_pct": 63.66373740369151,
+      "tunnel_ready": true,
+      "cpu_busy_pct": 2.641729982466394,
+      "iowait_pct": 0.22209234365867916,
+      "disk_util_pct": 2.9100249342487277,
+      "disk_await_ms": 0.5372340425531915,
+      "swapout_bytes_sec": 0.0,
+      "nitro_restarted": false,
+      "sample_seconds": 0.19942965102382004,
+      "edge": {
+        "windowSeconds": 20,
+        "requests": 495,
+        "statusCounts": {
+          "200": 490,
+          "503": 5
+        },
+        "http503Rate": 0.010101010101010102,
+        "noUpstream503": 5,
+        "requestP95Ms": 3.0,
+        "upstreamP95Ms": 3.0
+      }
+    },
+    {
+      "at": 1789938335.0193336,
+      "head": 68247539,
+      "public_head": 68247532,
+      "lag_blocks": 0,
+      "syncing": false,
+      "memory_available_pct": 58.57632468274437,
+      "memory_available_gib": 53.71971893310547,
+      "disk_free_pct": 63.663737195545266,
+      "tunnel_ready": true,
+      "cpu_busy_pct": 3.014432029795158,
+      "iowait_pct": 0.186219739292365,
+      "disk_util_pct": 2.24702076393452,
+      "disk_await_ms": 0.41286307053941906,
+      "swapout_bytes_sec": 0.0,
+      "nitro_restarted": false,
+      "sample_seconds": 0.22032709792256355,
+      "edge": {
+        "windowSeconds": 20,
+        "requests": 453,
+        "statusCounts": {
+          "200": 449,
+          "503": 4
+        },
+        "http503Rate": 0.008830022075055188,
+        "noUpstream503": 4,
+        "requestP95Ms": 3.0,
+        "upstreamP95Ms": 3.0
+      }
+    },
+    {
+      "at": 1789938340.3636258,
+      "head": 68247592,
+      "public_head": 68247587,
+      "lag_blocks": 0,
+      "syncing": false,
+      "memory_available_pct": 58.56802634006275,
+      "memory_available_gib": 53.71210861206055,
+      "disk_free_pct": 63.66373698739901,
+      "tunnel_ready": true,
+      "cpu_busy_pct": 4.316715542521994,
+      "iowait_pct": 0.187683284457478,
+      "disk_util_pct": 1.8150205308038792,
+      "disk_await_ms": 0.6419753086419753,
+      "swapout_bytes_sec": 0.0,
+      "nitro_restarted": false,
+      "sample_seconds": 0.17884654400404543,
+      "edge": {
+        "windowSeconds": 20,
+        "requests": 442,
+        "statusCounts": {
+          "200": 436,
+          "503": 6
+        },
+        "http503Rate": 0.013574660633484163,
+        "noUpstream503": 6,
+        "requestP95Ms": 3.0,
+        "upstreamP95Ms": 3.0
+      }
+    },
+    {
+      "at": 1789938345.6949341,
+      "head": 68247645,
+      "public_head": 68247643,
+      "lag_blocks": 0,
+      "syncing": false,
+      "memory_available_pct": 58.571794910724186,
+      "memory_available_gib": 53.7155647277832,
+      "disk_free_pct": 63.66373698739901,
+      "tunnel_ready": true,
+      "cpu_busy_pct": 2.751646284101599,
+      "iowait_pct": 0.12935089369708375,
+      "disk_util_pct": 1.5943553473688805,
+      "disk_await_ms": 0.3541666666666667,
+      "swapout_bytes_sec": 0.0,
+      "nitro_restarted": false,
+      "sample_seconds": 0.17386844602879137,
+      "edge": {
+        "windowSeconds": 20,
+        "requests": 471,
+        "statusCounts": {
+          "200": 467,
+          "503": 4
+        },
+        "http503Rate": 0.008492569002123142,
+        "noUpstream503": 4,
+        "requestP95Ms": 3.0,
+        "upstreamP95Ms": 3.0
+      }
+    },
+    {
+      "at": 1789938351.2244456,
+      "head": 68247697,
+      "public_head": 68247698,
+      "lag_blocks": 1,
+      "syncing": false,
+      "memory_available_pct": 58.57888697802852,
+      "memory_available_gib": 53.722068786621094,
+      "disk_free_pct": 63.663699521074214,
+      "tunnel_ready": true,
+      "cpu_busy_pct": 3.4615821132675064,
+      "iowait_pct": 0.24968789013732834,
+      "disk_util_pct": 2.658462710195541,
+      "disk_await_ms": 0.6133333333333333,
+      "swapout_bytes_sec": 0.0,
+      "nitro_restarted": false,
+      "sample_seconds": 0.369871172006242,
+      "edge": {
+        "windowSeconds": 20,
+        "requests": 490,
+        "statusCounts": {
+          "200": 486,
+          "503": 4
+        },
+        "http503Rate": 0.00816326530612245,
+        "noUpstream503": 4,
+        "requestP95Ms": 3.0,
+        "upstreamP95Ms": 3.0
+      }
+    },
+    {
+      "at": 1789938356.5674868,
+      "head": 68247753,
+      "public_head": 68247748,
+      "lag_blocks": 0,
+      "syncing": false,
+      "memory_available_pct": 58.576852948168224,
+      "memory_available_gib": 53.7202033996582,
+      "disk_free_pct": 63.663699521074214,
+      "tunnel_ready": true,
+      "cpu_busy_pct": 7.095941825005865,
+      "iowait_pct": 0.16420361247947454,
+      "disk_util_pct": 1.8341614198696414,
+      "disk_await_ms": 0.4265129682997118,
+      "swapout_bytes_sec": 0.0,
+      "nitro_restarted": false,
+      "sample_seconds": 0.18202965601813048,
+      "edge": {
+        "windowSeconds": 20,
+        "requests": 432,
+        "statusCounts": {
+          "200": 426,
+          "503": 6
+        },
+        "http503Rate": 0.013888888888888888,
+        "noUpstream503": 6,
+        "requestP95Ms": 3.0,
+        "upstreamP95Ms": 3.0
+      }
+    },
+    {
+      "at": 1789938361.9020922,
+      "head": 68247806,
+      "public_head": 68247803,
+      "lag_blocks": 0,
+      "syncing": false,
+      "memory_available_pct": 58.58248084673876,
+      "memory_available_gib": 53.725364685058594,
+      "disk_free_pct": 63.663699521074214,
+      "tunnel_ready": true,
+      "cpu_busy_pct": 3.030658992129684,
+      "iowait_pct": 0.1292141430752966,
+      "disk_util_pct": 1.499642300988556,
+      "disk_await_ms": 0.47413793103448276,
+      "swapout_bytes_sec": 0.0,
+      "nitro_restarted": false,
+      "sample_seconds": 0.17658476496580988,
+      "edge": {
+        "windowSeconds": 20,
+        "requests": 465,
+        "statusCounts": {
+          "200": 463,
+          "503": 2
+        },
+        "http503Rate": 0.004301075268817204,
+        "noUpstream503": 2,
+        "requestP95Ms": 3.0,
+        "upstreamP95Ms": 3.0
+      }
+    },
+    {
+      "at": 1789938367.279898,
+      "head": 68247859,
+      "public_head": 68247853,
+      "lag_blocks": 0,
+      "syncing": false,
+      "memory_available_pct": 58.58283856978168,
+      "memory_available_gib": 53.72569274902344,
+      "disk_free_pct": 63.66369931292797,
+      "tunnel_ready": true,
+      "cpu_busy_pct": 3.5331156716417915,
+      "iowait_pct": 0.1632462686567164,
+      "disk_util_pct": 1.9338742530197526,
+      "disk_await_ms": 0.319634703196347,
+      "swapout_bytes_sec": 0.0,
+      "nitro_restarted": false,
+      "sample_seconds": 0.2176599169615656,
+      "edge": {
+        "windowSeconds": 20,
+        "requests": 464,
+        "statusCounts": {
+          "200": 462,
+          "503": 2
+        },
+        "http503Rate": 0.004310344827586207,
+        "noUpstream503": 2,
+        "requestP95Ms": 3.0,
+        "upstreamP95Ms": 3.0
+      }
+    },
+    {
+      "at": 1789938372.623793,
+      "head": 68247912,
+      "public_head": 68247908,
+      "lag_blocks": 0,
+      "syncing": false,
+      "memory_available_pct": 58.59357026106918,
+      "memory_available_gib": 53.73553466796875,
+      "disk_free_pct": 63.66366122216442,
+      "tunnel_ready": true,
+      "cpu_busy_pct": 4.178403755868545,
+      "iowait_pct": 0.1995305164319249,
+      "disk_util_pct": 5.370614546674567,
+      "disk_await_ms": 0.5082266910420475,
+      "swapout_bytes_sec": 0.0,
+      "nitro_restarted": false,
+      "sample_seconds": 0.18243412708397955,
+      "edge": {
+        "windowSeconds": 20,
+        "requests": 468,
+        "statusCounts": {
+          "200": 466,
+          "503": 2
+        },
+        "http503Rate": 0.004273504273504274,
+        "noUpstream503": 2,
+        "requestP95Ms": 3.0,
+        "upstreamP95Ms": 3.0
+      }
+    },
+    {
+      "at": 1789938377.969259,
+      "head": 68247966,
+      "public_head": 68247963,
+      "lag_blocks": 0,
+      "syncing": false,
+      "memory_available_pct": 58.49027565264178,
+      "memory_available_gib": 53.640804290771484,
+      "disk_free_pct": 63.66390163108188,
+      "tunnel_ready": true,
+      "cpu_busy_pct": 6.035697510568342,
+      "iowait_pct": 0.8102395490840771,
+      "disk_util_pct": 22.972739299864276,
+      "disk_await_ms": 0.8694397283531409,
+      "swapout_bytes_sec": 0.0,
+      "nitro_restarted": false,
+      "sample_seconds": 0.18326089007314295,
+      "edge": {
+        "windowSeconds": 20,
+        "requests": 521,
+        "statusCounts": {
+          "200": 521
+        },
+        "http503Rate": 0.0,
+        "noUpstream503": 0,
+        "requestP95Ms": 3.0,
+        "upstreamP95Ms": 3.0
+      }
+    },
+    {
+      "at": 1789938383.3839102,
+      "head": 68248019,
+      "public_head": 68248013,
+      "lag_blocks": 0,
+      "syncing": false,
+      "memory_available_pct": 58.61030421225122,
+      "memory_available_gib": 53.75088119506836,
+      "disk_free_pct": 63.66390163108188,
+      "tunnel_ready": true,
+      "cpu_busy_pct": 2.8928488775746355,
+      "iowait_pct": 0.16199953714417958,
+      "disk_util_pct": 2.216209254380745,
+      "disk_await_ms": 0.3746958637469586,
+      "swapout_bytes_sec": 0.0,
+      "nitro_restarted": false,
+      "sample_seconds": 0.25454319501295686,
+      "edge": {
+        "windowSeconds": 20,
+        "requests": 475,
+        "statusCounts": {
+          "200": 473,
+          "503": 2
+        },
+        "http503Rate": 0.004210526315789474,
+        "noUpstream503": 2,
+        "requestP95Ms": 3.0,
+        "upstreamP95Ms": 3.0
+      }
+    },
+    {
+      "at": 1789938388.721998,
+      "head": 68248073,
+      "public_head": 68248068,
+      "lag_blocks": 0,
+      "syncing": false,
+      "memory_available_pct": 58.61031253139176,
+      "memory_available_gib": 53.75088882446289,
+      "disk_free_pct": 63.66390163108188,
+      "tunnel_ready": true,
+      "cpu_busy_pct": 3.101503759398496,
+      "iowait_pct": 0.29370300751879697,
+      "disk_util_pct": 2.7912616963537875,
+      "disk_await_ms": 0.3103448275862069,
+      "swapout_bytes_sec": 0.0,
+      "nitro_restarted": false,
+      "sample_seconds": 0.17958712903782725,
+      "edge": {
+        "windowSeconds": 20,
+        "requests": 467,
+        "statusCounts": {
+          "200": 465,
+          "503": 2
+        },
+        "http503Rate": 0.004282655246252677,
+        "noUpstream503": 2,
+        "requestP95Ms": 3.0,
+        "upstreamP95Ms": 3.0
+      }
+    },
+    {
+      "at": 1789938394.0942523,
+      "head": 68248126,
+      "public_head": 68248119,
+      "lag_blocks": 0,
+      "syncing": false,
+      "memory_available_pct": 58.58279281450874,
+      "memory_available_gib": 53.725650787353516,
+      "disk_free_pct": 63.66386916026705,
+      "tunnel_ready": true,
+      "cpu_busy_pct": 3.2288145471500176,
+      "iowait_pct": 0.19815829350740177,
+      "disk_util_pct": 2.6618248151988464,
+      "disk_await_ms": 0.5866834170854272,
+      "swapout_bytes_sec": 0.0,
+      "nitro_restarted": false,
+      "sample_seconds": 0.20934821898117661,
+      "edge": {
+        "windowSeconds": 20,
+        "requests": 453,
+        "statusCounts": {
+          "200": 451,
+          "503": 2
+        },
+        "http503Rate": 0.004415011037527594,
+        "noUpstream503": 2,
+        "requestP95Ms": 3.0,
+        "upstreamP95Ms": 3.0
+      }
+    },
+    {
+      "at": 1789938399.4509027,
+      "head": 68248179,
+      "public_head": 68248174,
+      "lag_blocks": 0,
+      "syncing": false,
+      "memory_available_pct": 58.594256590163155,
+      "memory_available_gib": 53.73616409301758,
+      "disk_free_pct": 63.66386916026705,
+      "tunnel_ready": true,
+      "cpu_busy_pct": 3.811973807296539,
+      "iowait_pct": 0.22217025257249765,
+      "disk_util_pct": 2.2588743344807725,
+      "disk_await_ms": 0.3652173913043478,
+      "swapout_bytes_sec": 0.0,
+      "nitro_restarted": false,
+      "sample_seconds": 0.19759443507064134,
+      "edge": {
+        "windowSeconds": 20,
+        "requests": 492,
+        "statusCounts": {
+          "200": 492
+        },
+        "http503Rate": 0.0,
+        "noUpstream503": 0,
+        "requestP95Ms": 3.0,
+        "upstreamP95Ms": 3.0
+      }
+    },
+    {
+      "at": 1789938404.804871,
+      "head": 68248232,
+      "public_head": 68248229,
+      "lag_blocks": 0,
+      "syncing": false,
+      "memory_available_pct": 58.59870733034829,
+      "memory_available_gib": 53.7402458190918,
+      "disk_free_pct": 63.66386916026705,
+      "tunnel_ready": true,
+      "cpu_busy_pct": 4.10958904109589,
+      "iowait_pct": 0.44491277367989696,
+      "disk_util_pct": 3.399347680421564,
+      "disk_await_ms": 0.3959731543624161,
+      "swapout_bytes_sec": 0.0,
+      "nitro_restarted": false,
+      "sample_seconds": 0.19323657895438373,
+      "edge": {
+        "windowSeconds": 20,
+        "requests": 537,
+        "statusCounts": {
+          "200": 537
+        },
+        "http503Rate": 0.0,
+        "noUpstream503": 0,
+        "requestP95Ms": 3.0,
+        "upstreamP95Ms": 3.0
+      }
+    },
+    {
+      "at": 1789938410.1376562,
+      "head": 68248285,
+      "public_head": 68248279,
+      "lag_blocks": 0,
+      "syncing": false,
+      "memory_available_pct": 58.602754592217565,
+      "memory_available_gib": 53.74395751953125,
+      "disk_free_pct": 63.66386916026705,
+      "tunnel_ready": true,
+      "cpu_busy_pct": 3.818587710022324,
+      "iowait_pct": 0.22324051227822816,
+      "disk_util_pct": 2.58776599183398,
+      "disk_await_ms": 0.4439746300211416,
+      "swapout_bytes_sec": 0.0,
+      "nitro_restarted": false,
+      "sample_seconds": 0.1711760190082714,
+      "edge": {
+        "windowSeconds": 20,
+        "requests": 509,
+        "statusCounts": {
+          "200": 509
+        },
+        "http503Rate": 0.0,
+        "noUpstream503": 0,
+        "requestP95Ms": 3.0,
+        "upstreamP95Ms": 3.0
+      }
+    },
+    {
+      "at": 1789938415.4755027,
+      "head": 68248338,
+      "public_head": 68248335,
+      "lag_blocks": 0,
+      "syncing": false,
+      "memory_available_pct": 58.5868317572375,
+      "memory_available_gib": 53.72935485839844,
+      "disk_free_pct": 63.66383648130598,
+      "tunnel_ready": true,
+      "cpu_busy_pct": 3.8877143528306317,
+      "iowait_pct": 0.46981442330279544,
+      "disk_util_pct": 4.3088537529740085,
+      "disk_await_ms": 0.6481675392670158,
+      "swapout_bytes_sec": 0.0,
+      "nitro_restarted": false,
+      "sample_seconds": 0.1752044219756499,
+      "edge": {
+        "windowSeconds": 20,
+        "requests": 522,
+        "statusCounts": {
+          "200": 521,
+          "503": 1
+        },
+        "http503Rate": 0.0019157088122605363,
+        "noUpstream503": 1,
+        "requestP95Ms": 3.0,
+        "upstreamP95Ms": 3.0
+      }
+    },
+    {
+      "at": 1789938420.8291924,
+      "head": 68248391,
+      "public_head": 68248386,
+      "lag_blocks": 0,
+      "syncing": false,
+      "memory_available_pct": 58.588183617574096,
+      "memory_available_gib": 53.730594635009766,
+      "disk_free_pct": 63.66383627315974,
+      "tunnel_ready": true,
+      "cpu_busy_pct": 3.0164854437039637,
+      "iowait_pct": 0.18706886472582718,
+      "disk_util_pct": 2.035979048231659,
+      "disk_await_ms": 0.5083333333333333,
+      "swapout_bytes_sec": 0.0,
+      "nitro_restarted": false,
+      "sample_seconds": 0.18940606503747404,
+      "edge": {
+        "windowSeconds": 20,
+        "requests": 489,
+        "statusCounts": {
+          "200": 488,
+          "503": 1
+        },
+        "http503Rate": 0.002044989775051125,
+        "noUpstream503": 1,
+        "requestP95Ms": 3.0,
+        "upstreamP95Ms": 3.0
+      }
+    },
+    {
+      "at": 1789938426.1768026,
+      "head": 68248445,
+      "public_head": 68248440,
+      "lag_blocks": 0,
+      "syncing": false,
+      "memory_available_pct": 58.57735625617047,
+      "memory_available_gib": 53.720664978027344,
+      "disk_free_pct": 63.66383627315974,
+      "tunnel_ready": true,
+      "cpu_busy_pct": 7.228209934395502,
+      "iowait_pct": 0.21087160262417995,
+      "disk_util_pct": 2.4870922552318704,
+      "disk_await_ms": 0.4426559356136821,
+      "swapout_bytes_sec": 0.0,
+      "nitro_restarted": false,
+      "sample_seconds": 0.186903506051749,
+      "edge": {
+        "windowSeconds": 20,
+        "requests": 452,
+        "statusCounts": {
+          "200": 449,
+          "503": 3
+        },
+        "http503Rate": 0.00663716814159292,
+        "noUpstream503": 3,
+        "requestP95Ms": 3.0,
+        "upstreamP95Ms": 3.0
+      }
+    },
+    {
+      "at": 1789938431.520479,
+      "head": 68248499,
+      "public_head": 68248495,
+      "lag_blocks": 0,
+      "syncing": false,
+      "memory_available_pct": 58.58122049694801,
+      "memory_available_gib": 53.72420883178711,
+      "disk_free_pct": 63.66383606501348,
+      "tunnel_ready": true,
+      "cpu_busy_pct": 4.380416959475287,
+      "iowait_pct": 0.1639728273600375,
+      "disk_util_pct": 1.6093789127677358,
+      "disk_await_ms": 0.335978835978836,
+      "swapout_bytes_sec": 0.0,
+      "nitro_restarted": false,
+      "sample_seconds": 0.18334114202298224,
+      "edge": {
+        "windowSeconds": 20,
+        "requests": 471,
+        "statusCounts": {
+          "200": 468,
+          "503": 3
+        },
+        "http503Rate": 0.006369426751592357,
+        "noUpstream503": 3,
+        "requestP95Ms": 3.0,
+        "upstreamP95Ms": 3.0
+      }
+    },
+    {
+      "at": 1789938436.8712397,
+      "head": 68248552,
+      "public_head": 68248545,
+      "lag_blocks": 0,
+      "syncing": false,
+      "memory_available_pct": 58.57849181885321,
+      "memory_available_gib": 53.72170639038086,
+      "disk_free_pct": 63.66380047200493,
+      "tunnel_ready": true,
+      "cpu_busy_pct": 3.267361517742124,
+      "iowait_pct": 0.17566459772807122,
+      "disk_util_pct": 2.2052939133884726,
+      "disk_await_ms": 0.5445134575569358,
+      "swapout_bytes_sec": 0.0,
+      "nitro_restarted": false,
+      "sample_seconds": 0.1891835939604789,
+      "edge": {
+        "windowSeconds": 20,
+        "requests": 491,
+        "statusCounts": {
+          "200": 487,
+          "503": 4
+        },
+        "http503Rate": 0.008146639511201629,
+        "noUpstream503": 4,
+        "requestP95Ms": 3.0,
+        "upstreamP95Ms": 3.0
+      }
+    },
+    {
+      "at": 1789938442.2368407,
+      "head": 68248604,
+      "public_head": 68248601,
+      "lag_blocks": 0,
+      "syncing": false,
+      "memory_available_pct": 58.56604638461591,
+      "memory_available_gib": 53.71029281616211,
+      "disk_free_pct": 63.663800263858676,
+      "tunnel_ready": true,
+      "cpu_busy_pct": 3.6907264657790235,
+      "iowait_pct": 0.1401541695865452,
+      "disk_util_pct": 2.0314592666275106,
+      "disk_await_ms": 0.34517766497461927,
+      "swapout_bytes_sec": 0.0,
+      "nitro_restarted": false,
+      "sample_seconds": 0.20274560304824263,
+      "edge": {
+        "windowSeconds": 20,
+        "requests": 455,
+        "statusCounts": {
+          "200": 447,
+          "503": 8
+        },
+        "http503Rate": 0.017582417582417582,
+        "noUpstream503": 8,
+        "requestP95Ms": 3.0,
+        "upstreamP95Ms": 3.0
+      }
+    },
+    {
+      "at": 1789938447.5741663,
+      "head": 68248658,
+      "public_head": 68248651,
+      "lag_blocks": 0,
+      "syncing": false,
+      "memory_available_pct": 58.596635864355584,
+      "memory_available_gib": 53.738346099853516,
+      "disk_free_pct": 63.663800263858676,
+      "tunnel_ready": true,
+      "cpu_busy_pct": 2.7239638370318184,
+      "iowait_pct": 0.2230832452741576,
+      "disk_util_pct": 1.9485414291895344,
+      "disk_await_ms": 0.3774403470715835,
+      "swapout_bytes_sec": 0.0,
+      "nitro_restarted": false,
+      "sample_seconds": 0.17747088195756078,
+      "edge": {
+        "windowSeconds": 20,
+        "requests": 481,
+        "statusCounts": {
+          "200": 475,
+          "503": 6
+        },
+        "http503Rate": 0.012474012474012475,
+        "noUpstream503": 6,
+        "requestP95Ms": 3.0,
+        "upstreamP95Ms": 3.0
+      }
+    },
+    {
+      "at": 1789938452.91212,
+      "head": 68248711,
+      "public_head": 68248706,
+      "lag_blocks": 0,
+      "syncing": false,
+      "memory_available_pct": 58.58496826975812,
+      "memory_available_gib": 53.72764587402344,
+      "disk_free_pct": 63.66380005571243,
+      "tunnel_ready": true,
+      "cpu_busy_pct": 3.08757924395398,
+      "iowait_pct": 0.19957736557877437,
+      "disk_util_pct": 2.341721276442839,
+      "disk_await_ms": 0.36629213483146067,
+      "swapout_bytes_sec": 0.0,
+      "nitro_restarted": false,
+      "sample_seconds": 0.17543516296427697,
+      "edge": {
+        "windowSeconds": 20,
+        "requests": 467,
+        "statusCounts": {
+          "200": 463,
+          "503": 4
+        },
+        "http503Rate": 0.008565310492505354,
+        "noUpstream503": 4,
+        "requestP95Ms": 3.0,
+        "upstreamP95Ms": 3.0
+      }
+    },
+    {
+      "at": 1789938458.25202,
+      "head": 68248763,
+      "public_head": 68248760,
+      "lag_blocks": 0,
+      "syncing": false,
+      "memory_available_pct": 58.607084704864974,
+      "memory_available_gib": 53.747928619384766,
+      "disk_free_pct": 63.663799847566175,
+      "tunnel_ready": true,
+      "cpu_busy_pct": 3.5207135312756717,
+      "iowait_pct": 0.22297852364745924,
+      "disk_util_pct": 4.1386544536913,
+      "disk_await_ms": 0.4059196617336152,
+      "swapout_bytes_sec": 0.0,
+      "nitro_restarted": false,
+      "sample_seconds": 0.17917857808060944,
+      "edge": {
+        "windowSeconds": 20,
+        "requests": 482,
+        "statusCounts": {
+          "200": 478,
+          "503": 4
+        },
+        "http503Rate": 0.008298755186721992,
+        "noUpstream503": 4,
+        "requestP95Ms": 3.0,
+        "upstreamP95Ms": 3.0
+      }
+    },
+    {
+      "at": 1789938463.6034334,
+      "head": 68248817,
+      "public_head": 68248811,
+      "lag_blocks": 0,
+      "syncing": false,
+      "memory_available_pct": 58.58283441021142,
+      "memory_available_gib": 53.72568893432617,
+      "disk_free_pct": 63.66376820933635,
+      "tunnel_ready": true,
+      "cpu_busy_pct": 3.0810684161199626,
+      "iowait_pct": 0.3045923149015933,
+      "disk_util_pct": 2.8590577112381994,
+      "disk_await_ms": 0.5309842041312273,
+      "swapout_bytes_sec": 0.0,
+      "nitro_restarted": false,
+      "sample_seconds": 0.18487286800518632,
+      "edge": {
+        "windowSeconds": 20,
+        "requests": 506,
+        "statusCounts": {
+          "200": 502,
+          "503": 4
+        },
+        "http503Rate": 0.007905138339920948,
+        "noUpstream503": 4,
+        "requestP95Ms": 3.0,
+        "upstreamP95Ms": 3.0
+      }
+    },
+    {
+      "at": 1789938468.938852,
+      "head": 68248870,
+      "public_head": 68248866,
+      "lag_blocks": 0,
+      "syncing": false,
+      "memory_available_pct": 58.615765728011105,
+      "memory_available_gib": 53.755889892578125,
+      "disk_free_pct": 63.6637680011901,
+      "tunnel_ready": true,
+      "cpu_busy_pct": 3.9176470588235293,
+      "iowait_pct": 0.2,
+      "disk_util_pct": 2.1741498933255543,
+      "disk_await_ms": 0.45808383233532934,
+      "swapout_bytes_sec": 0.0,
+      "nitro_restarted": false,
+      "sample_seconds": 0.1726071530720219,
+      "edge": {
+        "windowSeconds": 20,
+        "requests": 483,
+        "statusCounts": {
+          "200": 479,
+          "503": 4
+        },
+        "http503Rate": 0.008281573498964804,
+        "noUpstream503": 4,
+        "requestP95Ms": 3.0,
+        "upstreamP95Ms": 3.0
+      }
+    },
+    {
+      "at": 1789938474.285314,
+      "head": 68248923,
+      "public_head": 68248916,
+      "lag_blocks": 0,
+      "syncing": false,
+      "memory_available_pct": 58.62777856694069,
+      "memory_available_gib": 53.76690673828125,
+      "disk_free_pct": 63.6637680011901,
+      "tunnel_ready": true,
+      "cpu_busy_pct": 3.1565360244074165,
+      "iowait_pct": 0.15254635062191974,
+      "disk_util_pct": 1.832987867344592,
+      "disk_await_ms": 0.48214285714285715,
+      "swapout_bytes_sec": 0.0,
+      "nitro_restarted": false,
+      "sample_seconds": 0.1815849560080096,
+      "edge": {
+        "windowSeconds": 20,
+        "requests": 470,
+        "statusCounts": {
+          "200": 468,
+          "503": 2
+        },
+        "http503Rate": 0.00425531914893617,
+        "noUpstream503": 2,
+        "requestP95Ms": 3.0,
+        "upstreamP95Ms": 3.0
+      }
+    },
+    {
+      "at": 1789938480.749349,
+      "head": 68248976,
+      "public_head": 68248981,
+      "lag_blocks": 5,
+      "syncing": false,
+      "memory_available_pct": 58.63317768914658,
+      "memory_available_gib": 53.77185821533203,
+      "disk_free_pct": 63.663767793043846,
+      "tunnel_ready": true,
+      "cpu_busy_pct": 3.3275126115638343,
+      "iowait_pct": 0.4365541327124563,
+      "disk_util_pct": 2.506174535617418,
+      "disk_await_ms": 0.8637083993660856,
+      "swapout_bytes_sec": 0.0,
+      "nitro_restarted": false,
+      "sample_seconds": 1.2970550400204957,
+      "edge": {
+        "windowSeconds": 20,
+        "requests": 510,
+        "statusCounts": {
+          "200": 508,
+          "503": 2
+        },
+        "http503Rate": 0.00392156862745098,
+        "noUpstream503": 2,
+        "requestP95Ms": 3.0,
+        "upstreamP95Ms": 3.0
+      }
+    },
+    {
+      "at": 1789938486.091424,
+      "head": 68249040,
+      "public_head": 68249036,
+      "lag_blocks": 0,
+      "syncing": false,
+      "memory_available_pct": 58.61564094090311,
+      "memory_available_gib": 53.755775451660156,
+      "disk_free_pct": 63.663767793043846,
+      "tunnel_ready": true,
+      "cpu_busy_pct": 3.1921136016899423,
+      "iowait_pct": 0.16429996479286468,
+      "disk_util_pct": 1.7034579671079804,
+      "disk_await_ms": 0.3976945244956772,
+      "swapout_bytes_sec": 0.0,
+      "nitro_restarted": false,
+      "sample_seconds": 0.17661210801452398,
+      "edge": {
+        "windowSeconds": 20,
+        "requests": 499,
+        "statusCounts": {
+          "200": 499
+        },
+        "http503Rate": 0.0,
+        "noUpstream503": 0,
+        "requestP95Ms": 3.0,
+        "upstreamP95Ms": 3.0
+      }
+    },
+    {
+      "at": 1789938491.4318807,
+      "head": 68249093,
+      "public_head": 68249085,
+      "lag_blocks": 0,
+      "syncing": false,
+      "memory_available_pct": 58.643501742547976,
+      "memory_available_gib": 53.78132629394531,
+      "disk_free_pct": 63.663767793043846,
+      "tunnel_ready": true,
+      "cpu_busy_pct": 3.607520564042303,
+      "iowait_pct": 0.1645123384253819,
+      "disk_util_pct": 2.115923896333574,
+      "disk_await_ms": 0.39018087855297157,
+      "swapout_bytes_sec": 0.0,
+      "nitro_restarted": false,
+      "sample_seconds": 0.17615456704515964,
+      "edge": {
+        "windowSeconds": 20,
+        "requests": 490,
+        "statusCounts": {
+          "200": 490
+        },
+        "http503Rate": 0.0,
+        "noUpstream503": 0,
+        "requestP95Ms": 3.0,
+        "upstreamP95Ms": 3.0
+      }
+    },
+    {
+      "at": 1789938496.7714043,
+      "head": 68249147,
+      "public_head": 68249142,
+      "lag_blocks": 0,
+      "syncing": false,
+      "memory_available_pct": 58.64528203862203,
+      "memory_available_gib": 53.782958984375,
+      "disk_free_pct": 63.66373282447404,
+      "tunnel_ready": true,
+      "cpu_busy_pct": 3.374485596707819,
+      "iowait_pct": 0.21164021164021166,
+      "disk_util_pct": 2.88415246129985,
+      "disk_await_ms": 0.6027131782945736,
+      "swapout_bytes_sec": 0.0,
+      "nitro_restarted": false,
+      "sample_seconds": 0.17560762399807572,
+      "edge": {
+        "windowSeconds": 20,
+        "requests": 500,
+        "statusCounts": {
+          "200": 500
+        },
+        "http503Rate": 0.0,
+        "noUpstream503": 0,
+        "requestP95Ms": 3.0,
+        "upstreamP95Ms": 3.0
+      }
+    },
+    {
+      "at": 1789938502.1181242,
+      "head": 68249199,
+      "public_head": 68249197,
+      "lag_blocks": 0,
+      "syncing": false,
+      "memory_available_pct": 58.6407564261721,
+      "memory_available_gib": 53.77880859375,
+      "disk_free_pct": 63.66373282447404,
+      "tunnel_ready": true,
+      "cpu_busy_pct": 8.32356389214537,
+      "iowait_pct": 0.1406799531066823,
+      "disk_util_pct": 1.514947487419495,
+      "disk_await_ms": 0.4041095890410959,
+      "swapout_bytes_sec": 0.0,
+      "nitro_restarted": false,
+      "sample_seconds": 0.18759910797234625,
+      "edge": {
+        "windowSeconds": 20,
+        "requests": 446,
+        "statusCounts": {
+          "200": 445,
+          "503": 1
+        },
+        "http503Rate": 0.002242152466367713,
+        "noUpstream503": 1,
+        "requestP95Ms": 3.0,
+        "upstreamP95Ms": 3.0
+      }
+    },
+    {
+      "at": 1789938507.4587612,
+      "head": 68249252,
+      "public_head": 68249246,
+      "lag_blocks": 0,
+      "syncing": false,
+      "memory_available_pct": 58.64568967650814,
+      "memory_available_gib": 53.78333282470703,
+      "disk_free_pct": 63.66373282447404,
+      "tunnel_ready": true,
+      "cpu_busy_pct": 2.826647900539526,
+      "iowait_pct": 0.28149190710767064,
+      "disk_util_pct": 2.415442217064047,
+      "disk_await_ms": 0.43897216274089934,
+      "swapout_bytes_sec": 0.0,
+      "nitro_restarted": false,
+      "sample_seconds": 0.18234551895875484,
+      "edge": {
+        "windowSeconds": 20,
+        "requests": 462,
+        "statusCounts": {
+          "200": 461,
+          "503": 1
+        },
+        "http503Rate": 0.0021645021645021645,
+        "noUpstream503": 1,
+        "requestP95Ms": 3.0,
+        "upstreamP95Ms": 3.0
+      }
+    },
+    {
+      "at": 1789938512.8025537,
+      "head": 68249305,
+      "public_head": 68249302,
+      "lag_blocks": 0,
+      "syncing": false,
+      "memory_available_pct": 58.646775324347686,
+      "memory_available_gib": 53.78432846069336,
+      "disk_free_pct": 63.66373282447404,
+      "tunnel_ready": true,
+      "cpu_busy_pct": 2.7455121436114043,
+      "iowait_pct": 0.1525284524228558,
+      "disk_util_pct": 1.964896676064281,
+      "disk_await_ms": 0.37626262626262624,
+      "swapout_bytes_sec": 0.0,
+      "nitro_restarted": false,
+      "sample_seconds": 0.1764199670869857,
+      "edge": {
+        "windowSeconds": 20,
+        "requests": 465,
+        "statusCounts": {
+          "200": 464,
+          "503": 1
+        },
+        "http503Rate": 0.002150537634408602,
+        "noUpstream503": 1,
+        "requestP95Ms": 3.0,
+        "upstreamP95Ms": 3.0
+      }
+    }
+  ],
+  "guardReasons": [],
+  "edgeBaseline": {
+    "windowSeconds": 20,
+    "requests": 459,
+    "statusCounts": {
+      "200": 459
+    },
+    "http503Rate": 0.0,
+    "noUpstream503": 0,
+    "requestP95Ms": 3.0,
+    "upstreamP95Ms": 3.0
+  },
+  "finishedAt": "2026-09-20T21:08:36.331253+00:00"
+}

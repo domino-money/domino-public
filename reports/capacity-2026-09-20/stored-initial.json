@@ -1,0 +1,357 @@
+{
+  "startedAt": "2026-09-20T21:08:48.201625+00:00",
+  "profile": "stored",
+  "batch": 1,
+  "scope": "loopback on production host; normal collectors active; unchanged production configuration",
+  "poolCount": 6,
+  "pools": [
+    "0x84bd4e2d8be11aeb0afc1195b38f587b61e90068548f1063fdbe448fb8cad0b6",
+    "0xdb922f0619e11b0c1e6c3a142798f0243060b8a4331ea4f4e7de80e898cc02e7",
+    "0x94c62eebf6454231b2fcd0259ede448ae3c6ad8617718cd88dab20b30cfae48a",
+    "0xf399bd1544377680d48c62fd85c2105b869e55906c4189cc5ab3b4e83446928c",
+    "0x24107d152f14a76d292123265ae3f3c71f863fc2f4ef7ba49d64e78d28ea379e",
+    "0x4be9657ec9002e528f4f17a5c43edc525a07f888f7b180c2afbf75e096c4f38a"
+  ],
+  "stages": [
+    {
+      "n": 300,
+      "successes": 300,
+      "outcomes": {
+        "ok": 300
+      },
+      "httpStatuses": {
+        "200": 300
+      },
+      "successLatencyMs": {
+        "p50": 17.883,
+        "p95": 20.616,
+        "p99": 21.944
+      },
+      "maxSuccessMs": 24.349,
+      "meanSuccessBytes": 25915.0,
+      "offeredHttpPerSecond": 10.0,
+      "offeredRpcItemsPerSecond": null,
+      "plannedSeconds": 30,
+      "elapsedSeconds": 30.0,
+      "scheduled": 300,
+      "dropped": 0,
+      "maxInflightHttp": 1,
+      "maxInflightRpcItems": null,
+      "successHttpPerSecond": 10.0,
+      "generatorCpuSeconds": 0.125,
+      "methodEnvelopeLatency": {
+        "overview": {
+          "n": 240,
+          "successes": 240,
+          "outcomes": {
+            "ok": 240
+          },
+          "httpStatuses": {
+            "200": 240
+          },
+          "successLatencyMs": {
+            "p50": 18.149,
+            "p95": 20.653,
+            "p99": 22.823
+          },
+          "maxSuccessMs": 24.349,
+          "meanSuccessBytes": 29934.5
+        },
+        "search": {
+          "n": 30,
+          "successes": 30,
+          "outcomes": {
+            "ok": 30
+          },
+          "httpStatuses": {
+            "200": 30
+          },
+          "successLatencyMs": {
+            "p50": 6.754,
+            "p95": 8.888,
+            "p99": 8.977
+          },
+          "maxSuccessMs": 8.977,
+          "meanSuccessBytes": 753.0
+        },
+        "history": {
+          "n": 30,
+          "successes": 30,
+          "outcomes": {
+            "ok": 30
+          },
+          "httpStatuses": {
+            "200": 30
+          },
+          "successLatencyMs": {
+            "p50": 16.696,
+            "p95": 20.203,
+            "p99": 21.413
+          },
+          "maxSuccessMs": 21.413,
+          "meanSuccessBytes": 18920.4
+        }
+      },
+      "stopReasons": [],
+      "stoppedEarly": false
+    },
+    {
+      "n": 600,
+      "successes": 600,
+      "outcomes": {
+        "ok": 600
+      },
+      "httpStatuses": {
+        "200": 600
+      },
+      "successLatencyMs": {
+        "p50": 17.081,
+        "p95": 19.564,
+        "p99": 22.764
+      },
+      "maxSuccessMs": 44.482,
+      "meanSuccessBytes": 26403.5,
+      "offeredHttpPerSecond": 20.0,
+      "offeredRpcItemsPerSecond": null,
+      "plannedSeconds": 30,
+      "elapsedSeconds": 30.0,
+      "scheduled": 600,
+      "dropped": 0,
+      "maxInflightHttp": 1,
+      "maxInflightRpcItems": null,
+      "successHttpPerSecond": 20.0,
+      "generatorCpuSeconds": 0.209,
+      "methodEnvelopeLatency": {
+        "overview": {
+          "n": 480,
+          "successes": 480,
+          "outcomes": {
+            "ok": 480
+          },
+          "httpStatuses": {
+            "200": 480
+          },
+          "successLatencyMs": {
+            "p50": 17.301,
+            "p95": 19.975,
+            "p99": 36.364
+          },
+          "maxSuccessMs": 44.482,
+          "meanSuccessBytes": 30550.6
+        },
+        "search": {
+          "n": 60,
+          "successes": 60,
+          "outcomes": {
+            "ok": 60
+          },
+          "httpStatuses": {
+            "200": 60
+          },
+          "successLatencyMs": {
+            "p50": 6.369,
+            "p95": 8.741,
+            "p99": 9.923
+          },
+          "maxSuccessMs": 9.923,
+          "meanSuccessBytes": 753.0
+        },
+        "history": {
+          "n": 60,
+          "successes": 60,
+          "outcomes": {
+            "ok": 60
+          },
+          "httpStatuses": {
+            "200": 60
+          },
+          "successLatencyMs": {
+            "p50": 15.694,
+            "p95": 17.615,
+            "p99": 17.96
+          },
+          "maxSuccessMs": 17.96,
+          "meanSuccessBytes": 18877.0
+        }
+      },
+      "stopReasons": [],
+      "stoppedEarly": false
+    },
+    {
+      "n": 900,
+      "successes": 900,
+      "outcomes": {
+        "ok": 900
+      },
+      "httpStatuses": {
+        "200": 900
+      },
+      "successLatencyMs": {
+        "p50": 16.965,
+        "p95": 19.772,
+        "p99": 21.518
+      },
+      "maxSuccessMs": 25.755,
+      "meanSuccessBytes": 26762.1,
+      "offeredHttpPerSecond": 30.0,
+      "offeredRpcItemsPerSecond": null,
+      "plannedSeconds": 30,
+      "elapsedSeconds": 30.0,
+      "scheduled": 900,
+      "dropped": 0,
+      "maxInflightHttp": 1,
+      "maxInflightRpcItems": null,
+      "successHttpPerSecond": 30.0,
+      "generatorCpuSeconds": 0.299,
+      "methodEnvelopeLatency": {
+        "overview": {
+          "n": 720,
+          "successes": 720,
+          "outcomes": {
+            "ok": 720
+          },
+          "httpStatuses": {
+            "200": 720
+          },
+          "successLatencyMs": {
+            "p50": 17.223,
+            "p95": 19.993,
+            "p99": 21.722
+          },
+          "maxSuccessMs": 25.755,
+          "meanSuccessBytes": 30998.9
+        },
+        "search": {
+          "n": 90,
+          "successes": 90,
+          "outcomes": {
+            "ok": 90
+          },
+          "httpStatuses": {
+            "200": 90
+          },
+          "successLatencyMs": {
+            "p50": 6.175,
+            "p95": 7.978,
+            "p99": 8.718
+          },
+          "maxSuccessMs": 8.718,
+          "meanSuccessBytes": 753.0
+        },
+        "history": {
+          "n": 90,
+          "successes": 90,
+          "outcomes": {
+            "ok": 90
+          },
+          "httpStatuses": {
+            "200": 90
+          },
+          "successLatencyMs": {
+            "p50": 15.207,
+            "p95": 17.509,
+            "p99": 18.12
+          },
+          "maxSuccessMs": 18.12,
+          "meanSuccessBytes": 18877.0
+        }
+      },
+      "stopReasons": [],
+      "stoppedEarly": false
+    },
+    {
+      "n": 1328,
+      "successes": 1327,
+      "outcomes": {
+        "ok": 1327,
+        "transport_BrokenPipeError": 1
+      },
+      "httpStatuses": {
+        "200": 1327,
+        "None": 1
+      },
+      "successLatencyMs": {
+        "p50": 16.864,
+        "p95": 19.47,
+        "p99": 21.393
+      },
+      "maxSuccessMs": 35.294,
+      "meanSuccessBytes": 27044.6,
+      "offeredHttpPerSecond": 45.0,
+      "offeredRpcItemsPerSecond": null,
+      "plannedSeconds": 30,
+      "elapsedSeconds": 29.489,
+      "scheduled": 1328,
+      "dropped": 0,
+      "maxInflightHttp": 2,
+      "maxInflightRpcItems": null,
+      "successHttpPerSecond": 44.999,
+      "generatorCpuSeconds": 0.468,
+      "methodEnvelopeLatency": {
+        "overview": {
+          "n": 1064,
+          "successes": 1063,
+          "outcomes": {
+            "ok": 1063,
+            "transport_BrokenPipeError": 1
+          },
+          "httpStatuses": {
+            "200": 1063,
+            "None": 1
+          },
+          "successLatencyMs": {
+            "p50": 17.039,
+            "p95": 19.798,
+            "p99": 22.049
+          },
+          "maxSuccessMs": 35.294,
+          "meanSuccessBytes": 31319.6
+        },
+        "search": {
+          "n": 132,
+          "successes": 132,
+          "outcomes": {
+            "ok": 132
+          },
+          "httpStatuses": {
+            "200": 132
+          },
+          "successLatencyMs": {
+            "p50": 6.085,
+            "p95": 7.895,
+            "p99": 8.818
+          },
+          "maxSuccessMs": 10.23,
+          "meanSuccessBytes": 753.0
+        },
+        "history": {
+          "n": 132,
+          "successes": 132,
+          "outcomes": {
+            "ok": 132
+          },
+          "httpStatuses": {
+            "200": 132
+          },
+          "successLatencyMs": {
+            "p50": 15.343,
+            "p95": 17.337,
+            "p99": 18.364
+          },
+          "maxSuccessMs": 18.429,
+          "meanSuccessBytes": 18909.2
+        }
+      },
+      "stopReasons": [
+        "transport_BrokenPipeError"
+      ],
+      "stoppedEarly": true
+    }
+  ],
+  "guardModule": null,
+  "percentileEstimator": "nearest rank, successful responses only; batch method latency is full envelope latency",
+  "health": [],
+  "guardReasons": [],
+  "edgeBaseline": null,
+  "finishedAt": "2026-09-20T21:11:32.696021+00:00"
+}

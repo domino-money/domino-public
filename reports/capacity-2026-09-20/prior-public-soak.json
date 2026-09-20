@@ -1,0 +1,130 @@
+{
+  "sourceFile": "redacted:private-source/load-cache-diagnostic-20260919.json",
+  "sourceSha256": "858a5a9689c3be99b42b393008e2460f3421cdf933bce830866a02f6c2bfbfc5",
+  "startedAt": "2026-09-19T19:04:07.736950+00:00",
+  "tlsVerification": true,
+  "passed": true,
+  "stages": [
+    {
+      "name": "ramp-5",
+      "started_at": "2026-09-19T19:04:07.973115+00:00",
+      "ended_at": "2026-09-19T19:07:08.195139+00:00",
+      "requests": 900,
+      "errors": {
+        "http": 0,
+        "jsonrpc": 0,
+        "transport": 0,
+        "protocol": 0
+      },
+      "error_percent": 0.0,
+      "latency_ms": {
+        "p50": 17.189,
+        "p95": 21.151,
+        "p99": 27.952
+      },
+      "http_statuses": {
+        "200": 900
+      },
+      "requested_duration_seconds": 180,
+      "elapsed_seconds": 180.0,
+      "target_rps": 5,
+      "achieved_rps": 5.0,
+      "dispatched": 900,
+      "dropped_schedules": 0,
+      "max_inflight": 2,
+      "passed": true,
+      "abort_reasons": []
+    },
+    {
+      "name": "ramp-10",
+      "started_at": "2026-09-19T19:07:08.419126+00:00",
+      "ended_at": "2026-09-19T19:10:08.644017+00:00",
+      "requests": 1800,
+      "errors": {
+        "http": 0,
+        "jsonrpc": 0,
+        "transport": 0,
+        "protocol": 0
+      },
+      "error_percent": 0.0,
+      "latency_ms": {
+        "p50": 16.865,
+        "p95": 23.445,
+        "p99": 29.293
+      },
+      "http_statuses": {
+        "200": 1800
+      },
+      "requested_duration_seconds": 180,
+      "elapsed_seconds": 180.0,
+      "target_rps": 10,
+      "achieved_rps": 10.0,
+      "dispatched": 1800,
+      "dropped_schedules": 0,
+      "max_inflight": 2,
+      "passed": true,
+      "abort_reasons": []
+    },
+    {
+      "name": "ramp-20",
+      "started_at": "2026-09-19T19:10:08.874996+00:00",
+      "ended_at": "2026-09-19T19:13:09.103658+00:00",
+      "requests": 3600,
+      "errors": {
+        "http": 0,
+        "jsonrpc": 0,
+        "transport": 0,
+        "protocol": 0
+      },
+      "error_percent": 0.0,
+      "latency_ms": {
+        "p50": 16.496,
+        "p95": 21.141,
+        "p99": 27.564
+      },
+      "http_statuses": {
+        "200": 3600
+      },
+      "requested_duration_seconds": 180,
+      "elapsed_seconds": 180.001,
+      "target_rps": 20,
+      "achieved_rps": 20.0,
+      "dispatched": 3600,
+      "dropped_schedules": 0,
+      "max_inflight": 2,
+      "passed": true,
+      "abort_reasons": []
+    },
+    {
+      "name": "soak-20",
+      "started_at": "2026-09-19T19:13:09.327884+00:00",
+      "ended_at": "2026-09-19T20:13:09.584749+00:00",
+      "requests": 72000,
+      "errors": {
+        "http": 0,
+        "jsonrpc": 0,
+        "transport": 0,
+        "protocol": 0
+      },
+      "error_percent": 0.0,
+      "latency_ms": {
+        "p50": 17.048,
+        "p95": 23.451,
+        "p99": 37.877
+      },
+      "http_statuses": {
+        "200": 72000
+      },
+      "requested_duration_seconds": 3600,
+      "elapsed_seconds": 3600.001,
+      "target_rps": 20,
+      "achieved_rps": 20.0,
+      "dispatched": 72000,
+      "dropped_schedules": 0,
+      "max_inflight": 11,
+      "passed": true,
+      "abort_reasons": []
+    }
+  ],
+  "limitation": "Earlier public-edge concentrated workload; not the new diversified native test nor full application capacity."
+}

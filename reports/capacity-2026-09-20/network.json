@@ -1,0 +1,13 @@
+{
+  "at": "2026-09-20T21:16:45.162813+00:00",
+  "scope": "Bounded private SSH transfer of generated zeros, not an ISP saturation test.\n\nOne 32 MiB transfer, paced at no more than 8 MiB/s on the remote host. No files\nor secrets are read or transferred. Records whether IPv4 egress differs, never\nthe IP addresses. A different egress supports a WAN-path measurement; the SSH\noverlay, client and pacing still bound it. No proof of public Cloudflare capacity.\n",
+  "differentPublicEgress": true,
+  "plannedBytes": 33554432,
+  "receivedBytes": 33554432,
+  "senderPaceMiBPerSecond": 8,
+  "elapsedSecondsIncludingSshSetup": 4.507,
+  "firstByteSeconds": 0.512,
+  "observedMbitPerSecondIncludingSshSetup": 59.563,
+  "complete": true,
+  "timedOut": false
+}

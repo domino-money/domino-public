@@ -1,0 +1,140 @@
+{
+  "startedAt": "2026-09-20T20:46:25.638209+00:00",
+  "scope": "Isolated ASGI gateway fixture + real production loopback reader.\n\nRun on the VM, with its reader backend path and Python dependencies. Does not\nlisten on any port, modify production authentication, or use a production JWT.\nRS256 signatures are genuinely verified against an ephemeral fixture key.\n1,000 synthetic private test clients retain the normal per-IP budgets. Measures\ngateway Python gates/validation/threads and real HTTP/DB reader work, excluding\nCloudflare, Access service, public network and Uvicorn gateway overhead.\n",
+  "backendPath": "/opt/domino/releases/1b864e2a0253a9f7ce0f1a5380894ca2057dc839/read/backend",
+  "productionConfigurationChanged": false,
+  "syntheticClients": 1000,
+  "workerThreads": 2,
+  "storedGateCapacity": 4,
+  "stages": [
+    {
+      "n": 300,
+      "successes": 300,
+      "outcomes": {
+        "ok": 300
+      },
+      "httpStatuses": {
+        "200": 300
+      },
+      "successLatencyMs": {
+        "p50": 28.147,
+        "p95": 31.302,
+        "p99": 33.681
+      },
+      "maxSuccessMs": 63.407,
+      "meanSuccessBytes": 26828.2,
+      "offeredHttpPerSecond": 5.0,
+      "elapsedSeconds": 60.001,
+      "plannedSeconds": 60,
+      "dropped": 0,
+      "maxInflight": 1,
+      "successHttpPerSecond": 5.0,
+      "generatorAndGatewayCpuSeconds": 2.32,
+      "stoppedEarly": false
+    },
+    {
+      "n": 600,
+      "successes": 600,
+      "outcomes": {
+        "ok": 600
+      },
+      "httpStatuses": {
+        "200": 600
+      },
+      "successLatencyMs": {
+        "p50": 26.506,
+        "p95": 29.973,
+        "p99": 31.47
+      },
+      "maxSuccessMs": 33.134,
+      "meanSuccessBytes": 27026.9,
+      "offeredHttpPerSecond": 10.0,
+      "elapsedSeconds": 60.001,
+      "plannedSeconds": 60,
+      "dropped": 0,
+      "maxInflight": 1,
+      "successHttpPerSecond": 10.0,
+      "generatorAndGatewayCpuSeconds": 4.369,
+      "stoppedEarly": false
+    },
+    {
+      "n": 1200,
+      "successes": 1200,
+      "outcomes": {
+        "ok": 1200
+      },
+      "httpStatuses": {
+        "200": 1200
+      },
+      "successLatencyMs": {
+        "p50": 25.585,
+        "p95": 28.743,
+        "p99": 30.424
+      },
+      "maxSuccessMs": 43.616,
+      "meanSuccessBytes": 27067.8,
+      "offeredHttpPerSecond": 20.0,
+      "elapsedSeconds": 60.0,
+      "plannedSeconds": 60,
+      "dropped": 0,
+      "maxInflight": 1,
+      "successHttpPerSecond": 20.0,
+      "generatorAndGatewayCpuSeconds": 8.467,
+      "stoppedEarly": false
+    },
+    {
+      "n": 1800,
+      "successes": 1800,
+      "outcomes": {
+        "ok": 1800
+      },
+      "httpStatuses": {
+        "200": 1800
+      },
+      "successLatencyMs": {
+        "p50": 25.326,
+        "p95": 28.348,
+        "p99": 29.934
+      },
+      "maxSuccessMs": 46.884,
+      "meanSuccessBytes": 26993.0,
+      "offeredHttpPerSecond": 30.0,
+      "elapsedSeconds": 60.001,
+      "plannedSeconds": 60,
+      "dropped": 0,
+      "maxInflight": 2,
+      "successHttpPerSecond": 30.0,
+      "generatorAndGatewayCpuSeconds": 12.54,
+      "stoppedEarly": false
+    },
+    {
+      "n": 73,
+      "successes": 72,
+      "outcomes": {
+        "ok": 72,
+        "http_429": 1
+      },
+      "httpStatuses": {
+        "200": 72,
+        "429": 1
+      },
+      "successLatencyMs": {
+        "p50": 33.456,
+        "p95": 94.216,
+        "p99": 133.731
+      },
+      "maxSuccessMs": 133.731,
+      "meanSuccessBytes": 27141.7,
+      "offeredHttpPerSecond": 45.0,
+      "elapsedSeconds": 1.712,
+      "plannedSeconds": 60,
+      "dropped": 0,
+      "maxInflight": 5,
+      "successHttpPerSecond": 42.047,
+      "generatorAndGatewayCpuSeconds": 0.575,
+      "stoppedEarly": true
+    }
+  ],
+  "invalidAssertionStatus": 403,
+  "finishedAt": "2026-09-20T20:51:27.414689+00:00"
+}

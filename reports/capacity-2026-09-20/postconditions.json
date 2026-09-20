@@ -1,0 +1,33 @@
+{
+  "at": "2026-09-20T21:19:08.384796+00:00",
+  "walletIntervalEdge": {
+    "windowSeconds": 27,
+    "requests": 770,
+    "statusCounts": {
+      "200": 762,
+      "503": 8
+    },
+    "http503Rate": 0.01038961038961039,
+    "noUpstream503": 8,
+    "requestP95Ms": 3.0,
+    "upstreamP95Ms": 3.0
+  },
+  "nodeAfterExperiments": {
+    "at": 1789939148.3847833,
+    "head": 68255647,
+    "public_head": 68255643,
+    "lag_blocks": 0,
+    "syncing": false,
+    "memory_available_pct": 58.50053315291891,
+    "memory_available_gib": 53.650211334228516,
+    "disk_free_pct": 63.66217172760741,
+    "tunnel_ready": true,
+    "cpu_busy_pct": null,
+    "iowait_pct": null,
+    "disk_util_pct": null,
+    "disk_await_ms": null,
+    "swapout_bytes_sec": null,
+    "nitro_restarted": false,
+    "sample_seconds": 0.1854834210826084
+  }
+}

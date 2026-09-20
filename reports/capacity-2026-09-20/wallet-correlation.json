@@ -1,0 +1,90 @@
+{
+  "intervalUTC": [
+    "2026-09-20T21:14:56Z",
+    "2026-09-20T21:15:23Z"
+  ],
+  "failovers": [
+    {
+      "time": "2026-09-20T21:15:14+00:00",
+      "providerIndex": 1,
+      "reason": "http_503"
+    }
+  ],
+  "walletRequests": [
+    {
+      "time": "2026-09-20T21:14:59+00:00",
+      "service": "read-api",
+      "route": "wallet-assets",
+      "status": 200,
+      "reason": null,
+      "durationMs": 1600,
+      "gate": "provider",
+      "admitted": true
+    },
+    {
+      "time": "2026-09-20T21:15:03+00:00",
+      "service": "read-api",
+      "route": "wallet-assets",
+      "status": 200,
+      "reason": null,
+      "durationMs": 1677,
+      "gate": "provider",
+      "admitted": true
+    },
+    {
+      "time": "2026-09-20T21:15:07+00:00",
+      "service": "read-api",
+      "route": "wallet-assets",
+      "status": 200,
+      "reason": null,
+      "durationMs": 1662,
+      "gate": "provider",
+      "admitted": true
+    },
+    {
+      "time": "2026-09-20T21:15:11+00:00",
+      "service": "read-api",
+      "route": "wallet-assets",
+      "status": 200,
+      "reason": null,
+      "durationMs": 1576,
+      "gate": "provider",
+      "admitted": true
+    },
+    {
+      "time": "2026-09-20T21:15:17+00:00",
+      "service": "read-api",
+      "route": "wallet-assets",
+      "status": 429,
+      "reason": "read_capacity_busy",
+      "durationMs": 0,
+      "gate": "provider",
+      "admitted": false
+    },
+    {
+      "time": "2026-09-20T21:15:21+00:00",
+      "service": "read-api",
+      "route": "wallet-assets",
+      "status": 200,
+      "reason": null,
+      "durationMs": 7904,
+      "gate": "provider",
+      "admitted": true
+    }
+  ],
+  "postconditions": {
+    "at": "2026-09-20T21:17:42.469506+00:00",
+    "readerStatus": "ok",
+    "mode": "local_read_only",
+    "busy": false,
+    "storedBusy": false,
+    "units": {
+      "domino-read.service": "active",
+      "domino-public-current.service": "active",
+      "domino-public-history.service": "active",
+      "domino-public-accounting.service": "active",
+      "domino-gateway.service": "active"
+    },
+    "gatewayUnitVerification": "Actual production unit domino-gateway.service confirmed active by systemctl list-units after the reader health probe."
+  }
+}

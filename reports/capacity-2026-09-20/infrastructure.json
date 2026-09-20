@@ -1,0 +1,1077 @@
+{
+  "schemaVersion": 1,
+  "publicDataCapacity": {
+      "observedUTC": "2026-09-20T20:47:28.609504+00:00",
+      "postgres": {
+        "entityStatus": {
+          "rows": [
+            {
+              "kind": "pool",
+              "total": 1,
+              "leased": 0,
+              "status": "pending",
+              "with_payload": 0
+            },
+            {
+              "kind": "pool",
+              "total": 2103,
+              "leased": 1,
+              "status": "ready",
+              "with_payload": 2103
+            },
+            {
+              "kind": "token",
+              "total": 1342,
+              "leased": 0,
+              "status": "ready",
+              "with_payload": 1342
+            }
+          ],
+          "section": "entityStatus"
+        },
+        "demand": {
+          "rows": [
+            {
+              "kind": "pool",
+              "total": 2104,
+              "due_unleased": 1953,
+              "ever_explicit": 38,
+              "hot_60_seconds": 6,
+              "pending_explicit": 0,
+              "requested_1_hour": 6,
+              "discovery_requested": 0,
+              "requested_5_minutes": 6,
+              "pending_dependencies": 1
+            },
+            {
+              "kind": "token",
+              "total": 1342,
+              "due_unleased": 1031,
+              "ever_explicit": 5,
+              "hot_60_seconds": 0,
+              "pending_explicit": 0,
+              "requested_1_hour": 0,
+              "discovery_requested": 5,
+              "requested_5_minutes": 0,
+              "pending_dependencies": 0
+            }
+          ],
+          "section": "demand"
+        },
+        "freshnessSeconds": {
+          "rows": [
+            {
+              "hot": false,
+              "max": 1090.630829,
+              "min": 1.630829,
+              "p50": 585.630829,
+              "p95": 1039.8308289999998,
+              "kind": "pool",
+              "payloads": 2097
+            },
+            {
+              "hot": true,
+              "max": 6.630829,
+              "min": 1.630829,
+              "p50": 5.130829,
+              "p95": 6.630829,
+              "kind": "pool",
+              "payloads": 6
+            },
+            {
+              "hot": false,
+              "max": 1295.630829,
+              "min": 0.630829,
+              "p50": 650.630829,
+              "p95": 1227.530829,
+              "kind": "token",
+              "payloads": 1342
+            }
+          ],
+          "section": "freshnessSeconds",
+          "ageDefinition": "transaction_now_epoch_minus_observed_at"
+        },
+        "historyJobs": {
+          "rows": [
+            {
+              "total": 449,
+              "in_progress": 0,
+              "due_unleased": 447,
+              "window_seconds": 86400,
+              "never_completed": 6,
+              "with_last_error": 0,
+              "completed_before": 443,
+              "cycle_target_pinned": 7,
+              "newest_completed_at": "2026-09-20T20:47:18.408603+00:00",
+              "oldest_completed_at": "2026-09-20T20:09:29.033304+00:00",
+              "pending_never_completed": 6
+            },
+            {
+              "total": 1,
+              "in_progress": 0,
+              "due_unleased": 1,
+              "window_seconds": 604800,
+              "never_completed": 1,
+              "with_last_error": 0,
+              "completed_before": 0,
+              "cycle_target_pinned": 1,
+              "newest_completed_at": null,
+              "oldest_completed_at": null,
+              "pending_never_completed": 1
+            }
+          ],
+          "section": "historyJobs"
+        },
+        "catalogueUniquePools": {
+          "count": 146797,
+          "section": "catalogueUniquePools",
+          "publicLinkedPools": 3608,
+          "historyCoveragePools": 449,
+          "publicTokenPoolLinks": 5711
+        }
+      },
+      "collectorJournal": {
+        "windowStartUTC": "2026-09-20T20:42:28.609504+00:00",
+        "windowEndUTC": "2026-09-20T20:47:28.609504+00:00",
+        "windowSeconds": 300,
+        "lanes": {
+          "current": {
+            "tickCount": 155,
+            "topLevelRetries": 0,
+            "statuses": {},
+            "entityOutcomes": {
+              "pool:published": 620,
+              "token:published": 310
+            },
+            "reasons": {},
+            "rpcLogicalItems": null,
+            "firstJournalMicros": 1789936948965392,
+            "lastJournalMicros": 1789937246747438,
+            "durationMs": {
+              "count": 155,
+              "min": 1220,
+              "p50": 1379,
+              "p95": 3892.9999999999986,
+              "max": 5555,
+              "mean": 1732.3677419354838
+            },
+            "busyDurationMs": {
+              "count": 155,
+              "min": 1220,
+              "p50": 1379,
+              "p95": 3892.9999999999986,
+              "max": 5555,
+              "mean": 1732.3677419354838
+            },
+            "uniquePoolsTouched": 466,
+            "poolAttemptsPerTick": {
+              "count": 155,
+              "min": 4,
+              "p50": 4,
+              "p95": 4,
+              "max": 4,
+              "mean": 4
+            },
+            "tokenAttemptsPerTick": {
+              "count": 155,
+              "min": 2,
+              "p50": 2,
+              "p95": 2,
+              "max": 2,
+              "mean": 2
+            },
+            "fullFourPoolTicks": 155,
+            "observedPoolAttemptsPerSecond": 2.066666666666667,
+            "observedTokenAttemptsPerSecond": 1.0333333333333334
+          },
+          "accounting": {
+            "tickCount": 38,
+            "topLevelRetries": 0,
+            "statuses": {
+              "fee_chunk_in_progress": 1,
+              "fee_chunk_reconciled": 13,
+              "pending": 17,
+              "position_chunk_reconciled": 7
+            },
+            "entityOutcomes": {},
+            "reasons": {
+              "position_accounting_adapter_required": 4,
+              "reconciled_position_tail_required": 11,
+              "fee_accounting_adapter_required": 2
+            },
+            "rpcLogicalItems": null,
+            "firstJournalMicros": 1789936952411880,
+            "lastJournalMicros": 1789937243629384,
+            "durationMs": {
+              "count": 38,
+              "min": 79,
+              "p50": 3586,
+              "p95": 8574.65,
+              "max": 8634,
+              "mean": 2800.5526315789475
+            },
+            "busyDurationMs": {
+              "count": 38,
+              "min": 79,
+              "p50": 3586,
+              "p95": 8574.65,
+              "max": 8634,
+              "mean": 2800.5526315789475
+            },
+            "uniquePoolsTouched": 38,
+            "poolAttemptsPerTick": null,
+            "tokenAttemptsPerTick": null,
+            "fullFourPoolTicks": 0,
+            "observedPoolAttemptsPerSecond": null,
+            "observedTokenAttemptsPerSecond": null
+          },
+          "history": {
+            "tickCount": 47,
+            "topLevelRetries": 0,
+            "statuses": {
+              "current": 30,
+              "indexed": 17
+            },
+            "entityOutcomes": {},
+            "reasons": {},
+            "rpcLogicalItems": 8573,
+            "firstJournalMicros": 1789936953131443,
+            "lastJournalMicros": 1789937245295517,
+            "durationMs": {
+              "count": 47,
+              "min": 574,
+              "p50": 972,
+              "p95": 2459.2,
+              "max": 3256,
+              "mean": 1340.7659574468084
+            },
+            "busyDurationMs": {
+              "count": 47,
+              "min": 574,
+              "p50": 972,
+              "p95": 2459.2,
+              "max": 3256,
+              "mean": 1340.7659574468084
+            },
+            "uniquePoolsTouched": 31,
+            "poolAttemptsPerTick": null,
+            "tokenAttemptsPerTick": null,
+            "fullFourPoolTicks": 0,
+            "observedPoolAttemptsPerSecond": null,
+            "observedTokenAttemptsPerSecond": null
+          }
+        },
+        "notes": [
+          "Only aggregate collector JSON tick messages retained; raw entity IDs and logs omitted.",
+          "rpcLogicalItems sums emitted rpcCalls fields only for history. Current/accounting omit that field, so their values are null, not zero. Logical items are not HTTP requests.",
+          "Observed rates include idle ticks and current background demand; they are not a load-test capacity."
+        ],
+        "context": "No node load test was running. Root reports stored-SQL gateway fixture benchmark started around 20:45 UTC; six pools were active in the observed demand snapshot."
+      },
+      "nitroAndEdgeRpcRates": {
+        "observedUTC": "2026-09-20T20:49:01.913120+00:00",
+        "windowSeconds": 300,
+        "queries": {
+          "nitroRpcLogicalItemsPerSecond": {
+            "promql": "rate(rpc_requests{job=\"nitro\"}[5m])",
+            "results": [
+              {
+                "labels": {
+                  "instance": "robinhood-nitro",
+                  "job": "nitro"
+                },
+                "value": [
+                  1789937341.913,
+                  "90.37192982456139"
+                ]
+              }
+            ]
+          },
+          "nitroRpcSuccessPerSecond": {
+            "promql": "rate(rpc_success{job=\"nitro\"}[5m])",
+            "results": [
+              {
+                "labels": {
+                  "instance": "robinhood-nitro",
+                  "job": "nitro"
+                },
+                "value": [
+                  1789937341.913,
+                  "89.72280701754384"
+                ]
+              }
+            ]
+          },
+          "nitroRpcFailurePerSecond": {
+            "promql": "rate(rpc_failure{job=\"nitro\"}[5m])",
+            "results": [
+              {
+                "labels": {
+                  "instance": "robinhood-nitro",
+                  "job": "nitro"
+                },
+                "value": [
+                  1789937341.913,
+                  "0.6491228070175438"
+                ]
+              }
+            ]
+          },
+          "nitroDurationObservedItemsPerSecond": {
+            "promql": "rate(rpc_duration_all_count{job=\"nitro\"}[5m])",
+            "results": [
+              {
+                "labels": {
+                  "instance": "robinhood-nitro",
+                  "job": "nitro"
+                },
+                "value": [
+                  1789937341.913,
+                  "90.37192982456139"
+                ]
+              }
+            ]
+          },
+          "nitroMethodsItemsPerSecond": {
+            "promql": "rate(label_replace({__name__=~\"rpc_duration_.*_(success|failure)_count\",job=\"nitro\"},\"rpc_metric\",\"$1\",\"__name__\",\"(.*)\")[5m:15s])",
+            "results": [
+              {
+                "labels": {
+                  "instance": "robinhood-nitro",
+                  "job": "nitro",
+                  "rpc_metric": "rpc_duration_eth_blockNumber_success_count"
+                },
+                "value": [
+                  1789937341.913,
+                  "0.03157894736842105"
+                ]
+              },
+              {
+                "labels": {
+                  "instance": "robinhood-nitro",
+                  "job": "nitro",
+                  "rpc_metric": "rpc_duration_eth_chainId_success_count"
+                },
+                "value": [
+                  1789937341.913,
+                  "7.799999999999999"
+                ]
+              },
+              {
+                "labels": {
+                  "instance": "robinhood-nitro",
+                  "job": "nitro",
+                  "rpc_metric": "rpc_duration_eth_syncing_success_count"
+                },
+                "value": [
+                  1789937341.913,
+                  "0.03157894736842105"
+                ]
+              },
+              {
+                "labels": {
+                  "instance": "robinhood-nitro",
+                  "job": "nitro",
+                  "rpc_metric": "rpc_duration_eth_getBlockByNumber_success_count"
+                },
+                "value": [
+                  1789937341.913,
+                  "41.017543859649116"
+                ]
+              },
+              {
+                "labels": {
+                  "instance": "robinhood-nitro",
+                  "job": "nitro",
+                  "rpc_metric": "rpc_duration_eth_getLogs_success_count"
+                },
+                "value": [
+                  1789937341.913,
+                  "0.29473684210526313"
+                ]
+              },
+              {
+                "labels": {
+                  "instance": "robinhood-nitro",
+                  "job": "nitro",
+                  "rpc_metric": "rpc_duration_eth_call_success_count"
+                },
+                "value": [
+                  1789937341.913,
+                  "10.396491228070174"
+                ]
+              },
+              {
+                "labels": {
+                  "instance": "robinhood-nitro",
+                  "job": "nitro",
+                  "rpc_metric": "rpc_duration_eth_getCode_success_count"
+                },
+                "value": [
+                  1789937341.913,
+                  "10.51578947368421"
+                ]
+              },
+              {
+                "labels": {
+                  "instance": "robinhood-nitro",
+                  "job": "nitro",
+                  "rpc_metric": "rpc_duration_eth_getBalance_success_count"
+                },
+                "value": [
+                  1789937341.913,
+                  "0.07719298245614034"
+                ]
+              },
+              {
+                "labels": {
+                  "instance": "robinhood-nitro",
+                  "job": "nitro",
+                  "rpc_metric": "rpc_duration_eth_call_failure_count"
+                },
+                "value": [
+                  1789937341.913,
+                  "0.6210526315789473"
+                ]
+              },
+              {
+                "labels": {
+                  "instance": "robinhood-nitro",
+                  "job": "nitro",
+                  "rpc_metric": "rpc_duration_eth_getCode_failure_count"
+                },
+                "value": [
+                  1789937341.913,
+                  "0"
+                ]
+              },
+              {
+                "labels": {
+                  "instance": "robinhood-nitro",
+                  "job": "nitro",
+                  "rpc_metric": "rpc_duration_eth_gasPrice_success_count"
+                },
+                "value": [
+                  1789937341.913,
+                  "0.003508771929824561"
+                ]
+              },
+              {
+                "labels": {
+                  "instance": "robinhood-nitro",
+                  "job": "nitro",
+                  "rpc_metric": "rpc_duration_eth_getStorageAt_success_count"
+                },
+                "value": [
+                  1789937341.913,
+                  "15.964912280701753"
+                ]
+              },
+              {
+                "labels": {
+                  "instance": "robinhood-nitro",
+                  "job": "nitro",
+                  "rpc_metric": "rpc_duration_eth_getTransactionCount_success_count"
+                },
+                "value": [
+                  1789937341.913,
+                  "0.07719298245614034"
+                ]
+              },
+              {
+                "labels": {
+                  "instance": "robinhood-nitro",
+                  "job": "nitro",
+                  "rpc_metric": "rpc_duration_eth_getTransactionReceipt_success_count"
+                },
+                "value": [
+                  1789937341.913,
+                  "4.526315789473684"
+                ]
+              }
+            ]
+          },
+          "edgeAllHttpRequestsPerSecond": {
+            "promql": "rate(nginx_http_requests_total[5m])",
+            "results": [
+              {
+                "labels": {
+                  "instance": "robinhood-edge",
+                  "job": "nginx"
+                },
+                "value": [
+                  1789937341.913,
+                  "24.477364753436866"
+                ]
+              }
+            ]
+          }
+        },
+        "attribution": "All observed Nitro RPC clients and edge HTTP, not caller-specific collector counters. No node load test had started; root reports stored-SQL gateway benchmark began around20:45UTC. Six pools were hot at20:47:28UTC."
+      },
+      "collectorConfiguration": {
+        "source": "backend/manage_public_data.py plus active ops release",
+        "poolLimitPerTick": 4,
+        "tokenLimitPerTick": 2,
+        "rpcLogicalItemBudgetPerTick": 256,
+        "perEntityDeadlineSeconds": 12,
+        "currentPeriodSeconds": 0.2,
+        "historyPeriodSeconds": 5,
+        "historyDeadlineSeconds": 20,
+        "activePoolDelaySeconds": 5,
+        "inactivePoolDelaySeconds": 120,
+        "tokenDelaySeconds": 300,
+        "note": "Period sleeps after work; tick duration must be added. Scheduling reserves background progress and metadata consumes time/provider budget."
+      },
+      "illustrativeDemandModel": {
+        "observedPoolPublicationsPerSecond": 2.066666666666667,
+        "observedMixedTickMeanSeconds": 1.7323677419354837,
+        "observedMixedTickP50Seconds": 1.379,
+        "oneThousandPoolsRefreshEveryFiveSeconds": {
+          "requiredPublicationsPerSecond": 200,
+          "ratioToObservedPublicationsRate": 96.77419354838709
+        },
+        "oneThousandPoolsSinglePassAtObservedRateSeconds": 483.87096774193543,
+        "limitations": [
+          "The 4-pool/2-token mixed ticks do not isolate per-pool RPC cost or latency.",
+          "Single-pass figure assumes the observed throughput stays constant and is entirely available for those pools; fairness, retries, token work and repeat hot refreshes change actual completion time.",
+          "443 history jobs completed at some earlier point, not proof that 443 current windows are fully fresh.",
+          "Entity and history table growth rates were not measured from equal-semantic repeated snapshots; blockchain timestamps are not ingestion timestamps.",
+          "Nitro request metrics are all clients, not a caller-specific B_collectors value. Do not assign all 90.37 logical requests/s to these collectors."
+        ]
+      }
+    },
+  "title": "Domino capacity study — infrastructure and passive telemetry",
+  "scope": {
+    "readOnly": true,
+    "remoteMutations": false,
+    "rpcCalls": 0,
+    "alchemyCalls": 0,
+    "loadTests": 0,
+    "healthGetCount": 1,
+    "healthEndpoint": "http://127.0.0.1:8876/health",
+    "sql": "Read-only PostgreSQL transactions; configuration, public catalogue, aggregate schema/database sizes only",
+    "secretsIncluded": false
+  },
+  "observationWindowUTC": {
+    "start": "2026-09-20T20:32:50.516Z",
+    "end": "2026-09-20T20:49:01.913120+00:00"
+  },
+  "host": {
+    "name": "clawber",
+    "cpu": {
+      "model": "AMD Ryzen 7 9800X3D",
+      "physicalCores": 8,
+      "logicalThreads": 16,
+      "sockets": 1
+    },
+    "memory": {
+      "totalBytes": 98471710720,
+      "availableBytes": 57813868544,
+      "note": "Available memory includes reclaimable cache; low MemFree alone does not indicate pressure."
+    },
+    "loadAverage": [
+      0.29,
+      0.28,
+      0.42
+    ],
+    "uptimeSeconds": 779464.76,
+    "disks": [
+      {
+        "role": "Nitro data",
+        "device": "/dev/nvme0n1",
+        "model": "KINGSTON SNVS2000G",
+        "filesystem": "ext4",
+        "mountpoint": "/srv/robinhood-rpc/data",
+        "sizeBytes": 1967847137280,
+        "usedBytes": 695198085120,
+        "availableBytes": 1252628287488,
+        "usedPercent": 36,
+        "pcie": {
+          "currentSpeedGTs": 8,
+          "currentWidth": 1,
+          "controllerMaximumSpeedGTs": 8,
+          "controllerMaximumWidth": 4,
+          "observedUTC": "2026-09-20T20:38:03Z",
+          "note": "Current negotiated link remains PCIe 3.0 x1; no retraining or hardware change performed."
+        }
+      },
+      {
+        "role": "System",
+        "device": "/dev/nvme1n1p3",
+        "model": "WDS500G3XHC-00SJG0",
+        "filesystem": "ext4",
+        "mountpoint": "/",
+        "sizeBytes": 479480770560,
+        "usedBytes": 209038061568,
+        "availableBytes": 246011150336,
+        "usedPercent": 46
+      },
+      {
+        "role": "Existing external storage",
+        "device": "/dev/sda1",
+        "model": "Extreme 55AE",
+        "filesystem": "ext4",
+        "mountpoint": "/mnt/narrative-ssd",
+        "sizeBytes": 1967814615040,
+        "usedBytes": 396663402496,
+        "availableBytes": 1471116222464,
+        "usedPercent": 22
+      }
+    ],
+    "network": {
+      "physicalInterface": "enp14s0f0",
+      "negotiatedLinkMbps": 10000,
+      "wanCapacityMeasured": false,
+      "rateMetricsAvailable": false,
+      "limitation": "Prometheus node_network_* exposes eth0/lo in exporter container, not physical host NIC. Neither those series nor LAN negotiated rate measures WAN capacity.",
+      "hostCounters": {
+        "receiveBytes": 5979780358515,
+        "transmitBytes": 2020196953689,
+        "receiveErrors": 0,
+        "receiveDrops": 153687,
+        "transmitErrors": 0,
+        "transmitDrops": 0,
+        "note": "Lifetime totals, not rates; no conclusion about current packet loss."
+      }
+    }
+  },
+  "nitro": {
+    "container": "robinhood-nitro",
+    "image": "offchainlabs/nitro-node:v3.11.4-7d5ac27",
+    "imageDigest": "sha256:460918143cfdccc3aa984db8ca0c0d83b6054cec47ff10142bde4052054408ed",
+    "dataDirectory": "/srv/robinhood-rpc/data/nitro",
+    "cpuQuota": null,
+    "memoryQuotaBytes": null,
+    "pidsQuota": null,
+    "nofileSoft": 1048576,
+    "nofileHard": 1048576,
+    "trieDirtyCacheMiB": 4096,
+    "httpApis": [
+      "net",
+      "web3",
+      "eth"
+    ],
+    "websocketApis": [
+      "net",
+      "web3",
+      "eth"
+    ],
+    "directHttpEndpoint": "http://127.0.0.1:8547/",
+    "directWebsocketEndpoint": "ws://127.0.0.1:8548/",
+    "directEndpointScope": "Host loopback only; bypasses nginx rate/auth/method boundary. Test harness must impose approved read-only methods, deadlines, concurrency and stop conditions.",
+    "snapshot": {
+      "cpuPercentOfOneCore": 11.21,
+      "memoryGiB": 28.97,
+      "pids": 123,
+      "note": "docker stats instantaneous sample; CPU percent uses one logical CPU as 100%."
+    },
+    "historicalCapabilities": {
+      "source": "Earlier bounded authorized probes, not repeated in this audit",
+      "oldBlock": 59582156,
+      "oldHeaderAndLogsLocal": true,
+      "oldStateGetCode": "missing_trie_node_state_not_available",
+      "archiveStateAvailable": false
+    }
+  },
+  "edge": {
+    "workerProcesses": "auto",
+    "workerConnections": 8192,
+    "rateLimitPerSourceIpRps": 25,
+    "burst": 50,
+    "nodelay": true,
+    "connectionLimits": [
+      20,
+      5
+    ],
+    "clientMaxBodyMiB": 5,
+    "proxyConnectTimeoutSeconds": 5,
+    "httpReadTimeoutSeconds": 60,
+    "websocketReadTimeoutSeconds": 3600,
+    "note": "These limits are application policy, not measured Nitro capacity."
+  },
+  "baseline": {
+    "observedUTC": "2026-09-20T20:36:53.773Z",
+    "windowSeconds": 300,
+    "cpuUsedPercent": 3.7914473684264705,
+    "cpuIowaitPercent": 0.2127192982454505,
+    "nitroDisk": {
+      "readBytesPerSecond": 582393.7122807017,
+      "writeBytesPerSecond": 2740971.340350877,
+      "busyPercent": 2.7007017543860057,
+      "meanReadMilliseconds": 0.3370684157781807,
+      "meanWriteMilliseconds": 1.1938705705327972
+    },
+    "interpretation": "Light load in this observed window; not evidence of sustainable capacity during load or compaction."
+  },
+  "prometheus": {
+    "endpoint": "http://127.0.0.1:39090",
+    "retentionTime": "30d",
+    "retentionSize": "20GiB",
+    "runtimeStartUTC": "2026-09-18T17:39:15.829245719Z",
+    "targetsUp": [
+      "nitro",
+      "node",
+      "nginx",
+      "prometheus"
+    ],
+    "storageGrowth": {
+      "metric": "node_filesystem_avail_bytes",
+      "mountpoint": "/srv/robinhood-rpc/data",
+      "last24Hours": {
+        "startUTC": "2026-09-19T20:36:53.773Z",
+        "endUTC": "2026-09-20T20:36:53.773Z",
+        "samples": 289,
+        "stepSeconds": 300,
+        "firstAvailableBytes": 1258963124224,
+        "lastAvailableBytes": 1252579348480,
+        "usedGrowthBytes": 6383775744
+      },
+      "requestedSevenDays": {
+        "actualFirstUTC": "2026-09-18T03:36:53.773Z",
+        "actualLastUTC": "2026-09-20T20:36:53.773Z",
+        "samples": 131,
+        "stepSeconds": 1800,
+        "observedWindowSeconds": 234000,
+        "firstAvailableBytes": 1300761722880,
+        "lastAvailableBytes": 1252579348480,
+        "usedGrowthBytes": 48182374400,
+        "completeSevenDayWindow": false
+      },
+      "limitations": [
+        "Filesystem growth includes all files on that filesystem; not database-only accounting.",
+        "Retention configuration does not imply 7 days of observations exist; oldest returned point is approximately 65 hours before final sample.",
+        "Last-24-hour growth differs materially from longer-window average; no storage exhaustion forecast established."
+      ]
+    }
+  },
+  "vm": {
+    "name": "domino-alpha-01",
+    "vcpus": 4,
+    "virtualCpuModel": "AMD EPYC-Genoa",
+    "memory": {
+      "totalBytes": 8326946816,
+      "availableBytes": 6094376960
+    },
+    "loadAverage": [
+      0.32,
+      0.27,
+      0.27
+    ],
+    "rootDisk": {
+      "sizeBytes": 102888095744,
+      "usedBytes": 11461386240,
+      "availableBytes": 91409932288,
+      "usedPercent": 12
+    },
+    "kernel": {
+      "somaxconn": 4096,
+      "tcpMaxSynBacklog": 512,
+      "ephemeralPorts": [
+        32768,
+        60999
+      ]
+    },
+    "listeners": {
+      "reader": {
+        "host": "127.0.0.1",
+        "port": 8876,
+        "backlog": 2048
+      },
+      "gateway": {
+        "host": "127.0.0.1",
+        "port": 8878,
+        "backlog": 2048
+      },
+      "devReader": {
+        "host": "127.0.0.1",
+        "port": 8890,
+        "backlog": 2048
+      },
+      "devGateway": {
+        "host": "127.0.0.1",
+        "port": 8891,
+        "backlog": 2048
+      }
+    },
+    "releases": {
+      "reader": "1b864e2a0253a9f7ce0f1a5380894ca2057dc839",
+      "development": "1b864e2a0253a9f7ce0f1a5380894ca2057dc839",
+      "publicData": "16587afac43000dd529545e44fc7a5798f6aa528"
+    },
+    "production": {
+      "readerMemoryCurrentBytes": 72749056,
+      "gatewayMemoryCurrentBytes": 65069056,
+      "cpuQuota": null,
+      "memoryQuotaBytes": null,
+      "tasksMax": 9483,
+      "nofile": 524288,
+      "readBudgetSeconds": 15,
+      "publicDataEnabled": true,
+      "uvicorn": {
+        "readerWorkers": 1,
+        "gatewayWorkers": 1,
+        "readerLimitConcurrency": 8,
+        "gatewayLimitConcurrency": 16
+      },
+      "readGate": {
+        "providerCapacity": 1,
+        "providerMinimumStartIntervalSeconds": 1,
+        "readerStoredCapacity": 4,
+        "readerStoredIntervalSeconds": 0,
+        "gatewayStoredCapacityWhenV3Enabled": 4,
+        "gatewayStoredIntervalSecondsWhenV3Enabled": 0,
+        "note": "Provider/stored admission limits are distinct from HTTP server concurrency."
+      },
+      "gatewayClientBudget": {
+        "perMinute": 30,
+        "burst": 5,
+        "clientRecordCapacity": 10000
+      },
+      "gatewayConfiguredReads": {
+        "v1": [
+          "token",
+          "pool-market",
+          "pools",
+          "catalogue",
+          "nft-positions",
+          "wallet-assets",
+          "pool-activity"
+        ],
+        "v2": [
+          "pool-market"
+        ],
+        "v3": [
+          "overview",
+          "history",
+          "search"
+        ],
+        "source": "Allowlisted live process environment, not the reader /health contract."
+      }
+    },
+    "collectors": {
+      "services": [
+        "domino-public-current.service",
+        "domino-public-history.service",
+        "domino-public-accounting.service"
+      ],
+      "eachCpuQuotaCores": 1,
+      "eachMemoryMaxBytes": 536870912,
+      "eachTasksMax": 32,
+      "nofile": 524288,
+      "memoryCurrentBytes": {
+        "current": 48201728,
+        "history": 48685056,
+        "accounting": 46936064
+      }
+    },
+    "development": {
+      "slice": "dominodev.slice",
+      "sharedCpuQuotaCores": 0.5,
+      "sharedMemoryHighBytes": 805306368,
+      "sharedMemoryMaxBytes": 1073741824,
+      "sharedTasksMax": 64,
+      "readerMemoryMaxBytes": 536870912,
+      "gatewayMemoryMaxBytes": 201326592,
+      "eachServiceTasksMax": 32,
+      "eachServiceNofile": 512,
+      "startsPerMinute": 6,
+      "minimumStartIntervalSeconds": 2,
+      "rpcItemsPerMinute": 120,
+      "rpcItemsPerOperation": 64,
+      "operationDeadlineSeconds": 15,
+      "restartCooldownSeconds": 60,
+      "leaseExpiresUTC": "2026-09-27T12:28:36Z",
+      "oomEvents": 0,
+      "throttlingCounters": "Slice counters are lifetime totals; they do not establish current throttling."
+    },
+    "postgresql": {
+      "settings": {
+        "rows": [
+          {
+            "name": "effective_cache_size",
+            "unit": "8kB",
+            "setting": "524288"
+          },
+          {
+            "name": "maintenance_work_mem",
+            "unit": "kB",
+            "setting": "131072"
+          },
+          {
+            "name": "max_connections",
+            "unit": null,
+            "setting": "40"
+          },
+          {
+            "name": "max_parallel_workers",
+            "unit": null,
+            "setting": "8"
+          },
+          {
+            "name": "max_worker_processes",
+            "unit": null,
+            "setting": "8"
+          },
+          {
+            "name": "shared_buffers",
+            "unit": "8kB",
+            "setting": "131072"
+          },
+          {
+            "name": "work_mem",
+            "unit": "kB",
+            "setting": "8192"
+          }
+        ],
+        "section": "settings"
+      },
+      "databaseSize": {
+        "bytes": 3145432087,
+        "section": "databaseSize",
+        "database": "domino_catalogue"
+      },
+      "schemaSizes": {
+        "rows": [
+          {
+            "bytes": 185188352,
+            "tables": 4,
+            "schemaname": "domino_catalogue"
+          },
+          {
+            "bytes": 42696704,
+            "tables": 8,
+            "schemaname": "domino_public"
+          }
+        ],
+        "section": "schemaSizes"
+      },
+      "catalogueState": {
+        "rows": [
+          {
+            "revision": 6904,
+            "next_block": 68233442,
+            "start_block": 58736592,
+            "schema_version": 1
+          }
+        ],
+        "section": "catalogueState"
+      },
+      "catalogueCounts": {
+        "hints": 10,
+        "events": 146753,
+        "section": "catalogueCounts"
+      },
+      "samplePools": {
+        "poolIds": [
+          "0x00003bad12a24ea7bd5daeec9033ce3f28ea491a8ce8a4b4fc09b95e57efd741",
+          "0x0000482ca896d0c93ed68066c959b2781d7ebfeee870501d7a7f3f216ed99818",
+          "0x0000b006c7d8c9ca58f918462646a9ca12af741c1cc982447776a802c42b2a77",
+          "0x000213930d7fbbfe4b54a79dc7611e788da6b15a7fbbe09a18478ad988496b75",
+          "0x00023f6d1391a793d7fd4664ca9edcaed210964e5517925de61494b0c13a144b",
+          "0x00025f0a3c83320667934e27edb18add268c0c6ef17d9a0fdeea61bd14e71b58",
+          "0x0002cafe94d266e8523f1bf3f7e0b9cb3af4b5c70ff853737fbc8a40222a71c1",
+          "0x00030e68838ebbcb3295d1f9cd9afb17169f2cbfde545084c7cedabbe510d454",
+          "0x000344fb951128f9f29862872476316437a38d86ff269b540dd5a5973ae5afe1",
+          "0x00040d11b5c0f136c047a474d3be610266c61c92f28183d320536eb8394520db",
+          "0x00047a8fd31fd418ff8fc7b2b6b18d8dff23900f38bc25f8e90b8bca901a760a",
+          "0x000482ba6d4e95675f10b6f17c5a721b10c8c87592b465963a2417af80b1383b",
+          "0x00063aa996f530db3a8f8b895d2689e1f011ad6a9876cf13fd18b18a7588f48a",
+          "0x00069062f9d40e2d0e6766eca2a5c30c69aa4cce9559231a292ac7b1dddf172b",
+          "0x00071eaa0ebc36f5066df72d4c9fc57d3fb523175a082f9c597a144142e01e6b",
+          "0x0007bd6884738d2e6d99619994fa72c35aab576e920d6df563955d40be439357",
+          "0x0007d08655680732ab3d80bc7e2176d7c96d5ecc6f05754e0c09ce5457b82d9e",
+          "0x0007dfb75dc48c13207bc6b5120d2b7d90530d92baf72b15d05c42d174ff0fc4",
+          "0x00086a3b97b1e62ff69b1211bae5e3cf65d5cb46a9413623945389ce10342507",
+          "0x00090cd181c6d60c877940fc79fadda4a77cec6c51e6658500c34938c5637ab5",
+          "0x00096d694cf2f0bb562ded77500d82b3ed86b1e6ef6c85dc15109ed726e580d7",
+          "0x0009f0b753b605d25297a5a90df93965bc8900ac2e3e2dd1ca44d8abbfaa4325",
+          "0x000a35bf2fdec79507a7338f8e4b4029369d2f7c0270c9ac51ab9219a8aaeb4b",
+          "0x000a6af8252faac819dae38eb920ce8fa39a93d6a632686fb25f2f32bd8503da",
+          "0x000af342d6e6ddd397ac8d95b9eb11368cde4b7031923f7f0004c55243a596e2",
+          "0x000c4dfb9bb7a2a704c6bc060035cf8dd7e5c96f29a335799400e185a5c2879a",
+          "0x000d08a2291b6152bfd5b275bff403fd87dc4fda9be63cc6e8bfa53ca00cfc84",
+          "0x000d21af0a5b73651e79a799412f20b4b8612b6649913063d684dc48bc8f0379",
+          "0x000d7d272004541b642ebc701ff97ae10aebd5e528be3e7badb80ced0230e834",
+          "0x000df8c6508ab1f59ad80ceebdb8232e50409697812f8496ab01700d5de0e29e",
+          "0x000e3c49a9c687ffe53a3cca682d96756e1438161e83e98e2683bce0eb1876fb",
+          "0x000e47d0dc8ddaa69644a9dda2ace2118705bfeca1dba29ae7240f82a4473f29",
+          "0x001093daf94f1ca67ee8fd503da3a999c9269f50df81c455bb8bd18ad658f85d",
+          "0x0011c63dfa64cda29e637c57756c56fef1f626ef8e9f568074b9f8724571f3b4",
+          "0x0011fb7e41090865ec2078bbcfbe06e78cc092d8dc37d0af374f4c9db3d83f19",
+          "0x001214618bf5517e4628bfb1fecef8faef97401baa907fab29edde250f585f3f",
+          "0x00124183b4a7fe1eb7b94c284468dfa63ca689e026daebf12a1ace1181a71104",
+          "0x0012bb2e4548a9c602269431c48d7792e55ff0fe0e39e0e0165fdd326541f909",
+          "0x0013659417f15e26d882e5b52a8d783dfac3219265d5dd937d1dd1391e750e2d",
+          "0x0013c4f06023b9c65f22e085e69d7d00fac793f13afe9db4ff166d495d2b901e",
+          "0x0013ec82c6f41983a1bf8beeba984f9ae7e49558c01abc6d9bd2dff5411f5ff6",
+          "0x001470d1ef92edb2eb2e463d22c9dcbf64d965586de8ba07a53cb1ccee07a089",
+          "0x00150a250b72e8bf03d310ae36cce60a1f15c40ff3ea9c325fa52612f224ae20",
+          "0x001613e639825943e6595da9f63be1233d54d1ba7ac99b84f04fd41fdc063ced",
+          "0x00161938d84aa831809e5da5cec632a8fb4e211c13abced6e796c74f2b974f98",
+          "0x00165dbf9fb2ca25fe06f2b914d7684888eec75d5400722e3ca272cada9bab7c",
+          "0x00169f66395dba961277862acfddd836af362078948c90aa4a9983e5114bc098",
+          "0x0016be0376db2b80ff57f1670bb389a557d15653cf68832f8f86ff9bfcf45709",
+          "0x0016cf014524c077fe583b3152970680bb61171b04a3f3e559e0ce941f780515",
+          "0x0017059743fc3ea594650ad2366bb594c78f55a1d391531ca83fb4844d0f39ff",
+          "0x001719d29e6297c7a939d6f894e0e32b9d7254411b3277d06242d1053bcfc80d",
+          "0x0017bf631f02618d3b552d0ddd01fc6c0486d202b4d2a4d2e0e3f4940874ebb1",
+          "0x0017e522f431108f82b9e68e6bfdbfdb2bef352530a07af4b5b6c90595be3dd6",
+          "0x00180ec4afc47e286ffd58d8585586c4fe7b01d13c616fcdc71d6edae0e1c246",
+          "0x001884989011142c7d216572fe17fb1cd5c7cdb2096a859c85c13c5b132710ad",
+          "0x0019bc338f1f43a0e3a27a42e2b78ead31514739f948eb3bf47acd5957e7330e",
+          "0x001a0bf01848834ab7da3ee2f4bbb315e6f18cf20862e23553eacc527c43a8ca",
+          "0x001a20b5780a8bc3d3cab83c7399bf7cb62a1941d5914aa4db9c27b615d3e74f",
+          "0x001ae7dd908cbc48676d54c89094cab305a371c93bb5234efa0aed05e932c9d1",
+          "0x001b31ca70230b0482b7654e8e1ecea45b37da42b7cb4c78973f716c4aa83b42",
+          "0x001b34078121c4cdd8d013cd39c6def92fb78689642b82208c96bbc4c7dc2c6d",
+          "0x001b4f6c27c925fff6b5a56dfcacbb7c49c63b9587f9430ffe0888fc072d05af",
+          "0x001b5f23aab29ae0e7bebeac53f26c46723fca68258f5d89ee787ca53c46ffa2",
+          "0x001bf08d905a1fe380f1bc3079205ce90849499290ed1eade9b0975812cf8f9e"
+        ],
+        "section": "samplePools",
+        "selection": "up_to_64_deterministic_unique_public_catalogue_pool_ids"
+      },
+      "connectionMetadata": {
+        "socketPath": "/run/postgresql-domino",
+        "port": 8877,
+        "database": "domino_catalogue"
+      },
+      "memoryCurrentBytes": 5260251136,
+      "memoryNote": "systemd cgroup memory includes page cache; not PostgreSQL RSS",
+      "observedUTC": "2026-09-20T20:43:06.268939+00:00"
+    },
+    "readerHealth": {
+      "observedUTC": "2026-09-20T20:41:23.024712+00:00",
+      "status": "ok",
+      "returnedKeys": [
+        "status",
+        "mode",
+        "generation",
+        "readBudgetSeconds",
+        "busy",
+        "storedBusy",
+        "retryAfterSeconds",
+        "storedRetryAfterSeconds",
+        "snapshotRefresh",
+        "snapshotStoreFailures"
+      ],
+      "enabledReadsPublished": false
+    }
+  },
+  "provenance": {
+    "priorStorageAudit": "redacted:private-source/rpc-storage-audit-20260919.json",
+    "codeReferences": [
+      "backend/read_api.py",
+      "backend/read_gateway.py",
+      "backend/bridge_state.py",
+      "backend/dev_read_budget.py"
+    ]
+  },
+  "limitations": [
+    "No RPC, Alchemy or load-test calls performed for this artifact.",
+    "64 public catalogue pool IDs are deterministic lexicographic samples, not a guarantee of liquidity, recent activity or persisted history.",
+    "Database-size aggregate can include schemas besides the two listed; no private tenant table content was read.",
+    "No WAN throughput ceiling, request capacity per second or sustainable user count has been measured by these passive snapshots."
+  ]
+}
