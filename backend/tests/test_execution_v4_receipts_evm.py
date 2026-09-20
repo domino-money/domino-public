@@ -5,7 +5,7 @@ import os
 import unittest
 from eth_abi import encode
 from eth_hash.auto import keccak
-from test_general_compound_receipts_evm import CompoundReceiptEvmTests as Harness, calldata, KEY_TYPE, INIT_TYPE
+from evm_harness import EvmHarness as Harness, calldata, KEY_TYPE, INIT_TYPE
 import execution_models as m
 import general_compound_receipts as g
 import execution_v4 as v

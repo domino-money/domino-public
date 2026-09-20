@@ -139,8 +139,6 @@ jobs:
       - name: Build contract artifacts for backend EVM tests
         working-directory: contracts
         run: node ../scripts/test-contracts.mjs build test/setup/DominoSetup.t.sol
-      - name: Build and qualify the local compound receipt fixture
-        run: node scripts/test-contracts.mjs --match-path test/reference/OfficialDominoCompound.t.sol
       - run: python scripts/export-read-contract.py --check
       - run: python scripts/export-read-v2-contract.py --check
       - run: python scripts/export-read-v3-contract.py --check

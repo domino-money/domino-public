@@ -1,5 +1,7 @@
 # General same-position compound candidate
 
+> **Retired on 20 September 2026.** The implementation this document describes - `DominoVault.sol`, `DominoVaultFactory.sol` and `DominoCompoundEngine.sol` - was removed from the tree; it was never publicly deployed. Its custody semantics live on in `DominoVaultV4`, whose tests inherit this lineage's ([contracts/README.md](../contracts/README.md)). Source links below point at files that no longer exist at HEAD.
+
 This is a new immutable version 3, for independent review. It is not an upgrade of an existing clone, a deployed executor, a signing service, a frontend capability, or a complete #97 performance history. Version 2 custody remains a separate historical implementation.
 
 The #116 version-2 architecture recovered 4,136 runtime bytes before execution. The initial general financial implementation measured 29,653 bytes against the 24,576-byte EIP-170 limit. Version 3 therefore introduces a separately pinned `DominoCompoundEngine`, in addition to the stateless read helper. The engine orchestrates a single closed same-NFT action; assets, source balances, policy, authorization and recovery stay in the vault. The engine performs no delegatecall; the EIP-1167 vault clone delegates only to its immutable implementation. There is no upgrade, configurable engine, engine token allowance, or operator-selected recipient.

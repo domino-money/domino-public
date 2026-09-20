@@ -7,7 +7,7 @@ import tempfile
 import unittest
 from eth_hash.auto import keccak
 import test_execution_v4_receipts_evm as evm
-from test_general_compound_receipts_evm import calldata
+from evm_harness import calldata
 
 ROOT = Path(__file__).resolve().parents[2]
 

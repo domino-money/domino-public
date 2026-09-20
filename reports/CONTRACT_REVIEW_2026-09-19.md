@@ -252,8 +252,10 @@ accounting, so they need receipt gas from Anvil as well as the snapshot delta.
    they are not the originals. H-01 and H-02 are closed
    ([CONTRACT_HYGIENE_2026-09-19](CONTRACT_HYGIENE_2026-09-19.md)), and as of
    20 September so is every item in the minor report - see its status section.
-   The V3/V4 decision is still open: the shared base is extracted, and V3's
-   twelve remaining tests are the ones that would go with it.*
+   The V3/V4 decision was taken the same day: V3 is retired. Its factory
+   and architecture suites were ported to V4 first (35 tests), its custody
+   suite already ran against V4 through the shared base, and the twelve
+   V3-only tests went with it.*
 
 ## What was verified sound
 

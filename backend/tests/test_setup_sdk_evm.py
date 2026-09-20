@@ -6,7 +6,7 @@ import subprocess
 import tempfile
 import unittest
 from eth_hash.auto import keccak
-from test_general_compound_receipts_evm import CompoundReceiptEvmTests as Harness, calldata
+from evm_harness import EvmHarness as Harness, calldata
 ROOT=Path(__file__).resolve().parents[2]
 
 @unittest.skipUnless(os.environ.get('DOMINO_TEST_EVM')=='1','requires isolated local Anvil')

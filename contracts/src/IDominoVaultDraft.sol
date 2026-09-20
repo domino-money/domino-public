@@ -30,21 +30,6 @@ interface IDominoVaultDraft {
         bool paused;
     }
 
-    struct CompoundSelfPlan {
-        bytes32 intentId;
-        uint256 tokenId;
-        uint64 expectedPolicyVersion;
-        uint64 expectedStateNonce;
-        uint64 deadline;
-        uint128 liquidityIncrease;
-        // Enforce against proven earned-fee balances, never wallet/principal funds.
-        uint128 maxGrossFee0;
-        uint128 maxGrossFee1;
-        uint128 minNetAdded0;
-        uint128 minNetAdded1;
-        uint160 minSqrtPriceX96;
-        uint160 maxSqrtPriceX96;
-    }
     /// @dev A completed owner policy write; stateNonce also advances exactly once.
     event PolicyChanged(uint64 indexed version);
     event AutomationPaused(address indexed caller, uint64 indexed policyVersion, uint64 stateNonce);
@@ -71,13 +56,6 @@ interface IDominoVaultDraft {
     function stateNonce() external view returns (uint64);
     /// @notice Caller: anyone. Reports completed intent use for replay protection.
     function intentConsumed(bytes32 intentId) external view returns (bool);
-    /// @notice Caller: owner or a currently registered operator, while unpaused.
-    /// @dev Validate policy version/state nonce, intent replay, expiry, membership,
-    /// frequency, all plan bounds and proven fee provenance before any interaction.
-    /// The caller must also enforce the reviewed economic consumption minimum or
-    /// explicitly bounded subsidy; FeeAccounting intentionally permits a zero cut.
-    /// No principal reduction, wallet pull, arbitrary recipient or calldata.
-    function compoundSelf(CompoundSelfPlan calldata plan) external;
     /// @notice Caller: owner only. Validate and store a consecutive policy version.
     /// @dev MUST invoke PolicyValidation.validateUpdate before writing; preserve
     /// paused, respect registered membership, advance stateNonce and emit PolicyChanged.

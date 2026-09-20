@@ -1,13 +1,15 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.26;
 
-import {DominoVaultFactory} from "../src/DominoVaultFactory.sol";
-import {DominoVault} from "../src/DominoVault.sol";
+import {DominoVaultFactoryV4} from "../src/DominoVaultFactoryV4.sol";
+import {DominoVaultV4} from "../src/DominoVaultV4.sol";
+import {DominoVaultReadHelper} from "../src/DominoVaultReadHelper.sol";
 import {DominoVaultTypes as T} from "../src/DominoVaultTypes.sol";
 import {IDominoVaultDraft} from "../src/IDominoVaultDraft.sol";
 import {PolicyValidation} from "../src/PolicyValidation.sol";
 import {FeeAccounting} from "../src/FeeAccounting.sol";
 import {VmE2, MockPoolManager, MockPositionManager, MockStateView, MockERC20, E2ForeignSubscriber} from "./E2Mocks.sol";
+import {StubEngineV4} from "./DominoVaultV4Custody.t.sol";
 
 interface VmFactoryCode {
     function etch(address account, bytes calldata code) external;
@@ -15,7 +17,17 @@ interface VmFactoryCode {
     function clearMockedCalls() external;
 }
 
-contract DominoVaultFactoryTest {
+/**
+ * Sequence creation through the V4 factory.
+ *
+ * These are the V3 factory's thirty tests, ported when V3 was retired: the
+ * two factories differ only in how the implementation is bound - V3 built it
+ * in the constructor, V4 binds a separately deployed one once through
+ * finalizeImplementation - so everything createVault refuses, pins, predicts
+ * and emits is the same contract. The two constructor tests the V4 suite
+ * already carried (DominoVaultFactoryV4.t.sol) are not repeated here.
+ */
+contract DominoVaultFactoryV4CreationTest {
     VmE2 private constant vm = VmE2(address(uint160(uint256(keccak256("hevm cheat code")))));
     VmFactoryCode private constant vmCode = VmFactoryCode(address(vm));
     address private constant OWNER_A = address(0x101);
@@ -27,7 +39,9 @@ contract DominoVaultFactoryTest {
     MockPositionManager private positions;
     MockStateView private state;
     MockERC20 private token;
-    DominoVaultFactory private factory;
+    DominoVaultFactoryV4 private factory;
+    DominoVaultReadHelper private readHelper;
+    StubEngineV4 private engine;
     T.PoolKey private key;
 
     function setUp() public {
@@ -39,7 +53,12 @@ contract DominoVaultFactoryTest {
         state = new MockStateView(address(manager), positions);
         token = new MockERC20();
         key = T.PoolKey(address(0), address(token), 3000, 60, address(0));
-        factory = new DominoVaultFactory(address(manager), address(positions), address(state), FEE_RECIPIENT);
+        readHelper = new DominoVaultReadHelper(address(positions), address(state));
+        factory = new DominoVaultFactoryV4(address(manager), address(positions), address(state), FEE_RECIPIENT);
+        engine = new StubEngineV4(address(factory));
+        // This contract is the deployer, so it binds the implementation once.
+        factory.finalizeImplementation(address(new DominoVaultV4(address(factory), address(manager),
+            address(positions), address(state), FEE_RECIPIENT, address(readHelper), address(engine))));
     }
 
     function params(uint256 root) private view returns (T.InitParams memory value) {
@@ -70,6 +89,14 @@ contract DominoVaultFactoryTest {
         (bool ok, bytes memory data) = target.staticcall(abi.encodeWithSignature(signature));
         require(ok && data.length == 32, "missing address getter");
         value = abi.decode(data, (address));
+    }
+
+    /// What V3's pre-flight check asserted of a fresh vault at (1, 1, 1), read
+    /// off the getters V4 keeps: live root permission at the initial policy
+    /// version, state nonce and authority generation, unpaused.
+    function _freshAuthority(DominoVaultV4 vault) private view returns (bool) {
+        return vault.rootPermissionValid() && vault.policy().version == 1 && vault.stateNonce() == 1
+            && vault.authorityGeneration() == 1 && !vault.policy().paused;
     }
 
     function assertNotCreated(address owner, uint256 nonce, address predicted) private view {
@@ -113,7 +140,7 @@ contract DominoVaultFactoryTest {
         address predicted = prepare(OWNER_A, 101, 0);
         T.InitParams memory value = params(101);
         value.consentToUncollectedFees = false;
-        expectRejectedCreation(value, DominoVault.MissingConsent.selector, 101);
+        expectRejectedCreation(value, DominoVaultV4.MissingConsent.selector, 101);
         require(create(OWNER_A, 101, 0) == predicted, "consented retry rejected");
     }
 
@@ -121,12 +148,12 @@ contract DominoVaultFactoryTest {
         prepare(OWNER_A, 101, 0);
         T.InitParams memory value = params(101);
         value.rootTokenId = 0;
-        expectRejectedCreation(value, DominoVault.InvalidPosition.selector, 101);
+        expectRejectedCreation(value, DominoVaultV4.InvalidPosition.selector, 101);
         value = params(101);
         value.expectedPoolId = bytes32(0);
-        expectRejectedCreation(value, DominoVault.InvalidPosition.selector, 101);
+        expectRejectedCreation(value, DominoVaultV4.InvalidPosition.selector, 101);
         value.expectedPoolId = bytes32(uint256(1));
-        expectRejectedCreation(value, DominoVault.InvalidPosition.selector, 101);
+        expectRejectedCreation(value, DominoVaultV4.InvalidPosition.selector, 101);
         value = params(101);
         (, uint256 info) = positions.getPoolAndPositionInfo(101);
         vmCode.mockCall(
@@ -134,7 +161,7 @@ contract DominoVaultFactoryTest {
             abi.encodeCall(positions.getPoolAndPositionInfo, (101)),
             abi.encode(key, info ^ (uint256(1) << 56))
         );
-        expectRejectedCreation(value, DominoVault.InvalidPosition.selector, 101);
+        expectRejectedCreation(value, DominoVaultV4.InvalidPosition.selector, 101);
         vmCode.clearMockedCalls();
         create(OWNER_A, 101, 0);
     }
@@ -146,53 +173,53 @@ contract DominoVaultFactoryTest {
         // the sole failing guard, not a later code/orientation rejection.
         candidate.currency0 = address(token) > address(other) ? address(token) : address(other);
         candidate.currency1 = address(token) > address(other) ? address(other) : address(token);
-        expectRejectedKey(candidate, -120, 180, 101, DominoVault.InvalidIdentity.selector);
+        expectRejectedKey(candidate, -120, 180, 101, DominoVaultV4.InvalidIdentity.selector);
         candidate = key;
         candidate.hooks = address(0xbeef);
-        expectRejectedKey(candidate, -120, 180, 102, DominoVault.InvalidIdentity.selector);
+        expectRejectedKey(candidate, -120, 180, 102, DominoVaultV4.InvalidIdentity.selector);
         candidate = key;
         candidate.fee = 1_000_001;
-        expectRejectedKey(candidate, -120, 180, 103, DominoVault.InvalidIdentity.selector);
+        expectRejectedKey(candidate, -120, 180, 103, DominoVaultV4.InvalidIdentity.selector);
     }
 
     function testCreateRejectsInvalidTickSpacingAndRangesWithExactSelectors() public {
         T.PoolKey memory candidate = key;
         candidate.tickSpacing = 0;
-        expectRejectedKey(candidate, -120, 180, 101, DominoVault.InvalidPosition.selector);
+        expectRejectedKey(candidate, -120, 180, 101, DominoVaultV4.InvalidPosition.selector);
         candidate.tickSpacing = -60;
-        expectRejectedKey(candidate, -120, 180, 102, DominoVault.InvalidPosition.selector);
+        expectRejectedKey(candidate, -120, 180, 102, DominoVaultV4.InvalidPosition.selector);
         candidate.tickSpacing = 32768;
         // Aligned, valid int24 ticks reach initialize's spacing upper bound.
-        expectRejectedKey(candidate, 0, 32768, 103, DominoVault.InvalidIdentity.selector);
+        expectRejectedKey(candidate, 0, 32768, 103, DominoVaultV4.InvalidIdentity.selector);
         candidate = key;
-        expectRejectedKey(candidate, -119, 180, 104, DominoVault.InvalidPosition.selector);
-        expectRejectedKey(candidate, -120, 181, 105, DominoVault.InvalidPosition.selector);
-        expectRejectedKey(candidate, 180, 180, 106, DominoVault.InvalidPosition.selector);
-        expectRejectedKey(candidate, 180, -120, 107, DominoVault.InvalidPosition.selector);
-        expectRejectedKey(candidate, -887280, 180, 108, DominoVault.InvalidPosition.selector);
-        expectRejectedKey(candidate, -120, 887280, 109, DominoVault.InvalidPosition.selector);
+        expectRejectedKey(candidate, -119, 180, 104, DominoVaultV4.InvalidPosition.selector);
+        expectRejectedKey(candidate, -120, 181, 105, DominoVaultV4.InvalidPosition.selector);
+        expectRejectedKey(candidate, 180, 180, 106, DominoVaultV4.InvalidPosition.selector);
+        expectRejectedKey(candidate, 180, -120, 107, DominoVaultV4.InvalidPosition.selector);
+        expectRejectedKey(candidate, -887280, 180, 108, DominoVaultV4.InvalidPosition.selector);
+        expectRejectedKey(candidate, -120, 887280, 109, DominoVaultV4.InvalidPosition.selector);
     }
 
     function testCreateRejectsCurrencyWithoutCodeOnEitherSide() public {
         T.PoolKey memory candidate = key;
         candidate.currency0 = address(1);
-        expectRejectedKey(candidate, -120, 180, 101, DominoVault.InvalidIdentity.selector);
+        expectRejectedKey(candidate, -120, 180, 101, DominoVaultV4.InvalidIdentity.selector);
         candidate = key;
         candidate.currency1 = address(1);
-        expectRejectedKey(candidate, -120, 180, 102, DominoVault.InvalidIdentity.selector);
+        expectRejectedKey(candidate, -120, 180, 102, DominoVaultV4.InvalidIdentity.selector);
     }
 
     function testCreateRejectsOrientationOutsideThePoolPair() public {
         prepare(OWNER_A, 101, 0);
         T.InitParams memory value = params(101);
         value.baseCurrency = address(token);
-        expectRejectedCreation(value, DominoVault.InvalidIdentity.selector, 101);
+        expectRejectedCreation(value, DominoVaultV4.InvalidIdentity.selector, 101);
         value = params(101);
         value.baseCurrency = address(1);
-        expectRejectedCreation(value, DominoVault.InvalidIdentity.selector, 101);
+        expectRejectedCreation(value, DominoVaultV4.InvalidIdentity.selector, 101);
         value = params(101);
         value.quoteCurrency = address(1);
-        expectRejectedCreation(value, DominoVault.InvalidIdentity.selector, 101);
+        expectRejectedCreation(value, DominoVaultV4.InvalidIdentity.selector, 101);
     }
 
     function testCreateEnforcesEveryExecutionLimitDomain() public {
@@ -208,7 +235,7 @@ contract DominoVaultFactoryTest {
             else if (i == 6) value.limits.maxGasCostWei = 0;
             else if (i == 7) value.limits.maxObservationAgeSeconds = 0;
             else value.limits.forecastHorizonSeconds = 0;
-            expectRejectedCreation(value, DominoVault.InvalidLimits.selector, 101);
+            expectRejectedCreation(value, DominoVaultV4.InvalidLimits.selector, 101);
         }
     }
 
@@ -254,10 +281,9 @@ contract DominoVaultFactoryTest {
         value.limits =
             T.ExecutionLimits(1, 1_000_000, 9999, 9999, type(uint128).max, type(uint32).max, type(uint32).max);
         vm.prank(OWNER_A);
-        DominoVault vault = DominoVault(payable(factory.createVault(value, 0)));
+        DominoVaultV4 vault = DominoVaultV4(payable(factory.createVault(value, 0)));
         require(vault.activePositions() == 1 && vault.policy().maxPositions == 1, "initial root count");
-        vm.prank(OWNER_A);
-        vault.validateAuthority(1, 1, 1);
+        require(_freshAuthority(vault), "fresh vault authority invalid");
     }
 
     function testCreateRejectsAndPreservesForeignRootSubscription() public {
@@ -265,7 +291,7 @@ contract DominoVaultFactoryTest {
         E2ForeignSubscriber foreignSubscriber = new E2ForeignSubscriber();
         vm.prank(OWNER_A);
         positions.subscribe(101, address(foreignSubscriber), "");
-        expectRejectedCreation(params(101), DominoVault.ForeignSubscription.selector, 101);
+        expectRejectedCreation(params(101), DominoVaultV4.ForeignSubscription.selector, 101);
         require(positions.subscriber(101) == address(foreignSubscriber), "foreign subscriber evicted");
         vm.prank(OWNER_A);
         positions.unsubscribe(101);
@@ -294,29 +320,29 @@ contract DominoVaultFactoryTest {
         value.operator = address(0);
         vm.recordLogs();
         vm.prank(OWNER_A);
-        DominoVault vault = DominoVault(payable(factory.createVault(value, 0)));
+        DominoVaultV4 vault = DominoVaultV4(payable(factory.createVault(value, 0)));
         require(
             vault.operator() == address(0) && !vault.isOperator(address(0)) && !vault.isOperator(OPERATOR),
             "zero operator enabled"
         );
         require(operatorEventCount(address(vault), address(0)) == 0, "zero to zero OperatorChanged");
-        vm.prank(OWNER_A);
-        vault.validateAuthority(1, 1, 1);
+        require(_freshAuthority(vault), "fresh vault authority invalid");
         vm.prank(OPERATOR);
-        vm.expectRevert(DominoVault.Unauthorized.selector);
-        vault.validateAuthority(1, 1, 1);
+        vm.expectRevert(DominoVaultV4.Unauthorized.selector);
+        vault.pause();
     }
 
     function testNonzeroInitialOperatorRemainsConfiguredAndAuthorized() public {
         prepare(OWNER_A, 101, 0);
         vm.recordLogs();
-        DominoVault vault = DominoVault(payable(create(OWNER_A, 101, 0)));
+        DominoVaultV4 vault = DominoVaultV4(payable(create(OWNER_A, 101, 0)));
         require(vault.operator() == OPERATOR && vault.isOperator(OPERATOR), "configured operator missing");
         require(operatorEventCount(address(vault), OPERATOR) == 1, "operator registration event missing");
+        require(_freshAuthority(vault), "fresh vault authority invalid");
+        // A configured operator's authority is live: it can act.
         vm.prank(OPERATOR);
-        vault.validateAuthority(1, 1, 1);
-        vm.prank(OWNER_A);
-        vault.validateAuthority(1, 1, 1);
+        vault.pause();
+        require(vault.policy().paused, "configured operator could not act");
     }
 
     function testOwnerOrVaultAsInitialOperatorDoesNotNarrowAcceptedConfiguration() public {
@@ -326,10 +352,9 @@ contract DominoVaultFactoryTest {
             T.InitParams memory value = params(root);
             value.operator = i == 0 ? OWNER_A : predicted;
             vm.prank(OWNER_A);
-            DominoVault vault = DominoVault(payable(factory.createVault(value, i)));
+            DominoVaultV4 vault = DominoVaultV4(payable(factory.createVault(value, i)));
             require(vault.operator() == value.operator && vault.isOperator(value.operator), "operator alias rejected");
-            vm.prank(OWNER_A);
-            vault.validateAuthority(1, 1, 1);
+            require(_freshAuthority(vault), "fresh vault authority invalid");
         }
     }
 
@@ -380,7 +405,7 @@ contract DominoVaultFactoryTest {
             vault,
             address(factory),
             factory.implementation(),
-            uint64(3)
+            uint64(4)
         );
         bytes memory tail = abi.encode(
             address(manager),
@@ -464,7 +489,7 @@ contract DominoVaultFactoryTest {
         state.setFeeGrowthInside(independentPoolId(), -120, 180, point.feeGrowthInside0X128, point.feeGrowthInside1X128);
     }
 
-    function assertIdentityAndSources(DominoVault vault, uint256 root, ExpectedHashes memory expected) private view {
+    function assertIdentityAndSources(DominoVaultV4 vault, uint256 root, ExpectedHashes memory expected) private view {
         require(vault.sequenceIdentityHash() == expected.sequence, "independent E1 sequence hash");
         T.Position memory registered = vault.position(root);
         require(
@@ -526,7 +551,7 @@ contract DominoVaultFactoryTest {
             }
             vm.recordLogs();
             vm.prank(OWNER_A);
-            DominoVault vault = DominoVault(payable(factory.createVault(value, i)));
+            DominoVaultV4 vault = DominoVaultV4(payable(factory.createVault(value, i)));
             ExpectedHashes memory expected = independentHashes(address(vault), root, i, i == 1, point);
             point.commitment = expected.baseline;
             assertIdentityAndSources(vault, root, expected);
@@ -546,7 +571,7 @@ contract DominoVaultFactoryTest {
         prepare(OWNER_A, 101, 0);
         T.Checkpoint memory original = originalCheckpoint();
         setCheckpointInputs(101, original);
-        DominoVault vault = DominoVault(payable(create(OWNER_A, 101, 0)));
+        DominoVaultV4 vault = DominoVaultV4(payable(create(OWNER_A, 101, 0)));
         ExpectedHashes memory expected = independentHashes(address(vault), 101, 0, false, original);
         original.commitment = expected.baseline;
         T.Checkpoint memory latest = T.Checkpoint((uint128(1) << 100) + 17, 1001, 2002, 3003, 4004, 1300, bytes32(0));
@@ -575,7 +600,7 @@ contract DominoVaultFactoryTest {
         require(vault.authorityGeneration() == 2 && vault.stateNonce() == 2, "rearm did not change authority");
     }
 
-    function testConstructorPinsValidatedManagersAndImplementation() public view {
+    function testFinalizedFactoryPinsValidatedManagersAndImplementation() public view {
         require(factory.poolManager() == address(manager), "pool manager pin");
         require(factory.positionManager() == address(positions), "position manager pin");
         require(factory.stateView() == address(state), "state view pin");
@@ -584,42 +609,16 @@ contract DominoVaultFactoryTest {
         require(implementation.code.length != 0 && !factory.isVault(implementation), "implementation registry");
         require(addressGetter(implementation, "factory()") == address(factory), "implementation factory");
         require(addressGetter(implementation, "poolManager()") == address(manager), "implementation manager");
-    }
-
-    function testConstructorRejectsZeroOrCodeLessPins() public {
-        address[4] memory pins = [address(manager), address(positions), address(state), FEE_RECIPIENT];
-        for (uint256 i; i < pins.length; ++i) {
-            address saved = pins[i];
-            pins[i] = address(0);
-            vm.expectRevert(DominoVaultFactory.InvalidManagerConfiguration.selector);
-            new DominoVaultFactory(pins[0], pins[1], pins[2], pins[3]);
-            pins[i] = saved;
-        }
-        for (uint256 i; i < 3; ++i) {
-            address saved = pins[i];
-            pins[i] = address(0xdead);
-            vm.expectRevert(DominoVaultFactory.InvalidManagerConfiguration.selector);
-            new DominoVaultFactory(pins[0], pins[1], pins[2], pins[3]);
-            pins[i] = saved;
-        }
-    }
-
-    function testConstructorRejectsManagerDisagreement() public {
-        MockPoolManager other = new MockPoolManager();
-        MockPositionManager foreignPositions = new MockPositionManager(address(other));
-        MockStateView foreignState = new MockStateView(address(other), positions);
-        vm.expectRevert(DominoVaultFactory.ManagerMismatch.selector);
-        new DominoVaultFactory(address(manager), address(foreignPositions), address(state), FEE_RECIPIENT);
-        vm.expectRevert(DominoVaultFactory.ManagerMismatch.selector);
-        new DominoVaultFactory(address(manager), address(positions), address(foreignState), FEE_RECIPIENT);
+        require(factory.implementationCodeHash() == implementation.codehash && factory.deployer() == address(this),
+            "finalization pins");
     }
 
     function testChainAdmissionAlsoAppliesAfterDeployment() public {
         T.InitParams memory value = params(101);
         vm.chainId(1);
-        vm.expectRevert(DominoVaultFactory.UnsupportedChain.selector);
-        new DominoVaultFactory(address(manager), address(positions), address(state), FEE_RECIPIENT);
-        vm.expectRevert(DominoVaultFactory.UnsupportedChain.selector);
+        vm.expectRevert(DominoVaultFactoryV4.UnsupportedChain.selector);
+        new DominoVaultFactoryV4(address(manager), address(positions), address(state), FEE_RECIPIENT);
+        vm.expectRevert(DominoVaultFactoryV4.UnsupportedChain.selector);
         factory.createVault(value, 0);
     }
 
@@ -660,9 +659,9 @@ contract DominoVaultFactoryTest {
         require(addressGetter(vault, "positionManager()") == address(positions), "manager binding");
         require(addressGetter(vault, "stateView()") == address(state), "state binding");
         require(addressGetter(vault, "serviceFeeRecipient()") == FEE_RECIPIENT, "fee recipient binding");
-        DominoVault deployed = DominoVault(payable(vault));
+        DominoVaultV4 deployed = DominoVaultV4(payable(vault));
         require(
-            deployed.implementation() == factory.implementation() && deployed.implementationVersion() == 3,
+            deployed.implementation() == factory.implementation() && deployed.implementationVersion() == 4,
             "implementation version binding"
         );
         require(deployed.sequenceId() == sequence && deployed.rootTokenId() == 101, "sequence/root binding");
@@ -678,7 +677,7 @@ contract DominoVaultFactoryTest {
         require(factory.predictVault(OWNER_B, 0) != predicted, "owners share CREATE2 salt");
         T.InitParams memory value = params(101);
         vm.prank(OWNER_B);
-        vm.expectRevert(DominoVault.PermissionUnavailable.selector);
+        vm.expectRevert(DominoVaultV4.PermissionUnavailable.selector);
         factory.createVault(value, 0);
         assertNotCreated(OWNER_A, 0, predicted);
         assertNotCreated(OWNER_B, 0, factory.predictVault(OWNER_B, 0));
@@ -690,12 +689,12 @@ contract DominoVaultFactoryTest {
         address predicted = prepare(OWNER_A, 101, 0);
         T.InitParams memory value = params(101);
         vm.prank(OWNER_A);
-        vm.expectRevert(abi.encodeWithSelector(DominoVaultFactory.UnexpectedOwnerNonce.selector, 0, 1));
+        vm.expectRevert(abi.encodeWithSelector(DominoVaultFactoryV4.UnexpectedOwnerNonce.selector, 0, 1));
         factory.createVault(value, 1);
         assertNotCreated(OWNER_A, 0, predicted);
         create(OWNER_A, 101, 0);
         vm.prank(OWNER_A);
-        vm.expectRevert(abi.encodeWithSelector(DominoVaultFactory.UnexpectedOwnerNonce.selector, 1, 0));
+        vm.expectRevert(abi.encodeWithSelector(DominoVaultFactoryV4.UnexpectedOwnerNonce.selector, 1, 0));
         factory.createVault(value, 0);
         require(factory.nextOwnerNonce(OWNER_A) == 1 && factory.isVault(predicted), "replay mutated registry");
     }
@@ -723,7 +722,7 @@ contract DominoVaultFactoryTest {
         positions.setApprovalForAll(predicted, true);
         T.InitParams memory value = params(101);
         vm.prank(OWNER_A);
-        vm.expectRevert(DominoVault.PermissionUnavailable.selector);
+        vm.expectRevert(DominoVaultV4.PermissionUnavailable.selector);
         factory.createVault(value, 0);
         assertNotCreated(OWNER_A, 0, predicted);
         vm.prank(OWNER_A);
@@ -737,17 +736,17 @@ contract DominoVaultFactoryTest {
         bytes32 sequence = factory.sequenceIdFor(OWNER_A, 0);
         // Even the designated factory cannot initialize the implementation.
         vm.prank(address(factory));
-        vm.expectRevert(DominoVault.AlreadyInitialized.selector);
-        DominoVault(payable(implementation)).initialize(OWNER_A, sequence, value);
+        vm.expectRevert(DominoVaultV4.AlreadyInitialized.selector);
+        DominoVaultV4(payable(implementation)).initialize(OWNER_A, sequence, value);
         require(addressGetter(implementation, "owner()") == address(0), "implementation acquired owner");
         address predicted = prepare(OWNER_A, 101, 0);
         create(OWNER_A, 101, 0);
         vm.prank(OWNER_B);
-        vm.expectRevert(DominoVault.Unauthorized.selector);
-        DominoVault(payable(predicted)).initialize(OWNER_B, sequence, value);
+        vm.expectRevert(DominoVaultV4.Unauthorized.selector);
+        DominoVaultV4(payable(predicted)).initialize(OWNER_B, sequence, value);
         vm.prank(address(factory));
-        vm.expectRevert(DominoVault.AlreadyInitialized.selector);
-        DominoVault(payable(predicted)).initialize(OWNER_B, sequence, value);
+        vm.expectRevert(DominoVaultV4.AlreadyInitialized.selector);
+        DominoVaultV4(payable(predicted)).initialize(OWNER_B, sequence, value);
         require(addressGetter(predicted, "owner()") == OWNER_A, "reinitialization replaced owner");
     }
 
@@ -756,19 +755,21 @@ contract DominoVaultFactoryTest {
         vmCode.etch(predicted, hex"00"); // Fault injection; outsiders cannot deploy from this factory's CREATE2 origin.
         T.InitParams memory value = params(101);
         vm.prank(OWNER_A);
-        vm.expectRevert(DominoVaultFactory.VaultDeploymentFailed.selector);
+        vm.expectRevert(DominoVaultFactoryV4.VaultDeploymentFailed.selector);
         factory.createVault{gas: 500_000}(value, 0);
         assertNotCreated(OWNER_A, 0, predicted);
     }
 
     function testOwnerNonceExhaustionDoesNotWrap() public {
         // Storage fault injection reaches the uint256 boundary without 2**256 calls.
-        bytes32 slot = keccak256(abi.encode(OWNER_A, uint256(0)));
+        // implementation and implementationCodeHash hold slots 0 and 1; the
+        // immutables take none, so the owner-nonce mapping is slot 2.
+        bytes32 slot = keccak256(abi.encode(OWNER_A, uint256(2)));
         vm.store(address(factory), slot, bytes32(type(uint256).max));
         require(factory.nextOwnerNonce(OWNER_A) == type(uint256).max, "nonce injection layout changed");
         T.InitParams memory value = params(101);
         vm.prank(OWNER_A);
-        vm.expectRevert(DominoVaultFactory.OwnerNonceExhausted.selector);
+        vm.expectRevert(DominoVaultFactoryV4.OwnerNonceExhausted.selector);
         factory.createVault(value, type(uint256).max);
         require(factory.nextOwnerNonce(OWNER_A) == type(uint256).max, "nonce wrapped");
     }
@@ -781,7 +782,7 @@ contract DominoVaultFactoryTest {
         require(positions.subscribeReentryAttempted() && !positions.subscribeReentrySucceeded(), "reentry outcome");
         require(
             keccak256(positions.subscribeReentryResult())
-                == keccak256(abi.encodeWithSelector(DominoVaultFactory.ReentrantCreate.selector)),
+                == keccak256(abi.encodeWithSelector(DominoVaultFactoryV4.ReentrantCreate.selector)),
             "reentry guard error"
         );
         require(factory.isVault(predicted) && factory.nextOwnerNonce(OWNER_A) == 1, "outer create failed");
@@ -825,5 +826,45 @@ contract DominoVaultFactoryTest {
             ++found;
         }
         require(found == 1 && factory.vaultForSequence(sequence) == predicted, "missing committed creation event");
+    }
+
+    /// finalizeImplementation records the candidate's codehash and createVault
+    /// checks it again on every clone. On Cancun code cannot change under an
+    /// address outside its creating transaction, so today this is a backstop;
+    /// it is also the factory's only defence should that ever change, and it
+    /// was deletable with every suite green before this test.
+    function testAnImplementationWhoseCodeChangedAfterFinalizationCannotBeCloned() public {
+        address predicted = prepare(OWNER_A, 101, 0);
+        address implementation = factory.implementation();
+        bytes memory runtime = implementation.code;
+        vmCode.etch(implementation, abi.encodePacked(runtime, hex"00"));
+        T.InitParams memory value = params(101);
+        vm.prank(OWNER_A);
+        vm.expectRevert(DominoVaultFactoryV4.InvalidManagerConfiguration.selector);
+        factory.createVault(value, 0);
+        assertNotCreated(OWNER_A, 0, predicted);
+        vmCode.etch(implementation, runtime);
+        require(create(OWNER_A, 101, 0) == predicted, "restored implementation could not be cloned");
+    }
+
+    /// The sequence registry is the last line behind the owner nonce: a nonce
+    /// only ever moves forward, so a sequence id cannot recur unless that
+    /// bookkeeping regressed. Rewinding the nonce by storage fault injection
+    /// is the only way to reach the check, and it was deletable with every
+    /// suite green before this test.
+    function testARewoundOwnerNonceCannotRecreateASequence() public {
+        address predicted = prepare(OWNER_A, 101, 0);
+        require(create(OWNER_A, 101, 0) == predicted, "first creation");
+        vm.store(address(factory), keccak256(abi.encode(OWNER_A, uint256(2))), bytes32(0));
+        require(factory.nextOwnerNonce(OWNER_A) == 0, "nonce rewind layout changed");
+        positions.mint(OWNER_A, 102, key, -120, 180, 1000);
+        vm.prank(OWNER_A);
+        positions.approve(predicted, 102);
+        T.InitParams memory value = params(102);
+        vm.prank(OWNER_A);
+        vm.expectRevert(DominoVaultFactoryV4.SequenceAlreadyCreated.selector);
+        factory.createVault(value, 0);
+        require(factory.isVault(predicted) && factory.vaultForSequence(factory.sequenceIdFor(OWNER_A, 0)) == predicted,
+            "a refused recreation touched the registry");
     }
 }

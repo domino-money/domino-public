@@ -9,7 +9,7 @@ import { CONTRACTS, LIMITS, PROFILE, checkContractSizes, formatReport, inspectAr
 
 const command = fileURLToPath(new URL('./check-contract-size.mjs', import.meta.url));
 const bytes = (length) => `0x${'01'.repeat(length)}`;
-function artifact(name = 'DominoVault', { runtime = 10_000, creation = 30_000 } = {}) {
+function artifact(name = 'DominoVaultV4', { runtime = 10_000, creation = 30_000 } = {}) {
   const contract = CONTRACTS.find((value) => value.name === name);
   const metadata = { compiler: { version: PROFILE.compiler }, settings: { compilationTarget: { [`src/${name}.sol`]: name },
     evmVersion: 'cancun', optimizer: { enabled: true, runs: 200 }, viaIR: true, metadata: { bytecodeHash: 'none' } } };
@@ -35,7 +35,7 @@ function populate(output) {
 }
 
 test('EIP-170 exact runtime limit passes for non-reserved production contracts; one byte over fails', () => {
-  for (const name of ['DominoVaultFactory', 'DominoVaultReadHelper']) {
+  for (const name of ['DominoVaultFactoryV4', 'DominoVaultReadHelper']) {
     const exact = inspectArtifact(name, artifact(name, { runtime: 24_576 }));
     assert.equal(exact.ok, true);
     assert.equal(exact.runtimeHeadroomBytes, 0);
@@ -45,10 +45,10 @@ test('EIP-170 exact runtime limit passes for non-reserved production contracts; 
 });
 
 test('vault architecture reserve has its own exact boundary below the chain limit', () => {
-  const exact = inspectArtifact('DominoVault', artifact('DominoVault', { runtime: LIMITS.runtimeBytes - LIMITS.vaultReserveBytes }));
+  const exact = inspectArtifact('DominoVaultV4', artifact('DominoVaultV4', { runtime: LIMITS.runtimeBytes - LIMITS.vaultReserveBytes }));
   assert.equal(exact.ok, true);
   assert.equal(exact.runtimeHeadroomBytes, LIMITS.vaultReserveBytes);
-  const over = inspectArtifact('DominoVault', artifact('DominoVault', { runtime: LIMITS.runtimeBytes - LIMITS.vaultReserveBytes + 1 }));
+  const over = inspectArtifact('DominoVaultV4', artifact('DominoVaultV4', { runtime: LIMITS.runtimeBytes - LIMITS.vaultReserveBytes + 1 }));
   assert.deepEqual(over.issues, ['vault_runtime_reserve_exceeded']);
   assert.match(formatReport({ contracts: [over] }), /explicit architecture review/);
 });
@@ -67,17 +67,17 @@ test('initcode includes ABI address words and no selector: exact 49152 passes, n
 test('factory nested child creation bytes are already present and are not counted again', (t) => {
   const output = directory(t);
   populate(output);
-  writeFileSync(path.join(output, 'DominoVaultFactory.sol/DominoVaultFactory.json'), JSON.stringify(artifact('DominoVaultFactory', { creation: 49_024 })));
+  writeFileSync(path.join(output, 'DominoVaultFactoryV4.sol/DominoVaultFactoryV4.json'), JSON.stringify(artifact('DominoVaultFactoryV4', { creation: 49_024 })));
   const report = checkContractSizes(output);
   assert.equal(report.ok, true);
-  assert.equal(report.contracts.find((value) => value.name === 'DominoVaultFactory').initcodeBytes, 49_152);
+  assert.equal(report.contracts.find((value) => value.name === 'DominoVaultFactoryV4').initcodeBytes, 49_152);
 });
 
 test('metadata rejects missing, malformed and stale/wrong compiler profiles', () => {
   const missing = artifact();
   delete missing.metadata;
   delete missing.rawMetadata;
-  assert.throws(() => inspectArtifact('DominoVault', missing), { code: 'missing_metadata' });
+  assert.throws(() => inspectArtifact('DominoVaultV4', missing), { code: 'missing_metadata' });
   for (const change of [
     (metadata) => { metadata.compiler.version = '0.8.27+commit.40a35a09'; },
     (metadata) => { metadata.compiler.version = '0.8.26+commit.deadbeef'; },
@@ -90,9 +90,9 @@ test('metadata rejects missing, malformed and stale/wrong compiler profiles', ()
     (metadata) => { metadata.settings.metadata.bytecodeHash = 'bzzr1'; },
     (metadata) => { delete metadata.settings.metadata.bytecodeHash; },
     (metadata) => { delete metadata.settings.metadata; },
-  ]) assert.throws(() => inspectArtifact('DominoVault', rewriteProfile(artifact(), change)), { code: 'wrong_build_profile' });
-  assert.throws(() => inspectArtifact('DominoVault', { ...artifact(), metadata: 'not-json' }), { code: 'malformed_metadata' });
-  assert.throws(() => inspectArtifact('DominoVault', { ...artifact(), rawMetadata: '{}' }), { code: 'malformed_metadata' });
+  ]) assert.throws(() => inspectArtifact('DominoVaultV4', rewriteProfile(artifact(), change)), { code: 'wrong_build_profile' });
+  assert.throws(() => inspectArtifact('DominoVaultV4', { ...artifact(), metadata: 'not-json' }), { code: 'malformed_metadata' });
+  assert.throws(() => inspectArtifact('DominoVaultV4', { ...artifact(), rawMetadata: '{}' }), { code: 'malformed_metadata' });
 });
 
 test('a stale duplicate metadata representation or different compilation target cannot pass', () => {
@@ -100,12 +100,12 @@ test('a stale duplicate metadata representation or different compilation target 
   const stale = structuredClone(value.metadata);
   stale.settings.viaIR = false;
   value.rawMetadata = JSON.stringify(stale);
-  assert.throws(() => inspectArtifact('DominoVault', value), { code: 'wrong_build_profile' });
-  const target = rewriteProfile(artifact(), (metadata) => { metadata.settings.compilationTarget = { 'test/Fake.sol': 'DominoVault' }; });
-  assert.throws(() => inspectArtifact('DominoVault', target), { code: 'wrong_compilation_target' });
+  assert.throws(() => inspectArtifact('DominoVaultV4', value), { code: 'wrong_build_profile' });
+  const target = rewriteProfile(artifact(), (metadata) => { metadata.settings.compilationTarget = { 'test/Fake.sol': 'DominoVaultV4' }; });
+  assert.throws(() => inspectArtifact('DominoVaultV4', target), { code: 'wrong_compilation_target' });
   const rawOnly = artifact();
   delete rawOnly.metadata;
-  assert.equal(inspectArtifact('DominoVault', rawOnly).ok, true);
+  assert.equal(inspectArtifact('DominoVaultV4', rawOnly).ok, true);
 });
 
 test('bytecode is nonempty exact hex and cannot retain unresolved link slots', () => {
@@ -113,14 +113,14 @@ test('bytecode is nonempty exact hex and cannot retain unresolved link slots', (
     for (const object of ['', '0x', '0x1', '1234', '0xgg', null, 10]) {
       const value = artifact();
       value[section].object = object;
-      assert.throws(() => inspectArtifact('DominoVault', value), { code: 'malformed_bytecode' });
+      assert.throws(() => inspectArtifact('DominoVaultV4', value), { code: 'malformed_bytecode' });
     }
     const placeholder = artifact();
     placeholder[section].object = '0x__$1234567890abcdef1234567890abcdef12$__';
-    assert.throws(() => inspectArtifact('DominoVault', placeholder), { code: 'unresolved_library_links' });
+    assert.throws(() => inspectArtifact('DominoVaultV4', placeholder), { code: 'unresolved_library_links' });
     const references = artifact();
     references[section].linkReferences = { 'Library.sol': { Library: [{ start: 0, length: 20 }] } };
-    assert.throws(() => inspectArtifact('DominoVault', references), { code: 'unresolved_library_links' });
+    assert.throws(() => inspectArtifact('DominoVaultV4', references), { code: 'unresolved_library_links' });
   }
 });
 
@@ -134,21 +134,21 @@ test('constructor ABI changes cannot silently undercount dynamic or added deploy
   ]) {
     const value = artifact();
     change(value.abi);
-    assert.throws(() => inspectArtifact('DominoVault', value), { code: 'constructor_abi_changed' });
+    assert.throws(() => inspectArtifact('DominoVaultV4', value), { code: 'constructor_abi_changed' });
   }
   const value = artifact();
   delete value.abi;
-  assert.throws(() => inspectArtifact('DominoVault', value), { code: 'missing_constructor_abi' });
+  assert.throws(() => inspectArtifact('DominoVaultV4', value), { code: 'missing_constructor_abi' });
 });
 
 test('missing or malformed artifacts fail closed and still report the other contracts', (t) => {
   const output = directory(t);
   assert.equal(checkContractSizes(output).contracts.filter((value) => value.issues.includes('missing_artifact')).length, CONTRACTS.length);
   populate(output);
-  writeFileSync(path.join(output, 'DominoVault.sol/DominoVault.json'), '{');
+  writeFileSync(path.join(output, 'DominoVaultV4.sol/DominoVaultV4.json'), '{');
   const report = checkContractSizes(output);
   assert.equal(report.ok, false);
-  assert.deepEqual(report.contracts[0].issues, ['unreadable_artifact']);
+  assert.deepEqual(report.contracts.find((value) => value.name === 'DominoVaultV4').issues, ['unreadable_artifact']);
   assert.equal(report.contracts.filter((value) => value.ok).length, CONTRACTS.length - 1);
 });
 
@@ -160,7 +160,7 @@ test('CLI works with spaced paths, emits machine-readable results and propagates
   const report = JSON.parse(result.stdout);
   assert.equal(report.ok, true);
   assert.deepEqual(report.limits, LIMITS);
-  writeFileSync(path.join(output, 'DominoVault.sol/DominoVault.json'), JSON.stringify(artifact('DominoVault', { runtime: 24_577 })));
+  writeFileSync(path.join(output, 'DominoVaultV4.sol/DominoVaultV4.json'), JSON.stringify(artifact('DominoVaultV4', { runtime: 24_577 })));
   result = spawnSync(process.execPath, [command, '--out', output, '--json'], { encoding: 'utf8' });
   assert.equal(result.status, 1);
   assert.equal(JSON.parse(result.stdout).ok, false);
@@ -195,20 +195,20 @@ test('helper ABI admits only nonpayable construction, view/pure functions and cu
     assert.throws(() => inspectArtifact('DominoVaultReadHelper', changed), { code: 'helper_read_only_abi_changed' });
   }
   // Owner-bound vault mutations remain legitimate; this is the helper boundary.
-  const vault = artifact('DominoVault');
+  const vault = artifact('DominoVaultV4');
   vault.abi.push({ type: 'function', name: 'pause', stateMutability: 'nonpayable', inputs: [], outputs: [] });
-  assert.equal(inspectArtifact('DominoVault', vault).ok, true);
+  assert.equal(inspectArtifact('DominoVaultV4', vault).ok, true);
 });
 
 
-test('compound engine has its own runtime reserve and measured constructor arguments', () => {
-  const exact = inspectArtifact('DominoCompoundEngine', artifact('DominoCompoundEngine', {
+test('execution engine has its own runtime reserve and measured constructor arguments', () => {
+  const exact = inspectArtifact('DominoExecutionEngineV4', artifact('DominoExecutionEngineV4', {
     runtime: LIMITS.runtimeBytes - LIMITS.engineReserveBytes,
   }));
   assert.equal(exact.ok, true);
   assert.equal(exact.constructorArgumentsBytes, 128);
-  assert.equal(exact.requiredRuntimeReserveBytes, 8_000);
-  const over = inspectArtifact('DominoCompoundEngine', artifact('DominoCompoundEngine', {
+  assert.equal(exact.requiredRuntimeReserveBytes, LIMITS.engineReserveBytes);
+  const over = inspectArtifact('DominoExecutionEngineV4', artifact('DominoExecutionEngineV4', {
     runtime: LIMITS.runtimeBytes - LIMITS.engineReserveBytes + 1,
   }));
   assert.deepEqual(over.issues, ['engine_runtime_reserve_exceeded']);

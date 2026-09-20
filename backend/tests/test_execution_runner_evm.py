@@ -1,4 +1,12 @@
-"""Synthetic key + actual isolated Anvil v4 contracts + real private PG roles."""
+"""Durability of the executor on the V4 vault: crash points, nonces, reorgs,
+signer identity and backup/restore, with a synthetic key, an isolated Anvil
+and real private PostgreSQL roles.
+
+These eighteen tests ran on the V3 vault until V3 was retired on 20 September
+2026. The runner, signer, store and journal under test are the same; the V4
+executor suite's fixture (setup, candidate, finish) replaces the V3 plan
+construction, so the scenarios are unchanged.
+"""
 from concurrent.futures import ThreadPoolExecutor
 import json
 import os
@@ -13,85 +21,30 @@ import psycopg
 from eth_account import Account
 from eth_hash.auto import keccak
 import execution_models as m
-import general_compound_receipts as g
 from execution_store import UnsignedExecutionStore, ExecutionStoreError
-from execution_signer import RestrictedSigner, SignerPolicy, ExecutionError, rebuild_compound
+from execution_signer import RestrictedSigner, SignerPolicy, ExecutionError
 from execution_runner import ExecutionRunner, ExecutionJournal
-from position_accounting import core_position_id
 from execution_pg import ExecutionPostgres
-import test_general_compound_receipts_evm as evm
-from test_general_compound_receipts_evm import calldata, LIMITS_TYPE
+import test_execution_runner_v4_evm as v4suite
+from evm_harness import calldata
 
 KEY=bytes([66])*32  # Public synthetic fixture only. Never a production wallet.
 
 
 @unittest.skipUnless(os.environ.get('DOMINO_TEST_POSTGRES')=='1' and os.environ.get('DOMINO_TEST_EVM')=='1','isolated PG and EVM required')
 class DurableExecutorEvmTests(unittest.TestCase):
-    send=evm.CompoundReceiptEvmTests.send
-    deploy=evm.CompoundReceiptEvmTests.deploy
-    call=evm.CompoundReceiptEvmTests.call
-    setup_vault=evm.CompoundReceiptEvmTests.setup_vault
-    swaps=evm.CompoundReceiptEvmTests.swaps
-    stop=classmethod(evm.CompoundReceiptEvmTests.stop.__func__)
-
-    @classmethod
-    def setUpClass(cls):
-        evm.CompoundReceiptEvmTests.setUpClass.__func__(cls)
-        cls.base_snapshot=cls.rpc.request('evm_snapshot',[])
-        cls.pg=ExecutionPostgres().start()
-        cls.addClassCleanup(cls.pg.close)
-        with cls.pg.admin() as conn:
-            conn.execute((Path(__file__).resolve().parents[1]/'migrations/019_execution_journal.sql').read_text())
-            conn.execute('ALTER ROLE domino_execution_signer LOGIN')
+    # Composed from the V4 executor suite rather than inherited, so its own
+    # tests are not discovered a second time here.
+    _V4=v4suite.DurableV4ExecutorTests
+    send=_V4.send; deploy=_V4.deploy; call=_V4.call; swaps=_V4.swaps; setup_vault=_V4.setup_vault
+    stop=classmethod(_V4.stop.__func__)
+    setUpClass=classmethod(_V4.setUpClass.__func__)
+    setup=_V4.setup; mined_receipt=_V4.mined_receipt; candidate=_V4.candidate; finish=_V4.finish
 
     def setUp(self):
-        with self.pg.admin() as conn:
-            conn.execute('TRUNCATE domino_execution.intents,domino_execution.origins,domino_execution.signer_heads CASCADE')
-        self.rpc.request('evm_revert',[self.base_snapshot])
-        type(self).base_snapshot=self.rpc.request('evm_snapshot',[])
-        self.rpc.request('evm_setAutomine',[True])
-        self.setup_vault()
-        self.operator=Account.from_key(KEY).address.lower()
-        self.rpc.request('anvil_setBalance',[self.operator,hex(10**20)])
-        self.send(self.vault,calldata('setOperator(address)',['address'],[self.operator]))
-        self.send(self.vault,calldata('setExecutionLimits('+LIMITS_TYPE+')',[LIMITS_TYPE],[(2,5000,100,100,10**18,120,3600)]))
-        self.swaps()
-        time.sleep(1.05);self.rpc.request('evm_mine',[])
-        block=self.rpc.request('eth_getBlockByNumber',['latest',False])
-        seq=self.admission.sequence
-        member=self.call(self.vault,'position(uint256)',[g.POSITION_TYPE],['uint256'],[self.token])[0]
-        point=self.call(self.vault,'checkpoint(uint256)',[g.CHECKPOINT_TYPE],['uint256'],[self.token])[0]
-        pos=m.PositionIdentity(sequence=seq.digest(),tokenId=str(self.token),generation=str(member[4]),isRoot=member[2],
-            parentTokenId=str(member[3]),tickLower=member[5],tickUpper=member[6],registrationBaselineId='0x'+member[7].hex(),
-            corePositionId=core_position_id(seq.positionManager,member[5],member[6],'0x'+self.token.to_bytes(32,'big').hex()))
-        limits=m.ExecutionLimits(version='2',baseCurrency=seq.baseCurrency,quoteCurrency=seq.quoteCurrency,upsideBps=5000,
-            maxSlippageBps=100,maxPriceImpactBps=100,maxGasCostWei=str(10**18),maxObservationAgeSeconds=120,forecastHorizonSeconds=3600)
-        policy=m.SequencePolicy(serviceFeeBps=200,triggerDistanceBps=500,maxOverlapBps=1000,minimumIntervalSeconds=1,maxPositions=4,version='1',paused=False,limits=limits)
-        accruals=tuple(sorted((m.AccrualObservation(source=m.FeeSourceIdentity(sequence=seq.digest(),position=pos.digest(),currency=c),
-            amountRaw=str(10**15),checkpointId='0x'+point[6].hex()) for c in (seq.poolKey.currency0,seq.poolKey.currency1)),key=lambda a:a.source.digest()))
-        self.obs=m.Observation(sequence=seq,policy=policy,stateNonce=str(self.call(self.vault,'stateNonce()',['uint64'])[0]),
-            authorityGeneration=str(self.call(self.vault,'authorityGeneration()',['uint64'])[0]),
-            blockNumber=str(int(block['number'],16)),blockHash=block['hash'],blockTimestamp=str(int(block['timestamp'],16)),
-            sqrtPriceX96=str(2**96),operator=self.operator,operatorEnabled=True,canonical=True,coverageComplete=True,
-            positions=(m.CustodyObservation(position=pos,holder=seq.owner,individualApproval=seq.vault,active=True),),balances=(),accruals=accruals)
-        swap=m.SwapBounds(enabled=False,adapterId=m.ZERO_HASH,adapterVersion='0',routeCommitment=m.ZERO_HASH,currencyIn=m.ZERO,currencyOut=m.ZERO,amountInRaw='0',minAmountOutRaw='0')
-        self.plan=m.ExecutionPlan(sequence=seq,policyHash=policy.digest(),observationHash=self.obs.digest(),action=1,path=0,
-            expectedPolicyVersion='1',expectedStateNonce=self.obs.stateNonce,expectedAuthorityGeneration=self.obs.authorityGeneration,
-            sourceBlockNumber=self.obs.blockNumber,sourceBlockHash=self.obs.blockHash,deadline=str(int(self.obs.blockTimestamp)+100),
-            allocations=(),collections=tuple(m.CollectionBudget(sourceId=a.source.digest(),maxGrossRaw=str(10**15)) for a in accruals),
-            destination=m.Destination(createChild=False,tokenId=str(self.token),tickLower=pos.tickLower,tickUpper=pos.tickUpper),
-            liquidityIncrease=str(5*10**13),maxGrossFee0=str(10**15),maxGrossFee1=str(10**15),maxChargedInput0='0',maxChargedInput1='0',
-            minNetAdded0='1',minNetAdded1='1',maxNetAdded0=str(2**127-1),maxNetAdded1=str(2**127-1),
-            minSqrtPriceX96=str(2**95),maxSqrtPriceX96=str(2**97),maxGasCostWei=str(10**17),swap=swap)
-        self.store=UnsignedExecutionStore(self.pg.settings)
-        self.worker=str(uuid.uuid4())
-        self.signer=RestrictedSigner(self.rpc,KEY,self.admission,SignerPolicy(3000000,10**10,10**6,10**17,enabled=True))
-        self.runner=ExecutionRunner(self.pg.settings,self.signer,restore_only=False)
-        self.identifier=self.plan.intent_id()
-        self.store.persist(self.owner,self.plan,self.obs,actor=self.operator)
-        self.lease=self.store.acquire(self.owner,self.identifier,self.worker,lease_seconds=300)
-        self.store.reserve(self.owner,self.identifier,self.worker,self.lease['fence'])
-        self.rpc.request('evm_mine',[])
+        self._V4.setUp(self)
+        self.setup()
+        self.candidate()
 
     def step(self,**kwargs):return self.runner.step(self.owner,self.identifier,self.worker,**kwargs)
     def prepare(self):return self.runner.journal.prepare(self.owner,self.identifier,self.worker,self.lease['fence'],self.signer)
@@ -130,7 +83,7 @@ class DurableExecutorEvmTests(unittest.TestCase):
             if first['state']!='reconciled':
                 item=self.runner.journal.read(self.owner,self.identifier)
                 cp,_=self.runner._stored_compound(item)
-                g.CompoundReceiptReconciler(self.rpc).reconcile(cp,self.admission,item['attempts'][0]['transaction_hash'],e1_plan=self.plan,observation=self.obs)
+                self.signer.verifier().reconcile(cp,self.admission,item['attempts'][0]['transaction_hash'],e1_plan=self.plan,observation=self.obs)
             self.assertEqual(first['state'],'reconciled',first)
             second=self.step();self.assertEqual(second['receipt'],first['receipt'])
             self.assertEqual(len(sends),1)
@@ -235,9 +188,9 @@ class DurableExecutorEvmTests(unittest.TestCase):
         finally:self.rpc.request=original
 
     def test_restricted_signer_disabled_wrong_identity_and_owner_revocation(self):
-        disabled=RestrictedSigner(self.rpc,KEY,self.admission,SignerPolicy(3000000,10**10,10**6,10**17))
+        disabled=RestrictedSigner(self.rpc,KEY,self.admission,SignerPolicy(6000000,10**10,10**6,10**17),price_observation_id=self.signer.price_observation_id)
         with self.assertRaisesRegex(ExecutionError,'execution_disabled'):disabled.qualify(self.plan,self.obs)
-        wrong=RestrictedSigner(self.rpc,bytes([67])*32,self.admission,self.signer.policy)
+        wrong=RestrictedSigner(self.rpc,bytes([67])*32,self.admission,self.signer.policy,price_observation_id=self.signer.price_observation_id)
         with self.assertRaisesRegex(ExecutionError,'execution_signer_identity'):wrong.qualify(self.plan,self.obs)
         self.send(self.vault,calldata('revokeOperator()'))
         with self.assertRaisesRegex(ExecutionError,'execution_authority_changed'):self.signer.qualify(self.plan,self.obs)

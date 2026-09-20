@@ -1,11 +1,13 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.26;
 
-import {DominoVault} from "../src/DominoVault.sol";
-import {DominoVaultFactory} from "../src/DominoVaultFactory.sol";
+import {DominoVaultV4} from "../src/DominoVaultV4.sol";
+import {DominoVaultFactoryV4} from "../src/DominoVaultFactoryV4.sol";
+import {DominoVaultReadHelper} from "../src/DominoVaultReadHelper.sol";
+import {DominoExecutionTypes as E} from "../src/DominoExecutionTypes.sol";
 import {DominoVaultTypes as T} from "../src/DominoVaultTypes.sol";
 import {IDominoVaultDraft} from "../src/IDominoVaultDraft.sol";
-import {VaultE2TestHarness} from "./DominoVaultCustody.t.sol";
+import {VaultV4TestHarness, StubEngineV4} from "./DominoVaultV4Custody.t.sol";
 import {VmE2, MockPoolManager, MockPositionManager, MockStateView, MockERC20} from "./E2Mocks.sol";
 
 interface VmArchitectureCode {
@@ -14,7 +16,12 @@ interface VmArchitectureCode {
 
 /// @dev Architecture/availability evidence only. Artificial credits below use
 /// the existing test harness; they are never claimed as collected trading fees.
-contract DominoVaultArchitectureTest {
+/// Ported from the V3 architecture suite when V3 was retired: the helper pin,
+/// its failure modes and what stays reachable without it are V4 properties
+/// too. V4 differs in two places, both marked below: the helper is a
+/// constructor argument rather than something a factory builds, and a child
+/// arrives by execution mint rather than adoption.
+contract DominoVaultV4ArchitectureTest {
     VmE2 private constant vm = VmE2(address(uint160(uint256(keccak256("hevm cheat code")))));
     VmArchitectureCode private constant codeVm = VmArchitectureCode(address(vm));
     address private constant OTHER_OWNER = address(0x2202);
@@ -25,8 +32,10 @@ contract DominoVaultArchitectureTest {
     MockPositionManager private positions;
     MockStateView private state;
     MockERC20 private token;
-    DominoVaultFactory private factory;
-    DominoVault private vault;
+    DominoVaultFactoryV4 private factory;
+    DominoVaultReadHelper private readHelper;
+    StubEngineV4 private engine;
+    DominoVaultV4 private vault;
     T.PoolKey private key;
 
     receive() external payable {}
@@ -40,7 +49,11 @@ contract DominoVaultArchitectureTest {
         state = new MockStateView(address(manager), positions);
         token = new MockERC20();
         key = T.PoolKey(address(0), address(token), 3000, 60, address(0));
-        factory = new DominoVaultFactory(address(manager), address(positions), address(state), RECIPIENT);
+        readHelper = new DominoVaultReadHelper(address(positions), address(state));
+        factory = new DominoVaultFactoryV4(address(manager), address(positions), address(state), RECIPIENT);
+        engine = new StubEngineV4(address(factory));
+        factory.finalizeImplementation(address(new DominoVaultV4(address(factory), address(manager),
+            address(positions), address(state), RECIPIENT, address(readHelper), address(engine))));
         vault = _create(address(this), 11);
     }
 
@@ -63,15 +76,15 @@ contract DominoVaultArchitectureTest {
         positions.approve(predicted, root);
     }
 
-    function _create(address owner, uint256 root) private returns (DominoVault result) {
+    function _create(address owner, uint256 root) private returns (DominoVaultV4 result) {
         (, uint256 nonce) = _prepare(owner, root);
         T.InitParams memory value = _params(root);
         vm.prank(owner);
-        result = DominoVault(payable(factory.createVault(value, nonce)));
+        result = DominoVaultV4(payable(factory.createVault(value, nonce)));
     }
 
-    function _assertMetadata(DominoVault target, address helper, bytes32 helperHash) private view {
-        require(target.implementationVersion() == 3, "wrong immutable vault version");
+    function _assertMetadata(DominoVaultV4 target, address helper, bytes32 helperHash) private view {
+        require(target.implementationVersion() == 4, "wrong immutable vault version");
         require(address(target.readHelper()) == helper && target.readHelperCodeHash() == helperHash,
             "helper metadata changed");
         require(helper != address(0) && helper.code.length != 0 && helper.codehash == helperHash,
@@ -79,8 +92,8 @@ contract DominoVaultArchitectureTest {
     }
 
     function testFactoryClonesShareFixedHelperWithoutSharingOwnerState() public {
-        DominoVault peer = _create(OTHER_OWNER, 21);
-        DominoVault implementation = DominoVault(payable(factory.implementation()));
+        DominoVaultV4 peer = _create(OTHER_OWNER, 21);
+        DominoVaultV4 implementation = DominoVaultV4(payable(factory.implementation()));
         address helper = address(vault.readHelper());
         bytes32 helperHash = vault.readHelperCodeHash();
         _assertMetadata(vault, helper, helperHash);
@@ -100,11 +113,19 @@ contract DominoVaultArchitectureTest {
             "one clone changed another clone");
         _assertMetadata(vault, helper, helperHash);
 
-        DominoVaultFactory otherFactory = new DominoVaultFactory(
+        // V4 difference: the helper is a constructor argument the implementation
+        // pins by address and codehash, not something the factory builds. A
+        // second factory finalised over a fresh helper pins that one.
+        DominoVaultReadHelper otherHelper = new DominoVaultReadHelper(address(positions), address(state));
+        DominoVaultFactoryV4 otherFactory = new DominoVaultFactoryV4(
             address(manager), address(positions), address(state), RECIPIENT);
-        DominoVault otherImplementation = DominoVault(payable(otherFactory.implementation()));
-        require(address(otherImplementation.readHelper()) != helper, "helper was not constructor-created");
-        _assertMetadata(otherImplementation, address(otherImplementation.readHelper()), otherImplementation.readHelperCodeHash());
+        StubEngineV4 otherEngine = new StubEngineV4(address(otherFactory));
+        otherFactory.finalizeImplementation(address(new DominoVaultV4(address(otherFactory), address(manager),
+            address(positions), address(state), RECIPIENT, address(otherHelper), address(otherEngine))));
+        DominoVaultV4 otherImplementation = DominoVaultV4(payable(otherFactory.implementation()));
+        require(address(otherImplementation.readHelper()) == address(otherHelper) && address(otherHelper) != helper,
+            "helper pin is not the constructor argument");
+        _assertMetadata(otherImplementation, address(otherHelper), address(otherHelper).codehash);
     }
 
     function _sequenceDigest(uint64 version) private view returns (bytes32) {
@@ -118,9 +139,9 @@ contract DominoVaultArchitectureTest {
             key.currency0, key.currency1, RECIPIENT));
     }
 
-    function testVersionThreeUsesExistingIdentityDomainWithNewVersionValue() public view {
-        require(vault.sequenceIdentityHash() == _sequenceDigest(3), "version 3 E1 identity mismatch");
-        require(vault.sequenceIdentityHash() != _sequenceDigest(2), "version 2 identity replayed");
+    function testVersionFourUsesExistingIdentityDomainWithNewVersionValue() public view {
+        require(vault.sequenceIdentityHash() == _sequenceDigest(4), "version 4 E1 identity mismatch");
+        require(vault.sequenceIdentityHash() != _sequenceDigest(3), "version 3 identity replayed");
     }
 
     function testHelperRejectsMutationAndCustodySelectorsWithoutChangingVault() public {
@@ -154,17 +175,16 @@ contract DominoVaultArchitectureTest {
         bytes32 original = vault.registrationCheckpoint(11).commitment;
         uint64 version = vault.policy().version;
         require(vault.rootArmed() && !vault.rootPermissionValid(), "helper outage did not fail closed");
-        vm.expectRevert(DominoVault.PermissionUnavailable.selector);
-        vault.validateAuthority(version, nonce, generation);
-        vm.expectRevert(DominoVault.PermissionUnavailable.selector);
+        // execute() is where V4 asks what V3's pre-flight check asked; with
+        // the helper gone it is refused before any engine call.
+        E.Plan memory plan;
+        vm.expectRevert(DominoVaultV4.PermissionUnavailable.selector);
+        vault.execute(plan);
+        vm.expectRevert(DominoVaultV4.PermissionUnavailable.selector);
         vault.rearmRoot(true);
-        positions.mint(address(this), 12, key, -300, 900, 500);
-        positions.approve(address(vault), 12);
-        vm.expectRevert(DominoVault.PermissionUnavailable.selector);
-        vault.adoptChild(12, 11, true);
         require(vault.stateNonce() == nonce && vault.authorityGeneration() == generation && vault.rootArmed() &&
             vault.checkpoint(11).commitment == checkpoint && vault.registrationCheckpoint(11).commitment == original &&
-            !vault.position(12).known && positions.ownerOf(12) == address(this), "unavailable helper mutated state");
+            vault.policy().version == version, "unavailable helper mutated state");
     }
 
     function testMissingHelperFailsClosedAndRestorationAllowsExplicitRearm() public {
@@ -214,7 +234,7 @@ contract DominoVaultArchitectureTest {
         T.InitParams memory value = _params(21);
         codeVm.etch(helper, hex"");
         vm.prank(OTHER_OWNER);
-        vm.expectRevert(DominoVault.ReadHelperUnavailable.selector);
+        vm.expectRevert(DominoVaultV4.ReadHelperUnavailable.selector);
         factory.createVault(value, nonce);
         require(predicted.code.length == 0 && !factory.isVault(predicted) &&
             factory.nextOwnerNonce(OTHER_OWNER) == nonce &&
@@ -224,25 +244,33 @@ contract DominoVaultArchitectureTest {
         codeVm.etch(helper, runtime);
         vm.prank(OTHER_OWNER);
         address created = factory.createVault(value, nonce);
-        require(created == predicted && DominoVault(payable(created)).rootPermissionValid(),
+        require(created == predicted && DominoVaultV4(payable(created)).rootPermissionValid(),
             "same prediction could not retry after restoration");
     }
 
-    function _fundedHarness() private returns (VaultE2TestHarness result) {
-        VaultE2TestHarness implementation = new VaultE2TestHarness(
-            address(this), address(manager), address(positions), address(state), RECIPIENT);
+    function _fundedHarness() private returns (VaultV4TestHarness result) {
+        StubEngineV4 harnessEngine = new StubEngineV4(address(this));
+        VaultV4TestHarness implementation = new VaultV4TestHarness(address(this), address(manager),
+            address(positions), address(state), RECIPIENT, address(readHelper), address(harnessEngine));
         bytes memory creation = abi.encodePacked(hex"3d602d80600a3d3981f3", hex"363d3d373d3d3d363d73",
             address(implementation), hex"5af43d82803e903d91602b57fd5bf3");
         address clone;
         assembly ("memory-safe") { clone := create(0, add(creation, 32), mload(creation)) }
         require(clone != address(0), "harness clone failed");
-        result = VaultE2TestHarness(payable(clone));
+        result = VaultV4TestHarness(payable(clone));
         positions.mint(address(this), 31, key, -600, 600, 1000);
         positions.approve(clone, 31);
         result.initialize(address(this), keccak256("architecture artificial credit fixture"), _params(31));
-        positions.mint(address(this), 32, key, -300, 900, 500);
-        positions.approve(clone, 32);
-        result.adoptChild(32, 31, true);
+        // V4 difference: the child arrives by execution mint, as successor 32.
+        E.Plan memory plan;
+        plan.action = E.MINT;
+        plan.authority.tokenId = 31;
+        plan.authority.intentId = keccak256("architecture fixture child");
+        harnessEngine.armMint(31, -300, 900, 500);
+        manager.setUnlocked(true);
+        result.execute(plan);
+        manager.setUnlocked(false);
+        require(result.position(32).active && positions.ownerOf(32) == clone, "fixture child not minted as 32");
         vm.deal(clone, 112);
         token.mint(clone, 218);
         result.creditOriginal(31, 100, 200);
@@ -251,7 +279,7 @@ contract DominoVaultArchitectureTest {
     }
 
     function testMissingHelperCannotBlockTrackedUntrackedOrNFTRecovery() public {
-        VaultE2TestHarness funded = _fundedHarness();
+        VaultV4TestHarness funded = _fundedHarness();
         T.Position memory root = funded.position(31);
         positions.mint(address(this), 99, key, -300, 900, 500);
         positions.transferFrom(address(this), address(funded), 99);

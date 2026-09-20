@@ -20,7 +20,7 @@ from execution_v4_adapter import rebuild_v4
 from execution_pg import ExecutionPostgres
 from position_accounting import core_position_id
 import test_execution_v4_receipts_evm as evm
-from test_general_compound_receipts_evm import calldata,LIMITS_TYPE
+from evm_harness import calldata,LIMITS_TYPE
 
 KEY=bytes([66])*32  # Published synthetic local test key; never funded remotely.
 
@@ -141,7 +141,7 @@ class DurableV4ExecutorTests(unittest.TestCase):
         self.signer=RestrictedSigner(self.rpc,KEY,self.admission,SignerPolicy(6000000,10**10,10**6,10**17,enabled=True),price_observation_id=price_id)
         self.runner=ExecutionRunner(self.pg.settings,self.signer,restore_only=False);self.identifier=plan.intent_id()
         self.store.persist(self.owner,plan,observation,actor=self.operator)
-        lease=self.store.acquire(self.owner,self.identifier,self.worker,lease_seconds=300)
+        self.lease=lease=self.store.acquire(self.owner,self.identifier,self.worker,lease_seconds=300)
         self.store.reserve(self.owner,self.identifier,self.worker,lease['fence'])
         return plan
     def step(self):

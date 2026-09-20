@@ -7,14 +7,16 @@ import {VmE2, MockERC20, MockPoolManager, MockPositionManager, MockStateView, E2
     E2ForeignSubscriber, E2OwnerWithoutNFTReceiver} from "../E2Mocks.sol";
 
 /**
- * The custody surface DominoVault and DominoVaultV4 share, as one interface.
+ * The custody surface of DominoVaultV4, as one interface.
  *
- * scripts/check-vault-abi-drift.mjs records that the two vaults have 96 ABI
- * members in common; this is the part of that surface the shared tests use,
- * plus the four harness-only entry points each suite's subclass adds. The
- * errors are declared here rather than imported from either vault so a shared
- * test can name one without choosing a lineage - the selector depends on the
- * signature alone, so it is the same error in both.
+ * Written when two lineages implemented it: the tests below ran against
+ * DominoVault (V3) and DominoVaultV4 through this interface until V3 was
+ * retired on 20 September 2026. The split stays because it keeps the custody
+ * contract legible on its own - this is the part of the vault's surface the
+ * custody tests use, plus the four harness-only entry points the suite's
+ * harness adds. The errors are declared here rather than imported so a test
+ * names one without importing the vault; a selector depends on the signature
+ * alone, so it is the same error.
  */
 /// Test-only runtime replacement, used to take an oracle offline.
 interface VmE2CodeEtch {

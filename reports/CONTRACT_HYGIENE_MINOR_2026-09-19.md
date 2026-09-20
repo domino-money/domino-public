@@ -251,3 +251,41 @@ successor of the same parent, and for a manager that minted to someone else or m
 exists. The ninth is recorded rather than pinned: `notifyUnsubscribe` refusing while
 `_T_COMPOUND` is set cannot be told apart from outside, because the execution then fails its
 own permission check and the frame reverts either way.
+
+### V3 retired — 20 September 2026
+
+The extract-or-retire decision came out as retire, once two facts were on the table: the release
+order names no V3 artifact, and `docs/PUBLIC_VAULT_E2.md` records V3 as never publicly activated.
+What V4 does not do that V3 did is one thing, `adoptChild` - bringing an NFT the owner already
+holds into the vault as a child; V4 acquires children only by minting successors - plus the
+`validateAuthority` pre-flight, whose decision the routing helper makes instead.
+
+Removed: `DominoVault.sol`, `DominoVaultFactory.sol`, `DominoCompoundEngine.sol`; the read
+helper's `compoundCall`, which only V3 called; the draft interface's `CompoundSelfPlan` and
+`compoundSelf`, which nothing implemented any more; the five V3 test suites; the ABI drift
+script, whose subject was two vaults; the V3 entries and reserves of the size gate; and the
+backend's on-EVM tests of V3 itself - the V3 compound receipt tests and the two performance
+suites (`test_performance_financial_collection_evm.py`, `test_performance_history_worker_evm.py`)
+that drove V3 `compoundSelf` receipts through the V3 collection branches, five tests in all.
+
+Two things in the backend were not V3 tests and stayed. The module that held the V3 receipt
+tests was also every other EVM test's Anvil harness; it is now `backend/tests/evm_harness.py`,
+with the harness and nothing else. And `test_execution_runner_evm.py` - eighteen tests of the
+durable executor's crash points, nonces, reorgs, signer identity and backup/restore - ran on the
+V3 vault only as a fixture; the runner, signer, store and journal it exercises are the ones V4
+uses. It was ported onto the V4 executor suite's fixture before V3 was removed, scenarios
+unchanged.
+
+Kept, on purpose, and worth knowing: the backend still carries V3 branches - receipt decoding
+for `compoundSelf`, and the V3 performance readers in `performance_collection.py`,
+`performance_financial_collection.py` and `performance_history_worker.py`. Those modules are
+pinned by SHA-256 in `api-contracts/performance-v1` and `performance-v2`, so removing the
+branches is a read-contract change with manifests to regenerate and app pins to move, not a
+deletion; it is the natural next step and is not this one. Their fixture-based unit tests stay;
+the on-EVM tests of those branches went, because their subject no longer compiles.
+
+Before deletion, nothing pinned by the V3 suites was left unpinned for V4: the factory suite's
+thirty tests were ported as `DominoVaultFactoryV4Creation.t.sol` (28; the two constructor tests
+the V4 factory suite already had are not repeated), and the architecture suite's seven as
+`DominoVaultV4Architecture.t.sol`, both green on first compile - the two factories differ only
+in how the implementation is bound, and the helper pin is the same contract.

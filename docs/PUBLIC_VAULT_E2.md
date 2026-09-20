@@ -1,5 +1,7 @@
 # Public vault and factory — E2 custody candidate
 
+> **Retired on 20 September 2026.** The implementation this document describes - `DominoVault.sol`, `DominoVaultFactory.sol` and `DominoCompoundEngine.sol` - was removed from the tree; it was never publicly deployed. Its custody semantics live on in `DominoVaultV4`, whose tests inherit this lineage's ([contracts/README.md](../contracts/README.md)). Source links below point at files that no longer exist at HEAD.
+
 11 September 2026 · [#86](https://github.com/domino-money/domino/issues/86) · original implementation version 1
 
 The current source contains a [version-2 architecture candidate](PUBLIC_VAULT_V2_ARCHITECTURE.md) for independent review. The custody semantics below remain; the version-1 bytecode measurements and compiler profile at the end are historical. Version 2 does not activate compound, Domino or swaps.

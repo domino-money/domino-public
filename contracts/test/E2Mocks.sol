@@ -87,7 +87,7 @@ contract MockPositionManager {
     bool public mintNothing;
     function setMintRecipientOverride(address to) external { mintRecipientOverride = to; }
     function setMintNothing(bool value) external { mintNothing = value; }
-    function modifyLiquiditiesWithoutUnlock(bytes calldata actions, bytes[] calldata params) external payable virtual {
+    function modifyLiquiditiesWithoutUnlock(bytes calldata actions, bytes[] calldata params) external payable {
         if (!MockPoolManager(poolManager).isUnlocked()) revert ManagerLocked();
         require(actions.length == 1 && actions[0] == 0x02 && params.length == 1, "mock: only MINT_POSITION");
         if (mintNothing) return;

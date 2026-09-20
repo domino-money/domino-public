@@ -4,16 +4,13 @@ import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-export const LIMITS = Object.freeze({ runtimeBytes: 24_576, initcodeBytes: 49_152, vaultReserveBytes: 512, engineReserveBytes: 8_000 });
+export const LIMITS = Object.freeze({ runtimeBytes: 24_576, initcodeBytes: 49_152, vaultReserveBytes: 313, engineReserveBytes: 2_048 });
 export const PROFILE = Object.freeze({ compiler: '0.8.26+commit.8a97fa7a', evmVersion: 'cancun', optimizerRuns: 200, viaIR: true, bytecodeHash: 'none' });
 export const CONTRACTS = Object.freeze([
-  Object.freeze({ name: 'DominoVault', constructorAddresses: 5, runtimeReserveBytes: LIMITS.vaultReserveBytes }),
-  Object.freeze({ name: 'DominoVaultFactory', constructorAddresses: 4, runtimeReserveBytes: 0 }),
   Object.freeze({ name: 'DominoVaultReadHelper', constructorAddresses: 2, runtimeReserveBytes: 0 }),
-  Object.freeze({ name: 'DominoCompoundEngine', constructorAddresses: 4, runtimeReserveBytes: LIMITS.engineReserveBytes }),
-  Object.freeze({ name: 'DominoVaultV4', constructorAddresses: 7, runtimeReserveBytes: 313 }),
+  Object.freeze({ name: 'DominoVaultV4', constructorAddresses: 7, runtimeReserveBytes: LIMITS.vaultReserveBytes }),
   Object.freeze({ name: 'DominoVaultFactoryV4', constructorAddresses: 4, runtimeReserveBytes: 0 }),
-  Object.freeze({ name: 'DominoExecutionEngineV4', constructorAddresses: 4, runtimeReserveBytes: 2_048 }),
+  Object.freeze({ name: 'DominoExecutionEngineV4', constructorAddresses: 4, runtimeReserveBytes: LIMITS.engineReserveBytes }),
   Object.freeze({ name: 'DominoRoutingHelperV4', constructorAddresses: 0, runtimeReserveBytes: 0 }),
   // Publisher, the state view it bounds a published price against, and the
   // band in basis points (reviewed 2026-09-19 with the price-guard hardening).
@@ -119,7 +116,7 @@ export function inspectArtifact(name, artifact) {
   const issues = [];
   if (runtimeHeadroomBytes < 0) issues.push('runtime_limit_exceeded');
   if (initcodeHeadroomBytes < 0) issues.push('initcode_limit_exceeded');
-  if (runtimeHeadroomBytes >= 0 && runtimeHeadroomBytes < contract.runtimeReserveBytes) issues.push(['DominoCompoundEngine','DominoExecutionEngineV4'].includes(contract.name) ? 'engine_runtime_reserve_exceeded' : 'vault_runtime_reserve_exceeded');
+  if (runtimeHeadroomBytes >= 0 && runtimeHeadroomBytes < contract.runtimeReserveBytes) issues.push(contract.name === 'DominoExecutionEngineV4' ? 'engine_runtime_reserve_exceeded' : 'vault_runtime_reserve_exceeded');
   return { name, ok: issues.length === 0, runtimeBytes, runtimeHeadroomBytes,
     requiredRuntimeReserveBytes: contract.runtimeReserveBytes, creationBytes, constructorArgumentsBytes: argumentsBytes,
     initcodeBytes, initcodeHeadroomBytes, issues };

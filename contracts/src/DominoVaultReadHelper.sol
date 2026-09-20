@@ -80,25 +80,6 @@ contract DominoVaultReadHelper {
         return manager.subscriber(tokenId);
     }
 
-    /// @dev Encodes only fixed no-swap PM actions; it never executes them.
-    function compoundCall(uint256 tokenId, address currency0, address currency1, address vault, bool increase, uint128 amount)
-        external pure returns (bytes memory)
-    {
-        bytes[] memory params;
-        bytes memory actions;
-        if (increase) {
-            params = new bytes[](1);
-            params[0] = abi.encode(tokenId, uint256(amount), type(uint128).max, type(uint128).max, bytes(""));
-            actions = hex"00";
-        } else {
-            params = new bytes[](2);
-            params[0] = abi.encode(tokenId, uint256(0), uint128(0), uint128(0), bytes(""));
-            params[1] = abi.encode(currency0, currency1, vault);
-            actions = hex"0111";
-        }
-        return abi.encodeCall(IPositionManagerE2.modifyLiquiditiesWithoutUnlock, (actions, params));
-    }
-
     function readInitialPosition(bytes32 poolId, uint256 tokenId, address base, address quote)
         external view returns (T.PoolKey memory key, int24 lo, int24 hi)
     {
