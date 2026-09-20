@@ -28,12 +28,32 @@ contract DominoExecutionEngineV4 {
     bytes32 public immutable readHelperHash;
     bytes32 public immutable routingHelperHash;
     bytes32 public immutable priceGuardHash;
-    address private _activeVault;
+    /// The read helper's own state view, read once at construction. It is
+    /// immutable there, so an external call per use bought nothing.
+    IStateViewE2 public immutable stateView;
+    // Per-execution scratch, transient (EIP-1153) rather than storage: each of
+    // these is written and cleared inside one call, and in storage each cost a
+    // set and a delete - about fifteen thousand gas apiece after the EIP-3529
+    // refund cap - for state no later transaction can read. The same move the
+    // vault made for its own scratch.
+    uint256 private constant _T_VAULT = 0;
     // The vault's pool manager, read once per execution: _delta asked the
     // clone for it on every one of its dozen calls.
-    address private _activeManager;
-    bytes32 private _unlockHash;
-    uint256 private _destination;
+    uint256 private constant _T_MANAGER = 1;
+    uint256 private constant _T_UNLOCK = 2;
+    uint256 private constant _T_DESTINATION = 3;
+
+    function _tget(uint256 slot) private view returns (uint256 v) {
+        assembly ("memory-safe") { v := tload(slot) }
+    }
+
+    function _tset(uint256 slot, uint256 v) private {
+        assembly ("memory-safe") { tstore(slot, v) }
+    }
+
+    function _tgetAddress(uint256 slot) private view returns (address) {
+        return address(uint160(_tget(slot)));
+    }
     uint256 public constant MAX_COLLECTIONS = 16;
     uint256 public constant MAX_BUDGETS = 32;
 
@@ -52,33 +72,36 @@ contract DominoExecutionEngineV4 {
         routingHelper = DominoRoutingHelperV4(routingHelper_); priceGuard = IPriceGuardV4(priceGuard_);
         readHelperHash = readHelper_.codehash; routingHelperHash = routingHelper_.codehash;
         priceGuardHash = priceGuard_.codehash;
+        stateView = IStateViewE2(DominoVaultReadHelper(readHelper_).stateView());
     }
 
     function execute(E.Plan calldata plan) external returns (bytes32 planHash, uint256 destination) {
         address implementation = IVaultFactoryV4(factory).implementation();
         bytes32 cloneHash = keccak256(abi.encodePacked(hex"363d3d373d3d3d363d73",implementation,hex"5af43d82803e903d91602b57fd5bf3"));
-        if (!IVaultFactoryV4(factory).isVault(msg.sender) || msg.sender.codehash != cloneHash || _activeVault != address(0)
+        if (!IVaultFactoryV4(factory).isVault(msg.sender) || msg.sender.codehash != cloneHash || _tget(_T_VAULT) != 0
             || address(readHelper).codehash != readHelperHash || address(routingHelper).codehash != routingHelperHash
             || address(priceGuard).codehash != priceGuardHash) revert InvalidExecution();
         IVaultExecutionV4 vault = IVaultExecutionV4(msg.sender);
         routingHelper.validate(address(vault), plan, readHelper);
-        _activeVault = msg.sender;
-        _activeManager = vault.poolManager();
+        _tset(_T_VAULT, uint256(uint160(msg.sender)));
+        _tset(_T_MANAGER, uint256(uint160(vault.poolManager())));
         bytes memory data = abi.encode(plan);
         if (keccak256(msg.data) != keccak256(bytes.concat(this.execute.selector,data))) revert InvalidExecution();
-        _unlockHash = keccak256(data);
-        IPoolManagerE4(_activeManager).unlock(data);
-        if (_unlockHash != bytes32(0)) revert UnexpectedCallback();
-        destination = _destination;
+        _tset(_T_UNLOCK, uint256(keccak256(data)));
+        IPoolManagerE4(_tgetAddress(_T_MANAGER)).unlock(data);
+        if (_tget(_T_UNLOCK) != 0) revert UnexpectedCallback();
+        destination = _tget(_T_DESTINATION);
         planHash = keccak256(abi.encode(keccak256("DominoExecutionV4"),block.chainid,msg.sender,vault.sequenceIdentityHash(),plan));
-        delete _activeVault; delete _activeManager; delete _destination;
+        // All three cleared on the success path: transient state lives to the
+        // end of the transaction, not the end of the call.
+        _tset(_T_VAULT, 0); _tset(_T_MANAGER, 0); _tset(_T_DESTINATION, 0);
     }
 
     function unlockCallback(bytes calldata data) external returns (bytes memory) {
-        IVaultExecutionV4 vault = IVaultExecutionV4(_activeVault);
-        if (_activeVault == address(0) || msg.sender != _activeManager || _unlockHash == bytes32(0)
-            || keccak256(data) != _unlockHash) revert UnexpectedCallback();
-        delete _unlockHash;
+        IVaultExecutionV4 vault = IVaultExecutionV4(_tgetAddress(_T_VAULT));
+        if (_tget(_T_VAULT) == 0 || msg.sender != _tgetAddress(_T_MANAGER) || _tget(_T_UNLOCK) == 0
+            || uint256(keccak256(data)) != _tget(_T_UNLOCK)) revert UnexpectedCallback();
+        _tset(_T_UNLOCK, 0);
         E.Plan memory plan = abi.decode(data,(E.Plan));
         T.PoolKey memory key = vault.poolKey();
         if (_delta(vault.positionManager(),key.currency0) != 0 || _delta(vault.positionManager(),key.currency1) != 0
@@ -90,7 +113,7 @@ contract DominoExecutionEngineV4 {
         uint160 anchorPrice = priceGuard.referencePrice(plan.swap.priceObservationId,vault.poolId(),
             plan.authority.observedAtBlock,plan.authority.observedBlockHash,limits.maxObservationAgeSeconds);
         {
-            (uint160 spot,,,) = IStateViewE2(readHelper.stateView()).getSlot0(vault.poolId());
+            (uint160 spot,,,) = stateView.getSlot0(vault.poolId());
             routingHelper.checkSwapPrices(spot,spot,anchorPrice,limits.maxPriceImpactBps);
         }
         if (plan.action == E.NET) _net(vault,plan,key);
@@ -110,7 +133,7 @@ contract DominoExecutionEngineV4 {
         }
         for (uint256 i; i < plan.budgets.length; ++i)
             if (plan.budgets[i].minOriginal != 0 || plan.budgets[i].minCharged != 0) revert InvalidAmount();
-        readHelper.validateCompoundPrice(vault.poolId(),plan.authority,vault.executionLimits().maxObservationAgeSeconds);
+        readHelper.validateCompoundPrice(vault.poolId(),plan.authority,limits.maxObservationAgeSeconds);
         if (_delta(vault.positionManager(),key.currency0) != 0 || _delta(vault.positionManager(),key.currency1) != 0
             || _delta(address(this),key.currency0) != 0 || _delta(address(this),key.currency1) != 0) revert InvalidAmount();
         return bytes("");
@@ -171,7 +194,7 @@ contract DominoExecutionEngineV4 {
             beforePoint = _before(vault,id);
             vault.executionModify(id,plan.authority.liquidityIncrease,0,0,false);
         }
-        _destination = id;
+        _tset(_T_DESTINATION, id);
         uint128 added0 = _debt(vault.positionManager(),key.currency0);
         uint128 added1 = _debt(vault.positionManager(),key.currency1);
         _bound(added0,added1,plan);
@@ -216,7 +239,7 @@ contract DominoExecutionEngineV4 {
                 if (pass != 0 && wanted == 0) continue;
                 T.CompoundAmounts memory value = _amounts(vault,b,wanted,priorGross);
                 vault.executionApply(b.sourceId,currency,value,vault.positionManager(),false);
-                emit BudgetApplied(address(vault),plan.authority.intentId,b.sourceId,currency,_destination,value);
+                emit BudgetApplied(address(vault),plan.authority.intentId,b.sourceId,currency,_tget(_T_DESTINATION),value);
                 _debit(actualBudget,value.grossOriginalConsumed,value.chargedConsumed);
                 work.originalSpent[i] += value.grossOriginalConsumed;
                 remaining -= wanted;
@@ -253,7 +276,7 @@ contract DominoExecutionEngineV4 {
             emit BudgetApplied(address(vault),plan.authority.intentId,budget.sourceId,budget.currency,id,value);
         }
         T.Checkpoint memory afterPoint = _point(vault,id); _after(beforePoint,afterPoint,plan.authority.liquidityIncrease);
-        vault.executionCheckpoint(id,afterPoint); _destination = id;
+        vault.executionCheckpoint(id,afterPoint); _tset(_T_DESTINATION, id);
         emit FeesRealized(address(vault),plan.authority.intentId,id,beforePoint.commitment,afterPoint.commitment,realized0,realized1);
     }
 
@@ -274,7 +297,7 @@ contract DominoExecutionEngineV4 {
         E.FeeBudget memory budget = E.FeeBudget(route.sourceId,route.currencyIn,originalCap,chargedCap,0,0);
         T.CompoundAmounts memory value = _amounts(vault,budget,route.amountIn,0);
         // The anchor and the limits are the ones unlockCallback already bound.
-        (uint160 beforePrice,,,) = IStateViewE2(readHelper.stateView()).getSlot0(vault.poolId());
+        (uint160 beforePrice,,,) = stateView.getSlot0(vault.poolId());
         routingHelper.checkSwapPrices(beforePrice,beforePrice,anchorPrice,limits.maxPriceImpactBps);
         if (route.minAmountOut < routingHelper.minimumOutput(route.amountIn,anchorPrice,zeroForOne,limits.maxSlippageBps)) revert InvalidRoute();
         uint256 beforeInput = _balance(route.currencyIn); uint256 beforeOutput = _balance(outputCurrency);
@@ -284,7 +307,7 @@ contract DominoExecutionEngineV4 {
         int128 input = zeroForOne ? delta0 : delta1; int128 output = zeroForOne ? delta1 : delta0;
         if (input != -int256(uint256(route.amountIn)) || output <= 0 || uint128(output) < route.minAmountOut) revert InvalidAmount();
         uint128 amountOut = uint128(output);
-        (uint160 afterPrice,,,) = IStateViewE2(readHelper.stateView()).getSlot0(vault.poolId());
+        (uint160 afterPrice,,,) = stateView.getSlot0(vault.poolId());
         routingHelper.checkSwapPrices(beforePrice,afterPrice,anchorPrice,limits.maxPriceImpactBps);
         vault.executionApply(route.sourceId,route.currencyIn,value,address(this),false);
         manager.take(outputCurrency,address(vault),amountOut);
@@ -320,10 +343,11 @@ contract DominoExecutionEngineV4 {
     }
 
     function _balance(address currency) private view returns (uint256) {
-        return currency == address(0) ? _activeVault.balance : IERC20E2(currency).balanceOf(_activeVault);
+        address self = _tgetAddress(_T_VAULT);
+        return currency == address(0) ? self.balance : IERC20E2(currency).balanceOf(self);
     }
     function _delta(address account, address currency) private view returns (int256) {
-        return int256(uint256(IPoolManagerE4(_activeManager).exttload(keccak256(abi.encode(account,currency)))));
+        return int256(uint256(IPoolManagerE4(_tgetAddress(_T_MANAGER)).exttload(keccak256(abi.encode(account,currency)))));
     }
     function _debt(address account, address currency) private view returns (uint128) {
         int256 delta = _delta(account,currency);

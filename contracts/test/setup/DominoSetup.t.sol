@@ -9,7 +9,8 @@ import {IAllowanceTransfer} from "permit2/src/interfaces/IAllowanceTransfer.sol"
 import {IPositionDescriptor} from "../reference/official-v4/v4-periphery/src/interfaces/IPositionDescriptor.sol";
 import {IWETH9} from "../reference/official-v4/v4-periphery/src/interfaces/external/IWETH9.sol";
 
-interface SetupVm { function deal(address, uint256) external; function prank(address) external; function warp(uint256) external; }
+interface SetupVm { function deal(address, uint256) external; function prank(address) external; function warp(uint256) external;
+    function store(address, bytes32, bytes32) external; }
 contract SetupToken {
     mapping(address => uint256) public balanceOf;
     mapping(address => mapping(address => uint256)) public allowance;
@@ -98,30 +99,54 @@ contract DominoSetupTest {
         setup.cancel(id);
     }
     /**
-     * The unlock callback, forged. Nothing referenced it before: it is the one
-     * entry point on this contract that the pool manager alone may call, and
-     * all four of its clauses were unreachable from any suite.
+     * The unlock callback, forged, clause by clause.
+     *
+     * Its guard is four disjuncts and an earlier version of this test reached
+     * only the first two, because every case it built left `_entered` false.
+     * Each case below makes exactly one clause true, so deleting that clause
+     * alone fails this test - except the third, which no case can isolate:
+     * when `_callback` is zero, `keccak256(data) != _callback` is true as
+     * well, so `_callback == bytes32(0)` can never be the clause that decides.
+     * It is redundant, not merely untested, and is recorded as such in
+     * reports/CONTRACT_HYGIENE_MINOR_2026-09-19.md.
+     *
+     * `_entered` is slot 2 and `_callback` slot 3: the two mappings above them
+     * take one slot each and the immutables take none.
      */
-    function testUnlockCallbackRefusesEveryForgedEntry() external {
+    function testUnlockCallbackRefusesEachForgedClause() external {
         _deploy(false);
         bytes memory payload = abi.encode(uint8(1), bytes(""));
+        bytes32 armed = keccak256(payload);
+        bytes32 ENTERED = bytes32(uint256(2));
+        bytes32 CALLBACK = bytes32(uint256(3));
 
-        // Not the pool manager, and no operation in flight.
+        // Clause 1 alone: everything else satisfied, wrong caller.
+        vm.store(address(setup), ENTERED, bytes32(uint256(1)));
+        vm.store(address(setup), CALLBACK, armed);
         (bool ok, bytes memory out) = address(setup).call(
             abi.encodeCall(DominoSetup.unlockCallback, (payload)));
         require(!ok && bytes4(out) == DominoSetup.InvalidSetup.selector, "only the pool manager");
 
-        // The pool manager itself, but outside any operation: `_entered` is
-        // false and `_callback` is unset, so the payload cannot match.
+        // Clause 2 alone: the pool manager, with the payload it armed, but no
+        // operation in flight.
+        vm.store(address(setup), ENTERED, bytes32(0));
         vm.prank(address(manager));
         (ok, out) = address(setup).call(abi.encodeCall(DominoSetup.unlockCallback, (payload)));
         require(!ok && bytes4(out) == DominoSetup.InvalidSetup.selector, "no operation is in flight");
 
-        // An empty payload is refused for the same reason and not, for
-        // instance, by decoding into a zero `kind`.
+        // Clause 4 alone: the pool manager, inside an operation, handing back
+        // a payload other than the one the operation committed to. This is the
+        // clause that stops a different swap or mint plan executing inside a
+        // legitimate unlock, and nothing reached it before.
+        vm.store(address(setup), ENTERED, bytes32(uint256(1)));
+        vm.store(address(setup), CALLBACK, armed);
         vm.prank(address(manager));
-        (ok, out) = address(setup).call(abi.encodeCall(DominoSetup.unlockCallback, (bytes(""))));
-        require(!ok && bytes4(out) == DominoSetup.InvalidSetup.selector, "an empty payload is not a plan");
+        (ok, out) = address(setup).call(abi.encodeCall(
+            DominoSetup.unlockCallback, (abi.encode(uint8(2), bytes("")))));
+        require(!ok && bytes4(out) == DominoSetup.InvalidSetup.selector, "the payload must be the armed one");
+
+        vm.store(address(setup), ENTERED, bytes32(0));
+        vm.store(address(setup), CALLBACK, bytes32(0));
     }
 
     function testOwnerBoundOperationIdsPreventFrontRunningAndReplay() public {

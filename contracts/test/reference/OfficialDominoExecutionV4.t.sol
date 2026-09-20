@@ -364,9 +364,28 @@ contract OfficialDominoExecutionV4Test {
         p.swap.sqrtPriceLimitX96=TickMath.MIN_SQRT_PRICE+1;vm.prank(PUBLISHER);oracle.revoke(p.swap.priceObservationId);_reject(p);
         p=_withSwap();vm.warp(block.timestamp+61);_reject(p);
     }
+    /// Both doors the name promises. The fee door is the one that matters and
+    /// the one this test used to skip: withdrawFeeReserves deliberately carries
+    /// no deployment-pin check (DominoVaultV4.sol:475-479), so an owner whose
+    /// engine has been replaced or destroyed can still reach the reserve. That
+    /// property was pinned for V3 and unpinned for V4 until now.
     function testOwnerCanExitChildrenAndFeesWhenEngineUnavailable() external {
-        uint256 child=_mint(false);vm.etch(address(engine),hex"00");
+        uint256 child=_mint(false);
+        T.Position memory member=vault.position(tokenId);
+        address c0=Currency.unwrap(key.currency0);
+        T.FeeBalance memory reserve=vault.feeBalance(member.source0,c0);
+        require(reserve.original!=0 || reserve.charged!=0,"the fixture leaves a reserve to exit");
+
+        vm.etch(address(engine),hex"00");
+        require(!vault.rootPermissionValid(),"the deployment pin is broken");
         vault.withdrawChildPosition(child);require(positions.ownerOf(child)==address(this),"owner child exit independent engine");
+
+        uint256 before_=_balance(c0,address(this));
+        vault.withdrawFeeReserves(member.source0,c0,reserve.original,reserve.charged);
+        require(_balance(c0,address(this))==before_+uint256(reserve.original)+reserve.charged,"the reserve reached the owner");
+        T.FeeBalance memory left=vault.feeBalance(member.source0,c0);
+        require(left.original==0 && left.charged==0,"and the ledger is empty");
+
         positions.approve(address(0),tokenId);require(!vault.rootPermissionValid(),"owner can revoke root");
     }
     function testCallbacksAndForeignSourcesNeverAdmitted() external {

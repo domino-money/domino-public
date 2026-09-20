@@ -19,18 +19,22 @@ Alongside them, three things were measured here rather than estimated:
   `DominoExecutionEngineV4`'s two-pass allocation loop
   (`Variable cleaned is 1 too deep`, `contracts/src/DominoExecutionEngineV4.sol:183`).
 
+*Superseded — the figures below were true when this report was written and
+five of the ten rows no longer reproduce. Measured at the head that carries
+D-01, D-02, D-10 and the F2/F7 work:*
+
 | Contract | Runtime | Headroom | Reserve | Slack | Creation |
 |---|---:|---:|---:|---:|---:|
-| **DominoVaultV4** | **24,263** | **313** | **313** | **0** | 25,536 |
-| DominoExecutionEngineV4 | 21,902 | 2,674 | 2,048 | 626 | 22,418 |
-| DominoVault (V3) | 23,841 | 735 | 512 | 223 | 42,952 |
-| DominoRoutingHelperV4 | 13,842 | 10,734 | 0 | 10,734 | 13,868 |
-| DominoSetup | 11,688 | 12,888 | 0 | 12,888 | 12,561 |
-| DominoCompoundEngine | 10,020 | 14,556 | 8,000 | 6,556 | 10,440 |
-| DominoVaultReadHelper | 7,459 | 17,117 | 0 | 17,117 | 7,667 |
-| DominoVaultFactoryV4 | 3,502 | 21,074 | 0 | 21,074 | 4,239 |
-| DominoVaultFactory | 2,286 | 22,290 | 0 | 22,290 | 46,054 |
-| DominoPriceGuardV4 | 2,055 | 22,521 | 0 | 22,521 | 2,215 |
+| DominoVault (V3) | 23,841 | 735 | 512 | 223 | 43,112 |
+| DominoVaultV4 | 23,625 | 951 | 313 | **638** | 25,108 |
+| DominoExecutionEngineV4 | 21,899 | 2,677 | 2,048 | 629 | 22,717 |
+| DominoRoutingHelperV4 | 13,815 | 10,761 | 0 | 10,761 | 13,841 |
+| DominoSetup | 11,898 | 12,678 | 0 | 12,678 | 12,970 |
+| DominoCompoundEngine | 10,020 | 14,556 | 8,000 | 6,556 | 10,568 |
+| DominoVaultReadHelper | 7,459 | 17,117 | 0 | 17,117 | 7,731 |
+| DominoVaultFactoryV4 | 3,502 | 21,074 | 0 | 21,074 | 4,367 |
+| DominoPriceGuardV4 | 2,760 | 21,816 | 0 | 21,816 | 3,166 |
+| DominoVaultFactory | 2,286 | 22,290 | 0 | 22,290 | 46,182 |
 
 **Nothing in this report has been changed.** It is an assessment; each item
 below is a proposal with its own risk, and several are owner decisions.
@@ -41,6 +45,14 @@ below is a proposal with its own risk, and several are owner decisions.
 any byte added fails the build. That is the single fact that orders the rest —
 several hardening fixes add code to that contract, so the compaction work is
 what buys the room to make them.
+
+*No longer true, and the order it justified no longer binds.* Moving the
+vault's per-execution scratch to transient storage (D-10) freed 112 B and the
+same move in the engine freed a further 481 B, so the vault now has 638 B of
+slack and the engine 629 B. The hardening that needed room — D-01 and D-02 —
+has landed. Byte pressure is no longer what sequences this work, which is why
+F11 was declined rather than taken: 91 B is not worth removing a defence-in-depth
+codehash check from the guard that protects the fee sinks.
 
 ### 1. The non-swap compound path has no independent price anchor (hardening D-01)
 

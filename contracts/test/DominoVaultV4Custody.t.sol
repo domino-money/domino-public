@@ -27,6 +27,15 @@ contract StubEngineV4 {
     }
 }
 
+/// Speaks to the vault with its own address, so a notification can arrive
+/// mid-rearm from someone who is not the position manager - the only state in
+/// which notifySubscribe's sender clause is the one that decides.
+contract SubscribeForwarder {
+    function poke(address vault, uint256 tokenId, bytes calldata data) external {
+        DominoVaultV4(payable(vault)).notifySubscribe(tokenId, data);
+    }
+}
+
 /// @dev Terminal-state injection exists only here, as it does for V3.
 contract VaultV4TestHarness is DominoVaultV4 {
     constructor(address factory_, address pool_, address positions_, address state_, address recipient_,
@@ -348,16 +357,29 @@ contract DominoVaultV4CustodyTest is IERC721ReceiverE2 {
         require(!vault.rootArmed(), "a burnt root disarms the vault");
     }
 
-    /// The fourth clause of _requireExecution, which the other tests cannot
-    /// reach: the engine is at the pinned address but no longer the pinned
-    /// code. Being the right address is not enough.
-    function testExecutionCallbacksRefuseThePinnedAddressAtDifferentCode() external {
+    /**
+     * What a re-coded engine actually costs, stated as what this test shows.
+     *
+     * An earlier comment here claimed this reached _requireExecution's
+     * codehash clause. It does not and cannot: all six callbacks are decided
+     * by `_T_COMPOUND == 0` first, and that flag is transient, so no test can
+     * put the vault in the state where the codehash clause would be the one
+     * to fire. The pin is enforced on the path that matters instead -
+     * rootPermissionValid, which execute() checks at entry - and that is what
+     * is asserted below.
+     */
+    function testARecodedEngineBreaksTheDeploymentPinAndKeepsCallbacksRefused() external {
         bytes[] memory calls = _executionCalls();
+        require(vault.rootPermissionValid(), "the pin holds before the engine is re-coded");
+
         // Any different runtime at the same address is enough. Speak as the
         // engine with prank rather than through it: the etch replaces the
         // stub's own code, so `poke` would no longer exist to call.
         vmEtch.etch(address(engine), address(readHelper).code);
-        require(!vault.rootPermissionValid(), "a re-coded engine invalidates the deployment pin");
+        require(!vault.rootPermissionValid(), "and breaks once it is");
+        // Every owner path that re-checks the deployment now refuses.
+        (bool armed, bytes memory why) = address(vault).call(abi.encodeCall(DominoVaultV4.rearmRoot, (true)));
+        require(!armed && bytes4(why) == DominoVaultV4.PermissionUnavailable.selector, "rearm refuses a re-coded engine");
         for (uint256 i; i < calls.length; ++i) {
             vm.prank(address(engine));
             (bool ok, bytes memory out) = address(vault).call(calls[i]);
@@ -381,18 +403,64 @@ contract DominoVaultV4CustodyTest is IERC721ReceiverE2 {
         }
     }
 
-    /// notifySubscribe additionally binds the payload: the identity and the
-    /// generation the vault expects, and only during its own rearm window.
-    function testNotifySubscribeRefusesTheRightCallerWithTheWrongPayload() external {
-        vm.prank(address(positions));
-        (bool ok, bytes memory out) = address(vault).call(abi.encodeCall(
-            DominoVaultV4.notifySubscribe, (11, abi.encode(bytes32(0), uint64(0)))));
-        _refused(ok, out, "outside a rearm, and with a foreign payload");
+    /**
+     * notifySubscribe's last two clauses - the token it reports and the
+     * identity payload it carries - are live only inside a rearm, behind two
+     * transient flags a test cannot write. An earlier version of this test
+     * called the function directly and was decided by the transition flag two
+     * clauses earlier, so it pinned neither. Driving a rearm through a mock
+     * that forwards a different token or a different payload reaches both.
+     *
+     * Measured with mutation: the sender, token and payload clauses each fail
+     * this test when deleted. The other two do not, and the reason is the
+     * guard's own shape rather than a gap here. Outside a rearm
+     * `_T_TRANSITION == 0` and `_T_ENTERED != 1` are true together and mask
+     * each other; inside one they are false together. `_T_ENTERED != 1` can
+     * therefore never be the clause that decides - _T_TRANSITION is set only
+     * inside _armRoot, reached only from two nonReentrant functions - so it is
+     * redundant, not untested. `_T_TRANSITION == 0` could decide alone, but
+     * only for a notification arriving during some other guarded call, which
+     * no mock here can produce.
+     */
+    function testNotifySubscribeBindsTheTokenAndTheIdentityPayload() external {
+        // Clause 1 alone is unreachable the same way: outside a rearm the
+        // transition flag decides first. These two cases pin that pair.
+        for (uint256 who; who < 2; ++who) {
+            vm.prank(who == 0 ? STRANGER : address(positions));
+            (bool ok, bytes memory out) = address(vault).call(
+                abi.encodeCall(DominoVaultV4.notifySubscribe, (11, "")));
+            _refused(ok, out, "refused outside a rearm");
+        }
 
-        vm.prank(address(positions));
-        (ok, out) = address(vault).call(abi.encodeCall(DominoVaultV4.notifySubscribe,
-            (11, abi.encode(vault.sequenceIdentityHash(), vault.authorityGeneration()))));
-        _refused(ok, out, "the right payload is still refused outside a rearm");
+        // Mid-rearm, from a caller that is not the position manager: here the
+        // sender clause is the only one that is true, so this is what pins it.
+        SubscribeForwarder forwarder = new SubscribeForwarder();
+        positions.configureSubscribeReentry(address(forwarder),
+            abi.encodeCall(SubscribeForwarder.poke,
+                (address(vault), 11, abi.encode(vault.sequenceIdentityHash(), vault.authorityGeneration() + 1))),
+            false);
+        vault.rearmRoot(true);
+        require(!positions.subscribeReentrySucceeded(), "a stranger's notification is refused mid-rearm");
+        require(bytes4(positions.subscribeReentryResult()) == DominoVaultV4.UnexpectedCallback.selector,
+            "and refused as an unexpected callback");
+        positions.configureSubscribeReentry(address(0), "", false);
+
+        // A rearm that reports a different token.
+        positions.setSubscribeOverride("", 12);
+        (bool ok2, bytes memory out2) = address(vault).call(
+            abi.encodeCall(DominoVaultV4.rearmRoot, (true)));
+        _refused(ok2, out2, "the notification must name the root token");
+
+        // A rearm whose payload is not the identity the vault armed with.
+        positions.setSubscribeOverride(abi.encode(bytes32(0), uint64(0)), 0);
+        (ok2, out2) = address(vault).call(abi.encodeCall(DominoVaultV4.rearmRoot, (true)));
+        _refused(ok2, out2, "the payload must be this vault's identity and generation");
+
+        // And the honest rearm still passes, so the cases above failed on the
+        // clause named and not on the rearm itself.
+        positions.setSubscribeOverride("", 0);
+        vault.rearmRoot(true);
+        require(vault.rootArmed(), "an unaltered rearm is admitted");
     }
 
     /// A liquidity change nobody asked for invalidates the root instead of

@@ -120,6 +120,16 @@ contract MockPositionManager {
         subscribeReentrySucceeded = false; delete subscribeReentryResult;
     }
 
+    /// Set to forward a different payload or token than the vault asked for,
+    /// which is the only way to reach notifySubscribe's last two clauses: they
+    /// are live only inside a rearm, and the transient flags that get you
+    /// there cannot be written from a test.
+    bytes public subscribeDataOverride;
+    uint256 public subscribeTokenOverride;
+    function setSubscribeOverride(bytes calldata data, uint256 tokenId) external {
+        subscribeDataOverride = data; subscribeTokenOverride = tokenId;
+    }
+
     function subscribe(uint256 id, address target, bytes calldata data) external {
         _authorized(id);
         _locked();
@@ -130,7 +140,10 @@ contract MockPositionManager {
             (subscribeReentrySucceeded, subscribeReentryResult) = subscribeReentryTarget.call(subscribeReentryData);
             require(!requireSubscribeReentrySuccess || subscribeReentrySucceeded, "mock subscribe reentry failed");
         }
-        SubscriberE2(target).notifySubscribe(id, data);
+        bytes memory forwarded = data;
+        if (subscribeDataOverride.length != 0) forwarded = subscribeDataOverride;
+        SubscriberE2(target).notifySubscribe(
+            subscribeTokenOverride == 0 ? id : subscribeTokenOverride, forwarded);
     }
 
     function unsubscribe(uint256 id) external {

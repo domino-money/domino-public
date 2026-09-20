@@ -34,14 +34,17 @@ contract DominoRoutingHelperV4 {
         return scaled / anchorPrice;
     }
 
-    function nearCeiling(T.Position calldata member, uint160 price, bool inverse, uint16 trigger)
-        external pure returns (bool) {
+    /// `memory` and internally callable: validate reached these through
+    /// `this.`, which ABI-encoded an eleven-word struct and made a call to
+    /// this same contract. The external ABI is unchanged.
+    function nearCeiling(T.Position memory member, uint160 price, bool inverse, uint16 trigger)
+        public pure returns (bool) {
         uint160 ceiling = TickMath.getSqrtPriceAtTick(inverse ? member.tickLower : member.tickUpper);
         return ratioBps(price, ceiling, inverse) >= 10000 - trigger;
     }
 
-    function validateSuccessor(T.Position calldata parent, int24 lower, int24 upper, int24 spacing,
-        bool inverse, uint16 overlap, uint32 upside) external pure {
+    function validateSuccessor(T.Position memory parent, int24 lower, int24 upper, int24 spacing,
+        bool inverse, uint16 overlap, uint32 upside) public pure {
         if (spacing <= 0 || lower >= upper || lower < TickMath.MIN_TICK || upper > TickMath.MAX_TICK
             || lower % spacing != 0 || upper % spacing != 0 || overlap > 2000 || upside == 0)
             revert InvalidGeometry();
@@ -146,8 +149,8 @@ contract DominoRoutingHelperV4 {
             if (plan.destinationTokenId != a.tokenId || plan.tickLower != 0 || plan.tickUpper != 0) revert InvalidRoute();
         } else if (plan.action == E.MINT) {
             if (plan.destinationTokenId != 0 || vault.successorOf(a.tokenId) != 0 || vault.activePositions() >= rules.maxPositions
-                || !this.nearCeiling(parent,price,inverse,rules.triggerDistanceBps)) revert InvalidRoute();
-            this.validateSuccessor(parent,plan.tickLower,plan.tickUpper,key.tickSpacing,inverse,rules.maxOverlapBps,limits.upsideBps);
+                || !nearCeiling(parent,price,inverse,rules.triggerDistanceBps)) revert InvalidRoute();
+            validateSuccessor(parent,plan.tickLower,plan.tickUpper,key.tickSpacing,inverse,rules.maxOverlapBps,limits.upsideBps);
         } else if (plan.tickLower != 0 || plan.tickUpper != 0 || !vault.position(plan.destinationTokenId).active) revert InvalidRoute();
         for (uint256 i; i < plan.collect.length; ++i) {
             E.PositionRef calldata ref = plan.collect[i]; T.Position memory member = vault.position(ref.tokenId);
@@ -192,7 +195,7 @@ contract DominoRoutingHelperV4 {
         T.Position memory target = vault.position(p.destinationTokenId);
         bool sourceInside = tick >= member.tickLower && tick < member.tickUpper;
         if (sourceInside) {
-            if (!this.nearCeiling(member,price,inverse,rules.triggerDistanceBps)
+            if (!nearCeiling(member,price,inverse,rules.triggerDistanceBps)
                 || vault.successorOf(tokenId) != p.destinationTokenId) revert InvalidRoute();
         } else if (!(tick >= target.tickLower && tick < target.tickUpper)) revert InvalidRoute();
     }

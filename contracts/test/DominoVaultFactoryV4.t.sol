@@ -12,6 +12,33 @@ import {StubEngineV4} from "./DominoVaultV4Custody.t.sol";
 /// A pool manager whose positions point somewhere else, for ManagerMismatch.
 contract ForeignPoolManager {}
 
+/// finalizeImplementation reads seven getters off the candidate. A real
+/// DominoVaultV4 cannot be made to disagree on two of them - implementation()
+/// and implementationVersion() - so covering all seven needs a candidate that
+/// can disagree on any one.
+contract FakeImplementation {
+    address public factory;
+    address public implementation;
+    uint64 public implementationVersion;
+    address public poolManager;
+    address public positionManager;
+    address public stateView;
+    address public serviceFeeRecipient;
+    constructor(address factory_, address pool_, address positions_, address state_, address recipient_) {
+        factory = factory_; implementation = address(this); implementationVersion = 4;
+        poolManager = pool_; positionManager = positions_; stateView = state_; serviceFeeRecipient = recipient_;
+    }
+    function set(uint256 which, address value, uint64 version) external {
+        if (which == 0) factory = value;
+        else if (which == 1) implementation = value;
+        else if (which == 2) implementationVersion = version;
+        else if (which == 3) poolManager = value;
+        else if (which == 4) positionManager = value;
+        else if (which == 5) stateView = value;
+        else serviceFeeRecipient = value;
+    }
+}
+
 /**
  * The V4 factory's refusals.
  *
@@ -74,12 +101,20 @@ contract DominoVaultFactoryV4Test {
                 abi.encodeCall(this.deployFactory, (a[0], a[1], a[2], a[3])));
             _refused(ok, out, DominoVaultFactoryV4.InvalidManagerConfiguration.selector, "no code");
         }
-        // Real contracts that disagree about which pool they serve.
+        // Real contracts that disagree about which pool they serve. The guard
+        // has two halves and the V3 factory suite covers both; only the
+        // position-manager half was covered here, so deleting the state-view
+        // half left every suite green.
         ForeignPoolManager foreign = new ForeignPoolManager();
         MockPositionManager otherPositions = new MockPositionManager(address(foreign));
         (bool ok2, bytes memory out2) = address(this).call(abi.encodeCall(this.deployFactory,
             (address(poolManager), address(otherPositions), address(stateView), RECIPIENT)));
         _refused(ok2, out2, DominoVaultFactoryV4.ManagerMismatch.selector, "positions serve another pool");
+
+        MockStateView otherState = new MockStateView(address(foreign), otherPositions);
+        (ok2, out2) = address(this).call(abi.encodeCall(this.deployFactory,
+            (address(poolManager), address(positions), address(otherState), RECIPIENT)));
+        _refused(ok2, out2, DominoVaultFactoryV4.ManagerMismatch.selector, "the state view serves another pool");
     }
 
     /// External so the constructor's reverts can be caught.
@@ -99,14 +134,26 @@ contract DominoVaultFactoryV4Test {
             abi.encodeCall(DominoVaultFactoryV4.finalizeImplementation, (STRANGER)));
         _refused(ok, out, DominoVaultFactoryV4.InvalidManagerConfiguration.selector, "candidate has no code");
 
-        // An implementation built against a different factory disagrees on
-        // the first of the seven identity getters.
-        StubEngineV4 ourEngine = new StubEngineV4(address(this));
-        DominoVaultV4 foreignFactoryImpl = new DominoVaultV4(address(this), address(poolManager),
-            address(positions), address(stateView), RECIPIENT, address(readHelper), address(ourEngine));
-        (ok, out) = address(factory).call(
-            abi.encodeCall(DominoVaultFactoryV4.finalizeImplementation, (address(foreignFactoryImpl))));
-        _refused(ok, out, DominoVaultFactoryV4.ManagerMismatch.selector, "implementation names another factory");
+        // All seven identity getters, one at a time. Only the first was
+        // covered before: deleting the other six left every suite green.
+        string[7] memory names = [string('factory'), 'implementation', 'implementationVersion',
+            'poolManager', 'positionManager', 'stateView', 'serviceFeeRecipient'];
+        for (uint256 i; i < 7; ++i) {
+            FakeImplementation fake = new FakeImplementation(address(factory), address(poolManager),
+                address(positions), address(stateView), RECIPIENT);
+            fake.set(i, STRANGER, i == 2 ? 3 : 0);
+            (ok, out) = address(factory).call(
+                abi.encodeCall(DominoVaultFactoryV4.finalizeImplementation, (address(fake))));
+            _refused(ok, out, DominoVaultFactoryV4.ManagerMismatch.selector, names[i]);
+        }
+        // A candidate agreeing on all seven is accepted, so the loop above
+        // failed on the getter named and not on being a stand-in.
+        DominoVaultFactoryV4 spare = new DominoVaultFactoryV4(address(poolManager), address(positions),
+            address(stateView), RECIPIENT);
+        FakeImplementation honest = new FakeImplementation(address(spare), address(poolManager),
+            address(positions), address(stateView), RECIPIENT);
+        spare.finalizeImplementation(address(honest));
+        require(spare.implementation() == address(honest), "seven agreements are enough");
 
         factory.finalizeImplementation(address(good));
         require(factory.implementation() == address(good), "bound");
