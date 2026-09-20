@@ -13,6 +13,28 @@ Three loads took 19.46–21.24 seconds, 68–73% spent waiting; a stored six-poo
 response took a median 2.82 ms. Current RPC state, provider analytics and durable
 historical activity have different freshness failures and must be fixed separately.
 
+## 0. Reuse the work already delivered
+
+Reconciled against `origin/main` at `bc336b5`, GitHub discussions and local
+worktrees on 19 September 2026. The [reuse audit](../reports/GENERIC_TOKEN_REUSE_AUDIT_2026-09-19.md)
+records authors, commits, branch integration and remaining runtime gaps.
+This is an incremental extension of that work, not a replacement architecture.
+
+| Existing foundation | Reuse and remaining delta |
+| --- | --- |
+| Durable pool queue, narrow request function and fair rotation (`8bdf831`, `85f4163`) | Extend migration 020 and its repository for recurring demand and fencing; add token interest. Do not introduce a competing acquisition queue. |
+| Arbitrary-pool identity, followers and adaptive spans (`774f5b1`, `55efb5a`, `914e8ba`) | Connect the existing adaptive algorithm to queued indexing and schedule following pools continuously. |
+| Server snapshot, bridge, restart persistence and background refresher (`a1cd01f`, `c13238f`, `27a1d73`) | Migrate useful observations with original ages, remove the durable 24-pool ceiling, include persistent metadata and enable the public path. |
+| Stored/provider admission lanes (`48d84d5`) | Fix gateway health gating and route classification; preserve canonicality checks. |
+| Public explorer, shared scheduler, pagination and progressive snapshot consumption (`4592e67`, `7e7173c`, `39c59c2`) | Reuse these components; connect durable data, refresh successful results and let each chart progress independently. |
+| Recent live-window projection and truthful coverage (`c0d647b`, `1458815`, `6d08cde`, `d5b0542`) | Persist acquisition asynchronously and select windows by timestamp; retain the corrected coverage semantics. |
+| Canonical activity/fee/position/capital and financial history (`918b45e`, `03ec1fa`, `26e7294`) | Schedule and qualify existing reducers/checkpoints; add missing public chart projections. |
+
+The existing queue/identity/follower branches are already integrated. The public
+explorer and financial-history branches also contain work incorporated by squash
+or integration commits. Do not re-merge those old branches merely because their
+original commit IDs are not ancestors of main.
+
 ## 1. Product behavior
 
 | Situation | Required behavior |
@@ -93,6 +115,10 @@ priority, observation payload or checkpoint.
 
 Add versioned migrations alongside the existing catalogue/activity schema. Assign
 migration numbers against the current main branch during implementation.
+Extend the existing catalogue and migration-020 request queue in place where
+their semantics fit. The table below describes logical responsibilities, not a
+requirement to create six new independent tables. Any replacement of queue state
+needs an explicit idempotent migration and single-writer transition.
 
 | Logical data | Key and stored evidence |
 | --- | --- |
@@ -138,6 +164,13 @@ unit, with `retry_wait` and `blocked` outcomes. A recurring job computes its nex
 lease/generation fence so a late old worker cannot overwrite newer work.
 Checkpoints and publication commit atomically and are idempotent.
 
+The current public queue already deduplicates requests, recovers stale claims
+and rotates by least-recently-served time. Add recurrence, due times and fenced
+publication to that foundation. Private performance enrollment already provides
+examples of leases, a global RPC budget and minute projections (`275e5f3`,
+`de529f2`, `5f8b3c1`); reuse pure helpers/patterns, never its private owner tables,
+RLS boundary or visibility-based expiry for public collection.
+
 Scheduling rules:
 
 - Reserve capacity for visible/current reads and for new-token first results.
@@ -146,9 +179,11 @@ Scheduling rules:
 - Deduplicate identical users' requests; debounce aggregate interest updates.
 - Process bounded ranges/time slices, then yield. Use backoff with jitter and
   source-wide cooldown on 429. Retain useful progress across restarts.
-- Recognize the demonstrated log-size refusal structurally; split the range and
-  persist the useful smaller span. A dense single block receives a separate
-  bounded diagnostic, not infinite halving or a false success.
+- Connect the existing `AdaptiveSpan` and bounded within-pass retry to the
+  queue-worker path, which still uses a fixed span. Recognize the demonstrated
+  log-size refusal structurally and persist the useful smaller span. A dense
+  single block receives a separate bounded diagnostic, not infinite halving or
+  a false success.
 - Distinguish transport outage, provider size limits, missing historical state,
   invalid identity and canonicality failures. Do not retry authentication or
   invalid data indefinitely under the same policy.
@@ -174,8 +209,10 @@ collected. Offer 7d/30d/lifetime ranges according to available source coverage;
 keep the requested window and actual covered intervals explicit.
 
 Locate time-window boundaries from block timestamps with a bounded search. The
-existing shortcut of 86,400 blocks for 24 hours is not valid on this chain; a
-100 ms block cadence makes block count and elapsed seconds very different.
+existing live path scans roughly 86,400 blocks, which covers hours rather than
+a day on this chain. `1458815`, `6d08cde` and `d5b0542` already corrected its
+coverage claims and display. Preserve those fixes; the remaining change is to
+acquire the requested elapsed-time window durably, not to repair the labels again.
 
 Recent swap logs and pool-ratio candles can be collected independently of a full
 liquidity replay, but they are a separate projection. Do not insert them as a
@@ -199,10 +236,17 @@ policies; these are public read collectors, not activation of financial signing.
 
 ## 7. API and frontend changes
 
-Keep existing read-v1/v2 strict contracts and consumers working. Publish a new
-stored-projection contract (proposed `read-v3`) rather than silently adding fields
-to envelopes whose validators reject unknown keys. Final route names can follow
-the existing conventions; the required operations are:
+Keep existing read-v1/v2 strict contracts and consumers working. First use their
+existing token, catalogue, pool, snapshot, activity, metrics and APR routes behind
+the corrected admission and persistence layers. `read-v3` is not a prerequisite
+for those fixes or for successful-data refresh.
+
+Specify only the wire fields existing contracts cannot express: bundled metadata,
+independent readiness, durable acquisition progress and additional history
+windows/resolutions. Publish an additive stored-projection contract only for that
+delta (a version such as `read-v3` remains an option). Never silently add fields to
+strict envelopes. The following are required capabilities, not necessarily four
+new endpoints or a replacement adapter:
 
 - Token overview/search: durable metadata, paginated verified pools, discovery
   coverage and request/job status.
@@ -231,6 +275,8 @@ on the provider lane or publish a separately validated stored canonicality
 watermark. Never bypass that proof just to make a route faster. Preserve the
 separate development gateway's acquire/release and budget contract.
 
+Extend the existing shared source, scheduler, retained-row snapshot path,
+`pagers.ts` and `catalogueSession.ts`; do not build a second explorer or transport.
 Frontend query keys include chain/address or manager/pool, filters, source,
 window and revision. Give home, Explore, search, pool pages and revisits the same
 shared query state. The six featured pools merely supply initial query IDs.
@@ -257,26 +303,30 @@ query cache and session/tenant separation remain independent.
 
 | Increment | Concrete changes | Completion evidence |
 | --- | --- | --- |
-| A — fix proven admission and stuck-work errors | Route-aware health/admission; correct acquire/release; adaptive size-error handling in queued indexing; truthful stalled-work metrics. | Existing four admission reproductions corrected; one affected historical chunk commits and resumes correctly. |
-| B — durable generic acquisition | Add registry/interest/observation/job migrations and repositories; recurring due state for following pools; hook validated token/pool search into idempotent requests; persist discoveries and token metadata; import existing snapshot records with original ages. | A following pool advances without manual requeue; a nonfeatured token and >24 pools survive process/cache eviction, browser close and restart; duplicate users create one logical acquisition. |
-| C — stored aggregate contract | New read contract, validators/OpenAPI/fixtures, zero-provider projection endpoints, included metadata and preserved estimates; Worker/gateway routing. | Contract parity, beta/auth and cache-isolation checks; real public persisted overview <=1 s p95 at the tested load. |
-| D — progressive generic frontend | Replace selected-only loading with shared query state; address/name search and pagination backed by registry; independent charts/history; bounded successful refresh. | Home, Explore and arbitrary token pages share the same behavior; no token waterfall, no global chart wait, no stale successful page left indefinitely. |
-| E — continuous and historical completeness | Fair workers, grouped current/log reads, recent-window projections, deep backfill, canonical candles and dependent accounting stages; durable retry/coverage. | >24 pools progress, hot pools retain their lag target while new/backfill jobs advance; reorg and provider failure recovery preserve correctness. |
+| A — fix proven admission and stuck-work errors | Correct existing stored/provider admission and gateway health gating; connect existing AdaptiveSpan/retry to queued indexing; expose truthful stalled-work metrics. | Existing four admission reproductions corrected; one affected historical chunk commits and resumes correctly. |
+| B — extend durable generic acquisition | Extend catalogue/request queue with token registry, interest, observations and recurring fenced work; connect submitted search to narrow idempotent requests; import existing snapshot records with original ages. | A following pool advances without manual requeue; a nonfeatured token and >24 pools survive process/cache eviction, browser close and restart; duplicate users create one logical acquisition. |
+| C — extend stored projections where contracts need it | Reuse snapshot/bridge/validators and existing V1/V2; add only the contract delta needed for bundled metadata, qualified estimates and independent coverage/progress; configure public routes. | Contract parity, beta/auth and cache-isolation checks; real public persisted overview <=1 s p95 at the tested load; no provider calls in the stored path. |
+| D — extend existing progressive frontend | Reuse explorer, shared scheduler, pagination and snapshot-first rows; connect durable registry, independent charts/history and bounded successful refresh. | Home, Explore and arbitrary token pages share the same behavior; no token waterfall, no global chart wait, no stale successful page left indefinitely. |
+| E — integrate continuous and historical completeness | Adapt existing followers/rotation and financial reducers to recurring generic demand; persist the live-window projection; add missing canonical candles and fairness across job kinds. | >24 pools progress, hot pools retain their lag target while new/backfill jobs advance; reorg and provider failure recovery preserve correctness. |
 | F — capacity qualification and staged activation | Upgrade all relevant reader/gateway/worker releases and policies, validate provider budgets, run controlled benchmarks and failure/restart drills, publish actual capacity envelope. | Targets met with measured error/age distributions; runtime flags and release revisions recorded; rollback restores prior serving without losing acquired data. |
 
-A and contract design can proceed alongside B. C consumes B; D consumes C. E is
-built on B and can advance beside C/D. Broad activation follows measured results,
-not a blanket increase of concurrency or a hardcoded token whitelist.
+A and a focused contract-gap review can proceed alongside B. C consumes B;
+D's refresh/chart fixes can proceed on existing contracts, while its new bundled
+data consumers follow C. E extends B and can advance beside C/D. Broad activation
+follows measured results, not a blanket increase of concurrency or a hardcoded
+token whitelist.
 
 Principal implementation locations:
 
 - `backend/read_api.py`, `read_gateway.py`, `dev_read_gateway.py`, `read_service.py`.
 - `backend/pool_requests.py`, `manage_activity.py`, `followers.py`,
   `activity_indexer.py`, `catalogue.py`, `market_cache.py`, `markets_snapshot.py`.
-- Additive `backend/migrations/`, new durable repository/job/projection modules,
+- Additive `backend/migrations/` extending migration-020 semantics, existing
+  repositories/followers and only the missing token/observation/projection modules;
   existing activity/fee/position/capital stores and history validators.
-- New `api-contracts/read-v3/`, contract export scripts, backend OpenAPI and
-  `bridge/src/worker.mjs` with matching runtime configuration.
+- Existing `api-contracts/read-v1/` and `read-v2/`; an additive package only if
+  required by the wire-contract delta; contract export scripts, backend OpenAPI
+  and `bridge/src/worker.mjs` with matching runtime configuration.
 - `app/src/lib/read/`, `app/src/components/read/screens/TokenSearch.tsx`,
   `PoolPicker.tsx`, `PoolWorkspace.tsx`, `app/src/screens/Explore.tsx`,
   `app/src/components/markets/MarketCarousel.tsx` and the Pages bridge adapter
@@ -304,7 +354,10 @@ Principal implementation locations:
 
 ## 10. Acceptance and operating evidence
 
-Tests must cover behavior rather than mirror implementation:
+Tests must cover behavior rather than mirror implementation. Extend the existing
+snapshot/progressive-row, arbitrary-pool workspace, pagination/restart, queue
+recovery, follower/adaptive-span and candle-gap tests.
+Their existing coverage is part of the baseline, not work to recreate.
 
 - More than six tokens and more than 24 pools; a token with >100 pool candidates
   traversed by explicit pagination, not an automatic unbounded scan.
