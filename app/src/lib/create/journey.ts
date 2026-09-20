@@ -23,6 +23,7 @@ import type { TokenCandidate } from '../read/screens/tokens'
 import type { TokenDisplay } from '../read/types'
 import type { BudgetFields } from './budgets'
 import { CREATE } from './copy'
+import { SLIPPAGE_DEFAULT_BPS, slippageBpsFrom, slippageWritten } from './slippage'
 
 export type Stage = 'token' | 'pool' | 'amount' | 'balance' | 'automation' | 'review'
 export const STAGES: readonly Stage[] = ['token', 'pool', 'amount', 'balance', 'automation', 'review']
@@ -44,7 +45,8 @@ export interface DominoLimits {
 }
 
 export const DEFAULT_LIMITS: DominoLimits = { triggerPercent: '5', maxOverlapPercent: '20', sequenceCap: '3' }
-export const DEFAULT_SLIPPAGE_BPS = '50'
+/** The slippage a journey starts with, as the text the state keeps: 0.5% (create/slippage.ts). */
+export const DEFAULT_SLIPPAGE_BPS = String(SLIPPAGE_DEFAULT_BPS)
 
 /**
  * The contract's own domains (contracts/src/PolicyValidation.sol and the
@@ -203,10 +205,10 @@ export function validateBudget(text: string, decimals: number | null): BudgetChe
 
 export type SlippageCheck = { ok: true; bps: number } | { ok: false; reason: string }
 
+/** The slippage as kept: whole basis points inside the product's bound, 0.1% to 5% (create/slippage.ts). */
 export function validateSlippage(text: string): SlippageCheck {
-  if (!/^(?:0|[1-9]\d{0,3})$/.test(text)) return { ok: false, reason: CREATE.amount.slippageInvalid }
-  const bps = Number(text)
-  return bps <= 9999 ? { ok: true, bps } : { ok: false, reason: CREATE.amount.slippageInvalid }
+  const bps = slippageBpsFrom(text)
+  return bps === null ? { ok: false, reason: CREATE.amount.slippageInvalid } : { ok: true, bps }
 }
 
 /** A range on this pool: whole ticks, multiples of the spacing, inside v4's ticks, lower below upper. */
@@ -600,7 +602,11 @@ export function summaryLines(state: JourneyState, now: number): SummaryLine[] {
   const pool = state.pool
   const poolValue = pool ? `${tokenText(pool.currencies[0])}/${tokenText(pool.currencies[1])} · ${pool.fee} · ${shortAddress(pool.key)}` : none
   const budget = token ? validateBudget(state.budget, candidateDecimals(token)) : null
-  const amountValue = budget?.ok && state.range && token ? `${state.budget} ${tokenText(token.token)} · ${rangeText(state.range, price)}` : none
+  const slippage = validateSlippage(state.slippageBps)
+  const amountValue =
+    budget?.ok && state.range && token && slippage.ok
+      ? `${state.budget} ${tokenText(token.token)} · ${rangeText(state.range, price)} · ${CREATE.review.summary.slippage(slippageWritten(slippage.bps))}`
+      : none
   return [
     { stage: 'token', label: CREATE.stage.token.short, value: tokenValue, done: canContinue('token', state, now).ok },
     { stage: 'pool', label: CREATE.stage.pool.short, value: poolValue, done: canContinue('pool', state, now).ok },

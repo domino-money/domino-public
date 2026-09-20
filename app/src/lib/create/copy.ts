@@ -85,11 +85,16 @@ export const CREATE = {
     rangeSpacing: 'Range bounds must be multiples of the pool’s tick spacing.',
     rangeBounds: 'Range bounds are outside the ticks this pool allows.',
     rangeOrder: 'The lower bound must stay below the upper bound.',
+    /* The bound below is the product's (create/slippage.ts), the same numbers the backend's request models check. */
     slippageLabel: 'Slippage tolerance',
-    slippageHint: 'From 0.1% to 5%, in hundredths of a percent. Let the slider go beside a mark and it settles on it.',
-    slippageInvalid: 'Slippage is a whole number of basis points from 0 to 9999.',
+    slippageHint: 'From 0.1% to 5%, in hundredths of a percent: press a preset, drag the slider, or type an exact percentage. Let the slider go beside a mark and it settles on it.',
+    slippageInvalid: 'Slippage is a whole number of basis points from 10 to 500: 0.1% to 5%.',
+    slippagePresets: 'Common tolerances',
     slippageExact: 'Exact percentage',
     slippageExactInvalid: 'Enter a percentage from 0.1 to 5, with up to two decimal places.',
+    /** Above 1%: what the tolerance lets the deposit, and any balancing swap, do. Said, never blocked. */
+    slippageWarning: (percent: string) =>
+      `${percent} is more than the usual 1%. The deposit may take up to ${percent} more of each token than the expected amounts, and a balancing swap may return ${percent} less than its quote.`,
     rangeHeading: 'Price range',
     budgetNote: 'The budget is the total in this token before separately disclosed costs. It is not an amount of each asset.',
     maxLabel: 'Use max',
@@ -248,6 +253,8 @@ export const CREATE = {
     serviceFeeNote: 'Taken once, when Auto-compound or Domino-compound consumes earned fees. Never on your principal, and never on a direct deposit.',
     /** The headline: the position being created, in one line per thing that matters. */
     holds: 'This position holds',
+    /** The slippage line of the headline, so the choice is in view before Setup asks the wallet for anything. */
+    slippage: (percent: string) => `Slippage tolerance ${percent}`,
     rangeBetween: 'between',
     priceAt: (block: number) => `at the pool’s price, block ${block}`,
     inRange: 'The pool price at its read block is inside this range.',
@@ -303,6 +310,7 @@ export const CREATE = {
       rangePrices: (lower: string, upper: string, tickLower: number, tickUpper: number) => `${lower} to ${upper} (ticks ${tickLower} to ${tickUpper})`,
       rangeTicks: (tickLower: number, tickUpper: number) => `ticks ${tickLower} to ${tickUpper}`,
       limits: (trigger: number, overlap: number, cap: number) => `trigger ${trigger}%, overlap ${overlap}%, cap ${cap}`,
+      slippage: (percent: string) => `slippage ${percent}`,
       limitsInvalid: 'limits invalid',
       notConnected: 'not connected',
       price: 'Price',

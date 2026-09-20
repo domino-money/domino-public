@@ -3,6 +3,7 @@ import { CREATE } from '../../lib/create/copy'
 import type { Automation, JourneyState, Stage, TickRange } from '../../lib/create/journey'
 import { boundPrice, type PoolPrice } from '../../lib/read/screens/poolRange'
 import type { PoolOption } from '../../lib/read/screens/poolsList'
+import { slippageBpsFrom, slippageWritten } from '../../lib/create/slippage'
 import { SymbolText } from '../read/screens/SymbolText'
 import { StepMarker } from '../ui'
 
@@ -58,12 +59,14 @@ export function RangeSummary({ range, price }: { range: TickRange; price: Usable
   )
 }
 
-/** "0.25 WETH". */
+/** "0.25 WETH · slippage 0.5%". */
 export function AmountSummary({ state }: { state: JourneyState }) {
   if (!state.token) return null
+  const slippage = slippageBpsFrom(state.slippageBps)
   return (
     <>
       {state.budget} <SymbolText token={state.token.token} />
+      {slippage !== null && <> · {CREATE.review.summary.slippage(slippageWritten(slippage))}</>}
     </>
   )
 }

@@ -1,8 +1,9 @@
 import { lazy, Suspense } from 'react'
 import { CREATE } from '../../lib/create/copy'
 import type { PairBalancesState } from './usePairBalances'
-import { candidateDecimals, priceOf, validateBudget, walletSteps, type JourneyState } from '../../lib/create/journey'
+import { candidateDecimals, priceOf, validateBudget, validateSlippage, walletSteps, type JourneyState } from '../../lib/create/journey'
 import { pairedAmount } from '../../lib/create/pairAmount'
+import { slippageWarns, slippageWritten } from '../../lib/create/slippage'
 import { formatUnits } from '../../lib/read/decimal'
 import { rangePosition } from '../../lib/read/screens/poolRange'
 import { Address } from '../read/screens/Address'
@@ -55,6 +56,7 @@ export function StageReview({ state, now, open, balances }: { state: JourneyStat
   const steps = walletSteps(state)
   const pill = automationPill(state.automation)
   const held = heldAmounts(state)
+  const slippage = validateSlippage(state.slippageBps)
   return (
     <div className="dm-flow-stack" data-stage="review">
       <section aria-labelledby="create-choices-heading" className="dm-flow-section">
@@ -80,11 +82,20 @@ export function StageReview({ state, now, open, balances }: { state: JourneyStat
               CREATE.page.notChosen
             )}
           </p>
+          {/* The person's own tolerance, in view here and again on Setup's draft before any wallet step. */}
+          <p className="dm-flow-headline-line tnum" data-review-slippage={slippage.ok ? slippage.bps : undefined}>
+            {slippage.ok ? CREATE.review.slippage(slippageWritten(slippage.bps)) : CREATE.page.notChosen}
+          </p>
           <p className="dm-flow-headline-foot">
             <AutomationSummary automation={state.automation} />
             {pill && <Pill>{pill}</Pill>}
           </p>
         </div>
+        {slippage.ok && slippageWarns(slippage.bps) && (
+          <p role="status" className="dm-flow-position" data-tone="neutral" data-review-slippage-warning="">
+            {CREATE.amount.slippageWarning(slippageWritten(slippage.bps))}
+          </p>
+        )}
         {/* Only when there is something to warn about, as the range step does:
             a range that does not hold the price earns no fees until the price
             moves into it. The ordinary case is silent on screen. */}

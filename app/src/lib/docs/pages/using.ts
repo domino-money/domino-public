@@ -59,7 +59,7 @@ export const NEW_POSITION: DocPage = {
           items: [
             { title: CREATE.step.pool.title, body: [CREATE.step.pool.lead] },
             { title: CREATE.step.range.title, body: [CREATE.step.range.lead, ' See ', doc('Price ranges', 'ranges'), '.'] },
-            { title: CREATE.step.amount.title, body: [CREATE.step.amount.lead, ' A position holds both of the pool’s tokens, so the step shows a row for each: type an amount in either and the other follows from your range and the pool’s price. There is no choice of which token to deposit.'] },
+            { title: CREATE.step.amount.title, body: [CREATE.step.amount.lead, ' A position holds both of the pool’s tokens, so the step shows a row for each: type an amount in either and the other follows from your range and the pool’s price. There is no choice of which token to deposit. The slippage tolerance is chosen here too: 0.1%, 0.5% or 1% as presets, or any exact hundredth of a percent from 0.1% to 5%. It starts at 0.5%, and above 1% the step says what that allows.'] },
             { title: CREATE.step.automation.title, body: [CREATE.step.automation.lead, ' Choose Self-managing, Auto-compound or Domino-compound.'] },
             { title: CREATE.step.review.title, body: [CREATE.step.review.lead] },
           ],

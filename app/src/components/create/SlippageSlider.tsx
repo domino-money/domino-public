@@ -8,15 +8,19 @@ import {
   slippageMark,
   slippagePercent,
   slippageValue,
+  slippageWarns,
   slippageWritten,
 } from '../../lib/create/slippage'
 import { TextField } from './fields'
+import { SlippagePresets } from './SlippagePresets'
 
 /**
- * The slippage tolerance, dragged: the percentage in full size over a track
- * marked at 0.1%, 0.5% and 1%, and a box under it for a percentage between
- * the marks. What is kept is still whole basis points; the percentage is only
- * how it is chosen and written (create/slippage.ts).
+ * The slippage tolerance, chosen three ways that keep one value: the presets
+ * as buttons, the percentage in full size over a track marked at the same
+ * 0.1%, 0.5% and 1%, and a box under it for a percentage between the marks.
+ * Above 1% a line says what the tolerance allows. What is kept is still whole
+ * basis points; the percentage is only how it is chosen and written
+ * (create/slippage.ts).
  *
  * The native range input carries the position, so the pointer, the keyboard
  * and assistive technology all drive the same control; the track, the marks
@@ -53,6 +57,7 @@ export function SlippageSlider({ bps, onSlippage }: { bps: string; onSlippage: (
           {slippageWritten(value)}
         </span>
       </div>
+      <SlippagePresets value={value} onChoose={change} label={CREATE.amount.slippagePresets} />
       <div className="dm-flow-slip-rail">
         <span aria-hidden="true" className="dm-flow-slip-track">
           <span className="dm-flow-slip-fill" style={{ width: at(slippageIndex(value)) }} />
@@ -99,6 +104,11 @@ export function SlippageSlider({ bps, onSlippage }: { bps: string; onSlippage: (
         error={exact === null ? CREATE.amount.slippageExactInvalid : null}
         trailing="%"
       />
+      {slippageWarns(value) && (
+        <p role="status" className="dm-flow-slip-warn" data-slippage-warning="">
+          {CREATE.amount.slippageWarning(slippageWritten(value))}
+        </p>
+      )}
     </div>
   )
 }

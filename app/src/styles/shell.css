@@ -132,14 +132,14 @@
   .dm-seg-thumb { position: absolute; top: 2px; bottom: 2px; left: 0; width: 0; border-radius: var(--radius-inner); background: var(--surface-3); box-shadow: inset 0 0 0 1px var(--fg-subtle); opacity: 0; pointer-events: none; }
   .dm-seg[data-thumb] > .dm-seg-thumb { transition: translate 0.22s var(--ease-std), width 0.22s var(--ease-std), opacity var(--dur-fade) ease; }
   .dm-seg-item { position: relative; z-index: 1; display: inline-flex; align-items: center; justify-content: center; gap: 6px; height: 26px; padding: 0 10px; border-radius: var(--radius-inner); font-size: 12px; line-height: 16px; font-weight: 500; letter-spacing: -0.12px; color: var(--fg-muted); white-space: nowrap; cursor: pointer; transition: color 0.18s ease, opacity var(--dur-hover) ease; }
-  .dm-seg-item:hover:not(:disabled), .dm-seg-item[aria-selected="true"], .dm-seg-item[aria-checked="true"] { color: var(--fg); }
+  .dm-seg-item:hover:not(:disabled), .dm-seg-item[aria-selected="true"], .dm-seg-item[aria-checked="true"], .dm-seg-item[aria-pressed="true"] { color: var(--fg); }
   .dm-seg-item:disabled { opacity: 0.35; cursor: not-allowed; }
   .dm-seg-item:focus-visible { outline-offset: -2px; }
   /* Until the first measurement the selected item carries the thumb's fill and ring itself. */
-  .dm-seg:not([data-thumb]) > .dm-seg-item:is([aria-selected="true"], [aria-checked="true"]) { background: var(--surface-3); box-shadow: inset 0 0 0 1px var(--fg-subtle); }
+  .dm-seg:not([data-thumb]) > .dm-seg-item:is([aria-selected="true"], [aria-checked="true"], [aria-pressed="true"]) { background: var(--surface-3); box-shadow: inset 0 0 0 1px var(--fg-subtle); }
   :is(.dm-plate, .dm-dots-chart) .dm-seg { background: var(--wash); box-shadow: none; }
   :is(.dm-plate, .dm-dots-chart) .dm-seg-thumb { background: var(--wash-strong); }
-  :is(.dm-plate, .dm-dots-chart) .dm-seg:not([data-thumb]) > .dm-seg-item:is([aria-selected="true"], [aria-checked="true"]) { background: var(--wash-strong); }
+  :is(.dm-plate, .dm-dots-chart) .dm-seg:not([data-thumb]) > .dm-seg-item:is([aria-selected="true"], [aria-checked="true"], [aria-pressed="true"]) { background: var(--wash-strong); }
 
   /* ---- Select (C.9): a combobox button that keeps focus, and a listbox of option buttons ---- */
   .dm-select { position: relative; display: inline-block; max-width: 100%; }

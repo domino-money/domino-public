@@ -157,12 +157,38 @@ test('the amount step shows amounts, never the integers underneath them', () => 
   assert.equal(CREATE.amount.rawUnitsTitle, undefined);
 });
 
-test('slippage is a whole number of basis points from 0 to 9999', () => {
+test('slippage is a whole number of basis points inside the product’s bound: 10 to 500, 0.1% to 5%', () => {
   const v = journey.validateSlippage;
   assert.deepEqual(v('50'), { ok: true, bps: 50 });
-  assert.deepEqual(v('0'), { ok: true, bps: 0 });
-  assert.deepEqual(v('9999'), { ok: true, bps: 9999 });
-  for (const text of ['', '10000', '-1', '1.5', '050', 'abc']) assert.deepEqual(v(text), { ok: false, reason: CREATE.amount.slippageInvalid }, text);
+  assert.deepEqual(v('10'), { ok: true, bps: 10 }, 'the lower end is included');
+  assert.deepEqual(v('500'), { ok: true, bps: 500 }, 'the upper end is included');
+  for (const text of ['', '0', '9', '501', '9999', '10000', '-1', '1.5', '050', ' 50', '50 ', 'abc']) assert.deepEqual(v(text), { ok: false, reason: CREATE.amount.slippageInvalid }, text);
+  assert.equal(CREATE.amount.slippageInvalid, 'Slippage is a whole number of basis points from 10 to 500: 0.1% to 5%.');
+});
+
+test('the bound, its presets, default and warning line are one set of numbers, and the backend and both contracts hold the same ends', () => {
+  assert.deepEqual([slippage.SLIPPAGE_MIN_BPS, slippage.SLIPPAGE_MAX_BPS], [10, 500]);
+  assert.deepEqual([...slippage.SLIPPAGE_PRESETS], [10, 50, 100]);
+  assert.equal(slippage.SLIPPAGE_MARKS, slippage.SLIPPAGE_PRESETS, 'the marks on the track are the presets');
+  assert.equal(slippage.SLIPPAGE_DEFAULT_BPS, 50);
+  assert.equal(journey.DEFAULT_SLIPPAGE_BPS, '50', 'the journey starts at the default');
+  assert.equal(slippage.SLIPPAGE_WARN_ABOVE_BPS, 100);
+  assert.equal(slippage.slippageWarns(100), false, '1% itself is not warned about');
+  assert.equal(slippage.slippageWarns(105), true);
+  for (const text of ['10', '250', '500']) assert.equal(slippage.slippageBpsFrom(text), Number(text), text);
+  for (const text of ['9', '501', '0', '05', '5.0', '', '+50']) assert.equal(slippage.slippageBpsFrom(text), null, text);
+  // The backend's request models and the generated contracts check exactly these ends (backend/onboarding_models.py, Slippage).
+  const models = readFileSync(new URL('../../backend/onboarding_models.py', import.meta.url), 'utf8');
+  assert.match(models, /^SLIPPAGE_MIN_BPS = 10$/m);
+  assert.match(models, /^SLIPPAGE_MAX_BPS = 500$/m);
+  assert.match(models, /^Slippage = Annotated\[StrictInt, Field\(ge=SLIPPAGE_MIN_BPS, le=SLIPPAGE_MAX_BPS\)\]$/m);
+  for (const path of ['onboarding-v1/schemas/position-preview.request.schema.json', 'onboarding-v1/schemas/swap-preview.request.schema.json']) {
+    const schema = JSON.parse(readFileSync(new URL(`../../api-contracts/${path}`, import.meta.url), 'utf8'));
+    assert.deepEqual([schema.properties.slippageBps.minimum, schema.properties.slippageBps.maximum], [10, 500], path);
+  }
+  const create = JSON.parse(readFileSync(new URL('../../api-contracts/deposit-v1/schemas/create.request.schema.json', import.meta.url), 'utf8'));
+  const selection = create.$defs.DepositSelection.properties.slippageBps;
+  assert.deepEqual([selection.minimum, selection.maximum], [10, 500]);
 });
 
 test('the slippage track runs 0.1% to 5%, every hundredth of a percent to 1% and every twentieth above it', () => {
@@ -214,13 +240,25 @@ test('the thumb settles on a mark only when it is let go beside one', () => {
   assert.equal(v(300), null);
 });
 
-test('the amount step chooses slippage by dragging, in percent, not in a disclosure', () => {
+test('the amount step chooses slippage by a preset, by dragging or by an exact percent, not in a disclosure, and the choice is shown again in Review', () => {
   const stage = readFileSync(new URL('../src/components/create/StageAmount.tsx', import.meta.url), 'utf8');
   const slider = readFileSync(new URL('../src/components/create/SlippageSlider.tsx', import.meta.url), 'utf8');
   assert.doesNotMatch(stage, /<details|dm-flow-disclosure/, 'the slider is on the step, not behind a disclosure');
   assert.match(stage, /<SlippageSlider/);
   assert.match(slider, /type="range"/, 'a real range input: the keyboard, touch and assistive technology all work');
   assert.match(slider, /aria-valuetext/, 'the position says nothing out loud, so the percentage does');
+  assert.match(slider, /<SlippagePresets/, 'the presets are buttons on the step');
+  assert.match(slider, /data-slippage-warning/, 'above 1% the step says what that allows');
+  const presets = readFileSync(new URL('../src/components/create/SlippagePresets.tsx', import.meta.url), 'utf8');
+  assert.match(presets, /aria-pressed=\{preset === value\}/, 'toggle buttons: a value between the presets leaves none pressed');
+  const review = readFileSync(new URL('../src/components/create/StageReview.tsx', import.meta.url), 'utf8');
+  assert.match(review, /data-review-slippage=/, 'Review shows the tolerance before Setup asks the wallet for anything');
+  assert.match(review, /data-review-slippage-warning/, 'and says what more than 1% allows');
+  const rail = readFileSync(new URL('../src/components/create/StepList.tsx', import.meta.url), 'utf8');
+  assert.match(rail, /summary\.slippage\(/, 'the done Amount row says the tolerance');
+  assert.equal(CREATE.review.slippage('0.5%'), 'Slippage tolerance 0.5%');
+  assert.equal(CREATE.review.summary.slippage('0.5%'), 'slippage 0.5%');
+  assert.match(CREATE.amount.slippageWarning('2%'), /^2% is more than the usual 1%\. The deposit may take up to 2% more of each token/);
   // The strings the disclosure and the basis-point field used are gone with them.
   assert.equal(CREATE.amount.advanced, undefined);
   assert.equal(CREATE.amount.slippageValue, undefined);
@@ -247,6 +285,9 @@ test('Amount and range continues only with a usable price, a converted budget, a
   assert.deepEqual(journey.canContinue('amount', journey.withBudget(s, ''), NOW), { ok: false, reason: CREATE.amount.empty });
   assert.deepEqual(journey.canContinue('amount', journey.withRange(s, null), NOW), { ok: false, reason: CREATE.amount.noRange });
   assert.deepEqual(journey.canContinue('amount', journey.withSlippage(s, '12345'), NOW), { ok: false, reason: CREATE.amount.slippageInvalid });
+  assert.deepEqual(journey.canContinue('amount', journey.withSlippage(s, '9'), NOW), { ok: false, reason: CREATE.amount.slippageInvalid }, 'below 0.1%');
+  assert.deepEqual(journey.canContinue('amount', journey.withSlippage(s, '501'), NOW), { ok: false, reason: CREATE.amount.slippageInvalid }, 'above 5%');
+  assert.deepEqual(journey.canContinue('amount', journey.withSlippage(s, '500'), NOW), { ok: true }, '5% itself is allowed');
   const noDecimals = journey.withToken(s, candidate(addr('1'), null, { decimalsUnavailable: true }));
   assert.deepEqual(journey.canContinue('amount', journey.withBudget(noDecimals, '1'), NOW), { ok: false, reason: CREATE.amount.decimalsUnknown });
   const unpriced = { ...s, pool: pool({ sqrtPriceX96: '0' }) };
@@ -339,6 +380,11 @@ test('the preview request is shaped as onboarding-v1’s position-preview reques
   assert.deepEqual(journey.previewRequest({ ...s, pool: pool({ feePips: 8388608, fee: 'Dynamic' }) }), { ok: false, reason: CREATE.balance.dynamicFee });
   assert.deepEqual(journey.previewRequest(journey.initialState()), { ok: false, reason: CREATE.balance.incomplete });
   assert.deepEqual(journey.previewRequest(journey.withBudget(s, '')), { ok: false, reason: CREATE.amount.empty });
+  // The tolerance chosen is the one sent, and nothing outside the bound is sent or carried at all.
+  assert.equal(journey.previewRequest(journey.withSlippage(s, '120')).request.slippageBps, 120);
+  assert.equal(journey.setupDraft(journey.withSlippage(s, '120')).slippageBps, 120);
+  assert.deepEqual(journey.previewRequest(journey.withSlippage(s, '501')), { ok: false, reason: CREATE.amount.slippageInvalid });
+  assert.equal(journey.setupDraft(journey.withSlippage(s, '9')), null);
 });
 
 test('the wallet’s balance of each currency goes with the request: a position holds both, and only the service can say the wallet is short of one', () => {
@@ -541,7 +587,8 @@ test('the summary says — for what is not chosen and serialises every decision,
   assert.equal(lines[0].value, `ONE · ${addr('1').slice(0, 6)}…${addr('1').slice(-4)}`);
   assert.equal(lines[1].value, `ONE/TWO · 0.30% · ${id('a').slice(0, 6)}…${id('a').slice(-4)}`);
   // currency1 per currency0 with the read decimals (18 and 6): 1.0001^tick × 10^12, as the range controls write it.
-  assert.equal(lines[2].value, '0.5 ONE · ≈697,689,000,000 to ≈1,503,780,000,000 (ticks -3600 to 4080)');
+  assert.equal(lines[2].value, '0.5 ONE · ≈697,689,000,000 to ≈1,503,780,000,000 (ticks -3600 to 4080) · slippage 0.5%');
+  assert.equal(journey.summaryLines(journey.withSlippage(s, '250'), NOW)[2].value, '0.5 ONE · ≈697,689,000,000 to ≈1,503,780,000,000 (ticks -3600 to 4080) · slippage 2.5%', 'the summary says the tolerance chosen, not the default');
   assert.equal(lines[3].value, CREATE.balance.notEnabled);
   assert.equal(lines[4].value, 'Domino-compound · trigger 5%, overlap 20%, cap 3 · not connected');
   assert.equal(lines[5].value, CREATE.review.gate);

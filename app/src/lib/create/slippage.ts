@@ -1,17 +1,33 @@
 /**
- * The slippage tolerance as the amount step chooses it: a percentage dragged
- * along a track. What is kept and sent is still whole basis points
- * (JourneyState.slippageBps, which validateSlippage decides); nothing here
- * changes that contract. It only maps between a position on the track, the
- * basis points behind it and the percentage written on screen.
+ * The slippage tolerance a person chooses for a new position, and the one
+ * bound on it, shared by everything that offers or checks it: the amount
+ * step's slider (components/create/SlippageSlider.tsx), Setup's draft and its
+ * balancing swap (components/create/SlippageChoice.tsx), the journey's
+ * validation (journey.ts) and the preview forms (onboarding/inputs.ts,
+ * onboarding/swap.ts). What is kept and sent is whole basis points
+ * (JourneyState.slippageBps, DepositSelection.slippageBps); the percentage is
+ * only how it is chosen and written, and this module maps between the two.
+ *
+ * The bound is the product's own, 0.1% to 5%, and the backend's request
+ * models check the same numbers (backend/onboarding_models.py, `Slippage`),
+ * as tests/create-journey.test.mjs holds them to. The provider adapters
+ * admit 0 to 9999 behind them; that is not a limit a person is offered.
  */
 
-/** The ends of the track, in basis points: 0.1% to 5%. */
+/** The ends of the choice, in basis points: 0.1% to 5%, both included. */
 export const SLIPPAGE_MIN_BPS = 10
 export const SLIPPAGE_MAX_BPS = 500
 
-/** The marks on the track, in basis points: 0.1%, 0.5% and 1%. */
-export const SLIPPAGE_MARKS = [10, 50, 100] as const
+/** The presets, in basis points: 0.1%, 0.5% and 1%. Buttons on every control, and the marks on the track. */
+export const SLIPPAGE_PRESETS = [10, 50, 100] as const
+/** The marks on the track are the presets. */
+export const SLIPPAGE_MARKS = SLIPPAGE_PRESETS
+
+/** What a new position starts with: 0.5%. */
+export const SLIPPAGE_DEFAULT_BPS = 50
+
+/** Above this the screen says what the tolerance allows: more than 1% is unusual for a mint. */
+export const SLIPPAGE_WARN_ABOVE_BPS = 100
 
 /** How near a mark the thumb may be let go and still take it, in basis points. */
 const SNAP_BPS = 4
@@ -43,6 +59,23 @@ export function slippagePercent(bps: number): string {
 
 /** The same percentage as it is written on screen: 50 is "0.5%". */
 export const slippageWritten = (bps: number): string => `${slippagePercent(bps)}%`
+
+const BPS_TEXT = /^[1-9]\d{0,3}$/
+
+/**
+ * The kept text as whole basis points inside the bound, or null: no sign, no
+ * leading zero, no fraction, nothing below 0.1% or above 5%. The one rule
+ * every form applies before a slippage goes anywhere (journey.ts's
+ * validateSlippage puts the words to it).
+ */
+export function slippageBpsFrom(text: string): number | null {
+  if (!BPS_TEXT.test(text)) return null
+  const bps = Number(text)
+  return bps >= SLIPPAGE_MIN_BPS && bps <= SLIPPAGE_MAX_BPS ? bps : null
+}
+
+/** Whether a tolerance is past the line the screen warns at: above 1%. */
+export const slippageWarns = (bps: number): boolean => bps > SLIPPAGE_WARN_ABOVE_BPS
 
 /** The kept value in basis points. Anything outside the ends takes the nearer end, since the track cannot draw it. */
 export function slippageValue(text: string): number {

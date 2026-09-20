@@ -127,6 +127,8 @@
   .dm-flow-slip-scale > span:first-child { translate: 0 0; }
   .dm-flow-slip-scale > .dm-flow-slip-end { left: auto; right: 0; translate: 0 0; }
   .dm-flow-slip-exact { max-width: 220px; }
+  .dm-flow-slip > .dm-slip-presets { justify-self: start; }
+  .dm-flow-slip-warn { margin: 0; font-size: 13px; line-height: 18px; color: var(--fg-muted); text-wrap: pretty; }
 
   /* ---- Automation choices ----------------------------------------------------------------------------- */
   .dm-flow-options { display: grid; gap: 8px; min-width: 0; }
