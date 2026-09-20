@@ -36,7 +36,10 @@ function setupFixture(){
  const address=n=>'0x'+n.toString(16).padStart(40,'0'),code='0x6000',hash=keccak256(code),operationId='0x'+'a'.repeat(64);
  const deployment={setup:address(2),poolManager:address(3),positionManager:address(4),stateView:address(5),feeRecipient:address(6),setupCodeHash:hash,poolManagerCodeHash:hash,positionManagerCodeHash:hash,stateViewCodeHash:hash,feeBps:65,tariffVersion:'1',expiresAt:10000};
  const journal=createNonceJournal(storage(),locks(),token),walletCalls=[];
- const getters={manager:deployment.poolManager,positions:deployment.positionManager,stateView:deployment.stateView,feeRecipient:deployment.feeRecipient,assistedFeeBps:65,tariffVersion:1n,nextOperationId:operationId};
+ const key={currency0:address(0),currency1:address(9),fee:3000,tickSpacing:60,hooks:address(0)};
+ // A funded, unswapped operation of the owner's, and what the setup contract would simulate for its swap.
+ const getters={manager:deployment.poolManager,positions:deployment.positionManager,stateView:deployment.stateView,feeRecipient:deployment.feeRecipient,assistedFeeBps:65,tariffVersion:1n,nextOperationId:operationId,
+  operation:{owner,key,balance0:5000n,balance1:0n,swapped:false,closed:false,tokenId:0n},swap:2000n};
  let deferred;
  const wallet={owner,current:()=>true,nonceOffered:n=>journal.offered(owner,n),claimNonce:n=>journal.claim(owner,n),releaseRejectedNonce:(n,t)=>journal.releaseAfterRejection(owner,n,t),request:async(method,params)=>{
   walletCalls.push(method);
@@ -47,9 +50,22 @@ function setupFixture(){
   throw new Error('Unexpected fixture method');
  }};
  const gas={maxGas:100000n,maxFeePerGas:1n,maxPriorityFeePerGas:0n,reserveWei:0n};
- const key={currency0:address(0),currency1:address(9),fee:3000,tickSpacing:60,hooks:address(0)};
- return {wallet,journal,walletCalls,get deferred(){return deferred},client:()=>createSetupClient(wallet,deployment,()=>100,async()=>deployment),fund:client=>client.fund(key,1n,0n,gas)};
+ return {wallet,journal,walletCalls,get deferred(){return deferred},client:()=>createSetupClient(wallet,deployment,()=>100,async()=>deployment),fund:client=>client.fund(key,1n,0n,gas),
+  swap:(client,slippageBps)=>client.swap(operationId,true,1000n,slippageBps,1n,gas)};
 }
+test('the assisted swap takes the owner’s slippage limit inside the product’s bound only, draws its minimum output with it, and says the limit in the review',async()=>{
+ const fixture=setupFixture(),client=fixture.client();
+ // 10 to 500 basis points, both ends included (lib/create/slippage.ts): the provider's 0..9999 and the old 1000 are refused before anything is simulated.
+ for(const bps of [0,9,501,1000,9999,1.5])await assert.rejects(fixture.swap(client,bps),/invalid_swap_budget/,String(bps));
+ assert.equal(fixture.walletCalls.filter(method=>method==='eth_estimateGas').length,0,'nothing outside the bound is simulated');
+ const prepared=await fixture.swap(client,250);
+ assert.equal(prepared.kind,'swap');
+ const {args:[plan]}=decodeFunctionData({abi:setupAbi,data:prepared.transaction.data});
+ assert.equal(plan.minOutput,2000n*9750n/10000n,'the minimum output is the simulated output less the 2.5% chosen');
+ assert.ok(prepared.summary.some(line=>line.includes('minimum 1950 of')&&line.includes('at your 2.5% slippage limit')),prepared.summary.join('\n'));
+ assert.equal((await fixture.swap(fixture.client(),10)).kind,'swap','0.1% itself is allowed');
+ assert.equal((await fixture.swap(fixture.client(),500)).kind,'swap','5% itself is allowed');
+});
 async function timeoutSend(t,fixture,client,prepared){
  t.mock.timers.enable({apis:['setTimeout']});
  const sent=client.send(prepared,true);

@@ -11,6 +11,7 @@
  * Every figure is exact text from raw integers; a null the contract allows is
  * an explicit none with a closed reason, never zero.
  */
+import { SLIPPAGE_MAX_BPS, SLIPPAGE_MIN_BPS } from '../lib/create/slippage'
 import { formatWeiEth, groupRaw, isUint256, parseSafeInteger } from '../lib/raw'
 import type { OnboardingRequests, SwapPreview } from './types'
 
@@ -34,14 +35,15 @@ export type SwapRequest =
   | { ok: false; problem: SwapProblem }
 
 const ADDRESS = /^0x[0-9a-f]{40}$/
-/** Setup's own swap refuses more than 1000 basis points of slippage, so the preview never quotes more. */
-export const SWAP_SLIPPAGE_MAX_BPS = 1000
+/** The product's bound on a person's slippage (lib/create/slippage.ts): Setup's own swap and the backend's swap-preview apply the same ends, so the preview never quotes outside them. */
+export const SWAP_SLIPPAGE_MIN_BPS = SLIPPAGE_MIN_BPS
+export const SWAP_SLIPPAGE_MAX_BPS = SLIPPAGE_MAX_BPS
 
 export function swapRequest(fields: SwapFields): SwapRequest {
   if (!ADDRESS.test(fields.tokenIn) || !ADDRESS.test(fields.tokenOut) || fields.tokenIn === fields.tokenOut) return { ok: false, problem: 'tokens' }
   if (!isUint256(fields.grossRaw) || fields.grossRaw === '0') return { ok: false, problem: 'amount' }
   const slippage = parseSafeInteger(fields.slippageBps.trim())
-  if (slippage === null || slippage < 0 || slippage > SWAP_SLIPPAGE_MAX_BPS) return { ok: false, problem: 'slippage' }
+  if (slippage === null || slippage < SWAP_SLIPPAGE_MIN_BPS || slippage > SWAP_SLIPPAGE_MAX_BPS) return { ok: false, problem: 'slippage' }
   const impact = parseSafeInteger(fields.maxImpactBps.trim())
   if (impact === null || impact < 0 || impact > 10000) return { ok: false, problem: 'impact' }
   if (!Number.isSafeInteger(fields.feeBps) || fields.feeBps < 0 || fields.feeBps > 65) return { ok: false, problem: 'fee' }

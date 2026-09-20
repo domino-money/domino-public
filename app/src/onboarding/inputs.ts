@@ -9,6 +9,7 @@
  * Ticks are never snapped for the user: an unspaced tick is an issue, with the
  * nearest valid values named.
  */
+import { SLIPPAGE_MAX_BPS, SLIPPAGE_MIN_BPS } from '../lib/create/slippage'
 import { isRaw, isUint256, parseSafeInteger } from '../lib/raw'
 import { poolOf, tokenOf, type PreviewCatalog } from './catalog'
 import type { OnboardingRequests, OnboardingRoute } from './types'
@@ -45,6 +46,8 @@ export interface PositionForm {
 }
 
 export const MAX_TICK = 887272
+/** The product's bound (lib/create/slippage.ts), the same one the backend's request models check. */
+const SLIPPAGE_MESSAGE = `Slippage is a whole number of basis points from ${SLIPPAGE_MIN_BPS} to ${SLIPPAGE_MAX_BPS} (0.1% to 5%).`
 
 /** A stable identity for what would be sent, so any change invalidates. */
 export function requestKey(route: OnboardingRoute, value: unknown): string {
@@ -66,8 +69,8 @@ export function buildSwapRequest(form: SwapForm, catalog: PreviewCatalog): Build
   if (tokenIn && tokenOut && tokenIn.address === tokenOut.address) issues.push({ field: 'tokenOut', message: 'The two tokens must differ.' })
   const amount = form.amountRaw.trim()
   if (!isUint256(amount) || amount === '0') issues.push({ field: 'amountRaw', message: 'Enter a whole number of raw units above zero.' })
-  const slippage = integerIn(form.slippageBps, 0, 9999)
-  if (slippage === null) issues.push({ field: 'slippageBps', message: 'Slippage is a whole number of basis points from 0 to 9999.' })
+  const slippage = integerIn(form.slippageBps, SLIPPAGE_MIN_BPS, SLIPPAGE_MAX_BPS)
+  if (slippage === null) issues.push({ field: 'slippageBps', message: SLIPPAGE_MESSAGE })
   const impact = integerIn(form.maxPriceImpactBps, 0, 10000)
   if (impact === null) issues.push({ field: 'maxPriceImpactBps', message: 'Maximum price impact is a whole number of basis points from 0 to 10000.' })
   if (issues.length || !tokenIn || !tokenOut || slippage === null || impact === null) return { ok: false, issues, key }
@@ -118,8 +121,8 @@ export function buildPositionRequest(form: PositionForm, catalog: PreviewCatalog
   }
   if (lowerTick !== null && upperTick !== null && lowerTick >= upperTick) issues.push({ field: 'tickUpper', message: 'The upper tick must be above the lower tick.' })
 
-  const slippage = integerIn(form.slippageBps, 0, 9999)
-  if (slippage === null) issues.push({ field: 'slippageBps', message: 'Slippage is a whole number of basis points from 0 to 9999.' })
+  const slippage = integerIn(form.slippageBps, SLIPPAGE_MIN_BPS, SLIPPAGE_MAX_BPS)
+  if (slippage === null) issues.push({ field: 'slippageBps', message: SLIPPAGE_MESSAGE })
 
   const budget0 = optionalRaw(form.budget0Raw, 'budget0Raw', 'Budget for currency 0', issues)
   const budget1 = optionalRaw(form.budget1Raw, 'budget1Raw', 'Budget for currency 1', issues)

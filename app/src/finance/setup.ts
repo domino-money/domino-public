@@ -1,4 +1,5 @@
 import { decodeFunctionData, decodeFunctionResult, encodeAbiParameters, encodeFunctionData, keccak256, numberToHex, zeroAddress, type Address, type Hex } from 'viem'
+import { SLIPPAGE_MAX_BPS, SLIPPAGE_MIN_BPS, slippageWritten } from '../lib/create/slippage'
 
 /*
  * The closed ABIs are written as JSON: exactly what viem's parseAbi and
@@ -217,7 +218,8 @@ export function createSetupClient(wallet: WalletRpc, supplied: SetupDeployment, 
     }),
     swap: (id: Hex, zeroForOne: boolean, gross: bigint, slippageBps: number, sqrtLimit: bigint, gas: GasBudget) => bounded(async rpc => {
       await verify(rpc); const op = await operation(rpc, id)
-      if (op.closed || op.swapped || gross <= 0n || gross > (zeroForOne ? op.balance0 : op.balance1) || !Number.isSafeInteger(slippageBps) || slippageBps < 0 || slippageBps > 1000 || sqrtLimit <= 0n || sqrtLimit >= 2n ** 160n) return fail('invalid_swap_budget')
+      // The slippage is the owner's own limit, inside the product's bound (lib/create/slippage.ts): the minimum output below is drawn with it.
+      if (op.closed || op.swapped || gross <= 0n || gross > (zeroForOne ? op.balance0 : op.balance1) || !Number.isSafeInteger(slippageBps) || slippageBps < SLIPPAGE_MIN_BPS || slippageBps > SLIPPAGE_MAX_BPS || sqrtLimit <= 0n || sqrtLimit >= 2n ** 160n) return fail('invalid_swap_budget')
       const plan = { operationId: id, zeroForOne, grossInput: gross, minOutput: 1n, sqrtPriceLimitX96: sqrtLimit, deadline: BigInt(Math.floor(now()) + 90) }
       const data = encodeFunctionData({ abi: setupAbi, functionName: 'swap', args: [plan] })
       const output = decodeFunctionResult({ abi: setupAbi, functionName: 'swap', data: asHex(await rpc('eth_call', [{ from: wallet.owner, to: deployment.setup, data }, 'latest'])) })
@@ -226,7 +228,7 @@ export function createSetupClient(wallet: WalletRpc, supplied: SetupDeployment, 
       const fee = gross * BigInt(deployment.feeBps) / 10000n
       return prepare(rpc, 'swap', id, deployment.setup, encodeFunctionData({ abi: setupAbi, functionName: 'swap', args: [{ ...plan, minOutput: minimum }] }), 0n, gas,
         [`Swap ${gross} smallest units of ${zeroForOne ? op.key.currency0 : op.key.currency1}.`, `Domino fee ${fee} (${deployment.feeBps} bps), net input ${gross - fee}; tariff ${deployment.tariffVersion}; recipient ${deployment.feeRecipient}.`,
-          `Simulated output ${output}; minimum ${minimum} of ${zeroForOne ? op.key.currency1 : op.key.currency0}. Pool fees are included in the simulation.`, 'Swap and mint are separate. Cancelling mint refunds remaining balances without another swap or fee.'])
+          `Simulated output ${output}; minimum ${minimum} of ${zeroForOne ? op.key.currency1 : op.key.currency0}, at your ${slippageWritten(slippageBps)} slippage limit. Pool fees are included in the simulation.`, 'Swap and mint are separate. Cancelling mint refunds remaining balances without another swap or fee.'])
     }),
     mint: (id: Hex, plan: { tickLower: number; tickUpper: number; liquidity: bigint; maxAmount0: bigint; maxAmount1: bigint; minSqrtPriceX96: bigint; maxSqrtPriceX96: bigint; initialSqrtPriceX96: bigint }, gas: GasBudget) => bounded(async rpc => {
       await verify(rpc); const op = await operation(rpc, id)

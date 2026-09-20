@@ -357,9 +357,14 @@ test('Continue in Setup carries the verified choices as a pre-filled deposit dra
     assert.match(await draft.innerText(), /Filled in from New position\. Enter the budgets and network limits, then create the draft\. Nothing is sent before that\./);
     const field = (label, control = 'input') => draft.locator('label', { hasText: label }).locator(control);
     assert.equal(await field('Input amount is in', 'select').inputValue(), '1', 'the deposit token is the pool’s token 1');
-    for (const [label, value] of [['Input amount (smallest token units)', '1000000'], ['Lower tick', '-3600'], ['Upper tick', '4080'], ['Slippage limit (basis points)', '50'], ['Maximum token 0 spend (smallest units)', ''], ['Maximum token 1 spend (smallest units)', ''], ['Maximum gas units', '']]) {
+    for (const [label, value] of [['Input amount (smallest token units)', '1000000'], ['Lower tick', '-3600'], ['Upper tick', '4080'], ['Maximum token 0 spend (smallest units)', ''], ['Maximum token 1 spend (smallest units)', ''], ['Maximum gas units', '']]) {
       assert.equal(await field(label).inputValue(), value, label);
     }
+    // The slippage chosen on the amount step (its default, 0.5%) arrives as the draft's limit: the preset pressed, the exact box filled.
+    const slippage = draft.locator('[data-slippage-choice]');
+    assert.equal(await slippage.getAttribute('data-slippage-bps'), '50');
+    assert.equal(await slippage.locator('[data-slippage-preset="50"]').getAttribute('aria-pressed'), 'true');
+    assert.equal(await slippage.locator('label', { hasText: 'Exact percentage' }).locator('input').inputValue(), '0.5');
     await s.page.waitForTimeout(500);
     assert.deepEqual(s.deposits.map(call => call.route), ['list'], 'filling in the draft sends nothing: only the list Setup reads for any signed-in visit');
     const kept = await s.page.evaluate(() => JSON.stringify({ ...localStorage }) + JSON.stringify({ ...sessionStorage }) + location.href);

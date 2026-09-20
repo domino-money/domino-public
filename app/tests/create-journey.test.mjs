@@ -258,6 +258,19 @@ test('the amount step chooses slippage by a preset, by dragging or by an exact p
   assert.match(rail, /summary\.slippage\(/, 'the done Amount row says the tolerance');
   assert.equal(CREATE.review.slippage('0.5%'), 'Slippage tolerance 0.5%');
   assert.equal(CREATE.review.summary.slippage('0.5%'), 'slippage 0.5%');
+  // Setup's draft and its balancing swap take the choice through the same control, and every path applies the one bound: no 9999 and no 1000 left.
+  const setup = readFileSync(new URL('../src/screens/Setup.tsx', import.meta.url), 'utf8');
+  const advanced = readFileSync(new URL('../src/screens/AdvancedSetup.tsx', import.meta.url), 'utf8');
+  const finance = readFileSync(new URL('../src/finance/setup.ts', import.meta.url), 'utf8');
+  assert.match(setup, /<SlippageChoice/, 'the draft form offers the presets and the exact box');
+  assert.match(setup, /slippageBpsFrom\(form\.slippageBps\)/, 'the draft is created only with a limit inside the bound');
+  assert.match(setup, /<AdvancedSetup slippageBps=/, 'the balancing swap starts from the draft’s limit');
+  assert.match(advanced, /<SlippageChoice/, 'the swap offers the same control');
+  assert.match(finance, /slippageBps < SLIPPAGE_MIN_BPS \|\| slippageBps > SLIPPAGE_MAX_BPS/, 'the wallet client draws the minimum output inside the same bound');
+  assert.match(finance, /slippageWritten\(slippageBps\)/, 'and the swap review says the limit it used');
+  for (const [name, text] of [['Setup.tsx', setup], ['AdvancedSetup.tsx', advanced], ['finance/setup.ts', finance], ['onboarding/inputs.ts', readFileSync(new URL('../src/onboarding/inputs.ts', import.meta.url), 'utf8')], ['onboarding/swap.ts', readFileSync(new URL('../src/onboarding/swap.ts', import.meta.url), 'utf8')]]) {
+    assert.doesNotMatch(text, /9999|slippageBps > 1000|\b1000 basis/, `${name} applies the product’s bound, not the provider’s`);
+  }
   assert.match(CREATE.amount.slippageWarning('2%'), /^2% is more than the usual 1%\. The deposit may take up to 2% more of each token/);
   // The strings the disclosure and the basis-point field used are gone with them.
   assert.equal(CREATE.amount.advanced, undefined);

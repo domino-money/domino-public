@@ -10,13 +10,15 @@ import { financialFetch } from '../finance/http'
 import { realClock } from '../lib/clock'
 import { livePort } from '../session/livePort'
 import { SwapQuote } from '../components/preview/SwapQuote'
+import { SlippageChoice } from '../components/create/SlippageChoice'
+import { SLIPPAGE_DEFAULT_BPS, slippageBpsFrom } from '../lib/create/slippage'
 import { Button, Card } from '../components/ui'
 
-const defaults = { currency0: '', currency1: '', fee: '3000', tickSpacing: '60', amount0: '', amount1: '', grossSwap: '', slippage: '50', maxImpact: '100', sqrtLimit: '',
+const defaults = { currency0: '', currency1: '', fee: '3000', tickSpacing: '60', amount0: '', amount1: '', grossSwap: '', maxImpact: '100', sqrtLimit: '',
   tickLower: '', tickUpper: '', liquidity: '', maxAmount0: '', maxAmount1: '', minPrice: '', maxPrice: '', initialPrice: '0',
   maxGas: '', maxFee: '', priorityFee: '', reserve: '', operationId: '', transactionHash: '' }
 const labels: Record<keyof typeof defaults, string> = { currency0: 'Token 0 address (lower address; zero address for native)', currency1: 'Token 1 address', fee: 'Pool fee (pips)', tickSpacing: 'Tick spacing',
-  amount0: 'Fund token 0 (smallest units)', amount1: 'Fund token 1 (smallest units)', grossSwap: 'Swap gross input (smallest units, includes Domino fee)', slippage: 'Maximum swap slippage (basis points)', maxImpact: 'Maximum price impact for the quote (basis points)', sqrtLimit: 'Swap sqrtPriceX96 limit',
+  amount0: 'Fund token 0 (smallest units)', amount1: 'Fund token 1 (smallest units)', grossSwap: 'Swap gross input (smallest units, includes Domino fee)', maxImpact: 'Maximum price impact for the quote (basis points)', sqrtLimit: 'Swap sqrtPriceX96 limit',
   tickLower: 'Lower tick', tickUpper: 'Upper tick', liquidity: 'Liquidity (raw)', maxAmount0: 'Mint token 0 cap (smallest units)', maxAmount1: 'Mint token 1 cap (smallest units)',
   minPrice: 'Minimum sqrtPriceX96', maxPrice: 'Maximum sqrtPriceX96', initialPrice: 'Initial sqrtPriceX96 (0 for an existing pool)', maxGas: 'Maximum gas units', maxFee: 'Maximum fee per gas (wei)', priorityFee: 'Maximum priority fee (wei)', reserve: 'Keep native gas reserve (wei)', operationId: 'Operation ID', transactionHash: 'Wallet transaction hash' }
 type Client = ReturnType<typeof createSetupClient>
@@ -50,18 +52,31 @@ function AssistedSwap({ children }: { children: (open: boolean) => ReactNode }) 
  * holds public identities only; it grants no spending or automation authority.
  * It is read once on mount with a public GET; the wallet is asked only when the
  * owner presses a button. Without a published release only recovery remains,
- * and only for a profile this browser saved: with neither, there is no card. */
-export default function AdvancedSetup() {
+ * and only for a profile this browser saved: with neither, there is no card.
+ * `slippageBps` is the deposit draft's limit on the same page, when there is
+ * one: the balancing swap's minimum output is drawn with it until the owner
+ * sets the swap's own limit here. */
+export default function AdvancedSetup({ slippageBps }: { slippageBps?: string } = {}) {
   const [release, setRelease] = useState<Release>({ kind: 'loading' }), [saved] = useState(savedProfile)
   const [form, setForm] = useState(defaults), [client, setClient] = useState<Client | null>(null), [recovery, setRecovery] = useState(false)
+  // The swap's own limit once the owner sets one; until then the draft's choice, or the default, over the one bound (lib/create/slippage.ts).
+  const [ownSwapSlippage, setOwnSwapSlippage] = useState<string | null>(null)
+  const swapSlippage = ownSwapSlippage ?? (slippageBps !== undefined && slippageBpsFrom(slippageBps) !== null ? slippageBps : String(SLIPPAGE_DEFAULT_BPS))
   const [operation, setOperation] = useState<SetupOperation | null>(null), [recent, setRecent] = useState<{ id: Hex; operation: SetupOperation }[]>([])
   const [prepared, setPrepared] = useState<PreparedSetup | null>(null), [ack, setAck] = useState(false)
   const [busy, setBusy] = useState(false), [notice, setNotice] = useState<Notice | null>(null), [direction, setDirection] = useState(true)
   const generation = useRef(0), running = useRef(false)
   const say = (text: string, code: string | null = null) => setNotice({ text, code })
   useEffect(() => { let live = true; void readSetupRelease().then(result => { if (live) setRelease(result) }); return () => { live = false } }, [])
-  useEffect(() => watchConnection(walletConfig, { onChange: () => { generation.current++; running.current = false; setClient(null); setRecovery(false); setOperation(null); setRecent([]); setPrepared(null); setAck(false); setBusy(false); setForm(defaults); setNotice(null) } }), [])
+  useEffect(() => watchConnection(walletConfig, { onChange: () => { generation.current++; running.current = false; setClient(null); setRecovery(false); setOperation(null); setRecent([]); setPrepared(null); setAck(false); setBusy(false); setForm(defaults); setOwnSwapSlippage(null); setNotice(null) } }), [])
   useEffect(() => () => { generation.current++ }, [])
+  // A swap reviewed at one limit is not the swap at another: a limit that moves under a prepared step drops that review, as any edit does.
+  const reviewedSlippage = useRef(swapSlippage)
+  useEffect(() => {
+    if (reviewedSlippage.current === swapSlippage) return
+    reviewedSlippage.current = swapSlippage
+    generation.current++; setPrepared(null); setAck(false)
+  }, [swapSlippage])
   const available = release.kind === 'available'
   const profile = available ? release.deployment : release.kind === 'unavailable' ? saved : null
   // A typed Operation ID names another operation: the one read from chain before, and the swap pair it gave the quote, no longer apply.
@@ -94,11 +109,12 @@ export default function AdvancedSetup() {
   const gas = () => ({ maxGas: raw(form.maxGas, 64), maxFeePerGas: raw(form.maxFee), maxPriorityFeePerGas: raw(form.priorityFee), reserveWei: raw(form.reserve, 256) })
   const id = () => form.operationId.toLowerCase() as Hex
   const integer = (value: string) => { if (!/^-?(0|[1-9][0-9]{0,6})$/.test(value)) throw new Error('invalid_integer'); return Number(value) }
+  const swapSlippageBps = () => { const bps = slippageBpsFrom(swapSlippage); if (bps === null) throw new Error('invalid_slippage'); return bps }
   async function prepare(kind: 'fund' | 'swap' | 'mint' | 'cancel') {
     if (!client) return
     const gen = generation.current
     const result = kind === 'fund' ? await client.fund({ currency0: form.currency0.toLowerCase() as Address, currency1: form.currency1.toLowerCase() as Address, hooks: zeroAddress, fee: integer(form.fee), tickSpacing: integer(form.tickSpacing) }, raw(form.amount0), raw(form.amount1), gas())
-      : kind === 'swap' ? await client.swap(id(), direction, raw(form.grossSwap), integer(form.slippage), raw(form.sqrtLimit, 160), gas())
+      : kind === 'swap' ? await client.swap(id(), direction, raw(form.grossSwap), swapSlippageBps(), raw(form.sqrtLimit, 160), gas())
       : kind === 'mint' ? await client.mint(id(), { tickLower: integer(form.tickLower), tickUpper: integer(form.tickUpper), liquidity: raw(form.liquidity, 127), maxAmount0: raw(form.maxAmount0), maxAmount1: raw(form.maxAmount1), minSqrtPriceX96: raw(form.minPrice, 160), maxSqrtPriceX96: raw(form.maxPrice, 160), initialSqrtPriceX96: raw(form.initialPrice, 160) }, gas())
       : await client.cancel(id(), gas())
     if (generation.current === gen) setPrepared(result)
@@ -119,7 +135,7 @@ export default function AdvancedSetup() {
   }
   // The swap the quote is for: the operation read from chain when there is one, else the funding fields; typed amounts only.
   const swapKey = operation ? { currency0: operation.key.currency0.toLowerCase(), currency1: operation.key.currency1.toLowerCase() } : { currency0: form.currency0.trim().toLowerCase(), currency1: form.currency1.trim().toLowerCase() }
-  const swapFields = client ? { tokenIn: direction ? swapKey.currency0 : swapKey.currency1, tokenOut: direction ? swapKey.currency1 : swapKey.currency0, grossRaw: form.grossSwap.trim(), feeBps: client.deployment.feeBps, slippageBps: form.slippage, maxImpactBps: form.maxImpact } : null
+  const swapFields = client ? { tokenIn: direction ? swapKey.currency0 : swapKey.currency1, tokenOut: direction ? swapKey.currency1 : swapKey.currency0, grossRaw: form.grossSwap.trim(), feeBps: client.deployment.feeBps, slippageBps: swapSlippage, maxImpactBps: form.maxImpact } : null
   const inputs = (names: (keyof typeof defaults)[]) => <div className="dm-acct-fields">{names.map(name => <label className="dm-label dm-acct-lf" key={name}>{labels[name]}<input disabled={busy} className="dm-field dm-acct-mono-field" value={form[name]} onChange={event => edit(name, event.target.value)} /></label>)}</div>
   // No published release, no saved profile, and nothing read, running or said on this visit: a card would promise a recovery with
   // no way into it, so there is none, and nothing in its place. Where the release stands stays in the marker's data and title.
@@ -143,7 +159,7 @@ export default function AdvancedSetup() {
       {inputs(['operationId'])}<Button className="justify-self-start" disabled={busy} variant="outline" onClick={() => { void action(async () => { const gen = generation.current, op = await client.inspect(id()); if (generation.current === gen) setOperation(op) }) }}>Read operation from chain</Button>
       {operation && <p className="dm-acct-line dm-acct-wrap">Token 0 {operation.key.currency0}: {operation.balance0.toString()} · token 1 {operation.key.currency1}: {operation.balance1.toString()} · {operation.closed ? `closed, NFT ${operation.tokenId}` : operation.swapped ? 'swap completed; ready to mint or refund' : 'funded'}</p>}
       {available && !recovery && <>
-        <AssistedSwap>{open => <><label className="dm-acct-check"><input type="checkbox" disabled={busy} checked={direction} onChange={e => { generation.current++; setDirection(e.target.checked); setPrepared(null); setAck(false) }} /> Token 0 to token 1 (uncheck for token 1 to token 0)</label>{inputs(['grossSwap','slippage','maxImpact','sqrtLimit'])}{swapFields && <SwapQuote fields={swapFields} open={open} port={livePort} fetch={financialFetch} clock={realClock} />}<Button className="justify-self-start" disabled={busy} onClick={() => { void action(() => prepare('swap')) }}>Simulate and review swap</Button></>}</AssistedSwap>
+        <AssistedSwap>{open => <><label className="dm-acct-check"><input type="checkbox" disabled={busy} checked={direction} onChange={e => { generation.current++; setDirection(e.target.checked); setPrepared(null); setAck(false) }} /> Token 0 to token 1 (uncheck for token 1 to token 0)</label>{inputs(['grossSwap'])}<SlippageChoice id="setup-swap-slippage" label="Maximum swap slippage" bps={swapSlippage} disabled={busy} onChange={text => setOwnSwapSlippage(text)} />{inputs(['maxImpact','sqrtLimit'])}{swapFields && <SwapQuote fields={swapFields} open={open} port={livePort} fetch={financialFetch} clock={realClock} />}<Button className="justify-self-start" disabled={busy} onClick={() => { void action(() => prepare('swap')) }}>Simulate and review swap</Button></>}</AssistedSwap>
         <details className="dm-details dm-acct-disclosure"><summary>Mint or create a new pool</summary><div className="dm-acct-disclosure-body">{inputs(['tickLower','tickUpper','liquidity','maxAmount0','maxAmount1','minPrice','maxPrice','initialPrice'])}<Button className="justify-self-start" disabled={busy} onClick={() => { void action(() => prepare('mint')) }}>Simulate and review mint</Button></div></details>
       </>}
       <Button className="justify-self-start" variant="outline" disabled={busy} onClick={() => { void action(() => prepare('cancel')) }}>Review refund of remaining funds</Button>

@@ -90,6 +90,8 @@ export const CREATE = {
     slippageHint: 'From 0.1% to 5%, in hundredths of a percent: press a preset, drag the slider, or type an exact percentage. Let the slider go beside a mark and it settles on it.',
     slippageInvalid: 'Slippage is a whole number of basis points from 10 to 500: 0.1% to 5%.',
     slippagePresets: 'Common tolerances',
+    /** Setup's draft and its swap, when the box holds nothing the bound admits. */
+    slippageRequired: 'Choose a slippage limit from 0.1% to 5%.',
     slippageExact: 'Exact percentage',
     slippageExactInvalid: 'Enter a percentage from 0.1 to 5, with up to two decimal places.',
     /** Above 1%: what the tolerance lets the deposit, and any balancing swap, do. Said, never blocked. */

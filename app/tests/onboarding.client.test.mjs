@@ -85,7 +85,8 @@ test('local validation: spacing, order, bounds, independent token, budget, reser
   assert.deepEqual(fields({ budget1Raw: '1' }), [], "the other token's budget is the server's to judge (blocked)");
   assert.deepEqual(fields({ nativeBalanceRaw: '' }), ['nativeGasReserveRaw'], 'a reserve needs a balance');
   for (const amount of ['0', '1e3', '01', '-5', '1.5', ' ']) assert.ok(fields({ amountRaw: amount }).includes('amountRaw'), amount);
-  for (const slippage of ['50.0', '5e1', '-0', '10000']) assert.ok(fields({ slippageBps: slippage }).includes('slippageBps'), slippage);
+  for (const slippage of ['50.0', '5e1', '-0', '0', '9', '501', '10000']) assert.ok(fields({ slippageBps: slippage }).includes('slippageBps'), slippage);
+  for (const slippage of ['10', '500']) assert.deepEqual(fields({ slippageBps: slippage }), [], `${slippage}: the ends of the bound are inside it`);
   assert.ok(fields({ poolId: `0x${'ff'.repeat(32)}` }).includes('poolId'), 'only curated pools');
 
   const blank = buildPositionRequest({ ...POSITION_FORM, budget0Raw: '', budget1Raw: '', nativeBalanceRaw: '', nativeGasReserveRaw: '' }, consumerTestCatalog);

@@ -1,7 +1,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
 import { PoolExplorer } from '../components/read/screens/PoolExplorer'
+import { CREATE } from '../lib/create/copy'
 import type { SetupDraft } from '../lib/create/journey'
 import { carriedFor, clearSetupDraft, setupDraftFor } from '../lib/create/setupDraft'
+import { SLIPPAGE_DEFAULT_BPS, slippageBpsFrom } from '../lib/create/slippage'
+import { SlippageChoice } from '../components/create/SlippageChoice'
 import type { PoolOption } from '../lib/read/screens/poolsList'
 import { useReadSource } from '../lib/read/screens/readContext'
 import { readWithin } from '../lib/read/screens/screenRead'
@@ -23,10 +26,10 @@ import { OperationPanel } from '../components/deposit/OperationPanel'
 import { Button, Card, Display, Pill } from '../components/ui'
 import AdvancedSetup from './AdvancedSetup'
 
-const initial = { amountRaw: '', budget0Raw: '', budget1Raw: '', tickLower: '', tickUpper: '', slippageBps: '50',
+const initial = { amountRaw: '', budget0Raw: '', budget1Raw: '', tickLower: '', tickUpper: '', slippageBps: String(SLIPPAGE_DEFAULT_BPS),
   nativeGasReserveRaw: '', maxGasLimitRaw: '', maxFeePerGasRaw: '', maxPriorityFeePerGasRaw: '' }
 const labels: Record<keyof typeof initial, string> = { amountRaw: 'Input amount (smallest token units)', budget0Raw: 'Maximum token 0 spend (smallest units)',
-  budget1Raw: 'Maximum token 1 spend (smallest units)', tickLower: 'Lower tick', tickUpper: 'Upper tick', slippageBps: 'Slippage limit (basis points)',
+  budget1Raw: 'Maximum token 1 spend (smallest units)', tickLower: 'Lower tick', tickUpper: 'Upper tick', slippageBps: 'Slippage limit',
   nativeGasReserveRaw: 'Keep native gas reserve (wei)', maxGasLimitRaw: 'Maximum gas units', maxFeePerGasRaw: 'Maximum gas price (wei)', maxPriorityFeePerGasRaw: 'Maximum priority fee (wei)' }
 
 /** A failure as a closed code, for data attributes and titles only. */
@@ -162,11 +165,13 @@ export default function Setup() {
     if (session.kind !== 'signed_in' || !pool || creation || state.busy || sending) return
     const say = (text: string, code: string | null = null, blocker: string | null = null) => setNotice({ text, code, place: 'draft', blocker })
     if (pool.integration !== 'hookless_fixed_fee') { say('This pool needs a separate integration.'); return }
-    const numeric = [form.tickLower, form.tickUpper, form.slippageBps]
-    if (!numeric.every(value => /^-?(0|[1-9]\d{0,6})$/.test(value))) { say('Enter valid ticks and slippage.'); return }
+    if (![form.tickLower, form.tickUpper].every(value => /^-?(0|[1-9]\d{0,6})$/.test(value))) { say('Enter valid ticks.'); return }
+    // The limit is the person's own, inside the product's bound (lib/create/slippage.ts); the wire carries whole basis points.
+    const slippageBps = slippageBpsFrom(form.slippageBps)
+    if (slippageBps === null) { say(CREATE.amount.slippageRequired); return }
     const selection: DepositSelection = { chainId: 4663, poolId: pool.key, poolKey: { currency0: pool.currencies[0].address,
       currency1: pool.currencies[1].address, fee_pips: pool.feePips, tick_spacing: pool.tickSpacing, hooks: '0x0000000000000000000000000000000000000000' },
-      independentToken: pool.currencies[independent].address, ...form, tickLower: Number(form.tickLower), tickUpper: Number(form.tickUpper), slippageBps: Number(form.slippageBps) }
+      independentToken: pool.currencies[independent].address, ...form, tickLower: Number(form.tickLower), tickUpper: Number(form.tickUpper), slippageBps }
     const body = { idempotencyKey: crypto.randomUUID(), selection }
     if (!DEPOSIT_RUNTIME.validateRequest('create', body)) { say('Check token amounts, ticks and gas limits. All limits must be explicit.'); return }
     setCreation(true); setNotice(null)
@@ -236,7 +241,10 @@ export default function Setup() {
         <h2 className="dm-acct-panel-title dm-acct-span">Deposit budgets · {pool.fee} pool</h2><p className="dm-acct-hash dm-acct-span">Token 0: {pool.currencies[0].address}<br />Token 1: {pool.currencies[1].address}</p>
         {carried && pool.key === carried.pool.key && <p className="dm-hint dm-acct-span">Filled in from New position. Enter the budgets and network limits, then create the draft. Nothing is sent before that.</p>}
         <label className="dm-label dm-acct-lf">Input amount is in<select className="dm-field dm-acct-mono-field" value={independent} onChange={event => setIndependent(event.target.value === '1' ? 1 : 0)}><option value={0}>Token 0</option><option value={1}>Token 1</option></select></label>
-        {(Object.keys(initial) as (keyof typeof initial)[]).map(name => <label key={name} className="dm-label dm-acct-lf">{labels[name]}<input className="dm-field dm-acct-mono-field" value={form[name]} onChange={event => setForm(old => ({ ...old, [name]: event.target.value }))} /></label>)}
+        {(Object.keys(initial) as (keyof typeof initial)[]).map(name => name === 'slippageBps'
+          // The same presets and exact box as New position's amount step, over the same bound; a choice carried from there is the one shown.
+          ? <SlippageChoice key={name} id="setup-slippage" label={labels.slippageBps} bps={form.slippageBps} onChange={text => setForm(old => ({ ...old, slippageBps: text }))} />
+          : <label key={name} className="dm-label dm-acct-lf">{labels[name]}<input className="dm-field dm-acct-mono-field" value={form[name]} onChange={event => setForm(old => ({ ...old, [name]: event.target.value }))} /></label>)}
         <Button type="submit" className="justify-self-start" disabled={creation || state.busy !== null || sending}>Create deposit draft</Button><p className="dm-hint dm-acct-span">This saves your selection. Each approval and mint is reviewed separately before your wallet opens.</p>
         {notice?.place === 'draft' && <div className="dm-acct-span dm-acct-stack">
           <p className="dm-acct-line dm-acct-wrap" role="status" data-deposit-notice={notice.code ?? undefined}>{notice.text}</p>
@@ -244,6 +252,7 @@ export default function Setup() {
         </div>}
       </form>}
     </>}
-    <AdvancedSetup />
+    {/* The draft's limit is the balancing swap's too, until the owner sets the swap's own. */}
+    <AdvancedSetup slippageBps={session.kind === 'signed_in' && pool ? form.slippageBps : undefined} />
   </main>
 }
