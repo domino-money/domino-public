@@ -1,0 +1,9 @@
+{
+  "scope": "reader UID, mount namespace and application transport",
+  "at": 1789873947,
+  "httpMs": 31.33,
+  "chainId": "0x1237",
+  "blockNumber": 67609234,
+  "chainAgeSeconds": 0,
+  "rpcErrors": []
+}

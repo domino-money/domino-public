@@ -1,0 +1,9 @@
+{"at":"2026-09-20T03:07:14.353Z","round":0,"route":"overview","status":200,"ms":1412.38,"valid":true,"error":null,"pools":15,"readyPools":15,"hasMore":false}
+{"at":"2026-09-20T03:07:16.704Z","round":0,"route":"history","status":200,"ms":234.51,"valid":true,"error":null,"state":"stale","candles":1,"covered":1,"gaps":1}
+{"at":"2026-09-20T03:07:19.164Z","round":0,"route":"search","status":200,"ms":333.4,"valid":true,"error":null,"tokens":1}
+{"at":"2026-09-20T03:07:22.151Z","round":1,"route":"overview","status":200,"ms":860,"valid":true,"error":null,"pools":15,"readyPools":15,"hasMore":false}
+{"at":"2026-09-20T03:07:24.500Z","round":1,"route":"history","status":200,"ms":201.65,"valid":true,"error":null,"state":"stale","candles":1,"covered":1,"gaps":1}
+{"at":"2026-09-20T03:07:26.734Z","round":1,"route":"search","status":200,"ms":112.3,"valid":true,"error":null,"tokens":1}
+{"at":"2026-09-20T03:07:29.715Z","round":2,"route":"overview","status":200,"ms":873.05,"valid":true,"error":null,"pools":15,"readyPools":15,"hasMore":false}
+{"at":"2026-09-20T03:07:31.941Z","round":2,"route":"history","status":200,"ms":123.45,"valid":true,"error":null,"state":"stale","candles":1,"covered":1,"gaps":1}
+{"at":"2026-09-20T03:07:34.203Z","round":2,"route":"search","status":200,"ms":155.12,"valid":true,"error":null,"tokens":1}

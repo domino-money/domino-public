@@ -1,5 +1,9 @@
 # Persistent public data rollout — 20 September 2026
 
+**Current status: recovered and validated.** Runtime `3e304d8` is operational;
+final verification below supersedes the temporary network interruption.
+Acquired observations are available; historical backfill continues progressively.
+
 Implementation: `db676d6430516b60b534d66820f85249d6048a2c` plus
 `b0efeb30548c72e75c806c45cb31bac9437e04d1` (demand/history/CI repair).
 
@@ -173,3 +177,59 @@ reconfigure infrastructure. Mutable status is written to
 `reports/public-data-recovery-status.json`; completed samples, if obtained, go to
 `reports/public-data-vm-final-2026-09-20.jsonl`. A timeout or failed attempt is
 recorded explicitly. No unbounded watcher or recurring AI task was created.
+
+
+## Network recovered — final qualification completed
+
+The operator reported the network back at00:05BRT. The05:00 watcher was cancelled
+and the final qualification ran immediately, without restarting or reconfiguring
+any service. Reader, gateway and all three collectors remained active at
+`3e304d8e268b1b9ffda55771adfbf6a2471272e4`; the collector target was enabled.
+The [full CI for this exact runtime](https://github.com/domino-money/domino/actions/runs/35484523834)
+passed all jobs, including Frontend, Backend, Contracts, hygiene and gated preview.
+No subsequent product/deployment change was present on main.
+
+The [authenticated RPC smoke](rpc-after-network-recovery-2026-09-20.json) used
+the reader UID, its systemd mount namespace and the application's transport.
+It returned chain ID0x1237 (4663), block67,609,234 with timestamp age0seconds,
+and no JSON-RPC errors; the two-call batch took31.33ms. A raw DNS probe outside
+the reader namespace had failed because DNS is intentionally denied to that
+UID: the service mounts its approved host pins. No DNS or egress rule was weakened.
+
+[Final raw samples](public-data-vm-final-2026-09-20.jsonl) and
+[final statistical summary](public-data-final-summary-2026-09-20.json) now contain
+real results for the same CRUMBS token with15 ready pools plus the6 selected
+pools. All nine reads of each route validated. Loopback medians were21.52ms
+(selected overview),13.74ms (history) and33.19ms (CRUMBS overview).
+
+The first sample retained outage-era snapshots rather than inventing fresh
+values. In the remaining eight samples, snapshot ages were1–11seconds. Six-pool
+publication intervals had median11.069s and maximum14.007s; after excluding each
+pool's first recovery interval, median11.000s and maximum11.996s. Journal markers
+are emitted at tick completion and have the timing uncertainty documented in
+the summary. Current/history recorded no retries in this final window.
+
+Nine paced [authenticated public requests](public-api-recovered-2026-09-20.jsonl)
+all returned HTTP200 and passed response/request identity validation:
+
+| Route | Samples | Minimum | Median | Maximum |
+| --- | ---: | ---: | ---: | ---: |
+| overview | 3 | 860.00ms | 873.05ms | 1412.38ms |
+| history | 3 | 123.45ms | 201.65ms | 234.51ms |
+| search | 3 | 112.30ms | 155.12ms | 333.40ms |
+
+These three samples per public route are not an SLA or public p95 estimate.
+A real authenticated browser independently rendered CRUMBS with15 pool rows
+(16 table rows including the header) and no console errors. The temporary tab
+was then closed.
+
+Historical stored coverage increased by700,000 pool-blocks across7 additional
+pools during the80-second window. One global window was already complete, and
+no new whole window completed in this sample. The requested chart remained
+partial/stale with its acquisition gap visible. Provider analytics ended with
+one available and five stale observations; their ages/provenance were preserved.
+This qualification does not claim complete history or fresh external analytics
+for every pool.
+
+No recovery watcher or periodic AI monitoring remains active. The mutable status
+file records the completed qualification and the cancelled schedule.

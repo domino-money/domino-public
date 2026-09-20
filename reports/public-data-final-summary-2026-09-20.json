@@ -1,0 +1,697 @@
+{
+  "schemaVersion": 1,
+  "generatedAt": "2026-09-20T03:12:40.026820+00:00",
+  "commit": "3e304d8e268b1b9ffda55771adfbf6a2471272e4",
+  "source": "reports/public-data-vm-final-2026-09-20.jsonl",
+  "scope": "Read-only analysis of existing VM loopback qualification and journald. No extra RPC, HTTP data requests, service changes or restarts were performed by this analysis.",
+  "window": {
+    "start": "2026-09-20T03:06:43.642161+00:00",
+    "end": "2026-09-20T03:08:03.714312+00:00",
+    "durationSeconds": 80.072151,
+    "samples": 9,
+    "intervalSeconds": 10
+  },
+  "workload": {
+    "selectedPoolIds": [
+      "0x84bd4e2d8be11aeb0afc1195b38f587b61e90068548f1063fdbe448fb8cad0b6",
+      "0xdb922f0619e11b0c1e6c3a142798f0243060b8a4331ea4f4e7de80e898cc02e7",
+      "0x94c62eebf6454231b2fcd0259ede448ae3c6ad8617718cd88dab20b30cfae48a",
+      "0xf399bd1544377680d48c62fd85c2105b869e55906c4189cc5ab3b4e83446928c",
+      "0x24107d152f14a76d292123265ae3f3c71f863fc2f4ef7ba49d64e78d28ea379e",
+      "0x4be9657ec9002e528f4f17a5c43edc525a07f888f7b180c2afbf75e096c4f38a"
+    ],
+    "selectedPoolCount": 6,
+    "additionalToken": {
+      "symbolLabel": "CRUMBS",
+      "address": "0x80baa4b3bfac6f4978700df824b1b3d98e889136",
+      "previouslyKnown": true,
+      "poolCountEverySample": 15,
+      "readyPoolsEverySample": 15
+    },
+    "requestedPopulationDescription": "Six selected pools plus the fixed CRUMBS overview returning fifteen pools; the same requested fixture population as the earlier repair run."
+  },
+  "configuration": {
+    "currentPeriodSeconds": 0.2,
+    "persistedProviderCache": true,
+    "release": "3e304d8e268b1b9ffda55771adfbf6a2471272e4"
+  },
+  "api": {
+    "overview": {
+      "validatedHttpStatusCounts": {
+        "200": 9
+      },
+      "allSamplesMs": {
+        "count": 9,
+        "min": 19.98,
+        "p50": 21.52,
+        "p95": 83.64,
+        "max": 83.64
+      },
+      "afterFirstSampleMs": {
+        "count": 8,
+        "min": 19.98,
+        "p50": 21.175,
+        "p95": 22.6,
+        "max": 22.6
+      },
+      "lastThreeSamplesMs": {
+        "count": 3,
+        "min": 20.25,
+        "p50": 21.52,
+        "p95": 22.6,
+        "max": 22.6
+      }
+    },
+    "history": {
+      "validatedHttpStatusCounts": {
+        "200": 9
+      },
+      "allSamplesMs": {
+        "count": 9,
+        "min": 13.27,
+        "p50": 13.74,
+        "p95": 15.68,
+        "max": 15.68
+      },
+      "afterFirstSampleMs": {
+        "count": 8,
+        "min": 13.27,
+        "p50": 13.69,
+        "p95": 15.68,
+        "max": 15.68
+      },
+      "lastThreeSamplesMs": {
+        "count": 3,
+        "min": 13.74,
+        "p50": 14.12,
+        "p95": 15.68,
+        "max": 15.68
+      }
+    },
+    "genericToken": {
+      "validatedHttpStatusCounts": {
+        "200": 9
+      },
+      "allSamplesMs": {
+        "count": 9,
+        "min": 31.94,
+        "p50": 33.19,
+        "p95": 36.69,
+        "max": 36.69
+      },
+      "afterFirstSampleMs": {
+        "count": 8,
+        "min": 31.94,
+        "p50": 33.105,
+        "p95": 36.69,
+        "max": 36.69
+      },
+      "lastThreeSamplesMs": {
+        "count": 3,
+        "min": 31.94,
+        "p50": 35.54,
+        "p95": 36.69,
+        "max": 36.69
+      }
+    }
+  },
+  "current": {
+    "tickCount": 49,
+    "tickDurationMs": {
+      "count": 49,
+      "min": 1233,
+      "p50": 1363,
+      "p95": 1818,
+      "max": 2360
+    },
+    "resultCounts": {
+      "pool:published": 196,
+      "token:published": 98
+    },
+    "retryReasonCounts": {},
+    "selectedRetryReasonCounts": {},
+    "selectedPublicationCount": 42,
+    "publicationIntervalSeconds": {
+      "count": 36,
+      "min": 10.220853,
+      "p50": 11.068541,
+      "p95": 13.125988,
+      "max": 14.006805
+    },
+    "afterFirstSample": {
+      "start": "2026-09-20T03:06:53.711005+00:00",
+      "publicationIntervalSeconds": {
+        "count": 30,
+        "min": 10.220853,
+        "p50": 11.000149,
+        "p95": 11.995609,
+        "max": 11.995609
+      }
+    },
+    "lastThirtySeconds": {
+      "start": "2026-09-20T03:07:33.711819+00:00",
+      "publicationIntervalSeconds": {
+        "count": 7,
+        "min": 11.319893,
+        "p50": 11.876802,
+        "p95": 11.995609,
+        "max": 11.995609
+      }
+    },
+    "observedIntervalsOver15Seconds": 0,
+    "perPool": [
+      {
+        "poolId": "0x84bd4e2d8be11aeb0afc1195b38f587b61e90068548f1063fdbe448fb8cad0b6",
+        "publications": 7,
+        "publicationBatchFinishedAt": [
+          "2026-09-20T03:06:50.905425+00:00",
+          "2026-09-20T03:07:02.263895+00:00",
+          "2026-09-20T03:07:13.376628+00:00",
+          "2026-09-20T03:07:24.023552+00:00",
+          "2026-09-20T03:07:34.244405+00:00",
+          "2026-09-20T03:07:45.564298+00:00",
+          "2026-09-20T03:07:57.277411+00:00"
+        ],
+        "intervalSeconds": {
+          "count": 6,
+          "min": 10.220853,
+          "p50": 11.216313,
+          "p95": 11.713113,
+          "max": 11.713113
+        }
+      },
+      {
+        "poolId": "0xdb922f0619e11b0c1e6c3a142798f0243060b8a4331ea4f4e7de80e898cc02e7",
+        "publications": 7,
+        "publicationBatchFinishedAt": [
+          "2026-09-20T03:06:47.481436+00:00",
+          "2026-09-20T03:07:00.607424+00:00",
+          "2026-09-20T03:07:11.530058+00:00",
+          "2026-09-20T03:07:22.580421+00:00",
+          "2026-09-20T03:07:32.810433+00:00",
+          "2026-09-20T03:07:43.758120+00:00",
+          "2026-09-20T03:07:55.753729+00:00"
+        ],
+        "intervalSeconds": {
+          "count": 6,
+          "min": 10.230012,
+          "p50": 10.999025,
+          "p95": 13.125988,
+          "max": 13.125988
+        }
+      },
+      {
+        "poolId": "0x94c62eebf6454231b2fcd0259ede448ae3c6ad8617718cd88dab20b30cfae48a",
+        "publications": 7,
+        "publicationBatchFinishedAt": [
+          "2026-09-20T03:06:49.279430+00:00",
+          "2026-09-20T03:07:00.607424+00:00",
+          "2026-09-20T03:07:11.530058+00:00",
+          "2026-09-20T03:07:22.580421+00:00",
+          "2026-09-20T03:07:32.810433+00:00",
+          "2026-09-20T03:07:43.758120+00:00",
+          "2026-09-20T03:07:55.753729+00:00"
+        ],
+        "intervalSeconds": {
+          "count": 6,
+          "min": 10.230012,
+          "p50": 10.999025,
+          "p95": 11.995609,
+          "max": 11.995609
+        }
+      },
+      {
+        "poolId": "0xf399bd1544377680d48c62fd85c2105b869e55906c4189cc5ab3b4e83446928c",
+        "publications": 7,
+        "publicationBatchFinishedAt": [
+          "2026-09-20T03:06:44.920042+00:00",
+          "2026-09-20T03:06:58.926847+00:00",
+          "2026-09-20T03:07:10.013566+00:00",
+          "2026-09-20T03:07:21.119122+00:00",
+          "2026-09-20T03:07:31.340246+00:00",
+          "2026-09-20T03:07:42.290180+00:00",
+          "2026-09-20T03:07:54.166982+00:00"
+        ],
+        "intervalSeconds": {
+          "count": 6,
+          "min": 10.221124,
+          "p50": 11.096138,
+          "p95": 14.006805,
+          "max": 14.006805
+        }
+      },
+      {
+        "poolId": "0x24107d152f14a76d292123265ae3f3c71f863fc2f4ef7ba49d64e78d28ea379e",
+        "publications": 7,
+        "publicationBatchFinishedAt": [
+          "2026-09-20T03:06:47.481436+00:00",
+          "2026-09-20T03:06:58.926847+00:00",
+          "2026-09-20T03:07:10.013566+00:00",
+          "2026-09-20T03:07:21.119122+00:00",
+          "2026-09-20T03:07:31.340246+00:00",
+          "2026-09-20T03:07:42.290180+00:00",
+          "2026-09-20T03:07:54.166982+00:00"
+        ],
+        "intervalSeconds": {
+          "count": 6,
+          "min": 10.221124,
+          "p50": 11.096138,
+          "p95": 11.876802,
+          "max": 11.876802
+        }
+      },
+      {
+        "poolId": "0x4be9657ec9002e528f4f17a5c43edc525a07f888f7b180c2afbf75e096c4f38a",
+        "publications": 7,
+        "publicationBatchFinishedAt": [
+          "2026-09-20T03:06:47.481436+00:00",
+          "2026-09-20T03:07:00.607424+00:00",
+          "2026-09-20T03:07:11.530058+00:00",
+          "2026-09-20T03:07:22.580421+00:00",
+          "2026-09-20T03:07:32.810433+00:00",
+          "2026-09-20T03:07:43.758120+00:00",
+          "2026-09-20T03:07:55.753729+00:00"
+        ],
+        "intervalSeconds": {
+          "count": 6,
+          "min": 10.230012,
+          "p50": 10.999025,
+          "p95": 13.125988,
+          "max": 13.125988
+        }
+      }
+    ]
+  },
+  "freshness": {
+    "firstOutageAffectedSample": {
+      "at": "2026-09-20T03:06:43.778040+00:00",
+      "chainAgeSeconds": [
+        102,
+        1659,
+        1659,
+        1662,
+        1662,
+        1660
+      ],
+      "statistics": {
+        "count": 6,
+        "min": 102,
+        "p50": 1659.5,
+        "p95": 1662,
+        "max": 1662
+      }
+    },
+    "afterFirstSample": {
+      "sampleNumbers": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8
+      ],
+      "chainAgeSeconds": {
+        "count": 48,
+        "min": 1,
+        "p50": 4.0,
+        "p95": 11,
+        "max": 11
+      }
+    },
+    "lastThreeSamples": {
+      "sampleNumbers": [
+        6,
+        7,
+        8
+      ],
+      "chainAgeSeconds": {
+        "count": 18,
+        "min": 1,
+        "p50": 9.0,
+        "p95": 11,
+        "max": 11
+      }
+    },
+    "providerStatusBySample": [
+      {
+        "sample": 0,
+        "at": "2026-09-20T03:06:43.778040+00:00",
+        "counts": {
+          "unavailable": 6
+        }
+      },
+      {
+        "sample": 1,
+        "at": "2026-09-20T03:06:53.711005+00:00",
+        "counts": {
+          "unavailable": 1,
+          "available": 5
+        }
+      },
+      {
+        "sample": 2,
+        "at": "2026-09-20T03:07:03.712827+00:00",
+        "counts": {
+          "unavailable": 1,
+          "available": 5
+        }
+      },
+      {
+        "sample": 3,
+        "at": "2026-09-20T03:07:13.712725+00:00",
+        "counts": {
+          "available": 6
+        }
+      },
+      {
+        "sample": 4,
+        "at": "2026-09-20T03:07:23.712872+00:00",
+        "counts": {
+          "available": 6
+        }
+      },
+      {
+        "sample": 5,
+        "at": "2026-09-20T03:07:33.711819+00:00",
+        "counts": {
+          "available": 6
+        }
+      },
+      {
+        "sample": 6,
+        "at": "2026-09-20T03:07:43.713697+00:00",
+        "counts": {
+          "available": 6
+        }
+      },
+      {
+        "sample": 7,
+        "at": "2026-09-20T03:07:53.718051+00:00",
+        "counts": {
+          "available": 1,
+          "stale": 5
+        }
+      },
+      {
+        "sample": 8,
+        "at": "2026-09-20T03:08:03.714271+00:00",
+        "counts": {
+          "available": 1,
+          "stale": 5
+        }
+      }
+    ]
+  },
+  "history": {
+    "statusCounts": {
+      "indexed": 7
+    },
+    "reasonCounts": {},
+    "events": [
+      {
+        "at": "2026-09-20T03:06:47.364088+00:00",
+        "durationMs": 10521,
+        "status": "indexed",
+        "poolId": "0x14879767b9824b856d31c8ce490fe1138557853f8bc4bdf2294d301cec37989c",
+        "rpcCalls": 80,
+        "spanBlocks": 100000
+      },
+      {
+        "at": "2026-09-20T03:06:58.690423+00:00",
+        "durationMs": 10326,
+        "status": "indexed",
+        "poolId": "0x8ced268daad07f3ce9cf6f595f703d73afd081710b176713c18686fb33f810cf",
+        "rpcCalls": 79,
+        "spanBlocks": 100000
+      },
+      {
+        "at": "2026-09-20T03:07:09.761849+00:00",
+        "durationMs": 10071,
+        "status": "indexed",
+        "poolId": "0x1c05ffc38fbbc6a335b245a2770419ffc5215e45b6995a81d6cb8bbe9480fe30",
+        "rpcCalls": 79,
+        "spanBlocks": 100000
+      },
+      {
+        "at": "2026-09-20T03:07:21.278280+00:00",
+        "durationMs": 10516,
+        "status": "indexed",
+        "poolId": "0x9b1c2acf8b9f11e3201dae59e004152ad7530534850c6e0c19602a757dc96edc",
+        "rpcCalls": 79,
+        "spanBlocks": 100000
+      },
+      {
+        "at": "2026-09-20T03:07:32.459540+00:00",
+        "durationMs": 10181,
+        "status": "indexed",
+        "poolId": "0xa29e2151a1c0eec0a6fd6ef095c2322b71ba7752b1c0d7099ce94d9b5b91178b",
+        "rpcCalls": 79,
+        "spanBlocks": 100000
+      },
+      {
+        "at": "2026-09-20T03:07:43.921247+00:00",
+        "durationMs": 10461,
+        "status": "indexed",
+        "poolId": "0xa6b4a73d9d3bdec9613d99a7389315f255fd9933fe77796df5f7ed209622d2c7",
+        "rpcCalls": 79,
+        "spanBlocks": 100000
+      },
+      {
+        "at": "2026-09-20T03:07:55.191937+00:00",
+        "durationMs": 10270,
+        "status": "indexed",
+        "poolId": "0x1d27c85aabcaba0588e5290b755dc0fbb9cc8c54025a069c8014885782bc5fe0",
+        "rpcCalls": 79,
+        "spanBlocks": 100000
+      }
+    ],
+    "coverageBefore": {
+      "pools": 103,
+      "blocks": "11582859"
+    },
+    "coverageAfter": {
+      "pools": 110,
+      "blocks": "12282859"
+    },
+    "coveredBlocksAdded": 700000,
+    "jobsBefore": {
+      "count": 449,
+      "completed": 1,
+      "cachedboundaries": 92,
+      "maxspan": 100000,
+      "maxspansuccesses": 4,
+      "sample_error": "stale_or_future_block"
+    },
+    "jobsAfter": {
+      "count": 449,
+      "completed": 1,
+      "cachedboundaries": 100,
+      "maxspan": 100000,
+      "maxspansuccesses": 4,
+      "sample_error": "stale_or_future_block"
+    },
+    "newCompletedWindows": 0,
+    "requestedHistoryBefore": {
+      "status": 200,
+      "ms": 14.92,
+      "state": "stale",
+      "candles": 1,
+      "coveredIntervals": 1,
+      "gaps": 1
+    },
+    "requestedHistoryAfter": {
+      "status": 200,
+      "ms": 13.74,
+      "state": "stale",
+      "candles": 1,
+      "coveredIntervals": 1,
+      "gaps": 1
+    }
+  },
+  "accounting": {
+    "statusCounts": {
+      "pending": 16,
+      "caught_up_to_activity": 1,
+      "fee_chunk_in_progress": 2,
+      "fee_chunk_reconciled": 3
+    },
+    "reasonCounts": {
+      "fee_accounting_adapter_required": 6,
+      "reconciled_position_tail_required": 5,
+      "catalogue_writer_busy": 3,
+      "reconciled_fee_chunk_required": 1,
+      "position_accounting_adapter_required": 1
+    }
+  },
+  "queue": {
+    "passes": [
+      {
+        "at": "2026-09-20T03:07:23.575754+00:00",
+        "rpcCalls": 106,
+        "pools": 8,
+        "indexedSteps": 7,
+        "reasonCounts": {
+          "read_deadline_exceeded": 1
+        }
+      }
+    ],
+    "before": [
+      {
+        "status": "indexing",
+        "count": 119
+      },
+      {
+        "status": "queued",
+        "count": 328
+      },
+      {
+        "status": "registering",
+        "count": 2
+      }
+    ],
+    "after": [
+      {
+        "status": "indexing",
+        "count": 123
+      },
+      {
+        "status": "queued",
+        "count": 325
+      },
+      {
+        "status": "registering",
+        "count": 1
+      }
+    ],
+    "activityBefore": {
+      "chunks": 3031,
+      "latestblock": 67579374
+    },
+    "activityAfter": {
+      "chunks": 3040,
+      "latestblock": 67579374
+    }
+  },
+  "follower": {
+    "passes": [
+      {
+        "at": "2026-09-20T03:06:51.411700+00:00",
+        "indexedPasses": 0,
+        "indexedThrough": 67605190,
+        "reasonCounts": {
+          "catalogue_writer_busy": 1
+        },
+        "headFailureCount": 0
+      },
+      {
+        "at": "2026-09-20T03:07:15.228794+00:00",
+        "indexedPasses": 1,
+        "indexedThrough": 67605843,
+        "reasonCounts": {},
+        "headFailureCount": 0
+      },
+      {
+        "at": "2026-09-20T03:07:39.380417+00:00",
+        "indexedPasses": 1,
+        "indexedThrough": 67606085,
+        "reasonCounts": {},
+        "headFailureCount": 0
+      }
+    ]
+  },
+  "serviceState": {
+    "observedAt": "2026-09-20T03:10:41.486101+00:00",
+    "units": [
+      {
+        "Type": "simple",
+        "NRestarts": "0",
+        "ExecMainStatus": "0",
+        "Id": "domino-public-current.service",
+        "LoadState": "loaded",
+        "ActiveState": "active",
+        "SubState": "running"
+      },
+      {
+        "Type": "simple",
+        "NRestarts": "0",
+        "ExecMainStatus": "0",
+        "Id": "domino-public-history.service",
+        "LoadState": "loaded",
+        "ActiveState": "active",
+        "SubState": "running"
+      },
+      {
+        "Type": "simple",
+        "NRestarts": "0",
+        "ExecMainStatus": "0",
+        "Id": "domino-public-accounting.service",
+        "LoadState": "loaded",
+        "ActiveState": "active",
+        "SubState": "running"
+      },
+      {
+        "Type": "oneshot",
+        "NRestarts": "0",
+        "ExecMainStatus": "0",
+        "Id": "domino-queue-worker.service",
+        "LoadState": "loaded",
+        "ActiveState": "activating",
+        "SubState": "start"
+      },
+      {
+        "Id": "domino-queue-worker.timer",
+        "LoadState": "loaded",
+        "ActiveState": "active",
+        "SubState": "running"
+      },
+      {
+        "Type": "oneshot",
+        "NRestarts": "0",
+        "ExecMainStatus": "0",
+        "Id": "domino-catalogue-follower.service",
+        "LoadState": "loaded",
+        "ActiveState": "inactive",
+        "SubState": "dead"
+      },
+      {
+        "Id": "domino-catalogue-follower.timer",
+        "LoadState": "loaded",
+        "ActiveState": "active",
+        "SubState": "waiting"
+      }
+    ]
+  },
+  "comparison": {
+    "earlierPeriodSeconds": 1,
+    "earlierSelectedIntervalSeconds": {
+      "p50": 16.78,
+      "max": 18.19
+    },
+    "earlierSource": "Parent task journal measurement for the prior repair with CRUMBS (15 pools) plus 6 selected pools; not recalculated here.",
+    "previousPeriod02DifferentFixtureSource": "reports/public-current-period-qualification-2026-09-20.json",
+    "sameFixturePopulationAsEarlierRepair": true,
+    "controlledBeforeAfterExperiment": false
+  },
+  "methodology": {
+    "journalQueryBoundsUtc": [
+      "2026-09-20 03:06:42 UTC",
+      "2026-09-20 03:08:05 UTC"
+    ],
+    "journalFilter": "Structured JSON messages inside exact sampling start/end timestamps only.",
+    "publicationClock": "Journal __REALTIME_TIMESTAMP for the end-of-tick published marker. Each individual database commit is earlier within that tick.",
+    "intervals": "Successive marker timestamps for the same selected pool. Both endpoints must be inside the reported subwindow; boundary-crossing intervals are excluded.",
+    "percentiles": "p50 uses median; p95 uses nearest rank."
+  },
+  "limitations": [
+    "The first sample contains data retained through the preceding internet outage, with ages 102–1662 s; it is reported separately and never hidden from all-sample results.",
+    "After-first-sample and last-thirty-seconds cuts are descriptive windows, not a steady-state guarantee. Same fixture population does not control provider/cache warming, background backlog, internet recovery or simultaneous service load.",
+    "Published journal markers are grouped at tick completion. Tick duration reached 2.36 s, so they are not exact per-entity database commit timestamps.",
+    "The observed selected-pool interval maximum was below 15 s within this 80 s window. This is not a production SLA, high-concurrency benchmark or guarantee for every tracked pool.",
+    "Responses are VM loopback API calls with schema/request identity validation. They do not measure public Cloudflare, Access, TLS or browser delivery; the operator performs external validation separately.",
+    "Provider analytics recovered to all 6 available during samples 3–6, then 5 became stale in samples 7–8 while one remained available. Fresh chain observations do not imply fresh external analytics.",
+    "History gained 700,000 covered blocks and seven indexed chunks, but global completed jobs remained 1 and the specifically requested 24h history remained stale with one gap. Cached last_error stale_or_future_block is retained on some jobs; zero new history error log entries in this window does not clear every old job error.",
+    "The initial failed SSH attempts prevented earlier qualification from starting; these are access failures, not collector/API failures. This completed file is the evidence used here."
+  ]
+}
