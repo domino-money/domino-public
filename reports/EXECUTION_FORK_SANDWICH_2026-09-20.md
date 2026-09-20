@@ -56,7 +56,7 @@ and no ceiling unless the scenario says so.
 
 Values are USDG (six decimals) at the pre-scenario price. "Vault vs honest" is the vault's value after the scenario minus its value after the honest compound - positive means the vault ended better off. "Attacker cost" is what the move and its restoration cost the attacker in fees and impact against real depth. "Swap shortfall" is what the vault's own sale of fees fetched below the true rate because the anchor had moved.
 
-### `weth-usdg`, concentrated root (±200 ticks (±2.0% of price), fork block 68232373
+### `weth-usdg`, concentrated root: ±200 ticks (±2.0% of price), fork block 68232373
 root: token 3011383, ticks [-197756, -197356], liquidity 10158109690717875; fees earned over 40 round trips: 0.001586 WETH + 4.17 USDG; honest compound worth 7.34 USDG
 
 | scenario | move | outcome | vault vs honest (USDG) | attacker cost (USDG) | swap shortfall (USDG) |
@@ -86,7 +86,7 @@ root: token 3011383, ticks [-197756, -197356], liquidity 10158109690717875; fees
 | swap-pre-observation | 20.0% | executed | +1.65 | 91.92 | 0.5126 |
 | swap-post-observation | 20.0% | refused (InvalidPrice()) | no change | 92.44 | - |
 
-### `weth-usdg`, wide root (±2002 ticks (±22.2% of price), fork block 68234852
+### `weth-usdg`, wide root: ±2002 ticks (±22.2% of price), fork block 68234852
 root: token 3011465, ticks [-199552, -195548], liquidity 1056926085997426; fees earned over 40 round trips: 0.000165 WETH + 0.43 USDG; honest compound worth 0.77 USDG
 
 | scenario | move | outcome | vault vs honest (USDG) | attacker cost (USDG) | swap shortfall (USDG) |
