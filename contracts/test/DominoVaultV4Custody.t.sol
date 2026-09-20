@@ -2,6 +2,7 @@
 pragma solidity 0.8.26;
 
 import {DominoVaultV4} from "../src/DominoVaultV4.sol";
+import {DominoExecutionTypes as E} from "../src/DominoExecutionTypes.sol";
 import {DominoVaultReadHelper} from "../src/DominoVaultReadHelper.sol";
 import {DominoVaultTypes as T, IERC721ReceiverE2} from "../src/DominoVaultTypes.sol";
 import {IDominoVaultDraft} from "../src/IDominoVaultDraft.sol";
@@ -25,6 +26,21 @@ contract StubEngineV4 {
     /// only clause of _requireExecution an outsider cannot satisfy by itself.
     function poke(address target, bytes calldata data) external returns (bool ok, bytes memory returned) {
         (ok, returned) = target.call(data);
+    }
+
+    uint256 private _parent; int24 private _lo; int24 private _hi; uint128 private _liquidity;
+    /// Arm the next execute(): the vault forwards its own calldata to this
+    /// engine, and the engine answers by minting one successor of `parent`
+    /// through the real executionMint, then returns what execute() decodes.
+    function armMint(uint256 parent, int24 lo, int24 hi, uint128 liquidity) external {
+        _parent = parent; _lo = lo; _hi = hi; _liquidity = liquidity;
+    }
+    fallback() external {
+        require(_liquidity != 0, "stub engine: nothing armed");
+        uint256 id = DominoVaultV4(payable(msg.sender)).executionMint(keccak256(msg.data), _parent, _lo, _hi, _liquidity);
+        _liquidity = 0;
+        bytes memory out = abi.encode(keccak256(msg.data), id);
+        assembly ("memory-safe") { return(add(out, 32), mload(out)) }
     }
 }
 
@@ -106,6 +122,7 @@ contract DominoVaultV4CustodyTest is IERC721ReceiverE2, CustodyBehaviour {
         assembly ("memory-safe") { clone := create(0, add(creation, 32), mload(creation)) }
         require(clone != address(0), "clone deployment failed");
         harness = VaultV4TestHarness(payable(clone));
+        implementation = address(implementation_);
         vault = ICustodyVault(clone);
         vm.prank(owner);
         positions.approve(clone, 11);
@@ -123,6 +140,27 @@ contract DominoVaultV4CustodyTest is IERC721ReceiverE2, CustodyBehaviour {
     // ---------------------------------------------------------------
 
     /// Every one of the six entry points the engine drives, as calldata.
+    /// V4 acquires a child only by minting a successor inside an execution, so
+    /// this drives the real path: execute() -> engine -> executionMint -> the
+    /// position manager's MINT_POSITION, with the pool manager unlocked as it
+    /// would be inside the engine's own unlock. The id is whatever the manager
+    /// mints next; the shared tests count from 12, so the mock counts too.
+    function _child(uint256 id, uint256 parent) internal override {
+        require(positions.nextTokenId() == id, "the manager would not mint this id next");
+        E.Plan memory plan;
+        plan.action = E.MINT;
+        plan.authority.tokenId = parent;
+        plan.authority.intentId = keccak256(abi.encode("child", id, parent));
+        engine.armMint(parent, -300, 900, 500);
+        uint64 nonce = vault.stateNonce();
+        poolManager.setUnlocked(true);
+        vm.prank(owner);
+        harness.execute(plan);
+        poolManager.setUnlocked(false);
+        require(vault.position(id).active && positions.ownerOf(id) == address(vault) &&
+            vault.stateNonce() == nonce + 1, "successor mint not exact");
+    }
+
     function _executionCalls() private view returns (bytes[] memory calls) {
         T.Checkpoint memory point;
         T.CompoundAmounts memory value;
@@ -575,5 +613,46 @@ contract DominoVaultV4CustodyTest is IERC721ReceiverE2, CustodyBehaviour {
         require(vault.feeBalance(source1, key.currency1).original == 0 &&
             _balance(key.currency1, address(vault)) == 0 && _balance(key.currency1, owner) == 999,
             "the remainder was not fully backed");
+    }
+
+    /**
+     * executionMint believes the manager only when the manager did what it was
+     * asked - minted the next id, and minted it to the vault - and gives a
+     * parent one successor at most. The routing helper repeats the successor
+     * rule before the engine is ever called; the vault is the last line and is
+     * pinned on its own. All three clauses were deletable with the suite green
+     * before this test.
+     */
+    function testExecutionMintRefusesASecondSuccessorAndAManagerThatDidSomethingElse() public {
+        _child(12, 11);
+        E.Plan memory plan;
+        plan.action = E.MINT;
+        plan.authority.tokenId = 11;
+        plan.authority.intentId = keccak256("a second successor of the root");
+        engine.armMint(11, -300, 900, 500);
+        poolManager.setUnlocked(true);
+        vm.expectRevert(DominoVaultV4.InvalidPosition.selector);
+        harness.execute(plan);
+
+        // The manager mints the id it said it would, to someone else.
+        plan.authority.tokenId = 12;
+        plan.authority.intentId = keccak256("a successor minted to a stranger");
+        positions.setMintRecipientOverride(STRANGER);
+        engine.armMint(12, -300, 900, 500);
+        vm.expectRevert(DominoVaultV4.InvalidPosition.selector);
+        harness.execute(plan);
+        positions.setMintRecipientOverride(address(0));
+
+        // The manager mints nothing and reports so through nextTokenId.
+        plan.authority.intentId = keccak256("a successor that was never minted");
+        positions.setMintNothing(true);
+        engine.armMint(12, -300, 900, 500);
+        vm.expectRevert(DominoVaultV4.InvalidPosition.selector);
+        harness.execute(plan);
+        positions.setMintNothing(false);
+        poolManager.setUnlocked(false);
+
+        require(vault.activePositions() == 2 && harness.successorOf(12) == 0 && !vault.position(13).known,
+            "a refused mint registered a child");
     }
 }

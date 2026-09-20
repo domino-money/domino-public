@@ -18,7 +18,7 @@ contract CompoundGuardPositions is MockPositionManager {
     uint8 public attack;
     constructor(address manager) MockPositionManager(manager) {}
     function setAttack(uint8 value) external { attack = value; }
-    function modifyLiquiditiesWithoutUnlock(bytes calldata actions, bytes[] calldata params) external payable {
+    function modifyLiquiditiesWithoutUnlock(bytes calldata actions, bytes[] calldata params) external payable override {
         require(keccak256(actions) == keccak256(hex"0111") && params.length == 2, "probe reached wrong phase");
         (uint256 tokenId, uint256 liquidity, uint128 minimum0, uint128 minimum1, bytes memory hookData) =
             abi.decode(params[0], (uint256, uint256, uint128, uint128, bytes));

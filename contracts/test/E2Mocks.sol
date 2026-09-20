@@ -39,6 +39,7 @@ contract MockPositionManager {
     error ManagerUnlocked();
     error UnsubscribeGasTooLow();
     error TransferRejected();
+    error ManagerLocked();
     struct NFT { T.PoolKey key; int24 lower; int24 upper; uint128 liquidity; }
     address public immutable poolManager;
     mapping(uint256 => NFT) private _positions;
@@ -70,6 +71,31 @@ contract MockPositionManager {
         require(owner != address(0) && _owners[id] == address(0), "mock invalid mint");
         _owners[id] = owner;
         _positions[id] = NFT(key, lower, upper, liquidity);
+        if (id >= nextTokenId) nextTokenId = id + 1;
+    }
+
+    /// The V4 mint path, and only that: executionMint asks for MINT_POSITION
+    /// (0x02) with the vault as recipient and checks nextTokenId around the
+    /// call. The requirement is the real one at the PoolManager level -
+    /// liquidity moves only while it is unlocked - which is the inverse of
+    /// every other guard in this mock, so it gets its own error.
+    uint256 public nextTokenId = 1;
+    /// Two ways for the manager to do something other than what it was asked,
+    /// so the vault's own post-mint checks can be reached: mint to someone
+    /// else, or mint nothing at all.
+    address public mintRecipientOverride;
+    bool public mintNothing;
+    function setMintRecipientOverride(address to) external { mintRecipientOverride = to; }
+    function setMintNothing(bool value) external { mintNothing = value; }
+    function modifyLiquiditiesWithoutUnlock(bytes calldata actions, bytes[] calldata params) external payable virtual {
+        if (!MockPoolManager(poolManager).isUnlocked()) revert ManagerLocked();
+        require(actions.length == 1 && actions[0] == 0x02 && params.length == 1, "mock: only MINT_POSITION");
+        if (mintNothing) return;
+        (T.PoolKey memory key, int24 lower, int24 upper, uint256 liquidity,,, address owner,) =
+            abi.decode(params[0], (T.PoolKey, int24, int24, uint256, uint128, uint128, address, bytes));
+        uint256 id = nextTokenId++;
+        _owners[id] = mintRecipientOverride == address(0) ? owner : mintRecipientOverride;
+        _positions[id] = NFT(key, lower, upper, uint128(liquidity));
     }
 
     function ownerOf(uint256 id) public view returns (address owner) {

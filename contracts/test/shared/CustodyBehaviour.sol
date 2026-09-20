@@ -16,6 +16,11 @@ import {VmE2, MockERC20, MockPoolManager, MockPositionManager, MockStateView, E2
  * test can name one without choosing a lineage - the selector depends on the
  * signature alone, so it is the same error in both.
  */
+/// Test-only runtime replacement, used to take an oracle offline.
+interface VmE2CodeEtch {
+    function etch(address target, bytes calldata runtime) external;
+}
+
 interface ICustodyVault {
     error Unauthorized();
     error InvalidPosition();
@@ -109,10 +114,20 @@ abstract contract CustodyBehaviour {
     MockStateView internal stateView;
     MockERC20 internal token;
     MockERC20 internal secondToken;
+    /// The implementation behind the clone under test, for cold-gas measurement.
+    address internal implementation;
+
+    event CallbackGasBound(uint256 forwardedGas, uint256 coldCallGasUsed);
 
     /// Build a vault of this lineage, owned by `owner_`, over a native or an
     /// ERC20/ERC20 pair, armed and ready.
     function _setup(address owner_, bool nativePair) internal virtual;
+
+    /// Give the vault an active child of `parent`, numbered `id`, the way this
+    /// lineage acquires one: V3 adopts an owner's NFT, V4 mints a successor
+    /// through an execution. Either way the child ends in the vault's custody
+    /// and the state nonce advances exactly once.
+    function _child(uint256 id, uint256 parent) internal virtual;
 
     function _assertRootInvalidated(VmE2.Log[] memory logs, uint8 reason, uint64 generation, uint64 nonce) internal view {
         uint256 count;
@@ -675,5 +690,200 @@ abstract contract CustodyBehaviour {
         positions.approve(address(vault), 11);
         vault.resume();
         require(!vault.policy().paused, "resume did not recover");
+    }
+
+    function testUnsafePreviouslyWithdrawnChildRecoveryPreservesHistoricalSources() public {
+        _child(12, 11); _credit(12, 50, 0);
+        bytes32 source0 = vault.position(12).source0;
+        vault.withdrawChildPosition(12);
+        positions.transferFrom(owner, address(vault), 12);
+        vault.recoverUnmanagedPosition(12);
+        require(positions.ownerOf(12) == owner && !vault.position(12).active, "withdrawn child rescue changed membership");
+        require(vault.position(12).source0 == source0 && vault.feeBalance(source0, key.currency0).original == 50,
+            "withdrawn child reserve lost");
+        vault.withdrawFeeReserves(source0, key.currency0, 50, 0);
+    }
+
+    function testActiveChildCannotBypassManagedExitViaRecovery() public {
+        _child(12, 11);
+        uint64 nonce = vault.stateNonce();
+        vm.expectRevert(); vault.recoverUnmanagedPosition(12);
+        require(positions.ownerOf(12) == address(vault) && vault.position(12).active && vault.stateNonce() == nonce,
+            "active child recovery changed state");
+        vault.withdrawChildPosition(12);
+        require(positions.ownerOf(12) == owner && !vault.position(12).active, "normal child exit blocked");
+    }
+
+    function testPauseAndRootTransferLeaveOwnerExitsAvailable() public {
+        _child(12, 11); _credit(11, 100, 0); _credit(12, 0, 80);
+        vault.pause();
+        positions.transferFrom(owner, STRANGER, 11);
+        require(!vault.rootPermissionValid(), "old owner still armed");
+        _withdraw(11, key.currency0, 100, 0);
+        _withdraw(12, key.currency1, 80, 0);
+        vault.withdrawChildPosition(12);
+        require(positions.ownerOf(12) == owner, "root transfer reassigned child");
+        vm.prank(STRANGER); vm.expectRevert(ICustodyVault.Unauthorized.selector); vault.rearmRoot(true);
+    }
+
+    function testRejectingNativeReceiverRollsBackButNFTExitDoesNotRequireReceiver() public {
+        E2OwnerReceiver receiver = new E2OwnerReceiver(); _setup(address(receiver), true);
+        _child(12, 11); _credit(11, 100, 0);
+        bytes32 source0 = vault.position(11).source0;
+        uint64 nonce = vault.stateNonce(); receiver.setReject(true, true);
+        vm.expectRevert(); receiver.invoke(address(vault),
+            abi.encodeCall(vault.withdrawFeeReserves, (source0, key.currency0, 100, 0)));
+        require(vault.stateNonce() == nonce && vault.feeBalance(source0, key.currency0).original == 100, "receiver rollback");
+        receiver.invoke(address(vault), abi.encodeCall(vault.withdrawChildPosition, (12)));
+        require(positions.ownerOf(12) == owner && !vault.position(12).active && vault.stateNonce() == nonce + 1,
+            "rejecting NFT receiver stranded child");
+    }
+
+    function testPlainNFTExitNeverCallsOwnerReceiverOrReentryHook() public {
+        E2OwnerReceiver receiver = new E2OwnerReceiver(); _setup(address(receiver), true);
+        _child(12, 11); _child(13, 12);
+        receiver.configureReentry(address(vault), abi.encodeCall(vault.withdrawChildPosition, (13)));
+        receiver.invoke(address(vault), abi.encodeCall(vault.withdrawChildPosition, (12)));
+        require(!receiver.reentryAttempted(), "NFT exit called owner receiver");
+        require(positions.ownerOf(12) == owner && positions.ownerOf(13) == address(vault), "second child stolen");
+    }
+
+    function testOwnerWithoutNFTReceiverRecoversManagedAndUnmanagedNFTs() public {
+        E2OwnerWithoutNFTReceiver receiver = new E2OwnerWithoutNFTReceiver(); _setup(address(receiver), true);
+        _child(12, 11);
+        receiver.invoke(address(vault), abi.encodeCall(vault.withdrawChildPosition, (12)));
+        require(positions.ownerOf(12) == owner, "owner without receiver cannot exit child");
+        positions.mint(owner, 99, key, -300, 900, 500);
+        vm.prank(owner); positions.transferFrom(owner, address(vault), 99);
+        receiver.invoke(address(vault), abi.encodeCall(vault.recoverUnmanagedPosition, (99)));
+        require(positions.ownerOf(99) == owner, "owner without receiver cannot rescue NFT");
+    }
+
+    function testPlainNFTManagerFailureRollsBackAndManagerReentryIsUnauthorized() public {
+        _child(12, 11); _child(13, 12);
+        positions.setRejectTransfers(true); uint64 nonce = vault.stateNonce();
+        vm.expectRevert(MockPositionManager.TransferRejected.selector); vault.withdrawChildPosition(12);
+        require(vault.position(12).active && positions.ownerOf(12) == address(vault) && vault.stateNonce() == nonce,
+            "failed manager transfer left effects");
+        positions.setRejectTransfers(false);
+        positions.configureTransferReentry(address(vault), abi.encodeCall(vault.withdrawChildPosition, (13)));
+        vault.withdrawChildPosition(12);
+        require(positions.transferReentryAttempted() && !positions.transferReentrySucceeded() &&
+            keccak256(positions.transferReentryResult()) == keccak256(abi.encodeWithSelector(ICustodyVault.Unauthorized.selector)),
+            "manager reentry did not fail specifically at owner guard");
+        require(positions.ownerOf(12) == owner && positions.ownerOf(13) == address(vault), "manager reentry took second child");
+    }
+
+    function testNativeOwnerChildExitReentryFailsAtReentrancyGuard() public {
+        E2OwnerReceiver receiver = new E2OwnerReceiver(); _setup(address(receiver), true);
+        _child(12, 11); _credit(11, 100, 0);
+        bytes32 source0 = vault.position(11).source0;
+        uint64 nonce = vault.stateNonce(); uint64 generation = vault.authorityGeneration();
+        receiver.configureReentry(address(vault), abi.encodeCall(vault.withdrawChildPosition, (12)));
+        receiver.invoke(address(vault), abi.encodeCall(vault.withdrawFeeReserves, (source0, key.currency0, 50, 0)));
+        require(receiver.reentryAttempted() && !receiver.reentrySucceeded() &&
+            keccak256(receiver.reentryResult()) == keccak256(abi.encodeWithSelector(ICustodyVault.ReentrantCall.selector)),
+            "owner child exit did not fail specifically at reentrancy guard");
+        require(vault.position(12).active && positions.ownerOf(12) == address(vault) && vault.activePositions() == 2 &&
+            vault.stateNonce() == nonce + 1 && vault.authorityGeneration() == generation && vault.rootArmed() &&
+            address(receiver).balance == 50 && vault.feeBalance(source0, key.currency0).original == 50,
+            "nested child exit changed custody or outer payout");
+    }
+
+    function testMockManagerEntryGuardsRejectOperationsWhileUnlocked() public {
+        _child(12, 11);
+        poolManager.setUnlocked(true);
+        vm.expectRevert(MockPositionManager.ManagerUnlocked.selector); positions.unsubscribe(11);
+        vm.expectRevert(MockPositionManager.ManagerUnlocked.selector); positions.transferFrom(owner, STRANGER, 11);
+        vm.expectRevert(MockPositionManager.ManagerUnlocked.selector); positions.notifyModify(11, 0, 0);
+        vm.expectRevert(MockPositionManager.ManagerUnlocked.selector); positions.burn(11, 0);
+        vm.expectRevert(MockPositionManager.ManagerUnlocked.selector); vault.withdrawChildPosition(12);
+        require(positions.ownerOf(12) == address(vault) && vault.position(12).active, "locked-model rejection mutated custody");
+        poolManager.setUnlocked(false); vault.withdrawChildPosition(12);
+        require(positions.ownerOf(12) == owner, "locked manager positive control failed");
+    }
+
+    function testTerminalNonceRejectsNewAuthorityButOwnerRecoveryRemainsAvailable() public {
+        _child(12, 11); _credit(11, 100, 0);
+        vault.forceNonce(type(uint64).max);
+        vm.expectRevert(ICustodyVault.NonceExhausted.selector); vault.rearmRoot(true);
+        _withdraw(11, key.currency0, 100, 0);
+        vault.withdrawChildPosition(12);
+        require(vault.stateNonce() == type(uint64).max && positions.ownerOf(12) == owner, "terminal recovery wrapped/failed");
+    }
+
+    function testUnavailableStateViewBlocksAuthorityButNotNativeERC20AndChildRecovery() public {
+        _child(12, 11); _credit(11, 100, 200);
+        uint64 nonce = vault.stateNonce();
+        uint256 nativeBefore = owner.balance; uint256 tokenBefore = _balance(key.currency1, owner);
+        // Test-only runtime replacement: every oracle call now reverts, while
+        // the PositionManager and PoolManager continue serving actual custody.
+        VmE2CodeEtch(address(vm)).etch(address(stateView), hex"60006000fd");
+        (bool oracleAvailable,) = address(stateView).staticcall(abi.encodeWithSignature("poolManager()"));
+        require(!oracleAvailable && !vault.rootPermissionValid(), "disabled oracle did not block authority");
+        _withdraw(11, key.currency0, 100, 0);
+        _withdraw(11, key.currency1, 200, 0);
+        vault.withdrawChildPosition(12);
+        require(owner.balance == nativeBefore + 100 && _balance(key.currency1, owner) == tokenBefore + 200,
+            "oracle outage blocked fee payout");
+        require(positions.ownerOf(12) == owner && !vault.position(12).active, "oracle outage blocked NFT recovery");
+        require(vault.stateNonce() == nonce + 3 && vault.accountedCurrency(key.currency0) == 0 &&
+            vault.accountedCurrency(key.currency1) == 0, "recovery transition count or reserves wrong");
+    }
+
+    function testTerminalAuthorityGenerationBlocksNewAuthorityButPermitsRevocationAndOwnerExits() public {
+        _child(12, 11); _credit(11, 100, 0); vault.pause();
+        vault.forceGeneration(type(uint64).max);
+        uint64 nonce = vault.stateNonce();
+        vm.expectRevert(ICustodyVault.NonceExhausted.selector); vault.setOperator(STRANGER);
+        vm.expectRevert(ICustodyVault.NonceExhausted.selector); vault.rearmRoot(true);
+        vm.expectRevert(ICustodyVault.NonceExhausted.selector); vault.resume();
+        require(vault.stateNonce() == nonce && vault.operator() == OPERATOR && vault.policy().paused,
+            "rejected terminal action mutated authority");
+        vault.revokeOperator();
+        require(vault.stateNonce() == nonce + 1 && !vault.isOperator(OPERATOR) &&
+            vault.authorityGeneration() == type(uint64).max, "terminal revocation wrapped or counted twice");
+        _withdraw(11, key.currency0, 100, 0);
+        require(vault.stateNonce() == nonce + 2 && vault.authorityGeneration() == type(uint64).max,
+            "terminal fee recovery wrapped or counted twice");
+        vault.withdrawChildPosition(12);
+        require(vault.stateNonce() == nonce + 3 && vault.authorityGeneration() == type(uint64).max &&
+            positions.ownerOf(12) == owner, "terminal NFT recovery wrapped or failed");
+    }
+
+    function testColdCloneUnsubscribeCallbackFitsConservative100kGasBudget() public {
+        uint64 nonce = vault.stateNonce(); uint64 generation = vault.authorityGeneration();
+        address target = address(vault);
+        bytes memory data = abi.encodeCall(vault.notifyUnsubscribe, (11));
+        // cool marks both account and storage cold; also cool the delegate target.
+        vm.cool(target); vm.cool(implementation);
+        vm.prank(address(positions)); uint256 beforeGas = gasleft();
+        (bool ok,) = target.call{gas: 100000}(data);
+        uint256 used = beforeGas - gasleft();
+        require(ok && !vault.rootArmed() && vault.stateNonce() == nonce + 1 &&
+            vault.authorityGeneration() == generation + 1, "cold clone callback exceeded budget");
+        emit CallbackGasBound(100000, used);
+    }
+
+    /// withdrawChildPosition is the owner's managed exit for a child and only
+    /// that: the root leaves by recovery, a withdrawn child has already left,
+    /// and a token the vault never registered is not a child. Found by
+    /// mutation - the ported suite reached the happy path only, so the guard
+    /// could be deleted with both lineages green.
+    function testWithdrawChildPositionRefusesTheRootAWithdrawnChildAndAnUnknownToken() public {
+        _child(12, 11);
+        uint64 nonce = vault.stateNonce();
+        vm.expectRevert(ICustodyVault.InvalidPosition.selector); vault.withdrawChildPosition(11);
+        vm.expectRevert(ICustodyVault.InvalidPosition.selector); vault.withdrawChildPosition(99);
+        vault.withdrawChildPosition(12);
+        vm.expectRevert(ICustodyVault.InvalidPosition.selector); vault.withdrawChildPosition(12);
+        require(vault.stateNonce() == nonce + 1 && vault.activePositions() == 1 && positions.ownerOf(11) == owner
+            && vault.rootArmed(), "a refused exit moved state");
+
+        // Recovery is for what the vault holds. A token it does not hold is
+        // refused as a position, before any transfer is attempted.
+        positions.mint(owner, 99, key, -300, 900, 500);
+        vm.expectRevert(ICustodyVault.InvalidPosition.selector); vault.recoverUnmanagedPosition(99);
+        require(positions.ownerOf(99) == owner && vault.stateNonce() == nonce + 1, "a refused recovery moved state");
     }
 }
