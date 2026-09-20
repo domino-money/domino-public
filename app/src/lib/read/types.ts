@@ -93,7 +93,7 @@ export interface Provenance {
 export interface ProviderObservation {
   /** Which part of the payload this is about, e.g. `market` or `pools[0].providerMetrics`. */
   scope: string
-  provider: 'geckoterminal' | 'dexscreener' | 'alchemy' | 'alchemy_historical' | 'chainlink_robinhood_standard_v1'
+  provider: 'geckoterminal' | 'dexscreener' | 'alchemy' | 'local_catalogue' | 'alchemy_historical' | 'chainlink_robinhood_standard_v1'
   /** Unix seconds the provider was read, when the payload says. */
   retrievedAt: number | null
   cache?: CacheObservation

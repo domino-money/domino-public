@@ -17,6 +17,8 @@ def prepare_config(existing, urls):
     rpc_hosts(hosts)
     data = {'version':2,'rpcUrl':urls[0],'rpcFallbackUrls':urls[1:],
             'rpcAllowedHosts':hosts,'inventoryUrl':existing.get('inventoryUrl')}
+    if existing.get('version') == 4:
+        data['version'] = 4
     if existing.get('version') == 3:
         data.update(version=3, historicalRpcUrl=existing['historicalRpcUrl'])
         data['rpcAllowedHosts'] = list(dict.fromkeys([
@@ -25,11 +27,13 @@ def prepare_config(existing, urls):
 
 
 def prepare_local_config(existing, token, *, historical_url=None):
-    """Upgrade private configuration without losing Alchemy or archive access."""
+    """Use the local node first for all Robinhood reads; preserve recovery routes."""
     import re
     if not isinstance(token, str) or not re.fullmatch(r'[A-Za-z0-9_-]{16,256}', token):
         raise DataError('invalid_local_rpc_token')
-    historical_url = historical_url or existing.get('historicalRpcUrl') or existing.get('rpcUrl')
+    historical_url = historical_url or existing.get('historicalRpcUrl') or next((
+        url for url in [existing.get('rpcUrl'), *existing.get('rpcFallbackUrls', [])]
+        if url and urlsplit(url).hostname != LOCAL_RPC_HOST), None)
     if not historical_url:
         raise DataError('historical_rpc_required')
     primary = f'https://{LOCAL_RPC_HOST}/{token}/'
@@ -42,9 +46,8 @@ def prepare_local_config(existing, token, *, historical_url=None):
         raise DataError('too_many_preserved_rpc_endpoints')
     hosts = list(dict.fromkeys([*DEFAULT_RPC_HOSTS,
         *(urlsplit(url).hostname for url in [primary, *fallbacks, historical_url])]))
-    return checked_config({'version':3, 'rpcUrl':primary, 'rpcFallbackUrls':fallbacks,
-        'rpcAllowedHosts':hosts, 'inventoryUrl':existing.get('inventoryUrl'),
-        'historicalRpcUrl':historical_url})
+    return checked_config({'version':4, 'rpcUrl':primary, 'rpcFallbackUrls':fallbacks,
+        'rpcAllowedHosts':hosts, 'inventoryUrl':existing.get('inventoryUrl')})
 
 
 def probe_endpoints(urls, *, rpc_factory=None):
@@ -67,7 +70,7 @@ def main():
     parser=argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--config-file',type=str,default=str(CONFIG_PATH))
     parser.add_argument('--local', action='store_true',
-                        help='use the Domino node; preserve inventory and a separate historical source')
+                        help='use the Domino node; use local-first current/history reads; preserve fallback and inventory')
     args=parser.parse_args()
     if not sys.stdin.isatty():
         print('Open this configurator in an interactive terminal. No endpoint was requested.')
@@ -76,9 +79,9 @@ def main():
         existing=load_config(args.config_file)
         if args.local:
             token = getpass.getpass('Domino RPC authentication token (not the tunnel token): ').strip()
-            history = getpass.getpass('Qualified historical RPC HTTPS URL (blank preserves existing): ').strip()
+            history = getpass.getpass('Fallback RPC HTTPS URL (blank preserves existing): ').strip()
             data = prepare_local_config(existing, token, historical_url=history or None)
-            urls = list(dict.fromkeys([data['rpcUrl'], *data['rpcFallbackUrls'], data['historicalRpcUrl']]))
+            urls = list(dict.fromkeys([data['rpcUrl'], *data['rpcFallbackUrls']]))
         else:
             count=input('Number of RPC endpoints (1–3): ').strip()
             if count not in ('1','2','3'):raise DataError('invalid_rpc_endpoint_count')

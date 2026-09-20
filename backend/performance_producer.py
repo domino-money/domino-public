@@ -19,8 +19,8 @@ class ProducerRpc:
         self.calls,self.lock = deque(),threading.Lock()
         self.ready_at = clock()+60
 
-    def request(self, method, params=()):
-        if method not in PerformanceRpc.METHODS: raise CollectionError('collection_method_not_read_only')
+    def reserve(self):
+        """Charge one physical RPC item, including failover identity proofs."""
         check_read_deadline()
         with self.lock:
             now = self.clock()
@@ -28,7 +28,17 @@ class ProducerRpc:
             if now < self.ready_at or len(self.calls) >= self.maximum:
                 raise CollectionError('collection_rpc_budget')
             self.calls.append(now)
-        result = self.rpc.request(method,list(params))
+
+    def request(self, method, params=()):
+        if method not in PerformanceRpc.METHODS: raise CollectionError('collection_method_not_read_only')
+        # Only an explicitly implemented adapter can account at the wire layer.
+        # Legacy transports still charge exactly one item per request here.
+        budgeted = getattr(type(self.rpc), 'request_budgeted', None)
+        if callable(budgeted):
+            result = budgeted(self.rpc, method, list(params), self.reserve)
+        else:
+            self.reserve()
+            result = self.rpc.request(method,list(params))
         check_read_deadline()
         return result
 

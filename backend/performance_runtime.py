@@ -10,7 +10,7 @@ from psycopg.rows import dict_row
 
 from bridge_state import strict_json
 from catalogue import database_settings
-from discovery import DataError
+from discovery import DataError, ReadRpc, bytes32, json_http, parse_block
 from local_config import checked_config
 from performance_collection import PerformanceRpc
 from performance_models import Address, Hash, StrictModel
@@ -23,7 +23,39 @@ from performance_v2_service import StoredValuation
 from pydantic import Field
 from typing import Annotated, Literal
 from read_deadline import check_read_deadline, read_timeout
-from rpc_config import DEFAULT_RPC_HOSTS, configured_history_rpc_url
+from rpc_config import DEFAULT_RPC_HOSTS, configured_history_rpc_url, configured_history_rpc_urls
+from rpc_failover import HistoricalReadRpc
+
+
+class HistoricalPerformanceRpc(HistoricalReadRpc):
+    """Performance's finalized and EIP-1898 semantics with verified recovery.
+
+    The outer producer still admits only PerformanceRpc.METHODS. Block-by-hash
+    is an internal proof to locate an EIP-1898 state pin; the exact canonical
+    hash request is forwarded unchanged, never replaced by a number or latest.
+    """
+    METHODS = PerformanceRpc.METHODS | {'eth_getBlockByHash'}
+
+    def _validate_header_tag(self, tag, block):
+        if tag != 'finalized':
+            super()._validate_header_tag(tag, block)
+
+    def _prepare_state(self, params):
+        tag = params[-1] if params else None
+        if not isinstance(tag, dict):
+            return super()._prepare_state(params)
+        if set(tag) != {'blockHash', 'requireCanonical'} or tag['requireCanonical'] is not True:
+            raise DataError('block_unavailable')
+        expected_hash = bytes32(tag['blockHash'])
+        if any(block.hash == expected_hash for block in self.anchors.values()):
+            return
+        block = parse_block(ReadRpc.request(self, 'eth_getBlockByHash', [expected_hash, False]))
+        if block.hash != expected_hash:
+            raise DataError('snapshot_reorganized')
+        canonical = parse_block(ReadRpc.request(self, 'eth_getBlockByNumber', [block.tag, False]))
+        if canonical != block:
+            raise DataError('snapshot_reorganized')
+        self._record_block(self.anchors, block)
 
 
 class Subject(StrictModel):
@@ -82,7 +114,7 @@ class Runtime:
             raise ValueError('private_runtime_required')
         self.runtime = runtime
         self.config = checked_config(private_json(self.profile.rpcConfig,8192))
-        if self.config.get('rpcFallbackUrls') and self.config.get('version') != 3:
+        if self.config.get('rpcFallbackUrls') and self.config.get('version') not in (3, 4):
             raise ValueError('single_budgeted_performance_rpc_required')
         # Validate the same explicit private file, then the existing database schema.
         private_json(self.profile.databaseConfig,4096)
@@ -113,14 +145,21 @@ class Runtime:
     def producer(self):
         runtime = self
         class AdmittedRpc:
-            def request(self, method, params):
+            def request_budgeted(self, method, params, reserve):
                 if time.time() >= runtime.profile.expiresAt: raise DataError('performance_profile_expired')
-                # ReadRpc's counter is operation-local. The outer ProducerRpc
-                # owns the persistent rolling transport budget across factories.
-                # A producer may resume any enrolled historical block. Keep a
-                # single explicitly qualified historical endpoint so every
-                # transport request remains charged to ProducerRpc's budget.
+                def transport(url, payload, **kwargs):
+                    if time.time() >= runtime.profile.expiresAt:
+                        raise DataError('performance_profile_expired')
+                    # The rolling minute budget covers every actual attempt,
+                    # including the local refusal and fallback chain/hash proofs.
+                    for _ in payload if isinstance(payload, list) else (payload,):
+                        reserve()
+                    return json_http(url, payload, **kwargs)
+                if runtime.config.get('version') == 4:
+                    return HistoricalPerformanceRpc(configured_history_rpc_urls(runtime.config),
+                        transport=transport, max_requests=64).request(method, params)
                 return PerformanceRpc(configured_history_rpc_url(runtime.config),max_requests=1,
+                    transport=transport,
                     allowed_hosts=runtime.config.get('rpcAllowedHosts',DEFAULT_RPC_HOSTS)).request(method,params)
         rpc = ProducerRpc(AdmittedRpc(),maximum=self.profile.maxRequestsPerMinute)
         return PerformanceProducer(rpc,self.enrollments,PerformanceStore(self.settings,role=COLLECTOR_ROLE),

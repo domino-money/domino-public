@@ -142,9 +142,23 @@ class UnavailableAsset(WireModel):
     reason: Reason
 
 
+INVENTORY_FALLBACK_SCHEMA = {'anyOf':[
+    {'properties':{'fallbackReason':{'type':'null'}}},
+    {'properties':{'source':{'const':'alchemy'}}},
+]}
+
+
 class InventoryBase(WireModel):
-    source: Literal['alchemy'] | None
+    model_config = ConfigDict(extra='forbid',strict=True,json_schema_extra=INVENTORY_FALLBACK_SCHEMA)
+    source: Literal['alchemy', 'local_catalogue'] | None
     asOfBlock: None
+    fallbackReason: Literal['local_inventory_unavailable', 'local_inventory_empty', 'local_inventory_coverage_partial'] | None = None
+
+    @model_validator(mode='after')
+    def coherent_fallback(self):
+        if self.fallbackReason is not None and self.source!='alchemy':
+            raise ValueError('inventory_fallback_source_mismatch')
+        return self
 
 
 class InventoryIdle(InventoryBase):
@@ -163,8 +177,19 @@ class InventoryUnavailable(InventoryBase):
 
 
 class InventoryPage(InventoryBase):
+    model_config = ConfigDict(extra='forbid',strict=True,json_schema_extra={'allOf':[
+        INVENTORY_FALLBACK_SCHEMA,
+        {'anyOf':[
+            {'properties':{'source':{'const':'alchemy'},'coverage':{'const':'provider_page_only'}}},
+            {'properties':{'source':{'const':'local_catalogue'},'coverage':{'const':'local_catalogue_only'}}},
+        ]},
+        {'anyOf':[
+            {'properties':{'hasMore':{'const':True},'nextCursor':{'type':'string'}}},
+            {'properties':{'hasMore':{'const':False},'nextCursor':{'type':'null'}}},
+        ]},
+    ]})
     status: Literal['page_received']
-    coverage: Literal['provider_page_only']
+    coverage: Literal['provider_page_only', 'local_catalogue_only']
     hasMore: StrictBool
     # Same wire type on the producer and gateway; only the value is substituted.
     nextCursor: Annotated[str, StringConstraints(strict=True, min_length=1, max_length=4096)] | None
@@ -176,6 +201,15 @@ class InventoryPage(InventoryBase):
     candidatesProbed: Annotated[StrictInt, Field(ge=0, le=20)] | None = None
     candidatesSkipped: Annotated[StrictInt, Field(ge=0, le=20)] | None = None
     skippedReason: Reason | None = None
+
+    @model_validator(mode='after')
+    def coherent_coverage(self):
+        expected = {'alchemy':'provider_page_only','local_catalogue':'local_catalogue_only'}
+        if self.coverage != expected.get(self.source):
+            raise ValueError('inventory_coverage_source_mismatch')
+        if self.hasMore != (self.nextCursor is not None):
+            raise ValueError('inventory_cursor_coverage_mismatch')
+        return self
 
 
 Inventory = Annotated[InventoryIdle | InventoryUnavailable | InventoryPage, Field(discriminator='status')]

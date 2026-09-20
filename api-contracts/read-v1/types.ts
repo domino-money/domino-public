@@ -379,8 +379,9 @@ export type HistoryUnavailable = {
 };
 
 export type InventoryIdle = {
-  "source": ("alchemy" | null);
+  "source": ("alchemy" | "local_catalogue" | null);
   "asOfBlock": null;
+  "fallbackReason"?: ("local_inventory_unavailable" | "local_inventory_empty" | "local_inventory_coverage_partial" | null);
   "status": "not_configured" | "not_requested";
   "coverage": "unknown";
   "hasMore": null;
@@ -388,10 +389,11 @@ export type InventoryIdle = {
 };
 
 export type InventoryPage = {
-  "source": ("alchemy" | null);
+  "source": ("alchemy" | "local_catalogue" | null);
   "asOfBlock": null;
+  "fallbackReason"?: ("local_inventory_unavailable" | "local_inventory_empty" | "local_inventory_coverage_partial" | null);
   "status": "page_received";
-  "coverage": "provider_page_only";
+  "coverage": "provider_page_only" | "local_catalogue_only";
   "hasMore": boolean;
   "nextCursor": (string | null);
   "retrievedAt": number;
@@ -403,8 +405,9 @@ export type InventoryPage = {
 };
 
 export type InventoryUnavailable = {
-  "source": ("alchemy" | null);
+  "source": ("alchemy" | "local_catalogue" | null);
   "asOfBlock": null;
+  "fallbackReason"?: ("local_inventory_unavailable" | "local_inventory_empty" | "local_inventory_coverage_partial" | null);
   "status": "unavailable";
   "coverage": "unknown";
   "hasMore": null;

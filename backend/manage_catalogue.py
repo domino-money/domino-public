@@ -6,9 +6,10 @@ import os
 from pathlib import Path
 import signal
 
-from discovery import Block, DataError, DiscoveryReader, POOL_MANAGER, ReadRpc, bytes32, address
+from discovery import Block, DataError, DiscoveryReader, POOL_MANAGER, bytes32, address
 from local_config import load_config
-from rpc_config import configured_history_rpc_url, configured_rpc_urls
+from rpc_failover import HistoricalReadRpc as ReadRpc
+from rpc_config import configured_history_rpc_source, configured_rpc_urls
 from catalogue import configured_writer_catalogue, checked_key
 from catalogue_indexer import (INITIALIZE_TOPIC, CatalogueIndexer, IndexRpc, decode_initialize,
                                 initialize_identity)
@@ -133,8 +134,9 @@ def main():
         if not config and not override:raise DataError('configured_rpc_required')
         # Catalogue chunks verify contract code at their historical end block.
         # Keep a v3 archive route isolated from a current-read environment override.
-        current_url=configured_rpc_urls(config,override)[0]
-        url=(configured_history_rpc_url(config) if config.get('version')==3 or not override
+        current_routes=configured_rpc_urls(config,override)
+        current_url=current_routes if config.get('version')==4 and not override else current_routes[0]
+        url=(configured_history_rpc_source(config) if config.get('version') in (3,4) or not override
              else current_url)
         if args.action=='seed':url=current_url
         if args.action=='lookup':

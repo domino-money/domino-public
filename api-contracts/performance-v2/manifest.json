@@ -107,7 +107,7 @@
     },
     {
       "path": "backend/performance_runtime.py",
-      "sha256": "f9b171fcfbb72bfd7d6ca8f515dacc19c3d12f54af2eccfb68157b8a6db97cfe"
+      "sha256": "db40ac5f32a6ee5b4fdc0306169f2b6b1ca101ce8fef5a0bdbf3f0e7c81f1ab5"
     },
     {
       "path": "bridge/src/performance-worker.mjs",
@@ -119,7 +119,7 @@
     },
     {
       "path": "backend/performance_producer.py",
-      "sha256": "8056df1f12ad744dd5224015896bdcf8daacf9f23ed2eb5e28db562208ff3ffd"
+      "sha256": "742dba1a1492e0c81c645dd41f3c1f9a1fe5cb88d7c50c7888e3f3f00fb6352d"
     },
     {
       "path": "backend/performance_rollup.py",

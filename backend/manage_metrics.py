@@ -6,10 +6,11 @@ from pathlib import Path
 from activity_store import PgActivity
 from capital_store import CapitalIndexer
 from catalogue import configured_writer_catalogue
-from discovery import DataError, ReadRpc, bytes32
+from discovery import DataError, bytes32
 from historical_capacity import PROFILES, unavailable_work
 from local_config import load_config
-from rpc_config import configured_history_rpc_url, configured_inventory_url
+from rpc_failover import HistoricalReadRpc as ReadRpc
+from rpc_config import configured_history_rpc_source, configured_inventory_url
 from pool_activity import ACTIVITY_CAPACITY_PROFILES
 from metrics_service import stored_metrics
 from price_history import AlchemyHistorical, store_observations
@@ -25,7 +26,7 @@ def run(pool_id, max_steps, fetch_prices, *, capacity='standard', activity_capac
     config = load_config()
     if not config:
         raise DataError('configured_rpc_required')
-    url = configured_history_rpc_url(config)
+    url = configured_history_rpc_source(config)
     store = PgActivity(catalogue);steps = []
     def worker():
         return CapitalIndexer(store, ReadRpc(url, transport=bounded_transport(90), max_requests=160), capacity=capacity,

@@ -2,20 +2,23 @@
 
 The Robinhood node on `clawber` supplies current chain reads through the private
 HTTPS route on `rpc.domino.money`. It is a **pruned node**, not an archive. The
-application keeps a separate historical source and Alchemy inventory credentials.
+version 4 configuration sends both current and historical Robinhood reads to
+the local node first. Alchemy is retained for verified fallback. Nitro's
+Ethereum execution and Beacon upstreams remain separate and unchanged.
 
 ## Routing
 
-| Consumer | Source with a version 3 provider file |
+| Consumer | Source with a version 4 provider file |
 | --- | --- |
 | Token, wallet balance, pool state, current NFT and market snapshot reads | `rpcUrl`, then bounded `rpcFallbackUrls` |
 | Session/onboarding plain-EOA checks | Same current list, chain and block verified |
 | Direct deposit preparation/receipt reads | Current primary; existing single-provider, fail-closed transport |
-| Live activity window and log-only anchor lookup | Current primary; existing bounded log reader |
-| NFT reads requesting a block; owner resolution for stored pool positions | `historicalRpcUrl` |
-| Catalogue/activity reconstruction, fees, positions, capital and Chainlink replay | `historicalRpcUrl`; one coherent historical provider per invocation |
-| Managed performance collector and qualification forks | `historicalRpcUrl`; existing single-provider accounting/budgets |
-| Alchemy inventory and external price references | `inventoryUrl`, never credentials extracted from `rpcUrl` |
+| Live activity window and log-only anchor lookup | Local primary for each operation; bounded, verified fallback |
+| NFT reads requesting a block; owner resolution for stored pool positions | Local primary, then verified configured fallback |
+| Catalogue/activity reconstruction, fees, positions, capital and Chainlink replay | Local primary for each operation; fallback for transport failure or unavailable old state, with chain/block proofs |
+| Managed performance collector and qualification forks | Local first; fallback attempts and identity proofs spend the existing transport budgets |
+| Wallet token inventory | Local catalogue and searched tokens first, balances reread on-chain; Alchemy continuation only when local coverage is exhausted or unavailable |
+| Explicit external price-reference tools | Separate provider capability; no credentials extracted from the local `rpcUrl` |
 | Browser product data | Existing same-origin read bridge and backend; inherits their source |
 
 Public-provider benchmark modes remain explicit comparisons with the official
@@ -38,28 +41,33 @@ its private provider file:
 backend/.venv/bin/python backend/configure_rpc.py --local --config-file /absolute/private/providers.json
 ```
 
-The terminal hides the **RPC authentication token** and historical HTTPS URL.
-The token is not the Cloudflare connector token. Blank historical input preserves
-the existing historical URL, or the previous primary on the first migration.
+The terminal hides the **RPC authentication token** and fallback HTTPS URL.
+The token is not the Cloudflare connector token. Blank fallback input preserves the existing archive/recovery endpoint, or the
+previous primary on the first migration.
 The configurator verifies the chain, deployed manager links and a common block
 before an atomic, owner-only `0600` save. It does not prove old-state coverage or
 restart services. Preserve a private rollback copy before replacing production
 configuration; never copy a credential-bearing file into Git or an issue.
 
-Version 3 contains the version 2 fields (`rpcUrl`, `rpcFallbackUrls`,
-`rpcAllowedHosts`, `inventoryUrl`) plus required `historicalRpcUrl`. The known
-pruned `rpc.domino.money` host is refused as the historical source. Legacy
-version 1/2 files retain their shape and behavior. The generic RPC configurator
-preserves version 3's historical source; inventory-key rotation preserves both
-RPC routes. Rotate any separately stored archive credential explicitly.
+Version 4 contains `rpcUrl`, `rpcFallbackUrls`, `rpcAllowedHosts` and
+`inventoryUrl`. The local `rpc.domino.money` primary is mandatory. Both current
+and historical consumers use that same ordered route; there is no separate
+always-on historical Alchemy endpoint. Version 1/2/3 files remain supported for
+rollback, and their existing routing semantics are unchanged until migration.
 
-`rpcUrl` becomes `https://rpc.domino.money/` followed by the private token and a
-trailing slash. The exact host, HTTPS, bounded token and slash are validated;
-userinfo, queries, redirects and alternate ports remain forbidden. The old
-primary/fallbacks are preserved, subject to the existing three-endpoint limit.
-Rotating the local token removes the old local route from the recovery list.
-`DOMINO_DISCOVERY_RPC_URL` remains a validated single-source override for current
-reads; it cannot replace a version 3 historical source.
+The migration preserves a previous archive URL in the fallback list and keeps
+inventory credentials separate. Rotating the local token removes the old local
+URL from the fallback list. URLs and private files retain their existing exact
+host/path, ownership, mode and no-redirect validation. Operator overrides remain
+explicit; the deployed units unset shell RPC overrides.
+
+Local inventory reports `source: local_catalogue` and
+`coverage: local_catalogue_only`. Its pages include catalogue currencies and
+persisted searched tokens, not an assertion that every token in a wallet is
+known. A provider-bound opaque continuation can recover additional candidates
+from Alchemy with an explicit `fallbackReason`; native and requested-address
+balances always remain available through the chain reader. Development uses
+its admitted local catalogue and does not gain new database privileges.
 
 The operator financial release verifier also accepts `--rpc-file` containing one
 HTTPS URL in a private regular file, avoiding credentials in process arguments.
@@ -75,7 +83,7 @@ fallback. A disconnected tunnel may return
 Authentication failures, reverts, invalid ABI, changed chain/hash and exhausted
 budgets do not become retries.
 
-The specific [Geth missing-trie-node error](https://github.com/ethereum/go-ethereum/blob/master/trie/errors.go)
+For current read/session clients, the specific [Geth missing-trie-node error](https://github.com/ethereum/go-ethereum/blob/master/trie/errors.go)
 can recover a scalar state read or state-only batch at an already observed
 numeric block. The fallback must prove the same chain and every anchored block.
 All delivered chain/header assertions are checked before batch recovery. A mixed
@@ -83,9 +91,18 @@ header/state batch, ambiguous missing-state error or exhausted provider list
 fails closed. Provider messages and node details never enter the public response;
 the existing `rpc_error` contract is retained.
 
-Single-source historical jobs and deposit/log-window clients retain their current
-failure behavior. No generic retry wrapper is inserted around financial workflows,
-large indexer batches or persistently budgeted collectors.
+Historical v4 reads retain a bounded set of headers plus their highest observed
+continuity anchor. Each operation returns to the local primary: a pruned-state
+fallback cannot redirect subsequent logs/headers to Alchemy. A switch verifies
+chain identity and the continuity header; state at an evicted numeric block is
+pinned again. Historical mixed batches can recover an explicit missing-state refusal only after every delivered identity/header assertion validates. Invalid chain/hash, malformed envelopes and contract reverts do
+not trigger fallback. Ambiguous failed batches are not replayed.
+
+A missing-trie refusal is an expected reason for fallback even while the local
+node is healthy: availability does not imply archive-state retention. Logs and
+headers present locally do not require an archive fallback. Fixed operational
+messages record provider index and a safe fallback reason, never URLs or keys.
+Ethereum/Beacon upstreams and the node's probes remain unchanged.
 
 ## Applying a release
 
@@ -93,19 +110,26 @@ Code support and live activation are separate. Each production/development role
 has its own private provider/profile file and network policy. The VM's
 `127.0.0.1` is **not** the clawber host; use the authenticated HTTPS route.
 
-1. Install the source revision using the existing release procedure.
+1. Publish the compatible Worker and app before activating the VM. The additive
+   local inventory source/coverage fields require the updated strict validators;
+   the new consumers still accept the previous producer. Existing browser tabs
+   must reload to receive the new app validator.
+2. Install the source revision using the existing release procedure.
    `install_read_release.py` preserves runtime symlinks and updates read/gateway;
    it does not update every financial/indexer service.
-2. Add current public IPv4 pins for exactly `rpc.domino.money` to the applicable
+3. Add current public IPv4 pins for exactly `rpc.domino.money` to the applicable
    continuous/development egress input. Preserve historical/Alchemy pins. Render
    and apply the policy through existing tools, including each role's hosts file
    and `IPAddressAllow`. See [continuous egress](CONTINUOUS_EGRESS.md).
-3. Update each applicable private provider file. Development `rpcUrls` profiles
+4. Update each applicable private provider file. Development `rpcUrls` profiles
    use the same private current list. Units intentionally unset environment RPC
-   overrides; use their private files rather than shell exports.
-4. Restart through `domino-continuous-reads.target` for its members, then perform
+   overrides; use their private files rather than shell exports. Migrate active provider
+   files to v4 only alongside compatible code; preserve private rollback copies.
+5. Restart through `domino-continuous-reads.target` for its members, then perform
    bounded current-data, historical-state, inventory and public-bridge checks.
-   Roll back the private config and release through the same target, retaining
+   Development also has a hash-guarded maintenance lease: update its snapshot
+   transactionally when replacing tracked unit/profile files, without extending
+   authorization expiry. Roll back the private config and release through the same target, retaining
    prior egress pins until verification completes.
 
 The edge limits HTTP to 25 requests/second per IP (burst 50), with five WebSocket

@@ -182,6 +182,21 @@ class DepositForkTests(unittest.TestCase):
 
 
 class DepositForkCliTests(unittest.TestCase):
+    def test_v4_qualification_passes_local_first_routes_without_exporting_credentials(self):
+        local = 'https://rpc.domino.money/SYNTHETIC_LOCAL_TOKEN_0123456789/'
+        config = {'version': 4, 'rpcUrl': local, 'rpcFallbackUrls': [ENDPOINT]}
+        with tempfile.TemporaryDirectory(prefix='domino-test-fork-routing-') as directory:
+            output = Path(directory)/'report.json'
+            with patch.object(runner, 'load_config', return_value=config), \
+                    patch.object(runner.uniswap_config, 'load_config', return_value={'apiKey': CANARY}), \
+                    patch.object(runner, 'ForkReadGateway', side_effect=DataError('offline_stop')) as gateway, \
+                    redirect_stdout(StringIO()):
+                self.assertEqual(runner.main(['--rpc-config', 'unused', '--uniswap-config', 'unused',
+                                              '--output', str(output)]), 2)
+            self.assertEqual(gateway.call_args.args[0], (local, ENDPOINT))
+            self.assertNotIn(CANARY, output.read_text())
+            self.assertNotIn('SYNTHETIC_LOCAL_TOKEN', output.read_text())
+
     def execute(self, *, gateway=None, node=None, failure=None, case_failure=None):
         gateway, node = gateway or Gateway(), node or LocalNode()
         output, errors = StringIO(), StringIO()

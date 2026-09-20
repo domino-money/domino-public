@@ -58,8 +58,11 @@ def typescript(schemas):
         if '$ref' in schema: return schema['$ref'].rsplit('/', 1)[1]
         if 'const' in schema: return json.dumps(schema['const'])
         if 'enum' in schema: return ' | '.join(json.dumps(value) for value in schema['enum'])
-        for key in ('oneOf', 'anyOf'):
-            if key in schema: return '('+' | '.join(type_for(item) for item in schema[key])+')'
+        # Object-level anyOf can constrain relationships between properties;
+        # it is not a replacement for that object's declared TypeScript shape.
+        if schema.get('type') != 'object':
+            for key in ('oneOf', 'anyOf'):
+                if key in schema: return '('+' | '.join(type_for(item) for item in schema[key])+')'
         kind = schema.get('type')
         if kind == 'null': return 'null'
         if kind == 'string': return 'string'
@@ -150,7 +153,15 @@ function check(value, schema, root, depth = 0) {
       if (!Object.keys(value).every(key => Object.hasOwn(schema.properties, key))) return false;
       if (!Object.entries(value).every(([key, child]) => check(child, schema.properties[key], root, depth + 1))) return false;
       break;
-    case undefined: break;
+    case undefined:
+      // Property-only branches in allOf/anyOf constrain a parent object.
+      // They must validate the named fields without rejecting its other keys.
+      if (value && typeof value === 'object' && !Array.isArray(value)) {
+        if (schema.required && !schema.required.every(key => Object.hasOwn(value, key))) return false;
+        if (schema.properties && !Object.entries(schema.properties).every(([key, child]) =>
+            !Object.hasOwn(value, key) || check(value[key], child, root, depth + 1))) return false;
+      }
+      break;
     default: return false;
   }
   return true;

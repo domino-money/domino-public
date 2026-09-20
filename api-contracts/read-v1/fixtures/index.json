@@ -184,6 +184,27 @@
       "valid": true
     },
     {
+      "file": "fixtures/producer/wallet-assets.local-catalogue.json",
+      "kind": "producer",
+      "route": "wallet-assets",
+      "status": 200,
+      "valid": true
+    },
+    {
+      "file": "fixtures/producer/wallet-assets.local-coverage-fallback.json",
+      "kind": "producer",
+      "route": "wallet-assets",
+      "status": 200,
+      "valid": true
+    },
+    {
+      "file": "fixtures/producer/wallet-assets.local-unavailable-fallback.json",
+      "kind": "producer",
+      "route": "wallet-assets",
+      "status": 200,
+      "valid": true
+    },
+    {
       "file": "fixtures/producer/pool-market.success.json",
       "kind": "producer",
       "route": "pool-market",
@@ -612,6 +633,27 @@
     },
     {
       "file": "fixtures/gateway/wallet-assets.provider-unavailable.json",
+      "kind": "gateway",
+      "route": "wallet-assets",
+      "status": 200,
+      "valid": true
+    },
+    {
+      "file": "fixtures/gateway/wallet-assets.local-catalogue.json",
+      "kind": "gateway",
+      "route": "wallet-assets",
+      "status": 200,
+      "valid": true
+    },
+    {
+      "file": "fixtures/gateway/wallet-assets.local-coverage-fallback.json",
+      "kind": "gateway",
+      "route": "wallet-assets",
+      "status": 200,
+      "valid": true
+    },
+    {
+      "file": "fixtures/gateway/wallet-assets.local-unavailable-fallback.json",
       "kind": "gateway",
       "route": "wallet-assets",
       "status": 200,
@@ -1538,6 +1580,27 @@
       "file": "fixtures/invalid/pool-metrics.reference-claimed-current.json",
       "kind": "invalid",
       "route": "pool-metrics",
+      "status": 200,
+      "valid": false
+    },
+    {
+      "file": "fixtures/invalid/wallet-assets.local-with-provider-coverage.json",
+      "kind": "invalid",
+      "route": "wallet-assets",
+      "status": 200,
+      "valid": false
+    },
+    {
+      "file": "fixtures/invalid/wallet-assets.local-with-fallback-reason.json",
+      "kind": "invalid",
+      "route": "wallet-assets",
+      "status": 200,
+      "valid": false
+    },
+    {
+      "file": "fixtures/invalid/wallet-assets.local-has-more-without-cursor.json",
+      "kind": "invalid",
+      "route": "wallet-assets",
       "status": 200,
       "valid": false
     }

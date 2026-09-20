@@ -2,6 +2,22 @@
   "$defs": {
     "InventoryIdle": {
       "additionalProperties": false,
+      "anyOf": [
+        {
+          "properties": {
+            "fallbackReason": {
+              "type": "null"
+            }
+          }
+        },
+        {
+          "properties": {
+            "source": {
+              "const": "alchemy"
+            }
+          }
+        }
+      ],
       "properties": {
         "asOfBlock": {
           "title": "Asofblock",
@@ -11,6 +27,22 @@
           "const": "unknown",
           "title": "Coverage",
           "type": "string"
+        },
+        "fallbackReason": {
+          "anyOf": [
+            {
+              "enum": [
+                "local_inventory_unavailable",
+                "local_inventory_empty",
+                "local_inventory_coverage_partial"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Fallbackreason"
         },
         "hasMore": {
           "title": "Hasmore",
@@ -23,7 +55,10 @@
         "source": {
           "anyOf": [
             {
-              "const": "alchemy",
+              "enum": [
+                "alchemy",
+                "local_catalogue"
+              ],
               "type": "string"
             },
             {
@@ -54,6 +89,74 @@
     },
     "InventoryPage": {
       "additionalProperties": false,
+      "allOf": [
+        {
+          "anyOf": [
+            {
+              "properties": {
+                "fallbackReason": {
+                  "type": "null"
+                }
+              }
+            },
+            {
+              "properties": {
+                "source": {
+                  "const": "alchemy"
+                }
+              }
+            }
+          ]
+        },
+        {
+          "anyOf": [
+            {
+              "properties": {
+                "coverage": {
+                  "const": "provider_page_only"
+                },
+                "source": {
+                  "const": "alchemy"
+                }
+              }
+            },
+            {
+              "properties": {
+                "coverage": {
+                  "const": "local_catalogue_only"
+                },
+                "source": {
+                  "const": "local_catalogue"
+                }
+              }
+            }
+          ]
+        },
+        {
+          "anyOf": [
+            {
+              "properties": {
+                "hasMore": {
+                  "const": true
+                },
+                "nextCursor": {
+                  "type": "string"
+                }
+              }
+            },
+            {
+              "properties": {
+                "hasMore": {
+                  "const": false
+                },
+                "nextCursor": {
+                  "type": "null"
+                }
+              }
+            }
+          ]
+        }
+      ],
       "properties": {
         "asOfBlock": {
           "title": "Asofblock",
@@ -86,7 +189,10 @@
           "title": "Candidatesskipped"
         },
         "coverage": {
-          "const": "provider_page_only",
+          "enum": [
+            "provider_page_only",
+            "local_catalogue_only"
+          ],
           "title": "Coverage",
           "type": "string"
         },
@@ -95,6 +201,22 @@
           "minimum": 0,
           "title": "Excludedrows",
           "type": "integer"
+        },
+        "fallbackReason": {
+          "anyOf": [
+            {
+              "enum": [
+                "local_inventory_unavailable",
+                "local_inventory_empty",
+                "local_inventory_coverage_partial"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Fallbackreason"
         },
         "hasMore": {
           "title": "Hasmore",
@@ -177,7 +299,10 @@
         "source": {
           "anyOf": [
             {
-              "const": "alchemy",
+              "enum": [
+                "alchemy",
+                "local_catalogue"
+              ],
               "type": "string"
             },
             {
@@ -208,6 +333,22 @@
     },
     "InventoryUnavailable": {
       "additionalProperties": false,
+      "anyOf": [
+        {
+          "properties": {
+            "fallbackReason": {
+              "type": "null"
+            }
+          }
+        },
+        {
+          "properties": {
+            "source": {
+              "const": "alchemy"
+            }
+          }
+        }
+      ],
       "properties": {
         "asOfBlock": {
           "title": "Asofblock",
@@ -217,6 +358,22 @@
           "const": "unknown",
           "title": "Coverage",
           "type": "string"
+        },
+        "fallbackReason": {
+          "anyOf": [
+            {
+              "enum": [
+                "local_inventory_unavailable",
+                "local_inventory_empty",
+                "local_inventory_coverage_partial"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Fallbackreason"
         },
         "hasMore": {
           "title": "Hasmore",
@@ -271,7 +428,10 @@
         "source": {
           "anyOf": [
             {
-              "const": "alchemy",
+              "enum": [
+                "alchemy",
+                "local_catalogue"
+              ],
               "type": "string"
             },
             {

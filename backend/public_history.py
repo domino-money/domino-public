@@ -324,7 +324,8 @@ class PublicHistory:
                 if quantity(current.request('eth_chainId'))!=CHAIN_ID:raise DataError('wrong_chain')
                 head=parse_block(current.request('eth_getBlockByNumber',['latest',False]))
                 if not -15<=self.clock()-head.timestamp<=120:raise DataError('stale_or_future_block')
-                url=service.historical_rpc_url or (service.rpc_urls[0] if service.rpc_urls else service.rpc_url)
+                url=(getattr(service,'historical_rpc_urls',None) or service.historical_rpc_url or
+                     service.rpc_urls or service.rpc_url)
                 history=IndexRpc(url,transport=transport,max_requests=max_rpc_calls,batch_reads=True)
                 chain=CatalogueIndexer(self.catalogue,history);chain.check_chain()
                 stored_target=claim['target']

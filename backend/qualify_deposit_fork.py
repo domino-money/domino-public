@@ -27,7 +27,7 @@ from lp_mint_inspection import inspect_mint
 from discovery import CHAIN_ID, POOL_MANAGER, POSITION_MANAGER, STATE_VIEW, ZERO, PoolKey, DataError
 from fork_read_gateway import ForkReadGateway, ForkReadError
 from local_config import load_config
-from rpc_config import DEFAULT_RPC_HOSTS, configured_history_rpc_url
+from rpc_config import DEFAULT_RPC_HOSTS, configured_history_rpc_source
 import uniswap_config
 from reviewed_admission_config import load_candidate_with_digest
 from uniswap_position import UniswapPosition
@@ -313,13 +313,13 @@ def main(argv=None):
         if not config:
             raise DataError('configured_rpc_required')
         api_key = uniswap_config.load_config(args.uniswap_config)['apiKey']
-        history_url = configured_history_rpc_url(config)
-        with ForkReadGateway(history_url, allowed_hosts=config.get('rpcAllowedHosts', DEFAULT_RPC_HOSTS)) as gateway:
+        history_source = configured_history_rpc_source(config)
+        with ForkReadGateway(history_source, allowed_hosts=config.get('rpcAllowedHosts', DEFAULT_RPC_HOSTS)) as gateway:
             if gateway.request('eth_chainId') != hex(CHAIN_ID):
                 raise DataError('fork_source_chain_mismatch')
             source = gateway.request('eth_getBlockByNumber', ['latest', False])
             report['source'] = {k: source[k] for k in ('number', 'hash', 'timestamp')}
-            report['providerHost'] = urlsplit(history_url).hostname
+            report['providerHost'] = urlsplit(history_source[0] if isinstance(history_source, tuple) else history_source).hostname
             with DepositFork(gateway, block=source) as fork:
                 report['anvilVersion'] = fork.version
                 report['bootstrap'] = _bootstrap(fork)

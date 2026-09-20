@@ -151,7 +151,7 @@
     },
     {
       "path": "backend/rpc_config.py",
-      "sha256": "3a96d8674b15594db7378cb69cfc4e3854b94ccf72d77f92b0754ef377b9dfc8"
+      "sha256": "fe5609d99888dab28ffb60f1493e08849aa2724eeb7b0ed60b6dd90a186fcfd3"
     },
     {
       "path": "backend/position_accounting.py",

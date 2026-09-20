@@ -8,8 +8,8 @@ import re
 from discovery import (CHAIN_ID, RPC_URL, ZERO, DataError, DiscoveryReader,
                        ReadRpc, Block, address, bytes32, decode_result, discover,
                        json_http, parse_block)
-from inventory import AlchemyInventory, CursorCodec
-from rpc_failover import FailoverReadRpc
+from inventory import AlchemyInventory, CursorCodec, LocalCatalogueInventory, LocalFirstInventory
+from rpc_failover import FailoverReadRpc, HistoricalReadRpc
 from read_deadline import (ReadDeadline, check_read_deadline, current_read_deadline,
                            use_read_deadline)
 
@@ -73,13 +73,19 @@ def bounded_transport(seconds=60):
 
 
 class ReadService:
-    def __init__(self, *, rpc_url=RPC_URL, rpc_urls=None, inventory_url=None, historical_rpc_url=None, clock=time.time,
+    def __init__(self, *, rpc_url=RPC_URL, rpc_urls=None, inventory_url=None, historical_rpc_url=None,
+                 historical_rpc_urls=None, inventory_local_first=False, local_inventory=None, clock=time.time,
                  rpc_factory=None, inventory=None, cursor_codec=None, transport_factory=bounded_transport,
                  catalogue=None, market_cache=None, snapshot=None, requests=None, public_data=None):
         self.rpc_url, self.inventory_url, self.clock = rpc_url, inventory_url, clock
         self.rpc_urls = tuple(rpc_urls) if rpc_urls is not None else None
         self.historical_rpc_url = historical_rpc_url
+        self.historical_rpc_urls = tuple(historical_rpc_urls) if historical_rpc_urls is not None else None
         self.rpc_factory, self.inventory = rpc_factory, inventory
+        self.inventory_local_first = inventory_local_first
+        self.local_inventory = (local_inventory if local_inventory is not None else
+                                LocalCatalogueInventory(catalogue,clock=clock)
+                                if inventory_local_first and catalogue is not None else None)
         self.cursor_codec = cursor_codec or CursorCodec(clock=clock)
         # Demand queue for pools a consumer asked to see. A public read may only
         # ask (an insert through a narrowly granted function); the worker that
@@ -103,14 +109,15 @@ class ReadService:
 
     @property
     def inventory_configured(self):
-        return bool(self.inventory_url or self.inventory)
+        return bool(self.inventory_url or self.inventory or (self.inventory_local_first and self.local_inventory))
 
     def _rpc(self, transport, *, historical=False):
         check_read_deadline()
         if self.rpc_factory:
             return self.rpc_factory()
-        if historical and self.historical_rpc_url:
-            return FailoverReadRpc((self.historical_rpc_url,), transport=transport, batch_reads=True)
+        if historical and (self.historical_rpc_urls or self.historical_rpc_url):
+            return HistoricalReadRpc(self.historical_rpc_urls or (self.historical_rpc_url,),
+                                     transport=transport, batch_reads=True)
         if self.rpc_urls is not None:
             return FailoverReadRpc(self.rpc_urls, transport=transport, batch_reads=True)
         return ReadRpc(self.rpc_url, transport=transport, batch_reads=True)
@@ -244,7 +251,7 @@ class ReadService:
         # The window needs `eth_getLogs`, which the browser-facing read clients
         # deliberately lack; an injected factory (tests, alternate lanes) wins.
         rpc=self.rpc_factory() if self.rpc_factory else IndexRpc(
-            self.rpc_urls[0] if self.rpc_urls else self.rpc_url,
+            self.rpc_urls if self.rpc_urls else self.rpc_url,
             transport=self.transport_factory(),max_requests=4096)
         reader=DiscoveryReader(rpc,clock=self.clock)
         block=reader.snapshot()
@@ -629,11 +636,14 @@ class ReadService:
         transport = self.transport_factory()
         provider = self.inventory or (AlchemyInventory(self.inventory_url, transport=transport, clock=self.clock)
                                       if self.inventory_url else None)
+        if self.inventory_local_first and (self.local_inventory or provider):
+            provider = LocalFirstInventory(self.local_inventory, provider)
         if cursor and (not provider or not auto_discover):
             raise DataError('invalid_or_expired_cursor')
         key = self.cursor_codec.read(cursor, wallet, tokens, provider.context) if cursor else None
         inventory = {'status': 'not_configured' if auto_discover else 'not_requested',
-                     'source': 'alchemy' if provider else None, 'asOfBlock': None,
+                     'source': ('local_catalogue' if self.inventory_local_first and self.local_inventory else
+                                'alchemy' if provider else None), 'asOfBlock': None,
                      'coverage': 'unknown', 'hasMore': None, 'nextCursor': None}
         candidates = []
         skipped_candidates = 0
@@ -641,9 +651,6 @@ class ReadService:
         if auto_discover and provider:
             try:
                 check_read_deadline()
-                page = provider.page(wallet, key)
-                check_read_deadline()
-                candidates = page['currencies']
                 # Bound the candidates probed on-chain so a full provider page
                 # cannot exceed the RPC budget (#149). Each probed erc20
                 # candidate costs four reads (code, decimals, symbol, balance);
@@ -651,19 +658,32 @@ class ReadService:
                 # canonical re-read one each, and twelve items stay reserved.
                 reserved = 12 + 4 * len(tokens)
                 probed_budget = max(0, (getattr(reader.rpc, 'max_requests', 160) - reserved) // 4)
+                if isinstance(provider, LocalFirstInventory):
+                    page = provider.page(wallet, key, limit=min(20,probed_budget))
+                else:
+                    page = provider.page(wallet,key)
+                check_read_deadline()
+                candidates = page['currencies']
                 probed = candidates[:min(len(candidates), probed_budget)]
                 skipped_candidates = len(candidates) - len(probed)
                 candidates = probed
                 next_cursor = (self.cursor_codec.issue(wallet, tokens, provider.context, page['nextKey'])
                                if page['nextKey'] else None)
-                inventory.update(status='page_received', coverage='provider_page_only',
+                inventory.update(status='page_received', coverage=page.get('coverage','provider_page_only'),
+                                 source=page.get('source','alchemy'),
                                  hasMore=bool(page['nextKey']), nextCursor=next_cursor,
                                  retrievedAt=page['retrievedAt'], rowsReceived=page['rowsReceived'],
                                  excludedRows=page['excludedRows'],
                                  candidatesProbed=len(candidates),
                                  candidatesSkipped=skipped_candidates,
                                  skippedReason='request_budget_exhausted' if skipped_candidates else None)
+                if isinstance(provider,LocalFirstInventory):
+                    inventory['fallbackReason'] = page['fallbackReason']
             except DataError as error:
+                if str(error)=='invalid_or_expired_cursor':
+                    raise
+                if isinstance(provider,LocalFirstInventory):
+                    inventory.update(source=provider.source,fallbackReason=provider.fallback_reason)
                 inventory.update(status='unavailable', reason=str(error))
         block = reader.snapshot()  # Fresh balances after the indexed candidate page.
         items, failed = [], []

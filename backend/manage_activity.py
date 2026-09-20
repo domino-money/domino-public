@@ -25,11 +25,12 @@ from activity_indexer import ActivityIndexer
 from activity_store import PgActivity
 from catalogue import configured_writer_catalogue
 from catalogue_indexer import INITIALIZE_TOPIC, IndexRpc, decode_initialize
-from discovery import POOL_MANAGER, DataError, DiscoveryReader, ReadRpc, bytes32
+from discovery import POOL_MANAGER, DataError, DiscoveryReader, bytes32
 from followers import follow_many
 from indexer_io import MAX_INDEXER_SPAN, AdaptiveSpan, HeaderBudget, RequestBudget, indexer_transport
 from local_config import load_config
-from rpc_config import configured_history_rpc_url, configured_rpc_urls
+from rpc_failover import HistoricalReadRpc as ReadRpc
+from rpc_config import configured_history_rpc_source, configured_rpc_urls
 from pool_activity import ACTIVITY_CAPACITY_PROFILES
 from pool_requests import WRITER_ROLE, PgRequests, error_class
 from read_deadline import ReadDeadline, read_deadline, use_read_deadline
@@ -253,10 +254,11 @@ def main():
         override=os.environ.get('DOMINO_DISCOVERY_RPC_URL')
         if not config and not override:
             raise DataError('configured_rpc_required')
-        current_url=configured_rpc_urls(config,override)[0]
+        current_routes=configured_rpc_urls(config,override)
+        current_url=current_routes if config.get('version')==4 and not override else current_routes[0]
         # Walks reconcile state at old checkpoints; registration/anchor discovery
         # use retained logs and headers only and can use the current node.
-        url=(configured_history_rpc_url(config) if config.get('version')==3 or not override
+        url=(configured_history_rpc_source(config) if config.get('version') in (3,4) or not override
              else current_url)
         if args.find_anchor or args.register or (args.queue_worker and args.anchor_only):
             url=current_url

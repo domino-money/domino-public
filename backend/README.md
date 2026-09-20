@@ -569,8 +569,8 @@ restrictions stay enabled. No changes to local personal-bot services are needed.
 ## Multiple read RPC providers — issue #24
 
 For the node on clawber, use the [local RPC integration](../docs/LOCAL_RPC_SOURCE.md):
-`configure_rpc.py --local` creates version 3 with separate current, historical
-and Alchemy sources. The token stays in each service's private configuration;
+`configure_rpc.py --local` creates version 4 with local-first current and
+historical routes, bounded fallbacks, and separate inventory credentials. The token stays in each service's private configuration;
 the existing browser bridge inherits the backend's current data source.
 
 The local configuration separates generic RPC endpoints from Alchemy inventory.
@@ -595,7 +595,7 @@ The terminal asks for one to three full URLs through hidden input, preserves the
 inventory setting, verifies the chain/managers and common block on every endpoint,
 and saves only after all probes succeed. No endpoint or key is a command-line
 argument. The existing Alchemy configurator preserves the independent RPC list
-in version2 files when rotating an inventory key. With a version1 file, that
+in version2/3/4 files when rotating an inventory key. With a version1 file, that
 configurator replaces the primary RPC with the new Alchemy endpoint. Upgrade to
 version2 first to preserve a separate public RPC. Neither configurator is run
 automatically.
@@ -610,14 +610,34 @@ RPC/ABI and budget exhaustion do not trigger provider retries. State reads must
 use an already observed numeric block. No results from an inconsistent snapshot
 are mixed into a response.
 
-`DOMINO_DISCOVERY_RPC_URL` is a trusted, validated single-endpoint override and
-intentionally disables configured fallbacks for that process. Legacy historical
-CLI tools still use `rpcUrl` as their primary; this slice enables automatic
-failover in ReadService/API only for legacy configurations. Version 3 historical
-tools use `historicalRpcUrl`; Alchemy-only consumers use `inventoryUrl`.
-Public response shapes and field names are
-unchanged. Staging must qualify an independent secondary endpoint and exercise
-outage/identity failure before claiming deployed redundancy.
+`DOMINO_DISCOVERY_RPC_URL` is a trusted, validated single-endpoint override
+for explicit current-read tools. It cannot replace the historical policy in
+version 3 or 4 private files. Version 3 retains its explicit `historicalRpcUrl`
+for backwards compatibility. `configure_rpc.py --local` now writes version 4:
+`rpcUrl` is the authenticated local node, and `rpcFallbackUrls` are recovery
+sources for **both current and historical Robinhood reads**. Existing archive
+credentials are preserved as fallback entries; `inventoryUrl` remains separate.
+Inventory-key rotation preserves this routing policy.
+
+The historical client attempts the local node at the beginning of every scalar
+or batch operation. An explicit Nitro missing-trie-state refusal can recover
+from Alchemy after verifying chain 4663 and the highest observed block hash;
+the next log/header operation tries local again. A fallback cannot bypass a
+wrong chain, changed header, malformed batch, application revert or exhausted
+budget. An ambiguously failed batch is not replayed. All failed attempts,
+identity/header checks and batches spend the same call budget and deadline.
+A bounded cache retains the highest continuity header and recent block pins,
+so indexers can read thousands of headers without retaining thousands of proofs.
+Old state blocks are pinned again when needed. Existing ledger/log canonicality
+checks still run before publication. Fixed-code `rpc_failover` log entries name
+only the provider ordinal and cause; they never contain RPC URLs or credentials.
+
+This policy covers catalogue/activity followers and the request queue, public
+history/accounting, explicit NFT snapshots, fee/position/capital qualification,
+Chainlink collection/reference validation and configured benchmark sources.
+Explicit public-RPC benchmark modes keep their named source. Alchemy-specific
+inventory/price APIs are distinct capabilities; a generic node cannot serve
+those proprietary API methods. Public response shapes are unchanged.
 
 ## Nine-route read contract candidate
 

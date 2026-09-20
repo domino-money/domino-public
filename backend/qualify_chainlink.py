@@ -9,9 +9,10 @@ import time
 from catalogue import configured_catalogue
 from chainlink_history import ChainlinkHistorical, FEEDS
 from chainlink_reference import reference_series
-from discovery import DataError, DiscoveryReader, ReadRpc, bytes32, parse_block
+from discovery import DataError, DiscoveryReader, bytes32, parse_block
 from local_config import load_config
-from rpc_config import configured_history_rpc_url
+from rpc_failover import HistoricalReadRpc as ReadRpc
+from rpc_config import configured_history_rpc_source
 from price_history import store_observations
 from read_service import bounded_transport
 
@@ -23,7 +24,7 @@ def qualify(pool_id, hours=24, *, persist=False, provider_config=None):
     config = load_config(provider_config) if provider_config is not None else load_config()
     if provider_config is not None and not config:
         raise DataError('configured_rpc_required')
-    url = configured_history_rpc_url(config)
+    url = configured_history_rpc_source(config)
     rpc = ReadRpc(url, transport=bounded_transport(30), max_requests=30)
     reader = DiscoveryReader(rpc)
     snapshot = reader.snapshot()

@@ -259,5 +259,60 @@ class ConsumerRoutingTests(unittest.TestCase):
                 self.assert_private(output.read_text())
 
 
+class LocalFirstConsumerRoutingTests(unittest.TestCase):
+    setUp = ConsumerRoutingTests.setUp
+    assert_private = ConsumerRoutingTests.assert_private
+    # Inherit the existing privacy helpers only; these tests exercise v4
+    # composition at CLI/service boundaries without any transport dispatch.
+    def test_v4_fee_positions_chainlink_and_benchmarks_receive_ordered_recovery_routes(self):
+        import manage_fees, manage_positions, qualify_chainlink, benchmark_fee_steps
+        config = provider_config()
+        config.update(version=4, rpcFallbackUrls=[ARCHIVE])
+        del config['historicalRpcUrl']
+        routes = (LOCAL, ARCHIVE)
+        for module in (manage_fees, manage_positions):
+            with self.subTest(module=module.__name__), \
+                 patch.object(module, 'load_config', return_value=config), \
+                 patch.object(module, 'configured_writer_catalogue', return_value=MagicMock()), \
+                 patch.object(module, 'ReadRpc', side_effect=DataError('offline_stop')) as rpc, \
+                 patch.object(sys, 'argv', ['manage', '--pool-id', POOL, '--output', str(self.root / module.__name__)]), \
+                 redirect_stdout(io.StringIO()) as printed:
+                self.assertEqual(module.main(), 1)
+                self.assertEqual(rpc.call_args.args[0], routes)
+                self.assert_private(printed.getvalue())
+        with patch.object(qualify_chainlink, 'load_config', return_value=config), \
+             patch.object(qualify_chainlink, 'ReadRpc', side_effect=DataError('offline_stop')) as rpc, \
+             self.assertRaisesRegex(DataError, '^offline_stop$'):
+            qualify_chainlink.qualify(POOL, 1)
+        self.assertEqual(rpc.call_args.args[0], routes)
+        for source, name in [('configured-rpc', 'IndexRpc'), ('configured-dense', 'BatchIndexRpc')]:
+            with self.subTest(source=source), \
+                 patch.object(benchmark_fee_steps, 'load_config', return_value=config), \
+                 patch.object(benchmark_fee_steps, name, side_effect=DataError('offline_stop')) as rpc, \
+                 redirect_stdout(io.StringIO()) as printed:
+                self.assertEqual(benchmark_fee_steps.main(['--source', source, '--provider-config', 'unused',
+                    '--output', str(self.root / source)]), 1)
+                self.assertEqual(rpc.call_args.args[0], routes)
+                self.assert_private(printed.getvalue())
+
+    def test_v4_catalogue_and_activity_keep_local_first_despite_historical_override(self):
+        import manage_catalogue, manage_activity
+        config = provider_config()
+        config.update(version=4, rpcFallbackUrls=[ARCHIVE])
+        del config['historicalRpcUrl']
+        for module, arguments in [(manage_catalogue, ['index']), (manage_activity, ['--pool-id', POOL])]:
+            with self.subTest(module=module.__name__), \
+                 patch.object(module, 'load_config', return_value=config), \
+                 patch.object(module, 'configured_writer_catalogue', return_value=MagicMock()), \
+                 patch.object(module, 'ReadRpc', side_effect=DataError('offline_stop')) as rpc, \
+                 patch.dict(os.environ, {'DOMINO_DISCOVERY_RPC_URL': RPC_URL}), \
+                 patch.object(sys, 'argv', ['manage', *arguments, '--max-steps', '1',
+                                            '--output', str(self.root / module.__name__)]), \
+                 redirect_stdout(io.StringIO()) as printed:
+                self.assertEqual(module.main(), 1)
+                self.assertEqual(rpc.call_args.args[0], (LOCAL, ARCHIVE))
+                self.assert_private(printed.getvalue())
+
+
 if __name__ == '__main__':
     unittest.main()

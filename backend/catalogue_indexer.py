@@ -9,11 +9,12 @@ from discovery import (CHAIN_ID, POOL_MANAGER, DataError, ReadRpc, PoolKey,
 from catalogue import PgCatalogue
 from indexer_io import MAX_CHUNK_EVENTS, MAX_INDEXER_SPAN, indexer_transport, read_headers
 from discovery import Block
+from rpc_failover import HistoricalReadRpc
 
 INITIALIZE_TOPIC = '0x' + keccak(b'Initialize(bytes32,address,address,uint24,int24,address,uint160,int24)').hex()
 
 
-class IndexRpc(ReadRpc):
+class IndexRpc(HistoricalReadRpc):
     METHODS = ReadRpc.METHODS | {'eth_getLogs'}
     # An indexer envelope may carry many independent reads; the public read
     # path keeps ReadRpc's smaller cap.

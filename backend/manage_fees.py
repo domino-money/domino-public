@@ -5,11 +5,12 @@ from pathlib import Path
 
 from activity_store import PgActivity
 from catalogue import configured_writer_catalogue
-from discovery import DataError, DiscoveryReader, ReadRpc, bytes32
+from discovery import DataError, DiscoveryReader, bytes32
 from fee_store import FeeIndexer
 from historical_capacity import PROFILES
 from local_config import load_config
-from rpc_config import configured_history_rpc_url
+from rpc_failover import HistoricalReadRpc as ReadRpc
+from rpc_config import configured_history_rpc_source
 from pool_activity import ACTIVITY_CAPACITY_PROFILES
 from read_service import bounded_transport
 
@@ -32,7 +33,7 @@ def main():
         if catalogue is None:
             raise DataError('catalogue_not_configured')
         config=load_config()
-        url=configured_history_rpc_url(config) if config else None
+        url=configured_history_rpc_source(config) if config else None
         if not url:
             raise DataError('configured_rpc_required')
         # Validate deployment links and a fresh chain head once per invocation.

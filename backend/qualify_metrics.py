@@ -4,9 +4,10 @@ import json
 from pathlib import Path
 import time
 
-from discovery import DataError, POSITION_MANAGER, ReadRpc, bytes32
+from discovery import DataError, POSITION_MANAGER, bytes32
 from local_config import load_config
-from rpc_config import configured_history_rpc_url
+from rpc_failover import HistoricalReadRpc as ReadRpc
+from rpc_config import configured_history_rpc_source
 from nft_ownership import token_id
 from qualify_read_api import request
 from read_service import bounded_transport
@@ -46,7 +47,7 @@ def qualify(port, pool_ids, explicit_ids):
         config = load_config()
         if not config:
             raise DataError('configured_rpc_required')
-        rpc = ReadRpc(configured_history_rpc_url(config), transport=bounded_transport())
+        rpc = ReadRpc(configured_history_rpc_source(config), transport=bounded_transport())
         checked = 0
         for nft in nfts['items']:
             if nft['nftOwnershipResolved']:

@@ -37,7 +37,7 @@ def main():
             print('Inventario indisponivel neste acesso. Codigo:', str(error))
             print('A busca por endereco continua disponivel pelo RPC validado.')
         existing = load_config()
-        if existing.get('version') in (2, 3):
+        if existing.get('version') in (2, 3, 4):
             # Inventory-key rotation must not silently remove independent RPCs.
             config = {**existing, 'inventoryUrl': url}
         else:

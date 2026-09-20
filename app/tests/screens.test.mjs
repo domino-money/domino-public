@@ -771,7 +771,7 @@ test('a failed page is asked for again with the same handle while it can live, t
   assert.equal(stale.requests.at(-1).request.cursor, undefined, 'a handle that may be dead is not sent');
 });
 
-test('wallet: a full cursor table is busy, an empty unconfigured list asks for token addresses, 5 pages at most', async () => {
+test('wallet: a full cursor table is busy, an empty unconfigured list asks for token addresses, 5 external pages at most', async () => {
   const busy = walletSession.createWalletSession(fixtures({ 'wallet-assets': [firstPage, { fixture: errorFixture('wallet-assets.read_capacity_busy'), expectRequest: WALLET_MORE }] }), { wallet: FIXTURE_OWNER, tokens: [] });
   await busy.first();
   assert.equal((await busy.more()).status, 'busy');
@@ -797,6 +797,53 @@ test('wallet: a full cursor table is busy, an empty unconfigured list asks for t
   const gas = await walletSession.createWalletSession(fixtures({ 'wallet-assets': [{ fixture: gateway('wallet-assets.call-gas-limit') }] }), { wallet: FIXTURE_OWNER, tokens: [] }).first();
   const rows = tokens.candidatesFromWalletView(gas.view);
   assert.deepEqual(rows.map((c) => c.why), [null, 'wallet_unavailable'], 'an unreadable balance leaves the others valid');
+});
+
+test('manual local wallet pages can reach fallback beyond page five and retain its separate allowance', async () => {
+  const local = (first = false) => ({ fixture: gateway('wallet-assets.local-catalogue'), mutate: withCursor(MUTATED_CURSOR), expectRequest: first ? WALLET : WALLET_MORE });
+  const external = { fixture: gateway('wallet-assets.local-coverage-fallback'), mutate: (body) => ({ ...body,
+    inventory: { ...body.inventory, hasMore: true, nextCursor: MUTATED_CURSOR } }), expectRequest: WALLET_MORE };
+  const source = fixtures({ 'wallet-assets': [local(true), ...Array.from({ length: 6 }, () => local()), ...Array.from({ length: 6 }, () => external)] });
+  const session = walletSession.createWalletSession(source, { wallet: FIXTURE_OWNER, tokens: [] });
+  let snap = await session.first();
+  assert.equal(source.requests.length, 1, 'no automatic pagination');
+  for (let i = 0; i < 6; i++) snap = await session.more();
+  assert.equal(snap.view.pages, 7);
+  assert.equal(snap.view.localPages, 7);
+  assert.equal(snap.view.providerPages, 0);
+  assert.equal(snap.capped, false);
+  assert.equal(snap.canLoadMore, true);
+  assert.ok(snap.view.notes.some((note) => note.includes('outside this catalogue may be missing')));
+  const localRows = snap.view.rows.map((row) => row.key);
+  snap = await session.more();
+  assert.equal(snap.view.providerPages, 1);
+  assert.equal(snap.view.pages, 8);
+  assert.equal(snap.canLoadMore, true);
+  assert.ok(snap.view.notes.some((note) => note.includes('used a fallback source')));
+  assert.ok(localRows.every((key) => snap.view.rows.some((row) => row.key === key)));
+  for (let i = 0; i < 6; i++) snap = await session.more();
+  assert.equal(snap.view.providerPages, walletSession.WALLET_PAGE_CAP);
+  assert.equal(snap.view.pages, 7 + walletSession.WALLET_PAGE_CAP);
+  assert.equal(snap.capped, true);
+  assert.equal(source.requests.length, 7 + walletSession.WALLET_PAGE_CAP);
+  assert.equal(JSON.stringify(snap).includes(MUTATED_CURSOR), false);
+});
+
+test('a local catalogue cursor restart resets both page allowances without dropping earlier rows', async () => {
+  const local = (first = false) => ({ fixture: gateway('wallet-assets.local-catalogue'), mutate: withCursor(MUTATED_CURSOR), expectRequest: first ? WALLET : WALLET_MORE });
+  const source = fixtures({ 'wallet-assets': [local(true), ...Array.from({ length: 5 }, () => local()), expiredCursor, local(true)] });
+  const session = walletSession.createWalletSession(source, { wallet: FIXTURE_OWNER, tokens: [] });
+  let snap = await session.first();
+  for (let i = 0; i < 5; i++) snap = await session.more();
+  assert.equal(snap.view.localPages, 6);
+  const before = snap.view.rows.map((row) => row.key);
+  snap = await session.more();
+  assert.equal(snap.restarted, true);
+  assert.equal(snap.status, 'ready');
+  assert.equal(snap.view.pages, 1);
+  assert.equal(snap.view.localPages, 1);
+  assert.equal(snap.view.providerPages, 0);
+  assert.ok(before.every((key) => snap.view.rows.some((row) => row.key === key)));
 });
 
 test('the empty hint counts held balances: zero rows and native ETH are nothing held, a finished list only, and never with typed tokens', async () => {

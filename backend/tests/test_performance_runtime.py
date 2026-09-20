@@ -37,20 +37,131 @@ class RuntimeTests(unittest.TestCase):
         self.assertIsNone(value.admission('0x'+'f'*40,self.base.vault))
         self.assertEqual(value.producer().tick(),'cooldown')
 
-    def test_local_primary_retains_single_counted_archive_source_for_replay(self):
+    def local_profile(self):
         from configure_rpc import prepare_local_config
         data = prepare_local_config({'rpcUrl':'https://rpc.mainnet.chain.robinhood.com'},
                                     'SYNTHETIC_LOCAL_TOKEN_123')
         self.write('provider.json',data)
-        runtime = Runtime(self.path)
-        producer = runtime.producer()
+        producer = Runtime(self.path).producer()
         producer.rpc.ready_at = 0
-        with patch('performance_runtime.PerformanceRpc') as client:
-            client.return_value.request.return_value = '0x1237'
+        return data, producer
+
+    def test_local_primary_counts_identity_proof_and_request_without_fallback(self):
+        data, producer = self.local_profile()
+        calls = []
+        def transport(url, payload, **kwargs):
+            calls.append((url, payload['method']))
+            return {'jsonrpc':'2.0','id':payload['id'],'result':'0x1237'}
+        with patch('performance_runtime.json_http', side_effect=transport):
             self.assertEqual(producer.rpc.request('eth_chainId', []), '0x1237')
-        self.assertEqual(client.call_args.args, (data['historicalRpcUrl'],))
-        self.assertEqual(client.call_args.kwargs['max_requests'], 1)
-        self.assertEqual(len(producer.rpc.calls), 1)
+        self.assertEqual(calls, [(data['rpcUrl'],'eth_chainId')]*2)
+        self.assertEqual(len(producer.rpc.calls), 2)
+
+    def test_old_state_recovery_charges_every_wire_attempt_to_same_budget(self):
+        from performance_collection import CollectionError
+        from test_rpc_providers import BLOCK, TOKEN
+        data, producer = self.local_profile()
+        calls = []
+        missing = {'code':-32000,'message':'missing trie node '+'a'*64+' (path ) state 0x01 is not available, not found'}
+        def transport(url, payload, **kwargs):
+            method = payload['method']; calls.append((url,method))
+            response = {'jsonrpc':'2.0','id':payload['id']}
+            if method == 'eth_chainId': response['result']='0x1237'
+            elif method == 'eth_getBlockByNumber': response['result']=BLOCK
+            elif url == data['rpcUrl']: response['error']=missing
+            else: response['result']='0x6000'
+            return response
+        with patch('performance_runtime.json_http',side_effect=transport):
+            self.assertEqual(producer.rpc.request('eth_getCode',[TOKEN,BLOCK['number']]),'0x6000')
+        self.assertEqual(calls, [(data['rpcUrl'],'eth_chainId'),
+            (data['rpcUrl'],'eth_getBlockByNumber'),(data['rpcUrl'],'eth_getCode'),
+            (data['rpcFallbackUrls'][0],'eth_chainId'),
+            (data['rpcFallbackUrls'][0],'eth_getBlockByNumber'),
+            (data['rpcFallbackUrls'][0],'eth_getCode')])
+        self.assertEqual(len(producer.rpc.calls),len(calls))
+        producer.rpc.maximum=len(calls)
+        with patch('performance_runtime.json_http') as blocked:
+            with self.assertRaisesRegex(CollectionError,'^collection_rpc_budget$'):
+                producer.rpc.request('eth_chainId')
+            blocked.assert_not_called()
+
+    def test_changed_fallback_identity_fails_instead_of_returning_state(self):
+        from discovery import DataError
+        from test_rpc_providers import BLOCK, TOKEN
+        data, producer = self.local_profile()
+        def transport(url, payload, **kwargs):
+            if url != data['rpcUrl']: result='0x1'
+            elif payload['method']=='eth_chainId': result='0x1237'
+            elif payload['method']=='eth_getBlockByNumber': result=BLOCK
+            else: raise DataError('http_503')
+            return {'jsonrpc':'2.0','id':payload['id'],'result':result}
+        with patch('performance_runtime.json_http',side_effect=transport):
+            with self.assertRaisesRegex(DataError,'^wrong_chain$'):
+                producer.rpc.request('eth_getCode',[TOKEN,BLOCK['number']])
+
+    def test_v4_actual_collector_capture_and_page_keep_finalized_and_hash_pins(self):
+        from copy import deepcopy
+        from test_performance_collection import FakePerformanceRpc, OWNER, VAULT, CODE_HASH, vault_log
+        data, producer = self.local_profile()
+        fake = FakePerformanceRpc()
+        wire = []
+        def transport(url, payload, **kwargs):
+            self.assertEqual(url, data['rpcUrl'])
+            method, params = payload['method'], payload['params']
+            wire.append((method, deepcopy(params)))
+            if method == 'eth_getBlockByHash':
+                result = next((deepcopy(block) for block in fake.headers.values() if block['hash']==params[0]), None)
+            else:
+                result = fake.request(method, params)
+            return {'jsonrpc':'2.0','id':payload['id'],'result':result}
+        with patch('performance_runtime.json_http', side_effect=transport):
+            baseline = producer.collector.capture(OWNER, VAULT, ['1'], CODE_HASH)
+            fake.add_transaction(logs=[vault_log()])
+            fake.finalized = 11
+            page = producer.collector.collect(baseline, baseline.baseline)
+        self.assertEqual(baseline.baseline.blockNumber, 10)
+        self.assertEqual(page.throughCursor.blockNumber, 11)
+        self.assertTrue(any(method=='eth_getBlockByNumber' and params[0]=='finalized' for method,params in wire))
+        state = [params[-1] for method, params in wire if method in ('eth_call','eth_getCode','eth_getBalance')]
+        self.assertTrue(state)
+        self.assertTrue(all(isinstance(tag,dict) and tag.get('requireCanonical') is True for tag in state))
+        self.assertEqual(len(producer.rpc.calls), len(wire))
+
+    def test_eip1898_fallback_keeps_hash_and_refuses_noncanonical_recovery(self):
+        from copy import deepcopy
+        from discovery import DataError
+        from test_performance_collection import FakePerformanceRpc, CODE, VAULT
+        fake = FakePerformanceRpc()
+        block = fake.headers[10]
+        tag = {'blockHash': block['hash'], 'requireCanonical': True}
+        for mismatch in (False, True):
+            with self.subTest(mismatch=mismatch):
+                data, producer = self.local_profile()
+                wire = []
+                def transport(url, payload, **kwargs):
+                    method, params = payload['method'], payload['params']
+                    wire.append((url, method, deepcopy(params)))
+                    reply = {'jsonrpc':'2.0','id':payload['id']}
+                    if method == 'eth_getBlockByHash': result = deepcopy(block)
+                    elif method == 'eth_getCode':
+                        self.assertEqual(params[-1], tag)
+                        if url == data['rpcUrl']:
+                            reply['error'] = {'code':-32000,'message':'missing trie node '+'a'*64+' (path ) state unavailable'}
+                            return reply
+                        result = CODE
+                    else: result = fake.request(method, params)
+                    if mismatch and url != data['rpcUrl'] and method == 'eth_getBlockByNumber':
+                        result['hash'] = '0x'+'f'*64
+                    return {**reply,'result':result}
+                with patch('performance_runtime.json_http', side_effect=transport):
+                    if mismatch:
+                        with self.assertRaisesRegex(DataError,'^snapshot_reorganized$'):
+                            producer.rpc.request('eth_getCode',[VAULT,tag])
+                    else:
+                        self.assertEqual(producer.rpc.request('eth_getCode',[VAULT,tag]),CODE)
+                self.assertEqual(len(producer.rpc.calls),len(wire))
+                fallback_state = [row for row in wire if row[0]!=data['rpcUrl'] and row[1]=='eth_getCode']
+                self.assertEqual(len(fallback_state), 0 if mismatch else 1)
 
     def test_missing_or_linked_or_shared_configuration_fails_closed(self):
         with self.assertRaises(OSError): private_json(self.directory/'absent.json')

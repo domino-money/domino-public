@@ -18,7 +18,7 @@ from pool_requests import PgRequests, WRITER_ROLE
 from public_observations import PgPublicData
 from read_deadline import check_read_deadline, read_deadline
 from read_service import ReadService
-from rpc_config import configured_rpc_urls, configured_history_rpc_url
+from rpc_config import configured_rpc_urls, configured_history_rpc_urls
 
 
 class PublicCollector:
@@ -187,7 +187,7 @@ def main():
         raise DataError('catalogue_not_configured')
     repository = PgPublicData(catalogue,writer=True)
     service = ReadService(catalogue=catalogue,rpc_urls=configured_rpc_urls(config),
-                          historical_rpc_url=configured_history_rpc_url(config))
+                          historical_rpc_urls=configured_history_rpc_urls(config))
     if args.import_snapshot:
         from markets_snapshot import MarketsSnapshot
         legacy = MarketsSnapshot(path=args.import_snapshot)

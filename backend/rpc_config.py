@@ -64,17 +64,32 @@ def configured_rpc_urls(config, override=None):
         rpc_endpoint(url, hosts, field='rpc_fallback_url') for url in config.get('rpcFallbackUrls', [])))
 
 
-def configured_history_rpc_url(config):
-    """Pinned historical work uses its explicit source, never a pruned primary.
+def configured_history_rpc_urls(config):
+    """Version 4 uses the same local-first routes for current and old data.
 
-    Legacy files retain their previous single-source behavior. Version 3 makes
-    the operator's historical-state qualification independent of current reads.
-    No environment override can silently replace that historical source.
+    Older private files keep their explicit historical source until migrated;
+    request/environment input never replaces the operator's historical policy.
     """
+    if config.get('version') == 4:
+        return configured_rpc_urls(config)
     hosts = config.get('rpcAllowedHosts', DEFAULT_RPC_HOSTS)
     if config.get('version') == 3:
-        return rpc_endpoint(config.get('historicalRpcUrl'), hosts, field='historical_rpc_url')
-    return configured_rpc_urls(config)[0]
+        return (rpc_endpoint(config.get('historicalRpcUrl'), hosts, field='historical_rpc_url'),)
+    return (configured_rpc_urls(config)[0],)
+
+
+def configured_history_rpc_source(config):
+    """Client input: ordered routes in v4, unchanged single source in old files."""
+    urls = configured_history_rpc_urls(config)
+    return urls if config.get('version') == 4 else urls[0]
+
+
+def configured_history_rpc_url(config):
+    """Compatibility accessor for consumers needing one explicitly selected URL.
+
+    New RPC clients must consume configured_history_rpc_urls to retain fallback.
+    """
+    return configured_history_rpc_urls(config)[0]
 
 
 def configured_inventory_url(config):

@@ -62,6 +62,7 @@ export const BRIDGE_REFUSES_PYTHON_VALID = {
 /** Producer fixtures whose body differs from the browser-facing gateway fixture of the same name, by JSON path. */
 export const PRODUCER_GATEWAY_DIFFERENCES = {
   'wallet-assets.page': ['inventory.nextCursor'],
+  'wallet-assets.local-catalogue': ['inventory.nextCursor'],
 };
 
 /** @type {readonly BackendGap[]} */

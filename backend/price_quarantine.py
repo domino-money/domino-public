@@ -17,9 +17,10 @@ from catalogue import configured_catalogue
 from chainlink_checkpoint import Checkpoint
 from chainlink_collection import (BudgetRpc, INVOCATION_SECONDS, STORAGE_RPC_REQUESTS,
     canonical, collection_blocks, digest, validate_collection)
-from discovery import CHAIN_ID, DataError, ReadRpc, parse_block, quantity
+from discovery import CHAIN_ID, DataError, parse_block, quantity
 from local_config import load_config
-from rpc_config import configured_history_rpc_url
+from rpc_failover import HistoricalReadRpc as ReadRpc
+from rpc_config import configured_history_rpc_source
 from price_history import CHAINLINK_SOURCE, usd
 from read_service import bounded_transport
 
@@ -150,7 +151,7 @@ def main(argv=None):
         catalogue = configured_catalogue()
         if catalogue is None:
             raise DataError('catalogue_not_configured')
-        rpc = ReadRpc(configured_history_rpc_url(config), transport=bounded_transport(INVOCATION_SECONDS),
+        rpc = ReadRpc(configured_history_rpc_source(config), transport=bounded_transport(INVOCATION_SECONDS),
                       max_requests=STORAGE_RPC_REQUESTS + 3)
         print(json.dumps(quarantine_collection(catalogue, collection, rpc,
                          reviewed_sha256=args.reviewed_sha256, archive_directory=args.archive_directory)))

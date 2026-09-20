@@ -1,0 +1,59 @@
+{
+  "balanceCoverage": "requested_and_page_addresses_only",
+  "chainId": 4663,
+  "inventory": {
+    "asOfBlock": null,
+    "candidatesProbed": 1,
+    "candidatesSkipped": 0,
+    "coverage": "local_catalogue_only",
+    "excludedRows": 0,
+    "fallbackReason": "local_inventory_unavailable",
+    "hasMore": true,
+    "nextCursor": "eyJjaGFpbiI6NDY2MywiZXhwaXJlcyI6MTMxMCwia2V5Ijoie1wicGhhc2VcIjpcImFsY2hlbXlcIixcImtleVwiOm51bGwsXCJyZWFzb25cIjpcImxvY2FsX2ludmVudG9yeV9jb3ZlcmFnZV9wYXJ0aWFsXCJ9IiwicHJvdmlkZXIiOiI4ZTY3OTBmMzk5MDNjNTUxYTllMTJiMjc2ZGY4YWJiNjI4NmMzYjI2Y2E2ZTU4NjAyYjA0YjE2MzMwMTZkMWMwIiwidG9rZW5zIjpbIjB4MTExMTExMTExMTExMTExMTExMTExMTExMTExMTExMTExMTExMTExMSJdLCJ2IjoxLCJ3YWxsZXQiOiIweDMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMifQ.ca2xz1q96KS1_ytMXzf57230C2ypQUoQrDAlqjs4DMc",
+    "retrievedAt": 1010,
+    "rowsReceived": 1,
+    "skippedReason": null,
+    "source": "local_catalogue",
+    "status": "page_received"
+  },
+  "items": [
+    {
+      "address": "0x0000000000000000000000000000000000000000",
+      "amountRaw": "0",
+      "balanceStatus": "read_at_block",
+      "decimals": 18,
+      "discoveredByProvider": false,
+      "displayUnitsAvailable": true,
+      "executionAvailable": false,
+      "kind": "native",
+      "metadataIssues": {},
+      "readStatus": "available",
+      "requestedByAddress": false,
+      "symbol": "ETH"
+    },
+    {
+      "address": "0x1111111111111111111111111111111111111111",
+      "amountRaw": "57896044618658097711785492504343953926634992332820282019728792003956564820091",
+      "balanceStatus": "read_at_block",
+      "decimals": 6,
+      "discoveredByProvider": true,
+      "displayUnitsAvailable": true,
+      "executionAvailable": false,
+      "kind": "erc20_candidate",
+      "metadataIssues": {},
+      "readStatus": "available",
+      "requestedByAddress": true,
+      "symbol": "TOKEN"
+    }
+  ],
+  "liveExecution": false,
+  "mode": "public_address_read_only",
+  "schemaVersion": 2,
+  "snapshot": {
+    "hash": "0xabababababababababababababababababababababababababababababababab",
+    "number": 700,
+    "timestamp": 1000
+  },
+  "unavailableAssets": [],
+  "walletControlVerified": false
+}

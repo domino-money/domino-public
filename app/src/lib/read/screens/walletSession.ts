@@ -3,7 +3,8 @@
  * screen adds on top. The continuation handle stays inside A's pager; nothing
  * here can reach it.
  *
- * - At most 5 pages, then "Showing the first 5 pages".
+ * - At most 5 external inventory pages. Local catalogue pages are loaded only
+ *   by explicit Load more and do not consume that external allowance.
  * - After a failed page, Load more asks for the same page again while the
  *   handle can still be alive (300 s from the last good page, less a margin);
  *   after that, it starts the list again rather than send a dead handle.
@@ -44,6 +45,7 @@ export interface WalletContext {
   fallbackTokens?: readonly string[]
 }
 
+/** External inventory allowance; manual local catalogue paging is independent. */
 export const WALLET_PAGE_CAP = 5
 export const HANDLE_RETRY_WINDOW_MS = 300_000 - 15_000
 /** The request schema's bound on `tokens`. */
@@ -146,7 +148,7 @@ export function createWalletSession(source: ReadSource, context: WalletContext, 
 
   const snapshot = (): WalletSnapshot => {
     const shownStatus: WalletStatus = status === 'failed' && expired() ? 'handle_expired' : status
-    const capped = view.pages >= WALLET_PAGE_CAP && view.hasMore
+    const capped = view.providerPages >= WALLET_PAGE_CAP && view.hasMore
     return {
       view,
       status: shownStatus,
@@ -186,7 +188,7 @@ export function createWalletSession(source: ReadSource, context: WalletContext, 
 
   async function more(signal?: AbortSignal) {
     if (status === 'loading' || status === 'restart_exhausted') return snapshot()
-    if (view.pages >= WALLET_PAGE_CAP) return snapshot()
+    if (view.providerPages >= WALLET_PAGE_CAP) return snapshot()
     if (expired()) {
       // A handle this old may be gone: start the list again instead of sending it.
       pager = createWalletPager(budgeted, walletRequest(context))

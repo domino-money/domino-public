@@ -21,7 +21,7 @@ def checked_config(data):
     modern = legacy | {'rpcFallbackUrls', 'rpcAllowedHosts'}
     if (data['version'] == 1 and set(data) == legacy):
         hosts, fallbacks = DEFAULT_RPC_HOSTS, []
-    elif ((data['version'] == 2 and set(data) == modern) or
+    elif ((data['version'] in (2, 4) and set(data) == modern) or
           (data['version'] == 3 and set(data) == modern | {'historicalRpcUrl'})):
         hosts = rpc_hosts(data['rpcAllowedHosts'])
         fallbacks = data['rpcFallbackUrls']
@@ -30,6 +30,8 @@ def checked_config(data):
     else:
         raise DataError('invalid_local_provider_config')
     rpc_endpoint(data['rpcUrl'], hosts)
+    if data['version'] == 4 and urlsplit(data['rpcUrl']).hostname != LOCAL_RPC_HOST:
+        raise DataError('local_first_rpc_required')
     if data['version'] == 3:
         history = rpc_endpoint(data['historicalRpcUrl'], hosts, field='historical_rpc_url')
         if urlsplit(history).hostname == LOCAL_RPC_HOST:

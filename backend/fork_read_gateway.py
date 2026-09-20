@@ -16,9 +16,10 @@ import time
 from urllib.parse import urlsplit
 
 from bridge_state import strict_json
-from discovery import DataError, json_http
+from discovery import CHAIN_ID, DataError, RpcStateUnavailable, json_http, parse_block, quantity, rpc_failure
 from read_deadline import read_deadline
-from rpc_config import DEFAULT_RPC_HOSTS, rpc_endpoint
+from rpc_config import DEFAULT_RPC_HOSTS, MAX_RPC_ENDPOINTS, rpc_endpoint
+from rpc_failover import MAX_ANCHORS, RETRYABLE
 
 MAX_BODY = 65536
 MAX_RESPONSE = 2000000
@@ -29,6 +30,8 @@ ZERO_PARAMS = frozenset(('eth_chainId', 'net_version', 'eth_blockNumber', 'eth_g
 METHODS = ZERO_PARAMS | frozenset(('eth_getBlockByNumber', 'eth_getBlockByHash',
     'eth_getCode', 'eth_getBalance', 'eth_getTransactionCount', 'eth_getStorageAt',
     'eth_getTransactionByHash', 'eth_getTransactionReceipt', 'eth_call', 'eth_feeHistory', 'eth_getProof'))
+STATE_METHODS = frozenset(('eth_getCode', 'eth_getBalance', 'eth_getTransactionCount',
+                           'eth_getStorageAt', 'eth_getProof', 'eth_call'))
 ERRORS = frozenset(('fork_invalid_config', 'fork_not_running', 'fork_request_limit', 'fork_time_limit',
     'fork_capacity_busy', 'fork_method_not_allowed', 'fork_invalid_request', 'fork_body_too_large',
     'fork_origin_not_allowed', 'fork_upload_timeout', 'fork_upstream_unavailable',
@@ -42,6 +45,10 @@ class ForkReadError(Exception):
     def __init__(self, code):
         self.code = code if code in ERRORS else 'fork_upstream_unavailable'
         super().__init__(self.code)
+
+
+class _Retryable(ForkReadError):
+    """Internal signal containing a fixed error code, never provider diagnostics."""
 
 
 def _block(value, *, objects=True):
@@ -267,7 +274,12 @@ class ForkReadGateway:
                  max_requests=5000, total_seconds=1200, max_concurrency=8,
                  upload_seconds=5, clock=time.monotonic):
         try:
-            self._endpoint = rpc_endpoint(endpoint, allowed_hosts)
+            self._routed = isinstance(endpoint, (tuple, list))
+            endpoints = tuple(endpoint) if self._routed else (endpoint,)
+            if not 1 <= len(endpoints) <= MAX_RPC_ENDPOINTS or len(set(endpoints)) != len(endpoints):
+                raise ValueError()
+            self._endpoints = tuple(rpc_endpoint(value, allowed_hosts) for value in endpoints)
+            self._endpoint = self._endpoints[0]
             if (type(max_requests) is not int or not 1 <= max_requests <= 50000
                     or type(max_concurrency) is not int or not 1 <= max_concurrency <= 8
                     or any(type(value) not in (int, float) or not math.isfinite(value) or not 0 < value <= maximum
@@ -280,9 +292,11 @@ class ForkReadGateway:
         self._connections, self._reads = BoundedSemaphore(max_concurrency), BoundedSemaphore(max_concurrency)
         self._lock, self._requests, self._methods, self._failures = Lock(), 0, {}, {}
         self._server, self._thread, self._expires, self._closed, self._entered = None, None, None, False, False
-        parsed = urlsplit(self._endpoint)
-        self._private_markers = (self._endpoint,) + ((parsed.path.rsplit('/', 1)[-1],)
-            if parsed.hostname == 'robinhood-mainnet.g.alchemy.com' else ())
+        self._anchors, self._verified, self._routing_failure = {}, set(), False
+        # Both providers' path credentials must remain private, including the
+        # local route token's trailing-slash path and nested successful results.
+        self._private_markers = tuple(marker for value in self._endpoints for marker in
+            (value, urlsplit(value).path.rstrip('/').rsplit('/', 1)[-1]) if marker)
 
     @property
     def url(self):
@@ -316,30 +330,155 @@ class ForkReadGateway:
                 raise ForkReadError('fork_request_limit')
             self._requests += count
 
+    def _wire(self, endpoint, request, deadline, *, retryable=False):
+        with self._lock:
+            self._methods[request['method']] = self._methods.get(request['method'], 0)+1
+        try:
+            response = self._transport(endpoint, request,
+                                       timeout=min(deadline.remaining(), self._remaining()))
+        except DataError as error:
+            if retryable and str(error) in RETRYABLE:
+                raise _Retryable('fork_upstream_unavailable') from None
+            raise
+        deadline.remaining()
+        if (type(response) is not dict or response.get('jsonrpc') != '2.0'
+                or type(response.get('id')) is not type(request['id']) or response.get('id') != request['id']
+                or set(response) not in ({'jsonrpc', 'id', 'result'}, {'jsonrpc', 'id', 'error'})):
+            raise ForkReadError('fork_upstream_invalid_response')
+        encoded = json.dumps(response, allow_nan=False, separators=(',', ':'), default=_json_default)
+        if len(encoded.encode()) > MAX_RESPONSE or any(marker in encoded for marker in self._private_markers):
+            raise ForkReadError('fork_upstream_invalid_response')
+        if 'error' in response:
+            # The narrow Geth missing-trie refusal applies equally to storage,
+            # nonce and proof reads. Reverts and arbitrary error text do not.
+            if (retryable and request['method'] in STATE_METHODS and
+                    isinstance(rpc_failure('eth_call' if request['method'] == 'eth_call' else
+                                           'eth_getCode', response['error']), RpcStateUnavailable)):
+                raise _Retryable('fork_upstream_rpc_error')
+            raise ForkReadError('fork_upstream_rpc_error')
+        return json.loads(encoded)
+
+    def _invalid_identity(self):
+        with self._lock:
+            self._routing_failure = True
+        raise ForkReadError('fork_upstream_invalid_response')
+
+    def _record_block(self, raw, selector, *, by_hash=False):
+        try:
+            block = parse_block(raw)
+            if ((by_hash and block.hash.lower() != selector.lower()) or
+                    (not by_hash and HEX.fullmatch(selector) and block.number != int(selector, 16)) or
+                    (selector == 'earliest' and block.number != 0)):
+                self._invalid_identity()
+        except DataError:
+            self._invalid_identity()
+        with self._lock:
+            prior = self._anchors.get(block.tag)
+            if prior is not None and prior != block:
+                self._routing_failure = True
+                raise ForkReadError('fork_upstream_invalid_response')
+            self._anchors.pop(block.tag, None)
+            self._anchors[block.tag] = block
+            highest = max(self._anchors, key=lambda tag: self._anchors[tag].number)
+            while len(self._anchors) > MAX_ANCHORS:
+                del self._anchors[next(tag for tag in self._anchors if tag != highest)]
+        return block
+
+    def _routed_forward(self, request, deadline):
+        # The input envelope already reserved one attempt. Its first wire call
+        # consumes that reservation; every proof and retry reserves another.
+        # This keeps failed requests and batch admission in the existing budget.
+        first_wire, pinned, prepared = True, None, None
+
+        def wire(endpoint, body):
+            nonlocal first_wire
+            if not first_wire:
+                self._reserve(1)
+            first_wire = False
+            return self._wire(endpoint, body, deadline, retryable=True)
+
+        def proof(endpoint, method, params):
+            return wire(endpoint, {'jsonrpc': '2.0', 'id': 'domino.fork.proof',
+                                   'method': method, 'params': params})['result']
+
+        for index, endpoint in enumerate(self._endpoints):
+            try:
+                with self._lock:
+                    if self._routing_failure:
+                        raise ForkReadError('fork_upstream_invalid_response')
+                    verified = endpoint in self._verified
+                    highest = max(self._anchors.values(), key=lambda block: block.number, default=None)
+                # A fallback must prove its chain every time. A previously
+                # verified local primary remains first for the next operation.
+                if index or not verified:
+                    try:
+                        if quantity(proof(endpoint, 'eth_chainId', [])) != CHAIN_ID:
+                            self._invalid_identity()
+                    except DataError:
+                        self._invalid_identity()
+                    with self._lock:
+                        self._verified.add(endpoint)
+                if index:
+                    for block in {b.tag: b for b in (highest, pinned) if b is not None}.values():
+                        observed = self._record_block(proof(endpoint, 'eth_getBlockByNumber',
+                                                           [block.tag, False]), block.tag)
+                        if observed != block:
+                            self._invalid_identity()
+                if prepared is None:
+                    prepared = deepcopy(request)
+                    if request['method'] in STATE_METHODS:
+                        selector = request['params'][-1]
+                        by_hash = type(selector) is dict and 'blockHash' in selector
+                        tag = selector.get('blockHash', selector.get('blockNumber')) if type(selector) is dict else selector
+                        with self._lock:
+                            pinned = (next((b for b in self._anchors.values() if b.hash.lower() == tag.lower()), None)
+                                      if by_hash else self._anchors.get(hex(int(tag, 16))) if HEX.fullmatch(tag) else None)
+                        if pinned is None:
+                            raw = proof(endpoint, 'eth_getBlockByHash' if by_hash else 'eth_getBlockByNumber',
+                                        [tag, False])
+                            pinned = self._record_block(raw, tag, by_hash=by_hash)
+                        # Latest/safe/finalized are pinned before state access,
+                        # so failover cannot silently select another head.
+                        prepared['params'][-1] = deepcopy(selector) if by_hash else pinned.tag
+                response = wire(endpoint, prepared)
+                result, method = response['result'], request['method']
+                if method == 'eth_chainId':
+                    try:
+                        if quantity(result) != CHAIN_ID:
+                            self._invalid_identity()
+                    except DataError:
+                        self._invalid_identity()
+                elif method == 'net_version' and result != str(CHAIN_ID):
+                    self._invalid_identity()
+                elif method in ('eth_getBlockByNumber', 'eth_getBlockByHash'):
+                    self._record_block(result, request['params'][0], by_hash=method.endswith('Hash'))
+                return response
+            except _Retryable as error:
+                deadline.remaining()
+                if index+1 == len(self._endpoints):
+                    raise ForkReadError(error.code) from None
+                # A failed pin was never a proof and must be retried before any
+                # state read. A completed pin survives a missing-state refusal.
+                if request['method'] in STATE_METHODS and pinned is None:
+                    prepared = None
+        raise ForkReadError('fork_upstream_unavailable')
+
     def _forward(self, request):
         if not self._reads.acquire(blocking=False):
             raise ForkReadError('fork_capacity_busy')
         try:
-            with self._lock:
-                self._methods[request['method']] = self._methods.get(request['method'], 0)+1
             remaining = min(CALL_SECONDS, self._remaining())
             if remaining <= 0:
                 raise ForkReadError('fork_time_limit')
             try:
-                with read_deadline(remaining, clock=self._clock):
-                    response = self._transport(self._endpoint, request, timeout=remaining)
-                    if (type(response) is not dict or response.get('jsonrpc') != '2.0'
-                            or type(response.get('id')) is not type(request['id']) or response.get('id') != request['id']
-                            or set(response) not in ({'jsonrpc', 'id', 'result'}, {'jsonrpc', 'id', 'error'})):
-                        raise ForkReadError('fork_upstream_invalid_response')
-                    if 'error' in response:
-                        raise ForkReadError('fork_upstream_rpc_error')
-                    encoded = json.dumps(response, allow_nan=False, separators=(',', ':'), default=_json_default)
-                    if len(encoded.encode()) > MAX_RESPONSE or any(marker in encoded for marker in self._private_markers):
-                        raise ForkReadError('fork_upstream_invalid_response')
-                    return json.loads(encoded)
+                with read_deadline(remaining, clock=self._clock) as deadline:
+                    return (self._routed_forward(request, deadline) if self._routed else
+                            self._wire(self._endpoint, request, deadline))
             except ForkReadError:
                 raise
+            except DataError as error:
+                raise ForkReadError('fork_time_limit' if self._remaining() <= 0 or
+                                    str(error) == 'read_deadline_exceeded' else 'fork_upstream_unavailable') from None
             except Exception:
                 raise ForkReadError('fork_time_limit' if self._remaining() <= 0 else 'fork_upstream_unavailable') from None
         finally:

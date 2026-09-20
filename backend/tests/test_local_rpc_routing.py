@@ -12,7 +12,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from configure_rpc import prepare_config, prepare_local_config
 from discovery import DataError, ReadRpc, RpcStateUnavailable, rpc_failure
 from local_config import checked_config, load_config, save_config
-from rpc_config import (DEFAULT_RPC_HOSTS, configured_history_rpc_url,
+from rpc_config import (DEFAULT_RPC_HOSTS, configured_history_rpc_url, configured_history_rpc_urls,
                         configured_inventory_url, configured_rpc_urls, rpc_endpoint)
 from rpc_failover import FailoverReadRpc
 from read_service import ReadService
@@ -28,10 +28,10 @@ class LocalConfigTests(unittest.TestCase):
         return prepare_local_config({'version': 1, 'rpcUrl': ALCHEMY,
                                      'inventoryUrl': ALCHEMY}, 'SYNTHETIC_LOCAL_TOKEN_123')
 
-    def test_upgrade_roundtrip_separates_current_archive_and_inventory(self):
+    def test_upgrade_roundtrip_prefers_local_for_current_and_history_preserves_inventory(self):
         data = self.config()
         self.assertEqual(configured_rpc_urls(data), (LOCAL, ALCHEMY))
-        self.assertEqual(configured_history_rpc_url(data), ALCHEMY)
+        self.assertEqual(configured_history_rpc_urls(data), (LOCAL, ALCHEMY))
         self.assertEqual(configured_inventory_url(data), ALCHEMY)
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / 'providers.json'
@@ -44,11 +44,11 @@ class LocalConfigTests(unittest.TestCase):
         data = prepare_local_config(old, 'SYNTHETIC_ROTATED_TOKEN')
         self.assertNotEqual(data['rpcUrl'], old['rpcUrl'])
         self.assertEqual(data['rpcFallbackUrls'], [ALCHEMY])
-        self.assertEqual(data['historicalRpcUrl'], ALCHEMY)
+        self.assertNotIn('historicalRpcUrl', data)
         self.assertEqual(data['inventoryUrl'], ALCHEMY)
-        changed = prepare_config(data, [RPC_URL, SECOND])
-        self.assertEqual(changed['version'], 3)
-        self.assertEqual(changed['historicalRpcUrl'], ALCHEMY)
+        changed = prepare_config(data, [data['rpcUrl'], SECOND])
+        self.assertEqual(changed['version'], 4)
+        self.assertEqual(configured_history_rpc_urls(changed), (data['rpcUrl'], SECOND))
 
     def test_history_and_token_must_be_explicit_valid_and_private(self):
         for token in ('', 'short', '../' * 20, 'a' * 257, 'a' * 20 + '\n'):
@@ -71,13 +71,13 @@ class LocalConfigTests(unittest.TestCase):
     def test_override_does_not_replace_history_or_inventory(self):
         data = self.config()
         self.assertEqual(configured_rpc_urls(data, RPC_URL), (RPC_URL,))
-        self.assertEqual(configured_history_rpc_url(data), ALCHEMY)
+        self.assertEqual(configured_history_rpc_urls(data), (LOCAL, ALCHEMY))
         self.assertEqual(configured_inventory_url(data), ALCHEMY)
         for missing in ({}, {'rpcUrl': ALCHEMY}, {'rpcUrl': LOCAL, 'inventoryUrl': None}):
             with self.assertRaisesRegex(DataError, '^configured_inventory_required$'):
                 configured_inventory_url(missing)
 
-    def test_inventory_rotation_preserves_v3_routes(self):
+    def test_inventory_rotation_preserves_v4_routes(self):
         import configure_inventory as module
         data = self.config()
         with patch.object(module, 'load_config', return_value=data), \
@@ -102,7 +102,7 @@ class LocalConfigTests(unittest.TestCase):
              patch('read_api.ReadService') as service, patch.dict('os.environ', {}, clear=True):
             create_app()
         self.assertEqual(service.call_args.kwargs['rpc_urls'], (LOCAL, ALCHEMY))
-        self.assertEqual(service.call_args.kwargs['historical_rpc_url'], ALCHEMY)
+        self.assertEqual(service.call_args.kwargs['historical_rpc_urls'], (LOCAL, ALCHEMY))
         self.assertEqual(service.call_args.kwargs['inventory_url'], ALCHEMY)
 
     def test_nft_explicit_block_uses_archive_current_uses_local(self):
@@ -114,7 +114,8 @@ class LocalConfigTests(unittest.TestCase):
             return NftRpc()
         service = ReadService(rpc_urls=(LOCAL, ALCHEMY), historical_rpc_url=ALCHEMY,
                               clock=lambda: 1010)
-        with patch('read_service.FailoverReadRpc', side_effect=factory):
+        with patch('read_service.FailoverReadRpc', side_effect=factory), \
+             patch('read_service.HistoricalReadRpc', side_effect=factory):
             current = service.nft_positions(['1'])
             historic = service.nft_positions(['1'], 699)
         self.assertEqual(selected, [(LOCAL, ALCHEMY), (ALCHEMY,)])
@@ -146,7 +147,8 @@ class LocalConfigTests(unittest.TestCase):
 
         service = ReadService(rpc_urls=(LOCAL,), historical_rpc_url=ALCHEMY, clock=lambda: 1010)
         with patch.object(service, 'pool_activity', return_value=report) as activity, \
-             patch('read_service.FailoverReadRpc', side_effect=factory):
+             patch('read_service.FailoverReadRpc', side_effect=factory), \
+             patch('read_service.HistoricalReadRpc', side_effect=factory):
             result = service.pool_positions(identity['poolId'])
 
         activity.assert_called_once_with(identity['poolId'], include_positions=True)

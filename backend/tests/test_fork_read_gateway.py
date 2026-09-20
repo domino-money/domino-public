@@ -15,7 +15,7 @@ from unittest.mock import Mock, patch
 from urllib.error import HTTPError
 from urllib.parse import urlsplit
 
-from discovery import json_http
+from discovery import DataError, json_http
 from fork_read_gateway import (ForkReadError, ForkReadGateway, MAX_BATCH, MAX_BODY,
                                MAX_CALL_GAS, MAX_RESPONSE, METHODS, _Handler)
 
@@ -24,6 +24,11 @@ CANARY = 'SYNTHETIC_PRIVATE_CANARY'
 ENDPOINT = 'https://robinhood-mainnet.g.alchemy.com/v2/'+CANARY
 ADDRESS = '0x'+'12'*20
 HASH = '0x'+'34'*32
+LOCAL_TOKEN = 'SYNTHETIC_LOCAL_CANARY_0123456789'
+LOCAL = 'https://rpc.domino.money/'+LOCAL_TOKEN+'/'
+BLOCK = {'number': '0x123', 'hash': HASH, 'timestamp': '0x456'}
+MISSING_STATE = {'code': -32000,
+    'message': 'missing trie node '+'ab'*32+' (path ) state 0x123 is not available, not found'}
 
 
 def envelope(method='eth_chainId', params=None, identifier=1):
@@ -41,6 +46,22 @@ class Transport:
         if self.callback:
             return self.callback(request)
         return {'jsonrpc': '2.0', 'id': request['id'], 'result': '0x1237'}
+
+
+class RoutedTransport:
+    def __init__(self, callback=None):
+        self.calls, self.callback = [], callback
+
+    def __call__(self, endpoint, request, **options):
+        self.calls.append((endpoint, request, options))
+        if self.callback:
+            result = self.callback(endpoint, request)
+            if result is not None:
+                return result
+        method = request['method']
+        result = ('0x1237' if method == 'eth_chainId' else str(4663) if method == 'net_version' else
+                  dict(BLOCK) if method in ('eth_getBlockByNumber', 'eth_getBlockByHash') else '0x1234')
+        return {'jsonrpc': '2.0', 'id': request['id'], 'result': result}
 
 
 class ForkReadGatewayTests(unittest.TestCase):
@@ -500,6 +521,165 @@ class ForkReadGatewayTests(unittest.TestCase):
                         {'max_concurrency': 9}, {'total_seconds': float('nan')},
                         {'total_seconds': 3601}, {'upload_seconds': 6}):
             self.assertError('fork_invalid_config', lambda: self.gateway(**options))
+
+    def test_ordered_routes_keep_healthy_reads_on_local_and_charge_proofs(self):
+        transport = RoutedTransport()
+        with ForkReadGateway((LOCAL, ENDPOINT), transport=transport) as gateway:
+            self.assertEqual(gateway.request('eth_getStorageAt', [ADDRESS, '0x0', '0x123']), '0x1234')
+            self.assertEqual(gateway.request('eth_getBalance', [ADDRESS, '0x123']), '0x1234')
+            self.assertEqual([c[1]['method'] for c in transport.calls],
+                             ['eth_chainId', 'eth_getBlockByNumber', 'eth_getStorageAt', 'eth_getBalance'])
+            self.assertEqual({c[0] for c in transport.calls}, {LOCAL})
+            self.assertEqual(gateway.stats['requests'], 4)
+            self.assertEqual(sum(gateway.stats['methods'].values()), 4)
+
+    def test_missing_state_fallback_proves_chain_and_exact_block_preserves_id(self):
+        cases = [('eth_getCode', [ADDRESS, '0x123']), ('eth_getBalance', [ADDRESS, '0x123']),
+                 ('eth_getTransactionCount', [ADDRESS, {'blockNumber': '0x123'}]),
+                 ('eth_getStorageAt', [ADDRESS, '0x0', {'blockHash': HASH, 'requireCanonical': True}]),
+                 ('eth_getProof', [ADDRESS, ['0x0'], '0x123']),
+                 ('eth_call', [{'to': ADDRESS, 'data': '0x1234'}, 'latest'])]
+        for method, params in cases:
+            with self.subTest(method=method):
+                def missing(endpoint, request):
+                    if endpoint == LOCAL and request['method'] == method:
+                        return {'jsonrpc': '2.0', 'id': request['id'], 'error': MISSING_STATE}
+                transport = RoutedTransport(missing)
+                with ForkReadGateway((LOCAL, ENDPOINT), transport=transport) as gateway:
+                    response = gateway._handle(envelope(method, params, 'anvil_42'))
+                    self.assertEqual(response, {'jsonrpc': '2.0', 'id': 'anvil_42', 'result': '0x1234'})
+                    self.assertEqual(gateway.stats['requests'], 6)
+                    self.assertEqual([c[1]['method'] for c in transport.calls[-3:]],
+                                     ['eth_chainId', 'eth_getBlockByNumber', method])
+                    self.assertEqual(transport.calls[-2][1]['params'], ['0x123', False])
+                    self.assertEqual(transport.calls[-1][1]['id'], 'anvil_42')
+                    expected_tag = params[-1] if type(params[-1]) is dict and 'blockHash' in params[-1] else '0x123'
+                    self.assertEqual(transport.calls[-1][1]['params'][-1], expected_tag)
+                    gateway.request('eth_getBlockByNumber', ['0x123', False])
+                    self.assertEqual(transport.calls[-1][0], LOCAL, 'Fallback must not stick after one missing-state read.')
+                    self.assertEqual(gateway.stats['requests'], 7)
+
+    def test_transport_failures_can_fallback_but_other_errors_cannot(self):
+        for reason in ('network_unavailable', 'http_429', 'http_503'):
+            def unavailable(endpoint, request):
+                if endpoint == LOCAL:
+                    raise DataError(reason)
+            transport = RoutedTransport(unavailable)
+            with ForkReadGateway((LOCAL, ENDPOINT), transport=transport) as gateway:
+                self.assertEqual(gateway.request('eth_chainId'), '0x1237')
+                self.assertEqual(gateway.stats['requests'], 3)
+                self.assertEqual([c[0] for c in transport.calls], [LOCAL, ENDPOINT, ENDPOINT])
+        for error in ({'code': 3, 'message': 'execution reverted'},
+                      {'code': -32000, 'message': 'unrecognized provider refusal'},
+                      {**MISSING_STATE, 'data': '0xdeadbeef'}):
+            def refused(endpoint, request):
+                if request['method'] == 'eth_getCode':
+                    return {'jsonrpc': '2.0', 'id': request['id'], 'error': error}
+            transport = RoutedTransport(refused)
+            with ForkReadGateway((LOCAL, ENDPOINT), transport=transport) as gateway:
+                self.assertError('fork_upstream_rpc_error',
+                                 lambda: gateway.request('eth_getCode', [ADDRESS, '0x123']))
+                self.assertEqual({c[0] for c in transport.calls}, {LOCAL})
+
+    def test_fallback_wrong_chain_or_block_poison_gateway_without_state_delivery(self):
+        for mismatch in ('chain', 'block'):
+            with self.subTest(mismatch=mismatch):
+                def changed(endpoint, request):
+                    if endpoint == LOCAL and request['method'] == 'eth_getCode':
+                        return {'jsonrpc': '2.0', 'id': request['id'], 'error': MISSING_STATE}
+                    if endpoint == ENDPOINT:
+                        if mismatch == 'chain' and request['method'] == 'eth_chainId':
+                            return {'jsonrpc': '2.0', 'id': request['id'], 'result': '0x1'}
+                        if mismatch == 'block' and request['method'] == 'eth_getBlockByNumber':
+                            return {'jsonrpc': '2.0', 'id': request['id'],
+                                    'result': {**BLOCK, 'hash': '0x'+'cd'*32}}
+                transport = RoutedTransport(changed)
+                with ForkReadGateway((LOCAL, ENDPOINT), transport=transport) as gateway:
+                    self.assertError('fork_upstream_invalid_response',
+                                     lambda: gateway.request('eth_getCode', [ADDRESS, '0x123']))
+                    before = len(transport.calls)
+                    self.assertError('fork_upstream_invalid_response', lambda: gateway.request('eth_chainId'))
+                    self.assertEqual(len(transport.calls), before)
+                    self.assertNotIn((ENDPOINT, 'eth_getCode'), [(c[0], c[1]['method']) for c in transport.calls])
+
+    def test_every_fallback_proof_and_attempt_spends_existing_budget(self):
+        def missing(endpoint, request):
+            if endpoint == LOCAL and request['method'] == 'eth_getCode':
+                return {'jsonrpc': '2.0', 'id': request['id'], 'error': MISSING_STATE}
+        transport = RoutedTransport(missing)
+        with ForkReadGateway((LOCAL, ENDPOINT), transport=transport, max_requests=5) as gateway:
+            self.assertError('fork_request_limit', lambda: gateway.request('eth_getCode', [ADDRESS, '0x123']))
+            self.assertEqual(len(transport.calls), 5)
+            self.assertEqual(gateway.stats['requests'], 5)
+            self.assertEqual(transport.calls[-1][1]['method'], 'eth_getBlockByNumber')
+
+    def test_fallback_verifies_old_state_block_even_with_a_newer_continuity_anchor(self):
+        newer = {**BLOCK, 'number': '0x124', 'hash': '0x'+'ab'*32}
+        def changed_old_state(endpoint, request):
+            method = request['method']
+            if method == 'eth_getBlockByNumber' and request['params'][0] == '0x124':
+                return {'jsonrpc': '2.0', 'id': request['id'], 'result': newer}
+            if endpoint == LOCAL and method == 'eth_getStorageAt':
+                return {'jsonrpc': '2.0', 'id': request['id'], 'error': MISSING_STATE}
+            if endpoint == ENDPOINT and method == 'eth_getBlockByNumber' and request['params'][0] == '0x123':
+                return {'jsonrpc': '2.0', 'id': request['id'], 'result': {**BLOCK, 'hash': '0x'+'cd'*32}}
+        transport = RoutedTransport(changed_old_state)
+        with ForkReadGateway((LOCAL, ENDPOINT), transport=transport) as gateway:
+            gateway.request('eth_getBlockByNumber', ['0x124', False])
+            self.assertError('fork_upstream_invalid_response',
+                             lambda: gateway.request('eth_getStorageAt', [ADDRESS, '0x0', '0x123']))
+            fallback = [c[1] for c in transport.calls if c[0] == ENDPOINT]
+            self.assertEqual([c['method'] for c in fallback],
+                             ['eth_chainId', 'eth_getBlockByNumber', 'eth_getBlockByNumber'])
+            self.assertEqual([c['params'][0] for c in fallback[1:]], ['0x124', '0x123'])
+
+    def test_fallback_refuses_credential_echo_and_malformed_identity_envelopes(self):
+        for value in (LOCAL_TOKEN, CANARY, LOCAL, ENDPOINT, {'malformed': True}):
+            with self.subTest(shape=type(value).__name__):
+                def fallback_echo(endpoint, request):
+                    if endpoint == LOCAL and request['method'] == 'eth_getCode':
+                        return {'jsonrpc': '2.0', 'id': request['id'], 'error': MISSING_STATE}
+                    if endpoint == ENDPOINT and request['method'] == 'eth_chainId':
+                        return {'jsonrpc': '2.0', 'id': request['id'], 'result': value}
+                transport = RoutedTransport(fallback_echo)
+                with ForkReadGateway((LOCAL, ENDPOINT), transport=transport) as gateway, redirect_stderr(StringIO()) as logs:
+                    self.assertError('fork_upstream_invalid_response',
+                                     lambda: gateway.request('eth_getCode', [ADDRESS, '0x123']))
+                    self.assertEqual(len(transport.calls), 4)
+                    self.assertEqual(logs.getvalue(), '')
+
+    def test_fallback_shares_one_call_deadline(self):
+        now = [100.0]
+        def slow(endpoint, request):
+            now[0] += 4
+            if endpoint == LOCAL and request['method'] == 'eth_getCode':
+                return {'jsonrpc': '2.0', 'id': request['id'], 'error': MISSING_STATE}
+        transport = RoutedTransport(slow)
+        with ForkReadGateway((LOCAL, ENDPOINT), transport=transport, clock=lambda: now[0]) as gateway:
+            self.assertError('fork_time_limit', lambda: gateway.request('eth_getCode', [ADDRESS, '0x123']))
+            self.assertEqual(len(transport.calls), 3)
+            self.assertEqual({c[0] for c in transport.calls}, {LOCAL})
+
+    def test_routed_malformed_envelopes_and_both_provider_credentials_never_escape(self):
+        responses = [lambda r: {'jsonrpc': '2.0', 'id': True, 'result': '0x1237'},
+                     lambda r: {'jsonrpc': '2.0', 'id': r['id'], 'result': '0x1237', 'extra': True},
+                     lambda r: {'jsonrpc': '2.0', 'id': r['id'], 'result': {'nested': LOCAL_TOKEN}},
+                     lambda r: {'jsonrpc': '2.0', 'id': r['id'], 'result': {'nested': CANARY}}]
+        for make_response in responses:
+            transport = RoutedTransport(lambda endpoint, request: make_response(request))
+            with ForkReadGateway((LOCAL, ENDPOINT), transport=transport) as gateway:
+                self.assertError('fork_upstream_invalid_response', lambda: gateway.request('eth_chainId'))
+                self.assertEqual(len(transport.calls), 1)
+                for secret in (LOCAL_TOKEN, CANARY, LOCAL, ENDPOINT):
+                    self.assertNotIn(secret, json.dumps(gateway.stats))
+
+    def test_routed_batch_cannot_send_mixed_write_or_exceed_admission_budget(self):
+        transport = RoutedTransport()
+        with ForkReadGateway((LOCAL, ENDPOINT), transport=transport, max_requests=2) as gateway:
+            self.assertError('fork_method_not_allowed', lambda: gateway._handle(
+                [envelope(), envelope('eth_sendRawTransaction', ['0x00'], 2)]))
+            self.assertEqual(transport.calls, [])
+            self.assertEqual(gateway.stats['requests'], 2)
 
 
 if __name__ == '__main__':
