@@ -64,6 +64,24 @@ repository presents as its integration boundary, produced by no implementation a
 The engine's real receipt is the near-namesake `SourceFeesApplied`, so the collision misleads
 rather than merely wastes space.
 
+**M-19 — four clauses in `DominoPriceGuardV4.publish` cannot be the one that
+decides.** `contracts/src/DominoPriceGuardV4.sol:54-58`. Found by mutating each clause against
+the guard's new suite: fifteen of nineteen clauses across `publish`, `revoke` and
+`referencePrice` fail a test when deleted; these four do not, because each is subsumed by a
+neighbour. `poolId == bytes32(0)` and `sqrtPriceX96 == 0` are outside any band, so `_withinBand`
+refuses them first — *both became redundant when the deviation band was added in `28eeaa9`
+(D-03/D-04); before that they were load-bearing. Mine.* `blockNumber >= block.number` is implied
+by the hash comparison, since `blockhash` answers zero for the current block and a zero hash is
+refused just above. `expiresAt <= timestamp` could only decide for a stamp in the future, which
+the clause before it already refuses. Recorded rather than removed, and named in
+`contracts/test/DominoPriceGuardV4.t.sol` so nobody has to prove it again.
+
+**M-20 — two more clauses that can never decide.** `contracts/src/DominoVaultV4.sol:510` and
+`contracts/src/DominoSetup.sol:143`. `_tget(_T_ENTERED) != 1` is unreachable as a sole decider
+because `_T_TRANSITION` is set only inside `nonReentrant` functions, so the two are true together
+or false together. `_callback == bytes32(0)` is unreachable because a zero callback also fails
+the payload comparison beside it. Both are pinned as redundancies in their suites.
+
 ## Documentation the code contradicts
 
 **M-09 — `V4_EXECUTION.md` documents the price guard's pre-hardening constructor.**
@@ -133,7 +151,14 @@ be deleted with all 214 tests green. The guard is correct; nothing exercises it.
 
 ## Not fixed here
 
-This is the enumeration the review's reference needs. Nothing above is fixed by this document.
-The six test findings are the cheapest and are quality debt introduced on the same day as the
-suites themselves; the dead-clause findings are cosmetic and touch hardening guards, so each
-needs its own judgement about whether removing a clause is worth the diff.
+This is the enumeration the review's reference needs.
+
+**Since written:** the six test findings (M-12 … M-17) are fixed, each proved by deleting every
+clause of the guard it covers and watching the test die. M-19 and M-20 were found during that
+work and are recorded rather than removed - they are correct, cheap, and several would become
+load-bearing again if a neighbouring check were relaxed.
+
+The remaining dead-clause findings are cosmetic and touch hardening guards, so each needs its
+own judgement about whether removing a clause is worth the diff. M-09 and M-10 are documentation
+and mine; M-10 in particular must not be "fixed" by widening the comparison, which would change
+a hardening guard's behaviour rather than clean it.
