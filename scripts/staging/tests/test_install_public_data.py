@@ -102,7 +102,7 @@ class PublicInstallTests(unittest.TestCase):
         for setting in ('--max-pools 64','--max-steps 1','--max-seconds 50','--max-rpc-calls 2048','--max-header-calls 1000'):
             self.assertIn(setting,queue)
         self.assertIn('TimeoutStartSec=65',queue)
-        self.assertIn('OnUnitInactiveSec=15s',units['domino-queue-worker.timer.d/90-public-data.conf'])
+        self.assertIn('OnUnitInactiveSec=60s',units['domino-queue-worker.timer.d/90-public-data.conf'])
 
 
 if __name__=='__main__':unittest.main()

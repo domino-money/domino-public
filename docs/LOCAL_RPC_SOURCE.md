@@ -132,3 +132,10 @@ connections per IP; sustained capacity was measured at 20 requests/second for th
 qualified workload. This change increases neither concurrency nor existing
 request budgets. VM roles may share one egress IP: the infrastructure limit is
 aggregate, not an allocation per process. A local node is not unlimited capacity.
+
+The persistent history and accounting lanes pause five seconds between ticks.
+Queue/catalogue timers wait sixty seconds after a run finishes. The current
+observation lane keeps its existing cadence. These background intervals reserve
+capacity after historical reads become much faster on the local node; the nginx
+limit and per-job budgets remain unchanged. Bursts can still use the bounded
+transport fallback—these intervals are not a global rate-limit guarantee.
