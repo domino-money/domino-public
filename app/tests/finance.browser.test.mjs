@@ -408,7 +408,8 @@ const CHAIN = (() => {
   const calls = { [toFunctionSelector('manager()')]: address(poolManager), [toFunctionSelector('positions()')]: address(positionManager), [toFunctionSelector('stateView()')]: address(stateView),
     [toFunctionSelector('feeRecipient()')]: address(feeRecipient), [toFunctionSelector('assistedFeeBps()')]: encodeAbiParameters([{ type: 'uint16' }], [30]),
     [toFunctionSelector('tariffVersion()')]: encodeAbiParameters([{ type: 'uint64' }], [1n]), [toFunctionSelector('ownerNonce(address)')]: encodeAbiParameters([{ type: 'uint64' }], [1n]),
-    [toFunctionSelector('operation(bytes32)')]: encodeFunctionResult({ abi: operationAbi, functionName: 'operation', result: operation }) };
+    [toFunctionSelector('operation(bytes32)')]: encodeFunctionResult({ abi: operationAbi, functionName: 'operation', result: operation }),
+    [toFunctionSelector('recoveryStarted(bytes32)')]: encodeAbiParameters([{ type: 'bool' }], [false]) };
   return { deployment, code, calls };
 })();
 
@@ -529,6 +530,8 @@ test('the assisted swap quotes the amount the owner types for a signed-in wallet
     // An operation chosen from the list quotes its own pair; typing another Operation ID leaves that pair behind, so the quote is never for it.
     const asked = async (count) => { for (const end = Date.now() + 30_000; swaps().length < count;) { assert.ok(Date.now() < end, `waiting for swap quote ${count}`); await s.page.waitForTimeout(50); } };
     await advanced.getByRole('button', { name: /^Funded · 0x/ }).click();
+    assert.equal(await advanced.getByRole('button', { name: 'Review token 0 refund', exact: true }).isEnabled(), true);
+    assert.equal(await advanced.getByRole('button', { name: 'Review token 1 refund', exact: true }).isEnabled(), false);
     await asked(4);
     await quoteIs('current');
     assert.deepEqual([swaps().at(-1).body.tokenIn, swaps().at(-1).body.tokenOut], OPERATION_PAIR, 'the chosen operation’s pair');
@@ -563,6 +566,19 @@ test('the assisted swap quotes the amount the owner types for a signed-in wallet
     assert.equal(await swap.getAttribute('open'), null, 'back folded');
     await s.page.waitForTimeout(1_500);
     assert.deepEqual([swaps().length, await quote.getAttribute('data-swap-preview'), await quote.getAttribute('data-swap-preview-reason')], [before, 'off', 'not_open'], 'a folded swap asks for nothing');
+
+    // The independently read recovery phase disables economic actions in the UI,
+    // while leaving the remaining currency's owner refund available.
+    CHAIN.calls[toFunctionSelector('recoveryStarted(bytes32)')] = encodeAbiParameters([{ type: 'bool' }], [true]);
+    try {
+      await readOperations('Deployment verified through your wallet. Choose an existing operation or review new funding.');
+      await advanced.getByRole('button', { name: /^Recovering · 0x/ }).click();
+      assert.equal(await advanced.locator('details[data-assisted-swap]').count(), 0);
+      assert.equal(await advanced.getByText('Mint or create a new pool', { exact: true }).count(), 0);
+      assert.equal(await advanced.getByRole('button', { name: 'Review token 0 refund', exact: true }).isEnabled(), true);
+    } finally {
+      CHAIN.calls[toFunctionSelector('recoveryStarted(bytes32)')] = encodeAbiParameters([{ type: 'bool' }], [false]);
+    }
 
     const text = await advanced.innerText();
     assert.doesNotMatch(text, FORBIDDEN);

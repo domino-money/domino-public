@@ -1,0 +1,142 @@
+[
+  {
+    "suite": "test/DominoCompoundHelper.t.sol",
+    "status": 0,
+    "passed": 11,
+    "failed": 0,
+    "skipped": 0
+  },
+  {
+    "suite": "test/DominoL2Block.t.sol",
+    "status": 0,
+    "passed": 7,
+    "failed": 0,
+    "skipped": 0
+  },
+  {
+    "suite": "test/DominoPriceGuardV4.t.sol",
+    "status": 0,
+    "passed": 16,
+    "failed": 0,
+    "skipped": 0
+  },
+  {
+    "suite": "test/DominoRoutingArithmetic.t.sol",
+    "status": 0,
+    "passed": 9,
+    "failed": 0,
+    "skipped": 0
+  },
+  {
+    "suite": "test/DominoVaultFactoryV4.t.sol",
+    "status": 0,
+    "passed": 5,
+    "failed": 0,
+    "skipped": 0
+  },
+  {
+    "suite": "test/DominoVaultFactoryV4Creation.t.sol",
+    "status": 0,
+    "passed": 30,
+    "failed": 0,
+    "skipped": 0
+  },
+  {
+    "suite": "test/DominoVaultV4Architecture.t.sol",
+    "status": 0,
+    "passed": 7,
+    "failed": 0,
+    "skipped": 0
+  },
+  {
+    "suite": "test/DominoVaultV4Custody.t.sol",
+    "status": 0,
+    "passed": 67,
+    "failed": 0,
+    "skipped": 0
+  },
+  {
+    "suite": "test/DominoVaultV4Invariants.t.sol",
+    "status": 0,
+    "passed": 6,
+    "failed": 0,
+    "skipped": 0
+  },
+  {
+    "suite": "test/ExecutionEncoding.t.sol",
+    "status": 0,
+    "passed": 13,
+    "failed": 0,
+    "skipped": 0
+  },
+  {
+    "suite": "test/FeeAccounting.t.sol",
+    "status": 0,
+    "passed": 9,
+    "failed": 0,
+    "skipped": 0
+  },
+  {
+    "suite": "test/PolicyValidation.t.sol",
+    "status": 0,
+    "passed": 20,
+    "failed": 0,
+    "skipped": 0
+  },
+  {
+    "suite": "test/audit_anchor/AnchorExecutionEvidence.t.sol",
+    "status": 0,
+    "passed": 1,
+    "failed": 0,
+    "skipped": 0
+  },
+  {
+    "suite": "test/audit_custody/SetupRefundIsolation.t.sol",
+    "status": 0,
+    "passed": 3,
+    "failed": 0,
+    "skipped": 0
+  },
+  {
+    "suite": "test/audit_engine/EngineFeeConservationAudit.t.sol",
+    "status": 0,
+    "passed": 4,
+    "failed": 0,
+    "skipped": 0
+  },
+  {
+    "suite": "test/reference/OfficialDominoExecutionV4.t.sol",
+    "status": 0,
+    "passed": 20,
+    "failed": 0,
+    "skipped": 0
+  },
+  {
+    "suite": "test/reference/OfficialV4Compound.t.sol",
+    "status": 0,
+    "passed": 5,
+    "failed": 0,
+    "skipped": 0
+  },
+  {
+    "suite": "test/setup/DominoSetup.t.sol",
+    "status": 0,
+    "passed": 9,
+    "failed": 0,
+    "skipped": 0
+  },
+  {
+    "suite": "test/setup/OwnerReturnData.t.sol",
+    "status": 0,
+    "passed": 3,
+    "failed": 0,
+    "skipped": 0
+  },
+  {
+    "suite": "test/setup/SetupRecovery.t.sol",
+    "status": 0,
+    "passed": 11,
+    "failed": 0,
+    "skipped": 0
+  }
+]

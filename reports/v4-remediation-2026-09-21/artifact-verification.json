@@ -1,0 +1,212 @@
+{
+  "sourceFreeze": "aaf33947e7aeccf902b311c6d2282a742a929c2b",
+  "buildCheckout": "d1b2c742caed92f4e4f0945cc2c939e9455e8266",
+  "sources": [
+    {
+      "file": "contracts/src/DominoExecutionEngineV4.sol",
+      "keccak256": "0x1b2b66cf0b1674215d44ad1bd6da83bea7941c98304fa7b25f26a59710902cd6"
+    },
+    {
+      "file": "contracts/src/DominoExecutionTypes.sol",
+      "keccak256": "0xaf7e4b02fb78cb2722df651934c67cdfebb66b38a6bdce3cdc01e4177c741043"
+    },
+    {
+      "file": "contracts/src/DominoL2Block.sol",
+      "keccak256": "0x3d2e405e3d9937090fb7ec69c222b2b02d2b57131a440dbc22b7a446bc339ebc"
+    },
+    {
+      "file": "contracts/src/DominoPriceGuardV4.sol",
+      "keccak256": "0x4c10629a5b17e3d7b46045b37d8e3874e017a4805989765080939461d5856448"
+    },
+    {
+      "file": "contracts/src/DominoRoutingHelperV4.sol",
+      "keccak256": "0x51284151db70ecdb08d6b7b00b179dda312fb66830971e7f7ced5f925bdb5916"
+    },
+    {
+      "file": "contracts/src/DominoSetup.sol",
+      "keccak256": "0xea86e28105a26a2d08b7cf496df0c3c6b57aa5ab4ffe2b980dc89e9a5f44d4a5"
+    },
+    {
+      "file": "contracts/src/DominoVaultFactoryV4.sol",
+      "keccak256": "0x57bf7056f70e2983b4a1738a0422404d1bcf5e6fe498b2d76c600e5f6eadcd59"
+    },
+    {
+      "file": "contracts/src/DominoVaultReadHelper.sol",
+      "keccak256": "0xc3fd766500e29b77eb7d4499b4cc3665a5a5e991072d5356410be304dc616148"
+    },
+    {
+      "file": "contracts/src/DominoVaultTypes.sol",
+      "keccak256": "0xad1cce89214b131c2d3bb23c9994539f034bcfb9df203608da18ee7d9e8eef29"
+    },
+    {
+      "file": "contracts/src/DominoVaultV4.sol",
+      "keccak256": "0x3eaf6d08ff896076e918bdc677e31d92a18dc7d1425e313ec03caa120bb8def4"
+    },
+    {
+      "file": "contracts/src/FeeAccounting.sol",
+      "keccak256": "0xd6c0db903eb40345832f96a9349ddb25c7fbc9470340f5b96571352298f3f2d1"
+    },
+    {
+      "file": "contracts/src/IDominoVaultDraft.sol",
+      "keccak256": "0xc0826e1ba2248dd50be3cf622494c24eb78f75c0acda54a83f43840ee0cbc055"
+    },
+    {
+      "file": "contracts/src/PolicyValidation.sol",
+      "keccak256": "0xf965d30aeb959bf2400eac23a36be31cd998ff121d2209a62bb1e8a1502d033d"
+    }
+  ],
+  "artifacts": [
+    {
+      "component": "factory",
+      "runtimeBytes": 3502,
+      "runtimeTemplateHash": "0xd5d36d4ea4be9009f451fdd5801b19d4ed8b75b1acafd786f6102eff71246f55",
+      "creationCodeHash": "0x4ccdc92255eb09b94849d961cf17dd849019447cc012f6e43d0b816778258d25",
+      "artifactSha256": "8546f1224bf789327d40ed122f66e63384a550ab28109db2c2ee7112811bb75d"
+    },
+    {
+      "component": "readHelper",
+      "runtimeBytes": 6858,
+      "runtimeTemplateHash": "0x246fe0cd81ae92cd3a0758389fb3de4302bca6050fbd866941a53c8c24cbcc36",
+      "creationCodeHash": "0x47cc8adcb884f5c6086cbdaabfa05f112a7ac5d341e0c437f7756b051a1f8cad",
+      "artifactSha256": "3cc889d649d8d9ab7aeab7f87242f7ea12de027226743d3adeea795fd7f66fd4"
+    },
+    {
+      "component": "routing",
+      "runtimeBytes": 13873,
+      "runtimeTemplateHash": "0xd3c0d439931fd9ea2bb54016231eab44ba99196b82b58d6076322a40facee9b8",
+      "creationCodeHash": "0xaed9f6915247adb3910e99e38b763e6ccf02026d6decdc1d6b22231c9de36bf8",
+      "artifactSha256": "87d0d548d3305d885cd48a018f3c4d9f8b21ffc6314fae014903c60d01ecbd03"
+    },
+    {
+      "component": "priceGuard",
+      "runtimeBytes": 3516,
+      "runtimeTemplateHash": "0x6a5d9ceca64f252ab246a9b8e74c80eb20d149b3e8e4f6cbcddbb0cff0112885",
+      "creationCodeHash": "0x7370444dad7bf5d11dd1d273e9aa4b7439379ecd4f21ff07a57325763df9404a",
+      "artifactSha256": "0585ad05265a0922ef5a5fe99bf1d4032e94168d2ed9a55b3b23caf15dba6917"
+    },
+    {
+      "component": "engine",
+      "runtimeBytes": 21899,
+      "runtimeTemplateHash": "0x22e3b9f9fe254f59aa969e6bf33b1e69655b8bd376fd8e7a8d4207d1ad542416",
+      "creationCodeHash": "0xcd5cccb8fd7702aeb6d37d1c410b563b072e626e2ac8a6b0ab5c7a283bd06701",
+      "artifactSha256": "9902a6421740f165e215be7bfa614c0a26123c3d3ba0ed9b19cab713d65e298c"
+    },
+    {
+      "component": "implementation",
+      "runtimeBytes": 23625,
+      "runtimeTemplateHash": "0x8c4cfc9d27602ec81d64e0d5e2d0c186fef65c69b45579ff81babb58bc01fc09",
+      "creationCodeHash": "0x99cb69a89af88836410bb67e6e0cbbaa265251eda22569cd4540ecd4fd54b797",
+      "artifactSha256": "fa895a676f8139ae4aeba3f93a8a6e5f309ffac02ef7a9dfc9859b6b12d4c24f"
+    },
+    {
+      "component": "setup",
+      "runtimeBytes": 13239,
+      "runtimeTemplateHash": "0x6060c68a9f15c5c22949ac060554bed17656290f707a0dbb16061d8a015812a6",
+      "creationCodeHash": "0xa3e7d5da7c2d19567a80e8475073036804586bb2bc43624e68998beb5d5b69e5",
+      "artifactSha256": "3b7e6c999c6e43e371de206b60d204413d2db7f0f15a9c74fe056682345de346"
+    }
+  ],
+  "sizeGate": {
+    "version": 1,
+    "ok": true,
+    "profile": {
+      "compiler": "0.8.26+commit.8a97fa7a",
+      "evmVersion": "cancun",
+      "optimizerRuns": 200,
+      "viaIR": true,
+      "bytecodeHash": "none"
+    },
+    "limits": {
+      "runtimeBytes": 24576,
+      "initcodeBytes": 49152,
+      "vaultReserveBytes": 313,
+      "engineReserveBytes": 2048
+    },
+    "contracts": [
+      {
+        "name": "DominoVaultReadHelper",
+        "ok": true,
+        "runtimeBytes": 6858,
+        "runtimeHeadroomBytes": 17718,
+        "requiredRuntimeReserveBytes": 0,
+        "creationBytes": 7066,
+        "constructorArgumentsBytes": 64,
+        "initcodeBytes": 7130,
+        "initcodeHeadroomBytes": 42022,
+        "issues": []
+      },
+      {
+        "name": "DominoVaultV4",
+        "ok": true,
+        "runtimeBytes": 23625,
+        "runtimeHeadroomBytes": 951,
+        "requiredRuntimeReserveBytes": 313,
+        "creationBytes": 24884,
+        "constructorArgumentsBytes": 224,
+        "initcodeBytes": 25108,
+        "initcodeHeadroomBytes": 24044,
+        "issues": []
+      },
+      {
+        "name": "DominoVaultFactoryV4",
+        "ok": true,
+        "runtimeBytes": 3502,
+        "runtimeHeadroomBytes": 21074,
+        "requiredRuntimeReserveBytes": 0,
+        "creationBytes": 4239,
+        "constructorArgumentsBytes": 128,
+        "initcodeBytes": 4367,
+        "initcodeHeadroomBytes": 44785,
+        "issues": []
+      },
+      {
+        "name": "DominoExecutionEngineV4",
+        "ok": true,
+        "runtimeBytes": 21899,
+        "runtimeHeadroomBytes": 2677,
+        "requiredRuntimeReserveBytes": 2048,
+        "creationBytes": 22589,
+        "constructorArgumentsBytes": 128,
+        "initcodeBytes": 22717,
+        "initcodeHeadroomBytes": 26435,
+        "issues": []
+      },
+      {
+        "name": "DominoRoutingHelperV4",
+        "ok": true,
+        "runtimeBytes": 13873,
+        "runtimeHeadroomBytes": 10703,
+        "requiredRuntimeReserveBytes": 0,
+        "creationBytes": 13899,
+        "constructorArgumentsBytes": 0,
+        "initcodeBytes": 13899,
+        "initcodeHeadroomBytes": 35253,
+        "issues": []
+      },
+      {
+        "name": "DominoPriceGuardV4",
+        "ok": true,
+        "runtimeBytes": 3516,
+        "runtimeHeadroomBytes": 21060,
+        "requiredRuntimeReserveBytes": 0,
+        "creationBytes": 3907,
+        "constructorArgumentsBytes": 128,
+        "initcodeBytes": 4035,
+        "initcodeHeadroomBytes": 45117,
+        "issues": []
+      },
+      {
+        "name": "DominoSetup",
+        "ok": true,
+        "runtimeBytes": 13239,
+        "runtimeHeadroomBytes": 11337,
+        "requiredRuntimeReserveBytes": 0,
+        "creationBytes": 14119,
+        "constructorArgumentsBytes": 192,
+        "initcodeBytes": 14311,
+        "initcodeHeadroomBytes": 34841,
+        "issues": []
+      }
+    ]
+  }
+}

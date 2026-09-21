@@ -10,10 +10,14 @@ plainly as capabilities; where a claim rests on a measurement, the measurement i
 
 ## 1. Freeze
 
-**Sources frozen at `ec2e9aa`** — the last commit that changed anything under `contracts/src`.
-The two commits after it that touch `contracts/` add tests and a committed gas baseline
-(`672a77c`), and nothing since has touched the contracts at all. Review either commit; the
-deployed bytecode is identical.
+**Corrected production-source freeze: `aaf33947e7aeccf902b311c6d2282a742a929c2b`.**
+This supersedes the original `ec2e9aa` freeze after the executed audit found a
+Nitro block-domain incompatibility and coupled Setup refunds. The corrected
+contracts use the qualified ArbSys L2 number/hash source and provide independent
+owner currency recovery. See [remediation evidence](v4-remediation-2026-09-21/)
+and the [historical audit findings](V4_AUDIT_EXECUTION_2026-09-21.md).
+The deployment package must name the full final checkout SHA; its artifact
+loader verifies every source hash against that checkout.
 
 Build profile, enforced on every artifact by `scripts/check-contract-size.mjs` (it refuses an
 artifact built any other way, which is how a stale `out/` is caught):
@@ -33,41 +37,46 @@ outside the immutable slots:
 | # | artifact | runtime | runtime keccak256 |
 | ---: | --- | ---: | --- |
 | 1 | `DominoVaultFactoryV4` | 3,502 B | `0xd5d36d4ea4be9009f451fdd5801b19d4ed8b75b1acafd786f6102eff71246f55` |
-| 2 | `DominoVaultReadHelper` | 6,536 B | `0x03f19c14b1b159cb302e7c37fb964488f901ded6f0e3a10a0afd8d0ed9f7e6f8` |
+| 2 | `DominoVaultReadHelper` | 6,858 B | `0x246fe0cd81ae92cd3a0758389fb3de4302bca6050fbd866941a53c8c24cbcc36` |
 | 3 | `DominoRoutingHelperV4` | 13,873 B | `0xd3c0d439931fd9ea2bb54016231eab44ba99196b82b58d6076322a40facee9b8` |
-| 4 | `DominoPriceGuardV4` | 3,187 B | `0xdcde79a86d5efa76d4ede419d9c79e294b366aab741e000b6aa2d3f36d9f0a5c` |
+| 4 | `DominoPriceGuardV4` | 3,516 B | `0x6a5d9ceca64f252ab246a9b8e74c80eb20d149b3e8e4f6cbcddbb0cff0112885` |
 | 5 | `DominoExecutionEngineV4` | 21,899 B | `0x22e3b9f9fe254f59aa969e6bf33b1e69655b8bd376fd8e7a8d4207d1ad542416` |
-| 6 | `DominoVaultV4` (clone implementation) | 23,625 B | `0x8c4cfc9d27602ec81d64e0d5e2d0c186fef65c69b45579ff81babb58bc01fc09` |
-| 7 | `DominoSetup` | 11,898 B | `0x42a55c64277411bcfd3e96da1a71a398ee0cb39eadd0687d664404e377ef33b7` |
+| 6 | `DominoVaultV4 (clone implementation)` | 23,625 B | `0x8c4cfc9d27602ec81d64e0d5e2d0c186fef65c69b45579ff81babb58bc01fc09` |
+| 7 | `DominoSetup` | 13,239 B | `0x6060c68a9f15c5c22949ac060554bed17656290f707a0dbb16061d8a015812a6` |
 
 An eighth transaction, `factory.finalizeImplementation(implementation)`, binds #6 to #1 once and
 for ever. User vaults are EIP-1167 clones of #6; the clone's runtime is fixed bytecode and its
 hash is recomputed independently by the release verifier.
 
-Rebuild and confirm:
+Rebuild each suite separately and confirm (the loop in §6 avoids a whole-tree compiler memory spike):
 
 ```bash
-npm ci && npm run test:contracts && node scripts/check-contract-size.mjs
+npm ci
+# Run the sequential suite loop in §6, then:
+node scripts/check-contract-size.mjs
 ```
 
 **Pinned chain dependencies, not deployed by this release** (Robinhood Chain, chain id 4663;
 `backend/discovery.py` and `scripts/prepare-financial-release.mjs` hold them, and the verifier
-checks their runtime hashes and their links to the pool manager at the finalized block):
+compares their runtime hashes with explicit `dependencyCodeHashes` inputs and checks their links to the pool manager at the finalized block):
 PoolManager `0x8366a39cc670b4001a1121b8f6a443a643e40951`, PositionManager
 `0x58daec3116aae6d93017baaea7749052e8a04fa7`, StateView
 `0xf3334192d15450cdd385c8b70e03f9a6bd9e673b`.
 
 ## 2. Scope
 
-**In scope — 12 files under `contracts/src`, 2,536 lines**: the seven artifacts above,
+**In scope — 13 files under `contracts/src`, 2,630 lines**: the seven artifacts above,
 plus `DominoVaultTypes.sol`, `DominoExecutionTypes.sol`, `IDominoVaultDraft.sol` (the interface
 the vault takes its `Policy` struct and events from), `PolicyValidation.sol` and
-`FeeAccounting.sol`. `DominoRoutingHelperV4` is the only production source that imports the
+`FeeAccounting.sol`, plus the new `DominoL2Block.sol`. `DominoRoutingHelperV4` is the only production source that imports the
 vendored Uniswap tree, for `FullMath` and `TickMath`.
 
 **Vendored, in scope as a dependency but not as authored code**: Uniswap v4 core and periphery,
-solmate, permit2 and OpenZeppelin under `contracts/test/reference/official-v4/`. They are the
-real sources, used by the reference tests and by the fork qualification, not re-implementations.
+solmate, permit2 and OpenZeppelin under `contracts/test/reference/official-v4/`. They are authentic
+upstream sources used by local reference tests, but are not byte-for-byte the
+verified deployed source builds. Forks execute the actual upstream chain code.
+The [independent runtime qualification](v4-remediation-2026-09-21/DEPENDENCY_QUALIFICATION.md)
+records the exact expected deployed dependency hashes and source-provenance limits.
 
 **Out of scope, and why.** The backend (planner, signer, durable executor, read path), the
 frontend, the Cloudflare workers and the `api-contracts` wire packages: a different review.
@@ -89,43 +98,41 @@ Six roles. None of them can take a position or a reserve out of a vault except t
 | **deployer** | deploys the factory | call `finalizeImplementation` exactly once | anything afterwards: there is no upgrade, no second finalization, no admin key |
 | **owner** | vault creation, immutably bound to one address | policy and execution limits, set and revoke the operator, pause and resume, re-arm the root, withdraw child positions, withdraw fee reserves, recover untracked currency and unmanaged NFTs | nothing is withheld from the owner; every exit works with the engine, the operator, the publisher and even the read helper unavailable (`DominoVaultV4Architecture.t.sol:281`) |
 | **operator** | set by the owner, revocable at any time | `execute` one price-anchored plan at a time, and `pause` | resume, change policy or limits, withdraw anything, move a position |
-| **price publisher** | constructor argument, rotatable (below) | publish one observation per action, and revoke its own | publish outside the deviation band around the pool's live reading; nothing else on any vault |
-| **price guard guardian** | constructor argument, immutable | propose the next publisher (which must accept), and revoke any observation | publish anything, widen the band, or touch a vault |
+| **price publisher** | constructor argument, rotatable (below) | publish reusable pool observations and revoke observations | publish outside the deviation band around the pool's live reading; nothing else on any vault |
+| **price guard guardian** | constructor argument, immutable | propose the next publisher (which must accept), and revoke any observation | widen the band or directly control a vault; it can gain publishing authority through rotation |
 | **service fee recipient** | constructor argument, immutable | receive the service fee the policy sets (`FeeAccounting.MAX_SERVICE_FEE_BPS` caps it at 200 bps) | initiate anything |
 
 **What a compromised key costs.**
 
-- *Operator.* Bounded by the contracts, and the bound was measured rather than argued
-  ([EXECUTION_FORK_SANDWICH](EXECUTION_FORK_SANDWICH_2026-09-20.md)). Every action anchors to a
-  published observation; the engine refuses a spot that has moved past `maxPriceImpactBps` since
-  that observation; the plan states a ceiling on what one add may cost. On a real pool, every
-  post-observation manipulation at or beyond the limit was refused. The residual is a
-  pre-observation sandwich, where an honest publisher reads a pool the attacker has already
-  moved: it executed, and in every measured case the vault ended better off, because the
-  attacker's own volume pays the pool's fee and the vault's position earns its share. The
-  attacker paid $2.59 to move 0.5% and $92.42 to move 20% on that pool's depth. The channel that
-  does cost the vault is selling fees at a moved anchor: about **$500 of fees would have to be
-  sold in one compound for the manipulation to break even**, at any move size. That number
-  scales with pool depth, and it is the one to weigh against how large a fee reserve a vault is
-  allowed to accumulate before compounding.
+- *Operator.* Every action needs a published observation and remains subject to owner
+  limits and swap slippage checks. The plan's add ceiling constrains that submitted plan;
+  it is supplied by the operator, so it is not an independent bound against the same
+  operator choosing a broader ceiling. Pre-observation manipulation remains possible.
+  The [corrected fork report](EXECUTION_FORK_SANDWICH_2026-09-20.md) compares each
+  recipe with its corresponding honest control and marks absent swap outputs unavailable.
+  Point samples do not establish a $500 per-vault safety threshold. Multiple vaults can
+  sell against one moved pool before restoration, sharing the attacker's manipulation
+  cost. Evaluate aggregate exposure across that pool/window; no on-chain aggregate
+  exposure cap or universal economic safety bound is demonstrated here.
 - *Publisher.* A liveness dependency: every action needs an observation, so a silent publisher
   stops automation. Owner exits are unaffected. A stolen key cannot publish a price outside the
   band around the pool's own reading, and the guardian can revoke an observation without the
   publisher key. This is the deliberate residual: **one live publisher, no threshold.**
-- *Guardian.* Can hand the publisher role to an address of its choosing — but that address must
-  accept, and a new publisher is not admitted anywhere else until the sequence profiles are
-  re-issued naming it (`backend/execution_v4.py` refuses to sign while `publisher()` differs
-  from the admitted address). It cannot publish, and it cannot reach a vault.
+- *Guardian.* Can nominate itself or another address it controls as publisher, then
+  accept as that address. It has indirect publishing authority, no direct vault control
+  and no power to widen the immutable band. The honest backend requires publisher
+  profile re-admission after rotation; this does not restrain a compromised operator
+  submitting transactions directly.
 - *Owner.* Total, by design. The owner is the position's owner.
 
-**Rotating the publisher** is a two-key handshake needing no redeployment:
+**Rotating the publisher** is a two-call acceptance procedure needing no redeployment:
 `guardian.proposePublisher(next)`, then `next.acceptPublisher()`. Observations the old key
-published stay readable until they expire — at most 255 blocks. The procedure and the
+published remain readable until revoked or expired — at most 255 L2 blocks. The old publisher need not approve the change, and independent key custody is not enforced. The procedure and the
 re-admission that must follow are in [FINANCIAL_RELEASE](../docs/FINANCIAL_RELEASE.md).
 
-**Independence, enforced by the release tooling before any transaction is prepared**: operator ≠
+**Initial address separation, enforced by the release tooling before transaction preparation**: operator ≠
 publisher; guardian ≠ publisher and ≠ operator; none of them is the fee recipient or any
-deployed component; operator, publisher and guardian must be externally owned accounts at the
+deployed component. The verifier requires no runtime code for deployer, operator, publisher and guardian at the
 verified finalized block.
 
 ## 4. Known limitations
@@ -153,6 +160,21 @@ Stated here so nobody has to find them.
    of any pool is not measured.
 7. **The service around the contracts is unproven.** Signer, executor, planner and read path
    have never run against a real deployment.
+
+**Gas funding.** The operator's previously funded native ETH pays automated
+execution gas; the publisher separately pays for observations. The owner pays
+setup and manual transactions. The simulator grants synthetic ETH using
+`anvil_setBalance`. The 2% cut on consumed earned fees goes to the immutable fee
+recipient in the consumed currency. No automatic sale or top-up replenishes the
+operator; an insufficient native balance makes the signer refuse execution.
+
+**Owner recovery.** Setup now exposes `recoverCurrency` and `recoveryStarted`
+without changing the existing operation tuple. A successful partial recovery
+permanently disables swap/mint, preserves other outstanding claims and charges
+no Domino exit fee. Restricted-token transfers may remain blocked by that issuer;
+the healthy counterasset can be recovered independently. Recovery enforces the
+exact escrow debit and records actual owner balance observations, including
+recipient taxes. See [owner recovery](../docs/OWNER_SETUP_AND_RECOVERY.md).
 
 ## 5. Index of findings
 
@@ -191,7 +213,7 @@ found while closing the others: a test of mine that claimed a clause it could no
 
 ## 6. Reproducing the evidence
 
-**The suites.** 15 suites, 228 tests. A single Forge invocation over the whole tree exhausts
+**The suites.** **20 suites, 256 tests passed, none failed or skipped.** Results are recorded in [suite-results.json](v4-remediation-2026-09-21/suite-results.json). The original audit had 15 suites and 228 tests; corrected-source regression suites extend that evidence. A single Forge invocation over the whole tree exhausts
 memory (issue #145), so each suite is run against its own dependency closure, as CI does:
 
 ```bash
@@ -200,9 +222,9 @@ for suite in $(find contracts/test -name '*.t.sol' | sort); do
 done
 ```
 
-**Coverage is asserted by mutation, not by counting tests.** A guard counts as covered when
-deleting it makes a test fail. `scripts/mutate-contracts.mjs` is the tool every claim in the
-reports was produced with, and it is in the repository so the claims can be re-checked:
+**Targeted guard coverage is checked by mutation, not inferred from test counts.** A guard counts as covered when
+deleting it makes a test fail. `scripts/mutate-contracts.mjs` runs the committed targeted batches. The historical
+claims whose inputs are absent cannot be reproduced exactly:
 
 ```bash
 node scripts/mutate-contracts.mjs batch.json   # --head to mutate the last commit instead of the tree
@@ -214,18 +236,24 @@ never touched, because an earlier run left a mutated security guard in the tree 
 full backend run before it was caught. A mutation that does not apply is reported as an error,
 never as a pass. The verdicts are `CAUGHT`, `NOT CAUGHT`, `NOT APPLIED` and `NO BUILD`.
 
-Batches worth re-running: the price guard's 39 clauses (30 caught, 9 recorded redundancies), the
-routing arithmetic's 15 (13 caught, 2 redundancies), and the V4 vault's custody and child paths.
+The historical 39-clause price-guard and 15-clause arithmetic batch JSON inputs
+were not committed and their exact coverage totals were not reproduced. They
+are historical assertions, not current reproducible coverage. The two newly committed batches contain eight named mutations; **8/8 were caught**.
+Their [actual verdicts](v4-remediation-2026-09-21/mutation-results.json) and exact
+[batch inputs](../contracts/mutations/) are committed;
+`NOT APPLIED` and `NO BUILD` never count as caught guards. A passing baseline and
+explicit expected verdicts are required; unexpected results fail the command.
 
 **The fork qualification.** `backend/qualify_execution_fork.py` forks chain 4663 at the head of a
 node, deploys the stack from the built artifacts, gives a synthetic owner a real root position
 in `weth-usdg` through `DominoSetup`, earns it fees against the real pool, and runs one compound
-per scenario from one snapshot. It takes its upstream either from the read gateway or from a
-loopback JSON-RPC port, so no provider credential enters the process or its output:
+per scenario from one snapshot. It accepts the official public RPC with `--public-rpc`, or an explicit qualified
+read gateway/loopback source. Local runs install an ArbSys stand-in and record
+that emulation; only the separate live probe qualifies Nitro block semantics:
 
 ```bash
 backend/.venv/bin/python backend/qualify_execution_fork.py \
-  --source-url http://127.0.0.1:18547 --rounds 40 --moves 50,90,110,500,2000 \
+  --public-rpc --rounds 40 --moves 50,90,110,500,2000 \
   --lifecycle --output /tmp/fork.json
 ```
 

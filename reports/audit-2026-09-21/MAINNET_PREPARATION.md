@@ -1,5 +1,7 @@
 # Preparação do deploy V4 — Robinhood mainnet, 21/09/2026
 
+**Registro histórico.** Este arquivo descreve a preparação anterior às correções. Consulte o [estado atualizado](../v4-remediation-2026-09-21/MAINNET_PREPARATION.md).
+
 **Estado: preparação concluída até os dados disponíveis; versão congelada não está pronta para envio.** A auditoria encontrou incompatibilidade real entre os blocos usados pelos contratos e os blocos da Robinhood. O relatório também reproduz um problema de recuperação no Setup. Nenhuma transação foi assinada ou enviada à mainnet.
 
 ## O que está conferido

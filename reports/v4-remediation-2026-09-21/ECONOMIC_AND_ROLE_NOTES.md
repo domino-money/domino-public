@@ -63,9 +63,11 @@ The mutation runner and its own unit tests are present at
 [`scripts/mutate-contracts.test.mjs`](../../scripts/mutate-contracts.test.mjs).
 The historical reports describe mutation outcomes, including 39 price-guard
 mutations and 15 arithmetic mutations. The exact JSON batches and per-mutation
-raw outputs underlying those historical totals are **not committed** in the
-reviewed tree. A repository search found no JSON record with a `mutations`
-array outside build/dependency output. Tool availability alone does not make
+raw outputs underlying those historical totals were **not committed** in the
+original audited revision `7be7820`. Its repository search found no JSON record
+with a `mutations` array outside build/dependency output. The remediation adds
+two new targeted batches; their [8/8 caught results](mutation-results.json) do
+not recreate the missing historical batches. Tool availability alone does not make
 those exact historical totals reproducible.
 
 Treat those counts as historical assertions, not as freshly reproduced
@@ -74,8 +76,7 @@ precise batch, target revision, passing baseline, and actual verdict output.
 `NOT APPLIED` and `NO BUILD` prove no guard coverage. Source changes require
 new matching mutations; a historical textual mutation that no longer applies
 must not silently count as caught. Passing ordinary tests is separate evidence
-and must not be relabelled mutation coverage. No new mutation pass was run for
-this note.
+and must not be relabelled mutation coverage.
 
 ## Actual gas payers and no automatic asset sale
 

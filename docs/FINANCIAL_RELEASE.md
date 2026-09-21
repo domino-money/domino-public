@@ -30,6 +30,7 @@ hex; integer strings are canonical unsigned decimal strings.
 | maxPriorityFeePerGas | Priority fee cap, decimal wei |
 | maxTotalCostWei | Aggregate gas-cost cap for all eight operations |
 | reserveWei | Additional deployer balance reserved outside the gas-cost cap |
+| dependencyCodeHashes | Object containing independently qualified runtime keccak256 pins for `poolManager`, `positionManager` and `stateView`; each is a nonzero 32-byte lowercase hex hash |
 
 The three existing wallet admissions do not determine any of these roles.
 An operator/price-publisher address identifies a role; generating a project key
@@ -38,8 +39,13 @@ accepts no key field or arbitrary transaction/data/target field.
 
 PoolManager, PositionManager and StateView addresses are fixed to the reviewed
 4663 addresses in `backend/discovery.py`. The runtime hashes of those existing
-dependencies are captured at the verified finalized block and their
-PositionManager/StateView links to PoolManager are checked.
+dependencies must match the explicit `dependencyCodeHashes` inputs at the
+verified finalized block; recording whatever code the RPC returns is insufficient.
+Their PositionManager/StateView links to PoolManager are also checked. The deployer,
+operator, price publisher and guardian must have no runtime code at that block;
+the fee recipient may be a contract wallet. The generator requires operator,
+publisher and guardian to differ from each other and the fee recipient. Distinct
+addresses do not prove independent custody of their keys.
 
 ## Build and prepare
 
@@ -93,7 +99,7 @@ explicitly unqualified in the manifest.
 
 The price guard's publisher is the one role that can change after the eight
 transactions, because every execution depends on its liveness and a key does
-not stay clean forever. Rotation is a two-key handshake and needs no
+not stay clean forever. Rotation is a two-call handshake and needs no
 redeployment: the `priceGuardGuardian` calls `proposePublisher(next)` on the
 deployed `DominoPriceGuardV4`, and `next` calls `acceptPublisher()`. Until it
 accepts, nothing changes; a proposal to a mistyped address hands the role to
@@ -107,8 +113,11 @@ Rotation does not admit the new key anywhere else. The sequence profiles name
 guard differs from the admitted address (`execution_v4.py`), so a rotation is
 followed by re-issuing the profiles with the new publisher, through the same
 verified-release path. The guardian must differ from the operator and from
-the publisher, and it is a cold key: it publishes nothing and cannot widen the
-band.
+the publisher in the initial release inputs. On chain, it can propose itself or
+another address it controls and then accept as that address, gaining publisher
+powers. The handshake prevents accidental assignment to an unaccepted address;
+it does not enforce independent key holders. Keep the guardian outside automated
+services. It cannot widen the immutable band or directly control a vault.
 
 ## Wallet execution and partial recovery
 
@@ -161,8 +170,8 @@ chain/type, exact initcode/calldata, targets, values, gas and fees to the unsign
 requests. It matches each new runtime to the compiled artifact outside its
 immutable slots, then checks every immutable address/hash/tariff getter and the
 one-time factory binding. Constructors are bound by the exact creation
-transactions. Existing dependency code hashes and the final block are captured
-again under a canonical block-hash reference. A final canonicality/expiry check
+transactions. Existing dependency code hashes must equal the package's explicit
+pins under a canonical block-hash reference. A final canonicality/expiry check
 precedes output.
 
 Only this successful result includes `setup` and `sequence` profiles with
@@ -176,6 +185,13 @@ A deployed factory/Setup contract enables owner configuration; it does not
 prove signer funds, a user-created/admitted vault, current route prices or
 financial execution eligibility. The public profiles expire at the original
 absolute timestamp, without renewal by verification.
+
+The operator pays automated execution gas from its own native ETH balance; the
+publisher separately funds observation transactions. Neither the contracts nor
+the signer automatically sells user assets or service-fee revenue to refill those
+balances. The signer refuses execution when its gas budget and balance do not
+qualify. Local fork qualification prefunds test accounts with synthetic ETH;
+this is not operator-funding evidence. See [V4 execution](../contracts/V4_EXECUTION.md).
 
 ## Local qualification
 

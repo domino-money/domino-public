@@ -1,0 +1,335 @@
+{
+  "schemaVersion": 2,
+  "kind": "domino-v4-mainnet-preflight",
+  "expectedChainId": 4663,
+  "checkedAtUTC": "2026-09-21T15:27:47.788Z",
+  "readOnly": true,
+  "deploymentReady": false,
+  "executionAvailable": false,
+  "blockArtifacts": {
+    "status": "pass",
+    "library": {
+      "keccak256": "0x3d2e405e3d9937090fb7ec69c222b2b02d2b57131a440dbc22b7a446bc339ebc",
+      "sha256": "3094ee5cb132305a0f9b3b556e82f86bcc6b05c010fa4853b3185254a3046254"
+    },
+    "components": {
+      "probe": {
+        "artifactSha256": "25bba7aff84516004aa4747898565860febf8d2f589dedd3266030cbd78d43e3",
+        "compilationTarget": "test/DominoL2Block.t.sol:NitroBlockProbe",
+        "creationCodeHash": "0xfdbc90485e9aecf43168b46228ac97ae27b206cd75c993c0a0ed7a5a455ee1f4",
+        "runtimeTemplateHash": "0x19735bdf4d52c6f889cfd85f70fad899c9f4372c41ff8aa853bf043831e21b36",
+        "sourceHashes": {
+          "src/DominoL2Block.sol": {
+            "keccak256": "0x3d2e405e3d9937090fb7ec69c222b2b02d2b57131a440dbc22b7a446bc339ebc",
+            "sha256": "3094ee5cb132305a0f9b3b556e82f86bcc6b05c010fa4853b3185254a3046254"
+          },
+          "src/DominoPriceGuardV4.sol": {
+            "keccak256": "0x4c10629a5b17e3d7b46045b37d8e3874e017a4805989765080939461d5856448",
+            "sha256": "8907d17d29e3dc00028a291a3b54945f53615ac6456d9437845aa87fbf70534b"
+          },
+          "src/DominoVaultReadHelper.sol": {
+            "keccak256": "0xc3fd766500e29b77eb7d4499b4cc3665a5a5e991072d5356410be304dc616148",
+            "sha256": "4f7264ff2f3c31ba2858bf0eeac3134ffc59d846eab87c9a702cd16a35b63282"
+          },
+          "src/DominoVaultTypes.sol": {
+            "keccak256": "0xad1cce89214b131c2d3bb23c9994539f034bcfb9df203608da18ee7d9e8eef29",
+            "sha256": "2b44143b3684c40ab812c3a55a33980c2520dea1e1d2900a4a5d978343ef5e1b"
+          },
+          "src/IDominoVaultDraft.sol": {
+            "keccak256": "0xc0826e1ba2248dd50be3cf622494c24eb78f75c0acda54a83f43840ee0cbc055",
+            "sha256": "d5529a7162ef7c096a92591d2f483be8a40c3ab556abca0d8ab6bc3fbb6fe951"
+          },
+          "test/DominoL2Block.t.sol": {
+            "keccak256": "0x88062c8f72e210022f126d6851348a48b8a256968210659e1f71446967e493d3",
+            "sha256": "c69a0dd1c446f4d2ed7faa7f583e81233d123854041736191bae803f9bf58f20"
+          },
+          "test/shared/NitroTestSetup.sol": {
+            "keccak256": "0x68688bf61d6048e962cb9a94d14c405300c4dcb583e3ab5d1ae22fe91b0b3038",
+            "sha256": "3fa740831a2220391da19f4482ef11de4f6fa9bace915655ab2760560bd12bbf"
+          }
+        }
+      },
+      "priceGuard": {
+        "artifactSha256": "0585ad05265a0922ef5a5fe99bf1d4032e94168d2ed9a55b3b23caf15dba6917",
+        "compilationTarget": "src/DominoPriceGuardV4.sol:DominoPriceGuardV4",
+        "creationCodeHash": "0x7370444dad7bf5d11dd1d273e9aa4b7439379ecd4f21ff07a57325763df9404a",
+        "runtimeTemplateHash": "0x6a5d9ceca64f252ab246a9b8e74c80eb20d149b3e8e4f6cbcddbb0cff0112885",
+        "sourceHashes": {
+          "src/DominoL2Block.sol": {
+            "keccak256": "0x3d2e405e3d9937090fb7ec69c222b2b02d2b57131a440dbc22b7a446bc339ebc",
+            "sha256": "3094ee5cb132305a0f9b3b556e82f86bcc6b05c010fa4853b3185254a3046254"
+          },
+          "src/DominoPriceGuardV4.sol": {
+            "keccak256": "0x4c10629a5b17e3d7b46045b37d8e3874e017a4805989765080939461d5856448",
+            "sha256": "8907d17d29e3dc00028a291a3b54945f53615ac6456d9437845aa87fbf70534b"
+          }
+        }
+      },
+      "readHelper": {
+        "artifactSha256": "3cc889d649d8d9ab7aeab7f87242f7ea12de027226743d3adeea795fd7f66fd4",
+        "compilationTarget": "src/DominoVaultReadHelper.sol:DominoVaultReadHelper",
+        "creationCodeHash": "0x47cc8adcb884f5c6086cbdaabfa05f112a7ac5d341e0c437f7756b051a1f8cad",
+        "runtimeTemplateHash": "0x246fe0cd81ae92cd3a0758389fb3de4302bca6050fbd866941a53c8c24cbcc36",
+        "sourceHashes": {
+          "src/DominoL2Block.sol": {
+            "keccak256": "0x3d2e405e3d9937090fb7ec69c222b2b02d2b57131a440dbc22b7a446bc339ebc",
+            "sha256": "3094ee5cb132305a0f9b3b556e82f86bcc6b05c010fa4853b3185254a3046254"
+          },
+          "src/DominoVaultReadHelper.sol": {
+            "keccak256": "0xc3fd766500e29b77eb7d4499b4cc3665a5a5e991072d5356410be304dc616148",
+            "sha256": "4f7264ff2f3c31ba2858bf0eeac3134ffc59d846eab87c9a702cd16a35b63282"
+          },
+          "src/DominoVaultTypes.sol": {
+            "keccak256": "0xad1cce89214b131c2d3bb23c9994539f034bcfb9df203608da18ee7d9e8eef29",
+            "sha256": "2b44143b3684c40ab812c3a55a33980c2520dea1e1d2900a4a5d978343ef5e1b"
+          },
+          "src/IDominoVaultDraft.sol": {
+            "keccak256": "0xc0826e1ba2248dd50be3cf622494c24eb78f75c0acda54a83f43840ee0cbc055",
+            "sha256": "d5529a7162ef7c096a92591d2f483be8a40c3ab556abca0d8ab6bc3fbb6fe951"
+          }
+        }
+      }
+    }
+  },
+  "chain": {
+    "status": "pass",
+    "value": "4663"
+  },
+  "blocks": {
+    "latest": {
+      "status": "pass",
+      "value": {
+        "number": "68904226",
+        "hash": "0x15bbf7a537c12c6a41de7230f9baa15ae917751c739ff3ba5816fd8ddc1dfc33",
+        "parentHash": "0xb0d66c2ac2430abef360bd66653d851f1ab16be5566698ec9dad34f946e5e0bf",
+        "timestamp": "1790004470",
+        "l1BlockNumber": "26026774"
+      }
+    },
+    "finalized": {
+      "status": "pass",
+      "value": {
+        "number": "68894816",
+        "hash": "0xd716d6d5c6593d11aebbe903a972e58d202dde17c4eb0ce1c701eff0246eff42",
+        "parentHash": "0x9a8d0ddd81c13292f5b384f9c5d1410995cb5e9e756df23b657213dd68526c3f",
+        "timestamp": "1790003527",
+        "l1BlockNumber": "26026697"
+      }
+    }
+  },
+  "snapshot": {
+    "number": "68894816",
+    "hash": "0xd716d6d5c6593d11aebbe903a972e58d202dde17c4eb0ce1c701eff0246eff42",
+    "parentHash": "0x9a8d0ddd81c13292f5b384f9c5d1410995cb5e9e756df23b657213dd68526c3f",
+    "timestamp": "1790003527",
+    "l1BlockNumber": "26026697",
+    "tag": "finalized"
+  },
+  "dependencies": {
+    "poolManager": {
+      "address": "0x8366a39cc670b4001a1121b8f6a443a643e40951",
+      "code": {
+        "status": "unavailable",
+        "reason": "rpc_or_response_unavailable"
+      },
+      "pin": {
+        "status": "missing",
+        "reason": "expected_dependency_code_hash_not_supplied"
+      }
+    },
+    "positionManager": {
+      "address": "0x58daec3116aae6d93017baaea7749052e8a04fa7",
+      "code": {
+        "status": "unavailable",
+        "reason": "rpc_or_response_unavailable"
+      },
+      "pin": {
+        "status": "missing",
+        "reason": "expected_dependency_code_hash_not_supplied"
+      },
+      "poolManager": {
+        "status": "unavailable",
+        "reason": "rpc_or_response_unavailable"
+      }
+    },
+    "stateView": {
+      "address": "0xf3334192d15450cdd385c8b70e03f9a6bd9e673b",
+      "code": {
+        "status": "unavailable",
+        "reason": "rpc_or_response_unavailable"
+      },
+      "pin": {
+        "status": "missing",
+        "reason": "expected_dependency_code_hash_not_supplied"
+      },
+      "poolManager": {
+        "status": "unavailable",
+        "reason": "rpc_or_response_unavailable"
+      }
+    }
+  },
+  "roles": {
+    "deployer": {
+      "status": "missing",
+      "reason": "public_role_address_not_supplied"
+    },
+    "operator": {
+      "status": "missing",
+      "reason": "public_role_address_not_supplied"
+    },
+    "pricePublisher": {
+      "status": "missing",
+      "reason": "public_role_address_not_supplied"
+    },
+    "priceGuardGuardian": {
+      "status": "missing",
+      "reason": "public_role_address_not_supplied"
+    },
+    "feeRecipient": {
+      "status": "missing",
+      "reason": "public_role_address_not_supplied"
+    }
+  },
+  "roleSeparation": {
+    "status": "missing",
+    "reason": "public_roles_incomplete"
+  },
+  "blockSemantics": {
+    "rpcBlockNumber": "68894816",
+    "numberOpcode": {
+      "status": "unavailable",
+      "reason": "rpc_or_response_unavailable"
+    },
+    "arbBlockNumber": {
+      "status": "unavailable",
+      "reason": "rpc_or_response_unavailable"
+    },
+    "parent": {
+      "status": "pass",
+      "value": {
+        "number": "68894815",
+        "hash": "0x9a8d0ddd81c13292f5b384f9c5d1410995cb5e9e756df23b657213dd68526c3f",
+        "parentHash": "0x6188d1cc0a83662366464267ca08411b84c5d9089eb66972b5012db4b41966df",
+        "timestamp": "1790003527",
+        "l1BlockNumber": "26026696"
+      }
+    },
+    "arbBlockHash": {
+      "status": "unavailable",
+      "reason": "rpc_or_response_unavailable"
+    },
+    "blockhashOpcode": {
+      "status": "unavailable",
+      "reason": "rpc_or_response_unavailable"
+    },
+    "compiledProbe": {
+      "status": "unavailable",
+      "reason": "rpc_or_response_unavailable"
+    },
+    "compatibility": {
+      "status": "unavailable",
+      "reason": "block_context_not_fully_observed"
+    }
+  },
+  "snapshotCanonical": {
+    "status": "pass",
+    "value": true
+  },
+  "readiness": {
+    "status": "unavailable",
+    "reason": "read_only_preflight_does_not_qualify_deployment",
+    "blockers": [
+      {
+        "check": "roleSeparation",
+        "status": "missing",
+        "reason": "public_roles_incomplete"
+      },
+      {
+        "check": "correctedContractCompatibility",
+        "status": "unavailable",
+        "reason": "block_context_not_fully_observed"
+      },
+      {
+        "check": "roles.deployer",
+        "status": "missing",
+        "reason": "public_role_address_not_supplied"
+      },
+      {
+        "check": "roles.operator",
+        "status": "missing",
+        "reason": "public_role_address_not_supplied"
+      },
+      {
+        "check": "roles.pricePublisher",
+        "status": "missing",
+        "reason": "public_role_address_not_supplied"
+      },
+      {
+        "check": "roles.priceGuardGuardian",
+        "status": "missing",
+        "reason": "public_role_address_not_supplied"
+      },
+      {
+        "check": "roles.feeRecipient",
+        "status": "missing",
+        "reason": "public_role_address_not_supplied"
+      },
+      {
+        "check": "dependencies.poolManager.code",
+        "status": "unavailable",
+        "reason": "rpc_or_response_unavailable"
+      },
+      {
+        "check": "dependencies.poolManager.pin",
+        "status": "missing",
+        "reason": "expected_dependency_code_hash_not_supplied"
+      },
+      {
+        "check": "dependencies.positionManager.code",
+        "status": "unavailable",
+        "reason": "rpc_or_response_unavailable"
+      },
+      {
+        "check": "dependencies.positionManager.pin",
+        "status": "missing",
+        "reason": "expected_dependency_code_hash_not_supplied"
+      },
+      {
+        "check": "dependencies.positionManager.poolManager",
+        "status": "unavailable",
+        "reason": "rpc_or_response_unavailable"
+      },
+      {
+        "check": "dependencies.stateView.code",
+        "status": "unavailable",
+        "reason": "rpc_or_response_unavailable"
+      },
+      {
+        "check": "dependencies.stateView.pin",
+        "status": "missing",
+        "reason": "expected_dependency_code_hash_not_supplied"
+      },
+      {
+        "check": "dependencies.stateView.poolManager",
+        "status": "unavailable",
+        "reason": "rpc_or_response_unavailable"
+      }
+    ]
+  },
+  "deploymentInputs": {
+    "status": "missing",
+    "reason": "unsigned_release_parameters_artifacts_and_cost_qualification_still_required",
+    "pendingNonce": {
+      "status": "unavailable",
+      "reason": "not_queried"
+    },
+    "balanceWei": {
+      "status": "unavailable",
+      "reason": "not_queried"
+    },
+    "feeEstimate": {
+      "status": "unavailable",
+      "reason": "not_queried"
+    }
+  }
+}

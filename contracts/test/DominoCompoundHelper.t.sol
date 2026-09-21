@@ -173,8 +173,9 @@ contract DominoCompoundHelperTest {
         p.minSqrtPriceX96--; p.maxSqrtPriceX96++;
         state.setPrice(p.minSqrtPriceX96); helper.validateCompoundPrice(bytes32(0), p, 60);
         state.setPrice(p.maxSqrtPriceX96); helper.validateCompoundPrice(bytes32(0), p, 60);
-        p.observedAtBlock = 144;
-        VmCompoundHeader(address(vm)).setBlockhash(144, HEADER);
+        // Match the price guard's common 255-L2-block observation window.
+        p.observedAtBlock = 145;
+        VmCompoundHeader(address(vm)).setBlockhash(145, HEADER);
         helper.validateCompoundPrice(bytes32(0), p, 60);
     }
 
@@ -185,7 +186,10 @@ contract DominoCompoundHelperTest {
             if (variant == 1) p.observedBlockHash = keccak256("different header");
             if (variant == 2) p.observedAtBlock = 400;
             if (variant == 3) p.observedAtBlock = 401;
-            if (variant == 4) p.observedAtBlock = 143;
+            if (variant == 4) {
+                p.observedAtBlock = 144;
+                VmCompoundHeader(address(vm)).setBlockhash(144, HEADER);
+            }
             if (variant == 5) p.observedAtTimestamp = 1001;
             if (variant == 6) p.observedAtTimestamp = 939;
             if (variant == 7) p.deadline = 999;

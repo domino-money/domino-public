@@ -212,7 +212,7 @@ jobs:
       # Deterministic gas per test against the committed baseline; a regression
       # fails here instead of surfacing in a report months later.
       - name: Check the gas baseline
-        run: node --test scripts/gas-baseline.test.mjs && node scripts/gas-baseline.mjs --check
+        run: node --test scripts/gas-baseline.test.mjs scripts/mutate-contracts.test.mjs && node scripts/gas-baseline.mjs --check
   preview:
     name: Deploy gated preview
     needs: [hygiene, frontend, backend, contracts]

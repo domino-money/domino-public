@@ -1,0 +1,142 @@
+{
+  "kind": "new_targeted_mutation_evidence",
+  "date": "2026-09-21",
+  "sourceFreeze": "aaf33947e7aeccf902b311c6d2282a742a929c2b",
+  "runnerCommit": "dc3ba836c1dc7ff74e26e5a034bec3cb26bb6cf4",
+  "historical39And15BatchesReproduced": false,
+  "summary": {
+    "mutations": 8,
+    "caught": 8,
+    "notCaught": 0,
+    "noBuild": 0,
+    "notApplied": 0
+  },
+  "batches": [
+    {
+      "batch": "contracts/mutations/setup-recovery-2026-09-21.json",
+      "batchSha256": "2b4cdf061870b37719c541f0b4ec114b930eb9bc1d86ac77ad4f70dd6bbcb966",
+      "baselines": [
+        {
+          "suite": "test/setup/SetupRecovery.t.sol",
+          "passed": 11,
+          "failed": 0,
+          "skipped": 0,
+          "suites": 1
+        }
+      ],
+      "rows": [
+        {
+          "label": "recovery must belong to operation owner",
+          "verdict": "CAUGHT",
+          "passed": 10,
+          "failed": 1,
+          "skipped": 0,
+          "suites": 1,
+          "source": "contracts/src/DominoSetup.sol",
+          "sourceSha256": "250a7e13b0f5ecfdf772a8fecf97fd1134620d27abefe75a9b0ab4d91a272e06"
+        },
+        {
+          "label": "recovery cannot debit extra escrow",
+          "verdict": "CAUGHT",
+          "passed": 10,
+          "failed": 1,
+          "skipped": 0,
+          "suites": 1,
+          "source": "contracts/src/DominoSetup.sol",
+          "sourceSha256": "250a7e13b0f5ecfdf772a8fecf97fd1134620d27abefe75a9b0ab4d91a272e06"
+        },
+        {
+          "label": "partial recovery persists terminal setup phase",
+          "verdict": "CAUGHT",
+          "passed": 9,
+          "failed": 2,
+          "skipped": 0,
+          "suites": 1,
+          "source": "contracts/src/DominoSetup.sol",
+          "sourceSha256": "250a7e13b0f5ecfdf772a8fecf97fd1134620d27abefe75a9b0ab4d91a272e06"
+        },
+        {
+          "label": "owner callback cannot reenter recovery",
+          "verdict": "CAUGHT",
+          "passed": 10,
+          "failed": 1,
+          "skipped": 0,
+          "suites": 1,
+          "source": "contracts/src/DominoSetup.sol",
+          "sourceSha256": "250a7e13b0f5ecfdf772a8fecf97fd1134620d27abefe75a9b0ab4d91a272e06"
+        }
+      ],
+      "exitCode": 0
+    },
+    {
+      "batch": "contracts/mutations/security-guards-2026-09-21.json",
+      "batchSha256": "a45d2b1353863f9ceacbe68703f261a2c6ad918c4878511a03b8aeb52b527821",
+      "baselines": [
+        {
+          "suite": "test/DominoL2Block.t.sol",
+          "passed": 7,
+          "failed": 0,
+          "skipped": 0,
+          "suites": 1
+        },
+        {
+          "suite": "test/DominoPriceGuardV4.t.sol",
+          "passed": 16,
+          "failed": 0,
+          "skipped": 0,
+          "suites": 1
+        },
+        {
+          "suite": "test/DominoVaultV4Custody.t.sol",
+          "passed": 67,
+          "failed": 0,
+          "skipped": 0,
+          "suites": 1
+        }
+      ],
+      "rows": [
+        {
+          "label": "vault custody remains owner only",
+          "verdict": "CAUGHT",
+          "passed": 60,
+          "failed": 7,
+          "skipped": 0,
+          "suites": 1,
+          "source": "contracts/src/DominoVaultV4.sol",
+          "sourceSha256": "efe439acdc9b461fd786a95bbb04b0b6697176200c129eccf55e4be6d1c908ab"
+        },
+        {
+          "label": "terminal counters deny renewed authority",
+          "verdict": "CAUGHT",
+          "passed": 64,
+          "failed": 3,
+          "skipped": 0,
+          "suites": 1,
+          "source": "contracts/src/DominoVaultV4.sol",
+          "sourceSha256": "efe439acdc9b461fd786a95bbb04b0b6697176200c129eccf55e4be6d1c908ab"
+        },
+        {
+          "label": "publisher role authenticates new observations",
+          "verdict": "CAUGHT",
+          "passed": 14,
+          "failed": 2,
+          "skipped": 0,
+          "suites": 1,
+          "source": "contracts/src/DominoPriceGuardV4.sol",
+          "sourceSha256": "8907d17d29e3dc00028a291a3b54945f53615ac6456d9437845aa87fbf70534b"
+        },
+        {
+          "label": "ArbSys responses require the qualified chain",
+          "verdict": "CAUGHT",
+          "passed": 6,
+          "failed": 1,
+          "skipped": 0,
+          "suites": 1,
+          "source": "contracts/src/DominoL2Block.sol",
+          "sourceSha256": "3094ee5cb132305a0f9b3b556e82f86bcc6b05c010fa4853b3185254a3046254"
+        }
+      ],
+      "exitCode": 0
+    }
+  ]
+}

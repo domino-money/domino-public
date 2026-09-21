@@ -101,6 +101,27 @@ const unrelated=await rpc('eth_sendTransaction',[{from:fixture.owner,to:fixture.
 await rpc('anvil_mine',['0x40']);now=Number(BigInt((await rpc('eth_getBlockByNumber',['latest',false])).timestamp));
 await assert.rejects(client.receipt(unrelated));
 admissionMode='available';client=createSetupClient(wallet,deployment,()=>now,currentAdmission);
+// Independent currency recovery crosses the real SDK, ABI and contract even
+// after all optional services disappear. Only the isolated Anvil is altered.
+const isolated=await fund(1_000_000n,2_000_000n);
+const dependencyCodes=new Map();
+for(const address of [deployment.poolManager,deployment.positionManager,deployment.stateView]) {
+  dependencyCodes.set(address,await rpc('eth_getCode',[address,'latest']));
+  await rpc('anvil_setCode',[address,'0x']);
+}
+admissionMode='offline';client=createSetupClient(wallet,{...deployment,expiresAt:0},()=>now,currentAdmission);
+const independent=await client.recover(isolated,key.currency0,1_000_000n,gas);
+const independentHash=await settle(independent);
+op=await client.inspect(isolated);
+assert.equal(op.recoveryStarted,true);assert.equal(op.closed,false);
+assert.equal(op.balance0,0n);assert.equal(op.balance1,2_000_000n);
+client=createSetupClient(wallet,{...deployment,expiresAt:0},()=>now,currentAdmission);
+assert.equal((await client.receipt(independentHash,isolated)).state,'finalized');
+await settle(await client.recover(isolated,key.currency1,2_000_000n,gas));
+op=await client.inspect(isolated);assert.equal(op.closed,true);assert.equal(op.balance1,0n);
+for(const [address,code] of dependencyCodes)await rpc('anvil_setCode',[address,code]);
+admissionChecks++;
+admissionMode='available';client=createSetupClient(wallet,deployment,()=>now,currentAdmission);
 const late=await client.fund(key,1n,0n,gas);lateRejectOnce=true;
 await assert.rejects(client.send(late,true),/wallet_timeout/);assert.equal(wallet.nonceOffered(BigInt(late.transaction.nonce)),true);
 await new Promise(resolve=>setTimeout(resolve,75));assert.equal(wallet.nonceOffered(BigInt(late.transaction.nonce)),false);

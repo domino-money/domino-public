@@ -1,5 +1,7 @@
 # V4 audit execution and mainnet preparation — 21 September 2026
 
+**Historical report.** The findings below describe the original `ec2e9aa` freeze. They are preserved as audit evidence; corrected sources, new artifacts and validation are indexed in [V4 remediation](V4_REMEDIATION_2026-09-21.md). Statements such as “currently” below refer to the audited revision.
+
 **Disposition: do not deploy the frozen release as an operational V4 stack.** A mainnet block-domain incompatibility prevents its documented observation/execution flow. The original 228 tests pass, but their ordinary EVM semantics do not reproduce Robinhood Nitro. No mainnet transaction was signed or submitted.
 
 This is an engineering audit performed in this task, not an external certification. It executes the scope in [V4_AUDIT_PACKAGE_2026-09-21](V4_AUDIT_PACKAGE_2026-09-21.md). Review checkout: `7be7820efb2f261f49b688b1ad4e467b7f3725a2`; production-source freeze: `ec2e9aaa4a6f2f87c93553166fb2795171cb2a94`. The twelve production sources, compiler wrapper, lockfile and Foundry profile were unchanged from that freeze. Production sources remain unchanged after this review.
