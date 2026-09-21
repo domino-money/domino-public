@@ -1,0 +1,877 @@
+{
+  "schemaVersion": 1,
+  "kind": "independent-dependency-runtime-qualification",
+  "checkedAtUTC": "2026-09-21T15:33:31.639Z",
+  "chainId": 4663,
+  "method": "Sourcify verified recompilation plus immutable-only reconstruction; no local compiler rerun",
+  "sourceAddressBook": {
+    "repository": "https://github.com/Uniswap/sdks",
+    "commit": "358d9debee46d39e5ab7935dbe27e1589b320557",
+    "addressesPath": "sdks/sdk-core/src/addresses.ts",
+    "addressesSha256": "8151bc19d912e758f6952714922b4c8dda6e98bc844ccbe74ad3a20665d771f7",
+    "chainsPath": "sdks/sdk-core/src/chains.ts",
+    "chainsSha256": "a72600356b051cba24ee6ff8427091ae294c737f2d1c528f22c1eaec7df6d722",
+    "chainIdMapping": "ROBINHOOD = 4663"
+  },
+  "dependencies": {
+    "poolManager": {
+      "address": "0x8366a39cc670b4001a1121b8f6a443a643e40951",
+      "sourcify": {
+        "url": "https://sourcify.dev/server/v2/contract/4663/0x8366a39cc670b4001a1121b8f6a443a643e40951?fields=all",
+        "responseSha256": "eb4bac580bda1d7f171253ae7550943cceb00fb3ce0f2de908f0ea125dfe405d",
+        "matchId": "47290695",
+        "verifiedAt": "2026-09-08T09:35:27Z",
+        "runtimeMatch": "match",
+        "creationMatch": "match",
+        "deployment": {
+          "transactionHash": "0x4fb28d4935866f462582c6c931c6f2705e55f5be5eb178c7d8d9329a95c44c41",
+          "blockNumber": "9070",
+          "transactionIndex": "1",
+          "deployer": "0x9701fb0aDe1E269c8f64Ec0C7b3cfADB31A13A52"
+        },
+        "proxyResolution": {
+          "isProxy": false,
+          "proxyType": null,
+          "implementations": []
+        }
+      },
+      "compilation": {
+        "language": "Solidity",
+        "compiler": "solc",
+        "compilerVersion": "0.8.26+commit.8a97fa7a",
+        "compilerSettings": {
+          "viaIR": true,
+          "metadata": {
+            "bytecodeHash": "none"
+          },
+          "libraries": {},
+          "optimizer": {
+            "runs": 44444444,
+            "enabled": true
+          },
+          "evmVersion": "cancun",
+          "remappings": [
+            ":@ensdomains/=lib/v4-core/node_modules/@ensdomains/",
+            ":@openzeppelin/=lib/v4-core/lib/openzeppelin-contracts/",
+            ":@openzeppelin/contracts/=lib/v4-core/lib/openzeppelin-contracts/contracts/",
+            ":@uniswap/v4-core/=lib/v4-core/",
+            ":ds-test/=lib/v4-core/lib/forge-std/lib/ds-test/src/",
+            ":erc4626-tests/=lib/v4-core/lib/openzeppelin-contracts/lib/erc4626-tests/",
+            ":forge-gas-snapshot/=lib/forge-gas-snapshot/src/",
+            ":forge-std/=lib/v4-core/lib/forge-std/src/",
+            ":hardhat/=lib/v4-core/node_modules/hardhat/",
+            ":openzeppelin-contracts/=lib/v4-core/lib/openzeppelin-contracts/",
+            ":permit2/=lib/permit2/",
+            ":solmate/=lib/v4-core/lib/solmate/",
+            ":v4-core/=lib/v4-core/src/"
+          ]
+        },
+        "name": "PoolManager",
+        "fullyQualifiedName": "lib/v4-core/src/PoolManager.sol:PoolManager"
+      },
+      "runtime": {
+        "bytes": 24009,
+        "codeHash": "0xbd3881180b547f5fe817545743cfb4343e96b1bc6640dcd70c106b0066e95626",
+        "recompiledTemplateCodeHash": "0xa1d857ebc4a1ec6c1d33662732f3a056378b71c5a82a84cb42c692323bbebb48",
+        "reconstructedCodeHash": "0xbd3881180b547f5fe817545743cfb4343e96b1bc6640dcd70c106b0066e95626",
+        "reconstructionByteForByteEqual": true,
+        "linkReferences": {},
+        "immutableReferences": {
+          "511": [
+            {
+              "start": 13606,
+              "length": 32
+            }
+          ]
+        },
+        "transformations": [
+          {
+            "id": "511",
+            "type": "replace",
+            "offset": 13606,
+            "reason": "immutable"
+          }
+        ],
+        "transformationValues": {
+          "immutables": {
+            "511": "0x0000000000000000000000008366a39cc670b4001a1121b8f6a443a643e40951"
+          }
+        },
+        "cborAuxdata": {
+          "1": {
+            "value": "0xa164736f6c634300081a000a",
+            "offset": 23997
+          }
+        }
+      },
+      "sources": {
+        "topLevelPath": "lib/v4-core/src/PoolManager.sol",
+        "topLevelSha256": "aee34a095506dd312ea1fdff3e60f188c4e99906527f49d07d3bdd25ceb3377a",
+        "topLevelKeccak256": "0xaa234912d8bc3a54c80f3973b34823cfac88d01fe9481765b7a5925dccbc9b79",
+        "sourceCount": 179,
+        "metadataSourceCount": 45,
+        "metadataSourceHashesFoundByContent": 45,
+        "stdJsonInputSha256": "a9750feba4ec177312f4a19f6975e9366f3870645e7381bbf998e51f9873a321",
+        "metadataSha256": "efc078e1a41cf6bb8c6f9e2e99c3f60eb3d01d78c8f28fd1a24444a2ab206d0d",
+        "metadataCompilationTarget": {
+          "src/pkgs/v4-core/src/PoolManager.sol": "PoolManager"
+        }
+      }
+    },
+    "positionManager": {
+      "address": "0x58daec3116aae6d93017baaea7749052e8a04fa7",
+      "sourcify": {
+        "url": "https://sourcify.dev/server/v2/contract/4663/0x58daec3116aae6d93017baaea7749052e8a04fa7?fields=all",
+        "responseSha256": "3cae0bfcf41c6986610bef4fa6630e3a6da9eff595232afac48826ccd6fd2688",
+        "matchId": "46997905",
+        "verifiedAt": "2026-09-01T15:16:54Z",
+        "runtimeMatch": "match",
+        "creationMatch": null,
+        "deployment": {
+          "transactionHash": null,
+          "blockNumber": null,
+          "transactionIndex": null,
+          "deployer": null
+        },
+        "proxyResolution": {
+          "isProxy": false,
+          "proxyType": null,
+          "implementations": []
+        }
+      },
+      "compilation": {
+        "language": "Solidity",
+        "compiler": "solc",
+        "compilerVersion": "0.8.26+commit.8a97fa7a",
+        "compilerSettings": {
+          "viaIR": true,
+          "metadata": {
+            "bytecodeHash": "none"
+          },
+          "libraries": {},
+          "optimizer": {
+            "runs": 30000,
+            "enabled": true
+          },
+          "evmVersion": "cancun",
+          "remappings": [
+            ":@ensdomains/=lib/v4-core/node_modules/@ensdomains/",
+            ":@openzeppelin/=lib/v4-core/lib/openzeppelin-contracts/",
+            ":@openzeppelin/contracts/=lib/v4-core/lib/openzeppelin-contracts/contracts/",
+            ":@uniswap/v4-core/=lib/v4-core/",
+            ":ds-test/=lib/v4-core/lib/forge-std/lib/ds-test/src/",
+            ":erc4626-tests/=lib/v4-core/lib/openzeppelin-contracts/lib/erc4626-tests/",
+            ":forge-gas-snapshot/=lib/permit2/lib/forge-gas-snapshot/src/",
+            ":forge-std/=lib/v4-core/lib/forge-std/src/",
+            ":hardhat/=lib/v4-core/node_modules/hardhat/",
+            ":openzeppelin-contracts/=lib/v4-core/lib/openzeppelin-contracts/",
+            ":permit2/=lib/permit2/",
+            ":solmate/=lib/v4-core/lib/solmate/",
+            ":v4-core/=lib/v4-core/src/"
+          ]
+        },
+        "name": "PositionManager",
+        "fullyQualifiedName": "src/PositionManager.sol:PositionManager"
+      },
+      "runtime": {
+        "bytes": 23877,
+        "codeHash": "0xc873e135dc9aaec88489cfbad146b4cb49d6a32e0d80326377784b7ba17670b2",
+        "recompiledTemplateCodeHash": "0xcfd46cf5610444f7dcc8760cb6281fae59ce9c8d434bb6e816c7e2d410bd88c9",
+        "reconstructedCodeHash": "0xc873e135dc9aaec88489cfbad146b4cb49d6a32e0d80326377784b7ba17670b2",
+        "reconstructionByteForByteEqual": true,
+        "linkReferences": {},
+        "immutableReferences": {
+          "4682": [
+            {
+              "start": 5685,
+              "length": 32
+            },
+            {
+              "start": 8107,
+              "length": 32
+            }
+          ],
+          "6718": [
+            {
+              "start": 9429,
+              "length": 32
+            }
+          ],
+          "6720": [
+            {
+              "start": 9391,
+              "length": 32
+            }
+          ],
+          "6722": [
+            {
+              "start": 9508,
+              "length": 32
+            }
+          ],
+          "7111": [
+            {
+              "start": 2806,
+              "length": 32
+            },
+            {
+              "start": 3765,
+              "length": 32
+            },
+            {
+              "start": 4468,
+              "length": 32
+            },
+            {
+              "start": 6336,
+              "length": 32
+            },
+            {
+              "start": 7228,
+              "length": 32
+            },
+            {
+              "start": 7377,
+              "length": 32
+            },
+            {
+              "start": 8353,
+              "length": 32
+            },
+            {
+              "start": 8600,
+              "length": 32
+            },
+            {
+              "start": 10584,
+              "length": 32
+            },
+            {
+              "start": 10796,
+              "length": 32
+            },
+            {
+              "start": 12059,
+              "length": 32
+            },
+            {
+              "start": 15686,
+              "length": 32
+            },
+            {
+              "start": 15929,
+              "length": 32
+            },
+            {
+              "start": 16092,
+              "length": 32
+            },
+            {
+              "start": 16371,
+              "length": 32
+            },
+            {
+              "start": 17179,
+              "length": 32
+            },
+            {
+              "start": 17780,
+              "length": 32
+            },
+            {
+              "start": 19177,
+              "length": 32
+            },
+            {
+              "start": 19558,
+              "length": 32
+            },
+            {
+              "start": 19940,
+              "length": 32
+            },
+            {
+              "start": 20169,
+              "length": 32
+            },
+            {
+              "start": 20313,
+              "length": 32
+            },
+            {
+              "start": 22383,
+              "length": 32
+            }
+          ],
+          "7204": [
+            {
+              "start": 5250,
+              "length": 32
+            },
+            {
+              "start": 10698,
+              "length": 32
+            },
+            {
+              "start": 14914,
+              "length": 32
+            },
+            {
+              "start": 15006,
+              "length": 32
+            },
+            {
+              "start": 15298,
+              "length": 32
+            },
+            {
+              "start": 15435,
+              "length": 32
+            }
+          ],
+          "7306": [
+            {
+              "start": 5184,
+              "length": 32
+            },
+            {
+              "start": 12795,
+              "length": 32
+            }
+          ],
+          "7660": [
+            {
+              "start": 924,
+              "length": 32
+            },
+            {
+              "start": 2574,
+              "length": 32
+            },
+            {
+              "start": 3529,
+              "length": 32
+            },
+            {
+              "start": 20218,
+              "length": 32
+            }
+          ]
+        },
+        "transformations": [
+          {
+            "id": "7660",
+            "type": "replace",
+            "offset": 924,
+            "reason": "immutable"
+          },
+          {
+            "id": "7660",
+            "type": "replace",
+            "offset": 2574,
+            "reason": "immutable"
+          },
+          {
+            "id": "7111",
+            "type": "replace",
+            "offset": 2806,
+            "reason": "immutable"
+          },
+          {
+            "id": "7660",
+            "type": "replace",
+            "offset": 3529,
+            "reason": "immutable"
+          },
+          {
+            "id": "7111",
+            "type": "replace",
+            "offset": 3765,
+            "reason": "immutable"
+          },
+          {
+            "id": "7111",
+            "type": "replace",
+            "offset": 4468,
+            "reason": "immutable"
+          },
+          {
+            "id": "7306",
+            "type": "replace",
+            "offset": 5184,
+            "reason": "immutable"
+          },
+          {
+            "id": "7204",
+            "type": "replace",
+            "offset": 5250,
+            "reason": "immutable"
+          },
+          {
+            "id": "4682",
+            "type": "replace",
+            "offset": 5685,
+            "reason": "immutable"
+          },
+          {
+            "id": "7111",
+            "type": "replace",
+            "offset": 6336,
+            "reason": "immutable"
+          },
+          {
+            "id": "7111",
+            "type": "replace",
+            "offset": 7228,
+            "reason": "immutable"
+          },
+          {
+            "id": "7111",
+            "type": "replace",
+            "offset": 7377,
+            "reason": "immutable"
+          },
+          {
+            "id": "4682",
+            "type": "replace",
+            "offset": 8107,
+            "reason": "immutable"
+          },
+          {
+            "id": "7111",
+            "type": "replace",
+            "offset": 8353,
+            "reason": "immutable"
+          },
+          {
+            "id": "7111",
+            "type": "replace",
+            "offset": 8600,
+            "reason": "immutable"
+          },
+          {
+            "id": "6720",
+            "type": "replace",
+            "offset": 9391,
+            "reason": "immutable"
+          },
+          {
+            "id": "6718",
+            "type": "replace",
+            "offset": 9429,
+            "reason": "immutable"
+          },
+          {
+            "id": "6722",
+            "type": "replace",
+            "offset": 9508,
+            "reason": "immutable"
+          },
+          {
+            "id": "7111",
+            "type": "replace",
+            "offset": 10584,
+            "reason": "immutable"
+          },
+          {
+            "id": "7204",
+            "type": "replace",
+            "offset": 10698,
+            "reason": "immutable"
+          },
+          {
+            "id": "7111",
+            "type": "replace",
+            "offset": 10796,
+            "reason": "immutable"
+          },
+          {
+            "id": "7111",
+            "type": "replace",
+            "offset": 12059,
+            "reason": "immutable"
+          },
+          {
+            "id": "7306",
+            "type": "replace",
+            "offset": 12795,
+            "reason": "immutable"
+          },
+          {
+            "id": "7204",
+            "type": "replace",
+            "offset": 14914,
+            "reason": "immutable"
+          },
+          {
+            "id": "7204",
+            "type": "replace",
+            "offset": 15006,
+            "reason": "immutable"
+          },
+          {
+            "id": "7204",
+            "type": "replace",
+            "offset": 15298,
+            "reason": "immutable"
+          },
+          {
+            "id": "7204",
+            "type": "replace",
+            "offset": 15435,
+            "reason": "immutable"
+          },
+          {
+            "id": "7111",
+            "type": "replace",
+            "offset": 15686,
+            "reason": "immutable"
+          },
+          {
+            "id": "7111",
+            "type": "replace",
+            "offset": 15929,
+            "reason": "immutable"
+          },
+          {
+            "id": "7111",
+            "type": "replace",
+            "offset": 16092,
+            "reason": "immutable"
+          },
+          {
+            "id": "7111",
+            "type": "replace",
+            "offset": 16371,
+            "reason": "immutable"
+          },
+          {
+            "id": "7111",
+            "type": "replace",
+            "offset": 17179,
+            "reason": "immutable"
+          },
+          {
+            "id": "7111",
+            "type": "replace",
+            "offset": 17780,
+            "reason": "immutable"
+          },
+          {
+            "id": "7111",
+            "type": "replace",
+            "offset": 19177,
+            "reason": "immutable"
+          },
+          {
+            "id": "7111",
+            "type": "replace",
+            "offset": 19558,
+            "reason": "immutable"
+          },
+          {
+            "id": "7111",
+            "type": "replace",
+            "offset": 19940,
+            "reason": "immutable"
+          },
+          {
+            "id": "7111",
+            "type": "replace",
+            "offset": 20169,
+            "reason": "immutable"
+          },
+          {
+            "id": "7660",
+            "type": "replace",
+            "offset": 20218,
+            "reason": "immutable"
+          },
+          {
+            "id": "7111",
+            "type": "replace",
+            "offset": 20313,
+            "reason": "immutable"
+          },
+          {
+            "id": "7111",
+            "type": "replace",
+            "offset": 22383,
+            "reason": "immutable"
+          }
+        ],
+        "transformationValues": {
+          "immutables": {
+            "4682": "0x0000000000000000000000009639443158e8c5efa35bd45287bf2effd3d8dc06",
+            "6718": "0x061938567e6832ca43b380ce1978347d2ab5aea073ca93cdf29074c9ebfa15dd",
+            "6720": "0x0000000000000000000000000000000000000000000000000000000000001237",
+            "6722": "0x7cdd38ae70f02d5eb954d5bafbadb6e6ee2067b58a9dbed8e6c370c9a571913e",
+            "7111": "0x0000000000000000000000008366a39cc670b4001a1121b8f6a443a643e40951",
+            "7204": "0x0000000000000000000000000bd7d308f8e1639fab988df18a8011f41eacad73",
+            "7306": "0x00000000000000000000000000000000000000000000000000000000000493e0",
+            "7660": "0x000000000000000000000000000000000022d473030f116ddee9f6b43ac78ba3"
+          }
+        },
+        "cborAuxdata": {
+          "1": {
+            "value": "0xa164736f6c634300081a000a",
+            "offset": 23865
+          }
+        }
+      },
+      "sources": {
+        "topLevelPath": "src/PositionManager.sol",
+        "topLevelSha256": "bcd743c15f6b04902c4b246f21a3686beea6986372dea8ad0717577689877f3c",
+        "topLevelKeccak256": "0x79da5b37abe172d3e9bd05bb80559bdbdb15ae2f4dd454d4aa9d2e52ec7fc833",
+        "sourceCount": 231,
+        "metadataSourceCount": 69,
+        "metadataSourceHashesFoundByContent": 69,
+        "stdJsonInputSha256": "09c41fca510c69a467aa8b75dd3dc4ac21afb28c21ff340e82d9b144d4ae540f",
+        "metadataSha256": "1d60c00fd0be7ddb124bad8f864495bae823b315fc22b0e7b9ef94cbfcc19bc5",
+        "metadataCompilationTarget": {
+          "src/PositionManager.sol": "PositionManager"
+        }
+      }
+    },
+    "stateView": {
+      "address": "0xf3334192d15450cdd385c8b70e03f9a6bd9e673b",
+      "sourcify": {
+        "url": "https://sourcify.dev/server/v2/contract/4663/0xf3334192d15450cdd385c8b70e03f9a6bd9e673b?fields=all",
+        "responseSha256": "7cae9a78eab31eaec7d078fa0241769fc6598187d5dbba79e200124898848dd3",
+        "matchId": "47290694",
+        "verifiedAt": "2026-09-08T09:35:25Z",
+        "runtimeMatch": "match",
+        "creationMatch": null,
+        "deployment": {
+          "transactionHash": null,
+          "blockNumber": null,
+          "transactionIndex": null,
+          "deployer": null
+        },
+        "proxyResolution": {
+          "isProxy": false,
+          "proxyType": null,
+          "implementations": []
+        }
+      },
+      "compilation": {
+        "language": "Solidity",
+        "compiler": "solc",
+        "compilerVersion": "0.8.26+commit.8a97fa7a",
+        "compilerSettings": {
+          "viaIR": true,
+          "metadata": {
+            "bytecodeHash": "none"
+          },
+          "libraries": {},
+          "optimizer": {
+            "runs": 44444444,
+            "enabled": true
+          },
+          "evmVersion": "cancun",
+          "remappings": [
+            ":@ensdomains/=lib/v4-core/node_modules/@ensdomains/",
+            ":@openzeppelin/=lib/v4-core/lib/openzeppelin-contracts/",
+            ":@openzeppelin/contracts/=lib/v4-core/lib/openzeppelin-contracts/contracts/",
+            ":@uniswap/v4-core/=lib/v4-core/",
+            ":ds-test/=lib/v4-core/lib/forge-std/lib/ds-test/src/",
+            ":erc4626-tests/=lib/v4-core/lib/openzeppelin-contracts/lib/erc4626-tests/",
+            ":forge-gas-snapshot/=lib/forge-gas-snapshot/src/",
+            ":forge-std/=lib/v4-core/lib/forge-std/src/",
+            ":hardhat/=lib/v4-core/node_modules/hardhat/",
+            ":openzeppelin-contracts/=lib/v4-core/lib/openzeppelin-contracts/",
+            ":permit2/=lib/permit2/",
+            ":solmate/=lib/v4-core/lib/solmate/",
+            ":v4-core/=lib/v4-core/src/"
+          ]
+        },
+        "name": "StateView",
+        "fullyQualifiedName": "src/lens/StateView.sol:StateView"
+      },
+      "runtime": {
+        "bytes": 3531,
+        "codeHash": "0x7d9c591e0956fd89d98feb4ffcfe8bf1f7a62bd485edd979fa21d104b49878a6",
+        "recompiledTemplateCodeHash": "0x8a7606779ca5e90fcb69696c50f1840d10f1c2830a21907843e2c7e0f64489dd",
+        "reconstructedCodeHash": "0x7d9c591e0956fd89d98feb4ffcfe8bf1f7a62bd485edd979fa21d104b49878a6",
+        "reconstructionByteForByteEqual": true,
+        "linkReferences": {},
+        "immutableReferences": {
+          "2689": [
+            {
+              "start": 299,
+              "length": 32
+            },
+            {
+              "start": 582,
+              "length": 32
+            },
+            {
+              "start": 731,
+              "length": 32
+            },
+            {
+              "start": 926,
+              "length": 32
+            },
+            {
+              "start": 1153,
+              "length": 32
+            },
+            {
+              "start": 1353,
+              "length": 32
+            },
+            {
+              "start": 1499,
+              "length": 32
+            },
+            {
+              "start": 1570,
+              "length": 32
+            },
+            {
+              "start": 1671,
+              "length": 32
+            },
+            {
+              "start": 1844,
+              "length": 32
+            },
+            {
+              "start": 2064,
+              "length": 32
+            },
+            {
+              "start": 2410,
+              "length": 32
+            }
+          ]
+        },
+        "transformations": [
+          {
+            "id": "2701",
+            "type": "replace",
+            "offset": 299,
+            "reason": "immutable"
+          },
+          {
+            "id": "2701",
+            "type": "replace",
+            "offset": 582,
+            "reason": "immutable"
+          },
+          {
+            "id": "2701",
+            "type": "replace",
+            "offset": 731,
+            "reason": "immutable"
+          },
+          {
+            "id": "2701",
+            "type": "replace",
+            "offset": 926,
+            "reason": "immutable"
+          },
+          {
+            "id": "2701",
+            "type": "replace",
+            "offset": 1153,
+            "reason": "immutable"
+          },
+          {
+            "id": "2701",
+            "type": "replace",
+            "offset": 1353,
+            "reason": "immutable"
+          },
+          {
+            "id": "2701",
+            "type": "replace",
+            "offset": 1499,
+            "reason": "immutable"
+          },
+          {
+            "id": "2701",
+            "type": "replace",
+            "offset": 1570,
+            "reason": "immutable"
+          },
+          {
+            "id": "2701",
+            "type": "replace",
+            "offset": 1671,
+            "reason": "immutable"
+          },
+          {
+            "id": "2701",
+            "type": "replace",
+            "offset": 1844,
+            "reason": "immutable"
+          },
+          {
+            "id": "2701",
+            "type": "replace",
+            "offset": 2064,
+            "reason": "immutable"
+          },
+          {
+            "id": "2701",
+            "type": "replace",
+            "offset": 2410,
+            "reason": "immutable"
+          }
+        ],
+        "transformationValues": {
+          "immutables": {
+            "2701": "0x0000000000000000000000008366a39cc670b4001a1121b8f6a443a643e40951"
+          }
+        },
+        "cborAuxdata": {
+          "1": {
+            "value": "0xa164736f6c634300081a000a",
+            "offset": 3519
+          }
+        }
+      },
+      "sources": {
+        "topLevelPath": "src/lens/StateView.sol",
+        "topLevelSha256": "39378d970b5803b8e2f27b0f38a2632b681d423521c1c4ad7a5d2a0a865d9d94",
+        "topLevelKeccak256": "0x34b643b645e760a4c0846d5f986821e1e6f3c8f8f938e237d0c37d91fc9f3e32",
+        "sourceCount": 52,
+        "metadataSourceCount": 24,
+        "metadataSourceHashesFoundByContent": 22,
+        "stdJsonInputSha256": "264834369e63f6be1ef5736bf9a334b30ec52c00469083ee177e4347255e57d5",
+        "metadataSha256": "4b1bd7a3e956ef2f57e894eb3be13bbfbfaeaf126d2f2e2b9530ec0bae1265cf",
+        "metadataCompilationTarget": {
+          "src/pkgs/v4-periphery/src/lens/StateView.sol": "StateView"
+        }
+      }
+    }
+  },
+  "liveCrossCheck": {
+    "observedAtUTC": "2026-09-21T15:32:02.611Z",
+    "snapshot": {
+      "number": "68906748",
+      "hash": "0x1db507555d5cd84cb376e8dc0cb67a0a6886e8d967f86aee621c1e7dc4428205",
+      "tag": "latest",
+      "canonicalRecheck": true
+    },
+    "dependencies": {
+      "poolManager": {
+        "codeHash": "0xbd3881180b547f5fe817545743cfb4343e96b1bc6640dcd70c106b0066e95626",
+        "bytes": 24009,
+        "matchesSourcifyByteForByte": true
+      },
+      "positionManager": {
+        "codeHash": "0xc873e135dc9aaec88489cfbad146b4cb49d6a32e0d80326377784b7ba17670b2",
+        "bytes": 23877,
+        "matchesSourcifyByteForByte": true
+      },
+      "stateView": {
+        "codeHash": "0x7d9c591e0956fd89d98feb4ffcfe8bf1f7a62bd485edd979fa21d104b49878a6",
+        "bytes": 3531,
+        "matchesSourcifyByteForByte": true
+      }
+    }
+  }
+}
