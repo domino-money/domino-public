@@ -1,5 +1,6 @@
 """Read authorization/quotas on disposable PostgreSQL, using synthetic SIWE keys."""
 from concurrent.futures import ThreadPoolExecutor
+from threading import Event
 import os
 from pathlib import Path
 import sys
@@ -21,7 +22,7 @@ from session_models import SessionError
 from session_service import SessionService
 from session_siwe import SiwePolicy
 from wallet_access import WalletAccessAdmin
-from session_store import (CAPACITIES, PREVIEW_ACCOUNT_LIMIT, PREVIEW_GLOBAL_LIMIT,
+from session_store import (CAPACITIES, LOCK_ID, PREVIEW_ACCOUNT_LIMIT, PREVIEW_GLOBAL_LIMIT,
                            PREVIEW_IP_LIMIT, SessionStore,
                            _DeadlineConnection, digest)
 
@@ -302,16 +303,32 @@ class OnboardingAuthPostgresTests(unittest.TestCase):
 
     def test_concurrent_reservations_cannot_exceed_account_limit(self):
         credentials, owner = self.login()
+        busy = Event()
         def reserve(index):
-            try:
-                return (self.store if index % 2 else self.peer).begin_preview(**credentials)
-            except SessionError as error:
-                return error.code
+            # Lock contention is a retryable admission denial, not a quota
+            # decision. Its transaction rolls back without reserving a slot.
+            for attempt in range(20):
+                try:
+                    return (self.store if index % 2 else self.peer).begin_preview(**credentials)
+                except SessionError as error:
+                    if error.code != 'session_capacity_busy' or attempt == 19:
+                        return error.code
+                    busy.set()
+                    time.sleep(.02)
         with ThreadPoolExecutor(max_workers=4) as pool:
-            results = list(pool.map(reserve, range(14)))
-        self.assertEqual(sum(isinstance(result, dict) for result in results), PREVIEW_ACCOUNT_LIMIT)
-        self.assertEqual(results.count('session_rate_limited'), 4)
+            # Exercise the real 250 ms lock timeout, independent of runner speed.
+            # Release before collecting futures, including on assertion failure.
+            with self.admin.transaction():
+                self.admin.execute('SELECT pg_advisory_xact_lock(%s)', (LOCK_ID,))
+                futures = [pool.submit(reserve, index) for index in range(14)]
+                saw_contention = busy.wait(timeout=5)
+            self.assertTrue(saw_contention, 'workers did not exercise lock contention')
+            results = [future.result() for future in futures]
+        self.assertEqual(sum(isinstance(result, dict) for result in results), PREVIEW_ACCOUNT_LIMIT, results)
+        self.assertEqual(results.count('session_rate_limited'), 4, results)
         self.assertEqual(self.bucket('onboarding-account', owner)['count'], PREVIEW_ACCOUNT_LIMIT)
+        self.assertEqual(self.bucket('onboarding-global', 'all')['count'], PREVIEW_ACCOUNT_LIMIT)
+        self.assertEqual(self.bucket('onboarding-ip', credentials['client'])['count'], 14)
 
     def test_capacity_saturation_never_reaches_checker_and_keeps_reserved_ip(self):
         credentials, owner = self.login()
