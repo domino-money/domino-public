@@ -7,11 +7,11 @@ import { fileURLToPath } from 'node:url';
 export const LIMITS = Object.freeze({ runtimeBytes: 24_576, initcodeBytes: 49_152, vaultReserveBytes: 313, engineReserveBytes: 2_048 });
 export const PROFILE = Object.freeze({ compiler: '0.8.26+commit.8a97fa7a', evmVersion: 'cancun', optimizerRuns: 200, viaIR: true, bytecodeHash: 'none' });
 export const CONTRACTS = Object.freeze([
-  Object.freeze({ name: 'DominoVaultReadHelper', constructorAddresses: 2, runtimeReserveBytes: 0 }),
+  Object.freeze({ name: 'DominoVaultReadHelper', constructorAddresses: 2, runtimeReserveBytes: 0, readOnly: true }),
   Object.freeze({ name: 'DominoVaultV4', constructorAddresses: 7, runtimeReserveBytes: LIMITS.vaultReserveBytes }),
   Object.freeze({ name: 'DominoVaultFactoryV4', constructorAddresses: 4, runtimeReserveBytes: 0 }),
-  Object.freeze({ name: 'DominoExecutionEngineV4', constructorAddresses: 4, runtimeReserveBytes: LIMITS.engineReserveBytes }),
-  Object.freeze({ name: 'DominoRoutingHelperV4', constructorAddresses: 0, runtimeReserveBytes: 0 }),
+  Object.freeze({ name: 'DominoExecutionEngineV4', constructorAddresses: 4, runtimeReserveBytes: LIMITS.engineReserveBytes, reserveKind: 'engine' }),
+  Object.freeze({ name: 'DominoRoutingHelperV4', constructorAddresses: 0, runtimeReserveBytes: 0, readOnly: true }),
   // Publisher, the state view it bounds a published price against, the band
   // in basis points (reviewed 2026-09-19 with the price-guard hardening), and
   // the guardian that can rotate the publisher (2026-09-20).
@@ -20,6 +20,21 @@ export const CONTRACTS = Object.freeze([
   Object.freeze({ name: 'DominoSetup', constructorAddresses: 6,
     constructorTypes: Object.freeze(['address', 'address', 'address', 'address', 'uint16', 'uint64']), runtimeReserveBytes: 0 }),
 ]);
+
+// Public first-release names are distinct from the unchanged technical V4
+// protocol. Base-only test closures keep their existing gate; release builds
+// must separately inspect the seven contracts actually selected for deployment.
+export const PUBLIC_ALIASES = Object.freeze({
+  DominoVaultReadHelperV1: 'DominoVaultReadHelper',
+  DominoVaultV1: 'DominoVaultV4',
+  DominoVaultFactoryV1: 'DominoVaultFactoryV4',
+  DominoExecutionEngineV1: 'DominoExecutionEngineV4',
+  DominoRoutingHelperV1: 'DominoRoutingHelperV4',
+  DominoPriceGuardV1: 'DominoPriceGuardV4',
+  DominoSetupV1: 'DominoSetup',
+});
+export const PUBLIC_CONTRACTS = Object.freeze(Object.entries(PUBLIC_ALIASES).map(([name, base]) =>
+  Object.freeze({ ...CONTRACTS.find(contract => contract.name === base), name })));
 
 const defaultOut = fileURLToPath(new URL('../contracts/out/', import.meta.url));
 const object = (value) => value !== null && typeof value === 'object' && !Array.isArray(value);
@@ -86,7 +101,7 @@ function constructorBytes(abi, contract) {
       || constructors[0].inputs.some((input, index) => !object(input) || input.type !== types[index]))) {
     reject('constructor_abi_changed', `expected constructor (${types.join(',')}); review the size gate when changing its static ABI words`);
   }
-  if (['DominoVaultReadHelper', 'DominoRoutingHelperV4'].includes(contract.name)) {
+  if (contract.readOnly) {
     for (const entry of abi) {
       // Custom errors describe revert data, not callable state-changing entry
       // points. The helper's current compiled ABI contains these declarations.
@@ -104,7 +119,7 @@ function constructorBytes(abi, contract) {
 }
 
 export function inspectArtifact(name, artifact) {
-  const contract = CONTRACTS.find((item) => item.name === name);
+  const contract = [...CONTRACTS, ...PUBLIC_CONTRACTS].find((item) => item.name === name);
   if (!contract) reject('unknown_contract', 'only the enumerated architecture artifacts are admitted');
   if (!object(artifact)) reject('malformed_artifact', 'expected a Forge artifact object');
   checkMetadata(artifact, contract);
@@ -117,14 +132,14 @@ export function inspectArtifact(name, artifact) {
   const issues = [];
   if (runtimeHeadroomBytes < 0) issues.push('runtime_limit_exceeded');
   if (initcodeHeadroomBytes < 0) issues.push('initcode_limit_exceeded');
-  if (runtimeHeadroomBytes >= 0 && runtimeHeadroomBytes < contract.runtimeReserveBytes) issues.push(contract.name === 'DominoExecutionEngineV4' ? 'engine_runtime_reserve_exceeded' : 'vault_runtime_reserve_exceeded');
+  if (runtimeHeadroomBytes >= 0 && runtimeHeadroomBytes < contract.runtimeReserveBytes) issues.push(contract.reserveKind === 'engine' ? 'engine_runtime_reserve_exceeded' : 'vault_runtime_reserve_exceeded');
   return { name, ok: issues.length === 0, runtimeBytes, runtimeHeadroomBytes,
     requiredRuntimeReserveBytes: contract.runtimeReserveBytes, creationBytes, constructorArgumentsBytes: argumentsBytes,
     initcodeBytes, initcodeHeadroomBytes, issues };
 }
 
-export function checkContractSizes(outDirectory = defaultOut) {
-  const contracts = CONTRACTS.map(({ name }) => {
+export function checkContractSizes(outDirectory = defaultOut, selected = CONTRACTS) {
+  const contracts = selected.map(({ name }) => {
     const artifactPath = path.join(outDirectory, `${name}.sol`, `${name}.json`);
     try {
       let artifact;
@@ -159,12 +174,14 @@ export function formatReport(report) {
 function main(args) {
   let out = defaultOut;
   let json = false;
+  let publicRelease = false;
   for (let index = 0; index < args.length; index += 1) {
     if (args[index] === '--json' && !json) json = true;
+    else if (args[index] === '--public-release' && !publicRelease) publicRelease = true;
     else if (args[index] === '--out' && args[index + 1] && !args[index + 1].startsWith('--')) out = path.resolve(args[++index]);
-    else reject('invalid_arguments', 'usage: node scripts/check-contract-size.mjs [--out PATH] [--json]');
+    else reject('invalid_arguments', 'usage: node scripts/check-contract-size.mjs [--out PATH] [--json] [--public-release]');
   }
-  const report = checkContractSizes(out);
+  const report = checkContractSizes(out, publicRelease ? PUBLIC_CONTRACTS : CONTRACTS);
   console.log(json ? JSON.stringify(report, null, 2) : formatReport(report));
   return report.ok ? 0 : 1;
 }

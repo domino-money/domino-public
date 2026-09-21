@@ -5,12 +5,12 @@ import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { test } from 'node:test';
-import { CONTRACTS, LIMITS, PROFILE, checkContractSizes, formatReport, inspectArtifact } from './check-contract-size.mjs';
+import { CONTRACTS, PUBLIC_CONTRACTS, LIMITS, PROFILE, checkContractSizes, formatReport, inspectArtifact } from './check-contract-size.mjs';
 
 const command = fileURLToPath(new URL('./check-contract-size.mjs', import.meta.url));
 const bytes = (length) => `0x${'01'.repeat(length)}`;
 function artifact(name = 'DominoVaultV4', { runtime = 10_000, creation = 30_000 } = {}) {
-  const contract = CONTRACTS.find((value) => value.name === name);
+  const contract = [...CONTRACTS, ...PUBLIC_CONTRACTS].find((value) => value.name === name);
   const metadata = { compiler: { version: PROFILE.compiler }, settings: { compilationTarget: { [`src/${name}.sol`]: name },
     evmVersion: 'cancun', optimizer: { enabled: true, runs: 200 }, viaIR: true, metadata: { bytecodeHash: 'none' } } };
   return { metadata, rawMetadata: JSON.stringify(metadata),
@@ -27,8 +27,8 @@ function directory(t) {
   t.after(() => rmSync(output, { recursive: true, force: true }));
   return output;
 }
-function populate(output) {
-  for (const { name } of CONTRACTS) {
+function populate(output, selected = CONTRACTS) {
+  for (const { name } of selected) {
     mkdirSync(path.join(output, `${name}.sol`), { recursive: true });
     writeFileSync(path.join(output, `${name}.sol`, `${name}.json`), JSON.stringify(artifact(name)));
   }
@@ -42,6 +42,39 @@ test('EIP-170 exact runtime limit passes for non-reserved production contracts; 
     const over = inspectArtifact(name, artifact(name, { runtime: 24_577 }));
     assert.deepEqual(over.issues, ['runtime_limit_exceeded']);
   }
+});
+
+test('public V1 deployment targets preserve vault/engine reserves and helper-only ABI gates', () => {
+  assert.equal(PUBLIC_CONTRACTS.length, 7);
+  for (const contract of PUBLIC_CONTRACTS) {
+    assert(contract.name.endsWith('V1'));
+    assert.equal(inspectArtifact(contract.name, artifact(contract.name)).ok, true);
+  }
+  for (const [name, reserve, issue] of [
+    ['DominoVaultV1', LIMITS.vaultReserveBytes, 'vault_runtime_reserve_exceeded'],
+    ['DominoExecutionEngineV1', LIMITS.engineReserveBytes, 'engine_runtime_reserve_exceeded'],
+  ]) {
+    assert.equal(inspectArtifact(name, artifact(name, { runtime: LIMITS.runtimeBytes - reserve })).ok, true);
+    assert.deepEqual(inspectArtifact(name, artifact(name, { runtime: LIMITS.runtimeBytes - reserve + 1 })).issues, [issue]);
+  }
+  for (const name of ['DominoVaultReadHelperV1', 'DominoRoutingHelperV1']) {
+    const changed = artifact(name);
+    changed.abi.push({ type: 'function', name: 'write', stateMutability: 'nonpayable', inputs: [], outputs: [] });
+    assert.throws(() => inspectArtifact(name, changed), { code: 'helper_read_only_abi_changed' });
+  }
+  assert.throws(() => inspectArtifact('DominoVaultV1', artifact('DominoVaultV4')), { code: 'wrong_compilation_target' });
+});
+
+test('public-release CLI requires the real public artifacts instead of accepting only base artifacts', t => {
+  const output = directory(t);
+  populate(output);
+  let run = spawnSync(process.execPath, [command, '--out', output, '--public-release', '--json'], { encoding: 'utf8' });
+  assert.equal(run.status, 1);
+  assert(JSON.parse(run.stdout).contracts.every(item => item.issues.includes('missing_artifact')));
+  populate(output, PUBLIC_CONTRACTS);
+  run = spawnSync(process.execPath, [command, '--out', output, '--public-release', '--json'], { encoding: 'utf8' });
+  assert.equal(run.status, 0, run.stderr);
+  assert(JSON.parse(run.stdout).contracts.every(item => item.name.endsWith('V1') && item.ok));
 });
 
 test('vault architecture reserve has its own exact boundary below the chain limit', () => {

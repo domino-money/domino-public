@@ -22,8 +22,8 @@ const arbAbi = viem.parseAbi(['function arbBlockNumber() view returns (uint256)'
 const compiledCreation = '0x600160005260206000f3';
 const artifactTargets = {
   probe: ['test/DominoL2Block.t.sol', 'NitroBlockProbe'],
-  priceGuard: ['src/DominoPriceGuardV4.sol', 'DominoPriceGuardV4'],
-  readHelper: ['src/DominoVaultReadHelper.sol', 'DominoVaultReadHelper'],
+  priceGuard: ['src/DominoPriceGuardV1.sol', 'DominoPriceGuardV1'],
+  readHelper: ['src/DominoVaultReadHelperV1.sol', 'DominoVaultReadHelperV1'],
 };
 const librarySource = 'src/DominoL2Block.sol';
 function artifactFixture(t) {
@@ -201,10 +201,15 @@ test('artifact evidence binds current sources, both consumers, creation bytecode
   assert.equal(loaded.library.keccak256, loaded.priceGuard.sourceHashes[librarySource].keccak256);
   assert.equal(loaded.library.keccak256, loaded.readHelper.sourceHashes[librarySource].keccak256);
   assert.equal(loaded.probe.creationCodeHash, viem.keccak256(compiledCreation));
+  assert.equal(loaded.priceGuard.compilationTarget, 'src/DominoPriceGuardV1.sol:DominoPriceGuardV1');
+  assert.equal(loaded.readHelper.compilationTarget, 'src/DominoVaultReadHelperV1.sol:DominoVaultReadHelperV1');
   assert.match(loaded.probe.artifactSha256, /^[0-9a-f]{64}$/);
   const { rpc, calls } = fixture();
   const result = await run({ rpc });
   assert.equal(result.schemaVersion, 2);
+  assert.equal(result.publicReleaseVersion, 1); assert.equal(result.implementationVersion, 4);
+  assert.equal(result.kind, 'domino-v4-mainnet-preflight');
+  assert.equal(result.contractNames.priceGuard, 'DominoPriceGuardV1');
   assert.equal(result.blockArtifacts.status, 'pass');
   assert.equal(result.blockArtifacts.components.probe.creation, undefined);
   assert.equal(result.blockSemantics.compatibility.librarySourceHash, loaded.library.keccak256);
@@ -253,6 +258,7 @@ test('invalid compiler, missing library, inconsistent metadata, unsafe sources, 
   for (const [component, mutate, reason, updateRawMetadata] of [
     ['probe', a => { a.metadata.settings.optimizer.runs = 201; }, 'profile_mismatch'],
     ['priceGuard', a => { delete a.metadata.sources[librarySource]; }, 'library_missing'],
+    ['priceGuard', a => { a.metadata.settings.compilationTarget = { 'src/DominoPriceGuardV4.sol': 'DominoPriceGuardV4' }; }, 'profile_mismatch'],
     ['probe', a => { a.metadata.settings.viaIR = false; }, 'metadata_inconsistent', false],
     ['probe', a => { a.metadata.sources['src/../../private'] = { keccak256: hash(1) }; }, 'source_invalid'],
     ['probe', a => { a.bytecode.object = '0x'; }, 'bytecode_invalid'],

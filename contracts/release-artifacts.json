@@ -2,6 +2,17 @@
   "schemaVersion": 1,
   "kind": "domino-reviewed-release-artifacts",
   "compiler": "0.8.26+commit.8a97fa7a",
+  "publicReleaseVersion": 1,
+  "implementationVersion": 4,
+  "contractNames": {
+    "factory": "DominoVaultFactoryV1",
+    "readHelper": "DominoVaultReadHelperV1",
+    "routing": "DominoRoutingHelperV1",
+    "priceGuard": "DominoPriceGuardV1",
+    "engine": "DominoExecutionEngineV1",
+    "implementation": "DominoVaultV1",
+    "setup": "DominoSetupV1"
+  },
   "settings": {
     "remappings": [
       "@openzeppelin/contracts/=test/reference/official-v4/openzeppelin-contracts/contracts/",
@@ -21,15 +32,22 @@
     "viaIR": true
   },
   "sources": {
+    "contracts/src/DominoExecutionEngineV1.sol": "edd0ab46a5fa3083083444fc6f137dc4f92b68df029778184997c5fc62147d21",
     "contracts/src/DominoExecutionEngineV4.sol": "9808d77023d06099836649a6f9a77612593f3c23c1f2fe8948d26a706f3612e5",
     "contracts/src/DominoExecutionTypes.sol": "5103966b9a210522049293713c08b3706cde262cc94493082753ce9094821b88",
     "contracts/src/DominoL2Block.sol": "3094ee5cb132305a0f9b3b556e82f86bcc6b05c010fa4853b3185254a3046254",
+    "contracts/src/DominoPriceGuardV1.sol": "a170c0289a4910f297e4b4df34b09adead4b915959a3c582a0b23eee2ed03663",
     "contracts/src/DominoPriceGuardV4.sol": "8907d17d29e3dc00028a291a3b54945f53615ac6456d9437845aa87fbf70534b",
+    "contracts/src/DominoRoutingHelperV1.sol": "843d958f3593616b10761dcfe54e8dc6d32c52098b7263e2689ed29f97033fa6",
     "contracts/src/DominoRoutingHelperV4.sol": "d1efc6caeb629e3d5fe8f5fbdcde09bd6045ba2cb8f1c9a287d31db8405368c0",
     "contracts/src/DominoSetup.sol": "250a7e13b0f5ecfdf772a8fecf97fd1134620d27abefe75a9b0ab4d91a272e06",
+    "contracts/src/DominoSetupV1.sol": "820288da9f45aa3b77bacc04d61ad368fe56ca4bb22005d8c654bdb0d7f6c586",
+    "contracts/src/DominoVaultFactoryV1.sol": "17cc55d6926ac40bfe0c3da7d49d9642bcc1529eb156184fdb369173d48012a8",
     "contracts/src/DominoVaultFactoryV4.sol": "335f8ac25c130918f603af3c9f87daa73f0c419264bf472b572a8d52231fe080",
     "contracts/src/DominoVaultReadHelper.sol": "27ca900c9131f54253d8c8f00b75dc5aa4cd4280bb04f720579c88a5e20b2577",
+    "contracts/src/DominoVaultReadHelperV1.sol": "b3d0fffeccb88979ebe6c8065da8ed66c063cc4d5859bd24a488a3cc4fb567c9",
     "contracts/src/DominoVaultTypes.sol": "2b44143b3684c40ab812c3a55a33980c2520dea1e1d2900a4a5d978343ef5e1b",
+    "contracts/src/DominoVaultV1.sol": "f29d76e9e8d3f06f32c7535148e4aba62523e1e4488f3d70a8a5778c0a39e48d",
     "contracts/src/DominoVaultV4.sol": "8ba4c38bc0e1954a1ffca4486b723a7260e1bbc9dff6ce883da530692ec1cd81",
     "contracts/src/FeeAccounting.sol": "dfcb3f388b00a53f134428637ced5f85f142f2d0f6c955fca6587c9e920d7c89",
     "contracts/src/IDominoVaultDraft.sol": "79733edcb99022c3e203cbb0c3428fd0491368c809fa099a394b2769bb4bb29f",
@@ -48,8 +66,10 @@
     "scripts/solc-wrapper.py": "f4f141d8a624dfea8ea732b718bad9fd858e3b5253f816e6b9d5ab0f0ef256e8",
     "scripts/solc-compile.cjs": "ef628b3cb276507c89cc4362a0e608ac29f586f7f6d5ed2a1fd51a404ef68a0d",
     "scripts/test-contracts.mjs": "87a18f7a7a57e6aad5c59ffcff3a6292bff04d967148f99da500a5e4e8b059df",
-    "scripts/prepare-financial-release.mjs": "f6cd62f1a9a19c4533f51cb59d4fbad47a2a8e2fc3d158caad6b1a7e553789d6",
-    "scripts/release-artifact-manifest.mjs": "6006fa477d81ac86c7ff364a3d189ae3ec34f3fc849704684a4a579a57734a44"
+    "scripts/prepare-financial-release.mjs": "8a5890f302f0f77038d07a89715a49484c1e365b97fd81a99ed59bf323b59049",
+    "scripts/release-artifact-manifest.mjs": "eba3e810869fdfb7e655fe31c74598d5ef5754d89d3c8ed011d4e185257c04ec",
+    "scripts/build-public-release.mjs": "9536adc545eb37790105aa472e833442c2e5dca5ead38da104505c85038b5710",
+    "scripts/check-contract-size.mjs": "66f311dc9f8d07be896e4f91c888aded6a33c44c57c282f383c1fa1d5a1a46b9"
   },
   "contracts": {
     "factory": {

@@ -5,6 +5,7 @@ import { resolve, join, sep } from 'node:path';
 import { createHash } from 'node:crypto';
 import { pathToFileURL } from 'node:url';
 import { CHAIN_ID, DEPENDENCIES, toolsFor, readBounded, verificationRpcEndpoint, readOnlyRpc } from './prepare-financial-release.mjs';
+import { RELEASE_CONTRACTS, RELEASE_IDENTITY } from './release-artifact-manifest.mjs';
 
 export const NUMBER_PROBE = '0x4360005260206000f3';
 export const ARB_SYS = '0x0000000000000000000000000000000000000064';
@@ -30,8 +31,8 @@ const word = value => { assert(typeof value === 'string' && hashPattern.test(val
 
 const blockArtifactTargets = {
   probe: ['test/DominoL2Block.t.sol', 'NitroBlockProbe'],
-  priceGuard: ['src/DominoPriceGuardV4.sol', 'DominoPriceGuardV4'],
-  readHelper: ['src/DominoVaultReadHelper.sol', 'DominoVaultReadHelper'],
+  priceGuard: ['src/' + RELEASE_CONTRACTS.priceGuard + '.sol', RELEASE_CONTRACTS.priceGuard],
+  readHelper: ['src/' + RELEASE_CONTRACTS.readHelper + '.sol', RELEASE_CONTRACTS.readHelper],
 };
 const blockLibrarySource = 'src/DominoL2Block.sol';
 
@@ -148,6 +149,7 @@ export async function preflight({ rpc, viem, repo, inputs = {}, snapshotTag = 'f
   assert(['latest', 'finalized'].includes(snapshotTag), 'invalid_snapshot');
   const input = publicInputs(inputs);
   const result = { schemaVersion: 2, kind: 'domino-v4-mainnet-preflight', expectedChainId: CHAIN_ID,
+    ...RELEASE_IDENTITY, contractNames: RELEASE_CONTRACTS,
     checkedAtUTC: new Date().toISOString(), readOnly: true, deploymentReady: false, executionAvailable: false };
   let artifacts;
   if (!repo) result.blockArtifacts = status('missing', 'block_artifact_repository_required');

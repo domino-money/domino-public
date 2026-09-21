@@ -8,7 +8,7 @@ import { pathToFileURL } from 'node:url';
 import { createRequire } from 'node:module';
 import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { RELEASE_CONTRACTS, authenticateReleaseArtifacts } from './release-artifact-manifest.mjs';
+import { RELEASE_CONTRACTS, RELEASE_IDENTITY, authenticateReleaseArtifacts } from './release-artifact-manifest.mjs';
 
 export const CHAIN_ID = 4663;
 export const DEPENDENCIES = Object.freeze({
@@ -165,6 +165,7 @@ export function prepare(parameters, artifacts, viem, now = Date.now() / 1000) {
     transaction: { ...transaction(7, finalizeData, p, viem), to: d.factory } });
   const cloneRuntime = '0x363d3d373d3d3d363d73' + d.implementation.slice(2) + '5af43d82803e903d91602b57fd5bf3';
   return { schemaVersion: 1, kind: 'domino-financial-unsigned-release', chainId: CHAIN_ID,
+    ...RELEASE_IDENTITY, contractNames: CONTRACTS,
     network: 'Robinhood Chain mainnet', available: false, sourceCommit: p.sourceCommit,
     artifactManifestSha256: authenticatedArtifacts.get(artifacts).manifestSha256,
     parameters: structuredClone(p), addresses, steps, cloneRuntime, cloneCodeHash: viem.keccak256(cloneRuntime),
@@ -243,7 +244,7 @@ export async function verify(manifest, transactionHashes, artifacts, viem, rpc, 
     readHelper: { positionManager: d.positionManager, stateView: d.stateView }, routing: {}, priceGuard: { publisher, stateView: d.stateView, maxDeviationBps: p.priceGuardDeviationBps, guardian: p.priceGuardGuardian },
     engine: { factory: d.factory, readHelper: d.readHelper, routingHelper: d.routing, priceGuard: d.priceGuard,
       readHelperHash: codeHashes.readHelper, routingHelperHash: codeHashes.routing, priceGuardHash: codeHashes.priceGuard },
-    implementation: { factory: d.factory, implementation: d.implementation, implementationVersion: 4,
+    implementation: { factory: d.factory, implementation: d.implementation, implementationVersion: RELEASE_IDENTITY.implementationVersion,
       poolManager: d.poolManager, positionManager: d.positionManager, stateView: d.stateView, serviceFeeRecipient: p.feeRecipient,
       readHelper: d.readHelper, executionEngine: d.engine, readHelperCodeHash: codeHashes.readHelper,
       executionEngineCodeHash: codeHashes.engine, poolManagerCodeHash: codeHashes.poolManager,
@@ -275,6 +276,7 @@ export async function verify(manifest, transactionHashes, artifacts, viem, rpc, 
     ...sequenceAddresses, serviceFeeRecipient: p.feeRecipient, operator: p.operator, pricePublisher: publisher,
     serviceFeeBps: 200, dominoServiceFeeBps: 400, expiresAt: p.expiresAt, codeHashes: { ...sequenceHashes, vault: manifest.cloneCodeHash } } };
   return { schemaVersion: 1, kind: 'domino-financial-verified-release', chainId: CHAIN_ID,
+    ...RELEASE_IDENTITY, contractNames: CONTRACTS,
     sourceCommit: manifest.sourceCommit, packageSha256: digest(canonical(manifest)),
     artifactManifestSha256: authenticatedArtifacts.get(artifacts).manifestSha256,
     verifiedBlock: { number: Number(finalNumber), hash: final.hash, timestamp: Number(quantity(final.timestamp)) },

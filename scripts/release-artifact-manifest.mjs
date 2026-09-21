@@ -8,16 +8,20 @@ import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 
 export const MANIFEST_PATH = 'contracts/release-artifacts.json';
+// Public release naming is independent from the authenticated execution wire
+// protocol, plan domains and on-chain implementationVersion() identity.
+export const RELEASE_IDENTITY = Object.freeze({ publicReleaseVersion: 1, implementationVersion: 4 });
 export const RELEASE_CONTRACTS = Object.freeze({
-  factory: 'DominoVaultFactoryV4', readHelper: 'DominoVaultReadHelper',
-  routing: 'DominoRoutingHelperV4', priceGuard: 'DominoPriceGuardV4',
-  engine: 'DominoExecutionEngineV4', implementation: 'DominoVaultV4', setup: 'DominoSetup',
+  factory: 'DominoVaultFactoryV1', readHelper: 'DominoVaultReadHelperV1',
+  routing: 'DominoRoutingHelperV1', priceGuard: 'DominoPriceGuardV1',
+  engine: 'DominoExecutionEngineV1', implementation: 'DominoVaultV1', setup: 'DominoSetupV1',
 });
 export const COMPILER_VERSION = '0.8.26+commit.8a97fa7a';
 export const BUILD_INPUTS = Object.freeze([
   '.nvmrc', '.python-version', 'package.json', 'package-lock.json', 'contracts/foundry.toml',
   'scripts/solc-wrapper.py', 'scripts/solc-compile.cjs', 'scripts/test-contracts.mjs',
   'scripts/prepare-financial-release.mjs', 'scripts/release-artifact-manifest.mjs',
+  'scripts/build-public-release.mjs', 'scripts/check-contract-size.mjs',
 ]);
 export const COMPILER_SETTINGS = Object.freeze({
   remappings: [
@@ -155,6 +159,7 @@ export function authenticateReleaseArtifacts(repo, rawArtifacts) {
   const manifest = JSON.parse(raw), inputs = releaseInputs(repo);
   const expected = {
     schemaVersion: 1, kind: 'domino-reviewed-release-artifacts', compiler: COMPILER_VERSION,
+    ...RELEASE_IDENTITY, contractNames: RELEASE_CONTRACTS,
     settings: COMPILER_SETTINGS, sources: inputs.sourceHashes, buildInputs: inputs.buildInputs,
     contracts: Object.fromEntries(Object.entries(RELEASE_CONTRACTS).map(([component, name]) => {
       assertArtifactCompiler(rawArtifacts[component], name);
@@ -200,6 +205,7 @@ export function compileReleaseManifest(repo, artifactDirectory = join(repo, 'con
   const after = releaseInputs(repo);
   assert(canonical(inputs) === canonical(after), 'release_inputs_changed_during_build');
   return { schemaVersion: 1, kind: 'domino-reviewed-release-artifacts', compiler: COMPILER_VERSION,
+    ...RELEASE_IDENTITY, contractNames: RELEASE_CONTRACTS,
     settings: COMPILER_SETTINGS, sources: inputs.sourceHashes, buildInputs: inputs.buildInputs, contracts };
 }
 

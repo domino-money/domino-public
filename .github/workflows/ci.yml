@@ -150,6 +150,8 @@ jobs:
       # no production API can create that historical initial state.
       - name: Build and qualify swap reinvestment and legacy charged balances
         run: node scripts/test-contracts.mjs --match-path test/audit_engine/SwapReinvestment.t.sol
+      - name: Build public V1 contracts and prove equivalence to the internal V4 bases
+        run: node scripts/build-public-release.mjs
       - name: Independently reproduce the reviewed release artifact manifest
         run: node scripts/release-artifact-manifest.mjs --check
       - run: python scripts/export-read-contract.py --check
@@ -175,7 +177,7 @@ jobs:
       - run: python backend/dev_postgres.py prepare-tests
       - run: python -m unittest discover -s backend/tests -v
       - name: Verify unsigned financial deployment tooling on disposable EVM
-        run: node --test scripts/prepare-financial-release.test.mjs scripts/prepare-financial-release-rpc.test.mjs scripts/release-artifact-manifest.test.mjs
+        run: node --test scripts/prepare-financial-release.test.mjs scripts/prepare-financial-release-rpc.test.mjs scripts/release-artifact-manifest.test.mjs scripts/build-public-release.test.mjs
       - name: Stop isolated database
         if: always()
         run: python backend/dev_postgres.py stop

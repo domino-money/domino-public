@@ -1,10 +1,18 @@
-# Demanda pós-deploy: ciclo automático Domino V4
+# Demanda pós-deploy: ciclo automático Domino V1
 
 Data: 21 de setembro de 2026.
 
-Status: especificação de implementação para execução **após o deploy V4**.
+Status: especificação de implementação para execução **após o deploy público Domino V1**.
 Este documento não implementa nem ativa a automação. A inspeção do código usou
 o candidato M1/M2/M3 `d048b4b8564a7939baff0fafdada5ba67660043e`.
+
+**Domino V1 é o nome público deste primeiro release.** Os entrypoints Solidity
+V1 herdam as bases existentes e encaminham seus construtores, sem adicionar
+storage, funções de operação ou overrides. A implementação técnica continua
+retornando `implementationVersion() == 4`; os adapters, domínios, identidades e
+checks internos V4 permanecem. Uniswap V4, versões de schema e `tariffVersion`
+são identificadores independentes dessa nomeação pública. O nome deste arquivo
+e as referências às bases internas são preservados para continuidade técnica.
 
 ## 1. Objetivo e limite da entrega
 
@@ -15,8 +23,8 @@ prepara uma execução, envia a transação e reconcilia seu resultado.
 Os contratos não executam tarefas por conta própria. O ciclo será iniciado por
 um worker de backend. As chamadas financeiras principais já existem:
 
-- A carteira publisher chama `DominoPriceGuardV4.publish(observation)`.
-- A carteira operator chama `DominoVaultV4.execute(plan)` no vault autorizado.
+- A carteira publisher chama `DominoPriceGuardV1.publish(observation)`.
+- A carteira operator chama `DominoVaultV1.execute(plan)` no vault autorizado.
 - O vault e o engine executam coleta, eventual swap e reinvestimento, aplicando
   seus limites de custódia, preço, fonte de recursos e contabilidade.
 
@@ -382,6 +390,9 @@ testada e serviço ativo; não chamar as três coisas de automação pronta.
   [`execution_runner.py`](../backend/execution_runner.py) e
   [`execution_cli.py`](../backend/execution_cli.py): fronteira de assinatura,
   execução de intents e comandos privados existentes.
+- [`DominoPriceGuardV1.sol`](../contracts/src/DominoPriceGuardV1.sol) e
+  [`DominoVaultV1.sol`](../contracts/src/DominoVaultV1.sol): nomes públicos de
+  deploy, herdando a implementação técnica existente.
 - [`DominoPriceGuardV4.sol`](../contracts/src/DominoPriceGuardV4.sol),
   [`DominoVaultV4.sol`](../contracts/src/DominoVaultV4.sol) e
   [`DominoExecutionEngineV4.sol`](../contracts/src/DominoExecutionEngineV4.sol):

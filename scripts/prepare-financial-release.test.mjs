@@ -30,6 +30,8 @@ before(() => {
 
 test('actual compiled artifacts produce eight unsigned calls with exact constructors and no available profile', () => {
   const result = prepare(parameters, artifacts, viem);
+  assert.equal(result.publicReleaseVersion, 1); assert.equal(result.implementationVersion, 4);
+  assert.deepEqual(result.contractNames, CONTRACTS);
   assert.equal(result.available, false); assert.equal(result.deployment, null);
   assert.equal(result.steps.length, 8); assert.deepEqual(result.addresses.poolManager, DEPENDENCIES.poolManager);
   for (let index = 0; index < 8; index++) {
@@ -74,6 +76,11 @@ test('substituted in-memory artifacts cannot prepare and read-only RPC cannot se
 test('changed manifest fails verification before any RPC', async () => {
   const result = prepare(parameters, artifacts, viem); result.steps[0].transaction.data += '00';
   await assert.rejects(() => verify(result, [], artifacts, viem, () => { throw new Error('must not call'); }), /package_changed/);
+  for (const update of [{ publicReleaseVersion: 4 }, { implementationVersion: 1 },
+    { contractNames: { ...CONTRACTS, engine: 'DominoExecutionEngineV4' } }]) {
+    const renamed = { ...prepare(parameters, artifacts, viem), ...update };
+    await assert.rejects(() => verify(renamed, [], artifacts, viem, () => { throw new Error('must not call'); }), /package_changed/);
+  }
 });
 
 test('publisher re-admission is explicit, role-separated and cannot renew expired deployment profiles', async () => {
@@ -148,6 +155,10 @@ test('actual official-v4 dependency code and all unsigned deployments verify int
       const result = await verify(manifest, hashes, artifacts, viem, readonly);
       assert.equal(result.setup.available, true); assert.equal(result.sequence.available, true);
       assert.equal(result.sequence.deployment.serviceFeeBps, 200);
+      assert.equal(result.publicReleaseVersion, 1); assert.equal(result.implementationVersion, 4);
+      assert.equal(result.contractNames.implementation, 'DominoVaultV1');
+      assert.equal(result.sequence.contractVersion, '1.0.0-rc.1');
+      assert.equal(result.setup.contractVersion, '1.0.0-rc.1');
       assert.equal(result.sequence.deployment.dominoServiceFeeBps, 400);
       assert.equal(result.executionAvailable, false); assert.equal(result.priceObservationQualified, false);
       assert.equal(result.receipts.length, 8); assert(methods.length <= 160);

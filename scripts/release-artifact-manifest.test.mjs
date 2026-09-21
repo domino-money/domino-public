@@ -6,7 +6,7 @@ import { join, dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { MANIFEST_PATH, RELEASE_CONTRACTS, COMPILER_VERSION, COMPILER_SETTINGS, BUILD_INPUTS,
+import { MANIFEST_PATH, RELEASE_CONTRACTS, RELEASE_IDENTITY, COMPILER_VERSION, COMPILER_SETTINGS, BUILD_INPUTS,
   artifactIdentity, assertArtifactCompiler, releaseInputs } from './release-artifact-manifest.mjs';
 import { toolsFor, loadArtifacts, prepare, verify } from './prepare-financial-release.mjs';
 
@@ -42,6 +42,7 @@ function fixture(t, { committed = true } = {}) {
       creationBytes: 4, runtimeBytes: 64, abiSha256: hash('[]'), immutableRanges: [{ start: 0, length: 32 }] };
   }
   const manifest = { schemaVersion: 1, kind: 'domino-reviewed-release-artifacts', compiler: COMPILER_VERSION,
+    ...RELEASE_IDENTITY, contractNames: RELEASE_CONTRACTS,
     settings: COMPILER_SETTINGS, sources, buildInputs, contracts };
   write(repo, MANIFEST_PATH, manifest);
   git(repo, 'init', '-q'); git(repo, 'add', '.');
@@ -56,6 +57,19 @@ test('reviewed Git manifest admits matching source/build/ABI/bytecode identity a
   assert(Object.isFrozen(artifacts)); assert(Object.isFrozen(artifacts.setup.abi)); assert(Object.isFrozen(artifacts.setup.ranges[0]));
   assert.throws(() => { artifacts.engine.runtime = '0x00'; }, TypeError);
   assert.throws(() => prepare({}, structuredClone(artifacts), viem), /unauthenticated_release_artifacts/);
+});
+
+test('public names are V1 while the authenticated implementation protocol remains 4', t => {
+  assert.deepEqual(RELEASE_CONTRACTS, { factory: 'DominoVaultFactoryV1', readHelper: 'DominoVaultReadHelperV1',
+    routing: 'DominoRoutingHelperV1', priceGuard: 'DominoPriceGuardV1', engine: 'DominoExecutionEngineV1',
+    implementation: 'DominoVaultV1', setup: 'DominoSetupV1' });
+  assert.deepEqual(RELEASE_IDENTITY, { publicReleaseVersion: 1, implementationVersion: 4 });
+  for (const update of [{ publicReleaseVersion: 4 }, { implementationVersion: 1 },
+    { contractNames: { ...RELEASE_CONTRACTS, implementation: 'DominoVaultV4' } }]) {
+    const f = fixture(t); Object.assign(f.manifest, update); write(f.repo, MANIFEST_PATH, f.manifest);
+    git(f.repo, 'add', MANIFEST_PATH); git(f.repo, 'commit', '-qm', 'Incompatible synthetic release identity');
+    assert.throws(() => loadArtifacts(f.repo, viem), /release_artifact_manifest_mismatch/);
+  }
 });
 
 for (const [label, change] of [
@@ -80,7 +94,8 @@ test('changing source and matching artifact metadata cannot self-authenticate by
 
 test('compiler configuration, lockfile and wrapper changes invalidate the approval', t => {
   const f = fixture(t);
-  for (const path of ['contracts/foundry.toml', 'package-lock.json', 'scripts/solc-wrapper.py', 'scripts/solc-compile.cjs']) {
+  for (const path of ['contracts/foundry.toml', 'package-lock.json', 'scripts/solc-wrapper.py', 'scripts/solc-compile.cjs',
+    'scripts/build-public-release.mjs', 'scripts/check-contract-size.mjs']) {
     const original = readFileSync(join(f.repo, path), 'utf8'); write(f.repo, path, original + 'changed\n');
     assert.throws(() => loadArtifacts(f.repo, viem), /release_build_input_changed/);
     write(f.repo, path, original);
@@ -151,12 +166,12 @@ test('immutable normalization ignores compiler AST ids but cannot mask an extra 
 });
 
 test('raw solc empty remapping contexts equal Foundry normalization; nonempty contexts do not', () => {
-  const settings = { ...COMPILER_SETTINGS, compilationTarget: { 'src/DominoSetup.sol': 'DominoSetup' },
+  const settings = { ...COMPILER_SETTINGS, compilationTarget: { 'src/DominoSetupV1.sol': 'DominoSetupV1' },
     remappings: COMPILER_SETTINGS.remappings.map(value => ':' + value) };
   const metadata = { compiler: { version: COMPILER_VERSION }, settings };
-  assert.doesNotThrow(() => assertArtifactCompiler({ metadata: JSON.stringify(metadata) }, 'DominoSetup'));
+  assert.doesNotThrow(() => assertArtifactCompiler({ metadata: JSON.stringify(metadata) }, 'DominoSetupV1'));
   metadata.settings.remappings[0] = 'src/:' + COMPILER_SETTINGS.remappings[0];
-  assert.throws(() => assertArtifactCompiler({ metadata: JSON.stringify(metadata) }, 'DominoSetup'), /artifact_compiler_or_target_mismatch/);
+  assert.throws(() => assertArtifactCompiler({ metadata: JSON.stringify(metadata) }, 'DominoSetupV1'), /artifact_compiler_or_target_mismatch/);
 });
 
 test('ABI top-level ordering is immaterial but constructor parameter order and duplicates are bound', () => {

@@ -1,10 +1,33 @@
-# Unsigned Setup and Sequence V4 release
+# Unsigned Domino V1 Setup and Sequence release
 
 `scripts/prepare-financial-release.mjs` prepares public deployment transactions
 and verifies completed deployments. It never reads a key, signs, submits a
 transaction, creates a user vault or authorizes an operator. Chain **4663 is
 Robinhood Chain mainnet**. Deployment requires the selected deployer's real
 native-token funding; this is not a faucet/testnet flow.
+
+The public contracts are **Domino V1**, implemented by thin inherited entrypoints
+over the reviewed internal V4 contracts. `publicReleaseVersion: 1` identifies this
+public naming; `implementationVersion: 4` identifies the unchanged authenticated
+execution protocol. These are derived metadata in the artifact manifest,
+unsigned package, verified result and read-only preflight; they are not caller
+inputs or new fields in consumer deployment profiles. The on-chain
+`implementationVersion()` getter must still return **4**. Uniswap V4, EIP-712/
+plan domains, transaction encodings and consumer schema versions do not change.
+
+The seven public targets are `DominoVaultFactoryV1`, `DominoVaultReadHelperV1`,
+`DominoRoutingHelperV1`, `DominoPriceGuardV1`, `DominoExecutionEngineV1`,
+`DominoVaultV1` and `DominoSetupV1`. Release outputs record the exact mapping in
+`contractNames`; the base V4 artifacts remain available for internal tests and
+comparison, but are not the selected public deployment targets.
+
+Explorer source verification must select `src/<PublicName>.sol:<PublicName>`
+for each of these seven targets and use the pinned compiler settings and exact
+constructor arguments from the unsigned package. The EVM bytecode does not carry
+a human-readable contract name; the verified source target supplies that name.
+The user vaults remain minimal clones of the public `DominoVaultV1` implementation.
+Do not verify the deployed implementation using the internal V4 target merely
+because the bytecode is equivalent.
 
 ## Approved first-release pricing
 
@@ -71,7 +94,20 @@ addresses do not prove independent custody of their keys.
 ## Build and prepare
 
 Build the pinned Solidity 0.8.26 contracts in the final checkout using the
-existing offline contract launcher. Release artifacts also require the reviewed
+existing offline contract launcher. Then build the public aliases and verify
+their complete bytecode/ABI/immutable-range equivalence to the internal bases:
+
+```sh
+node scripts/build-public-release.mjs
+node scripts/check-contract-size.mjs --public-release
+```
+
+The default size check still covers the seven base artifacts used by the internal
+suites. The public-release check covers the seven V1 deployment targets with the
+same size limits and reserves. The builder must complete before release tooling
+or the independent manifest rebuild reads the new artifacts.
+
+Release artifacts also require the reviewed
 `contracts/release-artifacts.json` manifest. Artifact metadata alone is not proof
 that its bytecode came from the stated sources.
 
@@ -87,7 +123,9 @@ the fixed release settings without reading artifact metadata as compiler input,
 and compares creation bytecode, runtime template, ABI and every immutable byte
 range against Foundry's outputs. It records their identities, all imported source
 hashes and the compiler/build input hashes, including the lockfile, Foundry
-profile and wrappers. No keys or RPC are used. Run it after compilation completes;
+profile, wrappers, public-alias builder and size checker. The inherited base
+sources remain part of that authenticated import closure. No keys or RPC are
+used. Run it after compilation completes;
 do not run competing builds or edit inputs during this independent rebuild.
 
 Review the source/build-input diff and the generated manifest, then commit them
@@ -140,13 +178,13 @@ available deployment profiles in this file: `available:false`,
 
 Order and nonce offsets are fixed:
 
-1. Factory V4 (manager/positions/state/fee recipient).
-2. Read helper (positions/state).
-3. Routing helper V4.
-4. Price guard V4 (independent publisher).
-5. Execution engine V4 (factory/read helper/routing/guard).
-6. Vault implementation V4 (factory/managers/recipient/read helper/engine).
-7. DominoSetup (managers/recipient/Setup tariff/version).
+1. `DominoVaultFactoryV1` (manager/positions/state/fee recipient).
+2. `DominoVaultReadHelperV1` (positions/state).
+3. `DominoRoutingHelperV1`.
+4. `DominoPriceGuardV1` (independent publisher).
+5. `DominoExecutionEngineV1` (factory/read helper/routing/guard).
+6. `DominoVaultV1` (factory/managers/recipient/read helper/engine).
+7. `DominoSetupV1` (managers/recipient/Setup tariff/version).
 8. `factory.finalizeImplementation(implementation)`, called by that factory's deployer.
 
 Each deployment uses CREATE at its explicit nonce; the finalization is a call.
@@ -169,7 +207,7 @@ The price guard's publisher is the one role that can change after the eight
 transactions, because every execution depends on its liveness and a key does
 not stay clean forever. Rotation is a two-call handshake and needs no
 redeployment: the `priceGuardGuardian` calls `proposePublisher(next)` on the
-deployed `DominoPriceGuardV4`, and `next` calls `acceptPublisher()`. Until it
+deployed `DominoPriceGuardV1`, and `next` calls `acceptPublisher()`. Until it
 accepts, nothing changes; a proposal to a mistyped address hands the role to
 nobody. The guardian can also `revoke(id)` any observation without the
 publisher key - the emergency brake against a key that is publishing inside
