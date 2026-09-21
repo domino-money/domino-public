@@ -97,8 +97,9 @@ export function prepare(parameters, artifacts, viem, now = Date.now() / 1000) {
     && hashPattern.test(value) && !/^0x0+$/.test(value)), 'invalid_dependency_code_hash');
   for (const name of ['deployer', 'feeRecipient', 'operator', 'pricePublisher', 'priceGuardGuardian']) address(parameters[name]);
   assert(parameters.operator !== parameters.pricePublisher, 'price_publisher_must_be_independent');
-  // The guardian can replace the publisher, so it is neither the publisher
-  // nor the operator: one key must not be able to hand itself the anchor.
+  // Release policy separates the initial guardian, publisher and operator
+  // addresses. On chain the guardian can later nominate and accept itself;
+  // address separation does not prove independent custody of those keys.
   assert(parameters.priceGuardGuardian !== parameters.pricePublisher && parameters.priceGuardGuardian !== parameters.operator,
     'price_guard_guardian_must_be_independent');
   // The band a published price must sit within, against the pool's own
