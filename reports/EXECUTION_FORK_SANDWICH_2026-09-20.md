@@ -1,208 +1,186 @@
-# The compound sandwich, measured on a forked Robinhood pool — 20 September 2026
+# Forked-pool execution evidence — corrected 21 September 2026
 
-[CONTRACT_REVIEW_2026-09-19](CONTRACT_REVIEW_2026-09-19.md) closed its hardening findings by
-reading code: D-01 (every action anchors to a published price, checked against the pool's
-live reading) and D-02 (a plan states the ceiling of what one add may cost). It also said, under
-"Not covered", that *no finding was reproduced by execution* and that D-01/D-02's exploitability
-"needs a forked-pool test that manipulates spot around a compound and measures the value
-delta". This is that test. Every number below was read from a fork of Robinhood Chain
-(4663) at the head block of the self-hosted node, with the real PoolManager, PositionManager,
-StateView, WETH, USDG and the real `weth-usdg` pool (fee 200, tick spacing 4); nothing is an
-estimate.
+This revision supersedes the economic interpretation and tables published on
+20 September. The [original JSON files](fork/) remain unchanged. Their
+`lossVersusHonestQuote` used the non-swap control for swap scenarios, and the
+published “swap shortfall” was inferred from the anchor rather than read from
+the transaction. Those figures must not be used as measured swap proceeds.
 
-## What was run
+The derived `*-corrected-2026-09-21.json` files retain original observations,
+put retired metric fields under `supersededMetrics`, use each recipe's honest
+control, and mark missing conversion receipts unavailable. Recalculation does
+not recover absent outputs. Historical runs used ordinary Anvil and do not
+qualify Nitro opcode semantics. Current local qualification explicitly installs
+`MockNitroArbSys` at `0x64` and records this as emulation, never live-chain proof.
 
-`backend/qualify_execution_fork.py` — an operator command in the shape of the deposit fork
-qualification, reusing its Anvil child (`DepositFork`) and taking the upstream either from the
-read gateway or from a loopback JSON-RPC port. These runs used an SSH-forwarded port of the
-self-hosted Nitro node, so no provider credential entered the process, its arguments or its
-output. Balances, impersonation and snapshots are child-only controls.
+## Measurement definitions
 
-1. Deploy the V4 stack from the built artifacts — factory, read helper, routing helper, price
-   guard (band 2000 bps), engine, vault implementation, `finalizeImplementation`, and
-   `DominoSetup`.
-2. Give a synthetic owner a real root position through `DominoSetup.open`/`mint` — 2 WETH and
-   8,000 USDG, WETH wrapped from balance, USDG moved from the pool manager as the deposit
-   qualification does — around the current tick, and create the vault over it. Two ranges
-   were run: **±200 ticks (≈ ±2% of price)**, a concentrated position, and **±2000 ticks
-   (≈ ±22%)**, a wide one.
-3. Earn it fees: 40 round trips of a currency0 leg sized to a 0.2% impact, swapped by a fixture
-   driver against the real pool. The vault's share of the pool's 0.02% fee is what gets
-   compounded — a few USDG. Everything after this point starts from the same snapshot.
-4. One compound per scenario, at price moves of 0.5%, 0.9%, 1.1%, 5% and 20% (the vault's
-   `maxPriceImpactBps` is 100, so 0.9% is inside the limit and 1.1% outside):
-   - **honest** — observation at the true spot, compound, nobody interferes;
-   - **pre-observation** — the attacker moves spot, an honest publisher reads the moved pool,
-     the operator compounds at it, the attacker restores. No on-chain band can see this: the
-     published price and the spot agree;
-   - **post-observation** — observation at the true spot, then the attacker moves spot before
-     the compound: what the anchor refuses, and what it lets through inside the limit;
-   - **ceiling** — post-observation inside the limit, with the plan's `maxAdded` set to the
-     honest amounts plus 0.5%: what D-02 refuses;
-   - **swap-pre/post-observation** — the same two, on a GENERAL plan that also sells half of the
-     currency0 fee for currency1 at the anchor with the vault's own slippage floor: the direct
-     channel, where a moved anchor is a moved exchange rate.
-5. Value the vault at the pre-scenario price — position amounts from liquidity and range, plus
-   reserves, plus fees still uncollected — and the attacker's two balances the same way. The
-   attacker's cost is real: the pool's fee on its own volume and the price impact of moving
-   and restoring against real depth. Every refused compound is replayed as a call to read its
-   revert selector.
+- **Vault delta versus control:** recorded end-state balances and liquidity,
+  valued with the range formulas at the pre-scenario price, minus the matching
+  `honest` or `swap-honest` control. This is a computed mark-to-reference value,
+  not a realized sale or USD price feed. The same planning recipe may select
+  different amounts after an attack has generated additional pool fees.
+- **Attacker pool cost:** negative driver token-balance PnL at the same reference
+  price. Historical values exclude gas paid by the separate sender account.
+  Updated runs record that native gas debit separately.
+- **Actual swap shortfall:** reference-price quote for the receipt's exact input
+  minus `FeesConverted.amountOut`. This includes pool fees and swap impact;
+  it is not pure manipulation loss. When input amounts match, the updated tool
+  also compares actual output with the `swap-honest` output.
+- **Pre-swap spot quote difference:** an estimate before pool fees and swap impact.
+  Corrected old records include it but never substitute it for actual proceeds.
 
-The plan is sized as an operator would size it: the liquidity the accrued fees fund at the
-observed price, with 10% slack, floors of one unit on each side the range makes non-empty,
-and no ceiling unless the scenario says so.
+The updated tool validates receipt event identity by engine, vault and intent.
+Liquidity contributions come from `BudgetApplied`, not a formula evaluated
+at pre-swap spot. Initial value is read before the scenario; the legacy
+`vaultValueBeforeQuote` reused accrued fees read afterward and is historical
+only. Neither old before-values nor old estimated add amounts justify a claim
+about actual token receipts.
 
-## Results
+## Corrected historical tables
 
-Values are USDG (six decimals) at the pre-scenario price. "Vault vs honest" is the vault's value after the scenario minus its value after the honest compound - positive means the vault ended better off. "Attacker cost" is what the move and its restoration cost the attacker in fees and impact against real depth. "Swap shortfall" is what the vault's own sale of fees fetched below the true rate because the anchor had moved.
+Amounts below are currency1 units (USDG, six decimals), not a USD peg assertion.
+A refused compound changes no vault state itself, but attacker trades still
+earn pool fees; its final value need not equal the honest-compound control.
+Actual swap shortfall is unavailable for every executed swap in these old files.
 
-### `weth-usdg`, concentrated root: ±200 ticks (±2.0% of price), fork block 68232373
-root: token 3011383, ticks [-197756, -197356], liquidity 10158109690717875; fees earned over 40 round trips: 0.001586 WETH + 4.17 USDG; honest compound worth 7.34 USDG
+### Narrow range: half-width 200 ticks, source block 68232373
 
-| scenario | move | outcome | vault vs honest (USDG) | attacker cost (USDG) | swap shortfall (USDG) |
-| --- | ---: | --- | ---: | ---: | ---: |
-| honest | - | executed | 0.00 (baseline) | - | - |
-| swap-honest | - | executed | 0.00 (baseline) | - | 0.0000 |
-| pre-observation | 0.5% | executed | +0.54 | 2.59 | - |
-| post-observation | 0.5% | refused (InvalidAmount()) | no change | 2.59 | - |
-| ceiling | 0.5% | refused (InvalidAmount()) | no change | 2.59 | - |
-| swap-pre-observation | 0.5% | executed | +0.60 | 2.58 | 0.0109 |
-| swap-post-observation | 0.5% | executed | +0.60 | 2.58 | 0.0000 |
-| pre-observation | 0.9% | executed | +0.97 | 4.72 | - |
-| post-observation | 0.9% | refused (InvalidAmount()) | no change | 4.72 | - |
-| ceiling | 0.9% | refused (InvalidAmount()) | no change | 4.72 | - |
-| swap-pre-observation | 0.9% | executed | +1.00 | 4.70 | 0.0205 |
-| swap-post-observation | 0.9% | executed | +1.00 | 4.70 | 0.0000 |
-| pre-observation | 1.1% | executed | +1.18 | 5.96 | - |
-| post-observation | 1.1% | refused (InvalidPrice()) | no change | 5.97 | - |
-| swap-pre-observation | 1.1% | executed | +1.21 | 5.94 | 0.0256 |
-| swap-post-observation | 1.1% | refused (InvalidPrice()) | no change | 5.97 | - |
-| pre-observation | 5.0% | executed | +2.13 | 28.28 | - |
-| post-observation | 5.0% | refused (InvalidPrice()) | no change | 28.30 | - |
-| swap-pre-observation | 5.0% | executed | +2.03 | 28.17 | 0.1282 |
-| swap-post-observation | 5.0% | refused (InvalidPrice()) | no change | 28.30 | - |
-| pre-observation | 20.0% | executed | +2.12 | 92.42 | - |
-| post-observation | 20.0% | refused (InvalidPrice()) | no change | 92.44 | - |
-| swap-pre-observation | 20.0% | executed | +1.65 | 91.92 | 0.5126 |
-| swap-post-observation | 20.0% | refused (InvalidPrice()) | no change | 92.44 | - |
+[Corrected evidence](fork/weth-usdg-narrow-2026-09-20-corrected-2026-09-21.json) · [Original evidence](fork/weth-usdg-narrow-2026-09-20.json)
 
-### `weth-usdg`, wide root: ±2002 ticks (±22.2% of price), fork block 68234852
-root: token 3011465, ticks [-199552, -195548], liquidity 1056926085997426; fees earned over 40 round trips: 0.000165 WETH + 0.43 USDG; honest compound worth 0.77 USDG
+| Scenario | Move | Outcome | Vault delta vs matching control | Attacker pool cost | Actual swap shortfall |
+| --- | ---: | --- | ---: | ---: | --- |
+| honest | 0.0% | executed | +0.000000 | 0.000000 | not applicable |
+| swap-honest | 0.0% | executed | +0.000000 | 0.000000 | unavailable |
+| pre-observation | 0.5% | executed | +0.542562 | 2.586091 | not applicable |
+| post-observation | 0.5% | refused (InvalidAmount()) | +0.672488 | 2.588070 | not applicable |
+| ceiling | 0.5% | refused (InvalidAmount()) | +0.672488 | 2.588070 | not applicable |
+| swap-pre-observation | 0.5% | executed | +0.507465 | 2.576702 | unavailable |
+| swap-post-observation | 0.5% | executed | +0.507287 | 2.577259 | unavailable |
+| pre-observation | 0.9% | executed | +0.971523 | 4.716884 | not applicable |
+| post-observation | 0.9% | refused (InvalidAmount()) | +1.092589 | 4.722685 | not applicable |
+| ceiling | 0.9% | refused (InvalidAmount()) | +1.092589 | 4.722685 | not applicable |
+| swap-pre-observation | 0.9% | executed | +0.913906 | 4.700733 | unavailable |
+| swap-post-observation | 0.9% | executed | +0.914110 | 4.702386 | unavailable |
+| pre-observation | 1.1% | executed | +1.184824 | 5.958894 | not applicable |
+| post-observation | 1.1% | refused (InvalidPrice()) | +1.303286 | 5.967190 | not applicable |
+| swap-pre-observation | 1.1% | executed | +1.117289 | 5.939490 | unavailable |
+| swap-post-observation | 1.1% | refused (InvalidPrice()) | +1.214433 | 5.967190 | not executed |
+| pre-observation | 5.0% | executed | +2.125552 | 28.275984 | not applicable |
+| post-observation | 5.0% | refused (InvalidPrice()) | +2.242590 | 28.299181 | not applicable |
+| swap-pre-observation | 5.0% | executed | +1.943278 | 28.165296 | unavailable |
+| swap-post-observation | 5.0% | refused (InvalidPrice()) | +2.153737 | 28.299181 | not executed |
+| pre-observation | 20.0% | executed | +2.124017 | 92.416032 | not applicable |
+| post-observation | 20.0% | refused (InvalidPrice()) | +2.241055 | 92.439161 | not applicable |
+| swap-pre-observation | 20.0% | executed | +1.557386 | 91.920970 | unavailable |
+| swap-post-observation | 20.0% | refused (InvalidPrice()) | +2.152202 | 92.439161 | not executed |
 
-| scenario | move | outcome | vault vs honest (USDG) | attacker cost (USDG) | swap shortfall (USDG) |
-| --- | ---: | --- | ---: | ---: | ---: |
-| honest | - | executed | 0.00 (baseline) | - | - |
-| swap-honest | - | executed | 0.00 (baseline) | - | 0.0000 |
-| pre-observation | 0.5% | executed | +0.05 | 2.00 | - |
-| post-observation | 0.5% | executed | +0.05 | 2.00 | - |
-| ceiling | 0.5% | refused (InvalidAmount()) | no change | 2.00 | - |
-| swap-pre-observation | 0.5% | executed | +0.06 | 2.00 | 0.0011 |
-| swap-post-observation | 0.5% | executed | +0.06 | 2.00 | 0.0000 |
-| pre-observation | 0.9% | executed | +0.10 | 3.64 | - |
-| post-observation | 0.9% | executed | +0.10 | 3.64 | - |
-| ceiling | 0.9% | refused (InvalidAmount()) | no change | 3.64 | - |
-| swap-pre-observation | 0.9% | executed | +0.10 | 3.64 | 0.0021 |
-| swap-post-observation | 0.9% | executed | +0.10 | 3.64 | 0.0000 |
-| pre-observation | 1.1% | executed | +0.12 | 4.60 | - |
-| post-observation | 1.1% | refused (InvalidPrice()) | no change | 4.60 | - |
-| swap-pre-observation | 1.1% | executed | +0.12 | 4.60 | 0.0027 |
-| swap-post-observation | 1.1% | refused (InvalidPrice()) | no change | 4.60 | - |
-| pre-observation | 5.0% | executed | +0.55 | 26.28 | - |
-| post-observation | 5.0% | refused (InvalidPrice()) | no change | 26.28 | - |
-| swap-pre-observation | 5.0% | executed | +0.54 | 26.26 | 0.0176 |
-| swap-post-observation | 5.0% | refused (InvalidPrice()) | no change | 26.28 | - |
-| pre-observation | 20.0% | executed | +2.09 | 92.62 | - |
-| post-observation | 20.0% | refused (InvalidPrice()) | no change | 92.69 | - |
-| swap-pre-observation | 20.0% | executed | +2.00 | 92.52 | 0.1547 |
-| swap-post-observation | 20.0% | refused (InvalidPrice()) | no change | 92.69 | - |
+### Wide range: half-width 2002 ticks, source block 68234852
 
-### Lifecycle on the real pool: a successor, then every owner exit
+[Corrected evidence](fork/weth-usdg-wide-2026-09-20-corrected-2026-09-21.json) · [Original evidence](fork/weth-usdg-wide-2026-09-20.json)
 
-The same tool with `--lifecycle` (block 68250367, root token 3011978) continues from the honest
-compound: with the spot inside the trigger distance of the root's ceiling, the operator's MINT plan
-mints a successor through the real engine and the real PositionManager, and then the owner takes
-every exit the vault offers. Nothing here uses a harness sink.
+| Scenario | Move | Outcome | Vault delta vs matching control | Attacker pool cost | Actual swap shortfall |
+| --- | ---: | --- | ---: | ---: | --- |
+| honest | 0.0% | executed | +0.000000 | 0.000000 | not applicable |
+| swap-honest | 0.0% | executed | +0.000000 | 0.000000 | unavailable |
+| pre-observation | 0.5% | executed | +0.053963 | 1.998402 | not applicable |
+| post-observation | 0.5% | executed | +0.054386 | 1.998403 | not applicable |
+| ceiling | 0.5% | refused (InvalidAmount()) | +0.070043 | 1.998428 | not applicable |
+| swap-pre-observation | 0.5% | executed | +0.052889 | 1.997290 | unavailable |
+| swap-post-observation | 0.5% | executed | +0.053337 | 1.997357 | unavailable |
+| pre-observation | 0.9% | executed | +0.097274 | 3.638116 | not applicable |
+| post-observation | 0.9% | executed | +0.098055 | 3.638118 | not applicable |
+| ceiling | 0.9% | refused (InvalidAmount()) | +0.113769 | 3.638199 | not applicable |
+| swap-pre-observation | 0.9% | executed | +0.095287 | 3.636045 | unavailable |
+| swap-post-observation | 0.9% | executed | +0.096196 | 3.636263 | unavailable |
+| pre-observation | 1.1% | executed | +0.118973 | 4.603024 | not applicable |
+| post-observation | 1.1% | refused (InvalidPrice()) | +0.135695 | 4.603155 | not applicable |
+| swap-pre-observation | 1.1% | executed | +0.116512 | 4.600456 | unavailable |
+| swap-post-observation | 1.1% | refused (InvalidPrice()) | +0.128371 | 4.603155 | not executed |
+| pre-observation | 5.0% | executed | +0.548699 | 26.276605 | not applicable |
+| post-observation | 5.0% | refused (InvalidPrice()) | +0.572460 | 26.280035 | not applicable |
+| swap-pre-observation | 5.0% | executed | +0.534378 | 26.261622 | unavailable |
+| swap-post-observation | 5.0% | refused (InvalidPrice()) | +0.565136 | 26.280035 | not executed |
+| pre-observation | 20.0% | executed | +2.094917 | 92.619123 | not applicable |
+| post-observation | 20.0% | refused (InvalidPrice()) | +2.192834 | 92.688725 | not applicable |
+| swap-pre-observation | 20.0% | executed | +1.990433 | 92.516740 | unavailable |
+| swap-post-observation | 20.0% | refused (InvalidPrice()) | +2.185510 | 92.688725 | not executed |
 
-| step | outcome | L2 gas | paid to the owner (raw) |
-| --- | --- | ---: | ---: |
-| mint successor (execute, MINT) | executed | 1,742,808 | - |
-| withdrawChildPosition | executed | 71,936 | - |
-| withdrawFeeReserves currency0 | executed | 69,634 | 155963123686528 |
-| withdrawFeeReserves currency1 | executed | 77,839 | 4077974 |
-| recoverUntrackedCurrency currency0 | executed | 67,458 | 1000000000000000 |
+The swap control exceeds the non-swap control by 0.088853 USDG in the narrow
+run and 0.007324 USDG in the wide run. Original swap deltas included those
+unrelated differences. An unchanged anchor also does not mean an unchanged
+execution exchange rate: corrected records label the nonzero post-observation
+spot quote differences as estimates, with actual proceeds unavailable.
 
-The successor is token 3011979, ticks [-197616, -193360], liquidity
-367253381229, owned by the vault until `withdrawChildPosition` hands it to the owner. The reserve
-withdrawals pay exactly what the ledger held (0.000156 WETH and
-4.077974 USDG), the recovery returns the donation to the wei, and
-`accountedCurrency` reads zero for both currencies afterwards.
+## Conclusions and limits
 
-### Gas, read rather than estimated
+Recorded local-pool executions refused post-observation moves of 1.1%, 5%,
+and 20% with `InvalidPrice()`. Wide-range ceiling cases refused otherwise
+executable adds. Concentrated positions could fail closed on smaller composition
+changes with `InvalidAmount()`. These show local mechanics against real pool
+state, not live Nitro compatibility, service admission, or finalized-state reads.
 
-The honest compound's receipt shows **1,162,940 gas** on the L2 for 1,764 bytes of
-calldata; the live node's `NodeInterface.gasEstimateL1Component` puts the L1 data component of that
-calldata at **0** with an L1 base-fee estimate of 0 wei, at an L2 base fee of
-0.0547 gwei - about 0.000064 ETH per compound at that moment. A point sample
-from one block, recorded because SECURITY_SPEC §8 asks for L1 and L2 cost evidence and the release
-manifest calls the extra fee components unqualified; the successor mint is the most expensive
-action at 1,742,808 gas, and every owner exit is under 80,000.
+The sampled pre-observation cases had positive vault mark-to-reference deltas
+and negative attacker pool PnL at these specific sizes. They do not prove attacks
+always lose money. Outcomes depend on depth, reserves, position share, range,
+transaction grouping, pool fees, and gas. Missing old receipts prevent a
+separate conclusion about realized swap shortfall.
 
-## What the numbers say
+The former “about $500 per compound/per vault” safety interpretation is withdrawn.
+A manipulation can expose multiple vaults and actions in one pool/window while
+sharing its move-and-restore cost. Relevant exposure is aggregate executed
+notional, with cumulative impact included. These point samples establish no
+per-vault reserve threshold, universal break-even threshold, or on-chain
+aggregate exposure cap. The tool no longer emits a linearly extrapolated
+`breakevenCompoundedQuote`.
 
-**D-01 holds on a real pool.** Every post-observation move at or beyond the limit — 1.1%, 5%,
-20% — was refused with `InvalidPrice()`, with or without a swap, on both ranges. The anchor is
-the published observation; the engine compares the live spot to it before any action, and a
-spot that moved more than `maxPriceImpactBps` since the observation ends the execution before
-it touches the position.
+## Historical lifecycle and gas
 
-**D-02 holds, and the wide range is where it can be seen.** On the ±2% position a spot that
-moved even 0.5% after the observation changes the required composition by more than the
-plan's slack, so the add is refused as `InvalidAmount()` before any ceiling matters — the
-compound fails closed on its own. On the ±22% position the same moves fit and execute; with
-the ceilings set to the honest amounts they are refused with `InvalidAmount()`. The ceiling is
-the deciding clause there, which is what the review asked for and what
-`DominoExecutionEngineV4._bound` now pins.
+The [original lifecycle record](fork/weth-usdg-lifecycle-2026-09-20.json)
+remains local-fork evidence. No live vault was created.
 
-**The pre-observation sandwich is real, and it does not pay.** In every executed
-pre-observation scenario the vault ended *better* off than in the honest compound, by cents:
-the attacker's own volume pays the pool's fee, the root position earns its share, and that
-share exceeds any impermanent loss on the few USDG being compounded. The attacker's cost
-rises with the move — roughly $2.6 at 0.5%, $4.7 at 0.9%, $6 at 1.1%, $28 at 5% and $92 at
-20% on this pool's depth — while what it can extract is bounded by the compounded fees, which
-the review already stated. The direct channel is the swap: selling fees at a moved anchor
-loses the move times the amount sold, and the swap shortfall column shows exactly that, in
-tenths of a cent here because the amounts are fees. For a manipulation to pay, one compound
-would have to sell fees worth the attacker's cost divided by the move, and on this pool that
-ratio is nearly flat: $4.72 for 0.9%, $28.28 for 5%, $92.42 for 20% — about **$500 of fees
-sold at the moved rate per compound**, whatever the move. That is the number to keep against
-the fee reserves a vault is allowed to accumulate before compounding, and it scales with the
-pool's depth.
+| Step | Outcome | Child receipt gas used |
+| --- | --- | ---: |
+| mint successor (execute, MINT) | executed | 1742808 |
+| withdrawChildPosition | executed | 71936 |
+| withdrawFeeReserves currency0 | executed | 69634 |
+| withdrawFeeReserves currency1 | executed | 77839 |
+| recoverUntrackedCurrency currency0 | executed | 67458 |
 
-**What no band can see is bounded by the publisher.** Pre-observation manipulation defeats
-the guard's band by construction (spot and published price agree) and passes the engine's
-impact check (the anchor *is* the moved price). The residual is whatever an honest-but-naive
-publisher reads; the deviation band bounds a stolen key, not a moved pool. The measured
-attacker cost is what makes this expensive, and it scales with pool depth, not with the
-vault.
-
-**One operational note, not a security one.** On a concentrated range, a 0.5% move between
-observation and execution makes an honestly sized compound fail. In production the two are
-seconds apart, but volatile pairs move that much in seconds; the executor should expect
-`InvalidAmount()` refusals and re-plan rather than treat them as faults.
+The original gas point sample remains verbatim in raw JSON. Its L1 component and
+base-fee fields came from one live NodeInterface call; the execution gas came
+from a child receipt. A returned zero L1 component is not a permanent exemption.
+Child receipt products do not qualify full live Nitro cost. See
+[V4 execution](../contracts/V4_EXECUTION.md#who-pays-gas-and-how-the-operator-is-funded)
+for actual payers and the absence of automatic operator top-up.
 
 ## Reproduce
 
+Offline, without RPC access:
+
 ```sh
 backend/.venv/bin/python backend/qualify_execution_fork.py \
-  --source-url http://127.0.0.1:18547 --rounds 40 --moves 50,90,110,500,2000 --output /tmp/narrow.json
-backend/.venv/bin/python backend/qualify_execution_fork.py \
-  --source-url http://127.0.0.1:18547 --width 2000 --rounds 40 --moves 50,90,110,500,2000 --output /tmp/wide.json
+  --recompute reports/fork/weth-usdg-narrow-2026-09-20.json \
+  --output /tmp/narrow-corrected.json
+backend/.venv/bin/python -m unittest \
+  backend.tests.test_qualify_execution_fork backend.tests.test_qualify_execution_fork_metrics
 ```
 
-with `127.0.0.1:18547` forwarded to a Nitro node's HTTP port, or `--rpc-config` naming a private
-`providers.json` whose historical source is archive-capable. `--lifecycle` adds the successor mint
-and the owner exits after the scenarios. A pruned node keeps state for its
-block-age window only, so the fork starts at the head and a run must finish inside that
-window; these took about four minutes each. The raw outputs of the runs summarised above are
-in [`fork/`](fork/). `backend/tests/test_qualify_execution_fork.py` checks the tool's
-arithmetic and its source guard offline.
+New fork from the public endpoint, without loading private provider configuration:
+
+```sh
+backend/.venv/bin/python backend/qualify_execution_fork.py \
+  --public-rpc --rounds 40 --moves 50,90,110,500,2000 \
+  --output /tmp/narrow-current.json
+```
+
+Compile the corrected contracts and `MockNitroArbSys` first. For artifacts in
+another reviewed checkout, set `DOMINO_COMPOUND_EVM_ROOT` to that checkout.
+The fork installs the explicit child-only ArbSys stand-in before vault
+initialization and records its runtime hash and limitations. A pruned source
+may stop serving its selected state before the experiment finishes; that makes
+the run unavailable, not passed. A current fork rerun is separate evidence.
+
+Validation in this revision: 13 focused offline tests passed; all three old
+JSON files were recomputed without changing their originals. That offline
+result claims no new fork execution.

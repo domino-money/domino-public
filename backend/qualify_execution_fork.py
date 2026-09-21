@@ -1,6 +1,6 @@
 """Measure the compound sandwich on a forked Robinhood pool (review D-01, D-02).
 
-Forks Robinhood Chain (4663) at a finalized block, deploys the V4 stack from the
+Forks Robinhood Chain (4663) at a selected head block, deploys the V4 stack from the
 built artifacts, gives a synthetic owner a root position in a real pool through
 DominoSetup, earns it fees with round-trip swaps, and then runs one compound per
 scenario from one common snapshot:
@@ -15,9 +15,11 @@ scenario from one common snapshot:
   ceiling           post-observation inside the impact limit, with the plan's
                     maxAdded set to the honest amounts - what D-02 refuses.
 
-Every figure in the output is read from the fork; nothing is estimated. The
-attacker's cost is real pool depth and real fees. Balances, impersonation and
-snapshots are experiment controls on the child only. Never a production path.
+Receipts supply actual swap proceeds, consumed amounts and gas products.
+Valuation uses the stated fixed-price/range formulas; quote differences are
+estimates and are never substituted for receipts. Balances, impersonation,
+ArbSys emulation and snapshots are child-only controls. This Anvil experiment
+does not reproduce Nitro's EVM opcode overrides or qualify live execution.
 
 The fork's upstream is either the read gateway over the configured historical
 source, or a loopback JSON-RPC port (an SSH-forwarded self-hosted node), so no
@@ -26,6 +28,7 @@ provider credential ever enters this process or its output.
 import argparse
 import json
 import math
+import os
 import sys
 import time
 import urllib.request
@@ -37,7 +40,7 @@ from eth_hash.auto import keccak
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from deposit_fork import DepositFork
-from discovery import CHAIN_ID, POOL_MANAGER, POSITION_MANAGER, STATE_VIEW, ZERO, DataError
+from discovery import CHAIN_ID, RPC_URL, POOL_MANAGER, POSITION_MANAGER, STATE_VIEW, ZERO, DataError
 from fork_read_gateway import ForkReadGateway
 from local_config import load_config
 from rpc_config import DEFAULT_RPC_HOSTS, configured_history_rpc_source
@@ -100,6 +103,102 @@ def liquidity_for_amounts(amount0, amount1, price, lower, upper):
 def quote_value(amount0, amount1, price):
     """Both currencies in units of currency1 at a sqrt price."""
     return amount1 + amount0 * price * price // 2**192
+
+
+def receipt_metrics(receipt, engine, vault, intent_id, currencies):
+    """Decode only the known engine's identity-bound economic events.
+
+    This is experimental receipt extraction, not the production canonical
+    verifier. Missing successful swap events are a harness error, never zero.
+    """
+    added = {currency: 0 for currency in currencies}
+    conversions = []
+    for log in receipt.get('logs', []):
+        if log.get('address', '').lower() != engine.lower():
+            continue
+        topics = log.get('topics', [])
+        if not topics or topics[0] not in (v.APPLIED, v.CONVERTED):
+            continue
+        if (len(topics) != 4 or topics[1].lower() != '0x' + encode(['address'], [vault]).hex()
+                or topics[2].lower() != intent_id.lower()):
+            raise DataError('fork_receipt_identity_mismatch')
+        types = (['address', 'uint256', g.AMOUNTS_TYPE] if topics[0] == v.APPLIED else
+                 ['address', 'address', 'uint128', 'uint128', g.AMOUNTS_TYPE, 'uint128', 'uint128'])
+        raw = bytes.fromhex(log['data'][2:])
+        values = decode(types, raw)
+        if encode(types, values) != raw:
+            raise DataError('fork_receipt_noncanonical_data')
+        if topics[0] == v.APPLIED:
+            currency, _, amounts = values
+            if currency not in added:
+                raise DataError('fork_receipt_currency_mismatch')
+            added[currency] += amounts[6]
+        else:
+            cin, cout, amount_in, amount_out, amounts, before, after = values
+            if (cin not in added or cout not in added or cin == cout or amount_in != amounts[6]
+                    or after != before + amount_out or conversions):
+                raise DataError('fork_receipt_conversion_mismatch')
+            conversions.append({'status': 'measured', 'sourceId': topics[3], 'currencyIn': cin,
+                'currencyOut': cout, 'amountInRaw': str(amount_in), 'amountOutRaw': str(amount_out),
+                'serviceFeeInputRaw': str(amounts[5]), 'receiptLogIndex': int(log['logIndex'], 16)})
+    return tuple(added[c] for c in currencies), conversions
+
+
+def scenario_metrics(scenario, controls, reference):
+    """Same-recipe controls and separately labelled actual/estimated swap metrics."""
+    name = 'swap-honest' if scenario.get('swap') else 'honest'
+    control = controls.get(name)
+    result = {'controlScenario': name}
+    if scenario.get('outcome') == 'harness-error' or scenario.get('vaultValueAfterQuote') is None:
+        result['comparisonStatus'] = 'unavailable'
+    elif not control or control.get('outcome') != 'executed':
+        result['comparisonStatus'] = 'unavailable'
+    else:
+        result['comparisonStatus'] = 'computed_from_recorded_balances'
+        result['vaultValueDeltaVersusControlQuote'] = str(int(scenario['vaultValueAfterQuote']) - int(control['vaultValueAfterQuote']))
+    if scenario.get('attackerPnlQuote') is not None:
+        result['attackerPoolCostQuote'] = str(-int(scenario['attackerPnlQuote']))
+    if scenario.get('swap') and scenario.get('outcome') == 'executed':
+        swap = scenario.get('swapExecution', {})
+        amount = int(scenario['swapIn0'])
+        reference_quote = quote_value(amount, 0, reference)
+        result['swapReferenceQuote'] = str(reference_quote)
+        result['preSwapSpotQuoteDifference'] = str(reference_quote - quote_value(amount, 0, int(scenario['sqrtPriceAtCompound'])))
+        result['preSwapSpotQuoteDifferenceBasis'] = 'quote_estimate_before_pool_fee_and_swap_impact'
+        if swap.get('status') == 'measured':
+            if int(swap['amountInRaw']) != amount:
+                raise DataError('fork_receipt_input_mismatch')
+            result['swapShortfallStatus'] = 'measured_output_vs_reference_quote'
+            result['swapShortfallQuote'] = str(reference_quote - int(swap['amountOutRaw']))
+            result['swapShortfallBasis'] = 'includes_pool_fee_and_swap_impact; not_pure_manipulation_loss'
+            control_swap = (control or {}).get('swapExecution', {})
+            if control_swap.get('status') == 'measured' and control_swap['amountInRaw'] == swap['amountInRaw']:
+                result['swapOutputDeltaVersusControlQuote'] = str(int(swap['amountOutRaw']) - int(control_swap['amountOutRaw']))
+            else:
+                result['swapOutputComparisonStatus'] = 'unavailable_or_different_input_amount'
+        else:
+            result['swapShortfallStatus'] = 'unavailable_missing_conversion_receipt'
+    return result
+
+
+def correct_historical_report(report):
+    """Preserve original files; derived revisions never invent missing outputs."""
+    report = json.loads(json.dumps(report))
+    controls = {row['scenario']: row for row in report['scenarios'] if row['scenario'] in ('honest', 'swap-honest')}
+    for row in report['scenarios']:
+        old = {key: row.pop(key) for key in ('lossVersusHonestQuote', 'lossFractionOfCompounded', 'breakevenCompoundedQuote', 'attackerCostQuote') if key in row}
+        if old:
+            row['supersededMetrics'] = old
+        if row.get('swap') and row.get('outcome') == 'executed' and 'swapExecution' not in row:
+            row['swapExecution'] = {'status': 'unavailable', 'reason': 'historical_receipt_not_recorded'}
+        row.update(scenario_metrics(row, controls, int(report['referenceSqrtPrice'])))
+    report['evidenceVersion'] = 2
+    report['historicalCorrection'] = {'actualSwapOutputsRecovered': False,
+        'basis': 'same-recipe controls recomputed from original recorded after-values; missing receipts remain unavailable',
+        'beforeValueCaveat': 'legacy before-values queried accrued fees after the scenario; not an initial-value measurement',
+        'addedAmountsCaveat': 'legacy added amounts are formula estimates at pre-swap spot, not receipt amounts'}
+    report['economicScope'] = 'single-action point samples; no profitable-attack threshold or per-vault safety bound; exposure aggregates across a shared pool/window'
+    return report
 
 
 class Loopback:
@@ -199,7 +298,21 @@ class Experiment:
             ['bytes32'], [bytes.fromhex(self.pool_id[2:])])[:2]
 
     def artifact(self, source, name):
-        return json.loads((ROOT / 'contracts/out' / source / (name + '.json')).read_text())
+        root = Path(os.environ.get('DOMINO_COMPOUND_EVM_ROOT', ROOT))
+        return json.loads((root / 'contracts/out' / source / (name + '.json')).read_text())
+
+    def emulate_arbsys(self):
+        """Explicit child-only precompile stand-in, never a live Nitro proof."""
+        code = self.artifact('NitroTestSetup.sol', 'MockNitroArbSys')['deployedBytecode']['object']
+        address = '0x0000000000000000000000000000000000000064'
+        self.fork.request('anvil_setCode', [address, code])
+        actual = self.fork.request('eth_getCode', [address, 'latest'])
+        if actual != code:
+            raise DataError('fork_arbsys_emulation_failed')
+        return {'mode': 'explicit_anvil_arbsys_emulation', 'address': address,
+            'codeHash': '0x' + keccak(bytes.fromhex(code[2:])).hex(),
+            'nitroOpcodeQualification': False,
+            'scope': 'ArbSys uses child NUMBER/BLOCKHASH; does not reproduce Nitro opcode overrides'}
 
     def deploy(self, sender, source, name, types=(), values=()):
         artifact = self.artifact(source, name)
@@ -565,7 +678,9 @@ class Experiment:
             result = {'scenario': name, 'moveBps': move_bps, 'preObservation': pre_observation, 'ceiling': ceiling,
                 'swap': swap}
             attacker_before = self.driver_balances()
+            attacker_gas_before = self.balance(ZERO, ATTACKER)
             liquidity_before, reserves_before = self.vault_state()
+            value_before = self.vault_value(reference, liquidity_before, reserves_before)
             result['sqrtPriceBefore'] = str(self.spot()[0])
             if move_bps and pre_observation:
                 sold = self.amount_for_move(move_bps)
@@ -594,11 +709,28 @@ class Experiment:
             result['sqrtPriceAtCompound'] = str(self.spot()[0])
             receipt = self.send(OPERATOR, self.vault, plan.calldata())
             result['gasUsed'] = int(receipt['gasUsed'], 16)
+            result['gasPayer'] = OPERATOR
+            result['gasFunding'] = 'synthetic_native_balance_set_on_child; no_asset_sale'
+            if receipt.get('effectiveGasPrice') is not None:
+                result['effectiveGasPriceWei'] = str(int(receipt['effectiveGasPrice'], 16))
+                result['receiptGasProductWei'] = str(result['gasUsed'] * int(result['effectiveGasPriceWei']))
+            added = (0, 0)
             if receipt['status'] == '0x1':
                 result['outcome'] = 'executed'
+                added, conversions = receipt_metrics(receipt, self.engine, self.vault, plan.authority.intentId, self.currencies)
+                if bool(conversions) != bool(swap_in):
+                    raise DataError('fork_conversion_receipt_missing_or_unexpected')
+                if conversions:
+                    conversion = conversions[0]
+                    if ((conversion['currencyIn'], conversion['currencyOut'], int(conversion['amountInRaw'])) != (*self.currencies, swap_in)
+                            or conversion['sourceId'] != plan.swap.sourceId):
+                        raise DataError('fork_conversion_route_mismatch')
+                    result['swapExecution'] = conversion
             else:
                 result['outcome'] = 'refused'
                 result['reason'] = self.revert_reason(OPERATOR, self.vault, plan.calldata())
+                if swap:
+                    result['swapExecution'] = {'status': 'not_executed', 'reason': 'compound_reverted'}
             if move_bps:
                 received = self.balance(self.key.currency1, self.driver) - attacker_before[1]
                 if received > 0:
@@ -607,16 +739,16 @@ class Experiment:
             liquidity_after, reserves_after = self.vault_state()
             result['liquidityAdded'] = str(liquidity_after - liquidity_before)
             result['reservesAfter'] = [str(r) for r in reserves_after]
-            added = amounts_for_liquidity(liquidity_after - liquidity_before, int(result['sqrtPriceAtCompound']),
-                self.lower_price, self.upper_price)
             result['addedAmounts'] = [str(a) for a in added]
-            value_before = self.vault_value(reference, liquidity_before, reserves_before)
+            result['addedAmountsBasis'] = 'BudgetApplied_receipt_events'
             value_after = self.vault_value(reference, liquidity_after, reserves_after)
             result['vaultValueBeforeQuote'] = str(value_before)
             result['vaultValueAfterQuote'] = str(value_after)
             attacker_after = self.driver_balances()
             result['attackerPnlQuote'] = str(quote_value(*attacker_after, reference) - quote_value(*attacker_before, reference))
             result['attackerBalanceDelta'] = [str(a - b) for a, b in zip(attacker_after, attacker_before)]
+            result['attackerGasCostWei'] = str(attacker_gas_before - self.balance(ZERO, ATTACKER))
+            result['attackerPnlBasis'] = 'driver_token_balances_at_reference_quote; excludes_attacker_gas'
             return result, added
         finally:
             self.fork.request('evm_revert', [checkpoint])
@@ -624,8 +756,11 @@ class Experiment:
 
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__.split('\n')[0])
-    parser.add_argument('--rpc-config', type=Path, help='private providers.json; default: the local one, else the public source')
-    parser.add_argument('--source-url', help='loopback JSON-RPC source, e.g. an SSH-forwarded node; replaces the gateway')
+    source_options = parser.add_mutually_exclusive_group()
+    source_options.add_argument('--rpc-config', type=Path, help='explicit private providers.json')
+    source_options.add_argument('--source-url', help='loopback JSON-RPC source, e.g. an SSH-forwarded node; replaces the gateway')
+    source_options.add_argument('--public-rpc', action='store_true', help='official public endpoint only; does not load local/private configuration')
+    parser.add_argument('--recompute', type=Path, help='derive corrected metrics from historical JSON offline; never fills absent receipt outputs')
     parser.add_argument('--pool', choices=sorted(POOLS), default='weth-usdg')
     parser.add_argument('--block', help='fork block number (hex or decimal); default: the head block')
     parser.add_argument('--band', type=int, default=GUARD_BAND_BPS, help='price guard band, bps of sqrt price')
@@ -637,16 +772,26 @@ def main(argv=None):
     parser.add_argument('--lifecycle', action='store_true', help='also mint a successor near the ceiling and run every owner exit')
     parser.add_argument('--output', required=True, type=Path)
     args = parser.parse_args(argv)
+    if args.recompute:
+        report = correct_historical_report(json.loads(args.recompute.read_text()))
+        report['historicalCorrection']['sourceFile'] = args.recompute.name
+        with open(args.output, 'x') as handle:
+            json.dump(report, handle, indent=1)
+        return 0
     moves = [int(x) for x in args.moves.split(',') if x]
     report = {'tool': 'qualify_execution_fork', 'chainId': CHAIN_ID, 'pool': args.pool,
         'poolId': POOLS[args.pool][0], 'guardBandBps': args.band, 'maxPriceImpactBps': MAX_PRICE_IMPACT_BPS,
         'serviceFeeBps': SERVICE_FEE_BPS, 'planSlackPercent': 10, 'rootWidthTicks': args.width,
-        'startedAt': int(time.time()), 'scenarios': [],
-        'valuation': 'currency1 units at the pre-scenario sqrt price; position amounts from liquidity and range, plus vault reserves',
+        'startedAt': int(time.time()), 'scenarios': [], 'evidenceVersion': 2,
+        'valuation': 'formula estimates in currency1 units at pre-scenario price; position amounts from liquidity/range plus measured reserves and accrued fees',
+        'economicScope': 'single-action point samples; no profitable-attack threshold or per-vault safety bound; exposure aggregates across a shared pool/window',
         'controls': 'synthetic accounts impersonated on the child; balances set locally; WETH wrapped; other tokens moved from the pool manager'}
     if args.source_url:
         source = Loopback(args.source_url)
         report['upstream'] = 'loopback source'
+    elif args.public_rpc:
+        source = ForkReadGateway(RPC_URL, max_requests=40_000, total_seconds=1800)
+        report['upstream'] = urlsplit(RPC_URL).hostname
     else:
         config = load_config(args.rpc_config) if args.rpc_config else load_config()
         history = configured_history_rpc_source(config)
@@ -665,6 +810,7 @@ def main(argv=None):
         with DepositFork(gateway, block=block, total_seconds=1800, max_requests=40_000) as fork:
             report['anvilVersion'] = fork.version
             x = Experiment(fork, args.pool, args.band)
+            report['chainSemantics'] = x.emulate_arbsys()
             x.deploy_stack()
             report['stack'] = {k: getattr(x, k) for k in ('factory', 'helper', 'routing', 'guard', 'engine',
                 'implementation', 'setup', 'driver')}
@@ -705,7 +851,6 @@ def main(argv=None):
             except Exception as error:  # noqa: BLE001
                 report['gas'] = {'unavailable': type(error).__name__}
             print(json.dumps({'stage': 'scenario', **{k: honest[k] for k in ('scenario', 'outcome', 'liquidityAdded')}}), flush=True)
-            honest_value = int(honest['vaultValueAfterQuote'])
             compounded = quote_value(*honest_added, reference)
             report['honestCompoundedQuote'] = str(compounded)
             # The swap recipe's own control, before any manipulation.
@@ -715,6 +860,9 @@ def main(argv=None):
                 control = {'scenario': 'swap-honest', 'moveBps': 0, 'swap': True, 'outcome': 'harness-error',
                     'reason': type(error).__name__ + ': ' + str(error)[:120]}
             report['scenarios'].append(control)
+            controls = {'honest': honest, 'swap-honest': control}
+            for row in (honest, control):
+                row.update(scenario_metrics(row, controls, reference))
             print(json.dumps({'stage': 'scenario', **{k: control.get(k) for k in ('scenario', 'outcome', 'reason', 'liquidityAdded')}}), flush=True)
             families = (('pre-observation', True, False, False), ('post-observation', False, False, False),
                 ('ceiling', False, True, False), ('swap-pre-observation', True, False, True),
@@ -728,19 +876,11 @@ def main(argv=None):
                     except Exception as error:  # noqa: BLE001 - one scenario's failure is a result, not the run's
                         result = {'scenario': name, 'moveBps': move, 'swap': swap, 'outcome': 'harness-error',
                             'reason': type(error).__name__ + ': ' + str(error)[:120]}
-                    else:
-                        loss = honest_value - int(result['vaultValueAfterQuote'])
-                        result['lossVersusHonestQuote'] = str(loss)
-                        cost = -int(result['attackerPnlQuote'])
-                        result['attackerCostQuote'] = str(cost)
-                        if loss > 0 and compounded > 0:
-                            result['lossFractionOfCompounded'] = loss / compounded
-                            # What one compound would have to move for this attack to pay.
-                            result['breakevenCompoundedQuote'] = str(cost * compounded // loss)
+                    result.update(scenario_metrics(result, controls, reference))
                     report['scenarios'].append(result)
                     print(json.dumps({'stage': 'scenario', **{k: result.get(k) for k in
-                        ('scenario', 'moveBps', 'outcome', 'reason', 'lossVersusHonestQuote', 'attackerCostQuote',
-                         'breakevenCompoundedQuote')}}), flush=True)
+                        ('scenario', 'moveBps', 'outcome', 'reason', 'vaultValueDeltaVersusControlQuote', 'attackerPoolCostQuote',
+                         'swapShortfallStatus', 'swapShortfallQuote')}}), flush=True)
             if args.lifecycle:
                 try:
                     report['lifecycle'] = x.lifecycle()

@@ -1,7 +1,7 @@
 # V4 fee execution: E4, E6 and E7
 
-13 September 2026. This candidate adds a separate V4 deployment. The V3 vault,
-factory, engine and read helper source/ABI remain unchanged. No Robinhood funds,
+Updated 21 September 2026. This candidate uses a separate V4 deployment; the
+retired V3 contracts are not part of this release. No Robinhood funds,
 wallets, deployments or provider qualification are implied by the local tests.
 The economic policy remains [REINVESTMENT_POLICY](../REINVESTMENT_POLICY.md) and
 [PRICING_POLICY](../PRICING_POLICY.md).
@@ -146,6 +146,33 @@ their unspent additions from its projection view and returns them separately as
 durable ledger and later intents. Earning timestamps, complete income coverage,
 USD valuation and live profitability are not manufactured from collection time.
 
+## Who pays gas and how the operator is funded
+
+The transaction sender pays network gas in native ETH. The deployer pays for
+deployment, the publisher pays for publishing an observation, and the operator
+pays for an automated `execute`. An owner who submits an action directly pays
+that transaction's gas, including setup and owner exits. A reverted transaction
+can still cost its sender gas; it cannot collect the automation service fee.
+
+The operator must already hold enough ETH before submitting. In
+`backend/execution_signer.py`, `envelope()` checks the signer's native balance
+against its configured gas limit and fee cap and stops with
+`execution_gas_balance` if funding is insufficient. There is no implemented
+automatic top-up, sale of vault assets for gas, or reimbursement call. Internal
+balancing swaps send their output to the vault's charged-fee reserve. The
+service cut goes to the immutable service-fee recipient in the consumed
+currency; receiving a token service fee does not automatically convert it to
+ETH or transfer it to the operator.
+
+The approved economics include operator compensation and gas within the 2%
+cut on consumed earned fees; no additional gas debit is taken from principal.
+Funding and, where needed, converting the service recipient's revenue into
+operator ETH are separate treasury operations that have not been automated.
+The fork simulation explicitly gives synthetic accounts ETH using
+`anvil_setBalance`; it neither sells user assets nor proves a live funding
+service. Receipt gas products and simulated balances are not full live Nitro
+cost qualification.
+
 ## Local evidence and size gates
 
 Solc `0.8.26+commit.8a97fa7a`, Cancun, optimizer 200, viaIR, metadata hash disabled.
@@ -154,7 +181,11 @@ The vendored official core/periphery/Permit2 provenance is unchanged in
 The runtime uses its MIT FullMath and TickMath; the tests also use SqrtPriceMath;
 tests execute the actual PoolManager and PositionManager, not an effect mock.
 
-| Component | Runtime bytes | Initcode including constructor words |
+The following table is a **historical 13 September measurement**, retained for
+provenance, not the current deployment manifest. Read current sizes and hashes
+from the corrected artifacts and `scripts/check-contract-size.mjs` output.
+
+| Historical component | Runtime bytes | Initcode including constructor words |
 | --- | ---: | ---: |
 | DominoVaultV4 | 24,263 | 25,760 |
 | DominoVaultFactoryV4 | 3,502 | 4,367 |
@@ -163,15 +194,15 @@ tests execute the actual PoolManager and PositionManager, not an effect mock.
 | DominoPriceGuardV4 | 2,055 | 2,247 |
 | DominoSetup (separate owner-funded setup) | 11,688 | 12,753 |
 
-Every component fits [EIP-170](https://eips.ethereum.org/EIPS/eip-170) (24,576
+The gate checks [EIP-170](https://eips.ethereum.org/EIPS/eip-170) (24,576
 runtime bytes) and [EIP-3860](https://eips.ethereum.org/EIPS/eip-3860) (49,152
-initcode bytes). `scripts/check-contract-size.mjs` now enumerates the V3 and V4
+initcode bytes). `scripts/check-contract-size.mjs` enumerates the shipping V4
 components plus Setup, checks exact compiler/constructor ABI, and retains a
 313-byte V4 custody reserve and 2,048-byte V4 engine reserve. Setup uses four
 address words plus uint16/uint64 words (192 bytes), not six addresses. This gate
 measures final artifacts; it does not bypass native chain deployment limits.
 
-The 17 official EVM tests cover net/general parity on ERC20 and native pairs,
+The official EVM tests cover net/general parity on ERC20 and native pairs,
 fee-only waiting allocations, donations, old-unallocated versus new-collection
 separation, exact floor failures, cumulative rounding, successor/replay/reorg/
 cap/inverse geometry, funding, swap bounds/revocation/expiry/partial-fill rollback,
