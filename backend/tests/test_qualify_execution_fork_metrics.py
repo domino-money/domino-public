@@ -1,7 +1,10 @@
 """Receipt-derived swap evidence and same-recipe historical corrections."""
 from copy import deepcopy
+import hashlib
+import json
 from pathlib import Path
 import sys
+import tempfile
 import unittest
 
 from eth_abi import encode
@@ -97,6 +100,56 @@ class EconomicMetricsTests(unittest.TestCase):
         self.assertEqual(result['swapExecution']['status'], 'unavailable')
         self.assertNotIn('breakevenCompoundedQuote', result)
         self.assertNotIn('swapShortfallQuote', result)
+
+
+class ArtifactProvenanceTests(unittest.TestCase):
+    def setUp(self):
+        self.directory = tempfile.TemporaryDirectory()
+        self.addCleanup(self.directory.cleanup)
+        self.root = Path(self.directory.name)
+        self.source = 'DominoExecutionEngineV4.sol'
+        self.name = 'DominoExecutionEngineV4'
+        self.target = 'src/' + self.source
+        self.source_path = self.root / 'contracts' / self.target
+        self.source_path.parent.mkdir(parents=True)
+        self.source_bytes = b'// synthetic artifact provenance fixture\npragma solidity 0.8.26;\n'
+        self.source_path.write_bytes(self.source_bytes)
+        self.artifact = {'metadata': {'compiler': {'version': '0.8.26+commit.8a97fa7a'},
+            'settings': {'compilationTarget': {self.target: self.name}, 'optimizer': {'enabled': True, 'runs': 200},
+                'viaIR': True, 'evmVersion': 'cancun', 'metadata': {'bytecodeHash': 'none'}},
+            'sources': {self.target: {'keccak256': '0x' + q.keccak(self.source_bytes).hex()}}},
+            'bytecode': {'object': '0x60006000', 'linkReferences': {}},
+            'deployedBytecode': {'object': '0x6000', 'linkReferences': {}}}
+        self.artifact_path = self.root / 'contracts/out' / self.source / (self.name + '.json')
+        self.artifact_path.parent.mkdir(parents=True)
+        self.write_artifact()
+
+    def write_artifact(self):
+        self.artifact_path.write_text(json.dumps(self.artifact))
+
+    def test_provenance_binds_exact_source_artifact_and_both_bytecodes(self):
+        artifact, provenance, sources = q.load_fork_artifact(self.root, self.source, self.name)
+        self.assertEqual(artifact, self.artifact)
+        self.assertEqual(provenance['artifactSha256'], hashlib.sha256(self.artifact_path.read_bytes()).hexdigest())
+        self.assertEqual(sources[self.target]['sha256'], hashlib.sha256(self.source_bytes).hexdigest())
+        self.assertEqual(provenance['creationCodeHash'], '0x' + q.keccak(bytes.fromhex('60006000')).hex())
+        self.assertEqual(provenance['runtimeTemplateHash'], '0x' + q.keccak(bytes.fromhex('6000')).hex())
+
+    def test_stale_artifact_rejected_when_source_bytes_change(self):
+        self.source_path.write_bytes(self.source_bytes + b'// source changed after compilation\n')
+        with self.assertRaisesRegex(q.DataError, '^fork_artifact_source_changed$'):
+            q.load_fork_artifact(self.root, self.source, self.name)
+
+    def test_wrong_profile_and_unsafe_source_fail_closed(self):
+        self.artifact['metadata']['settings']['viaIR'] = False
+        self.write_artifact()
+        with self.assertRaisesRegex(q.DataError, '^fork_artifact_profile_mismatch$'):
+            q.load_fork_artifact(self.root, self.source, self.name)
+        self.artifact['metadata']['settings']['viaIR'] = True
+        self.artifact['metadata']['sources']['src/../outside.sol'] = {'keccak256': '0x' + '00' * 32}
+        self.write_artifact()
+        with self.assertRaisesRegex(q.DataError, '^fork_artifact_unsafe_source$'):
+            q.load_fork_artifact(self.root, self.source, self.name)
 
 
 if __name__ == '__main__':

@@ -26,9 +26,11 @@ source, or a loopback JSON-RPC port (an SSH-forwarded self-hosted node), so no
 provider credential ever enters this process or its output.
 """
 import argparse
+import hashlib
 import json
 import math
 import os
+import re
 import sys
 import time
 import urllib.request
@@ -57,6 +59,11 @@ LIMITS_TYPE = '(uint64,uint32,uint16,uint16,uint128,uint32,uint32)'
 INIT_TYPE = '(uint256,bytes32,address,address,address,bool,' + POLICY_TYPE + ',' + LIMITS_TYPE + ')'
 MINT_TYPE = '(bytes32,int24,int24,uint128,uint128,uint128,uint160,uint160,uint160,uint64)'
 OBSERVATION_TYPE = '(bytes32,uint64,bytes32,uint64,uint64,uint160)'
+FORK_ARTIFACTS = {name: 'src/' + name + '.sol' for name in (
+    'DominoVaultFactoryV4', 'DominoVaultReadHelper', 'DominoRoutingHelperV4',
+    'DominoPriceGuardV4', 'DominoExecutionEngineV4', 'DominoVaultV4', 'DominoSetup')}
+FORK_ARTIFACTS.update({'MockNitroArbSys': 'test/shared/NitroTestSetup.sol',
+    'OfficialV4SwapDriver': 'test/reference/OfficialV4Fixture.sol'})
 
 # Synthetic experiment accounts, impersonated on the child only.
 DEPLOYER = '0x00000000000000000000000000000000000d0d0d'
@@ -103,6 +110,55 @@ def liquidity_for_amounts(amount0, amount1, price, lower, upper):
 def quote_value(amount0, amount1, price):
     """Both currencies in units of currency1 at a sqrt price."""
     return amount1 + amount0 * price * price // 2**192
+
+
+def load_fork_artifact(root, source, name):
+    """Reject stale/unpinned builds and bind exact source bytes to loaded code."""
+    try:
+        target = FORK_ARTIFACTS[name]
+        if Path(target).name != source:
+            raise DataError('fork_artifact_target_mismatch')
+        contracts = (Path(root) / 'contracts').resolve()
+        raw = (contracts / 'out' / source / (name + '.json')).read_bytes()
+        artifact = json.loads(raw)
+        metadata = artifact['metadata']
+        settings = metadata['settings']
+        if (metadata['compiler']['version'] != '0.8.26+commit.8a97fa7a'
+                or settings.get('compilationTarget') != {target: name}
+                or settings.get('optimizer') != {'enabled': True, 'runs': 200}
+                or settings.get('viaIR') is not True or settings.get('evmVersion') != 'cancun'
+                or settings.get('metadata', {}).get('bytecodeHash') != 'none'):
+            raise DataError('fork_artifact_profile_mismatch')
+        sources = {}
+        if target not in metadata['sources']:
+            raise DataError('fork_artifact_source_missing')
+        for path, entry in metadata['sources'].items():
+            if (not path.startswith(('src/', 'test/', 'lib/')) or '\\' in path
+                    or any(part in ('', '.', '..') for part in path.split('/'))):
+                raise DataError('fork_artifact_unsafe_source')
+            resolved = (contracts / path).resolve()
+            if not resolved.is_relative_to(contracts):
+                raise DataError('fork_artifact_unsafe_source')
+            data = resolved.read_bytes()
+            digest = '0x' + keccak(data).hex()
+            if digest != entry['keccak256']:
+                raise DataError('fork_artifact_source_changed')
+            sources[path] = {'sha256': hashlib.sha256(data).hexdigest(), 'keccak256': digest}
+        hashes = {}
+        for key, label in (('bytecode', 'creationCodeHash'), ('deployedBytecode', 'runtimeTemplateHash')):
+            code = artifact[key]['object']
+            if not re.fullmatch(r'0x(?:[0-9a-fA-F]{2})+', code) or artifact[key].get('linkReferences'):
+                raise DataError('fork_artifact_invalid_bytecode')
+            hashes[label] = '0x' + keccak(bytes.fromhex(code[2:])).hex()
+        provenance = {'artifactSha256': hashlib.sha256(raw).hexdigest(), **hashes,
+            'compilationTarget': target, 'compilerVersion': metadata['compiler']['version'],
+            'sourceManifestSha256': hashlib.sha256(json.dumps(sources, sort_keys=True, separators=(',', ':')).encode()).hexdigest(),
+            'sourcePaths': sorted(sources)}
+        return artifact, provenance, sources
+    except DataError:
+        raise
+    except (AttributeError, KeyError, TypeError, ValueError, OSError):
+        raise DataError('fork_artifact_invalid_or_unavailable') from None
 
 
 def receipt_metrics(receipt, engine, vault, intent_id, currencies):
@@ -234,6 +290,8 @@ class Experiment:
         self.native = self.key.currency0 == ZERO
         # One sale size per move: every scenario starts from the same snapshot.
         self.move_amounts = {}
+        self.artifact_provenance = {'basis': 'validated_compiler_metadata_and_exact_local_source_bytes',
+            'artifacts': {}, 'sources': {}}
 
     # ---------------------------------------------------------------- rpc
     def call(self, target, signature, outputs, types=(), values=()):
@@ -299,7 +357,17 @@ class Experiment:
 
     def artifact(self, source, name):
         root = Path(os.environ.get('DOMINO_COMPOUND_EVM_ROOT', ROOT))
-        return json.loads((root / 'contracts/out' / source / (name + '.json')).read_text())
+        artifact, provenance, sources = load_fork_artifact(root, source, name)
+        recorded = self.artifact_provenance['artifacts'].get(name)
+        if recorded and recorded['artifactSha256'] != provenance['artifactSha256']:
+            raise DataError('fork_artifact_changed_during_run')
+        for path, digest in sources.items():
+            prior = self.artifact_provenance['sources'].get(path)
+            if prior and prior != digest:
+                raise DataError('fork_artifact_sources_changed_during_run')
+        self.artifact_provenance['artifacts'].setdefault(name, provenance)
+        self.artifact_provenance['sources'].update(sources)
+        return artifact
 
     def emulate_arbsys(self):
         """Explicit child-only precompile stand-in, never a live Nitro proof."""
@@ -309,6 +377,8 @@ class Experiment:
         actual = self.fork.request('eth_getCode', [address, 'latest'])
         if actual != code:
             raise DataError('fork_arbsys_emulation_failed')
+        self.artifact_provenance['artifacts']['MockNitroArbSys'].update({'installedAt': address,
+            'installedRuntimeCodeHash': '0x' + keccak(bytes.fromhex(actual[2:])).hex()})
         return {'mode': 'explicit_anvil_arbsys_emulation', 'address': address,
             'codeHash': '0x' + keccak(bytes.fromhex(code[2:])).hex(),
             'nitroOpcodeQualification': False,
@@ -318,7 +388,14 @@ class Experiment:
         artifact = self.artifact(source, name)
         initcode = artifact['bytecode']['object'] + encode(types, values).hex()
         receipt = self.must(sender, None, initcode, what='deploy:' + name)
-        return receipt['contractAddress'].lower()
+        address = receipt['contractAddress'].lower()
+        runtime = self.fork.request('eth_getCode', [address, 'latest'])
+        if not re.fullmatch(r'0x(?:[0-9a-fA-F]{2})+', runtime):
+            raise DataError('fork_deployed_code_missing')
+        self.artifact_provenance['artifacts'][name].update({'deployedAt': address,
+            'initcodeHash': '0x' + keccak(bytes.fromhex(initcode[2:])).hex(),
+            'deployedRuntimeCodeHash': '0x' + keccak(bytes.fromhex(runtime[2:])).hex()})
+        return address
 
     def fund_native(self, account, amount):
         self.fork.request('anvil_setBalance', [account, hex(amount)])
@@ -812,6 +889,9 @@ def main(argv=None):
             x = Experiment(fork, args.pool, args.band)
             report['chainSemantics'] = x.emulate_arbsys()
             x.deploy_stack()
+            if set(x.artifact_provenance['artifacts']) != set(FORK_ARTIFACTS):
+                raise DataError('fork_artifact_provenance_incomplete')
+            report['artifactProvenance'] = x.artifact_provenance
             report['stack'] = {k: getattr(x, k) for k in ('factory', 'helper', 'routing', 'guard', 'engine',
                 'implementation', 'setup', 'driver')}
             report['root'] = x.open_root(int(args.root0), int(args.root1), args.width)
