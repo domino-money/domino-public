@@ -13,7 +13,7 @@ Private source repository for a wallet-friendly Uniswap v4 liquidity app on Robi
 - **Wallet sessions candidate:** disabled SIWE backend with private PostgreSQL state and a separate session BFF; plain EOAs only. [Session runbook](docs/WALLET_SESSIONS.md). No frontend hookup or deployed login.
 - **Direct-deposit candidate:** durable owner-bound operations, one wallet-signed step at a time and verified receipts/NFT identity for admitted existing v4 pools. [Deposit runbook](docs/DIRECT_DEPOSITS.md). Disabled; no server signing/broadcast or public activation.
 - **Reviewed-token support:** WETH/USDG proxy profiles, fresh identity/state checks and explicit receipt amount bases in the disabled deposit candidate. Four deposit paths observed on a local Robinhood fork with the reviewed profiles. [Evidence and remaining gates](reports/UPGRADEABLE_ADMISSION_IMPLEMENTATION.md). No public activation or mainnet transactions.
-- **Contracts:** the [seven-component V4 release](contracts/README.md) implements owner-bound immutable clones, typed self-compound/netting/successor actions, owner-funded Setup and independent recovery. Local official-v4 and adversarial tests support review; no public financial deployment, signing or swaps are enabled. The V3 candidate was retired on 20 September 2026. [Current corrections and validation](reports/V4_REMEDIATION_2026-09-21.md) include Nitro L2 block semantics and fresh release artifact pins.
+- **Contracts:** the [seven-component public Domino V1 release](contracts/README.md) retains technical implementation version 4 and implements owner-bound immutable clones, typed self-compound/netting/successor actions, owner-funded Setup and independent recovery. Local official-v4 and adversarial tests support review; no public financial deployment, signing or swaps are enabled. The V3 candidate was retired on 20 September 2026. The [V4 remediation](reports/V4_REMEDIATION_2026-09-21.md) and [M1/M2/M3 corrections](reports/V4_M123_REMEDIATION_2026-09-21.md) document the internal bases; use the [public V1 build and unsigned release procedure](docs/FINANCIAL_RELEASE.md) for current deployment artifacts and pins.
 
 The personal live bot, operator wallet, credentials and operational database are outside this repository. See [implementation status](IMPLEMENTATION_STATUS.md), [alpha scope](ALPHA_SCOPE.md) and [security specification](SECURITY_SPEC.md).
 
@@ -56,6 +56,7 @@ The default Python suite explicitly skips PostgreSQL and native EVM cases. To ru
 npm --prefix app ci
 node scripts/test-contracts.mjs --match-path test/setup/DominoSetup.t.sol
 node scripts/test-contracts.mjs --match-path test/reference/OfficialDominoExecutionV4.t.sol
+node scripts/test-contracts.mjs --match-path test/audit_engine/SwapReinvestment.t.sol
 backend/.venv/bin/python backend/dev_postgres.py prepare-tests
 DOMINO_TEST_POSTGRES=1 DOMINO_TEST_EVM=1 backend/.venv/bin/python -m unittest discover -s backend/tests -v
 backend/.venv/bin/python backend/dev_postgres.py stop
@@ -76,10 +77,12 @@ Optional read-only provider setup and API commands are in [backend/README.md](ba
 | `api-contracts/read-v1/` | Shared read schemas, types, validators and fixtures |
 | `api-contracts/session-v1/` | Separate wallet-login schemas, types, validators and fixtures |
 | `bridge/` | Disabled Cloudflare read and session Worker candidates |
-| `contracts/` | V4 production contracts, official-pool integration and adversarial regressions |
+| `contracts/` | Public Domino V1 entrypoints, technical V4 bases, official-pool integration and adversarial regressions |
 | `scripts/` | Pinned compiler wrapper and repository checks |
 | `reports/` | Historical qualification evidence; not current production state |
 
 The existing owner-only Sites preview is a separate deployment. GitHub membership does not grant Sites access. Preserve `web/.openai/hosting.json`; publish only through the approved Sites workflow from a **separate checkout rooted at `web/`**, so the Sites source remote never replaces this repository's GitHub remote. No automatic deployment workflow is included.
 
 Third-party Uniswap reference sources retain their original notices and licenses in `backend/tests/reference/v4/`; see [third-party notices](backend/THIRD_PARTY_NOTICES.md).
+
+The current public V1 candidate is described in the [independent audit specification](reports/V1_INDEPENDENT_AUDIT_SPEC_2026-09-21.md), including complete-suite reproduction and the distinction from the original frozen V4 baseline.

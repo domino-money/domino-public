@@ -1,6 +1,8 @@
-# V4 fee execution: E4, E6 and E7
+# Technical V4 fee execution: public Domino V1, E4, E6 and E7
 
-Updated 21 September 2026. This candidate uses a separate V4 deployment; the
+Updated 21 September 2026. This candidate uses public Domino V1 deployment names
+over the existing technical V4 implementation; `implementationVersion()` remains 4.
+Uniswap V4, the execution wire and its hash domains retain their names. The
 retired V3 contracts are not part of this release. No Robinhood funds,
 wallets, deployments or provider qualification are implied by the local tests.
 The economic policy remains [REINVESTMENT_POLICY](../REINVESTMENT_POLICY.md) and
@@ -11,13 +13,13 @@ The economic policy remains [REINVESTMENT_POLICY](../REINVESTMENT_POLICY.md) and
 The factory does not embed creation bytecode for the entire architecture.
 Deployment is staged and its implementation may be finalized exactly once:
 
-1. `DominoVaultFactoryV4(poolManager, positionManager, stateView, serviceFeeRecipient)`.
-2. `DominoVaultReadHelper(positionManager, stateView)`.
-3. `DominoRoutingHelperV4()`.
-4. `DominoPriceGuardV4(pricePublisher, stateView, maxDeviationBps, guardian)`.
-5. `DominoExecutionEngineV4(factory, readHelper, routingHelper, priceGuard)`.
-6. `DominoVaultV4(factory, poolManager, positionManager, stateView, serviceFeeRecipient, readHelper, engine)`.
-7. `DominoSetup(poolManager, positionManager, stateView, serviceFeeRecipient, setupFeeBps, tariffVersion)`.
+1. `DominoVaultFactoryV1(poolManager, positionManager, stateView, serviceFeeRecipient)`.
+2. `DominoVaultReadHelperV1(positionManager, stateView)`.
+3. `DominoRoutingHelperV1()`.
+4. `DominoPriceGuardV1(pricePublisher, stateView, maxDeviationBps, guardian)`.
+5. `DominoExecutionEngineV1(factory, readHelper, routingHelper, priceGuard)`.
+6. `DominoVaultV1(factory, poolManager, positionManager, stateView, serviceFeeRecipient, readHelper, engine)`.
+7. `DominoSetupV1(poolManager, positionManager, stateView, serviceFeeRecipient, setupFeeBps, tariffVersion)`.
 8. The factory deployer calls `finalizeImplementation(implementation)` once.
 
 These are the eight transactions in the [unsigned release](../docs/FINANCIAL_RELEASE.md).
@@ -110,7 +112,7 @@ minimum output, directional sqrt-price limit and a separate price-observation ID
 The engine calls the pinned official PoolManager directly; it cannot invoke an
 arbitrary router or another pool. Partial fills revert. Input/output transfers,
 transient settlement debts, slippage floor and before/after price impact are
-checked. The publisher of `DominoPriceGuardV4` is a separate admitted price
+checked. The publisher of `DominoPriceGuardV1` (inheriting `DominoPriceGuardV4`) is a separate admitted price
 integrity source, not a spot read relabeled as an independent oracle. Each
 observation binds the pool, canonical recent L2 block hash, timestamp and expiry;
 revoked, stale, wrong-pool and mismatched-block observations fail. Local publisher
@@ -195,9 +197,17 @@ These vendored builds are not byte-identical to the mainnet dependency builds;
 the [separate qualification](../reports/v4-remediation-2026-09-21/DEPENDENCY_QUALIFICATION.md)
 records their independently verified runtime pins and limits.
 
+`backend/qualify_execution_fork.py` deploys the internal V4/unversioned bases in
+an isolated Anvil fork. Keep that evidence labeled as base-contract qualification.
+`scripts/build-public-release.mjs` separately builds the seven public V1 entrypoints
+and requires exact creation/runtime bytecode, ABI and immutable-range equivalence
+to those bases. The authenticated release manifest and unsigned preparation then
+select the V1 artifacts. This distinction does not rename historical audit evidence.
+
 The following table is a **historical 13 September measurement**, retained for
 provenance, not the current deployment manifest. Read current sizes and hashes
-from the corrected artifacts and `scripts/check-contract-size.mjs` output.
+from [release-artifacts.json](release-artifacts.json) and
+`scripts/check-contract-size.mjs --public-release` output.
 
 | Historical component | Runtime bytes | Initcode including constructor words |
 | --- | ---: | ---: |
@@ -210,9 +220,10 @@ from the corrected artifacts and `scripts/check-contract-size.mjs` output.
 
 The gate checks [EIP-170](https://eips.ethereum.org/EIPS/eip-170) (24,576
 runtime bytes) and [EIP-3860](https://eips.ethereum.org/EIPS/eip-3860) (49,152
-initcode bytes). `scripts/check-contract-size.mjs` enumerates the shipping V4
-components plus Setup, checks exact compiler/constructor ABI, and retains a
-313-byte V4 custody reserve and 2,048-byte V4 engine reserve. Setup uses four
+initcode bytes). `scripts/check-contract-size.mjs` checks the internal bases by
+default and the seven V1 deployment targets with `--public-release`. Both use the
+same exact compiler/constructor ABI checks, 313-byte custody reserve and
+2,048-byte engine reserve. Setup uses four
 address words plus uint16/uint64 words (192 bytes), not six addresses. This gate
 measures final artifacts; it does not bypass native chain deployment limits.
 

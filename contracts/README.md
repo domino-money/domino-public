@@ -1,17 +1,27 @@
-# V4 contracts
+# Public Domino V1 contracts — technical implementation V4
 
-The release contains seven contracts: the owner-bound immutable `DominoVaultV4`
-clone implementation, its `DominoVaultFactoryV4`, the non-custodial
-`DominoExecutionEngineV4`, `DominoRoutingHelperV4`, `DominoPriceGuardV4`, the
-stateless `DominoVaultReadHelper`, and owner-funded `DominoSetup`. The factory
+The public release contains seven contracts: the owner-bound immutable `DominoVaultV1`
+clone implementation, its `DominoVaultFactoryV1`, the non-custodial
+`DominoExecutionEngineV1`, `DominoRoutingHelperV1`, `DominoPriceGuardV1`, the
+stateless `DominoVaultReadHelperV1`, and owner-funded `DominoSetupV1`. The factory
 deployer finalizes the implementation once; it has no upgrade path. Each vault
 pins its engine and read helper, and its owner individually authorizes an operator.
+
+These public entrypoints inherit the existing technical V4 or unversioned bases
+without new operational functions, storage or overrides. The vault still returns
+`implementationVersion() == 4`; execution adapters, plan domains and schemas keep
+their technical versions. Uniswap V4 is independent of the public Domino V1 name.
+The public builder verifies exact creation/runtime bytecode, ABI and immutable-range
+equivalence to the bases before release preparation.
 
 The independent-audit baseline is tag **`v4-audit-2026-09-21`**, full checkout
 `255fc38b6eb62d630c8354a8dcec870f3c9dee39`, frozen after all CI jobs passed.
 Start with the [independent audit specification and complete suite](../reports/V4_INDEPENDENT_AUDIT_SPEC_2026-09-21.md),
 the [corrected audit package](../reports/V4_AUDIT_PACKAGE_2026-09-21.md)
 and [21 September remediation evidence](../reports/V4_REMEDIATION_2026-09-21.md).
+That frozen baseline is historical. The [M1/M2/M3 candidate](../reports/V4_M123_REMEDIATION_2026-09-21.md)
+and subsequent public V1 entrypoints are separately identified changes; the
+original audit tag is not a claim that it includes those later changes.
 The [execution specification](V4_EXECUTION.md) describes the typed wire,
 accounting and limits. No production signer or user deployment is enabled by
 passing local tests.
@@ -35,7 +45,7 @@ still needs qualified costs, price inputs and an economically eligible action.
 See [reinvestment policy](../REINVESTMENT_POLICY.md) and
 [pricing policy](../PRICING_POLICY.md).
 
-`DominoSetup` separately implements owner-funded bounded swaps, position minting,
+`DominoSetupV1`, inheriting `DominoSetup`, separately implements owner-funded bounded swaps, position minting,
 and pool initialization plus first mint. Its optional assisted-swap tariff is
 capped at 65 bps and does not apply to automated internal swaps. The owner can
 cancel normally or recover either escrow currency independently. Starting
@@ -112,6 +122,12 @@ builds. [Independent dependency qualification](../reports/v4-remediation-2026-09
 records the deployed pins and remaining verification limits. Local evidence is
 not independent certification or proof of live funding, finality or profitability.
 
+`backend/qualify_execution_fork.py` still deploys the internal base artifacts in
+its disposable fork. Its results qualify those bases, not the public V1 source
+entrypoint names. The public release uses `scripts/build-public-release.mjs` to
+prove equivalence and `scripts/prepare-financial-release.mjs` to prepare and verify
+the selected V1 targets with the authenticated artifact manifest.
+
 Development is supported on macOS, Linux and WSL2. Native Windows installation
 and testing are unsupported because the pinned Foundry npm installer uses POSIX
 shell syntax. Use Linux-installed Node 24/Python 3 and a separate Linux checkout
@@ -136,9 +152,19 @@ fail the command. For example:
 node scripts/test-contracts.mjs --match-path test/DominoL2Block.t.sol
 ```
 
-The bytecode gate checks all seven release components, exact compiler settings,
-constructor argument sizes, EIP-170/EIP-3860 limits and architecture reserves.
-Current sizes and hashes are in the [artifact manifest](../reports/transfer-tax-2026-09-21/artifact-verification.json).
+The default bytecode gate checks the seven internal base components. For the
+public deployment targets, run:
+
+```sh
+node scripts/build-public-release.mjs
+node scripts/check-contract-size.mjs --public-release
+```
+
+Both gates check exact compiler settings, constructor argument sizes,
+EIP-170/EIP-3860 limits and the same architecture reserves. Current release
+bytecode identities and sizes are in [release-artifacts.json](release-artifacts.json);
+the [release procedure](../docs/FINANCIAL_RELEASE.md) describes independent
+recompilation, authentication and verification of deployed runtime hashes.
 Contract hygiene and launcher regressions run before the suite.
 `npm run check:contract-gas` compares deterministic tests with
 [.gas-snapshot](.gas-snapshot); increases require an explained baseline update.
@@ -147,3 +173,5 @@ Test gas is not a live deployment estimate or a complete Nitro transaction cost.
 The sibling personal bot, its contracts, credentials and operational database
 are outside this package. Mainnet preparation uses only explicit project inputs
 and the [unsigned release procedure](../docs/FINANCIAL_RELEASE.md).
+
+The current public V1 candidate is described in the [independent audit specification](../reports/V1_INDEPENDENT_AUDIT_SPEC_2026-09-21.md), including complete-suite reproduction and the distinction from the original frozen V4 baseline.
