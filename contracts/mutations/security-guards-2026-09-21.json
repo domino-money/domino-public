@@ -1,0 +1,34 @@
+{
+  "description": "Four current vault, publisher and qualified L2 block guards. Narrow security regression sample, not exhaustive coverage.",
+  "provenance": "New targeted audit-remediation batch authored 2026-09-21. The historical 39-clause price-guard and 15-clause routing batch JSON inputs were not recovered; this batch is not an exact reproduction of either historical claim.",
+  "mutations": [
+    {
+      "label": "vault custody remains owner only",
+      "file": "contracts/src/DominoVaultV4.sol",
+      "suite": "test/DominoVaultV4Custody.t.sol",
+      "old": "if (msg.sender != owner || owner == address(0)) revert Unauthorized();",
+      "new": "if (owner == address(0)) revert Unauthorized();"
+    },
+    {
+      "label": "terminal counters deny renewed authority",
+      "file": "contracts/src/DominoVaultV4.sol",
+      "suite": "test/DominoVaultV4Custody.t.sol",
+      "old": "if (!recovery) revert NonceExhausted();",
+      "new": ""
+    },
+    {
+      "label": "publisher role authenticates new observations",
+      "file": "contracts/src/DominoPriceGuardV4.sol",
+      "suite": "test/DominoPriceGuardV4.t.sol",
+      "old": "if (msg.sender != publisher || point.poolId == bytes32(0)",
+      "new": "if (point.poolId == bytes32(0)"
+    },
+    {
+      "label": "ArbSys responses require the qualified chain",
+      "file": "contracts/src/DominoL2Block.sol",
+      "suite": "test/DominoL2Block.t.sol",
+      "old": "if (block.chainid != 4663) revert InvalidL2BlockContext();",
+      "new": ""
+    }
+  ]
+}

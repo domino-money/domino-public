@@ -1,0 +1,29 @@
+{
+  "description": "Four independent owner-escrow recovery protections introduced or retained by the Setup refund correction.",
+  "provenance": "New targeted audit-remediation batch authored 2026-09-21. The historical 39-clause price-guard and 15-clause routing batch JSON inputs were not recovered; this batch is not an exact reproduction of either historical claim.",
+  "file": "contracts/src/DominoSetup.sol",
+  "suite": "test/setup/SetupRecovery.t.sol",
+  "mutations": [
+    {
+      "label": "recovery must belong to operation owner",
+      "old": "if (op.owner != msg.sender || op.closed) revert InvalidSetup();",
+      "new": "if (op.closed) revert InvalidSetup();"
+    },
+    {
+      "label": "recovery cannot debit extra escrow",
+      "old": "|| _balance(currency) != beforeValue - amount) revert InvalidSetup();",
+      "new": ") revert InvalidSetup();"
+    },
+    {
+      "label": "partial recovery persists terminal setup phase",
+      "old": "recoveryStarted[id] = true;",
+      "new": "",
+      "index": 1
+    },
+    {
+      "label": "owner callback cannot reenter recovery",
+      "old": "if (_entered) revert InvalidSetup(); _entered = true;",
+      "new": "_entered = true;"
+    }
+  ]
+}
