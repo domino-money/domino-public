@@ -7,7 +7,7 @@ import { tmpdir } from 'node:os';
 import { createServer } from 'node:net';
 import { spawn, execFileSync } from 'node:child_process';
 import { createRequire } from 'node:module';
-import { CHAIN_ID, DEPENDENCIES, CONTRACTS, toolsFor, loadArtifacts, prepare, verify, readOnlyRpc } from './prepare-financial-release.mjs';
+import { CHAIN_ID, DEPENDENCIES, CONTRACTS, toolsFor, loadArtifacts, prepare, verify, readOnlyRpc, main } from './prepare-financial-release.mjs';
 
 const repo = resolve(process.env.DOMINO_FINANCIAL_RELEASE_REPO ?? join(dirname(fileURLToPath(import.meta.url)), '..'));
 const viem = toolsFor(repo);
@@ -75,6 +75,22 @@ test('changed manifest fails verification before any RPC', async () => {
   await assert.rejects(() => verify(result, [], artifacts, viem, () => { throw new Error('must not call'); }), /package_changed/);
 });
 
+test('publisher re-admission is explicit, role-separated and cannot renew expired deployment profiles', async () => {
+  const manifest = prepare(parameters, artifacts, viem);
+  const noRpc = () => { throw new Error('must not call RPC'); };
+  for (const pricePublisher of [undefined, '0x0', '0x' + '00'.repeat(20), parameters.operator,
+    parameters.priceGuardGuardian, parameters.feeRecipient, ...Object.values(manifest.addresses)]) {
+    await assert.rejects(() => verify(manifest, [], artifacts, viem, noRpc, Date.now() / 1000,
+      { pricePublisher }), /invalid_address|publisher_admission_role_conflict/);
+  }
+  await assert.rejects(() => verify(manifest, [], artifacts, viem, noRpc, Date.now() / 1000,
+    { pricePublisher: parameters.pricePublisher, expiresAt: parameters.expiresAt + 1000 }), /invalid_record_keys/);
+  await assert.rejects(() => verify(manifest, [], artifacts, viem, noRpc, parameters.expiresAt + 1,
+    { pricePublisher: '0x' + '66'.repeat(20) }), /release_expired/);
+  await assert.rejects(() => main(['prepare', '--repo', repo, '--parameters', 'unused', '--out', 'unused',
+    '--price-publisher', parameters.pricePublisher]), /invalid_record_keys/);
+});
+
 test('actual official-v4 dependency code and all unsigned deployments verify into current consumer profiles',
   { skip: process.env.DOMINO_TEST_EVM !== '1', timeout: 90000 }, async () => {
     const require = createRequire(join(repo, 'package.json'));
@@ -132,6 +148,8 @@ test('actual official-v4 dependency code and all unsigned deployments verify int
       assert.equal(result.setup.available, true); assert.equal(result.sequence.available, true);
       assert.equal(result.executionAvailable, false); assert.equal(result.priceObservationQualified, false);
       assert.equal(result.receipts.length, 8); assert(methods.length <= 160);
+      assert.equal(result.publisherAdmission.mode, 'original_deployment_publisher');
+      assert.equal(result.publisherAdmission.changedFromDeployment, false);
       // Pins are admitted before preparation, never learned during verification.
       const alteredDependencyRpc = async (method, params) => method === 'eth_getCode'
         && params[0] === DEPENDENCIES.poolManager ? '0x6000' : readonly(method, params);
@@ -139,6 +157,53 @@ test('actual official-v4 dependency code and all unsigned deployments verify int
       const contractGuardianRpc = async (method, params) => method === 'eth_getCode'
         && params[0] === input.priceGuardGuardian ? '0x6000' : readonly(method, params);
       await assert.rejects(() => verify(manifest, hashes, artifacts, viem, contractGuardianRpc), /execution_role_must_be_eoa/);
+      const originalManifest = JSON.stringify(manifest);
+      const nextPublisher = accounts[5];
+      const readmit = (publisher = nextPublisher) => verify(manifest, hashes, artifacts, viem, readonly,
+        Date.now() / 1000, { pricePublisher: publisher });
+      async function rotateCall(from, functionName, args = []) {
+        await send({ from, to: manifest.addresses.priceGuard, gas: '0x493e0',
+          data: viem.encodeFunctionData({ abi: artifacts.priceGuard.abi, functionName, args }) });
+        await rpc('anvil_mine', ['0x40']);
+      }
+      await rotateCall(input.priceGuardGuardian, 'proposePublisher', [nextPublisher]);
+      await assert.rejects(() => readmit(), /deployment_link_mismatch/);
+      await rotateCall(nextPublisher, 'acceptPublisher');
+      await assert.rejects(() => verify(manifest, hashes, artifacts, viem, readonly), /deployment_link_mismatch/);
+      await assert.rejects(() => readmit(accounts[6]), /deployment_link_mismatch/);
+      for (const conflict of [input.operator, input.priceGuardGuardian, input.feeRecipient, manifest.addresses.engine])
+        await assert.rejects(() => readmit(conflict), /publisher_admission_role_conflict/);
+      // Even a role that accepted rotation is inadmissible while it has code.
+      await rpc('anvil_setCode', [nextPublisher, '0x6000']);
+      await rpc('anvil_mine', ['0x40']);
+      await assert.rejects(() => readmit(), /execution_role_must_be_eoa/);
+      await rpc('anvil_setCode', [nextPublisher, '0x']);
+      await rpc('anvil_mine', ['0x40']);
+      const rotated = await readmit();
+      assert.equal(rotated.sequence.deployment.pricePublisher, nextPublisher);
+      assert.equal(rotated.publisherAdmission.mode, 'explicit_current_publisher');
+      assert.equal(rotated.publisherAdmission.originalPublisher, input.pricePublisher);
+      assert.equal(rotated.publisherAdmission.admittedPublisher, nextPublisher);
+      assert.equal(rotated.publisherAdmission.changedFromDeployment, true);
+      assert.equal(rotated.publisherAdmission.guardian, input.priceGuardGuardian);
+      assert.equal(rotated.publisherAdmission.priceGuard, manifest.addresses.priceGuard);
+      assert.equal(rotated.publisherAdmission.expiresAt, input.expiresAt);
+      assert.equal(rotated.sequence.deployment.expiresAt, input.expiresAt);
+      assert.equal(rotated.setup.deployment.expiresAt, input.expiresAt);
+      assert.equal(rotated.executionAvailable, false);
+      assert.equal(rotated.priceObservationQualified, false);
+      assert.equal(rotated.packageSha256, result.packageSha256);
+      assert.deepEqual(rotated.receipts, result.receipts);
+      assert.deepEqual(rotated.publisherAdmission.verifiedBlock,
+        { number: rotated.verifiedBlock.number, hash: rotated.verifiedBlock.hash });
+      assert.equal(JSON.stringify(manifest), originalManifest);
+      const changed = structuredClone(manifest);
+      changed.parameters.pricePublisher = nextPublisher;
+      await assert.rejects(() => verify(changed, hashes, artifacts, viem, readonly, Date.now() / 1000,
+        { pricePublisher: nextPublisher }), /package_changed/);
+      const rewritten = prepare({ ...input, pricePublisher: nextPublisher }, artifacts, viem);
+      await assert.rejects(() => verify(rewritten, hashes, artifacts, viem, readonly, Date.now() / 1000,
+        { pricePublisher: nextPublisher }), /deployment_transaction_mismatch/);
       const directory = mkdtempSync(join(tmpdir(), 'domino-financial-profile-sdk-'));
       try {
         execFileSync(process.execPath, [join(repo, 'app/node_modules/typescript/bin/tsc'),
@@ -147,10 +212,21 @@ test('actual official-v4 dependency code and all unsigned deployments verify int
           '--outDir', directory, '--rootDir', join(repo, 'app/src/finance')], { stdio: 'pipe' });
         writeFileSync(join(directory, 'package.json'), '{"type":"module"}');
         symlinkSync(join(repo, 'app/node_modules'), join(directory, 'node_modules'), 'dir');
+        const packageFile = join(directory, 'unsigned.json'), transactionsFile = join(directory, 'transactions.json');
+        const admittedFile = join(directory, 'admitted.json');
+        writeFileSync(packageFile, originalManifest); writeFileSync(transactionsFile, JSON.stringify(hashes));
+        await main(['verify', '--repo', repo, '--package', packageFile, '--transactions', transactionsFile,
+          '--rpc', endpoint, '--out', admittedFile, '--price-publisher', nextPublisher,
+          '--artifacts', process.env.DOMINO_FINANCIAL_ARTIFACTS ?? join(repo, 'contracts/out')]);
+        const admitted = JSON.parse(readFileSync(admittedFile, 'utf8'));
+        assert.equal(admitted.publisherAdmission.admittedPublisher, nextPublisher);
         const setup = await import(pathToFileURL(join(directory, 'setup.js')).href);
         const sequence = await import(pathToFileURL(join(directory, 'sequence.js')).href);
         assert.equal(setup.deploymentFrom(result.setup).setup, manifest.addresses.setup);
         assert.equal(sequence.sequenceDeploymentFrom(result.sequence).factory, manifest.addresses.factory);
+        assert.equal(sequence.sequenceDeploymentFrom(rotated.sequence).pricePublisher, nextPublisher);
+        assert.equal(sequence.sequenceDeploymentFrom(admitted.sequence).pricePublisher, nextPublisher);
+        assert.equal(setup.deploymentFrom(admitted.setup).setup, manifest.addresses.setup);
       } finally { rmSync(directory, { recursive: true, force: true }); }
       await assert.rejects(() => verify(manifest, [...hashes.slice(1), hashes[0]], artifacts, viem, readonly));
       const code = await rpc('eth_getCode', [manifest.addresses.routing, 'latest']);

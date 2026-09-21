@@ -174,8 +174,15 @@ function maskRuntime(code, ranges) {
   return data.toString('hex');
 }
 
-export async function verify(manifest, transactionHashes, artifacts, viem, rpc, now = Date.now() / 1000) {
+export async function verify(manifest, transactionHashes, artifacts, viem, rpc, now = Date.now() / 1000, admission = {}) {
   assert(canonical(manifest) === canonical(prepare(manifest.parameters, artifacts, viem, now)), 'package_changed');
+  // A current-publisher admission is separate from the original deployment
+  // inputs. Never rewrite constructor calldata, original roles or profile expiry.
+  const explicitPublisher = Object.hasOwn(admission, 'pricePublisher');
+  keys(admission, explicitPublisher ? ['pricePublisher'] : []);
+  const publisher = explicitPublisher ? address(admission.pricePublisher) : manifest.parameters.pricePublisher;
+  assert(![manifest.parameters.operator, manifest.parameters.priceGuardGuardian, manifest.parameters.feeRecipient]
+    .includes(publisher) && !Object.values(manifest.addresses).includes(publisher), 'publisher_admission_role_conflict');
   assert(Array.isArray(transactionHashes) && transactionHashes.length === 8
     && new Set(transactionHashes).size === 8 && transactionHashes.every(h => hashPattern.test(h)), 'eight_transaction_hashes_required');
   equal(quantity(await rpc('eth_chainId', [])), CHAIN_ID);
@@ -217,11 +224,11 @@ export async function verify(manifest, transactionHashes, artifacts, viem, rpc, 
       assert(codeHashes[component] === p.dependencyCodeHashes[component], 'dependency_code_changed');
   }
   for (const role of ['deployer','operator','pricePublisher','priceGuardGuardian'])
-    assert(hex(await rpc('eth_getCode', [p[role], block])) === '0x', 'execution_role_must_be_eoa');
+    assert(hex(await rpc('eth_getCode', [role === 'pricePublisher' ? publisher : p[role], block])) === '0x', 'execution_role_must_be_eoa');
   const checks = {
     factory: { poolManager: d.poolManager, positionManager: d.positionManager, stateView: d.stateView,
       serviceFeeRecipient: p.feeRecipient, deployer: p.deployer, implementation: d.implementation, implementationCodeHash: codeHashes.implementation },
-    readHelper: { positionManager: d.positionManager, stateView: d.stateView }, routing: {}, priceGuard: { publisher: p.pricePublisher, stateView: d.stateView, maxDeviationBps: p.priceGuardDeviationBps, guardian: p.priceGuardGuardian },
+    readHelper: { positionManager: d.positionManager, stateView: d.stateView }, routing: {}, priceGuard: { publisher, stateView: d.stateView, maxDeviationBps: p.priceGuardDeviationBps, guardian: p.priceGuardGuardian },
     engine: { factory: d.factory, readHelper: d.readHelper, routingHelper: d.routing, priceGuard: d.priceGuard,
       readHelperHash: codeHashes.readHelper, routingHelperHash: codeHashes.routing, priceGuardHash: codeHashes.priceGuard },
     implementation: { factory: d.factory, implementation: d.implementation, implementationVersion: 4,
@@ -253,12 +260,17 @@ export async function verify(manifest, transactionHashes, artifacts, viem, rpc, 
   const { setup: unusedSetup, ...sequenceAddresses } = d;
   const { setup: unusedHash, ...sequenceHashes } = codeHashes;
   const sequence = { contractVersion: '1.0.0-rc.1', chainId: CHAIN_ID, available: true, deployment: {
-    ...sequenceAddresses, serviceFeeRecipient: p.feeRecipient, operator: p.operator, pricePublisher: p.pricePublisher,
+    ...sequenceAddresses, serviceFeeRecipient: p.feeRecipient, operator: p.operator, pricePublisher: publisher,
     serviceFeeBps: 200, expiresAt: p.expiresAt, codeHashes: { ...sequenceHashes, vault: manifest.cloneCodeHash } } };
   return { schemaVersion: 1, kind: 'domino-financial-verified-release', chainId: CHAIN_ID,
     sourceCommit: manifest.sourceCommit, packageSha256: digest(canonical(manifest)),
     verifiedBlock: { number: Number(finalNumber), hash: final.hash, timestamp: Number(quantity(final.timestamp)) },
-    receipts, setup, sequence, executionAvailable: false, operatorFundingQualified: false, priceObservationQualified: false };
+    receipts, setup, sequence,
+    publisherAdmission: { mode: explicitPublisher ? 'explicit_current_publisher' : 'original_deployment_publisher',
+      originalPublisher: p.pricePublisher, admittedPublisher: publisher, changedFromDeployment: publisher !== p.pricePublisher,
+      priceGuard: d.priceGuard, guardian: p.priceGuardGuardian,
+      verifiedBlock: { number: Number(finalNumber), hash: final.hash }, expiresAt: p.expiresAt },
+    executionAvailable: false, operatorFundingQualified: false, priceObservationQualified: false };
 }
 
 function rpcUrl(endpoint) {
@@ -327,7 +339,9 @@ export async function main(argv) {
   const endpoint = action === 'verify' ? verificationRpcEndpoint(options) : undefined;
   const expected = action === 'prepare' ? ['repo', 'parameters', 'out']
     : ['repo', 'package', 'transactions', Object.hasOwn(options, 'rpc-file') ? 'rpc-file' : 'rpc', 'out'];
-  keys(options, Object.hasOwn(options, 'artifacts') ? [...expected, 'artifacts'] : expected);
+  if (Object.hasOwn(options, 'artifacts')) expected.push('artifacts');
+  if (action === 'verify' && Object.hasOwn(options, 'price-publisher')) expected.push('price-publisher');
+  keys(options, expected);
   const repo = resolve(options.repo), viem = toolsFor(repo), artifacts = loadArtifacts(repo, viem, options.artifacts);
   let result;
   if (action === 'prepare') {
@@ -341,7 +355,8 @@ export async function main(argv) {
     assert(manifest.sourceCommit === execFileSync('git', ['rev-parse', 'HEAD'], { cwd: repo, encoding: 'utf8' }).trim(), 'source_commit_mismatch');
     execFileSync('git', ['diff', '--quiet', 'HEAD', '--', 'contracts/src', 'contracts/foundry.toml'], { cwd: repo });
     result = await verify(manifest, JSON.parse(readBounded(options.transactions, 4096)),
-      artifacts, viem, readOnlyRpc(endpoint));
+      artifacts, viem, readOnlyRpc(endpoint), Date.now() / 1000,
+      Object.hasOwn(options, 'price-publisher') ? { pricePublisher: options['price-publisher'] } : {});
   }
   writeFileSync(options.out, json(result), { flag: 'wx', mode: 0o600 });
   return { kind: result.kind, transactions: result.steps?.length ?? result.receipts.length, available: result.available ?? true };
