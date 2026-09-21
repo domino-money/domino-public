@@ -30,6 +30,8 @@ contract StubEngineV4 {
     }
 
     uint256 private _parent; int24 private _lo; int24 private _hi; uint128 private _liquidity;
+    bool private _take;
+    function armTake() external { _take = true; }
     /// Arm the next execute(): the vault forwards its own calldata to this
     /// engine, and the engine answers by minting one successor of `parent`
     /// through the real executionMint, then returns what execute() decodes.
@@ -37,6 +39,10 @@ contract StubEngineV4 {
         _parent = parent; _lo = lo; _hi = hi; _liquidity = liquidity;
     }
     fallback() external {
+        if (_take) {
+            DominoVaultV4(payable(msg.sender)).executionTake();
+            revert("stub: take should have been refused");
+        }
         require(_liquidity != 0, "stub engine: nothing armed");
         uint256 id = DominoVaultV4(payable(msg.sender)).executionMint(keccak256(msg.data), _parent, _lo, _hi, _liquidity);
         _liquidity = 0;
@@ -137,10 +143,10 @@ contract DominoVaultV4CustodyTest is IERC721ReceiverE2, CustodyBehaviour {
     }
 
     // ---------------------------------------------------------------
-    // The six execution* callbacks: what _requireExecution is worth
+    // The seven execution* callbacks: what _requireExecution is worth
     // ---------------------------------------------------------------
 
-    /// Every one of the six entry points the engine drives, as calldata.
+    /// Every one of the seven entry points the engine drives, as calldata.
     /// V4 acquires a child only by minting a successor inside an execution, so
     /// this drives the real path: execute() -> engine -> executionMint -> the
     /// position manager's MINT_POSITION, with the pool manager unlocked as it
@@ -165,7 +171,7 @@ contract DominoVaultV4CustodyTest is IERC721ReceiverE2, CustodyBehaviour {
     function _executionCalls() private view returns (bytes[] memory calls) {
         T.Checkpoint memory point;
         T.CompoundAmounts memory value;
-        calls = new bytes[](6);
+        calls = new bytes[](7);
         calls[0] = abi.encodeCall(DominoVaultV4.executionModify, (11, 1, 0, 0, false));
         calls[1] = abi.encodeCall(DominoVaultV4.executionCheckpoint, (11, point));
         calls[2] = abi.encodeCall(DominoVaultV4.executionCredit, (11, 1, 1));
@@ -174,6 +180,7 @@ contract DominoVaultV4CustodyTest is IERC721ReceiverE2, CustodyBehaviour {
         calls[4] = abi.encodeCall(DominoVaultV4.executionApply,
             (vault.position(11).source0, key.currency0, value, address(positions), false));
         calls[5] = abi.encodeCall(DominoVaultV4.executionMint, (bytes32(uint256(1)), 11, -300, 900, 500));
+        calls[6] = abi.encodeCall(DominoVaultV4.executionTake, ());
     }
 
     function _refused(bool ok, bytes memory returned, string memory what) private pure {
@@ -182,7 +189,7 @@ contract DominoVaultV4CustodyTest is IERC721ReceiverE2, CustodyBehaviour {
     }
 
     /**
-     * No execution is in flight, so all six must refuse every caller - the
+     * No execution is in flight, so all seven must refuse every caller - the
      * pinned engine included, because being the engine is only one of the four
      * clauses. Before this test, replacing the whole body of _requireExecution
      * with `{ }` left every V4 suite passing: a forged executionCredit could
@@ -208,6 +215,18 @@ contract DominoVaultV4CustodyTest is IERC721ReceiverE2, CustodyBehaviour {
             (ok, out) = engine.poke(address(vault), calls[i]);
             _refused(ok, out, "engine outside an execution");
         }
+    }
+
+    function testResidualTakeRefusesAnAuthenticatedNonNetExecution() external {
+        E.Plan memory plan;
+        plan.action = E.GENERAL;
+        plan.authority.tokenId = 11;
+        engine.armTake();
+        uint64 nonce = vault.stateNonce();
+        (bool ok, bytes memory out) = address(harness).call(abi.encodeCall(harness.execute, (plan)));
+        require(!ok && out.length >= 4 && bytes4(out) == DominoVaultV4.InvalidExecution.selector,
+            "take is limited to NET even for the active engine");
+        require(vault.stateNonce() == nonce, "rejected take preserves nonce");
     }
 
     /// A credit forged against a live source is the concrete harm: it would be

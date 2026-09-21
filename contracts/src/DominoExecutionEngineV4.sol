@@ -253,14 +253,18 @@ contract DominoExecutionEngineV4 {
         T.Checkpoint memory beforePoint = _before(vault,id);
         (uint128 realized0,uint128 realized1) = readHelper.accrued(beforePoint);
         uint256 old0 = _balance(key.currency0); uint256 old1 = _balance(key.currency1);
-        // TAKE_PAIR rejects a negative side; this deliberately narrow optimized
-        // path never falls back to the general implementation.
-        vault.executionModify(id,plan.authority.liquidityIncrease,realized0,realized1,true);
-        uint256 received0 = _balance(key.currency0)-old0;
-        uint256 received1 = _balance(key.currency1)-old1;
-        if (received0 > realized0 || received1 > realized1) revert InvalidAmount();
-        uint128 added0 = realized0-uint128(received0); uint128 added1 = realized1-uint128(received1);
+        // Read the nominal residual before transferring it. Using the balance
+        // received to infer cost would count a transfer haircut as liquidity.
+        vault.executionModify(id,plan.authority.liquidityIncrease,realized0,realized1,false);
+        int256 residual0 = _delta(vault.positionManager(),key.currency0);
+        int256 residual1 = _delta(vault.positionManager(),key.currency1);
+        if (residual0 < 0 || residual1 < 0 || uint256(residual0) > realized0 || uint256(residual1) > realized1)
+            revert InvalidAmount();
+        uint128 added0 = realized0-uint128(uint256(residual0)); uint128 added1 = realized1-uint128(uint256(residual1));
         _bound(added0,added1,plan);
+        vault.executionTake();
+        if (_balance(key.currency0)-old0 != uint256(residual0) || _balance(key.currency1)-old1 != uint256(residual1))
+            revert InvalidAmount();
         for (uint256 i; i < 2; ++i) {
             E.FeeBudget memory budget = plan.budgets[i];
             bool zero = budget.currency == key.currency0;

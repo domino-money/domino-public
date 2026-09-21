@@ -84,10 +84,10 @@ interface IVaultExecutionV4 {
     function policy() external view returns (IDominoVaultDraft.Policy memory);
     function executionLimits() external view returns (T.ExecutionLimits memory);
     function executionModify(uint256, uint128, uint128, uint128, bool) external;
+    function executionTake() external;
     function executionCredit(uint256, uint128, uint128) external;
     function executionConvert(bytes32, address, uint128) external;
     function executionCheckpoint(uint256, T.Checkpoint calldata) external;
     function executionApply(bytes32, address, T.CompoundAmounts calldata, address, bool) external;
     function executionMint(bytes32, uint256, int24, int24, uint128) external returns (uint256);
 }
-

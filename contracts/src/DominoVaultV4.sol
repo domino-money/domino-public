@@ -322,6 +322,16 @@ contract DominoVaultV4 {
         if (_tget(_T_MODIFY) != 0) revert UnexpectedCallback();
     }
 
+    /// @dev NET first measures the position manager's nominal credit, then
+    /// takes it separately so transfer loss cannot masquerade as liquidity.
+    function executionTake() external {
+        _requireExecution();
+        if (_tget(_T_ACTION) != E.NET) revert InvalidExecution();
+        bytes[] memory params = new bytes[](1);
+        params[0] = abi.encode(_key.currency0, _key.currency1, address(this));
+        IPositionManagerE2(positionManager).modifyLiquiditiesWithoutUnlock(hex"11", params);
+    }
+
     function executionCheckpoint(uint256 tokenId, T.Checkpoint calldata point) external {
         _requireExecution();
         if (!_positions[tokenId].active || point.liquidity < _checkpoints[tokenId].liquidity) revert InvalidPosition();
