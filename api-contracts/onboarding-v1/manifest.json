@@ -131,7 +131,7 @@
     },
     {
       "path": "backend/tests/test_onboarding_auth.py",
-      "sha256": "34a6a6c89d039fe563a88709996bcf1467135041f9ee7b53b4cf49c64853f52e"
+      "sha256": "37d6a8833e1cc4d62f71b93a516f52cf6406a15ca5f60f4b02898a26174cfd37"
     },
     {
       "path": "backend/tests/onboarding_contract_fixtures.py",
