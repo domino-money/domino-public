@@ -20,6 +20,13 @@ Automation remains **2% simple / 4% Domino**, with internal swaps included in
 the mode fee and no additional swap surcharge. The earlier alternate Setup
 rates remain historical studies; the existing 65-bps contract ceiling is unchanged.
 
+The owner selected **50 sqrt-price bps** for `priceGuardDeviationBps` after the
+21 September measurement: approximately −0.9975%/+1.0025% in ordinary price.
+The immutable guard band is checked at publication against current pool spot;
+execution separately checks owner impact limits and plan price bounds. It does
+not include transfer/trading fees or establish an independent-price guarantee.
+The on-demand publisher/executor pipeline still requires production qualification.
+
 ## Public inputs
 
 Supply a JSON file containing exactly these fields. Addresses use lowercase

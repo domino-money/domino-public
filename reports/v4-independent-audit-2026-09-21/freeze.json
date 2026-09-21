@@ -1,0 +1,233 @@
+{
+  "kind": "domino-v4-independent-audit-freeze",
+  "frozenAtUTC": "2026-09-21T20:08:08.932886+00:00",
+  "repository": "https://github.com/domino-money/domino",
+  "tag": "v4-audit-2026-09-21",
+  "commit": "255fc38b6eb62d630c8354a8dcec870f3c9dee39",
+  "tree": "15fea131d90091c7341dc9ca2f72653656afbd73",
+  "annotatedTagObject": "3ab9cb2d4363c62bb89fb07b65bfa952c1554449",
+  "ci": {
+    "runId": 35645990350,
+    "url": "https://github.com/domino-money/domino/actions/runs/35645990350",
+    "conclusion": "success",
+    "headSha": "255fc38b6eb62d630c8354a8dcec870f3c9dee39"
+  },
+  "productionSourceLastChange": "abe25808da712de13b7f90b1c2089b08dffc0a94",
+  "sourceLines": 2670,
+  "sources": [
+    {
+      "file": "contracts/src/DominoExecutionEngineV4.sol",
+      "keccak256": "0x91ccaa2ee63bccb081101588f9ebec670462c1e40c47ffdfd045e269aca3e49b",
+      "sha256": "070554e1105d6698ed50cd992105f4714506e428e08dbc862a60f8a59933fb39"
+    },
+    {
+      "file": "contracts/src/DominoExecutionTypes.sol",
+      "keccak256": "0xd6d7b9014121651de6298879c9c75dc13422ce481c360d66b97af1b7c9d17787",
+      "sha256": "5103966b9a210522049293713c08b3706cde262cc94493082753ce9094821b88"
+    },
+    {
+      "file": "contracts/src/DominoL2Block.sol",
+      "keccak256": "0x3d2e405e3d9937090fb7ec69c222b2b02d2b57131a440dbc22b7a446bc339ebc",
+      "sha256": "3094ee5cb132305a0f9b3b556e82f86bcc6b05c010fa4853b3185254a3046254"
+    },
+    {
+      "file": "contracts/src/DominoPriceGuardV4.sol",
+      "keccak256": "0x4c10629a5b17e3d7b46045b37d8e3874e017a4805989765080939461d5856448",
+      "sha256": "8907d17d29e3dc00028a291a3b54945f53615ac6456d9437845aa87fbf70534b"
+    },
+    {
+      "file": "contracts/src/DominoRoutingHelperV4.sol",
+      "keccak256": "0x5a8164e6480506dd3c3bf3c4150eb1a0d3ec474b3246f6fa0fdbe56e88a648ba",
+      "sha256": "d1efc6caeb629e3d5fe8f5fbdcde09bd6045ba2cb8f1c9a287d31db8405368c0"
+    },
+    {
+      "file": "contracts/src/DominoSetup.sol",
+      "keccak256": "0xea86e28105a26a2d08b7cf496df0c3c6b57aa5ab4ffe2b980dc89e9a5f44d4a5",
+      "sha256": "250a7e13b0f5ecfdf772a8fecf97fd1134620d27abefe75a9b0ab4d91a272e06"
+    },
+    {
+      "file": "contracts/src/DominoVaultFactoryV4.sol",
+      "keccak256": "0x57bf7056f70e2983b4a1738a0422404d1bcf5e6fe498b2d76c600e5f6eadcd59",
+      "sha256": "335f8ac25c130918f603af3c9f87daa73f0c419264bf472b572a8d52231fe080"
+    },
+    {
+      "file": "contracts/src/DominoVaultReadHelper.sol",
+      "keccak256": "0xd0bfded8b8adfd2676925ad7a74856c2b09b4e45deafc4f7516182c4e810804f",
+      "sha256": "27ca900c9131f54253d8c8f00b75dc5aa4cd4280bb04f720579c88a5e20b2577"
+    },
+    {
+      "file": "contracts/src/DominoVaultTypes.sol",
+      "keccak256": "0xad1cce89214b131c2d3bb23c9994539f034bcfb9df203608da18ee7d9e8eef29",
+      "sha256": "2b44143b3684c40ab812c3a55a33980c2520dea1e1d2900a4a5d978343ef5e1b"
+    },
+    {
+      "file": "contracts/src/DominoVaultV4.sol",
+      "keccak256": "0x2c8d28ceee132c23271f5ada96dae08518c9cefe3968b2127850123532c1209e",
+      "sha256": "64355f0fbfce8cb00365311c2048a4e8c8502a57ce23c6d0f5d32843e484e256"
+    },
+    {
+      "file": "contracts/src/FeeAccounting.sol",
+      "keccak256": "0x37acafbf8042d9b3cd4005540ccfcc22e7a51a409e287509ec96d91ea4cd661a",
+      "sha256": "dfcb3f388b00a53f134428637ced5f85f142f2d0f6c955fca6587c9e920d7c89"
+    },
+    {
+      "file": "contracts/src/IDominoVaultDraft.sol",
+      "keccak256": "0x3243767704c107ab0621a601252886daa625a49a4b54f90673c7287fe74d8fc8",
+      "sha256": "79733edcb99022c3e203cbb0c3428fd0491368c809fa099a394b2769bb4bb29f"
+    },
+    {
+      "file": "contracts/src/PolicyValidation.sol",
+      "keccak256": "0xd8163606e4cb759d2842da849b2b00b71d706b4d1142d0add7b6352acbc697ce",
+      "sha256": "6e86c96ad6328f5f7451a932f5a56e014fd8c62fb949f897ce37904a3d5eca36"
+    }
+  ],
+  "artifacts": [
+    {
+      "component": "factory",
+      "runtimeBytes": 3502,
+      "runtimeTemplateHash": "0xd5d36d4ea4be9009f451fdd5801b19d4ed8b75b1acafd786f6102eff71246f55",
+      "creationCodeHash": "0x4ccdc92255eb09b94849d961cf17dd849019447cc012f6e43d0b816778258d25",
+      "artifactSha256": "0e8ec39a6e364b4075f2bbe7df38ba401ba5433d37a0d7bcfd93dc3c1823261f"
+    },
+    {
+      "component": "readHelper",
+      "runtimeBytes": 6859,
+      "runtimeTemplateHash": "0xc2d647a741091d460cc8a2f1ad797e2eebe5c6d56194566f8e6d448f01da03e7",
+      "creationCodeHash": "0xf65e15db95eb7a244bb70bb7253cc82ba11891d6b63bb6306f3272b8754cd847",
+      "artifactSha256": "471a1dc076cfd334db4f5239da068e4c18b5234bdc4df273cebf7b1989ca5e44"
+    },
+    {
+      "component": "routing",
+      "runtimeBytes": 14111,
+      "runtimeTemplateHash": "0x4727e575dd2af4db05e70303b42a424bb1cffb7a2620e1c3f457e2324120bfc4",
+      "creationCodeHash": "0x6fad6b56f8cf095714e9dec6776987445310814a5af51ae638819b33d10c3b73",
+      "artifactSha256": "4998c421fa07d28cdf9745386259b667586dd78fd03633647498022ae2030e38"
+    },
+    {
+      "component": "priceGuard",
+      "runtimeBytes": 3516,
+      "runtimeTemplateHash": "0x6a5d9ceca64f252ab246a9b8e74c80eb20d149b3e8e4f6cbcddbb0cff0112885",
+      "creationCodeHash": "0x7370444dad7bf5d11dd1d273e9aa4b7439379ecd4f21ff07a57325763df9404a",
+      "artifactSha256": "0585ad05265a0922ef5a5fe99bf1d4032e94168d2ed9a55b3b23caf15dba6917"
+    },
+    {
+      "component": "engine",
+      "runtimeBytes": 22335,
+      "runtimeTemplateHash": "0x2a7fa30feda516cef9089b45473d676de3fcb05e98f33568625581115558e521",
+      "creationCodeHash": "0xaf255fe4c4b44959b7d70ddf34b75e839013d978f650f51550caaaf925ba9203",
+      "artifactSha256": "2ce7a841ed40a2f7b079969b4e46779c626914271d09bd067f8ec519d287e8b8"
+    },
+    {
+      "component": "implementation",
+      "runtimeBytes": 24002,
+      "runtimeTemplateHash": "0x1883165399789c62f89e8db9667a87e4a05403bd8ab484ff615dc07dd3299c04",
+      "creationCodeHash": "0x1951355bdd33fa373cd0452afbda1ecfbb9cb39444dae32d28992bffa5cc9677",
+      "artifactSha256": "d82ab72129883e3f6eefff60d999f929532fbf8c4d5212956a7fda5d9f59df30"
+    },
+    {
+      "component": "setup",
+      "runtimeBytes": 13239,
+      "runtimeTemplateHash": "0x6060c68a9f15c5c22949ac060554bed17656290f707a0dbb16061d8a015812a6",
+      "creationCodeHash": "0xa3e7d5da7c2d19567a80e8475073036804586bb2bc43624e68998beb5d5b69e5",
+      "artifactSha256": "7d23550eb3415feb47f89531230b2a7ec2920530d5c13456898e0212312f23b0"
+    }
+  ],
+  "buildProfile": {
+    "compiler": "0.8.26+commit.8a97fa7a",
+    "evmVersion": "cancun",
+    "optimizerRuns": 200,
+    "viaIR": true,
+    "bytecodeHash": "none"
+  },
+  "buildInputs": [
+    {
+      "file": "contracts/foundry.toml",
+      "sha256": "4dec157f6bb98d55ba149f9ce6925bc9cc575ad2384373556646576c3d3071de"
+    },
+    {
+      "file": "package.json",
+      "sha256": "a2f73a6b08032ab9358378ab12f60db3fc4b1946af6624aa262d2bea70cda2a1"
+    },
+    {
+      "file": "package-lock.json",
+      "sha256": "d4faf21b47a0e736672a435479af8da6779c3fe8c6197ac0a1556783cbdae1ff"
+    },
+    {
+      "file": "scripts/solc-wrapper.py",
+      "sha256": "f4f141d8a624dfea8ea732b718bad9fd858e3b5253f816e6b9d5ab0f0ef256e8"
+    },
+    {
+      "file": ".nvmrc",
+      "sha256": "68ca3fba3b7e864770cb61aeb306d4bd4354b68ab4dd38450860c5d823e42a53"
+    },
+    {
+      "file": ".python-version",
+      "sha256": "a876e0b10411037a012498b9fe18d9bc1df32ed8b722a13564dc944ddcfd9135"
+    },
+    {
+      "file": "backend/requirements-api.lock",
+      "sha256": "de05e8c4976d73787ec9706c8bdba6b4990fd6381f25e2def8d43ec3b63b1e96"
+    },
+    {
+      "file": "app/package-lock.json",
+      "sha256": "ceb7c7c92f877d7e89222626136bc6b0f776f761eb76a03bd7a100d76fe711e3"
+    },
+    {
+      "file": "web/package-lock.json",
+      "sha256": "960c68271b5a651b679ba776e57f9a0fc54b3840c71b1dbabe933407b45c90dc"
+    },
+    {
+      "file": "contracts/test/reference/official-v4/provenance.json",
+      "sha256": "f03767ed4c438568f4903e47f29fbffe86ebfee6027a2bd2d1dce90f6ed88ef5"
+    },
+    {
+      "file": "contracts/.gas-snapshot",
+      "sha256": "c246f86e8ef52e9ee1389da5f600a98a80501cf1e30ff651b948a2cef5219828"
+    }
+  ],
+  "approved": {
+    "chainId": 4663,
+    "automationFeeBps": {
+      "simple": 200,
+      "domino": 400
+    },
+    "internalAutomationSwapSurchargeBps": 0,
+    "deployer": "0x706627e3e75b0603c4b6f9a1ebbfc635da712747",
+    "feeRecipient": "0x1488c84dafc03f7f4c4fb986f83ba99fd530c6f4",
+    "operator": "0x2320ea29fcf7b827e1a4039ed46244be4d4b29da",
+    "pricePublisher": "0x4d6f91d3101569bb8c710bc332f621600e429e7b",
+    "priceGuardGuardian": "0x5e57fded90c4635648eb7b3ba29705ff0769d103",
+    "priceGuardDeviationBps": 50,
+    "setupFeeBps": 65,
+    "tariffVersion": "1",
+    "dependencyCodeHashes": {
+      "poolManager": "0xbd3881180b547f5fe817545743cfb4343e96b1bc6640dcd70c106b0066e95626",
+      "positionManager": "0xc873e135dc9aaec88489cfbad146b4cb49d6a32e0d80326377784b7ba17670b2",
+      "stateView": "0x7d9c591e0956fd89d98feb4ffcfe8bf1f7a62bd485edd979fa21d104b49878a6"
+    }
+  },
+  "validation": {
+    "soliditySuites": 21,
+    "solidityTestsPassed": 269,
+    "soliditySkipped": 0,
+    "deterministicGasEntries": 250,
+    "backendTestsPassed": 2229,
+    "backendSkipped": 0,
+    "releaseTestsPassed": 12,
+    "releaseSkipped": 0,
+    "frontendTestsPassed": 1401,
+    "frontendSkipped": 6,
+    "vendoredFilesVerified": 98,
+    "actualMutationBatchesRerunAtFreeze": false,
+    "mutationInputsApplicable": 8
+  },
+  "mainnetTransactionsSent": false,
+  "productionAutomationEnabled": false,
+  "notes": [
+    "The commit is the canonical source identity; preserve the annotated tag.",
+    "Runtime hashes identify compiled templates before constructor immutable values.",
+    "The artifact record was built at the last production-source change; production sources and build inputs are unchanged at this full CI-green checkout.",
+    "The companion specification is authored after the freeze and supersedes historical parameter-selection statements in the frozen reports.",
+    "Public gas, nonce and profile-expiry proposals require revalidation before signing; freeze does not establish current chain state."
+  ]
+}

@@ -117,7 +117,8 @@ Apenas engine e implementação do vault mudaram o runtime. O vault ocupa
   **6/6**; ferramentas de contratos: **42/42**; higiene Solidity sem achados.
 - Oito transações de deploy re-simuladas pelo RPC próprio em fork: todas passaram,
   com **19.504.419 gas Anvil** e perfis ainda indisponíveis. Não é estimativa
-  completa de gas Nitro; os dados locais de papéis/proposta não foram publicados.
+  completa de gas Nitro; a proposta pública foi depois incluída no pacote da
+  [auditoria independente](V4_INDEPENDENT_AUDIT_SPEC_2026-09-21.md).
   [Resumo da regressão e simulação](transfer-tax-2026-09-21/NET_REGRESSION.json).
 
 Os quatro CIs vermelhos tinham duas causas comuns: hash de origem desatualizado
@@ -126,8 +127,13 @@ limite de 150.000. O commit `d56f0dad6446928017fe67184f4589432a160d0e` atualiza
 manifestos/pins e compartilha o validador duplicado, preservando callbacks
 semânticos separados. O bundle caiu a **149.589 bytes**, sem elevar seu limite.
 [Verificações locais e limitação do teardown Chrome/macOS](transfer-tax-2026-09-21/CI_REMEDIATION.json).
-O resultado integral remoto deve ser conferido no CI do commit integrado;
-reexecutar um commit antigo não incorpora essas correções.
+Uma rodada subsequente identificou 23 fixtures de backend que ainda calculavam
+o líquido a 2% para cenários Domino a 4%. A correção `255fc38` usa a tarifa da
+política e acrescenta validação dos dois modos. O
+[CI integral desse commit](https://github.com/domino-money/domino/actions/runs/35645990350)
+passou: 269 testes Solidity, 2.229 de backend e 12 de release, sem skips nessas
+suítes; frontend com 1.401 passes e seis skips previstos. Os cinco jobs passaram.
+Reexecutar um commit antigo não incorpora essas correções.
 
 ## Relação com o publisher e a banda
 
@@ -139,8 +145,10 @@ na saída líquida e na decisão de executar ou esperar.
 
 Os hooks identificados continuam fora das rotas admitidas. A alternativa HASH
 sem hook ainda precisa de liquidez, cotação, limites e rentabilidade adequados.
-A faixa imutável de produção continua sem seleção, conforme a decisão de
-medir a operação antes de fixá-la. A publicação prevista continua sob demanda
+A faixa imutável de publicação foi selecionada pelo usuário após a medição:
+**50 sqrt-bps**, aproximadamente −0,9975%/+1,0025% no preço do par. A comparação
+ocorre na publicação; a execução tem limites próprios de impacto e de preço.
+A publicação prevista continua sob demanda
 quando houver uma execução elegível; não foi ativado serviço de publicação.
 
 ## Reprodução

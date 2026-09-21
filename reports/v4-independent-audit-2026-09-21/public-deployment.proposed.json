@@ -1,0 +1,33 @@
+{
+  "chainId": 4663,
+  "sourceCommit": "255fc38b6eb62d630c8354a8dcec870f3c9dee39",
+  "deployer": "0x706627e3e75b0603c4b6f9a1ebbfc635da712747",
+  "nonce": "255",
+  "feeRecipient": "0x1488c84dafc03f7f4c4fb986f83ba99fd530c6f4",
+  "operator": "0x2320ea29fcf7b827e1a4039ed46244be4d4b29da",
+  "pricePublisher": "0x4d6f91d3101569bb8c710bc332f621600e429e7b",
+  "priceGuardDeviationBps": 50,
+  "priceGuardGuardian": "0x5e57fded90c4635648eb7b3ba29705ff0769d103",
+  "setupFeeBps": 65,
+  "tariffVersion": "1",
+  "expiresAt": 1792609290,
+  "gas": {
+    "factory": "8000000",
+    "readHelper": "8000000",
+    "routing": "8000000",
+    "priceGuard": "8000000",
+    "engine": "8000000",
+    "implementation": "8000000",
+    "setup": "8000000",
+    "finalize": "300000"
+  },
+  "maxFeePerGas": "200000000",
+  "maxPriorityFeePerGas": "0",
+  "maxTotalCostWei": "20000000000000000",
+  "reserveWei": "1000000000000000",
+  "dependencyCodeHashes": {
+    "poolManager": "0xbd3881180b547f5fe817545743cfb4343e96b1bc6640dcd70c106b0066e95626",
+    "positionManager": "0xc873e135dc9aaec88489cfbad146b4cb49d6a32e0d80326377784b7ba17670b2",
+    "stateView": "0x7d9c591e0956fd89d98feb4ffcfe8bf1f7a62bd485edd979fa21d104b49878a6"
+  }
+}

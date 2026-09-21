@@ -12,6 +12,8 @@ This file applies to the entire Domino repository. **Execute first, plan afterwa
 
 ## Boundaries
 
+- V4 audit baseline is frozen at tag `v4-audit-2026-09-21`, commit `255fc38b6eb62d630c8354a8dcec870f3c9dee39`, after green CI. Preserve that tag and review [the independent audit specification](reports/V4_INDEPENDENT_AUDIT_SPEC_2026-09-21.md). Subsequent contract/compiler/dependency/constructor-policy changes must be identified as a new candidate with their diff and relevant validation; never silently describe them as the frozen or independently audited release.
+
 - Never import a sibling personal bot, use its signer/configuration, or read its runtime for application behavior/tests. Development credentials stay in ignored local configuration.
 - Do not commit credentials, RPC URLs containing keys, wallet keystores, database files, logs or browser sessions. Do not print secrets in diagnostics. Preserve third-party licenses and reference provenance.
 - Token symbols and provider metadata are untrusted text. Currency identity is chain plus address, not symbol. Raw token amounts are integer strings; absent decimals must not be guessed.

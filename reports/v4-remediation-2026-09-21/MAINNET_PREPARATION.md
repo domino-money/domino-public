@@ -9,18 +9,27 @@ Os [artifacts atuais](../transfer-tax-2026-09-21/artifact-verification.json) e a
 anterior; o [relatório de correções](../V4_REMEDIATION_2026-09-21.md) preserva sua evidência histórica.
 Nenhuma transação foi assinada ou enviada à mainnet.
 
+O checkout completo foi congelado após CI verde em
+`255fc38b6eb62d630c8354a8dcec870f3c9dee39`, tag `v4-audit-2026-09-21`.
+A [spec de auditoria independente](../V4_INDEPENDENT_AUDIT_SPEC_2026-09-21.md)
+reúne o escopo, hashes, parâmetros aprovados e a suíte completa disponível.
+
 O usuário já forneceu os cinco endereços públicos e selecionou **65 bps (0,65%)**
 por swap assistido no Setup, separados dos swaps internos incluídos nos modos.
 Operador e publicador foram abastecidos. O pacote local de oito transações foi
 simulado com o saldo e nonce reais do fork, sem criar fundos artificiais.
-A banda imutável continua **não selecionada**: o usuário decidiu medir a operação
-antes de fixá-la. A [medição e seus limites](../PRICE_BAND_QUALIFICATION_2026-09-21.md)
+A banda imutável foi selecionada após a medição: **50 sqrt-bps**, cerca de
+−0,9975%/+1,0025% no preço. Esse parâmetro limita a publicação contra o spot;
+impacto e preço na execução também dependem dos limites do cofre e do plano.
+A [medição e seus limites](../PRICE_BAND_QUALIFICATION_2026-09-21.md)
 distinguem deriva dos pools, RPC e replay local de um publicador em produção.
 
-## Entradas necessárias para o pacote real
+## Entradas e revisão do pacote real
 
-O [modelo de parâmetros públicos](public-deployment.template.json) deixa os dados
-ainda não fornecidos como `null`. O gerador rejeita esse modelo incompleto.
+O [modelo genérico de parâmetros públicos](public-deployment.template.json)
+mantém placeholders `null` e não representa o estado de aprovação desta release.
+Os cinco papéis, a banda de 50 bps e a tarifa de 65 bps já foram fornecidos;
+o pacote local contém esses valores. O gerador rejeita o modelo incompleto.
 
 - Endereços públicos do deployer, destinatário das taxas, operador, publicador e
   guardião. Deployer pode coincidir com destinatário das taxas; operador,

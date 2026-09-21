@@ -85,8 +85,11 @@ GENERAL realizes fees with a zero-liquidity decrease and TAKE_PAIR, preserving
 principal, then increases the exact destination liquidity and settles each debt
 from admitted source balances. NET is a deliberately narrow optimized path: one
 position, its two original-currency uncollected-fee budgets, no old-original
-allocation floor, charged input or swap. A single increase plus TAKE_PAIR returns
-the actual fee remainder. Negative sides, insufficient realized fees or any
+allocation floor, charged input or swap. After one increase without taking funds,
+the engine reads the nominal PositionManager credit and computes productive cost
+as realized fees minus that nominal residual. A separate NET-only TAKE_PAIR then
+requires the vault to receive exactly the residual. A transfer haircut cannot
+be counted as added liquidity or enlarge the service fee. Negative sides, insufficient realized fees or any
 ineligible plan revert; there is no silent general-path fallback.
 
 MINT uses the parent and the owner's independent trigger/overlap/upside policy.

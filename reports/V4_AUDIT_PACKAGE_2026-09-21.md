@@ -10,6 +10,15 @@ plainly as capabilities; where a claim rests on a measurement, the measurement i
 
 ## 1. Freeze
 
+**Independent-audit checkout: `255fc38b6eb62d630c8354a8dcec870f3c9dee39`,
+tag `v4-audit-2026-09-21`.** All five jobs of
+[CI 35645990350](https://github.com/domino-money/domino/actions/runs/35645990350)
+passed before the tag was created. Start the external review with the
+[independent audit specification and complete suite guide](V4_INDEPENDENT_AUDIT_SPEC_2026-09-21.md)
+and [freeze manifest](v4-independent-audit-2026-09-21/freeze.json).
+The owner approved the immutable **50 sqrt-bps publication band**, 65-bps Setup
+tariff, and 2%/4% automation mode policy. No mainnet deployment was performed.
+
 **Current production-source freeze: `abe25808da712de13b7f90b1c2089b08dffc0a94`.**
 This supersedes the mode-fee freeze `7321c5bdefb27a29d15dfa2cdcbaae6cc9d9715b`
 with an exact residual-credit check for NET. The engine reads nominal core credit
@@ -26,8 +35,10 @@ and the [historical audit findings](V4_AUDIT_EXECUTION_2026-09-21.md).
 The deployment package must name the full final checkout SHA; its artifact
 loader verifies every source hash against that checkout.
 
-Build profile, enforced on every artifact by `scripts/check-contract-size.mjs` (it refuses an
-artifact built any other way, which is how a stale `out/` is caught):
+Build profile, enforced on every artifact by `scripts/check-contract-size.mjs`.
+That gate checks profile, ABI and sizes. Source freshness is checked separately
+by `loadArtifacts` in `scripts/prepare-financial-release.mjs`, which compares
+every metadata source hash against the selected checkout:
 
 | setting | value |
 | --- | --- |
@@ -37,7 +48,7 @@ artifact built any other way, which is how a stale `out/` is caught):
 | metadata | `bytecode_hash = "none"` |
 | limits | EIP-170 runtime 24,576 B; EIP-3860 initcode 49,152 B, constructor arguments included |
 
-The seven deployed artifacts, in deployment order, with the runtime `keccak256` of each. These
+The seven deployment artifacts, in deployment order, with the runtime-template `keccak256` of each. These
 are what `prepare-financial-release.mjs verify` compares against the chain after deployment,
 outside the immutable slots:
 
@@ -55,11 +66,11 @@ An eighth transaction, `factory.finalizeImplementation(implementation)`, binds #
 for ever. User vaults are EIP-1167 clones of #6; the clone's runtime is fixed bytecode and its
 hash is recomputed independently by the release verifier.
 
-Rebuild each suite separately and confirm (the loop in §6 avoids a whole-tree compiler memory spike):
+Rebuild each suite separately and confirm (the sequential launcher in §6 avoids a whole-tree compiler memory spike):
 
 ```bash
 npm ci
-# Run the sequential suite loop in §6, then:
+# Run the sequential suites in §6, then:
 node scripts/check-contract-size.mjs
 ```
 
@@ -74,7 +85,7 @@ PoolManager `0x8366a39cc670b4001a1121b8f6a443a643e40951`, PositionManager
 
 **In scope — 13 files under `contracts/src`, 2,670 lines**: the seven artifacts above,
 plus `DominoVaultTypes.sol`, `DominoExecutionTypes.sol`, `IDominoVaultDraft.sol` (the interface
-the vault takes its `Policy` struct and events from), `PolicyValidation.sol` and
+the vault takes its `Policy` struct from; the vault declares its own events), `PolicyValidation.sol` and
 `FeeAccounting.sol`, plus the new `DominoL2Block.sol`. `DominoRoutingHelperV4` is the only production source that imports the
 vendored Uniswap tree, for `FullMath` and `TickMath`.
 
@@ -133,7 +144,8 @@ Six roles. None of them can take a position or a reserve out of a vault except t
 - *Owner.* Total, by design. The owner is the position's owner.
 
 **Rotating the publisher** is a two-call acceptance procedure needing no redeployment:
-`guardian.proposePublisher(next)`, then `next.acceptPublisher()`. Observations the old key
+`guard.proposePublisher(next)` sent by the guardian, then `guard.acceptPublisher()`
+sent by `next`. Observations the old key
 published remain readable until revoked or expired — at most 255 L2 blocks. The old publisher need not approve the change, and independent key custody is not enforced. The procedure and the
 re-admission that must follow are in [FINANCIAL_RELEASE](../docs/FINANCIAL_RELEASE.md).
 
@@ -148,13 +160,14 @@ Stated here so nobody has to find them.
 
 1. **One live publisher is a liveness dependency.** No threshold, no fallback oracle. Chosen
    over adding a new trust role; rotation is the mitigation.
-2. **Pre-observation manipulation is outside what any on-chain band can see**, since the
-   published price and the spot agree. Bounded by the publisher's integrity and by the
-   attacker's cost, both measured above.
-3. **A concentrated position fails closed on small moves.** On a ±2% range, a 0.5% move between
-   observation and execution changes the required composition beyond an honestly sized plan and
-   the compound reverts with `InvalidAmount()`. Safe, but the executor must re-plan rather than
-   treat it as a fault — and that executor behaviour is not yet tested.
+2. **Pre-observation manipulation can evade the publication band**, when the
+   published price and the already-moved spot agree. Publisher integrity and an
+   aggregate economic loss bound have not been established by these measurements.
+3. **The measured concentrated-position plan failed closed on a small move.** In
+   the recorded ±2% fixture, a 0.5% move changed the required composition beyond
+   its plan and reverted with `InvalidAmount()`. This is a result for that plan,
+   not a universal threshold. The executor must re-plan; that production behaviour
+   remains unqualified.
 4. **Findings D-05 … D-08 were never recorded.** The internal review cites D-09 and D-10 by
    number and never enumerates what lies between; those four cannot be recovered. Everything
    else on record has a disposition in §5.
@@ -168,15 +181,20 @@ Stated here so nobody has to find them.
 7. **The service around the contracts is unproven.** Signer, executor, planner and read path
    have never run against a real deployment. This checkout also lacks a continuous
    publisher and the orchestration that refreshes observations and connects acquisition,
-   publication and execution; the signer receives a fixed observation ID. The owner
-   deferred the immutable band pending measurement. See the [read-only pool/RPC
+   publication and execution; the signer receives a fixed observation ID. After
+   measurement, the owner selected **50 sqrt-price bps** for the immutable
+   publication band (−0.9975%/+1.0025% in ordinary price). This applies at
+   `publish()` against current pool spot. Execution separately applies owner
+   impact limits and the plan's price bounds; `referencePrice()` does not reapply
+   the publication band. See the [read-only pool/RPC
    measurement and local guard replay](PRICE_BAND_QUALIFICATION_2026-09-21.md), whose
    results do not establish production publisher latency or independent-price quality.
 
 **Gas funding.** The operator's previously funded native ETH pays automated
 execution gas; the publisher separately pays for observations. The owner pays
-setup and manual transactions. The simulator grants synthetic ETH using
-`anvil_setBalance`. The mode cut (2% simple / 4% Domino) on consumed earned fees
+setup and manual transactions. Historical automation simulations grant synthetic
+ETH using `anvil_setBalance`; the later eight-transaction deployment rehearsal
+used the fork's existing deployer balance. The mode cut (2% simple / 4% Domino) on consumed earned fees
 goes to the immutable fee recipient in the consumed currency. No automatic sale or top-up replenishes the
 operator; an insufficient native balance makes the signer refuse execution.
 The [funding study](GAS_FUNDING_STUDY_2026-09-21.md) compares prefunded ETH,
@@ -246,9 +264,8 @@ presented as tests of the current source freeze. A single Forge invocation over 
 memory (issue #145), so each suite is run against its own dependency closure, as CI does:
 
 ```bash
-for suite in $(find contracts/test -name '*.t.sol' | sort); do
-  node scripts/test-contracts.mjs --match-path "${suite#contracts/}"
-done
+npm run test:contracts
+npm run check:contract-gas
 ```
 
 **Targeted guard coverage is checked by mutation, not inferred from test counts.** A guard counts as covered when
@@ -267,7 +284,9 @@ never as a pass. The verdicts are `CAUGHT`, `NOT CAUGHT`, `NOT APPLIED` and `NO 
 
 The historical 39-clause price-guard and 15-clause arithmetic batch JSON inputs
 were not committed and their exact coverage totals were not reproduced. They
-are historical assertions, not current reproducible coverage. The two newly committed batches contain eight named mutations; **8/8 were caught**.
+are historical assertions, not current reproducible coverage. The two committed
+batches contain eight named mutations; **8/8 were caught at the earlier remediation
+revision**, not re-executed after the current NET change.
 Their [actual verdicts](v4-remediation-2026-09-21/mutation-results.json) and exact
 [batch inputs](../contracts/mutations/) are committed;
 `NOT APPLIED` and `NO BUILD` never count as caught guards. A passing baseline and
@@ -286,7 +305,7 @@ that emulation; only the separate live probe qualifies Nitro block semantics:
 ```bash
 backend/.venv/bin/python backend/qualify_execution_fork.py \
   --source-url "${DOMINO_FORK_SOURCE_URL:?set the qualified local loopback RPC URL}" \
-  --rounds 40 --moves 50,90,110,500,2000 \
+  --band 50 --width 200 --rounds 40 --moves 50,90,110,500,2000 \
   --lifecycle --output /tmp/fork.json
 ```
 

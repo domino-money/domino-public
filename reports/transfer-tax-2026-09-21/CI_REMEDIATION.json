@@ -56,5 +56,22 @@
     "aggregateCheckApp": "partial; three final test processes blocked on browser.close because macOS GoogleUpdater inherited pipes. Only test processes were terminated; no test or budget was weakened."
   },
   "historicalRunsRerun": false,
-  "remoteResult": "See CI of the final integrated commit; historical failed runs retain their original code and result."
+  "remoteResult": "See CI of the final integrated commit; historical failed runs retain their original code and result.",
+  "integratedFollowup": {
+    "commit": "255fc38b6eb62d630c8354a8dcec870f3c9dee39",
+    "runId": 35645990350,
+    "url": "https://github.com/domino-money/domino/actions/runs/35645990350",
+    "conclusion": "success",
+    "jobsPassed": 5,
+    "additionalFailure": "23 execution-store fixtures used a fixed 200-bps net amount with a 400-bps Domino policy",
+    "additionalFix": "Use the fixture observation policy tariff and validate simple/Domino cases without a PostgreSQL opt-in",
+    "productionContractsChangedByFixtureFix": false,
+    "solidityTestsPassed": 269,
+    "backendTestsPassed": 2229,
+    "backendSkipped": 0,
+    "releaseTestsPassed": 12,
+    "frontendTestsPassed": 1401,
+    "frontendSkipped": 6,
+    "localMacOSTeardownLimitationResolvedByLinuxCI": true
+  }
 }

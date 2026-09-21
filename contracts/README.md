@@ -7,7 +7,10 @@ stateless `DominoVaultReadHelper`, and owner-funded `DominoSetup`. The factory
 deployer finalizes the implementation once; it has no upgrade path. Each vault
 pins its engine and read helper, and its owner individually authorizes an operator.
 
-Start review with the [corrected audit package](../reports/V4_AUDIT_PACKAGE_2026-09-21.md)
+The independent-audit baseline is tag **`v4-audit-2026-09-21`**, full checkout
+`255fc38b6eb62d630c8354a8dcec870f3c9dee39`, frozen after all CI jobs passed.
+Start with the [independent audit specification and complete suite](../reports/V4_INDEPENDENT_AUDIT_SPEC_2026-09-21.md),
+the [corrected audit package](../reports/V4_AUDIT_PACKAGE_2026-09-21.md)
 and [21 September remediation evidence](../reports/V4_REMEDIATION_2026-09-21.md).
 The [execution specification](V4_EXECUTION.md) describes the typed wire,
 accounting and limits. No production signer or user deployment is enabled by
@@ -135,7 +138,7 @@ node scripts/test-contracts.mjs --match-path test/DominoL2Block.t.sol
 
 The bytecode gate checks all seven release components, exact compiler settings,
 constructor argument sizes, EIP-170/EIP-3860 limits and architecture reserves.
-Current sizes and hashes are in the [artifact manifest](../reports/v4-remediation-2026-09-21/artifact-verification.json).
+Current sizes and hashes are in the [artifact manifest](../reports/transfer-tax-2026-09-21/artifact-verification.json).
 Contract hygiene and launcher regressions run before the suite.
 `npm run check:contract-gas` compares deterministic tests with
 [.gas-snapshot](.gas-snapshot); increases require an explained baseline update.
