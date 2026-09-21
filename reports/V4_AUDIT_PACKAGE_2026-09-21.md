@@ -1,0 +1,264 @@
+# V4 contracts: audit package — 21 September 2026
+
+What an external reviewer needs in order to start: what is frozen and how to rebuild it byte for
+byte, what is in scope and what is deliberately not, who can do what to a live vault and what
+each of those keys can cost if it is lost, every finding raised internally with its disposition,
+and how to check the coverage claims instead of trusting them.
+
+This document is written to be read by someone with no other context. It states limitations as
+plainly as capabilities; where a claim rests on a measurement, the measurement is named.
+
+## 1. Freeze
+
+**Sources frozen at `ec2e9aa`** — the last commit that changed anything under `contracts/src`.
+The two commits after it that touch `contracts/` add tests and a committed gas baseline
+(`672a77c`), and nothing since has touched the contracts at all. Review either commit; the
+deployed bytecode is identical.
+
+Build profile, enforced on every artifact by `scripts/check-contract-size.mjs` (it refuses an
+artifact built any other way, which is how a stale `out/` is caught):
+
+| setting | value |
+| --- | --- |
+| compiler | `solc 0.8.26+commit.8a97fa7a`, invoked through `scripts/solc-wrapper.py`, offline |
+| EVM version | `cancun` (the vault and engine use EIP-1153 transient storage) |
+| optimizer | enabled, 200 runs, `via_ir = true` |
+| metadata | `bytecode_hash = "none"` |
+| limits | EIP-170 runtime 24,576 B; EIP-3860 initcode 49,152 B, constructor arguments included |
+
+The seven deployed artifacts, in deployment order, with the runtime `keccak256` of each. These
+are what `prepare-financial-release.mjs verify` compares against the chain after deployment,
+outside the immutable slots:
+
+| # | artifact | runtime | runtime keccak256 |
+| ---: | --- | ---: | --- |
+| 1 | `DominoVaultFactoryV4` | 3,502 B | `0xd5d36d4ea4be9009f451fdd5801b19d4ed8b75b1acafd786f6102eff71246f55` |
+| 2 | `DominoVaultReadHelper` | 6,536 B | `0x03f19c14b1b159cb302e7c37fb964488f901ded6f0e3a10a0afd8d0ed9f7e6f8` |
+| 3 | `DominoRoutingHelperV4` | 13,873 B | `0xd3c0d439931fd9ea2bb54016231eab44ba99196b82b58d6076322a40facee9b8` |
+| 4 | `DominoPriceGuardV4` | 3,187 B | `0xdcde79a86d5efa76d4ede419d9c79e294b366aab741e000b6aa2d3f36d9f0a5c` |
+| 5 | `DominoExecutionEngineV4` | 21,899 B | `0x22e3b9f9fe254f59aa969e6bf33b1e69655b8bd376fd8e7a8d4207d1ad542416` |
+| 6 | `DominoVaultV4` (clone implementation) | 23,625 B | `0x8c4cfc9d27602ec81d64e0d5e2d0c186fef65c69b45579ff81babb58bc01fc09` |
+| 7 | `DominoSetup` | 11,898 B | `0x42a55c64277411bcfd3e96da1a71a398ee0cb39eadd0687d664404e377ef33b7` |
+
+An eighth transaction, `factory.finalizeImplementation(implementation)`, binds #6 to #1 once and
+for ever. User vaults are EIP-1167 clones of #6; the clone's runtime is fixed bytecode and its
+hash is recomputed independently by the release verifier.
+
+Rebuild and confirm:
+
+```bash
+npm ci && npm run test:contracts && node scripts/check-contract-size.mjs
+```
+
+**Pinned chain dependencies, not deployed by this release** (Robinhood Chain, chain id 4663;
+`backend/discovery.py` and `scripts/prepare-financial-release.mjs` hold them, and the verifier
+checks their runtime hashes and their links to the pool manager at the finalized block):
+PoolManager `0x8366a39cc670b4001a1121b8f6a443a643e40951`, PositionManager
+`0x58daec3116aae6d93017baaea7749052e8a04fa7`, StateView
+`0xf3334192d15450cdd385c8b70e03f9a6bd9e673b`.
+
+## 2. Scope
+
+**In scope — 12 files under `contracts/src`, 2,536 lines**: the seven artifacts above,
+plus `DominoVaultTypes.sol`, `DominoExecutionTypes.sol`, `IDominoVaultDraft.sol` (the interface
+the vault takes its `Policy` struct and events from), `PolicyValidation.sol` and
+`FeeAccounting.sol`. `DominoRoutingHelperV4` is the only production source that imports the
+vendored Uniswap tree, for `FullMath` and `TickMath`.
+
+**Vendored, in scope as a dependency but not as authored code**: Uniswap v4 core and periphery,
+solmate, permit2 and OpenZeppelin under `contracts/test/reference/official-v4/`. They are the
+real sources, used by the reference tests and by the fork qualification, not re-implementations.
+
+**Out of scope, and why.** The backend (planner, signer, durable executor, read path), the
+frontend, the Cloudflare workers and the `api-contracts` wire packages: a different review.
+The signer and executor have never run against a real deployment; that is stated in §4 as a
+known limitation, not hidden. The V3 lineage (`DominoVault`, `DominoVaultFactory`,
+`DominoCompoundEngine`) was retired on 20 September and is not in the tree; it was never
+publicly deployed.
+
+**Deployment and activation are separate acts.** This package covers the contracts. Nothing here
+authorizes the operator or publisher services, whose profiles are issued after the release is
+verified.
+
+## 3. Trust model
+
+Six roles. None of them can take a position or a reserve out of a vault except the owner.
+
+| role | set when | what it can do | what it cannot do |
+| --- | --- | --- | --- |
+| **deployer** | deploys the factory | call `finalizeImplementation` exactly once | anything afterwards: there is no upgrade, no second finalization, no admin key |
+| **owner** | vault creation, immutably bound to one address | policy and execution limits, set and revoke the operator, pause and resume, re-arm the root, withdraw child positions, withdraw fee reserves, recover untracked currency and unmanaged NFTs | nothing is withheld from the owner; every exit works with the engine, the operator, the publisher and even the read helper unavailable (`DominoVaultV4Architecture.t.sol:281`) |
+| **operator** | set by the owner, revocable at any time | `execute` one price-anchored plan at a time, and `pause` | resume, change policy or limits, withdraw anything, move a position |
+| **price publisher** | constructor argument, rotatable (below) | publish one observation per action, and revoke its own | publish outside the deviation band around the pool's live reading; nothing else on any vault |
+| **price guard guardian** | constructor argument, immutable | propose the next publisher (which must accept), and revoke any observation | publish anything, widen the band, or touch a vault |
+| **service fee recipient** | constructor argument, immutable | receive the service fee the policy sets (`FeeAccounting.MAX_SERVICE_FEE_BPS` caps it at 200 bps) | initiate anything |
+
+**What a compromised key costs.**
+
+- *Operator.* Bounded by the contracts, and the bound was measured rather than argued
+  ([EXECUTION_FORK_SANDWICH](EXECUTION_FORK_SANDWICH_2026-09-20.md)). Every action anchors to a
+  published observation; the engine refuses a spot that has moved past `maxPriceImpactBps` since
+  that observation; the plan states a ceiling on what one add may cost. On a real pool, every
+  post-observation manipulation at or beyond the limit was refused. The residual is a
+  pre-observation sandwich, where an honest publisher reads a pool the attacker has already
+  moved: it executed, and in every measured case the vault ended better off, because the
+  attacker's own volume pays the pool's fee and the vault's position earns its share. The
+  attacker paid $2.59 to move 0.5% and $92.42 to move 20% on that pool's depth. The channel that
+  does cost the vault is selling fees at a moved anchor: about **$500 of fees would have to be
+  sold in one compound for the manipulation to break even**, at any move size. That number
+  scales with pool depth, and it is the one to weigh against how large a fee reserve a vault is
+  allowed to accumulate before compounding.
+- *Publisher.* A liveness dependency: every action needs an observation, so a silent publisher
+  stops automation. Owner exits are unaffected. A stolen key cannot publish a price outside the
+  band around the pool's own reading, and the guardian can revoke an observation without the
+  publisher key. This is the deliberate residual: **one live publisher, no threshold.**
+- *Guardian.* Can hand the publisher role to an address of its choosing — but that address must
+  accept, and a new publisher is not admitted anywhere else until the sequence profiles are
+  re-issued naming it (`backend/execution_v4.py` refuses to sign while `publisher()` differs
+  from the admitted address). It cannot publish, and it cannot reach a vault.
+- *Owner.* Total, by design. The owner is the position's owner.
+
+**Rotating the publisher** is a two-key handshake needing no redeployment:
+`guardian.proposePublisher(next)`, then `next.acceptPublisher()`. Observations the old key
+published stay readable until they expire — at most 255 blocks. The procedure and the
+re-admission that must follow are in [FINANCIAL_RELEASE](../docs/FINANCIAL_RELEASE.md).
+
+**Independence, enforced by the release tooling before any transaction is prepared**: operator ≠
+publisher; guardian ≠ publisher and ≠ operator; none of them is the fee recipient or any
+deployed component; operator, publisher and guardian must be externally owned accounts at the
+verified finalized block.
+
+## 4. Known limitations
+
+Stated here so nobody has to find them.
+
+1. **One live publisher is a liveness dependency.** No threshold, no fallback oracle. Chosen
+   over adding a new trust role; rotation is the mitigation.
+2. **Pre-observation manipulation is outside what any on-chain band can see**, since the
+   published price and the spot agree. Bounded by the publisher's integrity and by the
+   attacker's cost, both measured above.
+3. **A concentrated position fails closed on small moves.** On a ±2% range, a 0.5% move between
+   observation and execution changes the required composition beyond an honestly sized plan and
+   the compound reverts with `InvalidAmount()`. Safe, but the executor must re-plan rather than
+   treat it as a fault — and that executor behaviour is not yet tested.
+4. **Findings D-05 … D-08 were never recorded.** The internal review cites D-09 and D-10 by
+   number and never enumerates what lies between; those four cannot be recovered. Everything
+   else on record has a disposition in §5.
+5. **`NET` and `FUND` have not run on a real forked pool.** Both run against the vendored
+   official contracts in local fixtures; `GENERAL`, the swap path and `MINT` ran on the real
+   `weth-usdg` pool.
+6. **The economic figures are point samples.** The fork's fees came from synthetic volume, and
+   the gas figures are one block's readings (1,162,908 L2 gas for a 1,764-byte compound; the L1
+   data component read as zero from the live node's `NodeInterface`). The real fee-accrual rate
+   of any pool is not measured.
+7. **The service around the contracts is unproven.** Signer, executor, planner and read path
+   have never run against a real deployment.
+
+## 5. Index of findings
+
+Three internal reports. Every finding on record, with what closed it.
+
+| report | what it covers |
+| --- | --- |
+| [CONTRACT_REVIEW_2026-09-19](CONTRACT_REVIEW_2026-09-19.md) | the standing review: hardening (D), optimization (F/V), the two false records, what was verified sound, what was not covered |
+| [CONTRACT_HYGIENE_2026-09-19](CONTRACT_HYGIENE_2026-09-19.md) | H-01 and H-02, the two false records and the untested shipping vault |
+| [CONTRACT_HYGIENE_MINOR_2026-09-19](CONTRACT_HYGIENE_MINOR_2026-09-19.md) | M-03 … M-22, the minor findings re-derived, and the seal |
+| [EXECUTION_FORK_SANDWICH_2026-09-20](EXECUTION_FORK_SANDWICH_2026-09-20.md) | D-01 and D-02 reproduced by execution on the real pool; the lifecycle and the gas readings |
+| [V4_AUDIT_READINESS_2026-09-20](V4_AUDIT_READINESS_2026-09-20.md) | the four tracks and their seals, which this package supersedes as the entry point |
+
+**Hardening.** D-01 (every action anchors to a published price, bounded against the pool's live
+reading) — fixed in `28eeaa9`, reproduced on the real pool. D-02 (a plan states the ceiling of
+one add) — fixed, and the ceiling was shown deciding on a wide range. D-03/D-04 (the publisher
+was one immutable key with no on-chain sanity check) — the band in `28eeaa9`, guardian rotation
+in `ec2e9aa`. D-09 (the overflow threshold of the routing arithmetic) — measured, not estimated:
+`DominoRoutingArithmetic.t.sol`. D-10 (per-execution scratch to transient storage) — done, and
+it is what bought the room for D-01 and D-02. D-05 … D-08: never recorded (§4.4).
+
+**Optimization.** F2 and F7 taken (−9.2% on a general execution, −11.1% on a netting one). F3
+declined, premise false. F11 declined: 91 B is not worth removing a defence-in-depth codehash
+check. V2 declined: 2,182 B measured, but the optimizer sequence that yields it fails to compile
+the tree. Compaction items V1 and V4–V8 became unnecessary once D-10 freed the room.
+
+**Hygiene.** H-01, H-02 and M-03 … M-22 all closed; three of them (M-19, M-20, and the nine
+clauses listed in the price guard's suite) are *recorded redundancies* rather than removals —
+correct, cheap, and load-bearing again if a neighbouring check were relaxed. M-21 and M-22 were
+found while closing the others: a test of mine that claimed a clause it could not reach, and
+`resume()`'s permission check, which no suite in the tree covered.
+
+**Two checks keep the closed tracks closed**, both in CI: `scripts/check-contract-hygiene.mjs`
+(licence, one pragma, no leftover markers, no unused or development-only imports) and
+`scripts/gas-baseline.mjs --check` against the committed `contracts/.gas-snapshot`.
+
+## 6. Reproducing the evidence
+
+**The suites.** 15 suites, 228 tests. A single Forge invocation over the whole tree exhausts
+memory (issue #145), so each suite is run against its own dependency closure, as CI does:
+
+```bash
+for suite in $(find contracts/test -name '*.t.sol' | sort); do
+  node scripts/test-contracts.mjs --match-path "${suite#contracts/}"
+done
+```
+
+**Coverage is asserted by mutation, not by counting tests.** A guard counts as covered when
+deleting it makes a test fail. `scripts/mutate-contracts.mjs` is the tool every claim in the
+reports was produced with, and it is in the repository so the claims can be re-checked:
+
+```bash
+node scripts/mutate-contracts.mjs batch.json   # --head to mutate the last commit instead of the tree
+```
+
+A batch is JSON — a suite, a file, and mutations each naming the text to delete or replace. It
+copies the repository to a temporary directory and mutates only the copy; the working tree is
+never touched, because an earlier run left a mutated security guard in the tree and it reached a
+full backend run before it was caught. A mutation that does not apply is reported as an error,
+never as a pass. The verdicts are `CAUGHT`, `NOT CAUGHT`, `NOT APPLIED` and `NO BUILD`.
+
+Batches worth re-running: the price guard's 39 clauses (30 caught, 9 recorded redundancies), the
+routing arithmetic's 15 (13 caught, 2 redundancies), and the V4 vault's custody and child paths.
+
+**The fork qualification.** `backend/qualify_execution_fork.py` forks chain 4663 at the head of a
+node, deploys the stack from the built artifacts, gives a synthetic owner a real root position
+in `weth-usdg` through `DominoSetup`, earns it fees against the real pool, and runs one compound
+per scenario from one snapshot. It takes its upstream either from the read gateway or from a
+loopback JSON-RPC port, so no provider credential enters the process or its output:
+
+```bash
+backend/.venv/bin/python backend/qualify_execution_fork.py \
+  --source-url http://127.0.0.1:18547 --rounds 40 --moves 50,90,110,500,2000 \
+  --lifecycle --output /tmp/fork.json
+```
+
+A pruned node keeps state only for its block-age window, so the run starts at the head and must
+finish inside it; each of the recorded runs took about four minutes. Raw outputs are in
+[`fork/`](fork/).
+
+**The invariants.** `contracts/test/DominoVaultV4Invariants.t.sol` drives a fuzzed owner and
+engine over one vault — credits, converted credits, withdrawals, donations, untracked recovery,
+successor mints through the real `executionMint`, child exits — under five invariants: the
+currency ledger is the sum of its sources; every tracked unit is backed by balance;
+`activePositions` counts the active members; the state nonce only grows; a withdrawn child never
+comes back. A scripted self-test proves each handler action reaches the vault, so a run that
+only ever reverted cannot pass quietly.
+
+**Deployment tooling.** `node scripts/prepare-financial-release.mjs prepare|verify` produces the
+eight unsigned transactions and verifies a completed deployment against the same pinned
+artifacts. It reads no key, signs nothing and submits nothing. The procedure, its inputs and its
+partial-failure rules are in [FINANCIAL_RELEASE](../docs/FINANCIAL_RELEASE.md).
+
+## 7. What would most repay an auditor's time
+
+Offered as the authors' own reading of where the risk is, not as a limit on scope.
+
+1. **`DominoExecutionEngineV4.unlockCallback` and the fee-accounting path.** The engine holds the
+   pool manager's unlock for one plan; every budget, allocation and settlement happens inside it.
+   The conservation arithmetic was verified internally on both the netted and non-netted
+   branches, and it is the densest code in the tree.
+2. **The anchor's sufficiency.** §3 states what a compromised operator can and cannot do; the
+   pre-observation residual is the part we can bound only economically.
+3. **The transient-storage discipline.** The vault and engine keep per-execution state in
+   EIP-1153 slots, discarded at the end of the transaction rather than the call. The callback
+   guards depend on that distinction.
+4. **The custody edges**: re-arm, unsubscribe during an owner exit, terminal nonce and generation
+   values, and recovery of an NFT the vault never registered. These are where a vault could
+   strand a position, and where the owner's guarantee in §3 would fail if it failed anywhere.

@@ -1,7 +1,9 @@
 # V4 contracts: what remains, and whether they are ready for an audit — 20 September 2026
 
 State of the four tracks the [19 September review](CONTRACT_REVIEW_2026-09-19.md) opened, as of
-`ec2e9aa` on `main`, with the three seals of 20 September added in place. Every closed item names the record that closes it; every open one says what
+`ec2e9aa` on `main`, with the three seals of 20 September added in place.
+
+> **Superseded as the entry point by [V4_AUDIT_PACKAGE_2026-09-21](V4_AUDIT_PACKAGE_2026-09-21.md)**, which carries the freeze, the scope, the trust model, the known limitations and the index. This document remains the record of how each track was closed. Every closed item names the record that closes it; every open one says what
 would close it. The last section answers the question this was written for.
 
 ## Hardening
