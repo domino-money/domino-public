@@ -85,4 +85,4 @@ The existing owner-only Sites preview is a separate deployment. GitHub membershi
 
 Third-party Uniswap reference sources retain their original notices and licenses in `backend/tests/reference/v4/`; see [third-party notices](backend/THIRD_PARTY_NOTICES.md).
 
-The current public V1 candidate is described in the [independent audit specification](reports/V1_INDEPENDENT_AUDIT_SPEC_2026-09-21.md), including complete-suite reproduction and the distinction from the original frozen V4 baseline.
+The [public V1 preparation record](reports/V1_RELEASE_PREPARATION_2026-09-21.md) records naming, compatibility and internal release validation.
