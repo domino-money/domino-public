@@ -15,7 +15,7 @@ import { useNow } from '../../../lib/read/useNow'
 import { MetricCell, TurnoverCell } from '../../explore/MetricCell'
 import { PoolTokenLabel } from '../../PoolCatalogueIdentity'
 import { TokenMarkPair } from '../../TokenIcon'
-import { Skeleton, Stat, StatStrip, cx } from '../../ui'
+import { FigureDash, Skeleton, Stat, StatStrip, cx } from '../../ui'
 import { Address } from './Address'
 import { CopyButton } from './CopyButton'
 import { PoolActivityCard } from './PoolActivityCard'
@@ -100,12 +100,6 @@ function useChainRead<R extends 'pool-metrics' | 'pool-activity' | 'pool-positio
   }, [source, route, poolId, when, attempt])
   return answer?.key === poolId ? answer.outcome : null
 }
-
-const Dash = ({ title }: { title?: string }) => (
-  <span className="text-fg-subtle" title={title} data-figure="none">
-    —
-  </span>
-)
 
 /**
  * One verified pool on its own page, from the title row down. Its identity is
@@ -221,7 +215,7 @@ export function PoolWorkspace({ source, option, onOption, range, onRange, action
   const atCapacity = answered?.ok === null && answered.acquiring === true && answered.accepted === false
   const loading = answered === null || (answered.ok === null && answered.acquiring === true && answered.accepted !== false)
   const failure = answered && !answered.ok ? answered.failure : null
-  const failed = failure ? sentence(failureText(failure, 'pools')) : atCapacity ? 'New acquisition is at capacity; no figures are stored for this pool yet.' : undefined
+  const failed = failure ? sentence(failureText(failure, 'pools')) : atCapacity ? 'Data collection is at capacity; no figures are stored for this pool yet.' : undefined
   const [currency0, currency1] = option.currencies
   const price = poolPrice(option, now.wall)
   const fee = option.fee === 'Dynamic' ? 'Dynamic fee' : option.fee
@@ -239,19 +233,19 @@ export function PoolWorkspace({ source, option, onOption, range, onRange, action
       </span>
   const HISTORY = 'Domino history'
   const fromHistory = (metric: Metric) => metric.source === undefined && metric.state !== 'unavailable' && metric.state !== 'rejected' && metric.state !== 'absent'
-  const figure = (node: ReactNode) => (shown ? <span className="animate-fade">{node}</span> : loading ? <Skeleton className="mt-1 h-6 w-24" /> : <Dash title={failed} />)
+  const figure = (node: ReactNode) => (shown ? <span className="animate-fade">{node}</span> : loading ? <Skeleton className="mt-1 h-6 w-24" /> : <FigureDash reason={failed} />)
   const metricsFailed = metricsRead && metricsRead.state !== 'ok' && metricsRead.state !== 'aborted' ? sentence(failureText(metricsRead, 'pools')) : undefined
   const apr = shown?.feeAprPercent
   const aprFromHistory = !!apr && apr.value !== null && (apr.state === 'qualified' || apr.state === 'stale')
 
   // Domino's own pool APR, where its 24h history qualifies; a dash with the reason otherwise.
   const historyApr = (() => {
-    if (!metricsListed) return <Dash title={`Unavailable: ${reasonText(option.aprReason)}`} />
+    if (!metricsListed) return <FigureDash reason={`Unavailable: ${reasonText(option.aprReason)}`} />
     if (!metricsRead) return <Skeleton className="ml-auto h-4 w-14" />
-    if (metricsFailed) return <Dash title={metricsFailed} />
-    if (!apr) return <Dash title={failed} />
+    if (metricsFailed) return <FigureDash reason={metricsFailed} />
+    if (!apr) return <FigureDash reason={failed} />
     const presented = presentMetric(apr, (m) => `${percentText(m) ?? '—'}%`)
-    if (presented.kind !== 'value') return <Dash title={`${presented.kind === 'not_current' ? 'Not current' : 'Unavailable'}: ${reasonText(presented.reason)}`} />
+    if (presented.kind !== 'value') return <FigureDash reason={`${presented.kind === 'not_current' ? 'Not current' : 'Unavailable'}: ${reasonText(presented.reason)}`} />
     return <span className="tnum" data-metric={presented.stale ? 'stale' : 'qualified'} title={presented.stale ? 'Stale, not current.' : undefined}>{presented.text}</span>
   })()
 
@@ -287,13 +281,13 @@ export function PoolWorkspace({ source, option, onOption, range, onRange, action
           : COPY.range.problems[price.problem]}>
           {price.state === 'usable'
             ? <span title={`${price.text}. Pool price from on-chain state at block ${price.block}. A ratio between the two tokens, not a dollar price.${price.stale ? ' Read more than 5 minutes ago on this page.' : ''}`}>{price.text}</span>
-            : <Dash title={COPY.range.problems[price.problem]} />}
+            : <FigureDash reason={COPY.range.problems[price.problem]} />}
         </Stat>
         <Stat label="TVL" sub={shown && fromHistory(shown.tvlUsd) ? HISTORY : providerLine}>{figure(shown && <MetricCell metric={shown.tvlUsd} retrieved={retrieved} />)}</Stat>
         <Stat label="24h volume" sub={shown && fromHistory(shown.volume24hUsd) ? HISTORY : providerLine}>{figure(shown && <MetricCell metric={shown.volume24hUsd} retrieved={retrieved} />)}</Stat>
         {metricsListed && (
           <Stat label="24h fees" sub={shown ? HISTORY : loading ? resting : undefined}>
-            {shown && !metricsRead ? <Skeleton className="mt-1 h-6 w-20" /> : shown && metricsFailed ? <Dash title={metricsFailed} /> : figure(shown && shown.lpFees24hUsd && <MetricCell metric={shown.lpFees24hUsd} />)}
+            {shown && !metricsRead ? <Skeleton className="mt-1 h-6 w-20" /> : shown && metricsFailed ? <FigureDash reason={metricsFailed} /> : figure(shown && shown.lpFees24hUsd && <MetricCell metric={shown.lpFees24hUsd} />)}
           </Stat>
         )}
         {aprFromHistory && apr
@@ -330,7 +324,7 @@ export function PoolWorkspace({ source, option, onOption, range, onRange, action
         {option.tokenMetadata === 'partial' && <div><dt>Token metadata</dt><dd className="text-fg-muted">{COPY.picker.partialMetadata}</dd></div>}
         <div><dt>Tick spacing</dt><dd>{option.tickSpacing}</dd></div>
         <div><dt>Hooks</dt><dd>{option.hooks === NATIVE_CURRENCY ? 'None' : <Address value={option.hooks} short />}</dd></div>
-        <div><dt>24h vol / TVL</dt><dd>{shown ? <TurnoverCell market={shown} retrieved={retrieved} /> : loading ? <Skeleton className="ml-auto h-4 w-12" /> : <Dash title={failed} />}</dd></div>
+        <div><dt>24h vol / TVL</dt><dd>{shown ? <TurnoverCell market={shown} retrieved={retrieved} /> : loading ? <Skeleton className="ml-auto h-4 w-12" /> : <FigureDash reason={failed} />}</dd></div>
         <div>
           <dt>Verification</dt>
           <dd>
@@ -359,7 +353,7 @@ export function PoolWorkspace({ source, option, onOption, range, onRange, action
             ) : (
               <div className="flex flex-wrap items-baseline justify-between gap-x-3">
                 <span className="text-fg-muted">Estimated APR</span>
-                {loading ? <Skeleton className="h-4 w-14" /> : <Dash title={failed} />}
+                {loading ? <Skeleton className="h-4 w-14" /> : <FigureDash reason={failed} />}
               </div>
             )}
           </div>

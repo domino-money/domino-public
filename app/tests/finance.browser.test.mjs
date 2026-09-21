@@ -633,9 +633,9 @@ test('a finalized receipt shows its transaction hash, block hash and fee recipie
 
     const cell = (currency, field) => done.locator(`[data-receipt-currency="${currency}"] [data-source-field="${field}"] dd`);
     await cell(TOKEN, 'grossOriginalConsumedRaw').getByText('1.5 TOKEN', { exact: true }).waitFor({ timeout: 30_000 });
-    assert.deepEqual([await cell(TOKEN, 'serviceFeeRaw').innerText(), await cell(TOKEN, 'originalAfterRaw').innerText(), await cell(TOKEN, 'grossOriginalConsumedRaw').locator('span').getAttribute('title')], ['0.03 TOKEN', '0.25 TOKEN', "1,500,000 in the token's smallest units."]);
+    assert.deepEqual([await cell(TOKEN, 'serviceFeeRaw').innerText(), await cell(TOKEN, 'originalAfterRaw').innerText(), await cell(TOKEN, 'grossOriginalConsumedRaw').locator('span').getAttribute('title')], ['0.03 TOKEN', '0.25 TOKEN', "1,500,000 in the token’s smallest units."]);
     await done.locator(`[data-receipt-currency="${UNKNOWN}"] [data-amount-reason="decimals_unavailable"]`).first().waitFor({ timeout: 30_000 });
-    assert.deepEqual([await cell(UNKNOWN, 'grossOriginalConsumedRaw').innerText(), await cell(UNKNOWN, 'grossOriginalConsumedRaw').locator('span').getAttribute('title')], ['—', "Token decimals unavailable. 42 in the token's smallest units."]);
+    assert.deepEqual([await cell(UNKNOWN, 'grossOriginalConsumedRaw').innerText(), await cell(UNKNOWN, 'grossOriginalConsumedRaw').locator('span').getAttribute('title')], ['—', "Token decimals unavailable. 42 in the token’s smallest units."]);
     assert.deepEqual([...asked].sort(), [TOKEN, UNKNOWN], 'one token read per currency, through the read path');
 
     assert.equal(await open.getAttribute('data-execution-can-cancel'), 'true');
@@ -666,20 +666,35 @@ const chainAbi = parseAbi([
   'function isVault(address) view returns(bool)', 'function owner() view returns(address)', 'function sequenceId() view returns(bytes32)', 'function policy() view returns(Policy)', 'function rootTokenId() view returns(uint256)',
   'function operator() view returns(address)', 'function rootPermissionValid() view returns(bool)', 'function baseCurrency() view returns(address)', 'function quoteCurrency() view returns(address)',
   'function stateNonce() view returns(uint64)', 'function position(uint256) view returns(Position)', 'function successorOf(uint256) view returns(uint256)', 'function activePositions() view returns(uint256)',
+  // The rest of the non-recovery verification, which only the sequence screen's
+  // connect reaches: the implementation's five code-hash getters, the engine's
+  // three helpers by address and by hash, and the guard's publisher.
+  'function readHelperCodeHash() view returns(bytes32)', 'function executionEngineCodeHash() view returns(bytes32)', 'function poolManagerCodeHash() view returns(bytes32)',
+  'function positionManagerCodeHash() view returns(bytes32)', 'function stateViewCodeHash() view returns(bytes32)', 'function routingHelper() view returns(address)',
+  'function priceGuard() view returns(address)', 'function readHelperHash() view returns(bytes32)', 'function routingHelperHash() view returns(bytes32)',
+  'function priceGuardHash() view returns(bytes32)', 'function publisher() view returns(address)',
+  // Simulated before it is offered, so the call has to resolve here too.
+  'function setOperator(address next)',
 ]);
 
 /**
  * A chain with a published sequence deployment and `roots.length` sequences created by `owner`, answered only for
  * the reads the sequence client makes. Anything else is refused as a non-read, and every method asked is logged.
  */
-function fakeSequenceChain(owner, { roots, chains = {} }) {
+function fakeSequenceChain(owner, { roots, chains = {}, operator = null }) {
   const at = (byte, bytes = 20) => `0x${byte.toString(16).padStart(2, '0').repeat(bytes)}`, zero = at(0, 32);
   const cloneOf = implementation => concatHex(['0x363d3d373d3d3d363d73', implementation, '0x5af43d82803e903d91602b57fd5bf3']);
   const implementation = at(0x42), factoryCode = '0x6001', implementationCode = '0x6002';
   const deployment = { factory: at(0x41), implementation, poolManager: at(0x43), positionManager: at(0x44), stateView: at(0x45), readHelper: at(0x46), engine: at(0x47), routing: at(0x48), priceGuard: at(0x49),
-    serviceFeeRecipient: at(0x4a), operator: at(0x4b), pricePublisher: at(0x4c), serviceFeeBps: 200, expiresAt: 4_000_000_000,
-    codeHashes: { factory: keccak256(factoryCode), implementation: keccak256(implementationCode), poolManager: at(0x53, 32), positionManager: at(0x54, 32), stateView: at(0x55, 32), readHelper: at(0x56, 32),
-      engine: at(0x57, 32), routing: at(0x58, 32), priceGuard: at(0x59, 32), vault: keccak256(cloneOf(implementation)) } };
+    serviceFeeRecipient: at(0x4a), operator: at(0x4b), pricePublisher: at(0x4c), serviceFeeBps: 200, expiresAt: 4_000_000_000, codeHashes: null };
+  // Every component carries code whose hash is the one the profile declares, so
+  // a FULL verify() passes — not only the recovery subset. Without this the
+  // sequence screen's connect fails with "The deployed code no longer matches
+  // its profile", because eth_getCode answered 0x for everything but the
+  // factory, the implementation and the vaults.
+  const COMPONENTS = ['factory', 'implementation', 'poolManager', 'positionManager', 'stateView', 'readHelper', 'engine', 'routing', 'priceGuard'];
+  const codeOf = new Map(COMPONENTS.map((name, index) => [deployment[name], name === 'factory' ? factoryCode : name === 'implementation' ? implementationCode : `0x60${(0x10 + index).toString(16)}`]));
+  deployment.codeHashes = Object.fromEntries([...COMPONENTS.map((name) => [name, keccak256(codeOf.get(deployment[name]))]), ['vault', keccak256(cloneOf(implementation))]]);
   const typeHash = keccak256(stringToHex('DominoSequence(uint256 chainId,address factory,address owner,uint256 nonce)'));
   const initHash = keccak256(concatHex(['0x3d602d80600a3d3981f3', cloneOf(implementation)]));
   const vaults = new Map(roots.map((root, nonce) => {
@@ -697,30 +712,53 @@ function fakeSequenceChain(owner, { roots, chains = {} }) {
       if (name === 'isVault') return vaults.has(args[0].toLowerCase());
     }
     if (to === implementation) {
-      const answers = { factory: deployment.factory, implementation, implementationVersion: 4n, readHelper: deployment.readHelper, executionEngine: deployment.engine };
+      const answers = { factory: deployment.factory, implementation, implementationVersion: 4n, readHelper: deployment.readHelper, executionEngine: deployment.engine,
+        readHelperCodeHash: deployment.codeHashes.readHelper, executionEngineCodeHash: deployment.codeHashes.engine,
+        poolManagerCodeHash: deployment.codeHashes.poolManager, positionManagerCodeHash: deployment.codeHashes.positionManager, stateViewCodeHash: deployment.codeHashes.stateView };
       if (name in answers) return answers[name];
     }
+    // The rest of the non-recovery verification: the managers point at the pool
+    // manager, the read helper at both, the engine at its three helpers by
+    // address and by code hash, and the guard at its publisher.
+    if ((to === deployment.positionManager || to === deployment.stateView) && name === 'poolManager') return deployment.poolManager;
+    if (to === deployment.readHelper) {
+      const answers = { positionManager: deployment.positionManager, stateView: deployment.stateView };
+      if (name in answers) return answers[name];
+    }
+    if (to === deployment.engine) {
+      const answers = { factory: deployment.factory, readHelper: deployment.readHelper, routingHelper: deployment.routing, priceGuard: deployment.priceGuard,
+        readHelperHash: deployment.codeHashes.readHelper, routingHelperHash: deployment.codeHashes.routing, priceGuardHash: deployment.codeHashes.priceGuard };
+      if (name in answers) return answers[name];
+    }
+    if (to === deployment.priceGuard && name === 'publisher') return deployment.pricePublisher;
     const vault = vaults.get(to);
     if (vault) {
       const index = id => vault.chain.findIndex(member => member.id === id);
-      const answers = { owner, sequenceId: vault.id, rootTokenId: vault.root, operator: deployment.operator, rootPermissionValid: true, baseCurrency: at(0x61), quoteCurrency: at(0x62), stateNonce: 1n,
+      const answers = { owner, sequenceId: vault.id, rootTokenId: vault.root, operator: operator ?? deployment.operator, rootPermissionValid: true, baseCurrency: at(0x61), quoteCurrency: at(0x62), stateNonce: 1n,
         policy: { serviceFeeBps: 200, triggerDistanceBps: 500, maxOverlapBps: 2000, minimumIntervalSeconds: 60, maxPositions: 3, version: 1n, paused: false },
         activePositions: BigInt(1 + vault.chain.filter(member => member.active).length) };
       if (name in answers) return answers[name];
       if (name === 'position') return args[0] === vault.root ? position(true, true, true, 0n) : index(args[0]) === -1 ? position(false, false, false, 0n)
         : position(true, vault.chain[index(args[0])].active, false, index(args[0]) === 0 ? vault.root : vault.chain[index(args[0]) - 1].id);
       if (name === 'successorOf') return args[0] === vault.root ? vault.chain[0]?.id ?? 0n : index(args[0]) === -1 ? 0n : vault.chain[index(args[0]) + 1]?.id ?? 0n;
+      if (name === 'setOperator') return undefined;
     }
     throw new Error(`unexpected ${name} on ${to}`);
   }
-  const log = [];
+  const log = [], missing = [], sends = [];
   async function request(method, params) {
     log.push(method);
     try {
       if (method === 'eth_getBlockByNumber') return { result: { number: '0x10', hash: at(0xbb, 32) } };
+      // A suite that routes these here keeps them off the mock wallet, which
+      // refuses anything outside its login set and fails the scenario's close.
+      if (method === 'eth_getTransactionCount') return { result: '0x0' };
+      if (method === 'eth_estimateGas') return { result: '0x186a0' };
+      if (method === 'eth_getBalance') return { result: '0xde0b6b3a7640000' };
+      if (method === 'eth_sendTransaction') { sends.push(params[0]); return { result: at(0xcc, 32) }; }
       if (method === 'eth_getCode') {
         const target = String(params[0]).toLowerCase();
-        return { result: target === deployment.factory ? factoryCode : target === implementation ? implementationCode : vaults.has(target) ? cloneOf(implementation) : '0x' };
+        return { result: codeOf.get(target) ?? (vaults.has(target) ? cloneOf(implementation) : '0x') };
       }
       if (method === 'eth_call') {
         const { functionName, args = [] } = decodeFunctionData({ abi: chainAbi, data: params[0].data });
@@ -728,10 +766,11 @@ function fakeSequenceChain(owner, { roots, chains = {} }) {
       }
       return { error: { code: 4200, message: `${method} is not a read` } };
     } catch (error) {
+      missing.push(String(error));
       return { error: { code: -32000, message: String(error) } };
     }
   }
-  return { log, request, vaults: [...vaults.keys()], release: { contractVersion: '1.0.0-rc.1', chainId: 4663, available: true, deployment } };
+  return { log, missing, sends, request, vaults: [...vaults.keys()], release: { contractVersion: '1.0.0-rc.1', chainId: 4663, available: true, deployment } };
 }
 
 test('Start tracking is offered for the sequences the wallet lists, reads each one\'s positions from its vault, and sends enroll with the session: nothing typed, nothing signed', async () => {
@@ -783,5 +822,112 @@ test('Start tracking is offered for the sequences the wallet lists, reads each o
     assert.deepEqual([...new Set(chain.log)].sort(), ['eth_call', 'eth_getBlockByNumber', 'eth_getCode'], 'the chain was only read');
     assert.deepEqual([...new Set(s.wallet.state.log.map(entry => entry.method))].filter(method => !['eth_accounts', 'eth_chainId', 'eth_requestAccounts', 'personal_sign', 'wallet_requestPermissions', 'wallet_switchEthereumChain'].includes(method)), []);
     assert.equal(s.wallet.state.signed.length, 1, 'only the login signature: Start tracking is not a wallet transaction');
+  } finally { await s.close(); }
+});
+
+/**
+ * The way back from a revoked operator, which this product could reach and not leave.
+ *
+ * `revokeOperator` sets the vault's operator to the zero address. Our own resume
+ * builder then refuses with `sequence_activation_unavailable` (sequence.ts, the
+ * `state.operator !== d.operator` clause) and the screen disables Review
+ * activation — correctly, because resuming a vault with no operator would
+ * un-pause an automation that cannot execute. But nothing offered the one
+ * transaction that undoes it, so a person who revoked from this product could
+ * never enable automation from it again.
+ *
+ * This exercises the whole path against the real component and the real builder.
+ * The mock wallet refuses eth_sendTransaction by design, and logs its parameters
+ * before refusing — so what WOULD be signed is read from that log, byte for byte,
+ * without anything being signed.
+ */
+test('a revoked operator can be authorised again, and the transaction is setOperator with the deployment’s own operator', async () => {
+  const s = await scenario();
+  const ZERO = `0x${'00'.repeat(20)}`;
+  const chain = fakeSequenceChain(OWNER, { roots: [100n], operator: ZERO });
+  await s.context.exposeFunction('__dominoChainRead', (method, params) => chain.request(method, params));
+  await s.context.addInitScript(() => {
+    let wallet = window.__dominoWalletRequest;
+    const request = (id, method, params) => ['eth_call', 'eth_getCode', 'eth_getBlockByNumber', 'eth_getTransactionCount', 'eth_estimateGas', 'eth_getBalance', 'eth_sendTransaction'].includes(method) ? window.__dominoChainRead(method, params) : wallet(id, method, params);
+    Object.defineProperty(window, '__dominoWalletRequest', { configurable: true, get: () => request, set: value => { wallet = value; } });
+  });
+  try {
+    await login(s.page);
+    s.set({ sequenceRelease: { status: 200, body: chain.release } });
+    await s.page.goto(`${s.origin}/#/sequence`);
+    await s.page.reload();
+    await s.page.waitForFunction(() => window.__dominoSessionProbe?.view().status === 'signed_in');
+
+    const main = s.page.locator('main');
+    // Owner controls are their own path: the sequences are listed from the wallet first.
+    await main.getByRole('button', { name: 'Read my sequences', exact: true }).click();
+    await main.getByLabel('Sequence address').waitFor();
+    await main.getByLabel('Sequence address').fill(chain.vaults[0]);
+    await main.getByRole('button', { name: 'Read owned sequence', exact: true }).click();
+    const restore = main.getByRole('button', { name: 'Review operator authorisation', exact: true });
+    await restore.waitFor();
+
+    // The dead end itself: activation cannot be reviewed while the operator is gone.
+    const activation = main.getByRole('button', { name: 'Review activation', exact: true });
+    if (await activation.count()) assert.equal(await activation.isDisabled(), true, 'activation stays refused until the operator is back');
+
+    // Every owner step is bounded by the network budget, so it has to be set first.
+    for (const [label, value] of [['Maximum wallet gas units', '300000'], ['Maximum fee per gas (wei)', '2000000000'],
+      ['Maximum priority fee per gas (wei)', '1000000'], ['Keep native gas reserve (wei)', '0']]) {
+      await main.getByLabel(label, { exact: true }).fill(value);
+    }
+    await s.page.waitForFunction(() => {
+      const button = [...document.querySelectorAll('main button')].find((item) => item.textContent === 'Review operator authorisation');
+      return Boolean(button) && !button.disabled;
+    });
+    await restore.click();
+    const panel = main.locator('[role="region"][aria-label="Sequence wallet review"]');
+    await panel.waitFor();
+    const words = await panel.innerText();
+    assert.match(words, /Review operator authorisation/, 'the step is named, not left as a code');
+    assert.match(words, new RegExp(`Authorise operator ${chain.release.deployment.operator} to execute for root NFT #100 again\.`, 'i'), 'the address shown is the deployment’s own operator');
+    assert.match(words, /The root NFT stays in your wallet/);
+    assert.match(words, /no Domino service fee/, 'an owner transaction carries no service fee');
+    assert.doesNotMatch(words, /0x0{40}/, 'the zero address is never offered as an operator');
+
+    await panel.getByRole('checkbox').check();
+    await panel.getByRole('button', { name: 'Send this step in wallet', exact: true }).click();
+    for (let waited = 0; chain.sends.length === 0 && waited < 15000; waited += 250) await new Promise((done) => setTimeout(done, 250));
+    assert.equal(chain.sends.length, 1, 'exactly one transaction was offered');
+    const tx = chain.sends[0];
+    assert.equal(String(tx.to).toLowerCase(), chain.vaults[0], 'sent to the sequence itself');
+    const decoded = decodeFunctionData({ abi: parseAbi(['function setOperator(address next)']), data: tx.data });
+    assert.equal(decoded.functionName, 'setOperator', 'one call, and it is the restoration');
+    assert.deepEqual(decoded.args.map((value) => String(value).toLowerCase()), [chain.release.deployment.operator.toLowerCase()],
+      'the argument is the deployment’s operator, never anything a person typed');
+    assert.deepEqual([...new Set(chain.log)].sort(), ['eth_call', 'eth_estimateGas', 'eth_getBalance', 'eth_getBlockByNumber', 'eth_getCode', 'eth_getTransactionCount', 'eth_sendTransaction'],
+      'reads, one simulation, one send — and nothing else');
+    assert.deepEqual(s.wallet.state.refused, [], 'nothing was asked of the wallet outside its own set');
+  } finally { await s.close(); }
+});
+
+test('with its operator in place a sequence is never offered the restoration', async () => {
+  const s = await scenario();
+  const chain = fakeSequenceChain(OWNER, { roots: [100n] });
+  await s.context.exposeFunction('__dominoChainRead', (method, params) => chain.request(method, params));
+  await s.context.addInitScript(() => {
+    let wallet = window.__dominoWalletRequest;
+    const request = (id, method, params) => ['eth_call', 'eth_getCode', 'eth_getBlockByNumber'].includes(method) ? window.__dominoChainRead(method, params) : wallet(id, method, params);
+    Object.defineProperty(window, '__dominoWalletRequest', { configurable: true, get: () => request, set: value => { wallet = value; } });
+  });
+  try {
+    await login(s.page);
+    s.set({ sequenceRelease: { status: 200, body: chain.release } });
+    await s.page.goto(`${s.origin}/#/sequence`);
+    await s.page.reload();
+    await s.page.waitForFunction(() => window.__dominoSessionProbe?.view().status === 'signed_in');
+    const main = s.page.locator('main');
+    await main.getByRole('button', { name: 'Read my sequences', exact: true }).click();
+    await main.getByLabel('Sequence address').waitFor();
+    await main.getByLabel('Sequence address').fill(chain.vaults[0]);
+    await main.getByRole('button', { name: 'Read owned sequence', exact: true }).click();
+    await main.getByRole('button', { name: 'Review operator revocation', exact: true }).waitFor();
+    assert.equal(await main.getByRole('button', { name: 'Review operator authorisation' }).count(), 0,
+      'nothing to restore, so nothing is offered');
   } finally { await s.close(); }
 });

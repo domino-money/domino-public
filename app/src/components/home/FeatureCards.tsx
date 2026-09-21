@@ -20,7 +20,7 @@ const FEATURES: ReadonlyArray<{
   {
     key: 'compound',
     title: 'Auto-compound',
-    body: 'Sign and approve once. We calculate the best rate of compounding earned fees for maximum return.',
+    body: 'Earned fees go back into the same position. The range stays as it is, and the fees become more liquidity inside it. Your principal is never sold.',
     href: '#/automate',
     link: 'Open Automate',
     roadmap: 'Compound',
@@ -28,8 +28,8 @@ const FEATURES: ReadonlyArray<{
   },
   {
     key: 'domino',
-    title: 'Domino Compounder',
-    body: 'Our novel auto-compounder. As the token price goes up and out of range, we collect your earned fees and automatically create a new pool above your previous one, drastically reducing risk of impermanent loss. Even if a token runs out of your range, you still earn.',
+    title: 'Domino-compound',
+    body: 'Near the top of a range, earned fees fund the next position one step higher in the same pool, new or already open, instead of returning to the position that earned them. Fees only, never principal, and the sequence stops at a cap you set.',
     href: '#/automate',
     link: 'Open Automate',
     roadmap: 'Domino',
@@ -38,7 +38,7 @@ const FEATURES: ReadonlyArray<{
   {
     key: 'custody',
     title: 'Non-custodial',
-    body: 'When you create an automation using Domino, you are the sole owner and only you can control it. Every step is fully automated by a contract whose controller is your signed wallet.',
+    body: 'You stay the owner: Domino never holds your keys. You approve one position at a time, never a blanket approval over all of them, and that approval is yours to withdraw.',
     // The Non-custodial page of the docs; its route is added alongside the docs.
     href: '#/docs/non-custodial',
     link: 'How it works',

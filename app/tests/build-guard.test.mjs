@@ -13,10 +13,15 @@
  */
 import assert from 'node:assert/strict';
 import { existsSync, lstatSync, mkdirSync, readFileSync, readdirSync, rmSync, symlinkSync, unlinkSync, writeFileSync } from 'node:fs';
-import { join, resolve } from 'node:path';
+import { spawnSync } from 'node:child_process';
+import { join, resolve, sep } from 'node:path';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import { test } from 'node:test';
 import { resolveConfig } from 'vite';
 import { FORBIDDEN, TEXT_FILE, assertDeployable, findForbidden } from '../scripts/deploy-markers.mjs';
+
+/** The app directory, for the standalone compile the backend suite mirrors. */
+const here = fileURLToPath(new URL('..', import.meta.url));
 
 const APP = resolve(import.meta.dirname, '..');
 const CONFIG = join(APP, 'vite.config.ts');
@@ -286,4 +291,58 @@ test('every browser suite offers the msedge channel, so Edge-only machines can r
     if (!text.includes("channel: 'msedge'") && !text.includes("'msedge'")) missing.push(name);
   }
   assert.deepEqual(missing, [], `these launch a browser without offering Edge: ${missing.join(', ')}`);
+});
+
+// Added 2026-09-21. rugged's backend suite compiles our wallet SDKs ALONE, with
+// plain tsc and no project, to check them against the contracts
+// (backend/tests/test_setup_sdk_evm.py and test_sequence_sdk_evm.py). That
+// compile sees no ambient declarations, so a build flag taken from
+// src/build-flags.d.ts type-checks here and fails there — a frontend change
+// breaking his CI, from a file he does not own. Anything these two reach must
+// stand on its own.
+//
+// It EMITS and then RUNS what it emitted under `{"type":"module"}`. A first
+// version of this guard only type-checked, and missed the second half: Vite
+// resolves `from './pin'` and plain Node ESM does not, so an extensionless
+// relative import compiles here and throws ERR_MODULE_NOT_FOUND there. Every
+// relative import these two reach needs the extension the emitted file will
+// have. Emitting inside .test-build (gitignored) lets Node find viem by
+// walking up to app/node_modules, which is what his symlink is for.
+// The deployment pin in src/finance/pin.ts is enforced only by a build whose
+// `__DOMINO_DEPLOYABLE__` define says true. That is safe exactly while every
+// mode writes the define, so a dist always carries a literal and never falls
+// through to "absent". Four harnesses compile those SDKs outside Vite and
+// would otherwise be refused a contract they deployed themselves.
+test('every build writes the deployable define, so no dist can be missing it', () => {
+  const config = readFileSync(resolve(here, 'vite.config.ts'), 'utf8');
+  assert.match(config, /__DOMINO_DEPLOYABLE__:\s*JSON\.stringify\(settings\.deployable\)/,
+    'the define must be written from the mode row, unconditionally');
+  const defines = [...config.matchAll(/__DOMINO_DEPLOYABLE__:/g)];
+  assert.equal(defines.length, 1, 'one define, so no mode can take a different path to it');
+  const modes = config.slice(config.indexOf('const MODES'), config.indexOf('} as const'));
+  const rows = [...modes.matchAll(/^\s+'?([a-z-]+)'?:\s*\{(.+)$/gm)];
+  assert.ok(rows.length >= 6, `expected the MODES rows to still be one per line: found ${rows.length}`);
+  for (const [, name, row] of rows) assert.match(row, /deployable: (true|false)/, `${name} says nothing about being deployable`);
+  assert.deepEqual(rows.filter(([, , row]) => /deployable: true/.test(row)).map(([, name]) => name), ['production', 'development']);
+});
+
+test('the wallet SDKs compile alone, and the emitted modules load, the way the backend suite does it', async () => {
+  const tsc = resolve(here, 'node_modules/typescript/bin/tsc');
+  const root = resolve(here, '.test-build/sdk-standalone');
+  rmSync(root, { recursive: true, force: true });
+  for (const entry of ['setup', 'sequence']) {
+    const out = join(root, entry);
+    mkdirSync(out, { recursive: true });
+    const run = spawnSync(process.execPath, [tsc, resolve(here, `src/finance/${entry}.ts`),
+      '--target', 'ES2022', '--module', 'ESNext', '--moduleResolution', 'Bundler',
+      '--strict', '--skipLibCheck', '--outDir', out, '--rootDir', resolve(here, 'src/finance')],
+      { encoding: 'utf8' });
+    assert.equal(run.status, 0, `src/finance/${entry}.ts does not compile on its own:
+${run.stdout}${run.stderr}`);
+    writeFileSync(join(out, 'package.json'), '{"type":"module"}');
+    const loaded = await import(pathToFileURL(join(out, `${entry}.js`)).href)
+      .catch((error) => ({ failed: error }));
+    assert.equal(loaded.failed, undefined, `${entry}.js does not load under plain Node ESM: ${loaded.failed?.code ?? loaded.failed?.message}`);
+  }
+  rmSync(root, { recursive: true, force: true });
 });

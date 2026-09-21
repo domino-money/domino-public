@@ -42,6 +42,21 @@ export interface WalletContext {
    * starts after them. The selected pools' tokens, where a screen has them.
    */
   fallbackTokens?: readonly string[]
+  /**
+   * Whether the provider should list what else the wallet holds.
+   *
+   * True is right for a LISTING, where finding the holdings is the point.
+   * It is wrong for a by-address check — "how much of this one token does
+   * this wallet have" — where it makes the service page the whole wallet to
+   * answer about one address. rugged measured that: a twenty-token page is
+   * about 90 local RPC items in 17 HTTP requests plus 2 Alchemy calls, where
+   * the single address alone is about 12 items in 7 requests
+   * (reports/capacity-2026-09-20). The Create flow asked the expensive way
+   * for every balance line it drew.
+   *
+   * Defaults to true, so a listing that says nothing keeps discovering.
+   */
+  discover?: boolean
 }
 
 export const WALLET_PAGE_CAP = 5
@@ -81,7 +96,8 @@ export function listsHeldTokens(view: WalletView): boolean {
 
 /** Fixed key order: the scheduler coalesces by the request's JSON. */
 export function walletRequest(context: WalletContext): WalletAssetsRequest {
-  return context.tokens.length > 0 ? { wallet: context.wallet, tokens: [...context.tokens], autoDiscover: true } : { wallet: context.wallet, autoDiscover: true }
+  const autoDiscover = context.discover !== false
+  return context.tokens.length > 0 ? { wallet: context.wallet, tokens: [...context.tokens], autoDiscover } : { wallet: context.wallet, autoDiscover }
 }
 
 /**

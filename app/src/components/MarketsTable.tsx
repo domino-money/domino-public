@@ -16,7 +16,7 @@ import { PoolCatalogueIdentity, PoolTokenLabel } from './PoolCatalogueIdentity'
 import { ReadStatus, marketsStatus } from './read/ReadStatus'
 import { PoolAprEstimate } from './read/screens/PoolAprEstimate'
 import { TokenMarkPair } from './TokenIcon'
-import { Button, Chip, LinkButton, Pill, Skeleton, TableShell, Td, Th } from './ui'
+import { Button, Chip, FigureDash, LinkButton, Pill, Skeleton, TableShell, Td, Th } from './ui'
 
 /** The pool page for a PoolId. Identity is chain and PoolId, never a symbol. */
 export { poolHref }
@@ -94,15 +94,6 @@ export function matchesFilter(listing: PoolListing, filter: MarketsFilter) {
   if (needle === '') return true
   const pair = listing.market ? `${nameOf(listing.market.tokens.base)}/${nameOf(listing.market.tokens.quote)}` : (listing.catalogue?.labels.join('/') ?? '')
   return squeeze(pair).includes(needle)
-}
-
-/** A figure that is not there, and which one: the dash is all a sighted reader needs, the label is for everyone else. */
-function Dash({ label }: { label: string }) {
-  return (
-    <span className="text-fg-subtle" title={`${label} unavailable`} aria-label={`${label} unavailable`}>
-      —
-    </span>
-  )
 }
 
 /**
@@ -217,16 +208,16 @@ function CatalogueRow({ poolId, entry, full }: { poolId: string; entry: PoolCata
         </a>
       </Td>
       <Td numeric col="wide">
-        <Dash label="Price" />
+        <FigureDash reason="Price unavailable" />
       </Td>
       <Td numeric>
-        <Dash label="TVL" />
+        <FigureDash reason="TVL unavailable" />
       </Td>
       <Td numeric col="wide">
-        <Dash label="24h volume" />
+        <FigureDash reason="24h volume unavailable" />
       </Td>
       <Td numeric col="wide">
-        <Dash label="Pool APR" />
+        <FigureDash reason="Pool APR unavailable" />
       </Td>
       <Td numeric className="dm-mkt-end">
         <span className="dm-row-end">
@@ -391,7 +382,7 @@ export function MarketsTable({
             24h volume{lean && <span className="sr-only">{' reported by a market data provider'}</span>}
           </Th>
           <Th numeric col="wide" className="dm-mkt-col">
-            Est. APR<span className="sr-only">{' from provider inputs'}</span>
+            APR
           </Th>
           <Th numeric className="dm-mkt-end">
             <span className="sr-only">Details</span>

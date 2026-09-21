@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { exploreHref, newPositionHref, parsePoolHash } from '../components/explore/routes'
 import { useHash } from '../components/explore/useHash'
+import { IconChevronLeft } from '../components/icons'
 import { PoolWorkspace } from '../components/read/screens/PoolWorkspace'
 import { TokenMarkPair } from '../components/TokenIcon'
 import { EmptyState, LinkButton, Skeleton, Stat, StatStrip } from '../components/ui'
@@ -90,9 +91,9 @@ function Pending({ id, entry, verifying = true, reason }: { id: string; entry?: 
         </StatStrip>
       </div>
       <div className="dm-card mt-8 animate-rise p-5 [--delay:120ms]">
-        <h2 className="dm-display dm-display-card">USD price and volume</h2>
-        {/* Who reports the candles is the plot's title and data, never a caption under the heading. */}
-        <div className="dm-pool-plot dm-dots-chart mt-4" title="Hourly candles reported by a market data provider." data-chart-provider="GeckoTerminal">
+        <h2 className="dm-display dm-display-card">Pool price history</h2>
+        {/* Stands in for the ratio chart the verified page opens on; no caption under the heading. */}
+        <div className="dm-pool-plot dm-dots-chart mt-4" title="Pool ratios from verified Robinhood Chain Swap events.">
           <div className="dm-pool-plot-empty">
             {verifying ? <Skeleton className="dm-pool-plot-baseline" /> : <span className="text-fg-subtle" title={reason?.text}>—</span>}
           </div>
@@ -241,7 +242,7 @@ export function PoolDetail({ poolId }: { poolId: string }) {
     <main className="dm-page dm-page--pool" data-pool-page={id ?? ''}>
       <nav aria-label="Breadcrumb" className="dm-pool-breadcrumb">
         <a href={exploreHref()} className="dm-pool-back">
-          <span aria-hidden="true" className="dm-pool-back-glyph">‹</span>
+          <IconChevronLeft size={14} />
           Markets
         </a>
       </nav>

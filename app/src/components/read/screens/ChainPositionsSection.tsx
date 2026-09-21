@@ -231,7 +231,7 @@ export function ChainPositionsSection() {
               id="nft-ids"
               value={text}
               onChange={(event) => setText(event.target.value)}
-              placeholder="Position NFT ids, up to 10"
+              placeholder="Position NFT IDs"
               aria-describedby={inputError ? 'nft-ids-hint nft-ids-error' : 'nft-ids-hint'}
               aria-invalid={inputError ? true : undefined}
             />
@@ -299,7 +299,7 @@ export function ChainPositionsSection() {
       ) : (
         // A read screen links nowhere (tests/screens.test.mjs pins it), so the ways to Markets and New position sit in the page's title row.
         state.phase === 'idle' && (
-          <EmptyState icon={<IconSearch />} title="Look up a position NFT" body="Enter its id above." data-empty="positions" />
+          <EmptyState icon={<IconSearch />} title="Look up a position NFT" body="Enter its ID above." data-empty="positions" />
         )
       )}
     </section>

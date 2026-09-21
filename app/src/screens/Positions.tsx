@@ -1,8 +1,8 @@
 import { lazy, Suspense, type CSSProperties, type ReactNode } from 'react'
 import PortfolioBody from '../components/portfolio/PortfolioBody'
 import { automateHref, marketsHref, newPositionHref } from '../components/explore/routes'
-import { IconAutomate, IconPositions, IconReceipt } from '../components/icons'
-import { Chip, Display, EmptyState, LinkButton, PageShell } from '../components/ui'
+import { IconAutomate, IconPositions } from '../components/icons'
+import { Chip, Display, LinkButton, PageShell } from '../components/ui'
 import { shortAddress } from '../lib/read/screens/identity'
 import { ChainPositionsSlot, SlotBoundary, SlotFailed } from '../lib/read/screens/slots'
 import { useWalletIdentity, type WalletIdentityView } from '../lib/walletIdentity'
@@ -32,10 +32,9 @@ function ConnectedChip({ identity }: { identity: Connected }) {
     <Chip
       variant="plate"
       className="dm-acct-wallet-chip"
-      title="Connected, not signed in. The read service can't list positions by wallet, so look them up by NFT id."
+      title="Connected, not signed in. The read service can’t list positions by wallet, so look them up by NFT id."
       data-connected-wallet=""
     >
-      <span aria-hidden="true" className="dm-acct-dot" />
       <span className="sr-only">Connected wallet </span>
       <span className="dm-acct-mono" title={identity.address} translate="no">
         {shortAddress(identity.address)}
@@ -78,7 +77,7 @@ function ManagedCard() {
             <Performance />
           </Suspense>
         ) : (
-          <Plot>Managed history needs wallet sign-in, which isn't available here.</Plot>
+          <Plot>Managed history needs wallet sign-in, which isn’t available here.</Plot>
         )}
       </div>
     </section>
@@ -88,7 +87,7 @@ function ManagedCard() {
 /** Receipts of what automation did, read with the wallet session: rugged97's Execution screen, mounted inside. */
 function ReceiptsCard() {
   return (
-    <section className="dm-card dm-acct-card dm-acct-o4" aria-labelledby="receipts-title">
+    <section className="dm-card dm-acct-card dm-acct-o3" aria-labelledby="receipts-title">
       <div className="dm-acct-card-head">
         <Display as="h2" id="receipts-title" className="dm-display-card">
           Receipts
@@ -106,11 +105,7 @@ function ReceiptsCard() {
             <Execution />
           </Suspense>
         ) : (
-          <EmptyState
-            icon={<IconReceipt />}
-            title="Receipts need wallet sign-in"
-            body="Wallet sign-in isn't available here, so automation receipts can't be read."
-          />
+          <p className="dm-acct-quiet">Wallet sign-in isn’t available here, so automation receipts can’t be read.</p>
         )}
       </div>
     </section>
@@ -214,7 +209,7 @@ export function Positions() {
         </div>
 
         <div className="dm-acct-col">
-          <div className="dm-acct-slot dm-acct-o3 animate-rise" style={rise(3)}>
+          <div className="dm-acct-slot dm-acct-o4 animate-rise" style={rise(3)}>
             <PortfolioBody identity={identity} />
           </div>
           <AutomationCard />

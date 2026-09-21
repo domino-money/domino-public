@@ -135,10 +135,35 @@ export interface TokenDetails {
 /** Details by lowercase address; `reading` while a read is on its way. A missing address is unknown. */
 export type TokenBook = ReadonlyMap<string, TokenDetails | 'reading'>
 
+/**
+ * Bidirectional formatting controls. A symbol is whatever the token contract
+ * returned, and these characters reorder the text AROUND them: a symbol ending
+ * in U+202E can make "1.5 EVIL / 200 USDG" read as its mirror on screen while
+ * the string itself is unchanged. The read screens isolate symbols in <bdi>
+ * (components/read/screens/SymbolText.tsx); these presenters build sentences,
+ * so they drop the controls instead.
+ */
+const BIDI = /[\u061C\u200E\u200F\u202A-\u202E\u2066-\u2069]/g
+
+/** As many characters of a symbol as the read screens show, and no more. */
+const SYMBOL_MAX = 24
+
+/**
+ * A read symbol, made safe to put inside a sentence: no bidi controls, and cut
+ * at the same 24 characters SymbolText shows, so one token cannot push a row
+ * off the panel. Empty after cleaning counts as no symbol at all.
+ */
+function safeSymbol(symbol: string): string | null {
+  const cleaned = symbol.replace(BIDI, '').trim()
+  if (cleaned === '') return null
+  return cleaned.length > SYMBOL_MAX ? `${cleaned.slice(0, SYMBOL_MAX)}…` : cleaned
+}
+
 /** A token by its symbol when one was read, otherwise by its short address. */
 export function tokenName(address: string, tokens?: TokenBook): string {
   const details = tokens?.get(address.toLowerCase())
-  return details && details !== 'reading' && details.symbol ? details.symbol : shortHex(address.toLowerCase())
+  const symbol = details && details !== 'reading' && details.symbol ? safeSymbol(details.symbol) : null
+  return symbol ?? shortHex(address.toLowerCase())
 }
 
 /**

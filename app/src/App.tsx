@@ -187,7 +187,7 @@ export default function App() {
       {/* Both footer controls sit in the footer's own flow at every width, never floating over the page, so they can never cover text. */}
       <Footer
         motion={
-          <Button variant="outline" size="sm" aria-pressed={still} onClick={() => setStill(!still)}>
+          <Button variant="outline" size="sm" onClick={() => setStill(!still)}>
             {still ? <IconPlay /> : <IconPause />}
             {still ? 'Resume motion' : 'Pause motion'}
           </Button>

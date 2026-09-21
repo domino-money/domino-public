@@ -56,7 +56,7 @@ export function usePairBalances(source: ReadSource | null, pool: PoolOption | nu
     const settle = (snapshot: WalletSnapshot | null) => {
       if (!controller.signal.aborted) setPage({ target: at, snapshot })
     }
-    const session = createWalletSession(source, { wallet, tokens: tokensKey.split(',') })
+    const session = createWalletSession(source, { wallet, tokens: tokensKey.split(','), discover: false })
     // A read that could not even answer settles as answering nothing, never as a
     // wait without an end: what waits on a budget must be able to go on without one.
     void session

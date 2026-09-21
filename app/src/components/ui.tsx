@@ -164,7 +164,7 @@ export function Display({
 
 /** Small uppercase label. New screens use none; kept for existing callers. */
 export function Eyebrow({ children, className }: { children: ReactNode; className?: string }) {
-  return <p className={cx('text-[11px] leading-[14px] font-medium uppercase tracking-[0.6px] text-fg-subtle', className)}>{children}</p>
+  return <p className={cx('dm-kicker', className)}>{children}</p>
 }
 
 /** A small label: `soft` under a name ("Uniswap · 0.02%"), `plate` on a plate (the hero chip, pair badges). */
@@ -326,7 +326,7 @@ export function Stat({
 } & Omit<HTMLAttributes<HTMLDivElement>, 'children' | 'className'>) {
   return (
     <div className={cx('min-w-0', className)} {...rest}>
-      <dt className="text-[11px] leading-[14px] font-medium uppercase tracking-[0.6px] text-fg-subtle">
+      <dt className="dm-kicker">
         {label}
         {info && (
           <span role="img" title={info} aria-label={info} className="ml-1 inline-flex align-[-2px] text-fg-subtle">
@@ -337,7 +337,7 @@ export function Stat({
       <dd
         className={cx(
           'tnum mt-1.5 truncate font-medium',
-          size === 'lg' ? 'text-[24px] leading-[28px] tracking-[-0.4px] md:text-[30px] md:leading-[34px]' : 'text-[20px] leading-[24px] tracking-[-0.4px] md:text-stat',
+          size === 'lg' ? 'text-stat md:text-stat-lg' : 'text-stat-sm md:text-stat',
         )}
       >
         {children}
@@ -474,6 +474,25 @@ export function Segmented<T extends string>({
         )
       })}
     </div>
+  )
+}
+
+/**
+ * A figure that is not there, and why. The dash is all a sighted reader needs;
+ * the reason is for everyone else, since `title` never appears on touch and is
+ * dropped on a generic span.
+ *
+ * The reason is the element's accessible NAME, not a visually hidden child.
+ * A hidden child would join the cell's own text, so a table reading "—" would
+ * start reading "— TVL unavailable" to everything that walks text rather than
+ * the accessibility tree — including our own screen tests. `aria-label` says
+ * the same thing to a screen reader and leaves the text alone.
+ */
+export function FigureDash({ reason }: { reason?: string }) {
+  return (
+    <span className="text-fg-subtle" title={reason} aria-label={reason ?? 'Unavailable'} data-figure="none">
+      —
+    </span>
   )
 }
 

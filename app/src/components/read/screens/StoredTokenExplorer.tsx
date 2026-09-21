@@ -70,18 +70,20 @@ export function StoredTokenExplorer({ source, token }: { source: ReadSource; tok
   // is not "collecting": nothing is collecting, and saying so forever is a lie
   // a person cannot act on. Same words the history chart already uses.
   const atCapacity = pending === true && value?.data.acquisitionAccepted === false
-  const CAPACITY = 'New acquisition is at capacity; showing stored data.'
+  const CAPACITY = 'Data collection is at capacity; showing what is already stored.'
   const failure = outcome && outcome.state !== 'ok' && outcome.state !== 'aborted' ? failureText(outcome, 'pools').title : null
+  const loading = !value && !failure
+  const said = failure ?? (atCapacity ? CAPACITY : pending ? 'Collecting data. Available figures are shown below.' : selected?.acquisition.status === 'rejected' ? 'This token could not be verified.' : loading ? 'Reading stored pools…' : '')
 
   return (
-    <section className="mt-6 grid gap-4" data-stored-token={token} data-acquisition={atCapacity ? 'at_capacity' : pending ? 'pending' : 'settled'}>
+    <section className="mt-6 grid gap-4" aria-labelledby="stored-token-title" data-stored-token={token} data-acquisition={atCapacity ? 'at_capacity' : pending ? 'pending' : 'settled'}>
       <Card className="p-5">
-        <h2 className="text-title font-medium">{candidate ? <SymbolText token={candidate.token} /> : 'Token data'}</h2>
+        <h2 id="stored-token-title" className="dm-display dm-display-card" title="Verified pools stored for this token. The list does not imply complete chain history.">{candidate ? <SymbolText token={candidate.token} /> : 'Token data'}</h2>
         <p className="mt-2 text-caption text-fg-muted"><Address value={token} /></p>
         {!value && !failure && <Skeleton className="mt-3 h-5 w-48" />}
-        <p role="status" className="mt-3 text-caption text-fg-muted">{failure ?? (atCapacity ? CAPACITY : pending ? 'Collecting data. Available figures are shown below.' : selected?.acquisition.status === 'rejected' ? 'This token could not be verified.' : 'Known verified pools. This list does not imply complete chain history.')}</p>
+        <p role="status" className={said && !loading ? 'mt-3 text-caption text-fg-muted' : 'sr-only'}>{said}</p>
       </Card>
-      {value && <MarketsContext.Provider value={provider}><MarketsTable variant="full" includeCatalogue={false} poolToken={token} empty={<p className="p-5 text-body text-fg-muted">{atCapacity ? 'New acquisition is at capacity. No pools are stored for this token yet.' : pending ? 'Pool data is being collected.' : 'No verified pools are stored for this token yet.'}</p>} /></MarketsContext.Provider>}
+      {value && <MarketsContext.Provider value={provider}><MarketsTable variant="full" includeCatalogue={false} poolToken={token} empty={<p className="p-5 text-body text-fg-muted">{atCapacity ? 'Data collection is at capacity. No pools are stored for this token yet.' : pending ? 'Pool data is being collected.' : 'No verified pools are stored for this token yet.'}</p>} /></MarketsContext.Provider>}
       <div className="flex gap-3">
         {pages.length > 1 && <Button variant="ghost" onClick={() => { setPages((prior) => prior.slice(0, -1)); setAnswer(null); setRetained(null) }}>Previous pools</Button>}
         {value?.data.hasMore && value.data.nextAfterPoolId && <Button onClick={() => { setPages((prior) => [...prior, { afterPoolId: value.data.nextAfterPoolId, revision: value.data.revision }]); setAnswer(null); setRetained(null) }}>More pools</Button>}

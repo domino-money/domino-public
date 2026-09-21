@@ -410,7 +410,7 @@ qualified figures take precedence; a refused pool-metrics or token read stays on
 its row, and so does one pool's market payload refused by a hop (502
 `upstream_contract_mismatch`). Apart from token metadata that read as available,
 kept in memory for the page, every load reads again, and the bridge's own
-bounded observation cache keeps its original ages. The Est. APR column shows
+bounded observation cache keeps its original ages. The APR column shows
 Domino's qualified APR where pool-metrics gives one, otherwise the read
 service's estimate, and "Unavailable", never 0, when there is neither. An empty
 selection reads nothing and says "No pools selected yet".
@@ -433,7 +433,7 @@ visible, with jitter.
 |---|---|---|
 | Gate 401 | Access expired, with Sign in again | no |
 | /api forwarder 503 `bridge_unavailable`, or no /api at all (the site's index page) | Live data unavailable | no |
-| /api forwarder 404 `not_found` (a preview or any other host) | Live data isn't available on this address | no |
+| /api forwarder 404 `not_found` (a preview or any other host) | Live data isn't available here | no |
 | Capabilities `dataMode: "disabled"`, no enabled read, or 404 `route_not_available` | Live data is switched off for now | no |
 | 429 `read_capacity_busy` | asked again under R-1, then Read service busy | yes |
 | Producer 503 or 504, transient | Temporarily unavailable | yes, for a person |

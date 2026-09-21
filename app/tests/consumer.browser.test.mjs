@@ -147,9 +147,14 @@ async function until(page, predicate, arg, label, timeout = 10_000) {
     await sleep(25);
   }
 }
-const viewIs = (page, status) => until(page, (wanted) => window.__dominoSessionProbe?.view().status === wanted, status, `session view ${status}`);
+// Sign-in is a handshake of several steps, and these two are waited on inside
+// it. The 10 s default is not enough on a loaded machine — a CI runner, or a
+// laptop with the other browser suites still going — where the whole chain
+// timed out at 10.9 s. The deadline only bounds how long a genuine failure
+// takes to report, so it matches the 30 s the deposit amounts already use.
+const viewIs = (page, status) => until(page, (wanted) => window.__dominoSessionProbe?.view().status === wanted, status, `session view ${status}`, 30_000);
 const previewState = (page, wanted) =>
-  until(page, (value) => document.querySelector('[data-preview-state]')?.getAttribute('data-preview-state') === value, wanted, `preview state ${wanted}`);
+  until(page, (value) => document.querySelector('[data-preview-state]')?.getAttribute('data-preview-state') === value, wanted, `preview state ${wanted}`, 30_000);
 // The eligibility text itself: a transient "Checking your sign-in…" also
 // renders as state "ineligible", so a wait on the state alone races the block.
 const eligibilityIs = (page, pattern, label) =>
@@ -366,8 +371,28 @@ test('signing out drops the preview; a new sign-in starts from ready, never from
 // ---- New position: the deposit amounts in Review ask onboarding-v1 (G8) ------------
 
 const balance = (page) => page.locator('section[data-stage="balance"]');
-const amountsAre = (page, status) =>
-  until(page, (wanted) => document.querySelector('section[data-stage="balance"]')?.getAttribute('data-preview') === wanted, status, `deposit amounts ${status}`, 30_000);
+/**
+ * Wait for the deposit amounts to reach a state, and optionally the reason
+ * they give for it. Waiting on the status alone is not enough where the
+ * reason is asserted next: the section is `off` while sign-in is still
+ * settling too, and reading `data-preview-reason` one render later can catch
+ * the section on its way through `loading`, where the reason is null by
+ * design. `off` always carries a reason (onboarding/intent.ts only ever makes
+ * one with a code, which onboarding.project.test.mjs holds it to), so waiting
+ * for the pair is waiting for the state the case is about.
+ */
+const amountsAre = (page, status, reason) =>
+  until(
+    page,
+    (wanted) => {
+      const section = document.querySelector('section[data-stage="balance"]');
+      if (!section || section.getAttribute('data-preview') !== wanted.status) return false;
+      return wanted.reason === undefined || section.getAttribute('data-preview-reason') === wanted.reason;
+    },
+    { status, reason },
+    `deposit amounts ${status}${reason === undefined ? '' : ` (${reason})`}`,
+    30_000,
+  );
 const rowLines = async (page, row) => (await balance(page).locator(`[data-balance-row="${row}"] dd`).innerText()).split('\n').map((line) => line.trim()).filter(Boolean);
 const positionCalls = (s) => s.onboarding.calls('position-preview');
 /** What New position's product rules keep off its screen now that it shows an estimate. */
@@ -462,7 +487,7 @@ test('New position with the onboarding service switched off shows only dashes, s
   const page = await s.open('/new');
   await signInHere(s, page);
   await walkToReview(page);
-  await amountsAre(page, 'off');
+  await amountsAre(page, 'off', 'feature_unavailable');
   assert.equal(await balance(page).getAttribute('data-preview-reason'), 'feature_unavailable');
   assert.equal(positionCalls(s).length, 1);
   for (const row of ['expected', 'maximum', 'unspent', 'liquidity']) assert.deepEqual(await rowLines(page, row), ['—'], row);

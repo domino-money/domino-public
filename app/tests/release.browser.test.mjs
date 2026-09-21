@@ -4,7 +4,7 @@
  * landing can be in, and exactly what each one costs on the wire:
  *
  *   (a) forwarder 503 bridge_unavailable   Live data unavailable: 2 GETs, 0 POST, no Retry
- *   (b) forwarder 404 not_found            Live data isn't available on this address
+ *   (b) forwarder 404 not_found            Live data isn't available here
  *   (c) capabilities off, or no reads      Live data is switched off for now: 0 POST
  *   (d) reads enabled                      3 GETs + the lean load in order; APR unavailable; provider and age
  *   (e) 404 route_not_available            switched off, after the first POST
@@ -383,7 +383,7 @@ test('(b) a forwarder that does not serve this address, as on a preview host: sa
   const { context, page } = await visit(forwarder(404, 'not_found'));
   try {
     assert.equal(await settled(page), 'not_connected');
-    await saidQuietly(page, 'not_connected', "Live data isn't available on this address");
+    await saidQuietly(page, 'not_connected', "Live data isn't available here");
     await nothingInvented(page, 'not found');
     assert.deepEqual(wire(), ['GET v3 capabilities', 'GET capabilities']);
   } finally {
@@ -454,7 +454,7 @@ test('(d) reads enabled: one capabilities GET per namespace and the lean load in
     for (const width of [1280, 390]) {
       await page.setViewportSize({ width, height: 900 });
       const heads = await page.locator('#pools thead th').evaluateAll((ths) => ths.map((th) => th.innerText.replace(/\s+/g, ' ').trim()));
-      assert.deepEqual(heads, ['Pool', 'Price', 'TVL reported by a market data provider', '24h volume reported by a market data provider', 'Est. APR from provider inputs', 'Details'], `${width}px`);
+      assert.deepEqual(heads, ['Pool', 'Price', 'TVL reported by a market data provider', '24h volume reported by a market data provider', 'APR', 'Details'], `${width}px`);
     }
     await page.setViewportSize({ width: 1280, height: 900 });
     assert.doesNotMatch(await page.locator('body').innerText(), /geckoterminal\.com/i, 'nor shown');

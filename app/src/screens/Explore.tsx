@@ -7,6 +7,7 @@ import { IconChevronLeft, IconSearch } from '../components/icons'
 import { FilterBar } from '../components/markets/FilterBar'
 import { MarketCarousel } from '../components/markets/MarketCarousel'
 import { MarketsTable } from '../components/MarketsTable'
+import { Address } from '../components/read/screens/Address'
 import { CatalogueCandidates, PoolPicker } from '../components/read/screens/PoolPicker'
 import { SymbolText } from '../components/read/screens/SymbolText'
 import { TokenLookup } from '../components/read/screens/TokenLookup'
@@ -204,7 +205,12 @@ export function Explore() {
       </nav>
       <div className="dm-mkt-titlebar mt-4 animate-rise" style={rise(1)}>
         <div className="min-w-0">
-          <Title />
+          <Display as="h1" className="dm-display-title">Token</Display>
+          <div className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1.5">
+            <span className="dm-chip">Uniswap</span>
+            <span className="dm-chip">Robinhood Chain</span>
+            <span className="dm-pool-id"><Address value={searchedKey ?? wire} short /></span>
+          </div>
         </div>
       </div>
 

@@ -144,11 +144,11 @@ function json(code: string, status: number): Response {
   })
 }
 
-function seeOther(location: string, cookie: string): Response {
-  return new Response(null, {
-    status: 303,
-    headers: { ...BASE_HEADERS, Location: location, 'Cache-Control': 'no-store', 'Set-Cookie': cookie },
-  })
+/** `cookie` is optional so a redirect that must NOT touch the session can say so. */
+function seeOther(location: string, cookie?: string): Response {
+  const headers = new Headers({ ...BASE_HEADERS, Location: location, 'Cache-Control': 'no-store' })
+  if (cookie) headers.set('Set-Cookie', cookie)
+  return new Response(null, { status: 303, headers })
 }
 
 /** A page navigation, as opposed to a script, image or API call. */
@@ -195,7 +195,13 @@ async function readForm(request: Request): Promise<string | null> {
 }
 
 async function login(request: Request, url: URL, config: BetaConfig): Promise<Response> {
-  if (request.method !== 'POST') return seeOther('/', clearCookie())
+  // A GET here sent Set-Cookie clearing the beta cookie, with no origin check
+  // of any kind — so any page, ad frame or extension could point at
+  // /__beta/login and sign a visitor out of the whole site, and so could the
+  // visitor's own bookmark. A GET must not change session state at all: it
+  // redirects and touches nothing. Signing out is a POST, and the gate
+  // already has one.
+  if (request.method !== 'POST') return seeOther('/')
   if (!sameOriginPost(request, url)) return json('origin_not_allowed', 403)
   const type = (request.headers.get('Content-Type') ?? '').toLowerCase()
   if (!type.startsWith('application/x-www-form-urlencoded')) return json('form_required', 415)

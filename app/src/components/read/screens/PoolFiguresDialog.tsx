@@ -9,7 +9,7 @@ import { askAgainLater, readWithin } from '../../../lib/read/screens/screenRead'
 import { useDialog } from '../../../lib/useDialog'
 import { IconClose } from '../../icons'
 import { TokenMarkPair } from '../../TokenIcon'
-import { Button, IconButton, Skeleton } from '../../ui'
+import { Button, FigureDash, IconButton, Skeleton } from '../../ui'
 import { TokenLabel } from '../TokenLabel'
 import { Address } from './Address'
 import { duration } from './PoolActivityCard'
@@ -49,21 +49,15 @@ function Panel({ id, heading, children, ...rest }: { id: string; heading: string
   )
 }
 
-const Dash = ({ title }: { title?: string }) => (
-  <span className="text-fg-subtle" title={title}>
-    —
-  </span>
-)
-
 /** Domino's own 24h figure: its value when qualified, a dash with the reason when not. */
 function History({ metric, percent = false }: { metric: Metric | undefined; percent?: boolean }) {
-  if (!metric) return <Dash title="Unavailable: not in this row" />
+  if (!metric) return <FigureDash reason="Unavailable: not in this row" />
   // A provider's figure stands where Domino's did not qualify.
-  if (metric.source) return <Dash title="Not qualified: the figure shown is the provider’s" />
+  if (metric.source) return <FigureDash reason="Not qualified: the figure shown is the provider’s" />
   if (metric.state !== 'qualified') {
     const shown = presentMetric(metric)
     const why = shown.kind === 'value' ? (shown.stale ? 'Stale, not current' : 'Not qualified') : `${shown.kind === 'not_current' ? 'Not current' : 'Unavailable'}: ${reasonText(shown.reason)}`
-    return <Dash title={why} />
+    return <FigureDash reason={why} />
   }
   return <>{percent ? `${percentText(metric) ?? '—'}%` : compactUsd(metric)}</>
 }
@@ -135,7 +129,7 @@ export function PoolFiguresDialog({ market, onClose }: { market: Market; onClose
   const staleText = activity.kind === 'ok' && age ? activityStaleText(age, activity.facts.block) : null
   const facts = activity.kind === 'ok' && !tooOld ? activity.facts : null
   const activityReason = activity.kind === 'failed' ? activity.reason : (staleText ?? undefined)
-  const fact = (node: ReactNode) => (facts ? node : activity.kind === 'failed' || tooOld ? <Dash title={activityReason} /> : <Skeleton className="ml-auto h-4 w-16" />)
+  const fact = (node: ReactNode) => (facts ? node : activity.kind === 'failed' || tooOld ? <FigureDash reason={activityReason} /> : <Skeleton className="ml-auto h-4 w-16" />)
 
   return (
     <div role="presentation" className="dm-dialog-backdrop" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
@@ -190,7 +184,7 @@ export function PoolFiguresDialog({ market, onClose }: { market: Market; onClose
               </>
             ) : (
               <p className="text-[13px] leading-[18px]" data-no-provider-figure="">
-                <Dash title={noProviderFigure} />
+                <FigureDash reason={noProviderFigure} />
               </p>
             )}
           </Panel>

@@ -414,3 +414,30 @@ test('password comparison is exact', async () => {
     assert.equal(await gate.isPassword(config, wrong), false);
   }
 });
+
+// Added 2026-09-20. A GET on the login path answered 303 with a Set-Cookie
+// clearing the beta cookie, and no origin check of any kind guarded it — so any
+// page, ad frame or extension the visitor happened to load could point at
+// /__beta/login and sign them out of the whole site, and so could their own
+// bookmark. A GET must not change session state.
+test('a GET on the login path redirects and touches no cookie; only a same-origin POST signs out', async () => {
+  const cookie = await signIn();
+  const get = await run(navigate(LOGIN_PATH, { Cookie: cookie }));
+  assert.equal(get.status, 303);
+  assert.equal(get.headers.get('Location'), '/');
+  assert.equal(get.headers.get('Set-Cookie'), null, 'no Set-Cookie header at all, not even an empty one');
+  // The session it did not touch still works.
+  assert.equal((await run(navigate('/', { Cookie: cookie }))).status, 200);
+
+  // A cross-origin POST to the logout path is refused before it can clear anything.
+  const foreign = new Request(`${ORIGIN}${LOGOUT_PATH}`, { method: 'POST', headers: { Origin: 'https://evil.example', Cookie: cookie } });
+  const refused = await run(foreign);
+  assert.equal(refused.status, 405);
+  assert.equal(refused.headers.get('Set-Cookie'), null);
+  assert.equal((await run(navigate('/', { Cookie: cookie }))).status, 200, 'still signed in');
+
+  // And the real sign-out still works, and really clears it.
+  const out = await run(new Request(`${ORIGIN}${LOGOUT_PATH}`, { method: 'POST', headers: { Origin: ORIGIN, Cookie: cookie } }));
+  assert.equal(out.status, 303);
+  assert.match(out.headers.get('Set-Cookie') ?? '', /Max-Age=0/);
+});

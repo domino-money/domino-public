@@ -10,7 +10,7 @@
  *
  *   gate 401                           Access expired, with Sign in again
  *   /api forwarder 503, or no /api     Live data unavailable
- *   forwarder 404 (another address)    Live data isn't available on this address
+ *   forwarder 404 (another host)       Live data isn't available here
  *   capabilities disabled, a route     Live data is switched off for now
  *     not enabled, 404 route_not_available
  *   429 read_capacity_busy             Read service busy, once R-1 gives up
@@ -62,7 +62,7 @@ const REASONS: Record<string, string> = {
   upstream_timeout: 'read service timed out',
   not_in_read_v1: 'read-v1 has no such field',
   mixed_basis: 'operands come from different sources',
-  fee_apr_not_provided: 'Qualified fee APR not provided by the read service',
+  fee_apr_not_provided: 'no qualified fee APR',
   turnover_undefined: 'no TVL to divide by',
 }
 
@@ -82,7 +82,7 @@ export interface FailureText {
 function notConnected(reason: NotConnectedReason): FailureText {
   switch (reason) {
     case 'not_found':
-      return { title: 'Live data isn\'t available on this address', detail: 'Live data isn\'t served on this address.', retry: false }
+      return { title: 'Live data isn\'t available here', detail: 'Pool figures are served from a different web address, so there are none to show on this one. Nothing is shown in their place.', retry: false }
     case 'worker_subrequest_refused':
       return { title: 'Request refused', detail: 'The site refused this read because it did not come straight from a browser.', retry: false }
     case 'bridge_unavailable':

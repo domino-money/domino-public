@@ -10,6 +10,7 @@
     ]
   },
   "files": [
+    "src/build-flags.d.ts",
     "src/lib/read/pin.ts",
     "src/lib/read/decimal.ts",
     "src/lib/clock.ts",

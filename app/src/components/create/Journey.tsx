@@ -289,11 +289,11 @@ export function Journey({ poolId }: { poolId: string }) {
           <Button type="button" variant="primary" size="lg" disabled={!check.ok} aria-describedby={check.ok ? undefined : 'continue-reason'} onClick={forward}>
             {CREATE.page.next}
           </Button>
-          {!check.ok && (
-            <p id="continue-reason" role="status" className="dm-flow-reason">
-              {check.reason}
-            </p>
-          )}
+          {/* Always in the DOM, so the live region exists before the reason lands in it: a region
+              mounted together with its text is announced by nothing. */}
+          <p id="continue-reason" role="status" className="dm-flow-reason">
+            {check.ok ? '' : check.reason}
+          </p>
         </>
       )}
     </div>

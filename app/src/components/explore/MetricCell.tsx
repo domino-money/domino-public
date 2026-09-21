@@ -74,7 +74,7 @@ export function valueTitle(shown: Extract<Presented, { kind: 'value' }>, retriev
   const stale = shown.stale ? ' Stale, not current.' : ''
   if (shown.source) return `Reported by a market data provider, ${retrieved}. Not reconciled by Domino.${stale}`
   // Only 24h vol/TVL is calculated from a provider's figures.
-  if (shown.calculatedFrom) return `Calculated by Domino from a market data provider's reported 24h volume and TVL, ${retrieved}. Those figures are not reconciled by Domino.${stale}`
+  if (shown.calculatedFrom) return `Calculated by Domino from a market data provider’s reported 24h volume and TVL, ${retrieved}. Those figures are not reconciled by Domino.${stale}`
   if (!shown.stale) return undefined
   return shown.asOf ? `Last observed ${new Date(shown.asOf * 1000).toLocaleString('en-US')}` : 'Last observed value, not current'
 }

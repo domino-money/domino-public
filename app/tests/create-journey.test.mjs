@@ -168,6 +168,15 @@ test('slippage is a whole number of basis points inside the product’s bound: 1
 
 test('the bound, its presets, default and warning line are one set of numbers, and the backend and both contracts hold the same ends', () => {
   assert.deepEqual([slippage.SLIPPAGE_MIN_BPS, slippage.SLIPPAGE_MAX_BPS], [10, 500]);
+  // src/finance/slippage.ts declares the same ends a second time, because the two modules cannot
+  // share one in either direction: setup.ts may not import out of src/finance (rugged's
+  // test_setup_sdk_evm.py compiles it with --rootDir there), and nothing outside the wallet feature
+  // may import into it (session.source-guard.test.mjs). The two copies are pinned to each other here.
+  const sdk = require('../.test-build/app/src/finance/slippage.js');
+  assert.deepEqual([sdk.SLIPPAGE_MIN_BPS, sdk.SLIPPAGE_MAX_BPS], [slippage.SLIPPAGE_MIN_BPS, slippage.SLIPPAGE_MAX_BPS], 'the SDK copy of the bound is the product bound');
+  for (let bps = slippage.SLIPPAGE_MIN_BPS; bps <= slippage.SLIPPAGE_MAX_BPS; bps += 1) {
+    assert.equal(sdk.slippageWritten(bps), slippage.slippageWritten(bps), `${bps} is written the same way on both sides`);
+  }
   assert.deepEqual([...slippage.SLIPPAGE_PRESETS], [10, 50, 100]);
   assert.equal(slippage.SLIPPAGE_MARKS, slippage.SLIPPAGE_PRESETS, 'the marks on the track are the presets');
   assert.equal(slippage.SLIPPAGE_DEFAULT_BPS, 50);

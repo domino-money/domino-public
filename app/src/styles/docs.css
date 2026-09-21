@@ -36,7 +36,7 @@
   .dm-docs-nav-link { display: flex; align-items: center; min-height: 32px; padding: 6px 10px; border-radius: var(--radius-sm); font-size: 14px; line-height: 20px; letter-spacing: -0.2px; color: var(--fg-muted); text-decoration: none; transition: background-color var(--dur-hover) ease, color var(--dur-hover) ease; }
   .dm-docs-nav-link:hover { background: var(--wash); color: var(--fg); }
   .dm-docs-nav-link[aria-current="page"] { background: var(--surface-3); color: var(--fg); font-weight: 500; }
-  .dm-docs-nav-link:focus-visible { outline-offset: -2px; }
+  .dm-docs-nav-link:focus-visible { outline-offset: var(--focus-offset-inset); }
 
   /* ---- The docs menu, below 1024px: a closed disclosure naming the page, opening the same list ---- */
   .dm-docs-menu { margin-bottom: 24px; border-radius: var(--radius); background: var(--surface-1); box-shadow: inset 0 0 0 1px var(--border); }
@@ -49,7 +49,7 @@
   .dm-docs-menu-page { color: var(--fg); }
 
   /* ---- Breadcrumb and the page's head ------------------------------------------------------- */
-  .dm-docs-crumbs ol { display: flex; flex-wrap: wrap; align-items: center; margin: 0 0 14px; padding: 0; list-style: none; font-size: 13px; line-height: 16px; color: var(--fg-subtle); }
+  .dm-docs-crumbs ol { display: flex; flex-wrap: wrap; align-items: center; margin: 0 0 14px; padding: 0; list-style: none; font-size: 13px; line-height: 16px; letter-spacing: -0.16px; color: var(--fg-subtle); }
   .dm-docs-crumbs li + li::before { content: '/'; margin: 0 8px; color: var(--fg-subtle); }
   .dm-docs-crumbs a { border-radius: 4px; color: var(--fg-muted); text-decoration: none; transition: color var(--dur-hover) ease; }
   .dm-docs-crumbs a:hover { color: var(--fg); }
@@ -59,13 +59,13 @@
   /* ---- "On this page": a rail beside the article, or a disclosure under the head ---------------- */
   .dm-docs-rail-title { margin: 0 0 12px; font-size: 12px; line-height: 16px; font-weight: 500; letter-spacing: -0.12px; color: var(--fg-subtle); }
   .dm-docs-toc-list { display: grid; margin: 0; padding: 0; list-style: none; box-shadow: inset 1px 0 0 var(--border); }
-  .dm-docs-toc-link { position: relative; display: block; padding: 5px 0 5px 14px; border-radius: 0 4px 4px 0; font-size: 13px; line-height: 18px; letter-spacing: -0.13px; color: var(--fg-subtle); text-decoration: none; text-wrap: pretty; transition: color var(--dur-hover) ease; }
+  .dm-docs-toc-link { position: relative; display: block; padding: 5px 0 5px 14px; border-radius: 0 4px 4px 0; font-size: 13px; line-height: 18px; letter-spacing: -0.16px; color: var(--fg-subtle); text-decoration: none; text-wrap: pretty; transition: color var(--dur-hover) ease; }
   .dm-docs-toc-link[data-depth="3"] { padding-left: 26px; }
   .dm-docs-toc-link::before { content: ''; position: absolute; left: 0; top: 4px; bottom: 4px; width: 2px; border-radius: 2px; background: var(--fg); opacity: 0; transition: opacity var(--dur-fade) ease; }
   .dm-docs-toc-link:hover,
   .dm-docs-toc-link[aria-current="location"] { color: var(--fg); }
   .dm-docs-toc-link[aria-current="location"]::before { opacity: 1; }
-  .dm-docs-toc-link:focus-visible { outline-offset: -2px; }
+  .dm-docs-toc-link:focus-visible { outline-offset: var(--focus-offset-inset); }
   .dm-docs-toc-menu { margin-top: 24px; border-radius: var(--radius); box-shadow: inset 0 0 0 1px var(--border); }
   .dm-docs-toc-menu > summary { min-height: 44px; padding: 0 14px; }
   .dm-docs-toc-menu > .dm-docs-toc { padding: 2px 14px 14px; }
@@ -92,7 +92,7 @@
   .dm-docs-steps { margin: 16px 0 0; padding: 8px; list-style: none; }
   .dm-docs-step { display: grid; grid-template-columns: 28px minmax(0, 1fr); gap: 16px; padding: 14px 12px; }
   .dm-docs-step + .dm-docs-step { border-top: 1px solid var(--border); }
-  .dm-docs-step-n { display: grid; place-items: center; width: 28px; height: 28px; border-radius: var(--radius-sm); background: var(--surface-3); font-size: 12px; line-height: 16px; font-weight: 500; color: var(--fg-subtle); }
+  .dm-docs-step-n { display: grid; place-items: center; width: 28px; height: 28px; border-radius: var(--radius-sm); background: var(--surface-3); font-size: 12px; line-height: 16px; font-weight: 500; letter-spacing: -0.12px; color: var(--fg-subtle); }
   .dm-docs-step-title { padding-top: 3px; font-size: 15px; line-height: 22px; font-weight: 500; letter-spacing: -0.2px; color: var(--fg); }
   .dm-docs-step-body { margin-top: 2px; font-size: 14px; line-height: 20px; color: var(--fg-muted); text-wrap: pretty; }
 
@@ -109,7 +109,7 @@
   .dm-docs-fact dt { font-size: 14px; line-height: 20px; color: var(--fg-muted); }
   .dm-docs-fact dd { min-width: 0; margin: 0; }
   .dm-docs-fact-value { display: block; font-size: 14px; line-height: 20px; font-weight: 500; letter-spacing: -0.2px; color: var(--fg); }
-  .dm-docs-fact-note { display: block; margin-top: 2px; font-size: 13px; line-height: 18px; color: var(--fg-muted); text-wrap: pretty; }
+  .dm-docs-fact-note { display: block; margin-top: 2px; font-size: 13px; line-height: 18px; letter-spacing: -0.16px; color: var(--fg-muted); text-wrap: pretty; }
   @media (min-width: 640px) { .dm-docs-fact { grid-template-columns: minmax(0, 180px) minmax(0, 1fr); gap: 24px; } }
 
   /* Addresses: name and role, the address in full with its copy button. Below 768px the address takes
@@ -118,7 +118,7 @@
   .dm-docs-addresses .dm-kv > div { min-height: 64px; padding-top: 10px; padding-bottom: 10px; }
   .dm-docs-addresses dt { display: grid; gap: 2px; flex-shrink: 0; }
   .dm-docs-addr-name { font-size: 14px; line-height: 20px; font-weight: 500; color: var(--fg); }
-  .dm-docs-addr-role { font-size: 12px; line-height: 16px; color: var(--fg-subtle); }
+  .dm-docs-addr-role { font-size: 12px; line-height: 16px; letter-spacing: -0.12px; color: var(--fg-subtle); }
   @media (max-width: 767px) {
     .dm-docs-addresses { padding: 4px 0; }
     .dm-docs-addresses .dm-kv { padding: 0 12px; }
@@ -150,7 +150,7 @@
   .dm-docs-pager-link:hover { box-shadow: var(--elev-card), inset 0 0 0 1px var(--border-strong); }
   .dm-docs-pager-link[data-dir="next"] { justify-content: flex-end; text-align: right; }
   .dm-docs-pager-text { display: grid; gap: 2px; min-width: 0; }
-  .dm-docs-pager-caption { font-size: 12px; line-height: 16px; color: var(--fg-subtle); }
+  .dm-docs-pager-caption { font-size: 12px; line-height: 16px; letter-spacing: -0.12px; color: var(--fg-subtle); }
   .dm-docs-pager-title { font-size: 15px; line-height: 22px; font-weight: 500; letter-spacing: -0.2px; color: var(--fg); overflow-wrap: anywhere; }
   .dm-docs-pager-chev { flex-shrink: 0; color: var(--fg-subtle); transition: translate var(--dur-fade) var(--ease-std), color var(--dur-hover) ease; }
   .dm-docs-pager-link:hover .dm-docs-pager-chev { color: var(--fg); }
@@ -178,7 +178,7 @@
   .dm-docs-rows > li { border-top: 1px solid var(--border); }
   .dm-docs-row { display: grid; grid-template-columns: minmax(0, 1fr) 14px; align-items: center; gap: 16px; padding: 12px 0; border-radius: var(--radius-xs); text-decoration: none; }
   .dm-docs-row-title { display: block; font-size: 15px; line-height: 22px; font-weight: 500; letter-spacing: -0.2px; color: var(--fg); text-decoration-line: underline; text-decoration-color: transparent; text-underline-offset: 3px; transition: text-decoration-color var(--dur-hover) ease; }
-  .dm-docs-row-summary { display: block; margin-top: 2px; font-size: 13px; line-height: 18px; color: var(--fg-muted); text-wrap: pretty; }
+  .dm-docs-row-summary { display: block; margin-top: 2px; font-size: 13px; line-height: 18px; letter-spacing: -0.16px; color: var(--fg-muted); text-wrap: pretty; }
   .dm-docs-row > svg { color: var(--fg-subtle); transition: translate var(--dur-fade) var(--ease-std), color var(--dur-hover) ease; }
   .dm-docs-row:hover .dm-docs-row-title { text-decoration-color: var(--border-strong); }
   .dm-docs-row:hover > svg { color: var(--fg); translate: 2px 0; }

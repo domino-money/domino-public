@@ -4,6 +4,7 @@ import type { WalletView } from '../../../lib/read/pagers'
 import { ADDRESS_PROBLEM, COPY, failureText } from '../../../lib/read/screens/copy'
 import { parseAddressInput } from '../../../lib/read/screens/identity'
 import { failureCode, quietTitle, reaskDelayMs, whenVisibleAfter } from '../../../lib/read/screens/quietRead'
+import { addressKey, type AddressKey } from '../../../lib/read/screens/identity'
 import { candidatesFromWalletView, type TokenCandidate } from '../../../lib/read/screens/tokens'
 import { WALLET_PAGE_CAP, createWalletSession, type WalletSession, type WalletSnapshot } from '../../../lib/read/screens/walletSession'
 import type { ReadSource } from '../../../lib/read/types'
@@ -59,6 +60,8 @@ export function WalletCandidates({
   const [waiting, setWaiting] = useState(false)
   const [said, setSaid] = useState('')
   const session = useRef<WalletSession | null>(null)
+  // The address this listing is about, so a row can say which wallet it came from.
+  const subject = useRef<AddressKey | null>(null)
   const generation = useRef(0)
   const running = useRef<AbortController | null>(null)
   // The by-address check's own signal, one per list: a newer page leaves the check on the wire; another list, or leaving, cancels it.
@@ -110,7 +113,7 @@ export function WalletCandidates({
       // The session as it is now: a check that answered while this page was on its way is in it.
       const latest = current.snapshot()
       setSnap(latest)
-      rowsTo.current(candidatesFromWalletView(latest.view))
+      rowsTo.current(candidatesFromWalletView(latest.view, subject.current))
       const passing = after.failure !== null && after.status !== 'restart_exhausted' && after.status !== 'handle_expired'
       const wait = passing && after.failure ? reaskDelayMs(after.failure, attempt) : null
       if (wait !== null) {
@@ -125,7 +128,7 @@ export function WalletCandidates({
         if (gen !== generation.current || current !== session.current) return
         const checked = current.snapshot()
         setSnap(checked)
-        rowsTo.current(candidatesFromWalletView(checked.view))
+        rowsTo.current(candidatesFromWalletView(checked.view, subject.current))
       })
     })
   }
@@ -153,6 +156,7 @@ export function WalletCandidates({
     generation.current += 1
     checks.current?.abort()
     checks.current = new AbortController()
+    subject.current = addressKey(parsed.wire)
     session.current = createWalletSession(source, { wallet: parsed.wire, tokens: parts, fallbackTokens: catalogueTokens().map((token) => token.address) })
     setSnap(null)
     run(

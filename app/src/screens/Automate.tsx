@@ -74,7 +74,7 @@ function AutomationCard({
 }
 
 /** In builds without the wallet flows there is nowhere to go, and the card says why instead of offering a way in. */
-const OFF = <p className="dm-acct-auto-off">Not available here: wallet sign-in is off.</p>
+const OFF = <p className="dm-acct-auto-off">Wallet sign-in isn’t available here, so this can’t be set up.</p>
 
 /**
  * Automate: the two ways Domino can put a position's earned fees to work, where
@@ -87,7 +87,7 @@ export function Automate() {
       <PageHeader
         className="animate-rise"
         title="Automate"
-        description="Two ways to put a position's earned fees to work, within limits your wallet signs."
+        description="Two ways to put a position’s earned fees to work, within limits your wallet signs."
       />
 
       <div className="dm-acct-auto-grid">
@@ -99,7 +99,7 @@ export function Automate() {
           step={1}
           art={<VignetteCompound className="dm-acct-auto-art" />}
           points={[
-            "Adds a position's earned fees back into the same position, improving your fees APR.",
+            'Adds a position’s earned fees back into the same position, improving your fees APR.',
             'Compounds earned fees only, nothing else.',
           ]}
           entry={

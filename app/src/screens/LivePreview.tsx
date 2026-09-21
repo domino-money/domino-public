@@ -119,7 +119,7 @@ export default function LivePreview() {
         </Display>
         <p className="mt-3 max-w-[70ch] text-[14px] text-fg-muted">
           Estimates from the onboarding service for your signed-in wallet. A preview is never a transaction, a quote lock or an authorization, and it
-          expires 30 seconds after it was requested. Pools and tokens here are the package's synthetic test pools.
+          expires 30 seconds after it was requested. Pools and tokens here are the package’s synthetic test pools.
         </p>
         <SessionLine />
 

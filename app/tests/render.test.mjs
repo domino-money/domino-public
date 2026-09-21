@@ -631,8 +631,8 @@ test('a pool page that could not be verified states no fee tier, and its chart n
   const main = await page.locator('main').innerText();
   assert.match(main, /FEE TIER\s+—/, 'the Fee tier stat is a dash');
   assert.doesNotMatch(main, /%|GeckoTerminal|Hourly candles/, 'no fee tier and no caption anywhere on the page');
-  const plot = page.locator('main .dm-card', { hasText: 'USD price and volume' }).locator('.dm-pool-plot');
-  assert.deepEqual([await plot.getAttribute('title'), await plot.getAttribute('data-chart-provider')], ['Hourly candles reported by a market data provider.', 'GeckoTerminal']);
+  const plot = page.locator('main .dm-card', { hasText: 'Pool price history' }).locator('.dm-pool-plot');
+  assert.deepEqual([await plot.getAttribute('title'), await plot.getAttribute('data-chart-provider')], ['Pool ratios from verified Robinhood Chain Swap events.', null]);
   clean(page, 'unverified pool page');
   await close(page);
 });
@@ -765,7 +765,7 @@ test('the positions screen is an honest empty state: no cards, totals or private
   const text = await page.locator('#root').innerText();
   assert.match(text, /Look up a position NFT/);
   // The by-id lookup is here now; finding every position a wallet holds is not.
-  assert.match(text, /Enter its id above/);
+  assert.match(text, /Enter its ID above/);
   // The managed side asks for a wallet session and shows nothing private without one.
   assert.match(text, /Sign in with your wallet to view private history/);
   assert.match(text, /Sign in with your wallet to view private execution receipts/);
@@ -790,7 +790,7 @@ test('the explanatory sections stay, in relative terms, and say plainly what is 
   const page = await open('/');
   const text = await page.locator('#root').innerText();
   // Home: the hero, the feature cards and the pools; below them how it works, the range simulator, what Domino does not do.
-  for (const heading of [/Earn fees on your tokens, hassle-free\./, /Pick a pool\. Set a range\. Amplify the fees you receive\./, /Move the price\. Watch what you own\./, /What Domino does not do\./]) {
+  for (const heading of [/Earn fees on your tokens, on your own terms\./, /Pick a pool\. Set a range\. Decide what happens to the fees\./, /Move the price\. Watch what you own\./, /What Domino does not do\./]) {
     assert.match(text, heading);
   }
   // The Uniswap strip, the old headlines and the simulator's explanation are gone (owner, 2026-09-14).

@@ -9,13 +9,13 @@ import { RECEIPT_TEXT, SEQUENCE_STEP_TEXT, errorCode, financeErrorText } from '.
 import { Button, Card, Display } from '../components/ui'
 
 const empty = { root: '', trigger: '', overlap: '', interval: '', positions: '', upside: '', slippage: '', impact: '', executionGas: '', age: '', horizon: '',
-  maxGas: '', maxFee: '', priority: '', reserve: '', vault: '', member: '', original: '', charged: '' }
+  maxGas: '', maxFee: '', priority: '', reserve: '', vault: '', member: '', original: '', charged: '', recoverAmount: '' }
 const labels: Record<keyof typeof empty,string> = {
   root:'Root NFT ID',trigger:'Distance to range ceiling (basis points)',overlap:'Maximum successor overlap (basis points)',interval:'Minimum execution interval (seconds)',
   positions:'Maximum positions, including root',upside:'Successor upside (basis points)',slippage:'Maximum swap slippage (basis points)',impact:'Maximum price impact (basis points)',
   executionGas:'Maximum execution gas cost (wei)',age:'Maximum observation age (seconds)',horizon:'Forecast horizon (seconds)',
   maxGas:'Maximum wallet gas units',maxFee:'Maximum fee per gas (wei)',priority:'Maximum priority fee per gas (wei)',reserve:'Keep native gas reserve (wei)',
-  vault:'Sequence address',member:'Root or child NFT ID',original:'Original fee amount (smallest units)',charged:'Already charged fee amount (smallest units)',
+  vault:'Sequence address',member:'Root or child NFT ID',original:'Original fee amount (smallest units)',charged:'Already charged fee amount (smallest units)',recoverAmount:'Amount to return (smallest units)',
 }
 type Client = ReturnType<typeof createSequenceClient>
 type Root = Awaited<ReturnType<Client['inspectRoot']>>
@@ -42,6 +42,8 @@ export default function Sequence() {
   const [form,setForm] = useState(empty), [client,setClient] = useState<Client|null>(null), [recovery,setRecovery] = useState(false)
   const [recent,setRecent] = useState<Awaited<ReturnType<Client['recent']>>>([]), [state,setState] = useState<SequenceState|null>(null)
   const [root,setRoot] = useState<Root|null>(null), [reserves,setReserves] = useState<Reserves|null>(null), [balanceIndex,setBalanceIndex] = useState(0)
+  // Which currency the untracked-balance recovery is about: the sequence's own two, or native.
+  const [recoverCurrency,setRecoverCurrency] = useState<`0x${string}`>('0x0000000000000000000000000000000000000000')
   const [base0,setBase0] = useState(true), [consent,setConsent] = useState(false), [prepared,setPrepared] = useState<PreparedSequence|null>(null)
   const [ack,setAck] = useState(false), [hash,setHash] = useState<Hex|null>(null), [busy,setBusy] = useState(false), [notice,setNotice] = useState<Notice|null>(null)
   const generation = useRef(0), connection = useRef(0), running = useRef(false)
@@ -98,9 +100,24 @@ export default function Sequence() {
       maxObservationAgeSeconds:integer(form.age),forecastHorizonSeconds:integer(form.horizon)},gas())
     if(generation.current===gen)setPrepared(value)
   }
-  async function recover(kind:'pause'|'revoke-operator'|'revoke-root'|'withdraw-child'|'withdraw-fees') {
+  async function changePolicy() {
+    if(!client||!state)return;const gen=generation.current
+    const value=await client.setPolicy(state.vault,{triggerDistanceBps:integer(form.trigger),maxOverlapBps:integer(form.overlap),
+      minimumIntervalSeconds:integer(form.interval),maxPositions:integer(form.positions)},gas())
+    if(generation.current===gen)setPrepared(value)
+  }
+  async function changeLimits() {
+    if(!client||!state)return;const gen=generation.current
+    const value=await client.setExecutionLimits(state.vault,{upsideBps:integer(form.upside),maxSlippageBps:integer(form.slippage),
+      maxPriceImpactBps:integer(form.impact),maxGasCostWei:sequenceRaw(form.executionGas),
+      maxObservationAgeSeconds:integer(form.age),forecastHorizonSeconds:integer(form.horizon)},gas())
+    if(generation.current===gen)setPrepared(value)
+  }
+  async function recover(kind:'pause'|'revoke-operator'|'revoke-root'|'withdraw-child'|'withdraw-fees'|'rearm-root'|'recover-position'|'recover-currency') {
     if(!client||!state)return;const gen=generation.current,balance=reserves?.balances[balanceIndex]
-    const values=kind==='withdraw-child'?{tokenId:sequenceRaw(form.member,256)}:kind==='withdraw-fees'?{sourceId:balance?.sourceId,currency:balance?.currency,original:sequenceRaw(form.original),charged:sequenceRaw(form.charged)}:{}
+    const values=kind==='withdraw-child'||kind==='recover-position'?{tokenId:sequenceRaw(form.member,256)}
+      :kind==='withdraw-fees'?{sourceId:balance?.sourceId,currency:balance?.currency,original:sequenceRaw(form.original),charged:sequenceRaw(form.charged)}
+      :kind==='recover-currency'?{currency:recoverCurrency,amount:sequenceRaw(form.recoverAmount,256)}:{}
     const value=await client.recover(state.vault,kind,gas(),values)
     if(generation.current===gen)setPrepared(value)
   }
@@ -148,7 +165,18 @@ export default function Sequence() {
         <div className="dm-acct-choices">{recent.map(row=><Button key={row.vault} variant="outline" size="sm" disabled={busy} onClick={()=>{void action(()=>inspect(row.vault))}}>Sequence {row.ownerNonce.toString()} · {row.vault.slice(0,10)}</Button>)}</div>
         {fields(['vault'])}<Button className="justify-self-start" variant="outline" disabled={busy} onClick={()=>{void action(()=>inspect())}}>Read owned sequence</Button>
         {state&&<><p className="dm-acct-line dm-acct-wrap">Root NFT #{state.rootTokenId.toString()} · {state.paused?'Paused':'Active'} · {state.operator==='0x0000000000000000000000000000000000000000'?'Operator revoked':`Operator ${state.operator}`} · root permission {state.rootPermissionValid?'valid':'not valid'}.</p>
-          <div className="dm-acct-choices">{!recovery&&state.paused&&<Button disabled={busy||!state.rootPermissionValid||state.operator!==client.deployment.operator} onClick={()=>{void action(async()=>{const gen=generation.current,result=await client.resume(state.vault,gas());if(generation.current===gen)setPrepared(result)})}}>Review activation</Button>}<Button variant="outline" disabled={busy||state.paused} onClick={()=>{void action(()=>recover('pause'))}}>Review pause</Button><Button variant="outline" disabled={busy||state.operator==='0x0000000000000000000000000000000000000000'} onClick={()=>{void action(()=>recover('revoke-operator'))}}>Review operator revocation</Button><Button variant="outline" disabled={busy} onClick={()=>{void action(()=>recover('revoke-root'))}}>Review root NFT approval revocation</Button></div>
+          <div className="dm-acct-choices">{!recovery&&state.paused&&<Button disabled={busy||!state.rootPermissionValid||state.operator!==client.deployment.operator} onClick={()=>{void action(async()=>{const gen=generation.current,result=await client.resume(state.vault,gas());if(generation.current===gen)setPrepared(result)})}}>Review activation</Button>}<Button variant="outline" disabled={busy||state.paused} onClick={()=>{void action(()=>recover('pause'))}}>Review pause</Button><Button variant="outline" disabled={busy||state.operator==='0x0000000000000000000000000000000000000000'} onClick={()=>{void action(()=>recover('revoke-operator'))}}>Review operator revocation</Button>{state.operator==='0x0000000000000000000000000000000000000000'&&<Button variant="outline" disabled={busy} onClick={()=>{void action(async()=>{const gen=generation.current,result=await client.restoreOperator(state.vault,gas());if(generation.current===gen)setPrepared(result)})}}>Review operator authorisation</Button>}{!state.rootPermissionValid&&<Button variant="outline" disabled={busy} onClick={()=>{void action(()=>recover('rearm-root'))}}>Review root permission repair</Button>}<Button variant="outline" disabled={busy} onClick={()=>{void action(()=>recover('revoke-root'))}}>Review root NFT approval revocation</Button></div>
+          {/* Both were write-once: chosen at creation and unchangeable from this
+              product, though both are onlyOwner on chain. A sequence that met its
+              own maxPositions had no way forward but to be abandoned. */}
+          <details className="dm-details dm-acct-disclosure"><summary>Adjust automation rules</summary><div className="dm-acct-disclosure-body">
+            <p className="dm-acct-line dm-acct-wrap">These bound when a successor is opened and how many positions the sequence may hold. The service fee and the paused state are never changed here.</p>
+            {fields(['trigger','overlap','interval','positions'])}<Button className="justify-self-start" variant="outline" disabled={busy} onClick={()=>{void action(changePolicy)}}>Review automation rule change</Button>
+          </div></details>
+          <details className="dm-details dm-acct-disclosure"><summary>Adjust safety limits</summary><div className="dm-acct-disclosure-body">
+            <p className="dm-acct-line dm-acct-wrap">These bound every automated run: the upside a successor must show, the slippage and price impact a swap may take, what the executor may spend on gas, and how stale a price reading may be.</p>
+            {fields(['upside','slippage','impact','executionGas','age','horizon'])}<Button className="justify-self-start" variant="outline" disabled={busy} onClick={()=>{void action(changeLimits)}}>Review safety limit change</Button>
+          </div></details>
           <details className="dm-details dm-acct-disclosure"><summary>Child positions and fee reserves</summary><div className="dm-acct-disclosure-body">{fields(['member'])}<Button className="justify-self-start" variant="outline" disabled={busy} onClick={()=>{void action(async()=>{const gen=generation.current,result=await client.reserves(state.vault,sequenceRaw(form.member,256));if(generation.current===gen){setReserves(result);setBalanceIndex(0)}})}}>Read position and earned-fee reserves</Button>
             {reserves&&<><p className="dm-acct-line">NFT #{reserves.tokenId.toString()} · {reserves.isRoot?'Root':'Child'} · {reserves.active?'registered':'withdrawn'}. {reserves.successor>0n?`Successor NFT #${reserves.successor}.`:'No successor registered.'}</p>
               {reserves.successor>0n&&<Button className="justify-self-start" variant="outline" size="sm" disabled={busy} onClick={()=>edit('member',reserves.successor.toString())}>Select successor</Button>}
@@ -156,6 +184,10 @@ export default function Sequence() {
               <label className="dm-label dm-acct-lf">Fee source and currency<select disabled={busy} className="dm-field" value={balanceIndex} onChange={e=>{generation.current++;setBalanceIndex(Number(e.target.value));setPrepared(null);setAck(false)}}>{reserves.balances.map((b,i)=><option key={`${b.sourceId}:${b.currency}`} value={i}>{b.currency} · source {b.sourceId.slice(0,12)}</option>)}</select></label>
               <p className="dm-acct-line dm-acct-wrap">Source {reserves.balances[balanceIndex].sourceId}. Available: {reserves.balances[balanceIndex].original.toString()} original + {reserves.balances[balanceIndex].charged.toString()} already charged smallest units. These are earned-fee reserves, not NFT principal.</p>
               {fields(['original','charged'])}<Button className="justify-self-start" variant="outline" disabled={busy} onClick={()=>{void action(()=>recover('withdraw-fees'))}}>Review fee reserve withdrawal</Button>
+              {/* A stray NFT the sequence holds but does not manage, and loose balances above what its books account for. Neither is principal and neither is a fee reserve. */}
+              {!reserves.active&&<Button className="justify-self-start" variant="outline" disabled={busy} onClick={()=>{void action(()=>recover('recover-position'))}}>Review unmanaged NFT recovery</Button>}
+              <label className="dm-label dm-acct-lf">Currency to return<select disabled={busy} className="dm-field" value={recoverCurrency} onChange={e=>{generation.current++;setRecoverCurrency(e.target.value as `0x${string}`);setPrepared(null);setAck(false)}}><option value="0x0000000000000000000000000000000000000000">Native ETH</option><option value={state.baseCurrency}>{state.baseCurrency}</option><option value={state.quoteCurrency}>{state.quoteCurrency}</option></select></label>
+              {fields(['recoverAmount'])}<Button className="justify-self-start" variant="outline" disabled={busy} onClick={()=>{void action(()=>recover('recover-currency'))}}>Review untracked balance recovery</Button>
             </>}
           </div></details>
         </>}

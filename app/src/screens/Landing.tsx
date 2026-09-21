@@ -28,17 +28,17 @@ const STEPS: ReadonlyArray<{ n: string; title: string; body: string; roadmap?: R
   {
     n: '01',
     title: 'Decide which tokens you want to pool, set your range',
-    body: 'Search for an existing pool or create a new one; the range customizer will allow you to decide a range and fee.',
+    body: 'Search for your token and pick one of the pools that already exists for it. The Range step draws the price band this position earns fees in, and the pool you pick carries the fee.',
   },
   {
     n: '02',
-    title: 'Review and sign',
-    body: 'Sign and approve the creation of your automation contract. Only your signed wallet can interact with it; your tokens are safe.',
+    title: 'Review, then sign in Setup',
+    body: 'Review every choice, the fees and the wallet steps before anything is sent. The deposit itself is signed in Setup, one reviewed wallet step at a time.',
   },
   {
     n: '03',
     title: 'Automation',
-    body: 'Three choices: self-managing, auto-compounding, Domino-compounding.',
+    body: 'Three choices: Self-managing, Auto-compound or Domino-compound.',
     roadmap: ['Compound', 'Domino'],
   },
 ]
@@ -105,10 +105,10 @@ function Hero() {
       <div className="dm-hero-body">
         <HeroChip />
         <Display as="h1" className={cx('dm-display-hero mt-5 text-balance', RISE)} style={delay(0)}>
-          Earn fees on your tokens, <span className="dm-hero-accent">hassle-free.</span>
+          Earn fees on your tokens, <span className="dm-hero-accent">on your own terms.</span>
         </Display>
         <p className={cx('mt-4 max-w-[60ch] text-body text-fg-muted', RISE)} style={delay(60)}>
-          Pick a range that suits your strategy, create a position and let us do the rest.
+          You pick the pool and the range, and nothing moves until your wallet signs.
         </p>
         <div className={cx('mt-6 flex w-full items-center justify-center gap-2', RISE)} style={delay(120)}>
           <LinkButton href="#/markets" className="max-md:h-11 max-md:flex-1 max-md:px-[18px]">
@@ -130,8 +130,10 @@ function HowItWorks() {
   return (
     <section id="learn" className="mt-12 grid gap-x-10 gap-y-6 md:mt-16 lg:grid-cols-[minmax(0,1fr)_minmax(0,2fr)]">
       <div className="min-w-0 lg:pt-5">
-        <h2 className="text-body font-medium text-fg-subtle">How it works</h2>
-        <p className="dm-display-title mt-3 max-w-[16ch] text-fg">Pick a pool. Set a range. Amplify the fees you receive.</p>
+        <p className="text-body font-medium text-fg-subtle">How it works</p>
+        <Display as="h2" className="dm-display-title mt-3 max-w-[30ch] text-balance text-fg">
+          Pick a pool. Set a range. Decide what happens to the fees.
+        </Display>
       </div>
       <ol className="dm-card m-0 min-w-0 list-none p-2">
         {STEPS.map((step, index) => (

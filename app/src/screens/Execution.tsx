@@ -81,12 +81,12 @@ function useTokenDetails(addresses: readonly string[]): ReadonlyMap<string, Toke
 function Amount({ raw, detail }: { raw: string; detail: TokenDetail | undefined }) {
   const units = detail?.state === 'read' && detail.decimals !== null ? formatUnits(raw, detail.decimals) : null
   if (detail?.state === 'read' && units?.kind === 'units') {
-    return <span title={`${groupRaw(raw)} in the token's smallest units.`} data-amount="units">{units.text}{detail.symbol ? ` ${detail.symbol}` : ''}</span>
+    return <span title={`${groupRaw(raw)} in the token’s smallest units.`} data-amount="units">{units.text}{detail.symbol ? ` ${detail.symbol}` : ''}</span>
   }
   const why = detail === undefined || detail.state === 'waiting' ? 'Reading token details.'
     : detail.state === 'failed' ? `Token details unavailable: ${words(detail.reason)}.` : 'Token decimals unavailable.'
   const reason = detail === undefined ? 'reading' : detail.state === 'read' ? 'decimals_unavailable' : detail.reason
-  return <span title={`${why} ${groupRaw(raw)} in the token's smallest units.`} data-amount="unknown" data-amount-reason={reason}>—</span>
+  return <span title={`${why} ${groupRaw(raw)} in the token’s smallest units.`} data-amount="unknown" data-amount-reason={reason}>—</span>
 }
 
 /** A full identity string with a copy button. Shown whole, never as a link. */

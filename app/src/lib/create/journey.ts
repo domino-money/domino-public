@@ -141,6 +141,7 @@ export function candidatesFromPool(option: PoolOption): TokenCandidate[] {
       decimalsUnavailable: token.decimals === null,
       // The address came out of the pools read, lowercase, and goes back on the wire as it came.
       source: 'pasted',
+      wallet: null,
       balance: null,
       page: null,
       old: false,

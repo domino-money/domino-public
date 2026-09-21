@@ -24,20 +24,23 @@
   html.dm-still .dm-flow-collapse { transition: none; }
 
   /* A step as a row: 56px, marker, title, what was chosen, Edit. */
-  .dm-flow-row { display: flex; align-items: center; gap: 12px; width: 100%; min-width: 0; min-height: 56px; padding: 0 12px; border-radius: var(--radius-sm); text-align: left; color: var(--fg-subtle); transition: background-color var(--dur-hover) ease, color var(--dur-hover) ease; }
+  .dm-flow-row { display: flex; align-items: center; gap: 12px; width: 100%; min-width: 0; min-height: 56px; padding: 0 16px; border-radius: var(--radius-sm); text-align: left; color: var(--fg-subtle); transition: background-color var(--dur-hover) ease, color var(--dur-hover) ease; }
   button.dm-flow-row { color: var(--fg); cursor: pointer; }
   button.dm-flow-row:hover { background: var(--wash); }
-  button.dm-flow-row:focus-visible { outline-offset: -2px; }
+  button.dm-flow-row:focus-visible { outline-offset: var(--focus-offset-inset); }
   .dm-flow-row-title { flex-shrink: 0; font-size: 14px; line-height: 20px; font-weight: 500; letter-spacing: -0.2px; }
-  .dm-flow-row-summary { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-align: right; font-size: 13px; line-height: 18px; letter-spacing: -0.12px; color: var(--fg-muted); font-variant-numeric: lining-nums tabular-nums; }
-  .dm-flow-edit { display: inline-flex; flex-shrink: 0; align-items: center; height: 32px; padding: 0 10px; border-radius: var(--radius); font-size: 13px; line-height: 16px; font-weight: 500; color: var(--fg-muted); transition: background-color var(--dur-hover) ease, color var(--dur-hover) ease; }
+  .dm-flow-row-summary { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-align: right; font-size: 13px; line-height: 18px; letter-spacing: -0.16px; color: var(--fg-muted); font-variant-numeric: lining-nums tabular-nums; }
+  .dm-flow-edit { display: inline-flex; flex-shrink: 0; align-items: center; height: 32px; padding: 0 10px; border-radius: var(--radius); font-size: 13px; line-height: 16px; font-weight: 500; letter-spacing: -0.16px; color: var(--fg-muted); transition: background-color var(--dur-hover) ease, color var(--dur-hover) ease; }
   button.dm-flow-row:hover .dm-flow-edit { background: var(--wash); color: var(--fg); }
 
   /* The open step: an inset panel. */
   .dm-flow-body { min-width: 0; padding: 16px; border-radius: var(--radius); background: var(--surface-1); box-shadow: inset 0 0 0 1px var(--border); }
   .dm-flow-collapse[data-open] .dm-flow-body { animation: dm-step-in var(--dur-step) var(--ease-enter) backwards; }
   .dm-flow-head { display: flex; align-items: flex-start; gap: 12px; min-width: 0; }
-  .dm-flow-title { margin: 0; padding-top: 2px; font-family: var(--font-sans); font-size: 16px; line-height: 24px; font-weight: 500; letter-spacing: -0.24px; color: var(--fg); outline: none; }
+  .dm-flow-title { margin: 0; padding-top: 2px; font-family: var(--font-sans); font-size: 16px; line-height: 24px; font-weight: 500; letter-spacing: -0.24px; color: var(--fg); }
+  /* StepList moves focus to this heading on every step change. Keep the ring tokens.css gives it when the
+     step was advanced from the keyboard; hide it when a pointer moved focus here. */
+  .dm-flow-title:focus:not(:focus-visible) { outline: none; }
   .dm-flow-lead { margin: 2px 0 0; font-size: 14px; line-height: 20px; color: var(--fg-muted); }
   .dm-flow-content { min-width: 0; margin-top: 24px; }
 
@@ -46,6 +49,10 @@
   .dm-flow-foot > .dm-btn { width: 100%; min-width: 0; }
   .dm-flow-reason { grid-column: 1 / -1; margin: 0; font-size: 12px; line-height: 16px; letter-spacing: -0.12px; color: var(--fg-subtle); text-align: right; }
   .dm-flow-reason[data-align="start"] { text-align: left; }
+  /* Journey keeps the reason paragraph mounted so the live region pre-exists its text. Hold its
+     one line open on the steps that have one, or the footer jumps when a reason appears. */
+  .dm-flow-foot:not([data-final]) { row-gap: 0; }
+  .dm-flow-foot:not([data-final]) > .dm-flow-reason { margin-top: 12px; min-height: 16px; }
 
   /* ---- Inside a step ------------------------------------------------------------------------------------ */
   .dm-flow-stack { display: grid; gap: 16px; min-width: 0; }
@@ -61,38 +68,42 @@
   .dm-flow-disclosure > :not(summary) { padding: 8px 0 12px; }
   .dm-flow-note > :not(summary) { padding: 4px 12px 8px; }
   .dm-flow-disclosure-value { min-width: 0; margin-left: auto; overflow: hidden; font-weight: 400; color: var(--fg-subtle); white-space: nowrap; }
-  .dm-flow-note > p { font-size: 13px; line-height: 18px; color: var(--fg-muted); }
+  .dm-flow-note > p { font-size: 13px; line-height: 18px; letter-spacing: -0.16px; color: var(--fg-muted); }
 
   /* A raised panel inside the inset: the chosen pool, the geometry, the options. */
   .dm-flow-panel { display: grid; gap: 12px; min-width: 0; padding: 12px; border-radius: var(--radius); background: var(--surface-2); box-shadow: var(--elev-field); }
+  /* Step 2 borrows the pool page's range controls, which are built for a page ground. Inside a
+     step they sit on --surface-1, so they are lifted onto the same ground as every other panel. */
+  .dm-flow-body [data-range-bound] { background: var(--surface-2); box-shadow: var(--elev-field); }
+  .dm-flow-body .dm-pool-interval { background-color: var(--surface-2); --chart-ground: var(--surface-2); }
   .dm-flow-pool-head { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; min-width: 0; }
   .dm-flow-pool-name { display: grid; flex: 1 1 180px; gap: 4px; min-width: 0; }
   .dm-flow-pool-head > .dm-btn { margin-left: auto; }
   .dm-flow-deposit { min-width: 0; margin: 0; padding: 12px 0 0; border: 0; box-shadow: inset 0 1px 0 var(--border); }
   /* Floated, the legend is an ordinary block inside the fieldset rather than a caption on its top edge. */
-  .dm-flow-deposit-legend { float: left; width: 100%; padding: 0; margin-bottom: 8px; font-size: 12px; line-height: 16px; font-weight: 500; color: var(--fg-muted); }
+  .dm-flow-deposit-legend { float: left; width: 100%; padding: 0; margin-bottom: 8px; font-size: 12px; line-height: 16px; font-weight: 500; letter-spacing: -0.12px; color: var(--fg-muted); }
   .dm-flow-deposit > .dm-hint { clear: both; }
   .dm-flow-choices { display: flex; clear: both; flex-wrap: wrap; gap: 8px; min-width: 0; }
   .dm-flow-choice { display: inline-flex; align-items: center; gap: 8px; max-width: 100%; height: 36px; padding: 0 14px 0 10px; border-radius: var(--radius-pill); background: var(--surface-1); box-shadow: inset 0 0 0 1px var(--border-lip); font-size: 14px; line-height: 20px; font-weight: 500; color: var(--fg-muted); cursor: pointer; transition: background-color var(--dur-hover) ease, box-shadow var(--dur-hover) ease, color var(--dur-hover) ease; }
   .dm-flow-choice:hover { color: var(--fg); box-shadow: inset 0 0 0 1px var(--border-strong); }
   .dm-flow-choice:has(input:checked) { background: var(--surface-3); color: var(--fg); box-shadow: inset 0 0 0 1px var(--fg-subtle); }
-  .dm-flow-choice[data-disabled] { opacity: 0.35; cursor: not-allowed; }
+  .dm-flow-choice[data-disabled] { color: var(--fg-subtle); cursor: not-allowed; }
   .dm-flow-choice-input { flex-shrink: 0; margin: 0; }
 
   /* ---- Fields --------------------------------------------------------------------------------------------- */
   .dm-flow-input { display: flex; align-items: center; gap: 8px; height: 40px; padding: 0 12px; border-radius: var(--radius); background: var(--surface-2); box-shadow: var(--elev-field); transition: box-shadow var(--dur-hover) ease; }
   .dm-flow-input:hover { box-shadow: var(--elev-field), inset 0 0 0 1px var(--border-strong); }
-  .dm-flow-input:has(input:focus-visible) { box-shadow: inset 0 0 0 1px var(--border-strong); outline: 2px solid var(--ring); outline-offset: 2px; }
+  .dm-flow-input:has(input:focus-visible) { box-shadow: inset 0 0 0 1px var(--border-strong); outline: 2px solid var(--ring); outline-offset: var(--focus-offset); }
   .dm-flow-input[data-invalid] { box-shadow: inset 0 0 0 1px var(--money-out); }
   .dm-flow-input-control { flex: 1; min-width: 0; height: 100%; background: transparent; color: var(--fg); font-size: 14px; line-height: 20px; letter-spacing: -0.2px; }
   .dm-flow-input-control:focus-visible { outline: none; }
   .dm-flow-input-control:disabled { color: var(--fg-subtle); cursor: not-allowed; }
-  .dm-flow-input-unit { flex-shrink: 0; font-size: 12px; line-height: 16px; color: var(--fg-subtle); }
+  .dm-flow-input-unit { flex-shrink: 0; font-size: 12px; line-height: 16px; letter-spacing: -0.12px; color: var(--fg-subtle); }
   .dm-flow-mono { font-family: var(--font-mono); font-size: 13px; letter-spacing: 0; }
 
   /* The budget: one large tabular figure with its token, the wallet's balance under it. */
   .dm-flow-amount { display: grid; gap: 12px; min-width: 0; padding: 16px 20px; border-radius: var(--radius); background: var(--surface-2); box-shadow: var(--elev-field); transition: box-shadow var(--dur-hover) ease; }
-  .dm-flow-amount:has(.dm-flow-amount-input:focus-visible) { box-shadow: inset 0 0 0 1px var(--border-strong); outline: 2px solid var(--ring); outline-offset: 2px; }
+  .dm-flow-amount:has(.dm-flow-amount-input:focus-visible) { box-shadow: inset 0 0 0 1px var(--border-strong); outline: 2px solid var(--ring); outline-offset: var(--focus-offset); }
   .dm-flow-amount[data-invalid] { box-shadow: inset 0 0 0 1px var(--money-out); }
   .dm-flow-amount-row { display: flex; align-items: center; gap: 12px; min-width: 0; }
   .dm-flow-amount-input { flex: 1; min-width: 0; height: 40px; background: transparent; color: var(--fg); font-size: 36px; line-height: 40px; font-weight: 500; letter-spacing: -0.6px; }
@@ -101,9 +112,13 @@
   .dm-flow-amount-input:disabled { color: var(--fg-subtle); cursor: not-allowed; }
   .dm-flow-amount-unit { flex-shrink: 0; max-width: 45%; overflow: hidden; font-size: 16px; line-height: 24px; font-weight: 500; color: var(--fg-muted); }
   .dm-flow-amount-foot { min-width: 0; padding-top: 12px; box-shadow: inset 0 1px 0 var(--border); }
-  .dm-flow-balance { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 12px; min-width: 0; }
-  .dm-flow-balance-line { margin: 0; min-width: 0; font-size: 13px; line-height: 18px; letter-spacing: -0.12px; overflow-wrap: anywhere; }
-  .dm-flow-balance-why { margin: 2px 0 0; min-width: 0; font-size: 12px; line-height: 16px; color: var(--fg-subtle); }
+  .dm-flow-balance { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 12px; min-height: 32px; min-width: 0; }
+  .dm-flow-balance-line { margin: 0; min-width: 0; font-size: 13px; line-height: 18px; letter-spacing: -0.16px; overflow-wrap: anywhere; }
+  .dm-flow-balance-why { margin: 2px 0 0; min-width: 0; font-size: 12px; line-height: 16px; letter-spacing: -0.12px; color: var(--fg-subtle); }
+  /* One row per pool token: the same 16px rhythm as .dm-flow-stack, so the two panels read as two fields
+     rather than one broken control, and the spacing does not move when a row grows an error line. */
+  .dm-flow-pair { display: grid; gap: 16px; min-width: 0; }
+  .dm-flow-pair-row { min-width: 0; }
 
   /* ---- Slippage tolerance ------------------------------------------------------------------------------ */
   /* A percentage you drag. The native range input lies invisible over the whole rail, so a pointer, a finger
@@ -112,7 +127,7 @@
   .dm-flow-slip { display: grid; gap: 8px; min-width: 0; }
   .dm-flow-slip-head { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 4px 12px; min-width: 0; }
   .dm-flow-slip-head > .dm-label { margin-bottom: 0; }
-  .dm-flow-slip-value { font-size: 32px; line-height: 36px; font-weight: 500; letter-spacing: -0.5px; color: var(--fg); }
+  .dm-flow-slip-value { font-size: 24px; line-height: 28px; font-weight: 500; letter-spacing: -0.4px; color: var(--fg); }
   .dm-flow-slip-rail { position: relative; height: 54px; min-width: 0; }
   .dm-flow-slip-track { position: absolute; top: 14px; left: 0; right: 0; height: 6px; border-radius: var(--radius-pill); background: var(--surface-3); }
   .dm-flow-slip-fill { position: absolute; top: 0; bottom: 0; left: 0; border-radius: var(--radius-pill); background: color-mix(in srgb, var(--primary-ink) 55%, transparent); }
@@ -120,7 +135,7 @@
   .dm-flow-slip-mark[data-taken] { background: var(--primary-ink); }
   .dm-flow-slip-input { position: absolute; inset: 0; width: 100%; height: 100%; margin: 0; opacity: 0; cursor: ew-resize; }
   .dm-flow-slip-thumb { position: absolute; top: 17px; width: 20px; height: 20px; translate: -50% -50%; border-radius: var(--radius-pill); background: var(--btn); box-shadow: var(--elev-button), inset 0 0 0 1.5px var(--primary-ink); pointer-events: none; }
-  .dm-flow-slip-input:focus-visible ~ .dm-flow-slip-thumb { outline: 2px solid var(--ring); outline-offset: 2px; }
+  .dm-flow-slip-input:focus-visible ~ .dm-flow-slip-thumb { outline: 2px solid var(--ring); outline-offset: var(--focus-offset); }
   .dm-flow-slip-scale { position: absolute; top: 32px; left: 0; right: 0; height: 16px; font-size: 11px; line-height: 16px; letter-spacing: -0.1px; color: var(--fg-subtle); font-variant-numeric: lining-nums tabular-nums; pointer-events: none; }
   .dm-flow-slip-scale > span { position: absolute; translate: -50% 0; white-space: nowrap; }
   /* The lowest mark is the track's own start and the end is its finish, so neither label is centred on a position that would hang off the rail. */
@@ -138,12 +153,12 @@
   .dm-flow-option-top { display: flex; align-items: center; gap: 8px; min-width: 0; }
   .dm-flow-option-top > input { flex-shrink: 0; margin: 0; }
   .dm-flow-option-title { font-size: 14px; line-height: 20px; font-weight: 500; letter-spacing: -0.2px; color: var(--fg); }
-  .dm-flow-option-line { font-size: 13px; line-height: 18px; letter-spacing: -0.12px; color: var(--fg-muted); }
+  .dm-flow-option-line { font-size: 13px; line-height: 18px; letter-spacing: -0.16px; color: var(--fg-muted); }
   .dm-flow-option-pill { margin-top: auto; }
   .dm-flow-limits { display: grid; gap: 12px; min-width: 0; }
   .dm-flow-geometry { display: grid; gap: 16px; min-width: 0; padding: 12px; border-radius: var(--radius); background: var(--surface-2); box-shadow: inset 0 0 0 1px var(--border); }
   .dm-flow-geometry-art { height: 110px; }
-  .dm-flow-rules { display: grid; gap: 6px; margin: 0; padding-left: 18px; list-style: disc; font-size: 13px; line-height: 18px; color: var(--fg-muted); }
+  .dm-flow-rules { display: grid; gap: 6px; margin: 0; padding-left: 18px; list-style: disc; font-size: 13px; line-height: 18px; letter-spacing: -0.16px; color: var(--fg-muted); }
   .dm-flow-rules > li::marker { color: var(--fg-faint); }
   @media (min-width: 640px) {
     .dm-flow-options { grid-template-columns: repeat(3, minmax(0, 1fr)); }
@@ -158,12 +173,12 @@
   .dm-flow-facts > div:last-child { background: none; }
   .dm-flow-facts dt { font-size: 14px; line-height: 20px; color: var(--fg-subtle); }
   .dm-flow-facts dd { margin: 0; min-width: 0; font-size: 14px; line-height: 20px; color: var(--fg); text-align: right; overflow-wrap: anywhere; }
-  .dm-flow-fact-sub { display: block; font-size: 12px; line-height: 16px; color: var(--fg-subtle); }
+  .dm-flow-fact-sub { display: block; font-size: 12px; line-height: 16px; letter-spacing: -0.12px; color: var(--fg-subtle); }
   .dm-flow-facts--noted > div { align-items: baseline; }
-  .dm-flow-facts--noted .dm-flow-fact-note { flex-basis: 100%; font-size: 12px; line-height: 16px; color: var(--fg-subtle); text-align: left; }
-  .dm-flow-position { display: flex; align-items: flex-start; gap: 8px; margin: 0; font-size: 13px; line-height: 18px; color: var(--fg-muted); }
-  /* The line appears only out of range, so its dot is always the neutral one. */
-  .dm-flow-position::before { content: ''; flex-shrink: 0; width: 6px; height: 6px; margin-top: 6px; border-radius: var(--radius-pill); background: var(--fg-faint); }
+  .dm-flow-facts--noted .dm-flow-fact-note { flex-basis: 100%; font-size: 12px; line-height: 16px; letter-spacing: -0.12px; color: var(--fg-subtle); text-align: left; }
+  .dm-flow-position, .dm-flow-short { display: flex; align-items: flex-start; gap: 8px; margin: 0; font-size: 13px; line-height: 18px; letter-spacing: -0.16px; color: var(--fg-muted); }
+  /* Both lines appear only when there is something to warn about — a range that does not hold the price, a wallet that does not cover the deposit — so the dot is always the neutral one. */
+  .dm-flow-position::before, .dm-flow-short::before { content: ''; flex-shrink: 0; width: 6px; height: 6px; margin-top: 6px; border-radius: var(--radius-pill); background: var(--fg-faint); }
   .dm-flow-wsteps { display: grid; gap: 4px; margin: 4px 0 0; padding: 0; list-style: none; }
   .dm-flow-wsteps > li { display: flex; align-items: flex-start; gap: 12px; min-width: 0; padding: 10px 12px; border-radius: var(--radius); background: var(--surface-2); box-shadow: inset 0 0 0 1px var(--border); }
 
@@ -174,15 +189,15 @@
   .dm-flow-combo-input { width: 100%; height: 40px; padding: 0 12px 0 34px; border-radius: var(--radius); background: var(--surface-2); color: var(--fg); box-shadow: var(--elev-field); font-family: var(--font-sans); font-size: 14px; line-height: 20px; letter-spacing: -0.2px; text-overflow: ellipsis; transition: box-shadow var(--dur-hover) ease; }
   .dm-flow-combo-input::placeholder { color: var(--fg-subtle); }
   .dm-flow-combo-input:hover { box-shadow: var(--elev-field), inset 0 0 0 1px var(--border-strong); }
-  .dm-flow-combo-input:focus-visible { box-shadow: inset 0 0 0 1px var(--border-strong); outline: 2px solid var(--ring); outline-offset: 2px; }
+  .dm-flow-combo-input:focus-visible { box-shadow: inset 0 0 0 1px var(--border-strong); outline: 2px solid var(--ring); outline-offset: var(--focus-offset); }
   .dm-flow-combo-input[aria-invalid="true"] { box-shadow: inset 0 0 0 1px var(--money-out); }
   .dm-flow-listbox { position: absolute; top: calc(100% + 6px); left: 0; right: 0; z-index: 40; padding: 4px; border-radius: var(--radius); background: var(--surface-2); box-shadow: var(--elev-menu); transform-origin: top center; animation: dm-pop var(--dur-menu) var(--ease-enter) backwards; }
   .dm-flow-listbox-scroll { display: grid; gap: 2px; max-height: 320px; overflow-y: auto; overscroll-behavior: contain; }
   .dm-flow-listbox-scroll:empty { display: none; }
-  .dm-flow-listbox-empty { margin: 0; padding: 10px; font-size: 13px; line-height: 18px; color: var(--fg-muted); }
+  .dm-flow-listbox-empty { margin: 0; padding: 10px; font-size: 13px; line-height: 18px; letter-spacing: -0.16px; color: var(--fg-muted); }
   .dm-flow-hit { display: flex; align-items: center; gap: 10px; width: 100%; min-width: 0; min-height: 48px; padding: 6px 10px; border-radius: var(--radius-sm); text-align: left; color: var(--fg); cursor: pointer; }
   .dm-flow-hit:hover, .dm-flow-hit[data-active] { background: var(--wash); }
-  .dm-flow-hit--off { opacity: 0.45; cursor: not-allowed; }
+  .dm-flow-hit--off { color: var(--fg-subtle); cursor: not-allowed; }
   .dm-flow-hit-name { min-width: 0; font-size: 14px; line-height: 20px; font-weight: 500; letter-spacing: -0.2px; }
   .dm-flow-hit-meta { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; line-height: 16px; letter-spacing: -0.12px; color: var(--fg-subtle); }
   .dm-flow-hit-blank { flex-shrink: 0; width: 28px; height: 28px; border-radius: var(--radius-pill); background: var(--surface-3); }
@@ -195,7 +210,7 @@
   .dm-flow-wallet { min-width: 0; border-radius: var(--radius); box-shadow: inset 0 0 0 1px var(--border); }
   .dm-flow-toggle { display: flex; align-items: center; gap: 10px; width: 100%; min-height: 44px; padding: 0 12px; border-radius: var(--radius); font-size: 14px; line-height: 20px; font-weight: 500; letter-spacing: -0.2px; color: var(--fg-muted); cursor: pointer; transition: background-color var(--dur-hover) ease, color var(--dur-hover) ease; }
   .dm-flow-toggle:hover { background: var(--wash); color: var(--fg); }
-  .dm-flow-toggle:focus-visible { outline-offset: -2px; }
+  .dm-flow-toggle:focus-visible { outline-offset: var(--focus-offset-inset); }
   .dm-flow-toggle-chevron { flex-shrink: 0; color: var(--fg-subtle); transition: rotate var(--dur-hover) var(--ease-std); }
   .dm-flow-toggle[aria-expanded="true"] .dm-flow-toggle-chevron { rotate: 180deg; }
   .dm-flow-wallet-body { display: grid; gap: 12px; min-width: 0; padding: 4px 12px 12px; }
@@ -208,14 +223,14 @@
   .dm-flow-candidate-main { display: flex; align-items: center; gap: 10px; min-width: 0; min-height: 52px; padding: 4px; }
   .dm-flow-candidate-main > input { margin: 0; }
   .dm-flow-candidate-check { display: grid; flex-shrink: 0; place-items: center; width: 24px; height: 24px; border-radius: var(--radius-sm); background: var(--surface-3); color: var(--fg); }
-  .dm-flow-candidate-details { margin: 0 4px 6px 30px; font-size: 12px; line-height: 16px; color: var(--fg-subtle); }
+  .dm-flow-candidate-details { margin: 0 4px 6px 30px; font-size: 12px; line-height: 16px; letter-spacing: -0.12px; color: var(--fg-subtle); }
   .dm-flow-candidate-details > summary { display: inline-flex; align-items: center; gap: 6px; border-radius: var(--radius-xs); cursor: pointer; list-style: none; transition: color var(--dur-hover) ease; }
   .dm-flow-candidate-details > summary::-webkit-details-marker { display: none; }
   .dm-flow-candidate-details > summary::before { content: ''; width: 5px; height: 5px; border-right: 1.5px solid currentColor; border-bottom: 1.5px solid currentColor; rotate: -45deg; transition: rotate var(--dur-hover) var(--ease-std); }
   .dm-flow-candidate-details[open] > summary::before { rotate: 45deg; }
   .dm-flow-candidate-details > summary:hover { color: var(--fg); }
   .dm-flow-candidate-facts { display: grid; gap: 4px; margin-top: 6px; overflow-wrap: anywhere; }
-  .dm-flow-candidate-why { margin: 0 4px 8px 30px; font-size: 12px; line-height: 16px; color: var(--fg-subtle); }
+  .dm-flow-candidate-why { margin: 0 4px 8px 30px; font-size: 12px; line-height: 16px; letter-spacing: -0.12px; color: var(--fg-subtle); }
 
   /* ---- Pool selection dialog (D.8): head, a scrolling body, a foot that stays ---------------------------- */
   .dm-flow-dialog { grid-template-rows: auto minmax(0, 1fr) auto; gap: 0; padding: 0; overflow: hidden; }
@@ -231,15 +246,15 @@
   @media (max-width: 767px) {
     .dm-flow-body { padding: 12px; }
     .dm-flow-content { margin-top: 20px; }
-    .dm-flow-row { gap: 10px; padding: 0 10px; }
+    .dm-flow-row { padding: 0 12px; }
     .dm-flow-amount { padding: 12px 16px; }
     .dm-flow-amount-input { height: 36px; font-size: 30px; line-height: 36px; }
   }
   /* Review's headline: what is being created, read at a glance, before any list. */
-  .dm-flow-headline { display: grid; gap: 6px; min-width: 0; padding: 16px; border: 1px solid var(--border-strong); border-radius: 14px; background: var(--surface-2); }
+  .dm-flow-headline { display: grid; gap: 6px; min-width: 0; padding: 16px; border-radius: var(--radius); background: var(--surface-2); box-shadow: var(--elev-field); }
   .dm-flow-headline-pair { display: flex; flex-wrap: wrap; align-items: baseline; gap: 8px; min-width: 0; font-size: 16px; line-height: 24px; font-weight: 500; color: var(--fg); }
   .dm-flow-headline-amounts { font-size: 20px; line-height: 28px; font-weight: 500; color: var(--fg); overflow-wrap: anywhere; }
-  .dm-flow-headline-line { font-size: 13px; line-height: 18px; color: var(--fg-muted); overflow-wrap: anywhere; }
+  .dm-flow-headline-line { font-size: 13px; line-height: 18px; letter-spacing: -0.16px; color: var(--fg-muted); overflow-wrap: anywhere; }
   .dm-flow-headline-foot { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 2px; }
   .dm-flow-fee { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 4px 16px; min-width: 0; }
   .dm-flow-fee-value { font-size: 14px; line-height: 20px; color: var(--fg); }

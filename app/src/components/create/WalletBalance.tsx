@@ -123,7 +123,7 @@ export function WalletBalance({ source, token, onUse }: { source: ReadSource | n
     if (!source || wallet === null || listed) return
     const controller = new AbortController()
     const at = { target: `${wallet}|${token.key}`, attempt }
-    const session = createWalletSession(source, { wallet, tokens: [token.wire] })
+    const session = createWalletSession(source, { wallet, tokens: [token.wire], discover: false })
     void session.first(controller.signal).then((snapshot) => {
       if (controller.signal.aborted) return
       setSettled({ ...at, outcome: outcomeOf(snapshot, token.key) })

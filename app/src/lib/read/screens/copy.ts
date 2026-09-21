@@ -158,6 +158,8 @@ export const COPY = {
     needsAdapter: 'Needs a separate adapter',
     hookless: 'No hooks, fixed fee',
     providerConflict: 'Provider figures rejected: the provider’s currencies conflict with the chain.',
+    /** No provider covers this pool: said once, instead of three columns each saying Unavailable. */
+    noFigures: 'No market figures are reported for this pool. It is still verified on chain, and you can use it.',
     partialMetadata: 'Token metadata partial',
     noOptions: 'No verified pool was found in these sources. That isn’t proof that none exists.',
   },

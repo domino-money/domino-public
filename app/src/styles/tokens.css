@@ -78,16 +78,17 @@
 
   /* Shape */
   --radius: 12px;       /* everything: cards, buttons, fields, menus, plates, dialogs */
-  --radius-lg: 12px;    /* kept as an alias so existing rounded-[var(--radius-lg)] resolves to 12 */
   --radius-sm: 8px;     /* inside a 4px padding: nav items, menu items, table band ends, row ends, step markers */
   --radius-inner: 9px;  /* inside a 2px padding: segmented thumb */
   --radius-xs: 4px;     /* compact: tick marks; bar tops use 2px */
   --radius-pill: 9999px;/* chips, status pills, dots only */
 
-  /* Spacing (4px base with half steps); Tailwind's default spacing already matches (p-1.5 = 6px) */
-  --space-0: 2px; --space-1: 4px; --space-1-5: 6px; --space-2: 8px; --space-2-5: 10px; --space-3: 12px;
-  --space-4: 16px; --space-5: 20px; --space-6: 24px; --space-7: 28px; --space-8: 32px; --space-10: 40px;
-  --space-12: 48px; --space-16: 64px; --space-24: 96px;
+  /* Focus ring geometry: outward on anything with clearance, inset on rows,
+     cards and anything inside a scroller or a tight track. One value each. */
+  --focus-offset: 2px;
+  --focus-offset-inset: -2px;
+
+  /* Spacing: 4px base with half steps. Use Tailwind's own scale (p-1.5 = 6px, gap-6 = 24px) — it already matches, so there is no --space-* token to reach for. */
 
   /* Layout */
   --header-h: 72px;     /* 56px below 768px */
@@ -220,7 +221,6 @@
   --radius-sm: var(--radius-sm);
   --radius-inner: var(--radius-inner);
   --radius-DEFAULT: var(--radius);
-  --radius-lg: var(--radius-lg);
 
   --shadow-card: var(--elev-card);
   --shadow-pill: var(--elev-pill);
@@ -235,15 +235,20 @@
   --font-sans: var(--font-sans);
   --font-mono: var(--font-mono);
 
-  /* Type scale: text-chip, text-caption, text-body, text-lead, text-section, text-stat,
+  /* Type scale: text-chip, text-caption, text-meta, text-body, text-lead, text-section, text-stat,
      text-amount (Geist) and text-hero, text-h1, text-title, text-card, text-rail (Instrument Serif sizes).
      Phone sizes live in the responsive .dm-display-* classes (shell.css). */
   --text-chip: 11px;     --text-chip--line-height: 14px;    --text-chip--letter-spacing: -0.1px;
   --text-caption: 12px;  --text-caption--line-height: 16px; --text-caption--letter-spacing: -0.12px;
+  --text-meta: 13px;     --text-meta--line-height: 18px;    --text-meta--letter-spacing: -0.16px;
   --text-body: 14px;     --text-body--line-height: 20px;    --text-body--letter-spacing: -0.2px;
   --text-lead: 16px;     --text-lead--line-height: 24px;    --text-lead--letter-spacing: -0.24px;
   --text-section: 20px;  --text-section--line-height: 26px; --text-section--letter-spacing: -0.3px;
   --text-stat: 24px;     --text-stat--line-height: 28px;    --text-stat--letter-spacing: -0.4px;
+  /* The figure sizes the Stat primitive steps between on a phone and a laptop; both keep the
+     -0.4px the 24px step carries, so the three sizes read as one figure at three widths. */
+  --text-stat-sm: 20px;  --text-stat-sm--line-height: 24px; --text-stat-sm--letter-spacing: -0.4px;
+  --text-stat-lg: 30px;  --text-stat-lg--line-height: 34px; --text-stat-lg--letter-spacing: -0.4px;
   --text-amount: 36px;   --text-amount--line-height: 40px;  --text-amount--letter-spacing: -0.6px;
   --text-hero: 56px;     --text-hero--line-height: 60px;    --text-hero--letter-spacing: -0.6px;
   --text-h1: 44px;       --text-h1--line-height: 48px;      --text-h1--letter-spacing: -0.4px;
@@ -292,7 +297,7 @@
 
   :where(a, button, input, select, textarea, summary, [tabindex]):focus-visible {
     outline: 2px solid var(--ring);
-    outline-offset: 2px;
+    outline-offset: var(--focus-offset);
   }
 
   section[id] {
@@ -368,7 +373,9 @@
     animation-duration: 0.01ms !important;
     animation-iteration-count: 1 !important;
     animation-delay: 0s !important;
+    transition-duration: 0.01ms !important;
     transition-delay: 0s !important;
+    scroll-behavior: auto !important;
   }
   html.dm-still .dm-art,
   html.dm-still .dm-art * {
@@ -379,6 +386,10 @@
   }
   html.dm-still .dm-marquee > [aria-hidden='true'] {
     display: none !important;
+  }
+  html.dm-still .dm-press:active,
+  html.dm-still .dm-press-icon:active {
+    scale: 1 !important;
   }
 }
 

@@ -6,9 +6,7 @@
 @layer components {
   /* ---- Shared pieces --------------------------------------------------------------------- */
   .dm-acct-mono { font-family: var(--font-mono); font-size: 13px; line-height: 18px; letter-spacing: 0; }
-  .dm-acct-dot { display: inline-block; width: 6px; height: 6px; flex-shrink: 0; border-radius: var(--radius-pill); background: var(--money-in); }
   .dm-acct-quiet { padding: 32px 16px; text-align: center; font-size: 14px; line-height: 20px; color: var(--fg-muted); }
-  .dm-acct-caps-label { font-size: 11px; line-height: 14px; font-weight: 500; letter-spacing: 0.6px; text-transform: uppercase; color: var(--fg-subtle); }
   .dm-acct-slot { min-width: 0; }
   .dm-acct-status { flex-shrink: 0; white-space: nowrap; }
   .dm-acct-slot-wait { min-height: 240px; }
@@ -59,7 +57,7 @@
 
   /* Wallet tokens: 48px rows, the mark, the name linked to Markets, the balance at the right. */
   .dm-acct-tokens { display: grid; gap: 8px; min-width: 0; }
-  .dm-acct-tokens-count { min-height: 16px; font-size: 12px; line-height: 16px; color: var(--fg-subtle); }
+  .dm-acct-tokens-count { min-height: 16px; font-size: 12px; line-height: 16px; letter-spacing: -0.12px; color: var(--fg-subtle); }
   .dm-acct-tokens-count:empty { display: none; }
   .dm-acct-token-list { display: grid; margin: 0 -8px; padding: 0; list-style: none; }
   .dm-acct-token { display: flex; align-items: center; gap: 10px; min-height: 48px; padding: 0 8px; border-radius: var(--radius-sm); transition: background-color var(--dur-fade) var(--ease-std); }
@@ -71,16 +69,16 @@
   .dm-acct-token-amount { min-width: 0; margin-left: auto; font-size: 14px; line-height: 20px; color: var(--fg); text-align: right; overflow-wrap: anywhere; }
   .dm-acct-tokens-empty { padding: 12px 0; font-size: 14px; line-height: 20px; color: var(--fg-muted); }
   .dm-acct-tokens-more { margin: 0 -12px; }
-  .dm-acct-tokens-more > summary { min-height: 36px; font-size: 13px; }
+  .dm-acct-tokens-more > summary { min-height: 36px; font-size: 13px; letter-spacing: -0.16px; }
   .dm-acct-tokens-form { display: grid; gap: 8px; }
-  .dm-acct-mono-field { font-family: var(--font-mono); font-size: 12px; line-height: 18px; resize: vertical; }
+  .dm-acct-mono-field { font-family: var(--font-mono); font-size: 12px; line-height: 18px; letter-spacing: 0; resize: vertical; }
 
   /* Automation, in the rail: two rows with inline icons (never in a tile) and their status. */
   .dm-acct-auto-list { display: grid; gap: 14px; margin: 2px 0; padding: 0; list-style: none; }
   .dm-acct-auto-list > li { display: flex; align-items: flex-start; gap: 10px; }
   .dm-acct-auto-icon { flex-shrink: 0; margin-top: 3px; color: var(--fg-muted); }
   .dm-acct-auto-name { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; font-size: 14px; line-height: 22px; font-weight: 500; color: var(--fg); }
-  .dm-acct-auto-text { margin-top: 2px; font-size: 13px; line-height: 18px; color: var(--fg-muted); }
+  .dm-acct-auto-text { margin-top: 2px; font-size: 13px; line-height: 18px; letter-spacing: -0.16px; color: var(--fg-muted); }
 
   /* ---- Position NFTs (E.5): the lookup card; rows are the summaries of their own details ---- */
   .dm-acct-nft-card { container: acct-nft / inline-size; padding: 8px; }
@@ -106,21 +104,21 @@
   .dm-acct-nft-range { display: grid; justify-items: start; gap: 6px; min-width: 0; }
   .dm-acct-nft-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; min-width: 0; }
   .dm-acct-nft-minibar { display: block; width: 80px; flex-shrink: 0; }
-  .dm-acct-nft-ticks { font-size: 12px; line-height: 16px; color: var(--fg-subtle); }
+  .dm-acct-nft-ticks { font-size: 12px; line-height: 16px; letter-spacing: -0.12px; color: var(--fg-subtle); }
   .dm-acct-nft-cell { position: relative; display: grid; min-width: 0; }
   /* The column's name, for a screen reader beside the band; shown as a label when the row stacks. */
   .dm-acct-nft-label { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; text-transform: uppercase; }
   .dm-acct-nft-amounts { display: grid; justify-items: end; gap: 2px; min-width: 0; text-align: right; }
-  .dm-acct-amount { display: block; max-width: 100%; font-size: 13px; line-height: 18px; color: var(--fg); overflow-wrap: anywhere; text-wrap: pretty; }
+  .dm-acct-amount { display: block; max-width: 100%; font-size: 13px; line-height: 18px; letter-spacing: -0.16px; color: var(--fg); overflow-wrap: anywhere; text-wrap: pretty; }
   .dm-acct-amount-symbol { color: var(--fg-subtle); }
-  .dm-acct-nft-empty { grid-column: 2 / 5; font-size: 13px; line-height: 18px; color: var(--fg-muted); }
+  .dm-acct-nft-empty { grid-column: 2 / 5; font-size: 13px; line-height: 18px; letter-spacing: -0.16px; color: var(--fg-muted); }
   .dm-acct-nft-chev { display: grid; place-items: center; justify-self: end; width: 32px; height: 32px; border-radius: var(--radius-sm); color: var(--fg-subtle); transition: color var(--dur-fade) ease; }
   .dm-acct-nft-chev > svg { transition: rotate var(--dur-fade) var(--ease-std), translate var(--dur-fade) var(--ease-std); }
   .dm-acct-nft summary:hover .dm-acct-nft-chev { color: var(--fg); }
   .dm-acct-nft details:not([open]) > summary:hover .dm-acct-nft-chev > svg { translate: 2px 0; }
   .dm-acct-nft details[open] > summary .dm-acct-nft-chev > svg { rotate: 90deg; }
   /* Under the row, aligned with the pair name (two 28px marks overlapping by 30%, then 12px). */
-  .dm-acct-nft-meta { grid-column: 1 / -1; display: flex; flex-wrap: wrap; align-items: center; gap: 4px 12px; padding-left: 60px; font-size: 12px; line-height: 16px; color: var(--fg-subtle); }
+  .dm-acct-nft-meta { grid-column: 1 / -1; display: flex; flex-wrap: wrap; align-items: center; gap: 4px 12px; padding-left: 60px; font-size: 12px; line-height: 16px; letter-spacing: -0.12px; color: var(--fg-subtle); }
   .dm-acct-nft-meta > [data-no-liquidity] { color: var(--fg-muted); }
 
   .dm-acct-nft-body { display: grid; gap: 16px; padding: 16px; animation: dm-fade var(--dur-fade) var(--ease-std) both; }
@@ -149,9 +147,9 @@
   /* The range against the pool's price, inside an opened row. */
   .dm-acct-range { display: grid; gap: 8px; }
   .dm-acct-range-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 4px 16px; }
-  .dm-acct-range-now { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 4px 8px; font-size: 12px; line-height: 16px; color: var(--fg-muted); }
+  .dm-acct-range-now { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 4px 8px; font-size: 12px; line-height: 16px; letter-spacing: -0.12px; color: var(--fg-muted); }
   .dm-acct-range-bar { padding: 4px 0; }
-  .dm-acct-range-ends { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: baseline; gap: 12px; font-size: 12px; line-height: 16px; color: var(--fg); }
+  .dm-acct-range-ends { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: baseline; gap: 12px; font-size: 12px; line-height: 16px; letter-spacing: -0.12px; color: var(--fg); }
   .dm-acct-range-unit { min-width: 0; overflow: hidden; text-align: center; text-overflow: ellipsis; white-space: nowrap; color: var(--fg-muted); }
 
   /* ---- Automate (E.6) ---------------------------------------------------------------------- */
@@ -169,7 +167,7 @@
   .dm-acct-auto-fee dt { color: var(--fg-subtle); }
   .dm-acct-auto-fee dd { margin: 0; color: var(--fg); }
   .dm-acct-auto-entry { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px 16px; margin-top: auto; padding-top: 4px; }
-  .dm-acct-auto-off { margin-top: auto; padding-top: 4px; font-size: 13px; line-height: 18px; color: var(--fg-subtle); }
+  .dm-acct-auto-off { margin-top: auto; padding-top: 4px; font-size: 13px; line-height: 18px; letter-spacing: -0.16px; color: var(--fg-subtle); }
   @media (max-width: 767px) {
     .dm-acct-auto-plate { height: 160px; }
     .dm-acct-auto-body { padding: 16px 12px 12px; }
@@ -179,7 +177,7 @@
   /* ---- Settings (E.7) ---------------------------------------------------------------------- */
   .dm-acct-settings { display: grid; gap: 24px; margin-top: 32px; }
   .dm-acct-set-title { font-size: 16px; line-height: 24px; font-weight: 500; letter-spacing: -0.24px; color: var(--fg); }
-  .dm-acct-set-note { margin-top: 2px; font-size: 13px; line-height: 18px; color: var(--fg-muted); }
+  .dm-acct-set-note { margin-top: 2px; font-size: 13px; line-height: 18px; letter-spacing: -0.16px; color: var(--fg-muted); }
   .dm-acct-set-appearance { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px 24px; padding: 20px; }
   .dm-acct-set-card { padding: 20px; }
   .dm-acct-build { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 20px 24px; margin: 20px 0 0; }
@@ -193,7 +191,7 @@
   .dm-acct-cap { display: flex; align-items: center; justify-content: space-between; gap: 16px; min-height: 64px; padding: 12px; border-radius: var(--radius-sm); }
   .dm-acct-cap + .dm-acct-cap { background: linear-gradient(var(--border), var(--border)) top center / calc(100% - 24px) 1px no-repeat; }
   .dm-acct-cap-name { font-size: 14px; line-height: 20px; font-weight: 500; color: var(--fg); }
-  .dm-acct-cap-note { max-width: 62ch; margin-top: 2px; font-size: 13px; line-height: 18px; color: var(--fg-muted); }
+  .dm-acct-cap-note { max-width: 62ch; margin-top: 2px; font-size: 13px; line-height: 18px; letter-spacing: -0.16px; color: var(--fg-muted); }
 
   /* ---- Rugged97's screens (E.8): presentation only, reached through class names ------------- */
   .dm-acct-desc { max-width: 72ch; font-size: 14px; line-height: 20px; color: var(--fg-muted); text-wrap: pretty; }
@@ -201,10 +199,10 @@
   .dm-acct-block { margin-top: 24px; }
   .dm-acct-panel { display: grid; gap: 12px; min-width: 0; padding: 20px; }
   .dm-acct-panel-title { font-size: 16px; line-height: 24px; font-weight: 500; letter-spacing: -0.24px; color: var(--fg); }
-  .dm-acct-panel-note { font-size: 13px; line-height: 18px; color: var(--fg-muted); }
+  .dm-acct-panel-note { font-size: 13px; line-height: 18px; letter-spacing: -0.16px; color: var(--fg-muted); }
   .dm-acct-subtitle { font-size: 14px; line-height: 20px; font-weight: 500; letter-spacing: -0.2px; color: var(--fg); }
   .dm-acct-line { font-size: 14px; line-height: 20px; color: var(--fg); }
-  .dm-acct-note { font-size: 12px; line-height: 16px; color: var(--fg-subtle); }
+  .dm-acct-note { font-size: 12px; line-height: 16px; letter-spacing: -0.12px; color: var(--fg-subtle); }
   .dm-acct-hash { font-family: var(--font-mono); font-size: 12px; line-height: 18px; letter-spacing: 0; color: var(--fg-muted); overflow-wrap: anywhere; }
   /* Sentences that carry a hash or an address: words wrap as words, and only a long hex string breaks inside. */
   .dm-acct-wrap { overflow-wrap: anywhere; }
@@ -243,7 +241,7 @@
   .dm-acct-perf-item { display: grid; gap: 6px; padding: 16px; }
   .dm-acct-perf-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 12px; }
   .dm-acct-metrics { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px 20px; margin: 10px 0 6px; }
-  .dm-acct-metrics dt { font-size: 12px; line-height: 16px; color: var(--fg-subtle); }
+  .dm-acct-metrics dt { font-size: 12px; line-height: 16px; letter-spacing: -0.12px; color: var(--fg-subtle); }
   .dm-acct-metrics dd { margin: 2px 0 0; font-size: 14px; line-height: 20px; font-weight: 500; color: var(--fg); overflow-wrap: anywhere; }
   @container acct-perf (min-width: 640px) { .dm-acct-metrics { grid-template-columns: repeat(5, minmax(0, 1fr)); } }
   .dm-acct-perf-form { display: grid; gap: 12px; padding: 16px; }
@@ -261,15 +259,15 @@
   .dm-acct-op-report { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 8px; }
   .dm-acct-op-report > label { flex: 1 1 320px; }
   .dm-acct-presign { display: grid; gap: 2px; margin: 12px 0 0; padding: 0; list-style: none; }
-  .dm-acct-presign > li { display: flex; align-items: center; gap: 10px; min-height: 36px; padding: 4px 10px; border-radius: var(--radius-sm); font-size: 13px; line-height: 18px; color: var(--fg); }
-  .dm-acct-presign > li::before { content: ''; width: 6px; height: 6px; flex-shrink: 0; border-radius: var(--radius-pill); background: var(--fg-faint); }
-  .dm-acct-presign > li[data-ok="true"]::before { background: var(--money-in); }
-  .dm-acct-presign > li[data-ok="false"]::before { background: var(--money-out); }
-  .dm-acct-op-facts { display: grid; gap: 2px; margin: 4px 0 0; padding: 12px 0 0; list-style: none; border-top: 1px solid var(--border); font-size: 12px; line-height: 16px; color: var(--fg-subtle); }
+  .dm-acct-presign > li { display: flex; align-items: center; gap: 10px; min-height: 36px; padding: 4px 10px; border-radius: var(--radius-sm); font-size: 13px; line-height: 18px; letter-spacing: -0.16px; color: var(--fg); }
+  .dm-acct-presign > li::before { content: ''; }
+  .dm-acct-presign > li[data-ok="true"]::before { --dot-fill: var(--money-in); }
+  .dm-acct-presign > li[data-ok="false"]::before { --dot-fill: var(--money-out); }
+  .dm-acct-op-facts { display: grid; gap: 2px; margin: 4px 0 0; padding: 12px 0 0; list-style: none; border-top: 1px solid var(--border); font-size: 12px; line-height: 16px; letter-spacing: -0.12px; color: var(--fg-subtle); }
   .dm-acct-facts { padding: 0; }
   .dm-acct-section { display: grid; gap: 12px; margin-top: 8px; padding-top: 16px; border-top: 1px solid var(--border); }
   .dm-acct-section-title { display: block; }
-  .dm-acct-callout { padding: 12px 16px; border-radius: var(--radius); font-size: 13px; line-height: 18px; }
+  .dm-acct-callout { padding: 12px 16px; border-radius: var(--radius); font-size: 13px; line-height: 18px; letter-spacing: -0.16px; }
 
   /* The pool explorer in Setup: the two steps beside the pair card. */
   .dm-acct-explorer { display: grid; align-items: start; gap: 16px; }
@@ -277,12 +275,12 @@
   .dm-acct-explorer-steps { padding: 16px; }
   .dm-acct-explorer-list { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; margin: 0; padding: 0; list-style: none; }
   @media (min-width: 768px) { .dm-acct-explorer-list { grid-template-columns: minmax(0, 1fr); gap: 20px; } }
-  .dm-acct-explorer-step { display: flex; align-items: center; gap: 10px; font-size: 13px; line-height: 18px; color: var(--fg); }
+  .dm-acct-explorer-step { display: flex; align-items: center; gap: 10px; font-size: 13px; line-height: 18px; letter-spacing: -0.16px; color: var(--fg); }
   .dm-acct-explorer-kicker { display: block; font-size: 11px; line-height: 14px; color: var(--fg-subtle); }
   .dm-acct-explorer-card { display: grid; gap: 12px; min-width: 0; padding: 20px; }
   .dm-acct-explorer-pair { display: grid; gap: 8px; }
   @media (min-width: 640px) { .dm-acct-explorer-pair { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
-  .dm-acct-explorer-details { display: grid; gap: 8px; font-size: 12px; line-height: 16px; color: var(--fg-muted); }
+  .dm-acct-explorer-details { display: grid; gap: 8px; font-size: 12px; line-height: 16px; letter-spacing: -0.12px; color: var(--fg-muted); }
   .dm-acct-explorer-results { margin-top: 4px; padding-top: 16px; border-top: 1px solid var(--border); }
   .dm-acct-explorer-empty { display: grid; justify-items: center; align-content: center; gap: 8px; min-height: 200px; padding: 0 16px; text-align: center; }
   .dm-acct-explorer-empty .dm-empty-tile { margin-bottom: 4px; font-size: 18px; line-height: 1; }

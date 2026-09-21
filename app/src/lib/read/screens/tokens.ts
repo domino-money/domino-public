@@ -30,6 +30,14 @@ export interface TokenCandidate {
   reasonCode: string | null
   decimalsUnavailable: boolean
   source: 'pasted' | 'wallet'
+  /**
+   * The address whose listing produced this row, for a wallet row; null for a
+   * pasted one. Rows are keyed by TOKEN address everywhere — the picker, the
+   * search, the exclusion — so the subject cannot live in the key. It lives
+   * here, and mergeCandidates uses it to refuse to carry one address's
+   * balances into another's listing.
+   */
+  wallet: AddressKey | null
   balance: Fact | null
   page: number | null
   old: boolean
@@ -53,15 +61,48 @@ export function candidateFromToken(data: TokenResponse, wire: string): TokenCand
   const asset = data.asset
   const token = tokenDisplay(asset)
   const key = addressKey(asset.address)
-  const base = { key, wire, token, source: 'pasted' as const, balance: null, page: null, old: false, block: data.snapshot.number }
+  const base = { key, wire, token, source: 'pasted' as const, wallet: null, balance: null, page: null, old: false, block: data.snapshot.number }
   if (asset.kind === 'unknown') {
     return { ...base, kind: 'unknown', why: asset.readStatus === 'no_contract' ? 'no_contract' : 'unreadable', reasonCode: asset.reason, decimalsUnavailable: true }
   }
   return { ...base, kind: asset.kind, why: null, reasonCode: null, decimalsUnavailable: asset.decimals === null }
 }
 
+/**
+ * One of a verified pool's two currencies, as a candidate.
+ *
+ * Arriving at the flow with a pool already chosen — the link a pool page's
+ * "New position" carries — gave a pool and no deposit token, and the step
+ * refused to continue for want of one with nowhere to pick it. The pool's own
+ * currencies are the only sensible answer, and the pool read already verified
+ * them on chain at `block`, so nothing is read again to offer them.
+ *
+ * A currency whose own token read did not complete keeps its reason and is
+ * offered unselectable, the same as anywhere else.
+ */
+export function candidateFromPoolCurrency(token: TokenDisplay, block: number): TokenCandidate {
+  const address = token.origin === 'read' ? token.address : ''
+  const key = addressKey(address)
+  const unreadable = token.origin === 'read' && (token.readStatus === 'no_contract' || token.readStatus === 'unavailable')
+  return {
+    key,
+    wire: key,
+    token,
+    kind: key === NATIVE_CURRENCY ? 'native' : 'erc20_candidate',
+    why: unreadable ? (token.origin === 'read' && token.readStatus === 'no_contract' ? 'no_contract' : 'unreadable') : null,
+    reasonCode: null,
+    decimalsUnavailable: token.origin === 'read' && token.decimals === null,
+    source: 'pasted',
+    wallet: null,
+    balance: null,
+    page: null,
+    old: false,
+    block,
+  }
+}
+
 /** Wallet rows as candidates, plus the assets whose balance read failed, which stay visible but not selectable. */
-export function candidatesFromWalletView(view: WalletView): TokenCandidate[] {
+export function candidatesFromWalletView(view: WalletView, wallet: AddressKey | null): TokenCandidate[] {
   const rows = view.rows.map((row): TokenCandidate => {
     const token = row.token
     const address = token.origin === 'read' ? token.address : ''
@@ -75,6 +116,7 @@ export function candidatesFromWalletView(view: WalletView): TokenCandidate[] {
       reasonCode: null,
       decimalsUnavailable: token.origin === 'read' && token.decimals === null,
       source: 'wallet',
+      wallet,
       balance: row.amount,
       page: row.page,
       old: row.old,
@@ -93,6 +135,7 @@ export function candidatesFromWalletView(view: WalletView): TokenCandidate[] {
       reasonCode: null,
       decimalsUnavailable: true,
       source: 'wallet',
+      wallet,
       balance: item.facts[0] ?? null,
       page: null,
       old: item.old ?? false,
@@ -102,9 +145,22 @@ export function candidatesFromWalletView(view: WalletView): TokenCandidate[] {
   return [...rows, ...unavailable]
 }
 
-/** One row per address: a newer reading replaces an older one, keeping the list's order. */
+/**
+ * One row per address: a newer reading replaces an older one, keeping the
+ * list's order.
+ *
+ * With one exception, which is the whole reason `wallet` exists. A listing for
+ * a NEW address does not mention the tokens the previous address held, so
+ * merging alone left those rows on screen — with their balances, their page
+ * number and `old: false` — under the new address's listing. Nothing on the row
+ * says which address it came from, so one wallet's holdings read as another's,
+ * and the picker would carry that choice forward. Paging the SAME address is
+ * untouched: a later page keeps the rows of the earlier ones.
+ */
 export function mergeCandidates(existing: readonly TokenCandidate[], incoming: readonly TokenCandidate[]): TokenCandidate[] {
-  const out = [...existing]
+  const subject = incoming.find((candidate) => candidate.source === 'wallet')?.wallet ?? null
+  const kept = subject === null ? existing : existing.filter((candidate) => candidate.source !== 'wallet' || candidate.wallet === subject)
+  const out = [...kept]
   for (const candidate of incoming) {
     const at = out.findIndex((c) => c.key === candidate.key)
     if (at === -1) out.push(candidate)

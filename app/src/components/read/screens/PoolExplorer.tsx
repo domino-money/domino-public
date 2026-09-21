@@ -73,9 +73,9 @@ export function PoolExplorer({ onSelection }: { onSelection?: (pool: PoolOption 
             return (
               <Button key={which} type="button" variant="outline" size="lg" className="min-w-0 justify-between"
                 disabled={!source || (which === 'second' && !first)}
-                aria-label={which === 'first' ? 'Choose first token' : 'Choose second token (optional)'} onClick={() => openToken(which)}>
+                aria-label={which === 'first' ? 'Choose first token' : 'Choose second asset (optional)'} onClick={() => openToken(which)}>
                 <span className="flex min-w-0 items-center gap-2">
-                  {token ? <><TokenMark token={token.token} size={22} /><span className="min-w-0 truncate"><SymbolText token={token.token} /></span></> : which === 'first' ? 'Choose first token' : 'Choose second token'}
+                  {token ? <><TokenMark token={token.token} size={22} /><span className="min-w-0 truncate"><SymbolText token={token.token} /></span></> : which === 'first' ? 'Choose first token' : 'Choose second asset'}
                 </span>
                 <span aria-hidden="true">⌄</span>
               </Button>
@@ -93,7 +93,7 @@ export function PoolExplorer({ onSelection }: { onSelection?: (pool: PoolOption 
             </div>
           </details>
         )}
-        {second && <Button type="button" variant="ghost" size="sm" className="justify-self-start" onClick={() => { setSecond(null); setPool(null); setRange(null) }}>Clear second token</Button>}
+        {second && <Button type="button" variant="ghost" size="sm" className="justify-self-start" onClick={() => { setSecond(null); setPool(null); setRange(null) }}>Clear second asset</Button>}
 
         <section aria-label="Pool results" className="dm-acct-explorer-results">
           {first && source ? (

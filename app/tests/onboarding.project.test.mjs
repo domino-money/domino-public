@@ -8,6 +8,7 @@
  * onboarding worker also serves to Chromium (tests/consumer.browser.test.mjs).
  */
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
 import { build, fixture, onboardingRuntime as runtime } from './support/consumer-fakes.mjs';
 import { DERIVED_POSITIONS, DERIVED_SWAPS, FEE_RECIPIENT } from './support/onboarding-derived.mjs';
@@ -232,4 +233,15 @@ test('swap quote rows: gross output and your slippage floor in smallest units, t
     checks: [SWAP_CHECK_WORDS.price_impact_unknown, SWAP_CHECK_WORDS.provider_output_fee_unknown, SWAP_CHECK_WORDS.simulation_unknown, SWAP_CHECK_WORDS.gas_estimate_incomplete].join(' '),
   });
   for (const words of Object.values(SWAP_CHECK_WORDS)) assert.doesNotMatch(words, /beta|enabled|this build|preview only/i);
+});
+
+// A screen reads `data-preview-reason` to say why the deposit amounts are not
+// there, and consumer.browser.test.mjs waits for a status and a reason
+// together on the strength of this: an `off` view always carries a code.
+test('an intent view that is off always says why', () => {
+  const source = readFileSync(new URL('../src/onboarding/intent.ts', import.meta.url), 'utf8');
+  const offs = [...source.matchAll(/make\(\s*(?:[^,()]*\?\s*)?'off'[^)]*\)/g)].map((match) => match[0]);
+  assert.ok(offs.length >= 4, `expected the off transitions to still be written with make(): found ${offs.length}`);
+  for (const call of offs) assert.doesNotMatch(call, /,\s*(null|undefined)\s*\)/, call);
+  assert.match(source, /let view: IntentView<R> = \{ status: 'off', reason: '[a-z_]+'/, 'the view starts off with a reason too');
 });

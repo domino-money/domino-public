@@ -39,6 +39,9 @@ export const CREATE = {
   },
   token: {
     needToken: 'Choose a token to continue.',
+    /** Arriving with a pool already chosen: its two currencies are the choice. */
+    depositWhich: 'Which of this pool’s tokens are you depositing?',
+    depositWhichNote: 'You can enter an amount of both in step 3; this one leads.',
     notSelectable: 'The chosen token cannot be deposited: it could not be read.',
     searchLabel: 'Token in the pool',
     searchPlaceholder: 'Token name or address',
@@ -132,8 +135,8 @@ export const CREATE = {
     pairOneSided: (symbol: string) => `At this price your range takes only ${symbol}.`,
     pairUnknown: 'The pool’s price or the range could not be used, so the other amount is not shown.',
     pairUnreadable: 'This token’s decimals or contract could not be read, so an amount cannot be entered in it.',
-    pairNone: 'Your balance of this token could not be read.',
-    pairReading: 'Reading your balance…',
+    pairNone: 'The wallet balance of this token could not be read.',
+    pairReading: 'Reading the wallet balance…',
   },
   balance: {
     /** The one line under the deposit amount rows (the docs' New position page shows it too, lib/docs/pages/using.ts). */
@@ -141,7 +144,7 @@ export const CREATE = {
     /** Why no request can be formed, from previewRequest in journey.ts. */
     incomplete: 'the earlier steps are not complete.',
     /** The estimate waits for the balances, because they are part of its own request. */
-    balances: 'your balances of this pool’s tokens are still being read.',
+    balances: 'the wallet balances of this pool’s tokens are still being read.',
     /**
      * The line that says the wallet does not cover the deposit, by token. Shown
      * only for a currency the estimate itself reported short in `previewChecks`;

@@ -356,7 +356,7 @@ export function PoolRangeControls({
   return (
     <div className="grid gap-5" data-picker="range" data-price-state={price.state === 'usable' ? (price.stale ? 'stale' : price.partial ? 'partial' : 'usable') : 'unavailable'} data-price-read={said?.code}>
       <section aria-labelledby="range-price-heading" className="grid gap-1" data-pool-price="">
-        <h3 id="range-price-heading" className="text-caption font-medium text-fg-muted">Pool price</h3>
+        <h3 id="range-price-heading" className="text-body font-medium text-fg">Pool price</h3>
         <p role="status" aria-live="polite" className="sr-only">{said?.text ?? ''}</p>
         {usable ? (
           <>

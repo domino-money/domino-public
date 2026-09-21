@@ -717,7 +717,12 @@ test('an address whose provider page lists nothing held: the selected pools’ t
       await list.locator(`[data-wallet-row="${USDG}"]`).waitFor({ timeout: 30_000 });
       assert.deepEqual(walletBodies(), [
         { wallet: OWNER, autoDiscover: true },
-        { wallet: OWNER, tokens: SELECTED_TOKENS, autoDiscover: true },
+        // Changed on purpose (2026-09-20): this second read is the by-address
+        // check the test's own name describes. Discovery has just reported
+        // that this address holds nothing listed, so asking it to look again
+        // is work with a known answer — and it is what made a single-token
+        // balance cost about 90 local RPC items instead of 12.
+        { wallet: OWNER, tokens: SELECTED_TOKENS, autoDiscover: false },
       ], 'the list showed nothing held, so the selected pools’ tokens are asked for once, by their addresses');
       assert.equal(await list.locator(`[data-wallet-row="${USDG}"] [data-balance]`).innerText(), '1.5');
       assert.equal(await list.getAttribute('data-wallet-verified-checked'), '');

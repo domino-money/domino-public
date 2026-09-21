@@ -268,7 +268,13 @@ export function PortfolioTokens({ address }: { address: string }) {
     if (!source) return
     generation.current += 1
     quiet.current = 0
-    const current = createWalletSession(source, { wallet: address, tokens, fallbackTokens: SELECTED_TOKENS })
+    // The automatic second read after an empty list is a by-address check of
+    // the selected pools' tokens — discovery already reported this address
+    // holds nothing listed, so asking it to look again is work with a known
+    // answer. Tokens someone typed keep discovery: walletSession's own note
+    // says supplying addresses suppresses emptyHint on the assumption the
+    // provider page still ran.
+    const current = createWalletSession(source, { wallet: address, tokens, fallbackTokens: SELECTED_TOKENS, discover: tokens !== SELECTED_TOKENS })
     session.current = current
     const listChecks = new AbortController()
     checks.current = listChecks

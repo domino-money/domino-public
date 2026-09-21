@@ -1,5 +1,6 @@
 import { decodeFunctionData, decodeFunctionResult, encodeAbiParameters, encodeFunctionData, keccak256, numberToHex, zeroAddress, type Address, type Hex } from 'viem'
-import { SLIPPAGE_MAX_BPS, SLIPPAGE_MIN_BPS, slippageWritten } from '../lib/create/slippage'
+import { SLIPPAGE_MAX_BPS, SLIPPAGE_MIN_BPS, slippageWritten } from './slippage.js'
+import { POSITION_MANAGER, SETUP_CONTRACT, pinned, unpinned } from './pin.js'
 
 /*
  * The closed ABIs are written as JSON: exactly what viem's parseAbi and
@@ -93,6 +94,11 @@ export function deploymentFrom(value: unknown, now = Date.now() / 1000): SetupDe
     || !Number.isSafeInteger(d.feeBps) || Number(d.feeBps) < 0 || Number(d.feeBps) > 65
     || typeof d.tariffVersion !== 'string' || !/^[1-9][0-9]{0,19}$/.test(d.tariffVersion) || BigInt(d.tariffVersion) >= 2n ** 64n
     || !Number.isSafeInteger(d.expiresAt) || Number(d.expiresAt) <= now) return fail('invalid_setup_release')
+  // The same anchor the sequence lane needs, for the same reason: this record
+  // names the contract that tokens are approved to, and every check above
+  // compares the record against itself. See ./pin.ts.
+  if (!pinned(SETUP_CONTRACT, d.setup)) return fail(unpinned(SETUP_CONTRACT) ? 'deployment_not_pinned' : 'deployment_identity_unpinned')
+  if (!pinned(POSITION_MANAGER, d.positionManager)) return fail('deployment_identity_unpinned')
   return d as unknown as SetupDeployment
 }
 export function raw(value: string, bits = 128): bigint {
@@ -218,7 +224,7 @@ export function createSetupClient(wallet: WalletRpc, supplied: SetupDeployment, 
     }),
     swap: (id: Hex, zeroForOne: boolean, gross: bigint, slippageBps: number, sqrtLimit: bigint, gas: GasBudget) => bounded(async rpc => {
       await verify(rpc); const op = await operation(rpc, id)
-      // The slippage is the owner's own limit, inside the product's bound (lib/create/slippage.ts): the minimum output below is drawn with it.
+      // The slippage is the owner's own limit, inside the product's bound (./slippage.ts, pinned to lib/create/slippage.ts): the minimum output below is drawn with it.
       if (op.closed || op.swapped || gross <= 0n || gross > (zeroForOne ? op.balance0 : op.balance1) || !Number.isSafeInteger(slippageBps) || slippageBps < SLIPPAGE_MIN_BPS || slippageBps > SLIPPAGE_MAX_BPS || sqrtLimit <= 0n || sqrtLimit >= 2n ** 160n) return fail('invalid_swap_budget')
       const plan = { operationId: id, zeroForOne, grossInput: gross, minOutput: 1n, sqrtPriceLimitX96: sqrtLimit, deadline: BigInt(Math.floor(now()) + 90) }
       const data = encodeFunctionData({ abi: setupAbi, functionName: 'swap', args: [plan] })

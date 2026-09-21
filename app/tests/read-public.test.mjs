@@ -174,3 +174,31 @@ test('a gate failure on read-v3 is still a failure: signing in is the way out, n
   assert.match(source, /const GATE = new Set\(\['gate_required', 'gate_unavailable', 'access_required'\]\)/);
   assert.match(source, /!GATE\.has\(check\.outcome\.state\)/, 'everything but a gate state falls back');
 });
+
+// Added 2026-09-20. An adversarial pass raised this as a gap: the v1/v2 path
+// binds a pool-market reply's inner provider block to the pool it claims to be
+// about (interpret.ts, the 'pool-market' case), and the stored v3 path appeared
+// not to. Tested directly, it is NOT a gap — read-v3's own runtime refuses all
+// three forgeries before our code sees them. These pin that guarantee, so if it
+// ever weakens on the producer's side we find out here rather than by rendering
+// one pool's figures under another pool's name.
+test('read-v3 refuses an overview whose stored figures belong to another pool or token', () => {
+  const intact = fixture('overview');
+  assert.equal(v3.validateResponse('overview', intact), true, 'the fixture itself is admitted');
+
+  const movedPool = fixture('overview');
+  const entry = movedPool.pools.find((row) => row.value);
+  assert.ok(entry, 'the fixture has a pool with a stored market');
+  entry.value.market.market.data.poolId = `0x${'cd'.repeat(32)}`;
+  assert.equal(v3.validateResponse('overview', movedPool), false, 'a provider block about another pool');
+
+  const movedCurrencies = fixture('overview');
+  movedCurrencies.pools.find((row) => row.value).value.market.market.data.currencies = [`0x${'ee'.repeat(20)}`, `0x${'ff'.repeat(20)}`];
+  assert.equal(v3.validateResponse('overview', movedCurrencies), false, 'a provider block about other currencies');
+
+  const movedToken = fixture('overview');
+  const holder = movedToken.tokens.find((row) => row.value);
+  assert.ok(holder, 'the fixture has a token with a stored value');
+  holder.value.asset.address = `0x${'ab'.repeat(20)}`;
+  assert.equal(v3.validateResponse('overview', movedToken), false, 'a token value about another address');
+});

@@ -340,6 +340,26 @@ test('every view carries the owner’s selection above its actions: pool, amount
   assert.equal(tokenName(TKA.toUpperCase().replace('0X', '0x'), tokens), 'TKA', 'addresses compare in lower case');
 });
 
+test('a symbol is whatever the token contract returned, so a sentence never takes it as written', () => {
+  // A symbol ending in U+202E reorders the text after it on screen: "1.5 EVIL / 200 USDG" can be
+  // read as its mirror while the string itself is unchanged. The read screens isolate symbols in
+  // <bdi> (SymbolText.tsx); these presenters build sentences, so the controls are dropped instead.
+  const RLO = '\u202E', LRI = '\u2066', PDI = '\u2069';
+  const evil = new Map([[TKA, { symbol: `EVIL${RLO}`, decimals: 2 }], [TKB, { symbol: `${LRI}USDG${PDI}`, decimals: 0 }]]);
+  assert.equal(tokenName(TKA, evil), 'EVIL', 'a trailing right-to-left override is dropped');
+  assert.equal(tokenName(TKB, evil), 'USDG', 'isolates are dropped too, not just overrides');
+  assert.equal(tokenAmount('150', TKA, evil), '1.5 EVIL', 'and the amount sentence is clean');
+
+  // Cut at the 24 characters SymbolText shows, so one token cannot push a row off the panel.
+  assert.equal(tokenName(TKA, new Map([[TKA, { symbol: 'A'.repeat(40), decimals: 0 }]])), `${'A'.repeat(24)}\u2026`);
+  assert.equal(tokenName(TKA, new Map([[TKA, { symbol: 'A'.repeat(24), decimals: 0 }]])), 'A'.repeat(24), 'exactly 24 is not cut');
+
+  // Nothing left after cleaning is no symbol at all, and the address stands in - the same answer
+  // as a token whose contract returned no symbol.
+  assert.equal(tokenName(TKA, new Map([[TKA, { symbol: `${RLO}${LRI}`, decimals: 0 }]])), '0x111111\u2026111111');
+  assert.equal(tokenName(TKA, new Map([[TKA, { symbol: '   ', decimals: 0 }]])), '0x111111\u2026111111');
+});
+
 test('a list row says the pair, the amount in token units, the update time and whether a slot is reserved, in words', () => {
   const listed = fixture('deposit-v1', 'responses/list.json').operations[0];
   const row = presentListItem(listed);

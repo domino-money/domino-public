@@ -48,11 +48,21 @@ function PoolRow({ option, checked, onPick, name, compact = false, open = false 
           {identity}
         </label>
       )}
-      <div className="dm-mkt-option-figures">
-        <ProviderFigure label="TVL" figure={option.liquidity} />
-        <ProviderFigure label="24h volume" figure={option.volume} />
-        <RowAprFigure option={option} />
-      </div>
+      {/* Most pools a search turns up are not covered by any market data
+          provider — for one token here, eleven of twelve. Three columns each
+          reading "Unavailable", with the reason only in a title nobody hovers,
+          spent the whole figure strip saying nothing three times. When there is
+          nothing to report, the row says so once, in words, and keeps what IS
+          known: the fee, and that the pool was verified on chain. */}
+      {worthColumns(option) ? (
+        <div className="dm-mkt-option-figures">
+          <ProviderFigure label="TVL" figure={option.liquidity} />
+          <ProviderFigure label="24h volume" figure={option.volume} />
+          <RowAprFigure option={option} />
+        </div>
+      ) : (
+        <p className="dm-mkt-option-note text-fg-muted" data-no-figures="">{COPY.picker.noFigures}</p>
+      )}
       {option.tokenMetadata === 'partial' && <p className="dm-mkt-option-note text-fg-muted">{COPY.picker.partialMetadata}</p>}
       {option.providerConflict && <p className="dm-mkt-option-note text-money-out">{COPY.picker.providerConflict}</p>}
       <details className="dm-details dm-mkt-option-details">
@@ -276,6 +286,18 @@ type PoolsResult =
  */
 const ROW_APR_TITLE = 'Estimate from this pool’s fixed LP fee and the 24h volume and liquidity reported in this list, annualised. A pool estimate, not a position’s APR, not APY and not a forecast, and not the pool page’s figure, which a different provider reports.'
 
+/**
+ * Whether the figure columns have anything to say.
+ *
+ * Only `unavailable` is empty — nothing was retrieved at all. `not_reported`
+ * (the provider answered and had no value) and `rejected` (it answered and the
+ * value failed an identity check) each say something specific about this pool,
+ * and keep their column.
+ */
+function worthColumns(option: PoolOption): boolean {
+  return option.liquidity.state !== 'unavailable' || option.volume.state !== 'unavailable'
+}
+
 function RowAprFigure({ option }: { option: PoolOption }) {
   const apr = rowApr({
     integration: option.integration,
@@ -365,9 +387,32 @@ export function PoolPicker({
     <div className="grid gap-3" data-picker="pool" data-pools-state={result.kind === 'failed' ? result.code : result.kind}>
       <p role="status" aria-live="polite" className="sr-only">{result.kind === 'loading' ? COPY.picker.poolsLoading : result.kind === 'failed' ? result.reason : ''}</p>
       {resting && options.length === 0 && (
-        <div className="grid gap-2" aria-hidden="true">
-          <Skeleton className="h-16 w-full" />
-          <Skeleton className="h-16 w-full" />
+        <div className="grid gap-3" aria-hidden="true">
+          {/* The coverage summary and the legend land with the read too; without a resting
+              shape they alone push the list 80px down the moment the pools arrive. */}
+          <Skeleton className="h-10 w-full rounded-[var(--radius)]" />
+          <div className="grid">
+            {!onOpen && <Skeleton className="mb-2 h-5 w-28" />}
+            <ul className="grid gap-2">
+              {[0, 1].map((row) => (
+                <li key={row} className="dm-mkt-option">
+                  <div className="flex min-h-14 items-center gap-3 px-3">
+                    {/* TokenMarkPair overlaps two marks at -30%, so the pair is 1.7x its size: a pill, not a circle. */}
+                    <Skeleton className={cx('shrink-0 rounded-full', compact ? 'h-7 w-12' : 'h-8 w-14')} />
+                    <span className="grid min-w-0 flex-1 gap-0.5">
+                      <Skeleton className="h-5 w-40 max-w-full" />
+                      <Skeleton className="h-4 w-28 max-w-full" />
+                    </span>
+                    <Skeleton className="h-5 w-12 shrink-0 rounded-full" />
+                  </div>
+                  <div className="dm-mkt-option-figures">
+                    <Skeleton className="h-[18px] w-full" />
+                  </div>
+                  <Skeleton className="mx-3 h-9 w-56 max-w-[calc(100%-24px)]" />
+                </li>
+              ))}
+            </ul>
+          </div>
         </div>
       )}
       {result.kind === 'failed' && result.final && options.length === 0 && (

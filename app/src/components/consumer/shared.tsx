@@ -21,7 +21,7 @@ export class ConsumerBoundary extends Component<{ children: ReactNode }, { faile
     if (!this.state.failed) return this.props.children
     return (
       <p role="alert" className="dm-page dm-page--narrow text-body text-fg-muted">
-        This screen couldn't load. Reload to try again.
+        This screen couldn’t load. Reload to try again.
       </p>
     )
   }

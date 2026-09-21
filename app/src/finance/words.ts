@@ -109,13 +109,19 @@ export const SETUP_STEP_TEXT: Readonly<Record<'approve' | 'fund' | 'swap' | 'min
 }
 
 /** What each prepared sequence step is, for its review heading. */
-export const SEQUENCE_STEP_TEXT: Readonly<Record<'approve-root' | 'create' | 'resume' | 'pause' | 'revoke-operator' | 'revoke-root' | 'withdraw-child' | 'withdraw-fees', string>> = {
+export const SEQUENCE_STEP_TEXT: Readonly<Record<'approve-root' | 'create' | 'resume' | 'pause' | 'restore-operator' | 'revoke-operator' | 'revoke-root' | 'withdraw-child' | 'withdraw-fees' | 'rearm-root' | 'recover-position' | 'recover-currency' | 'set-policy' | 'set-limits', string>> = {
   'approve-root': 'root NFT approval',
   create: 'paused sequence creation',
   resume: 'activation',
   pause: 'pause',
+  'restore-operator': 'operator authorisation',
   'revoke-operator': 'operator revocation',
   'revoke-root': 'root NFT approval revocation',
   'withdraw-child': 'child NFT withdrawal',
   'withdraw-fees': 'fee reserve withdrawal',
+  'rearm-root': 'root permission repair',
+  'recover-position': 'unmanaged NFT recovery',
+  'recover-currency': 'untracked balance recovery',
+  'set-policy': 'automation rule change',
+  'set-limits': 'safety limit change',
 }

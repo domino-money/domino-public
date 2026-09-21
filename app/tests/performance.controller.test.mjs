@@ -2,14 +2,22 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createRequire } from 'node:module';
 import { readFileSync } from 'node:fs';
-import { decodeFunctionData, encodeFunctionResult, keccak256, parseAbi, parseAbiParameters, zeroAddress } from 'viem';
+import { concatHex, decodeFunctionData, encodeFunctionResult, keccak256, parseAbi, parseAbiParameters, zeroAddress } from 'viem';
 import * as runtime from '../../api-contracts/performance-v2/runtime.mjs';
+// The deployment pin is enforced by a build that says it is deployable, and
+// the refusal below is what such a build does. `.test-build` is not one, so
+// this file stands in for it — before the requires, because pin.ts reads the
+// flag once when the module loads.
+globalThis.__DOMINO_DEPLOYABLE__ = true;
 const require = createRequire(import.meta.url);
 const { createPerformanceController, formatMetricUsd, formatMetricPercent, exactDecimal, enrollmentFailureText, performanceReasonText,
   PERFORMANCE_STATUS_TEXT, ENROLLMENT_STATUS_TEXT, ENROLLMENT_REASON_TEXT, COLLECTION_TEXT, SEQUENCE_LIST_TRIES, PERFORMANCE_RETRY_MS, trackableSequence } = require('../.test-build/app/src/finance/performance.js');
 // Compiled into the test build through performance.ts's import of its types.
 const { createSequenceClient, sequenceAbi, sequenceIdentity, cloneRuntime, SEQUENCE_LIST_LIMIT, SEQUENCE_MEMBER_STEPS, sequenceIdParameters, poolKeyParameters } = require('../.test-build/app/src/finance/sequence.js');
 const { setupAbi, tokenAbi, operationIdParameters } = require('../.test-build/app/src/finance/setup.js');
+const { sequenceDeploymentFrom } = require('../.test-build/app/src/finance/sequence.js');
+const { deploymentFrom } = require('../.test-build/app/src/finance/setup.js');
+const { SEQUENCE_FACTORY, SETUP_CONTRACT, POSITION_MANAGER } = require('../.test-build/app/src/finance/pin.js');
 const fixture = path => JSON.parse(readFileSync(new URL(`../../api-contracts/performance-v2/fixtures/${path}.json`, import.meta.url)));
 const epochs = fixture('responses/epochs'), cards = fixture('responses/cards');
 const flush = async () => { for (let i = 0; i < 40; i++) await Promise.resolve(); };
@@ -425,7 +433,7 @@ test('the closed owner ABIs ship as JSON, and each equals what viem parses from 
   assert.deepEqual(sequenceAbi, parseAbi(signatures(sequenceText, 'sequenceAbi')));
   assert.deepEqual(sequenceIdParameters, parseAbiParameters(parameters(sequenceText, 'sequenceIdParameters')));
   assert.deepEqual(poolKeyParameters, parseAbiParameters(parameters(sequenceText, 'poolKeyParameters')));
-  assert.deepEqual([setupAbi.length, tokenAbi.length, sequenceAbi.length], [13, 2, 52], 'every signature, and nothing else');
+  assert.deepEqual([setupAbi.length, tokenAbi.length, sequenceAbi.length], [13, 2, 58], 'every signature, and nothing else');
   const code = (text) => text.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
   for (const text of [setupText, sequenceText]) assert.doesNotMatch(code(text), /\bparseAbi(Parameters)?\b/, 'no ABI parser runs in the page');
 });
@@ -467,4 +475,77 @@ test('members at exactly the most successors it follows is read whole within the
   assert.ok(longest.log.length <= 100, `${longest.log.length} wallet calls, over the ceiling`);
   assert.deepEqual([...new Set(longest.log)].sort(), READ_METHODS, 'only reads');
   t.diagnostic(`members() over ${SEQUENCE_MEMBER_STEPS} successors: ${longest.log.length} of 100 wallet calls`);
+});
+
+/**
+ * The anchor the deployment records never had.
+ *
+ * Everything sequenceDeploymentFrom and deploymentFrom check proves the record
+ * is SELF-CONSISTENT; nothing proved it was ours, because every address they
+ * compare comes from the record. A record-controlling attacker — an extension
+ * rewriting the release reply, or a planted localStorage recovery profile —
+ * could name their own factory, satisfy the whole on-chain verification against
+ * it, and become the spender of a real ERC-721 approval over a real position.
+ *
+ * `src/finance/pin.ts` anchors one identity per lane outside the record. The
+ * contracts are not published yet, so both pins are null, and a null pin
+ * REFUSES rather than passes: the wallet paths fail closed until the real
+ * addresses are committed. These compile outside Vite, where the deployable
+ * flag is absent and the pin defaults to required — the same state a deployable
+ * build is in.
+ */
+test('a deployment record with no pinned identity is refused, on both lanes', () => {
+  assert.equal(SEQUENCE_FACTORY, null, 'unpublished: nothing to pin yet');
+  assert.equal(SETUP_CONTRACT, null, 'unpublished: nothing to pin yet');
+  assert.equal(POSITION_MANAGER, '0x58daec3116aae6d93017baaea7749052e8a04fa7', 'the deposit lane already pins this one');
+
+  const at = (byte) => `0x${byte.toString(16).padStart(2, '0').repeat(20)}`;
+  const hash32 = (byte) => `0x${byte.toString(16).padStart(2, '0').repeat(32)}`;
+  const implementation = at(0x42);
+  const clone = concatHex(['0x363d3d373d3d3d363d73', implementation, '0x5af43d82803e903d91602b57fd5bf3']);
+  const sequence = { contractVersion: '1.0.0-rc.1', chainId: 4663, available: true, deployment: {
+    factory: at(0x41), implementation, poolManager: at(0x43), positionManager: at(0x44), stateView: at(0x45),
+    readHelper: at(0x46), engine: at(0x47), routing: at(0x48), priceGuard: at(0x49), serviceFeeRecipient: at(0x4a),
+    operator: at(0x4b), pricePublisher: at(0x4c), serviceFeeBps: 200, expiresAt: 4_000_000_000,
+    codeHashes: { factory: hash32(0x51), implementation: hash32(0x52), poolManager: hash32(0x53), positionManager: hash32(0x54),
+      stateView: hash32(0x55), readHelper: hash32(0x56), engine: hash32(0x57), routing: hash32(0x58), priceGuard: hash32(0x59),
+      vault: keccak256(clone) } } };
+  // Structurally perfect, and still refused: it names a factory this build does not know.
+  assert.throws(() => sequenceDeploymentFrom(sequence, 1000), (error) => /deployment_not_pinned/.test(String(error.message ?? error)));
+  // available:false is not a record and stays parseable, so a switched-off lane still reads as switched off.
+  assert.equal(sequenceDeploymentFrom({ contractVersion: '1.0.0-rc.1', chainId: 4663, available: false, deployment: null }, 1000), null);
+
+  const setup = { contractVersion: '1.0.0-rc.1', chainId: 4663, available: true, deployment: {
+    setup: at(0x61), poolManager: at(0x43), positionManager: POSITION_MANAGER, stateView: at(0x45), feeRecipient: at(0x62),
+    setupCodeHash: hash32(0x71), poolManagerCodeHash: hash32(0x72), positionManagerCodeHash: hash32(0x73), stateViewCodeHash: hash32(0x74),
+    feeBps: 20, tariffVersion: '1', expiresAt: 4_000_000_000 } };
+  assert.throws(() => deploymentFrom(setup, 1000), (error) => /deployment_not_pinned/.test(String(error.message ?? error)));
+  assert.equal(deploymentFrom({ contractVersion: '1.0.0-rc.1', chainId: 4663, available: false, deployment: null }, 1000), null);
+});
+
+/**
+ * The owner's whole surface, checked against the contract rather than against
+ * a list someone kept up to date.
+ *
+ * On 2026-09-20 five of the nine onlyOwner functions had no way in from this
+ * product: setPolicy and setExecutionLimits (so a sequence's rules and safety
+ * limits were write-once, and one that met its own maxPositions had no way
+ * forward), rearmRoot (the repair for a lapsed root permission), and the two
+ * recoveries for an NFT or a balance that ended up in the vault by accident.
+ * Nothing failed while they were missing, because nothing was looking.
+ *
+ * This reads DominoVaultV4.sol and fails by name the day another appears.
+ */
+test('every onlyOwner function of the vault has an ABI entry the app can encode', () => {
+  const vault = readFileSync(new URL('../../contracts/src/DominoVaultV4.sol', import.meta.url), 'utf8');
+  const owner = [...vault.matchAll(/function\s+([A-Za-z0-9_]+)\s*\([^)]*\)\s*external\s+onlyOwner/g)].map((match) => match[1]);
+  assert.ok(owner.length >= 9, `expected the owner surface, found ${owner.length}`);
+  const encodable = new Set(sequenceAbi.filter((entry) => entry.type === 'function' && entry.stateMutability !== 'view').map((entry) => entry.name));
+  const absent = owner.filter((name) => !encodable.has(name));
+  assert.deepEqual(absent, [], `owner functions with no way in from the app: ${absent.join(', ')}`);
+  // And the reverse: nothing writable in our ABI that the vault does not have.
+  // approve is the position manager's, not the vault's, so it is named here.
+  const vaultWrites = [...encodable].filter((name) => name !== 'approve' && name !== 'createVault');
+  const known = new Set([...vault.matchAll(/function\s+([A-Za-z0-9_]+)\s*\(/g)].map((match) => match[1]));
+  assert.deepEqual(vaultWrites.filter((name) => !known.has(name)), [], 'the app can encode nothing the vault does not declare');
 });

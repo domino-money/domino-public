@@ -9,6 +9,7 @@ import { MetricCell } from '../explore/MetricCell'
 import { poolHref } from '../explore/routes'
 import { PoolTokenLabel } from '../PoolCatalogueIdentity'
 import { TokenIcon, TokenMark, TokenMarkPair } from '../TokenIcon'
+import { FigureDash } from '../ui'
 
 /**
  * What a card's plot shows, decided by the carousel from real outcomes only.
@@ -144,9 +145,7 @@ export function MarketCard({ listing, index, now, volume }: { listing: PoolListi
             {market ? (
               <MetricCell metric={market.tvlUsd} retrieved={retrieved} />
             ) : (
-              <span className="text-fg-subtle" aria-label="TVL unavailable">
-                —
-              </span>
+              <FigureDash reason="TVL unavailable" />
             )}
           </span>
         </span>

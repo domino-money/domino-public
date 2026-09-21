@@ -159,7 +159,7 @@ test('market rows: every observation reaches the table and the ticker as itself,
     // A shown value says a provider reported it, and when it was retrieved, in its title; a ratio says Domino calculated it from the provider's figures.
     const titles = await section(`market-${id}`).locator('tbody [data-metric="provider"], tbody [data-metric="calculated"]').evaluateAll((els) => els.map((el) => [el.getAttribute('data-metric'), el.getAttribute('title')]));
     for (const [state, title] of titles) {
-      assert.match(title, state === 'calculated' ? /^Calculated by Domino from a market data provider's reported 24h volume and TVL, retrieved \d+ s ago\. Those figures are not reconciled by Domino\.$/ : /^Reported by a market data provider, retrieved \d+ s ago\. Not reconciled by Domino\.$/, `${id}: ${state}`);
+      assert.match(title, state === 'calculated' ? /^Calculated by Domino from a market data provider’s reported 24h volume and TVL, retrieved \d+ s ago\. Those figures are not reconciled by Domino\.$/ : /^Reported by a market data provider, retrieved \d+ s ago\. Not reconciled by Domino\.$/, `${id}: ${state}`);
     }
   }
   const staleTitles = await section('market-stale').locator('tbody [data-metric="stale"]').evaluateAll((els) => els.map((el) => el.getAttribute('title')));
@@ -252,7 +252,7 @@ test('table-wide states: one polite status line, the right words, and not a sing
     busy: ['busy', /Try again in 7 s/],
     transient: ['unavailable', /Temporarily unavailable[\s\S]*answered: read service unavailable/],
     'not-connected': ['not_connected', /Live data unavailable/],
-    'not-found': ['not_connected', /Live data isn't available on this address/],
+    'not-found': ['not_connected', /Live data isn't available here/],
     'no-forwarder': ['not_connected', /Live data unavailable/],
     'route-disabled': ['disabled', /Live data is switched off for now/],
   };

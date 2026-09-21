@@ -23,7 +23,7 @@ const Container = ({ children }) => React.createElement('div', null, children)
 const stub = (name) => Object.defineProperty(() => null, 'displayName', { value: name })
 const parts = Object.fromEntries([
   'PoolPicker', 'PoolSelectionDialog', 'PoolWorkspace', 'TokenPicker', 'TokenLookup', 'CatalogueCandidates', 'WalletCandidates', 'PoolPriceChart', 'PoolHistoryChart', 'PoolRangeControls',
-  'PoolAprEstimate', 'PoolCatalogueIdentity', 'PoolTokenLabel', 'TokenMark', 'TokenMarkPair', 'SymbolText', 'Address', 'MetricCell', 'TurnoverCell', 'Tabs', 'Skeleton',
+  'PoolAprEstimate', 'IconChevronLeft', 'PoolCatalogueIdentity', 'PoolTokenLabel', 'TokenMark', 'TokenMarkPair', 'SymbolText', 'Address', 'MetricCell', 'TurnoverCell', 'Tabs', 'Skeleton',
   'CopyButton', 'ProviderFigure', 'EmptyState', 'LinkButton', 'SelectedPoolsTable', 'MarketsTable', 'TokensTable', 'SearchField', 'PageHeader', 'PoolActivityCard', 'PoolPositionsCard',
 ].map((name) => [name, stub(name)]))
 
@@ -61,6 +61,9 @@ function load(name, dependencies, expose = '') {
   const mod = { exports: {} }
   const common = {
     ...parts, Button: Container, Card: Container, Pill: Container, StatStrip: Container, cx: (...args) => args.join(' '),
+    // The shared dash is the real thing, not a stub: it carries the reason as an accessible name,
+    // and `dashes` below finds it by component name, which a stub() does not have.
+    FigureDash: function FigureDash({ reason }) { return React.createElement('span', { className: 'text-fg-subtle', title: reason, 'data-figure': 'none' }, '—') },
     // A stat renders its label, value and source line as text, so attribution can be checked as visible words.
     Stat: ({ label, children, sub }) => React.createElement('div', null, label, ' ', children, ' ', sub ?? null),
     useNow: () => ({ wall: 1001000, monotonic: 0 }), agedMarket: (market) => market,
@@ -106,8 +109,8 @@ const visibleText = (host) => renderToStaticMarkup(host.tree).replace(/<[^>]+>/g
 const lean = { poolId: id('a'), includePriceHistory: false }
 const ok = (extra = {}) => ({ state: 'ok', data: { poolId: id('a') }, ...extra })
 const unavailable = { state: 'unavailable', cause: { kind: 'producer', code: 'upstream_unavailable', status: 503 }, retryable: true }
-/** Every dash the page drew in place of a figure (its own Dash component), by title. */
-const dashes = (host) => elements(host.tree, (node) => node.type?.name === 'Dash').map((node) => node.props.title)
+/** Every dash the page drew in place of a figure (the shared FigureDash), by the reason it names. */
+const dashes = (host) => elements(host.tree, (node) => node.type?.name === 'FigureDash').map((node) => node.props.reason)
 
 test('a visible carousel card asks for its own verified candles while other rows are still loading', () => {
   const beforeSet = globalThis.__DOMINO_POOL_SET__;
@@ -302,7 +305,7 @@ test('a failed market read shows dashes with the reason in their titles, no pane
   assert.equal(elements(host.tree, (node) => node.type === parts.Skeleton).length, 0, 'a failed read never leaves a resting block in place of a figure')
   assert.doesNotMatch(renderToStaticMarkup(host.tree), /data-screen-status|dm-inset/, 'no status panel')
   assert.ok(dashes(host).includes('Unavailable. No response'), 'the reason is the dashes’ title')
-  const onPage = renderToStaticMarkup(host.tree).replace(/<p role="status"[^>]*>.*?<\/p>/gs, '').replace(/<[^>]+>/g, '')
+  const onPage = renderToStaticMarkup(host.tree).replace(/<p role="status"[^>]*>.*?<\/p>/gs, '').replace(/<span class="sr-only"[^>]*>.*?<\/span>/gs, '').replace(/<[^>]+>/g, '')
   assert.doesNotMatch(onPage, /Unavailable|No response|Retry|\bagain\b/, 'and never words on the page: only the polite live region says it')
   assert.match(renderToStaticMarkup(host.tree), /<p role="status" aria-live="polite" class="sr-only"[^>]*>Unavailable\. No response<\/p>/)
   // Changed on purpose (qa:visual): the chart card has no caption under its heading; who reports the candles is the plot's title and data.
@@ -474,7 +477,7 @@ test('a verification with no answer leaves the page’s dashes, the reason in th
     assert.doesNotMatch(markup.replace(/<span role="status" class="sr-only">.*?<\/span>/g, '').replace(/<[^>]+>/g, ''), /Unavailable|No response|\bagain\b/)
     // Changed on purpose (qa:visual): no caption under the chart heading; who reports the candles is the plot's title and data, and the dash keeps the reason.
     assert.doesNotMatch(markup.replace(/<[^>]+>/g, ''), /Hourly candles|GeckoTerminal|market data provider/i, 'no caption under the chart heading')
-    assert.match(markup, /<div class="dm-pool-plot dm-dots-chart mt-4" title="Hourly candles reported by a market data provider\." data-chart-provider="GeckoTerminal"><div class="dm-pool-plot-empty"><span class="text-fg-subtle" title="Unavailable\. No response">—<\/span>/)
+    assert.match(markup, /<div class="dm-pool-plot dm-dots-chart mt-4" title="Pool ratios from verified Robinhood Chain Swap events\."><div class="dm-pool-plot-empty"><span class="text-fg-subtle" title="Unavailable\. No response">—<\/span>/)
     assert.deepEqual(asks.map(({ outcome, attempt }) => [outcome.state, attempt]), [['busy', 0]])
     assert.equal(verifications.length, 1)
     asks[0].resolve(true); await flush(); host.render()
@@ -1219,7 +1222,7 @@ test('a refused acquisition is said, and asked about less often, not more', asyn
     const markup = renderToStaticMarkup(host.tree);
     assert.match(markup, new RegExp(`data-acquisition="${state}"`), `accepted=${accepted} pending=${pending}`);
     if (state === 'at_capacity') {
-      assert.match(markup, /New acquisition is at capacity/, 'the refusal is said in words, not left as "Collecting data"');
+      assert.match(markup, /Data collection is at capacity/, 'the refusal is said in words, not left as "Collecting data"');
       assert.doesNotMatch(markup, /Collecting data/, 'nothing is being collected');
     }
     if (state === 'pending') assert.match(markup, /Collecting data/);

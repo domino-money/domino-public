@@ -732,6 +732,29 @@ test('the wallet handle goes back exactly as received and never leaves the pager
   const exact = fixtures({ 'wallet-assets': [{ fixture: gateway('wallet-assets.page'), expectRequest: { wallet: mixed, autoDiscover: true } }] });
   assert.equal((await walletSession.createWalletSession(exact, { wallet: mixed, tokens: [] }).first()).status, 'ready', 'the wallet goes out exactly as typed');
   assert.deepEqual(walletSession.walletRequest({ wallet: mixed, tokens: [FIXTURE_TOKEN] }), { wallet: mixed, tokens: [FIXTURE_TOKEN], autoDiscover: true });
+  // Added 2026-09-20. A LISTING wants discovery; a by-address check does not.
+  // Asking "how much of this one token" with autoDiscover made the service page
+  // the whole wallet to answer about one address — rugged measured about 90
+  // local RPC items in 17 requests plus 2 Alchemy calls, against about 12 items
+  // in 7 for the address alone (reports/capacity-2026-09-20). The Create flow
+  // paid that for every balance line it drew.
+  assert.deepEqual(walletSession.walletRequest({ wallet: mixed, tokens: [FIXTURE_TOKEN], discover: false }), { wallet: mixed, tokens: [FIXTURE_TOKEN], autoDiscover: false });
+  assert.deepEqual(walletSession.walletRequest({ wallet: mixed, tokens: [], discover: false }), { wallet: mixed, autoDiscover: false });
+  // Absent means a listing, so nothing that does not ask loses discovery.
+  assert.deepEqual(walletSession.walletRequest({ wallet: mixed, tokens: [] }), { wallet: mixed, autoDiscover: true });
+  assert.deepEqual(walletSession.walletRequest({ wallet: mixed, tokens: [FIXTURE_TOKEN], discover: true }), { wallet: mixed, tokens: [FIXTURE_TOKEN], autoDiscover: true });
+  // And the three by-address callers ask for it, while the two listings do not.
+  for (const [file, expected] of [
+    ['../src/components/create/WalletBalance.tsx', true],
+    ['../src/components/create/usePairBalances.ts', true],
+    ['../src/components/read/screens/WalletCandidates.tsx', false],
+  ]) {
+    const text = readFileSync(new URL(file, import.meta.url), 'utf8');
+    assert.equal(/discover: false/.test(text), expected, `${file} discovery`);
+  }
+  // The portfolio is both: a listing first, a by-address check on the automatic retry.
+  const portfolio = readFileSync(new URL('../src/components/portfolio/PortfolioTokens.tsx', import.meta.url), 'utf8');
+  assert.match(portfolio, /discover: tokens !== SELECTED_TOKENS/, 'the automatic second read stops discovering');
 });
 
 test('an expired handle restarts once and marks nothing lost; a second one is left to the person', async () => {

@@ -1,4 +1,5 @@
 import { concatHex, decodeFunctionResult, encodeAbiParameters, encodeFunctionData, keccak256, numberToHex, stringToHex, zeroAddress, type Abi, type Address, type ContractFunctionName, type ContractFunctionReturnType, type Hex } from 'viem'
+import { POSITION_MANAGER, SEQUENCE_FACTORY, pinned, unpinned } from './pin.js'
 import type { GasBudget, WalletRpc } from './setup'
 
 /*
@@ -62,14 +63,29 @@ import type { GasBudget, WalletRpc } from './setup'
  *   function feeBalance(bytes32,address) view returns(Balance)
  *   function pause()
  *   function resume()
+ *   function setOperator(address)
  *   function revokeOperator()
  *   function withdrawChildPosition(uint256)
  *   function withdrawFeeReserves(bytes32,address,uint128,uint128)
+ *   function setPolicy(Policy)
+ *   function setExecutionLimits(Limits)
+ *   function rearmRoot(bool)
+ *   function recoverUnmanagedPosition(uint256)
+ *   function recoverUntrackedCurrency(address,uint256)
  *   function ownerOf(uint256) view returns(address)
  *   function getApproved(uint256) view returns(address)
  *   function approve(address,uint256)
  *   function getPoolAndPositionInfo(uint256) view returns(PoolKey,uint256)
  */
+/**
+ * Read on its own, not in `sequenceAbi`: every name added there widens the
+ * union `call()` is generic over until viem's return-type inference stops
+ * finishing — the same wall `links` hit.
+ *
+ * accountedCurrency signature: function accountedCurrency(address) view returns(uint256)
+ */
+const reserveAbi = [{ name: 'accountedCurrency', type: 'function', stateMutability: 'view', inputs: [{ type: 'address' }], outputs: [{ type: 'uint256' }] }] as const satisfies Abi
+
 const poolKeyComponents = [{ name: 'currency0', type: 'address' }, { name: 'currency1', type: 'address' }, { name: 'fee', type: 'uint24' }, { name: 'tickSpacing', type: 'int24' }, { name: 'hooks', type: 'address' }] as const
 const policyComponents = [{ name: 'serviceFeeBps', type: 'uint16' }, { name: 'triggerDistanceBps', type: 'uint16' }, { name: 'maxOverlapBps', type: 'uint16' }, { name: 'minimumIntervalSeconds', type: 'uint32' }, { name: 'maxPositions', type: 'uint8' }, { name: 'version', type: 'uint64' }, { name: 'paused', type: 'bool' }] as const
 const limitsComponents = [{ name: 'version', type: 'uint64' }, { name: 'upsideBps', type: 'uint32' }, { name: 'maxSlippageBps', type: 'uint16' }, { name: 'maxPriceImpactBps', type: 'uint16' }, { name: 'maxGasCostWei', type: 'uint128' }, { name: 'maxObservationAgeSeconds', type: 'uint32' }, { name: 'forecastHorizonSeconds', type: 'uint32' }] as const
@@ -123,9 +139,15 @@ export const sequenceAbi = [
   { name: 'feeBalance', type: 'function', stateMutability: 'view', inputs: [{ type: 'bytes32' }, { type: 'address' }], outputs: [{ type: 'tuple', components: balanceComponents }] },
   { name: 'pause', type: 'function', stateMutability: 'nonpayable', inputs: [], outputs: [] },
   { name: 'resume', type: 'function', stateMutability: 'nonpayable', inputs: [], outputs: [] },
+  { name: 'setOperator', type: 'function', stateMutability: 'nonpayable', inputs: [{ type: 'address' }], outputs: [] },
   { name: 'revokeOperator', type: 'function', stateMutability: 'nonpayable', inputs: [], outputs: [] },
   { name: 'withdrawChildPosition', type: 'function', stateMutability: 'nonpayable', inputs: [{ type: 'uint256' }], outputs: [] },
   { name: 'withdrawFeeReserves', type: 'function', stateMutability: 'nonpayable', inputs: [{ type: 'bytes32' }, { type: 'address' }, { type: 'uint128' }, { type: 'uint128' }], outputs: [] },
+  { name: 'setPolicy', type: 'function', stateMutability: 'nonpayable', inputs: [{ type: 'tuple', components: policyComponents }], outputs: [] },
+  { name: 'setExecutionLimits', type: 'function', stateMutability: 'nonpayable', inputs: [{ type: 'tuple', components: limitsComponents }], outputs: [] },
+  { name: 'rearmRoot', type: 'function', stateMutability: 'nonpayable', inputs: [{ type: 'bool' }], outputs: [] },
+  { name: 'recoverUnmanagedPosition', type: 'function', stateMutability: 'nonpayable', inputs: [{ type: 'uint256' }], outputs: [] },
+  { name: 'recoverUntrackedCurrency', type: 'function', stateMutability: 'nonpayable', inputs: [{ type: 'address' }, { type: 'uint256' }], outputs: [] },
   { name: 'ownerOf', type: 'function', stateMutability: 'view', inputs: [{ type: 'uint256' }], outputs: [{ type: 'address' }] },
   { name: 'getApproved', type: 'function', stateMutability: 'view', inputs: [{ type: 'uint256' }], outputs: [{ type: 'address' }] },
   { name: 'approve', type: 'function', stateMutability: 'nonpayable', inputs: [{ type: 'address' }, { type: 'uint256' }], outputs: [] },
@@ -157,7 +179,7 @@ export const SEQUENCE_LIST_LIMIT = 8
 /** The most successors a member read follows, so one read stays inside its wallet-call ceiling. */
 export const SEQUENCE_MEMBER_STEPS = 30
 export interface PreparedSequence {
-  kind: 'approve-root' | 'create' | 'resume' | 'pause' | 'revoke-operator' | 'revoke-root' | 'withdraw-child' | 'withdraw-fees'
+  kind: 'approve-root' | 'create' | 'resume' | 'pause' | 'restore-operator' | 'revoke-operator' | 'revoke-root' | 'withdraw-child' | 'withdraw-fees' | 'rearm-root' | 'recover-position' | 'recover-currency' | 'set-policy' | 'set-limits'
   owner: Address; vault: Address; expiresAt: number; summary: readonly string[]
   transaction: Readonly<{ from: Address; to: Address; data: Hex; value: '0x0'; nonce: Hex; gas: Hex; maxFeePerGas: Hex; maxPriorityFeePerGas: Hex; chainId: '0x1237'; type: '0x2' }>
 }
@@ -199,6 +221,14 @@ export function sequenceDeploymentFrom(value: unknown, now = Date.now() / 1000):
     || new Set(components.map(k => d[k])).size !== components.length || d.operator === d.pricePublisher
     || [...components,'serviceFeeRecipient'].some(k => d[k] === d.operator || d[k] === d.pricePublisher)
     || d.serviceFeeBps !== 200 || !Number.isSafeInteger(d.expiresAt) || Number(d.expiresAt) <= now) return fail('invalid_sequence_release')
+  // Everything above proves the record is self-consistent. Nothing above proves
+  // it is OURS: every address it compares comes from the record. One identity
+  // has to be anchored to this build, or a substituted factory passes the whole
+  // on-chain verification and chooses the spender of a real NFT approval. See
+  // ./pin.ts. Refusing while unpinned is the point: it fails closed until the
+  // contracts are published and their addresses committed.
+  if (!pinned(SEQUENCE_FACTORY, d.factory)) return fail(unpinned(SEQUENCE_FACTORY) ? 'deployment_not_pinned' : 'deployment_identity_unpinned')
+  if (!pinned(POSITION_MANAGER, d.positionManager)) return fail('deployment_identity_unpinned')
   const out = d as unknown as SequenceDeployment
   if (keccak256(cloneRuntime(out.implementation)) !== hashes.vault) return fail('invalid_clone_template')
   return Object.freeze({ ...out, codeHashes: Object.freeze({ ...out.codeHashes }) })
@@ -247,7 +277,10 @@ export function createSequenceClient(wallet: WalletRpc, deployment: SequenceDepl
     const abi: Abi = sequenceAbi, functionName: string = name
     return decodeFunctionResult({ abi, functionName, data: hex(await c.rpc('eth_call', [{ to, data: encodeFunctionData({ abi, functionName, args }) }, c.block])) }) as ContractFunctionReturnType<typeof sequenceAbi, 'view', Name>
   }
-  const encode = (name: ContractFunctionName<typeof sequenceAbi>, args: readonly unknown[] = []) => encodeFunctionData({ abi: sequenceAbi as Abi, functionName: name, args })
+  // Narrowed to the functions that WRITE, which is all this builds. Naming
+  // every function of the ABI — views included — is a type the compiler cannot
+  // finish, the same reason `links` above is left untyped.
+  const encode = (name: ContractFunctionName<typeof sequenceAbi, 'nonpayable'>, args: readonly unknown[] = []) => encodeFunctionData({ abi: sequenceAbi as Abi, functionName: name, args })
   const equal = (actual: unknown, expected: unknown) => { if (String(actual).toLowerCase() !== String(expected).toLowerCase()) fail('deployment_identity_changed') }
   async function code(c: Context, component: Component) {
     if (keccak256(hex(await c.rpc('eth_getCode', [d[component], c.block]))) !== d.codeHashes[component]) fail('deployment_code_changed')
@@ -423,7 +456,109 @@ export function createSequenceClient(wallet: WalletRpc, deployment: SequenceDepl
         if (current.state.stateNonce !== state.stateNonce || current.policy.version !== policy.version || current.limits.version !== limits.version) fail('sequence_preparation_changed')
       })
     }),
-    recover: (vault: Address, action: 'pause'|'revoke-operator'|'revoke-root'|'withdraw-child'|'withdraw-fees', gas: GasBudget, values: {tokenId?:bigint;sourceId?:Hex;currency?:Address;original?:bigint;charged?:bigint} = {}) => bounded(async c => {
+    /**
+     * Authorise the deployment's operator again for a sequence whose operator
+     * was revoked.
+     *
+     * `revokeOperator` sets the operator to the zero address, and `resume`
+     * requires the configured one, so without this a person who revokes from
+     * this product can never enable automation from it again. The address is
+     * never asked for: it is `d.operator`, the same operator the sequence was
+     * created with, which the deployment check already proved is an externally
+     * owned account, distinct from every component and from the owner. An
+     * operator that is some other non-zero address is refused rather than
+     * replaced — silently swapping who may execute is not a restoration.
+     *
+     * It grants authority and nothing else: a paused sequence stays paused,
+     * and Resume remains a separate, reviewed step.
+     */
+    /**
+     * Change the automation rules, or the safety limits, on a sequence the
+     * person owns. Both are onlyOwner on chain and neither had a way in from
+     * this product: the four policy fields and the six limits were chosen once
+     * at creation and could never be changed, so a sequence that reached its
+     * own maxPositions had no way forward except being abandoned.
+     *
+     * Each sends a WHOLE struct, because the contract takes a whole one. Only
+     * the fields a person chose come from the form; the rest is re-read from
+     * the live vault and sent back unchanged:
+     *
+     *   version        exactly current + 1, which the contract demands
+     *   paused         unchanged — flipping it here is refused
+     *                  (PauseChangeRequiresTransition); pause and resume stay
+     *                  their own reviewed steps
+     *   serviceFeeBps  unchanged — sending anything else silently breaks
+     *                  activation later with `sequence_tariff_changed`
+     *
+     * The bounds are the contract's own, checked here first so a refusal reads
+     * as words rather than as a reverted transaction.
+     */
+    setPolicy: (vault: Address, next: {triggerDistanceBps:number;maxOverlapBps:number;minimumIntervalSeconds:number;maxPositions:number}, gas: GasBudget) => bounded(async c => {
+      const o = Object.freeze({...next})
+      integer(o.triggerDistanceBps,0,2000); integer(o.maxOverlapBps,0,2000); integer(o.minimumIntervalSeconds,1,2**32-1); integer(o.maxPositions,1,255)
+      async function check(at: Context) {
+        await verify(at); const state = await owned(at,vault)
+        const current = await call(at,vault,'policy'), members = await call(at,vault,'activePositions') as bigint
+        if (current.version === 0n || current.version >= 2n**64n-1n) fail('policy_version_exhausted')
+        if (BigInt(o.maxPositions) < members) fail('position_limit_below_membership')
+        return { state, current, members }
+      }
+      const s = await check(c)
+      const policy = {serviceFeeBps:s.current.serviceFeeBps,triggerDistanceBps:o.triggerDistanceBps,maxOverlapBps:o.maxOverlapBps,
+        minimumIntervalSeconds:o.minimumIntervalSeconds,maxPositions:o.maxPositions,version:s.current.version+1n,paused:s.current.paused}
+      return prepare(c,'set-policy',vault,vault,encode('setPolicy',[policy]),gas,[
+        `Change the automation rules for root NFT #${s.state.rootTokenId}.`,
+        `Trigger distance ${s.current.triggerDistanceBps} to ${policy.triggerDistanceBps} bps; maximum overlap ${s.current.maxOverlapBps} to ${policy.maxOverlapBps} bps; minimum interval ${s.current.minimumIntervalSeconds} to ${policy.minimumIntervalSeconds}s; maximum positions ${s.current.maxPositions} to ${policy.maxPositions}, with ${s.members} registered now.`,
+        `Policy version ${s.current.version} to ${policy.version}. The service fee and the paused state are unchanged: ${policy.paused?'this sequence stays paused':'this sequence stays active'}, and pausing or resuming is its own step.`,
+        'Owner transaction: no Domino service fee. Network gas still applies.',
+      ],async at => {
+        const again = await check(at)
+        if (again.state.stateNonce !== s.state.stateNonce || again.current.version !== s.current.version) fail('sequence_preparation_changed')
+      })
+    }),
+    setExecutionLimits: (vault: Address, next: {upsideBps:number;maxSlippageBps:number;maxPriceImpactBps:number;maxGasCostWei:bigint;maxObservationAgeSeconds:number;forecastHorizonSeconds:number}, gas: GasBudget) => bounded(async c => {
+      const o = Object.freeze({...next})
+      integer(o.upsideBps,1,1_000_000); integer(o.maxSlippageBps,0,9999); integer(o.maxPriceImpactBps,0,9999)
+      if (uint(o.maxGasCostWei) === 0n) fail('invalid_sequence_policy')
+      integer(o.maxObservationAgeSeconds,1,2**32-1); integer(o.forecastHorizonSeconds,1,2**32-1)
+      async function check(at: Context) {
+        await verify(at); const state = await owned(at,vault)
+        const current = await call(at,vault,'executionLimits')
+        if (current.version >= 2n**64n-1n) fail('limits_version_exhausted')
+        return { state, current }
+      }
+      const s = await check(c)
+      const limits = {version:s.current.version+1n,upsideBps:o.upsideBps,maxSlippageBps:o.maxSlippageBps,maxPriceImpactBps:o.maxPriceImpactBps,
+        maxGasCostWei:o.maxGasCostWei,maxObservationAgeSeconds:o.maxObservationAgeSeconds,forecastHorizonSeconds:o.forecastHorizonSeconds}
+      return prepare(c,'set-limits',vault,vault,encode('setExecutionLimits',[limits]),gas,[
+        `Change the safety limits for root NFT #${s.state.rootTokenId}.`,
+        `Successor upside ${s.current.upsideBps} to ${limits.upsideBps} bps; maximum slippage ${s.current.maxSlippageBps} to ${limits.maxSlippageBps} bps; maximum price impact ${s.current.maxPriceImpactBps} to ${limits.maxPriceImpactBps} bps.`,
+        `Maximum execution gas cost ${s.current.maxGasCostWei} to ${limits.maxGasCostWei} wei; maximum observation age ${s.current.maxObservationAgeSeconds} to ${limits.maxObservationAgeSeconds}s; forecast horizon ${s.current.forecastHorizonSeconds} to ${limits.forecastHorizonSeconds}s.`,
+        `Limits version ${s.current.version} to ${limits.version}. These bound every automated run; they do not move the position.`,
+        'Owner transaction: no Domino service fee. Network gas still applies.',
+      ],async at => {
+        const again = await check(at)
+        if (again.state.stateNonce !== s.state.stateNonce || again.current.version !== s.current.version) fail('sequence_preparation_changed')
+      })
+    }),
+    restoreOperator: (vault: Address, gas: GasBudget) => bounded(async c => {
+      async function check(next: Context) {
+        await verify(next); const state = await owned(next,vault)
+        if (state.operator !== zeroAddress) fail(state.operator === d.operator ? 'operator_already_set' : 'operator_not_revoked')
+        return state
+      }
+      const s = await check(c)
+      return prepare(c,'restore-operator',vault,vault,encode('setOperator',[d.operator]),gas,[
+        `Authorise operator ${d.operator} to execute for root NFT #${s.rootTokenId} again.`,
+        'The root NFT stays in your wallet, and your policy and limits are unchanged.',
+        s.paused ? 'This sequence stays paused: Resume is a separate step you review and sign.' : 'Execution becomes possible again once this is signed.',
+        'Owner transaction: no Domino service fee. Network gas still applies.',
+      ],async next => {
+        const current = await check(next)
+        if (current.stateNonce !== s.stateNonce) fail('sequence_preparation_changed')
+      })
+    }),
+    recover: (vault: Address, action: 'pause'|'revoke-operator'|'revoke-root'|'withdraw-child'|'withdraw-fees'|'rearm-root'|'recover-position'|'recover-currency', gas: GasBudget, values: {tokenId?:bigint;sourceId?:Hex;currency?:Address;original?:bigint;charged?:bigint;amount?:bigint} = {}) => bounded(async c => {
       // Capture values before an await; caller mutation cannot change a review.
       const v = Object.freeze({...values})
       async function check(next: Context) {
@@ -436,6 +571,25 @@ export function createSequenceClient(wallet: WalletRpc, deployment: SequenceDepl
           await code(next,'positionManager'); const p = await call(next,vault,'position',[v.tokenId])
           if (!p.known || !p.active || p.isRoot) fail('invalid_child'); equal(await call(next,d.positionManager,'ownerOf',[v.tokenId]),vault)
         }
+        // Re-arming consents to whatever fees the root has not collected, so it
+        // is offered only where it is the repair it claims to be: a sequence
+        // whose permission over the root has lapsed.
+        if (action === 'rearm-root') {
+          if (state.rootPermissionValid) fail('root_permission_valid')
+          await code(next,'positionManager'); equal(await call(next,d.positionManager,'ownerOf',[state.rootTokenId]),wallet.owner)
+        }
+        // A stray NFT, not a member. An ACTIVE child is not stray — that one
+        // leaves through withdrawChildPosition, which keeps the ledger straight.
+        if (action === 'recover-position') {
+          if (v.tokenId === undefined || uint(v.tokenId,256) === 0n) fail('invalid_position')
+          await code(next,'positionManager'); equal(await call(next,d.positionManager,'ownerOf',[v.tokenId]),vault)
+          const p = await call(next,vault,'position',[v.tokenId])
+          if (p.active && !p.isRoot) fail('position_is_managed')
+        }
+        if (action === 'recover-currency') {
+          if (!v.currency || !addressPattern.test(v.currency) || ![state.baseCurrency,state.quoteCurrency,zeroAddress].includes(v.currency)) fail('invalid_currency')
+          if (v.amount === undefined || uint(v.amount,256) === 0n) fail('invalid_amount')
+        }
         if (action === 'withdraw-fees') {
           if (!v.sourceId || !hashPattern.test(v.sourceId) || !v.currency || !addressPattern.test(v.currency) || ![state.baseCurrency,state.quoteCurrency].includes(v.currency) || v.original === undefined || v.charged === undefined || uint(v.original)+uint(v.charged) === 0n) fail('invalid_fee_withdrawal')
           const source = await call(next,vault,'source',[v.sourceId]), balance = await call(next,vault,'feeBalance',[v.sourceId,v.currency])
@@ -444,9 +598,28 @@ export function createSequenceClient(wallet: WalletRpc, deployment: SequenceDepl
         return state
       }
       const s = await check(c)
-      const name = action === 'pause'?'pause':action === 'revoke-operator'?'revokeOperator':action === 'revoke-root'?'approve':action === 'withdraw-child'?'withdrawChildPosition':'withdrawFeeReserves'
-      const args = action === 'revoke-root'?[zeroAddress,s.rootTokenId]:action === 'withdraw-child'?[v.tokenId]:action === 'withdraw-fees'?[v.sourceId,v.currency,v.original,v.charged]:[]
-      const detail = action === 'withdraw-child'?`Return child NFT #${v.tokenId} to your wallet.`:action === 'withdraw-fees'?`Return ${v.original} original + ${v.charged} already charged fee units of ${v.currency}, source ${v.sourceId}, to your wallet.`:action === 'revoke-root'?`Revoke only the sequence approval for root NFT #${s.rootTokenId}.`:action === 'pause'?'Pause future execution.':'Remove the operator’s execution authority.'
+      const NAMES = { 'pause':'pause', 'revoke-operator':'revokeOperator', 'revoke-root':'approve', 'withdraw-child':'withdrawChildPosition',
+        'withdraw-fees':'withdrawFeeReserves', 'rearm-root':'rearmRoot', 'recover-position':'recoverUnmanagedPosition', 'recover-currency':'recoverUntrackedCurrency' } as const
+      const name = NAMES[action]
+      const args = action === 'revoke-root'?[zeroAddress,s.rootTokenId]:action === 'withdraw-child'||action === 'recover-position'?[v.tokenId]
+        :action === 'withdraw-fees'?[v.sourceId,v.currency,v.original,v.charged]:action === 'rearm-root'?[true]
+        :action === 'recover-currency'?[v.currency,v.amount]:[]
+      // What the books already account for, so the sentence can say what is NOT free.
+      const accounted = action === 'recover-currency'
+        ? decodeFunctionResult({ abi: reserveAbi as Abi, functionName: 'accountedCurrency',
+            data: hex(await c.rpc('eth_call', [{ to: vault, data: encodeFunctionData({ abi: reserveAbi as Abi, functionName: 'accountedCurrency', args: [v.currency] }) }, c.block])) }) as bigint
+        : 0n
+      const DETAILS: Record<typeof action, string> = {
+        'pause': 'Pause future execution.',
+        'revoke-operator': 'Remove the operator’s execution authority.',
+        'revoke-root': `Revoke only the sequence approval for root NFT #${s.rootTokenId}.`,
+        'withdraw-child': `Return child NFT #${v.tokenId} to your wallet.`,
+        'withdraw-fees': `Return ${v.original} original + ${v.charged} already charged fee units of ${v.currency}, source ${v.sourceId}, to your wallet.`,
+        'rearm-root': `Re-establish this sequence’s permission over root NFT #${s.rootTokenId}. Fees the root has not collected are consented to as part of it, exactly as at creation.`,
+        'recover-position': `Return NFT #${v.tokenId}, which this sequence holds but does not manage, to your wallet.`,
+        'recover-currency': `Return ${v.amount} raw units of ${v.currency} to your wallet. The sequence’s books account for ${accounted} units of it; only what is held above that can leave this way, and the contract refuses anything more.`,
+      }
+      const detail = DETAILS[action]
       return prepare(c,action,vault,action === 'revoke-root'?d.positionManager:vault,encode(name,args),gas,[detail,'Owner recovery: no Domino service fee. Network gas still applies. No private sign-in or running executor is required.'],async next => { await check(next) })
     }),
     reserves: (vault: Address, tokenId: bigint) => bounded(async c => {

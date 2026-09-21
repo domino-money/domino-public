@@ -12,6 +12,7 @@ import { Button, LinkButton, Pill } from '../ui'
 import { automationPill } from './StageAutomation'
 import { StageBalance } from './StageBalance'
 import { AutomationSummary, PoolPair, RangeSummary } from './StepList'
+import type { PoolOption } from '../../lib/read/screens/poolsList'
 
 /**
  * The position in one line: how much of each token it holds, at the pool's
@@ -22,8 +23,19 @@ import { AutomationSummary, PoolPair, RangeSummary } from './StepList'
  * Null when a choice is missing or the price cannot be used; the service's own
  * expected and maximum amounts, with slippage, arrive below in StageBalance
  * when onboarding answers, and they remain the authority.
+ *
+ * Returned as two sides rather than one sentence so each symbol can be drawn
+ * through SymbolText. A symbol is whatever the token contract returned: it can
+ * carry a right-to-left override that reorders the figures around it, or run
+ * long enough to push the line off the panel. Every read screen already
+ * isolates symbols that way; this is the same treatment for Review.
  */
-function heldAmounts(state: JourneyState): string | null {
+interface HeldSide {
+  amount: string
+  token: PoolOption['currencies'][number]
+}
+
+function heldAmounts(state: JourneyState): [HeldSide, HeldSide] | null {
   const { pool, token, range } = state
   if (!pool || !token || !range) return null
   const independent = pool.currencies.findIndex((currency) => currency.address === token.key)
@@ -32,14 +44,14 @@ function heldAmounts(state: JourneyState): string | null {
   if (!budget.ok) return null
   const other = pairedAmount({ sqrtPriceX96: pool.sqrtPriceX96, tickLower: range.lower, tickUpper: range.upper, independent, amountRaw: budget.raw })
   if (other.kind !== 'amount') return null
-  const side = (index: 0 | 1, raw: string) => {
+  const side = (index: 0 | 1, raw: string): HeldSide => {
     const currency = pool.currencies[index]
     const units = formatUnits(raw, currency.decimals)
-    return `${units && units.kind === 'units' ? units.text : raw} ${currency.symbol ?? ''}`.trim()
+    return { amount: units && units.kind === 'units' ? units.text : raw, token: currency }
   }
   const mine = side(independent, budget.raw)
   const theirs = side(independent === 0 ? 1 : 0, other.raw)
-  return independent === 0 ? `${mine} + ${theirs}` : `${theirs} + ${mine}`
+  return independent === 0 ? [mine, theirs] : [theirs, mine]
 }
 
 /**
@@ -69,7 +81,13 @@ export function StageReview({ state, now, open, balances }: { state: JourneyStat
             {pool ? <PoolPair option={pool} /> : CREATE.page.notChosen}
           </p>
           <p className="dm-flow-headline-amounts tnum" data-review-amounts="">
-            {held ?? CREATE.page.notChosen}
+            {held ? (
+              <>
+                {held[0].amount} <SymbolText token={held[0].token} /> + {held[1].amount} <SymbolText token={held[1].token} />
+              </>
+            ) : (
+              CREATE.page.notChosen
+            )}
           </p>
           <p className="dm-flow-headline-line tnum" data-review-range="">
             {state.range && price && price.state === 'usable' ? (

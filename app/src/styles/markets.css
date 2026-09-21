@@ -43,7 +43,7 @@
     transition: background-color var(--dur-fade) var(--ease-std);
   }
   .dm-mkt-card:hover { --chart-ground: var(--dm-mkt-card-hover); background-color: var(--dm-mkt-card-hover); }
-  .dm-mkt-card:focus-visible { outline: 2px solid var(--ring); outline-offset: -3px; }
+  .dm-mkt-card:focus-visible { outline: 2px solid var(--ring); outline-offset: var(--focus-offset-inset); }
   .dm-mkt-card-head { position: relative; z-index: 1; display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; }
   /* The chip gives way before the TVL does; inside it the fee gives way before the pair's name. */
   .dm-mkt-pair { flex: 0 1 auto; min-width: 0; transition: box-shadow var(--dur-fade) var(--ease-std); }
@@ -56,12 +56,11 @@
   }
   .dm-mkt-disc { display: inline-block; width: 20px; height: 20px; flex-shrink: 0; border-radius: var(--radius-pill); background: var(--surface-4); box-shadow: 0 0 0 2px var(--surface-3); }
   .dm-mkt-card-tvl { display: grid; flex-shrink: 0; justify-items: end; gap: 2px; text-align: right; }
-  .dm-mkt-card-label { font-size: 11px; line-height: 14px; font-weight: 500; letter-spacing: 0.6px; text-transform: uppercase; color: var(--fg-subtle); }
   .dm-mkt-card-figure { font-size: 16px; line-height: 20px; letter-spacing: -0.24px; white-space: nowrap; }
   .dm-mkt-plot { position: absolute; z-index: 1; left: 20px; right: 20px; bottom: 44px; height: 96px; }
   /* The resting plot while figures are on their way: an empty grid and one faint baseline, never bars. */
   .dm-mkt-baseline { position: absolute; left: 0; right: 0; bottom: 0; height: 2px; border-radius: 1px; background: var(--skeleton); animation: dm-pulse 1.6s ease-in-out infinite; }
-  .dm-mkt-plot-note { position: absolute; inset: 0; display: grid; place-items: center; margin: 0; padding: 0 16px; text-align: center; text-wrap: balance; font-size: 13px; line-height: 18px; color: var(--fg-subtle); }
+  .dm-mkt-plot-note { position: absolute; inset: 0; display: grid; place-items: center; margin: 0; padding: 0 16px; text-align: center; text-wrap: balance; font-size: 13px; line-height: 18px; letter-spacing: -0.16px; color: var(--fg-subtle); }
   .dm-mkt-card-caption { position: absolute; z-index: 1; left: 20px; right: 20px; bottom: 20px; margin: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; line-height: 16px; letter-spacing: -0.12px; color: var(--fg-subtle); }
 
   /* ---- Selected pools: heading, filters, table ---- */
@@ -94,7 +93,7 @@
   /* Home's footnote, inside the card under the rows. */
   .dm-mkt-caption { caption-side: bottom; padding: 12px 16px 4px; text-align: left; font-size: 12px; line-height: 16px; letter-spacing: -0.12px; color: var(--fg-subtle); }
   .dm-mkt-footnote { max-width: 100ch; margin-top: 12px; font-size: 12px; line-height: 16px; letter-spacing: -0.12px; color: var(--fg-subtle); }
-  .dm-mkt-notice { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; margin: 0 0 8px; font-size: 12px; line-height: 16px; color: var(--fg-muted); }
+  .dm-mkt-notice { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; margin: 0 0 8px; font-size: 12px; line-height: 16px; letter-spacing: -0.12px; color: var(--fg-muted); }
   .dm-mkt-empty { padding: 24px 8px 32px; }
   /* No rows, so nothing to scroll sideways: the token search's list may open past the card instead of inside it. */
   .dm-mkt-table[data-filter-empty] > div:has(> .dm-table) { overflow: visible !important; }
@@ -108,7 +107,7 @@
   .dm-mkt-catalogue-search { max-width: 520px; }
 
   /* ---- Token view ---- */
-  .dm-mkt-crumbs { font-size: 13px; line-height: 16px; }
+  .dm-mkt-crumbs { font-size: 13px; line-height: 16px; letter-spacing: -0.16px; }
   .dm-mkt-back { display: inline-flex; align-items: center; gap: 4px; border-radius: 4px; color: var(--fg-muted); text-decoration: none; transition: color var(--dur-hover) ease; }
   .dm-mkt-back:hover { color: var(--fg); }
   .dm-mkt-back > svg { transition: translate var(--dur-fade) var(--ease-std); }
@@ -119,9 +118,9 @@
   .dm-mkt-lookup-name { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; }
   .dm-mkt-lookup-symbol { font-size: 16px; line-height: 24px; font-weight: 500; letter-spacing: -0.24px; color: var(--fg); }
   .dm-mkt-lookup-meta { font-size: 12px; line-height: 16px; letter-spacing: -0.12px; color: var(--fg-subtle); }
-  .dm-mkt-lookup-address { display: flex; flex-wrap: wrap; align-items: center; gap: 2px 6px; margin-top: 2px; font-size: 12px; line-height: 16px; color: var(--fg-subtle); }
-  .dm-mkt-lookup-address .font-mono { font-size: 13px; line-height: 18px; color: var(--fg-muted); }
-  .dm-mkt-lookup-why { margin-top: 4px; font-size: 12px; line-height: 16px; color: var(--money-out); }
+  .dm-mkt-lookup-address { display: flex; flex-wrap: wrap; align-items: center; gap: 2px 6px; margin-top: 2px; font-size: 12px; line-height: 16px; letter-spacing: -0.12px; color: var(--fg-subtle); }
+  .dm-mkt-lookup-address .font-mono { font-size: 13px; line-height: 18px; letter-spacing: 0; color: var(--fg-muted); }
+  .dm-mkt-lookup-why { margin-top: 4px; font-size: 12px; line-height: 16px; letter-spacing: -0.12px; color: var(--money-out); }
   .dm-mkt-lookup-actions { display: flex; flex-wrap: wrap; gap: 8px; }
   @media (max-width: 639px) {
     .dm-mkt-lookup-actions { width: 100%; }
@@ -134,19 +133,19 @@
   .dm-mkt-option--checked { box-shadow: inset 0 0 0 1px var(--fg-subtle); }
   .dm-mkt-option-head { display: flex; align-items: center; gap: 12px; width: 100%; min-height: 56px; padding: 0 12px; border-radius: var(--radius-sm); text-align: left; cursor: pointer; transition: background-color var(--dur-fade) var(--ease-std); }
   .dm-mkt-option-head:hover { background: var(--wash); }
-  .dm-mkt-option-head:focus-visible { outline-offset: -2px; }
+  .dm-mkt-option-head:focus-visible { outline-offset: var(--focus-offset-inset); }
   .dm-mkt-option-head > .i-chev-r { flex-shrink: 0; color: var(--fg-subtle); transition: translate var(--dur-fade) var(--ease-std), color var(--dur-fade) ease; }
   .dm-mkt-option-head:hover > .i-chev-r { color: var(--fg); translate: 2px 0; }
   /* Each figure hugs its words on a laptop (label, value and source together); a phone stacks them full width. */
   .dm-mkt-option-figures { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 48px; padding: 0 12px; }
-  .dm-mkt-option-apr { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 0 12px; font-size: 13px; line-height: 18px; color: var(--fg-subtle); }
-  .dm-mkt-option-note { padding: 0 12px; font-size: 12px; line-height: 16px; }
-  .dm-mkt-option-details > summary { min-height: 36px; font-size: 13px; }
+  .dm-mkt-option-apr { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 0 12px; font-size: 13px; line-height: 18px; letter-spacing: -0.16px; color: var(--fg-subtle); }
+  .dm-mkt-option-note { padding: 0 12px; font-size: 12px; line-height: 16px; letter-spacing: -0.12px; }
+  .dm-mkt-option-details > summary { min-height: 36px; font-size: 13px; letter-spacing: -0.16px; }
   @media (max-width: 767px) {
     .dm-mkt-option-figures { display: grid; grid-template-columns: minmax(0, 1fr); }
   }
   .dm-mkt-coverage { border-radius: var(--radius); box-shadow: inset 0 0 0 1px var(--border); }
-  .dm-mkt-coverage > summary { font-size: 13px; }
+  .dm-mkt-coverage > summary { font-size: 13px; letter-spacing: -0.16px; }
   .dm-mkt-catalogue-panel { display: grid; gap: 8px; padding: 12px; border-radius: var(--radius); background: var(--surface-1); box-shadow: inset 0 0 0 1px var(--border); }
   .dm-mkt-candidate { display: grid; gap: 6px; padding: 10px 12px; border-radius: var(--radius-sm); background: var(--surface-2); box-shadow: inset 0 0 0 1px var(--border); list-style: none; }
 }

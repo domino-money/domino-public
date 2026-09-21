@@ -116,9 +116,14 @@ export function PoolHistoryChart({ source, option, market, loading, failed }: {
         <p className="mt-1 text-caption text-fg-muted">{at(point.candle.startTimestamp)} · close · {point.candle.swapCount} swaps{!point.candle.complete && ' · partial interval'}</p>
       </div>}
       <div className="mt-4" data-ratio-unit="quote_per_base">
-        {!current || (current.state === 'reading' && !data) ? <div className="dm-pool-plot dm-pool-plot-empty"><Skeleton className="dm-pool-plot-baseline" /><span role="status" className="sr-only">Reading stored pool history…</span></div> :
-          !data ? <p className="py-16 text-center text-body text-fg-muted" role="status">Pool history is temporarily unavailable.</p> :
-          !plot || !point ? <p className="py-16 text-center text-body text-fg-muted" role="status">{data.status === 'available' ? 'No swaps in the covered window.' : coverage}</p> : <>
+        <div role="status" aria-live="polite" className="sr-only">
+          {!current || (current.state === 'reading' && !data) ? 'Reading stored pool history…' :
+            !data ? 'Pool history is temporarily unavailable.' :
+            !plot || !point ? (data.status === 'available' ? 'No swaps in the covered window.' : `No prices to plot for this window. ${coverage}`) : ''}
+        </div>
+        {!current || (current.state === 'reading' && !data) ? <div className="dm-pool-plot dm-pool-plot-empty"><Skeleton className="dm-pool-plot-baseline" /></div> :
+          !data ? <div className="dm-pool-plot dm-pool-plot-empty"><p className="text-body text-fg-muted">Pool history is temporarily unavailable.</p></div> :
+          !plot || !point ? <div className="dm-pool-plot dm-pool-plot-empty"><p className="text-body text-fg-muted">{data.status === 'available' ? 'No swaps in the covered window.' : 'No prices to plot for this window.'}</p></div> : <>
             <svg width="100%" height="240" viewBox={`0 0 ${plot.width} ${plot.height}`} preserveAspectRatio="none" role="slider"
               aria-label="Inspect pool ratio closes" aria-valuemin={1} aria-valuemax={plot.points.length} aria-valuenow={index + 1}
               aria-valuetext={ratioCandleText(point.candle)} tabIndex={0} className="dm-pool-chart-svg"
@@ -133,7 +138,7 @@ export function PoolHistoryChart({ source, option, market, loading, failed }: {
             <div className="flex justify-between gap-3 text-caption text-fg-muted"><span>{at(data.requestedWindow.startTimestamp)}</span><span>{at(data.requestedWindow.endTimestamp)}</span></div>
           </>}
       </div>
-      {data && <p className="mt-3 text-caption text-fg-muted" role="status">{coverage}{!data.acquisitionAccepted && ' New acquisition is at capacity; showing stored data.'}</p>}
+      {data && <p className="mt-3 text-caption text-fg-muted">{coverage}{!data.acquisitionAccepted && ' Data collection is at capacity; showing what is already stored.'}</p>}
       {data && <details className="dm-details -mx-3 mt-3">
         <summary>Source, coverage and exact values</summary>
         <div className="grid gap-3 text-caption text-fg-muted">
