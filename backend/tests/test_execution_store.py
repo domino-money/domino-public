@@ -18,8 +18,8 @@ from execution_cases import scenario, address, identity
 from execution_pg import ExecutionPostgres
 
 
-def fresh_case(*, owner=1, number=11, action=1, amount=1000, collection=False):
-    observation,plan,credit=scenario(owner=owner,number=number,action=action)
+def fresh_case(*, owner=1, number=11, action=1, amount=1000, collection=False, simple=False):
+    observation,plan,credit=scenario(owner=owner,number=number,action=action,simple=simple)
     c=credit.model_dump(mode='json');c['finalized']=True
     credit=m.FeeCredit.model_validate_json(json.dumps(c))
     o=observation.model_dump(mode='json')
@@ -34,7 +34,7 @@ def fresh_case(*, owner=1, number=11, action=1, amount=1000, collection=False):
     observation=m.Observation.model_validate_json(json.dumps(o))
     p=plan.model_dump(mode='json')
     p['observationHash']=observation.digest();p['deadline']=str(int(o['blockTimestamp'])+60)
-    p['maxGrossFee0']=str(amount);p['minNetAdded0']=str(amount-amount*200//10000)
+    p['maxGrossFee0']=str(amount);p['minNetAdded0']=str(amount-amount*observation.policy.serviceFeeBps//10000)
     if collection:
         p['allocations']=[];p['collections']=[{'sourceId':source.digest(),'maxGrossRaw':str(amount)}]
     else:
@@ -42,6 +42,16 @@ def fresh_case(*, owner=1, number=11, action=1, amount=1000, collection=False):
         p['allocations'][0]['lotId']=credit.credit_id()
     plan=m.ExecutionPlan.model_validate_json(json.dumps(p))
     return observation,plan,credit,source
+
+
+class ExecutionStoreFixtureTests(unittest.TestCase):
+    def test_fresh_cases_validate_for_both_modes_before_postgres_is_required(self):
+        for simple,action in ((True,1),(False,1),(False,2),(False,3)):
+            for collection in (False,True):
+                for amount in (501,1000):
+                    with self.subTest(simple=simple,action=action,collection=collection,amount=amount):
+                        observation,plan,_,_=fresh_case(simple=simple,action=action,collection=collection,amount=amount)
+                        m.validate_candidate(plan,observation,now=int(observation.blockTimestamp),actor=observation.operator)
 
 
 @unittest.skipUnless(os.environ.get('DOMINO_TEST_POSTGRES')=='1','set DOMINO_TEST_POSTGRES=1 for actual private PostgreSQL roles')
