@@ -12,7 +12,7 @@ from test_execution_models import bind, replace
 
 
 def effect_fixture(*, collection=False, swap=False, actual=1000):
-    obs, plan, credit = scenario(collection=collection, swap=swap)
+    obs, plan, credit = scenario(collection=collection, swap=swap, simple=True)
     source = credit.source
     row = dict(sourceId=source, currency=obs.sequence.poolKey.currency0,
         originalBeforeRaw='0' if collection else '1300', chargedBeforeRaw='0',

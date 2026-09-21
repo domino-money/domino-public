@@ -5,7 +5,7 @@ import os
 import unittest
 from eth_abi import encode
 from eth_hash.auto import keccak
-from evm_harness import EvmHarness as Harness, calldata, KEY_TYPE, INIT_TYPE
+from evm_harness import EvmHarness as Harness, calldata, KEY_TYPE, INIT_TYPE, POLICY_TYPE
 import execution_models as m
 import general_compound_receipts as g
 import execution_v4 as v
@@ -18,7 +18,7 @@ class ExecutionV4ReceiptEvmTests(unittest.TestCase):
     deploy=Harness.deploy
     call=Harness.call
     swaps=Harness.swaps
-    def setup_vault(self, *, native=False):
+    def setup_vault(self, *, native=False, simple=False):
         self.manager = self.deploy('PoolManager.sol', 'PoolManager', ['address'], [self.owner])
         self.positions = self.deploy('PositionManager.sol', 'PositionManager',
             ['address', 'address', 'uint256', 'address', 'address'],
@@ -60,7 +60,7 @@ class ExecutionV4ReceiptEvmTests(unittest.TestCase):
         self.send(self.positions, calldata('approve(address,uint256)', ['address', 'uint256'], [self.vault, self.token]))
         pool = m.PoolKey(currency0=currencies[0], currency1=currencies[1], fee_pips=3000, tick_spacing=60, hooks=m.ZERO)
         params = (self.token, bytes.fromhex(pool.pool_id()[2:]), *currencies, m.ZERO, True,
-                  (200, 1000, 1000, 1, 4, 1, False), (1, 5000, 100, 100, 10**12, 120, 3600))
+                  (200 if simple else 400, 1000, 1000, 1, 1 if simple else 4, 1, False), (1, 5000, 100, 100, 10**12, 120, 3600))
         self.send(factory, calldata('createVault('+INIT_TYPE+',uint256)', [INIT_TYPE, 'uint256'], [params, 0]))
         implementation = self.call(self.vault, 'implementation()', ['address'])[0]
         helper = self.call(self.vault, 'readHelper()', ['address'])[0]
@@ -102,7 +102,7 @@ class ExecutionV4ReceiptEvmTests(unittest.TestCase):
         timestamp = int(source['timestamp'], 16)
         plan = g.CompoundPlan(intentId='0x'+keccak(encode(['address','uint256'],
             [self.vault, int(source['number'], 16)])).hex(), tokenId=str(self.token), positionIdentity='0x'+member[8].hex(),
-            checkpointId='0x'+checkpoint[6].hex(), policyVersion='1', limitsVersion='1',
+            checkpointId='0x'+checkpoint[6].hex(), policyVersion=str(self.call(self.vault,'policy()',[POLICY_TYPE])[0][5]), limitsVersion='1',
             stateNonce=str(self.call(self.vault, 'stateNonce()', ['uint64'])[0]),
             authorityGeneration=str(self.call(self.vault, 'authorityGeneration()', ['uint64'])[0]),
             observedAtBlock=str(int(source['number'], 16)), observedBlockHash=source['hash'],
@@ -135,16 +135,20 @@ class ExecutionV4ReceiptEvmTests(unittest.TestCase):
                 self.assertEqual(len(result['collections']),2)
                 for row in result['sources']:
                     self.assertEqual(int(row['originalBeforeRaw'])+int(row['realizedRaw']),int(row['grossOriginalConsumedRaw'])+int(row['originalAfterRaw']))
-                    self.assertEqual(int(row['serviceFeeRaw']),int(row['grossOriginalConsumedRaw'])*200//10000)
+                    self.assertEqual(int(row['serviceFeeRaw']),int(row['grossOriginalConsumedRaw'])*400//10000)
 
     def test_actual_successor_funding_and_reorganized_receipt(self):
         self.setup_vault();self.swaps();plan=self.plan(3,10**10)
         snapshot=self.rpc.request('evm_snapshot',[]);receipt,result=self.execute(plan)
         child=result['destinationTokenId'];self.assertEqual(result['successorCreated']['tokenId'],child)
+        self.assertEqual(result['serviceFeeBps'],400)
+        for row in result['sources']:self.assertEqual(int(row['serviceFeeRaw']),int(row['grossOriginalConsumedRaw'])*400//10000)
         self.assertEqual(len(result['applications']),2)
         self.swaps()
         next_plan=self.plan(2,10**10).model_copy(update={'destinationTokenId':child})
         _,funded=self.execute(next_plan);self.assertEqual(funded['liquidityAfterRaw'],str(2*10**10))
+        self.assertEqual(funded['serviceFeeBps'],400)
+        for row in funded['sources']:self.assertEqual(int(row['serviceFeeRaw']),int(row['grossOriginalConsumedRaw'])*400//10000)
         self.assertTrue(self.rpc.request('evm_revert',[snapshot]))
         with self.assertRaises(ValueError):v.ReceiptReconciler(self.rpc).reconcile(plan,self.admission,receipt['transactionHash'])
         _,again=self.execute(plan);self.assertEqual(again['destinationTokenId'],child)
@@ -188,7 +192,7 @@ class ExecutionV4ReceiptEvmTests(unittest.TestCase):
         self.assertEqual(result['conversions'][0]['sourceId'],sid)
         self.assertEqual(result['conversions'][0]['sourceTokenId'],str(self.token))
         for row in result['sources']:
-            self.assertEqual(int(row['serviceFeeRaw']),int(row['grossOriginalConsumedRaw'])*200//10000)
+            self.assertEqual(int(row['serviceFeeRaw']),int(row['grossOriginalConsumedRaw'])*400//10000)
         out=next(r for r in result['sources'] if (r['sourceId'],r['currency'])==(sid,self.key[1]))
         self.assertEqual(out['serviceFeeRaw'],'0');self.assertEqual(out['originalAfterRaw'],'0')
         self.assertGreater(int(out['chargedAfterRaw'])+int(out['liquidityFromSwapRaw']),0)
@@ -204,7 +208,7 @@ class ExecutionV4ReceiptEvmTests(unittest.TestCase):
         lower=get_sqrt_ratio_at_tick(-600);upper=get_sqrt_ratio_at_tick(600);liquidity=int(plan.authority.liquidityIncrease)
         owed0=(liquidity*(upper-price)*(1<<96)+upper*price-1)//(upper*price)
         owed1=(liquidity*(price-lower)+(1<<96)-1)//(1<<96)
-        grosses={self.key[0]:(owed0-1)*10000//9800+1,self.key[1]:(owed1-1)*10000//9800+1}
+        grosses={self.key[0]:(owed0-1)*10000//9600+1,self.key[1]:(owed1-1)*10000//9600+1}
         exact=plan.model_copy(update={'budgets':tuple(b.model_copy(update={'minOriginal':str(grosses[b.currency]),'maxOriginal':str(grosses[b.currency])}) for b in plan.budgets)})
         _,accepted=self.execute(exact)
         self.assertEqual(self.call(self.vault,'stateNonce()',['uint64'])[0],before+1)
@@ -223,3 +227,87 @@ class ExecutionV4ReceiptEvmTests(unittest.TestCase):
             general_gas=int(general_receipt['gasUsed'],16);net_gas=int(net_receipt['gasUsed'],16)
             self.assertLess(net_gas,general_gas)
             print(json.dumps({'native':native,'generalGasUsed':general_gas,'netGasUsed':net_gas,'basis':'same_snapshot_separate_local_transactions'}))
+
+
+    def test_simple_general_and_net_keep_two_percent_and_refuse_domino_actions(self):
+        for action in (0,1):
+            self.setup_vault(simple=True);self.swaps()
+            plan=self.plan(action)
+            for forbidden in (2,3):
+                bad=plan.model_copy(update={'action':forbidden})
+                with self.assertRaises(Exception):
+                    self.rpc.request('eth_call',[{'from':self.owner,'to':self.vault,'data':bad.calldata()},'latest'])
+            _,result=self.execute(plan)
+            self.assertEqual(result['serviceFeeBps'],200)
+            self.assertTrue(any(int(row['serviceFeeRaw'])>0 for row in result['sources']))
+            for row in result['sources']:
+                self.assertEqual(int(row['serviceFeeRaw']),int(row['grossOriginalConsumedRaw'])*200//10000)
+
+    def test_domino_to_simple_requires_child_exit_and_stale_plan_never_revives(self):
+        self.setup_vault();self.swaps()
+        _,minted=self.execute(self.plan(3,10**10));child=int(minted['destinationTokenId'])
+        before=self.call(self.vault,'stateNonce()',['uint64'])[0]
+        policy=(200,1000,1000,1,1,2,False)
+        change=calldata('setPolicy('+POLICY_TYPE+')',[POLICY_TYPE],[policy])
+        with self.assertRaises(Exception):
+            self.rpc.request('eth_call',[{'from':self.owner,'to':self.vault,'data':change},'latest'])
+        self.assertEqual(self.call(self.vault,'stateNonce()',['uint64'])[0],before)
+        stale=self.plan()
+        self.send(self.vault,calldata('withdrawChildPosition(uint256)',['uint256'],[child]))
+        self.send(self.vault,change)
+        self.assertEqual(self.call(self.vault,'policy()',[POLICY_TYPE])[0][0],200)
+        self.assertEqual(self.call(self.vault,'activePositions()',['uint256'])[0],1)
+        with self.assertRaises(Exception):
+            self.rpc.request('eth_call',[{'from':self.owner,'to':self.vault,'data':stale.calldata()},'latest'])
+        self.swaps();_,result=self.execute(self.plan())
+        self.assertEqual(result['serviceFeeBps'],200)
+        # A historical successor entry remains, but cannot make a simple vault
+        # a Domino route; only an explicit later 400-bps policy can change mode.
+        self.assertEqual(self.call(self.vault,'successorOf(uint256)',['uint256'],['uint256'],[self.token])[0],child)
+
+
+    def test_two_percent_converted_reserve_is_not_recharged_after_domino_upgrade(self):
+        self.setup_vault(simple=True);self.swaps();first=self.plan(0,10**10)
+        price=self.call(self.state,'getSlot0(bytes32)',['uint160','int24','uint24','uint24'],
+            ['bytes32'],[bytes.fromhex(self.admission.sequence.poolId[2:])])[0]
+        member=self.call(self.vault,'position(uint256)',[g.POSITION_TYPE],['uint256'],[self.token])[0]
+        sid='0x'+member[9].hex()
+        minimum=self.call(self.admission.routingHelper,'minimumOutput(uint128,uint160,bool,uint16)',['uint256'],
+            ['uint128','uint160','bool','uint16'],[10**9,price,True,100])[0]
+        swap=v.SwapPlan(sourceId=sid,currencyIn=self.key[0],amountIn=str(10**9),maxOriginal=str(2*10**9),maxCharged='0',
+            minAmountOut=str(minimum),sqrtPriceLimitX96=str(m.MIN_SQRT_RATIO+1),priceObservationId=first.swap.priceObservationId)
+        output=v.FeeBudget(sourceId=sid,currency=self.key[1],maxOriginal='0',maxCharged='0',minOriginal='0',minCharged='0')
+        first=first.model_copy(update={'swap':swap,'budgets':tuple(sorted((*first.budgets,output),key=lambda b:(b.sourceId,b.currency)))})
+        _,converted=self.execute(first)
+        self.assertEqual(converted['serviceFeeBps'],200)
+        self.assertEqual(len(converted['conversions']),1)
+        for row in converted['sources']:
+            self.assertEqual(int(row['serviceFeeRaw']),int(row['grossOriginalConsumedRaw'])*200//10000)
+        charged=next(row for row in converted['sources'] if row['sourceId']==sid and row['currency']==self.key[1])
+        self.assertGreater(int(charged['chargedAfterRaw']),0)
+
+        self.send(self.vault,calldata('setPolicy('+POLICY_TYPE+')',[POLICY_TYPE],[(400,1000,1000,1,4,2,False)]))
+        following=self.plan(0,10**8)
+        price=self.call(self.state,'getSlot0(bytes32)',['uint160','int24','uint24','uint24'],
+            ['bytes32'],[bytes.fromhex(self.admission.sequence.poolId[2:])])[0]
+        from v4_math import amount_delta, sqrt_at_tick
+        owed0=amount_delta(price,sqrt_at_tick(600),10**8,0,True)
+        owed1=amount_delta(sqrt_at_tick(-600),price,10**8,1,True)
+        # Minimal original gross at the new tariff pays currency0; the already
+        # converted balance pays currency1. Both are exact prior-reserve spends.
+        gross0=(owed0-1)*10000//9600+1
+        self.assertGreaterEqual(int(charged['chargedAfterRaw']),owed1)
+        budgets=(v.FeeBudget(sourceId=sid,currency=self.key[0],maxOriginal=str(gross0),minOriginal=str(gross0),maxCharged='0',minCharged='0'),
+                 v.FeeBudget(sourceId=sid,currency=self.key[1],maxOriginal='0',minOriginal='0',maxCharged=str(owed1),minCharged=str(owed1)))
+        following=following.model_copy(update={'authority':following.authority.model_copy(update={'minAdded0':str(owed0),'minAdded1':str(owed1)}),
+            'budgets':tuple(sorted(budgets,key=lambda b:(b.sourceId,b.currency))),'collect':(),
+            'maxAdded0':str(owed0),'maxAdded1':str(owed1)})
+        _,applied=self.execute(following)
+        self.assertEqual(applied['serviceFeeBps'],400)
+        original=next(row for row in applied['sources'] if row['sourceId']==sid and row['currency']==self.key[0])
+        old_charged=next(row for row in applied['sources'] if row['sourceId']==sid and row['currency']==self.key[1])
+        self.assertEqual(int(original['serviceFeeRaw']),gross0*400//10000)
+        self.assertGreater(int(original['serviceFeeRaw']),0)
+        self.assertEqual((old_charged['grossOriginalConsumedRaw'],old_charged['serviceFeeRaw']),('0','0'))
+        self.assertEqual(int(old_charged['chargedConsumedRaw']),owed1)
+        self.assertEqual(int(old_charged['chargedAfterRaw']),int(charged['chargedAfterRaw'])-owed1)

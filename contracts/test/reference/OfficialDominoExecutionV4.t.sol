@@ -92,7 +92,7 @@ contract OfficialDominoExecutionV4Test {
         address predicted=factory.predictVault(address(this),0); positions.approve(predicted,tokenId);
         T.InitParams memory p; p.rootTokenId=tokenId; p.expectedPoolId=keccak256(abi.encode(key));
         p.baseCurrency=inverse?c1:c0; p.quoteCurrency=inverse?c0:c1; p.consentToUncollectedFees=true;
-        p.policy=IDominoVaultDraft.Policy(200,1000,1000,1,4,1,false);
+        p.policy=IDominoVaultDraft.Policy(400,1000,1000,1,4,1,false);
         p.limits=T.ExecutionLimits(1,5000,100,100,1e12,120,3600);
         vault=DominoVaultV4(payable(factory.createVault(p,0)));
         require(address(vault)==predicted && vault.rootPermissionValid(),"actual v4 clone");
@@ -151,7 +151,7 @@ contract OfficialDominoExecutionV4Test {
         (uint128 a,uint128 b)=_owed(p.destinationTokenId,p.authority.liquidityIncrease);
         for(uint256 i;i<p.budgets.length;++i) {
             E.FeeBudget memory budget=p.budgets[i];uint128 net=budget.currency==Currency.unwrap(key.currency0)?a:b;
-            budget.minOriginal=uint128(net==0?0:(uint256(net)-1)*10000/9800+1);
+            budget.minOriginal=uint128(net==0?0:(uint256(net)-1)*10000/9600+1);
             budget.maxOriginal=budget.minOriginal;
         }
     }
@@ -353,7 +353,7 @@ contract OfficialDominoExecutionV4Test {
         (uint128 owed0,uint128 owed1)=_owed(tokenId,1e9);
         for(uint256 i;i<next.budgets.length;i++) {
             if(next.budgets[i].currency==Currency.unwrap(key.currency0)) {
-                next.budgets[i].minOriginal=uint128((uint256(owed0)-1)*10000/9800+1);
+                next.budgets[i].minOriginal=uint128((uint256(owed0)-1)*10000/9600+1);
                 next.budgets[i].maxOriginal=next.budgets[i].minOriginal;
             } else { next.budgets[i].minCharged=owed1;next.budgets[i].maxCharged=owed1; }
         }

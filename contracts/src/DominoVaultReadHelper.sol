@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.26;
 
+import {FeeAccounting} from "./FeeAccounting.sol";
+
 import {DominoL2Block} from "./DominoL2Block.sol";
 
 import {DominoVaultTypes as T, IPositionManagerE2, IStateViewE2} from "./DominoVaultTypes.sol";
@@ -189,7 +191,7 @@ contract DominoVaultReadHelper {
         uint128 maxOriginal, uint128 maxCharged, uint16 feeBps)
         external pure returns (T.CompoundAmounts memory)
     {
-        if (feeBps > 200) revert InvalidAmount();
+        if (feeBps > FeeAccounting.MAX_SERVICE_FEE_BPS) revert InvalidAmount();
         uint256 available = uint256(value.originalBefore) + value.realized;
         if (available + value.chargedBefore > type(uint128).max) revert InvalidAmount();
         value.liquidityAdded = added;

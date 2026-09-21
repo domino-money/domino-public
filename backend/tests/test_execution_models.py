@@ -189,9 +189,9 @@ class ExecutionCandidateTests(unittest.TestCase):
         accrual=m.AccrualObservation(source=lot.source,amountRaw='49',checkpointId=identity(700))
         obs=replace(self.obs, balances=[lot.model_dump()],accruals=[accrual.model_dump()])
         plan=bind(self.plan,obs,allocations=[{'lotId':lot.lotId,'amountRaw':'49'}],
-            collections=[{'sourceId':lot.source.digest(),'maxGrossRaw':'49'}],maxGrossFee0='98',minNetAdded0='97')
+            collections=[{'sourceId':lot.source.digest(),'maxGrossRaw':'49'}],maxGrossFee0='98',minNetAdded0='95')
         self.validate(plan=plan,obs=obs)
-        with self.assertRaises(ValueError): self.validate(plan=replace(plan,minNetAdded0='98'),obs=obs)
+        with self.assertRaises(ValueError): self.validate(plan=replace(plan,minNetAdded0='96'),obs=obs)
         with self.assertRaises(ValueError): self.validate(plan=replace(plan,collections=[{'sourceId':lot.source.digest(),'maxGrossRaw':'50'}]),obs=obs)
         self.assertFalse(hasattr(accrual,'credit_id'))
 
@@ -227,10 +227,10 @@ class ExecutionCandidateTests(unittest.TestCase):
     def test_swap_input_is_net_and_typed_pair_only(self):
         swap=m.SwapBounds(enabled=True,adapterId=identity(800),adapterVersion='1',routeCommitment=identity(801),
             currencyIn=self.obs.sequence.poolKey.currency0,currencyOut=self.obs.sequence.poolKey.currency1,
-            amountInRaw='980',minAmountOutRaw='1')
+            amountInRaw='960',minAmountOutRaw='1')
         swappable=replace(self.plan,minNetAdded0='0',minNetAdded1='1')
         self.validate(plan=replace(swappable,swap=swap.model_dump()))
-        for changes in [{'amountInRaw':'981'}, {'currencyOut':address(999)}]:
+        for changes in [{'amountInRaw':'961'}, {'currencyOut':address(999)}]:
             with self.assertRaises(ValueError): self.validate(plan=replace(swappable,swap=replace(swap,**changes).model_dump()))
         with self.assertRaises(ValueError): self.validate(plan=replace(self.plan,swap=swap.model_dump()))
         with self.assertRaises(ValidationError): replace(self.plan.swap,adapterVersion='1')
@@ -244,7 +244,7 @@ class ExecutionCandidateTests(unittest.TestCase):
                    'chargeStatus':'converted_charged' if b.convertedCharged else 'original_uncharged',
                    'amountRaw':b.amountRaw,'reservedRaw':b.reservedRaw} for b in obs.balances]
             result=consume_allocations(lots,[a.model_dump() for a in plan.allocations],service_fee_bps=obs.policy.serviceFeeBps)
-            self.assertEqual(result['groups'][0]['serviceFeeRaw'],'0' if charged else '20')
+            self.assertEqual(result['groups'][0]['serviceFeeRaw'],'0' if charged else '40')
             self.assertEqual(result['groups'][0]['sourceId'],obs.balances[0].source.digest())
             self.assertEqual(result['remainingLots'][0]['amountRaw'],'300')
 

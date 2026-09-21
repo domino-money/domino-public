@@ -66,7 +66,7 @@ contract DominoVaultV4ArchitectureTest {
         value.quoteCurrency = address(token);
         value.operator = OPERATOR;
         value.consentToUncollectedFees = true;
-        value.policy = IDominoVaultDraft.Policy(200, 500, 1000, 60, 4, 1, false);
+        value.policy = IDominoVaultDraft.Policy(400, 500, 1000, 60, 4, 1, false);
         value.limits = T.ExecutionLimits(1, 5000, 100, 100, 1 ether, 60, 3600);
     }
 

@@ -70,7 +70,7 @@ contract DominoVaultFactoryV4CreationTest {
         value.quoteCurrency = address(token);
         value.operator = OPERATOR;
         value.consentToUncollectedFees = true;
-        value.policy = IDominoVaultDraft.Policy(200, 500, 1000, 600, 4, 1, false);
+        value.policy = IDominoVaultDraft.Policy(400, 500, 1000, 600, 4, 1, false);
         value.limits = T.ExecutionLimits(1, 5000, 100, 100, 1_000_000_000_000, 120, 3600);
     }
 

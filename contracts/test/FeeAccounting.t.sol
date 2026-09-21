@@ -37,17 +37,17 @@ contract FeeAccountingTest {
     }
 
     function testRejectExcessiveRateAndOverspending() public {
-        (bool ok, bytes memory data) = address(this).call(abi.encodeCall(this.exposed, (100, 10, 201)));
+        (bool ok, bytes memory data) = address(this).call(abi.encodeCall(this.exposed, (100, 10, 401)));
         assertError(ok, data, FeeAccounting.ExcessiveFee.selector);
         (ok, data) = address(this).call(abi.encodeCall(this.exposed, (100, 101, 200)));
         assertError(ok, data, FeeAccounting.InsufficientReserve.selector);
-        (ok, data) = address(this).call(abi.encodeCall(this.exposed, (0, 1, 201)));
+        (ok, data) = address(this).call(abi.encodeCall(this.exposed, (0, 1, 401)));
         assertError(ok, data, FeeAccounting.ExcessiveFee.selector);
     }
 
     function testFuzzConservation(uint128 available, uint128 requested, uint16 rate) public pure {
         uint128 used = requested > available ? available : requested;
-        uint16 bps = rate % 201;
+        uint16 bps = rate % 401;
         (uint128 net, uint128 cut, uint128 left) = FeeAccounting.consume(available, used, bps);
         require(uint256(net) + cut + left == available);
         require(uint256(net) + cut == used);
@@ -56,7 +56,7 @@ contract FeeAccountingTest {
 
     function testFuzzUnmodifiedInputsMatchExactGuards(uint128 available, uint128 requested, uint16 rate) public {
         (bool ok, bytes memory data) = address(this).call(abi.encodeCall(this.exposed, (available, requested, rate)));
-        if (rate > 200) {
+        if (rate > 400) {
             assertError(ok, data, FeeAccounting.ExcessiveFee.selector);
         } else if (requested > available) {
             assertError(ok, data, FeeAccounting.InsufficientReserve.selector);
@@ -68,7 +68,7 @@ contract FeeAccountingTest {
     }
 
     function testFuzzExcessiveRateAlwaysUsesItsSelector(uint128 available, uint128 requested, uint16 seed) public {
-        uint16 invalidRate = 201 + seed % 65335;
+        uint16 invalidRate = 401 + seed % 65135;
         (bool ok, bytes memory data) =
             address(this).call(abi.encodeCall(this.exposed, (available, requested, invalidRate)));
         assertError(ok, data, FeeAccounting.ExcessiveFee.selector);
@@ -77,11 +77,20 @@ contract FeeAccountingTest {
     function testFuzzOverspendingAlwaysUsesItsSelector(uint128 seed, uint128 extra, uint16 rate) public {
         uint128 available = seed % type(uint128).max;
         uint128 used = available + 1 + extra % (type(uint128).max - available);
-        (bool ok, bytes memory data) = address(this).call(abi.encodeCall(this.exposed, (available, used, rate % 201)));
+        (bool ok, bytes memory data) = address(this).call(abi.encodeCall(this.exposed, (available, used, rate % 401)));
         assertError(ok, data, FeeAccounting.InsufficientReserve.selector);
     }
 
     function assertError(bool ok, bytes memory data, bytes4 selector) internal pure {
         require(!ok && keccak256(data) == keccak256(abi.encodeWithSelector(selector)), "wrong error selector");
     }
+    function testDominoFourPercentUsesConsumedGrossAndOwnerFavoringFloor() public pure {
+        (uint128 net, uint128 cut, uint128 left) = FeeAccounting.consume(2000, 1000, 400);
+        require(net == 960 && cut == 40 && left == 1000);
+        (net, cut, left) = FeeAccounting.consume(100, 24, 400);
+        require(net == 24 && cut == 0 && left == 76);
+        (net, cut, left) = FeeAccounting.consume(100, 25, 400);
+        require(net == 24 && cut == 1 && left == 75);
+    }
+
 }

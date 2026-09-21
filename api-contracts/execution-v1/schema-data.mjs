@@ -93,7 +93,7 @@ export const SCHEMAS = {
               "type": "string"
             },
             "serviceFeeBps": {
-              "maximum": 200,
+              "maximum": 400,
               "minimum": 0,
               "title": "Servicefeebps",
               "type": "integer"
@@ -449,7 +449,7 @@ export const SCHEMAS = {
               "type": "string"
             },
             "serviceFeeBps": {
-              "maximum": 200,
+              "maximum": 400,
               "minimum": 0,
               "title": "Servicefeebps",
               "type": "integer"

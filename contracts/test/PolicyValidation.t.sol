@@ -28,7 +28,7 @@ contract PolicyValidationTest {
 
     // Synthetic values for tests, not product defaults or real position IDs.
     function fixture() private pure returns (IDominoVaultDraft.Policy memory) {
-        return IDominoVaultDraft.Policy(200, 500, 1000, 60, 3, 1, false);
+        return IDominoVaultDraft.Policy(400, 500, 1000, 60, 3, 1, false);
     }
 
     function harness(address operator, uint256 childCount) private returns (PolicyWriteHarness) {
@@ -80,9 +80,9 @@ contract PolicyValidationTest {
     }
 
     function testInclusiveBoundsAndIndependentGeometry() public pure {
-        IDominoVaultDraft.Policy memory value = IDominoVaultDraft.Policy(0, 0, 2000, 1, 1, 1, true);
+        IDominoVaultDraft.Policy memory value = IDominoVaultDraft.Policy(200, 0, 2000, 1, 1, 1, true);
         PolicyValidation.validateInitial(value, 1);
-        value.serviceFeeBps = 200;
+        value.serviceFeeBps = 400;
         value.triggerDistanceBps = 2000;
         value.maxOverlapBps = 0;
         value.minimumIntervalSeconds = type(uint32).max;
@@ -415,7 +415,7 @@ contract PolicyValidationTest {
         PolicyWriteHarness vault = harness(address(0), 0);
         IDominoVaultDraft.Policy memory next = fixture();
         next.version = 2;
-        next.serviceFeeBps = 201 + seed % 65335;
+        next.serviceFeeBps = 401 + seed % 65135;
         (bool ok, bytes memory data) = address(vault).call(abi.encodeCall(vault.setPolicy, (next)));
         assertError(ok, data, FeeAccounting.ExcessiveFee.selector);
         assertStored(vault, fixture(), 0);
@@ -452,4 +452,36 @@ contract PolicyValidationTest {
             require(ok);
         }
     }
+    function testTariffIsStrictModeAndSimpleCapacityIsOne() public {
+        IDominoVaultDraft.Policy memory value = fixture();
+        uint16[5] memory invalid = [uint16(0), 199, 201, 399, 401];
+        for (uint256 i; i < invalid.length; ++i) {
+            value.serviceFeeBps = invalid[i];
+            (bool ok, bytes memory data) = address(this).call(abi.encodeCall(this.exposedInitial, (value, 1)));
+            assertError(ok, data, FeeAccounting.ExcessiveFee.selector);
+        }
+        value.serviceFeeBps = 200;
+        (bool success, bytes memory reason) = address(this).call(abi.encodeCall(this.exposedInitial, (value, 1)));
+        assertError(success, reason, PolicyValidation.InvalidMaxPositions.selector);
+        value.maxPositions = 1;
+        PolicyValidation.validateInitial(value, 1);
+        value.serviceFeeBps = 400;
+        PolicyValidation.validateInitial(value, 1); // Domino can also choose capacity one.
+    }
+
+    function testDowngradeRequiresWithdrawingChildrenAndInvalidatesOldPolicy() public {
+        PolicyWriteHarness vault = harness(address(0), 1);
+        IDominoVaultDraft.Policy memory next = fixture();
+        next.version = 2; next.serviceFeeBps = 200; next.maxPositions = 1;
+        (bool ok, bytes memory reason) = address(vault).call(abi.encodeCall(vault.setPolicy, (next)));
+        assertError(ok, reason, PolicyValidation.PositionLimitBelowMembership.selector);
+        require(vault.policy().serviceFeeBps == 400 && vault.stateNonce() == 0, "failed mode write mutated");
+        vault.withdrawChildPosition(12);
+        vault.setPolicy(next);
+        require(vault.policy().serviceFeeBps == 200 && vault.stateNonce() == 2, "mode/nonce not advanced");
+        next.version = 3; next.serviceFeeBps = 400; next.maxPositions = 3;
+        vault.setPolicy(next);
+        require(vault.policy().serviceFeeBps == 400 && vault.stateNonce() == 3, "upgrade failed");
+    }
+
 }

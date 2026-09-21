@@ -93,10 +93,18 @@ contract DominoCompoundHelperTest {
         vm.expectRevert(Helper.InvalidAmount.selector); helper.accrued(p);
     }
 
-    function testEveryAdmittedRateUsesMinimalGrossForExactNet() public view {
+    function testEveryLowerRateUsesMinimalGrossForExactNet() public view {
+        _checkRates(0, 200);
+    }
+
+    function testEveryUpperRateUsesMinimalGrossForExactNet() public view {
+        _checkRates(201, 400);
+    }
+
+    function _checkRates(uint16 first, uint16 last) private view {
         // Independent small-domain search catches both floor plateaus and an
         // incorrect ceil(net/(1-fee)) inverse without repeating the helper formula.
-        for (uint16 rate; rate <= 200; ++rate) {
+        for (uint16 rate = first; rate <= last; ++rate) {
             for (uint128 net; net <= 101; ++net) {
                 uint128 expected;
                 while (uint256(expected) - uint256(expected) * rate / 10000 < net) ++expected;
@@ -123,7 +131,7 @@ contract DominoCompoundHelperTest {
         require(v.chargedConsumed == 30 && v.grossOriginalConsumed == 49 && v.serviceFee == 0 &&
             v.originalAfter == 451 && v.chargedAfter == 0, "wrong class or charged waiting funds");
         // A later collected/converted charged lot stays exempt even at a new rate.
-        v = helper.compoundAmounts(_amounts(v.originalAfter, 50, 0), 50, 0, 50, 200);
+        v = helper.compoundAmounts(_amounts(v.originalAfter, 50, 0), 50, 0, 50, 400);
         require(v.grossOriginalConsumed == 0 && v.serviceFee == 0 && v.originalAfter == 451 &&
             v.chargedConsumed == 50 && v.chargedAfter == 0, "charged lot paid twice");
     }
@@ -141,7 +149,7 @@ contract DominoCompoundHelperTest {
         vm.expectRevert(Helper.InvalidAmount.selector);
         helper.compoundAmounts(_amounts(type(uint128).max, 0, 1), 1, 1, 0, 0);
         vm.expectRevert(Helper.InvalidAmount.selector);
-        helper.compoundAmounts(_amounts(100, 0, 0), 1, 100, 0, 201);
+        helper.compoundAmounts(_amounts(100, 0, 0), 1, 100, 0, 401);
     }
 
     function testFuzzMaximumAmountsConserveAndChooseMinimalGross(uint128 net, uint16 rawRate) public {

@@ -3,7 +3,18 @@ pragma solidity 0.8.26;
 
 /// @notice Proposed fee arithmetic only; this library provides no asset custody.
 library FeeAccounting {
-    uint16 internal constant MAX_SERVICE_FEE_BPS = 200;
+    // The stored tariff is the mode discriminator; no action-based pricing.
+    uint16 internal constant SIMPLE_SERVICE_FEE_BPS = 200;
+    uint16 internal constant DOMINO_SERVICE_FEE_BPS = 400;
+    uint16 internal constant MAX_SERVICE_FEE_BPS = DOMINO_SERVICE_FEE_BPS;
+
+    function isSimple(uint16 feeBps) internal pure returns (bool) {
+        return feeBps == SIMPLE_SERVICE_FEE_BPS;
+    }
+
+    function validTariff(uint16 feeBps) internal pure returns (bool) {
+        return isSimple(feeBps) || feeBps == DOMINO_SERVICE_FEE_BPS;
+    }
     error ExcessiveFee();
     error InsufficientReserve();
 

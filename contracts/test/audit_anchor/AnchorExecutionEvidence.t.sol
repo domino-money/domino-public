@@ -91,7 +91,7 @@ contract AnchorExecutionEvidenceTest {
         address predicted=factory.predictVault(address(this),0); positions.approve(predicted,tokenId);
         T.InitParams memory p; p.rootTokenId=tokenId; p.expectedPoolId=keccak256(abi.encode(key));
         p.baseCurrency=inverse?c1:c0; p.quoteCurrency=inverse?c0:c1; p.consentToUncollectedFees=true;
-        p.policy=IDominoVaultDraft.Policy(200,1000,1000,1,4,1,false);
+        p.policy=IDominoVaultDraft.Policy(400,1000,1000,1,4,1,false);
         p.limits=T.ExecutionLimits(1,5000,100,100,1e12,120,3600);
         vault=DominoVaultV4(payable(factory.createVault(p,0)));
         require(address(vault)==predicted && vault.rootPermissionValid(),"actual v4 clone");

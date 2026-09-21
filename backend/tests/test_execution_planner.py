@@ -124,19 +124,19 @@ class PlannerTests(unittest.TestCase):
         obs, hist, cfg = setup()
         decision, candidate = self.selected(obs, hist, cfg, evidence(obs, cfg))
         self.assertEqual(decision.action, 'compound_self')
-        # At the fee-floor plateau, 999-19 == 1000-20. Preserve the extra
+        # At the fee-floor plateau, 999-39 == 1000-40. Preserve the extra
         # original atom rather than charge it without increasing liquidity.
         self.assertEqual(candidate.grossConsumed, (999, 999))
-        self.assertEqual(candidate.serviceCut, (19, 19))
-        self.assertEqual(candidate.netAdded, (980, 980))
+        self.assertEqual(candidate.serviceCut, (39, 39))
+        self.assertEqual(candidate.netAdded, (960, 960))
         self.assertEqual(tuple(w.amountRaw for w in decision.waiting), (1, 1))
         self.assertFalse(decision.executionAvailable)
         root = obs.positions[0].position
         for i, (a, b) in enumerate(((Q96, sqrt_at_tick(root.tickUpper)), (sqrt_at_tick(root.tickLower), Q96))):
-            self.assertLessEqual(amount_delta(a, b, candidate.liquidityIncrease, i, True), 980)
+            self.assertLessEqual(amount_delta(a, b, candidate.liquidityIncrease, i, True), 960)
         # Increasing one unit would overdraw at least one currency (independent boundary).
-        self.assertTrue(amount_delta(Q96, sqrt_at_tick(root.tickUpper), candidate.liquidityIncrease+1, 0, True) > 980
-                        or amount_delta(sqrt_at_tick(root.tickLower), Q96, candidate.liquidityIncrease+1, 1, True) > 980)
+        self.assertTrue(amount_delta(Q96, sqrt_at_tick(root.tickUpper), candidate.liquidityIncrease+1, 0, True) > 960
+                        or amount_delta(sqrt_at_tick(root.tickLower), Q96, candidate.liquidityIncrease+1, 1, True) > 960)
 
     def test_fee_flow_dilution_includes_incumbent_owner_and_never_exceeds_pool_budget(self):
         obs, _, cfg = setup()
@@ -203,7 +203,7 @@ class PlannerTests(unittest.TestCase):
     def test_owner_fee_cut_is_not_charged_again_as_operator_gas(self):
         obs, hist, cfg = setup()
         _, c = self.selected(obs, hist, cfg, evidence(obs, cfg))
-        self.assertEqual(c.economics.ownerNetBenefitQuote, c.economics.incrementalEarningsQuote-38)
+        self.assertEqual(c.economics.ownerNetBenefitQuote, c.economics.incrementalEarningsQuote-78)
         self.assertEqual(c.economics.operatorBufferedCostQuote, 4)
 
     def test_smaller_bounded_swap_beats_full_swap_and_direct(self):
@@ -251,9 +251,9 @@ class PlannerTests(unittest.TestCase):
         obs, hist, cfg = setup(amounts=(1000, 1000), charged=True)
         _, c = self.selected(obs, hist, cfg, evidence(obs, cfg))
         self.assertEqual(c.serviceCut[0], 0)
-        self.assertEqual(c.chargedConsumed[0], 980)
+        self.assertEqual(c.chargedConsumed[0], 960)
         self.assertEqual(c.grossConsumed[0], 0)
-        self.assertEqual(c.serviceCut[1], 19)
+        self.assertEqual(c.serviceCut[1], 39)
         obs, hist, cfg = setup(amounts=(0, 0))
         self.assertEqual(p.plan(obs, hist, cfg, evidence(obs, cfg), now=NOW).action, 'wait')
 
@@ -347,7 +347,7 @@ class PlannerTests(unittest.TestCase):
         obs = replace(obs, balances=(replace(original, amountRaw='1000'), obs.balances[1], extra))
         _, candidate = self.selected(obs, hist, cfg, evidence(obs, cfg))
         self.assertEqual(candidate.grossConsumed, (1999, 1999))
-        self.assertEqual(candidate.serviceCut, (39, 39))
+        self.assertEqual(candidate.serviceCut, (79, 79))
         amounts = {a.lotId:int(a.amountRaw) for a in candidate.allocations}
         self.assertEqual(amounts[identity(300)]+amounts[identity(302)], 1999)
         accrual = m.AccrualObservation(source=original.source, amountRaw='2000', checkpointId=identity(7000))
@@ -389,7 +389,7 @@ class PlannerTests(unittest.TestCase):
         self.assertEqual(repeated.samples, hist.samples)
 
     def test_reserved_fees_are_never_spent_and_tiny_growth_floor_has_no_minimum_toll(self):
-        obs, hist, cfg = setup(amounts=(49, 49))
+        obs, hist, cfg = setup(amounts=(24, 24))
         ev = evidence(obs, cfg, gas=1)
         d = p.plan(obs, hist, cfg, ev, now=NOW)
         self.assertEqual(d.candidates[1].serviceCut, (0, 0))
@@ -397,7 +397,7 @@ class PlannerTests(unittest.TestCase):
         obs = replace(obs, balances=tuple(replace(b, reservedRaw=b.amountRaw) for b in obs.balances))
         d = p.plan(obs, hist, cfg, evidence(obs, cfg, gas=1), now=NOW)
         self.assertEqual(d.action, 'wait')
-        self.assertEqual(sum(w.amountRaw for w in d.waiting), 98)
+        self.assertEqual(sum(w.amountRaw for w in d.waiting), 48)
 
     def test_nonce_and_custody_revocation_stop_new_candidates(self):
         obs, hist, cfg = setup()

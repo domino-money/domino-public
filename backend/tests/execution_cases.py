@@ -34,7 +34,7 @@ def position(seq, token=101, parent=None, *, lower=-120, upper=180, generation='
 
 
 def scenario(action=1, *, native=False, reverse=False, owner=1, number=11, manager=6, charged=False,
-             collection=False, net=False, swap=False):
+             collection=False, net=False, swap=False, simple=False):
     seq = sequence(native=native, reverse=reverse, owner=owner, number=number, manager=manager)
     root = position(seq)
     members = [m.CustodyObservation(position=root, holder=seq.owner, individualApproval=seq.vault, active=True)]
@@ -43,8 +43,8 @@ def scenario(action=1, *, native=False, reverse=False, owner=1, number=11, manag
         destination = position(seq, 102, 101, lower=0, upper=600)
         members.append(m.CustodyObservation(position=destination, holder=seq.vault, individualApproval=m.ZERO, active=True))
     source = m.FeeSourceIdentity(sequence=seq.digest(), position=root.digest(), currency=seq.poolKey.currency0)
-    policy = m.SequencePolicy(serviceFeeBps=200, triggerDistanceBps=500, maxOverlapBps=2000,
-        minimumIntervalSeconds=600, maxPositions=4, version='1', paused=False,
+    policy = m.SequencePolicy(serviceFeeBps=200 if simple else 400, triggerDistanceBps=500, maxOverlapBps=2000,
+        minimumIntervalSeconds=600, maxPositions=1 if simple else 4, version='1', paused=False,
         limits=m.ExecutionLimits(version='1', baseCurrency=seq.baseCurrency, quoteCurrency=seq.quoteCurrency,
             upsideBps=5000, maxSlippageBps=100, maxPriceImpactBps=100, maxGasCostWei='1000000000000000',
             maxObservationAgeSeconds=120, forecastHorizonSeconds=3600))
@@ -64,7 +64,7 @@ def scenario(action=1, *, native=False, reverse=False, owner=1, number=11, manag
             tickLower=0 if action==3 else destination.tickLower, tickUpper=600 if action==3 else destination.tickUpper),
         liquidityIncrease='1', maxGrossFee0='0' if charged else '1000', maxGrossFee1='0',
         maxChargedInput0='1000' if charged else '0', maxChargedInput1='0',
-        minNetAdded0='980', minNetAdded1='0', maxNetAdded0='1000', maxNetAdded1='1000',
+        minNetAdded0='980' if simple else '960', minNetAdded1='0', maxNetAdded0='1000', maxNetAdded1='1000',
         minSqrtPriceX96=str(2**96-1), maxSqrtPriceX96=str(2**96+1),
         maxGasCostWei='1000000000000', swap=disabled)
     credit = m.FeeCredit(source=source.digest(), transactionHash=identity(401), eventIndex=3,
@@ -80,14 +80,14 @@ def scenario(action=1, *, native=False, reverse=False, owner=1, number=11, manag
                 swap=m.SwapBounds(
                 enabled=True, adapterId=identity(800), adapterVersion='1', routeCommitment=identity(801),
                 currencyIn=seq.poolKey.currency0, currencyOut=seq.poolKey.currency1,
-                amountInRaw='980', minAmountOutRaw='500').model_dump(mode='json'))
+                amountInRaw='980' if simple else '960', minAmountOutRaw='500').model_dump(mode='json'))
         plan = m.ExecutionPlan.model_validate_json(json.dumps({**plan.model_dump(mode='json'), **changes}))
     return observation, plan, credit
 
 
 def vectors():
     cases = []
-    for name, kwargs in [('self', {}), ('redirect', {'action':2}), ('domino', {'action':3}),
+    for name, kwargs in [('self', {}), ('simple', {'simple':True}), ('redirect', {'action':2}), ('domino', {'action':3}),
                          ('native', {'native':True}), ('reversed', {'reverse':True}),
                          ('other_owner', {'owner':2}), ('other_sequence', {'number':12}),
                          ('other_manager', {'manager':10}), ('charged_residual', {'charged':True}),

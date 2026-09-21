@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.26;
 
+import {FeeAccounting} from "./FeeAccounting.sol";
+
 import {DominoVaultReadHelper} from "./DominoVaultReadHelper.sol";
 import {DominoExecutionTypes as E, IVaultExecutionV4} from "./DominoExecutionTypes.sol";
 import {DominoVaultTypes as T, IStateViewE2, IPositionManagerE2} from "./DominoVaultTypes.sol";
@@ -76,7 +78,7 @@ contract DominoRoutingHelperV4 {
     function compoundAmounts(T.CompoundAmounts memory value, uint128 added,
         uint128 maxOriginal, uint128 maxCharged, uint16 feeBps, uint128 grossBefore, uint128 minimumOriginal)
         external pure returns (T.CompoundAmounts memory) {
-        if (feeBps > 200) revert InvalidAmount();
+        if (feeBps > FeeAccounting.MAX_SERVICE_FEE_BPS) revert InvalidAmount();
         uint256 available = uint256(value.originalBefore) + value.realized;
         if (available + value.chargedBefore > type(uint128).max) revert InvalidAmount();
         value.liquidityAdded = added;
@@ -139,6 +141,13 @@ contract DominoRoutingHelperV4 {
             || plan.maxAdded0 < a.minAdded0 || plan.maxAdded1 < a.minAdded1
             || plan.collect.length > 16 || plan.budgets.length == 0 || plan.budgets.length > 32)
             revert InvalidExecution();
+        // Simple is a stored tariff mode, not a label inferred from this recipe.
+        // Root identity and every source/collection are checked even after a
+        // former Domino child has been withdrawn and membership returns to one.
+        bool simple = FeeAccounting.isSimple(rules.serviceFeeBps);
+        if (!FeeAccounting.validTariff(rules.serviceFeeBps)
+            || (simple && (rules.maxPositions != 1 || vault.activePositions() != 1
+                || !parent.isRoot || plan.action > E.NET))) revert InvalidRoute();
         if (vault.positionManager() != readHelper.positionManager()) revert InvalidExecution();
         readHelper.validateCompoundPrice(vault.poolId(), a, limits.maxObservationAgeSeconds);
         T.PoolKey memory key = vault.poolKey();
@@ -154,7 +163,7 @@ contract DominoRoutingHelperV4 {
         } else if (plan.tickLower != 0 || plan.tickUpper != 0 || !vault.position(plan.destinationTokenId).active) revert InvalidRoute();
         for (uint256 i; i < plan.collect.length; ++i) {
             E.PositionRef calldata ref = plan.collect[i]; T.Position memory member = vault.position(ref.tokenId);
-            if (!member.active || (i != 0 && plan.collect[i-1].tokenId >= ref.tokenId)
+            if (!member.active || (simple && ref.tokenId != a.tokenId) || (i != 0 && plan.collect[i-1].tokenId >= ref.tokenId)
                 || member.identity != ref.positionIdentity || vault.checkpoint(ref.tokenId).commitment != ref.checkpointId)
                 revert InvalidExecution();
             _custody(vault,ref.tokenId,member);

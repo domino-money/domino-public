@@ -4,6 +4,7 @@ Admission is operator-controlled deployment configuration; price observations
 are independently published inputs, never a browser qualification or spot oracle.
 """
 from typing import Annotated, ClassVar
+from automation_tariff import is_simple, valid_policy_tariff
 from eth_abi import encode
 from eth_hash.auto import keccak
 from pydantic import Field, model_validator
@@ -332,7 +333,7 @@ class ReceiptReconciler(g.CompoundReceiptReconciler):
         limits_type='(uint64,uint32,uint16,uint16,uint128,uint32,uint32)'
         policy=call('policy()',[policy_type],source)[0]
         limits=call('executionLimits()',[limits_type],source)[0]
-        if (policy[0]>200 or policy[5]!=int(a.policyVersion) or policy[6] or limits[0]!=int(a.limitsVersion)
+        if (not valid_policy_tariff(policy[0],policy[4]) or policy[5]!=int(a.policyVersion) or policy[6] or limits[0]!=int(a.limitsVersion)
                 or block['timestamp']-source['timestamp']>limits[5]
                 or int(a.deadline)-source['timestamp']>limits[5]
                 or policy!=call('policy()',[policy_type],block)[0] or limits!=call('executionLimits()',[limits_type],block)[0]):
@@ -355,6 +356,11 @@ class ReceiptReconciler(g.CompoundReceiptReconciler):
         if ((action,parent,nonce)!=(plan.action,int(a.tokenId),int(a.stateNonce)+1)
                 or destination==0 or plan.action!=3 and destination!=int(plan.destinationTokenId)):
             raise ValueError('v4_completion_mismatch')
+        if is_simple(policy[0]):
+            root_id=call('rootTokenId()',['uint256'],source)[0]
+            if plan.action not in (0,1) or int(a.tokenId)!=root_id or int(plan.destinationTokenId)!=root_id:
+                raise ValueError('v4_simple_root_only')
+            if any(int(p.tokenId)!=root_id for p in plan.collect):raise ValueError('v4_simple_root_only')
         members={}
         def member(token,at=source):
             cache_key=(token,at['hash'])
@@ -407,7 +413,8 @@ class ReceiptReconciler(g.CompoundReceiptReconciler):
             if key in rows:return rows[key]
             sid=bytes.fromhex(source_id[2:])
             known,token,original_currency,identity=call('source(bytes32)',['(bool,uint256,address,bytes32)'],source,['bytes32'],[sid])[0]
-            if not known or currency not in (seq.poolKey.currency0,seq.poolKey.currency1):raise ValueError('v4_foreign_source')
+            if (not known or currency not in (seq.poolKey.currency0,seq.poolKey.currency1)
+                    or is_simple(policy[0]) and token!=root_id):raise ValueError('v4_foreign_source')
             source_member=member(token)
             if identity!=source_member[8] or sid not in source_member[9:11]:raise ValueError('v4_foreign_source')
             original,charged=call('feeBalance(bytes32,address)',['(uint128,uint128)'],source,['bytes32','address'],[sid,currency])[0]

@@ -6,6 +6,7 @@ Inputs labelled qualified are adapter assertions, never live admission by this
 module. E2/E4/E5/E7 and independent financial review remain separate gates.
 """
 from fractions import Fraction
+from automation_tariff import is_simple
 from hashlib import sha256
 import json
 from typing import Annotated, Literal
@@ -361,7 +362,10 @@ def route_sources(observation, settings, pending_parents=frozenset()):
         available = [q for q in live if q.tokenId != p.tokenId and in_range(q)]
         # An inactive historical source may spend retained fees, never collect;
         # it cannot become a new parent or receive additional liquidity.
-        if member.active and in_range(p) and not near:
+        if is_simple(policy.serviceFeeBps):
+            chosen = (destination(p),) if member.active and p.isRoot and in_range(p) else ()
+            action, reason = ('compound_self', 'simple_root') if chosen else ('wait', 'simple_unavailable')
+        elif member.active and in_range(p) and not near:
             chosen, action, reason = (destination(p),), 'compound_self', 'ordinary_source'
         elif not member.active or (not in_range(p) and spot <= floor):
             chosen = (destination(max(available, key=rank)),) if available else ()

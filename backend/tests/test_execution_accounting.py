@@ -272,7 +272,7 @@ class ExecutionAccountingTests(unittest.TestCase):
                 item[field] = value
                 with self.subTest(field=field, value=value), self.assertRaises(ValueError):
                     consume_allocations([item], [], service_fee_bps=200)
-        for bps in (-1, 201, True, 200.0, '200'):
+        for bps in (-1, 401, True, 200.0, '200'):
             with self.subTest(bps=bps), self.assertRaisesRegex(ValueError, 'invalid_service_fee_bps'):
                 consume_allocations([lot()], [], service_fee_bps=bps)
         for update in ({'chargeStatus': 'principal'}, {'sourceId': '0x1'}, {'currency': 'ETH'},
@@ -309,7 +309,7 @@ class ExecutionAccountingTests(unittest.TestCase):
     def test_independent_fraction_bounds_and_integer_conservation_samples(self):
         rng = random.Random(85)
         for _ in range(200):
-            a, b, charged, bps = rng.randrange(1, 10000), rng.randrange(1, 10000), rng.randrange(10000), rng.randrange(201)
+            a, b, charged, bps = rng.randrange(1, 10000), rng.randrange(1, 10000), rng.randrange(10000), rng.randrange(401)
             lots = [lot(1, a), lot(2, b), lot(3, charged, charged=True)]
             allocations = [allocation(1, a), allocation(2, b)]
             if charged:

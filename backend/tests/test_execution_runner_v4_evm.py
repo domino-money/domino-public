@@ -88,7 +88,7 @@ class DurableV4ExecutorTests(unittest.TestCase):
         target=next(p.position for p in members if p.position.tokenId==str(destination or self.token))
         limits=m.ExecutionLimits(version='2',baseCurrency=seq.baseCurrency,quoteCurrency=seq.quoteCurrency,upsideBps=5000,
             maxSlippageBps=100,maxPriceImpactBps=100,maxGasCostWei=str(10**18),maxObservationAgeSeconds=120,forecastHorizonSeconds=3600)
-        policy=m.SequencePolicy(serviceFeeBps=200,triggerDistanceBps=1000,maxOverlapBps=1000,minimumIntervalSeconds=1,maxPositions=4,version='1',paused=False,limits=limits)
+        policy=m.SequencePolicy(serviceFeeBps=400,triggerDistanceBps=1000,maxOverlapBps=1000,minimumIntervalSeconds=1,maxPositions=4,version='1',paused=False,limits=limits)
         accruals=tuple(sorted((m.AccrualObservation(source=m.FeeSourceIdentity(sequence=seq.digest(),position=root.digest(),currency=c),
             amountRaw=str(10**15),checkpointId=points[root.tokenId]) for c in (seq.poolKey.currency0,seq.poolKey.currency1)),key=lambda a:a.source.digest()))
         balances=[]

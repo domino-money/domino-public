@@ -1,6 +1,7 @@
 """Closed authenticated read-only execution status. No signing/cancellation API."""
 import hmac
 from types import SimpleNamespace
+from automation_tariff import MAX_SERVICE_FEE_BPS
 from typing import Annotated, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, StrictInt, ValidationError, model_validator
@@ -55,7 +56,7 @@ class Receipt(Record):
     blockHash:Hash
     canonical:Literal[True]
     finalized:Literal[True]
-    serviceFeeBps:Annotated[StrictInt,Field(ge=0,le=200)]
+    serviceFeeBps:Annotated[StrictInt,Field(ge=0,le=MAX_SERVICE_FEE_BPS)]
     serviceFeeRecipient:Address
     liquidityIncreaseRaw:Raw
     sources:Annotated[list[SourceAmounts],Field(min_length=1,max_length=128)]

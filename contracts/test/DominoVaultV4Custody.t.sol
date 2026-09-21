@@ -130,7 +130,7 @@ contract DominoVaultV4CustodyTest is IERC721ReceiverE2, CustodyBehaviour {
         T.InitParams memory params = T.InitParams({
             rootTokenId: 11, expectedPoolId: keccak256(abi.encode(key)), baseCurrency: key.currency0,
             quoteCurrency: key.currency1, operator: OPERATOR, consentToUncollectedFees: true,
-            policy: IDominoVaultDraft.Policy(200, 500, 1000, 60, 4, 1, false),
+            policy: IDominoVaultDraft.Policy(400, 500, 1000, 60, 4, 1, false),
             limits: T.ExecutionLimits(1, 5000, 100, 100, 1 ether, 60, 3600)
         });
         harness.initialize(owner, keccak256("synthetic sequence"), params);

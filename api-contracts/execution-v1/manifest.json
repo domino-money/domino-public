@@ -12,7 +12,7 @@
     },
     {
       "path": "schema-data.mjs",
-      "sha256": "75a7d91892ce9e0cd97eeb92eed164b8f6332f189276db6754f08993ae5e387f"
+      "sha256": "7074b0d7ec44075b3b3d75e6f670a28cbf52f47e4299e2bc20a4b039a980b120"
     },
     {
       "path": "schemas/list.request.schema.json",
@@ -20,7 +20,7 @@
     },
     {
       "path": "schemas/list.response.schema.json",
-      "sha256": "0db81fc211d810222eb9649d03a238c5ba0440ad9b16e6e6514527b8f8bc45e2"
+      "sha256": "42466f60fba8a587baf93cccc76022163db50eb153c793a5ab226c9bbaa6f3d4"
     },
     {
       "path": "schemas/status.request.schema.json",
@@ -28,7 +28,7 @@
     },
     {
       "path": "schemas/status.response.schema.json",
-      "sha256": "043e0a271717a74a63ea9dc2fb93190ca9e266e69e506a3af1dd7faf49c41740"
+      "sha256": "eab3f1975e829b7a8a5ff870702e169c174527e485fb4563dbca380ee0176f87"
     },
     {
       "path": "types.ts",
@@ -50,8 +50,12 @@
   "generator": "scripts/export-execution-contract.py",
   "sources": [
     {
+      "path": "backend/automation_tariff.py",
+      "sha256": "2c856b24960db994923a16148ab627d9093b5dd956c51d73387f7173646f4d17"
+    },
+    {
       "path": "backend/execution_status.py",
-      "sha256": "620dc7e96c4fb0f0d02ec98b86f384d678e1383eececd35ac57d37803fafe44e"
+      "sha256": "d6b129ce2838f9fdcfad03e76239967a37020a5e371828d83da3e35f874da569"
     },
     {
       "path": "backend/access_transport.py",
@@ -83,7 +87,7 @@
     },
     {
       "path": "scripts/export-execution-contract.py",
-      "sha256": "843a643e7e3f061e8515f0c960cf98c3403c54d8e0fcb76715b202f396775d19"
+      "sha256": "0a0c6d2723d3588196b1142e10675b1fff49b5dded0ab1977853ad877edefbf5"
     },
     {
       "path": "backend/tests/fixtures/execution/status-wire.json",

@@ -9,7 +9,10 @@ pragma solidity 0.8.26;
 /// holding assets. Operator registration/revocation remains a separate design.
 interface IDominoVaultDraft {
     struct Policy {
-        /// @dev 0..200 bps inclusive; same hard ceiling as FeeAccounting. No default.
+        /// @dev Canonical automation mode: 200 = simple, 400 = Domino. No other tariff.
+        /// Simple requires maxPositions=1 and root-only same-position execution.
+        /// Domino applies 400 to every recipe, including same-position adds.
+        /// Converted charged lots remain exempt across owner mode changes.
         uint16 serviceFeeBps;
         /// @dev 0..2000 bps inclusive; independent of maxOverlapBps. No default.
         uint16 triggerDistanceBps;

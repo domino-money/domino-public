@@ -210,7 +210,7 @@ contract DominoVaultFactoryV4Test {
             rootTokenId: 11, expectedPoolId: keccak256(abi.encode(_key())),
             baseCurrency: _key().currency0, quoteCurrency: _key().currency1,
             operator: address(0xB0B), consentToUncollectedFees: true,
-            policy: IDominoVaultDraft.Policy(200, 500, 1000, 60, 4, 1, false),
+            policy: IDominoVaultDraft.Policy(400, 500, 1000, 60, 4, 1, false),
             limits: T.ExecutionLimits(1, 5000, 100, 100, 1 ether, 60, 3600)
         });
     }

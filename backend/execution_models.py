@@ -13,6 +13,7 @@ from pydantic import AfterValidator, BaseModel, ConfigDict, Field, StrictInt, mo
 
 from v4_math import MIN_SQRT as MIN_SQRT_RATIO, MAX_SQRT as MAX_SQRT_RATIO
 from position_accounting import core_position_id
+from automation_tariff import MAX_SERVICE_FEE_BPS, is_simple, valid_policy_tariff
 
 
 VERSION = 'e1-candidate-1'
@@ -246,7 +247,7 @@ class ExecutionLimits(Record):
 
 
 class SequencePolicy(Record):
-    serviceFeeBps: Annotated[StrictInt, Field(ge=0, le=200)]
+    serviceFeeBps: Annotated[StrictInt, Field(ge=0, le=MAX_SERVICE_FEE_BPS)]
     triggerDistanceBps: Annotated[StrictInt, Field(ge=0, le=2000)]
     maxOverlapBps: Annotated[StrictInt, Field(ge=0, le=2000)]
     minimumIntervalSeconds: Annotated[StrictInt, Field(gt=0, le=2**32-1)]
@@ -260,6 +261,8 @@ class SequencePolicy(Record):
 
     @model_validator(mode='after')
     def checked(self):
+        if not valid_policy_tariff(self.serviceFeeBps, self.maxPositions):
+            raise ValueError('invalid_automation_tariff')
         if int(self.version) == 0:
             raise ValueError('zero_policy_version')
         return self
@@ -347,6 +350,8 @@ class Observation(Record):
             raise ValueError('missing_enabled_operator')
         if sum(p.active for p in self.positions) > self.policy.maxPositions:
             raise ValueError('active_membership_exceeds_policy')
+        if is_simple(self.policy.serviceFeeBps) and any(p.active and not p.position.isRoot for p in self.positions):
+            raise ValueError('simple_active_child')
         position_ids = _unique_sorted(self.positions, lambda v: v.position.digest())
         _unique_sorted(self.balances, lambda v: v.lotId)
         _unique_sorted(self.accruals, lambda v: v.source.digest())
@@ -614,6 +619,8 @@ def validate_candidate(plan: ExecutionPlan, observation: Observation, *, now: in
     for p in observation.positions:
         if p.active and not p.position.isRoot and p.holder != sequence.vault:
             raise ValueError('child_custody_unavailable')
+    if is_simple(policy.serviceFeeBps) and (plan.action != 1 or plan.destination.tokenId != root.position.tokenId):
+        raise ValueError('simple_root_only')
     destination = positions.get(plan.destination.tokenId)
     if destination is None or not destination.active:
         raise ValueError('destination_unavailable')

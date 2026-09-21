@@ -50,7 +50,7 @@ class Rpc:
         self.after = checkpoint(seq, 101, 101, inside, inside, 1235)
         self.fresh = checkpoint(seq, 101, 100, 17*2**128, inside, 1235)
         self.zeroed = checkpoint(seq, 101, 100, inside, inside, 1235)
-        self.policy = (200, 500, 2000, 600, 4, 1, False)
+        self.policy = (200, 500, 2000, 600, 1, 1, False)
         self.limits = (1, 5000, 100, 100, 10**15, 120, 3600)
         self.plan = g.CompoundPlan(intentId=identity(777), tokenId='101', positionIdentity=self.member.digest(),
             checkpointId='0x'+self.before[6].hex(), policyVersion='1', limitsVersion='1', stateNonce='7',
@@ -145,7 +145,7 @@ class Rpc:
         return g.CompoundReceiptReconciler(self).reconcile(self.plan, self.admission, identity(402), **kwargs)
 
     def bind_e1(self):
-        original, original_plan, _ = scenario(charged=bool(self.rows[0][1]))
+        original, original_plan, _ = scenario(charged=bool(self.rows[0][1]), simple=True)
         source = m.FeeSourceIdentity(sequence=self.seq.digest(), position=self.member.digest(), currency=self.seq.poolKey.currency0)
         collection = bool(self.rows[0][2])
         balances = () if collection else (m.SourceBalance(source=source, lotId=identity(201),

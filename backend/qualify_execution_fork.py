@@ -75,9 +75,9 @@ ATTACKER = '0x000000000000000000000000000000000000bad0'
 GUARDIAN = '0x0000000000000000000000000000000000006a2d'
 RECIPIENT = '0x0000000000000000000000000000000000000fee'
 
-# The vault's own limits: 1% price impact against the anchor, 200 bps service fee.
+# The vault's own limits: 1% price impact against the anchor, 400 bps Domino service fee.
 MAX_PRICE_IMPACT_BPS = 100
-SERVICE_FEE_BPS = 200
+SERVICE_FEE_BPS = 400
 GUARD_BAND_BPS = 2000
 
 ERRORS = {keccak(name.encode())[:4].hex(): name for name in (

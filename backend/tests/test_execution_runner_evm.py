@@ -88,7 +88,7 @@ class DurableExecutorEvmTests(unittest.TestCase):
             second=self.step();self.assertEqual(second['receipt'],first['receipt'])
             self.assertEqual(len(sends),1)
             self.assertTrue(first['receipt']['e1Proof'])
-            self.assertEqual(first['receipt']['serviceFeeBps'],200)
+            self.assertEqual(first['receipt']['serviceFeeBps'],400)
             with self.pg.admin() as conn:self.assertEqual(conn.execute('SELECT count(*) FROM domino_execution.effects WHERE canonical').fetchone()[0],1)
         finally:self.rpc.request=original
 

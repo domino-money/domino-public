@@ -13,6 +13,7 @@ the existing FeeAccounting policy; this module neither creates a cumulative fee
 debt nor proves the economic eligibility of repeated tiny actions.
 """
 from collections import defaultdict
+from automation_tariff import MAX_SERVICE_FEE_BPS
 from typing import Annotated, Literal
 
 from pydantic import AfterValidator, BaseModel, ConfigDict, Field, TypeAdapter, model_validator
@@ -126,7 +127,7 @@ def consume_allocations(lots, allocations, *, service_fee_bps):
     this function is not a reservation/intent state transition. Empty allocations
     preserve every lot and permit a wait preview, never a signable wait action.
     """
-    if type(service_fee_bps) is not int or not 0 <= service_fee_bps <= 200:
+    if type(service_fee_bps) is not int or not 0 <= service_fee_bps <= MAX_SERVICE_FEE_BPS:
         raise ValueError('invalid_service_fee_bps')
     lots, allocations = _models(FeeLot, lots), _models(Allocation, allocations)
     _lot_totals(lots)

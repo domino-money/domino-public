@@ -22,11 +22,12 @@ library PolicyValidation {
     /// @dev No policy defaults are selected. The uint32/uint8 upper bounds are
     /// representational; operational/resource ceilings need deployment review.
     function validate(IDominoVaultDraft.Policy memory next) internal pure {
-        if (next.serviceFeeBps > FeeAccounting.MAX_SERVICE_FEE_BPS) revert FeeAccounting.ExcessiveFee();
+        if (!FeeAccounting.validTariff(next.serviceFeeBps)) revert FeeAccounting.ExcessiveFee();
         if (next.triggerDistanceBps > MAX_TRIGGER_DISTANCE_BPS) revert ExcessiveTriggerDistance();
         if (next.maxOverlapBps > MAX_OVERLAP_BPS) revert ExcessiveOverlap();
         if (next.minimumIntervalSeconds == 0) revert InvalidMinimumInterval();
-        if (next.maxPositions == 0) revert InvalidMaxPositions();
+        if (next.maxPositions == 0 || (FeeAccounting.isSimple(next.serviceFeeBps) && next.maxPositions != 1))
+            revert InvalidMaxPositions();
         if (next.version == 0) revert InvalidPolicyVersion();
     }
 

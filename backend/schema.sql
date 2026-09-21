@@ -21,7 +21,8 @@ CREATE TABLE sequences (
  vault_address bytea NOT NULL CHECK(octet_length(vault_address)=20),
  pool_id bytea NOT NULL CHECK(octet_length(pool_id)=32),
  policy_version bigint NOT NULL CHECK(policy_version>=0),
- protocol_fee_bps smallint NOT NULL CHECK(protocol_fee_bps BETWEEN 0 AND 200),
+ -- New policy tariff is the mode: 200 simple / 400 Domino. Historical receipts are separate.
+ protocol_fee_bps smallint NOT NULL CHECK(protocol_fee_bps IN (200,400)),
  trigger_distance_bps smallint NOT NULL CHECK(trigger_distance_bps BETWEEN 0 AND 2000),
  max_overlap_bps smallint NOT NULL CHECK(max_overlap_bps BETWEEN 0 AND 2000),
  paused boolean NOT NULL DEFAULT true,
