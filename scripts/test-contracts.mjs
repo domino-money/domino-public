@@ -7,6 +7,7 @@ import { createRequire } from 'node:module';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { checkContractSizes, formatReport } from './check-contract-size.mjs';
+import { listContractSuites } from './contract-suites.mjs';
 
 const require = createRequire(import.meta.url);
 const root = fileURLToPath(new URL('../', import.meta.url));
@@ -38,25 +39,43 @@ export async function resolveForge() {
   return binary;
 }
 
-async function main() {
-  const binary = await resolveForge();
+/** One dependency closure per invocation avoids the full-tree solc-js OOM (#145). */
+export function runContractChecks(binary, raw = [], {
+  run = runChecked, discover = listContractSuites, checkSizes = checkContractSizes,
+  reportSize = formatReport, log = console.log,
+} = {}) {
   // `build` compiles every source (including all test contracts) without
   // running tests, so backend EVM tests can load artifacts such as
   // contracts/out/DominoSetup.t.sol/SetupToken.json (issue #144).
-  const raw = process.argv.slice(2);
   const build = raw[0] === 'build';
   const extra = build ? raw.slice(1) : raw;
-  const status = runChecked(binary, contractArguments(extra, build ? 'build' : 'test'));
-  if (status !== 0) return status;
-  if (build) return 0;
+  // An explicit path remains caller-controlled, including Forge's --mp alias,
+  // = spelling and leading positional PATH shortcut. Preserve build verbatim.
+  const pathFiltered = extra.some(arg => ['--match-path', '--mp'].includes(arg)
+    || arg.startsWith('--match-path=') || arg.startsWith('--mp='))
+    || (extra.length > 0 && !extra[0].startsWith('-'))
+    || (extra.includes('--') && extra.indexOf('--') < extra.length - 1);
+  const help = extra.includes('--help') || extra.includes('-h');
+  if (build || pathFiltered || help) {
+    const status = run(binary, contractArguments(extra, build ? 'build' : 'test'));
+    if (status !== 0 || build || help) return status;
+  } else {
+    const suites = discover();
+    if (suites.length === 0) throw new Error('No authored contract test suites found.');
+    for (const suite of suites) {
+      log(`Contract suite: ${suite}`);
+      const status = run(binary, contractArguments([...extra, '--match-path', suite]));
+      if (status !== 0) return status;
+    }
+  }
   // Keep npm's trailing Forge filters attached to this launcher, not to a
   // second shell command. Inspect only artifacts from the successful build.
-  const report = checkContractSizes();
-  console.log(formatReport(report));
+  const report = checkSizes();
+  log(reportSize(report));
   return report.ok ? 0 : 1;
 }
 
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
-  try { process.exitCode = await main(); }
+  try { process.exitCode = runContractChecks(await resolveForge(), process.argv.slice(2)); }
   catch (error) { console.error(`Contract test launcher: ${error.message}`); process.exitCode = 1; }
 }
