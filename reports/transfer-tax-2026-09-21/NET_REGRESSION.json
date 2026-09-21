@@ -1,0 +1,52 @@
+{
+  "sourceFreeze": "abe25808da712de13b7f90b1c2089b08dffc0a94",
+  "mainnetTransactionsSent": false,
+  "fixtureScope": "Actual Domino contracts with official vendored v4 core/periphery and synthetic selective recipient tax; not a QUOTRON/HASH tax model.",
+  "preFix": {
+    "sourceFreeze": "7321c5bdefb27a29d15dfa2cdcbaae6cc9d9715b",
+    "observedCurrency0Raw": {
+      "realized": "9000000000002",
+      "actualLiquidityCost": "29553002118",
+      "nominalResidual": "8970446997884",
+      "residualTransferLoss": "269113409936",
+      "reportedLiquidityAdded": "298666412054",
+      "serviceFeeWithoutTax": "1231375088",
+      "serviceFeeWithTax": "12444433835"
+    },
+    "conditions": [
+      "positive residual",
+      "3% recipient withholding only on PoolManager-to-vault",
+      "exact fee recipient transfer",
+      "loose plan cost ceilings"
+    ],
+    "note": "Local diagnostic before correction, subsequently replaced by rejection regression; no live third-party operation."
+  },
+  "postFix": {
+    "routeTestsPassed": 8,
+    "routeTestsFailed": 0,
+    "actualTokenForkCasesPassed": 8,
+    "backendEvm": {
+      "receipts": 9,
+      "history": 1,
+      "runner": 7,
+      "failed": 0,
+      "skipped": 0,
+      "durationSeconds": 22.216
+    },
+    "financialReleaseEvmTestsPassed": 6,
+    "privateRpcTestsPassed": 6,
+    "deploymentFork": {
+      "status": "passed",
+      "sourceCommit": "abe25808da712de13b7f90b1c2089b08dffc0a94",
+      "sourceBlock": {
+        "number": 69032280,
+        "hash": "0x460d6d089c558492f40b8c6049b0b3b935eae328a5df45d9c3c719bc6c0d065d",
+        "timestamp": 1790017290
+      },
+      "transactions": 8,
+      "totalAnvilGasUsed": "19504419",
+      "executionAvailable": false,
+      "scope": "Own-node fork using selected real role addresses, existing balance and nonce; no balance override or private key. Full role-specific unsigned package retained locally."
+    }
+  }
+}

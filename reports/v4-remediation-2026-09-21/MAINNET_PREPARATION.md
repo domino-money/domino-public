@@ -2,9 +2,10 @@
 
 As correções do domínio de blocos Nitro e da recuperação independente do Setup
 estão implementadas. O freeze de produção é
-`7321c5bdefb27a29d15dfa2cdcbaae6cc9d9715b`, incluindo 2% no modo simples e 4% no Domino.
-Os [artifacts atuais](../revert-fees-2026-09-21/artifact-verification.json) e a
-[validação da mudança](../REVERT_FEE_DEEP_DIVE_2026-09-21.md) substituem o freeze
+`abe25808da712de13b7f90b1c2089b08dffc0a94`, incluindo a reconciliação exata da
+sobra NET e mantendo 2% no modo simples / 4% no Domino.
+Os [artifacts atuais](../transfer-tax-2026-09-21/artifact-verification.json) e a
+[qualificação e correção NET](../TOKEN_FEES_AND_NET_ACCOUNTING_2026-09-21.md) substituem o freeze
 anterior; o [relatório de correções](../V4_REMEDIATION_2026-09-21.md) preserva sua evidência histórica.
 Nenhuma transação foi assinada ou enviada à mainnet.
 

@@ -156,7 +156,11 @@ simples continua em 2%. Nenhum serviço de top-up nem execução financeira em m
 
 ## Freeze e validação da implementação
 
-Freeze de produção: `7321c5bdefb27a29d15dfa2cdcbaae6cc9d9715b`, com 13 fontes e
+A [correção NET posterior](TOKEN_FEES_AND_NET_ACCOUNTING_2026-09-21.md) supersede
+o runtime abaixo, preservando as tarifas. Os números desta seção continuam
+sendo a evidência histórica da alteração de modos.
+
+Freeze da alteração de modos: `7321c5bdefb27a29d15dfa2cdcbaae6cc9d9715b`, com 13 fontes e
 2.656 linhas. O [manifesto dos sete artifacts](revert-fees-2026-09-21/artifact-verification.json)
 registra os hashes dos fontes, artifacts, criação e runtime, além do compilador e
 dos limites. O loader verificou todos os hashes dos fontes de cada metadata

@@ -10,14 +10,18 @@ plainly as capabilities; where a claim rests on a measurement, the measurement i
 
 ## 1. Freeze
 
-**Current production-source freeze: `7321c5bdefb27a29d15dfa2cdcbaae6cc9d9715b`.**
-This supersedes the remediation freeze `aaf33947e7aeccf902b311c6d2282a742a929c2b`
-with the owner-selected automation modes: 200 bps for simple, 400 bps for every
-Domino recipe. The 13 sources have 2,656 lines. Simple mode is root-only and cannot
+**Current production-source freeze: `abe25808da712de13b7f90b1c2089b08dffc0a94`.**
+This supersedes the mode-fee freeze `7321c5bdefb27a29d15dfa2cdcbaae6cc9d9715b`
+with an exact residual-credit check for NET. The engine reads nominal core credit
+before taking it and refuses a reduced receipt, so transfer loss cannot be
+reported as productive liquidity or enlarge the service fee. The owner-selected
+rates remain 200 bps simple and 400 bps for every Domino recipe.
+The 13 sources have 2,670 lines. Simple mode is root-only and cannot
 create or fund successors; previously charged converted lots remain exempt across
 mode changes. The qualified ArbSys block source and independent Setup recovery
 remain in place. See the [fee change and validation](REVERT_FEE_DEEP_DIVE_2026-09-21.md)
-and [current artifact manifest](revert-fees-2026-09-21/artifact-verification.json). See [remediation evidence](v4-remediation-2026-09-21/)
+and [current artifact manifest](transfer-tax-2026-09-21/artifact-verification.json) and
+[transfer/token qualification and NET correction](TOKEN_FEES_AND_NET_ACCOUNTING_2026-09-21.md). See [remediation evidence](v4-remediation-2026-09-21/)
 and the [historical audit findings](V4_AUDIT_EXECUTION_2026-09-21.md).
 The deployment package must name the full final checkout SHA; its artifact
 loader verifies every source hash against that checkout.
@@ -43,8 +47,8 @@ outside the immutable slots:
 | 2 | `DominoVaultReadHelper` | 6,859 B | `0xc2d647a741091d460cc8a2f1ad797e2eebe5c6d56194566f8e6d448f01da03e7` |
 | 3 | `DominoRoutingHelperV4` | 14,111 B | `0x4727e575dd2af4db05e70303b42a424bb1cffb7a2620e1c3f457e2324120bfc4` |
 | 4 | `DominoPriceGuardV4` | 3,516 B | `0x6a5d9ceca64f252ab246a9b8e74c80eb20d149b3e8e4f6cbcddbb0cff0112885` |
-| 5 | `DominoExecutionEngineV4` | 21,899 B | `0x22e3b9f9fe254f59aa969e6bf33b1e69655b8bd376fd8e7a8d4207d1ad542416` |
-| 6 | `DominoVaultV4 (clone implementation)` | 23,694 B | `0xd946962d3cb86a29f9caefadbcab6a4b326a928034660a2654f909395f766237` |
+| 5 | `DominoExecutionEngineV4` | 22,335 B | `0x2a7fa30feda516cef9089b45473d676de3fcb05e98f33568625581115558e521` |
+| 6 | `DominoVaultV4 (clone implementation)` | 24,002 B | `0x1883165399789c62f89e8db9667a87e4a05403bd8ab484ff615dc07dd3299c04` |
 | 7 | `DominoSetup` | 13,239 B | `0x6060c68a9f15c5c22949ac060554bed17656290f707a0dbb16061d8a015812a6` |
 
 An eighth transaction, `factory.finalizeImplementation(implementation)`, binds #6 to #1 once and
@@ -68,7 +72,7 @@ PoolManager `0x8366a39cc670b4001a1121b8f6a443a643e40951`, PositionManager
 
 ## 2. Scope
 
-**In scope — 13 files under `contracts/src`, 2,656 lines**: the seven artifacts above,
+**In scope — 13 files under `contracts/src`, 2,670 lines**: the seven artifacts above,
 plus `DominoVaultTypes.sol`, `DominoExecutionTypes.sol`, `IDominoVaultDraft.sol` (the interface
 the vault takes its `Policy` struct and events from), `PolicyValidation.sol` and
 `FeeAccounting.sol`, plus the new `DominoL2Block.sol`. `DominoRoutingHelperV4` is the only production source that imports the
@@ -227,7 +231,12 @@ found while closing the others: a test of mine that claimed a clause it could no
 
 ## 6. Reproducing the evidence
 
-**The suites.** **260 tests passed across 20 suites, zero skips**, for the current
+**The suites.** The current NET correction passed **269 tests across 21 suites**,
+with 250 deterministic gas entries, plus 17 backend EVM tests. See
+[current validation](transfer-tax-2026-09-21/CORE_VALIDATION.json) and
+[qualification report](TOKEN_FEES_AND_NET_ACCOUNTING_2026-09-21.md).
+
+**260 tests passed across 20 suites, zero skips**, for the prior
 mode-fee source freeze. Results and gas provenance are recorded in the
 [implementation validation](REVERT_FEE_DEEP_DIVE_2026-09-21.md). The earlier
 remediation run had **20 suites, 256 passing tests**, recorded in

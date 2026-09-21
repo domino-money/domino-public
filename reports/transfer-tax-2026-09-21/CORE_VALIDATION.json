@@ -1,0 +1,680 @@
+{
+  "sourceFreeze": "abe25808da712de13b7f90b1c2089b08dffc0a94",
+  "command": "node scripts/gas-baseline.mjs --update",
+  "status": "passed",
+  "totalSuites": 21,
+  "totalTests": 269,
+  "deterministicEntries": 250,
+  "suites": [
+    {
+      "path": "test/DominoCompoundHelper.t.sol",
+      "tests": 12,
+      "status": "passed",
+      "evidence": "Successful sequential forge snapshot --update; compiled --list used only to enumerate count."
+    },
+    {
+      "path": "test/DominoL2Block.t.sol",
+      "tests": 7,
+      "status": "passed",
+      "evidence": "Successful sequential forge snapshot --update; compiled --list used only to enumerate count."
+    },
+    {
+      "path": "test/DominoPriceGuardV4.t.sol",
+      "tests": 16,
+      "status": "passed",
+      "evidence": "Successful sequential forge snapshot --update; compiled --list used only to enumerate count."
+    },
+    {
+      "path": "test/DominoRoutingArithmetic.t.sol",
+      "tests": 9,
+      "status": "passed",
+      "evidence": "Successful sequential forge snapshot --update; compiled --list used only to enumerate count."
+    },
+    {
+      "path": "test/DominoVaultFactoryV4.t.sol",
+      "tests": 5,
+      "status": "passed",
+      "evidence": "Successful sequential forge snapshot --update; compiled --list used only to enumerate count."
+    },
+    {
+      "path": "test/DominoVaultFactoryV4Creation.t.sol",
+      "tests": 30,
+      "status": "passed",
+      "evidence": "Successful sequential forge snapshot --update; compiled --list used only to enumerate count."
+    },
+    {
+      "path": "test/DominoVaultV4Architecture.t.sol",
+      "tests": 7,
+      "status": "passed",
+      "evidence": "Successful sequential forge snapshot --update; compiled --list used only to enumerate count."
+    },
+    {
+      "path": "test/DominoVaultV4Custody.t.sol",
+      "tests": 68,
+      "status": "passed",
+      "evidence": "Successful sequential forge snapshot --update; compiled --list used only to enumerate count."
+    },
+    {
+      "path": "test/DominoVaultV4Invariants.t.sol",
+      "tests": 6,
+      "status": "passed",
+      "evidence": "Successful sequential forge snapshot --update; compiled --list used only to enumerate count."
+    },
+    {
+      "path": "test/ExecutionEncoding.t.sol",
+      "tests": 13,
+      "status": "passed",
+      "evidence": "Successful sequential forge snapshot --update; compiled --list used only to enumerate count."
+    },
+    {
+      "path": "test/FeeAccounting.t.sol",
+      "tests": 10,
+      "status": "passed",
+      "evidence": "Successful sequential forge snapshot --update; compiled --list used only to enumerate count."
+    },
+    {
+      "path": "test/PolicyValidation.t.sol",
+      "tests": 22,
+      "status": "passed",
+      "evidence": "Successful sequential forge snapshot --update; compiled --list used only to enumerate count."
+    },
+    {
+      "path": "test/audit_anchor/AnchorExecutionEvidence.t.sol",
+      "tests": 1,
+      "status": "passed",
+      "evidence": "Successful sequential forge snapshot --update; compiled --list used only to enumerate count."
+    },
+    {
+      "path": "test/audit_custody/SetupRefundIsolation.t.sol",
+      "tests": 3,
+      "status": "passed",
+      "evidence": "Successful sequential forge snapshot --update; compiled --list used only to enumerate count."
+    },
+    {
+      "path": "test/audit_engine/EngineFeeConservationAudit.t.sol",
+      "tests": 4,
+      "status": "passed",
+      "evidence": "Successful sequential forge snapshot --update; compiled --list used only to enumerate count."
+    },
+    {
+      "path": "test/reference/OfficialDominoExecutionV4.t.sol",
+      "tests": 20,
+      "status": "passed",
+      "evidence": "Successful sequential forge snapshot --update; compiled --list used only to enumerate count."
+    },
+    {
+      "path": "test/reference/OfficialFeeOnTransferRoutes.t.sol",
+      "tests": 8,
+      "status": "passed",
+      "evidence": "Successful sequential forge snapshot --update; compiled --list used only to enumerate count."
+    },
+    {
+      "path": "test/reference/OfficialV4Compound.t.sol",
+      "tests": 5,
+      "status": "passed",
+      "evidence": "Successful sequential forge snapshot --update; compiled --list used only to enumerate count."
+    },
+    {
+      "path": "test/setup/DominoSetup.t.sol",
+      "tests": 9,
+      "status": "passed",
+      "evidence": "Successful sequential forge snapshot --update; compiled --list used only to enumerate count."
+    },
+    {
+      "path": "test/setup/OwnerReturnData.t.sol",
+      "tests": 3,
+      "status": "passed",
+      "evidence": "Successful sequential forge snapshot --update; compiled --list used only to enumerate count."
+    },
+    {
+      "path": "test/setup/SetupRecovery.t.sol",
+      "tests": 11,
+      "status": "passed",
+      "evidence": "Successful sequential forge snapshot --update; compiled --list used only to enumerate count."
+    }
+  ],
+  "gasDelta": {
+    "ok": false,
+    "regressions": [
+      {
+        "key": "AnchorExecutionEvidenceTest:testPostObservationManipulationStillLowersSuccessfulSwapOutput()",
+        "before": 30806293,
+        "after": 30957293
+      },
+      {
+        "key": "DominoVaultFactoryV4CreationTest:testAnImplementationWhoseCodeChangedAfterFinalizationCannotBeCloned()",
+        "before": 1192578,
+        "after": 1193058
+      },
+      {
+        "key": "DominoVaultFactoryV4CreationTest:testCreateAcceptsInclusivePoolPolicyAndLimitBoundaries()",
+        "before": 1150657,
+        "after": 1150701
+      },
+      {
+        "key": "DominoVaultFactoryV4CreationTest:testFinalizedFactoryPinsValidatedManagersAndImplementation()",
+        "before": 32318,
+        "after": 32362
+      },
+      {
+        "key": "DominoVaultFactoryV4CreationTest:testNativeAndReversedOrientationMatchIndependentE1Commitments()",
+        "before": 2747245,
+        "after": 2747333
+      },
+      {
+        "key": "DominoVaultFactoryV4CreationTest:testNonzeroInitialOperatorRemainsConfiguredAndAuthorized()",
+        "before": 1168218,
+        "after": 1168262
+      },
+      {
+        "key": "DominoVaultFactoryV4CreationTest:testOwnerOrVaultAsInitialOperatorDoesNotNarrowAcceptedConfiguration()",
+        "before": 2216044,
+        "after": 2216132
+      },
+      {
+        "key": "DominoVaultFactoryV4CreationTest:testPredictionUsesOwnerNonceDomainAndExactCloneCode()",
+        "before": 1175703,
+        "after": 1175769
+      },
+      {
+        "key": "DominoVaultFactoryV4CreationTest:testRegistrationCheckpointPreservesOriginalPreimageAcrossRearm()",
+        "before": 1490944,
+        "after": 1491054
+      },
+      {
+        "key": "DominoVaultFactoryV4CreationTest:testZeroInitialOperatorIsDisabledWithoutSpuriousChangeEvent()",
+        "before": 1140354,
+        "after": 1140398
+      },
+      {
+        "key": "DominoVaultFactoryV4Test:testCreateVaultBindsTheOwnerNonceAndTheAddressItPredicted()",
+        "before": 6023482,
+        "after": 6085364
+      },
+      {
+        "key": "DominoVaultFactoryV4Test:testFinalizeImplementationIsDeployerOnlyOneShotAndIdentityChecked()",
+        "before": 8207649,
+        "after": 8269531
+      },
+      {
+        "key": "DominoVaultV4ArchitectureTest:testChangedButFunctionalHelperRuntimeIsRejectedByHash()",
+        "before": 140385,
+        "after": 140583
+      },
+      {
+        "key": "DominoVaultV4ArchitectureTest:testFactoryClonesShareFixedHelperWithoutSharingOwnerState()",
+        "before": 8586079,
+        "after": 8689120
+      },
+      {
+        "key": "DominoVaultV4ArchitectureTest:testHelperRejectsMutationAndCustodySelectorsWithoutChangingVault()",
+        "before": 70209,
+        "after": 70297
+      },
+      {
+        "key": "DominoVaultV4ArchitectureTest:testMissingHelperCannotBlockTrackedUntrackedOrNFTRecovery()",
+        "before": 7142348,
+        "after": 7245413
+      },
+      {
+        "key": "DominoVaultV4ArchitectureTest:testMissingHelperFailsClosedAndRestorationAllowsExplicitRearm()",
+        "before": 484513,
+        "after": 484909
+      },
+      {
+        "key": "DominoVaultV4ArchitectureTest:testUnavailableHelperRollsBackFactoryCreationAndSamePredictionRetries()",
+        "before": 1344620,
+        "after": 1344664
+      },
+      {
+        "key": "DominoVaultV4ArchitectureTest:testVersionFourUsesExistingIdentityDomainWithNewVersionValue()",
+        "before": 40582,
+        "after": 40626
+      },
+      {
+        "key": "DominoVaultV4CustodyTest:testARecodedEngineBreaksTheDeploymentPinAndKeepsCallbacksRefused()",
+        "before": 111546,
+        "after": 115340
+      },
+      {
+        "key": "DominoVaultV4CustodyTest:testActiveChildCannotBypassManagedExitViaRecovery()",
+        "before": 843826,
+        "after": 844155
+      },
+      {
+        "key": "DominoVaultV4CustodyTest:testArtificialCreditSinksRequireRealBalanceBackingAndPreserveChargeClass()",
+        "before": 278788,
+        "after": 278898
+      },
+      {
+        "key": "DominoVaultV4CustodyTest:testBothERC20CurrenciesWithdrawUsingCanonicalOrder()",
+        "before": 11521101,
+        "after": 11623705
+      },
+      {
+        "key": "DominoVaultV4CustodyTest:testBurnCallbackInvalidatesRootWithoutStrandingAlreadyTrackedReserves()",
+        "before": 152360,
+        "after": 152448
+      },
+      {
+        "key": "DominoVaultV4CustodyTest:testColdCloneUnsubscribeCallbackFitsConservative100kGasBudget()",
+        "before": 40755,
+        "after": 40821
+      },
+      {
+        "key": "DominoVaultV4CustodyTest:testDeliveredRootTransferAndRescueEmitTwoOrderedInvalidations()",
+        "before": 110088,
+        "after": 110242
+      },
+      {
+        "key": "DominoVaultV4CustodyTest:testDonationsAreUntrackedAndRecoveryCannotTouchReservedFees()",
+        "before": 217049,
+        "after": 217137
+      },
+      {
+        "key": "DominoVaultV4CustodyTest:testERC20FalseReturnAndRevertRollBackLedgerAndBalances()",
+        "before": 188561,
+        "after": 188702
+      },
+      {
+        "key": "DominoVaultV4CustodyTest:testERC20PairCanRecoverNativeDonationWithoutTouchingTrackedTokens()",
+        "before": 12077474,
+        "after": 12179990
+      },
+      {
+        "key": "DominoVaultV4CustodyTest:testERC20ReentryCannotWithdrawSecondSource()",
+        "before": 304703,
+        "after": 304835
+      },
+      {
+        "key": "DominoVaultV4CustodyTest:testERC20TransferFeeIsAbsorbedByTheOwnerWhileTheLedgerStaysBacked()",
+        "before": 11526195,
+        "after": 11628909
+      },
+      {
+        "key": "DominoVaultV4CustodyTest:testExecutionCallbacksRefuseEveryCallerOutsideAnExecution()",
+        "before": 122274,
+        "after": 136202
+      },
+      {
+        "key": "DominoVaultV4CustodyTest:testExecutionMintRefusesASecondSuccessorAndAManagerThatDidSomethingElse()",
+        "before": 992795,
+        "after": 993703
+      },
+      {
+        "key": "DominoVaultV4CustodyTest:testExternalModifyCallbackInvalidatesWithoutCreditingReportedFees()",
+        "before": 57633,
+        "after": 57686
+      },
+      {
+        "key": "DominoVaultV4CustodyTest:testForeignSubscriberRequiresExplicitUnsubscribeBeforeRearm()",
+        "before": 322129,
+        "after": 322217
+      },
+      {
+        "key": "DominoVaultV4CustodyTest:testForgedCreditCannotFabricateAWithdrawableReserve()",
+        "before": 48705,
+        "after": 48815
+      },
+      {
+        "key": "DominoVaultV4CustodyTest:testHarnessStandsUpTheShippedVaultNotItsTwin()",
+        "before": 58917,
+        "after": 58983
+      },
+      {
+        "key": "DominoVaultV4CustodyTest:testIndividualApprovalIsRequiredEvenWithGlobalApproval()",
+        "before": 216887,
+        "after": 217019
+      },
+      {
+        "key": "DominoVaultV4CustodyTest:testInitializedRootStaysWithOwnerAndCheckpointDoesNotCreditFees()",
+        "before": 99958,
+        "after": 100068
+      },
+      {
+        "key": "DominoVaultV4CustodyTest:testInsufficientCallbackBudgetLeavesAdvisoryFlagButAuthorityFailsClosed()",
+        "before": 64598,
+        "after": 64664
+      },
+      {
+        "key": "DominoVaultV4CustodyTest:testMockManagerEntryGuardsRejectOperationsWhileUnlocked()",
+        "before": 852574,
+        "after": 852903
+      },
+      {
+        "key": "DominoVaultV4CustodyTest:testNativeOwnerBurnCallbackRejectedWhileWithdrawalCompletes()",
+        "before": 12136699,
+        "after": 12239369
+      },
+      {
+        "key": "DominoVaultV4CustodyTest:testNativeOwnerCallbackCanUnsubscribeDuringUntrackedRecovery()",
+        "before": 12049081,
+        "after": 12151707
+      },
+      {
+        "key": "DominoVaultV4CustodyTest:testNativeOwnerCallbackCanUnsubscribeRootDuringSuccessfulExit()",
+        "before": 12051674,
+        "after": 12154344
+      },
+      {
+        "key": "DominoVaultV4CustodyTest:testNativeOwnerChildExitReentryFailsAtReentrancyGuard()",
+        "before": 12817630,
+        "after": 12920541
+      },
+      {
+        "key": "DominoVaultV4CustodyTest:testNativeOwnerModifyCallbackRejectedWhileWithdrawalCompletes()",
+        "before": 12156044,
+        "after": 12258714
+      },
+      {
+        "key": "DominoVaultV4CustodyTest:testNoNFTCanBePushedIntoTheVaultBecauseItDeclaresNoReceiverHook()",
+        "before": 11396269,
+        "after": 11498895
+      },
+      {
+        "key": "DominoVaultV4CustodyTest:testNotifyBurnRefusesAForgedCallerAndAForeignToken()",
+        "before": 40660,
+        "after": 40726
+      },
+      {
+        "key": "DominoVaultV4CustodyTest:testNotifySubscribeBindsTheTokenAndTheIdentityPayload()",
+        "before": 565549,
+        "after": 565708
+      },
+      {
+        "key": "DominoVaultV4CustodyTest:testOnlyManagerCanNotifyAndUnexpectedSubscriptionCannotArmVault()",
+        "before": 64606,
+        "after": 64716
+      },
+      {
+        "key": "DominoVaultV4CustodyTest:testOperatorMayPauseAndMayNotResume()",
+        "before": 63752,
+        "after": 63774
+      },
+      {
+        "key": "DominoVaultV4CustodyTest:testOperatorMayPauseButOnlyOwnerMayResumeAndRevocationStopsOperator()",
+        "before": 72212,
+        "after": 72234
+      },
+      {
+        "key": "DominoVaultV4CustodyTest:testOwnerNativeReceiverReentryFailsWhileOuterExitSucceeds()",
+        "before": 12094396,
+        "after": 12197000
+      },
+      {
+        "key": "DominoVaultV4CustodyTest:testOwnerOnlyCustodyRefusesOperatorAndStranger()",
+        "before": 97994,
+        "after": 98214
+      },
+      {
+        "key": "DominoVaultV4CustodyTest:testOwnerWithoutNFTReceiverRecoversManagedAndUnmanagedNFTs()",
+        "before": 12261985,
+        "after": 12364764
+      },
+      {
+        "key": "DominoVaultV4CustodyTest:testPauseAndRootTransferLeaveOwnerExitsAvailable()",
+        "before": 961583,
+        "after": 962022
+      },
+      {
+        "key": "DominoVaultV4CustodyTest:testPlainNFTExitNeverCallsOwnerReceiverOrReentryHook()",
+        "before": 13359471,
+        "after": 13462491
+      },
+      {
+        "key": "DominoVaultV4CustodyTest:testPlainNFTManagerFailureRollsBackAndManagerReentryIsUnauthorized()",
+        "before": 1655435,
+        "after": 1656027
+      },
+      {
+        "key": "DominoVaultV4CustodyTest:testRearmRootRequiresExplicitConsent()",
+        "before": 147928,
+        "after": 148016
+      },
+      {
+        "key": "DominoVaultV4CustodyTest:testRearmSnapshotsExactCoreStateWithoutReplacingOriginalSourceIdentity()",
+        "before": 474609,
+        "after": 474851
+      },
+      {
+        "key": "DominoVaultV4CustodyTest:testRecoverUntrackedCurrencyAdmitsNativeAndRefusesTrackedValue()",
+        "before": 51714,
+        "after": 51736
+      },
+      {
+        "key": "DominoVaultV4CustodyTest:testRecoverUntrackedCurrencyNeverReachesTheLedgerItTracks()",
+        "before": 62229,
+        "after": 62251
+      },
+      {
+        "key": "DominoVaultV4CustodyTest:testRejectingNativeReceiverRollsBackButNFTExitDoesNotRequireReceiver()",
+        "before": 12709309,
+        "after": 12812176
+      },
+      {
+        "key": "DominoVaultV4CustodyTest:testRepeatedInvalidationCallbacksDoNotCreateNewAuthorityTransitions()",
+        "before": 80507,
+        "after": 80612
+      },
+      {
+        "key": "DominoVaultV4CustodyTest:testResumeRefusesWhileTheRootPermissionIsGoneButPauseDoesNot()",
+        "before": 11348041,
+        "after": 11450579
+      },
+      {
+        "key": "DominoVaultV4CustodyTest:testSetOperatorRefusesZeroAndANoOpChange()",
+        "before": 40446,
+        "after": 40556
+      },
+      {
+        "key": "DominoVaultV4CustodyTest:testSubscriberCallbacksRefuseAnyCallerButThePositionManager()",
+        "before": 43731,
+        "after": 43841
+      },
+      {
+        "key": "DominoVaultV4CustodyTest:testTaxedUntrackedRecoveryPaysOutWhileTheVaultSideDebitStaysExact()",
+        "before": 11549388,
+        "after": 11651904
+      },
+      {
+        "key": "DominoVaultV4CustodyTest:testTerminalAuthorityGenerationBlocksNewAuthorityButPermitsRevocationAndOwnerExits()",
+        "before": 940458,
+        "after": 940919
+      },
+      {
+        "key": "DominoVaultV4CustodyTest:testTerminalGenerationRootRecoverySaturatesAndEmitsReasonFour()",
+        "before": 102348,
+        "after": 102414
+      },
+      {
+        "key": "DominoVaultV4CustodyTest:testTerminalNonceRejectsNewAuthorityButOwnerRecoveryRemainsAvailable()",
+        "before": 891599,
+        "after": 891950
+      },
+      {
+        "key": "DominoVaultV4CustodyTest:testTerminalNonceStopsOrdinaryPathsAndNeverStopsRecovery()",
+        "before": 79070,
+        "after": 79158
+      },
+      {
+        "key": "DominoVaultV4CustodyTest:testTerminalSurplusNFTRecoveryAndPauseEmitExactRecoveryEvents()",
+        "before": 199030,
+        "after": 199096
+      },
+      {
+        "key": "DominoVaultV4CustodyTest:testUnavailableStateViewBlocksAuthorityButNotNativeERC20AndChildRecovery()",
+        "before": 956001,
+        "after": 956396
+      },
+      {
+        "key": "DominoVaultV4CustodyTest:testUnexpectedLiquidityNotificationInvalidatesTheRoot()",
+        "before": 28328,
+        "after": 28372
+      },
+      {
+        "key": "DominoVaultV4CustodyTest:testUnmanagedRescueIgnoresRejectingReceiverAndCannotInvokeOwnerReentry()",
+        "before": 12134642,
+        "after": 12237158
+      },
+      {
+        "key": "DominoVaultV4CustodyTest:testUnsafePreviouslyWithdrawnChildRecoveryPreservesHistoricalSources()",
+        "before": 895203,
+        "after": 895598
+      },
+      {
+        "key": "DominoVaultV4CustodyTest:testUnsafeRootRecoveryInvalidatesOnceAndRequiresExplicitRearm()",
+        "before": 295479,
+        "after": 295721
+      },
+      {
+        "key": "DominoVaultV4CustodyTest:testUnsafeUnknownNFTCanOnlyBeRecoveredToImmutableOwner()",
+        "before": 177258,
+        "after": 177302
+      },
+      {
+        "key": "DominoVaultV4CustodyTest:testUnsubscribeGasGuardRevertsBeforeLosingSubscription()",
+        "before": 42838,
+        "after": 42860
+      },
+      {
+        "key": "DominoVaultV4CustodyTest:testWithdrawChildPositionRefusesTheRootAWithdrawnChildAndAnUnknownToken()",
+        "before": 934252,
+        "after": 934603
+      },
+      {
+        "key": "DominoVaultV4CustodyTest:testWithdrawFeeReservesRefusesInOrderAndNeverPaysAnEmptyReserve()",
+        "before": 71753,
+        "after": 71885
+      },
+      {
+        "key": "DominoVaultV4CustodyTest:testWithdrawNativeAndERC20ReservesPaysOnlyOwnerWithNoFee()",
+        "before": 246140,
+        "after": 246250
+      },
+      {
+        "key": "DominoVaultV4CustodyTest:testWrongCurrencyAndUnknownSourceCannotWithdrawAnotherBalance()",
+        "before": 196147,
+        "after": 196279
+      },
+      {
+        "key": "DominoVaultV4CustodyTest:testZeroWithdrawalFailsForKnownBackedSource()",
+        "before": 106442,
+        "after": 106530
+      },
+      {
+        "key": "DominoVaultV4InvariantsTest:testTheHandlerReachesEveryAction()",
+        "before": 1474816,
+        "after": 1475497
+      },
+      {
+        "key": "OfficialDominoExecutionV4Test:testAddCeilingBindsEveryActionAndFailsClosed()",
+        "before": 32610639,
+        "after": 32712588
+      },
+      {
+        "key": "OfficialDominoExecutionV4Test:testAddCeilingRefusesInBandCompositionShift()",
+        "before": 31524136,
+        "after": 31675690
+      },
+      {
+        "key": "OfficialDominoExecutionV4Test:testBadGeometryAndIndependentTriggerDenied()",
+        "before": 28825952,
+        "after": 28975983
+      },
+      {
+        "key": "OfficialDominoExecutionV4Test:testCallbacksAndForeignSourcesNeverAdmitted()",
+        "before": 28426262,
+        "after": 28575877
+      },
+      {
+        "key": "OfficialDominoExecutionV4Test:testCapIncludesRootAndUnconsumedFloorReverts()",
+        "before": 28794137,
+        "after": 28944182
+      },
+      {
+        "key": "OfficialDominoExecutionV4Test:testCollectionCapCannotConsumeOldUnallocatedFees()",
+        "before": 30348200,
+        "after": 30499290
+      },
+      {
+        "key": "OfficialDominoExecutionV4Test:testFundExistingSuccessorUsingEligibleParentFees()",
+        "before": 31209934,
+        "after": 31360627
+      },
+      {
+        "key": "OfficialDominoExecutionV4Test:testGeneralUsesWaitingFeesWithoutNewCollectionAndPreservesDonation()",
+        "before": 29917619,
+        "after": 30068075
+      },
+      {
+        "key": "OfficialDominoExecutionV4Test:testNettingRejectsInsufficientRealizedAndChargedPath()",
+        "before": 29123626,
+        "after": 29288687
+      },
+      {
+        "key": "OfficialDominoExecutionV4Test:testOfficialInverseSuccessorMint()",
+        "before": 29893857,
+        "after": 30043777
+      },
+      {
+        "key": "OfficialDominoExecutionV4Test:testOfficialNettingParityERC20AndGas()",
+        "before": 29973369,
+        "after": 30134792
+      },
+      {
+        "key": "OfficialDominoExecutionV4Test:testOfficialNettingParityNativeAndGas()",
+        "before": 29765185,
+        "after": 29926609
+      },
+      {
+        "key": "OfficialDominoExecutionV4Test:testOfficialSuccessorMintAndParentReplay()",
+        "before": 30169704,
+        "after": 30319913
+      },
+      {
+        "key": "OfficialDominoExecutionV4Test:testOfficialSwapConservationAndChargeOnceLineage()",
+        "before": 30231309,
+        "after": 30382189
+      },
+      {
+        "key": "OfficialDominoExecutionV4Test:testOwnerCanExitChildrenAndFeesWhenEngineUnavailable()",
+        "before": 29851221,
+        "after": 30001295
+      },
+      {
+        "key": "OfficialDominoExecutionV4Test:testRootTransferAndUnexpectedNftRecoveryRemainOwnerOnly()",
+        "before": 30027593,
+        "after": 30176907
+      },
+      {
+        "key": "OfficialDominoExecutionV4Test:testSuccessorReorgReplayReturnsOneCanonicalChild()",
+        "before": 31488593,
+        "after": 31639009
+      },
+      {
+        "key": "OfficialDominoExecutionV4Test:testSwapMinimumPartialFillRevocationAndExpiredAtomic()",
+        "before": 30426604,
+        "after": 30578004
+      },
+      {
+        "key": "OfficialDominoExecutionV4Test:testTransientScratchClearsBetweenCallsInOneTransaction()",
+        "before": 30685948,
+        "after": 30840764
+      }
+    ],
+    "improvements": [],
+    "added": [
+      "DominoVaultV4CustodyTest:testResidualTakeRefusesAnAuthenticatedNonNetExecution()",
+      "OfficialFeeOnTransferRoutesTest:testGeneralCollectTaxFromPoolManagerToVaultRevertsAtomically()",
+      "OfficialFeeOnTransferRoutesTest:testGeneralFundingTaxFromVaultToPoolManagerRevertsAtomically()",
+      "OfficialFeeOnTransferRoutesTest:testNetResidualTaxFailsWhenPlanCeilingsUseIndependentActualCost()",
+      "OfficialFeeOnTransferRoutesTest:testNetResidualTaxRevertsEvenWithLooseBoundsAndExemptFeeRecipient()",
+      "OfficialFeeOnTransferRoutesTest:testNetWithoutResidualDoesNotInvokeTransferTaxForInternallyNettedAmounts()",
+      "OfficialFeeOnTransferRoutesTest:testServiceFeeTaxFromVaultToRecipientRevertsBothRecipesAtomically()",
+      "OfficialFeeOnTransferRoutesTest:testSwapInputTaxFromVaultToPoolManagerRevertsAtomically()",
+      "OfficialFeeOnTransferRoutesTest:testSwapOutputTaxFromPoolManagerToVaultRevertsAtomically()"
+    ],
+    "removed": [],
+    "note": "Intentional gas increases from exact NET residual checks, a separate PositionManager take call, and larger contracts deployed inside fixtures. The gas baseline was deliberately renewed. Runtime size reserves and frontend bundle budgets remain unchanged. Fixture gas is not production execution gas."
+  }
+}

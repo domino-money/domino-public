@@ -1,0 +1,204 @@
+{
+  "schemaVersion": 1,
+  "kind": "isolated-live-token-transfer-replay",
+  "startedAtUTC": "2026-09-21T18:55:32.864Z",
+  "chainId": 4663,
+  "sourceBlock": {
+    "number": 69017481,
+    "hash": "0xf49e7cea2707d87c922f4b9bae473da523710375c8e9a70e68b591d412077471",
+    "timestamp": 1790015806,
+    "selection": "finalized"
+  },
+  "sourceEvidenceSha256": "251b607af566ec8830340ebeff6d16305889e42da05f8f813b260e5fe1e91649",
+  "mainnetTransactionsSent": false,
+  "privateKeysUsed": false,
+  "actors": {
+    "holder": "0x00000000000000000000000000000000000a11ce",
+    "vault": "0x000000000000000000000000000000000000b0b1",
+    "recipient": "0x000000000000000000000000000000000000cafe",
+    "poolManager": "0x8366a39cc670b4001a1121b8f6a443a643e40951"
+  },
+  "overrides": [
+    {
+      "scope": "local fork only",
+      "token": "0x5a86828efd322bfb16d93cfed16ee9bc14940d7f",
+      "account": "0x00000000000000000000000000000000000a11ce",
+      "storageSlot": "0x6203dd68657862fa26bd7c4a12a3a2b3bbf2220be739d51860c5d12e036c38ec",
+      "oldBalance": "0",
+      "syntheticBalance": "100000000000000000"
+    },
+    {
+      "scope": "local fork only",
+      "token": "0x5a86828efd322bfb16d93cfed16ee9bc14940d7f",
+      "account": "0x000000000000000000000000000000000000b0b1",
+      "storageSlot": "0xaabbe5a370944977f524b123c4888ef8cbaaa80febc01f92b63930037e9898eb",
+      "oldBalance": "0",
+      "syntheticBalance": "100000000000000000"
+    },
+    {
+      "scope": "local fork only",
+      "token": "0x5a86828efd322bfb16d93cfed16ee9bc14940d7f",
+      "account": "0x000000000000000000000000000000000000cafe",
+      "storageSlot": "0x336623c45f4242c97e6c17a49fb00471ec0564c385d11348671bf17265e46b72",
+      "oldBalance": "0",
+      "syntheticBalance": "100000000000000000"
+    },
+    {
+      "scope": "local fork only",
+      "token": "0xca75082b85bb7bec8325d513f615b16bda260020",
+      "account": "0x00000000000000000000000000000000000a11ce",
+      "storageSlot": "0xf1250360e2ad427cd17d744ecf2e2acd9b4c3f0f531f6f28fc3ddbd52ee313a4",
+      "oldBalance": "0",
+      "syntheticBalance": "100000000000000000"
+    },
+    {
+      "scope": "local fork only",
+      "token": "0xca75082b85bb7bec8325d513f615b16bda260020",
+      "account": "0x000000000000000000000000000000000000b0b1",
+      "storageSlot": "0x52fdb3a3b404330016290532466fe4ff41c112188c4e6984e526ba9d5e262635",
+      "oldBalance": "0",
+      "syntheticBalance": "100000000000000000"
+    },
+    {
+      "scope": "local fork only",
+      "token": "0xca75082b85bb7bec8325d513f615b16bda260020",
+      "account": "0x000000000000000000000000000000000000cafe",
+      "storageSlot": "0xfca184fb6115c9787009c7fd78e2e038eafb2fcb628ecd9bc503dbb15a17583f",
+      "oldBalance": "0",
+      "syntheticBalance": "100000000000000000"
+    }
+  ],
+  "cases": [
+    {
+      "token": "0xca75082b85bb7bec8325d513f615b16bda260020",
+      "label": "ordinary holder to simulated vault",
+      "from": "0x00000000000000000000000000000000000a11ce",
+      "to": "0x000000000000000000000000000000000000b0b1",
+      "amount": "10000000000000000",
+      "beforeFrom": "100000000000000000",
+      "beforeTo": "100000000000000000",
+      "afterFrom": "90000000000000000",
+      "afterTo": "110000000000000000",
+      "senderDebit": "10000000000000000",
+      "recipientCredit": "10000000000000000",
+      "localReceiptHash": "0x86742aea6e44e4ab166892c5ae2fb2e75810fa2f4ffc2c848a697339b1a42ee6",
+      "localGasUsed": "34049",
+      "status": "passed"
+    },
+    {
+      "token": "0xca75082b85bb7bec8325d513f615b16bda260020",
+      "label": "simulated vault to fee recipient",
+      "from": "0x000000000000000000000000000000000000b0b1",
+      "to": "0x000000000000000000000000000000000000cafe",
+      "amount": "10000000000000000",
+      "beforeFrom": "100000000000000000",
+      "beforeTo": "100000000000000000",
+      "afterFrom": "90000000000000000",
+      "afterTo": "110000000000000000",
+      "senderDebit": "10000000000000000",
+      "recipientCredit": "10000000000000000",
+      "localReceiptHash": "0x38459da415326f3e1f7f9bb04bdd7fe38bdf7e5f67bd250e18143596af07c14b",
+      "localGasUsed": "34049",
+      "status": "passed"
+    },
+    {
+      "token": "0xca75082b85bb7bec8325d513f615b16bda260020",
+      "label": "simulated vault to PoolManager",
+      "from": "0x000000000000000000000000000000000000b0b1",
+      "to": "0x8366a39cc670b4001a1121b8f6a443a643e40951",
+      "amount": "10000000000000000",
+      "beforeFrom": "100000000000000000",
+      "beforeTo": "278461770296107813717761",
+      "afterFrom": "90000000000000000",
+      "afterTo": "278461780296107813717761",
+      "senderDebit": "10000000000000000",
+      "recipientCredit": "10000000000000000",
+      "localReceiptHash": "0xb7ff75f0737545042cc6d485e6517f6317b7a902cf3b24ce1f099873de379cb2",
+      "localGasUsed": "34253",
+      "status": "passed"
+    },
+    {
+      "token": "0xca75082b85bb7bec8325d513f615b16bda260020",
+      "label": "PoolManager to simulated vault",
+      "from": "0x8366a39cc670b4001a1121b8f6a443a643e40951",
+      "to": "0x000000000000000000000000000000000000b0b1",
+      "amount": "10000000000000000",
+      "beforeFrom": "278461770296107813717761",
+      "beforeTo": "100000000000000000",
+      "afterFrom": "278461760296107813717761",
+      "afterTo": "110000000000000000",
+      "senderDebit": "10000000000000000",
+      "recipientCredit": "10000000000000000",
+      "localReceiptHash": "0x3736a68af45918be96334061b53c288aa1b69be328e7230886e6bff907f42061",
+      "localGasUsed": "34049",
+      "status": "passed"
+    },
+    {
+      "token": "0x5a86828efd322bfb16d93cfed16ee9bc14940d7f",
+      "label": "ordinary holder to simulated vault",
+      "from": "0x00000000000000000000000000000000000a11ce",
+      "to": "0x000000000000000000000000000000000000b0b1",
+      "amount": "10000000000000000",
+      "beforeFrom": "100000000000000000",
+      "beforeTo": "100000000000000000",
+      "afterFrom": "90000000000000000",
+      "afterTo": "110000000000000000",
+      "senderDebit": "10000000000000000",
+      "recipientCredit": "10000000000000000",
+      "localReceiptHash": "0x39be510cf92724fe3060f8845a05a94b937210ca60045f7a8ccfaaf3f2353193",
+      "localGasUsed": "68366",
+      "status": "passed"
+    },
+    {
+      "token": "0x5a86828efd322bfb16d93cfed16ee9bc14940d7f",
+      "label": "simulated vault to fee recipient",
+      "from": "0x000000000000000000000000000000000000b0b1",
+      "to": "0x000000000000000000000000000000000000cafe",
+      "amount": "10000000000000000",
+      "beforeFrom": "100000000000000000",
+      "beforeTo": "100000000000000000",
+      "afterFrom": "90000000000000000",
+      "afterTo": "110000000000000000",
+      "senderDebit": "10000000000000000",
+      "recipientCredit": "10000000000000000",
+      "localReceiptHash": "0x3ae468fc9d6c41cecc2dcffd103f97a919b79e422e62cde876c643d7ae3707cf",
+      "localGasUsed": "68366",
+      "status": "passed"
+    },
+    {
+      "token": "0x5a86828efd322bfb16d93cfed16ee9bc14940d7f",
+      "label": "simulated vault to PoolManager without canonical router",
+      "from": "0x000000000000000000000000000000000000b0b1",
+      "to": "0x8366a39cc670b4001a1121b8f6a443a643e40951",
+      "amount": "10000000000000000",
+      "beforeFrom": "100000000000000000",
+      "beforeTo": "42571212514344059305",
+      "expectedError": "NotRouter",
+      "error": "NotRouter",
+      "revertData": "0x91655201",
+      "status": "passed"
+    },
+    {
+      "token": "0x5a86828efd322bfb16d93cfed16ee9bc14940d7f",
+      "label": "PoolManager to simulated vault without transient authorization",
+      "from": "0x8366a39cc670b4001a1121b8f6a443a643e40951",
+      "to": "0x000000000000000000000000000000000000b0b1",
+      "amount": "10000000000000000",
+      "beforeFrom": "42571212514344059305",
+      "beforeTo": "100000000000000000",
+      "expectedError": "UnauthorizedPoolSettlement",
+      "error": "UnauthorizedPoolSettlement",
+      "revertData": "0xc16ce029",
+      "status": "passed"
+    }
+  ],
+  "limitations": [
+    "Synthetic holders and balances isolate transfer semantics; no actual Domino vault or full trading path is executed.",
+    "Amounts below one QUOTRON unit avoid ERC404 NFT synchronization boundaries; these tests do not qualify those boundaries.",
+    "A successful exact ordinary transfer does not admit a token, pool, hook or router into Domino."
+  ],
+  "canonicalityRechecked": true,
+  "status": "passed",
+  "finishedAtUTC": "2026-09-21T18:55:33.387Z",
+  "scriptSha256": "89d03d5bc17cb63af9e044c1318bd1c455fa1fc2254516950c05a05d0dfa7074"
+}

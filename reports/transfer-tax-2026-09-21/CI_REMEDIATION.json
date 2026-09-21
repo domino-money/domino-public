@@ -1,0 +1,60 @@
+{
+  "kind": "ci-cause-remediation",
+  "date": "2026-09-21",
+  "repository": "domino-money/domino",
+  "fixCommit": "d56f0dad6446928017fe67184f4589432a160d0e",
+  "failedRuns": [
+    {
+      "runId": 35638449070,
+      "head": "993a042"
+    },
+    {
+      "runId": 35635689110,
+      "head": "b3f841f"
+    },
+    {
+      "runId": 35632777019,
+      "head": "fbb10a2"
+    },
+    {
+      "runId": 35630455335,
+      "head": "d0a67b6"
+    }
+  ],
+  "causes": [
+    "performance-v2 generated manifest referenced a stale source hash",
+    "wallet all-lazy bundle 150184 gzip bytes exceeded unchanged 150000-byte budget"
+  ],
+  "changes": [
+    "Regenerate financial manifests and consumer pins",
+    "Share identical closed-schema traversal/wrappers, preserving separately bound contract semantic callbacks and strict validation"
+  ],
+  "nodeVersion": "24.21.0",
+  "viteVersion": "7.3.6",
+  "bundleGzipBytes": {
+    "beforeWalletTest": 150184,
+    "afterWalletTest": 149589,
+    "afterProduction": 149090,
+    "unchangedBudget": 150000
+  },
+  "localChecks": {
+    "exportersPassed": 2,
+    "bridgeTestsPassed": 771,
+    "apiContractTestsPassed": 582,
+    "newRegressionsPassed": 9,
+    "appLogicTestsPassed": 1136,
+    "typecheck": "passed",
+    "lint": "passed",
+    "build": "passed",
+    "renderTestsPassed": 36,
+    "sessionTestsPassed": 64,
+    "consumerTestsPassed": 35,
+    "financeTestsPassed": 16,
+    "gateTestsPassed": 25,
+    "lastReadAssertionsPassed": 70,
+    "lastReadSkipped": 6,
+    "aggregateCheckApp": "partial; three final test processes blocked on browser.close because macOS GoogleUpdater inherited pipes. Only test processes were terminated; no test or budget was weakened."
+  },
+  "historicalRunsRerun": false,
+  "remoteResult": "See CI of the final integrated commit; historical failed runs retain their original code and result."
+}
