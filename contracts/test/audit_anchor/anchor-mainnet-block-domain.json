@@ -1,0 +1,83 @@
+{
+  "checkedAtUTC": "2026-09-21T14:58:24.588780+00:00",
+  "endpoint": "https://rpc.mainnet.chain.robinhood.com",
+  "chainId": 4663,
+  "block": {
+    "number": "0x41b203a",
+    "hash": "0x2e5953a95b6c5fc471393180c25e05b5842eff0848467664f6f74827e49f8951",
+    "l1BlockNumber": "0x18d2285",
+    "timestamp": "0x6ab1460f"
+  },
+  "previousBlock": {
+    "number": "0x41b2039",
+    "hash": "0xb7b6646b4e8e03a76ee7a268e4229b8fba222b8b9869fa6e7e3678df0f71a4d2",
+    "l1BlockNumber": "0x18d2285",
+    "timestamp": "0x6ab1460f"
+  },
+  "calls": [
+    {
+      "label": "NUMBER",
+      "method": "eth_call",
+      "params": [
+        {
+          "data": "0x4360005260206000f3"
+        },
+        "0x41b203a"
+      ],
+      "result": "0x00000000000000000000000000000000000000000000000000000000018d2285"
+    },
+    {
+      "label": "BLOCKHASH_of_prior_L2",
+      "method": "eth_call",
+      "params": [
+        {
+          "data": "0x7f00000000000000000000000000000000000000000000000000000000041b20394060005260206000f3"
+        },
+        "0x41b203a"
+      ],
+      "result": "0x0000000000000000000000000000000000000000000000000000000000000000"
+    },
+    {
+      "label": "ArbSys.arbBlockNumber",
+      "method": "eth_call",
+      "params": [
+        {
+          "to": "0x0000000000000000000000000000000000000064",
+          "data": "0xa3b1b31d"
+        },
+        "0x41b203a"
+      ],
+      "result": "0x00000000000000000000000000000000000000000000000000000000041b203a"
+    },
+    {
+      "label": "ArbSys.arbBlockHash_of_prior_L2",
+      "method": "eth_call",
+      "params": [
+        {
+          "to": "0x0000000000000000000000000000000000000064",
+          "data": "0x2b407a8200000000000000000000000000000000000000000000000000000000041b2039"
+        },
+        "0x41b203a"
+      ],
+      "result": "0xb7b6646b4e8e03a76ee7a268e4229b8fba222b8b9869fa6e7e3678df0f71a4d2"
+    },
+    {
+      "label": "ArbSys.arbOSVersion",
+      "method": "eth_call",
+      "params": [
+        {
+          "to": "0x0000000000000000000000000000000000000064",
+          "data": "0x051038f2"
+        },
+        "0x41b203a"
+      ],
+      "result": "0x0000000000000000000000000000000000000000000000000000000000000074"
+    }
+  ],
+  "assertions": {
+    "NUMBER_equals_L1_header": true,
+    "NUMBER_differs_RPC_L2": true,
+    "L2_BLOCKHASH_is_zero": true,
+    "ArbSys_L2_hash_equals_RPC": true
+  }
+}

@@ -1,0 +1,137 @@
+[
+  {
+    "suite": "test/DominoCompoundHelper.t.sol",
+    "exit_code": 0,
+    "seconds": 35.63,
+    "passed": 11,
+    "failed": 0,
+    "skipped": 0,
+    "log": "DominoCompoundHelper.t.log"
+  },
+  {
+    "suite": "test/DominoPriceGuardV4.t.sol",
+    "exit_code": 0,
+    "seconds": 6.34,
+    "passed": 16,
+    "failed": 0,
+    "skipped": 0,
+    "log": "DominoPriceGuardV4.t.log"
+  },
+  {
+    "suite": "test/DominoRoutingArithmetic.t.sol",
+    "exit_code": 0,
+    "seconds": 12.03,
+    "passed": 9,
+    "failed": 0,
+    "skipped": 0,
+    "log": "DominoRoutingArithmetic.t.log"
+  },
+  {
+    "suite": "test/DominoVaultFactoryV4.t.sol",
+    "exit_code": 0,
+    "seconds": 85.7,
+    "passed": 5,
+    "failed": 0,
+    "skipped": 0,
+    "log": "DominoVaultFactoryV4.t.log"
+  },
+  {
+    "suite": "test/DominoVaultFactoryV4Creation.t.sol",
+    "exit_code": 0,
+    "seconds": 99.22,
+    "passed": 30,
+    "failed": 0,
+    "skipped": 0,
+    "log": "DominoVaultFactoryV4Creation.t.log"
+  },
+  {
+    "suite": "test/DominoVaultV4Architecture.t.sol",
+    "exit_code": 0,
+    "seconds": 95.82,
+    "passed": 7,
+    "failed": 0,
+    "skipped": 0,
+    "log": "DominoVaultV4Architecture.t.log"
+  },
+  {
+    "suite": "test/DominoVaultV4Custody.t.sol",
+    "exit_code": 0,
+    "seconds": 1.29,
+    "passed": 67,
+    "failed": 0,
+    "skipped": 0,
+    "log": "DominoVaultV4Custody.t.log"
+  },
+  {
+    "suite": "test/DominoVaultV4Invariants.t.sol",
+    "exit_code": 0,
+    "seconds": 98.21,
+    "passed": 6,
+    "failed": 0,
+    "skipped": 0,
+    "log": "DominoVaultV4Invariants.t.log"
+  },
+  {
+    "suite": "test/ExecutionEncoding.t.sol",
+    "exit_code": 0,
+    "seconds": 4.79,
+    "passed": 13,
+    "failed": 0,
+    "skipped": 0,
+    "log": "ExecutionEncoding.t.log"
+  },
+  {
+    "suite": "test/FeeAccounting.t.sol",
+    "exit_code": 0,
+    "seconds": 2.11,
+    "passed": 9,
+    "failed": 0,
+    "skipped": 0,
+    "log": "FeeAccounting.t.log"
+  },
+  {
+    "suite": "test/PolicyValidation.t.sol",
+    "exit_code": 0,
+    "seconds": 9.1,
+    "passed": 20,
+    "failed": 0,
+    "skipped": 0,
+    "log": "PolicyValidation.t.log"
+  },
+  {
+    "suite": "test/reference/OfficialDominoExecutionV4.t.sol",
+    "exit_code": 0,
+    "seconds": 83.53,
+    "passed": 20,
+    "failed": 0,
+    "skipped": 0,
+    "log": "OfficialDominoExecutionV4.t.log"
+  },
+  {
+    "suite": "test/reference/OfficialV4Compound.t.sol",
+    "exit_code": 0,
+    "seconds": 30.27,
+    "passed": 5,
+    "failed": 0,
+    "skipped": 0,
+    "log": "OfficialV4Compound.t.log"
+  },
+  {
+    "suite": "test/setup/DominoSetup.t.sol",
+    "exit_code": 0,
+    "seconds": 35.96,
+    "passed": 8,
+    "failed": 0,
+    "skipped": 0,
+    "log": "DominoSetup.t.log"
+  },
+  {
+    "suite": "test/setup/OwnerReturnData.t.sol",
+    "exit_code": 0,
+    "seconds": 50.71,
+    "passed": 2,
+    "failed": 0,
+    "skipped": 0,
+    "log": "OwnerReturnData.t.log"
+  }
+]

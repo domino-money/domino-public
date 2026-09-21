@@ -1,0 +1,245 @@
+{
+  "schemaVersion": 1,
+  "kind": "domino-v4-mainnet-preflight",
+  "expectedChainId": 4663,
+  "readOnly": true,
+  "deploymentReady": false,
+  "executionAvailable": false,
+  "chain": {
+    "status": "pass",
+    "value": "4663"
+  },
+  "blocks": {
+    "latest": {
+      "status": "pass",
+      "value": {
+        "number": "68889825",
+        "hash": "0x308350541be13fe59d14c268b38eee3b0964aa419483b4ee43c116bc5cde3ee2",
+        "parentHash": "0x43a3780e61d4af654f3420ff887fd78fbad348606ceeec4e1f7c72caea0a2c1d",
+        "timestamp": "1790003028",
+        "l1BlockNumber": "26026655"
+      }
+    },
+    "finalized": {
+      "status": "pass",
+      "value": {
+        "number": "68879377",
+        "hash": "0x4c48e566d73c5e3e4c228f45a67c736471fb746911a23c3a70a171ca8790dd9f",
+        "parentHash": "0x7e37626f2998bb1d463e0e49005589ef190f349631b3ab59d9d3ff60022dd873",
+        "timestamp": "1790001982",
+        "l1BlockNumber": "26026569"
+      }
+    }
+  },
+  "snapshot": {
+    "number": "68879377",
+    "hash": "0x4c48e566d73c5e3e4c228f45a67c736471fb746911a23c3a70a171ca8790dd9f",
+    "parentHash": "0x7e37626f2998bb1d463e0e49005589ef190f349631b3ab59d9d3ff60022dd873",
+    "timestamp": "1790001982",
+    "l1BlockNumber": "26026569",
+    "tag": "finalized"
+  },
+  "dependencies": {
+    "poolManager": {
+      "address": "0x8366a39cc670b4001a1121b8f6a443a643e40951",
+      "code": {
+        "status": "unavailable",
+        "reason": "rpc_or_response_unavailable"
+      },
+      "pin": {
+        "status": "missing",
+        "reason": "expected_dependency_code_hash_not_supplied"
+      }
+    },
+    "positionManager": {
+      "address": "0x58daec3116aae6d93017baaea7749052e8a04fa7",
+      "code": {
+        "status": "unavailable",
+        "reason": "rpc_or_response_unavailable"
+      },
+      "pin": {
+        "status": "missing",
+        "reason": "expected_dependency_code_hash_not_supplied"
+      },
+      "poolManager": {
+        "status": "unavailable",
+        "reason": "rpc_or_response_unavailable"
+      }
+    },
+    "stateView": {
+      "address": "0xf3334192d15450cdd385c8b70e03f9a6bd9e673b",
+      "code": {
+        "status": "unavailable",
+        "reason": "rpc_or_response_unavailable"
+      },
+      "pin": {
+        "status": "missing",
+        "reason": "expected_dependency_code_hash_not_supplied"
+      },
+      "poolManager": {
+        "status": "unavailable",
+        "reason": "rpc_or_response_unavailable"
+      }
+    }
+  },
+  "roles": {
+    "deployer": {
+      "status": "missing",
+      "reason": "public_role_address_not_supplied"
+    },
+    "operator": {
+      "status": "missing",
+      "reason": "public_role_address_not_supplied"
+    },
+    "pricePublisher": {
+      "status": "missing",
+      "reason": "public_role_address_not_supplied"
+    },
+    "priceGuardGuardian": {
+      "status": "missing",
+      "reason": "public_role_address_not_supplied"
+    },
+    "feeRecipient": {
+      "status": "missing",
+      "reason": "public_role_address_not_supplied"
+    }
+  },
+  "roleSeparation": {
+    "status": "missing",
+    "reason": "public_roles_incomplete"
+  },
+  "blockSemantics": {
+    "rpcBlockNumber": "68879377",
+    "numberOpcode": {
+      "status": "unavailable",
+      "reason": "rpc_or_response_unavailable"
+    },
+    "arbBlockNumber": {
+      "status": "unavailable",
+      "reason": "rpc_or_response_unavailable"
+    },
+    "parent": {
+      "status": "pass",
+      "value": {
+        "number": "68879376",
+        "hash": "0x7e37626f2998bb1d463e0e49005589ef190f349631b3ab59d9d3ff60022dd873",
+        "parentHash": "0x367e567c6e0dc9540aed2f34a615666e0b5e5a7a86a48d4b298dc423e74fa193",
+        "timestamp": "1790001982",
+        "l1BlockNumber": "26026569"
+      }
+    },
+    "arbBlockHash": {
+      "status": "unavailable",
+      "reason": "rpc_or_response_unavailable"
+    },
+    "blockhashOpcode": {
+      "status": "unavailable",
+      "reason": "rpc_or_response_unavailable"
+    },
+    "compatibility": {
+      "status": "unavailable",
+      "reason": "block_semantics_not_fully_observed"
+    }
+  },
+  "snapshotCanonical": {
+    "status": "pass",
+    "value": true
+  },
+  "readiness": {
+    "status": "unavailable",
+    "reason": "read_only_preflight_does_not_qualify_deployment",
+    "blockers": [
+      {
+        "check": "roleSeparation",
+        "status": "missing",
+        "reason": "public_roles_incomplete"
+      },
+      {
+        "check": "frozenContractCompatibility",
+        "status": "unavailable",
+        "reason": "block_semantics_not_fully_observed"
+      },
+      {
+        "check": "roles.deployer",
+        "status": "missing",
+        "reason": "public_role_address_not_supplied"
+      },
+      {
+        "check": "roles.operator",
+        "status": "missing",
+        "reason": "public_role_address_not_supplied"
+      },
+      {
+        "check": "roles.pricePublisher",
+        "status": "missing",
+        "reason": "public_role_address_not_supplied"
+      },
+      {
+        "check": "roles.priceGuardGuardian",
+        "status": "missing",
+        "reason": "public_role_address_not_supplied"
+      },
+      {
+        "check": "roles.feeRecipient",
+        "status": "missing",
+        "reason": "public_role_address_not_supplied"
+      },
+      {
+        "check": "dependencies.poolManager.code",
+        "status": "unavailable",
+        "reason": "rpc_or_response_unavailable"
+      },
+      {
+        "check": "dependencies.poolManager.pin",
+        "status": "missing",
+        "reason": "expected_dependency_code_hash_not_supplied"
+      },
+      {
+        "check": "dependencies.positionManager.code",
+        "status": "unavailable",
+        "reason": "rpc_or_response_unavailable"
+      },
+      {
+        "check": "dependencies.positionManager.pin",
+        "status": "missing",
+        "reason": "expected_dependency_code_hash_not_supplied"
+      },
+      {
+        "check": "dependencies.positionManager.poolManager",
+        "status": "unavailable",
+        "reason": "rpc_or_response_unavailable"
+      },
+      {
+        "check": "dependencies.stateView.code",
+        "status": "unavailable",
+        "reason": "rpc_or_response_unavailable"
+      },
+      {
+        "check": "dependencies.stateView.pin",
+        "status": "missing",
+        "reason": "expected_dependency_code_hash_not_supplied"
+      },
+      {
+        "check": "dependencies.stateView.poolManager",
+        "status": "unavailable",
+        "reason": "rpc_or_response_unavailable"
+      }
+    ]
+  },
+  "deploymentInputs": {
+    "status": "missing",
+    "reason": "unsigned_release_parameters_artifacts_and_cost_qualification_still_required",
+    "pendingNonce": {
+      "status": "unavailable",
+      "reason": "not_queried"
+    },
+    "balanceWei": {
+      "status": "unavailable",
+      "reason": "not_queried"
+    },
+    "feeEstimate": {
+      "status": "unavailable",
+      "reason": "not_queried"
+    }
+  }
+}

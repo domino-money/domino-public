@@ -1,0 +1,35 @@
+{
+  "observedAt": "2026-09-21T15:00:36.246Z",
+  "endpoint": "https://rpc.mainnet.chain.robinhood.com",
+  "meaning": "Point samples only; these are not approved fee caps or complete L2 deployment costs.",
+  "rpc": [
+    {
+      "method": "eth_chainId",
+      "status": "observed",
+      "result": "0x1237"
+    },
+    {
+      "method": "eth_gasPrice",
+      "status": "observed",
+      "result": "0x3083ec0"
+    },
+    {
+      "method": "eth_maxPriorityFeePerGas",
+      "status": "observed",
+      "result": "0x0"
+    },
+    {
+      "method": "eth_getBlockByNumber",
+      "status": "observed",
+      "result": {
+        "number": "0x41b2575",
+        "hash": "0x6438fe7f26bd8f3a6c69929fe0a093deb11ddb2876cd1658c809f538596100d7",
+        "timestamp": "0x6ab14693",
+        "l1BlockNumber": "0x18d228f",
+        "baseFeePerGas": "0x2fa92c0",
+        "gasLimit": "0x4000000000000",
+        "gasUsed": "0x18ab79"
+      }
+    }
+  ]
+}

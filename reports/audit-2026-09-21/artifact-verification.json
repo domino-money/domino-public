@@ -1,0 +1,166 @@
+{
+  "sourceCommit": "7be7820efb2f261f49b688b1ad4e467b7f3725a2",
+  "sourceFreeze": "ec2e9aaa4a6f2f87c93553166fb2795171cb2a94",
+  "sourceFreezeUnchanged": true,
+  "artifacts": [
+    {
+      "component": "factory",
+      "runtimeBytes": 3502,
+      "runtimeTemplateHash": "0xd5d36d4ea4be9009f451fdd5801b19d4ed8b75b1acafd786f6102eff71246f55",
+      "creationCodeHash": "0x4ccdc92255eb09b94849d961cf17dd849019447cc012f6e43d0b816778258d25",
+      "artifactSha256": "53649e8eb10fadce8e53df552408d2998a40441482b58aff17d4647c455028de",
+      "hashMatchesAuditPackage": true
+    },
+    {
+      "component": "readHelper",
+      "runtimeBytes": 6536,
+      "runtimeTemplateHash": "0x03f19c14b1b159cb302e7c37fb964488f901ded6f0e3a10a0afd8d0ed9f7e6f8",
+      "creationCodeHash": "0xe0cfb8afdc5db0ee88c9c5bb4ebe11c486671cc08d7600649476d231c13e9e20",
+      "artifactSha256": "765f0da5a9e7aa1e43b50d457705ef26384bf4ff84dc798ded47459aae5d8705",
+      "hashMatchesAuditPackage": true
+    },
+    {
+      "component": "routing",
+      "runtimeBytes": 13873,
+      "runtimeTemplateHash": "0xd3c0d439931fd9ea2bb54016231eab44ba99196b82b58d6076322a40facee9b8",
+      "creationCodeHash": "0xaed9f6915247adb3910e99e38b763e6ccf02026d6decdc1d6b22231c9de36bf8",
+      "artifactSha256": "7325ed6a3476eeff36693e43b5dd4af8f41aba9695a6a75a73f311be42ac37c3",
+      "hashMatchesAuditPackage": true
+    },
+    {
+      "component": "priceGuard",
+      "runtimeBytes": 3187,
+      "runtimeTemplateHash": "0xdcde79a86d5efa76d4ede419d9c79e294b366aab741e000b6aa2d3f36d9f0a5c",
+      "creationCodeHash": "0xced320896b748e4ba1c22027115229a4d07c48b4f4afd625b46607473bb0645b",
+      "artifactSha256": "03f3e94962d1beefd2bbbede7eda8359d1b89f5b6f82e917c48a4b6c74ca7219",
+      "hashMatchesAuditPackage": true
+    },
+    {
+      "component": "engine",
+      "runtimeBytes": 21899,
+      "runtimeTemplateHash": "0x22e3b9f9fe254f59aa969e6bf33b1e69655b8bd376fd8e7a8d4207d1ad542416",
+      "creationCodeHash": "0xcd5cccb8fd7702aeb6d37d1c410b563b072e626e2ac8a6b0ab5c7a283bd06701",
+      "artifactSha256": "2d4df372264a97b6165fc8a42eb57f35c437a63c867751280c45ad0a20f6932d",
+      "hashMatchesAuditPackage": true
+    },
+    {
+      "component": "implementation",
+      "runtimeBytes": 23625,
+      "runtimeTemplateHash": "0x8c4cfc9d27602ec81d64e0d5e2d0c186fef65c69b45579ff81babb58bc01fc09",
+      "creationCodeHash": "0x99cb69a89af88836410bb67e6e0cbbaa265251eda22569cd4540ecd4fd54b797",
+      "artifactSha256": "597575ce22351aa71e1a96549ce55dd6a3623c48d49f7489a5ea62192cfbf979",
+      "hashMatchesAuditPackage": true
+    },
+    {
+      "component": "setup",
+      "runtimeBytes": 11898,
+      "runtimeTemplateHash": "0x42a55c64277411bcfd3e96da1a71a398ee0cb39eadd0687d664404e377ef33b7",
+      "creationCodeHash": "0x0849fd3c21db2de1a98172bbf50d73fb82cab430e2fd2d179c59c8852ffab3fb",
+      "artifactSha256": "ed53c273c3ca8639889b76bfc51ab7330fb95750c4bbad188e67cc333dc6df4b",
+      "hashMatchesAuditPackage": true
+    }
+  ],
+  "sizeGate": {
+    "version": 1,
+    "ok": true,
+    "profile": {
+      "compiler": "0.8.26+commit.8a97fa7a",
+      "evmVersion": "cancun",
+      "optimizerRuns": 200,
+      "viaIR": true,
+      "bytecodeHash": "none"
+    },
+    "limits": {
+      "runtimeBytes": 24576,
+      "initcodeBytes": 49152,
+      "vaultReserveBytes": 313,
+      "engineReserveBytes": 2048
+    },
+    "contracts": [
+      {
+        "name": "DominoVaultReadHelper",
+        "ok": true,
+        "runtimeBytes": 6536,
+        "runtimeHeadroomBytes": 18040,
+        "requiredRuntimeReserveBytes": 0,
+        "creationBytes": 6744,
+        "constructorArgumentsBytes": 64,
+        "initcodeBytes": 6808,
+        "initcodeHeadroomBytes": 42344,
+        "issues": []
+      },
+      {
+        "name": "DominoVaultV4",
+        "ok": true,
+        "runtimeBytes": 23625,
+        "runtimeHeadroomBytes": 951,
+        "requiredRuntimeReserveBytes": 313,
+        "creationBytes": 24884,
+        "constructorArgumentsBytes": 224,
+        "initcodeBytes": 25108,
+        "initcodeHeadroomBytes": 24044,
+        "issues": []
+      },
+      {
+        "name": "DominoVaultFactoryV4",
+        "ok": true,
+        "runtimeBytes": 3502,
+        "runtimeHeadroomBytes": 21074,
+        "requiredRuntimeReserveBytes": 0,
+        "creationBytes": 4239,
+        "constructorArgumentsBytes": 128,
+        "initcodeBytes": 4367,
+        "initcodeHeadroomBytes": 44785,
+        "issues": []
+      },
+      {
+        "name": "DominoExecutionEngineV4",
+        "ok": true,
+        "runtimeBytes": 21899,
+        "runtimeHeadroomBytes": 2677,
+        "requiredRuntimeReserveBytes": 2048,
+        "creationBytes": 22589,
+        "constructorArgumentsBytes": 128,
+        "initcodeBytes": 22717,
+        "initcodeHeadroomBytes": 26435,
+        "issues": []
+      },
+      {
+        "name": "DominoRoutingHelperV4",
+        "ok": true,
+        "runtimeBytes": 13873,
+        "runtimeHeadroomBytes": 10703,
+        "requiredRuntimeReserveBytes": 0,
+        "creationBytes": 13899,
+        "constructorArgumentsBytes": 0,
+        "initcodeBytes": 13899,
+        "initcodeHeadroomBytes": 35253,
+        "issues": []
+      },
+      {
+        "name": "DominoPriceGuardV4",
+        "ok": true,
+        "runtimeBytes": 3187,
+        "runtimeHeadroomBytes": 21389,
+        "requiredRuntimeReserveBytes": 0,
+        "creationBytes": 3578,
+        "constructorArgumentsBytes": 128,
+        "initcodeBytes": 3706,
+        "initcodeHeadroomBytes": 45446,
+        "issues": []
+      },
+      {
+        "name": "DominoSetup",
+        "ok": true,
+        "runtimeBytes": 11898,
+        "runtimeHeadroomBytes": 12678,
+        "requiredRuntimeReserveBytes": 0,
+        "creationBytes": 12778,
+        "constructorArgumentsBytes": 192,
+        "initcodeBytes": 12970,
+        "initcodeHeadroomBytes": 36182,
+        "issues": []
+      }
+    ]
+  }
+}

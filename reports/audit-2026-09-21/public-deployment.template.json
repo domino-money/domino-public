@@ -1,0 +1,28 @@
+{
+  "chainId": 4663,
+  "sourceCommit": null,
+  "deployer": null,
+  "nonce": null,
+  "feeRecipient": null,
+  "operator": null,
+  "pricePublisher": null,
+  "priceGuardDeviationBps": null,
+  "priceGuardGuardian": null,
+  "setupFeeBps": null,
+  "tariffVersion": null,
+  "expiresAt": null,
+  "gas": {
+    "factory": null,
+    "readHelper": null,
+    "routing": null,
+    "priceGuard": null,
+    "engine": null,
+    "implementation": null,
+    "setup": null,
+    "finalize": null
+  },
+  "maxFeePerGas": null,
+  "maxPriorityFeePerGas": null,
+  "maxTotalCostWei": null,
+  "reserveWei": null
+}
