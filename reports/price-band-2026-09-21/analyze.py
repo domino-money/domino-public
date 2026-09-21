@@ -16,11 +16,12 @@ from bisect import bisect_left
 from collections import Counter
 from decimal import Decimal, localcontext
 from fractions import Fraction
+from hashlib import sha256
 import json
 from pathlib import Path
 import re
 
-DELAYS_MS = (500, 1000, 2000, 5000, 10000, 20000)
+DELAYS_MS = (500, 1000, 2000, 5000, 10000, 20000, 30000, 60000)
 BANDS_BPS = (25, 50, 100, 200, 2000)
 MAX_SQRT = 2**160 - 1
 POOL_ID = re.compile(r'0x[0-9a-fA-F]{64}\Z')
@@ -96,6 +97,32 @@ def block_window(source, future):
     return 'within_1_to_255_blocks', distance
 
 
+def qualification_status(document):
+    """Classify the collector's declared evidence, never certify production."""
+    status = document.get('status')
+    noncanonical = document.get('noncanonicalBlocks')
+    if status == 'noncanonical_samples_detected' or isinstance(noncanonical, list) and noncanonical:
+        return 'not_qualified_noncanonical_input'
+    if status is None:
+        return 'not_qualified_collection_status_unavailable'
+    if status != 'completed':
+        return 'not_qualified_incomplete_collection'
+    if any(not isinstance(document.get(key), str) or not document[key].strip()
+           for key in ('source', 'startedAtUTC', 'endedAtUTC')) or not re.fullmatch(
+               r'[0-9a-fA-F]{64}', str(document.get('collectorSha256', ''))):
+        return 'not_qualified_incomplete_provenance'
+    checked = document.get('canonicalityCheckedBlocks')
+    if type(checked) is not int or checked < 0 or not isinstance(noncanonical, list):
+        return 'not_qualified_canonicality_unavailable'
+    blocks = {quantity(s.get('blockNumber')) for s in document['samples']}
+    blocks.discard(None)
+    if not blocks:
+        return 'not_qualified_no_recorded_blocks'
+    if checked < len(blocks):
+        return 'not_qualified_incomplete_canonicality'
+    return 'completed_descriptive_collection_only'
+
+
 def analyze(document, delays_ms=DELAYS_MS, bands_bps=BANDS_BPS):
     if not isinstance(document, dict) or not isinstance(document.get('samples'), list) or not isinstance(document.get('pools'), list):
         raise ValueError('samples_and_pool_metadata_required')
@@ -132,12 +159,20 @@ def analyze(document, delays_ms=DELAYS_MS, bands_bps=BANDS_BPS):
         'schemaVersion': 1,
         'scope': 'observed spot-to-spot replay; not an independently sourced publisher or a production execution replay',
         'metadata': document.get('metadata'),
+        'inputRecord': {key: document[key] for key in ('status', 'source', 'startedAtUTC', 'endedAtUTC',
+            'collectorSha256', 'canonicalityCheckedBlocks', 'noncanonicalBlocks') if key in document},
+        'qualificationStatus': qualification_status(document),
+        'productionQualificationComplete': False,
+        'inputSha256': None,  # CLI hashes the exact byte buffer that was parsed.
+        'inputByteLength': None,
         'sampleCount': len(samples),
         'observedSpanMs': times[-1] - times[0] if times else None,
         'sampleSpacingMs': statistics([b-a for a, b in zip(times, times[1:])]),
         'rpcLatencyMs': statistics(latencies),
         'missingRpcLatencySamples': len(samples) - len(latencies),
         'method': {
+            'requestedDelaysMs': list(delays_ms),
+            'bandsBps': list(bands_bps),
             'futureSample': 'first global sample with observedAtUnixMs >= reference time + requested delay; missing reads are not skipped',
             'guardDecision': 'abs(referenceSqrt - laterSpotSqrt) * 10000 <= laterSpotSqrt * bandBps; both prices nonzero',
             'absoluteSqrtDriftBps': 'abs(referenceSqrt - laterSpotSqrt) * 10000 / laterSpotSqrt',
@@ -147,7 +182,9 @@ def analyze(document, delays_ms=DELAYS_MS, bands_bps=BANDS_BPS):
         },
         'limitations': [
             'No independently sourced price, publisher signing, submission or inclusion latency is measured.',
+            'Collector completion and canonicality fields are preserved input claims, not independently verified by this pure analyzer. Partial, absent-status or noncanonical inputs cannot complete qualification.',
             'Passing the band does not establish safety against pre-observation manipulation.',
+            'A wider band cannot make an observation older than 255 L2 blocks admissible; 30/60-second delays expose this separate constraint.',
             'Block distance is checked when available; canonical hashes, observation expiry, wall-clock age policy, execution slippage, impact and plan limits are not replayed.',
             'Overlapping delay pairs are correlated; percentiles/rejection rates are descriptive, not statistical guarantees.',
             'The first available global sample can overshoot the requested delay; actual delays and overshoot are reported.',
@@ -228,7 +265,10 @@ def main(argv=None):
     parser.add_argument('input', type=Path)
     parser.add_argument('--out', type=Path)
     args = parser.parse_args(argv)
-    result = analyze(json.loads(args.input.read_text()))
+    raw = args.input.read_bytes()
+    result = analyze(json.loads(raw))
+    result['inputSha256'] = sha256(raw).hexdigest()
+    result['inputByteLength'] = len(raw)
     rendered = json.dumps(result, indent=2, sort_keys=True, allow_nan=False) + '\n'
     if args.out:
         args.out.write_text(rendered)

@@ -1,6 +1,7 @@
 """Synthetic regression cases for exact guard math and imperfect sampling."""
 import copy
 from fractions import Fraction
+from hashlib import sha256
 import importlib.util
 import json
 from pathlib import Path
@@ -155,8 +156,48 @@ class AnalyzerTests(unittest.TestCase):
             document = data(sample(0), sample(500, block=2))
             source.write_text(json.dumps(document))
             a.main([str(source), '--out', str(target)])
-            self.assertEqual(json.loads(target.read_text())['sampleCount'], 2)
+            result = json.loads(target.read_text())
+            self.assertEqual(result['sampleCount'], 2)
+            self.assertEqual(result['inputSha256'], sha256(source.read_bytes()).hexdigest())
+            self.assertEqual(result['inputByteLength'], len(source.read_bytes()))
             self.assertEqual(json.loads(source.read_text()), document)
+
+    def test_completed_record_provenance_remains_descriptive_only(self):
+        document = data(sample(0, block=1), sample(500, block=2))
+        fields = dict(status='completed', source='synthetic source',
+            startedAtUTC='2026-09-21T00:00:00Z', endedAtUTC='2026-09-21T00:00:01Z',
+            collectorSha256='ab'*32, canonicalityCheckedBlocks=2, noncanonicalBlocks=[])
+        document.update(fields)
+        result = a.analyze(document)
+        self.assertEqual(result['inputRecord'], fields)
+        self.assertEqual(result['qualificationStatus'], 'completed_descriptive_collection_only')
+        self.assertFalse(result['productionQualificationComplete'])
+        self.assertIsNone(result['inputSha256'])  # No byte representation supplied to the pure API.
+        for updates, expected in (
+            ({'status': None}, 'not_qualified_collection_status_unavailable'),
+            ({'status': 'running'}, 'not_qualified_incomplete_collection'),
+            ({'status': 'failed'}, 'not_qualified_incomplete_collection'),
+            ({'endedAtUTC': None}, 'not_qualified_incomplete_provenance'),
+            ({'collectorSha256': None}, 'not_qualified_incomplete_provenance'),
+            ({'canonicalityCheckedBlocks': None}, 'not_qualified_canonicality_unavailable'),
+            ({'canonicalityCheckedBlocks': 1}, 'not_qualified_incomplete_canonicality'),
+            ({'noncanonicalBlocks': [1]}, 'not_qualified_noncanonical_input'),
+            ({'status': 'noncanonical_samples_detected', 'noncanonicalBlocks': []}, 'not_qualified_noncanonical_input'),
+        ):
+            with self.subTest(updates=updates):
+                changed = a.analyze({**document, **updates})
+                self.assertEqual(changed['qualificationStatus'], expected)
+                self.assertFalse(changed['productionQualificationComplete'])
+                self.assertEqual(changed['pools'][0]['delays'][0]['validPricePairs'], 1)
+
+    def test_default_long_delays_expose_expiry_despite_no_price_movement(self):
+        result = a.analyze(data(sample(0, block=1), sample(30000, block=301), sample(60000, block=601)))
+        self.assertEqual(result['method']['requestedDelaysMs'], [500, 1000, 2000, 5000, 10000, 20000, 30000, 60000])
+        self.assertEqual(result['qualificationStatus'], 'not_qualified_collection_status_unavailable')
+        for row in result['pools'][0]['delays'][-2:]:
+            self.assertGreater(row['bands']['2000']['accepted'], 0)
+            self.assertEqual(row['bands']['2000']['acceptedWithinBlockWindow'], 0)
+            self.assertEqual(row['blockWindow']['exceeds_255_blocks'], row['validPricePairs'])
 
 
 if __name__ == '__main__':
