@@ -1,0 +1,282 @@
+{
+  "blockCadence": {
+    "averageHeaderTimestampMsPerBlock": "100.116028509862",
+    "averageLocalObservedMsPerBlock": "99.324714072601",
+    "blockSpan": 6033,
+    "localObservedElapsedMs": 599226,
+    "maximumBlock": 69007845,
+    "minimumBlock": 69001812,
+    "missingBlockNumberSamples": 0,
+    "observedHeadersMonotonic": true,
+    "recordedHeaderTimestampSpanSeconds": 604,
+    "regressions": [],
+    "uniqueHeights": 1179,
+    "validHeaderSamples": 1200
+  },
+  "cycleDuration": {
+    "milliseconds": {
+      "count": 1200,
+      "max": "244.736957999994",
+      "min": "4.078042000008",
+      "p50": "11.326832999999",
+      "p95": "17.887459000001",
+      "p99": "63.056000000041"
+    },
+    "missingOrInvalidTimingSamples": 0,
+    "sampleCount": 1200
+  },
+  "cyclesWithReportedErrors": 0,
+  "fullyQualified": false,
+  "hashAudit": {
+    "conflictingHeightCount": 0,
+    "conflicts": [],
+    "declaredFinalCheckCompleteAndNoObservedHashConflict": true,
+    "independentChainRecheckPerformed": false,
+    "missingOrInvalidHashSampleIndexes": [],
+    "scope": "Every sampled hash for each height; no last-hash overwrite.",
+    "uniqueHeightHashPairs": 1179
+  },
+  "headerCallRtt": {
+    "milliseconds": {
+      "count": 1200,
+      "max": "167.539334000001",
+      "min": "1.752458000032",
+      "p50": "4.452833000047",
+      "p95": "6.697958000004",
+      "p99": "17.195083000028"
+    },
+    "missingOrInvalidTimingSamples": 0,
+    "sampleCount": 1200
+  },
+  "inputBytes": 2954211,
+  "inputSha256": "ba8f5d543d2427e19852e5881286d216a8b176472ac8d2ae1daf23f5f0e264fe",
+  "kind": "domino-price-band-offline-telemetry",
+  "limitations": [
+    "No publisher, signer, queue, submission, inclusion or production execution latency is measured.",
+    "Mac/SSH tunnel measurements do not qualify the runtime VM/HTTPS route.",
+    "No new canonicality or finality RPC check: input status and final-check counts are declarations bound to the input SHA.",
+    "Absence of conflicting sampled hashes does not prove absence of reorgs between samples or after the final check.",
+    "Timing quantiles exclude unavailable per-call timings, including failed requests; they are not an availability SLA.",
+    "Headers can be skipped/repeated and local wall-clock jumps are not measured; average cadence and crossing times are descriptive.",
+    "Crossing pairs overlap and are correlated; the last part of the series is right-censored."
+  ],
+  "method": {
+    "percentiles": "nearest rank; all durations in milliseconds; decimal display rounded to 12 places",
+    "rtt": "Header and per-pool fields measure individual successful HTTP RPC calls. Cycle includes header followed by all parallel pool reads; failures can consume cycle time without an individual RTT record."
+  },
+  "observedSpanMs": 599226,
+  "pools": [
+    {
+      "absentRows": 0,
+      "duplicateRows": 0,
+      "label": "WETH/USDG",
+      "poolId": "0x84bd4e2d8be11aeb0afc1195b38f587b61e90068548f1063fdbe448fb8cad0b6",
+      "poolKeyHashVerified": true,
+      "reportedErrors": 0,
+      "slot0CallRtt": {
+        "milliseconds": {
+          "count": 1200,
+          "max": "134.146000000008",
+          "min": "1.679125000024",
+          "p50": "5.964208000005",
+          "p95": "9.958209000004",
+          "p99": "27.697749999992"
+        },
+        "missingOrInvalidTimingSamples": 0,
+        "sampleCount": 1200
+      }
+    },
+    {
+      "absentRows": 0,
+      "duplicateRows": 0,
+      "label": "USDG/MARLIN",
+      "poolId": "0xdb922f0619e11b0c1e6c3a142798f0243060b8a4331ea4f4e7de80e898cc02e7",
+      "poolKeyHashVerified": true,
+      "reportedErrors": 0,
+      "slot0CallRtt": {
+        "milliseconds": {
+          "count": 1200,
+          "max": "133.549750000006",
+          "min": "1.508208999992",
+          "p50": "5.728249999986",
+          "p95": "9.625917000001",
+          "p99": "27.610458999989"
+        },
+        "missingOrInvalidTimingSamples": 0,
+        "sampleCount": 1200
+      }
+    },
+    {
+      "absentRows": 0,
+      "duplicateRows": 0,
+      "label": "cbBTC/USDG (catalogue label)",
+      "poolId": "0x94c62eebf6454231b2fcd0259ede448ae3c6ad8617718cd88dab20b30cfae48a",
+      "poolKeyHashVerified": true,
+      "reportedErrors": 0,
+      "slot0CallRtt": {
+        "milliseconds": {
+          "count": 1200,
+          "max": "133.882000000012",
+          "min": "1.580874999985",
+          "p50": "5.589458999981",
+          "p95": "9.665083000029",
+          "p99": "36.513707999984"
+        },
+        "missingOrInvalidTimingSamples": 0,
+        "sampleCount": 1200
+      }
+    },
+    {
+      "absentRows": 0,
+      "duplicateRows": 0,
+      "label": "U/USDG (catalogue label)",
+      "poolId": "0xf399bd1544377680d48c62fd85c2105b869e55906c4189cc5ab3b4e83446928c",
+      "poolKeyHashVerified": true,
+      "reportedErrors": 0,
+      "slot0CallRtt": {
+        "milliseconds": {
+          "count": 1200,
+          "max": "133.616250000021",
+          "min": "1.868750000023",
+          "p50": "5.533333999978",
+          "p95": "9.448750000000",
+          "p99": "27.611959000002"
+        },
+        "missingOrInvalidTimingSamples": 0,
+        "sampleCount": 1200
+      }
+    },
+    {
+      "absentRows": 0,
+      "duplicateRows": 0,
+      "label": "ETH/USDG (catalogue label)",
+      "poolId": "0x24107d152f14a76d292123265ae3f3c71f863fc2f4ef7ba49d64e78d28ea379e",
+      "poolKeyHashVerified": true,
+      "reportedErrors": 0,
+      "slot0CallRtt": {
+        "milliseconds": {
+          "count": 1200,
+          "max": "133.625459000003",
+          "min": "1.614749999950",
+          "p50": "5.406167000008",
+          "p95": "9.397875000024",
+          "p99": "36.559707999986"
+        },
+        "missingOrInvalidTimingSamples": 0,
+        "sampleCount": 1200
+      }
+    },
+    {
+      "absentRows": 0,
+      "duplicateRows": 0,
+      "label": "PONS/USDG (catalogue label)",
+      "poolId": "0x4be9657ec9002e528f4f17a5c43edc525a07f888f7b180c2afbf75e096c4f38a",
+      "poolKeyHashVerified": true,
+      "reportedErrors": 0,
+      "slot0CallRtt": {
+        "milliseconds": {
+          "count": 1200,
+          "max": "133.759458999994",
+          "min": "1.680249999976",
+          "p50": "5.306500000006",
+          "p95": "9.271792000000",
+          "p99": "36.774665999983"
+        },
+        "missingOrInvalidTimingSamples": 0,
+        "sampleCount": 1200
+      }
+    },
+    {
+      "absentRows": 0,
+      "duplicateRows": 0,
+      "label": "ETH/MARLIN",
+      "poolId": "0xbf0fe39ec46400f36455eae199696e1009af2182f62bfb256b559b1f3e11afec",
+      "poolKeyHashVerified": true,
+      "reportedErrors": 0,
+      "slot0CallRtt": {
+        "milliseconds": {
+          "count": 1200,
+          "max": "133.759583000006",
+          "min": "1.825583999977",
+          "p50": "5.231667000000",
+          "p95": "9.192833999987",
+          "p99": "27.604667000007"
+        },
+        "missingOrInvalidTimingSamples": 0,
+        "sampleCount": 1200
+      }
+    }
+  ],
+  "sampleCount": 1200,
+  "sampleSpacingMs": {
+    "count": 1199,
+    "max": "661.000000000000",
+    "min": "215.000000000000",
+    "p50": "500.000000000000",
+    "p95": "503.000000000000",
+    "p99": "510.000000000000"
+  },
+  "schemaVersion": 1,
+  "source": {
+    "canonicalityCheckedBlocks": 1179,
+    "chainId": 4663,
+    "collectorSha256": "c96b1f9fb903253dbec7d6eec50ff0872c3b7cb6c2c11bfee828c5f0ce5ac3bc",
+    "endedAtUTC": "2026-09-21T18:20:40.380Z",
+    "independentOracle": false,
+    "intervalMs": 500,
+    "noncanonicalBlocks": [],
+    "observedDurationMs": 599226,
+    "requestedSeconds": 600,
+    "source": "project Nitro node, authenticated SSH local tunnel; not production VM/HTTPS route",
+    "startedAtUTC": "2026-09-21T18:10:39.272Z",
+    "status": "completed",
+    "warnings": [
+      "Pool spot-to-spot drift only; not proof of economic safety or independent-price quality.",
+      "Observed RPC round trips include this machine and SSH tunnel, not the production publisher environment.",
+      "No publisher transaction or live inclusion latency is measured."
+    ]
+  },
+  "telemetrySha256": "186d847c1c60a033747bfb0a653aeeed7052caf2144ab1232991dfd055ef56b1",
+  "window256Blocks": {
+    "available": true,
+    "censoring": "References with no sampled crossing by the last valid header are right-censored, not zero-duration crossings; quantiles use completed crossings only and can bias short. Missing headers hide the true crossing and widen sampling uncertainty.",
+    "crossingObservationBracketMs": {
+      "count": 1148,
+      "max": "615.000000000000",
+      "min": "388.000000000000",
+      "p50": "500.000000000000",
+      "p95": "503.000000000000",
+      "p99": "505.000000000000"
+    },
+    "elapsedUntilFirstSampleAtLeast256BlocksAheadMs": {
+      "count": 1148,
+      "max": "36998.000000000000",
+      "min": "15000.000000000000",
+      "p50": "26000.000000000000",
+      "p95": "31502.000000000000",
+      "p99": "35004.000000000000"
+    },
+    "eligibleReferenceSamples": 1200,
+    "method": "For each observed header, find the first later sampled header >= source block + 256. Requires nondecreasing observed block numbers. Duplicate heights remain separate observation-time references.",
+    "observedBlocksAtCrossing": {
+      "count": 1148,
+      "max": "299.000000000000",
+      "min": "256.000000000000",
+      "p50": "258.000000000000",
+      "p95": "263.000000000000",
+      "p99": "276.000000000000"
+    },
+    "observedCrossings": 1148,
+    "resolution": "The crossing lies between the previous observed header and the first threshold-crossing header, subject to RPC/head staleness. Times are local header-receipt wall times, not canonical block arrival times; this is not a precisely measured on-chain TTL.",
+    "rightCensoredObservedLowerBoundMs": {
+      "count": 52,
+      "max": "25501.000000000000",
+      "min": "0.000000000000",
+      "p50": "12500.000000000000",
+      "p95": "24503.000000000000",
+      "p99": "25501.000000000000"
+    },
+    "rightCensoredReferenceSamples": 52,
+    "unavailableReason": null
+  }
+}

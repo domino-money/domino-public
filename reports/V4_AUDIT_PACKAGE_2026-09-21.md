@@ -162,7 +162,12 @@ Stated here so nobody has to find them.
    data component read as zero from the live node's `NodeInterface`). The real fee-accrual rate
    of any pool is not measured.
 7. **The service around the contracts is unproven.** Signer, executor, planner and read path
-   have never run against a real deployment.
+   have never run against a real deployment. This checkout also lacks a continuous
+   publisher and the orchestration that refreshes observations and connects acquisition,
+   publication and execution; the signer receives a fixed observation ID. The owner
+   deferred the immutable band pending measurement. See the [read-only pool/RPC
+   measurement and local guard replay](PRICE_BAND_QUALIFICATION_2026-09-21.md), whose
+   results do not establish production publisher latency or independent-price quality.
 
 **Gas funding.** The operator's previously funded native ETH pays automated
 execution gas; the publisher separately pays for observations. The owner pays

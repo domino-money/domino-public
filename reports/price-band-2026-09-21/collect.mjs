@@ -6,6 +6,7 @@ import {createServer} from 'node:net';
 import {spawn} from 'node:child_process';
 import {performance} from 'node:perf_hooks';
 import {toolsFor,DEPENDENCIES} from '../../scripts/prepare-financial-release.mjs';
+import {observedBlocks,differsFromCanonical} from './canonicality.mjs';
 const repo=resolve(import.meta.dirname,'../..'),v=toolsFor(repo);
 const seconds=Number(process.env.DOMINO_BAND_SAMPLE_SECONDS??600),intervalMs=500;
 assert(Number.isSafeInteger(seconds)&&seconds>=30&&seconds<=1800);
@@ -59,8 +60,10 @@ try{
   next+=intervalMs;if(next<performance.now())next=performance.now();await delay(Math.max(0,next-performance.now()));
  }
  report.status='completed';report.endedAtUTC=new Date().toISOString();report.rpcCalls=id;report.observedDurationMs=report.samples.at(-1).observedAtUnixMs-report.samples[0].observedAtUnixMs;
- const unique=new Map(report.samples.filter(s=>s.blockNumber!==undefined).map(s=>[s.blockNumber,s.blockHash]));report.canonicalityCheckedBlocks=0;report.noncanonicalBlocks=[];
- for(const[number,hash]of unique){const b=(await rpc('eth_getBlockByNumber',['0x'+number.toString(16),false])).value;if(b.hash!==hash)report.noncanonicalBlocks.push(number);report.canonicalityCheckedBlocks++;await delay(60);}
+ const observed=observedBlocks(report.samples);report.canonicalityCheckedBlocks=0;report.noncanonicalBlocks=[];
+ report.conflictingObservedHeights=observed.filter(b=>b.hashes.length>1).map(b=>b.number);
+ for(const block of observed){const b=(await rpc('eth_getBlockByNumber',['0x'+block.number.toString(16),false])).value;if(differsFromCanonical(block,b))report.noncanonicalBlocks.push(block.number);report.canonicalityCheckedBlocks++;await delay(60);}
+ report.rpcCalls=id;report.canonicalityCompletedAtUTC=new Date().toISOString();
  if(report.noncanonicalBlocks.length)report.status='noncanonical_samples_detected';
 }catch(e){report.status='failed';report.error=String(e.stack);throw e;}finally{const{createHash}=await import('node:crypto');report.collectorSha256=createHash('sha256').update(readFileSync(import.meta.filename)).digest('hex');save();tunnel?.kill('SIGTERM');}
 console.log(JSON.stringify({status:report.status,samples:report.samples.length,pools:report.pools.length,verifiedPools:report.pools.filter(p=>p.poolKeyHashVerified).length,canonicalityCheckedBlocks:report.canonicalityCheckedBlocks,noncanonicalBlocks:report.noncanonicalBlocks,out}));

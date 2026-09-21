@@ -8,6 +8,14 @@ Os [artifacts atuais](../revert-fees-2026-09-21/artifact-verification.json) e a
 anterior; o [relatório de correções](../V4_REMEDIATION_2026-09-21.md) preserva sua evidência histórica.
 Nenhuma transação foi assinada ou enviada à mainnet.
 
+O usuário já forneceu os cinco endereços públicos e selecionou **65 bps (0,65%)**
+por swap assistido no Setup, separados dos swaps internos incluídos nos modos.
+Operador e publicador foram abastecidos. O pacote local de oito transações foi
+simulado com o saldo e nonce reais do fork, sem criar fundos artificiais.
+A banda imutável continua **não selecionada**: o usuário decidiu medir a operação
+antes de fixá-la. A [medição e seus limites](../PRICE_BAND_QUALIFICATION_2026-09-21.md)
+distinguem deriva dos pools, RPC e replay local de um publicador em produção.
+
 ## Entradas necessárias para o pacote real
 
 O [modelo de parâmetros públicos](public-deployment.template.json) deixa os dados
@@ -48,8 +56,9 @@ O usuário paga a criação/configuração e as operações manuais que enviar. 
 transações automatizadas, o operador paga usando ETH nativo que já está na sua
 carteira. O publicador precisa de saldo próprio para publicar observações.
 
-Na simulação, `anvil_setBalance` fornece ETH fictício às contas. Não há receita
-vendida para obter esse ETH. Na implementação atual também não há serviço de
+Nos testes históricos de automação, `anvil_setBalance` fornece ETH fictício às
+contas; a simulação posterior da sequência de deploy usa os saldos do fork.
+Não há receita vendida para obter esse ETH. Na implementação atual também não há serviço de
 top-up automático: não se vendem automaticamente principal, reservas do usuário
 nem ativos do destinatário das taxas para abastecer o operador. Saldo insuficiente
 faz o signer recusar a execução. Os 2% no simples ou 4% no Domino sobre taxas ganhas e efetivamente consumidas
