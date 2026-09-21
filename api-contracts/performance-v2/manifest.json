@@ -80,7 +80,11 @@
     },
     {
       "path": "runtime.mjs",
-      "sha256": "b3e3b2d76713a09102690d78b69567b1fcc3cc20f681ef4475e9e610721f86dc"
+      "sha256": "79f6e54113e3649fb990ff013db3f578b87b8fe9af1820230059dc3b1695d6c3"
+    },
+    {
+      "path": "../shared/closed-schema.mjs",
+      "sha256": "ee18602dbc0b43267170a74aa62200b1653c38be25204318f2c93abc513e7970"
     },
     {
       "path": "README.md",
@@ -167,7 +171,7 @@
     },
     {
       "path": "backend/execution_v4.py",
-      "sha256": "97f86c7bfbca59226f5763cb5393a78b72562047b4914ae020f698031f1bc5bc"
+      "sha256": "49f44a4664eebb2ce60e4d56b81ae8daaff6dfe09eba31f492c8f297867604ae"
     },
     {
       "path": "backend/general_compound_receipts.py",
@@ -195,7 +199,7 @@
     },
     {
       "path": "scripts/export-performance-v2-contract.py",
-      "sha256": "a82ab83a58e145cd71e8d694305fd4b41e0f77e1516391ecf9c641b0d0dab251"
+      "sha256": "bea7f2fb85240d62ccc1b4d0495c07f87d56c68fe22489bd447359995d8e4ecd"
     }
   ],
   "status": "implemented_default_off"

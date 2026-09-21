@@ -116,7 +116,7 @@ export function validateError(status:number, value:unknown):value is Performance
         'generator': 'scripts/export-performance-v2-contract.py',
         'sources': [{'path': path, 'sha256': hashlib.sha256((ROOT/path).read_bytes()).hexdigest()} for path in SOURCES],
         'files': [{'path': path, 'sha256': hashlib.sha256(value.encode()).hexdigest()} for path, value in sorted(files.items())]}
-    for path in ('runtime.mjs', 'README.md', 'consumer.typecheck.mts'):
+    for path in ('runtime.mjs', '../shared/closed-schema.mjs', 'README.md', 'consumer.typecheck.mts'):
         manifest['files'].append({'path': path, 'sha256': hashlib.sha256((DEST/path).read_bytes()).hexdigest()})
     files['manifest.json'] = text(manifest)
     return files

@@ -76,7 +76,7 @@ export function validateError(status:number,value:unknown):value is ExecutionErr
     manifest={'contract':'execution-v1','contractVersion':CONTRACT_VERSION,'status':'implemented_default_off','generator':'scripts/export-execution-contract.py',
       'sources':[{'path':p,'sha256':hashlib.sha256((ROOT/p).read_bytes()).hexdigest()} for p in sources],
       'files':[{'path':p,'sha256':hashlib.sha256(v.encode()).hexdigest()} for p,v in sorted(files.items())]}
-    for p in ['runtime.mjs','README.md','consumer.test.mjs']:manifest['files'].append({'path':p,'sha256':hashlib.sha256((DEST/p).read_bytes()).hexdigest()})
+    for p in ['runtime.mjs', '../shared/closed-schema.mjs','README.md','consumer.test.mjs']:manifest['files'].append({'path':p,'sha256':hashlib.sha256((DEST/p).read_bytes()).hexdigest()})
     files['manifest.json']=text(manifest)
     return files
 

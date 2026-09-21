@@ -94,11 +94,11 @@ export const REQUEST_READ_CONTRACT: ReadContractPin = PRODUCER_PIN.packages['rea
 /** Authenticated private numeric history, independent of public pool estimates. */
 export const PERFORMANCE_V2_PIN = {
   version: '2.0.0-rc.1',
-  manifestSha256: '2b1264401f72b6a89d9d36fabc12c2b6d6cde9138eae92eebede4e7558cb3684',
+  manifestSha256: '184dab740fb584fa1bbabee348f4bd5bfad48d6ae208fd6e4f82d925e3e7f5ff',
 } as const
 
 /** Sanitized private execution status and finalized receipts only. */
 export const EXECUTION_V1_PIN = {
   version: '1.0.0-rc.1',
-  manifestSha256: '304297dd26312b7d06e09445c458ff1a07ae2971581d0dd89a797d4d159a24af',
+  manifestSha256: '9fdddba25c0cd86d646918b583181127f889fc12f08ddae085f1efa2b3cd0e26',
 } as const

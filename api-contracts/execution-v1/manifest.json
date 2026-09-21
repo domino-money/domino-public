@@ -36,7 +36,11 @@
     },
     {
       "path": "runtime.mjs",
-      "sha256": "c399073b9c0d775caff12eb39984e76cef82780b7febbabc895e9a1162fd7859"
+      "sha256": "0485ec047c867ce8178a8928ecd379c80aba35a22431b888a925286210f8cbd7"
+    },
+    {
+      "path": "../shared/closed-schema.mjs",
+      "sha256": "ee18602dbc0b43267170a74aa62200b1653c38be25204318f2c93abc513e7970"
     },
     {
       "path": "README.md",
@@ -87,7 +91,7 @@
     },
     {
       "path": "scripts/export-execution-contract.py",
-      "sha256": "0a0c6d2723d3588196b1142e10675b1fff49b5dded0ab1977853ad877edefbf5"
+      "sha256": "dd88dc60f312e3666d6d94fa40acde9a61ff13e57e101eb9095ec3923adfdc32"
     },
     {
       "path": "backend/tests/fixtures/execution/status-wire.json",
