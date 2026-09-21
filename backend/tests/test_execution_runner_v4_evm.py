@@ -214,9 +214,14 @@ class DurableV4ExecutorTests(unittest.TestCase):
         # The consumed conversion remains auditable but cannot fund a new
         # action. Pre-existing waiting lots have separate explicit fixtures.
         self.swaps()
-        with self.assertRaisesRegex(ValueError,'allocation_unavailable'):
+        with self.assertRaisesRegex(ExecutionStoreError,'execution_invalid_record'):
             self.candidate(charged_lot=lot)
+        # The store intentionally wraps model errors. Check the precise
+        # exhausted-allocation cause at the model boundary as well.
+        with self.assertRaisesRegex(ValueError,'allocation_unavailable'):
+            m.validate_candidate(self.plan,self.obs,now=int(self.obs.blockTimestamp),actor=self.operator)
         with self.pg.admin() as conn:
+            self.assertEqual(conn.execute('SELECT count(*) FROM domino_execution.intents WHERE intent_id=%s',(self.identifier,)).fetchone()[0],0)
             self.assertEqual(conn.execute('SELECT coalesce(sum(amount_raw),0) FROM domino_execution.spends WHERE lot_id=%s',(lot,)).fetchone()[0],amount)
 
     def test_price_identity_and_revocation_block_signing_before_journal(self):

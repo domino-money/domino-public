@@ -103,6 +103,36 @@ it with `--check`; there is no silent legacy/untrusted-manifest bypass.
 
 ## Validation
 
-Validation is being completed on Node 24 with the existing compiler settings and
-unchanged size-reserve requirements. The accompanying candidate evidence will
-record the completed runs and any remaining limitation before delivery.
+- Node 24.21.0; pinned Solidity 0.8.26, Cancun, optimizer 200, via-IR,
+  `bytecodeHash: none`, with the existing size-reserve requirements unchanged.
+- **278 Solidity tests passed in 22 authored suites**, no failures or skips.
+  Fuzz seed `0x01`; the existing fuzz and invariant suites are included.
+- **29 release-tool tests passed**, no failures or skips: six actual
+  prepare/verify tests with disposable Anvil, six RPC tests and 17 manifest
+  regressions. The eight local deployment transactions and subsequent receipt,
+  immutable/link, publisher-rotation and consumer-profile verification passed.
+- The independently compiled **seven production contracts** match the committed
+  manifest. `--check` also passed from a clean Git checkout after the manifest
+  and its source/build inputs were committed together.
+- The planner's **37 focused tests** passed, including both tariffs and the
+  expected-output plus old-allocation admission boundary.
+- Repository hygiene checked **2,110 tracked files with zero findings**;
+  contract hygiene and `git diff --check` passed.
+
+The gas baseline now records **259 deterministic tests**, up from 250. All nine
+new cases are included; no old cases were removed. Sixty existing cases use more
+gas and one uses less. The changes include the deferred-fee implementation,
+larger deployment bytecode, full-output reinvestment and revised regression
+fixtures. The greatest relative increase among existing whole-test snapshots is
+about 1.93%. These totals include fixture deployment and multiple operations;
+they are not per-automation gas quotes. The strict gas comparison remains enabled.
+
+| Contract | Runtime bytes | Remaining runtime bytes | Required reserve |
+| --- | ---: | ---: | ---: |
+| Vault | 24,121 | 455 | 313 |
+| Execution engine | 22,359 | 2,217 | 2,048 |
+
+All seven production runtime and full-initcode size gates passed. Source and
+artifact identity are recorded in `contracts/release-artifacts.json`; the frozen
+audit baseline remains distinct from this candidate. Full backend and remote CI
+results are recorded separately once those runs complete.
