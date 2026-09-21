@@ -1,0 +1,678 @@
+{
+  "schemaVersion": 1,
+  "kind": "domino-reviewed-release-artifacts",
+  "compiler": "0.8.26+commit.8a97fa7a",
+  "settings": {
+    "remappings": [
+      "@openzeppelin/contracts/=test/reference/official-v4/openzeppelin-contracts/contracts/",
+      "@uniswap/v4-core/=test/reference/official-v4/v4-core/",
+      "permit2/=test/reference/official-v4/permit2/",
+      "solmate/=test/reference/official-v4/solmate/"
+    ],
+    "optimizer": {
+      "enabled": true,
+      "runs": 200
+    },
+    "metadata": {
+      "bytecodeHash": "none"
+    },
+    "evmVersion": "cancun",
+    "libraries": {},
+    "viaIR": true
+  },
+  "sources": {
+    "contracts/src/DominoExecutionEngineV4.sol": "9808d77023d06099836649a6f9a77612593f3c23c1f2fe8948d26a706f3612e5",
+    "contracts/src/DominoExecutionTypes.sol": "5103966b9a210522049293713c08b3706cde262cc94493082753ce9094821b88",
+    "contracts/src/DominoL2Block.sol": "3094ee5cb132305a0f9b3b556e82f86bcc6b05c010fa4853b3185254a3046254",
+    "contracts/src/DominoPriceGuardV4.sol": "8907d17d29e3dc00028a291a3b54945f53615ac6456d9437845aa87fbf70534b",
+    "contracts/src/DominoRoutingHelperV4.sol": "d1efc6caeb629e3d5fe8f5fbdcde09bd6045ba2cb8f1c9a287d31db8405368c0",
+    "contracts/src/DominoSetup.sol": "250a7e13b0f5ecfdf772a8fecf97fd1134620d27abefe75a9b0ab4d91a272e06",
+    "contracts/src/DominoVaultFactoryV4.sol": "335f8ac25c130918f603af3c9f87daa73f0c419264bf472b572a8d52231fe080",
+    "contracts/src/DominoVaultReadHelper.sol": "27ca900c9131f54253d8c8f00b75dc5aa4cd4280bb04f720579c88a5e20b2577",
+    "contracts/src/DominoVaultTypes.sol": "2b44143b3684c40ab812c3a55a33980c2520dea1e1d2900a4a5d978343ef5e1b",
+    "contracts/src/DominoVaultV4.sol": "8ba4c38bc0e1954a1ffca4486b723a7260e1bbc9dff6ce883da530692ec1cd81",
+    "contracts/src/FeeAccounting.sol": "dfcb3f388b00a53f134428637ced5f85f142f2d0f6c955fca6587c9e920d7c89",
+    "contracts/src/IDominoVaultDraft.sol": "79733edcb99022c3e203cbb0c3428fd0491368c809fa099a394b2769bb4bb29f",
+    "contracts/src/PolicyValidation.sol": "6e86c96ad6328f5f7451a932f5a56e014fd8c62fb949f897ce37904a3d5eca36",
+    "contracts/test/reference/official-v4/v4-core/src/libraries/BitMath.sol": "e8a45eb3d57f9427fc47bbb2543c1a6a5f394113b378123ac7ca9f113a7502b4",
+    "contracts/test/reference/official-v4/v4-core/src/libraries/CustomRevert.sol": "9d3dbe6b742cb1ac30f57df89d879ade9649389de1165fc637114bd062d39fca",
+    "contracts/test/reference/official-v4/v4-core/src/libraries/FullMath.sol": "a9607255a6fd604d9c92f6b7416811c38b9d86e5dfdb0c345a494ebd35f7a4a3",
+    "contracts/test/reference/official-v4/v4-core/src/libraries/TickMath.sol": "272d4f6d3ff9ae33596ebcdb84a71a3c2d4542ae8fb5c88ddf1aca8043f5d06b"
+  },
+  "buildInputs": {
+    ".nvmrc": "68ca3fba3b7e864770cb61aeb306d4bd4354b68ab4dd38450860c5d823e42a53",
+    ".python-version": "a876e0b10411037a012498b9fe18d9bc1df32ed8b722a13564dc944ddcfd9135",
+    "package.json": "a2f73a6b08032ab9358378ab12f60db3fc4b1946af6624aa262d2bea70cda2a1",
+    "package-lock.json": "d4faf21b47a0e736672a435479af8da6779c3fe8c6197ac0a1556783cbdae1ff",
+    "contracts/foundry.toml": "4dec157f6bb98d55ba149f9ce6925bc9cc575ad2384373556646576c3d3071de",
+    "scripts/solc-wrapper.py": "f4f141d8a624dfea8ea732b718bad9fd858e3b5253f816e6b9d5ab0f0ef256e8",
+    "scripts/solc-compile.cjs": "ef628b3cb276507c89cc4362a0e608ac29f586f7f6d5ed2a1fd51a404ef68a0d",
+    "scripts/test-contracts.mjs": "87a18f7a7a57e6aad5c59ffcff3a6292bff04d967148f99da500a5e4e8b059df",
+    "scripts/prepare-financial-release.mjs": "f6cd62f1a9a19c4533f51cb59d4fbad47a2a8e2fc3d158caad6b1a7e553789d6",
+    "scripts/release-artifact-manifest.mjs": "6006fa477d81ac86c7ff364a3d189ae3ec34f3fc849704684a4a579a57734a44"
+  },
+  "contracts": {
+    "factory": {
+      "creationSha256": "ec04b2ef7061a751afd82cb1bedaff3cb6421e4d8c4ded3344dd406274cae2ab",
+      "runtimeSha256": "3fc5e98009762e556e8980759a98bb3f7711b8ad2aa8e1ecf2767baec3988208",
+      "creationBytes": 4239,
+      "runtimeBytes": 3502,
+      "abiSha256": "486e96bbf8e8040e32f5f73a9b39197bb93ae7099342da526b46ce5cebc09a81",
+      "immutableRanges": [
+        {
+          "start": 227,
+          "length": 32
+        },
+        {
+          "start": 299,
+          "length": 32
+        },
+        {
+          "start": 375,
+          "length": 32
+        },
+        {
+          "start": 618,
+          "length": 32
+        },
+        {
+          "start": 767,
+          "length": 32
+        },
+        {
+          "start": 889,
+          "length": 32
+        },
+        {
+          "start": 1011,
+          "length": 32
+        },
+        {
+          "start": 1687,
+          "length": 32
+        },
+        {
+          "start": 2935,
+          "length": 32
+        },
+        {
+          "start": 3003,
+          "length": 32
+        }
+      ]
+    },
+    "readHelper": {
+      "creationSha256": "7e72a43a6c95e1e67c0cd9f432698169348b96fb5a49f6f7331467210b5e1078",
+      "runtimeSha256": "e3ccb26d979ba9d1f4f828650ec2f6de1a1f74584e6f33ba81d8ad99db68644f",
+      "creationBytes": 7067,
+      "runtimeBytes": 6859,
+      "abiSha256": "5b2895ed46f59f37fdf1e3a5ce419675c1eee68aeaaaaa6a65343c09cb320728",
+      "immutableRanges": [
+        {
+          "start": 478,
+          "length": 32
+        },
+        {
+          "start": 2383,
+          "length": 32
+        },
+        {
+          "start": 2644,
+          "length": 32
+        },
+        {
+          "start": 3240,
+          "length": 32
+        },
+        {
+          "start": 3890,
+          "length": 32
+        },
+        {
+          "start": 4188,
+          "length": 32
+        },
+        {
+          "start": 4248,
+          "length": 32
+        },
+        {
+          "start": 5359,
+          "length": 32
+        },
+        {
+          "start": 5832,
+          "length": 32
+        }
+      ]
+    },
+    "routing": {
+      "creationSha256": "2f758ecacf06fecfc0dc495fff6f07086c80c1b0f91a69896f7a598880bf7047",
+      "runtimeSha256": "94b04e26021dcdd85281da6c2e805aaef9538ab2e2849e0b67e0f577163096e5",
+      "creationBytes": 14137,
+      "runtimeBytes": 14111,
+      "abiSha256": "241265fed54d06a8ba0508a29048a2008c2e8a62ce4dda48605c33c41d1ca34d",
+      "immutableRanges": []
+    },
+    "priceGuard": {
+      "creationSha256": "160bad772f513b90dc4bde295ce11768027e9ed7787f6179886f20f64dc4957d",
+      "runtimeSha256": "0723439dd9daa646378e273306247f0e8ccac9e1f50b53dd7f460d2f13e82ff8",
+      "creationBytes": 3907,
+      "runtimeBytes": 3516,
+      "abiSha256": "8a4a6c0f2e5712778cb8f357df3b9c7dbfe8a40c225a785d5bc4de2ddcabee6e",
+      "immutableRanges": [
+        {
+          "start": 318,
+          "length": 32
+        },
+        {
+          "start": 2088,
+          "length": 32
+        },
+        {
+          "start": 2457,
+          "length": 32
+        },
+        {
+          "start": 2545,
+          "length": 32
+        },
+        {
+          "start": 2722,
+          "length": 32
+        },
+        {
+          "start": 2792,
+          "length": 32
+        },
+        {
+          "start": 3217,
+          "length": 32
+        }
+      ]
+    },
+    "engine": {
+      "creationSha256": "5b87a6476fb1cbd4ebc6a38d16ffaaaebd02e33f5adb098fcf942989db4fd66f",
+      "runtimeSha256": "7ca50bc7ba76a4b27dfa70c5900843f8c29c9db77635b0dba6d0018754eb5590",
+      "creationBytes": 23049,
+      "runtimeBytes": 22359,
+      "abiSha256": "8b77c23a6aa15f1592171e8e23eb71df7f45f2b56b92e82377aee602b23b005c",
+      "immutableRanges": [
+        {
+          "start": 190,
+          "length": 32
+        },
+        {
+          "start": 297,
+          "length": 32
+        },
+        {
+          "start": 370,
+          "length": 32
+        },
+        {
+          "start": 1852,
+          "length": 32
+        },
+        {
+          "start": 1973,
+          "length": 32
+        },
+        {
+          "start": 2045,
+          "length": 32
+        },
+        {
+          "start": 2132,
+          "length": 32
+        },
+        {
+          "start": 2334,
+          "length": 32
+        },
+        {
+          "start": 3253,
+          "length": 32
+        },
+        {
+          "start": 4671,
+          "length": 32
+        },
+        {
+          "start": 8120,
+          "length": 32
+        },
+        {
+          "start": 8239,
+          "length": 32
+        },
+        {
+          "start": 8310,
+          "length": 32
+        },
+        {
+          "start": 8396,
+          "length": 32
+        },
+        {
+          "start": 8544,
+          "length": 32
+        },
+        {
+          "start": 9137,
+          "length": 32
+        },
+        {
+          "start": 9209,
+          "length": 32
+        },
+        {
+          "start": 9294,
+          "length": 32
+        },
+        {
+          "start": 12509,
+          "length": 32
+        },
+        {
+          "start": 12570,
+          "length": 32
+        },
+        {
+          "start": 12704,
+          "length": 32
+        },
+        {
+          "start": 12948,
+          "length": 32
+        },
+        {
+          "start": 13040,
+          "length": 32
+        },
+        {
+          "start": 13838,
+          "length": 32
+        },
+        {
+          "start": 13871,
+          "length": 32
+        },
+        {
+          "start": 13922,
+          "length": 32
+        },
+        {
+          "start": 13955,
+          "length": 32
+        },
+        {
+          "start": 14006,
+          "length": 32
+        },
+        {
+          "start": 14039,
+          "length": 32
+        },
+        {
+          "start": 14251,
+          "length": 32
+        },
+        {
+          "start": 14319,
+          "length": 32
+        },
+        {
+          "start": 14384,
+          "length": 32
+        },
+        {
+          "start": 16930,
+          "length": 32
+        },
+        {
+          "start": 19859,
+          "length": 32
+        },
+        {
+          "start": 21608,
+          "length": 32
+        }
+      ]
+    },
+    "implementation": {
+      "creationSha256": "d45173865ed6f4fdec688d0cd378225173d7f5f3c3ada96a9b27edd114a8625a",
+      "runtimeSha256": "59eb6368434e2b0f45fdef7bf0c1e6b3dba137f56e786a0121d70d38281a0527",
+      "creationBytes": 25394,
+      "runtimeBytes": 24121,
+      "abiSha256": "f190189af044c8330acff007dc9c88aaf45c2a44bffb073552540cdbe90ade76",
+      "immutableRanges": [
+        {
+          "start": 763,
+          "length": 32
+        },
+        {
+          "start": 2283,
+          "length": 32
+        },
+        {
+          "start": 3638,
+          "length": 32
+        },
+        {
+          "start": 4292,
+          "length": 32
+        },
+        {
+          "start": 4584,
+          "length": 32
+        },
+        {
+          "start": 4858,
+          "length": 32
+        },
+        {
+          "start": 6993,
+          "length": 32
+        },
+        {
+          "start": 7567,
+          "length": 32
+        },
+        {
+          "start": 8055,
+          "length": 32
+        },
+        {
+          "start": 8964,
+          "length": 32
+        },
+        {
+          "start": 9449,
+          "length": 32
+        },
+        {
+          "start": 9651,
+          "length": 32
+        },
+        {
+          "start": 9999,
+          "length": 32
+        },
+        {
+          "start": 10053,
+          "length": 32
+        },
+        {
+          "start": 10174,
+          "length": 32
+        },
+        {
+          "start": 10269,
+          "length": 32
+        },
+        {
+          "start": 11177,
+          "length": 32
+        },
+        {
+          "start": 11878,
+          "length": 32
+        },
+        {
+          "start": 11930,
+          "length": 32
+        },
+        {
+          "start": 11988,
+          "length": 32
+        },
+        {
+          "start": 12057,
+          "length": 32
+        },
+        {
+          "start": 12125,
+          "length": 32
+        },
+        {
+          "start": 12429,
+          "length": 32
+        },
+        {
+          "start": 13061,
+          "length": 32
+        },
+        {
+          "start": 13160,
+          "length": 32
+        },
+        {
+          "start": 13344,
+          "length": 32
+        },
+        {
+          "start": 14613,
+          "length": 32
+        },
+        {
+          "start": 14655,
+          "length": 32
+        },
+        {
+          "start": 14709,
+          "length": 32
+        },
+        {
+          "start": 17482,
+          "length": 32
+        },
+        {
+          "start": 19241,
+          "length": 32
+        },
+        {
+          "start": 20075,
+          "length": 32
+        },
+        {
+          "start": 20118,
+          "length": 32
+        },
+        {
+          "start": 20357,
+          "length": 32
+        },
+        {
+          "start": 20393,
+          "length": 32
+        },
+        {
+          "start": 21349,
+          "length": 32
+        },
+        {
+          "start": 21382,
+          "length": 32
+        },
+        {
+          "start": 21434,
+          "length": 32
+        },
+        {
+          "start": 22142,
+          "length": 32
+        },
+        {
+          "start": 22401,
+          "length": 32
+        },
+        {
+          "start": 22802,
+          "length": 32
+        },
+        {
+          "start": 22835,
+          "length": 32
+        },
+        {
+          "start": 22883,
+          "length": 32
+        },
+        {
+          "start": 22916,
+          "length": 32
+        },
+        {
+          "start": 22966,
+          "length": 32
+        },
+        {
+          "start": 23000,
+          "length": 32
+        },
+        {
+          "start": 23040,
+          "length": 32
+        },
+        {
+          "start": 23074,
+          "length": 32
+        },
+        {
+          "start": 23114,
+          "length": 32
+        },
+        {
+          "start": 23148,
+          "length": 32
+        },
+        {
+          "start": 23993,
+          "length": 32
+        },
+        {
+          "start": 24038,
+          "length": 32
+        }
+      ]
+    },
+    "setup": {
+      "creationSha256": "93451b7701936951aa70afb1cd5e0e235ebb0a0ff7d8bb6e92eb3b110124475b",
+      "runtimeSha256": "e31a0a3194fc2d82f779541c2a24bcf33061d45d5811757f75cdc9cf92db08ce",
+      "creationBytes": 14119,
+      "runtimeBytes": 13239,
+      "abiSha256": "0861b7a0e627e5bce607ea4d07ab2d4f5f551e79fa9e41c69d5f55fb9733a9b7",
+      "immutableRanges": [
+        {
+          "start": 28,
+          "length": 32
+        },
+        {
+          "start": 678,
+          "length": 32
+        },
+        {
+          "start": 721,
+          "length": 32
+        },
+        {
+          "start": 2536,
+          "length": 32
+        },
+        {
+          "start": 2672,
+          "length": 32
+        },
+        {
+          "start": 3060,
+          "length": 32
+        },
+        {
+          "start": 3678,
+          "length": 32
+        },
+        {
+          "start": 4375,
+          "length": 32
+        },
+        {
+          "start": 4447,
+          "length": 32
+        },
+        {
+          "start": 4745,
+          "length": 32
+        },
+        {
+          "start": 4893,
+          "length": 32
+        },
+        {
+          "start": 5216,
+          "length": 32
+        },
+        {
+          "start": 5394,
+          "length": 32
+        },
+        {
+          "start": 5555,
+          "length": 32
+        },
+        {
+          "start": 5891,
+          "length": 32
+        },
+        {
+          "start": 7560,
+          "length": 32
+        },
+        {
+          "start": 8075,
+          "length": 32
+        },
+        {
+          "start": 8670,
+          "length": 32
+        },
+        {
+          "start": 8727,
+          "length": 32
+        },
+        {
+          "start": 8795,
+          "length": 32
+        },
+        {
+          "start": 9325,
+          "length": 32
+        },
+        {
+          "start": 9403,
+          "length": 32
+        },
+        {
+          "start": 10617,
+          "length": 32
+        },
+        {
+          "start": 10813,
+          "length": 32
+        },
+        {
+          "start": 12610,
+          "length": 32
+        },
+        {
+          "start": 12671,
+          "length": 32
+        },
+        {
+          "start": 12819,
+          "length": 32
+        }
+      ]
+    }
+  }
+}

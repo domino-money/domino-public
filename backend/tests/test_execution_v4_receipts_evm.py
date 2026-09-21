@@ -18,7 +18,7 @@ class ExecutionV4ReceiptEvmTests(unittest.TestCase):
     deploy=Harness.deploy
     call=Harness.call
     swaps=Harness.swaps
-    def setup_vault(self, *, native=False, simple=False):
+    def setup_vault(self, *, native=False, simple=False, legacy_charged_fixture=False):
         self.manager = self.deploy('PoolManager.sol', 'PoolManager', ['address'], [self.owner])
         self.positions = self.deploy('PositionManager.sol', 'PositionManager',
             ['address', 'address', 'uint256', 'address', 'address'],
@@ -52,7 +52,8 @@ class ExecutionV4ReceiptEvmTests(unittest.TestCase):
         guard=self.deploy('DominoPriceGuardV4.sol','DominoPriceGuardV4',
             ['address','address','uint256','address'],[publisher,self.state,2000,guardian])
         engine=self.deploy('DominoExecutionEngineV4.sol','DominoExecutionEngineV4',['address']*4,[factory,helper,routing,guard])
-        implementation=self.deploy('DominoVaultV4.sol','DominoVaultV4',['address']*7,
+        implementation=self.deploy('SwapReinvestment.t.sol' if legacy_charged_fixture else 'DominoVaultV4.sol',
+            'LegacyChargedVaultV4' if legacy_charged_fixture else 'DominoVaultV4',['address']*7,
             [factory,self.manager,self.positions,self.state,self.recipient,helper,engine])
         self.send(factory,calldata('finalizeImplementation(address)',['address'],[implementation]))
         self.vault = self.call(factory, 'predictVault(address,uint256)', ['address'],
@@ -173,7 +174,7 @@ class ExecutionV4ReceiptEvmTests(unittest.TestCase):
             original.request('eth_call',[{'from':self.owner,'to':self.vault,'data':plan.calldata()+'00'},'latest'])
 
     def test_actual_swap_receipt_lineage_and_cumulative_cut(self):
-        self.setup_vault();self.swaps();plan=self.plan(0,10**10)
+        self.setup_vault();self.swaps();plan=self.plan(0,10**11)
         price=self.call(self.state,'getSlot0(bytes32)',['uint160','int24','uint24','uint24'],['bytes32'],[bytes.fromhex(self.admission.sequence.poolId[2:])])[0]
         # plan() already published this plan's observation; the guard
         # refuses a second identical one, and one anchor governs the whole
@@ -195,7 +196,8 @@ class ExecutionV4ReceiptEvmTests(unittest.TestCase):
             self.assertEqual(int(row['serviceFeeRaw']),int(row['grossOriginalConsumedRaw'])*400//10000)
         out=next(r for r in result['sources'] if (r['sourceId'],r['currency'])==(sid,self.key[1]))
         self.assertEqual(out['serviceFeeRaw'],'0');self.assertEqual(out['originalAfterRaw'],'0')
-        self.assertGreater(int(out['chargedAfterRaw'])+int(out['liquidityFromSwapRaw']),0)
+        self.assertEqual(out['chargedAfterRaw'],'0')
+        self.assertGreater(int(out['liquidityFromSwapRaw']),0)
 
     def test_exact_allocation_floor_reverts_atomically_and_accepts_measured_debit(self):
         self.setup_vault();self.swaps();self.execute(self.plan())
@@ -267,7 +269,7 @@ class ExecutionV4ReceiptEvmTests(unittest.TestCase):
 
 
     def test_two_percent_converted_reserve_is_not_recharged_after_domino_upgrade(self):
-        self.setup_vault(simple=True);self.swaps();first=self.plan(0,10**10)
+        self.setup_vault(simple=True,legacy_charged_fixture=True);self.swaps();first=self.plan(0,10**11)
         price=self.call(self.state,'getSlot0(bytes32)',['uint160','int24','uint24','uint24'],
             ['bytes32'],[bytes.fromhex(self.admission.sequence.poolId[2:])])[0]
         member=self.call(self.vault,'position(uint256)',[g.POSITION_TYPE],['uint256'],[self.token])[0]
@@ -284,7 +286,14 @@ class ExecutionV4ReceiptEvmTests(unittest.TestCase):
         for row in converted['sources']:
             self.assertEqual(int(row['serviceFeeRaw']),int(row['grossOriginalConsumedRaw'])*200//10000)
         charged=next(row for row in converted['sources'] if row['sourceId']==sid and row['currency']==self.key[1])
-        self.assertGreater(int(charged['chargedAfterRaw']),0)
+        self.assertEqual(charged['chargedAfterRaw'],'0')
+        # New swaps must consume their complete output. Represent a waiting lot
+        # from the prior rules explicitly through a test-only vault, with real
+        # token backing; never manufacture a production conversion receipt.
+        legacy_charged=10**9
+        self.send(self.key[1],calldata('mint(address,uint256)',['address','uint256'],[self.vault,legacy_charged]))
+        self.send(self.vault,calldata('seedCharged(bytes32,address,uint128)',
+            ['bytes32','address','uint128'],[bytes.fromhex(sid[2:]),self.key[1],legacy_charged]))
 
         self.send(self.vault,calldata('setPolicy('+POLICY_TYPE+')',[POLICY_TYPE],[(400,1000,1000,1,4,2,False)]))
         following=self.plan(0,10**8)
@@ -296,7 +305,7 @@ class ExecutionV4ReceiptEvmTests(unittest.TestCase):
         # Minimal original gross at the new tariff pays currency0; the already
         # converted balance pays currency1. Both are exact prior-reserve spends.
         gross0=(owed0-1)*10000//9600+1
-        self.assertGreaterEqual(int(charged['chargedAfterRaw']),owed1)
+        self.assertGreaterEqual(legacy_charged,owed1)
         budgets=(v.FeeBudget(sourceId=sid,currency=self.key[0],maxOriginal=str(gross0),minOriginal=str(gross0),maxCharged='0',minCharged='0'),
                  v.FeeBudget(sourceId=sid,currency=self.key[1],maxOriginal='0',minOriginal='0',maxCharged=str(owed1),minCharged=str(owed1)))
         following=following.model_copy(update={'authority':following.authority.model_copy(update={'minAdded0':str(owed0),'minAdded1':str(owed1)}),
@@ -309,5 +318,6 @@ class ExecutionV4ReceiptEvmTests(unittest.TestCase):
         self.assertEqual(int(original['serviceFeeRaw']),gross0*400//10000)
         self.assertGreater(int(original['serviceFeeRaw']),0)
         self.assertEqual((old_charged['grossOriginalConsumedRaw'],old_charged['serviceFeeRaw']),('0','0'))
+        self.assertEqual(int(old_charged['chargedBeforeRaw']),legacy_charged)
         self.assertEqual(int(old_charged['chargedConsumedRaw']),owed1)
-        self.assertEqual(int(old_charged['chargedAfterRaw']),int(charged['chargedAfterRaw'])-owed1)
+        self.assertEqual(int(old_charged['chargedAfterRaw']),legacy_charged-owed1)

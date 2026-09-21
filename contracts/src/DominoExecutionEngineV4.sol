@@ -314,7 +314,9 @@ contract DominoExecutionEngineV4 {
         routingHelper.checkSwapPrices(beforePrice,afterPrice,anchorPrice,limits.maxPriceImpactBps);
         vault.executionApply(route.sourceId,route.currencyIn,value,address(this),false);
         manager.take(outputCurrency,address(vault),amountOut);
-        if (_balance(route.currencyIn) != beforeInput-value.grossOriginalConsumed-value.chargedConsumed
+        // Service fees remain in the vault until this unlock has closed.
+        // Only the exact swap input is transferred to settle the core debt.
+        if (_balance(route.currencyIn) != beforeInput-route.amountIn
             || _balance(outputCurrency) != beforeOutput+amountOut) revert InvalidAmount();
         uint128 outputBefore = vault.feeBalance(route.sourceId,outputCurrency).charged;
         vault.executionConvert(route.sourceId,outputCurrency,amountOut);
@@ -322,7 +324,12 @@ contract DominoExecutionEngineV4 {
         bool outputBudget;
         for (uint256 i; i < plan.budgets.length; ++i) {
             if (plan.budgets[i].sourceId == route.sourceId && plan.budgets[i].currency == outputCurrency) {
-                plan.budgets[i].maxCharged += amountOut; outputBudget = true;
+                // Every newly converted unit must fund this same action. Add to
+                // any old charged allocation, preserving its exact floor. The
+                // allocator consumes floors first and the final check refuses
+                // any unconsumed floor, including a one-unit swap residual.
+                plan.budgets[i].maxCharged += amountOut;
+                plan.budgets[i].minCharged += amountOut; outputBudget = true;
             }
         }
         if (!outputBudget) revert InvalidAmount();

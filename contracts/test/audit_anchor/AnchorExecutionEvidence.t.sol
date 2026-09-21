@@ -143,7 +143,7 @@ contract AnchorExecutionEvidenceTest {
     }
 
     function _withSwap() private returns(E.Plan memory p) {
-        _swaps();p=_plan(0,1e10);T.Position memory member=vault.position(tokenId);
+        _swaps();p=_plan(0,1e11);T.Position memory member=vault.position(tokenId);
         (uint160 price,,,)=state.getSlot0(PoolId.wrap(vault.poolId()));
         p.swap=E.SwapPlan(member.source0,Currency.unwrap(key.currency0),1e9,2e9,0,
             uint128(routing.minimumOutput(1e9,price,true,100)),TickMath.MIN_SQRT_PRICE+1,p.swap.priceObservationId);

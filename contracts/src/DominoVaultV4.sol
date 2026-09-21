@@ -90,6 +90,8 @@ contract DominoVaultV4 {
     uint256 private constant _T_MODIFY = 5;
     uint256 private constant _T_LIQ = 6;
     uint256 private constant _T_FEES = 7;
+    uint256 private constant _T_SERVICE_FEE0 = 8;
+    uint256 private constant _T_SERVICE_FEE1 = 9;
 
     event Initialized(address indexed owner, bytes32 indexed sequenceId, bytes32 identity, uint256 rootTokenId);
     event PolicyChanged(uint64 indexed version, uint64 stateNonce);
@@ -283,6 +285,11 @@ contract DominoVaultV4 {
         (bool success, bytes memory returned) = address(executionEngine).call(msg.data);
         if (!success) { assembly ("memory-safe") { revert(add(returned, 32), mload(returned)) } }
         (bytes32 planHash, uint256 destination) = abi.decode(returned, (bytes32,uint256));
+        // The engine has closed the PoolManager unlock. Keep this vault's
+        // reentrancy and exact-receipt guards armed while paying the accrued
+        // fees; a recipient callback must never run between swap and add.
+        _settleServiceFee(_key.currency0, _T_SERVICE_FEE0);
+        _settleServiceFee(_key.currency1, _T_SERVICE_FEE1);
         // The _T_MODIFY operand is a backstop, not the check: executionModify
         // already reverts when the root callback never cleared the flag, so the
         // engine call above cannot return with it set. It stays as the vault's
@@ -378,8 +385,17 @@ contract DominoVaultV4 {
             uint256 paid = manager.settleFor{value: currency == address(0) ? value.liquidityAdded : 0}(debtor);
             if (paid != value.liquidityAdded) revert InvalidAmount();
         }
-        if (value.serviceFee != 0) _payExact(currency, serviceFeeRecipient, value.serviceFee);
+        uint256 slot = currency == _key.currency0 ? _T_SERVICE_FEE0 : _T_SERVICE_FEE1;
+        _tset(slot, _tget(slot) + value.serviceFee);
         if (_currencyBalance(currency, address(this)) < accountedCurrency[currency]) revert UnbackedReserve();
+    }
+
+    function _settleServiceFee(address currency, uint256 slot) private {
+        uint256 fee = _tget(slot);
+        if (fee != 0) {
+            _tset(slot, 0);
+            _payExact(currency, serviceFeeRecipient, fee);
+        }
     }
 
     function executionMint(bytes32 intentId, uint256 parent, int24 lo, int24 hi, uint128 liquidity)

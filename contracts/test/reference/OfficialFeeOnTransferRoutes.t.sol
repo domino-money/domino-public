@@ -52,9 +52,16 @@ contract SelectiveTaxToken {
     uint256 public matchingCalls;
     uint256 public taxBurned;
     uint256 public positiveTransfers;
+    IPoolManager public feeManager;
+    address public feeRecipient;
+    uint256 public completedFeePayments;
     event Transfer(address indexed from, address indexed to, uint256 amount);
 
     function mint(address to, uint256 amount) external { balanceOf[to] += amount; }
+
+    function requireCompletedFeePayment(IPoolManager manager_, address recipient_) external {
+        feeManager=manager_; feeRecipient=recipient_;
+    }
 
     /// @dev Skip preceding transfers on the same route to isolate a swap output
     /// after GENERAL collected the same currency. Zero disables the tax.
@@ -63,6 +70,10 @@ contract SelectiveTaxToken {
     }
 
     function transfer(address to, uint256 amount) external returns(bool) {
+        if(to == feeRecipient && amount != 0) {
+            require(!TransientStateLibrary.isUnlocked(feeManager),"ERC20 fee after unlock");
+            completedFeePayments++;
+        }
         uint256 burned;
         if(amount != 0) {
             ++positiveTransfers;
@@ -254,7 +265,7 @@ contract OfficialFeeOnTransferRoutesTest {
     }
 
     function _withSwap() private returns(E.Plan memory p) {
-        _swaps();p=_plan(0,1e10);T.Position memory member=vault.position(tokenId);
+        _swaps();p=_plan(0,1e11);T.Position memory member=vault.position(tokenId);
         (uint160 price,,,)=state.getSlot0(PoolId.wrap(vault.poolId()));
         p.swap=E.SwapPlan(member.source0,Currency.unwrap(key.currency0),1e9,2e9,0,
             uint128(routing.minimumOutput(1e9,price,true,100)),TickMath.MIN_SQRT_PRICE+1,p.swap.priceObservationId);
@@ -355,6 +366,15 @@ contract OfficialFeeOnTransferRoutesTest {
         _rejectWith(p,DominoExecutionEngineV4.InvalidAmount.selector,"independent maxAdded rejects residual tax");
         _token0().configure(address(manager),address(vault),0);
         vault.execute(p); _backed();
+    }
+
+    function testERC20ServiceFeeTransfersOccurAfterUnlockAndAggregatePerCurrency() external {
+        _setup(); E.Plan memory p=_withSwap();
+        _token0().requireCompletedFeePayment(manager,RECIPIENT);
+        _token1().requireCompletedFeePayment(manager,RECIPIENT);
+        vault.execute(p);
+        require(_token0().completedFeePayments()==1 && _token1().completedFeePayments()==1,
+            "one completed fee transfer per currency"); _backed();
     }
 
     function testNetWithoutResidualDoesNotInvokeTransferTaxForInternallyNettedAmounts() external {

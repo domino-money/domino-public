@@ -515,6 +515,24 @@ def _candidate(obs, settings, evidence, samples, sources, dest, depth, quote, no
     funded = _fund(groups, required(lo), pair, obs.policy.serviceFeeBps)
     allocations, collections, gross, charged, cuts = funded
     residual = tuple(max(0, outgoing[i]-added[i]) for i in range(2))
+    # The execution requires every newly converted unit to be reinvested. A
+    # minimum quote is not the actual output: also refuse a known expected
+    # surplus. Fresh simulation still has to check the real output and its
+    # source allocation; this aggregate prefilter is not that qualification.
+    if quote and quote.expectedAmountOutRaw > added[pair.index(bounds.currencyOut)]:
+        problems.append('swap_output_not_fully_reinvested')
+    if quote:
+        # Each selected old lot becomes an exact on-chain allocation floor.
+        # New output is an additional floor, even when another source supplied
+        # the old output-currency lot. Collection budgets remain optional caps.
+        allocated = {a.lotId: int(a.amountRaw) for a in allocations}
+        output_floor = 0
+        for (original, _source, currency), rows in groups:
+            if currency == bounds.currencyOut:
+                used = sum(allocated.get(identity, 0) for kind, identity, _ in rows if kind == 'lot')
+                output_floor += used-used*obs.policy.serviceFeeBps//10000 if original else used
+        if output_floor+quote.expectedAmountOutRaw > added[pair.index(bounds.currencyOut)]:
+            problems.append('swap_output_conflicts_with_allocations')
     if any(n >= 2**128 for n in (*gross, *charged, *added, *residual)) or any(gross[i]+charged[i] >= 2**128 for i in range(2)):
         problems.append('aggregate_currency_budget_overflow')
     swap_loss = max(Fraction(0), _value(incoming, evidence.prices, upper=True)-_value(outgoing, evidence.prices))

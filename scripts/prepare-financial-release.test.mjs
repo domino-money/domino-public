@@ -50,7 +50,7 @@ test('actual compiled artifacts produce eight unsigned calls with exact construc
 });
 
 test('no inferred roles, excess tariff, exhausted nonce, bad gas or false chain can prepare', () => {
-  const changes = [{ feeRecipient: undefined }, { privateKey: 'never-read' }, { operator: parameters.pricePublisher }, { operator: parameters.feeRecipient }, { pricePublisher: DEPENDENCIES.poolManager },
+  const changes = [{ sourceCommit: '0'.repeat(40) }, { feeRecipient: undefined }, { privateKey: 'never-read' }, { operator: parameters.pricePublisher }, { operator: parameters.feeRecipient }, { pricePublisher: DEPENDENCIES.poolManager },
     { chainId: 1 }, { setupFeeBps: 66 }, { priceGuardDeviationBps: 0 }, { priceGuardDeviationBps: 10000 }, { priceGuardGuardian: undefined }, { priceGuardGuardian: '0x' + '44'.repeat(20) }, { priceGuardGuardian: '0x' + '33'.repeat(20) }, { tariffVersion: '0' }, { expiresAt: 1 }, { nonce: (2n ** 64n - 1n).toString() },
     { maxTotalCostWei: '1' }, { gas: { ...parameters.gas, implementation: '53000' } },
     { dependencyCodeHashes: undefined }, { dependencyCodeHashes: {} },
@@ -58,13 +58,14 @@ test('no inferred roles, excess tariff, exhausted nonce, bad gas or false chain 
   for (const update of changes) assert.throws(() => prepare({ ...parameters, ...update }, artifacts, viem));
 });
 
-test('size guards reject oversized runtime/initcode and read-only RPC cannot send', async () => {
+test('substituted in-memory artifacts cannot prepare and read-only RPC cannot send', async () => {
   const forged = structuredClone(artifacts);
   forged.setup.creation = '0x' + '00'.repeat(49153);
-  assert.throws(() => prepare(parameters, forged, viem), /initcode_size_limit/);
+  assert.throws(() => prepare(parameters, forged, viem), /unauthenticated_release_artifacts/);
   const oversizedRuntime = structuredClone(artifacts);
   oversizedRuntime.setup.runtime = '0x' + '00'.repeat(24577);
-  assert.throws(() => prepare(parameters, oversizedRuntime, viem), /runtime_size_limit/);
+  assert.throws(() => prepare(parameters, oversizedRuntime, viem), /unauthenticated_release_artifacts/);
+  assert.throws(() => { artifacts.setup.creation = '0x00'; }, TypeError);
   const rpc = readOnlyRpc('http://127.0.0.1:1');
   await assert.rejects(() => rpc('eth_sendRawTransaction', ['0x']), /readonly_rpc_budget/);
   assert.throws(() => readOnlyRpc('https://rpc.example/?key=secret'), /public_rpc_url_required/);

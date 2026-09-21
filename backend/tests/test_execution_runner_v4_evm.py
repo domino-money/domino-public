@@ -116,7 +116,7 @@ class DurableV4ExecutorTests(unittest.TestCase):
             sourceBlockNumber=observation.blockNumber,sourceBlockHash=observation.blockHash,deadline=str(int(observation.blockTimestamp)+100),
             allocations=tuple(allocations),collections=tuple(m.CollectionBudget(sourceId=a.source.digest(),maxGrossRaw=str(10**15)) for a in accruals),
             destination=m.Destination(createChild=action==3,tokenId=target.tokenId,tickLower=-420 if action==3 else target.tickLower,tickUpper=4680 if action==3 else target.tickUpper),
-            liquidityIncrease=str(10**10 if swap or action in (2,3) or charged_lot else 5*10**13),maxGrossFee0=str(10**15),maxGrossFee1=str(10**15),
+            liquidityIncrease=str(10**11 if swap else 10**10 if action in (2,3) or charged_lot else 5*10**13),maxGrossFee0=str(10**15),maxGrossFee1=str(10**15),
             maxChargedInput0=str(charged[0]),maxChargedInput1=str(charged[1]),minNetAdded0='1',minNetAdded1='1',
             maxNetAdded0=str(2**127-1),maxNetAdded1=str(2**127-1),
             minSqrtPriceX96=str(2**95),maxSqrtPriceX96=str(2**97),maxGasCostWei=str(10**17),swap=disabled)
@@ -192,7 +192,7 @@ class DurableV4ExecutorTests(unittest.TestCase):
         self.assertEqual(self.step()['state'],'submitted');funded=self.finish()
         self.assertEqual(funded['receipt']['destinationTokenId'],str(child))
         self.assertEqual(funded['receipt']['liquidityAfterRaw'],str(2*10**10))
-    def test_swap_output_is_qualified_once_with_input_debits_and_spendable_residual(self):
+    def test_swap_output_is_qualified_once_with_input_debits_and_fully_consumed(self):
         self.setup();self.candidate(swap=True)
         self.assertEqual(self.step()['state'],'submitted');status=self.finish()
         self.assertEqual(len(status['receipt']['conversions']),1)
@@ -201,7 +201,7 @@ class DurableV4ExecutorTests(unittest.TestCase):
             self.assertEqual(len(rows),1);lot,amount,state,intent=rows[0]
             self.assertEqual((state,intent),('available',self.identifier))
             spent=conn.execute('SELECT coalesce(sum(amount_raw),0) FROM domino_execution.spends WHERE lot_id=%s',(lot,)).fetchone()[0]
-            self.assertGreater(amount-spent,0)
+            self.assertGreater(amount,0);self.assertEqual(amount-spent,0)
             self.assertGreater(conn.execute('SELECT count(*) FROM domino_execution.converted_inputs').fetchone()[0],0)
         # The legacy ledger can report a quarantined lineage, but cannot promote
         # even this known transaction to another available converted origin.
@@ -211,10 +211,13 @@ class DurableV4ExecutorTests(unittest.TestCase):
                 ('0x'+'dd'*32,'0x'+'ee'*32,lot))
         with self.assertRaisesRegex(ExecutionStoreError,'execution_lineage_mismatch'):
             ExecutionLedgerStore(self.pg.settings)._transaction(self.owner,forged)
-        self.swaps();self.candidate(charged_lot=lot)
-        self.assertEqual(self.step()['state'],'submitted');self.finish()
+        # The consumed conversion remains auditable but cannot fund a new
+        # action. Pre-existing waiting lots have separate explicit fixtures.
+        self.swaps()
+        with self.assertRaisesRegex(ValueError,'allocation_unavailable'):
+            self.candidate(charged_lot=lot)
         with self.pg.admin() as conn:
-            self.assertEqual(conn.execute('SELECT amount_raw FROM domino_execution.spends WHERE intent_id=%s AND lot_id=%s',(self.identifier,lot)).fetchone()[0],1)
+            self.assertEqual(conn.execute('SELECT coalesce(sum(amount_raw),0) FROM domino_execution.spends WHERE lot_id=%s',(lot,)).fetchone()[0],amount)
 
     def test_price_identity_and_revocation_block_signing_before_journal(self):
         self.setup();self.candidate(swap=True)

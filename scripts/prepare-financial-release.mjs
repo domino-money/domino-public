@@ -8,6 +8,7 @@ import { pathToFileURL } from 'node:url';
 import { createRequire } from 'node:module';
 import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
+import { RELEASE_CONTRACTS, authenticateReleaseArtifacts } from './release-artifact-manifest.mjs';
 
 export const CHAIN_ID = 4663;
 export const DEPENDENCIES = Object.freeze({
@@ -15,11 +16,15 @@ export const DEPENDENCIES = Object.freeze({
   positionManager: '0x58daec3116aae6d93017baaea7749052e8a04fa7',
   stateView: '0xf3334192d15450cdd385c8b70e03f9a6bd9e673b',
 });
-export const CONTRACTS = Object.freeze({
-  factory: 'DominoVaultFactoryV4', readHelper: 'DominoVaultReadHelper',
-  routing: 'DominoRoutingHelperV4', priceGuard: 'DominoPriceGuardV4',
-  engine: 'DominoExecutionEngineV4', implementation: 'DominoVaultV4', setup: 'DominoSetup',
-});
+export const CONTRACTS = RELEASE_CONTRACTS;
+const authenticatedArtifacts = new WeakMap();
+function deepFreeze(value) {
+  if (value && typeof value === 'object') {
+    for (const child of Object.values(value)) deepFreeze(child);
+    Object.freeze(value);
+  }
+  return value;
+}
 const addressPattern = /^0x[0-9a-f]{40}$/;
 const hashPattern = /^0x[0-9a-f]{64}$/;
 const zeroAddress = '0x' + '0'.repeat(40);
@@ -52,10 +57,11 @@ export function toolsFor(repo) {
 }
 
 export function loadArtifacts(repo, viem = toolsFor(repo), artifactDirectory = join(repo, 'contracts/out')) {
-  const artifacts = {};
+  const artifacts = {}, rawArtifacts = {};
   for (const [component, name] of Object.entries(CONTRACTS)) {
     const raw = readBounded(join(artifactDirectory, name + '.sol', name + '.json'));
     const artifact = JSON.parse(raw);
+    rawArtifacts[component] = artifact;
     const metadata = artifact.metadata;
     assert(metadata?.compiler?.version === '0.8.26+commit.8a97fa7a'
       && metadata.settings?.compilationTarget?.['src/' + name + '.sol'] === name
@@ -84,14 +90,18 @@ export function loadArtifacts(repo, viem = toolsFor(repo), artifactDirectory = j
     artifacts[component] = { abi: artifact.abi, creation, runtime, ranges, sha256: digest(raw),
       creationCodeHash: viem.keccak256(creation), runtimeTemplateHash: viem.keccak256(runtime) };
   }
-  return artifacts;
+  const provenance = authenticateReleaseArtifacts(repo, rawArtifacts);
+  authenticatedArtifacts.set(artifacts, provenance);
+  return deepFreeze(artifacts);
 }
 
 export function prepare(parameters, artifacts, viem, now = Date.now() / 1000) {
+  assert(authenticatedArtifacts.has(artifacts), 'unauthenticated_release_artifacts');
   keys(parameters, ['chainId', 'sourceCommit', 'deployer', 'nonce', 'feeRecipient', 'operator', 'pricePublisher',
     'priceGuardDeviationBps', 'priceGuardGuardian', 'dependencyCodeHashes',
     'setupFeeBps', 'tariffVersion', 'expiresAt', 'gas', 'maxFeePerGas', 'maxPriorityFeePerGas', 'maxTotalCostWei', 'reserveWei']);
   assert(parameters.chainId === CHAIN_ID && /^[0-9a-f]{40}$/.test(parameters.sourceCommit), 'wrong_chain_or_commit');
+  assert(parameters.sourceCommit === authenticatedArtifacts.get(artifacts).sourceCommit, 'source_commit_mismatch');
   keys(parameters.dependencyCodeHashes, Object.keys(DEPENDENCIES));
   assert(Object.values(parameters.dependencyCodeHashes).every(value => typeof value === 'string'
     && hashPattern.test(value) && !/^0x0+$/.test(value)), 'invalid_dependency_code_hash');
@@ -156,6 +166,7 @@ export function prepare(parameters, artifacts, viem, now = Date.now() / 1000) {
   const cloneRuntime = '0x363d3d373d3d3d363d73' + d.implementation.slice(2) + '5af43d82803e903d91602b57fd5bf3';
   return { schemaVersion: 1, kind: 'domino-financial-unsigned-release', chainId: CHAIN_ID,
     network: 'Robinhood Chain mainnet', available: false, sourceCommit: p.sourceCommit,
+    artifactManifestSha256: authenticatedArtifacts.get(artifacts).manifestSha256,
     parameters: structuredClone(p), addresses, steps, cloneRuntime, cloneCodeHash: viem.keccak256(cloneRuntime),
     maximumExecutionGasCostWei: maximumCost.toString(), requiredDeployerBalanceWei: requiredBalance.toString(),
     l2AdditionalFees: 'unqualified', deployment: null };
@@ -265,6 +276,7 @@ export async function verify(manifest, transactionHashes, artifacts, viem, rpc, 
     serviceFeeBps: 200, dominoServiceFeeBps: 400, expiresAt: p.expiresAt, codeHashes: { ...sequenceHashes, vault: manifest.cloneCodeHash } } };
   return { schemaVersion: 1, kind: 'domino-financial-verified-release', chainId: CHAIN_ID,
     sourceCommit: manifest.sourceCommit, packageSha256: digest(canonical(manifest)),
+    artifactManifestSha256: authenticatedArtifacts.get(artifacts).manifestSha256,
     verifiedBlock: { number: Number(finalNumber), hash: final.hash, timestamp: Number(quantity(final.timestamp)) },
     receipts, setup, sequence,
     publisherAdmission: { mode: explicitPublisher ? 'explicit_current_publisher' : 'original_deployment_publisher',

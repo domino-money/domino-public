@@ -39,6 +39,41 @@ interface VmExecutionV4 {
     function etch(address,bytes calldata) external;
 }
 
+/// A fee receiver that accepts only completed, locked-manager execution.
+/// This pins the callback boundary without introducing a pool manipulation.
+contract CompletedExecutionFeeRecipient {
+    using TransientStateLibrary for IPoolManager;
+    IPoolManager public immutable manager;
+    PositionManager public immutable positions;
+    DominoVaultV4 public immutable vault;
+    uint256 public immutable tokenId;
+    uint128 public expectedLiquidity;
+    uint256 public calls;
+    uint256 public received;
+    bool public rejectPayment;
+    bool public forwardPayment;
+
+    constructor(IPoolManager manager_, PositionManager positions_, DominoVaultV4 vault_, uint256 tokenId_) {
+        manager=manager_; positions=positions_; vault=vault_; tokenId=tokenId_;
+    }
+    function configure(uint128 liquidity, bool reject_, bool forward_) external {
+        expectedLiquidity=liquidity; rejectPayment=reject_; forwardPayment=forward_;
+    }
+    receive() external payable {
+        require(msg.sender==address(vault), "only fee payment");
+        require(!manager.isUnlocked() && manager.getNonzeroDeltaCount()==0, "fee after unlock settlement");
+        require(positions.getPositionLiquidity(tokenId)==expectedLiquidity, "add completed before fee callback");
+        (bool entered, bytes memory reason)=address(vault).call(abi.encodeCall(vault.pause,()));
+        require(!entered && bytes4(reason)==DominoVaultV4.ReentrantCall.selector, "vault remains guarded");
+        require(!rejectPayment, "recipient refused");
+        calls++; received+=msg.value;
+        if(forwardPayment) {
+            (bool forwarded,)=payable(address(0xBEEF)).call{value:msg.value}("");
+            require(forwarded,"forward payment");
+        }
+    }
+}
+
 contract OfficialDominoExecutionV4Test {
     using TransientStateLibrary for IPoolManager;
     VmExecutionV4 private constant vm = VmExecutionV4(address(uint160(uint256(keccak256("hevm cheat code")))));
@@ -334,7 +369,7 @@ contract OfficialDominoExecutionV4Test {
     }
 
     function _withSwap() private returns(E.Plan memory p) {
-        _swaps();p=_plan(0,1e10);T.Position memory member=vault.position(tokenId);
+        _swaps();p=_plan(0,1e11);T.Position memory member=vault.position(tokenId);
         (uint160 price,,,)=state.getSlot0(PoolId.wrap(vault.poolId()));
         p.swap=E.SwapPlan(member.source0,Currency.unwrap(key.currency0),1e9,2e9,0,
             uint128(routing.minimumOutput(1e9,price,true,100)),TickMath.MIN_SQRT_PRICE+1,p.swap.priceObservationId);
@@ -345,20 +380,11 @@ contract OfficialDominoExecutionV4Test {
         _setup(false,false);E.Plan memory p=_withSwap();T.Position memory member=vault.position(tokenId);
         uint256 owner0=_balance(Currency.unwrap(key.currency0),address(this));
         vault.execute(p);T.FeeBalance memory converted=vault.feeBalance(member.source0,Currency.unwrap(key.currency1));
-        require(converted.original==0 && converted.charged>0,"converted output original source charged-only");
+        require(converted.original==0 && converted.charged==0,"new converted output fully reinvested");
         require(_balance(Currency.unwrap(key.currency0),address(this))==owner0,"no wallet authority");
-        E.Plan memory next=_plan(0,1e9);E.FeeBudget[] memory b=new E.FeeBudget[](2);
-        b[0]=E.FeeBudget(member.source0,Currency.unwrap(key.currency0),type(uint128).max,0,0,0);
-        b[1]=E.FeeBudget(member.source0,Currency.unwrap(key.currency1),0,type(uint128).max,0,0);_sort(b);next.budgets=b;
-        (uint128 owed0,uint128 owed1)=_owed(tokenId,1e9);
-        for(uint256 i;i<next.budgets.length;i++) {
-            if(next.budgets[i].currency==Currency.unwrap(key.currency0)) {
-                next.budgets[i].minOriginal=uint128((uint256(owed0)-1)*10000/9600+1);
-                next.budgets[i].maxOriginal=next.budgets[i].minOriginal;
-            } else { next.budgets[i].minCharged=owed1;next.budgets[i].maxCharged=owed1; }
-        }
-        uint256 recipient1=_balance(Currency.unwrap(key.currency1),RECIPIENT);vault.execute(next);
-        require(_balance(Currency.unwrap(key.currency1),RECIPIENT)==recipient1,"no second charge on converted output");_backed();
+        // Legacy already-charged reserves are seeded explicitly and exercised
+        // by SwapReinvestmentTest; new swaps may no longer create such residue.
+        _backed();
     }
     function testSwapMinimumPartialFillRevocationAndExpiredAtomic() external {
         _setup(false,false);E.Plan memory p=_withSwap();uint128 minimum=p.swap.minAmountOut;
@@ -437,6 +463,59 @@ contract OfficialDominoExecutionV4Test {
         // A future collection cap is not consent to debit that old balance.
         E.Plan memory p=_plan(0,1e12);_reject(p);
         _oldAllocations(p);vault.execute(p);_backed();
+    }
+
+    function _feeRecipient() private returns(CompletedExecutionFeeRecipient recipient) {
+        CompletedExecutionFeeRecipient code=new CompletedExecutionFeeRecipient(manager,positions,vault,tokenId);
+        vm.etch(RECIPIENT,address(code).code);
+        recipient=CompletedExecutionFeeRecipient(payable(RECIPIENT));
+    }
+
+    function testNativeFeesPaidOnceAfterSwapAndAddWithExactParity() external {
+        _setup(true,false); E.Plan memory p=_withSwap();
+        uint256 snapshot=vm.snapshotState(); vault.execute(p);
+        bytes32 baseline=_stateHash(); uint256 totalFee=RECIPIENT.balance;
+        require(totalFee>0 && vm.revertToState(snapshot),"restore EOA baseline");
+        CompletedExecutionFeeRecipient recipient=_feeRecipient();
+        recipient.configure(OPENING+p.authority.liquidityIncrease,false,false);
+        vault.execute(p);
+        require(recipient.calls()==1 && recipient.received()==totalFee,"one aggregate native payment");
+        require(_stateHash()==baseline,"fee timing preserves exact economics"); _backed();
+    }
+
+    function testDeferredNativeFeesRejectAtomicallyAndKeepExactReceiptGuard() external {
+        _setup(true,false); _swaps(); E.Plan memory p=_plan(0,1e12);
+        CompletedExecutionFeeRecipient recipient=_feeRecipient();
+        recipient.configure(OPENING+p.authority.liquidityIncrease,true,false);
+        _rejectWith(p,DominoVaultV4.TransferFailed.selector,"refused post-unlock fee reverts whole execution");
+        require(recipient.calls()==0 && recipient.received()==0,"recipient state rolled back");
+        recipient.configure(OPENING+p.authority.liquidityIncrease,false,true);
+        _rejectWith(p,DominoVaultV4.TransferFailed.selector,"post-unlock financial receipt remains exact");
+        recipient.configure(OPENING+p.authority.liquidityIncrease,false,false);
+        vault.execute(p);
+        require(recipient.calls()==1,"same plan succeeds after rejection clears"); _backed();
+    }
+
+    function testDeferredNativeFeeScratchClearsBetweenExecutions() external {
+        _setup(true,false); _swaps();
+        CompletedExecutionFeeRecipient recipient=_feeRecipient();
+        recipient.configure(OPENING+1e12,false,false); vm.recordLogs(); vault.execute(_plan(1,1e12));
+        uint256 first=recipient.received(); require(first>0,"first NET service fee");
+        require(first==_nativeServiceFees(vm.getRecordedLogs()),"first execution fee only");
+        _swaps(); E.Plan memory p=_plan(0,1e12);
+        recipient.configure(OPENING+2e12,false,false); vm.recordLogs(); vault.execute(p);
+        uint256 second=_nativeServiceFees(vm.getRecordedLogs());
+        require(second>0 && recipient.calls()==2 && recipient.received()==first+second,
+            "no pending fee carried between calls"); _backed();
+    }
+
+    function _nativeServiceFees(VmExecutionV4.Log[] memory logs) private view returns(uint256 total) {
+        bytes32 topic=keccak256("BudgetApplied(address,bytes32,bytes32,address,uint256,(uint128,uint128,uint128,uint128,uint128,uint128,uint128,uint128,uint128))");
+        for(uint256 i;i<logs.length;++i) if(logs[i].emitter==address(engine) && logs[i].topics[0]==topic) {
+            (address currency,,T.CompoundAmounts memory value)=abi.decode(logs[i].data,
+                (address,uint256,T.CompoundAmounts));
+            if(currency==address(0)) total+=value.serviceFee;
+        }
     }
 
 }

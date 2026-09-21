@@ -208,6 +208,11 @@ class PlannerTests(unittest.TestCase):
 
     def test_smaller_bounded_swap_beats_full_swap_and_direct(self):
         obs, hist, cfg = setup(amounts=(2000, 100))
+        # Output-side collection is an optional cap, leaving room for the
+        # buffered quote. Immutable old-lot floors are checked separately.
+        output = obs.balances[1]
+        obs = replace(obs, balances=(obs.balances[0],), accruals=(m.AccrualObservation(
+            source=output.source, amountRaw=output.amountRaw, checkpointId=identity(7000)),))
         hist = history(obs, increment=20)
         ev = evidence(obs, cfg)
         dest = ev.destinations[0].destination
@@ -234,6 +239,55 @@ class PlannerTests(unittest.TestCase):
         ev = replace(ev, swaps=(quote(obs, ev.destinations[0].destination, 900, 891, 891),))
         _, best = self.selected(obs, hist, cfg, ev)
         self.assertIsNotNone(best.swap)
+
+    def test_swap_output_must_fit_reinvestment_even_when_only_expected_quote_exceeds_floor(self):
+        obs, hist, cfg = setup(amounts=(2000, 100))
+        ev = evidence(obs, cfg, max_liquidity=100000)
+        destination = ev.destinations[0].destination
+        output_capacity = amount_delta(sqrt_at_tick(destination.tickLower), Q96, 100000, 1, True)
+        for minimum, expected, rejected in ((output_capacity, output_capacity, False),
+                (output_capacity+1, output_capacity+1, True), (output_capacity, output_capacity+1, True)):
+            with self.subTest(minimum=minimum, expected=expected):
+                quoted = quote(obs, destination, 600, minimum, expected)
+                decision = p.plan(obs, hist, cfg, replace(ev, swaps=(quoted,)), now=NOW)
+                swaps = [candidate for candidate in decision.candidates if candidate.swap]
+                self.assertTrue(swaps)
+                largest = max(swaps, key=lambda candidate: candidate.liquidityIncrease)
+                self.assertEqual(largest.netAdded[1], output_capacity)
+                self.assertEqual('swap_output_not_fully_reinvested' in largest.reasons, rejected)
+                if minimum == output_capacity:
+                    self.assertEqual(largest.convertedResidual, (0, 0))
+                if rejected:
+                    self.assertTrue(all('swap_output_not_fully_reinvested' in candidate.reasons for candidate in swaps))
+                    self.assertIsNone(decision.candidates[decision.selected].swap)
+
+    def test_swap_expected_output_must_fit_beside_exact_old_lot_floors(self):
+        for tariff in (200, 400):
+            for charged in (False, True):
+                with self.subTest(tariff=tariff, charged=charged):
+                    obs, _, cfg = setup(amounts=(2000, 100))
+                    output = replace(obs.balances[1], convertedCharged=charged)
+                    obs = replace(obs, balances=(obs.balances[0], output),
+                        policy=replace(obs.policy, serviceFeeBps=tariff, maxPositions=1 if tariff == 200 else 4))
+                    hist = history(obs, increment=20)
+                    ev = evidence(obs, cfg)
+                    buffered = quote(obs, ev.destinations[0].destination, 400, 390, 392, impact=250)
+                    decision = p.plan(obs, hist, cfg, replace(ev, swaps=(buffered,)), now=NOW)
+                    swaps = [candidate for candidate in decision.candidates if candidate.swap]
+                    largest = max(swaps, key=lambda candidate: candidate.liquidityIncrease)
+                    self.assertGreaterEqual(largest.netAdded[1], buffered.expectedAmountOutRaw)
+                    self.assertNotIn('swap_output_not_fully_reinvested', largest.reasons)
+                    self.assertIn('swap_output_conflicts_with_allocations', largest.reasons)
+                    self.assertIn(output.lotId, {allocation.lotId for allocation in largest.allocations})
+                    self.assertIsNone(decision.candidates[decision.selected].swap)
+                    # An explicitly exact quote at the same floor fits; this
+                    # remains an estimate until actual EVM output is qualified.
+                    exact = replace(buffered, expectedAmountOutRaw=390)
+                    exact_decision = p.plan(obs, hist, cfg, replace(ev, swaps=(exact,)), now=NOW)
+                    exact_largest = max((candidate for candidate in exact_decision.candidates if candidate.swap),
+                        key=lambda candidate: candidate.liquidityIncrease)
+                    self.assertNotIn('swap_output_conflicts_with_allocations', exact_largest.reasons)
+                    self.assertEqual(largest.allocations, exact_largest.allocations)
 
     def test_stale_unqualified_and_bounded_swap_quotes_never_selected(self):
         obs, hist, cfg = setup(amounts=(2000, 0))

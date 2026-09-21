@@ -70,12 +70,59 @@ addresses do not prove independent custody of their keys.
 
 ## Build and prepare
 
-Build the pinned Solidity 0.8.26 contracts in the final clean checkout using the
-existing offline contract launcher. The generator reads Foundry artifacts;
-`--artifacts /absolute/out` optionally selects a separately built output folder.
-It checks compiler identity, compilation targets and every referenced source
-hash before encoding constructors. Old artifacts fail this check even when
-their filenames remain the same. Linked libraries are not accepted.
+Build the pinned Solidity 0.8.26 contracts in the final checkout using the
+existing offline contract launcher. Release artifacts also require the reviewed
+`contracts/release-artifacts.json` manifest. Artifact metadata alone is not proof
+that its bytecode came from the stated sources.
+
+When preparing a **new candidate**, after all seven production artifacts have
+been built, independently reproduce them through the pinned solc wrapper:
+
+```sh
+node scripts/release-artifact-manifest.mjs --write
+```
+
+The builder discovers the production import closure from source, compiles with
+the fixed release settings without reading artifact metadata as compiler input,
+and compares creation bytecode, runtime template, ABI and every immutable byte
+range against Foundry's outputs. It records their identities, all imported source
+hashes and the compiler/build input hashes, including the lockfile, Foundry
+profile and wrappers. No keys or RPC are used. Run it after compilation completes;
+do not run competing builds or edit inputs during this independent rebuild.
+
+Review the source/build-input diff and the generated manifest, then commit them
+together as the new candidate. A generated or staged manifest is deliberately
+insufficient for release: `prepare` and `verify` require its bytes to equal the
+manifest committed at the selected checkout's **HEAD**. They compare the current
+source/build-input hashes and all seven artifact identities to that trust root,
+and require each source/build input to match its own Git HEAD blob. Committing
+only the manifest while leaving its compiler inputs uncommitted is rejected.
+Changing bytecode, ABI or immutable masks while retaining valid source metadata
+therefore fails. Artifact objects admitted by the loader are sealed; direct calls
+to `prepare`/`verify` also reject substituted artifact sets.
+
+The trust root is the selected, reviewed Git revision; the manifest does not
+contain its own commit hash, so committing it creates no circular hash. An
+attacker who can replace the trusted Git revision/tooling or compiler environment
+is outside this gate's integrity boundary. Use the pinned lockfile installation
+and review the exact revision before signing. Independent auditors and CI can
+reproduce the committed manifest without updating it:
+
+```sh
+node scripts/release-artifact-manifest.mjs --check
+```
+
+Deployment preparation and verification read Foundry artifacts;
+`--artifacts /absolute/out` optionally selects a separately built output folder,
+but never bypasses the committed
+manifest. Compiler identity, compilation targets, metadata source hashes and
+unlinked bytecode checks still apply. The unsigned package and verified report
+both record `artifactManifestSha256` for this reviewed reference. Old packages
+without this binding do not silently gain verification under the new tooling.
+The original frozen audit tag and its historical evidence remain unchanged;
+checking an old deployment with the new verifier requires an explicitly reviewed
+manifest in a new verification checkout and a correspondingly reviewed package.
+No legacy or untrusted-manifest override is provided.
 
 ```sh
 node scripts/prepare-financial-release.mjs prepare \
