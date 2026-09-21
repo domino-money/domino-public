@@ -85,7 +85,7 @@ prior tracked fee reserve + realized earned fees
 service cut = floor(original gross consumed × serviceFeeBps / 10000)
 ```
 
-For swap paths add actual swap-in and swap-out legs on the appropriate currency sides, and preserve charge disposition for converted residuals. E1 must specify deterministic source allocation and rounding for mixed-source inputs/outputs, including which original units are consumed, and E7 must verify conservation through actual route effects. The output of a swap is not new earned income. Never charge 2% on conversion output again or levy the assisted-setup swap tariff inside automation. Untouched fees and unconsumed original input remain uncharged; a fully reverted action advances neither charges nor intent consumption. Floor rounding at 49/50 base units under 200 bps remains the existing policy, not an automatic minimum-fee toll.
+For swap paths add actual swap-in and swap-out legs on the appropriate currency sides, and preserve charge disposition for converted residuals. E1 must specify deterministic source allocation and rounding for mixed-source inputs/outputs, including which original units are consumed, and E7 must verify conservation through actual route effects. The output of a swap is not new earned income. Never charge the mode’s service fee on conversion output again or levy the assisted-setup swap tariff inside automation. Untouched fees and unconsumed original input remain uncharged; a fully reverted action advances neither charges nor intent consumption. Floor rounding at 49/50 base units under 200 bps remains the existing policy, not an automatic minimum-fee toll.
 
 ### Decision, financial plan and transaction attempt
 
@@ -109,7 +109,7 @@ The planner compares direct, bounded swap and waiting over a finite disclosed ho
 
 Proposed route data contains an admitted adapter/route version, registered currency path, exact fee-only input budget, minimum output, deadline and reviewed price/impact bounds. It contains no free-form call facility. On-chain executable guards and the independent signer must enforce the applicable bounds; an off-chain `impactPassed` boolean is not sufficient. The precise price-integrity reference and attainable on-chain price-impact guard remain E3/E7 review decisions for each admitted operation. If those cannot be established for a market, that operation stays unavailable.
 
-Gas estimates and reservations include the complete chosen path. Follow [existing Nitro qualification](../reports/DEPOSIT_RPC_QUALIFICATION.md): the observed estimate bundles execution and data-posting gas; do not add the included component twice. Requalify the new executor's actual paths and distinguish gross from unavailable net realized cost. Operator gas covered by the 2% cut is not deducted again from the owner's net liquidity addition.
+Gas estimates and reservations include the complete chosen path. Follow [existing Nitro qualification](../reports/DEPOSIT_RPC_QUALIFICATION.md): the observed estimate bundles execution and data-posting gas; do not add the included component twice. Requalify the new executor's actual paths and distinguish gross from unavailable net realized cost. Operator gas covered by the mode’s 2%/4% cut is not deducted again from the owner's net liquidity addition.
 
 ## Functional-alpha dependencies outside the seven packages
 

@@ -4,11 +4,11 @@
 
 ## What the alpha delivers
 
-The English creation/import journey offers **Auto-compound** and **Domino** on admitted Robinhood Chain markets. Auto-compound reinvests eligible earned fees into the same position. Domino retains the agreed source-routing rules and creates or funds successor positions from fees. Both use the proposed 2% service cut and bounded fee-funded swaps where the reviewed route and owner economics justify them.
+The English creation/import journey offers **Auto-compound** and **Domino** on admitted Robinhood Chain markets. Auto-compound reinvests eligible earned fees into the same position. Domino retains the agreed source-routing rules and creates or funds successor positions from fees. Simple Auto-compound uses 2% and Domino uses 4% on consumed earned fees, per mode for every recipe. Both support bounded fee-funded swaps where the reviewed route and owner economics justify them.
 
 Entry starts with tokens in the user's Robinhood wallet, including address search outside any starter catalogue. Users compare existing pools by pair, LP fee, rolling 24h volume, TVL and historical fee APR, then choose their amount and range. Explain the second asset and offer an explicit owner-signed balancing swap. The user also approved advanced creation of a new compatible pool when the selected pair/fee combination is absent, with explicit initial-price review. [ONBOARDING_AND_POOL_DISCOVERY.md](ONBOARDING_AND_POOL_DISCOVERY.md) defines this expanded alpha scope, data qualification and the proposed suggestion policy.
 
-The user subsequently requested monetization modeled on Revert. [PRICING_POLICY.md](PRICING_POLICY.md) adds separately quoted owner-requested assisted-swap fees to alpha scope; the exact rate schedule remains pending. The 2% automation service does not acquire a second swap fee or per-successor mint charge. Direct setup without swaps has no separate Domino percentage in this baseline; ordinary chain costs remain disclosed.
+The user subsequently requested monetization modeled on Revert. [PRICING_POLICY.md](PRICING_POLICY.md) adds separately quoted owner-requested assisted-swap fees to alpha scope; the exact rate schedule remains pending. The 2%/4% automation service does not acquire a second swap fee or per-successor mint charge. Direct setup without swaps has no separate Domino percentage in this baseline; ordinary chain costs remain disclosed.
 
 A Domino step creates another LP position in the same underlying Uniswap pool. It does not initialize a new pool, change its hook or move the original principal. The UI groups the root and successors as a sequence of cards and explains source, destination, amounts, costs and why an action is waiting.
 

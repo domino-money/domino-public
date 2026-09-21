@@ -10,11 +10,14 @@ plainly as capabilities; where a claim rests on a measurement, the measurement i
 
 ## 1. Freeze
 
-**Corrected production-source freeze: `aaf33947e7aeccf902b311c6d2282a742a929c2b`.**
-This supersedes the original `ec2e9aa` freeze after the executed audit found a
-Nitro block-domain incompatibility and coupled Setup refunds. The corrected
-contracts use the qualified ArbSys L2 number/hash source and provide independent
-owner currency recovery. See [remediation evidence](v4-remediation-2026-09-21/)
+**Current production-source freeze: `7321c5bdefb27a29d15dfa2cdcbaae6cc9d9715b`.**
+This supersedes the remediation freeze `aaf33947e7aeccf902b311c6d2282a742a929c2b`
+with the owner-selected automation modes: 200 bps for simple, 400 bps for every
+Domino recipe. The 13 sources have 2,656 lines. Simple mode is root-only and cannot
+create or fund successors; previously charged converted lots remain exempt across
+mode changes. The qualified ArbSys block source and independent Setup recovery
+remain in place. See the [fee change and validation](REVERT_FEE_DEEP_DIVE_2026-09-21.md)
+and [current artifact manifest](revert-fees-2026-09-21/artifact-verification.json). See [remediation evidence](v4-remediation-2026-09-21/)
 and the [historical audit findings](V4_AUDIT_EXECUTION_2026-09-21.md).
 The deployment package must name the full final checkout SHA; its artifact
 loader verifies every source hash against that checkout.
@@ -37,11 +40,11 @@ outside the immutable slots:
 | # | artifact | runtime | runtime keccak256 |
 | ---: | --- | ---: | --- |
 | 1 | `DominoVaultFactoryV4` | 3,502 B | `0xd5d36d4ea4be9009f451fdd5801b19d4ed8b75b1acafd786f6102eff71246f55` |
-| 2 | `DominoVaultReadHelper` | 6,858 B | `0x246fe0cd81ae92cd3a0758389fb3de4302bca6050fbd866941a53c8c24cbcc36` |
-| 3 | `DominoRoutingHelperV4` | 13,873 B | `0xd3c0d439931fd9ea2bb54016231eab44ba99196b82b58d6076322a40facee9b8` |
+| 2 | `DominoVaultReadHelper` | 6,859 B | `0xc2d647a741091d460cc8a2f1ad797e2eebe5c6d56194566f8e6d448f01da03e7` |
+| 3 | `DominoRoutingHelperV4` | 14,111 B | `0x4727e575dd2af4db05e70303b42a424bb1cffb7a2620e1c3f457e2324120bfc4` |
 | 4 | `DominoPriceGuardV4` | 3,516 B | `0x6a5d9ceca64f252ab246a9b8e74c80eb20d149b3e8e4f6cbcddbb0cff0112885` |
 | 5 | `DominoExecutionEngineV4` | 21,899 B | `0x22e3b9f9fe254f59aa969e6bf33b1e69655b8bd376fd8e7a8d4207d1ad542416` |
-| 6 | `DominoVaultV4 (clone implementation)` | 23,625 B | `0x8c4cfc9d27602ec81d64e0d5e2d0c186fef65c69b45579ff81babb58bc01fc09` |
+| 6 | `DominoVaultV4 (clone implementation)` | 23,694 B | `0xd946962d3cb86a29f9caefadbcab6a4b326a928034660a2654f909395f766237` |
 | 7 | `DominoSetup` | 13,239 B | `0x6060c68a9f15c5c22949ac060554bed17656290f707a0dbb16061d8a015812a6` |
 
 An eighth transaction, `factory.finalizeImplementation(implementation)`, binds #6 to #1 once and
@@ -65,7 +68,7 @@ PoolManager `0x8366a39cc670b4001a1121b8f6a443a643e40951`, PositionManager
 
 ## 2. Scope
 
-**In scope — 13 files under `contracts/src`, 2,630 lines**: the seven artifacts above,
+**In scope — 13 files under `contracts/src`, 2,656 lines**: the seven artifacts above,
 plus `DominoVaultTypes.sol`, `DominoExecutionTypes.sol`, `IDominoVaultDraft.sol` (the interface
 the vault takes its `Policy` struct and events from), `PolicyValidation.sol` and
 `FeeAccounting.sol`, plus the new `DominoL2Block.sol`. `DominoRoutingHelperV4` is the only production source that imports the
@@ -100,7 +103,7 @@ Six roles. None of them can take a position or a reserve out of a vault except t
 | **operator** | set by the owner, revocable at any time | `execute` one price-anchored plan at a time, and `pause` | resume, change policy or limits, withdraw anything, move a position |
 | **price publisher** | constructor argument, rotatable (below) | publish reusable pool observations and revoke observations | publish outside the deviation band around the pool's live reading; nothing else on any vault |
 | **price guard guardian** | constructor argument, immutable | propose the next publisher (which must accept), and revoke any observation | widen the band or directly control a vault; it can gain publishing authority through rotation |
-| **service fee recipient** | constructor argument, immutable | receive the service fee the policy sets (`FeeAccounting.MAX_SERVICE_FEE_BPS` caps it at 200 bps) | initiate anything |
+| **service fee recipient** | constructor argument, immutable | receive the policy mode fee: exactly 200 bps simple or 400 bps Domino, only on consumed earned fees | initiate anything |
 
 **What a compromised key costs.**
 
@@ -164,12 +167,15 @@ Stated here so nobody has to find them.
 **Gas funding.** The operator's previously funded native ETH pays automated
 execution gas; the publisher separately pays for observations. The owner pays
 setup and manual transactions. The simulator grants synthetic ETH using
-`anvil_setBalance`. The 2% cut on consumed earned fees goes to the immutable fee
-recipient in the consumed currency. No automatic sale or top-up replenishes the
+`anvil_setBalance`. The mode cut (2% simple / 4% Domino) on consumed earned fees
+goes to the immutable fee recipient in the consumed currency. No automatic sale or top-up replenishes the
 operator; an insufficient native balance makes the signer refuse execution.
 The [funding study](GAS_FUNDING_STUDY_2026-09-21.md) compares prefunded ETH,
 separate treasury conversion and sponsorship using measured local-fork gas and
-dated Nitro prices. Those are planning scenarios, not activated services.
+dated Nitro prices. The owner selected manual ETH funding first and a separate
+company-treasury conversion/refill service later. Automatic top-up is not implemented.
+The [new rate sensitivity](REVERT_FEE_DEEP_DIVE_2026-09-21.md) holds those historical
+gas costs constant; it is not a fresh Nitro measurement of this mode-fee build.
 
 **Owner recovery.** Setup now exposes `recoverCurrency` and `recoveryStarted`
 without changing the existing operation tuple. A successful partial recovery
@@ -216,7 +222,13 @@ found while closing the others: a test of mine that claimed a clause it could no
 
 ## 6. Reproducing the evidence
 
-**The suites.** **20 suites, 256 tests passed, none failed or skipped.** Results are recorded in [suite-results.json](v4-remediation-2026-09-21/suite-results.json). The original audit had 15 suites and 228 tests; corrected-source regression suites extend that evidence. A single Forge invocation over the whole tree exhausts
+**The suites.** **260 tests passed across 20 suites, zero skips**, for the current
+mode-fee source freeze. Results and gas provenance are recorded in the
+[implementation validation](REVERT_FEE_DEEP_DIVE_2026-09-21.md). The earlier
+remediation run had **20 suites, 256 passing tests**, recorded in
+[historical suite-results.json](v4-remediation-2026-09-21/suite-results.json);
+the original audit had 15 suites and 228 tests. These older counts are not
+presented as tests of the current source freeze. A single Forge invocation over the whole tree exhausts
 memory (issue #145), so each suite is run against its own dependency closure, as CI does:
 
 ```bash

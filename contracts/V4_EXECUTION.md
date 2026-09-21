@@ -122,7 +122,7 @@ The original source ID survives conversion. Output is credited in its new
 currency as `charged`; it is not a new original fee lot or new income. Only the
 matching typed output budget receives additional charged capacity, and its floor
 is unchanged. Pre-existing charged allocations retain priority. The only Domino
-charge is the owner's automation rate (at most 200 bps), evaluated as the delta
+charge is the owner's selected automation-mode rate (200 bps simple; 400 bps Domino), evaluated as the delta
 of `floor(cumulative original consumed * rate / 10000)` for that source/currency
 within the intent. Exact original allocation floors are honored even at integer
 rounding plateaus. Converted output/residual is never charged again; no setup
@@ -172,7 +172,7 @@ service cut goes to the immutable service-fee recipient in the consumed
 currency; receiving a token service fee does not automatically convert it to
 ETH or transfer it to the operator.
 
-The approved economics include operator compensation and gas within the 2%
+The approved economics include operator compensation and gas within the selected mode’s 2%/4%
 cut on consumed earned fees; no additional gas debit is taken from principal.
 Funding and, where needed, converting the service recipient's revenue into
 operator ETH are separate treasury operations that have not been automated.
@@ -239,3 +239,19 @@ release. No SQL, credential, continuous-service flag or real transaction is
 changed by these local commands. Concrete release identity/source qualification
 and funded synthetic-versus-real wallets remain explicit operational facts, not
 an extra software approval flag or a fabricated successful deployment.
+
+
+## Mode-specific tariff (21 September 2026)
+
+The Policy ABI is unchanged. Exactly `serviceFeeBps=200` selects simple
+Auto-compound and `400` selects Domino-compound. New owner policies accept no
+other rate. Simple mode requires `maxPositions=1` and root-only GENERAL/NET
+execution; FUND, MINT, child targets and foreign-position source/collection
+budgets are refused. Domino mode preserves the admitted routing rules and applies
+400 bps even when a recipe only adds to its current position.
+
+Changing mode requires the owner's policy transaction and invalidates pending
+plans by policy version/state nonce. Children must be withdrawn before a downgrade;
+their leftover fee reserves remain recoverable but cannot fund simple execution.
+Already charged converted lots carry their old disposition through a mode change
+and incur no top-up charge. The 200-bps extra swap fee is only a pricing study.

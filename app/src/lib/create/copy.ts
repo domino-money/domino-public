@@ -191,7 +191,7 @@ export const CREATE = {
     noneDetail: 'Earned fees stay in the position until you collect them. Nothing runs on your behalf.',
     compound: 'Auto-compound',
     compoundRules: [
-      'Earned fees go back into this same position.',
+      'Earned fees go back into this same root position. The position cap is one; no successors are created.',
       'The service fee is 2% of the earned fees consumed, taken once. Never on principal.',
       'Only proven earned fees are used. No wallet asset is pulled and no principal is sold.',
     ],
@@ -202,13 +202,13 @@ export const CREATE = {
       'A successor’s ceiling sits above the previous ceiling by the upside you set for the sequence, rounded up to the tick spacing; the next range below is drawn at 50%. Its floor may overlap downward by at most the configured share of that ceiling.',
       'The sequence has a cap, counted including the root. At the cap, fees fund an existing position or wait.',
       'Fees only, never principal. When an action is not justified, it waits with a reason.',
-      'The service fee is 2% of the earned fees consumed, once. No extra swap fee for the automation’s own balancing.',
+      'The service fee is 4% of the earned fees consumed, once, for every Domino recipe, including reinvestment into the source. No extra swap fee for the automation’s own balancing.',
     ],
     /** The three choices as cards: a title and one line each. */
     options: {
       none: { title: 'Self-managing', line: 'Fees wait in the position until you collect them.' },
-      compound: { title: 'Auto-compound', line: 'Fees go back into the same range.' },
-      domino: { title: 'Domino-compound', line: 'Fees open the next range one step higher.' },
+      compound: { title: 'Auto-compound', line: 'Fees go back into the same range. 2% of earned fees consumed.' },
+      domino: { title: 'Domino-compound', line: 'Fees can fund the next range one step higher. 4% of earned fees consumed.' },
     },
     optionsLegend: 'What the earned fees do',
     compoundRulesHeading: 'How Auto-compound works',
@@ -254,7 +254,7 @@ export const CREATE = {
     stepsNote: 'What your wallet will be asked for, in order: the deposit in Setup, then any automation from Automate. None of it starts from this page.',
     /** The one charge Domino makes, shown only when automation can make it. */
     serviceFee: 'Domino service fee',
-    serviceFeeValue: '2% of earned fees consumed',
+    serviceFeeValue: (mode: 'none' | 'compound' | 'domino') => mode === 'none' ? 'No automation service fee' : `${mode === 'domino' ? 4 : 2}% of earned fees consumed`,
     serviceFeeNote: 'Taken once, when Auto-compound or Domino-compound consumes earned fees. Never on your principal, and never on a direct deposit.',
     /** The headline: the position being created, in one line per thing that matters. */
     holds: 'This position holds',
@@ -296,13 +296,13 @@ export const CREATE = {
     automationApproveStep: 'Approve this position NFT to its sequence',
     automationApproveDetail: 'Only this NFT, to the address its sequence will have; never approval for all NFTs. The NFT stays in your wallet.',
     automationCreateStep: 'Create the sequence, paused',
-    automationCreateDetail: 'Registers this NFT, its limits and the 2% service fee on earned fees consumed. It starts paused: nothing runs yet.',
+    automationCreateDetail: (mode: 'compound' | 'domino') => `Registers this NFT, its limits and the ${mode === 'domino' ? 4 : 2}% service fee on earned fees consumed. It starts paused: nothing runs yet.`,
     automationActivateStep: (name: string) => `Activate ${name}`,
     automationActivateDetail: 'A separate owner transaction, when you choose. Nothing runs before it, and you can pause or revoke it from your wallet.',
     automationStepNames: { compound: 'Auto-compound', domino: 'Domino-compound' },
     /** The fee bases side by side (feeBases in journey.ts). */
     feeLabels: { pool: 'Pool trading fee', service: 'Domino service fee', swap: 'Assisted swap fee', gas: 'Network gas' },
-    feeValues: { service: '2% of earned fees consumed', swap: 'At most 0.65% of the consumed swap budget', gas: 'Paid by you' },
+    feeValues: { service: 'Auto-compound 2%; Domino-compound 4% of earned fees consumed', swap: 'At most 0.65% of the consumed swap budget', gas: 'Paid by you' },
     feeNotes: {
       pool: 'Paid by swappers through this pool to its liquidity providers, on each trade. Not a charge to you.',
       service: 'Once, when Auto-compound or Domino-compound consumes earned fees. Never on principal, never on a direct deposit.',

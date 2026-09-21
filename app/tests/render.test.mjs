@@ -690,7 +690,7 @@ test('Settings distinguishes disconnected automated signing from wallet transact
   assert.match(text, /Wallet permissions[\s\S]*Sign-in proves your address[\s\S]*Not connected/);
   // Changed on purpose (qa:visual, owner's call): a planned entry wears no pill. Service pricing states its tariff, as Home and Automate state the fee.
   const pricing = page.locator('.dm-acct-cap', { hasText: 'Service pricing' });
-  assert.match(await pricing.innerText(), /^Service pricing\s+Automation uses 2% of consumed earned fees\./);
+  assert.match(await pricing.innerText(), /^Service pricing\s+Auto-compound uses 2% and Domino-compound 4% of consumed earned fees, once\./);
   assert.equal(await pricing.locator('.dm-pill').count(), 0, 'no status pill on Service pricing');
   assert.doesNotMatch(text, /Planned/, 'no Planned pill');
   assert.doesNotMatch(text, /Enabled\b/, 'nothing is reported as enabled');
@@ -708,6 +708,8 @@ test('Automate shows its two cards and nothing under them, and each card’s way
   assert.equal(ways[0].height, ways[1].height, `the two ways in: ${ways.map(({ height }) => height).join(' vs ')} px`);
   assert.equal(await page.locator('main .dm-inset, main .dm-acct-auto-note').count(), 0, 'no panel under the cards');
   assert.doesNotMatch(await page.locator('main').innerText(), /Setup checks the deployment/, 'no note under the cards');
+  assert.equal(await page.locator('[data-automation-card="compound"] .dm-acct-auto-fee dd').innerText(), '2% of earned fees consumed, once');
+  assert.equal(await page.locator('[data-automation-card="domino"] .dm-acct-auto-fee dd').innerText(), '4% of earned fees consumed, once');
   clean(page, 'automate');
   await close(page);
 });

@@ -1,6 +1,23 @@
 # Domino — revenue and fee boundaries
 
-9 September 2026. The user has read and approved this pricing design and the onboarding proposal. Assisted-swap monetization, its 0.65% ceiling, the 2% automation rate and the separate non-stacking bases are approved for implementation. The exact tariff table still follows the calibration step below; approval does not select between its candidate rates. No new fee has been implemented or activated. [Revert fee review](REVERT_FEES_REVIEW.md) separates confirmed reference prices from Domino-specific choices.
+Updated **21 September 2026**, following the owner's explicit mode decision:
+**Auto-compound: 2%; Domino-compound: 4%**, both on newly charged consumed earned
+fees, once. The rate follows the selected automation mode for every recipe,
+including same-position reinvestment inside Domino mode. It is not selected by
+whether one execution happens to create a successor. Manual company ETH funding
+is the launch path; bounded automatic conversion/refill of company revenue is the
+next operational feature.
+
+The earlier 9 September assisted-swap boundary remains: at most 0.65% of the
+consumed owner-selected swap budget. An additional **2% of swap value is under
+study, not selected or activated**. It must not be silently stacked on the 2%/4%
+automation charge. The [contract-level Revert review](reports/REVERT_FEE_DEEP_DIVE_2026-09-21.md)
+separates source behavior, published prices and unverified live settings.
+
+The V4 mode implementation and deployment artifacts must agree before release.
+A policy document or successful test does not activate a real deployment or
+replace an owner's reviewed signature. Earlier receipts retain their original
+rates and policy versions.
 
 ## Alpha revenue lines
 
@@ -8,13 +25,14 @@
 |---|---|---|
 | Discover tokens/pools, inspect analytics, connect a wallet | No service charge | Product baseline |
 | Create/increase a position or initialize a compatible pool without an assisted swap | No setup percentage in this baseline; owner pays disclosed chain costs | No universal Revert creation fee was confirmed; a separate flat/percentage creation charge is not silently introduced |
-| Owner-requested assisted swap during funding or supported manual management | A versioned quoted fee on the consumed swap budget; ceiling 0.65% (65 bps) | Approved boundary; exact rate table and collection implementation pending |
-| Auto-compound or Domino fee reinvestment | 2% (200 bps) of consumed earned fees | Approved boundary; includes operator compensation/gas within the service cut; direct and swap-assisted paths use the same service rate |
+| Owner-requested assisted swap during funding or supported manual management | A versioned quoted fee on the consumed swap budget; ceiling 0.65% (65 bps) | Approved ceiling; Setup implements exact-input collection; live rate/version remain to be selected |
+| Auto-compound in the same root position | 2% (200 bps) of consumed earned fees | Every recipe in simple mode; one root position, no successor funding/creation |
+| Domino-compound | 4% (400 bps) of consumed earned fees | Every recipe in Domino mode: direct, swap-assisted, successor funding and successor creation; includes operator compensation/gas |
 | Pause/revoke/withdraw without a requested conversion | No Domino exit toll; owner-paid gas where applicable | Direct owner recovery remains available |
 
-The 2% automation rate does not apply to initial principal. Conversely, the assisted-swap fee can be paid from the explicitly selected initial funding budget. This is a separate owner-authorized service, not an operator right to debit deposits or wallet balances later.
+Neither automation rate applies to initial principal. Conversely, the assisted-swap fee can be paid from the explicitly selected initial funding budget. This is a separate owner-authorized service, not an operator right to debit deposits or wallet balances later.
 
-Do not add the assisted-swap service fee on top of the 2% for internal automated balancing, successor funding or successor creation. Real DEX fees and price impact still affect swap output and must be included in economics. An owner clicking a button that invokes the existing automation path does not silently turn it into a differently priced product.
+Do not add the assisted-swap service fee on top of the mode’s 2% or 4% for internal automated balancing, successor funding or successor creation. Real DEX fees and price impact still affect swap output and must be included in economics. An owner clicking a button that invokes the existing automation path does not silently turn it into a differently priced product.
 
 ## Rate selection
 
@@ -52,12 +70,36 @@ For 100 monthly funding operations averaging $1,000, assuming every operation sw
 | 0.30% | $150 |
 | 0.65% | $325 |
 
-If only half those operations require a swap, these revenues halve. The same $50,000 of **earned fees actually consumed by automation**, a different economic base, would generate $1,000 at 2% before execution and operating costs. Deposited TVL is not earned-fee volume and does not generate that recurring service revenue by itself.
+If only half those operations require a swap, these revenues halve. The same $50,000 of **earned fees actually consumed by automation**, a different economic base, would generate $1,000 in simple mode at 2%, or $2,000 in Domino mode at 4%, before execution and operating costs. Deposited TVL is not earned-fee volume and does not generate that recurring service revenue by itself.
 
 Track revenue by token and at realizable value. Contribution equals assisted-swap revenue plus automation revenue, less project-funded gas including failed/replaced attempts, route/provider charges borne by Domino, conversion losses and operating costs. Setup revenue helps fund acquisition/support but cannot guarantee ongoing execution economics. Keep the owner's net-benefit check separate from the operator cost/margin check; do not manufacture swaps or extra transactions to earn more fees.
 
 ## Implementation and release work
 
-Add typed fee schedules, owner-bound quotes, exact amount caps and receipt fields to the onboarding/API design. Extend contract review for assisted-swap collection separately from the existing earned-fee split library. Test fee-free direct deposit, charged exact-input swap, rate changes, rounding/dust, gas headroom, multiple hops, reverted swaps, swap-success/mint-cancel recovery, replacements/reorgs, recipient substitution and conservation. Verify that automated internal swaps never acquire an extra assisted-swap service charge.
+Maintain owner-bound quotes, exact amount caps and receipt fields for Setup collection. The 65-bps Setup ceiling is unchanged; a 200-bps swap tariff would require a separately selected policy, changed contract ceiling and new qualification. Test fee-free direct deposit, charged exact-input swap, rate changes, rounding/dust, gas headroom, multiple hops, reverted swaps, swap-success/mint-cancel recovery, replacements/reorgs, recipient substitution and conservation. Verify that automated internal swaps never acquire an extra assisted-swap service charge.
 
 Before activation, select the exact schedule from measured onboarding conversion and contribution scenarios, qualify the collection path and route costs on Robinhood, and show the rate and basis before every owner signature. Record applicable policy versions and preserve owner exits. No changes to the personal bot, existing approved wallets or live contracts are made by this proposal.
+
+
+## Automation mode, consent and accounting
+
+For this predeployment V4 release, the existing policy tuple retains its ABI.
+Its exact `serviceFeeBps` is also the canonical mode discriminator: 200 is simple
+and 400 is Domino. Other new owner-policy rates are refused. Pure arithmetic
+and historical receipt readers can cover a wider range without admitting those
+rates as new policies. This encoding must be explicit in the planner, SDK and
+release profile; raising a generic cap alone would not enforce the mode.
+
+Simple mode admits only root-position reinvestment, with one active position and
+`maxPositions=1`; it cannot create/fund successors or consume another position's
+fees. Domino mode can use the existing admitted source-routing rules at 400 bps.
+Owner-signed mode changes advance policy/state versions and invalidate plans.
+Downgrading requires all active children to be withdrawn first. Old child reserves
+remain owner-withdrawable and cannot become a simple-mode funding source.
+
+A lot charged at 2% is not charged the missing 2% after switching to Domino.
+Converted, already charged balances remain exempt; only original uncharged fees
+newly consumed use the current reviewed mode rate. A swap does not reset that
+lineage. For $100 of newly consumed earned fees, the service cut is $2 in simple
+mode or $4 in Domino mode, whether balancing is needed or not. Actual pool fees
+and impact reduce execution output separately.

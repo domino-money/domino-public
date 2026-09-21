@@ -64,7 +64,7 @@ balance effects and E1 source allocations. One intent has at most one canonical
 financial effect and one row per consumed lot; repeated reconciliation is
 idempotent. Collection credits remain classified as realized accrual with
 **unknown earning time**, never invented 24h income. Original and converted
-amounts stay separate and the 200 bps service cut applies only to consumed
+amounts stay separate and the selected 200/400 bps service cut applies only to consumed
 original fees. No additional owner gas deduction or setup fee is introduced.
 
 Receipt, realized credit origins, exact per-lot debits and release of collection

@@ -228,3 +228,19 @@ at the fixed 4663 addresses only inside its isolated chain. It verifies all
 created contracts, rejects reordered receipts and changed runtime code, and
 loads the resulting profiles with the actual Setup/Sequence SDK parsers. This
 local evidence is not a mainnet deployment or provider qualification.
+
+
+## Mode fee profile (21 September 2026)
+
+The verified sequence profile publishes both exact rates: `serviceFeeBps: 200`
+for simple Auto-compound and `dominoServiceFeeBps: 400` for Domino-compound.
+Both fields are required; the previous single-rate profile is refused for new
+admission. Deployment/source hashes must come from the mode-aware V4 build, not
+from the earlier 200-bps-only freeze. Regenerate and verify every pin; components
+whose bytecode is unchanged may retain the same hash.
+
+The wallet's reviewed automation mode sets the corresponding Policy rate. The
+existing Policy tuple is unchanged; its exact rate is the canonical mode signal.
+Simple mode has one root and no successor authority. A change is an owner-signed
+policy update, not a backend tariff override. Setup retains its independent
+65-bps maximum; the 200-bps assisted-swap proposal is not activated.

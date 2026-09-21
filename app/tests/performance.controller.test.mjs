@@ -349,11 +349,11 @@ const hexOf = (byte, bytes) => `0x${byte.toString(16).padStart(2, '0').repeat(by
 const ZERO32 = hexOf(0, 32);
 const CHAIN_OWNER = hexOf(0x2a, 20);
 const READ_METHODS = ['eth_accounts', 'eth_call', 'eth_chainId', 'eth_getBlockByNumber', 'eth_getCode'];
-function fakeChain({ sequences = 1, owner = CHAIN_OWNER, chains = {}, active = {} } = {}) {
+function fakeChain({ sequences = 1, owner = CHAIN_OWNER, chains = {}, active = {}, serviceFeeBps = 400 } = {}) {
   const implementation = hexOf(0x12, 20), factoryCode = '0x6001', implementationCode = '0x6002';
   const d = { factory: hexOf(0x11, 20), implementation, poolManager: hexOf(0x13, 20), positionManager: hexOf(0x14, 20), stateView: hexOf(0x15, 20), readHelper: hexOf(0x16, 20),
     engine: hexOf(0x17, 20), routing: hexOf(0x18, 20), priceGuard: hexOf(0x19, 20), serviceFeeRecipient: hexOf(0x1a, 20), operator: hexOf(0x1b, 20), pricePublisher: hexOf(0x1c, 20),
-    serviceFeeBps: 200, expiresAt: 4_000_000_000,
+    serviceFeeBps: 200, dominoServiceFeeBps: 400, expiresAt: 4_000_000_000,
     codeHashes: { factory: keccak256(factoryCode), implementation: keccak256(implementationCode), poolManager: hexOf(0x23, 32), positionManager: hexOf(0x24, 32), stateView: hexOf(0x25, 32),
       readHelper: hexOf(0x26, 32), engine: hexOf(0x27, 32), routing: hexOf(0x28, 32), priceGuard: hexOf(0x29, 32), vault: keccak256(cloneRuntime(implementation)) } };
   const vaults = new Map();
@@ -383,7 +383,7 @@ function fakeChain({ sequences = 1, owner = CHAIN_OWNER, chains = {}, active = {
       switch (name) {
         case 'owner': return v.owner;
         case 'sequenceId': return v.id;
-        case 'policy': return { serviceFeeBps: 200, triggerDistanceBps: 500, maxOverlapBps: 2000, minimumIntervalSeconds: 60, maxPositions: 3, version: 1n, paused: true };
+        case 'policy': return { serviceFeeBps, triggerDistanceBps: 500, maxOverlapBps: 2000, minimumIntervalSeconds: 60, maxPositions: serviceFeeBps === 200 ? 1 : 3, version: 1n, paused: true };
         case 'rootTokenId': return v.root;
         case 'operator': return d.operator;
         case 'rootPermissionValid': return true;
@@ -416,6 +416,34 @@ function fakeChain({ sequences = 1, owner = CHAIN_OWNER, chains = {}, active = {
     } };
   return { d, wallet, log, vaults: [...vaults.keys()], client: createSequenceClient(wallet, d) };
 }
+
+test('owned sequence inspection reports its stored tariff and mode without disabling recovery for an unknown historical tariff', async () => {
+  for (const [serviceFeeBps, automationMode] of [[200, 'compound'], [400, 'domino'], [201, null]]) {
+    const chain = fakeChain({ serviceFeeBps });
+    const recovery = createSequenceClient(chain.wallet, { ...chain.d, expiresAt: 0, serviceFeeBps: 999, dominoServiceFeeBps: 999 });
+    const state = await recovery.inspect(chain.vaults[0]);
+    assert.equal(state.serviceFeeBps, serviceFeeBps);
+    assert.equal(state.automationMode, automationMode);
+    assert.deepEqual((await recovery.members(chain.vaults[0])).tokenIds, [100n]);
+    assert.deepEqual([...new Set(chain.log)].sort(), READ_METHODS, 'recovery remains read-only and independent of release admission');
+  }
+});
+
+test('new sequence mode must be explicit and simple compound cannot admit successor capacity', async () => {
+  const chain = fakeChain();
+  const options = { rootTokenId: 100n, baseIsCurrency0: true, consentToUncollectedFees: true,
+    triggerDistanceBps: 500, maxOverlapBps: 2000, minimumIntervalSeconds: 60, maxPositions: 1,
+    upsideBps: 5000, maxSlippageBps: 100, maxPriceImpactBps: 100, maxGasCostWei: 10n ** 16n,
+    maxObservationAgeSeconds: 120, forecastHorizonSeconds: 3600 };
+  const gas = { maxGas: 1000000n, maxFeePerGas: 1n, maxPriorityFeePerGas: 0n, reserveWei: 0n };
+  for (const automationMode of [undefined, null, '', 'auto', 200, 400]) {
+    await assert.rejects(chain.client.create({ ...options, automationMode }, gas), /invalid_sequence_policy/);
+    if (automationMode !== undefined)
+      await assert.rejects(chain.client.setPolicy(chain.vaults[0], { ...options, automationMode }, gas), /invalid_sequence_policy/);
+  }
+  await assert.rejects(chain.client.create({ ...options, automationMode: 'compound', maxPositions: 2 }, gas), /simple_compound_position_limit/);
+  assert.equal(chain.log.includes('claimNonce'), false);
+});
 
 test('the closed owner ABIs ship as JSON, and each equals what viem parses from the reviewed signatures written beside it', () => {
   const source = (path) => readFileSync(new URL(`../src/finance/${path}`, import.meta.url), 'utf8');
@@ -506,12 +534,15 @@ test('a deployment record with no pinned identity is refused, on both lanes', ()
   const sequence = { contractVersion: '1.0.0-rc.1', chainId: 4663, available: true, deployment: {
     factory: at(0x41), implementation, poolManager: at(0x43), positionManager: at(0x44), stateView: at(0x45),
     readHelper: at(0x46), engine: at(0x47), routing: at(0x48), priceGuard: at(0x49), serviceFeeRecipient: at(0x4a),
-    operator: at(0x4b), pricePublisher: at(0x4c), serviceFeeBps: 200, expiresAt: 4_000_000_000,
+    operator: at(0x4b), pricePublisher: at(0x4c), serviceFeeBps: 200, dominoServiceFeeBps: 400, expiresAt: 4_000_000_000,
     codeHashes: { factory: hash32(0x51), implementation: hash32(0x52), poolManager: hash32(0x53), positionManager: hash32(0x54),
       stateView: hash32(0x55), readHelper: hash32(0x56), engine: hash32(0x57), routing: hash32(0x58), priceGuard: hash32(0x59),
       vault: keccak256(clone) } } };
   // Structurally perfect, and still refused: it names a factory this build does not know.
   assert.throws(() => sequenceDeploymentFrom(sequence, 1000), (error) => /deployment_not_pinned/.test(String(error.message ?? error)));
+  for (const change of [{ serviceFeeBps: 400 }, { serviceFeeBps: undefined }, { dominoServiceFeeBps: undefined },
+    { dominoServiceFeeBps: 200 }, { dominoServiceFeeBps: '400' }, { dominoServiceFeeBps: null }])
+    assert.throws(() => sequenceDeploymentFrom({ ...sequence, deployment: { ...sequence.deployment, ...change } }, 1000), /invalid_sequence_release/);
   // available:false is not a record and stays parseable, so a switched-off lane still reads as switched off.
   assert.equal(sequenceDeploymentFrom({ contractVersion: '1.0.0-rc.1', chainId: 4663, available: false, deployment: null }, 1000), null);
 

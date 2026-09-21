@@ -146,6 +146,8 @@ test('actual official-v4 dependency code and all unsigned deployments verify int
       const readonly = async (method, params) => { assert(!method.includes('send')); methods.push(method); return rpc(method, params); };
       const result = await verify(manifest, hashes, artifacts, viem, readonly);
       assert.equal(result.setup.available, true); assert.equal(result.sequence.available, true);
+      assert.equal(result.sequence.deployment.serviceFeeBps, 200);
+      assert.equal(result.sequence.deployment.dominoServiceFeeBps, 400);
       assert.equal(result.executionAvailable, false); assert.equal(result.priceObservationQualified, false);
       assert.equal(result.receipts.length, 8); assert(methods.length <= 160);
       assert.equal(result.publisherAdmission.mode, 'original_deployment_publisher');
@@ -226,6 +228,13 @@ test('actual official-v4 dependency code and all unsigned deployments verify int
         assert.equal(sequence.sequenceDeploymentFrom(result.sequence).factory, manifest.addresses.factory);
         assert.equal(sequence.sequenceDeploymentFrom(rotated.sequence).pricePublisher, nextPublisher);
         assert.equal(sequence.sequenceDeploymentFrom(admitted.sequence).pricePublisher, nextPublisher);
+        for (const profile of [result.sequence, rotated.sequence, admitted.sequence]) {
+          const deployment = sequence.sequenceDeploymentFrom(profile);
+          assert.equal(deployment.serviceFeeBps, 200); assert.equal(deployment.dominoServiceFeeBps, 400);
+          for (const change of [{ serviceFeeBps: 400 }, { dominoServiceFeeBps: undefined },
+            { dominoServiceFeeBps: 200 }, { dominoServiceFeeBps: '400' }])
+            assert.throws(() => sequence.sequenceDeploymentFrom({ ...profile, deployment: { ...profile.deployment, ...change } }), /invalid_sequence_release/);
+        }
         assert.equal(setup.deploymentFrom(admitted.setup).setup, manifest.addresses.setup);
       } finally { rmSync(directory, { recursive: true, force: true }); }
       await assert.rejects(() => verify(manifest, [...hashes.slice(1), hashes[0]], artifacts, viem, readonly));

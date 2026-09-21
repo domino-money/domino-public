@@ -580,7 +580,8 @@ test('the wallet steps are the real ones, in order: each ERC-20 through Permit2,
   const automated = journey.walletSteps(journey.withAutomation(ready(), 'domino'));
   assert.deepEqual(automated.slice(5).map((step) => step.title), ['Approve this position NFT to its sequence', 'Create the sequence, paused', 'Activate Domino-compound']);
   assert.match(automated[5].detail, /never approval for all NFTs/);
-  assert.match(automated[6].detail, /starts paused/);
+  assert.match(automated[6].detail, /4% service fee.*starts paused/);
+  assert.match(journey.walletSteps(journey.withAutomation(ready(), 'compound')).at(-2).detail, /2% service fee/);
   // That automation is not connected is the summary's `· not connected` (below) and CREATE.automation.notEnabled, not the step's words.
   assert.equal(automated.at(-1).detail, 'A separate owner transaction, when you choose. Nothing runs before it, and you can pause or revoke it from your wallet.');
   assert.equal(journey.walletSteps(journey.withAutomation(ready(), 'compound')).at(-1).title, 'Activate Auto-compound');
@@ -589,11 +590,13 @@ test('the wallet steps are the real ones, in order: each ERC-20 through Permit2,
   assert.deepEqual(journey.walletSteps({ ...ready(), pool: pool({ currencies: [token(addr('8')), token(addr('9'))] }) }), [], 'no steps for a pool that does not hold the token');
 });
 
-test('the fee bases stay apart: the pool’s LP fee and Domino’s 2% of consumed earned fees', () => {
-  const bases = journey.feeBases(ready());
+test('the fee bases follow the chosen mode: 2% simple, 4% Domino, none without automation', () => {
+  const bases = journey.feeBases(journey.withAutomation(ready(), 'compound'));
   assert.deepEqual(bases.map((fee) => fee.label), ['Pool trading fee', 'Domino service fee', 'Assisted swap fee', 'Network gas']);
   assert.equal(bases[0].value, '0.30%');
   assert.equal(bases[1].value, '2% of earned fees consumed');
+  assert.equal(journey.feeBases(journey.withAutomation(ready(), 'domino'))[1].value, '4% of earned fees consumed');
+  assert.equal(journey.feeBases(journey.withAutomation(ready(), 'none'))[1].value, 'No automation service fee');
   assert.match(bases[1].note, /Never on principal/);
   assert.match(bases[2].value, /0\.65%/);
   assert.equal(journey.feeBases(journey.initialState())[0].value, '—');
@@ -625,7 +628,7 @@ test('the summary says — for what is not chosen and serialises every decision,
   assert.ok(text.includes('Wallet step 2: Allow the position manager to use the selected token through Permit2'));
   assert.ok(text.includes('Wallet step 8: Activate Domino-compound'));
   assert.ok(text.includes('Pool trading fee: 0.30%'));
-  assert.ok(text.includes('Domino service fee: 2% of earned fees consumed'));
+  assert.ok(text.includes('Domino service fee: 4% of earned fees consumed'));
   assert.equal(text.at(-1), 'Create position: disabled — Deposits are made in Setup, one reviewed wallet step at a time.');
 });
 

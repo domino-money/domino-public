@@ -369,12 +369,16 @@ test('a status names a ROADMAP entry, so the pill beside the title always comes 
   for (const [, status] of statuses) assert.ok(names.has(status), status);
 });
 
-test('the limits and fees match the contracts: 20% trigger and overlap, a positions cap, an upside the owner sets, 2% service and 0.65% swap caps', () => {
+test('the limits and fees match the contracts: 20% trigger and overlap, a positions cap, an upside the owner sets, 2% simple / 4% Domino service and 0.65% swap cap', () => {
   const contract = (name) => readFileSync(join(REPO, 'contracts/src', name), 'utf8');
   const policy = contract('PolicyValidation.sol');
   assert.match(policy, /MAX_TRIGGER_DISTANCE_BPS = 2000;/, 'trigger distance is capped at 2,000 bps');
   assert.match(policy, /MAX_OVERLAP_BPS = 2000;/, 'overlap is capped at 2,000 bps');
-  assert.match(contract('FeeAccounting.sol'), /MAX_SERVICE_FEE_BPS = 200;/, 'the service fee is capped at 200 bps');
+  const accounting = contract('FeeAccounting.sol');
+  assert.match(accounting, /SIMPLE_SERVICE_FEE_BPS = 200;/);
+  assert.match(accounting, /DOMINO_SERVICE_FEE_BPS = 400;/);
+  assert.match(accounting, /MAX_SERVICE_FEE_BPS = DOMINO_SERVICE_FEE_BPS;/);
+  assert.match(policy, /FeeAccounting\.validTariff\(next\.serviceFeeBps\)/, 'only the two selected tariffs are valid');
   assert.match(contract('DominoSetup.sol'), /feeBps_ > 65\b/, 'the assisted swap fee is capped at 65 bps');
   assert.match(contract('DominoVaultV4.sol'), /limits\.upsideBps == 0 \|\| limits\.upsideBps > 1_000_000/, 'the upside is the owner’s own limit');
   assert.match(contract('DominoVaultV4.sol'), /activePositions >= _policy\.maxPositions/, 'a sequence has a positions cap');
@@ -387,7 +391,7 @@ test('the limits and fees match the contracts: 20% trigger and overlap, a positi
   assert.match(limits.Positions.note, /Counts the position it starts from/);
 
   const fees = Object.fromEntries(rowsOf(page('fees'), 'facts').map((row) => [row.label, row]));
-  assert.equal(fees['Domino service fee'].value, '2% of earned fees consumed');
+  assert.equal(fees['Domino service fee'].value, 'Auto-compound 2%; Domino-compound 4% of earned fees consumed');
   assert.match(fees['Domino service fee'].note, /Never on principal, never on a direct deposit/);
   assert.equal(fees['Assisted swap fee'].value, 'At most 0.65% of the consumed swap budget');
   assert.equal(fees['Network gas'].value, 'Paid by the wallet that sends it');

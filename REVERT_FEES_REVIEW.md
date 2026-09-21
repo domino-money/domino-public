@@ -1,6 +1,6 @@
 # Revert fee review and Domino implications
 
-Checked 9 September 2026 against current first-party documentation. Research and product planning only; no wallet was connected, no transaction was signed and no Domino pricing code was changed.
+Historical documentation review, checked 9 September 2026. The [21 September contract-level deep dive](reports/REVERT_FEE_DEEP_DIVE_2026-09-21.md) supersedes current pricing/implementation inferences, including the SelfCompoundor rate and the distinction between gross consumed fees and net-added reward bases. Research and product planning only; no wallet was connected, no transaction was signed and no Domino pricing code was changed.
 
 ## Findings
 

@@ -1,5 +1,14 @@
 # Milestone 1 — implementation status
 
+**21 September update:** the earlier milestone descriptions below are historical.
+Current V4 remediation is recorded in [the audit package](reports/V4_AUDIT_PACKAGE_2026-09-21.md).
+The owner selected 2% simple / 4% Domino pricing, manual gas funding first and
+automated company-treasury refill later. [The fee review](reports/REVERT_FEE_DEEP_DIVE_2026-09-21.md)
+records implementation, verification and remaining deployment inputs. Setup already
+implements its separately capped 65-bps collection path; the live tariff/version
+remain unselected. No additional 2% automation-swap fee is active.
+
+
 10 September 2026. Scope: the first reviewable product package, not a production financial launch.
 
 > **Update — 14 September 2026.** Since this document was written: P2 (private

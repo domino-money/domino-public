@@ -26,7 +26,7 @@ export const AUTO_COMPOUND: DocPage = {
     {
       id: 'service-fee',
       title: 'Service fee',
-      blocks: [p('2% of the earned fees it consumes, taken once. Never on principal, and earned fees that wait are not charged. See ', doc('Fees', 'fees', 'service-fee'), '.')],
+      blocks: [p('2% of the earned fees it consumes, taken once. Only the root position is used, with a position cap of one and no successors. Never on principal, and earned fees that wait are not charged. See ', doc('Fees', 'fees', 'service-fee'), '.')],
     },
     {
       id: 'where-it-starts',
@@ -120,7 +120,7 @@ export const DOMINO_COMPOUNDER: DocPage = {
       id: 'service-fee',
       title: 'Service fee',
       blocks: [
-        p('2% of the earned fees consumed, once. No extra swap fee for the automation’s own balancing, and no Domino service fee on withdrawals. See ', doc('Fees', 'fees', 'service-fee'), '.'),
+        p('4% of the earned fees consumed, once, for every Domino recipe, including reinvestment into the source. No extra swap fee for the automation’s own balancing, and no Domino service fee on withdrawals. See ', doc('Fees', 'fees', 'service-fee'), '.'),
       ],
     },
   ],

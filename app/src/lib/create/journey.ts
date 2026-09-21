@@ -543,7 +543,7 @@ export function walletSteps(state: JourneyState): WalletStep[] {
   }
   if (state.automation !== 'none') {
     steps.push({ title: words.automationApproveStep, detail: words.automationApproveDetail })
-    steps.push({ title: words.automationCreateStep, detail: words.automationCreateDetail })
+    steps.push({ title: words.automationCreateStep, detail: words.automationCreateDetail(state.automation) })
     steps.push({ title: words.automationActivateStep(words.automationStepNames[state.automation]), detail: words.automationActivateDetail })
   }
   return steps
@@ -561,7 +561,7 @@ export function feeBases(state: JourneyState): FeeBasis[] {
   const { feeLabels, feeValues, feeNotes } = CREATE.review
   return [
     { label: feeLabels.pool, value: poolFee, note: feeNotes.pool },
-    { label: feeLabels.service, value: feeValues.service, note: feeNotes.service },
+    { label: feeLabels.service, value: CREATE.review.serviceFeeValue(state.automation), note: feeNotes.service },
     { label: feeLabels.swap, value: feeValues.swap, note: feeNotes.swap },
     { label: feeLabels.gas, value: feeValues.gas, note: feeNotes.gas },
   ]

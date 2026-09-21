@@ -30,7 +30,7 @@ its reviewed owner transactions. The advanced owner flow uses DominoSetup:
    spender or unlimited amount is generated.
 3. Optionally simulate and review one exact-input swap. Its stated service
    tariff is bounded by the approved 65-bps ceiling and applies to consumed
-   gross input; there is no 2% automation charge on owner principal. A
+   gross input; there is no automation charge on owner principal. A
    successful swap cannot be charged or executed twice for that operation.
 4. Review mint amounts, liquidity, range, price bounds and deadline. For a new
    pool, initialization and first liquidity are atomic. The NFT goes directly
@@ -72,7 +72,7 @@ single `SetupClosed` receipt and refund amounts.
 A root NFT remains in its owner's wallet. Creation first approves only that
 NFT to its locally predicted clone address, then creates a paused sequence
 with explicit fee consent and bounded policy. A sequence manages earned fees
-and child NFTs. Its 2% service charge applies once to consumed uncharged
+and child NFTs. Its mode-specific service charge (2% simple, 4% Domino) applies once to consumed uncharged
 fees, including converted lineage; it does not charge principal or already
 charged residues again. Creating the sequence does not submit an operator
 execution. A separate activation review requires a current verified release,

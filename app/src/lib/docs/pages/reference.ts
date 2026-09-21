@@ -30,7 +30,7 @@ export const FEES: DocPage = {
       id: 'service-fee',
       title: 'Domino service fee',
       blocks: [
-        p('The service fee is 2% of the earned fees that Auto-compound or Domino-compound consumes, taken once.'),
+        p('Auto-compound charges 2% of consumed earned fees. Domino-compound charges 4% for every automated recipe, including reinvestment into the source. Each is taken once; changing the mode and rate requires a reviewed owner transaction.'),
         p('It is never charged on principal, on a direct deposit or on a withdrawal. Earned fees that wait are not charged, and an automation transaction that fails charges nothing.'),
         p('Gas for automation transactions is paid by the operator that sends them, and is included in the fee.'),
       ],
@@ -193,7 +193,7 @@ export const GLOSSARY: DocPage = {
           items: [
             { id: 'earned-fees', term: 'Earned fees', text: ['Trading fees a position has earned while in range.'] },
             { id: 'unsettled-fees', term: 'Unsettled fees', text: ['Earned fees not yet collected from a position.'] },
-            { id: 'service-fee', term: 'Service fee', text: ['Domino’s fee on automation: 2% of the earned fees consumed, once.'] },
+            { id: 'service-fee', term: 'Service fee', text: ['Domino’s fee on automation: Auto-compound 2%; Domino-compound 4% of earned fees consumed, once.'] },
             { id: 'assisted-swap-fee', term: 'Assisted swap fee', text: ['The fee on a balancing swap you request in Setup: at most 0.65% of the consumed swap budget.'] },
             { id: 'domino-history', term: 'Domino history', text: ['Domino’s own record of a pool’s last 24 hours, where the deployment provides it. Figures from it are marked Domino history.'] },
             { id: 'tvl', term: 'TVL', text: ['Total value locked: the value of the tokens in a pool, from Domino history or, where it has none, a market data provider.'] },

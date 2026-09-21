@@ -157,12 +157,17 @@ export const sequenceAbi = [
 export const sequenceIdParameters = [{ type: 'bytes32' }, { type: 'uint256' }, { type: 'address' }, { type: 'address' }, { type: 'uint256' }] as const
 /** poolKeyParameters signature: (address currency0,address currency1,uint24 fee,int24 tickSpacing,address hooks) */
 export const poolKeyParameters = [{ type: 'tuple', components: poolKeyComponents }] as const
+export type AutomationMode = 'compound' | 'domino'
+export const AUTOMATION_FEE_BPS = { compound: 200, domino: 400 } as const
+export const automationModeForFee = (feeBps: number): AutomationMode | null => feeBps === 200 ? 'compound' : feeBps === 400 ? 'domino' : null
+const feeDescription = (feeBps: number) => `${feeBps / 100}% of earned fees consumed, once; never principal or already charged lots. No additional automation swap fee.`
 type Component = 'factory' | 'implementation' | 'poolManager' | 'positionManager' | 'stateView' | 'readHelper' | 'engine' | 'routing' | 'priceGuard'
 export interface SequenceDeployment extends Record<Component, Address> {
-  serviceFeeRecipient: Address; operator: Address; pricePublisher: Address; serviceFeeBps: 200; expiresAt: number
+  serviceFeeRecipient: Address; operator: Address; pricePublisher: Address; serviceFeeBps: 200; dominoServiceFeeBps: 400; expiresAt: number
   codeHashes: Record<Component | 'vault', Hex>
 }
 export interface SequenceOptions {
+  automationMode: AutomationMode
   rootTokenId: bigint; baseIsCurrency0: boolean; consentToUncollectedFees: boolean
   triggerDistanceBps: number; maxOverlapBps: number; minimumIntervalSeconds: number; maxPositions: number
   upsideBps: number; maxSlippageBps: number; maxPriceImpactBps: number; maxGasCostWei: bigint
@@ -171,6 +176,7 @@ export interface SequenceOptions {
 export interface SequenceState {
   vault: Address; sequenceId: Hex; rootTokenId: bigint; operator: Address; paused: boolean; rootPermissionValid: boolean
   baseCurrency: Address; quoteCurrency: Address; stateNonce: bigint
+  serviceFeeBps: number; automationMode: AutomationMode | null
 }
 /** A sequence this wallet created, as the factory lists it: newest first, with its root NFT. */
 export interface OwnedSequence { vault: Address; sequenceId: Hex; ownerNonce: bigint; rootTokenId: bigint }
@@ -214,13 +220,13 @@ export function sequenceDeploymentFrom(value: unknown, now = Date.now() / 1000):
   if (r.available === false && r.deployment === null) return null
   if (r.available !== true) return fail('invalid_sequence_release')
   const d = record(r.deployment), hashes = record(d.codeHashes), names = [...components,'serviceFeeRecipient','operator','pricePublisher']
-  if (Object.keys(d).sort().join() !== [...names,'serviceFeeBps','expiresAt','codeHashes'].sort().join()
+  if (Object.keys(d).sort().join() !== [...names,'serviceFeeBps','dominoServiceFeeBps','expiresAt','codeHashes'].sort().join()
     || !names.every(k => typeof d[k] === 'string' && addressPattern.test(d[k]) && d[k] !== zeroAddress)
     || Object.keys(hashes).sort().join() !== [...components,'vault'].sort().join()
     || !Object.values(hashes).every(h => typeof h === 'string' && hashPattern.test(h) && !/^0x0+$/.test(h))
     || new Set(components.map(k => d[k])).size !== components.length || d.operator === d.pricePublisher
     || [...components,'serviceFeeRecipient'].some(k => d[k] === d.operator || d[k] === d.pricePublisher)
-    || d.serviceFeeBps !== 200 || !Number.isSafeInteger(d.expiresAt) || Number(d.expiresAt) <= now) return fail('invalid_sequence_release')
+    || d.serviceFeeBps !== 200 || d.dominoServiceFeeBps !== 400 || !Number.isSafeInteger(d.expiresAt) || Number(d.expiresAt) <= now) return fail('invalid_sequence_release')
   // Everything above proves the record is self-consistent. Nothing above proves
   // it is OURS: every address it compares comes from the record. One identity
   // has to be anchored to this build, or a substituted factory passes the whole
@@ -294,12 +300,13 @@ export function createSequenceClient(wallet: WalletRpc, deployment: SequenceDepl
   }
   async function verify(c: Context, recovery = false) {
     if (!recovery && now() >= d.expiresAt) fail('sequence_release_expired')
+    if (!recovery && (d.serviceFeeBps !== 200 || d.dominoServiceFeeBps !== 400)) fail('sequence_tariff_changed')
     if (!recovery) {
       // The UI performs one bounded same-origin GET here. OFF or a changed
       // profile must stop a previously loaded client before the wallet opens.
       const current=await currentAdmission?.()
       if (!current || now() >= current.expiresAt
-        || [...components,'operator','pricePublisher','serviceFeeRecipient','serviceFeeBps'].some(k => current[k as keyof SequenceDeployment] !== d[k as keyof SequenceDeployment])
+        || [...components,'operator','pricePublisher','serviceFeeRecipient','serviceFeeBps','dominoServiceFeeBps'].some(k => current[k as keyof SequenceDeployment] !== d[k as keyof SequenceDeployment])
         || Object.entries(d.codeHashes).some(([key,hash]) => current.codeHashes[key as keyof SequenceDeployment['codeHashes']] !== hash)) fail('sequence_admission_unavailable')
     }
     if (keccak256(cloneRuntime(d.implementation)) !== d.codeHashes.vault) fail('invalid_clone_template')
@@ -334,7 +341,7 @@ export function createSequenceClient(wallet: WalletRpc, deployment: SequenceDepl
     const p = await call(c, vault, 'policy')
     return { vault, sequenceId: id, rootTokenId: await call(c, vault, 'rootTokenId'), operator: String(await call(c, vault, 'operator')).toLowerCase() as Address,
       paused: p.paused, rootPermissionValid: await call(c, vault, 'rootPermissionValid'), baseCurrency: String(await call(c, vault, 'baseCurrency')).toLowerCase() as Address,
-      quoteCurrency: String(await call(c, vault, 'quoteCurrency')).toLowerCase() as Address, stateNonce: await call(c, vault, 'stateNonce') }
+      quoteCurrency: String(await call(c, vault, 'quoteCurrency')).toLowerCase() as Address, stateNonce: await call(c, vault, 'stateNonce'), serviceFeeBps: p.serviceFeeBps, automationMode: automationModeForFee(p.serviceFeeBps) }
   }
   async function root(c: Context, tokenId: bigint) {
     if (uint(tokenId,256) === 0n) fail('invalid_root_nft')
@@ -352,6 +359,8 @@ export function createSequenceClient(wallet: WalletRpc, deployment: SequenceDepl
     return { tokenId, key, poolId, lower, upper, ownerNonce, ...predicted, approved: String(await call(c,d.positionManager,'getApproved',[tokenId])).toLowerCase() as Address }
   }
   function options(o: SequenceOptions) {
+    if (o.automationMode !== 'compound' && o.automationMode !== 'domino') fail('invalid_sequence_policy')
+    if (o.automationMode === 'compound' && o.maxPositions !== 1) fail('simple_compound_position_limit')
     if (!o.consentToUncollectedFees || typeof o.baseIsCurrency0 !== 'boolean') fail('sequence_consent_required')
     integer(o.triggerDistanceBps,0,2000); integer(o.maxOverlapBps,0,2000); integer(o.minimumIntervalSeconds,1,2**32-1); integer(o.maxPositions,1,255)
     integer(o.upsideBps,1,1_000_000); integer(o.maxSlippageBps,0,9999); integer(o.maxPriceImpactBps,0,9999)
@@ -419,7 +428,7 @@ export function createSequenceClient(wallet: WalletRpc, deployment: SequenceDepl
     }),
     create: (supplied: SequenceOptions, gas: GasBudget) => bounded(async c => {
       const o = Object.freeze({...supplied}); options(o); await verify(c); const r = await root(c,o.rootTokenId)
-      const policy = {serviceFeeBps:200,triggerDistanceBps:o.triggerDistanceBps,maxOverlapBps:o.maxOverlapBps,minimumIntervalSeconds:o.minimumIntervalSeconds,maxPositions:o.maxPositions,version:1n,paused:true}
+      const policy = {serviceFeeBps:AUTOMATION_FEE_BPS[o.automationMode],triggerDistanceBps:o.triggerDistanceBps,maxOverlapBps:o.maxOverlapBps,minimumIntervalSeconds:o.minimumIntervalSeconds,maxPositions:o.maxPositions,version:1n,paused:true}
       const limits = {version:1n,upsideBps:o.upsideBps,maxSlippageBps:o.maxSlippageBps,maxPriceImpactBps:o.maxPriceImpactBps,maxGasCostWei:o.maxGasCostWei,maxObservationAgeSeconds:o.maxObservationAgeSeconds,forecastHorizonSeconds:o.forecastHorizonSeconds}
       const params = {rootTokenId:o.rootTokenId,expectedPoolId:r.poolId,baseCurrency:o.baseIsCurrency0?r.key.currency0:r.key.currency1,quoteCurrency:o.baseIsCurrency0?r.key.currency1:r.key.currency0,operator:d.operator,consentToUncollectedFees:true,policy,limits}
       const approval = r.approved !== r.vault
@@ -428,7 +437,7 @@ export function createSequenceClient(wallet: WalletRpc, deployment: SequenceDepl
         [approval?`Approve only NFT #${o.rootTokenId} to the predicted sequence. No approval for all NFTs.`:`Create a paused sequence from NFT #${o.rootTokenId}.`,
           'Your root NFT stays in your wallet. This does not start automation.',`Pool: ${r.poolId}. Range: ${r.lower} to ${r.upper}.`,
           `Base: ${params.baseCurrency}. Quote: ${params.quoteCurrency}.`,`Operator: ${d.operator}. Fee recipient: ${d.serviceFeeRecipient}.`,
-          '2% service fee on earned fees consumed for reinvestment, once; never on principal. Includes already uncollected fees with your consent.',
+          `${o.automationMode === 'domino' ? 'Domino-compound' : 'Auto-compound'}: ${feeDescription(policy.serviceFeeBps)} Includes already uncollected fees with your consent.`,
           `Trigger distance: ${o.triggerDistanceBps} bps; maximum overlap: ${o.maxOverlapBps} bps; minimum interval: ${o.minimumIntervalSeconds}s; maximum positions: ${o.maxPositions}.`,
           `Successor upside: ${o.upsideBps} bps; maximum slippage: ${o.maxSlippageBps} bps; maximum price impact: ${o.maxPriceImpactBps} bps.`,
           `Execution gas cost cap: ${o.maxGasCostWei} wei; observation age: ${o.maxObservationAgeSeconds}s; forecast horizon: ${o.forecastHorizonSeconds}s.`],guard)
@@ -438,14 +447,15 @@ export function createSequenceClient(wallet: WalletRpc, deployment: SequenceDepl
         await verify(next); const state=await owned(next,vault)
         if (!state.paused || !state.rootPermissionValid || state.operator !== d.operator) fail('sequence_activation_unavailable')
         const policy=await call(next,vault,'policy'), limits=await call(next,vault,'executionLimits')
-        if (policy.serviceFeeBps !== d.serviceFeeBps) fail('sequence_tariff_changed')
+        if (automationModeForFee(policy.serviceFeeBps) === null) fail('sequence_tariff_changed')
+        if (policy.serviceFeeBps === d.serviceFeeBps && policy.maxPositions !== 1) fail('simple_compound_position_limit')
         return {state,policy,limits}
       }
       const before=await activeProfile(c), {state,policy,limits}=before
       return prepare(c,'resume',vault,vault,encode('resume'),gas,[
         `Activate execution for root NFT #${state.rootTokenId} with operator ${state.operator}.`,
         `Base: ${state.baseCurrency}. Quote: ${state.quoteCurrency}. The root NFT remains in your wallet.`,
-        '2% on earned fees actually consumed for reinvestment, once, including already uncollected fees previously consented to. Never principal.',
+        `${automationModeForFee(policy.serviceFeeBps) === 'domino' ? 'Domino-compound' : 'Auto-compound'}: ${feeDescription(policy.serviceFeeBps)} Includes already uncollected fees previously consented to.`,
         `Fee recipient: ${d.serviceFeeRecipient}. Policy version ${policy.version}; limits version ${limits.version}.`,
         `Trigger distance: ${policy.triggerDistanceBps} bps; maximum overlap: ${policy.maxOverlapBps} bps; minimum interval: ${policy.minimumIntervalSeconds}s; maximum positions: ${policy.maxPositions}.`,
         `Successor upside: ${limits.upsideBps} bps; maximum slippage: ${limits.maxSlippageBps} bps; maximum price impact: ${limits.maxPriceImpactBps} bps.`,
@@ -487,29 +497,34 @@ export function createSequenceClient(wallet: WalletRpc, deployment: SequenceDepl
      *   paused         unchanged — flipping it here is refused
      *                  (PauseChangeRequiresTransition); pause and resume stay
      *                  their own reviewed steps
-     *   serviceFeeBps  unchanged — sending anything else silently breaks
-     *                  activation later with `sequence_tariff_changed`
+     *   serviceFeeBps  preserves the current mode unless an explicit new mode is
+     *                  selected and reviewed. Already charged lots stay charged.
      *
      * The bounds are the contract's own, checked here first so a refusal reads
      * as words rather than as a reverted transaction.
      */
-    setPolicy: (vault: Address, next: {triggerDistanceBps:number;maxOverlapBps:number;minimumIntervalSeconds:number;maxPositions:number}, gas: GasBudget) => bounded(async c => {
+    setPolicy: (vault: Address, next: {automationMode?:AutomationMode;triggerDistanceBps:number;maxOverlapBps:number;minimumIntervalSeconds:number;maxPositions:number}, gas: GasBudget) => bounded(async c => {
       const o = Object.freeze({...next})
+      if (o.automationMode !== undefined && o.automationMode !== 'compound' && o.automationMode !== 'domino') fail('invalid_sequence_policy')
       integer(o.triggerDistanceBps,0,2000); integer(o.maxOverlapBps,0,2000); integer(o.minimumIntervalSeconds,1,2**32-1); integer(o.maxPositions,1,255)
       async function check(at: Context) {
         await verify(at); const state = await owned(at,vault)
         const current = await call(at,vault,'policy'), members = await call(at,vault,'activePositions') as bigint
         if (current.version === 0n || current.version >= 2n**64n-1n) fail('policy_version_exhausted')
         if (BigInt(o.maxPositions) < members) fail('position_limit_below_membership')
-        return { state, current, members }
+        const mode = o.automationMode ?? automationModeForFee(current.serviceFeeBps)
+        if (mode !== 'compound' && mode !== 'domino') fail('invalid_sequence_policy')
+        if (mode === 'compound' && (o.maxPositions !== 1 || members !== 1n)) fail('simple_compound_position_limit')
+        return { state, current, members, mode: mode as AutomationMode }
       }
       const s = await check(c)
-      const policy = {serviceFeeBps:s.current.serviceFeeBps,triggerDistanceBps:o.triggerDistanceBps,maxOverlapBps:o.maxOverlapBps,
+      const policy = {serviceFeeBps:AUTOMATION_FEE_BPS[s.mode],triggerDistanceBps:o.triggerDistanceBps,maxOverlapBps:o.maxOverlapBps,
         minimumIntervalSeconds:o.minimumIntervalSeconds,maxPositions:o.maxPositions,version:s.current.version+1n,paused:s.current.paused}
       return prepare(c,'set-policy',vault,vault,encode('setPolicy',[policy]),gas,[
         `Change the automation rules for root NFT #${s.state.rootTokenId}.`,
+        `Service fee: ${feeDescription(s.current.serviceFeeBps)} New ${s.mode === 'domino' ? 'Domino-compound' : 'Auto-compound'} policy: ${feeDescription(policy.serviceFeeBps)}`,
         `Trigger distance ${s.current.triggerDistanceBps} to ${policy.triggerDistanceBps} bps; maximum overlap ${s.current.maxOverlapBps} to ${policy.maxOverlapBps} bps; minimum interval ${s.current.minimumIntervalSeconds} to ${policy.minimumIntervalSeconds}s; maximum positions ${s.current.maxPositions} to ${policy.maxPositions}, with ${s.members} registered now.`,
-        `Policy version ${s.current.version} to ${policy.version}. The service fee and the paused state are unchanged: ${policy.paused?'this sequence stays paused':'this sequence stays active'}, and pausing or resuming is its own step.`,
+        `Policy version ${s.current.version} to ${policy.version}. The paused state is unchanged: ${policy.paused?'this sequence stays paused':'this sequence stays active'}, and pausing or resuming is its own step.`,
         'Owner transaction: no Domino service fee. Network gas still applies.',
       ],async at => {
         const again = await check(at)

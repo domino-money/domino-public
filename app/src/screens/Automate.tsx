@@ -1,6 +1,7 @@
 import type { CSSProperties, ReactNode } from 'react'
 import { VignetteCompound, VignetteSequence } from '../components/home/Vignettes'
 import { Display, LinkButton, PageHeader, PageShell, Pill, cx } from '../components/ui'
+import { CREATE } from '../lib/create/copy'
 import { ROADMAP, type Availability } from '../lib/capabilities'
 
 /**
@@ -65,7 +66,7 @@ function AutomationCard({
         </ul>
         <dl className="dm-acct-auto-fee">
           <dt>Service fee</dt>
-          <dd>2% on earned fees</dd>
+          <dd>{CREATE.review.serviceFeeValue(kind)}, once</dd>
         </dl>
         {entry}
       </div>

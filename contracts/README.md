@@ -23,10 +23,11 @@ allocations, unpaid AMM debt and failed postconditions atomically. It cannot
 choose an arbitrary router, recipient or wallet debit.
 
 `FeeAccounting.sol` supplies the per-currency split. The engine preserves source
-lineage through swaps and charges at most 200 bps on consumed original earned
-fees, once. Unspent fees and already-charged output are not charged again.
+lineage through swaps and charges 200 bps in simple mode or 400 bps in Domino
+mode on consumed original earned fees, once. The rate follows the selected mode
+for every recipe, including same-position reinvestment in Domino mode. Unspent fees and already-charged output are not charged again.
 Integer floor rounding favors the owner: at 200 bps, 49 base units incur zero
-and 50 incur one. This arithmetic is not a profitability threshold; the planner
+and 50 incur one; at 400 bps, 24 incur zero and 25 incur one. This arithmetic is not a profitability threshold; the planner
 still needs qualified costs, price inputs and an economically eligible action.
 See [reinvestment policy](../REINVESTMENT_POLICY.md) and
 [pricing policy](../PRICING_POLICY.md).
@@ -62,13 +63,18 @@ shared policy struct and events; it is not the V4 ABI.
 
 | Field | Enforced domain and meaning |
 | --- | --- |
-| `serviceFeeBps` | 0–200 inclusive |
+| `serviceFeeBps` | Exactly 200 for simple root-only compound, or 400 for Domino; this is the canonical mode discriminator without changing the Policy ABI |
 | `triggerDistanceBps` | 0–2000 inclusive, independent from overlap |
 | `maxOverlapBps` | 0–2000 inclusive, independent from trigger distance |
 | `minimumIntervalSeconds` | 1–4,294,967,295 inclusive |
-| `maxPositions` | 1–255, counting root plus active children; cannot fall below actual membership |
+| `maxPositions` | Simple: exactly 1. Domino: 1–255, counting root plus active children; cannot fall below actual membership |
 | `version` | 1 initially, then exactly current + 1; overflow is rejected |
 | `paused` | Explicit initial state; policy writes preserve it, dedicated calls change it |
+
+Simple mode rejects successor actions and another position’s fee sources. A mode
+change is an owner policy transaction; it never recharges already charged lots.
+Downgrading requires withdrawal of active children, preserving owner access to
+their unused fee reserves.
 
 Type ceilings are representational bounds, not approved resource or operational
 limits. Fixture policy values do not establish production defaults.

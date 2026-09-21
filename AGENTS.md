@@ -7,7 +7,7 @@ This file applies to the entire Domino repository. **Execute first, plan afterwa
 - Robinhood Chain only for this alpha. English product copy; generic token/address handling, never a MARLIN-only runtime allowlist.
 - Preserve the approved Tangerine direction, readable cards, one activity card per row at every viewport, semantic signed amounts and progressive modal/card procedures. No long scrolling wizard.
 - No fabricated APR, TVL, token prices or zeroes for missing data. Distinguish zero, unavailable, stale, partial and unqualified. Preserve snapshot and source coverage.
-- Fees should be reinvested to the greatest economically eligible extent, including bounded swaps when implemented. No fixed idle reserve. Charge the 2% earned-fee service cut only on consumed fees, once; never on principal. Read PRICING_POLICY.md and REINVESTMENT_POLICY.md before changing calculations.
+- Fees should be reinvested to the greatest economically eligible extent, including bounded swaps when implemented. No fixed idle reserve. Charge 2% in simple Auto-compound mode and 4% in Domino-compound mode, only on consumed earned fees, once; never on principal. The mode applies to every recipe; do not add a second automation swap fee. Read PRICING_POLICY.md and REINVESTMENT_POLICY.md before changing calculations.
 - Self-compound and Domino are both in approved alpha scope. P2 implements owner setup, sequence controls and the durable executor; their new production capabilities remain off until actual deployment, access and execution profiles exist. See reports/P2_DELIVERY_2026-09-13.md. Do not enable live capabilities based on a mock or a personal-bot deployment.
 
 ## Boundaries

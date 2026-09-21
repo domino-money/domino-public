@@ -1,0 +1,141 @@
+{
+  "schemaVersion": 1,
+  "asOf": "2026-09-21",
+  "scope": "Rate-only sensitivity using prior measured 200-bps execution costs. New 400-bps runtime gas is not measured by this arithmetic. No production swap fee is implemented.",
+  "sourceCommit": "8877842",
+  "sourcePath": "reports/gas-funding-2026-09-21/calculations.json",
+  "sourceSha256": "0445d90d16fb7f44f2483dc4ea35ae6e6193e6326d76bf2bf489e92bae4989f8",
+  "assumptions": {
+    "realizationHaircut": "0.003",
+    "costBuffer": "0.15",
+    "revenueShareForCost": "1",
+    "fixedOperatingCostsUSD": "0",
+    "swapFeeCandidate": "0.02",
+    "internalSwapBasis": "Gross swap budget allocated from remaining earned fees after the mode service cut, fee included within that budget; ignores DEX fee/impact for this comparison"
+  },
+  "baseline": [
+    {
+      "recipe": "general",
+      "companyCostUSD": "0.196099937720498370842105263157894737",
+      "simple2PctThresholdUSD": "11.30967544526444967243836773478329726931",
+      "domino4PctThresholdUSD": "5.654837722632224836219183867391648634654",
+      "simpleModeEligibleRecipe": true
+    },
+    {
+      "recipe": "swap",
+      "companyCostUSD": "0.244980617584221973473684210526315789",
+      "simple2PctThresholdUSD": "14.12877182657248091748931003536926566449",
+      "domino4PctThresholdUSD": "7.064385913286240458744655017684632832247",
+      "simpleModeEligibleRecipe": true
+    },
+    {
+      "recipe": "mint",
+      "companyCostUSD": "0.303441404985972015052631578947368422",
+      "simple2PctThresholdUSD": "17.50038193249086345589399778282215071715",
+      "domino4PctThresholdUSD": "8.750190966245431727946998891411075358576",
+      "simpleModeEligibleRecipe": false
+    }
+  ],
+  "highGas": [
+    {
+      "recipe": "general",
+      "gasGwei": "0.5",
+      "companyCostUSD": "1.70263850414266405442105263157894737",
+      "domino4PctThresholdUSD": "49.09815144844693236169033416037586448094"
+    },
+    {
+      "recipe": "swap",
+      "gasGwei": "0.5",
+      "companyCostUSD": "2.15842735587938782284210526315789474",
+      "domino4PctThresholdUSD": "62.24151101457612829158528216227630268305"
+    },
+    {
+      "recipe": "mint",
+      "gasGwei": "0.5",
+      "companyCostUSD": "2.71917375835242957021052631578947368",
+      "domino4PctThresholdUSD": "78.41147999261018068560945995882383981946"
+    }
+  ],
+  "stackingExamples": [
+    {
+      "mode": "compound",
+      "newConsumedEarnedFeesUSD": "100",
+      "portionOfPostServiceBalanceSwapped": "0",
+      "serviceFeeUSD": "2.00",
+      "grossSwapBudgetUSD": "0.00",
+      "additionalSwapFeeUSD": "0.0000",
+      "combinedServiceChargesUSD": "2.0000",
+      "netBeforeDEXCostsUSD": "98.0000"
+    },
+    {
+      "mode": "compound",
+      "newConsumedEarnedFeesUSD": "100",
+      "portionOfPostServiceBalanceSwapped": "0.25",
+      "serviceFeeUSD": "2.00",
+      "grossSwapBudgetUSD": "24.5000",
+      "additionalSwapFeeUSD": "0.490000",
+      "combinedServiceChargesUSD": "2.490000",
+      "netBeforeDEXCostsUSD": "97.510000"
+    },
+    {
+      "mode": "compound",
+      "newConsumedEarnedFeesUSD": "100",
+      "portionOfPostServiceBalanceSwapped": "0.5",
+      "serviceFeeUSD": "2.00",
+      "grossSwapBudgetUSD": "49.000",
+      "additionalSwapFeeUSD": "0.98000",
+      "combinedServiceChargesUSD": "2.98000",
+      "netBeforeDEXCostsUSD": "97.02000"
+    },
+    {
+      "mode": "compound",
+      "newConsumedEarnedFeesUSD": "100",
+      "portionOfPostServiceBalanceSwapped": "1",
+      "serviceFeeUSD": "2.00",
+      "grossSwapBudgetUSD": "98.00",
+      "additionalSwapFeeUSD": "1.9600",
+      "combinedServiceChargesUSD": "3.9600",
+      "netBeforeDEXCostsUSD": "96.0400"
+    },
+    {
+      "mode": "domino",
+      "newConsumedEarnedFeesUSD": "100",
+      "portionOfPostServiceBalanceSwapped": "0",
+      "serviceFeeUSD": "4.00",
+      "grossSwapBudgetUSD": "0.00",
+      "additionalSwapFeeUSD": "0.0000",
+      "combinedServiceChargesUSD": "4.0000",
+      "netBeforeDEXCostsUSD": "96.0000"
+    },
+    {
+      "mode": "domino",
+      "newConsumedEarnedFeesUSD": "100",
+      "portionOfPostServiceBalanceSwapped": "0.25",
+      "serviceFeeUSD": "4.00",
+      "grossSwapBudgetUSD": "24.0000",
+      "additionalSwapFeeUSD": "0.480000",
+      "combinedServiceChargesUSD": "4.480000",
+      "netBeforeDEXCostsUSD": "95.520000"
+    },
+    {
+      "mode": "domino",
+      "newConsumedEarnedFeesUSD": "100",
+      "portionOfPostServiceBalanceSwapped": "0.5",
+      "serviceFeeUSD": "4.00",
+      "grossSwapBudgetUSD": "48.000",
+      "additionalSwapFeeUSD": "0.96000",
+      "combinedServiceChargesUSD": "4.96000",
+      "netBeforeDEXCostsUSD": "95.04000"
+    },
+    {
+      "mode": "domino",
+      "newConsumedEarnedFeesUSD": "100",
+      "portionOfPostServiceBalanceSwapped": "1",
+      "serviceFeeUSD": "4.00",
+      "grossSwapBudgetUSD": "96.00",
+      "additionalSwapFeeUSD": "1.9200",
+      "combinedServiceChargesUSD": "5.9200",
+      "netBeforeDEXCostsUSD": "94.0800"
+    }
+  ]
+}

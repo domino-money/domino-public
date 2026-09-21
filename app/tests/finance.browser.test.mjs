@@ -307,7 +307,7 @@ test('a refused or failing release (403, 404, 503) is treated like available:fal
   const implementation = address(0x12);
   const saved = { contractVersion: '1.0.0-rc.1', chainId: 4663, available: true, deployment: {
     factory: address(0x11), implementation, poolManager: address(0x13), positionManager: address(0x14), stateView: address(0x15), readHelper: address(0x16), engine: address(0x17), routing: address(0x18), priceGuard: address(0x19),
-    serviceFeeRecipient: address(0x1a), operator: address(0x1b), pricePublisher: address(0x1c), serviceFeeBps: 200, expiresAt: 1,
+    serviceFeeRecipient: address(0x1a), operator: address(0x1b), pricePublisher: address(0x1c), serviceFeeBps: 200, dominoServiceFeeBps: 400, expiresAt: 1,
     codeHashes: { factory: hash(0x21), implementation: hash(0x22), poolManager: hash(0x23), positionManager: hash(0x24), stateView: hash(0x25), readHelper: hash(0x26), engine: hash(0x27), routing: hash(0x28), priceGuard: hash(0x29),
       vault: keccak256(concatHex(['0x363d3d373d3d3d363d73', implementation, '0x5af43d82803e903d91602b57fd5bf3'])) } } };
   try {
@@ -675,6 +675,12 @@ test('a finalized receipt shows its transaction hash, block hash and fee recipie
 
 const chainAbi = parseAbi([
   'struct Policy { uint16 serviceFeeBps; uint16 triggerDistanceBps; uint16 maxOverlapBps; uint32 minimumIntervalSeconds; uint8 maxPositions; uint64 version; bool paused; }',
+  'struct PoolKey { address currency0; address currency1; uint24 fee; int24 tickSpacing; address hooks; }',
+  'struct ExecutionLimits { uint64 version; uint32 upsideBps; uint16 maxSlippageBps; uint16 maxPriceImpactBps; uint128 maxGasCostWei; uint32 maxObservationAgeSeconds; uint32 forecastHorizonSeconds; }',
+  'struct InitParams { uint256 rootTokenId; bytes32 expectedPoolId; address baseCurrency; address quoteCurrency; address operator; bool consentToUncollectedFees; Policy policy; ExecutionLimits limits; }',
+  'function predictVault(address,uint256) view returns(address)', 'function ownerOf(uint256) view returns(address)',
+  'function getPoolAndPositionInfo(uint256) view returns(PoolKey,uint256)', 'function getApproved(uint256) view returns(address)',
+  'function createVault(InitParams,uint256) returns(address)',
   'struct Position { bool known; bool active; bool isRoot; uint256 parentTokenId; uint64 generation; int24 tickLower; int24 tickUpper; bytes32 registrationBaselineId; bytes32 identity; bytes32 source0; bytes32 source1; }',
   'function implementation() view returns(address)', 'function implementationCodeHash() view returns(bytes32)', 'function poolManager() view returns(address)', 'function positionManager() view returns(address)',
   'function stateView() view returns(address)', 'function serviceFeeRecipient() view returns(address)', 'function factory() view returns(address)', 'function implementationVersion() view returns(uint64)',
@@ -690,19 +696,19 @@ const chainAbi = parseAbi([
   'function priceGuard() view returns(address)', 'function readHelperHash() view returns(bytes32)', 'function routingHelperHash() view returns(bytes32)',
   'function priceGuardHash() view returns(bytes32)', 'function publisher() view returns(address)',
   // Simulated before it is offered, so the call has to resolve here too.
-  'function setOperator(address next)',
+  'function setOperator(address next)', 'function setPolicy(Policy next)',
 ]);
 
 /**
  * A chain with a published sequence deployment and `roots.length` sequences created by `owner`, answered only for
  * the reads the sequence client makes. Anything else is refused as a non-read, and every method asked is logged.
  */
-function fakeSequenceChain(owner, { roots, chains = {}, operator = null }) {
+function fakeSequenceChain(owner, { roots, chains = {}, operator = null, serviceFeeBps = 400, maxPositions = 3 }) {
   const at = (byte, bytes = 20) => `0x${byte.toString(16).padStart(2, '0').repeat(bytes)}`, zero = at(0, 32);
   const cloneOf = implementation => concatHex(['0x363d3d373d3d3d363d73', implementation, '0x5af43d82803e903d91602b57fd5bf3']);
   const implementation = at(0x42), factoryCode = '0x6001', implementationCode = '0x6002';
   const deployment = { factory: at(0x41), implementation, poolManager: at(0x43), positionManager: at(0x44), stateView: at(0x45), readHelper: at(0x46), engine: at(0x47), routing: at(0x48), priceGuard: at(0x49),
-    serviceFeeRecipient: at(0x4a), operator: at(0x4b), pricePublisher: at(0x4c), serviceFeeBps: 200, expiresAt: 4_000_000_000, codeHashes: null };
+    serviceFeeRecipient: at(0x4a), operator: at(0x4b), pricePublisher: at(0x4c), serviceFeeBps: 200, dominoServiceFeeBps: 400, expiresAt: 4_000_000_000, codeHashes: null };
   // Every component carries code whose hash is the one the profile declares, so
   // a FULL verify() passes — not only the recovery subset. Without this the
   // sequence screen's connect fails with "The deployed code no longer matches
@@ -713,6 +719,13 @@ function fakeSequenceChain(owner, { roots, chains = {}, operator = null }) {
   deployment.codeHashes = Object.fromEntries([...COMPONENTS.map((name) => [name, keccak256(codeOf.get(deployment[name]))]), ['vault', keccak256(cloneOf(implementation))]]);
   const typeHash = keccak256(stringToHex('DominoSequence(uint256 chainId,address factory,address owner,uint256 nonce)'));
   const initHash = keccak256(concatHex(['0x3d602d80600a3d3981f3', cloneOf(implementation)]));
+  const poolKey = { currency0: at(0x61), currency1: at(0x62), fee: 3000, tickSpacing: 60, hooks: zeroAddress };
+  const poolId = keccak256(encodeAbiParameters(parseAbiParameters('(address currency0,address currency1,uint24 fee,int24 tickSpacing,address hooks)'), [poolKey]));
+  const packedPosition = (BigInt(poolId) >> 56n << 56n) | (BigInt.asUintN(24, -60n) << 8n) | (60n << 32n);
+  const predict = nonce => {
+    const id = keccak256(encodeAbiParameters(parseAbiParameters('bytes32,uint256,address,address,uint256'), [typeHash, 4663n, deployment.factory, owner, BigInt(nonce)]));
+    return `0x${keccak256(concatHex(['0xff', deployment.factory, id, initHash])).slice(-40)}`;
+  };
   const vaults = new Map(roots.map((root, nonce) => {
     const id = keccak256(encodeAbiParameters(parseAbiParameters('bytes32,uint256,address,address,uint256'), [typeHash, 4663n, deployment.factory, owner, BigInt(nonce)]));
     return [`0x${keccak256(concatHex(['0xff', deployment.factory, id, initHash])).slice(-40)}`, { id, root, chain: chains[nonce] ?? [] }];
@@ -726,6 +739,8 @@ function fakeSequenceChain(owner, { roots, chains = {}, operator = null }) {
       if (name in answers) return answers[name];
       if (name === 'vaultForSequence') return [...vaults].find(([, vault]) => vault.id === args[0])?.[0] ?? zeroAddress;
       if (name === 'isVault') return vaults.has(args[0].toLowerCase());
+      if (name === 'predictVault') return predict(args[1]);
+      if (name === 'createVault') return predict(args[1]);
     }
     if (to === implementation) {
       const answers = { factory: deployment.factory, implementation, implementationVersion: 4n, readHelper: deployment.readHelper, executionEngine: deployment.engine,
@@ -737,6 +752,11 @@ function fakeSequenceChain(owner, { roots, chains = {}, operator = null }) {
     // manager, the read helper at both, the engine at its three helpers by
     // address and by code hash, and the guard at its publisher.
     if ((to === deployment.positionManager || to === deployment.stateView) && name === 'poolManager') return deployment.poolManager;
+    if (to === deployment.positionManager) {
+      if (name === 'ownerOf') return owner;
+      if (name === 'getPoolAndPositionInfo') return [poolKey, packedPosition];
+      if (name === 'getApproved') return predict(roots.length);
+    }
     if (to === deployment.readHelper) {
       const answers = { positionManager: deployment.positionManager, stateView: deployment.stateView };
       if (name in answers) return answers[name];
@@ -751,17 +771,17 @@ function fakeSequenceChain(owner, { roots, chains = {}, operator = null }) {
     if (vault) {
       const index = id => vault.chain.findIndex(member => member.id === id);
       const answers = { owner, sequenceId: vault.id, rootTokenId: vault.root, operator: operator ?? deployment.operator, rootPermissionValid: true, baseCurrency: at(0x61), quoteCurrency: at(0x62), stateNonce: 1n,
-        policy: { serviceFeeBps: 200, triggerDistanceBps: 500, maxOverlapBps: 2000, minimumIntervalSeconds: 60, maxPositions: 3, version: 1n, paused: false },
+        policy: { serviceFeeBps, triggerDistanceBps: 500, maxOverlapBps: 2000, minimumIntervalSeconds: 60, maxPositions, version: 1n, paused: false },
         activePositions: BigInt(1 + vault.chain.filter(member => member.active).length) };
       if (name in answers) return answers[name];
       if (name === 'position') return args[0] === vault.root ? position(true, true, true, 0n) : index(args[0]) === -1 ? position(false, false, false, 0n)
         : position(true, vault.chain[index(args[0])].active, false, index(args[0]) === 0 ? vault.root : vault.chain[index(args[0]) - 1].id);
       if (name === 'successorOf') return args[0] === vault.root ? vault.chain[0]?.id ?? 0n : index(args[0]) === -1 ? 0n : vault.chain[index(args[0]) + 1]?.id ?? 0n;
-      if (name === 'setOperator') return undefined;
+      if (name === 'setOperator' || name === 'setPolicy') return undefined;
     }
     throw new Error(`unexpected ${name} on ${to}`);
   }
-  const log = [], missing = [], sends = [];
+  const log = [], missing = [], sends = [], simulations = [];
   async function request(method, params) {
     log.push(method);
     try {
@@ -774,10 +794,11 @@ function fakeSequenceChain(owner, { roots, chains = {}, operator = null }) {
       if (method === 'eth_sendTransaction') { sends.push(params[0]); return { result: at(0xcc, 32) }; }
       if (method === 'eth_getCode') {
         const target = String(params[0]).toLowerCase();
-        return { result: codeOf.get(target) ?? (vaults.has(target) ? cloneOf(implementation) : '0x') };
+        return { result: codeOf.get(target) ?? (vaults.has(target) ? cloneOf(implementation) : [poolKey.currency0, poolKey.currency1].includes(target) ? '0x6000' : '0x') };
       }
       if (method === 'eth_call') {
         const { functionName, args = [] } = decodeFunctionData({ abi: chainAbi, data: params[0].data });
+        if (['createVault', 'setPolicy'].includes(functionName)) simulations.push({ functionName, args });
         return { result: encodeFunctionResult({ abi: chainAbi, functionName, result: answer(String(params[0].to).toLowerCase(), functionName, args) }) };
       }
       return { error: { code: 4200, message: `${method} is not a read` } };
@@ -786,7 +807,7 @@ function fakeSequenceChain(owner, { roots, chains = {}, operator = null }) {
       return { error: { code: -32000, message: String(error) } };
     }
   }
-  return { log, missing, sends, request, vaults: [...vaults.keys()], release: { contractVersion: '1.0.0-rc.1', chainId: 4663, available: true, deployment } };
+  return { log, missing, sends, simulations, request, vaults: [...vaults.keys()], release: { contractVersion: '1.0.0-rc.1', chainId: 4663, available: true, deployment } };
 }
 
 test('Start tracking is offered for the sequences the wallet lists, reads each one\'s positions from its vault, and sends enroll with the session: nothing typed, nothing signed', async () => {
@@ -945,5 +966,140 @@ test('with its operator in place a sequence is never offered the restoration', a
     await main.getByRole('button', { name: 'Review operator revocation', exact: true }).waitFor();
     assert.equal(await main.getByRole('button', { name: 'Review operator authorisation' }).count(), 0,
       'nothing to restore, so nothing is offered');
+  } finally { await s.close(); }
+});
+
+
+async function openSequenceControls(s, chain) {
+  await s.context.exposeFunction('__dominoChainRead', (method, params) => chain.request(method, params));
+  await s.context.addInitScript(() => {
+    let wallet = window.__dominoWalletRequest;
+    const request = (id, method, params) => ['eth_call', 'eth_getCode', 'eth_getBlockByNumber', 'eth_getTransactionCount', 'eth_estimateGas', 'eth_getBalance', 'eth_sendTransaction'].includes(method) ? window.__dominoChainRead(method, params) : wallet(id, method, params);
+    Object.defineProperty(window, '__dominoWalletRequest', { configurable: true, get: () => request, set: value => { wallet = value; } });
+  });
+  await login(s.page);
+  s.set({ sequenceRelease: { status: 200, body: chain.release } });
+  await s.page.goto(`${s.origin}/#/sequence`);
+  await s.page.reload();
+  await s.page.waitForFunction(() => window.__dominoSessionProbe?.view().status === 'signed_in');
+  const main = s.page.locator('main');
+  await main.getByRole('button', { name: 'Read my sequences', exact: true }).click();
+  await main.getByLabel('Sequence address').waitFor();
+  for (const [label, value] of [['Maximum wallet gas units', '300000'], ['Maximum fee per gas (wei)', '2000000000'],
+    ['Maximum priority fee per gas (wei)', '1000000'], ['Keep native gas reserve (wei)', '0']]) {
+    await main.getByLabel(label, { exact: true }).fill(value);
+  }
+  return main;
+}
+
+test('creation mode shows 2% or 4%, simple locks one position, and changing mode clears consent and the reviewed transaction', async () => {
+  const s = await scenario(), chain = fakeSequenceChain(OWNER, { roots: [] });
+  try {
+    const main = await openSequenceControls(s, chain);
+    await main.getByLabel('Root NFT ID', { exact: true }).fill('300');
+    await main.getByRole('button', { name: 'Read my root NFT', exact: true }).click();
+    const mode = main.getByRole('combobox', { name: /^Automation mode/ });
+    await mode.waitFor();
+    assert.equal(await mode.inputValue(), 'compound');
+    const cap = main.getByLabel('Maximum positions, including root', { exact: true });
+    assert.equal(await cap.inputValue(), '1');
+    assert.equal(await cap.isDisabled(), true);
+    for (const [label, value] of [['Distance to range ceiling (basis points)', '500'], ['Maximum successor overlap (basis points)', '2000'],
+      ['Minimum execution interval (seconds)', '60'], ['Successor upside (basis points)', '5000'], ['Maximum swap slippage (basis points)', '100'],
+      ['Maximum price impact (basis points)', '100'], ['Maximum execution gas cost (wei)', '1000000000000000'], ['Maximum observation age (seconds)', '60'], ['Forecast horizon (seconds)', '3600']]) {
+      await main.getByLabel(label, { exact: true }).fill(value);
+    }
+    const consent = main.getByRole('checkbox', { name: /^I consent to using already uncollected fees/ });
+    await consent.check();
+    await main.getByRole('button', { name: 'Prepare approval or paused creation', exact: true }).click();
+    const review = main.getByRole('region', { name: 'Sequence wallet review', exact: true });
+    await review.waitFor();
+    assert.match(await review.innerText(), /Auto-compound: 2%/);
+    assert.equal(chain.simulations.at(-1).args[0].policy.serviceFeeBps, 200);
+    assert.equal(chain.simulations.at(-1).args[0].policy.maxPositions, 1);
+    await review.getByRole('checkbox').check();
+    await mode.selectOption('domino');
+    assert.equal(await review.count(), 0, 'the old reviewed step is removed');
+    assert.equal(await consent.isChecked(), false, 'the changed price needs fresh consent');
+    assert.equal(await main.getByRole('button', { name: 'Prepare approval or paused creation', exact: true }).isDisabled(), true);
+    assert.equal(await cap.isDisabled(), false);
+    await cap.fill('3');
+    assert.match(await consent.locator('..').innerText(), /service fee is 4%/);
+    await consent.check();
+    await main.getByRole('button', { name: 'Prepare approval or paused creation', exact: true }).click();
+    await review.waitFor();
+    assert.match(await review.innerText(), /Domino-compound: 4%/);
+    assert.equal(await review.getByRole('checkbox').isChecked(), false, 'new review needs its own acknowledgement');
+    assert.equal(chain.simulations.at(-1).args[0].policy.serviceFeeBps, 400);
+    assert.equal(chain.simulations.at(-1).args[0].policy.maxPositions, 3);
+    assert.deepEqual(chain.missing, []);
+    assert.equal(chain.sends.length, 0, 'reviewing alone never sends');
+  } finally { await s.close(); }
+});
+
+test('management reads the current rate and reviews an explicit mode change; a second choice invalidates the acknowledgement', async () => {
+  const s = await scenario(), chain = fakeSequenceChain(OWNER, { roots: [100n], serviceFeeBps: 200, maxPositions: 1 });
+  try {
+    const main = await openSequenceControls(s, chain);
+    await main.getByLabel('Sequence address').fill(chain.vaults[0]);
+    await main.getByRole('button', { name: 'Read owned sequence', exact: true }).click();
+    await main.locator('[data-sequence-current-mode="compound"]').waitFor();
+    assert.match(await main.locator('[data-sequence-current-mode]').innerText(), /Auto-compound · 2%/);
+    await main.getByText('Adjust automation rules', { exact: true }).click();
+    const mode = main.getByRole('combobox', { name: /^Automation mode for rule change/ });
+    assert.equal(await mode.inputValue(), 'compound');
+    await mode.selectOption('domino');
+    for (const [label, value] of [['Distance to range ceiling (basis points)', '500'], ['Maximum successor overlap (basis points)', '2000'],
+      ['Minimum execution interval (seconds)', '60'], ['Maximum positions, including root', '3']]) {
+      await main.getByLabel(label, { exact: true }).fill(value);
+    }
+    await main.getByRole('button', { name: 'Review automation rule change', exact: true }).click();
+    const review = main.getByRole('region', { name: 'Sequence wallet review', exact: true });
+    await review.waitFor();
+    assert.match(await review.innerText(), /New Domino-compound policy: 4%/);
+    assert.equal(chain.simulations.at(-1).args[0].serviceFeeBps, 400);
+    assert.equal(chain.simulations.at(-1).args[0].maxPositions, 3);
+    assert.equal(chain.simulations.at(-1).args[0].paused, false, 'mode change preserves active state');
+    await review.getByRole('checkbox').check();
+    await mode.selectOption('compound');
+    assert.equal(await review.count(), 0);
+    assert.equal(await main.getByLabel('Maximum positions, including root', { exact: true }).inputValue(), '1');
+    await main.getByRole('button', { name: 'Review automation rule change', exact: true }).click();
+    await review.waitFor();
+    assert.equal(await review.getByRole('checkbox').isChecked(), false);
+    assert.match(await review.innerText(), /New Auto-compound policy: 2%/);
+    assert.equal(chain.simulations.at(-1).args[0].serviceFeeBps, 200);
+    assert.equal(chain.simulations.at(-1).args[0].maxPositions, 1);
+    await review.getByRole('checkbox').check();
+    await review.getByRole('button', { name: 'Send this step in wallet', exact: true }).click();
+    await main.getByRole('heading', { name: 'Transaction receipt', exact: true }).waitFor();
+    assert.equal(chain.sends.length, 1);
+    const { functionName, args } = decodeFunctionData({ abi: chainAbi, data: chain.sends[0].data });
+    assert.equal(functionName, 'setPolicy');
+    assert.equal(args[0].serviceFeeBps, 200);
+    assert.equal(args[0].maxPositions, 1);
+    assert.deepEqual(chain.missing, []);
+  } finally { await s.close(); }
+});
+
+
+test('a Domino sequence with a child cannot prepare a switch to simple mode', async () => {
+  const s = await scenario(), chain = fakeSequenceChain(OWNER, { roots: [100n], chains: { 0: [{ id: 101n, active: true }] } });
+  try {
+    const main = await openSequenceControls(s, chain);
+    await main.getByLabel('Sequence address').fill(chain.vaults[0]);
+    await main.getByRole('button', { name: 'Read owned sequence', exact: true }).click();
+    await main.locator('[data-sequence-current-mode="domino"]').waitFor();
+    await main.getByText('Adjust automation rules', { exact: true }).click();
+    await main.getByRole('combobox', { name: /^Automation mode for rule change/ }).selectOption('compound');
+    for (const [label, value] of [['Distance to range ceiling (basis points)', '500'], ['Maximum successor overlap (basis points)', '2000'], ['Minimum execution interval (seconds)', '60']]) {
+      await main.getByLabel(label, { exact: true }).fill(value);
+    }
+    await main.getByRole('button', { name: 'Review automation rule change', exact: true }).click();
+    await main.locator('[data-notice-code="position_limit_below_membership"]').waitFor();
+    assert.equal(await main.getByRole('region', { name: 'Sequence wallet review', exact: true }).count(), 0);
+    assert.equal(chain.simulations.length, 0);
+    assert.equal(chain.sends.length, 0);
+    assert.deepEqual(chain.missing, []);
   } finally { await s.close(); }
 });

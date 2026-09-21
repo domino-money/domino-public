@@ -262,7 +262,7 @@ export async function verify(manifest, transactionHashes, artifacts, viem, rpc, 
   const { setup: unusedHash, ...sequenceHashes } = codeHashes;
   const sequence = { contractVersion: '1.0.0-rc.1', chainId: CHAIN_ID, available: true, deployment: {
     ...sequenceAddresses, serviceFeeRecipient: p.feeRecipient, operator: p.operator, pricePublisher: publisher,
-    serviceFeeBps: 200, expiresAt: p.expiresAt, codeHashes: { ...sequenceHashes, vault: manifest.cloneCodeHash } } };
+    serviceFeeBps: 200, dominoServiceFeeBps: 400, expiresAt: p.expiresAt, codeHashes: { ...sequenceHashes, vault: manifest.cloneCodeHash } } };
   return { schemaVersion: 1, kind: 'domino-financial-verified-release', chainId: CHAIN_ID,
     sourceCommit: manifest.sourceCommit, packageSha256: digest(canonical(manifest)),
     verifiedBlock: { number: Number(finalNumber), hash: final.hash, timestamp: Number(quantity(final.timestamp)) },

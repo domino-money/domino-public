@@ -171,3 +171,15 @@ This is explicitly **EIP-712-like candidate encoding**, not a claim of standard 
 The encoder rejects a model whose declared ABI fields do not exactly match its record fields. The checked-in fixture includes every record and identity type string, including `FeeCreditId`, `SuccessorId` and `ConvertedLotId`. It includes self/redirect/mint/native/reversed/other-owner/other-sequence/other-manager/charged-residual candidates, nonempty collection/accrual vectors, a general-path enabled swap and a separate no-swap net path. Solidity independently reconstructs complete plans and lineage IDs from literals, including action 2/3, signed ticks, arrays and successor identity. Netting and swaps remain mutually exclusive. The nine earlier vector cases retain every existing field/hash and the original ABI/domain. Revision `e1-hardening-99` tightens validation and adds standalone evidence records without changing existing signing fields; any future change to those fields/encoding requires a new candidate domain version and vectors before downstream consumers rely on it.
 
 Run the targeted Python tests with `python -m unittest discover -s backend/tests -p 'test_execution*.py' -v`, check vectors with `python backend/tests/execution_cases.py`, and run Solidity checks with `npm run test:contracts`. Full PostgreSQL/EVM regression evidence and the exact fixture digest are recorded in the [implementation report](../reports/EXECUTION_E1_IMPLEMENTATION.md).
+
+
+### Automation mode update — 21 September 2026
+
+`SequencePolicy.serviceFeeBps` is exactly 200 (simple) or 400 (Domino), preserving
+the Policy ABI field order and typed hash. Simple additionally requires
+`maxPositions=1`, root-only collection/budgets and same-root compound recipes.
+Domino charges 400 for all its recipes, not just creation of a successor. The
+planner and onchain routing enforce these constraints independently. Historical
+receipt/accounting arithmetic may represent other old rates without admitting
+those rates as new policies. Already charged balances are not charged again when
+an owner changes mode; state/policy versions invalidate old candidates.

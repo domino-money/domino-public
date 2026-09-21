@@ -2,8 +2,10 @@
 
 As correções do domínio de blocos Nitro e da recuperação independente do Setup
 estão implementadas. O freeze de produção é
-`aaf33947e7aeccf902b311c6d2282a742a929c2b`. O estado da validação e suas evidências
-constam no [relatório de correções](../V4_REMEDIATION_2026-09-21.md).
+`7321c5bdefb27a29d15dfa2cdcbaae6cc9d9715b`, incluindo 2% no modo simples e 4% no Domino.
+Os [artifacts atuais](../revert-fees-2026-09-21/artifact-verification.json) e a
+[validação da mudança](../REVERT_FEE_DEEP_DIVE_2026-09-21.md) substituem o freeze
+anterior; o [relatório de correções](../V4_REMEDIATION_2026-09-21.md) preserva sua evidência histórica.
 Nenhuma transação foi assinada ou enviada à mainnet.
 
 ## Entradas necessárias para o pacote real
@@ -50,9 +52,12 @@ Na simulação, `anvil_setBalance` fornece ETH fictício às contas. Não há re
 vendida para obter esse ETH. Na implementação atual também não há serviço de
 top-up automático: não se vendem automaticamente principal, reservas do usuário
 nem ativos do destinatário das taxas para abastecer o operador. Saldo insuficiente
-faz o signer recusar a execução. Os 2% sobre taxas ganhas e efetivamente consumidas
+faz o signer recusar a execução. Os 2% no simples ou 4% no Domino sobre taxas ganhas e efetivamente consumidas
 incluem a remuneração/custo operacional na política econômica, mas o recebimento
-dessas taxas não abastece automaticamente a carteira que paga gas.
+dessas taxas não abastece automaticamente a carteira que paga gas. O caminho
+aprovado é abastecimento manual inicial; conversão e reposição automáticas da
+tesouraria da empresa ficam para a implementação posterior. A taxa do modo
+já inclui swaps internos; não foi adicionada cobrança extra de 2% sobre swaps.
 
 ## Sequência de implantação
 

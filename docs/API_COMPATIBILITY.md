@@ -4,6 +4,31 @@ Applies to [issue #5](https://github.com/domino-money/domino/issues/5) and the
 shared frontend adapter in [issue #1](https://github.com/domino-money/domino/issues/1).
 Technical compatibility rules remain applicable. Under [EXECUTION_POLICY.md](EXECUTION_POLICY.md), any authorized collaborator may update producer and consumer together; a notice records the change and does not require a named owner's acknowledgement or a separate approval window.
 
+## Mode-specific automation fees — 21 September 2026
+
+The owner selected 200 bps for simple Auto-compound and 400 bps for every
+Domino-compound recipe. Policy's Solidity tuple and E1 typed field order are
+unchanged; the exact rate now discriminates mode and new policies accept only
+those two rates. Simple requires `maxPositions=1`, root-only sources and
+same-position execution. Historical receipts remain historical; the public
+receipt rate maximum widens from 200 to 400 without repricing old events.
+
+The predeployment sequence profile now requires `dominoServiceFeeBps:400` as well
+as `serviceFeeBps:200`. Producer, bridge, SDK, wallet review and generated receipt
+schemas change together. The closed parser refuses old single-rate profiles for
+new admission. Candidate `1.0.0-rc.1` and route names remain unchanged while these
+undeployed producers/consumers are revised; fresh manifest and runtime pins are
+required. A mainnet deployment has not been activated against either profile.
+
+SDK `SequenceOptions.automationMode` is required. An owner may explicitly select
+a new mode in `setPolicy`; omission preserves the current mode. Policy version
+and state nonce invalidate prior prepared plans. Withdrawals remain owner-only
+and available independently of tariff eligibility. No assisted-swap cap change
+or second internal-swap fee is part of this update. The unapplied candidate
+`backend/schema.sql` also admits only 200/400 for new sequence policy; existing
+runtime journal migrations and historical receipts are unchanged. Regenerate
+any candidate staging bundle whose schema digest pins that file.
+
 ## Current baseline and gaps
 
 The next disabled producer candidate is `read-v1 / 1.1.0-rc.3`, reconciling #26

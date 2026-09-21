@@ -54,7 +54,7 @@ Indexers persist coherent observations. Planners compare direct reinvestment, bo
 
 On-chain ownership, permissions and receipts determine actual financial state; PostgreSQL indexes and reconciles them. USD values are derived displays. Financial authorization uses integer token base units, recorded decimals, exact tick conventions and versioned owner limits. A stale browser value cannot become a spending limit.
 
-Each owner/sequence has isolated fee accounting and explicit authority. Unused fees remain available without being charged again. The approved 2% service cut funds ongoing gas; the receipt must not show that gas as a second owner deduction. Operator and owner economic checks remain separate. These rules are detailed in REINVESTMENT_POLICY.md and SECURITY_SPEC.md.
+Each owner/sequence has isolated fee accounting and explicit authority. Unused fees remain available without being charged again. The approved 2% simple / 4% Domino service cut funds ongoing gas; the receipt must not show that gas as a second owner deduction. Operator and owner economic checks remain separate. These rules are detailed in REINVESTMENT_POLICY.md and SECURITY_SPEC.md.
 
 A retry does not reset valid observation history or create a second independent transaction. Jobs need idempotent state changes, global per-operator nonce coordination and reconciliation of ambiguous sends. A recovered database lease is not proof that a transaction was never broadcast.
 
@@ -70,7 +70,7 @@ The funding planner calculates actual range-dependent token quantities with exac
 
 Pool suggestions use versioned activity/depth/freshness filters before ranking. Thresholds need empirical Robinhood calibration. Do not use a suggestion score or pool APR as an oracle, signing permission or promised position return.
 
-Funding quotes also bind the assisted-swap fee schedule/version, consumed-input base, exact fee, fixed recipient and net DEX input under [PRICING_POLICY.md](PRICING_POLICY.md). Keep this owner-funded service separate from the 2% earned-fee automation path and persist actual fee receipts for resumed onboarding. Rate selection and collection are new implementation work.
+Funding quotes also bind the assisted-swap fee schedule/version, consumed-input base, exact fee, fixed recipient and net DEX input under [PRICING_POLICY.md](PRICING_POLICY.md). Keep this owner-funded service separate from the mode-priced earned-fee automation path and persist actual fee receipts for resumed onboarding. Rate selection and collection are new implementation work.
 
 ## Next internal milestone: wallet-connected read-only integration
 

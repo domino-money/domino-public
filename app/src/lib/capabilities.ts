@@ -32,5 +32,5 @@ export const ROADMAP: Array<{ name: string; status: Availability; note: string }
     status: 'not-connected',
     note: 'Sign-in proves your address. Each deposit step separately shows its amounts and limits before your wallet requests transaction approval.',
   },
-  { name: 'Service pricing', status: 'planned', note: 'Automation uses 2% of consumed earned fees. Direct deposits have no Domino percentage fee. An assisted swap shows its separate tariff before approval.' },
+  { name: 'Service pricing', status: 'planned', note: 'Auto-compound uses 2% and Domino-compound 4% of consumed earned fees, once. No additional fee is charged for automation balancing swaps. Direct deposits have no Domino percentage fee. An assisted swap shows its separate tariff before approval.' },
 ]

@@ -1,5 +1,11 @@
 # V4 audit remediation — 21 September 2026
 
+Historical remediation evidence for the freeze below. The subsequent owner-selected
+2% simple / 4% Domino change supersedes that production freeze; see the
+[current audit package](V4_AUDIT_PACKAGE_2026-09-21.md) and
+[mode-fee implementation and validation](REVERT_FEE_DEEP_DIVE_2026-09-21.md).
+Its earlier test and gas measurements are not measurements of the mode-fee build.
+
 The corrected production-source freeze is
 `aaf33947e7aeccf902b311c6d2282a742a929c2b`: 13 sources, 2,630 lines. This replaces
 the operational candidate at `ec2e9aa`; the [original audit findings](V4_AUDIT_EXECUTION_2026-09-21.md)

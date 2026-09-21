@@ -83,7 +83,7 @@ The [official address list](https://docs.revert.finance/revert/resources/contrac
 
 ## Comparison with a proposed Domino 2% assisted-swap fee
 
-The existing [Domino pricing policy](../../PRICING_POLICY.md) separates an assisted-swap cap of **65 bps on consumed selected swap input** from **200 bps on consumed earned fees for automation**, with no internal automated-swap stacking. A proposal to charge 200 bps on assisted-swap volume changes the first boundary. It should be described as a new Domino tariff, not implementation of Revert's advertised schedule. Subsequent decisions about separate Domino automation modes are a different pricing axis.
+The existing [Domino pricing policy](../../PRICING_POLICY.md) separates an assisted-swap cap of **65 bps on consumed selected swap input** from **200 bps for simple / 400 bps for Domino on consumed earned fees for automation**, as selected by the owner during this review, with no internal automated-swap stacking. A proposal to charge 200 bps on assisted-swap volume changes the first boundary. It should be described as a new Domino tariff, not implementation of Revert's advertised schedule. Subsequent decisions about separate Domino automation modes are a different pricing axis.
 
 For the **same economically comparable chargeable swap amount**, 2% is about **3.08 times** a 0.65% fee, a **1.35 percentage-point** increase; versus 0.01%, it is 200 times the nominal rate. Input- and output-denominated fees are not exactly interchangeable when execution price, taxes or rounding differ, so compare final proceeds as well as headline percentages.
 

@@ -50,7 +50,7 @@ class SequenceSdkEvmTests(unittest.TestCase):
                     hashes['vault'] = '0x'+keccak(bytes.fromhex(self.rpc.request('eth_getCode', [self.vault, 'latest'])[2:])).hex()
                     now = int(self.rpc.request('eth_getBlockByNumber', ['latest', False])['timestamp'], 16)
                     deployment.update(serviceFeeRecipient=self.recipient, operator=operator, pricePublisher=a.pricePublisher,
-                        serviceFeeBps=200, expiresAt=now+3600, codeHashes=hashes)
+                        serviceFeeBps=200, dominoServiceFeeBps=400, expiresAt=now+3600, codeHashes=hashes)
                     fixture = dict(url=self.rpc.url, owner=self.owner, now=now, native=native, root=str(self.token),
                         oldVault=self.vault, child=child,
                         release=dict(contractVersion='1.0.0-rc.1', chainId=4663, available=True, deployment=deployment))

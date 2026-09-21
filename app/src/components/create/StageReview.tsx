@@ -162,7 +162,7 @@ export function StageReview({ state, now, open, balances }: { state: JourneyStat
             {CREATE.review.serviceFee}
           </h3>
           <p className="dm-flow-fee">
-            <span className="dm-flow-fee-value tnum">{CREATE.review.serviceFeeValue}</span>
+            <span className="dm-flow-fee-value tnum">{CREATE.review.serviceFeeValue(state.automation)}</span>
           </p>
           <p className="dm-hint">{CREATE.review.serviceFeeNote}</p>
         </section>

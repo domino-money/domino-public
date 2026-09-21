@@ -4,7 +4,7 @@ import { type Address, type Hex } from 'viem'
 import { walletConfig } from '../wallet/config'
 import { setupWallet } from '../finance/wallet'
 import { readRelease, type ReleaseRead } from '../finance/release'
-import { createSequenceClient, sequenceDeploymentFrom, sequenceRaw, type PreparedSequence, type SequenceDeployment, type SequenceState } from '../finance/sequence'
+import { AUTOMATION_FEE_BPS, createSequenceClient, sequenceDeploymentFrom, sequenceRaw, type AutomationMode, type PreparedSequence, type SequenceDeployment, type SequenceState } from '../finance/sequence'
 import { RECEIPT_TEXT, SEQUENCE_STEP_TEXT, errorCode, financeErrorText } from '../finance/words'
 import { Button, Card, Display } from '../components/ui'
 
@@ -45,13 +45,14 @@ export default function Sequence() {
   // Which currency the untracked-balance recovery is about: the sequence's own two, or native.
   const [recoverCurrency,setRecoverCurrency] = useState<`0x${string}`>('0x0000000000000000000000000000000000000000')
   const [base0,setBase0] = useState(true), [consent,setConsent] = useState(false), [prepared,setPrepared] = useState<PreparedSequence|null>(null)
+  const [createMode,setCreateMode] = useState<AutomationMode>('compound'), [policyMode,setPolicyMode] = useState<AutomationMode|null>(null)
   const [ack,setAck] = useState(false), [hash,setHash] = useState<Hex|null>(null), [busy,setBusy] = useState(false), [notice,setNotice] = useState<Notice|null>(null)
   const generation = useRef(0), connection = useRef(0), running = useRef(false)
   const say = (text:string, code:string|null = null) => setNotice({text,code})
   useEffect(() => { let live = true; void readSequenceRelease().then(result => { if(live) setRelease(result) }); return () => { live = false } },[])
   useEffect(() => watchConnection(walletConfig,{onChange:()=>{
     generation.current++; connection.current++; running.current=false; setBusy(false); setClient(null); setRecovery(false); setRecent([]); setState(null); setRoot(null); setReserves(null)
-    setPrepared(null); setHash(null); setAck(false); setConsent(false); setForm(empty); setNotice(null)
+    setPrepared(null); setHash(null); setAck(false); setConsent(false); setCreateMode('compound'); setPolicyMode(null); setForm(empty); setNotice(null)
   }}),[])
   useEffect(()=>()=>{generation.current++;connection.current++},[])
   const available = release.kind === 'available'
@@ -62,6 +63,12 @@ export default function Sequence() {
     if(name==='vault') {setState(null);setReserves(null)}
     if(name==='member') setReserves(null)
   }
+  function chooseMode(target:'create'|'policy',mode:AutomationMode) {
+    generation.current++; setPrepared(null); setAck(false); setConsent(false)
+    if(target==='create')setCreateMode(mode);else setPolicyMode(mode)
+    if(mode==='compound')setForm(old=>({...old,positions:'1'}))
+  }
+  const modeChoice=(target:'create'|'policy',mode:AutomationMode|null) => <label className="dm-label dm-acct-lf">{target==='create'?'Automation mode':'Automation mode for rule change'}<select className="dm-field" disabled={busy} value={mode??''} onChange={e=>chooseMode(target,e.target.value as AutomationMode)}>{mode===null&&<option value="" disabled>Choose an automation mode</option>}<option value="compound">Auto-compound · 2% · root position only</option><option value="domino">Domino-compound · 4% · successor positions</option></select><span className="dm-hint">{mode==='compound'?'Reinvest in the root only. Maximum positions is one.':mode==='domino'?'Reinvest or fund successor positions within your limits. The 4% rate applies to every automated recipe.':'Choose a mode and review its fee before changing the policy.'} Charged once on consumed earned fees, never principal. No additional automation swap fee.</span></label>
   async function action(work:()=>Promise<void>) {
     if(running.current)return
     running.current=true;setBusy(true);setNotice(null);setPrepared(null);setAck(false)
@@ -90,20 +97,20 @@ export default function Sequence() {
   const vault=()=>form.vault.toLowerCase() as Address
   async function inspect(address=vault()) {
     if(!client)return;const gen=generation.current, value=await client.inspect(address)
-    if(generation.current===gen){setState(value);setForm(old=>({...old,vault:address,member:value.rootTokenId.toString()}));setReserves(null)}
+    if(generation.current===gen){setState(value);setPolicyMode(value.automationMode);setConsent(false);setForm(old=>({...old,vault:address,member:value.rootTokenId.toString(),...(value.automationMode==='compound'?{positions:'1'}:{})}));setReserves(null)}
   }
   async function create() {
     if(!client||!root||recovery)return;const gen=generation.current
-    const value=await client.create({rootTokenId:sequenceRaw(form.root,256),baseIsCurrency0:base0,consentToUncollectedFees:consent,
-      triggerDistanceBps:integer(form.trigger),maxOverlapBps:integer(form.overlap),minimumIntervalSeconds:integer(form.interval),maxPositions:integer(form.positions),
+    const value=await client.create({automationMode:createMode,rootTokenId:sequenceRaw(form.root,256),baseIsCurrency0:base0,consentToUncollectedFees:consent,
+      triggerDistanceBps:integer(form.trigger),maxOverlapBps:integer(form.overlap),minimumIntervalSeconds:integer(form.interval),maxPositions:createMode==='compound'?1:integer(form.positions),
       upsideBps:integer(form.upside),maxSlippageBps:integer(form.slippage),maxPriceImpactBps:integer(form.impact),maxGasCostWei:sequenceRaw(form.executionGas),
       maxObservationAgeSeconds:integer(form.age),forecastHorizonSeconds:integer(form.horizon)},gas())
     if(generation.current===gen)setPrepared(value)
   }
   async function changePolicy() {
-    if(!client||!state)return;const gen=generation.current
-    const value=await client.setPolicy(state.vault,{triggerDistanceBps:integer(form.trigger),maxOverlapBps:integer(form.overlap),
-      minimumIntervalSeconds:integer(form.interval),maxPositions:integer(form.positions)},gas())
+    if(!client||!state||!policyMode)return;const gen=generation.current
+    const value=await client.setPolicy(state.vault,{automationMode:policyMode,triggerDistanceBps:integer(form.trigger),maxOverlapBps:integer(form.overlap),
+      minimumIntervalSeconds:integer(form.interval),maxPositions:policyMode==='compound'?1:integer(form.positions)},gas())
     if(generation.current===gen)setPrepared(value)
   }
   async function changeLimits() {
@@ -132,7 +139,7 @@ export default function Sequence() {
     }}
     finally {if(generation.current===gen){running.current=false;setBusy(false)}}
   }
-  const fields=(names:(keyof typeof empty)[]) => <div className="dm-acct-fields dm-acct-fields--3">{names.map(name=><label className="dm-label dm-acct-lf" key={name}>{labels[name]}<input disabled={busy} className="dm-field dm-acct-mono-field" value={form[name]} onChange={e=>edit(name,e.target.value)} autoComplete="off" /></label>)}</div>
+  const fields=(names:(keyof typeof empty)[],mode?:AutomationMode|null) => <div className="dm-acct-fields dm-acct-fields--3">{names.map(name=><label className="dm-label dm-acct-lf" key={name}>{labels[name]}<input disabled={busy||(name==='positions'&&mode==='compound')} className="dm-field dm-acct-mono-field" value={name==='positions'&&mode==='compound'?'1':form[name]} onChange={e=>edit(name,e.target.value)} autoComplete="off" /></label>)}</div>
   // No published release, no saved profile, and nothing read, running or said on this visit: the owner controls would promise actions
   // with no way into them. Once the release has answered, one plain line says so instead; why is its data and title. While it is read, nothing shows.
   const noControls=!available&&!saved&&!client&&!notice&&!busy
@@ -147,16 +154,17 @@ export default function Sequence() {
       <p className="dm-acct-panel-note">{available?'Create a paused sequence from a position NFT you hold, or manage one you own, directly through your wallet. Owner controls need no Domino sign-in.':'Pause, revoke permissions or recover assets of a sequence you own, directly through your wallet. Withdrawals have no Domino service fee.'}</p>
       {profile&&<Button className="justify-self-start" variant="outline" disabled={busy} onClick={()=>{void action(connect)}}>Read my sequences</Button>}
       {notice&&<p role="status" className="dm-acct-line dm-acct-wrap" data-notice-code={notice.code??undefined}>{notice.text}</p>}
-      {client&&<p className="dm-acct-hash">Factory {client.deployment.factory} · {recovery?'Saved deployment':'Verified deployment'} · 2% on earned fees consumed for reinvestment, once. No fee on principal.</p>}
+      {client&&<p className="dm-acct-hash">Factory {client.deployment.factory} · {recovery?'Saved deployment':'Verified deployment'} · Auto-compound 2%; Domino-compound 4% of earned fees consumed, once. No fee on principal.</p>}
     </Card>}
     {client&&<>
       <Card className="dm-acct-block dm-acct-panel"><h2 className="dm-acct-panel-title">Network budget</h2><p className="dm-acct-panel-note">Set explicit limits for each approval, creation or owner action. These are wallet transaction limits; the sequence execution cap is configured separately.</p>{fields(['maxGas','maxFee','priority','reserve'])}</Card>
       {available&&!recovery&&<Card className="dm-acct-block dm-acct-panel"><h2 className="dm-acct-panel-title">Create a paused sequence</h2><p className="dm-acct-panel-note">Creating a sequence starts it paused; activating it is a separate owner transaction.</p>{fields(['root'])}
         <Button className="justify-self-start" variant="outline" disabled={busy} onClick={()=>{void action(async()=>{const gen=generation.current,result=await client.inspectRoot(sequenceRaw(form.root,256));if(generation.current===gen){setRoot(result);setConsent(false)}})}}>Read my root NFT</Button>
         {root&&<><p className="dm-acct-line dm-acct-wrap">Pool {root.poolId} · ticks {root.lower} to {root.upper}. Currency 0: {root.key.currency0}. Currency 1: {root.key.currency1}. The zero address denotes native currency.</p>
+          {modeChoice('create',createMode)}
           <label className="dm-label dm-acct-lf">Price orientation<select disabled={busy} className="dm-field" value={base0?'0':'1'} onChange={e=>{generation.current++;setBase0(e.target.value==='0');setPrepared(null);setAck(false)}}><option value="0">Currency 0 is base; currency 1 is quote</option><option value="1">Currency 1 is base; currency 0 is quote</option></select></label>
-          <details className="dm-details dm-acct-disclosure" open><summary>Choose sequence limits</summary><div className="dm-acct-disclosure-body"><p className="dm-acct-panel-note">One basis point is 0.01%. Trigger distance and overlap each allow 0–2,000 bps. These choices define bounded automation authority; creation does not activate it.</p>{fields(['trigger','overlap','interval','positions','upside','slippage','impact','executionGas','age','horizon'])}</div></details>
-          <label className="dm-acct-check"><input type="checkbox" disabled={busy} checked={consent} onChange={e=>{generation.current++;setConsent(e.target.checked);setPrepared(null);setAck(false)}}/><span>I consent to using already uncollected fees from this NFT, plus future earned fees, for reinvestment under these limits. The service fee is 2% of earned fees actually consumed, once, never principal.</span></label>
+          <details className="dm-details dm-acct-disclosure" open><summary>Choose sequence limits</summary><div className="dm-acct-disclosure-body"><p className="dm-acct-panel-note">One basis point is 0.01%. Trigger distance and overlap each allow 0–2,000 bps; successor limits apply only in Domino mode. These choices define bounded automation authority; creation does not activate it.</p>{fields(['trigger','overlap','interval','positions','upside','slippage','impact','executionGas','age','horizon'],createMode)}</div></details>
+          <label className="dm-acct-check"><input type="checkbox" disabled={busy} checked={consent} onChange={e=>{generation.current++;setConsent(e.target.checked);setPrepared(null);setAck(false)}}/><span>I consent to using already uncollected fees from this NFT, plus future earned fees, for {createMode==='domino'?'Domino-compound':'Auto-compound'} under these limits. The service fee is {AUTOMATION_FEE_BPS[createMode]/100}% of earned fees actually consumed, once, never principal. No additional automation swap fee.</span></label>
           <Button className="justify-self-start" disabled={busy||!consent} onClick={()=>{void action(create)}}>Prepare approval or paused creation</Button>
           <p className="dm-acct-panel-note">First approve this NFT to its predicted sequence address. After its receipt is confirmed, prepare again to create the sequence. No approval for all NFTs is requested.</p>
         </>}
@@ -165,13 +173,12 @@ export default function Sequence() {
         <div className="dm-acct-choices">{recent.map(row=><Button key={row.vault} variant="outline" size="sm" disabled={busy} onClick={()=>{void action(()=>inspect(row.vault))}}>Sequence {row.ownerNonce.toString()} · {row.vault.slice(0,10)}</Button>)}</div>
         {fields(['vault'])}<Button className="justify-self-start" variant="outline" disabled={busy} onClick={()=>{void action(()=>inspect())}}>Read owned sequence</Button>
         {state&&<><p className="dm-acct-line dm-acct-wrap">Root NFT #{state.rootTokenId.toString()} · {state.paused?'Paused':'Active'} · {state.operator==='0x0000000000000000000000000000000000000000'?'Operator revoked':`Operator ${state.operator}`} · root permission {state.rootPermissionValid?'valid':'not valid'}.</p>
+          <p className="dm-acct-line" data-sequence-current-mode={state.automationMode??'unknown'}>Current policy: {state.automationMode==='domino'?'Domino-compound':state.automationMode==='compound'?'Auto-compound':'Unrecognized automation mode'} · {state.serviceFeeBps/100}% of consumed earned fees, once. No principal charge or additional automation swap fee.</p>
           <div className="dm-acct-choices">{!recovery&&state.paused&&<Button disabled={busy||!state.rootPermissionValid||state.operator!==client.deployment.operator} onClick={()=>{void action(async()=>{const gen=generation.current,result=await client.resume(state.vault,gas());if(generation.current===gen)setPrepared(result)})}}>Review activation</Button>}<Button variant="outline" disabled={busy||state.paused} onClick={()=>{void action(()=>recover('pause'))}}>Review pause</Button><Button variant="outline" disabled={busy||state.operator==='0x0000000000000000000000000000000000000000'} onClick={()=>{void action(()=>recover('revoke-operator'))}}>Review operator revocation</Button>{state.operator==='0x0000000000000000000000000000000000000000'&&<Button variant="outline" disabled={busy} onClick={()=>{void action(async()=>{const gen=generation.current,result=await client.restoreOperator(state.vault,gas());if(generation.current===gen)setPrepared(result)})}}>Review operator authorisation</Button>}{!state.rootPermissionValid&&<Button variant="outline" disabled={busy} onClick={()=>{void action(()=>recover('rearm-root'))}}>Review root permission repair</Button>}<Button variant="outline" disabled={busy} onClick={()=>{void action(()=>recover('revoke-root'))}}>Review root NFT approval revocation</Button></div>
-          {/* Both were write-once: chosen at creation and unchangeable from this
-              product, though both are onlyOwner on chain. A sequence that met its
-              own maxPositions had no way forward but to be abandoned. */}
           <details className="dm-details dm-acct-disclosure"><summary>Adjust automation rules</summary><div className="dm-acct-disclosure-body">
-            <p className="dm-acct-line dm-acct-wrap">These bound when a successor is opened and how many positions the sequence may hold. The service fee and the paused state are never changed here.</p>
-            {fields(['trigger','overlap','interval','positions'])}<Button className="justify-self-start" variant="outline" disabled={busy} onClick={()=>{void action(changePolicy)}}>Review automation rule change</Button>
+            <p className="dm-acct-line dm-acct-wrap">Choose the mode and its fee, then review the change before signing. The paused state stays unchanged. Simple Auto-compound requires a sequence with only its root registered.</p>
+            {modeChoice('policy',policyMode)}
+            {fields(['trigger','overlap','interval','positions'],policyMode)}<Button className="justify-self-start" variant="outline" disabled={busy||!policyMode} onClick={()=>{void action(changePolicy)}}>Review automation rule change</Button>
           </div></details>
           <details className="dm-details dm-acct-disclosure"><summary>Adjust safety limits</summary><div className="dm-acct-disclosure-body">
             <p className="dm-acct-line dm-acct-wrap">These bound every automated run: the upside a successor must show, the slippage and price impact a swap may take, what the executor may spend on gas, and how stale a price reading may be.</p>

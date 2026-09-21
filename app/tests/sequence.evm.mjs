@@ -26,7 +26,7 @@ const wallet={owner:f.owner,current:()=>current,nonceOffered:n=>claims.has(Strin
   return value;
 }};
 const d=sequenceDeploymentFrom(f.release,now),client=createSequenceClient(wallet,d,()=>now);
-const options={rootTokenId:BigInt(f.root),baseIsCurrency0:!f.native,consentToUncollectedFees:true,triggerDistanceBps:1000,maxOverlapBps:1000,minimumIntervalSeconds:60,maxPositions:4,upsideBps:5000,maxSlippageBps:100,maxPriceImpactBps:100,maxGasCostWei:10n**16n,maxObservationAgeSeconds:120,forecastHorizonSeconds:3600};
+const options={automationMode:'domino',rootTokenId:BigInt(f.root),baseIsCurrency0:!f.native,consentToUncollectedFees:true,triggerDistanceBps:1000,maxOverlapBps:1000,minimumIntervalSeconds:60,maxPositions:4,upsideBps:5000,maxSlippageBps:100,maxPriceImpactBps:100,maxGasCostWei:10n**16n,maxObservationAgeSeconds:120,forecastHorizonSeconds:3600};
 const gas={maxGas:15_000_000n,maxFeePerGas:10_000_000_000n,maxPriorityFeePerGas:1_000_000_000n,reserveWei:10n**14n};
 const check=()=>checks++;
 async function settle(c,step){
@@ -36,12 +36,17 @@ async function settle(c,step){
 }
 assert.equal(sequenceDeploymentFrom({...f.release,available:false,deployment:null},now),null);check();
 assert.throws(()=>sequenceDeploymentFrom({...f.release,deployment:{...f.release.deployment,serviceFeeBps:201}},now));check();
+for(const change of [{dominoServiceFeeBps:undefined},{dominoServiceFeeBps:200},{dominoServiceFeeBps:'400'},{serviceFeeBps:400}]){
+  assert.throws(()=>sequenceDeploymentFrom({...f.release,deployment:{...f.release.deployment,...change}},now),/invalid_sequence_release/);check();
+}
 assert.throws(()=>sequenceDeploymentFrom({...f.release,deployment:{...f.release.deployment,operator:d.pricePublisher}},now));check();
 assert.throws(()=>sequenceDeploymentFrom({...f.release,deployment:{...f.release.deployment,codeHashes:{...d.codeHashes,vault:`0x${'01'.repeat(32)}`}}},now),/clone_template/);check();
 assert.equal((await client.recent()).at(0).vault,f.oldVault);check();
 const root=await client.inspectRoot(BigInt(f.root));assert.equal(root.vault,sequenceIdentity(d,f.owner,1n).vault);check();
 await assert.rejects(client.create({...options,consentToUncollectedFees:false},gas),/consent/);check();
 await assert.rejects(client.create({...options,triggerDistanceBps:2001},gas),/policy/);check();
+await assert.rejects(client.create({...options,automationMode:undefined},gas),/invalid_sequence_policy/);check();
+await assert.rejects(client.create({...options,automationMode:'compound'},gas),/simple_compound_position_limit/);check();
 mode='wrongcode';await assert.rejects(client.create(options,gas),/deployment_code_changed/);mode='normal';check();
 mode='pending';await assert.rejects(client.create(options,gas),/pending_wallet_transaction/);mode='normal';check();
 await assert.rejects(client.create(options,{...gas,maxGas:21000n}),/gas_budget_exceeded/);check();
@@ -51,12 +56,18 @@ await assert.rejects(client.send(approval,false),/review_required/);await assert
 mode='reject';await assert.rejects(client.send(approval,true),/rejected/);assert.equal(wallet.nonceOffered(BigInt(approval.transaction.nonce)),false);check();
 const rejectedRetry=await client.create(options,gas),approvalHash=await settle(client,rejectedRetry);
 await assert.rejects(client.send(rejectedRetry,true),/review_required/);check();
+const simpleCreation=await client.create({...options,automationMode:'compound',maxPositions:1},gas);
+assert.equal(simpleCreation.kind,'create');
+const simpleParams=decodeFunctionData({abi:sequenceAbi,data:simpleCreation.transaction.data}).args[0];
+assert.equal(simpleParams.policy.serviceFeeBps,200);assert.equal(simpleParams.policy.maxPositions,1);
+assert(simpleCreation.summary.some(x=>x.startsWith('Auto-compound: 2%')));check();
 const creation=await client.create(options,gas);assert.equal(creation.kind,'create');
 const params=decodeFunctionData({abi:sequenceAbi,data:creation.transaction.data}).args[0];
-assert.equal(params.policy.paused,true);assert.equal(params.policy.serviceFeeBps,200);assert.equal(params.consentToUncollectedFees,true);
+assert.equal(params.policy.paused,true);assert.equal(params.policy.serviceFeeBps,400);assert.equal(params.consentToUncollectedFees,true);
+assert(creation.summary.some(x=>x.startsWith('Domino-compound: 4%')));
 assert.equal(params.baseCurrency.toLowerCase(),options.baseIsCurrency0?root.key.currency0:root.key.currency1);check();
 const createHash=await settle(client,creation);
-const created=await client.inspect(root.vault);assert.equal(created.paused,true);assert.equal(created.rootPermissionValid,true);assert.equal(created.rootTokenId,BigInt(f.root));check();
+const created=await client.inspect(root.vault);assert.equal(created.paused,true);assert.equal(created.rootPermissionValid,true);assert.equal(created.rootTokenId,BigInt(f.root));assert.equal(created.serviceFeeBps,400);assert.equal(created.automationMode,'domino');check();
 const activation=await client.resume(root.vault,gas);assert.equal(activation.kind,'resume');assert(activation.summary.some(x=>x.includes('Policy version 1')));assert(activation.summary.some(x=>x.includes('Execution gas cost cap')));
 await assert.rejects(client.send(activation,false),/review_required/);check();
 admitted=false;const beforeOff=calls.filter(x=>x.method==='eth_sendTransaction').length;
@@ -67,6 +78,35 @@ mode='wrongcode';await assert.rejects(client.send(activation,true),/deployment_c
 await settle(client,activation);assert.equal((await client.inspect(root.vault)).paused,false);check();
 await assert.rejects(client.resume(root.vault,gas),/sequence_activation_unavailable/);check();
 await settle(client,await client.recover(root.vault,'pause',gas));
+// An owner chooses a mode explicitly. Omission preserves it; every change
+// advances policy/state versions and invalidates already reviewed actions.
+const policyOptions={triggerDistanceBps:900,maxOverlapBps:1000,minimumIntervalSeconds:60,maxPositions:1};
+await assert.rejects(client.setPolicy(root.vault,{...policyOptions,automationMode:null},gas),/invalid_sequence_policy/);check();
+await assert.rejects(client.setPolicy(root.vault,{...policyOptions,automationMode:'compound',maxPositions:2},gas),/simple_compound_position_limit/);check();
+await assert.rejects(client.setPolicy(f.oldVault,{...policyOptions,automationMode:'compound'},gas),/position_limit_below_membership/);check();
+const stalePolicy=await client.setPolicy(root.vault,{...policyOptions,automationMode:'domino',maxPositions:4},gas);
+const toSimple=await client.setPolicy(root.vault,{...policyOptions,automationMode:'compound'},gas);
+const simplePolicy=decodeFunctionData({abi:sequenceAbi,data:toSimple.transaction.data}).args[0];
+assert.equal(simplePolicy.serviceFeeBps,200);assert.equal(simplePolicy.version,2n);assert.equal(simplePolicy.paused,true);
+assert(toSimple.summary.some(x=>x.includes('Service fee: 4%')&&x.includes('New Auto-compound policy: 2%')));
+await assert.rejects(client.send(toSimple,false),/review_required/);check();
+await settle(client,toSimple);
+let policyState=await client.inspect(root.vault);assert.equal(policyState.serviceFeeBps,200);assert.equal(policyState.automationMode,'compound');
+const beforeStale=calls.filter(x=>x.method==='eth_sendTransaction').length;
+await assert.rejects(client.send(stalePolicy,true),/sequence_preparation_changed/);
+assert.equal(calls.filter(x=>x.method==='eth_sendTransaction').length,beforeStale);check();
+const preserved=await client.setPolicy(root.vault,policyOptions,gas);
+assert.equal(decodeFunctionData({abi:sequenceAbi,data:preserved.transaction.data}).args[0].serviceFeeBps,200);
+await settle(client,preserved);
+const simpleActivation=await client.resume(root.vault,gas);
+assert(simpleActivation.summary.some(x=>x.startsWith('Auto-compound: 2%')));check();
+const toDomino=await client.setPolicy(root.vault,{...policyOptions,automationMode:'domino',maxPositions:4},gas);
+assert(toDomino.summary.some(x=>x.includes('Service fee: 2%')&&x.includes('New Domino-compound policy: 4%')));
+await settle(client,toDomino);
+await assert.rejects(client.send(simpleActivation,true),/sequence_preparation_changed/);check();
+policyState=await client.inspect(root.vault);assert.equal(policyState.serviceFeeBps,400);assert.equal(policyState.automationMode,'domino');
+const preservedDomino=await client.setPolicy(root.vault,{...policyOptions,maxPositions:4},gas);
+assert.equal(decodeFunctionData({abi:sequenceAbi,data:preservedDomino.transaction.data}).args[0].serviceFeeBps,400);check();
 mode='wrongreceipt';await assert.rejects(client.receipt(createHash),/deployment_identity_changed/);mode='normal';check();
 mode='reorg';assert.equal((await client.receipt(approvalHash)).state,'reorged');mode='normal';check();
 await assert.rejects(createSequenceClient(wallet,d,()=>now).receipt(createHash),/receipt_not_from_this_review/);check();
