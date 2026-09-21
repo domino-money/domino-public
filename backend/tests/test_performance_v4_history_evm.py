@@ -16,7 +16,6 @@ from test_performance_history_worker import Journal
 import test_execution_v4_receipts_evm as fixture
 
 
-@unittest.skipUnless(os.environ.get('DOMINO_TEST_EVM')=='1','requires isolated local Anvil')
 
 # Kept from the V3 history-worker EVM suite when V3 was retired; the V4
 # history test is its only remaining user.
@@ -34,6 +33,7 @@ class ReducingJournal(Journal):
         result['state'] = self.head['state']
         return result
 
+@unittest.skipUnless(os.environ.get('DOMINO_TEST_EVM')=='1','requires isolated local Anvil')
 class V4PerformanceEvmTests(unittest.TestCase):
     setUpClass=classmethod(fixture.ExecutionV4ReceiptEvmTests.setUpClass.__func__)
     stop=classmethod(fixture.ExecutionV4ReceiptEvmTests.stop.__func__)
