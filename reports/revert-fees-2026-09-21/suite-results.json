@@ -1,0 +1,214 @@
+{
+  "checkedAtUTC": "2026-09-21T17:08:46.607Z",
+  "productionCommit": "0ad5c6f",
+  "basis": "Last successful exact suite result per current authored suite; deterministic Forge test gas is the same metric retained by forge snapshot. Fuzz/invariant means excluded. No second full gas run.",
+  "logs": [
+    {
+      "file": "domino-mode-contracts2.log",
+      "sha256": "a883219241d85ec21eb5372de7fea1d98533360948dc88eede16d2a04eaed14e"
+    },
+    {
+      "file": "domino-mode-contracts-remaining.log",
+      "sha256": "9523fe451aa759eb268baba188bdc39b06548e71304c4a9b29b6b4ca4c5e782d"
+    },
+    {
+      "file": "domino-mode-contracts-fuzz.log",
+      "sha256": "1ce650dfc069ebcd6555e36913753ac5792d441904d7bccfc9d092f5193ff324"
+    }
+  ],
+  "suites": [
+    {
+      "path": "test/DominoCompoundHelper.t.sol",
+      "suite": "DominoCompoundHelperTest",
+      "passed": 12,
+      "log": "domino-mode-contracts-fuzz.log",
+      "testSourceSha256": "e064d70315ccaefa3aa609b077ae29f0c29547afa1335f5ef59475da0d9798b9",
+      "deterministic": 10
+    },
+    {
+      "path": "test/DominoL2Block.t.sol",
+      "suite": "DominoL2BlockTest",
+      "passed": 7,
+      "log": "domino-mode-contracts2.log",
+      "testSourceSha256": "c69a0dd1c446f4d2ed7faa7f583e81233d123854041736191bae803f9bf58f20",
+      "deterministic": 7
+    },
+    {
+      "path": "test/DominoPriceGuardV4.t.sol",
+      "suite": "DominoPriceGuardV4Test",
+      "passed": 16,
+      "log": "domino-mode-contracts2.log",
+      "testSourceSha256": "8eb20bcd01e15ac2b41af38a548bb6c19aac36b7f5c40cd86d6b11ded59b7506",
+      "deterministic": 16
+    },
+    {
+      "path": "test/DominoRoutingArithmetic.t.sol",
+      "suite": "DominoRoutingArithmeticTest",
+      "passed": 9,
+      "log": "domino-mode-contracts2.log",
+      "testSourceSha256": "811c1a3703565cc3a0318f1fab69f54b8c2d5231f3e13b837039643986286ad7",
+      "deterministic": 8
+    },
+    {
+      "path": "test/DominoVaultFactoryV4.t.sol",
+      "suite": "DominoVaultFactoryV4Test",
+      "passed": 5,
+      "log": "domino-mode-contracts2.log",
+      "testSourceSha256": "719d4e8a73cf497071cfbdafb53e8293cee114d9c2a214508491575569b85638",
+      "deterministic": 5
+    },
+    {
+      "path": "test/DominoVaultFactoryV4Creation.t.sol",
+      "suite": "DominoVaultFactoryV4CreationTest",
+      "passed": 30,
+      "log": "domino-mode-contracts2.log",
+      "testSourceSha256": "4c7e806e6b2a0c0f7b1a7a46e6b2db4eae7081fb22c7e5a43d593e5692f705d6",
+      "deterministic": 30
+    },
+    {
+      "path": "test/DominoVaultV4Architecture.t.sol",
+      "suite": "DominoVaultV4ArchitectureTest",
+      "passed": 7,
+      "log": "domino-mode-contracts2.log",
+      "testSourceSha256": "fd69601c76b18e64a856fbe75b3a94b4fcf02e8255e21007bb279f290c3cbb9e",
+      "deterministic": 7
+    },
+    {
+      "path": "test/DominoVaultV4Custody.t.sol",
+      "suite": "DominoVaultV4CustodyTest",
+      "passed": 67,
+      "log": "domino-mode-contracts2.log",
+      "testSourceSha256": "b0bf7cbfd84c42fcfcf58b584b6b7a375b56a447679dd9dc0b8f8bbc125f8eee",
+      "deterministic": 66
+    },
+    {
+      "path": "test/DominoVaultV4Invariants.t.sol",
+      "suite": "DominoVaultV4InvariantsTest",
+      "passed": 6,
+      "log": "domino-mode-contracts2.log",
+      "testSourceSha256": "61289a0699d537565df64d6de32f95515b08cd62bc111a6db385f01bb1668cd8",
+      "deterministic": 1
+    },
+    {
+      "path": "test/ExecutionEncoding.t.sol",
+      "suite": "ExecutionEncodingTest",
+      "passed": 13,
+      "log": "domino-mode-contracts2.log",
+      "testSourceSha256": "ff34fd6bffbae652f9025cdf7299543be6e738e39b17944cb887b7bcfb24bbac",
+      "deterministic": 13
+    },
+    {
+      "path": "test/FeeAccounting.t.sol",
+      "suite": "FeeAccountingTest",
+      "passed": 10,
+      "log": "domino-mode-contracts2.log",
+      "testSourceSha256": "cea1322efd3eea87c2c2077b9e13deb29a12816e1e25c261a8198e90c995636f",
+      "deterministic": 6
+    },
+    {
+      "path": "test/PolicyValidation.t.sol",
+      "suite": "PolicyValidationTest",
+      "passed": 22,
+      "log": "domino-mode-contracts2.log",
+      "testSourceSha256": "7e63782e3b8313ff838494ae5e0f3343ce9e64f2a5854da8d8e83f139767ae76",
+      "deterministic": 19
+    },
+    {
+      "path": "test/audit_anchor/AnchorExecutionEvidence.t.sol",
+      "suite": "AnchorExecutionEvidenceTest",
+      "passed": 1,
+      "log": "domino-mode-contracts2.log",
+      "testSourceSha256": "a35ce75ac5154369f03a5752e9cda0da4cab7c0833343b498592157a34174760",
+      "deterministic": 1
+    },
+    {
+      "path": "test/audit_custody/SetupRefundIsolation.t.sol",
+      "suite": "AuditSetupRefundIsolationTest",
+      "passed": 3,
+      "log": "domino-mode-contracts2.log",
+      "testSourceSha256": "7282dfe8d26b451ef7104a2a5ebdd593a08980e631de9f528ed9572c4f651d66",
+      "deterministic": 3
+    },
+    {
+      "path": "test/audit_engine/EngineFeeConservationAudit.t.sol",
+      "suite": "EngineFeeConservationAuditTest",
+      "passed": 4,
+      "log": "domino-mode-contracts-fuzz.log",
+      "testSourceSha256": "cfebca7b8d7345f4e10db9115eb5ff68c9b714d0c470634366acff4592913fbf",
+      "deterministic": 1
+    },
+    {
+      "path": "test/reference/OfficialDominoExecutionV4.t.sol",
+      "suite": "OfficialDominoExecutionV4Test",
+      "passed": 20,
+      "log": "domino-mode-contracts-remaining.log",
+      "testSourceSha256": "b4357bb06540c30fe0d3296b1fe4c3291cb7e60532e0fb85858b05f8d26ced90",
+      "deterministic": 20
+    },
+    {
+      "path": "test/reference/OfficialV4Compound.t.sol",
+      "suite": "OfficialV4CompoundTest",
+      "passed": 5,
+      "log": "domino-mode-contracts-remaining.log",
+      "testSourceSha256": "dd3ac19f04c65084462fbfcad932b15c5ca9f2c3df9da684c5c66cf8153da248",
+      "deterministic": 5
+    },
+    {
+      "path": "test/setup/DominoSetup.t.sol",
+      "suite": "DominoSetupTest",
+      "passed": 9,
+      "log": "domino-mode-contracts-remaining.log",
+      "testSourceSha256": "39b2c4345e77344c8f864cba7188d1744542c9bdc7f3622e882f07fc564d1629",
+      "deterministic": 9
+    },
+    {
+      "path": "test/setup/OwnerReturnData.t.sol",
+      "suite": "OwnerReturnDataTest",
+      "passed": 3,
+      "log": "domino-mode-contracts-remaining.log",
+      "testSourceSha256": "fbb45a2ba1c7dbf138ab7456b12e889fc4a220fa209668226369f1eb8e6b12da",
+      "deterministic": 3
+    },
+    {
+      "path": "test/setup/SetupRecovery.t.sol",
+      "suite": "SetupRecoveryTest",
+      "passed": 11,
+      "log": "domino-mode-contracts-remaining.log",
+      "testSourceSha256": "10825d232518d72f14c6ffd5069a14de7c3b90e85a331abc2703765145e68357",
+      "deterministic": 11
+    }
+  ],
+  "totalPassed": 260,
+  "totalSuites": 20,
+  "totalDeterministic": 241,
+  "productionArtifacts": {
+    "factory": {
+      "creationCodeHash": "0x4ccdc92255eb09b94849d961cf17dd849019447cc012f6e43d0b816778258d25",
+      "runtimeTemplateHash": "0xd5d36d4ea4be9009f451fdd5801b19d4ed8b75b1acafd786f6102eff71246f55"
+    },
+    "readHelper": {
+      "creationCodeHash": "0xf65e15db95eb7a244bb70bb7253cc82ba11891d6b63bb6306f3272b8754cd847",
+      "runtimeTemplateHash": "0xc2d647a741091d460cc8a2f1ad797e2eebe5c6d56194566f8e6d448f01da03e7"
+    },
+    "routing": {
+      "creationCodeHash": "0x6fad6b56f8cf095714e9dec6776987445310814a5af51ae638819b33d10c3b73",
+      "runtimeTemplateHash": "0x4727e575dd2af4db05e70303b42a424bb1cffb7a2620e1c3f457e2324120bfc4"
+    },
+    "priceGuard": {
+      "creationCodeHash": "0x7370444dad7bf5d11dd1d273e9aa4b7439379ecd4f21ff07a57325763df9404a",
+      "runtimeTemplateHash": "0x6a5d9ceca64f252ab246a9b8e74c80eb20d149b3e8e4f6cbcddbb0cff0112885"
+    },
+    "engine": {
+      "creationCodeHash": "0xcd5cccb8fd7702aeb6d37d1c410b563b072e626e2ac8a6b0ab5c7a283bd06701",
+      "runtimeTemplateHash": "0x22e3b9f9fe254f59aa969e6bf33b1e69655b8bd376fd8e7a8d4207d1ad542416"
+    },
+    "implementation": {
+      "creationCodeHash": "0x568bcfe76f6f008bd2b3e215953bad2ecf9be28ee2d1f532dcc6b8850f50070c",
+      "runtimeTemplateHash": "0xd946962d3cb86a29f9caefadbcab6a4b326a928034660a2654f909395f766237"
+    },
+    "setup": {
+      "creationCodeHash": "0xa3e7d5da7c2d19567a80e8475073036804586bb2bc43624e68998beb5d5b69e5",
+      "runtimeTemplateHash": "0x6060c68a9f15c5c22949ac060554bed17656290f707a0dbb16061d8a015812a6"
+    }
+  }
+}

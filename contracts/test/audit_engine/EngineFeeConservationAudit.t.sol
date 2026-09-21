@@ -36,7 +36,7 @@ contract EngineFeeConservationAuditTest {
         uint128 originalSeed, uint128 chargedSeed, uint128 capSeed,
         uint128 wantedSeed, uint128 priorSeed, uint16 feeSeed
     ) external view {
-        uint16 bps = feeSeed % 201;
+        uint16 bps = feeSeed % 401;
         uint128 original = originalSeed % 1e30;
         uint128 charged = chargedSeed % 1e30;
         uint128 cap = uint128(uint256(capSeed) % (uint256(original) + 1));
@@ -62,7 +62,7 @@ contract EngineFeeConservationAuditTest {
         uint128 originalSeed, uint128 realizedSeed, uint128 chargedSeed,
         uint128 wantedSeed, uint16 feeSeed
     ) external view {
-        uint16 bps = feeSeed % 201;
+        uint16 bps = feeSeed % 401;
         T.CompoundAmounts memory value;
         value.originalBefore = originalSeed % 1e30;
         value.realized = realizedSeed % 1e30;
@@ -89,7 +89,7 @@ contract EngineFeeConservationAuditTest {
     function testFuzzExactOriginalFloorSurvivesRoundingPlateaus(
         uint128 originalSeed, uint128 chargedSeed, uint128 priorSeed, uint16 feeSeed
     ) external view {
-        uint16 bps = feeSeed % 201;
+        uint16 bps = feeSeed % 401;
         uint128 original = originalSeed % 1e30;
         uint128 charged = chargedSeed % 1e30;
         uint128 prior = priorSeed % 1e30;

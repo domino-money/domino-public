@@ -153,7 +153,7 @@ contract DominoCompoundHelperTest {
     }
 
     function testFuzzMaximumAmountsConserveAndChooseMinimalGross(uint128 net, uint16 rawRate) public {
-        uint16 rate = rawRate % 201;
+        uint16 rate = rawRate % 401;
         uint256 maximumNet = uint256(type(uint128).max) - uint256(type(uint128).max) * rate / 10000;
         if (net > maximumNet) {
             vm.expectRevert(Helper.InvalidAmount.selector);

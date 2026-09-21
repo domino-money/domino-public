@@ -1,0 +1,71 @@
+{
+  "checkedAtUTC": "2026-09-21T17:08:46.607Z",
+  "baselineBeforeSha256": "d1e90aa588f55cafe0a95013a33fce16336ac143f180e2d9e11134dda3e1eca5",
+  "baselineAfterSha256": "eb20ac73f846014b795477a6fdc19185eb4b2f0de6f3151652ff0dfb3b4d2610",
+  "deterministicTests": 241,
+  "increased": 90,
+  "decreased": 1,
+  "added": [
+    "DominoCompoundHelperTest:testEveryLowerRateUsesMinimalGrossForExactNet()",
+    "DominoCompoundHelperTest:testEveryUpperRateUsesMinimalGrossForExactNet()",
+    "FeeAccountingTest:testDominoFourPercentUsesConsumedGrossAndOwnerFavoringFloor()",
+    "PolicyValidationTest:testDowngradeRequiresWithdrawingChildrenAndInvalidatesOldPolicy()",
+    "PolicyValidationTest:testTariffIsStrictModeAndSimpleCapacityIsOne()"
+  ],
+  "removed": [
+    "DominoCompoundHelperTest:testEveryAdmittedRateUsesMinimalGrossForExactNet()"
+  ],
+  "largestIncreases": [
+    {
+      "key": "OfficialDominoExecutionV4Test:testAddCeilingBindsEveryActionAndFailsClosed()",
+      "before": 32547745,
+      "after": 32610639
+    },
+    {
+      "key": "OfficialDominoExecutionV4Test:testAddCeilingRefusesInBandCompositionShift()",
+      "before": 31461283,
+      "after": 31524136
+    },
+    {
+      "key": "OfficialDominoExecutionV4Test:testSwapMinimumPartialFillRevocationAndExpiredAtomic()",
+      "before": 30363823,
+      "after": 30426604
+    },
+    {
+      "key": "OfficialDominoExecutionV4Test:testCollectionCapCannotConsumeOldUnallocatedFees()",
+      "before": 30285593,
+      "after": 30348200
+    },
+    {
+      "key": "OfficialDominoExecutionV4Test:testTransientScratchClearsBetweenCallsInOneTransaction()",
+      "before": 30623341,
+      "after": 30685948
+    },
+    {
+      "key": "OfficialDominoExecutionV4Test:testBadGeometryAndIndependentTriggerDenied()",
+      "before": 28763436,
+      "after": 28825952
+    },
+    {
+      "key": "OfficialDominoExecutionV4Test:testCapIncludesRootAndUnconsumedFloorReverts()",
+      "before": 28731709,
+      "after": 28794137
+    },
+    {
+      "key": "OfficialDominoExecutionV4Test:testNettingRejectsInsufficientRealizedAndChargedPath()",
+      "before": 29061265,
+      "after": 29123626
+    },
+    {
+      "key": "OfficialDominoExecutionV4Test:testOfficialNettingParityERC20AndGas()",
+      "before": 29911008,
+      "after": 29973369
+    },
+    {
+      "key": "OfficialDominoExecutionV4Test:testOfficialNettingParityNativeAndGas()",
+      "before": 29702824,
+      "after": 29765185
+    }
+  ],
+  "rationale": "Strict tariff/cap/source guards and 400-bps fixtures deliberately change the gas of policy, creation and execution tests. Tests that deploy the full stack include bytecode deposit and deployment gas; their increases are not per-execution mainnet quotes. Exhaustive rate coverage is split into0..200 and201..400 to bound EVM test memory."
+}
