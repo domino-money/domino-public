@@ -308,6 +308,21 @@ test('every browser suite offers the msedge channel, so Edge-only machines can r
 // relative import these two reach needs the extension the emitted file will
 // have. Emitting inside .test-build (gitignored) lets Node find viem by
 // walking up to app/node_modules, which is what his symlink is for.
+// src/ is TypeScript. A compiled .js beside its .ts is not just clutter: Vite
+// resolves an extensionless import through `.js` BEFORE `.ts`, so a stale emit
+// silently wins over the source it came from, and nothing says so. One reached
+// this repo on 2026-09-21, written by `tsc --outDir` when a `--rootDir` it
+// could not honour sent the emit next to the source instead.
+test('src carries no compiled JavaScript beside its TypeScript', () => {
+  const root = resolve(here, 'src');
+  const walk = (dir) => readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
+    const full = join(dir, entry.name);
+    return entry.isDirectory() ? walk(full) : /\.(js|jsx|mjs|cjs)$/.test(entry.name) ? [full] : [];
+  });
+  const strays = walk(root).map((file) => file.slice(root.length + 1).split(sep).join('/'));
+  assert.deepEqual(strays, [], `compiled files under src/: ${strays.join(', ')}`);
+});
+
 // The deployment pin in src/finance/pin.ts is enforced only by a build whose
 // `__DOMINO_DEPLOYABLE__` define says true. That is safe exactly while every
 // mode writes the define, so a dist always carries a literal and never falls
