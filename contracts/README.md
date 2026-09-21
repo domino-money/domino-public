@@ -1,65 +1,114 @@
 # V4 contracts
 
-The contracts the release deploys: [`DominoVaultV4.sol`](src/DominoVaultV4.sol) is the shipped vault - an owner-bound immutable clone with root subscription/rearm, operator revocation, policy guards and actual token/NFT exits, plus the `execution*` entry points a pinned engine calls inside one authenticated action; the fee-credit sinks are exposed through `executionCredit` and `executionConvert`, behind `_requireExecution`. [`DominoVaultFactoryV4.sol`](src/DominoVaultFactoryV4.sol) clones it, once the deployer has bound the implementation through `finalizeImplementation`. [`DominoExecutionEngineV4.sol`](src/DominoExecutionEngineV4.sol) is the non-custodial engine that holds the pool manager's unlock for one plan; [`DominoRoutingHelperV4.sol`](src/DominoRoutingHelperV4.sol) validates that plan before it runs and is the only production source that imports the vendored Uniswap tree (`FullMath`, `TickMath`, remapped by [`foundry.toml`](foundry.toml) into `test/reference/official-v4/`); [`DominoPriceGuardV4.sol`](src/DominoPriceGuardV4.sol) holds the published price observations every action must anchor to; [`DominoVaultReadHelper.sol`](src/DominoVaultReadHelper.sol) is the fixed stateless helper every clone pins by address and codehash; [`DominoSetup.sol`](src/DominoSetup.sol) is the deployment helper. The standing review of all of them is [CONTRACT_REVIEW_2026-09-19](../reports/CONTRACT_REVIEW_2026-09-19.md), and [V4_AUDIT_PACKAGE_2026-09-21](../reports/V4_AUDIT_PACKAGE_2026-09-21.md) is where an external reviewer starts: the freeze, the scope, the trust model, the known limitations and the index of every finding. Two checks keep the closed tracks closed: `scripts/check-contract-hygiene.mjs` (licence line, one pragma, no leftover markers, no unused or development-only imports) and `scripts/gas-baseline.mjs --check` against the committed [`.gas-snapshot`](.gas-snapshot), the gas of every deterministic test; a rise fails CI and needs a deliberate `--update` in the commit that causes it.
+The release contains seven contracts: the owner-bound immutable `DominoVaultV4`
+clone implementation, its `DominoVaultFactoryV4`, the non-custodial
+`DominoExecutionEngineV4`, `DominoRoutingHelperV4`, `DominoPriceGuardV4`, the
+stateless `DominoVaultReadHelper`, and owner-funded `DominoSetup`. The factory
+deployer finalizes the implementation once; it has no upgrade path. Each vault
+pins its engine and read helper, and its owner individually authorizes an operator.
 
-The V3 lineage - `DominoVault.sol`, `DominoVaultFactory.sol` and `DominoCompoundEngine.sol`: the E2 custody candidate and its same-NFT `compoundSelf` path - was retired on 20 September 2026. It was never publicly deployed and the release order named no V3 artifact. Its tests live on against V4: the custody suite in [`test/shared/CustodyBehaviour.sol`](test/shared/CustodyBehaviour.sol), the factory suite in [`test/DominoVaultFactoryV4Creation.t.sol`](test/DominoVaultFactoryV4Creation.t.sol) and the architecture suite in [`test/DominoVaultV4Architecture.t.sol`](test/DominoVaultV4Architecture.t.sol). Two things V4 does not carry over: `adoptChild` - a V4 vault acquires a child only by minting a successor inside an execution - and `validateAuthority`, whose decision the routing helper makes when it validates a plan. [E2 semantics](../docs/PUBLIC_VAULT_E2.md) and the [V3 compound candidate](../docs/PUBLIC_VAULT_V3_COMPOUND.md) are kept as records of the retired implementation. The #101 recovery refinement they describe - owner NFT exits by `transferFrom` that need no receiver hook, registration checkpoints readable after rearm, a nested root unsubscribe advancing authority during a native exit - is V4 behaviour and is pinned in the shared custody tests.
+Start review with the [corrected audit package](../reports/V4_AUDIT_PACKAGE_2026-09-21.md)
+and [21 September remediation evidence](../reports/V4_REMEDIATION_2026-09-21.md).
+The [execution specification](V4_EXECUTION.md) describes the typed wire,
+accounting and limits. No production signer or user deployment is enabled by
+passing local tests.
 
-`IDominoVaultDraft.sol` is the draft interface V4 takes its `Policy` struct and events from; it is not the V4 ABI. `PolicyValidation.sol` supplies the guards initialization and policy writes use.
+## Execution, fees and setup
 
-`FeeAccounting.sol` implements only the per-currency fee split for a no-swap path: gross used = net added + protocol cut, with unconsumed balances uncharged. The maximum service cut is 200 bps (2%). Floor rounding in integer token base units is an explicit owner-favoring policy. At 200 bps, consuming 49 base units charges zero and consuming 50 charges one; a zero rate and zero consumption are also valid. There is no rounding-up or minimum one-unit toll.
+V4 implements typed GENERAL, NET, FUND and MINT actions: self-compound, bounded
+same-pool fee balancing, successor creation and successor funding. Plans bind
+authority, nonce, deadline, source budgets and price observations. The engine
+measures realized fees, preserves principal and rejects unconsumed exact
+allocations, unpaid AMM debt and failed postconditions atomically. It cannot
+choose an arbitrary router, recipient or wallet debit.
 
-The library deliberately does not choose a universal minimum consumable amount. Its caller must enforce authorized fee-only spending and a reviewed economic minimum that covers the actual path's costs and owner-benefit requirements, or an explicitly capped project subsidy. Repeated dust consumptions remaining arithmetically valid do not make them approved automation. Token decimals, route costs and conservative economic evidence belong in that caller's reviewed policy. This slice implements no such execution planner or economic gate.
+`FeeAccounting.sol` supplies the per-currency split. The engine preserves source
+lineage through swaps and charges at most 200 bps on consumed original earned
+fees, once. Unspent fees and already-charged output are not charged again.
+Integer floor rounding favors the owner: at 200 bps, 49 base units incur zero
+and 50 incur one. This arithmetic is not a profitability threshold; the planner
+still needs qualified costs, price inputs and an economically eligible action.
+See [reinvestment policy](../REINVESTMENT_POLICY.md) and
+[pricing policy](../PRICING_POLICY.md).
 
-The public design removes the inherited 1500 bps liquidity-growth cap in favor of proven fee balances, exact execution budgets and price limits, all of which still need an on-chain execution implementation. Unit/fuzz tests check arithmetic, policy writes and specified authority transitions, not public-vault safety. Bounded fee-balancing swaps require a separate typed interface, accounting extension and review under the [reinvestment policy](../REINVESTMENT_POLICY.md); none is implemented here.
+`DominoSetup` separately implements owner-funded bounded swaps, position minting,
+and pool initialization plus first mint. Its optional assisted-swap tariff is
+capped at 65 bps and does not apply to automated internal swaps. The owner can
+cancel normally or recover either escrow currency independently. Starting
+independent recovery permanently disables swap/mint for that operation while
+preserving the remaining claim; recovery has no service fee. Restrictions on
+the selected token itself can still prevent its transfer. See
+[owner setup and recovery](../docs/OWNER_SETUP_AND_RECOVERY.md).
 
-## Policy write boundary
+On Robinhood Chain 4663, price observations and vault checkpoints use
+`DominoL2Block` to obtain the L2 block number/hash from ArbSys. The shared recent
+window is 255 L2 blocks. Invalid replies fail without falling back to native
+`NUMBER`/`BLOCKHASH`, which have different Nitro semantics. Local Anvil fixtures
+explicitly emulate ArbSys; the separate live read-only probe tests the actual
+chain behavior.
 
-E2 calls `PolicyValidation.validateInitial(policy, 1)` for its actual root-only atomic initialization and `validateUpdate` with the vault's own active membership before storing a new owner policy. Other implementations must preserve those guards. Both require nonzero membership within the policy's position cap. The count must describe the root plus actually registered children, never a supplied count. Enforcing the cap only when fees are later consumed is insufficient. The validator selects no default policy.
+Automated transactions require prefunded native ETH in the operator wallet;
+the publisher funds its own observations. There is no automatic sale of user
+assets, gas reimbursement or wallet top-up. Service revenue reaches the fixed
+recipient in the consumed currency. [Gas funding](V4_EXECUTION.md#who-pays-gas-and-how-the-operator-is-funded)
+describes the signer check and synthetic fork funding.
 
-The former one-argument initialization guard is removed so a caller cannot silently omit membership validation. This changes an internal library call, not a deployed vault ABI. E2 and the synthetic harness both supply membership from their own state. E2 additionally establishes unique membership, authorization and custody atomically; the validator's acceptance of a count alone does not prove those properties.
+## Owner policy and authority
+
+V4 calls `PolicyValidation.validateInitial(policy, 1)` for atomic root-only
+initialization and validates policy updates against its actual active membership.
+The validator chooses no default policy. `IDominoVaultDraft.sol` provides the
+shared policy struct and events; it is not the V4 ABI.
 
 | Field | Enforced domain and meaning |
 | --- | --- |
-| `serviceFeeBps` | 0–200 inclusive; uses the same cap and `ExcessiveFee` error as `FeeAccounting` |
-| `triggerDistanceBps` | 0–2000 inclusive; independent from overlap |
-| `maxOverlapBps` | 0–2000 inclusive; independent from trigger distance |
-| `minimumIntervalSeconds` | 1–4,294,967,295 inclusive; zero is invalid |
-| `maxPositions` | 1–255 inclusive, counting root plus registered children; a write cannot fall below actual membership |
-| `version` | 1 initially, then exactly current + 1; zero, skipped/reused versions and overflow are rejected |
-| `paused` | Explicit initial boolean; policy writes preserve it and dedicated pause/resume calls change it |
+| `serviceFeeBps` | 0–200 inclusive |
+| `triggerDistanceBps` | 0–2000 inclusive, independent from overlap |
+| `maxOverlapBps` | 0–2000 inclusive, independent from trigger distance |
+| `minimumIntervalSeconds` | 1–4,294,967,295 inclusive |
+| `maxPositions` | 1–255, counting root plus active children; cannot fall below actual membership |
+| `version` | 1 initially, then exactly current + 1; overflow is rejected |
+| `paused` | Explicit initial state; policy writes preserve it, dedicated calls change it |
 
-The interval and position type ceilings are representational bounds, **not approved operational/resource caps**. A real deployment must justify any tighter caps without widening approved fee/geometry limits or introducing implicit defaults. Membership comes from vault state, never an operator-supplied number. Fixtures' intervals, rates and position IDs are synthetic test inputs.
+Type ceilings are representational bounds, not approved resource or operational
+limits. Fixture policy values do not establish production defaults.
 
 | Call | Required caller |
 | --- | --- |
 | Read getters | Anyone |
-| `compoundSelf` (implemented by the separate V3 candidate) | Owner or currently registered operator, while unpaused and subject to all execution checks |
-| `setPolicy` | Owner only |
-| `pause` | Owner or currently registered operator for emergency stopping |
-| `resume` | Owner only |
-| Reserve and child-NFT withdrawals | Owner only, including while paused or the service is offline; fixed owner recipient and no exit toll |
+| `execute` | Owner or current operator, while unpaused and subject to all authority, subscription and execution checks |
+| `setPolicy`, `setExecutionLimits`, `setOperator`, `resume`, `rearmRoot` | Owner only |
+| `pause` | Owner or current operator |
+| Reserve, child-NFT and untracked-asset recovery | Owner only, including while paused; fixed owner recipient and no exit toll |
 
-E2 policy writes emit `PolicyChanged(version, stateNonce)`. E2 pause/resume events identify the actor and resulting state nonce; their ABI does not include the policy version used by the old harness. Withdrawal events identify the source/child, fixed owner recipient, actual reserve amounts where applicable, and resulting nonce. They follow the completed transfer. Historical source records still permit recovery of tracked reserves after a child leaves active membership.
+Policy, authority and membership changes invalidate prior plans through the
+state nonce and relevant generation. At terminal counter values, new authority
+is prohibited while owner recovery remains possible without wrap. Saturated
+counters stay saturated and `TerminalRecovery` identifies the exception.
+Historical source records preserve claims after a child leaves active membership.
+The root NFT stays in the owner's wallet under individual approval; successors
+mint to the vault. Recovery does not require an online operator or engine.
 
-The old synthetic harness permits `withdrawFeeReserves(tokenId, 0, 0)` for guard tests without transferring assets. E2 instead rejects all-zero reserve withdrawals, identifies the balance by source ID and current currency, and proves a nonzero transfer before emitting its withdrawal event. Do not treat the old harness's signature or zero-valued records as E2 behavior.
+## Evidence and local verification
 
-Every ordinary completed policy/authority/membership mutation and withdrawal in E2 advances `stateNonce` exactly once. At either counter's terminal value, new authority is prohibited while owner recovery remains possible without wrap; saturated counters remain saturated and `TerminalRecovery` identifies this exception. See the [E2 authority table](../docs/PUBLIC_VAULT_E2.md#authority-policy-and-exhaustion). Resuming must not revive a prior plan. Future financial execution still must enforce complete intent replay protection, deadlines, frequency, measured fee provenance, principal preservation, token compatibility and price bounds. Neither the old harness's freshness check nor E2's richer `validateAuthority` implements `compoundSelf`.
+The V3 `compoundSelf` implementation was retired on 20 September 2026 without
+public deployment. Its custody regressions now run against V4; the
+[E2](../docs/PUBLIC_VAULT_E2.md) and [V3](../docs/PUBLIC_VAULT_V3_COMPOUND.md)
+documents remain historical. V4 has no manual `adoptChild` entry point.
 
-Tests assert exact custom-error bytes, inclusive bounds, rejection before storage changes, independent geometry, registered membership, owner/operator/stranger separation, transition logs, owner exits while paused, stale plans and nonce exhaustion. Fee fuzzing includes raw invalid inputs and dedicated excessive-rate/overspending cases instead of only clamping inputs into a valid domain. No `forge-std` package is needed; a small test-only Foundry log interface inspects emitted logs.
+Official-v4 tests execute actual vendored PoolManager and PositionManager
+implementations. Their upstream provenance and licenses are preserved; those
+reference builds are not byte-identical to the verified mainnet dependency
+builds. [Independent dependency qualification](../reports/v4-remediation-2026-09-21/DEPENDENCY_QUALIFICATION.md)
+records the deployed pins and remaining verification limits. Local evidence is
+not independent certification or proof of live funding, finality or profitability.
 
-The [functional alpha scope](../ALPHA_SCOPE.md) now requires Domino successor creation/funding alongside self-compound. This interface still lacks those typed plans and their fee-balancing swap/accounting implementation; adding them and passing their separate evidence gates is required before alpha activation.
+Development is supported on macOS, Linux and WSL2. Native Windows installation
+and testing are unsupported because the pinned Foundry npm installer uses POSIX
+shell syntax. Use Linux-installed Node 24/Python 3 and a separate Linux checkout
+inside WSL2; do not reuse Windows `node_modules`.
 
-The approved [onboarding scope](../ONBOARDING_AND_POOL_DISCOVERY.md) also needs owner-funded balancing swaps, position creation, advanced bounded pool initialization plus first mint, and native-ETH accounting/refunds. These setup authorities must remain separate from fee-only operator actions. This package implements none of those integrations; a wallet-discovered token or a newly initialized pool does not bypass compatibility checks.
-
-[PRICING_POLICY.md](../PRICING_POLICY.md) proposes a separately capped, owner-reviewed assisted-swap service fee during setup/manual management. The existing 2% earned-fee library does not implement that collection; do not reuse it to charge deposits or add another service charge to automated internal swaps. The setup path requires its own exact-input accounting, fee consent, recipient and recovery tests.
-
-The existing personal contracts, manifests, configuration and deployment are not part of this package. The public design must undergo the independent review described in [SECURITY_SPEC.md](../SECURITY_SPEC.md) before handling assets.
-
-## Local verification, including Windows
-
-Contract development is supported on macOS and Linux, and **inside WSL2 on Windows**. Native Windows Command Prompt/PowerShell installation and contract testing are not supported: the pinned Foundry npm installer uses POSIX shell syntax. Use a separate Linux checkout and Linux-installed Node 24/Python 3 in WSL2; do not reuse Windows `node_modules` in that checkout.
-
-From the repository root inside the supported environment:
+From the repository root:
 
 ```sh
 npm ci
@@ -67,6 +116,25 @@ npm run test:contracts
 npm run check:repository
 ```
 
-Forge, Anvil and solc are pinned in the root lockfile; no global Solidity compiler, wallet, RPC key or funds are required. `scripts/test-contracts.mjs` invokes the pinned native Forge binary directly, sets absolute project/compiler paths (including paths with spaces), stays offline and propagates failed/terminated process status. This avoids the pinned npm launcher's swallowed child exit code. Launcher regressions run before the Solidity suite. Additional Forge filters can be passed with `npm run test:contracts -- --match-test testFloorAtFortyNineAndFiftyBaseUnits`.
+The launcher uses the pinned native Forge binary and absolute offline compiler
+paths, including checkout paths with spaces. By default it runs authored test
+files sequentially, compiling each dependency closure to avoid whole-tree
+solc-js memory exhaustion. Explicit `--match-path` selects one invocation;
+other test filters pass through to each suite. Failed or terminated subprocesses
+fail the command. For example:
 
-The contract command also runs the bytecode gate after Forge. It checks the production vault/helper/factory artifacts, pinned compiler settings, constructor argument sizes and the architecture review reserve. See the [version-2 verification report](../reports/PUBLIC_VAULT_V2_ARCHITECTURE.md) for exact measurements and limits.
+```sh
+node scripts/test-contracts.mjs --match-path test/DominoL2Block.t.sol
+```
+
+The bytecode gate checks all seven release components, exact compiler settings,
+constructor argument sizes, EIP-170/EIP-3860 limits and architecture reserves.
+Current sizes and hashes are in the [artifact manifest](../reports/v4-remediation-2026-09-21/artifact-verification.json).
+Contract hygiene and launcher regressions run before the suite.
+`npm run check:contract-gas` compares deterministic tests with
+[.gas-snapshot](.gas-snapshot); increases require an explained baseline update.
+Test gas is not a live deployment estimate or a complete Nitro transaction cost.
+
+The sibling personal bot, its contracts, credentials and operational database
+are outside this package. Mainnet preparation uses only explicit project inputs
+and the [unsigned release procedure](../docs/FINANCIAL_RELEASE.md).

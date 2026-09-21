@@ -12,13 +12,17 @@ The factory does not embed creation bytecode for the entire architecture.
 Deployment is staged and its implementation may be finalized exactly once:
 
 1. `DominoVaultFactoryV4(poolManager, positionManager, stateView, serviceFeeRecipient)`.
-2. Existing `DominoVaultReadHelper(positionManager, stateView)`.
-3. `DominoRoutingHelperV4()` and `DominoPriceGuardV4(pricePublisher, stateView, maxDeviationBps, guardian)`.
-4. `DominoExecutionEngineV4(factory, readHelper, routingHelper, priceGuard)`.
-5. `DominoVaultV4(factory, poolManager, positionManager, stateView, serviceFeeRecipient, readHelper, engine)`.
-6. The factory deployer calls `finalizeImplementation(implementation)` once.
-7. The NFT owner approves the predicted clone for its root NFT, then calls the
-   factory's existing owner-bound `createVault(InitParams, expectedOwnerNonce)`.
+2. `DominoVaultReadHelper(positionManager, stateView)`.
+3. `DominoRoutingHelperV4()`.
+4. `DominoPriceGuardV4(pricePublisher, stateView, maxDeviationBps, guardian)`.
+5. `DominoExecutionEngineV4(factory, readHelper, routingHelper, priceGuard)`.
+6. `DominoVaultV4(factory, poolManager, positionManager, stateView, serviceFeeRecipient, readHelper, engine)`.
+7. `DominoSetup(poolManager, positionManager, stateView, serviceFeeRecipient, setupFeeBps, tariffVersion)`.
+8. The factory deployer calls `finalizeImplementation(implementation)` once.
+
+These are the eight transactions in the [unsigned release](../docs/FINANCIAL_RELEASE.md).
+After deployment, each NFT owner separately approves the predicted clone for
+its root NFT and calls `createVault(InitParams, expectedOwnerNonce)`.
 
 Before finalization the factory cannot create a sequence. It has no upgrade or
 second-finalization path. Clones use fixed EIP-1167 bytecode. The engine accepts
@@ -105,10 +109,14 @@ arbitrary router or another pool. Partial fills revert. Input/output transfers,
 transient settlement debts, slippage floor and before/after price impact are
 checked. The publisher of `DominoPriceGuardV4` is a separate admitted price
 integrity source, not a spot read relabeled as an independent oracle. Each
-observation binds the pool, canonical recent block hash, timestamp and expiry;
+observation binds the pool, canonical recent L2 block hash, timestamp and expiry;
 revoked, stale, wrong-pool and mismatched-block observations fail. Local publisher
 fixtures prove mechanics only. Live source quality and custody remain deployment
 configuration, with publisher identity pinned separately from the executor.
+On chain 4663, observations and vault checkpoints obtain L2 number/hash from
+ArbSys through `DominoL2Block`, using a shared 255-L2-block window. Native Nitro
+`NUMBER`/`BLOCKHASH` are not substitutes. Missing or malformed ArbSys replies
+fail; the local Anvil emulator is identified separately from the live probe.
 
 The original source ID survives conversion. Output is credited in its new
 currency as `charged`; it is not a new original fee lot or new income. Only the
@@ -179,7 +187,10 @@ Solc `0.8.26+commit.8a97fa7a`, Cancun, optimizer 200, viaIR, metadata hash disab
 The vendored official core/periphery/Permit2 provenance is unchanged in
 [test/reference/official-v4/provenance.json](test/reference/official-v4/provenance.json).
 The runtime uses its MIT FullMath and TickMath; the tests also use SqrtPriceMath;
-tests execute the actual PoolManager and PositionManager, not an effect mock.
+tests execute actual PoolManager and PositionManager reference implementations.
+These vendored builds are not byte-identical to the mainnet dependency builds;
+the [separate qualification](../reports/v4-remediation-2026-09-21/DEPENDENCY_QUALIFICATION.md)
+records their independently verified runtime pins and limits.
 
 The following table is a **historical 13 September measurement**, retained for
 provenance, not the current deployment manifest. Read current sizes and hashes
@@ -210,7 +221,8 @@ converted reuse, root transfer, owner-only unmanaged recovery and helper-indepen
 child exit. The canonical Anvil verifier cases cover the corresponding receipts,
 tampered logs/runtime identities, reorg and exact-allocation settlement.
 
-Gas below is `receipt.gasUsed` from **separate transactions restored from the same
+The historical gas comparison below predates the 21 September ArbSys correction.
+It is `receipt.gasUsed` from **separate transactions restored from the same
 snapshot**, so both paths start with a fresh EVM transaction access list. Policies,
 liquidity, accrued fees and final source/cash/fee state match exactly. The fixture
 uses a 1e12 liquidity increase and actual uncollected fees; this is local gas, not

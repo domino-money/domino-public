@@ -74,3 +74,8 @@ atual do caminho ArbSys por `eth_call` não substitui os recibos finalizados e
 a comparação de bytecodes depois do deploy. Se o RPC público não servir o estado
 finalizado, a verificação exige outro endpoint com essa retenção de estado.
 Procedimento completo: [FINANCIAL_RELEASE](../../docs/FINANCIAL_RELEASE.md).
+
+A rotação do publicador funciona no contrato, mas o verificador das oito
+transações só admite o publicador original. Após uma rotação, o signer bloqueia
+por divergência até existir um procedimento separado de verificação e emissão
+de novos perfis. Alterar o manifesto original não resolve essa admissão.

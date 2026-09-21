@@ -16,6 +16,7 @@ no live execution profile was enabled.
 | V4-A04: unsupported per-vault threshold | Removed the $500 safety interpretation. Shared pool/window exposure can amortize manipulation cost across many executions. | [Economic qualifications](v4-remediation-2026-09-21/ECONOMIC_AND_ROLE_NOTES.md). No universal profitable-attack threshold or on-chain aggregate cap is claimed. |
 | Release artifact mismatch risk | Seven artifacts are checked against current source hashes/compiler settings. Verification requires explicit expected dependency runtime hashes and checks deployer/operator/publisher/guardian EOA code. | [Artifact manifest](v4-remediation-2026-09-21/artifact-verification.json); actual eight-step local deployment and verifier tests. |
 | Unsupported role/coverage claims | Guardian rotation is correctly described as two calls, without independent-key enforcement. Mutation tooling validates all suite summaries and exit status; missing historical batches are identified honestly. | New committed mutation batches and [verdict evidence](v4-remediation-2026-09-21/mutation-results.json). |
+| Incomplete or irreproducible test runs | Fork reports checkpoint each completed scenario atomically, bound scenario RPC work and return failure for incomplete evidence. The default Solidity launcher runs each authored suite separately to avoid whole-tree compiler memory exhaustion. | Focused checkpoint, timeout, cache and launcher regressions; fresh fork reports below. |
 
 The Setup operation tuple and ordinary cancellation event remain unchanged.
 The SDK reads the separate recovery flag, offers independent refunds, binds
@@ -61,14 +62,15 @@ qualifies Nitro block semantics.
 | Financial browser suite | 13 passed; the updated recovery-state browser case also passed individually |
 | Application typecheck, lint and production build | passed |
 | Backend with isolated PostgreSQL and EVM enabled | 2,209 passed, no skipped tests |
-| Final fork metric/provenance module | 10 passed, including 3 additional artifact-binding tests after the full backend run |
+| Final fork metric/provenance/checkpoint module | 17 passed after the final harness updates; this focused rerun follows the full backend run above |
 | Release/RPC tooling | 11 passed, including all eight unsigned transactions deployed and verified on isolated Anvil |
 | Corrected preflight | 17 passed and live current-state compiled probe passed |
 | Mutation tooling | 11 passed |
-| Combined contract tooling suites | 34 passed; contract source hygiene clean |
+| Combined contract tooling suites | 42 passed; contract source hygiene clean |
 | New targeted mutations | 8/8 caught; passing baselines, zero build/application failures or surviving mutations |
 | Solidity suites | **256 passed in 20 suites**, none failed/skipped; [per-suite results](v4-remediation-2026-09-21/suite-results.json) |
 | Gas baseline | Deliberately updated for qualified ArbSys reads and recovery protection; [measured changes](v4-remediation-2026-09-21/gas-changes.json) |
+| Corrected real-pool forks | Wide: 20/20 requested scenarios completed; narrow: 20 completed, four 20% scenarios and the lifecycle unavailable because of upstream state/receipt failures. [Measurements and limits](v4-remediation-2026-09-21/FORK_RESULTS.md). |
 
 The local checkout path exceeded PostgreSQL's Unix-socket length limit. The
 initial database tests failed on that environment condition; the full successful
@@ -97,3 +99,9 @@ reviewable gas/cost caps. The [current preparation checklist](v4-remediation-202
 and [public parameter template](v4-remediation-2026-09-21/public-deployment.template.json)
 preserve those gaps explicitly. Contract correctness evidence does not activate
 the signer/publisher, qualify their funding, or authorize user vaults.
+
+Publisher rotation works on chain, but the existing deployment verifier admits
+only the original constructor publisher. The previously documented claim that
+the same command could re-issue rotated profiles was incorrect and is removed.
+A separate verified rotation/profile admission procedure is still operational
+work; the signer refuses execution after a publisher mismatch.

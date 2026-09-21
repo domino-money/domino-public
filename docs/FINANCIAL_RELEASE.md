@@ -106,13 +106,16 @@ accepts, nothing changes; a proposal to a mistyped address hands the role to
 nobody. The guardian can also `revoke(id)` any observation without the
 publisher key - the emergency brake against a key that is publishing inside
 the band but should not be publishing at all. Observations the old key
-published stay readable until they expire (at most 255 blocks).
+published stay readable until they expire (at most 255 L2 blocks).
 
 Rotation does not admit the new key anywhere else. The sequence profiles name
 `pricePublisher`, and the signer refuses to sign while `publisher()` on the
-guard differs from the admitted address (`execution_v4.py`), so a rotation is
-followed by re-issuing the profiles with the new publisher, through the same
-verified-release path. The guardian must differ from the operator and from
+guard differs from the admitted address (`execution_v4.py`). The eight-transaction
+deployment verifier binds the original publisher to both constructor calldata
+and the current getter; it cannot re-admit a rotated publisher. Editing that
+address in the original manifest invalidates its deployment checks. A separate
+verified rotation/profile admission procedure remains to be implemented before
+automated execution can resume after rotation. The guardian must differ from the operator and from
 the publisher in the initial release inputs. On chain, it can propose itself or
 another address it controls and then accept as that address, gaining publisher
 powers. The handshake prevents accidental assignment to an unaccepted address;

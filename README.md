@@ -13,7 +13,7 @@ Private source repository for a wallet-friendly Uniswap v4 liquidity app on Robi
 - **Wallet sessions candidate:** disabled SIWE backend with private PostgreSQL state and a separate session BFF; plain EOAs only. [Session runbook](docs/WALLET_SESSIONS.md). No frontend hookup or deployed login.
 - **Direct-deposit candidate:** durable owner-bound operations, one wallet-signed step at a time and verified receipts/NFT identity for admitted existing v4 pools. [Deposit runbook](docs/DIRECT_DEPOSITS.md). Disabled; no server signing/broadcast or public activation.
 - **Reviewed-token support:** WETH/USDG proxy profiles, fresh identity/state checks and explicit receipt amount bases in the disabled deposit candidate. Four deposit paths observed on a local Robinhood fork with the reviewed profiles. [Evidence and remaining gates](reports/UPGRADEABLE_ADMISSION_IMPLEMENTATION.md). No public activation or mainnet transactions.
-- **Contracts:** the [V4 vault, factory, engine, routing helper and price guard](contracts/README.md): owner-bound immutable clones, a fixed non-custodial engine that runs one price-anchored plan at a time, and owner exits that need no engine. Local official-v4 and adversarial tests support review; no public financial deployment, signing or swaps are enabled. The V3 general-compound candidate was retired on 20 September 2026. Domino and optimized netting remain separate financial work.
+- **Contracts:** the [seven-component V4 release](contracts/README.md) implements owner-bound immutable clones, typed self-compound/netting/successor actions, owner-funded Setup and independent recovery. Local official-v4 and adversarial tests support review; no public financial deployment, signing or swaps are enabled. The V3 candidate was retired on 20 September 2026. [Current corrections and validation](reports/V4_REMEDIATION_2026-09-21.md) include Nitro L2 block semantics and fresh release artifact pins.
 
 The personal live bot, operator wallet, credentials and operational database are outside this repository. See [implementation status](IMPLEMENTATION_STATUS.md), [alpha scope](ALPHA_SCOPE.md) and [security specification](SECURITY_SPEC.md).
 
@@ -53,7 +53,9 @@ backend/.venv/bin/python scripts/export-onboarding-contract.py --check
 The default Python suite explicitly skips PostgreSQL and native EVM cases. To run the full suite:
 
 ```sh
-node scripts/test-contracts.mjs --match-path test/reference/OfficialDominoCompound.t.sol
+npm --prefix app ci
+node scripts/test-contracts.mjs --match-path test/setup/DominoSetup.t.sol
+node scripts/test-contracts.mjs --match-path test/reference/OfficialDominoExecutionV4.t.sol
 backend/.venv/bin/python backend/dev_postgres.py prepare-tests
 DOMINO_TEST_POSTGRES=1 DOMINO_TEST_EVM=1 backend/.venv/bin/python -m unittest discover -s backend/tests -v
 backend/.venv/bin/python backend/dev_postgres.py stop
@@ -74,7 +76,7 @@ Optional read-only provider setup and API commands are in [backend/README.md](ba
 | `api-contracts/read-v1/` | Shared read schemas, types, validators and fixtures |
 | `api-contracts/session-v1/` | Separate wallet-login schemas, types, validators and fixtures |
 | `bridge/` | Disabled Cloudflare read and session Worker candidates |
-| `contracts/` | Solidity draft interfaces and arithmetic tests |
+| `contracts/` | V4 production contracts, official-pool integration and adversarial regressions |
 | `scripts/` | Pinned compiler wrapper and repository checks |
 | `reports/` | Historical qualification evidence; not current production state |
 

@@ -155,7 +155,7 @@ Stated here so nobody has to find them.
    official contracts in local fixtures; `GENERAL`, the swap path and `MINT` ran on the real
    `weth-usdg` pool.
 6. **The economic figures are point samples.** The fork's fees came from synthetic volume, and
-   the gas figures are one block's readings (1,162,908 L2 gas for a 1,764-byte compound; the L1
+   the historical gas figures predate the ArbSys correction (1,162,908 local receipt gas for a 1,764-byte compound; the L1
    data component read as zero from the live node's `NodeInterface`). The real fee-accrual rate
    of any pool is not measured.
 7. **The service around the contracts is unproven.** Signer, executor, planner and read path
