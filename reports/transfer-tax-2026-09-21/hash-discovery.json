@@ -1,0 +1,28 @@
+{
+  "atUTC": "2026-09-21T18:53:34.047930+00:00",
+  "primaryProjectURL": "https://hashcats.fun/",
+  "projectStatsURL": "https://stats.hashcats.fun/",
+  "projectGitHubURL": "https://github.com/hashcats-dot-fun",
+  "abiAssetURL": "https://hashcats.fun/assets/params-B8MSnpYK.js",
+  "abiAssetSha256": "34beb3bc51fc5c9c6acbff1984a841eade17803c6ed6fbaad13445e1da509c94",
+  "extractedABIFile": "hash-hook-project-abi.json",
+  "extractedABISha256": "f07edaa0596a9972f20f03d1e9fdb1498a105fb85d6fd81e77a4193d0f1018d6",
+  "extraction": "JSON.parse literal array containing currentFee in the project-delivered params asset; no project JS execution",
+  "collectionDiscoveryURL": "https://github.com/Solana0x/hashcats",
+  "collectionLinkageQualification": "Candidate only until collection.hashToken and collection.hook pinned own-node reads; these confirm the requested token and its declared hook.",
+  "failures": [
+    {
+      "url": "https://sourcify.dev/server/v2/contract/4663/0xca757986e932bc55776492cca0b413e9b3d02acc?fields=all",
+      "status": 404
+    },
+    {
+      "url": "https://robinhoodchain.blockscout.com/api/v2/smart-contracts/0xca757986e932bc55776492cca0b413e9b3d02acc",
+      "status": 403
+    }
+  ],
+  "catalogueCoverage": {
+    "url": "https://www.hoodpools.com/data/pools.json",
+    "requestedTokenFound": false,
+    "claim": "No exact token address was found in this fetched catalogue; not evidence of pool absence."
+  }
+}
