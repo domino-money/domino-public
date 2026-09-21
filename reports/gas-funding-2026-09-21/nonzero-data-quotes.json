@@ -1,0 +1,40 @@
+{
+  "capturedAt": "2026-09-21T16:19:29.498139+00:00",
+  "source": "project own Nitro through SSH",
+  "blockNumber": 68923379,
+  "blockHash": "0xbe307cc6ca57f5cd9dc9ac6a3ee319ef3de846f9d78016f53c14d99b9f920207",
+  "quotes": [
+    {
+      "kind": "publish_observation",
+      "calldataBytes": 196,
+      "calldataKeccak256": "0x2caca3ef3c803a693d0098ab54e9acacff31e6a9151fb43fd85e09d7965add2f",
+      "l1DataGasInL2Units": 58257,
+      "baseFeeWei": "52962000",
+      "l1BaseFeeEstimateWei": "510543878"
+    },
+    {
+      "kind": "execute_general",
+      "calldataBytes": 1764,
+      "calldataKeccak256": "0x46e33cf8a01279dd958bfc44c531b51ff8c8edb0bae85f12f3b6b5d4c14f6298",
+      "l1DataGasInL2Units": 116005,
+      "baseFeeWei": "52962000",
+      "l1BaseFeeEstimateWei": "510543878"
+    },
+    {
+      "kind": "execute_swap",
+      "calldataBytes": 1956,
+      "calldataKeccak256": "0x0ace3d411d7f67670cd90b3fbd19bc518a13f7068c8bf03fe828a89dc1916c26",
+      "l1DataGasInL2Units": 122176,
+      "baseFeeWei": "52962000",
+      "l1BaseFeeEstimateWei": "510543878"
+    },
+    {
+      "kind": "execute_mint",
+      "calldataBytes": 1764,
+      "calldataKeccak256": "0x158395b43e3637184e901e658131a2eb94ea28b970861944bb205d477725becd",
+      "l1DataGasInL2Units": 117543,
+      "baseFeeWei": "52962000",
+      "l1BaseFeeEstimateWei": "510543878"
+    }
+  ]
+}

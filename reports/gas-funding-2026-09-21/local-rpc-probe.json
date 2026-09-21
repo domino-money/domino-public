@@ -1,0 +1,68 @@
+{
+  "capturedAt": "2026-09-21T16:11:47.060Z",
+  "source": "Domino own Nitro node via authenticated SSH; direct loopback RPC",
+  "chainId": "0x1237",
+  "clientVersion": "nitro/v3.11.4-7d5ac27/linux-amd64/go1.25.14",
+  "syncing": false,
+  "gasPrice": "0x3240bf0",
+  "priorityFee": "0x0",
+  "snapshots": {
+    "latest": {
+      "number": 68930584,
+      "hash": "0x8adc7145c7f93b131f46987e2c962ff9696cecfd723cd41b8b627cf24cff898c",
+      "parentHash": "0x35c4eca724f23a0b5ce92e604fa4344fba621c3f31b4517a99a04dd8e6c5e2ec",
+      "timestamp": 1790007106,
+      "baseFeePerGas": "0x3240bf0",
+      "poolManagerCode": {
+        "bytes": 24009,
+        "hash": "0xbd3881180b547f5fe817545743cfb4343e96b1bc6640dcd70c106b0066e95626"
+      },
+      "arbGasPrices": [
+        "0",
+        "0",
+        "1053880000000",
+        "20000000",
+        "32694000",
+        "52694000"
+      ]
+    },
+    "safe": {
+      "number": 68923379,
+      "hash": "0xbe307cc6ca57f5cd9dc9ac6a3ee319ef3de846f9d78016f53c14d99b9f920207",
+      "parentHash": "0x0e3a7d5f66aaa3dd597fa81bf3fc04eae25a4238e6a08a2c5ba1f6d9dbd616c2",
+      "timestamp": 1790006387,
+      "baseFeePerGas": "0x324b7d0",
+      "poolManagerCode": {
+        "bytes": 24009,
+        "hash": "0xbd3881180b547f5fe817545743cfb4343e96b1bc6640dcd70c106b0066e95626"
+      },
+      "arbGasPrices": [
+        "1143618286720",
+        "8168702048",
+        "1054760000000",
+        "20000000",
+        "32738000",
+        "52738000"
+      ]
+    },
+    "finalized": {
+      "number": 68919532,
+      "hash": "0x30507a223420f824283235352ee339afed53a9e66414af9f2a1bc565bd3b1028",
+      "parentHash": "0x438d9ac5cc75db954ee4b76388e4a167a8ed7758ec2dab80a63bcf9859db2a8a",
+      "timestamp": 1790006004,
+      "baseFeePerGas": "0x74c87c0",
+      "poolManagerCode": {
+        "bytes": 24009,
+        "hash": "0xbd3881180b547f5fe817545743cfb4343e96b1bc6640dcd70c106b0066e95626"
+      },
+      "arbGasPrices": [
+        "0",
+        "0",
+        "2449120000000",
+        "20000000",
+        "102456000",
+        "122456000"
+      ]
+    }
+  }
+}

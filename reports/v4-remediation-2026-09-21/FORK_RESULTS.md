@@ -26,6 +26,15 @@ zero loss or lifecycle success. The failure does not establish its precise
 pruning cause. Narrow took 1,176 seconds. Wide completed under the newer finite
 budget/checkpoint harness; `complete` applies only to the requested scope.
 
+Later on 21 September, the [project-node follow-up](../gas-funding-2026-09-21/local-fork-narrow-20pct.json)
+completed two controls, all four requested 20% cases and five lifecycle steps in
+15 seconds. Both post-observation cases refused `InvalidPrice`; both
+pre-observation cases executed against the newly published moved price. This is
+a fresh run with its own source state, not a replacement result for the failed
+public-provider attempts. It closes that narrow follow-up coverage gap, without
+establishing universal price protection or live readiness. The [funding study](../GAS_FUNDING_STUDY_2026-09-21.md)
+also records the successful local finalized-state probe and current cost model.
+
 Narrow launched with simulator changes at `c442055`, before embedded artifact
 provenance existed. The controlling audit validated sources/artifacts immediately
 before launch; the [separate artifact record](artifact-verification.json) is

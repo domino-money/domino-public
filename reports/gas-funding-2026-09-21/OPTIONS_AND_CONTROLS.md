@@ -50,6 +50,13 @@ The three asset paths are different:
 
 The unwrap observation is a **source-level candidate**, not present-day execution qualification. The earlier [token review](../UPGRADEABLE_TOKEN_REVIEW.md) qualified ordinary token transfers and approvals; it did not qualify the unwrap path. The token is upgradeable. Recheck the proxy implementation, source-derived authority/backing conditions, and actual treasury account behavior at a fresh block; simulate and fork-test exact token burn and native receipt. Do not equate same-chain WETH unwrapping with withdrawing through the Ethereum bridge. Robinhood documents a roughly seven-day canonical L2-to-L1 challenge window, a different operation. [Robinhood bridging](https://docs.robinhood.com/chain/bridging/).
 
+Follow-up cost sampling in this study executed `withdraw(uint256)` and a separate
+native transfer on an isolated fork of the project node: 47,873 and 21,000 child
+gas respectively. [Measured transaction footprints](gas-measurements-complete.json).
+This supports the cost model for that two-call sequence; `withdrawTo` was not
+executed, and the sample does not replace proxy/custody qualification for a live
+treasury or imply that any mainnet transfer occurred.
+
 Bootstrap cannot depend on future fees. An EOA holding only WETH or stablecoins has no ETH to initiate its own unwrap/swap; the first compound and publication must also happen before their potential service revenue is available. Seed the treasury/refill signer, operator and publisher independently, retain an emergency ETH floor, and refill before that floor is reached. A provider sponsor can front this expense only after a separate option-C integration.
 
 Batch conversion by an economic threshold. Required costs include approval or permit setup, swap/unwrap gas, token transfer/top-up gas, pool charges, price impact, failed/replaced attempts, and the applicable infrastructure charge. A `minOut` does not make a small conversion economical. Execute only if conservative net ETH received exceeds the conversion cost and selected margin, except for an explicit emergency subsidy budget. Do not use the 2% of an unexecuted future job as collateral.

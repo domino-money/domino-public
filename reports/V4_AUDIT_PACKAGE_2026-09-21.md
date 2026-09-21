@@ -167,6 +167,9 @@ setup and manual transactions. The simulator grants synthetic ETH using
 `anvil_setBalance`. The 2% cut on consumed earned fees goes to the immutable fee
 recipient in the consumed currency. No automatic sale or top-up replenishes the
 operator; an insufficient native balance makes the signer refuse execution.
+The [funding study](GAS_FUNDING_STUDY_2026-09-21.md) compares prefunded ETH,
+separate treasury conversion and sponsorship using measured local-fork gas and
+dated Nitro prices. Those are planning scenarios, not activated services.
 
 **Owner recovery.** Setup now exposes `recoverCurrency` and `recoveryStarted`
 without changing the existing operation tuple. A successful partial recovery
@@ -247,19 +250,27 @@ explicit expected verdicts are required; unexpected results fail the command.
 **The fork qualification.** `backend/qualify_execution_fork.py` forks chain 4663 at the head of a
 node, deploys the stack from the built artifacts, gives a synthetic owner a real root position
 in `weth-usdg` through `DominoSetup`, earns it fees against the real pool, and runs one compound
-per scenario from one snapshot. It accepts the official public RPC with `--public-rpc`, or an explicit qualified
-read gateway/loopback source. Local runs install an ArbSys stand-in and record
+per scenario from one snapshot. Prefer the project's qualified local loopback
+source, following [local RPC routing](../docs/LOCAL_RPC_SOURCE.md). Set
+`DOMINO_FORK_SOURCE_URL` to that loopback URL on the node host or through an
+authenticated local tunnel. The explicit `--public-rpc` option bypasses that
+source and is for a deliberate public-provider comparison. Local runs install an ArbSys stand-in and record
 that emulation; only the separate live probe qualifies Nitro block semantics:
 
 ```bash
 backend/.venv/bin/python backend/qualify_execution_fork.py \
-  --public-rpc --rounds 40 --moves 50,90,110,500,2000 \
+  --source-url "${DOMINO_FORK_SOURCE_URL:?set the qualified local loopback RPC URL}" \
+  --rounds 40 --moves 50,90,110,500,2000 \
   --lifecycle --output /tmp/fork.json
 ```
 
 A pruned node keeps state only for its block-age window, so the run starts at the head and must
-finish inside it; each of the recorded runs took about four minutes. Raw outputs are in
-[`fork/`](fork/).
+finish inside it. The finite harness preserves partial evidence and reports an
+incomplete run as a failure. The public narrow run was incomplete; the follow-up
+on the project node completed the 20% cases and lifecycle in 15 seconds. The
+same node served finalized state and passed the compiled L2/dependency preflight.
+See [original fork records](fork/), [local follow-up](gas-funding-2026-09-21/local-fork-narrow-20pct.json)
+and [finalized preflight](gas-funding-2026-09-21/local-finalized-preflight.json).
 
 **The invariants.** `contracts/test/DominoVaultV4Invariants.t.sol` drives a fuzzed owner and
 engine over one vault — credits, converted credits, withdrawals, donations, untracked recovery,

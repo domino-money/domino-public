@@ -44,6 +44,13 @@ remains unavailable on the public endpoint. It is preserved independently and
 never falls back to `latest`. Deployment verification still requires finalized
 state and canonical finalized receipts on an endpoint retaining that state.
 
+Follow-up on the project's own Nitro node succeeded at finalized block
+68,919,532: all three dependency pins/links and the compiled L2 probe passed.
+The earlier public-provider failure was not a qualification of local-node
+availability. [Local evidence](gas-funding-2026-09-21/local-finalized-preflight.json).
+The local-first routing documented by the project should have been checked
+before choosing the explicit public-RPC benchmark mode.
+
 The three external dependency pins were independently qualified from official
 Uniswap address records and Sourcify runtime reconstruction, then compared with
 current mainnet bytes. See [qualification and limitations](v4-remediation-2026-09-21/DEPENDENCY_QUALIFICATION.md).
@@ -72,6 +79,7 @@ qualifies Nitro block semantics.
 | Solidity suites | **256 passed in 20 suites**, none failed/skipped; [per-suite results](v4-remediation-2026-09-21/suite-results.json) |
 | Gas baseline | Deliberately updated for qualified ArbSys reads and recovery protection; [measured changes](v4-remediation-2026-09-21/gas-changes.json) |
 | Corrected real-pool forks | Wide: 20/20 requested scenarios completed; narrow: 20 completed, four 20% scenarios and the lifecycle unavailable because of upstream state/receipt failures. [Measurements and limits](v4-remediation-2026-09-21/FORK_RESULTS.md). |
+| Own-node follow-up | Finalized-state preflight passed at 68,919,532. A fresh narrow fork completed two controls, all four 20% cases and five lifecycle steps in 15 seconds. [Local study and evidence](GAS_FUNDING_STUDY_2026-09-21.md). |
 
 The local checkout path exceeded PostgreSQL's Unix-socket length limit. The
 initial database tests failed on that environment condition; the full successful
@@ -93,6 +101,8 @@ Neither the contract nor the signer automatically sells assets to refill these
 wallets. The signer rejects insufficient native gas balance. The 2% service cut
 on consumed earned fees is paid to the immutable recipient in the consumed
 currency and does not itself convert revenue or top up the operator.
+The [subsequent funding study](GAS_FUNDING_STUDY_2026-09-21.md) quantifies three
+options without activating a treasury service or changing the fee policy.
 
 The remaining production inputs are public role addresses, price deviation
 band, Setup tariff/version, profile expiry, current deployer nonce/balance and

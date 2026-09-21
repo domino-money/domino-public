@@ -69,10 +69,13 @@ Endereços previstos dependem do deployer e do nonce inicial. Uma criação reve
 consome nonce; a ferramenta rejeita a adoção silenciosa de uma sequência deslocada.
 Deploy não cria cofres de usuários, não concede aprovações e não ativa serviços.
 
-O preflight preserva a distinção entre `latest` e `finalized`. A qualificação
-atual do caminho ArbSys por `eth_call` não substitui os recibos finalizados e
-a comparação de bytecodes depois do deploy. Se o RPC público não servir o estado
-finalizado, a verificação exige outro endpoint com essa retenção de estado.
+O preflight preserva a distinção entre `latest` e `finalized`. Em 21/09, o nó
+próprio foi verificado diretamente por SSH: serviu o estado finalizado do bloco
+68.919.532, os três contratos Uniswap com os pins esperados e o teste compilado
+ArbSys. A indisponibilidade anterior era do endpoint público; ela não demonstrava
+um bloqueio no RPC do projeto. [Evidência local](../gas-funding-2026-09-21/local-finalized-preflight.json).
+Essa qualificação não substitui os recibos finalizados e a comparação de bytecodes
+depois do deploy, nem prova retenção ilimitada de histórico no nó podado.
 Procedimento completo: [FINANCIAL_RELEASE](../../docs/FINANCIAL_RELEASE.md).
 
 A rotação do publicador exige proposta do guardião e aceite da nova carteira.
