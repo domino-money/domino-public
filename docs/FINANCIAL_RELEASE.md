@@ -110,17 +110,31 @@ published stay readable until they expire (at most 255 L2 blocks).
 
 Rotation does not admit the new key anywhere else. The sequence profiles name
 `pricePublisher`, and the signer refuses to sign while `publisher()` on the
-guard differs from the admitted address (`execution_v4.py`). The eight-transaction
-deployment verifier binds the original publisher to both constructor calldata
-and the current getter; it cannot re-admit a rotated publisher. Editing that
-address in the original manifest invalidates its deployment checks. A separate
-verified rotation/profile admission procedure remains to be implemented before
-automated execution can resume after rotation. The guardian must differ from the operator and from
+guard differs from the admitted address (`execution_v4.py`). After the proposed
+publisher accepts, use `verify --price-publisher <new-public-address>` to request
+explicit re-admission. Keep the original unsigned package and its eight deployment
+hashes unchanged. The verifier checks those original transactions and immutable
+bindings, then checks that the explicitly named EOA is the current publisher at
+the canonical finalized block. It rejects conflicting operator, guardian,
+fee-recipient and component addresses. It does not discover or accept an unknown
+publisher automatically.
+
+The output profile names the admitted publisher; `publisherAdmission` records
+both original and current addresses, guard, guardian, block and unchanged expiry.
+This works only within the original profile validity window and does not renew
+it. Without this option, verification still requires the original publisher.
+No rotation transaction is signed or sent by the tool, and funding/price-source
+qualification remains separate. The guardian must differ from the operator and from
 the publisher in the initial release inputs. On chain, it can propose itself or
 another address it controls and then accept as that address, gaining publisher
 powers. The handshake prevents accidental assignment to an unaccepted address;
 it does not enforce independent key holders. Keep the guardian outside automated
 services. It cannot widen the immutable band or directly control a vault.
+
+Use the current verifier with `--repo` pointing to the original clean deployment
+checkout named by the manifest's source commit, and add `--price-publisher` to
+the verification command below. Write a new output file; do not edit the original
+manifest or replace historical verification evidence.
 
 ## Wallet execution and partial recovery
 

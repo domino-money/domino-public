@@ -75,7 +75,10 @@ a comparação de bytecodes depois do deploy. Se o RPC público não servir o es
 finalizado, a verificação exige outro endpoint com essa retenção de estado.
 Procedimento completo: [FINANCIAL_RELEASE](../../docs/FINANCIAL_RELEASE.md).
 
-A rotação do publicador funciona no contrato, mas o verificador das oito
-transações só admite o publicador original. Após uma rotação, o signer bloqueia
-por divergência até existir um procedimento separado de verificação e emissão
-de novos perfis. Alterar o manifesto original não resolve essa admissão.
+A rotação do publicador exige proposta do guardião e aceite da nova carteira.
+Depois disso, `verify --price-publisher <novo-endereço>` admite explicitamente o
+publicador atual no bloco finalizado e produz um novo perfil, preservando as oito
+transações originais e a validade existente. O novo endereço deve ser EOA e
+respeitar a separação de papéis. O manifesto original permanece intacto; a opção
+não renova perfis vencidos nem ativa o serviço. Até configurar o perfil verificado,
+o signer bloqueia a divergência de publicador.

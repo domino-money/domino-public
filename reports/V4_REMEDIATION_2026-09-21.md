@@ -17,6 +17,7 @@ no live execution profile was enabled.
 | Release artifact mismatch risk | Seven artifacts are checked against current source hashes/compiler settings. Verification requires explicit expected dependency runtime hashes and checks deployer/operator/publisher/guardian EOA code. | [Artifact manifest](v4-remediation-2026-09-21/artifact-verification.json); actual eight-step local deployment and verifier tests. |
 | Unsupported role/coverage claims | Guardian rotation is correctly described as two calls, without independent-key enforcement. Mutation tooling validates all suite summaries and exit status; missing historical batches are identified honestly. | New committed mutation batches and [verdict evidence](v4-remediation-2026-09-21/mutation-results.json). |
 | Incomplete or irreproducible test runs | Fork reports checkpoint each completed scenario atomically, bound scenario RPC work and return failure for incomplete evidence. The default Solidity launcher runs each authored suite separately to avoid whole-tree compiler memory exhaustion. | Focused checkpoint, timeout, cache and launcher regressions; fresh fork reports below. |
+| Publisher rotation/profile mismatch | Explicit `verify --price-publisher` re-admits the finalized current EOA while preserving original deployment transactions, immutable bindings, role separation and profile expiry. Ordinary verification still requires the original publisher. | Actual Anvil proposal/acceptance, CLI output and SDK parsing; rejects pre-acceptance, wrong/conflicting/code-bearing addresses and altered original manifests. |
 
 The Setup operation tuple and ordinary cancellation event remain unchanged.
 The SDK reads the separate recovery flag, offers independent refunds, binds
@@ -63,7 +64,7 @@ qualifies Nitro block semantics.
 | Application typecheck, lint and production build | passed |
 | Backend with isolated PostgreSQL and EVM enabled | 2,209 passed, no skipped tests |
 | Final fork metric/provenance/checkpoint module | 17 passed after the final harness updates; this focused rerun follows the full backend run above |
-| Release/RPC tooling | 11 passed, including all eight unsigned transactions deployed and verified on isolated Anvil |
+| Release/RPC tooling | 12 passed, including all eight unsigned transactions deployed and verified, publisher rotation/re-admission and consumer parsing on isolated Anvil |
 | Corrected preflight | 17 passed and live current-state compiled probe passed |
 | Mutation tooling | 11 passed |
 | Combined contract tooling suites | 42 passed; contract source hygiene clean |
@@ -100,8 +101,7 @@ and [public parameter template](v4-remediation-2026-09-21/public-deployment.temp
 preserve those gaps explicitly. Contract correctness evidence does not activate
 the signer/publisher, qualify their funding, or authorize user vaults.
 
-Publisher rotation works on chain, but the existing deployment verifier admits
-only the original constructor publisher. The previously documented claim that
-the same command could re-issue rotated profiles was incorrect and is removed.
-A separate verified rotation/profile admission procedure is still operational
-work; the signer refuses execution after a publisher mismatch.
+Publisher rotation now has an explicit read-only profile re-admission path.
+It preserves the original expiry and cannot renew expired profiles. Until the
+new verified profile is configured, the signer refuses a publisher mismatch;
+verification itself does not activate the services or qualify the new price source.
