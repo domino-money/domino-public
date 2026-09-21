@@ -243,4 +243,5 @@ The wallet's reviewed automation mode sets the corresponding Policy rate. The
 existing Policy tuple is unchanged; its exact rate is the canonical mode signal.
 Simple mode has one root and no successor authority. A change is an owner-signed
 policy update, not a backend tariff override. Setup retains its independent
-65-bps maximum; the 200-bps assisted-swap proposal is not activated.
+65-bps maximum. The owner confirmed no additional fee on internal automation
+swaps; the earlier 200-bps swap study does not authorize a release tariff.

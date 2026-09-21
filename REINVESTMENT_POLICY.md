@@ -1,6 +1,6 @@
 # Reinvestment objective — public product
 
-Updated 21 September 2026: simple Auto-compound is 2%, Domino-compound is 4%, per mode for every execution. Gas is initially funded manually by the company. The additional 2% swap charge remains a study, not an enabled tariff. Supersedes the inherited 15% addition cap in the public-product scenario. This is a product requirement, not authority to change the personal deployment.
+Updated 21 September 2026: simple Auto-compound is 2%, Domino-compound is 4%, per mode for every execution. Gas is initially funded manually by the company. The owner confirmed that internal swaps remain included in the mode fee; the additional 2% swap charge will not be implemented for this release. Supersedes the inherited 15% addition cap in the public-product scenario. This is a product requirement, not authority to change the personal deployment.
 
 ## Objective and implementation boundary
 

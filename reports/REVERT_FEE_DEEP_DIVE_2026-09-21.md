@@ -6,8 +6,10 @@ A tarifa segue o modo escolhido em toda execução. O operador começa com ETH
 abastecido manualmente pela empresa; o próximo serviço operacional será a
 conversão e reposição limitadas usando receita já recebida pela tesouraria.
 
-**Recomendação para swaps:** manter os swaps internos incluídos na tarifa do modo.
-A cobrança adicional de 2% sobre o swap foi estudada, mas não foi ativada. Para
+**Decisão confirmada para swaps:** manter os swaps internos incluídos na tarifa
+do modo. A cobrança adicional de 2% sobre o swap foi estudada e descartada para
+esta versão. O código já implementa essa decisão em contratos, backend, SDK,
+interface e perfis de release. Para
 swaps assistidos de depósito/gestão manual, já existe política e implementação
 separadas com teto de **0,65%**; a tarifa/versionamento concretos de produção ainda
 precisam ser selecionados. Um aumento desse teto para 2% seria outra decisão
@@ -61,7 +63,9 @@ Este estudo não afirma ter qualificado a tarifa de uma transação real da Reve
 
 ## Cobrar mais 2% sobre o swap
 
-A proposta tem duas interpretações, com efeitos diferentes:
+Estudo histórico da alternativa não adotada. A decisão confirmada mantém os
+swaps internos incluídos nos 2%/4%. A proposta tinha duas interpretações, com
+efeitos diferentes:
 
 1. **Swap assistido de capital do usuário:** o dono escolhe o orçamento e assina
    a troca. Já existe o teto de 0,65% no Setup. Em US$ 500 de orçamento de swap,
@@ -91,9 +95,9 @@ sempre mostrar orçamento bruto, fee, entrada líquida no DEX e saída mínima l
 
 A tarifa de 4% já cria mais margem para o gas do Domino. Cobrar também sobre o
 swap aumenta o custo quando o balanceamento é necessário e cria incentivo para
-executar mais swaps. A recomendação é preservar **uma cobrança de serviço por
-modo**, e avaliar preços competitivos separados apenas para swaps assistidos
-solicitados pelo usuário. Benefício do dono e sustentabilidade do operador
+executar mais swaps. O usuário confirmou a recomendação de preservar **uma cobrança
+de serviço por modo**. A avaliação de preços competitivos separados se aplica
+apenas a swaps assistidos solicitados pelo usuário. Benefício do dono e sustentabilidade do operador
 continuam critérios independentes.
 
 ## Efeito dos 4% sobre sustentabilidade

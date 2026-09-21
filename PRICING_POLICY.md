@@ -9,9 +9,11 @@ is the launch path; bounded automatic conversion/refill of company revenue is th
 next operational feature.
 
 The earlier 9 September assisted-swap boundary remains: at most 0.65% of the
-consumed owner-selected swap budget. An additional **2% of swap value is under
-study, not selected or activated**. It must not be silently stacked on the 2%/4%
-automation charge. The [contract-level Revert review](reports/REVERT_FEE_DEEP_DIVE_2026-09-21.md)
+consumed owner-selected swap budget. The owner confirmed that **internal automation
+swaps remain included in the mode fee, with no additional 2% swap charge**.
+The surcharge study is closed for this release. The separate assisted-swap
+boundary does not apply to internal automated balancing or reinvestment.
+The [contract-level Revert review](reports/REVERT_FEE_DEEP_DIVE_2026-09-21.md)
 separates source behavior, published prices and unverified live settings.
 
 The V4 mode implementation and deployment artifacts must agree before release.

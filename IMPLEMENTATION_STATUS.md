@@ -6,7 +6,8 @@ The owner selected 2% simple / 4% Domino pricing, manual gas funding first and
 automated company-treasury refill later. [The fee review](reports/REVERT_FEE_DEEP_DIVE_2026-09-21.md)
 records implementation, verification and remaining deployment inputs. Setup already
 implements its separately capped 65-bps collection path; the live tariff/version
-remain unselected. No additional 2% automation-swap fee is active.
+remain unselected. The owner confirmed that internal automation swaps stay
+included in the 2%/4% mode fee; the additional 2% swap charge is not part of this release.
 
 
 10 September 2026. Scope: the first reviewable product package, not a production financial launch.
