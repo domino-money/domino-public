@@ -59,11 +59,18 @@ contract DominoSetup {
     mapping(address => uint64) public ownerNonce;
     bool private _entered;
     bytes32 private _callback;
+    // Kept outside Operation so existing operation() decoders remain valid.
+    mapping(bytes32 => bool) public recoveryStarted;
     error InvalidSetup();
     event SetupFunded(bytes32 indexed operationId, address indexed owner, bytes32 indexed poolId, uint128 amount0, uint128 amount1);
     event SetupSwapped(bytes32 indexed operationId, address indexed owner, bool zeroForOne, uint128 grossInput, uint128 serviceFee, uint128 netInput, uint128 output, uint64 tariffVersion);
     event SetupMinted(bytes32 indexed operationId, address indexed owner, uint256 indexed tokenId, uint128 liquidity, uint128 amount0, uint128 amount1);
     event SetupClosed(bytes32 indexed operationId, address indexed owner, uint128 refund0, uint128 refund1);
+    /// @dev The amount debited from escrow need not equal the owner's net balance
+    /// increase (transfer taxes or an owner's forwarding hook). The two balance
+    /// observations describe the actual net receipt without claiming otherwise.
+    event SetupCurrencyRecovered(bytes32 indexed operationId, address indexed owner, address indexed currency,
+        uint128 debitedAmount, uint256 ownerBalanceBefore, uint256 ownerBalanceAfter);
 
     constructor(address manager_, address positions_, address view_, address recipient_, uint16 feeBps_, uint64 version_) {
         if (manager_.code.length == 0 || positions_.code.length == 0 || view_.code.length == 0
@@ -101,6 +108,7 @@ contract DominoSetup {
 
     function swap(SwapPlan calldata plan) external locked returns (uint128 output) {
         Operation storage op = _owned(plan.operationId);
+        if (recoveryStarted[plan.operationId]) revert InvalidSetup();
         _deadline(plan.deadline);
         if (op.swapped || plan.grossInput == 0 || plan.minOutput == 0
             || plan.grossInput > (plan.zeroForOne ? op.balance0 : op.balance1)) revert InvalidSetup();
@@ -116,6 +124,7 @@ contract DominoSetup {
 
     function mint(MintPlan calldata plan) external locked {
         Operation storage op = _owned(plan.operationId);
+        if (recoveryStarted[plan.operationId]) revert InvalidSetup();
         _deadline(plan.deadline);
         if (plan.liquidity == 0 || plan.liquidity > uint128(type(int128).max)
             || plan.tickLower < -887272 || plan.tickUpper > 887272 || plan.tickLower >= plan.tickUpper
@@ -136,8 +145,36 @@ contract DominoSetup {
     }
 
     /// @notice Always available to the owner, including after deadline or with
-    /// every Domino service stopped. No fee on a direct exit.
-    function cancel(bytes32 id) external locked { Operation storage op = _owned(id); _close(id, op); }
+    /// every Domino service stopped. No fee on a direct exit. If either currency
+    /// cannot be returned, recoverCurrency can return the other independently.
+    function cancel(bytes32 id) external locked {
+        Operation storage op = _owned(id);
+        recoveryStarted[id] = true;
+        _close(id, op);
+    }
+
+    /// @notice Recover only the selected owner's claim, without a pool call or
+    /// service fee. The first successful recovery permanently disables swaps and
+    /// mints; a restricted currency stays claimable until it can be transferred.
+    function recoverCurrency(bytes32 id, address currency, uint128 amount) external locked {
+        Operation storage op = _owned(id);
+        if (amount == 0) revert InvalidSetup();
+        if (currency == op.key.currency0) {
+            if (amount > op.balance0) revert InvalidSetup();
+            op.balance0 -= amount;
+        } else if (currency == op.key.currency1) {
+            if (amount > op.balance1) revert InvalidSetup();
+            op.balance1 -= amount;
+        } else revert InvalidSetup();
+        recoveryStarted[id] = true;
+        op.closed = op.balance0 == 0 && op.balance1 == 0;
+        (uint256 beforeOwner, uint256 afterOwner) = _refund(currency, op.owner, amount);
+        emit SetupCurrencyRecovered(id, op.owner, currency, amount, beforeOwner, afterOwner);
+        // As with cancel, these amounts cover only this closing transaction.
+        // SetupCurrencyRecovered is its receipt detail, not an additional refund.
+        if (op.closed) emit SetupClosed(id, op.owner,
+            currency == op.key.currency0 ? amount : 0, currency == op.key.currency1 ? amount : 0);
+    }
 
     function unlockCallback(bytes calldata data) external returns (bytes memory) {
         if (msg.sender != address(manager) || !_entered || _callback == bytes32(0) || keccak256(data) != _callback) revert InvalidSetup();
@@ -250,5 +287,21 @@ contract DominoSetup {
         if (!success || (currency != address(0) && result.length != 0 && (result.length != 32 || !abi.decode(result, (bool))))
             || _balance(currency) != beforeValue - amount
             || (currency != address(0) && IERC20E2(currency).balanceOf(to) != beforeRecipient + amount)) revert InvalidSetup();
+    }
+
+    /// @dev Recovery keeps exact escrow debits but permits an owner to accept a
+    /// reduced or forwarded receipt. Swap settlement, service fees and automatic
+    /// mint refunds continue to use _send's exact debit-and-credit checks.
+    function _refund(address currency, address to, uint128 amount)
+        private returns (uint256 beforeOwner, uint256 afterOwner)
+    {
+        uint256 beforeValue = _balance(currency);
+        beforeOwner = currency == address(0) ? to.balance : IERC20E2(currency).balanceOf(to);
+        bool success; bytes memory result;
+        if (currency == address(0)) (success,) = to.call{value: amount}("");
+        else (success, result) = currency.call(abi.encodeCall(IERC20E2.transfer, (to, amount)));
+        if (!success || (currency != address(0) && result.length != 0 && (result.length != 32 || !abi.decode(result, (bool))))
+            || _balance(currency) != beforeValue - amount) revert InvalidSetup();
+        afterOwner = currency == address(0) ? to.balance : IERC20E2(currency).balanceOf(to);
     }
 }

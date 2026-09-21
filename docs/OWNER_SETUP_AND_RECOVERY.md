@@ -41,6 +41,32 @@ that means its remaining inputs and actual output; cancellation never swaps
 back or charges again. Cancellation does not need a Domino session, private
 backend, operator, or running executor.
 
+If one token is paused, frozen or otherwise cannot be transferred, call
+`recoverCurrency(operationId, currency, amount)` from the operation's owner to
+return an available currency independently. The currency must be one of that
+operation's two currencies; the nonzero raw amount cannot exceed its remaining
+balance. Native currency uses the zero address. Recovery always pays the fixed
+owner and charges no service fee. A failed transfer leaves that claim intact.
+
+The first successful partial recovery sets `recoveryStarted(operationId)` and
+permanently disables mint and swap for that operation. Read both remaining
+balances through the unchanged `operation(operationId)` getter. A restricted
+token remains claimable; recover it later when its transfer is available, or
+use `cancel` to return all remaining balances together. The operation closes
+only once both balances reach zero. Recovery works without the pool manager,
+position manager, read dependency or Domino services.
+
+Recovery requires the setup contract's balance to decrease by exactly the
+debited claim. It lets the owner accept a transfer tax or forward tokens from a
+receipt hook; this does not weaken transfer checks for swap funding, service
+fees or minting. `SetupCurrencyRecovered` records the escrow debit and the
+owner's actual balances before and after the transfer. Their difference is a
+net balance change, not a promise that the owner retained the nominal amount.
+The final partial recovery also emits `SetupClosed`; its refund fields cover
+only that final transaction. The two events describe the same transfer and
+must not be counted twice. Ordinary successful `cancel` keeps its existing
+single `SetupClosed` receipt and refund amounts.
+
 ## Sequences
 
 A root NFT remains in its owner's wallet. Creation first approves only that
@@ -90,3 +116,6 @@ accounting, owner isolation, exact reviews, chain/account changes, canonical
 receipts and ambiguous/rejected wallet responses. The sequence SDK is also
 exercised against real local EVM transactions. These tests do not claim a
 funded mainnet deployment, live private session or an actual-wallet trial.
+Focused setup recovery tests additionally cover independent currency claims,
+restricted tokens, tax receipts, excessive debits, unavailable dependencies,
+cross-owner isolation and token/owner callback reentrancy.

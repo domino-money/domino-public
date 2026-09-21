@@ -16,6 +16,9 @@ contract OwnerReturningBytes {
         id=setup.nextOperationId(address(this));setup.open{value:amount}(id,key,amount,amount);
     }
     function cancel(DominoSetup setup,bytes32 id) external { setup.cancel(id); }
+    function recover(DominoSetup setup,bytes32 id,address currency,uint128 amount) external {
+        setup.recoverCurrency(id,currency,amount);
+    }
     function mint(DominoSetup setup,bytes32 id) external {
         setup.mint(DominoSetup.MintPlan(id,-600,600,1e18,1e20,1e20,uint160(1<<95),uint160(1<<97),uint160(1<<96),uint64(block.timestamp+120)));
     }
@@ -41,5 +44,12 @@ contract OwnerReturnDataTest {
         require(positions.ownerOf(1)==address(owner) && positions.getPositionLiquidity(1)==1e18,"owner root NFT");
         require(address(owner).balance>0 && address(setup).balance==0,"mint remainder refunded");
         require(setup.operation(id).closed,"closed exactly once");
+    }
+    function testPartialRecoveryAcceptsNativeReceiverReturningFalseBytes() external {
+        (DominoSetup setup,,OwnerReturningBytes owner,T.PoolKey memory key)=_fixture();
+        bytes32 id=owner.open(setup,key,1e20);owner.recover(setup,id,address(0),1e20);
+        require(address(owner).balance==1e20 && setup.operation(id).balance1==1e20,"native recovery");
+        owner.recover(setup,id,key.currency1,1e20);
+        require(setup.operation(id).closed,"closed after both recoveries");
     }
 }

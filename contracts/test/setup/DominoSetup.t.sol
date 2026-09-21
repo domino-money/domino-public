@@ -73,6 +73,19 @@ contract DominoSetupTest {
         require(_balance(key.currency1, address(this)) == before + op.balance1 && _balance(key.currency0, TREASURY) == fee, "recovery conservation");
         (bool again,) = address(setup).call(abi.encodeCall(setup.cancel, (id))); require(!again, "duplicate refund");
     }
+    function testPartialRecoveryAfterSwapReturnsBothClaimsWithoutRepeatingFee() public {
+        _deploy(true); _seed(); bytes32 id = _open(1e18, 0); _swap(id, 1);
+        DominoSetup.Operation memory beforeOp = setup.operation(id);
+        uint256 fee = TREASURY.balance;
+        uint256 tokenBefore = _balance(key.currency1, address(this));
+        setup.recoverCurrency(id, key.currency0, beforeOp.balance0);
+        require(setup.recoveryStarted(id) && !setup.operation(id).closed
+            && setup.operation(id).balance1 == beforeOp.balance1, "post-swap claim retained");
+        setup.recoverCurrency(id, key.currency1, beforeOp.balance1);
+        require(setup.operation(id).closed && setup.operation(id).swapped
+            && _balance(key.currency1, address(this)) == tokenBefore + beforeOp.balance1
+            && TREASURY.balance == fee, "post-swap recovery charged or lost output");
+    }
     function testSwapMinimumRevertsFeeAndInputThenRetryIsSingleEffect() public {
         _deploy(false); _seed(); bytes32 id = _open(1e14, 0);
         (bool ok,) = address(setup).call(abi.encodeCall(setup.swap, (DominoSetup.SwapPlan(id, true, 1e14, 1e20, 4_295_128_740, uint64(block.timestamp + 120)))));
