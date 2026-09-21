@@ -1,0 +1,1493 @@
+{
+  "schemaVersion": 1,
+  "generatedAtUTC": "2026-09-21T16:30:50.121595+00:00",
+  "status": "planning scenarios, not live complete-transaction quotes or profitability forecasts",
+  "calculatorSha256": "98ad44a96c3c6c4fe17543c655ee844d92bda1919e879530c664ea54ab9afc5f",
+  "sourceManifest": [
+    {
+      "path": "reports/gas-funding-2026-09-21/local-rpc-probe.json",
+      "sha256": "67701c2671e45c2c68c4d42420c765ddc5aa5fc61a081c84bfbb12f6bf9a2def",
+      "basis": "evidence or reviewed production source; not executed by this calculator"
+    },
+    {
+      "path": "reports/gas-funding-2026-09-21/gas-measurements.json",
+      "sha256": "9d870634c81e47d09efd9b9b3da34dfa6b7bd9bbc24b60d692c449469d5400de",
+      "basis": "evidence or reviewed production source; not executed by this calculator"
+    },
+    {
+      "path": "reports/gas-funding-2026-09-21/gas-measurements-complete.json",
+      "sha256": "dbaa9a4133151c389a6ba8983fa89a94bd61e200f52d3a46f078abb2ebae4dd1",
+      "basis": "evidence or reviewed production source; not executed by this calculator"
+    },
+    {
+      "path": "reports/gas-funding-2026-09-21/nonzero-data-quotes.json",
+      "sha256": "df16d7633cbbf117747f00d70fcffed78cb4cf8a9d1bf8f9a833ef62b9051c86",
+      "basis": "evidence or reviewed production source; not executed by this calculator"
+    },
+    {
+      "path": "reports/gas-funding-2026-09-21/local-fork-narrow-20pct.json",
+      "sha256": "e88e341d6caf48329d766655cb9a383feb9fac4172d7be7619f60c732f967606",
+      "basis": "evidence or reviewed production source; not executed by this calculator"
+    },
+    {
+      "path": "reports/fork/weth-usdg-wide-remediated-2026-09-21.json",
+      "sha256": "0bd58cf3a885d16beb62ac4efd20c7313e0b9317c97c649001d7a305786d57c7",
+      "basis": "evidence or reviewed production source; not executed by this calculator"
+    },
+    {
+      "path": "PRICING_POLICY.md",
+      "sha256": "08dc3ffcfaf642a0b3ea914fdff36d19233348892bc1621959a1fa0b0407d75d",
+      "basis": "evidence or reviewed production source; not executed by this calculator"
+    },
+    {
+      "path": "REINVESTMENT_POLICY.md",
+      "sha256": "664d4794cf941e77efb945482e946ee971373d0ce49468dc2863d47b6d149457",
+      "basis": "evidence or reviewed production source; not executed by this calculator"
+    },
+    {
+      "path": "backend/execution_planner.py",
+      "sha256": "3cc2baa2aec771e56b74a98853feef46df57812f708fbdb5b86ae6b15cbd4807",
+      "basis": "evidence or reviewed production source; not executed by this calculator"
+    },
+    {
+      "path": "backend/execution_signer.py",
+      "sha256": "ec777f348502856c6605310e3ed64e81cf2cc9f076aa72f517c1e2b89fa84ed1",
+      "basis": "evidence or reviewed production source; not executed by this calculator"
+    }
+  ],
+  "inputs": {
+    "chainId": 4663,
+    "baselineGasPriceWei": "52694000",
+    "gasPriceCapturedAtUTC": "2026-09-21T16:11:47.060Z",
+    "baselineBlock": 68930584,
+    "ethUsd": "2748.79",
+    "ethUsdSource": "https://api.exchange.coinbase.com/products/ETH-USD/ticker",
+    "ethUsdTradeAtUTC": "2026-09-21T16:10:47.868047798Z",
+    "ethUsdRetrievedAtUTC": "2026-09-21T16:10:48.068Z",
+    "serviceRate": "0.02",
+    "realizationHaircutAssumption": "0.003",
+    "policyCostBuffer": "0.15",
+    "allocationToGasAssumption": 1,
+    "failureProbabilityAssumption": ".05",
+    "failedComputeFractionAssumption": ".5",
+    "successesPerPublicationAssumption": 10,
+    "successesPerRefillAssumption": 100,
+    "saleRefillAllInGasEquivalentAssumption": 350000,
+    "observedExecutionGasUpper": {
+      "general": 1175124,
+      "swap": 1497579,
+      "mint": 1895616
+    },
+    "observedExecutionGasLower": {
+      "general": 1157932,
+      "swap": 1440762,
+      "mint": 1737500
+    },
+    "publicationGas": 157278,
+    "nonzeroDataQuotes": {
+      "capturedAt": "2026-09-21T16:19:29.498139+00:00",
+      "source": "project own Nitro through SSH",
+      "blockNumber": 68923379,
+      "blockHash": "0xbe307cc6ca57f5cd9dc9ac6a3ee319ef3de846f9d78016f53c14d99b9f920207",
+      "quotes": [
+        {
+          "kind": "publish_observation",
+          "calldataBytes": 196,
+          "calldataKeccak256": "0x2caca3ef3c803a693d0098ab54e9acacff31e6a9151fb43fd85e09d7965add2f",
+          "l1DataGasInL2Units": 58257,
+          "baseFeeWei": "52962000",
+          "l1BaseFeeEstimateWei": "510543878"
+        },
+        {
+          "kind": "execute_general",
+          "calldataBytes": 1764,
+          "calldataKeccak256": "0x46e33cf8a01279dd958bfc44c531b51ff8c8edb0bae85f12f3b6b5d4c14f6298",
+          "l1DataGasInL2Units": 116005,
+          "baseFeeWei": "52962000",
+          "l1BaseFeeEstimateWei": "510543878"
+        },
+        {
+          "kind": "execute_swap",
+          "calldataBytes": 1956,
+          "calldataKeccak256": "0x0ace3d411d7f67670cd90b3fbd19bc518a13f7068c8bf03fe828a89dc1916c26",
+          "l1DataGasInL2Units": 122176,
+          "baseFeeWei": "52962000",
+          "l1BaseFeeEstimateWei": "510543878"
+        },
+        {
+          "kind": "execute_mint",
+          "calldataBytes": 1764,
+          "calldataKeccak256": "0x158395b43e3637184e901e658131a2eb94ea28b970861944bb205d477725becd",
+          "l1DataGasInL2Units": 117543,
+          "baseFeeWei": "52962000",
+          "l1BaseFeeEstimateWei": "510543878"
+        }
+      ]
+    },
+    "nonzeroDataCostETH": {
+      "publish_observation": "0.000003085407234",
+      "execute_general": "0.00000614385681",
+      "execute_swap": "0.000006470685312",
+      "execute_mint": "0.000006225312366",
+      "treasury_unwrap_weth": "0.000001615129152",
+      "treasury_native_transfer": "0.000001351749126"
+    },
+    "hypotheticalContinuousPublisher": {
+      "intervalSeconds": 25,
+      "perPoolPerDay": 3456,
+      "costUSDZeroPosting": "78.73075949856403968",
+      "costUSDRecordedNonzeroPosting": "108.04156741794518784"
+    },
+    "headerPriceSample": {
+      "count": 61,
+      "secondsSpan": 3604,
+      "minWei": 49996000,
+      "medianWei": 51788000,
+      "maxWei": 491854000
+    },
+    "caveats": [
+      "observed gas upper is not a maximum limit",
+      "baseline price and historical nonzero posting quote are mixed snapshots",
+      "all-in AA overhead and treasury token-sale budgets are assumptions, not measured routes",
+      "USDG is never assumed to equal USD",
+      "no real transactions sent or wallets loaded"
+    ]
+  },
+  "formulas": {
+    "successCostETH": "P * Gs / 1e18 + Ds",
+    "failureCostETH": "P * r * Gs / 1e18 + Ds",
+    "postingQuoteETH": "NodeInterface.l1DataGasInL2Units * SAME_RESPONSE.baseFeeWei / 1e18",
+    "costPerSuccessETH": "Cs + f/(1-f)*Cf + Cp/N + Cr/B + O",
+    "cashBreakEvenConsumedFeesETH": "C / (0.02 * a * (1-h))",
+    "bufferedConsumedFeesETH": "1.15 * C / (0.02 * a * (1-h))",
+    "aaCostETH": "(1+m)*(Cs+P*Ga/1e18 + f/(1-f)*(Cf+P*Ga/1e18) + (Cp+P*Ga_pub/1e18)/N) + Cr/B + A/ETHUSD*(1/(1-f)+1/N)",
+    "N": "successful eligible executions per paid observation publication; includes wasted publications in realized denominator",
+    "B": "successful executions supported per treasury realization/refill batch",
+    "F": "new original earned fee basis consumed; excludes already charged converted lots and principal",
+    "O": "other operating/provider costs allocated per success"
+  },
+  "standaloneExecutionScenarios": [
+    {
+      "recipe": "general",
+      "dataScenario": "observed_zero",
+      "footprint": "low",
+      "gasUsed": 1157932,
+      "costETH": "0.000061016068808",
+      "costUSD": "0.16772035977874232"
+    },
+    {
+      "recipe": "general",
+      "dataScenario": "observed_zero",
+      "footprint": "upper",
+      "gasUsed": 1175124,
+      "costETH": "0.000061921984056",
+      "costUSD": "0.17021053055329224"
+    },
+    {
+      "recipe": "general",
+      "dataScenario": "recorded_nonzero",
+      "footprint": "low",
+      "gasUsed": 1157932,
+      "costETH": "0.000067159925618",
+      "costUSD": "0.18460853193950222"
+    },
+    {
+      "recipe": "general",
+      "dataScenario": "recorded_nonzero",
+      "footprint": "upper",
+      "gasUsed": 1175124,
+      "costETH": "0.000068065840866",
+      "costUSD": "0.18709870271405214"
+    },
+    {
+      "recipe": "swap",
+      "dataScenario": "observed_zero",
+      "footprint": "low",
+      "gasUsed": 1440762,
+      "costETH": "0.000075919512828",
+      "costUSD": "0.20868679766647812"
+    },
+    {
+      "recipe": "swap",
+      "dataScenario": "observed_zero",
+      "footprint": "upper",
+      "gasUsed": 1497579,
+      "costETH": "0.000078913427826",
+      "costUSD": "0.21691644127383054"
+    },
+    {
+      "recipe": "swap",
+      "dataScenario": "recorded_nonzero",
+      "footprint": "low",
+      "gasUsed": 1440762,
+      "costETH": "0.000082390198140",
+      "costUSD": "0.22647335274525060"
+    },
+    {
+      "recipe": "swap",
+      "dataScenario": "recorded_nonzero",
+      "footprint": "upper",
+      "gasUsed": 1497579,
+      "costETH": "0.000085384113138",
+      "costUSD": "0.23470299635260302"
+    },
+    {
+      "recipe": "mint",
+      "dataScenario": "observed_zero",
+      "footprint": "low",
+      "gasUsed": 1737500,
+      "costETH": "0.000091555825",
+      "costUSD": "0.25166773620175"
+    },
+    {
+      "recipe": "mint",
+      "dataScenario": "observed_zero",
+      "footprint": "upper",
+      "gasUsed": 1895616,
+      "costETH": "0.000099887589504",
+      "costUSD": "0.27457000715270016"
+    },
+    {
+      "recipe": "mint",
+      "dataScenario": "recorded_nonzero",
+      "footprint": "low",
+      "gasUsed": 1737500,
+      "costETH": "0.000097781137366",
+      "costUSD": "0.26877981258028714"
+    },
+    {
+      "recipe": "mint",
+      "dataScenario": "recorded_nonzero",
+      "footprint": "upper",
+      "gasUsed": 1895616,
+      "costETH": "0.000106112901870",
+      "costUSD": "0.29168208353123730"
+    }
+  ],
+  "baseline": {
+    "general": {
+      "successETH": "0.000068065840866",
+      "failureETH": "0.000037104848838",
+      "failureAllocationETH": "0.00000195288678094736842105263157894736842",
+      "publisherAllocationETH": "0.0000011373014166",
+      "refillAllocationETH": "0.000000184429",
+      "operatingAllocationETH": "0",
+      "costETH": "0.0000713404580635473684210526315789473684",
+      "costUSD": "0.196099937720498370842105263157894737",
+      "cashBreakEvenConsumedFeesETH": "0.00357775617169244575832761442221401045",
+      "bufferedConsumedFeesETH": "0.00411441959744631262207675658554611202",
+      "bufferedConsumedFeesUSD": "11.3096754452644496724383677347832973"
+    },
+    "swap": {
+      "successETH": "0.000085384113138",
+      "failureETH": "0.000045927399225",
+      "failureAllocationETH": "0.00000241723153815789473684210526315789474",
+      "publisherAllocationETH": "0.0000011373014166",
+      "refillAllocationETH": "0.000000184429",
+      "operatingAllocationETH": "0",
+      "costETH": "0.0000891230750927578947368421052631578947",
+      "costUSD": "0.244980617584221973473684210526315789",
+      "cashBreakEvenConsumedFeesETH": "0.00446956244196378609512748772633690545",
+      "bufferedConsumedFeesETH": "0.00513999680825835400939661088528744127",
+      "bufferedConsumedFeesUSD": "14.1287718265724809174893100353692657"
+    },
+    "mint": {
+      "successETH": "0.000106112901870",
+      "failureETH": "0.000056169107118",
+      "failureAllocationETH": "0.00000295626879568421052631578947368421053",
+      "publisherAllocationETH": "0.0000011373014166",
+      "refillAllocationETH": "0.000000184429",
+      "operatingAllocationETH": "0",
+      "costETH": "0.000110390901082284210526315789473684211",
+      "costUSD": "0.303441404985972015052631578947368422",
+      "cashBreakEvenConsumedFeesETH": "0.00553615351465818508156047088634324027",
+      "bufferedConsumedFeesETH": "0.00636657654185691284379454151929472633",
+      "bufferedConsumedFeesUSD": "17.5003819324908634558939977828221508"
+    }
+  },
+  "publisherAmortization": [
+    {
+      "recipe": "general",
+      "successesPerPublication": 1,
+      "successETH": "0.000068065840866",
+      "failureETH": "0.000037104848838",
+      "failureAllocationETH": "0.00000195288678094736842105263157894736842",
+      "publisherAllocationETH": "0.000011373014166",
+      "refillAllocationETH": "0.000000184429",
+      "operatingAllocationETH": "0",
+      "costETH": "0.0000815761708129473684210526315789473684",
+      "costUSD": "0.224235762568921596842105263157894737",
+      "cashBreakEvenConsumedFeesETH": "0.00409108178600538457477696246634640764",
+      "bufferedConsumedFeesETH": "0.00470474405390619226099350683629836879",
+      "bufferedConsumedFeesUSD": "12.9323534079368022250963416565485931"
+    },
+    {
+      "recipe": "general",
+      "successesPerPublication": 10,
+      "successETH": "0.000068065840866",
+      "failureETH": "0.000037104848838",
+      "failureAllocationETH": "0.00000195288678094736842105263157894736842",
+      "publisherAllocationETH": "0.0000011373014166",
+      "refillAllocationETH": "0.000000184429",
+      "operatingAllocationETH": "0",
+      "costETH": "0.0000713404580635473684210526315789473684",
+      "costUSD": "0.196099937720498370842105263157894737",
+      "cashBreakEvenConsumedFeesETH": "0.00357775617169244575832761442221401045",
+      "bufferedConsumedFeesETH": "0.00411441959744631262207675658554611202",
+      "bufferedConsumedFeesUSD": "11.3096754452644496724383677347832973"
+    },
+    {
+      "recipe": "general",
+      "successesPerPublication": 100,
+      "successETH": "0.000068065840866",
+      "failureETH": "0.000037104848838",
+      "failureAllocationETH": "0.00000195288678094736842105263157894736842",
+      "publisherAllocationETH": "0.00000011373014166",
+      "refillAllocationETH": "0.000000184429",
+      "operatingAllocationETH": "0",
+      "costETH": "0.0000703168867886073684210526315789473684",
+      "costUSD": "0.193286355235656048242105263157894737",
+      "cashBreakEvenConsumedFeesETH": "0.00352642361026115187668267961780077073",
+      "bufferedConsumedFeesETH": "0.00405538715180032465818508156047088634",
+      "bufferedConsumedFeesUSD": "11.1474076489972144171725703426067677"
+    },
+    {
+      "recipe": "swap",
+      "successesPerPublication": 1,
+      "successETH": "0.000085384113138",
+      "failureETH": "0.000045927399225",
+      "failureAllocationETH": "0.00000241723153815789473684210526315789474",
+      "publisherAllocationETH": "0.000011373014166",
+      "refillAllocationETH": "0.000000184429",
+      "operatingAllocationETH": "0",
+      "costETH": "0.0000993587878421578947368421052631578947",
+      "costUSD": "0.273116442432645199473684210526315789",
+      "cashBreakEvenConsumedFeesETH": "0.00498288805627672491157683577046930264",
+      "bufferedConsumedFeesETH": "0.00573032126471823364831336113603969804",
+      "bufferedConsumedFeesUSD": "15.7514497892448334701472839571345616"
+    },
+    {
+      "recipe": "swap",
+      "successesPerPublication": 10,
+      "successETH": "0.000085384113138",
+      "failureETH": "0.000045927399225",
+      "failureAllocationETH": "0.00000241723153815789473684210526315789474",
+      "publisherAllocationETH": "0.0000011373014166",
+      "refillAllocationETH": "0.000000184429",
+      "operatingAllocationETH": "0",
+      "costETH": "0.0000891230750927578947368421052631578947",
+      "costUSD": "0.244980617584221973473684210526315789",
+      "cashBreakEvenConsumedFeesETH": "0.00446956244196378609512748772633690545",
+      "bufferedConsumedFeesETH": "0.00513999680825835400939661088528744127",
+      "bufferedConsumedFeesUSD": "14.1287718265724809174893100353692657"
+    },
+    {
+      "recipe": "swap",
+      "successesPerPublication": 100,
+      "successETH": "0.000085384113138",
+      "failureETH": "0.000045927399225",
+      "failureAllocationETH": "0.00000241723153815789473684210526315789474",
+      "publisherAllocationETH": "0.00000011373014166",
+      "refillAllocationETH": "0.000000184429",
+      "operatingAllocationETH": "0",
+      "costETH": "0.0000880995038178178947368421052631578947",
+      "costUSD": "0.242167035099379650873684210526315789",
+      "cashBreakEvenConsumedFeesETH": "0.00441822988053249221348255292192366573",
+      "bufferedConsumedFeesETH": "0.00508096436261236604550493586021221560",
+      "bufferedConsumedFeesUSD": "13.9665040303052456622235126431927361"
+    },
+    {
+      "recipe": "mint",
+      "successesPerPublication": 1,
+      "successETH": "0.000106112901870",
+      "failureETH": "0.000056169107118",
+      "failureAllocationETH": "0.00000295626879568421052631578947368421053",
+      "publisherAllocationETH": "0.000011373014166",
+      "refillAllocationETH": "0.000000184429",
+      "operatingAllocationETH": "0",
+      "costETH": "0.000120626613831684210526315789473684211",
+      "costUSD": "0.331577229834395241052631578947368422",
+      "cashBreakEvenConsumedFeesETH": "0.00604947912897112389800981893047563746",
+      "bufferedConsumedFeesETH": "0.00695690099831679248271129177004698310",
+      "bufferedConsumedFeesUSD": "19.1230598951632160085519717045874467"
+    },
+    {
+      "recipe": "mint",
+      "successesPerPublication": 10,
+      "successETH": "0.000106112901870",
+      "failureETH": "0.000056169107118",
+      "failureAllocationETH": "0.00000295626879568421052631578947368421053",
+      "publisherAllocationETH": "0.0000011373014166",
+      "refillAllocationETH": "0.000000184429",
+      "operatingAllocationETH": "0",
+      "costETH": "0.000110390901082284210526315789473684211",
+      "costUSD": "0.303441404985972015052631578947368422",
+      "cashBreakEvenConsumedFeesETH": "0.00553615351465818508156047088634324027",
+      "bufferedConsumedFeesETH": "0.00636657654185691284379454151929472633",
+      "bufferedConsumedFeesUSD": "17.5003819324908634558939977828221508"
+    },
+    {
+      "recipe": "mint",
+      "successesPerPublication": 100,
+      "successETH": "0.000106112901870",
+      "failureETH": "0.000056169107118",
+      "failureAllocationETH": "0.00000295626879568421052631578947368421053",
+      "publisherAllocationETH": "0.00000011373014166",
+      "refillAllocationETH": "0.000000184429",
+      "operatingAllocationETH": "0",
+      "costETH": "0.000109367329807344210526315789473684211",
+      "costUSD": "0.300627822501129692452631578947368422",
+      "cashBreakEvenConsumedFeesETH": "0.00548482095322689119991553608193000055",
+      "bufferedConsumedFeesETH": "0.00630754409621092487990286649421950065",
+      "bufferedConsumedFeesUSD": "17.3381141362236282006282003906456212"
+    }
+  ],
+  "gasPriceStressWithFixedHistoricalDataETH": [
+    {
+      "recipe": "general",
+      "gasPriceGwei": "0.052694",
+      "successETH": "0.000068065840866",
+      "failureETH": "0.000037104848838",
+      "failureAllocationETH": "0.00000195288678094736842105263157894736842",
+      "publisherAllocationETH": "0.0000011373014166",
+      "refillAllocationETH": "0.000000184429",
+      "operatingAllocationETH": "0",
+      "costETH": "0.0000713404580635473684210526315789473684",
+      "costUSD": "0.196099937720498370842105263157894737",
+      "cashBreakEvenConsumedFeesETH": "0.00357775617169244575832761442221401045",
+      "bufferedConsumedFeesETH": "0.00411441959744631262207675658554611202",
+      "bufferedConsumedFeesUSD": "11.3096754452644496724383677347832973"
+    },
+    {
+      "recipe": "swap",
+      "gasPriceGwei": "0.052694",
+      "successETH": "0.000085384113138",
+      "failureETH": "0.000045927399225",
+      "failureAllocationETH": "0.00000241723153815789473684210526315789474",
+      "publisherAllocationETH": "0.0000011373014166",
+      "refillAllocationETH": "0.000000184429",
+      "operatingAllocationETH": "0",
+      "costETH": "0.0000891230750927578947368421052631578947",
+      "costUSD": "0.244980617584221973473684210526315789",
+      "cashBreakEvenConsumedFeesETH": "0.00446956244196378609512748772633690545",
+      "bufferedConsumedFeesETH": "0.00513999680825835400939661088528744127",
+      "bufferedConsumedFeesUSD": "14.1287718265724809174893100353692657"
+    },
+    {
+      "recipe": "mint",
+      "gasPriceGwei": "0.052694",
+      "successETH": "0.000106112901870",
+      "failureETH": "0.000056169107118",
+      "failureAllocationETH": "0.00000295626879568421052631578947368421053",
+      "publisherAllocationETH": "0.0000011373014166",
+      "refillAllocationETH": "0.000000184429",
+      "operatingAllocationETH": "0",
+      "costETH": "0.000110390901082284210526315789473684211",
+      "costUSD": "0.303441404985972015052631578947368422",
+      "cashBreakEvenConsumedFeesETH": "0.00553615351465818508156047088634324027",
+      "bufferedConsumedFeesETH": "0.00636657654185691284379454151929472633",
+      "bufferedConsumedFeesUSD": "17.5003819324908634558939977828221508"
+    },
+    {
+      "recipe": "general",
+      "gasPriceGwei": "0.1",
+      "successETH": "0.00012365625681",
+      "failureETH": "0.00006490005681",
+      "failureAllocationETH": "0.00000341579246368421052631578947368421053",
+      "publisherAllocationETH": "0.0000018813207234",
+      "refillAllocationETH": "0.00000035",
+      "operatingAllocationETH": "0",
+      "costETH": "0.000129303369997084210526315789473684211",
+      "costUSD": "0.355427810414285107052631578947368422",
+      "cashBreakEvenConsumedFeesETH": "0.00648462236695507575357651903077654017",
+      "bufferedConsumedFeesETH": "0.00745731572199833711661299688539302121",
+      "bufferedConsumedFeesUSD": "20.4985948834718090827746397085994828"
+    },
+    {
+      "recipe": "swap",
+      "gasPriceGwei": "0.1",
+      "successETH": "0.000156228585312",
+      "failureETH": "0.000081349635312",
+      "failureAllocationETH": "0.00000428155975326315789473684210526315790",
+      "publisherAllocationETH": "0.0000018813207234",
+      "refillAllocationETH": "0.00000035",
+      "operatingAllocationETH": "0",
+      "costETH": "0.000162741465788663157894736842105263158",
+      "costUSD": "0.447342113745219401789473684210526316",
+      "cashBreakEvenConsumedFeesETH": "0.00816155796332312727656654173045452146",
+      "bufferedConsumedFeesETH": "0.00938579165782159636805152299002269970",
+      "bufferedConsumedFeesUSD": "25.7995702511034258805363458797444967"
+    },
+    {
+      "recipe": "mint",
+      "gasPriceGwei": "0.1",
+      "successETH": "0.000195786912366",
+      "failureETH": "0.000101006112366",
+      "failureAllocationETH": "0.00000531611117715789473684210526315789474",
+      "publisherAllocationETH": "0.0000018813207234",
+      "refillAllocationETH": "0.00000035",
+      "operatingAllocationETH": "0",
+      "costETH": "0.000203334344266557894736842105263157895",
+      "costUSD": "0.558923412176471675473684210526315790",
+      "cashBreakEvenConsumedFeesETH": "0.0101973091407501451723591828115926728",
+      "bufferedConsumedFeesETH": "0.0117269055118626669482130602333315737",
+      "bufferedConsumedFeesUSD": "32.2348006019529802805785778387794965"
+    },
+    {
+      "recipe": "general",
+      "gasPriceGwei": "0.25",
+      "successETH": "0.00029992485681",
+      "failureETH": "0.00015303435681",
+      "failureAllocationETH": "0.00000805443983210526315789473684210526317",
+      "publisherAllocationETH": "0.0000042404907234",
+      "refillAllocationETH": "0.000000875",
+      "operatingAllocationETH": "0",
+      "costETH": "0.000313094787365505263157894736842105263",
+      "costUSD": "0.860631820562427212315789473684210526",
+      "cashBreakEvenConsumedFeesETH": "0.0157018449029842158053106688486512168",
+      "bufferedConsumedFeesETH": "0.0180571216384318481761072691759488993",
+      "bufferedConsumedFeesUSD": "49.6352353885050799480019004381565749"
+    },
+    {
+      "recipe": "swap",
+      "gasPriceGwei": "0.25",
+      "successETH": "0.000380865435312",
+      "failureETH": "0.000193668060312",
+      "failureAllocationETH": "0.0000101930558058947368421052631578947369",
+      "publisherAllocationETH": "0.0000042404907234",
+      "refillAllocationETH": "0.000000875",
+      "operatingAllocationETH": "0",
+      "costETH": "0.000396173981841294736842105263157894737",
+      "costUSD": "1.08899907954553255968421052631578947",
+      "cashBreakEvenConsumedFeesETH": "0.0198683040040769677453412870189515916",
+      "bufferedConsumedFeesETH": "0.0228485496046885129071424800717943304",
+      "bufferedConsumedFeesUSD": "62.8058646678717373940241777965475375"
+    },
+    {
+      "recipe": "mint",
+      "gasPriceGwei": "0.25",
+      "successETH": "0.000480129312366",
+      "failureETH": "0.000243177312366",
+      "failureAllocationETH": "0.0000127988059140000000000000000000000000",
+      "publisherAllocationETH": "0.0000042404907234",
+      "refillAllocationETH": "0.000000875",
+      "operatingAllocationETH": "0",
+      "costETH": "0.000498043609003400000000000000000000000",
+      "costUSD": "1.36901729199245588600000000000000000",
+      "cashBreakEvenConsumedFeesETH": "0.0249771117855265797392176529588766299",
+      "bufferedConsumedFeesETH": "0.0287236785533555667001003009027081244",
+      "bufferedConsumedFeesUSD": "78.9553603706782481895687061183550653"
+    },
+    {
+      "recipe": "general",
+      "gasPriceGwei": "0.5",
+      "successETH": "0.00059370585681",
+      "failureETH": "0.00029992485681",
+      "failureAllocationETH": "0.0000157855187794736842105263157894736842",
+      "publisherAllocationETH": "0.0000081724407234",
+      "refillAllocationETH": "0.00000175",
+      "operatingAllocationETH": "0",
+      "costETH": "0.000619413816312873684210526315789473684",
+      "costUSD": "1.70263850414266405442105263157894737",
+      "cashBreakEvenConsumedFeesETH": "0.0310638824630327825582009185451090112",
+      "bufferedConsumedFeesETH": "0.0357234648324876999419310563268753629",
+      "bufferedConsumedFeesUSD": "98.1963028968938647233806683207517288"
+    },
+    {
+      "recipe": "swap",
+      "gasPriceGwei": "0.5",
+      "successETH": "0.000755260185312",
+      "failureETH": "0.000380865435312",
+      "failureAllocationETH": "0.0000200455492269473684210526315789473684",
+      "publisherAllocationETH": "0.0000081724407234",
+      "refillAllocationETH": "0.00000175",
+      "operatingAllocationETH": "0",
+      "costETH": "0.000785228175262347368421052631578947368",
+      "costUSD": "2.15842735587938782284210526315789474",
+      "cashBreakEvenConsumedFeesETH": "0.0393795474053333685266325291664467085",
+      "bufferedConsumedFeesETH": "0.0452864795161333738056274085414137148",
+      "bufferedConsumedFeesUSD": "124.483022029152256583170564324552605"
+    },
+    {
+      "recipe": "mint",
+      "gasPriceGwei": "0.5",
+      "successETH": "0.000954033312366",
+      "failureETH": "0.000480129312366",
+      "failureAllocationETH": "0.0000252699638087368421052631578947368421",
+      "publisherAllocationETH": "0.0000081724407234",
+      "refillAllocationETH": "0.00000175",
+      "operatingAllocationETH": "0",
+      "costETH": "0.000989225716898136842105263157894736842",
+      "costUSD": "2.71917375835242957021052631578947368",
+      "cashBreakEvenConsumedFeesETH": "0.0496101161934873040173151032043498918",
+      "bufferedConsumedFeesETH": "0.0570516336225103996199123686850023756",
+      "bufferedConsumedFeesUSD": "156.822959985220361371218919917647680"
+    }
+  ],
+  "failureSensitivityGeneral": [
+    {
+      "minedFailureProbability": "0",
+      "failedComputeFraction": "0.25",
+      "successETH": "0.000068065840866",
+      "failureETH": "0.000021624352824",
+      "failureAllocationETH": "0.000000000000000",
+      "publisherAllocationETH": "0.0000011373014166",
+      "refillAllocationETH": "0.000000184429",
+      "operatingAllocationETH": "0",
+      "costETH": "0.0000693875712826",
+      "costUSD": "0.190731862065898054",
+      "cashBreakEvenConsumedFeesETH": "0.00347981801818455366098294884653961886",
+      "bufferedConsumedFeesETH": "0.00400179072091223671013039117352056169",
+      "bufferedConsumedFeesUSD": "11.0000823157363471464393179538615848"
+    },
+    {
+      "minedFailureProbability": "0",
+      "failedComputeFraction": "0.5",
+      "successETH": "0.000068065840866",
+      "failureETH": "0.000037104848838",
+      "failureAllocationETH": "0.000000000000000",
+      "publisherAllocationETH": "0.0000011373014166",
+      "refillAllocationETH": "0.000000184429",
+      "operatingAllocationETH": "0",
+      "costETH": "0.0000693875712826",
+      "costUSD": "0.190731862065898054",
+      "cashBreakEvenConsumedFeesETH": "0.00347981801818455366098294884653961886",
+      "bufferedConsumedFeesETH": "0.00400179072091223671013039117352056169",
+      "bufferedConsumedFeesUSD": "11.0000823157363471464393179538615848"
+    },
+    {
+      "minedFailureProbability": "0",
+      "failedComputeFraction": "1",
+      "successETH": "0.000068065840866",
+      "failureETH": "0.000068065840866",
+      "failureAllocationETH": "0.000000000000000",
+      "publisherAllocationETH": "0.0000011373014166",
+      "refillAllocationETH": "0.000000184429",
+      "operatingAllocationETH": "0",
+      "costETH": "0.0000693875712826",
+      "costUSD": "0.190731862065898054",
+      "cashBreakEvenConsumedFeesETH": "0.00347981801818455366098294884653961886",
+      "bufferedConsumedFeesETH": "0.00400179072091223671013039117352056169",
+      "bufferedConsumedFeesUSD": "11.0000823157363471464393179538615848"
+    },
+    {
+      "minedFailureProbability": "0.01",
+      "failedComputeFraction": "0.25",
+      "successETH": "0.000068065840866",
+      "failureETH": "0.000021624352824",
+      "failureAllocationETH": "0.000000218427806303030303030303030303030303",
+      "publisherAllocationETH": "0.0000011373014166",
+      "refillAllocationETH": "0.000000184429",
+      "operatingAllocationETH": "0",
+      "costETH": "0.0000696059990889030303030303030303030303",
+      "costUSD": "0.191332274235585760666666666666666667",
+      "cashBreakEvenConsumedFeesETH": "0.00349077227125892830005167016200115498",
+      "bufferedConsumedFeesETH": "0.00401438811194776754505942068630132822",
+      "bufferedConsumedFeesUSD": "11.0347098982409039501838849882982280"
+    },
+    {
+      "minedFailureProbability": "0.01",
+      "failedComputeFraction": "0.5",
+      "successETH": "0.000068065840866",
+      "failureETH": "0.000037104848838",
+      "failureAllocationETH": "0.000000374796452909090909090909090909090909",
+      "publisherAllocationETH": "0.0000011373014166",
+      "refillAllocationETH": "0.000000184429",
+      "operatingAllocationETH": "0",
+      "costETH": "0.0000697623677355090909090909090909090909",
+      "costUSD": "0.191762098807690034000000000000000000",
+      "cashBreakEvenConsumedFeesETH": "0.00349861422946384608370566244187106775",
+      "bufferedConsumedFeesETH": "0.00402340636388342299626151180815172791",
+      "bufferedConsumedFeesUSD": "11.0594991789791142978936810431293882"
+    },
+    {
+      "minedFailureProbability": "0.01",
+      "failedComputeFraction": "1",
+      "successETH": "0.000068065840866",
+      "failureETH": "0.000068065840866",
+      "failureAllocationETH": "0.000000687533746121212121212121212121212121",
+      "publisherAllocationETH": "0.0000011373014166",
+      "refillAllocationETH": "0.000000184429",
+      "operatingAllocationETH": "0",
+      "costETH": "0.0000700751050287212121212121212121212121",
+      "costUSD": "0.192621747951898580666666666666666667",
+      "cashBreakEvenConsumedFeesETH": "0.00351429814587368165101364700161089328",
+      "bufferedConsumedFeesETH": "0.00404144286775473389866569405185252728",
+      "bufferedConsumedFeesUSD": "11.1090777404555349933132731527917085"
+    },
+    {
+      "minedFailureProbability": "0.05",
+      "failedComputeFraction": "0.25",
+      "successETH": "0.000068065840866",
+      "failureETH": "0.000021624352824",
+      "failureAllocationETH": "0.00000113812383284210526315789473684210526",
+      "publisherAllocationETH": "0.0000011373014166",
+      "refillAllocationETH": "0.000000184429",
+      "operatingAllocationETH": "0",
+      "costETH": "0.0000705256951154421052631578947368421053",
+      "costUSD": "0.193860325476376104526315789473684211",
+      "cashBreakEvenConsumedFeesETH": "0.00353689544209840046455154938499709655",
+      "bufferedConsumedFeesETH": "0.00406742975841316053423428179274666104",
+      "bufferedConsumedFeesUSD": "11.1805102456285115448978514490840944"
+    },
+    {
+      "minedFailureProbability": "0.05",
+      "failedComputeFraction": "0.5",
+      "successETH": "0.000068065840866",
+      "failureETH": "0.000037104848838",
+      "failureAllocationETH": "0.00000195288678094736842105263157894736842",
+      "publisherAllocationETH": "0.0000011373014166",
+      "refillAllocationETH": "0.000000184429",
+      "operatingAllocationETH": "0",
+      "costETH": "0.0000713404580635473684210526315789473684",
+      "costUSD": "0.196099937720498370842105263157894737",
+      "cashBreakEvenConsumedFeesETH": "0.00357775617169244575832761442221401045",
+      "bufferedConsumedFeesETH": "0.00411441959744631262207675658554611202",
+      "bufferedConsumedFeesUSD": "11.3096754452644496724383677347832973"
+    },
+    {
+      "minedFailureProbability": "0.05",
+      "failedComputeFraction": "1",
+      "successETH": "0.000068065840866",
+      "failureETH": "0.000068065840866",
+      "failureAllocationETH": "0.00000358241267715789473684210526315789474",
+      "publisherAllocationETH": "0.0000011373014166",
+      "refillAllocationETH": "0.000000184429",
+      "operatingAllocationETH": "0",
+      "costETH": "0.0000729699839597578947368421052631578947",
+      "costUSD": "0.200579162208742903473684210526315789",
+      "cashBreakEvenConsumedFeesETH": "0.00365947763088053634587974449664783825",
+      "bufferedConsumedFeesETH": "0.00420839927551261679776170617114501399",
+      "bufferedConsumedFeesUSD": "11.5680058445363259275194003061817030"
+    },
+    {
+      "minedFailureProbability": "0.10",
+      "failedComputeFraction": "0.25",
+      "successETH": "0.000068065840866",
+      "failureETH": "0.000021624352824",
+      "failureAllocationETH": "0.00000240270586933333333333333333333333333",
+      "publisherAllocationETH": "0.0000011373014166",
+      "refillAllocationETH": "0.000000184429",
+      "operatingAllocationETH": "0",
+      "costETH": "0.0000717902771519333333333333333333333333",
+      "costUSD": "0.197336395932462827333333333333333333",
+      "cashBreakEvenConsumedFeesETH": "0.00360031480200267469073888331661651621",
+      "bufferedConsumedFeesETH": "0.00414036202230307589434971581410899365",
+      "bufferedConsumedFeesUSD": "11.3809857232864719876295553326646607"
+    },
+    {
+      "minedFailureProbability": "0.10",
+      "failedComputeFraction": "0.5",
+      "successETH": "0.000068065840866",
+      "failureETH": "0.000037104848838",
+      "failureAllocationETH": "0.00000412276098200000000000000000000000000",
+      "publisherAllocationETH": "0.0000011373014166",
+      "refillAllocationETH": "0.000000184429",
+      "operatingAllocationETH": "0",
+      "costETH": "0.0000735103322646000000000000000000000000",
+      "costUSD": "0.202064466225609834000000000000000000",
+      "cashBreakEvenConsumedFeesETH": "0.00368657634225677031093279839518555667",
+      "bufferedConsumedFeesETH": "0.00423956279359528585757271815446339017",
+      "bufferedConsumedFeesUSD": "11.6536678114067858124373119358074223"
+    },
+    {
+      "minedFailureProbability": "0.10",
+      "failedComputeFraction": "1",
+      "successETH": "0.000068065840866",
+      "failureETH": "0.000068065840866",
+      "failureAllocationETH": "0.00000756287120733333333333333333333333333",
+      "publisherAllocationETH": "0.0000011373014166",
+      "refillAllocationETH": "0.000000184429",
+      "operatingAllocationETH": "0",
+      "costETH": "0.0000769504424899333333333333333333333333",
+      "costUSD": "0.211520606811903847333333333333333333",
+      "cashBreakEvenConsumedFeesETH": "0.00385909942276496155132062855232363758",
+      "bufferedConsumedFeesETH": "0.00443796433617970578401872283517218321",
+      "bufferedConsumedFeesUSD": "12.1990319876474134620528251420929455"
+    },
+    {
+      "minedFailureProbability": "0.25",
+      "failedComputeFraction": "0.25",
+      "successETH": "0.000068065840866",
+      "failureETH": "0.000021624352824",
+      "failureAllocationETH": "0.00000720811760799999999999999999999999999",
+      "publisherAllocationETH": "0.0000011373014166",
+      "refillAllocationETH": "0.000000184429",
+      "operatingAllocationETH": "0",
+      "costETH": "0.0000765956888906000000000000000000000000",
+      "costUSD": "0.210545463665592374000000000000000000",
+      "cashBreakEvenConsumedFeesETH": "0.00384130836963891675025075225677031093",
+      "bufferedConsumedFeesETH": "0.00441750462508475426278836509528585757",
+      "bufferedConsumedFeesUSD": "12.1427925383867216700100300902708124"
+    },
+    {
+      "minedFailureProbability": "0.25",
+      "failedComputeFraction": "0.5",
+      "successETH": "0.000068065840866",
+      "failureETH": "0.000037104848838",
+      "failureAllocationETH": "0.0000123682829460000000000000000000000000",
+      "publisherAllocationETH": "0.0000011373014166",
+      "refillAllocationETH": "0.000000184429",
+      "operatingAllocationETH": "0",
+      "costETH": "0.0000817558542286000000000000000000000000",
+      "costUSD": "0.224729674545033394000000000000000000",
+      "cashBreakEvenConsumedFeesETH": "0.00410009299040120361083249749247743230",
+      "bufferedConsumedFeesETH": "0.00471510693896138415245737211634904714",
+      "bufferedConsumedFeesUSD": "12.9608388027476631444332998996990973"
+    },
+    {
+      "minedFailureProbability": "0.25",
+      "failedComputeFraction": "1",
+      "successETH": "0.000068065840866",
+      "failureETH": "0.000068065840866",
+      "failureAllocationETH": "0.0000226886136220000000000000000000000000",
+      "publisherAllocationETH": "0.0000011373014166",
+      "refillAllocationETH": "0.000000184429",
+      "operatingAllocationETH": "0",
+      "costETH": "0.0000920761849046000000000000000000000000",
+      "costUSD": "0.253098096303915434000000000000000000",
+      "cashBreakEvenConsumedFeesETH": "0.00461766223192577733199598796389167503",
+      "bufferedConsumedFeesETH": "0.00531031156671464393179538615847542628",
+      "bufferedConsumedFeesUSD": "14.5969313314695460932798395185556670"
+    }
+  ],
+  "refillAmortization": [
+    {
+      "path": "native",
+      "successesPerBatch": 1,
+      "batchCostETH": "0.000002458323126",
+      "allocatedCostETH": "0.000002458323126",
+      "allocatedCostUSD": "0.00675741402551754"
+    },
+    {
+      "path": "native",
+      "successesPerBatch": 10,
+      "batchCostETH": "0.000002458323126",
+      "allocatedCostETH": "0.0000002458323126",
+      "allocatedCostUSD": "0.000675741402551754"
+    },
+    {
+      "path": "native",
+      "successesPerBatch": 100,
+      "batchCostETH": "0.000002458323126",
+      "allocatedCostETH": "0.00000002458323126",
+      "allocatedCostUSD": "0.0000675741402551754"
+    },
+    {
+      "path": "native",
+      "successesPerBatch": 1000,
+      "batchCostETH": "0.000002458323126",
+      "allocatedCostETH": "0.000000002458323126",
+      "allocatedCostUSD": "0.00000675741402551754"
+    },
+    {
+      "path": "weth",
+      "successesPerBatch": 1,
+      "batchCostETH": "0.000006596072140",
+      "allocatedCostETH": "0.000006596072140",
+      "allocatedCostUSD": "0.01813121713771060"
+    },
+    {
+      "path": "weth",
+      "successesPerBatch": 10,
+      "batchCostETH": "0.000006596072140",
+      "allocatedCostETH": "0.000000659607214",
+      "allocatedCostUSD": "0.00181312171377106"
+    },
+    {
+      "path": "weth",
+      "successesPerBatch": 100,
+      "batchCostETH": "0.000006596072140",
+      "allocatedCostETH": "0.0000000659607214",
+      "allocatedCostUSD": "0.000181312171377106"
+    },
+    {
+      "path": "weth",
+      "successesPerBatch": 1000,
+      "batchCostETH": "0.000006596072140",
+      "allocatedCostETH": "0.00000000659607214",
+      "allocatedCostUSD": "0.0000181312171377106"
+    },
+    {
+      "path": "sale",
+      "successesPerBatch": 1,
+      "batchCostETH": "0.0000184429",
+      "allocatedCostETH": "0.0000184429",
+      "allocatedCostUSD": "0.050695659091"
+    },
+    {
+      "path": "sale",
+      "successesPerBatch": 10,
+      "batchCostETH": "0.0000184429",
+      "allocatedCostETH": "0.00000184429",
+      "allocatedCostUSD": "0.0050695659091"
+    },
+    {
+      "path": "sale",
+      "successesPerBatch": 100,
+      "batchCostETH": "0.0000184429",
+      "allocatedCostETH": "0.000000184429",
+      "allocatedCostUSD": "0.00050695659091"
+    },
+    {
+      "path": "sale",
+      "successesPerBatch": 1000,
+      "batchCostETH": "0.0000184429",
+      "allocatedCostETH": "0.0000000184429",
+      "allocatedCostUSD": "0.000050695659091"
+    }
+  ],
+  "optionRanges": [
+    {
+      "option": "A_manual_ETH",
+      "recipe": "general",
+      "lower": {
+        "successETH": "0.000061921984056",
+        "failureETH": "0.000030960992028",
+        "failureAllocationETH": "0.00000162952589621052631578947368421052632",
+        "publisherAllocationETH": "0.0000008287606932",
+        "refillAllocationETH": "0.00000001106574",
+        "operatingAllocationETH": "0",
+        "costETH": "0.0000643913363854105263157894736842105263",
+        "costUSD": "0.176998261542852600631578947368421053",
+        "cashBreakEvenConsumedFeesETH": "0.00322925458301958507100248112759330623",
+        "bufferedConsumedFeesETH": "0.00371364277047252283165285329673230217",
+        "bufferedConsumedFeesUSD": "10.2080241110471660344190466135247849"
+      },
+      "upper": {
+        "successETH": "0.000068065840866",
+        "failureETH": "0.000037104848838",
+        "failureAllocationETH": "0.00000195288678094736842105263157894736842",
+        "publisherAllocationETH": "0.0000011373014166",
+        "refillAllocationETH": "0.00000002458323126",
+        "operatingAllocationETH": "0",
+        "costETH": "0.0000711806122948073684210526315789473684",
+        "costUSD": "0.195660555269843546242105263157894737",
+        "cashBreakEvenConsumedFeesETH": "0.00356973983424309771419521723063928628",
+        "bufferedConsumedFeesETH": "0.00410520080937956237132449981523517922",
+        "bufferedConsumedFeesUSD": "11.2843349328144472506730718471203083"
+      }
+    },
+    {
+      "option": "B_treasury_conversion",
+      "recipe": "general",
+      "lower": {
+        "successETH": "0.000061921984056",
+        "failureETH": "0.000030960992028",
+        "failureAllocationETH": "0.00000162952589621052631578947368421052632",
+        "publisherAllocationETH": "0.0000008287606932",
+        "refillAllocationETH": "0.000000105388",
+        "operatingAllocationETH": "0",
+        "costETH": "0.0000644856586454105263157894736842105263",
+        "costUSD": "0.177257533627918000631578947368421053",
+        "cashBreakEvenConsumedFeesETH": "0.00323398488693132027661933167924827113",
+        "bufferedConsumedFeesETH": "0.00371908261997101831811223143113551180",
+        "bufferedConsumedFeesUSD": "10.2229771149501354426437206355909835"
+      },
+      "upper": {
+        "successETH": "0.000068065840866",
+        "failureETH": "0.000037104848838",
+        "failureAllocationETH": "0.00000195288678094736842105263157894736842",
+        "publisherAllocationETH": "0.0000011373014166",
+        "refillAllocationETH": "0.00000026347",
+        "operatingAllocationETH": "0",
+        "costETH": "0.0000714194990635473684210526315789473684",
+        "costUSD": "0.196317204830888370842105263157894737",
+        "cashBreakEvenConsumedFeesETH": "0.00358172011351792218761547801298632740",
+        "bufferedConsumedFeesETH": "0.00411897813054561051575779971493427651",
+        "bufferedConsumedFeesUSD": "11.3222058954624687296098822784141899"
+      }
+    },
+    {
+      "option": "C_Pimlico_included_API",
+      "recipe": "general",
+      "lower": {
+        "incrementalAllInGasEquivalentPerUserOp": 100000,
+        "sponsorshipRate": "0.10",
+        "apiUSDPerAttemptAndPublication": "0",
+        "costETH": "0.0000776837712362673684210526315789473684",
+        "costUSD": "0.213536373536539379642105263157894737",
+        "networkAndSponsorshipETH": "0.0000774993422362673684210526315789473684",
+        "apiAllocationETH": "0.000000000000000000000000000000000",
+        "treasuryRealizationAllocationETH": "0.000000184429",
+        "bufferedConsumedFeesETH": "0.00448025761894220028506572348624821834",
+        "bufferedConsumedFeesUSD": "12.3152873403721307215858100617642401"
+      },
+      "upper": {
+        "incrementalAllInGasEquivalentPerUserOp": 300000,
+        "sponsorshipRate": "0.10",
+        "apiUSDPerAttemptAndPublication": "0",
+        "costETH": "0.0000984991945488494736842105263157894737",
+        "costUSD": "0.270753600983931944768421052631578947",
+        "networkAndSponsorshipETH": "0.0000983147655488494736842105263157894737",
+        "apiAllocationETH": "0.000000000000000000000000000000000",
+        "treasuryRealizationAllocationETH": "0.000000184429",
+        "bufferedConsumedFeesETH": "0.00568074592433184025761495011349838992",
+        "bufferedConsumedFeesUSD": "15.6151775893441191817293987224832392"
+      }
+    },
+    {
+      "option": "C_Pimlico_overquota_API",
+      "recipe": "general",
+      "lower": {
+        "incrementalAllInGasEquivalentPerUserOp": 100000,
+        "sponsorshipRate": "0.10",
+        "apiUSDPerAttemptAndPublication": "0.0105",
+        "costETH": "0.0000820866654475193623605869836316496004",
+        "costUSD": "0.225639005115486748063157894736842105",
+        "networkAndSponsorshipETH": "0.0000774993422362673684210526315789473684",
+        "apiAllocationETH": "0.00000440289421125199393953435205270223203",
+        "treasuryRealizationAllocationETH": "0.000000184429",
+        "bufferedConsumedFeesETH": "0.00473418582069444667576103466280827686",
+        "bufferedConsumedFeesUSD": "13.0132826420666880778651744707807633"
+      },
+      "upper": {
+        "incrementalAllInGasEquivalentPerUserOp": 300000,
+        "sponsorshipRate": "0.10",
+        "apiUSDPerAttemptAndPublication": "0.0105",
+        "costETH": "0.000102902088760101467623744878368491706",
+        "costUSD": "0.282856232562879313189473684210526317",
+        "networkAndSponsorshipETH": "0.0000983147655488494736842105263157894737",
+        "apiAllocationETH": "0.00000440289421125199393953435205270223203",
+        "treasuryRealizationAllocationETH": "0.000000184429",
+        "bufferedConsumedFeesETH": "0.00593467412608408664831026129005844845",
+        "bufferedConsumedFeesUSD": "16.3131728910386765380087631314997625"
+      }
+    },
+    {
+      "option": "C_Alchemy_8pct_gas_only",
+      "recipe": "general",
+      "lower": {
+        "incrementalAllInGasEquivalentPerUserOp": 100000,
+        "sponsorshipRate": "0.08",
+        "apiUSDPerAttemptAndPublication": "0",
+        "costETH": "0.0000762746922865170526315789473684210527",
+        "costUSD": "0.209663111410255209103157894736842105",
+        "networkAndSponsorshipETH": "0.0000760902632865170526315789473684210527",
+        "apiAllocationETH": "0.000000000000000000000000000000000",
+        "treasuryRealizationAllocationETH": "0.000000184429",
+        "bufferedConsumedFeesETH": "0.00439899178182019109961463337380562741",
+        "bufferedConsumedFeesUSD": "12.0919046199495230927097080715831706"
+      },
+      "upper": {
+        "incrementalAllInGasEquivalentPerUserOp": 300000,
+        "sponsorshipRate": "0.08",
+        "apiUSDPerAttemptAndPublication": "0",
+        "costETH": "0.0000967116533570522105263157894736842105",
+        "costUSD": "0.265840025631331545772631578947368421",
+        "networkAndSponsorshipETH": "0.0000965272243570522105263157894736842105",
+        "apiAllocationETH": "0.000000000000000000000000000000000",
+        "treasuryRealizationAllocationETH": "0.000000184429",
+        "bufferedConsumedFeesETH": "0.00557765302711183761811751042601488676",
+        "bufferedConsumedFeesUSD": "15.3317968643947481263052314839254606"
+      }
+    },
+    {
+      "option": "A_manual_ETH",
+      "recipe": "swap",
+      "lower": {
+        "successETH": "0.000078913427826",
+        "failureETH": "0.000039456713913",
+        "failureAllocationETH": "0.00000207666915331578947368421052631578948",
+        "publisherAllocationETH": "0.0000008287606932",
+        "refillAllocationETH": "0.00000001106574",
+        "operatingAllocationETH": "0",
+        "costETH": "0.0000818299234125157894736842105263157895",
+        "costUSD": "0.224933275177089276947368421052631579",
+        "cashBreakEvenConsumedFeesETH": "0.00410380759340600749617272871245314892",
+        "bufferedConsumedFeesETH": "0.00471937873241690862059863801932112126",
+        "bufferedConsumedFeesUSD": "12.9725810658802742472153302011297049"
+      },
+      "upper": {
+        "successETH": "0.000085384113138",
+        "failureETH": "0.000045927399225",
+        "failureAllocationETH": "0.00000241723153815789473684210526315789474",
+        "publisherAllocationETH": "0.0000011373014166",
+        "refillAllocationETH": "0.00000002458323126",
+        "operatingAllocationETH": "0",
+        "costETH": "0.0000889632293240178947368421052631578947",
+        "costUSD": "0.244541235133567148873684210526315789",
+        "cashBreakEvenConsumedFeesETH": "0.00446154610451443805099509053476218128",
+        "bufferedConsumedFeesETH": "0.00513077802019160375864435411497650848",
+        "bufferedConsumedFeesUSD": "14.1034313141224784957240141477062767"
+      }
+    },
+    {
+      "option": "B_treasury_conversion",
+      "recipe": "swap",
+      "lower": {
+        "successETH": "0.000078913427826",
+        "failureETH": "0.000039456713913",
+        "failureAllocationETH": "0.00000207666915331578947368421052631578948",
+        "publisherAllocationETH": "0.0000008287606932",
+        "refillAllocationETH": "0.000000105388",
+        "operatingAllocationETH": "0",
+        "costETH": "0.0000819242456725157894736842105263157895",
+        "costUSD": "0.225192547262154676947368421052631579",
+        "cashBreakEvenConsumedFeesETH": "0.00410853789731774270178957926410811382",
+        "bufferedConsumedFeesETH": "0.00472481858191540410705801615372433089",
+        "bufferedConsumedFeesUSD": "12.9875340697832436554400042231959035"
+      },
+      "upper": {
+        "successETH": "0.000085384113138",
+        "failureETH": "0.000045927399225",
+        "failureAllocationETH": "0.00000241723153815789473684210526315789474",
+        "publisherAllocationETH": "0.0000011373014166",
+        "refillAllocationETH": "0.00000026347",
+        "operatingAllocationETH": "0",
+        "costETH": "0.0000892021160927578947368421052631578947",
+        "costUSD": "0.245197884694611973473684210526315789",
+        "cashBreakEvenConsumedFeesETH": "0.00447352638378926252441535131710922240",
+        "bufferedConsumedFeesETH": "0.00514455534135765190307765401467560577",
+        "bufferedConsumedFeesUSD": "14.1413022767704999746608245790001584"
+      }
+    },
+    {
+      "option": "C_Pimlico_included_API",
+      "recipe": "swap",
+      "lower": {
+        "incrementalAllInGasEquivalentPerUserOp": 100000,
+        "sponsorshipRate": "0.10",
+        "apiUSDPerAttemptAndPublication": "0",
+        "costETH": "0.0000968662169660831578947368421052631579",
+        "costUSD": "0.266264888534199723589473684210526316",
+        "networkAndSponsorshipETH": "0.0000966817879660831578947368421052631579",
+        "apiAllocationETH": "0.000000000000000000000000000000000",
+        "treasuryRealizationAllocationETH": "0.000000184429",
+        "bufferedConsumedFeesETH": "0.00558656717708102465290608668109591936",
+        "bufferedConsumedFeesUSD": "15.3562999906885497556617220081296522"
+      },
+      "upper": {
+        "incrementalAllInGasEquivalentPerUserOp": 300000,
+        "sponsorshipRate": "0.10",
+        "apiUSDPerAttemptAndPublication": "0",
+        "costETH": "0.000118060073280981052631578947368421052",
+        "costUSD": "0.324522348834027907663157894736842104",
+        "networkAndSponsorshipETH": "0.000117875644280981052631578947368421052",
+        "apiAllocationETH": "0.000000000000000000000000000000000",
+        "treasuryRealizationAllocationETH": "0.000000184429",
+        "bufferedConsumedFeesETH": "0.00680888085622508578366678984321385206",
+        "bufferedConsumedFeesUSD": "18.7161836087829535512854352531278044"
+      }
+    },
+    {
+      "option": "C_Pimlico_overquota_API",
+      "recipe": "swap",
+      "lower": {
+        "incrementalAllInGasEquivalentPerUserOp": 100000,
+        "sponsorshipRate": "0.10",
+        "apiUSDPerAttemptAndPublication": "0.0105",
+        "costETH": "0.000101269111177335151834271194157965390",
+        "costUSD": "0.278367520113147092010526315789473684",
+        "networkAndSponsorshipETH": "0.0000966817879660831578947368421052631579",
+        "apiAllocationETH": "0.00000440289421125199393953435205270223203",
+        "treasuryRealizationAllocationETH": "0.000000184429",
+        "bufferedConsumedFeesETH": "0.00584049537883327104360139785765597783",
+        "bufferedConsumedFeesUSD": "16.0542952923831071119410864171461753"
+      },
+      "upper": {
+        "incrementalAllInGasEquivalentPerUserOp": 300000,
+        "sponsorshipRate": "0.10",
+        "apiUSDPerAttemptAndPublication": "0.0105",
+        "costETH": "0.000122462967492233046571113299421123284",
+        "costUSD": "0.336624980412975276084210526315789472",
+        "networkAndSponsorshipETH": "0.000117875644280981052631578947368421052",
+        "apiAllocationETH": "0.00000440289421125199393953435205270223203",
+        "treasuryRealizationAllocationETH": "0.000000184429",
+        "bufferedConsumedFeesETH": "0.00706280905797733217436210101977391058",
+        "bufferedConsumedFeesUSD": "19.4141789104775109075647996621443277"
+      }
+    },
+    {
+      "option": "C_Alchemy_8pct_gas_only",
+      "recipe": "swap",
+      "lower": {
+        "incrementalAllInGasEquivalentPerUserOp": 100000,
+        "sponsorshipRate": "0.08",
+        "apiUSDPerAttemptAndPublication": "0",
+        "costETH": "0.0000951083662757907368421052631578947368",
+        "costUSD": "0.261432926135230819524210526315789474",
+        "networkAndSponsorshipETH": "0.0000949239372757907368421052631578947368",
+        "apiAllocationETH": "0.000000000000000000000000000000000",
+        "treasuryRealizationAllocationETH": "0.000000184429",
+        "bufferedConsumedFeesETH": "0.00548518662072012775167608087420155201",
+        "bufferedConsumedFeesUSD": "15.0776261311692799625296943461964841"
+      },
+      "upper": {
+        "incrementalAllInGasEquivalentPerUserOp": 300000,
+        "sponsorshipRate": "0.08",
+        "apiUSDPerAttemptAndPublication": "0",
+        "costETH": "0.000115916879748599578947368421052631579",
+        "costUSD": "0.318631159884153036614736842105263158",
+        "networkAndSponsorshipETH": "0.000115732450748599578947368421052631579",
+        "apiAllocationETH": "0.000000000000000000000000000000000",
+        "treasuryRealizationAllocationETH": "0.000000184429",
+        "bufferedConsumedFeesETH": "0.00668527641478884231642295306973552237",
+        "bufferedConsumedFeesUSD": "18.3764209562074218709602491685583065"
+      }
+    },
+    {
+      "option": "A_manual_ETH",
+      "recipe": "mint",
+      "lower": {
+        "successETH": "0.000099887589504",
+        "failureETH": "0.000049943794752",
+        "failureAllocationETH": "0.00000262862077642105263157894736842105263",
+        "publisherAllocationETH": "0.0000008287606932",
+        "refillAllocationETH": "0.00000001106574",
+        "operatingAllocationETH": "0",
+        "costETH": "0.000103356036713621052631578947368421053",
+        "costUSD": "0.284104040158034413263157894736842106",
+        "cashBreakEvenConsumedFeesETH": "0.00518335189135511798553555403051259042",
+        "bufferedConsumedFeesETH": "0.00596085467505838568336588713508947899",
+        "bufferedConsumedFeesUSD": "16.3851377222537399825793168980626090"
+      },
+      "upper": {
+        "successETH": "0.000106112901870",
+        "failureETH": "0.000056169107118",
+        "failureAllocationETH": "0.00000295626879568421052631578947368421053",
+        "publisherAllocationETH": "0.0000011373014166",
+        "refillAllocationETH": "0.00000002458323126",
+        "operatingAllocationETH": "0",
+        "costETH": "0.000110231055313544210526315789473684211",
+        "costUSD": "0.303002022535317190452631578947368422",
+        "cashBreakEvenConsumedFeesETH": "0.00552813717720883703742807369476851610",
+        "bufferedConsumedFeesETH": "0.00635735775379016259304228474898379353",
+        "bufferedConsumedFeesUSD": "17.4750414200408610341287018951591618"
+      }
+    },
+    {
+      "option": "B_treasury_conversion",
+      "recipe": "mint",
+      "lower": {
+        "successETH": "0.000099887589504",
+        "failureETH": "0.000049943794752",
+        "failureAllocationETH": "0.00000262862077642105263157894736842105263",
+        "publisherAllocationETH": "0.0000008287606932",
+        "refillAllocationETH": "0.000000105388",
+        "operatingAllocationETH": "0",
+        "costETH": "0.000103450358973621052631578947368421053",
+        "costUSD": "0.284363312243099813263157894736842106",
+        "cashBreakEvenConsumedFeesETH": "0.00518808219526685319115240458216755532",
+        "bufferedConsumedFeesETH": "0.00596629452455688116982526526949268862",
+        "bufferedConsumedFeesUSD": "16.4000907261567093908039909201288076"
+      },
+      "upper": {
+        "successETH": "0.000106112901870",
+        "failureETH": "0.000056169107118",
+        "failureAllocationETH": "0.00000295626879568421052631578947368421053",
+        "publisherAllocationETH": "0.0000011373014166",
+        "refillAllocationETH": "0.00000026347",
+        "operatingAllocationETH": "0",
+        "costETH": "0.000110469942082284210526315789473684211",
+        "costUSD": "0.303658672096362015052631578947368422",
+        "cashBreakEvenConsumedFeesETH": "0.00554011745648366151084833447711555722",
+        "bufferedConsumedFeesETH": "0.00637113507495621073747558464868289082",
+        "bufferedConsumedFeesUSD": "17.5129123826888825130655123264530435"
+      }
+    },
+    {
+      "option": "C_Pimlico_included_API",
+      "recipe": "mint",
+      "lower": {
+        "incrementalAllInGasEquivalentPerUserOp": 100000,
+        "sponsorshipRate": "0.10",
+        "apiUSDPerAttemptAndPublication": "0",
+        "costETH": "0.000120544941597298947368421052631578948",
+        "costUSD": "0.331352730013239373536842105263157896",
+        "networkAndSponsorshipETH": "0.000120360512597298947368421052631578948",
+        "apiAllocationETH": "0.000000000000000000000000000000000",
+        "treasuryRealizationAllocationETH": "0.000000184429",
+        "bufferedConsumedFeesETH": "0.00695219071398664942195006070844111284",
+        "bufferedConsumedFeesUSD": "19.1101123126993620645621073747558466"
+      },
+      "upper": {
+        "incrementalAllInGasEquivalentPerUserOp": 300000,
+        "sponsorshipRate": "0.10",
+        "apiUSDPerAttemptAndPublication": "0",
+        "costETH": "0.000141454681869460000000000000000000000",
+        "costUSD": "0.388829214975952953400000000000000000",
+        "networkAndSponsorshipETH": "0.000141270252869460000000000000000000000",
+        "apiAllocationETH": "0.000000000000000000000000000000000",
+        "treasuryRealizationAllocationETH": "0.000000184429",
+        "bufferedConsumedFeesETH": "0.00815811856318350050150451354062186560",
+        "bufferedConsumedFeesUSD": "22.4249547252931743435305917753259779"
+      }
+    },
+    {
+      "option": "C_Pimlico_overquota_API",
+      "recipe": "mint",
+      "lower": {
+        "incrementalAllInGasEquivalentPerUserOp": 100000,
+        "sponsorshipRate": "0.10",
+        "apiUSDPerAttemptAndPublication": "0.0105",
+        "costETH": "0.000124947835808550941307955404684281180",
+        "costUSD": "0.343455361592186741957894736842105265",
+        "networkAndSponsorshipETH": "0.000120360512597298947368421052631578948",
+        "apiAllocationETH": "0.00000440289421125199393953435205270223203",
+        "treasuryRealizationAllocationETH": "0.000000184429",
+        "bufferedConsumedFeesETH": "0.00720611891573889581264537188500117136",
+        "bufferedConsumedFeesUSD": "19.8081076143939194208414717837723698"
+      },
+      "upper": {
+        "incrementalAllInGasEquivalentPerUserOp": 300000,
+        "sponsorshipRate": "0.10",
+        "apiUSDPerAttemptAndPublication": "0.0105",
+        "costETH": "0.000145857576080711993939534352052702232",
+        "costUSD": "0.400931846554900321821052631578947368",
+        "networkAndSponsorshipETH": "0.000141270252869460000000000000000000000",
+        "apiAllocationETH": "0.00000440289421125199393953435205270223203",
+        "treasuryRealizationAllocationETH": "0.000000184429",
+        "bufferedConsumedFeesETH": "0.00841204676493574689219982471718192412",
+        "bufferedConsumedFeesUSD": "23.1229500269877316998099561843425012"
+      }
+    },
+    {
+      "option": "C_Alchemy_8pct_gas_only",
+      "recipe": "mint",
+      "lower": {
+        "incrementalAllInGasEquivalentPerUserOp": 100000,
+        "sponsorshipRate": "0.08",
+        "apiUSDPerAttemptAndPublication": "0",
+        "costETH": "0.000118356568640984421052631578947368421",
+        "costUSD": "0.325337352314651566745263157894736842",
+        "networkAndSponsorshipETH": "0.000118172139640984421052631578947368421",
+        "apiAllocationETH": "0.000000000000000000000000000000000",
+        "treasuryRealizationAllocationETH": "0.000000184429",
+        "bufferedConsumedFeesETH": "0.00682598063877292297946470991923137834",
+        "bufferedConsumedFeesUSD": "18.7631873200526229567227999788840205"
+      },
+      "upper": {
+        "incrementalAllInGasEquivalentPerUserOp": 300000,
+        "sponsorshipRate": "0.08",
+        "apiUSDPerAttemptAndPublication": "0",
+        "costETH": "0.000138886131817288000000000000000000000",
+        "costUSD": "0.381768810278043081520000000000000000",
+        "networkAndSponsorshipETH": "0.000138701702817288000000000000000000000",
+        "apiAllocationETH": "0.000000000000000000000000000000000",
+        "treasuryRealizationAllocationETH": "0.000000184429",
+        "bufferedConsumedFeesETH": "0.00800998252707528585757271815446339017",
+        "bufferedConsumedFeesUSD": "22.0177598705992750124373119358074223"
+      }
+    }
+  ],
+  "fixedOpexSensitivity": [
+    {
+      "hypotheticalMonthlyUSD": "50",
+      "monthlySuccesses": 1000,
+      "opexUSDPerSuccess": "0.05",
+      "operatorCostETH": "0.0000181898217033676635901614892370824981",
+      "additionalBufferedConsumedFeesUSD": "2.88365095285857572718154463390170512",
+      "generalWithOpex": {
+        "successETH": "0.000068065840866",
+        "failureETH": "0.000037104848838",
+        "failureAllocationETH": "0.00000195288678094736842105263157894736842",
+        "publisherAllocationETH": "0.0000011373014166",
+        "refillAllocationETH": "0.000000184429",
+        "operatingAllocationETH": "0.0000181898217033676635901614892370824981",
+        "costETH": "0.0000895302797669150320112141208160298665",
+        "costUSD": "0.246099937720498370842105263157894737",
+        "cashBreakEvenConsumedFeesETH": "0.00448998394016625035161555269889818789",
+        "bufferedConsumedFeesETH": "0.00516348153119118790435788560373291605",
+        "bufferedConsumedFeesUSD": "14.1933263981230253996199123686850023"
+      }
+    },
+    {
+      "hypotheticalMonthlyUSD": "50",
+      "monthlySuccesses": 10000,
+      "opexUSDPerSuccess": "0.005",
+      "operatorCostETH": "0.00000181898217033676635901614892370824981",
+      "additionalBufferedConsumedFeesUSD": "0.288365095285857572718154463390170512",
+      "generalWithOpex": {
+        "successETH": "0.000068065840866",
+        "failureETH": "0.000037104848838",
+        "failureAllocationETH": "0.00000195288678094736842105263157894736842",
+        "publisherAllocationETH": "0.0000011373014166",
+        "refillAllocationETH": "0.000000184429",
+        "operatingAllocationETH": "0.00000181898217033676635901614892370824981",
+        "costETH": "0.0000731594402338841347800687805026556182",
+        "costUSD": "0.201099937720498370842105263157894737",
+        "cashBreakEvenConsumedFeesETH": "0.00366897894853982621765640824988242819",
+        "bufferedConsumedFeesETH": "0.00421932579082080015030486948736479242",
+        "bufferedConsumedFeesUSD": "11.5980405405503072451565221981734678"
+      }
+    }
+  ],
+  "realizationSensitivity": [
+    {
+      "allocation": "1",
+      "haircut": "0",
+      "thresholdMultiplierRelativeToBaseline": "0.997"
+    },
+    {
+      "allocation": "1",
+      "haircut": "0.003",
+      "thresholdMultiplierRelativeToBaseline": "1"
+    },
+    {
+      "allocation": "1",
+      "haircut": "0.01",
+      "thresholdMultiplierRelativeToBaseline": "1.00707070707070707070707070707070707"
+    },
+    {
+      "allocation": "1",
+      "haircut": "0.05",
+      "thresholdMultiplierRelativeToBaseline": "1.04947368421052631578947368421052632"
+    },
+    {
+      "allocation": "0.75",
+      "haircut": "0",
+      "thresholdMultiplierRelativeToBaseline": "1.32933333333333333333333333333333333"
+    },
+    {
+      "allocation": "0.75",
+      "haircut": "0.003",
+      "thresholdMultiplierRelativeToBaseline": "1.33333333333333333333333333333333333"
+    },
+    {
+      "allocation": "0.75",
+      "haircut": "0.01",
+      "thresholdMultiplierRelativeToBaseline": "1.34276094276094276094276094276094276"
+    },
+    {
+      "allocation": "0.75",
+      "haircut": "0.05",
+      "thresholdMultiplierRelativeToBaseline": "1.39929824561403508771929824561403509"
+    },
+    {
+      "allocation": "0.5",
+      "haircut": "0",
+      "thresholdMultiplierRelativeToBaseline": "1.994"
+    },
+    {
+      "allocation": "0.5",
+      "haircut": "0.003",
+      "thresholdMultiplierRelativeToBaseline": "2"
+    },
+    {
+      "allocation": "0.5",
+      "haircut": "0.01",
+      "thresholdMultiplierRelativeToBaseline": "2.01414141414141414141414141414141414"
+    },
+    {
+      "allocation": "0.5",
+      "haircut": "0.05",
+      "thresholdMultiplierRelativeToBaseline": "2.09894736842105263157894736842105263"
+    }
+  ],
+  "numericValidation": {
+    "status": "passed",
+    "checks": [
+      "zero-failure/zero-posting/zero-refill identity",
+      "57.5-times buffered threshold at zero haircut",
+      "monotonic publisher and refill sharing",
+      "monotonic failure and gas-price cost",
+      "monotonic AA overhead",
+      "half revenue allocation doubles threshold",
+      "zero-overhead/zero-surcharge AA equals EOA model",
+      "posting cost uses same quote response base fee",
+      "61 observed price samples and recorded maximum",
+      "MINT observed upper matches recorded lifecycle"
+    ]
+  }
+}
