@@ -39,7 +39,7 @@ function setupFixture(){
  const key={currency0:address(0),currency1:address(9),fee:3000,tickSpacing:60,hooks:address(0)};
  // A funded, unswapped operation of the owner's, and what the setup contract would simulate for its swap.
  const getters={manager:deployment.poolManager,positions:deployment.positionManager,stateView:deployment.stateView,feeRecipient:deployment.feeRecipient,assistedFeeBps:65,tariffVersion:1n,nextOperationId:operationId,
-  operation:{owner,key,balance0:5000n,balance1:0n,swapped:false,closed:false,tokenId:0n},swap:2000n};
+  operation:{owner,key,balance0:5000n,balance1:0n,swapped:false,closed:false,tokenId:0n},recoveryStarted:false,swap:2000n};
  let deferred;
  const wallet={owner,current:()=>true,nonceOffered:n=>journal.offered(owner,n),claimNonce:n=>journal.claim(owner,n),releaseRejectedNonce:(n,t)=>journal.releaseAfterRejection(owner,n,t),request:async(method,params)=>{
   walletCalls.push(method);

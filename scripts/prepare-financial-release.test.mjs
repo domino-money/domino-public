@@ -19,6 +19,7 @@ before(() => {
     deployer: '0x' + '11'.repeat(20), nonce: '3', feeRecipient: '0x' + '22'.repeat(20),
     operator: '0x' + '33'.repeat(20), pricePublisher: '0x' + '44'.repeat(20), priceGuardDeviationBps: 2000,
     priceGuardGuardian: '0x' + '55'.repeat(20),
+    dependencyCodeHashes: Object.fromEntries(Object.keys(DEPENDENCIES).map(name => [name, '0x' + 'ab'.repeat(32)])),
     setupFeeBps: 65, tariffVersion: '1',
     expiresAt: Math.floor(Date.now() / 1000) + 3600,
     gas: { ...Object.fromEntries(Object.keys(CONTRACTS).map(name => [name, '8000000'])), finalize: '300000' },
@@ -51,7 +52,9 @@ test('actual compiled artifacts produce eight unsigned calls with exact construc
 test('no inferred roles, excess tariff, exhausted nonce, bad gas or false chain can prepare', () => {
   const changes = [{ feeRecipient: undefined }, { privateKey: 'never-read' }, { operator: parameters.pricePublisher }, { operator: parameters.feeRecipient }, { pricePublisher: DEPENDENCIES.poolManager },
     { chainId: 1 }, { setupFeeBps: 66 }, { priceGuardDeviationBps: 0 }, { priceGuardDeviationBps: 10000 }, { priceGuardGuardian: undefined }, { priceGuardGuardian: '0x' + '44'.repeat(20) }, { priceGuardGuardian: '0x' + '33'.repeat(20) }, { tariffVersion: '0' }, { expiresAt: 1 }, { nonce: (2n ** 64n - 1n).toString() },
-    { maxTotalCostWei: '1' }, { gas: { ...parameters.gas, implementation: '53000' } }];
+    { maxTotalCostWei: '1' }, { gas: { ...parameters.gas, implementation: '53000' } },
+    { dependencyCodeHashes: undefined }, { dependencyCodeHashes: {} },
+    { dependencyCodeHashes: { ...parameters.dependencyCodeHashes, poolManager: '0x' + '00'.repeat(32) } }];
   for (const update of changes) assert.throws(() => prepare({ ...parameters, ...update }, artifacts, viem));
 });
 
@@ -114,9 +117,12 @@ test('actual official-v4 dependency code and all unsigned deployments verify int
       await dependency('PoolManager', [accounts[0]], DEPENDENCIES.poolManager);
       await dependency('PositionManager', [DEPENDENCIES.poolManager, accounts[8], 100000n, accounts[7], accounts[6]], DEPENDENCIES.positionManager);
       await dependency('StateView', [DEPENDENCIES.poolManager], DEPENDENCIES.stateView);
+      const dependencyCodeHashes = {};
+      for (const [name, address] of Object.entries(DEPENDENCIES))
+        dependencyCodeHashes[name] = viem.keccak256(await rpc('eth_getCode', [address, 'latest']));
       const input = { ...parameters, deployer: accounts[0], nonce: BigInt(await rpc('eth_getTransactionCount', [accounts[0], 'pending'])).toString(),
         feeRecipient: accounts[1], operator: accounts[2], pricePublisher: accounts[3], priceGuardDeviationBps: 2000,
-        priceGuardGuardian: accounts[4] };
+        priceGuardGuardian: accounts[4], dependencyCodeHashes };
       const manifest = prepare(input, artifacts, viem), hashes = [];
       for (const step of manifest.steps) hashes.push((await send(step.transaction)).transactionHash);
       await rpc('anvil_mine', ['0x40']);
@@ -126,6 +132,13 @@ test('actual official-v4 dependency code and all unsigned deployments verify int
       assert.equal(result.setup.available, true); assert.equal(result.sequence.available, true);
       assert.equal(result.executionAvailable, false); assert.equal(result.priceObservationQualified, false);
       assert.equal(result.receipts.length, 8); assert(methods.length <= 160);
+      // Pins are admitted before preparation, never learned during verification.
+      const alteredDependencyRpc = async (method, params) => method === 'eth_getCode'
+        && params[0] === DEPENDENCIES.poolManager ? '0x6000' : readonly(method, params);
+      await assert.rejects(() => verify(manifest, hashes, artifacts, viem, alteredDependencyRpc), /dependency_code_changed/);
+      const contractGuardianRpc = async (method, params) => method === 'eth_getCode'
+        && params[0] === input.priceGuardGuardian ? '0x6000' : readonly(method, params);
+      await assert.rejects(() => verify(manifest, hashes, artifacts, viem, contractGuardianRpc), /execution_role_must_be_eoa/);
       const directory = mkdtempSync(join(tmpdir(), 'domino-financial-profile-sdk-'));
       try {
         execFileSync(process.execPath, [join(repo, 'app/node_modules/typescript/bin/tsc'),

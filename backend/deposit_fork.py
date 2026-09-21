@@ -22,7 +22,7 @@ from deposit_rpc import DepositRpc
 ROOT = Path(__file__).resolve().parents[1]
 READ_METHODS = DepositRpc.METHODS | {'web3_clientVersion', 'eth_getStorageAt',
     'eth_getBlockByHash', 'anvil_nodeInfo'}
-LOCAL_CONTROLS = frozenset({'anvil_setBalance', 'anvil_impersonateAccount',
+LOCAL_CONTROLS = frozenset({'anvil_setBalance', 'anvil_setCode', 'anvil_impersonateAccount',
     'anvil_stopImpersonatingAccount', 'anvil_mine', 'evm_mine',
     'evm_setNextBlockTimestamp', 'evm_snapshot', 'evm_revert',
     'eth_sendTransaction'})

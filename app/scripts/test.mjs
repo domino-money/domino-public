@@ -69,6 +69,7 @@ execFileSync(
     'tests/performance.controller.test.mjs',
     'tests/execution.controller.test.mjs',
     'tests/nonce.test.mjs',
+    'tests/setup-recovery.test.mjs',
   ],
   { stdio: 'inherit' },
 );

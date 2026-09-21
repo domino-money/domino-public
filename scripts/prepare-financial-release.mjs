@@ -89,9 +89,12 @@ export function loadArtifacts(repo, viem = toolsFor(repo), artifactDirectory = j
 
 export function prepare(parameters, artifacts, viem, now = Date.now() / 1000) {
   keys(parameters, ['chainId', 'sourceCommit', 'deployer', 'nonce', 'feeRecipient', 'operator', 'pricePublisher',
-    'priceGuardDeviationBps', 'priceGuardGuardian',
+    'priceGuardDeviationBps', 'priceGuardGuardian', 'dependencyCodeHashes',
     'setupFeeBps', 'tariffVersion', 'expiresAt', 'gas', 'maxFeePerGas', 'maxPriorityFeePerGas', 'maxTotalCostWei', 'reserveWei']);
   assert(parameters.chainId === CHAIN_ID && /^[0-9a-f]{40}$/.test(parameters.sourceCommit), 'wrong_chain_or_commit');
+  keys(parameters.dependencyCodeHashes, Object.keys(DEPENDENCIES));
+  assert(Object.values(parameters.dependencyCodeHashes).every(value => typeof value === 'string'
+    && hashPattern.test(value) && !/^0x0+$/.test(value)), 'invalid_dependency_code_hash');
   for (const name of ['deployer', 'feeRecipient', 'operator', 'pricePublisher', 'priceGuardGuardian']) address(parameters[name]);
   assert(parameters.operator !== parameters.pricePublisher, 'price_publisher_must_be_independent');
   // The guardian can replace the publisher, so it is neither the publisher
@@ -210,8 +213,10 @@ export async function verify(manifest, transactionHashes, artifacts, viem, rpc, 
       assert(code.length === artifact.runtime.length && maskRuntime(code, artifact.ranges) === maskRuntime(artifact.runtime, artifact.ranges), 'deployment_code_changed');
     }
     codeHashes[component] = viem.keccak256(code);
+    if (Object.hasOwn(DEPENDENCIES, component))
+      assert(codeHashes[component] === p.dependencyCodeHashes[component], 'dependency_code_changed');
   }
-  for (const role of ['operator','pricePublisher'])
+  for (const role of ['deployer','operator','pricePublisher','priceGuardGuardian'])
     assert(hex(await rpc('eth_getCode', [p[role], block])) === '0x', 'execution_role_must_be_eoa');
   const checks = {
     factory: { poolManager: d.poolManager, positionManager: d.positionManager, stateView: d.stateView,

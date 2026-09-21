@@ -24,10 +24,12 @@ import { POSITION_MANAGER, SETUP_CONTRACT, pinned, unpinned } from './pin.js'
  *   function ownerNonce(address) view returns (uint64)
  *   function nextOperationId(address) view returns (bytes32)
  *   function operation(bytes32) view returns (Operation)
+ *   function recoveryStarted(bytes32) view returns (bool)
  *   function open(bytes32 id, PoolKey key, uint128 amount0, uint128 amount1) payable
  *   function swap(SwapPlan) returns (uint128 output)
  *   function mint(MintPlan)
  *   function cancel(bytes32)
+ *   function recoverCurrency(bytes32 id, address currency, uint128 amount)
  */
 const poolKeyComponents = [{ name: 'currency0', type: 'address' }, { name: 'currency1', type: 'address' }, { name: 'fee', type: 'uint24' }, { name: 'tickSpacing', type: 'int24' }, { name: 'hooks', type: 'address' }] as const
 const operationComponents = [{ name: 'owner', type: 'address' }, { name: 'key', type: 'tuple', components: poolKeyComponents }, { name: 'balance0', type: 'uint128' }, { name: 'balance1', type: 'uint128' }, { name: 'swapped', type: 'bool' }, { name: 'closed', type: 'bool' }, { name: 'tokenId', type: 'uint256' }] as const
@@ -43,10 +45,12 @@ export const setupAbi = [
   { name: 'ownerNonce', type: 'function', stateMutability: 'view', inputs: [{ type: 'address' }], outputs: [{ type: 'uint64' }] },
   { name: 'nextOperationId', type: 'function', stateMutability: 'view', inputs: [{ type: 'address' }], outputs: [{ type: 'bytes32' }] },
   { name: 'operation', type: 'function', stateMutability: 'view', inputs: [{ type: 'bytes32' }], outputs: [{ type: 'tuple', components: operationComponents }] },
+  { name: 'recoveryStarted', type: 'function', stateMutability: 'view', inputs: [{ type: 'bytes32' }], outputs: [{ type: 'bool' }] },
   { name: 'open', type: 'function', stateMutability: 'payable', inputs: [{ name: 'id', type: 'bytes32' }, { name: 'key', type: 'tuple', components: poolKeyComponents }, { name: 'amount0', type: 'uint128' }, { name: 'amount1', type: 'uint128' }], outputs: [] },
   { name: 'swap', type: 'function', stateMutability: 'nonpayable', inputs: [{ type: 'tuple', components: swapPlanComponents }], outputs: [{ name: 'output', type: 'uint128' }] },
   { name: 'mint', type: 'function', stateMutability: 'nonpayable', inputs: [{ type: 'tuple', components: mintPlanComponents }], outputs: [] },
   { name: 'cancel', type: 'function', stateMutability: 'nonpayable', inputs: [{ type: 'bytes32' }], outputs: [] },
+  { name: 'recoverCurrency', type: 'function', stateMutability: 'nonpayable', inputs: [{ name: 'id', type: 'bytes32' }, { name: 'currency', type: 'address' }, { name: 'amount', type: 'uint128' }], outputs: [] },
 ] as const
 /**
  * tokenAbi signatures:
@@ -60,7 +64,7 @@ export const tokenAbi = [
 /** operationIdParameters signature: uint256,address,address,uint64 */
 export const operationIdParameters = [{ type: 'uint256' }, { type: 'address' }, { type: 'address' }, { type: 'uint64' }] as const
 export type PoolKey = { currency0: Address; currency1: Address; fee: number; tickSpacing: number; hooks: Address }
-export type SetupOperation = { owner: Address; key: PoolKey; balance0: bigint; balance1: bigint; swapped: boolean; closed: boolean; tokenId: bigint }
+export type SetupOperation = { owner: Address; key: PoolKey; balance0: bigint; balance1: bigint; swapped: boolean; closed: boolean; tokenId: bigint; recoveryStarted: boolean }
 export interface SetupDeployment {
   setup: Address; setupCodeHash: Hex; poolManager: Address; positionManager: Address; stateView: Address
   poolManagerCodeHash: Hex; positionManagerCodeHash: Hex; stateViewCodeHash: Hex
@@ -72,7 +76,7 @@ export interface WalletRpc {
 }
 export interface GasBudget { maxGas: bigint; maxFeePerGas: bigint; maxPriorityFeePerGas: bigint; reserveWei: bigint }
 export interface PreparedSetup {
-  kind: 'approve' | 'fund' | 'swap' | 'mint' | 'cancel'; operationId: Hex | null; owner: Address; expiresAt: number
+  kind: 'approve' | 'fund' | 'swap' | 'mint' | 'cancel' | 'recover'; operationId: Hex | null; owner: Address; expiresAt: number
   transaction: { from: Address; to: Address; data: Hex; value: Hex; nonce: Hex; gas: Hex; maxFeePerGas: Hex; maxPriorityFeePerGas: Hex; chainId: '0x1237'; type: '0x2' }
   summary: readonly string[]
 }
@@ -161,7 +165,8 @@ export function createSetupClient(wallet: WalletRpc, supplied: SetupDeployment, 
       const identities: (keyof SetupDeployment)[] = ['setup','setupCodeHash','poolManager','poolManagerCodeHash','positionManager','positionManagerCodeHash','stateView','stateViewCodeHash','feeRecipient','feeBps','tariffVersion']
       if (!current || now() >= current.expiresAt || identities.some(key => current[key] !== deployment[key])) return fail('setup_admission_unavailable')
     }
-    for (const [address, hash] of [[deployment.setup, deployment.setupCodeHash], [deployment.poolManager, deployment.poolManagerCodeHash], [deployment.positionManager, deployment.positionManagerCodeHash], [deployment.stateView, deployment.stateViewCodeHash]] as const) {
+    const dependencies = [[deployment.poolManager, deployment.poolManagerCodeHash], [deployment.positionManager, deployment.positionManagerCodeHash], [deployment.stateView, deployment.stateViewCodeHash]] as const
+    for (const [address, hash] of [[deployment.setup, deployment.setupCodeHash], ...(recovery ? [] : dependencies)] as const) {
       if (keccak256(asHex(await rpc('eth_getCode', [address, 'latest']))) !== hash) return fail('deployment_code_changed')
     }
     for (const [name, expected] of [['manager', deployment.poolManager], ['positions', deployment.positionManager], ['stateView', deployment.stateView], ['feeRecipient', deployment.feeRecipient], ['assistedFeeBps', deployment.feeBps], ['tariffVersion', deployment.tariffVersion]] as const) {
@@ -173,7 +178,9 @@ export function createSetupClient(wallet: WalletRpc, supplied: SetupDeployment, 
     const data = encodeFunctionData({ abi: setupAbi, functionName: 'operation', args: [id] })
     const op = decodeFunctionResult({ abi: setupAbi, functionName: 'operation', data: asHex(await rpc('eth_call', [{ to: deployment.setup, data }, 'latest'])) })
     if (op.owner.toLowerCase() !== wallet.owner) return fail('operation_not_owned')
-    return op
+    const recoveryData = encodeFunctionData({ abi: setupAbi, functionName: 'recoveryStarted', args: [id] })
+    const recoveryStarted = decodeFunctionResult({ abi: setupAbi, functionName: 'recoveryStarted', data: asHex(await rpc('eth_call', [{ to: deployment.setup, data: recoveryData }, 'latest'])) })
+    return { ...op, recoveryStarted }
   }
   async function prepare(rpc: Rpc, kind: PreparedSetup['kind'], operationId: Hex | null, to: Address, data: Hex, value: bigint, gas: GasBudget, summary: string[]) {
     if (gas.maxGas < 21000n || gas.maxGas > 15_000_000n || gas.maxFeePerGas <= 0n || gas.maxFeePerGas >= 2n ** 128n || gas.maxPriorityFeePerGas < 0n || gas.maxPriorityFeePerGas > gas.maxFeePerGas || gas.reserveWei < 0n) return fail('invalid_gas_budget')
@@ -224,6 +231,7 @@ export function createSetupClient(wallet: WalletRpc, supplied: SetupDeployment, 
     }),
     swap: (id: Hex, zeroForOne: boolean, gross: bigint, slippageBps: number, sqrtLimit: bigint, gas: GasBudget) => bounded(async rpc => {
       await verify(rpc); const op = await operation(rpc, id)
+      if (op.recoveryStarted) return fail('operation_recovery_started')
       // The slippage is the owner's own limit, inside the product's bound (./slippage.ts, pinned to lib/create/slippage.ts): the minimum output below is drawn with it.
       if (op.closed || op.swapped || gross <= 0n || gross > (zeroForOne ? op.balance0 : op.balance1) || !Number.isSafeInteger(slippageBps) || slippageBps < SLIPPAGE_MIN_BPS || slippageBps > SLIPPAGE_MAX_BPS || sqrtLimit <= 0n || sqrtLimit >= 2n ** 160n) return fail('invalid_swap_budget')
       const plan = { operationId: id, zeroForOne, grossInput: gross, minOutput: 1n, sqrtPriceLimitX96: sqrtLimit, deadline: BigInt(Math.floor(now()) + 90) }
@@ -238,6 +246,7 @@ export function createSetupClient(wallet: WalletRpc, supplied: SetupDeployment, 
     }),
     mint: (id: Hex, plan: { tickLower: number; tickUpper: number; liquidity: bigint; maxAmount0: bigint; maxAmount1: bigint; minSqrtPriceX96: bigint; maxSqrtPriceX96: bigint; initialSqrtPriceX96: bigint }, gas: GasBudget) => bounded(async rpc => {
       await verify(rpc); const op = await operation(rpc, id)
+      if (op.recoveryStarted) return fail('operation_recovery_started')
       if (op.closed || !Number.isSafeInteger(plan.tickLower) || !Number.isSafeInteger(plan.tickUpper) || plan.tickLower < -887272 || plan.tickUpper > 887272 || plan.tickLower >= plan.tickUpper || plan.tickLower % op.key.tickSpacing || plan.tickUpper % op.key.tickSpacing
         || plan.liquidity <= 0n || plan.liquidity >= 2n ** 127n || plan.maxAmount0 < 0n || plan.maxAmount1 < 0n || plan.maxAmount0 > op.balance0 || plan.maxAmount1 > op.balance1
         || plan.minSqrtPriceX96 <= 0n || plan.maxSqrtPriceX96 < plan.minSqrtPriceX96 || plan.maxSqrtPriceX96 >= 2n ** 160n || plan.initialSqrtPriceX96 < 0n || plan.initialSqrtPriceX96 >= 2n ** 160n) return fail('invalid_mint_limits')
@@ -251,9 +260,19 @@ export function createSetupClient(wallet: WalletRpc, supplied: SetupDeployment, 
       return prepare(rpc, 'cancel', id, deployment.setup, encodeFunctionData({ abi: setupAbi, functionName: 'cancel', args: [id] }), 0n, gas,
         [`Refund ${op.balance0} of ${op.key.currency0} and ${op.balance1} of ${op.key.currency1} to ${wallet.owner}.`, 'No exit fee. Any earlier successful swap remains completed.'])
     }),
+    recover: (id: Hex, currency: Address, amount: bigint, gas: GasBudget) => bounded(async rpc => {
+      await verify(rpc, true); const op = await operation(rpc, id)
+      if (op.closed) return fail('operation_already_closed')
+      if (amount <= 0n || amount >= 2n ** 128n || ![op.key.currency0.toLowerCase(), op.key.currency1.toLowerCase()].includes(currency)
+        || amount > (currency === op.key.currency0.toLowerCase() ? op.balance0 : op.balance1)) return fail('invalid_recovery_amount')
+      return prepare(rpc, 'recover', id, deployment.setup, encodeFunctionData({ abi: setupAbi, functionName: 'recoverCurrency', args: [id, currency, amount] }), 0n, gas,
+        [`Return ${amount} smallest units of ${currency} from this operation to ${wallet.owner}.`,
+          'This starts recovery: this operation can no longer swap or mint. Other funds remain available for a later refund.',
+          'No Domino exit fee. A token transfer charge may reduce the amount received; the receipt records actual wallet balances.'])
+    }),
     send: (prepared: PreparedSetup, acknowledged: boolean) => bounded(async rpc => {
       if (!acknowledged || !issued.has(prepared) || prepared.expiresAt <= now() || prepared.owner !== wallet.owner) return fail('wallet_review_required')
-      await verify(rpc, prepared.kind === 'cancel')
+      await verify(rpc, prepared.kind === 'cancel' || prepared.kind === 'recover')
       const latest = quantity(await rpc('eth_getTransactionCount', [wallet.owner, 'latest'])), pending = quantity(await rpc('eth_getTransactionCount', [wallet.owner, 'pending']))
       if (latest !== pending || numberToHex(pending) !== prepared.transaction.nonce || offered.has(String(pending)) || wallet.nonceOffered(pending) || prepared.expiresAt <= now()) return fail('pending_wallet_transaction')
       await rpc('eth_call', [prepared.transaction, 'latest'])
@@ -292,7 +311,7 @@ export function createSetupClient(wallet: WalletRpc, supplied: SetupDeployment, 
         // on-chain operation. An unrelated successful owner tx proves nothing.
         if (!operationId || !HASH.test(operationId) || tx.to.toLowerCase() !== deployment.setup) return fail('operation_receipt_required')
         const decoded = decodeFunctionData({ abi: setupAbi, data: asHex(tx.input) })
-        const bound = decoded.functionName === 'open' || decoded.functionName === 'cancel' ? decoded.args[0]
+        const bound = decoded.functionName === 'open' || decoded.functionName === 'cancel' || decoded.functionName === 'recoverCurrency' ? decoded.args[0]
           : decoded.functionName === 'swap' || decoded.functionName === 'mint' ? decoded.args[0].operationId : null
         if (bound !== operationId) return fail('transaction_operation_mismatch')
         if (decoded.functionName !== 'open' && quantity(tx.value) !== 0n) return fail('invalid_transaction_value')

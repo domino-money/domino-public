@@ -2,8 +2,9 @@
 
 Boots one local chain per test class, deploys built artifacts and sends
 transactions from the first funded account. Run after the contract build with
-DOMINO_TEST_EVM=1. Only exact-transfer tokens, fixture funding and the local
-chain's finalized tag are synthetic. DOMINO_COMPOUND_EVM_ROOT may select a
+DOMINO_TEST_EVM=1. Exact-transfer tokens, fixture funding, the local chain's
+finalized tag and an explicitly installed ArbSys emulator are synthetic.
+DOMINO_COMPOUND_EVM_ROOT may select a
 separate local checkout's built artifacts.
 
 This used to be the V3 compound receipt test module; the harness stayed when
@@ -69,6 +70,10 @@ class EvmHarness(unittest.TestCase):
                 time.sleep(.05)
         else:
             raise AssertionError('local EVM failed to start')
+        # Anvil does not implement Nitro's ArbSys. This explicit local fixture
+        # preserves child-chain observation semantics; it is not Nitro proof.
+        artifact = json.loads((cls.artifact_root/'contracts/out/NitroTestSetup.sol/MockNitroArbSys.json').read_text())
+        cls.rpc.request('anvil_setCode', ['0x' + '00'*19 + '64', artifact['deployedBytecode']['object']])
 
     @classmethod
     def stop(cls):

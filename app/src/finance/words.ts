@@ -31,6 +31,8 @@ const TEXT: Readonly<Record<string, string | ((again: ReadControl) => string)>> 
   invalid_operation_id: 'Enter the operation ID as a 32-byte hex value.',
   operation_not_owned: 'That operation belongs to another wallet.',
   operation_already_closed: 'That operation is already closed.',
+  operation_recovery_started: 'Recovery has started. Refund the remaining funds; this operation can no longer swap or mint.',
+  invalid_recovery_amount: 'Choose a token in this operation and an amount within its remaining balance.',
   invalid_swap_budget: 'Check the swap: a budget within the operation balance, a slippage limit from 0.1% to 5% and a price limit.',
   invalid_slippage: 'Choose a swap slippage limit from 0.1% to 5%.',
   swap_output_insufficient: 'The simulated swap output is too small for your slippage limit.',
@@ -100,12 +102,13 @@ export const RECEIPT_TEXT: Readonly<Record<'pending' | 'included' | 'confirming'
 }
 
 /** What each prepared setup step is, for its review heading. */
-export const SETUP_STEP_TEXT: Readonly<Record<'approve' | 'fund' | 'swap' | 'mint' | 'cancel', string>> = {
+export const SETUP_STEP_TEXT: Readonly<Record<'approve' | 'fund' | 'swap' | 'mint' | 'cancel' | 'recover', string>> = {
   approve: 'exact allowance',
   fund: 'funding',
   swap: 'assisted swap',
   mint: 'mint',
   cancel: 'refund',
+  recover: 'single-token refund',
 }
 
 /** What each prepared sequence step is, for its review heading. */

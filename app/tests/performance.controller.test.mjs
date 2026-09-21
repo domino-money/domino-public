@@ -433,7 +433,7 @@ test('the closed owner ABIs ship as JSON, and each equals what viem parses from 
   assert.deepEqual(sequenceAbi, parseAbi(signatures(sequenceText, 'sequenceAbi')));
   assert.deepEqual(sequenceIdParameters, parseAbiParameters(parameters(sequenceText, 'sequenceIdParameters')));
   assert.deepEqual(poolKeyParameters, parseAbiParameters(parameters(sequenceText, 'poolKeyParameters')));
-  assert.deepEqual([setupAbi.length, tokenAbi.length, sequenceAbi.length], [13, 2, 58], 'every signature, and nothing else');
+  assert.deepEqual([setupAbi.length, tokenAbi.length, sequenceAbi.length], [15, 2, 58], 'every signature, and nothing else');
   const code = (text) => text.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
   for (const text of [setupText, sequenceText]) assert.doesNotMatch(code(text), /\bparseAbi(Parameters)?\b/, 'no ABI parser runs in the page');
 });

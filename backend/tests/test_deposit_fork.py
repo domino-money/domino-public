@@ -175,10 +175,21 @@ class DepositForkTests(unittest.TestCase):
                     fork.transport('https://rpc.mainnet.chain.robinhood.com',
                         {'jsonrpc': '2.0', 'id': 1, 'method': method, 'params': []})
             send.assert_not_called()
-            for method in ('eth_sendRawTransaction', 'personal_sign', 'anvil_setCode'):
+            for method in ('eth_sendRawTransaction', 'personal_sign'):
                 with self.assertRaisesRegex(DataError, '^fork_method_rejected$'):
                     fork.request(method, [])
             send.assert_not_called()
+
+
+    def test_code_emulation_is_only_a_verified_child_control(self):
+        fork = DepositFork(Gateway(), block=BLOCK)
+        with patch.object(fork, '_request', return_value=True) as send:
+            with self.assertRaises(DataError):
+                fork.request('anvil_setCode', ['0x' + '00'*19 + '64', '0x6000'])
+            send.assert_not_called()
+            fork._verified = True
+            self.assertTrue(fork.request('anvil_setCode', ['0x' + '00'*19 + '64', '0x6000']))
+            send.assert_called_once()
 
 
 class DepositForkCliTests(unittest.TestCase):
