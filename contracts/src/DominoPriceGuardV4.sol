@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.26;
 
+import {DominoL2Block} from "./DominoL2Block.sol";
+
 /// @dev The one StateView reading the guard bounds a published price against.
 interface IStateViewGuard {
     function getSlot0(bytes32 poolId) external view returns (uint160 sqrtPriceX96, int24 tick, uint24, uint24);
@@ -13,9 +15,9 @@ interface IStateViewGuard {
 contract DominoPriceGuardV4 {
     struct Observation { bytes32 poolId; uint64 blockNumber; bytes32 blockHash; uint64 timestamp; uint64 expiresAt; uint160 sqrtPriceX96; }
     /// @notice The exclusive bound on an observation's age in blocks: it is
-    /// admitted while `block.number - blockNumber` is strictly below this, so
+    /// admitted while `ArbSys.arbBlockNumber() - blockNumber` is strictly below this, so
     /// the oldest observation accepted is 255 blocks old - one short of the
-    /// 256 whose hashes EVM `blockhash` still answers for. Stating the window
+    /// 256 whose hashes ArbSys still answers for. Stating the window
     /// here keeps the real lifetime explicit instead of leaving callers to
     /// discover that a longer declared window silently cannot be reached.
     uint64 public constant MAX_OBSERVATION_BLOCKS = 256;
@@ -81,11 +83,12 @@ contract DominoPriceGuardV4 {
     }
 
     function publish(Observation calldata point) external returns (bytes32 id) {
+        uint256 currentBlock = DominoL2Block.number();
         if (msg.sender != publisher || point.poolId == bytes32(0) || point.sqrtPriceX96 == 0
-            || point.blockNumber >= block.number || point.blockHash == bytes32(0)
-            || blockhash(point.blockNumber) != point.blockHash || point.timestamp > block.timestamp
-            || point.expiresAt <= block.timestamp || point.expiresAt <= point.timestamp
-            || point.blockNumber + MAX_OBSERVATION_BLOCKS <= block.number) revert InvalidObservation();
+            || currentBlock > type(uint64).max || point.blockNumber >= currentBlock
+            || currentBlock - point.blockNumber >= MAX_OBSERVATION_BLOCKS || point.blockHash == bytes32(0)
+            || DominoL2Block.hash(point.blockNumber) != point.blockHash || point.timestamp > block.timestamp
+            || point.expiresAt <= block.timestamp || point.expiresAt <= point.timestamp) revert InvalidObservation();
         // The attested price must sit within a band of what the pool reads now.
         // Without this the publisher's word is the only bound on the anchor
         // that governs every swap's impact and slippage floor.
@@ -108,10 +111,12 @@ contract DominoPriceGuardV4 {
     function referencePrice(bytes32 id, bytes32 poolId, uint64 observedAtBlock,
         bytes32 observedBlockHash, uint32 maxAge) external view returns (uint160) {
         Observation memory point = observations[id];
+        uint256 currentBlock = DominoL2Block.number();
         if (revoked[id] || point.poolId != poolId || point.sqrtPriceX96 == 0
             || point.blockNumber != observedAtBlock || point.blockHash != observedBlockHash
-            || blockhash(point.blockNumber) != point.blockHash || block.timestamp > point.expiresAt
-            || point.blockNumber + MAX_OBSERVATION_BLOCKS <= block.number
+            || currentBlock > type(uint64).max || point.blockNumber >= currentBlock
+            || currentBlock - point.blockNumber >= MAX_OBSERVATION_BLOCKS
+            || DominoL2Block.hash(point.blockNumber) != point.blockHash || block.timestamp > point.expiresAt
             // The claimed timestamp is the publisher's own, so this bound is a
             // ceiling on a self-attested value, not proof of freshness. What
             // actually bounds the age is the block distance above.

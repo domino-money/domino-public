@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.26;
 
+import {NitroTestSetup} from "./shared/NitroTestSetup.sol";
+
 import {DominoVaultV4} from "../src/DominoVaultV4.sol";
 import {DominoVaultFactoryV4} from "../src/DominoVaultFactoryV4.sol";
 import {DominoVaultReadHelper} from "../src/DominoVaultReadHelper.sol";
@@ -41,7 +43,7 @@ contract DominoVaultV4ArchitectureTest {
     receive() external payable {}
 
     function setUp() public {
-        vm.chainId(4663);
+        NitroTestSetup.install();
         vm.roll(400);
         vm.warp(1_700_000_000);
         manager = new MockPoolManager();

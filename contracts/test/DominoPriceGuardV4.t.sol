@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.26;
 
+import {NitroTestSetup} from "./shared/NitroTestSetup.sol";
+
 import {DominoPriceGuardV4} from "../src/DominoPriceGuardV4.sol";
 
 interface GuardVm {
@@ -44,7 +46,7 @@ contract DominoPriceGuardV4Test {
     DominoPriceGuardV4 private guard;
 
     function setUp() public {
-        vm.chainId(4663);
+        NitroTestSetup.install();
         vm.roll(1000);
         vm.warp(1_700_000_000);
         state = new MockGuardStateView();

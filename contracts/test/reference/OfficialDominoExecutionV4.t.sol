@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.26;
 
+import {NitroTestSetup} from "../shared/NitroTestSetup.sol";
+
 import {OfficialFixtureToken, OfficialV4Controller, OfficialV4SwapDriver, PoolManager,
     PositionManager, IPoolManager, PoolKey, Currency} from "./OfficialV4Fixture.sol";
 import {SqrtPriceMath} from "@uniswap/v4-core/src/libraries/SqrtPriceMath.sol";
@@ -67,7 +69,7 @@ contract OfficialDominoExecutionV4Test {
     receive() external payable {}
 
     function _setup(bool nativePair, bool inverse) private {
-        vm.chainId(4663); vm.roll(1000); vm.warp(1_700_000_000);
+        NitroTestSetup.install(); vm.roll(1000); vm.warp(1_700_000_000);
         manager = IPoolManager(address(new PoolManager(address(this))));
         positions = new PositionManager(manager,IAllowanceTransfer(address(0x1111)),100000,
             IPositionDescriptor(address(0x2222)),IWETH9(address(0x3333)));

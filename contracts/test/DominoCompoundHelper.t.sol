@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.26;
 
+import {NitroTestSetup} from "./shared/NitroTestSetup.sol";
+
 import {DominoVaultReadHelper as Helper} from "../src/DominoVaultReadHelper.sol";
 import {DominoVaultTypes as T} from "../src/DominoVaultTypes.sol";
 import {VmE2} from "./E2Mocks.sol";
@@ -26,6 +28,7 @@ contract DominoCompoundHelperTest {
     bytes32 private constant HEADER = keccak256("synthetic previous canonical header");
 
     function setUp() public {
+        NitroTestSetup.install();
         state = new CompoundPriceState();
         helper = new Helper(address(1), address(state));
         vm.roll(400); vm.warp(1000);

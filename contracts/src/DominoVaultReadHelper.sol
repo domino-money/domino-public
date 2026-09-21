@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.26;
 
+import {DominoL2Block} from "./DominoL2Block.sol";
+
 import {DominoVaultTypes as T, IPositionManagerE2, IStateViewE2} from "./DominoVaultTypes.sol";
 
 /// @notice Immutable read, identity, encoding and integer utility for the vault.
@@ -116,7 +118,8 @@ contract DominoVaultReadHelper {
         view
         returns (T.Checkpoint memory point)
     {
-        if (block.number > type(uint64).max) revert InvalidIdentity();
+        uint256 currentBlock = DominoL2Block.number();
+        if (currentBlock > type(uint64).max) revert InvalidIdentity();
         (point.liquidity, point.feeGrowthInside0LastX128, point.feeGrowthInside1LastX128) =
             IStateViewE2(stateView).getPositionInfo(poolId, positionManager, lo, hi, bytes32(tokenId));
         if (point.liquidity != IPositionManagerE2(positionManager).getPositionLiquidity(tokenId)) {
@@ -124,7 +127,7 @@ contract DominoVaultReadHelper {
         }
         (point.feeGrowthInside0X128, point.feeGrowthInside1X128) =
             IStateViewE2(stateView).getFeeGrowthInside(poolId, lo, hi);
-        point.observedAtBlock = uint64(block.number);
+        point.observedAtBlock = uint64(currentBlock);
         point.commitment = keccak256(
             abi.encode(
                 keccak256("DominoRegistrationCheckpointV1"),
@@ -144,10 +147,12 @@ contract DominoVaultReadHelper {
         external view
     {
         // The timestamp is an operator commitment, independently matched to the
-        // canonical header by admission. Solidity can prove the recent hash,
+        // canonical L2 header by admission. ArbSys proves the recent L2 hash,
         // but cannot read that historical header's timestamp itself.
-        if (plan.observedAtBlock >= block.number || plan.observedBlockHash == bytes32(0)
-            || blockhash(plan.observedAtBlock) != plan.observedBlockHash
+        uint256 currentBlock = DominoL2Block.number();
+        if (currentBlock > type(uint64).max || plan.observedAtBlock >= currentBlock
+            || currentBlock - plan.observedAtBlock >= 256 || plan.observedBlockHash == bytes32(0)
+            || DominoL2Block.hash(plan.observedAtBlock) != plan.observedBlockHash
             || plan.observedAtTimestamp > block.timestamp
             || block.timestamp - plan.observedAtTimestamp > maxAge
             // deadline >= observedAtTimestamp follows from the two bounds on

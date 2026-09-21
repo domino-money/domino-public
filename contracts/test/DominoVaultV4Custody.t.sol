@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.26;
 
+import {NitroTestSetup} from "./shared/NitroTestSetup.sol";
+
 import {DominoVaultV4} from "../src/DominoVaultV4.sol";
 import {DominoExecutionTypes as E} from "../src/DominoExecutionTypes.sol";
 import {DominoVaultReadHelper} from "../src/DominoVaultReadHelper.sol";
@@ -98,7 +100,7 @@ contract DominoVaultV4CustodyTest is IERC721ReceiverE2, CustodyBehaviour {
     function setUp() public { _setup(address(this), true); }
 
     function _setup(address owner_, bool nativePair) internal override {
-        vm.chainId(4663);
+        NitroTestSetup.install();
         owner = owner_;
         poolManager = new MockPoolManager();
         positions = new MockPositionManager(address(poolManager));

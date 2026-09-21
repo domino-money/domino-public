@@ -1,0 +1,28 @@
+{
+  "checkedAtUTC": "2026-09-21T15:15:19.383856+00:00",
+  "endpoint": "https://rpc.mainnet.chain.robinhood.com",
+  "chainId": 4663,
+  "sourceSha256": "3094ee5cb132305a0f9b3b556e82f86bcc6b05c010fa4853b3185254a3046254",
+  "probeSourceSha256": "c69a0dd1c446f4d2ed7faa7f583e81233d123854041736191bae803f9bf58f20",
+  "creationBytecodeSha256": "b1ee1a173557ae37ae26b1af2a0c7e59ee5eaaaff627eb771719fca1a63c9aec",
+  "blockTag": {
+    "blockHash": "0xa6d8d846e47fc5624779c1b746b13a72f7b811f5ba8cb7c334cbe9824504a1d7",
+    "requireCanonical": true
+  },
+  "header": {
+    "number": "0x41b47c7",
+    "hash": "0xa6d8d846e47fc5624779c1b746b13a72f7b811f5ba8cb7c334cbe9824504a1d7",
+    "l1BlockNumber": "0x18d22d8",
+    "timestamp": "0x6ab14a06"
+  },
+  "priorHeader": {
+    "number": "0x41b47c6",
+    "hash": "0x8fcf03517188fa0559ba0b09fdd7c398ebc02a845e0f20d95bec45ec0e8e2576"
+  },
+  "ethCallResult": "0x00000000000000000000000000000000000000000000000000000000041b47c78fcf03517188fa0559ba0b09fdd7c398ebc02a845e0f20d95bec45ec0e8e2576",
+  "decoded": {
+    "l2BlockNumber": 68896711,
+    "previousL2BlockHash": "0x8fcf03517188fa0559ba0b09fdd7c398ebc02a845e0f20d95bec45ec0e8e2576"
+  },
+  "qualification": "pinned latest EIP-1898 creation eth_call; no deployment, no transaction; public finalized state unavailable"
+}

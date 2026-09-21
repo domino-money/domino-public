@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.26;
 
+import {NitroTestSetup} from "./shared/NitroTestSetup.sol";
+
 import {DominoVaultReadHelper} from "../src/DominoVaultReadHelper.sol";
 import {DominoVaultTypes as T} from "../src/DominoVaultTypes.sol";
 import {DominoExecutionTypes as E} from "../src/DominoExecutionTypes.sol";
@@ -48,7 +50,7 @@ contract CustodyHandler {
     uint256 public recoveries; uint256 public mints; uint256 public exits;
 
     constructor() {
-        vm.chainId(4663);
+        NitroTestSetup.install();
         poolManager = new MockPoolManager();
         positions = new MockPositionManager(address(poolManager));
         stateView = new MockStateView(address(poolManager), positions);
