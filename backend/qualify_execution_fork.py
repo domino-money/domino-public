@@ -32,6 +32,7 @@ import math
 import os
 import re
 import sys
+import tempfile
 import time
 import urllib.request
 from pathlib import Path
@@ -257,6 +258,75 @@ def correct_historical_report(report):
     return report
 
 
+class ReportCheckpoint:
+    """Reserve a new evidence path and atomically retain every completed row."""
+    def __init__(self, path, report):
+        self.path, self.report = Path(path), report
+
+    def __enter__(self):
+        self.path.parent.mkdir(parents=True, exist_ok=True)
+        # Never overwrite a historical report, even if source setup later fails.
+        with self.path.open('x') as handle:
+            json.dump(self.report, handle, indent=1)
+        self.report['runStatus'] = 'running'
+        self.save()
+        return self
+
+    def save(self):
+        self.report['updatedAt'] = int(time.time())
+        temporary = None
+        try:
+            with tempfile.NamedTemporaryFile(mode='w', dir=self.path.parent,
+                    prefix=self.path.name + '.', suffix='.tmp', delete=False) as handle:
+                temporary = Path(handle.name)
+                json.dump(self.report, handle, indent=1)
+                handle.flush()
+                os.fsync(handle.fileno())
+            os.replace(temporary, self.path)
+        finally:
+            if temporary is not None:
+                temporary.unlink(missing_ok=True)
+
+    def __exit__(self, kind, error, traceback):
+        self.report['finishedAt'] = int(time.time())
+        if error is not None:
+            self.report['runStatus'] = 'interrupted' if isinstance(error, KeyboardInterrupt) else 'harness-error'
+            # Fixed exception type avoids serializing provider URLs/diagnostics.
+            self.report['runErrorType'] = type(error).__name__
+        else:
+            incomplete = any(row.get('outcome') == 'harness-error' for row in self.report['scenarios'])
+            incomplete |= self.report.get('lifecycle', {}).get('outcome') == 'harness-error'
+            self.report['runStatus'] = 'partial' if incomplete else 'complete'
+        self.save()
+        return False
+
+
+class ScenarioBudget:
+    """Check a scenario deadline/request budget before every child RPC.
+
+    DepositFork bounds an already-started RPC to 20 s. Snapshot cleanup uses
+    the underlying fork once so expiration cannot prevent rollback.
+    """
+    def __init__(self, fork, seconds, max_requests=2000):
+        self.fork, self.url = fork, fork.url
+        self.deadline = time.monotonic() + seconds
+        self.max_requests, self.count = max_requests, 0
+
+    def check(self):
+        if time.monotonic() >= self.deadline:
+            raise DataError('fork_scenario_time_budget')
+        if self.count >= self.max_requests:
+            raise DataError('fork_scenario_request_budget')
+
+    def request(self, method, params=()):
+        self.check()
+        self.count += 1
+        return self.fork.request(method, params)
+
+    def mine(self):
+        return self.request('anvil_mine', ['0x1', '0x0'])
+
+
 class Loopback:
     """A loopback JSON-RPC source (an SSH-forwarded node) in the gateway's place."""
     def __init__(self, url):
@@ -282,7 +352,7 @@ class Loopback:
 
 
 class Experiment:
-    def __init__(self, fork, pool_name, band_bps):
+    def __init__(self, fork, pool_name, band_bps, scenario_seconds=180):
         self.fork = fork
         self.pool_id, self.key = POOLS[pool_name]
         self.band_bps = band_bps
@@ -290,6 +360,8 @@ class Experiment:
         self.native = self.key.currency0 == ZERO
         # One sale size per move: every scenario starts from the same snapshot.
         self.move_amounts = {}
+        self.move_failures = {}
+        self.scenario_seconds = scenario_seconds
         self.artifact_provenance = {'basis': 'validated_compiler_metadata_and_exact_local_source_bytes',
             'artifacts': {}, 'sources': {}}
 
@@ -333,8 +405,12 @@ class Experiment:
         body = json.dumps({'jsonrpc': '2.0', 'id': 1, 'method': 'eth_call', 'params': [
             {'from': sender, 'to': target, 'data': data, 'value': hex(value), 'gas': hex(10_000_000)}, 'latest']}).encode()
         request = urllib.request.Request(self.fork.url, body, {'Content-Type': 'application/json'})
+        timeout = 30
+        if isinstance(self.fork, ScenarioBudget):
+            self.fork.check()
+            timeout = min(timeout, max(.001, self.fork.deadline - time.monotonic()))
         try:
-            with urllib.request.urlopen(request, timeout=30) as response:
+            with urllib.request.urlopen(request, timeout=timeout) as response:
                 result = json.load(response)
         except OSError:
             return 'unknown'
@@ -516,33 +592,44 @@ class Experiment:
             received = self.balance(self.key.currency1, self.driver)
             self.swap(False, received)
 
+    def restore(self, checkpoint):
+        fork = self.fork.fork if isinstance(self.fork, ScenarioBudget) else self.fork
+        if fork.request('evm_revert', [checkpoint]) is not True:
+            raise DataError('fork_snapshot_restore_failed')
+
     def price_after(self, zero_for_one, amount):
         checkpoint = self.fork.request('evm_snapshot')
         try:
             self.swap(zero_for_one, amount)
             return self.spot()[0]
         finally:
-            self.fork.request('evm_revert', [checkpoint])
+            self.restore(checkpoint)
 
     def amount_for_move(self, move_bps):
         """Bisect the currency0 sale that lowers currency0's price by move_bps."""
         if move_bps in self.move_amounts:
             return self.move_amounts[move_bps]
-        start = self.spot()[0]
-        target = int(start * math.sqrt(1 - move_bps / 10000))
-        low, high = 0, 10**18
-        while self.price_after(True, high) > target:
-            high *= 4
-            if high > 10**26:
-                raise DataError('fork_move_unreachable')
-        for _ in range(16):
-            mid = (low + high) // 2
-            if self.price_after(True, mid) > target:
-                low = mid
-            else:
-                high = mid
-        self.move_amounts[move_bps] = high
-        return high
+        if move_bps in self.move_failures:
+            raise DataError('fork_move_unavailable_cached:' + self.move_failures[move_bps])
+        try:
+            start = self.spot()[0]
+            target = int(start * math.sqrt(1 - move_bps / 10000))
+            low, high = 0, 10**18
+            while self.price_after(True, high) > target:
+                high *= 4
+                if high > 10**26:
+                    raise DataError('fork_move_unreachable')
+            for _ in range(16):
+                mid = (low + high) // 2
+                if self.price_after(True, mid) > target:
+                    low = mid
+                else:
+                    high = mid
+            self.move_amounts[move_bps] = high
+            return high
+        except Exception as error:  # sizing is identical across the common-snapshot families
+            self.move_failures[move_bps] = type(error).__name__ + ':' + str(error)[:120]
+            raise
 
     def amount_for_rise(self, target, cap):
         """Bisect the currency1 sale, up to `cap`, that lifts currency0's sqrt price to at least `target`."""
@@ -596,7 +683,7 @@ class Experiment:
             out['reason'] = type(error).__name__ + ': ' + str(error)[:160]
             return out
         finally:
-            self.fork.request('evm_revert', [checkpoint])
+            self.restore(checkpoint)
 
     def _lifecycle(self, out):
         if True:
@@ -750,6 +837,16 @@ class Experiment:
         return quote_value(amount0 + reserves[0] + fee0, amount1 + reserves[1] + fee1, reference)
 
     def run_scenario(self, name, move_bps, pre_observation, ceiling, reference, honest_added, swap=False):
+        if move_bps in self.move_failures:
+            raise DataError('fork_move_unavailable_cached:' + self.move_failures[move_bps])
+        original = self.fork
+        self.fork = ScenarioBudget(original, self.scenario_seconds)
+        try:
+            return self._run_scenario(name, move_bps, pre_observation, ceiling, reference, honest_added, swap)
+        finally:
+            self.fork = original
+
+    def _run_scenario(self, name, move_bps, pre_observation, ceiling, reference, honest_added, swap=False):
         checkpoint = self.fork.request('evm_snapshot')
         try:
             result = {'scenario': name, 'moveBps': move_bps, 'preObservation': pre_observation, 'ceiling': ceiling,
@@ -828,7 +925,7 @@ class Experiment:
             result['attackerPnlBasis'] = 'driver_token_balances_at_reference_quote; excludes_attacker_gas'
             return result, added
         finally:
-            self.fork.request('evm_revert', [checkpoint])
+            self.restore(checkpoint)
 
 
 def main(argv=None):
@@ -842,6 +939,7 @@ def main(argv=None):
     parser.add_argument('--block', help='fork block number (hex or decimal); default: the head block')
     parser.add_argument('--band', type=int, default=GUARD_BAND_BPS, help='price guard band, bps of sqrt price')
     parser.add_argument('--moves', default='50,90,110,500,2000', help='attacker price moves to measure, bps')
+    parser.add_argument('--scenario-seconds', type=int, default=180, help='per-scenario RPC budget, 1..600 seconds; in-flight RPC and rollback remain bounded separately')
     parser.add_argument('--rounds', type=int, default=40, help='fee-earning round trips before the compounds')
     parser.add_argument('--root0', default='2000000000000000000', help='root deposit of currency0, raw')
     parser.add_argument('--root1', default='8000000000', help='root deposit of currency1, raw')
@@ -856,124 +954,128 @@ def main(argv=None):
             json.dump(report, handle, indent=1)
         return 0
     moves = [int(x) for x in args.moves.split(',') if x]
+    if not 1 <= args.scenario_seconds <= 600 or any(not 0 < move < 10000 for move in moves):
+        parser.error('scenario seconds must be 1..600 and moves must be 1..9999 bps')
     report = {'tool': 'qualify_execution_fork', 'chainId': CHAIN_ID, 'pool': args.pool,
         'poolId': POOLS[args.pool][0], 'guardBandBps': args.band, 'maxPriceImpactBps': MAX_PRICE_IMPACT_BPS,
         'serviceFeeBps': SERVICE_FEE_BPS, 'planSlackPercent': 10, 'rootWidthTicks': args.width,
         'startedAt': int(time.time()), 'scenarios': [], 'evidenceVersion': 2,
+        'requestedMovesBps': moves, 'scenarioBudgetSeconds': args.scenario_seconds,
         'valuation': 'formula estimates in currency1 units at pre-scenario price; position amounts from liquidity/range plus measured reserves and accrued fees',
         'economicScope': 'single-action point samples; no profitable-attack threshold or per-vault safety bound; exposure aggregates across a shared pool/window',
         'controls': 'synthetic accounts impersonated on the child; balances set locally; WETH wrapped; other tokens moved from the pool manager'}
-    if args.source_url:
-        source = Loopback(args.source_url)
-        report['upstream'] = 'loopback source'
-    elif args.public_rpc:
-        source = ForkReadGateway(RPC_URL, max_requests=40_000, total_seconds=1800)
-        report['upstream'] = urlsplit(RPC_URL).hostname
-    else:
-        config = load_config(args.rpc_config) if args.rpc_config else load_config()
-        history = configured_history_rpc_source(config)
-        hosts = config.get('rpcAllowedHosts', DEFAULT_RPC_HOSTS)
-        source = ForkReadGateway(history, allowed_hosts=hosts)
-        report['upstream'] = urlsplit(history[0] if isinstance(history, tuple) else history).hostname
-    with source as gateway:
-        if gateway.request('eth_chainId') != hex(CHAIN_ID):
-            raise DataError('fork_source_chain_mismatch')
-        # A pruned Nitro node keeps state for roughly its block-age window, so
-        # the fork starts at the head, as the deposit qualification does, and
-        # the whole session has to finish inside that window.
-        tag = 'latest' if args.block is None else hex(int(args.block, 0))
-        block = gateway.request('eth_getBlockByNumber', [tag, False])
-        report['source'] = {k: block[k] for k in ('number', 'hash', 'timestamp')}
-        with DepositFork(gateway, block=block, total_seconds=1800, max_requests=40_000) as fork:
-            report['anvilVersion'] = fork.version
-            x = Experiment(fork, args.pool, args.band)
-            report['chainSemantics'] = x.emulate_arbsys()
-            x.deploy_stack()
-            if set(x.artifact_provenance['artifacts']) != set(FORK_ARTIFACTS):
-                raise DataError('fork_artifact_provenance_incomplete')
-            report['artifactProvenance'] = x.artifact_provenance
-            report['stack'] = {k: getattr(x, k) for k in ('factory', 'helper', 'routing', 'guard', 'engine',
-                'implementation', 'setup', 'driver')}
-            report['root'] = x.open_root(int(args.root0), int(args.root1), args.width)
-            x.create_vault()
-            report['vault'] = x.vault
-            print(json.dumps({'stage': 'vault', 'vault': x.vault, 'token': x.token}), flush=True)
-            # The attacker's war chest, currency0 only: every unit of currency1
-            # it holds afterwards came out of the pool. Funded before any swap,
-            # including the sizing probes.
-            x.fund_driver(10**24, 0)
-            # Fee generation: legs sized to a small impact, so the price ends near where it began.
-            probe = x.amount_for_move(20)
-            price_start = x.spot()[0]
-            x.earn_fees(args.rounds, probe)
-            fees = x.accrued()
-            report['fees'] = {'rounds': args.rounds, 'legCurrency0': str(probe), 'accrued': [str(f) for f in fees],
-                'sqrtPriceBefore': str(price_start), 'sqrtPriceAfter': str(x.spot()[0])}
-            print(json.dumps({'stage': 'fees', **report['fees']}), flush=True)
-            if fees[0] == 0 and fees[1] == 0:
-                raise DataError('fork_no_fees_accrued')
-            reference = x.spot()[0]
-            report['referenceSqrtPrice'] = str(reference)
-            honest, honest_added = x.run_scenario('honest', 0, False, False, reference, (0, 0))
-            report['scenarios'].append(honest)
-            # Gas on the L2 is in every receipt; the L1 data component is what the
-            # live node's NodeInterface estimates for this calldata, a point sample.
-            try:
-                sample_plan, _ = x.plan(int(honest['liquidityIncrease']), (2**127 - 1, 2**127 - 1))
-                data = sample_plan.calldata()
-                estimate = gateway.request('eth_call', [{'to': '0x00000000000000000000000000000000000000c8', 'from': OPERATOR,
-                    'data': calldata('gasEstimateL1Component(address,bool,bytes)', ['address', 'bool', 'bytes'],
-                        [x.vault, False, bytes.fromhex(data[2:])])}, 'latest'])
-                l1_gas, base_fee, l1_base_fee = decode(['uint64', 'uint256', 'uint256'], bytes.fromhex(estimate[2:]))
-                report['gas'] = {'compoundCalldataBytes': len(data) // 2 - 1, 'l2GasUsedHonest': honest.get('gasUsed'),
-                    'l1ComponentGas': int(l1_gas), 'l2BaseFeeWei': str(base_fee), 'l1BaseFeeEstimateWei': str(l1_base_fee),
-                    'source': 'NodeInterface.gasEstimateL1Component on the live node'}
-            except Exception as error:  # noqa: BLE001
-                report['gas'] = {'unavailable': type(error).__name__}
-            print(json.dumps({'stage': 'scenario', **{k: honest[k] for k in ('scenario', 'outcome', 'liquidityAdded')}}), flush=True)
-            compounded = quote_value(*honest_added, reference)
-            report['honestCompoundedQuote'] = str(compounded)
-            # The swap recipe's own control, before any manipulation.
-            try:
-                control, _ = x.run_scenario('swap-honest', 0, False, False, reference, honest_added, True)
-            except Exception as error:  # noqa: BLE001
-                control = {'scenario': 'swap-honest', 'moveBps': 0, 'swap': True, 'outcome': 'harness-error',
-                    'reason': type(error).__name__ + ': ' + str(error)[:120]}
-            report['scenarios'].append(control)
-            controls = {'honest': honest, 'swap-honest': control}
-            for row in (honest, control):
-                row.update(scenario_metrics(row, controls, reference))
-            print(json.dumps({'stage': 'scenario', **{k: control.get(k) for k in ('scenario', 'outcome', 'reason', 'liquidityAdded')}}), flush=True)
-            families = (('pre-observation', True, False, False), ('post-observation', False, False, False),
-                ('ceiling', False, True, False), ('swap-pre-observation', True, False, True),
-                ('swap-post-observation', False, False, True))
-            for move in moves:
-                for name, pre, ceiling, swap in families:
-                    if ceiling and move >= MAX_PRICE_IMPACT_BPS:
-                        continue
-                    try:
-                        result, _ = x.run_scenario(name, move, pre, ceiling, reference, honest_added, swap)
-                    except Exception as error:  # noqa: BLE001 - one scenario's failure is a result, not the run's
-                        result = {'scenario': name, 'moveBps': move, 'swap': swap, 'outcome': 'harness-error',
-                            'reason': type(error).__name__ + ': ' + str(error)[:120]}
-                    result.update(scenario_metrics(result, controls, reference))
-                    report['scenarios'].append(result)
-                    print(json.dumps({'stage': 'scenario', **{k: result.get(k) for k in
-                        ('scenario', 'moveBps', 'outcome', 'reason', 'vaultValueDeltaVersusControlQuote', 'attackerPoolCostQuote',
-                         'swapShortfallStatus', 'swapShortfallQuote')}}), flush=True)
-            if args.lifecycle:
+    with ReportCheckpoint(args.output, report) as evidence:
+        if args.source_url:
+            source = Loopback(args.source_url)
+            report['upstream'] = 'loopback source'
+        elif args.public_rpc:
+            source = ForkReadGateway(RPC_URL, max_requests=40_000, total_seconds=1800)
+            report['upstream'] = urlsplit(RPC_URL).hostname
+        else:
+            config = load_config(args.rpc_config) if args.rpc_config else load_config()
+            history = configured_history_rpc_source(config)
+            hosts = config.get('rpcAllowedHosts', DEFAULT_RPC_HOSTS)
+            source = ForkReadGateway(history, allowed_hosts=hosts)
+            report['upstream'] = urlsplit(history[0] if isinstance(history, tuple) else history).hostname
+        with source as gateway:
+            if gateway.request('eth_chainId') != hex(CHAIN_ID):
+                raise DataError('fork_source_chain_mismatch')
+            # A pruned Nitro node keeps state for roughly its block-age window, so
+            # the fork starts at the head, as the deposit qualification does, and
+            # the whole session has to finish inside that window.
+            tag = 'latest' if args.block is None else hex(int(args.block, 0))
+            block = gateway.request('eth_getBlockByNumber', [tag, False])
+            report['source'] = {k: block[k] for k in ('number', 'hash', 'timestamp')}
+            with DepositFork(gateway, block=block, total_seconds=1800, max_requests=40_000) as fork:
+                report['anvilVersion'] = fork.version
+                x = Experiment(fork, args.pool, args.band, args.scenario_seconds)
+                report['chainSemantics'] = x.emulate_arbsys()
+                x.deploy_stack()
+                if set(x.artifact_provenance['artifacts']) != set(FORK_ARTIFACTS):
+                    raise DataError('fork_artifact_provenance_incomplete')
+                report['artifactProvenance'] = x.artifact_provenance
+                report['stack'] = {k: getattr(x, k) for k in ('factory', 'helper', 'routing', 'guard', 'engine',
+                    'implementation', 'setup', 'driver')}
+                report['root'] = x.open_root(int(args.root0), int(args.root1), args.width)
+                x.create_vault()
+                report['vault'] = x.vault
+                print(json.dumps({'stage': 'vault', 'vault': x.vault, 'token': x.token}), flush=True)
+                # The attacker's war chest, currency0 only: every unit of currency1
+                # it holds afterwards came out of the pool. Funded before any swap,
+                # including the sizing probes.
+                x.fund_driver(10**24, 0)
+                # Fee generation: legs sized to a small impact, so the price ends near where it began.
+                probe = x.amount_for_move(20)
+                price_start = x.spot()[0]
+                x.earn_fees(args.rounds, probe)
+                fees = x.accrued()
+                report['fees'] = {'rounds': args.rounds, 'legCurrency0': str(probe), 'accrued': [str(f) for f in fees],
+                    'sqrtPriceBefore': str(price_start), 'sqrtPriceAfter': str(x.spot()[0])}
+                print(json.dumps({'stage': 'fees', **report['fees']}), flush=True)
+                if fees[0] == 0 and fees[1] == 0:
+                    raise DataError('fork_no_fees_accrued')
+                reference = x.spot()[0]
+                report['referenceSqrtPrice'] = str(reference)
+                honest, honest_added = x.run_scenario('honest', 0, False, False, reference, (0, 0))
+                report['scenarios'].append(honest)
+                evidence.save()
+                # Gas on the L2 is in every receipt; the L1 data component is what the
+                # live node's NodeInterface estimates for this calldata, a point sample.
                 try:
-                    report['lifecycle'] = x.lifecycle()
+                    sample_plan, _ = x.plan(int(honest['liquidityIncrease']), (2**127 - 1, 2**127 - 1))
+                    data = sample_plan.calldata()
+                    estimate = gateway.request('eth_call', [{'to': '0x00000000000000000000000000000000000000c8', 'from': OPERATOR,
+                        'data': calldata('gasEstimateL1Component(address,bool,bytes)', ['address', 'bool', 'bytes'],
+                            [x.vault, False, bytes.fromhex(data[2:])])}, 'latest'])
+                    l1_gas, base_fee, l1_base_fee = decode(['uint64', 'uint256', 'uint256'], bytes.fromhex(estimate[2:]))
+                    report['gas'] = {'compoundCalldataBytes': len(data) // 2 - 1, 'l2GasUsedHonest': honest.get('gasUsed'),
+                        'l1ComponentGas': int(l1_gas), 'l2BaseFeeWei': str(base_fee), 'l1BaseFeeEstimateWei': str(l1_base_fee),
+                        'source': 'NodeInterface.gasEstimateL1Component on the live node'}
                 except Exception as error:  # noqa: BLE001
-                    report['lifecycle'] = {'outcome': 'harness-error', 'reason': type(error).__name__ + ': ' + str(error)[:160]}
-                print(json.dumps({'stage': 'lifecycle', **{k: v for k, v in report['lifecycle'].items() if k != 'steps'},
-                    'steps': [(s['step'], s['outcome'], s.get('reason')) for s in report['lifecycle'].get('steps', [])]}), flush=True)
-            report['finishedAt'] = int(time.time())
-    args.output.parent.mkdir(parents=True, exist_ok=True)
-    with open(args.output, 'x') as handle:
-        json.dump(report, handle, indent=1)
+                    report['gas'] = {'unavailable': type(error).__name__}
+                print(json.dumps({'stage': 'scenario', **{k: honest[k] for k in ('scenario', 'outcome', 'liquidityAdded')}}), flush=True)
+                compounded = quote_value(*honest_added, reference)
+                report['honestCompoundedQuote'] = str(compounded)
+                # The swap recipe's own control, before any manipulation.
+                try:
+                    control, _ = x.run_scenario('swap-honest', 0, False, False, reference, honest_added, True)
+                except Exception as error:  # noqa: BLE001
+                    control = {'scenario': 'swap-honest', 'moveBps': 0, 'swap': True, 'outcome': 'harness-error',
+                        'reason': type(error).__name__ + ': ' + str(error)[:120]}
+                report['scenarios'].append(control)
+                controls = {'honest': honest, 'swap-honest': control}
+                for row in (honest, control):
+                    row.update(scenario_metrics(row, controls, reference))
+                print(json.dumps({'stage': 'scenario', **{k: control.get(k) for k in ('scenario', 'outcome', 'reason', 'liquidityAdded')}}), flush=True)
+                families = (('pre-observation', True, False, False), ('post-observation', False, False, False),
+                    ('ceiling', False, True, False), ('swap-pre-observation', True, False, True),
+                    ('swap-post-observation', False, False, True))
+                evidence.save()
+                for move in moves:
+                    for name, pre, ceiling, swap in families:
+                        if ceiling and move >= MAX_PRICE_IMPACT_BPS:
+                            continue
+                        try:
+                            result, _ = x.run_scenario(name, move, pre, ceiling, reference, honest_added, swap)
+                        except Exception as error:  # noqa: BLE001 - one scenario's failure is a result, not the run's
+                            result = {'scenario': name, 'moveBps': move, 'swap': swap, 'outcome': 'harness-error',
+                                'reason': type(error).__name__ + ': ' + str(error)[:120]}
+                        result.update(scenario_metrics(result, controls, reference))
+                        report['scenarios'].append(result)
+                        evidence.save()
+                        print(json.dumps({'stage': 'scenario', **{k: result.get(k) for k in
+                            ('scenario', 'moveBps', 'outcome', 'reason', 'vaultValueDeltaVersusControlQuote', 'attackerPoolCostQuote',
+                             'swapShortfallStatus', 'swapShortfallQuote')}}), flush=True)
+                if args.lifecycle:
+                    try:
+                        report['lifecycle'] = x.lifecycle()
+                    except Exception as error:  # noqa: BLE001
+                        report['lifecycle'] = {'outcome': 'harness-error', 'reason': type(error).__name__ + ': ' + str(error)[:160]}
+                    print(json.dumps({'stage': 'lifecycle', **{k: v for k, v in report['lifecycle'].items() if k != 'steps'},
+                        'steps': [(s['step'], s['outcome'], s.get('reason')) for s in report['lifecycle'].get('steps', [])]}), flush=True)
+                evidence.save()
     print(json.dumps({'stage': 'done', 'output': str(args.output), 'scenarios': len(report['scenarios'])}), flush=True)
-    return 0
+    return 0 if report['runStatus'] == 'complete' else 1
 
 
 if __name__ == '__main__':

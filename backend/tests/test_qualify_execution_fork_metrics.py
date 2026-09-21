@@ -6,6 +6,7 @@ from pathlib import Path
 import sys
 import tempfile
 import unittest
+from unittest.mock import Mock, patch
 
 from eth_abi import encode
 
@@ -100,6 +101,106 @@ class EconomicMetricsTests(unittest.TestCase):
         self.assertEqual(result['swapExecution']['status'], 'unavailable')
         self.assertNotIn('breakevenCompoundedQuote', result)
         self.assertNotIn('swapShortfallQuote', result)
+
+
+class FiniteEvidenceTests(unittest.TestCase):
+    def test_completed_rows_survive_an_upstream_failure_without_overwriting_history(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / 'evidence.json'
+            report = {'scenarios': []}
+            with self.assertRaisesRegex(q.DataError, 'source unavailable'):
+                with q.ReportCheckpoint(path, report) as evidence:
+                    report['scenarios'].append({'scenario': 'honest', 'outcome': 'executed'})
+                    evidence.save()
+                    saved = json.loads(path.read_text())
+                    self.assertEqual(saved['runStatus'], 'running')
+                    self.assertEqual(saved['scenarios'], report['scenarios'])
+                    raise q.DataError('source unavailable')
+            saved = json.loads(path.read_text())
+            self.assertEqual(saved['runStatus'], 'harness-error')
+            self.assertEqual(saved['runErrorType'], 'DataError')
+            self.assertEqual(saved['scenarios'], report['scenarios'])
+            with self.assertRaises(FileExistsError):
+                with q.ReportCheckpoint(path, {'scenarios': []}):
+                    pass
+            self.assertEqual(json.loads(path.read_text()), saved)
+            self.assertEqual(list(Path(directory).iterdir()), [path])
+
+    def test_partial_evidence_is_explicit_and_interrupt_keeps_prior_rows(self):
+        with tempfile.TemporaryDirectory() as directory:
+            for failure, status in ((None, 'partial'), (KeyboardInterrupt(), 'interrupted')):
+                path = Path(directory) / (status + '.json')
+                report = {'scenarios': [{'outcome': 'harness-error'}]}
+                try:
+                    with q.ReportCheckpoint(path, report):
+                        if failure:
+                            raise failure
+                except KeyboardInterrupt:
+                    pass
+                saved = json.loads(path.read_text())
+                self.assertEqual(saved['runStatus'], status)
+                self.assertEqual(saved['scenarios'], report['scenarios'])
+                self.assertIn('finishedAt', saved)
+
+    def test_deadline_and_request_budget_refuse_before_calling_the_fork(self):
+        fork = Mock(url='http://127.0.0.1:1')
+        with patch.object(q.time, 'monotonic', return_value=100):
+            budget = q.ScenarioBudget(fork, 5, max_requests=1)
+            budget.request('eth_chainId')
+            with self.assertRaisesRegex(q.DataError, '^fork_scenario_request_budget$'):
+                budget.request('eth_chainId')
+        self.assertEqual(fork.request.call_count, 1)
+        with patch.object(q.time, 'monotonic', return_value=105):
+            with self.assertRaisesRegex(q.DataError, '^fork_scenario_time_budget$'):
+                budget.request('eth_chainId')
+        self.assertEqual(fork.request.call_count, 1)
+
+    def test_anchor_mining_uses_the_scenario_rpc_budget(self):
+        fork = Mock(url='http://127.0.0.1:1')
+        budget = q.ScenarioBudget(fork, 180, max_requests=1)
+        budget.mine()
+        fork.request.assert_called_once_with('anvil_mine', ['0x1', '0x0'])
+        with self.assertRaisesRegex(q.DataError, '^fork_scenario_request_budget$'):
+            budget.mine()
+
+    def test_failed_sizing_is_cached_and_other_families_do_not_touch_the_fork(self):
+        fork = Mock(url='http://127.0.0.1:1')
+        experiment = q.Experiment(fork, 'weth-usdg', 100)
+        experiment.spot = Mock(return_value=(q.Q96, 0))
+        experiment.price_after = Mock(side_effect=q.DataError('fork_upstream_unavailable'))
+        with self.assertRaisesRegex(q.DataError, '^fork_upstream_unavailable$'):
+            experiment.amount_for_move(2000)
+        with self.assertRaisesRegex(q.DataError, '^fork_move_unavailable_cached:'):
+            experiment.run_scenario('post-observation', 2000, False, False, q.Q96, (0, 0))
+        self.assertEqual(experiment.price_after.call_count, 1)
+        fork.request.assert_not_called()
+
+    def test_expired_budget_does_not_block_rollback_and_original_fork_is_restored(self):
+        fork = Mock(url='http://127.0.0.1:1')
+        fork.request.return_value = True
+        experiment = q.Experiment(fork, 'weth-usdg', 100)
+        def fail_scenario(*args):
+            experiment.fork.deadline = 0
+            experiment.restore('checkpoint')
+            experiment.fork.request('eth_chainId')
+        experiment._run_scenario = fail_scenario
+        with self.assertRaisesRegex(q.DataError, '^fork_scenario_time_budget$'):
+            experiment.run_scenario('honest', 0, False, False, q.Q96, (0, 0))
+        fork.request.assert_called_once_with('evm_revert', ['checkpoint'])
+        self.assertIs(experiment.fork, fork)
+
+    def test_source_failure_still_writes_an_error_report_without_loading_private_config(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / 'failure.json'
+            with patch.object(q, 'ForkReadGateway') as gateway, patch.object(q, 'load_config') as config:
+                gateway.return_value.__enter__.return_value.request.side_effect = q.DataError('unavailable')
+                with self.assertRaises(q.DataError):
+                    q.main(['--public-rpc', '--output', str(path)])
+                config.assert_not_called()
+            report = json.loads(path.read_text())
+            self.assertEqual(report['runStatus'], 'harness-error')
+            self.assertEqual(report['scenarios'], [])
+            self.assertEqual(report['scenarioBudgetSeconds'], 180)
 
 
 class ArtifactProvenanceTests(unittest.TestCase):
