@@ -5,8 +5,10 @@ Current V4 remediation is recorded in [the audit package](reports/V4_AUDIT_PACKA
 The owner selected 2% simple / 4% Domino pricing, manual gas funding first and
 automated company-treasury refill later. [The fee review](reports/REVERT_FEE_DEEP_DIVE_2026-09-21.md)
 records implementation, verification and remaining deployment inputs. Setup already
-implements its separately capped 65-bps collection path; the live tariff/version
-remain unselected. The owner confirmed that internal automation swaps stay
+implements its separately capped 65-bps collection path. The owner approved
+`setupFeeBps: 65` (0.65%) and `tariffVersion: "1"` for the first Setup release;
+this is a release-input decision, not a deployed or active tariff. The owner
+confirmed that internal automation swaps stay
 included in the 2%/4% mode fee; the additional 2% swap charge is not part of this release.
 
 

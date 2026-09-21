@@ -6,6 +6,20 @@ transaction, creates a user vault or authorizes an operator. Chain **4663 is
 Robinhood Chain mainnet**. Deployment requires the selected deployer's real
 native-token funding; this is not a faucet/testnet flow.
 
+## Approved first-release pricing
+
+The owner selected **0.65% (65 bps)** for assisted swaps during funding or
+supported manual management: use `setupFeeBps: 65` and `tariffVersion: "1"`
+in the first release's public preparation inputs. The basis is consumed selected
+gross input, including the fee; direct deposits without a swap have no Setup
+percentage charge. This selection is approved for preparation, not evidence of
+a deployed contract or active collection. The prepared constructors and verified
+Setup profile must record the selected rate and version before publication.
+
+Automation remains **2% simple / 4% Domino**, with internal swaps included in
+the mode fee and no additional swap surcharge. The earlier alternate Setup
+rates remain historical studies; the existing 65-bps contract ceiling is unchanged.
+
 ## Public inputs
 
 Supply a JSON file containing exactly these fields. Addresses use lowercase
@@ -22,8 +36,8 @@ hex; integer strings are canonical unsigned decimal strings.
 | pricePublisher | Independent price publisher; must differ from operator |
 | priceGuardDeviationBps | Band, in basis points of the square-root price, inside which a published price must sit against the pool's live reading; integer 1–9999 |
 | priceGuardGuardian | Cold key that can propose the next price publisher (the proposed key must accept) and revoke an observation; must differ from operator and pricePublisher |
-| setupFeeBps | Explicit assisted Setup tariff, integer 0–65 |
-| tariffVersion | Nonzero uint64 tariff version as a decimal string |
+| setupFeeBps | `65` for the approved first release (0.65%); tooling/contract range remains integer 0–65 |
+| tariffVersion | `"1"` for the approved first release; nonzero uint64 decimal string |
 | expiresAt | Absolute Unix-second expiry for the resulting public profiles |
 | gas | Object with decimal limits for factory, readHelper, routing, priceGuard, engine, implementation, setup, finalize |
 | maxFeePerGas | Explicit maximum type-2 fee per gas, decimal wei |

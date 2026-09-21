@@ -9,11 +9,12 @@ conversão e reposição limitadas usando receita já recebida pela tesouraria.
 **Decisão confirmada para swaps:** manter os swaps internos incluídos na tarifa
 do modo. A cobrança adicional de 2% sobre o swap foi estudada e descartada para
 esta versão. O código já implementa essa decisão em contratos, backend, SDK,
-interface e perfis de release. Para
-swaps assistidos de depósito/gestão manual, já existe política e implementação
-separadas com teto de **0,65%**; a tarifa/versionamento concretos de produção ainda
-precisam ser selecionados. Um aumento desse teto para 2% seria outra decisão
-comercial e outra alteração de contrato.
+interface e perfis de release. Para swaps assistidos de entrada/gestão manual,
+o usuário selecionou **0,65% (65 bps), tariffVersion 1**, para a primeira release
+do Setup, sobre o orçamento selecionado e efetivamente consumido no swap. O teto
+existente de 65 bps permanece. A escolha autoriza os parâmetros de preparação;
+não significa contrato implantado ou cobrança ativa. Um aumento desse teto para
+2% seria outra decisão comercial e outra alteração de contrato.
 
 ## Pesquisa delegada e fontes
 
@@ -147,9 +148,11 @@ representam o modo: **200 simples; 400 Domino**. Validação genérica de um tet
   obrigatórios. O perfil antigo de taxa única não deve admitir o novo comportamento.
   Os novos fontes exigem novos artifacts/pins e atualização do freeze antes do deploy.
 
-A política de swaps do Setup permanece em até 65 bps. Os relatórios e recibos
-históricos não são reprecificados. A simulação antiga de compound simples continua
-em 2%. Nenhum serviço de top-up nem execução financeira em mainnet foi ativado.
+A primeira release do Setup usa os parâmetros aprovados `setupFeeBps: 65`
+e `tariffVersion: "1"`, dentro do teto existente de 65 bps. Preparação,
+verificação e implantação continuam etapas separadas desta decisão. Os relatórios
+e recibos históricos não são reprecificados. A simulação antiga de compound
+simples continua em 2%. Nenhum serviço de top-up nem execução financeira em mainnet foi ativado.
 
 ## Freeze e validação da implementação
 
