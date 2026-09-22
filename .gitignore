@@ -32,3 +32,5 @@ app/.test-artifacts/
 
 # Mutable state of the bounded operational recovery watcher.
 reports/public-data-recovery-status.json
+# wrangler writes a cache here when it runs from the repository root
+.wrangler/

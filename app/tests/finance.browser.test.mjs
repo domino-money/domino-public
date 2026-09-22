@@ -695,15 +695,26 @@ const chainAbi = parseAbi([
   'function positionManagerCodeHash() view returns(bytes32)', 'function stateViewCodeHash() view returns(bytes32)', 'function routingHelper() view returns(address)',
   'function priceGuard() view returns(address)', 'function readHelperHash() view returns(bytes32)', 'function routingHelperHash() view returns(bytes32)',
   'function priceGuardHash() view returns(bytes32)', 'function publisher() view returns(address)',
+  // The vault's own limits and balance reads, which the safety-limit change and the recovery steps make before anything is offered.
+  'struct Balance { uint128 original; uint128 charged; }',
+  'function executionLimits() view returns(ExecutionLimits)', 'function feeBalance(bytes32,address) view returns(Balance)',
+  'function accountedCurrency(address) view returns(uint256)',
   // Simulated before it is offered, so the call has to resolve here too.
-  'function setOperator(address next)', 'function setPolicy(Policy next)',
+  'function setOperator(address next)', 'function setPolicy(Policy next)', 'function setExecutionLimits(ExecutionLimits next)',
+  'function rearmRoot(bool consentToUncollectedFees)', 'function recoverUnmanagedPosition(uint256 tokenId)', 'function recoverUntrackedCurrency(address currency, uint256 amount)',
 ]);
 
 /**
  * A chain with a published sequence deployment and `roots.length` sequences created by `owner`, answered only for
  * the reads the sequence client makes. Anything else is refused as a non-read, and every method asked is logged.
+ *
+ * The vault's own state is what the owner steps re-read before they build anything, so each part of it is a knob:
+ * `policyVersion`, `paused`, `limitsVersion` and `rootPermissionValid` for the vault's policy, limits and permission,
+ * `vaultHeld` for NFTs the position manager reports the vault holding, and `accounted` for the units its books claim.
+ * The policy and limits answered are also returned, so a test can compare a built struct against them field by field.
  */
-function fakeSequenceChain(owner, { roots, chains = {}, operator = null, serviceFeeBps = 400, maxPositions = 3 }) {
+function fakeSequenceChain(owner, { roots, chains = {}, operator = null, serviceFeeBps = 400, maxPositions = 3,
+  policyVersion = 1n, paused = false, limitsVersion = 1n, rootPermissionValid = true, vaultHeld = [], accounted = 0n }) {
   const at = (byte, bytes = 20) => `0x${byte.toString(16).padStart(2, '0').repeat(bytes)}`, zero = at(0, 32);
   const cloneOf = implementation => concatHex(['0x363d3d373d3d3d363d73', implementation, '0x5af43d82803e903d91602b57fd5bf3']);
   const implementation = at(0x42), factoryCode = '0x6001', implementationCode = '0x6002';
@@ -730,7 +741,14 @@ function fakeSequenceChain(owner, { roots, chains = {}, operator = null, service
     const id = keccak256(encodeAbiParameters(parseAbiParameters('bytes32,uint256,address,address,uint256'), [typeHash, 4663n, deployment.factory, owner, BigInt(nonce)]));
     return [`0x${keccak256(concatHex(['0xff', deployment.factory, id, initHash])).slice(-40)}`, { id, root, chain: chains[nonce] ?? [] }];
   }));
-  const position = (known, active, isRoot, parentTokenId) => ({ known, active, isRoot, parentTokenId, generation: 0n, tickLower: -60, tickUpper: 60, registrationBaselineId: zero, identity: zero, source0: zero, source1: zero });
+  // The position manager reports these NFTs as held by the first vault: what an unmanaged-position recovery checks before it builds.
+  const held = new Map(vaultHeld.map(tokenId => [tokenId, [...vaults.keys()][0]]));
+  const policy = { serviceFeeBps, triggerDistanceBps: 500, maxOverlapBps: 2000, minimumIntervalSeconds: 60, maxPositions, version: policyVersion, paused };
+  const limits = { version: limitsVersion, upsideBps: 5000, maxSlippageBps: 100, maxPriceImpactBps: 100, maxGasCostWei: 1_000_000_000_000_000n, maxObservationAgeSeconds: 60, forecastHorizonSeconds: 3600 };
+  // The owner steps the vault can be asked to sign; each is simulated before it is offered, and none of them answers anything.
+  const WRITES = ['setOperator', 'setPolicy', 'setExecutionLimits', 'rearmRoot', 'recoverUnmanagedPosition', 'recoverUntrackedCurrency'];
+  // Two distinct fee sources, so a position's four reserve balances are four distinct source-and-currency pairs.
+  const position = (known, active, isRoot, parentTokenId) => ({ known, active, isRoot, parentTokenId, generation: 0n, tickLower: -60, tickUpper: 60, registrationBaselineId: zero, identity: zero, source0: at(0x71, 32), source1: at(0x72, 32) });
   function answer(to, name, args) {
     const shared = { poolManager: deployment.poolManager, positionManager: deployment.positionManager, stateView: deployment.stateView, serviceFeeRecipient: deployment.serviceFeeRecipient };
     if ((to === deployment.factory || to === implementation) && name in shared) return shared[name];
@@ -753,7 +771,7 @@ function fakeSequenceChain(owner, { roots, chains = {}, operator = null, service
     // address and by code hash, and the guard at its publisher.
     if ((to === deployment.positionManager || to === deployment.stateView) && name === 'poolManager') return deployment.poolManager;
     if (to === deployment.positionManager) {
-      if (name === 'ownerOf') return owner;
+      if (name === 'ownerOf') return held.get(args[0]) ?? owner;
       if (name === 'getPoolAndPositionInfo') return [poolKey, packedPosition];
       if (name === 'getApproved') return predict(roots.length);
     }
@@ -770,14 +788,15 @@ function fakeSequenceChain(owner, { roots, chains = {}, operator = null, service
     const vault = vaults.get(to);
     if (vault) {
       const index = id => vault.chain.findIndex(member => member.id === id);
-      const answers = { owner, sequenceId: vault.id, rootTokenId: vault.root, operator: operator ?? deployment.operator, rootPermissionValid: true, baseCurrency: at(0x61), quoteCurrency: at(0x62), stateNonce: 1n,
-        policy: { serviceFeeBps, triggerDistanceBps: 500, maxOverlapBps: 2000, minimumIntervalSeconds: 60, maxPositions, version: 1n, paused: false },
+      const answers = { owner, sequenceId: vault.id, rootTokenId: vault.root, operator: operator ?? deployment.operator, rootPermissionValid, baseCurrency: at(0x61), quoteCurrency: at(0x62), stateNonce: 1n,
+        policy, executionLimits: limits, accountedCurrency: accounted,
         activePositions: BigInt(1 + vault.chain.filter(member => member.active).length) };
       if (name in answers) return answers[name];
       if (name === 'position') return args[0] === vault.root ? position(true, true, true, 0n) : index(args[0]) === -1 ? position(false, false, false, 0n)
         : position(true, vault.chain[index(args[0])].active, false, index(args[0]) === 0 ? vault.root : vault.chain[index(args[0]) - 1].id);
       if (name === 'successorOf') return args[0] === vault.root ? vault.chain[0]?.id ?? 0n : index(args[0]) === -1 ? 0n : vault.chain[index(args[0]) + 1]?.id ?? 0n;
-      if (name === 'setOperator' || name === 'setPolicy') return undefined;
+      if (name === 'feeBalance') return { original: 0n, charged: 0n };
+      if (WRITES.includes(name)) return undefined;
     }
     throw new Error(`unexpected ${name} on ${to}`);
   }
@@ -807,7 +826,7 @@ function fakeSequenceChain(owner, { roots, chains = {}, operator = null, service
       return { error: { code: -32000, message: String(error) } };
     }
   }
-  return { log, missing, sends, simulations, request, vaults: [...vaults.keys()], release: { contractVersion: '1.0.0-rc.1', chainId: 4663, available: true, deployment } };
+  return { log, missing, sends, simulations, request, policy, limits, vaults: [...vaults.keys()], release: { contractVersion: '1.0.0-rc.1', chainId: 4663, available: true, deployment } };
 }
 
 test('Start tracking is offered for the sequences the wallet lists, reads each one\'s positions from its vault, and sends enroll with the session: nothing typed, nothing signed', async () => {
@@ -1100,6 +1119,210 @@ test('a Domino sequence with a child cannot prepare a switch to simple mode', as
     assert.equal(await main.getByRole('region', { name: 'Sequence wallet review', exact: true }).count(), 0);
     assert.equal(chain.simulations.length, 0);
     assert.equal(chain.sends.length, 0);
+    assert.deepEqual(chain.missing, []);
+  } finally { await s.close(); }
+});
+
+
+// ---- The five owner functions that gained an interface: what the wallet would actually be asked to sign -----------
+
+/**
+ * `setPolicy`, `setExecutionLimits`, `rearmRoot`, `recoverUnmanagedPosition` and `recoverUntrackedCurrency` are owner
+ * transactions this product now builds. performance.controller.test.mjs proves the closed ABI carries each signature;
+ * these prove the transaction, by decoding the calldata of the one offer each step makes.
+ *
+ * As in the operator-authorisation case above, nothing is signed: the fake chain records eth_sendTransaction and
+ * answers with a hash, so what WOULD be signed is read back byte for byte from what it recorded.
+ */
+const sequenceCall = (chain) => decodeFunctionData({ abi: chainAbi, data: chain.sends[0].data });
+
+test('an automation rule change sends the whole policy struct: the four typed fields, the rest exactly as the vault reported it, and the next version', async () => {
+  const s = await scenario(), chain = fakeSequenceChain(OWNER, { roots: [100n], serviceFeeBps: 400, maxPositions: 3, policyVersion: 7n, paused: true });
+  try {
+    const main = await openSequenceControls(s, chain);
+    await main.getByLabel('Sequence address').fill(chain.vaults[0]);
+    await main.getByRole('button', { name: 'Read owned sequence', exact: true }).click();
+    await main.locator('[data-sequence-current-mode="domino"]').waitFor();
+    await main.getByText('Adjust automation rules', { exact: true }).click();
+    for (const [label, value] of [['Distance to range ceiling (basis points)', '1234'], ['Maximum successor overlap (basis points)', '777'],
+      ['Minimum execution interval (seconds)', '900'], ['Maximum positions, including root', '5']]) {
+      await main.getByLabel(label, { exact: true }).fill(value);
+    }
+    await main.getByRole('button', { name: 'Review automation rule change', exact: true }).click();
+    const review = main.getByRole('region', { name: 'Sequence wallet review', exact: true });
+    await review.waitFor();
+    const words = await review.innerText();
+    assert.match(words, /Policy version 7 to 8\./, 'the version is the vault’s own, one higher');
+    assert.match(words, /this sequence stays paused/, 'the paused state is carried, never flipped here');
+    assert.doesNotMatch(words, FORBIDDEN);
+    await review.getByRole('checkbox').check();
+    await review.getByRole('button', { name: 'Send this step in wallet', exact: true }).click();
+    await main.getByRole('heading', { name: 'Transaction receipt', exact: true }).waitFor();
+    assert.equal(chain.sends.length, 1, 'exactly one transaction was offered');
+    assert.equal(String(chain.sends[0].to).toLowerCase(), chain.vaults[0], 'sent to the sequence itself');
+    const { functionName, args } = sequenceCall(chain);
+    assert.equal(functionName, 'setPolicy');
+    // paused is carried straight from the chain. serviceFeeBps comes back the same value, but by a
+    // round trip rather than a copy: with no mode chosen, sequence.ts:516 derives the mode from the
+    // fee the vault reported and :523 maps that mode back to a fee. A fee the mapping does not know
+    // refuses as invalid_sequence_policy instead of being silently rewritten. The mode-to-fee
+    // mapping itself is pinned by the tests at :1037 and :1052.
+    assert.deepEqual(args[0], { ...chain.policy, version: chain.policy.version + 1n, triggerDistanceBps: 1234, maxOverlapBps: 777, minimumIntervalSeconds: 900, maxPositions: 5 },
+      'every field of the struct: the four typed, paused and serviceFeeBps as the chain reported them, version exactly one higher');
+    assert.deepEqual(chain.missing, []);
+  } finally { await s.close(); }
+});
+
+test('a safety limit change sends the whole limits struct at the next version, quotes the live values it re-read, and refuses a zero execution gas cap before anything is prepared', async () => {
+  const s = await scenario(), chain = fakeSequenceChain(OWNER, { roots: [100n], limitsVersion: 5n });
+  try {
+    const main = await openSequenceControls(s, chain);
+    await main.getByLabel('Sequence address').fill(chain.vaults[0]);
+    await main.getByRole('button', { name: 'Read owned sequence', exact: true }).click();
+    await main.getByText('Adjust safety limits', { exact: true }).click();
+    const cap = main.getByLabel('Maximum execution gas cost (wei)', { exact: true });
+    for (const [label, value] of [['Successor upside (basis points)', '7500'], ['Maximum swap slippage (basis points)', '250'],
+      ['Maximum price impact (basis points)', '300'], ['Maximum execution gas cost (wei)', '0'], ['Maximum observation age (seconds)', '120'], ['Forecast horizon (seconds)', '7200']]) {
+      await main.getByLabel(label, { exact: true }).fill(value);
+    }
+    const change = main.getByRole('button', { name: 'Review safety limit change', exact: true });
+    const review = main.getByRole('region', { name: 'Sequence wallet review', exact: true });
+    await change.click();
+    await main.locator('[data-notice-code="invalid_sequence_policy"]').waitFor();
+    assert.equal(await review.count(), 0, 'an executor with no gas to spend is refused in words, with nothing prepared');
+    assert.equal(chain.sends.length, 0);
+
+    await cap.fill('2000000000000000');
+    await change.click();
+    await review.waitFor();
+    const words = await review.innerText();
+    assert.match(words, /Successor upside 5000 to 7500 bps/, 'the current side of each pair is the vault’s, not the form’s');
+    assert.match(words, /Limits version 5 to 6\./);
+    assert.doesNotMatch(words, FORBIDDEN);
+    await review.getByRole('checkbox').check();
+    await review.getByRole('button', { name: 'Send this step in wallet', exact: true }).click();
+    await main.getByRole('heading', { name: 'Transaction receipt', exact: true }).waitFor();
+    assert.equal(chain.sends.length, 1);
+    assert.equal(String(chain.sends[0].to).toLowerCase(), chain.vaults[0], 'sent to the sequence itself');
+    const { functionName, args } = sequenceCall(chain);
+    assert.equal(functionName, 'setExecutionLimits');
+    assert.deepEqual(args[0], { version: chain.limits.version + 1n, upsideBps: 7500, maxSlippageBps: 250, maxPriceImpactBps: 300,
+      maxGasCostWei: 2_000_000_000_000_000n, maxObservationAgeSeconds: 120, forecastHorizonSeconds: 7200 },
+      'the six typed limits, and the version the vault reported plus one');
+    assert.deepEqual(chain.missing, []);
+  } finally { await s.close(); }
+});
+
+test('a lapsed root permission is repaired with rearmRoot, and the consent its review promises is the boolean the transaction carries', async () => {
+  const s = await scenario(), chain = fakeSequenceChain(OWNER, { roots: [100n], rootPermissionValid: false });
+  try {
+    const main = await openSequenceControls(s, chain);
+    await main.getByLabel('Sequence address').fill(chain.vaults[0]);
+    await main.getByRole('button', { name: 'Read owned sequence', exact: true }).click();
+    const repair = main.getByRole('button', { name: 'Review root permission repair', exact: true });
+    await repair.click();
+    const review = main.getByRole('region', { name: 'Sequence wallet review', exact: true });
+    await review.waitFor();
+    const words = await review.innerText();
+    assert.match(words, /Re-establish this sequence’s permission over root NFT #100\./);
+    assert.match(words, /Fees the root has not collected are consented to as part of it, exactly as at creation\./, 'what the boolean means is said before it is sent');
+    assert.doesNotMatch(words, FORBIDDEN);
+    await review.getByRole('checkbox').check();
+    await review.getByRole('button', { name: 'Send this step in wallet', exact: true }).click();
+    await main.getByRole('heading', { name: 'Transaction receipt', exact: true }).waitFor();
+    assert.equal(chain.sends.length, 1);
+    assert.equal(String(chain.sends[0].to).toLowerCase(), chain.vaults[0], 'sent to the sequence itself');
+    const { functionName, args } = sequenceCall(chain);
+    assert.equal(functionName, 'rearmRoot');
+    assert.deepEqual(args, [true], 'consent is granted, never sent as false behind the sentence that promised it');
+    assert.deepEqual(chain.missing, []);
+  } finally { await s.close(); }
+});
+
+test('an NFT the sequence holds but does not manage is recovered by its exact token id, and a registered position is never offered that step', async () => {
+  const s = await scenario(), chain = fakeSequenceChain(OWNER, { roots: [100n], chains: { 0: [{ id: 12n, active: false }, { id: 13n, active: true }] }, vaultHeld: [12n] });
+  try {
+    const main = await openSequenceControls(s, chain);
+    await main.getByLabel('Sequence address').fill(chain.vaults[0]);
+    await main.getByRole('button', { name: 'Read owned sequence', exact: true }).click();
+    await main.locator('[data-sequence-current-mode="domino"]').waitFor();
+    // A valid root permission is not a lapsed one, so the repair of the previous test is not among these controls.
+    assert.equal(await main.getByRole('button', { name: 'Review root permission repair' }).count(), 0);
+    await main.getByText('Child positions and fee reserves', { exact: true }).click();
+    const read = main.getByRole('button', { name: 'Read position and earned-fee reserves', exact: true });
+    const recovery = main.getByRole('button', { name: 'Review unmanaged NFT recovery', exact: true });
+    await read.click();
+    await main.getByRole('button', { name: 'Select successor', exact: true }).waitFor();
+    assert.equal(await recovery.count(), 0, 'the registered root leaves through its own step, never as a stray NFT');
+
+    // An active child IS offered the withdrawal. Without this, the negative below would
+    // hold just as well for a button that had been renamed away, and prove nothing.
+    const withdrawal = main.getByRole('button', { name: 'Review child NFT withdrawal', exact: true });
+    await main.getByLabel('Root or child NFT ID', { exact: true }).fill('13');
+    await read.click();
+    await withdrawal.waitFor();
+    assert.equal(await withdrawal.count(), 1, 'an active child leaves through its own step');
+
+    await main.getByLabel('Root or child NFT ID', { exact: true }).fill('12');
+    await read.click();
+    await recovery.waitFor();
+    assert.equal(await withdrawal.count(), 0, 'a withdrawn child is not offered as an active one');
+    await recovery.click();
+    const review = main.getByRole('region', { name: 'Sequence wallet review', exact: true });
+    await review.waitFor();
+    const words = await review.innerText();
+    assert.match(words, /Return NFT #12, which this sequence holds but does not manage, to your wallet\./);
+    assert.doesNotMatch(words, FORBIDDEN);
+    await review.getByRole('checkbox').check();
+    await review.getByRole('button', { name: 'Send this step in wallet', exact: true }).click();
+    await main.getByRole('heading', { name: 'Transaction receipt', exact: true }).waitFor();
+    assert.equal(chain.sends.length, 1);
+    assert.equal(String(chain.sends[0].to).toLowerCase(), chain.vaults[0], 'sent to the sequence itself');
+    const { functionName, args } = sequenceCall(chain);
+    assert.equal(functionName, 'recoverUnmanagedPosition');
+    assert.deepEqual(args, [12n], 'the NFT read back from the vault, never the root and never another member');
+    assert.deepEqual(chain.missing, []);
+  } finally { await s.close(); }
+});
+
+test('an untracked balance is returned as the exact currency and amount chosen, is offered only once the position is read, and refuses an amount of nothing', async () => {
+  const s = await scenario(), chain = fakeSequenceChain(OWNER, { roots: [100n], accounted: 250n });
+  const currency = `0x${'61'.repeat(20)}`;
+  try {
+    const main = await openSequenceControls(s, chain);
+    await main.getByLabel('Sequence address').fill(chain.vaults[0]);
+    await main.getByRole('button', { name: 'Read owned sequence', exact: true }).click();
+    await main.getByText('Child positions and fee reserves', { exact: true }).click();
+    const recovery = main.getByRole('button', { name: 'Review untracked balance recovery', exact: true });
+    await main.getByLabel('Root or child NFT ID', { exact: true }).waitFor();
+    assert.equal(await recovery.count(), 0, 'no currency and no amount before the position and its reserves are read');
+    await main.getByRole('button', { name: 'Read position and earned-fee reserves', exact: true }).click();
+    await recovery.waitFor();
+
+    await main.getByRole('combobox', { name: /^Currency to return/ }).selectOption(currency);
+    const amount = main.getByLabel('Amount to return (smallest units)', { exact: true });
+    const review = main.getByRole('region', { name: 'Sequence wallet review', exact: true });
+    await amount.fill('0');
+    await recovery.click();
+    await main.locator('[data-notice-code="invalid_amount"]').waitFor();
+    assert.equal(await review.count(), 0, 'returning nothing is not a transaction');
+    assert.equal(chain.sends.length, 0);
+
+    await amount.fill('4200');
+    await recovery.click();
+    await review.waitFor();
+    const words = await review.innerText();
+    assert.match(words, new RegExp(`Return 4200 raw units of ${currency} to your wallet\\.`));
+    assert.match(words, /books account for 250 units of it/, 'what the books already hold is read from the vault, not assumed');
+    assert.doesNotMatch(words, FORBIDDEN);
+    await review.getByRole('checkbox').check();
+    await review.getByRole('button', { name: 'Send this step in wallet', exact: true }).click();
+    await main.getByRole('heading', { name: 'Transaction receipt', exact: true }).waitFor();
+    assert.equal(chain.sends.length, 1);
+    assert.equal(String(chain.sends[0].to).toLowerCase(), chain.vaults[0], 'sent to the sequence itself');
+    const { functionName, args } = sequenceCall(chain);
+    assert.equal(functionName, 'recoverUntrackedCurrency');
+    assert.deepEqual([String(args[0]).toLowerCase(), args[1]], [currency, 4200n], 'the pair chosen, unchanged: never the native default it started on');
     assert.deepEqual(chain.missing, []);
   } finally { await s.close(); }
 });

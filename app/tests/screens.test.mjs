@@ -743,9 +743,8 @@ test('the wallet handle goes back exactly as received and never leaves the pager
   // Absent means a listing, so nothing that does not ask loses discovery.
   assert.deepEqual(walletSession.walletRequest({ wallet: mixed, tokens: [] }), { wallet: mixed, autoDiscover: true });
   assert.deepEqual(walletSession.walletRequest({ wallet: mixed, tokens: [FIXTURE_TOKEN], discover: true }), { wallet: mixed, tokens: [FIXTURE_TOKEN], autoDiscover: true });
-  // And the three by-address callers ask for it, while the two listings do not.
+  // And the two by-address callers ask for it, while the two listings do not.
   for (const [file, expected] of [
-    ['../src/components/create/WalletBalance.tsx', true],
     ['../src/components/create/usePairBalances.ts', true],
     ['../src/components/read/screens/WalletCandidates.tsx', false],
   ]) {

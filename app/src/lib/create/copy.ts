@@ -105,18 +105,7 @@ export const CREATE = {
     maxLabel: 'Use max',
     connectForBalance: 'Connect a wallet in the header to use its balance.',
     balanceAt: (block: string | null) => (block ? `Balance at block ${block}:` : 'Balance:'),
-    balanceFromListing: 'Balance from the wallet listing:',
-    balanceReading: 'Reading the wallet balance…',
-    balanceWaiting: 'Connecting to the read service…',
-    balanceNotReturned: (block: string | null) => `The read returned no balance for this token${block ? ` at block ${block}` : ''}.`,
-    balanceInvalidAddress: 'The connected wallet reported an address that is not in the expected form, so nothing was read.',
     balanceNote: 'Public chain data at one block. A connection proves nothing about who controls the address.',
-    balanceRaw: 'Shown in raw units because the token’s decimals were not read, so it cannot fill the budget.',
-    balanceZero: 'The wallet holds none of this token at that block.',
-    balanceUnreadable: 'The balance could not be read, so it cannot fill the budget.',
-    balanceNoDecimals: 'The token’s decimals were not read, so the balance cannot fill the budget.',
-    /** The balance line's title when it shows a dash: why there is no balance. */
-    balanceFailed: 'The wallet balance could not be read.',
     /**
      * The pool's other token on the amount step. A position is funded with
      * both of a pool's tokens: the budget above is in the one chosen, and the

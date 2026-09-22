@@ -157,6 +157,18 @@ test('the amount step shows amounts, never the integers underneath them', () => 
   assert.equal(CREATE.amount.rawUnitsTitle, undefined);
 });
 
+// The single-token balance line went with components/create/WalletBalance.tsx,
+// which nothing had rendered since the amount step began showing both of a
+// pool's tokens. Its ten strings went with it; PairedAmounts.tsx keeps the four
+// that are still drawn. Pinned so a stale one cannot be reintroduced by habit.
+test('the retired single-token balance line left no copy behind', () => {
+  for (const key of ['balanceFromListing', 'balanceReading', 'balanceWaiting', 'balanceNotReturned',
+    'balanceInvalidAddress', 'balanceRaw', 'balanceZero', 'balanceUnreadable', 'balanceNoDecimals', 'balanceFailed'])
+    assert.equal(CREATE.amount[key], undefined, key);
+  for (const key of ['maxLabel', 'connectForBalance', 'balanceAt', 'balanceNote'])
+    assert.notEqual(CREATE.amount[key], undefined, `${key} is still drawn by PairedAmounts.tsx`);
+});
+
 test('slippage is a whole number of basis points inside the product’s bound: 10 to 500, 0.1% to 5%', () => {
   const v = journey.validateSlippage;
   assert.deepEqual(v('50'), { ok: true, bps: 50 });

@@ -393,6 +393,21 @@ test('www redirects to the apex, keeping the path', async () => {
   assert.equal(served, 0);
 });
 
+// Added 2026-09-21. The www redirect was the one answer the gate sent without a
+// Cache-Control, and a browser keeps an uncached permanent redirect for the life
+// of the profile — the mapping could never have been changed again for anyone
+// who had followed it once.
+test('the www redirect is not stored, so the mapping can still be changed', async () => {
+  const response = await run(new Request('https://www.domino.money/', { headers: { 'Sec-Fetch-Mode': 'navigate' } }));
+  assert.equal(response.status, 301);
+  assert.equal(response.headers.get('Cache-Control'), 'no-store');
+  // The redirect is the first answer a www visitor gets, so its HSTS is what promotes
+  // the next hop to https. It rides on BASE_HEADERS; pinned here so a literal header
+  // object cannot quietly drop it.
+  assert.equal(response.headers.get('Strict-Transport-Security'), 'max-age=31536000');
+  assert.equal(served, 0);
+});
+
 test('a preview hostname gets the same gate, not a way around it', async () => {
   for (const host of ['https://domino-app.pages.dev', 'https://abc123.domino-app.pages.dev']) {
     const page = await run(new Request(`${host}/`, { headers: { 'Sec-Fetch-Mode': 'navigate' } }));

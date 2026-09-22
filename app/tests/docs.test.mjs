@@ -239,7 +239,14 @@ test('the custody page opens with the approved sentence, word for word, then say
   assert.match(text, /earned fees not yet reinvested, are held by your own sequence vault until you withdraw them/);
   assert.match(text, /Only your wallet controls the vault/);
   assert.match(text, /The operator cannot[\s\S]*Withdraw positions or fees/);
-  assert.deepEqual(rowsOf(custody, 'facts').map((row) => row.label), ['Pause', 'Revoke the operator', 'Revoke the NFT approval', 'Withdraw']);
+  // Sequence.tsx: the owner's own controls. setPolicy and setExecutionLimits are onlyOwner and refuse a pause flip,
+  // so changing the limits is a row of its own; setOperator is offered only while the operator is revoked.
+  const controls = rowsOf(custody, 'facts');
+  assert.deepEqual(controls.map((row) => row.label), ['Pause', 'Change your limits', 'Revoke the operator', 'Revoke the NFT approval', 'Withdraw']);
+  const control = (label) => controls.find((row) => row.label === label);
+  assert.equal(control('Change your limits').value, 'You');
+  assert.equal(control('Change your limits').note, 'The automation rules, and the limits every run is bound by. The paused state is unchanged.');
+  assert.match(control('Revoke the operator').note, /Once revoked, you can authorise the same operator again\./);
   assert.match(text, /This request does not authorize transactions or automation\./);
 
   // The owner kept the lead; the operator section opens by squaring it with an operator that can act and pause.
@@ -256,6 +263,9 @@ test('the custody page opens with the approved sentence, word for word, then say
   // DominoExecutionEngineV4 swaps earned fees in the vault's own pool, within the owner's slippage and price-impact limits.
   const can = operator.blocks.find((block) => block.kind === 'split').columns.find((column) => column.title === 'The operator can').items.map(inlineText);
   assert.deepEqual(can, ['Add a position’s earned fees back into it.', 'Open or fund the next position from earned fees, within your limits.', 'Swap earned fees in the same pool, within your slippage and price-impact limits.', 'Pause automation.']);
+  // The operator's boundary did not move when the owner gained screens: what it cannot do, the controls above say the owner can.
+  const cannot = operator.blocks.find((block) => block.kind === 'split').columns.find((column) => column.title === 'The operator cannot').items.map(inlineText);
+  assert.deepEqual(cannot, ['Withdraw positions or fees.', 'Change your limits, or resume automation after a pause.', 'Reduce a position’s liquidity, or pull tokens from your wallet.', 'Send anything to an address of its choosing.']);
 });
 
 test('figures: Domino history first where the deployment provides it, the provider and the estimate after it, the protocol fee in the estimate, and every way a missing figure shows', () => {
@@ -303,16 +313,24 @@ test('Auto-compound starts on any position NFT you hold, with three wallet trans
   assert.ok(links.every((to) => to.startsWith('#/docs/')), links.join(', '));
 });
 
-test('Domino Compounder names the screen its Automate button opens, and Risks says what else stops automation and that restarting it takes a call no screen makes', () => {
+test('Domino Compounder names the screen its Automate button opens, and Risks says what else stops automation, which repairs that screen offers and which restart still takes a call it does not make', () => {
   const compounder = page('domino-compounder');
   const start = sectionText(compounder, 'start-and-stop');
   assert.match(start, /On Automate, Create or manage a sequence opens the screen that leads through these steps, each reviewed in your wallet\. It is also where you pause, revoke and withdraw\./);
   assert.doesNotMatch(start, /The same screen is where/);
   assert.ok(linksOf(compounder).some((link) => link.to === '#/docs/risks#automation-stops'));
-  // DominoVaultV4 notifyModifyLiquidity, notifyUnsubscribe and notifyBurn invalidate the root; rearmRoot and setOperator have no screen.
+  // DominoVaultV4 notifyModifyLiquidity, notifyUnsubscribe and notifyBurn invalidate the root. Sequence.tsx offers rearmRoot
+  // while rootPermissionValid is false, and setOperator while the operator is the zero address; rearmRoot re-subscribes through
+  // the position manager, so it needs the NFT approval the vault already holds. Nothing gives that approval back to a vault
+  // that exists: the create flow only ever approves the next predicted vault, so the last sentence stays true as written.
   const stops = sectionText(page('risks'), 'automation-stops');
   assert.match(stops, /Automation stops if the position you started from has its fees collected or its liquidity changed outside Domino, or leaves your wallet\./);
-  assert.match(stops, /Restarting it after that, or after you revoke the operator or the NFT approval, takes a contract call that no Domino screen makes\./);
+  assert.match(stops, /Create or manage a sequence can restore the vault’s permission over that position, while the position is still yours and still approved to the vault, and can name the operator again while it is revoked\./);
+  assert.match(stops, /Activation stays a separate step you sign\./);
+  assert.match(stops, /Restoring that permission consents again to the fees the position has not collected, exactly as creating the vault did\./);
+  assert.match(stops, /After you revoke the NFT approval, or the position leaves your wallet, restarting takes a contract call that no Domino screen makes\./);
+  // The old sentence said restarting always takes a call no screen makes; the repair and the operator now have buttons.
+  assert.doesNotMatch(stops, /Restarting it after that, or after you revoke the operator or the NFT approval/);
   // Your sequences starts the upside empty: 50% is only what New position draws with.
   const glossary = page('glossary');
   assert.equal(termText(glossary, 'upside'), 'How far above the previous ceiling a next position’s ceiling sits, at least. You set it; New position draws it at 50%.');
@@ -434,7 +452,9 @@ test('titles are short, a summary is one line ending in a period, and every page
     const words = textOf(entry).split(/\s+/).filter(Boolean).length;
     t.diagnostic(`${entry.slug}: ${words} words`);
     // 450: Non-custodial covers the partner's list and the setup operation; Figures, Domino history beside the provider and the estimate.
-    assert.ok(words <= (entry.slug === 'glossary' ? 600 : 450), `${entry.slug} has ${words} words`);
+    // 480 for Non-custodial: its controls table names what the owner can do, and changing the limits became one of them.
+    const budget = entry.slug === 'glossary' ? 600 : entry.slug === 'non-custodial' ? 480 : 450;
+    assert.ok(words <= budget, `${entry.slug} has ${words} words`);
   }
 });
 

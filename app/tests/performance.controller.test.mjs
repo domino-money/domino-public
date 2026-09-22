@@ -570,7 +570,7 @@ test('a deployment record with no pinned identity is refused, on both lanes', ()
 test('every onlyOwner function of the vault has an ABI entry the app can encode', () => {
   const vault = readFileSync(new URL('../../contracts/src/DominoVaultV4.sol', import.meta.url), 'utf8');
   const owner = [...vault.matchAll(/function\s+([A-Za-z0-9_]+)\s*\([^)]*\)\s*external\s+onlyOwner/g)].map((match) => match[1]);
-  assert.ok(owner.length >= 9, `expected the owner surface, found ${owner.length}`);
+  assert.ok(owner.length >= 10, `expected the owner surface, found ${owner.length}`);
   const encodable = new Set(sequenceAbi.filter((entry) => entry.type === 'function' && entry.stateMutability !== 'view').map((entry) => entry.name));
   const absent = owner.filter((name) => !encodable.has(name));
   assert.deepEqual(absent, [], `owner functions with no way in from the app: ${absent.join(', ')}`);

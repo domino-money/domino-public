@@ -64,7 +64,8 @@ export const NON_CUSTODIAL: DocPage = {
           kind: 'facts',
           rows: [
             { label: 'Pause', value: 'You or the operator', note: 'Stops automation. Only you can resume it.' },
-            { label: 'Revoke the operator', value: 'You', note: 'Removes the operator’s authority over your vault.' },
+            { label: 'Change your limits', value: 'You', note: 'The automation rules, and the limits every run is bound by. The paused state is unchanged.' },
+            { label: 'Revoke the operator', value: 'You', note: 'Removes the operator’s authority over your vault. Once revoked, you can authorise the same operator again.' },
             { label: 'Revoke the NFT approval', value: 'You', note: 'Takes back the vault’s approval for the position you started from, which stops automation.' },
             { label: 'Withdraw', value: 'You', note: 'Returns a position the vault holds, or earned fees it holds, to your wallet.' },
           ],
@@ -112,8 +113,10 @@ export const RISKS: DocPage = {
       id: 'automation-stops',
       title: 'Automation can stop',
       blocks: [
-        p('Automation stops if the position you started from has its fees collected or its liquidity changed outside Domino, or leaves your wallet.'),
-        p('Restarting it after that, or after you revoke the operator or the NFT approval, takes a contract call that no Domino screen makes.'),
+        p('Automation stops if the position you started from has its fees collected or its liquidity changed outside Domino, or leaves your wallet. Revoking the operator, or the NFT approval, stops it too.'),
+        p('On Automate, ', b('Create or manage a sequence'), ' can restore the vault’s permission over that position, while the position is still yours and still approved to the vault, and can name the operator again while it is revoked. Activation stays a separate step you sign.'),
+        p('Restoring that permission consents again to the fees the position has not collected, exactly as creating the vault did.'),
+        p('After you revoke the NFT approval, or the position leaves your wallet, restarting takes a contract call that no Domino screen makes.'),
       ],
     },
     {

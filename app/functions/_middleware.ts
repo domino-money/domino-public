@@ -291,9 +291,17 @@ export async function onRequest(context: Context): Promise<Response> {
   if (!config) return page('unavailable', 503)
 
   if (url.hostname === `www.${CANONICAL_HOST}`) {
+    // Permanent describes what the redirect means, not how long a browser may
+    // keep it. A 301 without this header is stored for the life of the profile,
+    // so the www → apex mapping could never be changed again for anyone who had
+    // followed it once. Like every other answer the gate writes: no-store.
     return new Response(null, {
       status: 301,
-      headers: { ...BASE_HEADERS, Location: `https://${CANONICAL_HOST}${url.pathname}${url.search}` },
+      headers: {
+        ...BASE_HEADERS,
+        Location: `https://${CANONICAL_HOST}${url.pathname}${url.search}`,
+        'Cache-Control': 'no-store',
+      },
     })
   }
 
