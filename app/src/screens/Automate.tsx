@@ -2,27 +2,18 @@ import type { CSSProperties, ReactNode } from 'react'
 import { VignetteCompound, VignetteSequence } from '../components/home/Vignettes'
 import { Display, LinkButton, PageHeader, PageShell, Pill, cx } from '../components/ui'
 import { CREATE } from '../lib/create/copy'
-import { ROADMAP, type Availability } from '../lib/capabilities'
-
-/**
- * The statuses that wear a pill. A planned entry wears none: its note states
- * its terms as they stand (the service fee is stated as fact on Home and
- * Automate), and a "Planned" pill would call the product unfinished.
- */
-const STATUS: Partial<Record<Availability, string>> = {
-  'not-connected': 'Not connected',
-}
+import { ROADMAP, ROADMAP_PILL } from '../lib/capabilities'
 
 /**
  * Where a ROADMAP entry stands, as the pill a person scans for. Read from
  * ROADMAP every time, never written by hand, so the pill changes by itself
  * when the entry does; an entry that is not listed, or whose status wears no
- * pill, shows nothing. Every status is the neutral pill: the words say where
- * it stands, never a colour.
+ * pill (ROADMAP_PILL), shows nothing. Every status is the neutral pill: the
+ * words say where it stands, never a colour.
  */
 export function RoadmapPill({ name, className }: { name: string; className?: string }) {
   const status = ROADMAP.find((entry) => entry.name === name)?.status
-  const label = status && STATUS[status]
+  const label = status && ROADMAP_PILL[status]
   if (!label) return null
   return <Pill className={cx('dm-acct-status', className)}>{label}</Pill>
 }

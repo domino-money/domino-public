@@ -123,8 +123,24 @@ export const FIGURES: DocPage = {
 export const CONTRACTS: DocPage = {
   slug: 'contracts',
   title: 'Contracts',
-  summary: 'The Uniswap contracts on Robinhood Chain that Domino positions use, with their addresses.',
+  summary: 'Domino V1 and the Uniswap contracts it builds on, on Robinhood Chain, with their addresses.',
   sections: [
+    {
+      // docs/deployments/v1-robinhood-mainnet-2026-09-21: the two contracts a wallet meets. The vault is a clone made per owner, so it has no address here.
+      id: 'domino-contracts',
+      title: 'Domino V1 on Robinhood Chain',
+      blocks: [
+        p('Domino’s own contracts are deployed on Robinhood Chain as Domino V1. Your wallet meets two of them directly, besides your own sequence vault: the Setup contract, which holds a setup operation until you mint or refund, and the factory that creates your sequence vault.'),
+        {
+          kind: 'addresses',
+          rows: [
+            { label: 'DominoSetupV1', role: 'Setup operations: fund, assisted swap, mint, refund', address: '0x676f449fcfcd0f5ce4c7a1db2d98c7d6565dd37a' },
+            { label: 'DominoVaultFactoryV1', role: 'Creates your sequence vault', address: '0x16bf6eaba7b31118627b277e97249720dfe1c7ff' },
+          ],
+        },
+        p('Your sequence vault is a contract of its own, created for your wallet by the factory. The service that carries out automation is not in operation yet: see ', doc('Domino Compounder', 'domino-compounder', 'start-and-stop'), '.'),
+      ],
+    },
     {
       id: 'uniswap-contracts',
       title: 'Uniswap contracts on Robinhood Chain',

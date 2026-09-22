@@ -1,4 +1,4 @@
-import { ROADMAP, type Availability } from '../../lib/capabilities'
+import { ROADMAP, ROADMAP_PILL } from '../../lib/capabilities'
 import { CREATE } from '../../lib/create/copy'
 import { LIMIT_BOUNDS, priceOf, successorGeometry, validateLimits, type Automation, type DominoLimits, type JourneyState } from '../../lib/create/journey'
 import { boundPrice, fromPoolPrice } from '../../lib/read/screens/poolRange'
@@ -13,13 +13,11 @@ const OPTIONS: ReadonlyArray<{ key: Automation; roadmap: string | null }> = [
   { key: 'domino', roadmap: 'Domino' },
 ]
 
-const STATUS_WORDS: Record<Availability, string> = { 'not-connected': CREATE.automation.notEnabled, planned: CREATE.automation.planned }
-
-/** The pill a choice wears while ROADMAP says it is not connected or planned; nothing once ROADMAP drops the entry. */
+/** The pill a choice wears while ROADMAP says it does not run here (ROADMAP_PILL); nothing once it runs, or once ROADMAP drops the entry. */
 export function automationPill(key: Automation): string | null {
   const name = OPTIONS.find((option) => option.key === key)?.roadmap
   const entry = name ? ROADMAP.find((item) => item.name === name) : undefined
-  return entry ? STATUS_WORDS[entry.status] : null
+  return (entry && ROADMAP_PILL[entry.status]) ?? null
 }
 
 function Rules({ heading, rules }: { heading: string; rules: readonly string[] }) {
@@ -85,7 +83,7 @@ function Geometry({ state, now }: { state: JourneyState; now: number }) {
 
 /**
  * Step 4, Automation: what happens to earned fees. Three cards; the two
- * automations wear ROADMAP's status while it says they are not connected.
+ * automations wear ROADMAP's status while it says they do not run.
  * Domino's limits are editable and checked, and the successor geometry they
  * imply is drawn from the chosen range. Nothing here reads anything.
  */

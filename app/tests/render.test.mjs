@@ -685,10 +685,15 @@ test('Settings distinguishes disconnected automated signing from wallet transact
   assert.match(text, /WALLET TRANSACTIONS\s+Built in; each step reviewed in wallet/);
   assert.doesNotMatch(text, /Nothing in this build signs|grants a spending permission or moves funds/, 'no claim this build contradicts');
   assert.doesNotMatch(text, /Live reads are built in|switched on by the read service/, 'no caption about where data comes from');
-  assert.match(text, /Compound[\s\S]*Not connected/);
-  assert.match(text, /Fee-balancing swaps[\s\S]*Not connected/);
-  assert.match(text, /Wallet permissions[\s\S]*Sign-in proves your address[\s\S]*Not connected/);
-  // Changed on purpose (qa:visual, owner's call): a planned entry wears no pill. Service pricing states its tariff, as Home and Automate state the fee.
+  // Domino V1 is deployed: the owner's wallet flows are connected and wear no pill; the automatic cycle is not running and says so.
+  for (const name of ['Compound', 'Fee-balancing swaps', 'Domino']) {
+    const row = page.locator('.dm-acct-cap').filter({ has: page.locator('.dm-acct-cap-name', { hasText: new RegExp(`^${name}$`) }) });
+    assert.equal(await row.locator('.dm-pill').innerText(), 'Not running', `${name} wears ROADMAP’s pill`);
+  }
+  const permissions = page.locator('.dm-acct-cap', { hasText: 'Wallet permissions' });
+  assert.match(await permissions.innerText(), /^Wallet permissions\s+Sign-in proves your address\./);
+  assert.equal(await permissions.locator('.dm-pill').count(), 0, 'no status pill on Wallet permissions');
+  // Changed on purpose (qa:visual, owner's call): a connected or planned entry wears no pill. Service pricing states its tariff, as Home and Automate state the fee.
   const pricing = page.locator('.dm-acct-cap', { hasText: 'Service pricing' });
   assert.match(await pricing.innerText(), /^Service pricing\s+Auto-compound uses 2% and Domino-compound 4% of consumed earned fees, once\./);
   assert.equal(await pricing.locator('.dm-pill').count(), 0, 'no status pill on Service pricing');
@@ -797,8 +802,9 @@ test('the explanatory sections stay, in relative terms, and say plainly what is 
   }
   // The Uniswap strip, the old headlines and the simulator's explanation are gone (owner, 2026-09-14).
   assert.doesNotMatch(text, /Built on Uniswap|Put fees to work|one tile at a time|Choose what fees do|A position opened at the start price/);
-  // Automation is not connected, and every place that describes it says so in those words; the marketing cards that only said so are gone.
-  assert.ok((text.match(/Not connected/g) ?? []).length >= 2, 'the upkeep step and the Domino hand-off say so');
+  // The automatic cycle is not running, and every place that describes it says so in those words; the marketing cards that only said so are gone.
+  assert.ok((text.match(/Not running/g) ?? []).length >= 2, 'the feature cards and the Domino hand-off say so');
+  assert.equal(await page.locator('#learn .dm-pill', { hasText: 'Not running' }).count(), 1, 'the Automation step of How it works wears ROADMAP’s pill');
   // The pools card has no caption any more (the owner's decision on the redesign): each figure names its source and age in its own title.
   assert.doesNotMatch(text, /Every figure on this page names its source and its age|describes a pool, not a position, and is not a forecast/);
   // The product describes itself as the product, never as an unfinished one.

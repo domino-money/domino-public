@@ -15,10 +15,12 @@ import { findForbidden } from '../scripts/deploy-markers.mjs';
 
 const require = createRequire(import.meta.url);
 const docs = require('../.test-build/app/src/lib/docs/registry.js');
-const { ROADMAP } = require('../.test-build/app/src/lib/capabilities.js');
+const { ROADMAP, AUTOMATION_SERVICE } = require('../.test-build/app/src/lib/capabilities.js');
 
 const APP = resolve(import.meta.dirname, '..');
 const REPO = resolve(APP, '..');
+/** The verified record of Domino V1 on Robinhood Chain (docs/V1_MAINNET_FRONTEND_HANDOFF_0XDECIMAL.md §3): the pages name its contracts and its state. */
+const DEPLOYMENT = JSON.parse(readFileSync(join(REPO, 'docs/deployments/v1-robinhood-mainnet-2026-09-21/deployment.json'), 'utf8'));
 const { DOC_GROUPS, DOC_PAGES } = docs;
 const SLUG = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 const KINDS = new Set(['p', 'list', 'steps', 'note', 'facts', 'addresses', 'split', 'terms']);
@@ -400,6 +402,12 @@ test('the limits and fees match the contracts: 20% trigger and overlap, a positi
   assert.match(contract('DominoSetup.sol'), /feeBps_ > 65\b/, 'the assisted swap fee is capped at 65 bps');
   assert.match(contract('DominoVaultV4.sol'), /limits\.upsideBps == 0 \|\| limits\.upsideBps > 1_000_000/, 'the upside is the owner’s own limit');
   assert.match(contract('DominoVaultV4.sol'), /activePositions >= _policy\.maxPositions/, 'a sequence has a positions cap');
+  // The verified record carries the same tariffs (handoff §6): 2% and 4% once on consumed earned fees, no extra fee on the automation's swaps, 65 bps on the assisted swap.
+  assert.deepEqual(
+    [DEPLOYMENT.policies.simpleCompoundFeeBps, DEPLOYMENT.policies.dominoCompoundFeeBps, DEPLOYMENT.policies.additionalAutomationSwapFeeBps, DEPLOYMENT.policies.assistedSwapFeeBps],
+    [200, 400, 0, 65],
+  );
+  assert.equal(DEPLOYMENT.policies.automationFeeBasis, 'consumed_original_earned_fees_once_not_principal');
 
   const limits = Object.fromEntries(rowsOf(page('domino-compounder'), 'facts').map((row) => [row.label, row]));
   assert.equal(limits['Trigger distance'].value, 'Up to 20%');
@@ -415,7 +423,7 @@ test('the limits and fees match the contracts: 20% trigger and overlap, a positi
   assert.equal(fees['Network gas'].value, 'Paid by the wallet that sends it');
 });
 
-test('the Uniswap addresses are the ones the backend is configured with, each a lowercase address', () => {
+test('the Uniswap addresses are the ones the backend is configured with, the Domino V1 addresses the ones the record verified, each a lowercase address', () => {
   const backend = (file) => readFileSync(join(REPO, 'backend', file), 'utf8');
   const constant = (text, name) => new RegExp(`^${name} = '(0x[0-9a-f]{40})'`, 'm').exec(text)?.[1];
   const discovery = backend('discovery.py');
@@ -426,8 +434,47 @@ test('the Uniswap addresses are the ones the backend is configured with, each a 
     ['Permit2', constant(backend('deposit_prepare.py'), 'PERMIT2')],
   ];
   for (const [name, address] of expected) assert.match(address ?? '', /^0x[0-9a-f]{40}$/, `backend ${name}`);
-  assert.deepEqual(rowsOf(page('contracts'), 'addresses').map((row) => [row.label, row.address]), expected);
+  const contracts = page('contracts');
+  assert.deepEqual(sectionIds(contracts), ['domino-contracts', 'uniswap-contracts', 'network']);
+  const rows = (id) => contracts.sections.find((section) => section.id === id).blocks.filter((block) => block.kind === 'addresses').flatMap((block) => block.rows.map((row) => [row.label, row.address]));
+  assert.deepEqual(rows('uniswap-contracts'), expected);
+  // The record's Uniswap dependencies are the backend's, so the page describes one chain.
+  assert.deepEqual([DEPLOYMENT.dependencies.poolManager, DEPLOYMENT.dependencies.positionManager, DEPLOYMENT.dependencies.stateView], expected.slice(0, 3).map(([, address]) => address));
+  // Domino V1: only the two contracts a wallet meets, under the names the record and the explorer give them. The vault is a clone
+  // made per owner and the implementation is its template (handoff §2), so neither has an address here.
+  assert.deepEqual(rows('domino-contracts'), [
+    [DEPLOYMENT.contractNames.setup, DEPLOYMENT.contracts.setup],
+    [DEPLOYMENT.contractNames.factory, DEPLOYMENT.contracts.factory],
+  ]);
+  assert.deepEqual([DEPLOYMENT.contractNames.setup, DEPLOYMENT.contractNames.factory], ['DominoSetupV1', 'DominoVaultFactoryV1']);
+  assert.equal(rowsOf(contracts, 'facts').find((row) => row.label === 'Chain ID').value, String(DEPLOYMENT.chain.chainId));
+  assert.equal(DEPLOYMENT.chain.chainId, 4663);
   for (const entry of DOC_PAGES) for (const row of rowsOf(entry, 'addresses')) assert.match(row.address, /^0x[0-9a-f]{40}$/, `${entry.slug}: ${row.label}`);
+});
+
+test('Domino V1 is deployed and the automation service is not in operation: the pages say both, the sequence you create stays paused, and no page calls automation active or names a date', () => {
+  // The record is the source of both facts (handoff §4.2 and §8). When executionAvailable flips, the pages are rewritten, not this line.
+  assert.equal(DEPLOYMENT.publicReleaseVersion, 1);
+  assert.equal(DEPLOYMENT.contractsDeployed, true);
+  // The screen withholds activation from the same fact the record states. One cannot flip without the other.
+  assert.equal(AUTOMATION_SERVICE.operational, DEPLOYMENT.executionAvailable);
+  assert.equal(DEPLOYMENT.executionAvailable, false);
+  // The same note on both automation pages, under the "Not running" pill their status draws from ROADMAP.
+  const note = 'Not running\nAutomation is not running: the contracts are deployed on Robinhood Chain, and the service that carries it out is not in operation yet. Until it is, the sequence you create stays paused and activation is not offered. Pause, revocation, repair and withdrawal work all the same.';
+  assert.ok(sectionText(page('auto-compound'), 'where-it-starts').includes(note), 'Auto-compound says so where it starts');
+  assert.ok(sectionText(page('domino-compounder'), 'start-and-stop').includes(note), 'Domino Compounder says so where it starts');
+  // Activation takes the sequence out of pause; only a service in operation makes it do anything, so the step no longer says it starts automation.
+  const activate = blocksOf(page('domino-compounder')).find((block) => block.kind === 'steps').items.find((step) => step.title === 'Activate it');
+  assert.equal(inlineText(activate.body), 'A separate transaction takes the sequence out of pause. Signing in or opening a page never does.');
+  assert.match(sectionText(page('what-is-domino'), 'your-wallet-signs'), /The service behind that operator is not in operation yet\. Until it is, the sequence you create stays paused, activation is not offered, and every other owner control still works\./);
+  assert.match(sectionText(page('what-is-domino'), 'built-on-uniswap'), /Domino’s own contracts, Domino V1, are deployed there as well: Setup opens positions, and a factory creates your sequence vault\./);
+  assert.match(sectionText(page('contracts'), 'domino-contracts'), /deployed on Robinhood Chain as Domino V1\.[\s\S]*The service that carries out automation is not in operation yet/);
+  for (const entry of DOC_PAGES) {
+    const text = textOf(entry);
+    assert.doesNotMatch(text, /automation is (?:now )?(?:active|running|live|on|in operation)\b|active automation|automation (?:now )?runs\b/i, entry.slug);
+    // No date and no promise; the public name is Domino V1, and the implementation's own version number stays out of the client's docs.
+    assert.doesNotMatch(text, /\bsoon\b|\bshortly\b|\bwill be\b|\bplanned\b|\broadmap\b|version 4|implementation version/i, entry.slug);
+  }
 });
 
 test('previous and next walk the pages in sidebar order: nothing before the first, nothing after the last', () => {
@@ -453,7 +500,8 @@ test('titles are short, a summary is one line ending in a period, and every page
     t.diagnostic(`${entry.slug}: ${words} words`);
     // 450: Non-custodial covers the partner's list and the setup operation; Figures, Domino history beside the provider and the estimate.
     // 480 for Non-custodial: its controls table names what the owner can do, and changing the limits became one of them.
-    const budget = entry.slug === 'glossary' ? 600 : entry.slug === 'non-custodial' ? 480 : 450;
+    // 480 for Domino Compounder: the availability note under its pill, since the contracts shipped without the service (2026-09-21).
+    const budget = entry.slug === 'glossary' ? 600 : entry.slug === 'non-custodial' || entry.slug === 'domino-compounder' ? 480 : 450;
     assert.ok(words <= budget, `${entry.slug} has ${words} words`);
   }
 });

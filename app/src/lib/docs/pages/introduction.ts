@@ -34,6 +34,8 @@ export const WHAT_IS_DOMINO: DocPage = {
         p('Nothing moves until your wallet signs. Each wallet step is reviewed on its own, and shows its amounts, destination and limits before your wallet asks you to sign it.'),
         p('Signing in is not one of those steps: it proves you control an address and allows nothing. See ', doc('what signing in proves', 'wallet', 'sign-in'), '.'),
         p('Once you activate automation, its operator sends automation transactions within the limits you signed. See ', doc('what the operator can do', 'non-custodial', 'operator'), '.'),
+        // Handoff of 2026-09-21: the contracts are on chain, the service that runs the cycle is not. Auto-compound and Domino Compounder say the same under their pill.
+        p('The service behind that operator is not in operation yet. Until it is, the sequence you create stays paused, activation is not offered, and every other owner control still works.'),
       ],
     },
     {
@@ -41,7 +43,7 @@ export const WHAT_IS_DOMINO: DocPage = {
       title: 'Built on Uniswap',
       blocks: [
         p('Every Domino position is a standard Uniswap position NFT on Robinhood Chain.'),
-        p('The Uniswap contracts behind it, with their addresses, are listed under ', doc('Contracts', 'contracts'), '.'),
+        p('Domino’s own contracts, Domino V1, are deployed there as well: Setup opens positions, and a factory creates your sequence vault. They are listed under ', doc('Contracts', 'contracts'), ', with the Uniswap contracts behind every position.'),
       ],
     },
   ],

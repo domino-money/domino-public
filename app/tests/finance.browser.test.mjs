@@ -593,7 +593,7 @@ test('the assisted swap quotes the amount the owner types for a signed-in wallet
 
 // ---- G13 receipt identity and status refresh; G16 Start tracking from owned sequences ---------------------------
 
-import { decodeFunctionData, encodeFunctionResult, parseAbi, parseAbiParameters, stringToHex, zeroAddress } from 'viem';
+import { decodeFunctionData, encodeFunctionResult, numberToHex, parseAbi, parseAbiParameters, stringToHex, zeroAddress } from 'viem';
 
 const readGateway = name => JSON.parse(readFileSync(new URL(`../../api-contracts/read-v1/fixtures/gateway/${name}.json`, import.meta.url)));
 const shots = () => { const dir = resolve(import.meta.dirname, '../.test-artifacts'); mkdirSync(dir, { recursive: true }); return dir; };
@@ -801,6 +801,11 @@ function fakeSequenceChain(owner, { roots, chains = {}, operator = null, service
     throw new Error(`unexpected ${name} on ${to}`);
   }
   const log = [], missing = [], sends = [], simulations = [];
+  // The one transaction this chain records, once a test says it was included: `transaction` overrides what the wallet
+  // actually sent (the gas fields are a wallet's to reshape, the rest is not), `receipt` overrides the receipt. Until
+  // `include` is called the transaction has no receipt, so a check finds it pending.
+  let included = null;
+  const include = (patch) => { included = patch ? { transaction: patch.transaction ?? {}, receipt: patch.receipt ?? {} } : null; };
   async function request(method, params) {
     log.push(method);
     try {
@@ -811,6 +816,14 @@ function fakeSequenceChain(owner, { roots, chains = {}, operator = null, service
       if (method === 'eth_estimateGas') return { result: '0x186a0' };
       if (method === 'eth_getBalance') return { result: '0xde0b6b3a7640000' };
       if (method === 'eth_sendTransaction') { sends.push(params[0]); return { result: at(0xcc, 32) }; }
+      if (method === 'eth_getTransactionByHash' || method === 'eth_getTransactionReceipt') {
+        const sent = sends[0];
+        if (!included || !sent || String(params[0]).toLowerCase() !== at(0xcc, 32)) return { result: null };
+        const block = { blockHash: at(0xbb, 32), blockNumber: '0x10' };
+        if (method === 'eth_getTransactionByHash') return { result: { hash: at(0xcc, 32), from: sent.from, to: sent.to, input: sent.data, value: sent.value, nonce: sent.nonce, chainId: sent.chainId, type: sent.type,
+          gas: sent.gas, maxFeePerGas: sent.maxFeePerGas, maxPriorityFeePerGas: sent.maxPriorityFeePerGas, ...block, ...included.transaction } };
+        return { result: { transactionHash: at(0xcc, 32), from: sent.from, to: sent.to, status: '0x1', gasUsed: '0xc350', effectiveGasPrice: sent.maxFeePerGas, ...block, ...included.receipt } };
+      }
       if (method === 'eth_getCode') {
         const target = String(params[0]).toLowerCase();
         return { result: codeOf.get(target) ?? (vaults.has(target) ? cloneOf(implementation) : [poolKey.currency0, poolKey.currency1].includes(target) ? '0x6000' : '0x') };
@@ -826,7 +839,7 @@ function fakeSequenceChain(owner, { roots, chains = {}, operator = null, service
       return { error: { code: -32000, message: String(error) } };
     }
   }
-  return { log, missing, sends, simulations, request, policy, limits, vaults: [...vaults.keys()], release: { contractVersion: '1.0.0-rc.1', chainId: 4663, available: true, deployment } };
+  return { log, missing, sends, simulations, request, include, policy, limits, vaults: [...vaults.keys()], release: { contractVersion: '1.0.0-rc.1', chainId: 4663, available: true, deployment } };
 }
 
 test('Start tracking is offered for the sequences the wallet lists, reads each one\'s positions from its vault, and sends enroll with the session: nothing typed, nothing signed', async () => {
@@ -993,7 +1006,7 @@ async function openSequenceControls(s, chain) {
   await s.context.exposeFunction('__dominoChainRead', (method, params) => chain.request(method, params));
   await s.context.addInitScript(() => {
     let wallet = window.__dominoWalletRequest;
-    const request = (id, method, params) => ['eth_call', 'eth_getCode', 'eth_getBlockByNumber', 'eth_getTransactionCount', 'eth_estimateGas', 'eth_getBalance', 'eth_sendTransaction'].includes(method) ? window.__dominoChainRead(method, params) : wallet(id, method, params);
+    const request = (id, method, params) => ['eth_call', 'eth_getCode', 'eth_getBlockByNumber', 'eth_getTransactionCount', 'eth_estimateGas', 'eth_getBalance', 'eth_sendTransaction', 'eth_getTransactionByHash', 'eth_getTransactionReceipt'].includes(method) ? window.__dominoChainRead(method, params) : wallet(id, method, params);
     Object.defineProperty(window, '__dominoWalletRequest', { configurable: true, get: () => request, set: value => { wallet = value; } });
   });
   await login(s.page);
@@ -1325,4 +1338,143 @@ test('an untracked balance is returned as the exact currency and amount chosen, 
     assert.deepEqual([String(args[0]).toLowerCase(), args[1]], [currency, 4200n], 'the pair chosen, unchanged: never the native default it started on');
     assert.deepEqual(chain.missing, []);
   } finally { await s.close(); }
+});
+
+// ---- The sequence receipt: exact identity, a budget for the gas fields, and no way to send again ------------------
+
+/**
+ * A wallet may reshape `gas`, `maxFeePerGas` and `maxPriorityFeePerGas` between the review and the chain (Rabby does),
+ * and the old check held each to the reviewed figure, so successful transactions were reported as not matching. The
+ * check now holds them to the budget the review approved — gas × maxFeePerGas — and the receipt's cost to the same,
+ * while hash, from, to, calldata, nonce, value, chain and type stay exact. An inclusion past the budget is its own
+ * state, apart from a revert and from a mismatch, and nothing on the screen sends a second time.
+ *
+ * Each case sends the root permission repair, the shortest owner step: one button, no field, no disclosure to open.
+ * The review fixes gas at 120,000 units (the 100,000 estimate plus a fifth) at 2 gwei, so the approved budget is
+ * 2.4e14 wei.
+ */
+const APPROVED_BUDGET = 120_000n * 2_000_000_000n;
+async function sendRepair(s, chain) {
+  const main = await openSequenceControls(s, chain);
+  await main.getByLabel('Sequence address').fill(chain.vaults[0]);
+  await main.getByRole('button', { name: 'Read owned sequence', exact: true }).click();
+  await main.getByRole('button', { name: 'Review root permission repair', exact: true }).click();
+  const review = main.getByRole('region', { name: 'Sequence wallet review', exact: true });
+  await review.waitFor();
+  await review.getByRole('checkbox').check();
+  await review.getByRole('button', { name: 'Send this step in wallet', exact: true }).click();
+  await main.getByRole('heading', { name: 'Transaction receipt', exact: true }).waitFor();
+  assert.equal(chain.sends.length, 1);
+  assert.deepEqual([chain.sends[0].gas, chain.sends[0].maxFeePerGas, chain.sends[0].maxPriorityFeePerGas], [numberToHex(120_000n), numberToHex(2_000_000_000n), numberToHex(1_000_000n)], 'the reviewed gas figures');
+  assert.equal(BigInt(chain.sends[0].gas) * BigInt(chain.sends[0].maxFeePerGas), APPROVED_BUDGET);
+  return main;
+}
+const checkReceipt = async (main, said) => {
+  await main.getByRole('button', { name: 'Check canonical receipt', exact: true }).click();
+  await main.getByRole('status').filter({ hasText: said }).waitFor();
+  return main.getByRole('status').innerText();
+};
+
+test('a receipt whose gas fields the wallet raised above the review is accepted while gas × maxFeePerGas and the cost paid stay within the approved budget, and the hash is shown as text', async () => {
+  const s = await scenario(), chain = fakeSequenceChain(OWNER, { roots: [100n], rootPermissionValid: false });
+  try {
+    const main = await sendRepair(s, chain);
+    const hash = `0x${'cc'.repeat(32)}`;
+    // The hash is text to copy, not a link: session.bundle.test.mjs keeps every external endpoint out of the deployable bundle.
+    assert.equal(await main.locator('.dm-acct-hash', { hasText: hash }).count(), 1, 'the hash is shown as text');
+    assert.equal(await main.locator('a[href^="http"]').count(), 0, 'and nothing on the page links out');
+    // Every gas field above the review: 60,000 × 3 gwei = 1.8e14 and 50,000 × 2.5 gwei = 1.25e14, both under the 2.4e14 approved.
+    chain.include({ transaction: { gas: numberToHex(60_000n), maxFeePerGas: numberToHex(3_000_000_000n), maxPriorityFeePerGas: numberToHex(2_000_000_000n) },
+      receipt: { gasUsed: numberToHex(50_000n), effectiveGasPrice: numberToHex(2_500_000_000n) } });
+    assert.equal(await checkReceipt(main, 'Receipt: Finalized.'), 'Receipt: Finalized. Read the root or owned sequence again before continuing.');
+    assert.equal(await main.locator('[data-notice-code]').count(), 0, 'accepted: no error code beside the sentence');
+    assert.equal(chain.sends.length, 1, 'checking a receipt sends nothing');
+    assert.deepEqual(chain.missing, []);
+  } finally { await s.close(); }
+});
+
+test('an included transaction whose gas × maxFeePerGas, or whose cost paid, is past the approved budget is its own state: not a revert, not a mismatch, and nothing is sent again', async () => {
+  const s = await scenario(), chain = fakeSequenceChain(OWNER, { roots: [100n], rootPermissionValid: false });
+  try {
+    const main = await sendRepair(s, chain);
+    const over = 'Receipt: Finalized, but past the approved network budget. Nothing was sent again. Read the root or owned sequence again to see where it stands.';
+    // The reviewed 120,000 units at 3 gwei: 3.6e14, past the 2.4e14 approved.
+    chain.include({ transaction: { maxFeePerGas: numberToHex(3_000_000_000n), maxPriorityFeePerGas: numberToHex(2_000_000_000n) } });
+    assert.equal(await checkReceipt(main, 'past the approved network budget'), over);
+    assert.equal(await main.locator('[data-notice-code]').count(), 0, 'a state, not an error');
+    chain.include(null);
+    assert.equal(await checkReceipt(main, 'Waiting to be included'), 'Receipt: Waiting to be included. Check again when the chain has progressed. No transaction is retried.');
+    // The transaction fits, but the receipt says the chain charged 120,000 × 3 gwei: the receipt is held to the budget too.
+    chain.include({ transaction: { gas: numberToHex(60_000n) }, receipt: { gasUsed: numberToHex(120_000n), effectiveGasPrice: numberToHex(3_000_000_000n) } });
+    assert.equal(await checkReceipt(main, 'past the approved network budget'), over);
+    // A revert stays a revert, whatever it cost.
+    chain.include({ transaction: { maxFeePerGas: numberToHex(3_000_000_000n) }, receipt: { status: '0x0' } });
+    assert.equal(await checkReceipt(main, 'Receipt: Reverted.'), 'Receipt: Reverted. Check again when the chain has progressed. No transaction is retried.');
+    // A receipt with no cost on it cannot be held to the budget, and is refused as one that could not be read.
+    chain.include({ receipt: { gasUsed: undefined } });
+    await main.getByRole('button', { name: 'Check canonical receipt', exact: true }).click();
+    await main.locator('[data-notice-code="invalid_receipt"]').waitFor();
+    assert.equal(chain.sends.length, 1, 'across every state, one transaction was ever offered');
+    for (const name of await main.getByRole('button').allInnerTexts()) assert.doesNotMatch(name, /send again|resend|retry|speed up|replace/i, `a control named ${name}`);
+    assert.doesNotMatch(await main.innerText(), FORBIDDEN);
+    assert.deepEqual(chain.missing, []);
+  } finally { await s.close(); }
+});
+
+test('a receipt whose transaction went to another address, or carried other calldata, does not match the reviewed step, whatever it cost', async () => {
+  const s = await scenario(), chain = fakeSequenceChain(OWNER, { roots: [100n], rootPermissionValid: false });
+  try {
+    const main = await sendRepair(s, chain);
+    const mismatch = main.locator('[data-notice-code="receipt_identity_changed"]');
+    chain.include({ transaction: { to: chain.release.deployment.factory } });
+    await main.getByRole('button', { name: 'Check canonical receipt', exact: true }).click();
+    await mismatch.waitFor();
+    assert.equal(await mismatch.innerText(), 'That receipt does not match the reviewed step.');
+    chain.include(null);
+    await checkReceipt(main, 'Waiting to be included');
+    chain.include({ transaction: { input: '0x' } });
+    await main.getByRole('button', { name: 'Check canonical receipt', exact: true }).click();
+    await mismatch.waitFor();
+    assert.equal(await mismatch.innerText(), 'That receipt does not match the reviewed step.');
+    // Said apart from the deployment's own sentence, which is about a profile, not a receipt.
+    assert.equal(await main.locator('[data-notice-code="deployment_identity_changed"]').count(), 0);
+    // The same transaction, unchanged, is still accepted afterwards: the refusal was the record's, not the page's.
+    chain.include({});
+    assert.equal(await checkReceipt(main, 'Receipt: Finalized.'), 'Receipt: Finalized. Read the root or owned sequence again before continuing.');
+    assert.equal(chain.sends.length, 1);
+    assert.deepEqual(chain.missing, []);
+  } finally { await s.close(); }
+});
+
+test('while the service that runs automation is not in operation a paused sequence is not offered activation and says why, with every other control in place; an active one says nothing', async () => {
+  const s = await scenario(), chain = fakeSequenceChain(OWNER, { roots: [100n], paused: true });
+  try {
+    const main = await openSequenceControls(s, chain);
+    await main.getByLabel('Sequence address').fill(chain.vaults[0]);
+    await main.getByRole('button', { name: 'Read owned sequence', exact: true }).click();
+    const why = main.locator('[data-automation-service="not-operational"]');
+    await why.waitFor();
+    assert.equal(await why.innerText(), 'This sequence stays paused: the service that runs automation is not in operation, so activation is not offered.');
+    assert.doesNotMatch(await why.innerText(), FORBIDDEN);
+    assert.equal(await main.getByRole('button', { name: 'Review activation' }).count(), 0, 'no activation while nothing would run');
+    assert.match(await main.innerText(), /Root NFT #100 · Paused · Operator 0x/, 'the chain’s own state is still said as the chain says it');
+    // The rule and limit changes sit in closed disclosures; opened, so their buttons count as offered.
+    for (const summary of ['Adjust automation rules', 'Adjust safety limits']) await main.getByText(summary, { exact: true }).click();
+    for (const [name, disabled] of [['Review pause', true], ['Review operator revocation', false], ['Review root NFT approval revocation', false], ['Review automation rule change', false], ['Review safety limit change', false]]) {
+      const button = main.getByRole('button', { name, exact: true });
+      assert.equal(await button.count(), 1, `${name} is still offered`);
+      assert.equal(await button.isDisabled(), disabled, `${name} is ${disabled ? 'disabled, as the sequence is already paused' : 'enabled'}`);
+    }
+    assert.deepEqual(chain.missing, []);
+  } finally { await s.close(); }
+  const active = await scenario(), running = fakeSequenceChain(OWNER, { roots: [100n], paused: false });
+  try {
+    const main = await openSequenceControls(active, running);
+    await main.getByLabel('Sequence address').fill(running.vaults[0]);
+    await main.getByRole('button', { name: 'Read owned sequence', exact: true }).click();
+    await main.getByRole('button', { name: 'Review operator revocation', exact: true }).waitFor();
+    assert.match(await main.innerText(), /Root NFT #100 · Active · Operator 0x/);
+    assert.equal(await main.locator('[data-automation-service]').count(), 0, 'an active sequence has no activation to withhold');
+    assert.equal(await main.getByRole('button', { name: 'Review activation' }).count(), 0);
+  } finally { await active.close(); }
 });

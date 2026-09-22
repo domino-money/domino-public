@@ -1,11 +1,8 @@
 import type { ComponentType, CSSProperties } from 'react'
-import { ROADMAP } from '../../lib/capabilities'
+import { RoadmapPill } from '../../screens/Automate'
 import { IconChevronRight } from '../icons'
-import { Pill, cx } from '../ui'
+import { cx } from '../ui'
 import { VignetteCompound, VignetteSequence, VignetteWallet, type VignetteProps } from './Vignettes'
-
-/** True while ROADMAP marks the named capability as not connected; the plate says so only then. */
-const notConnected = (name: string) => ROADMAP.some((entry) => entry.name === name && entry.status === 'not-connected')
 
 const FEATURES: ReadonlyArray<{
   key: string
@@ -57,7 +54,8 @@ export function FeatureCards({ className, delay = 60 }: { className?: string; de
       {FEATURES.map(({ key, title, body, href, link, roadmap, Art }, index) => (
         <article key={key} className="dm-vig-feature" style={{ '--delay': `${delay + 120 * index}ms` } as CSSProperties}>
           <div className="dm-plate dm-dots-plate dm-vig-plate">
-            {roadmap && notConnected(roadmap) && <Pill className="absolute left-3 top-3 z-[1]">Not connected</Pill>}
+            {/* ROADMAP's pill while the capability does not run here; nothing once it does. */}
+            {roadmap && <RoadmapPill name={roadmap} className="absolute left-3 top-3 z-[1]" />}
             <Art className="absolute inset-0" />
           </div>
           <h2 className="mt-5 text-lead font-medium text-fg">{title}</h2>

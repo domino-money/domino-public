@@ -461,8 +461,10 @@ export interface CreateGate {
 
 /**
  * Whether "Create position" may do anything. Derived from the build's
- * signing flag, which is false. It cannot flip on this connection without a
- * contract change either: read-v1 1.1.0-rc.3 types the capabilities answer's
+ * automated-signing flag, which is false: this page never signs, and the
+ * owner's own wallet steps are Setup's, admitted there at run time by the
+ * release endpoint. It cannot flip on this connection without a contract
+ * change either: read-v1 1.1.0-rc.3 types the capabilities answer's
  * `ownerTransactions` as the literal `false` (api-contracts/read-v1/types.ts),
  * so no server answer on this contract can enable an owner transaction.
  */

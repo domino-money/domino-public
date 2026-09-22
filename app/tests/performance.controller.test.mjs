@@ -515,17 +515,21 @@ test('members at exactly the most successors it follows is read whole within the
  * could name their own factory, satisfy the whole on-chain verification against
  * it, and become the spender of a real ERC-721 approval over a real position.
  *
- * `src/finance/pin.ts` anchors one identity per lane outside the record. The
- * contracts are not published yet, so both pins are null, and a null pin
- * REFUSES rather than passes: the wallet paths fail closed until the real
- * addresses are committed. These compile outside Vite, where the deployable
- * flag is absent and the pin defaults to required — the same state a deployable
- * build is in.
+ * `src/finance/pin.ts` anchors one identity per lane outside the record: the
+ * Domino V1 factory and setup contract, tag `v1-release-2026-09-21`. A record
+ * naming any other address is refused as `deployment_identity_unpinned`; the
+ * published profiles, which name the real ones, pass. These compile outside
+ * Vite, where the deployable flag is absent, so this file sets it at the top —
+ * the same state a deployable build is in.
  */
-test('a deployment record with no pinned identity is refused, on both lanes', () => {
-  assert.equal(SEQUENCE_FACTORY, null, 'unpublished: nothing to pin yet');
-  assert.equal(SETUP_CONTRACT, null, 'unpublished: nothing to pin yet');
+test('a deployment record naming another factory or setup contract is refused, and the published Domino V1 profiles pass, on both lanes', () => {
+  const profile = (name) => JSON.parse(readFileSync(new URL(`../../docs/deployments/v1-robinhood-mainnet-2026-09-21/${name}.json`, import.meta.url), 'utf8'));
+  const code = (expected) => (error) => String(error.message ?? error) === expected;
+  assert.equal(SEQUENCE_FACTORY, '0x16bf6eaba7b31118627b277e97249720dfe1c7ff', 'DominoVaultFactoryV1, lowercase');
+  assert.equal(SETUP_CONTRACT, '0x676f449fcfcd0f5ce4c7a1db2d98c7d6565dd37a', 'DominoSetupV1, lowercase');
   assert.equal(POSITION_MANAGER, '0x58daec3116aae6d93017baaea7749052e8a04fa7', 'the deposit lane already pins this one');
+  assert.equal(profile('sequence-release').deployment.factory, SEQUENCE_FACTORY, 'the pin is what the published sequence profile names');
+  assert.equal(profile('setup-release').deployment.setup, SETUP_CONTRACT, 'the pin is what the published setup profile names');
 
   const at = (byte) => `0x${byte.toString(16).padStart(2, '0').repeat(20)}`;
   const hash32 = (byte) => `0x${byte.toString(16).padStart(2, '0').repeat(32)}`;
@@ -538,20 +542,39 @@ test('a deployment record with no pinned identity is refused, on both lanes', ()
     codeHashes: { factory: hash32(0x51), implementation: hash32(0x52), poolManager: hash32(0x53), positionManager: hash32(0x54),
       stateView: hash32(0x55), readHelper: hash32(0x56), engine: hash32(0x57), routing: hash32(0x58), priceGuard: hash32(0x59),
       vault: keccak256(clone) } } };
+  const withSequence = (change) => ({ ...sequence, deployment: { ...sequence.deployment, ...change } });
   // Structurally perfect, and still refused: it names a factory this build does not know.
-  assert.throws(() => sequenceDeploymentFrom(sequence, 1000), (error) => /deployment_not_pinned/.test(String(error.message ?? error)));
+  assert.throws(() => sequenceDeploymentFrom(sequence, 1000), code('deployment_identity_unpinned'));
+  // The real factory beside another chain's Uniswap is refused by the position-manager pin, with the same code.
+  assert.throws(() => sequenceDeploymentFrom(withSequence({ factory: SEQUENCE_FACTORY }), 1000), code('deployment_identity_unpinned'));
+  // Past the pin, the next clause is the clone template: a wrong vault hash is refused as that, not as unpinned.
+  assert.throws(() => sequenceDeploymentFrom(withSequence({ factory: SEQUENCE_FACTORY, positionManager: POSITION_MANAGER,
+    codeHashes: { ...sequence.deployment.codeHashes, vault: hash32(0x5a) } }), 1000), code('invalid_clone_template'));
+  const anchored = sequenceDeploymentFrom(withSequence({ factory: SEQUENCE_FACTORY, positionManager: POSITION_MANAGER }), 1000);
+  assert.deepEqual([anchored.factory, anchored.positionManager, Object.isFrozen(anchored)], [SEQUENCE_FACTORY, POSITION_MANAGER, true], 'named the real ones, the record is admitted');
   for (const change of [{ serviceFeeBps: 400 }, { serviceFeeBps: undefined }, { dominoServiceFeeBps: undefined },
     { dominoServiceFeeBps: 200 }, { dominoServiceFeeBps: '400' }, { dominoServiceFeeBps: null }])
-    assert.throws(() => sequenceDeploymentFrom({ ...sequence, deployment: { ...sequence.deployment, ...change } }, 1000), /invalid_sequence_release/);
+    assert.throws(() => sequenceDeploymentFrom(withSequence(change), 1000), /invalid_sequence_release/);
   // available:false is not a record and stays parseable, so a switched-off lane still reads as switched off.
   assert.equal(sequenceDeploymentFrom({ contractVersion: '1.0.0-rc.1', chainId: 4663, available: false, deployment: null }, 1000), null);
+  // The published profile, as the Worker will serve it: admitted while current, refused once it expires (2026-10-21).
+  const publishedSequence = profile('sequence-release');
+  assert.equal(sequenceDeploymentFrom(publishedSequence, 1000).factory, SEQUENCE_FACTORY);
+  assert.throws(() => sequenceDeploymentFrom(publishedSequence, publishedSequence.deployment.expiresAt), code('invalid_sequence_release'));
 
   const setup = { contractVersion: '1.0.0-rc.1', chainId: 4663, available: true, deployment: {
     setup: at(0x61), poolManager: at(0x43), positionManager: POSITION_MANAGER, stateView: at(0x45), feeRecipient: at(0x62),
     setupCodeHash: hash32(0x71), poolManagerCodeHash: hash32(0x72), positionManagerCodeHash: hash32(0x73), stateViewCodeHash: hash32(0x74),
     feeBps: 20, tariffVersion: '1', expiresAt: 4_000_000_000 } };
-  assert.throws(() => deploymentFrom(setup, 1000), (error) => /deployment_not_pinned/.test(String(error.message ?? error)));
+  const withSetup = (change) => ({ ...setup, deployment: { ...setup.deployment, ...change } });
+  assert.throws(() => deploymentFrom(setup, 1000), code('deployment_identity_unpinned'));
+  assert.throws(() => deploymentFrom(withSetup({ setup: SETUP_CONTRACT, positionManager: at(0x44) }), 1000), code('deployment_identity_unpinned'));
+  // The two pins are the setup parser's last clauses: named the real contract beside this chain's Uniswap, the record is admitted.
+  assert.equal(deploymentFrom(withSetup({ setup: SETUP_CONTRACT }), 1000).setup, SETUP_CONTRACT);
   assert.equal(deploymentFrom({ contractVersion: '1.0.0-rc.1', chainId: 4663, available: false, deployment: null }, 1000), null);
+  const publishedSetup = profile('setup-release');
+  assert.equal(deploymentFrom(publishedSetup, 1000).setup, SETUP_CONTRACT);
+  assert.throws(() => deploymentFrom(publishedSetup, publishedSetup.deployment.expiresAt), code('invalid_setup_release'));
 });
 
 /**

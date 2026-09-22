@@ -52,6 +52,8 @@ const TEXT: Readonly<Record<string, string | ((again: ReadControl) => string)>> 
   sequence_admission_unavailable: 'The deployment could not be confirmed just now. Nothing was prepared.',
   deployment_code_changed: 'The deployed code no longer matches its profile. Nothing was prepared.',
   deployment_identity_changed: 'The deployment no longer matches its profile. Nothing was prepared.',
+  deployment_not_pinned: 'This site has no deployment to check that profile against. Nothing was prepared.',
+  deployment_identity_unpinned: 'That profile is not the deployment this site knows. Nothing was prepared.',
   invalid_setup_release: 'The deployment profile could not be read.',
   invalid_sequence_release: 'The deployment profile could not be read.',
   invalid_clone_template: 'The deployment profile is not consistent.',
@@ -92,14 +94,16 @@ export function errorCode(error: unknown): string | null {
   return error instanceof Error && /^[a-z0-9_]{1,64}$/.test(error.message) ? error.message : null
 }
 
-/** A receipt state in words. */
-export const RECEIPT_TEXT: Readonly<Record<'pending' | 'included' | 'confirming' | 'reorged' | 'reverted' | 'finalized', string>> = {
+/** A receipt state in words. `over_budget` is an included, successful transaction whose cost went past what the review approved: not a revert, not a mismatch. */
+export const RECEIPT_TEXT: Readonly<Record<'pending' | 'included' | 'confirming' | 'reorged' | 'reverted' | 'finalized' | 'over_budget' | 'over_budget_finalized', string>> = {
   pending: 'Waiting to be included',
   included: 'Included, waiting for finality',
   confirming: 'Included, waiting for finality',
   reorged: 'Its block left the canonical chain',
   reverted: 'Reverted',
   finalized: 'Finalized',
+  over_budget: 'Included, but past the approved network budget',
+  over_budget_finalized: 'Finalized, but past the approved network budget',
 }
 
 /** What each prepared setup step is, for its review heading. */

@@ -1,14 +1,11 @@
 import { useState } from 'react'
 import { previewPosition } from 'core/position'
-import { ROADMAP } from '../lib/capabilities'
 import { RANGES, SCENARIO_MAX, SCENARIO_MIN, UNIT, change, ofStart, times, type RangeKey } from '../lib/scenario'
+import { RoadmapPill } from '../screens/Automate'
 import { Display, KeyValue, KeyValueList, Pill, Segmented, cx } from './ui'
 import { MixBar } from './MixBar'
 import { PriceSlider } from './PriceSlider'
 import { RangeChart, useComposition } from './RangeChart'
-
-/** The Domino hand-off is described only while ROADMAP says it is not connected; the note then says so. */
-const dominoNotConnected = () => ROADMAP.some((entry) => entry.name === 'Domino' && entry.status === 'not-connected')
 
 /**
  * Move the price, watch what a position holds. The maths is the product's
@@ -34,7 +31,6 @@ export function RangeSimulator() {
   const nearTop = price >= triggerFrom && price <= upper
   const inRange = p.status === 'inside'
   const tokenPct = Math.round(p.tokenShare * 100)
-  const pending = dominoNotConnected()
 
   return (
     <div className="dm-card p-5 sm:p-6">
@@ -104,7 +100,8 @@ export function RangeSimulator() {
               <p className={cx('text-body font-medium', nearTop ? 'text-accent-fg' : 'text-fg')}>
                 {nearTop ? 'This is where Domino steps in' : `Above ${times(triggerFrom)}, Domino steps in`}
               </p>
-              {pending && <Pill>Not connected</Pill>}
+              {/* ROADMAP's pill while Domino does not run here; nothing once it does. */}
+              <RoadmapPill name="Domino" />
             </div>
             <p className={cx('mt-1.5 text-body', nearTop ? 'text-accent-fg' : 'text-fg-muted')}>
               Near the top of the range, the fees a position has collected open the next position higher up instead of going back into this one. The deposit stays

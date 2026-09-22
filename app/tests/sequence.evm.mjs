@@ -107,7 +107,7 @@ await assert.rejects(client.send(simpleActivation,true),/sequence_preparation_ch
 policyState=await client.inspect(root.vault);assert.equal(policyState.serviceFeeBps,400);assert.equal(policyState.automationMode,'domino');
 const preservedDomino=await client.setPolicy(root.vault,{...policyOptions,maxPositions:4},gas);
 assert.equal(decodeFunctionData({abi:sequenceAbi,data:preservedDomino.transaction.data}).args[0].serviceFeeBps,400);check();
-mode='wrongreceipt';await assert.rejects(client.receipt(createHash),/deployment_identity_changed/);mode='normal';check();
+mode='wrongreceipt';await assert.rejects(client.receipt(createHash),/receipt_identity_changed/);mode='normal';check();
 mode='reorg';assert.equal((await client.receipt(approvalHash)).state,'reorged');mode='normal';check();
 await assert.rejects(createSequenceClient(wallet,d,()=>now).receipt(createHash),/receipt_not_from_this_review/);check();
 // Recovery ignores expiry and a missing engine, but still verifies clone/owner.

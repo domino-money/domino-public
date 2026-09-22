@@ -595,7 +595,7 @@ test('the wallet steps are the real ones, in order: each ERC-20 through Permit2,
   assert.match(automated[6].detail, /4% service fee.*starts paused/);
   assert.match(journey.walletSteps(journey.withAutomation(ready(), 'compound')).at(-2).detail, /2% service fee/);
   // That automation is not connected is the summary's `· not connected` (below) and CREATE.automation.notEnabled, not the step's words.
-  assert.equal(automated.at(-1).detail, 'A separate owner transaction, when you choose. Nothing runs before it, and you can pause or revoke it from your wallet.');
+  assert.equal(automated.at(-1).detail, 'A separate owner transaction, when you choose. It takes the sequence out of pause; the service that compounds is not running. You can pause or revoke it from your wallet.');
   assert.equal(journey.walletSteps(journey.withAutomation(ready(), 'compound')).at(-1).title, 'Activate Auto-compound');
   assert.equal(new Set(automated.map((step) => step.title)).size, automated.length, 'every title is its own list key');
   assert.deepEqual(journey.walletSteps(journey.initialState()), []);

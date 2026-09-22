@@ -5,7 +5,7 @@ import { FeatureCards } from '../components/home/FeatureCards'
 import { HeroArt } from '../components/home/HeroArt'
 import { useInView } from '../components/home/Vignettes'
 import { Chip, Display, LinkButton, LiveDot, PageShell, Pill, cx } from '../components/ui'
-import { ROADMAP } from '../lib/capabilities'
+import { ROADMAP, ROADMAP_PILL } from '../lib/capabilities'
 import type { MarketsState } from '../lib/read/marketsProvider'
 import { useMarkets } from '../lib/read/useMarkets'
 
@@ -62,8 +62,8 @@ const LIMITS: ReadonlyArray<{ title: string; body: string }> = [
   },
 ]
 
-/** True while ROADMAP marks any of the named capabilities as not connected. */
-const notConnected = (names: ReadonlyArray<string>) => ROADMAP.some((entry) => names.includes(entry.name) && entry.status === 'not-connected')
+/** The pill ROADMAP gives the first named capability that wears one, so Home says what Settings and the docs say. */
+const roadmapPill = (names: ReadonlyArray<string>): string | undefined => ROADMAP.filter((entry) => names.includes(entry.name)).map((entry) => ROADMAP_PILL[entry.status]).find((label) => label !== undefined)
 
 /**
  * The newest block a live pool row was read at, or null. Only a ready answer
@@ -144,7 +144,7 @@ function HowItWorks() {
             <div className="min-w-0">
               <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5">
                 <h3 className="text-lead font-medium text-fg">{step.title}</h3>
-                {step.roadmap && notConnected(step.roadmap) && <Pill>Not connected</Pill>}
+                {step.roadmap && roadmapPill(step.roadmap) && <Pill>{roadmapPill(step.roadmap)}</Pill>}
               </div>
               <p className="mt-1 max-w-[62ch] text-body text-fg-muted">{step.body}</p>
             </div>

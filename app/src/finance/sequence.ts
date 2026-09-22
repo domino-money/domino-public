@@ -231,8 +231,8 @@ export function sequenceDeploymentFrom(value: unknown, now = Date.now() / 1000):
   // it is OURS: every address it compares comes from the record. One identity
   // has to be anchored to this build, or a substituted factory passes the whole
   // on-chain verification and chooses the spender of a real NFT approval. See
-  // ./pin.ts. Refusing while unpinned is the point: it fails closed until the
-  // contracts are published and their addresses committed.
+  // ./pin.ts. Domino V1 is pinned there; a record naming any other factory is
+  // refused before a client is built from it.
   if (!pinned(SEQUENCE_FACTORY, d.factory)) return fail(unpinned(SEQUENCE_FACTORY) ? 'deployment_not_pinned' : 'deployment_identity_unpinned')
   if (!pinned(POSITION_MANAGER, d.positionManager)) return fail('deployment_identity_unpinned')
   const out = d as unknown as SequenceDeployment
@@ -668,17 +668,31 @@ export function createSequenceClient(wallet: WalletRpc, deployment: SequenceDepl
       const value = await c.rpc('eth_getTransactionReceipt',[hash])
       if (value === null) return {state:'pending' as const}
       const r = record(value), tx = record(await c.rpc('eth_getTransactionByHash',[hash]))
-      for (const [actual,wanted] of [[r.transactionHash,hash],[tx.hash,hash],[tx.from,expected.owner],[tx.to,expected.transaction.to],[tx.input,expected.transaction.data],[r.from,expected.owner],[r.to,expected.transaction.to]]) equal(actual,wanted)
+      // Identity is exact: hash, from, to, calldata, nonce, value, chain and
+      // type are what was reviewed, byte for byte, and the receipt names the
+      // same block as the transaction. Any of these is a different step.
+      for (const [actual,wanted] of [[r.transactionHash,hash],[tx.hash,hash],[tx.from,expected.owner],[tx.to,expected.transaction.to],[tx.input,expected.transaction.data],[r.from,expected.owner],[r.to,expected.transaction.to]]) {
+        if (String(actual).toLowerCase() !== String(wanted).toLowerCase()) fail('receipt_identity_changed')
+      }
       if (quantity(tx.nonce) !== BigInt(expected.transaction.nonce) || quantity(tx.value) !== 0n || quantity(tx.chainId) !== 4663n || quantity(tx.type) !== 2n
-        || quantity(tx.gas) > BigInt(expected.transaction.gas) || quantity(tx.maxFeePerGas) > BigInt(expected.transaction.maxFeePerGas)
-        || quantity(tx.maxPriorityFeePerGas) > BigInt(expected.transaction.maxPriorityFeePerGas)
         || tx.blockHash !== r.blockHash || tx.blockNumber !== r.blockNumber) fail('receipt_identity_changed')
+      // The gas fields are the wallet's to reshape (Rabby does), so they are
+      // held to the budget the review approved rather than to its exact
+      // figures: gas × maxFeePerGas as reviewed. The transaction as included,
+      // and what the receipt says it cost, must both fit under it.
+      const approved = BigInt(expected.transaction.gas) * BigInt(expected.transaction.maxFeePerGas), maxFee = quantity(tx.maxFeePerGas)
+      if (r.gasUsed === undefined || r.gasUsed === null || r.effectiveGasPrice === undefined || r.effectiveGasPrice === null) fail('invalid_receipt')
+      const withinBudget = quantity(tx.gas) * maxFee <= approved && quantity(tx.maxPriorityFeePerGas) <= maxFee && quantity(r.gasUsed) * quantity(r.effectiveGasPrice) <= approved
       const block = record(await c.rpc('eth_getBlockByNumber',[r.blockNumber,false]))
       if (block.hash !== r.blockHash) return {state:'reorged' as const}
       const status = quantity(r.status); if (status !== 0n && status !== 1n) fail('invalid_receipt')
       if (status === 0n) return {state:'reverted' as const}
+      // Included and successful, but past the budget: nothing to send again,
+      // and not a revert. Said as its own state so the screen can say so.
       const finalized = record(await c.rpc('eth_getBlockByNumber',['finalized',false]))
-      return {state:quantity(finalized.number) >= quantity(r.blockNumber)?'finalized' as const:'confirming' as const}
+      const isFinal = quantity(finalized.number) >= quantity(r.blockNumber)
+      if (!withinBudget) return {state:isFinal?'over_budget_finalized' as const:'over_budget' as const}
+      return {state:isFinal?'finalized' as const:'confirming' as const}
     }),
   }
 }

@@ -24,32 +24,51 @@
  * person approves becomes the real one.
  *
  * The deposit lane has pinned its two addresses since it was written
- * (`app/src/deposit/present.ts`). This is the same idea for the two lanes that
- * did not have it.
+ * (`app/src/deposit/present.ts`). This is the same idea for the setup and
+ * sequence lanes.
  *
- * ## Why these are null
+ * ## What is pinned
  *
- * rugged has not published the V4 contracts yet. There is no address to pin,
- * and a pin that does not exist must not be treated as a pin that passed: a
- * null here REFUSES every deployment record, so the wallet paths fail closed
- * until the real addresses are committed.
+ * Domino V1 on Robinhood Chain mainnet (chain 4663): the seven contracts
+ * rugged deployed on 2026-09-21 and verified at a finalized block, frozen at
+ * tag `v1-release-2026-09-21` (source commit 3384424). The addresses below
+ * are the ones the release profiles under
+ * `docs/deployments/v1-robinhood-mainnet-2026-09-21/` name, and the handoff
+ * (`docs/V1_MAINNET_FRONTEND_HANDOFF_0XDECIMAL.md`, §4.1) is the instruction
+ * to commit them. "V1" is the public name; the implementation still answers
+ * `implementationVersion() == 4`, which `verify()` in sequence.ts insists on.
  *
- * That is deliberate. On the day the contracts are deployed, filling these in
- * is the switch that turns the wallet paths on — in git, reviewed, and part of
- * a build, rather than a value that arrives over the network.
+ * `SEQUENCE_FACTORY` anchors every sequence record: the factory it names must
+ * be this one, and every other sequence identity is read back off it on chain.
+ * `SETUP_CONTRACT` anchors every setup record: the contract the setup lane
+ * approves tokens to must be this one. A record naming any other address is
+ * refused with `deployment_identity_unpinned` before a client is built from it.
+ *
+ * Committing these removed the build-side refusal — in git, reviewed, part of
+ * a build, never a value that arrives over the network. The wallet paths
+ * still open only when the release Worker serves an admitted profile
+ * (available: true), which is a deployment act outside git. A different
+ * address is a different commit, for the same reason. What the pins
+ * do NOT say is whether the service that runs the compound cycle is operating:
+ * that is a Worker capability plus a backend the handoff (§8) says is not
+ * integrated yet, and nothing here may be read as "automation on".
  */
 
-/** Lowercase 0x address, or null while the contracts are unpublished. */
+/**
+ * Lowercase 0x address. `null` stays in the type: a lane without one refuses
+ * every record rather than passing.
+ */
 type Pin = `0x${string}` | null
 
 /**
- * `DominoVaultFactoryV4`. Every other sequence identity anchors to it, so this
- * is the only one that has to be pinned.
+ * `DominoVaultFactoryV1`. Every other sequence identity anchors to it, so this
+ * is the only one that has to be pinned. Not the implementation, which is the
+ * clone template (`DominoVaultV1`): `verify()` reads that back off the factory.
  */
-export const SEQUENCE_FACTORY: Pin = null
+export const SEQUENCE_FACTORY: Pin = '0x16bf6eaba7b31118627b277e97249720dfe1c7ff'
 
-/** `DominoSetup`, the contract the setup lane approves tokens to. */
-export const SETUP_CONTRACT: Pin = null
+/** `DominoSetupV1`, the contract the setup lane approves tokens to. */
+export const SETUP_CONTRACT: Pin = '0x676f449fcfcd0f5ce4c7a1db2d98c7d6565dd37a'
 
 /**
  * Uniswap v4 on Robinhood Chain, already pinned by the deposit lane and
@@ -90,13 +109,17 @@ export const POSITION_MANAGER = '0x58daec3116aae6d93017baaea7749052e8a04fa7'
 declare const __DOMINO_DEPLOYABLE__: boolean | undefined
 const REQUIRED: boolean = typeof __DOMINO_DEPLOYABLE__ === 'boolean' && __DOMINO_DEPLOYABLE__
 
-/** True while a deployable build has no pin for an identity, so a caller can say why it refused. */
+/**
+ * True when a deployable build has no pin for an identity, so a caller can say
+ * why it refused. Both pins above are set, so a published build never sees
+ * this; it stays so a lane added without an address refuses by name
+ * (`deployment_not_pinned`) rather than passing.
+ */
 export const unpinned = (pin: Pin): boolean => REQUIRED && pin === null
 
 /**
  * Whether a record's address is the pinned one. In a deployable build an
- * absent pin refuses: an unpublished contract cannot be verified, and a record
- * that cannot be verified may not reach a wallet.
+ * absent pin refuses: a record that cannot be anchored may not reach a wallet.
  */
 export function pinned(pin: Pin, value: unknown): boolean {
   if (typeof value !== 'string') return false

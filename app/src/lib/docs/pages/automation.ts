@@ -1,5 +1,15 @@
-import { b, doc, list, p } from '../blocks'
+import { b, doc, list, note, p } from '../blocks'
 import type { DocPage } from '../types'
+
+/**
+ * Handoff of 2026-09-21: Domino V1 is on Robinhood Chain, and the service that
+ * runs the compound cycle is not in operation. Both pages say so under the
+ * "Not running" pill their status draws from ROADMAP, and name no date.
+ */
+const NOT_IN_OPERATION = note(
+  ['Automation is not running: the contracts are deployed on Robinhood Chain, and the service that carries it out is not in operation yet. Until it is, the sequence you create stays paused and activation is not offered. Pause, revocation, repair and withdrawal work all the same.'],
+  'Not running',
+)
 
 export const AUTO_COMPOUND: DocPage = {
   slug: 'auto-compound',
@@ -33,6 +43,7 @@ export const AUTO_COMPOUND: DocPage = {
       title: 'Where it starts',
       blocks: [
         p('Auto-compound runs on a position NFT you hold, wherever you opened it. Starting it takes three wallet transactions: approve that one NFT to its sequence vault, create the sequence, which starts paused, then activate it.'),
+        NOT_IN_OPERATION,
         p(
           'Custody is the same as for Domino Compounder: the NFT stays in your wallet, and ',
           doc('your sequence vault', 'non-custodial', 'sequence-vault'),
@@ -102,7 +113,7 @@ export const DOMINO_COMPOUNDER: DocPage = {
           items: [
             { title: 'Approve one NFT', body: ['Approve only the position you start from, to its sequence vault.'] },
             { title: 'Create the sequence', body: ['A second transaction creates the vault with the limits you set. It starts paused.'] },
-            { title: 'Activate it', body: ['A separate transaction starts automation. Signing in or opening a page never does.'] },
+            { title: 'Activate it', body: ['A separate transaction takes the sequence out of pause. Signing in or opening a page never does.'] },
           ],
         },
         p(
@@ -114,6 +125,7 @@ export const DOMINO_COMPOUNDER: DocPage = {
           doc('Risks', 'risks', 'automation-stops'),
           '.',
         ),
+        NOT_IN_OPERATION,
       ],
     },
     {

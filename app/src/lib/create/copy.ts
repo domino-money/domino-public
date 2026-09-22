@@ -287,7 +287,7 @@ export const CREATE = {
     automationCreateStep: 'Create the sequence, paused',
     automationCreateDetail: (mode: 'compound' | 'domino') => `Registers this NFT, its limits and the ${mode === 'domino' ? 4 : 2}% service fee on earned fees consumed. It starts paused: nothing runs yet.`,
     automationActivateStep: (name: string) => `Activate ${name}`,
-    automationActivateDetail: 'A separate owner transaction, when you choose. Nothing runs before it, and you can pause or revoke it from your wallet.',
+    automationActivateDetail: 'A separate owner transaction, when you choose. It takes the sequence out of pause; the service that compounds is not running. You can pause or revoke it from your wallet.',
     automationStepNames: { compound: 'Auto-compound', domino: 'Domino-compound' },
     /** The fee bases side by side (feeBases in journey.ts). */
     feeLabels: { pool: 'Pool trading fee', service: 'Domino service fee', swap: 'Assisted swap fee', gas: 'Network gas' },
