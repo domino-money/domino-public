@@ -19,7 +19,7 @@ import uuid
 import execution_models as m
 import execution_planner as p
 from automation_config import AutomationConfig
-from automation_evidence import PPM, build_evidence, exposure_ppm
+from automation_evidence import PPM, SWAP_WINDOW_BLOCKS, build_evidence, exposure_ppm
 from automation_ledger import LedgerIndexStore, LedgerIndexer
 from automation_observer import (ChainReader, ObservationError, derive_admission, ledger_balances, measurement_history,
                                  observe_sequence, sample_pool)
@@ -34,10 +34,8 @@ from read_deadline import read_deadline
 WAIT_STATES = ('planned', 'reserved', 'publishing', 'published', 'executing')
 TERMINAL_EXECUTION = ('reconciled', 'reverted', 'attention', 'reorged')
 MAX_SUMMARY_CANDIDATES = 16
-# A cycle abandoned from one of these states had paid for a publication.
-PAID_STATES = ('publishing', 'published', 'executing')
-# Finished cycles that paid for a publication, over which the operator's
-# expected publications per completed cycle are measured.
+# Cycles that paid for a publication, over which the operator's expected
+# publications per completed cycle are measured.
 ATTEMPT_WINDOW = 20
 PUBLICATION_POLL_SECONDS = 0.1
 EXECUTION_POLL_SECONDS = 0.5
@@ -165,8 +163,7 @@ class SequenceCycle:
         waiting_since = max(state['waitingSince'], ctx.last_execution_at)
         history = measurement_history(seq_hash, samples, waiting_since=waiting_since, last_attempt_at=block['timestamp'],
                                       last_read_failed=not ctx.observation.coverageComplete)
-        window = self.config.swapCap.windowBlocks
-        used = self.store.swap_exposure(owner, seq.poolId, since_block=max(0, block['number'] - window + 1))
+        used = self.store.swap_exposure(owner, seq.poolId, block_number=block['number'], window_blocks=SWAP_WINDOW_BLOCKS)
         attempted, completed = self.store.attempt_history(owner, seq_hash, limit=ATTEMPT_WINDOW)
         attempts = Fraction(attempted + 1, completed + 1)
         notes = {}
@@ -196,15 +193,17 @@ class SequenceCycle:
 
     def _run(self, entry, *, act, respect_due):
         owner, scheduling = entry.owner, self.config.scheduling
+        if respect_due:
+            known = self.store.due_state(owner, entry.vault)
+            if known and not any(k['open'] or k['nextDueEpoch'] <= self.clock() for k in known):
+                # Not due, nothing open to resume: no chain read, no lease, no evaluation.
+                return {'sequenceHash': known[0]['sequenceHash'], 'owner': owner, 'vault': entry.vault, 'worker': self.worker,
+                        'outcome': 'not_due', 'nextDueEpoch': min(k['nextDueEpoch'] for k in known)}
         head, source = self._source()
         admission = derive_admission(self.reader, self.config.deployment, owner, entry.vault, head)
         seq_hash = admission.sequence.digest()
         state = self.store.ensure_sequence(owner, seq_hash, entry.vault, admission.sequence.poolId, now=source['timestamp'])
         summary = {'sequenceHash': seq_hash, 'owner': owner, 'vault': entry.vault, 'head': head['number'], 'worker': self.worker}
-        if respect_due and state['nextDueEpoch'] > self.clock() and self.store.open_cycle(owner, seq_hash) is None:
-            # Not due, nothing open to resume: no lease and no evaluation.
-            summary.update(outcome='not_due', nextDueEpoch=state['nextDueEpoch'])
-            return summary
         lease = self.store.acquire_sequence(owner, seq_hash, self.worker, lease_seconds=scheduling.leaseSeconds)
         fence = lease['fence']
         updates = {'last_attempt_at': source['timestamp'], 'last_read_failed': False}
@@ -216,6 +215,11 @@ class SequenceCycle:
             state = {**state, 'waitingSince': source['timestamp']}
         try:
             open_cycle = self.store.open_cycle(owner, seq_hash)
+            if open_cycle is not None and not act:
+                # An evaluation reports the cycle in flight; only a pass that may
+                # act, with its keys, carries it on.
+                summary.update(outcome='open', cycleId=open_cycle['cycleId'], state=open_cycle['state'])
+                return summary
             if open_cycle is not None:
                 summary.update(self._resume(entry, admission, open_cycle, fence, updates))
                 return summary
@@ -400,7 +404,7 @@ class SequenceCycle:
         try:
             self.store.reserve_swap(owner, seq_hash, self.worker, fence, intent_id=intent, pool_id=seq.poolId,
                                     block_number=int(plan.sourceBlockNumber), zero_for_one=zero_for_one, amount_in=amount, cap_raw=cap,
-                                    usage_ppm=usage, window_blocks=self.config.swapCap.windowBlocks)
+                                    usage_ppm=usage, window_blocks=SWAP_WINDOW_BLOCKS)
         except ExecutionStoreError as error:
             return 'swap_cap_exhausted' if error.code == 'execution_swap_cap_exhausted' else 'reserve_swap_' + error.code.removeprefix('execution_')
         return None
@@ -418,7 +422,12 @@ class SequenceCycle:
         result = {'cycleId': cycle_id, 'intentId': intent, 'observationId': anchor}
         # The act path wrote the source block when it planned; the chain-time
         # latency is measured against it, whichever pass carries the cycle on.
+        # A cycle opened before cycles recorded latency takes it from its plan.
         latency = dict((cycle['cost'] or {}).get('latency') or {})
+        if 'sourceBlock' not in latency:
+            stored = self.ledger.get(owner, intent)
+            latency.update(sourceBlock=int(stored['plan']['sourceBlockNumber']), sourceTimestamp=int(stored['observation']['blockTimestamp']),
+                           targetSeconds=self.config.scheduling.latencyTargetSeconds)
         clock = (started, latency)
         if state == 'planned':
             try:
@@ -652,8 +661,19 @@ class SequenceCycle:
     def _abandon(self, owner, cycle_id, intent, fence, updates, reason, result, *, cost=None, latency=None):
         """Release an unsigned intent's reservation and its swap share, and
         close the cycle. A signed intent cannot be cancelled here; the executor
-        owns it. A cycle that had paid for its publication counts as a failure."""
+        owns it. A cycle whose publication has a receipt paid for it, and
+        counts as a failed attempt: the same rule the operator's expected
+        publications per completion are measured by."""
         cycle = self.store.cycle(owner, cycle_id)
+        if cycle['state'] == 'publishing' and 'publication' not in (cost or {}) and cycle['observationId']:
+            # Resumed and abandoned before its poll. A publication still live
+            # holds its nonce, and every later one waits behind it: send its
+            # persisted bytes, as a restart would, whatever the chain then makes
+            # of them. Whether it was included says whether it was paid for.
+            try:
+                cost = {**(cost or {}), **self._publication_cost(self._settle_publication(cycle['observationId']))}
+            except (ExecutionError, ExecutionStoreError):
+                pass
         released = False
         if intent is not None:
             try:
@@ -668,7 +688,7 @@ class SequenceCycle:
         if latency is not None:
             cost = {**(cost or {}), 'latency': latency}
         self.store.update_cycle(owner, cycle_id, self.worker, fence, state='abandoned', reason=reason, cost=cost)
-        if cycle['state'] in PAID_STATES:
+        if (({**(cycle['cost'] or {}), **(cost or {})}).get('publication') or {}).get('gasUsedRaw') is not None:
             self._fail(owner, cycle_id, updates)
         else:
             updates['next_due_seconds'] = self._due(self.config.scheduling.evaluationIntervalSeconds)
@@ -697,14 +717,25 @@ class SequenceCycle:
                 'paused': self.config.paused or self.store.control(entry.owner, 'paused') is True,
                 'executionAvailable': False}
 
+    def _settle_publication(self, anchor):
+        """Drive one publication to what the chain says of it. Bytes never sent
+        go out first, even late: a signed row holds its nonce, and retiring it
+        unsent would leave every later publication of the key waiting behind
+        the gap. A late one reverts at the guard, and its nonce is spent."""
+        confirmations = self.config.finality.publicationConfirmations
+        if self.journal.status(anchor)['state'] == 'signed':
+            self.journal.send(anchor, self.rpc)
+        row = self.journal.check(anchor, self.rpc, confirmations=confirmations)
+        if row['state'] in ('signed', 'submitted', 'broadcast_unknown', 'reorged'):
+            self.journal.send(anchor, self.rpc)
+            row = self.journal.check(anchor, self.rpc, confirmations=confirmations)
+        return row
+
     def recover_publications(self):
         """Drive every live publication of the configured publisher to a receipt."""
         results = []
         for row in self.journal.live(self.config.deployment.pricePublisher):
-            row = self.journal.check(row['observationId'], self.rpc, confirmations=self.config.finality.publicationConfirmations)
-            if row['state'] in ('signed', 'submitted', 'broadcast_unknown', 'reorged'):
-                self.journal.send(row['observationId'], self.rpc)
-                row = self.journal.check(row['observationId'], self.rpc, confirmations=self.config.finality.publicationConfirmations)
+            row = self._settle_publication(row['observationId'])
             results.append({'observationId': row['observationId'], 'state': row['state'], 'reason': row['reason']})
         return results
 

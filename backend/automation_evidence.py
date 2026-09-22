@@ -32,6 +32,9 @@ PUBLISH_CALLDATA_BYTES = 4 + 6 * 32
 U256_MASK = (1 << 256) - 1
 MIN_TICK, MAX_TICK = -887272, 887272
 PPM = 1_000_000
+# The guard admits a source block for 255 blocks: executions observed within
+# that distance can land in the same block, so their swaps share one budget.
+SWAP_WINDOW_BLOCKS = 256
 # Placeholders for the two SwapPlan fields the route commitment leaves out.
 _PLACEHOLDER = '0x' + 'ee' * 32
 
@@ -488,7 +491,7 @@ def build_evidence(reader, ctx, admission, samples, config, settings, *, used_pp
             if len(quotes) < 32 - len(config.destinations.swapFractionsBps):
                 quotes.extend(swap_quotes(reader, ctx, admission, dest, config, costs['swap'], fingerprint, expires_at, caps, used_ppm))
     if notes is not None:
-        notes['swapCap'] = {'windowBlocks': config.swapCap.windowBlocks, 'usedPpm': used_ppm,
+        notes['swapCap'] = {'windowBlocks': SWAP_WINDOW_BLOCKS, 'usedPpm': used_ppm,
                             'directions': {('zeroForOne' if direction else 'oneForZero'): (None if cap is None else str(cap))
                                            for direction, cap in sorted(caps.items())}}
         notes['caps'] = dict(caps)

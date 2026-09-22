@@ -4,7 +4,8 @@
 financial services: one immutable source release for the `automation` component, one
 system user, one systemd unit without an `[Install]` section, migrations
 `028_automation_cycle.sql`, `029_ledger_index.sql` and `030_swap_exposure.sql` in one
-receipted transaction, and
+receipted transaction (it is a first installation: a host installed before 030 existed
+would need 030 applied on its own, and none has been), and
 the peer mappings the service needs. It never starts, enables or restarts anything, and
 it creates no configuration, key or funding. The
 [financial upgrade](FINANCIAL_BACKEND_UPGRADE.md) must already be installed: its

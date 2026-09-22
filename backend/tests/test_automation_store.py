@@ -127,8 +127,8 @@ class CycleStoreTests(unittest.TestCase):
             self.reserve(OWNER, SEQUENCE, self.worker, mine, identity(53), 1200, 1)
         # A reservation 256 blocks later no longer sees the first one.
         self.assertEqual(self.reserve(OWNER, SEQUENCE, self.worker, mine, identity(53), 1256, 500000)['usedPpm'], 900000)
-        self.assertEqual(self.store.swap_exposure(other_owner, POOL, since_block=1001), 900000)
-        self.assertEqual(self.store.swap_exposure(OWNER, identity(99), since_block=0), 0)
+        self.assertEqual(self.store.swap_exposure(other_owner, POOL, block_number=1256, window_blocks=256), 900000)
+        self.assertEqual(self.store.swap_exposure(OWNER, identity(99), block_number=1256, window_blocks=256), 0)
         # Released only by its own tenant, under the live fence, and only once.
         self.assertFalse(self.store.release_swap(other_owner, other_sequence, theirs_worker, theirs, identity(53)))
         hidden = self.store._transaction(other_owner, lambda conn, owner: conn.execute(
@@ -142,7 +142,7 @@ class CycleStoreTests(unittest.TestCase):
             self.store.release_swap(OWNER, SEQUENCE, self.worker, mine + 1, identity(53))
         self.assertTrue(self.store.release_swap(OWNER, SEQUENCE, self.worker, mine, identity(53)))
         self.assertFalse(self.store.release_swap(OWNER, SEQUENCE, self.worker, mine, identity(53)))
-        self.assertEqual(self.store.swap_exposure(OWNER, POOL, since_block=1001), 400000)
+        self.assertEqual(self.store.swap_exposure(OWNER, POOL, block_number=1256, window_blocks=256), 400000)
         # A released row cannot come back or be released again (the guard);
         # the worker may change nothing else and delete nothing (its grants).
         for released in ('false', 'true'):
@@ -178,9 +178,22 @@ class CycleStoreTests(unittest.TestCase):
         # 256 blocks from 2000 to 2255: the first share still counts at its last block ...
         with self.assertRaisesRegex(ExecutionStoreError, 'execution_swap_cap_exhausted'):
             self.reserve(OWNER, SEQUENCE, self.worker, fence, identity(62), 2255, 500000)
-        self.assertEqual(self.store.swap_exposure(OWNER, POOL, since_block=2000), 600000)
+        self.assertEqual(self.store.swap_exposure(OWNER, POOL, block_number=2255, window_blocks=256), 600000)
         # ... and no longer one block later.
         self.assertEqual(self.reserve(OWNER, SEQUENCE, self.worker, fence, identity(62), 2256, 500000)['usedPpm'], 500000)
+        # The window runs both ways: a swap observed 255 blocks later can land
+        # in the same block as one observed now; 256 blocks later it cannot.
+        self.assertEqual(self.store.swap_exposure(OWNER, POOL, block_number=2001, window_blocks=256), 1100000)
+        self.assertEqual(self.store.swap_exposure(OWNER, POOL, block_number=1745, window_blocks=256), 600000)
+        self.assertEqual(self.store.swap_exposure(OWNER, POOL, block_number=1744, window_blocks=256), 0)
+        with self.assertRaisesRegex(ExecutionStoreError, 'execution_swap_cap_exhausted'):
+            self.reserve(OWNER, SEQUENCE, self.worker, fence, identity(63), 2001, 1)
+        # A share names its own sequence's pool, nothing else.
+        with self.assertRaisesRegex(ExecutionStoreError, 'execution_state_conflict'):
+            self.reserve(OWNER, SEQUENCE, self.worker, fence, identity(64), 5000, 1, pool_id=identity(98))
+        for bad in ({'block_number': -1}, {'window_blocks': 0}):
+            with self.subTest(bad=bad), self.assertRaisesRegex(ExecutionStoreError, 'execution_invalid_record'):
+                self.store.swap_exposure(OWNER, POOL, **{'block_number': 10, 'window_blocks': 256, **bad})
 
     def test_reservations_on_one_pool_wait_for_each_other(self):
         # Another vault's reservation holds the pool's lock: this one waits for
@@ -201,8 +214,10 @@ class CycleStoreTests(unittest.TestCase):
         self.store.ensure_sequence(OWNER, SEQUENCE, address(3), POOL, now=1000)
         fence = self.store.acquire_sequence(OWNER, SEQUENCE, self.worker, lease_seconds=60)['fence']
         self.assertEqual(self.store.attempt_history(OWNER, SEQUENCE), (0, 0))
-        for reason, cost in (('replan_wait', {}), ('publication_reverted', {'publication': {'state': 'reverted'}}),
-                             ('price_outside_plan_band', {'publication': {'state': 'included'}}), ('publish_failed', {'latency': {}})):
+        paid = {'gasUsedRaw': '157278', 'effectiveGasPriceRaw': '10000000', 'wei': '1572780000000'}
+        for reason, cost in (('replan_wait', {}), ('publication_reverted', {'publication': {'state': 'reverted', **paid}}),
+                             ('price_outside_plan_band', {'publication': {'state': 'included', **paid}}), ('publish_failed', {'latency': {}}),
+                             ('publication_expired', {'publication': {'state': 'expired'}})):  # sent, never included: nothing paid
             cycle = self.store.record_cycle(OWNER, SEQUENCE, self.worker, fence, **self.cycle_fields())
             self.store.update_cycle(OWNER, cycle, self.worker, fence, state='abandoned', reason=reason, cost=cost)
         self.store.record_cycle(OWNER, SEQUENCE, self.worker, fence, **self.cycle_fields())  # still evaluated

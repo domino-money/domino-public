@@ -206,8 +206,16 @@ class AutomationCycleEvmTests(unittest.TestCase):
         self.assertEqual(first['outcome'], 'wait', first)
         self.assertIn('insufficient_qualified_fee_history', first['decision']['reasons'])
         self.assertEqual((self.counts()['publications'], self.counts()['intents']), (0, 0))
-        # The service loop honours the backoff the wait set; a manual pass does not.
-        self.assertEqual(self.cycle.run(self.entry, respect_due=True)['outcome'], 'not_due')
+        # The service loop honours the backoff the wait set, without a single
+        # chain read; a manual pass does not.
+        reads = []
+        request = self.rpc.request
+        self.rpc.request = lambda method, params: reads.append(method) or request(method, params)
+        try:
+            skipped = self.cycle.run(self.entry, respect_due=True)
+        finally:
+            self.rpc.request = request
+        self.assertEqual((skipped['outcome'], skipped['sequenceHash'], reads), ('not_due', first['sequenceHash'], []))
         self.assertGreater(first['nextDueEpoch'], time.time())
         self.warm_up()
         self.advance(2)
@@ -294,6 +302,11 @@ class AutomationCycleEvmTests(unittest.TestCase):
         self.assertEqual(self.journal.live(self.publisher)[0]['state'], 'signed')
         open_cycle = self.store.open_cycle(self.owner, self.sequence_hash())
         self.assertEqual(open_cycle['state'], 'publishing')
+        # A cycle opened by a release that did not record latency yet: the
+        # resumed pass takes the source block from the plan.
+        with self.pg.admin() as conn:
+            conn.execute('SET LOCAL session_replication_role = replica')
+            conn.execute("UPDATE domino_execution.cycles SET cost=cost-'latency' WHERE cycle_id=%s", (open_cycle['cycleId'],))
         # The restarted service keeps its worker identity, so it resumes its own
         # leases at once, sends the persisted bytes and continues the same cycle.
         restarted = self.worker(self.cycle.worker)
@@ -308,6 +321,11 @@ class AutomationCycleEvmTests(unittest.TestCase):
         self.assertEqual((done['cycleId'], done['outcome']), (open_cycle['cycleId'], 'completed'))
         counts = self.counts()
         self.assertEqual((counts['publications'], counts['attempts'], counts['effects']), (1, 1, 1))
+        plan = self.ledger.get(self.owner, open_cycle['intentId'])['plan']
+        latency = self.store.cycle(self.owner, open_cycle['cycleId'])['cost']['latency']
+        self.assertEqual(latency['sourceBlock'], int(plan['sourceBlockNumber']))
+        self.assertGreater(latency['executionBlocksAfterSource'], latency['publicationBlocksAfterSource'])
+        self.assertNotIn('evaluatedMs', latency)
         with self.pg.admin() as conn:
             # One publication for the whole episode: the journal's head is the chain's next nonce.
             self.assertEqual(int(conn.execute('SELECT next_nonce FROM domino_execution.publisher_heads').fetchone()[0]),
@@ -335,6 +353,38 @@ class AutomationCycleEvmTests(unittest.TestCase):
         self.assertEqual(len(lost), 1)
         self.assertEqual(self.counts()['publications'], 1)
         self.assertIn(self.journal.status(acted['observationId'])['state'], ('included', 'confirmed'))
+
+    def test_recovery_resends_a_publication_the_node_never_received(self):
+        self.setup()
+        self.warm_up()
+        self.advance(2)
+        self.trade()
+        request, send = self.rpc.request, self.journal.send
+        def unreachable(method, params):
+            if method == 'eth_sendRawTransaction':
+                raise TimeoutError('synthetic: never reached the node')
+            return request(method, params)
+        def crash(anchor, rpc):
+            self.rpc.request = unreachable
+            try:
+                send(anchor, rpc)
+            finally:
+                self.rpc.request = request
+            raise RuntimeError('synthetic_crash_after_an_undelivered_send')
+        self.journal.send = crash
+        try:
+            with self.assertRaisesRegex(RuntimeError, 'synthetic_crash'):
+                self.cycle.run(self.entry)
+        finally:
+            self.journal.send = send
+        live = self.journal.live(self.publisher)
+        self.assertEqual([row['state'] for row in live], ['broadcast_unknown'])
+        # The restarted service finds no receipt and sends the same bytes again.
+        restarted = self.worker(self.cycle.worker)
+        self.assertIn(restarted.recover_publications()[0]['state'], ('included', 'confirmed'))
+        resumed = restarted.run(self.entry)
+        self.assertEqual(resumed['outcome'], 'executing', resumed)
+        self.assertEqual(self.counts()['publications'], 1)
 
     def test_contention_pause_and_funding_refuse_before_any_transaction(self):
         self.setup()
@@ -425,6 +475,82 @@ class AutomationCycleEvmTests(unittest.TestCase):
         self.advance(2)
         after = self.cycle.run(self.entry, act=False)
         self.assertEqual(after['decision']['expectedPublicationsPerCompletion'], '3/1')
+
+    def test_a_publication_is_never_left_unsent_and_counts_as_a_failure_only_once_paid(self):
+        # A five-second deadline, so a publication can outlive its expiry.
+        self.setup(scheduling={'maxSourceBlockAge': 20, 'publicationWaitSeconds': 2}, plan={'deadlineSeconds': 5})
+        self.warm_up()
+        nonce = lambda: int(self.rpc.request('eth_getTransactionCount', [self.publisher, 'latest']), 16)
+        before = nonce()
+        def crashed(lose, *, recover=False):
+            self.advance(2)
+            self.trade()
+            send = self.journal.send
+            def crash(*args, **kwargs):
+                raise RuntimeError('synthetic_crash')
+            self.journal.send = crash
+            try:
+                with self.assertRaisesRegex(RuntimeError, 'synthetic_crash'):
+                    self.cycle.run(self.entry)
+            finally:
+                self.journal.send = send
+            opened = self.store.open_cycle(self.owner, self.sequence_hash())
+            self.assertEqual((opened['state'], self.journal.status(opened['observationId'])['state']), ('publishing', 'signed'))
+            lose()
+            restarted = self.worker(self.cycle.worker)
+            if recover:
+                restarted.recover_publications()
+            resumed = restarted.run(self.entry)
+            self.assertEqual((resumed['cycleId'], resumed['outcome'], resumed['reason']), (opened['cycleId'], 'abandoned', 'source_window_lost'))
+            return self.store.cycle(self.owner, opened['cycleId']), self.store.sequence(self.owner, opened['sequenceHash'])
+        # The service carries on without a restart and the source window passes
+        # in blocks: the signed bytes still go out, so their nonce holds nothing
+        # back. They land, were paid for, and count as a failed attempt.
+        cycle, state = crashed(lambda: self.rpc.request('anvil_mine', ['0x20', '0x0']))
+        self.assertEqual(cycle['cost']['publication']['state'], 'confirmed')
+        self.assertGreater(int(cycle['cost']['publication']['gasUsedRaw']), 0)
+        self.assertEqual((state['consecutiveFailures'], nonce()), (1, before + 1))
+        # A restart after the publication expired: recovery sends it before an
+        # expiry check could retire it unsent. The guard refuses it, the nonce
+        # is spent, the revert was paid for, and it counts.
+        cycle, state = crashed(lambda: self.advance(6), recover=True)
+        self.assertEqual(cycle['cost']['publication']['state'], 'reverted')
+        self.assertGreater(int(cycle['cost']['publication']['gasUsedRaw']), 0)
+        self.assertEqual((state['consecutiveFailures'], nonce()), (2, before + 2))
+        with self.pg.admin() as conn:
+            self.assertEqual(int(conn.execute('SELECT next_nonce FROM domino_execution.publisher_heads').fetchone()[0]), before + 2)
+        # Sent, not included before the wait ran out: nothing paid yet, not counted.
+        self.advance(2)
+        self.trade()
+        self.rpc.request('evm_setAutomine', [False])
+        try:
+            waited = self.cycle.run(self.entry)
+        finally:
+            self.rpc.request('evm_setAutomine', [True])
+        self.assertEqual((waited['outcome'], waited['reason']), ('abandoned', 'publication_window_lost'), waited)
+        publication = self.store.cycle(self.owner, waited['cycleId'])['cost']['publication']
+        self.assertIn(publication['state'], ('submitted', 'broadcast_unknown'))  # the node already held the re-sent bytes
+        self.assertNotIn('gasUsedRaw', publication)
+        self.assertEqual(self.store.sequence(self.owner, waited['sequenceHash'])['consecutiveFailures'], 2)
+        self.rpc.request('evm_mine', [])
+        self.advance(2)
+        self.assertEqual(self.cycle.run(self.entry, act=False)['decision']['expectedPublicationsPerCompletion'], '3/1')
+
+    def test_an_evaluation_reports_a_cycle_in_flight_and_leaves_it(self):
+        self.setup()
+        self.warm_up()
+        self.advance(2)
+        self.trade()
+        acted = self.cycle.run(self.entry)
+        self.assertEqual(acted['outcome'], 'executing', acted)
+        # The keyless evaluate command sees the open cycle and does not touch it.
+        reader = SequenceCycle(self.config, rpc=self.rpc)
+        seen = reader.run(self.entry, act=False)
+        self.assertEqual((seen['outcome'], seen['cycleId'], seen['state']), ('open', acted['cycleId'], 'executing'))
+        self.assertEqual(self.store.cycle(self.owner, acted['cycleId'])['state'], 'executing')
+        self.assertNotEqual(self.ledger.get(self.owner, acted['intentId'])['state'], 'cancelled')
+        self.finalize()
+        self.assertEqual(self.cycle.run(self.entry)['outcome'], 'completed')
 
     def test_reorg_after_a_completed_cycle_is_recorded_and_suspends_the_sequence(self):
         self.setup()
@@ -600,7 +726,8 @@ class AutomationCycleEvmTests(unittest.TestCase):
         finally:
             self.cycle._signer = signer
         self.assertEqual((revoked['outcome'], revoked['reason'], revoked['reservationReleased']), ('abandoned', 'anchor_revoked', True), revoked)
-        self.assertEqual(shares(), [(shares()[0][0], True), (revoked['intentId'], True)])
+        # Nothing was mined in between: the same plan, the same intent, twice released.
+        self.assertEqual(shares(), [(revoked['intentId'], True), (revoked['intentId'], True)])
         self.advance(2)
         self.assertEqual(self.cycle.run(self.entry, act=False)['decision']['swapCap']['usedPpm'], 0)
 
@@ -653,6 +780,14 @@ class AutomationCycleEvmTests(unittest.TestCase):
                                'WHERE intent_id=%s', (acted['intentId'],)).fetchone()
         self.assertEqual((row[0], row[1], int(row[2]), row[3], str(row[4]), row[7]),
                          (self.owner, observation.sequence.poolId, int(plan.sourceBlockNumber), plan.swap.currencyIn == self.key[0], plan.swap.amountInRaw, False))
+        # A signed intent's share stays: the database refuses to give it back.
+        seq_hash = acted['sequenceHash']
+        lease = self.store.acquire_sequence(self.owner, seq_hash, self.cycle.worker, lease_seconds=30)
+        try:
+            with self.assertRaisesRegex(ExecutionStoreError, 'execution_state_conflict'):
+                self.store.release_swap(self.owner, seq_hash, self.cycle.worker, lease['fence'], acted['intentId'])
+        finally:
+            self.store.update_sequence(self.owner, seq_hash, self.cycle.worker, lease['fence'], release=True)
         # No block passed between the evaluation and the act: the same cap.
         self.assertEqual(str(row[5]), acted['decision']['swapCap']['directions']['zeroForOne' if row[3] else 'oneForZero'])
         self.assertEqual(row[6], -(-int(plan.swap.amountInRaw) * 10**6 // int(row[5])))

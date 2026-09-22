@@ -61,7 +61,7 @@ def sample_config(*, currencies=(address(16), address(32)), **changes):
                     'overlapChoicesBps': [0, 500, 2000], 'liquidityFractionChoicesBps': [2500, 5000, 10000]},
         'pricing': {'kind': 'pool_spot', 'valuationBandBps': 10, 'wrappedNative': address(0x2000),
                     'gasPools': {c: gas_pool(c) for c in (c0, c1) if c != m.ZERO}, 'gasPriceBufferBps': 0},
-        'swapCap': {'depthMultiplierBps': 10000, 'windowBlocks': 256},
+        'swapCap': {'depthMultiplierBps': 10000},
         'gas': {'publishGasUnits': 160000, 'executeGasUnits': {'direct': 1200000, 'swap': 1500000, 'mint': 1900000, 'fund': 1300000},
                 'priorityFeePerGasWei': 1, 'basePriceBufferBps': 0, 'l1DataComponent': 'attested_none',
                 'operatorMinimumBalanceWei': 10**15, 'publisherMinimumBalanceWei': 10**15},

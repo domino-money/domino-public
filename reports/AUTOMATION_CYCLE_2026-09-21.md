@@ -305,8 +305,10 @@ The owner approved the study's proposal without the hooks. What changed:
   impact check are one bound. Before, the service kept half of it on the square root, and
   at 50 square-root basis points or more the band's upper edge fell outside the engine's
   bound, since (1.005)² exceeds 1.01.
-- **The swap cap.** Every compound swap in a pool, summed over all vaults over
-  `swapCap.windowBlocks`, stays below fee × depth × `swapCap.depthMultiplierBps`. Depth
+- **The swap cap.** Every compound swap in a pool, summed over all vaults over the
+  swaps observed within 256 blocks either side (the guard's window, since an execution
+  lands up to 255 blocks after the block it observed), stays below fee × depth ×
+  `swapCap.depthMultiplierBps`. Depth
   is the least running average of L × √P from the spot to the owner's impact bound in the
   swap's direction, walked tick by tick: that is the exact break-even of a push and its
   restore, so a liquidity gap next to the spot zeroes the cap and a far one lowers it in
@@ -321,13 +323,34 @@ The owner approved the study's proposal without the hooks. What changed:
   the source and whether that met `scheduling.latencyTargetSeconds`.
 - **Timing.** `serve` honours each sequence's due time. It did not before: the runbook
   said it did, but the loop ran every sequence every interval, so the waiting backoff
-  never applied. Every wait is jittered by up to `scheduling.jitterBps`, from the
+  never applied. A sequence that is not due is skipped from the database alone, with
+  no chain read. Every wait is jittered by up to `scheduling.jitterBps`, from the
   system's random source. After `scheduling.failureBackoffAfter` consecutive paid
-  failures the wait doubles per failure up to the maximum, and the operator's expected
-  gas cost carries the publications a completed cycle is expected to take: paid attempts
-  plus one over completions plus one, over the last 20.
+  failures (a publication with a receipt) the wait doubles per failure up to the
+  maximum, and the operator's expected gas cost carries the publications a completed
+  cycle is expected to take: paid attempts plus one over completions plus one, over the
+  last 20.
 - **App.** The default maximum slippage is 1%.
 - Two debugging prints left in the reorg re-check by `7d79e5e` are removed.
+
+An independent adversarial review of the change checked `impact_bounds` against the
+helper's `checkSwapPrices` on 200,000 random cases and the cap against an independent
+least-running-average computation on 3,000 random pools, and found what is fixed here
+before it landed: a configurable window below 256 blocks broke the cap's guarantee; the
+reservation guard did not tie a share to its sequence's pool, bound the window above, or
+refuse to give back the share of an intent that may still be signed; a cycle opened
+before cycles recorded latency would have failed on resumption; a resumed publication
+could be counted as a failure without having been paid, or the reverse; the maximum
+backoff could be shorter than a normal pass; and a skipped sequence still read its
+admission from the chain.
+
+Testing those fixes found two older defects, fixed here as well. A publication signed
+and never sent held its nonce: if its cycle was abandoned in the same run, or if the
+service came back after its expiry and the expiry check retired it unsent, every later
+publication of the key queued behind the gap. A signed publication is now always sent
+before anything retires it; a late one reverts at the guard and spends its nonce. And
+the keyless `evaluate` command resumed a cycle in flight and, lacking the keys,
+abandoned it, even with its publication paid; it now reports the cycle and leaves it.
 
 The integrated suite on Anvil and PostgreSQL covers the race for a pool's last share
 between two vaults (the second stops with `swap_cap_exhausted` before any intent or

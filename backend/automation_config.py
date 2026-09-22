@@ -97,12 +97,14 @@ class SwapCapPolicy(Frozen):
     """The proportion that keeps a compound swap from being worth sandwiching.
     Moving a pool by a fraction and back costs about fee x depth x fraction;
     the gain on a swap of size S is S x fraction. So the swaps of every vault
-    in one pool, summed over a window of blocks, stay under fee x depth,
-    measured tick by tick at the observed block over the owner's impact band
-    (automation_evidence.swap_cap), times this multiplier.
+    in one pool stay under fee x depth, measured tick by tick at the observed
+    block over the owner's impact band (automation_evidence.swap_cap), times
+    this multiplier. They are summed over the guard's 256-block window, which
+    is not configurable: an execution lands up to 255 blocks after the block
+    it observed, so two swaps can share a block, and one push, whenever their
+    observed blocks are that close.
     """
     depthMultiplierBps: Annotated[StrictInt, Field(ge=1, le=10000)]
-    windowBlocks: Annotated[StrictInt, Field(ge=1, le=256)]
 
 
 class ExecuteGasUnits(Frozen):
@@ -203,6 +205,9 @@ class SchedulingPolicy(Frozen):
     def checked(self):
         if self.maximumBackoffSeconds < self.minimumBackoffSeconds:
             raise ValueError('inverted_backoff')
+        # A failure's backoff never brings the next attempt sooner than a normal pass.
+        if self.maximumBackoffSeconds < self.evaluationIntervalSeconds:
+            raise ValueError('backoff_below_interval')
         return self
 
 

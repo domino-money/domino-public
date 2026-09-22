@@ -166,8 +166,9 @@ class CycleStore(_Store):
         """The one cycle of this sequence that has bound an intent and not finished."""
         sequence_hash = _hash(sequence_hash)
         def operation(conn, owner):
-            rows = conn.execute('SELECT * FROM cycles WHERE owner=%s AND sequence_hash=%s AND state NOT IN (%s,%s,%s) ORDER BY created_at DESC',
-                                (owner, sequence_hash, 'evaluated', *TERMINAL)).fetchall()
+            # Literal states, so the partial index of open cycles serves it.
+            rows = conn.execute("SELECT * FROM cycles WHERE owner=%s AND sequence_hash=%s AND state NOT IN ('evaluated','completed','abandoned') "
+                                'ORDER BY created_at DESC', (owner, sequence_hash)).fetchall()
             if len(rows) > 1:
                 raise ExecutionStoreError('execution_state_conflict')
             return self._cycle_row(rows[0]) if rows else None
@@ -184,33 +185,37 @@ class CycleStore(_Store):
         return self._transaction(owner, operation)
 
     def attempt_history(self, owner, sequence_hash, *, limit=20):
-        """Of this sequence's latest cycles that paid for a publication, how
-        many there were and how many completed. A sequence is evaluated only
-        with no cycle open, so every one of them has finished."""
+        """Of this sequence's latest cycles that paid for a publication (its
+        receipt's gas is on the cycle), how many there were and how many
+        completed. A sequence is evaluated only with no cycle open, so every
+        one of them has finished."""
         sequence_hash = _hash(sequence_hash)
         if type(limit) is not int or not 1 <= limit <= 100:
             raise ExecutionStoreError('execution_invalid_record')
         def operation(conn, owner):
             row = conn.execute("SELECT count(*) AS attempted,count(*) FILTER(WHERE state='completed') AS completed FROM "
-                               "(SELECT state FROM cycles WHERE owner=%s AND sequence_hash=%s AND cost ? 'publication' "
+                               "(SELECT state FROM cycles WHERE owner=%s AND sequence_hash=%s AND cost->'publication' ? 'gasUsedRaw' "
                                "ORDER BY created_at DESC LIMIT %s) s", (owner, sequence_hash, limit)).fetchone()
             return int(row['attempted']), int(row['completed'])
         return self._transaction(owner, operation)
 
     # ------------------------------------------------------- swap exposure
     @staticmethod
-    def _exposure(conn, pool_id, since_block):
+    def _exposure(conn, pool_id, block_number, window_blocks):
+        # Both ways: an execution observed at block B lands in (B, B+255], so
+        # only swaps observed within the window of B can share its block.
         row = conn.execute('SELECT coalesce(sum(usage_ppm),0) AS used FROM swap_exposure WHERE pool_id=%s AND NOT released '
-                           'AND block_number>=%s', (pool_id, int(since_block))).fetchone()
+                           'AND block_number BETWEEN %s AND %s', (pool_id, max(0, block_number - window_blocks + 1),
+                                                                  block_number + window_blocks - 1)).fetchone()
         return int(row['used'])
 
-    def swap_exposure(self, owner, pool_id, *, since_block):
+    def swap_exposure(self, owner, pool_id, *, block_number, window_blocks):
         """The share of the pool's swap cap that live reservations of every
-        tenant hold from `since_block` on, in millionths."""
+        tenant observed within the window of `block_number` hold, in millionths."""
         pool_id = _hash(pool_id)
-        if type(since_block) is not int or since_block < 0:
+        if type(block_number) is not int or block_number < 0 or type(window_blocks) is not int or not 1 <= window_blocks <= 256:
             raise ExecutionStoreError('execution_invalid_record')
-        return self._transaction(owner, lambda conn, owner: self._exposure(conn, pool_id, since_block))
+        return self._transaction(owner, lambda conn, owner: self._exposure(conn, pool_id, block_number, window_blocks))
 
     def reserve_swap(self, owner, sequence_hash, worker_id, fence, *, intent_id, pool_id, block_number, zero_for_one,
                      amount_in, cap_raw, usage_ppm, window_blocks):
@@ -225,7 +230,7 @@ class CycleStore(_Store):
         def operation(conn, owner):
             conn.execute("SELECT pg_advisory_xact_lock(hashtextextended('swap_exposure:'||%s,0))", (pool_id,))
             self._sequence_fence(conn, sequence_hash)
-            used = self._exposure(conn, pool_id, max(0, block_number - window_blocks + 1))
+            used = self._exposure(conn, pool_id, block_number, window_blocks)
             if used + usage_ppm > PPM:
                 raise ExecutionStoreError('execution_swap_cap_exhausted')
             conn.execute('INSERT INTO swap_exposure(reservation_id,intent_id,owner,sequence_hash,pool_id,block_number,zero_for_one,amount_in,'
@@ -233,6 +238,17 @@ class CycleStore(_Store):
                                                                                      block_number, zero_for_one, amount_in, cap_raw, usage_ppm))
             return {'usedPpm': used + usage_ppm, 'usagePpm': usage_ppm}
         return self._transaction(owner, operation, worker=worker_id, fence=fence)
+
+    def due_state(self, owner, vault):
+        """When the vault's sequences are next due, and whether one has a cycle
+        open: enough for the service loop to skip a pass without reading the chain."""
+        vault = _owner(vault)
+        def operation(conn, owner):
+            rows = conn.execute("SELECT s.sequence_hash,s.next_due_at,EXISTS(SELECT 1 FROM cycles c WHERE c.owner=s.owner AND "
+                                "c.sequence_hash=s.sequence_hash AND c.state NOT IN ('evaluated','completed','abandoned')) AS open "
+                                'FROM sequence_state s WHERE s.owner=%s AND s.vault=%s', (owner, vault)).fetchall()
+            return [{'sequenceHash': r['sequence_hash'], 'nextDueEpoch': r['next_due_at'].timestamp(), 'open': r['open']} for r in rows]
+        return self._transaction(owner, operation)
 
     def release_swap(self, owner, sequence_hash, worker_id, fence, intent_id):
         """Give back the share of an intent that was cancelled before signing."""

@@ -23,7 +23,7 @@ class ConfigTests(unittest.TestCase):
 
     def test_every_field_is_explicit_and_unknown_fields_are_refused(self):
         for section, field in (('gas', 'publishGasUnits'), ('scheduling', 'maxSourceBlockAge'), ('pricing', 'gasPriceBufferBps'),
-                               ('pricing', 'wrappedNative'), ('pricing', 'valuationBandBps'), ('swapCap', 'depthMultiplierBps'), ('swapCap', 'windowBlocks'),
+                               ('pricing', 'wrappedNative'), ('pricing', 'valuationBandBps'), ('swapCap', 'depthMultiplierBps'),
                                ('scheduling', 'jitterBps'), ('scheduling', 'latencyTargetSeconds'), ('scheduling', 'failureBackoffAfter'),
                                ('destinations', 'quoteSlippageBps'), ('finality', 'publicationConfirmations')):
             with self.subTest(section=section, field=field):
@@ -35,12 +35,17 @@ class ConfigTests(unittest.TestCase):
             validate_config({**sample_config(), 'extra': 1})
         with self.assertRaises(ValueError):
             validate_config(sample_config(gas={'l1DataComponent': 'zero'}))
-        # The service keeps no price band of its own, and no external reference.
-        for section, field, value in (('plan', 'priceBandSqrtBps', 25), ('pricing', 'feeds', {})):
+        # The service keeps no price band of its own, no external reference, and
+        # no swap window but the guard's.
+        for section, field, value in (('plan', 'priceBandSqrtBps', 25), ('pricing', 'feeds', {}), ('swapCap', 'windowBlocks', 32)):
             with self.subTest(field=field), self.assertRaises(ValueError):
                 validate_config(sample_config(**{section: {field: value}}))
         with self.assertRaises(ValueError):
             validate_config(sample_config(pricing={'kind': 'chainlink_usd_feeds'}))
+        # A failure's backoff is never shorter than a normal pass.
+        with self.assertRaisesRegex(ValueError, 'backoff_below_interval'):
+            validate_config(sample_config(scheduling={'evaluationIntervalSeconds': 61, 'maximumBackoffSeconds': 60}))
+        self.assertEqual(validate_config(sample_config(scheduling={'evaluationIntervalSeconds': 60, 'maximumBackoffSeconds': 60})).scheduling.maximumBackoffSeconds, 60)
 
     def test_duplicate_keys_and_non_objects_are_refused_at_ingress(self):
         with self.assertRaises(Exception):

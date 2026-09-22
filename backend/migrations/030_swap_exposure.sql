@@ -35,8 +35,13 @@ CREATE FUNCTION domino_execution.preserve_swap_exposure() RETURNS trigger LANGUA
 BEGIN
   IF TG_OP='DELETE' THEN RAISE EXCEPTION USING ERRCODE='23514',MESSAGE='execution_intent_immutable'; END IF;
   IF TG_OP='INSERT' THEN
-    IF NEW.released THEN RAISE EXCEPTION USING ERRCODE='23514',MESSAGE='execution_state_conflict'; END IF;
     PERFORM domino_execution.sequence_fence(NEW.sequence_hash);
+    -- A share is taken live, by the lease holder, on its own sequence's pool;
+    -- the row-level policy keeps the row's owner the tenant's.
+    IF NEW.released OR NOT EXISTS(SELECT 1 FROM domino_execution.sequence_state WHERE sequence_hash=NEW.sequence_hash
+        AND pool_id=NEW.pool_id) THEN
+      RAISE EXCEPTION USING ERRCODE='23514',MESSAGE='execution_state_conflict';
+    END IF;
     RETURN NEW;
   END IF;
   -- The reservation is written once; it can only be released, once.
@@ -45,6 +50,11 @@ BEGIN
     RAISE EXCEPTION USING ERRCODE='23514',MESSAGE='execution_intent_immutable';
   END IF;
   PERFORM domino_execution.sequence_fence(OLD.sequence_hash);
+  -- Only a share whose intent was never persisted or was cancelled goes back:
+  -- a cancelled intent was never signed, and a signed one may still land.
+  IF EXISTS(SELECT 1 FROM domino_execution.intents WHERE intent_id=OLD.intent_id AND state<>'cancelled') THEN
+    RAISE EXCEPTION USING ERRCODE='23514',MESSAGE='execution_state_conflict';
+  END IF;
   RETURN NEW;
 END $$;
 CREATE TRIGGER execution_swap_exposure_guard BEFORE INSERT OR UPDATE OR DELETE ON domino_execution.swap_exposure FOR EACH ROW EXECUTE FUNCTION domino_execution.preserve_swap_exposure();
@@ -64,4 +74,10 @@ GRANT UPDATE(released,updated_at) ON domino_execution.swap_exposure TO domino_ex
 
 -- Consecutive attempts paid for and not completed; a completion resets it.
 ALTER TABLE domino_execution.sequence_state ADD COLUMN consecutive_failures integer NOT NULL DEFAULT 0 CHECK(consecutive_failures>=0);
+-- Every evaluation leaves a cycle row. The two lookups a pass makes on them,
+-- the open cycle and the latest paid attempts, stay small as the table grows.
+CREATE INDEX execution_cycles_open ON domino_execution.cycles(sequence_hash,created_at DESC)
+ WHERE state NOT IN ('evaluated','completed','abandoned');
+CREATE INDEX execution_cycles_paid ON domino_execution.cycles(sequence_hash,created_at DESC)
+ WHERE cost->'publication' ? 'gasUsedRaw';
 REVOKE ALL ON ALL FUNCTIONS IN SCHEMA domino_execution FROM PUBLIC;
