@@ -100,7 +100,7 @@ test('the wallet feature is reached only through the build flag', () => {
   // preview for the signed-in wallet and carry the choices to Setup. That part reads the session, so it is part of
   // the wallet feature: components/create/DepositAmounts.tsx, written with or without its extension so that its
   // importers are checked too. Only Review's two parts may open it, lazily behind the build flag (below).
-  const feature = /^(session|wallet|finance|components\/wallet)\/|^screens\/(Setup|AdvancedSetup|WalletDeposit|Performance|Execution|Sequence)\.tsx$|^components\/create\/DepositAmounts(\.tsx)?$/;
+  const feature = /^(session|wallet|finance|components\/wallet)\/|^screens\/(Setup|AdvancedSetup|WalletDeposit|Performance|Execution|Sequence|SequenceCreate)\.tsx$|^components\/create\/DepositAmounts(\.tsx)?$/;
   // The onboarding previews and the deposit consumer (#38, #40/#44) read the
   // session through session/port.ts, and the preview screen also through
   // session/livePort.ts. Their lab screens live in chunks of the consumer-test

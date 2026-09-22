@@ -4,7 +4,7 @@ import { PageHeader, PageShell } from '../components/ui'
 import { Journey } from '../components/create/Journey'
 
 /**
- * New position: the five-step flow. `poolId`, when present, preselects the
+ * New position: the four-step flow. `poolId`, when present, preselects the
  * pool once the chain verifies it. The flow is part of the page's own code
  * (no chunk of its own), inside a boundary so a failure in it leaves the
  * rest of the page working and says so.

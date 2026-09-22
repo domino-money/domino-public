@@ -215,7 +215,9 @@ test('the automation is Domino Compounder in the docs and Domino-compound in the
   const compounder = page('domino-compounder');
   assert.equal(compounder.title, 'Domino Compounder');
   assert.match(textOf(compounder), /In the app you choose it as Domino-compound\./);
-  assert.match(textOf(page('new-position')), /Choose Self-managing, Auto-compound or Domino-compound\./);
+  // New position creates a plain position and offers no automation choice: its page names none of the three, and says where the choice is made.
+  assert.doesNotMatch(textOf(page('new-position')), /Self-managing|Auto-compound|Domino-compound|Automation step/);
+  assert.match(textOf(page('new-position')), /Automation is set up afterwards, from Automate, on the position you opened\./);
   const glossary = termIds(page('glossary'));
   for (const id of ['domino-compounder', 'sequence', 'self-managing', 'auto-compound', 'operator']) assert.ok(glossary.includes(id), id);
   assert.equal(glossary.includes('domino-sequence'), false);
@@ -307,7 +309,9 @@ test('Auto-compound starts on any position NFT you hold, with three wallet trans
   const start = sectionText(auto, 'where-it-starts');
   assert.match(start, /Auto-compound runs on a position NFT you hold, wherever you opened it\. Starting it takes three wallet transactions: approve that one NFT to its sequence vault, create the sequence, which starts paused, then activate it\./);
   assert.match(start, /Custody is the same as for Domino Compounder: the NFT stays in your wallet, and your sequence vault holds earned fees not yet reinvested until you withdraw them\./);
-  assert.match(start, /Choosing it in New position only records the choice\./);
+  assert.match(start, /Changes made to that NFT outside Domino can stop it: see Risks\./);
+  // New position offers no automation choice any more, so the page no longer says choosing it there records anything.
+  assert.doesNotMatch(textOf(auto), /New position|records the choice/);
   const links = linksOf(auto).map((link) => link.to);
   for (const to of ['#/docs/non-custodial#sequence-vault', '#/docs/non-custodial#pause-revoke-withdraw', '#/docs/risks#automation-stops']) assert.ok(links.includes(to), to);
   // No screen is named as the place a compound-only sequence starts: the owner has not chosen one.
@@ -333,9 +337,10 @@ test('Domino Compounder names the screen its Automate button opens, and Risks sa
   assert.match(stops, /After you revoke the NFT approval, or the position leaves your wallet, restarting takes a contract call that no Domino screen makes\./);
   // The old sentence said restarting always takes a call no screen makes; the repair and the operator now have buttons.
   assert.doesNotMatch(stops, /Restarting it after that, or after you revoke the operator or the NFT approval/);
-  // Your sequences starts the upside empty: 50% is only what New position draws with.
+  // Your sequences starts the upside empty: 50% is only what the app draws the next range with (DEFAULT_UPSIDE_PERCENT in journey.ts), and no page says New position draws it, which offers no automation.
   const glossary = page('glossary');
-  assert.equal(termText(glossary, 'upside'), 'How far above the previous ceiling a next position’s ceiling sits, at least. You set it; New position draws it at 50%.');
+  assert.equal(termText(glossary, 'upside'), 'How far above the previous ceiling a next position’s ceiling sits, at least. You set it; the app draws it at 50%.');
+  for (const entry of DOC_PAGES) assert.doesNotMatch(textOf(entry), /New position draws/, entry.slug);
   assert.equal(termText(glossary, 'sequence'), 'The vault contract created for your wallet that holds the positions automation opens and earned fees not yet reinvested. Only your wallet can withdraw from it.');
   for (const entry of DOC_PAGES) assert.doesNotMatch(textOf(entry), /50% by default/, entry.slug);
 });
@@ -371,7 +376,11 @@ test('the wallet, pools, fees, markets, new position, positions, risks and what 
   assert.match(poolPage, /Where available, the page also shows the pool’s on-chain activity over the last 24 hours and the positions in the pool\./);
   assert.doesNotMatch(poolPage, /hourly USD price and volume/);
 
-  assert.match(sectionText(page('new-position'), 'review'), /^Review\nReview lists every choice, the wallet steps in order and the fees side by side\. The steps are the deposit, made in Setup, then any automation’s own three transactions\. None of them starts from Review\./);
+  assert.match(sectionText(page('new-position'), 'review'), /^Review\nReview lists every choice, the wallet steps in order and the fees side by side\. The steps are the deposit, made in Setup with your wallet\. None of them starts from Review\. Automation is set up afterwards, from Automate, on the position you opened\./);
+  // Four steps, none of them Automation, and the summary counts them.
+  const newPosition = page('new-position');
+  assert.match(newPosition.summary, /^Plan a position in four steps,/);
+  assert.deepEqual(blocksOf(newPosition).find((block) => block.kind === 'steps').items.map((step) => step.title), ['Pool', 'Range', 'Amount', 'Review']);
   const positions = page('positions');
   assert.match(sectionText(positions, 'position-nfts'), /so on Positions a position is looked up by its ID\. Where available, a pool’s page lists the positions in that pool\./);
   assert.doesNotMatch(textOf(positions), /always looked up by its ID/);
@@ -412,8 +421,8 @@ test('the limits and fees match the contracts: 20% trigger and overlap, a positi
   const limits = Object.fromEntries(rowsOf(page('domino-compounder'), 'facts').map((row) => [row.label, row]));
   assert.equal(limits['Trigger distance'].value, 'Up to 20%');
   assert.equal(limits['Maximum overlap'].value, 'Up to 20%');
-  // Your sequences starts the field empty (Sequence.tsx); 50% is what New position draws the next range with (journey.ts).
-  assert.equal(limits.Upside.value, 'You set it; New position draws the next range at 50%');
+  // Your sequences starts the field empty (Sequence.tsx); 50% is what the app draws the next range with (DEFAULT_UPSIDE_PERCENT, journey.ts).
+  assert.equal(limits.Upside.value, 'You set it; the app draws the next range at 50%');
   assert.match(limits.Positions.note, /Counts the position it starts from/);
 
   const fees = Object.fromEntries(rowsOf(page('fees'), 'facts').map((row) => [row.label, row]));

@@ -8,7 +8,7 @@ export const CREATE = {
   page: {
     eyebrow: 'Robinhood Chain · Uniswap',
     title: 'New position',
-    description: 'Five steps. Nothing moves until your wallet signs in Setup.',
+    description: 'Four steps. Nothing moves until your wallet signs in Setup.',
     stepOf: (index: number, count: number) => `Step ${index} of ${count}`,
     back: 'Back',
     next: 'Continue',
@@ -20,12 +20,11 @@ export const CREATE = {
     sourceLoading: 'Connecting to the read service…',
     stepState: { done: 'done', current: 'current', upcoming: 'not started' },
   },
-  /** The five visual steps of the flow, over the six stages of the state machine. */
+  /** The four visual steps of the flow, over the five stages of the state machine. */
   step: {
     pool: { title: 'Pool', lead: 'Choose the pool this position trades in.' },
     range: { title: 'Range', lead: 'Choose the price band this position earns fees in.' },
     amount: { title: 'Amount', lead: 'How much of each token this position holds.' },
-    automation: { title: 'Automation', lead: 'What happens to the fees this position earns.' },
     review: { title: 'Review', lead: 'Every choice, the fees and the wallet steps, before Setup.' },
   },
   /** The state machine's stages: `short` labels the plain-text summary lines. */
@@ -34,7 +33,6 @@ export const CREATE = {
     pool: { title: 'Pool', short: 'Pool', lead: 'A position holds two assets. Pick an existing pool that trades your token against the other.' },
     amount: { title: 'Amount and range', short: 'Amount', lead: 'How much of each token, and the price band the position earns fees in.' },
     balance: { title: 'Deposit amounts', short: 'Balance', lead: 'How much of each token the deposit is expected to take, and the most it may take.' },
-    automation: { title: 'Automation', short: 'Automation', lead: 'What happens to the fees this position earns.' },
     review: { title: 'Review', short: 'Review', lead: 'Every choice, the fees and the wallet steps, before Setup.' },
   },
   token: {
@@ -173,6 +171,7 @@ export const CREATE = {
     },
     rawUnits: (text: string) => `${text} raw units`,
   },
+  /** The automation choices and their limits. No step of New position shows them: Automate does, for a position that exists. */
   automation: {
     notEnabled: 'Not connected',
     planned: 'Planned',
@@ -236,15 +235,12 @@ export const CREATE = {
       range: 'Range',
       budget: 'Budget',
       slippage: 'Slippage',
-      automation: 'Automation',
     },
     amounts: 'Deposit amounts per token',
     steps: 'Wallet steps',
-    stepsNote: 'What your wallet will be asked for, in order: the deposit in Setup, then any automation from Automate. None of it starts from this page.',
-    /** The one charge Domino makes, shown only when automation can make it. */
-    serviceFee: 'Domino service fee',
+    stepsNote: 'What your wallet will be asked for, in order, in Setup. None of it starts from this page.',
+    /** The one charge Domino makes, on earned fees an automation consumes. Automate states it for the mode it applies (screens/Automate.tsx); a direct deposit carries none. */
     serviceFeeValue: (mode: 'none' | 'compound' | 'domino') => mode === 'none' ? 'No automation service fee' : `${mode === 'domino' ? 4 : 2}% of earned fees consumed`,
-    serviceFeeNote: 'Taken once, when Auto-compound or Domino-compound consumes earned fees. Never on your principal, and never on a direct deposit.',
     /** The headline: the position being created, in one line per thing that matters. */
     holds: 'This position holds',
     /** The slippage line of the headline, so the choice is in view before Setup asks the wallet for anything. */
@@ -268,8 +264,8 @@ export const CREATE = {
      * The wallet steps, in order (walletSteps in journey.ts). A deposit takes
      * each ERC-20 through Permit2: an exact approval to Permit2, then a Permit2
      * allowance for the position manager (docs/DIRECT_DEPOSITS.md). Native ETH
-     * needs no approval: it goes with the mint. Automation is three owner
-     * transactions on the sequence (finance/sequence.ts).
+     * needs no approval: it goes with the mint. Nothing about automation: its
+     * owner transactions are Automate's to describe (finance/sequence.ts).
      */
     approveStep: 'Approve the selected token to Permit2',
     approveStepDetail: 'An exact amount, never unlimited, asked only when the current allowance is short. A smaller allowance is reset to zero first.',
@@ -282,19 +278,11 @@ export const CREATE = {
     mintStepDetail: 'One transaction to the verified position manager: mint, then settle both currencies. Nothing else in it.',
     nativeMintDetail: 'One transaction to the verified position manager: mint, then settle both currencies. Native ETH needs no approval: it goes with this transaction, capped at the budget, and what is not used is refunded.',
     otherNativeMintDetail: 'One transaction to the verified position manager: mint, then settle both currencies. Native ETH needs no approval: if the composition needs it, it goes with this transaction, and what is not used is refunded.',
-    automationApproveStep: 'Approve this position NFT to its sequence',
-    automationApproveDetail: 'Only this NFT, to the address its sequence will have; never approval for all NFTs. The NFT stays in your wallet.',
-    automationCreateStep: 'Create the sequence, paused',
-    automationCreateDetail: (mode: 'compound' | 'domino') => `Registers this NFT, its limits and the ${mode === 'domino' ? 4 : 2}% service fee on earned fees consumed. It starts paused: nothing runs yet.`,
-    automationActivateStep: (name: string) => `Activate ${name}`,
-    automationActivateDetail: 'A separate owner transaction, when you choose. It takes the sequence out of pause; the service that compounds is not running. You can pause or revoke it from your wallet.',
-    automationStepNames: { compound: 'Auto-compound', domino: 'Domino-compound' },
-    /** The fee bases side by side (feeBases in journey.ts). */
+    /** The fee bases side by side (feeBases in journey.ts). The service row is the docs' fees page's (lib/docs/pages/reference.ts), not Review's: a direct deposit carries no Domino fee. */
     feeLabels: { pool: 'Pool trading fee', service: 'Domino service fee', swap: 'Assisted swap fee', gas: 'Network gas' },
     feeValues: { service: 'Auto-compound 2%; Domino-compound 4% of earned fees consumed', swap: 'At most 0.65% of the consumed swap budget', gas: 'Paid by you' },
     feeNotes: {
       pool: 'Paid by swappers through this pool to its liquidity providers, on each trade. Not a charge to you.',
-      service: 'Once, when Auto-compound or Domino-compound consumes earned fees. Never on principal, never on a direct deposit.',
       swap: 'Only if you request a balancing swap, quoted before you approve it. Not added on top of the service fee.',
       gas: 'Paid by you; each wallet step shows its gas limit before you sign.',
     },
@@ -303,10 +291,7 @@ export const CREATE = {
       beyondDisplay: 'beyond display',
       rangePrices: (lower: string, upper: string, tickLower: number, tickUpper: number) => `${lower} to ${upper} (ticks ${tickLower} to ${tickUpper})`,
       rangeTicks: (tickLower: number, tickUpper: number) => `ticks ${tickLower} to ${tickUpper}`,
-      limits: (trigger: number, overlap: number, cap: number) => `trigger ${trigger}%, overlap ${overlap}%, cap ${cap}`,
       slippage: (percent: string) => `slippage ${percent}`,
-      limitsInvalid: 'limits invalid',
-      notConnected: 'not connected',
       price: 'Price',
       amounts: 'Deposit amounts',
       walletStep: (index: number) => `Wallet step ${index}`,

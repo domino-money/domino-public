@@ -1,4 +1,4 @@
-/* new-position builder (DESIGN.md H.5, E.4): the five-step flow card, its fields, the token search, the token
+/* new-position builder (DESIGN.md H.5, E.4): the four-step flow card, its fields, the token search, the token
    picker and the pool selection dialog. Every class is prefixed dm-flow-; every rule sits in @layer components,
    so a Tailwind utility on the same element still wins. Motion stops under reduced motion and html.dm-still. */
 
@@ -7,7 +7,7 @@
      become the containing block of anything fixed inside the card. ---------------------------------------- */
   .dm-flow-rise { animation: dm-rise var(--dur-enter) var(--ease-enter) backwards; animation-delay: var(--delay, 0s); }
 
-  /* ---- The flow card and its five steps --------------------------------------------------------------- */
+  /* ---- The flow card and its four steps --------------------------------------------------------------- */
   .dm-flow-card { margin-top: 32px; padding: 8px; }
   .dm-flow-steps { display: grid; gap: 4px; margin: 0; padding: 0; list-style: none; }
   .dm-flow-step { position: relative; min-width: 0; }
@@ -60,17 +60,12 @@
   .dm-flow-section { display: grid; gap: 8px; min-width: 0; }
   .dm-flow-subtitle { margin: 0; font-size: 14px; line-height: 20px; font-weight: 500; letter-spacing: -0.2px; color: var(--fg); }
 
-  /* The flow's own disclosures line up with the content edge; their hover wash reaches into the step panel's
-     padding. The picker's note keeps its summary inside its box, since the picker also sits in containers
-     this file does not control (the lab's dialog, Setup's pool explorer). */
-  .dm-flow-disclosures { display: grid; gap: 2px; min-width: 0; }
-  .dm-flow-disclosure > summary { margin-inline: -12px; }
-  .dm-flow-disclosure > :not(summary) { padding: 8px 0 12px; }
+  /* The picker's note keeps its summary inside its box, since the picker also sits in containers this file
+     does not control (the lab's dialog, Setup's pool explorer). */
   .dm-flow-note > :not(summary) { padding: 4px 12px 8px; }
-  .dm-flow-disclosure-value { min-width: 0; margin-left: auto; overflow: hidden; font-weight: 400; color: var(--fg-subtle); white-space: nowrap; }
   .dm-flow-note > p { font-size: 13px; line-height: 18px; letter-spacing: -0.16px; color: var(--fg-muted); }
 
-  /* A raised panel inside the inset: the chosen pool, the geometry, the options. */
+  /* A raised panel inside the inset: the chosen pool, the options. */
   .dm-flow-panel { display: grid; gap: 12px; min-width: 0; padding: 12px; border-radius: var(--radius); background: var(--surface-2); box-shadow: var(--elev-field); }
   /* Step 2 borrows the pool page's range controls, which are built for a page ground. Inside a
      step they sit on --surface-1, so they are lifted onto the same ground as every other panel. */
@@ -145,7 +140,7 @@
   .dm-flow-slip > .dm-slip-presets { justify-self: start; }
   .dm-flow-slip-warn { margin: 0; font-size: 13px; line-height: 18px; color: var(--fg-muted); text-wrap: pretty; }
 
-  /* ---- Automation choices ----------------------------------------------------------------------------- */
+  /* ---- Choice cards: which of a linked pool's two tokens is deposited ----------------------------------- */
   .dm-flow-options { display: grid; gap: 8px; min-width: 0; }
   .dm-flow-option { display: flex; flex-direction: column; align-items: flex-start; gap: 6px; min-width: 0; padding: 12px; border-radius: var(--radius); background: var(--surface-2); box-shadow: inset 0 0 0 1px var(--border); cursor: pointer; transition: box-shadow var(--dur-hover) ease; }
   .dm-flow-option:hover { box-shadow: inset 0 0 0 1px var(--border-strong); }
@@ -154,16 +149,8 @@
   .dm-flow-option-top > input { flex-shrink: 0; margin: 0; }
   .dm-flow-option-title { font-size: 14px; line-height: 20px; font-weight: 500; letter-spacing: -0.2px; color: var(--fg); }
   .dm-flow-option-line { font-size: 13px; line-height: 18px; letter-spacing: -0.16px; color: var(--fg-muted); }
-  .dm-flow-option-pill { margin-top: auto; }
-  .dm-flow-limits { display: grid; gap: 12px; min-width: 0; }
-  .dm-flow-geometry { display: grid; gap: 16px; min-width: 0; padding: 12px; border-radius: var(--radius); background: var(--surface-2); box-shadow: inset 0 0 0 1px var(--border); }
-  .dm-flow-geometry-art { height: 110px; }
-  .dm-flow-rules { display: grid; gap: 6px; margin: 0; padding-left: 18px; list-style: disc; font-size: 13px; line-height: 18px; letter-spacing: -0.16px; color: var(--fg-muted); }
-  .dm-flow-rules > li::marker { color: var(--fg-faint); }
   @media (min-width: 640px) {
     .dm-flow-options { grid-template-columns: repeat(3, minmax(0, 1fr)); }
-    .dm-flow-limits { grid-template-columns: repeat(3, minmax(0, 1fr)); align-items: start; }
-    .dm-flow-geometry { grid-template-columns: 176px minmax(0, 1fr); align-items: start; }
   }
 
   /* ---- Review ----------------------------------------------------------------------------------------- */
@@ -255,9 +242,6 @@
   .dm-flow-headline-pair { display: flex; flex-wrap: wrap; align-items: baseline; gap: 8px; min-width: 0; font-size: 16px; line-height: 24px; font-weight: 500; color: var(--fg); }
   .dm-flow-headline-amounts { font-size: 20px; line-height: 28px; font-weight: 500; color: var(--fg); overflow-wrap: anywhere; }
   .dm-flow-headline-line { font-size: 13px; line-height: 18px; letter-spacing: -0.16px; color: var(--fg-muted); overflow-wrap: anywhere; }
-  .dm-flow-headline-foot { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 2px; }
-  .dm-flow-fee { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 4px 16px; min-width: 0; }
-  .dm-flow-fee-value { font-size: 14px; line-height: 20px; color: var(--fg); }
 }
 
 /* Clips the opening step's content to its growing box, and releases it when the box has grown. */

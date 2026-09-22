@@ -1,13 +1,18 @@
 import { useEffect, useRef, useState } from 'react'
-import { watchConnection } from 'wagmi/actions'
+import { getConnection, watchConnection } from 'wagmi/actions'
 import { type Address, type Hex } from 'viem'
 import { walletConfig } from '../wallet/config'
 import { setupWallet } from '../finance/wallet'
+import { suggestGasBudget } from '../finance/gas'
+import type { GasBudget } from '../finance/setup'
 import { readRelease, type ReleaseRead } from '../finance/release'
 import { AUTOMATION_FEE_BPS, createSequenceClient, sequenceDeploymentFrom, sequenceRaw, type AutomationMode, type PreparedSequence, type SequenceDeployment, type SequenceState } from '../finance/sequence'
 import { RECEIPT_TEXT, SEQUENCE_STEP_TEXT, errorCode, financeErrorText } from '../finance/words'
 import { AUTOMATION_SERVICE } from '../lib/capabilities'
 import { Button, Card, Display } from '../components/ui'
+import { hashParts } from '../components/explore/routes'
+import { sequenceIntent } from '../lib/create/sequenceDefaults'
+import SequenceCreate from './SequenceCreate'
 
 const empty = { root: '', trigger: '', overlap: '', interval: '', positions: '', upside: '', slippage: '', impact: '', executionGas: '', age: '', horizon: '',
   maxGas: '', maxFee: '', priority: '', reserve: '', vault: '', member: '', original: '', charged: '', recoverAmount: '' }
@@ -50,10 +55,18 @@ export default function Sequence() {
   const [ack,setAck] = useState(false), [hash,setHash] = useState<Hex|null>(null), [busy,setBusy] = useState(false), [notice,setNotice] = useState<Notice|null>(null)
   const generation = useRef(0), connection = useRef(0), running = useRef(false)
   const say = (text:string, code:string|null = null) => setNotice({text,code})
-  useEffect(() => { let live = true; void readSequenceRelease().then(result => { if(live) setRelease(result) }); return () => { live = false } },[])
+  // What the link asked for (#/sequence/<mode>/<nft>): with either, a connected wallet is read without a press, so the guided creation opens filled in.
+  const [intent] = useState(() => sequenceIntent(hashParts(window.location.hash).segments))
+  // The wallet's own network price, asked only when the guided creation prepares a step; the owner's raw fields below stay theirs.
+  const [gasFor,setGasFor] = useState<(()=>Promise<GasBudget>)|null>(null)
+  const [intentRoot,setIntentRoot] = useState<Root|null>(null)
+  // The latest connect, reachable from the one-time release read below without being its dependency: a link naming a mode or a
+  // position, with the release in and a wallet already connected, reads the sequences without a press. Reads only; the one GET stays one.
+  const onArrival = useRef<()=>void>(()=>{})
+  useEffect(() => { let live = true; void readSequenceRelease().then(result => { if(!live) return; setRelease(result); const asked = sequenceIntent(hashParts(window.location.hash).segments); if(result.kind==='available'&&(asked.mode!==null||asked.tokenId!==null)) onArrival.current() }); return () => { live = false } },[])
   useEffect(() => watchConnection(walletConfig,{onChange:()=>{
     generation.current++; connection.current++; running.current=false; setBusy(false); setClient(null); setRecovery(false); setRecent([]); setState(null); setRoot(null); setReserves(null)
-    setPrepared(null); setHash(null); setAck(false); setConsent(false); setCreateMode('compound'); setPolicyMode(null); setForm(empty); setNotice(null)
+    setPrepared(null); setHash(null); setAck(false); setConsent(false); setCreateMode('compound'); setPolicyMode(null); setForm(empty); setNotice(null); setGasFor(null); setIntentRoot(null)
   }}),[])
   useEffect(()=>()=>{generation.current++;connection.current++},[])
   const available = release.kind === 'available'
@@ -88,11 +101,17 @@ export default function Sequence() {
     const wallet=await setupWallet(), epoch=++connection.current
     const next=createSequenceClient({...wallet,current:()=>wallet.current()&&connection.current===epoch},d,()=>Date.now()/1000,currentSequenceDeployment)
     const rows=await next.recent()
+    // A link that named a position: it is read now, so the guided creation opens on it. A position that cannot be read is left for the owner to read again there.
+    let wanted:Root|null=null
+    if(intent.tokenId){try{wanted=await next.inspectRoot(BigInt(intent.tokenId))}catch{wanted=null}}
     if(generation.current!==gen||!wallet.current())return
+    setGasFor(()=>()=>suggestGasBudget(wallet)); setIntentRoot(wanted)
     if(!isRecovery)try{localStorage.setItem(cacheKey,JSON.stringify({contractVersion:'1.0.0-rc.1',chainId:4663,available:true,deployment:d}))}catch{ /* Recovery still works while this verified profile is loaded. */ }
     setClient(next);setRecent(rows);setRecovery(isRecovery);setState(null);setReserves(null);setRoot(null);setHash(null)
     say(isRecovery?'Previously saved deployment identities were checked on chain. Manage a sequence you own below.':'Deployment verified through your wallet. Create a paused sequence or manage one you own.')
   }
+  // A link naming a mode or a position: with the release in and a wallet already connected, the sequences are read without a press. Reads only; a wallet connected later presses Read my sequences.
+  useEffect(()=>{ onArrival.current = () => { if(getConnection(walletConfig).status==='connected') void action(connect) } })
   const gas=()=>({maxGas:sequenceRaw(form.maxGas,64),maxFeePerGas:sequenceRaw(form.maxFee),maxPriorityFeePerGas:sequenceRaw(form.priority),reserveWei:sequenceRaw(form.reserve,256)})
   const integer=(value:string)=>{const n=sequenceRaw(value,32);return Number(n)}
   const vault=()=>form.vault.toLowerCase() as Address
@@ -158,8 +177,9 @@ export default function Sequence() {
       {client&&<p className="dm-acct-hash">Factory {client.deployment.factory} · {recovery?'Saved deployment':'Verified deployment'} · Auto-compound 2%; Domino-compound 4% of earned fees consumed, once. No fee on principal.</p>}
     </Card>}
     {client&&<>
+      {available&&!recovery&&<SequenceCreate client={client} gasFor={gasFor} intent={intent} initialRoot={intentRoot} onCreated={vault=>{void action(()=>inspect(vault))}} />}
       <Card className="dm-acct-block dm-acct-panel"><h2 className="dm-acct-panel-title">Network budget</h2><p className="dm-acct-panel-note">Set explicit limits for each approval, creation or owner action. These are wallet transaction limits; the sequence execution cap is configured separately.</p>{fields(['maxGas','maxFee','priority','reserve'])}</Card>
-      {available&&!recovery&&<Card className="dm-acct-block dm-acct-panel"><h2 className="dm-acct-panel-title">Create a paused sequence</h2><p className="dm-acct-panel-note">Creating a sequence starts it paused; activating it is a separate owner transaction.</p>{fields(['root'])}
+      {available&&!recovery&&<Card className="dm-acct-block dm-acct-panel"><h2 className="dm-acct-panel-title">Create a paused sequence</h2><p className="dm-acct-panel-note">Every field by hand, in basis points, seconds and wei. The guided creation above takes the same choices in plain units. Creating a sequence starts it paused; activating it is a separate owner transaction.</p>{fields(['root'])}
         <Button className="justify-self-start" variant="outline" disabled={busy} onClick={()=>{void action(async()=>{const gen=generation.current,result=await client.inspectRoot(sequenceRaw(form.root,256));if(generation.current===gen){setRoot(result);setConsent(false)}})}}>Read my root NFT</Button>
         {root&&<><p className="dm-acct-line dm-acct-wrap">Pool {root.poolId} · ticks {root.lower} to {root.upper}. Currency 0: {root.key.currency0}. Currency 1: {root.key.currency1}. The zero address denotes native currency.</p>
           {modeChoice('create',createMode)}

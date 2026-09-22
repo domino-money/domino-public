@@ -91,14 +91,14 @@ export function Automate() {
           step={1}
           art={<VignetteCompound className="dm-acct-auto-art" />}
           points={[
-            'Adds a position’s earned fees back into the same position, improving your fees APR.',
+            'Adds a position you already hold’s earned fees back into that same position, improving your fees APR.',
             'Compounds earned fees only, nothing else.',
           ]}
           entry={
             __DOMINO_WALLET_SESSION__ ? (
               <div className="dm-acct-auto-entry">
-                <LinkButton href="#/setup" variant="outline">
-                  Open a position
+                <LinkButton href="#/sequence/compound" variant="outline">
+                  Set up Auto-compound
                 </LinkButton>
               </div>
             ) : (
@@ -120,7 +120,7 @@ export function Automate() {
           entry={
             __DOMINO_WALLET_SESSION__ ? (
               <div className="dm-acct-auto-entry">
-                <LinkButton href="#/sequence">Create or manage a sequence</LinkButton>
+                <LinkButton href="#/sequence/domino">Set up Domino-compound</LinkButton>
               </div>
             ) : (
               OFF

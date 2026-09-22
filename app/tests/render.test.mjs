@@ -707,7 +707,7 @@ test('Settings distinguishes disconnected automated signing from wallet transact
 // Changed on purpose (qa:visual, Automate): the info panel under the two cards is gone, and the cards' ways in are one size, outline beside filled.
 test('Automate shows its two cards and nothing under them, and each card’s way in is the same size', async () => {
   const page = await open('/automate');
-  const ways = await Promise.all(['Open a position', 'Create or manage a sequence'].map((name) =>
+  const ways = await Promise.all(['Set up Auto-compound', 'Set up Domino-compound'].map((name) =>
     page.getByRole('link', { name, exact: true }).evaluate((link) => ({ height: link.getBoundingClientRect().height, outline: link.classList.contains('dm-btn--outline'), sm: link.classList.contains('dm-btn--sm') }))));
   assert.deepEqual(ways.map(({ outline, sm }) => [outline, sm]), [[true, false], [false, false]], 'outline beside filled, neither small');
   assert.equal(ways[0].height, ways[1].height, `the two ways in: ${ways.map(({ height }) => height).join(' vs ')} px`);

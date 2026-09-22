@@ -48,11 +48,11 @@ export const MARKETS: DocPage = {
 export const NEW_POSITION: DocPage = {
   slug: 'new-position',
   title: 'New position',
-  summary: 'Plan a position in five steps, then open it in Setup with your wallet.',
+  summary: 'Plan a position in four steps, then open it in Setup with your wallet.',
   sections: [
     {
-      id: 'five-steps',
-      title: 'Five steps',
+      id: 'four-steps',
+      title: 'Four steps',
       blocks: [
         {
           kind: 'steps',
@@ -60,7 +60,6 @@ export const NEW_POSITION: DocPage = {
             { title: CREATE.step.pool.title, body: [CREATE.step.pool.lead] },
             { title: CREATE.step.range.title, body: [CREATE.step.range.lead, ' See ', doc('Price ranges', 'ranges'), '.'] },
             { title: CREATE.step.amount.title, body: [CREATE.step.amount.lead, ' A position holds both of the pool’s tokens, so the step shows a row for each: type an amount in either and the other follows from your range and the pool’s price. There is no choice of which token to deposit. The slippage tolerance is chosen here too: 0.1%, 0.5% or 1% as presets, or any exact hundredth of a percent from 0.1% to 5%. It starts at 0.5%, and above 1% the step says what that allows.'] },
-            { title: CREATE.step.automation.title, body: [CREATE.step.automation.lead, ' Choose Self-managing, Auto-compound or Domino-compound.'] },
             { title: CREATE.step.review.title, body: [CREATE.step.review.lead] },
           ],
         },
@@ -70,7 +69,7 @@ export const NEW_POSITION: DocPage = {
       id: 'review',
       title: 'Review',
       blocks: [
-        p('Review lists every choice, the wallet steps in order and the fees side by side. The steps are the deposit, made in Setup, then any automation’s own three transactions. None of them starts from Review.'),
+        p('Review lists every choice, the wallet steps in order and the fees side by side. The steps are the deposit, made in Setup with your wallet. None of them starts from Review. Automation is set up afterwards, from Automate, on the position you opened.'),
         p('When your wallet is signed in and the service answers, Review also estimates how much of each token the deposit is expected to take, and the most it may take. Hover a figure to see until when its estimate is current; after that the figures show a dash until you open Review again.'),
         p(CREATE.balance.notEnabled),
       ],

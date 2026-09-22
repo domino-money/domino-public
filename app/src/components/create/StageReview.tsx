@@ -8,10 +8,9 @@ import { formatUnits } from '../../lib/read/decimal'
 import { rangePosition } from '../../lib/read/screens/poolRange'
 import { Address } from '../read/screens/Address'
 import { SymbolText } from '../read/screens/SymbolText'
-import { Button, LinkButton, Pill } from '../ui'
-import { automationPill } from './StageAutomation'
+import { Button, LinkButton } from '../ui'
 import { StageBalance } from './StageBalance'
-import { AutomationSummary, PoolPair, RangeSummary } from './StepList'
+import { PoolPair, RangeSummary } from './StepList'
 import type { PoolOption } from '../../lib/read/screens/poolsList'
 
 /**
@@ -55,10 +54,11 @@ function heldAmounts(state: JourneyState): [HeldSide, HeldSide] | null {
 }
 
 /**
- * Step 5, Review: what is being created at the top, the deposit amounts the
- * service reports when it answers (StageBalance.tsx), the wallet steps in
- * order, and the one fee Domino charges when automation can charge it. `open`
- * is whether Review is the open step: the amounts are asked for only then.
+ * Step 4, Review: what is being created at the top, the deposit amounts the
+ * service reports when it answers (StageBalance.tsx), and the wallet steps in
+ * order. No Domino fee: a direct deposit carries none, and automation, with
+ * its fee on earned fees, is applied later from Automate. `open` is whether
+ * Review is the open step: the amounts are asked for only then.
  */
 export function StageReview({ state, now, open, balances }: { state: JourneyState; now: number; open: boolean; balances: PairBalancesState }) {
   const pool = state.pool
@@ -66,7 +66,6 @@ export function StageReview({ state, now, open, balances }: { state: JourneyStat
   const usable = price && price.state === 'usable' ? price : null
   const inside = usable && state.range ? rangePosition(state.range, usable.tick) === 'inside' : null
   const steps = walletSteps(state)
-  const pill = automationPill(state.automation)
   const held = heldAmounts(state)
   const slippage = validateSlippage(state.slippageBps)
   return (
@@ -103,10 +102,6 @@ export function StageReview({ state, now, open, balances }: { state: JourneyStat
           {/* The person's own tolerance, in view here and again on Setup's draft before any wallet step. */}
           <p className="dm-flow-headline-line tnum" data-review-slippage={slippage.ok ? slippage.bps : undefined}>
             {slippage.ok ? CREATE.review.slippage(slippageWritten(slippage.bps)) : CREATE.page.notChosen}
-          </p>
-          <p className="dm-flow-headline-foot">
-            <AutomationSummary automation={state.automation} />
-            {pill && <Pill>{pill}</Pill>}
           </p>
         </div>
         {slippage.ok && slippageWarns(slippage.bps) && (
@@ -147,7 +142,6 @@ export function StageReview({ state, now, open, balances }: { state: JourneyStat
                       <SymbolText token={step.token} /> <Address value={step.token.address} short />
                     </span>
                   )}
-                  {pill && state.automation !== 'none' && index === steps.length - 1 && <Pill>{pill}</Pill>}
                 </span>
                 <span className="text-caption text-fg-muted">{step.detail}</span>
               </span>
@@ -155,19 +149,6 @@ export function StageReview({ state, now, open, balances }: { state: JourneyStat
           ))}
         </ol>
       </section>
-
-      {state.automation !== 'none' && (
-        <section aria-labelledby="create-fees-heading" className="dm-flow-section" data-review-fee="">
-          <h3 id="create-fees-heading" className="dm-flow-subtitle">
-            {CREATE.review.serviceFee}
-          </h3>
-          <p className="dm-flow-fee">
-            <span className="dm-flow-fee-value tnum">{CREATE.review.serviceFeeValue(state.automation)}</span>
-          </p>
-          <p className="dm-hint">{CREATE.review.serviceFeeNote}</p>
-        </section>
-      )}
-
     </div>
   )
 }

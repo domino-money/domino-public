@@ -279,7 +279,7 @@ test('sequence is reachable from Automate, reads its release on mount with no wa
   try {
     // The way into sequences lives on Automate (DESIGN.md E.6), where wallet builds render its link.
     await s.page.goto(`${s.origin}/#/automate`);
-    await s.page.getByRole('link', {name:'Create or manage a sequence'}).click();
+    await s.page.getByRole('link', {name:'Set up Domino-compound'}).click();
     await s.page.getByRole('heading', {name:'Your sequences',exact:true}).waitFor();
     const line = s.page.locator('[data-sequence-release="unavailable"][data-sequence-release-reason="release_not_available"]');
     await line.waitFor();
@@ -913,7 +913,7 @@ const chainAbi = parseAbi([
   'struct InitParams { uint256 rootTokenId; bytes32 expectedPoolId; address baseCurrency; address quoteCurrency; address operator; bool consentToUncollectedFees; Policy policy; ExecutionLimits limits; }',
   'function predictVault(address,uint256) view returns(address)', 'function ownerOf(uint256) view returns(address)',
   'function getPoolAndPositionInfo(uint256) view returns(PoolKey,uint256)', 'function getApproved(uint256) view returns(address)',
-  'function createVault(InitParams,uint256) returns(address)',
+  'function approve(address to, uint256 tokenId)', 'function createVault(InitParams,uint256) returns(address)',
   'struct Position { bool known; bool active; bool isRoot; uint256 parentTokenId; uint64 generation; int24 tickLower; int24 tickUpper; bytes32 registrationBaselineId; bytes32 identity; bytes32 source0; bytes32 source1; }',
   'function implementation() view returns(address)', 'function implementationCodeHash() view returns(bytes32)', 'function poolManager() view returns(address)', 'function positionManager() view returns(address)',
   'function stateView() view returns(address)', 'function serviceFeeRecipient() view returns(address)', 'function factory() view returns(address)', 'function implementationVersion() view returns(uint64)',
@@ -945,9 +945,15 @@ const chainAbi = parseAbi([
  * `policyVersion`, `paused`, `limitsVersion` and `rootPermissionValid` for the vault's policy, limits and permission,
  * `vaultHeld` for NFTs the position manager reports the vault holding, and `accounted` for the units its books claim.
  * The policy and limits answered are also returned, so a test can compare a built struct against them field by field.
+ *
+ * Two knobs are for the guided creation, whose steps change the chain they are sent to. `approved: false` leaves every
+ * NFT unapproved until an `approve` is sent, instead of reporting it approved to its predicted vault up front; a sent
+ * `createVault` then registers the vault at the address it predicted, with the policy and limits it carried, so the
+ * vault's views and the factory's `isVault`/`vaultForSequence` answer for it. `settled: true` includes every sent
+ * transaction at once in the finalized block, instead of leaving it pending until `include` is called.
  */
 function fakeSequenceChain(owner, { roots, chains = {}, operator = null, serviceFeeBps = 400, maxPositions = 3,
-  policyVersion = 1n, paused = false, limitsVersion = 1n, rootPermissionValid = true, vaultHeld = [], accounted = 0n }) {
+  policyVersion = 1n, paused = false, limitsVersion = 1n, rootPermissionValid = true, vaultHeld = [], accounted = 0n, approved = true, settled = false }) {
   const at = (byte, bytes = 20) => `0x${byte.toString(16).padStart(2, '0').repeat(bytes)}`, zero = at(0, 32);
   const cloneOf = implementation => concatHex(['0x363d3d373d3d3d363d73', implementation, '0x5af43d82803e903d91602b57fd5bf3']);
   const implementation = at(0x42), factoryCode = '0x6001', implementationCode = '0x6002';
@@ -966,14 +972,15 @@ function fakeSequenceChain(owner, { roots, chains = {}, operator = null, service
   const poolKey = { currency0: at(0x61), currency1: at(0x62), fee: 3000, tickSpacing: 60, hooks: zeroAddress };
   const poolId = keccak256(encodeAbiParameters(parseAbiParameters('(address currency0,address currency1,uint24 fee,int24 tickSpacing,address hooks)'), [poolKey]));
   const packedPosition = (BigInt(poolId) >> 56n << 56n) | (BigInt.asUintN(24, -60n) << 8n) | (60n << 32n);
-  const predict = nonce => {
+  const identity = nonce => {
     const id = keccak256(encodeAbiParameters(parseAbiParameters('bytes32,uint256,address,address,uint256'), [typeHash, 4663n, deployment.factory, owner, BigInt(nonce)]));
-    return `0x${keccak256(concatHex(['0xff', deployment.factory, id, initHash])).slice(-40)}`;
+    return { id, vault: `0x${keccak256(concatHex(['0xff', deployment.factory, id, initHash])).slice(-40)}` };
   };
-  const vaults = new Map(roots.map((root, nonce) => {
-    const id = keccak256(encodeAbiParameters(parseAbiParameters('bytes32,uint256,address,address,uint256'), [typeHash, 4663n, deployment.factory, owner, BigInt(nonce)]));
-    return [`0x${keccak256(concatHex(['0xff', deployment.factory, id, initHash])).slice(-40)}`, { id, root, chain: chains[nonce] ?? [] }];
-  }));
+  const predict = nonce => identity(nonce).vault;
+  // The sequences this owner created, by address: the ones `roots` names, then any a sent `createVault` adds.
+  const vaults = new Map(roots.map((root, nonce) => [identity(nonce).vault, { id: identity(nonce).id, root, chain: chains[nonce] ?? [] }]));
+  // With `approved: false`, which NFT is approved to whom: what a sent `approve` records.
+  const approvals = new Map();
   // The position manager reports these NFTs as held by the first vault: what an unmanaged-position recovery checks before it builds.
   const held = new Map(vaultHeld.map(tokenId => [tokenId, [...vaults.keys()][0]]));
   const policy = { serviceFeeBps, triggerDistanceBps: 500, maxOverlapBps: 2000, minimumIntervalSeconds: 60, maxPositions, version: policyVersion, paused };
@@ -986,7 +993,7 @@ function fakeSequenceChain(owner, { roots, chains = {}, operator = null, service
     const shared = { poolManager: deployment.poolManager, positionManager: deployment.positionManager, stateView: deployment.stateView, serviceFeeRecipient: deployment.serviceFeeRecipient };
     if ((to === deployment.factory || to === implementation) && name in shared) return shared[name];
     if (to === deployment.factory) {
-      const answers = { implementation, implementationCodeHash: deployment.codeHashes.implementation, nextOwnerNonce: BigInt(roots.length) };
+      const answers = { implementation, implementationCodeHash: deployment.codeHashes.implementation, nextOwnerNonce: BigInt(vaults.size) };
       if (name in answers) return answers[name];
       if (name === 'vaultForSequence') return [...vaults].find(([, vault]) => vault.id === args[0])?.[0] ?? zeroAddress;
       if (name === 'isVault') return vaults.has(args[0].toLowerCase());
@@ -1006,7 +1013,9 @@ function fakeSequenceChain(owner, { roots, chains = {}, operator = null, service
     if (to === deployment.positionManager) {
       if (name === 'ownerOf') return held.get(args[0]) ?? owner;
       if (name === 'getPoolAndPositionInfo') return [poolKey, packedPosition];
-      if (name === 'getApproved') return predict(roots.length);
+      if (name === 'getApproved') return approved ? predict(vaults.size) : approvals.get(args[0]) ?? zeroAddress;
+      // Simulated before it is offered, like the vault's own writes below.
+      if (name === 'approve') return undefined;
     }
     if (to === deployment.readHelper) {
       const answers = { positionManager: deployment.positionManager, stateView: deployment.stateView };
@@ -1022,7 +1031,7 @@ function fakeSequenceChain(owner, { roots, chains = {}, operator = null, service
     if (vault) {
       const index = id => vault.chain.findIndex(member => member.id === id);
       const answers = { owner, sequenceId: vault.id, rootTokenId: vault.root, operator: operator ?? deployment.operator, rootPermissionValid, baseCurrency: at(0x61), quoteCurrency: at(0x62), stateNonce: 1n,
-        policy, executionLimits: limits, accountedCurrency: accounted,
+        policy: vault.policy ?? policy, executionLimits: vault.limits ?? limits, accountedCurrency: accounted,
         activePositions: BigInt(1 + vault.chain.filter(member => member.active).length) };
       if (name in answers) return answers[name];
       if (name === 'position') return args[0] === vault.root ? position(true, true, true, 0n) : index(args[0]) === -1 ? position(false, false, false, 0n)
@@ -1033,29 +1042,44 @@ function fakeSequenceChain(owner, { roots, chains = {}, operator = null, service
     }
     throw new Error(`unexpected ${name} on ${to}`);
   }
-  const log = [], missing = [], sends = [], simulations = [];
-  // The one transaction this chain records, once a test says it was included: `transaction` overrides what the wallet
-  // actually sent (the gas fields are a wallet's to reshape, the rest is not), `receipt` overrides the receipt. Until
-  // `include` is called the transaction has no receipt, so a check finds it pending.
-  let included = null;
+  const log = [], missing = [], refused = [], sends = [], simulations = [];
+  // The transactions this chain records, each under its own hash, once a test says they were included: `transaction`
+  // overrides what the wallet actually sent (the gas fields are a wallet's to reshape, the rest is not), `receipt`
+  // overrides the receipt. Until `include` is called a transaction has no receipt, so a check finds it pending — unless
+  // the chain was made with `settled`, and then every send is included at once.
+  const hashOf = index => at(0xcc + index, 32);
+  let included = settled ? { transaction: {}, receipt: {} } : null;
   const include = (patch) => { included = patch ? { transaction: patch.transaction ?? {}, receipt: patch.receipt ?? {} } : null; };
+  /** What the contracts make of a sent transaction: an approval is recorded against its NFT, a creation registers the vault it predicted. */
+  function apply(tx) {
+    const to = String(tx.to).toLowerCase();
+    if (to !== deployment.positionManager && to !== deployment.factory) return;
+    const { functionName, args } = decodeFunctionData({ abi: chainAbi, data: tx.data });
+    if (to === deployment.positionManager && functionName === 'approve') approvals.set(args[1], String(args[0]).toLowerCase());
+    if (to === deployment.factory && functionName === 'createVault') {
+      const [params, nonce] = args, { id, vault } = identity(nonce);
+      vaults.set(vault, { id, root: params.rootTokenId, chain: [], policy: params.policy, limits: params.limits });
+    }
+  }
   async function request(method, params) {
     log.push(method);
     try {
       if (method === 'eth_getBlockByNumber') return { result: { number: '0x10', hash: at(0xbb, 32) } };
       // A suite that routes these here keeps them off the mock wallet, which
       // refuses anything outside its login set and fails the scenario's close.
-      if (method === 'eth_getTransactionCount') return { result: '0x0' };
+      if (method === 'eth_getTransactionCount') return { result: numberToHex(sends.length) };
       if (method === 'eth_estimateGas') return { result: '0x186a0' };
       if (method === 'eth_getBalance') return { result: '0xde0b6b3a7640000' };
-      if (method === 'eth_sendTransaction') { sends.push(params[0]); return { result: at(0xcc, 32) }; }
+      if (method === 'eth_gasPrice') return { result: '0x5f5e100' };
+      if (method === 'eth_sendTransaction') { const index = sends.length; sends.push(params[0]); apply(params[0]); return { result: hashOf(index) }; }
       if (method === 'eth_getTransactionByHash' || method === 'eth_getTransactionReceipt') {
-        const sent = sends[0];
-        if (!included || !sent || String(params[0]).toLowerCase() !== at(0xcc, 32)) return { result: null };
+        const index = sends.findIndex((_, i) => hashOf(i) === String(params[0]).toLowerCase());
+        if (!included || index === -1) return { result: null };
+        const sent = sends[index], hash = hashOf(index);
         const block = { blockHash: at(0xbb, 32), blockNumber: '0x10' };
-        if (method === 'eth_getTransactionByHash') return { result: { hash: at(0xcc, 32), from: sent.from, to: sent.to, input: sent.data, value: sent.value, nonce: sent.nonce, chainId: sent.chainId, type: sent.type,
+        if (method === 'eth_getTransactionByHash') return { result: { hash, from: sent.from, to: sent.to, input: sent.data, value: sent.value, nonce: sent.nonce, chainId: sent.chainId, type: sent.type,
           gas: sent.gas, maxFeePerGas: sent.maxFeePerGas, maxPriorityFeePerGas: sent.maxPriorityFeePerGas, ...block, ...included.transaction } };
-        return { result: { transactionHash: at(0xcc, 32), from: sent.from, to: sent.to, status: '0x1', gasUsed: '0xc350', effectiveGasPrice: sent.maxFeePerGas, ...block, ...included.receipt } };
+        return { result: { transactionHash: hash, from: sent.from, to: sent.to, status: '0x1', gasUsed: '0xc350', effectiveGasPrice: sent.maxFeePerGas, ...block, ...included.receipt } };
       }
       if (method === 'eth_getCode') {
         const target = String(params[0]).toLowerCase();
@@ -1066,13 +1090,14 @@ function fakeSequenceChain(owner, { roots, chains = {}, operator = null, service
         if (['createVault', 'setPolicy'].includes(functionName)) simulations.push({ functionName, args });
         return { result: encodeFunctionResult({ abi: chainAbi, functionName, result: answer(String(params[0].to).toLowerCase(), functionName, args) }) };
       }
+      refused.push(method);
       return { error: { code: 4200, message: `${method} is not a read` } };
     } catch (error) {
       missing.push(String(error));
       return { error: { code: -32000, message: String(error) } };
     }
   }
-  return { log, missing, sends, simulations, request, include, policy, limits, vaults: [...vaults.keys()], release: { contractVersion: '1.0.0-rc.1', chainId: 4663, available: true, deployment } };
+  return { log, missing, refused, sends, simulations, request, include, predict, poolKey, poolId, policy, limits, vaults: [...vaults.keys()], release: { contractVersion: '1.0.0-rc.1', chainId: 4663, available: true, deployment } };
 }
 
 test('Start tracking is offered for the sequences the wallet lists, reads each one\'s positions from its vault, and sends enroll with the session: nothing typed, nothing signed', async () => {
@@ -1710,4 +1735,124 @@ test('while the service that runs automation is not in operation a paused sequen
     assert.equal(await main.locator('[data-automation-service]').count(), 0, 'an active sequence has no activation to withhold');
     assert.equal(await main.getByRole('button', { name: 'Review activation' }).count(), 0);
   } finally { await active.close(); }
+});
+
+// ---- The guided creation: from a position link, two reviewed steps, no session ------------------------------------
+
+/**
+ * SequenceCreate.tsx, driven the way a person reaches it: a link naming the mode and the position NFT, a wallet that
+ * is connected and nothing more. The chain is the fake above with nothing approved and every send settled at once, so
+ * the approval is the first step the review offers, the creation the second, and each receipt comes back finalized
+ * on the first check. What the wallet was asked to sign is decoded from the two transactions the chain recorded.
+ */
+test('from a position link, a connected wallet without a session puts the NFT under Domino-compound in two reviewed steps: the approval, then the paused creation, with the defaults on the wire', async () => {
+  const s = await scenario(), ROOT = 5n;
+  const chain = fakeSequenceChain(OWNER, { roots: [], approved: false, settled: true });
+  const { factory, positionManager, operator } = chain.release.deployment, vault = chain.predict(0);
+  // Everything the sequence client and the gas suggestion ask of the wallet, past connecting, is the chain's to answer.
+  await s.context.exposeFunction('__dominoChainRead', (method, params) => chain.request(method, params));
+  await s.context.addInitScript((methods) => {
+    let wallet = window.__dominoWalletRequest;
+    const request = (id, method, params) => methods.includes(method) ? window.__dominoChainRead(method, params) : wallet(id, method, params);
+    Object.defineProperty(window, '__dominoWalletRequest', { configurable: true, get: () => request, set: value => { wallet = value; } });
+  }, ['eth_call', 'eth_getCode', 'eth_getBlockByNumber', 'eth_gasPrice', 'eth_getTransactionCount', 'eth_estimateGas', 'eth_getBalance', 'eth_sendTransaction', 'eth_getTransactionByHash', 'eth_getTransactionReceipt']);
+  const services = [];
+  s.page.on('request', request => { if (/\/api\/(deposit|session)\//.test(request.url())) services.push(new URL(request.url()).pathname); });
+  const dialog = s.page.locator('[role="dialog"][aria-labelledby="wallet-dialog-title"]');
+  const lower = value => String(value).toLowerCase();
+  try {
+    // Connected on Robinhood Chain, and no further: Sign in is offered and never pressed.
+    await s.page.waitForFunction(() => window.__dominoSessionProbe?.view().status === 'no_wallet');
+    await s.page.locator('header [aria-haspopup="dialog"]').click();
+    await dialog.getByRole('button', { name: 'Connect Test Wallet A', exact: true }).click();
+    await s.page.waitForFunction(() => window.__dominoSessionProbe?.view().status === 'signed_out');
+    await s.page.keyboard.press('Escape');
+
+    // The link: the mode and the NFT in the hash, with the release published. Reloaded so the screen mounts on it.
+    s.set({ sequenceRelease: { status: 200, body: chain.release } });
+    await s.page.goto(`${s.origin}/#/sequence/domino/${ROOT}`);
+    await s.page.reload();
+    await s.page.waitForFunction(() => window.__dominoSessionProbe?.view().status === 'signed_out');
+    const panel = s.page.locator('[data-sequence-create]');
+    const root = panel.locator(`[data-sequence-root="${ROOT}"]`);
+    // Read without a press: the deployment verified through the wallet, the sequences listed, the NFT inspected.
+    await root.waitFor({ timeout: 30_000 });
+    assert.equal(await panel.getAttribute('data-sequence-create-mode'), 'domino', 'the link’s mode is chosen');
+    assert.equal(await panel.getAttribute('data-sequence-create'), 'limits', 'the position and the mode are in; the limits are next');
+    assert.equal(await panel.locator('[data-sequence-mode="domino"]').getAttribute('aria-checked'), 'true');
+    assert.match(await root.innerText(), new RegExp(`^NFT ${ROOT} · pool 0x[0-9a-f]{4}…[0-9a-f]{4} · ticks -60 to 60 · .* Yours, and not in a sequence\\.$`));
+    assert.equal(await panel.locator('[data-sequence-create-review]').count(), 0, 'nothing is reviewed by arriving');
+    assert.deepEqual(chain.sends, [], 'nothing is sent by arriving');
+    assert.deepEqual([await panel.getByLabel('Positions in the sequence', { exact: true }).inputValue(), await panel.getByLabel('Successor upside (%)', { exact: true }).inputValue()], ['3', '50'], 'the defaults, in the units a person reads');
+
+    // Consent, then the review: the NFT is not yet approved to its predicted sequence, so the approval comes first.
+    await panel.getByRole('checkbox', { name: /^I consent to using this NFT’s already uncollected fees/ }).check();
+    await panel.getByRole('button', { name: 'Review the wallet steps', exact: true }).click();
+    const review = panel.locator('[data-sequence-create-review]');
+    await panel.locator('[data-sequence-create-review="approve-root"]').waitFor({ timeout: 30_000 });
+    assert.equal(await panel.getAttribute('data-sequence-create'), 'review');
+    let words = await review.innerText();
+    assert.match(words, /Review root NFT approval/, 'the step is named, not left as a code');
+    assert.match(words, new RegExp(`Approve only NFT #${ROOT} to the predicted sequence\\. No approval for all NFTs\\.`));
+    assert.match(words, new RegExp(`Sequence: ${vault}`), 'the predicted address, derived from the factory and the owner’s nonce');
+    assert.doesNotMatch(words, FORBIDDEN);
+    const sendStep = async (kind) => {
+      const step = panel.locator(`[data-sequence-create-review="${kind}"]`);
+      await step.getByRole('checkbox', { name: /^I reviewed the NFT, owner, sequence address, currencies, fees and limits for this single step\./ }).check();
+      await step.getByRole('button', { name: 'Send this step in wallet', exact: true }).click();
+      await panel.locator(`[data-sequence-create-sent="${kind}"][data-sequence-create-receipt="finalized"]`).waitFor({ timeout: 30_000 });
+    };
+    await sendStep('approve-root');
+
+    // Its receipt in: the creation is reviewed on its own, with nothing pressed, and the defaults are what it carries.
+    await panel.locator('[data-sequence-create-review="create"]').waitFor({ timeout: 30_000 });
+    words = await review.innerText();
+    assert.match(words, /Review paused sequence creation/);
+    assert.match(words, new RegExp(`Create a paused sequence from NFT #${ROOT}\\.`));
+    assert.match(words, /Your root NFT stays in your wallet\. This does not start automation\./);
+    assert.match(words, new RegExp(`Base: ${chain.poolKey.currency0}\\. Quote: ${chain.poolKey.currency1}\\.`), 'currency0 is the base');
+    assert.match(words, new RegExp(`Operator: ${operator}\\.`));
+    assert.match(words, /Domino-compound: 4% of earned fees consumed, once; never principal or already charged lots\./);
+    assert.match(words, /Trigger distance: 500 bps; maximum overlap: 2000 bps; minimum interval: 3600s; maximum positions: 3\./);
+    assert.match(words, /Successor upside: 5000 bps; maximum slippage: 50 bps; maximum price impact: 100 bps\./);
+    assert.match(words, /Execution gas cost cap: 5000000000000000 wei; observation age: 300s; forecast horizon: 604800s\./);
+    assert.doesNotMatch(words, FORBIDDEN);
+    await sendStep('create');
+
+    // Created: the vault read back from the chain, paused, with the root NFT still in the wallet, and why it stays paused.
+    const created = panel.locator(`[data-sequence-created="${vault}"]`);
+    await created.waitFor({ timeout: 30_000 });
+    assert.equal(await panel.getAttribute('data-sequence-create'), 'done');
+    assert.match(await created.innerText(), new RegExp(`^Domino-compound is set up for position NFT ${ROOT}\\s+Sequence ${vault} · paused · operator 0x[0-9a-f]{4}…[0-9a-f]{4} · your NFT stays in your wallet\\.`));
+    assert.equal(await created.locator('[data-automation-service="not-operational"]').innerText(), 'This sequence stays paused: the service that runs automation is not in operation, so activation is not offered.');
+    assert.equal(await panel.locator('[data-sequence-create-review]').count(), 0, 'nothing left to send');
+    assert.equal(await panel.locator('[data-notice-code]').count(), 0, 'no error code beside any sentence');
+    assert.doesNotMatch(await panel.innerText(), FORBIDDEN);
+    await s.page.screenshot({ path: join(shots(), 'p2-sequence-create.png'), fullPage: true });
+
+    // What the wallet was asked to sign, in order, decoded from the calldata the chain recorded.
+    assert.equal(chain.sends.length, 2, 'the approval, then the creation');
+    const [approve, create] = chain.sends.map(tx => ({ to: lower(tx.to), from: lower(tx.from), value: BigInt(tx.value), nonce: tx.nonce, ...decodeFunctionData({ abi: chainAbi, data: tx.data }) }));
+    assert.deepEqual([approve.functionName, approve.to, approve.from, lower(approve.args[0]), approve.args[1], approve.value, approve.nonce], ['approve', positionManager, OWNER, vault, ROOT, 0n, '0x0'],
+      'only this NFT, approved to the predicted sequence on the position manager, from the owner, as the first transaction');
+    const [params, ownerNonce] = create.args;
+    assert.deepEqual([create.functionName, create.to, create.from, create.value, create.nonce, ownerNonce], ['createVault', factory, OWNER, 0n, '0x1', 0n], 'the owner’s first sequence, as the second transaction');
+    assert.deepEqual({ ...params, baseCurrency: lower(params.baseCurrency), quoteCurrency: lower(params.quoteCurrency), operator: lower(params.operator) }, {
+      rootTokenId: ROOT, expectedPoolId: chain.poolId, baseCurrency: chain.poolKey.currency0, quoteCurrency: chain.poolKey.currency1, operator, consentToUncollectedFees: true,
+      policy: { serviceFeeBps: 400, triggerDistanceBps: 500, maxOverlapBps: 2000, minimumIntervalSeconds: 3600, maxPositions: 3, version: 1n, paused: true },
+      limits: { version: 1n, upsideBps: 5000, maxSlippageBps: 50, maxPriceImpactBps: 100, maxGasCostWei: 5_000_000_000_000_000n, maxObservationAgeSeconds: 300, forecastHorizonSeconds: 604_800 },
+    }, 'the whole InitParams: the pool read from the NFT, the deployment’s operator, consent, the 4% paused policy and the default limits in bps, seconds and wei');
+
+    // No service and no session took part, and the wallet was asked nothing outside connecting and the chain's own
+    // reads and sends. The one session route seen is the boot-time GET that asks whether a session exists to restore.
+    assert.deepEqual(services.filter(path => path !== '/api/session/v1/me'), [], 'no deposit service and no session request');
+    assert.deepEqual(s.deposits, []);
+    assert.deepEqual([...new Set(s.fake.state.log.map(entry => `${entry.method} ${entry.route}`))], ['GET me'], 'the session service was only asked whether a session exists, never for one');
+    assert.equal(s.wallet.state.signed.length, 0, 'no sign-in signature');
+    assert.deepEqual([...new Set(s.wallet.state.log.map(entry => entry.method))].filter(method => !['eth_accounts', 'eth_chainId', 'eth_requestAccounts', 'wallet_requestPermissions', 'wallet_switchEthereumChain'].includes(method)), [], 'the wallet itself was only asked to connect');
+    assert.deepEqual([...new Set(chain.log)].sort(), ['eth_call', 'eth_estimateGas', 'eth_gasPrice', 'eth_getBalance', 'eth_getBlockByNumber', 'eth_getCode', 'eth_getTransactionByHash', 'eth_getTransactionCount', 'eth_getTransactionReceipt', 'eth_sendTransaction'],
+      'reads, the network price, one simulation and one send per step, and the receipts');
+    assert.deepEqual(chain.refused, [], 'every method asked is one this chain answers');
+    assert.deepEqual(chain.missing, [], 'every call reached a contract that answers it');
+  } finally { await s.close(); }
 });

@@ -219,7 +219,7 @@ export function VignetteSequence({ className, running }: VignetteProps) {
   )
 }
 
-/** The staircase at rest, with no motion at all (New position's automation step). */
+/** The staircase at rest, with no motion at all, for a screen that draws the next range beside real ticks. */
 export function SequenceFrame({ className }: { className?: string }) {
   return (
     <Frame kind="seq" className={className} live={false} still>

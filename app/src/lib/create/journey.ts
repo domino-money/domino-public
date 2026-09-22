@@ -1,7 +1,11 @@
 /**
- * The new-position journey as a pure state machine: six stages, what each
+ * The new-position journey as a pure state machine: five stages, what each
  * needs before Continue, what a step forward or back does to the state, the
- * validation of budget, range and Domino limits, and the plain-text summary.
+ * validation of budget and range, and the plain-text summary. The journey
+ * creates a plain Uniswap position and asks nothing about automation: that
+ * is applied later, from Automate, to a position that exists. The Domino
+ * limits, their validation and the successor geometry stay here as pure
+ * helpers for that screen; no stage of this journey reads them.
  *
  * No React and no reads. Everything a stage shows comes from the values the
  * screens put here: a token candidate and a pool option from validated reads,
@@ -25,8 +29,8 @@ import type { BudgetFields } from './budgets'
 import { CREATE } from './copy'
 import { SLIPPAGE_DEFAULT_BPS, slippageBpsFrom, slippageWritten } from './slippage'
 
-export type Stage = 'token' | 'pool' | 'amount' | 'balance' | 'automation' | 'review'
-export const STAGES: readonly Stage[] = ['token', 'pool', 'amount', 'balance', 'automation', 'review']
+export type Stage = 'token' | 'pool' | 'amount' | 'balance' | 'review'
+export const STAGES: readonly Stage[] = ['token', 'pool', 'amount', 'balance', 'review']
 export const stageIndex = (stage: Stage) => STAGES.indexOf(stage)
 
 /** Two ticks, multiples of the pool's spacing, lower below upper. */
@@ -35,6 +39,7 @@ export interface TickRange {
   upper: number
 }
 
+/** What a position's earned fees do. Chosen on Automate for a position that exists, never in this journey, which keeps `'none'`. */
 export type Automation = 'none' | 'compound' | 'domino'
 
 /** Domino limits exactly as typed; `validateLimits` turns them into numbers. */
@@ -80,6 +85,7 @@ export interface JourneyState {
   budget: string
   slippageBps: string
   range: TickRange | null
+  /** Kept at their defaults by every stage of this journey; Automate's own state starts from `withAutomation` and `withLimits`. */
   automation: Automation
   limits: DominoLimits
 }
@@ -286,9 +292,6 @@ export function canContinue(stage: Stage, state: JourneyState, now: number): Che
     case 'balance':
       // The deposit amounts are an estimate shown in Review; nothing waits for them.
       return OK
-    case 'automation':
-      if (state.automation !== 'domino') return OK
-      return validateLimits(state.limits).ok ? OK : fail(CREATE.automation.limitsInvalid)
     case 'review':
       return fail(CREATE.review.gate)
     default:
@@ -517,9 +520,8 @@ export interface WalletStep {
  * an action. The deposit goes through the pool's currencies in pool order, as
  * the deposit service prepares them: each ERC-20 gets an exact approval to
  * Permit2, then a Permit2 allowance for the position manager; native ETH
- * needs no approval and goes with the mint. Automation is three separate
- * owner transactions on the sequence: approve this NFT to its predicted
- * address, create the sequence paused, and activate it later.
+ * needs no approval and goes with the mint. Nothing about automation: that
+ * is applied afterwards, from Automate, with its own owner transactions.
  */
 export function walletSteps(state: JourneyState): WalletStep[] {
   const { token, pool } = state
@@ -544,11 +546,6 @@ export function walletSteps(state: JourneyState): WalletStep[] {
   } else {
     steps.push({ title: words.mintStep, detail: words.mintStepDetail })
   }
-  if (state.automation !== 'none') {
-    steps.push({ title: words.automationApproveStep, detail: words.automationApproveDetail })
-    steps.push({ title: words.automationCreateStep, detail: words.automationCreateDetail(state.automation) })
-    steps.push({ title: words.automationActivateStep(words.automationStepNames[state.automation]), detail: words.automationActivateDetail })
-  }
   return steps
 }
 
@@ -558,13 +555,16 @@ export interface FeeBasis {
   note: string
 }
 
-/** The fee bases side by side, each with its own basis. Never one number. */
+/**
+ * The fee bases side by side, each with its own basis. Never one number, and
+ * no Domino service fee: a direct deposit carries none, and the fee on
+ * earned fees is Automate's to state when automation is applied.
+ */
 export function feeBases(state: JourneyState): FeeBasis[] {
   const poolFee = state.pool ? state.pool.fee : CREATE.page.notChosen
   const { feeLabels, feeValues, feeNotes } = CREATE.review
   return [
     { label: feeLabels.pool, value: poolFee, note: feeNotes.pool },
-    { label: feeLabels.service, value: CREATE.review.serviceFeeValue(state.automation), note: feeNotes.service },
     { label: feeLabels.swap, value: feeValues.swap, note: feeNotes.swap },
     { label: feeLabels.gas, value: feeValues.gas, note: feeNotes.gas },
   ]
@@ -588,15 +588,6 @@ const rangeText = (range: TickRange, price: PoolPrice | null): string => {
   return words.rangeTicks(range.lower, range.upper)
 }
 
-const automationText = (state: JourneyState): string => {
-  const words = CREATE.review.summary
-  if (state.automation === 'none') return CREATE.automation.none
-  if (state.automation === 'compound') return `${CREATE.automation.compound} · ${words.notConnected}`
-  const limits = validateLimits(state.limits)
-  const values = limits.ok ? words.limits(limits.values.trigger, limits.values.overlap, limits.values.cap) : words.limitsInvalid
-  return `${CREATE.automation.domino} · ${values} · ${words.notConnected}`
-}
-
 /** One line per stage for the rail and the review, with "—" where nothing is chosen. */
 export function summaryLines(state: JourneyState, now: number): SummaryLine[] {
   const none = CREATE.page.notChosen
@@ -616,7 +607,6 @@ export function summaryLines(state: JourneyState, now: number): SummaryLine[] {
     { stage: 'pool', label: CREATE.stage.pool.short, value: poolValue, done: canContinue('pool', state, now).ok },
     { stage: 'amount', label: CREATE.stage.amount.short, value: amountValue, done: canContinue('amount', state, now).ok },
     { stage: 'balance', label: CREATE.stage.balance.short, value: stageIndex(state.furthest) > stageIndex('balance') ? CREATE.balance.notEnabled : none, done: stageIndex(state.furthest) > stageIndex('balance') },
-    { stage: 'automation', label: CREATE.stage.automation.short, value: stageIndex(state.furthest) >= stageIndex('automation') ? automationText(state) : none, done: stageIndex(state.furthest) > stageIndex('automation') && canContinue('automation', state, now).ok },
     { stage: 'review', label: CREATE.stage.review.short, value: state.stage === 'review' ? CREATE.review.gate : none, done: false },
   ]
 }

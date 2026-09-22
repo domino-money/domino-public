@@ -1,12 +1,15 @@
 /**
  * The new-position journey's pure state machine (src/lib/create/journey.ts):
  * stages, what each needs before Continue, the transitions, the validation of
- * budget, range and Domino limits, the preview request it would send, the
- * creation gate, and the summary. No React and no reads are involved: the
- * inputs are shaped exactly like the values the read screens hand over.
+ * budget and range, the preview request it would send, the creation gate, and
+ * the summary. The journey creates a plain Uniswap position and asks nothing
+ * about automation; the Domino limits, their validation and the successor
+ * geometry are tested here as the pure helpers Automate reuses. No React and
+ * no reads are involved: the inputs are shaped exactly like the values the
+ * read screens hand over.
  */
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { test } from 'node:test';
 
@@ -79,14 +82,60 @@ function ready() {
   return journey.withBudget(s, '0.5');
 }
 
-test('the six stages, in order, and where the journey starts', () => {
-  assert.deepEqual(journey.STAGES, ['token', 'pool', 'amount', 'balance', 'automation', 'review']);
+test('the five stages, in order, and where the journey starts', () => {
+  assert.deepEqual(journey.STAGES, ['token', 'pool', 'amount', 'balance', 'review']);
   const s = journey.initialState();
   assert.equal(s.stage, 'token');
   assert.equal(s.furthest, 'token');
+  // The fields Automate starts from, at their defaults; no stage of this journey sets them.
   assert.equal(s.automation, 'none');
   assert.deepEqual(s.limits, { triggerPercent: '5', maxOverlapPercent: '20', sequenceCap: '3' });
   assert.equal(s.slippageBps, '50');
+});
+
+// The product's first function is a plain Uniswap position: pair, amount,
+// range. Auto-compound and Domino-compound are applied afterwards, from
+// Automate, to a position that exists (the owner, 2026-09-22). The stage that
+// asked went; the pure helpers Automate reuses stayed.
+test('no stage asks about automation: the fields stay at their defaults, Automate’s helpers still set them, and nothing of them reaches the review', () => {
+  assert.equal(journey.STAGES.includes('automation'), false);
+  const reviewed = journey.next(journey.next(ready(), NOW), NOW);
+  assert.equal(reviewed.stage, 'review');
+  assert.equal(reviewed.automation, 'none');
+  assert.deepEqual(reviewed.limits, journey.DEFAULT_LIMITS);
+  // withAutomation and withLimits set their field and change nothing else.
+  const domino = journey.withAutomation(ready(), 'domino');
+  assert.equal(domino.automation, 'domino');
+  assert.deepEqual({ ...domino, automation: 'none' }, ready());
+  const limited = journey.withLimits(domino, { sequenceCap: '256' });
+  assert.deepEqual(limited.limits, { ...journey.DEFAULT_LIMITS, sequenceCap: '256' });
+  assert.deepEqual({ ...limited, limits: journey.DEFAULT_LIMITS }, domino);
+  // Neither field gates a stage: a chosen mode with broken limits walks to Review exactly as the defaults do.
+  assert.equal(journey.reachable(limited, NOW), 'review');
+  assert.equal(journey.next(journey.next(limited, NOW), NOW).stage, 'review');
+  // And the review says nothing of them: no summary line, no wallet step, no fee row.
+  assert.deepEqual(journey.summaryLines(limited, NOW).map((line) => line.stage), ['token', 'pool', 'amount', 'balance', 'review']);
+  assert.deepEqual(journey.walletSteps(limited), journey.walletSteps(ready()));
+  assert.deepEqual(journey.feeBases(limited), journey.feeBases(ready()));
+  for (const line of journey.serialiseSummary(journey.next(journey.next(limited, NOW), NOW), NOW)) assert.doesNotMatch(line, /automation|compound|service fee|sequence|limits/i, line);
+  // The stage's component is gone, and the flow's components read none of the fields.
+  assert.equal(existsSync(new URL('../src/components/create/StageAutomation.tsx', import.meta.url)), false);
+  for (const name of ['Journey', 'StageReview', 'StepList', 'StageBalance', 'StageAmount', 'StageToken']) {
+    const source = readFileSync(new URL(`../src/components/create/${name}.tsx`, import.meta.url), 'utf8');
+    assert.doesNotMatch(source, /StageAutomation|automationPill|AutomationSummary|state\.automation|state\.limits|withAutomation|withLimits|validateLimits|successorGeometry|serviceFee/, name);
+  }
+  const rail = readFileSync(new URL('../src/components/create/StepList.tsx', import.meta.url), 'utf8');
+  assert.match(rail, /VISUAL_STEPS: readonly VisualStep\[\] = \['pool', 'range', 'amount', 'review'\]/, 'four steps on the rail');
+  // The page says how many steps there are, and no step or stage is named Automation.
+  assert.match(CREATE.page.description, /^Four steps\./);
+  assert.equal(CREATE.step.automation, undefined);
+  assert.equal(CREATE.stage.automation, undefined);
+  assert.deepEqual(Object.keys(CREATE.step), ['pool', 'range', 'amount', 'review']);
+  assert.deepEqual(Object.keys(CREATE.stage), journey.STAGES);
+  // Review's own automation copy went with the section that showed it; Automate keeps the fee's value.
+  for (const key of ['serviceFee', 'serviceFeeNote', 'automationApproveStep', 'automationCreateStep', 'automationActivateStep', 'automationStepNames']) assert.equal(CREATE.review[key], undefined, key);
+  assert.equal(CREATE.review.serviceFeeValue('domino'), '4% of earned fees consumed', 'screens/Automate.tsx states it');
+  assert.doesNotMatch(CREATE.review.stepsNote, /automation|Automate/i, 'the wallet steps are the deposit’s alone');
 });
 
 test('Your token: nothing continues without a selectable token, and the reason says so', () => {
@@ -358,27 +407,21 @@ test('Domino limits are checked one by one, each with its own words, within the 
 
 test('the journey walks forward only through complete stages, back freely, and the rail reopens what was reached', () => {
   let s = ready();
-  assert.equal(journey.reachable(s, NOW), 'review', 'nothing after the amount blocks: the deposit amounts wait for nothing and automation defaults to none');
+  assert.equal(journey.reachable(s, NOW), 'review', 'nothing after the amount blocks: the deposit amounts wait for nothing');
   assert.equal(journey.canOpen('balance', s, NOW), false, 'not reached yet');
   s = journey.next(s, NOW);
   assert.equal(s.stage, 'balance');
   assert.deepEqual(journey.canContinue('balance', s, NOW), { ok: true }, 'the person may continue whether or not an estimate of the amounts is shown');
   s = journey.next(s, NOW);
-  assert.equal(s.stage, 'automation');
-  s = journey.withAutomation(s, 'domino');
-  const broken = journey.withLimits(s, { sequenceCap: '256' });
-  assert.deepEqual(journey.canContinue('automation', broken, NOW), { ok: false, reason: CREATE.automation.limitsInvalid });
-  assert.equal(journey.next(broken, NOW), broken);
-  s = journey.next(s, NOW);
-  assert.equal(s.stage, 'review');
+  assert.equal(s.stage, 'review', 'the balance stage continues straight to Review: nothing is asked in between');
   assert.equal(s.furthest, 'review');
   assert.deepEqual(journey.canContinue('review', s, NOW), { ok: false, reason: CREATE.review.gate });
   assert.equal(journey.next(s, NOW), s, 'review is the last stage');
   // Back keeps everything and the rail may reopen any reached stage.
   const backOnce = journey.back(s);
-  assert.equal(backOnce.stage, 'automation');
+  assert.equal(backOnce.stage, 'balance');
   assert.equal(backOnce.furthest, 'review');
-  assert.equal(backOnce.automation, 'domino');
+  assert.equal(backOnce.budget, '0.5');
   assert.equal(journey.goTo(backOnce, 'token', NOW).stage, 'token');
   assert.equal(journey.goTo(backOnce, 'review', NOW).stage, 'review');
   assert.equal(journey.back(journey.initialState()).stage, 'token');
@@ -556,7 +599,7 @@ test('the successor geometry follows the agreed rule on the pool’s spacing, or
   assert.match(CREATE.automation.nextRangeNote, /drawn at a 50% upside/);
 });
 
-test('the wallet steps are the real ones, in order: each ERC-20 through Permit2, native ETH with the mint and no approval, automation as three owner transactions', () => {
+test('the wallet steps are the real ones, in order: each ERC-20 through Permit2, native ETH with the mint and no approval, and nothing about automation', () => {
   const erc20 = journey.walletSteps(ready());
   // docs/DIRECT_DEPOSITS.md: an exact approval to Permit2, then a Permit2 allowance for the position manager, currency by currency in pool order, then the mint.
   assert.deepEqual(erc20.map((step) => step.title), [
@@ -588,38 +631,34 @@ test('the wallet steps are the real ones, in order: each ERC-20 through Permit2,
   assert.deepEqual(nativeOther.map((step) => step.title), ['Approve the selected token to Permit2', 'Allow the position manager to use the selected token through Permit2', 'Mint the position NFT to your wallet']);
   assert.match(nativeOther[2].detail, /Native ETH needs no approval: if the composition needs it/);
   assert.ok(!native.concat(nativeOther).some((step) => /Approve|Allow/.test(step.title) && step.token?.address === ZERO), 'no approval step names native ETH');
-  // finance/sequence.ts: approve only this NFT to its predicted sequence, create the sequence paused, activate it in a separate owner transaction.
-  const automated = journey.walletSteps(journey.withAutomation(ready(), 'domino'));
-  assert.deepEqual(automated.slice(5).map((step) => step.title), ['Approve this position NFT to its sequence', 'Create the sequence, paused', 'Activate Domino-compound']);
-  assert.match(automated[5].detail, /never approval for all NFTs/);
-  assert.match(automated[6].detail, /4% service fee.*starts paused/);
-  assert.match(journey.walletSteps(journey.withAutomation(ready(), 'compound')).at(-2).detail, /2% service fee/);
-  // That automation is not connected is the summary's `· not connected` (below) and CREATE.automation.notEnabled, not the step's words.
-  assert.equal(automated.at(-1).detail, 'A separate owner transaction, when you choose. It takes the sequence out of pause; the service that compounds is not running. You can pause or revoke it from your wallet.');
-  assert.equal(journey.walletSteps(journey.withAutomation(ready(), 'compound')).at(-1).title, 'Activate Auto-compound');
-  assert.equal(new Set(automated.map((step) => step.title)).size, automated.length, 'every title is its own list key');
+  // The sequence's own owner transactions (finance/sequence.ts) are Automate's to describe: the deposit's steps are the whole list, whatever the automation field says.
+  for (const mode of ['compound', 'domino']) assert.deepEqual(journey.walletSteps(journey.withAutomation(ready(), mode)), erc20, mode);
+  for (const step of erc20) assert.doesNotMatch(`${step.title} ${step.detail}`, /sequence|compound|automation|service fee/i, step.title);
+  assert.equal(new Set(erc20.map((step) => step.title)).size, erc20.length, 'every title is its own list key');
   assert.deepEqual(journey.walletSteps(journey.initialState()), []);
   assert.deepEqual(journey.walletSteps({ ...ready(), pool: pool({ currencies: [token(addr('8')), token(addr('9'))] }) }), [], 'no steps for a pool that does not hold the token');
 });
 
-test('the fee bases follow the chosen mode: 2% simple, 4% Domino, none without automation', () => {
-  const bases = journey.feeBases(journey.withAutomation(ready(), 'compound'));
-  assert.deepEqual(bases.map((fee) => fee.label), ['Pool trading fee', 'Domino service fee', 'Assisted swap fee', 'Network gas']);
+test('the fee bases are the pool’s, the assisted swap’s and gas: a direct deposit carries no Domino service fee', () => {
+  const bases = journey.feeBases(ready());
+  assert.deepEqual(bases.map((fee) => fee.label), ['Pool trading fee', 'Assisted swap fee', 'Network gas']);
   assert.equal(bases[0].value, '0.30%');
-  assert.equal(bases[1].value, '2% of earned fees consumed');
-  assert.equal(journey.feeBases(journey.withAutomation(ready(), 'domino'))[1].value, '4% of earned fees consumed');
-  assert.equal(journey.feeBases(journey.withAutomation(ready(), 'none'))[1].value, 'No automation service fee');
-  assert.match(bases[1].note, /Never on principal/);
-  assert.match(bases[2].value, /0\.65%/);
+  assert.match(bases[0].note, /Not a charge to you/);
+  assert.match(bases[1].value, /0\.65%/);
+  assert.equal(bases[2].value, 'Paid by you');
+  for (const fee of bases) assert.doesNotMatch(`${fee.label} ${fee.value}`, /service fee|earned fees|compound/i, fee.label);
+  // The fee on earned fees is Automate's to state, for the mode it applies; the field changes nothing here.
+  for (const mode of ['compound', 'domino']) assert.deepEqual(journey.feeBases(journey.withAutomation(ready(), mode)), bases, mode);
   assert.equal(journey.feeBases(journey.initialState())[0].value, '—');
 });
 
 test('the summary says — for what is not chosen and serialises every decision, the gate included', () => {
   const empty = journey.summaryLines(journey.initialState(), NOW);
-  assert.deepEqual(empty.map((line) => line.value), ['—', '—', '—', '—', '—', '—']);
-  assert.deepEqual(empty.map((line) => line.done), [false, false, false, false, false, false]);
-  let s = journey.withAutomation(journey.next(journey.next(ready(), NOW), NOW), 'domino');
-  s = journey.next(s, NOW);
+  assert.deepEqual(empty.map((line) => line.label), ['Token', 'Pool', 'Amount', 'Balance', 'Review']);
+  assert.deepEqual(empty.map((line) => line.value), ['—', '—', '—', '—', '—']);
+  assert.deepEqual(empty.map((line) => line.done), [false, false, false, false, false]);
+  const s = journey.next(journey.next(ready(), NOW), NOW);
+  assert.equal(s.stage, 'review');
   const lines = journey.summaryLines(s, NOW);
   assert.equal(lines[0].value, `ONE · ${addr('1').slice(0, 6)}…${addr('1').slice(-4)}`);
   assert.equal(lines[1].value, `ONE/TWO · 0.30% · ${id('a').slice(0, 6)}…${id('a').slice(-4)}`);
@@ -627,8 +666,7 @@ test('the summary says — for what is not chosen and serialises every decision,
   assert.equal(lines[2].value, '0.5 ONE · ≈697,689,000,000 to ≈1,503,780,000,000 (ticks -3600 to 4080) · slippage 0.5%');
   assert.equal(journey.summaryLines(journey.withSlippage(s, '250'), NOW)[2].value, '0.5 ONE · ≈697,689,000,000 to ≈1,503,780,000,000 (ticks -3600 to 4080) · slippage 2.5%', 'the summary says the tolerance chosen, not the default');
   assert.equal(lines[3].value, CREATE.balance.notEnabled);
-  assert.equal(lines[4].value, 'Domino-compound · trigger 5%, overlap 20%, cap 3 · not connected');
-  assert.equal(lines[5].value, CREATE.review.gate);
+  assert.equal(lines[4].value, CREATE.review.gate);
   assert.equal(journey.positionText(s, NOW), CREATE.review.inRange);
   assert.equal(journey.positionText({ ...s, range: { lower: 60, upper: 120 } }, NOW), CREATE.review.outOfRange);
   assert.match(journey.positionText(s, 300_000), /read more than 5 minutes ago/);
@@ -638,9 +676,9 @@ test('the summary says — for what is not chosen and serialises every decision,
   assert.ok(text.includes('Deposit amounts: Exact amounts are calculated in Setup, at the price when you sign.'));
   assert.ok(text.includes('Wallet step 1: Approve the selected token to Permit2'));
   assert.ok(text.includes('Wallet step 2: Allow the position manager to use the selected token through Permit2'));
-  assert.ok(text.includes('Wallet step 8: Activate Domino-compound'));
+  assert.equal(text.filter((line) => line.startsWith('Wallet step')).length, 5, 'the deposit’s five steps, and no more');
   assert.ok(text.includes('Pool trading fee: 0.30%'));
-  assert.ok(text.includes('Domino service fee: 4% of earned fees consumed'));
+  assert.ok(!text.some((line) => line.startsWith('Domino service fee')), 'no service fee row: a direct deposit carries none');
   assert.equal(text.at(-1), 'Create position: disabled — Deposits are made in Setup, one reviewed wallet step at a time.');
 });
 
@@ -694,11 +732,11 @@ test('the copy never promises, never names a sample or a fixture, and never link
 test('the automation choices carry the approved names, and the service fee keeps the company’s name', () => {
   const { options } = CREATE.automation;
   assert.deepEqual([options.none.title, options.compound.title, options.domino.title], ['Self-managing', 'Auto-compound', 'Domino-compound']);
-  assert.equal(CREATE.automation.none, 'Self-managing', 'the summary line says what the step row says');
+  assert.equal(CREATE.automation.none, 'Self-managing', 'the summary line says what the option says');
   assert.equal(CREATE.automation.domino, 'Domino-compound');
   assert.equal(CREATE.automation.dominoRulesHeading, 'How Domino-compound works');
-  assert.equal(CREATE.review.automationStepNames.domino, 'Domino-compound');
-  assert.match(CREATE.review.feeNotes.service, /Auto-compound or Domino-compound consumes earned fees/);
+  // The docs' fees page draws its service row from these (lib/docs/pages/reference.ts).
+  assert.match(CREATE.review.feeValues.service, /^Auto-compound 2%; Domino-compound 4% of earned fees consumed$/);
   assert.equal(CREATE.review.feeLabels.service, 'Domino service fee', 'the fee label names the company, not the product');
   // "sequence" stays where it names the vault or its cap.
   assert.equal(CREATE.automation.cap, 'Positions in the sequence');

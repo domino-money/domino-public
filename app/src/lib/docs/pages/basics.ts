@@ -123,7 +123,7 @@ export const EARNED_FEES: DocPage = {
           [doc('Auto-compound', 'auto-compound'), ': fees go back into the same position.'],
           [doc('Domino-compound', 'domino-compounder'), ': near the top of the range, fees open the next position one step higher.'],
         ),
-        p('You record the choice in the Automation step of ', doc('New position', 'new-position'), '; automation starts only with its own wallet transactions.'),
+        p('You make the choice afterwards, from Automate, on a position you opened; automation starts only with its own wallet transactions.'),
       ],
     },
   ],

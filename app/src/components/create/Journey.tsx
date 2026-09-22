@@ -13,16 +13,12 @@ import {
   stageIndex,
   validateRange,
   verificationToken,
-  withAutomation,
   withBudget,
-  withLimits,
   withPool,
   withRange,
   withSlippage,
   withToken,
-  type Automation,
   type Check,
-  type DominoLimits,
   type JourneyState,
   type Stage,
   type TickRange,
@@ -36,10 +32,9 @@ import { mergeCandidates, type TokenCandidate } from '../../lib/read/screens/tok
 import { useNow } from '../../lib/read/useNow'
 import { Button, PageHeader, PageShell } from '../ui'
 import { StageAmount, StageRange } from './StageAmount'
-import { StageAutomation } from './StageAutomation'
 import { FinalControl, StageReview } from './StageReview'
 import { StageToken, type PreselectStatus } from './StageToken'
-import { AmountSummary, AutomationSummary, PoolSummary, RangeSummary, StepList, VISUAL_STEPS, type StepView, type VisualStep } from './StepList'
+import { AmountSummary, PoolSummary, RangeSummary, StepList, VISUAL_STEPS, type StepView, type VisualStep } from './StepList'
 
 /** The outcomes only the verification read can produce. */
 type Verified = Extract<PreselectStatus, { kind: 'verified' | 'not_found' | 'failed' }>
@@ -61,8 +56,6 @@ function visualOf(state: JourneyState, part: AmountPart): VisualStep {
       return part
     case 'balance':
       return 'amount'
-    case 'automation':
-      return 'automation'
     case 'review':
       return 'review'
     default:
@@ -71,7 +64,7 @@ function visualOf(state: JourneyState, part: AmountPart): VisualStep {
 }
 
 /** The machine stage a visual step opens at. */
-const STAGE_OF: Record<VisualStep, Stage> = { pool: 'token', range: 'amount', amount: 'amount', automation: 'automation', review: 'review' }
+const STAGE_OF: Record<VisualStep, Stage> = { pool: 'token', range: 'amount', amount: 'amount', review: 'review' }
 
 /**
  * The inputs a step was last shown with. A step that has been reached stays
@@ -85,11 +78,13 @@ const keyOf = (step: VisualStep, state: JourneyState): string => (step === 'rang
 const fail = (reason: string): Check => ({ ok: false, reason })
 
 /**
- * New position: five steps in one card over the state machine in
+ * New position: four steps in one card over the state machine in
  * lib/create/journey.ts, which decides what each step may do. Every read goes
  * through the shared read source; each step runs at most one at a time and
  * cancels it when the selection changes or the step is dropped. Nothing here
- * signs, approves, deposits or swaps: deposits are made in Setup.
+ * signs, approves, deposits or swaps: deposits are made in Setup. Nothing
+ * here asks about automation: that is applied from Automate, to a position
+ * that exists.
  */
 export function Journey({ poolId }: { poolId: string }) {
   const source = useReadSource()
@@ -192,8 +187,6 @@ export function Journey({ poolId }: { poolId: string }) {
   // separately from the same state would lose whichever landed first.
   const setDeposit = (candidate: TokenCandidate, text: string) => update(withBudget(withToken(state, candidate), text))
   const setSlippage = (text: string) => update(withSlippage(state, text))
-  const setAutomation = (choice: Automation) => update(withAutomation(state, choice))
-  const setLimits = (limits: Partial<DominoLimits>) => update(withLimits(state, limits))
 
   // What each step needs before Continue, in the machine's own words.
   const tokenCheck = canContinue('token', state, now)
@@ -202,15 +195,13 @@ export function Journey({ poolId }: { poolId: string }) {
   const usablePrice = price && price.state === 'usable' ? price : null
   const rangeCheck: Check = !poolCheck.ok ? poolCheck : !state.pool ? fail(CREATE.pool.needPool) : !usablePrice ? fail(CREATE.amount.priceUnavailable) : validateRange(state.range, state.pool)
   const amountCheck = poolCheck.ok ? canContinue('amount', state, now) : poolCheck
-  const automationCheck = canContinue('automation', state, now)
 
-  const complete: Record<VisualStep, boolean> = { pool: poolCheck.ok, range: rangeCheck.ok, amount: amountCheck.ok, automation: automationCheck.ok, review: false }
+  const complete: Record<VisualStep, boolean> = { pool: poolCheck.ok, range: rangeCheck.ok, amount: amountCheck.ok, review: false }
   const furthest = stageIndex(state.furthest)
   const reached: Record<VisualStep, boolean> = {
     pool: true,
     range: furthest >= stageIndex('amount'),
     amount: furthest > stageIndex('amount') || amountReached,
-    automation: furthest >= stageIndex('automation'),
     review: furthest >= stageIndex('review'),
   }
 
@@ -236,9 +227,6 @@ export function Journey({ poolId }: { poolId: string }) {
         open(next(toBalance, now), 'amount')
         return
       }
-      case 'automation':
-        open(next(state, now))
-        return
       case 'review':
         return
       default:
@@ -257,11 +245,9 @@ export function Journey({ poolId }: { poolId: string }) {
       case 'amount':
         open(state, 'range')
         return
-      case 'automation':
-        open(back(back(state)), 'amount')
-        return
       case 'review':
-        open(back(state))
+        // Back over the balance stage too: it has no step of its own, so Review's Back lands on Amount.
+        open(back(back(state)), 'amount')
         return
       default:
         return current satisfies never
@@ -275,7 +261,7 @@ export function Journey({ poolId }: { poolId: string }) {
     open(goTo(state, target, now), step === 'amount' ? 'amount' : 'range')
   }
 
-  const checkFor: Record<VisualStep, Check> = { pool: poolCheck, range: rangeCheck, amount: amountCheck, automation: automationCheck, review: canContinue('review', state, now) }
+  const checkFor: Record<VisualStep, Check> = { pool: poolCheck, range: rangeCheck, amount: amountCheck, review: canContinue('review', state, now) }
   const check = checkFor[current]
   const footer = (
     <div className="dm-flow-foot" data-journey-footer="" data-final={current === 'review' ? '' : undefined}>
@@ -313,8 +299,6 @@ export function Journey({ poolId }: { poolId: string }) {
         return <StageRange source={source} state={state} onRange={setRange} onPool={setPool} />
       case 'amount':
         return <StageAmount state={state} balances={pair} onBudget={setBudget} onDeposit={setDeposit} onSlippage={setSlippage} />
-      case 'automation':
-        return <StageAutomation state={state} now={now} onAutomation={setAutomation} onLimits={setLimits} />
       case 'review':
         return <StageReview state={state} now={now} open={current === 'review'} balances={pair} />
       default:
@@ -330,8 +314,6 @@ export function Journey({ poolId }: { poolId: string }) {
         return state.range && usablePrice ? <RangeSummary range={state.range} price={usablePrice} /> : null
       case 'amount':
         return <AmountSummary state={state} />
-      case 'automation':
-        return <AutomationSummary automation={state.automation} />
       case 'review':
         return null
       default:

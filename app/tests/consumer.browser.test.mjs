@@ -469,9 +469,9 @@ test('New position’s Review asks for the deposit amounts for the signed-in wal
   await jump(page, '05:00');
   assert.equal(positionCalls(s).length, 1, 'no timer and no expiry asks again');
 
-  // Opening Review again is a new intent.
+  // Opening Review again is a new intent. Back from Review lands on Amount, the step before it.
   await footerButton(page, 'Back').click();
-  await page.locator('[data-stage-card="automation"]').waitFor();
+  await page.locator('[data-stage-card="amount"] [data-pair-side="1"]').waitFor();
   await footerButton(page, 'Continue').click();
   await amountsAre(page, 'current');
   assert.equal(positionCalls(s).length, 2);

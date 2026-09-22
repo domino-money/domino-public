@@ -241,7 +241,7 @@ export const GLOSSARY: DocPage = {
             { id: 'operator', term: 'Operator', text: ['The address that carries out automation within your limits. It can pause, but cannot withdraw, change limits or resume.'] },
             { id: 'trigger-distance', term: 'Trigger distance', text: ['How near the top of its range the price must be before a next position is considered. Up to 20%.'] },
             { id: 'maximum-overlap', term: 'Maximum overlap', text: ['How far below the previous ceiling a next position’s floor may start. Up to 20%.'] },
-            { id: 'upside', term: 'Upside', text: ['How far above the previous ceiling a next position’s ceiling sits, at least. You set it; New position draws it at 50%.'] },
+            { id: 'upside', term: 'Upside', text: ['How far above the previous ceiling a next position’s ceiling sits, at least. You set it; the app draws it at 50%.'] },
           ],
         },
       ],

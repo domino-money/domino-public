@@ -415,9 +415,12 @@ export default function WalletDeposit({ pool, draft }: { pool: PoolOption | null
         <section className="dm-inset dm-acct-stack" aria-label="Position minted" data-wallet-deposit-minted={String(minted)}>
           <h3 className="dm-acct-subtitle">Position NFT {String(minted)} is in your wallet</h3>
           <p className="dm-acct-line">Unused funds returned with it. Its range, amounts and earned fees are on Positions.</p>
-          <LinkButton href={`#/positions/${String(minted)}`} className="justify-self-start">
-            See the position
-          </LinkButton>
+          <div className="dm-acct-choices">
+            <LinkButton href={`#/positions/${String(minted)}`}>See the position</LinkButton>
+            <LinkButton href={`#/sequence/${String(minted)}`} variant="outline">
+              Put its fees to work
+            </LinkButton>
+          </div>
         </section>
       )}
       {client && others.length > 0 && (

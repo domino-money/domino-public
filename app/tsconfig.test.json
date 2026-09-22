@@ -74,6 +74,7 @@
     "src/lib/create/journey.ts",
     "src/lib/create/pairAmount.ts",
     "src/lib/create/mintPlan.ts",
+    "src/lib/create/sequenceDefaults.ts",
     "src/lib/create/slippage.ts",
     "src/lib/read/screens/rowApr.ts",
     "src/lib/docs/registry.ts"

@@ -1,15 +1,15 @@
 import { useEffect, useRef, type ReactNode } from 'react'
 import { CREATE } from '../../lib/create/copy'
-import type { Automation, JourneyState, Stage, TickRange } from '../../lib/create/journey'
+import type { JourneyState, Stage, TickRange } from '../../lib/create/journey'
 import { boundPrice, type PoolPrice } from '../../lib/read/screens/poolRange'
 import type { PoolOption } from '../../lib/read/screens/poolsList'
 import { slippageBpsFrom, slippageWritten } from '../../lib/create/slippage'
 import { SymbolText } from '../read/screens/SymbolText'
 import { StepMarker } from '../ui'
 
-/** The five steps a person sees, over the state machine's six stages. */
-export type VisualStep = 'pool' | 'range' | 'amount' | 'automation' | 'review'
-export const VISUAL_STEPS: readonly VisualStep[] = ['pool', 'range', 'amount', 'automation', 'review']
+/** The four steps a person sees, over the state machine's five stages. */
+export type VisualStep = 'pool' | 'range' | 'amount' | 'review'
+export const VISUAL_STEPS: readonly VisualStep[] = ['pool', 'range', 'amount', 'review']
 
 export interface StepView {
   key: VisualStep
@@ -71,11 +71,6 @@ export function AmountSummary({ state }: { state: JourneyState }) {
   )
 }
 
-/** "Self-managing", "Auto-compound" or "Domino-compound". */
-export function AutomationSummary({ automation }: { automation: Automation }) {
-  return <>{CREATE.automation.options[automation].title}</>
-}
-
 /* ---------------------------------------------------------------------------
    The list
 --------------------------------------------------------------------------- */
@@ -85,7 +80,7 @@ const stilled = () =>
   (typeof window.matchMedia === 'function' && window.matchMedia('(prefers-reduced-motion: reduce)').matches) || document.documentElement.classList.contains('dm-still')
 
 /**
- * The flow card's five steps, in order. A done step is a row that opens it
+ * The flow card's four steps, in order. A done step is a row that opens it
  * again; the open step is an inset panel with its title, lead, content and
  * footer; the rest wait as rows. Opening a step grows its panel while the
  * previous one folds back to its row (CSS, instant when motion is stilled),
