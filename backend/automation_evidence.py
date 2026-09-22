@@ -154,15 +154,39 @@ def _next_initialized(bitmap, tick, spacing, zero_for_one):
     return (compressed + (255 - bit_pos)) * spacing, False
 
 
+MAX_PROTOCOL_FEE_PIPS = 1000
+MAX_SWAP_FEE_PIPS = 1_000_000
+
+
+def swap_fee_pips(protocol_fee, lp_fee, zero_for_one):
+    """The fee the core charges on a swap's input, in pips: the LP fee, or the
+    direction's protocol fee composed with it (protocol + lp - protocol*lp/1e6),
+    per Pool.swap and ProtocolFeeLibrary. The protocol's share never reaches
+    the position, so fee growth stays the LP fee's; only the output changes."""
+    if type(protocol_fee) is not int or type(lp_fee) is not int or not 0 <= protocol_fee < 1 << 24 or not 0 <= lp_fee < MAX_SWAP_FEE_PIPS:
+        raise ObservationError('automation_pool_fee_unqualified')
+    direction = protocol_fee & 0xfff if zero_for_one else protocol_fee >> 12
+    if direction > MAX_PROTOCOL_FEE_PIPS or (protocol_fee >> 12) > MAX_PROTOCOL_FEE_PIPS:
+        raise ObservationError('automation_pool_fee_unqualified')
+    fee = lp_fee if direction == 0 else direction + lp_fee - direction * lp_fee // MAX_SWAP_FEE_PIPS
+    if fee >= MAX_SWAP_FEE_PIPS:
+        raise ObservationError('automation_pool_fee_unqualified')
+    return fee
+
+
 def simulate_exact_input(reader, state_view, key, pool_id, pool, block, *, zero_for_one, amount_in, price_limit, max_steps):
     """The core's swap loop over the pool's initialized ticks at this block.
 
     Returns the output, the ending price and the step count, or None when the
     input cannot be consumed before the price limit - the engine would refuse
-    that swap. Protocol-fee pools are refused: the step fee here is the LP fee.
+    that swap. The step fee is the core's swap fee for the direction: the LP
+    fee alone, or the protocol fee's share for that direction composed with
+    it exactly as ProtocolFeeLibrary.calculateSwapFee does. A pool whose LP
+    fee is not the key's static fee (a dynamic-fee pool) is refused.
     """
-    if pool.protocol_fee != 0 or pool.lp_fee != key.fee_pips:
+    if pool.lp_fee != key.fee_pips:
         raise ObservationError('automation_pool_fee_unqualified')
+    swap_fee = swap_fee_pips(pool.protocol_fee, pool.lp_fee, zero_for_one)
     if type(amount_in) is not int or not 0 < amount_in < 2**127:
         raise ObservationError('automation_invalid_swap_amount')
     if zero_for_one and not MIN_SQRT < price_limit < pool.sqrt_price:
@@ -186,7 +210,7 @@ def simulate_exact_input(reader, state_view, key, pool_id, pool, block, *, zero_
         next_price = sqrt_at_tick(next_tick)
         target = max(next_price, price_limit) if zero_for_one else min(next_price, price_limit)
         start = price
-        price, step_in, step_out, charge = swap_step(price, target, liquidity, remaining, pool.lp_fee)
+        price, step_in, step_out, charge = swap_step(price, target, liquidity, remaining, swap_fee)
         remaining += step_in + charge
         output += step_out
         if price == next_price:

@@ -470,6 +470,19 @@ class AutomationCycleEvmTests(unittest.TestCase):
 
     def test_swap_quote_matches_the_engine_output_exactly(self):
         self.setup()
+        self.swap_quote_replay()
+
+    def test_swap_quote_matches_the_engine_output_with_the_pool_protocol_fee(self):
+        # The WETH/USDG pool on 4663 charges a protocol fee of 52 pips each way
+        # on top of its 200-pip LP fee; the fixture pool gets the same shape.
+        self.setup()
+        self.send(self.manager, calldata('setProtocolFeeController(address)', ['address'], [self.owner]))
+        self.send(self.manager, calldata('setProtocolFee(' + KEY_TYPE + ',uint24)', [KEY_TYPE, 'uint24'], [self.key, 52 | (52 << 12)]))
+        self.assertEqual(self.call(self.state, 'getSlot0(bytes32)', ['uint160', 'int24', 'uint24', 'uint24'], ['bytes32'],
+                                   [bytes.fromhex(self.admission.sequence.poolId[2:])])[2], 52 | (52 << 12))
+        self.swap_quote_replay()
+
+    def swap_quote_replay(self):
         # Fees mostly in currency0, at a volume that keeps the spot inside the
         # root range and within the reference divergence the config admits.
         self.warm_up(rounds=3, amount=2 * 10**16, directions=(True,))

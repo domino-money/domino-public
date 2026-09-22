@@ -245,5 +245,23 @@ configuration, key or funding and starts nothing. `test_install_automation.py` (
 host) runs in the repository-hygiene job. The procedure has not been run on the
 production VM as part of this delivery.
 
+## Addendum, 22 September 2026: gas units on the deployed contracts, and the pool's protocol fee
+
+[GAS_UNITS_V1_2026-09-22.md](GAS_UNITS_V1_2026-09-22.md) re-measures the units on the
+mainnet addresses, on an Anvil fork of the public endpoint: the study's fork experiment
+with the deployed stack adopted (runtime hashes checked against the manifest), twice, and
+then the automation cycle itself run end to end on the fork with synthetic keys, a
+disposable database and real Chainlink references. The cycle executed a direct compound
+and a compound with a swap on the deployed engine, through the whole service path
+including the ledger's reader; the successor cycles waited as uneconomic at the
+rehearsal's fee volumes and their units come from the fork experiment.
+
+Found on the way and fixed: the live WETH/USDG pool charges a protocol fee (52 pips each
+direction on top of the 200-pip LP fee), and the evidence builder refused any pool with a
+protocol fee, so on that pool the cycle could never have built evidence or acted. The
+swap fee is now composed as the core composes it; the composition is pinned by an
+integrated replay of the automation's own swap quote against the engine's output on a
+fixture pool with the same fee, which fails with the LP fee alone.
+
 Still open, unchanged from the list above: reference feeds per pool, timing on the real
-sequencer, gas units on the deployed contracts, successor economics.
+sequencer, successor economics.

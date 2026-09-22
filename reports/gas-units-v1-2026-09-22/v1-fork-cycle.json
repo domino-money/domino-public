@@ -1,0 +1,721 @@
+{
+ "tool": "measure_v1_cycle",
+ "chainId": 4663,
+ "pool": "weth-usdg",
+ "poolId": "0x84bd4e2d8be11aeb0afc1195b38f587b61e90068548f1063fdbe448fb8cad0b6",
+ "manifest": {
+  "path": "docs/deployments/v1-robinhood-mainnet-2026-09-21/deployment.json",
+  "releaseTag": "v1-release-2026-09-21",
+  "sourceCommit": "33844248f59a713d83d710b0af70476f7b00dd15"
+ },
+ "capturedAt": "2026-09-22T14:01:44.121111+00:00",
+ "scope": "the automation cycle (publish, execute, reconcile, ledger) on the deployed V1 runtime, on an Anvil fork under explicit ArbSys emulation, with real Chainlink references; gas from receipts; not live Nitro estimates",
+ "controls": "synthetic owner/attacker/operator/publisher keys funded on the child; the guard publisher rotated through the impersonated deployed guardian; USDG moved from the pool manager",
+ "syntheticRoles": {
+  "operator": "0x17c5185167401ed00cf5f5b2fc97d9bbfdb7d025",
+  "publisher": "0xba32858ea15ad4a729d3aca3c2ed5e3363bc16f6",
+  "owner": "0x000000000000000000000000000000000000dead"
+ },
+ "cycles": [
+  {
+   "name": "direct",
+   "passes": [
+    {
+     "outcome": "wait",
+     "reason": null,
+     "action": "wait",
+     "reasons": [
+      "not_due",
+      "insufficient_qualified_fee_history"
+     ],
+     "evidenceReasons": [],
+     "diagnostics": [],
+     "chosenAction": null,
+     "chosenSwap": null,
+     "candidates": 0,
+     "samples": 1
+    },
+    {
+     "outcome": "wait",
+     "reason": null,
+     "action": "wait",
+     "reasons": [
+      "insufficient_qualified_fee_history"
+     ],
+     "evidenceReasons": [],
+     "diagnostics": [],
+     "chosenAction": null,
+     "chosenSwap": null,
+     "candidates": 0,
+     "samples": 2
+    },
+    {
+     "outcome": "eligible_not_acted",
+     "reason": null,
+     "action": "compound_self",
+     "reasons": [],
+     "evidenceReasons": [],
+     "diagnostics": [],
+     "chosenAction": "compound_self",
+     "chosenSwap": false,
+     "candidates": 3,
+     "samples": 3
+    },
+    {
+     "outcome": "eligible_not_acted",
+     "reason": null,
+     "action": "compound_self",
+     "reasons": [],
+     "evidenceReasons": [],
+     "diagnostics": [],
+     "chosenAction": "compound_self",
+     "chosenSwap": false,
+     "candidates": 3,
+     "samples": 4
+    },
+    {
+     "outcome": "executing",
+     "reason": "included",
+     "action": "compound_self",
+     "reasons": [],
+     "evidenceReasons": [],
+     "diagnostics": [],
+     "chosenAction": "compound_self",
+     "chosenSwap": false,
+     "candidates": 3,
+     "samples": 5
+    }
+   ],
+   "outcome": "completed",
+   "cycleId": "01c9bd12-0e21-41a5-912f-94cad5823242",
+   "intentId": "0x74a750a7e5fcc88ac523abd5abd873a6ed32e4d331421967a3bb45f2c34387f1",
+   "observationId": "0xb08481c38e8e83e0680533efa4148d60333640ed9e155764dc2b47615fb26b43",
+   "decision": {
+    "outcome": "executing",
+    "reason": "included",
+    "action": "compound_self",
+    "reasons": [],
+    "evidenceReasons": [],
+    "diagnostics": [],
+    "chosenAction": "compound_self",
+    "chosenSwap": false,
+    "candidates": 3,
+    "samples": 5
+   },
+   "reason": null,
+   "cost": {
+    "execution": {
+     "wei": "8061544",
+     "action": 1,
+     "gasUsedRaw": "1007693",
+     "transactionHash": "0x6b347819dc066d504a941874c79e3551ba612cc2e204c4694f08c7a59fbe3b66",
+     "effectiveGasPriceRaw": "8",
+     "liquidityIncreaseRaw": "9709981180818"
+    },
+    "publication": {
+     "wei": "1258224",
+     "state": "confirmed",
+     "gasUsedRaw": "157278",
+     "effectiveGasPriceRaw": "8"
+    }
+   },
+   "journalState": null,
+   "action": 1,
+   "transactionHash": "0x6b347819dc066d504a941874c79e3551ba612cc2e204c4694f08c7a59fbe3b66",
+   "calldataBytes": 1764,
+   "executeDataQuotes": [
+    {
+     "tag": "latest",
+     "number": 69710912,
+     "hash": "0xb56b7fa5c611937cb42d1fc9f6bc189aef8758041ed5f3e8a743726590e2decc",
+     "l1DataGasInL2Units": 0,
+     "baseFeeWei": "49586000",
+     "l1BaseFeeEstimateWei": "0"
+    },
+    {
+     "tag": "safe",
+     "number": 69706498,
+     "hash": "0x31f4a1dff49b928e3598a7088dafc982d9e3c5bd2371b00b273f4f8f729ea03a",
+     "l1DataGasInL2Units": 0,
+     "baseFeeWei": "49602000",
+     "l1BaseFeeEstimateWei": "0"
+    }
+   ],
+   "publication": {
+    "state": "confirmed",
+    "gasUsedRaw": "157278",
+    "effectiveGasPriceRaw": "8",
+    "transactionHash": "0x648903f820ee55f4a05b0bd51dd7ebd91e6c8e09238bdcd0ef35cd4be5d29c00"
+   },
+   "ledger": {
+    "cursor": {
+     "blockNumber": 69710518,
+     "blockHash": "0x34a5b1e48233147a254ce74c0c687fa962922e99e3c1d09bd0b9ddf8085c671b",
+     "updatedAt": "2026-09-22T14:02:32.077722+00:00"
+    },
+    "withdrawals": [],
+    "exceptions": []
+   }
+  },
+  {
+   "name": "swap",
+   "passes": [
+    {
+     "outcome": "eligible_not_acted",
+     "reason": null,
+     "action": "compound_self",
+     "reasons": [],
+     "evidenceReasons": [],
+     "diagnostics": [],
+     "chosenAction": "compound_self",
+     "chosenSwap": true,
+     "candidates": 15,
+     "samples": 6
+    },
+    {
+     "outcome": "eligible_not_acted",
+     "reason": null,
+     "action": "compound_self",
+     "reasons": [],
+     "evidenceReasons": [],
+     "diagnostics": [],
+     "chosenAction": "compound_self",
+     "chosenSwap": true,
+     "candidates": 15,
+     "samples": 7
+    },
+    {
+     "outcome": "eligible_not_acted",
+     "reason": null,
+     "action": "compound_self",
+     "reasons": [],
+     "evidenceReasons": [],
+     "diagnostics": [],
+     "chosenAction": "compound_self",
+     "chosenSwap": true,
+     "candidates": 15,
+     "samples": 8
+    },
+    {
+     "outcome": "eligible_not_acted",
+     "reason": null,
+     "action": "compound_self",
+     "reasons": [],
+     "evidenceReasons": [],
+     "diagnostics": [],
+     "chosenAction": "compound_self",
+     "chosenSwap": true,
+     "candidates": 15,
+     "samples": 9
+    },
+    {
+     "outcome": "executing",
+     "reason": "included",
+     "action": "compound_self",
+     "reasons": [],
+     "evidenceReasons": [],
+     "diagnostics": [],
+     "chosenAction": "compound_self",
+     "chosenSwap": true,
+     "candidates": 15,
+     "samples": 10
+    }
+   ],
+   "outcome": "completed",
+   "cycleId": "ac3105dc-97f3-432c-af9c-8cc4470c2e2c",
+   "intentId": "0x601975725aab09b25e1ef5e842ae05767f0c950ef630e7820eee7d74e48dcc17",
+   "observationId": "0x4bef12695dd0c72d06498cec08f9d648efc55fa1a4110a744bb720b794a9bce3",
+   "decision": {
+    "outcome": "executing",
+    "reason": "included",
+    "action": "compound_self",
+    "reasons": [],
+    "evidenceReasons": [],
+    "diagnostics": [],
+    "chosenAction": "compound_self",
+    "chosenSwap": true,
+    "candidates": 15,
+    "samples": 10
+   },
+   "reason": null,
+   "cost": {
+    "execution": {
+     "wei": "11009320",
+     "action": 0,
+     "gasUsedRaw": "1376165",
+     "transactionHash": "0xb096756f46257e6650ac173ddf05146f8020efdbb56958632d9178ab9fea259d",
+     "effectiveGasPriceRaw": "8",
+     "liquidityIncreaseRaw": "10771014922211"
+    },
+    "publication": {
+     "wei": "1258224",
+     "state": "confirmed",
+     "gasUsedRaw": "157278",
+     "effectiveGasPriceRaw": "8"
+    }
+   },
+   "journalState": null,
+   "action": 0,
+   "transactionHash": "0xb096756f46257e6650ac173ddf05146f8020efdbb56958632d9178ab9fea259d",
+   "calldataBytes": 1956,
+   "executeDataQuotes": [
+    {
+     "tag": "latest",
+     "number": 69711114,
+     "hash": "0xc66a72ab6c069f63931287707c46bf3911593eb6749c4bb97d0b2c608a686f4f",
+     "l1DataGasInL2Units": 0,
+     "baseFeeWei": "50020000",
+     "l1BaseFeeEstimateWei": "0"
+    },
+    {
+     "tag": "safe",
+     "number": 69706498,
+     "hash": "0x31f4a1dff49b928e3598a7088dafc982d9e3c5bd2371b00b273f4f8f729ea03a",
+     "l1DataGasInL2Units": 0,
+     "baseFeeWei": "49602000",
+     "l1BaseFeeEstimateWei": "0"
+    }
+   ],
+   "publication": {
+    "state": "confirmed",
+    "gasUsedRaw": "157278",
+    "effectiveGasPriceRaw": "8",
+    "transactionHash": "0xb57bb2f8332e0ddbe4450546993cb39932c7a1fc470ea353f33cce5eb72d709d"
+   },
+   "ledger": {
+    "cursor": {
+     "blockNumber": 69710641,
+     "blockHash": "0x974da3d7687903cbc63cf37c009bea5046851fd879aeeeaa48eaa203eb5b5060",
+     "updatedAt": "2026-09-22T14:02:51.083715+00:00"
+    },
+    "withdrawals": [],
+    "exceptions": []
+   }
+  },
+  {
+   "name": "mint",
+   "passes": [
+    {
+     "outcome": "wait",
+     "reason": null,
+     "action": "wait",
+     "reasons": [
+      "no_economically_qualified_candidate"
+     ],
+     "evidenceReasons": [],
+     "diagnostics": [],
+     "chosenAction": null,
+     "chosenSwap": null,
+     "candidates": 27,
+     "samples": 11
+    },
+    {
+     "outcome": "wait",
+     "reason": null,
+     "action": "wait",
+     "reasons": [
+      "no_economically_qualified_candidate"
+     ],
+     "evidenceReasons": [],
+     "diagnostics": [],
+     "chosenAction": null,
+     "chosenSwap": null,
+     "candidates": 27,
+     "samples": 12
+    },
+    {
+     "outcome": "wait",
+     "reason": null,
+     "action": "wait",
+     "reasons": [
+      "no_economically_qualified_candidate"
+     ],
+     "evidenceReasons": [],
+     "diagnostics": [],
+     "chosenAction": null,
+     "chosenSwap": null,
+     "candidates": 27,
+     "samples": 13
+    },
+    {
+     "outcome": "wait",
+     "reason": null,
+     "action": "wait",
+     "reasons": [
+      "no_economically_qualified_candidate"
+     ],
+     "evidenceReasons": [],
+     "diagnostics": [],
+     "chosenAction": null,
+     "chosenSwap": null,
+     "candidates": 27,
+     "samples": 14
+    },
+    {
+     "outcome": "wait",
+     "reason": null,
+     "action": "wait",
+     "reasons": [
+      "no_economically_qualified_candidate"
+     ],
+     "evidenceReasons": [],
+     "diagnostics": [],
+     "chosenAction": null,
+     "chosenSwap": null,
+     "candidates": 30,
+     "samples": 15
+    },
+    {
+     "outcome": "wait",
+     "reason": null,
+     "action": "wait",
+     "reasons": [
+      "no_economically_qualified_candidate"
+     ],
+     "evidenceReasons": [],
+     "diagnostics": [],
+     "chosenAction": null,
+     "chosenSwap": null,
+     "candidates": 27,
+     "samples": 16
+    },
+    {
+     "outcome": "wait",
+     "reason": null,
+     "action": "wait",
+     "reasons": [
+      "no_economically_qualified_candidate"
+     ],
+     "evidenceReasons": [],
+     "diagnostics": [],
+     "chosenAction": null,
+     "chosenSwap": null,
+     "candidates": 30,
+     "samples": 17
+    },
+    {
+     "outcome": "wait",
+     "reason": null,
+     "action": "wait",
+     "reasons": [
+      "no_economically_qualified_candidate"
+     ],
+     "evidenceReasons": [],
+     "diagnostics": [],
+     "chosenAction": null,
+     "chosenSwap": null,
+     "candidates": 27,
+     "samples": 18
+    },
+    {
+     "outcome": "wait",
+     "reason": null,
+     "action": "wait",
+     "reasons": [
+      "no_economically_qualified_candidate"
+     ],
+     "evidenceReasons": [],
+     "diagnostics": [],
+     "chosenAction": null,
+     "chosenSwap": null,
+     "candidates": 27,
+     "samples": 19
+    },
+    {
+     "outcome": "wait",
+     "reason": null,
+     "action": "wait",
+     "reasons": [
+      "no_economically_qualified_candidate"
+     ],
+     "evidenceReasons": [],
+     "diagnostics": [],
+     "chosenAction": null,
+     "chosenSwap": null,
+     "candidates": 27,
+     "samples": 20
+    },
+    {
+     "outcome": "wait",
+     "reason": null,
+     "action": "wait",
+     "reasons": [
+      "no_economically_qualified_candidate"
+     ],
+     "evidenceReasons": [],
+     "diagnostics": [],
+     "chosenAction": null,
+     "chosenSwap": null,
+     "candidates": 27,
+     "samples": 21
+    }
+   ],
+   "outcome": "never_acted"
+  },
+  {
+   "name": "fund",
+   "passes": [
+    {
+     "outcome": "wait",
+     "reason": null,
+     "action": "wait",
+     "reasons": [
+      "no_economically_qualified_candidate"
+     ],
+     "evidenceReasons": [],
+     "diagnostics": [],
+     "chosenAction": null,
+     "chosenSwap": null,
+     "candidates": 30,
+     "samples": 22
+    },
+    {
+     "outcome": "wait",
+     "reason": null,
+     "action": "wait",
+     "reasons": [
+      "no_economically_qualified_candidate"
+     ],
+     "evidenceReasons": [],
+     "diagnostics": [],
+     "chosenAction": null,
+     "chosenSwap": null,
+     "candidates": 27,
+     "samples": 23
+    },
+    {
+     "outcome": "wait",
+     "reason": null,
+     "action": "wait",
+     "reasons": [
+      "no_economically_qualified_candidate"
+     ],
+     "evidenceReasons": [],
+     "diagnostics": [],
+     "chosenAction": null,
+     "chosenSwap": null,
+     "candidates": 30,
+     "samples": 24
+    },
+    {
+     "outcome": "wait",
+     "reason": null,
+     "action": "wait",
+     "reasons": [
+      "no_economically_qualified_candidate"
+     ],
+     "evidenceReasons": [],
+     "diagnostics": [],
+     "chosenAction": null,
+     "chosenSwap": null,
+     "candidates": 27,
+     "samples": 25
+    },
+    {
+     "outcome": "wait",
+     "reason": null,
+     "action": "wait",
+     "reasons": [
+      "no_economically_qualified_candidate"
+     ],
+     "evidenceReasons": [],
+     "diagnostics": [],
+     "chosenAction": null,
+     "chosenSwap": null,
+     "candidates": 27,
+     "samples": 26
+    },
+    {
+     "outcome": "wait",
+     "reason": null,
+     "action": "wait",
+     "reasons": [
+      "no_economically_qualified_candidate"
+     ],
+     "evidenceReasons": [],
+     "diagnostics": [],
+     "chosenAction": null,
+     "chosenSwap": null,
+     "candidates": 27,
+     "samples": 27
+    },
+    {
+     "outcome": "wait",
+     "reason": null,
+     "action": "wait",
+     "reasons": [
+      "no_economically_qualified_candidate"
+     ],
+     "evidenceReasons": [],
+     "diagnostics": [],
+     "chosenAction": null,
+     "chosenSwap": null,
+     "candidates": 27,
+     "samples": 28
+    },
+    {
+     "outcome": "wait",
+     "reason": null,
+     "action": "wait",
+     "reasons": [
+      "no_economically_qualified_candidate"
+     ],
+     "evidenceReasons": [],
+     "diagnostics": [],
+     "chosenAction": null,
+     "chosenSwap": null,
+     "candidates": 27,
+     "samples": 29
+    },
+    {
+     "outcome": "wait",
+     "reason": null,
+     "action": "wait",
+     "reasons": [
+      "no_economically_qualified_candidate"
+     ],
+     "evidenceReasons": [],
+     "diagnostics": [],
+     "chosenAction": null,
+     "chosenSwap": null,
+     "candidates": 30,
+     "samples": 30
+    },
+    {
+     "outcome": "wait",
+     "reason": null,
+     "action": "wait",
+     "reasons": [
+      "no_economically_qualified_candidate"
+     ],
+     "evidenceReasons": [],
+     "diagnostics": [],
+     "chosenAction": null,
+     "chosenSwap": null,
+     "candidates": 27,
+     "samples": 31
+    },
+    {
+     "outcome": "wait",
+     "reason": null,
+     "action": "wait",
+     "reasons": [
+      "no_economically_qualified_candidate"
+     ],
+     "evidenceReasons": [],
+     "diagnostics": [],
+     "chosenAction": null,
+     "chosenSwap": null,
+     "candidates": 30,
+     "samples": 32
+    }
+   ],
+   "outcome": "never_acted"
+  }
+ ],
+ "runStatus": "complete",
+ "upstream": "rpc.mainnet.chain.robinhood.com",
+ "source": {
+  "number": "0x427b239",
+  "hash": "0x129a796d0fe1461ff8760a76775e408cfc70492088c4ac73ce0c4b6f747ab6e4",
+  "timestamp": "0x6ab28a4c",
+  "baseFeePerGas": "0x2f310e0"
+ },
+ "anvilVersion": "anvil/v1.7.1",
+ "chainSemantics": {
+  "mode": "explicit_anvil_arbsys_emulation",
+  "address": "0x0000000000000000000000000000000000000064",
+  "codeHash": "0x51911f335b0ef36064063c298bc5e6de2221e29e64160c8a7eb877f1e5926c88",
+  "nitroOpcodeQualification": false,
+  "scope": "ArbSys uses child NUMBER/BLOCKHASH; does not reproduce Nitro opcode overrides"
+ },
+ "stack": {
+  "addresses": {
+   "factory": "0x16bf6eaba7b31118627b277e97249720dfe1c7ff",
+   "readHelper": "0x0f8e4a7894c83a5d6061246a1ba83261eddb608c",
+   "routing": "0xa00ca81cb91d5612913f87c142447cbce19a4ae5",
+   "priceGuard": "0x0ac66e192a0651bc655e0734f43a9a9de73378f1",
+   "engine": "0x9bef35ea86aedc9489486c4db3d2816ba2ad7ce9",
+   "implementation": "0x349965f26e62c2dec9746cd366d8f1364d679907",
+   "setup": "0x676f449fcfcd0f5ce4c7a1db2d98c7d6565dd37a",
+   "poolManager": "0x8366a39cc670b4001a1121b8f6a443a643e40951",
+   "positionManager": "0x58daec3116aae6d93017baaea7749052e8a04fa7",
+   "stateView": "0xf3334192d15450cdd385c8b70e03f9a6bd9e673b"
+  },
+  "runtimeCodeHashes": {
+   "factory": "0x3f3482f5f2faf2ff6b81d416ce3f666dc0f80ef5ce6c5b829fb7f8f1b0257dd3",
+   "readHelper": "0xb5f8ae682667e4d2b8749c5fcfac7964ae26d7190adfc941b1d1a6d351a4bbf3",
+   "routing": "0x4727e575dd2af4db05e70303b42a424bb1cffb7a2620e1c3f457e2324120bfc4",
+   "priceGuard": "0xc0b0b8114a4e5e7738d0e2dcf4796b90219efbcb31b96fe194dcf1d1499a7a6c",
+   "engine": "0x485ff66c813069df3de90eed7f4949e490cae0520dbeb74f935a9e2e619e9359",
+   "implementation": "0x48d9d4478e030ed92fcccc888f61bf68d70a03b17ba7287f3d498290f4eda50a",
+   "setup": "0x3d634de8bfa34c5d3ef1231f066b9ad11960d828062d2ef0f7bb13d2ad206c50",
+   "poolManager": "0xbd3881180b547f5fe817545743cfb4343e96b1bc6640dcd70c106b0066e95626",
+   "positionManager": "0xc873e135dc9aaec88489cfbad146b4cb49d6a32e0d80326377784b7ba17670b2",
+   "stateView": "0x7d9c591e0956fd89d98feb4ffcfe8bf1f7a62bd485edd979fa21d104b49878a6"
+  },
+  "guardBandBps": 50,
+  "driver": "0x7256e0609adc3a9e781b04456665e78e08e95b09",
+  "roles": {
+   "operator": "0x17c5185167401ed00cf5f5b2fc97d9bbfdb7d025",
+   "publisher": "0x4d6f91d3101569bb8c710bc332f621600e429e7b",
+   "feeRecipient": "0x1488c84dafc03f7f4c4fb986f83ba99fd530c6f4"
+  },
+  "basis": "deployed runtime at the mainnet addresses, hashes checked against the release manifest"
+ },
+ "root": {
+  "tokenId": 3103969,
+  "tickLower": -197312,
+  "tickUpper": -196908,
+  "liquidity": "10210314731290460",
+  "tickAtOpen": -197111,
+  "sqrtPriceAtOpen": "4158080665376403206393337"
+ },
+ "vault": "0x794fb20f1d21ea16472cd841245b817670882061",
+ "driverLegCurrency0": "823074340820312500",
+ "configVersion": "v1-fork-measurement-2026-09-22",
+ "swapShiftSqrtPrice": "4137369289475089529487863",
+ "finishedAt": "2026-09-22T14:04:50.574953+00:00",
+ "summary": [
+  {
+   "name": "direct",
+   "outcome": "completed",
+   "action": 1,
+   "chosen": "compound_self",
+   "swap": false,
+   "executionGas": "1007693",
+   "publicationGas": "157278",
+   "calldataBytes": 1764
+  },
+  {
+   "name": "swap",
+   "outcome": "completed",
+   "action": 0,
+   "chosen": "compound_self",
+   "swap": true,
+   "executionGas": "1376165",
+   "publicationGas": "157278",
+   "calldataBytes": 1956
+  },
+  {
+   "name": "mint",
+   "outcome": "never_acted",
+   "action": null,
+   "chosen": null,
+   "swap": null,
+   "executionGas": null,
+   "publicationGas": null,
+   "calldataBytes": null
+  },
+  {
+   "name": "fund",
+   "outcome": "never_acted",
+   "action": null,
+   "chosen": null,
+   "swap": null,
+   "executionGas": null,
+   "publicationGas": null,
+   "calldataBytes": null
+  }
+ ]
+}

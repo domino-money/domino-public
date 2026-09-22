@@ -15,7 +15,7 @@ import execution_planner as p
 import test_execution_planner as tp
 from automation_config import price_bounds
 from automation_evidence import (_next_initialized, build_evidence, engine_minimum_output, price_evidence, price_impact_bps,
-                                 quote_per_wei, ratio_bps, ratio_ceil_bps, simulate_exact_input, swap_amounts)
+                                 quote_per_wei, ratio_bps, ratio_ceil_bps, simulate_exact_input, swap_fee_pips, swap_amounts)
 from automation_fixtures import FakeChainReader, address, identity, sample_automation_config
 from automation_observer import ObservationContext, ObservationError, PoolState, measurement_history, sample_pool
 from execution_cases import identity as cid
@@ -118,9 +118,39 @@ class SimulatorTests(unittest.TestCase):
         self.assertLess(big['afterPrice'], sqrt_at_tick(-600))
         tight = simulate_exact_input(rd, address(20), self.key(), cid(1), pool, rd.head(), zero_for_one=True, amount_in=10**17, price_limit=sqrt_at_tick(-60), max_steps=8)
         self.assertIsNone(tight)
-        with self.assertRaisesRegex(ObservationError, 'pool_fee_unqualified'):
-            simulate_exact_input(rd, address(20), self.key(), cid(1), PoolState(2**96, 0, 1000, 3000, 10**18, 0, 0), rd.head(),
-                                 zero_for_one=True, amount_in=10**15, price_limit=sqrt_at_tick(-600), max_steps=8)
+        # A dynamic-fee pool (the LP fee is not the key's static fee) and an
+        # invalid protocol fee are refused; a valid protocol fee is not.
+        for protocol_fee, lp_fee in ((0, 500), (1001, 3000), (1001 << 12, 3000)):
+            with self.assertRaisesRegex(ObservationError, 'pool_fee_unqualified'):
+                simulate_exact_input(rd, address(20), self.key(), cid(1), PoolState(2**96, 0, protocol_fee, lp_fee, 10**18, 0, 0), rd.head(),
+                                     zero_for_one=True, amount_in=10**15, price_limit=sqrt_at_tick(-600), max_steps=8)
+
+    def test_a_protocol_fee_composes_into_the_swap_fee_as_the_core_does(self):
+        # ProtocolFeeLibrary.calculateSwapFee: protocol + lp - protocol * lp / 1e6, per direction.
+        self.assertEqual(swap_fee_pips(0, 3000, True), 3000)
+        self.assertEqual(swap_fee_pips(52 | (52 << 12), 200, True), 252)          # the WETH/USDG pool on 4663
+        self.assertEqual(swap_fee_pips(52 | (52 << 12), 200, False), 252)
+        self.assertEqual(swap_fee_pips(1000 | (30 << 12), 3000, True), 1000 + 3000 - 3)
+        self.assertEqual(swap_fee_pips(1000 | (30 << 12), 3000, False), 30 + 3000 - 0)
+        for bad in ((1001, 3000, True), (1001 << 12, 3000, False), (52, 10**6, True), (1 << 24, 3000, True), (-1, 3000, True)):
+            with self.assertRaisesRegex(ObservationError, 'pool_fee_unqualified'):
+                swap_fee_pips(*bad)
+        # The walk with a protocol fee is the core's step with the composed fee, in both directions.
+        rd = reader(ranges=[(-600, 600, 10**18)])
+        packed = 52 | (30 << 12)
+        for zero_for_one, fee in ((True, 52 + 3000 - 0), (False, 30 + 3000 - 0)):
+            pool = PoolState(rd.sqrt_price, rd.tick, packed, 3000, rd.liquidity, 0, 0)
+            lower, upper = price_bounds(2**96, 25, 100)
+            limit = lower if zero_for_one else upper
+            result = simulate_exact_input(rd, address(20), self.key(), cid(1), pool, rd.head(), zero_for_one=zero_for_one,
+                                          amount_in=10**15, price_limit=limit, max_steps=8)
+            target = max(sqrt_at_tick(-600), limit) if zero_for_one else min(sqrt_at_tick(600), upper)
+            end, amount_in, amount_out, charge = swap_step(2**96, target, 10**18, -10**15, fee)
+            self.assertEqual(amount_in + charge, 10**15)
+            self.assertEqual((result['amountOut'], result['afterPrice']), (amount_out, end))
+            plain = simulate_exact_input(rd, address(20), self.key(), cid(1), PoolState(rd.sqrt_price, rd.tick, 0, 3000, rd.liquidity, 0, 0), rd.head(),
+                                         zero_for_one=zero_for_one, amount_in=10**15, price_limit=limit, max_steps=8)
+            self.assertLess(result['amountOut'], plain['amountOut'])
 
     def test_ratio_and_minimum_output_replicate_the_contract_arithmetic(self):
         anchor = 2**96
