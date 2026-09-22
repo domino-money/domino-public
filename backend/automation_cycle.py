@@ -10,6 +10,7 @@ loses its source-block window, its anchor or its plan is abandoned with its
 reason and cost on record; the next evaluation starts from current state.
 """
 import json
+import sys
 import time
 import uuid
 
@@ -162,6 +163,12 @@ class SequenceCycle:
         fence = lease['fence']
         summary = {'sequenceHash': seq_hash, 'owner': owner, 'vault': entry.vault, 'head': head['number'], 'worker': self.worker}
         updates = {'last_attempt_at': source['timestamp'], 'last_read_failed': False}
+        if state['waitingSince'] > source['timestamp']:
+            # The block the waiting interval was moved to is gone: the chain
+            # observed now predates it. The interval restarts at this block, and
+            # the ledger check below turns the lost block into an explicit reorg.
+            updates['waiting_since'] = source['timestamp']
+            state = {**state, 'waitingSince': source['timestamp']}
         try:
             open_cycle = self.store.open_cycle(owner, seq_hash)
             if open_cycle is not None:
@@ -218,7 +225,15 @@ class SequenceCycle:
             summary.update(self._act(entry, admission, cycle_id, fence, state, updates))
             return summary
         finally:
-            self.store.update_sequence(owner, seq_hash, self.worker, fence, release=True, **updates)
+            in_flight = sys.exc_info()[1]
+            try:
+                self.store.update_sequence(owner, seq_hash, self.worker, fence, release=True, **updates)
+            except ExecutionStoreError:
+                # With an error already in flight, that error is the one to
+                # report; the lease expires on its own. Without one, the failed
+                # release is the error.
+                if in_flight is None:
+                    raise
 
     def _recheck_effects(self, owner, seq_hash, admission):
         reorged = []
@@ -229,8 +244,10 @@ class SequenceCycle:
             try:
                 runner = ExecutionRunner(self.config.database.settings(), self._signer(admission, anchor), restore_only=True)
                 status = runner.step(owner, intent, self.worker)
-            except (ExecutionError, ExecutionStoreError, ValueError, CycleError):
+            except (ExecutionError, ExecutionStoreError, ValueError, CycleError) as error:
+                import sys; print('RECHECK', intent, type(error).__name__, getattr(error, 'code', str(error)), file=sys.stderr)
                 continue
+            import sys; print('RECHECK', intent, status['state'], status.get('reason'), file=sys.stderr)
             if status['state'] in ('reorged', 'attention'):
                 reorged.append(intent)
         return reorged
@@ -454,7 +471,10 @@ class SequenceCycle:
                 self.store.update_cycle(owner, cycle_id, self.worker, fence, state='completed', cost=cost)
                 block = receipt.get('block') or {}
                 if block.get('timestamp'):
+                    # The interval starts at the receipt's block; an attempt
+                    # that observed an earlier block is dated no earlier.
                     updates['waiting_since'] = int(block['timestamp'])
+                    updates['last_attempt_at'] = max(int(updates.get('last_attempt_at', 0)), int(block['timestamp']))
                 updates['backoff_seconds'] = 0
                 updates['next_due_seconds'] = scheduling.evaluationIntervalSeconds
                 result.update(outcome='completed', cost=cost)

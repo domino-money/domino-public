@@ -263,5 +263,16 @@ swap fee is now composed as the core composes it; the composition is pinned by a
 integrated replay of the automation's own swap quote against the engine's output on a
 fixture pool with the same fee, which fails with the LP fee alone.
 
+Also found by the repository's CI after the ledger reader landed, and fixed: after a
+reorg that removes a completed execution, the observed block predates the waiting
+interval the completion had moved to the receipt's block. The planner's history model
+refused that window (`future_wait_start`), and the pass's lease release then failed the
+sequence row's own check (`waiting_since <= last_attempt_at`), hiding the first error.
+The integrated reorg test only passed when the execution landed in the same second as
+the snapshot, which the reader's extra work no longer allowed. Now a pass whose observed
+block predates the interval restarts the interval at that block, the planner's window is
+clamped to the block it is measured at, and a failed release never hides the error in
+flight. The reorg test forces the ordering; deleting either clause fails it.
+
 Still open, unchanged from the list above: reference feeds per pool, timing on the real
 sequencer, successor economics.

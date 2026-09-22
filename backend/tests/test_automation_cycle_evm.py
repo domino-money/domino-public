@@ -386,14 +386,25 @@ class AutomationCycleEvmTests(unittest.TestCase):
         self.advance(2)
         self.trade()
         snapshot = self.rpc.request('evm_snapshot', [])
-        self.assertEqual(self.cycle.run(self.entry)['outcome'], 'executing')
+        # The execution lands strictly later than the block the reverted chain
+        # will observe, as on a real sequencer: the waiting interval it moved
+        # must come back with the block, not stop the pass.
+        self.advance(3)
+        acted = self.cycle.run(self.entry)
+        self.assertEqual(acted['outcome'], 'executing')
         self.finalize()
         self.assertEqual(self.cycle.run(self.entry)['outcome'], 'completed')
+        receipt_time = ExecutionJournal(self.pg.settings).status(self.owner, acted['intentId'])['receipt']['block']['timestamp']
+        self.assertEqual(self.store.sequence(self.owner, self.sequence_hash())['waitingSince'], receipt_time)
         self.assertTrue(self.rpc.request('evm_revert', [snapshot]))
         self.advance(2)
         blocked = self.cycle.run(self.entry)
         self.assertEqual((blocked['outcome'], blocked['reason']), ('suspended', 'execution_reorged'), blocked)
         self.assertIn('ledger_chain_mismatch', blocked['decision']['observationDiagnostics'])
+        state = self.store.sequence(self.owner, blocked['sequenceHash'])
+        self.assertLess(state['waitingSince'], receipt_time)
+        self.assertLessEqual(state['waitingSince'], state['lastAttemptAt'])
+        self.assertIsNone(state['workerId'])
         self.assertEqual(self.counts()['publications'], 1)
         self.assertEqual(self.cycle.run(self.entry)['outcome'], 'skipped')
         with self.pg.admin() as conn:
