@@ -67,15 +67,13 @@ values. They are not production values.
 
 ## Installation
 
-1. Apply `backend/migrations/028_automation_cycle.sql` and then
-   `029_ledger_index.sql` to the financial database, after 015 and 019. 028 creates the
-   `domino_execution_publisher` role and grants the worker its tables; 029 adds the
-   ledger reader's tables to the existing `domino_execution_ledger` role. Map the
-   service user to `domino_execution_worker`, `domino_execution_signer`,
-   `domino_execution_publisher` and, with `ledger.indexer: "inline"`, to
-   `domino_execution_ledger`, as the existing execution services are mapped
-   (`scripts/staging/upgrade_financial.py` records the pattern); the roles are
-   `NOLOGIN` group roles and these migrations do not change that. A ledger that
+1. Install with [`scripts/staging/install_automation.py`](AUTOMATION_INSTALL.md): it
+   places the source release, the `domino-automation` user, the off unit, migrations
+   `028_automation_cycle.sql` and `029_ledger_index.sql` (after the financial upgrade's
+   015 and 019; 028 creates the `domino_execution_publisher` role, 029 adds the ledger
+   reader's tables to the existing `domino_execution_ledger` role) and the peer
+   mappings from the service user to `domino_execution_worker`, `domino_execution_signer`,
+   `domino_execution_publisher` and `domino_execution_ledger`. A ledger that
    already holds lots from before the reader existed is read from an explicit block
    once: `index --from-block <first execution block>`; otherwise the reader starts at
    the finalized head of its first pass.

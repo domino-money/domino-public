@@ -229,5 +229,21 @@ Validation, all on the disposable chain and database:
   staging registries with 029, repository and contract hygiene, and the hygiene job's
   steps verbatim.
 
+## Addendum, 22 September 2026: host installation
+
+`scripts/staging/install_automation.py`, documented in
+[AUTOMATION_INSTALL.md](../docs/AUTOMATION_INSTALL.md), follows the financial upgrade's
+pattern for one component: an immutable source release under
+`/opt/domino/financial/releases/<commit>/automation`, the `domino-automation` system
+user, an off unit with the financial services' hardening and a `ConditionPathExists`
+on the private configuration, migrations 028 and 029 in one receipted transaction
+guarded by the financial upgrade's receipt, the publisher role made `LOGIN`, and the
+peer rows mapping the service user to the four execution roles. Plan, inspect (baseline),
+apply under a root-only lock with a step journal, and a scoped rollback that removes the
+unit and restores the peer files while retaining the schema. It creates no
+configuration, key or funding and starts nothing. `test_install_automation.py` (5, no
+host) runs in the repository-hygiene job. The procedure has not been run on the
+production VM as part of this delivery.
+
 Still open, unchanged from the list above: reference feeds per pool, timing on the real
-sequencer, gas units on the deployed contracts, successor economics, host installation.
+sequencer, gas units on the deployed contracts, successor economics.

@@ -53,6 +53,8 @@ jobs:
         run: python3 -B -m unittest discover -s scripts/staging/tests -p test_install_read_release.py -v
       - name: Check the public-data installer and rollback without host access
         run: python3 -B -m unittest discover -s scripts/staging/tests -p test_install_public_data.py -v
+      - name: Check the automation installer without host access
+        run: python3 -B -m unittest discover -s scripts/staging/tests -p test_install_automation.py -v
       - name: Check the inactive reference-collector unit candidates
         run: |
           python3 -B -m unittest discover -s scripts/reference-collector/tests -v
