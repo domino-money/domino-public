@@ -41,7 +41,7 @@ export const PRODUCER_PIN = {
     },
     'onboarding-v1': {
       version: '1.0.0',
-      manifestSha256: '9ce8821d4e7604105c84126f282e19d3f2aab7de40c0cecb8ad8d8b07d098ed2',
+      manifestSha256: 'b4925edc60f25ef5dcb2c4c9e8a5de333074efff6464417304d4e6fe1afd7f90',
     },
     'deposit-v1': {
       version: '1.1.0-rc.4',
