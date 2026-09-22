@@ -1,0 +1,534 @@
+{
+ "census": "uniswap-v4-hooks",
+ "chainId": 4663,
+ "source": "project node on clawber through a loopback tunnel",
+ "capturedAt": "2026-09-22T19:24:19.036844+00:00",
+ "headBlock": 69890642,
+ "headTimestamp": 1790103798,
+ "windowHours": 24.0,
+ "ethUsd": 2753.621673807376,
+ "poolsInitialized": 861662,
+ "swapsInWindow": 2537496,
+ "createdByAge": {
+  ">30 days": {
+   "hookless": 286692,
+   "hooked": 148876
+  },
+  "7-30 days": {
+   "hooked": 121795,
+   "hookless": 234796
+  },
+  "1-7 days": {
+   "hookless": 39104,
+   "hooked": 20006
+  },
+  "<1 day": {
+   "hookless": 6752,
+   "hooked": 3641
+  }
+ },
+ "activityByAge": {
+  ">30 days": {
+   "hookless": {
+    "pools": 860,
+    "swaps": 181374,
+    "volumeUsd": 37824332.99586233
+   },
+   "hooked": {
+    "pools": 627,
+    "swaps": 60447,
+    "volumeUsd": 85950228.94533853
+   }
+  },
+  "7-30 days": {
+   "hooked": {
+    "pools": 7084,
+    "swaps": 234861,
+    "volumeUsd": 45214267.49789833
+   },
+   "hookless": {
+    "pools": 2610,
+    "swaps": 191180,
+    "volumeUsd": 40537226.37815648
+   }
+  },
+  "1-7 days": {
+   "hooked": {
+    "pools": 1730,
+    "swaps": 301513,
+    "volumeUsd": 23930519.321783356
+   },
+   "hookless": {
+    "pools": 2563,
+    "swaps": 510467,
+    "volumeUsd": 26194511.781959027
+   }
+  },
+  "<1 day": {
+   "hookless": {
+    "pools": 4464,
+    "swaps": 367788,
+    "volumeUsd": 60437786.47416245
+   },
+   "hooked": {
+    "pools": 1173,
+    "swaps": 689866,
+    "volumeUsd": 210883271.14518726
+   }
+  }
+ },
+ "hookDesigns": [
+  {
+   "codeHash": "0x8c522be50541ce573326359be951707cca6bef398911a822c94df7b6886dae60",
+   "hooks": 7,
+   "pools": 7,
+   "swaps": 79794,
+   "volumeUsd": 97356717.91066875,
+   "flags": [
+    "beforeSwap",
+    "beforeRemoveLiquidity",
+    "beforeAddLiquidity"
+   ],
+   "codeBytes": 5059
+  },
+  {
+   "codeHash": "0x0430617b26dfc5c3f6be1e1733304c6050c6b6ba9d0fb950b57070b5b2a96db4",
+   "hooks": 1,
+   "pools": 1,
+   "swaps": 16752,
+   "volumeUsd": 81641476.88730767,
+   "flags": [
+    "beforeSwap",
+    "beforeInitialize"
+   ],
+   "codeBytes": 28189
+  },
+  {
+   "codeHash": "0xc21b1e6c1b45403e81a581f22ed6d9c747997af1cfdac1b1dc9f4b1d346a10db",
+   "hooks": 1,
+   "pools": 5056,
+   "swaps": 586555,
+   "volumeUsd": 59852689.18012148,
+   "flags": [
+    "afterSwapReturnsDelta",
+    "afterSwap",
+    "beforeInitialize"
+   ],
+   "codeBytes": 15167
+  },
+  {
+   "codeHash": "0x1578ffdd8a818ef4ad897672ea833343ce0036c9f8b5a747f2bdf2f24578f06f",
+   "hooks": 16,
+   "pools": 16,
+   "swaps": 47093,
+   "volumeUsd": 24632056.675803132,
+   "flags": [
+    "afterSwap",
+    "beforeAddLiquidity"
+   ],
+   "codeBytes": 12193
+  },
+  {
+   "codeHash": "0xa40c3f947f981ecd28d30a371733432e7c4579a46730e6c20717039189096421",
+   "hooks": 8,
+   "pools": 8,
+   "swaps": 29915,
+   "volumeUsd": 19284001.037928488,
+   "flags": [
+    "afterInitialize"
+   ],
+   "codeBytes": 341
+  },
+  {
+   "codeHash": "0xbb52b2dc4a14fc6c3f90d0a268b51680d7adbdaa392b211bc524b6fd9368bb85",
+   "hooks": 1,
+   "pools": 16,
+   "swaps": 18153,
+   "volumeUsd": 15195772.694016015,
+   "flags": [
+    "beforeSwap",
+    "beforeInitialize"
+   ],
+   "codeBytes": 32997
+  },
+  {
+   "codeHash": "0xe888568e00fc1fc425d8f0135d8ceae791584cf78fbd902f3c569d6292dc38f2",
+   "hooks": 1,
+   "pools": 1,
+   "swaps": 531,
+   "volumeUsd": 13097579.24615823,
+   "flags": [
+    "afterSwapReturnsDelta",
+    "beforeSwapReturnsDelta",
+    "afterSwap",
+    "beforeSwap",
+    "beforeAddLiquidity",
+    "beforeInitialize"
+   ],
+   "codeBytes": 8474
+  },
+  {
+   "codeHash": "0xc41a91106002f15bf70ae266824317f3f3ac638ac72ca5253bae395fa47ee631",
+   "hooks": 1,
+   "pools": 3465,
+   "swaps": 312285,
+   "volumeUsd": 8098996.881217396,
+   "flags": [
+    "afterSwapReturnsDelta",
+    "afterSwap",
+    "afterRemoveLiquidity",
+    "afterAddLiquidity",
+    "beforeInitialize"
+   ],
+   "codeBytes": 25533
+  },
+  {
+   "codeHash": "0x4ef97bd8b342b9a23f1d29fbca064fb385bb089a503e4fdb1018f7970dc9e08e",
+   "hooks": 1,
+   "pools": 3,
+   "swaps": 5436,
+   "volumeUsd": 4127025.0243581166,
+   "flags": [
+    "beforeSwap",
+    "beforeInitialize"
+   ],
+   "codeBytes": 34326
+  },
+  {
+   "codeHash": "0x3259d18653e9a42eb3a5668d51be511a1355b7f38ac16e5afdfb46a3993a1bfa",
+   "hooks": 5,
+   "pools": 5,
+   "swaps": 8568,
+   "volumeUsd": 4098001.9098936096,
+   "flags": [
+    "afterSwapReturnsDelta",
+    "beforeSwapReturnsDelta",
+    "afterSwap",
+    "beforeSwap"
+   ],
+   "codeBytes": 17916
+  },
+  {
+   "codeHash": "0x30d4564d60c4fac810ab31e651f04e82858874be2039d2afb59afb2fcf593491",
+   "hooks": 1,
+   "pools": 3,
+   "swaps": 13178,
+   "volumeUsd": 2570872.7615761296,
+   "flags": [
+    "beforeInitialize"
+   ],
+   "codeBytes": 1438
+  },
+  {
+   "codeHash": "0x7e6fc4ff73b7a6efc80e181e4f713ecee758e2e5224abfcfc4193b7bff61515d",
+   "hooks": 1,
+   "pools": 1,
+   "swaps": 1047,
+   "volumeUsd": 2114563.557594052,
+   "flags": [
+    "afterRemoveLiquidityReturnsDelta",
+    "afterSwapReturnsDelta",
+    "beforeSwapReturnsDelta",
+    "afterSwap",
+    "beforeSwap",
+    "afterRemoveLiquidity",
+    "afterAddLiquidity",
+    "beforeAddLiquidity",
+    "beforeInitialize"
+   ],
+   "codeBytes": 14444
+  },
+  {
+   "codeHash": "0x3826a43e5853aa8547322e73b75e1793970958ceed8f1c1789c828353f447fc2",
+   "hooks": 1,
+   "pools": 1,
+   "swaps": 5001,
+   "volumeUsd": 1875497.6254864528,
+   "flags": [
+    "afterSwapReturnsDelta",
+    "afterSwap",
+    "afterRemoveLiquidity"
+   ],
+   "codeBytes": 11689
+  },
+  {
+   "codeHash": "0x05163dc98169b56077354bfbc910bc8c52342f80e5fb4533d5a698dacee6cdde",
+   "hooks": 1,
+   "pools": 1,
+   "swaps": 4504,
+   "volumeUsd": 1656064.1455744854,
+   "flags": [
+    "afterSwapReturnsDelta",
+    "afterSwap",
+    "afterRemoveLiquidity"
+   ],
+   "codeBytes": 11689
+  },
+  {
+   "codeHash": "0x83510a621e8519285755058e9a5d430356325755638a41020fe5f5d1e91b94ad",
+   "hooks": 1,
+   "pools": 1,
+   "swaps": 5075,
+   "volumeUsd": 1574487.672737916,
+   "flags": [
+    "afterSwapReturnsDelta",
+    "afterSwap",
+    "afterRemoveLiquidity"
+   ],
+   "codeBytes": 11689
+  }
+ ],
+ "topHooklessPools": [
+  {
+   "poolId": "0x7aebd80541bfaaf23dbb6e99ce13d4d31c1a84c91414f971eadbff7db5f85995",
+   "currency0": "0x2e8c31162b855a2ffa90f6f8634643ad6f111e18",
+   "currency1": "0x5fc5360d0400a0fd4f2af552add042d716f1d168",
+   "fee": 2300,
+   "swaps": 8399,
+   "volumeUsd": 7712770.340832993,
+   "createdAt": 1788444274,
+   "age": "7-30 days"
+  },
+  {
+   "poolId": "0x5875d407a42965b0e768c8925cea290e06fa50603ef34fc99eb92a1050e6ae36",
+   "currency0": "0x5fc5360d0400a0fd4f2af552add042d716f1d168",
+   "currency1": "0xc0d6457c16cc70d6790dd43521c899c87ce02f35",
+   "fee": 3000,
+   "swaps": 13550,
+   "volumeUsd": 6599922.187000999,
+   "createdAt": 1783772328,
+   "age": ">30 days"
+  },
+  {
+   "poolId": "0x24107d152f14a76d292123265ae3f3c71f863fc2f4ef7ba49d64e78d28ea379e",
+   "currency0": "0x0000000000000000000000000000000000000000",
+   "currency1": "0x5fc5360d0400a0fd4f2af552add042d716f1d168",
+   "fee": 100,
+   "swaps": 32898,
+   "volumeUsd": 4837907.376281857,
+   "createdAt": 1782982688,
+   "age": ">30 days"
+  },
+  {
+   "poolId": "0x4be9657ec9002e528f4f17a5c43edc525a07f888f7b180c2afbf75e096c4f38a",
+   "currency0": "0x39dbed3a2bd333467115de45665cc57f813c4571",
+   "currency1": "0x5fc5360d0400a0fd4f2af552add042d716f1d168",
+   "fee": 3000,
+   "swaps": 7375,
+   "volumeUsd": 4779725.713994998,
+   "createdAt": 1784338933,
+   "age": ">30 days"
+  },
+  {
+   "poolId": "0xc58bb68060bcb7b3ea0f6d4a4afef1e57f628722e808db12afb6d1733552872f",
+   "currency0": "0x5fc5360d0400a0fd4f2af552add042d716f1d168",
+   "currency1": "0xc0d6457c16cc70d6790dd43521c899c87ce02f35",
+   "fee": 310,
+   "swaps": 10785,
+   "volumeUsd": 4233576.402002006,
+   "createdAt": 1789631825,
+   "age": "1-7 days"
+  },
+  {
+   "poolId": "0xa92a3df27a00a276183ff7265fd8affa11df1fe8bb23ddfaf13f6c879a3f818b",
+   "currency0": "0x020bfc650a365f8bb26819deaabf3e21291018b4",
+   "currency1": "0x5fc5360d0400a0fd4f2af552add042d716f1d168",
+   "fee": 2690,
+   "swaps": 6901,
+   "volumeUsd": 3334234.3128829976,
+   "createdAt": 1784122755,
+   "age": ">30 days"
+  },
+  {
+   "poolId": "0x46525dc119850396470f132c4a989d7192cb692139db891b5a4cdcd684c11b17",
+   "currency0": "0x385f4f8ae47651ce5f58f5265395a669f8281e18",
+   "currency1": "0x5fc5360d0400a0fd4f2af552add042d716f1d168",
+   "fee": 2969,
+   "swaps": 4215,
+   "volumeUsd": 2717622.0140500036,
+   "createdAt": 1789080808,
+   "age": "7-30 days"
+  },
+  {
+   "poolId": "0x54f7883914619af9105355bf83ed678bcf9f63560218ac61c9963b9503d0ba32",
+   "currency0": "0x0000000000000000000000000000000000000000",
+   "currency1": "0x5fc5360d0400a0fd4f2af552add042d716f1d168",
+   "fee": 460,
+   "swaps": 14233,
+   "volumeUsd": 2577480.32546064,
+   "createdAt": 1783521035,
+   "age": ">30 days"
+  },
+  {
+   "poolId": "0x2d420ffa43f657344796377daf5b7f5b558892df6cc31a788f271c0cd9077611",
+   "currency0": "0x5fc5360d0400a0fd4f2af552add042d716f1d168",
+   "currency1": "0x62177377c361bf76f12612aa153a9b405bef9ff2",
+   "fee": 1000,
+   "swaps": 5980,
+   "volumeUsd": 2445916.539314001,
+   "createdAt": 1790036624,
+   "age": "<1 day"
+  },
+  {
+   "poolId": "0xb2db274d30cc14242c08300e04462c69533860793ca93b17859c98f5c06e1a67",
+   "currency0": "0x0bd7d308f8e1639fab988df18a8011f41eacad73",
+   "currency1": "0x1608502531e59c2aa5168921d3850285624c17f6",
+   "fee": 100,
+   "swaps": 3349,
+   "volumeUsd": 2345120.428964628,
+   "createdAt": 1790088896,
+   "age": "<1 day"
+  },
+  {
+   "poolId": "0xf399bd1544377680d48c62fd85c2105b869e55906c4189cc5ab3b4e83446928c",
+   "currency0": "0x5fc5360d0400a0fd4f2af552add042d716f1d168",
+   "currency1": "0xce24439f2d9c6a2289f741120fe202248b666666",
+   "fee": 75,
+   "swaps": 3855,
+   "volumeUsd": 2208613.895721007,
+   "createdAt": 1789031076,
+   "age": "7-30 days"
+  },
+  {
+   "poolId": "0x1e311f680bfd847c3a78121837186afcc5d6a7a1402388783d1b27abfd5a96c1",
+   "currency0": "0x0000000000000000000000000000000000000000",
+   "currency1": "0x675279fe3259dcd20b1520399d2977dad042bf3f",
+   "fee": 500,
+   "swaps": 3551,
+   "volumeUsd": 2116578.0424762345,
+   "createdAt": 1790095670,
+   "age": "<1 day"
+  },
+  {
+   "poolId": "0xea9f200e13055b82f175f44f592c4c13dd8c9d9320a66487d3c5cd90d68550ef",
+   "currency0": "0x5fc5360d0400a0fd4f2af552add042d716f1d168",
+   "currency1": "0xaa07a0e9209e16ac99708c3ec70159c6ef3128a3",
+   "fee": 8000,
+   "swaps": 3636,
+   "volumeUsd": 2019913.649429,
+   "createdAt": 1789888014,
+   "age": "1-7 days"
+  },
+  {
+   "poolId": "0xa5d2fa75a050327b6a0e3a6020994fea5a9df413e0e031045399411e1616b2e3",
+   "currency0": "0x0000000000000000000000000000000000000000",
+   "currency1": "0xce24439f2d9c6a2289f741120fe202248b666666",
+   "fee": 75,
+   "swaps": 4686,
+   "volumeUsd": 2016814.354181452,
+   "createdAt": 1789713621,
+   "age": "1-7 days"
+  },
+  {
+   "poolId": "0xe5923c8a8be481ec89a2ca784a2bbfa4235de6d88f92260fd66b660c4babf907",
+   "currency0": "0x117cc2133c37b721f49de2a7a74833232b3b4c0c",
+   "currency1": "0x5fc5360d0400a0fd4f2af552add042d716f1d168",
+   "fee": 500,
+   "swaps": 3147,
+   "volumeUsd": 1741231.6097969965,
+   "createdAt": 1785787191,
+   "age": ">30 days"
+  },
+  {
+   "poolId": "0x84bd4e2d8be11aeb0afc1195b38f587b61e90068548f1063fdbe448fb8cad0b6",
+   "currency0": "0x0bd7d308f8e1639fab988df18a8011f41eacad73",
+   "currency1": "0x5fc5360d0400a0fd4f2af552add042d716f1d168",
+   "fee": 200,
+   "swaps": 13743,
+   "volumeUsd": 1536671.7571404516,
+   "createdAt": 1784212668,
+   "age": ">30 days"
+  },
+  {
+   "poolId": "0x319bac87e616a89e241c10aeb8afd4892a852cdd8b373cd9765ecddc40b87cfe",
+   "currency0": "0x5fc5360d0400a0fd4f2af552add042d716f1d168",
+   "currency1": "0xec262a75e413fafd0df80480274532c79d42da09",
+   "fee": 2500,
+   "swaps": 2482,
+   "volumeUsd": 1520353.819635001,
+   "createdAt": 1787633513,
+   "age": "7-30 days"
+  },
+  {
+   "poolId": "0x7499938c352d5b5b8f0c648722aca5ee964ef9b85c3a3041f1ec379726291d9d",
+   "currency0": "0x05a3d1cd21d0c88145e82600e62e7e496e0f222b",
+   "currency1": "0x5fc5360d0400a0fd4f2af552add042d716f1d168",
+   "fee": 1000,
+   "swaps": 2003,
+   "volumeUsd": 1429471.5143570022,
+   "createdAt": 1788496435,
+   "age": "7-30 days"
+  },
+  {
+   "poolId": "0x0ff2e264ba5a85052e0ba970365fbce49a7bf426c78ee15fefc51077cd377355",
+   "currency0": "0x2e8c31162b855a2ffa90f6f8634643ad6f111e18",
+   "currency1": "0x5fc5360d0400a0fd4f2af552add042d716f1d168",
+   "fee": 10000,
+   "swaps": 869,
+   "volumeUsd": 1349108.9497070014,
+   "createdAt": 1784741463,
+   "age": ">30 days"
+  },
+  {
+   "poolId": "0x4c17caee3c2b9ee464cbbf594584174aa008c64bd002de4f991fdcb1ffca1be4",
+   "currency0": "0x0bd7d308f8e1639fab988df18a8011f41eacad73",
+   "currency1": "0xf9ac1e80f701280ed68356d1ee9dcb6ee854828a",
+   "fee": 100,
+   "swaps": 2292,
+   "volumeUsd": 1306287.7583753525,
+   "createdAt": 1790070006,
+   "age": "<1 day"
+  },
+  {
+   "poolId": "0x59de14b62a322e317e753fa23a23b72db0b8c4b593649e69ebcef09c456e2718",
+   "currency0": "0x5fc5360d0400a0fd4f2af552add042d716f1d168",
+   "currency1": "0xf51fb54de60f6e16252e852a5ed0e60b8307606a",
+   "fee": 3000,
+   "swaps": 5244,
+   "volumeUsd": 1279419.0698829987,
+   "createdAt": 1787683468,
+   "age": "7-30 days"
+  },
+  {
+   "poolId": "0xfbc47e0b533fb83e4de65c4a192d85395da62c78fe20365aa237cc25445e610e",
+   "currency0": "0x4a0e65a3eccec6dbe60ae065f2e7bb85fae35eea",
+   "currency1": "0x5fc5360d0400a0fd4f2af552add042d716f1d168",
+   "fee": 250,
+   "swaps": 5427,
+   "volumeUsd": 1210181.9737379982,
+   "createdAt": 1789829877,
+   "age": "1-7 days"
+  },
+  {
+   "poolId": "0x7fb39eb653999feb9f0d3b1410848911383dfc681f3585229df4aa5b560bf0ba",
+   "currency0": "0x32ac8c1d7672667d5ebdea22935f7b06fc8d496f",
+   "currency1": "0x5fc5360d0400a0fd4f2af552add042d716f1d168",
+   "fee": 2000,
+   "swaps": 2539,
+   "volumeUsd": 1194388.9825279994,
+   "createdAt": 1788413781,
+   "age": "7-30 days"
+  },
+  {
+   "poolId": "0x590dcb6a87828bf688b48089a62239b693378f1fb64d2286e6a399ed8c005fdf",
+   "currency0": "0x0000000000000000000000000000000000000000",
+   "currency1": "0x18e674231a58c239dc7daedcffe15ec3a24cff5c",
+   "fee": 2500,
+   "swaps": 3029,
+   "volumeUsd": 1110033.0581860163,
+   "createdAt": 1785990057,
+   "age": ">30 days"
+  },
+  {
+   "poolId": "0x778a632fdd85577efe9cfce4a2c9ac91b9decdb24c351f9b56e25d38fbe587b4",
+   "currency0": "0x5fc5360d0400a0fd4f2af552add042d716f1d168",
+   "currency1": "0xab093def657f15df31b33922a95e047add645b29",
+   "fee": 9000,
+   "swaps": 3538,
+   "volumeUsd": 1061333.3321120017,
+   "createdAt": 1788444564,
+   "age": "7-30 days"
+  }
+ ],
+ "rpcCalls": 544
+}

@@ -1,0 +1,66 @@
+{
+ "census": "new-pool-liquidity-positions",
+ "chainId": 4663,
+ "source": "project node on clawber through a loopback tunnel",
+ "capturedAt": "2026-09-22T19:35:13.897042+00:00",
+ "headBlock": 69905623,
+ "windowHours": 48.0,
+ "poolsCreated": 21038,
+ "positionsPerPool": {
+  "hooked, untraded": {
+   "pools": {
+    "2-4": 2715,
+    "5+": 1449,
+    "1": 914,
+    "0": 177
+   },
+   "swaps": {
+    "2-4": 0,
+    "5+": 0,
+    "1": 0,
+    "0": 0
+   }
+  },
+  "hookless, untraded": {
+   "pools": {
+    "1": 4878,
+    "5+": 20,
+    "2-4": 207,
+    "0": 20
+   },
+   "swaps": {
+    "1": 0,
+    "5+": 0,
+    "2-4": 0,
+    "0": 0
+   }
+  },
+  "hookless, traded": {
+   "pools": {
+    "1": 7095,
+    "2-4": 765,
+    "5+": 423
+   },
+   "swaps": {
+    "1": 703310,
+    "2-4": 38512,
+    "5+": 145030
+   }
+  },
+  "hooked, traded": {
+   "pools": {
+    "1": 1110,
+    "2-4": 1147,
+    "5+": 116,
+    "0": 2
+   },
+   "swaps": {
+    "1": 1042410,
+    "2-4": 451184,
+    "5+": 32270,
+    "0": 2
+   }
+  }
+ },
+ "rpcCalls": 110
+}

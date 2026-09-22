@@ -276,3 +276,14 @@ flight. The reorg test forces the ordering; deleting either clause fails it.
 
 Still open, unchanged from the list above: reference feeds per pool, timing on the real
 sequencer, successor economics.
+
+## Addendum, 22 September 2026: new tokens, no price reference
+
+The owner rejected both the Chainlink reference and the calm-market triggers proposed
+afterwards: Domino's market is mostly new, volatile tokens, the owner of a vault answers
+for the position, and the data must come from the project node and the Uniswap API.
+[NEW_TOKEN_AUTOMATION_STUDY_2026-09-22.md](NEW_TOKEN_AUTOMATION_STUDY_2026-09-22.md)
+measures what the contracts require, short-horizon price moves, manipulation economics,
+balancing needs and the hook census on the node, and proposes the replacement: no
+volatility gate, latency as a requirement, the owner's bands, and a per-pool swap cap at
+fee × depth. The "reference feeds per pool" item above is superseded by it.
