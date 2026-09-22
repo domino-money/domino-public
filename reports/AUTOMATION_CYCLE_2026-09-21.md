@@ -139,11 +139,10 @@ Not run, and not claimed: anything against the mainnet deployment or the own nod
 
 ## Open before activation
 
-- **Ledger completeness.** The ledger learns fees from the executor's reconciliation.
-  Owner actions that realize fees, or credits recorded by another path, leave the vault
-  and the ledger disagreeing, and the planner waits on `ledger_chain_mismatch` until an
-  operator records the credits through the ledger role. An indexer of vault fee events
-  into the ledger is the next piece for unattended operation.
+- **Ledger completeness.** Delivered on 22 September, see the addendum below. The
+  ledger now also learns from the vault's own fee events: owner withdrawals become
+  debits, and an execution the ledger cannot represent becomes an exception for the
+  operator instead of a silent wait.
 - **Reference feeds per pool.** Only currencies with an admitted Chainlink feed on 4663
   qualify. WETH/USDG and ETH/USDG have feeds in `chainlink_history.FEEDS`; every other
   pool waits by design until a reference is admitted and qualified.
@@ -159,3 +158,76 @@ Not run, and not claimed: anything against the mainnet deployment or the own nod
   path and leaves MINT to the executor's suite and the offline plan tests.
 - **Host installation.** Role mappings, the systemd unit and the private files follow
   the financial services' pattern but are not scripted here.
+
+## Addendum, 22 September 2026: the ledger's reader of vault fee events
+
+What the first delivery left open as the next piece for unattended operation. The
+vault's fee balances move through exactly two paths: the executor (`executionCredit`,
+`executionConvert`, `executionApply`, reported by the engine's `FeesRealized`,
+`FeesConverted` and `BudgetApplied`) and the owner's `withdrawFeeReserves`, reported by
+the vault's `FeeReservesWithdrawn`. The executor's own reconciliation already records
+the first path for the transactions it signed. The reader (`backend/automation_ledger.py`,
+migration `029_ledger_index.sql`) covers the rest from finalized blocks, one sequence at
+a time, from a durable cursor:
+
+- An owner withdrawal becomes a `withdrawals` row (the chain fact: source, currency,
+  original and charged amounts, block, state nonce) with `withdrawal_debits` attributing
+  it to the ledger's lots by one documented convention: original amount to original lots,
+  charged amount to converted lots, the oldest available lot first, quarantined lots
+  after, never more than a lot still holds. What the lots cannot absorb stays on the row
+  as unattributed, so a withdrawal of money the ledger never knew keeps the disagreement
+  visible instead of hiding it. The planner's view (`available_lots`), the claim guard and
+  the spend guard all count the debits.
+- An execution transaction whose events appear on the chain is checked against the
+  journal by hash: a reconciled canonical effect of ours is verified and passed over; one
+  of ours still pending in the journal holds the reader before its block; anything else
+  (`foreign_execution`, or `unreconciled_execution` for a transaction we signed whose
+  journal ended in `attention`, `reorged` or a different intent) is a `ledger_exceptions`
+  row that suspends the sequence (`ledger_exception`) until an operator records what the
+  evidence supports and acknowledges it. The reader does not invent lots or lineage for
+  an execution it did not reconcile.
+- The cycle reads before every evaluation when `ledger.indexer` is `inline` (the service
+  user then also holds `domino_execution_ledger`); `external` leaves the reading to an
+  `index` run. New CLI operations: `index` (with `--from-block` for an explicit rescan),
+  `ledger`, `acknowledge`. `status` reports the cursor, the latest withdrawals and
+  exceptions.
+
+Two things found while integrating and fixed with it: the chain reader's request budget
+was never reset between passes, so a long-running `serve` would have refused every read
+after its 4096th request; it is reset at the start of every pass and status read now. And
+a constraint deferred to commit could leave a store connection open; the store closes
+its connection in every case.
+
+Validation, all on the disposable chain and database:
+
+- `test_automation_ledger.py` (9, offline): first pass starts the cursor at the
+  finalized head and reads nothing; a withdrawal is recorded at its receipt position
+  with the block-scoped log index kept as evidence; the window is bounded and `catch_up`
+  repeats it, a rescan never moves the cursor back; an own reconciled execution is
+  verified and a pending one holds the cursor until reconciled; foreign, attention and
+  wrong-intent transactions become exceptions with their events on record; off-canonical
+  logs, reverted receipts, receipts missing the log, another owner's withdrawal, a log
+  budget and finality moving back are refused with nothing recorded; the configuration
+  refuses an absent or unknown `ledger` section.
+- `test_automation_ledger_store.py` (5, PostgreSQL with the actual roles): the oldest
+  lot is debited first and the planner's view follows, the same event is the same row, a
+  changed amount is a conflict, excess is unattributed, another tenant sees nothing; the
+  claim guard and the signer's spend guard refuse one unit past the debited lot
+  (deleting either guard's new line fails the test); withdrawals and debits are
+  immutable by privilege for the reconciliation role and by trigger for everyone, a
+  debit past the lot and a withdrawal without matching debits are refused, the worker
+  reads and never writes; exceptions are recorded once and acknowledged once; cursors
+  move forward only and are tenant-scoped; the reconciliation role cannot read signed bytes.
+- `test_automation_cycle_evm.py`, one more scenario (8 in all, about 120 s): after a
+  completed cycle the pass following reconciliation verifies our own execution's events;
+  the owner withdraws half of one source's original reserve; before finality the planner
+  waits on `ledger_chain_mismatch` and the sequence is not suspended; after finality the
+  withdrawal is recorded with the exact amount, source, currency and transaction, the
+  ledger's lots equal the vault's balance again, status shows the cursor and the row, a
+  second read records nothing, and the cycle acts again from the reduced lots.
+- Also run: the executor suites, the store suites, the offline automation suites, the
+  staging registries with 029, repository and contract hygiene, and the hygiene job's
+  steps verbatim.
+
+Still open, unchanged from the list above: reference feeds per pool, timing on the real
+sequencer, gas units on the deployed contracts, successor economics, host installation.

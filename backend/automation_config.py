@@ -237,6 +237,17 @@ class SequenceAdmission(Frozen):
     suspended: bool = False
 
 
+class LedgerPolicy(Frozen):
+    """Who reads the vault's fee events into the ledger, and how much per pass.
+    `inline`: the cycle reads them itself before every evaluation, under the
+    reconciliation role. `external`: a separate `index` process does, and the
+    cycle only refuses to act while an exception is unacknowledged.
+    """
+    indexer: Literal['inline', 'external']
+    maxBlocksPerPass: Annotated[StrictInt, Field(ge=1, le=100000)]
+    maxLogsPerPass: Annotated[StrictInt, Field(ge=1, le=4096)]
+
+
 class AutomationConfig(Frozen):
     schemaVersion: Literal[1]
     kind: Literal[KIND]
@@ -255,6 +266,7 @@ class AutomationConfig(Frozen):
     plan: PlanPolicy
     scheduling: SchedulingPolicy
     finality: FinalityPolicy
+    ledger: LedgerPolicy
     paused: bool
 
     @model_validator(mode='after')

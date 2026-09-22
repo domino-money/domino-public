@@ -55,6 +55,7 @@ class DurableExecutorEvmTests(unittest.TestCase):
             def __init__(self,conn):self.conn=conn
             def __enter__(self):self.conn.__enter__();return self
             def __exit__(self,*args):return self.conn.__exit__(*args)
+            def close(self):return self.conn.close()
             def execute(self,query,args=None):
                 result=self.conn.execute(query,args)
                 if needle in query:

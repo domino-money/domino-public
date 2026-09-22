@@ -52,7 +52,7 @@ class AutomationCycleEvmTests(unittest.TestCase):
         cls.pg = ExecutionPostgres().start()
         cls.addClassCleanup(cls.pg.close)
         with cls.pg.admin() as conn:
-            for name in ('019_execution_journal', '028_automation_cycle'):
+            for name in ('019_execution_journal', '028_automation_cycle', '029_ledger_index'):
                 conn.execute((Path(__file__).resolve().parents[1] / f'migrations/{name}.sql').read_text())
             for role in ('domino_execution_signer', 'domino_execution_publisher'):
                 conn.execute(f'ALTER ROLE {role} LOGIN')
@@ -61,7 +61,8 @@ class AutomationCycleEvmTests(unittest.TestCase):
         with self.pg.admin() as conn:
             conn.execute('TRUNCATE domino_execution.intents,domino_execution.origins,domino_execution.signer_heads,domino_execution.publications,'
                          'domino_execution.publisher_heads,domino_execution.cycles,domino_execution.sequence_state,domino_execution.pool_samples,'
-                         'domino_execution.controls CASCADE')
+                         'domino_execution.controls,domino_execution.withdrawals,domino_execution.withdrawal_debits,domino_execution.ledger_exceptions,'
+                         'domino_execution.ledger_cursors CASCADE')
         self.rpc.request('evm_revert', [self.base_snapshot])
         type(self).base_snapshot = self.rpc.request('evm_snapshot', [])
         self.rpc.request('evm_setAutomine', [True])
@@ -398,6 +399,74 @@ class AutomationCycleEvmTests(unittest.TestCase):
         with self.pg.admin() as conn:
             self.assertEqual(conn.execute("SELECT count(*) FROM domino_execution.journal WHERE state='reorged'").fetchone()[0], 1)
             self.assertEqual(conn.execute('SELECT count(*) FROM domino_execution.effects WHERE canonical').fetchone()[0], 0)
+
+    def test_owner_withdrawal_is_read_into_the_ledger_after_finality_and_the_cycle_continues(self):
+        self.setup()
+        self.warm_up()
+        self.advance(2)
+        self.trade()
+        acted = self.cycle.run(self.entry)
+        self.assertEqual(acted['outcome'], 'executing', acted)
+        self.finalize()
+        done = self.cycle.run(self.entry)
+        self.assertEqual(done['outcome'], 'completed', done)
+        seq_hash = self.store.cycle(self.owner, done['cycleId'])['sequenceHash']
+        executed = ExecutionJournal(self.pg.settings).status(self.owner, acted['intentId'])['receipt']['transactionHash']
+        # The pass after reconciliation reads our own execution's fee events and
+        # verifies them against the journal; nothing is recorded twice.
+        self.advance(2)
+        after = self.cycle.run(self.entry, act=False)
+        self.assertEqual((after['ledger']['verified'], after['ledger']['exceptions'], after['ledger']['withdrawals']), ([executed], [], []))
+        self.assertGreaterEqual(after['ledger']['cursor'], int(self.rpc.request('eth_getBlockByNumber', ['finalized', False])['number'], 16) - 1)
+        lots = [row for row in self.store.available_lots(self.owner, seq_hash) if row['kind'] == 'original' and int(row['remaining']) > 0]
+        self.assertTrue(lots)
+        source = _model(m.FeeSourceIdentity, lots[0]['source_record'])
+        source_id, currency = source.digest(), lots[0]['currency']
+        same = lambda row: _model(m.FeeSourceIdentity, row['source_record']).digest() == source_id and row['currency'] == currency and row['kind'] == 'original'
+        ledger_before = sum(int(row['remaining']) for row in self.store.available_lots(self.owner, seq_hash) if same(row))
+        balance = lambda: self.call(self.vault, 'feeBalance(bytes32,address)', ['(uint128,uint128)'], ['bytes32', 'address'], [bytes.fromhex(source_id[2:]), currency])[0]
+        vault_before = balance()[0]
+        self.assertEqual(ledger_before, vault_before)
+        withdraw = max(1, vault_before // 2)
+        receipt = self.send(self.vault, calldata('withdrawFeeReserves(bytes32,address,uint128,uint128)', ['bytes32', 'address', 'uint128', 'uint128'],
+                                                 [bytes.fromhex(source_id[2:]), currency, withdraw, 0]))
+        self.assertEqual(balance()[0], vault_before - withdraw)
+        # Not final yet: the vault and the ledger disagree, the executor finds the
+        # effect still canonical, and the planner waits without a transaction.
+        self.advance(2)
+        blocked = self.cycle.run(self.entry, act=False)
+        self.assertEqual(blocked['outcome'], 'wait', blocked)
+        self.assertIn('ledger_chain_mismatch', blocked['decision']['observationDiagnostics'])
+        self.assertEqual(blocked['ledger']['withdrawals'], [])
+        self.assertFalse(self.store.sequence(self.owner, seq_hash)['suspended'])
+        self.finalize()
+        read = self.cycle.run(self.entry, act=False)
+        self.assertNotIn('ledger_chain_mismatch', read['decision']['observationDiagnostics'], read)
+        recorded = read['ledger']['withdrawals']
+        self.assertEqual(len(recorded), 1, read['ledger'])
+        self.assertEqual((recorded[0]['state'], recorded[0]['originalRaw'], recorded[0]['chargedRaw'], recorded[0]['sourceId'], recorded[0]['currency'],
+                          recorded[0]['transactionHash'], recorded[0]['unattributedOriginalRaw'], recorded[0]['unattributedChargedRaw']),
+                         ('recorded', str(withdraw), '0', source_id, currency, receipt['transactionHash'], '0', '0'))
+        self.assertEqual(sum(int(d['amountRaw']) for d in recorded[0]['debits']), withdraw)
+        self.assertEqual(recorded[0]['blockNumber'], int(receipt['blockNumber'], 16))
+        # The ledger's lots for that source equal the vault's balance again, and the reader is caught up.
+        self.assertEqual(sum(int(row['remaining']) for row in self.store.available_lots(self.owner, seq_hash) if same(row)), balance()[0])
+        self.assertEqual((read['ledger']['caughtUp'], read['ledger']['held'], read['ledger']['exceptions']), (True, None, []))
+        status = self.cycle.status(self.entry)
+        self.assertEqual(status['ledger']['cursor']['blockNumber'], read['ledger']['cursor'])
+        self.assertEqual([w['withdrawalId'] for w in status['ledger']['withdrawals']], [recorded[0]['withdrawalId']])
+        self.assertEqual(status['ledger']['exceptions'], [])
+        # A second read records nothing new; the same event is the same row.
+        again = self.cycle.run(self.entry, act=False)
+        self.assertEqual((again['ledger']['withdrawals'], again['ledger']['exceptions']), ([], []))
+        self.assertEqual(len(self.cycle.index_store.withdrawals(self.owner, seq_hash)), 1)
+        # With fresh trading the cycle acts again from the reduced lots.
+        self.warm_up(2)
+        self.advance(2)
+        self.trade()
+        resumed = self.cycle.run(self.entry)
+        self.assertIn(resumed['outcome'], ('executing', 'wait'), resumed)
+        self.assertNotIn('ledger_chain_mismatch', resumed['decision']['observationDiagnostics'])
 
     def test_swap_quote_matches_the_engine_output_exactly(self):
         self.setup()

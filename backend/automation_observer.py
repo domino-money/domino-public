@@ -61,6 +61,13 @@ class ChainReader:
     def head(self):
         return self.header('latest')
 
+    def finalized(self):
+        return self.header('finalized')
+
+    def reset(self):
+        """A new pass gets the whole request budget again."""
+        self.requests = 0
+
     def block(self, number):
         header = self.header(hex(number))
         if header['number'] != number:
@@ -82,6 +89,18 @@ class ChainReader:
 
     def balance(self, address):
         return g._quantity(self.request('eth_getBalance', [address, 'latest']))
+
+    def logs(self, query, *, max_logs):
+        raw = self.request('eth_getLogs', [dict(query)])
+        if type(raw) is not list or len(raw) > max_logs:
+            raise ObservationError('automation_log_budget')
+        return raw
+
+    def receipt(self, transaction_hash):
+        raw = self.request('eth_getTransactionReceipt', [transaction_hash])
+        if type(raw) is not dict:
+            raise ObservationError('automation_receipt_unavailable')
+        return raw
 
 
 def clone_code(implementation):

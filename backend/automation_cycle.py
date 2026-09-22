@@ -17,6 +17,7 @@ import execution_models as m
 import execution_planner as p
 from automation_config import AutomationConfig
 from automation_evidence import build_evidence
+from automation_ledger import LedgerIndexStore, LedgerIndexer
 from automation_observer import (ChainReader, ObservationError, derive_admission, ledger_balances, measurement_history,
                                  observe_sequence, sample_pool)
 from automation_plan import PlanError, build_execution_plan, observation_id, observation_point
@@ -75,6 +76,10 @@ class SequenceCycle:
         self.store = CycleStore(settings)
         self.ledger = UnsignedExecutionStore(settings)
         self.journal = PublicationJournal(settings)
+        self.index_store = LedgerIndexStore(settings)
+        ledger = config.ledger
+        self.indexer = (LedgerIndexer(self.reader, self.index_store, max_blocks=ledger.maxBlocksPerPass, max_logs=ledger.maxLogsPerPass)
+                        if ledger.indexer == 'inline' else None)
         self.worker = worker_id or config.scheduling.workerId or str(uuid.uuid4())
         self.clock = clock
         self.settings = config.planner_settings()
@@ -135,6 +140,7 @@ class SequenceCycle:
     def run(self, entry, *, act=True):
         """One bounded pass for one sequence: resume open work, or evaluate and,
         when eligible and allowed, take the cycle as far as it can go now."""
+        self.reader.reset()
         with read_deadline(self.config.scheduling.cycleBudgetSeconds):
             return self._run(entry, act=act)
 
@@ -165,6 +171,15 @@ class SequenceCycle:
             if blocked:
                 summary.update(outcome='skipped', reason=blocked)
                 updates['next_due_seconds'] = scheduling.evaluationIntervalSeconds
+                return summary
+            if self.indexer is not None:
+                summary['ledger'] = self.indexer.index(owner, admission)
+            exceptions = self.store.unacknowledged_exceptions(owner, seq_hash)
+            if exceptions:
+                # A fee event of an execution the ledger cannot represent: the
+                # operator decides what it was before any fees are offered again.
+                updates.update(suspended=True, suspension_reason='ledger_exception')
+                summary.update(outcome='suspended', reason='ledger_exception', exceptions=exceptions)
                 return summary
             evaluation, pending, samples = self.evaluate(entry, admission, source, state)
             decision = evaluation.decision
@@ -491,6 +506,7 @@ class SequenceCycle:
 
     # ------------------------------------------------------------ status
     def status(self, entry):
+        self.reader.reset()
         head = self.reader.head()
         admission = derive_admission(self.reader, self.config.deployment, entry.owner, entry.vault, head)
         seq_hash = admission.sequence.digest()
@@ -504,6 +520,7 @@ class SequenceCycle:
                 'recentCycles': self.store.recent_cycles(entry.owner, seq_hash, limit=5) if state else [],
                 'pending': {k: (sorted(v) if isinstance(v, frozenset) else v) for k, v in self.store.pending_intents(entry.owner, seq_hash).items()},
                 'latestSampleAgeSeconds': head['timestamp'] - int(latest['block_timestamp']) if latest else None,
+                'ledger': self.store.ledger_summary(entry.owner, seq_hash) if state else None,
                 'balances': {'publisherWei': str(self.reader.balance(self.config.deployment.pricePublisher)),
                              'operatorWei': str(self.reader.balance(self.config.deployment.operator))},
                 'paused': self.config.paused or self.store.control(entry.owner, 'paused') is True,

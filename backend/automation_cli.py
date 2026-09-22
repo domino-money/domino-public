@@ -12,7 +12,8 @@ import sys
 
 from automation_config import load_config
 from automation_cycle import CycleError, SequenceCycle, serve
-from automation_observer import ObservationError
+from automation_ledger import LedgerIndexer, catch_up
+from automation_observer import ObservationError, derive_admission
 from automation_plan import PlanError
 from execution_cli import private_file
 from execution_signer import ExecutionError
@@ -39,9 +40,12 @@ def select(config, spec):
 def main(argv=None):
     parser = argparse.ArgumentParser(description='Private automation cycle worker')
     parser.add_argument('--config', required=True)
-    parser.add_argument('operation', choices=('status', 'evaluate', 'run-once', 'serve', 'pause', 'resume', 'suspend', 'unsuspend', 'publications'))
+    parser.add_argument('operation', choices=('status', 'evaluate', 'run-once', 'serve', 'pause', 'resume', 'suspend', 'unsuspend', 'publications',
+                                              'index', 'ledger', 'acknowledge'))
     parser.add_argument('--sequence', help='owner:vault, both lowercase hex')
     parser.add_argument('--reason', default='operator')
+    parser.add_argument('--from-block', type=int, help='index: rescan from this block instead of the cursor')
+    parser.add_argument('--exception', help='acknowledge: the exception id')
     args = parser.parse_args(argv)
     try:
         config = load_config(args.config)
@@ -73,6 +77,26 @@ def main(argv=None):
                 lease = cycle.store.acquire_sequence(entry.owner, seq_hash, cycle.worker, lease_seconds=30)
                 result.append(cycle.store.update_sequence(entry.owner, seq_hash, cycle.worker, lease['fence'], release=True,
                     suspended=args.operation == 'suspend', suspension_reason=args.reason if args.operation == 'suspend' else ''))
+        elif args.operation in ('index', 'ledger'):
+            ledger = config.ledger
+            indexer = LedgerIndexer(cycle.reader, cycle.index_store, max_blocks=ledger.maxBlocksPerPass, max_logs=ledger.maxLogsPerPass)
+            result = []
+            for entry in select(config, args.sequence):
+                cycle.reader.reset()
+                admission = derive_admission(cycle.reader, config.deployment, entry.owner, entry.vault, cycle.reader.head())
+                seq_hash = admission.sequence.digest()
+                if args.operation == 'index':
+                    result.append({'vault': entry.vault, 'sequenceHash': seq_hash,
+                                   'passes': catch_up(indexer, entry.owner, admission, from_block=args.from_block)})
+                else:
+                    result.append({'vault': entry.vault, 'sequenceHash': seq_hash, 'cursor': cycle.index_store.cursor(entry.owner, seq_hash),
+                                   'withdrawals': cycle.index_store.withdrawals(entry.owner, seq_hash),
+                                   'exceptions': cycle.index_store.exceptions(entry.owner, seq_hash)})
+        elif args.operation == 'acknowledge':
+            if args.sequence is None or args.exception is None:
+                raise CycleError('automation_acknowledgement_incomplete')
+            entry = select(config, args.sequence)[0]
+            result = cycle.index_store.acknowledge(entry.owner, args.exception, args.reason)
         else:
             result = cycle.journal.live(config.deployment.pricePublisher)
         print(json.dumps(result, sort_keys=True, separators=(',', ':'), default=str))

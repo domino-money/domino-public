@@ -141,6 +141,8 @@ PACKAGED_ONLY_MIGRATIONS = (
     # The automation cycle's own state and publisher role; applied with the
     # automation activation, never by the disabled foundation.
     'backend/migrations/028_automation_cycle.sql',
+    # The ledger's reader of vault fee events; same vehicle as 028.
+    'backend/migrations/029_ledger_index.sql',
 )
 MAPPINGS = (
     ('domino', 'domino-admin', ADMIN),

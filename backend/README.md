@@ -94,8 +94,9 @@ The [automation cycle](../docs/AUTOMATION_CYCLE_RUNBOOK.md) connects the economi
 planner, the unsigned intent store and the durable executor into one service around
 the deployed V1 contracts: canonical observations, independent price references,
 exact swap quotes, complete-path gas, a restricted on-demand publisher with its own
-signed-before-send journal, and a restart-safe orchestrator with one lease per
-sequence. It is a library and a disposable-chain integration
+signed-before-send journal, a restart-safe orchestrator with one lease per
+sequence, and a reader of the vault's fee events that keeps the ledger complete
+across owner withdrawals. It is a library and a disposable-chain integration
 (`tests/test_automation_cycle_evm.py`); no production configuration, key or unit
 exists in the repository and nothing is activated by installing it.
 

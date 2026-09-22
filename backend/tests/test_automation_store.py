@@ -25,11 +25,13 @@ class CycleStoreTests(unittest.TestCase):
         with cls.pg.admin() as conn:
             conn.execute((Path(__file__).resolve().parents[1] / 'migrations/019_execution_journal.sql').read_text())
             conn.execute((Path(__file__).resolve().parents[1] / 'migrations/028_automation_cycle.sql').read_text())
+            conn.execute((Path(__file__).resolve().parents[1] / 'migrations/029_ledger_index.sql').read_text())
             conn.execute('ALTER ROLE domino_execution_publisher LOGIN')
 
     def setUp(self):
         with self.pg.admin() as conn:
-            conn.execute('TRUNCATE domino_execution.cycles,domino_execution.sequence_state,domino_execution.pool_samples,domino_execution.controls,domino_execution.publications,domino_execution.publisher_heads CASCADE')
+            conn.execute('TRUNCATE domino_execution.cycles,domino_execution.sequence_state,domino_execution.pool_samples,domino_execution.controls,domino_execution.publications,'
+                         'domino_execution.publisher_heads,domino_execution.withdrawals,domino_execution.withdrawal_debits,domino_execution.ledger_exceptions,domino_execution.ledger_cursors CASCADE')
         self.store = CycleStore(self.pg.settings)
         self.worker = str(uuid.uuid4())
 

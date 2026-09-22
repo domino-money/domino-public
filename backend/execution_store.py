@@ -28,7 +28,8 @@ CODES = frozenset(('execution_invalid_record','execution_not_found','execution_i
     'execution_origin_immutable','execution_intent_immutable','execution_claim_immutable',
     'execution_origin_unavailable','execution_stale_fence','execution_state_conflict',
     'execution_balance_reserved','execution_claim_mismatch','execution_lineage_mismatch',
-    'execution_reservation_conflict','execution_lease_busy','execution_expired','execution_store_unavailable'))
+    'execution_reservation_conflict','execution_lease_busy','execution_expired','execution_store_unavailable',
+    'execution_withdrawal_immutable','execution_withdrawal_incomplete','execution_exception_immutable','execution_cursor_regressed'))
 
 
 class ExecutionStoreError(Exception):
@@ -103,13 +104,19 @@ class _Store:
             if type(fence) is not int or not 1 <= fence <= MAX_FENCE:
                 _invalid()
         try:
-            with self.connect(**self.settings, user=self.role, row_factory=dict_row, connect_timeout=2,
+            conn = self.connect(**self.settings, user=self.role, row_factory=dict_row, connect_timeout=2,
                     options=f'-c statement_timeout=5000 -c lock_timeout=2000 -c idle_in_transaction_session_timeout={self.idle_transaction_millis} '
-                            '-c search_path=domino_execution -c TimeZone=UTC') as conn:
-                conn.execute("SELECT set_config('domino.execution_owner',%s,true)", (owner,))
-                if worker is not None:
-                    conn.execute("SELECT set_config('domino.execution_worker',%s,true),set_config('domino.execution_fence',%s,true)", (worker,str(fence)))
-                return operation(conn, owner)
+                            '-c search_path=domino_execution -c TimeZone=UTC')
+            try:
+                with conn:
+                    conn.execute("SELECT set_config('domino.execution_owner',%s,true)", (owner,))
+                    if worker is not None:
+                        conn.execute("SELECT set_config('domino.execution_worker',%s,true),set_config('domino.execution_fence',%s,true)", (worker,str(fence)))
+                    return operation(conn, owner)
+            finally:
+                # A constraint deferred to commit raises out of the block above
+                # without closing the connection; close it in every case.
+                conn.close()
         except psycopg.errors.UniqueViolation:
             raise ExecutionStoreError('execution_reservation_conflict') from None
         except psycopg.errors.CheckViolation as error:

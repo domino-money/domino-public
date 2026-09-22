@@ -187,7 +187,8 @@ class CycleStore(_Store):
         def operation(conn, owner):
             return conn.execute(
                 'SELECT o.origin_id,o.lot_id,o.source_record,o.currency,o.kind,'
-                'o.amount_raw-coalesce((SELECT sum(s.amount_raw) FROM spends s WHERE s.owner=o.owner AND s.lot_id=o.lot_id),0) AS remaining,'
+                'o.amount_raw-coalesce((SELECT sum(s.amount_raw) FROM spends s WHERE s.owner=o.owner AND s.lot_id=o.lot_id),0)'
+                '-coalesce((SELECT sum(d.amount_raw) FROM withdrawal_debits d WHERE d.owner=o.owner AND d.lot_id=o.lot_id),0) AS remaining,'
                 'coalesce((SELECT sum(c.amount_raw) FROM lot_claims c WHERE c.owner=o.owner AND c.lot_id=o.lot_id AND c.active),0) AS reserved '
                 "FROM origins o WHERE o.owner=%s AND o.sequence_hash=%s AND o.state='available' ORDER BY o.lot_id", (owner, sequence_hash)).fetchall()
         return self._transaction(owner, operation)
@@ -213,6 +214,39 @@ class CycleStore(_Store):
             rows = conn.execute('SELECT e.intent_id FROM effects e JOIN intents i ON i.intent_id=e.intent_id WHERE i.owner=%s '
                                 'AND i.sequence_hash=%s AND e.canonical ORDER BY i.created_at DESC LIMIT %s', (owner, sequence_hash, int(limit))).fetchall()
             return [row['intent_id'] for row in rows]
+        return self._transaction(owner, operation)
+
+    # --------------------------------------------------------------- ledger
+    def unacknowledged_exceptions(self, owner, sequence_hash):
+        """Fee events the ledger could not represent, until an operator acknowledges them."""
+        sequence_hash = _hash(sequence_hash)
+        def operation(conn, owner):
+            rows = conn.execute('SELECT exception_id,kind,transaction_hash,block_number,intent_id FROM ledger_exceptions '
+                                'WHERE owner=%s AND sequence_hash=%s AND NOT acknowledged ORDER BY block_number,transaction_hash', (owner, sequence_hash)).fetchall()
+            return [{'exceptionId': r['exception_id'], 'kind': r['kind'], 'transactionHash': r['transaction_hash'],
+                     'blockNumber': int(r['block_number']), 'intentId': r['intent_id']} for r in rows]
+        return self._transaction(owner, operation)
+
+    def ledger_summary(self, owner, sequence_hash, *, limit=5):
+        """The worker's read of the reconciliation role's work: where the reader
+        of vault events stands, the latest withdrawals, the latest exceptions."""
+        sequence_hash = _hash(sequence_hash)
+        def operation(conn, owner):
+            cursor = conn.execute('SELECT block_number,block_hash,updated_at FROM ledger_cursors WHERE owner=%s AND sequence_hash=%s', (owner, sequence_hash)).fetchone()
+            withdrawals = conn.execute('SELECT withdrawal_id,source_id,currency,transaction_hash,block_number,original_raw,charged_raw,'
+                                       'unattributed_original_raw,unattributed_charged_raw FROM withdrawals WHERE owner=%s AND sequence_hash=%s '
+                                       'ORDER BY block_number DESC,event_index DESC LIMIT %s', (owner, sequence_hash, int(limit))).fetchall()
+            exceptions = conn.execute('SELECT exception_id,kind,transaction_hash,block_number,intent_id,acknowledged FROM ledger_exceptions '
+                                      'WHERE owner=%s AND sequence_hash=%s ORDER BY block_number DESC,transaction_hash LIMIT %s', (owner, sequence_hash, int(limit))).fetchall()
+            return {'cursor': None if cursor is None else {'blockNumber': int(cursor['block_number']), 'blockHash': cursor['block_hash'],
+                                                            'updatedAt': cursor['updated_at'].isoformat()},
+                    'withdrawals': [{'withdrawalId': w['withdrawal_id'], 'sourceId': w['source_id'], 'currency': w['currency'],
+                                     'transactionHash': w['transaction_hash'], 'blockNumber': int(w['block_number']),
+                                     'originalRaw': str(w['original_raw']), 'chargedRaw': str(w['charged_raw']),
+                                     'unattributedOriginalRaw': str(w['unattributed_original_raw']),
+                                     'unattributedChargedRaw': str(w['unattributed_charged_raw'])} for w in withdrawals],
+                    'exceptions': [{'exceptionId': e['exception_id'], 'kind': e['kind'], 'transactionHash': e['transaction_hash'],
+                                    'blockNumber': int(e['block_number']), 'intentId': e['intent_id'], 'acknowledged': e['acknowledged']} for e in exceptions]}
         return self._transaction(owner, operation)
 
     # --------------------------------------------------------------- shared

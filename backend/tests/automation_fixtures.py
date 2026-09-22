@@ -71,6 +71,7 @@ def sample_config(*, currencies=(address(16), address(32)), feeds=None, **change
                        'publicationWindowSeconds': 3600, 'maxPublicationsPerWindow': 10, 'publicationWaitSeconds': 20,
                        'executionWaitSeconds': 20, 'maxSourceBlockAge': 200, 'cycleBudgetSeconds': 300},
         'finality': {'publicationConfirmations': 0},
+        'ledger': {'indexer': 'inline', 'maxBlocksPerPass': 2000, 'maxLogsPerPass': 1024},
         'paused': False,
     }
     return deep_update(copy.deepcopy(config), changes)
