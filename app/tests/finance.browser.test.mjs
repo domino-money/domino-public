@@ -1814,7 +1814,7 @@ test('from a position link, a connected wallet without a session puts the NFT un
     assert.match(words, new RegExp(`Operator: ${operator}\\.`));
     assert.match(words, /Domino-compound: 4% of earned fees consumed, once; never principal or already charged lots\./);
     assert.match(words, /Trigger distance: 500 bps; maximum overlap: 2000 bps; minimum interval: 3600s; maximum positions: 3\./);
-    assert.match(words, /Successor upside: 5000 bps; maximum slippage: 50 bps; maximum price impact: 100 bps\./);
+    assert.match(words, /Successor upside: 5000 bps; maximum slippage: 100 bps; maximum price impact: 100 bps\./);
     assert.match(words, /Execution gas cost cap: 5000000000000000 wei; observation age: 300s; forecast horizon: 604800s\./);
     assert.doesNotMatch(words, FORBIDDEN);
     await sendStep('create');
@@ -1840,7 +1840,7 @@ test('from a position link, a connected wallet without a session puts the NFT un
     assert.deepEqual({ ...params, baseCurrency: lower(params.baseCurrency), quoteCurrency: lower(params.quoteCurrency), operator: lower(params.operator) }, {
       rootTokenId: ROOT, expectedPoolId: chain.poolId, baseCurrency: chain.poolKey.currency0, quoteCurrency: chain.poolKey.currency1, operator, consentToUncollectedFees: true,
       policy: { serviceFeeBps: 400, triggerDistanceBps: 500, maxOverlapBps: 2000, minimumIntervalSeconds: 3600, maxPositions: 3, version: 1n, paused: true },
-      limits: { version: 1n, upsideBps: 5000, maxSlippageBps: 50, maxPriceImpactBps: 100, maxGasCostWei: 5_000_000_000_000_000n, maxObservationAgeSeconds: 300, forecastHorizonSeconds: 604_800 },
+      limits: { version: 1n, upsideBps: 5000, maxSlippageBps: 100, maxPriceImpactBps: 100, maxGasCostWei: 5_000_000_000_000_000n, maxObservationAgeSeconds: 300, forecastHorizonSeconds: 604_800 },
     }, 'the whole InitParams: the pool read from the NFT, the deployment’s operator, consent, the 4% paused policy and the default limits in bps, seconds and wei');
 
     // No service and no session took part, and the wallet was asked nothing outside connecting and the chain's own
