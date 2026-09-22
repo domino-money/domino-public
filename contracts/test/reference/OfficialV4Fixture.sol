@@ -244,3 +244,43 @@ contract OfficialV4SwapDriver is IUnlockCallback {
         }
     }
 }
+
+/// @notice TEST ONLY. The AggregatorV3 surface the automation reference adapter
+/// reads, with an answer the test sets. No claim about any real feed.
+contract OfficialFixtureFeed {
+    uint8 public immutable decimals;
+    string public description;
+    int256 private _answer;
+    uint80 private _round;
+    uint256 private _updatedAt;
+
+    constructor(uint8 decimals_, string memory description_, int256 answer_) {
+        decimals = decimals_;
+        description = description_;
+        _answer = answer_;
+        _round = 1;
+        _updatedAt = block.timestamp;
+    }
+
+    function set(int256 answer_) external {
+        _answer = answer_;
+        _round += 1;
+        _updatedAt = block.timestamp;
+    }
+
+    function stale(uint256 updatedAt_) external {
+        _updatedAt = updatedAt_;
+    }
+
+    function latestRoundData() external view returns (uint80, int256, uint256, uint256, uint80) {
+        return (_round, _answer, _updatedAt, _updatedAt, _round);
+    }
+}
+
+/// @notice TEST ONLY. Stands in for Nitro's NodeInterface at 0xc8 on a local
+/// chain: a fixed data-component estimate in L2 gas units, never a measurement.
+contract OfficialFixtureNodeInterface {
+    function gasEstimateL1Component(address, bool, bytes calldata data) external pure returns (uint64, uint256, uint256) {
+        return (uint64(data.length * 16), 0, 0);
+    }
+}

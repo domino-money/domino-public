@@ -6,6 +6,13 @@ Status: especificação de implementação para execução **após o deploy púb
 Este documento não implementa nem ativa a automação. A inspeção do código usou
 o candidato M1/M2/M3 `d048b4b8564a7939baff0fafdada5ba67660043e`.
 
+> **Implementação (21/09/2026):** os entregáveis da seção 10 estão no backend como
+> biblioteca e integração testada em ambiente descartável — ver
+> [AUTOMATION_CYCLE_RUNBOOK.md](AUTOMATION_CYCLE_RUNBOOK.md) (configuração, instalação,
+> operação, falhas, ativação) e o [relatório de entrega](../reports/AUTOMATION_CYCLE_2026-09-21.md)
+> (o que está implementado, o que foi validado e o que continua em aberto). Nenhum
+> serviço está ativo; `executionAvailable` permanece `false`.
+
 **Domino V1 é o nome público deste primeiro release.** Os entrypoints Solidity
 V1 herdam as bases existentes e encaminham seus construtores, sem adicionar
 storage, funções de operação ou overrides. A implementação técnica continua

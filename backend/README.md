@@ -90,6 +90,15 @@ provider/read failures. The helper only creates a private candidate file; all
 services remain disabled in this candidate, with consumer validation and
 technical release evidence pending. No named collaborator's ACK is required.
 
+The [automation cycle](../docs/AUTOMATION_CYCLE_RUNBOOK.md) connects the economic
+planner, the unsigned intent store and the durable executor into one service around
+the deployed V1 contracts: canonical observations, independent price references,
+exact swap quotes, complete-path gas, a restricted on-demand publisher with its own
+signed-before-send journal, and a restart-safe orchestrator with one lease per
+sequence. It is a library and a disposable-chain integration
+(`tests/test_automation_cycle_evm.py`); no production configuration, key or unit
+exists in the repository and nothing is activated by installing it.
+
 API 0.8.0 follows the [MVP data strategy](../MVP_DATA_STRATEGY.md): read indexed
 market data on demand and keep exact historical reconstruction optional for
 onboarding. No lifetime backfill starts when a user reads a pool.

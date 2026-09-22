@@ -211,18 +211,24 @@ class UnsignedExecutionStore(_Store):
     A caller-provided nonce is a reservation candidate, not a canonical RPC
     observation. An eventual signer must reconstruct and revalidate everything.
     """
-    def persist(self, owner, plan, observation, *, actor):
+    def persist(self, owner, plan, observation, *, actor, price_observation_id=None):
         plan = _model(models.ExecutionPlan, plan)
         observation = _model(models.Observation, observation)
         _owner(actor)
         if plan.sequence.owner != owner:
             _invalid()
+        # The published anchor this intent will execute under is part of what
+        # is persisted, so the signer that later qualifies it reads the binding
+        # from the intent itself rather than from a process-wide setting.
+        if price_observation_id is not None:
+            _hash(price_observation_id)
         identifier = plan.intent_id()
         def operation(conn, owner):
             conn.execute('SELECT pg_advisory_xact_lock(hashtextextended(%s,0))', (identifier,))
             prior = conn.execute('SELECT * FROM intents WHERE owner=%s AND intent_id=%s', (owner,identifier)).fetchone()
             if prior:
-                if prior['plan'] != _dump(plan) or prior['observation'] != _dump(observation):
+                if (prior['plan'] != _dump(plan) or prior['observation'] != _dump(observation)
+                        or prior['commitments'].get('priceObservationId') != price_observation_id):
                     raise ExecutionStoreError('execution_identity_conflict')
                 return self._snapshot(prior)
             now = int(conn.execute('SELECT extract(epoch FROM clock_timestamp()) AS epoch').fetchone()['epoch'])
@@ -233,6 +239,8 @@ class UnsignedExecutionStore(_Store):
             accruals={a.source.digest():a for a in observation.accruals}
             commitments={'collections':[{'sourceId':c.sourceId,'checkpointId':accruals[c.sourceId].checkpointId,'amountRaw':c.maxGrossRaw} for c in plan.collections],
                 'successorId':plan.successor_id() if plan.action==3 else None}
+            if price_observation_id is not None:
+                commitments['priceObservationId']=price_observation_id
             row = conn.execute('INSERT INTO intents(intent_id,owner,sequence_hash,chain_id,model_version,plan,observation,commitments) VALUES(%s,%s,%s,4663,%s,%s,%s,%s) RETURNING *',
                 (identifier,owner,plan.sequence.digest(),models.VERSION,Jsonb(_dump(plan)),Jsonb(_dump(observation)),Jsonb(commitments))).fetchone()
             return self._snapshot(row)
@@ -241,6 +249,17 @@ class UnsignedExecutionStore(_Store):
     def get(self, owner, intent_id):
         identifier = _hash(intent_id)
         return self._transaction(owner, lambda conn,owner:self._snapshot(self._row(conn,owner,identifier)))
+
+    def price_observation(self, owner, intent_id):
+        """The anchor persisted with the intent, or None for an intent bound by configuration."""
+        identifier = _hash(intent_id)
+        def operation(conn, owner):
+            row = conn.execute('SELECT commitments FROM intents WHERE owner=%s AND intent_id=%s', (owner,identifier)).fetchone()
+            if row is None:
+                raise ExecutionStoreError('execution_not_found')
+            bound = row['commitments'].get('priceObservationId')
+            return _hash(bound) if bound is not None else None
+        return self._transaction(owner, operation)
 
     def reservations(self, owner, intent_id):
         """Recover committed unsigned claims after worker/process loss."""

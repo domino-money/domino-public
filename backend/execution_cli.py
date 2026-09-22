@@ -60,8 +60,14 @@ def main(argv=None):
         if len(key)!=64 or any(c not in '0123456789abcdef' for c in key):
             raise ExecutionError('execution_private_configuration')
         import execution_models as m
+        # The anchor bound to this intent when it was persisted takes precedence:
+        # it isolates pools and workers, where one configured id could not. A
+        # configured id remains the fallback for intents persisted without one.
+        from execution_runner import ExecutionJournal
+        bound=ExecutionJournal(config['database']).read(owner,identifier)['intent']['commitments'].get('priceObservationId')
+        if bound is not None:_hash(bound)
         signer=RestrictedSigner(ExecutionRpc(config['rpcEndpoint']),bytes.fromhex(key),config['admission'],policy,
-            price_observation_id=config.get('priceObservationId',m.ZERO_HASH))
+            price_observation_id=bound if bound is not None else config.get('priceObservationId',m.ZERO_HASH))
         runner=ExecutionRunner(config['database'],signer,restore_only=config['restoreOnly'])
         if args.operation=='status':result=runner.journal.status(owner,identifier)
         else:

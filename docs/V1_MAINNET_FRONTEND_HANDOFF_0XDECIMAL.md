@@ -193,7 +193,7 @@ Erros úteis para diagnóstico: `deployment_not_pinned`, `deployment_identity_un
 
 O backend deve observar oportunidades, obter evidência qualificada, executar o planner econômico, publicar preço sob demanda, persistir o intent, acionar o signer/operator restrito e reconciliar os efeitos. As chamadas on-chain já existem: publisher → `PriceGuard.publish(observation)`; operator → `vault.execute(plan)`.
 
-Isso não é um timer no navegador. Não colocar chaves operator/publisher no frontend nem pedir assinatura periódica ao owner para substituir o serviço. A especificação detalhada está em [`V4_AUTOMATION_CYCLE_POST_DEPLOY.md`](V4_AUTOMATION_CYCLE_POST_DEPLOY.md).
+Isso não é um timer no navegador. Não colocar chaves operator/publisher no frontend nem pedir assinatura periódica ao owner para substituir o serviço. A especificação detalhada está em [`V4_AUTOMATION_CYCLE_POST_DEPLOY.md`](V4_AUTOMATION_CYCLE_POST_DEPLOY.md); a implementação de backend, ainda não ativada em produção, está descrita em [`AUTOMATION_CYCLE_RUNBOOK.md`](AUTOMATION_CYCLE_RUNBOOK.md).
 
 `EXECUTION_BRIDGE_ENABLED` e `PERFORMANCE_BRIDGE_ENABLED` são capacidades independentes. A existência de endereços reais não provisiona listeners privados, collectors, credenciais Access, evidência econômica ou signers. Exibir o estado operacional real e o motivo de indisponibilidade.
 

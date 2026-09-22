@@ -43,6 +43,9 @@ PACKAGED_ONLY_MIGRATIONS = (
     'backend/migrations/025_public_history.sql',
     'backend/migrations/026_public_demand.sql',
     'backend/migrations/027_remove_wallet_access_gate.sql',
+    # Automation cycle state and the publisher role: applied with the
+    # automation activation, never by this upgrade.
+    'backend/migrations/028_automation_cycle.sql',
 )
 NEW_ROLES = ('domino_performance_collector', 'domino_performance_reader',
              'domino_execution_worker', 'domino_execution_ledger',

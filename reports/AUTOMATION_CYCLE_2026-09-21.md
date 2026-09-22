@@ -1,0 +1,161 @@
+# Automation cycle — delivery record, 21 September 2026
+
+What [V4_AUTOMATION_CYCLE_POST_DEPLOY.md](../docs/V4_AUTOMATION_CYCLE_POST_DEPLOY.md) asked
+for, what exists now, what was validated and how, and what is still open. The spec's
+own closing rule applies: this delivery is a **library** and an **integration tested on
+a disposable chain and database**. It is **not an active service**. Nothing in the
+repository configures, funds, admits or starts it, and the mainnet profiles keep
+`executionAvailable: false`.
+
+## Deliverables (spec §10)
+
+| # | Asked | Delivered | Where |
+| --- | --- | --- | --- |
+| 1 | Observation/history producer and economic evidence adapters | Admission derived from the verified deployment and checked link by link; the planner's `Observation` read at one block hash with the ledger offered only where the vault's fee balances agree; a pool fee/liquidity sampler with epochs and coverage; price qualification against Chainlink USD feeds on the chain; depth/activity bounds over the sampled window; exact swap quotes by walking initialized ticks with the core's step math; complete-path gas (publication + execution + the node's L1 data component) converted to the quote asset | `automation_observer.py`, `automation_evidence.py` |
+| 2 | Planner integration with plan construction, reservation and persistence | `Candidate` → `ExecutionPlan`, proved against `validate_candidate` and the V4 wire before persisting; the anchor's on-chain id computed offline and persisted with the intent (`commitments.priceObservationId`); reservation through the existing store | `automation_plan.py`, `execution_store.persist` |
+| 3 | Publisher worker and restricted signer, journal, anchor bound to the cycle | `PublisherSigner`: `publish(Observation)` for the admitted guard only, rebuilt before signing, qualified by simulation to the exact id; `PublicationJournal`: signed bytes persisted in the same transaction as the nonce claim, one row per observation id, send/check/recover; `domino_execution_publisher` role | `publisher_signer.py`, migration 028 |
+| 4 | Orchestrator linking publication to the executor/reconciler | `SequenceCycle`: lease per sequence, evaluate without transacting, re-plan at a fresh head, persist → reserve → publish inside the source-block window → executor step with the intent-bound anchor → reconcile; every transition durable before its side effect; costs recorded from receipts | `automation_cycle.py`, `automation_store.py` |
+| 5 | Versioned configuration, installation, limits, metrics, alerts, runbook | Strict private configuration with every parameter explicit and a `configVersion` on every cycle; CLI `status`/`evaluate`/`run-once`/`serve`/`pause`/`suspend`/`publications`; runbook with installation, pass anatomy, failure table and activation steps | `automation_config.py`, `automation_cli.py`, [runbook](../docs/AUTOMATION_CYCLE_RUNBOOK.md) |
+| 6 | Integrated tests, fork evidence, limitations, controlled activation | Offline suites for every module and a disposable Anvil + PostgreSQL suite driving the whole cycle with restarts, contention, a lost reply, a lost window, a revoked anchor, a moved price, an unfunded signer, pauses, a reorg and an exact swap-quote replay | `backend/tests/test_automation_*.py`, `test_publisher_signer.py`, this record |
+
+## Approved rules preserved (spec §3)
+
+Tariffs stay 200/400 bps, charged once on consumed original fees, by the existing
+contracts and planner; the cycle adds no rate. Internal swaps carry no extra fee; their
+DEX cost and impact enter the planner as `swapLossQuote`. Only the sequence's own
+tracked lots and accruals are offered, and only when the vault agrees with the ledger.
+Gas is the company's ETH, funded manually: the cycle refuses to start a pass below the
+configured minimum balance of either signer and never touches the fee recipient's key.
+The guard band is what the deployed contract says; the cycle publishes the pool's spot
+at the source block and never a substituted price. Publication happens only for a plan
+the planner selected and the builder proved; a wait publishes nothing. M-1/M-2/M-3 are
+untouched: no contract, artifact or manifest changed for this delivery.
+
+## How the decision varies (spec §4)
+
+The planner is the one that existed; the cycle feeds it what it lacked. Balances come
+from settled origins minus spends, with other intents' active claims as the reserved
+part. Gas is the complete path, publication included, at the head's buffered base fee
+plus the L1 component, converted through the same references at the operator-adverse
+bound; the plan's `maxGasCostWei` is the smaller of the owner's limit and the
+configured cap, a separate number from the envelope ceiling the signer enforces. Swap
+quotes are exact for the observed block and carry the engine's own minimum-output
+floor; the planner's M-2 prefilter and the engine's full-consumption bound remain the
+gates. The 15 % operator buffer is `operatorCostBufferBps: 1500` in the configuration,
+versioned, not inferred.
+
+One thing the integration found and the plan builder now does: the planner sizes a
+candidate to spend the selected funds exactly at the observed price, but the execution
+adds liquidity after its own swap has moved the price and settles with round-up, so an
+exact plan is short by a few units on the sold side and the engine refuses it with
+`InvalidAmount()` before anything is spent. The builder re-simulates the swap, sizes
+the addition at the price the swap leaves, keeps `plan.liquiditySlackBps` back so the
+caps have room, and refuses a swap whose actual output would not be consumed by that
+addition; the orchestrator then tries the planner's next eligible candidate - a smaller
+swap or the direct addition - instead of publishing for a plan that cannot execute.
+
+## Failure behaviour (spec §8)
+
+Covered by the integrated suite where a disposable chain can produce the situation:
+insufficient history and uneconomic candidates wait without a transaction; a signer
+below its minimum refuses before spending; a lost source-block window abandons the
+unsigned intent; a revoked anchor and a price outside the plan band are refused by the
+executor before the key is used, with the intent cancelled and the publication's cost
+on record; a lost broadcast reply recovers the same publication; a crash after the
+publication was signed, and after the execution was submitted, resumes with the same
+bytes and one receipt; two workers cannot lease one sequence; the operator pause and the
+owner's pause both stop new work; a reorg after a completed cycle is detected through
+the vault/ledger disagreement, recorded as `reorged` by the executor and suspends the
+sequence for operator reconciliation. Not producible on Anvil and therefore not
+claimed: real sequencer inclusion latency against the 255-block window, a real
+`finalized` lag, an execution that reverts after signing (the executor's own suite covers
+that path).
+
+## Validation
+
+Offline, no chain and no database (`python -m unittest`):
+
+- `test_automation_config.py` (6): the private configuration parses only when complete,
+  refuses unknown and missing fields, duplicate JSON keys, a shared key file and bad
+  planner numbers; the plan band and the gas estimate arithmetic.
+- `test_automation_plan.py` (6): direct, netting, swap and successor candidates become
+  plans that pass `validate_candidate` and rebuild on the V4 wire; a swap quote with a
+  route commitment made for another price limit is unrepresentable; the liquidity slack;
+  the observation point and the guard's id preimage; the publish calldata.
+- `test_automation_evidence.py` (10): the tick-bitmap walk against a brute-force search
+  on random bitmaps; the swap simulator against the core step math on one range and
+  across a range boundary, with partial fills refused; the contract's ratio and
+  minimum-output arithmetic; reference qualification (fresh, stale, divergent, wrongly
+  configured, missing); gas conversion through the native reference; full evidence
+  letting the planner choose; the sampler's epochs, gaps, same-second readings and
+  zero-liquidity restarts; the history's coherence rules.
+- `test_publisher_signer.py` (4): policy and point shapes; qualification against the
+  current publisher, the source window and the simulated id; envelope caps; signing
+  that rebuilds from the point and refuses a handed envelope.
+
+PostgreSQL, actual roles (`DOMINO_TEST_POSTGRES=1`):
+
+- `test_automation_store.py` (3): one lease per sequence with a fence every write
+  needs, the same worker resuming its own lease, tenant isolation, cycle immutability
+  and terminal states, shared samples and controls, the worker's read-only view of
+  publications without their signed bytes.
+
+Anvil and PostgreSQL together (`DOMINO_TEST_EVM=1`), `test_automation_cycle_evm.py`
+(7, about 95 s), on the V4 fixture stack with a competing position, fixture USD feeds,
+a fixture node interface at `0xc8`, a 1 wei base fee, the publisher rotated to a
+synthetic key through the guardian, and the owner's policy at a 1 % trigger distance:
+
+1. Without history the cycle waits and publishes nothing; with history it publishes one
+   observation from the publisher key (the guard's stored point equals the plan's source
+   block, hash and price), reserves one intent bound to that id, signs one attempt,
+   parks at `executing` before finality, resumes without new work, reconciles once with
+   its gas costs on the cycle, moves the waiting interval to the receipt block, and runs
+   a second cycle from ledger lots plus fresh accruals with the vault and ledger agreeing.
+2. A crash after the publication was signed, and another after the execution was
+   submitted, resume with the same bytes and nonce: one publication row, one attempt,
+   one effect.
+3. A lost `eth_sendRawTransaction` reply leaves `broadcast_unknown`; the check finds
+   the receipt and the cycle continues with the same publication.
+4. A second worker cannot lease the sequence; the operator pause skips; an unfunded
+   publisher is refused before any transaction; the owner's pause makes the planner
+   wait; nothing is published or reserved in any of those.
+5. Thirty-two blocks between planning and publication lose the window
+   (`publish_publisher_source_window`), the unsigned intent is cancelled; a revoked
+   anchor (`anchor_revoked`) and a 5 % price move (`price_outside_plan_band`) after
+   publication are refused before signing, with the intent cancelled and no journal row.
+6. A reverted chain after a completed cycle: the ledger disagrees with the vault, the
+   executor records `reorged`, the effect loses canonicality, the sequence is suspended.
+7. A swap cycle: the chosen plan's swap output, replayed with the tick walk at the
+   source block and the plan's own price limit, equals the engine's `FeesConverted`
+   output exactly; the swap input equals the plan's.
+
+Also run: the existing `test_execution_store.py`, `test_execution_runner_v4_evm.py`
+and `test_execution_runner_evm.py` suites (the intent store now carries the anchor;
+the private signer CLI prefers it), the offline adapter/model/planner suites, the
+staging upgrade tests with migration 028 registered, `export-execution-contract.py
+--check`, repository hygiene (0 findings) and contract hygiene (clean).
+
+Not run, and not claimed: anything against the mainnet deployment or the own node.
+
+## Open before activation
+
+- **Ledger completeness.** The ledger learns fees from the executor's reconciliation.
+  Owner actions that realize fees, or credits recorded by another path, leave the vault
+  and the ledger disagreeing, and the planner waits on `ledger_chain_mismatch` until an
+  operator records the credits through the ledger role. An indexer of vault fee events
+  into the ledger is the next piece for unattended operation.
+- **Reference feeds per pool.** Only currencies with an admitted Chainlink feed on 4663
+  qualify. WETH/USDG and ETH/USDG have feeds in `chainlink_history.FEEDS`; every other
+  pool waits by design until a reference is admitted and qualified.
+- **Timing on the real sequencer.** The guard admits a source block for 255 blocks,
+  measured at 15–37 s on the live node. The cycle bounds itself with
+  `maxSourceBlockAge` and refuses late publication, but the achievable margin with the
+  real tunnel, real inclusion and the executor's qualification is an activation
+  measurement.
+- **Gas units on the deployed contracts.** The configuration carries measured units from
+  the gas funding study; re-measure them on the V1 addresses before activation.
+- **Successor economics.** `successorActiveFractionBps` is an explicit operator
+  assumption for a range that is not active yet; the integrated suite drives the root
+  path and leaves MINT to the executor's suite and the offline plan tests.
+- **Host installation.** Role mappings, the systemd unit and the private files follow
+  the financial services' pattern but are not scripted here.

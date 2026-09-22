@@ -138,6 +138,9 @@ PACKAGED_ONLY_MIGRATIONS = (
     # foundation (issue #182). The foundation above still applies 011, so a new
     # installation applies this one separately, as the runbook records.
     'backend/migrations/027_remove_wallet_access_gate.sql',
+    # The automation cycle's own state and publisher role; applied with the
+    # automation activation, never by the disabled foundation.
+    'backend/migrations/028_automation_cycle.sql',
 )
 MAPPINGS = (
     ('domino', 'domino-admin', ADMIN),

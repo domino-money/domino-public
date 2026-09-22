@@ -23,6 +23,7 @@ PACKAGED_ONLY_MIGRATIONS = (
     'backend/migrations/025_public_history.sql',
     'backend/migrations/026_public_demand.sql',
     'backend/migrations/027_remove_wallet_access_gate.sql',
+    'backend/migrations/028_automation_cycle.sql',
 )
 
 
