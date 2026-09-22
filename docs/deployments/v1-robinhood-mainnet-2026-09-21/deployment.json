@@ -1,0 +1,154 @@
+{
+  "schemaVersion": 1,
+  "kind": "domino-public-mainnet-deployment",
+  "chain": {
+    "name": "Robinhood Chain",
+    "chainId": 4663,
+    "nativeCurrency": "ETH"
+  },
+  "publicReleaseVersion": 1,
+  "implementationVersion": 4,
+  "contractVersion": "1.0.0-rc.1",
+  "sourceCommit": "33844248f59a713d83d710b0af70476f7b00dd15",
+  "releaseTag": "v1-release-2026-09-21",
+  "contractNames": {
+    "factory": "DominoVaultFactoryV1",
+    "readHelper": "DominoVaultReadHelperV1",
+    "routing": "DominoRoutingHelperV1",
+    "priceGuard": "DominoPriceGuardV1",
+    "engine": "DominoExecutionEngineV1",
+    "implementation": "DominoVaultV1",
+    "setup": "DominoSetupV1"
+  },
+  "contracts": {
+    "factory": "0x16bf6eaba7b31118627b277e97249720dfe1c7ff",
+    "implementation": "0x349965f26e62c2dec9746cd366d8f1364d679907",
+    "readHelper": "0x0f8e4a7894c83a5d6061246a1ba83261eddb608c",
+    "engine": "0x9bef35ea86aedc9489486c4db3d2816ba2ad7ce9",
+    "routing": "0xa00ca81cb91d5612913f87c142447cbce19a4ae5",
+    "priceGuard": "0x0ac66e192a0651bc655e0734f43a9a9de73378f1",
+    "setup": "0x676f449fcfcd0f5ce4c7a1db2d98c7d6565dd37a"
+  },
+  "dependencies": {
+    "poolManager": "0x8366a39cc670b4001a1121b8f6a443a643e40951",
+    "positionManager": "0x58daec3116aae6d93017baaea7749052e8a04fa7",
+    "stateView": "0xf3334192d15450cdd385c8b70e03f9a6bd9e673b"
+  },
+  "roles": {
+    "deployer": "0x706627e3e75b0603c4b6f9a1ebbfc635da712747",
+    "feeRecipient": "0x1488c84dafc03f7f4c4fb986f83ba99fd530c6f4",
+    "operator": "0x2320ea29fcf7b827e1a4039ed46244be4d4b29da",
+    "pricePublisher": "0x4d6f91d3101569bb8c710bc332f621600e429e7b",
+    "priceGuardGuardian": "0x5e57fded90c4635648eb7b3ba29705ff0769d103"
+  },
+  "policies": {
+    "simpleCompoundFeeBps": 200,
+    "dominoCompoundFeeBps": 400,
+    "automationFeeBasis": "consumed_original_earned_fees_once_not_principal",
+    "additionalAutomationSwapFeeBps": 0,
+    "assistedSwapFeeBps": 65,
+    "tariffVersion": "1",
+    "priceGuardMaxSqrtPriceDeviationBps": 50,
+    "priceGuardBandImmutable": true,
+    "gasFunding": "manual_company_funding",
+    "pricePublication": "on_demand"
+  },
+  "runtimeCodeHashes": {
+    "poolManager": "0xbd3881180b547f5fe817545743cfb4343e96b1bc6640dcd70c106b0066e95626",
+    "positionManager": "0xc873e135dc9aaec88489cfbad146b4cb49d6a32e0d80326377784b7ba17670b2",
+    "stateView": "0x7d9c591e0956fd89d98feb4ffcfe8bf1f7a62bd485edd979fa21d104b49878a6",
+    "factory": "0x3f3482f5f2faf2ff6b81d416ce3f666dc0f80ef5ce6c5b829fb7f8f1b0257dd3",
+    "readHelper": "0xb5f8ae682667e4d2b8749c5fcfac7964ae26d7190adfc941b1d1a6d351a4bbf3",
+    "routing": "0x4727e575dd2af4db05e70303b42a424bb1cffb7a2620e1c3f457e2324120bfc4",
+    "priceGuard": "0xc0b0b8114a4e5e7738d0e2dcf4796b90219efbcb31b96fe194dcf1d1499a7a6c",
+    "engine": "0x485ff66c813069df3de90eed7f4949e490cae0520dbeb74f935a9e2e619e9359",
+    "implementation": "0x48d9d4478e030ed92fcccc888f61bf68d70a03b17ba7287f3d498290f4eda50a",
+    "vault": "0xbf534813c4fba2b9f90052bd4f75274b78e65b4c2669281bcc6d2e1c2230d42f",
+    "setup": "0x3d634de8bfa34c5d3ef1231f066b9ad11960d828062d2ef0f7bb13d2ad206c50"
+  },
+  "verifiedBlock": {
+    "number": 69250734,
+    "hash": "0x3435dfb3b0ece307341956c5c3f2b12a056a937b81797c24809c6f1e318e0b30",
+    "timestamp": 1790039242
+  },
+  "verification": {
+    "status": "passed",
+    "finality": "finalized",
+    "variant": "wallet-execution-budget-within-approved-limits-v3",
+    "proposalUnchanged": true,
+    "rpcEvidenceUnmodified": true
+  },
+  "receipts": [
+    {
+      "component": "factory",
+      "transactionHash": "0x1b8a8aaf45459f812f09437f68032ca958fb14b9ed665c5724922b8de111d0f1",
+      "blockNumber": 69239633,
+      "blockHash": "0x818c877d1239f476e499ac0ad567c040abdb24ed316e83997aff45c233e862e2"
+    },
+    {
+      "component": "readHelper",
+      "transactionHash": "0xcb7bee25404e732efd01b39d10a399e83feef84db19e2913923117ebd7d4c123",
+      "blockNumber": 69242518,
+      "blockHash": "0x3693bfa871e74a0a69f522679419e010085bae9154a84f1c28829d448e337022"
+    },
+    {
+      "component": "routing",
+      "transactionHash": "0x5a1d3c2e7fdedf9d654c5125661c29012a0fc624627e4196d0ce4379b3e89c23",
+      "blockNumber": 69242601,
+      "blockHash": "0xee7774f7f4fac26316f29681fc4eb51c4d54dda0055311aa66f953a01b1bd1f9"
+    },
+    {
+      "component": "priceGuard",
+      "transactionHash": "0xf4944874383bd0b0acaaf638caa23bb51f59c90c4128ec434e5f27a504693bc2",
+      "blockNumber": 69242674,
+      "blockHash": "0x56e68dd51f7ec7727685bb6fbf2be88fc5a13f3c6fb797f51c655f2b3c32894b"
+    },
+    {
+      "component": "engine",
+      "transactionHash": "0x0cdac4ce700eb1ffc9ceb343af47445f9741d2bc3ad8245bbffeef02b081830e",
+      "blockNumber": 69245190,
+      "blockHash": "0x787464bfaa548a251b2288b99336338299e62af9abedbbf82feda89fc146573b"
+    },
+    {
+      "component": "implementation",
+      "transactionHash": "0xadbd767b3f19dc58b97b36fe0595b3cbed29e4fa54ab6e9a14d86ee4523418b1",
+      "blockNumber": 69245254,
+      "blockHash": "0x9ac31c5439d37fdc0888c99babdf135a5339998256a37062f644f3479ca71b1d"
+    },
+    {
+      "component": "setup",
+      "transactionHash": "0xa5e96b185ced33e2cebcdda6ced625e9d30705a73f4d3b86b5d2a4ed594f21a8",
+      "blockNumber": 69249061,
+      "blockHash": "0xe875ab8d50efded9d4e67feae8d94ae09e604712f4737bdddc5e4eb62f2f7471"
+    },
+    {
+      "component": "finalize",
+      "transactionHash": "0x109aef9656f4bd08eae33c5da548261315bf53b6d07c25af49fc6052691cd641",
+      "blockNumber": 69249151,
+      "blockHash": "0x0dcd0101be4a7dbc9fff767936b544e006c9fa11bb3c7c428248cea411a744d9"
+    }
+  ],
+  "artifactManifestSha256": "d74a6816df586ccc6ee660954df31e673111a7c2b95234330aa3e195cc1c4c57",
+  "proposalCanonicalSha256": "27bc9b6b5ea2ae95d3590d810f35c616c55e2d560504ca6f9847c45507221f2a",
+  "sourceFileSha256": {
+    "verified-release.mainnet.json": "8361b2ad42d49aef03a4b7a3723098b799e1389e9adf76e702d26a7585d91bfe",
+    "public-deployment.candidate.json": "6c2606b739307e9425d4f93e2130a2d37d159092c73111a2638ee98c08c79944"
+  },
+  "profileFiles": {
+    "setup": {
+      "file": "setup-release.json",
+      "sha256": "8c5f1254d2fd001a85b26443f41d2a2030592631ae25f63a389641ce3b557f08"
+    },
+    "sequence": {
+      "file": "sequence-release.json",
+      "sha256": "6a6a10beba15fe904a70e5fff8c75b8ae542f9ec314645f0bcf9f527f95a7e6a"
+    }
+  },
+  "profileExpiresAt": 1792609290,
+  "contractsDeployed": true,
+  "transactionCount": 8,
+  "executionAvailable": false,
+  "operatorFundingQualified": false,
+  "priceObservationQualified": false,
+  "publicationNote": "Public handoff files only. Generating these files does not publish Worker profiles, change frontend pins, enable feature flags or start automation."
+}

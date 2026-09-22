@@ -1,0 +1,34 @@
+{
+  "contractVersion": "1.0.0-rc.1",
+  "chainId": 4663,
+  "available": true,
+  "deployment": {
+    "poolManager": "0x8366a39cc670b4001a1121b8f6a443a643e40951",
+    "positionManager": "0x58daec3116aae6d93017baaea7749052e8a04fa7",
+    "stateView": "0xf3334192d15450cdd385c8b70e03f9a6bd9e673b",
+    "factory": "0x16bf6eaba7b31118627b277e97249720dfe1c7ff",
+    "readHelper": "0x0f8e4a7894c83a5d6061246a1ba83261eddb608c",
+    "routing": "0xa00ca81cb91d5612913f87c142447cbce19a4ae5",
+    "priceGuard": "0x0ac66e192a0651bc655e0734f43a9a9de73378f1",
+    "engine": "0x9bef35ea86aedc9489486c4db3d2816ba2ad7ce9",
+    "implementation": "0x349965f26e62c2dec9746cd366d8f1364d679907",
+    "serviceFeeRecipient": "0x1488c84dafc03f7f4c4fb986f83ba99fd530c6f4",
+    "operator": "0x2320ea29fcf7b827e1a4039ed46244be4d4b29da",
+    "pricePublisher": "0x4d6f91d3101569bb8c710bc332f621600e429e7b",
+    "serviceFeeBps": 200,
+    "dominoServiceFeeBps": 400,
+    "expiresAt": 1792609290,
+    "codeHashes": {
+      "poolManager": "0xbd3881180b547f5fe817545743cfb4343e96b1bc6640dcd70c106b0066e95626",
+      "positionManager": "0xc873e135dc9aaec88489cfbad146b4cb49d6a32e0d80326377784b7ba17670b2",
+      "stateView": "0x7d9c591e0956fd89d98feb4ffcfe8bf1f7a62bd485edd979fa21d104b49878a6",
+      "factory": "0x3f3482f5f2faf2ff6b81d416ce3f666dc0f80ef5ce6c5b829fb7f8f1b0257dd3",
+      "readHelper": "0xb5f8ae682667e4d2b8749c5fcfac7964ae26d7190adfc941b1d1a6d351a4bbf3",
+      "routing": "0x4727e575dd2af4db05e70303b42a424bb1cffb7a2620e1c3f457e2324120bfc4",
+      "priceGuard": "0xc0b0b8114a4e5e7738d0e2dcf4796b90219efbcb31b96fe194dcf1d1499a7a6c",
+      "engine": "0x485ff66c813069df3de90eed7f4949e490cae0520dbeb74f935a9e2e619e9359",
+      "implementation": "0x48d9d4478e030ed92fcccc888f61bf68d70a03b17ba7287f3d498290f4eda50a",
+      "vault": "0xbf534813c4fba2b9f90052bd4f75274b78e65b4c2669281bcc6d2e1c2230d42f"
+    }
+  }
+}
