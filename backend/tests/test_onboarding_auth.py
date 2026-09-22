@@ -21,7 +21,6 @@ from read_deadline import read_deadline
 from session_models import SessionError
 from session_service import SessionService
 from session_siwe import SiwePolicy
-from wallet_access import WalletAccessAdmin
 from session_store import (CAPACITIES, LOCK_ID, PREVIEW_ACCOUNT_LIMIT, PREVIEW_GLOBAL_LIMIT,
                            PREVIEW_IP_LIMIT, SessionStore,
                            _DeadlineConnection, digest)
@@ -120,8 +119,6 @@ class OnboardingAuthPostgresTests(unittest.TestCase):
         self.addCleanup(self.admin.close)
         self.admin.execute('TRUNCATE domino_sessions.contexts,domino_sessions.challenges,domino_sessions.sessions,'
                            'domino_sessions.rate_limits,domino_sessions.private_limits')
-        self.admin.execute('TRUNCATE domino_wallet_access.grants,domino_wallet_access.audit RESTART IDENTITY')
-        self.access = WalletAccessAdmin(self.settings)
         self.store = SessionStore(self.settings, abuse_secret=SECRET)
         self.peer = SessionStore(self.settings, abuse_secret=SECRET)
         self.checker = Checker()
@@ -136,7 +133,6 @@ class OnboardingAuthPostgresTests(unittest.TestCase):
     def login(self, number=1, *, account_number=None):
         client = f'192.0.2.{number}'
         account = Account.from_key(bytes([account_number or number]) * 32)
-        self.access.grant(account.address)
         first = self.service.execute('bootstrap', {}, client=client)
         preauth = first['credentials']['preauth']
         csrf = first['result']['csrfToken']

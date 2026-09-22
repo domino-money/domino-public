@@ -137,10 +137,6 @@ export function WalletSessionDialog({
         </>
       )
       break
-    case 'not_invited':
-      // No retry: another signature cannot change an admission decision.
-      actions = disconnectButton
-      break
     case 'blocked':
       actions = (
         <>

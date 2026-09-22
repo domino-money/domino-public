@@ -195,15 +195,12 @@ class SessionStore:
 
     @staticmethod
     def _active(row, now):
-        return SessionStore._live(row,now) and row.get('_wallet_allowed') is True
+        """Live and on this chain. 008 constrains the column; re-read it anyway.
 
-    @staticmethod
-    def _admission(conn, address, generation=None):
-        row=conn.execute('SELECT generation FROM domino_wallet_access.grants '
-                         'WHERE chain_id=%s AND address=%s AND allowed', (CHAIN_ID,address)).fetchone()
-        if not row or generation is not None and row['generation']!=generation:
-            return SessionError('wallet_not_allowed')
-        return row['generation']
+        Only logout uses _live on its own: a browser may discard its own
+        session whatever else has already denied it.
+        """
+        return SessionStore._live(row,now) and row['chain_id']==CHAIN_ID
 
     @staticmethod
     def _context(conn, now, preauth, csrf, *, allow_consumed=False):
@@ -217,12 +214,7 @@ class SessionStore:
 
     @staticmethod
     def _session(conn, session):
-        row=conn.execute('SELECT * FROM sessions WHERE bearer_hash=%s',(digest(session),)).fetchone()
-        if row:
-            generation=row.get('admission_generation')
-            row['_wallet_allowed']=(generation is not None and row['chain_id']==CHAIN_ID and
-                not isinstance(SessionStore._admission(conn,row['address'],generation),SessionError))
-        return row
+        return conn.execute('SELECT * FROM sessions WHERE bearer_hash=%s',(digest(session),)).fetchone()
 
     def bootstrap(self, client, preauth=None, session=None):
         new,csrf=bearer(),bearer()
@@ -237,10 +229,6 @@ class SessionStore:
             # second login flow while its newly created session is active.
             created=conn.execute('SELECT * FROM sessions WHERE source_context_hash=%s',
                                  (digest(preauth),)).fetchone()
-            if created:
-                generation=created.get('admission_generation')
-                created['_wallet_allowed']=(generation is not None and
-                    not isinstance(self._admission(conn,created['address'],generation),SessionError))
             if self._active(created,now):return SessionError('session_exists')
             if not self._room(conn,'contexts'):return SessionError('session_capacity_busy')
             conn.execute('UPDATE contexts SET revoked_at=%s WHERE bearer_hash=%s',(now,digest(preauth)))
@@ -262,11 +250,6 @@ class SessionStore:
             if denied:return denied
             context=self._context(conn,now,preauth,csrf)
             if isinstance(context,SessionError):return context
-            # Snapshot without disclosing membership. Both states issue the
-            # same challenge; NULL must never inherit a subsequent grant.
-            admitted=conn.execute('SELECT generation FROM domino_wallet_access.grants '
-                'WHERE chain_id=%s AND address=%s AND allowed',(CHAIN_ID,address)).fetchone()
-            generation=admitted['generation'] if admitted else None
             if not self._room(conn,'challenges'):return SessionError('session_capacity_busy')
             issued=now.replace(microsecond=0)
             expires=min(issued+timedelta(minutes=5),context['expires_at'].replace(microsecond=0))
@@ -274,9 +257,9 @@ class SessionStore:
             message=issue(address,nonce,issued,expires)
             conn.execute('UPDATE challenges SET consumed_at=%s WHERE context_hash=%s AND consumed_at IS NULL',
                          (now,digest(preauth)))
-            conn.execute('INSERT INTO challenges(id,context_hash,address,nonce,issued_at,expires_at,message,admission_generation) '
-                         'VALUES (%s,%s,%s,%s,%s,%s,%s,%s)',
-                         (identifier,digest(preauth),address,nonce,issued,expires,message,generation))
+            conn.execute('INSERT INTO challenges(id,context_hash,address,nonce,issued_at,expires_at,message) '
+                         'VALUES (%s,%s,%s,%s,%s,%s,%s)',
+                         (identifier,digest(preauth),address,nonce,issued,expires,message))
             return _CommitResult({'result':{'challengeId':identifier,'message':message,'expiresAt':utc(expires)},'credentials':{}},
                                  min(expires,context['expires_at']),'challenge_invalid')
         return self._transaction(operation)
@@ -300,7 +283,7 @@ class SessionStore:
             return challenge
         return self._transaction(operation)
 
-    def check_verified_admission(self, preauth, csrf, challenge):
+    def reserve_verified_address(self, preauth, csrf, challenge):
         """Called only after SIWE ownership proof, before any EOA provider read."""
         def operation(conn,now):
             context=self._context(conn,now,preauth,csrf)
@@ -309,12 +292,8 @@ class SessionStore:
                 (challenge['id'],digest(preauth))).fetchone()
             if (not current or current['expires_at']<=now or current['consumed_at'] is not None
                     or current['attempts']<1 or any(current[key]!=challenge[key] for key in
-                        ('address','nonce','message','admission_generation'))):
+                        ('address','nonce','message'))):
                 return SessionError('challenge_invalid')
-            generation=current['admission_generation']
-            if generation is None:return SessionError('wallet_not_allowed')
-            denied=self._admission(conn,current['address'],generation)
-            if isinstance(denied,SessionError):return denied
             # Unsigned requests never spend another wallet's shared budget.
             denied=self._rate(conn,now,'verified-address',current['address'],PROVEN_WALLET_PER_HOUR,3600)
             if denied:return denied
@@ -337,21 +316,16 @@ class SessionStore:
             if (not current or current['expires_at']<=now or current['consumed_at'] is not None or
                     any(current[key]!=challenge[key] for key in ('address','nonce','message')) or current['attempts']<1):
                 return SessionError('challenge_invalid')
-            generation=current.get('admission_generation')
-            if generation is None or generation!=challenge.get('admission_generation'):
-                return SessionError('wallet_not_allowed')
-            denied=self._admission(conn,current['address'],generation)
-            if isinstance(denied,SessionError):return denied
             if not self._room(conn,'sessions'):return SessionError('session_capacity_busy')
             conn.execute('UPDATE challenges SET consumed_at=%s WHERE id=%s',(now,current['id']))
             conn.execute('UPDATE contexts SET consumed_at=%s WHERE bearer_hash=%s',(now,digest(preauth)))
             conn.execute('UPDATE sessions SET revoked_at=%s WHERE bearer_hash=%s',(now,digest(old_session)))
             expires=now+timedelta(hours=12)
             conn.execute('INSERT INTO sessions(bearer_hash,csrf_hash,source_context_hash,address,chain_id,policy,'
-                         'created_at,last_used_at,expires_at,block_number,block_hash,admission_generation) VALUES '
-                         '(%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)',
+                         'created_at,last_used_at,expires_at,block_number,block_hash) VALUES '
+                         '(%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)',
                          (digest(new),digest(new_csrf),digest(preauth),current['address'],CHAIN_ID,POLICY_VERSION,
-                          now,now,expires,validation['blockNumber'],validation['blockHash'],generation))
+                          now,now,expires,validation['blockNumber'],validation['blockHash']))
             return _CommitResult({'result':self._result(current['address'],expires,new_csrf,validation),
                     'credentials':{'preauth':None,'session':new}},
                     min(context['expires_at'],current['expires_at']),'challenge_invalid')
@@ -467,8 +441,8 @@ class SessionStore:
 
     def logout(self, client, preauth, session, csrf):
         def operation(conn,now):
-            # Removal revokes private authority, but matching live credentials
-            # still let their browser explicitly discard its own session.
+            # Matching live credentials let a browser explicitly discard its
+            # own session, whatever else has already denied it.
             row=self._session(conn,session)
             active=self._live(row,now)
             context=None

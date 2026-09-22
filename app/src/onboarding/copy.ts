@@ -22,7 +22,6 @@ export const ELIGIBILITY_COPY: Readonly<Record<EligibilityBlock, string>> = {
   signed_out: 'Sign in with your wallet to request a live preview. Previews are private to your session and are cleared when you sign out.',
   wrong_network: 'Switch your wallet to Robinhood Chain (4663) to request a preview.',
   wallet_account_differs: 'Your wallet is on a different account than your session. Sign out, then sign in with this account.',
-  not_invited: "This wallet isn't invited to the beta.",
   gate_required: 'Your beta access has expired. Reload the page and enter the password again.',
   gate_unavailable: 'The site is temporarily unavailable. Try again later.',
   session_disabled: "Wallet sign-in isn't enabled on this deployment.",

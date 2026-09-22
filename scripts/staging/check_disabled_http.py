@@ -29,7 +29,7 @@ READ_VERSION, GENERATION = '1.1.0-rc.3', None
 SERVICES = (
     ('gateway', 8878, 'read', READ_VERSION, ('token', 'pools', 'pool-market',
      'wallet-assets', 'nft-positions', 'catalogue', 'pool-activity', 'pool-positions', 'pool-metrics')),
-    ('auth', 8879, 'session', '3.0.0-rc.2', ('bootstrap', 'challenge', 'verify', 'me', 'refresh', 'logout')),
+    ('auth', 8879, 'session', '3.0.0-rc.3', ('bootstrap', 'challenge', 'verify', 'me', 'refresh', 'logout')),
     ('onboarding', 8880, 'onboarding', '1.0.0', ('swap-preview', 'position-preview')),
     ('deposit', 8881, 'deposit', '1.1.0-rc.4', ('create', 'get', 'list', 'prepare', 'report', 'reconcile', 'cancel', 'allowances')),
 )

@@ -24,8 +24,9 @@ A receipt does not revoke residual allowances or clear another-nonce effect.
 Legacy stored receipts are projected from their raw gas operands with null
 poster gas when absent, preserving the original private evidence. No SQL
 migration or historical rewrite is introduced here; migrations001–014 remain
-in order. Session-v1 3.0.0-rc.2 admission/generation checks remain in force before
-and after provider work and before payload delivery.
+in order. Session-v1 3.0.0-rc.3 fresh session checks remain in force before and
+after provider work and before payload delivery; the admission/generation checks
+that accompanied them were removed with the wallet whitelist (issue #182).
 
 ## Evidence and release gates
 

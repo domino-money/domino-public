@@ -60,13 +60,15 @@ interrupted work. Its separate `deposit-v1` contract requires reviewed token
 admission before preparation; it has no private key or broadcast method.
 Read/session payloads and frontend hooks remain unchanged. See
 [implementation evidence](../reports/DIRECT_DEPOSIT_IMPLEMENTATION.md).
-Issue #49 adds [operator-managed wallet admission](../docs/WALLET_ACCESS.md)
-to that candidate: login/private access is denied unless chain 4663 and the
-wallet's current grant generation match. Public reads remain open. The
-`session-v1` candidate is 3.0.0-rc.2; no initial wallets or services are enabled.
-The selected [home VM deployment](../docs/HOME_VM_RUNBOOK.md) still requires
-integrated-release validation and application configuration; the VM/empty PostgreSQL
-foundation is installed and four initial wallets are held privately for later admission.
+Issue #182 removes the [operator-managed wallet admission](../docs/WALLET_ACCESS.md)
+issue #49 had added: proving control of a chain 4663 address through SIWE is the
+only condition on login again, and the shared beta password at the edge is the
+only remaining gate. Public reads remain open. The `session-v1` candidate is
+3.0.0-rc.3; no services are enabled. Apply migration 027 before running this
+producer against a database that has 011, or its session-insert trigger refuses
+every login. The selected [home VM deployment](../docs/HOME_VM_RUNBOOK.md) still
+requires integrated-release validation and application configuration; the
+VM/empty PostgreSQL foundation is installed.
 
 Issue #42 adds opt-in [Robinhood fork qualification](../reports/DEPOSIT_FORK_QUALIFICATION.md)
 through a read-only upstream gateway and an isolated Anvil child. Four protocol

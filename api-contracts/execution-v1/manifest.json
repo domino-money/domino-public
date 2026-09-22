@@ -12,7 +12,7 @@
     },
     {
       "path": "schema-data.mjs",
-      "sha256": "7074b0d7ec44075b3b3d75e6f670a28cbf52f47e4299e2bc20a4b039a980b120"
+      "sha256": "5d1bfe60776f258ef4afe6c62696eedce703ad15b13dc4a3191bd1eb1d0124f5"
     },
     {
       "path": "schemas/list.request.schema.json",
@@ -32,7 +32,7 @@
     },
     {
       "path": "types.ts",
-      "sha256": "62ca1b225fb41dcda8bf462ab5888703ae5d00dab72c923ed979c6b235f91135"
+      "sha256": "b75e84dbc50a66317d9ad1fa99e8d11ad61794e996f7fb5774d05dbe6a58008e"
     },
     {
       "path": "runtime.mjs",

@@ -72,9 +72,8 @@ const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
  * One isolated world: a fake service, a server, a browser context with two
  * wallets. `close()` tears it down and checks every invariant.
  */
-async function scenario({ gate = null, intercept, admit = [ADDR_A, ADDR_B], clockAt, allowConsoleErrors = false, wallets } = {}) {
+async function scenario({ gate = null, intercept, clockAt, allowConsoleErrors = false, wallets } = {}) {
   const fake = createFakeSession();
-  for (const address of admit) fake.admit(address);
   const server = createWalletServer({ fake, gate, intercept });
   await new Promise((done) => server.listen(0, '127.0.0.1', done));
   servers.add(server);
@@ -679,7 +678,7 @@ test('sign-out is confirmed by the service, clears the cookie, and survives a re
   await s.close();
 });
 
-test('revocation ends the session, and re-admission does not bring it back: a new sign-in is needed', async () => {
+test('a revoked session stays dead across reloads: a new sign-in is needed', async () => {
   const s = await scenario();
   const page = await s.open();
   await connect(page);
@@ -688,7 +687,6 @@ test('revocation ends the session, and re-admission does not bring it back: a ne
   s.fake.revoke(ADDR_A);
   await page.reload({ waitUntil: 'load' });
   await viewIs(page, 'signed_out');
-  s.fake.admit(ADDR_A);
   await page.reload({ waitUntil: 'load' });
   assert.equal((await viewIs(page, 'signed_out')).reason, 'none', 'the old session stays dead');
   assert.equal(s.wallet.state.signed.length, 1, 'nothing asked for a signature on its own');
@@ -767,25 +765,7 @@ test('a verify answered by a platform 5xx after it committed is closed with the 
   }
 });
 
-// ---- admission, unavailability, gate ----------------------------------------
-
-test('wallet_not_allowed after a valid signature shows the invitation state and stops every request', async () => {
-  const s = await scenario({ admit: [] });
-  const page = await s.open();
-  await connect(page);
-  await clickSignIn(s, page);
-  await viewIs(page, 'not_invited');
-  assert.equal(s.wallet.state.signed.length, 1, 'the denial came after a valid signature');
-  const requests = s.fake.state.log.length;
-  await sleep(3000);
-  assert.equal(s.fake.state.log.length, requests, 'nothing is sent after the denial');
-  const text = await dialog(page).innerText();
-  assert.match(text, /This wallet doesn’t have sign-in access\. Public pages keep working\./);
-  assert.doesNotMatch(text, /invited|beta/i, 'no closed-beta wording');
-  assert.doesNotMatch(text, /unavailable|outage|network/i);
-  assert.equal(await dialog(page).getByRole('button', { name: 'Sign in', exact: true }).count(), 0);
-  await s.close();
-});
+// ---- unavailability, gate ---------------------------------------------------
 
 test('an unavailable session store is its own state, and trying again only reads me', async () => {
   const s = await scenario();
@@ -1411,7 +1391,7 @@ test("two tabs refreshing the same session keep one CSRF, and neither breaks the
   await s.close();
 });
 
-test('a refresh after revocation signs out and clears private data, with no signature', async () => {
+test('a refresh after the session is revoked signs out and clears private data, with no signature', async () => {
   const s = await scenario({ clockAt: Date.now() });
   const page = await s.open();
   await connect(page);

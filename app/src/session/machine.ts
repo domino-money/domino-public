@@ -18,8 +18,6 @@ import { checkChallengeMessage } from './siwe'
  *   - A signature is only requested as the next step of a sign-in the user
  *     started, and only after the server's message passed siwe.ts. No error,
  *     retry or recovery path requests one.
- *   - `wallet_not_allowed` stops the flow and nothing else is sent for that
- *     address while the page is open.
  *   - A recheck (expiry, visibility, another tab) that arrives while a flow is
  *     running is remembered and runs once the flow ends, so another tab's
  *     sign-out is never lost behind this tab's own request.
@@ -111,7 +109,6 @@ export type View =
   | { status: 'signed_in'; owner: string; expiresAt: string; notice?: 'refresh_unavailable' }
   /** This browser holds a session for an address other than the connected one. */
   | { status: 'other_session'; owner: string }
-  | { status: 'not_invited'; address: string }
   | { status: 'signing_out' }
   | { status: 'blocked'; failure: FailureKind; retry: Retry; retryAfterS: number | null }
 
@@ -146,7 +143,7 @@ export interface Machine {
   /** The session this browser holds, once verify or me has shown it. Owner is lowercase. */
   readonly session: { readonly owner: string; readonly csrf: string } | null
   readonly preauthCsrf: string | null
-  /** Lowercase addresses refused with wallet_not_allowed or account_unsupported. */
+  /** Lowercase addresses refused with account_unsupported. */
   readonly locked: readonly string[]
   /**
    * A recheck arrived while a flow was running. It runs as soon as the flow
@@ -255,7 +252,7 @@ function resting(m: Machine, reason: SignedOutReason): View {
   if (id.kind === 'unknown') return { status: 'starting' }
   if (id.kind === 'disconnected') return { status: 'no_wallet' }
   if (id.chainId !== ROBINHOOD_CHAIN_ID) return { status: 'wrong_network', chainId: id.chainId }
-  if (m.locked.includes(lower(id.address))) return { status: 'not_invited', address: id.address }
+  if (m.locked.includes(lower(id.address))) return blocked('account_unsupported', 'none')
   return { status: 'signed_out', reason }
 }
 
@@ -301,9 +298,6 @@ export function blockedFor(failure: TransportFailure): View {
           return blocked('timeout', 'check')
         case 'unsupported_account':
           return blocked('account_unsupported', 'none')
-        // A route answered with a code it cannot produce: producer drift.
-        case 'not_invited':
-          return blocked('contract_mismatch', 'none')
         // This page sent something the service rejects. Repeating it cannot help.
         default:
           return blocked('client_error', 'none')
@@ -698,17 +692,6 @@ function afterVerify(m: Machine, address: string, o: RouteOutcome<'verify'>): St
   const failure = o.failure
   if (failure.kind === 'session_error') {
     switch (classify(failure.code)) {
-      case 'not_invited':
-        // Only after a valid ownership proof. The flow stops here: no abort,
-        // no retry, no further request for this address. The preauth context
-        // lapses on its own and carries no authority.
-        return same({
-          ...m,
-          flow: IDLE,
-          preauthCsrf: null,
-          locked: [...m.locked, lower(address)],
-          view: { status: 'not_invited', address },
-        })
       case 'challenge_rejected':
         return abortLogin(m, { reason: 'challenge_expired' })
       case 'signature_rejected':
@@ -967,8 +950,8 @@ export function reduce(m: Machine, e: Event, env: Env): Step {
 
 /**
  * A recheck that waited for a flow runs as soon as the flow is idle, if the
- * landing is one a recheck applies to. Anything else (blocked, not invited,
- * wrong network) drops it: a recheck never retries a failure on its own.
+ * landing is one a recheck applies to. Anything else (blocked, wrong network)
+ * drops it: a recheck never retries a failure on its own.
  */
 function runPendingRecheck(s: Step): Step {
   const m = s.machine

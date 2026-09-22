@@ -15,11 +15,14 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import upgrade_financial as financial
 
 REPO = Path(__file__).resolve().parents[3]
-PUBLIC_MIGRATIONS = (
+# Named for the public collector, which owns most of them; 027 is the
+# foundation's own session-gate removal, packaged the same way.
+PACKAGED_ONLY_MIGRATIONS = (
     'backend/migrations/023_pool_request_scheduling.sql',
     'backend/migrations/024_public_observations.sql',
     'backend/migrations/025_public_history.sql',
     'backend/migrations/026_public_demand.sql',
+    'backend/migrations/027_remove_wallet_access_gate.sql',
 )
 
 
@@ -45,10 +48,10 @@ class FinancialTests(unittest.TestCase):
         # Only the registered financial upgrade migrations are applied.
         self.assertEqual([row['path'] for row in self.planned['migrations']],
                          list(financial.MIGRATIONS))
-        self.assertEqual(financial.PACKAGED_ONLY_MIGRATIONS,PUBLIC_MIGRATIONS)
+        self.assertEqual(financial.PACKAGED_ONLY_MIGRATIONS,PACKAGED_ONLY_MIGRATIONS)
         self.assertEqual(self.planned['packagedOnlyMigrations'],
                          [{'path':p,'sha256':financial.sha(self.files[p][0])}
-                          for p in PUBLIC_MIGRATIONS if p in self.files])
+                          for p in PACKAGED_ONLY_MIGRATIONS if p in self.files])
         self.assertEqual(set(self.planned['units']), {'domino-' + c + '.service' for c in financial.COMPONENTS})
 
     def test_units_scope_off_and_private_namespaces(self):
@@ -77,12 +80,12 @@ class FinancialTests(unittest.TestCase):
         files = dict(self.files)
         for index, name in enumerate(financial.base.MIGRATIONS):
             files[name] = (f'RAISE_FOUNDATION_REPLAY_{index};'.encode(), False)
-        for index,name in enumerate(PUBLIC_MIGRATIONS):
-            files[name]=(f'RAISE_PUBLIC_ACTIVATION_{index};'.encode(),False)
+        for index,name in enumerate(PACKAGED_ONLY_MIGRATIONS):
+            files[name]=(f'RAISE_PACKAGED_ONLY_{index};'.encode(),False)
         query = financial.migration_sql(files, self.planned)
         self.assertNotIn('RAISE_FOUNDATION_REPLAY', query)
-        self.assertNotIn('RAISE_PUBLIC_ACTIVATION', query)
-        for name in PUBLIC_MIGRATIONS:self.assertNotIn(name,query)
+        self.assertNotIn('RAISE_PACKAGED_ONLY', query)
+        for name in PACKAGED_ONLY_MIGRATIONS:self.assertNotIn(name,query)
         self.assertTrue(query.startswith('BEGIN;'))
         self.assertTrue(query.endswith('COMMIT;\n'))
         for name in financial.MIGRATIONS:
@@ -93,7 +96,7 @@ class FinancialTests(unittest.TestCase):
     def test_public_source_migrations_are_optional_but_unknown_or_missing_required_are_refused(self):
         def archive(extras,omit=()):
             files={name:raw for name,(raw,_) in self.files.items()
-                   if name not in PUBLIC_MIGRATIONS and name not in omit}
+                   if name not in PACKAGED_ONLY_MIGRATIONS and name not in omit}
             files.update({name:b'-- packaged only' for name in extras})
             output=io.BytesIO()
             with tarfile.open(fileobj=output,mode='w',format=tarfile.PAX_FORMAT,
@@ -103,17 +106,17 @@ class FinancialTests(unittest.TestCase):
                     tar.addfile(member,io.BytesIO(raw))
             target=Path(self.temp.name)/'packaged.tar';target.write_bytes(output.getvalue())
             return financial.archive_files(target,financial.sha(output.getvalue()),self.commit)
-        for extras in ((),PUBLIC_MIGRATIONS[:1],PUBLIC_MIGRATIONS[1:],PUBLIC_MIGRATIONS):
+        for extras in ((),PACKAGED_ONLY_MIGRATIONS[:1],PACKAGED_ONLY_MIGRATIONS[1:],PACKAGED_ONLY_MIGRATIONS):
             with self.subTest(extras=extras):
                 files=archive(extras)
-                self.assertEqual(set(files)&set(PUBLIC_MIGRATIONS),set(extras))
+                self.assertEqual(set(files)&set(PACKAGED_ONLY_MIGRATIONS),set(extras))
                 planned=financial.plan(files,self.commit,self.digest)
                 self.assertEqual([row['path'] for row in planned['migrations']],list(financial.MIGRATIONS))
         with self.assertRaisesRegex(ValueError,'unexpected_migration'):
-            archive((*PUBLIC_MIGRATIONS,'backend/migrations/027_unregistered.sql'))
+            archive((*PACKAGED_ONLY_MIGRATIONS,'backend/migrations/999_unregistered.sql'))
         for name in (*financial.base.MIGRATIONS,*financial.MIGRATIONS):
             with self.subTest(missing=name),self.assertRaisesRegex(ValueError,'required_release_file_missing'):
-                archive(PUBLIC_MIGRATIONS,omit=(name,))
+                archive(PACKAGED_ONLY_MIGRATIONS,omit=(name,))
 
     def test_only_the_pinned_foundation_succession_is_accepted(self):
         """The installers re-apply the foundation; one deliberate change travels."""

@@ -1,0 +1,22 @@
+-- Remove the per-wallet admission gate. The shared beta password at the edge
+-- is the only remaining gate on sign-in; nothing here touches it.
+--
+-- 011 installed a BEFORE INSERT trigger on domino_sessions.sessions that
+-- refuses any row whose admission_generation does not match a live grant. It
+-- denies on its own, independently of Python, so it must go in the same change
+-- that removes the producer's checks: leaving it would deny every login at the
+-- database level.
+DROP TRIGGER IF EXISTS wallet_access_session_insert ON domino_sessions.sessions;
+
+-- Everything else 011 created stays in place, unused: the domino_wallet_access
+-- schema, its grants and append-only audit tables, set_access(),
+-- guard_session_insert() and the domino_wallet_access_operator role. The audit
+-- table is history and is kept; the rest is dormant, so re-enabling the gate
+-- later is re-creating the trigger above rather than reinstalling a schema.
+-- No application code reads or writes that schema any more, so a grant written
+-- into it now admits nobody and revoking one refuses nobody.
+--
+-- domino_sessions.challenges.admission_generation and
+-- domino_sessions.sessions.admission_generation are no longer written or read.
+-- Both are nullable, so new rows simply leave them NULL. Dropping the columns
+-- is a separate, optional change.

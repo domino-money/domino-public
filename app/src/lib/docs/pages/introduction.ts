@@ -75,7 +75,7 @@ export const WALLET: DocPage = {
       blocks: [
         p('Sign in asks your wallet to sign a short message that names this site, your address and Robinhood Chain. It says: ', b('Sign in to Domino. This request does not authorize transactions or automation.')),
         p('The signature proves you control the address. It approves no token, deposits nothing, swaps nothing, withdraws nothing and starts no automation.'),
-        p('A message that does not match this site, your address and the network is never sent to your wallet. Only standard wallet accounts can sign in, not an address with contract code, and a wallet also needs sign-in access from the Domino team.'),
+        p('A message that does not match this site, your address and the network is never sent to your wallet. Only standard wallet accounts can sign in, not an address with contract code.'),
       ],
     },
     {

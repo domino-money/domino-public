@@ -21,7 +21,6 @@ export type SessionSnapshot =
   | { kind: 'wrong_network'; chainId: number }
   | { kind: 'signed_out' }
   | { kind: 'wallet_account_differs' }
-  | { kind: 'not_invited' }
   | { kind: 'gate_required' }
   | { kind: 'gate_unavailable' }
   | { kind: 'session_disabled' }
@@ -101,8 +100,6 @@ export function toSessionSnapshot(snapshot: Snapshot, locked: ReadonlySet<string
       return { kind: 'signed_out' }
     case 'other_session':
       return { kind: 'wallet_account_differs' }
-    case 'not_invited':
-      return { kind: 'not_invited' }
     case 'blocked': {
       const kind = BLOCKED[view.failure]
       return kind === 'session_busy' ? { kind, retryAfterS: view.retryAfterS } : ({ kind } as SessionSnapshot)

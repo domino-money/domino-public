@@ -158,7 +158,7 @@ test('a 200 that fails validation is a contract mismatch, never a success', asyn
 });
 
 test('an error whose status does not match its code is a contract mismatch', async () => {
-  assert.deepEqual(await failureOf(json({ error: 'wallet_not_allowed' }, { status: 401 })), {
+  assert.deepEqual(await failureOf(json({ error: 'session_exists' }, { status: 401 })), {
     kind: 'contract_mismatch',
     detail: 'error_body',
   });

@@ -1,10 +1,10 @@
 // Closed session-v1 candidate contract. No financial authority is represented.
-export const CONTRACT_VERSION = '3.0.0-rc.2';
+export const CONTRACT_VERSION = '3.0.0-rc.3';
 export const ROUTES = Object.freeze(['bootstrap', 'challenge', 'verify', 'me', 'refresh', 'logout']);
 export const ERROR_STATUS_BY_CODE = Object.freeze({
   invalid_request: 400, session_required: 401, preauth_required: 401,
   invalid_signature: 401, challenge_invalid: 401,
-  origin_not_allowed: 403, csrf_invalid: 403, account_unsupported: 403, wallet_not_allowed: 403,
+  origin_not_allowed: 403, csrf_invalid: 403, account_unsupported: 403,
   route_not_available: 404, method_not_allowed: 405, session_exists: 409,
   request_too_large: 413, json_required: 415,
   session_rate_limited: 429, session_capacity_busy: 429,

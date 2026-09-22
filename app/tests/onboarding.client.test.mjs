@@ -325,13 +325,13 @@ test('every errors.json pair validates and lands on its state, with no amounts (
   assert.equal(kind('preview_expired').kind, 'expired_before_delivery');
 });
 
-test('a mismatched pair, an unknown code and wallet_not_allowed are all unavailable (T-26, S-9)', () => {
+test('a mismatched pair, an unknown code and a neighbouring family’s code are all unavailable (T-26, S-9)', () => {
   const interpret = (status, body) => interpretPreview('swap-preview', REQUESTS['swap-preview'], onb(status, body), runtime, SWAP_OWNER).failure;
   for (const [status, body] of [
     [400, { error: 'session_required' }],
     [503, { error: 'invalid_request' }],
     [418, { error: 'teapot' }],
-    [403, { error: 'wallet_not_allowed' }],
+    [409, { error: 'session_exists' }],
     [401, { error: 'session_required', detail: 'x' }],
   ]) {
     const failure = interpret(status, body);

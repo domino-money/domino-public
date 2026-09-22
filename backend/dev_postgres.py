@@ -206,6 +206,9 @@ def create_database(name):
         conn.execute((ROOT/'migrations/024_public_observations.sql').read_text())
         conn.execute((ROOT/'migrations/025_public_history.sql').read_text())
         conn.execute((ROOT/'migrations/026_public_demand.sql').read_text())
+        # 011 installs the wallet-admission gate on domino_sessions.sessions;
+        # 027 detaches it, so a development database matches a migrated one.
+        conn.execute((ROOT/'migrations/027_remove_wallet_access_gate.sql').read_text())
 
 
 

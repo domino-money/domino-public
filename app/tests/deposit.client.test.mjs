@@ -113,9 +113,9 @@ test('all 49 errors.json pairs validate and come back as that code; the table co
   }
 });
 
-test('wallet_not_allowed, an unknown code and a mismatched pair are invalid bodies, not errors (T3)', () => {
+test('a neighbouring family’s code, an unknown code and a mismatched pair are invalid bodies, not errors (T3)', () => {
   for (const [status, body] of [
-    [403, { error: 'wallet_not_allowed' }],
+    [409, { error: 'session_exists' }],
     [409, { error: 'deposit_everything_is_fine' }],
     [400, { error: 'deposit_owner_busy' }],
   ]) {

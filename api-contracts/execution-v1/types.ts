@@ -81,6 +81,6 @@ export interface ExecutionResponses {
 
 export type ExecutionRoute = keyof ExecutionRequests;
 
-export type ExecutionErrorCode = "account_check_unavailable" | "account_unsupported" | "challenge_invalid" | "csrf_invalid" | "execution_capacity_busy" | "execution_store_unavailable" | "invalid_request" | "invalid_signature" | "json_required" | "method_not_allowed" | "onboarding_capacity_busy" | "onboarding_rate_limited" | "origin_not_allowed" | "preauth_required" | "request_timeout" | "request_too_large" | "route_not_available" | "session_capacity_busy" | "session_exists" | "session_rate_limited" | "session_required" | "session_store_unavailable" | "upstream_contract_mismatch" | "upstream_invalid_response" | "upstream_timeout" | "upstream_unavailable" | "wallet_not_allowed";
+export type ExecutionErrorCode = "account_check_unavailable" | "account_unsupported" | "challenge_invalid" | "csrf_invalid" | "execution_capacity_busy" | "execution_store_unavailable" | "invalid_request" | "invalid_signature" | "json_required" | "method_not_allowed" | "onboarding_capacity_busy" | "onboarding_rate_limited" | "origin_not_allowed" | "preauth_required" | "request_timeout" | "request_too_large" | "route_not_available" | "session_capacity_busy" | "session_exists" | "session_rate_limited" | "session_required" | "session_store_unavailable" | "upstream_contract_mismatch" | "upstream_invalid_response" | "upstream_timeout" | "upstream_unavailable";
 
 export type ExecutionError = {error: ExecutionErrorCode};

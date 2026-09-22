@@ -2,7 +2,7 @@
 
 `scripts/staging/check_roles.py` checks the PostgreSQL foundation after the
 reviewed application migrations 001–014 have been applied. It does not provision
-roles, run migrations, grant a wallet, change configuration, or start services.
+roles, run migrations, change configuration, or start services.
 Run it as root **on the target VM**, against its existing private Unix socket:
 
 ```sh
@@ -111,7 +111,9 @@ are checked against the source's role matrix. In particular, the public reader
 and writer cannot access sessions, admission or deposits; auth cannot grant
 wallet access or access deposit storage; the operator can read admission and
 execute its dedicated function but cannot read session secrets or write tables
-directly. Deposit SELECT/INSERT/UPDATE and expiry EXECUTE remain separate from
+directly. Issue #182 left that whole admission surface dormant rather than
+dropping it, so these expectations are unchanged even though no code path uses
+them any more. Deposit SELECT/INSERT/UPDATE and expiry EXECUTE remain separate from
 direct DELETE or maintenance ownership. The verifier **never invokes**
 `set_access`, `expire_unissued`, or any other application function.
 

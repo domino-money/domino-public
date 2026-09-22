@@ -33,7 +33,7 @@ const FORBIDDEN = /not connected yet|not enabled|isn’t enabled|isn't enabled|a
 const RELEASE_OFF = { status: 200, body: { contractVersion: '1.0.0-rc.1', chainId: 4663, available: false, deployment: null } };
 
 async function scenario({ clock = false, routes = [] } = {}) {
-  const fake = createFakeSession(); fake.admit(ACCOUNTS[0].address);
+  const fake = createFakeSession();
   const calls = [], executions = [], releases = [], deposits = [], errors = [];
   const state = { performance: 'available', execution: 'on', setupRelease: RELEASE_OFF, sequenceRelease: RELEASE_OFF, deposit: null };
   const server = createWalletServer({ fake, dist: resolve(import.meta.dirname, '../.wallet-test-dist'), routes: [...routes, async (request, url) => {

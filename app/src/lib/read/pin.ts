@@ -26,6 +26,13 @@
  * moved again with the slippage bound: every request that carries a
  * `slippageBps` now takes 10 to 500 basis points (lib/create/slippage.ts holds
  * the same numbers), and the versions stayed where they were.
+ *
+ * session-v1 is at 3.0.0-rc.3 because the producer dropped `wallet_not_allowed`
+ * from its closed error set with the per-wallet whitelist (issue #182). The
+ * onboarding-v1, performance-v2 and execution-v1 digests moved with it: those
+ * manifests hash backend sources the same change touched, and the last two
+ * inherit the session error table, without any of the three changing a route,
+ * a schema shape or a version.
  */
 export const PRODUCER_PIN = {
   producerCommit: 'a5f71f19e6391f3eab52ee6e51417be211bc8ea5',
@@ -36,12 +43,12 @@ export const PRODUCER_PIN = {
       manifestSha256: 'a57a2124be81faf48207d13415736044ae2564bd772923f86be9717dfaeb503b',
     },
     'session-v1': {
-      version: '3.0.0-rc.2',
-      manifestSha256: '28412404c6b8b93e1be6d04291c8ef5042319151d9f905e193ee1a02aa230501',
+      version: '3.0.0-rc.3',
+      manifestSha256: '98e89f83e157d3a774254aee4fa4165bdfd2e0b96df1127f3d654709127e2879',
     },
     'onboarding-v1': {
       version: '1.0.0',
-      manifestSha256: 'b4925edc60f25ef5dcb2c4c9e8a5de333074efff6464417304d4e6fe1afd7f90',
+      manifestSha256: '8c4f8076af50ec2e6537ba4764865fbb1055cd6ae866851307ba2390404b3a69',
     },
     'deposit-v1': {
       version: '1.1.0-rc.4',
@@ -94,11 +101,11 @@ export const REQUEST_READ_CONTRACT: ReadContractPin = PRODUCER_PIN.packages['rea
 /** Authenticated private numeric history, independent of public pool estimates. */
 export const PERFORMANCE_V2_PIN = {
   version: '2.0.0-rc.1',
-  manifestSha256: '184dab740fb584fa1bbabee348f4bd5bfad48d6ae208fd6e4f82d925e3e7f5ff',
+  manifestSha256: '7c8291381abf244af0e62a8e0c8930c2919fb494ca817b213e4154537f96d8a0',
 } as const
 
 /** Sanitized private execution status and finalized receipts only. */
 export const EXECUTION_V1_PIN = {
   version: '1.0.0-rc.1',
-  manifestSha256: '9fdddba25c0cd86d646918b583181127f889fc12f08ddae085f1efa2b3cd0e26',
+  manifestSha256: '5a42eaae19219d0ea0d2856fc407ad62b72986722143d87bf77ee3f3feb3a158',
 } as const

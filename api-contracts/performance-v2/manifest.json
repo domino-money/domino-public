@@ -4,7 +4,7 @@
   "files": [
     {
       "path": "fixtures/errors.json",
-      "sha256": "4058a8855becbcd97a2e3dab1b59c5658e0cbb22c0b6aa018df2c16480f6899f"
+      "sha256": "9de56f779a7fb820be364bb844f8aa43f984f9b8d35df39ce3f00b0c21f2e55b"
     },
     {
       "path": "fixtures/requests/cards.json",
@@ -44,7 +44,7 @@
     },
     {
       "path": "schema-data.mjs",
-      "sha256": "c25fb7d7d9d79bad645c348a7d48ad6c41ba017439bfa6723da6442bd160f285"
+      "sha256": "dc00b5f150ff4ca5205f6c36eab51afb47cdd739bb91d4f0d456c420735e7c99"
     },
     {
       "path": "schemas/cards.request.schema.json",
@@ -72,11 +72,11 @@
     },
     {
       "path": "schemas/error.response.schema.json",
-      "sha256": "3a68e3a0f662f6a86a2f7ff09acaa19d1247fe6257f4e8458f3195e56652400e"
+      "sha256": "9ec0302c3a3cd6d2f44e2b5229903821cd216f6c27db6d36f91b6849c6c83d23"
     },
     {
       "path": "types.ts",
-      "sha256": "4ad0fed10dfb1f899d1b13fa61bcf03512663d1de1dbd481811f475abf39e403"
+      "sha256": "e893fffa9aeed36684e1bd90cf9c23ac4ed7020b79a471ff0c789e6fd02c1507"
     },
     {
       "path": "runtime.mjs",

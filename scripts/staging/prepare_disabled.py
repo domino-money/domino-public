@@ -134,6 +134,10 @@ PACKAGED_ONLY_MIGRATIONS = (
     'backend/migrations/024_public_observations.sql',
     'backend/migrations/025_public_history.sql',
     'backend/migrations/026_public_demand.sql',
+    # Detaches migration 011's session-insert gate from an already installed
+    # foundation (issue #182). The foundation above still applies 011, so a new
+    # installation applies this one separately, as the runbook records.
+    'backend/migrations/027_remove_wallet_access_gate.sql',
 )
 MAPPINGS = (
     ('domino', 'domino-admin', ADMIN),

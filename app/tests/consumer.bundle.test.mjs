@@ -73,7 +73,6 @@ const CONSUMER_MARKERS = [
   'Preview only',
   'enabled on this deployment',
   'part of this build',
-  'invited to the beta',
   'beta access',
 ];
 

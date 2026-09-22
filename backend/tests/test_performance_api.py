@@ -262,7 +262,7 @@ class PerformanceApiTests(unittest.TestCase):
         from performance_models import ERROR_STATUS_BY_CODE
         for code, status in ERROR_STATUS.items():
             self.assertEqual(ERROR_STATUS_BY_CODE[code], status, code)
-        for code in ('wallet_not_allowed', 'session_capacity_busy', 'session_store_unavailable'):
+        for code in ('account_unsupported', 'session_capacity_busy', 'session_store_unavailable'):
             self.service.auth = SimpleNamespace(begin=Mock(side_effect=SessionError(code)))
             response = self.post()
             self.assertEqual((response.status_code, response.json()), (ERROR_STATUS[code], {'error': code}))

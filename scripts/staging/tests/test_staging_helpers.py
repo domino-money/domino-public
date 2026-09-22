@@ -47,7 +47,8 @@ PACKAGED_MIGRATIONS = ('backend/migrations/015_unsigned_execution.sql',
                        'backend/migrations/023_pool_request_scheduling.sql',
                        'backend/migrations/024_public_observations.sql',
                        'backend/migrations/025_public_history.sql',
-                       'backend/migrations/026_public_demand.sql')
+                       'backend/migrations/026_public_demand.sql',
+                       'backend/migrations/027_remove_wallet_access_gate.sql')
 
 
 def packaged_records(files):

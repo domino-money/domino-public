@@ -52,7 +52,6 @@ test('every B2 view status maps to exactly one port state', () => {
     [{ status: 'wrong_network', chainId: 1 }, 'wrong_network'],
     [{ status: 'signed_out', reason: 'session_ended' }, 'signed_out'],
     [{ status: 'other_session', owner: B.toLowerCase() }, 'wallet_account_differs'],
-    [{ status: 'not_invited', address: A }, 'not_invited'],
     [SIGNED_IN, 'signed_in'],
   ];
   for (const [view, kind] of cases) assert.equal(toSessionSnapshot(snap(view), NONE).kind, kind, view.status);

@@ -50,9 +50,6 @@ export const STEP: Record<SigningStep, string> = {
 export const REFRESH_UNAVAILABLE =
   'The service could not renew your session just now. This page will try again shortly; if it cannot, the session ends after 30 minutes idle.'
 
-export const NOT_INVITED =
-  'This wallet doesn’t have sign-in access. Public pages keep working. Ask the Domino team for access.'
-
 /** The Connect dialog when no browser wallet has announced itself (through EIP-6963). */
 export const NO_BROWSER_WALLET = 'No browser wallet found. Install or unlock a wallet extension, then open this again.'
 
@@ -81,8 +78,6 @@ export function describe(view: View): string {
         : `Signed in as ${shortAddress(view.owner)}.`
     case 'other_session':
       return `This browser is signed in as ${shortAddress(view.owner)}, not the connected account. Sign that session out to continue.`
-    case 'not_invited':
-      return NOT_INVITED
     case 'signing_out':
       return 'Signing out…'
     case 'blocked':

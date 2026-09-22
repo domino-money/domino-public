@@ -21,7 +21,6 @@ from session_models import SessionError
 from session_service import SessionService
 from session_siwe import SiwePolicy
 from session_store import CAPACITIES, CLEANUP_BATCH, SessionStore, digest, session_csrf, _DeadlineConnection
-from wallet_access import WalletAccessAdmin
 
 VALIDATION={'method':'plain_eoa','blockNumber':'123','blockHash':'0x'+'ab'*32}
 SECRET=b'synthetic shared abuse-key secret only'
@@ -62,9 +61,7 @@ class SessionStoreTests(unittest.TestCase):
         self.addCleanup(self.admin.close)
         self.admin.execute('TRUNCATE domino_sessions.contexts,domino_sessions.challenges,domino_sessions.sessions,'
                            'domino_sessions.rate_limits,domino_sessions.private_limits')
-        self.admin.execute('TRUNCATE domino_wallet_access.grants,domino_wallet_access.audit RESTART IDENTITY')
         self.account=Account.from_key(bytes([3])*32)
-        WalletAccessAdmin(self.settings).grant(self.account.address)
         self.checker=Checker()
         self.store=SessionStore(self.settings,abuse_secret=SECRET)
         self.service=SessionService(self.store,SiwePolicy('https://domino.money'),self.checker)
@@ -385,7 +382,7 @@ class SessionStoreTests(unittest.TestCase):
         inserted=[]
         def slow(conn,statement,params=None):
             if statement.startswith('SELECT * FROM challenges WHERE id='):
-                # Arm expiry inside the transaction, AFTER admission/cleanup.
+                # Arm expiry inside the transaction, AFTER cleanup.
                 # Connection or CI scheduling delays cannot delete the fixture
                 # before the exact mutation/rollback path we intend to exercise.
                 original(conn,"UPDATE challenges SET expires_at=statement_timestamp()+interval '100 milliseconds' WHERE id=%s",(b['challengeId'],))
@@ -406,7 +403,7 @@ class SessionStoreTests(unittest.TestCase):
         touched=[]
         def slow(conn,statement,params=None):
             if statement.startswith('SELECT * FROM sessions WHERE bearer_hash='):
-                # Keep setup/admission latency outside the 100ms expiry window.
+                # Keep setup latency outside the 100ms expiry window.
                 # The final guard must roll back both this test-only arming
                 # update and the snapshot/idle touch; the original row must still exist.
                 original(conn,"UPDATE sessions SET created_at=statement_timestamp()-interval '1 hour',"

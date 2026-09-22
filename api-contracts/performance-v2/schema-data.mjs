@@ -1078,6 +1078,5 @@ export const ERRORS = {
   "upstream_contract_mismatch": 502,
   "upstream_invalid_response": 502,
   "upstream_timeout": 504,
-  "upstream_unavailable": 503,
-  "wallet_not_allowed": 403
+  "upstream_unavailable": 503
 };

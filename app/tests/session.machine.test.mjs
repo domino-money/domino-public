@@ -93,7 +93,7 @@ const verifying = (address = ADDR_A) => then(awaitingSignature(address), signed(
 
 test('the error table covers exactly the codes the runtime defines', () => {
   assert.deepEqual(Object.keys(ERROR_CLASS).sort(), Object.keys(runtime.ERROR_STATUS_BY_CODE).sort());
-  assert.equal(Object.keys(ERROR_CLASS).length, 23);
+  assert.equal(Object.keys(ERROR_CLASS).length, 22);
 });
 
 test('the first identity on Robinhood Chain reads me and nothing else', () => {
@@ -176,28 +176,25 @@ test('no failure, at any step, asks for a signature or restarts sign-in on its o
       walked += 1;
     }
   }
-  assert.equal(walked, 5 * 32);
+  assert.equal(walked, 5 * 31);
 });
 
-test('wallet_not_allowed after a valid signature stops everything for that address', () => {
-  const out = then(verifying(), result(code('verify', 'wallet_not_allowed')));
-  assert.deepEqual(out.machine.view, { status: 'not_invited', address: ADDR_A });
-  // No abort, no retry, no read: nothing at all is sent after the denial.
-  assert.deepEqual(out.effects.filter((e) => e.type === 'call' || e.type === 'sign'), []);
+test('account_unsupported after a valid signature stops everything for that address', () => {
+  const out = then(verifying(), result(code('verify', 'account_unsupported')));
+  // Nothing but the preauth abort is sent after the denial; it lands blocked.
+  assert.deepEqual(out.machine.view, { status: 'signing_in', step: 'closing' });
+  assert.deepEqual(routes(out.effects), ['logout']);
+  const closed = then(out, result(ok('logout', FIXTURES.responses.logout)));
+  assert.deepEqual(closed.machine.view, { status: 'blocked', failure: 'account_unsupported', retry: 'none', retryAfterS: null });
   for (const event of [{ type: 'sign_in' }, { type: 'retry' }, { type: 'recheck', cause: 'remote' }, { type: 'recheck', cause: 'expiry' }]) {
-    assert.deepEqual(then(out, event).effects, [], JSON.stringify(event));
+    assert.deepEqual(then(closed, event).effects, [], JSON.stringify(event));
   }
   // Reconnecting the same address on the same page stays denied without a request.
-  const again = then(out, identity({ kind: 'disconnected' }), identity(wallet(ADDR_A)));
+  const again = then(closed, identity({ kind: 'disconnected' }), identity(wallet(ADDR_A)));
   assert.deepEqual(routes(again.effects), []);
-  assert.equal(again.machine.view.status, 'not_invited');
+  assert.deepEqual(again.machine.view, { status: 'blocked', failure: 'account_unsupported', retry: 'none', retryAfterS: null });
   // Another address is not affected.
-  assert.deepEqual(routes(then(out, identity(wallet(ADDR_B))).effects), ['me']);
-});
-
-test('wallet_not_allowed on any route but verify is producer drift, not a denial', () => {
-  const out = then(signedOut(), { type: 'sign_in' }, result(code('bootstrap', 'wallet_not_allowed')));
-  assert.deepEqual(out.machine.view, { status: 'blocked', failure: 'contract_mismatch', retry: 'none', retryAfterS: null });
+  assert.deepEqual(routes(then(closed, identity(wallet(ADDR_B))).effects), ['me']);
 });
 
 test('a 503 is an unavailable state, never signed out, and trying again only reads me', () => {
@@ -542,8 +539,9 @@ test('a waiting recheck is dropped by an identity change and never retries a fai
   assert.equal(down.machine.view.failure, 'store_unavailable');
   assert.deepEqual(routes(down.effects), [], 'a blocked landing is not rechecked on its own');
 
-  const denied = then(verifying(), { type: 'recheck', cause: 'remote' }, result(code('verify', 'wallet_not_allowed')));
-  assert.deepEqual(denied.effects.filter((e) => e.type === 'call' || e.type === 'sign'), [], 'nothing after wallet_not_allowed');
+  const denied = then(verifying(), { type: 'recheck', cause: 'remote' }, result(code('verify', 'account_unsupported')));
+  assert.deepEqual(denied.effects.filter((e) => e.type === 'sign'), [], 'no signature after account_unsupported');
+  assert.deepEqual(routes(denied.effects), ['logout'], 'only the preauth abort');
 });
 
 test('a Sign out click during a background me is not lost: the check is abandoned and the session signed out', () => {

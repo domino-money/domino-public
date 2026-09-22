@@ -4,7 +4,7 @@
   "files": [
     {
       "path": "fixtures/errors.json",
-      "sha256": "334e9d2436957db3c32f2b589cde2918756d17e9d397815b23307ac609a64272"
+      "sha256": "47469ec213b49b9d5462472fc741ea8786e3147a08d9e9c29a9525900e189240"
     },
     {
       "path": "fixtures/requests/cards.json",
@@ -40,7 +40,7 @@
     },
     {
       "path": "schema-data.mjs",
-      "sha256": "6237dac15455f350f0a23a07845678ffafc7a7f41499881acddba92ed395239a"
+      "sha256": "5de0a85b5fe87561343168da05560b7155da7a9936974a41c40443cc79679fae"
     },
     {
       "path": "schemas/cards.request.schema.json",
@@ -52,11 +52,11 @@
     },
     {
       "path": "schemas/error.response.schema.json",
-      "sha256": "6fcc8a643a9ee8f44dbcf4c0a1c3ff12fc8332822ec9a503c15e7661fc3cf9f4"
+      "sha256": "cc0444333db6ab6a974a3992246d346cfb4d587d232d33d775c121415a3f2334"
     },
     {
       "path": "types.ts",
-      "sha256": "c0d9f10065261c123d560a6f2de912ad080d12d98b416fd9cb744d1741e30b6c"
+      "sha256": "98d9a282f7c9b4bede78b8baa653aae4bd7de69cb03afa037f73db0cdd5cc552"
     },
     {
       "path": "runtime.mjs",
@@ -115,19 +115,15 @@
     },
     {
       "path": "backend/session_models.py",
-      "sha256": "3cda2e02ec83a30b82fc9344fd4fa0168b54ac0fa783cb18a72b3e2596ac6393"
+      "sha256": "4fd480654df1deffec09b9d46df81f249d4a1d6c9e204a39f127b7d0bf3f5c51"
     },
     {
       "path": "backend/session_store.py",
-      "sha256": "a59aa12048b4bca60e72c789e4003dad78cc71704aa683a1fdc8308bdd6bc4d1"
+      "sha256": "5fe1dc47f216fda896b1b449ba5b30f26d16f80495b979acc403aa3f4bb0a6d2"
     },
     {
       "path": "backend/session_chain.py",
       "sha256": "9bfca0671c8e90ecc325646b56aba6bbd21e2c31ea92166aa1bc6823b1401b7e"
-    },
-    {
-      "path": "backend/wallet_access.py",
-      "sha256": "e07e6eed8d323aac75f093fb8b1f6b7e8ad3035d9e42b40a9eac3b0ed9cd5820"
     },
     {
       "path": "backend/read_deadline.py",
@@ -171,7 +167,7 @@
     },
     {
       "path": "scripts/export-performance-contract.py",
-      "sha256": "086495dddae4be8d67f197fb88552fe23882cdcefcfcfb54414982136c1248b9"
+      "sha256": "cdbf575d206b921d6ad10f454c45e40c16187e46ba3ea03027910518481b09dd"
     }
   ],
   "status": "candidate_disabled_pending_consumer_acknowledgement"

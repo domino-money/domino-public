@@ -1,5 +1,11 @@
 # Wallet admission implementation — issue #49 / PR #53
 
+> **Superseded.** Issue #182 removed this feature on 21 September 2026. Nothing
+> described below is in the code any more; see
+> [docs/WALLET_ACCESS.md](../docs/WALLET_ACCESS.md) for what was removed, what
+> stayed dormant in the database, and what the removal cost. This page is kept
+> as the record of what was built and qualified.
+
 This disabled backend candidate admits only operator-approved wallets on Robinhood
 Chain. Public blockchain reads remain unauthenticated. No financial permission,
 real wallet grant or deployment is part of this correction.

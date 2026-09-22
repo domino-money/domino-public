@@ -107,7 +107,7 @@ export function validateError(status:number, value:unknown):value is OnboardingE
 '''
     source_paths = ['backend/onboarding_models.py', 'backend/onboarding_api.py', 'backend/authenticated_api.py', 'backend/access_transport.py',
                     'backend/onboarding_service.py', 'backend/onboarding_auth.py',
-                    'backend/session_store.py', 'backend/hop_log.py', 'backend/session_models.py', 'backend/wallet_access.py',
+                    'backend/session_store.py', 'backend/hop_log.py', 'backend/session_models.py',
                     'backend/tests/test_onboarding_flow.py', 'backend/tests/test_onboarding_auth.py', 'backend/tests/onboarding_contract_fixtures.py',
                     'backend/uniswap_quote.py', 'backend/uniswap_position.py',
                     'backend/tests/test_uniswap_quote.py', 'backend/tests/test_uniswap_position.py',

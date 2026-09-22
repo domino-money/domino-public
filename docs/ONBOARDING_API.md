@@ -95,10 +95,10 @@ The session store reserves the IP attempt, checks active session/chain/CSRF, and
 reserves account/global quotas. The existing plain-EOA checker runs before the
 provider. Fresh DB guards before and after provider work reject expiry, logout
 and changed session credentials while a calculation is running. The final
-`session-v1` 3.0.0-rc.2 authority also checks wallet admission/generation before
-account RPC and again before delivery. Revocation/regrant invalidates old cookies
-with `session_required`; `wallet_not_allowed` remains login verify-only after
-valid possession proof. GET `/session/me` is read-only and recovers the same
+`session-v1` 3.0.0-rc.3 authority rechecks the live session before account RPC
+and again before delivery. A revoked, logged-out or expired session invalidates
+old cookies with `session_required`; there is no per-wallet denial, because
+3.0.0-rc.3 removed the admission list. GET `/session/me` is read-only and recovers the same
 CSRF for reload/two tabs; it does not renew expiry or replace the financial
 request's fresh plain-EOA check. Previews and protected refresh keep CSRF stable.
 
@@ -118,9 +118,9 @@ Failures retain reserved attempts; process restart does not reset them. These ar
 conservative development limits, not a production SLA; fixed-window bursts remain
 bounded by concurrency. Timeout/disconnect retains a worker's slot until the
 actual operation exits. There are no retries, cached unsigned transactions or
-scheduled execution. The composed producer applies session/admission migrations008/011 alongside
-the public data migrations001–007/012/013. Preview adds no new migration or
-public-reader permission.
+scheduled execution. The composed producer applies session migrations008/011/027
+alongside the public data migrations001–007/012/013; 027 detaches 011's
+session-insert gate. Preview adds no new migration or public-reader permission.
 
 ## Reproduction and launch configuration
 
@@ -167,7 +167,7 @@ Technical controls, compatibility evidence and wallet consent still apply.
 
 The [shared package](../api-contracts/onboarding-v1/README.md) includes schemas,
 types, runtime validation, deterministic fixtures and producer hashes. The onboarding payload contract stays 1.0.0; inherited read-v1 rc.3 and
-session-v1 3.0.0-rc.2 must be pinned from this combined producer. Session/source
+session-v1 3.0.0-rc.3 must be pinned from this combined producer. Session/source
 manifest hashes change with the composed private authorization methods. Any
 authorized collaborator may integrate amount/range/review hooks and run rendering
 tests; validator tests alone do not establish the actual consumer behavior.

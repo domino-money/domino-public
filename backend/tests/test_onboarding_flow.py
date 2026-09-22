@@ -31,7 +31,6 @@ from session_service import SessionService
 from session_siwe import SiwePolicy
 from session_store import SessionStore, digest
 from session_models import CONTRACT_VERSION as SESSION_VERSION
-from wallet_access import WalletAccessAdmin
 from uniswap_quote import ENDPOINT as QUOTE_ENDPOINT, UniswapQuote
 from uniswap_position import ENDPOINT as POSITION_ENDPOINT, UniswapPosition
 from test_lp_mint_inspection import fixture as mint_fixture, plan, set_plan
@@ -94,8 +93,6 @@ class OnboardingFlowTests(unittest.TestCase):
         self.addCleanup(self.admin.close)
         self.admin.execute('TRUNCATE domino_sessions.contexts,domino_sessions.challenges,domino_sessions.sessions,'
                            'domino_sessions.rate_limits,domino_sessions.private_limits')
-        self.admin.execute('TRUNCATE domino_wallet_access.grants,domino_wallet_access.audit RESTART IDENTITY')
-        self.access = WalletAccessAdmin(self.settings)
         self.session_store = SessionStore(self.settings, abuse_secret=SECRET)
         # Separate instances exercise durable shared state as separate processes do.
         self.preview_store = SessionStore(self.settings, abuse_secret=SECRET)
@@ -141,7 +138,6 @@ class OnboardingFlowTests(unittest.TestCase):
 
     def login(self, number=1):
         account = Account.from_key(bytes([number]) * 32)
-        self.access.grant(account.address)
         client = f'192.0.2.{number}'
         response = self.post('session', 'bootstrap', client_id=client)
         self.assertEqual(response.status_code, 200, response.text)
@@ -231,23 +227,22 @@ class OnboardingFlowTests(unittest.TestCase):
             self.assertEqual(response.json()['preview']['request']['owner'], owner)
         self.assertEqual(len(self.provider.calls), 2)
 
-    def test_removed_and_regranted_wallet_cannot_reuse_old_session_before_provider(self):
+    def test_revoked_session_cannot_reach_a_preview_and_a_fresh_login_can(self):
         credentials, owner = self.login()
-        self.access.revoke(owner)
+        self.admin.execute('UPDATE domino_sessions.sessions SET revoked_at=statement_timestamp() '
+                           'WHERE bearer_hash=%s', (digest(credentials['session']),))
         checks = self.checker.check.call_count
-        for regrant in (False, True):
-            if regrant:
-                self.access.grant(owner)
-            for route, body in (('swap-preview', SWAP_BODY), ('position-preview', position_body())):
-                self.assert_error(self.post('onboarding', route, body, credentials), 401, 'session_required')
-            self.assert_error(self.post('session', 'me', credentials=credentials), 401, 'session_required')
+        for route, body in (('swap-preview', SWAP_BODY), ('position-preview', position_body())):
+            self.assert_error(self.post('onboarding', route, body, credentials), 401, 'session_required')
+        self.assert_error(self.post('session', 'me', credentials=credentials), 401, 'session_required')
         self.assertEqual(self.provider.calls, [])
         self.assertEqual(self.checker.check.call_count, checks)
-        fresh, _ = self.login(1)
+        fresh, same_owner = self.login(1)
+        self.assertEqual(same_owner, owner)
         self.assertEqual(self.post('onboarding', 'swap-preview', SWAP_BODY, fresh).status_code, 200)
 
-    def test_logout_expiry_csrf_and_admission_changes_inflight_prevent_delivery(self):
-        for number, change in enumerate(('logout', 'absolute_expiry', 'idle_expiry', 'csrf', 'revoke', 'regrant'), start=1):
+    def test_logout_expiry_and_csrf_changes_inflight_prevent_delivery(self):
+        for number, change in enumerate(('logout', 'absolute_expiry', 'idle_expiry', 'csrf'), start=1):
             with self.subTest(change=change):
                 credentials, owner = self.login(number)
                 entered, released = Event(), Event()
@@ -264,10 +259,6 @@ class OnboardingFlowTests(unittest.TestCase):
                         if change == 'logout':
                             response = self.post('session', 'logout', credentials=credentials)
                             self.assertEqual(response.status_code, 200, response.text)
-                        elif change in ('revoke', 'regrant'):
-                            self.access.revoke(owner)
-                            if change == 'regrant':
-                                self.access.grant(owner)
                         elif change == 'csrf':
                             self.admin.execute('UPDATE domino_sessions.sessions SET csrf_hash=%s WHERE bearer_hash=%s',
                                                (digest('z' * 43), digest(credentials['session'])))

@@ -10,15 +10,17 @@ There is no private portfolio/settings API in this release. The verified owner
 context is a prerequisite for that later work; public NFT ownership stays public
 snapshot data and practice positions stay browser-local simulations.
 
-Issue #49 extends this disabled candidate with mandatory [wallet admission](WALLET_ACCESS.md)
-under `session-v1` **3.0.0-rc.2**. Operators control a persistent, default-empty
-allowlist for login/private operations; public reads remain unauthenticated.
-Grant generations prevent removed/re-admitted wallets from reusing old sign-in
-challenges or sessions. `wallet_not_allowed` occurs only after a valid SIWE proof
-on `verify`; admission is checked before EOA RPC and again at session creation. Well-formed challenge requests are uniform; unsigned
-requests never consume a target wallet's shared quota.
-Successful response shapes and the read-only GET/protected POST separation stay
-unchanged. See the linked runbook for migration 011 and operator permissions.
+Issue #182 removes the [wallet admission](WALLET_ACCESS.md) that #49 had added,
+raising this disabled candidate to `session-v1` **3.0.0-rc.3**. There is no
+allowlist: proving control of an address through SIWE is the only condition on
+login, and `wallet_not_allowed` is gone from the closed error set. Public reads
+remain unauthenticated, as they always were, and who may reach the site at all
+is still decided before this contract by the shared beta password at the edge.
+Well-formed challenge requests are uniform; unsigned requests never consume a
+target wallet's shared quota. Successful response shapes and the read-only
+GET/protected POST separation stay unchanged. See the linked runbook for
+migration 027, which must run before this producer meets a database that has
+011.
 
 ## Components and fixed traffic boundaries
 
@@ -196,7 +198,7 @@ unavailable, distinct from `session_required`. Unsupported code-bearing wallets
 may still use public reads. See shared safe error fixtures and exact schemas;
 frontend adapter/rendering tests remain outstanding in this candidate's evidence.
 
-## Earlier 2.0.0 transition and current admission migration
+## Earlier 2.0.0 transition and the admission migrations
 
 [Execution policy](EXECUTION_POLICY.md) supersedes historical owner, ACK and
 approval procedures here. Any authorized collaborator or agent may implement
@@ -204,8 +206,9 @@ and operate within scope, recording results alongside or after execution.
 Technical controls, compatibility evidence and wallet consent still apply.
 
 The earlier 2.0.0 candidate kept the family/path `session-v1` and separated GET
-recovery from refresh. The current 3.0.0-rc.2 candidate also requires admitted
-wallets and generation-bound session/challenge state. Deployment must
+recovery from refresh. 3.0.0-rc.1 and rc.2 added admitted wallets and
+generation-bound session/challenge state; the current rc.3 candidate takes both
+back out. Deployment must
 remain disabled until the consumer implements GET recovery plus POST refresh
 and matches the new producer commit/digest. Any authorized collaborator may
 complete and validate both sides without another person's ACK. No mixed-version
@@ -217,12 +220,15 @@ and old retained CSRF must not remain usable in descendant authenticated routes.
 An old session presented to GET returns `session_required` without writing.
 The candidate does not change a deployed database or invoke revocation.
 
-Migration 011 adds nullable generations to old rows without backfilling admission.
-Pre-migration sessions/challenges cannot become authorized from a later grant.
-Keep ingress disabled during transition and retain the admission audit. Returning
-to a legacy producer can remove this gate, so rollback also keeps ingress off
-until a matching policy-preserving build is reviewed. The owner-selected hosting
-target is described in the [home VM handoff](HOME_VM_RUNBOOK.md).
+Migration 011 added nullable generations and a session-INSERT trigger enforcing
+them. Migration 027 drops that trigger and leaves everything else 011 created
+dormant, including the append-only admission audit, which is retained. Apply 027
+with ingress disabled: until it runs, the trigger refuses every session INSERT
+this producer makes, because the producer no longer writes a generation.
+Rollback to an admission-enforcing producer needs the trigger restored and
+grants issued first, and also keeps ingress off until that build is reviewed.
+The owner-selected hosting target is described in the
+[home VM handoff](HOME_VM_RUNBOOK.md).
 
 The descendant `begin_preview` / `finish_preview` store guards continue checking
 the stored CSRF hash, so newly derived CSRF uses their existing interface.
@@ -268,8 +274,7 @@ holds `SESSION_ACCESS_CLIENT_ID` and `SESSION_ACCESS_CLIENT_SECRET`; its configu
 destination is `SESSION_GATEWAY_ORIGIN`. The auth service identity is distinct
 from the public reader identity. Keep credentials out of command arguments,
 prompts, source, browser storage and logs. Rotating the abuse secret resets its
-rate namespaces, so coordinate rotation with admission control; do not rotate
-it independently in each worker or on restart.
+rate namespaces; do not rotate it independently in each worker or on restart.
 
 ## Activation and rollback gates
 

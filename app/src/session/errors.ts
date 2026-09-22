@@ -14,8 +14,6 @@ export type ErrorClass =
   | 'challenge_rejected'
   | 'signature_rejected'
   | 'csrf'
-  /** The wallet proved ownership but is not on the admission list. */
-  | 'not_invited'
   /** The address has contract code. */
   | 'unsupported_account'
   | 'session_exists'
@@ -40,7 +38,6 @@ export const ERROR_CLASS: Readonly<Record<SessionErrorCode, ErrorClass>> = {
   challenge_invalid: 'challenge_rejected',
   invalid_signature: 'signature_rejected',
   csrf_invalid: 'csrf',
-  wallet_not_allowed: 'not_invited',
   account_unsupported: 'unsupported_account',
   session_exists: 'session_exists',
   route_not_available: 'disabled',

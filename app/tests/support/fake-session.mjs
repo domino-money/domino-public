@@ -11,9 +11,8 @@
  * expiry (session_store.py begin_private/finish_private), logout by
  * session or by preauth abort (which also revokes a session the context
  * created), bootstrap refusing a preauth whose context already created an
- * active session (session_store.py matches source_context_hash), and
- * admission generations so a revoked and re-admitted wallet cannot reuse an
- * old session. Cookies carry the real names and attributes.
+ * active session (session_store.py matches source_context_hash).
+ * Cookies carry the real names and attributes.
  *
  * Every client mistake is recorded as a violation while the fake still answers
  * as the real service would, so graceful handling cannot hide a protocol bug.
@@ -56,8 +55,6 @@ export function createFakeSession() {
     offset: 0,
     contexts: new Map(),
     sessions: new Map(),
-    admitted: new Map(),
-    generations: new Map(),
     violations: [],
     log: [],
     verifies: new Map(),
@@ -117,8 +114,6 @@ export function createFakeSession() {
   const activeSession = (token) => {
     const row = token ? state.sessions.get(token) : undefined;
     if (!row || row.revoked || row.expiresAt <= now() || row.idleAt <= now()) return null;
-    // Revoking or re-admitting an address bumps its generation; old sessions die.
-    if (state.admitted.get(row.owner) !== row.generation) return null;
     return row;
   };
 
@@ -179,7 +174,6 @@ export function createFakeSession() {
       expiresAt: expires,
       attempts: 0,
       consumed: false,
-      generation: state.admitted.get(address) ?? null,
     };
     return success('challenge', { challengeId: ctx.challenge.id, message: ctx.challenge.message, expiresAt: utc(expires) });
   }
@@ -202,8 +196,6 @@ export function createFakeSession() {
       signer = null;
     }
     if (signer !== current.address) return error('invalid_signature');
-    // Admission is disclosed only now, after a valid proof of possession.
-    if (current.generation === null || state.admitted.get(current.address) !== current.generation) return error('wallet_not_allowed');
 
     current.consumed = true;
     ctx.consumed = true;
@@ -214,7 +206,6 @@ export function createFakeSession() {
       expiresAt: now() + 12 * 60 * MINUTE,
       idleAt: now() + 30 * MINUTE,
       revoked: false,
-      generation: current.generation,
       context: cookies.preauth,
     };
     state.sessions.set(token, row);
@@ -416,16 +407,10 @@ export function createFakeSession() {
     set origin(value) {
       state.origin = value;
     },
-    admit(address) {
-      const key = address.toLowerCase();
-      const generation = (state.generations.get(key) ?? 0) + 1;
-      state.generations.set(key, generation);
-      state.admitted.set(key, generation);
-    },
+    /** Revokes every session this owner holds, as session_store.revoke does. */
     revoke(address) {
       const key = address.toLowerCase();
-      state.admitted.delete(key);
-      state.generations.set(key, (state.generations.get(key) ?? 0) + 1);
+      for (const row of state.sessions.values()) if (row.owner === key) row.revoked = true;
     },
     advance(ms) {
       state.offset += ms;

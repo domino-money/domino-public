@@ -111,7 +111,7 @@
     },
     {
       "path": "backend/session_store.py",
-      "sha256": "a59aa12048b4bca60e72c789e4003dad78cc71704aa683a1fdc8308bdd6bc4d1"
+      "sha256": "5fe1dc47f216fda896b1b449ba5b30f26d16f80495b979acc403aa3f4bb0a6d2"
     },
     {
       "path": "backend/hop_log.py",
@@ -119,19 +119,15 @@
     },
     {
       "path": "backend/session_models.py",
-      "sha256": "3cda2e02ec83a30b82fc9344fd4fa0168b54ac0fa783cb18a72b3e2596ac6393"
-    },
-    {
-      "path": "backend/wallet_access.py",
-      "sha256": "e07e6eed8d323aac75f093fb8b1f6b7e8ad3035d9e42b40a9eac3b0ed9cd5820"
+      "sha256": "4fd480654df1deffec09b9d46df81f249d4a1d6c9e204a39f127b7d0bf3f5c51"
     },
     {
       "path": "backend/tests/test_onboarding_flow.py",
-      "sha256": "0c67c8804e65c4b8c1d57ea32a443faefd427a42b33e026cf8ee8454f66403d4"
+      "sha256": "6856a2a3ff7c00f3a86af19f5012bef46fa904e2170d1222b8480a83f513d5ef"
     },
     {
       "path": "backend/tests/test_onboarding_auth.py",
-      "sha256": "37d6a8833e1cc4d62f71b93a516f52cf6406a15ca5f60f4b02898a26174cfd37"
+      "sha256": "686077764a854b933e2fdbd4ca4d9b08d0adea5d3be89497b26d1f687a418093"
     },
     {
       "path": "backend/tests/onboarding_contract_fixtures.py",
@@ -159,7 +155,7 @@
     },
     {
       "path": "scripts/export-onboarding-contract.py",
-      "sha256": "2c9ffb8d67c8dde5a77a45a77a54ee6bae0816c4aa8c65fabaf07e08117babd6"
+      "sha256": "c33af72e796ff0bcd06f58db8e9860dd3aef9fb6bd5ce68cdcb7bbbd22f6692d"
     }
   ],
   "status": "candidate_disabled_pending_consumer_acknowledgement"

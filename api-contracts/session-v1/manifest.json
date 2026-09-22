@@ -1,10 +1,10 @@
 {
   "contract": "session-v1",
-  "contractVersion": "3.0.0-rc.2",
+  "contractVersion": "3.0.0-rc.3",
   "files": [
     {
       "path": "fixtures/errors.json",
-      "sha256": "cd75fde27e27f021a9b56850de7fe65af93987619c8a7f29e304d81b14592fc4"
+      "sha256": "cdc577eac2da33ff75559fc45d4b895262635d436e0a004711002d97b2e88b57"
     },
     {
       "path": "fixtures/requests/bootstrap.json",
@@ -56,78 +56,78 @@
     },
     {
       "path": "runtime.d.mts",
-      "sha256": "f908c12cc8bc456106ec1c3ac79abacd5c0d3571af09b378a531ac69eead060a"
+      "sha256": "190f865e2a31b5c8dec0705f87c329ec24897c313bac19f217a54ca1cbb0120c"
     },
     {
       "path": "schemas/bootstrap.request.schema.json",
-      "sha256": "49bd6cae6f0a0b95e5045e504ae4bb8391fd93b2b6975f4e8f6eecdcc73add29"
+      "sha256": "c41ecbf45bce6fc6f70390748c1e578502df0f8dd329c9e8f8bebf4a7999d2c0"
     },
     {
       "path": "schemas/bootstrap.response.schema.json",
-      "sha256": "2e68b7f22c2a708d58d5bc90cf62ed0680d58bd0a2dcbd479371fbb4b79faf1c"
+      "sha256": "f39fbb43fe43d6e271d1fc29f563510e9829a6479a0eafacf83d1881331e50c7"
     },
     {
       "path": "schemas/challenge.request.schema.json",
-      "sha256": "9a311e5bee48a748a4081fd372937c76aa2de5e52707302f4ace3ca7bd84aede"
+      "sha256": "6cde841eaa23a9e92218528faba427a60c0fc53ae7f383acd55f232c5e7030d3"
     },
     {
       "path": "schemas/challenge.response.schema.json",
-      "sha256": "3fe57420b0608c7eabac86f433ac222692c5ee9fd45098ffc024d9deb7e3bf7f"
+      "sha256": "a6443f9a6db9e4819daa4707dc02ae266750cb55323567078c4b3a74b7edcb4d"
     },
     {
       "path": "schemas/error.response.schema.json",
-      "sha256": "74b9d066ddcd513b52daa31fdbef6a754f2d76fba7fdd1e0b17f761f7c0ab67e"
+      "sha256": "e3f932c45d00bf9b31adf23d82144f0ad86c91d88fece758b5195cdb7efb70ee"
     },
     {
       "path": "schemas/logout.request.schema.json",
-      "sha256": "4c7f6caeaa40e45ca3df45a18c4f8d39be1d49b58fb947cb537a3831b92003c3"
+      "sha256": "65c8b17d162130704910d3833097d651ca8508cda715cb58c5c0504b0b9b6b77"
     },
     {
       "path": "schemas/logout.response.schema.json",
-      "sha256": "bc39e2d3eb8fb8647bf083b89916476f4fcff6384f5778c7b8c386ce7a987d71"
+      "sha256": "912303fa198d1fa508c3b16b621434e6c4ed08193e7bb4f89d98e51f5d68dfb6"
     },
     {
       "path": "schemas/me.request.schema.json",
-      "sha256": "69f10d8be9b5ef8a277ac2d2137428a1a7b1e40ddd71877675f3fbbdc5bf8d53"
+      "sha256": "23a808551def0a7205333c2c9ca166407de789715d281337a5ba6e6e2c75dacb"
     },
     {
       "path": "schemas/me.response.schema.json",
-      "sha256": "cae3d906ad04a05ec1f6cfdcb1f2071f4a906c5baa0e41246847f62b4d2f28c0"
+      "sha256": "eaee5a28cda76b33702094220a366ddd8a57270b5beb489bb4440d2859d5484c"
     },
     {
       "path": "schemas/refresh.request.schema.json",
-      "sha256": "0f80136d30c5ed2595515fb1508dcc716df5fbf282ac8be2ce84074ddb47cfce"
+      "sha256": "4c64faf0f09526be0e9f000ba18c4e0b383684c746ed83ba7a926e945d4ef039"
     },
     {
       "path": "schemas/refresh.response.schema.json",
-      "sha256": "b2d877981347651eb0238511fbf048d5c00889edbc27e12435d7ebaca9865104"
+      "sha256": "efb2223971c56657015cbf4f59ef672cdbaefbe263ffe9fbdabb88ffe203c6c1"
     },
     {
       "path": "schemas/verify.request.schema.json",
-      "sha256": "c04886e5ae638ed349fa830d4bf46b660e857958d37bc642672689b38e96ee75"
+      "sha256": "e85eb58fef2863db4b11c1ac32cf30823a0753203b18b98d2c8f5a3504a5da95"
     },
     {
       "path": "schemas/verify.response.schema.json",
-      "sha256": "7e98c0d67ee94306d261f8666792ef8c19495139cc0851e6d0ec89f53f1b2983"
+      "sha256": "02a7a4edacdc637a229e0968aaeae8daa3055b23ff5abcc58d974b53d3659c19"
     },
     {
       "path": "types.ts",
-      "sha256": "90e99f9d9a4264028eb9efff5843c2fa0a4213c10e954870203618c50424e319"
+      "sha256": "71d290acd7f986543e3a37c5ac947383523e4e7b6d418bdde8b4b725611a38b1"
     },
     {
       "path": "runtime.mjs",
-      "sha256": "a363174b3655c71cbc80d7fb6ca63ec3e84666230927d0ae8d9d6dca6cf5b01f"
+      "sha256": "144c6c6fa1332c21c49e9ad70d56d26c5d4389ffc29e689a9219a9351199f211"
     },
     {
       "path": "README.md",
-      "sha256": "bacb34452aa19bf27a1320ac59c350f56fe5564c40ec5714e919f9b6489c6251"
+      "sha256": "527f3192dc7f9366faaf5e295481602f566c4227e71f01bd07e5f2268adde963"
     }
   ],
   "generator": "scripts/export-session-contract.py",
   "sources": [
     {
       "path": "backend/session_models.py",
-      "sha256": "3cda2e02ec83a30b82fc9344fd4fa0168b54ac0fa783cb18a72b3e2596ac6393"
+      "sha256": "4fd480654df1deffec09b9d46df81f249d4a1d6c9e204a39f127b7d0bf3f5c51"
     },
     {
       "path": "backend/session_api.py",
@@ -143,23 +143,19 @@
     },
     {
       "path": "backend/session_service.py",
-      "sha256": "b68c453e26a2d278e8554d39ae389636119c079bce2433b9d492b79cc8303c73"
+      "sha256": "a526da6ec648e3dd5b4f7b703f3a339e025bf5821b2cc9a35fa5b7692b32c506"
     },
     {
       "path": "backend/session_store.py",
-      "sha256": "a59aa12048b4bca60e72c789e4003dad78cc71704aa683a1fdc8308bdd6bc4d1"
+      "sha256": "5fe1dc47f216fda896b1b449ba5b30f26d16f80495b979acc403aa3f4bb0a6d2"
     },
     {
       "path": "backend/hop_log.py",
       "sha256": "cecd1132e819d745d59649c5e4e3c379a8262973a89fad0864b4d568100274c7"
     },
     {
-      "path": "backend/wallet_access.py",
-      "sha256": "e07e6eed8d323aac75f093fb8b1f6b7e8ad3035d9e42b40a9eac3b0ed9cd5820"
-    },
-    {
-      "path": "backend/migrations/011_wallet_access.sql",
-      "sha256": "e0c2760927446fb7e73ca13041326019c239641d42274f25777e8baf9bf369a9"
+      "path": "backend/migrations/027_remove_wallet_access_gate.sql",
+      "sha256": "0a65dd15291ce97b68ca730c349128b63860a8c27791893813137850523fde29"
     },
     {
       "path": "backend/tests/session_contract_fixtures.py",
@@ -167,7 +163,7 @@
     },
     {
       "path": "scripts/export-session-contract.py",
-      "sha256": "e87657ad44bf8b234952be78db79864d58402aa2a9dd22a03b89e1aced29040a"
+      "sha256": "f06704edf0eb84e933cbfce4edac24a8e09fd47ea86f4e4f5d534be8206ebd43"
     }
   ],
   "status": "candidate_disabled_pending_consumer_acknowledgement"

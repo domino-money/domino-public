@@ -40,7 +40,6 @@ from session_siwe import SiwePolicy
 from session_store import SessionStore, digest
 from session_models import CONTRACT_VERSION as SESSION_VERSION
 from deposit_models import CONTRACT_VERSION as DEPOSIT_VERSION
-from wallet_access import WalletAccessAdmin
 from deposit_contract_fixtures import artifact as artifact_fixture, selection as selection_fixture
 from test_lp_mint_inspection import MINT_TYPES, OWNER as FIXTURE_OWNER, plan, set_plan
 from test_deposit_receipt import Rpc, reconcile as receipt_fixture, HASH as TX_HASH
@@ -139,8 +138,6 @@ class DepositFlowTests(unittest.TestCase):
         self.admin.execute('TRUNCATE domino_sessions.contexts,domino_sessions.challenges,domino_sessions.sessions,'
                            'domino_sessions.rate_limits,domino_sessions.private_limits,domino_deposits.intents')
         self.admin.execute('UPDATE domino_deposits.capacity SET used=0,retained=0')
-        self.admin.execute('TRUNCATE domino_wallet_access.grants,domino_wallet_access.audit RESTART IDENTITY')
-        self.access = WalletAccessAdmin(self.settings)
         self.checker = SimpleNamespace(check=Mock(side_effect=lambda owner: dict(VALIDATION)))
         self.verifier = SimpleNamespace(verify=Mock(return_value=True))
         session_store = SessionStore(self.settings, abuse_secret=SECRET)
@@ -178,7 +175,6 @@ class DepositFlowTests(unittest.TestCase):
 
     def login(self, number=1):
         account = Account.from_key(bytes([number]) * 32)
-        self.access.grant(account.address)
         client = f'192.0.2.{number}'
         response = self.post('session', 'bootstrap', client_id=client)
         self.assertEqual(response.status_code, 200, response.text)
@@ -392,8 +388,8 @@ class DepositFlowTests(unittest.TestCase):
         self.assertEqual(len(self.preparer.calls), 1)
         self.assertEqual(len(self.store.get(owner, record['id'])['history']), 1)
 
-    def test_logout_expiry_csrf_and_admission_changes_during_preparer_prevent_delivery(self):
-        for number, action in enumerate(('logout', 'csrf', 'revoke', 'regrant', 'expiry'), start=1):
+    def test_logout_expiry_and_csrf_changes_during_preparer_prevent_delivery(self):
+        for number, action in enumerate(('logout', 'csrf', 'expiry'), start=1):
             with self.subTest(action=action):
                 credentials, owner = self.login(number)
                 record, _ = self.create(credentials)
@@ -410,10 +406,6 @@ class DepositFlowTests(unittest.TestCase):
                         if action == 'logout':
                             response = self.post('session', action, credentials=credentials)
                             self.assertEqual(response.status_code, 200, response.text)
-                        elif action in ('revoke', 'regrant'):
-                            self.access.revoke(owner)
-                            if action == 'regrant':
-                                self.access.grant(owner)
                         elif action == 'csrf':
                             self.admin.execute('UPDATE domino_sessions.sessions SET csrf_hash=%s WHERE bearer_hash=%s',
                                                (digest('z'*43), digest(credentials['session'])))
@@ -454,7 +446,8 @@ class DepositFlowTests(unittest.TestCase):
         issue = self.store.issue
         def revoke_after_commit(*args, **kwargs):
             issued = issue(*args, **kwargs)
-            self.access.revoke(owner)
+            self.admin.execute('UPDATE domino_sessions.sessions SET revoked_at=statement_timestamp() '
+                               'WHERE bearer_hash=%s', (digest(credentials['session']),))
             return issued
         with patch.object(self.store, 'issue', side_effect=revoke_after_commit):
             denied = self.change('prepare', record, credentials)
@@ -466,7 +459,6 @@ class DepositFlowTests(unittest.TestCase):
         self.assertIsNotNone(stored['issued'])
         original_nonce = stored['issued']['transaction']['nonceRaw']
         checks, preparations = self.checker.check.call_count, len(self.preparer.calls)
-        self.access.grant(owner)
         self.error(self.post('deposit', 'get', {'intentId': record['id']}, credentials), 401, 'session_required')
         self.assertEqual(self.checker.check.call_count, checks)
         fresh, same_owner = self.login()

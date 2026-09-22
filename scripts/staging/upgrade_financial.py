@@ -34,13 +34,15 @@ MIGRATIONS = tuple('backend/migrations/' + name + '.sql' for name in (
     # the reference price sources only widen an existing check.
     '020_pool_requests', '021_reference_price_sources',
     '022_event_timestamp_source'))
-# Public collector deployment owns these migrations. They can accompany this
-# release as source, but must never enter financial SQL or its applied receipt.
+# Owned by other deployments: the public collector for 023-026, and the
+# foundation's own session schema for 027. They can accompany this release as
+# source, but must never enter financial SQL or its applied receipt.
 PACKAGED_ONLY_MIGRATIONS = (
     'backend/migrations/023_pool_request_scheduling.sql',
     'backend/migrations/024_public_observations.sql',
     'backend/migrations/025_public_history.sql',
     'backend/migrations/026_public_demand.sql',
+    'backend/migrations/027_remove_wallet_access_gate.sql',
 )
 NEW_ROLES = ('domino_performance_collector', 'domino_performance_reader',
              'domino_execution_worker', 'domino_execution_ledger',

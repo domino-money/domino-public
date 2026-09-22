@@ -348,7 +348,7 @@ test('the wallet, pools, fees, markets, new position, positions, risks and what 
     'Managed positions and automation receipts, on Positions.',
   ]);
   assert.match(sectionText(wallet, 'what-needs-sign-in'), /Neither do a setup operation’s steps \(fund, swap, mint and refund\) or the owner controls of your sequence vault: they work with your wallet alone\./);
-  assert.match(sectionText(wallet, 'sign-in'), /not an address with contract code, and a wallet also needs sign-in access from the Domino team\./);
+  assert.match(sectionText(wallet, 'sign-in'), /Only standard wallet accounts can sign in, not an address with contract code\./);
 
   // Outside its range a position holds one token, so the sentence says in range, and is written here, not imported.
   const pools = page('pools');

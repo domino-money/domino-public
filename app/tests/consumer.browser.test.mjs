@@ -65,8 +65,6 @@ const sleep = (ms) => new Promise((done) => setTimeout(done, ms));
 
 async function scenario({ clockAt, wallets, reads = false } = {}) {
   const fake = createFakeSession();
-  fake.admit(ADDR_A);
-  fake.admit(ADDR_B);
   const onboarding = createFakeOnboarding({ session: fake });
   // New position's scenarios also need the public reads: the real read Worker over the package fixtures.
   const read = reads ? createReadStub() : null;
