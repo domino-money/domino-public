@@ -26,12 +26,14 @@ class CycleStoreTests(unittest.TestCase):
             conn.execute((Path(__file__).resolve().parents[1] / 'migrations/019_execution_journal.sql').read_text())
             conn.execute((Path(__file__).resolve().parents[1] / 'migrations/028_automation_cycle.sql').read_text())
             conn.execute((Path(__file__).resolve().parents[1] / 'migrations/029_ledger_index.sql').read_text())
+            conn.execute((Path(__file__).resolve().parents[1] / 'migrations/030_swap_exposure.sql').read_text())
             conn.execute('ALTER ROLE domino_execution_publisher LOGIN')
 
     def setUp(self):
         with self.pg.admin() as conn:
             conn.execute('TRUNCATE domino_execution.cycles,domino_execution.sequence_state,domino_execution.pool_samples,domino_execution.controls,domino_execution.publications,'
-                         'domino_execution.publisher_heads,domino_execution.withdrawals,domino_execution.withdrawal_debits,domino_execution.ledger_exceptions,domino_execution.ledger_cursors CASCADE')
+                         'domino_execution.publisher_heads,domino_execution.withdrawals,domino_execution.withdrawal_debits,domino_execution.ledger_exceptions,domino_execution.ledger_cursors,'
+                         'domino_execution.swap_exposure CASCADE')
         self.store = CycleStore(self.pg.settings)
         self.worker = str(uuid.uuid4())
 
@@ -103,6 +105,118 @@ class CycleStoreTests(unittest.TestCase):
             with self.assertRaises(psycopg.errors.InsufficientPrivilege):
                 conn.execute("INSERT INTO publications(observation_id,guard,pool_id,block_number,block_hash,block_timestamp,expires_at,sqrt_price,signer,nonce,envelope,signed_bytes,transaction_hash,state) VALUES(%s,%s,%s,1,%s,10,20,5,%s,0,'{}'::jsonb,%s,%s,'signed')",
                              (identity(40), address(23), POOL, identity(41), address(10), b'\x01', identity(42)))
+
+    def reserve(self, owner, sequence, worker, fence, intent, block, usage, **changes):
+        fields = dict(intent_id=intent, pool_id=POOL, block_number=block, zero_for_one=True, amount_in=10**15, cap_raw=3 * 10**15,
+                      usage_ppm=usage, window_blocks=256)
+        return self.store.reserve_swap(owner, sequence, worker, fence, **{**fields, **changes})
+
+    def test_swap_exposure_is_one_budget_per_pool_shared_by_every_vault_over_the_window(self):
+        other_owner, other_sequence = address(2), identity(13)
+        self.store.ensure_sequence(OWNER, SEQUENCE, address(3), POOL, now=1000)
+        self.store.ensure_sequence(other_owner, other_sequence, address(4), POOL, now=1000)
+        mine = self.store.acquire_sequence(OWNER, SEQUENCE, self.worker, lease_seconds=60)['fence']
+        theirs_worker = str(uuid.uuid4())
+        theirs = self.store.acquire_sequence(other_owner, other_sequence, theirs_worker, lease_seconds=60)['fence']
+        self.assertEqual(self.reserve(OWNER, SEQUENCE, self.worker, mine, identity(51), 1000, 600000), {'usedPpm': 600000, 'usagePpm': 600000})
+        # Another owner's vault on the same pool shares the budget: 60% + 50% is refused inside the window.
+        with self.assertRaisesRegex(ExecutionStoreError, 'execution_swap_cap_exhausted'):
+            self.reserve(other_owner, other_sequence, theirs_worker, theirs, identity(52), 1010, 500000)
+        self.assertEqual(self.reserve(other_owner, other_sequence, theirs_worker, theirs, identity(52), 1010, 400000)['usedPpm'], 10**6)
+        with self.assertRaisesRegex(ExecutionStoreError, 'execution_swap_cap_exhausted'):
+            self.reserve(OWNER, SEQUENCE, self.worker, mine, identity(53), 1200, 1)
+        # A reservation 256 blocks later no longer sees the first one.
+        self.assertEqual(self.reserve(OWNER, SEQUENCE, self.worker, mine, identity(53), 1256, 500000)['usedPpm'], 900000)
+        self.assertEqual(self.store.swap_exposure(other_owner, POOL, since_block=1001), 900000)
+        self.assertEqual(self.store.swap_exposure(OWNER, identity(99), since_block=0), 0)
+        # Released only by its own tenant, under the live fence, and only once.
+        self.assertFalse(self.store.release_swap(other_owner, other_sequence, theirs_worker, theirs, identity(53)))
+        hidden = self.store._transaction(other_owner, lambda conn, owner: conn.execute(
+            'UPDATE swap_exposure SET released=true WHERE intent_id=%s RETURNING intent_id', (identity(53),)).fetchone(), worker=theirs_worker, fence=theirs)
+        self.assertIsNone(hidden)
+        with self.assertRaisesRegex(ExecutionStoreError, 'execution_store_unavailable'):
+            self.store._transaction(other_owner, lambda conn, owner: conn.execute(
+                'INSERT INTO swap_exposure(reservation_id,intent_id,owner,sequence_hash,pool_id,block_number,zero_for_one,amount_in,cap_raw,usage_ppm) '
+                'VALUES(%s,%s,%s,%s,%s,1300,true,1,1,1)', (str(uuid.uuid4()), identity(56), OWNER, other_sequence, POOL)), worker=theirs_worker, fence=theirs)
+        with self.assertRaisesRegex(ExecutionStoreError, 'execution_stale_fence'):
+            self.store.release_swap(OWNER, SEQUENCE, self.worker, mine + 1, identity(53))
+        self.assertTrue(self.store.release_swap(OWNER, SEQUENCE, self.worker, mine, identity(53)))
+        self.assertFalse(self.store.release_swap(OWNER, SEQUENCE, self.worker, mine, identity(53)))
+        self.assertEqual(self.store.swap_exposure(OWNER, POOL, since_block=1001), 400000)
+        # A released row cannot come back or be released again (the guard);
+        # the worker may change nothing else and delete nothing (its grants).
+        for released in ('false', 'true'):
+            with self.subTest(released=released), self.assertRaisesRegex(ExecutionStoreError, 'execution_intent_immutable'):
+                self.store._transaction(OWNER, lambda conn, owner: conn.execute(
+                    f'UPDATE swap_exposure SET released={released} WHERE intent_id=%s AND released', (identity(53),)), worker=self.worker, fence=mine)
+        for statement in ('UPDATE swap_exposure SET usage_ppm=1 WHERE intent_id=%s', 'DELETE FROM swap_exposure WHERE intent_id=%s'):
+            with self.subTest(statement=statement), self.assertRaisesRegex(ExecutionStoreError, 'execution_store_unavailable'):
+                self.store._transaction(OWNER, lambda conn, owner: conn.execute(statement, (identity(51),)), worker=self.worker, fence=mine)
+        with psycopg.connect(**self.pg.settings, user='domino_execution_worker', options='-c search_path=domino_execution') as conn:
+            with self.assertRaises(psycopg.errors.InsufficientPrivilege):
+                conn.execute('UPDATE swap_exposure SET block_number=0 WHERE intent_id=%s', (identity(51),))
+        # One live reservation per intent; a released one does not block the
+        # same plan, rebuilt at the same block, from reserving again.
+        with self.assertRaisesRegex(ExecutionStoreError, 'execution_reservation_conflict'):
+            self.reserve(OWNER, SEQUENCE, self.worker, mine, identity(51), 1300, 1)
+        self.assertEqual(self.reserve(OWNER, SEQUENCE, self.worker, mine, identity(53), 1256, 500000)['usedPpm'], 900000)
+        self.assertTrue(self.store.release_swap(OWNER, SEQUENCE, self.worker, mine, identity(53)))
+        # A stale lease reserves nothing; malformed shares are refused before the database.
+        with self.assertRaisesRegex(ExecutionStoreError, 'execution_stale_fence'):
+            self.reserve(OWNER, SEQUENCE, self.worker, mine + 1, identity(54), 1300, 1)
+        for bad in ({'usage_ppm': 0}, {'usage_ppm': 10**6 + 1}, {'window_blocks': 257}, {'amount_in': 0}, {'cap_raw': 0}, {'zero_for_one': 1}):
+            with self.subTest(bad=bad), self.assertRaisesRegex(ExecutionStoreError, 'execution_invalid_record'):
+                self.reserve(OWNER, SEQUENCE, self.worker, mine, identity(55), 1300, 1, **bad)
+
+    def test_the_window_holds_exactly_its_blocks(self):
+        self.store.ensure_sequence(OWNER, SEQUENCE, address(3), POOL, now=1000)
+        fence = self.store.acquire_sequence(OWNER, SEQUENCE, self.worker, lease_seconds=60)['fence']
+        self.reserve(OWNER, SEQUENCE, self.worker, fence, identity(61), 2000, 600000)
+        # A stale lease learns nothing of the budget: its fence is checked first.
+        with self.assertRaisesRegex(ExecutionStoreError, 'execution_stale_fence'):
+            self.reserve(OWNER, SEQUENCE, self.worker, fence + 1, identity(62), 2001, 500000)
+        # 256 blocks from 2000 to 2255: the first share still counts at its last block ...
+        with self.assertRaisesRegex(ExecutionStoreError, 'execution_swap_cap_exhausted'):
+            self.reserve(OWNER, SEQUENCE, self.worker, fence, identity(62), 2255, 500000)
+        self.assertEqual(self.store.swap_exposure(OWNER, POOL, since_block=2000), 600000)
+        # ... and no longer one block later.
+        self.assertEqual(self.reserve(OWNER, SEQUENCE, self.worker, fence, identity(62), 2256, 500000)['usedPpm'], 500000)
+
+    def test_reservations_on_one_pool_wait_for_each_other(self):
+        # Another vault's reservation holds the pool's lock: this one waits for
+        # it, and gives up at the store's lock timeout instead of reading a sum
+        # the other is about to change.
+        self.store.ensure_sequence(OWNER, SEQUENCE, address(3), POOL, now=1000)
+        fence = self.store.acquire_sequence(OWNER, SEQUENCE, self.worker, lease_seconds=60)['fence']
+        with self.pg.admin() as conn:
+            conn.execute("SELECT pg_advisory_xact_lock(hashtextextended('swap_exposure:'||%s,0))", (POOL,))
+            with self.assertRaisesRegex(ExecutionStoreError, 'execution_store_unavailable'):
+                self.reserve(OWNER, SEQUENCE, self.worker, fence, identity(71), 3000, 1)
+        # Another pool's lock is not this one's.
+        with self.pg.admin() as conn:
+            conn.execute("SELECT pg_advisory_xact_lock(hashtextextended('swap_exposure:'||%s,0))", (identity(99),))
+            self.assertEqual(self.reserve(OWNER, SEQUENCE, self.worker, fence, identity(71), 3000, 1)['usedPpm'], 1)
+
+    def test_attempts_count_only_cycles_that_paid_for_a_publication(self):
+        self.store.ensure_sequence(OWNER, SEQUENCE, address(3), POOL, now=1000)
+        fence = self.store.acquire_sequence(OWNER, SEQUENCE, self.worker, lease_seconds=60)['fence']
+        self.assertEqual(self.store.attempt_history(OWNER, SEQUENCE), (0, 0))
+        for reason, cost in (('replan_wait', {}), ('publication_reverted', {'publication': {'state': 'reverted'}}),
+                             ('price_outside_plan_band', {'publication': {'state': 'included'}}), ('publish_failed', {'latency': {}})):
+            cycle = self.store.record_cycle(OWNER, SEQUENCE, self.worker, fence, **self.cycle_fields())
+            self.store.update_cycle(OWNER, cycle, self.worker, fence, state='abandoned', reason=reason, cost=cost)
+        self.store.record_cycle(OWNER, SEQUENCE, self.worker, fence, **self.cycle_fields())  # still evaluated
+        self.assertEqual(self.store.attempt_history(OWNER, SEQUENCE), (2, 0))
+        self.assertEqual(self.store.attempt_history(OWNER, SEQUENCE, limit=1), (1, 0))
+        self.assertEqual(self.store.attempt_history(address(2), SEQUENCE), (0, 0))
+        with self.assertRaisesRegex(ExecutionStoreError, 'execution_invalid_record'):
+            self.store.attempt_history(OWNER, SEQUENCE, limit=0)
+        # The failure count is a scheduling field under the live lease.
+        state = self.store.update_sequence(OWNER, SEQUENCE, self.worker, fence, consecutive_failures=3, next_due_seconds=40)
+        self.assertEqual(state['consecutiveFailures'], 3)
+        self.assertGreater(state['nextDueEpoch'], 0)
+        with self.assertRaisesRegex(ExecutionStoreError, 'execution_store_unavailable'):
+            self.store.update_sequence(OWNER, SEQUENCE, self.worker, fence, consecutive_failures=-1)
 
 
 if __name__ == '__main__':

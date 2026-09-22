@@ -213,6 +213,8 @@ def create_database(name):
             conn.execute((ROOT/'migrations/028_automation_cycle.sql').read_text())
         if conn.execute("SELECT to_regclass('domino_execution.withdrawals') IS NULL").fetchone()[0]:
             conn.execute((ROOT/'migrations/029_ledger_index.sql').read_text())
+        if conn.execute("SELECT to_regclass('domino_execution.swap_exposure') IS NULL").fetchone()[0]:
+            conn.execute((ROOT/'migrations/030_swap_exposure.sql').read_text())
 
 
 

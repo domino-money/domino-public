@@ -12,7 +12,7 @@ test('the defaults make a valid Domino creation and a valid Auto-compound one, o
   assert.deepEqual(domino.options, {
     automationMode: 'domino', rootTokenId: 42n, baseIsCurrency0: true, consentToUncollectedFees: true,
     triggerDistanceBps: 500, maxOverlapBps: 2000, minimumIntervalSeconds: 3600, maxPositions: 3, upsideBps: 5000,
-    maxSlippageBps: 50, maxPriceImpactBps: 100, maxGasCostWei: 5_000_000_000_000_000n, maxObservationAgeSeconds: 300, forecastHorizonSeconds: 604_800,
+    maxSlippageBps: 100, maxPriceImpactBps: 100, maxGasCostWei: 5_000_000_000_000_000n, maxObservationAgeSeconds: 300, forecastHorizonSeconds: 604_800,
   });
   const compound = sequenceOptionsFrom('compound', 42n, { ...SEQUENCE_DEFAULTS, sequenceCap: '9', triggerPercent: '99' });
   assert.ok(compound.ok);

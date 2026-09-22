@@ -15,15 +15,16 @@ import execution_models as m
 import execution_planner as p
 import execution_v4 as v4
 import test_execution_planner as tp
-from automation_config import PlanPolicy, price_bounds
+from automation_config import PlanPolicy, impact_bounds
+from automation_evidence import price_impact_bps
 from automation_observer import ObservationContext, PoolState
 from automation_plan import (ACTIONS, PlanError, build_execution_plan, observation_id, observation_point, publish_calldata,
                              PLACEHOLDER_OBSERVATION)
 from execution_cases import identity
 from execution_v4_adapter import decode_plan, rebuild_v4
 
-POLICY = PlanPolicy(deadlineSeconds=60, priceBandSqrtBps=25, maxGasCostWei=10**15, preferNetPath=True, liquiditySlackBps=25)
-EXACT = PlanPolicy(deadlineSeconds=60, priceBandSqrtBps=25, maxGasCostWei=10**15, preferNetPath=True, liquiditySlackBps=0)
+POLICY = PlanPolicy(deadlineSeconds=60, maxGasCostWei=10**15, preferNetPath=True, liquiditySlackBps=25)
+EXACT = PlanPolicy(deadlineSeconds=60, maxGasCostWei=10**15, preferNetPath=True, liquiditySlackBps=0)
 
 
 def changed(record, **values):
@@ -66,8 +67,11 @@ class PlanBuilderTests(unittest.TestCase):
         self.assertLess(int(slack.maxNetAdded0), int(plan.maxNetAdded0))
         self.assertEqual(int(plan.deadline), tp.NOW + 60)
         self.assertEqual(plan.maxGasCostWei, str(10**14))
-        lower, upper = price_bounds(int(obs.sqrtPriceX96), 25, obs.policy.limits.maxPriceImpactBps)
+        # The plan's band is the owner's impact limit, exactly as the engine checks it.
+        lower, upper = impact_bounds(int(obs.sqrtPriceX96), obs.policy.limits.maxPriceImpactBps)
         self.assertEqual((plan.minSqrtPriceX96, plan.maxSqrtPriceX96), (str(lower), str(upper)))
+        self.assertLessEqual(price_impact_bps(upper, int(obs.sqrtPriceX96)), obs.policy.limits.maxPriceImpactBps)
+        self.assertGreater(price_impact_bps(upper + 1, int(obs.sqrtPriceX96)), obs.policy.limits.maxPriceImpactBps)
         slippage = obs.policy.limits.maxSlippageBps
         for i in (0, 1):
             self.assertEqual(int(getattr(plan, f'minNetAdded{i}')), candidate.netAdded[i] * (10000 - slippage) // 10000)
@@ -98,7 +102,7 @@ class PlanBuilderTests(unittest.TestCase):
         hist = tp.history(obs, increment=20)
         ev = tp.evidence(obs, cfg)
         dest = ev.destinations[0].destination
-        lower, _ = price_bounds(int(obs.sqrtPriceX96), 25, obs.policy.limits.maxPriceImpactBps)
+        lower, _ = impact_bounds(int(obs.sqrtPriceX96), obs.policy.limits.maxPriceImpactBps)
         route = v4.SwapPlan(sourceId=identity(1), currencyIn=obs.sequence.poolKey.currency0, amountIn='400', maxOriginal='1', maxCharged='0',
                             minAmountOut='390', sqrtPriceLimitX96=str(lower), priceObservationId=identity(2))
         bounds = m.SwapBounds(enabled=True, adapterId=v4.ADAPTER_ID, adapterVersion=v4.ADAPTER_VERSION,

@@ -11,7 +11,7 @@ from eth_abi import encode
 from eth_hash.auto import keccak
 
 import execution_models as m
-from automation_config import price_bounds
+from automation_config import impact_bounds
 from execution_v4_adapter import rebuild_v4, selected_positions
 from v4_math import MIN_SQRT, MAX_SQRT, amount_delta, sqrt_at_tick
 
@@ -77,7 +77,7 @@ def size_addition(ctx, candidate, plan_policy, *, reader=None, state_view=None, 
     if reader is not None:
         from automation_evidence import simulate_exact_input
         limits = obs.policy.limits
-        lower, upper = price_bounds(spot, plan_policy.priceBandSqrtBps, limits.maxPriceImpactBps)
+        lower, upper = impact_bounds(spot, limits.maxPriceImpactBps)
         zero_for_one = into == 0
         limit = max(MIN_SQRT + 1, lower) if zero_for_one else min(MAX_SQRT - 1, upper)
         result = simulate_exact_input(reader, state_view, obs.sequence.poolKey, obs.sequence.poolId, ctx.pool, ctx.block,
@@ -117,12 +117,13 @@ def size_addition(ctx, candidate, plan_policy, *, reader=None, state_view=None, 
 def build_execution_plan(ctx, candidate, *, plan_policy, gas_cap_wei, reader=None, state_view=None, max_steps=64):
     """The E1 plan for one non-waiting candidate, verified offline and against
     the V4 wire. Floors and ceilings on the addition follow the owner's own
-    slippage limit around the amounts the execution will actually settle."""
+    slippage limit around the amounts the execution will actually settle; the
+    price band is the owner's impact limit, exactly as the engine checks it."""
     obs = ctx.observation
     if candidate.action not in ACTIONS or candidate.destination is None:
         raise PlanError('automation_candidate_not_executable')
     limits = obs.policy.limits
-    lower, upper = price_bounds(int(obs.sqrtPriceX96), plan_policy.priceBandSqrtBps, limits.maxPriceImpactBps)
+    lower, upper = impact_bounds(int(obs.sqrtPriceX96), limits.maxPriceImpactBps)
     deadline = int(obs.blockTimestamp) + min(plan_policy.deadlineSeconds, limits.maxObservationAgeSeconds)
     slippage = limits.maxSlippageBps
     liquidity, needs = size_addition(ctx, candidate, plan_policy, reader=reader, state_view=state_view, max_steps=max_steps)

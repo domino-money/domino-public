@@ -41,7 +41,7 @@ export const SEQUENCE_DEFAULTS: SequenceForm = {
   sequenceCap: DEFAULT_LIMITS.sequenceCap,
   upsidePercent: String(DEFAULT_UPSIDE_PERCENT),
   minimumIntervalMinutes: '60',
-  maxSlippagePercent: '0.5',
+  maxSlippagePercent: '1',
   maxPriceImpactPercent: '1',
   maxGasCostEth: '0.005',
   maxObservationAgeMinutes: '5',

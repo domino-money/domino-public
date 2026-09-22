@@ -210,3 +210,25 @@ fica muito abaixo do equilíbrio em todos os pools, mesmo compondo de hora em ho
   conta posições, não donos.
 - Se as posições de lançamento dos pools sem hook ficam com o criador ou presas num
   contrato de trava, o que decide se o criador poderia automatizá-las.
+
+## 9. Implementação, 22/09/2026
+
+O owner aprovou a proposta sem os hooks. O
+[adendo do registro do ciclo](AUTOMATION_CYCLE_2026-09-21.md#addendum-22-september-2026-the-new-token-proposal-implemented)
+descreve o que mudou no código. Três pontos diferem do texto acima:
+
+- **Faixa de valoração.** O planner avalia o outro token no spot com uma margem pequena
+  e explícita, `pricing.valuationBandBps`, e não na faixa de impacto do dono. Com a faixa
+  de impacto, cada swap contaria como perda cerca de duas vezes o impacto do seu valor, e
+  quem alarga o limite num token volátil teria os swaps recusados. O que a execução pode
+  encontrar continua limitado pelo impacto e pela slippage do dono, no engine.
+- **Profundidade.** O teto usa a menor média acumulada de L × √P entre o spot e o limite
+  de impacto, e não a menor liquidez pontual. É a condição exata de equilíbrio: empurrar
+  até um ponto só se paga se o swap passar de taxa × a profundidade média do caminho.
+  Uma lacuna de liquidez colada no spot zera o teto; uma lacuna distante o reduz em
+  proporção.
+- **Custo esperado das tentativas.** A conta do operador multiplica o gás da publicação
+  por (tentativas pagas + 1) / (conclusões + 1), nas últimas 20 tentativas da sequência.
+
+A parte do app, slippage padrão de 1%, foi feita junto.
+

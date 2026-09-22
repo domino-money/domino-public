@@ -297,7 +297,7 @@ substituídos silenciosamente pelos das fixtures.
 
 | Grupo | Definições necessárias |
 | --- | --- |
-| Evidência | Fontes de preço admitidas, fallback, cobertura, freshness e tratamento de divergência. Ler o spot do próprio pool não cria uma referência independente nem protege contra manipulação anterior à observação. |
+| Evidência | Fontes de preço admitidas, fallback, cobertura, freshness e tratamento de divergência. Ler o spot do próprio pool não cria uma referência independente nem protege contra manipulação anterior à observação. Decisão do owner em 22/09/2026 ([estudo](../reports/NEW_TOKEN_AUTOMATION_STUDY_2026-09-22.md)): o Domino atende sobretudo tokens novos que nenhum oráculo cobre, então o preço vem do spot do próprio pool no bloco observado, sem referência externa (Chainlink recusado por ora), sem média e sem gatilho de volatilidade. A proteção contra manipulação anterior à observação passa a ser a regra de proporção: os swaps de compound de todos os vaults de um pool, somados numa janela de até 256 blocos, ficam abaixo de taxa × profundidade, medida tick a tick dentro do impacto máximo do dono. |
 | Histórico | Quantidade mínima de amostras, duração/cobertura, idade máxima e política de recuperação. |
 | Economia | Horizonte máximo, haircut de projeção, benefício mínimo, realização conservadora da receita e margem de custo. |
 | Busca | Frações de liquidez e opções de overlap, dentro dos limites do owner; cotas de quotes e RPC. |

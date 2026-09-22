@@ -4,8 +4,9 @@ observe -> decide -> reserve -> publish (a real transaction from the publisher
 key) -> inclusion -> qualify/sign/send through the durable executor -> receipt
 -> reconciliation, with restarts at the transitions, two workers, a lost
 broadcast reply, a lost source window, a revoked anchor, a moved price, an
-unfunded signer, pauses and a reorg. Synthetic keys, fixture feeds and a mock
-node interface: this proves the integration, not a production deployment.
+unfunded signer, pauses, a reorg and a swap cap another vault used up.
+Synthetic keys and a mock node interface, the pool's own spot as the only
+price: this proves the integration, not a production deployment.
 """
 import os
 from pathlib import Path
@@ -52,7 +53,7 @@ class AutomationCycleEvmTests(unittest.TestCase):
         cls.pg = ExecutionPostgres().start()
         cls.addClassCleanup(cls.pg.close)
         with cls.pg.admin() as conn:
-            for name in ('019_execution_journal', '028_automation_cycle', '029_ledger_index'):
+            for name in ('019_execution_journal', '028_automation_cycle', '029_ledger_index', '030_swap_exposure'):
                 conn.execute((Path(__file__).resolve().parents[1] / f'migrations/{name}.sql').read_text())
             for role in ('domino_execution_signer', 'domino_execution_publisher'):
                 conn.execute(f'ALTER ROLE {role} LOGIN')
@@ -62,7 +63,7 @@ class AutomationCycleEvmTests(unittest.TestCase):
             conn.execute('TRUNCATE domino_execution.intents,domino_execution.origins,domino_execution.signer_heads,domino_execution.publications,'
                          'domino_execution.publisher_heads,domino_execution.cycles,domino_execution.sequence_state,domino_execution.pool_samples,'
                          'domino_execution.controls,domino_execution.withdrawals,domino_execution.withdrawal_debits,domino_execution.ledger_exceptions,'
-                         'domino_execution.ledger_cursors CASCADE')
+                         'domino_execution.ledger_cursors,domino_execution.swap_exposure CASCADE')
         self.rpc.request('evm_revert', [self.base_snapshot])
         type(self).base_snapshot = self.rpc.request('evm_snapshot', [])
         self.rpc.request('evm_setAutomine', [True])
@@ -99,8 +100,6 @@ class AutomationCycleEvmTests(unittest.TestCase):
             self.send(currency, calldata('mint(address,uint256)', ['address', 'uint256'], [competitor, 10**20]))
         self.send(competitor, calldata('seed(' + KEY_TYPE + ',uint128)', [KEY_TYPE, 'uint128'], [self.key, 9 * 10**18]))
         self.send(competitor, calldata('refundSetup()'))
-        self.feeds = {c: self.deploy('OfficialV4Fixture.sol', 'OfficialFixtureFeed', ['uint8', 'string', 'int256'], [8, 'FIXTURE / USD', 10**8])
-                      for c in (self.key[0], self.key[1], m.ZERO)}
         node = self.deploy('OfficialV4Fixture.sol', 'OfficialFixtureNodeInterface')
         self.rpc.request('anvil_setCode', [NODE_INTERFACE, self.rpc.request('eth_getCode', [node, 'latest'])])
         self.rpc.request('anvil_setNextBlockBaseFeePerGas', [hex(1)])
@@ -121,7 +120,12 @@ class AutomationCycleEvmTests(unittest.TestCase):
                     'planner': {'minimumSamples': 3, 'minimumSampleSeconds': 2, 'maximumMeasurementSeconds': 60, 'maximumSampleAgeSeconds': 120},
                     'scheduling': {'executionWaitSeconds': 2, 'publicationWaitSeconds': 10, 'evaluationIntervalSeconds': 1,
                                    'minimumBackoffSeconds': 1, 'maximumBackoffSeconds': 4}}
-        raw = sample_config(currencies=(self.key[0], self.key[1]), feeds=self.feeds, **deep_update(defaults, changes))
+        raw = sample_config(currencies=(self.key[0], self.key[1]), **deep_update(defaults, changes))
+        # The fixture pool has no native side: its quote token stands for the
+        # wrapped native asset, so gas converts one to one. Conversion through
+        # a native/quote pool is covered offline.
+        raw['pricing']['wrappedNative'] = self.admission.sequence.quoteCurrency
+        raw['pricing']['gasPools'] = {}
         self.config = validate_config(raw)
         self.entry = self.config.sequences[0]
         self.cycle = self.worker()
@@ -176,6 +180,16 @@ class AutomationCycleEvmTests(unittest.TestCase):
         self.advance(2)
         self.trade()
 
+    def set_state(self, *, consecutive_failures=None, next_due_at=None):
+        """Put the sequence's row where a scenario needs it, as an earlier
+        history would have left it; the row's lease guard is bypassed."""
+        with self.pg.admin() as conn:
+            conn.execute('SET LOCAL session_replication_role = replica')
+            if consecutive_failures is not None:
+                conn.execute('UPDATE domino_execution.sequence_state SET consecutive_failures=%s', (consecutive_failures,))
+            if next_due_at == 'far':
+                conn.execute("UPDATE domino_execution.sequence_state SET next_due_at=clock_timestamp()+interval '1 hour'")
+
     def counts(self):
         with self.pg.admin() as conn:
             return {table: conn.execute(f'SELECT count(*) FROM domino_execution.{table}').fetchone()[0]
@@ -192,9 +206,14 @@ class AutomationCycleEvmTests(unittest.TestCase):
         self.assertEqual(first['outcome'], 'wait', first)
         self.assertIn('insufficient_qualified_fee_history', first['decision']['reasons'])
         self.assertEqual((self.counts()['publications'], self.counts()['intents']), (0, 0))
+        # The service loop honours the backoff the wait set; a manual pass does not.
+        self.assertEqual(self.cycle.run(self.entry, respect_due=True)['outcome'], 'not_due')
+        self.assertGreater(first['nextDueEpoch'], time.time())
         self.warm_up()
         self.advance(2)
         self.trade()
+        # Two earlier paid failures on record: the completion below resets them.
+        self.set_state(consecutive_failures=2)
         acted = self.cycle.run(self.entry)
         self.assertEqual(acted['outcome'], 'executing', acted)
         counts = self.counts()
@@ -206,8 +225,10 @@ class AutomationCycleEvmTests(unittest.TestCase):
         self.assertEqual(self.ledger.price_observation(self.owner, acted['intentId']), acted['observationId'])
         stored = self.call(self.admission.priceGuard, 'observations(bytes32)', OBSERVATION_TYPES, ['bytes32'], [bytes.fromhex(acted['observationId'][2:])])
         self.assertEqual((stored[1], '0x' + stored[2].hex(), stored[5]), (int(intent['plan']['sourceBlockNumber']), intent['plan']['sourceBlockHash'], int(intent['observation']['sqrtPriceX96'])))
-        # A pass before finality resumes the same cycle and adds no work.
-        again = self.cycle.run(self.entry)
+        # A pass before finality resumes the same cycle and adds no work; the
+        # service loop resumes it too, even before the sequence's due time.
+        self.set_state(next_due_at='far')
+        again = self.cycle.run(self.entry, respect_due=True)
         self.assertEqual((again['cycleId'], again['outcome']), (acted['cycleId'], 'executing'))
         self.assertEqual(self.counts()['publications'], 1)
         self.finalize()
@@ -221,6 +242,21 @@ class AutomationCycleEvmTests(unittest.TestCase):
         receipt = ExecutionJournal(self.pg.settings).status(self.owner, acted['intentId'])['receipt']
         state = self.store.sequence(self.owner, cycle['sequenceHash'])
         self.assertEqual(state['waitingSince'], receipt['block']['timestamp'])
+        self.assertEqual(state['consecutiveFailures'], 0)
+        # Latency, in chain blocks and seconds from the observed block and in
+        # wall-clock milliseconds along the act path of the pass that acted.
+        latency = cycle['cost']['latency']
+        self.assertEqual((latency['sourceBlock'], latency['sourceTimestamp'], latency['targetSeconds']),
+                         (int(intent['plan']['sourceBlockNumber']), int(intent['observation']['blockTimestamp']), 5))
+        self.assertEqual(latency['publicationBlock'], publication['includedBlockNumber'])
+        self.assertEqual(latency['executionBlock'], int(receipt['block']['number']))
+        self.assertGreater(latency['executionBlocksAfterSource'], latency['publicationBlocksAfterSource'])
+        self.assertGreaterEqual(latency['publicationBlocksAfterSource'], 1)
+        self.assertEqual(latency['executionSecondsAfterSource'], int(receipt['block']['timestamp']) - latency['sourceTimestamp'])
+        self.assertEqual(latency['withinTarget'], latency['executionSecondsAfterSource'] <= 5)
+        phases = [latency[k] for k in ('evaluatedMs', 'plannedMs', 'persistedMs', 'reservedMs', 'publicationSentMs', 'publicationIncludedMs', 'executionSentMs')]
+        self.assertEqual(phases, sorted(phases))
+        self.assertGreaterEqual(phases[0], 0)
         # The pool kept trading while finality was awaited, so the next pass
         # may already find enough new fees for a second cycle; if it waits, more
         # rounds make it eligible. Either way the second cycle spends ledger
@@ -348,6 +384,8 @@ class AutomationCycleEvmTests(unittest.TestCase):
         self.assertTrue(lost['reservationReleased'])
         self.assertEqual(self.ledger.get(self.owner, lost['intentId'])['state'], 'cancelled')
         self.assertEqual(self.counts()['publications'], 0)
+        # Nothing was paid for: not a failed attempt.
+        self.assertEqual(self.store.sequence(self.owner, lost['sequenceHash'])['consecutiveFailures'], 0)
         # Revoked after publication: the executor refuses before the key is used.
         signer = self.cycle._signer
         def revoking(admission, anchor):
@@ -365,6 +403,8 @@ class AutomationCycleEvmTests(unittest.TestCase):
         self.assertEqual(revoked['reason'], 'anchor_revoked')
         self.assertEqual((self.counts()['publications'], self.counts()['journal'], self.counts()['attempts']), (1, 0, 0))
         self.assertEqual(self.ledger.get(self.owner, revoked['intentId'])['state'], 'cancelled')
+        # The publication was paid for: one failed attempt.
+        self.assertEqual(self.store.sequence(self.owner, revoked['sequenceHash'])['consecutiveFailures'], 1)
         # The price leaves the plan's band between publication and signing: same refusal, nothing signed.
         def moving(admission, anchor):
             self.trade(amount=5 * 10**17, directions=(True,))
@@ -379,6 +419,12 @@ class AutomationCycleEvmTests(unittest.TestCase):
         self.assertEqual(moved['outcome'], 'abandoned', moved)
         self.assertEqual(moved['reason'], 'price_outside_plan_band')
         self.assertEqual((self.counts()['publications'], self.counts()['journal'], self.counts()['attempts']), (2, 0, 0))
+        self.assertEqual(self.store.sequence(self.owner, moved['sequenceHash'])['consecutiveFailures'], 2)
+        # Two paid attempts, none completed: the operator now expects three
+        # publications per completed cycle, and its cost says so.
+        self.advance(2)
+        after = self.cycle.run(self.entry, act=False)
+        self.assertEqual(after['decision']['expectedPublicationsPerCompletion'], '3/1')
 
     def test_reorg_after_a_completed_cycle_is_recorded_and_suspends_the_sequence(self):
         self.setup()
@@ -479,6 +525,85 @@ class AutomationCycleEvmTests(unittest.TestCase):
         self.assertIn(resumed['outcome'], ('executing', 'wait'), resumed)
         self.assertNotIn('ledger_chain_mismatch', resumed['decision']['observationDiagnostics'])
 
+    def test_a_swap_cap_another_vault_used_up_stops_before_the_intent_and_the_next_pass_goes_direct(self):
+        self.setup()
+        self.warm_up(rounds=3, amount=2 * 10**16, directions=(True,))
+        self.advance(2)
+        self.trade(amount=10**16, directions=(False,))
+        self.advance(2)
+        self.trade(amount=2 * 10**16, directions=(True,))
+        evaluate = self.cycle.evaluate
+        def racing(entry, admission, block, state, **kwargs):
+            result = evaluate(entry, admission, block, state, **kwargs)
+            if kwargs.get('only') is not None:
+                # Between this act-time evaluation and the reservation, a vault
+                # of another owner takes the whole cap of the same pool.
+                with self.pg.admin() as conn:
+                    conn.execute("SET LOCAL session_replication_role = replica")
+                    conn.execute('INSERT INTO domino_execution.swap_exposure(reservation_id,intent_id,owner,sequence_hash,pool_id,block_number,'
+                                 'zero_for_one,amount_in,cap_raw,usage_ppm) VALUES(%s,%s,%s,%s,%s,%s,true,1,1,1000000)',
+                                 (str(uuid.uuid4()), '0x' + 'ab' * 32, '0x' + '22' * 20, '0x' + 'cd' * 32, admission.sequence.poolId, block['number']))
+            return result
+        self.cycle.evaluate = racing
+        try:
+            raced = self.cycle.run(self.entry)
+        finally:
+            self.cycle.evaluate = evaluate
+        self.assertTrue(raced['decision']['chosen']['swap'], raced['decision'])
+        self.assertEqual(raced['decision']['swapCap']['usedPpm'], 0)
+        self.assertEqual((raced['outcome'], raced['reason']), ('abandoned', 'swap_cap_exhausted'), raced)
+        self.assertEqual((self.counts()['intents'], self.counts()['publications']), (0, 0))
+        self.assertEqual(self.store.sequence(self.owner, raced['sequenceHash'])['consecutiveFailures'], 0)
+        # The next pass sees the pool's budget spent: no swap is quoted, and
+        # the fees go in without one or wait, never over the cap.
+        again = self.cycle.run(self.entry)
+        self.assertEqual(again['decision']['swapCap']['usedPpm'], 10**6, again['decision'])
+        self.assertIn(again['outcome'], ('executing', 'wait'), again)
+        if again['outcome'] == 'executing':
+            self.assertFalse(again['decision']['chosen']['swap'])
+            self.assertFalse(_model(m.ExecutionPlan, self.ledger.get(self.owner, again['intentId'])['plan']).swap.enabled)
+        with self.pg.admin() as conn:
+            self.assertEqual(conn.execute('SELECT count(*) FROM domino_execution.swap_exposure').fetchone()[0], 1)
+
+    def test_a_swap_share_is_given_back_when_its_intent_is_cancelled_unsigned(self):
+        self.setup()
+        self.warm_up(rounds=3, amount=2 * 10**16, directions=(True,))
+        self.advance(2)
+        self.trade(amount=10**16, directions=(False,))
+        self.advance(2)
+        self.trade(amount=2 * 10**16, directions=(True,))
+        def shares():
+            with self.pg.admin() as conn:
+                return conn.execute('SELECT intent_id,released FROM domino_execution.swap_exposure ORDER BY created_at').fetchall()
+        # The intent store fails after the share was taken: the share goes back.
+        persist = self.ledger.persist
+        def failing(*args, **kwargs):
+            raise ExecutionStoreError('execution_store_unavailable')
+        self.ledger.persist = failing
+        try:
+            failed = self.cycle.run(self.entry)
+        finally:
+            self.ledger.persist = persist
+        self.assertTrue(failed['decision']['chosen']['swap'], failed['decision'])
+        self.assertEqual((failed['outcome'], failed['reason']), ('abandoned', 'execution_store_unavailable'), failed)
+        self.assertEqual([released for _, released in shares()], [True])
+        # The same plan at the same block reserves again; revoked after its
+        # publication and cancelled unsigned, it gives its share back too.
+        signer = self.cycle._signer
+        def revoking(admission, anchor):
+            self.rpc.request('eth_sendTransaction', [{'from': self.guardian, 'to': self.admission.priceGuard, 'gas': hex(200000),
+                                                      'data': calldata('revoke(bytes32)', ['bytes32'], [bytes.fromhex(anchor[2:])])}])
+            return signer(admission, anchor)
+        self.cycle._signer = revoking
+        try:
+            revoked = self.cycle.run(self.entry)
+        finally:
+            self.cycle._signer = signer
+        self.assertEqual((revoked['outcome'], revoked['reason'], revoked['reservationReleased']), ('abandoned', 'anchor_revoked', True), revoked)
+        self.assertEqual(shares(), [(shares()[0][0], True), (revoked['intentId'], True)])
+        self.advance(2)
+        self.assertEqual(self.cycle.run(self.entry, act=False)['decision']['swapCap']['usedPpm'], 0)
+
     def test_swap_quote_matches_the_engine_output_exactly(self):
         self.setup()
         self.swap_quote_replay()
@@ -495,7 +620,7 @@ class AutomationCycleEvmTests(unittest.TestCase):
 
     def swap_quote_replay(self):
         # Fees mostly in currency0, at a volume that keeps the spot inside the
-        # root range and within the reference divergence the config admits.
+        # root range.
         self.warm_up(rounds=3, amount=2 * 10**16, directions=(True,))
         self.advance(2)
         self.trade(amount=10**16, directions=(False,))
@@ -521,6 +646,16 @@ class AutomationCycleEvmTests(unittest.TestCase):
                                       price_limit=int(typed.swap.sqrtPriceLimitX96), max_steps=64)
         self.assertEqual(str(replay['amountOut']), receipt['conversions'][0]['amountOutRaw'])
         self.assertEqual(receipt['conversions'][0]['amountInRaw'], plan.swap.amountInRaw)
+        # The swap took its share of the pool's cap before the intent existed,
+        # and keeps it: it was signed, whatever the window does next.
+        with self.pg.admin() as conn:
+            row = conn.execute('SELECT owner,pool_id,block_number,zero_for_one,amount_in,cap_raw,usage_ppm,released FROM domino_execution.swap_exposure '
+                               'WHERE intent_id=%s', (acted['intentId'],)).fetchone()
+        self.assertEqual((row[0], row[1], int(row[2]), row[3], str(row[4]), row[7]),
+                         (self.owner, observation.sequence.poolId, int(plan.sourceBlockNumber), plan.swap.currencyIn == self.key[0], plan.swap.amountInRaw, False))
+        # No block passed between the evaluation and the act: the same cap.
+        self.assertEqual(str(row[5]), acted['decision']['swapCap']['directions']['zeroForOne' if row[3] else 'oneForZero'])
+        self.assertEqual(row[6], -(-int(plan.swap.amountInRaw) * 10**6 // int(row[5])))
 
 
 if __name__ == '__main__':

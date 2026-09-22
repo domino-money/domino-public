@@ -29,7 +29,8 @@ CODES = frozenset(('execution_invalid_record','execution_not_found','execution_i
     'execution_origin_unavailable','execution_stale_fence','execution_state_conflict',
     'execution_balance_reserved','execution_claim_mismatch','execution_lineage_mismatch',
     'execution_reservation_conflict','execution_lease_busy','execution_expired','execution_store_unavailable',
-    'execution_withdrawal_immutable','execution_withdrawal_incomplete','execution_exception_immutable','execution_cursor_regressed'))
+    'execution_withdrawal_immutable','execution_withdrawal_incomplete','execution_exception_immutable','execution_cursor_regressed',
+    'execution_swap_cap_exhausted'))
 
 
 class ExecutionStoreError(Exception):

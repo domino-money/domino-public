@@ -47,6 +47,7 @@ PACKAGED_ONLY_MIGRATIONS = (
     # automation activation, never by this upgrade.
     'backend/migrations/028_automation_cycle.sql',
     'backend/migrations/029_ledger_index.sql',
+    'backend/migrations/030_swap_exposure.sql',
 )
 NEW_ROLES = ('domino_performance_collector', 'domino_performance_reader',
              'domino_execution_worker', 'domino_execution_ledger',

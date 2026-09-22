@@ -1,16 +1,18 @@
 """Economic evidence for the planner, produced from canonical state.
 
-Prices: the pool's own spot is what the guard anchors; it is qualified only
-when the admitted independent references agree with it inside the divergence
-the configuration names. Depth and activity: bounds measured over the sampled
-window, never one snapshot. Swap quotes: an exact walk over the pool's
-initialized ticks with the same step math the core uses, for the engine's one
-registered route. Gas: the complete path - publication plus execution - at the
-head's base fee with the configured buffer, plus the data component the node
-reports, converted to the sequence's quote asset through the same references.
-Whatever is unavailable leaves the evidence unqualified; nothing is zero-filled.
+Prices: the pool's own spot at the observed block is the anchor the guard
+binds, valued with the configured margin; there is no external reference,
+average or volatility gate (the owner's decision of 22 September 2026). Depth and activity: bounds measured over the sampled window,
+never one snapshot. Swap quotes: an exact walk over the pool's initialized
+ticks with the same step math the core uses, for the engine's one registered
+route, each quote inside the pool's swap cap (fee x depth, shared by every
+vault over a window of blocks). Gas: the complete path - publication plus
+execution - at the head's base fee with the configured buffer, plus the data
+component the node reports, converted to the sequence's quote asset through the
+native asset or an admitted native/quote pool; the operator's account carries
+the publications a success is expected to cost. Whatever is unavailable leaves
+the evidence unqualified; nothing is zero-filled.
 """
-from dataclasses import dataclass
 from fractions import Fraction
 import json
 from hashlib import sha256
@@ -21,46 +23,17 @@ from eth_abi import encode
 import execution_models as m
 import execution_planner as p
 import execution_v4 as v4
-from automation_config import gas_price_estimate, price_bounds
+from automation_config import gas_price_estimate, impact_bounds
 from automation_observer import ObservationError
 from v4_math import MIN_SQRT, MAX_SQRT, Q96, amount_delta, sqrt_at_tick, swap_step, tick_at_sqrt
 
-ROUND_TYPES = ('uint80', 'int256', 'uint256', 'uint256', 'uint80')
 NODE_INTERFACE = '0x00000000000000000000000000000000000000c8'
 PUBLISH_CALLDATA_BYTES = 4 + 6 * 32
 U256_MASK = (1 << 256) - 1
 MIN_TICK, MAX_TICK = -887272, 887272
+PPM = 1_000_000
 # Placeholders for the two SwapPlan fields the route commitment leaves out.
 _PLACEHOLDER = '0x' + 'ee' * 32
-
-
-@dataclass(frozen=True)
-class Reference:
-    currency: str
-    answer: int
-    feed_decimals: int
-    token_decimals: int
-    updated_at: int
-    round_id: int
-
-    def usd_per_atom(self):
-        return Fraction(self.answer, 10 ** (self.feed_decimals + self.token_decimals))
-
-
-def read_reference(reader, currency, feed, token_decimals, block, *, max_age):
-    """One feed's latest round at the observation block, checked against the
-    identity the configuration pins and the freshness both it and the feed's
-    own heartbeat allow."""
-    if reader.call(feed.proxy, 'decimals()', ['uint8'], block)[0] != feed.feedDecimals:
-        raise ObservationError('automation_reference_configuration')
-    if reader.call(feed.proxy, 'description()', ['string'], block)[0] != feed.description:
-        raise ObservationError('automation_reference_configuration')
-    values = reader.call(feed.proxy, 'latestRoundData()', ROUND_TYPES, block)
-    round_id, answer, started, updated, answered = values
-    if (answer <= 0 or not 0 < started <= updated <= block['timestamp'] or answered != round_id
-            or block['timestamp'] - updated > min(max_age, feed.heartbeatSeconds)):
-        raise ObservationError('automation_reference_stale')
-    return Reference(currency, answer, feed.feedDecimals, token_decimals, updated, round_id)
 
 
 def _ratio(value, *, up):
@@ -77,51 +50,41 @@ def spot_price(sqrt_price):
     return Fraction(sqrt_price * sqrt_price, Q96 * Q96)
 
 
-def price_evidence(reader, ctx, policy, admission):
+def price_evidence(ctx, admission, band_bps):
     """Prices in the planner's frame: quote atoms per raw unit of each pool
-    currency, the quote itself exactly one. Qualified when every needed
-    reference is fresh and the pool spot sits within the divergence bound."""
+    currency, the quote itself exactly one. The anchor is the pool's spot at
+    the observed block; the other currency is valued over the spot plus or
+    minus the configured margin."""
     seq = admission.sequence
-    references, reasons = {}, []
-    needed = {seq.poolKey.currency0, seq.poolKey.currency1}
-    if seq.quoteCurrency != m.ZERO:
-        needed.add(m.ZERO)  # gas is paid in the native asset
-    for currency in sorted(needed):
-        feed = policy.feeds.get(currency)
-        if feed is None or currency not in policy.tokenDecimals:
-            reasons.append('reference_missing')
-            continue
-        try:
-            references[currency] = read_reference(reader, currency, feed, policy.tokenDecimals[currency], ctx.block, max_age=policy.maxAgeSeconds)
-        except ObservationError as error:
-            reasons.append(error.code.removeprefix('automation_'))
+    if not MIN_SQRT <= ctx.pool.sqrt_price < MAX_SQRT:
+        return None, ('price_unqualified',)
+    band = Fraction(band_bps, 10000)
     spot = spot_price(ctx.pool.sqrt_price)  # currency1 atoms per currency0 atom
-    if reasons:
-        return None, tuple(sorted(set(reasons))), references
-    c0, c1 = references[seq.poolKey.currency0], references[seq.poolKey.currency1]
-    reference = c0.usd_per_atom() / c1.usd_per_atom()
-    if abs(spot - reference) * 10000 > reference * policy.maxDivergenceBps:
-        return None, ('reference_divergence',), references
-    band = Fraction(policy.bandBps, 10000)
-    low, high = min(spot, reference) * (1 - band), max(spot, reference) * (1 + band)
+    low, high = spot * (1 - band), spot * (1 + band)
     if seq.quoteCurrency == seq.poolKey.currency1:
         values = ((low, high), (Fraction(1), Fraction(1)))
     else:
         values = ((Fraction(1), Fraction(1)), (1 / high, 1 / low))
-    prices = tuple(p.PriceBand(lower=_ratio(lower, up=False), upper=_ratio(upper, up=True)) for lower, upper in values)
-    return prices, (), references
+    return tuple(p.PriceBand(lower=_ratio(lower, up=False), upper=_ratio(upper, up=True)) for lower, upper in values), ()
 
 
-def quote_per_wei(references, quote_currency, band_bps):
-    """Quote atoms one wei is worth, rounded against the operator."""
-    if quote_currency == m.ZERO:
+def quote_per_wei(reader, ctx, pricing, quote_currency, state_view):
+    """Quote atoms one wei is worth, rounded against the operator: one for the
+    native asset and its wrapper; otherwise the admitted native/quote pool's
+    spot at the observed block, with the configured buffer."""
+    if quote_currency in (m.ZERO, pricing.wrappedNative):
         return Fraction(1)
-    native = references.get(m.ZERO)
-    quote = references.get(quote_currency)
-    if native is None or quote is None:
-        raise ObservationError('automation_reference_missing')
-    return Fraction(native.answer * 10 ** (quote.feed_decimals + quote.token_decimals),
-                    quote.answer * 10 ** (native.feed_decimals + 18)) * Fraction(10000 + band_bps, 10000)
+    key = pricing.gasPools.get(quote_currency)
+    if key is None:
+        raise ObservationError('automation_gas_price_source_missing')
+    pool_id = bytes.fromhex(key.pool_id()[2:])
+    sqrt_price = reader.call(state_view, 'getSlot0(bytes32)', ['uint160', 'int24', 'uint24', 'uint24'], ctx.block, ['bytes32'], [pool_id])[0]
+    liquidity = reader.call(state_view, 'getLiquidity(bytes32)', ['uint128'], ctx.block, ['bytes32'], [pool_id])[0]
+    if not MIN_SQRT <= sqrt_price < MAX_SQRT or liquidity <= 0:
+        raise ObservationError('automation_gas_price_unavailable')
+    price = spot_price(sqrt_price)  # currency1 atoms per currency0 atom
+    per_native = price if key.currency0 in (m.ZERO, pricing.wrappedNative) else 1 / price
+    return per_native * Fraction(10000 + pricing.gasPriceBufferBps, 10000)
 
 
 def ceil_fraction(value):
@@ -225,6 +188,71 @@ def simulate_exact_input(reader, state_view, key, pool_id, pool, block, *, zero_
     return {'amountOut': output, 'afterPrice': price, 'steps': steps}
 
 
+def swap_cap(reader, state_view, key, pool_id, pool, block, *, zero_for_one, bound, multiplier_bps, max_steps):
+    """The pool's cap on compound swaps in this direction, in the input
+    currency's atoms: fee x depth, times the configured multiplier.
+
+    Pushing the price from the spot to a point and restoring it trades about
+    2 x L x (distance in square root) at each liquidity L on the way, so its
+    fees are fee x depth x fraction, depth being the average of L x sqrt P
+    over the path; the gain on a swap of size S is S x fraction. The push is
+    unprofitable up to every point of the owner's impact band exactly when S
+    stays below fee times the least running average of the depth from the
+    spot, which is what this walks, tick by tick: a liquidity gap right at the
+    spot makes the cap zero, a far one lowers it in proportion. The fee is
+    the lower of the two directions', since a push and its restore each pay
+    one. None when the walk needs more steps than admitted: the cap is then
+    unmeasured, not assumed.
+    """
+    if pool.lp_fee != key.fee_pips:
+        raise ObservationError('automation_pool_fee_unqualified')
+    fee = min(swap_fee_pips(pool.protocol_fee, pool.lp_fee, True), swap_fee_pips(pool.protocol_fee, pool.lp_fee, False))
+    pool_bytes = bytes.fromhex(pool_id[2:])
+    words = {}
+    def bitmap(word):
+        if word not in words:
+            words[word] = reader.call(state_view, 'getTickBitmap(bytes32,int16)', ['uint256'], block, ['bytes32', 'int16'], [pool_bytes, word])[0]
+        return words[word]
+    price, tick, liquidity = pool.sqrt_price, pool.tick, pool.liquidity
+    swept, least, steps = 0, None, 0  # sum of L x distance; least running average of L
+    while price != bound:
+        steps += 1
+        if steps > max_steps:
+            return None
+        next_tick, initialized = _next_initialized(bitmap, tick, key.tick_spacing, zero_for_one)
+        next_tick = max(MIN_TICK, min(MAX_TICK, next_tick))
+        next_price = sqrt_at_tick(next_tick)
+        target = max(next_price, bound) if zero_for_one else min(next_price, bound)
+        if target != price:
+            live = max(0, liquidity)
+            # The running average moves monotonically toward each segment's
+            # liquidity, so its least value is at the first segment or at a
+            # segment's end: nowhere else needs checking.
+            least = Fraction(live) if least is None else least
+            swept += live * abs(price - target)
+            least = min(least, Fraction(swept, abs(pool.sqrt_price - target)))
+            price = target
+        if price == bound:
+            break
+        if initialized:
+            net = reader.call(state_view, 'getTickLiquidity(bytes32,int24)', ['uint128', 'int128'], block, ['bytes32', 'int24'], [pool_bytes, next_tick])[1]
+            liquidity += -net if zero_for_one else net
+        tick = next_tick - 1 if zero_for_one else next_tick
+    if least is None:
+        return 0
+    numerator, denominator = (Q96, pool.sqrt_price) if zero_for_one else (pool.sqrt_price, Q96)
+    depth = least * fee * numerator * multiplier_bps
+    return depth.numerator // (depth.denominator * MAX_SWAP_FEE_PIPS * 10000 * denominator)
+
+
+def exposure_ppm(amount, cap):
+    """The share of the pool's cap one swap takes, in millionths, rounded up;
+    None when there is no cap to take a share of."""
+    if cap is None or cap <= 0:
+        return None
+    return -(-amount * PPM // cap)
+
+
 def ratio_bps(value, anchor):
     return value * value * 10000 // (anchor * anchor)
 
@@ -259,13 +287,16 @@ def l1_component(reader, block, policy, to, data_size):
     return int(estimate)
 
 
-def path_cost(reader, ctx, gas, admission, execute_units, execute_calldata_bytes):
-    """Publication plus execution, priced at the head's base fee with the buffer."""
+def path_cost(ctx, gas, execute_units, l1, *, attempts=Fraction(1)):
+    """Publication plus execution, priced at the head's base fee with the
+    buffer. `l1` holds the data components of the two transactions. `attempts`
+    is how many publications one completed cycle is expected to take: the
+    operator pays for the failed ones, so its expected cost carries them, while
+    the per-transaction gas the owner's cap limits does not."""
     price = gas_price_estimate(ctx.block['baseFeePerGas'], gas)
-    l1 = (l1_component(reader, ctx.block, gas, admission.priceGuard, PUBLISH_CALLDATA_BYTES)
-          + l1_component(reader, ctx.block, gas, admission.sequence.vault, execute_calldata_bytes))
-    units = gas.publishGasUnits + execute_units + l1
-    return {'gasWei': units * price, 'units': units, 'l1Units': l1, 'pricePerGas': price}
+    publish, execute = gas.publishGasUnits + l1[0], execute_units + l1[1]
+    return {'gasWei': (publish + execute) * price, 'expectedWei': ceil_fraction(publish * price * attempts) + execute * price,
+            'units': publish + execute, 'l1Units': l1[0] + l1[1], 'pricePerGas': price}
 
 
 # -------------------------------------------------------------- evidence
@@ -346,7 +377,10 @@ def swap_amounts(obs, dest, spot, fractions, minimum_bps):
     return surplus, tuple(a for a in amounts if a < 2**127)
 
 
-def swap_quotes(reader, ctx, admission, dest, prices, config, cost_swap, evidence_id, expires_at):
+def swap_quotes(reader, ctx, admission, dest, config, cost_swap, evidence_id, expires_at, caps, used_ppm):
+    """Exact-input quotes for this range's surplus currency, inside the owner's
+    impact band and the pool's remaining swap cap. `caps` holds the cap per
+    direction, measured once per evidence."""
     obs, seq = ctx.observation, admission.sequence
     limits = obs.policy.limits
     key = seq.poolKey
@@ -355,12 +389,22 @@ def swap_quotes(reader, ctx, admission, dest, prices, config, cost_swap, evidenc
     if surplus is None:
         return ()
     zero_for_one = surplus == 0
-    lower, upper = price_bounds(spot, config.plan.priceBandSqrtBps, limits.maxPriceImpactBps)
+    lower, upper = impact_bounds(spot, limits.maxPriceImpactBps)
     limit = max(MIN_SQRT + 1, lower) if zero_for_one else min(MAX_SQRT - 1, upper)
+    if zero_for_one not in caps:
+        caps[zero_for_one] = swap_cap(reader, admission.stateView, key, seq.poolId, ctx.pool, ctx.block, zero_for_one=zero_for_one,
+                                      bound=lower if zero_for_one else upper, multiplier_bps=config.swapCap.depthMultiplierBps,
+                                      max_steps=config.destinations.maxSimulationSteps)
+    cap = caps[zero_for_one]
     currency_in, currency_out = (key.currency0, key.currency1) if zero_for_one else (key.currency1, key.currency0)
     quotes = []
     gas_quote = cost_swap['gasQuote']
     for amount in amounts:
+        usage = exposure_ppm(amount, cap)
+        if usage is None or usage > PPM - used_ppm:
+            # Above what the pool's cap has left: the excess waits for a later
+            # cycle, while the direct addition stays open.
+            continue
         result = simulate_exact_input(reader, admission.stateView, key, seq.poolId, ctx.pool, ctx.block, zero_for_one=zero_for_one,
                                       amount_in=amount, price_limit=limit, max_steps=config.destinations.maxSimulationSteps)
         if result is None:
@@ -384,19 +428,31 @@ def swap_quotes(reader, ctx, admission, dest, prices, config, cost_swap, evidenc
     return tuple(quotes)
 
 
-def build_evidence(reader, ctx, admission, samples, config, settings, *, execute_calldata_bytes=2048):
-    """The planner's Evidence for one observation, or None with the reasons."""
+def build_evidence(reader, ctx, admission, samples, config, settings, *, used_ppm=0, attempts=Fraction(1), only=None,
+                   notes=None, execute_calldata_bytes=2048):
+    """The planner's Evidence for one observation, or None with the reasons.
+
+    `used_ppm` is the share of the pool's swap cap other compound swaps hold
+    in the current window; `attempts` the publications a completed cycle is
+    expected to take; `only`, when given, the destination digests worth
+    re-quoting (the act path's re-evaluation). `notes`, when a dict, receives
+    the swap cap per direction for the cycle's record and its reservation.
+    """
     obs, seq = ctx.observation, admission.sequence
     limits = obs.policy.limits
-    prices, reasons, references = price_evidence(reader, ctx, config.references, admission)
+    if type(used_ppm) is not int or not 0 <= used_ppm <= PPM or not attempts >= 1:
+        return None, ('swap_exposure_unavailable',)
+    prices, reasons = price_evidence(ctx, admission, config.pricing.valuationBandBps)
     if prices is None:
         return None, reasons
     try:
-        per_wei = quote_per_wei(references, seq.quoteCurrency, config.references.bandBps)
+        per_wei = quote_per_wei(reader, ctx, config.pricing, seq.quoteCurrency, admission.stateView)
+        l1 = (l1_component(reader, ctx.block, config.gas, admission.priceGuard, PUBLISH_CALLDATA_BYTES),
+              l1_component(reader, ctx.block, config.gas, admission.sequence.vault, execute_calldata_bytes))
         costs = {}
         for kind in ('direct', 'swap', 'mint', 'fund'):
-            cost = path_cost(reader, ctx, config.gas, admission, getattr(config.gas.executeGasUnits, kind), execute_calldata_bytes)
-            cost['gasQuote'] = ceil_fraction(Fraction(cost['gasWei']) * per_wei)
+            cost = path_cost(ctx, config.gas, getattr(config.gas.executeGasUnits, kind), l1, attempts=attempts)
+            cost['gasQuote'] = ceil_fraction(Fraction(cost['expectedWei']) * per_wei)
             costs[kind] = cost
     except (ObservationError, ValueError) as error:
         return None, (getattr(error, 'code', 'gas_unavailable').removeprefix('automation_'),)
@@ -411,16 +467,17 @@ def build_evidence(reader, ctx, admission, samples, config, settings, *, execute
         held[pair.index(a.source.currency)] += int(a.amountRaw)
     exposure = ceil_fraction(_value(held, prices, upper=True) * Fraction(config.destinations.exposureLossBps, 10000))
     fingerprint = '0x' + sha256(json.dumps({'observation': obs.digest(), 'config': config.configVersion, 'block': ctx.block['hash'],
-        'references': {c: [r.answer, r.round_id, r.updated_at] for c, r in sorted(references.items())},
-        'costs': {k: v['gasWei'] for k, v in costs.items()}}, sort_keys=True).encode()).hexdigest()
+        'costs': {k: [v['gasWei'], v['gasQuote']] for k, v in costs.items()}, 'swapExposurePpm': used_ppm,
+        'attempts': [attempts.numerator, attempts.denominator], 'only': sorted(only) if only is not None else None},
+        sort_keys=True).encode()).hexdigest()
     admission_id = '0x' + keccak(encode(['string', 'bytes32', 'uint256'], ['DominoAutomationAdmissionV1', bytes.fromhex(seq.digest()[2:]),
                                                                           int(config.deployment.expiresAt)])).hex()
     kinds = {'compound_self': 'direct', 'redirect_fees': 'fund', 'create_domino': 'mint'}
-    destinations, quotes = {}, []
+    destinations, quotes, caps = {}, [], {}
     for route in p.route_sources(obs, settings):
         kind = kinds.get(route.action)
         for dest in route.destinations:
-            if kind is None or dest.digest() in destinations:
+            if kind is None or dest.digest() in destinations or (only is not None and dest.digest() not in only):
                 continue
             cost = costs[kind]
             depth = destination_evidence(ctx, dest, route.action, ticks, min_liquidity, max_liquidity, config.destinations,
@@ -429,7 +486,12 @@ def build_evidence(reader, ctx, admission, samples, config, settings, *, execute
                 continue
             destinations[dest.digest()] = depth
             if len(quotes) < 32 - len(config.destinations.swapFractionsBps):
-                quotes.extend(swap_quotes(reader, ctx, admission, dest, prices, config, costs['swap'], fingerprint, expires_at))
+                quotes.extend(swap_quotes(reader, ctx, admission, dest, config, costs['swap'], fingerprint, expires_at, caps, used_ppm))
+    if notes is not None:
+        notes['swapCap'] = {'windowBlocks': config.swapCap.windowBlocks, 'usedPpm': used_ppm,
+                            'directions': {('zeroForOne' if direction else 'oneForZero'): (None if cap is None else str(cap))
+                                           for direction, cap in sorted(caps.items())}}
+        notes['caps'] = dict(caps)
     evidence = p.Evidence(observationHash=obs.digest(), evidenceId=fingerprint, qualified=obs.canonical and obs.coverageComplete,
                           expiresAt=expires_at, prices=prices, operationAdmissionId=admission_id,
                           destinations=tuple(destinations.values()), swaps=tuple(quotes[:32]))

@@ -32,7 +32,7 @@ class LedgerIndexStoreTests(unittest.TestCase):
         cls.pg = ExecutionPostgres().start()
         cls.addClassCleanup(cls.pg.close)
         with cls.pg.admin() as conn:
-            for name in ('019_execution_journal', '028_automation_cycle', '029_ledger_index'):
+            for name in ('019_execution_journal', '028_automation_cycle', '029_ledger_index', '030_swap_exposure'):
                 conn.execute((Path(__file__).resolve().parents[1] / f'migrations/{name}.sql').read_text())
             for role in ('domino_execution_signer', 'domino_execution_publisher'):
                 conn.execute(f'ALTER ROLE {role} LOGIN')

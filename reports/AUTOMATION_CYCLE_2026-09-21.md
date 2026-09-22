@@ -287,3 +287,55 @@ measures what the contracts require, short-horizon price moves, manipulation eco
 balancing needs and the hook census on the node, and proposes the replacement: no
 volatility gate, latency as a requirement, the owner's bands, and a per-pool swap cap at
 fee × depth. The "reference feeds per pool" item above is superseded by it.
+
+## Addendum, 22 September 2026: the new-token proposal implemented
+
+The owner approved the study's proposal without the hooks. What changed:
+
+- **Prices from the pool.** The Chainlink section of the configuration is gone. The
+  anchor is the pool's spot at the observed block; the planner values the other currency
+  at the spot plus or minus `pricing.valuationBandBps`. Gas converts one to one when the
+  quote is ETH or WETH, and through an admitted native/quote pool, read at the same
+  block, for any other quote; a quote without one leaves the evidence unqualified. The
+  valuation margin is its own small number rather than the owner's impact limit: valued
+  over the impact band, a swap would count about twice the impact of its value as loss,
+  and the owners who widen the limit for volatile tokens would see their swaps refused.
+- **The owner's band.** The plan's price band is the owner's `maxPriceImpactBps`, with
+  the routing helper's rounding: the plan band, the swap's price limit and the engine's
+  impact check are one bound. Before, the service kept half of it on the square root, and
+  at 50 square-root basis points or more the band's upper edge fell outside the engine's
+  bound, since (1.005)² exceeds 1.01.
+- **The swap cap.** Every compound swap in a pool, summed over all vaults over
+  `swapCap.windowBlocks`, stays below fee × depth × `swapCap.depthMultiplierBps`. Depth
+  is the least running average of L × √P from the spot to the owner's impact bound in the
+  swap's direction, walked tick by tick: that is the exact break-even of a push and its
+  restore, so a liquidity gap next to the spot zeroes the cap and a far one lowers it in
+  proportion. Migration `030_swap_exposure.sql` holds the shares, readable by every
+  tenant's worker and written only by its own; a share is reserved under a per-pool lock
+  before the intent exists, and given back when the intent is cancelled unsigned. Quotes
+  above what the window has left are not offered; the direct addition stays open.
+- **Latency.** The act path re-reads only the pool, the vault and the ledger, and
+  re-quotes only the destinations the evaluation found eligible. Each cycle records the
+  source block, the wall-clock milliseconds of each phase of the pass that acted, the
+  blocks to the publication and to the execution, the execution's chain seconds after
+  the source and whether that met `scheduling.latencyTargetSeconds`.
+- **Timing.** `serve` honours each sequence's due time. It did not before: the runbook
+  said it did, but the loop ran every sequence every interval, so the waiting backoff
+  never applied. Every wait is jittered by up to `scheduling.jitterBps`, from the
+  system's random source. After `scheduling.failureBackoffAfter` consecutive paid
+  failures the wait doubles per failure up to the maximum, and the operator's expected
+  gas cost carries the publications a completed cycle is expected to take: paid attempts
+  plus one over completions plus one, over the last 20.
+- **App.** The default maximum slippage is 1%.
+- Two debugging prints left in the reorg re-check by `7d79e5e` are removed.
+
+The integrated suite on Anvil and PostgreSQL covers the race for a pool's last share
+between two vaults (the second stops with `swap_cap_exhausted` before any intent or
+transaction, and the next pass quotes no swap), the share given back after a failed
+persist and after a revoked anchor, the latency record of a completed cycle, the failure
+count of paid and unpaid abandonments, and a sequence resumed by the service loop before
+its due time. Every guard added here was checked by mutation: deleting it fails a test.
+
+Still open: latency on the real node and sequencer, measured from the first manual
+pass; successor economics.
+

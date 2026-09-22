@@ -25,6 +25,7 @@ PACKAGED_ONLY_MIGRATIONS = (
     'backend/migrations/027_remove_wallet_access_gate.sql',
     'backend/migrations/028_automation_cycle.sql',
     'backend/migrations/029_ledger_index.sql',
+    'backend/migrations/030_swap_exposure.sql',
 )
 
 

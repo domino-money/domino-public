@@ -143,6 +143,8 @@ PACKAGED_ONLY_MIGRATIONS = (
     'backend/migrations/028_automation_cycle.sql',
     # The ledger's reader of vault fee events; same vehicle as 028.
     'backend/migrations/029_ledger_index.sql',
+    # The pools' shared swap cap and the failure count; same vehicle as 028.
+    'backend/migrations/030_swap_exposure.sql',
 )
 MAPPINGS = (
     ('domino', 'domino-admin', ADMIN),

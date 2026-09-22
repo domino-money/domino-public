@@ -1,4 +1,4 @@
-"""Evidence and observation arithmetic, offline: references, tick walk, gas, samples."""
+"""Evidence and observation arithmetic, offline: pool-spot prices, tick walk, swap cap, gas, samples."""
 from fractions import Fraction
 import json
 from pathlib import Path
@@ -13,18 +13,17 @@ import execution_cases as cases
 import execution_models as m
 import execution_planner as p
 import test_execution_planner as tp
-from automation_config import price_bounds
-from automation_evidence import (_next_initialized, build_evidence, engine_minimum_output, price_evidence, price_impact_bps,
-                                 quote_per_wei, ratio_bps, ratio_ceil_bps, simulate_exact_input, swap_fee_pips, swap_amounts)
-from automation_fixtures import FakeChainReader, address, identity, sample_automation_config
+from automation_config import GasPoolKey, impact_bounds, validate_config
+from automation_evidence import (PPM, _next_initialized, build_evidence, engine_minimum_output, exposure_ppm, price_evidence,
+                                 price_impact_bps, quote_per_wei, ratio_bps, ratio_ceil_bps, simulate_exact_input, swap_amounts,
+                                 swap_cap, swap_fee_pips)
+from automation_fixtures import FakeChainReader, address, gas_pool, identity, sample_automation_config, sample_config
 from automation_observer import ObservationContext, ObservationError, PoolState, measurement_history, sample_pool
 from execution_cases import identity as cid
 from execution_v4_adapter import rebuild_v4
-from v4_math import Q96, sqrt_at_tick, swap_step
+from v4_math import MAX_SQRT, MIN_SQRT, Q96, sqrt_at_tick, swap_step
 
 C0, C1 = address(16), address(32)
-FEEDS = {address(0x1001): (8, 'FIXTURE / USD', 7, 10**8, 1700000000), address(0x1002): (8, 'FIXTURE / USD', 7, 10**8, 1700000000),
-         address(0x1003): (8, 'FIXTURE / USD', 7, 10**8, 1700000000)}
 
 
 def changed(record, **values):
@@ -38,7 +37,7 @@ def v4_setup(**kwargs):
 
 
 def reader(**kwargs):
-    defaults = dict(sqrt_price=2**96, tick=0, lp_fee=3000, spacing=60, ranges=[(-600, 600, 10**18)], feeds=FEEDS)
+    defaults = dict(sqrt_price=2**96, tick=0, lp_fee=3000, spacing=60, ranges=[(-600, 600, 10**18)])
     return FakeChainReader(**{**defaults, **kwargs})
 
 
@@ -93,7 +92,7 @@ class SimulatorTests(unittest.TestCase):
     def test_single_range_step_equals_the_core_step_math(self):
         rd = reader()
         pool = PoolState(rd.sqrt_price, rd.tick, 0, 3000, rd.liquidity, 0, 0)
-        limit = price_bounds(2**96, 25, 100)[0]
+        limit = impact_bounds(2**96, 50)[0]
         result = simulate_exact_input(rd, address(20), self.key(), cid(1), pool, rd.head(), zero_for_one=True, amount_in=10**15, price_limit=limit, max_steps=8)
         end, amount_in, amount_out, charge = swap_step(2**96, max(sqrt_at_tick(-600), limit), 10**18, -10**15, 3000)
         self.assertEqual(amount_in + charge, 10**15)
@@ -102,7 +101,7 @@ class SimulatorTests(unittest.TestCase):
         # mirrors that and the amounts are the single real step's.
         self.assertEqual((result['amountOut'], result['afterPrice'], result['steps']), (amount_out, end, 2))
         # Selling the other way walks up to the upper tick's word instead.
-        upper = price_bounds(2**96, 25, 100)[1]
+        upper = impact_bounds(2**96, 50)[1]
         other = simulate_exact_input(rd, address(20), self.key(), cid(1), pool, rd.head(), zero_for_one=False, amount_in=10**15, price_limit=upper, max_steps=8)
         self.assertGreater(other['amountOut'], 0)
         self.assertGreater(other['afterPrice'], 2**96)
@@ -140,7 +139,7 @@ class SimulatorTests(unittest.TestCase):
         packed = 52 | (30 << 12)
         for zero_for_one, fee in ((True, 52 + 3000 - 0), (False, 30 + 3000 - 0)):
             pool = PoolState(rd.sqrt_price, rd.tick, packed, 3000, rd.liquidity, 0, 0)
-            lower, upper = price_bounds(2**96, 25, 100)
+            lower, upper = impact_bounds(2**96, 50)
             limit = lower if zero_for_one else upper
             result = simulate_exact_input(rd, address(20), self.key(), cid(1), pool, rd.head(), zero_for_one=zero_for_one,
                                           amount_in=10**15, price_limit=limit, max_steps=8)
@@ -174,37 +173,62 @@ class SimulatorTests(unittest.TestCase):
                     self.assertGreater(got, int(quote) * 9899 // 10000 - 2)
 
 
-class ReferenceTests(unittest.TestCase):
+class PricingTests(unittest.TestCase):
     def setUp(self):
         self.obs, self.hist, self.cfg = v4_setup()
         self.config = sample_automation_config()
         self.admission = admission_for(self.obs, self.config)
 
-    def test_pool_spot_qualifies_only_beside_fresh_agreeing_references(self):
+    def test_the_pool_spot_is_the_anchor_with_no_reference_and_no_gate(self):
         rd = reader()
-        prices, reasons, refs = price_evidence(rd, context(self.obs, rd), self.config.references, self.admission)
+        prices, reasons = price_evidence(context(self.obs, rd), self.admission, 10)
         self.assertEqual(reasons, ())
-        quote_index = (C0, C1).index(self.obs.sequence.quoteCurrency)
-        self.assertEqual(prices[quote_index].lower.fraction(), 1)
-        base = prices[1 - quote_index]
-        self.assertLessEqual(base.lower.fraction(), 1)
-        self.assertGreaterEqual(base.upper.fraction(), 1)
-        self.assertEqual(quote_per_wei(refs, self.obs.sequence.quoteCurrency, 0), 1)
-        stale = reader(feeds={**FEEDS, address(0x1001): (8, 'FIXTURE / USD', 7, 10**8, 1700000000 - 90000)})
-        self.assertEqual(price_evidence(stale, context(self.obs, stale), self.config.references, self.admission)[1], ('reference_stale',))
-        divergent = reader(feeds={**FEEDS, address(0x1001): (8, 'FIXTURE / USD', 7, 2 * 10**8, 1700000000)})
-        self.assertEqual(price_evidence(divergent, context(self.obs, divergent), self.config.references, self.admission)[1], ('reference_divergence',))
-        wrong = reader(feeds={**FEEDS, address(0x1001): (6, 'FIXTURE / USD', 7, 10**8, 1700000000)})
-        self.assertEqual(price_evidence(wrong, context(self.obs, wrong), self.config.references, self.admission)[1], ('reference_configuration',))
-        missing = sample_automation_config(feeds={C0: address(0x1001)})
-        self.assertEqual(price_evidence(rd, context(self.obs, rd), missing.references, self.admission)[1], ('reference_missing',))
+        self.assertEqual(self.obs.sequence.quoteCurrency, C1)
+        self.assertEqual((prices[1].lower.fraction(), prices[1].upper.fraction()), (1, 1))
+        self.assertEqual((prices[0].lower.fraction(), prices[0].upper.fraction()), (Fraction(9990, 10000), Fraction(10010, 10000)))
+        # A pool that moved 21% since the last sample is priced where it is:
+        # no average, no external reference, no calm-market condition.
+        moved = reader(sqrt_price=2**96 * 11 // 10)
+        spot = Fraction((2**96 * 11 // 10) ** 2, 2**192)
+        prices, reasons = price_evidence(context(self.obs, moved), self.admission, 10)
+        self.assertEqual(reasons, ())
+        self.assertEqual((prices[0].lower.fraction(), prices[0].upper.fraction()), (spot * Fraction(9990, 10000), spot * Fraction(10010, 10000)))
+        self.assertEqual(price_evidence(context(self.obs, moved), self.admission, 0)[0][0].lower.fraction(), spot)
+        # A pool with no price (never initialized) or outside the core's domain has none to anchor on.
+        for sqrt_price in (0, MIN_SQRT - 1, MAX_SQRT):
+            self.assertEqual(price_evidence(context(self.obs, reader(sqrt_price=sqrt_price)), self.admission, 10), (None, ('price_unqualified',)))
+        # Quoted in currency0, the other side is the inverted band.
+        obs, _, _ = v4_setup(reverse=True)
+        prices, _ = price_evidence(context(obs, moved), admission_for(obs, self.config), 10)
+        self.assertEqual((prices[0].lower.fraction(), prices[0].upper.fraction()), (1, 1))
+        self.assertEqual((prices[1].lower.fraction(), prices[1].upper.fraction()), (1 / (spot * Fraction(10010, 10000)), 1 / (spot * Fraction(9990, 10000))))
 
-    def test_gas_is_converted_through_the_native_reference_against_the_operator(self):
-        refs = price_evidence(reader(), context(self.obs, reader()), self.config.references, self.admission)[2]
-        self.assertEqual(quote_per_wei(refs, m.ZERO, 0), 1)
-        self.assertEqual(quote_per_wei(refs, C1, 100), Fraction(101, 100))
-        expensive = {**refs, m.ZERO: changed_ref(refs[m.ZERO], answer=3000 * 10**8)}
-        self.assertEqual(quote_per_wei(expensive, C1, 0), 3000)
+    def test_gas_is_one_to_one_in_the_native_asset_and_its_wrapper_else_priced_through_the_admitted_pool(self):
+        pricing = self.config.pricing
+        ctx = context(self.obs, reader())
+        self.assertEqual(quote_per_wei(reader(), ctx, pricing, m.ZERO, address(20)), 1)
+        self.assertEqual(quote_per_wei(reader(), ctx, pricing, pricing.wrappedNative, address(20)), 1)
+        pool = GasPoolKey(**gas_pool(C1)).pool_id()
+        # 50**2 = 2500 atoms of C1 per wei, rounded against the operator by the buffer.
+        rd = reader(pools={pool: (2**96 * 50, 10**20)})
+        self.assertEqual(quote_per_wei(rd, ctx, pricing, C1, address(20)), 2500)
+        buffered = sample_automation_config(pricing={'gasPriceBufferBps': 100}).pricing
+        self.assertEqual(quote_per_wei(rd, ctx, buffered, C1, address(20)), 2525)
+        # The wrapper as currency1: the quote is currency0 and the spot inverts.
+        high = address(0xFFFF)
+        inverted = sample_automation_config(pricing={'wrappedNative': high, 'gasPools': {
+            C0: {'currency0': C0, 'currency1': high, 'fee': 500, 'tickSpacing': 10, 'hooks': m.ZERO}}}).pricing
+        key = GasPoolKey(currency0=C0, currency1=high, fee=500, tickSpacing=10, hooks=m.ZERO).pool_id()
+        self.assertEqual(quote_per_wei(reader(pools={key: (2**96 // 4, 10**20)}), ctx, inverted, C0, address(20)), 16)
+        with self.assertRaisesRegex(ObservationError, 'gas_price_source_missing'):
+            quote_per_wei(rd, ctx, pricing, address(0x5555), address(20))
+        for empty in ((2**96 * 50, 0), (0, 10**20)):
+            with self.subTest(empty=empty), self.assertRaisesRegex(ObservationError, 'gas_price_unavailable'):
+                quote_per_wei(reader(pools={pool: empty}), ctx, pricing, C1, address(20))
+        # In the evidence, an unpriceable quote leaves it unqualified with the reason.
+        raw = sample_config()
+        raw['pricing']['gasPools'] = {}
+        self.assertEqual(build_evidence(rd, ctx, self.admission, [], validate_config(raw), self.cfg), (None, ('gas_price_source_missing',)))
 
     def test_full_evidence_lets_the_planner_choose_and_the_wire_rebuild(self):
         # A pool whose liquidity is comparable to the sequence's fees, so the
@@ -232,6 +256,14 @@ class ReferenceTests(unittest.TestCase):
         priced = reader(ranges=[(-120, 120, 10**5)])
         evidence, _ = build_evidence(priced, context(self.obs, priced, 10**4), self.admission, samples, self.config, self.cfg)
         self.assertEqual(evidence.destinations[0].directGasWei, (160000 + 1200000) * 8)
+        self.assertEqual(evidence.destinations[0].directGasQuote, (160000 + 1200000) * 8)
+        # Three publications expected per completed cycle: the operator's cost
+        # carries the two failed ones; the per-transaction gas does not.
+        evidence, _ = build_evidence(priced, context(self.obs, priced, 10**4), self.admission, samples, self.config, self.cfg, attempts=Fraction(3))
+        self.assertEqual(evidence.destinations[0].directGasWei, (160000 + 1200000) * 8)
+        self.assertEqual(evidence.destinations[0].directGasQuote, (3 * 160000 + 1200000) * 8)
+        self.assertEqual(build_evidence(priced, context(self.obs, priced, 10**4), self.admission, samples, self.config, self.cfg,
+                                        attempts=Fraction(1, 2)), (None, ('swap_exposure_unavailable',)))
         node = reader(ranges=[(-120, 120, 10**5)], node_interface=False)
         strict = sample_automation_config(gas={'l1DataComponent': 'node_interface'})
         evidence, reasons = build_evidence(node, context(self.obs, node, 10**4), self.admission, samples, strict, self.cfg)
@@ -252,9 +284,101 @@ class ReferenceTests(unittest.TestCase):
         self.assertEqual(amounts, (480, 960))  # 1000 gross at 4% = 960 net, halves
 
 
-def changed_ref(ref, **values):
-    from automation_evidence import Reference
-    return Reference(**{**ref.__dict__, **values})
+class SwapCapTests(unittest.TestCase):
+    def cap(self, rd, zero_for_one, *, impact=100, multiplier=10000, max_steps=64, protocol_fee=0):
+        key = m.PoolKey(currency0=C0, currency1=C1, fee_pips=3000, tick_spacing=rd.spacing, hooks=m.ZERO)
+        pool = PoolState(rd.sqrt_price, rd.tick, protocol_fee, 3000, rd.liquidity, 0, 0)
+        lower, upper = impact_bounds(rd.sqrt_price, impact)
+        return swap_cap(rd, address(20), key, cid(1), pool, rd.head(), zero_for_one=zero_for_one,
+                        bound=lower if zero_for_one else upper, multiplier_bps=multiplier, max_steps=max_steps)
+
+    def test_the_cap_is_fee_times_depth_in_the_input_currency(self):
+        # One range across the band, price one: L x fee in either currency.
+        rd = reader(ranges=[(-600, 600, 10**18)])
+        self.assertEqual((self.cap(rd, True), self.cap(rd, False)), (3 * 10**15, 3 * 10**15))
+        self.assertEqual(self.cap(rd, True, multiplier=2500), 75 * 10**13)
+        # At price four (square root two) a currency0 atom is worth four of
+        # currency1: the same depth caps currency0 at L x fee / 2 and
+        # currency1 at L x fee x 2.
+        two = reader(sqrt_price=2 * 2**96, tick=13863, ranges=[(13200, 14400, 10**18)])
+        self.assertEqual((self.cap(two, True), self.cap(two, False)), (15 * 10**14, 6 * 10**15))
+        # The protocol fee counts, the lower direction's: 52 + 3000 against 30 + 3000.
+        self.assertEqual(self.cap(rd, True, protocol_fee=52 | (30 << 12)), 3030 * 10**12)
+
+    def test_depth_is_the_least_running_average_inside_the_owner_band(self):
+        # A second range adds depth above tick -60 only. Selling currency0
+        # walks out of it inside a 1% band: the push to the band's edge pays
+        # 1.5 L down to tick -60 and L beyond, and that average is the least.
+        rd = reader(ranges=[(-600, 600, 10**18), (-60, 600, 5 * 10**17)])
+        spot, edge, mid = 2**96, impact_bounds(2**96, 100)[0], sqrt_at_tick(-60)
+        self.assertTrue(edge < mid < spot)
+        average = Fraction(15 * 10**17 * (spot - mid) + 10**18 * (mid - edge), spot - edge)
+        self.assertEqual(self.cap(rd, True), int(average * 3000 / 10**6))
+        self.assertLess(self.cap(rd, True), 45 * 10**14)
+        self.assertGreater(self.cap(rd, True), 3 * 10**15)
+        # Buying never leaves the deeper range inside the band; a narrower
+        # band never reaches tick -60 either.
+        self.assertEqual(self.cap(rd, False), 45 * 10**14)
+        self.assertLess(mid, impact_bounds(2**96, 50)[0])
+        self.assertEqual(self.cap(rd, True, impact=50), 45 * 10**14)
+        # A gap right below the spot: the first push is free, so no swap that
+        # way; the other direction keeps its depth.
+        gap = reader(ranges=[(-600, -60, 10**18), (0, 600, 10**18)])
+        self.assertEqual((self.cap(gap, True), self.cap(gap, False)), (0, 3 * 10**15))
+        # A gap farther out lowers the cap in proportion instead of zeroing it.
+        far = reader(ranges=[(-60, 600, 10**18)])
+        average = Fraction(10**18 * (spot - mid), spot - edge)
+        self.assertEqual(self.cap(far, True), int(average * 3000 / 10**6))
+        # A walk longer than admitted leaves the cap unmeasured, not assumed.
+        dense = reader(spacing=1, ranges=[(-t, t, 10**15) for t in range(1, 80)])
+        self.assertIsNone(self.cap(dense, True, max_steps=10))
+        self.assertGreater(self.cap(dense, True, max_steps=200), 0)
+        # A spot on the band's edge (no impact admitted) leaves nothing to cap.
+        self.assertEqual(self.cap(rd, True, impact=0), 0)
+
+    def test_exposure_is_a_share_of_the_cap_rounded_up(self):
+        self.assertEqual(exposure_ppm(1, 3 * 10**6), 1)
+        self.assertEqual(exposure_ppm(3 * 10**6, 3 * 10**6), PPM)
+        self.assertEqual(exposure_ppm(3 * 10**6 + 1, 3 * 10**6), PPM + 1)
+        self.assertEqual(exposure_ppm(480, 3 * 10**6), 160)
+        self.assertIsNone(exposure_ppm(1, 0))
+        self.assertIsNone(exposure_ppm(1, None))
+
+    def test_quotes_stay_inside_what_the_pool_cap_has_left(self):
+        obs, hist, cfg = v4_setup()
+        # Fees in currency0 only, and the app's default impact limit of 1%.
+        limits = tp.replace(obs.policy.limits, maxPriceImpactBps=100)
+        lopsided = tp.replace(obs, balances=(obs.balances[0],), policy=tp.replace(obs.policy, limits=limits))
+        config = sample_automation_config()
+        admission = admission_for(lopsided, config)
+        rd = reader(ranges=[(-120, 120, 10**9)], base_fee=0)
+        ctx = context(lopsided, rd, member_liquidity=10**8)
+        samples = [{'block_number': 1200 + i, 'block_timestamp': 1700000000 - 600 + i * 100, 'liquidity': 10**9, 'tick': 0, 'qualified': True} for i in range(6)]
+        def quoted(used):
+            notes = {}
+            evidence, reasons = build_evidence(rd, ctx, admission, samples, config, cfg, used_ppm=used, notes=notes)
+            self.assertEqual(reasons, ())
+            self.assertTrue(evidence.destinations)
+            return sorted({int(q.bounds.amountInRaw) for q in evidence.swaps}), notes
+        amounts, notes = quoted(0)
+        self.assertEqual(amounts, [240, 480, 720, 960])
+        # fee 3000 pips x depth 10**9 at price one: 3,000,000 atoms of currency0.
+        self.assertEqual(notes['swapCap'], {'windowBlocks': 256, 'usedPpm': 0, 'directions': {'zeroForOne': str(3 * 10**6)}})
+        self.assertEqual(notes['caps'], {True: 3 * 10**6})
+        self.assertEqual([exposure_ppm(a, 3 * 10**6) for a in amounts], [80, 160, 240, 320])
+        # Other vaults hold all but 200 ppm: the two smaller swaps still fit;
+        # with nothing left none does, and the direct addition stays open.
+        self.assertEqual(quoted(PPM - 200)[0], [240, 480])
+        self.assertEqual(quoted(PPM)[0], [])
+        self.assertEqual(build_evidence(rd, ctx, admission, samples, config, cfg, used_ppm=PPM + 1), (None, ('swap_exposure_unavailable',)))
+        # The act path re-quotes only the destinations it names.
+        full, _ = build_evidence(rd, ctx, admission, samples, config, cfg)
+        first = full.destinations[0].destination.digest()
+        only, _ = build_evidence(rd, ctx, admission, samples, config, cfg, only=frozenset({first}))
+        self.assertEqual([d.destination.digest() for d in only.destinations], [first])
+        self.assertTrue(all(q.destination.digest() == first for q in only.swaps))
+        self.assertEqual(build_evidence(rd, ctx, admission, samples, config, cfg, only=frozenset())[0].destinations, ())
+        self.assertNotEqual(only.evidenceId, full.evidenceId)
 
 
 class SamplerTests(unittest.TestCase):

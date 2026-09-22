@@ -9,9 +9,12 @@ Keys are read by the signers themselves; this module never opens them.
 """
 from fractions import Fraction
 import json
+from math import isqrt
 import re
 from typing import Annotated, Literal
 
+from eth_abi import encode
+from eth_hash.auto import keccak
 from pydantic import BaseModel, ConfigDict, Field, StrictInt, model_validator
 
 import execution_models as m
@@ -41,31 +44,65 @@ class DatabaseSettings(Frozen):
         return {'host': self.host, 'port': self.port, 'dbname': self.dbname}
 
 
-class ReferenceFeed(Frozen):
-    """One Chainlink-style USD feed for one admitted currency, pinned by identity."""
-    proxy: m.Account
-    feedDecimals: Annotated[StrictInt, Field(ge=0, le=18)]
-    heartbeatSeconds: Annotated[StrictInt, Field(gt=0, le=604800)]
-    description: Annotated[str, Field(min_length=1, max_length=64)]
-
-
-class PriceReferencePolicy(Frozen):
-    """The pool's own spot is the anchor the guard binds; it qualifies only when
-    an independent reference agrees with it. No reference for a currency means
-    no qualification for its pools, never a silent pass.
-    """
-    kind: Literal['chainlink_usd_feeds']
-    feeds: dict[m.Address, ReferenceFeed]
-    tokenDecimals: dict[m.Address, Annotated[StrictInt, Field(ge=0, le=36)]]
-    maxAgeSeconds: Annotated[StrictInt, Field(gt=0, le=604800)]
-    maxDivergenceBps: Annotated[StrictInt, Field(ge=0, le=5000)]
-    bandBps: Annotated[StrictInt, Field(ge=0, le=5000)]
+class GasPoolKey(Frozen):
+    """Any v4 pool's key, a hook and a dynamic fee included: gas is only
+    priced through this pool, never traded in it. The ETH/USDG pool the
+    new-token census valued ETH with, on 4663, has both."""
+    currency0: m.Address
+    currency1: m.Account
+    fee: Annotated[StrictInt, Field(ge=0, lt=2**24)]
+    tickSpacing: Annotated[StrictInt, Field(ge=1, le=32767)]
+    hooks: m.Address
 
     @model_validator(mode='after')
     def checked(self):
-        if set(self.feeds) - set(self.tokenDecimals):
-            raise ValueError('reference_feed_without_token_decimals')
+        if int(self.currency0, 16) >= int(self.currency1, 16):
+            raise ValueError('currency_order')
         return self
+
+    def pool_id(self):
+        return '0x' + keccak(encode(['address', 'address', 'uint24', 'int24', 'address'],
+                                    [self.currency0, self.currency1, self.fee, self.tickSpacing, self.hooks])).hex()
+
+
+class PricingPolicy(Frozen):
+    """Where prices come from. The owner decided on 22 September 2026 that
+    Domino, serving mostly new tokens no oracle covers, prices from the pool
+    itself: the anchor is the pool's spot at the observed block, with no
+    external reference, no average and no volatility gate. The planner values
+    the other currency over the spot plus or minus `valuationBandBps`, a small
+    margin of conservatism; what the execution may actually meet is bounded
+    by the owner's impact and slippage limits, which the engine enforces. Gas
+    is paid in the native asset: one wei is one atom of the native asset or
+    its wrapper, and any other quote currency is priced through an admitted
+    native/quote pool at the same block, rounded against the operator.
+    """
+    kind: Literal['pool_spot']
+    valuationBandBps: Annotated[StrictInt, Field(ge=0, le=1000)]
+    wrappedNative: m.Account
+    gasPools: dict[m.Address, GasPoolKey]
+    gasPriceBufferBps: Bps
+
+    @model_validator(mode='after')
+    def checked(self):
+        native = {m.ZERO, self.wrappedNative}
+        for quote, key in self.gasPools.items():
+            pair = {key.currency0, key.currency1}
+            if quote in native or quote not in pair or not pair & native:
+                raise ValueError('gas_pool_not_native_quote')
+        return self
+
+
+class SwapCapPolicy(Frozen):
+    """The proportion that keeps a compound swap from being worth sandwiching.
+    Moving a pool by a fraction and back costs about fee x depth x fraction;
+    the gain on a swap of size S is S x fraction. So the swaps of every vault
+    in one pool, summed over a window of blocks, stay under fee x depth,
+    measured tick by tick at the observed block over the owner's impact band
+    (automation_evidence.swap_cap), times this multiplier.
+    """
+    depthMultiplierBps: Annotated[StrictInt, Field(ge=1, le=10000)]
+    windowBlocks: Annotated[StrictInt, Field(ge=1, le=256)]
 
 
 class ExecuteGasUnits(Frozen):
@@ -124,8 +161,9 @@ class HistoryPolicy(Frozen):
 
 
 class PlanPolicy(Frozen):
+    # The plan's price band is the owner's impact limit itself (impact_bounds);
+    # the service keeps no narrower band of its own.
     deadlineSeconds: Annotated[StrictInt, Field(gt=0, le=3600)]
-    priceBandSqrtBps: Annotated[StrictInt, Field(gt=0, le=4999)]
     maxGasCostWei: Positive
     preferNetPath: bool
     # The planner sizes liquidity to spend the funds exactly; the plan keeps
@@ -151,6 +189,15 @@ class SchedulingPolicy(Frozen):
     # refused here so a slow inclusion fails before it costs a transaction.
     maxSourceBlockAge: Annotated[StrictInt, Field(ge=1, le=200)]
     cycleBudgetSeconds: Annotated[StrictInt, Field(ge=1, le=600)]
+    # Every wait is its base value times a random factor within +-jitterBps,
+    # so no one outside can tell when a sequence will next observe.
+    jitterBps: Annotated[StrictInt, Field(ge=0, le=5000)]
+    # Chain seconds from the observed block to the execution's block that each
+    # cycle's measured latency is reported against.
+    latencyTargetSeconds: Annotated[StrictInt, Field(ge=1, le=60)]
+    # After this many consecutive failed attempts (a publication or an
+    # execution paid for and not completed) the wait doubles per failure.
+    failureBackoffAfter: Annotated[StrictInt, Field(ge=1, le=16)]
 
     @model_validator(mode='after')
     def checked(self):
@@ -259,7 +306,8 @@ class AutomationConfig(Frozen):
     operator: OperatorConfig
     publisher: PublisherConfig
     planner: dict
-    references: PriceReferencePolicy
+    pricing: PricingPolicy
+    swapCap: SwapCapPolicy
     gas: GasPolicy
     destinations: DestinationPolicy
     history: HistoryPolicy
@@ -301,15 +349,24 @@ def load_config(path):
     return parse_config(private_file(path, 262144))
 
 
-def price_bounds(sqrt_price, band_sqrt_bps, max_impact_bps):
-    """The plan's own price band around the anchor: never wider than the half
-    the engine's squared-ratio impact bound permits on the square root.
+def impact_bounds(sqrt_price, max_impact_bps):
+    """The widest square-root band around the anchor whose squared ratio stays
+    inside the owner's impact limit, with the routing helper's own rounding:
+    floor(s*s*10000/a/a) >= 10000-I below and ceil(s*s*10000/a/a) <= 10000+I
+    above. The plan's band, the swap's price limit and the engine's impact
+    check are then one and the same bound.
     """
     if type(sqrt_price) is not int or not MIN_SQRT <= sqrt_price < MAX_SQRT:
         raise ValueError('invalid_sqrt_price')
-    band = min(int(band_sqrt_bps), int(max_impact_bps) // 2)
-    lower = max(MIN_SQRT, sqrt_price * (10000 - band) // 10000)
-    upper = min(MAX_SQRT - 1, -(-sqrt_price * (10000 + band) // 10000))
+    if type(max_impact_bps) is not int or not 0 <= max_impact_bps < 10000:
+        raise ValueError('invalid_price_impact')
+    square = sqrt_price * sqrt_price
+    low = (10000 - max_impact_bps) * square
+    lower = isqrt(-(-low // 10000))
+    if lower * lower * 10000 < low:
+        lower += 1
+    upper = isqrt((10000 + max_impact_bps) * square // 10000)
+    lower, upper = max(MIN_SQRT, lower), min(MAX_SQRT - 1, upper)
     if not lower <= sqrt_price <= upper:
         raise ValueError('invalid_price_band')
     return lower, upper

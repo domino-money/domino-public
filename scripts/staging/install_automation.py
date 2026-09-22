@@ -2,8 +2,8 @@
 """Install the automation cycle beside the financial services; never start it.
 
 One immutable source release for the `automation` component, one system user,
-one systemd unit without an [Install] section, the two automation migrations
-(028, 029) in one receipted transaction, and peer mappings from the service
+one systemd unit without an [Install] section, the three automation migrations
+(028, 029, 030) in one receipted transaction, and peer mappings from the service
 user to the four execution roles it needs. No configuration, key, funding or
 activation: the unit cannot start until the operator places the private
 configuration, and nothing here reads, creates or returns it. The financial
@@ -30,7 +30,8 @@ UNIT = f'domino-{COMPONENT}.service'
 ROLES = ('domino_execution_worker', 'domino_execution_signer', 'domino_execution_publisher', 'domino_execution_ledger')
 # The roles the financial upgrade already made LOGIN roles with peer entries.
 FINANCIAL_ROLES = ('domino_execution_worker', 'domino_execution_signer', 'domino_execution_ledger')
-MIGRATIONS = ('backend/migrations/028_automation_cycle.sql', 'backend/migrations/029_ledger_index.sql')
+MIGRATIONS = ('backend/migrations/028_automation_cycle.sql', 'backend/migrations/029_ledger_index.sql',
+              'backend/migrations/030_swap_exposure.sql')
 SOURCES = ('backend/automation_cli.py', 'backend/automation_cycle.py', 'backend/automation_ledger.py',
            'backend/automation_config.py', 'backend/automation_observer.py', 'backend/automation_evidence.py',
            'backend/automation_plan.py', 'backend/automation_store.py', 'backend/publisher_signer.py')

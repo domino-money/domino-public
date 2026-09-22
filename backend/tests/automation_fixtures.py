@@ -32,9 +32,13 @@ def deep_update(base, changes):
     return base
 
 
-def sample_config(*, currencies=(address(16), address(32)), feeds=None, **changes):
+def gas_pool(quote, *, fee=500, tick_spacing=10, hooks=m.ZERO):
+    """A native/quote pool key for converting gas into `quote`."""
+    return {'currency0': m.ZERO, 'currency1': quote, 'fee': fee, 'tickSpacing': tick_spacing, 'hooks': hooks}
+
+
+def sample_config(*, currencies=(address(16), address(32)), **changes):
     c0, c1 = currencies
-    feeds = feeds or {c0: address(0x1001), c1: address(0x1002), m.ZERO: address(0x1003)}
     config = {
         'schemaVersion': 1, 'kind': 'domino-automation-cycle', 'configVersion': 'test-1',
         'database': {'host': '/tmp/socket', 'port': 18897, 'dbname': 'execution_test'},
@@ -55,10 +59,9 @@ def sample_config(*, currencies=(address(16), address(32)), feeds=None, **change
                     'maximumSampleAgeSeconds': 120, 'maximumForecastSeconds': 3600, 'forecastHaircutBps': 0,
                     'minimumOwnerBenefitQuote': 0, 'operatorCostBufferBps': 1500, 'serviceRealizationBps': 10000,
                     'overlapChoicesBps': [0, 500, 2000], 'liquidityFractionChoicesBps': [2500, 5000, 10000]},
-        'references': {'kind': 'chainlink_usd_feeds',
-                       'feeds': {currency: {'proxy': proxy, 'feedDecimals': 8, 'heartbeatSeconds': 86400, 'description': 'FIXTURE / USD'}
-                                 for currency, proxy in feeds.items()},
-                       'tokenDecimals': {c0: 18, c1: 18, m.ZERO: 18}, 'maxAgeSeconds': 3600, 'maxDivergenceBps': 200, 'bandBps': 10},
+        'pricing': {'kind': 'pool_spot', 'valuationBandBps': 10, 'wrappedNative': address(0x2000),
+                    'gasPools': {c: gas_pool(c) for c in (c0, c1) if c != m.ZERO}, 'gasPriceBufferBps': 0},
+        'swapCap': {'depthMultiplierBps': 10000, 'windowBlocks': 256},
         'gas': {'publishGasUnits': 160000, 'executeGasUnits': {'direct': 1200000, 'swap': 1500000, 'mint': 1900000, 'fund': 1300000},
                 'priorityFeePerGasWei': 1, 'basePriceBufferBps': 0, 'l1DataComponent': 'attested_none',
                 'operatorMinimumBalanceWei': 10**15, 'publisherMinimumBalanceWei': 10**15},
@@ -66,10 +69,11 @@ def sample_config(*, currencies=(address(16), address(32)), feeds=None, **change
                          'totalLiquidityMarginBps': 1000, 'activeFractionHaircutBps': 0, 'successorActiveFractionBps': 5000,
                          'exposureLossBps': 0, 'swapFractionsBps': [2500, 5000, 7500, 10000], 'minimumSwapFractionBps': 100, 'quoteSlippageBps': 50, 'maxSimulationSteps': 64},
         'history': {'samplerVersion': 'pool-fee-sampler-1', 'sampleIntervalSeconds': 1, 'maximumSampleGapSeconds': 600},
-        'plan': {'deadlineSeconds': 100, 'priceBandSqrtBps': 25, 'maxGasCostWei': 10**16, 'preferNetPath': True, 'liquiditySlackBps': 25},
+        'plan': {'deadlineSeconds': 100, 'maxGasCostWei': 10**16, 'preferNetPath': True, 'liquiditySlackBps': 25},
         'scheduling': {'workerId': None, 'evaluationIntervalSeconds': 5, 'minimumBackoffSeconds': 5, 'maximumBackoffSeconds': 60, 'leaseSeconds': 120,
                        'publicationWindowSeconds': 3600, 'maxPublicationsPerWindow': 10, 'publicationWaitSeconds': 20,
-                       'executionWaitSeconds': 20, 'maxSourceBlockAge': 200, 'cycleBudgetSeconds': 300},
+                       'executionWaitSeconds': 20, 'maxSourceBlockAge': 200, 'cycleBudgetSeconds': 300, 'jitterBps': 0,
+                       'latencyTargetSeconds': 5, 'failureBackoffAfter': 3},
         'finality': {'publicationConfirmations': 0},
         'ledger': {'indexer': 'inline', 'maxBlocksPerPass': 2000, 'maxLogsPerPass': 1024},
         'paused': False,
@@ -86,13 +90,13 @@ def selector(signature):
 
 
 class FakeChainReader:
-    """An in-memory pool, feeds and node interface behind the reader interface."""
-    def __init__(self, *, sqrt_price, tick, lp_fee, spacing, ranges, fee_growth=(0, 0), feeds=None, timestamp=1700000000, number=1234,
+    """An in-memory pool, other pools' spots and a node interface behind the reader interface."""
+    def __init__(self, *, sqrt_price, tick, lp_fee, spacing, ranges, fee_growth=(0, 0), pools=None, timestamp=1700000000, number=1234,
                  protocol_fee=0, node_interface=True, base_fee=7):
         self.sqrt_price, self.tick, self.lp_fee, self.spacing, self.protocol_fee = sqrt_price, tick, lp_fee, spacing, protocol_fee
         self.fee_growth = list(fee_growth)
         self.ranges = list(ranges)  # (lower, upper, liquidity)
-        self.feeds = dict(feeds or {})  # proxy -> (decimals, description, round, answer, updated)
+        self.pools = dict(pools or {})  # pool id -> (sqrt price, liquidity) of pools other than the sequence's
         self.block = {'number': number, 'hash': identity(number), 'timestamp': timestamp, 'baseFeePerGas': base_fee}
         self.node_interface = node_interface
         self.calls = []
@@ -119,10 +123,9 @@ class FakeChainReader:
     def call(self, target, signature, outputs, block, inputs=(), values=()):
         self.calls.append(signature)
         name = signature.split('(')[0]
-        if target in self.feeds:
-            decimals, description, round_id, answer, updated = self.feeds[target]
-            return {'decimals': (decimals,), 'description': (description,),
-                    'latestRoundData': (round_id, answer, updated, updated, round_id)}[name]
+        other = self.pools.get('0x' + values[0].hex()) if name in ('getSlot0', 'getLiquidity') and values else None
+        if other is not None:
+            return (other[0], 0, 0, 500) if name == 'getSlot0' else (other[1],)
         if name == 'getSlot0':
             return (self.sqrt_price, self.tick, self.protocol_fee, self.lp_fee)
         if name == 'getLiquidity':

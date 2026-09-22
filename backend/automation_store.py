@@ -11,6 +11,7 @@ from psycopg.types.json import Jsonb
 from execution_store import _Store, _hash, _owner, _worker, ExecutionStoreError, WORKER_ROLE, MAX_LEASE_SECONDS
 
 TERMINAL = ('completed', 'abandoned')
+PPM = 1_000_000
 
 
 def _cycle_id(value):
@@ -56,7 +57,8 @@ class CycleStore(_Store):
         return {'sequenceHash': row['sequence_hash'], 'owner': row['owner'], 'vault': row['vault'], 'poolId': row['pool_id'],
                 'waitingSince': int(row['waiting_since']), 'lastAttemptAt': int(row['last_attempt_at']),
                 'lastReadFailed': row['last_read_failed'], 'suspended': row['suspended'], 'suspensionReason': row['suspension_reason'],
-                'nextDueAt': row['next_due_at'].isoformat(), 'backoffSeconds': row['backoff_seconds'],
+                'nextDueAt': row['next_due_at'].isoformat(), 'nextDueEpoch': row['next_due_at'].timestamp(),
+                'backoffSeconds': row['backoff_seconds'], 'consecutiveFailures': row['consecutive_failures'],
                 'publicationsInWindow': row['publications_in_window'],
                 'publicationWindowStart': row['publication_window_start'].isoformat() if row['publication_window_start'] else None,
                 'publicationWindowStartEpoch': row['publication_window_start'].timestamp() if row['publication_window_start'] else None,
@@ -85,8 +87,8 @@ class CycleStore(_Store):
     def update_sequence(self, owner, sequence_hash, worker_id, fence, *, release=False, **fields):
         """Update scheduling fields under the live lease; optionally release it."""
         sequence_hash = _hash(sequence_hash)
-        allowed = {'waiting_since', 'last_attempt_at', 'last_read_failed', 'suspended', 'suspension_reason',
-                   'next_due_seconds', 'backoff_seconds', 'publications_in_window', 'publication_window_start_now'}
+        allowed = {'waiting_since', 'last_attempt_at', 'last_read_failed', 'suspended', 'suspension_reason', 'next_due_seconds',
+                   'backoff_seconds', 'consecutive_failures', 'publications_in_window', 'publication_window_start_now'}
         if set(fields) - allowed:
             raise ExecutionStoreError('execution_invalid_record')
         if 'suspension_reason' in fields:
@@ -180,6 +182,66 @@ class CycleStore(_Store):
                                 (owner, sequence_hash, limit)).fetchall()
             return [self._cycle_row(row) for row in rows]
         return self._transaction(owner, operation)
+
+    def attempt_history(self, owner, sequence_hash, *, limit=20):
+        """Of this sequence's latest cycles that paid for a publication, how
+        many there were and how many completed. A sequence is evaluated only
+        with no cycle open, so every one of them has finished."""
+        sequence_hash = _hash(sequence_hash)
+        if type(limit) is not int or not 1 <= limit <= 100:
+            raise ExecutionStoreError('execution_invalid_record')
+        def operation(conn, owner):
+            row = conn.execute("SELECT count(*) AS attempted,count(*) FILTER(WHERE state='completed') AS completed FROM "
+                               "(SELECT state FROM cycles WHERE owner=%s AND sequence_hash=%s AND cost ? 'publication' "
+                               "ORDER BY created_at DESC LIMIT %s) s", (owner, sequence_hash, limit)).fetchone()
+            return int(row['attempted']), int(row['completed'])
+        return self._transaction(owner, operation)
+
+    # ------------------------------------------------------- swap exposure
+    @staticmethod
+    def _exposure(conn, pool_id, since_block):
+        row = conn.execute('SELECT coalesce(sum(usage_ppm),0) AS used FROM swap_exposure WHERE pool_id=%s AND NOT released '
+                           'AND block_number>=%s', (pool_id, int(since_block))).fetchone()
+        return int(row['used'])
+
+    def swap_exposure(self, owner, pool_id, *, since_block):
+        """The share of the pool's swap cap that live reservations of every
+        tenant hold from `since_block` on, in millionths."""
+        pool_id = _hash(pool_id)
+        if type(since_block) is not int or since_block < 0:
+            raise ExecutionStoreError('execution_invalid_record')
+        return self._transaction(owner, lambda conn, owner: self._exposure(conn, pool_id, since_block))
+
+    def reserve_swap(self, owner, sequence_hash, worker_id, fence, *, intent_id, pool_id, block_number, zero_for_one,
+                     amount_in, cap_raw, usage_ppm, window_blocks):
+        """Take this swap's share of the pool's cap, under a per-pool lock, or
+        refuse with `execution_swap_cap_exhausted` when the window's live
+        reservations of every vault would pass the whole cap."""
+        sequence_hash, intent_id, pool_id = _hash(sequence_hash), _hash(intent_id), _hash(pool_id)
+        if (type(block_number) is not int or block_number < 0 or type(zero_for_one) is not bool or type(amount_in) is not int
+                or not 0 < amount_in < 2**128 or type(cap_raw) is not int or cap_raw <= 0 or type(usage_ppm) is not int
+                or not 1 <= usage_ppm <= PPM or type(window_blocks) is not int or not 1 <= window_blocks <= 256):
+            raise ExecutionStoreError('execution_invalid_record')
+        def operation(conn, owner):
+            conn.execute("SELECT pg_advisory_xact_lock(hashtextextended('swap_exposure:'||%s,0))", (pool_id,))
+            self._sequence_fence(conn, sequence_hash)
+            used = self._exposure(conn, pool_id, max(0, block_number - window_blocks + 1))
+            if used + usage_ppm > PPM:
+                raise ExecutionStoreError('execution_swap_cap_exhausted')
+            conn.execute('INSERT INTO swap_exposure(reservation_id,intent_id,owner,sequence_hash,pool_id,block_number,zero_for_one,amount_in,'
+                         'cap_raw,usage_ppm) VALUES(%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)', (str(uuid.uuid4()), intent_id, owner, sequence_hash, pool_id,
+                                                                                     block_number, zero_for_one, amount_in, cap_raw, usage_ppm))
+            return {'usedPpm': used + usage_ppm, 'usagePpm': usage_ppm}
+        return self._transaction(owner, operation, worker=worker_id, fence=fence)
+
+    def release_swap(self, owner, sequence_hash, worker_id, fence, intent_id):
+        """Give back the share of an intent that was cancelled before signing."""
+        sequence_hash, intent_id = _hash(sequence_hash), _hash(intent_id)
+        def operation(conn, owner):
+            row = conn.execute('UPDATE swap_exposure SET released=true,updated_at=clock_timestamp() WHERE owner=%s AND intent_id=%s '
+                               'AND sequence_hash=%s AND NOT released RETURNING intent_id', (owner, intent_id, sequence_hash)).fetchone()
+            return row is not None
+        return self._transaction(owner, operation, worker=worker_id, fence=fence)
 
     # --------------------------------------------------------------- ledger
     def available_lots(self, owner, sequence_hash):
