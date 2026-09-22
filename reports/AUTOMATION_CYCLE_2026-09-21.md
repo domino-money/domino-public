@@ -362,3 +362,41 @@ its due time. Every guard added here was checked by mutation: deleting it fails 
 Still open: latency on the real node and sequencer, measured from the first manual
 pass; successor economics.
 
+## Addendum, 22 September 2026: a publication the node dropped
+
+A publication that was sent, then dropped by the node and never mined, held its nonce
+for good. The journal's head was already past it, so every later publication of the key
+was signed with a higher nonce, waited behind the gap and expired in turn. In the running
+service nothing drove such a row again (a cycle that stops waiting leaves its row live),
+and at a restart the check retired it as `expired`, a state nothing could leave. The key
+stayed stuck until someone stepped in.
+
+Two ways out were weighed. The first signs the next publication with the unspent nonce.
+That gives one nonce two signed transactions. If the old copy was still held somewhere
+and landed first, it would revert at the guard, and the new row would end in `attention`
+with `publication_nonce_consumed_without_receipt`: no double publication and no stuck
+key, but the signal meant for a key used by someone else would fire on the journal's own
+bytes, and the retired row could never record the revert it paid for. It would also need
+a migration, since `publications` is unique on signer and nonce. The second way keeps one
+signature per nonce and is what the journal now does. Before `prepare` claims a nonce,
+`resend_unspent` sends again the same bytes of every row holding a nonce that the chain
+has not spent and the node does not hold, live or expired, in nonce order. A late point
+reverts at the guard and spends the nonce, and the new publication is mined behind it.
+Migration `031_publication_resend.sql` lets an expired row become live again when its
+bytes are sent, and in no other way; recovery then records its receipt (`reverted`, with
+the gas it cost).
+
+The integrated suite drops a sent publication with automine off. After a restart retires
+it as expired, the next cycle's publication is mined behind its revert; without a restart
+the row is still live, and the same happens. A row whose nonce is spent, and one the node
+still holds, are not sent again; a plain `send` leaves an expired row alone; recovery
+records both reverts, and the journal's head ends equal to the chain's nonce. The guard
+refuses every other way out of `expired`. Every guard added was checked by mutation:
+deleting it fails a test.
+
+Still open: the revert of a publication sent again is not counted as a paid failure of
+the cycle that gave it up. The old bytes carry the fee cap of the moment they were signed
+(twice the base fee plus the priority fee, within the policy's maximum), so a base fee
+that has since more than doubled holds the key back until it falls. A nonce this journal
+never signed, such as a transaction sent from the publisher key by hand and then dropped,
+still needs the operator.

@@ -3,8 +3,9 @@
 observe -> decide -> reserve -> publish (a real transaction from the publisher
 key) -> inclusion -> qualify/sign/send through the durable executor -> receipt
 -> reconciliation, with restarts at the transitions, two workers, a lost
-broadcast reply, a lost source window, a revoked anchor, a moved price, an
-unfunded signer, pauses, a reorg and a swap cap another vault used up.
+broadcast reply, a publication the node dropped, a lost source window, a
+revoked anchor, a moved price, an unfunded signer, pauses, a reorg and a swap
+cap another vault used up.
 Synthetic keys and a mock node interface, the pool's own spot as the only
 price: this proves the integration, not a production deployment.
 """
@@ -18,6 +19,7 @@ import uuid
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from eth_account import Account
+from eth_hash.auto import keccak
 
 import execution_models as m
 import test_execution_v4_receipts_evm as evm
@@ -53,7 +55,7 @@ class AutomationCycleEvmTests(unittest.TestCase):
         cls.pg = ExecutionPostgres().start()
         cls.addClassCleanup(cls.pg.close)
         with cls.pg.admin() as conn:
-            for name in ('019_execution_journal', '028_automation_cycle', '029_ledger_index', '030_swap_exposure'):
+            for name in ('019_execution_journal', '028_automation_cycle', '029_ledger_index', '030_swap_exposure', '031_publication_resend'):
                 conn.execute((Path(__file__).resolve().parents[1] / f'migrations/{name}.sql').read_text())
             for role in ('domino_execution_signer', 'domino_execution_publisher'):
                 conn.execute(f'ALTER ROLE {role} LOGIN')
@@ -146,8 +148,8 @@ class AutomationCycleEvmTests(unittest.TestCase):
             time.sleep(0.01)
         self.fail('local transaction was not mined')
 
-    def worker(self, worker_id=None):
-        return SequenceCycle(self.config, rpc=self.rpc, worker_id=worker_id, operator_key=OPERATOR_KEY, publisher_key=PUBLISHER_KEY)
+    def worker(self, worker_id=None, config=None):
+        return SequenceCycle(config or self.config, rpc=self.rpc, worker_id=worker_id, operator_key=OPERATOR_KEY, publisher_key=PUBLISHER_KEY)
 
     def advance(self, seconds):
         head = self.rpc.request('eth_getBlockByNumber', ['latest', False])
@@ -172,6 +174,15 @@ class AutomationCycleEvmTests(unittest.TestCase):
             self.trade(**trade)
             outcomes.append(self.cycle.run(self.entry, act=False))
         return outcomes
+
+    def eligible(self):
+        """Trade until an evaluation finds the sequence eligible: a completed
+        cycle may have spent what the pool had earned so far."""
+        for _ in range(4):
+            outcome = self.warm_up(1)[0]
+            if outcome['outcome'] == 'eligible_not_acted':
+                return
+        self.fail(outcome)
 
     def finalize(self):
         """Finality for the executor, with the pool trading meanwhile as a real
@@ -535,6 +546,89 @@ class AutomationCycleEvmTests(unittest.TestCase):
         self.rpc.request('evm_mine', [])
         self.advance(2)
         self.assertEqual(self.cycle.run(self.entry, act=False)['decision']['expectedPublicationsPerCompletion'], '3/1')
+
+    def test_a_publication_the_node_dropped_is_sent_again_and_the_next_one_is_mined(self):
+        # A five-second deadline, so a dropped publication expires within the
+        # test. The cycles that carry on plan with the ordinary deadline, so a
+        # slow runner cannot lose their execution to plan_expired.
+        self.setup(scheduling={'maxSourceBlockAge': 20, 'publicationWaitSeconds': 2}, plan={'deadlineSeconds': 5})
+        steady = self.config.model_copy(update={'plan': self.config.plan.model_copy(update={'deadlineSeconds': 100})})
+        self.warm_up()
+        nonce = lambda: int(self.rpc.request('eth_getTransactionCount', [self.publisher, 'latest']), 16)
+        before = nonce()
+        def dropped():
+            # The node takes the publication and holds it, no block comes before
+            # the cycle stops waiting, and then the node drops it.
+            self.eligible()
+            self.advance(2)
+            self.trade()
+            self.rpc.request('evm_setAutomine', [False])
+            try:
+                waited = self.cycle.run(self.entry)
+                self.assertEqual((waited['outcome'], waited['reason']), ('abandoned', 'publication_window_lost'), waited)
+                # While the node holds the bytes, nothing is sent again.
+                self.assertEqual(self.journal.resend_unspent(self.publisher, self.rpc), [])
+                publication = self.journal.status(waited['observationId'])
+                self.rpc.request('anvil_dropTransaction', [publication['transactionHash']])
+            finally:
+                self.rpc.request('evm_setAutomine', [True])
+            self.assertIn(publication['state'], ('submitted', 'broadcast_unknown'))
+            self.advance(6)  # past the point's expiry
+            return publication
+        # A restart finds no receipt, the nonce unspent and the point past its
+        # expiry: the row is retired as expired, and the nonce is still unspent.
+        first = dropped()
+        restarted = self.worker(self.cycle.worker, config=steady)
+        self.assertEqual([row['state'] for row in restarted.recover_publications()], ['expired'])
+        self.assertEqual(nonce(), before)
+        # A plain send leaves an expired row alone; only a nonce the chain still waits for brings it back.
+        self.assertEqual(self.journal.send(first['observationId'], self.rpc)['state'], 'expired')
+        # The next cycle sends the same bytes again ahead of its own: the guard
+        # refuses the late point, the nonce is spent, and the new one is mined.
+        self.advance(2)
+        self.trade()
+        acted = restarted.run(self.entry)
+        self.assertEqual(acted['outcome'], 'executing', acted)
+        self.assertIn(self.journal.status(acted['observationId'])['state'], ('included', 'confirmed'))
+        self.assertEqual(self.rpc.request('eth_getTransactionReceipt', [first['transactionHash']])['status'], '0x0')
+        self.assertEqual(nonce(), before + 2)
+        self.finalize()
+        self.assertEqual(restarted.run(self.entry)['outcome'], 'completed')
+        # Without a restart the dropped row is still live when the next cycle
+        # comes: its bytes go out again too. The first one's nonce is spent, so
+        # its bytes never do, although nothing has read its receipt yet and the
+        # endpoint's pending count lags behind its latest one.
+        second = dropped()
+        self.assertEqual(self.journal.status(first['observationId'])['state'], 'submitted')
+        sent = []
+        request = self.rpc.request
+        def spy(method, params):
+            if method == 'eth_sendRawTransaction':
+                sent.append('0x' + keccak(bytes.fromhex(params[0][2:])).hex())
+            if method == 'eth_getTransactionCount' and params == [self.publisher, 'pending']:
+                return hex(before)
+            return request(method, params)
+        self.advance(2)
+        self.trade()
+        self.rpc.request = spy
+        try:
+            acted = restarted.run(self.entry)
+        finally:
+            self.rpc.request = request
+        self.assertEqual(acted['outcome'], 'executing', acted)
+        self.assertIn(self.journal.status(acted['observationId'])['state'], ('included', 'confirmed'))
+        self.assertIn(second['transactionHash'], sent)
+        self.assertNotIn(first['transactionHash'], sent)
+        self.assertEqual(nonce(), before + 4)
+        # Recovery reads what the chain made of both: each late point was
+        # refused at the guard, and each revert is on record with its gas.
+        restarted.recover_publications()
+        for publication in (first, second):
+            row = self.journal.status(publication['observationId'])
+            self.assertEqual(row['state'], 'reverted')
+            self.assertGreater(int(row['gasUsedRaw']), 0)
+        with self.pg.admin() as conn:
+            self.assertEqual(int(conn.execute('SELECT next_nonce FROM domino_execution.publisher_heads').fetchone()[0]), nonce())
 
     def test_an_evaluation_reports_a_cycle_in_flight_and_leaves_it(self):
         self.setup()

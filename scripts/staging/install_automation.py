@@ -2,8 +2,8 @@
 """Install the automation cycle beside the financial services; never start it.
 
 One immutable source release for the `automation` component, one system user,
-one systemd unit without an [Install] section, the three automation migrations
-(028, 029, 030) in one receipted transaction, and peer mappings from the service
+one systemd unit without an [Install] section, the four automation migrations
+(028 to 031) in one receipted transaction, and peer mappings from the service
 user to the four execution roles it needs. No configuration, key, funding or
 activation: the unit cannot start until the operator places the private
 configuration, and nothing here reads, creates or returns it. The financial
@@ -31,7 +31,7 @@ ROLES = ('domino_execution_worker', 'domino_execution_signer', 'domino_execution
 # The roles the financial upgrade already made LOGIN roles with peer entries.
 FINANCIAL_ROLES = ('domino_execution_worker', 'domino_execution_signer', 'domino_execution_ledger')
 MIGRATIONS = ('backend/migrations/028_automation_cycle.sql', 'backend/migrations/029_ledger_index.sql',
-              'backend/migrations/030_swap_exposure.sql')
+              'backend/migrations/030_swap_exposure.sql', 'backend/migrations/031_publication_resend.sql')
 SOURCES = ('backend/automation_cli.py', 'backend/automation_cycle.py', 'backend/automation_ledger.py',
            'backend/automation_config.py', 'backend/automation_observer.py', 'backend/automation_evidence.py',
            'backend/automation_plan.py', 'backend/automation_store.py', 'backend/publisher_signer.py')
@@ -102,7 +102,7 @@ def plan(files, commit, digest):
 
 
 def migration_sql(files, planned):
-    """One explicit transaction: the two automation migrations, the publisher's
+    """One explicit transaction: the automation migrations, the publisher's
     login, and the receipt. Refused unless the financial upgrade is installed
     and nothing of the automation schema exists yet."""
     receipt = json.dumps({'commit': planned['commit'], 'migrations': planned['migrations']}, sort_keys=True, separators=(',', ':'))

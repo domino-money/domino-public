@@ -27,6 +27,7 @@ class CycleStoreTests(unittest.TestCase):
             conn.execute((Path(__file__).resolve().parents[1] / 'migrations/028_automation_cycle.sql').read_text())
             conn.execute((Path(__file__).resolve().parents[1] / 'migrations/029_ledger_index.sql').read_text())
             conn.execute((Path(__file__).resolve().parents[1] / 'migrations/030_swap_exposure.sql').read_text())
+            conn.execute((Path(__file__).resolve().parents[1] / 'migrations/031_publication_resend.sql').read_text())
             conn.execute('ALTER ROLE domino_execution_publisher LOGIN')
 
     def setUp(self):
@@ -105,6 +106,27 @@ class CycleStoreTests(unittest.TestCase):
             with self.assertRaises(psycopg.errors.InsufficientPrivilege):
                 conn.execute("INSERT INTO publications(observation_id,guard,pool_id,block_number,block_hash,block_timestamp,expires_at,sqrt_price,signer,nonce,envelope,signed_bytes,transaction_hash,state) VALUES(%s,%s,%s,1,%s,10,20,5,%s,0,'{}'::jsonb,%s,%s,'signed')",
                              (identity(40), address(23), POOL, identity(41), address(10), b'\x01', identity(42)))
+
+    def test_an_expired_publication_leaves_expired_only_when_its_bytes_are_sent_again(self):
+        with self.pg.admin() as conn:
+            conn.execute("INSERT INTO domino_execution.publications(observation_id,guard,pool_id,block_number,block_hash,block_timestamp,expires_at,sqrt_price,signer,nonce,envelope,signed_bytes,transaction_hash,state) VALUES(%s,%s,%s,1,%s,10,20,5,%s,0,'{}'::jsonb,%s,%s,'signed')",
+                         (identity(40), address(23), POOL, identity(41), address(10), b'\x01', identity(42)))
+        def move(state):
+            with self.pg.admin() as conn:
+                conn.execute('UPDATE domino_execution.publications SET state=%s WHERE observation_id=%s', (state, identity(40)))
+        move('submitted')
+        move('expired')
+        # Retired without a receipt: no outcome is written over it directly.
+        for state in ('included', 'confirmed', 'reverted', 'attention', 'reorged', 'revoked', 'signed'):
+            with self.subTest(state=state), self.assertRaisesRegex(psycopg.errors.CheckViolation, 'execution_state_conflict'):
+                move(state)
+        # Its bytes sent again, the row is live until its receipt, and can expire again.
+        move('broadcast_unknown')
+        move('expired')
+        move('submitted')
+        move('reverted')
+        with self.assertRaisesRegex(psycopg.errors.CheckViolation, 'execution_state_conflict'):
+            move('submitted')
 
     def reserve(self, owner, sequence, worker, fence, intent, block, usage, **changes):
         fields = dict(intent_id=intent, pool_id=POOL, block_number=block, zero_for_one=True, amount_in=10**15, cap_raw=3 * 10**15,

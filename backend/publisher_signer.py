@@ -8,7 +8,9 @@ a crash after signing leaves either nothing or a re-sendable record, and a
 restart re-sends those bytes instead of publishing twice. The row's key is the
 id the guard will assign to that exact point, which is how two cycles on the
 same pool and block share one transaction and how the intent binds its anchor
-before the publisher spends anything.
+before the publisher spends anything. A nonce gets one signed transaction:
+while the chain has not spent it, the journal sends those bytes again before
+it claims another nonce, even for a row it retired as expired.
 """
 from dataclasses import dataclass
 
@@ -26,6 +28,9 @@ from execution_store import ExecutionStoreError, _hash
 
 PUBLISHER_ROLE = 'domino_execution_publisher'
 LIVE = ('signed', 'submitted', 'broadcast_unknown', 'reorged')
+# An expired row never had a receipt: while the chain has not spent its nonce,
+# its bytes are still the only ones signed for that nonce.
+HOLDING = LIVE + ('expired',)
 
 
 @dataclass(frozen=True)
@@ -170,9 +175,12 @@ class PublicationJournal:
 
     def prepare(self, signer, point, *, max_source_age):
         """Qualify, claim the next nonce, sign and persist in one transaction.
-        An existing row for this id is returned as is: same point, same bytes."""
+        An existing row for this id is returned as is: same point, same bytes.
+        Earlier nonces the chain still waits for go out first (resend_unspent),
+        so no nonce is claimed behind a gap this journal's own bytes can close."""
         record = point_record(point)
         identifier = observation_id(signer.guard, point)
+        self.resend_unspent(signer.address, signer.rpc)
         def operation(conn):
             conn.execute('SELECT pg_advisory_xact_lock(hashtextextended(%s,0))', (identifier,))
             existing = conn.execute('SELECT * FROM publications WHERE observation_id=%s', (identifier,)).fetchone()
@@ -198,10 +206,28 @@ class PublicationJournal:
 
     def send(self, identifier, rpc):
         """Re-send the persisted bytes while the row is live; a timeout is ambiguous, never a retry with new bytes."""
-        identifier = _hash(identifier)
+        return self._send(_hash(identifier), rpc, LIVE)
+
+    def resend_unspent(self, signer_address, rpc):
+        """Send again the bytes of every row holding a nonce the chain has not
+        spent and the node does not hold. A node can drop a transaction it
+        accepted, and a check may then retire the row as expired; the nonce
+        stays unspent either way, and every later publication of the key waits
+        behind it. Only the same bytes, never a second signature for that
+        nonce: a late publication reverts at the guard, and its nonce is spent.
+        An expired row sent again is live until its receipt."""
+        signer_address = g._address(signer_address)
+        pending = g._quantity(rpc.request('eth_getTransactionCount', [signer_address, 'pending']))
+        latest = g._quantity(rpc.request('eth_getTransactionCount', [signer_address, 'latest']))
+        held = self._transaction(lambda conn: [r['observation_id'] for r in conn.execute(
+            'SELECT observation_id FROM publications WHERE signer=%s AND nonce>=%s AND state=ANY(%s) ORDER BY nonce',
+            (signer_address, max(pending, latest), list(HOLDING))).fetchall()])
+        return [self._send(identifier, rpc, HOLDING) for identifier in held]
+
+    def _send(self, identifier, rpc, states):
         def operation(conn):
             row = self._row(conn, identifier, lock=True)
-            if row['state'] not in LIVE:
+            if row['state'] not in states:
                 return self._status(row)
             raw = bytes(row['signed_bytes'])
             verify_signed(raw, row['envelope'], row['signer'], row['transaction_hash'])

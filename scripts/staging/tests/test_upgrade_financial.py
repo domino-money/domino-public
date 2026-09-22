@@ -26,6 +26,7 @@ PACKAGED_ONLY_MIGRATIONS = (
     'backend/migrations/028_automation_cycle.sql',
     'backend/migrations/029_ledger_index.sql',
     'backend/migrations/030_swap_exposure.sql',
+    'backend/migrations/031_publication_resend.sql',
 )
 
 

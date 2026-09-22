@@ -3,9 +3,10 @@
 `scripts/staging/install_automation.py` installs the automation cycle beside the
 financial services: one immutable source release for the `automation` component, one
 system user, one systemd unit without an `[Install]` section, migrations
-`028_automation_cycle.sql`, `029_ledger_index.sql` and `030_swap_exposure.sql` in one
-receipted transaction (it is a first installation: a host installed before 030 existed
-would need 030 applied on its own, and none has been), and
+`028_automation_cycle.sql`, `029_ledger_index.sql`, `030_swap_exposure.sql` and
+`031_publication_resend.sql` in one receipted transaction (it is a first installation:
+a host installed before 030 or 031 existed would need them applied on their own; none
+had been installed when 030 was added), and
 the peer mappings the service needs. It never starts, enables or restarts anything, and
 it creates no configuration, key or funding. The
 [financial upgrade](FINANCIAL_BACKEND_UPGRADE.md) must already be installed: its
@@ -20,7 +21,7 @@ service does once it runs; this document is only how it gets onto the host.
 | `/opt/domino/financial/releases/<commit>/automation` (backend source, read-only, `backend/runtime` bound to `/var/lib/domino-financial/automation`) | Any other release directory; the interpreter (`/opt/domino/backend-venv`, whose dependency lock must match the archive) |
 | System user `domino-automation` (nologin, in `domino-db`) | Any existing user, unit or lane |
 | `/etc/systemd/system/domino-automation.service` (off; `ConditionPathExists` on the private configuration) | Public, development and continuous read lanes, gateways, tunnels, policy units (their `systemctl show` state is recorded before and required equal after) |
-| Migrations 028, 029 and 030, `domino_execution_publisher` made `LOGIN`, receipt in `domino_automation_install.receipt` | Every other schema and role; no data is written to the execution ledger |
+| Migrations 028 to 031, `domino_execution_publisher` made `LOGIN`, receipt in `domino_automation_install.receipt` | Every other schema and role; no data is written to the execution ledger |
 | `pg_ident.conf`: `domino_financial domino-automation <role>` for `domino_execution_worker`, `_signer`, `_publisher`, `_ledger`; `pg_hba.conf`: the publisher's `local ... peer map=domino_financial` entry | Every other peer line |
 | `/etc/domino/financial/automation` (0700, empty) and `/var/lib/domino-financial/automation` (0700), both owned by the service user | Nothing is placed in them |
 

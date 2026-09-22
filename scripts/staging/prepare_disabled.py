@@ -145,6 +145,8 @@ PACKAGED_ONLY_MIGRATIONS = (
     'backend/migrations/029_ledger_index.sql',
     # The pools' shared swap cap and the failure count; same vehicle as 028.
     'backend/migrations/030_swap_exposure.sql',
+    # The publisher sends an expired publication's bytes again; same vehicle as 028.
+    'backend/migrations/031_publication_resend.sql',
 )
 MAPPINGS = (
     ('domino', 'domino-admin', ADMIN),

@@ -215,6 +215,8 @@ def create_database(name):
             conn.execute((ROOT/'migrations/029_ledger_index.sql').read_text())
         if conn.execute("SELECT to_regclass('domino_execution.swap_exposure') IS NULL").fetchone()[0]:
             conn.execute((ROOT/'migrations/030_swap_exposure.sql').read_text())
+        # 031 only replaces 028's publication guard, so it applies again safely.
+        conn.execute((ROOT/'migrations/031_publication_resend.sql').read_text())
 
 
 

@@ -22,7 +22,7 @@ the [activation](#activation) steps below are done and recorded.
 | `backend/automation_observer.py` | Admission of a sequence from the verified deployment (`derive_admission`), the planner's `Observation` at one canonical block, the ledger/vault agreement check, the pool fee/liquidity sampler. |
 | `backend/automation_evidence.py` | Prices from the pool's own spot at the observed block, depth/activity bounds over the sampled window, exact swap quotes by walking the pool's initialized ticks, the pool's swap cap (fee × depth over the owner's impact band, walked tick by tick), complete-path gas including publication, the L1 data component and the publications a completed cycle is expected to take. |
 | `backend/automation_plan.py` | The planner's candidate → the persistable `ExecutionPlan`, proved against `validate_candidate` and the V4 wire (`rebuild_v4`) before anything is stored; the anchor's exact on-chain id computed offline. |
-| `backend/publisher_signer.py` | The restricted publisher: `publish(Observation)` for the admitted guard only, signed bytes persisted before any send, one row per observation id. |
+| `backend/publisher_signer.py` | The restricted publisher: `publish(Observation)` for the admitted guard only, signed bytes persisted before any send, one row per observation id and one signature per nonce. Before it claims a nonce it sends again the bytes of every row whose nonce the chain has not spent. |
 | `backend/automation_store.py` | Sequence leases, cycle records, shared pool samples, operator controls, the ledger view offered to the planner (lots net of settled spends and recorded withdrawals). |
 | `backend/automation_ledger.py` | The ledger's reader of the vault's fee events from finalized blocks, under the reconciliation role: an owner withdrawal becomes a debit on the ledger's lots, our own reconciled executions are verified, any other execution is an exception that suspends the sequence until an operator acknowledges it. |
 | `backend/automation_cycle.py` | The orchestrator: observe → decide → reserve → publish → execute → reconcile, with restart-safe transitions. |
@@ -30,6 +30,7 @@ the [activation](#activation) steps below are done and recorded.
 | `backend/migrations/028_automation_cycle.sql` | Tables, the `domino_execution_publisher` role and the guards. Applied with the automation activation, never by the disabled foundation or the financial upgrade. |
 | `backend/migrations/029_ledger_index.sql` | The reader's cursors, withdrawals with their lot debits, exceptions, and the claim/spend guards counting the debits. Applied with 028; no new role. |
 | `backend/migrations/030_swap_exposure.sql` | The pools' shared swap budget (`swap_exposure`: each compound swap's share of its pool's cap, readable by every tenant's worker, written and released only by its own) and `sequence_state.consecutive_failures`. Applied with 028 and 029; no new role. |
+| `backend/migrations/031_publication_resend.sql` | The publication guard lets an `expired` row whose bytes are sent again become `submitted`/`broadcast_unknown`, live until its receipt; no other way out of `expired`. Applied with 028 to 030; no table, no role. |
 
 The existing pieces are reused unchanged in their boundaries: `execution_planner`
 decides, `execution_store` reserves, `execution_signer`/`execution_runner` sign, send and
@@ -71,10 +72,11 @@ values. They are not production values.
 
 1. Install with [`scripts/staging/install_automation.py`](AUTOMATION_INSTALL.md): it
    places the source release, the `domino-automation` user, the off unit, migrations
-   `028_automation_cycle.sql`, `029_ledger_index.sql` and `030_swap_exposure.sql` (after
-   the financial upgrade's 015 and 019; 028 creates the `domino_execution_publisher`
-   role, 029 adds the ledger reader's tables to the existing `domino_execution_ledger`
-   role, 030 the pools' shared swap budget and the failure count) and the peer
+   `028_automation_cycle.sql`, `029_ledger_index.sql`, `030_swap_exposure.sql` and
+   `031_publication_resend.sql` (after the financial upgrade's 015 and 019; 028 creates
+   the `domino_execution_publisher` role, 029 adds the ledger reader's tables to the
+   existing `domino_execution_ledger` role, 030 the pools' shared swap budget and the
+   failure count, 031 lets an expired publication be sent again) and the peer
    mappings from the service user to `domino_execution_worker`, `domino_execution_signer`,
    `domino_execution_publisher` and `domino_execution_ledger`. A ledger that
    already holds lots from before the reader existed is read from an explicit block
@@ -153,6 +155,7 @@ attempts, those whose publication has a receipt: attempts + 1 over completions +
 | Anchor expired, revoked, from another block, or the price left the plan band | Named by the cycle's read-only pre-check (`anchor_revoked`, `price_outside_plan_band`, `plan_expired`, `authority_changed`) or refused by the executor's qualification, in both cases before the key is used; the unsigned intent is cancelled, the cycle is `abandoned` with the reason, the publication's cost stays on record. |
 | Source-block window lost before publication | `publish_publisher_source_window` or `source_window_lost`; no transaction. |
 | Broadcast reply lost | The publisher row becomes `broadcast_unknown`; the next check finds the receipt or re-sends the same bytes. The executor keeps its own ambiguity handling. |
+| A sent publication the node dropped | Its nonce stays unspent and every later publication of the key would wait behind it, whether the row is still live or a check has retired it as `expired`. Before the publisher claims its next nonce, it sends again the same bytes of every row holding a nonce the chain has not spent and the node does not hold; an expired one becomes live again. A late point reverts at the guard and spends the nonce, and the new publication is mined after it. Never a second signature for one nonce. The row's receipt is recorded when it is next checked, by the recovery that `run-once` and a starting `serve` begin with; until then `publications` lists it as live. The cycle that gave it up is not counted as a paid failure for it. |
 | Process crash after a publication or execution was signed | The next pass resumes from the journals: same bytes, same nonce, one receipt. A signed publication is always sent before anything retires it, even past its source window or its expiry: its nonce would otherwise hold every later publication of the key back. A late one reverts at the guard and costs that revert; a cycle abandoned that way counts as a paid failure. |
 | Two workers | One lease per sequence; the intent store's fence and the executor's journal still guard the plan and the nonce. |
 | Execution reverted | `execution_reverted`, reservations released by the executor, backoff. |
@@ -167,7 +170,7 @@ Deploying the contracts did not enable this. To activate, in order and recorded:
 
 1. A verified production configuration (this document's table), with a gas pool for
    every non-ETH quote currency and the gas units re-measured on the deployed contracts.
-2. Migrations 028, 029 and 030 applied and the four roles mapped on the host.
+2. Migrations 028 to 031 applied and the four roles mapped on the host.
 3. Both keys placed and funded; the guard's publisher equal to the publisher key.
 4. `status` and `evaluate` clean for every admitted sequence over a measurement window;
    decisions recorded as `wait` with reasons that make sense.

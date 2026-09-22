@@ -89,9 +89,10 @@ class AutomationInstallTests(unittest.TestCase):
             self.assertNotIn(name, query)
         self.assertTrue(query.startswith('BEGIN;'))
         self.assertTrue(query.endswith('COMMIT;\n'))
-        first, second, third = (self.files[name][0].decode() for name in automation.MIGRATIONS)
+        first, second, third, fourth = (self.files[name][0].decode() for name in automation.MIGRATIONS)
         self.assertLess(query.index(first), query.index(second))
         self.assertLess(query.index(second), query.index(third))
+        self.assertLess(query.index(third), query.index(fourth))
         self.assertLess(query.index('financial_schema_missing'), query.index(first))
         for guard in ('wrong_automation_ddl_identity', 'automation_schema_already_exists', 'execution_roles_unexpected',
                       "to_regclass('domino_financial_install.receipt') IS NULL", "to_regclass('domino_execution.cycles') IS NOT NULL"):
