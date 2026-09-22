@@ -461,18 +461,18 @@ test('Setup’s draft starts from the same validated choices as the preview requ
 test('the line under Continue in Setup promises a filled-in Setup only for choices there is a draft to carry, and the link loading in its place promises nothing (G9)', () => {
   const s = ready();
   assert.equal(journey.continueNote(s, true), CREATE.review.setupNote);
-  assert.equal(journey.continueNote(s, false), CREATE.review.setupNoteSignedOut);
+  assert.equal(journey.continueNote(s, false), CREATE.review.setupNoteNotConnected);
   for (const other of [pool({ hooks: addr('f') }), pool({ feePips: 8388608, fee: 'Dynamic' })]) {
     const state = { ...s, pool: other };
     assert.equal(journey.setupDraft(state), null, 'Setup’s deposits take neither pool, so nothing is carried');
-    for (const signedIn of [true, false]) assert.equal(journey.continueNote(state, signedIn), CREATE.review.setupNoteUnsupported);
+    for (const connected of [true, false]) assert.equal(journey.continueNote(state, connected), CREATE.review.setupNoteUnsupported);
   }
   assert.equal(journey.continueNote(journey.withBudget(s, ''), true), CREATE.review.gate, 'no draft for any other reason: the neutral line');
   for (const neutral of [CREATE.review.setupNoteUnsupported, CREATE.review.gate]) assert.doesNotMatch(neutral, /filled in|carr|opens with/i, neutral);
   // While the chunk with the carrying link loads, a plain link stands in for it, carrying nothing: its line is the neutral one.
   const review = readFileSync(new URL('../src/components/create/StageReview.tsx', import.meta.url), 'utf8');
   assert.match(review, /<Suspense fallback=\{<SetupLink note=\{CREATE\.review\.gate\} \/>\}>/);
-  assert.doesNotMatch(review, /note=\{CREATE\.review\.setupNote(SignedOut)?\}/, 'the promise is made only where the link carries the choices');
+  assert.doesNotMatch(review, /note=\{CREATE\.review\.setupNote(NotConnected)?\}/, 'the promise is made only where the link carries the choices');
 });
 
 // Changed on purpose (owner, 2026-09-19): the Review opened with a green dot

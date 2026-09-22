@@ -24,28 +24,28 @@ const Q96 = 1n << 96n
 const ordered = (a: bigint, b: bigint): readonly [bigint, bigint] => (a > b ? [b, a] : [a, b])
 
 /** L for an amount of currency0 held between two prices (v4-core LiquidityAmounts.getLiquidityForAmount0). */
-function liquidityForAmount0(sqrtA: bigint, sqrtB: bigint, amount0: bigint): bigint {
+export function liquidityForAmount0(sqrtA: bigint, sqrtB: bigint, amount0: bigint): bigint {
   const [low, high] = ordered(sqrtA, sqrtB)
   if (high === low) return 0n
   return (amount0 * ((low * high) / Q96)) / (high - low)
 }
 
 /** L for an amount of currency1 held between two prices (getLiquidityForAmount1). */
-function liquidityForAmount1(sqrtA: bigint, sqrtB: bigint, amount1: bigint): bigint {
+export function liquidityForAmount1(sqrtA: bigint, sqrtB: bigint, amount1: bigint): bigint {
   const [low, high] = ordered(sqrtA, sqrtB)
   if (high === low) return 0n
   return (amount1 * Q96) / (high - low)
 }
 
 /** The currency0 a liquidity holds between two prices (getAmount0ForLiquidity). */
-function amount0ForLiquidity(sqrtA: bigint, sqrtB: bigint, liquidity: bigint): bigint {
+export function amount0ForLiquidity(sqrtA: bigint, sqrtB: bigint, liquidity: bigint): bigint {
   const [low, high] = ordered(sqrtA, sqrtB)
   if (low === 0n || high === low) return 0n
   return (((liquidity * Q96) * (high - low)) / high) / low
 }
 
 /** The currency1 a liquidity holds between two prices (getAmount1ForLiquidity). */
-function amount1ForLiquidity(sqrtA: bigint, sqrtB: bigint, liquidity: bigint): bigint {
+export function amount1ForLiquidity(sqrtA: bigint, sqrtB: bigint, liquidity: bigint): bigint {
   const [low, high] = ordered(sqrtA, sqrtB)
   return (liquidity * (high - low)) / Q96
 }

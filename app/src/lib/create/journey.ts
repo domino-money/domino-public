@@ -442,13 +442,14 @@ export function setupDraft(state: JourneyState): SetupDraft | null {
 
 /**
  * The line under Continue in Setup. It promises a Setup filled in only when
- * these choices make a draft to carry (`setupDraft`), for a signed-in wallet
- * or once one signs in. A pool Setup's deposits do not take (hooks, or a
- * dynamic fee) is carried nowhere, so the line says what Setup takes; anything
- * else without a draft gets the neutral line, never a promise.
+ * these choices make a draft to carry (`setupDraft`), for a wallet connected
+ * on Robinhood Chain or once one connects. A pool Setup's deposits do not
+ * take (hooks, or a dynamic fee) is carried nowhere, so the line says what
+ * Setup takes; anything else without a draft gets the neutral line, never a
+ * promise.
  */
-export function continueNote(state: JourneyState, signedIn: boolean): string {
-  if (setupDraft(state) !== null) return signedIn ? CREATE.review.setupNote : CREATE.review.setupNoteSignedOut
+export function continueNote(state: JourneyState, connected: boolean): string {
+  if (setupDraft(state) !== null) return connected ? CREATE.review.setupNote : CREATE.review.setupNoteNotConnected
   const pool = state.pool
   return pool && (pool.hooks !== NATIVE_CURRENCY || pool.feePips === DYNAMIC_FEE_PIPS) ? CREATE.review.setupNoteUnsupported : CREATE.review.gate
 }

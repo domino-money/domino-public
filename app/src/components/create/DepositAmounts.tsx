@@ -12,7 +12,7 @@ import { ONBOARDING_RUNTIME } from '../../onboarding/contract'
 import { createPreviewController } from '../../onboarding/controller'
 import { createIntentDriver, formFromRequest, type IntentView } from '../../onboarding/intent'
 import { livePort } from '../../session/livePort'
-import { sessionKey } from '../../session/port'
+import { getWalletIdentity, subscribeWalletIdentity, useWalletIdentity, walletKey } from '../../lib/walletIdentity'
 import { AmountsSection, type AmountCell, type AmountsShown } from './StageBalance'
 import { SetupLink } from './StageReview'
 
@@ -110,24 +110,25 @@ export default function DepositAmounts({ state, open, balances }: { state: Journ
 let stopWatching: (() => void) | null = null
 
 /**
- * Carries these choices to Setup for the signed-in wallet, in memory only
- * (lib/create/setupDraft.ts), and clears them on any session change from now
- * on, whichever screen is open. Signed out, nothing is carried and anything
- * carried before is dropped. Nothing is sent: Setup creates a draft only when
- * the owner presses Create there.
+ * Carries these choices to Setup for the wallet connected on Robinhood Chain,
+ * in memory only (lib/create/setupDraft.ts), and clears them when that wallet
+ * changes or disconnects from now on, whichever screen is open. Without one,
+ * nothing is carried and anything carried before is dropped. A sign-in or
+ * sign-out is not a wallet change. Nothing is sent: Setup funds only when the
+ * owner reviews and sends a step there.
  */
 function carry(state: JourneyState) {
   stopWatching?.()
   stopWatching = null
   const draft = setupDraft(state)
-  const session = sessionKey(livePort.getSnapshot())
-  if (draft === null || session === null) {
+  const wallet = walletKey(getWalletIdentity())
+  if (draft === null || wallet === null) {
     clearSetupDraft()
     return
   }
-  putSetupDraft(draft, session)
-  const stop = livePort.subscribe(() => {
-    if (sessionKey(livePort.getSnapshot()) === session) return
+  putSetupDraft(draft, wallet)
+  const stop = subscribeWalletIdentity(() => {
+    if (walletKey(getWalletIdentity()) === wallet) return
     clearSetupDraft()
     stop()
     if (stopWatching === stop) stopWatching = null
@@ -137,9 +138,10 @@ function carry(state: JourneyState) {
 
 /**
  * The final control in builds with wallet sign-in: the link to Setup, which takes these choices with it for a
- * signed-in wallet. Its line promises that only for choices there is a draft to carry (journey.ts continueNote).
+ * wallet connected on Robinhood Chain. Its line promises that only for choices there is a draft to carry
+ * (journey.ts continueNote).
  */
 export function ContinueInSetup({ state }: { state: JourneyState }) {
-  const session = useSyncExternalStore(livePort.subscribe, livePort.getSnapshot)
-  return <SetupLink note={continueNote(state, session.kind === 'signed_in')} onClick={() => carry(state)} />
+  const identity = useWalletIdentity()
+  return <SetupLink note={continueNote(state, walletKey(identity) !== null)} onClick={() => carry(state)} />
 }

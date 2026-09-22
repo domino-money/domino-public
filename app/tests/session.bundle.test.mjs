@@ -238,6 +238,14 @@ test('session/read closures retain their 90 kB budget; financial screens have a 
   // larger and fails first. The headroom is printed with every run below; the
   // ceilings stay where they were, without charging these opt-in screens to
   // visitors who only open wallet sign-in or public reads.
+  //
+  // 2026-09-22: Setup gained the deposit through the wallet alone
+  // (screens/WalletDeposit.tsx with create/mintPlan.ts, create/depositForm.ts
+  // and finance/gas.ts), the path that creates a position with no session and
+  // no deposit service. Measured in dist: financial 140,042 B, all lazy
+  // 153,653 B. The all-lazy ceiling moves to 160 kB for it; the session and
+  // public-read ceiling is untouched (50,957 B against 90 kB), so nobody who
+  // never opens Setup pays for it.
   for (const [label, dir] of [
     ['dist', DIST],
     ['.wallet-test-dist', WALLET],
@@ -255,7 +263,7 @@ test('session/read closures retain their 90 kB budget; financial screens have a 
     for (const file of financialRoots) assert.ok(!base.has(file) && !initial.has(file), `${file} must remain opt-in`);
     const allLazy = new Set([...base, ...financial]);
     assert.deepEqual([...new Set([...initial, ...allLazy])].sort(), js, 'every generated script belongs to a measured closure');
-    for (const [family, files, budget] of [['session/public reads', base, 90_000], ['financial', financial, 150_000], ['all lazy', allLazy, 150_000]]) {
+    for (const [family, files, budget] of [['session/public reads', base, 90_000], ['financial', financial, 150_000], ['all lazy', allLazy, 160_000]]) {
       const total = [...files].reduce((sum, file) => sum + gzip(join(dir, 'assets', file)), 0);
       // The headroom is a diagnostic only, so the margin stays visible in every run; only the budget itself fails the test.
       t.diagnostic(`${label} ${family}: ${total} bytes gzip (${files.size} scripts; ${budget} budget; ${budget - total} bytes, ${((100 * (budget - total)) / budget).toFixed(1)}% headroom)`);

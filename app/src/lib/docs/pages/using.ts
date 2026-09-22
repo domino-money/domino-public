@@ -80,7 +80,7 @@ export const NEW_POSITION: DocPage = {
       title: 'Deposits happen in Setup',
       blocks: [
         p(CREATE.review.gate),
-        p(b('Continue in Setup'), ' opens it. With your wallet signed in, Setup opens with the pool, range, amount and slippage filled in; signed out, nothing is carried over. Signing out or changing wallets clears what was carried.'),
+        p(b('Continue in Setup'), ' opens it. With your wallet connected on Robinhood Chain, Setup opens with the pool, range, amount and slippage filled in; without a wallet, nothing is carried over. Changing or disconnecting the wallet clears what was carried.'),
         p('Setup checks the deployment before any wallet step, and every step shows its amounts, destination and limits before your wallet asks you to sign.'),
         note(['Deposits work with hookless pools that have a fixed fee. Direct deposits carry no Domino percentage fee; network gas still applies.']),
       ],

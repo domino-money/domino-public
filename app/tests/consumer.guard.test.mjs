@@ -170,7 +170,7 @@ test('DF-11: prepare has exactly one call site, inside issueWalletStep; create a
   const at = flow.indexOf('.prepare(');
   assert.ok(start > 0 && start < at && at < end, 'the call sits in issueWalletStep');
   assert.deepEqual(hits(ALL, /\.create\(/), ['screens/Sequence.tsx', 'screens/Setup.tsx']);
-  assert.deepEqual(hits(ALL, /\bhandoff\.send\(|HANDOFF\.send\(|\.send\(\s*(step|walletStep)/), ['screens/AdvancedSetup.tsx', 'screens/Sequence.tsx']);
+  assert.deepEqual(hits(ALL, /\bhandoff\.send\(|HANDOFF\.send\(|\.send\(\s*(step|walletStep)/), ['screens/AdvancedSetup.tsx', 'screens/Sequence.tsx', 'screens/WalletDeposit.tsx']);
   assert.deepEqual(hits(MINE, /available:\s*true/), [], 'no handoff says it is available');
   assert.deepEqual(hits(MINE, /executionAvailable:\s*true|automationAvailable:\s*true|serverBroadcastAvailable:\s*true/), []);
 });

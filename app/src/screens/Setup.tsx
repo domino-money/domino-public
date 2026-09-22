@@ -25,6 +25,8 @@ import type { DepositSelection } from '../deposit/types'
 import { OperationPanel } from '../components/deposit/OperationPanel'
 import { Button, Card, Display, Pill } from '../components/ui'
 import AdvancedSetup from './AdvancedSetup'
+import WalletDeposit from './WalletDeposit'
+import { getWalletIdentity, subscribeWalletIdentity, useWalletIdentity, walletKey } from '../lib/walletIdentity'
 
 const initial = { amountRaw: '', budget0Raw: '', budget1Raw: '', tickLower: '', tickUpper: '', slippageBps: String(SLIPPAGE_DEFAULT_BPS),
   nativeGasReserveRaw: '', maxGasLimitRaw: '', maxFeePerGasRaw: '', maxPriorityFeePerGasRaw: '' }
@@ -117,8 +119,9 @@ const formFromDraft = (draft: SetupDraft | null): typeof initial => draft ? { ..
 export default function Setup() {
   const session = useSyncExternalStore(livePort.subscribe, livePort.getSnapshot)
   const scope = sessionKey(session)
-  // New position's choices, when the owner continued here signed in: read once, for this session only, and sent nowhere.
-  const [carried, setCarried] = useState<SetupDraft | null>(() => setupDraftFor(sessionKey(livePort.getSnapshot())))
+  const identity = useWalletIdentity()
+  // New position's choices, when the owner continued here with a wallet connected: read once, for that wallet only, and sent nowhere.
+  const [carried, setCarried] = useState<SetupDraft | null>(() => setupDraftFor(walletKey(getWalletIdentity())))
   const [explored, setExplored] = useState<PoolOption | null>(null)
   const pool = explored ?? carried?.pool ?? null
   const [form, setForm] = useState(() => formFromDraft(carried))
@@ -132,7 +135,10 @@ export default function Setup() {
   }, [])
   const state = useSyncExternalStore(deps.flow.subscribe, deps.flow.getState)
   useEffect(() => deps.flow.start(), [deps])
-  useEffect(() => { let key = sessionKey(livePort.getSnapshot()); return livePort.subscribe(() => { const next = sessionKey(livePort.getSnapshot()); if (next !== key) { key = next; clearSetupDraft(); setCarried(null); setExplored(null); setIndependent(0); setApproval(null); setForm(initial); setNotice(null); setSending(false); setCreation(false) } }) }, [])
+  // A session change ends what the service's deposit flow had in hand. The carried choices are the connected wallet's and stay.
+  useEffect(() => { let key = sessionKey(livePort.getSnapshot()); return livePort.subscribe(() => { const next = sessionKey(livePort.getSnapshot()); if (next !== key) { key = next; setApproval(null); setNotice(null); setSending(false); setCreation(false) } }) }, [])
+  // Another wallet, another network or none: the choices carried for the previous wallet go, and the pool chosen for them with them.
+  useEffect(() => { let key = walletKey(getWalletIdentity()); return subscribeWalletIdentity(() => { const next = walletKey(getWalletIdentity()); if (next !== key) { key = next; clearSetupDraft(); setCarried(null); setExplored(null); setIndependent(0); setForm(initial) } }) }, [])
   // A pool picked in the explorer other than the one New position carried: the carried token index, amount and ticks were that pool's, so they go.
   // The handler stays the same function, so the explorer hands over a selection only when the selection changes.
   const carriedNow = useRef(carried)
@@ -214,7 +220,12 @@ export default function Setup() {
   return <main className="dm-page dm-page--narrow">
     <Display as="h1" className="dm-display-title">Create or recover a position</Display>
     <p className="dm-acct-lede">Choose a pool, review token budgets and approve each step in your wallet. Direct deposits carry no Domino percentage fee. You pay network gas; Uniswap pool fees apply only if you swap.</p>
-    {session.kind !== 'signed_in' ? <Card className="dm-acct-block dm-acct-signin">Sign in with your wallet to prepare a deposit or view its receipts.</Card> : <>
+    <PoolExplorer onSelection={explore} />
+    {identity.kind === 'connected' && identity.chainId === 4663 ? <WalletDeposit pool={pool} draft={carried} />
+      : <Card className="dm-acct-block dm-acct-signin" data-setup-wallet={identity.kind === 'connected' ? 'other-network' : 'disconnected'}>
+        {identity.kind === 'connected' ? 'Switch your wallet to Robinhood Chain to deposit. Each step is reviewed before your wallet opens.' : 'Connect your wallet on Robinhood Chain to deposit. Each step is reviewed before your wallet opens.'}
+      </Card>}
+    {session.kind === 'signed_in' && <>
       <Card className="dm-acct-block dm-acct-panel" data-deposits={state.phase} data-deposits-reason={quiet ? failureCode(quiet.failure) : undefined}
         title={quiet ? `Deposits could not be read: ${failureCode(quiet.failure).replaceAll('_', ' ')}` : undefined}>
         <h2 className="dm-acct-panel-title">Your deposits</h2>
@@ -236,7 +247,6 @@ export default function Setup() {
       {current && shown && <div className="dm-acct-block dm-acct-stack"><OperationPanel op={current.op} view={shown} onAction={action} preSign={check?.rows ?? null} summaryAcknowledged={ack}
         onAcknowledge={setAck} allowances={current.allowances} handoffAvailable />{current.walletStep && <Button className="justify-self-start" variant="accent" disabled={!check?.ok || sending || state.busy !== null} onClick={() => { void send() }}>{sending ? 'Waiting for wallet…' : 'Review and send in wallet'}</Button>}
         {notice?.place === 'step' && <p className="dm-acct-line dm-acct-wrap" role="status">{notice.text}</p>}</div>}
-      <PoolExplorer onSelection={explore} />
       {pool && <form className="dm-card dm-acct-block dm-acct-draft" data-setup-draft={carried && pool.key === carried.pool.key ? 'new-position' : 'typed'} onSubmit={event => { event.preventDefault(); void create() }}>
         <h2 className="dm-acct-panel-title dm-acct-span">Deposit budgets · {pool.fee} pool</h2><p className="dm-acct-hash dm-acct-span">Token 0: {pool.currencies[0].address}<br />Token 1: {pool.currencies[1].address}</p>
         {carried && pool.key === carried.pool.key && <p className="dm-hint dm-acct-span">Filled in from New position. Enter the budgets and network limits, then create the draft. Nothing is sent before that.</p>}

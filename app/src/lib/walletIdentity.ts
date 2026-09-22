@@ -1,4 +1,5 @@
 import { useSyncExternalStore } from 'react'
+import { CHAIN_ID } from './read/screens/identity'
 
 /**
  * What the header's wallet control is connected to, published outward for
@@ -48,6 +49,15 @@ export function subscribeWalletIdentity(listener: () => void): () => void {
   return () => {
     listeners.delete(listener)
   }
+}
+
+/**
+ * One string for a wallet connected on Robinhood Chain, for what a screen
+ * carries to another under it (lib/create/setupDraft.ts): the chain and the
+ * lowercase address. Any other state, another chain included, keys nothing.
+ */
+export function walletKey(view: WalletIdentityView): string | null {
+  return view.kind === 'connected' && view.chainId === CHAIN_ID ? `${view.chainId}|${view.address.toLowerCase()}` : null
 }
 
 /** The published identity, live. */

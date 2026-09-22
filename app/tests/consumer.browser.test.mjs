@@ -458,7 +458,7 @@ test('New position’s Review asks for the deposit amounts for the signed-in wal
   const text = await page.locator('main').innerText();
   assert.doesNotMatch(text, REVIEW_FORBIDDEN);
   assert.match(text, /Exact amounts are calculated in Setup, at the price when you sign\./);
-  assert.match(await page.locator('#create-reason').innerText(), /^Setup opens with this pool, range and amount filled in\. Nothing is sent until you create the draft there\.$/);
+  assert.match(await page.locator('#create-reason').innerText(), /^Setup opens with this pool, range and amount filled in\. Nothing is sent until you review each step in your wallet there\.$/);
   await noSigningControls(page);
 
   // The estimate is current for 30 s after it was asked; then its figures go back to a dash, with the time in the title.

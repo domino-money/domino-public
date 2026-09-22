@@ -258,8 +258,8 @@ export const CREATE = {
     recipientValue: 'The wallet that signs the mint. No address is known to this screen.',
     /** Final control, wallet builds: a link to Setup, which opens with these choices filled in for the signed-in wallet. */
     setup: 'Continue in Setup',
-    setupNote: 'Setup opens with this pool, range and amount filled in. Nothing is sent until you create the draft there.',
-    setupNoteSignedOut: 'Sign in first, and Setup opens with this pool, range and amount filled in. Nothing is sent until you create the draft there.',
+    setupNote: 'Setup opens with this pool, range and amount filled in. Nothing is sent until you review each step in your wallet there.',
+    setupNoteNotConnected: 'Connect your wallet on Robinhood Chain first, and Setup opens with this pool, range and amount filled in. Nothing is sent until you review each step in your wallet there.',
     /** Under the link when the pool is one Setup's deposits do not take (hooks or a dynamic fee): nothing is carried, and nothing is promised. */
     setupNoteUnsupported: 'Deposits in Setup take pools with no hooks and a fixed fee.',
     /** Final control, builds without wallet sign-in. */

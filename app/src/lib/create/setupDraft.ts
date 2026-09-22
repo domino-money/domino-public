@@ -1,29 +1,31 @@
 /**
- * The New position choices on their way to Setup's deposit draft: in this
- * page's memory only, never storage or the URL, and only for the server
- * session they were carried under.
+ * The New position choices on their way to Setup: in this page's memory
+ * only, never storage or the URL, and only for the connected wallet they were
+ * carried under.
  *
- * Review's "Continue in Setup" puts them here with the session key of the
- * signed-in wallet (components/create/DepositAmounts.tsx), and clears them on
- * any session change from then on. Setup reads them for its own session key
- * and fills in its draft; a different session never sees them, and reading
- * them sends nothing. They go when the draft is created, when the session
- * changes, or when another set of choices replaces them.
+ * Review's "Continue in Setup" puts them here with the key of the wallet
+ * connected on Robinhood Chain (lib/walletIdentity.ts walletKey, from
+ * components/create/DepositAmounts.tsx), and clears them when that wallet
+ * changes or disconnects from then on. Setup reads them for its own wallet key
+ * and fills in its deposit; a different wallet never sees them, and reading
+ * them sends nothing. They go when the deposit is funded, when the wallet
+ * changes, or when another set of choices replaces them. Signing in or out
+ * of the private session is not a wallet change.
  *
- * Nothing here imports the wallet session: the key arrives as a string.
+ * Nothing here imports the wallet feature: the key arrives as a string.
  */
 import type { SetupDraft } from './journey'
 
 let held: { draft: SetupDraft; session: string } | null = null
 
-export function putSetupDraft(draft: SetupDraft, session: string) {
-  held = { draft, session }
+export function putSetupDraft(draft: SetupDraft, wallet: string) {
+  held = { draft, session: wallet }
 }
 
-/** The draft carried under `session`. Another session's draft is dropped, never returned; no session returns nothing. */
-export function setupDraftFor(session: string | null): SetupDraft | null {
-  if (held === null || session === null) return null
-  if (held.session !== session) {
+/** The draft carried under `wallet`. Another wallet's draft is dropped, never returned; no wallet returns nothing. */
+export function setupDraftFor(wallet: string | null): SetupDraft | null {
+  if (held === null || wallet === null) return null
+  if (held.session !== wallet) {
     held = null
     return null
   }

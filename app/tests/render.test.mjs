@@ -176,7 +176,7 @@ test('every route in the header renders', async () => {
     // The owner's wallet screens ship in the deployable build (vite.config.ts MODES: wallet true). Signed out, with no release behind this server and no
     // saved profile, neither offers an owner card with no way into it (changed on purpose, qa:visual dead ends): Setup offers sign-in and nothing more,
     // and Sequence says in one plain line that there is nothing to manage. Each is read once its release has answered.
-    ['/setup', /Create or recover a position[\s\S]*Sign in with your wallet to prepare a deposit/, '[data-setup-release="unavailable"]'],
+    ['/setup', /Create or recover a position[\s\S]*Connect your wallet on Robinhood Chain to deposit/, '[data-setup-release="unavailable"]'],
     ['/sequence', /Your sequences[\s\S]*No sequence to manage here\./, '[data-sequence-release="unavailable"]'],
   ]) {
     const page = await open(route);
