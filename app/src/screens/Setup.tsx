@@ -219,12 +219,16 @@ export default function Setup() {
   const blockerButton = (id: string | null) => id && <Button className="justify-self-start" variant="outline" size="sm" disabled={state.busy !== null} onClick={() => open(id)}>Open the blocking deposit</Button>
   return <main className="dm-page dm-page--narrow">
     <Display as="h1" className="dm-display-title">Create or recover a position</Display>
-    <p className="dm-acct-lede">Choose a pool, review token budgets and approve each step in your wallet. Direct deposits carry no Domino percentage fee. You pay network gas; Uniswap pool fees apply only if you swap.</p>
-    <PoolExplorer onSelection={explore} />
+    <p className="dm-acct-lede">{pool ? 'Review the amounts and approve each step in your wallet.' : 'Choose a pool, review the amounts and approve each step in your wallet.'} Direct deposits carry no Domino percentage fee. You pay network gas; Uniswap pool fees apply only if you swap.</p>
     {identity.kind === 'connected' && identity.chainId === 4663 ? <WalletDeposit pool={pool} draft={carried} />
       : <Card className="dm-acct-block dm-acct-signin" data-setup-wallet={identity.kind === 'connected' ? 'other-network' : 'disconnected'}>
         {identity.kind === 'connected' ? 'Switch your wallet to Robinhood Chain to deposit. Each step is reviewed before your wallet opens.' : 'Connect your wallet on Robinhood Chain to deposit. Each step is reviewed before your wallet opens.'}
       </Card>}
+    {/* The pool comes from New position with the rest of the choices; the explorer is for choosing one here, or another one, and folds away once there is one. */}
+    <details className="dm-details dm-acct-disclosure dm-acct-block" open={pool ? undefined : true} data-setup-explorer={pool ? 'folded' : 'open'}>
+      <summary>{pool ? 'Choose another pool' : 'Choose a pool'}</summary>
+      <div className="dm-acct-disclosure-body"><PoolExplorer onSelection={explore} /></div>
+    </details>
     {session.kind === 'signed_in' && <>
       <Card className="dm-acct-block dm-acct-panel" data-deposits={state.phase} data-deposits-reason={quiet ? failureCode(quiet.failure) : undefined}
         title={quiet ? `Deposits could not be read: ${failureCode(quiet.failure).replaceAll('_', ' ')}` : undefined}>

@@ -433,7 +433,7 @@ export default function WalletDeposit({ pool, draft }: { pool: PoolOption | null
           ))}
         </section>
       )}
-      {client && !pool && minted === null && <p className="dm-acct-panel-note">Choose a pool above to deposit into it.</p>}
+      {client && !pool && minted === null && <p className="dm-acct-panel-note">Choose a pool below to deposit into it.</p>}
       {client && pool && chosen && (
         <section className="dm-acct-stack" aria-label="Funded operation" data-wallet-deposit-operation={chosen.id}>
           <h3 className="dm-acct-subtitle">
