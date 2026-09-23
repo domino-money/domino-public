@@ -228,7 +228,10 @@ test('setup lists deposits in words, adds More deposits, links to the blocking d
     await s.page.goto(`${s.origin}/#/setup`);
     const list = s.page.locator('[data-deposits]');
     const rows = list.locator('[data-deposit-row]');
+    // The list renders before boot reconciles its outstanding row. Wait for
+    // boot to finish before asserting the complete sequence of requests.
     await rows.nth(1).waitFor();
+    await s.page.locator('[data-deposits="ready"]').waitFor();
     assert.deepEqual(s.deposits.map(call => call.route), ['list', 'reconcile'], 'boot: the first page, then the outstanding deposit');
     const pair = '0x111111…111111 / 0x222222…222222 · 0.30%';
     assert.match(await rows.nth(0).innerText(), new RegExp(`^${pair.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\s+\\S.*\\s+Draft · Updated \\d{4}-\\d\\d-\\d\\d \\d\\d:\\d\\d:\\d\\d UTC$`));
