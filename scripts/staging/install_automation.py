@@ -41,7 +41,9 @@ MIGRATIONS = ('backend/migrations/028_automation_cycle.sql', 'backend/migrations
               'backend/migrations/035_cancel_unsigned_gas_claims.sql',
               'backend/migrations/036_gas_settlement_journal_read.sql',
               'backend/migrations/037_gas_settlement_receipt_evidence.sql',
-              'backend/migrations/038_gas_settlement_quote_witness.sql')
+              'backend/migrations/038_gas_settlement_quote_witness.sql',
+              'backend/migrations/039_automation_readiness.sql',
+              'backend/migrations/040_gas_finalized_quote_lag.sql')
 SOURCES = ('backend/automation_cli.py', 'backend/automation_cycle.py', 'backend/automation_ledger.py',
            'backend/automation_config.py', 'backend/automation_observer.py', 'backend/automation_evidence.py',
            'backend/automation_plan.py', 'backend/automation_store.py', 'backend/publisher_signer.py',

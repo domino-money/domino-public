@@ -158,6 +158,8 @@ PACKAGED_ONLY_MIGRATIONS = (
     'backend/migrations/036_gas_settlement_journal_read.sql',
     'backend/migrations/037_gas_settlement_receipt_evidence.sql',
     'backend/migrations/038_gas_settlement_quote_witness.sql',
+    'backend/migrations/039_automation_readiness.sql',
+    'backend/migrations/040_gas_finalized_quote_lag.sql',
 )
 MAPPINGS = (
     ('domino', 'domino-admin', ADMIN),

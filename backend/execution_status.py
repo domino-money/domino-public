@@ -33,6 +33,8 @@ State=Literal['planned','reserved','cancelled','signing','signed','submitted','b
 
 class StatusRequest(Record):
     intentId:Hash
+class AvailabilityRequest(Record):
+    vault:Address
 class ListRequest(Record):
     # Plain keyset position, not an authority bearer. Every query still binds
     # the authenticated owner; a foreign position reveals no foreign rows.
@@ -92,8 +94,23 @@ class ListResponse(Record):
     items:Annotated[list[Status],Field(max_length=20)]
     nextAfterIntentId:Hash|None
     executionAvailable:Literal[False]
-REQUEST_MODELS={'status':StatusRequest,'list':ListRequest}
-RESPONSE_MODELS={'status':StatusResponse,'list':ListResponse}
+class AvailabilityResponse(Record):
+    contractVersion:Literal[CONTRACT_VERSION]
+    chainId:Literal[4663]
+    owner:Address
+    vault:Address
+    operational:bool
+    checkedAtEpoch:Annotated[StrictInt,Field(ge=0)]
+    expiresAtEpoch:Annotated[StrictInt,Field(ge=0)]
+
+    @model_validator(mode='after')
+    def coherent(self):
+        if self.expiresAtEpoch < self.checkedAtEpoch or self.expiresAtEpoch > self.checkedAtEpoch + 10:
+            raise ValueError('availability_expiry_invalid')
+        return self
+
+REQUEST_MODELS={'status':StatusRequest,'list':ListRequest,'availability':AvailabilityRequest}
+RESPONSE_MODELS={'status':StatusResponse,'list':ListResponse,'availability':AvailabilityResponse}
 def validate_request(route,body):
     try:return REQUEST_MODELS[route].model_validate(body).model_dump(mode='json')
     except (KeyError,ValidationError,ValueError,TypeError):raise ExecutionStatusError('invalid_request') from None
@@ -158,6 +175,25 @@ class ExecutionStatusReader(_Store):
             return result
         return self._transaction(owner,op)
 
+    def availability(self, owner, vault):
+        """Read only this owner's fresh serve-loop heartbeat, never a signer state."""
+        from execution_store import _owner
+        vault = _owner(vault)
+        def op(conn, owner):
+            row = conn.execute('SELECT value,extract(epoch from updated_at)::bigint AS observed,'
+                'extract(epoch from clock_timestamp())::bigint AS checked '
+                'FROM controls WHERE key=%s', ('automation_ready_' + vault[2:],)).fetchone()
+            if row is None:
+                now = conn.execute('SELECT extract(epoch from clock_timestamp())::bigint AS checked').fetchone()['checked']
+                return {'operational': False, 'checkedAtEpoch': now, 'expiresAtEpoch': now}
+            now = row['checked']
+            value = row['value']
+            ready = (type(value) is dict and set(value) == {'owner','vault','ready'}
+                     and value['owner'] == owner and value['vault'] == vault and value['ready'] is True
+                     and 0 <= now - row['observed'] <= 45)
+            return {'operational': ready, 'checkedAtEpoch': now, 'expiresAtEpoch': now + (10 if ready else 0)}
+        return self._transaction(owner, op)
+
 class ExecutionStatusService:
     def __init__(self,auth,reader):self.auth,self.reader=auth,reader
     def execute(self,route,body,*,client,session,csrf):
@@ -167,6 +203,8 @@ class ExecutionStatusService:
             if route=='status':
                 items=self.reader.list(owner,identifier=request['intentId'],limit=1)
                 body={'item':items[0] if items else None}
+            elif route=='availability':
+                body={'vault':request['vault'],**self.reader.availability(owner,request['vault'])}
             else:
                 items=self.reader.list(owner,after=request['afterIntentId'],limit=request['limit']+1)
                 more=len(items)>request['limit'];items=items[:request['limit']]
@@ -174,7 +212,8 @@ class ExecutionStatusService:
             # No store owner, bearer, cursor or client-selected signer is trusted
             # to supply the principal. Reauthentication follows the final read.
             self.auth.finish(context);check_read_deadline()
-            result={'contractVersion':CONTRACT_VERSION,'chainId':4663,'owner':owner,'executionAvailable':False,**body}
+            result={'contractVersion':CONTRACT_VERSION,'chainId':4663,'owner':owner,
+                    **({'executionAvailable':False} if route!='availability' else {}),**body}
             return validate_response(route,result)
         except ExecutionStoreError:raise ExecutionStatusError('execution_store_unavailable') from None
 

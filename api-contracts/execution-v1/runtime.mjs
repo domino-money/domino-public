@@ -7,6 +7,8 @@ export const ROUTES = Object.freeze(Object.keys(SCHEMAS));
 export const ERROR_STATUS_BY_CODE = Object.freeze({ ...ERRORS });
 
 function semantic(name,value) {
+  if (name === 'AvailabilityResponse') return value.expiresAtEpoch >= value.checkedAtEpoch &&
+    value.expiresAtEpoch <= value.checkedAtEpoch + 10;
   if (name === 'Status') return value.canCancel === ['planned','reserved'].includes(value.state) &&
     (value.receipt !== null) === (value.state === 'reconciled') && (value.signer === null) === (value.nonceRaw === null) &&
     new Set(value.attempts.map(a=>a.ordinal)).size === value.attempts.length && new Set(value.attempts.map(a=>a.transactionHash)).size === value.attempts.length;

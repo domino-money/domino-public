@@ -76,6 +76,7 @@
     "src/lib/create/mintPlan.ts",
     "src/lib/create/depositPlan.ts",
     "src/lib/create/sequenceDefaults.ts",
+    "src/finance/automationAvailability.ts",
     "src/lib/create/slippage.ts",
     "src/lib/read/screens/rowApr.ts",
     "src/lib/docs/registry.ts"

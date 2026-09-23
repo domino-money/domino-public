@@ -133,7 +133,11 @@ class EthUsdReaderTests(unittest.TestCase):
             EthUsdReader(self.rpc, clock=lambda: self.now, finalized=True).quote()
         self.rpc.reorg = False
         self.rpc.pinned_reads = 0
-        self.rpc.finalized_age = 200
+        self.rpc.updated_at = self.now - 1800
+        self.rpc.finalized_age = 1800
+        self.assertEqual(EthUsdReader(self.rpc, clock=lambda: self.now,
+                                      finalized=True).quote().block_timestamp, self.now - 1800)
+        self.rpc.finalized_age = 1801
         with self.assertRaisesRegex(GasBudgetError, 'gas_quote_block_stale'):
             EthUsdReader(self.rpc, clock=lambda: self.now, finalized=True).quote()
 
@@ -150,7 +154,8 @@ class GasBudgetPostgresTests(unittest.TestCase):
                          '034_gas_settlement_sweep', '035_cancel_unsigned_gas_claims',
                          '036_gas_settlement_journal_read',
                          '037_gas_settlement_receipt_evidence',
-                         '038_gas_settlement_quote_witness'):
+                         '038_gas_settlement_quote_witness',
+                         '040_gas_finalized_quote_lag'):
                 conn.execute((Path(__file__).resolve().parents[1] / 'migrations' /
                               f'{name}.sql').read_text())
             conn.execute('ALTER ROLE domino_gas_budget_worker LOGIN')
@@ -387,6 +392,34 @@ class GasBudgetPostgresTests(unittest.TestCase):
                 'domino_gas_budget.settle(%s,%s,%s,%s,%s,%s,%s)', args).fetchone(),
                 (20_000_000,))
         self.assertEqual(budget.status(claim['day'])['usedUsdMicros'], 20_000_000)
+
+    def test_delayed_finalized_quote_settles_but_stale_quote_fails_closed(self):
+        budget = self.budget()
+        self.addCleanup(budget.connection.close)
+        claim = budget.reserve(CYCLE_1, 'publisher', ADDRESS, 5 * 10**15, self.quote)
+        self.publication_witness(CYCLE_1, 2 * 10**15)
+        now = int(time.time())
+        rpc = FeedRpc(now)
+        rpc.finalized_age = 900
+        rpc.updated_at = now - 910
+        witness = GasBudgetService(self.pg.settings, rpc).attest_settlement_quote(
+            CYCLE_1, 'publisher')
+        self.assertEqual(witness['blockTimestamp'], now - 900)
+        settler = self.settler()
+        self.addCleanup(settler.connection.close)
+        result = settler.settle(CYCLE_1, 'publisher', 2 * 10**15, self.quote,
+                                witnessed_quote=witness)
+        self.assertEqual(result['state'], 'settled')
+        self.assertEqual(budget.status(claim['day'])['usedUsdMicros'], 4_000_000)
+
+        stale = int(time.time()) - 1801
+        with psycopg.connect(**self.pg.settings, user='domino_gas_budget_worker') as conn:
+            with self.assertRaisesRegex(psycopg.errors.CheckViolation,
+                                        'gas_settlement_quote_invalid'):
+                conn.execute('SELECT * FROM domino_gas_budget.attest_settlement_quote('
+                             '%s,%s,%s,%s,%s,%s,%s,%s)',
+                             (CYCLE_2, 'publisher', 2000 * 10**8, PHASE_ROUND,
+                              stale - 1, 998, FeedRpc._hash(998), stale))
 
     def test_old_quote_witness_cannot_be_replayed_to_release_cap(self):
         budget = self.budget()

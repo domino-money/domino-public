@@ -6,14 +6,17 @@ function serializes all reservations for a Sao Paulo calendar day. A reservation
 must precede signing either leg; unresolved reservations continue to count.
 """
 from dataclasses import dataclass
+from datetime import datetime
 import re
 import time
+from zoneinfo import ZoneInfo
 
 from eth_abi import decode, encode
 from eth_hash.auto import keccak
 import psycopg
 
 from chainlink_history import ETH_FEED, MANIFEST_SHA256
+from read_deadline import read_deadline
 from discovery import CHAIN_ID, address, bytes32, parse_block, quantity
 
 
@@ -36,6 +39,9 @@ class QuotePolicy:
     # The feed's reviewed heartbeat is 24h; 2h is an independent, stricter
     # operating ceiling for gas accounting. The 20% buffer is not a price SLA.
     max_head_age_seconds: int = 180
+    # Robinhood Chain finality is currently about 14 minutes behind latest.
+    # This bound applies only to canonical finalized settlement quotes.
+    max_finalized_lag_seconds: int = 1800
     max_answer_age_seconds: int = 7200
     confirmations: int = 2
     reservation_bps: int = 12000
@@ -43,6 +49,8 @@ class QuotePolicy:
     def __post_init__(self):
         if (type(self.max_head_age_seconds) is not int or
                 not 1 <= self.max_head_age_seconds <= 180 or
+                type(self.max_finalized_lag_seconds) is not int or
+                not 180 <= self.max_finalized_lag_seconds <= 1800 or
                 type(self.max_answer_age_seconds) is not int or
                 not 1 <= self.max_answer_age_seconds <= 7200 or
                 type(self.confirmations) is not int or
@@ -138,7 +146,9 @@ class EthUsdReader:
         if (block.number > head.number or block.timestamp > head.timestamp or
                 not self.finalized and block.number != head.number - self.policy.confirmations):
             raise GasBudgetError('gas_quote_block_invalid')
-        if block.timestamp > now or now - block.timestamp > self.policy.max_head_age_seconds:
+        block_age_limit = (self.policy.max_finalized_lag_seconds if self.finalized
+                           else self.policy.max_head_age_seconds)
+        if block.timestamp > now or now - block.timestamp > block_age_limit:
             raise GasBudgetError('gas_quote_block_stale')
         for contract in (ETH_FEED.proxy, ETH_FEED.aggregator):
             code = self._request('eth_getCode', [contract, {'blockHash': block.hash, 'requireCanonical': True}])
@@ -374,6 +384,25 @@ class GasBudgetService:
                 '-c search_path=pg_catalog -c TimeZone=UTC')
         except psycopg.Error:
             raise GasBudgetError('gas_budget_unavailable') from None
+
+    def health(self):
+        """Prove the peer can read its cap and quote both gas-accounting paths.
+
+        This never reserves capacity, writes a claim or returns budget or price
+        data across the IPC boundary. A spent daily cap is not a ready signer.
+        """
+        with read_deadline(7):
+            day = datetime.now(ZoneInfo('America/Sao_Paulo')).date().isoformat()
+            with self._connection() as conn:
+                remaining = GasUsdBudget(conn).status(day)['remainingUsdMicros']
+            if remaining <= 0:
+                return False
+            # Reservations use latest minus confirmations; settlement attests
+            # against finalized. A healthy reservation path alone could
+            # advertise a signer that cannot settle any receipt.
+            EthUsdReader(self.rpc).quote()
+            EthUsdReader(self.rpc, finalized=True).quote()
+            return True
 
     def reserve_pair(self, publication_id, publisher, publisher_max_wei,
                      intent_id, operator, operator_max_wei):

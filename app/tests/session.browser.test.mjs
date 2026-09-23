@@ -1008,7 +1008,7 @@ test('signing in grants no wallet transaction or automated signing authority', a
   await until(page, () => /AUTOMATED SIGNING/.test(document.body.innerText), null, 'settings');
   const settings = await page.locator('main').innerText();
   // Session authority stays separate from the optional wallet transaction UI.
-  assert.match(settings, /AUTOMATED SIGNING\s+Not connected/);
+  assert.match(settings, /AUTOMATED SIGNING\s+External; checked per sequence/);
   assert.match(settings, /WALLET TRANSACTIONS\s+Built in; each step reviewed in wallet/);
   assert.match(settings, /Sign-in proves your address/);
   // Settings' footnote is gone on purpose (review:wallet): its "Nothing in this build signs a transaction" was false in the wallet build.

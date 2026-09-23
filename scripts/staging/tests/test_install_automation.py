@@ -100,7 +100,7 @@ class AutomationInstallTests(unittest.TestCase):
         self.assertTrue(query.startswith('BEGIN;'))
         self.assertTrue(query.endswith('COMMIT;\n'))
         migrations = [self.files[name][0].decode() for name in automation.MIGRATIONS]
-        self.assertEqual(len(migrations), 11)
+        self.assertEqual(len(migrations), 13)
         for earlier, later in zip(migrations, migrations[1:]):
             self.assertLess(query.index(earlier), query.index(later))
         first = migrations[0]
@@ -167,7 +167,7 @@ class GasPeerRoleTests(unittest.TestCase):
             conn.execute((REPO / 'backend/migrations/019_execution_journal.sql').read_text())
             conn.execute((REPO / 'backend/migrations/028_automation_cycle.sql').read_text())
             for name in automation.MIGRATIONS:
-                if not name.split('/')[-1].startswith(('032_', '033_', '034_', '035_', '036_', '037_', '038_')):
+                if not name.split('/')[-1].startswith(('032_', '033_', '034_', '035_', '036_', '037_', '038_', '040_')):
                     continue
                 conn.execute((REPO / name).read_text())
             conn.execute(automation.gas_login_sql(cls.pg.settings['dbname']))

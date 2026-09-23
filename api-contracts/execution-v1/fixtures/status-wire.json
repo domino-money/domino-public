@@ -1,6 +1,9 @@
 {
   "contractVersion": "1.0.0-rc.1",
   "requests": {
+    "availability": {
+      "vault": "0x5656565656565656565656565656565656565656"
+    },
     "list": {
       "afterIntentId": null,
       "limit": 10
@@ -10,6 +13,24 @@
     }
   },
   "responses": {
+    "availability.off": {
+      "chainId": 4663,
+      "checkedAtEpoch": 100,
+      "contractVersion": "1.0.0-rc.1",
+      "expiresAtEpoch": 100,
+      "operational": false,
+      "owner": "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "vault": "0x5656565656565656565656565656565656565656"
+    },
+    "availability.ready": {
+      "chainId": 4663,
+      "checkedAtEpoch": 100,
+      "contractVersion": "1.0.0-rc.1",
+      "expiresAtEpoch": 110,
+      "operational": true,
+      "owner": "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "vault": "0x5656565656565656565656565656565656565656"
+    },
     "list.empty": {
       "chainId": 4663,
       "contractVersion": "1.0.0-rc.1",

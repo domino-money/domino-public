@@ -10,6 +10,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import psycopg
 from automation_fixtures import address, identity
 from automation_store import CycleStore
+from execution_status import ExecutionStatusReader
 from execution_pg import ExecutionPostgres
 from execution_store import ExecutionStoreError
 
@@ -28,7 +29,9 @@ class CycleStoreTests(unittest.TestCase):
             conn.execute((Path(__file__).resolve().parents[1] / 'migrations/029_ledger_index.sql').read_text())
             conn.execute((Path(__file__).resolve().parents[1] / 'migrations/030_swap_exposure.sql').read_text())
             conn.execute((Path(__file__).resolve().parents[1] / 'migrations/031_publication_resend.sql').read_text())
+            conn.execute((Path(__file__).resolve().parents[1] / 'migrations/039_automation_readiness.sql').read_text())
             conn.execute('ALTER ROLE domino_execution_publisher LOGIN')
+            conn.execute('ALTER ROLE domino_execution_reader LOGIN')
 
     def setUp(self):
         with self.pg.admin() as conn:
@@ -41,6 +44,19 @@ class CycleStoreTests(unittest.TestCase):
     def cycle_fields(self, **changes):
         return {'state': 'evaluated', 'reason': 'wait', 'config_version': 'test-1', 'fingerprint': identity(21), 'observation_hash': identity(22),
                 'source_block_number': 5, 'source_block_hash': identity(23), 'decision': {'action': 'wait'}, **changes}
+
+    def test_due_state_preserves_structural_read_failure_for_readiness(self):
+        self.store.ensure_sequence(OWNER, SEQUENCE, address(3), POOL, now=1000)
+        lease = self.store.acquire_sequence(OWNER, SEQUENCE, self.worker, lease_seconds=60)
+        self.store.update_sequence(OWNER, SEQUENCE, self.worker, lease['fence'], release=True,
+                                   last_read_failed=True, next_due_seconds=3600)
+        state = self.store.due_state(OWNER, address(3))
+        self.assertEqual(len(state), 1)
+        self.assertIs(state[0]['readinessQualified'], False)
+        lease = self.store.acquire_sequence(OWNER, SEQUENCE, self.worker, lease_seconds=60)
+        self.store.update_sequence(OWNER, SEQUENCE, self.worker, lease['fence'], release=True,
+                                   last_read_failed=False, next_due_seconds=3600)
+        self.assertIs(self.store.due_state(OWNER, address(3))[0]['readinessQualified'], True)
 
     def test_lease_is_exclusive_and_every_write_needs_the_live_fence(self):
         self.store.ensure_sequence(OWNER, SEQUENCE, address(3), POOL, now=1000)
@@ -106,6 +122,25 @@ class CycleStoreTests(unittest.TestCase):
             with self.assertRaises(psycopg.errors.InsufficientPrivilege):
                 conn.execute("INSERT INTO publications(observation_id,guard,pool_id,block_number,block_hash,block_timestamp,expires_at,sqrt_price,signer,nonce,envelope,signed_bytes,transaction_hash,state) VALUES(%s,%s,%s,1,%s,10,20,5,%s,0,'{}'::jsonb,%s,%s,'signed')",
                              (identity(40), address(23), POOL, identity(41), address(10), b'\x01', identity(42)))
+
+    def test_readiness_is_fresh_owner_scoped_and_reader_cannot_write_controls(self):
+        vault = address(3)
+        reader = ExecutionStatusReader(self.pg.settings)
+        self.assertFalse(reader.availability(OWNER, vault)['operational'])
+        self.store.record_readiness(OWNER, vault, True)
+        response = reader.availability(OWNER, vault)
+        self.assertTrue(response['operational'])
+        self.assertEqual(response['expiresAtEpoch'] - response['checkedAtEpoch'], 10)
+        self.assertFalse(reader.availability(address(2), vault)['operational'])
+        self.assertFalse(reader.availability(OWNER, address(4))['operational'])
+        with self.pg.admin() as conn:
+            conn.execute("UPDATE domino_execution.controls SET updated_at=clock_timestamp()-interval '46 seconds' WHERE key=%s", ('automation_ready_' + vault[2:],))
+        self.assertFalse(reader.availability(OWNER, vault)['operational'])
+        self.store.record_readiness(OWNER, vault, False)
+        self.assertFalse(reader.availability(OWNER, vault)['operational'])
+        with psycopg.connect(**self.pg.settings, user='domino_execution_reader', options='-c search_path=domino_execution') as conn:
+            with self.assertRaises(psycopg.errors.InsufficientPrivilege):
+                conn.execute('UPDATE controls SET value=%s WHERE key=%s', ('{}', 'automation_ready_' + vault[2:]))
 
     def test_an_expired_publication_leaves_expired_only_when_its_bytes_are_sent_again(self):
         with self.pg.admin() as conn:

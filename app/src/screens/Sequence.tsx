@@ -1,6 +1,7 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState, useSyncExternalStore } from 'react'
 import { getConnection, watchConnection } from 'wagmi/actions'
 import { type Address, type Hex } from 'viem'
+import * as executionRuntime from 'api-contracts/execution-v1/runtime.mjs'
 import { walletConfig } from '../wallet/config'
 import { setupWallet } from '../finance/wallet'
 import { suggestGasBudget } from '../finance/gas'
@@ -8,8 +9,10 @@ import type { GasBudget } from '../finance/setup'
 import { readRelease, type ReleaseRead } from '../finance/release'
 import { AUTOMATION_FEE_BPS, createSequenceClient, sequenceDeploymentFrom, sequenceProviderReadError, sequenceRaw, sequenceReadError, sequenceReadStage, type AutomationMode, type PreparedSequence, type SequenceDeployment, type SequenceState } from '../finance/sequence'
 import { readSequenceSnapshot } from '../finance/sequenceSnapshot'
+import { automationAvailable } from '../finance/automationAvailability'
+import { financialFetch } from '../finance/http'
 import { RECEIPT_TEXT, SEQUENCE_STEP_TEXT, errorCode, financeErrorText } from '../finance/words'
-import { AUTOMATION_SERVICE } from '../lib/capabilities'
+import { livePort } from '../session/livePort'
 import { Button, Card, Display } from '../components/ui'
 import { hashParts } from '../components/explore/routes'
 import { sequenceIntent } from '../lib/create/sequenceDefaults'
@@ -47,6 +50,10 @@ function savedProfile(): SequenceDeployment | null {
 export default function Sequence() {
   const [release,setRelease] = useState<Release>({kind:'loading'}), [saved] = useState(savedProfile)
   const [form,setForm] = useState(empty), [client,setClient] = useState<Client|null>(null), [recovery,setRecovery] = useState(false)
+  const [connectedOwner,setConnectedOwner] = useState<`0x${string}`|null>(null)
+  const [readyLease,setReadyLease] = useState<{ owner:`0x${string}`; vault:`0x${string}`; epoch:number; refresh:number }|null>(null)
+  const [readinessRefresh,setReadinessRefresh] = useState(0)
+  const session = useSyncExternalStore(livePort.subscribe,livePort.getSnapshot)
   const [recent,setRecent] = useState<Awaited<ReturnType<Client['recent']>>>([]), [state,setState] = useState<SequenceState|null>(null)
   const [root,setRoot] = useState<Root|null>(null), [reserves,setReserves] = useState<Reserves|null>(null), [balanceIndex,setBalanceIndex] = useState(0)
   // Which currency the untracked-balance recovery is about: the sequence's own two, or native.
@@ -67,11 +74,26 @@ export default function Sequence() {
   useEffect(() => { let live = true; void readSequenceRelease().then(result => { if(!live) return; setRelease(result); const asked = sequenceIntent(hashParts(window.location.hash).segments); if(result.kind==='available'&&(asked.mode!==null||asked.tokenId!==null)) onArrival.current() }); return () => { live = false } },[])
   useEffect(() => watchConnection(walletConfig,{onChange:()=>{
     generation.current++; connection.current++; running.current=false; setBusy(false); setClient(null); setRecovery(false); setRecent([]); setState(null); setRoot(null); setReserves(null)
-    setPrepared(null); setHash(null); setAck(false); setConsent(false); setCreateMode('compound'); setPolicyMode(null); setForm(empty); setNotice(null); setGasFor(null); setIntentRoot(null)
+    setPrepared(null); setHash(null); setAck(false); setConsent(false); setCreateMode('compound'); setPolicyMode(null); setForm(empty); setNotice(null); setGasFor(null); setIntentRoot(null); setConnectedOwner(null); setReadyLease(null)
   }}),[])
   useEffect(()=>()=>{generation.current++;connection.current++},[])
   const available = release.kind === 'available'
   const profile = available ? release.deployment : release.kind === 'unavailable' ? saved : null
+  const serviceReady = Boolean(readyLease&&state?.paused&&!recovery&&connectedOwner===readyLease.owner&&state.vault===readyLease.vault
+    &&session.kind==='signed_in'&&session.owner===readyLease.owner&&session.epoch===readyLease.epoch
+    &&readinessRefresh===readyLease.refresh)
+  useEffect(()=>{
+    let live=true
+    if(state?.paused&&connectedOwner&&session.kind==='signed_in'&&session.owner===connectedOwner&&!recovery)
+      void automationAvailable(connectedOwner,state.vault,livePort,financialFetch,executionRuntime).then(ready=>{
+        if(!live)return
+        if(!ready){setReadyLease(null);return}
+        const lease={owner:connectedOwner,vault:state.vault,epoch:session.epoch,refresh:readinessRefresh}
+        setReadyLease(lease)
+        setTimeout(()=>setReadyLease(current=>current===lease?null:current),9_000)
+      })
+    return()=>{live=false}
+  },[state?.vault,state?.paused,connectedOwner,session,recovery,readinessRefresh])
   function edit(name:keyof typeof empty,value:string) {
     generation.current++; setForm(old=>({...old,[name]:value})); setPrepared(null); setAck(false)
     if(name==='root') {setRoot(null);setConsent(false)}
@@ -108,7 +130,7 @@ export default function Sequence() {
     if(generation.current!==gen||!wallet.current())return
     setGasFor(()=>()=>suggestGasBudget(wallet)); setIntentRoot(wanted)
     if(!isRecovery)try{localStorage.setItem(cacheKey,JSON.stringify({contractVersion:'1.0.0-rc.1',chainId:4663,available:true,deployment:d}))}catch{ /* Recovery still works while this verified profile is loaded. */ }
-    setClient(next);setRecent(rows);setRecovery(isRecovery);setState(null);setReserves(null);setRoot(null);setHash(null)
+    setClient(next);setRecent(rows);setRecovery(isRecovery);setState(null);setReserves(null);setRoot(null);setHash(null);setConnectedOwner(wallet.owner)
     say(isRecovery?'Previously saved deployment identities were checked on chain. Manage a sequence you own below.':'Deployment verified through your wallet. Create a paused sequence or manage one you own.')
   }
   // A link naming a mode or a position: with the release in and a wallet already connected, the sequences are read without a press. Reads only; a wallet connected later presses Read my sequences.
@@ -149,11 +171,17 @@ export default function Sequence() {
     const value=await client.recover(state.vault,kind,gas(),values)
     if(generation.current===gen)setPrepared(value)
   }
+  async function requireServiceReady(vault: `0x${string}`) {
+    if(connectedOwner&&await automationAvailable(connectedOwner,vault,livePort,financialFetch,executionRuntime))return
+    setReadyLease(null)
+    throw new Error('sequence_activation_unavailable')
+  }
   async function send() {
     if(!client||!prepared||!ack||running.current)return
     const step=prepared,gen=generation.current
     running.current=true;setBusy(true);setPrepared(null);setAck(false);setHash(null)
-    try {const result=await client.send(step,true);if(generation.current===gen){setHash(result);setForm(old=>({...old,vault:step.vault}));say('Offered to your wallet once. Check the canonical receipt, then read the position or sequence again before the next step.')}}
+    try {if(step.kind==='resume')await requireServiceReady(step.vault)
+      const result=await client.send(step,true);if(generation.current===gen){setHash(result);setForm(old=>({...old,vault:step.vault}));say('Offered to your wallet once. Check the canonical receipt, then read the position or sequence again before the next step.')}}
     catch(error){if(generation.current===gen){
       const beforeWallet=error instanceof Error&&['review_required','sequence_admission_unavailable','sequence_release_expired','sequence_preparation_changed','sequence_activation_unavailable','sequence_tariff_changed','deployment_code_changed','deployment_identity_changed','root_approval_changed'].includes(error.message)
       say(beforeWallet?'The preparation is no longer valid. No wallet transaction was requested. Read your sequences again, then prepare and review again.':error&&typeof error==='object'&&(error as {code?:unknown}).code===4001?'Wallet request rejected. Prepare and review again if you want to continue.':'The wallet outcome may be unknown. Check wallet activity and chain state. This nonce remains protected against another offer, including after reload.',errorCode(error))
@@ -172,7 +200,7 @@ export default function Sequence() {
       :<div hidden data-sequence-release={release.kind} data-recovery-profile="none" />)
     :<Card className="dm-acct-block dm-acct-panel" data-sequence-release={release.kind} data-sequence-release-reason={release.kind==='unavailable'?release.reason:undefined} data-recovery-profile={saved?'saved':'none'}>
       <h2 className="dm-acct-panel-title">Owner controls</h2>
-      <p className="dm-acct-panel-note">{available?'Create a paused sequence from a position NFT you hold, or manage one you own, directly through your wallet. Owner controls need no Domino sign-in.':'Pause, revoke permissions or recover assets of a sequence you own, directly through your wallet. Withdrawals have no Domino service fee.'}</p>
+      <p className="dm-acct-panel-note">{available?'Create a paused sequence from a position NFT you hold, or manage one you own, directly through your wallet. Creation and recovery need no Domino sign-in; activation checks your owner session and the live service.':'Pause, revoke permissions or recover assets of a sequence you own, directly through your wallet. Withdrawals have no Domino service fee.'}</p>
       {profile&&<Button className="justify-self-start" variant="outline" disabled={busy} onClick={()=>{void action(connect)}}>Read my sequences</Button>}
       {notice&&<p role="status" className="dm-acct-line dm-acct-wrap" data-notice-code={notice.code??undefined} data-notice-stage={notice.stage??undefined}>{notice.text}</p>}
       {client&&<p className="dm-acct-hash">Factory {client.deployment.factory} · {recovery?'Saved deployment':'Verified deployment'} · Auto-compound 2%; Domino-compound 4% of earned fees consumed, once. No fee on principal.</p>}
@@ -199,8 +227,9 @@ export default function Sequence() {
           {/* Activation is offered only while the service that runs automation is in operation: an owner may authorise the operator, but that
               alone runs nothing, and a resumed sequence with no service behind it would be announced as active for no reason. Every other
               control stays: pause, revocation, repair, withdrawal and recovery need no service. Paused/Active above is the chain's own word. */}
-          {!recovery&&state.paused&&!AUTOMATION_SERVICE.operational&&<p className="dm-acct-line dm-acct-wrap" data-automation-service="not-operational">{AUTOMATION_SERVICE.reason}</p>}
-          <div className="dm-acct-choices">{!recovery&&state.paused&&AUTOMATION_SERVICE.operational&&<Button disabled={busy||!state.rootPermissionValid||state.operator!==client.deployment.operator} onClick={()=>{void action(async()=>{const gen=generation.current,result=await client.resume(state.vault,gas());if(generation.current===gen)setPrepared(result)})}}>Review activation</Button>}<Button variant="outline" disabled={busy||state.paused} onClick={()=>{void action(()=>recover('pause'))}}>Review pause</Button><Button variant="outline" disabled={busy||state.operator==='0x0000000000000000000000000000000000000000'} onClick={()=>{void action(()=>recover('revoke-operator'))}}>Review operator revocation</Button>{state.operator==='0x0000000000000000000000000000000000000000'&&<Button variant="outline" disabled={busy} onClick={()=>{void action(async()=>{const gen=generation.current,result=await client.restoreOperator(state.vault,gas());if(generation.current===gen)setPrepared(result)})}}>Review operator authorisation</Button>}{!state.rootPermissionValid&&<Button variant="outline" disabled={busy} onClick={()=>{void action(()=>recover('rearm-root'))}}>Review root permission repair</Button>}<Button variant="outline" disabled={busy} onClick={()=>{void action(()=>recover('revoke-root'))}}>Review root NFT approval revocation</Button></div>
+          {!recovery&&state.paused&&!serviceReady&&<p className="dm-acct-line dm-acct-wrap" data-automation-service="not-operational">{session.kind==='signed_in'&&session.owner===connectedOwner?'The automation service is not ready for this sequence. Activation is unavailable.':'Sign in with this sequence owner wallet to check whether the automation service is ready before activation.'}</p>}
+          {!recovery&&state.paused&&!serviceReady&&session.kind==='signed_in'&&session.owner===connectedOwner&&<Button variant="outline" disabled={busy} onClick={()=>setReadinessRefresh(value=>value+1)}>Check automation service</Button>}
+          <div className="dm-acct-choices">{!recovery&&state.paused&&serviceReady&&<Button disabled={busy||!state.rootPermissionValid||state.operator!==client.deployment.operator} onClick={()=>{void action(async()=>{await requireServiceReady(state.vault);const gen=generation.current,result=await client.resume(state.vault,gas());if(generation.current===gen)setPrepared(result)})}}>Review activation</Button>}<Button variant="outline" disabled={busy||state.paused} onClick={()=>{void action(()=>recover('pause'))}}>Review pause</Button><Button variant="outline" disabled={busy||state.operator==='0x0000000000000000000000000000000000000000'} onClick={()=>{void action(()=>recover('revoke-operator'))}}>Review operator revocation</Button>{state.operator==='0x0000000000000000000000000000000000000000'&&<Button variant="outline" disabled={busy} onClick={()=>{void action(async()=>{const gen=generation.current,result=await client.restoreOperator(state.vault,gas());if(generation.current===gen)setPrepared(result)})}}>Review operator authorisation</Button>}{!state.rootPermissionValid&&<Button variant="outline" disabled={busy} onClick={()=>{void action(()=>recover('rearm-root'))}}>Review root permission repair</Button>}<Button variant="outline" disabled={busy} onClick={()=>{void action(()=>recover('revoke-root'))}}>Review root NFT approval revocation</Button></div>
           <details className="dm-details dm-acct-disclosure"><summary>Adjust automation rules</summary><div className="dm-acct-disclosure-body">
             <p className="dm-acct-line dm-acct-wrap">Choose the mode and its fee, then review the change before signing. The paused state stays unchanged. Simple Auto-compound requires a sequence with only its root registered.</p>
             {modeChoice('policy',policyMode)}

@@ -37,7 +37,7 @@ export function Settings() {
           <dl className="dm-acct-build">
             <Stat label="Chain">Robinhood</Stat>
             <Stat label="Chain id">{CAPABILITIES.chainId}</Stat>
-            <Stat label="Automated signing">{CAPABILITIES.signingEnabled ? 'Enabled' : 'Not connected'}</Stat>
+            <Stat label="Automated signing">External; checked per sequence</Stat>
             <Stat label="Wallet transactions">
               {__DOMINO_WALLET_SESSION__ && CAPABILITIES.walletTransactionsBuilt ? 'Built in; each step reviewed in wallet' : 'Off'}
             </Stat>

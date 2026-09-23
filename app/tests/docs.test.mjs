@@ -15,7 +15,7 @@ import { findForbidden } from '../scripts/deploy-markers.mjs';
 
 const require = createRequire(import.meta.url);
 const docs = require('../.test-build/app/src/lib/docs/registry.js');
-const { ROADMAP, AUTOMATION_SERVICE } = require('../.test-build/app/src/lib/capabilities.js');
+const { ROADMAP, ROADMAP_PILL } = require('../.test-build/app/src/lib/capabilities.js');
 
 const APP = resolve(import.meta.dirname, '..');
 const REPO = resolve(APP, '..');
@@ -226,7 +226,7 @@ test('the automation is Domino Compounder in the docs and Domino-compound in the
   assert.ok(lines.length >= 5, `${lines.length} lines name the sequence`);
   for (const line of lines) {
     for (const [phrase] of line.matchAll(/(?:\S+\s+){0,4}sequences?\b(?:\s+\S+)?/gi)) {
-      assert.match(phrase, /sequence vault|(your|the|its) sequence\b|Create or manage a sequence|^Sequence$/i, `"${phrase}" in: ${line}`);
+      assert.match(phrase, /sequence vault|sequence creation|(your|the|its|a new|each owner and|that exact) sequence\b|Create or manage a sequence|^Sequence$|^Per sequence$/i, `"${phrase}" in: ${line}`);
     }
   }
 });
@@ -304,10 +304,10 @@ test('figures: Domino history first where the deployment provides it, the provid
   for (const entry of DOC_PAGES) assert.doesNotMatch(textOf(entry), /as a market data provider reports it|reported by a provider and not reconciled by Domino/, entry.slug);
 });
 
-test('Auto-compound starts on any position NFT you hold, with three wallet transactions and the custody of Domino Compounder, and names no screen that starts it', () => {
+test('Auto-compound sets up on any position NFT you hold with two wallet transactions; activation is a separate conditional third step', () => {
   const auto = page('auto-compound');
   const start = sectionText(auto, 'where-it-starts');
-  assert.match(start, /Auto-compound runs on a position NFT you hold, wherever you opened it\. Starting it takes three wallet transactions: approve that one NFT to its sequence vault, create the sequence, which starts paused, then activate it\./);
+  assert.match(start, /Auto-compound runs on a position NFT you hold, wherever you opened it\. Setup takes two wallet transactions: approve that one NFT to its sequence vault, then create the sequence, which starts paused\. Activation is a separate wallet transaction when the service is ready for your sequence\./);
   assert.match(start, /Custody is the same as for Domino Compounder: the NFT stays in your wallet, and your sequence vault holds earned fees not yet reinvested until you withdraw them\./);
   assert.match(start, /Changes made to that NFT outside Domino can stop it: see Risks\./);
   // New position offers no automation choice any more, so the page no longer says choosing it there records anything.
@@ -353,8 +353,9 @@ test('the wallet, pools, fees, markets, new position, positions, risks and what 
     'Deposit drafts kept by the deposit service, and their receipts.',
     'The assisted swap quote in Setup.',
     'Managed positions and automation receipts, on Positions.',
+    'Checking whether the automation service is ready for your sequence before activation.',
   ]);
-  assert.match(sectionText(wallet, 'what-needs-sign-in'), /Neither do a setup operation’s steps \(fund, swap, mint and refund\) or the owner controls of your sequence vault: they work with your wallet alone\./);
+  assert.match(sectionText(wallet, 'what-needs-sign-in'), /Neither do a setup operation’s steps \(fund, swap, mint and refund\), sequence creation, pause, revocation, repair or withdrawal: they work with your wallet alone\. Activation also requires a live service check bound to your signed-in address and your sequence vault\./);
   assert.match(sectionText(wallet, 'sign-in'), /Only standard wallet accounts can sign in, not an address with contract code\./);
 
   // Outside its range a position holds one token, so the sentence says in range, and is written here, not imported.
@@ -468,26 +469,30 @@ test('the Uniswap addresses are the ones the backend is configured with, the Dom
   for (const entry of DOC_PAGES) for (const row of rowsOf(entry, 'addresses')) assert.match(row.address, /^0x[0-9a-f]{40}$/, `${entry.slug}: ${row.label}`);
 });
 
-test('Domino V1 is deployed and the automation service is not in operation: the pages say both, the sequence you create stays paused, and no page calls automation active or names a date', () => {
-  // The record is the source of both facts (handoff §4.2 and §8). When executionAvailable flips, the pages are rewritten, not this line.
+test('Domino V1 is deployed; owner-scoped automation copy keeps each new sequence paused until its own service check passes', () => {
   assert.equal(DEPLOYMENT.publicReleaseVersion, 1);
   assert.equal(DEPLOYMENT.contractsDeployed, true);
-  // The screen withholds activation from the same fact the record states. One cannot flip without the other.
-  assert.equal(AUTOMATION_SERVICE.operational, DEPLOYMENT.executionAvailable);
-  assert.equal(DEPLOYMENT.executionAvailable, false);
-  // The same note on both automation pages, under the "Not running" pill their status draws from ROADMAP.
-  const note = 'Not running\nAutomation is not running: the contracts are deployed on Robinhood Chain, and the service that carries it out is not in operation yet. Until it is, the sequence you create stays paused and activation is not offered. Pause, revocation, repair and withdrawal work all the same.';
-  assert.ok(sectionText(page('auto-compound'), 'where-it-starts').includes(note), 'Auto-compound says so where it starts');
-  assert.ok(sectionText(page('domino-compounder'), 'start-and-stop').includes(note), 'Domino Compounder says so where it starts');
-  // Activation takes the sequence out of pause; only a service in operation makes it do anything, so the step no longer says it starts automation.
+  for (const name of ['Compound', 'Fee-balancing swaps', 'Domino']) {
+    const entry = ROADMAP.find((row) => row.name === name);
+    assert.equal(entry.status, 'owner-scoped');
+    assert.equal(ROADMAP_PILL[entry.status], 'Per sequence');
+    assert.doesNotMatch(entry.note, /not running|not in operation/i);
+  }
+  for (const [slug, section] of [['auto-compound', 'where-it-starts'], ['domino-compounder', 'start-and-stop']]) {
+    const copy = sectionText(page(slug), section);
+    assert.match(copy, /Per sequence\nAutomation availability is checked for each owner and sequence\./);
+    assert.match(copy, /signed-in owner can review activation only when the live service confirms readiness for that vault/);
+    assert.match(copy, /does not offer activation when the check fails/);
+  }
   const activate = blocksOf(page('domino-compounder')).find((block) => block.kind === 'steps').items.find((step) => step.title === 'Activate it');
-  assert.equal(inlineText(activate.body), 'A separate transaction takes the sequence out of pause. Signing in or opening a page never does.');
-  assert.match(sectionText(page('what-is-domino'), 'your-wallet-signs'), /The service behind that operator is not in operation yet\. Until it is, the sequence you create stays paused, activation is not offered, and every other owner control still works\./);
+  assert.match(inlineText(activate.body), /After the service confirms readiness for your sequence, a separate wallet transaction takes it out of pause\. Signing in or opening a page never does\./);
+  assert.match(sectionText(page('what-is-domino'), 'your-wallet-signs'), /offers activation only to its signed-in owner after the live service confirms readiness for that exact sequence/);
   assert.match(sectionText(page('what-is-domino'), 'built-on-uniswap'), /Domino’s own contracts, Domino V1, are deployed there as well: Setup opens positions, and a factory creates your sequence vault\./);
-  assert.match(sectionText(page('contracts'), 'domino-contracts'), /deployed on Robinhood Chain as Domino V1\.[\s\S]*The service that carries out automation is not in operation yet/);
+  assert.match(sectionText(page('contracts'), 'domino-contracts'), /deployed on Robinhood Chain as Domino V1\.[\s\S]*Service readiness is checked for each owner and vault/);
+  assert.match(sectionText(page('wallet'), 'what-needs-sign-in'), /Checking whether the automation service is ready for your sequence before activation/);
   for (const entry of DOC_PAGES) {
     const text = textOf(entry);
-    assert.doesNotMatch(text, /automation is (?:now )?(?:active|running|live|on|in operation)\b|active automation|automation (?:now )?runs\b/i, entry.slug);
+    assert.doesNotMatch(text, /automation is (?:now )?(?:active|running|live|on|in operation)\b|active automation|automation (?:now )?runs\b|automation is not running|service (?:that carries it out )?is not in operation/i, entry.slug);
     // No date and no promise; the public name is Domino V1, and the implementation's own version number stays out of the client's docs.
     assert.doesNotMatch(text, /\bsoon\b|\bshortly\b|\bwill be\b|\bplanned\b|\broadmap\b|version 4|implementation version/i, entry.slug);
   }

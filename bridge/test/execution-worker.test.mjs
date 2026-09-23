@@ -9,3 +9,10 @@ function harness(value=f.responses['status.reserved']){const calls=[];return {ca
 test('receipt bridge validates and forwards only its fixed private identity',async()=>{const h=harness();const res=await h.worker.fetch(request(),env);assert.equal(res.status,200,await res.clone().text());assert.equal(h.calls[0].url,env.EXECUTION_GATEWAY_ORIGIN+'/internal/execution/v1/status');const headers=new Headers(h.calls[0].init.headers);assert.equal(headers.get('Cookie'),null);assert.equal(headers.get('X-Domino-Session'),'s'.repeat(43));assert.equal(res.headers.get('Set-Cookie'),null)});
 test('owner injection, missing CSRF and disabled bridge cannot reach upstream',async()=>{for(const [body,headers,settings,status] of [[{...f.requests.status,owner:'0x'+'a'.repeat(40)},{},env,400],[f.requests.status,{'X-Domino-CSRF':''},env,403],[f.requests.status,{},{...env,EXECUTION_BRIDGE_ENABLED:'false'},404]]){const h=harness();assert.equal((await h.worker.fetch(request('status',body,headers),settings)).status,status);assert.equal(h.calls.length,0)}});
 test('wrong intent, stale keyset and signed bytes are refused',async()=>{const item=f.responses['status.reserved'].item;for(const value of [{...f.responses['status.reserved'],item:{...item,intentId:'0x'+'b'.repeat(64)}},{...f.responses['status.reserved'],item:{...item,signedBytes:'0x1234'}}])assert.equal((await harness(value).worker.fetch(request(),env)).status,502);const page={...f.responses['list.empty'],items:[item]};assert.equal((await harness(page).worker.fetch(request('list',{afterIntentId:item.intentId,limit:1}),env)).status,502)});
+test('availability bridge binds the response to the requested vault',async()=>{
+  const ready=f.responses['availability.ready'],body=f.requests.availability;
+  const h=harness(ready),good=await h.worker.fetch(request('availability',body),env);
+  assert.equal(good.status,200,await good.clone().text());
+  assert.equal(h.calls[0].url,env.EXECUTION_GATEWAY_ORIGIN+'/internal/execution/v1/availability');
+  assert.equal((await harness({...ready,vault:'0x'+'7'.repeat(40)}).worker.fetch(request('availability',body),env)).status,502);
+});

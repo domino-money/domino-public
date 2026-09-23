@@ -678,18 +678,18 @@ test('the deployable build carries the live read path and the selected pools, no
 
 // Changed on purpose (review:wallet, wording on scoped screens): the build card's footnote is gone. It was a caption about where live reads
 // come from, and its "Nothing in this build signs a transaction…" was false in this build, whose Setup and sequences do prepare wallet steps.
-test('Settings distinguishes disconnected automated signing from wallet transactions reviewed step by step, with no caption about data sources; no practice mode is left', async () => {
+test('Settings describes owner-scoped automated signing and wallet transactions reviewed step by step, with no caption about data sources; no practice mode is left', async () => {
   const page = await open('/settings');
   const text = await page.locator('#root').innerText();
   // The stat labels are set in capitals by the stylesheet, and innerText follows that.
-  assert.match(text, /AUTOMATED SIGNING\s+Not connected/);
+  assert.match(text, /AUTOMATED SIGNING\s+External; checked per sequence/);
   assert.match(text, /WALLET TRANSACTIONS\s+Built in; each step reviewed in wallet/);
   assert.doesNotMatch(text, /Nothing in this build signs|grants a spending permission or moves funds/, 'no claim this build contradicts');
   assert.doesNotMatch(text, /Live reads are built in|switched on by the read service/, 'no caption about where data comes from');
-  // Domino V1 is deployed: the owner's wallet flows are connected and wear no pill; the automatic cycle is not running and says so.
+  // Domino V1 is deployed: owner's wallet flows have no pill; service readiness is checked for each sequence.
   for (const name of ['Compound', 'Fee-balancing swaps', 'Domino']) {
     const row = page.locator('.dm-acct-cap').filter({ has: page.locator('.dm-acct-cap-name', { hasText: new RegExp(`^${name}$`) }) });
-    assert.equal(await row.locator('.dm-pill').innerText(), 'Not running', `${name} wears ROADMAP’s pill`);
+    assert.equal(await row.locator('.dm-pill').innerText(), 'Per sequence', `${name} wears ROADMAP’s pill`);
   }
   const permissions = page.locator('.dm-acct-cap', { hasText: 'Wallet permissions' });
   assert.match(await permissions.innerText(), /^Wallet permissions\s+Sign-in proves your address\./);
@@ -803,9 +803,10 @@ test('the explanatory sections stay, in relative terms, and say plainly what is 
   }
   // The Uniswap strip, the old headlines and the simulator's explanation are gone (owner, 2026-09-14).
   assert.doesNotMatch(text, /Built on Uniswap|Put fees to work|one tile at a time|Choose what fees do|A position opened at the start price/);
-  // The automatic cycle is not running, and every place that describes it says so in those words; the marketing cards that only said so are gone.
-  assert.ok((text.match(/Not running/g) ?? []).length >= 2, 'the feature cards and the Domino hand-off say so');
-  assert.equal(await page.locator('#learn .dm-pill', { hasText: 'Not running' }).count(), 1, 'the Automation step of How it works wears ROADMAP’s pill');
+  // The landing page describes owner-scoped availability without claiming the service is on or off for everyone.
+  assert.ok((text.match(/Per sequence/g) ?? []).length >= 2, 'the feature cards and the Domino hand-off say so');
+  assert.equal(await page.locator('#learn .dm-pill', { hasText: 'Per sequence' }).count(), 1, 'the Automation step of How it works wears ROADMAP’s pill');
+  assert.doesNotMatch(text, /Not running|automation is running/i);
   // The pools card has no caption any more (the owner's decision on the redesign): each figure names its source and age in its own title.
   assert.doesNotMatch(text, /Every figure on this page names its source and its age|describes a pool, not a position, and is not a forecast/);
   // The product describes itself as the product, never as an unfinished one.

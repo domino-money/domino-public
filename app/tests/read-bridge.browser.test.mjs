@@ -290,13 +290,13 @@ test('the bridge build reads through the same-origin bridge, adds no credential 
 });
 
 // Settings' footnote (live reads built in, nothing signs) is gone on purpose (review:wallet): a caption about data sources, false in wallet builds.
-test('Settings in the bridge-test build says what dist says: automated signing not connected, and no caption about data sources', async () => {
+test('Settings in the bridge-test build says that automation is checked per sequence, and has no caption about data sources', async () => {
   const { context, page } = await visit();
   await page.evaluate(() => { location.hash = '#/settings'; });
   await page.waitForTimeout(150);
   const text = await page.locator('#root').innerText();
   // The stat label is set in capitals by the stylesheet, and innerText follows that.
-  assert.match(text, /AUTOMATED SIGNING\s+Not connected/, 'the read bridge never enables the executor');
+  assert.match(text, /AUTOMATED SIGNING\s+External; checked per sequence/, 'the read bridge never enables the executor');
   assert.match(text, /WALLET TRANSACTIONS\s+Off/, 'this read-only build carries no wallet transaction handoff');
   assert.doesNotMatch(text, /Live reads are built in|Nothing in this build signs a transaction/);
   await closeContext(context);

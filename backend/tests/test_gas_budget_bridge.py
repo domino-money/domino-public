@@ -14,7 +14,7 @@ from unittest.mock import patch
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from gas_budget_bridge import GasBudgetClient, _dispatch, serve_one
-from gas_usd_budget import GasBudgetError
+from gas_usd_budget import GasBudgetError, GasBudgetService, GasUsdBudget, EthUsdReader
 
 
 PUBLISHER = '0x' + '11' * 20
@@ -35,6 +35,10 @@ class FakeService:
         self.calls.append(('reserve_pair', args))
         return {'publisher': RESERVED, 'operator': RESERVED}
 
+    def health(self):
+        self.calls.append(('health', ()))
+        return True
+
     def require_reservation(self, *args):
         self.calls.append(('require_reservation', args))
 
@@ -44,6 +48,62 @@ class FakeService:
 
 
 class BridgeTests(unittest.TestCase):
+    def test_health_requires_a_responding_peer_and_validates_its_boolean_ack(self):
+        service = FakeService()
+        with tempfile.TemporaryDirectory() as directory:
+            path = str(Path(directory) / 'budget.sock')
+            with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as listener:
+                listener.bind(path)
+                os.chmod(path, 0o660)
+                client = GasBudgetClient(path, server_uid=os.getuid())
+                with self.assertRaisesRegex(GasBudgetError, 'gas_budget_unavailable'):
+                    client.health()  # The inode exists, but nothing listens.
+                listener.listen(1)
+                def handle():
+                    conn, _ = listener.accept()
+                    with conn:
+                        serve_one(conn, service, {os.getuid(): {'health'}})
+                thread = threading.Thread(target=handle)
+                thread.start()
+                with patch('gas_budget_bridge._peer_credentials',
+                           return_value=(os.getpid(), os.getuid(), os.getgid())):
+                    self.assertTrue(client.health())
+                thread.join(timeout=3)
+                self.assertFalse(thread.is_alive())
+                self.assertEqual(service.calls, [('health', ())])
+        self.assertFalse(_dispatch(type('Spent', (), {'health': lambda self: False})(),
+                                   {'operation': 'health', 'args': []}, {'health'}))
+        with self.assertRaisesRegex(GasBudgetError, 'gas_budget_unavailable'):
+            _dispatch(service, {'operation': 'health', 'args': []}, {'attest_settlement_quote'})
+        with patch('gas_budget_bridge._peer_credentials',
+                   return_value=(os.getpid(), os.getuid(), os.getgid())):
+            with patch('gas_budget_bridge.os.stat') as stat_call, patch('gas_budget_bridge.socket.socket') as socket_call:
+                stat_call.return_value.st_mode = stat.S_IFSOCK | 0o660
+                stat_call.return_value.st_uid = os.getuid()
+                socket_call.return_value.__enter__.return_value.recv.return_value = b'{"ok":1}\n'
+                with self.assertRaisesRegex(GasBudgetError, 'gas_budget_protocol'):
+                    client.health()
+
+    def test_health_checks_budget_and_quote_without_reserving(self):
+        class Connection:
+            def __enter__(self): return self
+            def __exit__(self, *_): return False
+        service = GasBudgetService({'host': '/tmp/test', 'port': 5432, 'dbname': 'domino_catalogue'},
+                                   object(), connect=lambda **kwargs: Connection())
+        with patch.object(GasUsdBudget, 'status', return_value={'remainingUsdMicros': 10}) as status, \
+             patch.object(EthUsdReader, 'quote', return_value=object()) as quote:
+            self.assertTrue(service.health())
+            self.assertEqual(status.call_count, 1)
+            self.assertEqual(quote.call_count, 2)
+        with patch.object(GasUsdBudget, 'status', return_value={'remainingUsdMicros': 10}), \
+             patch.object(EthUsdReader, 'quote', side_effect=[object(), GasBudgetError('gas_quote_block_stale')]):
+            with self.assertRaisesRegex(GasBudgetError, 'gas_quote_block_stale'):
+                service.health()
+        with patch.object(GasUsdBudget, 'status', return_value={'remainingUsdMicros': 0}), \
+             patch.object(EthUsdReader, 'quote') as quote:
+            self.assertFalse(service.health())
+            quote.assert_not_called()
+
     def test_client_reaches_only_the_allowed_local_peer_and_validates_ack(self):
         service = FakeService()
         with tempfile.TemporaryDirectory() as directory:

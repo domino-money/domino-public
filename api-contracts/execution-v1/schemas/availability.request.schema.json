@@ -1,0 +1,17 @@
+{
+  "additionalProperties": false,
+  "properties": {
+    "vault": {
+      "maxLength": 42,
+      "minLength": 42,
+      "pattern": "^0x[0-9a-f]{40}$(?![\\s\\S])",
+      "title": "Vault",
+      "type": "string"
+    }
+  },
+  "required": [
+    "vault"
+  ],
+  "title": "AvailabilityRequest",
+  "type": "object"
+}

@@ -2109,7 +2109,7 @@ test('a receipt whose transaction went to another address, or carried other call
   } finally { await s.close(); }
 });
 
-test('while the service that runs automation is not in operation a paused sequence is not offered activation and says why, with every other control in place; an active one says nothing', async () => {
+test('when service readiness is unavailable for this vault, activation is withheld while other owner controls remain', async () => {
   const s = await scenario(), chain = fakeSequenceChain(OWNER, { roots: [100n], paused: true });
   try {
     const main = await openSequenceControls(s, chain);
@@ -2117,7 +2117,7 @@ test('while the service that runs automation is not in operation a paused sequen
     await main.getByRole('button', { name: 'Read owned sequence', exact: true }).click();
     const why = main.locator('[data-automation-service="not-operational"]');
     await why.waitFor();
-    assert.equal(await why.innerText(), 'This sequence stays paused: the service that runs automation is not in operation, so activation is not offered.');
+    assert.equal(await why.innerText(), 'The automation service is not ready for this sequence. Activation is unavailable.');
     assert.doesNotMatch(await why.innerText(), FORBIDDEN);
     assert.equal(await main.getByRole('button', { name: 'Review activation' }).count(), 0, 'no activation while nothing would run');
     assert.match(await main.innerText(), /Root NFT #100 · Paused · Operator 0x/, 'the chain’s own state is still said as the chain says it');
@@ -2140,6 +2140,36 @@ test('while the service that runs automation is not in operation a paused sequen
     assert.equal(await main.locator('[data-automation-service]').count(), 0, 'an active sequence has no activation to withhold');
     assert.equal(await main.getByRole('button', { name: 'Review activation' }).count(), 0);
   } finally { await active.close(); }
+});
+
+test('a fresh owner-scoped service reply offers activation, then a failed recheck closes it before review', async () => {
+  const chain = fakeSequenceChain(OWNER, { roots: [100n], paused: true });
+  let operational = true;
+  const reads = [];
+  const s = await scenario({ routes: [async (request, url) => {
+    if (url.pathname !== '/api/execution/v1/availability') return;
+    const body = JSON.parse(await request.text());
+    reads.push(body);
+    const now = Math.floor(Date.now() / 1000);
+    return json({ contractVersion: executionRuntime.CONTRACT_VERSION, chainId: 4663, owner: OWNER,
+      vault: body.vault, operational, checkedAtEpoch: now, expiresAtEpoch: operational ? now + 10 : now }, 200,
+    { 'X-Domino-Execution-Contract': executionRuntime.CONTRACT_VERSION });
+  }] });
+  try {
+    const main = await openSequenceControls(s, chain);
+    await main.getByLabel('Sequence address').fill(chain.vaults[0]);
+    await main.getByRole('button', { name: 'Read owned sequence', exact: true }).click();
+    const activation = main.getByRole('button', { name: 'Review activation', exact: true });
+    await activation.waitFor();
+    assert.deepEqual(reads, [{ vault: chain.vaults[0] }]);
+    operational = false;
+    await activation.click();
+    await main.locator('[data-automation-service="not-operational"]').waitFor();
+    assert.equal(await activation.count(), 0);
+    assert.equal(await main.getByRole('region', { name: 'Sequence wallet review' }).count(), 0);
+    assert.equal(chain.sends.length, 0);
+    assert.deepEqual(reads, [{ vault: chain.vaults[0] }, { vault: chain.vaults[0] }]);
+  } finally { await s.close(); }
 });
 
 // ---- The guided creation: from a position link, two reviewed steps, no session ------------------------------------
@@ -2366,7 +2396,7 @@ test('from a position link, a connected wallet without a session puts the NFT un
     await created.waitFor({ timeout: 30_000 });
     assert.equal(await panel.getAttribute('data-sequence-create'), 'done');
     assert.match(await created.innerText(), new RegExp(`^Domino-compound is set up for position NFT ${ROOT}\\s+Sequence ${vault} · paused · operator 0x[0-9a-f]{4}…[0-9a-f]{4} · your NFT stays in your wallet\\.`));
-    assert.equal(await created.locator('[data-automation-service="not-operational"]').innerText(), 'This sequence stays paused: the service that runs automation is not in operation, so activation is not offered.');
+    assert.match(await created.innerText(), /Activation is a separate owner transaction\. Owner controls offer it only after a live service check\./);
     assert.equal(await panel.locator('[data-sequence-create-review]').count(), 0, 'nothing left to send');
     assert.equal(await panel.locator('[data-notice-code]').count(), 0, 'no error code beside any sentence');
     assert.doesNotMatch(await panel.innerText(), FORBIDDEN);

@@ -1,5 +1,78 @@
 // Generated.
 export const SCHEMAS = {
+  "availability": {
+    "request": {
+      "additionalProperties": false,
+      "properties": {
+        "vault": {
+          "maxLength": 42,
+          "minLength": 42,
+          "pattern": "^0x[0-9a-f]{40}$(?![\\s\\S])",
+          "title": "Vault",
+          "type": "string"
+        }
+      },
+      "required": [
+        "vault"
+      ],
+      "title": "AvailabilityRequest",
+      "type": "object"
+    },
+    "response": {
+      "additionalProperties": false,
+      "properties": {
+        "chainId": {
+          "const": 4663,
+          "title": "Chainid",
+          "type": "integer"
+        },
+        "checkedAtEpoch": {
+          "minimum": 0,
+          "title": "Checkedatepoch",
+          "type": "integer"
+        },
+        "contractVersion": {
+          "const": "1.0.0-rc.1",
+          "title": "Contractversion",
+          "type": "string"
+        },
+        "expiresAtEpoch": {
+          "minimum": 0,
+          "title": "Expiresatepoch",
+          "type": "integer"
+        },
+        "operational": {
+          "title": "Operational",
+          "type": "boolean"
+        },
+        "owner": {
+          "maxLength": 42,
+          "minLength": 42,
+          "pattern": "^0x[0-9a-f]{40}$(?![\\s\\S])",
+          "title": "Owner",
+          "type": "string"
+        },
+        "vault": {
+          "maxLength": 42,
+          "minLength": 42,
+          "pattern": "^0x[0-9a-f]{40}$(?![\\s\\S])",
+          "title": "Vault",
+          "type": "string"
+        }
+      },
+      "required": [
+        "contractVersion",
+        "chainId",
+        "owner",
+        "vault",
+        "operational",
+        "checkedAtEpoch",
+        "expiresAtEpoch"
+      ],
+      "title": "AvailabilityResponse",
+      "type": "object"
+    }
+  },
   "list": {
     "request": {
       "additionalProperties": false,

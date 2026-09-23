@@ -137,8 +137,8 @@ test('GUARD-5: the consumer is reached only through the two flag-gated lab scree
 
   const importersOf = (wanted) =>
     ALL.filter(({ path, code }) => specifiers(code).some((spec) => spec.startsWith('.') && target(path, spec) === wanted)).map(({ path }) => path);
-  // Setup's preview consumer reads the session through the live port, as Performance and Execution do; New position does not.
-  assert.deepEqual(importersOf('session/livePort'), ['finance/wallet.ts', 'screens/AdvancedSetup.tsx', 'screens/Execution.tsx', 'screens/LivePreview.tsx', 'screens/Performance.tsx', 'screens/Setup.tsx']);
+  // Setup's preview consumer reads the session through the live port, as Performance, Execution and the owner-only sequence activation check do; New position does not.
+  assert.deepEqual(importersOf('session/livePort'), ['finance/wallet.ts', 'screens/AdvancedSetup.tsx', 'screens/Execution.tsx', 'screens/LivePreview.tsx', 'screens/Performance.tsx', 'screens/Sequence.tsx', 'screens/Setup.tsx']);
   // Create position's chunk and what it is made of ask no preview and read no session: it signs through the wallet alone.
   for (const path of ['components/create/DepositAmounts.tsx', 'components/create/CreatePosition.tsx', 'components/create/StageReview.tsx', 'lib/create/depositPlan.ts', 'lib/create/createProgress.ts']) {
     const targets = specifiers(byPath(path).code).filter((spec) => spec.startsWith('.')).map((spec) => target(path, spec));

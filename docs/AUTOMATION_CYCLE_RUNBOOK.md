@@ -79,13 +79,16 @@ values. They are not production values.
    `033_gas_budget_claim_read.sql`, `034_gas_settlement_sweep.sql`,
    `035_cancel_unsigned_gas_claims.sql`, `036_gas_settlement_journal_read.sql` and
    `037_gas_settlement_receipt_evidence.sql` and
-   `038_gas_settlement_quote_witness.sql` (after the financial upgrade's 015 and 019; 028 creates
+   `038_gas_settlement_quote_witness.sql`, `039_automation_readiness.sql` and
+   `040_gas_finalized_quote_lag.sql` (after the financial upgrade's 015 and 019; 028 creates
    the `domino_execution_publisher` role, 029 adds the ledger reader's tables to the
    existing `domino_execution_ledger` role, 030 the pools' shared swap budget and the
    failure count, 031 lets an expired publication be sent again; 032–038 install
    the shared USD gas cap, settlement claim reader, rotating cursor and a guarded
    unsigned cancellation tombstone, scoped settlement witnesses and an
-   append-only reverted operator receipt) and the peer
+   append-only reverted operator receipt; 039 exposes owner-scoped readiness;
+   040 permits a canonical finalized gas quote up to 30 minutes old while
+   reservation quotes retain their 180-second ceiling) and the peer
    mappings from the service user to `domino_execution_worker`, `domino_execution_signer`,
    `domino_execution_publisher` and `domino_execution_ledger`. The two gas
    privilege roles remain `NOLOGIN`, behind separate peer-login bridge identities.
@@ -187,7 +190,7 @@ Deploying the contracts did not enable this. To activate, in order and recorded:
 
 1. A verified production configuration (this document's table), with a gas pool for
    every non-ETH quote currency and the gas units re-measured on the deployed contracts.
-2. Migrations 028 to 038 applied; the four execution roles and two isolated gas
+2. Migrations 028 to 040 applied; the four execution roles and two isolated gas
    peers verified, with the reservation and settlement runtime boundary and
    receipt sweep tested end to end.
 3. Both keys placed and funded; the guard's publisher equal to the publisher key.

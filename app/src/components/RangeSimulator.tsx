@@ -100,7 +100,7 @@ export function RangeSimulator() {
               <p className={cx('text-body font-medium', nearTop ? 'text-accent-fg' : 'text-fg')}>
                 {nearTop ? 'This is where Domino steps in' : `Above ${times(triggerFrom)}, Domino steps in`}
               </p>
-              {/* ROADMAP's pill while Domino does not run here; nothing once it does. */}
+              {/* ROADMAP's pill describes owner-scoped readiness for Domino. */}
               <RoadmapPill name="Domino" />
             </div>
             <p className={cx('mt-1.5 text-body', nearTop ? 'text-accent-fg' : 'text-fg-muted')}>

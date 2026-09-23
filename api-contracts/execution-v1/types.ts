@@ -43,6 +43,20 @@ export type Status = {
   "canCancel": boolean;
 };
 
+export type AvailabilityRequest = {
+  "vault": string;
+};
+
+export type AvailabilityResponse = {
+  "contractVersion": "1.0.0-rc.1";
+  "chainId": 4663;
+  "owner": string;
+  "vault": string;
+  "operational": boolean;
+  "checkedAtEpoch": number;
+  "expiresAtEpoch": number;
+};
+
 export type ListRequest = {
   "afterIntentId"?: string | null;
   "limit"?: number;
@@ -70,11 +84,13 @@ export type StatusResponse = {
 };
 
 export interface ExecutionRequests {
+  "availability": AvailabilityRequest;
   "list": ListRequest;
   "status": StatusRequest;
 }
 
 export interface ExecutionResponses {
+  "availability": AvailabilityResponse;
   "list": ListResponse;
   "status": StatusResponse;
 }

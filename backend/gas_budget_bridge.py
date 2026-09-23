@@ -21,6 +21,7 @@ from bridge_state import strict_json
 from execution_signer import ExecutionRpc
 from execution_status_runtime import private_file
 from gas_usd_budget import GasBudgetError, GasBudgetService
+from read_deadline import read_timeout
 
 
 SOCKET_PATH = '/run/domino-gas-reservation.sock'
@@ -29,6 +30,7 @@ SIGNING_CLIENT_USERS = ('domino-automation', 'domino-execution-signer')
 SETTLEMENT_CLIENT_USER = 'domino-gas-settlement'
 MAX_MESSAGE = 4096
 OPERATIONS = {
+    'health': 0,
     'reserve_pair': 6,
     'reserve_one': 4,
     'require_reservation': 4,
@@ -119,8 +121,10 @@ class GasBudgetClient:
         self.path = path
         self.server_uid = server_uid
 
-    def _request(self, operation, args):
+    def _request(self, operation, args, *, timeout=30):
         if operation not in OPERATIONS or len(args) != OPERATIONS[operation]:
+            raise GasBudgetError('gas_budget_protocol')
+        if type(timeout) not in (int, float) or not 0 < timeout <= 30:
             raise GasBudgetError('gas_budget_protocol')
         server_uid = _uid(SERVER_USER) if self.server_uid is None else self.server_uid
         try:
@@ -129,7 +133,7 @@ class GasBudgetClient:
                     or stat.S_IMODE(info.st_mode) != 0o660):
                 raise GasBudgetError('gas_budget_unavailable')
             with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as conn:
-                conn.settimeout(30)
+                conn.settimeout(read_timeout(timeout))
                 conn.connect(self.path)
                 peer = _peer_credentials(conn)
                 # With systemd socket activation PID 1 calls listen(), so Linux
@@ -149,6 +153,7 @@ class GasBudgetClient:
                 raise GasBudgetError('gas_budget_protocol')
             value = result['ok']
             if (operation.startswith('require_') and value is not None
+                    or operation == 'health' and type(value) is not bool
                     or operation == 'reserve_one' and not _valid_reservation(value)
                     or operation == 'reserve_pair' and
                     (type(value) is not dict or set(value) != {'publisher', 'operator'}
@@ -160,6 +165,10 @@ class GasBudgetClient:
             raise
         except (OSError, ValueError, TypeError, KeyError):
             raise GasBudgetError('gas_budget_unavailable') from None
+
+    def health(self):
+        """Read-only peer/DB/quote check, with no claim or signer authority."""
+        return self._request('health', (), timeout=8)
 
     def reserve_pair(self, publication_id, publisher, publisher_max_wei,
                      intent_id, operator, operator_max_wei):

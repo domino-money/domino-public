@@ -22,7 +22,7 @@ import general_compound_receipts as g
 from automation_config import AutomationConfig
 from automation_evidence import PPM, SWAP_WINDOW_BLOCKS, build_evidence, exposure_ppm
 from automation_ledger import LedgerIndexStore, LedgerIndexer
-from automation_observer import (ChainReader, ObservationError, derive_admission, ledger_balances, measurement_history,
+from automation_observer import (POLICY_TYPE, ChainReader, ObservationError, derive_admission, ledger_balances, measurement_history,
                                  observe_sequence, sample_pool)
 from automation_plan import PlanError, build_execution_plan, observation_id, observation_point
 from automation_store import CycleStore
@@ -30,7 +30,7 @@ from execution_runner import ExecutionRunner
 from execution_signer import ExecutionError, ExecutionRpc, RestrictedSigner, SignerPolicy
 from execution_store import ExecutionStoreError, UnsignedExecutionStore, _model
 from gas_budget_bridge import GasBudgetClient
-from gas_usd_budget import GasBudgetError
+from gas_usd_budget import GasBudgetError, QuotePolicy
 from publisher_signer import PublicationJournal, PublisherPolicy, PublisherSigner
 from read_deadline import read_deadline
 
@@ -42,6 +42,83 @@ MAX_SUMMARY_CANDIDATES = 16
 ATTEMPT_WINDOW = 20
 PUBLICATION_POLL_SECONDS = 0.1
 EXECUTION_POLL_SECONDS = 0.5
+READINESS_MAX_INTERVAL_SECONDS = 15
+
+
+def service_readiness_probe(cycle, entry):
+    """Read-only proof of the gas peer, chain RPC and current vault admission.
+
+    A due-state skip alone never reads the chain. Check the same private peer
+    that must reserve gas, an available finalized head, and the vault's live
+    owner, root permission, operator and policy. A paused vault may be ready
+    for its owner to Resume. Settlement also requires a fresh finalized quote.
+    """
+    try:
+        peer = cycle.gas_budget
+        if not isinstance(peer, GasBudgetClient):
+            return False
+        with read_deadline(12):
+            if peer.health() is not True:
+                return False
+            reader = cycle.reader
+            reader.reset()
+            if g._quantity(reader.request('eth_chainId', ())) != 4663:
+                return False
+            head = reader.head()
+            finalized = reader.finalized()
+            now = cycle.clock()
+            if not (0 < finalized['number'] <= head['number']
+                    and finalized['timestamp'] <= head['timestamp'] <= now + 5
+                    and now - head['timestamp'] <= QuotePolicy().max_head_age_seconds
+                    and now - finalized['timestamp'] <= QuotePolicy().max_finalized_lag_seconds):
+                return False
+            derive_admission(reader, cycle.config.deployment, entry.owner, entry.vault, head)
+            policy = reader.call(entry.vault, 'policy()', [POLICY_TYPE], head)[0]
+            operator = reader.call(entry.vault, 'operator()', ['address'], head)[0]
+            enabled = reader.call(entry.vault, 'isOperator(address)', ['bool'], head,
+                                  ['address'], [cycle.config.deployment.operator])[0]
+            root_permission = reader.call(entry.vault, 'rootPermissionValid()', ['bool'], head)[0]
+            deployment = cycle.config.deployment
+            return (operator.lower() == deployment.operator and enabled is True
+                    and root_permission is True
+                    and (policy[0] == deployment.dominoServiceFeeBps
+                         or policy[0] == deployment.serviceFeeBps and policy[4] == 1))
+    except Exception:
+        return False
+
+
+def service_ready_after_pass(cycle, entry, summary, infrastructure_ready=False):
+    """Only the live serve loop can advertise a short-lived owner activation gate.
+
+    This says that this worker handled the admitted vault and its signing lane is
+    configured. It is not a promise that a future cycle will be economical or
+    that a transaction will succeed; all execution checks remain independent.
+    """
+    config = cycle.config
+    outcome = summary.get('outcome')
+    if (not infrastructure_ready
+            or outcome not in ('wait', 'not_due', 'completed', 'executing')
+            or (outcome == 'not_due' and summary.get('readinessQualified') is not True)
+            or (outcome == 'wait' and
+                (type(summary.get('decision')) is not dict
+                 or summary['decision'].get('observationDiagnostics') != []))
+            or config.paused or entry.suspended
+            or cycle.clock() >= min(entry.expiresAt, config.deployment.expiresAt)
+            or config.scheduling.evaluationIntervalSeconds > READINESS_MAX_INTERVAL_SECONDS
+            or not config.operator.policy.enabled or not config.publisher.enabled
+            or cycle.operator_key is None or cycle.publisher is None
+            or cycle.publisher.address != config.deployment.pricePublisher):
+        return False
+    try:
+        from eth_account import Account
+        if Account.from_key(cycle.operator_key).address.lower() != config.deployment.operator:
+            return False
+        if cycle.store.control(entry.owner, 'paused') is True:
+            return False
+        return True
+    except Exception:
+        # A readiness probe must fail closed even if a key decoder raises.
+        return False
 
 
 class CycleError(ValueError):
@@ -205,7 +282,8 @@ class SequenceCycle:
             if known and not any(k['open'] or k['nextDueEpoch'] <= self.clock() for k in known):
                 # Not due, nothing open to resume: no chain read, no lease, no evaluation.
                 return {'sequenceHash': known[0]['sequenceHash'], 'owner': owner, 'vault': entry.vault, 'worker': self.worker,
-                        'outcome': 'not_due', 'nextDueEpoch': min(k['nextDueEpoch'] for k in known)}
+                        'outcome': 'not_due', 'nextDueEpoch': min(k['nextDueEpoch'] for k in known),
+                        'readinessQualified': all(k['readinessQualified'] for k in known)}
         head, source = self._source()
         admission = derive_admission(self.reader, self.config.deployment, owner, entry.vault, head)
         seq_hash = admission.sequence.digest()
@@ -801,17 +879,21 @@ def serve(cycle, *, stop, sleep=time.sleep, log=print):
     interval = cycle.config.scheduling.evaluationIntervalSeconds
     while not stop():
         due = []
+        finality_ready = True
         try:
             cycle.finalize_publications()
         except (ExecutionStoreError, ExecutionError) as error:
+            finality_ready = False
             log(json.dumps({'event': 'publication_finality',
                             'code': getattr(error, 'code', 'publisher_finality_unavailable')}))
         except Exception:
+            finality_ready = False
             log(json.dumps({'event': 'publication_finality',
                             'code': 'publisher_finality_unavailable'}))
         for entry in cycle.config.sequences:
             if stop():
                 break
+            summary = None
             try:
                 summary = cycle.run(entry, respect_due=True)
                 due.append(summary.get('nextDueEpoch'))
@@ -823,6 +905,15 @@ def serve(cycle, *, stop, sleep=time.sleep, log=print):
                 log(json.dumps({'event': 'refused', 'code': getattr(error, 'code', 'automation_unavailable'), 'vault': entry.vault}))
             except Exception:
                 log(json.dumps({'event': 'error', 'code': 'automation_unavailable', 'vault': entry.vault}))
+            try:
+                # Probe after the cycle: a long pass may outlive earlier health
+                # evidence. Admission is owner/vault specific, never shared.
+                infrastructure_ready = service_readiness_probe(cycle, entry)
+                cycle.store.record_readiness(entry.owner, entry.vault,
+                    service_ready_after_pass(cycle, entry, summary or {},
+                                             finality_ready and infrastructure_ready))
+            except ExecutionStoreError as error:
+                log(json.dumps({'event': 'readiness', 'code': error.code, 'vault': entry.vault}))
         now = cycle.clock()
         pause = min((d - now for d in due if d is not None), default=interval)
         sleep(max(1.0, min(float(interval), pause)))

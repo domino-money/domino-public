@@ -9,6 +9,12 @@ test('producer fixtures and closed owner-free request contract',()=>{
  assert(!runtime.validateRequest('list',{owner:'0x'+'a'.repeat(40)}));
  assert(!runtime.validateRequest('list',{limit:21}));
  assert(!runtime.validateRequest('status',{intentId:'0x'+'1'.repeat(64)+'\n'}));
+ assert(!runtime.validateRequest('availability',{vault:'0x'+'5'.repeat(40),owner:'0x'+'a'.repeat(40)}));
+});
+test('availability cannot be broadened to a different vault or stale lease',()=>{
+ const ready=fixture.responses['availability.ready'];
+ assert(!runtime.validateResponse('availability',{...ready,vault:'0x'+'7'.repeat(40),privateKey:'redacted'}));
+ assert(!runtime.validateResponse('availability',{...ready,expiresAtEpoch:111}));
 });
 test('cannot fabricate reconciled effect, cancel a submitted transaction, or inject signed bytes',()=>{
  const base=fixture.responses['status.reserved'];

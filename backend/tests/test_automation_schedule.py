@@ -3,16 +3,20 @@ consecutive failed attempts, the swap's share of its pool's cap taken before
 the intent exists, and a service loop that sleeps until the earliest due
 sequence instead of a fixed interval."""
 from pathlib import Path
+import os
 import random
 import sys
 from types import SimpleNamespace
 import unittest
+from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from automation_cycle import CycleError, SequenceCycle, serve
+from automation_cycle import CycleError, SequenceCycle, serve, service_readiness_probe, service_ready_after_pass
 from automation_fixtures import address, identity, sample_automation_config
 from execution_store import ExecutionStoreError
+from gas_budget_bridge import GasBudgetClient
+from eth_account import Account
 
 
 def cycle(**scheduling):
@@ -122,6 +126,9 @@ class FakeCycle:
                                                           {'owner': address(2), 'vault': address(4), 'expiresAt': 2000000000, 'suspended': False}])
         self.outcomes, self.now, self.calls = list(outcomes), now, []
         self.finality_passes = 0
+        self.finality_error = None
+        self.readiness = []
+        self.store = SimpleNamespace(record_readiness=lambda owner, vault, ready: self.readiness.append((owner, vault, ready)))
 
     def clock(self):
         return self.now
@@ -140,6 +147,8 @@ class FakeCycle:
 
     def finalize_publications(self):
         self.finality_passes += 1
+        if self.finality_error:
+            raise self.finality_error
         return []
 
 
@@ -160,6 +169,8 @@ class ServeTests(unittest.TestCase):
         self.assertEqual([vault for vault, _ in fake.calls], [address(3), address(4)] * 3)
         self.assertEqual(fake.finality_passes, 3)
         self.assertTrue(all(respect for _, respect in fake.calls))
+        self.assertEqual(len(fake.readiness), 6)
+        self.assertTrue(all(ready is False for _, _, ready in fake.readiness))
         # Sequences that were not due are not logged.
         self.assertEqual(len(logs), 2)
 
@@ -169,10 +180,133 @@ class ServeTests(unittest.TestCase):
         self.assertEqual(sleeps, [10.0])
         self.assertIn('automation_sequence_not_admitted', logs[0])
         self.assertEqual(len(logs), 2)
+        self.assertEqual([ready for _, _, ready in fake.readiness], [False, False])
+
+    def test_finality_failure_closes_every_heartbeat_for_that_pass(self):
+        fake = FakeCycle([{'outcome':'wait','nextDueEpoch':1010.0}, {'outcome':'wait','nextDueEpoch':1010.0}], interval=10)
+        fake.finality_error = ExecutionStoreError('execution_store_unavailable')
+        sleeps, logs = self.serve(fake, 1)
+        self.assertEqual(sleeps, [10.0])
+        self.assertEqual([ready for _, _, ready in fake.readiness], [False, False])
+        self.assertTrue(any('publication_finality' in line for line in logs))
         fake = FakeCycle([RuntimeError('boom'), RuntimeError('boom')])
         sleeps, logs = self.serve(fake, 1)
         self.assertEqual(sleeps, [30.0])
         self.assertTrue(all('automation_unavailable' in line and 'boom' not in line for line in logs))
+        self.assertEqual([ready for _, _, ready in fake.readiness], [False, False])
+
+
+class ReadinessTests(unittest.TestCase):
+    def test_only_a_successful_live_pass_with_the_expected_signers_and_checked_infrastructure_is_ready(self):
+        key = bytes.fromhex('11' * 32)  # Synthetic test key, never a deployed wallet.
+        operator = Account.from_key(key).address.lower()
+        publisher = address(2)
+        entry = SimpleNamespace(owner=address(1), vault=address(3), expiresAt=5000, suspended=False)
+        config = SimpleNamespace(paused=False, scheduling=SimpleNamespace(evaluationIntervalSeconds=10),
+            operator=SimpleNamespace(policy=SimpleNamespace(enabled=True)), publisher=SimpleNamespace(enabled=True),
+            deployment=SimpleNamespace(operator=operator, pricePublisher=publisher, expiresAt=5000))
+        cycle = SimpleNamespace(config=config, clock=lambda: 1000, operator_key=key,
+            publisher=SimpleNamespace(address=publisher),
+            store=SimpleNamespace(control=lambda owner, name: False))
+        clean_wait = {'outcome': 'wait', 'decision': {'observationDiagnostics': []}}
+        clean_skip = {'outcome': 'not_due', 'readinessQualified': True}
+        self.assertTrue(service_ready_after_pass(cycle, entry, clean_wait, True))
+        self.assertTrue(service_ready_after_pass(cycle, entry, clean_skip, True))
+        self.assertFalse(service_ready_after_pass(cycle, entry, {'outcome': 'wait'}, True))
+        self.assertFalse(service_ready_after_pass(cycle, entry, {'outcome': 'wait', 'decision':
+                         {'observationDiagnostics': ['ledger_chain_mismatch']}}, True))
+        self.assertFalse(service_ready_after_pass(cycle, entry, {'outcome': 'not_due'}, True))
+        self.assertFalse(service_ready_after_pass(cycle, entry, {'outcome': 'not_due', 'readinessQualified': False}, True))
+        self.assertFalse(service_ready_after_pass(cycle, entry, {'outcome': 'not_due'}, False))
+        self.assertFalse(service_ready_after_pass(cycle, entry, {'outcome': 'refused'}, True))
+        cycle.store.control = lambda owner, name: True
+        self.assertFalse(service_ready_after_pass(cycle, entry, clean_wait, True))
+        cycle.store.control = lambda owner, name: False
+        config.paused = True
+        self.assertFalse(service_ready_after_pass(cycle, entry, clean_wait, True))
+        config.paused = False
+        cycle.operator_key = bytes.fromhex('22' * 32)
+        self.assertFalse(service_ready_after_pass(cycle, entry, clean_wait, True))
+
+    def test_due_skip_preserves_the_last_structural_read_state(self):
+        worker = cycle()
+        worker.clock = lambda: 1000
+        entry = worker.config.sequences[0]
+        def skip(qualified):
+            worker.store = SimpleNamespace(due_state=lambda owner, vault: [
+                {'sequenceHash': identity(1), 'open': False, 'nextDueEpoch': 5000,
+                 'readinessQualified': qualified}])
+            return worker._run(entry, act=True, respect_due=True)
+        self.assertIs(skip(True)['readinessQualified'], True)
+        self.assertIs(skip(False)['readinessQualified'], False)
+
+    def test_probe_requires_live_peer_rpc_and_current_vault_admission(self):
+        client = GasBudgetClient('/run/test-readiness.sock', server_uid=os.getuid())
+        head = {'number': 200, 'timestamp': 2000}
+        finalized = {'number': 190, 'timestamp': 1900}
+        entry = SimpleNamespace(owner=address(1), vault=address(3))
+        deployment = SimpleNamespace(operator=address(2), serviceFeeBps=200, dominoServiceFeeBps=400)
+        state = {'paused': True, 'operator': address(2), 'enabled': True,
+                 'rootPermission': True, 'fee': 200, 'positions': 1}
+        def call(target, signature, outputs, block, *args):
+            if signature == 'policy()':
+                return ((state['fee'], 0, 0, 0, state['positions'], 0, state['paused']),)
+            if signature == 'operator()':
+                return (state['operator'],)
+            if signature == 'isOperator(address)':
+                return (state['enabled'],)
+            if signature == 'rootPermissionValid()':
+                return (state['rootPermission'],)
+            raise AssertionError(signature)
+        reader = SimpleNamespace(reset=lambda: None, request=lambda method, params: '0x1237',
+                                 head=lambda: head, finalized=lambda: finalized, call=call)
+        candidate = SimpleNamespace(gas_budget=client, reader=reader, clock=lambda: 2000,
+                                    config=SimpleNamespace(deployment=deployment))
+        with patch.object(client, 'health', return_value=True), patch('automation_cycle.derive_admission') as admitted:
+            self.assertTrue(service_readiness_probe(candidate, entry))
+            admitted.assert_called_with(reader, deployment, entry.owner, entry.vault, head)
+            state['paused'] = False
+            self.assertTrue(service_readiness_probe(candidate, entry))
+            state['paused'] = True
+            state['rootPermission'] = False
+            self.assertFalse(service_readiness_probe(candidate, entry))
+            state['rootPermission'] = True
+            state['enabled'] = False
+            self.assertFalse(service_readiness_probe(candidate, entry))
+            state['enabled'] = True
+            state['operator'] = address(4)
+            self.assertFalse(service_readiness_probe(candidate, entry))
+            state['operator'] = address(2)
+            state['fee'] = 300
+            self.assertFalse(service_readiness_probe(candidate, entry))
+            state['fee'] = 200
+            state['positions'] = 2
+            self.assertFalse(service_readiness_probe(candidate, entry))
+            state['fee'] = 400
+            self.assertTrue(service_readiness_probe(candidate, entry))
+            state['fee'] = 200
+            state['positions'] = 1
+            admitted.side_effect = RuntimeError('vault changed')
+            self.assertFalse(service_readiness_probe(candidate, entry))
+            admitted.side_effect = None
+            reader.finalized = lambda: (_ for _ in ()).throw(RuntimeError('finalized unavailable'))
+            self.assertFalse(service_readiness_probe(candidate, entry))
+            reader.finalized = lambda: {'number': 201, 'timestamp': 1900}
+            self.assertFalse(service_readiness_probe(candidate, entry))
+            reader.finalized = lambda: finalized
+            finalized['timestamp'] = 199
+            self.assertFalse(service_readiness_probe(candidate, entry))
+            finalized['timestamp'] = 200
+            self.assertTrue(service_readiness_probe(candidate, entry))
+            finalized['timestamp'] = 1900
+            reader.request = lambda method, params: '0x1'
+            self.assertFalse(service_readiness_probe(candidate, entry))
+            reader.request = lambda method, params: '0x1237'
+            head['timestamp'] = 800
+            self.assertFalse(service_readiness_probe(candidate, entry))
+            head['timestamp'] = 2000
+        with patch.object(client, 'health', return_value=False):
+            self.assertFalse(service_readiness_probe(candidate, entry))
 
 
 if __name__ == '__main__':

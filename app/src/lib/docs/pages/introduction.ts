@@ -34,8 +34,7 @@ export const WHAT_IS_DOMINO: DocPage = {
         p('Nothing moves until your wallet signs. Each wallet step is reviewed on its own, and shows its amounts, destination and limits before your wallet asks you to sign it.'),
         p('Signing in is not one of those steps: it proves you control an address and allows nothing. See ', doc('what signing in proves', 'wallet', 'sign-in'), '.'),
         p('Once you activate automation, its operator sends automation transactions within the limits you signed. See ', doc('what the operator can do', 'non-custodial', 'operator'), '.'),
-        // Handoff of 2026-09-21: the contracts are on chain, the service that runs the cycle is not. Auto-compound and Domino Compounder say the same under their pill.
-        p('The service behind that operator is not in operation yet. Until it is, the sequence you create stays paused, activation is not offered, and every other owner control still works.'),
+        p('A new sequence starts paused. This site offers activation only to its signed-in owner after the live service confirms readiness for that exact sequence. If the check fails, pause, revocation, repair and withdrawal still work through your wallet.'),
       ],
     },
     {
@@ -96,8 +95,9 @@ export const WALLET: DocPage = {
           ['Deposit drafts kept by the deposit service, and their receipts.'],
           ['The assisted swap quote in Setup.'],
           ['Managed positions and automation receipts, on ', doc('Positions', 'positions', 'managed-positions'), '.'],
+          ['Checking whether the automation service is ready for your sequence before activation.'],
         ),
-        p('Public pages need no sign-in. Neither do a setup operation’s steps (fund, swap, mint and refund) or the owner controls of your sequence vault: they work with your wallet alone.'),
+        p('Public pages need no sign-in. Neither do a setup operation’s steps (fund, swap, mint and refund), sequence creation, pause, revocation, repair or withdrawal: they work with your wallet alone. Activation also requires a live service check bound to your signed-in address and your sequence vault.'),
       ],
     },
   ],

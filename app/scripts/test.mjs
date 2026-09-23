@@ -71,6 +71,7 @@ execFileSync(
     'tests/consumer.port.test.mjs',
     'tests/performance.controller.test.mjs',
     'tests/execution.controller.test.mjs',
+    'tests/automation-availability.test.mjs',
     'tests/nonce.test.mjs',
     'tests/setup-recovery.test.mjs',
   ],

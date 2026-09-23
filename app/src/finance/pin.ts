@@ -49,9 +49,9 @@
  * still open only when the release Worker serves an admitted profile
  * (available: true), which is a deployment act outside git. A different
  * address is a different commit, for the same reason. What the pins
- * do NOT say is whether the service that runs the compound cycle is operating:
- * that is a Worker capability plus a backend the handoff (§8) says is not
- * integrated yet, and nothing here may be read as "automation on".
+ * do NOT say is whether the service can operate a particular sequence:
+ * that takes an owner-bound live readiness check. Nothing here may be read
+ * as permission to activate or as a promise of execution.
  */
 
 /**

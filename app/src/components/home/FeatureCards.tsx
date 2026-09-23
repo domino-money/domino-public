@@ -54,7 +54,7 @@ export function FeatureCards({ className, delay = 60 }: { className?: string; de
       {FEATURES.map(({ key, title, body, href, link, roadmap, Art }, index) => (
         <article key={key} className="dm-vig-feature" style={{ '--delay': `${delay + 120 * index}ms` } as CSSProperties}>
           <div className="dm-plate dm-dots-plate dm-vig-plate">
-            {/* ROADMAP's pill while the capability does not run here; nothing once it does. */}
+            {/* ROADMAP's pill describes owner-scoped readiness for automated features. */}
             {roadmap && <RoadmapPill name={roadmap} className="absolute left-3 top-3 z-[1]" />}
             <Art className="absolute inset-0" />
           </div>

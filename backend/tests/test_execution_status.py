@@ -30,7 +30,8 @@ class ExecutionStatusTests(unittest.TestCase):
         self.auth_store=auth_fixture.AuthStore()
         checker=SimpleNamespace(check=Mock(return_value={'method':'plain_eoa','blockNumber':'100','blockHash':auth_fixture.h(100)}))
         self.auth=OnboardingAuth(self.auth_store,checker)
-        self.reader=SimpleNamespace(list=Mock(return_value=[item()]))
+        self.reader=SimpleNamespace(list=Mock(return_value=[item()]),
+                                    availability=Mock(return_value={'operational':False,'checkedAtEpoch':100,'expiresAtEpoch':100}))
         self.service=ExecutionStatusService(self.auth,self.reader)
         self.gateway=ExecutionStatusGateway(service=self.service,verifier=SimpleNamespace(verify=Mock()),origin=auth_fixture.ORIGIN,enabled=True)
         self.client=TestClient(create_execution_status_app(self.gateway),client=('127.0.0.1',40000))
@@ -48,6 +49,19 @@ class ExecutionStatusTests(unittest.TestCase):
         for secret in ('signed_bytes','envelope','session','csrf','plan','keyFile'):
             self.assertNotIn('"'+secret+'"',result.text)
         self.assertEqual(set(result.headers['cache-control'].split(', ')),{'no-store','no-transform'})
+
+    def test_availability_is_owner_scoped_and_never_grants_execution_authority(self):
+        vault='0x'+'56'*20
+        self.reader.availability.return_value={'operational':True,'checkedAtEpoch':100,'expiresAtEpoch':110}
+        result=self.post('availability',{'vault':vault})
+        self.assertEqual(result.status_code,200,result.text)
+        self.assertEqual(result.json(),{'contractVersion':CONTRACT_VERSION,'chainId':4663,'owner':OWNER,
+                                        'vault':vault,'operational':True,'checkedAtEpoch':100,'expiresAtEpoch':110})
+        self.reader.availability.assert_called_once_with(OWNER,vault)
+        self.assertEqual(self.post('availability',{'vault':vault,'owner':OWNER}).status_code,400)
+        self.assertEqual(self.post('availability',{'vault':vault.upper()}).status_code,400)
+        self.reader.availability.return_value={'operational':True,'checkedAtEpoch':100,'expiresAtEpoch':111}
+        self.assertEqual(self.post('availability',{'vault':vault}).status_code,502)
 
     def test_no_owner_signer_nonce_calldata_in_requests(self):
         for field,value in [('owner',OWNER),('signer',OWNER),('nonceRaw','0'),('data','0x'),('privateKey','synthetic')]:

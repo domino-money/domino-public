@@ -3,7 +3,6 @@ import type { Hex } from 'viem'
 import { AUTOMATION_FEE_BPS, createSequenceClient, type PreparedSequence, type SequenceState } from '../finance/sequence'
 import type { GasBudget } from '../finance/setup'
 import { RECEIPT_TEXT, SEQUENCE_STEP_TEXT, errorCode, financeErrorText } from '../finance/words'
-import { AUTOMATION_SERVICE } from '../lib/capabilities'
 import { CREATE } from '../lib/create/copy'
 import { SEQUENCE_DEFAULTS, sequenceOptionsFrom, type SequenceForm, type SequenceMode } from '../lib/create/sequenceDefaults'
 import { formatUnits } from '../lib/read/decimal'
@@ -27,9 +26,9 @@ import { Button, Card } from '../components/ui'
  * arrive in the units a person reads (lib/create/sequenceDefaults.ts) and go
  * out as the basis points, seconds and wei the contracts take.
  *
- * Creation needs no private session and no running service. What it cannot
- * do is start automation: the service that runs it is not in operation, and
- * the screen says so instead of offering activation.
+ * Creation needs no private session and no running service. It does not
+ * activate the vault: the owner controls check live, owner-scoped service
+ * readiness before offering that separate wallet transaction.
  */
 
 type Client = ReturnType<typeof createSequenceClient>
@@ -233,7 +232,7 @@ export default function SequenceCreate({ client, gasFor, intent, initialRoot, on
             {chosen?.title ?? 'The sequence'} is set up for position NFT {created.rootTokenId.toString()}
           </h3>
           <p className="dm-acct-line dm-acct-wrap">Sequence {created.vault} · paused · operator {shortAddress(created.operator)} · your NFT stays in your wallet.</p>
-          <p className="dm-acct-line dm-acct-wrap" data-automation-service="not-operational">{AUTOMATION_SERVICE.reason}</p>
+          <p className="dm-acct-line dm-acct-wrap">Activation is a separate owner transaction. Owner controls offer it only after a live service check.</p>
           <p className="dm-acct-line">Pause, rules, limits and withdrawals are in the owner controls below.</p>
         </section>
       ) : (

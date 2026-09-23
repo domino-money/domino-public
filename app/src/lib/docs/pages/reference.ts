@@ -138,7 +138,7 @@ export const CONTRACTS: DocPage = {
             { label: 'DominoVaultFactoryV1', role: 'Creates your sequence vault', address: '0x16bf6eaba7b31118627b277e97249720dfe1c7ff' },
           ],
         },
-        p('Your sequence vault is a contract of its own, created for your wallet by the factory. The service that carries out automation is not in operation yet: see ', doc('Domino Compounder', 'domino-compounder', 'start-and-stop'), '.'),
+        p('Your sequence vault is a contract of its own, created for your wallet by the factory. Service readiness is checked for each owner and vault before this site offers activation: see ', doc('Domino Compounder', 'domino-compounder', 'start-and-stop'), '.'),
       ],
     },
     {

@@ -9,7 +9,8 @@ system users, the automation unit and four gas peer units without `[Install]` se
 `035_cancel_unsigned_gas_claims.sql` and
 `036_gas_settlement_journal_read.sql` and
 `037_gas_settlement_receipt_evidence.sql` and
-`038_gas_settlement_quote_witness.sql` in one receipted transaction. This is a first-installation
+`038_gas_settlement_quote_witness.sql`, `039_automation_readiness.sql`, and
+`040_gas_finalized_quote_lag.sql` in one receipted transaction. This is a first-installation
 path; an already installed automation host needs a separate incremental migration
 procedure. It also adds the peer mappings the service needs. It never starts,
 enables or restarts anything, and
@@ -27,7 +28,7 @@ service does once it runs; this document is only how it gets onto the host.
 | System users `domino-automation`, `domino-gas-reservation` and `domino-gas-settlement` (nologin shells, in `domino-db`) | Any existing user, unit or lane |
 | `/etc/systemd/system/domino-automation.service` (off; `ConditionPathExists` on the private configuration) | Public, development and continuous read lanes, gateways, tunnels, policy units (their `systemctl show` state is recorded before and required equal after) |
 | `domino-gas-reservation.socket`/`.service` and `domino-gas-settlement.service`/`.timer`, all off | No listener, timer or gas peer starts during installation |
-| Migrations 028–038, `domino_execution_publisher` made `LOGIN`, two `NOLOGIN` gas privilege roles inherited by separate unprivileged LOGIN bridge roles, receipt in `domino_automation_install.receipt` | Every other schema and role; no data is written to the execution ledger |
+| Migrations 028–040, `domino_execution_publisher` made `LOGIN`, two `NOLOGIN` gas privilege roles inherited by separate unprivileged LOGIN bridge roles, receipt in `domino_automation_install.receipt` | Every other schema and role; no data is written to the execution ledger |
 | `pg_ident.conf`: `domino-automation` maps to its four execution roles; each gas OS identity maps to only its own bridge. `pg_hba.conf` gains only the publisher and two bridge entries ahead of the local reject. | Every other peer line |
 | `/etc/domino/financial/automation` (0700, empty) and `/var/lib/domino-financial/automation` (0700), both owned by the service user | Nothing is placed in them |
 | Empty 0700 `/etc/domino/financial/gas-reservation` and `/etc/domino/financial/gas-settlement`, each owned by its own OS peer | No RPC credential or signer key is created |
@@ -62,6 +63,10 @@ every step under `/var/backups/domino-financial/automation/<commit>/`, verifies 
 with `systemd-analyze`, commits the SQL, replaces the peer files, reloads PostgreSQL,
 proves the four execution and two gas peer connections, checks cross-role denial, reloads systemd, and
 requires the recorded lane state unchanged and the new unit not running.
+
+For a host that has already installed 028–038, use the separate
+[readiness upgrade](AUTOMATION_READINESS_UPGRADE.md) to apply 039/040 and pin the
+inactive automation and execution-status units to the new source release.
 
 ## Private configuration and activation boundary
 

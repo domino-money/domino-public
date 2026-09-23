@@ -241,13 +241,18 @@ class CycleStore(_Store):
 
     def due_state(self, owner, vault):
         """When the vault's sequences are next due, and whether one has a cycle
-        open: enough for the service loop to skip a pass without reading the chain."""
+        open: enough for the service loop to skip a pass without reading the chain.
+        Carry the last structural read result so a skipped pass cannot turn a
+        suspended or incomplete sequence into a ready heartbeat.
+        """
         vault = _owner(vault)
         def operation(conn, owner):
-            rows = conn.execute("SELECT s.sequence_hash,s.next_due_at,EXISTS(SELECT 1 FROM cycles c WHERE c.owner=s.owner AND "
+            rows = conn.execute("SELECT s.sequence_hash,s.next_due_at,s.suspended,s.last_read_failed,EXISTS(SELECT 1 FROM cycles c WHERE c.owner=s.owner AND "
                                 "c.sequence_hash=s.sequence_hash AND c.state NOT IN ('evaluated','completed','abandoned')) AS open "
                                 'FROM sequence_state s WHERE s.owner=%s AND s.vault=%s', (owner, vault)).fetchall()
-            return [{'sequenceHash': r['sequence_hash'], 'nextDueEpoch': r['next_due_at'].timestamp(), 'open': r['open']} for r in rows]
+            return [{'sequenceHash': r['sequence_hash'], 'nextDueEpoch': r['next_due_at'].timestamp(),
+                     'open': r['open'], 'readinessQualified': not r['suspended'] and not r['last_read_failed']}
+                    for r in rows]
         return self._transaction(owner, operation)
 
     def release_swap(self, owner, sequence_hash, worker_id, fence, intent_id):
@@ -358,6 +363,19 @@ class CycleStore(_Store):
             raise ExecutionStoreError('execution_invalid_record')
         return self._transaction(owner, lambda conn, owner: conn.execute(
             'INSERT INTO controls(key,value) VALUES(%s,%s) ON CONFLICT(key) DO UPDATE SET value=EXCLUDED.value,updated_at=clock_timestamp()', (key, Jsonb(value))))
+
+    def record_readiness(self, owner, vault, ready):
+        """A short-lived, owner-scoped liveness signal written only by serve().
+
+        It does not authorize execution; the authenticated status reader treats
+        missing or stale rows as unavailable. A one-shot evaluate/run never
+        writes it.
+        """
+        owner, vault = _owner(owner), _owner(vault)
+        if type(ready) is not bool:
+            raise ExecutionStoreError('execution_invalid_record')
+        return self.set_control(owner, 'automation_ready_' + vault[2:],
+                                {'owner': owner, 'vault': vault, 'ready': ready})
 
     def publication(self, owner, observation_id):
         observation_id = _hash(observation_id)
