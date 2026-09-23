@@ -121,6 +121,7 @@ class FakeCycle:
                                                sequences=[{'owner': address(1), 'vault': address(3), 'expiresAt': 2000000000, 'suspended': False},
                                                           {'owner': address(2), 'vault': address(4), 'expiresAt': 2000000000, 'suspended': False}])
         self.outcomes, self.now, self.calls = list(outcomes), now, []
+        self.finality_passes = 0
 
     def clock(self):
         return self.now
@@ -131,6 +132,15 @@ class FakeCycle:
         if isinstance(outcome, Exception):
             raise outcome
         return outcome
+
+    def settle_gas(self, *, limit):
+        assert limit == 8
+        return {'scanned': 0, 'settled': 0, 'cancelled': 0,
+                'attention': 0, 'results': []}
+
+    def finalize_publications(self):
+        self.finality_passes += 1
+        return []
 
 
 class ServeTests(unittest.TestCase):
@@ -148,6 +158,7 @@ class ServeTests(unittest.TestCase):
         # floor; then nothing due before the interval sleeps the interval.
         self.assertEqual(sleeps, [12.5, 1.0, 30.0])
         self.assertEqual([vault for vault, _ in fake.calls], [address(3), address(4)] * 3)
+        self.assertEqual(fake.finality_passes, 3)
         self.assertTrue(all(respect for _, respect in fake.calls))
         # Sequences that were not due are not logged.
         self.assertEqual(len(logs), 2)

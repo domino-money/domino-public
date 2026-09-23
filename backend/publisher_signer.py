@@ -25,12 +25,19 @@ import general_compound_receipts as g
 from automation_plan import PRICE_OBSERVED, observation_id, publish_calldata
 from execution_signer import ExecutionError, verify_signed
 from execution_store import ExecutionStoreError, _hash
+from gas_receipt_settlement import GasReceiptSettlement, GasSettlementError
 
 PUBLISHER_ROLE = 'domino_execution_publisher'
 LIVE = ('signed', 'submitted', 'broadcast_unknown', 'reorged')
 # An expired row never had a receipt: while the chain has not spent its nonce,
 # its bytes are still the only ones signed for that nonce.
 HOLDING = LIVE + ('expired',)
+
+
+class _PublisherReceiptProbe(GasReceiptSettlement):
+    """Reuse the canonical receipt verifier without a settlement DB login."""
+    def __init__(self, rpc):
+        self.rpc = rpc
 
 
 @dataclass(frozen=True)
@@ -60,12 +67,13 @@ def point_record(point):
 
 
 class PublisherSigner:
-    def __init__(self, rpc, key, guard, policy):
+    def __init__(self, rpc, key, guard, policy, *, gas_budget=None):
         self.rpc = rpc
         self._account = Account.from_key(key)
         self.address = self._account.address.lower()
         self.guard = g._address(guard)
         self.policy = policy
+        self.gas_budget = gas_budget
 
     def qualify(self, point, *, max_source_age):
         """The guard would accept this point now: the key publishes, the id is
@@ -124,6 +132,14 @@ class PublisherSigner:
         expected = self.envelope(point, envelope['nonce'], fee=envelope['maxFeePerGas'], priority=envelope['maxPriorityFeePerGas'])
         if envelope != expected:
             raise ExecutionError('execution_envelope_changed')
+        if self.gas_budget is None:
+            raise ExecutionError('publisher_gas_reservation_required')
+        try:
+            self.gas_budget.require_reservation(
+                observation_id(self.guard, point), 'publisher', self.address,
+                envelope['gas'] * envelope['maxFeePerGas'])
+        except Exception:
+            raise ExecutionError('publisher_gas_reservation_required') from None
         signed = self._account.sign_transaction({**envelope, 'to': to_checksum_address(envelope['to'])})
         raw = bytes(signed.raw_transaction)
         digest = '0x' + keccak(raw).hex()
@@ -133,10 +149,10 @@ class PublisherSigner:
 
 class PublicationJournal:
     """The publisher role's own store: no tenant owner, no plan, no key."""
-    def __init__(self, settings, *, connect=psycopg.connect):
+    def __init__(self, settings, *, gas_budget=None, connect=psycopg.connect):
         if type(settings) is not dict or set(settings) != {'host', 'port', 'dbname'}:
             raise ValueError('invalid_execution_database_settings')
-        self.settings, self.connect = dict(settings), connect
+        self.settings, self.connect, self.gas_budget = dict(settings), connect, gas_budget
 
     def _transaction(self, operation):
         try:
@@ -172,6 +188,11 @@ class PublicationJournal:
     def status(self, identifier):
         identifier = _hash(identifier)
         return self._transaction(lambda conn: self._status(self._row(conn, identifier)))
+
+    def settlement_record(self, identifier):
+        """Private full journal row for canonical gas receipt reconciliation."""
+        identifier = _hash(identifier)
+        return self._transaction(lambda conn: self._row(conn, identifier))
 
     def prepare(self, signer, point, *, max_source_age):
         """Qualify, claim the next nonce, sign and persist in one transaction.
@@ -229,6 +250,18 @@ class PublicationJournal:
             row = self._row(conn, identifier, lock=True)
             if row['state'] not in states:
                 return self._status(row)
+            # A restart may resend a row signed before this cap existed. Such a
+            # row has no counted claim and must fail closed. A valid pending
+            # claim remains counted even when its new-signature gate is stale.
+            if self.gas_budget is None:
+                raise ExecutionError('publisher_gas_reservation_required')
+            try:
+                envelope = row['envelope']
+                self.gas_budget.require_existing_reservation(
+                    identifier, 'publisher', row['signer'],
+                    envelope['gas'] * envelope['maxFeePerGas'])
+            except Exception:
+                raise ExecutionError('publisher_gas_reservation_required') from None
             raw = bytes(row['signed_bytes'])
             verify_signed(raw, row['envelope'], row['signer'], row['transaction_hash'])
             try:
@@ -248,7 +281,10 @@ class PublicationJournal:
         identifier = _hash(identifier)
         def operation(conn):
             row = self._row(conn, identifier, lock=True)
-            if row['state'] in ('reverted', 'expired', 'revoked', 'attention'):
+            if row['state'] in ('expired', 'revoked', 'attention') or (
+                    row['state'] == 'reverted' and conn.execute(
+                        'SELECT 1 FROM publication_finality WHERE observation_id=%s',
+                        (identifier,)).fetchone()):
                 return self._status(row)
             head = g._header(rpc.request('eth_getBlockByNumber', ['latest', False]))
             receipt = rpc.request('eth_getTransactionReceipt', [row['transaction_hash']])
@@ -256,8 +292,10 @@ class PublicationJournal:
             if type(receipt) is dict:
                 number = g._quantity(receipt.get('blockNumber'))
                 block = g._header(rpc.request('eth_getBlockByNumber', [hex(number), False]))
-                if block['hash'] != g._hash(receipt.get('blockHash')):
-                    state, reason = ('reorged', 'publication_block_lost') if row['state'] in ('included', 'confirmed') else (row['state'], row['reason'])
+                if (block['hash'] != g._hash(receipt.get('blockHash')) or
+                        row['state'] in ('included', 'confirmed', 'reverted') and
+                        row['included_block_hash'] is not None and row['included_block_hash'] != block['hash']):
+                    state, reason = ('reorged', 'publication_block_lost') if row['state'] in ('included', 'confirmed', 'reverted') else (row['state'], row['reason'])
                 elif g._quantity(receipt.get('status')) != 1:
                     state, reason = 'reverted', 'publication_reverted'
                 else:
@@ -273,7 +311,7 @@ class PublicationJournal:
                 if state == 'reorged':
                     fields = {}
             else:
-                if row['state'] in ('included', 'confirmed'):
+                if row['state'] in ('included', 'confirmed', 'reverted'):
                     state, reason = 'reorged', 'publication_block_lost'
                 elif g._quantity(rpc.request('eth_getTransactionCount', [row['signer'], 'latest'])) > int(row['nonce']):
                     state, reason = 'attention', 'publication_nonce_consumed_without_receipt'
@@ -286,6 +324,112 @@ class PublicationJournal:
                                (state, reason, *fields.values(), identifier)).fetchone()
             return self._status(row)
         return self._transaction(operation)
+
+    def pending_finality(self, signer_address, *, limit=8):
+        """Rotate durable terminal rows before RPC reads; unavailable old rows cannot starve new ones."""
+        signer_address = g._address(signer_address)
+        if type(limit) is not int or not 1 <= limit <= 32:
+            raise ExecutionError('publisher_finality_limit_invalid')
+        def operation(conn):
+            conn.execute('INSERT INTO publication_finality_cursor(signer) VALUES(%s) ON CONFLICT DO NOTHING',
+                         (signer_address,))
+            cursor = conn.execute('SELECT * FROM publication_finality_cursor WHERE signer=%s FOR UPDATE',
+                                  (signer_address,)).fetchone()
+            marker = (cursor['last_created_at'], cursor['last_observation_id'])
+            suffix = conn.execute(
+                'SELECT 1 FROM publications p LEFT JOIN publication_finality f USING(observation_id) '
+                'WHERE p.signer=%s AND p.state IN (%s,%s) AND f.observation_id IS NULL '
+                'AND (p.created_at,p.observation_id)>(%s,%s) LIMIT 1',
+                (signer_address, 'confirmed', 'reverted', *marker)).fetchone() if marker[0] else None
+            if marker[0] and suffix is None:
+                marker = (None, None)
+            rows = conn.execute(
+                'SELECT p.observation_id,p.created_at FROM publications p '
+                'LEFT JOIN publication_finality f USING(observation_id) '
+                'WHERE p.signer=%s AND p.state IN (%s,%s) AND f.observation_id IS NULL '
+                'AND (%s::timestamptz IS NULL OR (p.created_at,p.observation_id)>(%s,%s)) '
+                'ORDER BY p.created_at,p.observation_id LIMIT %s',
+                (signer_address, 'confirmed', 'reverted', marker[0], *marker, limit)).fetchall()
+            if rows:
+                last = rows[-1]
+                conn.execute('UPDATE publication_finality_cursor SET last_created_at=%s,'
+                    'last_observation_id=%s,updated_at=clock_timestamp() WHERE signer=%s',
+                    (last['created_at'], last['observation_id'], signer_address))
+            elif marker[0]:
+                conn.execute('UPDATE publication_finality_cursor SET last_created_at=NULL,'
+                    'last_observation_id=NULL,updated_at=clock_timestamp() WHERE signer=%s',
+                    (signer_address,))
+            return [row['observation_id'] for row in rows]
+        return self._transaction(operation)
+
+    def finalize_receipt(self, identifier, rpc, *, confirmations):
+        """Append one publisher-only witness after independent finalized RPC proof."""
+        identifier = _hash(identifier)
+        row = self.check(identifier, rpc, confirmations=confirmations)
+        if row['state'] not in ('confirmed', 'reverted'):
+            return {'observationId': identifier, 'state': 'pending'}
+        full = self.settlement_record(identifier)
+        verifier = _PublisherReceiptProbe(rpc)
+        try:
+            proof = verifier._proof(full['transaction_hash'], full['signer'],
+                                    full['envelope'], full['signed_bytes'])
+            verifier._still_canonical(proof)
+        except GasSettlementError as error:
+            if error.code in ('gas_receipt_pending', 'gas_receipt_not_final',
+                              'gas_receipt_rpc_unavailable', 'gas_receipt_reorganized'):
+                return {'observationId': identifier, 'state': 'pending', 'reason': error.code}
+            raise ExecutionError('publisher_finality_invalid') from None
+        if (full['state'] != ('confirmed' if proof.status else 'reverted') or
+                int(full['included_block_number']) != proof.block['number'] or
+                full['included_block_hash'] != proof.block['hash'] or
+                int(full['gas_used']) != proof.gas_used or
+                int(full['effective_gas_price']) != proof.effective_gas_price):
+            raise ExecutionError('publisher_finality_mismatch')
+        try:
+            final = g._header(verifier._rpc('eth_getBlockByNumber', ['finalized', False]))
+            verifier._still_canonical(proof)
+        except (GasSettlementError, ValueError, TypeError, KeyError):
+            return {'observationId': identifier, 'state': 'pending',
+                    'reason': 'gas_receipt_reorganized'}
+        if (final['number'] < proof.block['number'] or
+                final['number'] == proof.block['number'] and final != proof.block):
+            return {'observationId': identifier, 'state': 'pending',
+                    'reason': 'gas_receipt_not_final'}
+        def operation(conn):
+            current = self._row(conn, identifier, lock=True)
+            if (current['state'] != full['state'] or
+                    current['included_block_number'] != full['included_block_number'] or
+                    current['included_block_hash'] != full['included_block_hash'] or
+                    current['gas_used'] != full['gas_used'] or
+                    current['effective_gas_price'] != full['effective_gas_price']):
+                raise ExecutionError('publisher_finality_mismatch')
+            conn.execute('INSERT INTO publication_finality(observation_id,signer,transaction_hash,'
+                'included_block_number,included_block_hash,finalized_head_number,finalized_head_hash,'
+                'receipt_status,gas_used,effective_gas_price) '
+                'VALUES(%s,%s,%s,%s,%s,%s,%s,%s,%s,%s) ON CONFLICT(observation_id) DO NOTHING',
+                (identifier, full['signer'], proof.transaction_hash, proof.block['number'],
+                 proof.block['hash'], final['number'], final['hash'], proof.status,
+                 proof.gas_used, proof.effective_gas_price))
+            witness = conn.execute('SELECT * FROM publication_finality WHERE observation_id=%s',
+                                   (identifier,)).fetchone()
+            if (witness['transaction_hash'] != proof.transaction_hash or
+                    witness['included_block_hash'] != proof.block['hash'] or
+                    witness['gas_used'] != proof.gas_used or
+                    witness['effective_gas_price'] != proof.effective_gas_price):
+                raise ExecutionError('publisher_finality_mismatch')
+            return {'observationId': identifier, 'state': 'finalized'}
+        return self._transaction(operation)
+
+    def finalize_pending(self, signer_address, rpc, *, confirmations, limit=8):
+        results = []
+        for identifier in self.pending_finality(signer_address, limit=limit):
+            try:
+                results.append(self.finalize_receipt(identifier, rpc,
+                                                     confirmations=confirmations))
+            except (ExecutionError, ExecutionStoreError) as error:
+                results.append({'observationId': identifier, 'state': 'attention',
+                                'reason': getattr(error, 'code', 'publisher_finality_unavailable')})
+        return results
 
     def live(self, signer_address):
         """Rows a restart must still drive to a receipt for this signer."""

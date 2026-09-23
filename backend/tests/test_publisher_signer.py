@@ -12,7 +12,7 @@ from eth_hash.auto import keccak
 from automation_fixtures import address, identity, selector
 from automation_plan import observation_id, publish_calldata
 from execution_signer import ExecutionError, verify_signed
-from publisher_signer import PublisherPolicy, PublisherSigner, point_record
+from publisher_signer import PublicationJournal, PublisherPolicy, PublisherSigner, point_record
 
 KEY = bytes([77]) * 32  # published synthetic local test key; never funded remotely
 GUARD = address(23)
@@ -51,12 +51,22 @@ class FakeRpc:
         raise AssertionError(method)
 
 
+class SyntheticReservation:
+    def __init__(self):
+        self.calls = []
+
+    def require_reservation(self, *args):
+        self.calls.append(args)
+
+
 class PublisherSignerTests(unittest.TestCase):
     def setUp(self):
         self.policy = PublisherPolicy(400000, 10**10, 10**6, 10**16, 600, enabled=True)
         self.address = Account.from_key(KEY).address.lower()
         self.rpc = FakeRpc(self.address)
-        self.signer = PublisherSigner(self.rpc, KEY, GUARD, self.policy)
+        self.budget = SyntheticReservation()
+        self.signer = PublisherSigner(self.rpc, KEY, GUARD, self.policy,
+                                      gas_budget=self.budget)
 
     def test_policy_and_point_shapes_are_checked(self):
         with self.assertRaises(ExecutionError):
@@ -105,6 +115,9 @@ class PublisherSignerTests(unittest.TestCase):
     def test_sign_rebuilds_from_the_point_and_refuses_a_handed_envelope(self):
         envelope = self.signer.envelope(POINT, 5)
         raw, digest = self.signer.sign(POINT, envelope)
+        self.assertEqual(self.budget.calls[0],
+                         (observation_id(GUARD, POINT), 'publisher', self.address,
+                          envelope['gas'] * envelope['maxFeePerGas']))
         self.assertEqual(Account.recover_transaction(raw).lower(), self.address)
         self.assertEqual('0x' + keccak(raw).hex(), digest)
         verify_signed(raw, envelope, self.address, digest)
@@ -117,6 +130,39 @@ class PublisherSignerTests(unittest.TestCase):
         # The nonce is the journal's claim, carried through the envelope, not a restricted field.
         raw, _ = self.signer.sign(POINT, self.signer.envelope(POINT, 6))
         self.assertEqual(Account.recover_transaction(raw).lower(), self.address)
+
+    def test_missing_or_denied_shared_reservation_blocks_signature(self):
+        envelope = self.signer.envelope(POINT, 5)
+        without = PublisherSigner(self.rpc, KEY, GUARD, self.policy)
+        with self.assertRaisesRegex(ExecutionError, 'publisher_gas_reservation_required'):
+            without.sign(POINT, envelope)
+        self.budget.require_reservation = lambda *args: (_ for _ in ()).throw(ValueError('denied'))
+        with self.assertRaisesRegex(ExecutionError, 'publisher_gas_reservation_required'):
+            self.signer.sign(POINT, envelope)
+
+    def test_legacy_signed_publication_cannot_resend_without_counted_claim(self):
+        envelope = self.signer.envelope(POINT, 5)
+        raw, digest = self.signer.sign(POINT, envelope)
+        identifier = observation_id(GUARD, POINT)
+        row = {'state': 'signed', 'envelope': envelope, 'signer': self.address,
+               'signed_bytes': raw, 'transaction_hash': digest}
+        journal = object.__new__(PublicationJournal)
+        journal._transaction = lambda operation: operation(None)
+        journal._row = lambda conn, key, lock=False: row
+        journal._status = lambda value: value
+        journal.gas_budget = None
+        with self.assertRaisesRegex(ExecutionError, 'publisher_gas_reservation_required'):
+            journal.send(identifier, self.rpc)
+        self.assertFalse(any(method == 'eth_sendRawTransaction' for method, _ in self.rpc.calls))
+
+        class DeniedClaim:
+            def require_existing_reservation(self, *_):
+                raise ValueError('claim missing')
+
+        journal.gas_budget = DeniedClaim()
+        with self.assertRaisesRegex(ExecutionError, 'publisher_gas_reservation_required'):
+            journal.send(identifier, self.rpc)
+        self.assertFalse(any(method == 'eth_sendRawTransaction' for method, _ in self.rpc.calls))
 
 
 if __name__ == '__main__':

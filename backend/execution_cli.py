@@ -14,6 +14,8 @@ import sys
 from execution_signer import ExecutionRpc, RestrictedSigner, SignerPolicy, ExecutionError
 from execution_runner import ExecutionRunner
 from execution_store import _owner, _hash, _worker, ExecutionStoreError
+from gas_budget_bridge import GasBudgetClient
+from gas_usd_budget import GasBudgetError
 
 
 def private_file(path, maximum):
@@ -66,8 +68,10 @@ def main(argv=None):
         from execution_runner import ExecutionJournal
         bound=ExecutionJournal(config['database']).read(owner,identifier)['intent']['commitments'].get('priceObservationId')
         if bound is not None:_hash(bound)
-        signer=RestrictedSigner(ExecutionRpc(config['rpcEndpoint']),bytes.fromhex(key),config['admission'],policy,
-            price_observation_id=bound if bound is not None else config.get('priceObservationId',m.ZERO_HASH))
+        rpc=ExecutionRpc(config['rpcEndpoint'])
+        signer=RestrictedSigner(rpc,bytes.fromhex(key),config['admission'],policy,
+            price_observation_id=bound if bound is not None else config.get('priceObservationId',m.ZERO_HASH),
+            gas_budget=GasBudgetClient())
         runner=ExecutionRunner(config['database'],signer,restore_only=config['restoreOnly'])
         if args.operation=='status':result=runner.journal.status(owner,identifier)
         else:
@@ -79,7 +83,7 @@ def main(argv=None):
             else:result=runner.step(owner,identifier,worker,replace=args.operation=='replace')
         print(json.dumps(result,sort_keys=True,separators=(',',':')))
         return 0
-    except (ExecutionError,ExecutionStoreError) as error:
+    except (ExecutionError,ExecutionStoreError,GasBudgetError) as error:
         print(json.dumps({'error':error.code}));return 1
     except Exception:
         print('{"error":"execution_unavailable"}');return 1

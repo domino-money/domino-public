@@ -52,7 +52,14 @@ PACKAGED_MIGRATIONS = ('backend/migrations/015_unsigned_execution.sql',
                        'backend/migrations/028_automation_cycle.sql',
                        'backend/migrations/029_ledger_index.sql',
                        'backend/migrations/030_swap_exposure.sql',
-                       'backend/migrations/031_publication_resend.sql')
+                       'backend/migrations/031_publication_resend.sql',
+                       'backend/migrations/032_shared_gas_budget.sql',
+                       'backend/migrations/033_gas_budget_claim_read.sql',
+                       'backend/migrations/034_gas_settlement_sweep.sql',
+                       'backend/migrations/035_cancel_unsigned_gas_claims.sql',
+                       'backend/migrations/036_gas_settlement_journal_read.sql',
+                       'backend/migrations/037_gas_settlement_receipt_evidence.sql',
+                       'backend/migrations/038_gas_settlement_quote_witness.sql')
 
 
 def packaged_records(files):

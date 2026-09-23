@@ -115,7 +115,7 @@ def rebuild_compound(plan, observation, checkpoint):
 
 
 class RestrictedSigner:
-    def __init__(self, rpc, key, admission, policy, *, price_observation_id=m.ZERO_HASH):
+    def __init__(self, rpc, key, admission, policy, *, price_observation_id=m.ZERO_HASH, gas_budget=None):
         self.rpc=rpc
         self._account=Account.from_key(key)
         self.address=self._account.address.lower()
@@ -136,6 +136,7 @@ class RestrictedSigner:
             raise ExecutionError('execution_price_observation_required')
         self.price_observation_id=price_observation_id
         self.policy=policy
+        self.gas_budget=gas_budget
 
     def verifier(self):
         if self.action=='typed_fee_execution_v4':
@@ -207,7 +208,7 @@ class RestrictedSigner:
             raise ExecutionError('execution_source_reorg')
         return compound,head
 
-    def envelope(self, plan, nonce, *, fee=None, priority=None):
+    def envelope(self, plan, nonce, *, fee=None, priority=None, existing_signed=False):
         compound, _ = self.qualify(plan['plan'],plan['observation'])
         p=_model(m.ExecutionPlan,plan['plan'])
         base=g._quantity(self.rpc.request('eth_getBlockByNumber',['latest',False]).get('baseFeePerGas'))
@@ -215,6 +216,21 @@ class RestrictedSigner:
         priority=self.policy.priority_fee_per_gas if priority is None else priority
         if fee>self.policy.max_fee_per_gas or priority>fee or self.policy.max_gas*fee>min(self.policy.max_total_cost,int(p.maxGasCostWei)):
             raise ExecutionError('execution_gas_budget')
+        if self.action=='typed_fee_execution_v4':
+            if self.gas_budget is None:
+                raise ExecutionError('execution_gas_reservation_required')
+            try:
+                if not existing_signed:
+                    # A replacement may raise the fee ceiling. Re-price the
+                    # same claim atomically under the shared daily cap before
+                    # the new envelope can cross the key boundary.
+                    self.gas_budget.reserve_one(p.intent_id(),'operator',
+                        self.address,self.policy.max_gas*fee)
+                require = (self.gas_budget.require_existing_reservation if existing_signed
+                           else self.gas_budget.require_reservation)
+                require(p.intent_id(),'operator',self.address,self.policy.max_gas*fee)
+            except Exception:
+                raise ExecutionError('execution_gas_reservation_required') from None
         if g._quantity(self.rpc.request('eth_getBalance',[self.address,'latest']))<self.policy.max_gas*fee:
             raise ExecutionError('execution_gas_balance')
         return {'chainId':4663,'nonce':nonce,'type':2,'to':p.sequence.vault,'value':0,
@@ -232,8 +248,9 @@ class RestrictedSigner:
         verify_signed(raw,envelope,self.address,digest)
         return raw,digest
 
-    def assert_envelope(self,record,envelope):
-        expected=self.envelope(record,envelope['nonce'],fee=envelope['maxFeePerGas'],priority=envelope['maxPriorityFeePerGas'])
+    def assert_envelope(self,record,envelope,*,existing_signed=False):
+        expected=self.envelope(record,envelope['nonce'],fee=envelope['maxFeePerGas'],
+            priority=envelope['maxPriorityFeePerGas'],existing_signed=existing_signed)
         if envelope!=expected:raise ExecutionError('execution_envelope_changed')
 
 

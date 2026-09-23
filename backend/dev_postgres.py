@@ -217,6 +217,38 @@ def create_database(name):
             conn.execute((ROOT/'migrations/030_swap_exposure.sql').read_text())
         # 031 only replaces 028's publication guard, so it applies again safely.
         conn.execute((ROOT/'migrations/031_publication_resend.sql').read_text())
+        if conn.execute("SELECT to_regnamespace('domino_gas_budget') IS NULL").fetchone()[0]:
+            conn.execute((ROOT/'migrations/032_shared_gas_budget.sql').read_text())
+        if conn.execute("SELECT to_regprocedure('domino_gas_budget.claim_for_settlement(text,text)') IS NULL").fetchone()[0]:
+            conn.execute((ROOT/'migrations/033_gas_budget_claim_read.sql').read_text())
+        if conn.execute("SELECT to_regprocedure('domino_gas_budget.next_pending(integer)') IS NULL").fetchone()[0]:
+            conn.execute((ROOT/'migrations/034_gas_settlement_sweep.sql').read_text())
+        if conn.execute("SELECT to_regprocedure('domino_gas_budget.cancel_unsigned(text,text)') IS NULL").fetchone()[0]:
+            conn.execute((ROOT/'migrations/035_cancel_unsigned_gas_claims.sql').read_text())
+        if conn.execute("SELECT to_regprocedure('domino_execution.gas_publication_witness(text)') IS NULL").fetchone()[0]:
+            conn.execute((ROOT/'migrations/036_gas_settlement_journal_read.sql').read_text())
+        if conn.execute("SELECT to_regclass('domino_execution.reverted_receipts') IS NULL").fetchone()[0]:
+            conn.execute((ROOT/'migrations/037_gas_settlement_receipt_evidence.sql').read_text())
+        if conn.execute("SELECT to_regclass('domino_gas_budget.settlement_quote_witnesses') IS NULL").fetchone()[0]:
+            conn.execute((ROOT/'migrations/038_gas_settlement_quote_witness.sql').read_text())
+        # Development mirrors the production split: callable NOLOGIN privilege
+        # roles, each inherited by exactly one unprivileged LOGIN bridge.
+        for login, privilege in (
+                ('domino_gas_reservation_login', 'domino_gas_budget_worker'),
+                ('domino_gas_settlement_login', 'domino_gas_settlement_worker')):
+            if not conn.execute('SELECT 1 FROM pg_roles WHERE rolname=%s', (login,)).fetchone():
+                conn.execute(sql.SQL('CREATE ROLE {} LOGIN INHERIT NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS')
+                             .format(sql.Identifier(login)))
+            attrs = conn.execute('SELECT rolcanlogin,rolsuper,rolcreatedb,rolcreaterole,rolreplication,rolbypassrls '
+                                 'FROM pg_roles WHERE rolname=%s', (login,)).fetchone()
+            if attrs != (True, False, False, False, False, False):
+                raise DataError('unsafe_gas_access_role')
+            if conn.execute('SELECT rolcanlogin FROM pg_roles WHERE rolname=%s', (privilege,)).fetchone() != (False,):
+                raise DataError('gas_privilege_role_login_enabled')
+            conn.execute(sql.SQL('GRANT CONNECT ON DATABASE {} TO {}').format(
+                sql.Identifier(name), sql.Identifier(login)))
+            conn.execute(sql.SQL('GRANT {} TO {} WITH INHERIT TRUE, SET FALSE').format(
+                sql.Identifier(privilege), sql.Identifier(login)))
 
 
 

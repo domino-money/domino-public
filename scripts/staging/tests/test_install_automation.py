@@ -78,6 +78,16 @@ class AutomationInstallTests(unittest.TestCase):
             self.assertIn(line + '\n', text)
         for forbidden in ('[Install]', 'WantedBy=', '--key', 'run-once', 'domino-dev', 'EnvironmentFile=/'):
             self.assertNotIn(forbidden, text)
+        peers = self.planned['peerUnits']
+        self.assertEqual(set(peers), set(automation.PEER_UNITS))
+        self.assertIn('SocketMode=0660\n', peers['domino-gas-reservation.socket'])
+        self.assertIn('SocketGroup=domino-db\n', peers['domino-gas-reservation.socket'])
+        self.assertIn('User=domino-gas-reservation\n', peers['domino-gas-reservation.service'])
+        self.assertIn('User=domino-gas-settlement\n', peers['domino-gas-settlement.service'])
+        self.assertIn('Requires=domino-gas-reservation.socket\n', peers['domino-gas-settlement.service'])
+        self.assertIn('gas_settlement_cli.py', peers['domino-gas-settlement.service'])
+        self.assertIn('Unit=domino-gas-settlement.service\n', peers['domino-gas-settlement.timer'])
+        self.assertTrue(all('[Install]' not in unit for unit in peers.values()))
 
     def test_only_the_automation_migrations_run_in_one_guarded_transaction(self):
         files = dict(self.files)
@@ -89,15 +99,21 @@ class AutomationInstallTests(unittest.TestCase):
             self.assertNotIn(name, query)
         self.assertTrue(query.startswith('BEGIN;'))
         self.assertTrue(query.endswith('COMMIT;\n'))
-        first, second, third, fourth = (self.files[name][0].decode() for name in automation.MIGRATIONS)
-        self.assertLess(query.index(first), query.index(second))
-        self.assertLess(query.index(second), query.index(third))
-        self.assertLess(query.index(third), query.index(fourth))
+        migrations = [self.files[name][0].decode() for name in automation.MIGRATIONS]
+        self.assertEqual(len(migrations), 11)
+        for earlier, later in zip(migrations, migrations[1:]):
+            self.assertLess(query.index(earlier), query.index(later))
+        first = migrations[0]
+        second = migrations[1]
         self.assertLess(query.index('financial_schema_missing'), query.index(first))
         for guard in ('wrong_automation_ddl_identity', 'automation_schema_already_exists', 'execution_roles_unexpected',
                       "to_regclass('domino_financial_install.receipt') IS NULL", "to_regclass('domino_execution.cycles') IS NOT NULL"):
             self.assertIn(guard, query)
         self.assertIn('ALTER ROLE domino_execution_publisher LOGIN; GRANT CONNECT ON DATABASE domino_catalogue TO domino_execution_publisher;', query)
+        for _, login, privilege in automation.GAS_ACCESS:
+            self.assertIn(f'CREATE ROLE {login} LOGIN INHERIT NOSUPERUSER', query)
+            self.assertIn(f'GRANT {privilege} TO {login} WITH INHERIT TRUE, SET FALSE;', query)
+            self.assertNotIn(f'ALTER ROLE {privilege} LOGIN', query)
         self.assertIn('domino_automation_install.receipt', query)
         self.assertEqual(query.count('CREATE ROLE domino_execution_publisher'), 1)
         self.assertNotIn('LOGIN;', query.split(second)[0].split(first)[0])
@@ -107,11 +123,15 @@ class AutomationInstallTests(unittest.TestCase):
         original_hba, original_ident = hba_text().decode().splitlines(), ident_text().decode().splitlines()
         new_hba, new_ident = hba.decode().splitlines(), ident.decode().splitlines()
         self.assertEqual([line for line in new_hba if line not in original_hba],
-                         ['local domino_catalogue domino_execution_publisher peer map=domino_financial'])
+                         ['local domino_catalogue domino_execution_publisher peer map=domino_financial',
+                          *(f'local domino_catalogue {login} peer map=domino_financial'
+                            for _, login, _ in automation.GAS_ACCESS)])
         self.assertEqual(new_hba[-1], 'local all all reject')
         self.assertLess(new_hba.index('local domino_catalogue domino_execution_publisher peer map=domino_financial'), len(new_hba) - 1)
         self.assertEqual(new_ident[:len(original_ident)], original_ident)
-        self.assertEqual(new_ident[len(original_ident):], [f'domino_financial domino-automation {role}' for role in automation.ROLES])
+        self.assertEqual(new_ident[len(original_ident):],
+                         [f'domino_financial domino-automation {role}' for role in automation.ROLES] +
+                         [f'domino_financial {os_user} {login}' for os_user, login, _ in automation.GAS_ACCESS])
         for bad_hba, bad_ident, reason in (
                 (hba_text(publisher=True), ident_text(), 'automation_peers_exist'),
                 (hba_text(), ident_text(automation_rows=True), 'automation_peers_exist'),
@@ -131,6 +151,103 @@ class AutomationInstallTests(unittest.TestCase):
                 automation.apply(self.files, self.planned, {})
         self.assertEqual(automation.RECEIPTS, Path('/var/backups/domino-financial/automation'))
         self.assertEqual(automation.UNIT, 'domino-automation.service')
+
+
+@unittest.skipUnless(os.environ.get('DOMINO_TEST_POSTGRES') == '1', 'disposable PostgreSQL required')
+class GasPeerRoleTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        sys.path.insert(0, str(REPO / 'backend' / 'tests'))
+        from execution_pg import ExecutionPostgres
+        import psycopg
+        cls.psycopg = psycopg
+        cls.pg = ExecutionPostgres().start()
+        cls.addClassCleanup(cls.pg.close)
+        with cls.pg.admin() as conn:
+            conn.execute((REPO / 'backend/migrations/019_execution_journal.sql').read_text())
+            conn.execute((REPO / 'backend/migrations/028_automation_cycle.sql').read_text())
+            for name in automation.MIGRATIONS:
+                if not name.split('/')[-1].startswith(('032_', '033_', '034_', '035_', '036_', '037_', '038_')):
+                    continue
+                conn.execute((REPO / name).read_text())
+            conn.execute(automation.gas_login_sql(cls.pg.settings['dbname']))
+
+    def test_bridge_roles_connect_and_inherit_only_their_function_set(self):
+        reserve = 'domino_gas_budget.reserve(text,text,text,numeric,numeric,numeric,bigint,bigint,text,bigint,integer)'
+        settle = 'domino_gas_budget.settle(text,text,numeric,numeric,numeric,bigint,bigint)'
+        claim = 'domino_gas_budget.claim_for_settlement(text,text)'
+        sweep = 'domino_gas_budget.next_pending(integer)'
+        cancel = 'domino_gas_budget.cancel_unsigned(text,text)'
+        attest = 'domino_gas_budget.attest_settlement_quote(text,text,numeric,numeric,bigint,bigint,text,bigint)'
+        for _, login, privilege in automation.GAS_ACCESS:
+            with self.subTest(login=login), self.psycopg.connect(**self.pg.settings, user=login) as conn:
+                self.assertEqual(conn.execute('SELECT current_user').fetchone(), (login,))
+                self.assertEqual(conn.execute('SELECT rolcanlogin FROM pg_roles WHERE rolname=%s',
+                                              (privilege,)).fetchone(), (False,))
+                self.assertEqual(conn.execute('SELECT has_function_privilege(current_user,%s,\'EXECUTE\'),'
+                                              'has_function_privilege(current_user,%s,\'EXECUTE\'),'
+                                              'has_function_privilege(current_user,%s,\'EXECUTE\'),'
+                                              'has_function_privilege(current_user,%s,\'EXECUTE\'),'
+                                              'has_function_privilege(current_user,%s,\'EXECUTE\'),'
+                                              'has_function_privilege(current_user,%s,\'EXECUTE\')',
+                                              (reserve, settle, claim, sweep, cancel, attest)).fetchone(),
+                                 (login == 'domino_gas_reservation_login',
+                                  login == 'domino_gas_settlement_login',
+                                  login == 'domino_gas_settlement_login',
+                                  login == 'domino_gas_settlement_login',
+                                  login == 'domino_gas_settlement_login',
+                                  login == 'domino_gas_reservation_login'))
+                foreign = next(role for _, role, _ in automation.GAS_ACCESS if role != login)
+                with self.assertRaises(self.psycopg.errors.InsufficientPrivilege):
+                    conn.execute(f'SET ROLE {foreign}')
+                conn.rollback()
+                with self.assertRaises(self.psycopg.errors.InsufficientPrivilege):
+                    conn.execute(f'SET ROLE {privilege}')
+                conn.rollback()
+                if login == 'domino_gas_reservation_login':
+                    self.assertEqual(len(conn.execute('SELECT * FROM domino_gas_budget.status(current_date)').fetchone()), 3)
+                    with self.assertRaises(self.psycopg.errors.InsufficientPrivilege):
+                        conn.execute("SELECT * FROM domino_gas_budget.claim_for_settlement('0x" + '11' * 32 + "','publisher')")
+                else:
+                    self.assertEqual(conn.execute("SELECT * FROM domino_gas_budget.claim_for_settlement('0x" +
+                                                  '11' * 32 + "','publisher')").fetchall(), [])
+                    with self.assertRaises(self.psycopg.errors.InsufficientPrivilege):
+                        conn.execute('SELECT * FROM domino_gas_budget.status(current_date)')
+
+    def test_privilege_roles_cannot_log_in_directly(self):
+        for _, _, privilege in automation.GAS_ACCESS:
+            with self.subTest(role=privilege), self.assertRaises(self.psycopg.OperationalError):
+                self.psycopg.connect(**self.pg.settings, user=privilege, connect_timeout=2)
+
+    def test_settlement_witness_functions_are_scoped_without_direct_table_select(self):
+        claim = '0x' + '11' * 32
+        owner = '0x' + '22' * 20
+        with self.pg.admin() as conn:
+            conn.execute('INSERT INTO domino_execution.publications '
+                         '(observation_id,guard,pool_id,block_number,block_hash,block_timestamp,expires_at,'
+                         'sqrt_price,signer,nonce,envelope,signed_bytes,transaction_hash,state) '
+                         "VALUES(%s,%s,%s,1,%s,1,2,1,%s,0,'{}'::jsonb,%s,%s,'signed')",
+                         (claim, owner, claim, claim, owner, b'x', '0x' + '33' * 32))
+        with self.psycopg.connect(**self.pg.settings, user='domino_gas_settlement_login') as conn:
+            self.assertEqual(conn.execute('SELECT observation_id FROM domino_execution.gas_publication_witness(%s)',
+                                          (claim,)).fetchall(), [(claim,)])
+            self.assertEqual(conn.execute('SELECT * FROM domino_execution.gas_publication_witness(%s)',
+                                          ('0x' + '44' * 32,)).fetchall(), [])
+            self.assertEqual(conn.execute('SELECT * FROM domino_execution.gas_intent_witness(%s,%s)',
+                                          (owner, claim)).fetchall(), [])
+            self.assertEqual(conn.execute('SELECT * FROM domino_execution.gas_reverted_witness(%s,%s)',
+                                          (owner, claim)).fetchall(), [])
+            for table in ('publications', 'intents', 'journal', 'attempts', 'effects',
+                          'reverted_receipts', 'publication_finality',
+                          'publication_finality_cursor'):
+                with self.subTest(table=table), self.assertRaises(self.psycopg.errors.InsufficientPrivilege):
+                    conn.execute(f'SELECT * FROM domino_execution.{table} LIMIT 1')
+                conn.rollback()
+            with self.assertRaises(self.psycopg.errors.InsufficientPrivilege):
+                conn.execute('INSERT INTO domino_execution.publications DEFAULT VALUES')
+        with self.psycopg.connect(**self.pg.settings, user='domino_gas_reservation_login') as conn:
+            with self.assertRaises(self.psycopg.errors.InsufficientPrivilege):
+                conn.execute('SELECT * FROM domino_execution.gas_publication_witness(%s)', (claim,))
 
 
 if __name__ == '__main__':

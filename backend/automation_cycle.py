@@ -18,6 +18,7 @@ import uuid
 
 import execution_models as m
 import execution_planner as p
+import general_compound_receipts as g
 from automation_config import AutomationConfig
 from automation_evidence import PPM, SWAP_WINDOW_BLOCKS, build_evidence, exposure_ppm
 from automation_ledger import LedgerIndexStore, LedgerIndexer
@@ -28,6 +29,8 @@ from automation_store import CycleStore
 from execution_runner import ExecutionRunner
 from execution_signer import ExecutionError, ExecutionRpc, RestrictedSigner, SignerPolicy
 from execution_store import ExecutionStoreError, UnsignedExecutionStore, _model
+from gas_budget_bridge import GasBudgetClient
+from gas_usd_budget import GasBudgetError
 from publisher_signer import PublicationJournal, PublisherPolicy, PublisherSigner
 from read_deadline import read_deadline
 
@@ -80,16 +83,18 @@ class Evaluation:
 
 
 class SequenceCycle:
-    def __init__(self, config, *, rpc=None, worker_id=None, operator_key=None, publisher_key=None, clock=time.time, rng=None):
+    def __init__(self, config, *, rpc=None, worker_id=None, operator_key=None, publisher_key=None,
+                 gas_budget=None, clock=time.time, rng=None):
         if not isinstance(config, AutomationConfig):
             raise CycleError('automation_configuration_required')
         self.config = config
         self.rpc = rpc or ExecutionRpc(config.rpcEndpoint)
         self.reader = ChainReader(self.rpc)
         settings = config.database.settings()
+        self.gas_budget = gas_budget if gas_budget is not None else GasBudgetClient()
         self.store = CycleStore(settings)
         self.ledger = UnsignedExecutionStore(settings)
-        self.journal = PublicationJournal(settings)
+        self.journal = PublicationJournal(settings, gas_budget=self.gas_budget)
         self.index_store = LedgerIndexStore(settings)
         ledger = config.ledger
         self.indexer = (LedgerIndexer(self.reader, self.index_store, max_blocks=ledger.maxBlocksPerPass, max_logs=ledger.maxLogsPerPass)
@@ -104,7 +109,8 @@ class SequenceCycle:
         if publisher_key is not None:
             pub = config.publisher
             self.publisher = PublisherSigner(self.rpc, publisher_key, config.deployment.priceGuard,
-                PublisherPolicy(pub.maxGas, pub.maxFeePerGas, pub.priorityFeePerGas, pub.maxTotalCostWei, pub.expirySeconds, pub.enabled))
+                PublisherPolicy(pub.maxGas, pub.maxFeePerGas, pub.priorityFeePerGas, pub.maxTotalCostWei,
+                                pub.expirySeconds, pub.enabled), gas_budget=self.gas_budget)
             if self.publisher.address != config.deployment.pricePublisher:
                 raise CycleError('automation_publisher_key_mismatch')
 
@@ -123,7 +129,8 @@ class SequenceCycle:
         if self.operator_key is None:
             raise CycleError('automation_operator_key_required')
         policy = SignerPolicy(**self.config.operator.policy.model_dump())
-        signer = RestrictedSigner(self.rpc, self.operator_key, admission, policy, price_observation_id=anchor)
+        signer = RestrictedSigner(self.rpc, self.operator_key, admission, policy,
+                                  price_observation_id=anchor, gas_budget=self.gas_budget)
         if signer.address != self.config.deployment.operator:
             raise CycleError('automation_operator_key_mismatch')
         return signer
@@ -465,7 +472,26 @@ class SequenceCycle:
         if self.publisher is None:
             return self._abandon(owner, cycle_id, intent, fence, updates, 'signers_unavailable', result, latency=latency)
         try:
+            # Reserve both possible network payments as one database transaction
+            # before either key can sign. The signer gates independently check
+            # the exact envelope maximum immediately before signing.
+            raw_head = self.rpc.request('eth_getBlockByNumber', ['latest', False])
+            base = g._quantity(raw_head.get('baseFeePerGas'))
+            pub_policy = self.publisher.policy
+            op_policy = self.config.operator.policy
+            pub_fee = min(pub_policy.max_fee_per_gas, 2 * base + pub_policy.priority_fee_per_gas)
+            op_fee = min(op_policy.max_fee_per_gas, 2 * base + op_policy.priority_fee_per_gas)
+            pub_max = pub_policy.max_gas * pub_fee
+            op_max = op_policy.max_gas * op_fee
+            if (pub_max > pub_policy.max_total_cost
+                    or op_max > min(op_policy.max_total_cost, int(plan.maxGasCostWei))):
+                raise ExecutionError('execution_gas_budget')
+            self.gas_budget.reserve_pair(anchor, self.publisher.address, pub_max,
+                intent, self.config.deployment.operator, op_max)
             publication = self.journal.prepare(self.publisher, point, max_source_age=scheduling.maxSourceBlockAge)
+        except GasBudgetError as error:
+            return self._abandon(owner, cycle_id, intent, fence, updates, 'publish_' + error.code,
+                                 result, latency=latency)
         except ExecutionError as error:
             return self._abandon(owner, cycle_id, intent, fence, updates, 'publish_' + error.code, result, latency=latency)
         if self.store.cycle(owner, cycle_id)['state'] != 'publishing':
@@ -572,11 +598,33 @@ class SequenceCycle:
             runner = ExecutionRunner(self.config.database.settings(), self._signer(admission, anchor), restore_only=False)
         except CycleError as error:
             return self._abandon(owner, cycle_id, intent, fence, updates, error.code.removeprefix('automation_'), result, latency=latency)
-        if runner.journal.read(owner, intent)['journal'] is None:
+        journal = runner.journal.read(owner, intent)['journal']
+        if journal is None:
             # Nothing signed yet: name the refusal while the intent can still be released.
             reason = self._prevalidate(admission, _model(m.ExecutionPlan, self.ledger.get(owner, intent)['plan']), anchor)
             if reason:
                 return self._abandon(owner, cycle_id, intent, fence, updates, reason, result, latency=latency)
+        if journal is None or journal['state'] == 'signing':
+            # Publication may have taken longer than the signing gate's 120s.
+            # Refresh only an unsigned operator leg; reconciliation of an
+            # already signed attempt never depends on a fresh price quote.
+            try:
+                policy = self.config.operator.policy
+                base = g._quantity(self.rpc.request('eth_getBlockByNumber',
+                    ['latest', False]).get('baseFeePerGas'))
+                fee = min(policy.max_fee_per_gas, 2 * base + policy.priority_fee_per_gas)
+                maximum = policy.max_gas * fee
+                if maximum > policy.max_total_cost:
+                    raise ExecutionError('execution_gas_budget')
+                self.gas_budget.reserve_one(intent, 'operator',
+                    self.config.deployment.operator, maximum)
+            except (GasBudgetError, ExecutionError) as error:
+                code = error.code
+                if journal is None:
+                    return self._abandon(owner, cycle_id, intent, fence, updates,
+                                         'operator_' + code, result, latency=latency)
+                return self._park(owner, cycle_id, fence, updates,
+                                  'operator_' + code, result, latency)
         deadline = self.clock() + scheduling.executionWaitSeconds
         status = None
         while True:
@@ -737,8 +785,13 @@ class SequenceCycle:
         for row in self.journal.live(self.config.deployment.pricePublisher):
             row = self._settle_publication(row['observationId'])
             results.append({'observationId': row['observationId'], 'state': row['state'], 'reason': row['reason']})
+        self.finalize_publications()
         return results
 
+    def finalize_publications(self):
+        """One bounded publisher-identity pass after terminal cycles leave live()."""
+        return self.journal.finalize_pending(self.config.deployment.pricePublisher, self.rpc,
+            confirmations=self.config.finality.publicationConfirmations, limit=8)
 
 def serve(cycle, *, stop, sleep=time.sleep, log=print):
     """Round-robin over the admitted sequences, each at its own due time: a
@@ -748,6 +801,14 @@ def serve(cycle, *, stop, sleep=time.sleep, log=print):
     interval = cycle.config.scheduling.evaluationIntervalSeconds
     while not stop():
         due = []
+        try:
+            cycle.finalize_publications()
+        except (ExecutionStoreError, ExecutionError) as error:
+            log(json.dumps({'event': 'publication_finality',
+                            'code': getattr(error, 'code', 'publisher_finality_unavailable')}))
+        except Exception:
+            log(json.dumps({'event': 'publication_finality',
+                            'code': 'publisher_finality_unavailable'}))
         for entry in cycle.config.sequences:
             if stop():
                 break

@@ -90,7 +90,14 @@ class DurableExecutorEvmTests(unittest.TestCase):
             self.assertEqual(len(sends),1)
             self.assertTrue(first['receipt']['e1Proof'])
             self.assertEqual(first['receipt']['serviceFeeBps'],400)
-            with self.pg.admin() as conn:self.assertEqual(conn.execute('SELECT count(*) FROM domino_execution.effects WHERE canonical').fetchone()[0],1)
+            with self.pg.admin() as conn:
+                self.assertEqual(conn.execute('SELECT count(*) FROM domino_execution.effects WHERE canonical').fetchone()[0],1)
+                witness=conn.execute("SELECT receipt->>'transactionHash',receipt->'block'->>'number',"
+                    "receipt->'gas'->>'receiptGasProductWei' FROM domino_execution.effects "
+                    'WHERE intent_id=%s',(self.identifier,)).fetchone()
+                receipt=first['receipt']
+                self.assertEqual(witness,(receipt['transactionHash'],str(receipt['block']['number']),
+                                          receipt['gas']['receiptGasProductWei']))
         finally:self.rpc.request=original
 
     def test_ambiguous_broadcast_cannot_cancel_or_allocate_new_nonce(self):
@@ -199,12 +206,13 @@ class DurableExecutorEvmTests(unittest.TestCase):
 
     def test_stale_worker_and_actual_roles_cannot_read_or_modify_signed_bytes(self):
         self.prepare();self.runner.journal.persist_signed(self.owner,self.identifier,self.worker,self.lease['fence'],self.signer)
-        for role in ('domino_execution_worker','domino_execution_ledger','domino_execution_owner'):
+        with self.assertRaises(psycopg.OperationalError):
+            psycopg.connect(**self.pg.settings,user='domino_execution_owner',connect_timeout=2)
+        for role in ('domino_execution_worker','domino_execution_ledger'):
             with psycopg.connect(**self.pg.settings,user=role) as conn:
                 conn.execute("SELECT set_config('domino.execution_owner',%s,true)",(self.owner,))
-                if role=='domino_execution_owner':self.assertEqual(conn.execute('SELECT signed_bytes FROM domino_execution.attempts').fetchall(),[])
-                else:
-                    with self.assertRaises(psycopg.errors.InsufficientPrivilege):conn.execute('SELECT signed_bytes FROM domino_execution.attempts')
+                with self.assertRaises(psycopg.errors.InsufficientPrivilege):
+                    conn.execute('SELECT signed_bytes FROM domino_execution.attempts')
         with self.pg.admin() as conn:
             conn.execute('ALTER TABLE domino_execution.intents DISABLE TRIGGER USER')
             conn.execute("UPDATE domino_execution.intents SET lease_until=clock_timestamp()-interval '1 second'")
@@ -313,7 +321,16 @@ class DurableExecutorEvmTests(unittest.TestCase):
         self.rpc.request('eth_sendRawTransaction',['0x'+bytes(attempt['signed_bytes']).hex()]);self.finality()
         self.assertEqual(self.step()['state'],'reverted')
         self.assertIsNone(self.runner.journal.status(self.owner,self.identifier)['receipt'])
-        with self.pg.admin() as conn:self.assertEqual(conn.execute('SELECT count(*) FROM domino_execution.effects').fetchone()[0],0)
+        with self.pg.admin() as conn:
+            self.assertEqual(conn.execute('SELECT count(*) FROM domino_execution.effects').fetchone()[0],0)
+            row=conn.execute('SELECT transaction_hash,gas_used,effective_gas_price '
+                'FROM domino_execution.reverted_receipts WHERE intent_id=%s',(self.identifier,)).fetchone()
+            receipt=self.rpc.request('eth_getTransactionReceipt',[attempt['transaction_hash']])
+            self.assertEqual(row,(attempt['transaction_hash'],int(receipt['gasUsed'],16),
+                                  int(receipt['effectiveGasPrice'],16)))
+            with self.assertRaises(psycopg.errors.CheckViolation):
+                conn.execute('UPDATE domino_execution.reverted_receipts SET gas_used=1 '
+                             'WHERE intent_id=%s',(self.identifier,))
 
     def test_api_reader_has_only_sanitized_columns_and_real_keyset_is_tenant_bound(self):
         from execution_status import ExecutionStatusReader, Status

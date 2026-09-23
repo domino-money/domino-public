@@ -31,6 +31,7 @@ from automation_observer import ChainReader, derive_admission, pool_state
 from evm_harness import calldata, KEY_TYPE, LIMITS_TYPE, POLICY_TYPE
 from execution_pg import ExecutionPostgres
 from execution_runner import ExecutionJournal
+from execution_signer import ExecutionError
 from execution_store import ExecutionStoreError, _model
 from execution_v4_adapter import decode_plan
 
@@ -38,6 +39,22 @@ OPERATOR_KEY = bytes([66]) * 32   # published synthetic local test keys; never f
 PUBLISHER_KEY = bytes([77]) * 32
 NODE_INTERFACE = '0x' + '00' * 19 + 'c8'
 OBSERVATION_TYPES = ['bytes32', 'uint64', 'bytes32', 'uint64', 'uint64', 'uint160']
+
+
+class SyntheticGasBudget:
+    # This EVM suite isolates cycle transitions. The real shared cap and
+    # concurrent claims are exercised by test_gas_usd_budget.
+    def reserve_pair(self, *args):
+        return {'publisher': {}, 'operator': {}}
+
+    def require_reservation(self, *args):
+        return None
+
+    def require_existing_reservation(self, *args):
+        return None
+
+    def reserve_one(self, *args):
+        return {'state': 'reserved'}
 
 
 @unittest.skipUnless(os.environ.get('DOMINO_TEST_POSTGRES') == '1' and os.environ.get('DOMINO_TEST_EVM') == '1', 'isolated PG and EVM required')
@@ -55,7 +72,13 @@ class AutomationCycleEvmTests(unittest.TestCase):
         cls.pg = ExecutionPostgres().start()
         cls.addClassCleanup(cls.pg.close)
         with cls.pg.admin() as conn:
-            for name in ('019_execution_journal', '028_automation_cycle', '029_ledger_index', '030_swap_exposure', '031_publication_resend'):
+            for name in ('019_execution_journal', '028_automation_cycle', '029_ledger_index',
+                         '030_swap_exposure', '031_publication_resend',
+                         '032_shared_gas_budget', '033_gas_budget_claim_read',
+                         '034_gas_settlement_sweep', '035_cancel_unsigned_gas_claims',
+                         '036_gas_settlement_journal_read',
+                         '037_gas_settlement_receipt_evidence',
+                         '038_gas_settlement_quote_witness'):
                 conn.execute((Path(__file__).resolve().parents[1] / f'migrations/{name}.sql').read_text())
             for role in ('domino_execution_signer', 'domino_execution_publisher'):
                 conn.execute(f'ALTER ROLE {role} LOGIN')
@@ -65,7 +88,8 @@ class AutomationCycleEvmTests(unittest.TestCase):
             conn.execute('TRUNCATE domino_execution.intents,domino_execution.origins,domino_execution.signer_heads,domino_execution.publications,'
                          'domino_execution.publisher_heads,domino_execution.cycles,domino_execution.sequence_state,domino_execution.pool_samples,'
                          'domino_execution.controls,domino_execution.withdrawals,domino_execution.withdrawal_debits,domino_execution.ledger_exceptions,'
-                         'domino_execution.ledger_cursors,domino_execution.swap_exposure CASCADE')
+                         'domino_execution.ledger_cursors,domino_execution.swap_exposure,'
+                         'domino_execution.publication_finality_cursor CASCADE')
         self.rpc.request('evm_revert', [self.base_snapshot])
         type(self).base_snapshot = self.rpc.request('evm_snapshot', [])
         self.rpc.request('evm_setAutomine', [True])
@@ -149,7 +173,8 @@ class AutomationCycleEvmTests(unittest.TestCase):
         self.fail('local transaction was not mined')
 
     def worker(self, worker_id=None, config=None):
-        return SequenceCycle(config or self.config, rpc=self.rpc, worker_id=worker_id, operator_key=OPERATOR_KEY, publisher_key=PUBLISHER_KEY)
+        return SequenceCycle(config or self.config, rpc=self.rpc, worker_id=worker_id, operator_key=OPERATOR_KEY,
+                             publisher_key=PUBLISHER_KEY, gas_budget=SyntheticGasBudget())
 
     def advance(self, seconds):
         head = self.rpc.request('eth_getBlockByNumber', ['latest', False])
@@ -691,6 +716,17 @@ class AutomationCycleEvmTests(unittest.TestCase):
         # reverts them, the nonce is spent, and the claims go back with the
         # canonical revert, as for any execution that reverts.
         restarted = self.worker(self.cycle.worker, config=steady)
+        authorized = restarted.gas_budget.require_existing_reservation
+        def refuse_operator_claim(_id, leg, *_args):
+            if leg == 'operator':
+                raise ExecutionError('gas_reservation_not_authorized')
+            return authorized(_id, leg, *_args)
+        restarted.gas_budget.require_existing_reservation = refuse_operator_claim
+        refused = restarted.run(self.entry)
+        self.assertEqual((refused['outcome'], refused['reason']),
+                         ('executing', 'execution_gas_reservation_required'), refused)
+        self.assertEqual(nonce(), before)
+        restarted.gas_budget.require_existing_reservation = authorized
         restarted.run(self.entry)
         self.assertEqual(nonce(), before + 1)
         self.finalize()

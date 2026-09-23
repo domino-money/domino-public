@@ -18,6 +18,7 @@ from automation_plan import PlanError
 from execution_cli import private_file
 from execution_signer import ExecutionError
 from execution_store import ExecutionStoreError
+from gas_usd_budget import GasBudgetError
 
 
 def read_key(path):
@@ -57,7 +58,9 @@ def main(argv=None):
         elif args.operation == 'evaluate':
             result = [cycle.run(entry, act=False) for entry in select(config, args.sequence)]
         elif args.operation == 'run-once':
-            result = {'publications': cycle.recover_publications(), 'cycles': [cycle.run(entry) for entry in select(config, args.sequence)]}
+            publications = cycle.recover_publications()
+            cycles = [cycle.run(entry) for entry in select(config, args.sequence)]
+            result = {'publications': publications, 'cycles': cycles}
         elif args.operation == 'serve':
             stopping = []
             for name in (signal.SIGTERM, signal.SIGINT):
@@ -101,7 +104,8 @@ def main(argv=None):
             result = cycle.journal.live(config.deployment.pricePublisher)
         print(json.dumps(result, sort_keys=True, separators=(',', ':'), default=str))
         return 0
-    except (ExecutionError, ExecutionStoreError, CycleError, ObservationError, PlanError) as error:
+    except (ExecutionError, ExecutionStoreError, CycleError, ObservationError, PlanError,
+            GasBudgetError) as error:
         print(json.dumps({'error': getattr(error, 'code', 'automation_unavailable')}))
         return 1
     except Exception:

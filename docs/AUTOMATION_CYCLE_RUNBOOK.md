@@ -27,10 +27,12 @@ the [activation](#activation) steps below are done and recorded.
 | `backend/automation_ledger.py` | The ledger's reader of the vault's fee events from finalized blocks, under the reconciliation role: an owner withdrawal becomes a debit on the ledger's lots, our own reconciled executions are verified, any other execution is an exception that suspends the sequence until an operator acknowledges it. |
 | `backend/automation_cycle.py` | The orchestrator: observe → decide → reserve → publish → execute → reconcile, with restart-safe transitions. |
 | `backend/automation_cli.py` | Private commands: `status`, `evaluate`, `run-once`, `serve`, `pause`/`resume`, `suspend`/`unsuspend`, `publications`, `index`, `ledger`, `acknowledge`. |
+| `backend/gas_budget_bridge.py` and `backend/gas_settlement_cli.py` | Separate OS peers for reservation over an authenticated local socket and bounded keyless receipt settlement. Both services are installed off. |
 | `backend/migrations/028_automation_cycle.sql` | Tables, the `domino_execution_publisher` role and the guards. Applied with the automation activation, never by the disabled foundation or the financial upgrade. |
 | `backend/migrations/029_ledger_index.sql` | The reader's cursors, withdrawals with their lot debits, exceptions, and the claim/spend guards counting the debits. Applied with 028; no new role. |
 | `backend/migrations/030_swap_exposure.sql` | The pools' shared swap budget (`swap_exposure`: each compound swap's share of its pool's cap, readable by every tenant's worker, written and released only by its own) and `sequence_state.consecutive_failures`. Applied with 028 and 029; no new role. |
 | `backend/migrations/031_publication_resend.sql` | The publication guard lets an `expired` row whose bytes are sent again become `submitted`/`broadcast_unknown`, live until its receipt; no other way out of `expired`. Applied with 028 to 030; no table, no role. |
+| `backend/migrations/032_shared_gas_budget.sql` to `038_gas_settlement_quote_witness.sql` | The shared US$20/day cap, bounded rotating settlement cursor, terminal unsigned-claim cancellation, scoped exact-ID journal witnesses, database-derived gas charge and an independent ETH/USD quote witness written by the reservation peer. The publisher writes a separate finalized-receipt witness through a bounded rotating pass; the keyless settlement peer verifies finalized receipts without broadcasts. |
 
 The existing pieces are reused unchanged in their boundaries: `execution_planner`
 decides, `execution_store` reserves, `execution_signer`/`execution_runner` sign, send and
@@ -73,12 +75,21 @@ values. They are not production values.
 1. Install with [`scripts/staging/install_automation.py`](AUTOMATION_INSTALL.md): it
    places the source release, the `domino-automation` user, the off unit, migrations
    `028_automation_cycle.sql`, `029_ledger_index.sql`, `030_swap_exposure.sql` and
-   `031_publication_resend.sql` (after the financial upgrade's 015 and 019; 028 creates
+   `031_publication_resend.sql`, `032_shared_gas_budget.sql`,
+   `033_gas_budget_claim_read.sql`, `034_gas_settlement_sweep.sql`,
+   `035_cancel_unsigned_gas_claims.sql`, `036_gas_settlement_journal_read.sql` and
+   `037_gas_settlement_receipt_evidence.sql` and
+   `038_gas_settlement_quote_witness.sql` (after the financial upgrade's 015 and 019; 028 creates
    the `domino_execution_publisher` role, 029 adds the ledger reader's tables to the
    existing `domino_execution_ledger` role, 030 the pools' shared swap budget and the
-   failure count, 031 lets an expired publication be sent again) and the peer
+   failure count, 031 lets an expired publication be sent again; 032–038 install
+   the shared USD gas cap, settlement claim reader, rotating cursor and a guarded
+   unsigned cancellation tombstone, scoped settlement witnesses and an
+   append-only reverted operator receipt) and the peer
    mappings from the service user to `domino_execution_worker`, `domino_execution_signer`,
-   `domino_execution_publisher` and `domino_execution_ledger`. A ledger that
+   `domino_execution_publisher` and `domino_execution_ledger`. The two gas
+   privilege roles remain `NOLOGIN`, behind separate peer-login bridge identities.
+   Keep the unit off until the full cycle is rehearsed. A ledger that
    already holds lots from before the reader existed is read from an explicit block
    once: `index --from-block <first execution block>`; otherwise the reader starts at
    the finalized head of its first pass.
@@ -91,6 +102,11 @@ values. They are not production values.
    latest sample age and the last cycles. `evaluate` runs the planner and records a
    decision without a transaction; a sequence with a cycle in flight is reported
    (`open`, with the cycle and its state) and left to a pass that has the keys.
+   The separate `gas_settlement_cli.py --config <peer-file> --limit 8` scans at
+   most eight pending claims under its own OS identity and needs no keys. It
+   never sends transactions. Pending, unsigned, reorganized and ambiguous
+   receipts keep their reservation; a later pass retries them after the durable
+   cursor wraps.
 4. Run one pass with keys: `run-once`. It first drives any live publication of the
    publisher to a receipt, then evaluates and, when eligible, publishes and executes.
 5. `serve` loops over the admitted sequences, honouring each one's due time and backoff:
@@ -171,7 +187,9 @@ Deploying the contracts did not enable this. To activate, in order and recorded:
 
 1. A verified production configuration (this document's table), with a gas pool for
    every non-ETH quote currency and the gas units re-measured on the deployed contracts.
-2. Migrations 028 to 031 applied and the four roles mapped on the host.
+2. Migrations 028 to 038 applied; the four execution roles and two isolated gas
+   peers verified, with the reservation and settlement runtime boundary and
+   receipt sweep tested end to end.
 3. Both keys placed and funded; the guard's publisher equal to the publisher key.
 4. `status` and `evaluate` clean for every admitted sequence over a measurement window;
    decisions recorded as `wait` with reasons that make sense.

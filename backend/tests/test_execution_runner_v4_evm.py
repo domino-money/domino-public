@@ -39,8 +39,17 @@ class DurableV4ExecutorTests(unittest.TestCase):
         cls.base_snapshot=cls.rpc.request('evm_snapshot',[])
         cls.pg=ExecutionPostgres().start();cls.addClassCleanup(cls.pg.close)
         with cls.pg.admin() as conn:
-            conn.execute((Path(__file__).resolve().parents[1]/'migrations/019_execution_journal.sql').read_text())
+            for name in ('019_execution_journal', '028_automation_cycle',
+                         '032_shared_gas_budget', '033_gas_budget_claim_read',
+                         '034_gas_settlement_sweep', '035_cancel_unsigned_gas_claims',
+                         '036_gas_settlement_journal_read',
+                         '037_gas_settlement_receipt_evidence',
+                         '038_gas_settlement_quote_witness'):
+                conn.execute((Path(__file__).resolve().parents[1]/'migrations'/f'{name}.sql').read_text())
             conn.execute('ALTER ROLE domino_execution_signer LOGIN')
+            # The production table owner never logs in; the base disposable
+            # fixture temporarily enables it for older schema tests.
+            conn.execute('ALTER ROLE domino_execution_owner NOLOGIN')
     def setUp(self):
         with self.pg.admin() as conn:conn.execute('TRUNCATE domino_execution.intents,domino_execution.origins,domino_execution.signer_heads CASCADE')
         self.rpc.request('evm_revert',[self.base_snapshot]);type(self).base_snapshot=self.rpc.request('evm_snapshot',[])
@@ -138,7 +147,10 @@ class DurableV4ExecutorTests(unittest.TestCase):
                 currencyIn=seq.poolKey.currency0,currencyOut=seq.poolKey.currency1,amountInRaw=str(incoming),minAmountOutRaw=str(minimum))
             plan=m.ExecutionPlan.model_validate_json(json.dumps({**plan.model_dump(mode='json'),'swap':bounds.model_dump(mode='json')}))
         self.obs,self.plan=observation,plan
-        self.signer=RestrictedSigner(self.rpc,KEY,self.admission,SignerPolicy(6000000,10**10,10**6,10**17,enabled=True),price_observation_id=price_id)
+        self.signer=RestrictedSigner(self.rpc,KEY,self.admission,SignerPolicy(6000000,10**10,10**6,10**17,enabled=True),
+            price_observation_id=price_id,gas_budget=type('SyntheticReservation',(),{
+                'reserve_one':lambda *_:None,'require_reservation':lambda *_:None,
+                'require_existing_reservation':lambda *_:None})())
         self.runner=ExecutionRunner(self.pg.settings,self.signer,restore_only=False);self.identifier=plan.intent_id()
         self.store.persist(self.owner,plan,observation,actor=self.operator)
         self.lease=lease=self.store.acquire(self.owner,self.identifier,self.worker,lease_seconds=300)

@@ -153,6 +153,38 @@ class ExecutionJournal(_Store):
             conn.execute("UPDATE journal SET state='reconciled',reason='',updated_at=clock_timestamp() WHERE intent_id=%s",(identifier,))
         self._transaction(owner,op,worker=worker,fence=fence)
 
+    def record_reverted_receipt(self,owner,identifier,worker,fence,attempt,receipt,block):
+        """Persist finalized revert gas once, under the same signer fence as state."""
+        if g._quantity(receipt.get('status'))!=0:
+            raise ExecutionError('execution_receipt_invalid')
+        gas_used=g._quantity(receipt.get('gasUsed'))
+        gas_price=g._quantity(receipt.get('effectiveGasPrice'))
+        envelope=attempt['envelope']
+        if (not 0<gas_used<=envelope['gas'] or
+                not 0<gas_price<=envelope['maxFeePerGas'] or
+                gas_used*gas_price>=2**128):
+            raise ExecutionError('execution_receipt_cost_invalid')
+        def op(conn,owner):
+            self._row(conn,owner,identifier);self._fence(conn,identifier)
+            j=conn.execute('SELECT * FROM journal WHERE intent_id=%s FOR UPDATE',(identifier,)).fetchone()
+            prior=conn.execute('SELECT * FROM reverted_receipts WHERE intent_id=%s',(identifier,)).fetchone()
+            expected=(attempt['transaction_hash'],block['number'],block['hash'],gas_used,gas_price)
+            if prior:
+                actual=(prior['transaction_hash'],int(prior['block_number']),prior['block_hash'],
+                        int(prior['gas_used']),int(prior['effective_gas_price']))
+                if actual!=expected or j['state']!='reverted':
+                    raise ExecutionError('execution_receipt_conflict')
+                return
+            if j is None or j['signer']!=g._address(receipt.get('from')) or j['state'] not in (
+                    'signed','submitted','broadcast_unknown','included','reorged'):
+                raise ExecutionError('execution_receipt_identity')
+            conn.execute('INSERT INTO reverted_receipts(owner,intent_id,transaction_hash,block_number,'
+                'block_hash,gas_used,effective_gas_price) VALUES(%s,%s,%s,%s,%s,%s,%s)',
+                (owner,identifier,*expected))
+            conn.execute("UPDATE journal SET state='reverted',reason='execution_transaction_reverted',"
+                'updated_at=clock_timestamp() WHERE intent_id=%s',(identifier,))
+        self._transaction(owner,op,worker=worker,fence=fence)
+
     @staticmethod
     def _settle(conn,owner,identifier,intent,result):
         """Atomically preserve realized origins, exact debits and unspent rest.
@@ -316,7 +348,7 @@ class ExecutionRunner:
                 self.journal.state(owner,identifier,worker,fence,'included')
                 return self.journal.status(owner,identifier)
             if g._quantity(receipt['status'])==0:
-                self.journal.state(owner,identifier,worker,fence,'reverted','execution_transaction_reverted')
+                self.journal.record_reverted_receipt(owner,identifier,worker,fence,attempt,receipt,block)
                 self.journal.release_reverted(owner,identifier,worker,fence)
                 return self.journal.status(owner,identifier)
             cp, _ = self._stored_compound(data)
@@ -357,9 +389,22 @@ class ExecutionRunner:
         plan=_model(m.ExecutionPlan,data['intent']['plan'])
         if g._header(rpc.request('eth_getBlockByNumber',['latest',False]))['timestamp']<=int(plan.deadline):
             try:
-                self.signer.assert_envelope(data['intent'],attempt['envelope'])
+                self.signer.assert_envelope(data['intent'],attempt['envelope'],existing_signed=True)
             except ValueError:
                 self.journal.state(owner,identifier,worker,fence,data['journal']['state'],'execution_revalidation_pending')
+                return self.journal.status(owner,identifier)
+        elif self.signer.action=='typed_fee_execution_v4':
+            # Deadline expiry makes the calldata harmless but not free. Exact
+            # signed bytes may still spend gas; the original reservation must
+            # remain counted even when fresh execution qualification is skipped.
+            try:
+                if self.signer.gas_budget is None:
+                    raise ExecutionError('execution_gas_reservation_required')
+                envelope=attempt['envelope']
+                self.signer.gas_budget.require_existing_reservation(identifier,'operator',j['signer'],
+                    envelope['gas']*envelope['maxFeePerGas'])
+            except Exception:
+                self.journal.state(owner,identifier,worker,fence,data['journal']['state'],'execution_gas_reservation_required')
                 return self.journal.status(owner,identifier)
         raw=bytes(attempt['signed_bytes'])
         verify_signed(raw,attempt['envelope'],j['signer'],attempt['transaction_hash'])

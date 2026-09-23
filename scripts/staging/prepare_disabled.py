@@ -147,6 +147,14 @@ PACKAGED_ONLY_MIGRATIONS = (
     'backend/migrations/030_swap_exposure.sql',
     # The publisher sends an expired publication's bytes again; same vehicle as 028.
     'backend/migrations/031_publication_resend.sql',
+    # Shared pilot gas accounting belongs to the automation installer.
+    'backend/migrations/032_shared_gas_budget.sql',
+    'backend/migrations/033_gas_budget_claim_read.sql',
+    'backend/migrations/034_gas_settlement_sweep.sql',
+    'backend/migrations/035_cancel_unsigned_gas_claims.sql',
+    'backend/migrations/036_gas_settlement_journal_read.sql',
+    'backend/migrations/037_gas_settlement_receipt_evidence.sql',
+    'backend/migrations/038_gas_settlement_quote_witness.sql',
 )
 MAPPINGS = (
     ('domino', 'domino-admin', ADMIN),
