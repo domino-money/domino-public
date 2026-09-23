@@ -3,9 +3,9 @@
 observe -> decide -> reserve -> publish (a real transaction from the publisher
 key) -> inclusion -> qualify/sign/send through the durable executor -> receipt
 -> reconciliation, with restarts at the transitions, two workers, a lost
-broadcast reply, a publication the node dropped, a lost source window, a
-revoked anchor, a moved price, an unfunded signer, pauses, a reorg and a swap
-cap another vault used up.
+broadcast reply, a publication and an execution the node dropped, a lost
+source window, a revoked anchor, a moved price, an unfunded signer, pauses, a
+reorg and a swap cap another vault used up.
 Synthetic keys and a mock node interface, the pool's own spot as the only
 price: this proves the integration, not a production deployment.
 """
@@ -174,6 +174,27 @@ class AutomationCycleEvmTests(unittest.TestCase):
             self.trade(**trade)
             outcomes.append(self.cycle.run(self.entry, act=False))
         return outcomes
+
+    def dropped_executions(self, cycle):
+        """One pass in which the node takes every execution the operator sends
+        and then drops it. Returns the pass and the hashes it sent."""
+        request, sent = self.rpc.request, []
+        def dropping(method, params):
+            if method == 'eth_sendRawTransaction' and Account.recover_transaction(params[0]).lower() == self.operator:
+                request('evm_setAutomine', [False])
+                try:
+                    reply = request(method, params)
+                    request('anvil_dropTransaction', [reply])
+                finally:
+                    request('evm_setAutomine', [True])
+                sent.append(reply)
+                return reply
+            return request(method, params)
+        self.rpc.request = dropping
+        try:
+            return cycle.run(self.entry), sent
+        finally:
+            self.rpc.request = request
 
     def eligible(self):
         """Trade until an evaluation finds the sequence eligible: a completed
@@ -629,6 +650,91 @@ class AutomationCycleEvmTests(unittest.TestCase):
             self.assertGreater(int(row['gasUsedRaw']), 0)
         with self.pg.admin() as conn:
             self.assertEqual(int(conn.execute('SELECT next_nonce FROM domino_execution.publisher_heads').fetchone()[0]), nonce())
+
+    def test_a_dropped_execution_past_its_deadline_is_sent_again_and_spends_its_nonce(self):
+        # A five-second deadline, so the dropped execution's plan expires within
+        # the test. The cycles that carry on plan with the ordinary deadline.
+        self.setup(plan={'deadlineSeconds': 5})
+        steady = self.config.model_copy(update={'plan': self.config.plan.model_copy(update={'deadlineSeconds': 100})})
+        operator = steady.operator
+        disabled = steady.model_copy(update={'operator': operator.model_copy(update={'policy': operator.policy.model_copy(update={'enabled': False})})})
+        self.warm_up()
+        self.advance(2)
+        self.trade()
+        nonce = lambda: int(self.rpc.request('eth_getTransactionCount', [self.operator, 'latest']), 16)
+        before = nonce()
+        acted, sent = self.dropped_executions(self.cycle)
+        self.assertEqual(acted['outcome'], 'executing', acted)
+        self.assertTrue(sent)
+        journal = lambda: ExecutionJournal(self.pg.settings).status(self.owner, acted['intentId'])
+        # The price leaves the plan's band, and the head reaches the deadline
+        # itself, where a block could still take the bytes: they no longer
+        # requalify, and the intent waits for them instead of retiring.
+        deadline = int(self.ledger.get(self.owner, acted['intentId'])['plan']['deadline'])
+        self.assertLess(int(self.rpc.request('eth_getBlockByNumber', ['latest', False])['timestamp'], 16), deadline - 1)
+        self.rpc.request('evm_setNextBlockTimestamp', [deadline - 1])
+        self.send(self.trader, calldata('swap(' + KEY_TYPE + ',bool,uint256)', [KEY_TYPE, 'bool', 'uint256'], [self.key, True, 2 * 10**17]))
+        self.rpc.request('evm_setNextBlockTimestamp', [deadline])
+        self.rpc.request('evm_mine', [])
+        waited = self.cycle.run(self.entry)
+        self.assertEqual((waited['outcome'], waited['reason']), ('executing', 'execution_revalidation_pending'), waited)
+        self.assertEqual((journal()['state'], nonce()), ('submitted', before))
+        self.assertFalse(self.store.sequence(self.owner, acted['sequenceHash'])['suspended'])
+        # Past the deadline every block refuses the bytes, whatever the price
+        # does now. A signer switched off still sends nothing.
+        self.advance(1)
+        self.trade(amount=2 * 10**17, directions=(False,))
+        parked = self.worker(self.cycle.worker, config=disabled).run(self.entry)
+        self.assertEqual((parked['outcome'], parked['reason']), ('executing', 'step_execution_disabled'), parked)
+        self.assertEqual(nonce(), before)
+        # Switched on, it sends the recorded bytes again as they are: the engine
+        # reverts them, the nonce is spent, and the claims go back with the
+        # canonical revert, as for any execution that reverts.
+        restarted = self.worker(self.cycle.worker, config=steady)
+        restarted.run(self.entry)
+        self.assertEqual(nonce(), before + 1)
+        self.finalize()
+        reverted = restarted.run(self.entry)
+        self.assertEqual((reverted['outcome'], reverted['reason']), ('abandoned', 'execution_reverted'), reverted)
+        self.assertEqual((journal()['state'], journal()['receipt']), ('reverted', None))
+        self.assertEqual(self.rpc.request('eth_getTransactionReceipt', [journal()['attempts'][-1]['transactionHash']])['status'], '0x0')
+        self.assertFalse(self.store.sequence(self.owner, acted['sequenceHash'])['suspended'])
+        with self.pg.admin() as conn:
+            self.assertEqual(int(conn.execute('SELECT next_nonce FROM domino_execution.signer_heads').fetchone()[0]), nonce())
+        # Nothing waits behind the key: the next execution lands.
+        self.eligible()
+        self.advance(2)
+        self.trade()
+        again = restarted.run(self.entry)
+        self.assertEqual(again['outcome'], 'executing', again)
+        self.assertEqual(nonce(), before + 2)
+        self.finalize()
+        self.assertEqual(restarted.run(self.entry)['outcome'], 'completed')
+
+    def test_a_dropped_execution_that_stops_qualifying_waits_and_lands_when_it_qualifies_again(self):
+        self.setup()
+        self.warm_up()
+        self.advance(2)
+        self.trade()
+        nonce = lambda: int(self.rpc.request('eth_getTransactionCount', [self.operator, 'latest']), 16)
+        before = nonce()
+        acted, _ = self.dropped_executions(self.cycle)
+        self.assertEqual(acted['outcome'], 'executing', acted)
+        # The operator key runs out of gas funds with the deadline far ahead:
+        # the bytes no longer requalify, and nothing is sent or retired.
+        self.rpc.request('anvil_setBalance', [self.operator, hex(0)])
+        waited, sent = self.dropped_executions(self.cycle)
+        self.assertEqual((waited['outcome'], waited['reason'], sent), ('executing', 'execution_revalidation_pending', []), waited)
+        self.assertEqual(ExecutionJournal(self.pg.settings).status(self.owner, acted['intentId'])['state'], 'submitted')
+        self.assertFalse(self.store.sequence(self.owner, acted['sequenceHash'])['suspended'])
+        self.assertEqual(nonce(), before)
+        # Funded again, the same bytes requalify, go out again and land.
+        self.rpc.request('anvil_setBalance', [self.operator, hex(10**20)])
+        landed = self.cycle.run(self.entry)
+        self.assertEqual((landed['outcome'], landed['cycleId']), ('executing', acted['cycleId']), landed)
+        self.assertEqual(nonce(), before + 1)
+        self.finalize()
+        self.assertEqual(self.cycle.run(self.entry)['outcome'], 'completed')
 
     def test_an_evaluation_reports_a_cycle_in_flight_and_leaves_it(self):
         self.setup()

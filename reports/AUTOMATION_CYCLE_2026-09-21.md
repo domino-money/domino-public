@@ -400,3 +400,39 @@ the cycle that gave it up. The old bytes carry the fee cap of the moment they we
 that has since more than doubled holds the key back until it falls. A nonce this journal
 never signed, such as a transaction sent from the publisher key by hand and then dropped,
 still needs the operator.
+
+## Addendum, 22 September 2026: an execution the node dropped
+
+The operator's executor had the same gap as the publisher, through a different door.
+With no receipt and its nonce unspent, a step re-sends an execution's recorded bytes
+only after requalifying them against the current chain. When requalification failed
+(the plan's deadline had passed, the price had left the plan's band, the operator was
+unfunded, the owner had acted), the step retired the intent in `attention` with
+`execution_revalidation_failed`. Nothing ever sent those bytes again and the sequence
+was suspended, so the nonce stayed unspent. Every later execution of the operator key,
+for every owner, is signed on a higher nonce and would have waited behind it.
+Reproduced on Anvil with the node dropping every send of one execution, both past its
+deadline and with the price out of the band before it.
+
+Requalification still guards every re-send while the deadline is ahead. A failure no
+longer retires the intent: it waits (`execution_revalidation_pending`), not suspended,
+and goes out again when the bytes requalify. Once the plan's deadline is behind the head,
+every block refuses the bytes (`validateCompoundPrice` reverts past the deadline, and the
+anchor expires with it), so they are sent again as recorded. The engine reverts them,
+the nonce is spent, and the canonical revert releases the claims, as for any execution
+that reverts. Once they have been broadcast, anyone can re-broadcast the same bytes; the
+executor suite already relies on the chain refusing them. A disabled signer sends
+nothing. No schema change: the journal's guard does not restrict its states.
+
+The integrated suite covers both paths. In the first, the node drops an execution; with
+the price out of the band and the head exactly at the deadline, the intent waits. Past
+the deadline, a disabled signer sends nothing, and an enabled one sends the bytes: they
+revert, the nonce is spent, the sequence stays active and the next execution lands. In the
+second, the node drops an execution while the operator is unfunded; the intent waits,
+then lands once funded. Six mutants of the change, including the original code and the
+deadline boundary, each fail a test.
+
+Still open: until the deadline passes, a dropped execution that does not requalify holds
+the key back for up to the plan's remaining lifetime. Freeing the nonce costs one
+reverted execution. The revert is a paid failure of the cycle that made it, with its
+backoff.

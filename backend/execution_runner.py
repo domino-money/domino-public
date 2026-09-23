@@ -347,13 +347,20 @@ class ExecutionRunner:
             self.journal.persist_signed(owner,identifier,worker,fence,self.signer,replacement=True)
             data=self.journal.read(owner,identifier)
         attempt=data['attempts'][-1]
-        # Restoration never invents a new transaction. Exact recorded bytes can
-        # be re-sent only after independent requalification of the same intent.
-        try:
-            self.signer.assert_envelope(data['intent'],attempt['envelope'])
-        except ValueError:
-            self.journal.state(owner,identifier,worker,fence,'attention','execution_revalidation_failed')
-            return self.journal.status(owner,identifier)
+        if not self.signer.policy.enabled:raise ExecutionError('execution_disabled')
+        # Restoration never invents a new transaction. Exact recorded bytes are
+        # re-sent only after independent requalification of the same intent,
+        # or once the plan's deadline is behind the head: every later block
+        # refuses them, so sending them can only spend their nonce. Until then a
+        # failed requalification waits; retiring the intent would strand the
+        # nonce, and every later execution of the key would wait behind it.
+        plan=_model(m.ExecutionPlan,data['intent']['plan'])
+        if g._header(rpc.request('eth_getBlockByNumber',['latest',False]))['timestamp']<=int(plan.deadline):
+            try:
+                self.signer.assert_envelope(data['intent'],attempt['envelope'])
+            except ValueError:
+                self.journal.state(owner,identifier,worker,fence,data['journal']['state'],'execution_revalidation_pending')
+                return self.journal.status(owner,identifier)
         raw=bytes(attempt['signed_bytes'])
         verify_signed(raw,attempt['envelope'],j['signer'],attempt['transaction_hash'])
         # Hold the intent row and live fence through broadcast. Takeover cannot

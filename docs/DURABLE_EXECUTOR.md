@@ -211,7 +211,14 @@ at a canonical pinned head. Qualifying a publisher remains a deployment task;
 local test observations are not an external price oracle.
 
 The signer rebuilds the whole envelope again at the key boundary and again
-before sending its persisted bytes. A runner step shares one 90-second deadline
+before sending its persisted bytes, until the plan's deadline is behind the
+head. From then on every block refuses those bytes, so a step sends them again
+as recorded, whatever requalification would say, and they can only spend their
+nonce with a canonical revert. Before the deadline, bytes that no longer
+requalify are not sent: the intent waits (`execution_revalidation_pending`)
+instead of retiring, because a signed nonce the chain has not spent holds back
+every later execution of the key, for every owner. A disabled signer sends
+nothing. A runner step shares one 90-second deadline
 across RPC calls; each HTTP request has its smaller timeout and a bounded reply.
 There is no RPC redirect or automatic failover. Its fenced SQL critical section
 has a 95-second idle limit under the existing 300-second lease; other store
