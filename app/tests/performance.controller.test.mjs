@@ -13,7 +13,7 @@ const require = createRequire(import.meta.url);
 const { createPerformanceController, formatMetricUsd, formatMetricPercent, exactDecimal, enrollmentFailureText, performanceReasonText,
   PERFORMANCE_STATUS_TEXT, ENROLLMENT_STATUS_TEXT, ENROLLMENT_REASON_TEXT, COLLECTION_TEXT, SEQUENCE_LIST_TRIES, PERFORMANCE_RETRY_MS, trackableSequence } = require('../.test-build/app/src/finance/performance.js');
 // Compiled into the test build through performance.ts's import of its types.
-const { createSequenceClient, sequenceAbi, sequenceIdentity, cloneRuntime, SEQUENCE_LIST_LIMIT, SEQUENCE_MEMBER_STEPS, sequenceIdParameters, poolKeyParameters } = require('../.test-build/app/src/finance/sequence.js');
+const { createSequenceClient, sequenceAbi, sequenceIdentity, cloneRuntime, sequenceProviderReadError, sequenceReadError, SEQUENCE_LIST_LIMIT, SEQUENCE_MEMBER_STEPS, sequenceIdParameters, poolKeyParameters } = require('../.test-build/app/src/finance/sequence.js');
 const { setupAbi, tokenAbi, operationIdParameters } = require('../.test-build/app/src/finance/setup.js');
 const { sequenceDeploymentFrom } = require('../.test-build/app/src/finance/sequence.js');
 const { deploymentFrom } = require('../.test-build/app/src/finance/setup.js');
@@ -416,6 +416,53 @@ function fakeChain({ sequences = 1, owner = CHAIN_OWNER, chains = {}, active = {
     } };
   return { d, wallet, log, vaults: [...vaults.keys()], client: createSequenceClient(wallet, d) };
 }
+
+test('owner sequence reads classify untrusted wallet failures by RPC method without leaking provider data', async () => {
+  const privateReply = 'private-provider-reply SECRET_CALLDATA_0xdeadbeef';
+  for (const [method, code] of [
+    ['eth_accounts', 'sequence_read_accounts'], ['eth_chainId', 'sequence_read_chain'],
+    ['eth_getBlockByNumber', 'sequence_read_block'], ['eth_getCode', 'sequence_read_code'], ['eth_call', 'sequence_read_call'],
+  ]) {
+    const chain = fakeChain({ sequences: 0 });
+    const request = chain.wallet.request;
+    const wallet = { ...chain.wallet, request: (name, params) => {
+      if (name === method) {
+        const error = Object.assign(new Error(privateReply), { data: privateReply });
+        if (method === 'eth_accounts') throw error; // Both a synchronous throw and rejected provider promises stay closed.
+        return Promise.reject(error);
+      }
+      return request(name, params);
+    } };
+    const client = createSequenceClient(wallet, { ...chain.d, expiresAt: 0 }, () => 1000);
+    await assert.rejects(client.recent(), error => {
+      assert.equal(error.message, code);
+      assert.equal(JSON.stringify(error).includes(privateReply), false);
+      return true;
+    });
+    assert.equal(chain.log.includes('claimNonce'), false);
+  }
+  assert.equal(sequenceProviderReadError(new Error(privateReply)).message, 'sequence_read_provider');
+  assert.equal(sequenceProviderReadError(new Error('connect_robinhood_wallet')).message, 'connect_robinhood_wallet');
+  assert.equal(sequenceReadError(new Error(privateReply)).message, 'sequence_read_unexpected');
+});
+
+test('owner sequence reads distinguish an undecodable contract result and their own deadline', async () => {
+  const malformed = fakeChain({ sequences: 0 });
+  const original = malformed.wallet.request;
+  const undecodable = createSequenceClient({ ...malformed.wallet, request: (method, params) => method === 'eth_call' ? Promise.resolve('0x') : original(method, params) },
+    { ...malformed.d, expiresAt: 0 }, () => 1000);
+  await assert.rejects(undecodable.recent(), /sequence_read_decode/);
+
+  let now = 1000;
+  const delayed = fakeChain({ sequences: 0 });
+  const timeout = createSequenceClient({ ...delayed.wallet, request: async (method, params) => {
+    const value = await delayed.wallet.request(method, params);
+    if (method === 'eth_accounts') now += 31;
+    return value;
+  } }, { ...delayed.d, expiresAt: 0 }, () => now);
+  await assert.rejects(timeout.recent(), /sequence_read_timeout/);
+  assert.equal(delayed.log.includes('claimNonce'), false);
+});
 
 test('owned sequence inspection reports its stored tariff and mode without disabling recovery for an unknown historical tariff', async () => {
   for (const [serviceFeeBps, automationMode] of [[200, 'compound'], [400, 'domino'], [201, null]]) {

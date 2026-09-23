@@ -191,7 +191,25 @@ export interface PreparedSequence {
 }
 const components: Component[] = ['factory','implementation','poolManager','positionManager','stateView','readHelper','engine','routing','priceGuard']
 const addressPattern = /^0x[0-9a-f]{40}$/, hashPattern = /^0x[0-9a-f]{64}$/
-const fail = (code: string): never => { throw new Error(code) }
+// A closed failure raised by this client, distinct from an untrusted wallet
+// provider exception. Only the code crosses into the owner screen.
+class SequenceFault extends Error {}
+const fail = (code: string): never => { throw new SequenceFault(code) }
+const READ_RPC_FAILURE: Readonly<Record<string, string>> = {
+  eth_accounts: 'sequence_read_accounts',
+  eth_chainId: 'sequence_read_chain',
+  eth_getBlockByNumber: 'sequence_read_block',
+  eth_getCode: 'sequence_read_code',
+  eth_call: 'sequence_read_call',
+}
+/** Opening the provider precedes the first RPC. Keep that failure closed too. */
+export function sequenceProviderReadError(error: unknown): Error {
+  return error instanceof Error && error.message === 'connect_robinhood_wallet' ? error : new SequenceFault('sequence_read_provider')
+}
+/** No unknown exception from a read is ever copied into the DOM. */
+export function sequenceReadError(error: unknown): Error {
+  return error instanceof SequenceFault ? error : new SequenceFault('sequence_read_unexpected')
+}
 const record = (x: unknown): Record<string, unknown> => x && typeof x === 'object' && !Array.isArray(x) ? x as Record<string, unknown> : fail('invalid_sequence_reply')
 const hex = (x: unknown): Hex => typeof x === 'string' && x.length <= 200_002 && /^0x(?:[0-9a-fA-F]{2})*$/.test(x) ? x.toLowerCase() as Hex : fail('invalid_wallet_reply')
 const quantity = (x: unknown): bigint => typeof x === 'string' && /^0x(?:0|[1-9a-fA-F][0-9a-fA-F]{0,63})$/.test(x) ? BigInt(x) : fail('invalid_wallet_quantity')
@@ -246,25 +264,41 @@ export function createSequenceClient(wallet: WalletRpc, deployment: SequenceDepl
   currentAdmission?: () => Promise<SequenceDeployment | null>) {
   const d = Object.freeze({ ...deployment, codeHashes: Object.freeze({ ...deployment.codeHashes }) })
   type Rpc = (method: string, params: unknown[], rejected?: (error: unknown) => Promise<void>) => Promise<unknown>
-  type Context = { rpc: Rpc; block: Hex; hash: Hex }
+  type Context = { rpc: Rpc; block: Hex; hash: Hex; diagnoseRead: boolean }
   const issued = new WeakMap<PreparedSequence, (c: Context) => Promise<void>>()
   const sent = new Map<Hex, PreparedSequence>()
   let busy = false
-  async function bounded<T>(work: (c: Context) => Promise<T>): Promise<T> {
+  async function bounded<T>(work: (c: Context) => Promise<T>, diagnoseRead = false): Promise<T> {
     if (busy) return fail('wallet_action_busy')
     busy = true; const end = now() + 30; let calls = 0
     const rpc: Rpc = async (method, params, rejected) => {
-      if (!wallet.current() || now() >= end || ++calls > 100) return fail('wallet_action_expired')
+      // Keep the wallet transaction lane exactly as it was. Diagnostic
+      // normalization is for owner reads only and never wraps a send result.
+      if (!diagnoseRead) {
+        if (!wallet.current() || now() >= end || ++calls > 100) return fail('wallet_action_expired')
+        let timer: ReturnType<typeof setTimeout> | undefined
+        try {
+          const original = wallet.request(method, params).catch(async error => {
+            if (rejected) { try { await rejected(error) } catch { /* A failed release keeps the nonce protected. */ } }
+            throw error
+          })
+          const value = await Promise.race([original, new Promise<never>((_, reject) => { timer = setTimeout(() => reject(new Error('wallet_timeout')), Math.max(1, (end - now()) * 1000)) })])
+          if (!wallet.current() || now() >= end) return fail('wallet_identity_changed')
+          return value
+        } finally { clearTimeout(timer) }
+      }
+      if (!wallet.current()) return fail('wallet_action_expired')
+      if (now() >= end) return fail('sequence_read_timeout')
+      if (++calls > 100) return fail('sequence_read_limit')
       let timer: ReturnType<typeof setTimeout> | undefined
       try {
-        // Observe the original wallet promise even after our deadline. A late
-        // explicit 4001 may release only this claim; silence/timeout never does.
-        const original = wallet.request(method, params).catch(async error => {
-          if (rejected) { try { await rejected(error) } catch { /* A failed release keeps the nonce protected. */ } }
-          throw error
-        })
-        const value = await Promise.race([original, new Promise<never>((_, reject) => { timer = setTimeout(() => reject(new Error('wallet_timeout')), Math.max(1, (end - now()) * 1000)) })])
-        if (!wallet.current() || now() >= end) return fail('wallet_identity_changed')
+        let reply: Promise<unknown>
+        try { reply = Promise.resolve(wallet.request(method, params)) }
+        catch { return fail(READ_RPC_FAILURE[method] ?? 'sequence_read_rpc') }
+        const original = reply.catch(() => fail(READ_RPC_FAILURE[method] ?? 'sequence_read_rpc'))
+        const value = await Promise.race([original, new Promise<never>((_, reject) => { timer = setTimeout(() => reject(new SequenceFault('sequence_read_timeout')), Math.max(1, (end - now()) * 1000)) })])
+        if (!wallet.current()) return fail('wallet_identity_changed')
+        if (now() >= end) return fail('sequence_read_timeout')
         return value
       } finally { clearTimeout(timer) }
     }
@@ -273,7 +307,7 @@ export function createSequenceClient(wallet: WalletRpc, deployment: SequenceDepl
       if (!Array.isArray(accounts) || typeof accounts[0] !== 'string' || accounts[0].toLowerCase() !== wallet.owner || quantity(await rpc('eth_chainId', [])) !== 4663n) return fail('wallet_identity_changed')
       const block = record(await rpc('eth_getBlockByNumber', ['latest', false]))
       if (!hashPattern.test(String(block.hash))) return fail('invalid_block')
-      const c = { rpc, block: numberToHex(quantity(block.number)), hash: block.hash as Hex }
+      const c = { rpc, block: numberToHex(quantity(block.number)), hash: block.hash as Hex, diagnoseRead }
       return await work(c)
     } finally { busy = false }
   }
@@ -281,7 +315,9 @@ export function createSequenceClient(wallet: WalletRpc, deployment: SequenceDepl
   type ViewName = ContractFunctionName<typeof sequenceAbi, 'view'>
   async function call<Name extends ViewName>(c: Context, to: Address, name: Name, args: readonly unknown[] = []): Promise<ContractFunctionReturnType<typeof sequenceAbi, 'view', Name>> {
     const abi: Abi = sequenceAbi, functionName: string = name
-    return decodeFunctionResult({ abi, functionName, data: hex(await c.rpc('eth_call', [{ to, data: encodeFunctionData({ abi, functionName, args }) }, c.block])) }) as ContractFunctionReturnType<typeof sequenceAbi, 'view', Name>
+    const data = hex(await c.rpc('eth_call', [{ to, data: encodeFunctionData({ abi, functionName, args }) }, c.block]))
+    try { return decodeFunctionResult({ abi, functionName, data }) as ContractFunctionReturnType<typeof sequenceAbi, 'view', Name> }
+    catch (error) { if (c.diagnoseRead) fail('sequence_read_decode'); throw error }
   }
   // Narrowed to the functions that WRITE, which is all this builds. Naming
   // every function of the ABI — views included — is a type the compiler cannot
@@ -295,7 +331,11 @@ export function createSequenceClient(wallet: WalletRpc, deployment: SequenceDepl
     // The same call as `call`, left untyped: a link is only compared as text, and typing one result over every view name is needlessly deep for the compiler.
     const abi: Abi = sequenceAbi
     for (const [functionName, expected] of Object.entries(values) as [string,unknown][]) {
-      equal(decodeFunctionResult({ abi, functionName, data: hex(await c.rpc('eth_call', [{ to, data: encodeFunctionData({ abi, functionName, args: [] }) }, c.block])) }), expected)
+      const data = hex(await c.rpc('eth_call', [{ to, data: encodeFunctionData({ abi, functionName, args: [] }) }, c.block]))
+      let decoded: unknown
+      try { decoded = decodeFunctionResult({ abi, functionName, data }) }
+      catch (error) { if (c.diagnoseRead) fail('sequence_read_decode'); throw error }
+      equal(decoded, expected)
     }
   }
   async function verify(c: Context, recovery = false) {
@@ -385,14 +425,14 @@ export function createSequenceClient(wallet: WalletRpc, deployment: SequenceDepl
   return {
     deployment:d,
     verify: () => bounded(async c => { await verify(c,now() >= d.expiresAt); await canonical(c) }),
-    inspectRoot: (id: bigint) => bounded(async c => { await verify(c); const result = await root(c,id); await canonical(c); return result }),
+    inspectRoot: (id: bigint) => bounded(async c => { await verify(c); const result = await root(c,id); await canonical(c); return result }, true),
     inspect: (vault: Address) => bounded(async c => { await verify(c,true); const result = await owned(c,vault); await canonical(c); return result }),
     recent: () => bounded(async c => {
       await verify(c,now() >= d.expiresAt); const nonce = await call(c,d.factory,'nextOwnerNonce',[wallet.owner]) as bigint
       const rows: { vault: Address; sequenceId: Hex; ownerNonce: bigint }[] = []
       for (let n = nonce; n > 0n && n > nonce - 8n; n--) { const found = sequenceIdentity(d,wallet.owner,n-1n); equal(await call(c,d.factory,'vaultForSequence',[found.id]),found.vault); rows.push({vault:found.vault,sequenceId:found.id,ownerNonce:n-1n}) }
       await canonical(c); return rows
-    }),
+    }, true),
     /** Read-only, for tracking: the sequences `recent` lists, each with its root NFT, checked only as recovery checks a deployment. Prepares nothing. */
     sequences: () => bounded(async c => {
       await verify(c,true); const nonce = await call(c,d.factory,'nextOwnerNonce',[wallet.owner]) as bigint
