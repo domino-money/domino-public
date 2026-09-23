@@ -1082,6 +1082,16 @@ test('with TOKEN and only gas in ETH, Review plans the swap; Create position app
     // Every step done and drawn green, a moment before Positions opens.
     await s.page.locator('[data-wallet-step="mint"][data-step-state="done"]').waitFor({ timeout: 90_000 });
     assert.deepEqual(await walletStepStates(s.page), [[`approve:${FIXTURE_TOKEN}`, 'done'], ['fund', 'done'], ['swap', 'done'], ['mint', 'done']]);
+    // The done state and check render before the marker's background-color transition settles.
+    await s.page.waitForFunction(() => {
+      const probe = document.createElement('span');
+      probe.style.background = 'var(--money-in)';
+      document.body.append(probe);
+      const green = getComputedStyle(probe).backgroundColor;
+      probe.remove();
+      const steps = [...document.querySelectorAll('[data-wallet-steps] li .dm-step-marker')];
+      return steps.length === 4 && steps.every(marker => marker.textContent === '✓' && getComputedStyle(marker).backgroundColor === green);
+    }, null, { timeout: 2_000 });
     assert.deepEqual(await markers(s.page), [['✓', true], ['✓', true], ['✓', true], ['✓', true]], 'each done step shows a check on green');
     assert.equal((await list.innerText()).match(/\bDone\b/g)?.length, 4, 'each says Done');
     await s.page.locator('[data-stage-card="review"]').screenshot({ path: join(shots(), 'swap-steps-done.png') });
@@ -2170,9 +2180,12 @@ test('a guided sequence link names a failed wallet read without exposing its pro
 test('a rejected guided contract read exposes only the closed function stage', async () => {
   const s = await scenario(), chain = fakeSequenceChain(OWNER, { roots: [5n] });
   const privateReply = 'private-provider-reply SECRET_CALLDATA_0xdeadbeef';
+  const attempts = [];
   await s.context.exposeFunction('__dominoChainRead', (method, params) => {
-    if (method === 'eth_call' && params[0].data.startsWith(toFunctionSelector('nextOwnerNonce(address)')))
+    if (method === 'eth_call' && params[0].data.startsWith(toFunctionSelector('nextOwnerNonce(address)'))) {
+      attempts.push(params[1]);
       throw new Error(privateReply);
+    }
     return chain.request(method, params);
   });
   await s.context.addInitScript(() => {
@@ -2193,7 +2206,60 @@ test('a rejected guided contract read exposes only the closed function stage', a
     const notice = s.page.locator('main [data-notice-code="sequence_read_call"]');
     await notice.waitFor({ timeout: 30_000 });
     assert.equal(await notice.getAttribute('data-notice-stage'), 'factory_next_owner_nonce');
+    assert.ok(attempts.length >= 3, 'a persistent provider rejection exhausts the bounded retry');
+    assert.equal(new Set(attempts.slice(0, 3)).size, 1, 'all attempts use the same pinned block');
     assert.doesNotMatch(await s.page.locator('main').innerText(), /SECRET_CALLDATA|deadbeef/);
+    assert.deepEqual(chain.sends, []);
+    assert.equal(s.wallet.state.signed.length, 0);
+  } finally { await s.close(); }
+});
+
+test('isolated wallet rejections at the engine verification calls recover at the pinned block without a send', async () => {
+  const s = await scenario(), chain = fakeSequenceChain(OWNER, { roots: [5n] });
+  const { engine } = chain.release.deployment;
+  const selectors = { readHelperHash: toFunctionSelector('readHelperHash()'), priceGuard: toFunctionSelector('priceGuard()') };
+  const attempts = { readHelperHash: [], priceGuard: [] };
+  const codeAttempts = [];
+  await s.context.exposeFunction('__dominoChainRead', (method, params) => {
+    if (method === 'eth_getCode' && params[0].toLowerCase() === engine.toLowerCase()) {
+      codeAttempts.push(params[1]);
+      if (codeAttempts.length === 1) throw new Error('private-provider-reply SECRET_CALLDATA_0xdeadbeef');
+    }
+    if (method === 'eth_call' && params[0].to.toLowerCase() === engine.toLowerCase()) {
+      const name = Object.keys(selectors).find(key => params[0].data.startsWith(selectors[key]));
+      if (name) {
+        attempts[name].push(params[1]);
+        if (attempts[name].length === 1) throw new Error('private-provider-reply SECRET_CALLDATA_0xdeadbeef');
+      }
+    }
+    return chain.request(method, params);
+  });
+  await s.context.addInitScript(() => {
+    let wallet = window.__dominoWalletRequest;
+    const request = (id, method, params) => ['eth_call', 'eth_getCode', 'eth_getBlockByNumber'].includes(method)
+      ? window.__dominoChainRead(method, params) : wallet(id, method, params);
+    Object.defineProperty(window, '__dominoWalletRequest', { configurable: true, get: () => request, set: value => { wallet = value; } });
+  });
+  try {
+    await s.page.waitForFunction(() => window.__dominoSessionProbe?.view().status === 'no_wallet');
+    await s.page.locator('header [aria-haspopup="dialog"]').click();
+    await s.page.locator('[role="dialog"][aria-labelledby="wallet-dialog-title"]').getByRole('button', { name: 'Connect Test Wallet A', exact: true }).click();
+    await s.page.waitForFunction(() => window.__dominoSessionProbe?.view().status === 'signed_out');
+    await s.page.keyboard.press('Escape');
+    s.set({ sequenceRelease: { status: 200, body: chain.release } });
+    await s.page.goto(`${s.origin}/#/sequence/compound/5`);
+    await s.page.reload();
+    const main = s.page.locator('main');
+    await main.locator('[data-sequence-create]').waitFor({ timeout: 30_000 });
+    assert.ok(codeAttempts.length >= 2, 'the rejected bytecode read was retried');
+    assert.equal(codeAttempts[0], codeAttempts[1], 'bytecode retry used the same pinned block');
+    for (const name of Object.keys(selectors)) {
+      assert.ok(attempts[name].length >= 2, `${name} was retried after one rejected read`);
+      assert.equal(attempts[name][0], attempts[name][1], `${name} retry used the same pinned block`);
+    }
+    assert.equal(attempts.readHelperHash[0], attempts.priceGuard[0], 'both engine reads belong to one pinned verification');
+    assert.equal(await main.locator('[data-notice-code="sequence_read_call"]').count(), 0);
+    assert.doesNotMatch(await main.innerText(), /SECRET_CALLDATA|deadbeef/);
     assert.deepEqual(chain.sends, []);
     assert.equal(s.wallet.state.signed.length, 0);
   } finally { await s.close(); }

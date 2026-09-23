@@ -295,19 +295,34 @@ export function createSequenceClient(wallet: WalletRpc, deployment: SequenceDepl
         } finally { clearTimeout(timer) }
       }
       if (!wallet.current()) return fail('wallet_action_expired')
-      if (now() >= end) return fail('sequence_read_timeout')
-      if (++calls > 100) return fail('sequence_read_limit')
-      let timer: ReturnType<typeof setTimeout> | undefined
-      try {
-        let reply: Promise<unknown>
-        try { reply = Promise.resolve(wallet.request(method, params)) }
-        catch { return fail(READ_RPC_FAILURE[method] ?? 'sequence_read_rpc') }
-        const original = reply.catch(() => fail(READ_RPC_FAILURE[method] ?? 'sequence_read_rpc'))
-        const value = await Promise.race([original, new Promise<never>((_, reject) => { timer = setTimeout(() => reject(new SequenceFault('sequence_read_timeout')), Math.max(1, (end - now()) * 1000)) })])
+      // Wallet RPCs can reject an isolated contract read under load. Retry
+      // only these owner reads, with the exact same pinned block and calldata.
+      // Every attempt still counts toward this action's deadline and RPC cap.
+      const retryable = method === 'eth_call' || method === 'eth_getCode'
+      const failure = READ_RPC_FAILURE[method] ?? 'sequence_read_rpc'
+      for (let attempt = 0; attempt < (retryable ? 3 : 1); attempt++) {
         if (!wallet.current()) return fail('wallet_identity_changed')
         if (now() >= end) return fail('sequence_read_timeout')
-        return value
-      } finally { clearTimeout(timer) }
+        if (++calls > 100) return fail('sequence_read_limit')
+        let timer: ReturnType<typeof setTimeout> | undefined
+        try {
+          let reply: Promise<unknown>
+          try { reply = Promise.resolve(wallet.request(method, params)) }
+          catch { return fail(failure) }
+          const original = reply.catch(() => fail(failure))
+          const value = await Promise.race([original, new Promise<never>((_, reject) => { timer = setTimeout(() => reject(new SequenceFault('sequence_read_timeout')), Math.max(1, (end - now()) * 1000)) })])
+          if (!wallet.current()) return fail('wallet_identity_changed')
+          if (now() >= end) return fail('sequence_read_timeout')
+          return value
+        } catch (error) {
+          if (!retryable || attempt === 2 || !(error instanceof SequenceFault) || error.message !== failure) throw error
+          if (!wallet.current()) return fail('wallet_identity_changed')
+          const remaining = Math.floor((end - now()) * 1000)
+          if (remaining <= 0) return fail('sequence_read_timeout')
+          await new Promise<void>(resolve => setTimeout(resolve, Math.min(attempt === 0 ? 200 : 500, remaining)))
+        } finally { clearTimeout(timer) }
+      }
+      return fail(failure)
     }
     try {
       const accounts = await rpc('eth_accounts', [])
