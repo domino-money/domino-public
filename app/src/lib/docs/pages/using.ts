@@ -48,7 +48,7 @@ export const MARKETS: DocPage = {
 export const NEW_POSITION: DocPage = {
   slug: 'new-position',
   title: 'New position',
-  summary: 'Plan a position in four steps, then open it in Setup with your wallet.',
+  summary: 'Plan a position in four steps, then create it with your wallet.',
   sections: [
     {
       id: 'four-steps',
@@ -69,19 +69,19 @@ export const NEW_POSITION: DocPage = {
       id: 'review',
       title: 'Review',
       blocks: [
-        p('Review lists every choice, the wallet steps in order and the fees side by side. The steps are the deposit, made in Setup with your wallet. None of them starts from Review. Automation is set up afterwards, from Automate, on the position you opened.'),
+        p('Review lists every choice and the wallet steps in order. The steps are what your wallet signs when you press Create position: any approval, the deposit, then the position. Automation is set up afterwards, from Automate, on the position you opened.'),
         p('When your wallet is signed in and the service answers, Review also estimates how much of each token the deposit is expected to take, and the most it may take. Hover a figure to see until when its estimate is current; after that the figures show a dash until you open Review again.'),
         p(CREATE.balance.notEnabled),
       ],
     },
     {
-      id: 'setup',
-      title: 'Deposits happen in Setup',
+      id: 'create',
+      title: 'Create position',
       blocks: [
-        p(CREATE.review.gate),
-        p(b('Continue in Setup'), ' opens it. With your wallet connected on Robinhood Chain, Setup opens with the pool, range, amount and slippage filled in; without a wallet, nothing is carried over. Changing or disconnecting the wallet clears what was carried.'),
-        p('Setup checks the deployment before any wallet step, and every step shows its amounts, destination and limits before your wallet asks you to sign.'),
-        note(['Deposits work with hookless pools that have a fixed fee. Direct deposits carry no Domino percentage fee; network gas still applies.']),
+        p(b('Create position'), ' is the last step. It needs your wallet connected on Robinhood Chain, and no sign-in.'),
+        p('Your wallet asks you to sign, in order: an exact approval for each token whose allowance is short, the deposit of both tokens, and the position itself. The deployment is checked on chain before each step, and each transaction is read back before the next one is asked for.'),
+        p('When the position exists, it opens on Positions. If a deposit went through and the position did not (a declined signature, a closed tab), pressing Create position again creates it from that deposit, never depositing twice; the deposit can also be refunded.'),
+        note(['Positions are created in hookless pools that have a fixed fee. A direct position carries no Domino percentage fee; network gas still applies.']),
       ],
     },
   ],

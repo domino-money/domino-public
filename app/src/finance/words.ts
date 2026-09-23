@@ -4,7 +4,7 @@
  */
 
 /** The button each owner screen reads its deployment and the wallet with: Setup's owner recovery, and Your sequences. */
-export type ReadControl = 'Read my operations' | 'Read my sequences'
+export type ReadControl = 'Read my operations' | 'Read my sequences' | 'Create position'
 
 /** A sentence, or one that names the screen's own read button, since each screen names it differently. */
 const TEXT: Readonly<Record<string, string | ((again: ReadControl) => string)>> = {

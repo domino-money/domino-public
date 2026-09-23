@@ -25,8 +25,7 @@ import type { DepositSelection } from '../deposit/types'
 import { OperationPanel } from '../components/deposit/OperationPanel'
 import { Button, Card, Display, Pill } from '../components/ui'
 import AdvancedSetup from './AdvancedSetup'
-import WalletDeposit from './WalletDeposit'
-import { getWalletIdentity, subscribeWalletIdentity, useWalletIdentity, walletKey } from '../lib/walletIdentity'
+import { getWalletIdentity, subscribeWalletIdentity, walletKey } from '../lib/walletIdentity'
 
 const initial = { amountRaw: '', budget0Raw: '', budget1Raw: '', tickLower: '', tickUpper: '', slippageBps: String(SLIPPAGE_DEFAULT_BPS),
   nativeGasReserveRaw: '', maxGasLimitRaw: '', maxFeePerGasRaw: '', maxPriorityFeePerGasRaw: '' }
@@ -119,7 +118,6 @@ const formFromDraft = (draft: SetupDraft | null): typeof initial => draft ? { ..
 export default function Setup() {
   const session = useSyncExternalStore(livePort.subscribe, livePort.getSnapshot)
   const scope = sessionKey(session)
-  const identity = useWalletIdentity()
   // New position's choices, when the owner continued here with a wallet connected: read once, for that wallet only, and sent nowhere.
   const [carried, setCarried] = useState<SetupDraft | null>(() => setupDraftFor(walletKey(getWalletIdentity())))
   const [explored, setExplored] = useState<PoolOption | null>(null)
@@ -218,12 +216,10 @@ export default function Setup() {
   const open = (id: string) => { setNotice(null); deps.flow.dispatch({ t: 'user', action: 'open', id }) }
   const blockerButton = (id: string | null) => id && <Button className="justify-self-start" variant="outline" size="sm" disabled={state.busy !== null} onClick={() => open(id)}>Open the blocking deposit</Button>
   return <main className="dm-page dm-page--narrow">
-    <Display as="h1" className="dm-display-title">Create or recover a position</Display>
+    <Display as="h1" className="dm-display-title">Deposits and recovery</Display>
     <p className="dm-acct-lede">{pool ? 'Review the amounts and approve each step in your wallet.' : 'Choose a pool, review the amounts and approve each step in your wallet.'} Direct deposits carry no Domino percentage fee. You pay network gas; Uniswap pool fees apply only if you swap.</p>
-    {identity.kind === 'connected' && identity.chainId === 4663 ? <WalletDeposit pool={pool} draft={carried} />
-      : <Card className="dm-acct-block dm-acct-signin" data-setup-wallet={identity.kind === 'connected' ? 'other-network' : 'disconnected'}>
-        {identity.kind === 'connected' ? 'Switch your wallet to Robinhood Chain to deposit. Each step is reviewed before your wallet opens.' : 'Connect your wallet on Robinhood Chain to deposit. Each step is reviewed before your wallet opens.'}
-      </Card>}
+    {/* Positions are created from New position's Create position. This page keeps the deposit service's drafts and owner recovery. */}
+    <p className="dm-acct-block text-body text-fg-muted" data-setup-new-position="">To open a new position, use <a className="underline" href="#/new">New position</a>: its last step creates it through your wallet.</p>
     {/* The pool comes from New position with the rest of the choices; the explorer is for choosing one here, or another one, and folds away once there is one. */}
     <details className="dm-details dm-acct-disclosure dm-acct-block" open={pool ? undefined : true} data-setup-explorer={pool ? 'folded' : 'open'}>
       <summary>{pool ? 'Choose another pool' : 'Choose a pool'}</summary>

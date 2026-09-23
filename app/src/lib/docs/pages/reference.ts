@@ -255,7 +255,7 @@ export const GLOSSARY: DocPage = {
           items: [
             { id: 'sign-in', term: 'Sign-in', text: ['A signature over a message that proves you control an address. It authorizes no transaction and no automation.'] },
             { id: 'session', term: 'Session', text: ['What signing in starts. It ends after 30 minutes idle, at its end time, or when you sign out.'] },
-            { id: 'setup', term: 'Setup', text: ['The screen where deposits are made, one reviewed wallet step at a time.'] },
+            { id: 'setup', term: 'Setup', text: ['Domino V1’s setup contract: it holds a deposit until its position is minted.'] },
             { id: 'receipt', term: 'Receipt', text: ['A record of a transaction automation submitted and what it did, on Positions once you sign in.'] },
           ],
         },

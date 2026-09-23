@@ -32,8 +32,8 @@ const STEPS: ReadonlyArray<{ n: string; title: string; body: string; roadmap?: R
   },
   {
     n: '02',
-    title: 'Review, then sign in Setup',
-    body: 'Review every choice, the fees and the wallet steps before anything is sent. The deposit itself is signed in Setup, one reviewed wallet step at a time.',
+    title: 'Review, then create',
+    body: 'Review every choice and the wallet steps before anything is sent. Create position then asks your wallet to sign each step, and opens the position when it exists.',
   },
   {
     n: '03',

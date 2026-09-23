@@ -8,7 +8,7 @@ export const CREATE = {
   page: {
     eyebrow: 'Robinhood Chain · Uniswap',
     title: 'New position',
-    description: 'Four steps. Nothing moves until your wallet signs in Setup.',
+    description: 'Four steps. Nothing moves until your wallet signs.',
     stepOf: (index: number, count: number) => `Step ${index} of ${count}`,
     back: 'Back',
     next: 'Continue',
@@ -25,7 +25,7 @@ export const CREATE = {
     pool: { title: 'Pool', lead: 'Choose the pool this position trades in.' },
     range: { title: 'Range', lead: 'Choose the price band this position earns fees in.' },
     amount: { title: 'Amount', lead: 'How much of each token this position holds.' },
-    review: { title: 'Review', lead: 'Every choice, the fees and the wallet steps, before Setup.' },
+    review: { title: 'Review', lead: 'Every choice and the wallet steps. Create position opens it.' },
   },
   /** The state machine's stages: `short` labels the plain-text summary lines. */
   stage: {
@@ -33,7 +33,7 @@ export const CREATE = {
     pool: { title: 'Pool', short: 'Pool', lead: 'A position holds two assets. Pick an existing pool that trades your token against the other.' },
     amount: { title: 'Amount and range', short: 'Amount', lead: 'How much of each token, and the price band the position earns fees in.' },
     balance: { title: 'Deposit amounts', short: 'Balance', lead: 'How much of each token the deposit is expected to take, and the most it may take.' },
-    review: { title: 'Review', short: 'Review', lead: 'Every choice, the fees and the wallet steps, before Setup.' },
+    review: { title: 'Review', short: 'Review', lead: 'Every choice and the wallet steps. Create position opens it.' },
   },
   token: {
     needToken: 'Choose a token to continue.',
@@ -127,7 +127,7 @@ export const CREATE = {
   },
   balance: {
     /** The one line under the deposit amount rows (the docs' New position page shows it too, lib/docs/pages/using.ts). */
-    notEnabled: 'Exact amounts are calculated in Setup, at the price when you sign.',
+    notEnabled: 'Exact amounts are calculated when you create the position, at the price when you sign.',
     /** Why no request can be formed, from previewRequest in journey.ts. */
     incomplete: 'the earlier steps are not complete.',
     /** The estimate waits for the balances, because they are part of its own request. */
@@ -140,7 +140,7 @@ export const CREATE = {
     short: (symbols: readonly string[]) =>
       `A position holds both of this pool’s tokens, and your wallet does not cover the most this deposit may take of ${
         symbols.length > 1 ? `${symbols.slice(0, -1).join(', ')} and ${symbols[symbols.length - 1]}` : symbols[0]
-      }. Lower the budget, or swap into ${symbols.length > 1 ? 'them' : 'it'} in Setup before depositing.`,
+      }. Lower the budget, or add ${symbols.length > 1 ? 'them' : 'it'} to your wallet first.`,
     hooks: 'this pool has hooks, and deposits support hookless pools only.',
     dynamicFee: 'this pool has a dynamic fee, and deposits support fixed fees only.',
     /** The four rows, filled while an estimate for these choices is current. */
@@ -161,7 +161,7 @@ export const CREATE = {
       expired: (at: string) => `This estimate expired at ${at}.`,
       signedOut: 'Sign in with your wallet to see these amounts.',
       loading: 'Reading the amounts…',
-      off: 'Exact amounts are calculated in Setup, at the price when you sign.',
+      off: 'Exact amounts are calculated when you create the position, at the price when you sign.',
       unavailable: 'These amounts could not be read.',
     },
     /** The screen reader's line when the rows change. */
@@ -226,8 +226,6 @@ export const CREATE = {
     },
   },
   review: {
-    gate: 'Deposits are made in Setup, one reviewed wallet step at a time.',
-    gateDetail: 'Signing stays in Setup and your wallet. Nothing can be approved, minted or swapped from this page.',
     choices: 'Your choices',
     lines: {
       pool: 'Pool',
@@ -238,12 +236,12 @@ export const CREATE = {
     },
     amounts: 'Deposit amounts per token',
     steps: 'Wallet steps',
-    stepsNote: 'What your wallet will be asked for, in order, in Setup. None of it starts from this page.',
+    stepsNote: 'What your wallet asks you to sign, in order, when you press Create position.',
     /** The one charge Domino makes, on earned fees an automation consumes. Automate states it for the mode it applies (screens/Automate.tsx); a direct deposit carries none. */
     serviceFeeValue: (mode: 'none' | 'compound' | 'domino') => mode === 'none' ? 'No automation service fee' : `${mode === 'domino' ? 4 : 2}% of earned fees consumed`,
     /** The headline: the position being created, in one line per thing that matters. */
     holds: 'This position holds',
-    /** The slippage line of the headline, so the choice is in view before Setup asks the wallet for anything. */
+    /** The slippage line of the headline, so the choice is in view before the wallet is asked for anything. */
     slippage: (percent: string) => `Slippage tolerance ${percent}`,
     rangeBetween: 'between',
     priceAt: (block: number) => `at the pool’s price, block ${block}`,
@@ -252,32 +250,25 @@ export const CREATE = {
     stale: 'The pool price was read more than 5 minutes ago on this page.',
     recipient: 'NFT recipient',
     recipientValue: 'The wallet that signs the mint. No address is known to this screen.',
-    /** Final control, wallet builds: a link to Setup, which opens with these choices filled in for the signed-in wallet. */
-    setup: 'Continue in Setup',
-    setupNote: 'Setup opens with this pool, range and amount filled in. Nothing is sent until you review each step in your wallet there.',
-    setupNoteNotConnected: 'Connect your wallet on Robinhood Chain first, and Setup opens with this pool, range and amount filled in. Nothing is sent until you review each step in your wallet there.',
-    /** Under the link when the pool is one Setup's deposits do not take (hooks or a dynamic fee): nothing is carried, and nothing is promised. */
-    setupNoteUnsupported: 'Deposits in Setup take pools with no hooks and a fixed fee.',
-    /** Final control, builds without wallet sign-in. */
-    noSetup: 'Deposits are made in Setup, which isn’t available here.',
+    /** The review step's own line: it is the last one, and its action is Create position (StageReview.tsx FinalControl). */
+    final: 'Press Create position: your wallet asks you to sign each step.',
+    /** Final control while its chunk loads, if it cannot load, and in builds without a wallet (StageReview.tsx FinalControl). */
+    loading: 'Loading the wallet steps…',
+    loadFailed: 'The wallet steps could not load. Reload the page to try again.',
+    noWallet: 'Creating a position needs a wallet, which isn’t available here.',
     /**
-     * The wallet steps, in order (walletSteps in journey.ts). A deposit takes
-     * each ERC-20 through Permit2: an exact approval to Permit2, then a Permit2
-     * allowance for the position manager (docs/DIRECT_DEPOSITS.md). Native ETH
-     * needs no approval: it goes with the mint. Nothing about automation: its
-     * owner transactions are Automate's to describe (finance/sequence.ts).
+     * The wallet steps Create position asks for, in order (walletSteps in
+     * journey.ts, components/create/CreatePosition.tsx): an exact approval for
+     * each token whose allowance is short, the deposit of both tokens to
+     * Domino V1's setup contract, and the mint of the position NFT to the
+     * wallet. Native ETH needs no approval: it travels with the deposit.
      */
-    approveStep: 'Approve the selected token to Permit2',
-    approveStepDetail: 'An exact amount, never unlimited, asked only when the current allowance is short. A smaller allowance is reset to zero first.',
-    permitStep: 'Allow the position manager to use the selected token through Permit2',
-    permitStepDetail: 'A Permit2 allowance for that exact amount, to the verified position manager only, expiring within an hour.',
-    otherApproveStep: 'Approve the other token to Permit2, if the composition needs it',
-    otherPermitStep: 'Allow the position manager to use the other token through Permit2, if the composition needs it',
-    otherTokenStep: 'The amount, if any, is calculated when the deposit is prepared.',
-    mintStep: 'Mint the position NFT to your wallet',
-    mintStepDetail: 'One transaction to the verified position manager: mint, then settle both currencies. Nothing else in it.',
-    nativeMintDetail: 'One transaction to the verified position manager: mint, then settle both currencies. Native ETH needs no approval: it goes with this transaction, capped at the budget, and what is not used is refunded.',
-    otherNativeMintDetail: 'One transaction to the verified position manager: mint, then settle both currencies. Native ETH needs no approval: if the composition needs it, it goes with this transaction, and what is not used is refunded.',
+    approveStep: 'Approve the exact amount',
+    approveStepDetail: 'Asked only when this token’s allowance is short: never unlimited, and a smaller allowance is reset to zero first.',
+    fundStep: 'Deposit the tokens',
+    fundStepDetail: 'One transaction to Domino’s setup contract, verified on chain first. Native ETH travels with it. The tokens stay yours until the mint, and can be refunded.',
+    mintStep: 'Create the position',
+    mintStepDetail: 'One transaction: the position NFT is minted to your wallet at your range, and what the range does not use comes back with it.',
     /** The fee bases side by side (feeBases in journey.ts). The service row is the docs' fees page's (lib/docs/pages/reference.ts), not Review's: a direct deposit carries no Domino fee. */
     feeLabels: { pool: 'Pool trading fee', service: 'Domino service fee', swap: 'Assisted swap fee', gas: 'Network gas' },
     feeValues: { service: 'Auto-compound 2%; Domino-compound 4% of earned fees consumed', swap: 'At most 0.65% of the consumed swap budget', gas: 'Paid by you' },

@@ -417,6 +417,12 @@ test('New position’s Review asks for the deposit amounts for the signed-in wal
   assert.equal(positionCalls(s).length, 0, 'nothing is asked for a wallet that is not signed in');
   assert.deepEqual(await rowLines(page, 'expected'), ['—']);
   assert.equal(await balance(page).locator('[data-balance-row="expected"] dd').getAttribute('title'), 'Sign in with your wallet to see these amounts.');
+  // Changed on purpose (Create position): Review's last control opens the position through the wallet (CreatePosition.tsx). With no wallet
+  // connected it asks for one, and says why.
+  const connect = page.locator('[data-create-position="connect"]');
+  await connect.waitFor({ timeout: 30_000 });
+  assert.equal(await connect.innerText(), 'Connect wallet');
+  assert.equal(await page.locator('#create-reason').innerText(), 'Connect your wallet to create the position. Each transaction appears in your wallet to sign.');
 
   // Signing in while Review is open finishes the intent Review's opening made: one request.
   await signInHere(s, page);
@@ -457,8 +463,12 @@ test('New position’s Review asks for the deposit amounts for the signed-in wal
   assert.match(await balance(page).locator('[data-balance-short]').innerText(), /^A position holds both of this pool’s tokens, and your wallet does not cover the most this deposit may take of ETH\./);
   const text = await page.locator('main').innerText();
   assert.doesNotMatch(text, REVIEW_FORBIDDEN);
-  assert.match(text, /Exact amounts are calculated in Setup, at the price when you sign\./);
-  assert.match(await page.locator('#create-reason').innerText(), /^Setup opens with this pool, range and amount filled in\. Nothing is sent until you review each step in your wallet there\.$/);
+  assert.match(text, /Exact amounts are calculated when you create the position, at the price when you sign\./);
+  // Connected on Robinhood Chain: Create position itself, which says what the wallet will ask. Nothing is sent by showing it.
+  await page.locator('[data-create-position="idle"]').waitFor();
+  assert.equal(await page.locator('[data-create-position="idle"]').innerText(), 'Create position');
+  assert.equal(await page.locator('#create-reason').innerText(), 'Your wallet asks you to sign each step: an exact approval if needed, the deposit, then the position.');
+  assert.equal(await page.getByRole('link', { name: 'Continue in Setup' }).count(), 0, 'no way on through Setup');
   await noSigningControls(page);
 
   // The estimate is current for 30 s after it was asked; then its figures go back to a dash, with the time in the title.
@@ -489,7 +499,7 @@ test('New position with the onboarding service switched off shows only dashes, s
   assert.equal(await balance(page).getAttribute('data-preview-reason'), 'feature_unavailable');
   assert.equal(positionCalls(s).length, 1);
   for (const row of ['expected', 'maximum', 'unspent', 'liquidity']) assert.deepEqual(await rowLines(page, row), ['—'], row);
-  assert.equal(await balance(page).locator('[data-balance-row="liquidity"] dd').getAttribute('title'), 'Exact amounts are calculated in Setup, at the price when you sign.');
+  assert.equal(await balance(page).locator('[data-balance-row="liquidity"] dd').getAttribute('title'), 'Exact amounts are calculated when you create the position, at the price when you sign.');
   assert.doesNotMatch(await page.locator('main').innerText(), REVIEW_FORBIDDEN);
   await footerButton(page, 'Back').click();
   await footerButton(page, 'Continue').click();

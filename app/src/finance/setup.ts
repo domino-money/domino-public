@@ -81,6 +81,20 @@ export interface PreparedSetup {
   summary: readonly string[]
 }
 const ADDRESS = /^0x[0-9a-f]{40}$/, HASH = /^0x[0-9a-f]{64}$/
+/**
+ * How long a send waits for the wallet's answer. Every other step is bounded
+ * to 25 seconds of reads; a signature is a person reading a transaction on a
+ * phone, so it gets its own window. The prepared step itself still expires 25
+ * seconds after it was simulated, and is checked before the wallet is asked.
+ */
+export const SIGN_WINDOW_S = 180
+/**
+ * The on-chain deadline a swap or mint carries: the signing window plus room
+ * for inclusion, well inside the contract's 1,200 seconds. A deadline shorter
+ * than the time a person may take to sign would revert a signed step; the
+ * price band, not the deadline, is what bounds the price it executes at.
+ */
+export const STEP_DEADLINE_S = SIGN_WINDOW_S + 300
 const fail = (code: string): never => { throw new Error(code) }
 const asHex = (value: unknown): Hex => typeof value === 'string' && /^0x(?:[0-9a-fA-F]{2})*$/.test(value) ? value as Hex : fail('invalid_wallet_reply')
 const quantity = (value: unknown): bigint => typeof value === 'string' && /^0x(?:0|[1-9a-fA-F][0-9a-fA-F]*)$/.test(value) ? BigInt(value) : fail('invalid_wallet_quantity')
@@ -116,16 +130,30 @@ export function poolKey(key: PoolKey): PoolKey {
 }
 // Each operation is bounded and uses the selected wallet's provider. No RPC URL,
 // signer, allowance spender or calldata comes from a backend response.
+/** getSlot0(bytes32 poolId) view returns (uint160 sqrtPriceX96, int24 tick, uint24 protocolFee, uint24 lpFee) */
+const slot0Abi = [{ name: 'getSlot0', type: 'function', stateMutability: 'view', inputs: [{ type: 'bytes32' }], outputs: [{ type: 'uint160' }, { type: 'int24' }, { type: 'uint24' }, { type: 'uint24' }] }] as const
+/** balanceOf(address) view returns (uint256) */
+const balanceAbi = [{ name: 'balanceOf', type: 'function', stateMutability: 'view', inputs: [{ type: 'address' }], outputs: [{ type: 'uint256' }] }] as const
+/**
+ * The wallet's balance of one currency, read through its own provider: native
+ * ETH with eth_getBalance, a token with balanceOf. Reads only; for saying what
+ * is missing before a deposit is prepared (components/create/CreatePosition.tsx).
+ */
+export async function walletBalance(wallet: WalletRpc, currency: Address): Promise<bigint> {
+  if (currency === zeroAddress) return quantity(await wallet.request('eth_getBalance', [wallet.owner, 'latest']))
+  const data = encodeFunctionData({ abi: balanceAbi, functionName: 'balanceOf', args: [wallet.owner] })
+  return decodeFunctionResult({ abi: balanceAbi, functionName: 'balanceOf', data: asHex(await wallet.request('eth_call', [{ to: currency, data }, 'latest'])) })
+}
 export function createSetupClient(wallet: WalletRpc, supplied: SetupDeployment, now = () => Date.now() / 1000,
   currentAdmission?: () => Promise<SetupDeployment | null>) {
   const deployment = Object.freeze({ ...supplied })
   const issued = new WeakSet<PreparedSetup>(), offered = new Set<string>()
   const returned = new Map<Hex, PreparedSetup>()
   let busy = false
-  async function bounded<T>(work: (rpc: (method: string, params: unknown[], onUserRejection?: () => Promise<void>) => Promise<unknown>) => Promise<T>): Promise<T> {
+  async function bounded<T>(work: (rpc: (method: string, params: unknown[], onUserRejection?: () => Promise<void>) => Promise<unknown>) => Promise<T>, seconds = 25): Promise<T> {
     if (busy) return fail('wallet_action_busy')
     busy = true
-    const end = now() + 25
+    const end = now() + seconds
     let calls = 0
     const rpc = async (method: string, params: unknown[], onUserRejection?: () => Promise<void>) => {
       if (!wallet.current() || now() >= end || ++calls > 48) return fail('wallet_action_expired')
@@ -199,6 +227,15 @@ export function createSetupClient(wallet: WalletRpc, supplied: SetupDeployment, 
   }
   return {
     deployment,
+    /** The pool's square-root price now, read on chain through the wallet from the deployment's own StateView. Reads only. */
+    price: (key: PoolKey) => bounded(async rpc => {
+      await identity(rpc); poolKey(key)
+      const id = keccak256(encodeAbiParameters([{ type: 'tuple', components: poolKeyComponents }], [key]))
+      const data = encodeFunctionData({ abi: slot0Abi, functionName: 'getSlot0', args: [id] })
+      const [sqrtPriceX96] = decodeFunctionResult({ abi: slot0Abi, functionName: 'getSlot0', data: asHex(await rpc('eth_call', [{ to: deployment.stateView, data }, 'latest'])) })
+      if (sqrtPriceX96 === 0n) return fail('pool_not_initialized')
+      return sqrtPriceX96
+    }),
     inspect: (id: Hex) => bounded(async rpc => { await verify(rpc, true); return operation(rpc, id) }),
     recent: () => bounded(async rpc => {
       await verify(rpc, true)
@@ -234,7 +271,7 @@ export function createSetupClient(wallet: WalletRpc, supplied: SetupDeployment, 
       if (op.recoveryStarted) return fail('operation_recovery_started')
       // The slippage is the owner's own limit, inside the product's bound (./slippage.ts, pinned to lib/create/slippage.ts): the minimum output below is drawn with it.
       if (op.closed || op.swapped || gross <= 0n || gross > (zeroForOne ? op.balance0 : op.balance1) || !Number.isSafeInteger(slippageBps) || slippageBps < SLIPPAGE_MIN_BPS || slippageBps > SLIPPAGE_MAX_BPS || sqrtLimit <= 0n || sqrtLimit >= 2n ** 160n) return fail('invalid_swap_budget')
-      const plan = { operationId: id, zeroForOne, grossInput: gross, minOutput: 1n, sqrtPriceLimitX96: sqrtLimit, deadline: BigInt(Math.floor(now()) + 90) }
+      const plan = { operationId: id, zeroForOne, grossInput: gross, minOutput: 1n, sqrtPriceLimitX96: sqrtLimit, deadline: BigInt(Math.floor(now()) + STEP_DEADLINE_S) }
       const data = encodeFunctionData({ abi: setupAbi, functionName: 'swap', args: [plan] })
       const output = decodeFunctionResult({ abi: setupAbi, functionName: 'swap', data: asHex(await rpc('eth_call', [{ from: wallet.owner, to: deployment.setup, data }, 'latest'])) })
       const minimum = output * BigInt(10000 - slippageBps) / 10000n
@@ -250,7 +287,7 @@ export function createSetupClient(wallet: WalletRpc, supplied: SetupDeployment, 
       if (op.closed || !Number.isSafeInteger(plan.tickLower) || !Number.isSafeInteger(plan.tickUpper) || plan.tickLower < -887272 || plan.tickUpper > 887272 || plan.tickLower >= plan.tickUpper || plan.tickLower % op.key.tickSpacing || plan.tickUpper % op.key.tickSpacing
         || plan.liquidity <= 0n || plan.liquidity >= 2n ** 127n || plan.maxAmount0 < 0n || plan.maxAmount1 < 0n || plan.maxAmount0 > op.balance0 || plan.maxAmount1 > op.balance1
         || plan.minSqrtPriceX96 <= 0n || plan.maxSqrtPriceX96 < plan.minSqrtPriceX96 || plan.maxSqrtPriceX96 >= 2n ** 160n || plan.initialSqrtPriceX96 < 0n || plan.initialSqrtPriceX96 >= 2n ** 160n) return fail('invalid_mint_limits')
-      return prepare(rpc, 'mint', id, deployment.setup, encodeFunctionData({ abi: setupAbi, functionName: 'mint', args: [{ operationId: id, ...plan, deadline: BigInt(Math.floor(now()) + 90) }] }), 0n, gas,
+      return prepare(rpc, 'mint', id, deployment.setup, encodeFunctionData({ abi: setupAbi, functionName: 'mint', args: [{ operationId: id, ...plan, deadline: BigInt(Math.floor(now()) + STEP_DEADLINE_S) }] }), 0n, gas,
         [`Mint liquidity ${plan.liquidity} in ticks ${plan.tickLower} to ${plan.tickUpper}; caps ${plan.maxAmount0} / ${plan.maxAmount1} smallest units.`, `Token 0: ${op.key.currency0}; token 1: ${op.key.currency1}.`, `Price limits (sqrtPriceX96): ${plan.minSqrtPriceX96} to ${plan.maxSqrtPriceX96}.`,
           plan.initialSqrtPriceX96 ? `Create the pool at sqrtPriceX96 ${plan.initialSqrtPriceX96} and mint atomically. This sets the pool's initial relative token price.` : 'Mint into the existing pool.', `NFT and unused funds return to ${wallet.owner}. No Domino percentage fee on mint.`])
     }),
@@ -294,7 +331,7 @@ export function createSetupClient(wallet: WalletRpc, supplied: SetupDeployment, 
       if (typeof hash !== 'string' || !/^0x[0-9a-fA-F]{64}$/.test(hash)) return fail('wallet_result_unknown')
       returned.set(hash.toLowerCase() as Hex, prepared)
       return hash.toLowerCase() as Hex
-    }),
+    }, SIGN_WINDOW_S),
     receipt: (hash: Hex, operationId?: Hex) => bounded(async rpc => {
       await identity(rpc)
       if (!HASH.test(hash)) return fail('invalid_transaction_hash')
@@ -322,6 +359,9 @@ export function createSetupClient(wallet: WalletRpc, supplied: SetupDeployment, 
       if (!receipt || receipt.transactionHash?.toLowerCase() !== hash || receipt.from?.toLowerCase() !== wallet.owner || !receipt.blockNumber || !receipt.blockHash || !HASH.test(receipt.blockHash) || !['0x0','0x1'].includes(receipt.status ?? '')) return fail('invalid_receipt')
       const block = await rpc('eth_getBlockByNumber', [receipt.blockNumber, false]) as { hash?: string } | null
       if (!block || block.hash !== receipt.blockHash) return { state: 'reorged' as const }
+      // A failed transaction is said as soon as its block is canonical: on Robinhood Chain finality trails by
+      // minutes, and a revert read as "included" would let the next step start on a state that never changed.
+      if (receipt.status === '0x0') return { state: 'reverted' as const, blockHash: receipt.blockHash }
       const final = await rpc('eth_getBlockByNumber', ['finalized', false]) as { number?: string } | null
       if (!final?.number || quantity(final.number) < quantity(receipt.blockNumber)) return { state: 'included' as const }
       return { state: receipt.status === '0x1' ? 'finalized' as const : 'reverted' as const, blockHash: receipt.blockHash }

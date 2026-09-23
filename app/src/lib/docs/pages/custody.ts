@@ -12,7 +12,7 @@ export const NON_CUSTODIAL: DocPage = {
       id: 'your-wallet',
       title: 'The position you open stays in your wallet',
       blocks: [
-        p('A position you open in Setup is a standard Uniswap position NFT, minted to the wallet that signs the mint.'),
+        p('A position you create is a standard Uniswap position NFT, minted to the wallet that signs the mint.'),
         p('When you start Auto-compound or Domino-compound from it, that NFT stays in your wallet. You approve that one NFT to your sequence vault, never all of your NFTs.'),
         p('In Setup’s advanced section, with the assisted swap, the tokens you fund wait in a setup operation until you mint or refund. Only your wallet can do either, and a refund carries no Domino fee.'),
       ],

@@ -180,12 +180,18 @@ const owned = (body, id) => { const out = structuredClone(body); out.walletStep 
 const listOf = (operations, hasMore = false) => ({ contractVersion: depositRuntime.CONTRACT_VERSION, operations: operations.map(op => { const { history, ...rest } = structuredClone(op); return { ...rest, historyCount: history.length, lastStep: history.at(-1) ?? null }; }),
   hasMore, nextBefore: hasMore ? operations.at(-1).id : null, serverBroadcastAvailable: false, automationAvailable: false });
 
-test('setup reads its release on mount, asks for a wallet, and makes no deposit request or wallet transaction by merely opening the screen', async () => {
+// Changed on purpose (Create position): a position is opened from New position's last step through the wallet, so Setup no longer asks for a
+// wallet to deposit. It says in one line where a new position is made, and links there.
+test('setup reads its release on mount, points to New position for a new position, and makes no deposit request or wallet transaction by merely opening the screen', async () => {
   const s = await scenario(); const depositCalls = [];
   s.page.on('request', request => { if (request.url().includes('/api/deposit/')) depositCalls.push(request.url()); });
   try {
     await s.page.goto(`${s.origin}/#/setup`);
-    await s.page.getByText('Connect your wallet on Robinhood Chain to deposit. Each step is reviewed before your wallet opens.', { exact: true }).waitFor();
+    const line = s.page.locator('[data-setup-new-position]');
+    await line.waitFor();
+    assert.equal(await line.innerText(), 'To open a new position, use New position: its last step creates it through your wallet.');
+    assert.equal(await line.getByRole('link', { name: 'New position', exact: true }).getAttribute('href'), '#/new');
+    assert.equal(await s.page.locator('[data-setup-wallet], [data-wallet-deposit]').count(), 0, 'no deposit through the wallet here');
     // Changed on purpose (qa:visual, dead ends): with no release and no saved profile an Owner recovery card promised a recovery with no way
     // into it. Nothing is shown in its place; where the release stands is a hidden marker's data and title.
     const recovery = s.page.locator('[data-setup-release="unavailable"][data-setup-release-reason="release_not_available"]');
@@ -329,72 +335,6 @@ test('a refused or failing release (403, 404, 503) is treated like available:fal
     assert.equal(await s.page.getByRole('heading', {name:'Create a paused sequence'}).count(), 0, 'a saved profile never brings creation back');
     assert.ok(s.releases.every(call => call.method === 'GET'));
     assert.equal(s.wallet.state.signed.length, 0); assert.deepEqual(s.wallet.state.refused, [], 'mounting asked the wallet for nothing');
-  } finally { await s.close(); }
-});
-
-// ---- New position to Setup: the verified choices as a pre-filled deposit draft (G9) ----
-
-test('Continue in Setup carries the verified choices as a pre-filled deposit draft, in memory, for the connected wallet only, and sends nothing until Create (G9)', async () => {
-  const read = createReadStub();
-  const s = await scenario({ routes: [(request, url) => read.handle(request, url)] });
-  await s.context.route(ARTWORK, route => route.fulfill({ status: 200, contentType: 'application/json', body: '[]' }));
-  s.set({ deposit: () => deposit({ error: 'route_not_available' }, 404) });
-  const dialog = s.page.locator('[role="dialog"][aria-labelledby="wallet-dialog-title"]');
-  try {
-    await login(s.page);
-    await s.page.goto(`${s.origin}/#/new`);
-    await walkToReview(s.page);
-    // This server has no onboarding service: the amounts stay a dash, with why on the section, and nothing blocks the way on.
-    await s.page.locator('section[data-stage="balance"][data-preview="off"][data-preview-reason="feature_unavailable"]').waitFor({ timeout: 30_000 });
-    assert.equal(await s.page.locator('#create-reason').innerText(), 'Setup opens with this pool, range and amount filled in. Nothing is sent until you review each step in your wallet there.');
-    assert.doesNotMatch(await s.page.locator('main').innerText(), /carried over|Request details|"chainId"/);
-    assert.deepEqual(s.deposits, [], 'New position sends nothing to the deposit service');
-
-    await s.page.getByRole('link', { name: 'Continue in Setup', exact: true }).click();
-    const draft = s.page.locator('form[data-setup-draft="new-position"]');
-    await draft.waitFor();
-    assert.match(await draft.innerText(), /Token 0: 0x0000000000000000000000000000000000000000\s+Token 1: 0x1111111111111111111111111111111111111111/);
-    assert.match(await draft.innerText(), /Filled in from New position\. Enter the budgets and network limits, then create the draft\. Nothing is sent before that\./);
-    const field = (label, control = 'input') => draft.locator('label', { hasText: label }).locator(control);
-    assert.equal(await field('Input amount is in', 'select').inputValue(), '1', 'the deposit token is the pool’s token 1');
-    for (const [label, value] of [['Input amount (smallest token units)', '1000000'], ['Lower tick', '-3600'], ['Upper tick', '4080'], ['Maximum token 0 spend (smallest units)', ''], ['Maximum token 1 spend (smallest units)', ''], ['Maximum gas units', '']]) {
-      assert.equal(await field(label).inputValue(), value, label);
-    }
-    // The slippage chosen on the amount step (its default, 0.5%) arrives as the draft's limit: the preset pressed, the exact box filled.
-    const slippage = draft.locator('[data-slippage-choice]');
-    assert.equal(await slippage.getAttribute('data-slippage-bps'), '50');
-    assert.equal(await slippage.locator('[data-slippage-preset="50"]').getAttribute('aria-pressed'), 'true');
-    assert.equal(await slippage.locator('label', { hasText: 'Exact percentage' }).locator('input').inputValue(), '0.5');
-    await s.page.waitForTimeout(500);
-    assert.deepEqual(s.deposits.map(call => call.route), ['list'], 'filling in the draft sends nothing: only the list Setup reads for any signed-in visit');
-    const kept = await s.page.evaluate(() => JSON.stringify({ ...localStorage }) + JSON.stringify({ ...sessionStorage }) + location.href);
-    assert.doesNotMatch(kept, /1000000|-3600|4080|0911afcb/, 'the choices live in memory only: never storage or the URL');
-    assert.doesNotMatch(await s.page.locator('main').innerText(), FORBIDDEN);
-
-    // The choices are the connected wallet's: signing out keeps them for the deposit through the wallet; disconnecting the wallet clears them.
-    const carried = s.page.locator('[data-wallet-deposit][data-wallet-deposit-prefill="new-position"]');
-    await carried.waitFor();
-    await s.page.locator('header [aria-haspopup="dialog"]').click();
-    await dialog.getByRole('button', { name: 'Sign out', exact: true }).click();
-    await s.page.waitForFunction(() => window.__dominoSessionProbe?.view().status === 'signed_out');
-    await s.page.keyboard.press('Escape');
-    await carried.waitFor();
-    assert.equal(await s.page.locator('form[data-setup-draft]').count(), 0, 'the service’s draft form is the signed-in session’s');
-    await s.page.locator('header [aria-haspopup="dialog"]').click();
-    await dialog.getByRole('button', { name: 'Disconnect wallet', exact: true }).click();
-    await s.page.waitForFunction(() => window.__dominoSessionProbe?.view().status === 'no_wallet');
-    await s.page.keyboard.press('Escape');
-    await s.page.getByText('Connect your wallet on Robinhood Chain to deposit. Each step is reviewed before your wallet opens.', { exact: true }).waitFor();
-    await login(s.page);
-    await s.page.locator('[data-deposits]').waitFor();
-    assert.equal(await s.page.locator('form[data-setup-draft]').count(), 0, 'nothing carried survives a wallet change');
-    assert.equal(await s.page.locator('[data-wallet-deposit-prefill="new-position"]').count(), 0, 'nor for the deposit through the wallet');
-    await s.page.goto(`${s.origin}/#/automate`);
-    await s.page.goto(`${s.origin}/#/setup`);
-    await s.page.locator('[data-deposits]').waitFor();
-    assert.equal(await s.page.locator('form[data-setup-draft]').count(), 0, 'nor a visit after it');
-    assert.equal(s.deposits.filter(call => call.route === 'create').length, 0, 'no deposit draft was created');
-    assert.equal(s.wallet.state.signed.length, 2, 'the two sign-in signatures only');
   } finally { await s.close(); }
 });
 
@@ -600,7 +540,7 @@ test('the assisted swap quotes the amount the owner types for a signed-in wallet
   } finally { await s.close(); }
 });
 
-// ---- The deposit through the wallet: New position's choices funded and minted with no session ------------------
+// ---- Create position: New position's last step opens the position through the wallet, with no session and no Setup ----
 
 /** The setup contract's ABI as finance/setup.ts lists it, and the token's, parsed so the chain below can decode every call and encode every answer. */
 const setupChainAbi = parseAbi([
@@ -614,35 +554,49 @@ const setupChainAbi = parseAbi([
   'function open(bytes32 id, PoolKey key, uint128 amount0, uint128 amount1) payable', 'function swap(SwapPlan) returns (uint128 output)', 'function mint(MintPlan)', 'function cancel(bytes32)',
   'function recoverCurrency(bytes32 id, address currency, uint128 amount)',
 ]);
-const erc20Abi = parseAbi(['function allowance(address,address) view returns(uint256)', 'function approve(address,uint256) returns(bool)']);
+/** finance/setup.ts's token ABI, and the balance read Create position checks the wallet with before asking it anything (CreatePosition.tsx). */
+const erc20Abi = parseAbi(['function allowance(address,address) view returns(uint256)', 'function approve(address,uint256) returns(bool)', 'function balanceOf(address) view returns (uint256)']);
 
 /**
- * A browser wallet on Robinhood Chain that is also the chain behind a published setup deployment, for the deposit
- * through the wallet. It connects and never signs in: personal_sign is outside its set, so a sign-in attempt would be
- * refused and recorded like any other stray method. It answers the reads the deployment is verified with, the gas
- * price, the token's allowance, the nonce, simulation and balance reads a step is prepared with, and the transaction,
- * receipt and block reads a sent step is followed by. Every transaction it is handed is included in its own block, all
- * of them finalized, and its state moves as the contract's would: an approval sets the allowance, `open` records the
- * funded operation under the id it named and counts the owner's nonce up, `mint` closes it with NFT 4242.
+ * A browser wallet on Robinhood Chain that is also the chain behind a published setup deployment, for Create position.
+ * It connects and never signs in: personal_sign is outside its set, so a sign-in attempt would be refused and recorded
+ * like any other stray method. It answers the reads the deployment is verified with, the gas price, the wallet's
+ * balances, the token's allowance, the nonce, simulation and balance reads a step is prepared with, and the
+ * transaction, receipt and block reads a sent step is followed by. Every transaction it is handed is included in its
+ * own block, all of them finalized (with `finality: 'lagging'`, none: the finalized block stays behind them all, as an
+ * L2's does behind L1), and its state moves as the contract's would: an approval sets the allowance,
+ * `open` records the funded operation under the id it named and counts the owner's nonce up, `mint` closes it with the
+ * NFT `tokenId`, `cancel` closes it with its balances refunded. `seed` puts an operation on chain before the page
+ * opens; `decline(name)` makes the wallet refuse, with 4001, the next transaction that calls `name`; `revert(name)` includes
+ * it with status 0 and no effect.
  */
-function fakeDepositChain(owner) {
+function fakeDepositChain(owner, { tokenId = 4242n, balances = {}, finality = 'final' } = {}) {
   const at = (byte, bytes = 20) => `0x${byte.toString(16).padStart(2, '0').repeat(bytes)}`;
   const setup = at(0x71), poolManager = at(0x72), positionManager = at(0x73), stateView = at(0x74), feeRecipient = at(0x75);
   const code = { [setup]: '0x6071', [poolManager]: '0x6072', [positionManager]: '0x6073', [stateView]: '0x6074' };
   const deployment = { setup, setupCodeHash: keccak256(code[setup]), poolManager, positionManager, stateView, poolManagerCodeHash: keccak256(code[poolManager]),
     positionManagerCodeHash: keccak256(code[positionManager]), stateViewCodeHash: keccak256(code[stateView]), feeRecipient, feeBps: 30, tariffVersion: '1', expiresAt: Math.floor(Date.now() / 1000) + 86_400 };
-  const TOKEN_ID = 4242n, FINALIZED = { number: '0x100', hash: at(0xbf, 32) };
+  const FINALIZED = { number: finality === 'lagging' ? '0x1' : '0x100', hash: at(0xbf, 32) };
   const lower = value => String(value).toLowerCase();
   const operationId = nonce => keccak256(encodeAbiParameters(parseAbiParameters('uint256,address,address,uint64'), [4663n, setup, owner, nonce]));
   const NONE = { owner: zeroAddress, key: { currency0: zeroAddress, currency1: zeroAddress, fee: 0, tickSpacing: 0, hooks: zeroAddress }, balance0: 0n, balance1: 0n, swapped: false, closed: false, tokenId: 0n };
-  const operations = new Map(), allowances = new Map();
-  const log = [], refused = [], missing = [], sends = [];
+  const operations = new Map(), allowances = new Map(), held = new Map(Object.entries(balances).map(([token, amount]) => [lower(token), amount]));
+  const log = [], refused = [], missing = [], sends = [], viewed = [], declined = [];
+  const refuse = new Set(), reverting = new Set(), reverted = new Set();
   let permitted = false;
   const blockOf = index => ({ number: numberToHex(0x10 + index), hash: at(0xb0 + index, 32) });
   const hashOf = index => at(0xc0 + index, 32);
+  const decode = tx => decodeFunctionData({ abi: lower(tx.to) === setup ? setupChainAbi : erc20Abi, data: tx.data });
   function view(to, data) {
+    if (to === stateView) {
+      const { functionName } = decodeFunctionData({ abi: stateViewAbi, data });
+      viewed.push(functionName);
+      if (functionName === 'getSlot0') return encodeFunctionResult({ abi: stateViewAbi, functionName, result: [STUB_SQRT_PRICE, 0, 0, 3000] });
+      throw new Error(`unexpected ${functionName} on the state view`);
+    }
     if (to === setup) {
       const { functionName, args = [] } = decodeFunctionData({ abi: setupChainAbi, data });
+      viewed.push(functionName);
       const answers = { manager: poolManager, positions: positionManager, stateView, feeRecipient, assistedFeeBps: 30, tariffVersion: 1n, ownerNonce: BigInt(operations.size),
         nextOperationId: operationId(BigInt(operations.size)), operation: operations.get(args[0]) ?? NONE, recoveryStarted: false };
       if (functionName in answers) return encodeFunctionResult({ abi: setupChainAbi, functionName, result: answers[functionName] });
@@ -650,21 +604,22 @@ function fakeDepositChain(owner) {
       throw new Error(`unexpected ${functionName} on the setup contract`);
     }
     const { functionName, args } = decodeFunctionData({ abi: erc20Abi, data });
+    viewed.push(functionName);
     if (functionName === 'allowance') return encodeFunctionResult({ abi: erc20Abi, functionName, result: lower(args[1]) === setup ? allowances.get(to) ?? 0n : 0n });
     if (functionName === 'approve') return encodeFunctionResult({ abi: erc20Abi, functionName, result: true });
+    if (functionName === 'balanceOf') return encodeFunctionResult({ abi: erc20Abi, functionName, result: lower(args[0]) === lower(owner) ? held.get(to) ?? 0n : 0n });
     throw new Error(`unexpected ${functionName} on ${to}`);
   }
   /** What the contracts make of a transaction once it is included. */
   function include(tx) {
-    const to = lower(tx.to);
-    if (to !== setup) {
-      const { functionName, args } = decodeFunctionData({ abi: erc20Abi, data: tx.data });
-      if (functionName === 'approve' && lower(args[0]) === setup) allowances.set(to, args[1]);
+    const { functionName, args } = decode(tx);
+    if (lower(tx.to) !== setup) {
+      if (functionName === 'approve' && lower(args[0]) === setup) allowances.set(lower(tx.to), args[1]);
       return;
     }
-    const { functionName, args } = decodeFunctionData({ abi: setupChainAbi, data: tx.data });
     if (functionName === 'open') operations.set(args[0], { owner, key: args[1], balance0: args[2], balance1: args[3], swapped: false, closed: false, tokenId: 0n });
-    if (functionName === 'mint') operations.set(args[0].operationId, { ...operations.get(args[0].operationId), balance0: 0n, balance1: 0n, closed: true, tokenId: TOKEN_ID });
+    if (functionName === 'mint') operations.set(args[0].operationId, { ...operations.get(args[0].operationId), balance0: 0n, balance1: 0n, closed: true, tokenId });
+    if (functionName === 'cancel') operations.set(args[0], { ...operations.get(args[0]), balance0: 0n, balance1: 0n, closed: true });
   }
   async function request(method, params) {
     log.push(method);
@@ -682,14 +637,20 @@ function fakeDepositChain(owner) {
         case 'eth_estimateGas': return { result: '0x186a0' };
         case 'eth_getBalance': return { result: '0xde0b6b3a7640000' };
         case 'eth_call': return { result: view(lower(params[0].to), params[0].data) };
-        case 'eth_sendTransaction': { const index = sends.length; sends.push(params[0]); include(params[0]); return { result: hashOf(index) }; }
+        case 'eth_sendTransaction': {
+          const { functionName } = decode(params[0]);
+          if (refuse.delete(functionName)) { declined.push(functionName); return { error: { code: 4001, message: 'User rejected the request.' } }; }
+          const index = sends.length; sends.push(params[0]);
+          if (reverting.delete(functionName)) reverted.add(index); else include(params[0]);
+          return { result: hashOf(index) };
+        }
         case 'eth_getTransactionByHash': case 'eth_getTransactionReceipt': {
           const index = sends.findIndex((_, i) => hashOf(i) === lower(params[0]));
           if (index === -1) return { result: null };
           const sent = sends[index], block = { blockHash: blockOf(index).hash, blockNumber: blockOf(index).number };
           return { result: method === 'eth_getTransactionByHash'
             ? { hash: hashOf(index), from: sent.from, to: sent.to, input: sent.data, value: sent.value, nonce: sent.nonce, chainId: sent.chainId, type: sent.type, gas: sent.gas, maxFeePerGas: sent.maxFeePerGas, maxPriorityFeePerGas: sent.maxPriorityFeePerGas, ...block }
-            : { transactionHash: hashOf(index), from: sent.from, to: sent.to, status: '0x1', gasUsed: '0xc350', effectiveGasPrice: sent.maxFeePerGas, ...block } };
+            : { transactionHash: hashOf(index), from: sent.from, to: sent.to, status: reverted.has(index) ? '0x0' : '0x1', gasUsed: '0xc350', effectiveGasPrice: sent.maxFeePerGas, ...block } };
         }
         case 'eth_getBlockByNumber': {
           if (params[0] === 'finalized') return { result: FINALIZED };
@@ -704,7 +665,15 @@ function fakeDepositChain(owner) {
     refused.push(method);
     return { error: { code: 4200, message: `${method} is not supported` } };
   }
-  return { log, refused, missing, sends, request, operationId, tokenId: TOKEN_ID, release: { contractVersion: '1.0.0-rc.1', chainId: 4663, available: true, deployment } };
+  return {
+    log, refused, missing, sends, viewed, declined, request, operationId, tokenId, operations, release: { contractVersion: '1.0.0-rc.1', chainId: 4663, available: true, deployment },
+    /** An operation of this owner already on chain, under the owner's next id. */
+    seed(operation) { const id = operationId(BigInt(operations.size)); operations.set(id, { owner, swapped: false, closed: false, tokenId: 0n, ...operation }); return id; },
+    decline(functionName) { refuse.add(functionName); },
+    revert(functionName) { reverting.add(functionName); },
+    /** Every transaction sent, decoded against the contract it went to. */
+    decoded: () => sends.map(tx => ({ to: lower(tx.to), from: lower(tx.from), value: BigInt(tx.value), nonce: tx.nonce, ...decode(tx) })),
+  };
 }
 
 /** The chain above announced as a browser wallet of its own (EIP-6963), beside the mock wallets, which stay untouched. */
@@ -727,19 +696,49 @@ async function installDepositWallet(context, chain) {
   });
 }
 
-test('a connected wallet without a session funds a setup operation and mints the position from the choices New position carried: two reviewed wallet steps, the allowance first when short, and the NFT id linked to Positions', async () => {
-  const read = createReadStub();
+/** The deployed StateView's price read: what Create position sizes the mint at. */
+const stateViewAbi = parseAbi(['function getSlot0(bytes32 poolId) view returns (uint160 sqrtPriceX96, int24 tick, uint24 protocolFee, uint24 lpFee)']);
+/** An amount with Review's default 0.5% slippage as room, rounded up: what the deposit takes of it (CreatePosition.tsx withRoom). */
+const withRoom = amount => (amount * 10050n + 9999n) / 10000n;
+/** The read stub's pool (support/read-stub.mjs), as the setup contract keys it: ETH against TOKEN, 0.30%, spacing 60, no hooks. */
+const STUB_POOL_KEY = { currency0: zeroAddress, currency1: FIXTURE_TOKEN, fee: 3000, tickSpacing: 60, hooks: zeroAddress };
+/** The standard range the read stub's pool price (tick 0) gives New position, in ticks, as Review states it. */
+const STUB_RANGE = [-3600, 4080];
+/** The read stub's pool price: tick 0. */
+const STUB_SQRT_PRICE = 2n ** 96n;
+const lowerKey = key => ({ ...key, currency0: key.currency0.toLowerCase(), currency1: key.currency1.toLowerCase(), hooks: key.hooks.toLowerCase() });
+/**
+ * The read gateway's answer for the position NFT the chain above minted, once it exists: the read fixture's first
+ * position (nft-positions.success), made this wallet's NFT `tokenId` in the stub's pool, at the minted range and
+ * liquidity, holding what the deposit funded. Any other question keeps its fixture.
+ */
+const mintedPosition = (chain) => (route, body) => {
+  const minted = [...chain.operations.values()].find(op => op.closed && op.tokenId !== 0n);
+  if (route !== 'nft-positions' || !minted || JSON.stringify(body.tokenIds) !== JSON.stringify([String(minted.tokenId)])) return undefined;
+  const [open, mint] = ['open', 'mint'].map(name => chain.decoded().find(tx => tx.functionName === name));
+  const base = readGateway('nft-positions.success'), plan = mint.args[0];
+  const item = { ...base.items[0], tokenId: String(minted.tokenId), owner: OWNER, salt: numberToHex(minted.tokenId, { size: 32 }), tickLower: plan.tickLower, tickUpper: plan.tickUpper,
+    liquidityRaw: String(plan.liquidity), principalRaw: [String(open.args[2]), String(open.args[3])], unsettledFeesRaw: ['0', '0'], inRange: true, hasLiquidity: true };
+  return JSON.stringify({ ...base, items: [item] });
+};
+/** Create position's step list as the page shows it: each step's key and state. */
+const createSteps = page => page.locator('[data-create-steps] li').evaluateAll(items => items.map(item => [item.getAttribute('data-create-step'), item.getAttribute('data-create-step-state')]));
+
+/**
+ * The wallet-test build at New position's Review with the chain above connected on Robinhood Chain and nothing more:
+ * Sign in is offered and never pressed. The release the setup client verifies is the chain's own. Resolves once
+ * Create position's lazily loaded control is in (StageReview.tsx FinalControl). `answer` goes to the read stub.
+ */
+async function atReview(chain, { answer } = {}) {
+  const read = createReadStub({ answer });
   const s = await scenario({ routes: [(request, url) => read.handle(request, url)] });
-  await s.context.route(ARTWORK, route => route.fulfill({ status: 200, contentType: 'application/json', body: '[]' }));
-  const chain = fakeDepositChain(ACCOUNTS[0].address);
-  await installDepositWallet(s.context, chain);
-  s.set({ setupRelease: { status: 200, body: chain.release } });
-  const services = [];
-  s.page.on('request', request => { if (/\/api\/(deposit|session)\//.test(request.url())) services.push(new URL(request.url()).pathname); });
-  const { setup } = chain.release.deployment, SQRT_PRICE = 79228162514264337593543950336n;
-  const dialog = s.page.locator('[role="dialog"][aria-labelledby="wallet-dialog-title"]');
   try {
-    // Connected on Robinhood Chain, and no further: Sign in is offered and never pressed.
+    await s.context.route(ARTWORK, route => route.fulfill({ status: 200, contentType: 'application/json', body: '[]' }));
+    await installDepositWallet(s.context, chain);
+    s.set({ setupRelease: { status: 200, body: chain.release } });
+    const services = [];
+    s.page.on('request', request => { if (/\/api\/(deposit|session)\//.test(request.url())) services.push(new URL(request.url()).pathname); });
+    const dialog = s.page.locator('[role="dialog"][aria-labelledby="wallet-dialog-title"]');
     await s.page.goto(`${s.origin}/#/new`);
     await s.page.reload();
     await s.page.waitForFunction(() => window.__dominoSessionProbe?.view().status === 'no_wallet');
@@ -747,86 +746,205 @@ test('a connected wallet without a session funds a setup operation and mints the
     await dialog.getByRole('button', { name: 'Connect Deposit Wallet', exact: true }).click();
     await s.page.waitForFunction(() => window.__dominoSessionProbe?.view().status === 'signed_out');
     await s.page.keyboard.press('Escape');
-
     await walkToReview(s.page);
-    // The link that carries the choices is the lazily loaded chunk's; until it is in, a plain link stands in for it and carries nothing (StageReview.tsx FinalControl).
-    await s.page.locator('#create-reason', { hasText: 'Setup opens with this pool, range and amount filled in.' }).waitFor({ timeout: 30_000 });
-    await s.page.getByRole('link', { name: 'Continue in Setup', exact: true }).click();
-    const panel = s.page.locator('[data-wallet-deposit]');
-    await panel.waitFor();
-    // The choices are the connected wallet's (lib/create/setupDraft.ts, carried by DepositAmounts.tsx under walletKey): a session is not what carries them.
-    assert.equal(await panel.getAttribute('data-wallet-deposit-prefill'), 'new-position', 'New position’s choices reach the deposit through the wallet with no session');
-    await s.page.locator('[data-wallet-deposit="funding"]').waitFor({ timeout: 30_000 });
-    assert.equal(await panel.getByRole('combobox', { name: /^Deposit token/ }).inputValue(), '1', 'the deposit token is the pool’s token 1');
-    assert.equal(await panel.getByLabel('Amount', { exact: true }).inputValue(), '1', '1000000 raw units of a 6-decimal token, in its own units');
-    assert.equal(await panel.getByLabel(/^Lower tick/).inputValue(), '-3600');
-    assert.equal(await panel.getByLabel(/^Upper tick/).inputValue(), '4080');
-    assert.equal(await panel.locator('[data-slippage-choice]').getAttribute('data-slippage-bps'), '50');
-    const paired = await panel.locator('[data-wallet-deposit-paired]').getAttribute('data-wallet-deposit-paired');
-    assert.match(paired, /^[1-9]\d*$/, 'the other token’s amount, raw, from the range and the price as read');
+    await s.page.locator('[data-create-position="idle"]').waitFor({ timeout: 30_000 });
+    return Object.assign(s, { read, services });
+  } catch (error) { await s.close().catch(() => {}); throw error; }
+}
+
+/** No service and no session took part, and the wallet was asked nothing outside connecting and the chain's own reads and sends. */
+async function onlyTheWallet(s, chain) {
+  // The one session route seen is the boot-time GET that asks whether a session exists to restore; none was started.
+  assert.deepEqual(s.services.filter(path => path !== '/api/session/v1/me'), [], 'no deposit service and no session request');
+  assert.deepEqual(s.deposits, []);
+  assert.deepEqual([...new Set(s.fake.state.log.map(entry => `${entry.method} ${entry.route}`))], ['GET me'], 'the session service was only asked whether a session exists, never for one');
+  assert.equal(s.wallet.state.signed.length, 0, 'no sign-in signature');
+  assert.ok(!chain.log.includes('personal_sign') && !chain.log.includes('eth_signTypedData_v4'), 'the wallet was never asked to sign a message');
+  assert.deepEqual(chain.refused, [], 'every method Create position asked is one this wallet answers');
+  assert.deepEqual(chain.missing, [], 'every call reached a contract that answers it');
+}
+
+test('Create position opens the position from Review through a connected wallet with no session: the exact approval, the deposit, then the mint at Review’s range, and the page opens the new position on Positions', async () => {
+  const chain = fakeDepositChain(ACCOUNTS[0].address, { balances: { [FIXTURE_TOKEN]: 5_000_000n } });
+  const s = await atReview(chain, { answer: mintedPosition(chain) });
+  const { setup } = chain.release.deployment;
+  try {
+    const button = s.page.locator('[data-create-position]');
+    assert.equal(await button.innerText(), 'Create position');
+    assert.equal(await s.page.locator('#create-reason').innerText(), 'Your wallet asks you to sign each step: an exact approval if needed, the deposit, then the position.');
+    assert.equal(await s.page.getByRole('link', { name: 'Continue in Setup' }).count(), 0, 'no hand-off to Setup');
+    assert.equal(await s.page.locator('[data-create-steps]').count(), 0, 'no step list before the press');
     assert.deepEqual(chain.sends, [], 'nothing is sent by arriving');
+    // What Review says the position holds: the ETH the range pairs with the typed 1 TOKEN.
+    const [, eth, token] = (await s.page.locator('[data-review-amounts]').innerText()).match(/^([\d.,]+) ETH \+ ([\d.,]+) TOKEN$/) ?? [];
+    assert.equal(token, '1');
 
-    // Step one: the token's allowance is short, so the approval is what funding prepares first.
-    const review = panel.locator('[data-wallet-deposit-review]');
-    await panel.getByRole('button', { name: 'Review funding', exact: true }).click();
-    await panel.locator('[data-wallet-deposit-review="approve"]').waitFor({ timeout: 30_000 });
-    assert.match(await review.innerText(), new RegExp(`Approve 1000000 smallest units of ${FIXTURE_TOKEN} to ${setup}\\.`));
-    const sendStep = async (kind) => {
-      const step = panel.locator(`[data-wallet-deposit-review="${kind}"]`);
-      await step.getByRole('checkbox').check();
-      await step.getByRole('button', { name: 'Send this step in wallet', exact: true }).click();
-      await panel.locator(`[data-wallet-deposit-sent="${kind}"][data-wallet-deposit-receipt="finalized"]`).waitFor({ timeout: 30_000 });
-    };
-    await sendStep('approve');
+    await button.click();
+    const list = s.page.locator('[data-create-steps]');
+    await list.waitFor();
+    assert.deepEqual((await createSteps(s.page)).map(([key]) => key), ['check', `approve:${FIXTURE_TOKEN}`, 'fund', 'mint'], 'one approval for the one ERC-20 (ETH needs none), the deposit, the mint');
+    assert.equal(await s.page.locator('[data-create-position="running"]').innerText(), 'Creating position…');
+    // Mid-flow: the balances checked, the approval included, the deposit on its way into a block.
+    await s.page.locator('[data-create-step="fund"][data-create-step-state="chain"]').waitFor({ timeout: 60_000 });
+    assert.deepEqual(await createSteps(s.page), [['check', 'done'], [`approve:${FIXTURE_TOKEN}`, 'done'], ['fund', 'chain'], ['mint', 'waiting']]);
+    assert.match(await list.innerText(), /Approve\s+TOKEN[\s\S]*Deposit the tokens\s+Waiting for the network[\s\S]*Create the position\s+Next/);
+    // The window as the person sees it, scrolled to the steps (a full-page capture draws the sticky header mid-page).
+    await list.evaluate(element => element.scrollIntoView({ block: 'end' }));
+    await s.page.screenshot({ path: join(shots(), 'create-position-steps.png') });
 
-    // Its receipt in: funding is prepared again on its own, now with the allowance there.
-    await panel.locator('[data-wallet-deposit-review="fund"]').waitFor({ timeout: 30_000 });
-    assert.match(await review.innerText(), new RegExp(`Fund ${paired} smallest units of ${zeroAddress} and 1000000 of ${FIXTURE_TOKEN}\\.`));
-    await sendStep('fund');
-
-    // The operation funded: the mint is prepared on its own from the balances read back, in the carried range.
-    await panel.locator('[data-wallet-deposit-review="mint"]').waitFor({ timeout: 30_000 });
-    assert.equal(await panel.getAttribute('data-wallet-deposit'), 'mint');
-    assert.match(await review.innerText(), new RegExp(`Mint liquidity [1-9]\\d* in ticks -3600 to 4080; caps ${paired} / 1000000 smallest units\\.`));
-    await sendStep('mint');
-
-    const minted = panel.locator('[data-wallet-deposit-minted="4242"]');
-    await minted.waitFor({ timeout: 30_000 });
-    assert.equal(await panel.getAttribute('data-wallet-deposit'), 'done');
-    assert.equal(await minted.getByRole('link', { name: 'See the position', exact: true }).getAttribute('href'), '#/positions/4242');
-    assert.equal(await panel.locator('[data-wallet-deposit-review]').count(), 0, 'nothing left to send');
-    await s.page.screenshot({ path: join(shots(), 'p2-wallet-deposit.png'), fullPage: true });
+    // The mint read back closed with its NFT: the page opens that position on Positions.
+    await s.page.waitForFunction(() => location.hash === '#/positions/4242', null, { timeout: 60_000 });
+    await s.page.locator('#nft-ids').waitFor();
+    assert.equal(await s.page.locator('#nft-ids').inputValue(), '4242', 'Positions looks up the new NFT');
+    // The position read from chain: the one card is NFT 4242, in the pool chosen, at Review's range.
+    const cards = s.page.locator('#chain-lookup [data-chain-cards]');
+    await cards.waitFor({ timeout: 30_000 });
+    assert.equal(await cards.getAttribute('data-chain-cards'), '1');
+    assert.deepEqual(s.read.requests.filter(r => r.path.endsWith('/nft-positions')).map(r => JSON.parse(r.body)), [{ tokenIds: ['4242'] }], 'one read, of the new NFT');
+    assert.match(await cards.innerText(), /ETH\s*\/\s*TOKEN[\s\S]*Ticks -3600 to 4080/);
+    await s.page.screenshot({ path: join(shots(), 'create-position-positions.png'), fullPage: true });
 
     // What the wallet was asked to sign, in order, decoded from the calldata it recorded.
-    assert.equal(chain.sends.length, 3, 'the approval, the funding and the mint');
-    const [approve, open, mint] = chain.sends.map(tx => ({ to: String(tx.to).toLowerCase(), value: BigInt(tx.value), nonce: tx.nonce, ...decodeFunctionData({ abi: String(tx.to).toLowerCase() === FIXTURE_TOKEN ? erc20Abi : setupChainAbi, data: tx.data }) }));
-    assert.deepEqual([approve.functionName, approve.to, approve.args[0].toLowerCase(), approve.args[1], approve.value, approve.nonce], ['approve', FIXTURE_TOKEN, setup, 1_000_000n, 0n, '0x0'], 'an exact allowance to the setup contract');
+    assert.equal(chain.sends.length, 3, 'the approval, the deposit and the mint, one signature each');
+    const [approve, open, mint] = chain.decoded();
+    assert.deepEqual([approve.functionName, approve.to, approve.from, approve.args[0].toLowerCase(), approve.args[1], approve.value, approve.nonce], ['approve', FIXTURE_TOKEN, OWNER, setup, withRoom(1_000_000n), 0n, '0x0'],
+      'an exact allowance of the typed 1 TOKEN with the 0.5% slippage room, to the setup contract, never unlimited');
     const [id, key, amount0, amount1] = open.args;
-    assert.deepEqual([open.functionName, open.to, open.nonce, id], ['open', setup, '0x1', chain.operationId(0n)], 'the owner’s first operation id');
-    assert.deepEqual({ ...key, currency0: key.currency0.toLowerCase(), currency1: key.currency1.toLowerCase() }, { currency0: zeroAddress, currency1: FIXTURE_TOKEN, fee: 3000, tickSpacing: 60, hooks: zeroAddress }, 'the read stub’s pool');
-    assert.deepEqual([amount0, amount1, open.value], [BigInt(paired), 1_000_000n, BigInt(paired)], 'the typed amount and the paired one shown; token 0 is native, so its amount travels as the value');
+    assert.deepEqual([open.functionName, open.to, open.from, open.nonce, id], ['open', setup, OWNER, '0x1', chain.operationId(0n)], 'the owner’s first operation id');
+    assert.deepEqual(lowerKey(key), STUB_POOL_KEY, 'the pool chosen on the first step');
+    assert.deepEqual([amount1, open.value], [withRoom(1_000_000n), amount0], 'the typed 1 TOKEN with its slippage room; token 0 is native ETH, so its amount travels as the value');
+    assert.equal(amount0, withRoom(parseUnits(eth.replaceAll(',', ''), 18)), 'the ETH amount is the one Review showed, with the same room');
     const plan = mint.args[0];
-    assert.deepEqual([mint.functionName, mint.to, mint.value, mint.nonce], ['mint', setup, 0n, '0x2']);
-    assert.deepEqual([plan.operationId, plan.tickLower, plan.tickUpper, plan.maxAmount0, plan.maxAmount1, plan.initialSqrtPriceX96], [id, -3600, 4080, BigInt(paired), 1_000_000n, 0n], 'the carried range, the funded balances as caps, the existing pool');
+    assert.deepEqual([mint.functionName, mint.to, mint.from, mint.value, mint.nonce], ['mint', setup, OWNER, 0n, '0x2']);
+    assert.deepEqual([plan.operationId, plan.tickLower, plan.tickUpper, plan.maxAmount0, plan.maxAmount1, plan.initialSqrtPriceX96], [id, ...STUB_RANGE, amount0, withRoom(1_000_000n), 0n],
+      'Review’s range, the funded balances as caps, the existing pool');
+    assert.ok(chain.viewed.includes('getSlot0'), 'the mint was priced from the chain, through the wallet');
     assert.ok(plan.liquidity > 0n, 'a position, not an empty one');
-    assert.ok(plan.minSqrtPriceX96 > 0n && plan.minSqrtPriceX96 < SQRT_PRICE && SQRT_PRICE < plan.maxSqrtPriceX96, 'a price band around the price as read');
+    assert.ok(plan.minSqrtPriceX96 > 0n && plan.minSqrtPriceX96 < STUB_SQRT_PRICE && STUB_SQRT_PRICE < plan.maxSqrtPriceX96, 'a price band around the price as read');
+    assert.equal(chain.operations.get(id).tokenId, 4242n);
+    assert.ok(chain.viewed.includes('balanceOf'), 'the wallet’s TOKEN balance was checked before anything was asked');
+    await onlyTheWallet(s, chain);
+    assert.doesNotMatch(await s.page.locator('main').innerText(), FORBIDDEN);
+  } finally { await s.close(); }
+});
 
-    // No service and no session took part, and the wallet was asked nothing outside the deposit's own reads and sends. The one
-    // session route seen is the boot-time GET that asks whether a session exists to restore; none was started.
-    assert.deepEqual(services.filter(path => path !== '/api/session/v1/me'), [], 'no deposit service and no session request');
-    assert.deepEqual(s.deposits, []);
-    assert.deepEqual([...new Set(s.fake.state.log.map(entry => `${entry.method} ${entry.route}`))], ['GET me'], 'the session service was only asked whether a session exists, never for one');
-    assert.equal(s.wallet.state.signed.length, 0, 'no sign-in signature');
-    assert.ok(!chain.log.includes('personal_sign'), 'no sign-in was asked of the wallet');
-    assert.deepEqual(chain.refused, [], 'every method the deposit asked is one this wallet answers');
-    assert.deepEqual(chain.missing, [], 'every call reached a contract that answers it');
-    assert.doesNotMatch(await panel.innerText(), FORBIDDEN);
+test('Create position finds this wallet’s earlier deposit in the same pool and mints it: no approval and no second deposit, only the mint, and the page opens that position', async () => {
+  // A block that is included and not yet final is enough to go on, as it is on an L2 whose finalized block trails by minutes.
+  const chain = fakeDepositChain(ACCOUNTS[0].address, { tokenId: 4243n, finality: 'lagging' });
+  // Funded earlier and never minted (a declined mint, a closed tab): open, not closed, not recovering, this wallet's, this pool.
+  const id = chain.seed({ key: STUB_POOL_KEY, balance0: 2_000_000n, balance1: 1_000_000n });
+  const s = await atReview(chain);
+  const { setup } = chain.release.deployment;
+  try {
+    await s.page.locator('[data-create-position="idle"]').click();
+    // Found, not chosen: its amounts are said, and the wallet is asked nothing until the next press.
+    await s.page.getByRole('status').filter({ hasText: /^You have an earlier deposit in this pool: [\d.,]+ ETH and 1 TOKEN\. Press Create position to create this range from it, or refund it to your wallet\.$/ }).waitFor({ timeout: 30_000 });
+    assert.deepEqual(chain.sends, [], 'nothing was sent by finding it');
+    assert.equal(await s.page.getByRole('button', { name: 'Refund the deposit instead', exact: true }).count(), 1, 'it can be refunded instead');
+    await s.page.locator('[data-create-position="held"]').click();
+    await s.page.waitForFunction(() => location.hash === '#/positions/4243', null, { timeout: 60_000 });
+    assert.equal(chain.sends.length, 1, 'the mint alone');
+    const [mint] = chain.decoded();
+    const plan = mint.args[0];
+    assert.deepEqual([mint.functionName, mint.to, mint.from, mint.value, mint.nonce], ['mint', setup, OWNER, 0n, '0x0']);
+    assert.deepEqual([plan.operationId, plan.tickLower, plan.tickUpper, plan.maxAmount0, plan.maxAmount1, plan.initialSqrtPriceX96], [id, ...STUB_RANGE, 2_000_000n, 1_000_000n, 0n],
+      'the held operation, Review’s range, the held balances as caps');
+    assert.ok(plan.liquidity > 0n);
+    assert.ok(!chain.viewed.includes('allowance') && !chain.viewed.includes('balanceOf') && !chain.viewed.includes('nextOperationId'), 'nothing about a new deposit was even read');
+    assert.equal(chain.operations.size, 1, 'no second operation');
+    await onlyTheWallet(s, chain);
+  } finally { await s.close(); }
+});
+
+test('a mint declined in the wallet leaves the deposit held: Create position says so, offers the refund, and the refund sends cancel for that operation', async () => {
+  const chain = fakeDepositChain(ACCOUNTS[0].address, { balances: { [FIXTURE_TOKEN]: 5_000_000n } });
+  chain.decline('mint');
+  const s = await atReview(chain);
+  const { setup } = chain.release.deployment;
+  try {
+    await s.page.locator('[data-create-position="idle"]').click();
+    const held = s.page.locator('[data-create-position="held"]');
+    await held.waitFor({ timeout: 60_000 });
+    assert.equal(await held.innerText(), 'Create position', 'pressed again, it mints the held deposit');
+    assert.deepEqual(chain.declined, ['mint']);
+    await s.page.getByRole('status').filter({ hasText: 'You declined in your wallet. Your deposit is held: press Create position to continue, or refund it.' }).waitFor();
+    assert.equal(await s.page.locator('#create-reason').innerText(), 'A deposit is held for this pool. Press Create position to create the position from it, or refund it.');
+    assert.deepEqual(await createSteps(s.page), [['check', 'done'], [`approve:${FIXTURE_TOKEN}`, 'done'], ['fund', 'done'], ['mint', 'failed']]);
+    assert.deepEqual(chain.decoded().map(tx => tx.functionName), ['approve', 'open'], 'the mint was never sent');
+    assert.ok((await s.page.evaluate(() => location.hash)).startsWith('#/new'), 'still on New position');
+
+    const refund = s.page.getByRole('button', { name: 'Refund the deposit instead', exact: true });
+    await refund.click();
+    await s.page.getByRole('status').filter({ hasText: 'The deposit was refunded to your wallet.' }).waitFor({ timeout: 60_000 });
+    assert.deepEqual(await createSteps(s.page), [['refund', 'done']]);
+    assert.equal(await s.page.locator('[data-create-position]').getAttribute('data-create-position'), 'idle');
+    assert.equal(await refund.count(), 0, 'nothing left to refund');
+    const [, open, cancel] = chain.decoded();
+    assert.deepEqual([cancel.functionName, cancel.to, cancel.from, cancel.value, cancel.nonce, cancel.args[0]], ['cancel', setup, OWNER, 0n, '0x2', open.args[0]], 'cancel for the operation the deposit opened, at the nonce the declined mint gave back');
+    assert.deepEqual([chain.operations.get(open.args[0]).closed, chain.operations.get(open.args[0]).tokenId], [true, 0n]);
+    assert.ok((await s.page.evaluate(() => location.hash)).startsWith('#/new'));
+    await onlyTheWallet(s, chain);
+  } finally { await s.close(); }
+});
+
+test('pressed again after a declined mint, Create position mints the held deposit: only the mint is sent, never a second approval or deposit, and the page opens the position', async () => {
+  const chain = fakeDepositChain(ACCOUNTS[0].address, { balances: { [FIXTURE_TOKEN]: 5_000_000n } });
+  chain.decline('mint');
+  const s = await atReview(chain);
+  try {
+    await s.page.locator('[data-create-position="idle"]').click();
+    await s.page.locator('[data-create-position="held"]').click({ timeout: 60_000 });
+    await s.page.waitForFunction(() => location.hash === '#/positions/4242', null, { timeout: 60_000 });
+    const [, open, mint] = chain.decoded();
+    assert.deepEqual(chain.decoded().map(tx => [tx.functionName, tx.nonce]), [['approve', '0x0'], ['open', '0x1'], ['mint', '0x2']], 'one approval, one deposit, and the mint at the nonce the declined one gave back');
+    assert.deepEqual([mint.args[0].operationId, mint.args[0].maxAmount0, mint.args[0].maxAmount1], [open.args[0], open.args[2], open.args[3]], 'the held operation, capped at what it holds');
+    assert.equal(chain.operations.size, 1, 'no second operation');
+    await onlyTheWallet(s, chain);
+  } finally { await s.close(); }
+});
+
+// On an L2 the finalized block trails by minutes: a failed transaction is said as soon as its block is canonical (finance/setup.ts receipt).
+test('a deposit that reverts in a block not yet final is reported as reverted, and no mint is prepared', async () => {
+  const chain = fakeDepositChain(ACCOUNTS[0].address, { balances: { [FIXTURE_TOKEN]: 5_000_000n }, finality: 'lagging' });
+  chain.revert('open');
+  const s = await atReview(chain);
+  try {
+    await s.page.locator('[data-create-position="idle"]').click();
+    await s.page.locator('[data-create-position="failed"], [data-create-position="held"], [data-create-position="done"]').waitFor({ timeout: 60_000 });
+    assert.deepEqual(chain.decoded().map(tx => tx.functionName), ['approve', 'open'], 'no mint after a deposit that did not happen');
+    assert.equal(await s.page.locator('[data-create-position]').getAttribute('data-create-position'), 'failed');
+    assert.deepEqual((await createSteps(s.page)).find(([key]) => key === 'fund'), ['fund', 'failed'], 'the deposit is not shown as done');
+    assert.equal(await s.page.locator('[data-create-notice="operation_not_owned"]').count(), 0, 'no word of another wallet');
+    await s.page.getByRole('status').filter({ hasText: 'The deposit reverted on chain: nothing was deposited, only network gas was spent. Press Create position to try again.' }).waitFor({ timeout: 5_000 });
+  } finally { await s.close(); }
+});
+
+test('with no wallet connected Review’s last control is Connect wallet, says why, and opens the header’s wallet dialog', async () => {
+  const read = createReadStub();
+  const s = await scenario({ routes: [(request, url) => read.handle(request, url)] });
+  await s.context.route(ARTWORK, route => route.fulfill({ status: 200, contentType: 'application/json', body: '[]' }));
+  try {
+    await s.page.goto(`${s.origin}/#/new`);
+    await s.page.waitForFunction(() => window.__dominoSessionProbe?.view().status === 'no_wallet');
+    await walkToReview(s.page);
+    const connect = s.page.locator('[data-create-position="connect"]');
+    await connect.waitFor({ timeout: 30_000 });
+    assert.equal(await connect.innerText(), 'Connect wallet');
+    assert.equal(await s.page.locator('#create-reason').innerText(), 'Connect your wallet to create the position. Each transaction appears in your wallet to sign.');
+    assert.equal(await s.page.getByRole('button', { name: 'Create position', exact: true }).count(), 0);
+    assert.equal(await s.page.getByRole('link', { name: 'Continue in Setup' }).count(), 0, 'no hand-off to Setup');
+    await connect.click();
+    const dialog = s.page.locator('[role="dialog"][aria-labelledby="wallet-dialog-title"]');
+    await dialog.waitFor();
+    await dialog.getByRole('button', { name: 'Connect Test Wallet A', exact: true }).waitFor();
+    assert.deepEqual(s.releases, [], 'nothing about a deployment is read before a wallet is there');
+    assert.equal(s.wallet.state.signed.length, 0);
   } finally { await s.close(); }
 });
 
 // ---- G13 receipt identity and status refresh; G16 Start tracking from owned sequences ---------------------------
 
-import { decodeFunctionData, encodeFunctionResult, numberToHex, parseAbi, parseAbiParameters, stringToHex, zeroAddress } from 'viem';
+import { decodeFunctionData, encodeFunctionResult, numberToHex, parseAbi, parseAbiParameters, parseUnits, stringToHex, zeroAddress } from 'viem';
 
 const readGateway = name => JSON.parse(readFileSync(new URL(`../../api-contracts/read-v1/fixtures/gateway/${name}.json`, import.meta.url)));
 const shots = () => { const dir = resolve(import.meta.dirname, '../.test-artifacts'); mkdirSync(dir, { recursive: true }); return dir; };

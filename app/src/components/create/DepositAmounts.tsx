@@ -2,8 +2,7 @@ import { useEffect, useMemo, useSyncExternalStore } from 'react'
 import { financialFetch } from '../../finance/http'
 import { realClock } from '../../lib/clock'
 import { CREATE } from '../../lib/create/copy'
-import { continueNote, previewRequest, setupDraft, type JourneyState } from '../../lib/create/journey'
-import { clearSetupDraft, putSetupDraft } from '../../lib/create/setupDraft'
+import { previewRequest, type JourneyState } from '../../lib/create/journey'
 import type { PairBalancesState } from './usePairBalances'
 import { positionAmounts, type AmountCell as EstimateCell } from '../../onboarding/amounts'
 import { broadcastBudgetChannel, createPreviewBudget } from '../../onboarding/budget'
@@ -12,9 +11,7 @@ import { ONBOARDING_RUNTIME } from '../../onboarding/contract'
 import { createPreviewController } from '../../onboarding/controller'
 import { createIntentDriver, formFromRequest, type IntentView } from '../../onboarding/intent'
 import { livePort } from '../../session/livePort'
-import { getWalletIdentity, subscribeWalletIdentity, useWalletIdentity, walletKey } from '../../lib/walletIdentity'
 import { AmountsSection, type AmountCell, type AmountsShown } from './StageBalance'
-import { SetupLink } from './StageReview'
 
 /**
  * Review's deposit amounts and its way on to Setup, in builds with wallet
@@ -104,44 +101,8 @@ export default function DepositAmounts({ state, open, balances }: { state: Journ
 }
 
 /* ---------------------------------------------------------------------------
-   Continue in Setup
+   Create position
 --------------------------------------------------------------------------- */
 
-let stopWatching: (() => void) | null = null
-
-/**
- * Carries these choices to Setup for the wallet connected on Robinhood Chain,
- * in memory only (lib/create/setupDraft.ts), and clears them when that wallet
- * changes or disconnects from now on, whichever screen is open. Without one,
- * nothing is carried and anything carried before is dropped. A sign-in or
- * sign-out is not a wallet change. Nothing is sent: Setup funds only when the
- * owner reviews and sends a step there.
- */
-function carry(state: JourneyState) {
-  stopWatching?.()
-  stopWatching = null
-  const draft = setupDraft(state)
-  const wallet = walletKey(getWalletIdentity())
-  if (draft === null || wallet === null) {
-    clearSetupDraft()
-    return
-  }
-  putSetupDraft(draft, wallet)
-  const stop = subscribeWalletIdentity(() => {
-    if (walletKey(getWalletIdentity()) === wallet) return
-    clearSetupDraft()
-    stop()
-    if (stopWatching === stop) stopWatching = null
-  })
-  stopWatching = stop
-}
-
-/**
- * The final control in builds with wallet sign-in: the link to Setup, which takes these choices with it for a
- * wallet connected on Robinhood Chain. Its line promises that only for choices there is a draft to carry
- * (journey.ts continueNote).
- */
-export function ContinueInSetup({ state }: { state: JourneyState }) {
-  const identity = useWalletIdentity()
-  return <SetupLink note={continueNote(state, walletKey(identity) !== null)} onClick={() => carry(state)} />
-}
+/** Review's last control, from this same chunk so the entry never carries the wallet or the setup client. */
+export { default as CreatePosition } from './CreatePosition'

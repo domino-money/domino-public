@@ -349,8 +349,8 @@ test('the wallet, pools, fees, markets, new position, positions, risks and what 
   const wallet = page('wallet');
   const needs = blocksOf(wallet).find((block) => block.kind === 'list').items.map(inlineText);
   assert.deepEqual(needs, [
-    'Direct deposits in Setup, and their receipts.',
-    'The deposit-amount estimate in New position’s Review, and carrying its choices to Setup.',
+    'Deposit drafts kept by the deposit service, and their receipts.',
+    'The deposit-amount estimate in New position’s Review.',
     'The assisted swap quote in Setup.',
     'Managed positions and automation receipts, on Positions.',
   ]);
@@ -376,7 +376,7 @@ test('the wallet, pools, fees, markets, new position, positions, risks and what 
   assert.match(poolPage, /Where available, the page also shows the pool’s on-chain activity over the last 24 hours and the positions in the pool\./);
   assert.doesNotMatch(poolPage, /hourly USD price and volume/);
 
-  assert.match(sectionText(page('new-position'), 'review'), /^Review\nReview lists every choice, the wallet steps in order and the fees side by side\. The steps are the deposit, made in Setup with your wallet\. None of them starts from Review\. Automation is set up afterwards, from Automate, on the position you opened\./);
+  assert.match(sectionText(page('new-position'), 'review'), /^Review\nReview lists every choice and the wallet steps in order\. The steps are what your wallet signs when you press Create position: any approval, the deposit, then the position\. Automation is set up afterwards, from Automate, on the position you opened\./);
   // Four steps, none of them Automation, and the summary counts them.
   const newPosition = page('new-position');
   assert.match(newPosition.summary, /^Plan a position in four steps,/);

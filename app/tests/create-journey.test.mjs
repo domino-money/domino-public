@@ -415,7 +415,7 @@ test('the journey walks forward only through complete stages, back freely, and t
   s = journey.next(s, NOW);
   assert.equal(s.stage, 'review', 'the balance stage continues straight to Review: nothing is asked in between');
   assert.equal(s.furthest, 'review');
-  assert.deepEqual(journey.canContinue('review', s, NOW), { ok: false, reason: CREATE.review.gate });
+  assert.deepEqual(journey.canContinue('review', s, NOW), { ok: false, reason: CREATE.review.final });
   assert.equal(journey.next(s, NOW), s, 'review is the last stage');
   // Back keeps everything and the rail may reopen any reached stage.
   const backOnce = journey.back(s);
@@ -501,29 +501,23 @@ test('Setup’s draft starts from the same validated choices as the preview requ
   assert.equal(journey.setupDraft(journey.initialState()), null);
 });
 
-test('the line under Continue in Setup promises a filled-in Setup only for choices there is a draft to carry, and the link loading in its place promises nothing (G9)', () => {
+test('Review ends on Create position, made in place: no hand-off to Setup, and the control loads lazily behind the wallet flag', () => {
+  // setupDraft is what Create position reads: every choice, or null when one is missing or the pool is not one it takes.
   const s = ready();
-  assert.equal(journey.continueNote(s, true), CREATE.review.setupNote);
-  assert.equal(journey.continueNote(s, false), CREATE.review.setupNoteNotConnected);
-  for (const other of [pool({ hooks: addr('f') }), pool({ feePips: 8388608, fee: 'Dynamic' })]) {
-    const state = { ...s, pool: other };
-    assert.equal(journey.setupDraft(state), null, 'Setup’s deposits take neither pool, so nothing is carried');
-    for (const connected of [true, false]) assert.equal(journey.continueNote(state, connected), CREATE.review.setupNoteUnsupported);
-  }
-  assert.equal(journey.continueNote(journey.withBudget(s, ''), true), CREATE.review.gate, 'no draft for any other reason: the neutral line');
-  for (const neutral of [CREATE.review.setupNoteUnsupported, CREATE.review.gate]) assert.doesNotMatch(neutral, /filled in|carr|opens with/i, neutral);
-  // While the chunk with the carrying link loads, a plain link stands in for it, carrying nothing: its line is the neutral one.
+  assert.ok(journey.setupDraft(s));
+  for (const other of [pool({ hooks: addr('f') }), pool({ feePips: 8388608, fee: 'Dynamic' })]) assert.equal(journey.setupDraft({ ...s, pool: other }), null);
+  assert.equal(journey.continueNote, undefined, 'no line about carrying choices anywhere');
+  for (const key of ['gate', 'gateDetail', 'setup', 'noSetup', 'setupNote', 'setupNoteNotConnected', 'setupNoteUnsupported', 'permitStep', 'otherApproveStep']) assert.equal(CREATE.review[key], undefined, key);
   const review = readFileSync(new URL('../src/components/create/StageReview.tsx', import.meta.url), 'utf8');
-  assert.match(review, /<Suspense fallback=\{<SetupLink note=\{CREATE\.review\.gate\} \/>\}>/);
-  assert.doesNotMatch(review, /note=\{CREATE\.review\.setupNote(NotConnected)?\}/, 'the promise is made only where the link carries the choices');
+  assert.match(review, /module\.CreatePosition/, 'the final control is Create position');
+  assert.doesNotMatch(review, /#\/setup|Continue in Setup|SetupLink/, 'nothing on Review sends anyone to Setup');
+  assert.match(review, /<Suspense fallback=\{<Unavailable note=\{CREATE\.review\.loading\} \/>\}>/);
+  const control = readFileSync(new URL('../src/components/create/CreatePosition.tsx', import.meta.url), 'utf8');
+  assert.match(control, /'Create position'/);
+  assert.match(control, /window\.location\.hash = `#\/positions\/\$\{tokenId\.toString\(\)\}`/, 'the new position opens on Positions');
+  assert.doesNotMatch(control, /livePort|session\//, 'no sign-in is needed to create a position');
 });
 
-// Changed on purpose (owner, 2026-09-19): the Review opened with a green dot
-// beside "the pool price is inside this range" — the ordinary case, stated as
-// if it were news. The range step had already been reduced the same way: the
-// sentence is shown only when the range does NOT hold the price, because that
-// position earns no fees until the price moves into it. Nothing green is left
-// in the flow.
 test('the Review states its range position only when the range misses the price, and never in green', () => {
   const review = readFileSync(new URL('../src/components/create/StageReview.tsx', import.meta.url), 'utf8');
   const css = readFileSync(new URL('../src/styles/flow.css', import.meta.url), 'utf8');
@@ -575,11 +569,12 @@ test('carried choices live in memory for the session they were carried under: an
   assert.equal(setupDrafts.setupDraftFor('1|uid|0xa'), null);
 });
 
-test('the creation gate is off, from the build’s signing flag, with its reason', () => {
+test('the automated-signing gate stays off: Domino signs nothing on its own, and Review says the wallet signs each step', () => {
   const gate = journey.createGate();
   assert.equal(gate.enabled, false);
-  assert.equal(gate.reason, 'Deposits are made in Setup, one reviewed wallet step at a time.');
-  assert.match(gate.detail, /Signing stays in Setup/);
+  assert.equal(gate.reason, CREATE.review.final);
+  assert.equal(gate.reason, 'Press Create position: your wallet asks you to sign each step.');
+  assert.equal(gate.detail, CREATE.review.stepsNote);
 });
 
 test('the successor geometry follows the agreed rule on the pool’s spacing, or says it is infeasible', () => {
@@ -599,42 +594,26 @@ test('the successor geometry follows the agreed rule on the pool’s spacing, or
   assert.match(CREATE.automation.nextRangeNote, /drawn at a 50% upside/);
 });
 
-test('the wallet steps are the real ones, in order: each ERC-20 through Permit2, native ETH with the mint and no approval, and nothing about automation', () => {
+test('the wallet steps are the ones Create position asks for, in order: an exact approval per ERC-20, the deposit, the position; native ETH needs no approval; nothing about automation', () => {
   const erc20 = journey.walletSteps(ready());
-  // docs/DIRECT_DEPOSITS.md: an exact approval to Permit2, then a Permit2 allowance for the position manager, currency by currency in pool order, then the mint.
-  assert.deepEqual(erc20.map((step) => step.title), [
-    'Approve the selected token to Permit2',
-    'Allow the position manager to use the selected token through Permit2',
-    'Approve the other token to Permit2, if the composition needs it',
-    'Allow the position manager to use the other token through Permit2, if the composition needs it',
-    'Mint the position NFT to your wallet',
-  ]);
-  assert.deepEqual(erc20.map((step) => step.token?.address), [addr('1'), addr('1'), addr('2'), addr('2'), undefined]);
+  assert.deepEqual(erc20.map((step) => step.title), ['Approve the exact amount', 'Approve the exact amount', 'Deposit the tokens', 'Create the position']);
+  // One approval per ERC-20, in pool order, whichever token was typed; the deposit and the mint name no token.
+  assert.deepEqual(erc20.map((step) => step.token?.address), [addr('1'), addr('2'), undefined, undefined]);
+  assert.deepEqual(journey.walletSteps(journey.withToken(ready(), TWO)).map((step) => step.token?.address), [addr('1'), addr('2'), undefined, undefined]);
   assert.match(erc20[0].detail, /never unlimited/);
-  assert.match(erc20[1].detail, /within an hour/);
-  // The deposit service prepares currency0 before currency1, whichever of them is deposited.
-  const second = journey.walletSteps(journey.withToken(ready(), TWO));
-  assert.deepEqual(second.map((step) => step.token?.address), [addr('1'), addr('1'), addr('2'), addr('2'), undefined]);
-  assert.equal(second[0].title, 'Approve the other token to Permit2, if the composition needs it');
-  assert.equal(second[2].title, 'Approve the selected token to Permit2');
-  // Native ETH needs no approval: only the other token goes through Permit2, and the ETH goes with the mint.
+  assert.match(erc20[0].detail, /only when this token’s allowance is short/);
+  assert.match(erc20[2].detail, /setup contract/);
+  assert.match(erc20[3].detail, /minted to your wallet/);
+  // Native ETH needs no approval: it travels with the deposit.
   const ethPool = pool({ currencies: [token(ZERO, 18, 'ETH'), token(addr('2'), 6, 'USDG')] });
-  const native = journey.walletSteps(journey.withToken(journey.withPool(journey.initialState(), ethPool, NOW), candidate(ZERO, 18)));
-  assert.deepEqual(native.map((step) => step.title), [
-    'Approve the other token to Permit2, if the composition needs it',
-    'Allow the position manager to use the other token through Permit2, if the composition needs it',
-    'Mint the position NFT to your wallet',
-  ]);
-  assert.equal(native[2].token.address, ZERO);
-  assert.match(native[2].detail, /Native ETH needs no approval/);
-  const nativeOther = journey.walletSteps(journey.withToken(journey.withPool(journey.initialState(), ethPool, NOW), TWO));
-  assert.deepEqual(nativeOther.map((step) => step.title), ['Approve the selected token to Permit2', 'Allow the position manager to use the selected token through Permit2', 'Mint the position NFT to your wallet']);
-  assert.match(nativeOther[2].detail, /Native ETH needs no approval: if the composition needs it/);
-  assert.ok(!native.concat(nativeOther).some((step) => /Approve|Allow/.test(step.title) && step.token?.address === ZERO), 'no approval step names native ETH');
-  // The sequence's own owner transactions (finance/sequence.ts) are Automate's to describe: the deposit's steps are the whole list, whatever the automation field says.
+  for (const typed of [candidate(ZERO, 18), TWO]) {
+    const steps = journey.walletSteps(journey.withToken(journey.withPool(journey.initialState(), ethPool, NOW), typed));
+    assert.deepEqual(steps.map((step) => step.title), ['Approve the exact amount', 'Deposit the tokens', 'Create the position']);
+    assert.equal(steps[0].token.address, addr('2'));
+    assert.match(steps[1].detail, /Native ETH travels with it/);
+  }
   for (const mode of ['compound', 'domino']) assert.deepEqual(journey.walletSteps(journey.withAutomation(ready(), mode)), erc20, mode);
-  for (const step of erc20) assert.doesNotMatch(`${step.title} ${step.detail}`, /sequence|compound|automation|service fee/i, step.title);
-  assert.equal(new Set(erc20.map((step) => step.title)).size, erc20.length, 'every title is its own list key');
+  for (const step of erc20) assert.doesNotMatch(`${step.title} ${step.detail}`, /sequence|compound|automation|service fee|Permit2|Setup opens/i, step.title);
   assert.deepEqual(journey.walletSteps(journey.initialState()), []);
   assert.deepEqual(journey.walletSteps({ ...ready(), pool: pool({ currencies: [token(addr('8')), token(addr('9'))] }) }), [], 'no steps for a pool that does not hold the token');
 });
@@ -666,20 +645,21 @@ test('the summary says — for what is not chosen and serialises every decision,
   assert.equal(lines[2].value, '0.5 ONE · ≈697,689,000,000 to ≈1,503,780,000,000 (ticks -3600 to 4080) · slippage 0.5%');
   assert.equal(journey.summaryLines(journey.withSlippage(s, '250'), NOW)[2].value, '0.5 ONE · ≈697,689,000,000 to ≈1,503,780,000,000 (ticks -3600 to 4080) · slippage 2.5%', 'the summary says the tolerance chosen, not the default');
   assert.equal(lines[3].value, CREATE.balance.notEnabled);
-  assert.equal(lines[4].value, CREATE.review.gate);
+  assert.equal(lines[4].value, CREATE.review.final);
   assert.equal(journey.positionText(s, NOW), CREATE.review.inRange);
   assert.equal(journey.positionText({ ...s, range: { lower: 60, upper: 120 } }, NOW), CREATE.review.outOfRange);
   assert.match(journey.positionText(s, 300_000), /read more than 5 minutes ago/);
   const text = journey.serialiseSummary(s, NOW);
   // The request is sent for the deposit amounts in wallet builds, never printed: no JSON dump in the summary (G8).
   assert.ok(!text.some((line) => line.startsWith('Request:') || line.includes('"chainId"')), 'no request JSON in the summary');
-  assert.ok(text.includes('Deposit amounts: Exact amounts are calculated in Setup, at the price when you sign.'));
-  assert.ok(text.includes('Wallet step 1: Approve the selected token to Permit2'));
-  assert.ok(text.includes('Wallet step 2: Allow the position manager to use the selected token through Permit2'));
-  assert.equal(text.filter((line) => line.startsWith('Wallet step')).length, 5, 'the deposit’s five steps, and no more');
+  assert.ok(text.includes('Deposit amounts: Exact amounts are calculated when you create the position, at the price when you sign.'));
+  assert.ok(text.includes('Wallet step 1: Approve the exact amount'));
+  assert.ok(text.includes('Wallet step 3: Deposit the tokens'));
+  assert.ok(text.includes('Wallet step 4: Create the position'));
+  assert.equal(text.filter((line) => line.startsWith('Wallet step')).length, 4, 'two approvals, the deposit and the position, and no more');
   assert.ok(text.includes('Pool trading fee: 0.30%'));
   assert.ok(!text.some((line) => line.startsWith('Domino service fee')), 'no service fee row: a direct deposit carries none');
-  assert.equal(text.at(-1), 'Create position: disabled — Deposits are made in Setup, one reviewed wallet step at a time.');
+  assert.equal(text.at(-1), 'Create position: Press Create position: your wallet asks you to sign each step.');
 });
 
 test('a verified pool’s two currencies become candidates, by address, with the read’s decimals and status', () => {
@@ -725,7 +705,7 @@ test('the copy never promises, never names a sample or a fixture, and never link
     assert.doesNotMatch(text, /https?:\/\//, text);
     assert.doesNotMatch(text, /guarantee|risk-free|will earn/i, text);
   }
-  assert.match(CREATE.balance.notEnabled, /calculated in Setup/);
+  assert.match(CREATE.balance.notEnabled, /calculated when you create the position/);
   assert.match(CREATE.automation.notEnabled, /^Not connected$/);
 });
 

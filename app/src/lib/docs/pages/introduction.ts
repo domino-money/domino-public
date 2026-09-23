@@ -21,7 +21,7 @@ export const WHAT_IS_DOMINO: DocPage = {
       blocks: [
         list(
           [doc('Markets', 'markets'), ' lists Uniswap pools on Robinhood Chain, with a page for each pool.'],
-          [doc('New position', 'new-position'), ' plans a pool, a range and an amount, then hands over to Setup.'],
+          [doc('New position', 'new-position'), ' plans a pool, a range and an amount, then creates the position with your wallet.'],
           [doc('Positions', 'positions'), ' looks up any position NFT, and shows your managed positions once you sign in.'],
           [b('Automate'), ' holds the two ways to put earned fees to work: ', doc('Auto-compound', 'auto-compound'), ' and ', doc('Domino-compound', 'domino-compounder'), '.'],
         ),
@@ -93,8 +93,8 @@ export const WALLET: DocPage = {
       title: 'What needs sign-in',
       blocks: [
         list(
-          ['Direct deposits in Setup, and their receipts.'],
-          ['The deposit-amount estimate in New position’s Review, and carrying its choices to Setup.'],
+          ['Deposit drafts kept by the deposit service, and their receipts.'],
+          ['The deposit-amount estimate in New position’s Review.'],
           ['The assisted swap quote in Setup.'],
           ['Managed positions and automation receipts, on ', doc('Positions', 'positions', 'managed-positions'), '.'],
         ),

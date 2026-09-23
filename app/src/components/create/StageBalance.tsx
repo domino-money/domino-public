@@ -61,7 +61,7 @@ const DepositAmounts = __DOMINO_WALLET_SESSION__
  * is current; otherwise every figure is a dash, and why is in its title. The
  * estimate is asked for when Review opens and when its inputs change, in
  * builds with wallet sign-in and for a signed-in wallet (DepositAmounts.tsx).
- * Exact amounts are still calculated in Setup, and nothing here can sign.
+ * Exact amounts are calculated when the position is created, and nothing here can sign.
  */
 export function StageBalance({ state, open, balances }: { state: JourneyState; open: boolean; balances: PairBalancesState }) {
   if (!DepositAmounts) return <AmountsSection state={state} shown={NOT_ASKED} />

@@ -82,7 +82,7 @@ const fail = (reason: string): Check => ({ ok: false, reason })
  * lib/create/journey.ts, which decides what each step may do. Every read goes
  * through the shared read source; each step runs at most one at a time and
  * cancels it when the selection changes or the step is dropped. Nothing here
- * signs, approves, deposits or swaps: deposits are made in Setup. Nothing
+ * signs, approves, deposits or swaps before Create position is pressed. Nothing
  * here asks about automation: that is applied from Automate, to a position
  * that exists.
  */
@@ -91,6 +91,8 @@ export function Journey({ poolId }: { poolId: string }) {
   const now = useNow(false).wall
   const [state, setState] = useState<JourneyState>(initialState)
   const [part, setPart] = useState<AmountPart>('range')
+  // Create position is asking the wallet: Back waits, so leaving Review cannot drop the flow mid-way.
+  const [creating, setCreating] = useState(false)
   // Whether the budget half of the amount stage has been reached on this visit.
   const [amountReached, setAmountReached] = useState(false)
   const [candidates, setCandidates] = useState<TokenCandidate[]>([])
@@ -265,11 +267,11 @@ export function Journey({ poolId }: { poolId: string }) {
   const check = checkFor[current]
   const footer = (
     <div className="dm-flow-foot" data-journey-footer="" data-final={current === 'review' ? '' : undefined}>
-      <Button type="button" variant="outline" size="lg" disabled={current === 'pool'} onClick={backward}>
+      <Button type="button" variant="outline" size="lg" disabled={current === 'pool' || creating} onClick={backward}>
         {CREATE.page.back}
       </Button>
       {current === 'review' ? (
-        <FinalControl state={state} />
+        <FinalControl state={state} onBusy={setCreating} />
       ) : (
         <>
           <Button type="button" variant="primary" size="lg" disabled={!check.ok} aria-describedby={check.ok ? undefined : 'continue-reason'} onClick={forward}>

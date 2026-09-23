@@ -43,14 +43,20 @@ const reply = (route, body) => {
   return fixture(name ?? `${route}.success`);
 };
 
-export function createReadStub() {
+/**
+ * `answer(route, body)`, optional: the gateway's reply to one question, as JSON text, in place of the fixture; undefined
+ * leaves the fixture. The Worker checks it like any gateway reply. For a scenario whose chain made something the
+ * fixtures do not hold, such as the position NFT Create position has just minted (finance.browser).
+ */
+export function createReadStub({ answer } = {}) {
   /** Every read the page asked the Worker for, as it arrived. */
   const requests = [];
   const worker = createWorker({
     getClientIp: () => '198.51.100.31',
     fetch: async (url, init) => {
       const route = new URL(url).pathname.replace('/internal/read/v1/', '');
-      return new Response(reply(route, JSON.parse(init.body)), { status: 200, headers: { 'Content-Type': 'application/json', 'X-Domino-Read-Contract': RC3 } });
+      const body = JSON.parse(init.body);
+      return new Response(answer?.(route, body) ?? reply(route, body), { status: 200, headers: { 'Content-Type': 'application/json', 'X-Domino-Read-Contract': RC3 } });
     },
   });
   return {

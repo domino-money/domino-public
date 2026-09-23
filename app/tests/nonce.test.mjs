@@ -73,7 +73,7 @@ async function timeoutSend(t,fixture,client,prepared){
  // the actual wallet prompt. These yields do not advance the fake deadline.
  for(let i=0;i<100&&!fixture.deferred;i++)await new Promise(resolve=>setImmediate(resolve));
  assert(fixture.deferred,'wallet prompt must have opened');
- t.mock.timers.tick(25001);
+ t.mock.timers.tick(180001);
  await assert.rejects(sent,/wallet_timeout/);
  t.mock.timers.reset();
  assert(fixture.journal.offered(owner,0n));

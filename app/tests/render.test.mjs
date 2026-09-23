@@ -174,9 +174,10 @@ test('every route in the header renders', async () => {
     ['/docs', /Docs[\s\S]*What Domino is[\s\S]*Non-custodial/],
     ['/docs/non-custodial', /Non-custodial[\s\S]*On this page/],
     // The owner's wallet screens ship in the deployable build (vite.config.ts MODES: wallet true). Signed out, with no release behind this server and no
-    // saved profile, neither offers an owner card with no way into it (changed on purpose, qa:visual dead ends): Setup offers sign-in and nothing more,
-    // and Sequence says in one plain line that there is nothing to manage. Each is read once its release has answered.
-    ['/setup', /Create or recover a position[\s\S]*Connect your wallet on Robinhood Chain to deposit/, '[data-setup-release="unavailable"]'],
+    // saved profile, neither offers an owner card with no way into it (changed on purpose, qa:visual dead ends), and Sequence says in one plain line
+    // that there is nothing to manage. Each is read once its release has answered. Changed on purpose (Create position): a position is opened from
+    // New position's last step, so Setup no longer asks for a wallet to deposit; one line points there instead.
+    ['/setup', /Deposits and recovery[\s\S]*To open a new position, use New position: its last step creates it through your wallet\./, '[data-setup-release="unavailable"]'],
     ['/sequence', /Your sequences[\s\S]*No sequence to manage here\./, '[data-sequence-release="unavailable"]'],
   ]) {
     const page = await open(route);

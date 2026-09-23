@@ -293,7 +293,7 @@ export function canContinue(stage: Stage, state: JourneyState, now: number): Che
       // The deposit amounts are an estimate shown in Review; nothing waits for them.
       return OK
     case 'review':
-      return fail(CREATE.review.gate)
+      return fail(CREATE.review.final)
     default:
       return stage satisfies never
   }
@@ -443,20 +443,6 @@ export function setupDraft(state: JourneyState): SetupDraft | null {
   return { pool: state.pool, independent: index, amountRaw: request.amountRaw, tickLower: request.tickLower, tickUpper: request.tickUpper, slippageBps: request.slippageBps }
 }
 
-/**
- * The line under Continue in Setup. It promises a Setup filled in only when
- * these choices make a draft to carry (`setupDraft`), for a wallet connected
- * on Robinhood Chain or once one connects. A pool Setup's deposits do not
- * take (hooks, or a dynamic fee) is carried nowhere, so the line says what
- * Setup takes; anything else without a draft gets the neutral line, never a
- * promise.
- */
-export function continueNote(state: JourneyState, connected: boolean): string {
-  if (setupDraft(state) !== null) return connected ? CREATE.review.setupNote : CREATE.review.setupNoteNotConnected
-  const pool = state.pool
-  return pool && (pool.hooks !== NATIVE_CURRENCY || pool.feePips === DYNAMIC_FEE_PIPS) ? CREATE.review.setupNoteUnsupported : CREATE.review.gate
-}
-
 export interface CreateGate {
   enabled: boolean
   reason: string
@@ -464,16 +450,15 @@ export interface CreateGate {
 }
 
 /**
- * Whether "Create position" may do anything. Derived from the build's
- * automated-signing flag, which is false: this page never signs, and the
- * owner's own wallet steps are Setup's, admitted there at run time by the
- * release endpoint. It cannot flip on this connection without a contract
- * change either: read-v1 1.1.0-rc.3 types the capabilities answer's
- * `ownerTransactions` as the literal `false` (api-contracts/read-v1/types.ts),
- * so no server answer on this contract can enable an owner transaction.
+ * Whether Domino signs anything on its own: the build's automated-signing
+ * flag, which is false. Create position is the owner's own wallet steps
+ * (components/create/CreatePosition.tsx), admitted at run time by the release
+ * endpoint; nothing here signs for the owner. read-v1 1.1.0-rc.3 types the
+ * capabilities answer's `ownerTransactions` as the literal `false`
+ * (api-contracts/read-v1/types.ts), so no server answer can change that.
  */
 export function createGate(): CreateGate {
-  return { enabled: CAPABILITIES.signingEnabled, reason: CREATE.review.gate, detail: CREATE.review.gateDetail }
+  return { enabled: CAPABILITIES.signingEnabled, reason: CREATE.review.final, detail: CREATE.review.stepsNote }
 }
 
 /* ---------------------------------------------------------------------------
@@ -527,25 +512,13 @@ export function walletSteps(state: JourneyState): WalletStep[] {
   const { token, pool } = state
   if (!token || !pool || !poolHolds(pool, token.key)) return []
   const words = CREATE.review
-  const other = otherCurrency(pool, token.key)
   const steps: WalletStep[] = []
   for (const currency of pool.currencies) {
     if (tokenAddress(currency) === NATIVE_CURRENCY) continue
-    if (tokenAddress(currency) === token.key) {
-      steps.push({ title: words.approveStep, detail: words.approveStepDetail, token: token.token })
-      steps.push({ title: words.permitStep, detail: words.permitStepDetail, token: token.token })
-    } else {
-      steps.push({ title: words.otherApproveStep, detail: words.otherTokenStep, token: currency })
-      steps.push({ title: words.otherPermitStep, detail: words.otherTokenStep, token: currency })
-    }
+    steps.push({ title: words.approveStep, detail: words.approveStepDetail, token: currency })
   }
-  if (token.key === NATIVE_CURRENCY) {
-    steps.push({ title: words.mintStep, detail: words.nativeMintDetail, token: token.token })
-  } else if (other && tokenAddress(other) === NATIVE_CURRENCY) {
-    steps.push({ title: words.mintStep, detail: words.otherNativeMintDetail, token: other })
-  } else {
-    steps.push({ title: words.mintStep, detail: words.mintStepDetail })
-  }
+  steps.push({ title: words.fundStep, detail: words.fundStepDetail })
+  steps.push({ title: words.mintStep, detail: words.mintStepDetail })
   return steps
 }
 
@@ -607,7 +580,7 @@ export function summaryLines(state: JourneyState, now: number): SummaryLine[] {
     { stage: 'pool', label: CREATE.stage.pool.short, value: poolValue, done: canContinue('pool', state, now).ok },
     { stage: 'amount', label: CREATE.stage.amount.short, value: amountValue, done: canContinue('amount', state, now).ok },
     { stage: 'balance', label: CREATE.stage.balance.short, value: stageIndex(state.furthest) > stageIndex('balance') ? CREATE.balance.notEnabled : none, done: stageIndex(state.furthest) > stageIndex('balance') },
-    { stage: 'review', label: CREATE.stage.review.short, value: state.stage === 'review' ? CREATE.review.gate : none, done: false },
+    { stage: 'review', label: CREATE.stage.review.short, value: state.stage === 'review' ? CREATE.review.final : none, done: false },
   ]
 }
 
@@ -628,7 +601,7 @@ export function serialiseSummary(state: JourneyState, now: number): string[] {
   lines.push(`${words.amounts}: ${CREATE.balance.notEnabled}`)
   for (const [index, step] of walletSteps(state).entries()) lines.push(`${words.walletStep(index + 1)}: ${step.title}`)
   for (const fee of feeBases(state)) lines.push(`${fee.label}: ${fee.value}`)
-  const gate = createGate()
-  lines.push(`${words.create}: ${gate.enabled ? words.enabled : words.disabled(gate.reason)}`)
+  // The owner's own action: the wallet signs each step when Create position is pressed (components/create/CreatePosition.tsx).
+  lines.push(`${words.create}: ${CREATE.review.final}`)
   return lines
 }

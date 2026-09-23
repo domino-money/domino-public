@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { pathToFileURL } from 'node:url';
 const fixture=JSON.parse(readFileSync(0,'utf8'));
-const {createSetupClient,deploymentFrom}=await import(pathToFileURL(process.env.DOMINO_SETUP_SDK_MODULE).href);
+const {createSetupClient,deploymentFrom,SIGN_WINDOW_S}=await import(pathToFileURL(process.env.DOMINO_SETUP_SDK_MODULE).href);
 let now=fixture.now, current=true, rejectOnce=false, unknownOnce=false, lateRejectOnce=false;
 let admissionMode='available', admissionCalls=0, admissionChecks=0;
 const calls=[];
@@ -16,7 +16,7 @@ const wallet={nonceOffered:n=>claims.has(String(n)),claimNonce:async n=>{if(clai
   calls.push(method);
   if(rejectOnce&&method==='eth_sendTransaction'){rejectOnce=false;throw Object.assign(new Error('User rejected'),{code:4001});}
   if(unknownOnce&&method==='eth_sendTransaction'){unknownOnce=false;throw new Error('wallet_outcome_unknown');}
-  if(lateRejectOnce&&method==='eth_sendTransaction'){lateRejectOnce=false;now+=24.999;return new Promise((_,reject)=>setTimeout(()=>reject(Object.assign(new Error('late_rejection'),{code:4001})),50));}
+  if(lateRejectOnce&&method==='eth_sendTransaction'){lateRejectOnce=false;now+=SIGN_WINDOW_S-0.001;return new Promise((_,reject)=>setTimeout(()=>reject(Object.assign(new Error('late_rejection'),{code:4001})),50));}
   return rpc(method,params);
 }};
 const deployment=deploymentFrom(fixture.release,now);

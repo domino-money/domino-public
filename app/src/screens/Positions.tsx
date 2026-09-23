@@ -1,4 +1,4 @@
-import { lazy, Suspense, type CSSProperties, type ReactNode } from 'react'
+import { lazy, Suspense, useEffect, type CSSProperties, type ReactNode } from 'react'
 import PortfolioBody from '../components/portfolio/PortfolioBody'
 import { automateHref, marketsHref, newPositionHref } from '../components/explore/routes'
 import { IconAutomate, IconPositions } from '../components/icons'
@@ -6,6 +6,7 @@ import { Chip, Display, LinkButton, PageShell } from '../components/ui'
 import { shortAddress } from '../lib/read/screens/identity'
 import { ChainPositionsSlot, SlotBoundary, SlotFailed } from '../lib/read/screens/slots'
 import { useWalletIdentity, type WalletIdentityView } from '../lib/walletIdentity'
+import { createdPositions } from '../lib/positionMemory'
 import { RoadmapPill } from './Automate'
 
 type Connected = Extract<WalletIdentityView, { kind: 'connected' }>
@@ -157,6 +158,12 @@ function AutomationCard() {
  */
 export function Positions() {
   const identity = useWalletIdentity()
+  // The positions this browser created for the connected wallet, when the link names none: listed without typing an id.
+  const address = identity.kind === 'connected' ? identity.address : null
+  useEffect(() => {
+    const ids = createdPositions(address)
+    if (ids.length > 0 && /^#\/(positions|app|portfolio)\/?$/.test(window.location.hash)) window.location.replace(`#/positions/${ids.join(',')}`)
+  }, [address])
   return (
     <PageShell>
       <div className="dm-acct-title animate-rise" style={rise(0)}>

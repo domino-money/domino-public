@@ -8,7 +8,7 @@ import { formatUnits } from '../../lib/read/decimal'
 import { rangePosition } from '../../lib/read/screens/poolRange'
 import { Address } from '../read/screens/Address'
 import { SymbolText } from '../read/screens/SymbolText'
-import { Button, LinkButton } from '../ui'
+import { Button } from '../ui'
 import { StageBalance } from './StageBalance'
 import { PoolPair, RangeSummary } from './StepList'
 import type { PoolOption } from '../../lib/read/screens/poolsList'
@@ -153,24 +153,22 @@ export function StageReview({ state, now, open, balances }: { state: JourneyStat
   )
 }
 
-// The final control's own part in builds with wallet sign-in, from the same chunk as the deposit amounts: it
-// carries the choices to Setup for a signed-in wallet. While it loads, the plain link stands in for it with the
-// neutral line: that link carries nothing, so it promises nothing.
-const ContinueInSetup = __DOMINO_WALLET_SESSION__
+// The final control in builds with wallet sign-in: Create position, from the same chunk as the deposit amounts, so
+// the entry never carries the wallet or the setup client. While it loads, the disabled button stands in for it.
+const CreateControl = __DOMINO_WALLET_SESSION__
   ? lazy(() =>
       import('./DepositAmounts')
-        .then((module) => ({ default: module.ContinueInSetup }))
-        .catch(() => ({ default: () => <SetupLink note={CREATE.review.gateDetail} /> })),
+        .then((module) => ({ default: module.CreatePosition }))
+        .catch(() => ({ default: () => <Unavailable note={CREATE.review.loadFailed} /> })),
     )
   : null
 
-/** The link to Setup and the one line under it. `onClick` carries the choices; without it the link carries nothing. */
-export function SetupLink({ note, onClick }: { note: string; onClick?: () => void }) {
+function Unavailable({ note }: { note: string }) {
   return (
     <>
-      <LinkButton href="#/setup" variant="primary" size="lg" className="w-full" data-create-position="setup" aria-describedby="create-reason" onClick={onClick}>
-        {CREATE.review.setup}
-      </LinkButton>
+      <Button type="button" variant="primary" size="lg" className="w-full" disabled data-create-position="" aria-describedby="create-reason">
+        {CREATE.page.create}
+      </Button>
       <p id="create-reason" className="dm-flow-reason" data-align="start">
         {note}
       </p>
@@ -179,29 +177,20 @@ export function SetupLink({ note, onClick }: { note: string; onClick?: () => voi
 }
 
 /**
- * The last control of the flow. Deposits happen in Setup, one reviewed
- * wallet step at a time: a build that carries wallet sign-in links there, and
- * the link takes these choices along for a signed-in wallet; any other build
- * shows the disabled action and why. This is the one control that depends on
- * the build, so it lives here, where the build flag is defined, and not in
- * lib/create/copy.ts, which is compiled for tests without it.
+ * The last control of the flow: Create position. In a build that carries the
+ * wallet it opens the position through the wallet, step by step
+ * (CreatePosition.tsx); any other build shows the disabled action and why.
+ * This is the one control that depends on the build, so it lives here, where
+ * the build flag is defined, and not in lib/create/copy.ts, which is compiled
+ * for tests without it.
  */
-export function FinalControl({ state }: { state: JourneyState }) {
-  if (ContinueInSetup) {
+export function FinalControl({ state, onBusy }: { state: JourneyState; onBusy?: (busy: boolean) => void }) {
+  if (CreateControl) {
     return (
-      <Suspense fallback={<SetupLink note={CREATE.review.gate} />}>
-        <ContinueInSetup state={state} />
+      <Suspense fallback={<Unavailable note={CREATE.review.loading} />}>
+        <CreateControl state={state} onBusy={onBusy} />
       </Suspense>
     )
   }
-  return (
-    <>
-      <Button type="button" variant="primary" size="lg" className="w-full" disabled data-create-position="" aria-describedby="create-reason">
-        {CREATE.page.create}
-      </Button>
-      <p id="create-reason" className="dm-flow-reason" data-align="start">
-        {CREATE.review.noSetup}
-      </p>
-    </>
-  )
+  return <Unavailable note={CREATE.review.noWallet} />
 }
