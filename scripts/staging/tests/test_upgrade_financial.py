@@ -91,10 +91,12 @@ class FinancialTests(unittest.TestCase):
         files = dict(self.files)
         for index, name in enumerate(financial.base.MIGRATIONS):
             files[name] = (f'RAISE_FOUNDATION_REPLAY_{index};'.encode(), False)
+        files['backend/schema.sql'] = (b'RAISE_CANDIDATE_SCHEMA_REPLAY;', False)
         for index,name in enumerate(PACKAGED_ONLY_MIGRATIONS):
             files[name]=(f'RAISE_PACKAGED_ONLY_{index};'.encode(),False)
         query = financial.migration_sql(files, self.planned)
         self.assertNotIn('RAISE_FOUNDATION_REPLAY', query)
+        self.assertNotIn('RAISE_CANDIDATE_SCHEMA_REPLAY', query)
         self.assertNotIn('RAISE_PACKAGED_ONLY', query)
         for name in PACKAGED_ONLY_MIGRATIONS:self.assertNotIn(name,query)
         self.assertTrue(query.startswith('BEGIN;'))
@@ -130,10 +132,11 @@ class FinancialTests(unittest.TestCase):
                 archive(PACKAGED_ONLY_MIGRATIONS,omit=(name,))
 
     def test_only_the_pinned_foundation_succession_is_accepted(self):
-        """The installers re-apply the foundation; one deliberate change travels."""
+        """The upgrade compares foundation source without replaying migration 006."""
         name = 'backend/migrations/006_chainlink_prices.sql'
         successors = financial.base.FOUNDATION_SUCCESSORS
-        self.assertEqual(set(successors), {name}, 'a second exemption needs its own review')
+        self.assertEqual(set(successors), {name, 'backend/schema.sql'},
+                         'another exemption needs its own review')
         (installed, expected), = successors[name].items()
         # The pin names the release this upgrade reads and the file it carries.
         self.assertEqual(expected, financial.sha(self.files[name][0]))
@@ -157,6 +160,46 @@ class FinancialTests(unittest.TestCase):
         self.assertNotIn(b'NOT VALID', previous)
         self.assertEqual(statements(previous), statements(self.files[name][0]),
                          'the accepted change adds NOT VALID and a comment, nothing else')
+
+    def test_schema_tariff_succession_is_exact_and_inert(self):
+        name = 'backend/schema.sql'
+        current, executable = self.files[name]
+        removed = (b' -- New policy tariff is the mode: 200 simple / 400 Domino. Historical receipts are separate.\n'
+                   b' protocol_fee_bps smallint NOT NULL CHECK(protocol_fee_bps IN (200,400)),')
+        previous_check = b' protocol_fee_bps smallint NOT NULL CHECK(protocol_fee_bps BETWEEN 0 AND 200),'
+        self.assertEqual(current.count(removed), 1)
+        previous = current.replace(removed, previous_check)
+        (installed_hash, expected_hash), = financial.base.FOUNDATION_SUCCESSORS[name].items()
+        self.assertEqual(financial.sha(previous), installed_hash)
+        self.assertEqual(financial.sha(current), expected_hash)
+        self.assertEqual(self.planned['foundation'][name], expected_hash)
+        self.assertTrue(financial.base.succeeds(name, installed_hash, expected_hash))
+        self.assertTrue(financial.base.succeeds(name, (previous, executable), (current, executable)))
+        for installed, wanted in (
+            (installed_hash, '0' * 64), ('0' * 64, expected_hash),
+            ((previous + b'-- drift\n', executable), (current, executable)),
+            ((previous, executable), (current, not executable)),
+            (None, (current, executable)),
+        ):
+            with self.subTest(installed=installed, wanted=wanted):
+                self.assertFalse(financial.base.succeeds(name, installed, wanted))
+
+        # baseline must pass this exact digest gate before touching host state.
+        installed = {n: self.files[n][0] for n in self.planned['foundation']}
+        installed[name] = previous
+        def read(path, maximum=64*1024*1024):
+            return installed[str(path).split('/auth/', 1)[1]]
+        with patch.object(financial, 'read_file', read), \
+             patch.object(financial.os, 'geteuid', lambda: 0), \
+             patch.object(financial.base, 'trusted_parents', lambda *a: None), \
+             patch.object(financial.base, 'pg_parents', lambda *a: None), \
+             patch.object(financial.base, 'dependency_preflight', lambda *a: None), \
+             patch.object(financial, 'unit_state', side_effect=ValueError('reached_unit_state')):
+            with self.assertRaisesRegex(ValueError, 'reached_unit_state'):
+                financial.baseline(self.files, self.planned)
+            installed[name] = previous + b'-- drift\n'
+            with self.assertRaisesRegex(ValueError, 'foundation_or_dependency_change'):
+                financial.baseline(self.files, self.planned)
 
     def test_a_foundation_change_that_is_not_pinned_still_fails_closed(self):
         from unittest.mock import patch as _patch

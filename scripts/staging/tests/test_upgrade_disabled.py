@@ -2,6 +2,7 @@
 import contextlib
 import copy
 import fcntl
+import hashlib
 import io
 import json
 import os
@@ -191,7 +192,7 @@ class PlanTests(unittest.TestCase):
             *ident, ('domino', 'domino-read', 'domino_catalogue_admin')], ident))
 
     def test_the_pinned_foundation_succession_passes_and_nothing_else_does(self):
-        """Neither installer replays a migration, so the one accepted change is inert."""
+        """Neither upgrade replays migration 006, so its pinned change is inert."""
         import prepare_disabled as base
         name = 'backend/migrations/006_chainlink_prices.sql'
         (installed, expected), = base.FOUNDATION_SUCCESSORS[name].items()
@@ -208,6 +209,33 @@ class PlanTests(unittest.TestCase):
             with self.subTest(why=why), self.assertRaises(ValueError) as raised:
                 upgrade.plan(old, broken, 'a' * 64, 'b' * 64, 'c' * 40, 'd' * 40)
             self.assertIn('requires_another_upgrade', str(raised.exception))
+
+    def test_schema_tariff_succession_is_accepted_only_for_pinned_contents(self):
+        name = 'backend/schema.sql'
+        current = (Path(__file__).resolve().parents[3] / name).read_bytes()
+        changed = (b' -- New policy tariff is the mode: 200 simple / 400 Domino. Historical receipts are separate.\n'
+                   b' protocol_fee_bps smallint NOT NULL CHECK(protocol_fee_bps IN (200,400)),')
+        previous_check = b' protocol_fee_bps smallint NOT NULL CHECK(protocol_fee_bps BETWEEN 0 AND 200),'
+        self.assertEqual(current.count(changed), 1)
+        previous = current.replace(changed, previous_check)
+        (old_hash, new_hash), = install.FOUNDATION_SUCCESSORS[name].items()
+        self.assertEqual(hashlib.sha256(previous).hexdigest(), old_hash)
+        self.assertEqual(hashlib.sha256(current).hexdigest(), new_hash)
+
+        old, new = archives()
+        old[name] = (previous, False)
+        new[name] = (current, False)
+        planned = make_plan(old, new)
+        self.assertIn(name, planned['changedFiles'])
+        self.assertIn('migration replay', planned['notPerformed'])
+        for broken, why in (
+            ((current + b'-- drift\n', False), 'different destination content'),
+            ((current, True), 'mode change'),
+        ):
+            with self.subTest(why=why), self.assertRaisesRegex(ValueError, 'requires_another_upgrade'):
+                make_plan(old, dict(new, **{name: broken}))
+        with self.assertRaisesRegex(ValueError, 'requires_another_upgrade'):
+            make_plan(dict(old, **{name: (previous + b'-- drift\n', False)}), new)
 
     def test_plan_is_host_free_and_compares_full_archive_file_content(self):
         old, new = archives()

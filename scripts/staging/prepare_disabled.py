@@ -47,15 +47,18 @@ SERVICES = {
 }
 ROOTS = (*SERVICES, 'operator', 'write')
 # A foundation file must match between the installed release and the one being
-# installed, because these installers re-apply those files and neither replays a
-# migration during an upgrade. One exact transition is accepted, pinned by both
-# digests so anything else still fails closed: 006 re-adds its source check
-# NOT VALID, so a re-apply cannot refuse a database that already holds a row for
-# a source 021 admits, and the wider constraint 021 adds validates the table.
+# installed, because these installers compare those files and neither replays a
+# migration during an upgrade. Exact transitions are pinned by both digests so
+# anything else still fails closed. Migration 006 adds NOT VALID to the source
+# check; schema.sql is candidate source only, and its tariff check changes from
+# 0..200 to the released 200/400 mode policy without being executed by upgrade.
 FOUNDATION_SUCCESSORS = {
     'backend/migrations/006_chainlink_prices.sql': {
         '52e16a5775278a297cfbfdc560d7b8183da33946c0f13b60a9d21c137fc0b1f3':
             '256c574f256c4481655cda4c0f794854ef5e5c23a6cf3a71363d8bf024db4574'},
+    'backend/schema.sql': {
+        '2653b9faccd9bfd8af1d6f140ebb0b9fcec6f4c3f95649f70c91a646e7bac0c5':
+            '5f49ac20748a024c5cb44a5a9d7fdd8963782c38a9ad3551065e806a7cebbf76'},
 }
 
 
