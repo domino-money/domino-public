@@ -406,7 +406,8 @@ test('each family goes to its own binding and to no other', async () => {
   await pages(call('/api/read/v1/'), env);
   await pages(call('/api/read/v1/no-such-read'), env);
   await pages(call('/api/read/v1/capabilities/'), env);
-  assert.equal(bound.read.calls.length, 3);
+  await pages(call('/api/read/v4/sequence-snapshot', { method: 'POST', body: '{}' }), env);
+  assert.equal(bound.read.calls.length, 4, 'V4 goes to the same read binding');
 });
 
 test("the stand-in routes /api as wrangler's bundle does: no path with an empty segment reaches functions/api/[[path]].ts", () => {
@@ -434,7 +435,7 @@ test('an /api path no family owns gets a JSON 404 from the forwarder, never inde
     '/api/x',
     '/api/read',
     '/api/read/v1',
-    '/api/read/v4/capabilities',
+    '/api/read/v5/capabilities',
     '/api/readx/v1/capabilities',
     '/api/sessions/v1/me',
     '/api/deposit/v1',

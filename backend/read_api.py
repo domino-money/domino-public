@@ -21,6 +21,8 @@ from rpc_config import configured_history_rpc_urls
 from catalogue import configured_catalogue
 from pool_requests import configured_pool_requests
 from read_service import ReadService
+from sequence_snapshot import (CONTRACT_VERSION as V4_CONTRACT_VERSION,
+                               SequenceSnapshotRequest, validate_snapshot_response)
 from read_contract import CONTRACT_VERSION, RESPONSE_MODELS, ErrorResponse, validate_response, sanitize_error, unsigned_string_pattern
 from public_data_contract import (CONTRACT_VERSION as V3_CONTRACT_VERSION,
                                   REQUEST_MODELS as V3_REQUEST_MODELS,
@@ -305,6 +307,7 @@ def create_app(service=None, *, gate=None, read_budget_seconds=60,
             from public_data_service import PublicDataService
             public_data = PublicDataService(PgPublicData(catalogue))
         service = ReadService(rpc_urls=configured_rpc_urls(config, os.environ.get('DOMINO_DISCOVERY_RPC_URL')),
+                              snapshot_rpc_version=config.get('version'),
                               historical_rpc_urls=(configured_history_rpc_urls(config)
                                                    if config.get('version') in (3,4) else None),
                               inventory_url=os.environ.get('DOMINO_INVENTORY_RPC_URL') or config.get('inventoryUrl'),
@@ -351,7 +354,8 @@ def create_app(service=None, *, gate=None, read_budget_seconds=60,
         request_id = (hop_log.checked_request_id(request.headers.get('x-domino-request-id'))
                       or secrets.token_hex(16))
         v3 = request.url.path.startswith('/v3/read/')
-        contract_version = V3_CONTRACT_VERSION if v3 else CONTRACT_VERSION
+        v4 = request.url.path.startswith('/v4/read/')
+        contract_version = V4_CONTRACT_VERSION if v4 else V3_CONTRACT_VERSION if v3 else CONTRACT_VERSION
         # Bounding a liveness answer by the read budget lets a reader that is
         # only slow to warm up report 504, which the gateway reads as the whole
         # upstream being unavailable. A probe answers on its own bound.
@@ -387,7 +391,8 @@ def create_app(service=None, *, gate=None, read_budget_seconds=60,
         # The path never reaches the record: only a declared route name does.
         tail = request.url.path.rsplit('/', 1)[-1]
         route = (tail if (request.url.path == '/v1/read/' + tail and tail in RESPONSE_MODELS
-                         or request.url.path == '/v3/read/' + tail and tail in V3_RESPONSE_MODELS)
+                         or request.url.path == '/v3/read/' + tail and tail in V3_RESPONSE_MODELS
+                         or request.url.path == '/v4/read/sequence-snapshot' and tail == 'sequence-snapshot')
                  else {'/health': 'health', '/v1/capabilities': 'capabilities'}.get(
                      request.url.path, 'unmatched'))
         hop_log.emit(service='read-api', requestId=request_id, route=route,
@@ -536,6 +541,11 @@ def create_app(service=None, *, gate=None, read_budget_seconds=60,
     @app.post('/v3/read/search', responses={200: {'model': V3_RESPONSE_MODELS['search']}, **error_responses})
     def search(body: SearchRequest):
         return stored_public('search', body)
+
+    @app.post('/v4/read/sequence-snapshot')
+    def owner_sequence_snapshot(body: SequenceSnapshotRequest):
+        return run_read(lambda: service.sequence_snapshot(body.owner, body.tokenId),
+                        'sequence-snapshot', body.model_dump(), validator=validate_snapshot_response)
 
     return app
 

@@ -26,6 +26,8 @@ const TEXT: Readonly<Record<string, string | ((again: ReadControl) => string)>> 
   sequence_read_limit: 'The wallet read exceeded its request limit. No transaction was prepared.',
   sequence_read_decode: 'The wallet returned a contract result that could not be decoded. No transaction was prepared.',
   sequence_read_rpc: 'The wallet could not complete a read request. No transaction was prepared.',
+  sequence_read_snapshot_unavailable: 'The trusted read service is unavailable. No transaction was prepared. Press Read my sequences again later.',
+  sequence_read_snapshot_invalid: 'The trusted read service returned an inconsistent sequence snapshot. No transaction was prepared.',
   sequence_read_unexpected: 'The wallet read ended unexpectedly. No transaction was prepared.',
   invalid_block: 'Your wallet returned a block that could not be read.',
   chain_changed: (again) => `The chain moved on while reading. Press ${again} again.`,

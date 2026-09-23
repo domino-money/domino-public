@@ -1,5 +1,4 @@
-import type { FetchLike } from '../lib/http/rawReply'
-import { financialFetch } from './http'
+import { financialFetch } from './http.js'
 
 /** The Worker-local setup and sequence release profiles: public GETs, no wallet, no session. */
 export const RELEASE_CONTRACT = '1.0.0-rc.1'
@@ -16,7 +15,7 @@ export type ReleaseRead<T> =
    */
   | { kind: 'unavailable'; reason: string }
 
-async function boundedText(response: Response): Promise<string | null> {
+export async function boundedText(response: Response, maxBytes = MAX_BYTES): Promise<string | null> {
   if (!response.body) return ''
   const reader = response.body.getReader(), chunks: Uint8Array[] = []
   let size = 0
@@ -24,7 +23,7 @@ async function boundedText(response: Response): Promise<string | null> {
     const chunk = await reader.read()
     if (chunk.done) break
     size += chunk.value.byteLength
-    if (size > MAX_BYTES) { await reader.cancel().catch(() => undefined); return null }
+    if (size > maxBytes) { await reader.cancel().catch(() => undefined); return null }
     chunks.push(chunk.value)
   }
   const bytes = new Uint8Array(size)
@@ -38,7 +37,7 @@ async function boundedText(response: Response): Promise<string | null> {
  * strict profile parser: null for `available: false`, a thrown code for
  * anything malformed or expired. Never throws itself.
  */
-export async function readRelease<T>(path: ReleasePath, parse: (value: unknown) => T | null, get: FetchLike = financialFetch, timeoutMs = 10_000): Promise<ReleaseRead<T>> {
+export async function readRelease<T>(path: ReleasePath, parse: (value: unknown) => T | null, get: typeof financialFetch = financialFetch, timeoutMs = 10_000): Promise<ReleaseRead<T>> {
   const controller = new AbortController(), timer = setTimeout(() => controller.abort(), timeoutMs)
   const unavailable = (reason: string): ReleaseRead<T> => ({ kind: 'unavailable', reason })
   try {

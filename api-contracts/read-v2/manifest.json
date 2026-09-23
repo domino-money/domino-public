@@ -266,7 +266,7 @@
     },
     {
       "path": "backend/read_service.py",
-      "sha256": "9ac4ce210ad2ed266d040c559766e13fa15c1dd969c3c6d386cd83ef463c7b26"
+      "sha256": "10ee84a5e5c1c1c52e989b1b7fb3b55c3b4219065fc957e31b0c27451df09c90"
     },
     {
       "path": "backend/market_cache.py",
@@ -278,15 +278,15 @@
     },
     {
       "path": "backend/read_gateway.py",
-      "sha256": "a0cdb688a87129bba53f4eebbd2fc11837ea8a99560d934380cf4a3e29fd4464"
+      "sha256": "caecf6685aedd4d0b81c27c46956dc6027c81f8e41f0f715baf8865f68192dbf"
     },
     {
       "path": "backend/read_api.py",
-      "sha256": "79de375a34c3c5c1837cbbe5507bb786fb7fd84585d3c09a5ef37ec39c4ab8a8"
+      "sha256": "0dd88342d7310c4e5a9f66f35385ad2a84cb925fd8208aabec8216f4c53b7fc5"
     },
     {
       "path": "backend/bridge_http.py",
-      "sha256": "6935b953b3200f69a8d964b8125ef88820747b5c1d629153dcf7db7c7b2a5977"
+      "sha256": "20708626ee8039aea592bf526d6911f098628b548f755f10eccd178c5589a87b"
     },
     {
       "path": "backend/dev_read_gateway.py",
@@ -322,7 +322,7 @@
     },
     {
       "path": "bridge/src/worker.mjs",
-      "sha256": "56bf8e6754e2309db4fdaf526b4f7dc316a110bd4f5b47c7cdaa527e1d26397f"
+      "sha256": "325fa540a063f4ad7698eee57e2f88a770fe44e7ccbb18708ad377d76b351c15"
     },
     {
       "path": "bridge/src/strict-json.mjs",
@@ -330,11 +330,11 @@
     },
     {
       "path": "app/functions/_lib/bridge.ts",
-      "sha256": "4de557e26be76aad70f3d82319ca6c779de314ad6bcef1fb9c1beee8d95dad05"
+      "sha256": "87706ac32da5f9b145c3b9a84b673487ee453df4d3a23ae3271b121ecbf5436d"
     },
     {
       "path": "bridge/wrangler.read.toml",
-      "sha256": "ac1346bcc211541e7768eda9e4c4df0e98a59379efcbe0560b3a97071420df47"
+      "sha256": "c97c6c23ef923e3d3e482d91d0cc252b4c8fdf83034b9cd5d97931572d381eee"
     },
     {
       "path": "backend/tests/read_v2_contract_fixtures.py",

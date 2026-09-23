@@ -166,8 +166,8 @@ class LocalReaderHTTP:
             return response.status_code, self._collect(chunks, budget), received
 
     def request(self, route, body=None, *, deadline, request_id=None, version='v1'):
-        routes = READ_ROUTES if version == 'v1' else V3_ENABLED_READS if version == 'v3' else ()
-        if (version not in ('v1', 'v3') or not isinstance(route, str)
+        routes = READ_ROUTES if version == 'v1' else V3_ENABLED_READS if version == 'v3' else ('sequence-snapshot',) if version == 'v4' else ()
+        if (version not in ('v1', 'v3', 'v4') or not isinstance(route, str)
                 or (route != 'health' and route not in routes) or route == 'health' and version != 'v1'):
             raise DataError('route_not_available')
         budget = _Budget(deadline, self.clock)

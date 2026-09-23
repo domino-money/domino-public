@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { inspection, publicDataRelease, releaseVars } from './publish-read-path.mjs'
+import { readFileSync } from 'node:fs'
+import { inspection, publicDataRelease, sequenceSnapshotRelease, releaseVars } from './publish-read-path.mjs'
 import { READ_TUNNEL_IDS } from './read-tunnel-config.mjs'
 
 const settings = () => ({ bindings: [
@@ -21,6 +22,37 @@ test('the workflow V3 input is explicit and inspect remains read-only', () => {
   for (const invalid of ['', '1', 'yes', true, false, null]) {
     assert.throws(() => publicDataRelease('worker', invalid), /must be true or false/)
   }
+})
+test('V4 snapshot publication requires its separate explicit opt-in', () => {
+  assert.equal(sequenceSnapshotRelease('worker'),false)
+  assert.equal(sequenceSnapshotRelease('worker','true'),true)
+  assert.equal(sequenceSnapshotRelease('tunnels-v4'),true)
+  assert.equal(sequenceSnapshotRelease('worker-disable-v4','true'),false)
+  assert.equal(sequenceSnapshotRelease('tunnels-disable-v4','true'),false)
+  assert.equal(sequenceSnapshotRelease('inspect','true'),false)
+  const current=settings(), enabled=releaseVars(current,{enableV4:true})
+  assert.equal(releaseVars(current).READ_V4_BRIDGE_ENABLED,undefined)
+  assert.equal(enabled.READ_V4_BRIDGE_ENABLED,'true')
+  assert.equal(enabled.ENABLED_V4_READS,'sequence-snapshot')
+  current.bindings.push({type:'plain_text',name:'READ_V4_BRIDGE_ENABLED',text:'true'},
+    {type:'plain_text',name:'ENABLED_V4_READS',text:'sequence-snapshot'})
+  assert.equal(releaseVars(current).ENABLED_V4_READS,'sequence-snapshot')
+  const disabled=releaseVars(current,{disableV4:true})
+  assert.equal(disabled.READ_V4_BRIDGE_ENABLED,'false')
+  assert.equal(disabled.ENABLED_V4_READS,'sequence-snapshot')
+  assert.equal(disabled.ENABLED_READS,releaseVars(current).ENABLED_READS)
+  assert.equal(disabled.READ_V3_BRIDGE_ENABLED,releaseVars(current).READ_V3_BRIDGE_ENABLED)
+  assert.equal(releaseVars(current).READ_V4_BRIDGE_ENABLED,'true','ordinary release preserves active V4')
+  assert.throws(()=>releaseVars(current,{enableV4:true,disableV4:true}),/Invalid V4/)
+  assert.throws(()=>releaseVars(current,{enableV4:'true'}),/Invalid V4/)
+})
+
+test('reviewed V4 rollback disables the Worker before removing the tunnel path', () => {
+  const workflow=readFileSync(new URL('../.github/workflows/read-path-release.yml',import.meta.url),'utf8')
+  assert.match(workflow,/options: \[inspect, app, bridge, publish, disable-sequence-snapshot\]/)
+  const worker=workflow.indexOf('run: node scripts/publish-read-path.mjs worker-disable-v4')
+  const tunnel=workflow.indexOf('run: node scripts/publish-read-path.mjs tunnels-disable-v4')
+  assert.ok(worker>0 && tunnel>worker)
 })
 
 test('enables only v2 pool-market and retains the exact existing v1 read list', () => {

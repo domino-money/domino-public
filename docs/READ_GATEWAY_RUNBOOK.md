@@ -48,6 +48,9 @@ backend/.venv/bin/python backend/read_gateway.py --port 8878 --reader-port 8876
 ```
 
 The disabled gateway returns 404 for read requests and performs no provider work.
+The separate, OFF-by-default V1 sequence snapshot pilot has its own `--enable-v4`
+and `DOMINO_BRIDGE_V4_READS=sequence-snapshot` gates; see
+[SEQUENCE_SNAPSHOT_PILOT.md](SEQUENCE_SNAPSHOT_PILOT.md) before enabling it.
 Both listeners bind to `127.0.0.1`; neither is a public development server. Stop
 each with Ctrl+C. Port 8765 is excluded from the gateway and its reader target.
 The gateway holds `backend/runtime/read-gateway.lock` until exit; do not delete

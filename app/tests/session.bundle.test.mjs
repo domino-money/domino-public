@@ -246,6 +246,11 @@ test('session/read closures retain their 90 kB budget; financial screens have a 
   // 153,653 B. The all-lazy ceiling moves to 160 kB for it; the session and
   // public-read ceiling is untouched (50,957 B against 90 kB), so nobody who
   // never opens Setup pays for it.
+  // 2026-09-23: the owner-only V4 sequence snapshot stays in the lazy finance
+  // closure. The bounded parser is shared with release reads; measured gzip is
+  // 160,069 B in dist and 160,501 B in the wallet-test build. Increase only
+  // the all-lazy ceiling by 1 kB. The 90 kB session/read and 150 kB finance
+  // ceilings remain unchanged, and the initial closure stays outside this sum.
   for (const [label, dir] of [
     ['dist', DIST],
     ['.wallet-test-dist', WALLET],
@@ -265,7 +270,7 @@ test('session/read closures retain their 90 kB budget; financial screens have a 
     for (const file of financialRoots) assert.ok(!base.has(file) && !initial.has(file), `${file} must remain opt-in`);
     const allLazy = new Set([...base, ...financial]);
     assert.deepEqual([...new Set([...initial, ...allLazy])].sort(), js, 'every generated script belongs to a measured closure');
-    for (const [family, files, budget] of [['session/public reads', base, 90_000], ['financial', financial, 150_000], ['all lazy', allLazy, 160_000]]) {
+    for (const [family, files, budget] of [['session/public reads', base, 90_000], ['financial', financial, 150_000], ['all lazy', allLazy, 161_000]]) {
       const total = [...files].reduce((sum, file) => sum + gzip(join(dir, 'assets', file)), 0);
       // The headroom is a diagnostic only, so the margin stays visible in every run; only the budget itself fails the test.
       t.diagnostic(`${label} ${family}: ${total} bytes gzip (${files.size} scripts; ${budget} budget; ${budget - total} bytes, ${((100 * (budget - total)) / budget).toFixed(1)}% headroom)`);

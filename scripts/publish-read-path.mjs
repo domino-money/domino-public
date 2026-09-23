@@ -7,21 +7,29 @@ import { spawnSync } from 'node:child_process'
 import { readFileSync } from 'node:fs'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { isDeepStrictEqual } from 'node:util'
-import { READ_TUNNEL_IDS, V3_READ_TUNNEL_IDS, extendReadTunnelConfig } from './read-tunnel-config.mjs'
+import { READ_TUNNEL_IDS, V3_READ_TUNNEL_IDS, V4_READ_TUNNEL_IDS, extendReadTunnelConfig } from './read-tunnel-config.mjs'
 
 const ROOT = fileURLToPath(new URL('../', import.meta.url))
 // read-v1's ten POST routes: an existing Worker variable may name any of them and is retained as it is.
 const KNOWN_READS = new Set(['token', 'pools', 'pool-market', 'wallet-assets', 'nft-positions', 'catalogue', 'pool-activity', 'pool-positions', 'pool-metrics', 'markets-snapshot'])
-const VISIBLE_VARS = ['READ_BRIDGE_ENABLED', 'READ_V2_BRIDGE_ENABLED', 'READ_V3_BRIDGE_ENABLED',
-  'ENABLED_READS', 'ENABLED_V2_READS', 'ENABLED_V3_READS', 'APP_ORIGIN', 'GATEWAY_ORIGIN']
+const VISIBLE_VARS = ['READ_BRIDGE_ENABLED', 'READ_V2_BRIDGE_ENABLED', 'READ_V3_BRIDGE_ENABLED', 'READ_V4_BRIDGE_ENABLED',
+  'ENABLED_READS', 'ENABLED_V2_READS', 'ENABLED_V3_READS', 'ENABLED_V4_READS', 'APP_ORIGIN', 'GATEWAY_ORIGIN']
 
 export function publicDataRelease(operation, selected = 'false') {
   if (!['false', 'true'].includes(selected)) throw new Error('DOMINO_RELEASE_PUBLIC_DATA must be true or false.')
   return operation !== 'inspect' && (operation.endsWith('-v3') || selected === 'true')
 }
 
-export function releaseVars(settings, { enableV3 = false } = {}) {
+export function sequenceSnapshotRelease(operation, selected = 'false') {
+  if (!['false', 'true'].includes(selected)) throw new Error('DOMINO_RELEASE_SEQUENCE_SNAPSHOT must be true or false.')
+  return operation !== 'inspect' && operation !== 'worker-disable-v4' && operation !== 'tunnels-disable-v4'
+    && (operation === 'worker-v4' || operation === 'tunnels-v4' || selected === 'true')
+}
+
+export function releaseVars(settings, { enableV3 = false, enableV4 = false, disableV4 = false } = {}) {
   if (typeof enableV3 !== 'boolean') throw new Error('Invalid V3 release option.')
+  if (typeof enableV4 !== 'boolean' || typeof disableV4 !== 'boolean' || (enableV4 || enableV3) && disableV4)
+    throw new Error('Invalid V4 release option.')
   const vars = Object.fromEntries((settings.bindings ?? [])
     .filter(binding => binding.type === 'plain_text' && VISIBLE_VARS.includes(binding.name))
     .map(binding => [binding.name, binding.text]))
@@ -32,8 +40,12 @@ export function releaseVars(settings, { enableV3 = false } = {}) {
   }
   const reads = vars.ENABLED_READS?.split(',').map(value => value.trim()) ?? []
   if (!reads.includes('pool-market') || reads.some(value => !KNOWN_READS.has(value))) throw new Error('Unexpected existing enabled v1 reads; refusing to replace them.')
-  return { ...vars, READ_V2_BRIDGE_ENABLED: 'true', ENABLED_V2_READS: 'pool-market',
-    ...(enableV3 ? { READ_V3_BRIDGE_ENABLED: 'true', ENABLED_V3_READS: 'overview,history,search' } : {}) }
+  if (vars.READ_V4_BRIDGE_ENABLED === 'true' && vars.ENABLED_V4_READS !== 'sequence-snapshot')
+    throw new Error('Unexpected existing V4 snapshot routes; refusing to replace them.')
+  return { ...vars, ...(disableV4 ? {} : { READ_V2_BRIDGE_ENABLED: 'true', ENABLED_V2_READS: 'pool-market' }),
+    ...(enableV3 ? { READ_V3_BRIDGE_ENABLED: 'true', ENABLED_V3_READS: 'overview,history,search' } : {}),
+    ...(enableV4 ? { READ_V4_BRIDGE_ENABLED: 'true', ENABLED_V4_READS: 'sequence-snapshot' } : {}),
+    ...(disableV4 ? { READ_V4_BRIDGE_ENABLED: 'false' } : {}) }
 }
 
 /** Summarise one settled result per key, and name every resource refused. */
@@ -76,13 +88,16 @@ async function cloudflare(path, payload) {
 }
 
 async function run(operation) {
-  if (!['inspect', 'tunnels', 'worker', 'tunnels-v3', 'worker-v3'].includes(operation)) throw new Error('Use inspect, tunnels, worker, tunnels-v3 or worker-v3.')
-  const enableV3 = publicDataRelease(operation, process.env.DOMINO_RELEASE_PUBLIC_DATA)
-  if (operation === 'tunnels' || operation === 'tunnels-v3') {
-    for (const id of enableV3 ? V3_READ_TUNNEL_IDS : READ_TUNNEL_IDS) {
+  if (!['inspect', 'tunnels', 'worker', 'tunnels-v3', 'worker-v3', 'tunnels-v4', 'worker-v4',
+    'worker-disable-v4', 'tunnels-disable-v4'].includes(operation)) throw new Error('Use inspect, tunnels, worker, tunnels-v3 or worker-v3/v4; reviewed rollback uses worker-disable-v4 then tunnels-disable-v4.')
+  const disableV4 = operation === 'worker-disable-v4' || operation === 'tunnels-disable-v4'
+  const enableV3 = !disableV4 && publicDataRelease(operation, process.env.DOMINO_RELEASE_PUBLIC_DATA)
+  const enableV4 = sequenceSnapshotRelease(operation, process.env.DOMINO_RELEASE_SEQUENCE_SNAPSHOT)
+  if (operation.startsWith('tunnels')) {
+    for (const id of enableV4 || disableV4 ? V4_READ_TUNNEL_IDS : enableV3 ? V3_READ_TUNNEL_IDS : READ_TUNNEL_IDS) {
       const path = `cfd_tunnel/${id}/configurations`
       const before = await cloudflare(path)
-      const config = extendReadTunnelConfig(id, before.config, { enableV3 })
+      const config = extendReadTunnelConfig(id, before.config, { enableV3, enableV4, disableV4 })
       if (!isDeepStrictEqual(config, before.config)) {
         const latest = await cloudflare(path)
         if (latest.version !== before.version || !isDeepStrictEqual(latest.config, before.config)) throw new Error('Tunnel changed during publication; retry against its new configuration.')
@@ -91,7 +106,9 @@ async function run(operation) {
       const after = await cloudflare(path)
       if (!isDeepStrictEqual(after.config, config)) throw new Error('Published tunnel configuration differs from the intended path-only update.')
       console.log(JSON.stringify({ tunnel: id, version: after.version, v2PathEnabled: true, storedReadPathsEnabled: true,
-        ...(enableV3 ? { v3StoredPathsEnabled: true } : {}), otherSettingsPreserved: true }))
+        ...(enableV3 ? { v3StoredPathsEnabled: true } : {}),
+        ...(enableV4 ? { v4SequenceSnapshotEnabled: true } : {}),
+        ...(disableV4 ? { v4SequenceSnapshotEnabled: false } : {}), otherSettingsPreserved: true }))
     }
     return
   }
@@ -114,12 +131,15 @@ async function run(operation) {
     return
   }
   const settings = await cloudflare('workers/scripts/domino-read-bridge/settings')
-  const vars = releaseVars(settings, { enableV3 })
+  const vars = releaseVars(settings, { enableV3, enableV4, disableV4 })
   if (!readFileSync(new URL('../bridge/wrangler.read.toml', import.meta.url), 'utf8').includes('READ_V2_BRIDGE_ENABLED')) {
     throw new Error('This source does not yet contain the v2 read Worker.')
   }
   if (enableV3 && !readFileSync(new URL('../bridge/wrangler.read.toml', import.meta.url), 'utf8').includes('READ_V3_BRIDGE_ENABLED')) {
     throw new Error('This source does not yet contain the v3 read Worker.')
+  }
+  if (enableV4 && !readFileSync(new URL('../bridge/wrangler.read.toml', import.meta.url), 'utf8').includes('READ_V4_BRIDGE_ENABLED')) {
+    throw new Error('This source does not yet contain the v4 read Worker.')
   }
   const args = ['--yes', 'wrangler@4.130.0', 'deploy', '-c', 'bridge/wrangler.read.toml', '--keep-vars']
   for (const [name, value] of Object.entries(vars)) args.push('--var', `${name}:${value}`)
@@ -128,8 +148,10 @@ async function run(operation) {
   const deployed = await cloudflare('workers/scripts/domino-read-bridge/settings')
   const current = Object.fromEntries((deployed.bindings ?? []).filter(binding => binding.type === 'plain_text').map(binding => [binding.name, binding.text]))
   if (Object.entries(vars).some(([name, value]) => current[name] !== value)) throw new Error('Deployed read Worker flags differ from the requested release.')
-  releaseVars(deployed, { enableV3 })
-  console.log(`Read Worker deployed: existing v1 reads retained; read-v2 pool-market enabled; ${enableV3 ? 'read-v3 stored reads enabled; ' : ''}Access credentials retained.`)
+  releaseVars(deployed, { enableV3, enableV4, disableV4 })
+  console.log(disableV4
+    ? 'Read Worker deployed: read-v4 sequence snapshot disabled; existing v1-v3 flags and Access credentials retained.'
+    : `Read Worker deployed: existing v1 reads retained; read-v2 pool-market enabled; ${enableV3 ? 'read-v3 stored reads enabled; ' : ''}${enableV4 ? 'read-v4 sequence snapshot enabled; ' : ''}Access credentials retained.`)
 }
 
 if (import.meta.url === pathToFileURL(process.argv[1] ?? '').href) {

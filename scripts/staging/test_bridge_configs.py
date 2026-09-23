@@ -92,6 +92,9 @@ class DisabledBridgeConfigs(unittest.TestCase):
                 {"READ_V3_BRIDGE_ENABLED": "true"},
                 {"READ_V3_BRIDGE_ENABLED": False},
                 {"ENABLED_V3_READS": "overview,history,search"},
+                {"READ_V4_BRIDGE_ENABLED": "true"},
+                {"READ_V4_BRIDGE_ENABLED": False},
+                {"ENABLED_V4_READS": "sequence-snapshot"},
             ]
             for update in variants:
                 with self.subTest(service=service, update=update):
@@ -100,8 +103,8 @@ class DisabledBridgeConfigs(unittest.TestCase):
                     self.assertTrue(validate(service, config))
 
     def test_requires_explicit_disabled_read_versions_and_empty_route_lists(self):
-        for key in ("READ_BRIDGE_ENABLED", "READ_V2_BRIDGE_ENABLED", "READ_V3_BRIDGE_ENABLED",
-                    "ENABLED_READS", "ENABLED_V2_READS", "ENABLED_V3_READS"):
+        for key in ("READ_BRIDGE_ENABLED", "READ_V2_BRIDGE_ENABLED", "READ_V3_BRIDGE_ENABLED", "READ_V4_BRIDGE_ENABLED",
+                    "ENABLED_READS", "ENABLED_V2_READS", "ENABLED_V3_READS", "ENABLED_V4_READS"):
             with self.subTest(missing=key):
                 config = copy.deepcopy(self.configs["read"])
                 del config["vars"][key]

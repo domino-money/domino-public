@@ -10,6 +10,8 @@ from discovery import (CHAIN_ID, RPC_URL, ZERO, DataError, DiscoveryReader,
                        json_http, parse_block)
 from inventory import AlchemyInventory, CursorCodec
 from rpc_failover import FailoverReadRpc, HistoricalReadRpc
+from rpc_config import LOCAL_RPC_HOST, rpc_endpoint
+from sequence_snapshot import sequence_snapshot
 from read_deadline import (ReadDeadline, check_read_deadline, current_read_deadline,
                            use_read_deadline)
 
@@ -76,9 +78,11 @@ class ReadService:
     def __init__(self, *, rpc_url=RPC_URL, rpc_urls=None, inventory_url=None, historical_rpc_url=None,
                  historical_rpc_urls=None, clock=time.time,
                  rpc_factory=None, inventory=None, cursor_codec=None, transport_factory=bounded_transport,
-                 catalogue=None, market_cache=None, snapshot=None, requests=None, public_data=None):
+                 catalogue=None, market_cache=None, snapshot=None, requests=None, public_data=None,
+                 snapshot_rpc_version=None):
         self.rpc_url, self.inventory_url, self.clock = rpc_url, inventory_url, clock
         self.rpc_urls = tuple(rpc_urls) if rpc_urls is not None else None
+        self.snapshot_rpc_version = snapshot_rpc_version
         self.historical_rpc_url = historical_rpc_url
         self.historical_rpc_urls = tuple(historical_rpc_urls) if historical_rpc_urls is not None else None
         self.rpc_factory, self.inventory = rpc_factory, inventory
@@ -117,6 +121,19 @@ class ReadService:
         if self.rpc_urls is not None:
             return FailoverReadRpc(self.rpc_urls, transport=transport, batch_reads=True)
         return ReadRpc(self.rpc_url, transport=transport, batch_reads=True)
+
+    def sequence_snapshot(self, owner, token_id=None):
+        """Use only the configured primary Domino node; never public failover."""
+        if self.rpc_factory is not None:  # An injected, explicit test double.
+            return sequence_snapshot(self._rpc(self.transport_factory()), owner, token_id)
+        if self.snapshot_rpc_version != 4 or not self.rpc_urls:
+            raise DataError('upstream_unavailable')
+        try:
+            primary = rpc_endpoint(self.rpc_urls[0], (LOCAL_RPC_HOST,))
+        except DataError:
+            raise DataError('upstream_unavailable') from None
+        return sequence_snapshot(ReadRpc(primary, transport=self.transport_factory(), batch_reads=True),
+                                 owner, token_id)
 
     def _market(self, kind, pool_id, **kwargs):
         check_read_deadline()

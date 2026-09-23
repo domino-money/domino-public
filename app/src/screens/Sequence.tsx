@@ -7,6 +7,7 @@ import { suggestGasBudget } from '../finance/gas'
 import type { GasBudget } from '../finance/setup'
 import { readRelease, type ReleaseRead } from '../finance/release'
 import { AUTOMATION_FEE_BPS, createSequenceClient, sequenceDeploymentFrom, sequenceProviderReadError, sequenceRaw, sequenceReadError, sequenceReadStage, type AutomationMode, type PreparedSequence, type SequenceDeployment, type SequenceState } from '../finance/sequence'
+import { readSequenceSnapshot } from '../finance/sequenceSnapshot'
 import { RECEIPT_TEXT, SEQUENCE_STEP_TEXT, errorCode, financeErrorText } from '../finance/words'
 import { AUTOMATION_SERVICE } from '../lib/capabilities'
 import { Button, Card, Display } from '../components/ui'
@@ -99,7 +100,7 @@ export default function Sequence() {
     const d=live.kind==='available'?live.deployment:savedProfile(), isRecovery=live.kind!=='available'
     if(!d){say('The deployment could not be read. No approval or transaction was requested.',live.kind==='unavailable'?live.reason:null);return}
     const wallet=await setupWallet().catch(error=>{throw sequenceProviderReadError(error)}), epoch=++connection.current
-    const next=createSequenceClient({...wallet,current:()=>wallet.current()&&connection.current===epoch},d,()=>Date.now()/1000,currentSequenceDeployment)
+    const next=createSequenceClient({...wallet,current:()=>wallet.current()&&connection.current===epoch},d,()=>Date.now()/1000,currentSequenceDeployment,readSequenceSnapshot)
     const rows=await next.recent().catch(error=>{throw sequenceReadError(error)})
     // A link that named a position: it is read now, so the guided creation opens on it. A position that cannot be read is left for the owner to read again there.
     let wanted:Root|null=null

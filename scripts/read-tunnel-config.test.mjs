@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { extendReadTunnelConfig, V3_READ_TUNNEL_IDS } from './read-tunnel-config.mjs';
+import { extendReadTunnelConfig, V3_READ_TUNNEL_IDS, V4_READ_TUNNEL_IDS } from './read-tunnel-config.mjs';
 
 const PROD = '31526265-ca63-40f2-bbb7-bd37a537f899';
 const DEV = '7abb1264-ee70-4b69-a33c-b75a9deb4589';
@@ -43,6 +43,33 @@ test('V3 opens only exact stored production routes and keeps Access and prior pr
   assert.deepEqual(extendReadTunnelConfig(PROD, result, { enableV3: true }), result);
   assert.throws(() => extendReadTunnelConfig(DEV, fixture(DEV), { enableV3: true }), /mismatch/);
 })
+
+test('V4 opens only the fixed production snapshot and preserves an existing V3 path', () => {
+  assert.deepEqual(V4_READ_TUNNEL_IDS,[PROD]);
+  const baseline=extendReadTunnelConfig(PROD,fixture(PROD));
+  const v4=extendReadTunnelConfig(PROD,baseline,{enableV4:true});
+  const pattern=new RegExp(v4.ingress[1].path);
+  assert.equal(pattern.test('/internal/read/v4/sequence-snapshot'),true);
+  for(const path of ['/internal/read/v4/eth_call','/internal/read/v4/sequence-snapshot/',
+    '/internal/read/v4/%73equence-snapshot','/internal/read/v4/sequence-snapshot?method=eth_call'])
+    assert.equal(pattern.test(path),false,path);
+  assert.deepEqual(extendReadTunnelConfig(PROD,v4),v4);
+  const both=extendReadTunnelConfig(PROD,extendReadTunnelConfig(PROD,baseline,{enableV3:true}),{enableV4:true});
+  assert.equal(new RegExp(both.ingress[1].path).test('/internal/read/v3/overview'),true);
+  assert.equal(new RegExp(both.ingress[1].path).test('/internal/read/v4/sequence-snapshot'),true);
+  assert.deepEqual(extendReadTunnelConfig(PROD,both),both);
+  const rolledBack=extendReadTunnelConfig(PROD,both,{disableV4:true});
+  const rollbackPattern=new RegExp(rolledBack.ingress[1].path);
+  assert.equal(rollbackPattern.test('/internal/read/v4/sequence-snapshot'),false);
+  assert.equal(rollbackPattern.test('/internal/read/v3/overview'),true);
+  assert.equal(rollbackPattern.test('/internal/read/v2/pool-market'),true);
+  assert.deepEqual(extendReadTunnelConfig(PROD,rolledBack,{disableV4:true}),rolledBack);
+  assert.deepEqual(extendReadTunnelConfig(PROD,fixture(PROD),{disableV4:true}),fixture(PROD));
+  assert.throws(()=>extendReadTunnelConfig(PROD,both,{enableV4:true,disableV4:true}),/mismatch/);
+  assert.throws(()=>extendReadTunnelConfig(PROD,both,{enableV3:true,disableV4:true}),/mismatch/);
+  assert.throws(()=>extendReadTunnelConfig(DEV,fixture(DEV),{enableV4:true}),/mismatch/);
+  assert.throws(()=>extendReadTunnelConfig(DEV,fixture(DEV),{disableV4:true}),/mismatch/);
+});
 
 function fixture(id, path = PUBLISHED[id][0]) {
   const rule = id === PROD ? {

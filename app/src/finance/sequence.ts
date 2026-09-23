@@ -1,6 +1,7 @@
 import { concatHex, decodeFunctionResult, encodeAbiParameters, encodeFunctionData, keccak256, numberToHex, stringToHex, zeroAddress, type Abi, type Address, type ContractFunctionName, type ContractFunctionReturnType, type Hex } from 'viem'
 import { POSITION_MANAGER, SEQUENCE_FACTORY, pinned, unpinned } from './pin.js'
 import type { GasBudget, WalletRpc } from './setup'
+import { sequenceSnapshotFrom, snapshotCalls, type SequenceSnapshot } from './sequenceSnapshot.js'
 
 /*
  * The closed ABI is written as JSON: exactly what viem's parseAbi and
@@ -268,16 +269,73 @@ export function sequenceDeploymentFrom(value: unknown, now = Date.now() / 1000):
 /** Closed owner-only calls: no backend calldata, signer, router or nonce is
  * accepted. Every logical action has one deadline and a fixed read ceiling. */
 export function createSequenceClient(wallet: WalletRpc, deployment: SequenceDeployment, now = () => Date.now() / 1000,
-  currentAdmission?: () => Promise<SequenceDeployment | null>) {
+  currentAdmission?: () => Promise<SequenceDeployment | null>,
+  snapshotRead?: (owner: Address, tokenId: bigint | null) => Promise<SequenceSnapshot>) {
   const d = Object.freeze({ ...deployment, codeHashes: Object.freeze({ ...deployment.codeHashes }) })
   type Rpc = (method: string, params: unknown[], rejected?: (error: unknown) => Promise<void>) => Promise<unknown>
   type Context = { rpc: Rpc; block: Hex; hash: Hex; diagnoseRead: boolean }
   const issued = new WeakMap<PreparedSequence, (c: Context) => Promise<void>>()
   const sent = new Map<Hex, PreparedSequence>()
   let busy = false
-  async function bounded<T>(work: (c: Context) => Promise<T>, diagnoseRead = false): Promise<T> {
+  /** The snapshot has a closed, server-selected set of view results. Its source
+   * is the Domino local RPC, which is a trust boundary, not a state proof. */
+  function snapshotRpc(snapshot: SequenceSnapshot, walletRpc: Rpc, check: () => void): Rpc {
+    const block = numberToHex(BigInt(snapshot.blockNumber))
+    const codes = new Map<string, Hex>(), calls = new Map<string, Hex>()
+    const setCode = (to: Address, value: Hex) => {
+      const target = to.toLowerCase(), previous = codes.get(target)
+      if (previous !== undefined && previous !== value) fail('sequence_read_snapshot_invalid')
+      codes.set(target,value)
+    }
+    const key = (to: Address, data: Hex) => `${to.toLowerCase()}:${data.toLowerCase()}`
+    const put = (to: Address, name: string, args: readonly unknown[], result: Hex) => {
+      const abi: Abi = sequenceAbi
+      calls.set(key(to,encodeFunctionData({abi,functionName:name,args})),result)
+    }
+    for (const role of components) setCode(d[role],snapshot.code[role])
+    setCode(d.operator,snapshot.code.operator); setCode(d.pricePublisher,snapshot.code.pricePublisher)
+    for (const [role,names] of Object.entries(snapshotCalls)) {
+      const target = d[role as Component]
+      for (const name of names) put(target,name,name === 'nextOwnerNonce' ? [wallet.owner] : [],snapshot.calls[role][name])
+    }
+    let nonce: bigint
+    try { nonce = decodeFunctionResult({abi:sequenceAbi as Abi,functionName:'nextOwnerNonce',data:snapshot.calls.factory.nextOwnerNonce}) as bigint }
+    catch { return fail('sequence_read_snapshot_invalid') }
+    if (snapshot.recent.length !== Number(nonce < 8n ? nonce : 8n)) fail('sequence_read_snapshot_invalid')
+    for (const [index,row] of snapshot.recent.entries()) {
+      const expectedNonce = nonce - 1n - BigInt(index), expected = sequenceIdentity(d,wallet.owner,expectedNonce)
+      if (row.ownerNonce !== expectedNonce.toString() || row.sequenceId !== expected.id || row.vault !== expected.vault)
+        fail('sequence_read_snapshot_invalid')
+      put(d.factory,'vaultForSequence',[row.sequenceId],row.vaultForSequence)
+    }
+    if (snapshot.root) {
+      const root = snapshot.root, id = BigInt(root.tokenId)
+      const expected = sequenceIdentity(d,wallet.owner,nonce)
+      if (root.predictedSequenceId !== expected.id || root.predictedVault !== expected.vault) fail('sequence_read_snapshot_invalid')
+      put(d.positionManager,'ownerOf',[id],root.ownerOf)
+      put(d.positionManager,'getPoolAndPositionInfo',[id],root.getPoolAndPositionInfo)
+      put(d.positionManager,'getApproved',[id],root.getApproved)
+      put(d.factory,'predictVault',[wallet.owner,nonce],root.predictVault)
+      setCode(root.currency0,root.code.currency0); setCode(root.currency1,root.code.currency1)
+      setCode(root.predictedVault,root.code.predictedVault)
+    }
+    return async (method, params) => {
+      if (method !== 'eth_call' && method !== 'eth_getCode') return walletRpc(method,params)
+      check()
+      if (params.length !== 2 || params[1] !== block) return fail('sequence_read_snapshot_invalid')
+      if (method === 'eth_getCode') {
+        const target = String(params[0]).toLowerCase()
+        return codes.get(target) ?? fail('sequence_read_snapshot_invalid')
+      }
+      const tx = record(params[0])
+      if (Object.keys(tx).sort().join() !== 'data,to' || typeof tx.to !== 'string' || typeof tx.data !== 'string') return fail('sequence_read_snapshot_invalid')
+      return calls.get(key(tx.to as Address,tx.data as Hex)) ?? fail('sequence_read_snapshot_invalid')
+    }
+  }
+  async function bounded<T>(work: (c: Context) => Promise<T>, diagnoseRead = false,
+    fallbackTokenId?: bigint | null): Promise<T> {
     if (busy) return fail('wallet_action_busy')
-    busy = true; const end = now() + 30; let calls = 0
+    busy = true; const started = now(); let end = started + 30; let calls = 0, readCallLimit = 100
     const rpc: Rpc = async (method, params, rejected) => {
       // Keep the wallet transaction lane exactly as it was. Diagnostic
       // normalization is for owner reads only and never wraps a send result.
@@ -303,7 +361,7 @@ export function createSequenceClient(wallet: WalletRpc, deployment: SequenceDepl
       for (let attempt = 0; attempt < (retryable ? 3 : 1); attempt++) {
         if (!wallet.current()) return fail('wallet_identity_changed')
         if (now() >= end) return fail('sequence_read_timeout')
-        if (++calls > 100) return fail('sequence_read_limit')
+        if (++calls > readCallLimit) return fail('sequence_read_limit')
         let timer: ReturnType<typeof setTimeout> | undefined
         try {
           let reply: Promise<unknown>
@@ -325,12 +383,40 @@ export function createSequenceClient(wallet: WalletRpc, deployment: SequenceDepl
       return fail(failure)
     }
     try {
-      const accounts = await rpc('eth_accounts', [])
-      if (!Array.isArray(accounts) || typeof accounts[0] !== 'string' || accounts[0].toLowerCase() !== wallet.owner || quantity(await rpc('eth_chainId', [])) !== 4663n) return fail('wallet_identity_changed')
-      const block = record(await rpc('eth_getBlockByNumber', ['latest', false]))
-      if (!hashPattern.test(String(block.hash))) return fail('invalid_block')
-      const c = { rpc, block: numberToHex(quantity(block.number)), hash: block.hash as Hex, diagnoseRead }
-      return await work(c)
+      const execute = async (snapshot?: SequenceSnapshot) => {
+        const accounts = await rpc('eth_accounts', [])
+        if (!Array.isArray(accounts) || typeof accounts[0] !== 'string' || accounts[0].toLowerCase() !== wallet.owner || quantity(await rpc('eth_chainId', [])) !== 4663n) return fail('wallet_identity_changed')
+        const tag = snapshot ? numberToHex(BigInt(snapshot.blockNumber)) : 'latest'
+        const block = record(await rpc('eth_getBlockByNumber', [tag, false]))
+        if (!hashPattern.test(String(block.hash)) || snapshot && (block.hash !== snapshot.blockHash || quantity(block.number) !== BigInt(snapshot.blockNumber))) return fail('chain_changed')
+        const c = { rpc: snapshot ? snapshotRpc(snapshot,rpc,()=>{
+          if (!wallet.current() || now() >= end) fail('sequence_read_timeout')
+          if (++calls > readCallLimit) fail('sequence_read_limit')
+        }) : rpc,
+          block: numberToHex(quantity(block.number)), hash: block.hash as Hex, diagnoseRead }
+        return work(c)
+      }
+      try { return await execute() }
+      catch (error) {
+        if (!diagnoseRead || !snapshotRead || fallbackTokenId === undefined || !(error instanceof SequenceFault)
+            || !['sequence_read_call','sequence_read_code'].includes(error.message)) throw error
+        if (!wallet.current() || now() >= end) return fail('sequence_read_timeout')
+        // One read-only replay gets its own allowance after a late wallet
+        // rejection. The first phase still has its original 30s/100-call cap;
+        // the entire action cannot exceed 55s/160 fixed reads.
+        end = Math.min(now() + 25, started + 55)
+        readCallLimit = 160
+        let snapshot: SequenceSnapshot
+        try { snapshot = sequenceSnapshotFrom(await snapshotRead(wallet.owner,fallbackTokenId),wallet.owner,fallbackTokenId) }
+        catch (failure) {
+          // OFF/404 or a broken bridge is an availability miss: preserve the
+          // original closed wallet error and stage. Never retry the 48 reads.
+          if (!(failure instanceof Error) || failure.message !== 'sequence_read_snapshot_invalid') throw error
+          return fail('sequence_read_snapshot_invalid')
+        }
+        if (!wallet.current() || now() >= end) return fail('sequence_read_timeout')
+        return execute(snapshot)
+      }
     } finally { busy = false }
   }
   // Call signatures are selected from the local closed ABI, never public JSON.
@@ -462,14 +548,14 @@ export function createSequenceClient(wallet: WalletRpc, deployment: SequenceDepl
   return {
     deployment:d,
     verify: () => bounded(async c => { await verify(c,now() >= d.expiresAt); await canonical(c) }),
-    inspectRoot: (id: bigint) => bounded(async c => { await verify(c); const result = await root(c,id); await canonical(c); return result }, true),
+    inspectRoot: (id: bigint) => bounded(async c => { await verify(c); const result = await root(c,id); await canonical(c); return result }, true, id),
     inspect: (vault: Address) => bounded(async c => { await verify(c,true); const result = await owned(c,vault); await canonical(c); return result }),
     recent: () => bounded(async c => {
       await verify(c,now() >= d.expiresAt); const nonce = await call(c,d.factory,'nextOwnerNonce',[wallet.owner]) as bigint
       const rows: { vault: Address; sequenceId: Hex; ownerNonce: bigint }[] = []
       for (let n = nonce; n > 0n && n > nonce - 8n; n--) { const found = sequenceIdentity(d,wallet.owner,n-1n); equal(await call(c,d.factory,'vaultForSequence',[found.id]),found.vault); rows.push({vault:found.vault,sequenceId:found.id,ownerNonce:n-1n}) }
       await canonical(c); return rows
-    }, true),
+    }, true, null),
     /** Read-only, for tracking: the sequences `recent` lists, each with its root NFT, checked only as recovery checks a deployment. Prepares nothing. */
     sequences: () => bounded(async c => {
       await verify(c,true); const nonce = await call(c,d.factory,'nextOwnerNonce',[wallet.owner]) as bigint

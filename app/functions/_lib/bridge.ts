@@ -80,6 +80,7 @@ const FAMILIES: readonly Family[] = [
   { prefix: '/api/read/v1/', binding: 'READ_BRIDGE', contract: 'x-domino-read-contract', csrf: false, cookies: [] },
   { prefix: '/api/read/v2/', binding: 'READ_BRIDGE', contract: 'x-domino-read-contract', csrf: false, cookies: [] },
   { prefix: '/api/read/v3/', binding: 'READ_BRIDGE', contract: 'x-domino-read-contract', csrf: false, cookies: [] },
+  { prefix: '/api/read/v4/', binding: 'READ_BRIDGE', contract: 'x-domino-read-contract', csrf: false, cookies: [] },
   {
     prefix: '/api/session/v1/',
     binding: 'SESSION_BRIDGE',

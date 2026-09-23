@@ -10,6 +10,11 @@ import {
   ROUTES as V3_ROUTES, validateRequest as validateV3Request, validateResponse as validateV3Response,
   matchesRequest as matchesV3Request,
 } from '../../api-contracts/read-v3/runtime.mjs';
+import {
+  CONTRACT_VERSION as V4_CONTRACT_VERSION, ERROR_STATUS_BY_CODE as V4_ERROR_STATUS_BY_CODE,
+  ROUTES as V4_ROUTES, validateRequest as validateV4Request,
+  validateResponse as validateV4Response, matchesRequest as matchesV4Request,
+} from '../../api-contracts/read-v4/runtime.mjs';
 
 const CONTRACT_HEADER = 'X-Domino-Read-Contract';
 // Only the exact public path chooses a protocol. Neither deployment variables
@@ -32,6 +37,12 @@ const V3_PROTOCOL = Object.freeze({
   enabledFlag: 'READ_V3_BRIDGE_ENABLED', readsFlag: 'ENABLED_V3_READS', routes: V3_ROUTES,
   validateRequest: validateV3Request, validateResponse: validateV3Response, errors: V3_ERROR_STATUS_BY_CODE,
   matchesRequest: (request, response, route) => matchesV3Request(route, request, response),
+});
+const V4_PROTOCOL = Object.freeze({
+  prefix: '/api/read/v4/', upstreamPrefix: '/internal/read/v4/', version: V4_CONTRACT_VERSION,
+  enabledFlag: 'READ_V4_BRIDGE_ENABLED', readsFlag: 'ENABLED_V4_READS', routes: V4_ROUTES,
+  validateRequest: validateV4Request, validateResponse: validateV4Response,
+  errors: V4_ERROR_STATUS_BY_CODE, matchesRequest: matchesV4Request,
 });
 export const LIMITS = Object.freeze({ requestBytes: 8192, responseBytes: 1024 * 1024, bodyMs: 5000, totalMs: 20000, upstreamMs: 15000 });
 
@@ -317,7 +328,8 @@ export function createWorker({ fetch: fetchImpl = globalThis.fetch, getClientIp 
       };
       try {
         const url = new URL(request.url);
-        if (url.pathname.startsWith(V3_PROTOCOL.prefix)) protocol = V3_PROTOCOL;
+        if (url.pathname.startsWith(V4_PROTOCOL.prefix)) protocol = V4_PROTOCOL;
+        else if (url.pathname.startsWith(V3_PROTOCOL.prefix)) protocol = V3_PROTOCOL;
         else if (url.pathname.startsWith(V2_PROTOCOL.prefix)) protocol = V2_PROTOCOL;
         const settings = config(env, protocol);
         const route = url.pathname.startsWith(protocol.prefix) ? url.pathname.slice(protocol.prefix.length) : null;

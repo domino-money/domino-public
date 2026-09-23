@@ -5,7 +5,7 @@ on:
       operation:
         description: Inspect access, publish app, bridge (tunnels and Worker), or both after the VM is ready
         type: choice
-        options: [inspect, app, bridge, publish]
+        options: [inspect, app, bridge, publish, disable-sequence-snapshot]
         default: inspect
         required: true
       source_sha:
@@ -14,6 +14,11 @@ on:
         required: true
       enable_public_data:
         description: Enable the read-v3 stored public data routes after the VM is ready
+        type: boolean
+        default: false
+        required: true
+      enable_sequence_snapshot:
+        description: Enable the fixed V1 sequence snapshot only after the reader and gateway are qualified
         type: boolean
         default: false
         required: true
@@ -55,6 +60,7 @@ jobs:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
           DOMINO_RELEASE_PUBLIC_DATA: ${{ inputs.enable_public_data }}
+          DOMINO_RELEASE_SEQUENCE_SNAPSHOT: ${{ inputs.enable_sequence_snapshot }}
       - name: Publish the read Worker, retaining v1/v2 reads and enabling v3 only when selected
         if: inputs.operation == 'bridge' || inputs.operation == 'publish'
         run: node scripts/publish-read-path.mjs worker
@@ -62,6 +68,19 @@ jobs:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
           DOMINO_RELEASE_PUBLIC_DATA: ${{ inputs.enable_public_data }}
+          DOMINO_RELEASE_SEQUENCE_SNAPSHOT: ${{ inputs.enable_sequence_snapshot }}
+      - name: Disable the V4 read Worker before removing the V4 tunnel path
+        if: inputs.operation == 'disable-sequence-snapshot'
+        run: node scripts/publish-read-path.mjs worker-disable-v4
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
+      - name: Remove only the V4 production read tunnel path
+        if: inputs.operation == 'disable-sequence-snapshot'
+        run: node scripts/publish-read-path.mjs tunnels-disable-v4
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
       - name: Upload the same recorded app to preview and production
         if: inputs.operation == 'app' || inputs.operation == 'publish'
         run: |

@@ -34,7 +34,7 @@ class FailoverReadRpc(ReadRpc):
         _LOG.warning('rpc_failover provider_index=%d reason=%s', self.index, reason)
 
     def _validate_header_tag(self, tag, block):
-        if tag != 'latest' and block.tag != tag:
+        if tag not in ('latest', 'finalized') and block.tag != tag:
             raise DataError('snapshot_reorganized')
 
     def _record_block(self, anchors, block):

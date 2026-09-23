@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createRequire } from 'node:module';
 import { readFileSync } from 'node:fs';
-import { concatHex, decodeFunctionData, encodeFunctionResult, keccak256, parseAbi, parseAbiParameters, zeroAddress } from 'viem';
+import { concatHex, decodeFunctionData, encodeAbiParameters, encodeFunctionData, encodeFunctionResult, keccak256, parseAbi, parseAbiParameters, zeroAddress } from 'viem';
 import * as runtime from '../../api-contracts/performance-v2/runtime.mjs';
 // The deployment pin is enforced by a build that says it is deployable, and
 // the refusal below is what such a build does. `.test-build` is not one, so
@@ -469,6 +469,169 @@ test('a rejected owner contract read identifies only its closed contract/functio
     assert.equal(chain.log.includes('claimNonce'), false);
   }
   assert.equal(sequenceReadStage(new Error(privateReply)), null);
+});
+
+test('guided recent() can replay only a fixed finalized snapshot after wallet eth_call rejection', async () => {
+  const chain = fakeChain({ sequences: 0 });
+  const original = chain.wallet.request;
+  const staticCalls = {
+    factory: ['implementation','implementationCodeHash','poolManager','positionManager','stateView','serviceFeeRecipient','nextOwnerNonce'],
+    implementation: ['factory','implementation','implementationVersion','poolManager','positionManager','stateView','serviceFeeRecipient','readHelper','executionEngine','readHelperCodeHash','executionEngineCodeHash','poolManagerCodeHash','positionManagerCodeHash','stateViewCodeHash'],
+    positionManager: ['poolManager'], stateView: ['poolManager'], readHelper: ['positionManager','stateView'],
+    engine: ['factory','readHelper','routingHelper','priceGuard','readHelperHash','routingHelperHash','priceGuardHash'],
+    priceGuard: ['publisher'],
+  };
+  const calls = {};
+  for (const [role,names] of Object.entries(staticCalls)) {
+    calls[role] = {};
+    for (const name of names) {
+      try { calls[role][name] = await original('eth_call',[{to:chain.d[role],data:encodeFunctionData({abi:sequenceAbi,functionName:name,args:name==='nextOwnerNonce'?[chain.wallet.owner]:[]})},'0x10']); }
+      catch { calls[role][name] = '0x'; }
+    }
+  }
+  const roles = ['factory','implementation','poolManager','positionManager','stateView','readHelper','engine','routing','priceGuard'];
+  const code = Object.fromEntries([...roles,'operator','pricePublisher'].map(role => [role,
+    role==='factory'?'0x6001':role==='implementation'?'0x6002':'0x']));
+  const snapshot = {schemaVersion:1,contractVersion:'1.0.0-rc.1',chainId:4663,owner:chain.wallet.owner,tokenId:null,
+    blockNumber:16,blockHash:hexOf(0xbb,32),code,calls,recent:[],root:null};
+  let fetches = 0;
+  const wallet = {...chain.wallet,request:(method,params) => method==='eth_call' &&
+    decodeFunctionData({abi:sequenceAbi,data:params[0].data}).functionName==='implementation'
+    ? Promise.reject(new Error('private provider refusal')):original(method,params)};
+  const client = createSequenceClient(wallet,{...chain.d,expiresAt:0},()=>1000,undefined,async(owner,tokenId)=>{
+    fetches++;assert.equal(owner,chain.wallet.owner);assert.equal(tokenId,null);return snapshot;
+  });
+  assert.deepEqual(await client.recent(),[]);
+  assert.equal(fetches,1);
+  assert.equal(chain.log.includes('claimNonce'),false);
+  const broken = createSequenceClient(wallet,{...chain.d,expiresAt:0},()=>1000,undefined,async()=>({...snapshot,blockHash:hexOf(0xcc,32)}));
+  await assert.rejects(broken.recent(),/chain_changed/);
+});
+
+test('guided inspectRoot() rechecks deployed links, NFT owner, pool identity and approval from a typed snapshot', async () => {
+  const base = fakeChain({sequences:0}), d = structuredClone(base.d), owner = base.wallet.owner;
+  const componentNames = ['factory','implementation','poolManager','positionManager','stateView','readHelper','engine','routing','priceGuard'];
+  const code = Object.fromEntries([...componentNames,'operator','pricePublisher'].map(role => [role,
+    role==='factory'?'0x6001':role==='implementation'?'0x6002':role==='operator'||role==='pricePublisher'?'0x':'0x6000']));
+  for (const role of componentNames) d.codeHashes[role] = keccak256(code[role]);
+  const rootTokenId = 3136705n, poolKey = {currency0:hexOf(0x31,20),currency1:hexOf(0x32,20),fee:40000,tickSpacing:200,hooks:zeroAddress};
+  const poolId = keccak256(encodeAbiParameters(poolKeyParameters,[poolKey]));
+  const packed = (BigInt(poolId) & ~((1n<<56n)-1n)) | (BigInt.asUintN(24,-400n)<<8n) | (400n<<32n);
+  const predicted = sequenceIdentity(d,owner,0n);
+  const staticCalls = {
+    factory:['implementation','implementationCodeHash','poolManager','positionManager','stateView','serviceFeeRecipient','nextOwnerNonce'],
+    implementation:['factory','implementation','implementationVersion','poolManager','positionManager','stateView','serviceFeeRecipient','readHelper','executionEngine','readHelperCodeHash','executionEngineCodeHash','poolManagerCodeHash','positionManagerCodeHash','stateViewCodeHash'],
+    positionManager:['poolManager'],stateView:['poolManager'],readHelper:['positionManager','stateView'],
+    engine:['factory','readHelper','routingHelper','priceGuard','readHelperHash','routingHelperHash','priceGuardHash'],priceGuard:['publisher'],
+  };
+  const links = {
+    factory:{implementation:d.implementation,implementationCodeHash:d.codeHashes.implementation,poolManager:d.poolManager,positionManager:d.positionManager,stateView:d.stateView,serviceFeeRecipient:d.serviceFeeRecipient,nextOwnerNonce:0n},
+    implementation:{factory:d.factory,implementation:d.implementation,implementationVersion:4n,poolManager:d.poolManager,positionManager:d.positionManager,stateView:d.stateView,serviceFeeRecipient:d.serviceFeeRecipient,readHelper:d.readHelper,executionEngine:d.engine,
+      readHelperCodeHash:d.codeHashes.readHelper,executionEngineCodeHash:d.codeHashes.engine,poolManagerCodeHash:d.codeHashes.poolManager,positionManagerCodeHash:d.codeHashes.positionManager,stateViewCodeHash:d.codeHashes.stateView},
+    positionManager:{poolManager:d.poolManager},stateView:{poolManager:d.poolManager},readHelper:{positionManager:d.positionManager,stateView:d.stateView},
+    engine:{factory:d.factory,readHelper:d.readHelper,routingHelper:d.routing,priceGuard:d.priceGuard,readHelperHash:d.codeHashes.readHelper,routingHelperHash:d.codeHashes.routing,priceGuardHash:d.codeHashes.priceGuard},
+    priceGuard:{publisher:d.pricePublisher},
+  };
+  const original = async (method,params) => {
+    if (method==='eth_accounts') return [owner];
+    if (method==='eth_chainId') return '0x1237';
+    if (method==='eth_getBlockByNumber') return {number:'0x10',hash:hexOf(0xbb,32)};
+    if (method==='eth_getCode') return Object.entries(d).find(([role,address]) => componentNames.includes(role) && address===params[0])
+      ? code[componentNames.find(role=>d[role]===params[0])] : params[0]===poolKey.currency0||params[0]===poolKey.currency1?'0x6000':'0x';
+    if (method==='eth_call') {
+      const {to,data}=params[0], {functionName,args}=decodeFunctionData({abi:sequenceAbi,data});
+      let result;
+      const role=Object.keys(links).find(name=>d[name]===to);
+      if (role && Object.hasOwn(links[role],functionName)) result=links[role][functionName];
+      else if (to===d.positionManager && functionName==='ownerOf') result=owner;
+      else if (to===d.positionManager && functionName==='getPoolAndPositionInfo') result=[poolKey,packed];
+      else if (to===d.positionManager && functionName==='getApproved') result=zeroAddress;
+      else if (to===d.factory && functionName==='predictVault') result=predicted.vault;
+      else throw new Error(`unexpected read ${functionName} on ${to}`);
+      return encodeFunctionResult({abi:sequenceAbi,functionName,result});
+    }
+    throw new Error(`unexpected ${method}`);
+  };
+  const calls={};
+  for (const [role,names] of Object.entries(staticCalls)) {
+    calls[role]={};
+    for (const name of names) calls[role][name]=await original('eth_call',[{to:d[role],data:encodeFunctionData({abi:sequenceAbi,functionName:name,args:name==='nextOwnerNonce'?[owner]:[]})},'0x10']);
+  }
+  const root={tokenId:rootTokenId.toString(),ownerOf:await original('eth_call',[{to:d.positionManager,data:encodeFunctionData({abi:sequenceAbi,functionName:'ownerOf',args:[rootTokenId]})},'0x10']),
+    getPoolAndPositionInfo:await original('eth_call',[{to:d.positionManager,data:encodeFunctionData({abi:sequenceAbi,functionName:'getPoolAndPositionInfo',args:[rootTokenId]})},'0x10']),
+    getApproved:await original('eth_call',[{to:d.positionManager,data:encodeFunctionData({abi:sequenceAbi,functionName:'getApproved',args:[rootTokenId]})},'0x10']),
+    predictVault:await original('eth_call',[{to:d.factory,data:encodeFunctionData({abi:sequenceAbi,functionName:'predictVault',args:[owner,0n]})},'0x10']),
+    predictedSequenceId:predicted.id,predictedVault:predicted.vault,currency0:poolKey.currency0,currency1:poolKey.currency1,
+    code:{currency0:'0x6000',currency1:'0x6000',predictedVault:'0x'}};
+  const snapshot={schemaVersion:1,contractVersion:'1.0.0-rc.1',chainId:4663,owner,tokenId:rootTokenId.toString(),blockNumber:16,
+    blockHash:hexOf(0xbb,32),code,calls,recent:[],root};
+  const wallet={...base.wallet,request:(method,params)=>method==='eth_call' && decodeFunctionData({abi:sequenceAbi,data:params[0].data}).functionName==='implementation'
+    ? Promise.reject(new Error('private wallet refusal')) : original(method,params)};
+  const client=createSequenceClient(wallet,d,()=>1000,async()=>d,async()=>snapshot);
+  const found=await client.inspectRoot(rootTokenId);
+  assert.equal(found.poolId,poolId);assert.equal(found.vault,predicted.vault);assert.equal(found.approved,zeroAddress);
+  const foreign=structuredClone(snapshot);foreign.root.ownerOf=encodeFunctionResult({abi:sequenceAbi,functionName:'ownerOf',result:hexOf(0xdd,20)});
+  const tampered=createSequenceClient(wallet,d,()=>1000,async()=>d,async()=>foreign);
+  await assert.rejects(tampered.inspectRoot(rootTokenId),/deployment_identity_changed/);
+  let lateNow=1000, walletReads=0, snapshotReads=0;
+  const lateWallet={...base.wallet,request:(method,params)=>{
+    walletReads++;
+    if(method==='eth_call' && decodeFunctionData({abi:sequenceAbi,data:params[0].data}).functionName==='publisher'){
+      lateNow=1028;
+      return Promise.reject(new Error('late private wallet refusal'));
+    }
+    return original(method,params);
+  }};
+  const late=createSequenceClient(lateWallet,d,()=>lateNow,async()=>d,async()=>{
+    snapshotReads++;lateNow+=17;return snapshot;
+  });
+  assert.equal((await late.inspectRoot(rootTokenId)).poolId,poolId);
+  assert.ok(walletReads>=43,`wallet reads before late fallback: ${walletReads}`);
+  assert.equal(snapshotReads,1);
+  lateNow=1000;
+  const overBudget=createSequenceClient(lateWallet,d,()=>lateNow,async()=>d,async()=>{
+    lateNow+=26;return snapshot;
+  });
+  await assert.rejects(overBudget.inspectRoot(rootTokenId),/sequence_read_timeout/);
+});
+
+test('sequence preparation never uses the read snapshot after a wallet refusal', async () => {
+  const chain = fakeChain({sequences:0});
+  const original = chain.wallet.request;
+  let snapshots = 0;
+  const wallet = {...chain.wallet,request:(method,params) => method==='eth_getCode' && params[0]===chain.d.factory
+    ? Promise.reject(new Error('wallet read refused')):original(method,params)};
+  const client = createSequenceClient(wallet,chain.d,()=>1000,async()=>chain.d,async()=>{snapshots++;throw new Error('never called');});
+  await assert.rejects(client.create({automationMode:'compound',rootTokenId:100n,baseIsCurrency0:true,
+    consentToUncollectedFees:true,triggerDistanceBps:100,maxOverlapBps:100,
+    minimumIntervalSeconds:60,maxPositions:1,upsideBps:100,maxSlippageBps:100,
+    maxPriceImpactBps:100,maxGasCostWei:1n,maxObservationAgeSeconds:60,
+    forecastHorizonSeconds:3600},{}),/wallet read refused/);
+  assert.equal(snapshots,0);
+  assert.equal(chain.log.includes('claimNonce'),false);
+});
+
+test('disabled snapshot bridge preserves the closed wallet read error without replaying reads', async () => {
+  const chain=fakeChain({sequences:0}), original=chain.wallet.request;
+  let rejected=0, snapshots=0;
+  const wallet={...chain.wallet,request:(method,params)=>{
+    if(method==='eth_call' && decodeFunctionData({abi:sequenceAbi,data:params[0].data}).functionName==='implementation'){
+      rejected++;return Promise.reject(new Error('private provider data'));
+    }
+    return original(method,params);
+  }};
+  const client=createSequenceClient(wallet,{...chain.d,expiresAt:0},()=>1000,undefined,async()=>{
+    snapshots++;throw new Error('sequence_read_snapshot_unavailable');
+  });
+  await assert.rejects(client.recent(),error=>{
+    assert.equal(error.message,'sequence_read_call');
+    assert.equal(sequenceReadStage(error),'factory_implementation');
+    assert.equal(JSON.stringify(error).includes('private provider data'),false);
+    return true;
+  });
+  assert.equal(rejected,3);
+  assert.equal(snapshots,1);
+  assert.equal(chain.log.includes('claimNonce'),false);
 });
 
 test('owner sequence reads distinguish an undecodable contract result and their own deadline', async () => {

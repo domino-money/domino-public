@@ -1084,15 +1084,15 @@
     },
     {
       "path": "backend/read_api.py",
-      "sha256": "79de375a34c3c5c1837cbbe5507bb786fb7fd84585d3c09a5ef37ec39c4ab8a8"
+      "sha256": "0dd88342d7310c4e5a9f66f35385ad2a84cb925fd8208aabec8216f4c53b7fc5"
     },
     {
       "path": "backend/read_service.py",
-      "sha256": "9ac4ce210ad2ed266d040c559766e13fa15c1dd969c3c6d386cd83ef463c7b26"
+      "sha256": "10ee84a5e5c1c1c52e989b1b7fb3b55c3b4219065fc957e31b0c27451df09c90"
     },
     {
       "path": "backend/rpc_failover.py",
-      "sha256": "4608bc2a95842219680482c8e7bd3414a037418743ad066971bd91e4fcd1ab49"
+      "sha256": "56ad3354fe3e3147e6f6954d90963612eb586f99b7e8ea0c607a986774223edb"
     },
     {
       "path": "backend/rpc_config.py",
@@ -1116,7 +1116,7 @@
     },
     {
       "path": "backend/read_gateway.py",
-      "sha256": "a0cdb688a87129bba53f4eebbd2fc11837ea8a99560d934380cf4a3e29fd4464"
+      "sha256": "caecf6685aedd4d0b81c27c46956dc6027c81f8e41f0f715baf8865f68192dbf"
     },
     {
       "path": "backend/bridge_state.py",
@@ -1124,7 +1124,7 @@
     },
     {
       "path": "backend/bridge_http.py",
-      "sha256": "6935b953b3200f69a8d964b8125ef88820747b5c1d629153dcf7db7c7b2a5977"
+      "sha256": "20708626ee8039aea592bf526d6911f098628b548f755f10eccd178c5589a87b"
     },
     {
       "path": "backend/metrics_service.py",
