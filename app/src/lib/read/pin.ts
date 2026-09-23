@@ -109,5 +109,5 @@ export const PERFORMANCE_V2_PIN = {
 /** Sanitized private execution status, finalized receipts and short-lived service availability. */
 export const EXECUTION_V1_PIN = {
   version: '1.0.0-rc.1',
-  manifestSha256: '3007b262e38b63f39f1a2a57b9ddea5df2f34519e2ba918939a1126a40655434',
+  manifestSha256: '5b00de7408e658a4a1a1ee1190037744c4d48b0a1b8248e5e96217be81a69b75',
 } as const

@@ -6,11 +6,13 @@ import json
 import os
 import sys
 import tempfile
+import time
 import unittest
 from unittest.mock import Mock, patch
 
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]))
 from fastapi.testclient import TestClient
+from discovery import CHAIN_ID, SNAPSHOT_LOOPBACK_RPC
 from onboarding_auth import OnboardingAuth
 from execution_status import *
 import test_performance_api as auth_fixture
@@ -157,8 +159,45 @@ class ExecutionStatusStartupTests(unittest.TestCase):
             'proxy_headers':False,'access_log':False,'server_header':False,'limit_concurrency':16})
         gateway,lock=status_gateway(self.path)
         try:
+            self.assertEqual(gateway.service.auth.checker.urls,
+                             ('https://rpc.mainnet.chain.robinhood.com',))
             with self.assertRaises((OSError,ValueError)):status_gateway(self.path)
         finally:os.close(lock)
+
+    def test_private_status_profile_uses_only_pinned_loopback_for_eoa_check(self):
+        from execution_status_runtime import status_gateway
+        calls=[]
+        block={'number':'0xa','hash':'0x'+'a'*64,'timestamp':hex(int(time.time()))}
+        def local_rpc(url,body):
+            calls.append((url,body['method'],body['params']))
+            result={'eth_chainId':hex(CHAIN_ID),'eth_getBlockByNumber':block,
+                    'eth_getCode':'0x'}[body['method']]
+            return {'jsonrpc':'2.0','id':body['id'],'result':result}
+        self.config['session']['rpcEndpoint']=SNAPSHOT_LOOPBACK_RPC
+        self.write()
+        with patch('session_chain.snapshot_loopback_http',local_rpc):
+            gateway,lock=status_gateway(self.path)
+        try:
+            checker=gateway.service.auth.checker
+            self.assertEqual(checker.urls,(SNAPSHOT_LOOPBACK_RPC,))
+            self.assertIs(checker.transport,local_rpc)
+            self.assertEqual(checker.check(OWNER)['method'],'plain_eoa')
+            self.assertEqual({url for url,_,_ in calls},{SNAPSHOT_LOOPBACK_RPC})
+            self.assertEqual([method for _,method,_ in calls],
+                             ['eth_chainId','eth_chainId','eth_getBlockByNumber','eth_getCode',
+                              'eth_getBlockByNumber','eth_chainId'])
+        finally:os.close(lock)
+
+    def test_status_profile_rejects_loopback_near_misses_without_fallback(self):
+        from execution_status_runtime import status_gateway
+        for bad in ('http://localhost:18547/','http://127.0.0.2:18547/',
+                    'http://127.0.0.1:8547/',SNAPSHOT_LOOPBACK_RPC.rstrip('/'),
+                    SNAPSHOT_LOOPBACK_RPC+'?route=https://evil.invalid'):
+            self.config['session']['rpcEndpoint']=bad
+            self.write()
+            with self.subTest(endpoint=bad),self.assertRaisesRegex(
+                    ValueError,'^invalid_session_rpc_config$'):
+                status_gateway(self.path)
 
     def test_disabled_start_needs_no_config_and_cannot_enable_from_environment(self):
         from execution_status import main

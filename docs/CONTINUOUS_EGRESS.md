@@ -36,7 +36,7 @@ rendered only for an enabled role and only for the hostnames actually pinned.
 | `deposit` | 8881 | rpc, jwks, uniswap | same |
 | `performance` | 8900 | rpc, jwks | |
 | `performance-collector` | — | rpc | reads chain state, serves nothing |
-| `execution-status` | 8901 | — | database only |
+| `execution-status` | 8901 | jwks | Access assertions, database and exact VM-local EOA RPC at `127.0.0.1:18547` |
 | `execution-signer` | — | rpc | `ExecutionRpc` broadcast |
 | `tunnel` | 20241 | edges, jwks | 7844 to the official edge inventory; connector JWKS |
 | `write` | — | rpc | the indexer's provider |
@@ -58,9 +58,16 @@ For the V4 sequence snapshot, the reader can use the private VM loopback RPC
 at `127.0.0.1:18547`. Set the optional boolean `sequenceSnapshotLoopback` in
 the operator policy input only when that tunnel and the reader's matching
 private configuration are installed. It adds one reader-owned, loopback-only
-TCP rule for port 18547 before the reader's final drop. It grants no other
-service identity or external address. Without this explicit option the
-renderer preserves the earlier reader policy.
+TCP rule for port 18547 before the reader's final drop. The reader option
+grants no other service identity or external address. Without it, the renderer
+preserves the earlier reader policy.
+
+When `execution-status` is enabled, its identity gets a separate rule for the
+same exact loopback port. Its private profile must select
+`http://127.0.0.1:18547/`; the session checker verifies chain 4663 and a fresh
+pinned block before classifying an EOA. This rule does not grant that identity
+an external RPC route or change the reader's snapshot opt-in. Its only external
+destination is the separately pinned Access issuer for JWKS refresh.
 
 ## Input
 

@@ -257,18 +257,37 @@ class ContinuousEgressTests(unittest.TestCase):
         self.assertNotIn('exact auth origin', nft(off))
         self.assertNotIn('/etc/systemd/system/domino-auth.service.d/' + policy.DROPIN, off['artifacts'])
 
-    def test_a_family_without_external_needs_gets_a_listener_and_nothing_else(self):
+    def test_status_identity_gets_only_pinned_jwks_and_exact_loopback_rpc(self):
         result = policy.render(snapshot(LIVE_ENABLED + ('execution-status',)))
         chains, sets = parse(nft(result))
-        self.assertNotIn('execution_status_ipv4', sets)
-        self.assertEqual(len(chains['execution_status']), 2)
+        self.assertEqual(result['roleHosts']['execution-status'],[ISSUER])
+        self.assertEqual(sets['execution_status_ipv4'],2)
+        self.assertEqual(len(chains['execution_status']), 4)
+        self.assertIn('oifname != "lo" ip daddr @execution_status_ipv4 tcp dport 443 '
+                      'counter accept comment "operator pinned external"',chains['execution_status'])
+        self.assertEqual(chains['execution_status'][2],
+                         'oifname "lo" ip saddr 127.0.0.1 ip daddr 127.0.0.1 '
+                         'tcp dport 18547 ct direction original counter accept '
+                         'comment "private execution-status EOA RPC"')
+        self.assertTrue(chains['execution_status'][-1].endswith('drop'))
+        self.assertNotIn('tcp dport 8547', nft(result))
+        for role in ('auth','onboarding','deposit','performance'):
+            self.assertNotIn('tcp dport 18547','\n'.join(chains[role]))
         self.assertIn('tcp dport 8901 ct direction original counter accept comment "exact execution-status origin"',
                       '\n'.join(chains['tunnel']))
         text = dropin(result, 'execution-status')
-        self.assertNotIn('BindReadOnlyPaths', text)
-        self.assertEqual(text.count('IPAddressAllow='), 1 + 1)
+        self.assertEqual(text.count('IPAddressAllow='), 1 + 1 + 2)
+        self.assertIn('IPAddressAllow=14.0.0.1/32\n',text)
+        self.assertIn('IPAddressAllow=14.0.0.2/32\n',text)
+        self.assertIn('14.0.0.1 '+ISSUER+'\n',result['artifacts'][policy.ROOT+'/execution-status.hosts'])
+        self.assertIn('BindReadOnlyPaths='+policy.ROOT+'/execution-status.hosts:/etc/hosts\n',text)
         self.assertIn('--port 8901 --enable --config /run/domino-financial-execution-status-config/profile.json\n', text)
-        self.assertNotIn(policy.ROOT + '/execution-status.hosts', result['artifacts'])
+
+    def test_status_identity_requires_jwks_pin_and_does_not_gain_public_rpc(self):
+        isolated = policy.render(snapshot(('execution-status',),{ISSUER:PINS[ISSUER]}))
+        self.assertEqual(isolated['roleHosts']['execution-status'],[ISSUER])
+        self.assertNotIn('rpc.mainnet.chain.robinhood.com',nft(isolated))
+        self.reject(snapshot(('execution-status',),{}),'incomplete_host_inventory')
 
     def test_the_collector_and_the_signer_get_egress_but_no_listener_or_enable_flag(self):
         result = policy.render(snapshot(LIVE_ENABLED + ('performance-collector', 'execution-signer')))

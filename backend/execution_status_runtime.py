@@ -46,9 +46,10 @@ def private_file(path,maximum):
 
 def status_gateway(path):
     from bridge_identity import AccessVerifier
+    from discovery import SNAPSHOT_LOOPBACK_RPC
     from execution_status import ExecutionStatusGateway, ExecutionStatusReader, ExecutionStatusService
     from onboarding_auth import OnboardingAuth
-    from rpc_config import rpc_hosts,rpc_endpoint
+    from rpc_config import rpc_hosts
     from session_api import acquire_session_lock
     from session_chain import PlainEoaChecker
     from session_siwe import SiwePolicy
@@ -66,12 +67,13 @@ def status_gateway(path):
     if (type(session) is not dict or set(session)!={'origin','abuseSecretFile','rpcEndpoint','rpcAllowedHosts'}
             or type(access) is not dict or set(access)!={'issuer','audience','serviceId'}):raise ValueError()
     SiwePolicy(session['origin'])
-    hosts=rpc_hosts(session['rpcAllowedHosts']);endpoint=rpc_endpoint(session['rpcEndpoint'],hosts)
+    hosts=rpc_hosts(session['rpcAllowedHosts'])
     secret=private_file(session['abuseSecretFile'],65).decode('ascii').removesuffix('\n')
     if not re.fullmatch(r'[0-9a-f]{64}',secret):raise ValueError()
     verifier=AccessVerifier(access['issuer'],access['audience'],access['serviceId'])
     store=SessionStore(database,abuse_secret=bytes.fromhex(secret))
-    checker=PlainEoaChecker((endpoint,),allowed_hosts=hosts)
+    checker=PlainEoaChecker((session['rpcEndpoint'],),allowed_hosts=hosts,
+                            execution_status_loopback=session['rpcEndpoint']==SNAPSHOT_LOOPBACK_RPC)
     service=ExecutionStatusService(OnboardingAuth(store,checker),ExecutionStatusReader(database))
     gateway=ExecutionStatusGateway(service=service,verifier=verifier,origin=session['origin'],enabled=True)
     fd=private_directory(config['runtimeDirectory'])

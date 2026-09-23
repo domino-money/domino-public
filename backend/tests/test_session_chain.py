@@ -1,11 +1,14 @@
 """Fresh plain-EOA checks with deterministic synthetic providers only."""
 from copy import deepcopy
+import io
+import json
 from pathlib import Path
 import sys
 import unittest
+from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from discovery import CHAIN_ID, DataError, RPC_URL
+from discovery import CHAIN_ID, DataError, RPC_URL, SNAPSHOT_LOOPBACK_RPC
 from read_deadline import read_deadline
 from rpc_config import DEFAULT_RPC_HOSTS
 from session_chain import PlainEoaChecker
@@ -121,6 +124,56 @@ class EoaTests(unittest.TestCase):
         self.assertEqual(self.provider.calls,[])
         with self.assertRaisesRegex(SessionError,'^account_check_unavailable$'):
             self.checker.check('not-an-address')
+        self.assertEqual(self.provider.calls,[])
+
+    def test_status_loopback_uses_only_exact_local_transport_and_pinned_chain(self):
+        with patch('session_chain.snapshot_loopback_http', self.provider):
+            checker=PlainEoaChecker((SNAPSHOT_LOOPBACK_RPC,),clock=lambda:1010,
+                                    execution_status_loopback=True)
+        self.assertEqual(checker.urls,(SNAPSHOT_LOOPBACK_RPC,))
+        self.assertIs(checker.transport,self.provider)
+        self.assertEqual(checker.check(ADDRESS)['blockHash'],BLOCK['hash'])
+        self.assertEqual({url for url,_,_ in self.provider.calls},{SNAPSHOT_LOOPBACK_RPC})
+        self.provider.chain=1
+        with self.assertRaisesRegex(SessionError,'^account_check_unavailable$'):
+            checker.check(ADDRESS)
+
+    def test_status_loopback_http_transport_performs_chain_and_code_reads(self):
+        methods=[]
+        def opener(request,timeout):
+            self.assertEqual(request.full_url,SNAPSHOT_LOOPBACK_RPC)
+            self.assertGreater(timeout,0)
+            body=json.loads(request.data)
+            method=body['method'];methods.append(method)
+            result={'eth_chainId':hex(CHAIN_ID),'eth_getBlockByNumber':BLOCK,
+                    'eth_getCode':'0x'}[method]
+            return io.BytesIO(json.dumps({'jsonrpc':'2.0','id':body['id'],
+                                          'result':result}).encode())
+        checker=PlainEoaChecker((SNAPSHOT_LOOPBACK_RPC,),clock=lambda:1010,
+                                execution_status_loopback=True)
+        with patch('discovery._LOOPBACK_JSON_OPENER',opener):
+            self.assertEqual(checker.check(ADDRESS)['method'],'plain_eoa')
+        self.assertEqual(methods,['eth_chainId','eth_chainId','eth_getBlockByNumber',
+                                  'eth_getCode','eth_getBlockByNumber','eth_chainId'])
+
+    def test_status_loopback_rejects_near_misses_fallbacks_and_transport_override(self):
+        for url in ('http://localhost:18547/','http://127.0.0.2:18547/',
+                    'http://127.0.0.1:8547/',SNAPSHOT_LOOPBACK_RPC.rstrip('/'),
+                    SNAPSHOT_LOOPBACK_RPC+'?url=https://evil.invalid'):
+            for enabled in (False,True):
+                with self.subTest(url=url,enabled=enabled), self.assertRaisesRegex(
+                        ValueError,'^invalid_session_rpc_config$'):
+                    PlainEoaChecker((url,),execution_status_loopback=enabled)
+        for urls,kwargs in (((SNAPSHOT_LOOPBACK_RPC,RPC_URL),{}),
+                            ((SNAPSHOT_LOOPBACK_RPC,),{'transport':self.provider}),
+                            ((RPC_URL,),{})):
+            with self.subTest(urls=urls,kwargs=kwargs), self.assertRaisesRegex(
+                    ValueError,'^invalid_session_rpc_config$'):
+                PlainEoaChecker(urls,execution_status_loopback=True,**kwargs)
+        with self.assertRaisesRegex(ValueError,'^invalid_session_rpc_config$'):
+            PlainEoaChecker((SNAPSHOT_LOOPBACK_RPC,),execution_status_loopback=1)
+        with self.assertRaisesRegex(ValueError,'^invalid_session_rpc_config$'):
+            PlainEoaChecker((SNAPSHOT_LOOPBACK_RPC,))
         self.assertEqual(self.provider.calls,[])
 
 

@@ -8,7 +8,8 @@ import math
 import re
 import time
 
-from discovery import CHAIN_ID, DataError, address as normalized_address, json_http, parse_block, quantity
+from discovery import (CHAIN_ID, SNAPSHOT_LOOPBACK_RPC, DataError, address as normalized_address,
+                       json_http, parse_block, quantity, snapshot_loopback_http)
 from read_deadline import read_deadline
 from rpc_config import DEFAULT_RPC_HOSTS, MAX_RPC_ENDPOINTS, rpc_endpoint, rpc_hosts
 from rpc_failover import FailoverReadRpc
@@ -22,13 +23,24 @@ MAX_FUTURE_SECONDS = 15
 
 
 class PlainEoaChecker:
-    def __init__(self, rpc_urls, *, allowed_hosts=DEFAULT_RPC_HOSTS, transport=json_http, clock=time.time):
+    def __init__(self, rpc_urls, *, allowed_hosts=DEFAULT_RPC_HOSTS, transport=json_http,
+                 clock=time.time, execution_status_loopback=False):
         # Only explicitly supplied operator configuration can select destinations.
         if not isinstance(rpc_urls, (tuple, list)) or not 1 <= len(rpc_urls) <= MAX_RPC_ENDPOINTS:
             raise ValueError('invalid_session_rpc_config')
         try:
             hosts = rpc_hosts(allowed_hosts)
-            urls = tuple(rpc_endpoint(url, hosts) for url in rpc_urls)
+            if type(execution_status_loopback) is not bool:
+                raise ValueError('invalid_loopback_opt_in')
+            if execution_status_loopback:
+                # One private status-only route, with the existing no-proxy,
+                # no-redirect transport. No external fallback or injected
+                # transport can silently replace its destination.
+                if tuple(rpc_urls) != (SNAPSHOT_LOOPBACK_RPC,) or transport is not json_http:
+                    raise ValueError('invalid_status_loopback')
+                urls, transport = (SNAPSHOT_LOOPBACK_RPC,), snapshot_loopback_http
+            else:
+                urls = tuple(rpc_endpoint(url, hosts) for url in rpc_urls)
             if len(set(urls)) != len(urls):
                 raise ValueError('duplicate_endpoint')
         except (DataError, ValueError, TypeError):

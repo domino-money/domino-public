@@ -148,7 +148,7 @@ The explicit JSON configuration has these exact keys:
   "session": {
     "origin": "https://domino.money",
     "abuseSecretFile": "/absolute/private/session-abuse-secret",
-    "rpcEndpoint": "https://rpc.mainnet.chain.robinhood.com",
+    "rpcEndpoint": "http://127.0.0.1:18547/",
     "rpcAllowedHosts": ["rpc.mainnet.chain.robinhood.com"]
   },
   "access": {
@@ -166,6 +166,14 @@ lowercase hexadecimal characters, optionally followed by one newline. Database
 settings cannot choose a role: session authentication uses `domino_session_auth`
 and status reads use `domino_execution_reader`. The RPC endpoint is used only
 for the existing plain-EOA session check, with no fallback or environment override.
+On the production status identity, use exactly `http://127.0.0.1:18547/` after
+qualifying the independently managed VM-local RPC tunnel for chain 4663. That
+one endpoint selects the bounded no-proxy, no-redirect loopback transport.
+Other HTTP endpoints and mixed local/external fallbacks are rejected. HTTPS DNS
+endpoints still pass the existing validator, but the status identity's egress
+policy does not grant external RPC access.
+The `rpcAllowedHosts` field remains in the fixed profile schema but does not
+select an external fallback when this exact loopback endpoint is used.
 
 The config, secret and runtime directory must be outside every product checkout,
 owned by the service user, with file mode `0600` and directory mode `0700`.

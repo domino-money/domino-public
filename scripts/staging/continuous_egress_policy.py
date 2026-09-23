@@ -60,7 +60,7 @@ ISSUER = re.compile(r'[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.cloudflareaccess\.co
 CLASSES = {'read': ('rpc', 'analytics'), 'gateway': ('jwks',),
            'auth': ('rpc', 'jwks'), 'onboarding': ('rpc', 'jwks', 'uniswap'),
            'deposit': ('rpc', 'jwks', 'uniswap'), 'performance': ('rpc', 'jwks'),
-           'performance-collector': ('rpc',), 'execution-status': (),
+           'performance-collector': ('rpc',), 'execution-status': ('jwks',),
            'execution-signer': ('rpc',), 'tunnel': ('edges', 'jwks'),
            'write': ('rpc',), 'operator': (), 'admin': ()}
 # A class an enabled role cannot run without. Analytics is optional for the
@@ -251,6 +251,10 @@ def render(snapshot):
                 lines.append(prefix + 'oifname "lo" ip saddr 127.0.0.1 ip daddr 127.0.0.1 '
                              f'tcp dport {SNAPSHOT_RPC_PORT} ct direction original counter accept '
                              'comment "private V4 snapshot RPC"')
+            if role == 'execution-status':
+                lines.append(prefix + 'oifname "lo" ip saddr 127.0.0.1 ip daddr 127.0.0.1 '
+                             f'tcp dport {SNAPSHOT_RPC_PORT} ct direction original counter accept '
+                             'comment "private execution-status EOA RPC"')
             if role == 'tunnel':
                 for protocol in ('tcp', 'udp'):
                     lines.append(prefix + f'oifname "lo" ip daddr 127.0.0.53 {protocol} dport 53 '
