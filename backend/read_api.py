@@ -308,6 +308,7 @@ def create_app(service=None, *, gate=None, read_budget_seconds=60,
             public_data = PublicDataService(PgPublicData(catalogue))
         service = ReadService(rpc_urls=configured_rpc_urls(config, os.environ.get('DOMINO_DISCOVERY_RPC_URL')),
                               snapshot_rpc_version=config.get('version'),
+                              snapshot_loopback=config.get('sequenceSnapshotLoopback', False),
                               historical_rpc_urls=(configured_history_rpc_urls(config)
                                                    if config.get('version') in (3,4) else None),
                               inventory_url=os.environ.get('DOMINO_INVENTORY_RPC_URL') or config.get('inventoryUrl'),

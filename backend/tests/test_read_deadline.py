@@ -7,11 +7,13 @@ import sys
 from threading import Event, Thread
 import time
 import unittest
+import urllib.request
 from unittest.mock import Mock, patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from discovery import (DataError, MAX_RESPONSE_BYTES, ReadRpc, _DeadlineHTTPResponse,
-                       _deadline_connect, current_read_deadline, json_http)
+                       _deadline_connect, current_read_deadline, json_http,
+                       SNAPSHOT_LOOPBACK_RPC, snapshot_loopback_http)
 from market_cache import MarketCache
 from market_data import GeckoMarketData
 from read_deadline import check_read_deadline, read_deadline
@@ -65,6 +67,30 @@ class SlowSocket:
 
 
 class DeadlineTests(unittest.TestCase):
+    def test_snapshot_loopback_transport_accepts_only_fixed_no_proxy_endpoint(self):
+        import discovery
+        handlers = discovery._LOOPBACK_JSON_OPENER.__self__.handlers
+        self.assertFalse(any(isinstance(h, urllib.request.ProxyHandler) for h in handlers))
+        self.assertTrue(any(isinstance(h, discovery.NoRedirect) for h in handlers))
+        self.assertTrue(any(isinstance(h, discovery._DeadlineHTTPHandler) for h in handlers))
+        body = b'{"jsonrpc":"2.0","id":1,"result":"0x1237"}'
+        with self.assertRaisesRegex(DataError, '^https_endpoint_required$'):
+            json_http(SNAPSHOT_LOOPBACK_RPC, {'jsonrpc': '2.0'})
+        with patch('discovery._LOOPBACK_JSON_OPENER', return_value=io.BytesIO(body)) as opener:
+            self.assertEqual(snapshot_loopback_http(SNAPSHOT_LOOPBACK_RPC, {'jsonrpc': '2.0'})['result'],
+                             '0x1237')
+            self.assertEqual(opener.call_args.args[0].full_url, SNAPSHOT_LOOPBACK_RPC)
+            with self.assertRaisesRegex(DataError, '^https_endpoint_required$'):
+                json_http('https://example.test/', {'jsonrpc': '2.0'},
+                          opener=opener, snapshot_loopback=True)
+            for bad in ('http://localhost:18547/', 'http://127.0.0.2:18547/',
+                        'http://127.0.0.1:8547/', SNAPSHOT_LOOPBACK_RPC + 'other',
+                        SNAPSHOT_LOOPBACK_RPC + '?url=https://evil.invalid'):
+                with self.subTest(url=bad), self.assertRaisesRegex(
+                        DataError, '^https_endpoint_required$'):
+                    snapshot_loopback_http(bad, {'jsonrpc': '2.0'})
+            self.assertEqual(opener.call_count, 1)
+
     def test_nested_context_never_renews_budget_and_restores_outer(self):
         clock = FakeClock()
         with read_deadline(15, clock=clock) as outer:

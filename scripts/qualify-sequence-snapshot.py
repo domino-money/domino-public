@@ -19,7 +19,8 @@ def main():
     request = SequenceSnapshotRequest.model_validate({'owner': args.owner, 'tokenId': args.token_id})
     configured = load_config()
     service = ReadService(rpc_urls=configured_rpc_urls(configured),
-                          snapshot_rpc_version=configured.get('version'))
+                          snapshot_rpc_version=configured.get('version'),
+                          snapshot_loopback=configured.get('sequenceSnapshotLoopback', False))
     started = time.monotonic()
     result = service.sequence_snapshot(request.owner, request.tokenId)
     validate_snapshot_response('sequence-snapshot', result)

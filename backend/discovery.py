@@ -234,7 +234,40 @@ class _DeadlineHTTPSHandler(urllib.request.HTTPSHandler):
         return self.do_open(_DeadlineHTTPSConnection, request, context=self._context)
 
 
+class _DeadlineHTTPConnection(http.client.HTTPConnection):
+    def __init__(self, *args, **kwargs):
+        self.deadline = current_read_deadline()
+        super().__init__(*args, **kwargs)
+        self._create_connection = partial(_deadline_connect, deadline=self.deadline)
+        if self.deadline is not None:
+            self.response_class = partial(_DeadlineHTTPResponse, deadline=self.deadline)
+
+    def connect(self):
+        if self.deadline is not None:
+            self.timeout = self.deadline.timeout(self.timeout)
+        super().connect()
+        if self.deadline is not None:
+            self.sock.settimeout(self.deadline.remaining())
+
+    def send(self, data):
+        if self.deadline is not None:
+            remaining = self.deadline.remaining()
+            if self.sock is not None:
+                self.sock.settimeout(remaining)
+        super().send(data)
+        if self.deadline is not None:
+            self.deadline.remaining()
+
+
+class _DeadlineHTTPHandler(urllib.request.HTTPHandler):
+    def http_open(self, request):
+        return self.do_open(_DeadlineHTTPConnection, request)
+
+
 _JSON_OPENER = urllib.request.build_opener(NoRedirect(), _DeadlineHTTPSHandler()).open
+SNAPSHOT_LOOPBACK_RPC = 'http://127.0.0.1:18547/'
+_LOOPBACK_JSON_OPENER = urllib.request.build_opener(
+    urllib.request.ProxyHandler({}), NoRedirect(), _DeadlineHTTPHandler()).open
 
 
 def _strict_json_object(pairs):
@@ -251,13 +284,18 @@ def _reject_json_constant(value):
 
 
 def json_http(url, body=None, *, timeout=12, opener=_JSON_OPENER, headers=None,
-              max_bytes=MAX_RESPONSE_BYTES):
+              max_bytes=MAX_RESPONSE_BYTES, snapshot_loopback=False):
     try:
         parsed = urlsplit(url)
-        valid = (parsed.scheme == 'https' and parsed.hostname and not parsed.fragment
-                 and not parsed.username and not parsed.password
-                 and (parsed.port is None or 1 <= parsed.port <= 65535)
-                 and not any(ord(char) < 32 or ord(char) == 127 for char in url))
+        if snapshot_loopback is True:
+            valid = url == SNAPSHOT_LOOPBACK_RPC and opener is _LOOPBACK_JSON_OPENER
+        elif snapshot_loopback is False:
+            valid = (parsed.scheme == 'https' and parsed.hostname and not parsed.fragment
+                     and not parsed.username and not parsed.password
+                     and (parsed.port is None or 1 <= parsed.port <= 65535)
+                     and not any(ord(char) < 32 or ord(char) == 127 for char in url))
+        else:
+            valid = False
     except ValueError:
         valid = False
     if not valid:
@@ -306,6 +344,14 @@ def json_http(url, body=None, *, timeout=12, opener=_JSON_OPENER, headers=None,
         raise
     except (UnicodeError, ValueError, RecursionError, InvalidOperation):
         raise DataError('invalid_json') from None
+
+
+def snapshot_loopback_http(url, body=None, *, timeout=12):
+    """Fixed no-proxy HTTP hop to the VM-local, externally encrypted RPC tunnel."""
+    if url != SNAPSHOT_LOOPBACK_RPC:
+        raise DataError('https_endpoint_required')
+    return json_http(url, body, timeout=timeout, opener=_LOOPBACK_JSON_OPENER,
+                     snapshot_loopback=True)
 
 
 class ReadRpc:

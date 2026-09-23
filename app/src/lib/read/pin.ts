@@ -13,7 +13,7 @@
  * bytes, not which commit produced them.
  *
  * Three independent contracts are pinned below, each with its own version and
- * its own digest: read-v1 (rc.3, unchanged), read-v2's opt-in pool APR
+ * its own digest: read-v1 (rc.3), read-v2's opt-in pool APR
  * estimates, and read-v3's stored public observations, paged discovery and
  * denominated history. read-v3 is additive — it took nothing away from v1 or
  * v2, and the Worker serves all three at once.
@@ -22,7 +22,9 @@
  * persisted public token data, and acquisition separated from reads. Later
  * producer commits changed backend sources the manifests digest without
  * changing a route, a schema or a version, which is why the versions here did
- * not move while the digests did. The onboarding-v1 and deposit-v1 digests
+ * not move while the digests did. The private V4 snapshot loopback route
+ * updated read-v1 and read-v2 source hashes without changing their wire
+ * contracts. The onboarding-v1 and deposit-v1 digests
  * moved again with the slippage bound: every request that carries a
  * `slippageBps` now takes 10 to 500 basis points (lib/create/slippage.ts holds
  * the same numbers), and the versions stayed where they were.
@@ -40,7 +42,7 @@ export const PRODUCER_PIN = {
   packages: {
     'read-v1': {
       version: '1.1.0-rc.3',
-      manifestSha256: '9d1c5ad293bade7e9d4fd181ebb8ba4603502a56c9d98e3834b895bb6f855085',
+      manifestSha256: 'd9d6c4aa1fb974d9fc9dc676d3217504d8ba6c70ebf1daf8aeef58d33c492a57',
     },
     'session-v1': {
       version: '3.0.0-rc.3',
@@ -60,7 +62,7 @@ export const PRODUCER_PIN = {
 /** Separately opted-in public pool estimates; never accepted as a v1 response. */
 export const READ_V2_PIN = {
   version: '2.0.0-rc.1',
-  manifestSha256: 'a42fa1c5c4df493acfbd7a52903fdd82e1e399da5f8eac8e5415528b86012a34',
+  manifestSha256: '704ce295f5383c2a53402702fe889a7d19bf911a116e80b00187c6889bf0fa71',
 } as const
 
 /** Stored public observations, paged discovery and explicitly denominated history. */

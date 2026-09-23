@@ -19,15 +19,19 @@ def checked_config(data):
         raise DataError('invalid_local_provider_config')
     legacy = {'version', 'rpcUrl', 'inventoryUrl'}
     modern = legacy | {'rpcFallbackUrls', 'rpcAllowedHosts'}
+    loopback = modern | {'sequenceSnapshotLoopback'}
     if (data['version'] == 1 and set(data) == legacy):
         hosts, fallbacks = DEFAULT_RPC_HOSTS, []
     elif ((data['version'] in (2, 4) and set(data) == modern) or
+          (data['version'] == 4 and set(data) == loopback) or
           (data['version'] == 3 and set(data) == modern | {'historicalRpcUrl'})):
         hosts = rpc_hosts(data['rpcAllowedHosts'])
         fallbacks = data['rpcFallbackUrls']
         if not isinstance(fallbacks, list) or len(fallbacks) >= MAX_RPC_ENDPOINTS:
             raise DataError('invalid_rpc_fallback_urls')
     else:
+        raise DataError('invalid_local_provider_config')
+    if 'sequenceSnapshotLoopback' in data and type(data['sequenceSnapshotLoopback']) is not bool:
         raise DataError('invalid_local_provider_config')
     rpc_endpoint(data['rpcUrl'], hosts)
     if data['version'] == 4 and urlsplit(data['rpcUrl']).hostname != LOCAL_RPC_HOST:

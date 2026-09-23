@@ -8,7 +8,7 @@ from pydantic import ValidationError
 from fastapi.testclient import TestClient
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from discovery import DataError
+from discovery import DataError, SNAPSHOT_LOOPBACK_RPC
 from read_api import create_app, ReadGate
 from read_gateway import Gateway, create_gateway
 from bridge_http import LocalReaderHTTP
@@ -82,6 +82,27 @@ class SequenceSnapshotTests(unittest.TestCase):
         self.assertEqual(rpc.url,local)
         self.assertNotIsInstance(rpc,FailoverReadRpc)
         self.assertEqual(read.call_count,1)
+
+    def test_snapshot_loopback_requires_explicit_v4_local_primary_and_never_falls_back(self):
+        local = 'https://rpc.domino.money/SYNTHETIC_LOCAL_TOKEN_123/'
+        public = 'https://rpc.mainnet.chain.robinhood.com'
+        for version, urls in ((3, (local, public)), (4, (public, local)), (4, ())):
+            service = ReadService(rpc_urls=urls, snapshot_rpc_version=version,
+                                  snapshot_loopback=True)
+            with patch('read_service.sequence_snapshot') as read:
+                with self.assertRaisesRegex(DataError, '^upstream_unavailable$'):
+                    service.sequence_snapshot(OWNER)
+                read.assert_not_called()
+        service = ReadService(rpc_urls=(local, public), snapshot_rpc_version=4,
+                              snapshot_loopback=True)
+        with patch('read_service.sequence_snapshot', side_effect=lambda rpc, *_: rpc):
+            rpc = service.sequence_snapshot(OWNER)
+        self.assertEqual(rpc.url, SNAPSHOT_LOOPBACK_RPC)
+        self.assertNotIsInstance(rpc, FailoverReadRpc)
+        with patch('read_service.snapshot_loopback_http', side_effect=DataError('network_unavailable')) as local_http:
+            with self.assertRaisesRegex(DataError, '^network_unavailable$'):
+                rpc.request('eth_chainId', [])
+            local_http.assert_called_once()
 
     def test_fixed_targets_finalized_anchor_and_closed_shape(self):
         rpc = FixedRpc()

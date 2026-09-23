@@ -7,7 +7,7 @@ import re
 
 from discovery import (CHAIN_ID, RPC_URL, ZERO, DataError, DiscoveryReader,
                        ReadRpc, Block, address, bytes32, decode_result, discover,
-                       json_http, parse_block)
+                       json_http, parse_block, SNAPSHOT_LOOPBACK_RPC, snapshot_loopback_http)
 from inventory import AlchemyInventory, CursorCodec
 from rpc_failover import FailoverReadRpc, HistoricalReadRpc
 from rpc_config import LOCAL_RPC_HOST, rpc_endpoint
@@ -74,15 +74,30 @@ def bounded_transport(seconds=60):
     return transport
 
 
+def bounded_snapshot_loopback_transport(seconds=60):
+    parent = current_read_deadline()
+    deadline = ReadDeadline(seconds, parents=(parent,) if parent else ())
+
+    def transport(url, body=None):
+        if url != SNAPSHOT_LOOPBACK_RPC:
+            raise DataError('upstream_unavailable')
+        with use_read_deadline(deadline) as active:
+            return snapshot_loopback_http(url, body, timeout=active.timeout(8))
+    return transport
+
+
 class ReadService:
     def __init__(self, *, rpc_url=RPC_URL, rpc_urls=None, inventory_url=None, historical_rpc_url=None,
                  historical_rpc_urls=None, clock=time.time,
                  rpc_factory=None, inventory=None, cursor_codec=None, transport_factory=bounded_transport,
                  catalogue=None, market_cache=None, snapshot=None, requests=None, public_data=None,
-                 snapshot_rpc_version=None):
+                 snapshot_rpc_version=None, snapshot_loopback=False):
         self.rpc_url, self.inventory_url, self.clock = rpc_url, inventory_url, clock
         self.rpc_urls = tuple(rpc_urls) if rpc_urls is not None else None
         self.snapshot_rpc_version = snapshot_rpc_version
+        if type(snapshot_loopback) is not bool:
+            raise DataError('invalid_local_provider_config')
+        self.snapshot_loopback = snapshot_loopback
         self.historical_rpc_url = historical_rpc_url
         self.historical_rpc_urls = tuple(historical_rpc_urls) if historical_rpc_urls is not None else None
         self.rpc_factory, self.inventory = rpc_factory, inventory
@@ -132,6 +147,10 @@ class ReadService:
             primary = rpc_endpoint(self.rpc_urls[0], (LOCAL_RPC_HOST,))
         except DataError:
             raise DataError('upstream_unavailable') from None
+        if self.snapshot_loopback:
+            return sequence_snapshot(ReadRpc(SNAPSHOT_LOOPBACK_RPC,
+                                             transport=bounded_snapshot_loopback_transport(),
+                                             batch_reads=True), owner, token_id)
         return sequence_snapshot(ReadRpc(primary, transport=self.transport_factory(), batch_reads=True),
                                  owner, token_id)
 

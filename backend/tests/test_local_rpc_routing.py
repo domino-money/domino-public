@@ -39,6 +39,20 @@ class LocalConfigTests(unittest.TestCase):
             self.assertEqual(load_config(path), data)
             self.assertEqual(path.stat().st_mode & 0o777, 0o600)
 
+    def test_snapshot_loopback_opt_in_is_v4_only_and_boolean(self):
+        current = self.config()
+        self.assertEqual(current['version'], 4)
+        self.assertEqual(checked_config({**current, 'sequenceSnapshotLoopback': True})
+                         ['sequenceSnapshotLoopback'], True)
+        self.assertEqual(checked_config({**current, 'sequenceSnapshotLoopback': False})
+                         ['sequenceSnapshotLoopback'], False)
+        for bad in (None, 1, 'true', 'http://127.0.0.1:18547/'):
+            with self.subTest(bad=bad), self.assertRaisesRegex(
+                    DataError, '^invalid_local_provider_config$'):
+                checked_config({**current, 'sequenceSnapshotLoopback': bad})
+        with self.assertRaisesRegex(DataError, '^invalid_local_provider_config$'):
+            checked_config({**current, 'version': 2, 'sequenceSnapshotLoopback': True})
+
     def test_rotation_preserves_sources_and_never_falls_back_to_old_token(self):
         old = self.config()
         data = prepare_local_config(old, 'SYNTHETIC_ROTATED_TOKEN')
@@ -102,8 +116,19 @@ class LocalConfigTests(unittest.TestCase):
              patch('read_api.ReadService') as service, patch.dict('os.environ', {}, clear=True):
             create_app()
         self.assertEqual(service.call_args.kwargs['rpc_urls'], (LOCAL, ALCHEMY))
+        self.assertIs(service.call_args.kwargs['snapshot_loopback'], False)
         self.assertEqual(service.call_args.kwargs['historical_rpc_urls'], (LOCAL, ALCHEMY))
         self.assertEqual(service.call_args.kwargs['inventory_url'], ALCHEMY)
+
+    def test_api_uses_private_v4_snapshot_loopback_opt_in(self):
+        from read_api import create_app
+        config = {**self.config(), 'sequenceSnapshotLoopback': True}
+        with patch('read_api.load_config', return_value=config), \
+             patch('read_api.configured_catalogue', return_value=None), \
+             patch('read_api.ReadService') as service, patch.dict('os.environ', {}, clear=True):
+            create_app()
+        self.assertIs(service.call_args.kwargs['snapshot_loopback'], True)
+        self.assertEqual(service.call_args.kwargs['rpc_urls'], (LOCAL, ALCHEMY))
 
     def test_nft_explicit_block_uses_archive_current_uses_local(self):
         # Exercise the public method's factory selection, not only its helper.
