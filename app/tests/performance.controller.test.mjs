@@ -13,7 +13,7 @@ const require = createRequire(import.meta.url);
 const { createPerformanceController, formatMetricUsd, formatMetricPercent, exactDecimal, enrollmentFailureText, performanceReasonText,
   PERFORMANCE_STATUS_TEXT, ENROLLMENT_STATUS_TEXT, ENROLLMENT_REASON_TEXT, COLLECTION_TEXT, SEQUENCE_LIST_TRIES, PERFORMANCE_RETRY_MS, trackableSequence } = require('../.test-build/app/src/finance/performance.js');
 // Compiled into the test build through performance.ts's import of its types.
-const { createSequenceClient, sequenceAbi, sequenceIdentity, cloneRuntime, sequenceProviderReadError, sequenceReadError, SEQUENCE_LIST_LIMIT, SEQUENCE_MEMBER_STEPS, sequenceIdParameters, poolKeyParameters } = require('../.test-build/app/src/finance/sequence.js');
+const { createSequenceClient, sequenceAbi, sequenceIdentity, cloneRuntime, sequenceProviderReadError, sequenceReadError, sequenceReadStage, SEQUENCE_LIST_LIMIT, SEQUENCE_MEMBER_STEPS, sequenceIdParameters, poolKeyParameters } = require('../.test-build/app/src/finance/sequence.js');
 const { setupAbi, tokenAbi, operationIdParameters } = require('../.test-build/app/src/finance/setup.js');
 const { sequenceDeploymentFrom } = require('../.test-build/app/src/finance/sequence.js');
 const { deploymentFrom } = require('../.test-build/app/src/finance/setup.js');
@@ -444,6 +444,31 @@ test('owner sequence reads classify untrusted wallet failures by RPC method with
   assert.equal(sequenceProviderReadError(new Error(privateReply)).message, 'sequence_read_provider');
   assert.equal(sequenceProviderReadError(new Error('connect_robinhood_wallet')).message, 'connect_robinhood_wallet');
   assert.equal(sequenceReadError(new Error(privateReply)).message, 'sequence_read_unexpected');
+});
+
+test('a rejected owner contract read identifies only its closed contract/function stage', async () => {
+  const privateReply = 'private-provider-reply SECRET_CALLDATA_0xdeadbeef';
+  for (const [failedFunction, expectedStage] of [
+    ['implementation', 'factory_implementation'],
+    ['nextOwnerNonce', 'factory_next_owner_nonce'],
+  ]) {
+    const chain = fakeChain({ sequences: 0 });
+    const original = chain.wallet.request;
+    const wallet = { ...chain.wallet, request: (method, params) => {
+      if (method === 'eth_call' && decodeFunctionData({ abi: sequenceAbi, data: params[0].data }).functionName === failedFunction)
+        return Promise.reject(Object.assign(new Error(privateReply), { data: privateReply }));
+      return original(method, params);
+    } };
+    const client = createSequenceClient(wallet, { ...chain.d, expiresAt: 0 }, () => 1000);
+    await assert.rejects(client.recent(), error => {
+      assert.equal(error.message, 'sequence_read_call');
+      assert.equal(sequenceReadStage(error), expectedStage);
+      assert.equal(JSON.stringify(error).includes(privateReply), false);
+      return true;
+    });
+    assert.equal(chain.log.includes('claimNonce'), false);
+  }
+  assert.equal(sequenceReadStage(new Error(privateReply)), null);
 });
 
 test('owner sequence reads distinguish an undecodable contract result and their own deadline', async () => {

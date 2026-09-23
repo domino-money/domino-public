@@ -6,7 +6,7 @@ import { setupWallet } from '../finance/wallet'
 import { suggestGasBudget } from '../finance/gas'
 import type { GasBudget } from '../finance/setup'
 import { readRelease, type ReleaseRead } from '../finance/release'
-import { AUTOMATION_FEE_BPS, createSequenceClient, sequenceDeploymentFrom, sequenceProviderReadError, sequenceRaw, sequenceReadError, type AutomationMode, type PreparedSequence, type SequenceDeployment, type SequenceState } from '../finance/sequence'
+import { AUTOMATION_FEE_BPS, createSequenceClient, sequenceDeploymentFrom, sequenceProviderReadError, sequenceRaw, sequenceReadError, sequenceReadStage, type AutomationMode, type PreparedSequence, type SequenceDeployment, type SequenceState } from '../finance/sequence'
 import { RECEIPT_TEXT, SEQUENCE_STEP_TEXT, errorCode, financeErrorText } from '../finance/words'
 import { AUTOMATION_SERVICE } from '../lib/capabilities'
 import { Button, Card, Display } from '../components/ui'
@@ -27,7 +27,7 @@ type Client = ReturnType<typeof createSequenceClient>
 type Root = Awaited<ReturnType<Client['inspectRoot']>>
 type Reserves = Awaited<ReturnType<Client['reserves']>>
 type Release = { kind: 'loading' } | ReleaseRead<SequenceDeployment>
-type Notice = { text: string; code: string | null }
+type Notice = { text: string; code: string | null; stage: string | null }
 const cacheKey = 'domino.sequence.public-recovery.v1'
 const readSequenceRelease = () => readRelease('/api/setup/v1/sequence-release', value => sequenceDeploymentFrom(value))
 /** For a loaded client: the published profile now, or null when it is no longer published. */
@@ -54,7 +54,7 @@ export default function Sequence() {
   const [createMode,setCreateMode] = useState<AutomationMode>('compound'), [policyMode,setPolicyMode] = useState<AutomationMode|null>(null)
   const [ack,setAck] = useState(false), [hash,setHash] = useState<Hex|null>(null), [busy,setBusy] = useState(false), [notice,setNotice] = useState<Notice|null>(null)
   const generation = useRef(0), connection = useRef(0), running = useRef(false)
-  const say = (text:string, code:string|null = null) => setNotice({text,code})
+  const say = (text:string, code:string|null = null, stage:string|null = null) => setNotice({text,code,stage})
   // What the link asked for (#/sequence/<mode>/<nft>): with either, a connected wallet is read without a press, so the guided creation opens filled in.
   const [intent] = useState(() => sequenceIntent(hashParts(window.location.hash).segments))
   // The wallet's own network price, asked only when the guided creation prepares a step; the owner's raw fields below stay theirs.
@@ -87,7 +87,7 @@ export default function Sequence() {
     if(running.current)return
     running.current=true;setBusy(true);setNotice(null);setPrepared(null);setAck(false)
     const gen=generation.current
-    try {await work()} catch(error) {if(generation.current===gen)say(financeErrorText(errorCode(error),'The wallet read or simulation could not be completed. No new transaction was sent.','Read my sequences'),errorCode(error))}
+    try {await work()} catch(error) {if(generation.current===gen)say(financeErrorText(errorCode(error),'The wallet read or simulation could not be completed. No new transaction was sent.','Read my sequences'),errorCode(error),sequenceReadStage(error))}
     finally {if(generation.current===gen){running.current=false;setBusy(false)}}
   }
   async function connect() {
@@ -173,7 +173,7 @@ export default function Sequence() {
       <h2 className="dm-acct-panel-title">Owner controls</h2>
       <p className="dm-acct-panel-note">{available?'Create a paused sequence from a position NFT you hold, or manage one you own, directly through your wallet. Owner controls need no Domino sign-in.':'Pause, revoke permissions or recover assets of a sequence you own, directly through your wallet. Withdrawals have no Domino service fee.'}</p>
       {profile&&<Button className="justify-self-start" variant="outline" disabled={busy} onClick={()=>{void action(connect)}}>Read my sequences</Button>}
-      {notice&&<p role="status" className="dm-acct-line dm-acct-wrap" data-notice-code={notice.code??undefined}>{notice.text}</p>}
+      {notice&&<p role="status" className="dm-acct-line dm-acct-wrap" data-notice-code={notice.code??undefined} data-notice-stage={notice.stage??undefined}>{notice.text}</p>}
       {client&&<p className="dm-acct-hash">Factory {client.deployment.factory} · {recovery?'Saved deployment':'Verified deployment'} · Auto-compound 2%; Domino-compound 4% of earned fees consumed, once. No fee on principal.</p>}
     </Card>}
     {client&&<>

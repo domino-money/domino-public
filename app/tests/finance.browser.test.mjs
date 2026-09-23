@@ -2164,6 +2164,38 @@ test('a guided sequence link names a failed wallet read without exposing its pro
   } finally { await s.close(); }
 });
 
+test('a rejected guided contract read exposes only the closed function stage', async () => {
+  const s = await scenario(), chain = fakeSequenceChain(OWNER, { roots: [5n] });
+  const privateReply = 'private-provider-reply SECRET_CALLDATA_0xdeadbeef';
+  await s.context.exposeFunction('__dominoChainRead', (method, params) => {
+    if (method === 'eth_call' && params[0].data.startsWith(toFunctionSelector('nextOwnerNonce(address)')))
+      throw new Error(privateReply);
+    return chain.request(method, params);
+  });
+  await s.context.addInitScript(() => {
+    let wallet = window.__dominoWalletRequest;
+    const request = (id, method, params) => ['eth_call', 'eth_getCode', 'eth_getBlockByNumber'].includes(method)
+      ? window.__dominoChainRead(method, params) : wallet(id, method, params);
+    Object.defineProperty(window, '__dominoWalletRequest', { configurable: true, get: () => request, set: value => { wallet = value; } });
+  });
+  try {
+    await s.page.waitForFunction(() => window.__dominoSessionProbe?.view().status === 'no_wallet');
+    await s.page.locator('header [aria-haspopup="dialog"]').click();
+    await s.page.locator('[role="dialog"][aria-labelledby="wallet-dialog-title"]').getByRole('button', { name: 'Connect Test Wallet A', exact: true }).click();
+    await s.page.waitForFunction(() => window.__dominoSessionProbe?.view().status === 'signed_out');
+    await s.page.keyboard.press('Escape');
+    s.set({ sequenceRelease: { status: 200, body: chain.release } });
+    await s.page.goto(`${s.origin}/#/sequence/compound/5`);
+    await s.page.reload();
+    const notice = s.page.locator('main [data-notice-code="sequence_read_call"]');
+    await notice.waitFor({ timeout: 30_000 });
+    assert.equal(await notice.getAttribute('data-notice-stage'), 'factory_next_owner_nonce');
+    assert.doesNotMatch(await s.page.locator('main').innerText(), /SECRET_CALLDATA|deadbeef/);
+    assert.deepEqual(chain.sends, []);
+    assert.equal(s.wallet.state.signed.length, 0);
+  } finally { await s.close(); }
+});
+
 /**
  * SequenceCreate.tsx, driven the way a person reaches it: a link naming the mode and the position NFT, a wallet that
  * is connected and nothing more. The chain is the fake above with nothing approved and every send settled at once, so

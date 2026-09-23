@@ -193,7 +193,9 @@ const components: Component[] = ['factory','implementation','poolManager','posit
 const addressPattern = /^0x[0-9a-f]{40}$/, hashPattern = /^0x[0-9a-f]{64}$/
 // A closed failure raised by this client, distinct from an untrusted wallet
 // provider exception. Only the code crosses into the owner screen.
-class SequenceFault extends Error {}
+class SequenceFault extends Error {
+  constructor(code: string, readonly stage: string | null = null) { super(code) }
+}
 const fail = (code: string): never => { throw new SequenceFault(code) }
 const READ_RPC_FAILURE: Readonly<Record<string, string>> = {
   eth_accounts: 'sequence_read_accounts',
@@ -209,6 +211,11 @@ export function sequenceProviderReadError(error: unknown): Error {
 /** No unknown exception from a read is ever copied into the DOM. */
 export function sequenceReadError(error: unknown): Error {
   return error instanceof SequenceFault ? error : new SequenceFault('sequence_read_unexpected')
+}
+/** A closed contract/function label for a rejected owner eth_call. No address,
+ * calldata, provider message or provider error data leaves this client. */
+export function sequenceReadStage(error: unknown): string | null {
+  return error instanceof SequenceFault && error.message === 'sequence_read_call' ? error.stage : null
 }
 const record = (x: unknown): Record<string, unknown> => x && typeof x === 'object' && !Array.isArray(x) ? x as Record<string, unknown> : fail('invalid_sequence_reply')
 const hex = (x: unknown): Hex => typeof x === 'string' && x.length <= 200_002 && /^0x(?:[0-9a-fA-F]{2})*$/.test(x) ? x.toLowerCase() as Hex : fail('invalid_wallet_reply')
@@ -313,9 +320,24 @@ export function createSequenceClient(wallet: WalletRpc, deployment: SequenceDepl
   }
   // Call signatures are selected from the local closed ABI, never public JSON.
   type ViewName = ContractFunctionName<typeof sequenceAbi, 'view'>
+  const readStage = (to: Address, name: string) => {
+    const role = components.find(component => d[component].toLowerCase() === to.toLowerCase()) ?? 'other_contract'
+    return `${role.replace(/[A-Z]/g, letter => `_${letter.toLowerCase()}`)}_${name.replace(/[A-Z]/g, letter => `_${letter.toLowerCase()}`)}`
+  }
+  async function readCall(c: Context, to: Address, functionName: string, args: readonly unknown[]): Promise<Hex> {
+    const abi: Abi = sequenceAbi
+    let value: unknown
+    try { value = await c.rpc('eth_call', [{ to, data: encodeFunctionData({ abi, functionName, args }) }, c.block]) }
+    catch (error) {
+      if (c.diagnoseRead && error instanceof SequenceFault && error.message === 'sequence_read_call')
+        throw new SequenceFault('sequence_read_call', readStage(to, functionName))
+      throw error
+    }
+    return hex(value)
+  }
   async function call<Name extends ViewName>(c: Context, to: Address, name: Name, args: readonly unknown[] = []): Promise<ContractFunctionReturnType<typeof sequenceAbi, 'view', Name>> {
     const abi: Abi = sequenceAbi, functionName: string = name
-    const data = hex(await c.rpc('eth_call', [{ to, data: encodeFunctionData({ abi, functionName, args }) }, c.block]))
+    const data = await readCall(c, to, functionName, args)
     try { return decodeFunctionResult({ abi, functionName, data }) as ContractFunctionReturnType<typeof sequenceAbi, 'view', Name> }
     catch (error) { if (c.diagnoseRead) fail('sequence_read_decode'); throw error }
   }
@@ -331,7 +353,7 @@ export function createSequenceClient(wallet: WalletRpc, deployment: SequenceDepl
     // The same call as `call`, left untyped: a link is only compared as text, and typing one result over every view name is needlessly deep for the compiler.
     const abi: Abi = sequenceAbi
     for (const [functionName, expected] of Object.entries(values) as [string,unknown][]) {
-      const data = hex(await c.rpc('eth_call', [{ to, data: encodeFunctionData({ abi, functionName, args: [] }) }, c.block]))
+      const data = await readCall(c, to, functionName, [])
       let decoded: unknown
       try { decoded = decodeFunctionResult({ abi, functionName, data }) }
       catch (error) { if (c.diagnoseRead) fail('sequence_read_decode'); throw error }
