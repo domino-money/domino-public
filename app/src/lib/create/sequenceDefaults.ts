@@ -97,11 +97,13 @@ const within = (value: number | null, min: number, max: number) => value !== nul
  * The creation for a mode, a root NFT and the form, or the first thing wrong
  * with it. Auto-compound fixes the cap at one and keeps the successor limits
  * at their defaults: the contract still requires them inside their bounds.
- * The base currency is the pool's currency0, as every price on these screens
- * is written as currency1 per currency0.
+ * The owner must choose which of the root pool's currencies is the base. This
+ * orientation is immutable in the vault and determines its quote price and
+ * successor direction; it cannot be inferred from the pool's token order.
  */
-export function sequenceOptionsFrom(mode: SequenceMode, rootTokenId: bigint, form: SequenceForm): SequenceCheck {
+export function sequenceOptionsFrom(mode: SequenceMode, rootTokenId: bigint, baseIsCurrency0: boolean | null, form: SequenceForm): SequenceCheck {
   if (rootTokenId <= 0n) return { ok: false, reason: 'Choose the position NFT first.' }
+  if (typeof baseIsCurrency0 !== 'boolean') return { ok: false, reason: 'Choose which pool currency is the quote first.' }
   const trigger = percentToBps(mode === 'domino' ? form.triggerPercent : SEQUENCE_DEFAULTS.triggerPercent)
   if (!within(trigger, 0, 2000)) return { ok: false, reason: 'Trigger distance is a percentage from 0 to 20, with up to two decimal places.' }
   const overlap = percentToBps(mode === 'domino' ? form.maxOverlapPercent : SEQUENCE_DEFAULTS.maxOverlapPercent)
@@ -127,7 +129,7 @@ export function sequenceOptionsFrom(mode: SequenceMode, rootTokenId: bigint, for
     options: {
       automationMode: mode,
       rootTokenId,
-      baseIsCurrency0: true,
+      baseIsCurrency0,
       consentToUncollectedFees: true,
       triggerDistanceBps: trigger as number,
       maxOverlapBps: overlap as number,

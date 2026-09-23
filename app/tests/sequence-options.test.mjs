@@ -7,24 +7,29 @@ import { test } from 'node:test';
 import { SEQUENCE_DEFAULTS, ethToWei, percentToBps, sequenceIntent, sequenceOptionsFrom } from '../.test-build/app/src/lib/create/sequenceDefaults.js';
 
 test('the defaults make a valid Domino creation and a valid Auto-compound one, on the wire the vault takes', () => {
-  const domino = sequenceOptionsFrom('domino', 42n, SEQUENCE_DEFAULTS);
+  const domino = sequenceOptionsFrom('domino', 42n, true, SEQUENCE_DEFAULTS);
   assert.ok(domino.ok);
   assert.deepEqual(domino.options, {
     automationMode: 'domino', rootTokenId: 42n, baseIsCurrency0: true, consentToUncollectedFees: true,
     triggerDistanceBps: 500, maxOverlapBps: 2000, minimumIntervalSeconds: 3600, maxPositions: 3, upsideBps: 5000,
     maxSlippageBps: 100, maxPriceImpactBps: 100, maxGasCostWei: 5_000_000_000_000_000n, maxObservationAgeSeconds: 300, forecastHorizonSeconds: 604_800,
   });
-  const compound = sequenceOptionsFrom('compound', 42n, { ...SEQUENCE_DEFAULTS, sequenceCap: '9', triggerPercent: '99' });
+  const compound = sequenceOptionsFrom('compound', 42n, false, { ...SEQUENCE_DEFAULTS, sequenceCap: '9', triggerPercent: '99' });
   assert.ok(compound.ok);
   // Auto-compound is one position, and the successor fields are the defaults whatever was typed for them.
   assert.equal(compound.options.maxPositions, 1);
   assert.equal(compound.options.triggerDistanceBps, 500);
   assert.equal(compound.options.automationMode, 'compound');
+  assert.equal(compound.options.baseIsCurrency0, false, 'the quote can be currency0 in simple Auto-compound');
+  const reverseDomino = sequenceOptionsFrom('domino', 42n, false, SEQUENCE_DEFAULTS);
+  assert.ok(reverseDomino.ok);
+  assert.equal(reverseDomino.options.baseIsCurrency0, false, 'Domino successor direction can also use currency0 as quote');
+  assert.deepEqual(sequenceOptionsFrom('compound', 42n, null, SEQUENCE_DEFAULTS), { ok: false, reason: 'Choose which pool currency is the quote first.' });
 });
 
 test('each field is refused with its own words at the contract bound', () => {
   const base = SEQUENCE_DEFAULTS;
-  const refused = (form, mode = 'domino') => { const r = sequenceOptionsFrom(mode, 1n, { ...base, ...form }); assert.equal(r.ok, false); return r.reason; };
+  const refused = (form, mode = 'domino') => { const r = sequenceOptionsFrom(mode, 1n, true, { ...base, ...form }); assert.equal(r.ok, false); return r.reason; };
   assert.match(refused({ triggerPercent: '20.01' }), /^Trigger distance/);
   assert.match(refused({ triggerPercent: '5.123' }), /^Trigger distance/, 'three decimals');
   assert.match(refused({ maxOverlapPercent: '-1' }), /^Maximum overlap/);
@@ -39,7 +44,7 @@ test('each field is refused with its own words at the contract bound', () => {
   assert.match(refused({ maxGasCostEth: 'abc' }), /^The gas cap/);
   assert.match(refused({ maxObservationAgeMinutes: '0' }), /^Price reading age/);
   assert.match(refused({ forecastHorizonHours: '0' }), /^The forecast horizon/);
-  assert.equal(sequenceOptionsFrom('compound', 0n, base).ok, false, 'no NFT');
+  assert.equal(sequenceOptionsFrom('compound', 0n, true, base).ok, false, 'no NFT');
 });
 
 test('units convert exactly', () => {

@@ -1903,8 +1903,24 @@ test('from a position link, a connected wallet without a session puts the NFT un
     assert.deepEqual(chain.sends, [], 'nothing is sent by arriving');
     assert.deepEqual([await panel.getByLabel('Positions in the sequence', { exact: true }).inputValue(), await panel.getByLabel('Successor upside (%)', { exact: true }).inputValue()], ['3', '50'], 'the defaults, in the units a person reads');
 
-    // Consent, then the review: the NFT is not yet approved to its predicted sequence, so the approval comes first.
+    // A quote choice is required even when the link selected the NFT and mode. The pool's token order is not consent.
+    const quote = panel.getByRole('radiogroup', { name: 'Quote currency' });
+    const quote0 = quote.getByRole('radio', { name: /^Quote: currency 0 / });
+    const quote1 = quote.getByRole('radio', { name: /^Quote: currency 1 / });
+    assert.match(await quote.innerText(), new RegExp(chain.poolKey.currency0), 'the full currency0 identity is shown');
+    assert.match(await quote.innerText(), new RegExp(chain.poolKey.currency1), 'the full currency1 identity is shown');
+    assert.equal(await quote0.isChecked(), false);
+    assert.equal(await quote1.isChecked(), false);
     await panel.getByRole('checkbox', { name: /^I consent to using this NFT’s already uncollected fees/ }).check();
+    assert.equal(await panel.getByRole('button', { name: 'Review the wallet steps', exact: true }).isDisabled(), true);
+    await quote1.check();
+    assert.equal(await panel.getByRole('button', { name: 'Review the wallet steps', exact: true }).isEnabled(), true);
+    // Changing orientation invalidates even a prepared approval; the final choice makes currency0 the quote.
+    await panel.getByRole('button', { name: 'Review the wallet steps', exact: true }).click();
+    await panel.locator('[data-sequence-create-review="approve-root"]').waitFor({ timeout: 30_000 });
+    await quote0.check();
+    assert.equal(await panel.locator('[data-sequence-create-review]').count(), 0);
+    assert.equal(await quote0.isChecked(), true);
     await panel.getByRole('button', { name: 'Review the wallet steps', exact: true }).click();
     const review = panel.locator('[data-sequence-create-review]');
     await panel.locator('[data-sequence-create-review="approve-root"]').waitFor({ timeout: 30_000 });
@@ -1928,7 +1944,7 @@ test('from a position link, a connected wallet without a session puts the NFT un
     assert.match(words, /Review paused sequence creation/);
     assert.match(words, new RegExp(`Create a paused sequence from NFT #${ROOT}\\.`));
     assert.match(words, /Your root NFT stays in your wallet\. This does not start automation\./);
-    assert.match(words, new RegExp(`Base: ${chain.poolKey.currency0}\\. Quote: ${chain.poolKey.currency1}\\.`), 'currency0 is the base');
+    assert.match(words, new RegExp(`Base: ${chain.poolKey.currency1}\\. Quote: ${chain.poolKey.currency0}\\.`), 'the owner selected currency0 as the quote');
     assert.match(words, new RegExp(`Operator: ${operator}\\.`));
     assert.match(words, /Domino-compound: 4% of earned fees consumed, once; never principal or already charged lots\./);
     assert.match(words, /Trigger distance: 500 bps; maximum overlap: 2000 bps; minimum interval: 3600s; maximum positions: 3\./);
@@ -1956,7 +1972,7 @@ test('from a position link, a connected wallet without a session puts the NFT un
     const [params, ownerNonce] = create.args;
     assert.deepEqual([create.functionName, create.to, create.from, create.value, create.nonce, ownerNonce], ['createVault', factory, OWNER, 0n, '0x1', 0n], 'the owner’s first sequence, as the second transaction');
     assert.deepEqual({ ...params, baseCurrency: lower(params.baseCurrency), quoteCurrency: lower(params.quoteCurrency), operator: lower(params.operator) }, {
-      rootTokenId: ROOT, expectedPoolId: chain.poolId, baseCurrency: chain.poolKey.currency0, quoteCurrency: chain.poolKey.currency1, operator, consentToUncollectedFees: true,
+      rootTokenId: ROOT, expectedPoolId: chain.poolId, baseCurrency: chain.poolKey.currency1, quoteCurrency: chain.poolKey.currency0, operator, consentToUncollectedFees: true,
       policy: { serviceFeeBps: 400, triggerDistanceBps: 500, maxOverlapBps: 2000, minimumIntervalSeconds: 3600, maxPositions: 3, version: 1n, paused: true },
       limits: { version: 1n, upsideBps: 5000, maxSlippageBps: 100, maxPriceImpactBps: 100, maxGasCostWei: 5_000_000_000_000_000n, maxObservationAgeSeconds: 300, forecastHorizonSeconds: 604_800 },
     }, 'the whole InitParams: the pool read from the NFT, the deployment’s operator, consent, the 4% paused policy and the default limits in bps, seconds and wei');

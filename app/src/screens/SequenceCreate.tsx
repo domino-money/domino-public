@@ -15,7 +15,8 @@ import { Button, Card } from '../components/ui'
  * third things Domino does, on a position that already exists. The owner
  * names the position NFT (or arrives with it from Positions or from the
  * deposit that minted it), chooses Auto-compound (same position, 2 %) or
- * Domino-compound (the next range up, 4 %), keeps or changes the limits, and
+ * Domino-compound (the next range up, 4 %), chooses the immutable quote
+ * currency, keeps or changes the limits, and
  * reviews two wallet steps: the NFT's approval to its predicted sequence, then
  * the sequence's creation. The sequence is born paused; the root NFT stays in
  * the wallet.
@@ -73,6 +74,7 @@ export default function SequenceCreate({ client, gasFor, intent, initialRoot, on
   const [tokenIdText, setTokenIdText] = useState(intent.tokenId ?? '')
   const [root, setRoot] = useState<Root | null>(initialRoot)
   const [mode, setMode] = useState<SequenceMode | null>(intent.mode)
+  const [baseIsCurrency0, setBaseIsCurrency0] = useState<boolean | null>(null)
   const [form, setForm] = useState<SequenceForm>(SEQUENCE_DEFAULTS)
   const [consent, setConsent] = useState(false)
   const [prepared, setPrepared] = useState<PreparedSequence | null>(null)
@@ -130,11 +132,15 @@ export default function SequenceCreate({ client, gasFor, intent, initialRoot, on
     setMode(next)
     setConsent(false)
   }
+  const chooseQuote = (nextBaseIsCurrency0: boolean) => {
+    invalidate()
+    setBaseIsCurrency0(nextBaseIsCurrency0)
+  }
 
   async function review() {
-    if (!root || !mode || !gasFor) return
+    if (!root || !mode || baseIsCurrency0 === null || !gasFor) return
     const gen = generation.current
-    const options = sequenceOptionsFrom(mode, root.tokenId, form)
+    const options = sequenceOptionsFrom(mode, root.tokenId, baseIsCurrency0, form)
     if (!options.ok) {
       say(options.reason)
       return
@@ -245,12 +251,13 @@ export default function SequenceCreate({ client, gasFor, intent, initialRoot, on
                     invalidate()
                     setTokenIdText(event.target.value)
                     setRoot(null)
+                    setBaseIsCurrency0(null)
                   }}
                 />
               </label>
             </div>
             <div className="dm-acct-choices">
-              <Button variant="outline" disabled={busy} onClick={() => void action(() => readRoot(tokenIdText))}>
+              <Button variant="outline" disabled={busy} onClick={() => { invalidate(); setRoot(null); setBaseIsCurrency0(null); void action(() => readRoot(tokenIdText)) }}>
                 Read the position
               </Button>
             </div>
@@ -279,7 +286,23 @@ export default function SequenceCreate({ client, gasFor, intent, initialRoot, on
           )}
           {root && mode && (
             <fieldset disabled={busy} className="dm-acct-fieldset">
-              <legend className="dm-acct-subtitle">3 · Limits</legend>
+              <legend className="dm-acct-subtitle">3 · Quote currency</legend>
+              <p className="dm-acct-panel-note">Choose how this sequence measures price: quote units for one base unit. Domino successors follow higher prices in this orientation. The choice is fixed when the sequence is created.</p>
+              <div className="dm-acct-stack" role="radiogroup" aria-label="Quote currency">
+                <label className="dm-acct-check dm-acct-wrap">
+                  <input type="radio" name="sequence-quote-currency" value="currency0" checked={baseIsCurrency0 === false} onChange={() => chooseQuote(false)} />
+                  <span>Quote: currency 0 ({root.key.currency0}); base: currency 1 ({root.key.currency1})</span>
+                </label>
+                <label className="dm-acct-check dm-acct-wrap">
+                  <input type="radio" name="sequence-quote-currency" value="currency1" checked={baseIsCurrency0 === true} onChange={() => chooseQuote(true)} />
+                  <span>Quote: currency 1 ({root.key.currency1}); base: currency 0 ({root.key.currency0})</span>
+                </label>
+              </div>
+            </fieldset>
+          )}
+          {root && mode && (
+            <fieldset disabled={busy} className="dm-acct-fieldset">
+              <legend className="dm-acct-subtitle">4 · Limits</legend>
               {mode === 'domino' && (
                 <div className="dm-acct-fields">
                   {DOMINO_FIELDS.map((name) => (
@@ -317,7 +340,7 @@ export default function SequenceCreate({ client, gasFor, intent, initialRoot, on
                 </span>
               </label>
               <div className="dm-acct-choices">
-                <Button disabled={busy || !consent || !gasFor} onClick={() => void action(review)}>
+                <Button disabled={busy || !consent || baseIsCurrency0 === null || !gasFor} onClick={() => void action(review)}>
                   Review the wallet steps
                 </Button>
               </div>
