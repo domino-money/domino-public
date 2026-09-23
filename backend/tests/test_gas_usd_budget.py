@@ -436,7 +436,10 @@ class GasBudgetPostgresTests(unittest.TestCase):
                     conn.execute('SELECT * FROM domino_gas_budget.settle(%s,%s,%s,%s,%s,%s,%s)', candidate)
                 conn.rollback()
         self.mark_publication_finality(CYCLE_1, 2 * 10**15)
-        self.attest(CYCLE_1, 'publisher')
+        witness = self.attest(CYCLE_1, 'publisher')
+        correct = (CYCLE_1, 'publisher', 2 * 10**15, witness['answerRaw'],
+                   witness['roundId'], witness['answerUpdatedAt'],
+                   witness['blockTimestamp'])
         with psycopg.connect(**self.pg.settings, user='domino_gas_settlement_login') as conn:
             result = conn.execute('SELECT spent_usd_micros FROM domino_gas_budget.settle('
                                   '%s,%s,%s,%s,%s,%s,%s)', correct).fetchone()
@@ -454,7 +457,10 @@ class GasBudgetPostgresTests(unittest.TestCase):
                 conn.execute('SELECT * FROM domino_gas_budget.settle(%s,%s,%s,%s,%s,%s,%s)', args)
             conn.rollback()
         self.mark_publication_finality(CYCLE_1, 2*10**15, state='reverted')
-        self.attest(CYCLE_1, 'publisher')
+        witness = self.attest(CYCLE_1, 'publisher')
+        args = (CYCLE_1, 'publisher', 2*10**15, witness['answerRaw'],
+                witness['roundId'], witness['answerUpdatedAt'],
+                witness['blockTimestamp'])
         with psycopg.connect(**self.pg.settings, user='domino_gas_settlement_login') as conn:
             self.assertEqual(conn.execute('SELECT spent_usd_micros FROM domino_gas_budget.settle('
                                           '%s,%s,%s,%s,%s,%s,%s)', args).fetchone(),
@@ -466,8 +472,10 @@ class GasBudgetPostgresTests(unittest.TestCase):
         self.addCleanup(budget.connection.close)
         budget.reserve(identifier, 'publisher', signer, 10**14, self.quote)
         self.assertEqual(journal.check(identifier, rpc, confirmations=2)['state'], 'confirmed')
+        # The quote held before finality may be older than the later attestation.
         args = (identifier, 'publisher', 12_500_000_000_000, self.quote.answer_raw,
-                self.quote.round_id, self.quote.answer_updated_at, self.quote.block_timestamp)
+                self.quote.round_id, self.quote.answer_updated_at,
+                self.quote.block_timestamp - 1)
         self.assertEqual(journal.finalize_pending(signer, rpc, confirmations=2)[0]['state'], 'pending')
         with psycopg.connect(**self.pg.settings, user='domino_gas_settlement_login') as conn:
             with self.assertRaises(psycopg.errors.CheckViolation):
@@ -475,7 +483,11 @@ class GasBudgetPostgresTests(unittest.TestCase):
             conn.rollback()
         rpc.final['number'] = '0x66'
         self.assertEqual(journal.finalize_pending(signer, rpc, confirmations=2)[0]['state'], 'finalized')
-        self.attest(identifier, 'publisher')
+        witness = self.attest(identifier, 'publisher')
+        self.assertNotEqual(args[6], witness['blockTimestamp'])
+        args = (identifier, 'publisher', 12_500_000_000_000, witness['answerRaw'],
+                witness['roundId'], witness['answerUpdatedAt'],
+                witness['blockTimestamp'])
         with psycopg.connect(**self.pg.settings, user='domino_gas_settlement_login') as conn:
             self.assertEqual(conn.execute('SELECT state FROM domino_gas_budget.settle('
                                           '%s,%s,%s,%s,%s,%s,%s)', args).fetchone(),
@@ -532,12 +544,14 @@ class GasBudgetPostgresTests(unittest.TestCase):
                         conn.execute('SELECT * FROM domino_gas_budget.settle(%s,%s,%s,%s,%s,%s,%s)', args)
                     conn.rollback()
                 self.operator_witness(identifier, 2*10**15, reverted=reverted)
-                self.attest(identifier, 'operator')
+                witness = self.attest(identifier, 'operator')
                 with psycopg.connect(**self.pg.settings, user='domino_gas_settlement_login') as conn:
                     with self.assertRaises(psycopg.errors.CheckViolation):
                         conn.execute('SELECT * FROM domino_gas_budget.settle(%s,%s,%s,%s,%s,%s,%s)', args)
                     conn.rollback()
-                    exact = (*args[:2], 2*10**15, *args[3:])
+                    exact = (identifier, 'operator', 2*10**15, witness['answerRaw'],
+                             witness['roundId'], witness['answerUpdatedAt'],
+                             witness['blockTimestamp'])
                     self.assertEqual(conn.execute('SELECT spent_usd_micros FROM domino_gas_budget.settle('
                                                   '%s,%s,%s,%s,%s,%s,%s)', exact).fetchone(),
                                      (4_000_000,))
