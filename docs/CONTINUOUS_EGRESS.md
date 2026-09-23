@@ -54,6 +54,14 @@ every enabled listener it fronts. The tunnel and the indexer use the stub
 resolver; every other enabled unit reads a pinned hosts file bound over
 `/etc/hosts` and never resolves.
 
+For the V4 sequence snapshot, the reader can use the private VM loopback RPC
+at `127.0.0.1:18547`. Set the optional boolean `sequenceSnapshotLoopback` in
+the operator policy input only when that tunnel and the reader's matching
+private configuration are installed. It adds one reader-owned, loopback-only
+TCP rule for port 18547 before the reader's final drop. It grants no other
+service identity or external address. Without this explicit option the
+renderer preserves the earlier reader policy.
+
 ## Input
 
 ```json
@@ -62,11 +70,16 @@ resolver; every other enabled unit reads a pinned hosts file bound over
   "resolver": "127.0.0.53",
   "accessIssuer": "<team>.cloudflareaccess.com",
   "enabled": ["read", "gateway", "tunnel", "write"],
+  "sequenceSnapshotLoopback": true,
   "identities": { "<role>": { "user", "realUid", "effectiveUid", "gid",
                               "supplementaryGids", "unit", "cgroup" } },
   "hosts": [ { "hostname": "...", "addresses": ["..."] } ]
 }
 ```
+
+The optional `sequenceSnapshotLoopback` field defaults to false and requires
+`read` in `enabled` when true. It changes the nft policy and its pin digest,
+not the unit drop-ins or the public Worker flag.
 
 `identities` names all thirteen roles exactly (`admin` may be `null`). Roles
 with a service unit must name `domino-<role>.service` and its system-slice

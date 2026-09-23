@@ -123,6 +123,29 @@ class ContinuousEgressTests(unittest.TestCase):
                             for rule in chains[role] if 'oifname != "lo"' in rule))
         self.assertNotIn('ws.domino.money', json.dumps(result))
 
+    def test_v4_snapshot_loopback_grants_only_the_read_identity_exact_rpc_port(self):
+        original = snapshot()
+        before = policy.render(original)
+        after = policy.render({**original, 'sequenceSnapshotLoopback': True})
+        baseline, _ = parse(nft(before))
+        enabled, _ = parse(nft(after))
+        grant = ('oifname "lo" ip saddr 127.0.0.1 ip daddr 127.0.0.1 '
+                 'tcp dport 18547 ct direction original counter accept '
+                 'comment "private V4 snapshot RPC"')
+        self.assertEqual(enabled['read'], baseline['read'][:-1] + [grant, baseline['read'][-1]])
+        for role in baseline.keys() - {'read'}:
+            self.assertEqual(enabled[role], baseline[role])
+        self.assertNotIn('tcp dport 18547', nft(before))
+        self.assertNotIn('tcp dport 8547', nft(after))
+        self.assertNotEqual(before['pinSetSha256'], after['pinSetSha256'])
+        self.assertEqual(dropin(before, 'read'), dropin(after, 'read'))
+
+    def test_v4_snapshot_loopback_requires_explicit_boolean_and_reader(self):
+        self.reject({**snapshot(), 'sequenceSnapshotLoopback': 'true'},
+                    'invalid_sequence_snapshot_loopback')
+        self.reject({**snapshot(('gateway', 'tunnel', 'write')),
+                     'sequenceSnapshotLoopback': True}, 'snapshot_loopback_requires_reader')
+
     def test_domino_rpc_does_not_admit_sibling_suffix_or_credential_hosts(self):
         for host, reason in (('ws.domino.money', 'unapproved_hostname'),
                              ('other.domino.money', 'unapproved_hostname'),

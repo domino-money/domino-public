@@ -42,6 +42,7 @@ NO_UNIT = ('write', 'operator', 'admin')
 LISTENERS = {'read': 8876, 'gateway': 8878, 'auth': 8879, 'onboarding': 8880,
              'deposit': 8881, 'performance': 8900, 'execution-status': 8901,
              'tunnel': 20241}
+SNAPSHOT_RPC_PORT = 18547
 RPC_HOSTS = frozenset(('rpc.mainnet.chain.robinhood.com', 'robinhood-mainnet.g.alchemy.com',
                        'rpc.domino.money'))
 ANALYTICS_HOSTS = frozenset(('api.geckoterminal.com', 'api.dexscreener.com'))
@@ -118,9 +119,13 @@ def classes_of(hostname, issuer):
 
 
 def validate(snapshot):
-    fields = (*FIELDS,'publicDataCollectors') if 'publicDataCollectors' in snapshot else FIELDS
+    optional = tuple(name for name in ('publicDataCollectors', 'sequenceSnapshotLoopback')
+                     if name in snapshot)
+    fields = (*FIELDS, *optional)
     exact(snapshot, fields, 'invalid_snapshot_fields')
     require(type(snapshot.get('publicDataCollectors',False)) is bool,'invalid_public_data_collectors')
+    require(type(snapshot.get('sequenceSnapshotLoopback', False)) is bool,
+            'invalid_sequence_snapshot_loopback')
     require(type(snapshot['version']) is int and snapshot['version'] == 1, 'invalid_snapshot_version')
     require(snapshot['resolver'] == '127.0.0.53', 'invalid_resolver')
     issuer = snapshot['accessIssuer']
@@ -131,6 +136,8 @@ def validate(snapshot):
     require(all(role in ROLES and role not in ('operator', 'admin') for role in enabled),
             'unknown_enabled_role')
     require(not snapshot.get('publicDataCollectors') or 'write' in enabled,'public_collectors_require_writer')
+    require(not snapshot.get('sequenceSnapshotLoopback') or 'read' in enabled,
+            'snapshot_loopback_requires_reader')
     enabled = tuple(role for role in ROLES if role in enabled)
     exact(snapshot['identities'], ROLES, 'invalid_identity_roles')
     seen_uids = set()
@@ -240,6 +247,10 @@ def render(snapshot):
                 for protocol, port in ports:
                     lines.append(prefix + f'oifname != "lo" ip daddr @{name} {protocol} dport {port} '
                                  f'counter accept comment "{comment}"')
+            if role == 'read' and snapshot.get('sequenceSnapshotLoopback'):
+                lines.append(prefix + 'oifname "lo" ip saddr 127.0.0.1 ip daddr 127.0.0.1 '
+                             f'tcp dport {SNAPSHOT_RPC_PORT} ct direction original counter accept '
+                             'comment "private V4 snapshot RPC"')
             if role == 'tunnel':
                 for protocol in ('tcp', 'udp'):
                     lines.append(prefix + f'oifname "lo" ip daddr 127.0.0.53 {protocol} dport 53 '
@@ -303,6 +314,8 @@ def render(snapshot):
     pin_scope = json.dumps({'issuer': issuer, 'enabled': enabled, 'pins': pins}, sort_keys=True)
     if snapshot.get('publicDataCollectors'):
         pin_scope += ':public-data-collectors'
+    if snapshot.get('sequenceSnapshotLoopback'):
+        pin_scope += ':sequence-snapshot-loopback'
     return {'version': 1, 'kind': 'domino-continuous-egress-v1', 'applied': False,
             'policyQualified': False, 'enabled': list(enabled),
             'roleHosts': {role: hosts for role, hosts in role_hosts.items() if hosts},
