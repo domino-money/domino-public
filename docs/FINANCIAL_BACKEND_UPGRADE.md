@@ -18,10 +18,12 @@ provider/session/configuration files are preserved in place.
 
 ## Schema and peer boundaries
 
-Only migrations 015–019 execute, together in a single PostgreSQL transaction.
-The transaction provisions isolated performance roles, applies the five exact
-SQL files, enables peer login for the six non-owner runtime roles and writes a
-postgres-only `domino_financial_install.receipt` containing release/migration
+Only migrations 015–022 execute, together in a single PostgreSQL transaction.
+Migrations 023–038 may travel in the source archive but are not applied by this
+helper. The transaction provisions isolated performance and execution roles,
+applies the eight exact SQL files, enables peer login for the six non-owner
+runtime roles, and writes a postgres-only `domino_financial_install.receipt`
+containing release/migration
 hashes. Existing financial schemas or roles cause preflight rejection;
 reapplication is never inferred from an absent filesystem receipt. A failed SQL
 statement rolls back role/schema/receipt creation. Foundation SQL is never
@@ -128,11 +130,11 @@ treated as an empty database.
 
 ## Verification
 
-Eight local tests exercise a real Git archive, CLI planning without Git or host
+Local tests exercise a real Git archive, CLI planning without Git or host
 commands, archive traversal/link/private-directory rejection, exact service and
 peer scope, migration sentinels, partial/idempotent recovery and foreign drift.
 The opt-in PostgreSQL fixture starts from populated 001–014, proves that a
-failing 019 rolls back the whole operation, applies the real five migrations
+failing 022 rolls back the whole operation, applies the real eight migrations
 once, preserves wallet/catalogue counts and checks protected SQL surfaces.
 
 ```sh
