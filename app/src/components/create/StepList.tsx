@@ -85,8 +85,11 @@ const stilled = () =>
  * footer; the rest wait as rows. Opening a step grows its panel while the
  * previous one folds back to its row (CSS, instant when motion is stilled),
  * and focus moves to the open step's title, except on the first paint.
+ * `locked` keeps the done rows closed while Create position is asking the
+ * wallet: changing a choice mid-way would leave the steps describing another
+ * position.
  */
-export function StepList({ steps, onOpen }: { steps: readonly StepView[]; onOpen: (key: VisualStep) => void }) {
+export function StepList({ steps, onOpen, locked = false }: { steps: readonly StepView[]; onOpen: (key: VisualStep) => void; locked?: boolean }) {
   const current = steps.find((step) => step.state === 'current')?.key ?? null
   const title = useRef<HTMLHeadingElement>(null)
   const arrived = useRef(false)
@@ -126,7 +129,7 @@ export function StepList({ steps, onOpen }: { steps: readonly StepView[]; onOpen
             <div className="dm-flow-collapse" data-open={open ? undefined : ''}>
               <div className="dm-flow-collapse-inner">
                 {step.state === 'done' ? (
-                  <button type="button" className="dm-flow-row" onClick={() => onOpen(step.key)}>
+                  <button type="button" className="dm-flow-row" disabled={locked} onClick={() => onOpen(step.key)}>
                     <StepMarker index={number} state="done" label={label} />
                     <span className="dm-flow-row-title">{words.title}</span>
                     <span className="dm-flow-row-summary">{step.summary}</span>

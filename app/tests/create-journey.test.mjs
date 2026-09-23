@@ -120,7 +120,9 @@ test('no stage asks about automation: the fields stay at their defaults, Automat
   for (const line of journey.serialiseSummary(journey.next(journey.next(limited, NOW), NOW), NOW)) assert.doesNotMatch(line, /automation|compound|service fee|sequence|limits/i, line);
   // The stage's component is gone, and the flow's components read none of the fields.
   assert.equal(existsSync(new URL('../src/components/create/StageAutomation.tsx', import.meta.url)), false);
-  for (const name of ['Journey', 'StageReview', 'StepList', 'StageBalance', 'StageAmount', 'StageToken']) {
+  // StageBalance went with Review's deposit amounts (owner, 2026-09-22); Create position is read in its place.
+  assert.equal(existsSync(new URL('../src/components/create/StageBalance.tsx', import.meta.url)), false);
+  for (const name of ['Journey', 'StageReview', 'StepList', 'CreatePosition', 'StageAmount', 'StageToken']) {
     const source = readFileSync(new URL(`../src/components/create/${name}.tsx`, import.meta.url), 'utf8');
     assert.doesNotMatch(source, /StageAutomation|automationPill|AutomationSummary|state\.automation|state\.limits|withAutomation|withLimits|validateLimits|successorGeometry|serviceFee/, name);
   }
@@ -157,6 +159,20 @@ test('Choose a pool: the pool must hold the token; a different token drops the p
   // A pool that does not trade the token cannot be continued with.
   const elsewhere = journey.withPool(s, pool({ key: id('b'), currencies: [token(addr('8')), token(addr('9'))] }), NOW);
   assert.deepEqual(journey.canContinue('pool', elsewhere, NOW), { ok: false, reason: CREATE.pool.poolMismatch });
+  // Create position opens positions through Domino V1's setup contract, which takes hookless, fixed-fee pools only:
+  // any other pool is refused here, at the pool step, with its own sentence, not with a disabled button at Review.
+  const hooked = journey.withPool(s, pool({ key: id('d'), hooks: addr('f'), integration: 'requires_separate_adapter' }), NOW);
+  assert.deepEqual(journey.canContinue('pool', hooked, NOW), { ok: false, reason: CREATE.pool.unsupportedHooks });
+  assert.match(CREATE.pool.unsupportedHooks, /^This pool has hooks, .*Choose another pool\.$/);
+  const dynamic = journey.withPool(s, pool({ key: id('e'), feePips: 8388608, fee: 'Dynamic' }), NOW);
+  assert.deepEqual(journey.canContinue('pool', dynamic, NOW), { ok: false, reason: CREATE.pool.unsupportedDynamic });
+  assert.match(CREATE.pool.unsupportedDynamic, /^This pool has a dynamic fee, .*Choose another pool\.$/);
+  // Hooks are said first when a pool has both; neither pool walks on, and the journey never reaches Review with it.
+  assert.deepEqual(journey.canContinue('pool', journey.withPool(s, pool({ key: id('f'), hooks: addr('f'), feePips: 8388608 }), NOW), NOW), { ok: false, reason: CREATE.pool.unsupportedHooks });
+  for (const refused of [hooked, dynamic]) {
+    assert.equal(journey.next(refused, NOW), refused, 'Continue does nothing');
+    assert.equal(journey.reachable(journey.withBudget(refused, '0.5'), NOW), 'pool');
+  }
   // Re-reading the same pool keeps the range; a pool without a usable price gets none.
   const custom = journey.withRange(s, { lower: -600, upper: 600 });
   assert.deepEqual(journey.withPool(custom, pool({ block: 701 }), NOW).range, { lower: -600, upper: 600 });
@@ -530,20 +546,38 @@ test('the Review states its range position only when the range misses the price,
 });
 
 // Changed on purpose (owner, 2026-09-19): the Review said the fee twice --
-// PoolPair ends in it and a chip repeated it -- and said "Exact amounts are
-// calculated in Setup" both above and below the four dashes, which read as two
-// different remarks rather than one explanation.
-test('the Review says the fee once, and explains the empty deposit rows once', () => {
+// PoolPair ends in it and a chip repeated it. Changed again (owner,
+// 2026-09-22): the deposit amounts per token, with their dashes and the line
+// explaining them, were deleted; Review keeps Your choices and Wallet steps.
+test('the Review says the fee once, and keeps only Your choices and Wallet steps: no deposit amounts per token', () => {
   const review = readFileSync(new URL('../src/components/create/StageReview.tsx', import.meta.url), 'utf8');
-  const balance = readFileSync(new URL('../src/components/create/StageBalance.tsx', import.meta.url), 'utf8');
   assert.match(review, /<PoolPair option=\{pool\} \/>/, 'the pair still carries the fee');
   assert.doesNotMatch(review, /data-fee=/, 'no chip repeats it');
-  assert.match(balance, /\{figures && <p className="dm-hint">\{CREATE\.balance\.notEnabled\}<\/p>\}/,
-    'the trailing hint appears only under rows that carry numbers');
-  // Without figures the section already opens with the same sentence, so the
-  // explanation is still on screen exactly once.
-  assert.equal(CREATE.balance.titles.off, CREATE.balance.notEnabled);
-  assert.match(balance, /data-balance-waiting=\{shown\.status\}>\s*\{shown\.title\}/, 'that opening line is still rendered');
+  assert.equal(existsSync(new URL('../src/components/create/StageBalance.tsx', import.meta.url)), false, 'the deposit amounts section is gone');
+  const code = review.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
+  assert.doesNotMatch(code, /StageBalance|AmountsSection|CREATE\.balance|data-balance|CREATE\.review\.amounts|onboarding|previewRequest/, 'nothing of it is left in Review');
+  // Two sections, in this order: the choices, then the wallet steps.
+  assert.deepEqual([...review.matchAll(/aria-labelledby="(create-[a-z]+-heading)"/g)].map((match) => match[1]), ['create-choices-heading', 'create-steps-heading']);
+  assert.match(review, /\{CREATE\.review\.choices\}[\s\S]*\{CREATE\.review\.steps\}/);
+  assert.equal(CREATE.review.choices, 'Your choices');
+  assert.equal(CREATE.review.steps, 'Wallet steps');
+});
+
+test('Review’s wallet steps are the live ones once Create position runs: each marked by its key and state, and a done step is drawn green with a check', () => {
+  const review = readFileSync(new URL('../src/components/create/StageReview.tsx', import.meta.url), 'utf8');
+  const css = readFileSync(new URL('../src/styles/flow.css', import.meta.url), 'utf8');
+  const control = readFileSync(new URL('../src/components/create/CreatePosition.tsx', import.meta.url), 'utf8');
+  assert.match(review, /const progress = useCreateProgress\(\)\n\s*const live = progress && progress\.length > 0 \? progress : null/, 'Review reads the steps Create position publishes, and keeps its own plan until there are some');
+  assert.match(review, /step\.state === 'waiting' && index !== next \? '' : LIVE_CAPTION\[step\.state\]/, '"Next" under the first waiting step only');
+  assert.match(review, /data-wallet-step=\{step\.key\} data-step-state=\{step\.state \?\? undefined\}/);
+  assert.match(review, /\{step\.state === 'done' \? '✓' : index \+ 1\}/, 'a done step shows a check in place of its number');
+  assert.match(css, /\.dm-flow-wsteps > li\[data-step-state="done"\] \{[^}]*--money-in/, 'a done step is green');
+  assert.match(css, /\.dm-flow-wsteps > li\[data-step-state="done"\] \.dm-step-marker \{[^}]*--money-in/);
+  // Create position publishes the steps it runs, marks each one as it goes, and never leaves a run's steps behind.
+  assert.match(control, /publishCreateProgress\(next\.length > 0 \? next : null\)/, 'an empty list is never published: Review keeps its plan');
+  assert.match(control, /mark\(approveKey, 'waiting', gen, true\)/, 'a second approval of the same token opens its step again');
+  assert.match(control, /mark\(key, 'done', gen\)/);
+  assert.equal((control.match(/publishCreateProgress\(null\)/g) ?? []).length, 2, 'cleared when the wallet changes and when the control goes');
 });
 
 test('a pool picked on Setup keeps the carried choices only when it is the pool they were carried for (G9)', () => {
@@ -616,6 +650,36 @@ test('the wallet steps are the ones Create position asks for, in order: an exact
   for (const step of erc20) assert.doesNotMatch(`${step.title} ${step.detail}`, /sequence|compound|automation|service fee|Permit2|Setup opens/i, step.title);
   assert.deepEqual(journey.walletSteps(journey.initialState()), []);
   assert.deepEqual(journey.walletSteps({ ...ready(), pool: pool({ currencies: [token(addr('8')), token(addr('9'))] }) }), [], 'no steps for a pool that does not hold the token');
+  // Each step carries the key Create position reports its progress under (lib/create/createProgress.ts), so Review can mark it.
+  assert.deepEqual(erc20.map((step) => step.key), [`approve:${addr('1')}`, `approve:${addr('2')}`, 'fund', 'mint']);
+  assert.equal(new Set(erc20.map((step) => step.key)).size, erc20.length, 'one key per step');
+});
+
+test('with one of the two tokens in the wallet, the steps approve and deposit that token alone, then swap part of it inside the pool, then create the position', () => {
+  for (const from of [0, 1]) {
+    const steps = journey.walletSteps(ready(), from);
+    const held = [addr('1'), addr('2')][from];
+    assert.deepEqual(steps.map((step) => step.key), [`approve:${held}`, 'fund', 'swap', 'mint'], `from token ${from}`);
+    assert.deepEqual(steps.map((step) => step.title), ['Approve the exact amount', 'Deposit the token', 'Swap for the other token', 'Create the position']);
+    assert.deepEqual(steps.map((step) => step.token?.address), [held, held, undefined, undefined], 'the approval and the deposit name the token deposited');
+    assert.match(steps[1].detail, /The token stays yours until the mint, and can be refunded\./);
+    // An ERC-20 deposited alone sends no ETH, so the step does not say it does.
+    assert.doesNotMatch(steps[1].detail, /Native ETH/);
+    assert.match(steps[2].detail, /One swap inside this pool, of part of your deposit/);
+    assert.match(steps[2].detail, /Domino’s assisted-swap fee \(0\.65%\)/, 'the fee as written by default');
+  }
+  // The fee named is the one handed in: the deployment's own, as Review writes it.
+  assert.match(journey.walletSteps(ready(), 0, '0.3%')[2].detail, /assisted-swap fee \(0\.3%\)/);
+  // Native ETH: no approval, whichever side is swapped from; an ERC-20 deposited alone is still approved exactly.
+  const ethPool = pool({ currencies: [token(ZERO, 18, 'ETH'), token(addr('2'), 6, 'USDG')] });
+  const eth = journey.withBudget(journey.withToken(journey.withPool(journey.initialState(), ethPool, NOW), TWO), '1');
+  assert.deepEqual(journey.walletSteps(eth, 0).map((step) => step.key), ['fund', 'swap', 'mint'], 'ETH alone travels with the deposit');
+  assert.equal(journey.walletSteps(eth, 0)[0].token.address, ZERO);
+  assert.match(journey.walletSteps(eth, 0)[0].detail, /Native ETH travels with it/);
+  assert.deepEqual(journey.walletSteps(eth, 1).map((step) => step.key), [`approve:${addr('2')}`, 'fund', 'swap', 'mint']);
+  // No token held: the steps as for both tokens; a pool that does not hold the token: none.
+  assert.deepEqual(journey.walletSteps(ready(), null), journey.walletSteps(ready()));
+  assert.deepEqual(journey.walletSteps({ ...ready(), pool: pool({ currencies: [token(addr('8')), token(addr('9'))] }) }, 0), []);
 });
 
 test('the fee bases are the pool’s, the assisted swap’s and gas: a direct deposit carries no Domino service fee', () => {
@@ -652,7 +716,7 @@ test('the summary says — for what is not chosen and serialises every decision,
   const text = journey.serialiseSummary(s, NOW);
   // The request is sent for the deposit amounts in wallet builds, never printed: no JSON dump in the summary (G8).
   assert.ok(!text.some((line) => line.startsWith('Request:') || line.includes('"chainId"')), 'no request JSON in the summary');
-  assert.ok(text.includes('Deposit amounts: Exact amounts are calculated when you create the position, at the price when you sign.'));
+  assert.ok(!text.some((line) => line.startsWith('Deposit amounts')), 'no deposit amounts block: Review is the choices and the wallet steps');
   assert.ok(text.includes('Wallet step 1: Approve the exact amount'));
   assert.ok(text.includes('Wallet step 3: Deposit the tokens'));
   assert.ok(text.includes('Wallet step 4: Create the position'));
@@ -660,6 +724,9 @@ test('the summary says — for what is not chosen and serialises every decision,
   assert.ok(text.includes('Pool trading fee: 0.30%'));
   assert.ok(!text.some((line) => line.startsWith('Domino service fee')), 'no service fee row: a direct deposit carries none');
   assert.equal(text.at(-1), 'Create position: Press Create position: your wallet asks you to sign each step.');
+  // A one-token deposit in ONE: its approval, its deposit, the swap, the position.
+  const swapping = journey.serialiseSummary(s, NOW, 0).filter((line) => line.startsWith('Wallet step'));
+  assert.deepEqual(swapping, ['Wallet step 1: Approve the exact amount', 'Wallet step 2: Deposit the token', 'Wallet step 3: Swap for the other token', 'Wallet step 4: Create the position']);
 });
 
 test('a verified pool’s two currencies become candidates, by address, with the read’s decimals and status', () => {

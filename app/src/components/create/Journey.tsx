@@ -259,9 +259,15 @@ export function Journey({ poolId }: { poolId: string }) {
   // Reopening a done step: goTo() opens a stage only when canOpen() allows it.
   const reopen = (step: VisualStep) => {
     const target = STAGE_OF[step]
-    if (!canOpen(target, state, now)) return
+    if (creating || !canOpen(target, state, now)) return
     open(goTo(state, target, now), step === 'amount' ? 'amount' : 'range')
   }
+
+  // One wallet read for both of the pool's currencies, owned here so it starts
+  // as soon as a pool is chosen and is settled by the time Review reads it:
+  // the amount step names the second token with it, and Review and Create
+  // position plan the deposit from it.
+  const pair = usePairBalances(source, state.pool)
 
   const checkFor: Record<VisualStep, Check> = { pool: poolCheck, range: rangeCheck, amount: amountCheck, review: canContinue('review', state, now) }
   const check = checkFor[current]
@@ -271,7 +277,7 @@ export function Journey({ poolId }: { poolId: string }) {
         {CREATE.page.back}
       </Button>
       {current === 'review' ? (
-        <FinalControl state={state} onBusy={setCreating} />
+        <FinalControl state={state} balances={pair} onBusy={setCreating} />
       ) : (
         <>
           <Button type="button" variant="primary" size="lg" disabled={!check.ok} aria-describedby={check.ok ? undefined : 'continue-reason'} onClick={forward}>
@@ -287,11 +293,6 @@ export function Journey({ poolId }: { poolId: string }) {
     </div>
   )
 
-  // One wallet read for both of the pool's currencies, owned here so it starts
-  // as soon as a pool is chosen and is settled by the time Review asks for an
-  // estimate: the amount step names the second token with it, and the estimate
-  // carries it as its budgets. One read, one owner, one estimate per opening.
-  const pair = usePairBalances(source, state.pool)
 
   const bodyOf = (step: VisualStep): ReactNode => {
     switch (step) {
@@ -302,7 +303,7 @@ export function Journey({ poolId }: { poolId: string }) {
       case 'amount':
         return <StageAmount state={state} balances={pair} onBudget={setBudget} onDeposit={setDeposit} onSlippage={setSlippage} />
       case 'review':
-        return <StageReview state={state} now={now} open={current === 'review'} balances={pair} />
+        return <StageReview state={state} now={now} balances={pair} />
       default:
         return step satisfies never
     }
@@ -344,7 +345,7 @@ export function Journey({ poolId }: { poolId: string }) {
     <PageShell width="flow" data-create-journey="">
       <PageHeader size="display" align="center" title={CREATE.page.title} description={CREATE.page.description} className="dm-flow-rise" />
       <div className="dm-card dm-flow-card dm-flow-rise" style={{ '--delay': '60ms' } as CSSProperties}>
-        <StepList steps={steps} onOpen={reopen} />
+        <StepList steps={steps} onOpen={reopen} locked={creating} />
       </div>
     </PageShell>
   )

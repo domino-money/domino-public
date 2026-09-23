@@ -73,6 +73,6 @@ export const ROADMAP: Array<{ name: string; status: Availability; note: string }
   {
     name: 'Service pricing',
     status: 'planned',
-    note: 'Auto-compound uses 2% and Domino-compound 4% of consumed earned fees, once. No additional fee is charged for automation balancing swaps. Direct deposits have no Domino percentage fee. Setup’s assisted swap charges 0.65% of the amount swapped, shown before approval.',
+    note: 'Auto-compound uses 2% and Domino-compound 4% of consumed earned fees, once. No additional fee is charged for automation balancing swaps. Direct deposits have no Domino percentage fee. The assisted swap Create position makes when a wallet holds one of the two tokens charges 0.65% of the amount swapped, shown before signing.',
   },
 ]

@@ -1,15 +1,17 @@
 import { lazy, Suspense } from 'react'
 import { CREATE } from '../../lib/create/copy'
 import type { PairBalancesState } from './usePairBalances'
-import { candidateDecimals, priceOf, validateBudget, validateSlippage, walletSteps, type JourneyState } from '../../lib/create/journey'
-import { pairedAmount } from '../../lib/create/pairAmount'
+import { priceOf, validateSlippage, walletSteps, type JourneyState } from '../../lib/create/journey'
 import { slippageWarns, slippageWritten } from '../../lib/create/slippage'
 import { formatUnits } from '../../lib/read/decimal'
 import { rangePosition } from '../../lib/read/screens/poolRange'
 import { Address } from '../read/screens/Address'
 import { SymbolText } from '../read/screens/SymbolText'
 import { Button } from '../ui'
-import { StageBalance } from './StageBalance'
+import { ASSISTED_SWAP_FEE_BPS, type DepositPlan } from '../../lib/create/depositPlan'
+import { reviewPlan } from '../../lib/create/reviewPlan'
+import { NATIVE_CURRENCY } from '../../lib/read/screens/identity'
+import { useCreateProgress, type LiveState } from '../../lib/create/createProgress'
 import { PoolPair, RangeSummary } from './StepList'
 import type { PoolOption } from '../../lib/read/screens/poolsList'
 
@@ -19,9 +21,9 @@ import type { PoolOption } from '../../lib/read/screens/poolsList'
  * the one the range and the price make of it (create/pairAmount.ts) — so
  * Review opens with what is being created rather than with a list of settings.
  *
- * Null when a choice is missing or the price cannot be used; the service's own
- * expected and maximum amounts, with slippage, arrive below in StageBalance
- * when onboarding answers, and they remain the authority.
+ * Null when a choice is missing or the price cannot be used. When the wallet
+ * holds only one of the two tokens, the line is what the position holds after
+ * part of that token is swapped for the other (lib/create/depositPlan.ts).
  *
  * Returned as two sides rather than one sentence so each symbol can be drawn
  * through SymbolText. A symbol is whatever the token contract returned: it can
@@ -34,39 +36,55 @@ interface HeldSide {
   token: PoolOption['currencies'][number]
 }
 
-function heldAmounts(state: JourneyState): [HeldSide, HeldSide] | null {
-  const { pool, token, range } = state
-  if (!pool || !token || !range) return null
-  const independent = pool.currencies.findIndex((currency) => currency.address === token.key)
-  if (independent !== 0 && independent !== 1) return null
-  const budget = validateBudget(state.budget, candidateDecimals(token))
-  if (!budget.ok) return null
-  const other = pairedAmount({ sqrtPriceX96: pool.sqrtPriceX96, tickLower: range.lower, tickUpper: range.upper, independent, amountRaw: budget.raw })
-  if (other.kind !== 'amount') return null
-  const side = (index: 0 | 1, raw: string): HeldSide => {
-    const currency = pool.currencies[index]
-    const units = formatUnits(raw, currency.decimals)
-    return { amount: units && units.kind === 'units' ? units.text : raw, token: currency }
-  }
-  const mine = side(independent, budget.raw)
-  const theirs = side(independent === 0 ? 1 : 0, other.raw)
-  return independent === 0 ? [mine, theirs] : [theirs, mine]
+const sideOf = (pool: PoolOption, index: 0 | 1, raw: bigint | string): HeldSide => {
+  const currency = pool.currencies[index]
+  const units = formatUnits(String(raw), currency.decimals)
+  return { amount: units && units.kind === 'units' ? units.text : String(raw), token: currency }
+}
+
+/** The raw balances the read service reported for the pool's two tokens, in pool order, or null until it answered. */
+const rawBalances = (balances: PairBalancesState): readonly [string | null, string | null] | null =>
+  balances.status === 'ready' && balances.balances ? [balances.balances[0].raw, balances.balances[1].raw] : null
+
+/** How the wallet funds these choices, from the balances the read service reported: what Review shows, and what the final control's line says. */
+const planFor = (state: JourneyState, balances: PairBalancesState): DepositPlan | null => reviewPlan(state, rawBalances(balances))?.plan ?? null
+
+/** What each live state says under its step, once Create position runs. */
+const LIVE_CAPTION: Record<LiveState, string> = {
+  waiting: 'Next',
+  reading: 'Checking…',
+  wallet: 'Confirm in your wallet',
+  chain: 'Waiting for the network',
+  done: 'Done',
+  failed: 'Stopped',
 }
 
 /**
- * Step 4, Review: what is being created at the top, the deposit amounts the
- * service reports when it answers (StageBalance.tsx), and the wallet steps in
- * order. No Domino fee: a direct deposit carries none, and automation, with
- * its fee on earned fees, is applied later from Automate. `open` is whether
- * Review is the open step: the amounts are asked for only then.
+ * Step 4, Review: the choices at the top, then the wallet steps in order,
+ * each turning green as Create position completes it. No Domino fee on the
+ * deposit: automation, with its fee on earned fees, is applied later from
+ * Automate. When the wallet holds only one of the two tokens, the headline is
+ * what the position holds after part of it is swapped, and the steps include
+ * that swap with its fee.
  */
-export function StageReview({ state, now, open, balances }: { state: JourneyState; now: number; open: boolean; balances: PairBalancesState }) {
+export function StageReview({ state, now, balances }: { state: JourneyState; now: number; balances: PairBalancesState }) {
   const pool = state.pool
   const price = priceOf(pool, now)
   const usable = price && price.state === 'usable' ? price : null
   const inside = usable && state.range ? rangePosition(state.range, usable.tick) === 'inside' : null
-  const steps = walletSteps(state)
-  const held = heldAmounts(state)
+  const planned = reviewPlan(state, rawBalances(balances))
+  const plan = planned?.plan ?? null
+  const swap = plan && plan.kind === 'swap' ? plan : null
+  const steps = walletSteps(state, swap ? swap.from : null, `${ASSISTED_SWAP_FEE_BPS / 100}%`)
+  // Once Create position runs, its own steps, as they happen: the tokens it found in the wallet decide them.
+  const progress = useCreateProgress()
+  const live = progress && progress.length > 0 ? progress : null
+  // "Next" is said under the first step still waiting, and only there.
+  const next = live ? live.findIndex((step) => step.state === 'waiting') : -1
+  const shown = live
+    ? live.map((step, index) => ({ ...step, caption: step.state === 'waiting' && index !== next ? '' : LIVE_CAPTION[step.state] }))
+    : steps.map((step) => ({ ...step, state: null as LiveState | null, caption: step.detail }))
+  const held = pool && planned ? ([sideOf(pool, 0, planned.need[0]), sideOf(pool, 1, planned.need[1])] as const) : null
   const slippage = validateSlippage(state.slippageBps)
   return (
     <div className="dm-flow-stack" data-stage="review">
@@ -79,8 +97,14 @@ export function StageReview({ state, now, open, balances }: { state: JourneyStat
           <p className="dm-flow-headline-pair">
             {pool ? <PoolPair option={pool} /> : CREATE.page.notChosen}
           </p>
-          <p className="dm-flow-headline-amounts tnum" data-review-amounts="">
-            {held ? (
+          <p className="dm-flow-headline-amounts tnum" data-review-amounts="" data-review-plan={plan?.kind}>
+            {swap && pool ? (
+              // What the position holds once part of the one token is swapped: estimates, before the pool's own price impact.
+              <>
+                ≈{sideOf(pool, swap.from, swap.deposit - swap.swap).amount} <SymbolText token={pool.currencies[swap.from]} /> + ≈
+                {sideOf(pool, swap.from === 0 ? 1 : 0, swap.receive).amount} <SymbolText token={pool.currencies[swap.from === 0 ? 1 : 0]} />
+              </>
+            ) : held ? (
               <>
                 {held[0].amount} <SymbolText token={held[0].token} /> + {held[1].amount} <SymbolText token={held[1].token} />
               </>
@@ -88,6 +112,13 @@ export function StageReview({ state, now, open, balances }: { state: JourneyStat
               CREATE.page.notChosen
             )}
           </p>
+          {swap && pool && (
+            <p className="dm-flow-headline-line tnum" data-review-swap={swap.from}>
+              From your wallet: {sideOf(pool, swap.from, swap.deposit).amount} <SymbolText token={pool.currencies[swap.from]} />. About {sideOf(pool, swap.from, swap.swap).amount}{' '}
+              <SymbolText token={pool.currencies[swap.from]} /> of it is swapped for ≈{sideOf(pool, swap.from === 0 ? 1 : 0, swap.receive).amount}{' '}
+              <SymbolText token={pool.currencies[swap.from === 0 ? 1 : 0]} />.
+            </p>
+          )}
           <p className="dm-flow-headline-line tnum" data-review-range="">
             {state.range && price && price.state === 'usable' ? (
               <>
@@ -119,20 +150,40 @@ export function StageReview({ state, now, open, balances }: { state: JourneyStat
           </p>
         )}
         {inside === true && usable && <span className="sr-only" data-review-position="inside">{CREATE.review.inRange}</span>}
+        {swap && pool && (
+          // One span: the line is a flex row (its dot, then the sentence), and the symbols must stay inside the sentence.
+          <p role="status" className="dm-flow-position" data-tone="neutral" data-review-swap-note="">
+            <span>
+              Your wallet does not hold enough <SymbolText token={pool.currencies[swap.from === 0 ? 1 : 0]} />, so part of your <SymbolText token={pool.currencies[swap.from]} /> is swapped for it
+              inside this pool before the position is created. {CREATE.review.swapNote(`${ASSISTED_SWAP_FEE_BPS / 100}%`)}
+            </span>
+          </p>
+        )}
+        {plan && plan.kind === 'short' && pool && (
+          <p role="status" className="dm-flow-position" data-tone="neutral" data-review-short={plan.token}>
+            <span>
+              Your wallet holds {sideOf(pool, plan.token, plan.have).amount} <SymbolText token={pool.currencies[plan.token]} />
+              {pool.currencies[plan.token].address === NATIVE_CURRENCY ? ' after network gas' : ''}; this position needs {sideOf(pool, plan.token, plan.need).amount}. Lower the amount, or add{' '}
+              <SymbolText token={pool.currencies[plan.token]} /> to your wallet.
+            </span>
+          </p>
+        )}
       </section>
-
-      <StageBalance state={state} open={open} balances={balances} />
 
       <section aria-labelledby="create-steps-heading" className="dm-flow-section">
         <h3 id="create-steps-heading" className="dm-flow-subtitle">
           {CREATE.review.steps}
         </h3>
         <p className="text-caption text-fg-muted">{CREATE.review.stepsNote}</p>
-        <ol className="dm-flow-wsteps" data-wallet-steps="">
-          {steps.map((step, index) => (
-            <li key={step.title}>
-              <span aria-hidden="true" className="dm-step-marker">
-                {index + 1}
+        <ol className="dm-flow-wsteps" data-wallet-steps="" data-live={live ? '' : undefined} aria-live="polite">
+          {shown.map((step, index) => (
+            <li key={step.key} data-wallet-step={step.key} data-step-state={step.state ?? undefined}>
+              <span
+                aria-hidden="true"
+                className="dm-step-marker"
+                data-state={step.state === 'done' ? 'done' : step.state === 'wallet' || step.state === 'chain' || step.state === 'reading' ? 'current' : undefined}
+              >
+                {step.state === 'done' ? '✓' : index + 1}
               </span>
               <span className="grid min-w-0 gap-0.5">
                 <span className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-body font-medium text-fg">
@@ -143,7 +194,7 @@ export function StageReview({ state, now, open, balances }: { state: JourneyStat
                     </span>
                   )}
                 </span>
-                <span className="text-caption text-fg-muted">{step.detail}</span>
+                {step.caption && <span className="text-caption text-fg-muted">{step.caption}</span>}
               </span>
             </li>
           ))}
@@ -153,8 +204,8 @@ export function StageReview({ state, now, open, balances }: { state: JourneyStat
   )
 }
 
-// The final control in builds with wallet sign-in: Create position, from the same chunk as the deposit amounts, so
-// the entry never carries the wallet or the setup client. While it loads, the disabled button stands in for it.
+// The final control in builds with the wallet: Create position, from its own chunk, so the entry never carries the
+// wallet or the setup client. While it loads, the disabled button stands in for it.
 const CreateControl = __DOMINO_WALLET_SESSION__
   ? lazy(() =>
       import('./DepositAmounts')
@@ -179,16 +230,17 @@ function Unavailable({ note }: { note: string }) {
 /**
  * The last control of the flow: Create position. In a build that carries the
  * wallet it opens the position through the wallet, step by step
- * (CreatePosition.tsx); any other build shows the disabled action and why.
+ * (CreatePosition.tsx), and says under it when Review's reading finds the
+ * wallet cannot fund it; any other build shows the disabled action and why.
  * This is the one control that depends on the build, so it lives here, where
  * the build flag is defined, and not in lib/create/copy.ts, which is compiled
  * for tests without it.
  */
-export function FinalControl({ state, onBusy }: { state: JourneyState; onBusy?: (busy: boolean) => void }) {
+export function FinalControl({ state, balances, onBusy }: { state: JourneyState; balances: PairBalancesState; onBusy?: (busy: boolean) => void }) {
   if (CreateControl) {
     return (
       <Suspense fallback={<Unavailable note={CREATE.review.loading} />}>
-        <CreateControl state={state} onBusy={onBusy} />
+        <CreateControl state={state} reviewed={planFor(state, balances)} onBusy={onBusy} />
       </Suspense>
     )
   }

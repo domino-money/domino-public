@@ -9,8 +9,10 @@ import { createFakeOnboarding } from './support/fake-onboarding.mjs';
 import { createFakeSession } from './support/fake-session.mjs';
 import { createWalletServer } from './support/wallet-server.mjs';
 import { ACCOUNTS, installWallets } from './support/mock-wallet.mjs';
-import { ARTWORK, walkToReview } from './support/new-position.mjs';
+import { ARTWORK, choosePool, footerButton, walkToReview } from './support/new-position.mjs';
 import { FIXTURE_TOKEN, createReadStub } from './support/read-stub.mjs';
+// The mint's own sizing, from the unit build (npm test compiles it first, as check:app runs it first).
+import { bandFor, bandLiquidity, mintPlanFor } from '../.test-build/app/src/lib/create/mintPlan.js';
 import * as runtime from '../../api-contracts/performance-v2/runtime.mjs';
 import * as executionRuntime from '../../api-contracts/execution-v1/runtime.mjs';
 import * as depositRuntime from '../../api-contracts/deposit-v1/runtime.mjs';
@@ -565,12 +567,18 @@ const erc20Abi = parseAbi(['function allowance(address,address) view returns(uin
  * transaction, receipt and block reads a sent step is followed by. Every transaction it is handed is included in its
  * own block, all of them finalized (with `finality: 'lagging'`, none: the finalized block stays behind them all, as an
  * L2's does behind L1), and its state moves as the contract's would: an approval sets the allowance,
- * `open` records the funded operation under the id it named and counts the owner's nonce up, `mint` closes it with the
- * NFT `tokenId`, `cancel` closes it with its balances refunded. `seed` puts an operation on chain before the page
- * opens; `decline(name)` makes the wallet refuse, with 4001, the next transaction that calls `name`; `revert(name)` includes
- * it with status 0 and no effect.
+ * `open` records the funded operation under the id it named and counts the owner's nonce up, `swap` exchanges part of
+ * one side for the other inside the pool (DominoSetup.swap: the gross input leaves that side, the output joins the
+ * other, once per operation), `mint` closes it with the NFT `tokenId`, `cancel` closes it with its balances refunded.
+ * The wallet holds `eth` wei of ETH and `balances` of each ERC-20. The pool has a constant `liquidity` around the
+ * stub's price and swaps as v4-core's swap math does (`swapAt`): a swap, simulated or sent, pays the deployment's
+ * assisted fee on the gross input and the pool's 0.30% on the rest, and one that is sent moves the price its
+ * StateView reports. A swap that would cross its price limit, or return less than its minimum, reverts, as the contract
+ * does. `swapOutput` is what a size buys from the stub's first price. `seed` puts an operation on chain
+ * before the page opens; `decline(name)` makes the wallet refuse, with 4001, the next transaction that calls `name`;
+ * `revert(name)` includes it with status 0 and no effect.
  */
-function fakeDepositChain(owner, { tokenId = 4242n, balances = {}, finality = 'final' } = {}) {
+function fakeDepositChain(owner, { tokenId = 4242n, balances = {}, eth = 10n ** 18n, liquidity = 5n * 10n ** 17n, finality = 'final' } = {}) {
   const at = (byte, bytes = 20) => `0x${byte.toString(16).padStart(2, '0').repeat(bytes)}`;
   const setup = at(0x71), poolManager = at(0x72), positionManager = at(0x73), stateView = at(0x74), feeRecipient = at(0x75);
   const code = { [setup]: '0x6071', [poolManager]: '0x6072', [positionManager]: '0x6073', [stateView]: '0x6074' };
@@ -581,7 +589,35 @@ function fakeDepositChain(owner, { tokenId = 4242n, balances = {}, finality = 'f
   const operationId = nonce => keccak256(encodeAbiParameters(parseAbiParameters('uint256,address,address,uint64'), [4663n, setup, owner, nonce]));
   const NONE = { owner: zeroAddress, key: { currency0: zeroAddress, currency1: zeroAddress, fee: 0, tickSpacing: 0, hooks: zeroAddress }, balance0: 0n, balance1: 0n, swapped: false, closed: false, tokenId: 0n };
   const operations = new Map(), allowances = new Map(), held = new Map(Object.entries(balances).map(([token, amount]) => [lower(token), amount]));
-  const log = [], refused = [], missing = [], sends = [], viewed = [], declined = [];
+  const log = [], refused = [], missing = [], sends = [], viewed = [], declined = [], quotes = [];
+  /** The pool's square-root price now: the stub's, until a swap is included. */
+  let sqrtPrice = STUB_SQRT_PRICE;
+  /**
+   * What `gross` swapped from the square-root price `from` buys, and the price it leaves: the assisted fee off the
+   * gross, the pool's 0.30% off the rest, then v4-core's SqrtPriceMath along the constant liquidity, rounded as it is.
+   */
+  const swapAt = (gross, zeroForOne, from = sqrtPrice) => {
+    const net = gross - (gross * BigInt(deployment.feeBps)) / 10000n;
+    const curve = (net * 997n) / 1000n;
+    if (zeroForOne) {
+      const after = (liquidity * Q96 * from + (liquidity * Q96 + curve * from) - 1n) / (liquidity * Q96 + curve * from);
+      return [(liquidity * (from - after)) / Q96, after];
+    }
+    const after = from + (curve * Q96) / liquidity;
+    return [(liquidity * Q96 * (after - from)) / after / from, after];
+  };
+  /** What `gross` buys from the stub's first price, the one each test's single swap starts from. */
+  const swapOutput = (gross, zeroForOne) => swapAt(gross, zeroForOne, STUB_SQRT_PRICE)[0];
+  /** DominoSetup.swap's own checks, then its output and the price it leaves; a partial or short fill reverts. */
+  const swapped = plan => {
+    const op = operations.get(plan.operationId);
+    if (!op || op.closed || op.swapped || plan.grossInput === 0n || plan.minOutput === 0n || plan.grossInput > (plan.zeroForOne ? op.balance0 : op.balance1)) throw new Error('execution reverted: InvalidSetup()');
+    if (plan.zeroForOne ? plan.sqrtPriceLimitX96 >= sqrtPrice : plan.sqrtPriceLimitX96 <= sqrtPrice) throw new Error('execution reverted: price limit on the wrong side');
+    const [output, after] = swapAt(plan.grossInput, plan.zeroForOne);
+    if (plan.zeroForOne ? after < plan.sqrtPriceLimitX96 : after > plan.sqrtPriceLimitX96) throw new Error('execution reverted: a partial fill');
+    if (output < plan.minOutput) throw new Error('execution reverted: InvalidSetup()');
+    return [output, after];
+  };
   const refuse = new Set(), reverting = new Set(), reverted = new Set();
   let permitted = false;
   const blockOf = index => ({ number: numberToHex(0x10 + index), hash: at(0xb0 + index, 32) });
@@ -591,7 +627,7 @@ function fakeDepositChain(owner, { tokenId = 4242n, balances = {}, finality = 'f
     if (to === stateView) {
       const { functionName } = decodeFunctionData({ abi: stateViewAbi, data });
       viewed.push(functionName);
-      if (functionName === 'getSlot0') return encodeFunctionResult({ abi: stateViewAbi, functionName, result: [STUB_SQRT_PRICE, 0, 0, 3000] });
+      if (functionName === 'getSlot0') return encodeFunctionResult({ abi: stateViewAbi, functionName, result: [sqrtPrice, 0, 0, 3000] });
       throw new Error(`unexpected ${functionName} on the state view`);
     }
     if (to === setup) {
@@ -600,6 +636,12 @@ function fakeDepositChain(owner, { tokenId = 4242n, balances = {}, finality = 'f
       const answers = { manager: poolManager, positions: positionManager, stateView, feeRecipient, assistedFeeBps: 30, tariffVersion: 1n, ownerNonce: BigInt(operations.size),
         nextOperationId: operationId(BigInt(operations.size)), operation: operations.get(args[0]) ?? NONE, recoveryStarted: false };
       if (functionName in answers) return encodeFunctionResult({ abi: setupChainAbi, functionName, result: answers[functionName] });
+      if (functionName === 'swap') {
+        const [output] = swapped(args[0]);
+        // A quote is the swap simulated with a minimum of one unit (finance/setup.ts quoteSwap and swap's own simulation).
+        if (args[0].minOutput === 1n) quotes.push(args[0]);
+        return encodeFunctionResult({ abi: setupChainAbi, functionName, result: output });
+      }
       if (['open', 'mint', 'cancel'].includes(functionName)) return '0x';
       throw new Error(`unexpected ${functionName} on the setup contract`);
     }
@@ -618,6 +660,13 @@ function fakeDepositChain(owner, { tokenId = 4242n, balances = {}, finality = 'f
       return;
     }
     if (functionName === 'open') operations.set(args[0], { owner, key: args[1], balance0: args[2], balance1: args[3], swapped: false, closed: false, tokenId: 0n });
+    if (functionName === 'swap') {
+      const plan = args[0], op = operations.get(plan.operationId), [output, after] = swapped(plan);
+      sqrtPrice = after;
+      operations.set(plan.operationId, { ...op, swapped: true,
+        balance0: plan.zeroForOne ? op.balance0 - plan.grossInput : op.balance0 + output,
+        balance1: plan.zeroForOne ? op.balance1 + output : op.balance1 - plan.grossInput });
+    }
     if (functionName === 'mint') operations.set(args[0].operationId, { ...operations.get(args[0].operationId), balance0: 0n, balance1: 0n, closed: true, tokenId });
     if (functionName === 'cancel') operations.set(args[0], { ...operations.get(args[0]), balance0: 0n, balance1: 0n, closed: true });
   }
@@ -635,7 +684,7 @@ function fakeDepositChain(owner, { tokenId = 4242n, balances = {}, finality = 'f
         case 'eth_gasPrice': return { result: '0x5f5e100' };
         case 'eth_getTransactionCount': return { result: numberToHex(sends.length) };
         case 'eth_estimateGas': return { result: '0x186a0' };
-        case 'eth_getBalance': return { result: '0xde0b6b3a7640000' };
+        case 'eth_getBalance': return { result: numberToHex(eth) };
         case 'eth_call': return { result: view(lower(params[0].to), params[0].data) };
         case 'eth_sendTransaction': {
           const { functionName } = decode(params[0]);
@@ -666,7 +715,9 @@ function fakeDepositChain(owner, { tokenId = 4242n, balances = {}, finality = 'f
     return { error: { code: 4200, message: `${method} is not supported` } };
   }
   return {
-    log, refused, missing, sends, viewed, declined, request, operationId, tokenId, operations, release: { contractVersion: '1.0.0-rc.1', chainId: 4663, available: true, deployment },
+    log, refused, missing, sends, viewed, declined, quotes, request, operationId, tokenId, operations, swapOutput, price: () => sqrtPrice, release: { contractVersion: '1.0.0-rc.1', chainId: 4663, available: true, deployment },
+    /** What the wallet holds: its ETH, and its balance of an ERC-20. */
+    eth, balanceOf: token => held.get(lower(token)) ?? 0n,
     /** An operation of this owner already on chain, under the owner's next id. */
     seed(operation) { const id = operationId(BigInt(operations.size)); operations.set(id, { owner, swapped: false, closed: false, tokenId: 0n, ...operation }); return id; },
     decline(functionName) { refuse.add(functionName); },
@@ -706,6 +757,7 @@ const STUB_POOL_KEY = { currency0: zeroAddress, currency1: FIXTURE_TOKEN, fee: 3
 const STUB_RANGE = [-3600, 4080];
 /** The read stub's pool price: tick 0. */
 const STUB_SQRT_PRICE = 2n ** 96n;
+const Q96 = 2n ** 96n;
 const lowerKey = key => ({ ...key, currency0: key.currency0.toLowerCase(), currency1: key.currency1.toLowerCase(), hooks: key.hooks.toLowerCase() });
 /**
  * The read gateway's answer for the position NFT the chain above minted, once it exists: the read fixture's first
@@ -721,16 +773,49 @@ const mintedPosition = (chain) => (route, body) => {
     liquidityRaw: String(plan.liquidity), principalRaw: [String(open.args[2]), String(open.args[3])], unsettledFeesRaw: ['0', '0'], inRange: true, hasLiquidity: true };
   return JSON.stringify({ ...base, items: [item] });
 };
-/** Create position's step list as the page shows it: each step's key and state. */
-const createSteps = page => page.locator('[data-create-steps] li').evaluateAll(items => items.map(item => [item.getAttribute('data-create-step'), item.getAttribute('data-create-step-state')]));
+/**
+ * The read gateway's wallet page for the chain above: the read fixture's (wallet-assets.last-page), holding what the
+ * chain's wallet holds of ETH and TOKEN, so Review's plan and Create position read the same balances, as they do when
+ * the read service and the wallet look at one chain.
+ */
+const walletAssets = (chain) => (route) => {
+  if (route !== 'wallet-assets') return undefined;
+  const base = readGateway('wallet-assets.last-page');
+  const items = base.items.map(item => ({ ...item, amountRaw: String(item.address === zeroAddress ? chain.eth : chain.balanceOf(item.address)) }));
+  return JSON.stringify({ ...base, items });
+};
+/** The first answer any of `answers` gives, for the read stub. */
+const firstAnswer = (...answers) => (route, body) => answers.map(answer => answer?.(route, body)).find(reply => reply !== undefined);
+/** Review's list of wallet steps as the page shows it: each step's key and live state (null before Create position runs). */
+const walletStepStates = page => page.locator('[data-wallet-steps] li').evaluateAll(items => items.map(item => [item.getAttribute('data-wallet-step'), item.getAttribute('data-step-state')]));
+/** Records every change of Review's wallet steps from now on, in `window.__walletStepLog`, as `key=state` lists. */
+const recordWalletSteps = page => page.evaluate(() => {
+  const log = (window.__walletStepLog = []);
+  const record = () => {
+    const now = [...document.querySelectorAll('[data-wallet-steps] li')].map(item => `${item.getAttribute('data-wallet-step')}=${item.getAttribute('data-step-state')}`).join(' ');
+    if (now && log.at(-1) !== now) log.push(now);
+  };
+  new MutationObserver(record).observe(document.body, { subtree: true, childList: true, attributes: true, attributeFilter: ['data-step-state', 'data-wallet-step'] });
+});
+/** The order in which the recorded steps turned done, each with what the others were at that moment. */
+async function doneOrder(page) {
+  const log = await page.evaluate(() => window.__walletStepLog);
+  const order = [];
+  for (const entry of log) {
+    const states = Object.fromEntries(entry.split(' ').map(pair => pair.split('=')));
+    for (const [key, state] of Object.entries(states)) if (state === 'done' && !order.some(done => done.key === key)) order.push({ key, states });
+  }
+  return { log, order };
+}
 
 /**
  * The wallet-test build at New position's Review with the chain above connected on Robinhood Chain and nothing more:
- * Sign in is offered and never pressed. The release the setup client verifies is the chain's own. Resolves once
- * Create position's lazily loaded control is in (StageReview.tsx FinalControl). `answer` goes to the read stub.
+ * Sign in is offered and never pressed. The release the setup client verifies is the chain's own, and the read
+ * service reports the chain wallet's balances. Resolves once Create position's lazily loaded control is in
+ * (StageReview.tsx FinalControl). `answer` goes to the read stub; `amount` is the TOKEN amount typed.
  */
-async function atReview(chain, { answer } = {}) {
-  const read = createReadStub({ answer });
+async function atReview(chain, { answer, amount } = {}) {
+  const read = createReadStub({ answer: firstAnswer(answer, walletAssets(chain)) });
   const s = await scenario({ routes: [(request, url) => read.handle(request, url)] });
   try {
     await s.context.route(ARTWORK, route => route.fulfill({ status: 200, contentType: 'application/json', body: '[]' }));
@@ -746,8 +831,10 @@ async function atReview(chain, { answer } = {}) {
     await dialog.getByRole('button', { name: 'Connect Deposit Wallet', exact: true }).click();
     await s.page.waitForFunction(() => window.__dominoSessionProbe?.view().status === 'signed_out');
     await s.page.keyboard.press('Escape');
-    await walkToReview(s.page);
+    await walkToReview(s.page, { amount });
     await s.page.locator('[data-create-position="idle"]').waitFor({ timeout: 30_000 });
+    // Review's plan is drawn once the read service has answered the wallet's balances.
+    await s.page.locator('[data-review-plan]').waitFor({ timeout: 30_000 });
     return Object.assign(s, { read, services });
   } catch (error) { await s.close().catch(() => {}); throw error; }
 }
@@ -771,23 +858,29 @@ test('Create position opens the position from Review through a connected wallet 
   try {
     const button = s.page.locator('[data-create-position]');
     assert.equal(await button.innerText(), 'Create position');
-    assert.equal(await s.page.locator('#create-reason').innerText(), 'Your wallet asks you to sign each step: an exact approval if needed, the deposit, then the position.');
+    assert.equal(await s.page.locator('#create-reason').innerText(), 'Your wallet asks you to sign each step in the list above, in order.');
     assert.equal(await s.page.getByRole('link', { name: 'Continue in Setup' }).count(), 0, 'no hand-off to Setup');
-    assert.equal(await s.page.locator('[data-create-steps]').count(), 0, 'no step list before the press');
     assert.deepEqual(chain.sends, [], 'nothing is sent by arriving');
+    // The wallet holds both tokens: Review plans both, and nothing is swapped.
+    assert.equal(await s.page.locator('[data-review-amounts]').getAttribute('data-review-plan'), 'both');
+    assert.equal(await s.page.locator('[data-review-swap], [data-review-swap-note], [data-review-short]').count(), 0);
     // What Review says the position holds: the ETH the range pairs with the typed 1 TOKEN.
     const [, eth, token] = (await s.page.locator('[data-review-amounts]').innerText()).match(/^([\d.,]+) ETH \+ ([\d.,]+) TOKEN$/) ?? [];
     assert.equal(token, '1');
+    // Before the press the list is the plan: each step by its key, none of them running.
+    const list = s.page.locator('[data-wallet-steps]');
+    assert.equal(await list.getAttribute('data-live'), null);
+    assert.deepEqual(await walletStepStates(s.page), [[`approve:${FIXTURE_TOKEN}`, null], ['fund', null], ['mint', null]]);
+    await recordWalletSteps(s.page);
 
     await button.click();
-    const list = s.page.locator('[data-create-steps]');
-    await list.waitFor();
-    assert.deepEqual((await createSteps(s.page)).map(([key]) => key), ['check', `approve:${FIXTURE_TOKEN}`, 'fund', 'mint'], 'one approval for the one ERC-20 (ETH needs none), the deposit, the mint');
+    await s.page.locator('[data-wallet-steps][data-live]').waitFor();
+    assert.deepEqual((await walletStepStates(s.page)).map(([key]) => key), [`approve:${FIXTURE_TOKEN}`, 'fund', 'mint'], 'one approval for the one ERC-20 (ETH needs none), the deposit, the mint');
     assert.equal(await s.page.locator('[data-create-position="running"]').innerText(), 'Creating position…');
-    // Mid-flow: the balances checked, the approval included, the deposit on its way into a block.
-    await s.page.locator('[data-create-step="fund"][data-create-step-state="chain"]').waitFor({ timeout: 60_000 });
-    assert.deepEqual(await createSteps(s.page), [['check', 'done'], [`approve:${FIXTURE_TOKEN}`, 'done'], ['fund', 'chain'], ['mint', 'waiting']]);
-    assert.match(await list.innerText(), /Approve\s+TOKEN[\s\S]*Deposit the tokens\s+Waiting for the network[\s\S]*Create the position\s+Next/);
+    // Mid-flow: the approval included, the deposit on its way into a block.
+    await s.page.locator('[data-wallet-step="fund"][data-step-state="chain"]').waitFor({ timeout: 60_000 });
+    assert.deepEqual(await walletStepStates(s.page), [[`approve:${FIXTURE_TOKEN}`, 'done'], ['fund', 'chain'], ['mint', 'waiting']]);
+    assert.match(await list.innerText(), /Approve the exact amount\s+TOKEN[\s\S]*Done[\s\S]*Deposit the tokens\s+Waiting for the network[\s\S]*Create the position\s+Next/);
     // The window as the person sees it, scrolled to the steps (a full-page capture draws the sticky header mid-page).
     await list.evaluate(element => element.scrollIntoView({ block: 'end' }));
     await s.page.screenshot({ path: join(shots(), 'create-position-steps.png') });
@@ -823,6 +916,11 @@ test('Create position opens the position from Review through a connected wallet 
     assert.ok(plan.minSqrtPriceX96 > 0n && plan.minSqrtPriceX96 < STUB_SQRT_PRICE && STUB_SQRT_PRICE < plan.maxSqrtPriceX96, 'a price band around the price as read');
     assert.equal(chain.operations.get(id).tokenId, 4242n);
     assert.ok(chain.viewed.includes('balanceOf'), 'the wallet’s TOKEN balance was checked before anything was asked');
+    assert.deepEqual(chain.quotes, [], 'nothing was swapped or even quoted: the wallet held both tokens');
+    // The steps turned done one at a time, in order, each while the ones after it were still to come.
+    const { order } = await doneOrder(s.page);
+    assert.deepEqual(order.map(({ key }) => key), [`approve:${FIXTURE_TOKEN}`, 'fund', 'mint']);
+    for (const [index, { key, states }] of order.entries()) for (const later of order.slice(index + 1)) assert.notEqual(states[later.key], 'done', `${later.key} was done before ${key}`);
     await onlyTheWallet(s, chain);
     assert.doesNotMatch(await s.page.locator('main').innerText(), FORBIDDEN);
   } finally { await s.close(); }
@@ -869,14 +967,14 @@ test('a mint declined in the wallet leaves the deposit held: Create position say
     assert.deepEqual(chain.declined, ['mint']);
     await s.page.getByRole('status').filter({ hasText: 'You declined in your wallet. Your deposit is held: press Create position to continue, or refund it.' }).waitFor();
     assert.equal(await s.page.locator('#create-reason').innerText(), 'A deposit is held for this pool. Press Create position to create the position from it, or refund it.');
-    assert.deepEqual(await createSteps(s.page), [['check', 'done'], [`approve:${FIXTURE_TOKEN}`, 'done'], ['fund', 'done'], ['mint', 'failed']]);
+    assert.deepEqual(await walletStepStates(s.page), [[`approve:${FIXTURE_TOKEN}`, 'done'], ['fund', 'done'], ['mint', 'failed']]);
     assert.deepEqual(chain.decoded().map(tx => tx.functionName), ['approve', 'open'], 'the mint was never sent');
     assert.ok((await s.page.evaluate(() => location.hash)).startsWith('#/new'), 'still on New position');
 
     const refund = s.page.getByRole('button', { name: 'Refund the deposit instead', exact: true });
     await refund.click();
     await s.page.getByRole('status').filter({ hasText: 'The deposit was refunded to your wallet.' }).waitFor({ timeout: 60_000 });
-    assert.deepEqual(await createSteps(s.page), [['refund', 'done']]);
+    assert.deepEqual(await walletStepStates(s.page), [['refund', 'done']]);
     assert.equal(await s.page.locator('[data-create-position]').getAttribute('data-create-position'), 'idle');
     assert.equal(await refund.count(), 0, 'nothing left to refund');
     const [, open, cancel] = chain.decoded();
@@ -913,9 +1011,185 @@ test('a deposit that reverts in a block not yet final is reported as reverted, a
     await s.page.locator('[data-create-position="failed"], [data-create-position="held"], [data-create-position="done"]').waitFor({ timeout: 60_000 });
     assert.deepEqual(chain.decoded().map(tx => tx.functionName), ['approve', 'open'], 'no mint after a deposit that did not happen');
     assert.equal(await s.page.locator('[data-create-position]').getAttribute('data-create-position'), 'failed');
-    assert.deepEqual((await createSteps(s.page)).find(([key]) => key === 'fund'), ['fund', 'failed'], 'the deposit is not shown as done');
+    assert.deepEqual((await walletStepStates(s.page)).find(([key]) => key === 'fund'), ['fund', 'failed'], 'the deposit is not shown as done');
     assert.equal(await s.page.locator('[data-create-notice="operation_not_owned"]').count(), 0, 'no word of another wallet');
     await s.page.getByRole('status').filter({ hasText: 'The deposit reverted on chain: nothing was deposited, only network gas was spent. Press Create position to try again.' }).waitFor({ timeout: 5_000 });
+  } finally { await s.close(); }
+});
+
+// ---- Create position with one of the pool's two tokens: part of it is swapped inside the pool before the mint ----
+
+/** Each wallet step's marker, whether it is drawn in the money-in green (styles/flow.css), and what it shows. */
+const markers = page => page.evaluate(() => {
+  const probe = document.createElement('span');
+  probe.style.background = 'var(--money-in)';
+  document.body.append(probe);
+  const green = getComputedStyle(probe).backgroundColor;
+  probe.remove();
+  return [...document.querySelectorAll('[data-wallet-steps] li .dm-step-marker')].map(marker => [marker.textContent, getComputedStyle(marker).backgroundColor === green]);
+});
+/** The steps turned done one at a time, in `keys` order, each while every step after it was not done yet. */
+async function doneInTurn(page, keys) {
+  const { log, order } = await doneOrder(page);
+  assert.deepEqual(order.map(({ key }) => key), keys, log.join('\n'));
+  for (const [index, { key, states }] of order.entries()) {
+    for (const later of keys.slice(index + 1)) assert.notEqual(states[later], 'done', `${later} was done no later than ${key}`);
+  }
+  return log;
+}
+
+test('with TOKEN and only gas in ETH, Review plans the swap; Create position approves and deposits the typed TOKEN alone, swaps part of it for ETH inside the pool, mints, and opens the position, each wallet step turning green in turn', async () => {
+  // 10,000,000,000 TOKEN (6 decimals) pairs with about 0.0112 ETH at this range; the wallet holds 0.01 ETH, enough for gas only.
+  const typed = 10n ** 16n;
+  const chain = fakeDepositChain(ACCOUNTS[0].address, { eth: 10n ** 16n, balances: { [FIXTURE_TOKEN]: 2n * typed } });
+  const s = await atReview(chain, { answer: mintedPosition(chain), amount: '10000000000' });
+  const { setup } = chain.release.deployment;
+  try {
+    // Review: the plan is the swap from TOKEN, in the headline and the line under it, with the note that says why.
+    const amounts = s.page.locator('[data-review-amounts]');
+    assert.equal(await amounts.getAttribute('data-review-plan'), 'swap');
+    assert.match(await amounts.innerText(), /^≈[\d.,]+ TOKEN \+ ≈[\d.,]+ ETH$/, 'what the position holds after the swap');
+    const swapLine = s.page.locator('[data-review-swap]');
+    assert.equal(await swapLine.getAttribute('data-review-swap'), '1', 'from TOKEN, currency 1');
+    const [, from, part, bought] = (await swapLine.innerText()).match(/^From your wallet: ([\d.,]+) TOKEN\. About ([\d.,]+) TOKEN of it is swapped for ≈([\d.,]+) ETH\.$/) ?? [];
+    assert.equal(from, '10,000,000,000', 'the typed amount is the budget');
+    const partRaw = parseUnits(part.replaceAll(',', ''), 6);
+    assert.ok(partRaw > typed / 3n && partRaw < (typed * 2n) / 3n, `about half of it at this range: ${part}`);
+    assert.ok(parseUnits(bought.replaceAll(',', ''), 18) > 0n);
+    assert.equal(await s.page.locator('[data-review-swap-note]').innerText(),
+      'Your wallet does not hold enough ETH, so part of your TOKEN is swapped for it inside this pool before the position is created. The amounts are estimates before the pool’s price impact. The swap returns at least what your slippage limit allows; the pool’s fee and Domino’s assisted-swap fee (0.65%) apply to the swapped part.');
+    assert.equal(await s.page.locator('[data-review-short]').count(), 0);
+    // Review keeps Your choices and Wallet steps: no deposit amounts per token, and nothing that asks for a sign-in.
+    assert.deepEqual(await s.page.locator('[data-stage="review"] h3').allInnerTexts(), ['Your choices', 'Wallet steps']);
+    assert.doesNotMatch(await s.page.locator('main').innerText(), /Deposit amounts per token|Sign in with your wallet to see these amounts\./);
+    assert.equal(await s.page.locator('section[data-stage="balance"]').count(), 0);
+    // The wallet steps, in order: approve TOKEN, deposit it, swap, create. None running before the press.
+    assert.deepEqual(await walletStepStates(s.page), [[`approve:${FIXTURE_TOKEN}`, null], ['fund', null], ['swap', null], ['mint', null]]);
+    const list = s.page.locator('[data-wallet-steps]');
+    assert.match(await list.innerText(), /Approve the exact amount\s+TOKEN[\s\S]*Deposit the token\s+TOKEN[\s\S]*Swap for the other token\s+One swap inside this pool[\s\S]*Domino’s assisted-swap fee \(0\.65%\)[\s\S]*Create the position/);
+    assert.doesNotMatch(await s.page.locator('[data-wallet-step="fund"]').innerText(), /Native ETH/, 'the TOKEN deposit sends no ETH, and says none');
+    assert.deepEqual((await markers(s.page)).map(([text]) => text), ['1', '2', '3', '4']);
+    await s.page.locator('[data-stage-card="review"]').screenshot({ path: join(shots(), 'swap-review.png') });
+    assert.deepEqual(chain.sends, [], 'nothing is sent by arriving');
+
+    await recordWalletSteps(s.page);
+    await s.page.locator('[data-create-position="idle"]').click();
+    await s.page.locator('[data-wallet-steps][data-live]').waitFor();
+    assert.deepEqual((await walletStepStates(s.page)).map(([key]) => key), [`approve:${FIXTURE_TOKEN}`, 'fund', 'swap', 'mint'], 'the chain’s balances make the same plan');
+    // Every step done and drawn green, a moment before Positions opens.
+    await s.page.locator('[data-wallet-step="mint"][data-step-state="done"]').waitFor({ timeout: 90_000 });
+    assert.deepEqual(await walletStepStates(s.page), [[`approve:${FIXTURE_TOKEN}`, 'done'], ['fund', 'done'], ['swap', 'done'], ['mint', 'done']]);
+    assert.deepEqual(await markers(s.page), [['✓', true], ['✓', true], ['✓', true], ['✓', true]], 'each done step shows a check on green');
+    assert.equal((await list.innerText()).match(/\bDone\b/g)?.length, 4, 'each says Done');
+    await s.page.locator('[data-stage-card="review"]').screenshot({ path: join(shots(), 'swap-steps-done.png') });
+    const log = await doneInTurn(s.page, [`approve:${FIXTURE_TOKEN}`, 'fund', 'swap', 'mint']);
+    assert.ok(log.some(entry => entry.includes('swap=wallet')) && log.some(entry => entry.includes('swap=chain')), 'the swap was asked of the wallet, then waited for');
+    await s.page.waitForFunction(() => location.hash === '#/positions/4242', null, { timeout: 60_000 });
+    await s.page.locator('#nft-ids').waitFor();
+    assert.equal(await s.page.locator('#nft-ids').inputValue(), '4242');
+
+    // What the wallet signed, decoded: four transactions, one more than with both tokens.
+    const sent = chain.decoded();
+    assert.deepEqual(sent.map(tx => tx.functionName), ['approve', 'open', 'swap', 'mint']);
+    const [approve, open, swap, mint] = sent;
+    assert.deepEqual([approve.to, approve.from, approve.args[0].toLowerCase(), approve.args[1], approve.value, approve.nonce], [FIXTURE_TOKEN, OWNER, setup, typed, 0n, '0x0'],
+      'an exact allowance of the typed TOKEN: the typed amount is the budget, so no room is added');
+    const [id, key, amount0, amount1] = open.args;
+    assert.deepEqual([open.to, open.from, open.nonce, id, amount0, amount1, open.value], [setup, OWNER, '0x1', chain.operationId(0n), 0n, typed, 0n], 'the TOKEN alone, no ETH');
+    assert.deepEqual(lowerKey(key), STUB_POOL_KEY);
+    const plan = swap.args[0];
+    assert.deepEqual([swap.to, swap.from, swap.value, swap.nonce, plan.operationId, plan.zeroForOne], [setup, OWNER, 0n, '0x2', id, false], 'TOKEN (currency 1) for ETH, in the operation just funded');
+    assert.ok(plan.grossInput > 0n && plan.grossInput < typed, `part of the deposit: ${plan.grossInput}`);
+    // Sized from the contract's own quotes, each the swap simulated through the wallet, then the swap itself simulated
+    // once more before it is offered.
+    assert.ok(chain.quotes.length >= 2 && chain.quotes.length <= 11, `${chain.quotes.length} quotes: at most ten to size it, and the swap's own simulation`);
+    assert.ok(chain.quotes.every(quote => quote.operationId === id && quote.zeroForOne === false), 'every quote for this operation, TOKEN for ETH');
+    assert.equal(chain.quotes.at(-1).grossInput, plan.grossInput, 'the size offered is the size last simulated');
+    assert.equal(plan.minOutput, (chain.swapOutput(plan.grossInput, false) * 9950n) / 10000n, 'at least the simulated output less the 0.5% slippage limit');
+    assert.ok(plan.sqrtPriceLimitX96 > STUB_SQRT_PRICE && plan.sqrtPriceLimitX96 <= (STUB_SQRT_PRICE * 10500n) / 10000n, 'a price limit above the price: TOKEN in pushes it up, at most 5% in square root');
+    const minted = mint.args[0], received = chain.swapOutput(plan.grossInput, false);
+    assert.deepEqual([mint.to, mint.value, mint.nonce, minted.operationId, minted.tickLower, minted.tickUpper, minted.maxAmount0, minted.maxAmount1, minted.initialSqrtPriceX96],
+      [setup, 0n, '0x3', id, ...STUB_RANGE, received, typed - plan.grossInput, 0n], 'Review’s range, capped at what the operation holds after the swap');
+    // TOKEN in pushed the price up; the mint is drawn around the price the swap left, and both sides of the deposit
+    // cover (nearly) the same liquidity there: the split was sized for that price, not the one before it.
+    const after = chain.price();
+    assert.ok(after > STUB_SQRT_PRICE, 'the swap moved the pool');
+    assert.ok(minted.minSqrtPriceX96 < after && after < minted.maxSqrtPriceX96, 'the mint’s band is around the price after the swap');
+    const expected = mintPlanFor({ sqrtPriceX96: String(after), tickLower: STUB_RANGE[0], tickUpper: STUB_RANGE[1], balance0: received, balance1: typed - plan.grossInput, slippageBps: 50 });
+    assert.equal(minted.liquidity, expected.liquidity, 'the liquidity the balances make across the band');
+    const [from0, from1] = bandLiquidity(bandFor(after, ...STUB_RANGE, 50), received, typed - plan.grossInput);
+    assert.ok((from0 > from1 ? from0 - from1 : from1 - from0) * 200n <= (from0 > from1 ? from0 : from1), `both sides alike, within 0.5%: ${from0} and ${from1}`);
+    assert.deepEqual([chain.operations.get(id).swapped, chain.operations.get(id).closed, chain.operations.get(id).tokenId], [true, true, 4242n]);
+    await onlyTheWallet(s, chain);
+  } finally { await s.close(); }
+});
+
+test('with ETH only and TOKEN typed, the ETH pays for the whole position: deposited as the value with room, part swapped for TOKEN inside the pool, then the mint; no approval is asked', async () => {
+  const chain = fakeDepositChain(ACCOUNTS[0].address, { eth: 10n ** 18n });
+  const s = await atReview(chain, { answer: mintedPosition(chain) });
+  const { setup } = chain.release.deployment;
+  try {
+    assert.equal(await s.page.locator('[data-review-amounts]').getAttribute('data-review-plan'), 'swap');
+    const swapLine = s.page.locator('[data-review-swap]');
+    assert.equal(await swapLine.getAttribute('data-review-swap'), '0', 'from ETH, currency 0');
+    const [, from, part, bought] = (await swapLine.innerText()).match(/^From your wallet: ([\d.,]+) ETH\. About ([\d.,]+) ETH of it is swapped for ≈([\d.,]+) TOKEN\.$/) ?? [];
+    const reviewed = parseUnits(from.replaceAll(',', ''), 18);
+    assert.ok(parseUnits(part.replaceAll(',', ''), 18) < reviewed);
+    assert.ok(parseUnits(bought.replaceAll(',', ''), 6) >= 1_000_000n, `the typed 1 TOKEN, at least: ${bought}`);
+    await s.page.locator('[data-review-swap-note]').waitFor();
+    // ETH needs no approval: it travels with the deposit.
+    assert.deepEqual(await walletStepStates(s.page), [['fund', null], ['swap', null], ['mint', null]]);
+    assert.match(await s.page.locator('[data-wallet-steps]').innerText(), /Deposit the token\s+ETH[\s\S]*Native ETH travels with it[\s\S]*Swap for the other token[\s\S]*Create the position/);
+
+    await recordWalletSteps(s.page);
+    await s.page.locator('[data-create-position="idle"]').click();
+    await s.page.waitForFunction(() => location.hash === '#/positions/4242', null, { timeout: 90_000 });
+    await doneInTurn(s.page, ['fund', 'swap', 'mint']);
+    const sent = chain.decoded();
+    assert.deepEqual(sent.map(tx => tx.functionName), ['open', 'swap', 'mint'], 'no approval');
+    const [open, swap, mint] = sent;
+    const [id, , amount0, amount1] = open.args;
+    assert.deepEqual([open.to, open.nonce, id, amount1], [setup, '0x0', chain.operationId(0n), 0n], 'ETH alone');
+    assert.ok(amount0 > 0n && open.value === amount0, 'the ETH travels as the value');
+    // Review estimated with the published 0.65% fee; the chain's deployment charges its own (0.30% here), so the deposit is a little less.
+    assert.ok(amount0 <= reviewed && amount0 * 1000n >= reviewed * 990n, `${amount0} against Review’s ${reviewed}`);
+    const plan = swap.args[0];
+    assert.deepEqual([swap.value, swap.nonce, plan.operationId, plan.zeroForOne], [0n, '0x1', id, true], 'ETH (currency 0) for TOKEN');
+    assert.ok(plan.grossInput > 0n && plan.grossInput < amount0);
+    assert.ok(plan.sqrtPriceLimitX96 < STUB_SQRT_PRICE && plan.sqrtPriceLimitX96 >= (STUB_SQRT_PRICE * 9500n) / 10000n, 'a price limit below the price: ETH in pushes it down');
+    assert.equal(plan.minOutput, (chain.swapOutput(plan.grossInput, true) * 9950n) / 10000n);
+    const minted = mint.args[0];
+    assert.deepEqual([mint.nonce, minted.operationId, minted.maxAmount0, minted.maxAmount1], ['0x2', id, amount0 - plan.grossInput, chain.swapOutput(plan.grossInput, true)]);
+    assert.ok(minted.liquidity > 0n);
+    assert.ok(!chain.viewed.includes('allowance'), 'no allowance was even read');
+    await onlyTheWallet(s, chain);
+  } finally { await s.close(); }
+});
+
+test('a pool with hooks is refused at the pool step with its own sentence, and Continue stays off: Create position never meets it', async () => {
+  const HOOKS = `0x${'ab'.repeat(20)}`;
+  const hooked = (route) => {
+    if (route !== 'pools') return undefined;
+    const base = readGateway('pools.success');
+    return JSON.stringify({ ...base, pools: base.pools.map(pool => ({ ...pool, poolKey: { ...pool.poolKey, hooks: HOOKS }, integrationClass: 'requires_separate_adapter' })) });
+  };
+  const read = createReadStub({ answer: hooked });
+  const s = await scenario({ routes: [(request, url) => read.handle(request, url)] });
+  await s.context.route(ARTWORK, route => route.fulfill({ status: 200, contentType: 'application/json', body: '[]' }));
+  try {
+    await s.page.goto(`${s.origin}/#/new`);
+    await s.page.waitForFunction(() => window.__dominoSessionProbe?.view().status === 'no_wallet');
+    await choosePool(s.page);
+    assert.equal(await s.page.locator('[data-chosen-pool] [data-pool-integration]').getAttribute('data-pool-integration'), 'requires_separate_adapter');
+    const reason = s.page.locator('#continue-reason');
+    await reason.filter({ hasText: /\S/ }).waitFor();
+    assert.equal(await reason.innerText(), 'This pool has hooks, and positions can only be created here in pools without hooks. Choose another pool.');
+    const next = footerButton(s.page, 'Continue');
+    assert.equal(await next.isDisabled(), true);
+    await next.click({ force: true });
+    await s.page.waitForTimeout(500);
+    assert.equal(await s.page.locator('[data-stage="range"]').count(), 0, 'the range step is not reached');
+    assert.equal(await s.page.locator('[data-create-position]').count(), 0);
   } finally { await s.close(); }
 });
 

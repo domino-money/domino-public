@@ -277,7 +277,11 @@ export function canContinue(stage: Stage, state: JourneyState, now: number): Che
     case 'pool':
       if (!state.token) return fail(CREATE.token.needToken)
       if (!state.pool) return fail(CREATE.pool.needPool)
-      return poolHolds(state.pool, state.token.key) ? OK : fail(CREATE.pool.poolMismatch)
+      if (!poolHolds(state.pool, state.token.key)) return fail(CREATE.pool.poolMismatch)
+      // Create position opens positions through Domino V1's setup contract, which takes hookless, fixed-fee pools only.
+      if (state.pool.hooks !== NATIVE_CURRENCY) return fail(CREATE.pool.unsupportedHooks)
+      if (state.pool.feePips === DYNAMIC_FEE_PIPS) return fail(CREATE.pool.unsupportedDynamic)
+      return OK
     case 'amount': {
       if (!state.token || !state.pool) return fail(CREATE.pool.needPool)
       const price = priceOf(state.pool, now)
@@ -494,6 +498,8 @@ export function successorGeometry(range: TickRange, limits: LimitValues, spacing
 }
 
 export interface WalletStep {
+  /** 'fund', 'swap', 'mint', or `approve:<token address>`: the key Create position reports each step's progress under (lib/create/createProgress.ts). */
+  key: string
   title: string
   detail: string
   /** The token the step concerns, for the screen to name by symbol and address. */
@@ -501,24 +507,30 @@ export interface WalletStep {
 }
 
 /**
- * What a real creation would ask a wallet for, in order. A description, not
- * an action. The deposit goes through the pool's currencies in pool order, as
- * the deposit service prepares them: each ERC-20 gets an exact approval to
- * Permit2, then a Permit2 allowance for the position manager; native ETH
- * needs no approval and goes with the mint. Nothing about automation: that
- * is applied afterwards, from Automate, with its own owner transactions.
+ * The wallet steps Create position asks for, in order: a description, not an
+ * action, and nothing about automation, which is applied afterwards from
+ * Automate with its own owner transactions. `swapFrom` is the token
+ * a one-token deposit is made in (lib/create/depositPlan.ts): only it is
+ * approved and deposited, and a swap inside the pool comes before the mint.
+ * `assistedFee` is the deployment's assisted-swap fee, as written.
  */
-export function walletSteps(state: JourneyState): WalletStep[] {
+export function walletSteps(state: JourneyState, swapFrom: 0 | 1 | null = null, assistedFee = '0.65%'): WalletStep[] {
   const { token, pool } = state
   if (!token || !pool || !poolHolds(pool, token.key)) return []
   const words = CREATE.review
   const steps: WalletStep[] = []
-  for (const currency of pool.currencies) {
-    if (tokenAddress(currency) === NATIVE_CURRENCY) continue
-    steps.push({ title: words.approveStep, detail: words.approveStepDetail, token: currency })
+  for (const [index, currency] of pool.currencies.entries()) {
+    if (tokenAddress(currency) === NATIVE_CURRENCY || (swapFrom !== null && index !== swapFrom)) continue
+    steps.push({ key: `approve:${tokenAddress(currency)}`, title: words.approveStep, detail: words.approveStepDetail, token: currency })
   }
-  steps.push({ title: words.fundStep, detail: words.fundStepDetail })
-  steps.push({ title: words.mintStep, detail: words.mintStepDetail })
+  if (swapFrom === null) {
+    steps.push({ key: 'fund', title: words.fundStep, detail: words.fundStepDetail })
+  } else {
+    const held = pool.currencies[swapFrom]
+    steps.push({ key: 'fund', title: words.fundOneStep, detail: words.fundOneStepDetail(tokenAddress(held) === NATIVE_CURRENCY), token: held })
+    steps.push({ key: 'swap', title: words.swapStep, detail: words.swapStepDetail(assistedFee) })
+  }
+  steps.push({ key: 'mint', title: words.mintStep, detail: words.mintStepDetail })
   return steps
 }
 
@@ -592,14 +604,17 @@ export function positionText(state: JourneyState, now: number): string | null {
   return `${inside ? CREATE.review.inRange : CREATE.review.outOfRange}${price.stale ? ` ${CREATE.review.stale}` : ''}`
 }
 
-/** The whole journey as plain text lines: the review's words, and what tests read. */
-export function serialiseSummary(state: JourneyState, now: number): string[] {
+/**
+ * The whole journey as plain text lines: the review's words, and what tests
+ * read. `swapFrom` is the token a one-token deposit is made in, as Review
+ * plans it (lib/create/reviewPlan.ts), for the wallet steps.
+ */
+export function serialiseSummary(state: JourneyState, now: number, swapFrom: 0 | 1 | null = null): string[] {
   const words = CREATE.review.summary
   const lines = summaryLines(state, now).map((line) => `${line.label}: ${line.value}`)
   const position = positionText(state, now)
   if (position) lines.push(`${words.price}: ${position}`)
-  lines.push(`${words.amounts}: ${CREATE.balance.notEnabled}`)
-  for (const [index, step] of walletSteps(state).entries()) lines.push(`${words.walletStep(index + 1)}: ${step.title}`)
+  for (const [index, step] of walletSteps(state, swapFrom).entries()) lines.push(`${words.walletStep(index + 1)}: ${step.title}`)
   for (const fee of feeBases(state)) lines.push(`${fee.label}: ${fee.value}`)
   // The owner's own action: the wallet signs each step when Create position is pressed (components/create/CreatePosition.tsx).
   lines.push(`${words.create}: ${CREATE.review.final}`)

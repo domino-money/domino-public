@@ -70,8 +70,7 @@ export const NEW_POSITION: DocPage = {
       title: 'Review',
       blocks: [
         p('Review lists every choice and the wallet steps in order. The steps are what your wallet signs when you press Create position: any approval, the deposit, then the position. Automation is set up afterwards, from Automate, on the position you opened.'),
-        p('When your wallet is signed in and the service answers, Review also estimates how much of each token the deposit is expected to take, and the most it may take. Hover a figure to see until when its estimate is current; after that the figures show a dash until you open Review again.'),
-        p(CREATE.balance.notEnabled),
+        p('If your wallet holds only one of the two tokens, part of it is swapped for the other inside the same pool before the position is created: one more signature, and the pool’s fee and Domino’s assisted-swap fee (0.65%) on the swapped part. Review shows how much is swapped before you sign.'),
       ],
     },
     {
@@ -79,9 +78,9 @@ export const NEW_POSITION: DocPage = {
       title: 'Create position',
       blocks: [
         p(b('Create position'), ' is the last step. It needs your wallet connected on Robinhood Chain, and no sign-in.'),
-        p('Your wallet asks you to sign, in order: an exact approval for each token whose allowance is short, the deposit of both tokens, and the position itself. The deployment is checked on chain before each step, and each transaction is read back before the next one is asked for.'),
+        p('Your wallet asks you to sign, in order: an exact approval for each token whose allowance is short, the deposit of both tokens (or of the one your wallet holds, then the swap of part of it inside the pool), and the position itself. The deployment is checked on chain before each step, and each transaction is read back before the next one is asked for.'),
         p('When the position exists, it opens on Positions. If a deposit went through and the position did not (a declined signature, a closed tab), pressing Create position again creates it from that deposit, never depositing twice; the deposit can also be refunded.'),
-        note(['Positions are created in hookless pools that have a fixed fee. A direct position carries no Domino percentage fee; network gas still applies.']),
+        note(['Positions are created in hookless pools that have a fixed fee. A direct position carries no Domino percentage fee, except the assisted-swap fee on the part swapped when your wallet holds one token; network gas still applies.']),
       ],
     },
   ],

@@ -167,6 +167,9 @@
   /* Both lines appear only when there is something to warn about — a range that does not hold the price, a wallet that does not cover the deposit — so the dot is always the neutral one. */
   .dm-flow-position::before, .dm-flow-short::before { content: ''; flex-shrink: 0; width: 6px; height: 6px; margin-top: 6px; border-radius: var(--radius-pill); background: var(--fg-faint); }
   .dm-flow-wsteps { display: grid; gap: 4px; margin: 4px 0 0; padding: 0; list-style: none; }
+  .dm-flow-wsteps > li[data-step-state="done"] { box-shadow: inset 0 0 0 1px var(--money-in); background: var(--money-in-bg); }
+  .dm-flow-wsteps > li[data-step-state="done"] .dm-step-marker { background: var(--money-in); color: var(--bg); }
+  .dm-flow-wsteps > li[data-step-state="failed"] .dm-step-marker { background: var(--surface-4); color: var(--fg); }
   .dm-flow-wsteps > li { display: flex; align-items: flex-start; gap: 12px; min-width: 0; padding: 10px 12px; border-radius: var(--radius); background: var(--surface-2); box-shadow: inset 0 0 0 1px var(--border); }
 
   /* ---- Token search ------------------------------------------------------------------------------------ */

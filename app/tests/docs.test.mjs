@@ -348,9 +348,9 @@ test('Domino Compounder names the screen its Automate button opens, and Risks sa
 test('the wallet, pools, fees, markets, new position, positions, risks and what Domino is pages say what the app and contracts do', () => {
   const wallet = page('wallet');
   const needs = blocksOf(wallet).find((block) => block.kind === 'list').items.map(inlineText);
+  // Changed on purpose (owner, 2026-09-22): Review's deposit-amount estimate was deleted, so it needs no sign-in any more.
   assert.deepEqual(needs, [
     'Deposit drafts kept by the deposit service, and their receipts.',
-    'The deposit-amount estimate in New position’s Review.',
     'The assisted swap quote in Setup.',
     'Managed positions and automation receipts, on Positions.',
   ]);
@@ -366,7 +366,7 @@ test('the wallet, pools, fees, markets, new position, positions, risks and what 
   const fees = page('fees');
   const trading = rowsOf(fees, 'facts').find((row) => row.label === 'Pool trading fee');
   assert.equal(trading.note, 'Paid by swappers to the pool’s liquidity providers, on each trade. Not a charge on your deposit; a swap you make pays it.');
-  assert.match(sectionText(fees, 'pool-trading-fee'), /A swap you make, such as a balancing swap in Setup, pays it, and any protocol fee, like any other\./);
+  assert.match(sectionText(fees, 'pool-trading-fee'), /A swap you make, such as the one Create position makes when your wallet holds one token, pays it, and any protocol fee, like any other\./);
 
   const markets = page('markets');
   assert.match(sectionText(markets, 'find-a-token'), /Type the name of a token from the selected pools, or paste any token’s contract address\.\nThe token is read from chain\. Find pools then lists its existing pools, each verified on chain\./);
@@ -377,6 +377,13 @@ test('the wallet, pools, fees, markets, new position, positions, risks and what 
   assert.doesNotMatch(poolPage, /hourly USD price and volume/);
 
   assert.match(sectionText(page('new-position'), 'review'), /^Review\nReview lists every choice and the wallet steps in order\. The steps are what your wallet signs when you press Create position: any approval, the deposit, then the position\. Automation is set up afterwards, from Automate, on the position you opened\./);
+  // Changed on purpose (owner, 2026-09-22): the estimate paragraph went with Review's deposit amounts; the swap a
+  // one-token wallet needs is said in its place, with the fee the V1 deployment charges on the swapped part.
+  assert.match(sectionText(page('new-position'), 'review'), /\nIf your wallet holds only one of the two tokens, part of it is swapped for the other inside the same pool before the position is created: one more signature, and the pool’s fee and Domino’s assisted-swap fee \(0\.65%\) on the swapped part\. Review shows how much is swapped before you sign\.$/);
+  for (const entry of DOC_PAGES) assert.doesNotMatch(textOf(entry), /deposit-amount estimate|expected to take, and the most it may take|Hover a figure to see until when/, entry.slug);
+  const create = sectionText(page('new-position'), 'create');
+  assert.match(create, /the deposit of both tokens \(or of the one your wallet holds, then the swap of part of it inside the pool\), and the position itself\./);
+  assert.match(create, /A direct position carries no Domino percentage fee, except the assisted-swap fee on the part swapped when your wallet holds one token; network gas still applies\./);
   // Four steps, none of them Automation, and the summary counts them.
   const newPosition = page('new-position');
   assert.match(newPosition.summary, /^Plan a position in four steps,/);
@@ -428,7 +435,7 @@ test('the limits and fees match the contracts: 20% trigger and overlap, a positi
   const fees = Object.fromEntries(rowsOf(page('fees'), 'facts').map((row) => [row.label, row]));
   assert.equal(fees['Domino service fee'].value, 'Auto-compound 2%; Domino-compound 4% of earned fees consumed');
   assert.match(fees['Domino service fee'].note, /Never on principal, never on a direct deposit/);
-  assert.equal(fees['Assisted swap fee'].value, 'At most 0.65% of the consumed swap budget');
+  assert.equal(fees['Assisted swap fee'].value, '0.65% of the amount swapped');
   assert.equal(fees['Network gas'].value, 'Paid by the wallet that sends it');
 });
 

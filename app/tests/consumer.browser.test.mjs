@@ -21,7 +21,7 @@ import { createFakeOnboarding } from './support/fake-onboarding.mjs';
 import { createFakeSession } from './support/fake-session.mjs';
 import { ACCOUNTS, installWallets } from './support/mock-wallet.mjs';
 import { ARTWORK, footerButton, walkToReview } from './support/new-position.mjs';
-import { FIXTURE_POOL, FIXTURE_TOKEN, createReadStub } from './support/read-stub.mjs';
+import { createReadStub } from './support/read-stub.mjs';
 import { createWalletServer } from './support/wallet-server.mjs';
 
 const DIST = resolve(import.meta.dirname, '../.consumer-test-dist');
@@ -32,8 +32,6 @@ const ADDR_B = ACCOUNTS[1].address;
 const FONTS = /^https:\/\/fonts\.(googleapis|gstatic)\.com\//;
 const INJECTED = /^https?:\/\/[^/]*\.kaspersky-labs\.com\//;
 const ZERO = '0x0000000000000000000000000000000000000000';
-/** What the read package's wallet page holds of FIXTURE_TOKEN, and none of ETH: the budgets New position reads from it. */
-const WALLET_TOKEN_BALANCE_RAW = '57896044618658097711785492504343953926634992332820282019728792003956564820091';
 const OTHER_OWNER = '0x9999999999999999999999999999999999999999';
 const OPERATION_ID = '00000000-0000-4000-8000-000000000040';
 const EXPIRED_ON_ARRIVAL = 'This preview had already expired by the time it arrived, so its figures are hidden.';
@@ -366,34 +364,15 @@ test('signing out drops the preview; a new sign-in starts from ready, never from
   await s.close();
 });
 
-// ---- New position: the deposit amounts in Review ask onboarding-v1 (G8) ------------
+// ---- New position: Review asks onboarding-v1 nothing (G8 retired) ------------------
+//
+// Changed on purpose (owner, 2026-09-22): Review's deposit amounts per token, the onboarding-v1 position preview
+// they asked for a signed-in wallet (G8), were deleted. Review keeps Your choices and Wallet steps, and Create
+// position reads the wallet and the chain itself. What those cases proved about the preview is gone with it; what
+// stays is that Review asks the onboarding service nothing, signed in or not, and ends on Create position.
 
-const balance = (page) => page.locator('section[data-stage="balance"]');
-/**
- * Wait for the deposit amounts to reach a state, and optionally the reason
- * they give for it. Waiting on the status alone is not enough where the
- * reason is asserted next: the section is `off` while sign-in is still
- * settling too, and reading `data-preview-reason` one render later can catch
- * the section on its way through `loading`, where the reason is null by
- * design. `off` always carries a reason (onboarding/intent.ts only ever makes
- * one with a code, which onboarding.project.test.mjs holds it to), so waiting
- * for the pair is waiting for the state the case is about.
- */
-const amountsAre = (page, status, reason) =>
-  until(
-    page,
-    (wanted) => {
-      const section = document.querySelector('section[data-stage="balance"]');
-      if (!section || section.getAttribute('data-preview') !== wanted.status) return false;
-      return wanted.reason === undefined || section.getAttribute('data-preview-reason') === wanted.reason;
-    },
-    { status, reason },
-    `deposit amounts ${status}${reason === undefined ? '' : ` (${reason})`}`,
-    30_000,
-  );
-const rowLines = async (page, row) => (await balance(page).locator(`[data-balance-row="${row}"] dd`).innerText()).split('\n').map((line) => line.trim()).filter(Boolean);
 const positionCalls = (s) => s.onboarding.calls('position-preview');
-/** What New position's product rules keep off its screen now that it shows an estimate. */
+/** What New position's product rules keep off its screen. */
 const REVIEW_FORBIDDEN = /Preview only|Request details|Onboarding contract|"chainId"|not enabled|not connected yet|isn.t enabled|\bbeta\b|read-only|Retry|Read again/i;
 
 /** Sign-in from the header on any page: connect Test Wallet A, then Sign in. */
@@ -408,104 +387,49 @@ async function signInHere(s, page) {
   await closeDialog(page);
 }
 
-test('New position’s Review asks for the deposit amounts for the signed-in wallet once per opening, fills the rows while current, and returns them to a dash at expiry with nothing re-asked (G8)', async () => {
+test('New position’s Review keeps Your choices and Wallet steps, asks the onboarding service nothing signed out or signed in, and ends on Create position', async () => {
   const s = await scenario({ reads: true, clockAt: Date.now() });
   s.onboarding.controls.positionFromRequest = true;
   const page = await s.open('/new');
   await walkToReview(page);
-  await amountsAre(page, 'signed-out');
-  assert.equal(positionCalls(s).length, 0, 'nothing is asked for a wallet that is not signed in');
-  assert.deepEqual(await rowLines(page, 'expected'), ['—']);
-  assert.equal(await balance(page).locator('[data-balance-row="expected"] dd').getAttribute('title'), 'Sign in with your wallet to see these amounts.');
-  // Changed on purpose (Create position): Review's last control opens the position through the wallet (CreatePosition.tsx). With no wallet
-  // connected it asks for one, and says why.
+  // With no wallet connected Review's last control asks for one, and says why.
   const connect = page.locator('[data-create-position="connect"]');
   await connect.waitFor({ timeout: 30_000 });
   assert.equal(await connect.innerText(), 'Connect wallet');
   assert.equal(await page.locator('#create-reason').innerText(), 'Connect your wallet to create the position. Each transaction appears in your wallet to sign.');
+  const review = page.locator('[data-stage="review"]');
+  assert.deepEqual(await review.locator('h3').allInnerTexts(), ['Your choices', 'Wallet steps'], 'the two sections Review keeps');
+  assert.equal(await page.locator('section[data-stage="balance"], [data-balance-row], [data-amount-cell]').count(), 0, 'no deposit amounts section');
+  const signedOut = await page.locator('main').innerText();
+  assert.doesNotMatch(signedOut, /Deposit amounts per token|Sign in with your wallet to see these amounts\.|Exact amounts are calculated/);
+  assert.equal(positionCalls(s).length, 0);
 
-  // Signing in while Review is open finishes the intent Review's opening made: one request.
+  // Signed in while Review is open: still no preview is asked, and the page is the same two sections.
   await signInHere(s, page);
-  await amountsAre(page, 'current');
-  const [call] = positionCalls(s);
-  const [session] = s.fake.sessionsFor(ADDR_A).filter((row) => row.active);
-  assert.equal(call.csrf, session.csrf, 'the CSRF of this session, lent for the request');
-  assert.deepEqual(call.body, {
-    chainId: 4663,
-    poolId: FIXTURE_POOL,
-    poolKey: { currency0: ZERO, currency1: FIXTURE_TOKEN, fee_pips: 3000, tick_spacing: 60, hooks: ZERO },
-    independentToken: FIXTURE_TOKEN,
-    amountRaw: '1000000',
-    tickLower: -3600,
-    tickUpper: 4080,
-    slippageBps: 50,
-    // A position holds both of the pool's currencies, so the wallet's balance of
-    // each goes with the request: only the service can say the wallet does not
-    // cover the one the person did not choose. These are read balances, at a
-    // block, not figures this page computed — the wallet holds no ETH here. No
-    // gas reserve is sent: that is a number the person chooses, in Setup.
-    budget0Raw: '0',
-    budget1Raw: WALLET_TOKEN_BALANCE_RAW,
-    nativeBalanceRaw: '0',
-  }, 'exactly the request the journey forms, with the balances it read and nothing invented');
-  assert.deepEqual(await rowLines(page, 'expected'), ['0.000000000002000001 ETH', '1 TOKEN'], 'currency0 then currency1, with the decimals the pool read returned');
-  assert.deepEqual(await rowLines(page, 'maximum'), ['0.000000000002010001 ETH', '1.005 TOKEN']);
-  // The budgets are the wallet's own balances: it holds no ETH, so that currency's maximum
-  // exceeds it and nothing of it is unspent — a dash, never a zero — while the token it does
-  // hold reports what would be left.
-  assert.deepEqual(await rowLines(page, 'unspent'), ['—', '57,896,044,618,658,097,711,785,492,504,343,953,926,634,992,332,820,282,019,728,792,003,956,563.820091 TOKEN']);
-  assert.deepEqual(await rowLines(page, 'liquidity'), ['12,345']);
-  assert.match(await balance(page).locator('[data-balance-row="expected"] [data-amount-cell]').first().getAttribute('title'), /^An estimate for these choices, current until \d\d:\d\d:\d\d\. What the deposit is expected to take of this token\.$/);
-  assert.equal(await balance(page).locator('[data-balance-row="unspent"] [data-amount-cell]').first().getAttribute('title'), 'No budget was set for this token.');
-  // ETH is short, so the estimate blocks and the line names it: a position holds both currencies.
-  assert.equal(await balance(page).getAttribute('data-preview-checks'), 'blocked');
-  assert.equal(await balance(page).locator('[data-balance-short]').getAttribute('data-balance-short'), '0');
-  assert.match(await balance(page).locator('[data-balance-short]').innerText(), /^A position holds both of this pool’s tokens, and your wallet does not cover the most this deposit may take of ETH\./);
+  await page.locator('[data-create-position="idle"]').waitFor({ timeout: 30_000 });
+  assert.equal(await page.locator('[data-create-position="idle"]').innerText(), 'Create position');
+  assert.equal(await page.locator('#create-reason').innerText(), 'Your wallet asks you to sign each step in the list above, in order.');
+  assert.deepEqual(await review.locator('h3').allInnerTexts(), ['Your choices', 'Wallet steps']);
   const text = await page.locator('main').innerText();
   assert.doesNotMatch(text, REVIEW_FORBIDDEN);
-  assert.match(text, /Exact amounts are calculated when you create the position, at the price when you sign\./);
-  // Connected on Robinhood Chain: Create position itself, which says what the wallet will ask. Nothing is sent by showing it.
-  await page.locator('[data-create-position="idle"]').waitFor();
-  assert.equal(await page.locator('[data-create-position="idle"]').innerText(), 'Create position');
-  assert.equal(await page.locator('#create-reason').innerText(), 'Your wallet asks you to sign each step: an exact approval if needed, the deposit, then the position.');
+  assert.doesNotMatch(text, /Deposit amounts per token|Sign in with your wallet to see these amounts\.|Exact amounts are calculated/);
   assert.equal(await page.getByRole('link', { name: 'Continue in Setup' }).count(), 0, 'no way on through Setup');
   await noSigningControls(page);
+  // The steps are listed with their keys, before anything is pressed, and none is marked as running or done.
+  const steps = await page.locator('[data-wallet-steps] li').evaluateAll((items) => items.map((item) => [item.getAttribute('data-wallet-step'), item.getAttribute('data-step-state')]));
+  assert.ok(steps.length >= 3 && steps.every(([key, state]) => key && state === null), JSON.stringify(steps));
+  assert.deepEqual(steps.at(-1), ['mint', null]);
 
-  // The estimate is current for 30 s after it was asked; then its figures go back to a dash, with the time in the title.
-  await jump(page, '00:30');
-  await amountsAre(page, 'expired');
-  assert.deepEqual(await rowLines(page, 'maximum'), ['—']);
-  assert.match(await balance(page).locator('[data-balance-row="maximum"] dd').getAttribute('title'), /^This estimate expired at \d\d:\d\d:\d\d\.$/);
+  // Neither time nor opening Review again asks for anything.
   await jump(page, '05:00');
-  assert.equal(positionCalls(s).length, 1, 'no timer and no expiry asks again');
-
-  // Opening Review again is a new intent. Back from Review lands on Amount, the step before it.
   await footerButton(page, 'Back').click();
   await page.locator('[data-stage-card="amount"] [data-pair-side="1"]').waitFor();
   await footerButton(page, 'Continue').click();
-  await amountsAre(page, 'current');
-  assert.equal(positionCalls(s).length, 2);
-  assert.equal(s.wallet.state.signed.length, 1, 'the sign-in signature only');
-  await s.close();
-});
-
-test('New position with the onboarding service switched off shows only dashes, says why in data attributes, and does not ask again (G8)', async () => {
-  const s = await scenario({ reads: true });
-  s.onboarding.controls.disabled = true;
-  const page = await s.open('/new');
-  await signInHere(s, page);
-  await walkToReview(page);
-  await amountsAre(page, 'off', 'feature_unavailable');
-  assert.equal(await balance(page).getAttribute('data-preview-reason'), 'feature_unavailable');
-  assert.equal(positionCalls(s).length, 1);
-  for (const row of ['expected', 'maximum', 'unspent', 'liquidity']) assert.deepEqual(await rowLines(page, row), ['—'], row);
-  assert.equal(await balance(page).locator('[data-balance-row="liquidity"] dd').getAttribute('title'), 'Exact amounts are calculated when you create the position, at the price when you sign.');
-  assert.doesNotMatch(await page.locator('main').innerText(), REVIEW_FORBIDDEN);
-  await footerButton(page, 'Back').click();
-  await footerButton(page, 'Continue').click();
   await page.locator('[data-stage-card="review"]').waitFor();
   await sleep(1_000);
-  assert.equal(positionCalls(s).length, 1, 'a route that is not there is not asked again on this page');
+  assert.equal(positionCalls(s).length, 0, 'no position preview, ever');
+  assert.equal(s.onboarding.calls().length, 0, 'nothing of the onboarding service');
+  assert.equal(s.wallet.state.signed.length, 1, 'the sign-in signature only');
   await s.close();
 });
 

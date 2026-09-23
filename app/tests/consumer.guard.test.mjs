@@ -43,12 +43,13 @@ const CONSUMER = [
 const isConsumer = (path) => CONSUMER.some((pattern) => pattern.test(path));
 const MINE = ALL.filter(({ path }) => isConsumer(path));
 /**
- * The product's own consumers of the preview client outside those directories: New position's deposit amounts (a
- * wallet-build chunk of its own) and the in-memory draft it carries to Setup. They are not consumer code for GUARD-5's
- * import rules, but what GUARD-1, GUARD-3 and GUARD-6 forbid holds for them too: no wallet method, no storage, no URL
- * write, no clock of their own.
+ * The product's own consumers of the preview client outside those directories: the in-memory draft carried to Setup.
+ * It is not consumer code for GUARD-5's import rules, but what GUARD-1, GUARD-3 and GUARD-6 forbid holds for it too:
+ * no wallet method, no storage, no URL write, no clock of its own. Changed on purpose (owner, 2026-09-22): New
+ * position's deposit amounts were deleted from Review, so components/create/DepositAmounts.tsx consumes no preview
+ * any more; it is Create position's chunk, which signs through the wallet, and GUARD-5 holds it to that.
  */
-const PRODUCT_CONSUMERS = ['components/create/DepositAmounts.tsx', 'lib/create/setupDraft.ts'];
+const PRODUCT_CONSUMERS = ['lib/create/setupDraft.ts'];
 const SCANNED = [...MINE, ...ALL.filter(({ path }) => PRODUCT_CONSUMERS.includes(path))];
 const hits = (files, pattern) => files.flatMap(({ path, code }) => (pattern.test(code) ? [path] : []));
 const specifiers = (code) => [...code.matchAll(/(?:from|import)\s*\(?\s*'([^']+)'/g)].map((match) => match[1]);
@@ -118,14 +119,13 @@ test('GUARD-4: the spending capabilities stay literally false and the consumer n
   assert.deepEqual(hits(MINE, /\b(CAPABILITIES|ROADMAP)\b/), []);
 });
 
-test('GUARD-5: the consumer is reached only through the two flag-gated lab screens and the product’s two named consumers, each opened lazily', () => {
+test('GUARD-5: the consumer is reached only through the two flag-gated lab screens and the product’s named consumer, Setup, opened lazily; New position consumes none of it', () => {
   const offenders = [];
-  // The product now consumes onboarding-v1 (coverage audit G8 and G15): New position's deposit amounts ask for a
-  // position preview, and Setup's assisted swap for a swap preview. Like the other private screens, those two
-  // consumers are wallet-build code of their own: components/create/DepositAmounts.tsx is a lazy chunk opened only
-  // behind __DOMINO_WALLET_SESSION__ (checked below), and AdvancedSetup.tsx is already inside the lazy Setup screen.
-  // They are named here, one file each; nothing else outside the consumer directories may import them.
-  for (const { path, code } of ALL.filter(({ path }) => !isConsumer(path) && !/^finance\/|^screens\/(Setup|AdvancedSetup|Performance|Execution|Sequence)\.tsx$|^components\/create\/DepositAmounts\.tsx$/.test(path))) {
+  // The product consumes onboarding-v1 in Setup (coverage audit G15): its assisted swap asks for a swap preview, from
+  // AdvancedSetup.tsx, inside the lazy Setup screen. Changed on purpose (owner, 2026-09-22): New position's deposit
+  // amounts (G8) were deleted from Review, so components/create/DepositAmounts.tsx, the lazy chunk Review opens behind
+  // __DOMINO_WALLET_SESSION__ (checked below), is Create position alone and is scanned like any other file here.
+  for (const { path, code } of ALL.filter(({ path }) => !isConsumer(path) && !/^finance\/|^screens\/(Setup|AdvancedSetup|Performance|Execution|Sequence)\.tsx$/.test(path))) {
     for (const spec of specifiers(code)) {
       if (spec.startsWith('.') && isConsumerTarget(target(path, spec))) offenders.push(`${path}: ${spec}`);
     }
@@ -137,12 +137,17 @@ test('GUARD-5: the consumer is reached only through the two flag-gated lab scree
 
   const importersOf = (wanted) =>
     ALL.filter(({ path, code }) => specifiers(code).some((spec) => spec.startsWith('.') && target(path, spec) === wanted)).map(({ path }) => path);
-  // The two product preview consumers read the session through the live port, as Performance and Execution do.
-  assert.deepEqual(importersOf('session/livePort'), ['components/create/DepositAmounts.tsx', 'finance/wallet.ts', 'screens/AdvancedSetup.tsx', 'screens/Execution.tsx', 'screens/LivePreview.tsx', 'screens/Performance.tsx', 'screens/Setup.tsx']);
-  // New position's consumer is its own chunk: only Review's two parts open it, each lazily behind the wallet flag,
-  // so the entry never carries the session or the onboarding client (session.bundle and consumer.bundle check the build).
-  assert.deepEqual(importersOf('components/create/DepositAmounts'), ['components/create/StageBalance.tsx', 'components/create/StageReview.tsx']);
-  for (const path of ['components/create/StageBalance.tsx', 'components/create/StageReview.tsx']) {
+  // Setup's preview consumer reads the session through the live port, as Performance and Execution do; New position does not.
+  assert.deepEqual(importersOf('session/livePort'), ['finance/wallet.ts', 'screens/AdvancedSetup.tsx', 'screens/Execution.tsx', 'screens/LivePreview.tsx', 'screens/Performance.tsx', 'screens/Setup.tsx']);
+  // Create position's chunk and what it is made of ask no preview and read no session: it signs through the wallet alone.
+  for (const path of ['components/create/DepositAmounts.tsx', 'components/create/CreatePosition.tsx', 'components/create/StageReview.tsx', 'lib/create/depositPlan.ts', 'lib/create/createProgress.ts']) {
+    const targets = specifiers(byPath(path).code).filter((spec) => spec.startsWith('.')).map((spec) => target(path, spec));
+    assert.deepEqual(targets.filter((t) => isConsumerTarget(t) || t.startsWith('session/')), [], `${path} reaches no preview client and no session`);
+  }
+  // Create position is its own chunk: only Review opens it, lazily behind the wallet flag, so the entry never carries
+  // the wallet or the setup client (session.bundle and consumer.bundle check the build).
+  assert.deepEqual(importersOf('components/create/DepositAmounts'), ['components/create/StageReview.tsx']);
+  for (const path of ['components/create/StageReview.tsx']) {
     const { code } = byPath(path);
     assert.match(code, /__DOMINO_WALLET_SESSION__\s*\?\s*lazy\(\(\)\s*=>\s*import\('\.\/DepositAmounts'\)/, path);
     // importersOf() cannot tell a static import from import(): every mention of the module must be the lazy one.

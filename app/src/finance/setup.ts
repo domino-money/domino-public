@@ -248,6 +248,18 @@ export function createSetupClient(wallet: WalletRpc, supplied: SetupDeployment, 
       }
       return values
     }),
+    /**
+     * What swapping `gross` of this operation's token buys, from the contract itself: the swap simulated through
+     * the wallet with a minimum output of one unit, the pool's fee, its price impact and the assisted-swap fee all
+     * in it. Reads only; for sizing a swap before it is prepared.
+     */
+    quoteSwap: (id: Hex, zeroForOne: boolean, gross: bigint, sqrtLimit: bigint) => bounded(async rpc => {
+      await identity(rpc); const op = await operation(rpc, id)
+      if (op.closed || op.swapped || op.recoveryStarted || gross <= 0n || gross > (zeroForOne ? op.balance0 : op.balance1) || sqrtLimit <= 0n || sqrtLimit >= 2n ** 160n) return fail('invalid_swap_budget')
+      const plan = { operationId: id, zeroForOne, grossInput: gross, minOutput: 1n, sqrtPriceLimitX96: sqrtLimit, deadline: BigInt(Math.floor(now()) + STEP_DEADLINE_S) }
+      const data = encodeFunctionData({ abi: setupAbi, functionName: 'swap', args: [plan] })
+      return decodeFunctionResult({ abi: setupAbi, functionName: 'swap', data: asHex(await rpc('eth_call', [{ from: wallet.owner, to: deployment.setup, data }, 'latest'])) })
+    }),
     fund: (key: PoolKey, amount0: bigint, amount1: bigint, gas: GasBudget) => bounded(async rpc => {
       await verify(rpc); poolKey(key)
       if (amount0 < 0n || amount1 < 0n || amount0 >= 2n ** 128n || amount1 >= 2n ** 128n || amount0 + amount1 === 0n) return fail('invalid_funding')

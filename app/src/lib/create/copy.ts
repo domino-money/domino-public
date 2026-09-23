@@ -58,6 +58,9 @@ export const CREATE = {
   pool: {
     needPool: 'Choose a pool to continue.',
     poolMismatch: 'The chosen pool does not hold the selected token. Choose another pool.',
+    /** A pool Domino V1's setup contract does not open positions in (DominoSetup.open refuses hooks; a dynamic fee has no fixed key). */
+    unsupportedHooks: 'This pool has hooks, and positions can only be created here in pools without hooks. Choose another pool.',
+    unsupportedDynamic: 'This pool has a dynamic fee, and positions can only be created here in pools with a fixed fee. Choose another pool.',
     chosenHeading: 'Chosen pool',
     verifiedAt: (block: number) => `Verified at block ${block}`,
     change: 'Choose a different pool',
@@ -104,20 +107,6 @@ export const CREATE = {
     connectForBalance: 'Connect a wallet in the header to use its balance.',
     balanceAt: (block: string | null) => (block ? `Balance at block ${block}:` : 'Balance:'),
     balanceNote: 'Public chain data at one block. A connection proves nothing about who controls the address.',
-    /**
-     * The pool's other token on the amount step. A position is funded with
-     * both of a pool's tokens: the budget above is in the one chosen, and the
-     * service derives the other from the range and the price. So the balance
-     * that decides whether the deposit can go through is often this one.
-     */
-    /**
-     * A position holds both of the pool's tokens, so the amount step shows one
-     * row per token: the one an amount is typed in fixes the liquidity and the
-     * other follows from the range and the price. There is no choice of "which
-     * token to deposit" to make — typing is the choice.
-     */
-    pairNote: (block: number | null) =>
-      `Type an amount in either token; the other follows from your range and the pool’s price${block === null ? '' : ` at block ${block}`}. Exact amounts, with slippage, are calculated in Review.`,
     pairUnused: (symbol: string) => `At this price your range takes only ${symbol}, so an amount of this token would buy no position.`,
     pairOneSided: (symbol: string) => `At this price your range takes only ${symbol}.`,
     pairUnknown: 'The pool’s price or the range could not be used, so the other amount is not shown.',
@@ -130,8 +119,6 @@ export const CREATE = {
     notEnabled: 'Exact amounts are calculated when you create the position, at the price when you sign.',
     /** Why no request can be formed, from previewRequest in journey.ts. */
     incomplete: 'the earlier steps are not complete.',
-    /** The estimate waits for the balances, because they are part of its own request. */
-    balances: 'the wallet balances of this pool’s tokens are still being read.',
     /**
      * The line that says the wallet does not cover the deposit, by token. Shown
      * only for a currency the estimate itself reported short in `previewChecks`;
@@ -143,33 +130,6 @@ export const CREATE = {
       }. Lower the budget, or add ${symbols.length > 1 ? 'them' : 'it'} to your wallet first.`,
     hooks: 'this pool has hooks, and deposits support hookless pools only.',
     dynamicFee: 'this pool has a dynamic fee, and deposits support fixed fees only.',
-    /** The four rows, filled while an estimate for these choices is current. */
-    rows: {
-      expected: 'Expected deposit',
-      maximum: 'Maximum debit',
-      unspent: 'Unspent budget',
-      liquidity: 'Mint liquidity',
-    },
-    /** What a row's title says, never on screen: where the figure stands, or why it is a dash. */
-    titles: {
-      current: (until: string) => `An estimate for these choices, current until ${until}.`,
-      expected: 'What the deposit is expected to take of this token.',
-      maximum: 'The most the deposit may take of this token, with your slippage.',
-      liquidity: 'The liquidity the mint would add, in raw units.',
-      rawUnits: 'Raw units: this token’s decimals were not read.',
-      noBudget: 'No budget was set for this token.',
-      expired: (at: string) => `This estimate expired at ${at}.`,
-      signedOut: 'Sign in with your wallet to see these amounts.',
-      loading: 'Reading the amounts…',
-      off: 'Exact amounts are calculated when you create the position, at the price when you sign.',
-      unavailable: 'These amounts could not be read.',
-    },
-    /** The screen reader's line when the rows change. */
-    announce: {
-      current: 'Deposit amounts shown.',
-      expired: 'The deposit amounts expired.',
-    },
-    rawUnits: (text: string) => `${text} raw units`,
   },
   /** The automation choices and their limits. No step of New position shows them: Automate does, for a position that exists. */
   automation: {
@@ -227,31 +187,20 @@ export const CREATE = {
   },
   review: {
     choices: 'Your choices',
-    lines: {
-      pool: 'Pool',
-      token: 'Deposit token',
-      range: 'Range',
-      budget: 'Budget',
-      slippage: 'Slippage',
-    },
-    amounts: 'Deposit amounts per token',
     steps: 'Wallet steps',
     stepsNote: 'What your wallet asks you to sign, in order, when you press Create position.',
     /** The one charge Domino makes, on earned fees an automation consumes. Automate states it for the mode it applies (screens/Automate.tsx); a direct deposit carries none. */
     serviceFeeValue: (mode: 'none' | 'compound' | 'domino') => mode === 'none' ? 'No automation service fee' : `${mode === 'domino' ? 4 : 2}% of earned fees consumed`,
-    /** The headline: the position being created, in one line per thing that matters. */
-    holds: 'This position holds',
     /** The slippage line of the headline, so the choice is in view before the wallet is asked for anything. */
     slippage: (percent: string) => `Slippage tolerance ${percent}`,
     rangeBetween: 'between',
-    priceAt: (block: number) => `at the pool’s price, block ${block}`,
     inRange: 'The pool price at its read block is inside this range.',
     outOfRange: 'The pool price at its read block is outside this range: the position would start inactive, holding one asset.',
     stale: 'The pool price was read more than 5 minutes ago on this page.',
-    recipient: 'NFT recipient',
-    recipientValue: 'The wallet that signs the mint. No address is known to this screen.',
     /** The review step's own line: it is the last one, and its action is Create position (StageReview.tsx FinalControl). */
     final: 'Press Create position: your wallet asks you to sign each step.',
+    /** Create position with nothing to create: a choice is missing, or the pool is one positions are not created in. */
+    notReady: 'Complete the steps above. Positions are created in pools without hooks and with a fixed fee.',
     /** Final control while its chunk loads, if it cannot load, and in builds without a wallet (StageReview.tsx FinalControl). */
     loading: 'Loading the wallet steps…',
     loadFailed: 'The wallet steps could not load. Reload the page to try again.',
@@ -269,12 +218,21 @@ export const CREATE = {
     fundStepDetail: 'One transaction to Domino’s setup contract, verified on chain first. Native ETH travels with it. The tokens stay yours until the mint, and can be refunded.',
     mintStep: 'Create the position',
     mintStepDetail: 'One transaction: the position NFT is minted to your wallet at your range, and what the range does not use comes back with it.',
+    /** The deposit and the swap when the wallet holds one of the two tokens (lib/create/depositPlan.ts). */
+    fundOneStep: 'Deposit the token',
+    /** `native`: the token deposited is native ETH, which travels with the transaction; an ERC-20 alone sends no ETH. */
+    fundOneStepDetail: (native: boolean) =>
+      `One transaction to Domino’s setup contract, verified on chain first.${native ? ' Native ETH travels with it.' : ''} The token stays yours until the mint, and can be refunded.`,
+    swapStep: 'Swap for the other token',
+    swapStepDetail: (fee: string) => `One swap inside this pool, of part of your deposit, with at least what your slippage limit allows. The pool’s fee and Domino’s assisted-swap fee (${fee}) apply to the swapped part.`,
+    /** Under the headline when part of the deposit is swapped (StageReview.tsx names the two tokens before it): what the swap costs, and what bounds it. */
+    swapNote: (fee: string) => `The amounts are estimates before the pool’s price impact. The swap returns at least what your slippage limit allows; the pool’s fee and Domino’s assisted-swap fee (${fee}) apply to the swapped part.`,
     /** The fee bases side by side (feeBases in journey.ts). The service row is the docs' fees page's (lib/docs/pages/reference.ts), not Review's: a direct deposit carries no Domino fee. */
     feeLabels: { pool: 'Pool trading fee', service: 'Domino service fee', swap: 'Assisted swap fee', gas: 'Network gas' },
-    feeValues: { service: 'Auto-compound 2%; Domino-compound 4% of earned fees consumed', swap: 'At most 0.65% of the consumed swap budget', gas: 'Paid by you' },
+    feeValues: { service: 'Auto-compound 2%; Domino-compound 4% of earned fees consumed', swap: '0.65% of the amount swapped', gas: 'Paid by you' },
     feeNotes: {
       pool: 'Paid by swappers through this pool to its liquidity providers, on each trade. Not a charge to you.',
-      swap: 'Only if you request a balancing swap, quoted before you approve it. Not added on top of the service fee.',
+      swap: 'Only when your wallet holds one of the two tokens and part of it is swapped for the other, simulated before you sign. Not added on top of the service fee.',
       gas: 'Paid by you; each wallet step shows its gas limit before you sign.',
     },
     /** The words of the plain-text summary (summaryLines and serialiseSummary in journey.ts). */
@@ -284,7 +242,6 @@ export const CREATE = {
       rangeTicks: (tickLower: number, tickUpper: number) => `ticks ${tickLower} to ${tickUpper}`,
       slippage: (percent: string) => `slippage ${percent}`,
       price: 'Price',
-      amounts: 'Deposit amounts',
       walletStep: (index: number) => `Wallet step ${index}`,
       create: 'Create position',
       enabled: 'enabled',

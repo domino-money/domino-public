@@ -94,7 +94,7 @@ test('the feature is lazy: the entry closure holds no wallet code, and the islan
   const { entry, island } = shape(DIST);
   const initial = staticClosure(DIST, entry);
   const entryText = closureText(DIST, initial);
-  // New position consumes onboarding-v1 for the signed-in wallet (G8); its client stays out of the entry too.
+  // Setup consumes onboarding-v1 for the signed-in wallet (G15); its client stays out of the entry too.
   for (const needle of ['personal_sign', 'wallet_switchEthereumChain', '/api/session/v1/', '/api/onboarding/v1/', 'X-Domino-Onboarding-Contract']) {
     assert.ok(!entryText.includes(needle), `dist/assets/${entry[0]} contains ${needle}: the feature must stay in its chunk`);
   }
@@ -253,10 +253,12 @@ test('session/read closures retain their 90 kB budget; financial screens have a 
     const { js, entry, island } = shape(dir);
     const initial = staticClosure(dir, entry);
     const readRoots = js.filter((file) => /^(PoolExplorer|TokenPicker|index)-/.test(file) && !initial.has(file));
-    // New position's deposit amounts are the fifth private lazy root: the product now consumes onboarding-v1 there
-    // (G8), for a signed-in wallet, from a chunk of its own that Review opens (components/create/DepositAmounts.tsx).
+    // New position's Create position is the fifth private lazy root: the chunk Review opens in wallet builds
+    // (components/create/DepositAmounts.tsx), which signs through the wallet with the setup client. Changed on
+    // purpose (owner, 2026-09-22): it held Review's deposit amounts and their onboarding-v1 preview (G8) before;
+    // those were deleted, and the chunk is Create position alone.
     const financialRoots = js.filter((file) => /^(Setup|Sequence|Execution|Performance|DepositAmounts)-/.test(file));
-    assert.equal(financialRoots.length, 5, 'the four P2 financial screens and New position\'s deposit amounts are explicit lazy roots');
+    assert.equal(financialRoots.length, 5, 'the four P2 financial screens and New position\'s Create position are explicit lazy roots');
     assert.equal(readRoots.filter((file) => file.startsWith('index-')).length, 1, 'include the public read screen, even though Vite calls it index');
     const base = new Set([...staticClosure(dir, [...island, ...readRoots])].filter((file) => !initial.has(file)));
     const financial = new Set([...staticClosure(dir, financialRoots)].filter((file) => !initial.has(file)));

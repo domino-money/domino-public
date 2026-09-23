@@ -47,6 +47,7 @@ execFileSync(
     'tests/create-budgets.test.mjs',
     'tests/create-pair-amount.test.mjs',
     'tests/mint-plan.test.mjs',
+    'tests/deposit-plan.test.mjs',
     'tests/sequence-options.test.mjs',
     'tests/row-apr.test.mjs',
     'tests/docs.test.mjs',

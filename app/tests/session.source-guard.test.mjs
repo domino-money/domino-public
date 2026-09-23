@@ -96,23 +96,23 @@ test('the wallet feature is reached only through the build flag', () => {
   // Outside the feature, nothing imports wagmi, viem, TanStack Query or the
   // session modules statically. The error boundary is plain React and is the
   // one wallet component the header may import directly.
-  // New position now consumes onboarding-v1 (coverage audit G8): Review's deposit amounts ask for a position
-  // preview for the signed-in wallet and carry the choices to Setup. That part reads the session, so it is part of
-  // the wallet feature: components/create/DepositAmounts.tsx, written with or without its extension so that its
-  // importers are checked too. Only Review's two parts may open it, lazily behind the build flag (below).
+  // Review's last control, Create position, signs through the wallet (components/create/CreatePosition.tsx, in the
+  // chunk components/create/DepositAmounts.tsx names), so both are part of the wallet feature, written with or
+  // without their extension so that their importers are checked too. Only Review opens that chunk, lazily behind
+  // the build flag (below). Changed on purpose (owner, 2026-09-22): Review's deposit amounts, and with them
+  // StageBalance.tsx, the second part that opened the chunk, were deleted.
   const feature = /^(session|wallet|finance|components\/wallet)\/|^screens\/(Setup|AdvancedSetup|WalletDeposit|Performance|Execution|Sequence|SequenceCreate)\.tsx$|^components\/create\/(DepositAmounts|CreatePosition)(\.tsx)?$/;
   // The onboarding previews and the deposit consumer (#38, #40/#44) read the
   // session through session/port.ts, and the preview screen also through
   // session/livePort.ts. Their lab screens live in chunks of the consumer-test
   // build only; consumer.guard and consumer.bundle prove neither lab reaches a
   // deployable one. The onboarding modules themselves now also ship, lazily,
-  // under New position's deposit amounts and Setup's swap quote (G8, G15),
-  // which hand them the live port. This is a named exception for two modules,
-  // not an opening of the feature.
+  // under Setup's swap quote (G15), which hands them the live port. This is a
+  // named exception, not an opening of the feature.
   const consumer = /^(onboarding|deposit|components\/(preview|deposit|consumer))\/|^screens\/(LivePreview|Deposits)\.tsx$/;
   const consumerMayUse = (path, target) =>
     consumer.test(path) && (target === 'session/port' || (path === 'screens/LivePreview.tsx' && target === 'session/livePort'));
-  const reviewOpens = (path, spec) => ['components/create/StageBalance.tsx', 'components/create/StageReview.tsx'].includes(path) && spec === './DepositAmounts';
+  const reviewOpens = (path, spec) => path === 'components/create/StageReview.tsx' && spec === './DepositAmounts';
   const offenders = [];
   for (const { path, code } of ALL.filter(({ path }) => !feature.test(path))) {
     for (const spec of specifiers(code)) {
@@ -125,13 +125,14 @@ test('the wallet feature is reached only through the build flag', () => {
     }
   }
   assert.deepEqual(offenders, []);
-  for (const path of ['components/create/StageBalance.tsx', 'components/create/StageReview.tsx']) {
+  assert.equal(ALL.some(({ path }) => path === 'components/create/StageBalance.tsx'), false, 'the deposit amounts section is gone');
+  for (const path of ['components/create/StageReview.tsx']) {
     const { code } = ALL.find((file) => file.path === path);
-    assert.match(code, /__DOMINO_WALLET_SESSION__\s*\?\s*lazy\(\(\)\s*=>\s*import\('\.\/DepositAmounts'\)/, `${path} opens the deposit amounts lazily, behind the flag`);
+    assert.match(code, /__DOMINO_WALLET_SESSION__\s*\?\s*lazy\(\(\)\s*=>\s*import\('\.\/DepositAmounts'\)/, `${path} opens Create position lazily, behind the flag`);
     // reviewOpens admits the specifier, and specifiers() cannot tell a static import from import(): every mention must be the lazy one,
     // so a static `from './DepositAmounts'` (or a bare import of it) beside the lazy import still fails here, before any build.
     const mentions = [...code.matchAll(/['"`]\.\/DepositAmounts(?:\.tsx?)?['"`]/g)].length;
     const lazy = [...code.matchAll(/import\(\s*['"`]\.\/DepositAmounts(?:\.tsx?)?['"`]\s*\)/g)].length;
-    assert.deepEqual([mentions, lazy], [1, 1], `${path} names the deposit amounts once, in its lazy import()`);
+    assert.deepEqual([mentions, lazy], [1, 1], `${path} names Create position's chunk once, in its lazy import()`);
   }
 });

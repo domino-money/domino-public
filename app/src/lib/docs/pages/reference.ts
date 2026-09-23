@@ -39,7 +39,7 @@ export const FEES: DocPage = {
       id: 'assisted-swap-fee',
       title: 'Assisted swap fee',
       blocks: [
-        p('At most 0.65% of the consumed swap budget. It applies only when you request a balancing swap in Setup, and it is quoted before you approve it.'),
+        p('0.65% of the amount swapped. It applies only when your wallet holds one of a new position’s two tokens and Create position swaps part of it for the other inside the same pool; Review shows the swap, and your wallet shows it before you sign.'),
         p('It is not added on top of the service fee, and the automation’s own balancing swaps carry no swap fee.'),
       ],
     },
@@ -52,7 +52,7 @@ export const FEES: DocPage = {
       id: 'pool-trading-fee',
       title: 'Pool trading fee',
       blocks: [
-        p('Swappers pay a pool’s fee tier to its liquidity providers, on each trade. It is what an in-range position earns, not a charge on your deposit. A swap you make, such as a balancing swap in Setup, pays it, and any protocol fee, like any other. See ', doc('Pools and fee tiers', 'pools', 'fee-tiers'), '.'),
+        p('Swappers pay a pool’s fee tier to its liquidity providers, on each trade. It is what an in-range position earns, not a charge on your deposit. A swap you make, such as the one Create position makes when your wallet holds one token, pays it, and any protocol fee, like any other. See ', doc('Pools and fee tiers', 'pools', 'fee-tiers'), '.'),
       ],
     },
   ],
@@ -210,7 +210,7 @@ export const GLOSSARY: DocPage = {
             { id: 'earned-fees', term: 'Earned fees', text: ['Trading fees a position has earned while in range.'] },
             { id: 'unsettled-fees', term: 'Unsettled fees', text: ['Earned fees not yet collected from a position.'] },
             { id: 'service-fee', term: 'Service fee', text: ['Domino’s fee on automation: Auto-compound 2%; Domino-compound 4% of earned fees consumed, once.'] },
-            { id: 'assisted-swap-fee', term: 'Assisted swap fee', text: ['The fee on a balancing swap you request in Setup: at most 0.65% of the consumed swap budget.'] },
+            { id: 'assisted-swap-fee', term: 'Assisted swap fee', text: ['The fee on the swap Create position makes when your wallet holds one of the two tokens: 0.65% of the amount swapped.'] },
             { id: 'domino-history', term: 'Domino history', text: ['Domino’s own record of a pool’s last 24 hours, where the deployment provides it. Figures from it are marked Domino history.'] },
             { id: 'tvl', term: 'TVL', text: ['Total value locked: the value of the tokens in a pool, from Domino history or, where it has none, a market data provider.'] },
             { id: 'volume-24h', term: '24h volume', text: ['The value swapped through a pool over the last 24 hours, from Domino history or, where it has none, a market data provider.'] },

@@ -94,7 +94,6 @@ export const WALLET: DocPage = {
       blocks: [
         list(
           ['Deposit drafts kept by the deposit service, and their receipts.'],
-          ['The deposit-amount estimate in New position’s Review.'],
           ['The assisted swap quote in Setup.'],
           ['Managed positions and automation receipts, on ', doc('Positions', 'positions', 'managed-positions'), '.'],
         ),
