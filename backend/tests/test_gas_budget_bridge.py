@@ -3,6 +3,8 @@ import json
 import os
 from pathlib import Path
 import socket
+import stat
+import struct
 import sys
 import tempfile
 import threading
@@ -58,7 +60,8 @@ class BridgeTests(unittest.TestCase):
 
                 thread = threading.Thread(target=handle)
                 thread.start()
-                with patch('gas_budget_bridge._peer_uid', return_value=os.getuid()):
+                with patch('gas_budget_bridge._peer_credentials',
+                           return_value=(os.getpid(), os.getuid(), os.getgid())):
                     client = GasBudgetClient(path, server_uid=os.getuid())
                     result = client.reserve_pair(PUBLICATION, PUBLISHER, 1,
                                                  INTENT, OPERATOR, 2)
@@ -113,9 +116,9 @@ class BridgeTests(unittest.TestCase):
             'args': [PUBLICATION, 'publisher']}, {'attest_settlement_quote'}), ATTESTED)
 
     def test_client_refuses_a_false_authorization_ack(self):
-        with patch('gas_budget_bridge._peer_uid', return_value=os.getuid()):
+        with patch('gas_budget_bridge._peer_credentials',
+                   return_value=(os.getpid(), os.getuid(), os.getgid())):
             with patch('gas_budget_bridge.os.stat') as stat_call, patch('gas_budget_bridge.socket.socket') as socket_call:
-                import stat
                 stat_call.return_value.st_mode = stat.S_IFSOCK | 0o660
                 stat_call.return_value.st_uid = os.getuid()
                 conn = socket_call.return_value.__enter__.return_value
@@ -123,6 +126,65 @@ class BridgeTests(unittest.TestCase):
                 client = GasBudgetClient('/run/unused.sock', server_uid=os.getuid())
                 with self.assertRaisesRegex(GasBudgetError, 'gas_budget_protocol'):
                     client.require_reservation(PUBLICATION, 'publisher', PUBLISHER, 1)
+
+    def test_systemd_listener_identity_requires_pid1_root_and_strict_socket_metadata(self):
+        # systemd creates/listens on the socket as PID 1 before handing the FD
+        # to the nonroot service. SO_PEERCRED therefore reports (1, 0, 0) on
+        # the client side, while the pathname remains owned by the service.
+        server_uid = 12345
+        client = GasBudgetClient('/run/domino-gas-reservation.sock', server_uid=server_uid)
+        cases = (
+            ((1, 0, 0), server_uid, 0o660, True),
+            ((4321, server_uid, 12345), server_uid, 0o660, True),
+            ((4321, 0, 0), server_uid, 0o660, False),
+            ((1, 0, 12345), server_uid, 0o660, False),
+            ((1, 12346, 0), server_uid, 0o660, False),
+            ((1, 0, 0), 12346, 0o660, False),
+            ((1, 0, 0), server_uid, 0o666, False),
+        )
+        with patch('gas_budget_bridge.os.stat') as stat_call, \
+                patch('gas_budget_bridge.socket.socket') as socket_call, \
+                patch.object(socket, 'SO_PEERCRED', 17, create=True):
+            conn = socket_call.return_value.__enter__.return_value
+            conn.recv.return_value = b'{"ok":null}\n'
+            for peer, owner, mode, allowed in cases:
+                with self.subTest(peer=peer, owner=owner, mode=mode):
+                    stat_call.return_value.st_mode = stat.S_IFSOCK | mode
+                    stat_call.return_value.st_uid = owner
+                    conn.getsockopt.return_value = struct.pack('3i', *peer)
+                    conn.sendall.reset_mock()
+                    if allowed:
+                        self.assertIsNone(client.require_reservation(PUBLICATION, 'publisher', PUBLISHER, 1))
+                    else:
+                        with self.assertRaisesRegex(GasBudgetError, 'gas_budget_unavailable'):
+                            client.require_reservation(PUBLICATION, 'publisher', PUBLISHER, 1)
+                    self.assertEqual(conn.sendall.called, allowed)
+            stat_call.return_value.st_mode = stat.S_IFSOCK | 0o660
+            stat_call.return_value.st_uid = server_uid
+            conn.getsockopt.return_value = struct.pack('3i', 1, 0, 0)
+            conn.sendall.reset_mock()
+            alternate = GasBudgetClient('/run/other.sock', server_uid=server_uid)
+            with self.assertRaisesRegex(GasBudgetError, 'gas_budget_unavailable'):
+                alternate.require_reservation(PUBLICATION, 'publisher', PUBLISHER, 1)
+            conn.sendall.assert_not_called()
+
+    def test_server_still_refuses_root_as_a_client(self):
+        service = FakeService()
+        first, second = socket.socketpair()
+        try:
+            with patch('gas_budget_bridge._peer_uid', return_value=0):
+                thread = threading.Thread(target=serve_one, args=(first, service, {12345: {'reserve_pair'}}))
+                thread.start()
+                second.sendall(json.dumps({'operation': 'reserve_pair',
+                    'args': [PUBLICATION, PUBLISHER, 1, INTENT, OPERATOR, 2]}).encode() + b'\n')
+                response = second.recv(256)
+                thread.join(timeout=3)
+            self.assertFalse(thread.is_alive())
+            self.assertEqual(json.loads(response), {'error': 'gas_budget_unavailable'})
+            self.assertEqual(service.calls, [])
+        finally:
+            first.close()
+            second.close()
 
 
 if __name__ == '__main__':

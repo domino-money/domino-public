@@ -46,7 +46,7 @@ def _uid(user):
         raise GasBudgetError('gas_budget_unavailable') from None
 
 
-def _peer_uid(conn):
+def _peer_credentials(conn):
     # Linux SO_PEERCRED is mandatory here. Refuse other platforms rather than
     # accidentally accepting an unauthenticated local socket peer.
     if not hasattr(socket, 'SO_PEERCRED'):
@@ -54,7 +54,11 @@ def _peer_uid(conn):
     raw = conn.getsockopt(socket.SOL_SOCKET, socket.SO_PEERCRED, 12)
     if len(raw) != 12:
         raise GasBudgetError('gas_budget_unavailable')
-    return struct.unpack('3i', raw)[1]
+    return struct.unpack('3i', raw)
+
+
+def _peer_uid(conn):
+    return _peer_credentials(conn)[1]
 
 
 def _read_message(conn):
@@ -127,7 +131,13 @@ class GasBudgetClient:
             with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as conn:
                 conn.settimeout(30)
                 conn.connect(self.path)
-                if _peer_uid(conn) != server_uid:
+                peer = _peer_credentials(conn)
+                # With systemd socket activation PID 1 calls listen(), so Linux
+                # SO_PEERCRED reports PID 1's credentials even after the socket
+                # is passed to the unprivileged reservation service. The
+                # pathname socket must still belong to that service with the
+                # exact installed mode, checked above.
+                if peer[1] != server_uid and not (self.path == SOCKET_PATH and peer == (1, 0, 0)):
                     raise GasBudgetError('gas_budget_unavailable')
                 _write_message(conn, {'operation': operation, 'args': list(args)})
                 result = _read_message(conn)

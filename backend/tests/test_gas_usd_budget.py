@@ -405,11 +405,19 @@ class GasBudgetPostgresTests(unittest.TestCase):
                 conn.execute('SELECT * FROM domino_gas_budget.settle(%s,%s,%s,%s,%s,%s,%s)', args)
             conn.rollback()
         self.assertEqual(budget.status(claim['day'])['usedUsdMicros'], 12_000_000)
-        self.attest(CYCLE_1, 'publisher')
+        fresh_witness = self.attest(CYCLE_1, 'publisher', answer=3000)
+        self.assertNotEqual(fresh_witness['answerRaw'], witness['answerRaw'])
+        fresh_args = (CYCLE_1, 'publisher', 2 * 10**15, fresh_witness['answerRaw'],
+                      fresh_witness['roundId'], fresh_witness['answerUpdatedAt'],
+                      fresh_witness['blockTimestamp'])
         with psycopg.connect(**self.pg.settings, user='domino_gas_settlement_login') as conn:
+            with self.assertRaisesRegex(psycopg.errors.CheckViolation,
+                                        'gas_settlement_quote_missing'):
+                conn.execute('SELECT * FROM domino_gas_budget.settle(%s,%s,%s,%s,%s,%s,%s)', args)
+            conn.rollback()
             self.assertEqual(conn.execute('SELECT spent_usd_micros FROM '
-                'domino_gas_budget.settle(%s,%s,%s,%s,%s,%s,%s)', args).fetchone(),
-                (4_000_000,))
+                'domino_gas_budget.settle(%s,%s,%s,%s,%s,%s,%s)', fresh_args).fetchone(),
+                (6_000_000,))
 
     def test_settlement_login_cannot_release_cap_with_tiny_direct_sql_operand(self):
         budget = self.budget()
