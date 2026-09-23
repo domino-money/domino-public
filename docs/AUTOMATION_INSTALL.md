@@ -141,3 +141,6 @@ are refused when the financial rows are missing or the automation rows already e
 The opt-in disposable PostgreSQL test proves both LOGIN bridges connect, both
 privilege roles stay `NOLOGIN`, and reserve/settle permissions do not cross.
 The host procedure itself has not been run on the production VM as part of this delivery.
+The optional [synthetic Ubuntu rehearsal](AUTOMATION_OFF_CI_REHEARSAL.md)
+checks the archive plan, OFF units and local socket peer credentials on a disposable
+CI runner; it does not run the native `--inspect`/`--apply` or qualify a settlement.
