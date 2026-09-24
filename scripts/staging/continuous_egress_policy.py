@@ -39,6 +39,8 @@ ROLES = ('read', 'gateway', 'auth', 'onboarding', 'deposit', 'performance',
 # timer-driven units whose systemd layer is not this file's, and the two
 # accounts never run a service at all.
 NO_UNIT = ('write', 'operator', 'admin')
+# The units the public read path cannot run without; every other enabled unit is a family.
+READ_PATH_UNITS = ('domino-read.service', 'domino-gateway.service', 'domino-tunnel.service')
 LISTENERS = {'read': 8876, 'gateway': 8878, 'auth': 8879, 'onboarding': 8880,
              'deposit': 8881, 'performance': 8900, 'execution-status': 8901,
              'tunnel': 20241}
@@ -309,8 +311,16 @@ def render(snapshot):
         artifacts[path] = '\n'.join(dropin) + '\n'
         metadata[path] = {'uid': 0, 'gid': 0, 'mode': 0o644}
     members = ' '.join([EGRESS_UNIT, *units])
+    # The read path is required: a member stopped or restarted takes the target
+    # with it, the tunnel included. A family is only wanted, so the target still
+    # starts it but does not inherit its failures: on 24 September each automatic
+    # restart of a required auth listener that exited at start restarted the
+    # whole read path.
+    required = ' '.join([EGRESS_UNIT, *(unit for unit in units if unit in READ_PATH_UNITS)])
+    families = [unit for unit in units if unit not in READ_PATH_UNITS]
     target = ['[Unit]', 'Description=Domino continuously supervised token and pool-market reads',
-              f'Requires={members}', f'After=network-online.target {members}',
+              f'Requires={required}', *([f'Wants={" ".join(families)}'] if families else []),
+              f'After=network-online.target {members}',
               'Wants=network-online.target', '', '[Install]', 'WantedBy=multi-user.target']
     artifacts[UNIT_DIR + TARGET] = '\n'.join(target) + '\n'
     metadata[UNIT_DIR + TARGET] = {'uid': 0, 'gid': 0, 'mode': 0o644}

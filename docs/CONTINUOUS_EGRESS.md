@@ -108,7 +108,7 @@ python3 scripts/staging/continuous_egress_policy.py < pins.json > candidate.json
 | `/etc/domino/continuous-reads/policy.nft` | 0600 | the whole table, every identity, default deny |
 | `/etc/domino/continuous-reads/<role>.hosts` | 0644 | for each enabled unit with pins; edge names are not pinned here |
 | `/etc/systemd/system/domino-<role>.service.d/60-continuous-reads.conf` | 0644 | for each enabled unit: bound to the egress service and the target, address allow-list, hosts bind |
-| `/etc/systemd/system/domino-continuous-reads.target` | 0644 | `Requires=` the egress service and every enabled unit |
+| `/etc/systemd/system/domino-continuous-reads.target` | 0644 | `Requires=` the egress service and the read path (reader, gateway, tunnel); `Wants=` each enabled family |
 
 A family's drop-in also carries `ExecStart=` with the installer's exact
 command plus its enable flags, derived from `upgrade_financial.unit_text` so
@@ -176,8 +176,9 @@ the fall-through.
 ### Switching a family on
 
 Add it to `enabled`, pin what its classes need, render, review, apply as
-above, then `systemctl start domino-<role>.service` — the target now requires
-it, so the next restart of the target brings it too. The rest of a family's
+above, then `systemctl start domino-<role>.service` — the target now wants
+it, so the next start of the target brings it too, and its own restarts stay
+its own. The rest of a family's
 activation is its own work and is not here: the private files under
 `/etc/domino/financial/<component>/` — `environment`, and the file the
 rendered command names: `rpc.json` for `auth`, `onboarding` and `deposit`
@@ -197,11 +198,11 @@ enabled while its drop-in had lost its configuration bind, exited at start, and
 each of its three automatic restarts restarted the egress service, reader,
 gateway, tunnel and the public-data lanes (23:20:50 to 23:21:09 UTC), until its
 start limit left it failed and the target inactive. Recovery put the target
-back without it and set its egress drop-in aside. Start a family enabled
-and watch it run before its unit joins the target, and keep one that can still
-fail at start out of it: the rendered target names every enabled family in
-`Requires=`, and a dependency that does not propagate restarts (`Wants=`) is
-not what the renderer writes today.
+back without it and set its egress drop-in aside. The renderer
+now names families in `Wants=` and only the read path in `Requires=`: `Wants=`
+carries no restart back to the target, and the family's `PartOf=` still takes it
+down with the target. Start a family enabled and watch it run before applying a
+candidate that adds it.
 
 ## Not yet a role
 

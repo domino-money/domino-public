@@ -248,7 +248,13 @@ class ContinuousEgressTests(unittest.TestCase):
         self.assertIn(f'14.0.0.1 {ISSUER}\n', hosts)
         self.assertIn('12.0.0.3 robinhood-mainnet.g.alchemy.com\n', hosts)
         self.assertNotIn('geckoterminal', hosts)
-        self.assertIn('domino-auth.service', result['artifacts']['/etc/systemd/system/domino-continuous-reads.target'])
+        target = result['artifacts']['/etc/systemd/system/domino-continuous-reads.target']
+        # The target starts the family but does not require it: a family's restarts
+        # stay its own instead of restarting the read path.
+        self.assertIn('Requires=domino-continuous-egress.service domino-read.service '
+                      'domino-gateway.service domino-tunnel.service\n', target)
+        self.assertIn('\nWants=domino-auth.service\n', target)
+        self.assertIn(' domino-auth.service domino-tunnel.service\n', target.split('After=')[1])
         self.assertEqual(result['units'], ['domino-read.service', 'domino-gateway.service',
                                            'domino-auth.service', 'domino-tunnel.service'])
         # Off again: nothing of it remains.
