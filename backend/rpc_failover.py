@@ -6,10 +6,11 @@ identity or an inconsistent snapshot poisons the whole read even if a metadata
 caller catches its first exception.
 """
 import logging
+from urllib.parse import urlsplit
 
 from discovery import RPC_URL, CHAIN_ID, DataError, ReadRpc, RpcStateUnavailable, parse_block, quantity
 from read_deadline import check_read_deadline
-from rpc_config import MAX_RPC_ENDPOINTS
+from rpc_config import LOCAL_RPC_HOST, LOCAL_STATE_BLOCKS, MAX_RPC_ENDPOINTS
 
 RETRYABLE = frozenset({'network_unavailable', 'http_429', 'http_502', 'http_503', 'http_504',
                        'http_520', 'http_521', 'http_522', 'http_523', 'http_524', 'http_530'})
@@ -172,6 +173,7 @@ class HistoricalReadRpc(FailoverReadRpc):
     their own range/log/canonicality checks. Unlike a browser read, a historical
     walk may observe thousands of headers and must not accumulate all of them.
     An evicted numeric state block is read and pinned again before state access.
+    State older than the own pruned node keeps starts at the next route.
 
     String endpoints retain the previous single-provider behavior for explicit
     tools and old configurations. An ordered tuple opts into verified failover.
@@ -184,6 +186,8 @@ class HistoricalReadRpc(FailoverReadRpc):
             ReadRpc.__init__(self, urls, **kwargs)
         else:
             super().__init__(urls, **kwargs)
+        self._pruned_primary = (not self.legacy_single_source and len(self.urls) > 1
+                                and urlsplit(self.urls[0]).hostname == LOCAL_RPC_HOST)
 
     def _record_block(self, anchors, block):
         if block.tag in anchors and block != anchors[block.tag]:
@@ -222,19 +226,38 @@ class HistoricalReadRpc(FailoverReadRpc):
                 raise DataError('snapshot_reorganized')
         self.verified = True
 
-    def _begin_operation(self):
+    def _beyond_local_state(self, calls):
+        # The highest verified header is the head this read has proven; the own
+        # node refuses state further below it, so asking there is a wasted trip.
+        # Only state reads end in a numeric block; headers end in False, logs
+        # in a filter and EIP-1898 pins in an object.
+        if not self._pruned_primary or not self.anchors:
+            return False
+        head = max(block.number for block in self.anchors.values())
+        for _, params in calls:
+            try:
+                if head - quantity(params[-1] if params else None) > LOCAL_STATE_BLOCKS:
+                    return True
+            except DataError:
+                pass  # Not a numeric state block; the read path decides.
+        return False
+
+    def _begin_operation(self, calls):
         # Missing old state does not send subsequent retained logs/headers to
-        # Alchemy. Each independent operation starts at the local primary;
-        # changing providers still checks the same highest continuity proof.
-        if self._operation_depth == 0 and self.index and not self.failure:
-            self.index = 0
-            self.url, self.verified = self.urls[0], False
+        # Alchemy. Each independent operation starts at the local primary,
+        # except state older than it keeps, which starts at the next route.
+        # Changing providers still checks the same highest continuity proof.
+        if self._operation_depth == 0 and not self.failure:
+            start = 1 if self._beyond_local_state(calls) else 0
+            if self.index != start:
+                self.index = start
+                self.url, self.verified = self.urls[start], False
         self._operation_depth += 1
 
     def request(self, method, params=()):
         if self.legacy_single_source:
             return ReadRpc.request(self, method, params)
-        self._begin_operation()
+        self._begin_operation(((method, params),))
         try:
             return super().request(method, params)
         finally:
@@ -243,7 +266,7 @@ class HistoricalReadRpc(FailoverReadRpc):
     def batch(self, calls, *, item_errors=False):
         if self.legacy_single_source:
             return ReadRpc.batch(self, calls, item_errors=item_errors)
-        self._begin_operation()
+        self._begin_operation(self._batch_specs(calls))
         try:
             return super().batch(calls, item_errors=item_errors)
         finally:

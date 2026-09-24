@@ -11,10 +11,12 @@ from discovery import CHAIN_ID, DataError, ZERO
 from rpc_failover import HistoricalReadRpc, MAX_ANCHORS
 from configure_rpc import prepare_local_config
 from local_config import checked_config
-from rpc_config import configured_history_rpc_source, configured_history_rpc_urls
+from rpc_config import LOCAL_STATE_BLOCKS, configured_history_rpc_source, configured_history_rpc_urls
 
 LOCAL = 'https://rpc.domino.money/TEST_LOCAL_TOKEN_0123456/'
 FALLBACK = 'https://robinhood-mainnet.g.alchemy.com/v2/test-fallback'
+SECOND = 'https://secondary.example.invalid/test-second'
+BEYOND = 0x20 + LOCAL_STATE_BLOCKS + 1  # a head that puts block 0x20 outside the local window
 MISSING = {'code': -32000, 'message': 'missing trie node ' + 'a'*64 + ' (path 00) state unavailable'}
 
 
@@ -161,6 +163,66 @@ class HistoryRoutingTests(unittest.TestCase):
         provider.fail_transport = False
         rpc.request('eth_getBlockByNumber', ['0x21', False])
         self.assertEqual(provider.calls[-1][0], LOCAL)
+
+
+class LocalStateWindowTests(unittest.TestCase):
+    """State the own node no longer keeps skips it; everything else stays local-first."""
+
+    def anchored(self, head, urls=(LOCAL, FALLBACK)):
+        provider = Provider(); provider.fail_state = True
+        rpc = HistoricalReadRpc(urls, transport=provider)
+        rpc.request('eth_getBlockByNumber', ['0x20', False])
+        rpc.request('eth_getBlockByNumber', [hex(head), False])
+        return provider, rpc
+
+    def test_state_beyond_local_window_starts_at_fallback_without_a_refusal(self):
+        provider, rpc = self.anchored(BEYOND)
+        before = len(provider.calls)
+        with self.assertNoLogs('rpc_failover', level='WARNING'):
+            self.assertEqual(rpc.request('eth_getCode', [ZERO, '0x20']), '0x01')
+        self.assertEqual(provider.calls[before:], [
+            (FALLBACK, 'eth_chainId', []),
+            (FALLBACK, 'eth_getBlockByNumber', [hex(BEYOND), False]),
+            (FALLBACK, 'eth_getCode', [ZERO, '0x20'])])
+        self.assertEqual(rpc.count, len(provider.calls))
+
+    def test_state_at_the_window_edge_still_tries_local_first(self):
+        provider, rpc = self.anchored(BEYOND - 1)
+        with self.assertLogs('rpc_failover', level='WARNING'):
+            self.assertEqual(rpc.request('eth_getCode', [ZERO, '0x20']), '0x01')
+        self.assertEqual([url for url, method, _ in provider.calls if method == 'eth_getCode'],
+                         [LOCAL, FALLBACK])
+
+    def test_old_reads_keep_the_verified_fallback_and_other_operations_return_local(self):
+        provider, rpc = self.anchored(BEYOND)
+        rpc.request('eth_getCode', [ZERO, '0x20'])
+        before = len(provider.calls)
+        rpc.request('eth_getBalance', [ZERO, '0x20'])
+        self.assertEqual(provider.calls[before:], [(FALLBACK, 'eth_getBalance', [ZERO, '0x20'])])
+        rpc.request('eth_getBlockByNumber', ['0x21', False])
+        self.assertEqual(provider.calls[-1], (LOCAL, 'eth_getBlockByNumber', ['0x21', False]))
+        self.assertEqual(rpc.request('eth_chainId'), hex(CHAIN_ID))
+        self.assertEqual(provider.calls[-1], (LOCAL, 'eth_chainId', []))
+        provider.fail_state = False
+        self.assertEqual(rpc.request('eth_getCode', [ZERO, hex(BEYOND)]), '0x01')
+        self.assertEqual(provider.calls[-1], (LOCAL, 'eth_getCode', [ZERO, hex(BEYOND)]))
+        self.assertEqual(rpc.count, len(provider.calls))
+
+    def test_batch_with_old_state_starts_at_fallback(self):
+        provider, rpc = self.anchored(BEYOND)
+        before = len(provider.calls)
+        result = rpc.batch([('eth_getBlockByNumber', ['0x40', False]), ('eth_getCode', [ZERO, '0x20'])])
+        self.assertEqual(result, [header(64), '0x01'])
+        self.assertEqual({url for url, _, _ in provider.calls[before:]}, {FALLBACK})
+
+    def test_only_the_own_node_with_a_next_route_is_skipped(self):
+        provider, rpc = self.anchored(BEYOND, urls=(FALLBACK, SECOND))
+        rpc.request('eth_getCode', [ZERO, '0x20'])
+        self.assertEqual(provider.calls[-1], (FALLBACK, 'eth_getCode', [ZERO, '0x20']))
+        provider, rpc = self.anchored(BEYOND, urls=(LOCAL,))
+        with self.assertRaisesRegex(DataError, '^rpc_error$'):
+            rpc.request('eth_getCode', [ZERO, '0x20'])
+        self.assertEqual(provider.calls[-1], (LOCAL, 'eth_getCode', [ZERO, '0x20']))
 
 
 if __name__ == '__main__':

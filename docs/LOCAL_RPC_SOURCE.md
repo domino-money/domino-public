@@ -15,7 +15,7 @@ Ethereum execution and Beacon upstreams remain separate and unchanged.
 | Direct deposit preparation/receipt reads | Current primary; existing single-provider, fail-closed transport |
 | Live activity window and log-only anchor lookup | Local primary for each operation; bounded, verified fallback |
 | NFT reads requesting a block; owner resolution for stored pool positions | Local primary, then verified configured fallback |
-| Catalogue/activity reconstruction, fees, positions, capital and Chainlink replay | Local primary for each operation; fallback for transport failure or unavailable old state, with chain/block proofs |
+| Catalogue/activity reconstruction, fees, positions, capital and Chainlink replay | Local primary for each operation, except state older than the node keeps, which starts at the fallback; fallback for transport failure or unavailable old state, with chain/block proofs |
 | Managed performance collector and qualification forks | Local first; fallback attempts and identity proofs spend the existing transport budgets |
 | Wallet token inventory | Alchemy exclusively for candidate discovery; every balance is reread through the local-first RPC |
 | Explicit external price-reference tools | Separate provider capability; no credentials extracted from the local `rpcUrl` |
@@ -92,7 +92,13 @@ the existing `rpc_error` contract is retained.
 
 Historical v4 reads retain a bounded set of headers plus their highest observed
 continuity anchor. Each operation returns to the local primary: a pruned-state
-fallback cannot redirect subsequent logs/headers to Alchemy. A switch verifies
+fallback cannot redirect subsequent logs/headers to Alchemy. The exception is
+a state read whose numeric block lies more than `LOCAL_STATE_BLOCKS` (15,000)
+below the highest verified header. The node keeps about 30 minutes of state
+(18,000 blocks at ten per second), so such a read starts at the next route
+instead of drawing a certain missing-trie refusal; consecutive old reads stay
+on the verified fallback. Reads inside the margin still try the node first and
+keep the refusal fallback, which covers the shorter window after a restart. A switch verifies
 chain identity and the continuity header; state at an evicted numeric block is
 pinned again. Historical mixed batches can recover an explicit missing-state refusal only after every delivered identity/header assertion validates. Invalid chain/hash, malformed envelopes and contract reverts do
 not trigger fallback. Ambiguous failed batches are not replayed.

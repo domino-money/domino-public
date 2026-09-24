@@ -24,7 +24,8 @@
  * changing a route, a schema or a version, which is why the versions here did
  * not move while the digests did. The private V4 snapshot loopback route
  * updated read-v1 and read-v2 source hashes without changing their wire
- * contracts. The onboarding-v1 and deposit-v1 digests
+ * contracts, and so did starting old historical state reads past the own node.
+ * The onboarding-v1 and deposit-v1 digests
  * moved again with the slippage bound: every request that carries a
  * `slippageBps` now takes 10 to 500 basis points (lib/create/slippage.ts holds
  * the same numbers), and the versions stayed where they were.
@@ -42,7 +43,7 @@ export const PRODUCER_PIN = {
   packages: {
     'read-v1': {
       version: '1.1.0-rc.3',
-      manifestSha256: 'd9d6c4aa1fb974d9fc9dc676d3217504d8ba6c70ebf1daf8aeef58d33c492a57',
+      manifestSha256: 'a5e6e7fa47468ea5d39855beb62be40e314c2fd4831a192a1fb16ea91c31549b',
     },
     'session-v1': {
       version: '3.0.0-rc.3',

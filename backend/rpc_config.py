@@ -6,6 +6,10 @@ from urllib.parse import urlsplit
 from discovery import DataError, RPC_URL
 
 LOCAL_RPC_HOST = 'rpc.domino.money'
+# That node keeps state for its 30-minute block-age window, about 18,000 blocks
+# at ten blocks per second. A historical state read further below the highest
+# verified header starts at the next route instead of a certain refusal.
+LOCAL_STATE_BLOCKS = 15_000
 DEFAULT_RPC_HOSTS = ('rpc.mainnet.chain.robinhood.com', 'robinhood-mainnet.g.alchemy.com', LOCAL_RPC_HOST)
 MAX_RPC_ENDPOINTS = 3
 MAX_RPC_HOSTS = 8
